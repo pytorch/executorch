@@ -815,10 +815,11 @@ def _measured_routing_config(
 
 # The CUDA tensors `move_program_to_device` created for the compile on this
 # thread, leaving out GPU tensors the caller passed in, which stay the caller's.
-# They can be parked on the CPU when an autotune capture runs out of memory,
-# since AOTI autotunes on random inputs rather than on them. Held weakly, so
-# they live exactly as long as the program (or a decomposed copy sharing them)
-# does.
+# They can be parked on the CPU when an autotune timing runs out of memory.
+# That is safe while the timed kernels read random stand-ins instead of them,
+# which holds for Inductor's autotune only with autotune_at_compile_time on.
+# Held weakly, so they live exactly as long as the program (or a decomposed
+# copy sharing them) does.
 _MOVED_TENSORS = threading.local()
 
 
@@ -1404,13 +1405,14 @@ class CudaBackend(AotiBackend, BackendDetails):
         CUDA preprocessing replaces state-dict entries when moving them to the
         target device; it does not mutate the source tensors, and it never
         frees or parks the GPU tensors it shares with the caller (see
-        ``_MOVED_TENSORS``).  Only low-memory mode lets Inductor move them to
-        disk while it autotunes, and they come back with the same values at
-        new addresses (see ``get_aoti_compile_options``).  Memoizing those
-        tensors therefore avoids a model-sized copy for every delegated method,
-        on the GPU when the weights already live there, while preserving an
-        independent graph and state-dict mapping.  Without compile-time
-        autotune, the GPU tensors the graph writes get their own copy in
+        ``_MOVED_TENSORS`` and ``release_moved_tensors``).  Only low-memory
+        mode lets Inductor move them to disk while it autotunes, and they come
+        back with the same values at new addresses (see
+        ``get_aoti_compile_options``).  Memoizing those tensors therefore
+        avoids a model-sized copy for every delegated method, on the GPU when
+        the weights already live there, while preserving an independent graph
+        and state-dict mapping.  Without compile-time autotune, the GPU
+        tensors the graph writes get their own copy in
         ``move_program_to_device``.
         """
         tensor_memo = {

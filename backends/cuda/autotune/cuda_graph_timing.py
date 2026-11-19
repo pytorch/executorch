@@ -39,8 +39,10 @@ To keep captures succeeding:
 - on CUDA OOM the cache is emptied and the capture retried; if that fails too,
   the tensors given as ``offload`` (the model's weights the compile moved to
   the GPU, never GPU tensors the caller passed in) are parked on the CPU while
-  the candidate is timed and restored afterwards. This is safe because AOTI
-  autotunes on random inputs, never on the model's tensors;
+  the candidate is timed and restored afterwards. This is safe with
+  ``autotune_at_compile_time`` on, because AOTI then autotunes on random
+  inputs. With it off, Inductor first times candidates on the model's real
+  tensors, so a candidate can read a parked one;
 - a candidate that cannot be captured at all is timed with Inductor's default.
 """
 
