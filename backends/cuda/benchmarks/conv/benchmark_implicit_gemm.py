@@ -516,12 +516,12 @@ def boundary_cases(precision, layout):
     ]
 
 
-def stage_boundary_cases(precision):
-    """``implicit_gemm.stage_boundary_calls()``: every routed stage geometry
-    at every corner of its limits."""
+def corner_cases(label, calls, precision):
+    """Contiguous ``Case``s of ``calls``, the (input shape, C_out, kernel,
+    stride, padding) corners of a routed range."""
     return [
         Case(
-            "stage boundary",
+            label,
             shape,
             out_channels,
             kernel,
@@ -531,9 +531,7 @@ def stage_boundary_cases(precision):
             False,
             precision,
         )
-        for shape, out_channels, kernel, stride, padding in (
-            implicit_gemm.stage_boundary_calls()
-        )
+        for shape, out_channels, kernel, stride, padding in calls
     ]
 
 
@@ -755,7 +753,13 @@ def main():
     parser.add_argument(
         "--suite",
         default="shapes",
-        choices=["shapes", "envelope", "boundary", "stage_boundary"],
+        choices=[
+            "shapes",
+            "envelope",
+            "boundary",
+            "stage_boundary",
+            "winograd_boundary",
+        ],
     )
     parser.add_argument(
         "--precision",
@@ -783,7 +787,12 @@ def main():
         ),
         "envelope": lambda: envelope_cases(args.precision.split(",")),
         "boundary": lambda: boundary_cases(args.precision, args.layout),
-        "stage_boundary": lambda: stage_boundary_cases(args.precision),
+        "stage_boundary": lambda: corner_cases(
+            "stage boundary", implicit_gemm.stage_boundary_calls(), args.precision
+        ),
+        "winograd_boundary": lambda: corner_cases(
+            "winograd boundary", implicit_gemm.winograd_boundary_calls(), args.precision
+        ),
     }[args.suite]()
     index, count = map(int, args.shard.split("/"))
     l2_bytes = torch.cuda.get_device_properties(0).L2_cache_size
