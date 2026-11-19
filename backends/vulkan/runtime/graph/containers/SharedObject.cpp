@@ -8,6 +8,12 @@
 
 #include <executorch/backends/vulkan/runtime/graph/containers/SharedObject.h>
 
+#include <executorch/backends/vulkan/runtime/vk_api/memory/vma_api.h>
+#include <executorch/backends/vulkan/runtime/api/Context.h>
+#include <executorch/backends/vulkan/runtime/api/containers/Tensor.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Adapter.h>
+#include <executorch/backends/vulkan/runtime/vk_api/memory/Allocator.h>
+#include <executorch/backends/vulkan/runtime/graph/containers/Value.h>
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
 #include <algorithm>

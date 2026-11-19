@@ -6,11 +6,17 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <memory>
+#include <vector>
+#include <string>
+
+#include <executorch/backends/vulkan/runtime/vk_api/Types.h>
+#include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
+#include <executorch/backends/vulkan/runtime/graph/containers/Value.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/ExecuteNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/BlitNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/View.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 namespace vkcompute {
 

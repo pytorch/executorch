@@ -8,8 +8,15 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Transpose.h>
 
+#include <executorch/backends/vulkan/runtime/utils/VecUtils.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Exception.h>
+#include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/ExecuteNode.h>
 #include <executorch/backends/vulkan/runtime/graph/Logging.h>
 
+#include <stdint.h>
+#include <memory>
+#include <vector>
 #include <algorithm>
 
 namespace vkcompute {

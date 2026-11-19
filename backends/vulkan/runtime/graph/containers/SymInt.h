@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include <stdint.h>
+
 #include <executorch/backends/vulkan/runtime/api/Context.h>
 #include <executorch/backends/vulkan/runtime/api/containers/ParamsBuffer.h>
 

@@ -6,9 +6,14 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/vulkan/runtime/vk_api/memory/Buffer.h>
+#include <executorch/backends/vulkan/runtime/graph/GraphConfig.h>
+#include <executorch/backends/vulkan/runtime/graph/containers/Value.h>
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/ExecuteNode.h>
 
+#include <string>
+#include <vector>
 namespace vkcompute {
 ExecuteNode::ExecuteNode(
     const ResizeFunction& resize_fn,

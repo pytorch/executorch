@@ -8,6 +8,22 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Preprocess.h>
 
+#include <stdint.h>
+#include <vector>
+#include <memory>
+#include <string>
+
+#include <executorch/backends/vulkan/runtime/api/ShaderRegistry.h>
+#include <executorch/backends/vulkan/runtime/utils/VecUtils.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Descriptor.h>
+#include <executorch/backends/vulkan/runtime/vk_api/DispatchGrid.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Pipeline.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Shader.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Types.h>
+#include <executorch/backends/vulkan/runtime/vk_api/memory/Buffer.h>
+#include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
+#include <executorch/backends/vulkan/runtime/graph/containers/PushConstantData.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/ExecuteNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/DynamicDispatchNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>

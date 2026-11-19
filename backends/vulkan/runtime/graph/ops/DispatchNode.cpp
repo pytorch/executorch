@@ -8,6 +8,15 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/DispatchNode.h>
 
+#include <mutex>
+
+#include <executorch/backends/vulkan/runtime/api/Context.h>
+#include <executorch/backends/vulkan/runtime/vk_api/DispatchGrid.h>
+#include <executorch/backends/vulkan/runtime/vk_api/memory/Buffer.h>
+#include <executorch/backends/vulkan/runtime/vk_api/memory/Image.h>
+#include <executorch/backends/vulkan/runtime/graph/containers/PushConstantData.h>
+#include <executorch/backends/vulkan/runtime/graph/containers/Value.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/ExecuteNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/BindingUtils.h>
