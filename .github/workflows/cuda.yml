@@ -627,8 +627,9 @@ jobs:
           popd
         fi
 
-        # Install flash-linear-attention for chunk_gated_delta_rule triton kernel tests
-        pip install "flash-linear-attention==0.4.2"
+        # Install FLA's kernels for the chunk_gated_delta_rule triton kernel tests. Releases
+        # before 0.6.0 fail to import under the triton 3.9 that torch 2.15 requires.
+        pip install "fla-core==0.6.0"
 
         # Build executor_runner (needed by CUDA backend e2e tests in both shards)
         cmake --build cmake-out --target executor_runner

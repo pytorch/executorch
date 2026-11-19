@@ -7,7 +7,7 @@
 """
 Export and validate chunk_gated_delta_rule triton kernel on CUDA backend.
 
-Requires: pip install flash-linear-attention
+Requires: pip install fla-core>=0.6.0
 
 Usage:
   python -m pytest backends/cuda/tests/test_chunk_gated_delta_rule.py -v
