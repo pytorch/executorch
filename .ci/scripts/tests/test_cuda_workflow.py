@@ -25,6 +25,13 @@ def _supported_cuda_versions():
     return [f"{major}.{minor}" for major, minor in versions]
 
 
+def _matrix_cuda_versions(job):
+    matrix = job["strategy"]["matrix"]
+    if "include" in matrix:
+        return [row["cuda"] for row in matrix["include"]]
+    return list(matrix.get("cuda") or matrix["cuda-version"])
+
+
 def _all_keys(value):
     if isinstance(value, dict):
         for key, child in value.items():
@@ -57,12 +64,40 @@ class CudaWorkflowTest(unittest.TestCase):
             for name, job in jobs.items():
                 with_ = job.get("with", {})
                 version = with_.get("gpu-arch-version")
-                if with_.get("gpu-arch-type") != "cuda" or "${{" in str(version):
+                if with_.get("gpu-arch-type") != "cuda":
                     continue
-                checked += 1
-                with self.subTest(workflow=workflow, job=name):
-                    self.assertIn(version, supported)
+                if "${{" in str(version):
+                    versions = _matrix_cuda_versions(job)
+                else:
+                    versions = [version]
+                for version in versions:
+                    checked += 1
+                    with self.subTest(workflow=workflow, job=name, version=version):
+                        self.assertIn(version, supported)
         self.assertGreater(checked, 0)
+
+    def test_windows_jobs_cover_every_supported_train(self):
+        jobs = yaml.safe_load(
+            (ROOT / ".github" / "workflows" / "cuda-windows.yml").read_text()
+        )["jobs"]
+        for name in (
+            "export-model-cuda-windows-artifact",
+            "test-model-cuda-windows-e2e",
+            "unittest-cuda-runtime-windows",
+        ):
+            with self.subTest(job=name):
+                self.assertEqual(
+                    sorted(set(_matrix_cuda_versions(jobs[name]))),
+                    sorted(_supported_cuda_versions()),
+                )
+        export, e2e = (
+            jobs[name]["strategy"]["matrix"]["include"]
+            for name in (
+                "export-model-cuda-windows-artifact",
+                "test-model-cuda-windows-e2e",
+            )
+        )
+        self.assertEqual(export, e2e)
 
     def test_windows_export_image_matches_the_export_job(self):
         build = (ROOT / ".ci" / "docker" / "build.sh").read_text()
@@ -75,8 +110,11 @@ class CudaWorkflowTest(unittest.TestCase):
         jobs = yaml.safe_load(
             (ROOT / ".github" / "workflows" / "cuda-windows.yml").read_text()
         )["jobs"]
-        export = jobs["export-model-cuda-windows-artifact"]["with"]
-        self.assertEqual(export["gpu-arch-version"], image_version)
+        export = jobs["export-model-cuda-windows-artifact"]
+        self.assertIn(image_version, _matrix_cuda_versions(export))
+        script = export["with"]["script"]
+        self.assertIn('!= "${{ matrix.cuda }}" ]; then', script)
+        self.assertIn('install_cuda_redist.py --train "${{ matrix.cuda }}"', script)
 
     def test_cuda_builds_take_the_node_driver_on_an_unpinned_v3(self):
         # This job used to pin linux_job_v2 to a test-infra SHA because that was
