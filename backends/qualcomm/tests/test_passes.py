@@ -1979,7 +1979,9 @@ class TestPasses(unittest.TestCase):
     def test_constant_only_partition_stays_on_cpu(self):
         """An int64 buffer gets an int32 cast from I64toI32. When the buffer's consumer is
         not delegated, that cast alone would form a partition with no graph input, which
-        QNN cannot compile ("No graph inputs present").
+        QNN cannot compile ("No graph inputs present"). Unlike
+        test_partitioner_keeps_constant_only_subgraph_on_cpu, the constant-only node here
+        is the cast that I64toI32 inserts.
         """
 
         class Lookup(torch.nn.Module):
@@ -2004,8 +2006,8 @@ class TestPasses(unittest.TestCase):
                 skip_node_op_set={"aten.index.Tensor", "aten.topk.default"},
             )
         except RuntimeError as e:
-            if "QNN" in str(e) or "qnn" in str(e):
-                self.skipTest(f"QNN SDK not available: {e}")
+            if "Failed to initialize QNN backend" in str(e):
+                skip_without_qnn_sdk(self, e)
             raise
 
         edge.to_executorch()
