@@ -744,7 +744,8 @@ class Module {
       std::vector<std::vector<uint8_t>>& shared_arenas);
   runtime::Result<std::unique_ptr<PlannedMemory>>
   make_planned_memory_with_devices(
-      const ET_RUNTIME_NAMESPACE::MethodMeta& method_meta);
+      const ET_RUNTIME_NAMESPACE::MethodMeta& method_meta,
+      int target_device_override = -1);
   runtime::Result<std::vector<size_t>> get_mem_planned_buffer_sizes(
       const std::string& method_name);
   runtime::Result<std::vector<size_t>> get_max_mem_planned_buffer_sizes();

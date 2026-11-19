@@ -112,6 +112,30 @@ def _export(kind: str, directory: str, target: int) -> None:
     torch.save(expected, Path(directory) / "expected.pt")
 
 
+# A target_device load option moves the program to the named device
+# instead: exported for one device, run on the other.
+_RUN_REMAP = """
+import sys
+
+import torch
+from executorch.runtime import Runtime
+
+directory, current, remap = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+torch.cuda.set_device(current)
+method = Runtime.get().load_program(
+    directory + "/model.pte",
+    data_path=directory + "/aoti_cuda_blob.ptd",
+    backend_options={"CudaBackend": {"target_device": f"cuda:{remap}"}},
+).load_method("forward")
+inputs = torch.load(directory + "/inputs.pt")
+expected = torch.load(directory + "/expected.pt")
+for _ in range(2):
+    (output,) = method.execute(inputs)
+    torch.testing.assert_close(output.cpu(), expected, atol=2e-2, rtol=2e-2)
+assert torch.cuda.current_device() == current, torch.cuda.current_device()
+"""
+
+
 # Programs on both devices in one process, with cross-method sharing enabled
 # as a runner would: each runs on its own device, and freeing both trims each
 # device's pool.
@@ -192,3 +216,51 @@ class CudaTargetDeviceTest(unittest.TestCase):
 
     def test_int4_matmul_runs_on_the_target_device(self):
         self._check("int4")
+
+    def test_load_option_remaps_to_the_named_device(self):
+        for target, remap in ((0, 1), (1, 0)):
+            with tempfile.TemporaryDirectory() as directory:
+                _export("dense", directory, target)
+                with self.subTest(target=target, remap=remap):
+                    result = subprocess.run(
+                        [
+                            sys.executable,
+                            "-c",
+                            _RUN_REMAP,
+                            directory,
+                            str(target),
+                            str(remap),
+                        ],
+                        capture_output=True,
+                        text=True,
+                        timeout=600,
+                    )
+                    self.assertEqual(
+                        result.returncode,
+                        0,
+                        f"lowered for cuda:{target}, remapped to cuda:{remap}:\n"
+                        f"{result.stdout}\n{result.stderr}",
+                    )
+
+    def test_load_option_remap_to_a_missing_device_fails(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _export("dense", directory, 0)
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    _RUN_REMAP,
+                    directory,
+                    "0",
+                    str(torch.cuda.device_count()),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=600,
+            )
+            self.assertNotEqual(
+                result.returncode,
+                0,
+                f"remap to a missing device loaded:\n"
+                f"{result.stdout}\n{result.stderr}",
+            )

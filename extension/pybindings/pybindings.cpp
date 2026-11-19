@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <charconv>
 #include <chrono>
 #include <cinttypes>
 #include <condition_variable>
@@ -19,6 +20,7 @@
 #include <mutex>
 #include <numeric>
 #include <stdexcept>
+#include <string_view>
 #include <thread>
 #include <tuple>
 #include <unordered_map>
@@ -4381,12 +4383,58 @@ bool has_device_buffers(const MethodMeta& method_meta) {
   return false;
 }
 
+/// The CUDA backend's target_device load option: the device a method's
+/// planned buffers move to at load, replacing the one they were planned
+/// for. Named here because this loader allocates the buffers before any
+/// delegate initializes; the CUDA delegate reads the same option (under
+/// its own backend id) and moves the rest of the method, and
+/// extension/module does the same for the C++ loader. Returns -1 when
+/// the option is not set.
+Result<int> cuda_target_device_override(
+    const LoadBackendOptionsMap* backend_options) {
+  if (backend_options == nullptr) {
+    return -1;
+  }
+  for (const auto& option : backend_options->get_options("CudaBackend")) {
+    if (std::strcmp(option.key, "target_device") != 0) {
+      continue;
+    }
+    const auto* text =
+        std::get_if<std::array<char, kMaxOptionValueLength>>(&option.value);
+    if (text == nullptr) {
+      return Error::InvalidArgument;
+    }
+    std::string_view value(text->data());
+    while (!value.empty() && value.back() == '\0') {
+      value.remove_suffix(1);
+    }
+    if (value == "cuda") {
+      return 0;
+    }
+    int index = -1;
+    bool parsed = false;
+    if (value.size() > 5 && value.substr(0, 5) == "cuda:") {
+      const std::string_view digits = value.substr(5);
+      const auto result =
+          std::from_chars(digits.data(), digits.data() + digits.size(), index);
+      parsed = result.ec == std::errc() &&
+          result.ptr == digits.data() + digits.size() && index >= 0;
+    }
+    if (!parsed) {
+      return Error::InvalidArgument;
+    }
+    return index;
+  }
+  return -1;
+}
+
 /// Arenas sized and placed for a single method, used when that method's
 /// buffers cannot come from the program-wide host arenas. Returns nullptr when
 /// every buffer is on the host, so one pass over the metadata answers both
 /// whether the method needs its own arenas and how big they are.
 std::shared_ptr<ProgramMemory> make_method_memory(
-    const MethodMeta& method_meta) {
+    const MethodMeta& method_meta,
+    const LoadBackendOptionsMap* backend_options = nullptr) {
   const size_t num_buffers = method_meta.num_memory_planned_buffers();
   std::vector<int64_t> sizes;
   std::vector<runtime::etensor::Device> devices;
@@ -4405,6 +4453,40 @@ std::shared_ptr<ProgramMemory> make_method_memory(
   }
   if (!needs_device_memory) {
     return nullptr;
+  }
+  const auto device_override = cuda_target_device_override(backend_options);
+  THROW_IF_ERROR(
+      device_override.error(),
+      "target_device load option must be a string of the form cuda[:N]");
+  if (device_override.get() >= 0) {
+    // A remap moves every device buffer together, so a method planned
+    // across devices has no single device to move to.
+    int planned_device = -1;
+    for (auto& device : devices) {
+      if (device.is_cpu()) {
+        continue;
+      }
+      THROW_IF_ERROR(
+          device.type() == runtime::etensor::DeviceType::CUDA
+              ? Error::Ok
+              : Error::InvalidArgument,
+          "target_device load option cannot move a buffer on device "
+          "type %d, not CUDA",
+          static_cast<int>(device.type()));
+      THROW_IF_ERROR(
+          planned_device < 0 || planned_device == device.index()
+              ? Error::Ok
+              : Error::InvalidArgument,
+          "target_device load option cannot move this method: its "
+          "buffers are planned on cuda:%d and cuda:%d, and a remap "
+          "needs a single device",
+          planned_device,
+          static_cast<int>(device.index()));
+      planned_device = device.index();
+      device = runtime::etensor::Device(
+          device.type(),
+          static_cast<runtime::etensor::DeviceIndex>(device_override.get()));
+    }
   }
   return std::make_shared<ProgramMemory>(std::move(sizes), std::move(devices));
 }
@@ -5566,7 +5648,8 @@ struct PyProgram final {
     // accelerator method cannot make the rest of the program unloadable. A
     // host-only method keeps sharing the program-wide arenas, so its planned
     // memory is not isolated from the other host-only methods of this program.
-    auto method_memory = make_method_memory(meta.get());
+    auto method_memory =
+        make_method_memory(meta.get(), &state_->backend_options_);
     auto memory = method_memory ? std::move(method_memory) : memory_;
     Result<Method> res = state_->program_->load_method(
         method_name.c_str(),

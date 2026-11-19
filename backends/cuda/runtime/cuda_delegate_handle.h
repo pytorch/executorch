@@ -330,6 +330,13 @@ struct CudaDelegateHandle : public aoti::AOTIDelegateHandle {
   // The CUDA device the container, its weights and its IO buffers live on.
   int device_index{0};
 
+  // When a target_device load option remapped this delegate, the device the
+  // program was lowered for, and the named data map that identifies the
+  // method in the backend's remap registry. exported_device_index stays -1
+  // and remap_registry_key stays null when no remap was requested.
+  int exported_device_index{-1};
+  const void* remap_registry_key{nullptr};
+
   // CUDA graph state (warmup, capture, replay, static buffers)
   CudaGraphState cuda_graph_state;
 

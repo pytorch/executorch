@@ -22,6 +22,7 @@
 #include <atomic>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -107,6 +108,38 @@ std::string_view trim(std::string_view s) {
   return s.substr(start, end - start);
 }
 
+// The CUDA device index named by a "cuda" or "cuda:N" device string, as
+// written by CudaPartitioner into the target_device compile spec and accepted
+// from the target_device load option.
+Result<int> parse_cuda_device_string(std::string_view value) {
+  while (!value.empty() && value.back() == '\0') {
+    value.remove_suffix(1);
+  }
+  value = trim(value);
+  constexpr std::string_view kCuda = "cuda";
+  if (value == kCuda) {
+    return 0;
+  }
+  const bool has_prefix = value.size() > kCuda.size() + 1 &&
+      value.substr(0, kCuda.size()) == kCuda && value[kCuda.size()] == ':';
+  int index = -1;
+  bool parsed = false;
+  if (has_prefix) {
+    const std::string_view digits = value.substr(kCuda.size() + 1);
+    const auto result =
+        std::from_chars(digits.data(), digits.data() + digits.size(), index);
+    parsed = result.ec == std::errc() &&
+        result.ptr == digits.data() + digits.size() && index >= 0;
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      parsed,
+      InvalidArgument,
+      "init: target_device '%.*s' is not of the form cuda[:N]",
+      static_cast<int>(value.size()),
+      value.data());
+  return index;
+}
+
 // The CUDA device index named by the target_device compile spec, in the
 // "cuda" or "cuda:N" form CudaPartitioner writes, or -1 without one.
 Result<int> parse_cuda_target_device(ArrayRef<CompileSpec> compile_specs) {
@@ -119,32 +152,7 @@ Result<int> parse_cuda_target_device(ArrayRef<CompileSpec> compile_specs) {
       value = std::string_view(
           static_cast<const char*>(spec.value.buffer), spec.value.nbytes);
     }
-    while (!value.empty() && value.back() == '\0') {
-      value.remove_suffix(1);
-    }
-    value = trim(value);
-    constexpr std::string_view kCuda = "cuda";
-    if (value == kCuda) {
-      return 0;
-    }
-    const bool has_prefix = value.size() > kCuda.size() + 1 &&
-        value.substr(0, kCuda.size()) == kCuda && value[kCuda.size()] == ':';
-    int index = -1;
-    bool parsed = false;
-    if (has_prefix) {
-      const std::string_view digits = value.substr(kCuda.size() + 1);
-      const auto result =
-          std::from_chars(digits.data(), digits.data() + digits.size(), index);
-      parsed = result.ec == std::errc() &&
-          result.ptr == digits.data() + digits.size() && index >= 0;
-    }
-    ET_CHECK_OR_RETURN_ERROR(
-        parsed,
-        InvalidArgument,
-        "init: target_device '%.*s' is not of the form cuda[:N]",
-        static_cast<int>(value.size()),
-        value.data());
-    return index;
+    return parse_cuda_device_string(value);
   }
   return -1;
 }
@@ -559,6 +567,72 @@ class ET_EXPERIMENTAL CudaBackend final
           device_index,
           device_count);
     }
+
+    // A target_device load option (the compile spec's key, passed as a
+    // runtime spec at load) remaps the method to another device: the one
+    // device every delegate and planned buffer of the method was lowered
+    // for is replaced by the one the caller names, so a program exported
+    // on whichever GPU was free (cuda:3, say) loads on a single-GPU box as
+    // cuda:0. The remap is only defined for a method whose delegates all
+    // share that one exported device; the registry below refuses a method
+    // whose delegates were lowered for different devices, and the loaders
+    // refuse one whose planned buffers span devices. Without the option,
+    // the exported device stands, exactly as before.
+    const auto device_override =
+        context.get_runtime_spec<const char*>(kTargetDeviceSpec);
+    ET_CHECK_OR_RETURN_ERROR(
+        device_override.ok() || device_override.error() == Error::NotFound,
+        InvalidArgument,
+        "init: the '%s' load option for method '%s' must be a string of "
+        "the form cuda[:N]",
+        kTargetDeviceSpec,
+        method_name.c_str());
+    const int exported_device_index = device_index;
+    const void* remap_registry_key = nullptr;
+    if (device_override.ok()) {
+      const auto parsed_override = parse_cuda_device_string(
+          device_override.get() == nullptr ? "" : device_override.get());
+      ET_CHECK_OK_OR_RETURN_ERROR(parsed_override.error());
+      int device_count = 0;
+      ET_CUDA_CHECK_OR_RETURN_ERROR(cudaGetDeviceCount(&device_count));
+      ET_CHECK_OR_RETURN_ERROR(
+          parsed_override.get() < device_count,
+          InvalidArgument,
+          "init: method '%s' remapped to cuda:%d by the '%s' load option, "
+          "but this process sees %d CUDA device(s)",
+          method_name.c_str(),
+          parsed_override.get(),
+          kTargetDeviceSpec,
+          device_count);
+      device_index = parsed_override.get();
+      remap_registry_key = context.get_named_data_map();
+      if (device_index != exported_device_index) {
+        ET_LOG(
+            Info,
+            "Method '%s': target_device load option remaps cuda:%d to "
+            "cuda:%d",
+            method_name.c_str(),
+            exported_device_index,
+            device_index);
+      }
+      if (remap_registry_key != nullptr) {
+        std::lock_guard<std::mutex> guard(remapped_methods_mutex_);
+        const auto it = remapped_methods_.find(
+            RemappedMethodKey{remap_registry_key, method_name});
+        ET_CHECK_OR_RETURN_ERROR(
+            it == remapped_methods_.end() ||
+                it->second.exported_device == exported_device_index,
+            InvalidArgument,
+            "init: method '%s' has delegates lowered for cuda:%d and "
+            "cuda:%d, so the '%s' load option cannot remap it; remap "
+            "needs a method lowered for a single device",
+            method_name.c_str(),
+            it == remapped_methods_.end() ? exported_device_index
+                                          : it->second.exported_device,
+            exported_device_index,
+            kTargetDeviceSpec);
+      }
+    }
     const auto device_guard = CUDAGuard::create(device_index);
     ET_CHECK_OK_OR_RETURN_ERROR(device_guard.error());
 
@@ -807,6 +881,28 @@ class ET_EXPERIMENTAL CudaBackend final
     }
 
     mutable_state_note_handle(handle);
+
+    if (remap_registry_key != nullptr) {
+      std::lock_guard<std::mutex> guard(remapped_methods_mutex_);
+      const RemappedMethodKey key{remap_registry_key, method_name};
+      const auto it =
+          remapped_methods_
+              .try_emplace(key, RemappedMethod{exported_device_index, 0})
+              .first;
+      ET_CHECK_OR_RETURN_ERROR(
+          it->second.exported_device == exported_device_index,
+          InvalidArgument,
+          "init: method '%s' has delegates lowered for cuda:%d and "
+          "cuda:%d, so the '%s' load option cannot remap it; remap "
+          "needs a method lowered for a single device",
+          method_name.c_str(),
+          it->second.exported_device,
+          exported_device_index,
+          kTargetDeviceSpec);
+      ++it->second.delegates;
+      handle->exported_device_index = exported_device_index;
+      handle->remap_registry_key = remap_registry_key;
+    }
 
     {
       std::lock_guard<std::mutex> guard(live_handles_mutex_);
@@ -1107,6 +1203,15 @@ class ET_EXPERIMENTAL CudaBackend final
           "Failed to remove temporary shared library %s: %s",
           handle->so_path.c_str(),
           remove_error.message().c_str());
+    }
+
+    if (handle->remap_registry_key != nullptr) {
+      std::lock_guard<std::mutex> guard(remapped_methods_mutex_);
+      const auto it = remapped_methods_.find(
+          RemappedMethodKey{handle->remap_registry_key, handle->method_name});
+      if (it != remapped_methods_.end() && --it->second.delegates == 0) {
+        remapped_methods_.erase(it);
+      }
     }
 
     const int device_index = handle->device_index;
@@ -1589,6 +1694,32 @@ class ET_EXPERIMENTAL CudaBackend final
   // it can only be released once none of them are left on that device.
   mutable std::mutex live_handles_mutex_;
   mutable std::unordered_map<int, size_t> live_handles_;
+
+  // Methods a target_device load option remapped, by (named data map, method
+  // name): the device the method's delegates were lowered for, and how many
+  // of them are alive. Every delegate of the method must agree on the
+  // exported device, or the remap would move only part of the method.
+  struct RemappedMethod {
+    int exported_device;
+    size_t delegates;
+  };
+  struct RemappedMethodKey {
+    const void* data_map;
+    std::string method_name;
+    bool operator==(const RemappedMethodKey& other) const {
+      return data_map == other.data_map && method_name == other.method_name;
+    }
+  };
+  struct RemappedMethodKeyHash {
+    size_t operator()(const RemappedMethodKey& key) const {
+      return std::hash<const void*>{}(key.data_map) ^
+          std::hash<std::string>{}(key.method_name);
+    }
+  };
+  mutable std::mutex remapped_methods_mutex_;
+  mutable std::
+      unordered_map<RemappedMethodKey, RemappedMethod, RemappedMethodKeyHash>
+          remapped_methods_;
 
   // ---------------------------------------------------------------
   // Per-weight constant cache.

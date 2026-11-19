@@ -8,7 +8,9 @@
 
 #include <executorch/extension/module/module.h>
 
+#include <charconv>
 #include <functional>
+#include <string_view>
 
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/data_loader/mmap_data_loader.h>
@@ -119,6 +121,51 @@ runtime::Result<std::unique_ptr<runtime::DataLoader>> make_data_loader(
     }
   }
   return data_loader;
+}
+
+// The CUDA backend's target_device load option: the device a method's
+// planned buffers move to at load, replacing the one they were planned
+// for. Named here because Module allocates the buffers before any
+// delegate initializes; the CUDA delegate reads the same option (under
+// its own backend id) and moves the rest of the method. Returns -1 when
+// the option is not set.
+runtime::Result<int> cuda_target_device_override(
+    const runtime::LoadBackendOptionsMap* backend_options) {
+  if (backend_options == nullptr) {
+    return -1;
+  }
+  for (const auto& option : backend_options->get_options("CudaBackend")) {
+    if (std::strcmp(option.key, "target_device") != 0) {
+      continue;
+    }
+    const auto* text =
+        std::get_if<std::array<char, runtime::kMaxOptionValueLength>>(
+            &option.value);
+    if (text == nullptr) {
+      return runtime::Error::InvalidArgument;
+    }
+    std::string_view value(text->data());
+    while (!value.empty() && value.back() == '\0') {
+      value.remove_suffix(1);
+    }
+    if (value == "cuda") {
+      return 0;
+    }
+    int index = -1;
+    bool parsed = false;
+    if (value.size() > 5 && value.substr(0, 5) == "cuda:") {
+      const std::string_view digits = value.substr(5);
+      const auto result =
+          std::from_chars(digits.data(), digits.data() + digits.size(), index);
+      parsed = result.ec == std::errc() &&
+          result.ptr == digits.data() + digits.size() && index >= 0;
+    }
+    if (!parsed) {
+      return runtime::Error::InvalidArgument;
+    }
+    return index;
+  }
+  return -1;
 }
 } // namespace
 
@@ -450,7 +497,8 @@ Module::make_planned_memory_with_shared_arenas(
 
 runtime::Result<std::unique_ptr<Module::PlannedMemory>>
 Module::make_planned_memory_with_devices(
-    const ET_RUNTIME_NAMESPACE::MethodMeta& method_meta) {
+    const ET_RUNTIME_NAMESPACE::MethodMeta& method_meta,
+    int target_device_override) {
   auto planned = std::make_unique<PlannedMemory>();
   const size_t num_buffers = method_meta.num_memory_planned_buffers();
   planned->planned_buffers.reserve(num_buffers);
@@ -458,6 +506,10 @@ Module::make_planned_memory_with_devices(
   planned->device_buffers.reserve(num_buffers);
   planned->planned_devices.reserve(num_buffers);
 
+  // The device the method's device buffers were planned for, once one is
+  // seen. A target_device override moves every buffer together, so a
+  // method planned across devices has no single device to move to.
+  int planned_device = -1;
   for (size_t i = 0; i < num_buffers; ++i) {
     auto size = method_meta.memory_planned_buffer_size(i);
     ET_CHECK_OK_OR_RETURN_ERROR(
@@ -465,6 +517,29 @@ Module::make_planned_memory_with_devices(
     auto device = method_meta.memory_planned_buffer_device(i);
     ET_CHECK_OK_OR_RETURN_ERROR(
         device.error(), "Failed to get buffer device for index %zu", i);
+    if (target_device_override >= 0 && !device->is_cpu()) {
+      ET_CHECK_OR_RETURN_ERROR(
+          device->type() == runtime::etensor::DeviceType::CUDA,
+          InvalidArgument,
+          "target_device load option cannot move buffer %zu: it is on "
+          "device type %d, not CUDA",
+          i,
+          static_cast<int>(device->type()));
+      ET_CHECK_OR_RETURN_ERROR(
+          planned_device < 0 || planned_device == device->index(),
+          InvalidArgument,
+          "target_device load option cannot move this method: its "
+          "buffers are planned on cuda:%d and cuda:%d, and a remap "
+          "needs a single device",
+          planned_device,
+          static_cast<int>(device->index()));
+      planned_device = device->index();
+      device =
+          runtime::Result<runtime::etensor::Device>(runtime::etensor::Device(
+              device->type(),
+              static_cast<runtime::etensor::DeviceIndex>(
+                  target_device_override)));
+    }
     planned->planned_devices.push_back(device.get());
 
     if (device->is_cpu()) {
@@ -598,7 +673,11 @@ runtime::Error Module::load_method(
 
         // Device-aware path: allocate CPU and device buffers. The device
         // span is owned by the HierarchicalAllocator inside PlannedMemory.
-        auto planned_res = make_planned_memory_with_devices(meta);
+        const auto device_override =
+            cuda_target_device_override(effective_backend_options);
+        ET_CHECK_OK_OR_RETURN_ERROR(device_override.error());
+        auto planned_res =
+            make_planned_memory_with_devices(meta, device_override.get());
         ET_CHECK_OK_OR_RETURN_ERROR(planned_res.error());
         method_holder.planned_memory = std::move(planned_res.get());
         planned_memory = method_holder.planned_memory->planned_memory.get();
