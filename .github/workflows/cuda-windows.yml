@@ -337,7 +337,7 @@ jobs:
   delete-model-cuda-windows-artifacts:
     name: delete-model-cuda-windows-artifacts
     # The exports exist only to hand the models to the Windows job above, about
-    # 18 GB per run, and GitHub bills artifact storage by the hour, so delete
+    # 21 GB per run, and GitHub bills artifact storage by the hour, so delete
     # them as soon as the tests have consumed them instead of keeping them for
     # the repository retention window. They are kept when a test fails so that
     # "Re-run failed jobs" and debugging still have them; those expire with the

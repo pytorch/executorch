@@ -103,13 +103,14 @@ class CudaWorkflowTest(unittest.TestCase):
                     sorted(set(_matrix_cuda_versions(job))),
                     sorted(_supported_cuda_versions()),
                 )
-        for name in WINDOWS_TRAIN_JOBS[1:]:
+        for name in ("test-model-cuda-windows-e2e", "unittest-cuda-runtime-windows"):
             with self.subTest(job=name):
                 script = jobs[name]["with"]["script"]
                 self.assertIn("CUDA\\v${{ matrix.cuda-version }}'", script)
                 self.assertNotRegex(script, r"CUDA\\v\d")
                 # The 13.x Windows toolkits keep their DLLs in bin\x64, ahead of bin, and
-                # the toolkit has to lead PATH before setup picks a torch for its nvcc.
+                # the toolkit has to lead PATH before setup, since setup.py builds the
+                # CUDA extension with the first nvcc on PATH.
                 path = script.index(
                     r"PATH = \"\$env:CUDA_HOME\bin\x64;\$env:CUDA_HOME\bin;"
                 )
