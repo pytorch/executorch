@@ -759,6 +759,7 @@ def main():
             "boundary",
             "stage_boundary",
             "winograd_boundary",
+            "conv3d_boundary",
         ],
     )
     parser.add_argument(
@@ -792,6 +793,9 @@ def main():
         ),
         "winograd_boundary": lambda: corner_cases(
             "winograd boundary", implicit_gemm.winograd_boundary_calls(), args.precision
+        ),
+        "conv3d_boundary": lambda: corner_cases(
+            "conv3d boundary", implicit_gemm.conv3d_boundary_calls(), args.precision
         ),
     }[args.suite]()
     index, count = map(int, args.shard.split("/"))

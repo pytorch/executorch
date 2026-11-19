@@ -168,6 +168,9 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
         # Split-K runs where the output tiles alone do not fill the GPU.
         if implicit_gemm.schedule_supports("igemm_ffma_splitk", call) is None:
             schedules.append("igemm_ffma_splitk")
+        # The packed tensor-core schedule runs the tap-major K order.
+        if self.tensor_cores and x.shape[1] >= implicit_gemm.TAP_MAJOR_MIN_CHANNELS:
+            schedules.append("igemm_tc_packed")
         candidates = [
             (schedule, configs)
             for (schedule, _), configs in implicit_gemm.CONFIGS.items()
@@ -179,7 +182,10 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
             with tf32:
                 self.assertIsNone(implicit_gemm.schedule_supports(schedule, call))
             tolerance = _TOLERANCE[x.dtype]
-            if schedule == "igemm_tc" and x.dtype == torch.float32:
+            if (
+                schedule in implicit_gemm.TENSOR_CORE_SCHEDULES
+                and x.dtype == torch.float32
+            ):
                 tolerance = _TF32_TOLERANCE
             for config in configs if every_config else configs[:1]:
                 with tf32, force_conv_candidate(schedule, config):
@@ -426,6 +432,25 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
                 x, w, b, (1, 1), (1, 1), (1, 1), output_strides=(4608, 1, 1536, 512)
             )
 
+    def test_packed_tensor_cores(self):
+        # igemm_tc_packed copies the operands into channels-innermost order
+        # unless they already are; check() runs it on every geometry with at
+        # least 16 input channels.
+        if not self.tensor_cores:
+            self.skipTest("needs tensor cores")
+        x, w, b = self.tensors((1, 64, 4, 6, 7), 72, (3, 3, 3), dtype=torch.bfloat16)
+        packed_w = w.permute(2, 3, 4, 1, 0).contiguous().permute(4, 3, 0, 1, 2)
+        for name, x_, w_ in (
+            ("copied", x, w),
+            ("channels-last input", _channels_last(x), w),
+            ("packed weight", x, packed_w),
+        ):
+            with self.subTest(name):
+                self.check(x_, w_, b, (1, 1, 1), (1, 1, 1), (1, 1, 1))
+        strides = _dense_strides((1, 72, 4, 6, 7), (0, 2, 3, 4, 1))
+        with self.subTest(output_strides=strides):
+            self.check(x, w, b, (1, 1, 1), (1, 1, 1), (1, 1, 1), output_strides=strides)
+
     def test_winograd(self):
         from executorch.backends.cuda.triton.kernels.conv.core import implicit_gemm
         from executorch.backends.cuda.triton.kernels.conv.core.common import (
@@ -594,7 +619,9 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
             out = self.convolution(x, w, b, (1, 1), (1, 1), (1, 1))
         stream.synchronize()
         self.assertEqual(stats.measured, 1)
-        self.assertEqual(set(stats.picks[0].times_us), {"igemm_ffma", "igemm_tc"})
+        self.assertEqual(
+            set(stats.picks[0].times_us), {"igemm_ffma", "igemm_tc", "igemm_tc_packed"}
+        )
         torch.testing.assert_close(
             out.double(),
             _reference(x, w, b, (1, 1), (1, 1), (1, 1)),
