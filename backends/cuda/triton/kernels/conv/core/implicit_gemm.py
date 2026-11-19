@@ -47,7 +47,9 @@ the bias in FP32 before the single store:
   native weight layout strides both tile dimensions by the tap count.
 
 Strict-FP32 3x3 stride-1 calls also time ``winograd_f4`` (``winograd.py``),
-which writes the same output layout from a Winograd F(4x4, 3x3) computation.
+which writes the same output layout from a Winograd F(4x4, 3x3) computation,
+and 1-D calls with few output rows time ``stream_ffma`` (``weight_stream.py``),
+which streams the weights at full width instead of tiling the outputs.
 """
 
 from __future__ import annotations
@@ -64,7 +66,7 @@ from executorch.backends.cuda.autotune.launch_params import (
     autotune_launch_param,
     InvalidLaunchParam,
 )
-from executorch.backends.cuda.triton.kernels.conv.core import winograd
+from executorch.backends.cuda.triton.kernels.conv.core import weight_stream, winograd
 from executorch.backends.cuda.triton.kernels.conv.core.common import (
     conv_allows_tf32,
     ConvCall,
@@ -83,6 +85,7 @@ SCHEDULES = (
     Schedule("igemm_ffma_splitk", 0),
     Schedule("winograd_f4", 0),
     Schedule("igemm_tc_packed", 80),
+    Schedule("stream_ffma", 0),
 )
 TENSOR_CORE_SCHEDULES = frozenset({"igemm_tc", "igemm_tc_packed"})
 TAP_MAJOR_MIN_CHANNELS = 16
@@ -444,10 +447,11 @@ def conv3d_boundary_calls() -> (
 # stride 2 and padding 1, and transposed kernel 4 with stride 2 and padding 1,
 # with CONV1D_IN_CHANNELS input and CONV1D_OUT_CHANNELS output channels and
 # CONV1D_ROWS output rows, in contiguous layouts. Such a call reads each weight
-# for a few outputs, so it is bound by streaming the weights, which the
-# split-K schedule spreads over the GPU and Inductor's template, with its few
-# output tiles, does not; fewer input channels or rows leave too little weight
-# traffic to hide the launch of the reduction. The benchmark's
+# for a few outputs, so it is bound by streaming the weights, which
+# ``stream_ffma`` and the split-K schedule spread over the GPU and Inductor's
+# template, with its few output tiles, does not; fewer input channels or rows
+# leave too little weight traffic to hide the launch of the reduction. The
+# benchmark's
 # ``conv1d_boundary`` suite measures ``conv1d_boundary_calls()``.
 CONV1D_GEOMETRIES = (
     # (kernel, stride, padding, transposed)
@@ -457,7 +461,7 @@ CONV1D_GEOMETRIES = (
     (4, 2, 1, True),
 )
 CONV1D_IN_CHANNELS = (512, 4096)
-CONV1D_OUT_CHANNELS = (64, 2048)
+CONV1D_OUT_CHANNELS = (64, 4096)
 CONV1D_ROWS = (4, 64)
 CONV1D_LAYOUTS = frozenset({("contiguous", "contiguous", "contiguous")})
 
@@ -673,6 +677,8 @@ def schedule_supports(name: str, call: ConvCall) -> Optional[str]:
         )
     if name == "winograd_f4":
         return winograd.reason(call)
+    if name == "stream_ffma":
+        return weight_stream.reason(call)
     if name == "igemm_ffma_splitk" and _split_k(call) == 1:
         return "igemm_ffma_splitk: the output tiles fill the GPU without splitting K"
     return None
@@ -1121,6 +1127,9 @@ def run_schedule(
     (and the K order, if it sets ``TAP_MAJOR``)."""
     if name == "winograd_f4":
         winograd.run(x, weight, bias, out, config)
+        return
+    if name == "stream_ffma":
+        weight_stream.run(x, weight, bias, out, params, config)
         return
     if name == "igemm_tc_packed":
         x, weight = _packed(x, weight, params.transposed)
