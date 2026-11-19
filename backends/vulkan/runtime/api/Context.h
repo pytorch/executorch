@@ -79,9 +79,6 @@ class Context final {
   // Misc
   VkImageTiling preferred_image_tiling_;
 
-  // Widens a dispatch's barrier to a full barrier while shaders are profiled.
-  void serialize_if_profiling(vkapi::PipelineBarrier& pipeline_barrier);
-
  public:
   // Adapter access
 
@@ -180,6 +177,9 @@ class Context final {
    * initialized this function is a no-op.
    */
   void report_shader_exec_finish();
+
+  // Widens a dispatch's barrier to a full barrier while shaders are profiled.
+  void serialize_if_profiling(vkapi::PipelineBarrier& pipeline_barrier);
 
   // Memory Management
 

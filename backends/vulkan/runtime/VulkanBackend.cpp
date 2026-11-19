@@ -1162,6 +1162,8 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
           r.shader_exec_finish_ns);
       // The barrier makes earlier writes visible to this dispatch. Tools
       // grouping by kernel_name report all barriers as one ETVK_BARRIER entry.
+      // Two events per dispatch need about twice the ETDump buffer space; a
+      // fixed-size buffer that runs out aborts the process.
       const std::string barrier_event_name =
           "{\"kernel_name\": \"ETVK_BARRIER\", \"dispatch\": {" +
           r.kernel_name + "}" + dispatch_fields;

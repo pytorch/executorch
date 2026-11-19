@@ -104,6 +104,16 @@ size_t QueryPool::write_timestamp(const CommandBuffer& cmd) {
   return num_queries_ - 1;
 }
 
+bool QueryPool::has_incomplete_entries() const {
+  for (const ShaderDuration& entry : shader_durations_) {
+    if (entry.previous_work_finish_query_idx >= num_queries_ ||
+        entry.shader_exec_finish_query_idx >= num_queries_) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void QueryPool::reset_querypool() {
   EARLY_RETURN_IF_UNINITIALIZED();
   std::lock_guard<std::mutex> lock(mutex_);
@@ -183,8 +193,11 @@ void QueryPool::record_shader_exec_finish(const CommandBuffer& cmd) {
   EARLY_RETURN_IF_UNINITIALIZED();
   std::lock_guard<std::mutex> lock(mutex_);
 
-  size_t query_idx = write_timestamp(cmd);
-  shader_durations_.back().shader_exec_finish_query_idx = query_idx;
+  if (shader_durations_.empty() ||
+      shader_durations_.back().shader_exec_finish_query_idx != UINT32_MAX) {
+    return;
+  }
+  shader_durations_.back().shader_exec_finish_query_idx = write_timestamp(cmd);
 }
 
 std::vector<ShaderTimestamp> QueryPool::to_shader_timestamps(
@@ -210,6 +223,9 @@ std::vector<ShaderTimestamp> QueryPool::to_shader_timestamps(
 void QueryPool::extract_results() {
   EARLY_RETURN_IF_UNINITIALIZED();
   std::lock_guard<std::mutex> lock(mutex_);
+  if (has_incomplete_entries()) {
+    return;
+  }
 
   const VkQueryResultFlags flags = VK_QUERY_RESULT_64_BIT;
 
@@ -283,11 +299,8 @@ std::vector<ShaderTimestamp> QueryPool::get_shader_timestamp_ticks() {
   if (querypool_ == VK_NULL_HANDLE || num_queries_ == 0) {
     return {};
   }
-  for (const ShaderDuration& entry : shader_durations_) {
-    if (entry.previous_work_finish_query_idx >= num_queries_ ||
-        entry.shader_exec_finish_query_idx >= num_queries_) {
-      return {};
-    }
+  if (has_incomplete_entries()) {
+    return {};
   }
   std::vector<uint64_t> ticks(num_queries_);
   // Without PARTIAL_BIT, any unavailable query makes the whole call NOT_READY.
