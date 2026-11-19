@@ -657,8 +657,7 @@ class MuseGlimmerWithDFlash(nn.Module):
         input_pos: torch.Tensor,
     ) -> torch.Tensor:
         """Populate the Draft context cache without projecting logits."""
-        noise_embedding = (
-            self.target.embed_tokens(draft_tokens).to(self.target.activation_dtype)
-            * self.draft_config.input_embedding_scale
+        noise_embedding = self.target.embed_tokens(draft_tokens).to(
+            self.target.activation_dtype
         )
         return self.draft(noise_embedding, target_hidden, input_pos)
