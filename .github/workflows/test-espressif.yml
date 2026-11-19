@@ -50,13 +50,18 @@ jobs:
     name: Resolve CI docker image
     uses: ./.github/workflows/_docker-image.yml
 
-  test-esp32s3:
-    name: ESP32-S3 (${{ matrix.kernels }})
+  test-emulator:
+    name: ${{ matrix.name }} (${{ matrix.kernels }})
     needs: docker-image
     strategy:
       fail-fast: false
       matrix:
-        kernels: [optimized, ansi]
+        # The ANSI C kernels are the same on every chip, so they run on one.
+        include:
+          - { target: esp32s3, name: ESP32-S3, kernels: optimized }
+          - { target: esp32s3, name: ESP32-S3, kernels: ansi }
+          - { target: esp32p4, name: ESP32-P4, kernels: optimized }
+          - { target: esp32s31, name: ESP32-S31, kernels: optimized }
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
@@ -67,14 +72,15 @@ jobs:
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 45
-      upload-artifact: test-report-esp32s3-${{ matrix.kernels }}
+      upload-artifact: test-report-${{ matrix.target }}-${{ matrix.kernels }}
       script: |
         set -euo pipefail
         CONDA_ENV=$(conda env list --json | jq -r '.envs | .[-1]')
         conda activate "${CONDA_ENV}"
         source .ci/scripts/utils.sh
         install_executorch --use-pt-pinned-commit --minimal
-        ESPRESSIF_NN_KERNELS="${{ matrix.kernels }}" bash .ci/scripts/test_espressif.sh
+        ESPRESSIF_TARGET="${{ matrix.target }}" ESPRESSIF_NN_KERNELS="${{ matrix.kernels }}" \
+          bash .ci/scripts/test_espressif.sh
 
   test-host:
     name: ESP-NN delegate on the host
