@@ -109,15 +109,16 @@ jobs:
             quant: "non-quantized"
             cuda-version: "13.2"
           # Each train installs its own toolkit and its own torch, so the remaining trains
-          # get the smallest model plus one int4 model, which runs the int4 kernels the
-          # non-quantized model does not.
+          # get the smallest model plus the tile-packed int4 model, the only quant here that
+          # lowers to _weight_int4pack_mm and so runs the int4mm shim that train's nvcc built.
           - model_repo: "facebook"
             model_name: "dinov2-small-imagenet1k-1-layer"
             quant: "non-quantized"
             cuda-version: "13.4"
-          - model_repo: "nvidia"
-            model_name: "parakeet-tdt"
-            quant: "quantized-int4-weight-only"
+          - model_repo: "mistralai"
+            model_name: "Voxtral-Mini-4B-Realtime-2602"
+            quant: "quantized-int4-tile-packed"
+            mode: "vr-offline"
             cuda-version: "13.4"
     with:
       timeout: 90
@@ -196,8 +197,8 @@ jobs:
 
   test-model-cuda-windows-e2e:
     name: test-model-cuda-windows-e2e
-    # Same path filter as the export job above. Not gated on the export's result: that is
-    # one result for the whole matrix, so one row's failed export (say a train whose torch
+    # Same path filter as the export job above. Not gated on the export succeeding: that
+    # result covers the whole matrix, so one row's failed export (say a train whose torch
     # pin expired) would skip every row here. Each row downloads its own artifact and
     # fails on the download if its export failed. The skipped check keeps a fork pull
     # request, where nothing was exported, from running this and failing on the download.
@@ -251,15 +252,16 @@ jobs:
             quant: "non-quantized"
             cuda-version: "13.2"
           # Each train installs its own toolkit and its own torch, so the remaining trains
-          # get the smallest model plus one int4 model, which runs the int4 kernels the
-          # non-quantized model does not.
+          # get the smallest model plus the tile-packed int4 model, the only quant here that
+          # lowers to _weight_int4pack_mm and so runs the int4mm shim that train's nvcc built.
           - model_repo: "facebook"
             model_name: "dinov2-small-imagenet1k-1-layer"
             quant: "non-quantized"
             cuda-version: "13.4"
-          - model_repo: "nvidia"
-            model_name: "parakeet-tdt"
-            quant: "quantized-int4-weight-only"
+          - model_repo: "mistralai"
+            model_name: "Voxtral-Mini-4B-Realtime-2602"
+            quant: "quantized-int4-tile-packed"
+            mode: "vr-offline"
             cuda-version: "13.4"
     with:
       timeout: 240
@@ -327,6 +329,7 @@ jobs:
           \$ErrorActionPreference = 'Stop'
           \$env:CUDA_HOME = 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v${{ matrix.cuda-version }}'
           \$env:CUDA_PATH = \$env:CUDA_HOME
+          \$env:PATH = \"\$env:CUDA_HOME\bin\x64;\$env:CUDA_HOME\bin;\$env:PATH\"
           .ci/scripts/setup-windows.ps1
           .ci/scripts/test_cuda_runtime_windows.ps1
         }"

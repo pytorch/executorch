@@ -108,19 +108,25 @@ class CudaWorkflowTest(unittest.TestCase):
                 script = jobs[name]["with"]["script"]
                 self.assertIn("CUDA\\v${{ matrix.cuda-version }}'", script)
                 self.assertNotRegex(script, r"CUDA\\v\d")
-        e2e_script = jobs["test-model-cuda-windows-e2e"]["with"]["script"]
-        # The 13.x Windows toolkits keep their DLLs in bin\x64, ahead of bin.
-        self.assertIn(
-            r"PATH = \"\$env:CUDA_HOME\bin\x64;\$env:CUDA_HOME\bin;", e2e_script
-        )
-        e2e_script = jobs["test-model-cuda-windows-e2e"]["with"]["script"]
-        # The 13.x Windows toolkits keep their DLLs in bin\x64, ahead of bin.
-        self.assertIn(
-            r"PATH = \"\$env:CUDA_HOME\bin\x64;\$env:CUDA_HOME\bin;", e2e_script
-        )
+                # The 13.x Windows toolkits keep their DLLs in bin\x64, ahead of bin, and
+                # the toolkit has to lead PATH before setup picks a torch for its nvcc.
+                path = script.index(
+                    r"PATH = \"\$env:CUDA_HOME\bin\x64;\$env:CUDA_HOME\bin;"
+                )
+                self.assertLess(path, script.index(".ci/scripts/setup-windows.ps1"))
         export = jobs["export-model-cuda-windows-artifact"]["strategy"]["matrix"]
         e2e = jobs["test-model-cuda-windows-e2e"]["strategy"]["matrix"]
         self.assertEqual(export["include"], e2e["include"])
+        # Only the tile-packed quant lowers to _weight_int4pack_mm, so each train needs it.
+        for version in _supported_cuda_versions():
+            with self.subTest(train=version):
+                self.assertTrue(
+                    any(
+                        row["quant"] == "quantized-int4-tile-packed"
+                        and row["cuda-version"] == version
+                        for row in export["include"]
+                    )
+                )
 
     def test_one_train_failing_its_export_does_not_skip_the_others(self):
         jobs = yaml.safe_load(
