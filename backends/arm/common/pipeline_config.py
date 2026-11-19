@@ -26,10 +26,10 @@ class LeakyReLULoweringConfig(Enum):
 class SDPASafeSoftmaxGuardPolicy(Enum):
     """Options for preserving or removing SDPA safe-softmax guards.
 
-    ``AUTO`` removes guards only for structurally eligible, unmasked,
-    noncausal, zero-dropout SDPA calls with a nonempty key sequence. ``AUTO``
-    and ``REMOVE`` assume attention scores do not become all ``-inf`` through
-    nonfinite inputs or overflow.
+    ``AUTO`` removes guards only for structurally eligible SDPA calls without
+    ``attn_mask`` (``is_causal`` is allowed), with zero dropout and a nonempty
+    key sequence. ``AUTO`` and ``REMOVE`` assume attention scores do not become
+    all ``-inf`` through nonfinite inputs or overflow.
 
     """
 
