@@ -222,10 +222,12 @@ void GraphBuilder::lower_max_pool2d(const Node& node) {
     throw std::runtime_error(
         "ggml: max_pool2d supports dilation 1 without ceil_mode");
   }
-  require_f32(node, input.tensor);
+  // Exact in F32; set() rounds an F16 or BF16 result back.
+  ggml_tensor* x = half_as_f32(input.tensor);
+  require_f32(node, x);
   ggml_tensor* result = ggml_pool_2d(
       instance_.context.get(),
-      contiguous(input.tensor),
+      contiguous(x),
       GGML_OP_POOL_MAX,
       kernel[0],
       kernel[1],
