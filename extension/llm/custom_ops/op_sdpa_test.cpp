@@ -7,6 +7,8 @@
  */
 
 #include <limits>
+#include <stdexcept>
+#include <thread>
 
 #include <executorch/extension/llm/custom_ops/op_sdpa.h>
 
@@ -22,6 +24,57 @@
 
 using namespace ::testing;
 using executorch::runtime::testing::TensorFactory;
+
+TEST(SdpaMaskedKvTailTest, NestsAndRestoresTheCallingThread) {
+  using torch::executor::native::sdpa_masked_kv_tail_enabled;
+  using torch::executor::native::SdpaMaskedKvTailGuard;
+  EXPECT_FALSE(sdpa_masked_kv_tail_enabled());
+  {
+    SdpaMaskedKvTailGuard enabled(true);
+    EXPECT_TRUE(sdpa_masked_kv_tail_enabled());
+    {
+      SdpaMaskedKvTailGuard disabled(false);
+      EXPECT_FALSE(sdpa_masked_kv_tail_enabled());
+    }
+    EXPECT_TRUE(sdpa_masked_kv_tail_enabled());
+  }
+  EXPECT_FALSE(sdpa_masked_kv_tail_enabled());
+}
+
+TEST(SdpaMaskedKvTailTest, DoesNotEnableAnotherThread) {
+  using torch::executor::native::sdpa_masked_kv_tail_enabled;
+  using torch::executor::native::SdpaMaskedKvTailGuard;
+  bool workerDefault = true;
+  bool workerEnabled = false;
+  bool workerRestored = true;
+  {
+    SdpaMaskedKvTailGuard enabled(true);
+    std::thread worker([&] {
+      workerDefault = sdpa_masked_kv_tail_enabled();
+      {
+        SdpaMaskedKvTailGuard workerGuard(true);
+        workerEnabled = sdpa_masked_kv_tail_enabled();
+      }
+      workerRestored = sdpa_masked_kv_tail_enabled();
+    });
+    worker.join();
+    EXPECT_TRUE(sdpa_masked_kv_tail_enabled());
+  }
+  EXPECT_FALSE(workerDefault);
+  EXPECT_TRUE(workerEnabled);
+  EXPECT_FALSE(workerRestored);
+  EXPECT_FALSE(sdpa_masked_kv_tail_enabled());
+}
+
+TEST(SdpaMaskedKvTailTest, RestoresAfterAnException) {
+  EXPECT_THROW(
+      [] {
+        torch::executor::native::SdpaMaskedKvTailGuard enabled(true);
+        throw std::runtime_error("scope exit");
+      }(),
+      std::runtime_error);
+  EXPECT_FALSE(torch::executor::native::sdpa_masked_kv_tail_enabled());
+}
 
 executorch::aten::Tensor op_scaled_dot_product_attention(
     const executorch::aten::Tensor& query,
