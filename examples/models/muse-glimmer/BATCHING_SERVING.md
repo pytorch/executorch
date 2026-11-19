@@ -426,3 +426,43 @@ ATEM opening tag are emitted as ordinary text.
 With `ignore_eos`, reasoning-token details are omitted
 because the generated IDs can contain hidden post-EOS text; total completion
 usage still includes all generated tokens.
+
+## Native
+
+The native worker serves a `.ptn` on the native backend's ggml engine, on the
+CPU or a GPU backend ggml was built with, under the same serving
+runtime, prefix cache, scheduler and launcher. Export the Hugging Face model
+from its GGUF with the off-graph cache and selected logits; the package
+carries the sliding windows and context length:
+
+```sh
+python -m executorch.backends.native.examples.hf_llm.export_hf_llm \
+  --model /path/to/models/mg-hf \
+  --gguf /path/to/models/mg/model.gguf \
+  --offgraph_cache --logits_to_keep selected \
+  --output /path/to/models/mg-native/model.ptn
+```
+
+`--model` names the Hugging Face `meta-models/Muse-Glimmer-30B` directory for
+its config and tokenizer, which needs a transformers release with Muse Glimmer.
+Build with `make muse-glimmer-batching-native`, which builds ggml's CPU backend
+and, on Apple, Metal. Then serve, adding `--native-device gpu` for Metal:
+
+```sh
+python -m executorch.examples.models.muse_glimmer.serving.serve_batching \
+  --backend native \
+  --worker-bin /path/to/executorch/cmake-out/examples/models/muse-glimmer-batching/muse_glimmer_batching_worker \
+  --model-path /path/to/models/mg-native/model.ptn \
+  --tokenizer-path /path/to/models/mg-hf/tokenizer.json \
+  --hf-tokenizer /path/to/models/mg-hf \
+  --max-context 8192
+```
+
+Sessions are sequences of the engine's cell cache: a batch puts several in one
+forward, and prefix snapshots clone a session's cells rather than copy them.
+The pool holds `--max-context` cells for every resident session (requests,
+`--prefix-cache-entries` snapshots and capture slots), and its storage grows
+with the cells in use. The native worker serves text only: `--dflash` and
+`--pos-embed-path` are rejected. `--native-device` picks `cpu` (default) or
+`gpu`, and `--native-kv-dtype` stores the cache as `fp32` (default) or
+`fp16`.
