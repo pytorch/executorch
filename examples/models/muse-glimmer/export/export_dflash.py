@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import gc
 import json
+import logging
 from typing import TYPE_CHECKING
 
 import torch
@@ -852,6 +853,7 @@ def _export_dflash_cuda(
     max_target_prefill = min(
         target_config.max_seq_len - 1, target_model._sliding_window * 2
     )
+    target_model.set_max_prefill_chunk(max_target_prefill)
 
     # See _export_dflash_mlx: normalize params/buffers/scales to one dtype
     # before export so no mixed-precision promotion leaks into the graph.
@@ -1169,6 +1171,8 @@ def main() -> None:
     add_kv_layout_arguments(parser)
     parser.add_argument("--forward-sizes", default="1,2,4,8,16,32,64")
     args = parser.parse_args()
+    logging.basicConfig()
+    logging.getLogger("executorch.backends.cuda.cuda_backend").setLevel(logging.INFO)
 
     try:
         validate_dflash_export_options(args.backend, args.use_offgraph_kv_cache)

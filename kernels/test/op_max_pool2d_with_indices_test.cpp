@@ -387,3 +387,23 @@ TEST_F(OpMaxPool2DWithIndicesOutTest, CeilMode) {
       self, kernel_size, stride, padding, dilation, ceil_mode, out, indices);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
+
+TEST_F(
+    OpMaxPool2DWithIndicesOutTest,
+    SingleElementPaddingExceedsHalfKernelOnOtherAxis) {
+  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Float>
+      tf;
+  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Long>
+      tfLong;
+  executorch::aten::Tensor in = tf.ones({1, 1, 3, 3});
+  executorch::aten::Tensor out = tf.zeros({1, 1, 3, 5});
+  executorch::aten::Tensor indices = tfLong.zeros({1, 1, 3, 5});
+  int64_t kernel_size[] = {3, 1};
+  int64_t stride = 1;
+  int64_t padding = 1;
+  int64_t dilation = 1;
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_max_pool2d_with_indices_out(
+          in, kernel_size, stride, padding, dilation, false, out, indices));
+}

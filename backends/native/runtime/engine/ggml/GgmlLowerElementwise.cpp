@@ -225,6 +225,19 @@ void GraphBuilder::lower_hardtanh(const Node& node) {
           input.sizes});
 }
 
+// ATen's elu is x > 0 ? scale * x : alpha * scale * expm1(input_scale * x), and
+// ggml's x > 0 ? x : expm1(x).
+void GraphBuilder::lower_elu(const Node& node) {
+  for (const auto& [name, index] :
+       {std::pair{"alpha", 1}, {"scale", 2}, {"input_scale", 3}}) {
+    if (float_arg(node, name, index, 1.0, true) != 1.0) {
+      throw std::runtime_error(
+          "ggml: elu supports only alpha, scale and input_scale 1");
+    }
+  }
+  lower_unary(node, ggml_elu);
+}
+
 // Reduces a run of trailing dimensions, which ggml sees as one row.
 std::pair<ggml_tensor*, std::vector<int64_t>> GraphBuilder::trailing_rows(
     const Node& node,
@@ -306,6 +319,22 @@ void GraphBuilder::lower_amax(const Node& node) {
       ggml_get_rows(ctx, ggml_reshape_3d(ctx, rows, 1, width, count), index);
   ggml_tensor* result = reshape(ctx, values, sizes);
   set_single_output(node, TensorRef{result, std::move(sizes)});
+}
+
+// ggml normalizes each row, so only the last dimension.
+void GraphBuilder::lower_softmax(const Node& node) {
+  const TensorRef input = tensor_arg(node, "self", 0);
+  require_f32(node, input.tensor);
+  const size_t rank = input.sizes.size();
+  if (rank == 0 ||
+      normalize_dim(int_arg(node, "dim", 1, -1), rank) !=
+          static_cast<int64_t>(rank) - 1) {
+    throw std::runtime_error("ggml: softmax supports the last dimension only");
+  }
+  ggml_context* ctx = instance_.context.get();
+  set_single_output(
+      node,
+      TensorRef{ggml_soft_max(ctx, contiguous(input.tensor)), input.sizes});
 }
 
 // Comparisons produce 0/1 floats: a <= b is 1 - step(a - b) and a < b is

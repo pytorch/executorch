@@ -57,6 +57,11 @@ class ClonePoolModule(torch.nn.Module):
         return torch.nn.functional.avg_pool2d(torch.relu(x).clone(), 2)
 
 
+class AvgPool3dModule(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.nn.functional.avg_pool3d(x, 2)
+
+
 class CloneCopyModule(torch.nn.Module):
     def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         return torch.relu(x).copy_(torch.relu(y).clone())
@@ -292,6 +297,22 @@ class TestLegalizePortableDimOrderPass(unittest.TestCase):
                 FileCheck().check("_to_dim_order_copy").check("aten.mean.out").run(
                     graph_module.code
                 )
+
+    def test_channels_last_3d_avg_pool3d_runtime_matches_eager(self) -> None:
+        cases = (
+            ("batched", torch.randn(2, 3, 4, 6, 8)),
+            ("one_batch", torch.randn(1, 2, 4, 4, 4)),
+        )
+
+        for name, x in cases:
+            with self.subTest(name=name):
+                sample_input = (x.to(memory_format=torch.channels_last_3d),)
+                graph_module = self._assert_runtime_matches_eager(
+                    AvgPool3dModule(), sample_input
+                )
+                FileCheck().check("_to_dim_order_copy").check(
+                    "aten.avg_pool3d.out"
+                ).run(graph_module.code)
 
     def test_issue_11086_runtime_regressions(self) -> None:
         cases = (

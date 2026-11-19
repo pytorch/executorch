@@ -31,6 +31,8 @@ inline uint32_t fp32_to_bits(float f) {
   return bits;
 }
 
+} // namespace
+
 /*
  * Convert a 16-bit floating-point number in IEEE half-precision format, in bit
  * representation, to a 32-bit floating-point number in IEEE single-precision
@@ -126,8 +128,6 @@ uint16_t float_to_half(float f) {
       (sign >> 16) |
       (shl1_w > UINT32_C(0xFF000000) ? UINT16_C(0x7E00) : nonsign));
 }
-
-} // namespace
 
 StagingBuffer::StagingBuffer(
     Context* context_p,

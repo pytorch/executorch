@@ -181,7 +181,7 @@ ComputeGraph::ComputeGraph(GraphConfig config)
   // Check if the underlying GPU can access accelerated integer dot product
   // instructions
   can_use_int8_dot_product_ =
-      context_->adapter_ptr()->supports_int8_dot_product();
+      context_->adapter_ptr()->accelerates_signed_packed4x8_dot();
 }
 
 ComputeGraph::~ComputeGraph() {

@@ -137,6 +137,14 @@ class TestQnnCompileSpecBuilderDeviceDefaults(unittest.TestCase):
         self.assertFalse(htp.call_args.kwargs["use_weight_sharing"])
         self.assertFalse(qnn.call_args.kwargs["shared_buffer"])
 
+    def test_gpu_target_disables_weight_sharing(self):
+        """As in legacy, GPU never shares weights."""
+        builder = QnnCompileSpecBuilder(soc_model=_TEST_SOC, backend="gpu")
+
+        _, gpu, _ = _build_with_mocks(builder)
+
+        self.assertFalse(gpu.call_args.kwargs["use_weight_sharing"])
+
     def test_explicit_values_override_x86_defaults(self):
         """Passing the flags explicitly overrides the target-derived default."""
         builder = QnnCompileSpecBuilder(soc_model=_TEST_SOC, enable_x86_64=True)

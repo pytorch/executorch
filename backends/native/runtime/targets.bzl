@@ -150,6 +150,22 @@ def define_common_targets():
         visibility = ["//executorch/backends/native/..."],
     )
 
+    # Header-only: the off-graph KV cache a method's update_and_attend calls
+    # need, for the LLM runners and executors that build it.
+    runtime.cxx_library(
+        name = "offgraph_cache",
+        exported_headers = [
+            "OffGraphCache.h",
+        ],
+        exported_deps = [
+            ":method",
+            "//executorch/backends/native/runtime/deserialize:package",
+            "//executorch/extension/llm/cache:kv_cache",
+            "//executorch/extension/llm/runner:constants",
+        ],
+        visibility = ["PUBLIC"],
+    )
+
     runtime.cxx_library(
         name = "tensor_info",
         srcs = ["TensorInfo.cpp"],

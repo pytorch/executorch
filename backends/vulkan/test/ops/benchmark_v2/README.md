@@ -99,6 +99,7 @@ name; tensor and benchmark settings belong in the JSON file.
 | `--error_mode=report\|throw\|skip` | `report` | Report failures and continue, stop on the first failure, or disable validation. Unsupported cases report `SKIP`. |
 | `--validate_specs` | `false` | Audit schemas and registrations without allocating case tensors or running GPU work. |
 | `--validation_only` | `false` | Run correctness checks without calibration or timing passes. Requires validation enabled. |
+| `--fault_rel=<r>` | none | Test hook: scale every GPU output by `1 + r` before validation. Reports record `fault_rel`. |
 | `--table_name_max_chars=<N>` | `32` | Limit shader/operator names in table output; `0` disables truncation. |
 | `--table_inputs_max_chars=<N>` | `64` | Limit table input strings; `0` disables truncation. |
 | `--helpshort` | — | Show the binary's flags and defaults. |
@@ -307,11 +308,13 @@ Registered convolution routes:
 
 | Operator | Routes and options |
 | --- | --- |
-| `aten.convolution.default`, `et_vk.conv_with_clamp.default`, `et_vk.conv2d.with_epilogue` | `auto`, `direct`, `im2col`. `direct` accepts `masked: true`, which disables the border-specialized shader variants. `im2col` accepts `intermediate_storage`: `buffer`, `texture2d`, or `texture3d`; omission uses the production choice. For batch-1 depthwise convolutions, `aten.convolution.default` and `et_vk.conv2d.with_epilogue` also accept `b1x1` and `b4x2`, which force the 1x1 output tile or the default tile. |
+| `aten.convolution.default`, `et_vk.conv_with_clamp.default`, `et_vk.conv2d.with_epilogue` | `auto`, `direct`, `im2col`, `winograd`. `direct` accepts `masked: true`, which disables the border-specialized shader variants. `im2col` accepts `intermediate_storage`: `buffer`, `texture2d`, or `texture3d`; omission uses the production choice. `winograd` accepts `chunk_rows`, a positive number of output tile rows per chunk, and `weight_storage`: `buffer` or `texture2d`; omission uses the production choice. For batch-1 depthwise convolutions, `aten.convolution.default` and `et_vk.conv2d.with_epilogue` also accept `b1x1` and `b4x2`, which force the 1x1 output tile or the default tile. |
 | `et_vk.q8ta_conv2d.default` | `auto`, `direct` (general convolution), `im2col`. No route options. |
 
 The floating-point forced routes currently support forward 2D convolution with
 batch 1 and channels-packed texture3d input/output. im2col requires groups 1.
+winograd requires groups 1, Half tensors, and a 3x3 kernel with stride 1,
+dilation 1, and padding 1.
 The Q8TA routes use packed int8 buffers and the production streaming feasibility
 checks. Route eligibility is separate from automatic performance heuristics:
 for example, forcing floating-point im2col can test dilated convolutions even
@@ -568,7 +571,12 @@ A batch is one recorded command buffer containing repeated executions of the
 case. For a raw shader, each repetition is one shader dispatch; for an operator,
 each repetition is the full execute chain, which may dispatch several shaders.
 The repetition count is reported as `dispatches_per_batch` or
-`operator_invocations_per_batch`, respectively.
+`operator_invocations_per_batch`, respectively. A full pipeline barrier precedes
+every repetition, so repetitions never overlap on the GPU and per-repetition
+latency is the serialized cost of one execution. Barriers derived from tensor
+accesses alone did not prevent overlap: on Adreno 750, repetitions of some
+pointwise convolutions overlapped despite write-after-write barriers on their
+output, and batch latency read 1.8-2.7x below the serialized cost.
 
 Calibration always warms and probes query-free batches, increasing repetitions
 until the measured wall time reaches roughly `target_ms` or `max_dispatches`.
@@ -587,7 +595,7 @@ submissions.
 | --- | --- | --- |
 | Wall time | Host monotonic clock from command-buffer submission through fence completion, without timestamp queries. Includes host submission overhead, queue/fence waiting, and GPU execution. | `wall_time_batch_us` contains batch totals. Dividing each total by the repetition count gives `wall_time_shader_us` or `wall_time_operator_us`. |
 | Whole-batch GPU timestamps | One timestamp pair brackets the entire repeated dispatch chain, including GPU dependency barriers and inter-dispatch gaps. | `gpu_timestamp_batch_us` describes batch totals. Dividing each total by the repetition count gives `gpu_timestamp_shader_us` or `gpu_timestamp_operator_us`. These are two views of the same capture. |
-| Per-dispatch GPU timestamps | Operator-only profiling pass with a timestamp pair around each executed shader, including its associated barriers. | `shader_breakdown[].gpu_timestamp_shader_us` describes each dispatch position, averaged across that profiling batch's operator repetitions. |
+| Per-dispatch GPU timestamps | Operator-only profiling pass with three timestamps per executed shader; see [Measurement boundaries and shader breakdowns](#measurement-boundaries-and-shader-breakdowns). | `shader_breakdown[].gpu_timestamp_shader_us`, `gpu_timestamp_barrier_us`, and `gpu_timestamp_gap_us` describe each dispatch position, averaged across that profiling batch's operator repetitions. |
 
 Pass selection depends on case type and timestamp support:
 
@@ -730,21 +738,49 @@ run within that definition.
 
 When GPU timestamps are available, operator reports also include `shader_breakdown`.
 Each entry describes an actual dispatch in execution order: `dispatch_index`,
-runtime-selected `shader_name`, resolved GWG/LWG, and `gpu_timestamp_shader_us`
-statistics. Repeated shader names remain separate entries; skipped nodes are
+runtime-selected `shader_name`, resolved GWG/LWG, and timing statistics.
+Repeated shader names remain separate entries; skipped nodes are
 omitted. Table output shows these shaders indented below their operator.
 
 The breakdown uses a separate profiling pass with the calibrated invocation count,
 capped by timestamp query-pool capacity. `shader_profile_invocations_per_batch`
 reports that count. Warmup and benchmark run counts are the same as the aggregate
-timing passes. Each shader sample averages that dispatch position over the batch
-and includes its dependency barrier.
-Per-dispatch timestamp overhead and inter-dispatch gaps mean the sum need not
-match the separately measured operator latency. The passes can also run under
-different GPU clock/cache conditions, and their repetition counts may differ.
-For small workloads, per-dispatch timestamps can substantially increase measured
-latency. Compare the batch GPU timestamps and query-free wall measurements
-when evaluating that overhead.
+timing passes. Each sample averages that dispatch position over the batch.
+
+The profiling pass records three bottom-of-pipe timestamps per dispatch. Each
+marks when all previously recorded GPU work had finished:
+
+```
+TS(previous work finish) ─ barrier ─ TS(barrier finish) ─ dispatch ─ TS(shader exec finish)
+◄──────── gpu_timestamp_barrier_us ────────►◄──────── gpu_timestamp_shader_us ────────►
+```
+
+- `gpu_timestamp_shader_us`: launch, execution, and drain of the dispatch.
+- `gpu_timestamp_barrier_us`: the dispatch's dependency barrier, including cache
+  maintenance that makes earlier writes visible. Its cost depends on the
+  preceding work, not on this shader. Whether the barrier finish timestamp waits
+  for cache maintenance is driver-dependent.
+- `gpu_timestamp_gap_us`: from the preceding dispatch's shader execution finish
+  to this dispatch's previous work finish; omitted for a batch's first dispatch.
+  Near zero unless other GPU work runs in between. For an operator's first
+  dispatch, it contains the full barrier between repetitions, which also makes
+  the previous repetition's writes visible; that dispatch's
+  `gpu_timestamp_barrier_us` therefore understates the barrier cost it would
+  pay after a different producer.
+
+While shaders are profiled, every dispatch's barrier is widened to a full
+pipeline barrier, so profiled dispatches never overlap. The report adds
+`shader_profile_order_violations`, the number of out-of-order timestamps (stale
+or unwritten queries; overlapping dispatches do not cause violations), and
+`shader_profile_overhead_ratio`, the profiled batch's per-invocation latency
+divided by the unprofiled `gpu_timestamp_operator_us` median. A ratio well above
+1 means timestamps and serialization change execution, and the breakdown
+misrepresents the unprofiled operator. Use `gpu_timestamp_operator_us` for
+latency comparisons and the breakdown for attribution.
+
+The sum of shader, barrier, and gap times need not match the separately
+measured operator latency: the passes can run under different GPU clock and
+cache conditions, and their repetition counts may differ.
 Prepacking remains outside timing.
 Breakdowns are omitted when timestamps are unavailable, including on this
 repository's SwiftShader build.
@@ -958,6 +994,19 @@ finite and nonnegative. FP16 accumulation may require larger tolerances for
 long reductions. Reports include per-output mismatch counts and error maxima,
 and `reference_wall_time_us`, without tensor values.
 
+Each output also reports `mean_abs_error`, `rms_error`, and `reference_rms` over
+its finite elements. RMS error is a stable measure of precision: comparing
+`rms_error` between two builds on the same inputs shows error growth that the
+pass/fail tolerances can hide. Statistics without a finite element are null.
+
+`--fault_rel=<r>` scales every GPU output by `1 + r` before the comparison, so a
+correctness gate can be shown to fail on a known error; each validation report
+then records `fault_rel`. The injected error is `r * abs(expected)`, so
+`is_close` fails only where `r > rtol + atol / abs(expected)`: `r = 0.01` fails
+FP32 cases at the default tolerances but no FP16 case, whose defaults are
+`atol=rtol=1e-2`. Use `r = 0.1` or more for FP16 cases, or gate on `rms_error`
+growth against a baseline run.
+
 ## Operator source organization
 
 Operator code follows family and quantization-scheme folders, using the production
@@ -1034,9 +1083,8 @@ shapes, it includes the smallest performance-collection cases that dispatch a
 shader no correctness shape reaches. Performance collections exist to measure
 latency and are not run in CI. Correctness cases that fail because of known
 operator bugs live in separate collections named after the bug, such as
-`convolution/q8ta/cases/legacy_4w4c_padding.json` and
-`embedding/qw/q4gsw/cases/texture3d_multirow_indices.json`, so CI stays green
-while the cases remain available for a fix.
+`convolution/q8ta/cases/legacy_4w4c_padding.json`, so CI stays green while the
+cases remain available for a fix.
 
 ## Schema audits and validation-only runs
 
@@ -1049,7 +1097,8 @@ outputs according to `--validation_mode`. Use
 `--validation_only` to execute GPU correctness checks without calibration or
 benchmark passes; it requires `--validation_mode=all` or `first` and
 `--error_mode=report` or `throw`. With `first`, remaining cases report `SKIP`
-without allocating tensors or executing benchmark passes.
+without allocating tensors or executing benchmark passes. Validation-only
+operator reports list the operator's `execute_nodes`, as timed reports do.
 
 Device support is determined while constructing and executing each case. The
 binary catches ET-VK `ShaderNotSupportedError` and unsupported-route exceptions
