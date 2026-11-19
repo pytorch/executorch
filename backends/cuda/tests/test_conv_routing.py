@@ -827,9 +827,15 @@ _KEPT_ROWS = (
         "1x1 convolution",
     ),
     (
-        "5x5 s2, 32 channels",
-        lambda dtype: _dense(nn.Conv2d, 32, 32, 5, dtype, stride=2),
-        (1, 32, 39, 39),
+        "5x5 s2, 16 channels",
+        lambda dtype: _dense(nn.Conv2d, 16, 16, 5, dtype, stride=2),
+        (1, 16, 39, 39),
+        "16 input channels",
+    ),
+    (
+        "3x3 s2, 32 channels",
+        lambda dtype: _dense(nn.Conv2d, 32, 32, 3, dtype, stride=2),
+        (2, 32, 29, 29),
         "32 input channels",
     ),
 )
@@ -917,8 +923,8 @@ def _layout_variants(routed_layouts):  # noqa: C901
     )
 
 
-# 3-D convolutions: a causal 3x3x3 after an explicit pad, a 1x1x1 and a
-# (3,1,1) stride (2,1,1): (row, model, input shape, dtype, why Inductor
+# 3-D convolutions: a causal 3x3x3 after an explicit pad, a 1x1x1 and
+# (3,1,1) stride (2,1,1) ones: (row, model, input shape, dtype, why Inductor
 # keeps them).
 _CONV3D_ROWS = (
     (
@@ -940,7 +946,14 @@ _CONV3D_ROWS = (
         _dense(nn.Conv3d, 320, 320, (3, 1, 1), torch.bfloat16, stride=(2, 1, 1)),
         (2, 320, 17, 16, 16),
         torch.bfloat16,
-        "320 input channels",
+        "4096 3-D output pixels",
+    ),
+    (
+        "3x1x1 s2, 640 ch",
+        _dense(nn.Conv3d, 640, 640, (3, 1, 1), torch.bfloat16, stride=(2, 1, 1)),
+        (2, 640, 9, 8, 8),
+        torch.bfloat16,
+        None,
     ),
 )
 # 1-D convolutions over short sequences, likewise.
@@ -969,9 +982,8 @@ _CONV1D_ROWS = (
 )
 
 
-# Dense 3x3 convolutions with 64 to 512 channels from 120x160 down to 3x3
-# pixels: (row, model, input shape, whether strict FP32 routes it, or why
-# not).
+# Dense 3x3 and 5x5 stage convolutions from 120x160 down to 3x3 pixels: (row,
+# model, input shape, whether strict FP32 routes it, or why not).
 _STAGE_ROWS = (
     (
         "64 ch 120x160",
@@ -1007,12 +1019,74 @@ _STAGE_ROWS = (
         (5, 64, 21, 21),
         None,
     ),
+    (
+        "512-1024 ch s2 14x14 x2",
+        lambda dtype: _dense(
+            nn.Conv2d, 512, 1024, 3, dtype, stride=2, padding=1, bias=False
+        ),
+        (2, 512, 14, 14),
+        None,
+    ),
+    (
+        "128-256 ch s2 60x80",
+        lambda dtype: _dense(
+            nn.Conv2d, 128, 256, 3, dtype, stride=2, padding=1, bias=False
+        ),
+        (1, 128, 60, 80),
+        "outside the benchmarked stage range",
+    ),
+    (
+        "32 ch 5x5 s2 39x39",
+        lambda dtype: _dense(nn.Conv2d, 32, 32, 5, dtype, stride=2),
+        (1, 32, 39, 39),
+        None,
+    ),
+    (
+        "64 ch 3x3 s2 29x29 x2",
+        lambda dtype: _dense(nn.Conv2d, 64, 64, 3, dtype, stride=2),
+        (2, 64, 29, 29),
+        None,
+    ),
+    (
+        "64 ch 3x3 s2 5x5",
+        lambda dtype: _dense(nn.Conv2d, 64, 64, 3, dtype, stride=2),
+        (1, 64, 5, 5),
+        "outside the benchmarked stage range",
+    ),
+)
+# 1x1 convolutions, likewise.
+_POINTWISE_ROWS = (
+    (
+        "512-32 ch 32x32",
+        lambda dtype: _dense(nn.Conv2d, 512, 32, 1, dtype),
+        (1, 512, 32, 32),
+        None,
+    ),
+    (
+        "1024-256 ch 16x16",
+        lambda dtype: _dense(nn.Conv2d, 1024, 256, 1, dtype, bias=False),
+        (1, 1024, 16, 16),
+        None,
+    ),
+    (
+        "512-32 ch 3x3 x5",
+        lambda dtype: _dense(nn.Conv2d, 512, 32, 1, dtype),
+        (5, 512, 3, 3),
+        "1440 outputs",
+    ),
+    (
+        "512 ch 15x20",
+        lambda dtype: _dense(nn.Conv2d, 512, 512, 1, dtype),
+        (1, 512, 15, 20),
+        "512 to 512 channels",
+    ),
 )
 
 
 def _stage_steps_past(shape, c_out, kernel, stride, padding):
     """The (input shape, C_out, kernel, stride, padding) one step past each
-    stage limit a benchmarked corner sits on."""
+    stage limit a benchmarked corner sits on, including one pixel fewer below
+    the fewest outputs."""
     from executorch.backends.cuda.triton.kernels.conv.core import implicit_gemm
 
     multiplier, fewest, most = next(
@@ -1040,11 +1114,15 @@ def _stage_steps_past(shape, c_out, kernel, stride, padding):
         grown = [*extent[:i], e + 1, *extent[i + 1 :]]
         if e == implicit_gemm.MAX_STAGE_EXTENT or not fits(batch, grown):
             yield (batch, channels, *grown), c_out
+        shrunk = [*extent[:i], e - 1, *extent[i + 1 :]]
+        outputs = implicit_gemm._outputs(batch, shrunk, kernel, stride, padding)
+        if outputs * c_out < implicit_gemm.MIN_STAGE_OUTPUT_ELEMENTS:
+            yield (batch, channels, *shrunk), c_out
 
 
 def _winograd_steps_past(shape, c_out):
     """The (input shape, C_out) one step past each Winograd limit a benchmarked
-    corner sits on."""
+    corner sits on, and an input too large for 32-bit indices."""
     from executorch.backends.cuda.triton.kernels.conv.core import implicit_gemm
 
     fewest, most = implicit_gemm.WINOGRAD_CHANNELS
@@ -1054,16 +1132,7 @@ def _winograd_steps_past(shape, c_out):
             yield (batch, channels + step, *extent), c_out
         if c_out == edge:
             yield shape, c_out + step
-    pixels = implicit_gemm.MAX_STAGE_INPUT_PIXELS
-    if (
-        batch == implicit_gemm.MAX_STAGE_BATCH
-        or (batch + 1) * math.prod(extent) > pixels
-    ):
-        yield (batch + 1, channels, *extent), c_out
-    for i, e in enumerate(extent):
-        grown = [*extent[:i], e + 1, *extent[i + 1 :]]
-        if e == implicit_gemm.MAX_STAGE_EXTENT or batch * math.prod(grown) > pixels:
-            yield (batch, channels, *grown), c_out
+    yield (2**31 // (channels * math.prod(extent)) + 1, channels, *extent), c_out
 
 
 def _steps_past(families, shape, c_out, kernel, stride, padding):
@@ -1383,41 +1452,39 @@ class ImplicitGemmRoutingTest(_PassTest):
 
     def test_one_step_past_the_conv3d_calls_is_kept(self):
         """Each 3-D corner moved one step past a limit it sits on: one input or
-        output channel fewer or more, fewer output pixels; another kernel,
-        stride, padding or precision."""
+        output channel fewer or more, fewer or more output pixels; another
+        stride, padding, kernel or precision."""
         from executorch.backends.cuda.triton.kernels.conv.core import implicit_gemm
 
-        fewest, most = implicit_gemm.CONV3D_CHANNELS
         for call in implicit_gemm.conv3d_boundary_calls():
             shape, c_out, kernel, stride, padding = call
             batch, channels, *extent = shape
+            *_, in_range, out_range, (fewest, most), _ = next(
+                r for r in implicit_gemm.CONV3D_RANGES if r[:3] == call[2:]
+            )
             outside = []
-            for edge, step in ((fewest, -1), (most, 1)):
-                if channels == edge:
-                    outside.append(
-                        (
-                            (batch, channels + step, *extent),
-                            c_out,
-                            kernel,
-                            stride,
-                            padding,
-                            padding,
-                        )
-                    )
-                if c_out == edge:
-                    outside.append(
-                        (shape, c_out + step, kernel, stride, padding, padding)
-                    )
+            for (low, high), value, moved in (
+                (
+                    in_range,
+                    channels,
+                    lambda c: ((batch, c, *extent), c_out),  # noqa: B023
+                ),
+                (out_range, c_out, lambda c: (shape, c)),  # noqa: B023
+            ):
+                if value == low:
+                    outside.append((*moved(low - 1), kernel, stride, padding, padding))
+                if value == high:
+                    outside.append((*moved(high + 1), kernel, stride, padding, padding))
             outputs = implicit_gemm._outputs(batch, extent, kernel, stride, padding)
-            if outputs == implicit_gemm.CONV3D_MIN_OUTPUT_PIXELS:
-                fewer = (batch, channels, *extent[:2], extent[2] - 1)
-                outside.append((fewer, c_out, kernel, stride, padding, padding))
+            for edge, step in ((fewest, -1), (most, 1)):
+                if outputs == edge:
+                    moved = (batch, channels, *extent[:2], extent[2] + step)
+                    outside.append((moved, c_out, kernel, stride, padding, padding))
             grown = (batch, channels, *(e + 2 for e in extent))
             outside += [
-                (grown, c_out, kernel, (2, 2, 2), padding, padding),
+                (grown, c_out, kernel, tuple(s + 1 for s in stride), padding, padding),
                 (shape, c_out, kernel, stride, padding, (2, 2, 2)),
-                (shape, c_out, (3, 3, 1), stride, padding, padding),
-                (grown, c_out, (3, 1, 1), (2, 1, 1), (0, 0, 0), (0, 0, 0)),
+                (grown, c_out, (3, 3, 1), stride, padding, padding),
             ]
             variants = [(o, torch.bfloat16, False) for o in outside]
             variants += [
@@ -1629,7 +1696,8 @@ class ImplicitGemmRoutingTest(_PassTest):
     def test_one_step_past_the_stage_calls_is_kept(self):
         """Each stage corner moved one step past a limit it sits on: one input
         channel fewer or more, an output channel count that is not the stage's,
-        one more image or pixel; another kernel, padding or precision. The
+        one more image or pixel, one pixel fewer below the fewest outputs;
+        another kernel, padding or precision. The
         Winograd range, which covers some of these steps, is tested alone."""
         from executorch.backends.cuda.triton.kernels.conv.core import implicit_gemm
 
@@ -1638,14 +1706,15 @@ class ImplicitGemmRoutingTest(_PassTest):
         )
         for call in implicit_gemm.stage_boundary_calls():
             shape, c_out, kernel, stride, padding = call
+            padded = tuple(p + 1 for p in padding)
             outside = [
                 (*step, kernel, stride, padding, padding, torch.float32, False)
                 for step in _stage_steps_past(*call)
             ]
             outside += [
                 (shape, c_out, (5, 5), stride, (2, 2), (2, 2), torch.float32, False),
-                (shape, c_out, kernel, stride, (0, 0), (0, 0), torch.float32, False),
-                (shape, c_out, kernel, stride, padding, (2, 2), torch.float32, False),
+                (shape, c_out, kernel, stride, padded, padded, torch.float32, False),
+                (shape, c_out, kernel, stride, padding, padded, torch.float32, False),
                 (shape, c_out, kernel, stride, padding, padding, torch.float32, True),
                 (shape, c_out, kernel, stride, padding, padding, torch.bfloat16, False),
             ]
@@ -1705,6 +1774,107 @@ class ImplicitGemmRoutingTest(_PassTest):
                     )
                     self.assertIn("not a benchmarked layout", reason)
 
+    def test_pointwise_rows(self):
+        for row, model, shape, fp32_reason in _POINTWISE_ROWS:
+            for dtype, tf32 in self.precisions():
+                reason = fp32_reason
+                if dtype != torch.float32 or tf32:
+                    reason = "only strict-FP32 1x1 convolutions are benchmarked"
+
+                def inputs(shape=shape, dtype=dtype):
+                    return torch.randn(shape, dtype=dtype)
+
+                with self.subTest(row=row, dtype=dtype, tf32=tf32), self.tf32(tf32):
+                    if reason is None:
+                        self.assertRouted(
+                            model(dtype), inputs, template="implicit_gemm"
+                        )
+                    else:
+                        self.assertKept(model(dtype), inputs, reason=reason)
+
+    def test_pointwise_calls_are_routed(self):
+        # Every call the benchmark's pointwise_boundary suite measures, in the
+        # layouts the range admits.
+        from executorch.backends.cuda.triton.kernels.conv.core import implicit_gemm
+
+        for call in implicit_gemm.pointwise_boundary_calls():
+            shape, c_out, kernel, stride, padding = call
+            for layout, routed in _layout_variants(implicit_gemm.POINTWISE_LAYOUTS):
+                # A channels-last 1x1 weight has the contiguous strides.
+                routed = routed or layout.__name__ == "channels_last_weight"
+                with self.subTest(call=call, layout=layout.__name__):
+                    reason = self.worth_routing(
+                        shape,
+                        c_out,
+                        kernel,
+                        stride,
+                        padding,
+                        padding,
+                        dtype=torch.float32,
+                        tf32=False,
+                        layout=layout,
+                    )
+                    if callable(routed):
+                        routed = routed(
+                            self.call(
+                                *call[:4], padding, padding, torch.float32, layout
+                            )
+                        )
+                    if routed:
+                        self.assertIsNone(reason)
+                    else:
+                        self.assertIn("not a benchmarked layout", reason)
+
+    def test_one_step_past_the_pointwise_calls_is_kept(self):
+        """Each 1x1 corner moved one step past a limit it sits on: one input or
+        output channel fewer or more, one output pixel fewer or more at the
+        fewest or most outputs; stride 2, padding 1 or another precision."""
+        from executorch.backends.cuda.triton.kernels.conv.core import implicit_gemm
+
+        for call in implicit_gemm.pointwise_boundary_calls():
+            shape, c_out, kernel, stride, padding = call
+            batch, channels, height, width = shape
+            outside = []
+            for (low, high), value, moved in (
+                (
+                    implicit_gemm.POINTWISE_IN_CHANNELS,
+                    channels,
+                    lambda c: ((batch, c, height, width), c_out),  # noqa: B023
+                ),
+                (
+                    implicit_gemm.POINTWISE_OUT_CHANNELS,
+                    c_out,
+                    lambda c: (shape, c),  # noqa: B023
+                ),
+            ):
+                if value == low:
+                    outside.append(moved(low - 1))
+                if value == high:
+                    outside.append(moved(high + 1))
+            fewest, most = implicit_gemm.POINTWISE_OUTPUT_ELEMENTS
+            outputs = batch * height * width * c_out
+            if outputs == fewest:
+                outside.append(((batch, channels, height, width - 1), c_out))
+            if outputs == most:
+                outside.append(((batch, channels, height, width + 1), c_out))
+            variants = [
+                (*step, kernel, stride, padding, padding, torch.float32, False)
+                for step in outside
+            ]
+            variants += [
+                (shape, c_out, kernel, (2, 2), padding, padding, torch.float32, False),
+                (shape, c_out, kernel, stride, (1, 1), (1, 1), torch.float32, False),
+            ]
+            variants += [
+                (shape, c_out, kernel, stride, padding, padding, dtype, tf32)
+                for dtype, tf32 in self.precisions()[1:]
+            ]
+            for *step, dtype, tf32 in variants:
+                with self.subTest(call=call, outside=step, dtype=dtype, tf32=tf32):
+                    self.assertIsNotNone(
+                        self.worth_routing(*step, dtype=dtype, tf32=tf32)
+                    )
+
     def test_winograd_calls_are_routed(self):
         # Every call the benchmark's winograd_boundary suite measures.
         from executorch.backends.cuda.triton.kernels.conv.core import implicit_gemm
@@ -1732,9 +1902,9 @@ class ImplicitGemmRoutingTest(_PassTest):
 
     def test_one_step_past_the_winograd_calls_is_kept(self):
         """Each Winograd corner moved one step past a limit it sits on: one
-        input or output channel fewer or more, one more image or pixel; another
-        kernel, stride, padding, precision or layout. The stage range, which
-        covers some of these steps, is tested alone."""
+        input or output channel fewer or more, an input too large for 32-bit
+        indices; another kernel, stride, padding, precision or layout. The
+        stage range, which covers some of these steps, is tested alone."""
         from executorch.backends.cuda.triton.kernels.conv.core import implicit_gemm
 
         def channels_last_input(call):
