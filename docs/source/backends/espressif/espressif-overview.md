@@ -28,7 +28,7 @@ This backend is a prototype under active development. Its APIs, the delegate pay
 - **ESP32-S3.** This is the primary target, with ESP-NN's SIMD kernels. The backend has been verified on an ESP32-S3 with 16 MB flash and 8 MB octal PSRAM (ESP32-S3-DevKitC-1 N16R8). CI runs on an emulated ESP32-S3 with both ESP-NN's SIMD kernels and its portable C kernels.
 - **Other ESP32 chips.** These use ESP-NN's portable C kernels, which are roughly an order of magnitude slower than the S3's SIMD kernels.
 - **Memory.** PSRAM is recommended for image models, whose activations rarely fit in internal RAM. Without PSRAM, a model's activations must fit in about 280 KB of internal RAM on the original ESP32.
-- **Software.** ESP-IDF 6.0 or newer, and the `espressif/esp-nn` component, version 1.4.0 or newer. The component manager fetches ESP-NN from the Espressif component registry.
+- **Software.** ESP-IDF 6.0 or newer, and the `espressif/esp-nn` component, version 1.4.0 or newer. The component manager fetches ESP-NN from the Espressif component registry. The experimental operator library (`-DET_ESPRESSIF_OPS=ON`) pins `espressif/esp-nn` to exactly 1.4.1, so a project that requires another ESP-NN version gets a component manager conflict.
 
 ## Development Requirements
 
@@ -234,12 +234,12 @@ The example project's defaults suit small programs. Image models need two change
 
 ### Configuration
 
-The delegate has the following options in menuconfig, under *ExecuTorch ESP-NN backend* (*ExecuTorch → ExecuTorch ESP-NN backend* in the ESP-IDF component):
+The delegate has the following options in menuconfig, under *ExecuTorch ESP-NN backend* (*ExecuTorch → ExecuTorch ESP-NN backend* in the ESP-IDF component). In `sdkconfig` and `sdkconfig.defaults` files, they take the `CONFIG_` prefix, for example `CONFIG_ESPNN_DELEGATE_PROFILE=y`:
 
 | Kconfig option | Default | Effect |
 |---|---|---|
-| `ESPNN_DELEGATE_CONSTANTS_TO_PSRAM` | y | Copies weights from memory-mapped flash into PSRAM at load time when they fit, avoiding flash cache misses on large models. |
-| `ESPNN_DELEGATE_DUAL_CORE` | n | Splits large convolutions across both cores. ESP-NN's worker is process-wide. |
+| `ESPNN_DELEGATE_CONSTANTS_TO_PSRAM` | y | Copies weights from memory-mapped flash into PSRAM at load time when they fit, avoiding flash cache misses on large models. Requires `CONFIG_SPIRAM`; without PSRAM the option is hidden and off. |
+| `ESPNN_DELEGATE_DUAL_CORE` | n | Splits large convolutions across both cores. ESP-NN's worker is process-wide. Supported on the ESP32-S3 and ESP32-P4 with ESP-NN's optimized kernels and both cores enabled; elsewhere the runtime prints a warning and runs on one core. |
 | `ESPNN_DELEGATE_PROFILE` | n | Prints a per-operator time table after each delegate's first run. |
 
 ESP-NN selects its kernels from ESP-IDF's target. `CONFIG_NN_OPTIMIZED=y`, the default, uses the SIMD kernels on the ESP32-S3. `CONFIG_NN_ANSI_C=y` selects the portable C reference kernels, for verification and debugging.

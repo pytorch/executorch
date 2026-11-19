@@ -58,7 +58,7 @@ The host and the device validate graphs independently:
 ### init
 
 - The delegate state comes from the runtime allocator.
-- The interpreter parses the graph. If the payload is misaligned, or `ESPNN_DELEGATE_CONSTANTS_TO_PSRAM` copies the constants to PSRAM, it keeps its own copy and frees the processed buffer.
+- The interpreter parses the graph. If the payload is misaligned, or `CONFIG_ESPNN_DELEGATE_CONSTANTS_TO_PSRAM` copies the constants to PSRAM, it keeps its own copy and frees the processed buffer.
 - The activation arena, ESP-NN scratch buffers and per-operation state are allocated with ESP-IDF's `heap_caps` allocator. The arena goes to internal RAM when it fits with room to spare, and otherwise to PSRAM.
 
 Nothing is allocated during `execute`.
@@ -66,10 +66,10 @@ Nothing is allocated during `execute`.
 ### execute
 
 1. **Inputs.** Each input must have the graph's shape and a contiguous dim order. Float32 inputs are quantized with the graph's input parameters, using round-half-to-even. Int8 inputs are copied as is. Rank-4 inputs are converted from NCHW to NHWC. Other dtypes are rejected.
-2. **Operations.** The interpreter runs the operations in order. Calls are serialized by a process-wide mutex, because ESP-NN's scratch pointers are global. With `ESPNN_DELEGATE_DUAL_CORE`, large convolutions are split across both cores.
+2. **Operations.** The interpreter runs the operations in order. Calls are serialized by a process-wide mutex, because ESP-NN's scratch pointers are global. With `CONFIG_ESPNN_DELEGATE_DUAL_CORE`, large convolutions are split across both cores on targets where ESP-NN supports it (the ESP32-S3 and ESP32-P4 with the optimized kernels); on other targets the runtime prints a warning and runs on one core.
 3. **Outputs.** Outputs are written back as float32 (dequantized) or int8, matching the output tensor, and converted from NHWC to NCHW for rank 4.
 
-`delegate_stats()` accumulates the number of delegates, the number of calls, the time spent in `execute` (including input and output conversion) and the arena sizes. `ESPNN_DELEGATE_PROFILE` prints a per-operation time table after each delegate's first run.
+`delegate_stats()` accumulates the number of delegates, the number of calls, the time spent in `execute` (including input and output conversion) and the arena sizes. `CONFIG_ESPNN_DELEGATE_PROFILE` prints a per-operation time table after each delegate's first run.
 
 ## Host Reference
 

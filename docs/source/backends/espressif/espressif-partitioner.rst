@@ -49,7 +49,7 @@ Lowering report
 After partitioning, ``partitioner.report`` (the second value returned by ``to_espnn_edge``) has the following keys:
 
 - ``partitions``: the number of delegated regions.
-- ``rejected_partitions``: regions that were found but couldn't be delegated as a unit, for example because a boundary tensor wasn't quantized. Their operators run on the CPU.
+- ``rejected_partitions``: the number of regions that were found but couldn't be delegated as a unit, for example because a boundary tensor wasn't quantized. Their operators run on the CPU.
 - ``delegated_ops``: the number of operators inside delegates, not counting quantize and dequantize nodes.
 - ``cpu_ops``: a list with one entry per operator left on the CPU. Each entry has ``name``, ``target`` and ``reason``, which explains why the operator wasn't delegated.
 

@@ -1,6 +1,6 @@
 Operator,Compute DType,Quantization,Constraints
-conv2d / convolution,int8,"static int8, per-channel weights","Batch 1; any stride and padding; dilation; groups 1, grouped or depthwise"
-conv_transpose2d,int8,"static int8, per-channel weights",Batch 1
+conv2d / convolution,int8,"static int8, per-channel weights","Batch 1; stride, padding and dilation at most 255; groups 1, grouped or depthwise"
+conv_transpose2d,int8,"static int8, per-channel weights",Batch 1; groups 1
 linear,int8,"static int8, per-channel weights",
 relu / relu6,int8,static int8,Fused into a preceding conv2d / linear / add when possible
 hardtanh,int8,static int8,"Fused as ReLU / ReLU6 when possible, otherwise a lookup table"

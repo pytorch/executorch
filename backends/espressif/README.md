@@ -48,7 +48,7 @@ symmetric weights, as annotated by `EspNNQuantizer`.
 
 | Group | Operators |
 |---|---|
-| Convolution | `conv2d` (any stride and padding, groups 1, grouped or depthwise, dilation through phase decomposition), `conv_transpose2d`, `linear` |
+| Convolution | `conv2d` (stride, padding and dilation at most 255, groups 1, grouped or depthwise, dilation through phase decomposition), `conv_transpose2d` (groups 1), `linear` |
 | Activations | `relu`, `relu6`, `hardtanh`, plus table lookups for `hardswish`, `hardsigmoid`, `sigmoid`, `silu`, `tanh`, `gelu`, `elu`, `leaky_relu` |
 | Elementwise | `add`, `mul` (with broadcasting), `softmax` (dim 1 of batch-1 rank-2 or rank-4 tensors) |
 | Pooling | `max_pool2d`, `avg_pool2d`, `adaptive_avg_pool2d`, `mean` over H and W |
