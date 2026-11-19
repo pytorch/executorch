@@ -883,9 +883,10 @@ class ImplicitGemmLoweringTest(unittest.TestCase):
         )
         # Inductor has no transposed template on CUDA. to_edge keeps both as
         # aten.convolution; to_edge_transform_and_lower keeps conv_transpose1d,
-        # which the backend rewrites as a convolution, and conv_transpose3d.
+        # which the backend rewrites as a convolution (outside the 1-D range),
+        # and conv_transpose3d.
         self.lower_and_run(model, inputs, 2, 1e-4, route="required", to_backend=True)
         output = self.lower_and_run(
             model, inputs, 1, self.fp32_tolerance(), route="required"
         )
-        self.assertIn("transposed convolution is not benchmarked faster", output)
+        self.assertRegex(output, r"implicit GEMM: [^\n]*1-D")
