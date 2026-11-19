@@ -178,6 +178,7 @@ set(all_test_sources
     "op_atanh_test.cpp"
     "op_avg_pool1d_test.cpp"
     "op_avg_pool2d_test.cpp"
+    "op_avg_pool3d_test.cpp"
     "op_bitwise_and_test.cpp"
     "op_bitwise_left_shift_test.cpp"
     "op_bitwise_not_test.cpp"
@@ -373,6 +374,7 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
       "op_sum_test.cpp"
       "op_where_test.cpp"
       "UnaryUfuncRealHBBF16ToFloatHBF16Test.cpp"
+      "${EXECUTORCH_ROOT}/kernels/optimized/test/complex_binary_broadcast_test.cpp"
       ${CMAKE_CURRENT_BINARY_DIR}/include/optimized/executorch/kernels/test/supported_features.cpp
   )
 

@@ -129,6 +129,7 @@ class ExecuTorchModelPreparationStrategy(ModelPreparationStrategy):
             - ``module_transforms``: Component-keyed transforms applied after
               one shared module is selected for each component.
             - ``num_shardings``: Optional component shard counts.
+            - ``model_layout``: Optional ``ModelLayout`` for compilation.
 
             Root ``input_config.extra_options`` configures tokenizer and runtime
             output:
@@ -248,6 +249,7 @@ class ExecuTorchModelPreparationStrategy(ModelPreparationStrategy):
                     "num_shardings",
                     extra.get("num_shardings"),
                 ),
+                model_layout=model_options.get("model_layout"),
             )
 
         except StageError:
