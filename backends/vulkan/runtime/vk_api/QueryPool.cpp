@@ -12,6 +12,7 @@
 
 #include <executorch/backends/vulkan/runtime/vk_api/QueryPool.h>
 
+#include <algorithm>
 #include <cmath>
 #include <iomanip>
 #include <iostream>
@@ -29,6 +30,21 @@ constexpr int64_t kDefaultNsPerTick = 52; // lround(52.08f);
 
 } // namespace
 
+size_t count_order_violations(const std::vector<ShaderTimestamp>& timestamps) {
+  size_t violations = 0;
+  for (size_t i = 0; i < timestamps.size(); ++i) {
+    const ShaderTimestamp& entry = timestamps[i];
+    const bool ordered =
+        entry.previous_work_finish_ticks <= entry.barrier_finish_ticks &&
+        entry.barrier_finish_ticks <= entry.shader_exec_finish_ticks &&
+        (i + 1 == timestamps.size() ||
+         entry.shader_exec_finish_ticks <=
+             timestamps[i + 1].previous_work_finish_ticks);
+    violations += ordered ? 0 : 1;
+  }
+  return violations;
+}
+
 #define EARLY_RETURN_IF_UNINITIALIZED() \
   if (querypool_ == VK_NULL_HANDLE) {   \
     return;                             \
@@ -41,6 +57,7 @@ QueryPool::QueryPool(const QueryPoolConfig& config, const Adapter* adapter_p)
       querypool_(VK_NULL_HANDLE),
       num_queries_(0u),
       shader_durations_{},
+      num_order_violations_(0u),
       mutex_{} {
   initialize(adapter_p);
 }
@@ -87,20 +104,35 @@ size_t QueryPool::write_timestamp(const CommandBuffer& cmd) {
   return num_queries_ - 1;
 }
 
-void QueryPool::reset_querypool(const CommandBuffer& cmd) {
+bool QueryPool::has_incomplete_entries() const {
+  for (const ShaderDuration& entry : shader_durations_) {
+    if (entry.previous_work_finish_query_idx >= num_queries_ ||
+        entry.shader_exec_finish_query_idx >= num_queries_) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void QueryPool::reset_querypool() {
   EARLY_RETURN_IF_UNINITIALIZED();
   std::lock_guard<std::mutex> lock(mutex_);
 
-  cmd.reset_querypool(querypool_, 0u, config_.max_query_count);
   reset_state();
+}
+
+void QueryPool::reset_all(const CommandBuffer& cmd) {
+  EARLY_RETURN_IF_UNINITIALIZED();
+  cmd.reset_querypool(querypool_, 0u, config_.max_query_count);
 }
 
 void QueryPool::reset_state() {
   num_queries_ = 0u;
   shader_durations_.clear();
+  num_order_violations_ = 0u;
 }
 
-void QueryPool::shader_profile_begin(
+void QueryPool::record_previous_work_finish(
     const CommandBuffer& cmd,
     const uint32_t dispatch_id,
     const std::string& kernel_name,
@@ -109,6 +141,15 @@ void QueryPool::shader_profile_begin(
   EARLY_RETURN_IF_UNINITIALIZED();
   std::lock_guard<std::mutex> lock(mutex_);
 
+  // Reset only the queries this dispatch records. Command buffers are replayed,
+  // so resetting the whole pool would cost time proportional to its size on
+  // every execution.
+  if (num_queries_ < config_.max_query_count) {
+    cmd.reset_querypool(
+        querypool_,
+        num_queries_,
+        std::min(kQueriesPerDispatch, config_.max_query_count - num_queries_));
+  }
   uint32_t query_idx = write_timestamp(cmd);
 
   ShaderDuration log_entry{
@@ -119,28 +160,72 @@ void QueryPool::shader_profile_begin(
       gwg,
       lwg,
       // Query indexes
-      query_idx, // start query idx
-      UINT32_MAX, // end query idx
+      query_idx, // previous work finish query idx
+      UINT32_MAX, // barrier finish query idx
+      UINT32_MAX, // shader exec finish query idx
       // Timings
-      0u, // start time
-      0u, // end time
-      0u, // duration
+      0u, // previous work finish
+      0u, // barrier finish
+      0u, // shader exec finish
+      0u, // barrier duration
+      0u, // shader exec duration
   };
 
   shader_durations_.emplace_back(log_entry);
 }
 
-void QueryPool::shader_profile_end(const CommandBuffer& cmd) {
+void QueryPool::record_barrier_finish(const CommandBuffer& cmd) {
   EARLY_RETURN_IF_UNINITIALIZED();
   std::lock_guard<std::mutex> lock(mutex_);
 
-  size_t query_idx = write_timestamp(cmd);
-  shader_durations_.back().end_query_idx = query_idx;
+  if (shader_durations_.empty()) {
+    return;
+  }
+  ShaderDuration& entry = shader_durations_.back();
+  if (entry.shader_exec_finish_query_idx != UINT32_MAX ||
+      entry.barrier_finish_query_idx != UINT32_MAX) {
+    return;
+  }
+  entry.barrier_finish_query_idx = write_timestamp(cmd);
+}
+
+void QueryPool::record_shader_exec_finish(const CommandBuffer& cmd) {
+  EARLY_RETURN_IF_UNINITIALIZED();
+  std::lock_guard<std::mutex> lock(mutex_);
+
+  if (shader_durations_.empty() ||
+      shader_durations_.back().shader_exec_finish_query_idx != UINT32_MAX) {
+    return;
+  }
+  shader_durations_.back().shader_exec_finish_query_idx = write_timestamp(cmd);
+}
+
+std::vector<ShaderTimestamp> QueryPool::to_shader_timestamps(
+    const std::vector<uint64_t>& ticks) const {
+  std::vector<ShaderTimestamp> results;
+  results.reserve(shader_durations_.size());
+  for (const ShaderDuration& entry : shader_durations_) {
+    const uint32_t barrier_finish_idx =
+        entry.barrier_finish_query_idx < ticks.size()
+        ? entry.barrier_finish_query_idx
+        : entry.previous_work_finish_query_idx;
+    results.push_back(
+        {entry.kernel_name,
+         ticks.at(entry.previous_work_finish_query_idx),
+         ticks.at(barrier_finish_idx),
+         ticks.at(entry.shader_exec_finish_query_idx),
+         {{entry.gwg[0u], entry.gwg[1u], entry.gwg[2u]},
+          {entry.lwg.x(), entry.lwg.y(), entry.lwg.z()}}});
+  }
+  return results;
 }
 
 void QueryPool::extract_results() {
   EARLY_RETURN_IF_UNINITIALIZED();
   std::lock_guard<std::mutex> lock(mutex_);
+  if (has_incomplete_entries()) {
+    return;
+  }
 
   const VkQueryResultFlags flags = VK_QUERY_RESULT_64_BIT;
 
@@ -157,11 +242,21 @@ void QueryPool::extract_results() {
       sizeof(uint64_t), // stride
       flags)); // flags
 
-  for (ShaderDuration& entry : shader_durations_) {
-    entry.start_time_ns = query_data.at(entry.start_query_idx) * ns_per_tick_;
-    entry.end_time_ns = query_data.at(entry.end_query_idx) * ns_per_tick_;
-    entry.execution_duration_ns = entry.end_time_ns - entry.start_time_ns;
+  const std::vector<ShaderTimestamp> timestamps =
+      to_shader_timestamps(query_data);
+  for (size_t i = 0; i < shader_durations_.size(); ++i) {
+    ShaderDuration& entry = shader_durations_[i];
+    entry.previous_work_finish_ns =
+        timestamps[i].previous_work_finish_ticks * ns_per_tick_;
+    entry.barrier_finish_ns = timestamps[i].barrier_finish_ticks * ns_per_tick_;
+    entry.shader_exec_finish_ns =
+        timestamps[i].shader_exec_finish_ticks * ns_per_tick_;
+    entry.barrier_duration_ns =
+        entry.barrier_finish_ns - entry.previous_work_finish_ns;
+    entry.shader_exec_duration_ns =
+        entry.shader_exec_finish_ns - entry.barrier_finish_ns;
   }
+  num_order_violations_ = count_order_violations(timestamps);
 }
 
 std::ostream& operator<<(std::ostream& os, const utils::uvec3& extents) {
@@ -185,8 +280,9 @@ std::vector<ShaderResult> QueryPool::get_shader_timestamp_data() {
     shader_result.push_back(ShaderResult{
         /* .kernel_name = */ entry.kernel_name,
         /* .dispatch_id = */ entry.dispatch_id,
-        /* .start_time_ns = */ entry.start_time_ns,
-        /* .end_time_ns = */ entry.end_time_ns,
+        /* .previous_work_finish_ns = */ entry.previous_work_finish_ns,
+        /* .barrier_finish_ns = */ entry.barrier_finish_ns,
+        /* .shader_exec_finish_ns = */ entry.shader_exec_finish_ns,
         /* .metadata = */
         ShaderMetadata{
             /* .gwg = */
@@ -203,11 +299,8 @@ std::vector<ShaderTimestamp> QueryPool::get_shader_timestamp_ticks() {
   if (querypool_ == VK_NULL_HANDLE || num_queries_ == 0) {
     return {};
   }
-  for (const ShaderDuration& entry : shader_durations_) {
-    if (entry.start_query_idx >= num_queries_ ||
-        entry.end_query_idx >= num_queries_) {
-      return {};
-    }
+  if (has_incomplete_entries()) {
+    return {};
   }
   std::vector<uint64_t> ticks(num_queries_);
   // Without PARTIAL_BIT, any unavailable query makes the whole call NOT_READY.
@@ -224,17 +317,7 @@ std::vector<ShaderTimestamp> QueryPool::get_shader_timestamp_ticks() {
     return {};
   }
   VK_CHECK(status);
-  std::vector<ShaderTimestamp> results;
-  results.reserve(shader_durations_.size());
-  for (const ShaderDuration& entry : shader_durations_) {
-    results.push_back(
-        {entry.kernel_name,
-         ticks.at(entry.start_query_idx),
-         ticks.at(entry.end_query_idx),
-         {{entry.gwg[0u], entry.gwg[1u], entry.gwg[2u]},
-          {entry.lwg.x(), entry.lwg.y(), entry.lwg.z()}}});
-  }
-  return results;
+  return to_shader_timestamps(ticks);
 }
 
 std::string QueryPool::generate_string_report() {
@@ -251,6 +334,7 @@ std::string QueryPool::generate_string_report() {
   ss << std::setw(kernel_name_w) << "Kernel Name";
   ss << std::setw(global_size_w) << "Global Workgroup Size";
   ss << std::setw(local_size_w) << "Local Workgroup Size";
+  ss << std::right << std::setw(duration_w) << "Barrier (ns)";
   ss << std::right << std::setw(duration_w) << "Duration (ns)";
   ss << std::endl;
 
@@ -258,19 +342,18 @@ std::string QueryPool::generate_string_report() {
   ss << std::setw(kernel_name_w) << "===========";
   ss << std::setw(global_size_w) << "=====================";
   ss << std::setw(local_size_w) << "====================";
+  ss << std::right << std::setw(duration_w) << "============";
   ss << std::right << std::setw(duration_w) << "=============";
   ss << std::endl;
 
   for (ShaderDuration& entry : shader_durations_) {
-    std::chrono::duration<size_t, std::nano> exec_duration_ns(
-        entry.execution_duration_ns);
-
     ss << std::left;
     ss << std::setw(kernel_name_w) << entry.kernel_name;
     ss << std::setw(global_size_w) << stringize(entry.gwg.extents());
     ss << std::setw(local_size_w)
        << stringize(static_cast<utils::uvec3>(entry.lwg));
-    ss << std::right << std::setw(duration_w) << exec_duration_ns.count();
+    ss << std::right << std::setw(duration_w) << entry.barrier_duration_ns;
+    ss << std::right << std::setw(duration_w) << entry.shader_exec_duration_ns;
     ss << std::endl;
   }
 
@@ -285,23 +368,23 @@ std::string QueryPool::generate_tsv_string_report() {
   ss << "Kernel Name\t";
   ss << "Global Workgroup Size\t";
   ss << "Local Workgroup Size\t";
+  ss << "Barrier (ns)\t";
   ss << "Duration (ns)\t";
   ss << std::endl;
 
   ss << "===========\t";
   ss << "=====================\t";
   ss << "====================\t";
+  ss << "============\t";
   ss << "=============\t";
   ss << std::endl;
 
   for (ShaderDuration& entry : shader_durations_) {
-    std::chrono::duration<size_t, std::nano> exec_duration_ns(
-        entry.execution_duration_ns);
-
     ss << entry.kernel_name << "\t";
     ss << stringize(entry.gwg.extents()) << "\t";
     ss << stringize(static_cast<utils::uvec3>(entry.lwg)) << "\t";
-    ss << exec_duration_ns.count() << "\t";
+    ss << entry.barrier_duration_ns << "\t";
+    ss << entry.shader_exec_duration_ns << "\t";
     ss << std::endl;
   }
 
@@ -321,7 +404,7 @@ unsigned long QueryPool::get_total_shader_ns(std::string kernel_name) {
   for (ShaderDuration& entry : shader_durations_) {
     if (entry.kernel_name == kernel_name) {
       std::chrono::duration<size_t, std::nano> exec_duration_ns(
-          entry.execution_duration_ns);
+          entry.shader_exec_duration_ns);
       return exec_duration_ns.count();
     }
   }
@@ -334,7 +417,7 @@ unsigned long QueryPool::get_mean_shader_ns(std::string kernel_name) {
   for (ShaderDuration& entry : shader_durations_) {
     if (entry.kernel_name == kernel_name) {
       std::chrono::duration<size_t, std::nano> exec_duration_ns(
-          entry.execution_duration_ns);
+          entry.shader_exec_duration_ns);
       total_ns += exec_duration_ns.count();
       count++;
     }
