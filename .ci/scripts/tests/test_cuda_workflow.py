@@ -100,7 +100,10 @@ class CudaWorkflowTest(unittest.TestCase):
                     job["with"]["gpu-arch-version"], "${{ matrix.cuda-version }}"
                 )
                 # GitHub cuts check names at 100 characters, so the train goes first.
-                self.assertIn(f"{name}-${{{{ matrix.cuda-version }}}}", job["name"])
+                self.assertTrue(
+                    job["name"].startswith(f"{name}-${{{{ matrix.cuda-version }}}}"),
+                    job["name"],
+                )
                 self.assertEqual(
                     sorted(set(_matrix_cuda_versions(job))),
                     sorted(_supported_cuda_versions()),

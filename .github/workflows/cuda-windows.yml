@@ -257,7 +257,7 @@ jobs:
             model_name: "dinov2-small-imagenet1k-1-layer"
             quant: "non-quantized"
             cuda-version: "13.2"
-          # The export matrix's rows, which runs one model per row; see there for why.
+          # Same rows as the export matrix; see there for why.
           - model_repo: "facebook"
             model_name: "dinov2-small-imagenet1k-1-layer"
             quant: "non-quantized"
@@ -312,6 +312,8 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_cuda_runtime_windows.ps1') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/install_nvidia_driver_windows.ps1') ||
       contains(needs.changed-files.outputs.changed-files, 'tools/cmake/Test.cmake') ||
+      contains(needs.changed-files.outputs.changed-files, 'install_requirements.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'install_utils.py') ||
       needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
     strategy:
