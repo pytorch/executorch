@@ -814,20 +814,6 @@ _KEPT_ROWS = (
         "48 input channels",
     ),
     (
-        "3x3",
-        lambda dtype: _dense(nn.Conv2d, 64, 64, 3, dtype, padding=1, bias=False),
-        (1, 64, 120, 160),
-        "64 input channels",
-    ),
-    (
-        "3x3 s2",
-        lambda dtype: _dense(
-            nn.Conv2d, 256, 512, 3, dtype, stride=2, padding=1, bias=False
-        ),
-        (1, 256, 30, 40),
-        "256 input channels",
-    ),
-    (
         "1x1",
         lambda dtype: _dense(nn.Conv2d, 512, 512, 1, dtype),
         (1, 512, 15, 20),
@@ -980,6 +966,79 @@ _CONV1D_ROWS = (
         "512 input channels",
     ),
 )
+
+
+# Dense 3x3 convolutions with 64 to 512 channels from 120x160 down to 3x3
+# pixels: (row, model, input shape, whether strict FP32 routes it, or why
+# not).
+_STAGE_ROWS = (
+    (
+        "64 ch 120x160",
+        lambda dtype: _dense(nn.Conv2d, 64, 64, 3, dtype, padding=1, bias=False),
+        (1, 64, 120, 160),
+        "outside the benchmarked stage range",
+    ),
+    (
+        "512 ch 15x20",
+        lambda dtype: _dense(nn.Conv2d, 512, 512, 3, dtype, padding=1, bias=False),
+        (1, 512, 15, 20),
+        None,
+    ),
+    (
+        "256-512 ch s2 30x40",
+        lambda dtype: _dense(
+            nn.Conv2d, 256, 512, 3, dtype, stride=2, padding=1, bias=False
+        ),
+        (1, 256, 30, 40),
+        None,
+    ),
+    (
+        "512 ch 3x3 x5",
+        lambda dtype: _dense(nn.Conv2d, 512, 512, 3, dtype, padding=1, bias=False),
+        (5, 512, 3, 3),
+        None,
+    ),
+    (
+        "64-128 ch s2 21x21 x5",
+        lambda dtype: _dense(
+            nn.Conv2d, 64, 128, 3, dtype, stride=2, padding=1, bias=False
+        ),
+        (5, 64, 21, 21),
+        None,
+    ),
+)
+
+
+def _stage_steps_past(shape, c_out, kernel, stride, padding):
+    """The (input shape, C_out, kernel, stride, padding) one step past each
+    stage limit a benchmarked corner sits on."""
+    from executorch.backends.cuda.triton.kernels.conv.core import implicit_gemm
+
+    multiplier, fewest, most = next(
+        g[3:]
+        for g in implicit_gemm.STAGE_GEOMETRIES
+        if g[:3] == (kernel, stride, padding)
+    )
+    batch, channels, *extent = shape
+
+    def fits(batch, extent):
+        outputs = implicit_gemm._outputs(batch, extent, kernel, stride, padding)
+        return (
+            batch * math.prod(extent) <= implicit_gemm.MAX_STAGE_INPUT_PIXELS
+            and outputs * c_out <= implicit_gemm.MAX_STAGE_OUTPUT_ELEMENTS
+        )
+
+    for edge, step in ((fewest, -1), (most, 1)):
+        if channels == edge:
+            channels_past = channels + step
+            yield (batch, channels_past, *extent), multiplier * channels_past
+    yield shape, c_out + 1
+    if batch == implicit_gemm.MAX_STAGE_BATCH or not fits(batch + 1, extent):
+        yield (batch + 1, channels, *extent), c_out
+    for i, e in enumerate(extent):
+        grown = [*extent[:i], e + 1, *extent[i + 1 :]]
+        if e == implicit_gemm.MAX_STAGE_EXTENT or not fits(batch, grown):
+            yield (batch, channels, *grown), c_out
 
 
 def _steps_past(families, shape, c_out, kernel, stride, padding):
@@ -1389,3 +1448,120 @@ class ImplicitGemmRoutingTest(_PassTest):
         ):
             with self.subTest(reason=reason):
                 self.assertKept(model, lambda: torch.randn(1, 8, 9), reason=reason)
+
+    def test_stage_rows(self):
+        for row, model, shape, fp32_reason in _STAGE_ROWS:
+            for dtype, tf32 in self.precisions():
+                reason = fp32_reason
+                if dtype != torch.float32 or tf32:
+                    reason = "stage convolutions are not benchmarked"
+                with self.subTest(row=row, dtype=dtype, tf32=tf32), self.tf32(tf32):
+                    inputs = lambda shape=shape, dtype=dtype: torch.randn(  # noqa: E731
+                        shape, dtype=dtype
+                    )
+                    if reason is None:
+                        self.assertRouted(
+                            model(dtype), inputs, template="implicit_gemm"
+                        )
+                    else:
+                        self.assertKept(model(dtype), inputs, reason=reason)
+
+    def test_stage_calls_are_routed(self):
+        # Every call the benchmark's stage_boundary suite measures.
+        from executorch.backends.cuda.triton.kernels.conv.core import implicit_gemm
+
+        for (
+            shape,
+            c_out,
+            kernel,
+            stride,
+            padding,
+        ) in implicit_gemm.stage_boundary_calls():
+            with self.subTest(shape=shape, c_out=c_out, stride=stride):
+                self.assertIsNone(
+                    self.worth_routing(
+                        shape,
+                        c_out,
+                        kernel,
+                        stride,
+                        padding,
+                        padding,
+                        dtype=torch.float32,
+                        tf32=False,
+                    )
+                )
+
+    def test_one_step_past_the_stage_calls_is_kept(self):
+        """Each stage corner moved one step past a limit it sits on: one input
+        channel fewer or more, an output channel count that is not the stage's,
+        one more image or pixel; another kernel, padding or precision."""
+        from executorch.backends.cuda.triton.kernels.conv.core import implicit_gemm
+
+        for call in implicit_gemm.stage_boundary_calls():
+            shape, c_out, kernel, stride, padding = call
+            outside = [
+                (*step, kernel, stride, padding, padding, torch.float32, False)
+                for step in _stage_steps_past(*call)
+            ]
+            outside += [
+                (shape, c_out, (5, 5), stride, (2, 2), (2, 2), torch.float32, False),
+                (shape, c_out, kernel, stride, (0, 0), (0, 0), torch.float32, False),
+                (shape, c_out, kernel, stride, padding, (2, 2), torch.float32, False),
+                (shape, c_out, kernel, stride, padding, padding, torch.float32, True),
+                (shape, c_out, kernel, stride, padding, padding, torch.bfloat16, False),
+            ]
+            for shape_, c_out_, kernel_, stride_, before, after, dtype, tf32 in outside:
+                with self.subTest(
+                    call=call,
+                    outside=(
+                        shape_,
+                        c_out_,
+                        kernel_,
+                        stride_,
+                        before,
+                        after,
+                        dtype,
+                        tf32,
+                    ),
+                ):
+                    self.assertIsNotNone(
+                        self.worth_routing(
+                            shape_,
+                            c_out_,
+                            kernel_,
+                            stride_,
+                            before,
+                            after,
+                            dtype=dtype,
+                            tf32=tf32,
+                        )
+                    )
+
+    def test_stage_calls_in_other_layouts_are_kept(self):
+        # The stage range is measured with contiguous inputs and weights only.
+        from executorch.backends.cuda.triton.kernels.conv.core import implicit_gemm
+
+        def channels_last_input(call):
+            x = call.input.contiguous(memory_format=torch.channels_last)
+            return dataclasses.replace(call, input=x)
+
+        def channels_last_weight(call):
+            w = call.weight.contiguous(memory_format=torch.channels_last)
+            return dataclasses.replace(call, weight=w)
+
+        for call in implicit_gemm.stage_boundary_calls():
+            shape, c_out, kernel, stride, padding = call
+            for layout in (channels_last_input, channels_last_weight):
+                with self.subTest(call=call, layout=layout.__name__):
+                    reason = self.worth_routing(
+                        shape,
+                        c_out,
+                        kernel,
+                        stride,
+                        padding,
+                        padding,
+                        dtype=torch.float32,
+                        tf32=False,
+                        layout=layout,
+                    )
+                    self.assertIn("not a benchmarked layout", reason)
