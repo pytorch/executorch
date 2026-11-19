@@ -14,6 +14,7 @@ import os
 import shutil
 import sys
 import threading
+import time
 import typing
 import warnings
 import weakref
@@ -72,6 +73,8 @@ from torch._inductor.decomposition import conv1d_to_conv2d
 from torch._prims_common import suggest_memory_format
 from torch.fx.experimental.symbolic_shapes import statically_known_true
 from torch.nn.attention import SDPBackend
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # AOTI compile-time CPU clones for mutated buffers
@@ -1154,10 +1157,14 @@ class CudaBackend(AotiBackend, BackendDetails):
                     f"Method {method_name!r} has {len(programs)} partitions but "
                     f"{len(method_specs)} compile-spec lists"
                 )
+            start = time.monotonic()
             results[method_name] = [
                 cls._preprocess_with_weight_collector(program, specs, collector)
                 for program, specs in zip(programs, method_specs)
             ]
+            logger.info(
+                "CUDA compiled %s in %.1f s", method_name, time.monotonic() - start
+            )
         collector.finish()
         return results
 
