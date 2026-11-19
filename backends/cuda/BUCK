@@ -213,6 +213,7 @@ fbcode_target(
         ":cpu_count",
         ":triton_routing",
         "//caffe2:torch",
+        "//executorch/exir/dialects:lib",
     ],
 )
 
