@@ -1148,7 +1148,12 @@ def get_permute_inputs():
 
     # Pixel shuffle decomposed into view -> permute -> view, which leaves a
     # packed dim of size 2.
-    highdim_test_suite = VkTestSuite([((1, 3, 2, 2, 5, 6), (0, 1, 4, 2, 5, 3))])
+    highdim_test_suite = VkTestSuite(
+        [
+            ((1, 3, 2, 2, 5, 6), (0, 1, 4, 2, 5, 3)),
+            ((2, 3, 2, 2, 5, 6), (0, 1, 4, 2, 5, 3)),
+        ]
+    )
     highdim_test_suite.layouts = test_suite.layouts
     highdim_test_suite.storage_types = ["utils::kBuffer"]
     highdim_test_suite.dtypes = ["at::kFloat", "at::kInt"]
