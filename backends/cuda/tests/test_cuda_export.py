@@ -290,6 +290,42 @@ class TestCudaBackendCompileOptions(unittest.TestCase):
                 self.assertTrue(inductor_utils.is_big_gpu(0))
             self.assertIs(inductor_utils.is_big_gpu, is_big_gpu)
 
+    def test_conv_choices_the_cpp_wrapper_cannot_call_are_dropped(self):
+        from executorch.backends.cuda.cuda_backend import (
+            _offer_only_cpp_callable_conv_choices,
+        )
+        from torch._inductor.kernel import conv
+        from torch._inductor.select_algorithm import ExternKernelCaller
+        from torch._inductor.virtualized import V
+
+        def extern(cpp_kernel_name, use_fallback_kernel=False):
+            caller = mock.create_autospec(ExternKernelCaller, instance=True)
+            caller.choice = mock.Mock(
+                cpp_kernel_name=cpp_kernel_name,
+                use_fallback_kernel=use_fallback_kernel,
+            )
+            return caller
+
+        python_only = extern(None)
+        aten = extern("at::convolution")
+        fallback = extern(None, use_fallback_kernel=True)
+        template = mock.Mock()
+        choices = [python_only, aten, fallback, template]
+        for cpp_wrapper, expected in (
+            (True, [aten, fallback, template]),
+            (False, choices),
+        ):
+            with self.subTest(cpp_wrapper=cpp_wrapper), mock.patch.object(
+                conv, "autotune_select_algorithm"
+            ) as select:
+                graph = mock.Mock(cpp_wrapper=cpp_wrapper)
+                with V.set_graph_handler(
+                    graph
+                ), _offer_only_cpp_callable_conv_choices():
+                    conv.autotune_select_algorithm("convolution", choices, [], None)
+                select.assert_called_once_with("convolution", expected, [], None)
+                self.assertIs(conv.autotune_select_algorithm, select)
+
     def test_cuda_include_ptx_compile_spec(self):
         with mock.patch.object(
             CudaBackend, "_setup_cuda_environment_for_fatbin", return_value=True
@@ -678,6 +714,29 @@ class TestCudaExport(unittest.TestCase):
         # Test export
         edge_program_manager = self._export_to_cuda_with_lower(module, inputs)
         self.assertIsNotNone(edge_program_manager, "Conv2d operation export failed")
+
+    def test_1x1_conv_lowered_as_a_convolution(self):
+        """A 1x1 convolution that Inductor lowers as a convolution, as it does
+        with layout optimization off in a graph with few convolutions,
+        compiles: Inductor's Python-only ``conv1x1_via_mm``, which the C++
+        wrapper cannot call, is not among its choices."""
+        from torch._inductor.kernel import conv
+
+        offered = []
+        original = conv.autotune_select_algorithm
+
+        def record(name, choices, *args, **kwargs):
+            offered.extend(c.name for c in choices)
+            return original(name, choices, *args, **kwargs)
+
+        module = torch.nn.Conv2d(512, 32, kernel_size=1).eval()
+        inputs = (torch.randn(5, 512, 3, 3),)
+        with mock.patch.object(
+            conv, "autotune_select_algorithm", record
+        ), torch._inductor.config.patch(layout_optimization=False):
+            self._export_to_cuda_with_lower(module, inputs)
+        self.assertTrue(offered)
+        self.assertNotIn("conv1x1_via_mm", offered)
 
     def test_linear(self):
         """Test CUDA export for linear layer."""
