@@ -27,6 +27,7 @@ on:
       - runtime/**
       - schema/**
       - install_requirements.py
+      - torch_pin.py
       - requirements-examples.txt
       - setup.py
       - CMakeLists.txt
@@ -150,6 +151,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'runtime/') ||
       contains(needs.changed-files.outputs.changed-files, 'schema/') ||
       contains(needs.changed-files.outputs.changed-files, 'install_requirements.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'torch_pin.py') ||
       contains(needs.changed-files.outputs.changed-files, 'requirements-examples.txt') ||
       contains(needs.changed-files.outputs.changed-files, 'setup.py') ||
       contains(needs.changed-files.outputs.changed-files, 'CMakeLists.txt') ||

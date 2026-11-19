@@ -25,6 +25,7 @@ on:
       - version.txt
       # Read for the torch the component's VERSION and README name.
       - install_requirements.py
+      - torch_pin.py
       - install_utils.py
       # Exported by the consumer test.
       - examples/models/mlperf_tiny/**
