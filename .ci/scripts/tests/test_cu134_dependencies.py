@@ -33,9 +33,6 @@ class TestCu134Dependencies(unittest.TestCase):
         self.modules = patch.dict(sys.modules, {"install_utils": self.utils})
         self.modules.start()
         self.addCleanup(self.modules.stop)
-        detected = patch.object(self.utils, "_detected_cuda_version", return_value=None)
-        detected.start()
-        self.addCleanup(detected.stop)
         self.installer = load_module("install_requirements")
 
     def install_commands(
@@ -138,7 +135,6 @@ class TestCu134Dependencies(unittest.TestCase):
         with (
             patch.object(self.utils.subprocess, "run", return_value=nvcc),
             patch.object(self.utils.platform, "system", return_value="Linux"),
-            patch.object(self.utils, "_detected_cuda_version", return_value=(13, 0)),
             redirect_stderr(stderr),
         ):
             url = self.utils.determine_torch_url(self.installer.TORCH_URL_BASE)

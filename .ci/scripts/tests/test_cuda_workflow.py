@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import os
+import re
 import subprocess
 import sys
 import unittest
@@ -48,6 +49,7 @@ class CudaWorkflowTest(unittest.TestCase):
 
     def test_every_cuda_job_uses_a_supported_version(self):
         supported = _supported_cuda_versions()
+        checked = 0
         for workflow in ("cuda.yml", "cuda-windows.yml"):
             jobs = yaml.safe_load(
                 (ROOT / ".github" / "workflows" / workflow).read_text()
@@ -57,8 +59,24 @@ class CudaWorkflowTest(unittest.TestCase):
                 version = with_.get("gpu-arch-version")
                 if with_.get("gpu-arch-type") != "cuda" or "${{" in str(version):
                     continue
+                checked += 1
                 with self.subTest(workflow=workflow, job=name):
                     self.assertIn(version, supported)
+        self.assertGreater(checked, 0)
+
+    def test_windows_export_image_matches_the_export_job(self):
+        build = (ROOT / ".ci" / "docker" / "build.sh").read_text()
+        match = re.search(
+            r"executorch-ubuntu-22\.04-cuda-windows\)(.*?);;", build, re.S
+        )
+        self.assertIsNotNone(match)
+        image_version = re.search(r"CUDA_VERSION=(\S+)", match.group(1)).group(1)
+        self.assertIn(image_version, _supported_cuda_versions())
+        jobs = yaml.safe_load(
+            (ROOT / ".github" / "workflows" / "cuda-windows.yml").read_text()
+        )["jobs"]
+        export = jobs["export-model-cuda-windows-artifact"]["with"]
+        self.assertEqual(export["gpu-arch-version"], image_version)
 
     def test_cuda_builds_take_the_node_driver_on_an_unpinned_v3(self):
         # This job used to pin linux_job_v2 to a test-infra SHA because that was
