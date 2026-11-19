@@ -15,6 +15,7 @@ import importlib.util
 import json
 import os
 import tempfile
+import threading
 import types
 import unittest
 from pathlib import Path
@@ -424,6 +425,8 @@ class ChoiceTest(_PassTest):
         self.assertNoMeasurementMeta(graph_module)
         log = self.log()
         self.assertEqual(log["config"]["margin"], 0.15)
+        # Configured, though one call leaves nothing to warm up.
+        self.assertEqual(log["config"]["workers"], 8)
         node = log["nodes"][0]
         self.assertEqual((node["choice"], node["outcome"]), ("toy", "faster"))
         statuses = {c["name"]: c for c in node["candidates"]}
@@ -699,11 +702,24 @@ class ChoiceTest(_PassTest):
             ("measured_routing_margin", "inf"),
             ("measured_routing_margin", "fast"),
             ("measured_routing", "MAYBE"),
+            ("measured_routing_workers", "-1"),
+            ("measured_routing_workers", "two"),
         ):
             with self.subTest(key=key, value=value), self.assertRaisesRegex(
                 ValueError, key
             ):
                 CudaBackend.get_custom_passes(self.specs(**{key: value}))
+
+    def test_warm_up_statistics_are_logged_not_cached(self):
+        warm = {"workers": 2, "batch_wall_s": 3.0, "rc": 0, "wall_s": 2.5}
+        self.results = lambda spec: {**_entry(), "warm": warm}
+        self.run_passes(measured_routing_workers="3")
+        log = self.log()
+        self.assertEqual(log["config"]["workers"], 3)
+        self.assertEqual(log["nodes"][0]["warm"], warm)
+        self.assertEqual(log["warm_wall_s"], 3.0)
+        (entry,) = (self.directory / "cache").iterdir()
+        self.assertNotIn("warm", json.loads(entry.read_text()))
 
     def test_export_through_both_lowering_apis(self):
         for api, theirs, chosen in (
@@ -715,6 +731,169 @@ class ChoiceTest(_PassTest):
                 self.results = lambda spec, theirs=theirs: _entry(theirs=theirs)
                 self.export(api, _Add())
                 self.assertEqual(self.log()["choices"], {chosen: 1})
+
+
+def _no_compile_pool():
+    """The worker without Inductor's compile pool, whose process a test's
+    patched ``subprocess.Popen`` would replace."""
+    from torch._inductor.async_compile import AsyncCompile
+
+    return mock.patch.object(AsyncCompile, "wait_process_pool_ready")
+
+
+class WarmUpTest(unittest.TestCase):
+    """The worker's parallel warm-up, with its processes given."""
+
+    def job(self, sizes, workers=2):
+        def spec(size):
+            return {"args": [{"tensor": ["float32", [size], [1]]}, 1.0]}
+
+        return {
+            "precision": [["cuda", "conv", "tf32"]],
+            "workers": workers,
+            "signatures": {
+                name: {"spec": spec(size), "device": "cuda:0"}
+                for name, size in sizes.items()
+            },
+        }
+
+    def warm(self, job):
+        from executorch.backends.cuda.triton import measured_routing
+
+        calls = []
+
+        def popen(command, env, **kwargs):
+            calls.append((json.loads(Path(command[-1]).read_text()), env))
+            return mock.Mock(**{"wait.return_value": 0})
+
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        with mock.patch.object(measured_routing.subprocess, "Popen", side_effect=popen):
+            stats = measured_routing._WarmUp(job, Path(directory.name)).result()
+        return stats, calls
+
+    def test_largest_calls_are_compiled_first_one_per_process(self):
+        from torch._inductor.async_compile import get_compile_threads
+
+        stats, calls = self.warm(self.job({"a": 10, "b": 30, "c": 20}, workers=1))
+        self.assertEqual(
+            [list(job["signatures"]) for job, _ in calls], [["b"], ["c"], ["a"]]
+        )
+        for job, env in calls:
+            self.assertTrue(job["warm"])
+            self.assertEqual(job["precision"], [["cuda", "conv", "tf32"]])
+            self.assertEqual(
+                env["TORCHINDUCTOR_COMPILE_THREADS"],
+                str(get_compile_threads()),
+            )
+        self.assertEqual(stats["workers"], 1)
+        self.assertEqual({c["rc"] for c in stats["calls"].values()}, {0})
+
+    def test_nothing_to_overlap_compiles_nothing(self):
+        for job in (self.job({"a": 10}), self.job({"a": 10, "b": 20}, workers=0)):
+            with self.subTest(job=list(job["signatures"])):
+                stats, calls = self.warm(job)
+                self.assertEqual((stats, calls), ({}, []))
+
+    def test_a_worker_that_cannot_measure_stops_its_warm_up(self):
+        """The warm-up starts with the worker, before it knows whether it can
+        measure; if it cannot, the running processes are killed and no more
+        start."""
+        from executorch.backends.cuda.cuda_backend import CudaBackend
+        from executorch.backends.cuda.triton import measured_routing
+
+        started, killed = threading.Event(), threading.Event()
+
+        def popen(command, env, **kwargs):
+            started.set()
+            return mock.Mock(
+                **{"wait.side_effect": lambda timeout: killed.wait(30) and -9},
+                kill=killed.set,
+            )
+
+        job = {
+            **self.job({"a": 10, "b": 20, "c": 30}, workers=1),
+            "backend": f"{CudaBackend.__module__}:{CudaBackend.__qualname__}",
+            "compile_specs": [],
+            "margin": 0.15,
+            "device": "cuda:0",
+        }
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / "job.json"
+        path.write_text(json.dumps(job))
+        with _no_compile_pool(), mock.patch.object(
+            measured_routing,
+            "_cpp_wrapper_unavailable",
+            side_effect=lambda device: started.wait(30) and "no C shims",
+        ), mock.patch.object(
+            measured_routing.subprocess, "Popen", side_effect=popen
+        ) as spawned:
+            measured_routing._worker_main(str(path))
+        self.assertTrue(killed.is_set())
+        self.assertEqual(spawned.call_count, 1)
+        self.assertFalse((path.parent / "warm.json").exists())
+
+    def test_warm_up_processes_leave_no_autotune_timings(self):
+        from executorch.backends.cuda.triton import measured_routing
+        from torch._inductor.codecache import PersistentCache
+
+        update = PersistentCache.update_local_cache
+        with measured_routing._without_autotune_cache_writes():
+            self.assertFalse(torch._inductor.config.autotune_local_cache)
+            self.assertIsNone(PersistentCache.update_local_cache(None, {"a": 1}))
+            self.assertIsNot(PersistentCache.update_local_cache, update)
+        self.assertIs(PersistentCache.update_local_cache, update)
+
+    def publish(self, workers, **popen):
+        """The results the worker publishes for two calls, with the warm-up's
+        processes given."""
+        from executorch.backends.cuda.cuda_backend import CudaBackend
+        from executorch.backends.cuda.triton import measured_routing
+
+        job = {
+            **self.job({"a": 10, "b": 20}, workers),
+            "backend": f"{CudaBackend.__module__}:{CudaBackend.__qualname__}",
+            "compile_specs": [],
+            "margin": 0.15,
+            "device": "cuda:0",
+        }
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / "job.json"
+        path.write_text(json.dumps(job))
+        with _no_compile_pool(), mock.patch.object(
+            measured_routing, "_cpp_wrapper_unavailable", return_value=None
+        ), mock.patch.object(
+            measured_routing, "measure", side_effect=lambda b, o, spec, d, m: _entry()
+        ), mock.patch.object(
+            measured_routing.subprocess, "Popen", **popen
+        ) as spawned:
+            measured_routing._worker_main(str(path))
+        published = {
+            key: json.loads((path.parent / f"{key}.json").read_text()) for key in "ab"
+        }
+        warm = json.loads((path.parent / "warm.json").read_text())
+        return published, warm, spawned.call_count
+
+    @unittest.skipUnless(torch.cuda.is_available(), "CUDA required")
+    def test_the_warm_up_does_not_change_what_is_measured(self):
+        """The worker publishes the same results with the warm-up as without:
+        the measurement does not read anything the warm-up produces."""
+        without, _, _ = self.publish(0)
+        process = mock.Mock(**{"wait.return_value": 0})
+        published, warm, spawned = self.publish(2, return_value=process)
+        self.assertEqual(spawned, 2)
+        self.assertEqual(published, without)
+
+    @unittest.skipUnless(torch.cuda.is_available(), "CUDA required")
+    def test_a_warm_up_that_cannot_start_only_costs_time(self):
+        without, _, _ = self.publish(0)
+        published, warm, _ = self.publish(2, side_effect=OSError("too many open files"))
+        self.assertEqual(published, without)
+        self.assertEqual({c["rc"] for c in warm["calls"].values()}, {None})
+        for call in warm["calls"].values():
+            self.assertIn("too many open files", call["error"])
 
 
 @unittest.skipUnless(torch.cuda.is_available(), "CUDA required")
@@ -801,6 +980,9 @@ class ProbeTest(_PassTest):
             "conv"
         ]
         self.assertTrue(conv["picks"])
+        # Compiled first in parallel processes (the default warm-up).
+        warm = [n["warm"] for n in nodes.values()]
+        self.assertEqual({w["rc"] for w in warm}, {0}, warm)
         for path in (self.directory / "cache").iterdir():
             path.unlink()
         self.run_passes(_Sort())

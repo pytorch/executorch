@@ -777,6 +777,7 @@ CUDA_GRAPH_AUTOTUNE_TIMING_COMPILE_SPEC = "cuda_graph_autotune_timing"
 MEASURED_ROUTING_COMPILE_SPEC = "measured_routing"
 MEASURED_ROUTING_MARGIN_COMPILE_SPEC = "measured_routing_margin"
 MEASURED_ROUTING_CACHE_DIR_COMPILE_SPEC = "measured_routing_cache_dir"
+MEASURED_ROUTING_WORKERS_COMPILE_SPEC = "measured_routing_workers"
 
 
 def _measured_routing_config(
@@ -801,6 +802,13 @@ def _measured_routing_config(
             config = dataclasses.replace(config, margin=margin)
         elif spec.key == MEASURED_ROUTING_CACHE_DIR_COMPILE_SPEC:
             config = dataclasses.replace(config, cache_dir=spec.value.decode("utf-8"))
+        elif spec.key == MEASURED_ROUTING_WORKERS_COMPILE_SPEC:
+            value = spec.value.decode("utf-8")
+            if not value.isdigit():
+                raise ValueError(
+                    f"Invalid {spec.key}: {value!r}. Expected a non-negative integer."
+                )
+            config = dataclasses.replace(config, workers=int(value))
     return config if enabled else None
 
 
