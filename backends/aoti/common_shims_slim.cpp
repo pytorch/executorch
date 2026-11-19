@@ -184,6 +184,15 @@ int32_t aoti_torch_dtype_bool() {
   return 11; // ScalarType::Bool
 }
 
+size_t aoti_torch_dtype_element_size(int32_t dtype) {
+  const auto scalar_type = static_cast<slim::c10::ScalarType>(dtype);
+  if (!slim::c10::isValidScalarType(scalar_type)) {
+    ET_LOG(Error, "Unsupported dtype %d for element size", dtype);
+    return 0;
+  }
+  return slim::c10::elementSize(scalar_type);
+}
+
 // ============================================================
 // Device Type Constants - Implementations
 // ============================================================

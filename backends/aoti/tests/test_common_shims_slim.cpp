@@ -707,6 +707,20 @@ TEST_F(CommonShimsSlimTest, DTypeConstants) {
   EXPECT_EQ(aoti_torch_dtype_bool(), 11); // ScalarType::Bool
 }
 
+TEST_F(CommonShimsSlimTest, DTypeElementSize) {
+  EXPECT_EQ(aoti_torch_dtype_element_size(aoti_torch_dtype_float32()), 4);
+  EXPECT_EQ(aoti_torch_dtype_element_size(aoti_torch_dtype_float64()), 8);
+  EXPECT_EQ(aoti_torch_dtype_element_size(aoti_torch_dtype_bfloat16()), 2);
+  EXPECT_EQ(aoti_torch_dtype_element_size(aoti_torch_dtype_float16()), 2);
+  EXPECT_EQ(aoti_torch_dtype_element_size(aoti_torch_dtype_int64()), 8);
+  EXPECT_EQ(aoti_torch_dtype_element_size(aoti_torch_dtype_int32()), 4);
+  EXPECT_EQ(aoti_torch_dtype_element_size(aoti_torch_dtype_int16()), 2);
+  EXPECT_EQ(aoti_torch_dtype_element_size(aoti_torch_dtype_int8()), 1);
+  EXPECT_EQ(aoti_torch_dtype_element_size(aoti_torch_dtype_uint8()), 1);
+  EXPECT_EQ(aoti_torch_dtype_element_size(aoti_torch_dtype_bool()), 1);
+  EXPECT_EQ(aoti_torch_dtype_element_size(9), 0); // ComplexFloat
+}
+
 // ============================================================================
 // Device Type Constants Tests
 // ============================================================================
