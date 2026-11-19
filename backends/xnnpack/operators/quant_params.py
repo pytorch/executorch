@@ -85,6 +85,13 @@ class QuantParams:
             and self.qmax == 7
             and self.dtype == torch.int8
         )
+        self.is_qc2w = (
+            self.per_channel
+            and not self.is_dynamic
+            and self.qmin == -2
+            and self.qmax == 1
+            and self.dtype == torch.int8
+        )
 
         # Groupwise quantization for weight
         self.per_channel_group = False
@@ -159,7 +166,8 @@ class QuantParams:
             f"is_input={self.is_input}, "
             f"is_output={self.is_output}, "
             f"group_size={self.group_size}, "
-            f"is_qc4w={self.is_qc4w}"
+            f"is_qc4w={self.is_qc4w}, "
+            f"is_qc2w={self.is_qc2w}"
             f")"
         )
 
@@ -183,6 +191,7 @@ class QuantParams:
             # Assuming folded quant weights
             # TODO Add support for unfolded weights
             assert not self.is_qc4w, "Not expecting QC4W per channel tensor"
+            assert not self.is_qc2w, "Not expecting QC2W per channel tensor"
 
             return exir_ops.edge.quantized_decomposed.quantize_per_channel.default(
                 tensor, self.scale, self.zp, self.axis, self.qmin, self.qmax, self.dtype

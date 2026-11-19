@@ -482,6 +482,7 @@ class XNNDatatype(IntEnum):
     xnn_datatype_int32 = 12
     xnn_datatype_pfp32 = 13
     xnn_datatype_bf16 = 14
+    xnn_datatype_qcint2 = 15
 
 
 @dataclass
