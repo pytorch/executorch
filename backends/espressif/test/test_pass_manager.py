@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import copy
+
 import pytest
 import torch
 from executorch.backends.espressif import (
@@ -38,6 +40,16 @@ class MultiplyAndFloatUsers(torch.nn.Module):
 class MultiplyReshapeAndSin(torch.nn.Module):
     def forward(self, x, y):
         return torch.sin((x * y).reshape(-1))
+
+
+class MultiplyWithConstants(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("scale", torch.linspace(1, 2, 6))
+        self.offset = torch.linspace(0, 1, 6)
+
+    def forward(self, input, y):
+        return input * y, torch.sin(input * self.scale), torch.cos(input + self.offset)
 
 
 def _output_scale(program):
@@ -264,18 +276,31 @@ def test_operator_library_reports_all_methods():
     assert all(not plan.delegates for plan in serialized.execution_plan)
 
 
-def test_lowering_preserves_fused_quant_source_program():
+@pytest.mark.parametrize("model", [MultiplyAndFloatUsers(), MultiplyWithConstants()])
+def test_lowering_is_isolated_and_idempotent(model):
     inputs = (torch.linspace(-1, 1, 6), torch.linspace(-2, 2, 6))
-    tester = EspTester(MultiplyAndFloatUsers(), inputs).export_fused_quant().to_edge()
+    tester = EspTester(model, inputs).export_fused_quant().to_edge()
     reference = tester.get_artifact().exported_program()
-    graph_before = str(reference.graph)
-    constants_before = reference.constants.copy()
+    reference_before = copy.deepcopy(reference)
     expected = reference.module()(*inputs)
-    tester.run_passes().to_executorch().serialize()
-    assert str(reference.graph) == graph_before
-    assert reference.constants.keys() == constants_before.keys()
-    assert all(
-        reference.constants[key] is value for key, value in constants_before.items()
-    )
-    reference.validate()
+    tester.run_passes()
+    lowered = tester.get_artifact().exported_program()
+    assert str(lowered.graph) != str(reference_before.graph)
+    lowered_before = copy.deepcopy(lowered)
+    repeated = EspPassManager()(lowered).exported_program
+    for program, snapshot in (
+        (reference, reference_before),
+        (lowered, lowered_before),
+        (repeated, lowered_before),
+    ):
+        assert str(program.graph) == str(snapshot.graph)
+        assert program.graph_signature == snapshot.graph_signature
+        torch.testing.assert_close(
+            program.state_dict, snapshot.state_dict, atol=0, rtol=0
+        )
+        torch.testing.assert_close(
+            program.constants, snapshot.constants, atol=0, rtol=0
+        )
+        program.validate()
     torch.testing.assert_close(reference.module()(*inputs), expected, atol=0, rtol=0)
+    tester.to_executorch().serialize()

@@ -359,14 +359,6 @@ def test_dynamic_shapes_stay_portable(model):
     assert not LowerToEsp()(edge).modified
 
 
-def test_lowering_is_idempotent(binary_program):
-    first = EspPassManager()(binary_program)
-    assert first.modified
-    graph = str(first.exported_program.graph)
-    second = EspPassManager()(first.exported_program)
-    assert str(second.exported_program.graph) == graph
-
-
 @pytest.mark.parametrize("scale", [0.03, 0.25, 0.5, 0.7, 1.0, 1.3, 2.0, 32768.0])
 def test_requantization_matches_existing_integer_reference(scale):
     values = torch.arange(-128, 128, dtype=torch.int64)
