@@ -571,7 +571,12 @@ A batch is one recorded command buffer containing repeated executions of the
 case. For a raw shader, each repetition is one shader dispatch; for an operator,
 each repetition is the full execute chain, which may dispatch several shaders.
 The repetition count is reported as `dispatches_per_batch` or
-`operator_invocations_per_batch`, respectively.
+`operator_invocations_per_batch`, respectively. A full pipeline barrier precedes
+every repetition, so repetitions never overlap on the GPU and per-repetition
+latency is the serialized cost of one execution. Barriers derived from tensor
+accesses alone did not prevent overlap: on Adreno 750, repetitions of some
+pointwise convolutions overlapped despite write-after-write barriers on their
+output, and batch latency read 1.8-2.7x below the serialized cost.
 
 Calibration always warms and probes query-free batches, increasing repetitions
 until the measured wall time reaches roughly `target_ms` or `max_dispatches`.
@@ -757,7 +762,11 @@ TS(previous work finish) ─ barrier ─ TS(barrier finish) ─ dispatch ─ TS(
   for cache maintenance is driver-dependent.
 - `gpu_timestamp_gap_us`: from the preceding dispatch's shader execution finish
   to this dispatch's previous work finish; omitted for a batch's first dispatch.
-  Near zero unless other GPU work runs in between.
+  Near zero unless other GPU work runs in between. For an operator's first
+  dispatch, it contains the full barrier between repetitions, which also makes
+  the previous repetition's writes visible; that dispatch's
+  `gpu_timestamp_barrier_us` therefore understates the barrier cost it would
+  pay after a different producer.
 
 While shaders are profiled, every dispatch's barrier is widened to a full
 pipeline barrier, so profiled dispatches never overlap. The report adds
