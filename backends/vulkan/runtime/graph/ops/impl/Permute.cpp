@@ -125,7 +125,11 @@ void add_permute_node(
     const ValueRef out) {
   check_args(graph, in, permute_dims, out);
 
-  std::string kernel_name = "permute";
+  // Buffer outputs whose packed dim has stride 1 are written one vec4 texel
+  // per thread.
+  const bool use_vec4 = is_packed_dim_vec4_contiguous(graph, out);
+
+  std::string kernel_name = use_vec4 ? "permute_vec4" : "permute";
   kernel_name.reserve(kShaderNameReserve);
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
@@ -174,7 +178,7 @@ void add_permute_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      default_pick_gwg,
+      use_vec4 ? default_pick_vec4_gwg : default_pick_gwg,
       pick_balanced_lwg,
       {{out, vkapi::kWrite}, {in, vkapi::kRead}},
       param_ubos,
