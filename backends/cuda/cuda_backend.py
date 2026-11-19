@@ -7,6 +7,7 @@
 
 import contextlib
 import copy
+import dataclasses
 import functools
 import logging
 import math
@@ -57,6 +58,11 @@ from executorch.backends.cuda.passes.replace_masked_copy_with_where import (
 )
 from executorch.backends.cuda.target_smem import target_smem_context
 from executorch.backends.cuda.triton.kernels import triton_mutation_cache
+from executorch.backends.cuda.triton.measured_routing import (
+    ApplyChoicesPass,
+    MeasureChoicesPass,
+    MeasuredRoutingConfig,
+)
 from executorch.backends.cuda.triton.replacement_pass import (
     ReplaceEdgeOpWithTritonOpPass,
 )
@@ -765,6 +771,35 @@ def _on_off_compile_spec_value(spec: CompileSpec) -> bool:
 
 
 CUDA_GRAPH_AUTOTUNE_TIMING_COMPILE_SPEC = "cuda_graph_autotune_timing"
+MEASURED_ROUTING_COMPILE_SPEC = "measured_routing"
+MEASURED_ROUTING_MARGIN_COMPILE_SPEC = "measured_routing_margin"
+MEASURED_ROUTING_CACHE_DIR_COMPILE_SPEC = "measured_routing_cache_dir"
+
+
+def _measured_routing_config(
+    compile_specs: List[CompileSpec],
+) -> Optional[MeasuredRoutingConfig]:
+    """The measured-routing settings (ON by default), or None when it is OFF:
+    calls several implementations can run then take their static choice."""
+    enabled, config = True, MeasuredRoutingConfig()
+    for spec in compile_specs:
+        if spec.key == MEASURED_ROUTING_COMPILE_SPEC:
+            enabled = _on_off_compile_spec_value(spec)
+        elif spec.key == MEASURED_ROUTING_MARGIN_COMPILE_SPEC:
+            value = spec.value.decode("utf-8")
+            try:
+                margin = float(value)
+            except ValueError:
+                margin = math.nan
+            if not 0 <= margin <= 1:
+                raise ValueError(
+                    f"Invalid {spec.key}: {value!r}. Expected a number from 0 to 1."
+                )
+            config = dataclasses.replace(config, margin=margin)
+        elif spec.key == MEASURED_ROUTING_CACHE_DIR_COMPILE_SPEC:
+            config = dataclasses.replace(config, cache_dir=spec.value.decode("utf-8"))
+    return config if enabled else None
+
 
 # The CUDA tensors `move_program_to_device` placed on the GPU for the compile on
 # this thread: they can be parked on the CPU when an autotune capture runs out
@@ -1408,7 +1443,9 @@ class CudaBackend(AotiBackend, BackendDetails):
     @classmethod
     def get_custom_passes(cls, compile_specs: List[CompileSpec]) -> List[typing.Any]:
         """
-        Return CUDA-specific passes, ending with ReplaceEdgeOpWithTritonOpPass.
+        Return CUDA-specific passes, ending with ReplaceEdgeOpWithTritonOpPass
+        and, with measured routing on, the passes that measure the
+        implementations of the calls several can run and apply the choice.
 
         The replacement pass uses Triton kernels for the calls they support and
         leaves other calls to the regular lowering. The triton_kernel_mode
@@ -1455,7 +1492,17 @@ class CudaBackend(AotiBackend, BackendDetails):
                 passes.append(
                     LowerOffGraphKVPass(parse_offgraph_kv_manifest(spec.value))
                 )
-        passes.append(ReplaceEdgeOpWithTritonOpPass())
+        config = _measured_routing_config(compile_specs)
+        passes.append(
+            ReplaceEdgeOpWithTritonOpPass(measured_routing=config is not None)
+        )
+        if config is not None:
+            try:
+                method_name = cls.method_name_from_compile_specs(compile_specs)
+            except RuntimeError:
+                method_name = "method"
+            passes.append(MeasureChoicesPass(cls, compile_specs, config))
+            passes.append(ApplyChoicesPass(method_name, config))
         return passes
 
     @classmethod

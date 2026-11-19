@@ -137,6 +137,12 @@ def time_with_cuda_graph_us(fn: Callable[[], Any]) -> float:
     ``fn`` must launch its work on the current stream, which must not be the
     legacy default stream.
     """
+    return min(cuda_graph_call_times_us(fn))
+
+
+def cuda_graph_call_times_us(fn: Callable[[], Any]) -> list[float]:
+    """The device time of each of several ``fn()`` calls captured into one
+    CUDA graph, each with a cold L2, in microseconds."""
     stream = torch.cuda.current_stream()
     if stream.cuda_stream == 0:
         raise RuntimeError("cannot capture on the legacy default CUDA stream")
@@ -168,7 +174,7 @@ def time_with_cuda_graph_us(fn: Callable[[], Any]) -> float:
                 call_end.record()
         graph.replay()
         events[-1][1].synchronize()
-        return min(s.elapsed_time(e) for s, e in events) * 1000.0
+        return [s.elapsed_time(e) * 1000.0 for s, e in events]
     finally:
         # A failed capture leaves nothing to release; that must not mask its error.
         with contextlib.suppress(RuntimeError):
