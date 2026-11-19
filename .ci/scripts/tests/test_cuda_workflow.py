@@ -33,10 +33,22 @@ def _matrix_cuda_versions(job):
     assert expression, job["with"]["gpu-arch-version"]
     key = expression.group(1)
     matrix = job["strategy"]["matrix"]
-    if key in matrix:
-        assert isinstance(matrix[key], list), matrix[key]
-        return list(matrix[key])
-    return [row[key] for row in matrix["include"]]
+    versions = list(matrix.get(key, []))
+    versions += [row[key] for row in matrix.get("include", []) if key in row]
+    excluded = {row[key] for row in matrix.get("exclude", []) if key in row}
+    return [version for version in versions if version not in excluded]
+
+
+def _rendered_names(job):
+    """The check names GitHub gives a job's include rows, with each row's values filled in."""
+    names = []
+    for row in job["strategy"]["matrix"]["include"]:
+        name = job["name"]
+        for key, value in row.items():
+            name = name.replace(f"${{{{ matrix.{key} }}}}", str(value))
+        assert "${{" not in name, name
+        names.append(name)
+    return names
 
 
 WINDOWS_TRAIN_JOBS = (
@@ -104,6 +116,13 @@ class CudaWorkflowTest(unittest.TestCase):
                     job["name"].startswith(f"{name}-${{{{ matrix.cuda-version }}}}"),
                     job["name"],
                 )
+                # An explicit name stops GitHub appending the matrix values, so the name
+                # itself has to tell every row apart, within the 100 characters.
+                if "include" in job["strategy"]["matrix"]:
+                    rendered = _rendered_names(job)
+                    self.assertEqual(len(set(rendered)), len(rendered), rendered)
+                    for check in rendered:
+                        self.assertLessEqual(len(check), 100, check)
                 self.assertEqual(
                     sorted(set(_matrix_cuda_versions(job))),
                     sorted(_supported_cuda_versions()),
@@ -113,9 +132,9 @@ class CudaWorkflowTest(unittest.TestCase):
                 script = jobs[name]["with"]["script"]
                 self.assertIn("CUDA\\v${{ matrix.cuda-version }}'", script)
                 self.assertNotRegex(script, r"CUDA\\v\d")
-                # The 13.x Windows toolkits keep their DLLs in bin\x64, ahead of bin, and
-                # the toolkit has to lead PATH before setup, since setup.py builds the
-                # CUDA extension with the first nvcc on PATH.
+                # The 13.x Windows toolkits keep their DLLs in bin\x64, so bin\x64 goes
+                # ahead of bin on PATH. The toolkit has to lead PATH before setup, since
+                # setup.py builds the CUDA extension with the first nvcc on PATH.
                 path = script.index(
                     r"PATH = \"\$env:CUDA_HOME\bin\x64;\$env:CUDA_HOME\bin;"
                 )
@@ -134,7 +153,7 @@ class CudaWorkflowTest(unittest.TestCase):
                     )
                 )
 
-    def test_one_train_failing_its_export_does_not_skip_the_others(self):
+    def test_one_failed_export_row_does_not_skip_the_others(self):
         jobs = yaml.safe_load(
             (ROOT / ".github" / "workflows" / "cuda-windows.yml").read_text()
         )["jobs"]

@@ -112,9 +112,10 @@ jobs:
             model_name: "dinov2-small-imagenet1k-1-layer"
             quant: "non-quantized"
             cuda-version: "13.2"
-          # Each train installs its own toolkit and its own torch, so the remaining trains
-          # get the smallest model plus the tile-packed int4 model, the only quant here that
-          # lowers to _weight_int4pack_mm and so runs the int4mm shim that train's nvcc built.
+          # Each train installs its own toolkit and, for the export, its own torch, so each
+          # needs rows of its own. The other trains get only the smallest model and the
+          # tile-packed int4 model, the only quant here that lowers to _weight_int4pack_mm
+          # and so runs the int4mm shim that train's nvcc built.
           - model_repo: "facebook"
             model_name: "dinov2-small-imagenet1k-1-layer"
             quant: "non-quantized"
@@ -166,7 +167,6 @@ jobs:
           export CUDA_HOME="${TOOLKITS}/cuda-${{ matrix.cuda-version }}"
           export PATH="${CUDA_HOME}/bin:${PATH}"
           export CUDACXX="${CUDA_HOME}/bin/nvcc"
-          export LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${LD_LIBRARY_PATH:-}"
           python .ci/scripts/wheel/install_cuda_redist.py --train "${{ matrix.cuda-version }}" \
             --platform windows-x86_64 --dest "${TOOLKITS}/cuda-windows-${{ matrix.cuda-version }}" --components cuda_cudart
           export WINDOWS_CUDA_HOME="${TOOLKITS}/cuda-windows-${{ matrix.cuda-version }}"
