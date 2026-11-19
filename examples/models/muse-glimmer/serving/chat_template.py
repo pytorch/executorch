@@ -5,6 +5,7 @@
 
 """Muse's role-complete template and canonical OpenAI tool-name translation."""
 
+from collections import Counter
 from copy import deepcopy
 from functools import cached_property
 from pathlib import Path
@@ -29,6 +30,47 @@ def resolve_tool_result_names(messages):
         ):
             message = message.model_copy(update={"name": names[message.tool_call_id]})
         result.append(message)
+    return _order_repeated_tool_results(result)
+
+
+def _order_repeated_tool_results(messages):
+    """Put the results of repeated calls to one function in call order.
+
+    The template labels a result only with its function name, so the model can
+    tell results of calls to the same function apart only by their order. Each
+    such group is reordered within the positions it already occupies. Results
+    already in call order, results of other functions, and results that do not
+    match the preceding assistant message's calls keep their positions.
+    """
+    result = list(messages)
+    calls = {}
+    start = 0
+    while start < len(result):
+        if result[start].role != "tool":
+            calls = {
+                call.id: (index, call.function.name)
+                for index, call in enumerate(result[start].tool_calls or [])
+            }
+            start += 1
+            continue
+        end = start
+        while end < len(result) and result[end].role == "tool":
+            end += 1
+        ids = Counter(message.tool_call_id for message in result[start:end])
+        groups = {}
+        for position in range(start, end):
+            message = result[position]
+            call = calls.get(message.tool_call_id)
+            if call and call[1] == message.name and ids[message.tool_call_id] == 1:
+                groups.setdefault(message.name, []).append(position)
+        for positions in groups.values():
+            ordered = sorted(
+                (result[position] for position in positions),
+                key=lambda message: calls[message.tool_call_id][0],
+            )
+            for position, message in zip(positions, ordered):
+                result[position] = message
+        start = end
     return result
 
 

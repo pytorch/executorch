@@ -586,6 +586,207 @@ def test_tool_result_names_survive_token_replay(stream):
     asyncio.run(scenario())
 
 
+def _bundled_template():
+    from pathlib import Path
+
+    from executorch.examples.models.muse_glimmer.serving import chat_template
+    from jinja2 import Environment
+
+    jinja = Environment().from_string(
+        Path(chat_template.__file__).with_suffix(".jinja").read_text()
+    )
+
+    class Tokenizer:
+        all_special_tokens = []
+        eos_token = None
+
+        def apply_chat_template(self, messages, **kwargs):
+            return jinja.render(messages=messages, bos_token="", **kwargs)
+
+    template = chat_template.MuseGlimmerChatTemplate(
+        allow_fallback=True, assistant_header="<|start|>assistant"
+    )
+    template._hf = Tokenizer()
+    return template
+
+
+def _tool_history(calls, results, between=()):
+    from executorch.examples.llm_server.python.protocol import (
+        ChatMessage,
+        FunctionCall,
+        ToolCall,
+    )
+
+    return [
+        ChatMessage(role="user", content="Run the jobs"),
+        ChatMessage(
+            role="assistant",
+            tool_calls=[
+                ToolCall(id=call_id, function=FunctionCall(name=name, arguments="{}"))
+                for call_id, name in calls
+            ],
+        ),
+        *between,
+        *(
+            ChatMessage(
+                role="tool", **dict(zip(("tool_call_id", "content", "name"), result))
+            )
+            for result in results
+        ),
+    ]
+
+
+def test_repeated_tool_results_render_in_call_order():
+    from executorch.examples.models.muse_glimmer.serving.chat_template import (
+        resolve_tool_result_names,
+    )
+
+    template = _bundled_template()
+    calls = [("call_alpha", "delegate"), ("call_beta", "delegate")]
+
+    def render(results):
+        return template.render(resolve_tool_result_names(_tool_history(calls, results)))
+
+    completion_order = render([("call_beta", "B"), ("call_alpha", "A")])
+    assert completion_order == render([("call_alpha", "A"), ("call_beta", "B")])
+    assert completion_order != render([("call_alpha", "B"), ("call_beta", "A")])
+
+
+@pytest.mark.parametrize(
+    "calls,results,between,expected",
+    [
+        (
+            [("a", "delegate"), ("b", "delegate")],
+            [("a", "A"), ("b", "B")],
+            (),
+            ["A", "B"],
+        ),
+        (
+            [("a", "delegate"), ("b", "lookup")],
+            [("b", "B"), ("a", "A")],
+            (),
+            ["B", "A"],
+        ),
+        (
+            [("a", "delegate"), ("b", "lookup"), ("c", "delegate")],
+            [("c", "C"), ("b", "B"), ("a", "A")],
+            (),
+            ["A", "B", "C"],
+        ),
+        (
+            [("a", "delegate"), ("b", "delegate")],
+            [("b", "B"), ("compacted", "X"), ("a", "A")],
+            (),
+            ["A", "X", "B"],
+        ),
+        (
+            [("a", "delegate"), ("b", "delegate")],
+            [("b", "B1"), ("b", "B2"), ("a", "A")],
+            (),
+            ["B1", "B2", "A"],
+        ),
+        (
+            [("a", "delegate"), ("b", "delegate")],
+            [("b", "B", "other"), ("a", "A")],
+            (),
+            ["B", "A"],
+        ),
+        (
+            [("a", "delegate"), ("b", "delegate")],
+            [("b", "B"), ("a", "A")],
+            ("user",),
+            ["B", "A"],
+        ),
+    ],
+    ids=[
+        "in-call-order",
+        "different-functions",
+        "mixed-functions",
+        "unmatched-result-stays",
+        "repeated-result-id",
+        "explicit-other-name",
+        "after-user-message",
+    ],
+)
+def test_only_ambiguous_tool_results_are_reordered(calls, results, between, expected):
+    from executorch.examples.llm_server.python.protocol import ChatMessage
+    from executorch.examples.models.muse_glimmer.serving.chat_template import (
+        resolve_tool_result_names,
+    )
+
+    between = [ChatMessage(role=role, content="interjection") for role in between]
+    messages = resolve_tool_result_names(_tool_history(calls, results, between))
+    assert [m.content for m in messages if m.role == "tool"] == expected
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_repeated_tool_results_keep_token_replay(stream):
+    import asyncio
+
+    from executorch.examples.llm_server.python.protocol import (
+        ChatCompletionRequest,
+        ChatMessage,
+    )
+    from executorch.examples.models.muse_glimmer.tests.test_serve import _create_message
+
+    serving, runtime = _glimmer_serving(
+        [
+            {
+                "text": _atem("delegate.delegate", [("job", "alpha")])
+                + "\n"
+                + _atem("delegate.delegate", [("job", "beta")]),
+                "gen_ids": [777],
+            },
+            {"text": " to=user<|message|>Done"},
+        ],
+        template=_bundled_template(),
+    )
+    serving._tool_detector_cls = AtemToolCallDetector
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "delegate",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"job": {"type": "string"}},
+                },
+            },
+        }
+    ]
+
+    async def scenario():
+        user = ChatMessage(role="user", content="Run both jobs")
+        first = await _create_message(
+            serving,
+            ChatCompletionRequest(
+                messages=[user], tools=tools, session_id="s", stream=stream
+            ),
+        )
+        alpha, beta = (call["id"] for call in first["tool_calls"])
+        await _create_message(
+            serving,
+            ChatCompletionRequest(
+                messages=[
+                    user,
+                    ChatMessage(**first),
+                    ChatMessage(role="tool", tool_call_id=beta, content="B"),
+                    ChatMessage(role="tool", tool_call_id=alpha, content="A"),
+                ],
+                tools=tools,
+                session_id="s",
+                stream=stream,
+            ),
+        )
+        prompt = runtime.prompts[1]
+        assert any(segment.get("ids") == [777] for segment in prompt.segments or [])
+        text = "".join(segment.get("text", "") for segment in prompt.segments)
+        result = '<tool_output name="delegate.delegate">\n{}\n</tool_output>'
+        assert text.index(result.format("A")) < text.index(result.format("B"))
+
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize("stream", [False, True])
 @pytest.mark.parametrize("keyword", ["oneOf", "anyOf", "if", "dependentSchemas"])
 def test_schema_coercion_respects_whole_object_constraints(stream, keyword):
