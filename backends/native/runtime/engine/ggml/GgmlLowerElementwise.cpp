@@ -321,6 +321,22 @@ void GraphBuilder::lower_amax(const Node& node) {
   set_single_output(node, TensorRef{result, std::move(sizes)});
 }
 
+// ggml normalizes each row, so only the last dimension.
+void GraphBuilder::lower_softmax(const Node& node) {
+  const TensorRef input = tensor_arg(node, "self", 0);
+  require_f32(node, input.tensor);
+  const size_t rank = input.sizes.size();
+  if (rank == 0 ||
+      normalize_dim(int_arg(node, "dim", 1, -1), rank) !=
+          static_cast<int64_t>(rank) - 1) {
+    throw std::runtime_error("ggml: softmax supports the last dimension only");
+  }
+  ggml_context* ctx = instance_.context.get();
+  set_single_output(
+      node,
+      TensorRef{ggml_soft_max(ctx, contiguous(input.tensor)), input.sizes});
+}
+
 // Comparisons produce 0/1 floats: a <= b is 1 - step(a - b) and a < b is
 // step(b - a).
 void GraphBuilder::lower_compare(const Node& node, bool strict) {
