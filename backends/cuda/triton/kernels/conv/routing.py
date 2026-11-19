@@ -30,6 +30,7 @@ import torch
 from executorch.backends.cuda.triton.kernels.conv.conv import TEMPLATES
 from executorch.backends.cuda.triton.kernels.conv.core.common import (
     bind_conv,
+    CONV_OVERLOADS,
     ConvCall,
     ConvParams,
     dense_strides,
@@ -42,10 +43,19 @@ from executorch.backends.cuda.triton.routing import (
     ReplacementError,
     ReplacementPlan,
 )
+from executorch.exir.dialects._ops import ops as exir_ops
 from torch._subclasses.fake_tensor import FakeTensor
 from torch.fx import Node
 
 logger: logging.Logger = logging.getLogger(__name__)
+
+# The edge ops of the conv overloads ``bind_conv`` binds.
+CONV_TARGETS = tuple(
+    getattr(
+        getattr(exir_ops.edge.aten, name.removeprefix("aten::")), overload or "default"
+    )
+    for name, overload in CONV_OVERLOADS
+)
 
 
 def regular_lowering_gap(target: Any, call: ConvCall) -> Optional[str]:

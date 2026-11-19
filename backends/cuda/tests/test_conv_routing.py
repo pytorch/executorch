@@ -197,6 +197,22 @@ class ConvRoutingTest(_PassTest):
         patch.start()
         self.addCleanup(patch.stop)
 
+    def test_every_bound_overload_is_planned(self):
+        """The pass plans exactly the overloads ``bind_conv`` binds, in one
+        table."""
+        from executorch.backends.cuda.triton.kernels.conv import routing
+        from executorch.backends.cuda.triton.kernels.conv.core.common import (
+            CONV_OVERLOADS,
+        )
+        from executorch.backends.cuda.triton.replacement_pass import PLANNERS
+
+        self.assertEqual(
+            [(t._schema.name, t._schema.overload_name) for t in routing.CONV_TARGETS],
+            list(CONV_OVERLOADS),
+        )
+        for target in routing.CONV_TARGETS:
+            self.assertIs(PLANNERS[target], routing.plan)
+
     def test_canonical_arguments(self):
         self.assertRouted(
             _depthwise(),

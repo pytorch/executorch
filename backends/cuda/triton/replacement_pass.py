@@ -29,30 +29,17 @@ from torch.fx.passes.infra.pass_base import PassBase, PassResult
 logger = logging.getLogger(__name__)
 triton = torch.ops.triton
 
-CONV_TARGETS = (
-    exir_ops.edge.aten.conv1d.default,
-    exir_ops.edge.aten.conv2d.default,
-    exir_ops.edge.aten.conv3d.default,
-    exir_ops.edge.aten.conv1d.padding,
-    exir_ops.edge.aten.conv2d.padding,
-    exir_ops.edge.aten.conv3d.padding,
-    exir_ops.edge.aten.conv_transpose1d.default,
-    exir_ops.edge.aten.conv_transpose2d.input,
-    exir_ops.edge.aten.conv_transpose3d.input,
-    exir_ops.edge.aten.convolution.default,
-)
-
 # Global mapping from edge dialect operators to Triton kernel functions
 EDGE_TO_TRITON_KERNELS = {
     exir_ops.edge.aten.scaled_dot_product_attention.default: triton.sdpa,
     exir_ops.edge.aten.topk.default: triton.topk,
-    **{target: triton.convolution for target in CONV_TARGETS},
+    **{target: triton.convolution for target in conv_routing.CONV_TARGETS},
 }
 
 # Ops whose calls are classified before they are replaced (see routing.py):
 # edge op -> planner(node) returning a ``routing.ReplacementPlan``.
 PLANNERS: dict[object, Callable[[Node], routing.ReplacementPlan]] = {
-    target: conv_routing.plan for target in CONV_TARGETS
+    target: conv_routing.plan for target in conv_routing.CONV_TARGETS
 }
 
 
