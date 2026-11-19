@@ -318,6 +318,47 @@ class ConvRoutingTest(_PassTest):
         self.assertIn(torch.ops.triton.convolution.default, targets)
         self.assertIn("(permissive template, only implementation)", logs)
 
+    def test_measured_routing_leaves_the_calls_both_can_run(self):
+        """With measured routing on, a call both the regular lowering and a
+        template can run is left for the measurement with both candidates,
+        whatever worth_routing says (its verdict is the static choice); a call
+        only a template can run is replaced."""
+        from executorch.backends.cuda.triton.kernels.conv import routing
+        from executorch.backends.cuda.triton.measured_routing import META_KEY
+        from executorch.backends.cuda.triton.replacement_pass import (
+            ReplaceEdgeOpWithTritonOpPass,
+        )
+
+        unprofitable = dataclasses.replace(
+            _permissive_template(), worth_routing=lambda call: "not worth it"
+        )
+        cases = (
+            (_permissive_template(), _depthwise(), "conv"),
+            (unprofitable, _depthwise(), "inductor"),
+            (unprofitable, _depthwise(dilation=2, padding=2), None),
+        )
+        for template, model, static_choice in cases:
+            with self.subTest(static_choice=static_choice):
+                graph_module = _backend_graphs(model, lambda: torch.randn(1, 8, 9, 9))[
+                    _APIS[0]
+                ]
+                with mock.patch.object(routing, "TEMPLATES", (template,)):
+                    ReplaceEdgeOpWithTritonOpPass(measured_routing=True)(graph_module)
+                recorded = [n for n in graph_module.graph.nodes if META_KEY in n.meta]
+                replaced = torch.ops.triton.convolution.default in _targets(
+                    graph_module
+                )
+                if static_choice is None:
+                    self.assertEqual(recorded, [])
+                    self.assertTrue(replaced)
+                    continue
+                self.assertFalse(replaced)
+                (node,) = recorded
+                plan = node.meta[META_KEY]["plan"]
+                self.assertTrue(plan.measure)
+                self.assertEqual([c.name for c in plan.legal()], ["inductor", "conv"])
+                self.assertEqual(plan.static_choice, static_choice)
+
     def test_without_a_template_the_node_is_kept(self):
         from executorch.backends.cuda.triton.kernels.conv import routing
 

@@ -18,6 +18,9 @@ from executorch.backends.aoti.aoti_backend import AotiBackend
 from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 from executorch.backends.cuda.passes.remove_assert_async import RemoveAssertAsyncPass
+from executorch.backends.cuda.tests.routing_test_utils import (
+    static_routing_compile_specs,
+)
 from executorch.backends.cuda.triton.replacement_pass import (
     ReplaceEdgeOpWithTritonOpPass,
 )
@@ -455,7 +458,8 @@ class TestCudaExport(unittest.TestCase):
             module: The torch.nn.Module to export
             inputs: The example inputs for the module
             compile_specs: Optional list of compile specs. If not provided, defaults to
-                          only the method name compile spec for "forward"
+                          the method name compile spec for "forward", with the
+                          static routing
             strict: Whether to export in strict mode
         """
         # Export the model
@@ -463,7 +467,7 @@ class TestCudaExport(unittest.TestCase):
 
         # Create partitioner with compile specs
         if compile_specs is None:
-            compile_specs = [CudaBackend.generate_method_name_compile_spec("forward")]
+            compile_specs = static_routing_compile_specs()
 
         partitioner = CudaPartitioner(compile_specs)
 

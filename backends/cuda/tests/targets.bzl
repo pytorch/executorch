@@ -16,6 +16,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/...",
         ],
         deps = [
+            ":routing_test_utils",
             "//caffe2:torch",
             "//executorch/backends/cuda:cuda_backend",
             "//executorch/backends/cuda:cuda_partitioner",
@@ -112,6 +113,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/backends/cuda:cuda_backend",
             "//executorch/backends/cuda:cuda_partitioner",
             "//executorch/backends/cuda:triton_kernels",
+            "//executorch/backends/cuda:triton_measured_routing",
             "//executorch/backends/cuda:triton_replacement_pass",
             "//executorch/exir:lib",
             "//executorch/exir/backend:backend_details",
@@ -133,6 +135,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/...",
         ],
         deps = [
+            ":routing_test_utils",
             "//caffe2:torch",
             "//executorch/backends/cuda:autotune",
             "//executorch/backends/cuda:cuda_backend",
@@ -158,6 +161,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/...",
         ],
         deps = [
+            ":routing_test_utils",
             "//caffe2:torch",
             "//executorch/backends/cuda:autotune",
             "//executorch/backends/cuda:cuda_backend",
@@ -171,6 +175,20 @@ def define_common_targets(is_fbcode = False):
             platform = "gpu-remote-execution",
             subplatform = "A100",
         ),
+    )
+
+    runtime.python_library(
+        name = "routing_test_utils",
+        srcs = [
+            "routing_test_utils.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            "//executorch/backends/cuda:cuda_backend",
+            "//executorch/exir/backend:compile_spec_schema",
+        ],
     )
 
     runtime.python_library(
