@@ -17,12 +17,13 @@ from typing import Dict, Optional
 from executorch.exir._serialize._dataclass import _DataclassEncoder, _json_to_dataclass
 from executorch.exir._serialize._flatbuffer import _flatc_compile, _flatc_decompile
 from executorch.exir._warnings import experimental
-from executorch.exir.backend.backend_details import CompileSpec
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 
 @unique
 class SamsungChipset(IntEnum):
     UNDEFINED_CHIP_V = 0
+    E9945 = 9945
     E9955 = 9955
     E9965 = 9965
 

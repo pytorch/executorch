@@ -12,8 +12,6 @@
 
 #include <atomic>
 #include <cstdint>
-#include <memory>
-#include <mutex>
 
 namespace torch {
 namespace executor {
@@ -60,6 +58,9 @@ class EnnApi {
       NumberOfBuffersInfo* out_buffers_info,
       const int session_id,
       const bool do_commit);
+  EnnReturn (*EnnGenerateBufferSpaceDev)(
+      const EnnModelId model_id,
+      const int session_count);
   EnnReturn (*EnnExecuteModelWithSessionIdWait)(
       const EnnModelId model_id,
       const int session_id);
@@ -78,64 +79,64 @@ class EnnApi {
       *EnnGetFileDescriptorFromEnnBuffer)(EnnBufferPtr buffer, int32_t* fd);
 
  private:
-  static std::mutex instance_mutex_;
   std::atomic_bool initialize_ = false;
   // Pointer to the dlopen libs
   void* libenn_public_api_ = nullptr;
-  static std::atomic<int> ref_count_;
 
   EnnApi();
   Error loadApiLib();
   Error unloadApiLib();
 };
 
-typedef EnnReturn (*EnnInitialize_fn)(void);
-typedef EnnReturn (*EnnSetPreferencePerfMode_fn)(const uint32_t val);
-typedef EnnReturn (*EnnGetPreferencePerfMode_fn)(uint32_t* val_ptr);
-typedef EnnReturn (
-    *EnnOpenModel_fn)(const char* model_file, EnnModelId* model_id);
-typedef EnnReturn (*EnnOpenModelFromMemory_fn)(
+using EnnInitialize_fn = EnnReturn (*)(void);
+using EnnSetPreferencePerfMode_fn = EnnReturn (*)(const uint32_t val);
+using EnnGetPreferencePerfMode_fn = EnnReturn (*)(uint32_t* val_ptr);
+using EnnOpenModel_fn =
+    EnnReturn (*)(const char* model_file, EnnModelId* model_id);
+using EnnOpenModelFromMemory_fn = EnnReturn (*)(
     const char* va,
     const uint32_t size,
     EnnModelId* model_id);
-typedef EnnReturn (*EnnSetFastIpc_fn)(void);
-typedef EnnReturn (*EnnUnsetFastIpc_fn)(void);
-typedef EnnReturn (*EnnExecuteModelFastIpc_fn)(
+using EnnSetFastIpc_fn = EnnReturn (*)(void);
+using EnnUnsetFastIpc_fn = EnnReturn (*)(void);
+using EnnExecuteModelFastIpc_fn = EnnReturn (*)(
     const EnnModelId model_id,
     int client_sleep_usec);
-typedef EnnReturn (*EnnExecuteModel_fn)(const EnnModelId model_id);
-typedef EnnReturn (*EnnExecuteModelWithSessionIdAsync_fn)(
+using EnnExecuteModel_fn = EnnReturn (*)(const EnnModelId model_id);
+using EnnExecuteModelWithSessionIdAsync_fn = EnnReturn (*)(
     const EnnModelId model_id,
     const int session_id);
-typedef EnnReturn (*EnnCloseModel_fn)(const EnnModelId model_id);
-typedef EnnReturn (*EnnDeinitialize_fn)(void);
-typedef EnnReturn (*EnnAllocateAllBuffers_fn)(
+using EnnCloseModel_fn = EnnReturn (*)(const EnnModelId model_id);
+using EnnDeinitialize_fn = EnnReturn (*)(void);
+using EnnAllocateAllBuffers_fn = EnnReturn (*)(
     const EnnModelId model_id,
     EnnBufferPtr** out_buffers,
     NumberOfBuffersInfo* out_buffers_info);
-typedef EnnReturn (*EnnAllocateAllBuffersWithSessionId_fn)(
+using EnnAllocateAllBuffersWithSessionId_fn = EnnReturn (*)(
     const EnnModelId model_id,
     EnnBufferPtr** out_buffers,
     NumberOfBuffersInfo* out_buffers_info,
     const int session_id,
     const bool do_commit);
-typedef EnnReturn (*EnnExecuteModelWithSessionIdWait_fn)(
+using EnnGenerateBufferSpaceDev_fn =
+    EnnReturn (*)(const EnnModelId model_id, const int session_count);
+using EnnExecuteModelWithSessionIdWait_fn = EnnReturn (*)(
     const EnnModelId model_id,
     const int session_id);
-typedef EnnReturn (*EnnBufferCommit_fn)(const EnnModelId model_id);
-typedef EnnReturn (*EnnGetBuffersInfo_fn)(
+using EnnBufferCommit_fn = EnnReturn (*)(const EnnModelId model_id);
+using EnnGetBuffersInfo_fn = EnnReturn (*)(
     const EnnModelId model_id,
     NumberOfBuffersInfo* buffers_info);
-typedef EnnReturn (
-    *EnnReleaseBuffers_fn)(EnnBufferPtr* buffers, const int32_t numOfBuffers);
-typedef EnnReturn (*EnnCreateBuffer_fn)(
+using EnnReleaseBuffers_fn =
+    EnnReturn (*)(EnnBufferPtr* buffers, const int32_t numOfBuffers);
+using EnnCreateBuffer_fn = EnnReturn (*)(
     const uint32_t req_size,
     const uint32_t ion_flag,
     EnnBufferPtr* out);
-typedef EnnReturn (*EnnReleaseBuffer_fn)(EnnBufferPtr buf);
-typedef EnnReturn (
-    *EnnGetFileDescriptorFromEnnBuffer_fn)(EnnBufferPtr buffer, int32_t* fd);
-typedef EnnReturn (*EnnOpenModelFromFd_fn)(int _fd, EnnModelId* model_id);
+using EnnReleaseBuffer_fn = EnnReturn (*)(EnnBufferPtr buf);
+using EnnGetFileDescriptorFromEnnBuffer_fn =
+    EnnReturn (*)(EnnBufferPtr buffer, int32_t* fd);
+using EnnOpenModelFromFd_fn = EnnReturn (*)(int _fd, EnnModelId* model_id);
 
 } // namespace enn
 } // namespace executor
