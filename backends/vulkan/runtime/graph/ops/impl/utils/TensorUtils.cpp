@@ -44,6 +44,27 @@ bool check_same_packed_dim(
   return graph.packed_dim_of(in) == graph.packed_dim_of(out);
 }
 
+bool is_packed_dim_vec4_contiguous(ComputeGraph& graph, const ValueRef tensor) {
+  if (!graph.is_buffer_storage(tensor)) {
+    return false;
+  }
+  // Elements wider than 4 bytes do not form vec4 texels.
+  if (vkapi::element_size(graph.dtype_of(tensor)) > 4) {
+    return false;
+  }
+  const api::PackedDimInfo& packed_dim_info = graph.packed_dim_info_of(tensor);
+  if (packed_dim_info.packed_dim_block_size != 1 ||
+      packed_dim_info.outer_packed_dim_block_size != 1 ||
+      packed_dim_info.packed_dim_align % 4 != 0) {
+    return false;
+  }
+  const std::vector<int64_t> dim_order = graph.dim_order_of(tensor);
+  const int64_t ndim = utils::safe_downcast<int64_t>(dim_order.size());
+  const int64_t packed_dim = packed_dim_info.packed_dim;
+  // A packed dim beyond the tensor's rank is placed innermost.
+  return packed_dim >= ndim || dim_order.back() == ndim - 1 - packed_dim;
+}
+
 //
 // Work group size calculation functions
 //
