@@ -35,6 +35,14 @@ class FoldParameterSplits(ExportPass):
         source = node.args[0]
         if not isinstance(source, torch.fx.Node) or source.op != "get_attr":
             return False
+        graph = graph_module.graph
+        sources = [
+            n for n in graph.nodes if n.op == "get_attr" and n.target == source.target
+        ]
+        # Fold only a parameter that this split alone reads. Otherwise the
+        # parameter stays and, under QAT, trains apart from its folded copy.
+        if [user for n in sources for user in n.users] != [node]:
+            return False
         # Symbolic sizes are nodes, possibly nested in a list.
         leaves, _ = pytree.tree_flatten((node.args[1:], node.kwargs))
         if any(isinstance(leaf, torch.fx.Node) for leaf in leaves):
@@ -54,7 +62,6 @@ class FoldParameterSplits(ExportPass):
                 for user in node.users
                 if user.target == operator.getitem
             ]
-        graph = graph_module.graph
         for old, value in replaced:
             name = f"{source.target.replace('.', '_')}_{old.name}"
             # Under QAT the new parameter trains in place of its slice.
@@ -71,15 +78,12 @@ class FoldParameterSplits(ExportPass):
             old.replace_all_uses_with(get_attr)
             graph.erase_node(old)
 
-        if not isinstance(outputs, torch.Tensor) and not node.users:
+        if not isinstance(outputs, torch.Tensor):
             graph.erase_node(node)
-        if not source.users:
-            graph.erase_node(source)
-            if not any(
-                n.op == "get_attr" and n.target == source.target for n in graph.nodes
-            ):
-                owner, _, attr = source.target.rpartition(".")
-                delattr(graph_module.get_submodule(owner), attr)
+        for n in sources:
+            graph.erase_node(n)
+        owner, _, attr = source.target.rpartition(".")
+        delattr(graph_module.get_submodule(owner), attr)
         return True
 
     def call(self, graph_module: torch.fx.GraphModule):

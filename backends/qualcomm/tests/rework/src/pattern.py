@@ -3785,6 +3785,15 @@ class FoldParameterSplits:
             self.cache.add_(1.0)
             return y
 
+    class _TiedSplits(torch.nn.Module):
+        # The parameter is read whole and through two overlapping slices.
+        def __init__(self):
+            super().__init__()
+            self.weight = torch.nn.Parameter(torch.randn(8, 4))
+
+        def forward(self, x):
+            return x * self.weight + self.weight[0:6].sum() + self.weight[2:8].sum()
+
     class _SymbolicSplitSizes(torch.nn.Module):
         def __init__(self):
             super().__init__()
@@ -3838,7 +3847,9 @@ class FoldParameterSplits:
 
         with subtests.test(msg="unused_source_removed"):
             module = FoldParameterSplits._CrossAttention().eval()
-            gm = pass_pipeline.lower_annotation_gm(module, inputs, target_pass)
+            gm = pass_pipeline.lower_annotation_gm(
+                module, inputs, target_pass, backend_type=backend_type
+            )
             names = dict(gm.named_parameters())
             assert "attn.in_proj_weight" not in names
             assert "attn.in_proj_bias" not in names
@@ -3853,7 +3864,9 @@ class FoldParameterSplits:
                     backend=backend_type, per_channel_linear=True, is_qat=True
                 ),
             )
-            folded = [p for n, p in prepared.named_parameters() if "in_proj" in n]
+            names = dict(prepared.named_parameters())
+            assert "attn.in_proj_weight" not in names
+            folded = [p for n, p in names.items() if "in_proj" in n]
             assert folded, "expected folded in_proj parameters"
             prepared(*inputs).sum().backward()
             assert all(p.grad is not None for p in folded)
@@ -3865,6 +3878,13 @@ class FoldParameterSplits:
             assert not target_pass()(gm).modified
             gm(x)
             assert torch.equal(gm(x), x + 1.0)
+
+        with subtests.test(msg="tied_parameter_not_folded"):
+            module = FoldParameterSplits._TiedSplits()
+            x = torch.randn(8, 4)
+            gm = torch.export.export(module, (x,), strict=True).module()
+            assert not target_pass()(gm).modified
+            assert "weight" in dict(gm.named_parameters())
 
         with subtests.test(msg="symbolic_split_sizes"):
             module = FoldParameterSplits._SymbolicSplitSizes()
