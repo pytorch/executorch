@@ -109,6 +109,8 @@ If an export runs out of GPU memory while AOTInductor compiles its kernels, `Com
 - The earlier template search for matrix multiplies and convolutions still keeps the weights on the GPU.
 - PyTorch skips the move when the last kernel it generates runs on the CPU.
 
+If the model's weights are already on the GPU, lowering normally copies them first, so it needs about twice their size in GPU memory. `CompileSpec("share_weights", b"ON")` makes lowering use the weights where they are instead. The export does not change them. Low-memory mode shares them too, but it may move them to disk while it autotunes, so they come back at new addresses.
+
 For a complete working example, see the [CUDA export script](https://github.com/pytorch/executorch/blob/main/examples/cuda/scripts/export.py).
 
 

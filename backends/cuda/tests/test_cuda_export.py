@@ -34,6 +34,7 @@ from torch.nn.attention.varlen import varlen_attn
 _AUTOTUNE_OFFLOAD = "autotune_offload_constants_min_device_fraction"
 _TORCH_CAN_OFFLOAD = hasattr(torch._inductor.config.aot_inductor, _AUTOTUNE_OFFLOAD)
 _LOW_MEMORY_ON = CompileSpec(key="low_memory_mode", value=b"ON")
+_SHARE_WEIGHTS_ON = CompileSpec(key="share_weights", value=b"ON")
 
 
 class _ScaleShift(torch.nn.Module):
@@ -886,42 +887,11 @@ class TestCudaExport(unittest.TestCase):
             expected = module(x)
         torch.testing.assert_close(output.cpu(), expected, atol=1e-4, rtol=1e-4)
 
-    def _lower_gpu_weights(self, module, compile_specs):
-        x = torch.randn(1 << 24, device="cuda")
-        expected = [weight.detach().cpu() for weight in module.weights]
-        weight_bytes = sum(weight.nbytes for weight in module.weights)
-        before = torch.cuda.memory_allocated()
-        torch.cuda.reset_peak_memory_stats()
-        program = self._export_to_cuda_with_lower(
-            module,
-            (x,),
-            [CudaBackend.generate_method_name_compile_spec("forward"), *compile_specs],
-        ).to_executorch()
-        self.assertLess(torch.cuda.max_memory_allocated() - before, 2 * weight_bytes)
-        for weight, value in zip(module.weights, expected):
-            self.assertTrue(torch.equal(weight.cpu(), value))
-        (output,) = _execute(program, "forward", [x.cpu()])
-        with torch.no_grad():
-            reference = module(x)
-        torch.testing.assert_close(output.cpu(), reference.cpu(), atol=1e-4, rtol=1e-4)
-
     @unittest.skipIf(
         torch.version.hip is not None,
         "loads through the Python runtime, which the ROCm build does not include",
     )
-    def test_lowering_leaves_gpu_weights_in_place(self):
-        """Lowering leaves weights that already live on the GPU at their
-        addresses and unchanged, and the program matches eager."""
-        module = _ScaleShift().to("cuda").eval()
-        pointers = [weight.data_ptr() for weight in module.weights]
-        self._lower_gpu_weights(module, [])
-        self.assertEqual(pointers, [weight.data_ptr() for weight in module.weights])
-
-    @unittest.skipIf(
-        torch.version.hip is not None,
-        "loads through the Python runtime, which the ROCm build does not include",
-    )
-    def test_lowering_leaves_written_gpu_buffers_unchanged(self):
+    def test_sharing_leaves_written_gpu_buffers_unchanged(self):
         """With compile-time autotune, the compile shares a GPU buffer the
         graph writes with the caller and does not write it."""
 
@@ -937,7 +907,12 @@ class TestCudaExport(unittest.TestCase):
         module = Counter()
         x = torch.randn(4, device="cuda")
         program = self._export_to_cuda_with_lower(
-            module, (x,), [CudaBackend.generate_method_name_compile_spec("forward")]
+            module,
+            (x,),
+            [
+                CudaBackend.generate_method_name_compile_spec("forward"),
+                _SHARE_WEIGHTS_ON,
+            ],
         ).to_executorch()
         self.assertTrue(torch.equal(module.count.cpu(), torch.zeros(4)))
         (output,) = _execute(program, "forward", [x.cpu()])
@@ -955,15 +930,33 @@ class TestCudaExport(unittest.TestCase):
         """Low-memory mode lets Inductor move the weights to disk while it
         autotunes, so weights on the GPU may come back at new addresses, but
         with the same values."""
-        self._lower_gpu_weights(_ScaleShift().to("cuda").eval(), [_LOW_MEMORY_ON])
+        module = _ScaleShift().to("cuda").eval()
+        x = torch.randn(1 << 24, device="cuda")
+        expected = [weight.detach().cpu() for weight in module.weights]
+        weight_bytes = sum(weight.nbytes for weight in module.weights)
+        before = torch.cuda.memory_allocated()
+        torch.cuda.reset_peak_memory_stats()
+        program = self._export_to_cuda_with_lower(
+            module,
+            (x,),
+            [CudaBackend.generate_method_name_compile_spec("forward"), _LOW_MEMORY_ON],
+        ).to_executorch()
+        self.assertLess(torch.cuda.max_memory_allocated() - before, 2 * weight_bytes)
+        for weight, value in zip(module.weights, expected):
+            self.assertTrue(torch.equal(weight.cpu(), value))
+        (output,) = _execute(program, "forward", [x.cpu()])
+        with torch.no_grad():
+            reference = module(x)
+        torch.testing.assert_close(output.cpu(), reference.cpu(), atol=1e-4, rtol=1e-4)
 
     @unittest.skipIf(
         torch.version.hip is not None,
         "loads through the Python runtime, which the ROCm build does not include",
     )
     def test_methods_share_gpu_weights(self):
-        """Each method is moved and released on its own, and no release may
-        free the weights both methods still share with the module."""
+        """With share_weights, each method is moved and released on its own,
+        and no release may free the weights both methods still share with the
+        module."""
         module = _ScaleShift().to("cuda").eval()
         x = torch.randn(1 << 24, device="cuda")
         expected = [weight.detach().cpu() for weight in module.weights]
@@ -977,7 +970,10 @@ class TestCudaExport(unittest.TestCase):
             partitioner={
                 name: [
                     CudaPartitioner(
-                        [CudaBackend.generate_method_name_compile_spec(name)]
+                        [
+                            CudaBackend.generate_method_name_compile_spec(name),
+                            _SHARE_WEIGHTS_ON,
+                        ]
                     )
                 ]
                 for name in methods
@@ -995,6 +991,29 @@ class TestCudaExport(unittest.TestCase):
         for name in methods:
             (output,) = _execute(program, name, [x.cpu()])
             torch.testing.assert_close(output.cpu(), reference, atol=1e-4, rtol=1e-4)
+
+    def test_sharing_frees_weights_moved_from_the_host(self):
+        """Release frees the weights the move put on the GPU, also after
+        run_decompositions (which conv1d triggers) rebuilds the program."""
+        with patch.object(
+            CudaBackend,
+            "release_moved_tensors",
+            wraps=CudaBackend.release_moved_tensors,
+        ) as release:
+            self._export_to_cuda_with_lower(
+                torch.nn.Conv1d(4, 4, 3).eval(),
+                (torch.randn(1, 4, 8),),
+                [
+                    CudaBackend.generate_method_name_compile_spec("forward"),
+                    _SHARE_WEIGHTS_ON,
+                ],
+            )
+        ((moved, _),) = [call.args for call in release.call_args_list]
+        weights = list(moved.state_dict.values())
+        self.assertTrue(weights)
+        for weight in weights:
+            self.assertTrue(weight.is_cuda)
+            self.assertEqual(0, weight.untyped_storage().nbytes())
 
     def test_resnet_block(self):
         """Test CUDA export for a ResNet-style block."""
