@@ -1885,6 +1885,8 @@ def get_reduce_per_row_inputs():
         ((3, 7, 280), -1, False),
         ((3, 17, 77), -1, True),
         ((3, 17, 77), -1, False),
+        # More rows than the usual 65535 y-workgroup limit
+        ((70000, 8), -1, False),
     ]
     return inputs
 
