@@ -347,6 +347,55 @@ def _pass_float_scalars_to_triton_as_floats() -> typing.ContextManager[None]:
     return _FLOAT_KERNEL_ARGS.scope()
 
 
+def _install_cpp_callable_conv_choices(active):
+    from torch._inductor.kernel import conv
+    from torch._inductor.select_algorithm import ExternKernelCaller
+    from torch._inductor.virtualized import V
+
+    original = conv.autotune_select_algorithm
+
+    def autotune_select_algorithm(name, choices, *args, **kwargs):
+        if active() and V.graph.cpp_wrapper:
+            choices = [
+                c
+                for c in choices
+                if not (
+                    isinstance(c, ExternKernelCaller)
+                    and c.choice.cpp_kernel_name is None
+                    and not c.choice.use_fallback_kernel
+                )
+            ]
+        return original(name, choices, *args, **kwargs)
+
+    conv.autotune_select_algorithm = autotune_select_algorithm
+
+    def remove() -> None:
+        conv.autotune_select_algorithm = original
+
+    return remove
+
+
+_CPP_CALLABLE_CONV_CHOICES = _CompilePatch(_install_cpp_callable_conv_choices)
+
+
+def _offer_only_cpp_callable_conv_choices() -> typing.ContextManager[None]:
+    """Leave out the convolution autotune choices AOTInductor cannot call.
+
+    With layout optimization off, which Inductor decides for a graph with few
+    convolutions (fewer than one per 300 nodes), a 1x1 convolution is lowered
+    as a convolution and Inductor offers ``conv1x1_via_mm``, a Python function
+    with no C++ shim. The C++ wrapper cannot emit it, so the compile fails with
+    "Expected name is not None" whenever it is the fastest choice.
+
+    Only threads inside this context drop the choices.
+
+    Inductor offers Python-only extern conv choices such as ``conv1x1_via_mm``
+    under the C++ wrapper (https://github.com/pytorch/pytorch/issues/204342).
+    Remove this patch once the PyTorch version ExecuTorch pins includes the fix.
+    """
+    return _CPP_CALLABLE_CONV_CHOICES.scope()
+
+
 def _full_zeros_preserving_strides(x: torch.Tensor, device) -> torch.Tensor:
     """Allocate a zero-filled tensor matching ``x``'s size/stride/dtype on ``device``.
 
@@ -1513,6 +1562,7 @@ class CudaBackend(AotiBackend, BackendDetails):
                 # process without torch. See `_link_libraries_as_needed`.
                 stack.enter_context(_link_libraries_as_needed())
                 stack.enter_context(_pass_float_scalars_to_triton_as_floats())
+                stack.enter_context(_offer_only_cpp_callable_conv_choices())
                 # On ROCm, is_big_gpu gates on architecture, not SM count.
                 if torch.version.hip is None:
                     stack.enter_context(_allow_triton_templates_on_small_gpus())
