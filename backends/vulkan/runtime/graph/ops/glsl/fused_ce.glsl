@@ -17,6 +17,8 @@ ${define_active_storage_type(STORAGE)}
 
 layout(std430) buffer;
 
+#include "common.glslh"
+
 ${layout_declare_tensor(B, "w", "t_dlogits", DTYPE, "buffer")}
 ${layout_declare_tensor(B, "w", "t_loss_partial", DTYPE, "buffer")}
 ${layout_declare_tensor(B, "r", "t_logits", DTYPE, "buffer")}
@@ -44,7 +46,7 @@ void main() {
 
   const uint tid = gl_LocalInvocationID.x;
   const uint V = uint(vocab);
-  const uint base = row * V;
+  const uint base = row * align_up_4(V);
   const int lbl = t_labels[row];
 
   if (lbl < 0) {

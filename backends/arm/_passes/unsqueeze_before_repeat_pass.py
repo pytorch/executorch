@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -56,6 +56,7 @@ class UnsqueezeBeforeRepeatPass(ArmPass):
                     graph_module.graph,
                     exir_ops.edge.aten.view_copy.default,
                     (node.all_input_nodes[0], new_shape),
+                    from_node=node,
                 )
                 node.replace_input_with(node.all_input_nodes[0], view_node)
             modified_graph = True

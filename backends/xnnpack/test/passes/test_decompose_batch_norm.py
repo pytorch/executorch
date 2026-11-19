@@ -147,6 +147,26 @@ class TestDecomposeBatchNorm(unittest.TestCase):
         )
         self._validate_decomposition(tester.get_artifact(), torch.float32, 3, 2)
 
+    def test_fp32_two_non_affine_batch_norms(self):
+        """Test that each non-affine BatchNorm2d gets its own convolution weights."""
+        model = torch.nn.Sequential(
+            self.BatchNorm2d(3, affine=False),
+            torch.nn.ReLU(),
+            self.BatchNorm2d(3, affine=False),
+        ).eval()
+        (
+            Tester(
+                model,
+                (torch.randn(2, 3, 4, 4),),
+            )
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+            .check_count({self.conv_name: 2})
+            .check_not([self.bn_name])
+            .run_method_and_compare_outputs()
+        )
+
     def _validate_decomposition(
         self,
         edge_manager: EdgeProgramManager,

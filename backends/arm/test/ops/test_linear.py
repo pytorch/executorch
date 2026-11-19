@@ -8,6 +8,7 @@
 
 from typing import Tuple
 
+import pytest
 import torch
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
     DynamicW8A8QParamsSupport,
@@ -21,6 +22,7 @@ from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
+    OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
@@ -132,6 +134,11 @@ test_data_rank4_FP = {
     ),
 }
 
+test_data_rank3_FP = {
+    "model_linear_rank3_bias": lambda: (torch.randn(2, 3, 20), 11, True),
+    "model_linear_rank3_no_bias": lambda: (torch.randn(2, 3, 20), 11, False),
+}
+
 # Generate a new test set paired with per_channel_quant=True/False.
 test_data_rank1_INT = {
     f"{k},per_channel_quant={q}": (lambda v=v, q=q: (*v(), q))
@@ -143,6 +150,12 @@ test_data_rank1_INT = {
 test_data_rank2_INT = {
     f"{k},per_channel_quant={q}": (lambda v=v, q=q: (*v(), q))
     for (k, v) in test_data_rank2_FP.items()
+    for q in [True, False]
+}
+
+test_data_rank3_INT = {
+    f"{k},per_channel_quant={q}": (lambda v=v, q=q: (*v(), q))
+    for (k, v) in test_data_rank3_FP.items()
     for q in [True, False]
 }
 
@@ -172,7 +185,10 @@ class Linear(torch.nn.Module):
         return self.fc(x)
 
 
-@common.parametrize("test_data", test_data_rank1_FP | test_data_rank4_FP)
+@common.parametrize(
+    "test_data",
+    test_data_rank1_FP | test_data_rank2_FP | test_data_rank3_FP | test_data_rank4_FP,
+)
 def test_linear_tosa_FP(test_data: torch.Tensor):
     test_data, out_features, has_bias = test_data()
     in_features = test_data.shape[-1]
@@ -189,7 +205,31 @@ def test_linear_tosa_FP(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_rank1_INT | test_data_rank4_INT)
+@pytest.mark.parametrize(
+    "shape,out_features", [((0, 7), 11), ((2, 0, 7), 11), ((2, 0), 11), ((2, 7), 0)]
+)
+@pytest.mark.parametrize("bias", [False, True])
+def test_linear_empty_not_delegated_tosa_FP(shape, out_features, bias):
+    inputs = (torch.randn(shape),)
+    module = Linear(shape[-1], out_features, bias)
+    if bias:
+        with torch.no_grad():
+            module.fc.bias.fill_(1)
+    pipeline = OpNotSupportedPipeline[input_t1](
+        module, inputs, {"executorch_exir_dialects_edge__ops_aten_linear_default": 1}
+    )
+    pipeline.run()
+    partitioned = pipeline.tester.get_artifact().exported_program().module()
+    torch.testing.assert_close(partitioned(*inputs), module(*inputs))
+
+
+@common.parametrize(
+    "test_data",
+    test_data_rank1_INT
+    | test_data_rank2_INT
+    | test_data_rank3_INT
+    | test_data_rank4_INT,
+)
 def test_linear_tosa_INT(test_data: torch.Tensor):
     test_data, out_features, has_bias, per_channel_quantization = test_data()
     in_features = test_data.shape[-1]
@@ -208,7 +248,13 @@ def test_linear_tosa_INT(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_rank1_INT | test_data_rank4_INT)
+@common.parametrize(
+    "test_data",
+    test_data_rank1_INT
+    | test_data_rank2_INT
+    | test_data_rank3_INT
+    | test_data_rank4_INT,
+)
 def test_linear_tosa_INT_a8w4(test_data: torch.Tensor):
     test_data, out_features, has_bias, per_channel_quantization = test_data()
     in_features = test_data.shape[-1]

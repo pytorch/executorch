@@ -22,13 +22,10 @@ using executorch::aten::RuntimeContext;
 using executorch::runtime::can_cast;
 using executorch::runtime::canCast;
 using executorch::runtime::is_integral_type;
-using executorch::runtime::isIntegralType;
 using executorch::runtime::promoteTypes;
 using torch::executor::apply_binary_elementwise_fn;
 using torch::executor::Error;
 using torch::executor::resize_to_broadcast_target_size;
-using torch::executor::native::utils::extract_scalar;
-using torch::executor::native::utils::get_scalar_dtype;
 using torch::executor::native::utils::promote_type_with_scalar;
 
 namespace impl {
@@ -87,6 +84,23 @@ template <
 struct FmodInner<false, CTYPE_A, CTYPE_B, CTYPE_IN, CTYPE_OUT>
     : public ReportCanCastBug {};
 
+// Computes integers as integers so that int64 values above 2^53 are not
+// rounded through double.
+template <typename CTYPE>
+CTYPE fmod_value(CTYPE a, CTYPE b) {
+  if constexpr (std::is_integral_v<CTYPE>) {
+    // a % -1 overflows for the most negative value; the result is always 0.
+    if constexpr (std::is_signed_v<CTYPE>) {
+      if (b == -1) {
+        return 0;
+      }
+    }
+    return static_cast<CTYPE>(a % b);
+  } else {
+    return std::fmod(a, b);
+  }
+}
+
 } // namespace
 
 Tensor& fmod_Tensor_out(
@@ -102,67 +116,6 @@ Tensor& fmod_Tensor_out(
       out);
 
   static constexpr const char op_name[] = "fmod.Tensor_out";
-  constexpr int kNnlibMaxDim = 4; /*fallback if broadcast and dim > 4 */
-
-  int a_dim = a.dim(), b_dim = b.dim(), out_dim = out.dim();
-  bool optimized = true;
-  /*find broadcast*/
-  const bool a_is_broadcasted = !out.sizes().equals(a.sizes());
-  const bool b_is_broadcasted = !out.sizes().equals(b.sizes());
-  const bool broadcast = (a_is_broadcasted || b_is_broadcasted);
-  int max_dim = a.dim() > b.dim() ? a.dim() : b.dim();
-  max_dim = out.dim() > max_dim ? out.dim() : max_dim;
-
-  if ((a.scalar_type() == ScalarType::Float) ||
-      (b.scalar_type() == ScalarType::Float))
-    optimized = false;
-
-  if ((a_dim == 0) || (b_dim == 0))
-    optimized = false;
-
-  if ((broadcast == true) && (max_dim > kNnlibMaxDim))
-    optimized = false;
-
-  if (optimized) {
-    FLOAT32* __restrict__ p_out =
-        (FLOAT32* __restrict__)out.mutable_data_ptr<float>();
-    const FLOAT32* __restrict__ p_inp1 =
-        (const FLOAT32* __restrict__)a.const_data_ptr<float>();
-    const FLOAT32* __restrict__ p_inp2 =
-        (const FLOAT32* __restrict__)b.const_data_ptr<float>();
-
-    if (broadcast) {
-      WORD32 p_out_shape[kNnlibMaxDim];
-      WORD32 p_inp1_shape[kNnlibMaxDim];
-      WORD32 p_inp2_shape[kNnlibMaxDim];
-
-      for (int i = 0; i < kNnlibMaxDim; i++) {
-        p_inp1_shape[i] = 1;
-        p_inp2_shape[i] = 1;
-        p_out_shape[i] = 1;
-      }
-
-      int off_o = kNnlibMaxDim - out.dim();
-      int off_a = kNnlibMaxDim - a.dim();
-      int off_b = kNnlibMaxDim - b.dim();
-
-      for (int i = 0; i < out.dim(); i++)
-        p_out_shape[i + off_o] = out.size(i);
-      for (int i = 0; i < a.dim(); i++)
-        p_inp1_shape[i + off_a] = a.size(i);
-      for (int i = 0; i < b.dim(); i++)
-        p_inp2_shape[i + off_b] = b.size(i);
-
-      WORD32 val = xa_nn_elm_fmod_broadcast_4D_f32xf32_f32(
-          p_out, p_out_shape, p_inp1, p_inp1_shape, p_inp2, p_inp2_shape);
-    } else {
-      WORD32 num_elm = out.numel();
-
-      WORD32 val = xa_nn_elm_fmod_f32xf32_f32(p_out, p_inp1, p_inp2, num_elm);
-    }
-
-    return out;
-  }
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
@@ -176,10 +129,7 @@ Tensor& fmod_Tensor_out(
   // Compute Dtype
   ScalarType compute_type =
       torch::executor::native::utils::get_compute_type(common_type);
-  if (compute_type != ScalarType::Float) {
-    compute_type = ScalarType::Double;
-  }
-  ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+  ET_SWITCH_REAL_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
     torch::executor::native::utils::apply_bitensor_elementwise_fn<
         CTYPE_COMPUTE,
         op_name,
@@ -194,7 +144,7 @@ Tensor& fmod_Tensor_out(
               return value;
             }
           }
-          value = std::fmod(val_a, val_b);
+          value = fmod_value(val_a, val_b);
           return value;
         },
         ctx,
@@ -234,50 +184,45 @@ Tensor& fmod_Scalar_out(
   static constexpr const char op_name[] = "fmod.Scalar_out";
 
   ScalarType a_type = a.scalar_type();
-  ScalarType b_type = get_scalar_dtype(b);
   ScalarType common_type = promote_type_with_scalar(a_type, b);
   ScalarType out_type = out.scalar_type();
 
   ET_KERNEL_CHECK(ctx, canCast(common_type, out_type), InvalidArgument, out);
 
-  // Check for integer division by zero
-  if (isIntegralType(common_type, /*includeBool=*/true)) {
-    auto is_zero = false;
-    ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, op_name, CTYPE_B, [&]() {
-      CTYPE_B val_b = 0;
-      extract_scalar(b, &val_b);
-      is_zero = (val_b == 0);
-    });
-
-    ET_KERNEL_CHECK_MSG(
-        ctx,
-        !is_zero,
-        InvalidArgument,
-        out,
-        "Fmod operation encountered integer division by zero");
-  }
   // Compute Dtype
   ScalarType compute_type =
       torch::executor::native::utils::get_compute_type(common_type);
-  if (compute_type != ScalarType::Float) {
-    compute_type = ScalarType::Double;
-  }
 
-  ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+  bool div_by_zero_error = false;
+
+  ET_SWITCH_REAL_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+    // Like ATen, the scalar takes the compute dtype first, so a scalar such as
+    // 256 for an int8 tensor becomes 0.
     const CTYPE_COMPUTE val_b =
         torch::executor::native::utils::scalar_to<CTYPE_COMPUTE>(b);
+    if (is_integral_type<CTYPE_COMPUTE, /*includeBool=*/true>::value &&
+        val_b == 0 && a.numel() > 0) {
+      div_by_zero_error = true;
+      return;
+    }
     torch::executor::native::utils::apply_unitensor_elementwise_fn<
         CTYPE_COMPUTE,
         op_name,
         torch::executor::native::utils::SupportedTensorDtypes::REALHBF16>(
-        [val_b](const auto val_a) {
-          return executorch::math::fmod(val_a, (decltype(val_a))val_b);
-        },
+        [val_b](const CTYPE_COMPUTE val_a) { return fmod_value(val_a, val_b); },
         ctx,
         a,
         torch::executor::native::utils::SupportedTensorDtypes::REALHBBF16,
         out);
   });
+
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      !div_by_zero_error,
+      InvalidArgument,
+      out,
+      "Fmod operation encountered integer division by zero");
+
   return out;
 }
 

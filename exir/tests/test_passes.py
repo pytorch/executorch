@@ -33,13 +33,16 @@ from executorch.backends.xnnpack.utils.configs import (
 from executorch.exir import (
     EdgeCompileConfig,
     EdgeProgramManager,
+    ExecutorchBackendConfig,
     memory,
     to_edge,
     to_edge_transform_and_lower,
 )
+from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDemo
 from executorch.exir.dialects._ops import bind_pattern_to_op, ops, ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.emit import emit_program
+from executorch.exir.error import InternalError
 from executorch.exir.graph_module import get_control_flow_submodules
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.passes import (
@@ -87,6 +90,9 @@ from executorch.exir.tensor import TensorSpec
 from executorch.exir.tests.common import register_additional_test_aten_ops
 from executorch.exir.tests.control_flow_models import FTCondDeadCode, FTMapBasic
 from executorch.exir.tests.models import FeedForwardBlock, MLP, Mul
+from executorch.extension.pybindings.portable_lib import (  # @manual
+    _load_for_executorch_from_buffer,
+)
 from functorch.experimental import control_flow
 
 from torch import nn
@@ -166,6 +172,21 @@ def unbacked_out(
     out: torch.Tensor,
 ) -> torch.Tensor:
     return out.copy_(x[: x[0]])
+
+
+# Writes its input in place once to_executorch removes auto_functionalized.
+lib.define("scale_in_place(Tensor(a!) self) -> Tensor")
+lib.define("scale_in_place.out(Tensor(a!) self, *, Tensor(b!) out) -> Tensor(b!)")
+
+
+@impl(lib, "scale_in_place", "CompositeExplicitAutograd")
+def scale_in_place(a: torch.Tensor) -> torch.Tensor:
+    return a.mul_(2).clone()
+
+
+@impl(lib, "scale_in_place.out", "CompositeExplicitAutograd")
+def scale_in_place_out(a: torch.Tensor, out: torch.Tensor) -> torch.Tensor:
+    return out.copy_(a.mul_(2))
 
 
 def simple_promote_dtype(
@@ -301,6 +322,66 @@ class TestPasses(unittest.TestCase):
         for node in new_graph_module.graph.nodes:
             if node.op == "call_function":
                 self.assertNotEqual(node.target, torch.ops.aten.to.dtype)
+
+    def test_redundant_copy_removal(self) -> None:
+        class IndexUpdate(torch.nn.Module):
+            def forward(self, x: torch.Tensor, index: torch.Tensor) -> torch.Tensor:
+                x.index_copy_(0, index, torch.ones(1, x.shape[1]))
+                return x + 1
+
+        class CopyOfAnotherUpdate(torch.nn.Module):
+            def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                y.copy_(x.index_put((torch.tensor([1]),), torch.ones(x.shape[1])))
+                return y + 1
+
+        class PlainCopy(torch.nn.Module):
+            def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                x.copy_(y)
+                return x + 1
+
+        class CastingCopy(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                y = torch.empty(x.shape, dtype=torch.float64)
+                y.copy_(x)
+                return y + 1
+
+        def count(
+            module: torch.nn.Module, inputs: tuple, op: str, dynamic_shapes=None
+        ) -> int:
+            # Functionalization turns copy_ into copy, which RemoveNoopPass sees
+            # while to_edge_transform_and_lower decomposes.
+            gm = (
+                to_edge_transform_and_lower(
+                    export(module, inputs, dynamic_shapes=dynamic_shapes, strict=True)
+                )
+                .exported_program()
+                .graph_module
+            )
+            return sum(
+                n.op == "call_function" and n.name.startswith(op)
+                for n in gm.graph.nodes
+            )
+
+        x = torch.randn(3, 4)
+        index = torch.tensor([1])
+        self.assertEqual(count(IndexUpdate(), (x, index), "aten_copy_default"), 0)
+        rows = torch.export.Dim("rows", min=2)
+        self.assertEqual(
+            count(
+                IndexUpdate(),
+                (x, index),
+                "aten_copy_default",
+                dynamic_shapes={"x": {0: rows}, "index": None},
+            ),
+            0,
+        )
+        # Only the copy of an index update back into its own input is known to be
+        # a no-op: the copy into y and its write-back both stay.
+        self.assertEqual(
+            count(CopyOfAnotherUpdate(), (x, x.clone()), "aten_copy_default"), 2
+        )
+        self.assertEqual(count(PlainCopy(), (x, x.clone()), "aten_copy_default"), 2)
+        self.assertEqual(count(CastingCopy(), (x,), "aten_copy_default"), 1)
 
     def test_redundant_slice_copy_removal(self) -> None:
         class FooWithNoSlice(torch.nn.Module):
@@ -608,6 +689,19 @@ class TestPasses(unittest.TestCase):
 
         new_output = new_gm(test_input)
         self.assertTrue(torch.equal(original_output, new_output))
+
+    def test_scalar_to_tensor_pass_keeps_float64_scalars(self) -> None:
+        class ScalarOps(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return (x * 0.1 + 0.3) / 0.7
+
+        x = torch.tensor([1.0, 3.0, -7.0, 123456.789], dtype=torch.float64)
+        edge = to_edge(export(ScalarOps(), (x,), strict=True))
+        edge = edge.transform([ScalarToTensorPass(), RemoveMixedTypeOperators()])
+
+        self.assertTrue(
+            torch.equal(edge.exported_program().module()(x), ScalarOps()(x))
+        )
 
     def test_remove_mixed_types_symfloats(self) -> None:
         class Foo(torch.nn.Module):
@@ -1623,6 +1717,35 @@ class TestPasses(unittest.TestCase):
         # Validate that the program successfully passes validation to executorch:
         edge.exported_program()._validate()
         edge.to_executorch()
+
+    def test_constant_prop_for_output_clones_in_program_dialect(self) -> None:
+        class M(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+                return x * 2, torch.arange(4, dtype=torch.float32) + 1
+
+        exported = export(M(), (torch.ones(4),), strict=True)
+        for ep in (exported.run_decompositions({}), exported):
+            with self.subTest(dialect=ep.dialect):
+                ep = constant_prop_pass(ep)
+                [_, folded] = ep.graph.output_node().args[0]
+                self.assertEqual(folded.target, torch.ops.aten.clone.default)
+                ep._validate()
+                edge = to_edge(
+                    ep, compile_config=EdgeCompileConfig(_skip_dim_order=False)
+                )
+                [_, folded] = edge.exported_program().graph.output_node().args[0]
+                self.assertEqual(
+                    folded.target, exir_ops.edge.dim_order_ops._clone_dim_order.default
+                )
+
+        with self.subTest(dialect="EDGE"):
+            edge = to_edge(
+                export(M(), (torch.ones(4),), strict=True),
+                compile_config=EdgeCompileConfig(_skip_dim_order=True),
+            )
+            ep = constant_prop_pass(edge.exported_program())
+            [_, folded] = ep.graph.output_node().args[0]
+            self.assertEqual(folded.target, exir_ops.edge.aten.clone.default)
 
     def test_constant_prop_preserves_memory_alloc(self) -> None:
         class Add(torch.nn.Module):
@@ -2902,6 +3025,129 @@ class TestPasses(unittest.TestCase):
         module = new_ep.module()
         self.assertFalse(torch.equal(module(x), module(x)))
 
+    def test_constant_prop_pass_keeps_tensor_written_in_place(self) -> None:
+        """
+        torch.export keeps in-place ops. A tensor or buffer that one writes,
+        directly, through a view, as an out= argument, in a list or inside a
+        no_grad or autocast block, has to stay a runtime tensor, or the folded
+        value is wrong and decomposing can fail.
+        """
+
+        class WrittenInPlace(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                for name in "bcdef":
+                    self.register_buffer(name, torch.zeros(6))
+
+            def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+                t = torch.zeros(2, 6)
+                rows = t.unbind(0)
+                rows[0].add_(x)
+                out = torch.zeros(6)
+                torch.mul(x, 2, out=out)
+                listed = torch.zeros(6)
+                torch._foreach_add_([listed], [x])
+                self.b[1:3].copy_(x[:2])
+                no_grad = torch.zeros(6)
+                with torch.no_grad():
+                    no_grad[1:3] = x[:2]
+                    self.c[1:3].copy_(x[:2])
+                autocast = torch.zeros(6)
+                with torch.autocast("cpu", enabled=False):
+                    autocast[2:4] = x[:2]
+                nested = torch.zeros(6)
+                with torch.no_grad():
+                    with torch.autocast("cpu", enabled=False):
+                        nested[1:3] = x[:2]
+                torch.atleast_2d(self.d)[0].add_(x)
+                torch.meshgrid(self.e, x[:1], indexing="ij")[0][:, 0].add_(x)
+                torch.broadcast_tensors(self.f, x.view(1, 6))[0][0].add_(x)
+                written = rows[0] + rows[1] + out + listed + no_grad + autocast + nested
+                buffers = self.b + self.c + self.d + self.e + self.f
+                return written + buffers * 2, self.b
+
+        x = torch.randn(6)
+        ep = constant_prop_pass(export(WrittenInPlace(), (x,), strict=False))
+        self.assertEqual(len(ep.constants), 0)
+        torch.testing.assert_close(ep.module()(x), WrittenInPlace()(x))
+
+        # A saved and loaded program no longer shares storage between views.
+        class WrittenThroughSlice(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("b", torch.zeros(4))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                self.b[:2].copy_(x)
+                return self.b * 2
+
+        x = torch.randn(2)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "written.pt2")
+            torch.export.save(export(WrittenThroughSlice(), (x,), strict=False), path)
+            ep = constant_prop_pass(torch.export.load(path))
+        torch.testing.assert_close(ep.module()(x), WrittenThroughSlice()(x))
+
+    def test_constant_prop_pass_detaches_folded_parameters(self) -> None:
+        class M(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.w = torch.nn.Parameter(torch.randn(4, 4))
+
+            def forward(self, x):
+                # `to` with the same dtype returns the parameter itself.
+                return x + self.w.t() + self.w.to(torch.float32)
+
+        m = M()
+        x = torch.randn(4, 4)
+        new_ep = constant_prop_pass(export(m, (x,), strict=True))
+
+        targets = [node.target for node in new_ep.graph.nodes]
+        self.assertNotIn(torch.ops.aten.t.default, targets)
+        self.assertNotIn(torch.ops.aten.to.dtype, targets)
+        self.assertTrue(torch.allclose(new_ep.module()(x), m(x)))
+        copy.deepcopy(to_edge(new_ep).exported_program())
+
+    def test_constant_prop_pass_keeps_scalar_read_at_runtime(self) -> None:
+        """
+        A non-tensor value cannot become a constant placeholder. When a node
+        outside the fold or the program output reads one, it stays in the
+        graph, while the tensors computed from it still fold. A non-tensor
+        value read only by folded nodes folds away.
+        """
+
+        class M(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("n", torch.tensor(1))
+                self.register_buffer("s", torch.tensor(2.0))
+                self.register_buffer("k", torch.tensor(3))
+                self.w = torch.nn.Parameter(torch.randn(4, 3))
+
+            def forward(self, x):
+                n = (self.n * 2).item() + 1
+                torch._check(n >= 1)
+                torch._check(n <= x.shape[0])
+                # The first reader of `n` is folded, a later one is not.
+                w = (self.w * self.s.item())[:n]
+                return x[:n] * w, self.k.item()
+
+        m = M()
+        x = torch.randn(4, 3)
+        new_ep = constant_prop_pass(export(m, (x,), strict=True))
+
+        targets = [node.target for node in new_ep.graph.nodes]
+        self.assertEqual(targets.count(torch.ops.aten.item.default), 2)
+        self.assertIn(torch.ops.aten._assert_scalar.default, targets)
+        self.assertEqual(targets.count(torch.ops.aten.mul.Tensor), 1)
+        self.assertEqual(targets.count(torch.ops.aten.slice.Tensor), 1)
+        self.assertNotIn("s", new_ep.state_dict)
+        out, k = new_ep.module()(x)
+        expected_out, expected_k = m(x)
+        self.assertTrue(torch.allclose(out, expected_out))
+        self.assertEqual(k, expected_k)
+        to_edge(new_ep).to_executorch()
+
     def test_constant_prop_pass_zero_stride_tensors(self) -> None:
         """
         Test that constant propagation correctly handles tensors with zero strides
@@ -2962,6 +3208,499 @@ class TestPasses(unittest.TestCase):
             prop_tensor.is_contiguous(),
             f"Propagated tensor is not contiguous: {prop_tensor.stride()}",
         )
+
+    def _operator_names(self, et) -> List[str]:
+        return [
+            op.name
+            for plan in et.executorch_program.execution_plan
+            for op in plan.operators
+        ]
+
+    def _constant_bytes(self, et) -> int:
+        return sum(
+            len(buffer.storage) for buffer in et.executorch_program.constant_buffer
+        )
+
+    def test_fold_constant_transposes_is_off_by_default(self) -> None:
+        model = MLP(n_layer=2).eval()
+        exported = export(model, model.get_random_inputs(), strict=True)
+
+        default = to_edge(exported).to_executorch()
+        unfolded = to_edge(exported).to_executorch(
+            ExecutorchBackendConfig(fold_constant_transposes=False)
+        )
+
+        self.assertIn("aten::permute_copy", self._operator_names(default))
+        self.assertEqual(default.buffer, unfolded.buffer)
+
+    def test_fold_constant_transposes_folds_linear_weight(self) -> None:
+        model = MLP(n_layer=2).eval()
+        exported = export(model, model.get_random_inputs(), strict=True)
+
+        folded = to_edge(exported).to_executorch(
+            ExecutorchBackendConfig(fold_constant_transposes=True)
+        )
+        self.assertNotIn("aten::permute_copy", self._operator_names(folded))
+
+        unfolded = to_edge(exported).to_executorch(
+            ExecutorchBackendConfig(fold_constant_transposes=False)
+        )
+        self.assertIn("aten::permute_copy", self._operator_names(unfolded))
+        self.assertLessEqual(
+            self._constant_bytes(folded), self._constant_bytes(unfolded)
+        )
+        # The folded program does not keep the replaced weights alive.
+        program = folded.exported_program()
+        used = {spec.target for spec in program.graph_signature.input_specs}
+        self.assertLessEqual(set(program.state_dict) | set(program.constants), used)
+        inputs = model.get_random_inputs()
+        expected = _load_for_executorch_from_buffer(unfolded.buffer).forward(inputs)
+        actual = _load_for_executorch_from_buffer(folded.buffer).forward(inputs)
+        self.assertTrue(torch.equal(actual[0], expected[0]))
+
+    def test_fold_constant_transposes_folds_t_copy_and_transpose_copy(self) -> None:
+        class Transposes(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.a = torch.nn.Parameter(torch.randn(4, 3))
+                self.b = torch.nn.Parameter(torch.randn(4, 3))
+
+            def forward(self, x):
+                return (
+                    x + torch.ops.aten.t_copy.default(self.a),
+                    x + torch.ops.aten.transpose_copy.int(self.b, 0, 1),
+                )
+
+        exported = export(Transposes().eval(), (torch.randn(3, 4),), strict=True)
+        # Without this, both ops are decomposed to permute_copy.
+        compile_config = EdgeCompileConfig(
+            preserve_ops=[
+                torch.ops.aten.t_copy.default,
+                torch.ops.aten.transpose_copy.int,
+            ]
+        )
+
+        unfolded = to_edge(exported, compile_config=compile_config).to_executorch(
+            ExecutorchBackendConfig(fold_constant_transposes=False)
+        )
+        folded = to_edge(exported, compile_config=compile_config).to_executorch(
+            ExecutorchBackendConfig(fold_constant_transposes=True)
+        )
+
+        self.assertIn("aten::t_copy", self._operator_names(unfolded))
+        self.assertIn("aten::transpose_copy", self._operator_names(unfolded))
+        self.assertNotIn("aten::t_copy", self._operator_names(folded))
+        self.assertNotIn("aten::transpose_copy", self._operator_names(folded))
+        inputs = (torch.randn(3, 4),)
+        expected = _load_for_executorch_from_buffer(unfolded.buffer).forward(inputs)
+        actual = _load_for_executorch_from_buffer(folded.buffer).forward(inputs)
+        for a, e in zip(actual, expected):
+            self.assertTrue(torch.equal(a, e))
+
+    def test_fold_constant_transposes_folds_shared_weight_once(self) -> None:
+        class Project(torch.nn.Module):
+            def __init__(self, weight):
+                super().__init__()
+                self.weight = weight
+
+            def forward(self, x):
+                return torch.nn.functional.linear(x, self.weight)
+
+        weight = torch.nn.Parameter(torch.randn(8, 4))
+        programs = {
+            "a": export(Project(weight), (torch.randn(1, 4),), strict=True),
+            "b": export(Project(weight), (torch.randn(2, 4),), strict=True),
+        }
+
+        unfolded = to_edge(programs).to_executorch(
+            ExecutorchBackendConfig(fold_constant_transposes=False)
+        )
+        folded = to_edge(programs).to_executorch(
+            ExecutorchBackendConfig(fold_constant_transposes=True)
+        )
+
+        self.assertNotIn("aten::permute_copy", self._operator_names(folded))
+        self.assertEqual(self._constant_bytes(folded), self._constant_bytes(unfolded))
+        (a,) = folded.exported_program("a").constants.values()
+        (b,) = folded.exported_program("b").constants.values()
+        self.assertIs(a, b)
+
+    def test_fold_constant_transposes_keeps_weight_used_elsewhere(self) -> None:
+        class TiedWeights(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.embedding = torch.nn.Embedding(100, 16)
+
+            def forward(self, hidden, tokens):
+                logits = torch.nn.functional.linear(hidden, self.embedding.weight)
+                return logits, self.embedding(tokens)
+
+        model = TiedWeights().eval()
+        inputs = (torch.randn(1, 16), torch.randint(0, 100, (1, 4)))
+        exported = export(model, inputs, strict=True)
+
+        unfolded = to_edge(exported).to_executorch(
+            ExecutorchBackendConfig(fold_constant_transposes=False)
+        )
+        folded = to_edge(exported).to_executorch(
+            ExecutorchBackendConfig(fold_constant_transposes=True)
+        )
+
+        self.assertIn("aten::permute_copy", self._operator_names(folded))
+        self.assertEqual(folded.buffer, unfolded.buffer)
+
+    def test_fold_constant_transposes_keeps_weight_another_method_reads(
+        self,
+    ) -> None:
+        class Project(torch.nn.Module):
+            def __init__(self, weight):
+                super().__init__()
+                self.weight = weight
+
+            def forward(self, x):
+                return torch.nn.functional.linear(x, self.weight)
+
+        class Lookup(torch.nn.Module):
+            def __init__(self, weight):
+                super().__init__()
+                self.weight = weight
+
+            def forward(self, tokens):
+                return torch.nn.functional.embedding(tokens, self.weight)
+
+        weight = torch.nn.Parameter(torch.randn(100, 16))
+        programs = {
+            "project": export(Project(weight), (torch.randn(1, 16),), strict=True),
+            "lookup": export(
+                Lookup(weight), (torch.randint(0, 100, (1, 4)),), strict=True
+            ),
+        }
+
+        unfolded = to_edge(programs).to_executorch(
+            ExecutorchBackendConfig(fold_constant_transposes=False)
+        )
+        folded = to_edge(programs).to_executorch(
+            ExecutorchBackendConfig(fold_constant_transposes=True)
+        )
+
+        self.assertIn("aten::permute_copy", self._operator_names(folded))
+        self.assertEqual(folded.buffer, unfolded.buffer)
+
+    def test_fold_constant_transposes_keeps_external_constants(self) -> None:
+        model = MLP(n_layer=1).eval()
+        exported = export(model, model.get_random_inputs(), strict=True)
+
+        et = to_edge(exported).to_executorch(
+            ExecutorchBackendConfig(
+                external_constants=True, fold_constant_transposes=True
+            )
+        )
+
+        self.assertIn("aten::permute_copy", self._operator_names(et))
+
+    def test_fold_constant_transposes_folds_lifted_constant(self) -> None:
+        class Project(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.randn(4, 3)
+
+            def forward(self, x):
+                return x @ self.weight.t()
+
+        exported = export(Project(), (torch.randn(2, 3),), strict=True)
+
+        unfolded = to_edge(exported).to_executorch(
+            ExecutorchBackendConfig(fold_constant_transposes=False)
+        )
+        folded = to_edge(exported).to_executorch(
+            ExecutorchBackendConfig(fold_constant_transposes=True)
+        )
+
+        self.assertIn("aten::permute_copy", self._operator_names(unfolded))
+        self.assertNotIn("aten::permute_copy", self._operator_names(folded))
+
+    def test_fold_constant_transposes_keeps_weight_with_same_bytes(self) -> None:
+        class SameBytes(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                values = torch.randn(4, 4)
+                self.weight = torch.nn.Parameter(values.clone())
+                self.other = torch.nn.Parameter(values)
+
+            def forward(self, x):
+                return torch.nn.functional.linear(x, self.weight) + self.other.sum()
+
+        exported = export(SameBytes().eval(), (torch.randn(1, 4),), strict=True)
+
+        unfolded = to_edge(exported).to_executorch(
+            ExecutorchBackendConfig(fold_constant_transposes=False)
+        )
+        folded = to_edge(exported).to_executorch(
+            ExecutorchBackendConfig(fold_constant_transposes=True)
+        )
+
+        self.assertEqual(folded.buffer, unfolded.buffer)
+
+    def test_fold_constant_transposes_keeps_weight_transposed_two_ways(
+        self,
+    ) -> None:
+        class Permute(torch.nn.Module):
+            def __init__(self, weight, dims):
+                super().__init__()
+                self.weight = weight
+                self.dims = dims
+
+            def forward(self, x):
+                return x + self.weight.permute(self.dims)
+
+        weight = torch.nn.Parameter(torch.randn(2, 3, 4))
+        programs = {
+            "a": export(Permute(weight, (1, 0, 2)), (torch.randn(3, 2, 4),)),
+            "b": export(Permute(weight, (2, 1, 0)), (torch.randn(4, 3, 2),)),
+        }
+
+        unfolded = to_edge(programs).to_executorch(
+            ExecutorchBackendConfig(fold_constant_transposes=False)
+        )
+        folded = to_edge(programs).to_executorch(
+            ExecutorchBackendConfig(fold_constant_transposes=True)
+        )
+
+        self.assertEqual(folded.buffer, unfolded.buffer)
+
+    def test_fold_constant_transposes_updates_edge_manager_for_every_method(
+        self,
+    ) -> None:
+        class Project(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(3, 4)
+                # A lifted tensor constant, so the constants dict is not empty.
+                self.weight = torch.randn(4, 3)
+
+            def forward(self, x):
+                return self.linear(x) + x @ self.weight.t()
+
+        class Add(torch.nn.Module):
+            def forward(self, x):
+                return x + x
+
+        edge = to_edge(
+            {
+                "project": export(Project().eval(), (torch.randn(2, 3),), strict=True),
+                "add": export(Add(), (torch.randn(2, 3),), strict=True),
+            }
+        )
+        original = edge.exported_program("project")
+        state_dict = set(original.state_dict)
+        # The transformed manager shares the constants dict with edge.
+        constants = set(
+            edge.transform([ExportPass()]).exported_program("project").constants
+        )
+
+        et = edge.to_executorch(ExecutorchBackendConfig(fold_constant_transposes=True))
+
+        self.assertNotIn("aten::permute_copy", self._operator_names(et))
+        for method in ("project", "add"):
+            self.assertIs(edge.exported_program(method), et.exported_program(method))
+        # The fold changes a copy, so what original shares is left consistent.
+        self.assertEqual(set(original.constants), constants)
+        self.assertEqual(set(original.state_dict), state_dict)
+        # The copy shares the weights it keeps instead of copying them.
+        self.assertIs(
+            et.exported_program("project").state_dict["linear.bias"],
+            original.state_dict["linear.bias"],
+        )
+        self.assertLessEqual(
+            {spec.arg.name for spec in original.graph_signature.input_specs},
+            {node.name for node in original.graph.find_nodes(op="placeholder")},
+        )
+
+    def test_fold_constant_transposes_with_non_leaf_example_input(self) -> None:
+        # A tensor that requires grad and is not a leaf cannot be deep-copied.
+        x = torch.randn(2, 3, requires_grad=True) * 2
+        edge = to_edge(export(torch.nn.Linear(3, 4).eval(), (x,), strict=True))
+
+        et = edge.to_executorch(ExecutorchBackendConfig(fold_constant_transposes=True))
+
+        self.assertNotIn("aten::permute_copy", self._operator_names(et))
+
+    def test_fold_constant_transposes_keeps_weight_a_constant_method_returns(
+        self,
+    ) -> None:
+        model = torch.nn.Linear(16, 8).eval()
+        exported = export(model, (torch.randn(1, 16),), strict=True)
+        constant_methods = {"weight": model.weight.detach()}
+
+        unfolded = to_edge(exported, constant_methods=constant_methods).to_executorch(
+            ExecutorchBackendConfig(fold_constant_transposes=False)
+        )
+        folded = to_edge(exported, constant_methods=constant_methods).to_executorch(
+            ExecutorchBackendConfig(fold_constant_transposes=True)
+        )
+
+        self.assertIn("aten::permute_copy", self._operator_names(folded))
+        self.assertEqual(folded.buffer, unfolded.buffer)
+
+    def test_fold_constant_transposes_keeps_buffer(self) -> None:
+        class AddTransposedBuffer(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("weight", torch.randn(4, 3))
+
+            def forward(self, x):
+                return x + self.weight.t()
+
+        exported = export(AddTransposedBuffer(), (torch.randn(3, 4),), strict=True)
+
+        et = to_edge(exported).to_executorch(
+            ExecutorchBackendConfig(fold_constant_transposes=True)
+        )
+
+        self.assertIn("aten::permute_copy", self._operator_names(et))
+
+    def test_fold_constant_transposes_keeps_non_cpu_weight(self) -> None:
+        # Two weights of one size would make the fold compare their bytes,
+        # which it cannot read on this device. The emitter reports it instead.
+        model = torch.nn.Sequential(torch.nn.Linear(4, 4), torch.nn.Linear(4, 4))
+        model = model.to("meta")
+        edge = to_edge(export(model, (torch.ones(2, 4, device="meta"),), strict=True))
+
+        with self.assertRaisesRegex(InternalError, "on device 'meta'"):
+            edge.to_executorch(ExecutorchBackendConfig(fold_constant_transposes=True))
+
+    def test_fold_constant_transposes_ignores_non_cpu_constant_it_keeps(
+        self,
+    ) -> None:
+        class AddWeight(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.randn(4, 4, device="meta"))
+
+            def forward(self, x):
+                return x + self.weight
+
+        # Each meta tensor has the size of the weight that folds.
+        fold = export(torch.nn.Linear(4, 4, bias=False), (torch.randn(1, 4),))
+        add = export(AddWeight(), (torch.ones(4, 4, device="meta"),))
+        for programs, constant_methods in (
+            ({"fold": fold, "add": add}, None),
+            ({"fold": fold}, {"weight": torch.randn(4, 4, device="meta")}),
+        ):
+            edge = to_edge(programs, constant_methods=constant_methods)
+            with self.assertRaisesRegex(InternalError, "on device 'meta'"):
+                edge.to_executorch(
+                    ExecutorchBackendConfig(fold_constant_transposes=True)
+                )
+
+    def test_fold_constant_transposes_keeps_transpose_written_in_place(
+        self,
+    ) -> None:
+        class ScaleTransposed(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.randn(4, 3))
+
+            def forward(self, x):
+                transposed = torch.t_copy(self.weight)
+                torch.ops.DO_NOT_USE_TEST_ONLY.scale_in_place(transposed)
+                return x @ transposed
+
+        exported = export(ScaleTransposed().eval(), (torch.randn(2, 3),))
+        # Without this, t_copy is decomposed to a permute_copy and a clone, and
+        # the op writes the clone.
+        compile_config = EdgeCompileConfig(preserve_ops=[torch.ops.aten.t_copy.default])
+
+        unfolded = to_edge(exported, compile_config=compile_config).to_executorch(
+            ExecutorchBackendConfig(fold_constant_transposes=False)
+        )
+        folded = to_edge(exported, compile_config=compile_config).to_executorch(
+            ExecutorchBackendConfig(fold_constant_transposes=True)
+        )
+
+        self.assertEqual(folded.buffer, unfolded.buffer)
+
+    def test_fold_constant_transposes_keeps_returned_transpose(self) -> None:
+        class ReturnTransposed(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.randn(4, 3))
+
+            def forward(self, x):
+                return x + 1, self.weight.t()
+
+        exported = export(ReturnTransposed().eval(), (torch.randn(2),), strict=True)
+
+        et = to_edge(exported).to_executorch(
+            ExecutorchBackendConfig(fold_constant_transposes=True)
+        )
+
+        self.assertIn("aten::permute_copy", self._operator_names(et))
+
+    def test_fold_constant_transposes_keeps_delegate_input(self) -> None:
+        class AddTransposed(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.randn(4, 3))
+
+            def forward(self, x):
+                return x + self.weight.t()
+
+        exported = export(AddTransposed().eval(), (torch.randn(3, 4),), strict=True)
+
+        et = to_edge_transform_and_lower(
+            exported, partitioner=[AddMulPartitionerDemo()]
+        ).to_executorch(ExecutorchBackendConfig(fold_constant_transposes=True))
+
+        self.assertIn("aten::permute_copy", self._operator_names(et))
+
+    def test_fold_constant_transposes_folds_next_to_delegate(self) -> None:
+        class PartlyDelegated(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.delegated = torch.nn.Linear(4, 4)
+                # XNNPACK does not take float64, so this layer stays portable.
+                self.portable = torch.nn.Linear(4, 2).double()
+
+            def forward(self, x):
+                return self.portable(self.delegated(x).double())
+
+        exported = export(PartlyDelegated().eval(), (torch.randn(1, 4),), strict=True)
+
+        unfolded = to_edge_transform_and_lower(
+            exported, partitioner=[XnnpackPartitioner()]
+        ).to_executorch(ExecutorchBackendConfig(fold_constant_transposes=False))
+        folded = to_edge_transform_and_lower(
+            exported, partitioner=[XnnpackPartitioner()]
+        ).to_executorch(ExecutorchBackendConfig(fold_constant_transposes=True))
+
+        self.assertEqual(len(folded.executorch_program.execution_plan[0].delegates), 1)
+        self.assertIn("aten::permute_copy", self._operator_names(unfolded))
+        self.assertNotIn("aten::permute_copy", self._operator_names(folded))
+        inputs = (torch.randn(1, 4),)
+        expected = _load_for_executorch_from_buffer(unfolded.buffer).forward(inputs)
+        actual = _load_for_executorch_from_buffer(folded.buffer).forward(inputs)
+        self.assertTrue(torch.equal(actual[0], expected[0]))
+
+    def test_fold_constant_transposes_cannot_be_undone_on_the_same_manager(
+        self,
+    ) -> None:
+        model = torch.nn.Linear(4, 4).eval().requires_grad_(False)
+        edge = to_edge(export(model, (torch.randn(1, 4),), strict=True))
+        edge.to_executorch(ExecutorchBackendConfig(fold_constant_transposes=True))
+
+        for config in (
+            ExecutorchBackendConfig(fold_constant_transposes=False),
+            ExecutorchBackendConfig(
+                external_constants=True, fold_constant_transposes=True
+            ),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "folded weight transposes"):
+                edge.to_executorch(config)
+        # A manager that folded nothing can still change these settings.
+        edge = to_edge(export(Mul(), Mul().get_random_inputs(), strict=True))
+        edge.to_executorch(ExecutorchBackendConfig(fold_constant_transposes=True))
+        edge.to_executorch(ExecutorchBackendConfig(external_constants=True))
 
     class AddConstant(torch.nn.Module):
         def __init__(self, constant: torch.Tensor, use_buffer: bool = False):
@@ -3114,6 +3853,115 @@ class TestPasses(unittest.TestCase):
                         modified_const.is_contiguous(),
                         f"Constant should be contiguous after pass, got strides {modified_const.stride()}",
                     )
+
+    def test_convert_constant_dim_order_parameter(self):
+        """
+        Verify that the convert_constant_dim_order_pass converts a parameter
+        outside the allowed dim orders to contiguous, keeps it a parameter, and
+        leaves a channels-last parameter as it is.
+        """
+
+        class AddParameter(torch.nn.Module):
+            def __init__(self, weight: torch.Tensor):
+                super().__init__()
+                self.weight = torch.nn.Parameter(weight)
+
+            def forward(self, x):
+                return x + self.weight
+
+        weights = {
+            "transposed": (torch.randn(5, 4).t(), True),
+            "channels_last": (
+                torch.randn(2, 3, 4, 5).to(memory_format=torch.channels_last),
+                False,
+            ),
+        }
+        for description, (weight, converted) in weights.items():
+            with self.subTest(description=description):
+                inputs = (torch.randn(weight.shape),)
+                ep = torch.export.export(AddParameter(weight), inputs)
+                logs = (
+                    self.assertLogs(convert_constant_dim_order_pass.logger, "WARNING")
+                    if converted
+                    else self.assertNoLogs(convert_constant_dim_order_pass.logger)
+                )
+                with logs as captured:
+                    modified_ep = (
+                        convert_constant_dim_order_pass.convert_constant_dim_order_pass(
+                            copy.deepcopy(ep)
+                        )
+                    )
+                if converted:
+                    self.assertIn(
+                        "Parameter 'weight' has strides (1, 4)", captured.output[0]
+                    )
+
+                torch.testing.assert_close(
+                    ep.module()(*inputs), modified_ep.module()(*inputs)
+                )
+                param = modified_ep.state_dict["weight"]
+                self.assertIsInstance(param, torch.nn.Parameter)
+                self.assertEqual(param.is_contiguous(), converted)
+                placeholder = next(
+                    n for n in modified_ep.graph.nodes if n.name == "p_weight"
+                )
+                self.assertEqual(placeholder.meta["val"].stride(), param.stride())
+
+    def test_to_edge_makes_transposed_parameter_contiguous(self):
+        """
+        Verify that to_edge stores a transposed parameter contiguous with and
+        without _skip_dim_order, so a partitioner sees the stored layout.
+        """
+
+        class AddParameter(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.randn(5, 4).t())
+
+            def forward(self, x):
+                return self.weight + x
+
+        model = AddParameter()
+        inputs = (torch.randn(4, 5),)
+        for skip_dim_order in (False, True):
+            with self.subTest(skip_dim_order=skip_dim_order):
+                with self.assertLogs(
+                    convert_constant_dim_order_pass.logger, "WARNING"
+                ) as captured:
+                    ep = to_edge(
+                        torch.export.export(model, inputs),
+                        compile_config=EdgeCompileConfig(
+                            _skip_dim_order=skip_dim_order
+                        ),
+                    ).exported_program()
+                # Only one run of the pass converts: the first, or with
+                # _skip_dim_order the only one.
+                self.assertEqual(len(captured.output), 1)
+                self.assertIn("Parameter 'weight'", captured.output[0])
+                self.assertTrue(ep.state_dict["weight"].is_contiguous())
+                placeholder = next(n for n in ep.graph.nodes if n.name == "p_weight")
+                self.assertTrue(placeholder.meta["val"].is_contiguous())
+                torch.testing.assert_close(ep.module()(*inputs), model(*inputs))
+
+    def test_convert_constant_dim_order_missing_placeholder(self):
+        """
+        Verify that the convert_constant_dim_order_pass names the placeholder it
+        cannot find for a lifted tensor it converts.
+        """
+
+        class AddParameter(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.randn(5, 4).t())
+
+            def forward(self, x):
+                return x + self.weight
+
+        ep = torch.export.export(AddParameter(), (torch.randn(4, 5),))
+        spec = next(s for s in ep.graph_signature.input_specs if s.target == "weight")
+        spec.arg = TensorArgument(name="missing")
+        with self.assertRaisesRegex(RuntimeError, "Missing placeholder for missing"):
+            convert_constant_dim_order_pass.convert_constant_dim_order_pass(ep)
 
 
 class TestMemoryFormatOpsPassPreserveFormat(unittest.TestCase):

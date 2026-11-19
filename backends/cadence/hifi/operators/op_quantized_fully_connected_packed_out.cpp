@@ -14,6 +14,21 @@
 #include <cmath>
 #include <cstring>
 
+#include <xtensa/config/core-isa.h>
+
+// HiFi4 cores run 4-bit through the fused kernel below. It requantizes with
+// nnlib's own HiFi4 macro, so its output is bit-identical to the nnlib path;
+// HiFi1 and HiFi5 requantize differently and keep the nnlib path.
+#if defined(XCHAL_HAVE_HIFI4) && XCHAL_HAVE_HIFI4 &&    \
+    !(defined(XCHAL_HAVE_HIFI5) && XCHAL_HAVE_HIFI5) && \
+    !(defined(XCHAL_HAVE_HIFI1) && XCHAL_HAVE_HIFI1)
+#define PACKED_FC_FUSED_4BIT 1
+#include <xa_nnlib_common.h>
+#include <xa_nnlib_quant_macros.h>
+#else
+#define PACKED_FC_FUSED_4BIT 0
+#endif
+
 // Row-packed sub-byte fully-connected on HiFi.
 //
 // The weight arrives as [out_dim, packed_row_bytes] int8, where the bytes are
@@ -37,6 +52,9 @@
 //   of sub-byte weights actually shows up: for the wakeword shapes this is a
 //   GEMV, so it is memory bound on weight traffic and 6-bit moves 25% fewer
 //   bytes than 8-bit.
+//
+//   On HiFi4, 4-bit skips the tile: fused_split_4bit_gemv() decodes nibbles
+//   straight into the multiply and requantizes with nnlib's macro.
 //
 // There is no fatal path here. Which kernel serves this operator is decided at
 // build time by operator_fallback.bzl, so there is no generic kernel linked to
@@ -203,8 +221,8 @@ inline void unpack_row_planar_6bit_aligned(
     int8_t* __restrict__ dst,
     const uint8_t* __restrict__ src,
     const int64_t in_dim) {
-  const int64_t half = in_dim >> 1;
-  const int64_t quarter = in_dim >> 2;
+  const int32_t half = static_cast<int32_t>(in_dim >> 1);
+  const int32_t quarter = static_cast<int32_t>(in_dim >> 2);
   const ae_int32x2 m0F = AE_MOVDA32(0x0F0F0F0F);
   const ae_int32x2 m30 = AE_MOVDA32(0x30303030);
   const ae_int32x2* __restrict__ pb =
@@ -214,8 +232,9 @@ inline void unpack_row_planar_6bit_aligned(
   // The cursors are rebuilt from k on purpose. Hoisting them and letting the
   // _IP post-increment carry them across iterations measured 1.1% slower: the
   // compiler already strength-reduces these, and the mutable carried pointers
-  // only constrain its scheduling.
-  for (int64_t k = 0; k < quarter; k += 8) {
+  // only constrain its scheduling. The counter is 32-bit because a 64-bit one
+  // cost a two-word compare and exit branch inside every iteration.
+  for (int32_t k = 0; k < quarter; k += 8) {
     const ae_int32x2* __restrict__ pa0 =
         reinterpret_cast<const ae_int32x2*>(src + k);
     const ae_int32x2* __restrict__ pa1 =
@@ -253,9 +272,9 @@ inline void unpack_row_planar_6bit_scalar(
     int8_t* __restrict__ dst,
     const uint8_t* __restrict__ src,
     const int64_t in_dim) {
-  const int64_t half = in_dim >> 1;
-  const int64_t quarter = in_dim >> 2;
-  for (int64_t k = 0; k < quarter; ++k) {
+  const int32_t half = static_cast<int32_t>(in_dim >> 1);
+  const int32_t quarter = static_cast<int32_t>(in_dim >> 2);
+  for (int32_t k = 0; k < quarter; ++k) {
     const uint8_t a = src[k];
     const uint8_t c = src[k + quarter];
     const uint8_t b = src[half + k];
@@ -322,21 +341,24 @@ inline void unpack_tile_split_4bit_aligned(
     const int64_t in_dim,
     const int64_t row_bytes,
     const int64_t rows) {
-  const int64_t half = in_dim >> 1;
+  const int32_t half = static_cast<int32_t>(in_dim >> 1);
+  const int32_t row_stride = static_cast<int32_t>(row_bytes);
+  const int32_t tile_stride = static_cast<int32_t>(in_dim);
+  const int32_t n_rows = static_cast<int32_t>(rows);
   const ae_int32x2 m0F = AE_MOVDA32(0x0F0F0F0F);
 
-  for (int64_t t = 0; t < rows; ++t) {
+  for (int32_t t = 0; t < n_rows; ++t) {
     const ae_int32x2* __restrict__ p =
-        reinterpret_cast<const ae_int32x2*>(src + t * row_bytes);
+        reinterpret_cast<const ae_int32x2*>(src + t * row_stride);
     ae_int32x2* __restrict__ dlo =
-        reinterpret_cast<ae_int32x2*>(dst + t * in_dim);
+        reinterpret_cast<ae_int32x2*>(dst + t * tile_stride);
     ae_int32x2* __restrict__ dhi = dlo + (half >> 3);
 
     // 32 values per iteration. This width is a measured local optimum, not a
     // guess: 16 values per iteration cost 276k cycles more (the loop ran twice
     // as many times for a body this short), and 64 values per iteration cost
     // 2.6% more again on register pressure.
-    for (int64_t k = 0; k < half; k += 16) {
+    for (int32_t k = 0; k < half; k += 16) {
       ae_int32x2 a0, a1;
       AE_L32X2_IP(a0, p, 8);
       AE_L32X2_IP(a1, p, 8);
@@ -352,8 +374,8 @@ inline void unpack_row_split_4bit_scalar(
     int8_t* __restrict__ dst,
     const uint8_t* __restrict__ src,
     const int64_t in_dim) {
-  const int64_t half = in_dim >> 1;
-  for (int64_t k = 0; k < half; ++k) {
+  const int32_t half = static_cast<int32_t>(in_dim >> 1);
+  for (int32_t k = 0; k < half; ++k) {
     const uint8_t b = src[k];
     dst[k] = static_cast<int8_t>(b & 0x0F);
     dst[k + half] = static_cast<int8_t>((b >> 4) & 0x0F);
@@ -371,9 +393,38 @@ inline void unpack_tile_split_4bit(
     unpack_tile_split_4bit_aligned(dst, src, in_dim, row_bytes, rows);
     return;
   }
-  for (int64_t t = 0; t < rows; ++t) {
+  const int32_t n_rows = static_cast<int32_t>(rows);
+  for (int32_t t = 0; t < n_rows; ++t) {
     unpack_row_split_4bit_scalar(dst + t * in_dim, src + t * row_bytes, in_dim);
   }
+}
+
+// Sum of n int8 values, 8 per iteration. Bytes are sign-extended from 32-bit
+// words with shifts, which every HiFi variant supports, so the same code runs
+// on HiFi1, HiFi4 and HiFi5. Partial sums stay small: each 32-bit lane gains
+// at most 4 * 128 per iteration.
+inline int32_t sum_int8(const int8_t* __restrict__ v, const int32_t n) {
+  int32_t s = 0;
+  int32_t k = 0;
+  while (k < n && (reinterpret_cast<uintptr_t>(v + k) & 7) != 0) {
+    s += v[k++];
+  }
+  const int32_t n8 = k + ((n - k) & ~7);
+  const ae_int32x2* __restrict__ p = reinterpret_cast<const ae_int32x2*>(v + k);
+  ae_int32x2 acc = AE_ZERO32();
+  for (; k < n8; k += 8) {
+    ae_int32x2 w;
+    AE_L32X2_IP(w, p, 8);
+    acc = AE_ADD32(acc, AE_SRAI32(AE_SLAI32(w, 24), 24));
+    acc = AE_ADD32(acc, AE_SRAI32(AE_SLAI32(w, 16), 24));
+    acc = AE_ADD32(acc, AE_SRAI32(AE_SLAI32(w, 8), 24));
+    acc = AE_ADD32(acc, AE_SRAI32(w, 24));
+  }
+  s += AE_MOVAD32_H(acc) + AE_MOVAD32_L(acc);
+  for (; k < n; ++k) {
+    s += v[k];
+  }
+  return s;
 }
 
 // Decode one packed row of `in_dim` values in natural k order.
@@ -460,6 +511,158 @@ void packed_fully_connected_scalar(
   }
 }
 
+#if PACKED_FC_FUSED_4BIT
+// (x - zp) widened to int16 once per input vector, so every row reuses it.
+// Returns S = sum(x - zp) for the offset fold.
+inline int32_t widen_input(
+    int16_t* __restrict__ x16,
+    const int8_t* __restrict__ x,
+    const int32_t n,
+    const int32_t zp) {
+  int32_t s = 0;
+  for (int32_t k = 0; k < n; ++k) {
+    const int32_t v = static_cast<int32_t>(x[k]) - zp;
+    x16[k] = static_cast<int16_t>(v);
+    s += v;
+  }
+  return s;
+}
+
+// Low 32 bits of two accumulators that hold sums scaled by 256, as nnlib's
+// 4-row kernel leaves them.
+inline __attribute__((always_inline)) ae_int32x2
+unscale_pair(const ae_int64 a, const ae_int64 b) {
+  return AE_SEL32_LL(
+      AE_MOVINT32X2_FROMINT64(AE_SRAI64(a, 8)),
+      AE_MOVINT32X2_FROMINT64(AE_SRAI64(b, 8)));
+}
+
+// Per-channel requantize of two rows, the same steps as
+// xa_nn_matmul_v2_per_chan_sym8sxasym8s_asym8s on HiFi4.
+inline __attribute__((always_inline)) ae_int32x2 requantize_pair(
+    const ae_int32x2 acc,
+    const int32_t mult0,
+    const int32_t mult1,
+    const int32_t shift0,
+    const int32_t shift1,
+    const int32_t out_zp) {
+  const int32_t l0 = shift0 < 0 ? 0 : shift0;
+  const int32_t r0 = shift0 > 0 ? 0 : -shift0;
+  const int32_t l1 = shift1 < 0 ? 0 : shift1;
+  const int32_t r1 = shift1 > 0 ? 0 : -shift1;
+  ae_int32x2 y;
+  MPY_BY_QUANT_MULT_PER_CHAN_X2_OUT32_SHIFT(
+      y, acc, AE_MOVDA32X2(mult0, mult1), l0, l1, r0, r1);
+  y = AE_ADD32S(y, AE_MOVDA32(out_zp));
+  y = AE_MAX32(y, AE_MOVDA32(-128));
+  return AE_MIN32(y, AE_MOVDA32(127));
+}
+
+// One 4-bit split row times x16, accumulated scaled by 256. AE_L8X4F puts
+// each byte in the top half of a 16-bit lane, so masking with 0x0F00 gives
+// u[k] << 8 from the low nibble, and shifting right by 4 first gives
+// u[k + H] << 8 from the high one: the same scaling nnlib's int8 kernel
+// uses, so the weights never pass through scratch.
+inline __attribute__((always_inline)) void mac_split_4bit(
+    ae_int64& acc,
+    const ae_int16x4 w,
+    const ae_int16x4 vlo,
+    const ae_int16x4 vhi,
+    const ae_int16x4 mask) {
+  AE_MULAAAAQ16(acc, AE_AND16(w, mask), vlo);
+  AE_MULAAAAQ16(acc, AE_AND16(AE_SRAI16(w, 4), mask), vhi);
+}
+
+// Fused 4-bit split GEMV, four output rows at a time: reads each packed row
+// once, multiplies, and requantizes, with no unpacked tile and no nnlib call.
+// Needs in_dim a multiple of 8 and 4-byte-aligned weights, for the 4-byte
+// weight loads and the 8-byte loads of x16.
+void fused_split_4bit_gemv(
+    int8_t* __restrict__ out,
+    const uint8_t* __restrict__ w,
+    const int16_t* __restrict__ x16,
+    const int32_t in_dim,
+    const int32_t out_dim,
+    const int32_t* __restrict__ bias,
+    const int32_t offset_fold,
+    const int32_t* __restrict__ mult,
+    const int32_t* __restrict__ shift,
+    const int32_t qstride,
+    const int32_t out_zp) {
+  const int32_t half = in_dim >> 1;
+  const ae_int16x4 mask = AE_MOVDA16(0x0F00);
+  int32_t r = 0;
+  for (; r + 4 <= out_dim; r += 4) {
+    const signed char* p0 = reinterpret_cast<const signed char*>(w + r * half);
+    const signed char* p1 = p0 + half;
+    const signed char* p2 = p1 + half;
+    const signed char* p3 = p2 + half;
+    const ae_int16x4* plo = reinterpret_cast<const ae_int16x4*>(x16);
+    const ae_int16x4* phi = reinterpret_cast<const ae_int16x4*>(x16 + half);
+    ae_int64 a0 = AE_ZERO64();
+    ae_int64 a1 = AE_ZERO64();
+    ae_int64 a2 = AE_ZERO64();
+    ae_int64 a3 = AE_ZERO64();
+    for (int32_t c = 0; c < half; c += 4) {
+      ae_int16x4 vlo, vhi, w0, w1, w2, w3;
+      AE_L16X4_IP(vlo, plo, 8);
+      AE_L16X4_IP(vhi, phi, 8);
+      AE_L8X4F_IP(w0, p0, 4);
+      AE_L8X4F_IP(w1, p1, 4);
+      AE_L8X4F_IP(w2, p2, 4);
+      AE_L8X4F_IP(w3, p3, 4);
+      mac_split_4bit(a0, w0, vlo, vhi, mask);
+      mac_split_4bit(a1, w1, vlo, vhi, mask);
+      mac_split_4bit(a2, w2, vlo, vhi, mask);
+      mac_split_4bit(a3, w3, vlo, vhi, mask);
+    }
+    const ae_int32x2 acc01 = AE_ADD32(
+        unscale_pair(a0, a1),
+        AE_MOVDA32X2(bias[r] + offset_fold, bias[r + 1] + offset_fold));
+    const ae_int32x2 acc23 = AE_ADD32(
+        unscale_pair(a2, a3),
+        AE_MOVDA32X2(bias[r + 2] + offset_fold, bias[r + 3] + offset_fold));
+    const ae_int32x2 y01 = requantize_pair(
+        acc01,
+        mult[r * qstride],
+        mult[(r + 1) * qstride],
+        shift[r * qstride],
+        shift[(r + 1) * qstride],
+        out_zp);
+    const ae_int32x2 y23 = requantize_pair(
+        acc23,
+        mult[(r + 2) * qstride],
+        mult[(r + 3) * qstride],
+        shift[(r + 2) * qstride],
+        shift[(r + 3) * qstride],
+        out_zp);
+    out[r] = static_cast<int8_t>(AE_MOVAD32_H(y01));
+    out[r + 1] = static_cast<int8_t>(AE_MOVAD32_L(y01));
+    out[r + 2] = static_cast<int8_t>(AE_MOVAD32_H(y23));
+    out[r + 3] = static_cast<int8_t>(AE_MOVAD32_L(y23));
+  }
+  for (; r < out_dim; ++r) {
+    const signed char* p0 = reinterpret_cast<const signed char*>(w + r * half);
+    const ae_int16x4* plo = reinterpret_cast<const ae_int16x4*>(x16);
+    const ae_int16x4* phi = reinterpret_cast<const ae_int16x4*>(x16 + half);
+    ae_int64 a0 = AE_ZERO64();
+    for (int32_t c = 0; c < half; c += 4) {
+      ae_int16x4 vlo, vhi, w0;
+      AE_L16X4_IP(vlo, plo, 8);
+      AE_L16X4_IP(vhi, phi, 8);
+      AE_L8X4F_IP(w0, p0, 4);
+      mac_split_4bit(a0, w0, vlo, vhi, mask);
+    }
+    const ae_int32x2 acc =
+        AE_ADD32(unscale_pair(a0, a0), AE_MOVDA32(bias[r] + offset_fold));
+    const int32_t m = mult[r * qstride];
+    const int32_t s = shift[r * qstride];
+    out[r] = static_cast<int8_t>(
+        AE_MOVAD32_H(requantize_pair(acc, m, m, s, s, out_zp)));
+  }
+}
+#endif
+
 } // namespace
 
 void quantized_fully_connected_packed_out(
@@ -500,6 +703,39 @@ void quantized_fully_connected_packed_out(
   // symmetrically so this normally holds.
   const bool fast_path = out.scalar_type() == ScalarType::Char &&
       in.scalar_type() == ScalarType::Char && weight_zp == 0;
+
+#if PACKED_FC_FUSED_4BIT
+  if (fast_path && weight_bits == 4 && (in_dim & 7) == 0 &&
+      row_bytes * 2 == in_dim &&
+      (reinterpret_cast<uintptr_t>(w_data) & 3) == 0) {
+    int16_t* __restrict__ x16 = reinterpret_cast<int16_t*>(
+        kernels::allocate_temp_memory(ctx, in_dim * sizeof(int16_t)));
+    if (x16 != nullptr) {
+      const int8_t* __restrict__ in_data = in.const_data_ptr<int8_t>();
+      int8_t* __restrict__ out_data = out.mutable_data_ptr<int8_t>();
+      const int32_t n_in = static_cast<int32_t>(in_dim);
+      const int32_t n_out = static_cast<int32_t>(out_dim);
+      for (int32_t i = 0; i < static_cast<int32_t>(leading_dims); ++i) {
+        const int32_t s = widen_input(
+            x16, in_data + i * n_in, n_in, static_cast<int32_t>(in_zero_point));
+        // Offset binary, B = 8: see the offset fold below.
+        fused_split_4bit_gemv(
+            out_data + i * n_out,
+            w_data,
+            x16,
+            n_in,
+            n_out,
+            bias_data,
+            -8 * s,
+            mult_data,
+            shift_data,
+            static_cast<int32_t>(qparam_stride),
+            static_cast<int32_t>(out_zero_point));
+      }
+      return;
+    }
+  }
+#endif
 
   const int64_t row_tile = rows_per_tile(in_dim);
   int8_t* __restrict__ tile = nullptr;
@@ -595,18 +831,16 @@ void quantized_fully_connected_packed_out(
     if (split_layout) {
       // sum (x-zp)(u-B) = sum (x-zp)u - B*S with S = sum(x - zp), so S goes
       // into the bias and the decode never subtracts.
-      int32_t s = 0;
-      for (int64_t k = 0; k < in_dim; ++k) {
-        s += static_cast<int32_t>(vec[k]);
-      }
+      const int32_t s = sum_int8(vec, static_cast<int32_t>(in_dim));
       offset_fold = -weight_offset *
           (s -
            static_cast<int32_t>(in_dim) * static_cast<int32_t>(in_zero_point));
     }
 
-    for (int64_t r0 = 0; r0 < out_dim; r0 += row_tile) {
-      const int64_t rows =
-          (out_dim - r0) < row_tile ? (out_dim - r0) : row_tile;
+    const int32_t n_out = static_cast<int32_t>(out_dim);
+    const int32_t n_tile = static_cast<int32_t>(row_tile);
+    for (int32_t r0 = 0; r0 < n_out; r0 += n_tile) {
+      const int32_t rows = (n_out - r0) < n_tile ? (n_out - r0) : n_tile;
 
       if (split_layout && weight_bits == 4) {
         // Whole tile in one call: the fixed per-row cost is what dominates a
@@ -620,7 +854,7 @@ void quantized_fully_connected_packed_out(
             rows,
             row_aligned);
       } else {
-        for (int64_t t = 0; t < rows; ++t) {
+        for (int32_t t = 0; t < rows; ++t) {
           const uint8_t* __restrict__ row = w_data + (r0 + t) * row_bytes;
           if (!split_layout) {
             unpack_row(tile + t * in_dim, row, in_dim, weight_bits);
@@ -630,7 +864,7 @@ void quantized_fully_connected_packed_out(
         }
       }
       if (split_layout) {
-        for (int64_t t = 0; t < rows; ++t) {
+        for (int32_t t = 0; t < rows; ++t) {
           tile_bias[t] = bias_data[r0 + t] + offset_fold;
         }
       }
@@ -641,8 +875,9 @@ void quantized_fully_connected_packed_out(
           qparams_are_scalar ? tile_mult : mult_data + r0;
       const int32_t* __restrict__ call_shift =
           qparams_are_scalar ? tile_shift : shift_data + r0;
-      const int64_t rows_per_call = nnlib_rows_per_call(call_shift, rows);
-      for (int64_t t = 0; t < rows; t += rows_per_call) {
+      const int32_t rows_per_call =
+          static_cast<int32_t>(nnlib_rows_per_call(call_shift, rows));
+      for (int32_t t = 0; t < rows; t += rows_per_call) {
         const int32_t ret = xa_nn_matmul_per_chan_sym8sxasym8s_asym8s(
             out_data + i * out_dim + r0 + t,
             tile + t * in_dim, // p_mat1: [rows, in_dim] unpacked weights

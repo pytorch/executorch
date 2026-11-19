@@ -50,11 +50,16 @@ void add_rms_norm_node(
     const ValueRef weight_data,
     const ValueRef eps,
     const ValueRef out) {
-  ValueRef arg_weight = prepack_standard_like(graph, weight_data, in);
+  const bool is_buffer = graph.is_buffer_storage(in);
+
+  // The buffer shader indexes the weight as a dense array.
+  ValueRef arg_weight = prepack_standard(
+      graph,
+      weight_data,
+      graph.storage_type_of(in),
+      is_buffer ? utils::kWidthPacked : graph.estimate_memory_layout_of(in));
 
   float epsilon = graph.extract_scalar<float>(eps);
-
-  const bool is_buffer = graph.is_buffer_storage(in);
 
   std::string kernel_name("rms_norm");
   kernel_name.reserve(kShaderNameReserve);

@@ -2,13 +2,13 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import functools
 
 # Tests for NeutronQuantizer.
 
 import itertools
 from copy import deepcopy
 
-import executorch.backends.nxp.tests.executorch_pipeline as executorch_pipeline
 import executorch.backends.nxp.tests.simple_models as models
 import numpy as np
 
@@ -39,6 +39,7 @@ from executorch.backends.nxp.tests.executorch_pipeline import (
 )
 from executorch.backends.nxp.tests.executors import (
     convert_run_compare,
+    graph_contains_any,
     graph_contains_any_of_ops,
     tflite,
     ToChannelFirstPreprocess,
@@ -145,6 +146,37 @@ def test_quantizer_conv2d():
         nodes[12].target == torch.ops.quantized_decomposed.quantize_per_tensor.default
     )
     assert nodes[12].args[0].target == torch.ops.aten.conv2d.default
+
+
+def test_quantizer_non_strict_export():
+    class ConvConcatRelu(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv = torch.nn.Conv2d(4, 4, 3, padding=1)
+
+        def forward(self, x):
+            return torch.relu(torch.cat((self.conv(x), self.conv(x)), dim=1))
+
+    example_input = (torch.ones(1, 4, 8, 8),)
+    exported_model = torch.export.export(
+        ConvConcatRelu().eval(), example_input, strict=False
+    )
+
+    m = _prepare_for_quantization(exported_model)
+    m(*example_input)
+    m = convert_pt2e(m)
+
+    convs = [n for n in m.graph.nodes if n.target == torch.ops.aten.conv2d.default]
+    assert len(convs) == 2
+    for conv in convs:
+        assert (
+            conv.args[0].target
+            == torch.ops.quantized_decomposed.dequantize_per_tensor.default
+        )
+        assert (
+            conv.args[1].target
+            == torch.ops.quantized_decomposed.dequantize_per_channel.default
+        )
 
 
 def test_quantizer_linear():
@@ -423,7 +455,7 @@ def test_quantizers_order_invariance():
 @pytest.mark.parametrize("activation, inplace, use_qat", all_activation_cases)
 def test_quantizer__linear_w_activation(mocker, activation, inplace, use_qat):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-    quantizer_spy = mocker.spy(executorch_pipeline, "calibrate_and_quantize")
+    quantizer_spy = mocker.spy(NeutronQuantizer, "annotate")
 
     input_shape = (1, 4)
     model = models.LinearActivationModule(
@@ -471,7 +503,7 @@ def test_quantizer__linear_w_activation(mocker, activation, inplace, use_qat):
 @pytest.mark.parametrize("activation, inplace, use_qat", all_activation_cases)
 def test_quantizer__addmm_w_activation(mocker, activation, inplace, use_qat):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-    quantizer_spy = mocker.spy(executorch_pipeline, "calibrate_and_quantize")
+    quantizer_spy = mocker.spy(NeutronQuantizer, "annotate")
 
     input_shape = (1, 4)
     model = models.LinearActivationModule(
@@ -516,7 +548,7 @@ def test_quantizer__addmm_w_activation(mocker, activation, inplace, use_qat):
 @pytest.mark.parametrize("activation, inplace, use_qat", all_activation_cases)
 def test_quantizer__mm_w_activation(mocker, activation, inplace, use_qat):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-    quantizer_spy = mocker.spy(executorch_pipeline, "calibrate_and_quantize")
+    quantizer_spy = mocker.spy(NeutronQuantizer, "annotate")
 
     input_shape = (1, 4)
     model = models.LinearActivationModule(
@@ -561,7 +593,7 @@ def test_quantizer__mm_w_activation(mocker, activation, inplace, use_qat):
 @pytest.mark.parametrize("activation, inplace, use_qat", all_activation_cases)
 def test_quantizer__conv_w_activation(mocker, activation, inplace, use_qat):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-    quantizer_spy = mocker.spy(executorch_pipeline, "calibrate_and_quantize")
+    quantizer_spy = mocker.spy(NeutronQuantizer, "annotate")
 
     input_shape = (1, 4, 8, 8)
     model = models.ConvActivationModule(
@@ -729,3 +761,44 @@ def test_torchao_native_conv_bn_qat_fusing(
         assert len(graph_nodes) == 21
     else:
         assert len(graph_nodes) == 15
+
+
+def test_quantizer__non_float_input_does_not_crash_prepare_or_convert():
+    """A non-floating-point input (e.g. int64) must not crash the
+    prepare_pt2e/convert_pt2e.
+
+    Uses prepare_pt2e/convert_pt2e directly (not calibrate_and_quantize test
+    wrapper), matching how any external PT2E caller might use NeutronQuantizer.
+    """
+
+    class PowModule(torch.nn.Module):
+        def forward(self, x, y):
+            return torch.ops.aten.pow.Tensor_Tensor(x, y)
+
+    x = torch.randint(-4, 5, (2,), dtype=torch.int64)
+    y = torch.randn((2,), dtype=torch.float32)
+
+    exported_model = export(PowModule(), (x, y), strict=True)
+    quantizer = NeutronQuantizer(neutron_target_spec)
+
+    prepared_model = prepare_pt2e(exported_model.module(), quantizer)
+    prepared_model(x, y)  # calibration must not raise (torch.histc on int64)
+
+    quantized_model = convert_pt2e(
+        prepared_model
+    )  # must not raise (quantize_per_tensor dtype check)
+    quantized_model(x, y)  # sanity: the converted graph still runs
+
+    def quant_node_on(n, name):
+        return (
+            hasattr(n, "target")
+            and n.target is torch.ops.quantized_decomposed.quantize_per_tensor.default
+            and n.all_input_nodes[0].name == name
+        )
+
+    assert graph_contains_any(
+        quantized_model.graph, condition=functools.partial(quant_node_on, name="y")
+    )
+    assert not graph_contains_any(
+        quantized_model.graph, condition=functools.partial(quant_node_on, name="x")
+    )

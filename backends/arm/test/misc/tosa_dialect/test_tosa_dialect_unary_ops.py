@@ -127,9 +127,11 @@ def test_tosa_unary_ops(
     with TosaLoweringContext(
         TosaSpecification.create_from_string(spec)
     ), FakeTensorMode() as mode:
-        output = getattr(exir_ops.backend.tosa, op_name).default(
-            mode.from_tensor(input_tensor)
-        )
+        operands: tuple[torch.Tensor, ...] = (mode.from_tensor(input_tensor),)
+        if op_name == "NEGATE":
+            zero_point = torch.zeros(1, dtype=input_tensor.dtype)
+            operands += (zero_point, zero_point)
+        output = getattr(exir_ops.backend.tosa, op_name).default(*operands)
 
     assert output.dtype == input_tensor.dtype
     assert tuple(output.shape) == tuple(input_tensor.shape)
@@ -346,9 +348,11 @@ def test_tosa_float_unary_ops_accept_bfloat16_with_bf16_extension(
     with TosaLoweringContext(
         TosaSpecification.create_from_string("TOSA-1.1+FP+bf16")
     ), FakeTensorMode() as mode:
-        output = getattr(exir_ops.backend.tosa, op_name).default(
-            mode.from_tensor(input_tensor)
-        )
+        operands: tuple[torch.Tensor, ...] = (mode.from_tensor(input_tensor),)
+        if op_name == "NEGATE":
+            zero_point = torch.zeros(1, dtype=input_tensor.dtype)
+            operands += (zero_point, zero_point)
+        output = getattr(exir_ops.backend.tosa, op_name).default(*operands)
 
     assert output.dtype == torch.bfloat16
     assert tuple(output.shape) == tuple(input_tensor.shape)
@@ -360,8 +364,11 @@ def test_negate_rejects_bfloat16_without_bf16_extension() -> None:
     with TosaLoweringContext(
         TosaSpecification.create_from_string("TOSA-1.1+FP")
     ), FakeTensorMode() as mode:
+        zero_point = torch.zeros(1, dtype=sample_input.dtype)
         with pytest.raises(TosaValueError, match="doesn't support bfloat16"):
-            exir_ops.backend.tosa.NEGATE.default(mode.from_tensor(sample_input))
+            exir_ops.backend.tosa.NEGATE.default(
+                mode.from_tensor(sample_input), zero_point, zero_point
+            )
 
 
 def test_abs_rejects_int8() -> None:
@@ -392,3 +399,29 @@ def test_logical_not_rejects_non_bool() -> None:
     ), FakeTensorMode() as mode:
         with pytest.raises(TosaValueError, match="requires bool inputs"):
             exir_ops.backend.tosa.LOGICAL_NOT.default(mode.from_tensor(sample_input))
+
+
+@pytest.mark.parametrize("op_name", ["ABS", "NEGATE", "BITWISE_NOT"])
+@pytest.mark.parametrize(
+    ("spec", "accepted"), [("TOSA-1.1+INT+int64", True), ("TOSA-1.1+INT", False)]
+)
+def test_unary_ops_take_int64_only_with_the_extension(
+    op_name: str, spec: str, accepted: bool
+) -> None:
+    input_tensor = torch.randint(1, 16, (2, 3), dtype=torch.int64)
+
+    with TosaLoweringContext(
+        TosaSpecification.create_from_string(spec)
+    ), FakeTensorMode() as mode:
+        args: list[torch.Tensor] = [mode.from_tensor(input_tensor)]
+        if op_name == "NEGATE":
+            zero_point = torch.zeros(1, dtype=torch.int64)
+            args.extend([zero_point, zero_point])
+        if not accepted:
+            with pytest.raises(TosaValueError):
+                getattr(exir_ops.backend.tosa, op_name).default(*args)
+            return
+        output = getattr(exir_ops.backend.tosa, op_name).default(*args)
+
+    assert output.dtype == torch.int64
+    assert tuple(output.shape) == (2, 3)

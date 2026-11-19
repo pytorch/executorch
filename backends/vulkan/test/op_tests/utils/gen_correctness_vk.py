@@ -59,6 +59,20 @@ class VkCorrectnessTestGen(CorrectnessTestGen):
         self.op_reg_name = op_reg_name
         self.generator = ComputeGraphGen(self.op_reg_name, self.f, self.suite_def)
 
+    def gen_create_ref_data(self, inputs) -> str:
+        ref_data = super().gen_create_ref_data(inputs)
+        case_index = self.suite_def.input_cases.index(inputs)
+        for dtype, (rtol, atol) in self.suite_def.case_tolerances.get(
+            case_index, {}
+        ).items():
+            ref_data += f"""
+  if (test_dtype == {dtype}) {{
+    rtol = {rtol};
+    atol = {atol};
+  }}
+"""
+        return ref_data
+
     def generate_fixture_cpp(self) -> str:
         check_fn = ""
         if not self.suite_def.requires_prepack:
@@ -141,6 +155,71 @@ ValueRef add_scalar_to_graph(ComputeGraph& graph, const at::Scalar& scalar) {
   }
   VK_THROW("Unsupported at::Scalar!");
 }
+
+class OutputPaddingCheck {
+  ValueRef value_ = kDummyValueRef;
+  ValueRef view_ = kDummyValueRef;
+  ValueRef initializer_ = kDummyValueRef;
+  ValueRef capture_ = kDummyValueRef;
+  at::ScalarType dtype_ = at::kFloat;
+
+ public:
+  OutputPaddingCheck(ComputeGraph* graph, ValueRef value, at::ScalarType dtype)
+      : value_(value), dtype_(dtype) {
+    const auto padded = graph->padded_sizes_of(value);
+    const auto order = graph->dim_order_of(value);
+    const int64_t offset = padded.size() - order.size();
+    // A packed dim beyond the tensor's rank is innermost.
+    const int64_t packed = padded.size() - 1 - graph->packed_dim_of(value);
+    std::vector<int64_t> padded_order;
+    for (int64_t d = 0; d < offset; ++d) {
+      if (d != packed) {
+        padded_order.push_back(d);
+      }
+    }
+    for (const auto d : order) {
+      padded_order.push_back(d + offset);
+    }
+    if (packed < offset) {
+      padded_order.push_back(packed);
+    }
+    view_ = graph->add_tensor_view(value, padded, padded_order);
+    initializer_ = graph->set_input_tensor(view_);
+  }
+
+  void add_readback(ComputeGraph* graph) {
+    capture_ = graph->set_output_tensor(view_);
+  }
+
+  void poison(ComputeGraph* graph) {
+    graph->virtual_resize(view_, graph->padded_sizes_of(value_));
+    const auto poison = at::full(graph->sizes_of(view_), 7, at::TensorOptions().dtype(dtype_));
+    graph->maybe_cast_and_copy_into_staging(
+        initializer_, poison.const_data_ptr(), poison.numel(), from_at_scalartype(dtype_));
+  }
+
+  void check(ComputeGraph* graph) {
+    const auto padded = graph->sizes_of(view_);
+    auto logical = graph->sizes_of(value_);
+    logical.insert(logical.begin(), padded.size() - logical.size(), 1);
+    auto physical = at::empty(padded, at::TensorOptions().dtype(dtype_));
+    graph->maybe_cast_and_copy_from_staging(
+        capture_, physical.mutable_data_ptr(), physical.numel(), from_at_scalartype(dtype_));
+    const auto values = physical.to(at::kDouble).contiguous();
+    const double* data = values.const_data_ptr<double>();
+    for (int64_t i = 0; i < physical.numel(); ++i) {
+      int64_t remaining = i;
+      bool padding = false;
+      for (size_t d = padded.size(); d-- > 0;) {
+        padding |= remaining % padded[d] >= logical[d];
+        remaining /= padded[d];
+      }
+      if (padding) {
+        EXPECT_EQ(data[i], 0.0) << "physical element " << i;
+      }
+    }
+  }
+};
 
 #ifdef USE_VULKAN_FP16_INFERENCE
 bool check_close(at::Tensor& t1, at::Tensor& t2, float rtol=1e-2, float atol=1e-2) {

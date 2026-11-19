@@ -158,6 +158,9 @@ struct ET_EXPERIMENTAL LayerGeometry {
 // exactly one entry per model layer.
 struct ET_EXPERIMENTAL CacheGeometry {
   std::vector<LayerGeometry> layers;
+  // Unset means ordinary attention. DFlash K/V are [new context, block].
+  // Nonnegative temporary block length; zero persists all K/V with one dummy Q.
+  std::optional<int> dflash_block_size = std::nullopt;
 };
 
 // Runtime-selected cache sizing and storage settings.
@@ -171,17 +174,24 @@ struct ET_EXPERIMENTAL CacheConfig {
   // Max tokens per step; a ring layer sizes slots to window + max_write - 1.
   // Unset = each ring layer uses its own window.
   std::optional<int> max_write;
+  // Sequences a batch layout must hold at once, for a byte layer whose
+  // storage width is fixed when the program is compiled. Unset = no fixed
+  // bound; the capacity they share is the only limit.
+  std::optional<int> max_seqs;
 };
 
 ET_EXPERIMENTAL inline bool valid(const CacheGeometry& geometry) {
-  if (geometry.layers.empty()) {
+  if (geometry.layers.empty() ||
+      (geometry.dflash_block_size && *geometry.dflash_block_size < 0)) {
     return false;
   }
   for (const LayerGeometry& layer : geometry.layers) {
     if (layer.n_kv_heads <= 0 || layer.head_dim <= 0) {
       return false;
     }
-    if ((layer.policy.kind == LayerPolicy::Kind::Flat &&
+    if ((layer.policy.kind != LayerPolicy::Kind::Flat &&
+         layer.policy.kind != LayerPolicy::Kind::Ring) ||
+        (layer.policy.kind == LayerPolicy::Kind::Flat &&
          layer.policy.window != 0) ||
         (layer.policy.kind == LayerPolicy::Kind::Ring &&
          layer.policy.window <= 0)) {
@@ -195,7 +205,8 @@ ET_EXPERIMENTAL inline bool valid(const CacheConfig& cfg) {
   // initial_capacity may be 0 but not negative, and may exceed capacity -- the
   // byte layer clamps it.
   return cfg.capacity > 0 && cfg.initial_capacity >= 0 &&
-      (!cfg.max_write || *cfg.max_write > 0);
+      (!cfg.max_write || *cfg.max_write > 0) &&
+      (!cfg.max_seqs || *cfg.max_seqs > 0);
 }
 
 ET_EXPERIMENTAL inline bool valid(

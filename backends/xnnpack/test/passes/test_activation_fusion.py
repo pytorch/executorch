@@ -231,6 +231,51 @@ class TestActivationFusion(unittest.TestCase):
             activation_name="executorch_exir_dialects_edge__ops_aten_hardtanh_default",
         )
 
+    def test_activation_fusion_stacked_activations(self):
+        # Fusing a second activation must narrow the range of the first one
+        # instead of replacing it.
+        relu = torch.nn.ReLU
+        hardtanh = torch.nn.Hardtanh
+        cases = [
+            (relu(), relu(), (0.0, float("inf"))),
+            (torch.nn.ReLU6(), relu(), (0.0, 6.0)),
+            (hardtanh(-1.0, 1.0), relu(), (0.0, 1.0)),
+            (relu(), hardtanh(-1.0, 1.0), (0.0, 1.0)),
+            (hardtanh(-2.0, 2.0), hardtanh(-1.0, 3.0), (-1.0, 2.0)),
+            (hardtanh(0.0, 1.0), hardtanh(2.0, 3.0), (2.0, 2.0)),
+        ]
+        inputs = (torch.randn(4, 8) * 10,)
+        for first, second, (output_min, output_max) in cases:
+            with self.subTest(first=first, second=second):
+                linear = torch.nn.Linear(8, 8)
+                module = torch.nn.Sequential(linear, first, second).eval()
+                artifact = (
+                    Tester(module, inputs)
+                    .export()
+                    .to_edge()
+                    .run_passes(self.PassStage)
+                    .check_not(
+                        [
+                            "executorch_exir_dialects_edge__ops_aten_relu_default",
+                            "executorch_exir_dialects_edge__ops_aten_hardtanh_default",
+                        ]
+                    )
+                    .get_artifact(StageType.RUN_PASSES)
+                )
+                fused = [
+                    n.meta[FuseActivationPass.FUSED_ACTIVATION_TAG]
+                    for n in artifact.exported_program().graph.nodes
+                    if FuseActivationPass.FUSED_ACTIVATION_TAG in n.meta
+                ]
+                self.assertEqual(len(fused), 1)
+                self.assertEqual(float(fused[0].output_min), output_min)
+                self.assertEqual(float(fused[0].output_max), output_max)
+                # The fused range is exactly what the unfused activations compute.
+                torch.testing.assert_close(
+                    module(*inputs),
+                    linear(*inputs).clamp(output_min, output_max),
+                )
+
     def _test_binary_op_activation_e2e(
         self,
         binary_op,

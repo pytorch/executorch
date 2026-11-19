@@ -20,7 +20,8 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
     QnnDevice* qnn_device_ptr,
     const QnnExecuTorchContextBinary& qnn_context_blob,
     const QnnExecuTorchOptions* options,
-    QnnDlcManager* qnn_dlc_manager) {
+    QnnDlcManager* qnn_dlc_manager,
+    Qnn_ContextHandle_t spill_fill_handle) {
   auto backend_params = std::make_unique<BackendConfigParameters>();
 
   switch (options->backend_options()->backend_type()) {
@@ -79,7 +80,8 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
           htp_options,
           options->target_options(),
           qnn_dlc_manager,
-          get_option(options->profile_level(), QNN_RUNTIME_PROFILE_LEVEL));
+          get_option(options->profile_level(), QNN_RUNTIME_PROFILE_LEVEL),
+          spill_fill_handle);
 
       backend_params->qnn_graph_ptr_ = std::make_unique<HtpGraph>(
           implementation_ptr,

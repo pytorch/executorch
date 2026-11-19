@@ -50,8 +50,12 @@ PHDRS
 {
     rom_boot PT_LOAD;
     rom_exec PT_LOAD;
+    rom_sram PT_LOAD;
     rom_dram PT_LOAD;
     rom_model PT_LOAD;
+#ifdef __clang__
+    tls       PT_TLS;
+#endif
     null     PT_NULL;
 }
 
@@ -100,7 +104,11 @@ SECTIONS
    * Alignment requirement from up to 496 interrupts, rounded to the closest
    * power of two equals 512 (words), thus 2048 bytes.
    */
+#ifdef __clang__
+  .data.vtable_rw (NOLOAD):
+#else
   .data.vtable_rw (COPY):
+#endif
   {
     . = ALIGN(0x800);
     KEEP(*(.vtable_rw))
@@ -143,11 +151,33 @@ SECTIONS
     *(vtable)
     *(.data)
     *(.data.*)
+    *(.got)
+    *(.got.*)
     *(.rodata*)
 
     . = ALIGN(4);
+#ifndef __clang__
     __data_end__ = .;
+#endif
   } > BRAM :rom_exec
+
+#ifdef __clang__
+  .tdata :
+  {
+    __tls_start = .;
+    *(.tdata .tdata.* .gnu.linkonce.td.*)
+    . = ALIGN(4);
+    __data_end__ = .;
+  } > BRAM :rom_exec :tls
+
+  .tbss (NOLOAD) :
+  {
+    *(.tbss .tbss.* .gnu.linkonce.tb.*)
+    *(.tcommon)
+    . = ALIGN(4);
+    __tls_end = .;
+  } > BRAM :null :tls
+#endif
 
   .ARM.extab :
   {
@@ -178,6 +208,11 @@ SECTIONS
     . = ALIGN(4);
     __zero_table_start__ = .;
 
+#ifdef __clang__
+    LONG (ADDR(.tbss))
+    LONG (SIZEOF(.tbss) / 4)
+#endif
+
     LONG (ADDR(.bss))
     LONG (SIZEOF(.bss) / 4)
 
@@ -194,6 +229,9 @@ SECTIONS
 
     . = ALIGN(4);
     /* preinit data */
+#ifdef __clang__
+    __bothinit_array_start = .;
+#endif
     PROVIDE_HIDDEN (__preinit_array_start = .);
     KEEP(*(.preinit_array))
     PROVIDE_HIDDEN (__preinit_array_end = .);
@@ -204,6 +242,9 @@ SECTIONS
     KEEP(*(SORT(.init_array.*)))
     KEEP(*(.init_array))
     PROVIDE_HIDDEN (__init_array_end = .);
+#ifdef __clang__
+    __bothinit_array_end = .;
+#endif
 
     . = ALIGN(4);
     /* finit data */
@@ -213,7 +254,8 @@ SECTIONS
     PROVIDE_HIDDEN (__fini_array_end = .);
 
     KEEP(*(.jcr*))
-  } > SRAM :rom_dram
+    . = ALIGN(4);
+  } > SRAM :rom_sram
 
 #if (ETHOSU_MODEL == 0)
   .sram.rodata :
@@ -239,6 +281,7 @@ SECTIONS
     *(.fast_memory)
     . = ALIGN(16);
     *(.bss.ethosu_scratch);
+    . = ALIGN(4);
   } > SRAM :null
 
   .ddr :
@@ -306,6 +349,20 @@ SECTIONS
     __StackTop = .;
   } > DTCM :null
   PROVIDE(__stack = __StackTop);
+
+#ifdef __clang__
+  PROVIDE(__data_start = __data_start__);
+  PROVIDE(__data_source = LOADADDR(.data));
+  PROVIDE(__data_size = __data_end__ - __data_start__);
+  PROVIDE(__bss_start = __bss_start__);
+  PROVIDE(__bss_size = __bss_end__ - __bss_start__);
+  PROVIDE(__tls_align = MAX(ALIGNOF(.tdata), ALIGNOF(.tbss)));
+  PROVIDE(__tls_base = __tls_start);
+  PROVIDE(__arm32_tls_tcb_offset = MAX(8, __tls_align));
+  PROVIDE(__heap_start = __end__);
+  PROVIDE(__heap_end = __HeapLimit);
+  PROVIDE(__stack_limit = __StackLimit);
+#endif
 
   /* Check if stack exceeds DTCM limit */
   ASSERT(LENGTH(DTCM) >= __STACK_SIZE, "region DTCM overflowed with stack")

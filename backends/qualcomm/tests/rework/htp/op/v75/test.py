@@ -290,7 +290,10 @@ def test_bmm(request, kwargs):
     Bmm.test(request, kwargs)  # noqa: F405
 
 
-@enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
+# rtol=0: rtol=1 accepts a raw integer copied into a quantized output
+@enumerate_activation_dtype(
+    [Tolerance(rtol=0, atol=0.5), Tolerance(rtol=0, atol=0.5), Tolerance(rtol=1e-1)]
+)
 @with_htp_context
 def test_cast(request, kwargs):
     Cast.test(request, kwargs)  # noqa: F405
@@ -399,6 +402,14 @@ def test_conv1d_transpose(request, kwargs):
             (8, 8, True, Tolerance(), "8a8w_pcq"),
             (16, 4, True, CosineSimilarity(0.95), "16a4w_pcq"),
             (None, None, False, Tolerance(rtol=1e-1), "fp"),
+            # the HTP only takes fp16a8w for 1x1 kernels, the rest fall back to CPU
+            (
+                "fp16",
+                8,
+                True,
+                pytest.raises(AssertionError, match=EXPECT_NOT_FULLY_DELEGATED),
+                "fp16a8w_pcq",
+            ),
         ]
     ],
 )
@@ -424,6 +435,10 @@ def test_conv2d(request, kwargs):
 @with_htp_context
 def test_conv2d_transpose(request, kwargs):
     Conv.test_2d_transpose(request, kwargs)  # noqa: F405
+
+
+def test_conv2d_16a16w_default(subtests, caplog):
+    Conv.test_2d_16a16w_default(subtests, caplog)  # noqa: F405
 
 
 # LPBQ (QNN_QUANTIZATION_ENCODING_BLOCKWISE_EXPANSION) requires V69+; enabled here
@@ -487,6 +502,20 @@ def test_conv3d(request, kwargs):
 @with_htp_context
 def test_conv3d_transpose(request, kwargs):
     Conv.test_3d_transpose(request, kwargs)  # noqa: F405
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        pytest.param(
+            {"act": None, "expected": Tolerance(rtol=1e-1)},
+            id="fp",
+        )
+    ],
+)
+@with_htp_context
+def test_conv_backward(request, kwargs):
+    ConvBackward.test(request, kwargs)  # noqa: F405
 
 
 @enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
@@ -823,7 +852,7 @@ def test_linalg_vector_norm(request, kwargs):
                 "pcq": False,
                 "lpbq": True,
                 "block_sz_map": {"linear": (1, 32)},
-                "expected": Tolerance(),
+                "expected": CosineSimilarity(0.99),
             },
             id="16a4w_lpbq",
         ),
@@ -832,6 +861,27 @@ def test_linalg_vector_norm(request, kwargs):
 @with_htp_context
 def test_linear_block_quant(request, kwargs):
     Linear.test(request, kwargs)  # noqa: F405
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        pytest.param(
+            {
+                "act": 16,
+                "param": 4,
+                "pcq": False,
+                "lpbq": True,
+                "block_sz_map": {"linear": (1, 32)},
+                "expected": CosineSimilarity(0.99),
+            },
+            id="16a4w_lpbq",
+        ),
+    ],
+)
+@with_htp_context
+def test_linear_block_quant_large_bias(request, kwargs):
+    LinearLargeBias.test(request, kwargs)  # noqa: F405
 
 
 @pytest.mark.parametrize(

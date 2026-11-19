@@ -17,6 +17,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -56,7 +57,9 @@ class TempPackage {
   std::filesystem::path path_;
 
  public:
-  explicit TempPackage(std::vector<uint8_t> tensors = {}) {
+  explicit TempPackage(
+      std::vector<uint8_t> tensors = {},
+      const std::vector<std::pair<std::string, std::string>>& extra = {}) {
     path_ = std::filesystem::temp_directory_path() /
         ("ptn_package_" + std::to_string(reinterpret_cast<uintptr_t>(this)) +
          ".ptn");
@@ -74,6 +77,9 @@ class TempPackage {
     add(archive.get(), kProgramEntry, as_bytes(program_));
     add(archive.get(), kSafeTensorsEntry, ByteSpan(tensors));
     add(archive.get(), kAliasesEntry, as_bytes(aliases_));
+    for (const auto& [name, bytes] : extra) {
+      add(archive.get(), name.c_str(), as_bytes(bytes));
+    }
     if (zip_close(archive.get()) != 0) {
       throw std::runtime_error("failed to close test package");
     }
@@ -133,6 +139,64 @@ TEST(PackageTest, LoadsConstantsOnDemand) {
   ASSERT_TRUE(acquired);
   EXPECT_TRUE(std::ranges::equal(acquired->span(), destination));
   EXPECT_NO_THROW(package.verify());
+}
+
+TEST(PackageTest, IgnoresSampleMembers) {
+  const std::string index =
+      R"({"version":"1.0","samples":[{"calls":[{"method":"forward","in":["samples[0].calls[0].in[0]"]}]}]})";
+  const std::vector<uint8_t> data = make_safetensors(
+      R"({"samples[0].calls[0].in[0]":{"dtype":"U8","shape":[2],"data_offsets":[0,2]}})",
+      "in");
+  const TempPackage file(
+      {},
+      {{"samples/golden/index.json", index},
+       {"samples/golden/data.safetensors",
+        std::string(data.begin(), data.end())}});
+  const Package package = Package::load(file.path());
+
+  EXPECT_EQ(package.owner_keys(), (std::vector<std::string>{"weight", "bias"}));
+  EXPECT_FALSE(package.constant_info("samples[0].calls[0].in[0]"));
+  EXPECT_NO_THROW(package.verify());
+}
+
+TEST(PackageTest, ReadsMetadataByName) {
+  const TempPackage file(
+      {},
+      {{kMetadataEntry,
+        R"({"get_n_caches":2,"get_windows":[0,4096],"arch":"llama","tied":true})"}});
+  const Package package = Package::load(file.path());
+
+  EXPECT_EQ(package.metadata_int("get_n_caches"), 2);
+  EXPECT_EQ(
+      package.metadata_ints("get_windows"), (std::vector<int64_t>{0, 4096}));
+  EXPECT_EQ(package.metadata_int("missing"), std::nullopt);
+  EXPECT_EQ(package.metadata_ints("missing"), std::nullopt);
+  EXPECT_THROW(package.metadata_int("get_windows"), std::runtime_error);
+  EXPECT_THROW(package.metadata_ints("get_n_caches"), std::runtime_error);
+  EXPECT_THROW(package.metadata_int("arch"), std::runtime_error);
+  EXPECT_THROW(package.metadata_int("tied"), std::runtime_error);
+  EXPECT_NO_THROW(package.verify());
+
+  const TempPackage none;
+  EXPECT_EQ(
+      Package::load(none.path()).metadata_int("get_n_caches"), std::nullopt);
+}
+
+TEST(PackageTest, RejectsMalformedMetadata) {
+  for (const std::string metadata :
+       {R"([1])",
+        R"({"nested":[[1]]})",
+        R"({"object":{"a":1}})",
+        R"({"":1})",
+        R"({"null":null})",
+        "{"}) {
+    const TempPackage file({}, {{kMetadataEntry, metadata}});
+    EXPECT_THROW(Package::load(file.path()), std::runtime_error) << metadata;
+  }
+  const TempPackage huge(
+      {}, {{kMetadataEntry, R"({"n":18446744073709551615})"}});
+  EXPECT_THROW(
+      Package::load(huge.path()).metadata_int("n"), std::runtime_error);
 }
 
 TEST(PackageTest, ReportsMissingConstantsAndWrongDestinations) {

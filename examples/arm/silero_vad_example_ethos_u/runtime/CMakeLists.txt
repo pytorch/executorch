@@ -69,14 +69,9 @@ if(NOT EXISTS "${ET_PTE_FILE_PATH}")
 endif()
 
 include(${ET_DIR_PATH}/backends/arm/scripts/corstone_utils.cmake)
-fetch_ethos_u_content(${ETHOS_SDK_PATH} ${ET_DIR_PATH})
-
-if(NOT EXISTS "${ETHOS_SDK_PATH}")
-  message(
-    FATAL_ERROR
-      "The ${ETHOS_SDK_PATH} directory does not exist. Please run examples/arm/setup.sh script and retry."
-  )
-endif()
+arm_ensure_ethos_u_content(
+  "${ETHOS_SDK_PATH}" "${ET_DIR_PATH}" ON SYSTEM_CONFIG "Ethos_U85"
+)
 
 find_package(
   executorch REQUIRED HINTS "${ET_BUILD_DIR_PATH}/lib/cmake/ExecuTorch"
@@ -124,11 +119,12 @@ gen_operators_lib(
   "${EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD}"
 )
 
-add_executable(silero_vad_ethos_u main.cpp)
+add_executable(silero_vad_ethos_u)
 
 target_sources(
   silero_vad_ethos_u
   PRIVATE main.cpp ${ET_DIR_PATH}/examples/arm/common/arm_memory_allocator.cpp
+          ${ET_DIR_PATH}/examples/arm/executor_runner/arm_perf_monitor.cpp
 )
 
 target_link_libraries(
@@ -185,6 +181,9 @@ endif()
 
 target_include_directories(
   silero_vad_ethos_u
-  PRIVATE ${ET_INCLUDE_PATH} ${ET_DIR_PATH}/runtime/core/portable_type/c10
-          ${ET_DIR_PATH}/examples/arm/common ${CMAKE_CURRENT_BINARY_DIR}
+  PRIVATE ${ET_INCLUDE_PATH}
+          ${ET_DIR_PATH}/runtime/core/portable_type/c10
+          ${ET_DIR_PATH}/examples/arm/common
+          ${ET_DIR_PATH}/examples/arm/executor_runner
+          ${CMAKE_CURRENT_BINARY_DIR}
 )

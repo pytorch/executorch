@@ -18,10 +18,22 @@ import torch.nn as nn
 from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
 from executorch.backends.mlx.partitioner import MLXPartitioner
 from executorch.backends.mlx.passes import get_default_passes
-from executorch.backends.mlx.test.test_utils import get_mlx_node_counts
-from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
+from executorch.backends.mlx.test.test_utils import (
+    get_mlx_node_counts,
+    inspect_pte_file,
+)
+from executorch.exir import (
+    EdgeCompileConfig,
+    ExecutorchBackendConfig,
+    to_edge,
+    to_edge_transform_and_lower,
+)
+from executorch.exir.lowered_backend_module import LoweredBackendModule
+from executorch.exir.passes import MemoryPlanningPass
+from executorch.exir.program import get_fake_program
 from executorch.runtime import Runtime
 from torch.export import export
+from torch.export.graph_signature import InputKind, InputSpec, TensorArgument
 
 
 class TestMLXPartitionerRejectsToEdge(unittest.TestCase):
@@ -63,6 +75,15 @@ def _delegate_count(program) -> int:
     )
 
 
+def _cpu_ops(program) -> set:
+    """The ATen ops left outside every delegate, which run on the CPU."""
+    return {
+        str(node.target)
+        for node in program.exported_program().graph_module.graph.nodes
+        if node.op == "call_function" and str(node.target).startswith("aten.")
+    }
+
+
 def _run(model, inputs, transform_passes=None):
     """Lower, execute, and return the node counts, the delegate count and the error.
 
@@ -79,7 +100,9 @@ def _run(model, inputs, transform_passes=None):
         counts = get_mlx_node_counts(path)
         method = Runtime.get().load_program(path).load_method("forward")
         out = method.execute(list(inputs))[0]
-    return counts, delegates, (out - ref).abs().max().item()
+    assert out.shape == ref.shape, (out.shape, ref.shape)
+    diff = (out - ref).abs()
+    return counts, delegates, diff.max().item() if diff.numel() else 0.0
 
 
 class TestMLXPartitionerConstantInputs(unittest.TestCase):
@@ -148,6 +171,244 @@ class TestMLXPartitionerConstantInputs(unittest.TestCase):
                         builder.check_support_only()
                     else:
                         builder.build()
+
+
+class TestMLXPartitionerUnsupportedDtypes(unittest.TestCase):
+    def test_float64_tensor_list_stays_off_the_delegate(self):
+        class Float64Cat(nn.Module):
+            def forward(self, x, y):
+                return x + torch.cat([y.sin(), y.cos()]).float()
+
+        _, delegates, err = _run(
+            Float64Cat().eval(),
+            (torch.randn(8), torch.randn(4, dtype=torch.float64)),
+        )
+        self.assertGreater(delegates, 0)
+        self.assertLess(err, 1e-6)
+
+    def test_int64_scatter_add_stays_off_the_delegate(self):
+        class ScatterAdd(nn.Module):
+            def forward(self, base, index, src):
+                return base.scatter_add(0, index, src) + 1
+
+        index = torch.tensor([0, 2, 2, 7])
+        for dtype, scatters in ((torch.float32, 1), (torch.int64, 0)):
+            with self.subTest(dtype=dtype):
+                counts, delegates, err = _run(
+                    ScatterAdd(),
+                    (torch.zeros(8, dtype=dtype), index, torch.ones(4, dtype=dtype)),
+                )
+                self.assertEqual(counts.get("ScatterAddNode", 0), scatters)
+                self.assertGreater(delegates, 0)
+                self.assertEqual(err, 0)
+
+
+class MoeDispatch(nn.Module):
+    """The static dispatch of a mixture-of-experts block.
+
+    Routing weights come from gather, an int64 histogram counts tokens per
+    expert, tokens are scattered into expert slots, and index_add_ (which
+    becomes index_put with accumulate) brings the results back.
+    """
+
+    def __init__(self, experts=4, hidden=8, top_k=2):
+        super().__init__()
+        self.top_k = top_k
+        self.router = nn.Linear(hidden, experts, bias=False)
+        self.weight = nn.Parameter(torch.randn(experts, hidden, hidden))
+
+    def forward(self, x):
+        tokens, hidden = x.shape
+        experts = self.weight.shape[0]
+        scores = self.router(x).softmax(-1)
+        _, selected = torch.topk(scores, self.top_k, dim=-1)
+        weights = scores.gather(1, selected)
+        expert = selected.reshape(-1)
+        order = torch.argsort(expert)
+        token = torch.arange(tokens).repeat_interleave(self.top_k)[order]
+        expert = expert[order]
+        counts = torch.zeros(experts, dtype=torch.long).scatter_add(
+            0, expert, torch.ones_like(expert)
+        )
+        slot = torch.arange(tokens * self.top_k) - (counts.cumsum(0) - counts)[expert]
+        slots = torch.zeros(experts, tokens, hidden)
+        slots[expert, slot] = x[token]
+        y = torch.bmm(slots, self.weight)[expert, slot]
+        out = torch.zeros(tokens, hidden)
+        out.index_add_(0, token, weights.reshape(-1, 1)[order] * y)
+        return x + out
+
+
+class TestMLXPartitionerIndexPutAndGather(unittest.TestCase):
+    def test_moe_dispatch_is_lowered(self):
+        model, inputs = MoeDispatch().eval(), (torch.randn(6, 8),)
+        program = _lower(model, inputs)
+        # Only the int64 histogram stays on the CPU, between two delegates.
+        self.assertEqual(_cpu_ops(program), {"aten.scatter_add.out"})
+        self.assertEqual(_delegate_count(program), 2)
+        method = Runtime.get().load_program(program.buffer).load_method("forward")
+        err = (method.execute(list(inputs))[0] - model(*inputs)).abs().max()
+        self.assertLess(err.item(), 1e-5)
+
+    def test_cache_write_into_a_buffer(self):
+        class Cache(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("k", torch.zeros(2, 8, 4))
+
+            def forward(self, pos, v):
+                self.k[:, pos] = v
+                return self.k * 1
+
+        program = _lower(Cache().eval(), (torch.tensor([0]), torch.randn(2, 1, 4)))
+        self.assertEqual(_cpu_ops(program), set())
+        method = Runtime.get().load_program(program.buffer).load_method("forward")
+        reference = Cache()
+        # Each call must see the writes of the calls before it.
+        for pos in (0, 3, 5):
+            inputs = (torch.tensor([pos]), torch.randn(2, 1, 4))
+            out = method.execute(list(inputs))[0]
+            self.assertTrue(torch.equal(out, reference(*inputs)))
+        # Eager raises on a position outside the cache; the delegate clamps it
+        # to the nearest end, so the write stays inside the buffer.
+        for pos, clamped in ((8, 7), (-9, 0)):
+            v = torch.randn(2, 1, 4)
+            out = method.execute([torch.tensor([pos]), v])[0]
+            self.assertTrue(torch.equal(out, reference(torch.tensor([clamped]), v)))
+
+    def test_gather_clamps_out_of_range_indices(self):
+        class Gather(nn.Module):
+            def forward(self, x, index):
+                return torch.gather(x, 1, index)
+
+        x = torch.arange(12.0).reshape(3, 4)
+        program = _lower(Gather(), (x, torch.zeros(3, 2, dtype=torch.long)))
+        method = Runtime.get().load_program(program.buffer).load_method("forward")
+        # Eager raises on 9, -1 and -7. The delegate counts -1 from the end and
+        # clamps 9 and -7 to the nearest end instead of reading outside x.
+        out = method.execute([x, torch.tensor([[9, -1], [-7, 1], [3, 2]])])[0]
+        clamped = torch.tensor([[3, 3], [0, 1], [3, 2]])
+        self.assertTrue(torch.equal(out, torch.gather(x, 1, clamped)))
+
+    def test_index_add_clamps_out_of_range_indices(self):
+        class IndexAdd(nn.Module):
+            def forward(self, x, index, values):
+                return x.index_add(0, index, values)
+
+        x, values = torch.randn(8, 4), torch.randn(3, 4)
+        program = _lower(IndexAdd(), (x, torch.tensor([0, 1, 2]), values))
+        self.assertEqual(_cpu_ops(program), set())
+        method = Runtime.get().load_program(program.buffer).load_method("forward")
+        # Eager raises on 9, -1 and -9. The delegate counts -1 from the end,
+        # clamps 9 and -9 to the nearest end, and adds both rows aimed at row 7.
+        out = method.execute([x, torch.tensor([9, -1, -9]), values])[0]
+        expected = IndexAdd()(x, torch.tensor([7, 7, 0]), values)
+        self.assertTrue(torch.allclose(out, expected))
+
+    def test_empty_axis(self):
+        # The delegate cannot return an empty tensor yet, so both models sum.
+        class IndexPut(nn.Module):
+            def forward(self, x, index, values):
+                return torch.ops.aten.index_put.default(x, [index], values).sum(0)
+
+        class Gather(nn.Module):
+            def forward(self, x, index):
+                return torch.gather(x, 1, index).sum(1)
+
+        def run(model, *inputs):
+            program = _lower(model, inputs)
+            self.assertEqual(_cpu_ops(program), set())
+            method = Runtime.get().load_program(program.buffer).load_method("forward")
+            return method.execute(list(inputs))[0]
+
+        # Writing or reading nothing on an empty axis works, as in eager.
+        empty, no_index = torch.zeros(0, 4), torch.zeros(0, dtype=torch.long)
+        out = run(IndexPut(), empty, no_index, empty)
+        self.assertTrue(torch.equal(out, torch.zeros(4)))
+        out = run(Gather(), torch.zeros(3, 0), torch.zeros(3, 0, dtype=torch.long))
+        self.assertTrue(torch.equal(out, torch.zeros(3)))
+        # Eager raises on a non-empty write, but there is nowhere to write,
+        # so the delegate returns the input.
+        out = run(IndexPut(), empty, torch.tensor([0]), torch.ones(1, 4))
+        self.assertTrue(torch.equal(out, torch.zeros(4)))
+        # Eager raises; with no element to clamp to, the delegate must too.
+        with self.assertRaisesRegex(RuntimeError, "empty axis"):
+            run(Gather(), torch.zeros(3, 0), torch.zeros(3, 2, dtype=torch.long))
+
+    def test_unsupported_forms_run_on_the_cpu(self):
+        class IndexPut(nn.Module):
+            def __init__(self, accumulate=False):
+                super().__init__()
+                self.accumulate = accumulate
+
+            def forward(self, x, index, values):
+                # Some work before the refused op, so the program has a delegate.
+                x = x.logical_not() if x.dtype == torch.bool else x + 1
+                return torch.ops.aten.index_put.default(
+                    x, [index], values, self.accumulate
+                )
+
+        class Gather(nn.Module):
+            def forward(self, x, index):
+                return torch.gather(x + 1, 0, index)
+
+        index = torch.tensor([4, 1, 4])
+        cases = {
+            "int64": (
+                IndexPut(),
+                (torch.zeros(6, dtype=torch.long), index[1:], torch.tensor([7, 9])),
+                "on torch.int64 is not supported",
+            ),
+            "bool_accumulate": (
+                IndexPut(True),
+                (
+                    torch.ones(6, dtype=torch.bool),
+                    index,
+                    torch.ones(3, dtype=torch.bool),
+                ),
+                "accumulate on bool",
+            ),
+            "bool_mask": (
+                IndexPut(),
+                (
+                    torch.zeros(6),
+                    torch.tensor([1, 0, 1, 0, 0, 1]) == 1,
+                    torch.tensor(2.0),
+                ),
+                "only int32 and int64 index tensors",
+            ),
+            # PyTorch lets a 0-d index gather from a 1-d input.
+            "gather_0d_index": (
+                Gather(),
+                (torch.arange(5.0), torch.tensor(2)),
+                "index of rank 0",
+            ),
+        }
+        refused_ops = (torch.ops.aten.index_put.default, torch.ops.aten.gather.default)
+        for name, (model, inputs, reason) in cases.items():
+            with self.subTest(name):
+                # Refused on purpose, not by a handler that crashed.
+                builder = MLXProgramBuilder(get_fake_program(export(model, inputs)))
+                builder.check_support_only()
+                [info] = [
+                    info
+                    for node, info in builder.node_info.items()
+                    if node.target in refused_ops
+                ]
+                self.assertFalse(info.supported)
+                self.assertIn(reason, info.unsupported_reason)
+
+                program = _lower(model, inputs)
+                self.assertEqual(_delegate_count(program), 1)
+                op = "gather" if isinstance(model, Gather) else "index_put"
+                self.assertEqual(_cpu_ops(program), {f"aten.{op}.out"})
+                method = (
+                    Runtime.get().load_program(program.buffer).load_method("forward")
+                )
+                # Exact, and bool outputs cannot be subtracted.
+                self.assertTrue(
+                    torch.equal(method.execute(list(inputs))[0], model(*inputs))
+                )
 
 
 class Sdpa(nn.Module):
@@ -323,6 +584,83 @@ class TestMLXPartitionerSdpaShapes(unittest.TestCase):
             self.assertEqual(get_mlx_node_counts(path).get("SdpaNode", 0), 0)
 
 
+class TestMLXPartitionerSharedConstants(unittest.TestCase):
+    def test_weight_used_twice_in_one_delegate_and_once_in_another(self):
+        class SharedLinear(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = nn.Linear(4, 4)
+
+            def forward(self, x):
+                y = self.linear(x) + self.linear(x * 2)
+                # elu is not lowered, so the last use lands in a second delegate.
+                return self.linear(torch.nn.functional.elu(y))
+
+        _, delegates, err = _run(SharedLinear().eval(), (torch.randn(2, 4),))
+        self.assertGreater(delegates, 1)
+        self.assertLess(err, 1e-5)
+
+    def test_second_placeholder_for_one_constant_raises(self):
+        class TwoReads(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("c", torch.randn(4))
+
+            def forward(self, x):
+                return x + self.c, x * self.c
+
+        ep = export(TwoReads(), (torch.randn(4),), strict=False)
+        original = next(n for n in ep.graph.nodes if n.name == "b_c")
+        with ep.graph.inserting_after(original):
+            second = ep.graph.placeholder("b_c_second")
+        second.meta = dict(original.meta)
+        mul = next(n for n in ep.graph.nodes if n.target == torch.ops.aten.mul.Tensor)
+        mul.replace_input_with(original, second)
+        ep.graph_signature.input_specs.insert(
+            1, InputSpec(InputKind.BUFFER, TensorArgument("b_c_second"), "c", True)
+        )
+
+        for check_only in (True, False):
+            with self.subTest(check_only=check_only):
+                builder = MLXProgramBuilder(ep)
+                with self.assertRaisesRegex(ValueError, "more than one placeholder"):
+                    if check_only:
+                        builder.check_support_only()
+                    else:
+                        builder.build()
+
+    def test_delegates_share_the_bytes_of_a_shared_weight(self):
+        class SharedLinear(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = nn.Linear(4, 4)
+
+            def forward(self, x):
+                # elu is not lowered, so the second use lands in another delegate.
+                return self.linear(torch.nn.functional.elu(self.linear(x)))
+
+        model = SharedLinear().eval()
+        weight = model.linear.weight.detach().clone()
+        program = to_edge_transform_and_lower(
+            export(model, (torch.randn(2, 4),), strict=False),
+            partitioner=[MLXPartitioner()],
+        ).exported_program()
+        delegates = [
+            module
+            for module in program.graph_module.children()
+            if isinstance(module, LoweredBackendModule)
+        ]
+
+        self.assertEqual(len(delegates), 2)
+        first, second = (
+            {id(buffer) for buffer in delegate.named_data_store_output.buffers}
+            for delegate in delegates
+        )
+        self.assertEqual(len(first), 2)
+        self.assertEqual(first, second)
+        self.assertTrue(torch.equal(model.linear.weight, weight))
+
+
 class TestMLXPartitionerGroupedKeys(unittest.TestCase):
     """Repeated KV heads are fused only when the caller enables the shared passes."""
 
@@ -397,6 +735,141 @@ class TestMLXPartitionerSdpaCausal(unittest.TestCase):
         self.assertLess(err, 1e-4)
 
 
+class TestMLXPartitionerConstantBase(unittest.TestCase):
+    def test_slice_scatter_into_a_buffer(self):
+        class ScatterIntoBuffer(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("base", torch.zeros(4, 8))
+
+            def forward(self, x):
+                return torch.slice_scatter(self.base, x, 1, 0, 2) * 2
+
+        counts, _, err = _run(ScatterIntoBuffer().eval(), (torch.randn(4, 2),))
+        self.assertEqual(counts.get("SliceUpdateNode", 0), 1)
+        self.assertLess(err, 1e-6)
+
+
+class TestMLXPartitionerBoolIndex(unittest.TestCase):
+    """The MLX runtime gathers only with integer indices."""
+
+    class ConstantMask(nn.Module):
+        def __init__(self, mask, persistent=None, axis=0, scale=True):
+            super().__init__()
+            if persistent is None:
+                self.mask = mask
+            else:
+                self.register_buffer("mask", mask, persistent=persistent)
+            self.axis = axis
+            self.scale = scale
+
+        def forward(self, x):
+            y = (x + 1)[(slice(None),) * self.axis + (self.mask,)]
+            if self.axis:
+                # The leading dim's stride depends on how many elements the
+                # mask selects, which exir spec propagation rejects, so keep it
+                # in the delegate.
+                y = y.sum(self.axis)
+            return y * 2 if self.scale else y
+
+    def test_constant_mask_becomes_positions(self):
+        mask = torch.tensor([1, 0, 1, 1, 0, 1, 0, 1]) == 1
+        cases = {
+            "1d": (self.ConstantMask(mask), (8, 16)),
+            "2d": (self.ConstantMask(mask.reshape(1, 8)), (1, 8, 16)),
+            "3d": (self.ConstantMask(mask.reshape(2, 2, 2)), (2, 2, 2, 5)),
+            "buffer": (self.ConstantMask(mask, persistent=False), (8, 16)),
+            "axis_1": (self.ConstantMask(mask.reshape(2, 4), axis=1), (3, 2, 4, 5)),
+        }
+        for name, (model, shape) in cases.items():
+            with self.subTest(name):
+                _, delegates, err = _run(model.eval(), (torch.randn(shape),))
+                self.assertEqual(delegates, 1)
+                self.assertLess(err, 1e-5)
+
+    def test_other_bool_indices_run_on_the_cpu(self):
+        class ComputedMask(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.ids = torch.tensor([[1, 7, 7, 2, 7, 3, 7, 4]])
+
+            def forward(self, x):
+                return (x + 1)[self.ids == 7] * 2
+
+        class MaskInput(nn.Module):
+            def forward(self, x, mask):
+                return (x + 1)[mask] * 2
+
+        class MaskWithIndex(nn.Module):
+            def __init__(self, mask):
+                super().__init__()
+                self.mask = mask
+
+            def forward(self, x, i):
+                return (x + 1)[self.mask, i] * 2
+
+        class MaskThenUpdate(nn.Module):
+            def __init__(self, mask):
+                super().__init__()
+                self.register_buffer("mask", mask, persistent=False)
+
+            def forward(self, x):
+                y = (x + 1)[self.mask] * 2
+                self.mask.copy_(x[:, :, 0] > 0)
+                return y
+
+        mask = torch.tensor([[1, 0, 1, 1, 0, 1, 0, 1]]) == 1
+        x = torch.randn(1, 8, 16)
+        # An all-false mask gives an empty result, so it is the graph output
+        # here: an MLX op after it would have to write an empty output too.
+        all_false = self.ConstantMask(torch.zeros(1, 8, dtype=torch.bool), scale=False)
+        cases = {
+            "computed_mask": (ComputedMask(), (x,), 2),
+            "mask_input": (MaskInput(), (x, mask), 2),
+            "mask_with_index": (MaskWithIndex(mask), (x, torch.tensor([3])), 2),
+            "persistent_buffer": (self.ConstantMask(mask, persistent=True), (x,), 2),
+            "all_false": (all_false, (x,), 1),
+        }
+        for name, (model, inputs, expected) in cases.items():
+            with self.subTest(name):
+                _, delegates, err = _run(model.eval(), inputs)
+                self.assertEqual(delegates, expected)
+                self.assertLess(err, 1e-6)
+
+        with self.subTest("mutated_buffer"):
+            # Not run: the eager reference call would overwrite the mask first.
+            program = _lower(MaskThenUpdate(mask).eval(), (x,))
+            self.assertEqual(_delegate_count(program), 2)
+
+    def test_handler_refuses_masks_it_cannot_lower(self):
+        mask = torch.tensor([1, 0, 1, 1, 0, 1, 0, 1]) == 1
+        cases = {
+            # A persistent buffer has no values in the fake copy, so the handler
+            # must refuse it rather than fail reading it.
+            "persistent_buffer": (
+                self.ConstantMask(mask, persistent=True),
+                "only a constant boolean mask",
+            ),
+            "all_false": (
+                self.ConstantMask(torch.zeros(8, dtype=torch.bool)),
+                "all-false",
+            ),
+        }
+        for name, (model, reason) in cases.items():
+            with self.subTest(name):
+                # The same fake copy of the program that to_backend gives the
+                # partitioner.
+                ep = get_fake_program(export(model.eval(), (torch.randn(8, 16),)))
+                index = next(
+                    n for n in ep.graph.nodes if n.target == torch.ops.aten.index.Tensor
+                )
+                builder = MLXProgramBuilder(ep)
+                builder.check_support_only()
+                info = builder.node_info[index]
+                self.assertFalse(info.supported)
+                self.assertIn(reason, info.unsupported_reason)
+
+
 class TestMLXPartitionerMixedSupport(unittest.TestCase):
     """An operator is preserved from decomposition per operator, not per call."""
 
@@ -426,6 +899,334 @@ class TestMLXPartitionerMixedSupport(unittest.TestCase):
         _, delegates, err = _run(TwoRolls().eval(), (torch.randn(4, 8),))
         self.assertGreater(delegates, 0)
         self.assertLess(err, 1e-4)
+
+
+class TestMLXPartitionerFunctionalIndexCopy(unittest.TestCase):
+    """index_copy that returns a new tensor rather than updating one."""
+
+    class ConstantDestination(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.register_buffer("table", torch.randn(16, 8))
+
+        def forward(self, indices, update):
+            return self.table.index_copy(0, indices, update)
+
+    class StridedIndices(nn.Module):
+        def forward(self, data, indices, update):
+            return data.index_copy(0, indices[::2], update)
+
+    def test_constant_destination(self):
+        # The destination is a constant the delegate must read, not write.
+        counts, delegates, err = _run(
+            self.ConstantDestination().eval(),
+            (torch.tensor([1, 5]), torch.randn(2, 8)),
+        )
+        self.assertEqual(delegates, 1)
+        self.assertEqual(counts.get("IndexCopyNode", 0), 1)
+        self.assertEqual(err, 0)
+
+    def test_scalar_source_stays_off_the_delegate(self):
+        # ATen copies a 0-d source into a 1-D destination; the delegate only
+        # takes a source of the destination's rank.
+        class ScalarSource(nn.Module):
+            def forward(self, data, indices, update):
+                return data.index_copy(0, indices, update)
+
+        counts, _, err = _run(
+            ScalarSource().eval(),
+            (torch.zeros(4), torch.tensor([2]), torch.tensor(5.0)),
+        )
+        self.assertEqual(counts.get("IndexCopyNode", 0), 0)
+        self.assertEqual(err, 0)
+
+    def test_strided_indices(self):
+        # Indices sliced in the graph are a strided view the delegate must
+        # read in order.
+        counts, delegates, err = _run(
+            self.StridedIndices().eval(),
+            (torch.randn(16, 8), torch.tensor([1, 4, 9, 7]), torch.randn(2, 8)),
+        )
+        self.assertEqual(delegates, 1)
+        self.assertEqual(counts.get("IndexCopyNode", 0), 1)
+        self.assertEqual(err, 0)
+
+
+class TestMLXPartitionerMutatedUserInput(unittest.TestCase):
+    """index_copy_ into a user input: the delegate writes the input itself."""
+
+    class IndexCopyInput(nn.Module):
+        def __init__(self, axis):
+            super().__init__()
+            self.axis = axis
+
+        def forward(self, data, indices, update):
+            data.index_copy_(self.axis, indices, update)
+            return data.sum(self.axis)
+
+    def _assert_written_by_delegate(self, program, n_inputs=1):
+        # No write-back copy_, and the method returns each mutated input as
+        # its own value.
+        graph = program.exported_program().graph
+        self.assertFalse(
+            any(n.target == torch.ops.aten.copy_.default for n in graph.nodes)
+        )
+        plan = program.executorch_program.execution_plan[0]
+        self.assertEqual(plan.outputs[:n_inputs], plan.inputs[:n_inputs])
+
+    def test_index_copy_into_input_lowers_and_executes(self):
+        for axis, shape, update_shape in (
+            (0, (16, 8), (4, 8)),
+            (1, (8, 16), (8, 4)),
+        ):
+            with self.subTest(axis=axis):
+                model = self.IndexCopyInput(axis).eval()
+                inputs = (
+                    torch.randn(shape),
+                    torch.tensor([1, 5, 9, 12]),
+                    torch.randn(update_shape),
+                )
+                expected = inputs[0].clone()
+                with torch.no_grad():
+                    expected_sum = model(expected, *inputs[1:])
+                program = _lower(model, inputs)
+                self._assert_written_by_delegate(program)
+                with tempfile.TemporaryDirectory() as tmp:
+                    path = Path(tmp) / "model.pte"
+                    path.write_bytes(program.buffer)
+                    counts = get_mlx_node_counts(path)
+                    method = Runtime.get().load_program(path).load_method("forward")
+                    data, summed = method.execute(list(inputs))
+                self.assertEqual(_delegate_count(program), 1)
+                self.assertEqual(counts.get("IndexCopyNode", 0), 1)
+                self.assertTrue(torch.allclose(data, expected))
+                self.assertTrue(torch.allclose(summed, expected_sum, atol=1e-5))
+
+    def test_index_copy_into_input_across_calls(self):
+        model = self.IndexCopyInput(0).eval()
+        cache = torch.zeros(16, 8)
+        program = _lower(model, (cache, torch.tensor([1]), torch.randn(1, 8)))
+        self._assert_written_by_delegate(program)
+
+        method = Runtime.get().load_program(program.buffer).load_method("forward")
+        expected = cache.clone()
+        for row in (3, 7, 11):
+            indices, update = torch.tensor([row]), torch.randn(1, 8)
+            expected.index_copy_(0, indices, update)
+            cache, summed = method.execute([cache, indices, update])
+            self.assertTrue(torch.equal(cache, expected))
+            self.assertTrue(torch.allclose(summed, expected.sum(0), atol=1e-5))
+
+    class IndexCopyInputOnly(nn.Module):
+        def forward(self, cache, indices, update):
+            cache.index_copy_(0, indices, update)
+            return cache
+
+    def test_delegate_whose_only_effect_is_the_input_write(self):
+        # The method returns the input itself, so nothing reads the delegate's
+        # outputs; dead code elimination must still keep it.
+        model = self.IndexCopyInputOnly().eval()
+        cache = torch.zeros(16, 8)
+        program = _lower(model, (cache.clone(), torch.tensor([1]), torch.randn(1, 8)))
+        self._assert_written_by_delegate(program)
+        self.assertEqual(_delegate_count(program), 1)
+
+        method = Runtime.get().load_program(program.buffer).load_method("forward")
+        expected = cache.clone()
+        for row in (3, 7):
+            indices, update = torch.tensor([row]), torch.randn(1, 8)
+            expected.index_copy_(0, indices, update)
+            cache, _ = method.execute([cache, indices, update])
+            self.assertTrue(torch.equal(cache, expected))
+
+    def test_schema_version_marks_programs_that_write_inputs(self):
+        # A runtime that predates mutated_inputs would skip the write-back, so
+        # only a program that writes inputs requires schema version 2.
+        class ReadOnly(nn.Module):
+            def forward(self, data, indices, update):
+                return data.index_copy(0, indices, update).sum(0)
+
+        inputs = (torch.randn(16, 8), torch.tensor([1]), torch.randn(1, 8))
+        for model, version in ((self.IndexCopyInput(0), "2"), (ReadOnly(), "1")):
+            with self.subTest(model=type(model).__name__):
+                program = _lower(model.eval(), tuple(t.clone() for t in inputs))
+                with tempfile.TemporaryDirectory() as tmp:
+                    path = Path(tmp) / "model.pte"
+                    path.write_bytes(program.buffer)
+                    self.assertEqual(
+                        inspect_pte_file(path)["graph"]["version"], version
+                    )
+                    method = Runtime.get().load_program(path).load_method("forward")
+                    method.execute([t.clone() for t in inputs])
+
+    class ReadThenIndexCopy(nn.Module):
+        def forward(self, data, indices, update):
+            before = data.sum(0)
+            data.index_copy_(0, indices, update)
+            return before, data.sum(0)
+
+    def test_read_before_index_copy(self):
+        # A value read from the input before it is updated must be computed
+        # from the old contents, not race the write into the input.
+        model = self.ReadThenIndexCopy().eval()
+        cache = torch.randn(16, 8)
+        program = _lower(model, (cache, torch.tensor([1]), torch.randn(1, 8)))
+        self._assert_written_by_delegate(program)
+
+        method = Runtime.get().load_program(program.buffer).load_method("forward")
+        expected = cache.clone()
+        for row in (3, 7, 11):
+            indices, update = torch.tensor([row]), torch.randn(1, 8)
+            expected_before = expected.sum(0)
+            expected.index_copy_(0, indices, update)
+            cache, before, after = method.execute([cache, indices, update])
+            self.assertTrue(torch.allclose(before, expected_before, atol=1e-5))
+            self.assertTrue(torch.equal(cache, expected))
+            self.assertTrue(torch.allclose(after, expected.sum(0), atol=1e-5))
+
+    def test_unplanned_input_updated_in_callers_tensor(self):
+        # An unplanned input is the caller's own tensor, so the update lands
+        # there. A large cache is page-aligned, so MLX wraps it without a copy.
+        model = self.IndexCopyInput(0).eval()
+        cache = torch.zeros(1024, 1024)
+        program = to_edge_transform_and_lower(
+            export(
+                model,
+                (cache.clone(), torch.tensor([1]), torch.randn(1, 1024)),
+                strict=False,
+            ),
+            partitioner=[MLXPartitioner()],
+        ).to_executorch(
+            ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
+            )
+        )
+        self._assert_written_by_delegate(program)
+        method = Runtime.get().load_program(program.buffer).load_method("forward")
+        expected = cache.clone()
+        for row in (3, 700):
+            indices, update = torch.tensor([row]), torch.randn(1, 1024)
+            expected.index_copy_(0, indices, update)
+            _, summed = method.execute([cache, indices, update])
+            self.assertTrue(torch.equal(cache, expected))
+            self.assertTrue(torch.allclose(summed, expected.sum(0), atol=1e-3))
+
+    class TwoCaches(nn.Module):
+        def forward(self, k_cache, v_cache, indices, k, v):
+            k_cache.index_copy_(0, indices, k)
+            v_cache.index_copy_(0, indices, v)
+            return k_cache.sum(0) + v_cache.sum(0)
+
+    def test_two_inputs_written_by_delegate(self):
+        model = self.TwoCaches().eval()
+        k_cache, v_cache = torch.zeros(16, 8), torch.zeros(16, 8)
+        example = (
+            k_cache,
+            v_cache,
+            torch.tensor([1]),
+            torch.randn(1, 8),
+            torch.randn(1, 8),
+        )
+        program = _lower(model, tuple(t.clone() for t in example))
+        self._assert_written_by_delegate(program, n_inputs=2)
+
+        method = Runtime.get().load_program(program.buffer).load_method("forward")
+        expected_k, expected_v = k_cache.clone(), v_cache.clone()
+        for row in (3, 7):
+            indices, k, v = torch.tensor([row]), torch.randn(1, 8), torch.randn(1, 8)
+            expected_k.index_copy_(0, indices, k)
+            expected_v.index_copy_(0, indices, v)
+            k_cache, v_cache, summed = method.execute([k_cache, v_cache, indices, k, v])
+            self.assertTrue(torch.equal(k_cache, expected_k))
+            self.assertTrue(torch.equal(v_cache, expected_v))
+            expected = expected_k.sum(0) + expected_v.sum(0)
+            self.assertTrue(torch.allclose(summed, expected, atol=1e-5))
+
+    class SnapshotBeforeMutation(nn.Module):
+        def forward(self, cache, indices, update):
+            before = cache.clone()
+            cache.index_copy_(0, indices, update)
+            return before, cache
+
+    class ViewOfSnapshotBeforeMutation(nn.Module):
+        def forward(self, cache, indices, update):
+            before = cache.clone()
+            cache.index_copy_(0, indices, update)
+            return before.view(2, 2), cache
+
+    def test_snapshot_before_index_copy(self):
+        # MLX can return the clone as the input's own memory, so it must be
+        # read out before the update is written into that memory.
+        for model in (
+            self.SnapshotBeforeMutation().eval(),
+            self.ViewOfSnapshotBeforeMutation().eval(),
+        ):
+            with self.subTest(model=type(model).__name__):
+                cache = torch.tensor([1.0, 2.0, 3.0, 4.0])
+                indices = torch.tensor([1, 3], dtype=torch.int64)
+                update = torch.tensor([20.0, 40.0])
+                program = _lower(model, (cache.clone(), indices, update))
+                self._assert_written_by_delegate(program)
+
+                method = (
+                    Runtime.get().load_program(program.buffer).load_method("forward")
+                )
+                expected = cache.clone()
+                for step in range(3):
+                    update = torch.tensor([20.0, 40.0]) * (step + 1)
+                    expected_before = expected.clone()
+                    expected.index_copy_(0, indices, update)
+                    cache, before, after = method.execute([cache, indices, update])
+                    self.assertTrue(torch.equal(before.flatten(), expected_before))
+                    self.assertTrue(torch.equal(cache, expected))
+                    self.assertTrue(torch.equal(after, expected))
+
+    def test_scalar_source_into_input(self):
+        # The delegate's IndexCopyNode rejects a 0-d source; the update must
+        # still reach the input, whichever path then lowers it.
+        model = self.IndexCopyInput(0).eval()
+        data = torch.zeros(4)
+        program = _lower(model, (data.clone(), torch.tensor([2]), torch.tensor(5.0)))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "model.pte"
+            path.write_bytes(program.buffer)
+            self.assertEqual(get_mlx_node_counts(path).get("IndexCopyNode", 0), 0)
+            method = Runtime.get().load_program(path).load_method("forward")
+            expected = data.clone()
+            for row, value in ((2, 5.0), (0, 7.0)):
+                indices, update = torch.tensor([row]), torch.tensor(value)
+                expected.index_copy_(0, indices, update)
+                data, summed = method.execute([data, indices, update])
+                self.assertTrue(torch.equal(data, expected))
+                self.assertTrue(torch.equal(summed, expected.sum(0)))
+
+    def test_index_copy_accepts_int32_indices(self):
+        # Export accepts int32 indices for index_copy, so the delegate must too.
+        # Eager ATen does not, so the reference uses int64 indices.
+        model = self.IndexCopyInput(0).eval()
+        data, update = torch.randn(16, 8), torch.randn(2, 8)
+        indices = torch.tensor([2, 9], dtype=torch.int32)
+        expected = data.clone().index_copy_(0, indices.long(), update)
+        program = _lower(model, (data.clone(), indices, update))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "model.pte"
+            path.write_bytes(program.buffer)
+            method = Runtime.get().load_program(path).load_method("forward")
+            result, summed = method.execute([data.clone(), indices, update])
+        self.assertTrue(torch.equal(result, expected))
+        self.assertTrue(torch.allclose(summed, expected.sum(0), atol=1e-5))
+
+    def test_index_copy_rejects_negative_index(self):
+        # ATen raises on negative indices, so the delegate must not wrap them.
+        model = self.IndexCopyInput(0).eval()
+        inputs = (torch.randn(4, 8), torch.tensor([1]), torch.randn(1, 8))
+        program = _lower(model, inputs)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "model.pte"
+            path.write_bytes(program.buffer)
+            method = Runtime.get().load_program(path).load_method("forward")
+            with self.assertRaises(RuntimeError):
+                method.execute([inputs[0], torch.tensor([-1]), inputs[2]])
 
 
 if __name__ == "__main__":

@@ -36,15 +36,6 @@ Error HtpContext::MakeConfig(std::vector<const QnnContext_Config_t*>& config) {
   return Error::Ok;
 }
 
-Error HtpContext::AfterConfigure() {
-  // update sf_handle with first context handle encounterded as group handle
-  // TODO: should handle the thread safety if needed
-  if (sf_handle_ == 0x0) {
-    sf_handle_ = GetHandle();
-  }
-  return Error::Ok;
-}
-
 } // namespace qnn
 } // namespace backends
 } // namespace executorch

@@ -7,7 +7,7 @@
 import functools
 import inspect
 from collections import OrderedDict
-from typing import Dict
+from typing import Dict, Optional, Set
 
 from executorch.backends.qualcomm._passes import (
     AnnotateAvgPool1D,
@@ -17,6 +17,7 @@ from executorch.backends.qualcomm._passes import (
     AnnotateUnbind,
     CanonicalizeConv,
     ConvertBmmToMatmul,
+    ConvertComplexStft,
     ConvertLinearToConv2d,
     ConvertMhaToSha,
     ConvertSquareToPow,
@@ -34,7 +35,6 @@ from executorch.backends.qualcomm._passes import (
     DecomposeEmpty,
     DecomposeExpM1,
     DecomposeFill,
-    DecomposeFloorDivide,
     DecomposeGlu,
     DecomposeHyperbolicVariants,
     DecomposeLinalgVectorNorm,
@@ -86,6 +86,7 @@ from executorch.backends.qualcomm.utils.constants import (
 from executorch.backends.transforms.decompose_sdpa import (
     DecomposeScaledDotProductAttention,
 )
+from executorch.backends.transforms.utils import reserve_node_names
 from executorch.exir import ExportedProgram
 from executorch.exir.pass_manager import PassManager
 from executorch.exir.program._program import (
@@ -99,6 +100,7 @@ from torch.fx.passes.infra.pass_manager import this_before_that_pass_constraint
 class QnnPassManager(PassManager):
 
     def _transform(self, graph_module: GraphModule):
+        reserve_node_names(graph_module)
         return self(graph_module).graph_module
 
     def _reset(self):
@@ -171,6 +173,8 @@ class QnnPassManager(PassManager):
         """Return annotation pipeline pass classes. Override in subclasses to add backend-specific passes."""
         passes = [
             RemoveRedundancy,
+            # Retraced autocast regions may emit ops that the passes below decompose.
+            DecomposeWrapWithAutocast,
             RecomposePixelUnshuffle,
             RecomposeRmsNorm,
             ReplaceArangeArgs,
@@ -193,7 +197,6 @@ class QnnPassManager(PassManager):
             DecomposeTriu,
             DecomposeTrunc,
             DecomposeVar,
-            DecomposeWrapWithAutocast,
             DecomposeEinsum,
             DecomposeEmpty,
             DecomposeExpM1,
@@ -217,6 +220,8 @@ class QnnPassManager(PassManager):
     def get_export_passes(cls):
         """Return export pipeline pass classes. Override in subclasses to add backend-specific passes."""
         passes = [
+            DecomposeWrapWithAutocast,
+            ConvertComplexStft,
             DecomposeAsStrided,
             DecomposeBinaryAlpha,
             DecomposeCDist,
@@ -232,12 +237,6 @@ class QnnPassManager(PassManager):
             DecomposeExpM1,
             DecomposeFill,
             DecomposeVar,
-            # DecomposeFloorDivide does not apply to the annotation pipeline,
-            # since the CPU QDQ model would reduce accuracy.
-            # We keep div and floor operations in floating-point to maintain precision.
-            # This pass is needed before to_edge pipeline to avoid mixed type for div operator with RemoveMixedTypeOperators pass.
-            DecomposeFloorDivide,
-            DecomposeWrapWithAutocast,
             ConvertSquareToPow,
             LiftConstantScalarOperands,
             InsertReshapeForReduceOps,
@@ -344,6 +343,17 @@ class QnnPassManager(PassManager):
         }
 
     @classmethod
+    def _get_terminal_passes(cls):
+        return [ResolveDebugHandle]
+
+    @classmethod
+    def _move_terminal_passes_to_end(cls, passes):
+        for p in cls._get_terminal_passes():
+            passes.remove(p)
+            passes.append(p)
+        return passes
+
+    @classmethod
     def get_capture_program_passes(cls):
         """Build an ordered mapping of passes with activation flags and init defaults.
 
@@ -406,7 +416,7 @@ class QnnPassManager(PassManager):
             self.add_pass(p)
         self.solve_constraints()
 
-        sorted_passes = self.passes
+        sorted_passes = self._move_terminal_passes_to_end(self.passes)
         self._reset()
         for p in sorted_passes:
             if not passes_job[p][QCOM_PASS_ACTIVATE_KEY]:
@@ -445,12 +455,18 @@ class QnnPassManager(PassManager):
         self,
         graph_module: GraphModule,
         convert_linear_to_conv2d: bool = False,
+        linear_node_names: Optional[Set[str]] = None,
     ):
+        # convert_linear_to_conv2d converts every linear; otherwise only the
+        # linears in linear_node_names are converted.
+        selected_linears = None if convert_linear_to_conv2d else linear_node_names
         self._instantiate_passes(
             self.get_annotation_passes(
-                convert_linear_to_conv2d=convert_linear_to_conv2d,
+                convert_linear_to_conv2d=convert_linear_to_conv2d
+                or bool(selected_linears),
             ),
             quantization_capture=True,
+            linear_node_names=selected_linears,
         )
         return self._transform(graph_module)
 

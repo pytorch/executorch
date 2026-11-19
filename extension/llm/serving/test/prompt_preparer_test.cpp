@@ -174,8 +174,7 @@ TEST(PromptPreparerTest, NormalizesAndValidatesDirectAndDeferredRawPrompts) {
              {{{make_text_input("a"), make_token_input({0})}}, {1, 2, 0}},
              {{}, {}},
              {{{make_text_input("missing")}}, {}},
-             {{{make_image_input(Image{})}}, {}},
-             {{{make_text_input("a"), make_token_input({3, 4})}}, {}}}) {
+             {{{make_image_input(Image{})}}, {}}}) {
       SCOPED_TRACE(deferred);
       PromptInput input = raw;
       std::optional<PromptPreparation> prepare;
@@ -289,10 +288,7 @@ TEST(PromptPreparerTest, RejectsInvalidDirectAndDeferredOpaquePrompts) {
              {nullptr, 3},
              {invalid, 3},
              {std::make_shared<TestPreparedInput>(0), 3},
-             {std::make_shared<TestPreparedInput>(4), 3},
-             {std::make_shared<TestPreparedInput>(1), 0},
-             {std::make_shared<TestPreparedInput>(beyond_position_limit),
-              beyond_position_limit}}) {
+             {std::make_shared<TestPreparedInput>(0), beyond_position_limit}}) {
       SCOPED_TRACE(deferred);
       const PromptPreparationContext context{tokenizer, limit, {}};
       PromptInput input;
@@ -314,6 +310,40 @@ TEST(PromptPreparerTest, RejectsInvalidDirectAndDeferredOpaquePrompts) {
     }
   }
   EXPECT_TRUE(tokenizer.calls.empty());
+}
+
+TEST(PromptPreparerTest, OverflowCountsAllSegmentsAndOpaquePositions) {
+  RecordingTokenizer tokenizer;
+  tokenizer.encodings = {{"tail", {4, 5}}};
+  const PromptPreparationContext context{tokenizer, 2, {}};
+  PromptInput input{{make_token_input({1, 2, 3}), make_text_input("tail")}};
+  std::optional<PromptPreparation> prepare;
+  auto result = serving::detail::prepare_prompt(context, input, prepare);
+  auto error = std::get<ServingError>(result);
+  EXPECT_EQ(error.code, ErrorCode::ContextLengthExceeded);
+  ASSERT_TRUE(error.context_overflow);
+  EXPECT_EQ(error.context_overflow->prompt_tokens, 5u);
+  EXPECT_EQ(error.context_overflow->context_length, 2u);
+  const auto position_limit =
+      static_cast<std::size_t>(std::numeric_limits<batching::Position>::max());
+  for (auto [size, limit] : std::vector<std::pair<std::size_t, std::size_t>>{
+           {7, 2}, {1, 0}, {position_limit + 1, position_limit + 1}}) {
+    ModelPreparer model = [size = size](
+                              const auto&,
+                              const auto&) -> serving::ModelPreparationResult {
+      return batching::PreparedInputPtr(
+          std::make_shared<TestPreparedInput>(size));
+    };
+    result = serving::detail::prepare_prompt(
+        PromptPreparationContext{tokenizer, limit, {}}, input, prepare, model);
+    error = std::get<ServingError>(result);
+    EXPECT_EQ(error.code, ErrorCode::ContextLengthExceeded);
+    ASSERT_TRUE(error.context_overflow);
+    EXPECT_EQ(error.context_overflow->prompt_tokens, size);
+    EXPECT_EQ(
+        error.context_overflow->context_length,
+        std::min(limit, position_limit));
+  }
 }
 
 TEST(PromptPreparerTest, RejectsEmptyCallbackAndPreservesCallbackError) {

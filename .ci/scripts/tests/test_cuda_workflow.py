@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import os
+import re
 import subprocess
 import sys
 import unittest
@@ -15,6 +16,13 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW = yaml.safe_load((ROOT / ".github" / "workflows" / "cuda.yml").read_text())
+
+
+def _supported_cuda_versions():
+    import runpy
+
+    versions = runpy.run_path(str(ROOT / "install_utils.py"))["SUPPORTED_CUDA_VERSIONS"]
+    return [f"{major}.{minor}" for major, minor in versions]
 
 
 def _all_keys(value):
@@ -32,12 +40,43 @@ def _model_quant(entry):
 
 
 class CudaWorkflowTest(unittest.TestCase):
-    def test_build_matrix_preserves_existing_cuda_versions(self):
+    def test_build_matrix_covers_supported_cuda_versions(self):
         job = WORKFLOW["jobs"]["test-cuda-builds"]
         self.assertEqual(
-            job["strategy"]["matrix"]["cuda-version"], ["12.6", "13.0", "13.4"]
+            job["strategy"]["matrix"]["cuda-version"], _supported_cuda_versions()
         )
         self.assertEqual(job["with"]["gpu-arch-version"], "${{ matrix.cuda-version }}")
+
+    def test_every_cuda_job_uses_a_supported_version(self):
+        supported = _supported_cuda_versions()
+        checked = 0
+        for workflow in ("cuda.yml", "cuda-windows.yml"):
+            jobs = yaml.safe_load(
+                (ROOT / ".github" / "workflows" / workflow).read_text()
+            )["jobs"]
+            for name, job in jobs.items():
+                with_ = job.get("with", {})
+                version = with_.get("gpu-arch-version")
+                if with_.get("gpu-arch-type") != "cuda" or "${{" in str(version):
+                    continue
+                checked += 1
+                with self.subTest(workflow=workflow, job=name):
+                    self.assertIn(version, supported)
+        self.assertGreater(checked, 0)
+
+    def test_windows_export_image_matches_the_export_job(self):
+        build = (ROOT / ".ci" / "docker" / "build.sh").read_text()
+        match = re.search(
+            r"executorch-ubuntu-22\.04-cuda-windows\)(.*?);;", build, re.S
+        )
+        self.assertIsNotNone(match)
+        image_version = re.search(r"CUDA_VERSION=(\S+)", match.group(1)).group(1)
+        self.assertIn(image_version, _supported_cuda_versions())
+        jobs = yaml.safe_load(
+            (ROOT / ".github" / "workflows" / "cuda-windows.yml").read_text()
+        )["jobs"]
+        export = jobs["export-model-cuda-windows-artifact"]["with"]
+        self.assertEqual(export["gpu-arch-version"], image_version)
 
     def test_cuda_builds_take_the_node_driver_on_an_unpinned_v3(self):
         # This job used to pin linux_job_v2 to a test-infra SHA because that was
@@ -51,17 +90,14 @@ class CudaWorkflowTest(unittest.TestCase):
         for pin in ("test-infra-ref", "driver-version", "driver-download-url"):
             self.assertNotIn(pin, job["with"])
 
-    def test_cuda134_runtime_update_precedes_build_and_propagates_failure(self):
+    def test_cuda_runtime_update_precedes_build_and_propagates_failure(self):
         script = WORKFLOW["jobs"]["test-cuda-builds"]["with"]["script"]
         stubs = """
 conda() { printf 'CONDA %s\n' "$*"; return "$CONDA_STATUS"; }
-source() { printf 'BUILD %s\n' "$*"; }
+source() { printf 'BUILD %s\n' "$*"; printf 'LIBRARY PATH %s\n' "$LD_LIBRARY_PATH"; }
 """
         for version, conda_status in (
-            ("12.6", 0),
-            ("13.0", 0),
-            ("13.4", 0),
-            ("13.4", 1),
+            (version, status) for version in ("13.2", "13.4") for status in (0, 1)
         ):
             with self.subTest(version=version, conda_status=conda_status):
                 result = subprocess.run(
@@ -70,19 +106,26 @@ source() { printf 'BUILD %s\n' "$*"; }
                         "-c",
                         stubs + script.replace("${{ matrix.cuda-version }}", version),
                     ],
-                    env={**os.environ, "CONDA_STATUS": str(conda_status)},
+                    env={
+                        **os.environ,
+                        "CONDA_STATUS": str(conda_status),
+                        "LD_LIBRARY_PATH": "/cuda/lib64",
+                    },
                     capture_output=True,
                     text=True,
                 )
                 self.assertEqual(result.returncode, conda_status, result.stderr)
-                expected = []
-                if version == "13.4":
-                    expected.append(
-                        "CONDA install -y -n base -c conda-forge "
-                        "libstdcxx-ng=16.2.0 libgcc-ng=16.2.0"
-                    )
+                expected = [
+                    "CONDA install -y -n base -c conda-forge "
+                    "libstdcxx-ng=16.2.0 libgcc-ng=16.2.0"
+                ]
                 if conda_status == 0:
-                    expected.append(f"BUILD .ci/scripts/test-cuda-build.sh {version}")
+                    expected.extend(
+                        (
+                            f"BUILD .ci/scripts/test-cuda-build.sh {version}",
+                            "LIBRARY PATH /opt/conda/lib:/cuda/lib64",
+                        )
+                    )
                 self.assertEqual(result.stdout.splitlines(), expected)
 
     def test_cuda_probe_checks_the_result_and_torch_train(self):
@@ -118,7 +161,7 @@ sys.modules['torch'] = SimpleNamespace(
 """
         for expected, invalid_result, succeeds in (
             ("13.4", "0", True),
-            ("13.0", "0", False),
+            ("13.2", "0", False),
             ("13.4", "1", False),
         ):
             with self.subTest(expected=expected, invalid_result=invalid_result):

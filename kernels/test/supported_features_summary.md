@@ -7,7 +7,7 @@
 | **namespace op_gelu**|---|---|---|---|--- |
 | dtype_double|True|False|True|True|True |
 | **namespace op_log_softmax**|---|---|---|---|--- |
-| dtype_double|True|False|True|True|True |
+| dtype_double|True|True|True|True|True |
 
 # Source
 All of supported features are defined in fbcode/executorch/kernels/test/supported_features.yaml.

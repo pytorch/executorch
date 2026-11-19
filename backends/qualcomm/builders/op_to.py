@@ -3,16 +3,20 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import warnings
 from typing import Dict
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 
 import torch
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
 from executorch.backends.qualcomm.utils.constants import QCOM_QUANT_ATTRS
 
 from .node_visitor import NodeVisitor, QNN_TENSOR_TYPE_MAP
 from .node_visitor_manager import register_node_visitor
-from .qnn_constants import OpCast, OpConvert, QNN_OP_PACKAGE_NAME_QTI_AISW
+from .qnn_constants import OpCast, OpConvert, OpQuantize, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
 @register_node_visitor
@@ -82,6 +86,18 @@ class To(NodeVisitor):
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
     ) -> PyQnnManager.PyQnnOpWrapper:
         input_node = self.get_node(node.args[0])
+        # HTP fails to compile an int64 cast above rank 4, so it stays on CPU.
+        if node.meta["val"].dim() > 4 and torch.int64 in (
+            input_node.meta["val"].dtype,
+            node.meta["val"].dtype,
+        ):
+            warnings.warn(
+                f"[QNN Delegate Op Builder]: {node.name} casts a rank "
+                f"{node.meta['val'].dim()} int64 tensor, fallback op",
+                stacklevel=1,
+            )
+            return None
+
         input_tensor = self.get_tensor(input_node, node)
 
         input_tensor_wrapper = self.define_tensor(
@@ -93,17 +109,44 @@ class To(NodeVisitor):
         )
         node_input_tensors = [input_tensor_wrapper]
 
+        # Cast into a quantized tensor copies the raw integer, and HTP rejects
+        # Convert from an integer, so cast to fp32, then quantize.
+        int_to_quantized = (
+            node.meta.get(QCOM_QUANT_ATTRS)
+            and not input_node.meta.get(QCOM_QUANT_ATTRS)
+            and not input_node.meta["val"].is_floating_point()
+        )
+
         # if the output / input dtype is int64, we should cast it to int32 first
         # since int32 is the only source that can be cast into int64
         # this is mainly for validation purpose, redundant cast ops will be fused
         # in preprocess stage.
+        # HTP casts uint8 to float32 as if the input were bool, while uint8 to
+        # int32 and int32 to float32 are right, so on HTP a plain uint8 to
+        # float32 cast goes through int32 too, as does float64, which is built
+        # as float32, and a uint8 cast into a quantized tensor. Here the step is
+        # needed for the values, and nothing fuses it away.
         ops = []
         if (
-            node.meta["val"].dtype == torch.int64
-            and input_node.meta["val"].dtype != torch.int32
-        ) or (
-            input_node.meta["val"].dtype == torch.int64
-            and node.meta["val"].dtype != torch.int32
+            (
+                node.meta["val"].dtype == torch.int64
+                and input_node.meta["val"].dtype != torch.int32
+            )
+            or (
+                input_node.meta["val"].dtype == torch.int64
+                and node.meta["val"].dtype != torch.int32
+            )
+            or (
+                input_node.meta["val"].dtype == torch.uint8
+                and (
+                    int_to_quantized
+                    or (
+                        node.meta["val"].dtype in (torch.float32, torch.float64)
+                        and not node.meta.get(QCOM_QUANT_ATTRS)
+                    )
+                )
+                and self.backend_type == QnnExecuTorchBackendType.kHtpBackend
+            )
         ):
             input_quant_encoding, input_quant_configs = self.get_quant_encoding_conf(
                 input_node, node
@@ -137,6 +180,30 @@ class To(NodeVisitor):
             PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
+
+        if int_to_quantized:
+            float_tensor_wrapper = self.define_custom_tensor_wrapper(
+                node_name=node.name + "_float",
+                tensor_type=PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+                dtype=PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
+                quant_encoding=PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED,
+                quant_configs={},
+                dims=output_tensor.size(),
+                tensor=output_tensor,
+                is_fake_tensor=True,
+                nodes_to_wrappers=nodes_to_wrappers,
+            )
+            cast_op = PyQnnManager.PyQnnOpWrapper(
+                f"{node.name}_float", QNN_OP_PACKAGE_NAME_QTI_AISW, OpCast.op_name
+            )
+            cast_op.AddInputTensors(node_input_tensors)
+            cast_op.AddOutputTensors([float_tensor_wrapper])
+            quantize_op = PyQnnManager.PyQnnOpWrapper(
+                node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpQuantize.op_name
+            )
+            quantize_op.AddInputTensors([float_tensor_wrapper])
+            quantize_op.AddOutputTensors([output_tensor_wrapper])
+            return ops + [cast_op, quantize_op]
 
         qnn_op = OpCast if self.is_cast_node(node) else OpConvert
         op = PyQnnManager.PyQnnOpWrapper(

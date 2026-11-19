@@ -32,7 +32,8 @@
 -keep class org.pytorch.executorch.EValue { *; }
 
 # Keep Tensor and its inner classes. The Tensor class has methods and fields
-# accessed from JNI (dtypeJniCode, shape, getRawDataBuffer, nativeNewTensor).
+# accessed from JNI (dtypeJniCode, shape, dimOrder, getRawDataBuffer,
+# nativeNewTensor).
 -keep class org.pytorch.executorch.Tensor { *; }
 -keep class org.pytorch.executorch.Tensor$* { *; }
 

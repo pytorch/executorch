@@ -1,0 +1,2767 @@
+[
+  {
+    "name": "q8ta/conv2d/correctness int8x4 buffer general",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "general",
+    "sweep_variables": {"v_LAYOUT": ["4c1w", "4w4c", "4c"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 3, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [32, 28], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"pad_columns": {"source": {"rand_uniform_int": [-128, 127]}, "valid_columns": 27}}}},
+        {"tensor": {"name": "weight_sums", "sizes": [32], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [32], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [32], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 32, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/correctness int8x4 buffer auto",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "auto",
+    "sweep_variables": {"v_LAYOUT": ["4c1w", "4w4c", "4c"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 3, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [32, 28], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"pad_columns": {"source": {"rand_uniform_int": [-128, 127]}, "valid_columns": 27}}}},
+        {"tensor": {"name": "weight_sums", "sizes": [32], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [32], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [32], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 32, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/correctness [3]",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "legacy_4w4c",
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 3, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [32, 28], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"pad_columns": {"source": {"rand_uniform_int": [-128, 127]}, "valid_columns": 27}}}},
+        {"tensor": {"name": "weight_sums", "sizes": [32], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [32], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [32], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 32, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/correctness int8x4 buffer 4c1w",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["general", "im2col", "auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 32, 8, 8], "dtype": "int8x4", "storage": "buffer", "layout": "4c1w", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [64, 288], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [64], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 64, 8, 8], "dtype": "int8x4", "storage": "buffer", "layout": "4c1w", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/correctness int8x4 buffer 4w4c",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["general", "im2col", "legacy_4w4c", "auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 32, 8, 8], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [64, 288], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [64], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 64, 8, 8], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/correctness int8x4 buffer 4c",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["general", "im2col", "auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 32, 8, 8], "dtype": "int8x4", "storage": "buffer", "layout": "4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [64, 288], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [64], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 64, 8, 8], "dtype": "int8x4", "storage": "buffer", "layout": "4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/correctness int8x4 buffer 4c1w (6)",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["general", "im2col", "auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 32, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4c1w", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [64, 288], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [64], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 64, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4c1w", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/correctness int8x4 buffer 4w4c (7)",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["general", "im2col", "legacy_4w4c", "auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 32, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [64, 288], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [64], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 64, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/correctness int8x4 buffer 4c (8)",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["general", "im2col", "auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 32, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [64, 288], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [64], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 64, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/correctness int8x4 buffer 4c1w (9)",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["general", "im2col", "auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 32, 77, 77], "dtype": "int8x4", "storage": "buffer", "layout": "4c1w", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [16, 288], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [16], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [16], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [16], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 16, 77, 77], "dtype": "int8x4", "storage": "buffer", "layout": "4c1w", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/correctness int8x4 buffer 4w4c (10)",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["general", "im2col", "auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 32, 77, 77], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [16, 288], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [16], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [16], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [16], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 16, 77, 77], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/correctness int8x4 buffer 4c (11)",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["general", "im2col", "auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 32, 77, 77], "dtype": "int8x4", "storage": "buffer", "layout": "4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [16, 288], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [16], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [16], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [16], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 16, 77, 77], "dtype": "int8x4", "storage": "buffer", "layout": "4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/correctness int8x4 buffer",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["auto", "im2col"], "v_LAYOUT": ["4c1w", "4w4c"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [2, 32, 7, 7], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [16, 288], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [16], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [16], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [16], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [2, 16, 7, 7], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/correctness int8x4 buffer 4c1w (13)",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["general", "im2col", "auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 32, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4c1w", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [64, 144], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [64], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 2},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 64, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4c1w", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/correctness int8x4 buffer 4w4c (14)",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["general", "im2col", "legacy_4w4c", "auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 32, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [64, 144], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [64], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 2},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 64, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/correctness int8x4 buffer 4c (15)",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["general", "im2col", "auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 32, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [64, 144], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [64], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 2},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 64, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/correctness int8x4 buffer 4c1w (16)",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["general", "auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 3, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4c1w", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [32, 28], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"pad_columns": {"source": {"rand_uniform_int": [-128, 127]}, "valid_columns": 27}}}},
+        {"tensor": {"name": "weight_sums", "sizes": [32], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [32], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [32], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [2, 2]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 32, 32, 32], "dtype": "int8x4", "storage": "buffer", "layout": "4c1w", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/correctness int8x4 buffer 4c1w (17)",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["general", "im2col", "auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 32, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4c1w", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [64, 288], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [64], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [2, 2]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 64, 32, 32], "dtype": "int8x4", "storage": "buffer", "layout": "4c1w", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/correctness int8x4 buffer 4w4c (18)",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["general", "legacy_4w4c", "auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 3, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [32, 28], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"pad_columns": {"source": {"rand_uniform_int": [-128, 127]}, "valid_columns": 27}}}},
+        {"tensor": {"name": "weight_sums", "sizes": [32], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [32], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [32], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [2, 2]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 32, 32, 32], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/correctness int8x4 buffer 4w4c (19)",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["general", "im2col", "legacy_4w4c", "auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 32, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [64, 288], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [64], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [2, 2]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 64, 32, 32], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/correctness int8x4 buffer 4c (20)",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["general", "auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 3, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [32, 28], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"pad_columns": {"source": {"rand_uniform_int": [-128, 127]}, "valid_columns": 27}}}},
+        {"tensor": {"name": "weight_sums", "sizes": [32], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [32], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [32], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [2, 2]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 32, 32, 32], "dtype": "int8x4", "storage": "buffer", "layout": "4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/correctness int8x4 buffer 4c (21)",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["general", "im2col", "auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 32, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [64, 288], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [64], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [2, 2]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 64, 32, 32], "dtype": "int8x4", "storage": "buffer", "layout": "4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/correctness int8x4 buffer 4c1w (22)",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["general", "im2col", "auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 96, 81, 81], "dtype": "int8x4", "storage": "buffer", "layout": "4c1w", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [96, 288], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [96], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [96], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [96], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [2, 2]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 3},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 96, 41, 41], "dtype": "int8x4", "storage": "buffer", "layout": "4c1w", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/correctness int8x4 buffer 4w4c (23)",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["general", "im2col", "auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 96, 81, 81], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [96, 288], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [96], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [96], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [96], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [2, 2]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 3},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 96, 41, 41], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/correctness int8x4 buffer 4c (24)",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["general", "im2col", "auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 96, 81, 81], "dtype": "int8x4", "storage": "buffer", "layout": "4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [96, 288], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [96], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [96], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [96], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [2, 2]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 3},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 96, 41, 41], "dtype": "int8x4", "storage": "buffer", "layout": "4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/correctness int8x4 buffer 4c1w (25)",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["general", "im2col", "auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 96, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4c1w", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [96, 600], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [96], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [96], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [96], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [5, 5]},
+        {"int_list": [2, 2]},
+        {"int_list": [2, 2]},
+        {"int_list": [1, 1]},
+        {"int": 4},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 96, 32, 32], "dtype": "int8x4", "storage": "buffer", "layout": "4c1w", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/correctness int8x4 buffer 4w4c (26)",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["general", "im2col", "legacy_4w4c", "auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 96, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [96, 600], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [96], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [96], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [96], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [5, 5]},
+        {"int_list": [2, 2]},
+        {"int_list": [2, 2]},
+        {"int_list": [1, 1]},
+        {"int": 4},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 96, 32, 32], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/correctness int8x4 buffer 4c (27)",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["general", "im2col", "auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 96, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [96, 600], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [96], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [96], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [96], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [5, 5]},
+        {"int_list": [2, 2]},
+        {"int_list": [2, 2]},
+        {"int_list": [1, 1]},
+        {"int": 4},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 96, 32, 32], "dtype": "int8x4", "storage": "buffer", "layout": "4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/im2col",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["im2col", "im2col_unsigned", "im2col_auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 4, 5, 5], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"repeat": [-128, -1, 0, 1, 127]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [5, 36], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"repeat": [-1, 127, 0, -128, 1]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [8], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [8], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0.00390625]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [8], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [1, 1]},
+        {"int_list": [0, 0]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 5, 3, 3], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/im2col (2)",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["im2col_unsigned"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 4, 1, 1], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [262145, 4], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [262148], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [262148], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0.00390625]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [262148], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [0, 0]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 262145, 1, 1], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/im2col [19]",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0},
+    "route": "im2col_auto",
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 4, 91, 91], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [1, 33124], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [4], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [4], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0.00390625]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [4], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [91, 91]},
+        {"int_list": [1, 1]},
+        {"int_list": [0, 0]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 1, 1, 1], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/im2col (4)",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["im2col", "im2col_unsigned", "im2col_auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 4, 90, 91], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"repeat": [127]}}},
+        {"float": 0.008123000152409077},
+        {"int": 0},
+        {"tensor": {"name": "weight", "sizes": [1, 32760], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"repeat": [127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [4], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [4], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [9.999999974752427e-07]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [4], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [90, 91]},
+        {"int_list": [1, 1]},
+        {"int_list": [0, 0]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 1, 1, 1], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/im2col (5)",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["im2col", "im2col_unsigned", "im2col_auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 8, 6, 7], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"repeat": [-128, -1, 0, 1, 127]}}},
+        {"float": 0.008123000152409077},
+        {"int": 11},
+        {"tensor": {"name": "weight", "sizes": [8, 36], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"repeat": [-1, 127, 0, -128, 1]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [8], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [8], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0.00390625]}}},
+        {"float": 0.05313999950885773},
+        {"int": -3},
+        {"tensor": {"name": "bias", "sizes": [8], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 2},
+        {"string": "relu"},
+        {"tensor": {"name": "output", "sizes": [1, 8, 6, 7], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/im2col (6)",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["im2col", "im2col_unsigned", "im2col_auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 8, 7, 7], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"repeat": [-128, -1, 0, 1, 127]}}},
+        {"float": 0.008123000152409077},
+        {"int": 127},
+        {"tensor": {"name": "weight", "sizes": [12, 72], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"repeat": [-1, 127, 0, -128, 1]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [12], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [12], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0.00390625]}}},
+        {"float": 0.05313999950885773},
+        {"int": -5},
+        {"tensor": {"name": "bias", "sizes": [12], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [2, 2]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "relu"},
+        {"tensor": {"name": "output", "sizes": [1, 12, 4, 4], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/im2col (7)",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["im2col", "im2col_unsigned", "im2col_auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 8, 5, 5], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"repeat": [-128, -1, 0, 1, 127]}}},
+        {"float": 0.008123000152409077},
+        {"int": -7},
+        {"tensor": {"name": "weight", "sizes": [8, 72], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"repeat": [-1, 127, 0, -128, 1]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [8], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [8], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0.00390625]}}},
+        {"float": 0.05313999950885773},
+        {"int": 3},
+        null,
+        {"int_list": [3, 3]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 8, 5, 5], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/im2col (8)",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 0.25, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["im2col", "im2col_unsigned", "im2col_auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 8, 9, 9], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"repeat": [-128, -1, 0, 1, 127]}}},
+        {"float": 0.008123000152409077},
+        {"int": -128},
+        {"tensor": {"name": "weight", "sizes": [12, 72], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"repeat": [-1, 127, 0, -128, 1]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [12], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [12], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0.00390625]}}},
+        {"float": 0.05313999950885773},
+        {"int": 5},
+        null,
+        {"int_list": [3, 3]},
+        {"int_list": [1, 1]},
+        {"int_list": [2, 2]},
+        {"int_list": [2, 2]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 12, 9, 9], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/narrow_workgroup [0]",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "general",
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 32, 9, 9], "dtype": "int8x4", "storage": "buffer", "layout": "4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [64, 288], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [64], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 64, 9, 9], "dtype": "int8x4", "storage": "buffer", "layout": "4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/narrow_workgroup [1]",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "general",
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 32, 7, 7], "dtype": "int8x4", "storage": "buffer", "layout": "4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [128, 288], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [128], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [128], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [128], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 128, 7, 7], "dtype": "int8x4", "storage": "buffer", "layout": "4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/streaming_im2col [0]",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "im2col_fallback",
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [10, 32, 30, 99], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-8, 12]}}},
+        {"float": 1.0},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [4, 288], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [4], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [4], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [4], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [10, 4, 30, 99], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/streaming_im2col [1]",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "im2col_fallback",
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [10, 64, 30, 99], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-8, 12]}}},
+        {"float": 1.0},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [4, 576], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [4], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [4], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [4], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [10, 4, 30, 99], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/streaming_im2col",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "im2col_auto",
+    "sweep_variables": {"v_LAYOUT": ["4c1w", "4w4c"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [10, 32, 30, 99], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-8, 12]}}},
+        {"float": 1.0},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [4, 288], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [4], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [4], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [4], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [10, 4, 30, 99], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/streaming_im2col [4]",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "im2col_auto",
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [10, 64, 30, 99], "dtype": "int8x4", "storage": "buffer", "layout": "4c1w", "data": {"rand_uniform_int": [-8, 12]}}},
+        {"float": 1.0},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [4, 576], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [4], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [4], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [4], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [10, 4, 30, 99], "dtype": "int8x4", "storage": "buffer", "layout": "4c1w", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/streaming_im2col [6]",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "im2col_auto",
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [20, 32, 30, 99], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-8, 12]}}},
+        {"float": 1.0},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [10, 288], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [12], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [12], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [12], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [20, 10, 30, 99], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/streaming_im2col [5]",
+    "operator": "et_vk.q8ta_conv2d.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "im2col_auto",
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [20, 32, 30, 99], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-8, 12]}}},
+        {"float": 1.0},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [16, 144], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [16], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [16], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [16], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 2},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [20, 16, 30, 99], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/streaming_dynamic_shrink",
+    "check": "q8ta_streaming_dynamic_shrink",
+    "parameters": {
+      "operator_case": {
+        "name": "q8ta streaming dynamic shrink operator",
+        "operator": "et_vk.q8ta_conv2d.default",
+        "target_ms": 100,
+        "benchmark_runs": 1,
+        "warmup_runs": 1,
+        "max_dispatches": 200,
+        "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+        "route": "im2col_auto",
+        "args_sweep": [
+          [
+            {"tensor": {"name": "input", "sizes": [10, 64, 30, 99], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-8, 12]}}},
+            {"float": 1.0},
+            {"int": 2},
+            {"tensor": {"name": "weight", "sizes": [4, 576], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+            {"tensor": {"name": "weight_sums", "sizes": [4], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+            {"tensor": {"name": "weight_scales", "sizes": [4], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+            {"float": 0.05313999950885773},
+            {"int": -1},
+            {"tensor": {"name": "bias", "sizes": [4], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+            {"int_list": [3, 3]},
+            {"int_list": [1, 1]},
+            {"int_list": [1, 1]},
+            {"int_list": [1, 1]},
+            {"int": 1},
+            {"string": "none"},
+            {"tensor": {"name": "output", "sizes": [10, 4, 30, 99], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"fill": 0}}}
+          ]
+        ]
+      },
+      "input_name": "input",
+      "output_name": "output",
+      "stream_plan": {"batch": 10, "flattened_kernel_size": 576, "out_height": 30, "out_width": 99, "scratch_budget_bytes": 16777216},
+      "expected_plan": {"num_tiles": 2, "min_rows_per_tile": 21},
+      "resized_width": 51
+    },
+    "validation_steps": [
+      {"tensor_sizes": {"input": [10, 64, 30, 99]}, "expected_output_sizes": [10, 4, 30, 99], "validate_output": false},
+      {"tensor_sizes": {"input": [1, 64, 20, 51]}, "expected_output_sizes": [1, 4, 20, 51], "validate_output": true},
+      {"tensor_sizes": {"input": [10, 64, 30, 99]}, "expected_output_sizes": [10, 4, 30, 99], "validate_output": false},
+      {"tensor_sizes": {"input": [1, 64, 20, 51]}, "expected_output_sizes": [1, 4, 20, 51], "validate_output": true},
+      {"tensor_sizes": {"input": [10, 64, 30, 99]}, "expected_output_sizes": [10, 4, 30, 99], "validate_output": false},
+      {"tensor_sizes": {"input": [1, 64, 20, 51]}, "expected_output_sizes": [1, 4, 20, 51], "validate_output": true},
+      {"tensor_sizes": {"input": [10, 64, 30, 99]}, "expected_output_sizes": [10, 4, 30, 99], "validate_output": false},
+      {"tensor_sizes": {"input": [1, 64, 20, 51]}, "expected_output_sizes": [1, 4, 20, 51], "validate_output": true}
+    ]
+  },
+  {"name": "q8ta/conv2d/unsigned_dot_selection", "check": "q8ta_unsigned_dot_selection", "parameters": {"accumulator_limit_bytes": 33025, "test_kernel_sizes": [33025, 33026]}},
+  {
+    "name": "q8ta/conv2d/pw_correctness",
+    "operator": "et_vk.q8ta_conv2d_pw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["auto", "pw_signed", "pw_unsigned", "pw_auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 16, 8, 8], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [1, 16], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"pad_columns": {"source": {"rand_uniform_int": [-128, 127]}, "valid_columns": 16}}}},
+        {"tensor": {"name": "weight_sums", "sizes": [4], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [4], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [4], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [0, 0]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 1, 8, 8], "dtype": "int8x4", "storage": "buffer", "layout": "4c1w", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/pw_correctness (2)",
+    "operator": "et_vk.q8ta_conv2d_pw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["auto", "pw_signed", "pw_unsigned", "pw_auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 16, 8, 8], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [2, 16], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"pad_columns": {"source": {"rand_uniform_int": [-128, 127]}, "valid_columns": 16}}}},
+        {"tensor": {"name": "weight_sums", "sizes": [4], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [4], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [4], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [0, 0]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 2, 8, 8], "dtype": "int8x4", "storage": "buffer", "layout": "4c1w", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/pw_correctness (3)",
+    "operator": "et_vk.q8ta_conv2d_pw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["auto", "pw_signed", "pw_unsigned", "pw_auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 16, 8, 8], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [3, 16], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"pad_columns": {"source": {"rand_uniform_int": [-128, 127]}, "valid_columns": 16}}}},
+        {"tensor": {"name": "weight_sums", "sizes": [4], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [4], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [4], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [0, 0]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 3, 8, 8], "dtype": "int8x4", "storage": "buffer", "layout": "4c1w", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/pw_correctness (4)",
+    "operator": "et_vk.q8ta_conv2d_pw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["auto", "pw_signed", "pw_unsigned", "pw_auto", "legacy_4w4c"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 16, 8, 8], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [1, 16], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"pad_columns": {"source": {"rand_uniform_int": [-128, 127]}, "valid_columns": 16}}}},
+        {"tensor": {"name": "weight_sums", "sizes": [4], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [4], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [4], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [0, 0]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 1, 8, 8], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/pw_correctness (5)",
+    "operator": "et_vk.q8ta_conv2d_pw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["auto", "pw_signed", "pw_unsigned", "pw_auto", "legacy_4w4c"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 16, 8, 8], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [2, 16], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"pad_columns": {"source": {"rand_uniform_int": [-128, 127]}, "valid_columns": 16}}}},
+        {"tensor": {"name": "weight_sums", "sizes": [4], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [4], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [4], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [0, 0]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 2, 8, 8], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/pw_correctness (6)",
+    "operator": "et_vk.q8ta_conv2d_pw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["auto", "pw_signed", "pw_unsigned", "pw_auto", "legacy_4w4c"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 16, 8, 8], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [3, 16], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"pad_columns": {"source": {"rand_uniform_int": [-128, 127]}, "valid_columns": 16}}}},
+        {"tensor": {"name": "weight_sums", "sizes": [4], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [4], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [4], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [0, 0]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 3, 8, 8], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/pw_correctness (7)",
+    "operator": "et_vk.q8ta_conv2d_pw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["auto", "pw_signed", "pw_unsigned", "pw_auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 16, 8, 8], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [1, 16], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"pad_columns": {"source": {"rand_uniform_int": [-128, 127]}, "valid_columns": 16}}}},
+        {"tensor": {"name": "weight_sums", "sizes": [4], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [4], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [4], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [0, 0]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 1, 8, 8], "dtype": "int8x4", "storage": "buffer", "layout": "4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/pw_correctness (8)",
+    "operator": "et_vk.q8ta_conv2d_pw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["auto", "pw_signed", "pw_unsigned", "pw_auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 16, 8, 8], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [2, 16], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"pad_columns": {"source": {"rand_uniform_int": [-128, 127]}, "valid_columns": 16}}}},
+        {"tensor": {"name": "weight_sums", "sizes": [4], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [4], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [4], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [0, 0]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 2, 8, 8], "dtype": "int8x4", "storage": "buffer", "layout": "4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/pw_correctness (9)",
+    "operator": "et_vk.q8ta_conv2d_pw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["auto", "pw_signed", "pw_unsigned", "pw_auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 16, 8, 8], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [3, 16], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"pad_columns": {"source": {"rand_uniform_int": [-128, 127]}, "valid_columns": 16}}}},
+        {"tensor": {"name": "weight_sums", "sizes": [4], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [4], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [4], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [0, 0]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 3, 8, 8], "dtype": "int8x4", "storage": "buffer", "layout": "4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/pw_correctness (10)",
+    "operator": "et_vk.q8ta_conv2d_pw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["auto", "pw_signed", "pw_unsigned", "pw_auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 3, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [32, 4],
+            "dtype": "int8",
+            "storage": "constant",
+            "layout": "width",
+            "data": {"pad_columns": {"source": {"pad_columns": {"source": {"rand_uniform_int": [-128, 127]}, "valid_columns": 3}}, "valid_columns": 3}}
+          }
+        },
+        {"tensor": {"name": "weight_sums", "sizes": [32], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [32], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [32], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [0, 0]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 32, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4c1w", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/pw_correctness (11)",
+    "operator": "et_vk.q8ta_conv2d_pw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["auto", "pw_signed", "pw_unsigned", "pw_auto", "legacy_4w4c"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 3, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [32, 4],
+            "dtype": "int8",
+            "storage": "constant",
+            "layout": "width",
+            "data": {"pad_columns": {"source": {"pad_columns": {"source": {"rand_uniform_int": [-128, 127]}, "valid_columns": 3}}, "valid_columns": 3}}
+          }
+        },
+        {"tensor": {"name": "weight_sums", "sizes": [32], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [32], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [32], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [0, 0]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 32, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/pw_correctness (12)",
+    "operator": "et_vk.q8ta_conv2d_pw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["auto", "pw_signed", "pw_unsigned", "pw_auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 3, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [32, 4],
+            "dtype": "int8",
+            "storage": "constant",
+            "layout": "width",
+            "data": {"pad_columns": {"source": {"pad_columns": {"source": {"rand_uniform_int": [-128, 127]}, "valid_columns": 3}}, "valid_columns": 3}}
+          }
+        },
+        {"tensor": {"name": "weight_sums", "sizes": [32], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [32], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [32], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [0, 0]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 32, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/pw_correctness (13)",
+    "operator": "et_vk.q8ta_conv2d_pw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["auto", "pw_signed", "pw_unsigned", "pw_auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 32, 32, 32], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [64, 32], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"pad_columns": {"source": {"rand_uniform_int": [-128, 127]}, "valid_columns": 32}}}},
+        {"tensor": {"name": "weight_sums", "sizes": [64], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [0, 0]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 64, 32, 32], "dtype": "int8x4", "storage": "buffer", "layout": "4c1w", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/pw_correctness (14)",
+    "operator": "et_vk.q8ta_conv2d_pw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["auto", "pw_signed", "pw_unsigned", "pw_auto", "legacy_4w4c"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 32, 32, 32], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [64, 32], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"pad_columns": {"source": {"rand_uniform_int": [-128, 127]}, "valid_columns": 32}}}},
+        {"tensor": {"name": "weight_sums", "sizes": [64], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [0, 0]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 64, 32, 32], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/pw_correctness (15)",
+    "operator": "et_vk.q8ta_conv2d_pw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["auto", "pw_signed", "pw_unsigned", "pw_auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 32, 32, 32], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [64, 32], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"pad_columns": {"source": {"rand_uniform_int": [-128, 127]}, "valid_columns": 32}}}},
+        {"tensor": {"name": "weight_sums", "sizes": [64], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [0, 0]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 64, 32, 32], "dtype": "int8x4", "storage": "buffer", "layout": "4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/pw_correctness (16)",
+    "operator": "et_vk.q8ta_conv2d_pw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["auto", "pw_signed", "pw_unsigned", "pw_auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 64, 16, 16], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [96, 64], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"pad_columns": {"source": {"rand_uniform_int": [-128, 127]}, "valid_columns": 64}}}},
+        {"tensor": {"name": "weight_sums", "sizes": [96], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [96], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [96], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [0, 0]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 96, 16, 16], "dtype": "int8x4", "storage": "buffer", "layout": "4c1w", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/pw_correctness (17)",
+    "operator": "et_vk.q8ta_conv2d_pw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["auto", "pw_signed", "pw_unsigned", "pw_auto", "legacy_4w4c"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 64, 16, 16], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [96, 64], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"pad_columns": {"source": {"rand_uniform_int": [-128, 127]}, "valid_columns": 64}}}},
+        {"tensor": {"name": "weight_sums", "sizes": [96], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [96], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [96], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [0, 0]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 96, 16, 16], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/pw_correctness (18)",
+    "operator": "et_vk.q8ta_conv2d_pw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["auto", "pw_signed", "pw_unsigned", "pw_auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 64, 16, 16], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [96, 64], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"pad_columns": {"source": {"rand_uniform_int": [-128, 127]}, "valid_columns": 64}}}},
+        {"tensor": {"name": "weight_sums", "sizes": [96], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [96], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [96], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [0, 0]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 96, 16, 16], "dtype": "int8x4", "storage": "buffer", "layout": "4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/pw_correctness (19)",
+    "operator": "et_vk.q8ta_conv2d_pw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["auto", "pw_signed", "pw_unsigned", "pw_auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 7, 57, 33], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [13, 8],
+            "dtype": "int8",
+            "storage": "constant",
+            "layout": "width",
+            "data": {"pad_columns": {"source": {"pad_columns": {"source": {"rand_uniform_int": [-128, 127]}, "valid_columns": 7}}, "valid_columns": 7}}
+          }
+        },
+        {"tensor": {"name": "weight_sums", "sizes": [16], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [16], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [16], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [0, 0]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 13, 57, 33], "dtype": "int8x4", "storage": "buffer", "layout": "4c1w", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/pw_correctness (20)",
+    "operator": "et_vk.q8ta_conv2d_pw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["auto", "pw_signed", "pw_unsigned", "pw_auto", "legacy_4w4c"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 7, 57, 33], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [13, 8],
+            "dtype": "int8",
+            "storage": "constant",
+            "layout": "width",
+            "data": {"pad_columns": {"source": {"pad_columns": {"source": {"rand_uniform_int": [-128, 127]}, "valid_columns": 7}}, "valid_columns": 7}}
+          }
+        },
+        {"tensor": {"name": "weight_sums", "sizes": [16], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [16], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [16], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [0, 0]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 13, 57, 33], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/pw_correctness (21)",
+    "operator": "et_vk.q8ta_conv2d_pw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["auto", "pw_signed", "pw_unsigned", "pw_auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 7, 57, 33], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [13, 8],
+            "dtype": "int8",
+            "storage": "constant",
+            "layout": "width",
+            "data": {"pad_columns": {"source": {"pad_columns": {"source": {"rand_uniform_int": [-128, 127]}, "valid_columns": 7}}, "valid_columns": 7}}
+          }
+        },
+        {"tensor": {"name": "weight_sums", "sizes": [16], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [16], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [16], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [0, 0]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 13, 57, 33], "dtype": "int8x4", "storage": "buffer", "layout": "4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/pw_correctness (22)",
+    "operator": "et_vk.q8ta_conv2d_pw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["auto", "pw_signed", "pw_unsigned", "pw_auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 40, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [80, 40], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"pad_columns": {"source": {"rand_uniform_int": [-128, 127]}, "valid_columns": 40}}}},
+        {"tensor": {"name": "weight_sums", "sizes": [80], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [80], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [80], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [0, 0]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 80, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4c1w", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/pw_correctness (23)",
+    "operator": "et_vk.q8ta_conv2d_pw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["auto", "pw_signed", "pw_unsigned", "pw_auto", "legacy_4w4c"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 40, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [80, 40], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"pad_columns": {"source": {"rand_uniform_int": [-128, 127]}, "valid_columns": 40}}}},
+        {"tensor": {"name": "weight_sums", "sizes": [80], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [80], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [80], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [0, 0]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 80, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/pw_correctness (24)",
+    "operator": "et_vk.q8ta_conv2d_pw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["auto", "pw_signed", "pw_unsigned", "pw_auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 40, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [80, 40], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"pad_columns": {"source": {"rand_uniform_int": [-128, 127]}, "valid_columns": 40}}}},
+        {"tensor": {"name": "weight_sums", "sizes": [80], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [80], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [80], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [0, 0]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 80, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/pw_correctness (25)",
+    "operator": "et_vk.q8ta_conv2d_pw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["auto", "pw_signed", "pw_unsigned", "pw_auto"], "v_OUTPUT_LAYOUT": ["4c1w", "4w4c"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [2, 8, 8, 8], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [8, 8], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"pad_columns": {"source": {"rand_uniform_int": [-128, 127]}, "valid_columns": 8}}}},
+        {"tensor": {"name": "weight_sums", "sizes": [8], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [8], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [8], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"repeat": [0]}}},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [0, 0]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [2, 8, 8, 8], "dtype": "int8x4", "storage": "buffer", "layout": "v_OUTPUT_LAYOUT", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/pw_correctness (26)",
+    "operator": "et_vk.q8ta_conv2d_pw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "v_ROUTE",
+    "sweep_variables": {"v_ROUTE": ["auto", "pw_signed", "pw_unsigned", "pw_auto"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 7, 7, 5], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-128, -5]}}},
+        {"float": 0.008123000152409077},
+        {"int": -128},
+        {
+          "tensor": {
+            "name": "weight",
+            "sizes": [13, 8],
+            "dtype": "int8",
+            "storage": "constant",
+            "layout": "width",
+            "data": {"pad_columns": {"source": {"pad_columns": {"source": {"rand_uniform_int": [-128, 127]}, "valid_columns": 7}}, "valid_columns": 7}}
+          }
+        },
+        {"tensor": {"name": "weight_sums", "sizes": [16], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"row_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [16], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        null,
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [0, 0]},
+        {"int_list": [1, 1]},
+        {"int": 1},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 13, 7, 5], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/dw_correctness",
+    "operator": "et_vk.q8ta_conv2d_dw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "auto",
+    "sweep_variables": {"v_LAYOUT": ["4c1w", "4w4c", "4c"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 32, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [3, 3, 32], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [32], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"column_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [32], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [32], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 32},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 32, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/dw_correctness (2)",
+    "operator": "et_vk.q8ta_conv2d_dw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "auto",
+    "sweep_variables": {"v_LAYOUT": ["4c1w", "4w4c", "4c"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 80, 16, 16], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [3, 3, 80], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [80], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"column_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [80], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [80], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 80},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 80, 16, 16], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/dw_correctness (3)",
+    "operator": "et_vk.q8ta_conv2d_dw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "auto",
+    "sweep_variables": {"v_LAYOUT": ["4c1w", "4w4c", "4c"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 16, 57, 33], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [3, 3, 16], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [16], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"column_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [16], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [16], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 16},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 16, 57, 33], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/dw_correctness (4)",
+    "operator": "et_vk.q8ta_conv2d_dw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "auto",
+    "sweep_variables": {"v_LAYOUT": ["4c1w", "4w4c"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [2, 8, 8, 8], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [3, 3, 8], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [8], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"column_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [8], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [8], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 8},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [2, 8, 8, 8], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/dw_correctness (5)",
+    "operator": "et_vk.q8ta_conv2d_dw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "auto",
+    "sweep_variables": {"v_LAYOUT": ["4c1w", "4w4c", "4c"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 32, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [5, 5, 32], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [32], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"column_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [32], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [32], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+        {"int_list": [5, 5]},
+        {"int_list": [1, 1]},
+        {"int_list": [2, 2]},
+        {"int_list": [1, 1]},
+        {"int": 32},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 32, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/dw_correctness (6)",
+    "operator": "et_vk.q8ta_conv2d_dw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "auto",
+    "sweep_variables": {"v_LAYOUT": ["4c1w", "4w4c", "4c"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 64, 32, 32], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [3, 3, 64], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [64], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"column_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [2, 2]},
+        {"int_list": [2, 2]},
+        {"int_list": [1, 1]},
+        {"int": 64},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 64, 17, 17], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/dw_correctness (7)",
+    "operator": "et_vk.q8ta_conv2d_dw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "auto",
+    "sweep_variables": {"v_LAYOUT": ["4c1w", "4w4c", "4c"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 96, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [5, 5, 96], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [96], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"column_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [96], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [96], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+        {"int_list": [5, 5]},
+        {"int_list": [2, 2]},
+        {"int_list": [2, 2]},
+        {"int_list": [1, 1]},
+        {"int": 96},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 96, 32, 32], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/dw_correctness (8)",
+    "operator": "et_vk.q8ta_conv2d_dw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "auto",
+    "sweep_variables": {"v_LAYOUT": ["4c1w", "4w4c", "4c"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 64, 32, 32], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [3, 3, 64], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [64], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"column_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [2, 2]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 64},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 64, 16, 16], "dtype": "int8x4", "storage": "buffer", "layout": "v_LAYOUT", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/dw_correctness [2]",
+    "operator": "et_vk.q8ta_conv2d_dw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "legacy_4w4c",
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 32, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [3, 3, 32], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [32], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"column_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [32], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [32], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 32},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 32, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/dw_correctness [14]",
+    "operator": "et_vk.q8ta_conv2d_dw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "legacy_4w4c",
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 80, 16, 16], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [3, 3, 80], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [80], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"column_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [80], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [80], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 80},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 80, 16, 16], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/dw_correctness [22]",
+    "operator": "et_vk.q8ta_conv2d_dw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "legacy_4w4c",
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 32, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [5, 5, 32], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [32], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"column_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [32], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [32], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+        {"int_list": [5, 5]},
+        {"int_list": [1, 1]},
+        {"int_list": [2, 2]},
+        {"int_list": [1, 1]},
+        {"int": 32},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 32, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/dw_correctness [6]",
+    "operator": "et_vk.q8ta_conv2d_dw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "legacy_4w4c",
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 64, 32, 32], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [3, 3, 64], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [64], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"column_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [2, 2]},
+        {"int_list": [2, 2]},
+        {"int_list": [1, 1]},
+        {"int": 64},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 64, 17, 17], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/dw_correctness [26]",
+    "operator": "et_vk.q8ta_conv2d_dw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "legacy_4w4c",
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 96, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [5, 5, 96], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [96], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"column_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [96], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [96], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+        {"int_list": [5, 5]},
+        {"int_list": [2, 2]},
+        {"int_list": [2, 2]},
+        {"int_list": [1, 1]},
+        {"int": 96},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 96, 32, 32], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/dw_correctness [10]",
+    "operator": "et_vk.q8ta_conv2d_dw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "legacy_4w4c",
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 64, 32, 32], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [3, 3, 64], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [64], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"column_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [2, 2]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 64},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 64, 16, 16], "dtype": "int8x4", "storage": "buffer", "layout": "4w4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/dw_narrow_workgroup [0]",
+    "operator": "et_vk.q8ta_conv2d_dw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "auto",
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 128, 7, 7], "dtype": "int8x4", "storage": "buffer", "layout": "4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [3, 3, 128], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [128], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"column_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [128], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [128], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 128},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": [1, 128, 7, 7], "dtype": "int8x4", "storage": "buffer", "layout": "4c", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "q8ta/conv2d/dw_narrow_workgroup",
+    "operator": "et_vk.q8ta_conv2d_dw.default",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0018818534756524, "rtol": 0},
+    "route": "auto",
+    "sweep_variables": {"v_SIZES": [[1, 64, 9, 9], [1, 64, 13, 13]]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": "v_SIZES", "dtype": "int8x4", "storage": "buffer", "layout": "4c", "data": {"rand_uniform_int": [-121, 125]}}},
+        {"float": 0.008123000152409077},
+        {"int": 2},
+        {"tensor": {"name": "weight", "sizes": [3, 3, 64], "dtype": "int8", "storage": "constant", "layout": "width", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"tensor": {"name": "weight_sums", "sizes": [64], "dtype": "int32", "storage": "constant", "layout": "width", "data": {"column_sum": "weight"}}},
+        {"tensor": {"name": "weight_scales", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [0.004999999888241291, 0.014999999664723873]}}},
+        {"float": 0.05313999950885773},
+        {"int": -1},
+        {"tensor": {"name": "bias", "sizes": [64], "dtype": "float32", "storage": "constant", "layout": "width", "data": {"rand_uniform_float": [-1, 1]}}},
+        {"int_list": [3, 3]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int": 64},
+        {"string": "none"},
+        {"tensor": {"name": "output", "sizes": "v_SIZES", "dtype": "int8x4", "storage": "buffer", "layout": "4c", "data": {"fill": 0}}}
+      ]
+    ]
+  }
+]

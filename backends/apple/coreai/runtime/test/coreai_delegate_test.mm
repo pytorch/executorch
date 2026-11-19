@@ -1,0 +1,1410 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#include <executorch/runtime/backend/interface.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
+#include <gtest/gtest.h>
+#include <pthread.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <array>
+#include <atomic>
+#include <cerrno>
+#include <cstdint>
+#include <cstdlib>
+#include <memory>
+#include <optional>
+#include <thread>
+
+#include "coreai_cache.h"
+#include "coreai_cache_entry_fixture.h"
+#import "coreai_delegate_fixture.h"
+#include "coreai_fault_scope.h"
+#include "coreai_test_utils.h"
+
+namespace executorch::backends::coreai::testing {
+namespace {
+using namespace executorch::runtime;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
+using executorch::aten::TensorImpl;
+
+class CoreAIDelegateTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    backend = get_backend_class("CoreAIBackend");
+    ASSERT_NE(backend, nullptr);
+  }
+  ScopedFakeBridgeState bridge;
+  const BackendInterface* backend = nullptr;
+};
+
+// All preflight rows must fail before reading payloads or creating storage.
+void expect_preflight_rejection(
+    const BackendInterface* backend,
+    ScopedFakeBridgeState& bridge,
+    NSDictionary* manifest,
+    Error expected) {
+  DelegateFixture fixture(backend, bridge, manifest);
+  ASSERT_NE(fixture.storage.url, nil);
+  NSURL* absent =
+      [fixture.storage.url URLByAppendingPathComponent:@"uncreated/models"];
+  NSString* previous_bundle = bridge.state().last_bundle;
+  EXPECT_EQ(fixture.init(absent.path), expected);
+  EXPECT_EQ(fixture.data.attempts.load(), 0);
+  EXPECT_EQ(fixture.data.metadata_requests.load(), 0);
+  EXPECT_EQ(fixture.freed, 0);
+  EXPECT_EQ(bridge.state().last_bundle, previous_bundle);
+  EXPECT_FALSE([NSFileManager.defaultManager fileExistsAtPath:absent.path]);
+  NSError* error = nil;
+  NSArray* children = [NSFileManager.defaultManager
+      contentsOfDirectoryAtPath:fixture.storage.url.path
+                          error:&error];
+  EXPECT_NE(children, nil);
+  EXPECT_EQ(error, nil);
+  EXPECT_EQ(children.count, 0u);
+}
+
+TEST_F(CoreAIDelegateTest, AvailabilityRejectsWithoutTakingManifestOwnership) {
+  @autoreleasepool {
+    DelegateFixture fixture(backend, bridge);
+    bridge.state().available = false;
+    EXPECT_FALSE(backend->is_available());
+    EXPECT_EQ(fixture.init(), Error::NotSupported);
+    EXPECT_EQ(fixture.freed, 0);
+    EXPECT_EQ(fixture.data.attempts.load(), 0);
+    EXPECT_EQ(bridge.state().sessions.load(), 0);
+    bridge.state().available = true;
+    EXPECT_TRUE(backend->is_available());
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    EXPECT_EQ(fixture.freed, 1);
+    EXPECT_EQ(bridge.state().sessions.load(), 1);
+  }
+}
+
+TEST_F(
+    CoreAIDelegateTest,
+    LoaderFactoryFailureLeavesManifestAndStorageUntouched) {
+  @autoreleasepool {
+    bridge.state().fail_loader_factory = true;
+    expect_preflight_rejection(
+        backend, bridge, manifest_dict(), Error::Internal);
+    EXPECT_EQ(bridge.state().loaders.load(), 0);
+    EXPECT_EQ(bridge.state().sessions.load(), 0);
+  }
+}
+
+TEST_F(
+    CoreAIDelegateTest,
+    PreflightRejectsBeforePayloadReadsOrStorageCreation) {
+  @autoreleasepool {
+    auto missing_function = aot_manifest_dict();
+    [missing_function removeObjectForKey:@"function"];
+    auto numeric_platform = aot_manifest_dict();
+    numeric_platform[@"platform"] = @1;
+    auto escaping_arch = aot_manifest_dict();
+    NSMutableDictionary* archs = [escaping_arch[@"archs"] mutableCopy];
+    archs[@"arch_a"] = @"../model.arch_a.aimodelc";
+    escaping_arch[@"archs"] = archs;
+    auto escaping_file = aot_manifest_dict();
+    escaping_file[@"files"] = @{@"model.arch_a.aimodelc/../escape" : @1};
+    auto ios = aot_manifest_dict();
+    ios[@"platform"] = @"iOS";
+    const struct {
+      const char* name;
+      NSMutableDictionary* manifest;
+      NSString* device_architecture;
+      Error expected;
+    } rows[] = {
+        {"missing function",
+         missing_function,
+         @"arch_b",
+         Error::InvalidProgram},
+        {"non-string platform",
+         numeric_platform,
+         @"arch_b",
+         Error::InvalidProgram},
+        {"escaping architecture path",
+         escaping_arch,
+         @"arch_b",
+         Error::InvalidProgram},
+        {"escaping file entry",
+         escaping_file,
+         @"arch_b",
+         Error::InvalidProgram},
+        {"incompatible platform",
+         ios,
+         @"arch_b",
+         Error::DelegateInvalidCompatibility},
+        {"missing device architecture",
+         aot_manifest_dict(),
+         nil,
+         Error::DelegateInvalidCompatibility},
+    };
+    for (const auto& row : rows) {
+      SCOPED_TRACE(row.name);
+      bridge.state().device_architecture = row.device_architecture;
+      ASSERT_NO_FATAL_FAILURE(expect_preflight_rejection(
+          backend, bridge, row.manifest, row.expected));
+    }
+    bridge.state().device_architecture = @"arch_b";
+  }
+}
+
+TEST_F(CoreAIDelegateTest, PreflightRejectsFutureDeploymentForSourceAndAot) {
+  @autoreleasepool {
+    for (bool aot : {false, true}) {
+      SCOPED_TRACE(aot ? "aimodelc" : "aimodel");
+      auto dict = aot ? aot_manifest_dict() : manifest_dict();
+      dict[@"min_deployment_version"] = @"999999.0";
+      expect_preflight_rejection(
+          backend, bridge, dict, Error::DelegateInvalidCompatibility);
+    }
+  }
+}
+
+TEST_F(CoreAIDelegateTest, AotInitPassesOnlySelectedArchitectureBundleToSdk) {
+  @autoreleasepool {
+    NSString* arch = @"arch_a";
+    DelegateFixture fixture(backend, bridge, aot_manifest_dict());
+    aot_data(fixture.data, arch);
+    bridge.state().device_architecture = arch;
+    auto parsed = parse_manifest(fixture.json);
+    ASSERT_TRUE(parsed.ok());
+    auto selected = select_bundle(parsed.get(), arch, @"macOS");
+    ASSERT_TRUE(selected.ok());
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    auto key = cache_variant_key(selected.get(), @"macOS", arch, @"default");
+    ASSERT_TRUE(key.ok());
+    NSString* expected = [fixture.storage.url.path
+        stringByAppendingPathComponent:
+            [NSString stringWithFormat:@"sources/%@/%@",
+                                       key.get(),
+                                       selected->path.lastPathComponent]];
+    EXPECT_TRUE([bridge.state().last_bundle isEqualToString:expected]);
+    fixture.reset();
+    EXPECT_EQ(bridge.state().sessions.load(), 0);
+    EXPECT_EQ(fixture.data.attempts.load(), 2);
+    EXPECT_EQ(fixture.data.releases.load(), fixture.data.requests.load());
+  }
+}
+
+TEST_F(
+    CoreAIDelegateTest,
+    InitBindingFailurePreservesManifestAndAllowsWarmRetry) {
+  @autoreleasepool {
+    DelegateFixture fixture(backend, bridge);
+    bridge.state().fail_load = true;
+    EXPECT_EQ(fixture.init(), Error::InvalidProgram);
+    EXPECT_EQ(fixture.freed, 0);
+    EXPECT_EQ(bridge.state().sessions.load(), 0);
+    ASSERT_NE(bridge.state().last_bundle, nil);
+    EXPECT_FALSE([NSFileManager.defaultManager
+        fileExistsAtPath:bridge.state().last_bundle]);
+    const int attempts = fixture.data.attempts.load();
+    bridge.state().fail_load = false;
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    EXPECT_EQ(fixture.freed, 1);
+    EXPECT_EQ(bridge.state().sessions.load(), 1);
+    EXPECT_EQ(fixture.data.attempts.load(), attempts);
+    EXPECT_FALSE([NSFileManager.defaultManager
+        fileExistsAtPath:bridge.state().last_bundle]);
+    EXPECT_TRUE([bridge.state().last_bundle
+        hasPrefix:[fixture.storage.url.URLByResolvingSymlinksInPath.path
+                      stringByAppendingString:@"/"]]);
+  }
+  EXPECT_EQ(bridge.state().sessions.load(), 0);
+}
+
+TEST_F(CoreAIDelegateTest, RetainedBindingCompletionDoesNotPinSession) {
+  @autoreleasepool {
+    bridge.state().retain_binding_completion = true;
+    DelegateFixture fixture(backend, bridge);
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    EXPECT_EQ(bridge.state().sessions.load(), 1);
+    fixture.reset();
+    EXPECT_EQ(bridge.state().sessions.load(), 0);
+    EXPECT_EQ(bridge.state().prepared_models.load(), 0);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, OrderedIoBindingUsesManifestFunctionAndNames) {
+  @autoreleasepool {
+    DelegateFixture fixture(backend, bridge);
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    EXPECT_EQ(bridge.state().binding_mismatches.load(), 0);
+    FloatTensors tensors;
+    ASSERT_EQ(fixture.execute({tensors.args, 2}), Error::Ok);
+    EXPECT_EQ(tensors.output[0], 3);
+    EXPECT_EQ(tensors.output[1], 7);
+    EXPECT_EQ(bridge.state().last_input_bytes.load(), tensors.input);
+    EXPECT_EQ(bridge.state().executions.load(), 1);
+    EXPECT_EQ(bridge.state().output_copies.load(), 1);
+    EXPECT_EQ(bridge.state().last_output_destination.load(), tensors.output);
+  }
+}
+
+NSMutableDictionary* enumerated_manifest(NSArray* functions) {
+  NSMutableDictionary* manifest = manifest_dict();
+  [manifest removeObjectForKey:@"function"];
+  manifest[@"enumerated_functions"] = functions;
+  return manifest;
+}
+
+// A 1-D float tensor of `size` elements over `data`, shaped once at
+// construction because TensorImpl caches its element count.
+struct VectorTensor final {
+  executorch::aten::TensorImpl::SizesType size[1];
+  executorch::aten::TensorImpl::DimOrderType order[1] = {0};
+  executorch::aten::TensorImpl::StridesType stride[1] = {1};
+  executorch::aten::TensorImpl impl;
+  EValue value;
+  VectorTensor(float* data, int size_value, bool dynamic = false)
+      : size{size_value},
+        impl(
+            executorch::aten::ScalarType::Float,
+            1,
+            size,
+            data,
+            order,
+            stride,
+            dynamic ? runtime::TensorShapeDynamism::DYNAMIC_BOUND
+                    : runtime::TensorShapeDynamism::STATIC),
+        value(executorch::aten::Tensor(&impl)) {}
+};
+
+TEST_F(CoreAIDelegateTest, EnumeratedFunctionsDispatchByInputShape) {
+  @autoreleasepool {
+    bridge.state().functions =
+        [NSSet setWithArray:@[ @"main_two", @"main_one" ]];
+    DelegateFixture fixture(
+        backend, bridge, enumerated_manifest(@[
+          @{@"function" : @"main_two",
+            @"input_shapes" : @[ @[ @2 ] ]},
+          @{@"function" : @"main_one",
+            @"input_shapes" : @[ @[ @1 ] ]},
+        ]));
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    EXPECT_EQ(bridge.state().binding_mismatches.load(), 0);
+
+    FloatTensors two;
+    ASSERT_EQ(fixture.execute({two.args, 2}), Error::Ok);
+    EXPECT_TRUE([bridge.state().last_function isEqual:@"main_two"]);
+    EXPECT_EQ(two.output[0], 3);
+    EXPECT_EQ(two.output[1], 7);
+
+    float one_input[1] = {5};
+    float one_output[2] = {-1, -1};
+    VectorTensor one_in(one_input, 1);
+    VectorTensor one_out(one_output, 2, /*dynamic=*/true);
+    EValue* one_args[] = {&one_in.value, &one_out.value};
+    ASSERT_EQ(fixture.execute({one_args, 2}), Error::Ok);
+    EXPECT_TRUE([bridge.state().last_function isEqual:@"main_one"]);
+    EXPECT_EQ(one_out.impl.size(0), 1);
+    EXPECT_EQ(one_output[0], 5);
+
+    float three_input[3] = {1, 2, 3};
+    float three_output[3] = {-1, -1, -1};
+    VectorTensor three_in(three_input, 3);
+    VectorTensor three_out(three_output, 3, /*dynamic=*/true);
+    EValue* three_args[] = {&three_in.value, &three_out.value};
+    const int executions = bridge.state().executions.load();
+    EXPECT_EQ(fixture.execute({three_args, 2}), Error::InvalidArgument);
+    EXPECT_EQ(bridge.state().executions.load(), executions);
+    EXPECT_EQ(three_output[0], -1);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, EnumeratedFunctionBindFailureFailsInit) {
+  @autoreleasepool {
+    bridge.state().functions =
+        [NSSet setWithArray:@[ @"main_two", @"main_one" ]];
+    bridge.state().fail_function = @"main_one";
+    DelegateFixture fixture(
+        backend, bridge, enumerated_manifest(@[
+          @{@"function" : @"main_two",
+            @"input_shapes" : @[ @[ @2 ] ]},
+          @{@"function" : @"main_one",
+            @"input_shapes" : @[ @[ @1 ] ]},
+        ]));
+    EXPECT_EQ(fixture.init(), Error::InvalidProgram);
+    EXPECT_EQ(bridge.state().function_bindings.load(), 2);
+    EXPECT_EQ(fixture.freed, 0);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, AdjacentInputAndOutputStorageCopiesDirectly) {
+  @autoreleasepool {
+    DelegateFixture fixture(backend, bridge);
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    FloatTensors tensors;
+    float storage[] = {3, 7, -1, -1};
+    tensors.input_impl.set_data(storage);
+    tensors.output_impl.set_data(storage + 2);
+    ASSERT_EQ(fixture.execute({tensors.args, 2}), Error::Ok);
+    EXPECT_EQ(storage[2], 3);
+    EXPECT_EQ(storage[3], 7);
+    EXPECT_EQ(bridge.state().output_copies.load(), 1);
+    EXPECT_EQ(bridge.state().last_output_destination.load(), storage + 2);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, PartialInputOutputOverlapStagesBeforeWriting) {
+  @autoreleasepool {
+    DelegateFixture fixture(backend, bridge);
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    for (bool destination_first : {false, true}) {
+      SCOPED_TRACE(destination_first);
+      FloatTensors tensors;
+      float storage[] = {3, 7, 11};
+      float* source = storage + (destination_first ? 1 : 0);
+      float* destination = storage + (destination_first ? 0 : 1);
+      const float expected[] = {source[0], source[1]};
+      tensors.input_impl.set_data(source);
+      tensors.output_impl.set_data(destination);
+      const int copies = bridge.state().output_copies.load();
+      ASSERT_EQ(fixture.execute({tensors.args, 2}), Error::Ok);
+      EXPECT_EQ(destination[0], expected[0]);
+      EXPECT_EQ(destination[1], expected[1]);
+      EXPECT_EQ(bridge.state().output_copies.load(), copies + 1);
+      EXPECT_NE(bridge.state().last_output_destination.load(), destination);
+    }
+  }
+}
+
+TEST_F(CoreAIDelegateTest, CrossOutputInputAliasesPreserveEverySource) {
+  @autoreleasepool {
+    bridge.state().multiple_io = true;
+    DelegateFixture fixture(backend, bridge, multiple_io_manifest());
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    FloatTensors first, second;
+    second.input[0] = 11;
+    second.input[1] = 13;
+    first.output_impl.set_data(second.input);
+    second.output_impl.set_data(first.input);
+    EValue* args[] = {&first.in, &second.in, &first.out, &second.out};
+    ASSERT_EQ(fixture.execute({args, 4}), Error::Ok);
+    EXPECT_EQ(first.input[0], 11);
+    EXPECT_EQ(first.input[1], 13);
+    EXPECT_EQ(second.input[0], 3);
+    EXPECT_EQ(second.input[1], 7);
+    EXPECT_EQ(bridge.state().output_copies.load(), 2);
+    EXPECT_NE(bridge.state().last_output_destination.load(), first.input);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, OverlappingOutputDestinationsPreserveWriteOrder) {
+  @autoreleasepool {
+    bridge.state().multiple_io = true;
+    DelegateFixture fixture(backend, bridge, multiple_io_manifest());
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    FloatTensors first, second;
+    second.input[0] = 11;
+    second.input[1] = 13;
+    float storage[] = {-1, -1, -1};
+    first.output_impl.set_data(storage);
+    second.output_impl.set_data(storage + 1);
+    EValue* args[] = {&first.in, &second.in, &first.out, &second.out};
+    ASSERT_EQ(fixture.execute({args, 4}), Error::Ok);
+    EXPECT_EQ(storage[0], 3);
+    EXPECT_EQ(storage[1], 11);
+    EXPECT_EQ(storage[2], 13);
+    EXPECT_EQ(bridge.state().output_copies.load(), 2);
+    EXPECT_NE(bridge.state().last_output_destination.load(), storage + 1);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, MultipleInputsAndOutputsPreserveManifestOrder) {
+  @autoreleasepool {
+    bridge.state().multiple_io = true;
+    DelegateFixture fixture(backend, bridge, multiple_io_manifest());
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    FloatTensors first, second;
+    second.input[0] = 11;
+    second.input[1] = 13;
+    EValue* args[] = {&first.in, &second.in, &first.out, &second.out};
+    ASSERT_EQ(fixture.execute({args, 4}), Error::Ok);
+    EXPECT_EQ(first.output[0], 3);
+    EXPECT_EQ(first.output[1], 7);
+    EXPECT_EQ(second.output[0], 11);
+    EXPECT_EQ(second.output[1], 13);
+    EXPECT_EQ(bridge.state().binding_mismatches.load(), 0);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, LaterOutputResizeFailureLeavesResultBytesUntouched) {
+  @autoreleasepool {
+    bridge.state().multiple_io = true;
+    DelegateFixture fixture(backend, bridge, multiple_io_manifest());
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    FloatTensors first, second;
+    float larger[] = {11, 13, 17};
+    TensorImpl::SizesType one[] = {1}, three[] = {3};
+    TensorImpl first_input(
+        ScalarType::Float,
+        1,
+        one,
+        first.input,
+        first.order,
+        first.input_stride);
+    TensorImpl second_input(
+        ScalarType::Float, 1, three, larger, second.order, second.input_stride);
+    EValue first_in{Tensor(&first_input)}, second_in{Tensor(&second_input)};
+    EValue* args[] = {&first_in, &second_in, &first.out, &second.out};
+    EXPECT_EQ(fixture.execute({args, 4}), Error::InvalidArgument);
+    EXPECT_EQ(bridge.state().output_copies.load(), 0);
+    EXPECT_EQ(first.out.toTensor().size(0), 1);
+    EXPECT_EQ(second.out.toTensor().size(0), 2);
+    for (size_t i = 0; i < 2; ++i) {
+      EXPECT_EQ(first.output[i], -1);
+      EXPECT_EQ(second.output[i], -1);
+    }
+  }
+}
+
+TEST_F(CoreAIDelegateTest, ConflictingSharedOutputShapesDoNotCopyBytes) {
+  @autoreleasepool {
+    bridge.state().multiple_io = true;
+    DelegateFixture fixture(backend, bridge, multiple_io_manifest());
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    const struct {
+      const char* name;
+      TensorImpl::SizesType shape[2];
+    } cases[] = {
+        {"different byte counts", {2, 2}},
+        {"equal byte counts", {2, 1}},
+    };
+    for (const auto& row : cases) {
+      SCOPED_TRACE(row.name);
+      for (bool separate_value : {false, true}) {
+        SCOPED_TRACE(separate_value);
+        RangeTensors<float> first, second;
+        const TensorImpl::SizesType first_shape[] = {1, 2};
+        ASSERT_EQ(resize_tensor(first.in.toTensor(), first_shape), Error::Ok);
+        ASSERT_EQ(resize_tensor(second.in.toTensor(), row.shape), Error::Ok);
+        EValue alias{Tensor(&first.output_impl)};
+        EValue* args[] = {
+            &first.in,
+            &second.in,
+            &first.out,
+            separate_value ? &alias : &first.out};
+        EXPECT_EQ(fixture.execute({args, 4}), Error::InvalidArgument);
+        EXPECT_EQ(bridge.state().output_copies.load(), 0);
+        for (float value : first.output) {
+          EXPECT_EQ(value, 99);
+        }
+      }
+    }
+  }
+}
+
+TEST_F(CoreAIDelegateTest, MatchingSharedOutputShapesPreserveCopyOrder) {
+  @autoreleasepool {
+    bridge.state().multiple_io = true;
+    DelegateFixture fixture(backend, bridge, multiple_io_manifest());
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    FloatTensors first, second;
+    second.input[0] = 11;
+    second.input[1] = 13;
+    EValue alias{Tensor(&first.output_impl)};
+    EValue* args[] = {&first.in, &second.in, &first.out, &alias};
+    ASSERT_EQ(fixture.execute({args, 4}), Error::Ok);
+    EXPECT_EQ(bridge.state().output_copies.load(), 2);
+    EXPECT_EQ(first.out.toTensor().size(0), 2);
+    EXPECT_EQ(first.output[0], 11);
+    EXPECT_EQ(first.output[1], 13);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, WrongOutputCountDoesNotWriteCallerStorage) {
+  @autoreleasepool {
+    bridge.state().multiple_io = true;
+    bridge.state().bad_output = true;
+    DelegateFixture fixture(backend, bridge, multiple_io_manifest());
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    FloatTensors first, second;
+    EValue* args[] = {&first.in, &second.in, &first.out, &second.out};
+    EXPECT_EQ(fixture.execute({args, 4}), Error::Internal);
+    EXPECT_EQ(bridge.state().output_copies.load(), 0);
+    EXPECT_EQ(first.out.toTensor().size(0), 2);
+    EXPECT_EQ(second.out.toTensor().size(0), 2);
+    for (size_t i = 0; i < 2; ++i) {
+      EXPECT_EQ(first.output[i], -1);
+      EXPECT_EQ(second.output[i], -1);
+    }
+  }
+}
+
+TEST_F(CoreAIDelegateTest, ArgumentValidationRejectsBeforeSdkExecution) {
+  @autoreleasepool {
+    DelegateFixture fixture(backend, bridge);
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    FloatTensors tensors;
+    EXPECT_EQ(fixture.execute({tensors.args, 1}), Error::InvalidArgument);
+    EValue scalar(int64_t(3));
+    EValue* args[] = {&scalar, &tensors.out};
+    EXPECT_EQ(fixture.execute({args, 2}), Error::InvalidArgument);
+    EXPECT_EQ(bridge.state().executions.load(), 0);
+  }
+}
+
+// No assertion may leave a caller thread blocked behind its input-read gate.
+class BorrowedInputWorker final {
+ public:
+  BorrowedInputWorker(
+      DelegateFixture& fixture,
+      FloatTensors& tensors,
+      FakeBridgeState& state)
+      : fixture_(fixture), tensors_(tensors), state_(state) {
+    state_.input_ready = dispatch_semaphore_create(0);
+    state_.allow_input_read = dispatch_semaphore_create(0);
+  }
+  ~BorrowedInputWorker() {
+    release_and_join();
+    state_.input_ready = nil;
+    state_.allow_input_read = nil;
+  }
+  BorrowedInputWorker(const BorrowedInputWorker&) = delete;
+  BorrowedInputWorker& operator=(const BorrowedInputWorker&) = delete;
+  int start() {
+    const int error = pthread_create(&thread_, nullptr, run, this);
+    started_ = error == 0;
+    return error;
+  }
+  long wait_ready() {
+    return dispatch_semaphore_wait(state_.input_ready, test_deadline(5));
+  }
+  long wait_finished(int64_t timeout) {
+    return dispatch_semaphore_wait(
+        finished_, dispatch_time(DISPATCH_TIME_NOW, timeout));
+  }
+  void release() {
+    dispatch_semaphore_signal(state_.allow_input_read);
+  }
+  void release_and_join() {
+    release();
+    if (started_) {
+      const long returned = dispatch_semaphore_wait(returned_, test_deadline());
+      if (returned != 0) {
+        ADD_FAILURE()
+            << "Delegate worker did not return after releasing its input gate";
+        // A stuck worker still borrows this stack; unwinding would be unsafe.
+        std::_Exit(EXIT_FAILURE);
+      }
+      EXPECT_EQ(pthread_join(thread_, nullptr), 0);
+      started_ = false;
+    }
+  }
+  Error status = Error::Internal;
+
+ private:
+  static void* run(void* context) {
+    auto& worker = *static_cast<BorrowedInputWorker*>(context);
+    @autoreleasepool {
+      worker.status = worker.fixture_.execute({worker.tensors_.args, 2});
+    }
+    dispatch_semaphore_signal(worker.finished_);
+    dispatch_semaphore_signal(worker.returned_);
+    return nullptr;
+  }
+  DelegateFixture& fixture_;
+  FloatTensors& tensors_;
+  FakeBridgeState& state_;
+  dispatch_semaphore_t finished_ = dispatch_semaphore_create(0);
+  dispatch_semaphore_t returned_ = dispatch_semaphore_create(0);
+  pthread_t thread_{};
+  bool started_ = false;
+};
+
+TEST_F(CoreAIDelegateTest, BorrowedInputStorageStaysLiveUntilSuccessOrError) {
+  @autoreleasepool {
+    DelegateFixture fixture(backend, bridge);
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    FloatTensors tensors;
+    for (bool failure : {false, true}) {
+      SCOPED_TRACE(failure ? "runtime error" : "success");
+      bridge.state().fail_execute = failure;
+      bridge.state().last_input_bytes = nullptr;
+      const auto first_byte =
+          reinterpret_cast<const unsigned char*>(tensors.input)[0];
+      bridge.state().last_input_first_byte =
+          static_cast<unsigned char>(first_byte ^ 0xff);
+      const int executions = bridge.state().executions.load();
+      BorrowedInputWorker worker(fixture, tensors, bridge.state());
+      const int started = worker.start();
+      if (started != 0) {
+        worker.release_and_join();
+        FAIL() << "pthread_create failed: " << started;
+      }
+      const long ready = worker.wait_ready();
+      const void* observed = bridge.state().last_input_bytes.load();
+      const long premature = worker.wait_finished(50 * NSEC_PER_MSEC);
+      worker.release();
+      const long finished = worker.wait_finished(5 * NSEC_PER_SEC);
+      worker.release_and_join();
+      ASSERT_TRUE(bridge.wait_for_callbacks(test_deadline()));
+      EXPECT_EQ(ready, 0);
+      EXPECT_EQ(observed, tensors.input);
+      EXPECT_NE(premature, 0);
+      EXPECT_EQ(finished, 0);
+      EXPECT_EQ(worker.status, failure ? Error::Internal : Error::Ok);
+      EXPECT_EQ(bridge.state().executions.load(), executions + 1);
+      EXPECT_EQ(
+          bridge.state().last_input_first_byte.load(),
+          reinterpret_cast<const unsigned char*>(tensors.input)[0]);
+    }
+  }
+}
+
+TEST_F(CoreAIDelegateTest, RetainedExecutionCompletionReleasesResults) {
+  @autoreleasepool {
+    bridge.state().retain_execution_completion = true;
+    DelegateFixture fixture(backend, bridge);
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    FloatTensors tensors;
+    ASSERT_EQ(fixture.execute({tensors.args, 2}), Error::Ok);
+    EXPECT_EQ(bridge.state().output_owners.load(), 0);
+    bridge.state().fail_execute = true;
+    EXPECT_EQ(fixture.execute({tensors.args, 2}), Error::Internal);
+    EXPECT_EQ(bridge.state().output_owners.load(), 0);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, ExecuteMapsRuntimeErrors) {
+  @autoreleasepool {
+    DelegateFixture fixture(backend, bridge);
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    FloatTensors tensors;
+    bridge.state().fail_execute = true;
+    EXPECT_EQ(fixture.execute({tensors.args, 2}), Error::Internal);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, MalformedOutputDoesNotWriteCallerStorage) {
+  @autoreleasepool {
+    DelegateFixture fixture(backend, bridge);
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    FloatTensors tensors;
+    bridge.state().bad_output = true;
+    EXPECT_EQ(fixture.execute({tensors.args, 2}), Error::Internal);
+    EXPECT_EQ(tensors.output[0], -1);
+    EXPECT_EQ(tensors.output[1], -1);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, NoncontiguousInputIsNotSupported) {
+  @autoreleasepool {
+    DelegateFixture fixture(backend, bridge);
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    FloatTensors tensors;
+    tensors.input_stride[0] = 2;
+    EXPECT_EQ(fixture.execute({tensors.args, 2}), Error::NotSupported);
+    EXPECT_EQ(bridge.state().executions.load(), 0);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, NonemptyOutputRequiresStorage) {
+  @autoreleasepool {
+    DelegateFixture fixture(backend, bridge);
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    FloatTensors tensors;
+    tensors.output_impl.set_data(nullptr);
+    EXPECT_EQ(fixture.execute({tensors.args, 2}), Error::InvalidArgument);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, OutputResizesDownAndBackWithinCapacity) {
+  @autoreleasepool {
+    DelegateFixture fixture(backend, bridge);
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    FloatTensors tensors;
+    TensorImpl::SizesType one[] = {1};
+    TensorImpl smaller(
+        ScalarType::Float,
+        1,
+        one,
+        tensors.input,
+        tensors.order,
+        tensors.input_stride);
+    EValue small{Tensor(&smaller)};
+    EValue* args[] = {&small, &tensors.out};
+    ASSERT_EQ(fixture.execute({args, 2}), Error::Ok);
+    EXPECT_EQ(tensors.out.toTensor().size(0), 1);
+    ASSERT_EQ(fixture.execute({tensors.args, 2}), Error::Ok);
+    EXPECT_EQ(tensors.out.toTensor().size(0), 2);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, OutputResizeFailurePreservesStorage) {
+  @autoreleasepool {
+    DelegateFixture fixture(backend, bridge);
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    FloatTensors tensors;
+    TensorImpl::SizesType capacity[] = {1};
+    TensorImpl output(
+        ScalarType::Float,
+        1,
+        capacity,
+        tensors.output,
+        tensors.order,
+        tensors.output_stride,
+        TensorShapeDynamism::DYNAMIC_BOUND);
+    EValue too_small{Tensor(&output)};
+    EValue* args[] = {&tensors.in, &too_small};
+    tensors.output[0] = -2;
+    EXPECT_EQ(fixture.execute({args, 2}), Error::InvalidArgument);
+    EXPECT_EQ(tensors.output[0], -2);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, StaticOutputRejectsShapeChangeWithinCapacity) {
+  @autoreleasepool {
+    DelegateFixture fixture(backend, bridge);
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    FloatTensors tensors;
+    TensorImpl::SizesType shape[] = {1};
+    TensorImpl input(
+        ScalarType::Float,
+        1,
+        shape,
+        tensors.input,
+        tensors.order,
+        tensors.input_stride);
+    TensorImpl output(
+        ScalarType::Float,
+        1,
+        tensors.output_size,
+        tensors.output,
+        tensors.order,
+        tensors.output_stride,
+        TensorShapeDynamism::STATIC);
+    EValue in{Tensor(&input)}, out{Tensor(&output)};
+    EValue* args[] = {&in, &out};
+    EXPECT_EQ(fixture.execute({args, 2}), Error::InvalidArgument);
+    EXPECT_EQ(out.toTensor().size(0), 2);
+    EXPECT_EQ(tensors.output[0], -1);
+    EXPECT_EQ(tensors.output[1], -1);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, HalfDtypePreservesBitsAndRejectsMixedOutputDtype) {
+  @autoreleasepool {
+    DelegateFixture fixture(backend, bridge);
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    FloatTensors tensors;
+    uint16_t input[] = {0x3c00, 0x4000}, output[] = {0, 0};
+    TensorImpl input_impl(
+        ScalarType::Half,
+        1,
+        tensors.input_size,
+        input,
+        tensors.order,
+        tensors.input_stride);
+    TensorImpl output_impl(
+        ScalarType::Half,
+        1,
+        tensors.output_size,
+        output,
+        tensors.order,
+        tensors.output_stride);
+    EValue in{Tensor(&input_impl)}, out{Tensor(&output_impl)};
+    EValue* args[] = {&in, &out};
+    ASSERT_EQ(fixture.execute({args, 2}), Error::Ok);
+    EXPECT_EQ(output[0], input[0]);
+    EXPECT_EQ(output[1], input[1]);
+    EXPECT_EQ(bridge.state().last_input_bytes.load(), input);
+    EValue* mixed[] = {&in, &tensors.out};
+    EXPECT_EQ(fixture.execute({mixed, 2}), Error::InvalidArgument);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, Int32DtypePreservesValuesAndRejectsFloatOutput) {
+  @autoreleasepool {
+    DelegateFixture fixture(backend, bridge);
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    FloatTensors tensors;
+    for (const auto& values :
+         {std::array<int32_t, 2>{INT32_MIN, INT32_MAX},
+          std::array<int32_t, 2>{-16777217, 16777217}}) {
+      int32_t input[] = {values[0], values[1]}, output[] = {0, 0};
+      TensorImpl input_impl(
+          ScalarType::Int,
+          1,
+          tensors.input_size,
+          input,
+          tensors.order,
+          tensors.input_stride);
+      TensorImpl output_impl(
+          ScalarType::Int,
+          1,
+          tensors.output_size,
+          output,
+          tensors.order,
+          tensors.output_stride);
+      EValue in{Tensor(&input_impl)}, out{Tensor(&output_impl)};
+      EValue* args[] = {&in, &out};
+      ASSERT_EQ(fixture.execute({args, 2}), Error::Ok);
+      EXPECT_EQ(output[0], input[0]);
+      EXPECT_EQ(output[1], input[1]);
+      EXPECT_EQ(bridge.state().last_input_bytes.load(), input);
+      EXPECT_EQ(bridge.state().last_input_byte_count.load(), sizeof(input));
+      EValue* mixed[] = {&in, &tensors.out};
+      EXPECT_EQ(fixture.execute({mixed, 2}), Error::InvalidArgument);
+      EXPECT_EQ(tensors.output[0], -1);
+      EXPECT_EQ(tensors.output[1], -1);
+    }
+  }
+}
+
+TEST_F(CoreAIDelegateTest, BoolDtypePreservesValuesAndRejectsFloatOutput) {
+  @autoreleasepool {
+    DelegateFixture fixture(backend, bridge);
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    FloatTensors tensors;
+    for (const auto& values :
+         {std::array<bool, 2>{false, true}, std::array<bool, 2>{true, false}}) {
+      bool input[] = {values[0], values[1]};
+      bool output[] = {true, !values[0], !values[1], false};
+      TensorImpl input_impl(
+          ScalarType::Bool,
+          1,
+          tensors.input_size,
+          input,
+          tensors.order,
+          tensors.input_stride);
+      TensorImpl output_impl(
+          ScalarType::Bool,
+          1,
+          tensors.output_size,
+          output + 1,
+          tensors.order,
+          tensors.output_stride);
+      EValue in{Tensor(&input_impl)}, out{Tensor(&output_impl)};
+      EValue* args[] = {&in, &out};
+      ASSERT_EQ(fixture.execute({args, 2}), Error::Ok);
+      EXPECT_EQ(output[1], input[0]);
+      EXPECT_EQ(output[2], input[1]);
+      EXPECT_TRUE(output[0]);
+      EXPECT_FALSE(output[3]);
+      EXPECT_EQ(bridge.state().last_input_bytes.load(), input);
+      EXPECT_EQ(bridge.state().last_input_byte_count.load(), 2);
+      EValue* mixed[] = {&in, &tensors.out};
+      EXPECT_EQ(fixture.execute({mixed, 2}), Error::InvalidArgument);
+      EXPECT_EQ(tensors.output[0], -1);
+      EXPECT_EQ(tensors.output[1], -1);
+    }
+  }
+}
+
+TEST_F(CoreAIDelegateTest, ScalarTensorsExecuteAndRejectOutputRankMismatch) {
+  @autoreleasepool {
+    DelegateFixture fixture(backend, bridge);
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    FloatTensors tensors;
+    TensorImpl input(ScalarType::Float, 0, nullptr, tensors.input);
+    TensorImpl output(ScalarType::Float, 0, nullptr, tensors.output);
+    EValue in{Tensor(&input)}, out{Tensor(&output)};
+    EValue* args[] = {&in, &out};
+    ASSERT_EQ(fixture.execute({args, 2}), Error::Ok);
+    EXPECT_EQ(tensors.output[0], tensors.input[0]);
+    EXPECT_EQ(bridge.state().last_input_bytes.load(), tensors.input);
+    EValue* wrong_rank[] = {&tensors.in, &out};
+    EXPECT_EQ(fixture.execute({wrong_rank, 2}), Error::InvalidArgument);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, EmptyVectorAndMatrixBorrowNullStorage) {
+  @autoreleasepool {
+    DelegateFixture fixture(backend, bridge);
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    for (int rank : {1, 2}) {
+      SCOPED_TRACE(rank);
+      TensorImpl::SizesType shape[] = {2, 0};
+      TensorImpl::DimOrderType order[] = {0, 1};
+      TensorImpl::StridesType strides[] = {1, 1};
+      auto* sizes = rank == 1 ? shape + 1 : shape;
+      TensorImpl input(ScalarType::Float, rank, sizes, nullptr, order, strides);
+      TensorImpl output(
+          ScalarType::Float, rank, sizes, nullptr, order, strides);
+      EValue in{Tensor(&input)}, out{Tensor(&output)};
+      EValue* args[] = {&in, &out};
+      const int executions = bridge.state().executions.load();
+      bridge.state().last_input_bytes = &input;
+      bridge.state().last_input_byte_count = 1;
+      ASSERT_EQ(fixture.execute({args, 2}), Error::Ok);
+      EXPECT_EQ(bridge.state().executions.load(), executions + 1);
+      EXPECT_EQ(bridge.state().last_input_bytes.load(), nullptr);
+      EXPECT_EQ(bridge.state().last_input_byte_count.load(), 0);
+      EXPECT_EQ(bridge.state().output_copies.load(), 0);
+    }
+  }
+}
+
+TEST_F(CoreAIDelegateTest, BorrowedStorageMayAliasOutputAfterExecution) {
+  @autoreleasepool {
+    DelegateFixture fixture(backend, bridge);
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    FloatTensors tensors;
+    tensors.output_impl.set_data(tensors.input);
+    ASSERT_EQ(fixture.execute({tensors.args, 2}), Error::Ok);
+    EXPECT_EQ(tensors.input[0], 3);
+    EXPECT_EQ(tensors.input[1], 7);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, BorrowedStorageUsesCurrentInputPointer) {
+  @autoreleasepool {
+    DelegateFixture fixture(backend, bridge);
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    FloatTensors tensors;
+    ASSERT_EQ(fixture.execute({tensors.args, 2}), Error::Ok);
+    float next_input[] = {11, 13};
+    tensors.input_impl.set_data(next_input);
+    ASSERT_EQ(fixture.execute({tensors.args, 2}), Error::Ok);
+    EXPECT_EQ(bridge.state().last_input_bytes.load(), next_input);
+    EXPECT_EQ(tensors.output[0], 11);
+    EXPECT_EQ(tensors.output[1], 13);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, DynamicShapesBorrowCurrentSubrange) {
+  @autoreleasepool {
+    DelegateFixture fixture(backend, bridge);
+    ASSERT_EQ(fixture.init(), Error::Ok);
+    RangeTensors<float> tensors;
+    for (TensorImpl::SizesType rows : {3, 0}) {
+      SCOPED_TRACE(rows);
+      TensorImpl::SizesType shape[] = {rows, 2};
+      ASSERT_EQ(resize_tensor(tensors.in.toTensor(), {shape, 2}), Error::Ok);
+      tensors.fill_output();
+      ASSERT_EQ(fixture.execute({tensors.args, 2}), Error::Ok);
+      const size_t elements = static_cast<size_t>(rows) * 2;
+      EXPECT_EQ(bridge.state().last_input_bytes.load(), tensors.input + 2);
+      EXPECT_EQ(
+          bridge.state().last_input_byte_count.load(),
+          elements * sizeof(float));
+      EXPECT_EQ(tensors.out.toTensor().size(0), rows);
+      EXPECT_EQ(tensors.out.toTensor().const_data_ptr(), tensors.output + 2);
+      for (size_t i = 0; i < 12; ++i) {
+        SCOPED_TRACE(i);
+        EXPECT_EQ(
+            tensors.output[i],
+            i >= 2 && i < 2 + elements ? tensors.input[i] : 99.0f);
+      }
+    }
+  }
+}
+
+TEST_F(CoreAIDelegateTest, OptionsRejectWrongTypes) {
+  @autoreleasepool {
+    const BackendOption wrong_types[] = {
+        {"coreai_cache_dir", 1},
+        {"coreai_compute_unit", 1},
+        {"coreai_share_multifunction_model", 1},
+        {"coreai_expect_frequent_reshapes", 1},
+    };
+    for (const auto& option : wrong_types) {
+      SCOPED_TRACE(option.key);
+      DelegateFixture fixture(backend, bridge);
+      EXPECT_EQ(
+          fixture.init_with_options({&option, 1}), Error::InvalidArgument);
+      EXPECT_EQ(fixture.freed, 0);
+    }
+  }
+}
+
+TEST_F(CoreAIDelegateTest, StorageOptionsRejectRelativePaths) {
+  @autoreleasepool {
+    DelegateFixture fixture(backend, bridge);
+    BackendOptions<1> relative;
+    ASSERT_EQ(relative.set_option("coreai_cache_dir", "relative"), Error::Ok);
+    EXPECT_EQ(
+        fixture.init_with_options(
+            {relative.view().data(), relative.view().size()}),
+        Error::InvalidArgument);
+    EXPECT_EQ(fixture.freed, 0);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, ComputeUnitOptionSelectsSpecialization) {
+  @autoreleasepool {
+    // A successful init frees the processed manifest, so each case gets a
+    // fresh fixture.
+    auto init_with_compute_unit = [&](const char* name) {
+      bridge.state().last_compute_unit = -1;
+      DelegateFixture fixture(backend, bridge);
+      BackendOptions<2> options;
+      if (name != nullptr) {
+        EXPECT_EQ(options.set_option("coreai_compute_unit", name), Error::Ok);
+      }
+      return fixture.init_with_storage(options);
+    };
+    {
+      SCOPED_TRACE("absent");
+      ASSERT_EQ(init_with_compute_unit(nullptr), Error::Ok);
+      EXPECT_EQ(
+          bridge.state().last_compute_unit.load(), ETCoreAIComputeUnitDefault);
+    }
+    const std::pair<const char*, ETCoreAIComputeUnit> valid[] = {
+        {"default", ETCoreAIComputeUnitDefault},
+        {"cpu_only", ETCoreAIComputeUnitCPUOnly},
+        {"prefer_cpu", ETCoreAIComputeUnitPreferCPU},
+        {"prefer_gpu", ETCoreAIComputeUnitPreferGPU},
+        {"prefer_neural_engine", ETCoreAIComputeUnitPreferNeuralEngine},
+    };
+    for (const auto& [name, unit] : valid) {
+      SCOPED_TRACE(name);
+      ASSERT_EQ(init_with_compute_unit(name), Error::Ok);
+      EXPECT_EQ(bridge.state().last_compute_unit.load(), unit);
+    }
+    for (const char* name : {"gpu", "neural_engine", "CPU_ONLY", ""}) {
+      SCOPED_TRACE(name);
+      EXPECT_EQ(init_with_compute_unit(name), Error::InvalidArgument);
+      EXPECT_EQ(bridge.state().last_compute_unit.load(), -1);
+    }
+  }
+}
+
+TEST_F(CoreAIDelegateTest, ExpectFrequentReshapesOptionReachesLoader) {
+  @autoreleasepool {
+    auto init_with_reshapes = [&](std::optional<bool> reshapes) {
+      bridge.state().last_expect_frequent_reshapes = -1;
+      DelegateFixture fixture(backend, bridge);
+      BackendOptions<3> options;
+      EXPECT_EQ(
+          options.set_option("coreai_compute_unit", "cpu_only"), Error::Ok);
+      if (reshapes.has_value()) {
+        EXPECT_EQ(
+            options.set_option("coreai_expect_frequent_reshapes", *reshapes),
+            Error::Ok);
+      }
+      return fixture.init_with_storage(options);
+    };
+    for (const auto& [reshapes, expected] :
+         {std::pair<std::optional<bool>, int>{std::nullopt, 0},
+          std::pair<std::optional<bool>, int>{false, 0},
+          std::pair<std::optional<bool>, int>{true, 1}}) {
+      SCOPED_TRACE(
+          reshapes.has_value() ? (*reshapes ? "true" : "false") : "absent");
+      ASSERT_EQ(init_with_reshapes(reshapes), Error::Ok);
+      EXPECT_EQ(bridge.state().last_expect_frequent_reshapes.load(), expected);
+      EXPECT_EQ(
+          bridge.state().last_compute_unit.load(), ETCoreAIComputeUnitCPUOnly);
+    }
+  }
+}
+
+NSMutableDictionary* multifunction_manifest() {
+  NSMutableDictionary* manifest = manifest_dict();
+  manifest[@"multifunction"] = @YES;
+  return manifest;
+}
+
+// Uses the fixture's own cache directory unless root names another; sharing is
+// scoped to the cache directory.
+Error init_sharing(
+    DelegateFixture& fixture,
+    std::optional<bool> share,
+    NSString* root = nil) {
+  BackendOptions<2> options;
+  if (share.has_value()) {
+    const Error error =
+        options.set_option("coreai_share_multifunction_model", *share);
+    if (error != Error::Ok) {
+      return error;
+    }
+  }
+  if (root == nil) {
+    return fixture.init_with_storage(options);
+  }
+  const Error error = options.set_option("coreai_cache_dir", root.UTF8String);
+  if (error != Error::Ok) {
+    return error;
+  }
+  return fixture.init_with_options(
+      {options.view().data(), options.view().size()});
+}
+
+TEST_F(CoreAIDelegateTest, ShareOptionRequiresMultifunctionExport) {
+  @autoreleasepool {
+    DelegateFixture fixture(backend, bridge);
+    EXPECT_EQ(init_sharing(fixture, true), Error::InvalidArgument);
+    EXPECT_EQ(bridge.state().prepared_models.load(), 0);
+    EXPECT_EQ(fixture.freed, 0);
+    DelegateFixture allowed(backend, bridge);
+    EXPECT_EQ(init_sharing(allowed, false), Error::Ok);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, ShareOptionSharesOneModelUntilLastDelegate) {
+  @autoreleasepool {
+    {
+      SCOPED_TRACE("off loads one model per delegate");
+      DelegateFixture first(backend, bridge, multifunction_manifest());
+      DelegateFixture second(backend, bridge, multifunction_manifest());
+      ASSERT_EQ(init_sharing(first, std::nullopt), Error::Ok);
+      ASSERT_EQ(init_sharing(second, false, first.storage.url.path), Error::Ok);
+      EXPECT_EQ(bridge.state().prepared_models.load(), 2);
+    }
+    EXPECT_EQ(bridge.state().prepared_models.load(), 0);
+    {
+      SCOPED_TRACE("on shares one model");
+      DelegateFixture first(backend, bridge, multifunction_manifest());
+      DelegateFixture second(backend, bridge, multifunction_manifest());
+      ASSERT_EQ(init_sharing(first, true), Error::Ok);
+      ASSERT_EQ(init_sharing(second, true, first.storage.url.path), Error::Ok);
+      EXPECT_EQ(bridge.state().prepared_models.load(), 1);
+      EXPECT_EQ(bridge.state().sessions.load(), 2);
+      for (auto* fixture : {&first, &second}) {
+        FloatTensors tensors;
+        ASSERT_EQ(fixture->execute({tensors.args, 2}), Error::Ok);
+        EXPECT_EQ(tensors.output[0], 3);
+        EXPECT_EQ(tensors.output[1], 7);
+      }
+      first.reset();
+      EXPECT_EQ(bridge.state().prepared_models.load(), 1);
+      second.reset();
+      EXPECT_EQ(bridge.state().prepared_models.load(), 0);
+    }
+  }
+}
+
+TEST_F(CoreAIDelegateTest, SharedModelsAreScopedToCacheDirectory) {
+  @autoreleasepool {
+    DelegateFixture first(backend, bridge, multifunction_manifest());
+    DelegateFixture other_directory(backend, bridge, multifunction_manifest());
+    DelegateFixture alias(backend, bridge, multifunction_manifest());
+    ASSERT_EQ(init_sharing(first, true), Error::Ok);
+    ASSERT_EQ(init_sharing(other_directory, true), Error::Ok);
+    EXPECT_EQ(bridge.state().prepared_models.load(), 2);
+    NSURL* link = [alias.storage.url URLByAppendingPathComponent:@"alias"];
+    ASSERT_TRUE([NSFileManager.defaultManager
+        createSymbolicLinkAtURL:link
+             withDestinationURL:first.storage.url
+                          error:nil]);
+    ASSERT_EQ(init_sharing(alias, true, link.path), Error::Ok);
+    EXPECT_EQ(bridge.state().prepared_models.load(), 2);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, SharedModelSerializesConcurrentExecution) {
+  @autoreleasepool {
+    bridge.state().execute_delay_us = 1000;
+    // The unshared run shows the workload does overlap when nothing serializes
+    // it, so the shared assertion can fail.
+    for (const bool share : {false, true}) {
+      SCOPED_TRACE(share ? "shared" : "unshared");
+      bridge.state().max_active_executions = 0;
+      DelegateFixture first(backend, bridge, multifunction_manifest());
+      DelegateFixture second(backend, bridge, multifunction_manifest());
+      ASSERT_EQ(init_sharing(first, share), Error::Ok);
+      ASSERT_EQ(init_sharing(second, share, first.storage.url.path), Error::Ok);
+      std::atomic<int> failures{0};
+      auto run = [&](DelegateFixture* fixture) {
+        for (int iteration = 0; iteration < 20; ++iteration) {
+          FloatTensors tensors;
+          if (fixture->execute({tensors.args, 2}) != Error::Ok ||
+              tensors.output[0] != 3 || tensors.output[1] != 7) {
+            ++failures;
+          }
+        }
+      };
+      std::thread worker(run, &first);
+      run(&second);
+      worker.join();
+      EXPECT_EQ(failures.load(), 0);
+      if (share) {
+        EXPECT_EQ(bridge.state().max_active_executions.load(), 1);
+      } else {
+        EXPECT_GT(bridge.state().max_active_executions.load(), 1);
+      }
+    }
+  }
+}
+
+TEST_F(CoreAIDelegateTest, ConcurrentFirstSharedLoadsAcquireOnce) {
+  @autoreleasepool {
+    BookmarkLoaderScope fake;
+    // Widens the window in which a second load could miss the registry.
+    fake.loader.onSpecialize = ^(NSURL*) {
+      usleep(50000);
+    };
+    DelegateFixture first(backend, bridge, multifunction_manifest());
+    DelegateFixture second(backend, bridge, multifunction_manifest());
+    Error second_result = Error::Internal;
+    NSString* root = first.storage.url.path;
+    std::thread worker(
+        [&] { second_result = init_sharing(second, true, root); });
+    const Error first_result = init_sharing(first, true);
+    worker.join();
+    EXPECT_EQ(first_result, Error::Ok);
+    EXPECT_EQ(second_result, Error::Ok);
+    EXPECT_EQ(
+        fake.loader->specializations.load() + fake.loader->restores.load(), 1);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, SharedLoadsOfDifferentModelsRunConcurrently) {
+  @autoreleasepool {
+    BookmarkLoaderScope fake;
+    // Each specialization waits until both are in flight; if one shared load
+    // blocked the other, neither would ever see two in flight.
+    auto in_flight = std::make_shared<std::atomic<int>>(0);
+    auto max_in_flight = std::make_shared<std::atomic<int>>(0);
+    fake.loader.onSpecialize = ^(NSURL*) {
+      const int now = ++*in_flight;
+      int seen = max_in_flight->load();
+      while (now > seen && !max_in_flight->compare_exchange_weak(seen, now)) {
+      }
+      for (int i = 0; i < 400 && max_in_flight->load() < 2; ++i) {
+        usleep(5000);
+      }
+      --*in_flight;
+    };
+    DelegateFixture first(backend, bridge, multifunction_manifest());
+    DelegateFixture second(backend, bridge, multifunction_manifest());
+    Error second_result = Error::Internal;
+    std::thread worker([&] { second_result = init_sharing(second, true); });
+    const Error first_result = init_sharing(first, true);
+    worker.join();
+    EXPECT_EQ(first_result, Error::Ok);
+    EXPECT_EQ(second_result, Error::Ok);
+    EXPECT_EQ(fake.loader->specializations.load(), 2);
+    EXPECT_EQ(max_in_flight->load(), 2);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, WaiterAcquiresAfterConcurrentSharedLoadFails) {
+  @autoreleasepool {
+    BookmarkLoaderScope fake;
+    auto calls = std::make_shared<std::atomic<int>>(0);
+    auto first_in_flight = std::make_shared<std::atomic<bool>>(false);
+    auto second_waiting = std::make_shared<std::atomic<bool>>(false);
+    __weak BookmarkFakeLoader* loader = fake.loader;
+    // The first acquisition fails only once the second load waits on it.
+    fake.loader.onSpecialize = ^(NSURL*) {
+      if (++*calls == 1) {
+        *first_in_flight = true;
+        for (int i = 0; i < 1000 && !*second_waiting; ++i) {
+          usleep(5000);
+        }
+        loader.specializeError = [NSError errorWithDomain:NSPOSIXErrorDomain
+                                                     code:EIO
+                                                 userInfo:nil];
+      } else {
+        loader.specializeError = nil;
+      }
+    };
+    DelegateFixture first(backend, bridge, multifunction_manifest());
+    DelegateFixture second(backend, bridge, multifunction_manifest());
+    NSString* root = first.storage.url.path;
+    Error first_result = Error::Ok;
+    std::thread worker([&] { first_result = init_sharing(first, true); });
+    while (!*first_in_flight) {
+      std::this_thread::yield();
+    }
+    Error second_result = Error::Internal;
+    {
+      StorageFaultScope observe_wait(FaultPoint::BeforeSharedLoadWait);
+      observe_wait.armed = false;
+      observe_wait.observe = ^(FaultPoint point) {
+        if (point == FaultPoint::BeforeSharedLoadWait) {
+          *second_waiting = true;
+        }
+      };
+      second_result = init_sharing(second, true, root);
+    }
+    worker.join();
+    EXPECT_TRUE(second_waiting->load());
+    EXPECT_NE(first_result, Error::Ok);
+    EXPECT_EQ(second_result, Error::Ok);
+    EXPECT_EQ(calls->load(), 2);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, FailedSharedAcquisitionLeavesNoEntry) {
+  @autoreleasepool {
+    BookmarkLoaderScope fake;
+    fake.loader.specializeError = [NSError errorWithDomain:NSPOSIXErrorDomain
+                                                      code:EIO
+                                                  userInfo:nil];
+    DelegateFixture failed(backend, bridge, multifunction_manifest());
+    EXPECT_NE(init_sharing(failed, true), Error::Ok);
+    fake.loader.specializeError = nil;
+    DelegateFixture first(backend, bridge, multifunction_manifest());
+    DelegateFixture second(backend, bridge, multifunction_manifest());
+    NSString* root = failed.storage.url.path;
+    ASSERT_EQ(init_sharing(first, true, root), Error::Ok);
+    ASSERT_EQ(init_sharing(second, true, root), Error::Ok);
+    EXPECT_EQ(fake.loader->specializations.load(), 2);
+    EXPECT_EQ(fake.loader->restores.load(), 0);
+  }
+}
+
+TEST_F(CoreAIDelegateTest, ConfiguredSymlinkCacheDirectoryLoadsAndClears) {
+  @autoreleasepool {
+    DelegateFixture fixture(backend, bridge);
+    NSURL* target =
+        [fixture.storage.url URLByAppendingPathComponent:@"cache-target"];
+    NSURL* configured =
+        [fixture.storage.url URLByAppendingPathComponent:@"cache-link"];
+    ASSERT_EQ(mkdir(target.fileSystemRepresentation, 0777), 0);
+    ASSERT_EQ(
+        symlink(
+            target.fileSystemRepresentation,
+            configured.fileSystemRepresentation),
+        0);
+    ASSERT_EQ(fixture.init(configured.path), Error::Ok);
+    EXPECT_TRUE([bridge.state().last_bundle containsString:@"/cache-target/"]);
+    EXPECT_FALSE([bridge.state().last_bundle containsString:@"/cache-link/"]);
+    fixture.reset();
+    EXPECT_EQ(clear_cache(configured.path.UTF8String), Error::Ok);
+  }
+}
+
+TEST_F(
+    CoreAIDelegateTest,
+    LifetimeDestroyAndWarmReloadIsolateRootsWithoutSource) {
+  @autoreleasepool {
+    DelegateFixture first(backend, bridge);
+    ASSERT_EQ(first.init(), Error::Ok);
+    EXPECT_EQ(first.freed, 1);
+    EXPECT_EQ(bridge.state().sessions.load(), 1);
+    NSString* first_bundle = bridge.state().last_bundle;
+    ASSERT_NE(first_bundle, nil);
+    first.reset();
+    EXPECT_EQ(bridge.state().sessions.load(), 0);
+    EXPECT_FALSE([NSFileManager.defaultManager fileExistsAtPath:first_bundle]);
+    backend->destroy(nullptr);
+
+    DelegateFixture reloaded(backend, bridge);
+    ASSERT_EQ(reloaded.init(first.storage.url.path), Error::Ok);
+    EXPECT_EQ(reloaded.data.attempts.load(), 0);
+    EXPECT_TRUE([bridge.state().last_bundle isEqualToString:first_bundle]);
+    DelegateFixture other(backend, bridge);
+    NSURL* nested =
+        [other.storage.url URLByAppendingPathComponent:@"nested/models"];
+    EXPECT_FALSE([NSFileManager.defaultManager fileExistsAtPath:nested.path]);
+    ASSERT_EQ(other.init(nested.path), Error::Ok);
+    EXPECT_EQ(bridge.state().sessions.load(), 2);
+    EXPECT_TRUE([bridge.state().last_bundle
+        hasPrefix:[other.storage.url.URLByResolvingSymlinksInPath.path
+                      stringByAppendingString:@"/"]]);
+    EXPECT_FALSE([bridge.state().last_bundle isEqualToString:first_bundle]);
+    EXPECT_FALSE([NSFileManager.defaultManager fileExistsAtPath:first_bundle]);
+    other.reset();
+    reloaded.reset();
+    EXPECT_EQ(bridge.state().sessions.load(), 0);
+  }
+  EXPECT_EQ(bridge.state().sessions.load(), 0);
+  EXPECT_EQ(bridge.state().prepared_models.load(), 0);
+  EXPECT_EQ(bridge.state().loaders.load(), 0);
+}
+
+} // namespace
+} // namespace executorch::backends::coreai::testing

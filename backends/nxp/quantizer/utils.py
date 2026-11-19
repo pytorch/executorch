@@ -32,8 +32,6 @@ from torch.fx.passes.utils.source_matcher_utils import (
 )
 
 from torchao.quantization.pt2e import (
-    HistogramObserver,
-    MinMaxObserver,
     move_exported_model_to_eval,
     move_exported_model_to_train,
     ObserverOrFakeQuantize,
@@ -124,19 +122,16 @@ def get_aten_node_target_partitions(
     modules: Dict[Type, Dict[str, list[torch.fx.Node]]] = {}
 
     for node in graph.nodes:
-        # The metadata source_fn should contain a tuple of a unique name for the
-        # source, and the source function if the node is decomposed from a
-        # function, or the type of module if the node is decomposed from a leaf
-        # module
-        # TODO(matthiascremon): look into ways to avoid using source_fn_stack
-        if (source_fn_st := node.meta.get("source_fn_stack")) is None:
-            continue
-
-        source_fn = source_fn_st[-1]
         if node.target not in wanted_original_aten_op:
             continue
 
-        diff_modules = modules.setdefault(source_fn[1], {})
+        # The metadata source_fn_stack names the function or leaf module the
+        # node came from. A non-strict torch.export does not record it, so fall
+        # back to the node's target.
+        source_fn_st = node.meta.get("source_fn_stack")
+        source = source_fn_st[-1][1] if source_fn_st else node.target
+
+        diff_modules = modules.setdefault(source, {})
         partition = diff_modules.setdefault(node.name, [])
         partition.append(node)
 
@@ -205,42 +200,6 @@ def find_sequential_partitions_aten(
     return fused_partitions
 
 
-def _replace_histogram_observers_for_integer_inputs(
-    m: torch.fx.GraphModule,
-) -> None:
-    """Replace HistogramObserver with MinMaxObserver for observer nodes whose
-    input tensor has a non-floating-point dtype.
-
-    HistogramObserver calls torch.histc internally, which raises
-    NotImplementedError for integer and bool dtypes.  MinMaxObserver only
-    tracks min/max and handles all dtypes, producing equally valid
-    quantization ranges for non-float inputs (e.g. embedding indices, bool
-    masks).
-    """
-    for node in m.graph.nodes:
-        if node.op != "call_module":
-            continue
-        obs = getattr(m, node.target, None)
-        if not isinstance(obs, HistogramObserver):
-            continue
-        input_node = node.args[0] if node.args else None
-        if input_node is None:
-            continue
-        val = input_node.meta.get("val", None)
-        if val is not None and not val.is_floating_point():
-            setattr(
-                m,
-                node.target,
-                MinMaxObserver(
-                    dtype=obs.dtype,
-                    qscheme=obs.qscheme,
-                    quant_min=obs.quant_min,
-                    quant_max=obs.quant_max,
-                    eps=obs.eps,
-                ),
-            )
-
-
 def calibrate_and_quantize(
     model: ExportedProgram | fx.GraphModule,
     calibration_inputs: Iterable[tuple[torch.Tensor, ...]],
@@ -268,13 +227,6 @@ def calibrate_and_quantize(
         m = AddSimulatedLinearBatchNormFusionQATPass()(m).graph_module
     else:
         m = prepare_pt2e(model, quantizer)
-
-    # Swap HistogramObserver -> MinMaxObserver for any observer whose input has
-    # a non-floating-point dtype.  Safe for both PTQ and QAT: in QAT the graph
-    # contains FakeQuantize nodes which are not HistogramObserver instances, so
-    # the helper is effectively a no-op there, but it protects against the edge
-    # case where a QAT graph does contain a HistogramObserver.
-    _replace_histogram_observers_for_integer_inputs(m)
 
     if is_qat:
         if train_fn:

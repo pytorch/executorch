@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -11,10 +12,11 @@ from typing import cast
 
 import torch
 import torch.fx
+
 from executorch.backends.transforms.dim_maps import (
-    _Dim,
     _normalize_dims,
     normalize_view_shape,
+    view_shape_values,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 
@@ -39,11 +41,7 @@ def refresh_permute_view_meta(node: torch.fx.Node) -> None:
     match node.target:
         case exir_ops.edge.aten.view_copy.default:
             node.meta["val"] = input_val.new_empty(
-                tuple(
-                    normalize_view_shape(
-                        input_val.shape, cast(Sequence[_Dim], node.args[1])
-                    )
-                )
+                tuple(normalize_view_shape(input_val.shape, view_shape_values(node)))
             )
         case exir_ops.edge.aten.permute_copy.default:
             dims = _normalize_dims(

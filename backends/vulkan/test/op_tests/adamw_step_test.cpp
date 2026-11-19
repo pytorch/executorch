@@ -179,6 +179,24 @@ TEST(VulkanAdamwStepTest, test_adamw_step_with_weight_decay) {
       /*step=*/10);
 }
 
+TEST(VulkanAdamwStepTest, test_adamw_step_rejects_mismatched_shapes) {
+  using namespace vkcompute;
+  ComputeGraph graph(GraphConfig{});
+  // Equal numel, but [3, 5] pads to 24 elements and [15] to 16.
+  const ValueRef r_param =
+      graph.add_tensor({3, 5}, vkapi::kFloat, utils::kBuffer);
+  const ValueRef r_m = graph.add_tensor({15}, vkapi::kFloat, utils::kBuffer);
+  const ValueRef r_v = graph.add_tensor({3, 5}, vkapi::kFloat, utils::kBuffer);
+  const ValueRef r_grad =
+      graph.add_tensor({3, 5}, vkapi::kFloat, utils::kBuffer);
+  std::vector<ValueRef> args = {r_param, r_m, r_v, r_grad};
+  for (int i = 0; i < 7; ++i) {
+    args.push_back(graph.add_scalar<double>(0.5));
+  }
+  EXPECT_THROW(
+      VK_GET_OP_FN("et_vk.adamw_step.default")(graph, args), vkapi::Error);
+}
+
 TEST(VulkanAdamwStepTest, test_adamw_step_large_1d) {
   test_vulkan_adamw_step(
       /*sizes=*/{1000},

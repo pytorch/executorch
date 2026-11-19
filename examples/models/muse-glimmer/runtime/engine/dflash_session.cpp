@@ -376,7 +376,7 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
         }
         use_target_prefill = chunk >= config_.min_target_prefill_chunk;
       } else {
-        chunk = std::min<int64_t>(chunk, kCudaDFlashHiddenRows);
+        chunk = std::min<int64_t>(chunk, config_.block_size);
       }
 #endif
       const bool is_final_chunk = offset + chunk == token_count;
@@ -669,10 +669,10 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
   Error prime_draft_cache() {
 #ifdef EXECUTORCH_BUILD_CUDA
     if (config_.has_draft_prefill) {
-      while (hidden_rows() - kCudaDFlashHiddenRows >=
+      while (hidden_rows() - config_.block_size >=
              config_.min_draft_prefill_chunk) {
         const int64_t rows_to_feed = std::min(
-            hidden_rows() - kCudaDFlashHiddenRows,
+            hidden_rows() - config_.block_size,
             config_.max_draft_prefill_chunk);
         ET_CHECK_OK_OR_RETURN_ERROR(run_draft_prefill(rows_to_feed));
         hidden_.erase(
@@ -680,7 +680,7 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
         cached_ctx_len_ += rows_to_feed;
       }
     }
-    constexpr int64_t prime_chunk = kCudaDFlashHiddenRows;
+    const int64_t prime_chunk = config_.block_size;
 #else
     const int64_t prime_chunk = config_.max_prefill_chunk;
 #endif
@@ -1162,9 +1162,9 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
           /*next_image_row=*/nullptr,
           timing,
           /*use_target_prefill=*/false,
-          /*retain_from_row=*/0);
+          /*retain_from_row=*/0,
+          /*defer_hidden_copy=*/true);
       ET_CHECK_OK_OR_RETURN_ERROR(verify.error());
-      hidden = std::move(verify->hidden);
 
       const auto accept_start =
           timing == nullptr ? Clock::time_point{} : Clock::now();
@@ -1192,6 +1192,23 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
       ET_CHECK_OK_OR_RETURN_ERROR(read_device_int64(result, cycle));
       if (timing != nullptr) {
         timing->accept_correction_ms += elapsed_ms(accept_start, Clock::now());
+      }
+      const int64_t committed_rows = cycle[0];
+      ET_CHECK_OR_RETURN_ERROR(
+          committed_rows > 0 && committed_rows <= verify_len &&
+              last_hidden_tensor_ != nullptr,
+          InvalidProgram,
+          "DFlash verifier returned an invalid committed count");
+      const auto hidden_copy_start =
+          timing == nullptr ? Clock::time_point{} : Clock::now();
+      hidden.resize(committed_rows * hidden_dim_);
+      ET_CHECK_OK_OR_RETURN_ERROR(copy_bytes_to_host(
+          hidden.data(),
+          last_hidden_tensor_->const_data_ptr(),
+          hidden.size() * sizeof(uint16_t)));
+      if (timing != nullptr) {
+        timing->target_hidden_copy_ms +=
+            elapsed_ms(hidden_copy_start, Clock::now());
       }
     }
 
@@ -1294,7 +1311,8 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
       int64_t* next_image_row,
       DFlashCycleTiming* timing,
       bool use_target_prefill,
-      int64_t retain_from_row) {
+      int64_t retain_from_row,
+      bool defer_hidden_copy = false) {
     const auto execute_start =
         timing == nullptr ? Clock::time_point{} : Clock::now();
     auto embed_outputs = execute_active(kEmbedText, {EValue(token_tensor)});
@@ -1370,7 +1388,8 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
         sample_last,
         timing,
         use_target_prefill,
-        retain_from_row);
+        retain_from_row,
+        defer_hidden_copy);
   }
 
   Result<TargetResult> process_target_outputs(
@@ -1380,7 +1399,8 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
       bool sample_last,
       DFlashCycleTiming* timing,
       bool use_target_prefill,
-      int64_t retain_from_row) {
+      int64_t retain_from_row,
+      bool defer_hidden_copy = false) {
     ET_CHECK_OR_RETURN_ERROR(
         outputs.size() >= 2 && outputs[0].isTensor() && outputs[1].isTensor(),
         InvalidProgram,
@@ -1464,6 +1484,19 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
         retain_from_row >= 0 && retain_from_row <= count,
         InvalidArgument,
         "Invalid retained target hidden row offset");
+#ifdef EXECUTORCH_BUILD_CUDA
+    if (defer_hidden_copy) {
+      last_hidden_tensor_ = device_tensor(
+          {1,
+           static_cast<SizesType>(count),
+           static_cast<SizesType>(hidden_dim_)},
+          hidden_tensor.mutable_data_ptr(),
+          hidden_dtype_);
+      return TargetResult{sampled, {}};
+    }
+#else
+    (void)defer_hidden_copy;
+#endif
     const int64_t retained_rows = count - retain_from_row;
     std::vector<uint16_t> hidden(retained_rows * hidden_dim_);
     const auto hidden_copy_start =
@@ -1558,18 +1591,18 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
     const uint16_t* hidden_data = hidden_.data();
     int64_t hidden_input_rows = rows_to_feed;
 #ifdef EXECUTORCH_BUILD_CUDA
-    std::vector<uint16_t> padded_hidden(kCudaDFlashHiddenRows * hidden_dim_, 0);
+    std::vector<uint16_t> padded_hidden(config_.block_size * hidden_dim_, 0);
     ET_CHECK_OR_RETURN_ERROR(
-        hidden_input_rows <= kCudaDFlashHiddenRows,
+        hidden_input_rows <= config_.block_size,
         InvalidState,
         "CUDA DFlash hidden backlog exceeds %" PRId64 " rows",
-        kCudaDFlashHiddenRows);
+        config_.block_size);
     std::memcpy(
         padded_hidden.data(),
         hidden_data,
         rows_to_feed * hidden_dim_ * sizeof(uint16_t));
     hidden_data = padded_hidden.data();
-    hidden_input_rows = kCudaDFlashHiddenRows;
+    hidden_input_rows = config_.block_size;
 #endif
     auto token_tensor = from_blob(
         draft_tokens.data(),
@@ -1640,6 +1673,7 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
   std::vector<float> draft_logits_storage_;
   TensorPtr draft_logits_tensor_;
 #ifdef EXECUTORCH_BUILD_CUDA
+  TensorPtr last_hidden_tensor_;
   // Session-owned device inputs of the speculative chain.
   TensorPtr candidates_;
   TensorPtr positions_;

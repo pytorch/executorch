@@ -45,6 +45,30 @@ function gcc_select_toolchain() {
     fi
 }
 
+function clang_select_toolchain() {
+    if [[ "${OS}" != "Linux" ]] ; then
+        log_step "toolchain" "Error: Linux is required for Arm Toolchain for Embedded support"
+        exit 1
+    fi
+
+    local atfe_version="23.1.0"
+    local atfe_host=""
+    if [[ "${ARCH}" == "x86_64" ]] ; then
+        atfe_host="x86_64"
+        toolchain_sha256_checksum="a7be511613af15151c93961ad39c8cf9ae6889a453c8b547f42f4051a416dc8e"
+    elif [[ "${ARCH}" == "aarch64" ]] || [[ "${ARCH}" == "arm64" ]] ; then
+        atfe_host="AArch64"
+        toolchain_sha256_checksum="df3b055d05659d8fda710d820e6c1ceff7bca3234c5067abe82a16e781d8de99"
+    else
+        log_step "toolchain" "Error: Unsupported architecture ${ARCH} for Arm Toolchain for Embedded"
+        exit 1
+    fi
+
+    toolchain_dir="ATfE-${atfe_version}-Linux-${atfe_host}"
+    toolchain_archive="${toolchain_dir}.tar.xz"
+    toolchain_url="https://github.com/arm/arm-toolchain/releases/download/release-${atfe_version}-ATfE/${toolchain_archive}"
+}
+
 function zephyr_select_toolchain() {
     if [[ "${OS}" != "Linux" ]] ; then
         log_step "toolchain" "Error: Linux is required for Zephyr toolchain support"
@@ -97,6 +121,8 @@ function musl_select_toolchain() {
 function select_toolchain() {
     if [[ "${target_toolchain}" == "zephyr" ]]; then
         zephyr_select_toolchain
+    elif [[ "${target_toolchain}" == "clang" ]]; then
+        clang_select_toolchain
     elif [[ "${target_toolchain}" == "linux-musl" ]]; then
         musl_select_toolchain
     else
@@ -116,7 +142,14 @@ function setup_toolchain() {
 
     if [[ ! -e "${toolchain_archive}" ]]; then
         log_step "toolchain" "Downloading ${toolchain_dir} toolchain"
-        download_with_retry "toolchain" "${toolchain_url}" "${toolchain_archive}" "${toolchain_md5_checksum}" || exit 1
+        if [[ "${target_toolchain}" == "clang" ]]; then
+            download_with_retry "toolchain" "${toolchain_url}" \
+                "${toolchain_archive}" "${toolchain_sha256_checksum}" \
+                sha256 || exit 1
+        else
+            download_with_retry "toolchain" "${toolchain_url}" \
+                "${toolchain_archive}" "${toolchain_md5_checksum}" || exit 1
+        fi
     fi
 
     log_step "toolchain" "Installing ${toolchain_dir} toolchain"
@@ -131,5 +164,8 @@ function setup_path_toolchain() {
     if [[ "${target_toolchain}" == "linux-musl" ]]; then
         local toolchain_root_path="$(cd ${toolchain_dir} && pwd)"
         set_env_in_setup_path MUSL_TOOLCHAIN_ROOT ${toolchain_root_path}
+    elif [[ "${target_toolchain}" == "clang" ]]; then
+        local toolchain_root_path="$(cd ${toolchain_dir} && pwd)"
+        set_env_in_setup_path ATFE_TOOLCHAIN_ROOT ${toolchain_root_path}
     fi
 }

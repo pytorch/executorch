@@ -129,9 +129,6 @@ xfail_cases_dialect: dict[str, xfail_type] = {
     "explicit_scale": (_SCALE_NOT_FOLDED, RuntimeError),
     "multihead_attention": (_LINEAR_RETRACED_AS_INT32, Exception),
 }
-xfail_cases_impl: dict[str, xfail_type] = {
-    "multihead_attention": (_LINEAR_RETRACED_AS_INT32, Exception),
-}
 
 
 def _transform_for_annotation(model, example_inputs, dynamic_shapes=None):
@@ -161,7 +158,7 @@ def test_dialect_sdpa(test_case, cortex_m_target):
     )
 
 
-@parametrize("test_case", test_cases, xfails=xfail_cases_impl)
+@parametrize("test_case", test_cases)
 def test_implementation_sdpa(test_case, cortex_m_target):
     tester = CortexMTester(
         test_case.model, test_case.example_inputs, target_config=cortex_m_target

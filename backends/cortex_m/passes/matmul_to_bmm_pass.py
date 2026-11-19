@@ -45,10 +45,11 @@ class MatmulToBmmPass(ExportPass):
         if op != torch.ops.aten.matmul.default:
             return super().call_operator(op, args, kwargs, meta)
 
-        lhs = cast(ProxyValue, args[0])
-        rhs = cast(ProxyValue, args[1])
-        lhs_shape = lhs.to_tensor().shape
-        rhs_shape = rhs.to_tensor().shape
+        # A constant operand is a plain tensor; .data works for both kinds.
+        lhs = cast(ProxyValue | torch.Tensor, args[0])
+        rhs = cast(ProxyValue | torch.Tensor, args[1])
+        lhs_shape = lhs.data.shape
+        rhs_shape = rhs.data.shape
         lhs_rank = len(lhs_shape)
         rhs_rank = len(rhs_shape)
 
