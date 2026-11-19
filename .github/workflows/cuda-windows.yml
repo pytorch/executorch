@@ -20,6 +20,8 @@ on:
       - .ci/scripts/export_model_artifact.sh
       - .ci/scripts/test_model_e2e_windows.ps1
       - .ci/scripts/wheel/install_cuda_redist.py
+      - install_requirements.py
+      - install_utils.py
       # Only unittest-cuda-runtime-windows runs for these alone; the other jobs
       # filter on their own paths and stay skipped.
       - .ci/scripts/test_cuda_runtime_windows.ps1
@@ -50,7 +52,7 @@ jobs:
     uses: ./.github/workflows/_ci-run-decision.yml
 
   export-model-cuda-windows-artifact:
-    name: export-model-cuda-windows-artifact
+    name: export-model-cuda-windows-artifact-${{ matrix.cuda-version }} (${{ matrix.model_name }}, ${{ matrix.quant }})
     # Skip this job if the pull request is from a fork (HuggingFace secrets are not available).
     # Path-filtered on push: mirrors the workflow-level pull_request `paths:`
     # filter so push commits that don't touch CUDA-relevant paths skip
@@ -67,6 +69,8 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e_windows.ps1') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/wheel/install_cuda_redist.py') ||
+        contains(needs.changed-files.outputs.changed-files, 'install_requirements.py') ||
+        contains(needs.changed-files.outputs.changed-files, 'install_utils.py') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
@@ -196,7 +200,7 @@ jobs:
         source .ci/scripts/export_model_artifact.sh cuda-windows "${{ matrix.model_repo }}/${{ matrix.model_name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}" "${{ matrix.mode }}"
 
   test-model-cuda-windows-e2e:
-    name: test-model-cuda-windows-e2e
+    name: test-model-cuda-windows-e2e-${{ matrix.cuda-version }} (${{ matrix.model_name }}, ${{ matrix.quant }})
     # Same path filter as the export job above. Not gated on the export succeeding: that
     # result covers the whole matrix, so one row's failed export (say a train whose torch
     # pin expired) would skip every row here. Each row downloads its own artifact and
@@ -214,6 +218,8 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e_windows.ps1') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/wheel/install_cuda_redist.py') ||
+        contains(needs.changed-files.outputs.changed-files, 'install_requirements.py') ||
+        contains(needs.changed-files.outputs.changed-files, 'install_utils.py') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
     uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
@@ -251,9 +257,7 @@ jobs:
             model_name: "dinov2-small-imagenet1k-1-layer"
             quant: "non-quantized"
             cuda-version: "13.2"
-          # Each train installs its own toolkit and its own torch, so the remaining trains
-          # get the smallest model plus the tile-packed int4 model, the only quant here that
-          # lowers to _weight_int4pack_mm and so runs the int4mm shim that train's nvcc built.
+          # The export matrix's rows, which runs one model per row; see there for why.
           - model_repo: "facebook"
             model_name: "dinov2-small-imagenet1k-1-layer"
             quant: "non-quantized"
@@ -267,7 +271,7 @@ jobs:
       timeout: 240
       runner: windows.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda
-      # The same toolkit the export uses.
+      # The same CUDA version the export used.
       gpu-arch-version: ${{ matrix.cuda-version }}
       download-artifact: ${{ matrix.model_repo }}-${{ matrix.model_name }}-cuda-windows-${{ matrix.quant }}-cuda${{ matrix.cuda-version }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
