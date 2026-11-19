@@ -145,6 +145,11 @@ class Context final {
     shader_profiling_enabled_ = enabled;
   }
 
+  bool shader_profiling_enabled() {
+    std::lock_guard<std::mutex> cmd_lock(cmd_mutex_);
+    return shader_profiling_enabled_;
+  }
+
   /*
    * Starts a new timestamp capture in the current command buffer: clears the
    * querypool's recorded entries. Each profiled dispatch resets the queries it

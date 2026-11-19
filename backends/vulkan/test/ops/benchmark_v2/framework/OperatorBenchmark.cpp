@@ -115,6 +115,9 @@ Report benchmark_operator(
   for (size_t i = first; i < end; ++i) {
     execute_nodes.push_back(graph.execute_nodes()[i]->name());
   }
+  const CacheFlush cache_flush(
+      graph,
+      validation_only ? 0 : spec.value("cache_flush_bytes", uint64_t(0)));
   const Json accesses =
       tensor_accesses(graph, first, end, tensors, args.back());
   std::map<std::string, ValueRef> outputs;
@@ -139,6 +142,7 @@ Report benchmark_operator(
   auto& context = *graph.context();
   auto encode_batch = [&](uint32_t count) {
     for (uint32_t i = 0; i < count; ++i) {
+      cache_flush.encode(graph);
       // Barriers derived from tensor accesses alone let some drivers overlap
       // consecutive repetitions.
       vkapi::PipelineBarrier barrier = vkapi::full_pipeline_barrier();
@@ -160,6 +164,9 @@ Report benchmark_operator(
     result["route"] = route;
   }
   result["execute_nodes_per_invocation"] = end - first;
+  if (spec.contains("cache_flush_bytes")) {
+    result["cache_flush_bytes"] = spec.at("cache_flush_bytes");
+  }
   result["execute_nodes"] = std::move(execute_nodes);
   result.update(measure(spec, graph, encode_batch, Json(result)));
   return result;
