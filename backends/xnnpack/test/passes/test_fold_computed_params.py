@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,6 +9,9 @@ import unittest
 
 import torch
 import torch.nn.functional as F
+from executorch.backends.xnnpack._passes.fold_constant_subgraphs import (
+    FoldConstantSubgraphsPass,
+)
 from executorch.backends.xnnpack.partition.config.gemm_configs import AddmmConfig
 from executorch.backends.xnnpack.partition.config.generic_node_configs import MulConfig
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
@@ -196,6 +200,49 @@ class TestFoldComputedParams(unittest.TestCase):
         module = self.ComputedLinear()
         self._test_fully_delegated(
             module, (torch.randn(2, 8),), folded=(module.weight * 2, module.bias + 1)
+        )
+
+    def test_early_noop_then_computed_linear_folding(self):
+        module = self.ComputedLinear().eval()
+        inputs = (torch.randn(2, 8),)
+        program = torch.export.export(module, inputs)
+        transformed = FoldConstantSubgraphsPass()(program)
+        self.assertIs(transformed, program)
+        targets = {node.target for node in transformed.graph.nodes}
+        self.assertIn(torch.ops.aten.mul.Tensor, targets)
+        self.assertIn(torch.ops.aten.add.Tensor, targets)
+        self._test_fully_delegated(
+            module, inputs, folded=(module.weight * 2, module.bias + 1)
+        )
+
+    def test_both_folding_stages_contribute(self):
+        class SharedBiases(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.randn(4, 8))
+                self.other_weight = torch.nn.Parameter(torch.randn(4, 8))
+                self.bias = torch.nn.Parameter(torch.randn(4))
+
+            def forward(self, x):
+                bias = torch.cat((self.bias, self.bias)).split(4)[0]
+                return F.linear(x, self.weight * 2, bias) + F.linear(
+                    x, self.other_weight * 3, bias
+                )
+
+        module = SharedBiases().eval()
+        inputs = (torch.randn(2, 8),)
+        program = torch.export.export(module, inputs)
+        transformed = FoldConstantSubgraphsPass()(program)
+        targets = [node.target for node in transformed.graph.nodes]
+        self.assertNotIn(torch.ops.aten.cat.default, targets)
+        self.assertNotIn(torch.ops.aten.split.Tensor, targets)
+        self.assertEqual(targets.count(torch.ops.aten.mul.Tensor), 2)
+        transformed.validate()
+        torch.testing.assert_close(transformed.module()(*inputs), module(*inputs))
+        self._test_fully_delegated(
+            module,
+            inputs,
+            folded=(module.weight * 2, module.other_weight * 3, module.bias),
         )
 
     def test_fp32_folded_name_does_not_replace_param(self):

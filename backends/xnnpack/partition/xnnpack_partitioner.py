@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -9,12 +10,14 @@ import itertools
 import logging
 from typing import List, Optional, Type, Union
 
+from executorch.backends.xnnpack._passes.fold_constant_subgraphs import (
+    FoldConstantSubgraphsPass,
+)
 from executorch.backends.xnnpack.partition.config import ALL_PARTITIONER_CONFIGS
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
     XNNPartitionerConfig,
 )
-
 from executorch.backends.xnnpack.xnnpack_preprocess import XnnpackBackend
 from executorch.exir.backend.backend_details import ExportedProgram
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
@@ -28,6 +31,12 @@ logger = logging.getLogger(__name__)
 
 
 class XnnpackPartitioner(ConfigerationBasedPartitioner):
+    def transform_for_pre_decomposition(
+        self, exported_program: ExportedProgram
+    ) -> ExportedProgram:
+        """Apply XNNPACK transforms before default ATen decompositions."""
+        return FoldConstantSubgraphsPass()(exported_program)
+
     def __init__(
         self,
         configs: Optional[List[Type[XNNPartitionerConfig]]] = None,
@@ -91,6 +100,7 @@ class XnnpackPartitioner(ConfigerationBasedPartitioner):
         if self._check_if_called_from_to_backend():
             logger.warning(
                 "\nDEPRECATION WARNING: You are using the deprecated 'to_edge() + to_backend()' workflow. "
+                "It does not run pre-decomposition transforms, including constant cat/split folding. "
                 "Please consider migrating to 'to_edge_transform_and_lower()' for better error handling and optimization. "
             )
 

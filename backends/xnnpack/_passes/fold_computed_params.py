@@ -1,11 +1,12 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 import torch
-from executorch.backends.transforms.utils import create_constant_placeholder
+from executorch.backends.xnnpack._passes.constant_folding import fold_constants
 from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 from executorch.backends.xnnpack.utils.utils import (
     COMPUTED_PARAM_TAG,
@@ -25,7 +26,12 @@ class FoldComputedParamsPass(XNNPACKPass):
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         graph = graph_module.graph
         names = {node.name for node in graph.nodes}
-        values = {}
+        values = {
+            node: get_param_tensor(self.exported_program, node)
+            for node in graph.nodes
+            if is_param_node(self.exported_program, node)
+        }
+        selected = set()
         for node in graph.nodes:
             # A GEMM rejected after its check, possibly by an earlier partitioner,
             # leaves tags behind, which delegate outputs and inputs inherit. So
@@ -33,50 +39,12 @@ class FoldComputedParamsPass(XNNPACKPass):
             if (
                 node.op != "call_function"
                 or not names & node.meta.get(COMPUTED_PARAM_TAG, set())
-                or not all(
-                    n in values or is_param_node(self.exported_program, n)
-                    for n in node.all_input_nodes
-                )
+                or not all(n in values or n in selected for n in node.all_input_nodes)
             ):
                 continue
-            args, kwargs = torch.fx.node.map_arg(
-                (node.args, node.kwargs),
-                lambda n: (
-                    values[n]
-                    if n in values
-                    else get_param_tensor(self.exported_program, n)
-                ),
-            )
-            with torch.no_grad():
-                values[node] = node.target(*args, **kwargs)
+            selected.add(node)
 
-        if not values:
-            return PassResult(graph_module, False)
-
-        taken = (
-            names
-            | self.exported_program.state_dict.keys()
-            | self.exported_program.constants.keys()
+        changed = fold_constants(
+            self.exported_program, selected, values, InputKind.PARAMETER
         )
-        for node, value in values.items():
-            if all(user in values for user in node.users):
-                continue
-            name = f"{node.name}_folded"
-            while name in taken:
-                name += "_"
-            taken.add(name)
-            with graph.inserting_before(next(iter(graph.nodes))):
-                param = create_constant_placeholder(
-                    exp_program=self.exported_program,
-                    graph=graph,
-                    kind=InputKind.PARAMETER,
-                    name=name,
-                    data=value,
-                )
-            node.replace_all_uses_with(param)
-
-        for node in reversed(values):
-            graph.erase_node(node)
-
-        graph_module.recompile()
-        return PassResult(graph_module, True)
+        return PassResult(graph_module, changed)
