@@ -1302,6 +1302,36 @@ class GgmlOpsTest(unittest.TestCase):
             (torch.tensor([[-1.0, 0.0, 0.25, 0.5]]),),
         )
 
+    def test_symbolic_neg_slices_from_the_end(self):
+        class Tail(torch.nn.Module):
+            def forward(self, x, buffer):
+                return buffer[:, -x.shape[1] :] + x
+
+        model = Tail()
+        steps = [(torch.randn(2, n), torch.randn(2, 8)) for n in (5, 1, 7)]
+        # At n = 8 the slice would start at 0, which export specializes.
+        ep = torch.export.export(
+            model,
+            steps[0],
+            dynamic_shapes={"x": {1: Dim("n", min=1, max=7)}, "buffer": None},
+        )
+        self.assertIn(
+            "<built-in function neg>",
+            {str(n.target) for n in ep.graph.nodes if n.op == "call_function"},
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            package = outdir / "model.ptn"
+            to_native(ep).save(str(package))
+            actual = _run_ggml(package, steps, outdir, 1, resize=True)
+        for inputs, [(raw, shape)] in zip(steps, actual):
+            expected = model(*inputs)
+            self.assertEqual(shape, tuple(expected.shape))
+            torch.testing.assert_close(
+                torch.frombuffer(bytearray(raw), dtype=torch.float32).reshape(shape),
+                expected,
+            )
+
     def test_sdpa_mask_broadcasts_over_queries(self):
         # A [B, 1, 1, S] padding mask: every query reads the same row.
         keep = torch.rand(1, 1, 1, 8)
