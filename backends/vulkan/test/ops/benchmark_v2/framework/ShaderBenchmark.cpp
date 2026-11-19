@@ -161,7 +161,9 @@ Report benchmark_shader(
   const LocalWorkGroup& lwg = workgroups.lwg;
 
   const size_t input_nodes = graph.execute_nodes().size();
-  const CacheFlush cache_flush(graph, spec);
+  const CacheFlush cache_flush(
+      graph,
+      validation_only ? 0 : spec.value("cache_flush_bytes", uint64_t(0)));
   std::map<std::string, ValueRef> outputs;
   if (validation_only) {
     Json accesses = Json::object();

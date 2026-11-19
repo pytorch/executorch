@@ -33,17 +33,8 @@ Report read_gpu_clock(GpuClock* clock) {
   return frequency ? Report(*frequency) : Report();
 }
 
-double median(std::vector<double> values) {
-  if (values.empty()) {
-    return std::nan("");
-  }
-  const size_t mid = values.size() / 2;
-  std::nth_element(values.begin(), values.begin() + mid, values.end());
-  const double upper = values[mid];
-  if (values.size() % 2 == 1) {
-    return upper;
-  }
-  return (*std::max_element(values.begin(), values.begin() + mid) + upper) / 2;
+double median(const std::vector<double>& values) {
+  return latency_statistics(values).at("p50").get<double>();
 }
 
 int64_t monotonic_ns(Clock::time_point time) {
@@ -109,9 +100,7 @@ Report profile_operator_shaders(
         shaders_per_invocation,
         {std::nullopt, std::nullopt, {"Shader binding metadata unavailable"}});
   }
-  // Each dispatch records previous work, barrier, and shader execution finish.
-  constexpr uint32_t kQueriesPerDispatch = 3;
-  if (shaders_per_invocation > query_limit / kQueriesPerDispatch) {
+  if (shaders_per_invocation > query_limit / vkapi::kQueriesPerDispatch) {
     throw UnsupportedRoute(
         "Operator dispatch chain exceeds timestamp query capacity");
   }
@@ -120,7 +109,8 @@ Report profile_operator_shaders(
       : std::min(
             count,
             static_cast<uint32_t>(
-                query_limit / (kQueriesPerDispatch * shaders_per_invocation)));
+                query_limit /
+                (vkapi::kQueriesPerDispatch * shaders_per_invocation)));
   // Re-record the batch inside a timestamp pair to measure profiling overhead.
   context.flush();
   context.set_cmd(true);
@@ -204,13 +194,12 @@ Report profile_operator_shaders(
 
 } // namespace
 
-CacheFlush::CacheFlush(ComputeGraph& graph, const Json& spec)
+CacheFlush::CacheFlush(ComputeGraph& graph, uint64_t bytes)
     : first_(graph.execute_nodes().size()) {
-  if (spec.contains("cache_flush_bytes")) {
+  if (bytes > 0) {
     constexpr int64_t kRowElements = 1024;
-    const int64_t rows = static_cast<int64_t>(utils::div_up(
-        spec.at("cache_flush_bytes").get<uint64_t>(),
-        uint64_t(kRowElements * sizeof(float))));
+    const int64_t rows = static_cast<int64_t>(
+        utils::div_up(bytes, uint64_t(kRowElements * sizeof(float))));
     const std::vector<int64_t> sizes = {rows, kRowElements};
     const ValueRef src = graph.add_tensor(sizes, vkapi::kFloat, utils::kBuffer);
     const ValueRef dst = graph.add_tensor(sizes, vkapi::kFloat, utils::kBuffer);

@@ -115,7 +115,9 @@ Report benchmark_operator(
   for (size_t i = first; i < end; ++i) {
     execute_nodes.push_back(graph.execute_nodes()[i]->name());
   }
-  const CacheFlush cache_flush(graph, spec);
+  const CacheFlush cache_flush(
+      graph,
+      validation_only ? 0 : spec.value("cache_flush_bytes", uint64_t(0)));
   const Json accesses =
       tensor_accesses(graph, first, end, tensors, args.back());
   std::map<std::string, ValueRef> outputs;

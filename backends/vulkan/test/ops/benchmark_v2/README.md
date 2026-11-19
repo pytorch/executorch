@@ -148,7 +148,7 @@ Benchmark conditions such as `target_ms` and `benchmark_runs` belong in the JSON
 | `warmup_runs` | Unmeasured batches per timing mode, default 3. |
 | `benchmark_runs` | Measured batches per timing mode, default 10. |
 | `sustain_s` | Replace the measurement passes with back-to-back query-free replay for this many seconds. See [sustained replay](#sustained-replay-for-hardware-counters). |
-| `cache_flush_bytes` | Before each repetition, copy a scratch buffer of this many bytes to evict the case's working set from GPU caches. See [cold-cache measurement](#cold-cache-measurement). |
+| `cache_flush_bytes` | Before each repetition, copy a scratch buffer of this many bytes, rounded up to a multiple of 4 KiB and at most 2^27 (128 MiB), to evict the case's working set from GPU caches. Not combinable with throughput estimates. See [cold-cache measurement](#cold-cache-measurement). |
 | `check` | Registered validation-only check, e.g. capability or dynamic-resize checks. |
 | `reference` | Optional registered CPU reference name; inferred for supported operators/shaders. |
 | `validation_method` | Comparison function and tolerances, e.g. `{"function":"is_close","atol":0.01,"rtol":0.01}`. Optional `outputs` selects named tensors to check. |
@@ -807,7 +807,10 @@ include it. To isolate the measured work:
 - For operators and raw shaders, subtract a separately benchmarked
   `aten.clone.default` case on float32 buffers of the same size.
 
-Reports include the requested `cache_flush_bytes`.
+Throughput estimates would count the copy's time but not its traffic, so
+`show_memory_throughput` and `show_compute_throughput` are rejected with
+`cache_flush_bytes`. Validation runs skip the copy. Reports include the
+requested `cache_flush_bytes`.
 
 ### Sustained replay for hardware counters
 
