@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/examples/models/muse-glimmer/runtime/engine/sampling.h>
+#include <executorch/examples/models/muse-glimmer/runtime/engine/dflash2_sampling.h>
 
 #include <algorithm>
 #include <cmath>
@@ -338,6 +338,133 @@ bool test_partition_top_p_matches_full_sort_reference() {
   return true;
 }
 
+bool test_dflash2_conditional_path() {
+  std::mt19937 rng(71);
+  muse_glimmer::SamplingWorkspace workspace;
+  const int64_t ids[] = {1, 2, 3, 4};
+  const float scores[] = {0, 1, 0, 1, 0, 2, 3, 0};
+  std::vector<uint64_t> candidates = {0, 0, 0};
+  std::vector<std::vector<float>> probabilities;
+  if (!muse_glimmer::sample_dflash2_path(
+          rng,
+          ids,
+          scores,
+          2,
+          2,
+          5,
+          0,
+          true,
+          candidates,
+          probabilities,
+          workspace) ||
+      candidates != std::vector<uint64_t>({0, 2, 3})) {
+    return false;
+  }
+  for (int draw = 0; draw < 100; ++draw) {
+    probabilities.assign(3, std::vector<float>(5, 7.0f));
+    if (!muse_glimmer::sample_dflash2_path(
+            rng,
+            ids,
+            scores,
+            2,
+            2,
+            5,
+            0.7,
+            false,
+            candidates,
+            probabilities,
+            workspace)) {
+      return false;
+    }
+    const int previous = candidates[1] == 1 ? 0 : 1;
+    const auto expected = muse_glimmer::sampling_probabilities(
+        scores + 4 + previous * 2, 2, 0.7, 0, 1.0);
+    if (!check_normalized(probabilities[1]) ||
+        !check_normalized(probabilities[2]) || probabilities[1][0] != 0 ||
+        probabilities[2][2] != 0 || !near(probabilities[2][3], expected[0]) ||
+        !near(probabilities[2][4], expected[1])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool test_dflash2_rejection_distribution() {
+  std::mt19937 rng(19);
+  muse_glimmer::SamplingWorkspace workspace;
+  const int64_t ids[] = {1, 3};
+  const float scores[] = {2, -1, 2, -1};
+  const std::vector<float> target = {0.1, 0.2, 0.4, 0.3};
+  // The target has mass outside the draft's top-k support.
+  for (bool greedy : {false, true}) {
+    std::vector<int> counts(4, 0);
+    std::vector<uint64_t> candidates(2, 0);
+    std::vector<std::vector<float>> probabilities;
+    constexpr int trials = 100000;
+    for (int draw = 0; draw < trials; ++draw) {
+      if (!muse_glimmer::sample_dflash2_path(
+              rng,
+              ids,
+              scores,
+              1,
+              2,
+              4,
+              0.8,
+              greedy,
+              candidates,
+              probabilities,
+              workspace)) {
+        return false;
+      }
+      uint64_t token = candidates[1];
+      const float q = greedy ? 1.0f : probabilities[1][token];
+      if (!muse_glimmer::accept_with_probability(
+              rng, std::min(1.0f, target[token] / q))) {
+        auto residual = target;
+        token = greedy ? muse_glimmer::sample_excluding_token_in_place(
+                             rng, residual, token)
+                       : muse_glimmer::sample_from_residual_in_place(
+                             rng, residual, probabilities[1]);
+      }
+      ++counts[token];
+    }
+    for (int token = 0; token < 4; ++token) {
+      if (std::abs(static_cast<float>(counts[token]) / trials - target[token]) >
+          0.01f) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+bool test_dflash2_invalid_candidates() {
+  std::mt19937 rng(19);
+  muse_glimmer::SamplingWorkspace workspace;
+  const int64_t duplicates[] = {1, 1};
+  const int64_t out_of_range[] = {1, 4};
+  const float scores[] = {2, -1, 2, -1};
+  std::vector<uint64_t> candidates(2, 0);
+  std::vector<std::vector<float>> probabilities;
+  for (const int64_t* ids : {duplicates, out_of_range}) {
+    if (muse_glimmer::sample_dflash2_path(
+            rng,
+            ids,
+            scores,
+            1,
+            2,
+            4,
+            1,
+            false,
+            candidates,
+            probabilities,
+            workspace)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 } // namespace
 
 int main() {
@@ -345,6 +472,9 @@ int main() {
     const char* name;
     bool (*run)();
   } tests[] = {
+      {"dflash2_conditional_path", test_dflash2_conditional_path},
+      {"dflash2_rejection_distribution", test_dflash2_rejection_distribution},
+      {"dflash2_invalid_candidates", test_dflash2_invalid_candidates},
       {"argmax_index_tie_and_tail", test_argmax_index_tie_and_tail},
       {"max_value_all_negative_with_tail",
        test_max_value_all_negative_with_tail},

@@ -49,6 +49,48 @@ artifact supports different draft counts without another export. Draft tokens
 have separate `[owners, block_size]` axes; each block ranges from 2 to the
 exported maximum. Torch infers the concatenated context-plus-block K/V length.
 
+### DFlash2 on Apple Silicon
+
+DFlash2 GGUF drafts use the same exporter and serving flags. For example:
+
+```sh
+python -m executorch.examples.models.muse_glimmer.export.export_dflash \
+  --backend mlx --use-offgraph-kv-cache \
+  --target-gguf /path/to/Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf \
+  --draft-gguf /path/to/Muse-Glimmer-30B-DFlash2-Q4_K_M.gguf \
+  --activation-dtype bfloat16 \
+  --output-dir /path/to/muse-dflash2
+```
+
+Serve the resulting artifact with the batching worker and `--dflash`. DFlash2
+requires the MLX off-graph path; legacy runners and CUDA export are not yet
+supported. Existing DFlash artifacts keep their original behavior.
+
+DFlash2 runs its full trained block (16 positions for this checkpoint), even
+with `--dflash-n-draft 3`; this option limits the output projection and
+verification to three proposals.
+Its convolution and non-causal attention depend on that full block. Each
+session's convolution stays within its own block. Near the context limit,
+generation falls back to the target when a full draft block does not fit.
+
+The artifact identifies the draft through `get_dflash_selector_top_k`: absent
+or zero selects the existing DFlash logits ABI; a positive value selects
+DFlash2. The exporter reads this value from the GGUF's `dflash.selector_top_k`
+metadata. Renaming a model file does not change its behavior.
+
+The shared PyTorch model computes convolution, top-k candidates, and conditional
+candidate scores. DFlash2's `draft_forward` has a fifth input containing the
+contiguous proposal rows `[1, ..., N]`. It returns token IDs `[owners, N, K]`
+and float scores `[owners, N, K, K]`. The host walks the candidates conditioned on the previously selected
+token. MLX keeps greedy draft proposals and the existing target acceptance and
+residual sampling rules, including for nonzero target temperature. The shared
+candidate sampler also exposes conditional proposal probabilities for backends
+that choose stochastic proposals; a verifier must use those probabilities.
+
+CUDA can reuse the model and candidate sampler, but still needs the dual-output
+ABI and full-block semantics wired into its export and runtime paths. No
+CUDA-specific kernels or graph-capture policy are required by the shared model.
+
 ## Build
 
 On Apple Silicon, run the Make target from the ExecuTorch checkout:

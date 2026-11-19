@@ -18,6 +18,10 @@ from dataclasses import dataclass, field
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from executorch.examples.models.muse_glimmer.model.dflash2 import (
+    CandidateSelector,
+    DFlashGroupedConv,
+)
 from executorch.examples.models.muse_glimmer.model.model import (
     FlatKVCache,
     RingKVCache,
@@ -68,6 +72,46 @@ class DFlashConfig:
     max_seq_len: int = 131072
     sliding_window: int | None = None
     sliding_window_pattern: list[bool] | None = None
+    conv_kernel_size: int = 0
+    conv_group_size: int = 0
+    selector_rank: int = 0
+    selector_top_k: int = 0
+    input_embedding_scale: float = 1.0
+    output_multiplier: float = 1.0
+    final_logit_softcapping: float | None = None
+
+    def __post_init__(self):
+        if any(
+            (
+                self.conv_kernel_size,
+                self.conv_group_size,
+                self.selector_rank,
+                self.selector_top_k,
+            )
+        ):
+            if not (
+                self.conv_kernel_size > 0
+                and self.conv_group_size > 0
+                and self.dim % self.conv_group_size == 0
+                and self.selector_rank > 0
+                and 1 <= self.selector_top_k <= self.vocab_size
+                and self.block_size >= 2
+            ):
+                raise ValueError(
+                    "DFlash2 requires valid convolution and selector metadata"
+                )
+        if not all(
+            math.isfinite(scale) and scale > 0
+            for scale in (self.input_embedding_scale, self.output_multiplier)
+        ):
+            raise ValueError(
+                "DFlash embedding and logit scales must be finite and positive"
+            )
+        if self.final_logit_softcapping is not None and (
+            not math.isfinite(self.final_logit_softcapping)
+            or self.final_logit_softcapping <= 0
+        ):
+            raise ValueError("DFlash logit softcapping must be finite and positive")
 
     @property
     def n_target_layers(self) -> int:
@@ -92,6 +136,13 @@ class DFlashConfig:
             sliding_window_pattern=metadata.get(
                 "dflash.attention.sliding_window_pattern", None
             ),
+            conv_kernel_size=metadata.get("dflash.conv_kernel_size", 0),
+            conv_group_size=metadata.get("dflash.conv_group_size", 0),
+            selector_rank=metadata.get("dflash.selector_rank", 0),
+            selector_top_k=metadata.get("dflash.selector_top_k", 0),
+            input_embedding_scale=metadata.get("dflash.embedding_scale", 1.0),
+            output_multiplier=metadata.get("dflash.logit_scale", 1.0),
+            final_logit_softcapping=metadata.get("dflash.final_logit_softcapping"),
         )
 
 
@@ -292,6 +343,38 @@ class DFlashDecoderLayer(nn.Module):
         )
         self.post_attention_layernorm = RMSNorm(config.dim, config.norm_eps)
         self.mlp = DFlashMLP(config)
+        self.attention_conv = (
+            DFlashGroupedConv(
+                config.dim, config.conv_kernel_size, config.conv_group_size
+            )
+            if config.conv_kernel_size
+            else None
+        )
+        self.mlp_conv = (
+            DFlashGroupedConv(
+                config.dim, config.conv_kernel_size, config.conv_group_size
+            )
+            if config.conv_kernel_size
+            else None
+        )
+
+    def prepare_attention(self, x: torch.Tensor):
+        h = self.input_layernorm(x)
+        if self.attention_conv is None:
+            return h, None
+        return self.attention_conv.prepare(h)
+
+    def finish_attention(self, h: torch.Tensor, coefficients):
+        if self.attention_conv is not None:
+            h = self.attention_conv.finish(h, coefficients)
+        return h
+
+    def feed_forward(self, x: torch.Tensor) -> torch.Tensor:
+        h = self.post_attention_layernorm(x)
+        if self.mlp_conv is None:
+            return self.mlp(h)
+        h, coefficients = self.mlp_conv.prepare(h)
+        return self.mlp_conv.finish(self.mlp(h), coefficients)
 
     def forward(
         self,
@@ -302,10 +385,10 @@ class DFlashDecoderLayer(nn.Module):
         ctx_start: int,
         total_ctx: int,
     ) -> torch.Tensor:
-        x = x + self.self_attn(
-            self.input_layernorm(x), target_hidden, cos, sin, ctx_start, total_ctx
-        )
-        x = x + self.mlp(self.post_attention_layernorm(x))
+        h, coefficients = self.prepare_attention(x)
+        h = self.self_attn(h, target_hidden, cos, sin, ctx_start, total_ctx)
+        x = x + self.finish_attention(h, coefficients)
+        x = x + self.feed_forward(x)
         return x
 
 
@@ -350,6 +433,17 @@ class DFlashDraftModel(nn.Module):
         )
 
         self.norm = RMSNorm(config.dim, config.norm_eps)
+
+        self.candidate_selector = (
+            CandidateSelector(
+                config.dim,
+                config.vocab_size,
+                config.selector_rank,
+                config.selector_top_k,
+            )
+            if config.selector_top_k
+            else None
+        )
 
         self.rope_theta = config.rope_theta
         self.head_dim = config.head_dim
@@ -435,6 +529,42 @@ def _packed_draft_forward(
     return lm_head(draft(noise_embedding, target_hidden, positions, kv_order)).float()
 
 
+def _draft_forward(
+    embed_tokens,
+    lm_head,
+    draft,
+    activation_dtype,
+    draft_tokens,
+    target_hidden,
+    input_pos,
+    cache_input=None,
+    proposal_rows=None,
+):
+    noise_embedding = embed_tokens(draft_tokens).to(activation_dtype)
+    if draft.config.input_embedding_scale != 1.0:
+        noise_embedding = noise_embedding * draft.config.input_embedding_scale
+    h = draft(
+        noise_embedding,
+        target_hidden,
+        input_pos,
+        *(() if cache_input is None else (cache_input,)),
+    )
+    if draft.candidate_selector is None:
+        return lm_head(h).float()
+    torch._check(draft_tokens.shape[1] == draft.config.block_size)
+    h = h.reshape(draft_tokens.shape[0], draft_tokens.shape[1], -1)
+    # The caller supplies the contiguous proposal prefix [1, ..., N].
+    h = h[:, 1:] if proposal_rows is None else h.index_select(1, proposal_rows)
+    logits = lm_head(h).float() * draft.config.output_multiplier
+    softcap = draft.config.final_logit_softcapping
+    if softcap is not None:
+        logits = torch.tanh(logits / softcap) * softcap
+    unary, candidate_ids = torch.topk(logits, draft.config.selector_top_k, dim=-1)
+    return candidate_ids, draft.candidate_selector(
+        candidate_ids, unary, h, draft_tokens[:, 0]
+    )
+
+
 class MuseGlimmerWithDFlash(nn.Module):
     """Wrapper combining target and draft models with shared weights.
 
@@ -486,19 +616,20 @@ class MuseGlimmerWithDFlash(nn.Module):
         target_hidden: torch.Tensor,
         input_pos: torch.Tensor,
         valid_ctx_len: torch.Tensor | None = None,
-    ) -> torch.Tensor:
-        noise_embedding = self.target.embed_tokens(draft_tokens).to(
-            self.target.activation_dtype
+        proposal_rows: torch.Tensor | None = None,
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+        # Fourth input: CUDA valid context length or off-graph K/V permutation.
+        return _draft_forward(
+            self.target.embed_tokens,
+            self.target.lm_head,
+            self.draft,
+            self.target.activation_dtype,
+            draft_tokens,
+            target_hidden,
+            input_pos,
+            valid_ctx_len,
+            proposal_rows,
         )
-
-        # The fourth input is CUDA's valid context length or the off-graph MLX
-        # permutation from projected rows to contiguous owner K/V groups.
-        if valid_ctx_len is None:
-            h = self.draft(noise_embedding, target_hidden, input_pos)
-        else:
-            h = self.draft(noise_embedding, target_hidden, input_pos, valid_ctx_len)
-
-        return self.target.lm_head(h).float()
 
     def draft_forward_packed(
         self,
@@ -526,7 +657,8 @@ class MuseGlimmerWithDFlash(nn.Module):
         input_pos: torch.Tensor,
     ) -> torch.Tensor:
         """Populate the Draft context cache without projecting logits."""
-        noise_embedding = self.target.embed_tokens(draft_tokens).to(
-            self.target.activation_dtype
+        noise_embedding = (
+            self.target.embed_tokens(draft_tokens).to(self.target.activation_dtype)
+            * self.draft_config.input_embedding_scale
         )
         return self.draft(noise_embedding, target_hidden, input_pos)
