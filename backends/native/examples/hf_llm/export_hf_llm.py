@@ -34,6 +34,7 @@ from executorch.backends.native.examples.hf_llm.hf_utils import (
     PositionedStaticLayer,
     report_lowering,
 )
+from executorch.backends.native.examples.hf_llm.muse_glimmer import MuseGlimmerTextLM
 from executorch.exir.native import Call, Sample, SampleSet, to_native, write_samples
 from executorch.extension.llm.cache.hf_attention import register_offgraph_attention
 from executorch.extension.llm.cache.reference_cache import (
@@ -57,6 +58,7 @@ from transformers import (
     AttentionInterface,
     AutoConfig,
     AutoModelForCausalLM,
+    AutoModelForImageTextToText,
     AutoTokenizer,
     PreTrainedModel,
 )
@@ -94,37 +96,52 @@ def _parameters_on_meta() -> Iterator[None]:
         nn.Module.register_parameter = register
 
 
+# Models Transformers builds only with their vision tower: the class that
+# builds one, and the text-only module to export instead.
+_TEXT_ONLY = {"muse_glimmer": (AutoModelForImageTextToText, MuseGlimmerTextLM)}
+# Per-layer config lists, kept for the layers --layers keeps.
+_PER_LAYER = ("layer_types", "layer_rope_theta")
+
+
 def _load(
     path: str,
     layers: int,
     random_weights: bool,
     empty_weights: bool,
     offgraph_cache: bool = False,
-) -> PreTrainedModel:
+) -> nn.Module:
     config = AutoConfig.from_pretrained(path)
     text_config = config.get_text_config()
     if layers:
         text_config.num_hidden_layers = layers
-        if getattr(text_config, "layer_types", None):
-            text_config.layer_types = text_config.layer_types[:layers]
+        for name in _PER_LAYER:
+            if getattr(text_config, name, None):
+                setattr(text_config, name, getattr(text_config, name)[:layers])
+    auto_class, text_only = _TEXT_ONLY.get(
+        config.model_type, (AutoModelForCausalLM, None)
+    )
+    if text_only and not offgraph_cache:
+        raise ValueError(f"{config.model_type} exports only with --offgraph_cache")
     if offgraph_cache:
         register_offgraph_attention(_OFFGRAPH_ATTENTION)
     attn = _OFFGRAPH_ATTENTION if offgraph_cache else "sdpa"
     kwargs = {"dtype": torch.float32, "attn_implementation": attn}
     if empty_weights:
         with _parameters_on_meta():
-            model = AutoModelForCausalLM.from_config(config, **kwargs)
+            model = auto_class.from_config(config, **kwargs)
     elif random_weights:
-        model = AutoModelForCausalLM.from_config(config, **kwargs)
+        model = auto_class.from_config(config, **kwargs)
     else:
-        model = AutoModelForCausalLM.from_pretrained(path, config=config, **kwargs)
+        model = auto_class.from_pretrained(path, config=config, **kwargs)
+    if text_only:
+        model = text_only(model)
     model.generation_config.use_cache = True
     model.generation_config.cache_implementation = "static"
     return model.eval()
 
 
 def load_gguf(
-    model: PreTrainedModel,
+    model: nn.Module,
     path: str,
     architecture: str | None = None,
     raw_iter: RawIter | None = None,
@@ -280,7 +297,7 @@ class OffGraphLastTokenLM(nn.Module):
     ``capacity`` positions the active one.
     """
 
-    def __init__(self, model: PreTrainedModel, capacity: int) -> None:
+    def __init__(self, model: nn.Module, capacity: int) -> None:
         super().__init__()
         self.model = model
         config = model.config.get_text_config()
