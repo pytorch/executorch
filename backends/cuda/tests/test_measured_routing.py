@@ -11,7 +11,6 @@ Most tests use a toy family whose "replacement" of the edge ``add`` is the
 aten ``add`` and whose measurements are given; the probe tests measure real
 calls in the worker process."""
 
-import dataclasses
 import importlib.util
 import json
 import os
@@ -76,13 +75,13 @@ class _Sort(torch.nn.Module):
 
 
 class _Convs(torch.nn.Module):
-    """Calls whose regular lowering the probe classifies: a 3x3 convolution
-    (Triton templates), a same-padded 1-D one (an extern convolution the
-    runtime lacks), and a sort."""
+    """Calls whose regular lowering the probe classifies: a 1-D convolution
+    the backend hands Inductor as a 2-D one (Triton templates), a same-padded
+    1-D one (an extern convolution the runtime lacks), and a sort."""
 
-    def forward(self, x, w3, x1, w4, s):
+    def forward(self, x, w5, x1, w4, s):
         return (
-            torch.nn.functional.conv2d(x, w3, padding=1),
+            torch.nn.functional.conv1d(x, w5, padding=2),
             torch.nn.functional.conv1d(x1, w4, padding="same"),
             torch.sort(s, stable=True)[0],
         )
@@ -90,8 +89,8 @@ class _Convs(torch.nn.Module):
     @staticmethod
     def inputs():
         return (
-            torch.randn(1, 16, 8, 8, device="cuda"),
-            torch.randn(16, 16, 3, 3, device="cuda") / 12,
+            torch.randn(1, 64, 16, device="cuda"),
+            torch.randn(64, 64, 5, device="cuda") / 16,
             *_SamePadded1d.inputs(),
             *_Sort.inputs(),
         )
@@ -720,9 +719,10 @@ class ChoiceTest(_PassTest):
 
 @unittest.skipUnless(torch.cuda.is_available(), "CUDA required")
 class ProbeTest(_PassTest):
-    """Real calls measured in the worker process: the conv family's plans with
-    the regular lowering always a candidate, so the probe classifies it, and a
-    stable sort whose "replacement" is the aten op."""
+    """Real calls measured in the worker process: convolutions through the
+    conv family's plans (with the static rule for the regular lowering's gaps
+    turned off, so the probe has to find them) and a stable sort whose
+    "replacement" is the aten op."""
 
     def setUp(self):
         from executorch.export.utils import is_fbcode
@@ -736,13 +736,6 @@ class ProbeTest(_PassTest):
         from executorch.backends.cuda.triton import replacement_pass, routing
         from executorch.backends.cuda.triton.kernels.conv import routing as conv_routing
         from executorch.exir.dialects._ops import ops as exir_ops
-
-        def conv_plan(node):
-            plan = conv_routing.plan(node)
-            regular = routing.Candidate(routing.REGULAR_LOWERING)
-            return dataclasses.replace(
-                plan, candidates=(regular, *plan.candidates[1:]), measure=True
-            )
 
         def sort_plan(node):
             return routing.ReplacementPlan(
@@ -758,24 +751,20 @@ class ProbeTest(_PassTest):
 
         sort = exir_ops.edge.aten.sort.stable
         for patch in (
+            mock.patch.object(conv_routing, "regular_lowering_gap", return_value=None),
             mock.patch.dict(
                 replacement_pass.EDGE_TO_TRITON_KERNELS,
                 {sort: torch.ops.aten.sort.stable},
             ),
-            mock.patch.dict(
-                replacement_pass.PLANNERS,
-                {
-                    **{t: conv_plan for t in replacement_pass.CONV_TARGETS},
-                    sort: sort_plan,
-                },
-            ),
+            mock.patch.dict(replacement_pass.PLANNERS, {sort: sort_plan}),
         ):
             patch.start()
             self.addCleanup(patch.stop)
 
     def test_real_measurements(self):
         """One export (and run, outside fbcode) through the AOTI compile: the
-        3x3 convolution's regular lowering is timed; the probe finds that the
+        1-D convolution's regular lowering, the 2-D convolution the backend
+        hands Inductor, is compiled and timed; the probe finds that the
         same-padded 1-D one calls a kernel the runtime lacks, so our kernel
         is kept and the AOTI compile succeeds with it; the sort's supported
         fallback runs and is timed in the worker. Measuring the sort again
@@ -786,15 +775,15 @@ class ProbeTest(_PassTest):
         nodes = {n["spec"]["original"]: n for n in self.log()["nodes"]}
         self.assertEqual(
             sorted(nodes),
-            ["aten::conv1d.padding", "aten::conv2d.default", "aten::sort.stable"],
+            ["aten::conv1d.default", "aten::conv1d.padding", "aten::sort.stable"],
         )
         regular = {
             name: {c["name"]: c for c in node["candidates"]}["inductor"]
             for name, node in nodes.items()
         }
-        # The 3x3 convolution's templates and the supported fallback ran and
-        # were timed in the worker.
-        for name in ("aten::conv2d.default", "aten::sort.stable"):
+        # The convolution's templates and the supported fallback ran and were
+        # timed in the worker.
+        for name in ("aten::conv1d.default", "aten::sort.stable"):
             self.assertEqual(regular[name]["status"], "available", regular[name])
             self.assertGreater(regular[name]["fast_us"]["median_us"], 0)
         padded = regular["aten::conv1d.padding"]
@@ -808,7 +797,7 @@ class ProbeTest(_PassTest):
             ),
             ("conv", "only_available"),
         )
-        conv = {c["name"]: c for c in nodes["aten::conv2d.default"]["candidates"]}[
+        conv = {c["name"]: c for c in nodes["aten::conv1d.default"]["candidates"]}[
             "conv"
         ]
         self.assertTrue(conv["picks"])
