@@ -316,6 +316,12 @@ def test_fixed_linear_keep_dim(request, kwargs):
     FixedLinearKeepDim.test(request, kwargs)  # noqa: F405
 
 
+@enumerate_backends_quantized()
+@repack_pass_fixtures
+def test_fold_parameter_splits(request, kwargs):
+    FoldParameterSplits.test(request, kwargs)  # noqa: F405
+
+
 @enumerate_backends()
 @repack_pass_fixtures
 def test_fold_qdq(request, kwargs):
