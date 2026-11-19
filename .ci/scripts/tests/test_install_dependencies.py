@@ -388,6 +388,16 @@ class TestInstallDependencies(unittest.TestCase):
                 self.assertIn(
                     f"torchao=={self.installer.TORCHAO_NIGHTLY_VERSION}", commands[0]
                 )
+                # Nothing after the third-party/ao build may pin torchao, or pip would
+                # replace the source build.
+                self.assertFalse(
+                    any(
+                        arg.startswith("torchao==")
+                        for command in commands[2:]
+                        for arg in command
+                    ),
+                    commands[2:],
+                )
                 source_version = self.installer.TORCHAO_NIGHTLY_VERSION.partition(
                     ".dev"
                 )[0]
