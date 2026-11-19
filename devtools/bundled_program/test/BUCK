@@ -3,7 +3,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
+
 oncall("executorch")
 # add this empty BUCK file to unblock landing. Without this, we get land error:
 #   "No build file at xplat/executorch/exir/tests/BUCK when resolving target fbsource//xplat/executorch/exir/tests:."

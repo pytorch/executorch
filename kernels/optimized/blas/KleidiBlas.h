@@ -24,7 +24,10 @@
 #include <executorch/runtime/platform/assert.h>
 
 #ifndef ET_KLEIDIAI_DISABLE_NEON_BF16
-#if __has_include(<kai/kai_matmul_clamp_f32_bf16p8x4_bf16p12x4b_8x12_neon_mmla.h>)
+// KleidiAI before 1.7 errors out in this header without FEAT_BF16, so a
+// baseline Arm64 build (no +bf16) skips it.
+#if __has_include(<kai/kai_matmul_clamp_f32_bf16p8x4_bf16p12x4b_8x12_neon_mmla.h>) && \
+    defined(__ARM_FEATURE_BF16_VECTOR_ARITHMETIC)
 #define ET_KLEIDIAI_HAS_NEON_BF16
 #include <kai/kai_matmul_clamp_f32_bf16p8x4_bf16p12x4b_8x12_neon_mmla.h>
 #elif __has_include(<kai/ukernels/matmul/matmul_clamp_f32_bf16p_bf16p/kai_matmul_clamp_f32_bf16p8x4_bf16p12x4b_8x12_neon_mmla.h>)

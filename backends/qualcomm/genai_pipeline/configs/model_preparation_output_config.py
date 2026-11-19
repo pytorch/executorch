@@ -11,6 +11,9 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from executorch.backends.qualcomm.genai_pipeline.compilation.model_layout import (
+        ModelLayout,
+    )
     from torch import nn
 
 
@@ -48,6 +51,9 @@ class ModelPreparationOutputConfig:
             stage; ``None`` for flows that build no inference (e.g. multimodal,
             not yet supported).
         num_shardings: Optional per-component number of shardings for the model.
+        model_layout: The model's module paths and tagging rules, used by
+            compilation for sharding and quantized-IO tagging. ``None`` uses the
+            default layout.
     """
 
     model_module: Optional[Dict[str, "nn.Module"]] = None
@@ -58,3 +64,4 @@ class ModelPreparationOutputConfig:
     meta: Optional[Dict[str, Dict[str, Any]]] = None
     inference: Any = None
     num_shardings: Optional[Dict[str, int]] = None
+    model_layout: Optional["ModelLayout"] = None

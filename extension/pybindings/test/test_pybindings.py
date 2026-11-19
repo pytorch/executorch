@@ -2358,6 +2358,114 @@ print("CUDA DLPack roundtrip preserved device storage")
             torch.equal(output.view(torch.float16), value.view(torch.float16))
         )
 
+    def test_float8_dlpack_input(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("only portable bindings read DLPack inputs themselves")
+
+        class Identity(torch.nn.Module):
+            def forward(self, x):
+                return x
+
+        for dtype in (torch.float8_e4m3fn, torch.float8_e5m2):
+            value = torch.tensor([1.0, -2.0, 0.5, 0.0]).to(dtype)
+            program = to_edge(export(Identity(), (value,))).to_executorch(
+                ExecutorchBackendConfig(
+                    memory_planning_pass=MemoryPlanningPass(
+                        alloc_graph_input=False, alloc_graph_output=False
+                    )
+                )
+            )
+            method = self.load_prog_fn(program.buffer).load_method("forward")
+            # The wrapper takes no max_version, so it gets a legacy capsule; raw
+            # capsules also cover the versioned kind.
+            for kind, given in (
+                ("wrapper", DLPackOnly(value)),
+                ("legacy capsule", value.__dlpack__()),
+                ("versioned capsule", value.__dlpack__(max_version=(1, 1))),
+            ):
+                with self.subTest(dtype=dtype, input=kind):
+                    output = torch.from_dlpack(method(given)[0])
+                    self.assertEqual(output.dtype, dtype)
+                    self.assertTrue(
+                        torch.equal(output.view(torch.uint8), value.view(torch.uint8))
+                    )
+            if dtype == torch.float8_e4m3fn:
+                # exir cannot export fnuz dtypes, so their codes are checked by
+                # the dtype a float8_e4m3fn method reports when it refuses them,
+                # read from a versioned capsule.
+                for fnuz in (torch.float8_e4m3fnuz, torch.float8_e5m2fnuz):
+                    name = str(fnuz).removeprefix("torch.").capitalize()
+                    with self.subTest(dtype=fnuz):
+                        with self.assertRaisesRegex(
+                            ValueError,
+                            f"has dtype {name} but the method expects Float8_e4m3fn",
+                        ):
+                            method(value.to(fnuz).__dlpack__(max_version=(1, 1)))
+
+    def test_float8_result_round_trips_through_dlpack(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("only portable bindings return ExecuTorchResult outputs")
+
+        class Identity(torch.nn.Module):
+            def forward(self, x):
+                return x
+
+        config = ExecutorchBackendConfig(
+            memory_planning_pass=MemoryPlanningPass(
+                alloc_graph_input=False, alloc_graph_output=False
+            )
+        )
+        script = """
+import importlib
+import sys
+import torch
+
+runtime = importlib.import_module(sys.argv[1])
+native = sys.modules[runtime.ExecuTorchResult.__module__]
+assert native._tensor_output == "executorch"
+for path, dtype in zip(
+    sys.argv[2:], (torch.float8_e4m3fn, torch.float8_e5m2), strict=True
+):
+    value = torch.tensor([1.0, -2.0, 0.5, 0.0]).to(dtype)
+    with open(path, "rb") as source:
+        data = source.read()
+    method = runtime._load_program_from_buffer(data).load_method("forward")
+    output = method(value)[0]
+    assert isinstance(output, runtime.ExecuTorchResult), type(output)
+    tensor = torch.from_dlpack(output)
+    assert tensor.dtype == dtype, (dtype, tensor.dtype)
+    assert torch.equal(tensor.view(torch.uint8), value.view(torch.uint8)), dtype
+    roundtrip = torch.from_dlpack(method(output)[0])
+    assert roundtrip.dtype == dtype, (dtype, roundtrip.dtype)
+    assert torch.equal(roundtrip.view(torch.uint8), value.view(torch.uint8)), dtype
+print("float8 results round trip through DLPack")
+"""
+        arguments = [self.runtime.__name__]
+        with tempfile.TemporaryDirectory() as directory:
+            for dtype in (torch.float8_e4m3fn, torch.float8_e5m2):
+                name = str(dtype).removeprefix("torch.")
+                value = torch.tensor([1.0, -2.0, 0.5, 0.0]).to(dtype)
+                program = to_edge(export(Identity(), (value,))).to_executorch(config)
+                path = os.path.join(directory, f"{name}.pte")
+                with open(path, "wb") as source:
+                    source.write(program.buffer)
+                arguments.append(path)
+            environment = os.environ.copy()
+            environment["EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT"] = "executorch"
+            completed = subprocess.run(
+                [sys.executable, "-c", script, *arguments],
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
+        self.assertIn("float8 results round trip through DLPack", completed.stdout)
+
     def test_unsupported_buffer_format_is_rejected(self):
         exported_program, _ = create_program(ModuleAddSingleInput())
         executorch_module = self.load_fn(exported_program.buffer)
