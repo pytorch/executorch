@@ -761,13 +761,13 @@ TS(previous work finish) ─ barrier ─ TS(barrier finish) ─ dispatch ─ TS(
 
 While shaders are profiled, every dispatch's barrier is widened to a full
 pipeline barrier, so profiled dispatches never overlap. The report adds
-`shader_profile_order_violations`, the number of out-of-order timestamps (always
-0 when serialization holds), and `shader_profile_overhead_ratio`, the profiled
-batch's per-invocation latency divided by the unprofiled
-`gpu_timestamp_operator_us` median. A ratio well above 1 means timestamps and
-serialization change execution, and the breakdown misrepresents the unprofiled
-operator. Use `gpu_timestamp_operator_us` for latency comparisons and the
-breakdown for attribution.
+`shader_profile_order_violations`, the number of out-of-order timestamps (stale
+or unwritten queries; overlapping dispatches do not cause violations), and
+`shader_profile_overhead_ratio`, the profiled batch's per-invocation latency
+divided by the unprofiled `gpu_timestamp_operator_us` median. A ratio well above
+1 means timestamps and serialization change execution, and the breakdown
+misrepresents the unprofiled operator. Use `gpu_timestamp_operator_us` for
+latency comparisons and the breakdown for attribution.
 
 The sum of shader, barrier, and gap times need not match the separately
 measured operator latency: the passes can run under different GPU clock and
