@@ -17,6 +17,7 @@
 #include <cstring>
 #include <limits>
 #include <numeric>
+#include <tuple>
 
 namespace executorch::backends::cpu {
 namespace {
@@ -254,6 +255,90 @@ INSTANTIATE_TEST_SUITE_P(
         "torch.ops.aten.relu.default",
         "torch.ops.aten.sigmoid.default"));
 
+TEST_F(ProviderTest, XNNPACKEluMatchesATenAndRequiresLiteralUnitScales) {
+  const float infinity = std::numeric_limits<float>::infinity();
+  const std::array<float, 12> input{
+      -infinity,
+      -20,
+      -2,
+      -0.5f,
+      -1e-6f,
+      -0.0f,
+      0,
+      1e-6f,
+      0.5f,
+      3,
+      infinity,
+      std::numeric_limits<float>::quiet_NaN()};
+  gelu_graph(input.size());
+  auto& node = graph.nodes[0];
+  node.target = "torch.ops.aten.elu.default";
+  GuardedBuffer source(sizeof(input)), output(sizeof(input));
+  std::copy(
+      input.begin(), input.end(), static_cast<float*>(source.buffer.data));
+  bind_value(0, source.buffer);
+  bind_value(1, output.buffer);
+  for (const auto& [alpha, expected_alpha] :
+       {std::pair<ptn::Argument, double>{ptn::IntArg{1}, 1.0},
+        {ptn::FloatArg{0.5}, 0.5}}) {
+    node.inputs = {
+        {"self", ptn::TensorArg{0}},
+        {"alpha", alpha},
+        {"scale", ptn::IntArg{1}},
+        {"input_scale", ptn::FloatArg{1.0}}};
+    auto provider = create_xnnpack_provider();
+    auto* implementation = provider->implementations()[0];
+    ASSERT_TRUE(
+        implementation->supports(node, graph, execution_context).supported);
+    PreparationContext context{
+        graph, buffers, allocator, private_bytes, execution_context};
+    auto executable = implementation->compile({{0}, {0}, {1}}, context);
+    ASSERT_TRUE(executable.ok());
+    ASSERT_EQ(provider->finish(), Error::Ok);
+    ASSERT_EQ(executable.get()->reshape(), Error::Ok);
+    ASSERT_EQ(executable.get()->bind(), Error::Ok);
+    ASSERT_EQ(executable.get()->run(execution_context), Error::Ok);
+    const auto* result = static_cast<const float*>(output.buffer.data);
+    for (size_t index = 0; index < input.size(); ++index) {
+      SCOPED_TRACE(index);
+      const double x = input[index];
+      const double want = x > 0 ? x : expected_alpha * std::expm1(x);
+      if (std::isnan(want)) {
+        EXPECT_TRUE(std::isnan(result[index]));
+      } else if (std::isinf(want)) {
+        EXPECT_EQ(result[index], want);
+      } else {
+        EXPECT_NEAR(result[index], want, 1e-5 * std::abs(want));
+      }
+    }
+  }
+  auto provider = create_xnnpack_provider();
+  auto* implementation = provider->implementations()[0];
+  const auto rejects = [&](size_t position, ptn::Argument argument) {
+    node.inputs[1].arg = ptn::IntArg{1};
+    node.inputs[2].arg = ptn::IntArg{1};
+    node.inputs[3].arg = ptn::IntArg{1};
+    node.inputs[position].arg = std::move(argument);
+    return !implementation->supports(node, graph, execution_context).supported;
+  };
+  for (size_t position : {1, 2, 3}) {
+    SCOPED_TRACE(position);
+    EXPECT_TRUE(rejects(position, ptn::NoneArg{}));
+    EXPECT_TRUE(rejects(position, ptn::IntArg{1, 0}));
+    EXPECT_TRUE(rejects(position, ptn::FloatArg{1.0, 0}));
+  }
+  for (double alpha :
+       {-1.0,
+        0.0,
+        static_cast<double>(std::numeric_limits<float>::denorm_min()),
+        static_cast<double>(infinity)}) {
+    SCOPED_TRACE(alpha);
+    EXPECT_TRUE(rejects(1, ptn::FloatArg{alpha}));
+  }
+  EXPECT_TRUE(rejects(2, ptn::FloatArg{2.0}));
+  EXPECT_TRUE(rejects(3, ptn::FloatArg{2.0}));
+}
+
 TEST_F(ProviderTest, XNNPACKValidatesFinalConstantBeforePacking) {
   graph.values.emplace_back(
       "input", ptn::ScalarType::Float, std::vector<int64_t>{1, 3});
@@ -363,14 +448,24 @@ TEST_F(ProviderTest, XNNPACKSharesWeightConversionsAcrossRegions) {
   const auto original_weight = buffers[1];
   std::memset(buffers[1].data, 0xFF, buffers[1].readable_bytes);
   buffers[1] = {};
-  for (auto* executable : {first.get().get(), second.get().get()}) {
-    ASSERT_EQ(executable->bind(), Error::Ok);
-    ASSERT_EQ(executable->run(execution_context), Error::Ok);
+  GuardedBuffer replacement(18 * sizeof(float));
+  std::fill_n(static_cast<float*>(replacement.buffer.data), 18, 2);
+  const auto original = buffers[0];
+  for (const auto& input : {original, replacement.buffer, original}) {
+    buffers[0] = input;
+    for (auto* executable : {first.get().get(), second.get().get()}) {
+      ASSERT_EQ(executable->bind(), Error::Ok);
+      ASSERT_EQ(executable->run(execution_context), Error::Ok);
+    }
+    const float scale = *static_cast<const float*>(input.data);
+    EXPECT_FLOAT_EQ(static_cast<float*>(buffers[3].data)[0], 400 * scale);
+    EXPECT_FLOAT_EQ(static_cast<float*>(buffers[3].data)[4], 784 * scale);
   }
-  EXPECT_FLOAT_EQ(static_cast<float*>(buffers[3].data)[0], 400);
-  EXPECT_FLOAT_EQ(static_cast<float*>(buffers[3].data)[4], 784);
 
   first.get().reset();
+  ASSERT_EQ(second.get()->bind(), Error::Ok);
+  ASSERT_EQ(second.get()->run(execution_context), Error::Ok);
+  EXPECT_FLOAT_EQ(static_cast<float*>(buffers[3].data)[4], 784);
   second.get().reset();
   provider.reset();
   graph.values[1] = ptn::Value("weight", ptn::ScalarType::Float, {2, 2, 1, 1});
@@ -582,6 +677,172 @@ TEST_F(ProviderTest, XNNPACKSoftmaxAcceptsOnlyFP32LastDimension) {
   graph.values[0] = ptn::Value("input", ptn::ScalarType::Float, {});
   graph.values[1] = ptn::Value("output", ptn::ScalarType::Float, {});
   EXPECT_FALSE(supported());
+}
+
+TEST_F(ProviderTest, XNNPACKClampAppliesOptionalBounds) {
+  const float infinity = std::numeric_limits<float>::infinity();
+  const std::array<float, 10> source{
+      -infinity,
+      -7,
+      -0.5f,
+      -0.0f,
+      0,
+      0.25f,
+      3,
+      7,
+      infinity,
+      std::numeric_limits<float>::quiet_NaN()};
+  gelu_graph(source.size());
+  auto& node = graph.nodes[0];
+  node.name = "clamp";
+  node.target = "torch.ops.aten.clamp.default";
+  GuardedBuffer input(sizeof(source)), output(sizeof(source));
+  std::copy(
+      source.begin(), source.end(), static_cast<float*>(input.buffer.data));
+  bind_value(0, input.buffer);
+  bind_value(1, output.buffer);
+  PreparationContext context{
+      graph, buffers, allocator, private_bytes, execution_context};
+  const std::array<std::tuple<ptn::Argument, ptn::Argument, float, float>, 4>
+      cases{{
+          {ptn::IntArg{0}, ptn::IntArg{6}, 0, 6},
+          {ptn::NoneArg{}, ptn::FloatArg{0.5}, -infinity, 0.5f},
+          {ptn::FloatArg{-0.5}, ptn::NoneArg{}, -0.5f, infinity},
+          {ptn::FloatArg{2}, ptn::IntArg{2}, 2, 2},
+      }};
+  for (const auto& [min_arg, max_arg, min, max] : cases) {
+    node.inputs = {
+        {"self", ptn::TensorArg{0}}, {"min", min_arg}, {"max", max_arg}};
+    auto provider = create_xnnpack_provider();
+    auto* implementation = provider->implementations()[0];
+    ASSERT_TRUE(
+        implementation->supports(graph.node(0), graph, execution_context)
+            .supported);
+    auto executable = implementation->compile({{0}, {0}, {1}}, context);
+    ASSERT_TRUE(executable.ok());
+    ASSERT_EQ(provider->finish(), Error::Ok);
+    ASSERT_EQ(executable.get()->reshape(), Error::Ok);
+    ASSERT_EQ(executable.get()->bind(), Error::Ok);
+    ASSERT_EQ(executable.get()->run(execution_context), Error::Ok);
+    const auto* result = static_cast<const float*>(output.buffer.data);
+    for (size_t index = 0; index < source.size(); ++index) {
+      SCOPED_TRACE(index);
+      if (std::isnan(source[index])) {
+        EXPECT_TRUE(std::isnan(result[index]));
+      } else {
+        EXPECT_EQ(result[index], std::min(std::max(source[index], min), max));
+      }
+    }
+  }
+}
+
+TEST_F(ProviderTest, XNNPACKClampRejectsNonLiteralOrInvertedBounds) {
+  gelu_graph(4);
+  auto& node = graph.nodes[0];
+  node.target = "torch.ops.aten.clamp.default";
+  auto provider = create_xnnpack_provider();
+  const auto supported = [&](ptn::Argument min, ptn::Argument max) {
+    node.inputs = {{"self", ptn::TensorArg{0}}, {"min", min}, {"max", max}};
+    return provider->implementations()[0]
+        ->supports(graph.node(0), graph, execution_context)
+        .supported;
+  };
+  EXPECT_TRUE(supported(ptn::IntArg{0}, ptn::FloatArg{6.0}));
+  EXPECT_FALSE(supported(ptn::IntArg{6}, ptn::IntArg{0}));
+  EXPECT_FALSE(supported(ptn::IntArg{0, 0}, ptn::NoneArg{}));
+  EXPECT_FALSE(supported(ptn::NoneArg{}, ptn::FloatArg{6.0, 0}));
+  EXPECT_FALSE(supported(ptn::TensorArg{0}, ptn::NoneArg{}));
+  EXPECT_FALSE(supported(ptn::NoneArg{}, ptn::NoneArg{}));
+  graph.values[1] = ptn::Value("output", ptn::ScalarType::Float, {2});
+  EXPECT_FALSE(supported(ptn::IntArg{0}, ptn::IntArg{6}));
+  graph.values[0] = ptn::Value("input", ptn::ScalarType::Int, {4});
+  graph.values[1] = ptn::Value("output", ptn::ScalarType::Int, {4});
+  EXPECT_FALSE(supported(ptn::IntArg{0}, ptn::IntArg{6}));
+}
+
+TEST_F(ProviderTest, XNNPACKDivBroadcastsScalarDivisor) {
+  for (const auto role :
+       {ptn::ValueRole::UserInput, ptn::ValueRole::ConstantTensor}) {
+    SCOPED_TRACE(static_cast<int>(role));
+    graph = {};
+    buffers.clear();
+    graph.values.emplace_back(
+        "dividend", ptn::ScalarType::Float, std::vector<int64_t>{11});
+    graph.values.emplace_back(
+        "divisor", ptn::ScalarType::Float, std::vector<int64_t>{});
+    graph.values.emplace_back(
+        "output", ptn::ScalarType::Float, std::vector<int64_t>{11});
+    graph.values[0].role = ptn::ValueRole::UserInput;
+    graph.values[1].role = role;
+    ptn::Node div;
+    div.name = "div";
+    div.target = "torch.ops.aten.div.Tensor";
+    div.inputs = {{"self", ptn::TensorArg{0}}, {"other", ptn::TensorArg{1}}};
+    div.outputs = {{ptn::OutputValueKind::Tensor, 2, {}}};
+    graph.nodes.push_back(div);
+    graph.input_ids = role == ptn::ValueRole::UserInput
+        ? std::vector<ptn::ValueId>{0, 1}
+        : std::vector<ptn::ValueId>{0};
+    graph.output_ids = {2};
+    graph.initialize_schedule();
+    graph.rebuild_def_use();
+    GuardedBuffer dividend(44), divisor(4), output(44);
+    buffers = {dividend.buffer, divisor.buffer, output.buffer};
+    auto* data = static_cast<float*>(dividend.buffer.data);
+    std::iota(data, data + 11, -5.0f);
+    *static_cast<float*>(divisor.buffer.data) = 4;
+    PreparationContext context{
+        graph, buffers, allocator, private_bytes, execution_context};
+    auto provider = create_xnnpack_provider();
+    auto* implementation = provider->implementations()[0];
+    ASSERT_TRUE(
+        implementation->supports(graph.node(0), graph, execution_context)
+            .supported);
+    auto executable = implementation->compile({{0}, {0, 1}, {2}}, context);
+    ASSERT_TRUE(executable.ok());
+    ASSERT_EQ(provider->finish(), Error::Ok);
+    ASSERT_EQ(executable.get()->reshape(), Error::Ok);
+    ASSERT_EQ(executable.get()->bind(), Error::Ok);
+    ASSERT_EQ(executable.get()->run(execution_context), Error::Ok);
+    const auto* result = static_cast<const float*>(output.buffer.data);
+    for (size_t index = 0; index < 11; ++index) {
+      EXPECT_EQ(result[index], data[index] / 4);
+    }
+  }
+}
+
+TEST_F(ProviderTest, XNNPACKBinaryRequiresTensorOperandsAndUnitAlpha) {
+  gelu_graph(4);
+  auto& node = graph.nodes[0];
+  auto provider = create_xnnpack_provider();
+  const auto supported = [&](const char* target,
+                             std::vector<ptn::NamedArgument> inputs) {
+    node.target = target;
+    node.inputs = std::move(inputs);
+    return provider->implementations()[0]
+        ->supports(graph.node(0), graph, execution_context)
+        .supported;
+  };
+  for (const auto* target :
+       {"torch.ops.aten.div.Tensor", "torch.ops.aten.mul.Tensor"}) {
+    SCOPED_TRACE(target);
+    EXPECT_TRUE(supported(
+        target, {{"self", ptn::TensorArg{0}}, {"other", ptn::TensorArg{0}}}));
+    EXPECT_FALSE(supported(
+        target, {{"self", ptn::TensorArg{0}}, {"other", ptn::FloatArg{6}}}));
+    EXPECT_FALSE(supported(
+        target, {{"self", ptn::IntArg{6}}, {"other", ptn::TensorArg{0}}}));
+  }
+  const auto add = [&](ptn::Argument other, ptn::Argument alpha) {
+    return supported(
+        "torch.ops.aten.add.Tensor",
+        {{"self", ptn::TensorArg{0}}, {"other", other}, {"alpha", alpha}});
+  };
+  EXPECT_TRUE(add(ptn::TensorArg{0}, ptn::IntArg{1}));
+  EXPECT_TRUE(add(ptn::TensorArg{0}, ptn::FloatArg{1}));
+  EXPECT_FALSE(add(ptn::TensorArg{0}, ptn::IntArg{2}));
+  EXPECT_FALSE(add(ptn::TensorArg{0}, ptn::FloatArg{0.5}));
+  EXPECT_FALSE(add(ptn::FloatArg{3}, ptn::IntArg{1}));
 }
 
 TEST_F(ProviderTest, XNNPACKAndReferenceRegionsShareBoundaryAndSkipBuffers) {
@@ -1518,6 +1779,79 @@ TEST_F(ProviderTest, XNNPACKMaxPool2dRejectsUnsupportedSchemas) {
   EXPECT_FALSE(supported());
   graph.values[1] = ptn::Value("output", ptn::ScalarType::Float, {1, 2, 4, 4});
   graph.values[1] = ptn::Value("output", ptn::ScalarType::Int, {1, 2, 4, 4});
+  EXPECT_FALSE(supported());
+  graph.values[1] = ptn::Value("output", ptn::ScalarType::Float, {1, 2, 4, 4});
+  graph.values[0] = ptn::Value("input", ptn::ScalarType::Float, {1, 2, 8});
+  EXPECT_FALSE(supported());
+}
+TEST_F(ProviderTest, XNNPACKAveragePoolRejectsUnsupportedSchemas) {
+  graph.values.emplace_back(
+      "input", ptn::ScalarType::Float, std::vector<int64_t>{1, 2, 8, 8});
+  graph.values.emplace_back(
+      "output", ptn::ScalarType::Float, std::vector<int64_t>{1, 2, 4, 4});
+  graph.values[0].role = ptn::ValueRole::UserInput;
+  ptn::Node node;
+  node.name = "avg_pool2d";
+  node.target = "torch.ops.aten.avg_pool2d.default";
+  node.inputs = {
+      {"self", ptn::TensorArg{0}},
+      {"kernel_size", ptn::IntListArg{{3, 3}, {}}},
+      {"stride", ptn::IntListArg{{2, 2}, {}}},
+      {"padding", ptn::IntListArg{{1, 1}, {}}},
+      {"ceil_mode", ptn::BoolArg{false}},
+      {"count_include_pad", ptn::BoolArg{true}},
+      {"divisor_override", ptn::NoneArg{}}};
+  node.outputs = {{ptn::OutputValueKind::Tensor, 1, {}}};
+  graph.nodes.push_back(node);
+  graph.input_ids = {0};
+  graph.output_ids = {1};
+  auto provider = create_xnnpack_provider();
+  auto* implementation = provider->implementations()[0];
+  auto supported = [&] {
+    return implementation->supports(graph.node(0), graph, execution_context)
+        .supported;
+  };
+  ASSERT_TRUE(supported());
+  struct InvalidArgument {
+    size_t index;
+    ptn::Argument argument;
+  };
+  const InvalidArgument invalid[] = {
+      {1, ptn::IntListArg{{}, {}}},
+      {1, ptn::IntListArg{{0, 3}, {}}},
+      {1, ptn::IntListArg{{3, 3, 3}, {}}},
+      {1, ptn::IntListArg{{3, 3}, {0, 1}}},
+      {1, ptn::IntListArg{{65536, 65536}, {}}},
+      {1, ptn::IntListArg{{std::numeric_limits<int64_t>::max(), 3}, {}}},
+      {2, ptn::IntListArg{{0, 2}, {}}},
+      {2, ptn::IntListArg{{int64_t{1} << 32, 2}, {}}},
+      {3, ptn::IntListArg{{}, {}}},
+      {3, ptn::IntListArg{{-1, 1}, {}}},
+      {3, ptn::IntListArg{{2, 1}, {}}},
+      {4, ptn::IntArg{0}},
+      {4, ptn::BoolArg{false, 0}},
+      {5, ptn::BoolArg{true, 0}},
+      {6, ptn::IntArg{9}}};
+  for (const auto& [index, argument] : invalid) {
+    SCOPED_TRACE(index);
+    graph.node(0).inputs[index].arg = argument;
+    EXPECT_FALSE(supported());
+    graph.nodes[0] = node;
+  }
+  graph.node(0).inputs[0].mutated = true;
+  EXPECT_FALSE(supported());
+  graph.nodes[0] = node;
+  graph.node(0).inputs.pop_back();
+  EXPECT_FALSE(supported());
+  graph.nodes[0] = node;
+  for (const auto& shape :
+       {std::vector<int64_t>{1, 2, 5, 4},
+        std::vector<int64_t>{1, 3, 4, 4},
+        std::vector<int64_t>{1, 2, 4}}) {
+    graph.values[1] = ptn::Value("output", ptn::ScalarType::Float, shape);
+    EXPECT_FALSE(supported());
+  }
+  graph.values[1] = ptn::Value("output", ptn::ScalarType::Half, {1, 2, 4, 4});
   EXPECT_FALSE(supported());
   graph.values[1] = ptn::Value("output", ptn::ScalarType::Float, {1, 2, 4, 4});
   graph.values[0] = ptn::Value("input", ptn::ScalarType::Float, {1, 2, 8});

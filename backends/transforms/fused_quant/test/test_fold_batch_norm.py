@@ -12,14 +12,10 @@ import torch
 from executorch.backends.transforms.fused_quant.pre_quantize_passes.fold_batch_norm import (
     FoldBatchNorm,
 )
-from executorch.backends.transforms.fused_quant.pre_quantize_passes.replace_batch_norm_with_conv import (
-    ReplaceBatchNormWithConv,
-)
 from executorch.backends.transforms.fused_quant.test.helpers import trace
 from parameterized import parameterized
 from torch import fx, nn
 from torch._ops import OpOverload
-from torch.export import ExportedProgram
 
 _BATCH_NORM = torch.ops.aten._native_batch_norm_legit_no_training.default
 _CONVOLUTION = torch.ops.aten.convolution.default
@@ -73,31 +69,14 @@ class _ConvBatchNormModel(nn.Module):
         return self.batch_norm(self.conv(inp))
 
 
-class _FoldAndReplaceModel(nn.Module):
-    def __init__(self, channels: int) -> None:
-        super().__init__()
-        self.conv = nn.Conv2d(channels, channels, kernel_size=3, padding=1)
-        self.fusable_batch_norm = nn.BatchNorm2d(channels)
-        self.standalone_batch_norm = nn.BatchNorm2d(channels)
-        _randomize_batch_norm(self.fusable_batch_norm, channels)
-        _randomize_batch_norm(self.standalone_batch_norm, channels)
-
-    def forward(self, inp: torch.Tensor) -> torch.Tensor:
-        return self.fusable_batch_norm(self.conv(inp)) + self.standalone_batch_norm(inp)
-
-
 def _trace(
     model: nn.Module, inp: torch.Tensor, conv_target: OpOverload
-) -> ExportedProgram:
-    return trace(model, (inp,), ops_to_keep=[conv_target, _CONVOLUTION])
+) -> fx.GraphModule:
+    return trace(model, (inp,), ops_to_keep=[conv_target, _CONVOLUTION]).module()
 
 
-def _count(exported_program: ExportedProgram, target: object) -> int:
-    return len(
-        exported_program.graph_module.graph.find_nodes(
-            op="call_function", target=target
-        )
-    )
+def _count(graph_module: fx.GraphModule, target: object) -> int:
+    return len(graph_module.graph.find_nodes(op="call_function", target=target))
 
 
 class FoldBatchNormTest(unittest.TestCase):
@@ -122,42 +101,33 @@ class FoldBatchNormTest(unittest.TestCase):
         model = _ConvBatchNormModel(len(input_shape), input_shape[1], bias).eval()
         inp = torch.randn(input_shape)
         expected = model(inp)
-        exported_program = _trace(model, inp, conv_target)
+        graph_module = _trace(model, inp, conv_target)
 
-        self.assertEqual(_count(exported_program, conv_target), 1)
-        self.assertEqual(_count(exported_program, _BATCH_NORM), 1)
+        self.assertEqual(_count(graph_module, conv_target), 1)
+        self.assertEqual(_count(graph_module, _BATCH_NORM), 1)
 
-        result = FoldBatchNorm()(exported_program)
+        result = FoldBatchNorm()(graph_module)
 
         self.assertTrue(result.modified)
-        self.assertEqual(_count(result.exported_program, conv_target), 1)
-        self.assertEqual(_count(result.exported_program, _BATCH_NORM), 0)
-        folded_conv = result.exported_program.graph_module.graph.find_nodes(
+        self.assertEqual(_count(graph_module, conv_target), 1)
+        self.assertEqual(_count(graph_module, _BATCH_NORM), 0)
+        folded_conv = graph_module.graph.find_nodes(
             op="call_function", target=conv_target
         )[0]
         self.assertIsInstance(folded_conv.args[2], fx.Node)
         self.assertFalse(
             any(isinstance(value, fx.Node) for value in folded_conv.kwargs.values())
         )
-        actual = result.exported_program.module()(inp)
-        torch.testing.assert_close(actual, expected, atol=1e-5, rtol=1e-5)
-
-    def test_fold_then_replace_handles_only_remaining_batch_norm(self) -> None:
-        torch.manual_seed(0)
-        model = _FoldAndReplaceModel(3).eval()
-        inp = torch.randn(2, 3, 6, 8)
-        expected = model(inp)
-        exported_program = _trace(model, inp, torch.ops.aten.conv2d.default)
-
-        fold_result = FoldBatchNorm()(exported_program)
-
-        self.assertTrue(fold_result.modified)
-        self.assertEqual(_count(fold_result.exported_program, _BATCH_NORM), 1)
-
-        replace_result = ReplaceBatchNormWithConv()(fold_result.exported_program)
-
-        self.assertTrue(replace_result.modified)
-        self.assertEqual(_count(replace_result.exported_program, _BATCH_NORM), 0)
-        self.assertEqual(_count(replace_result.exported_program, _CONVOLUTION), 1)
-        actual = replace_result.exported_program.module()(inp)
+        # The batch norm's statistics and the convolution's original weights are
+        # gone; only the folded weights remain.
+        weight, bias = folded_conv.args[1:3]
+        assert isinstance(weight, fx.Node) and isinstance(bias, fx.Node)
+        self.assertEqual(
+            {weight.target, bias.target},
+            {name for name, _ in graph_module.named_parameters()},
+        )
+        buffers = dict(graph_module.named_buffers())
+        self.assertNotIn("batch_norm.running_mean", buffers)
+        self.assertNotIn("batch_norm.running_var", buffers)
+        actual = graph_module(inp)
         torch.testing.assert_close(actual, expected, atol=1e-5, rtol=1e-5)

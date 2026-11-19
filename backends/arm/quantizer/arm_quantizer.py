@@ -14,6 +14,7 @@ from __future__ import annotations
 import functools
 import logging
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
 import torch
@@ -46,7 +47,10 @@ from executorch.backends.cortex_m.quantizer.node_finders import (
 )
 from executorch.backends.cortex_m.quantizer.pattern_matcher import PatternMatcher
 
-from executorch.backends.cortex_m.quantizer_reporter import QuantizerReporter
+from executorch.backends.cortex_m.quantizer_reporter import (
+    logger as quantizer_reporter_logger,
+    QuantizerReporter,
+)
 from executorch.exir.graph_module import (
     _get_control_flow_submodules,
     get_cond_while_submodules,
@@ -651,9 +655,6 @@ class TOSAQuantizer(Quantizer):
         self.use_composable_quantizer = use_composable_quantizer
         self.quantizer: _TOSAQuantizerV1 | _TOSAQuantizerV2
         if use_composable_quantizer:
-            logger.info(
-                "Using composable quantizer implementation in the arm backend. See https://github.com/pytorch/executorch/issues/17701"
-            )
             self.quantizer = _TOSAQuantizerV2(compile_spec_or_tosa_spec)
         else:
             logger.info(
@@ -1350,7 +1351,25 @@ class _TOSAQuantizerV2(ComposableQuantizer):
     def annotate(self, model):
         reporter = QuantizerReporter(self.quantizers, "FINAL QUANTIZATION REPORT")
         model = super().annotate(model)
-        reporter.log_quantizer_report(model)
+        intermediate_path = self.compile_spec._get_intermediate_path()
+        file_handler = None
+        if (
+            intermediate_path is not None
+            and quantizer_reporter_logger.getEffectiveLevel() <= logging.INFO
+        ):
+            report_path = Path(intermediate_path) / "quantization_report.txt"
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            file_handler = logging.FileHandler(report_path)
+            quantizer_reporter_logger.addHandler(file_handler)
+        try:
+            reporter.log_quantizer_report(model)
+        finally:
+            if file_handler is not None:
+                quantizer_reporter_logger.removeHandler(file_handler)
+                logger.info(
+                    "Saved quantization report to %s.", file_handler.baseFilename
+                )
+                file_handler.close()
         return model
 
     def _remove_annotations(self, model: GraphModule) -> GraphModule:
@@ -1384,7 +1403,21 @@ The following nodes are not marked for quantization and will not be decomposed i
             for node in non_quantized_nodes:
                 msg += f"   {node.name}\n"
 
-            logger.debug(msg)
+            intermediate_path = self.compile_spec._get_intermediate_path()
+            file_handler = None
+            if intermediate_path is not None and logger.isEnabledFor(logging.DEBUG):
+                report_path = (
+                    Path(intermediate_path) / "pre_transform_quantization_report.txt"
+                )
+                report_path.parent.mkdir(parents=True, exist_ok=True)
+                file_handler = logging.FileHandler(report_path)
+                logger.addHandler(file_handler)
+            try:
+                logger.debug(msg)
+            finally:
+                if file_handler is not None:
+                    logger.removeHandler(file_handler)
+                    file_handler.close()
 
     def transform_for_annotation(self, model: GraphModule) -> GraphModule:
         # Transform_for_annotation should only decompose ops if quantized, which is

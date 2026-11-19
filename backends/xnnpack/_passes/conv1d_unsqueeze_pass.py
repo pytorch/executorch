@@ -125,6 +125,7 @@ class Conv1dUnsqueezePass(XNNPACKPass):
     def call(self, graph_module: torch.fx.GraphModule):
         graph = graph_module.graph
         node_list = list(graph.nodes)
+        unsqueezed_kernels = set()
         for node in node_list:
             if node.op == "call_function":
                 if node.target.__name__ == "aten.convolution.default":
@@ -132,10 +133,15 @@ class Conv1dUnsqueezePass(XNNPACKPass):
                     if is_dequant(kernel_node) and not is_quant(kernel_node.args[0]):
                         kernel_node = kernel_node.args[0]
 
-                    # The weight rank is the only reliable indicator of the conv
-                    # dimensionality. stride, padding and dilation may each be a
-                    # single value that ATen broadcasts over every spatial dim.
-                    if len(get_shape(kernel_node)) != 3:
+                    # The weight rank tells the conv dimensionality: stride,
+                    # padding and dilation may each be a single value that ATen
+                    # broadcasts over every spatial dim. A kernel shared by
+                    # several convs is unsqueezed once, so it is already 4d when
+                    # a later conv that uses it is reached.
+                    if (
+                        kernel_node not in unsqueezed_kernels
+                        and len(get_shape(kernel_node)) != 3
+                    ):
                         # skip conv if it is not 1d
                         continue
 
@@ -145,7 +151,9 @@ class Conv1dUnsqueezePass(XNNPACKPass):
                         )
 
                     # Modify graph such that the conv changes from 1d to 2d
-                    self.unsqueeze_kernel_weights(kernel_node)
+                    if kernel_node not in unsqueezed_kernels:
+                        self.unsqueeze_kernel_weights(kernel_node)
+                        unsqueezed_kernels.add(kernel_node)
 
                     # (b) Extend stride, padding, and dilation for extra dim
                     node.args = (

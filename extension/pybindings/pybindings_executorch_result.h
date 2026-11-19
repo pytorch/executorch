@@ -76,15 +76,28 @@ inline const PyTensorDType& python_dtype(
   return kDTypes[index];
 }
 
-inline executorch::aten::ScalarType scalar_type_from_torch_dtype(
-    const std::string& torch_dtype) {
+// The dtype that ExecuTorchResult.dtype calls `name`, such as "bfloat16".
+inline std::optional<executorch::aten::ScalarType> scalar_type_from_name(
+    const std::string& name) {
   using executorch::aten::ScalarType;
-  for (int8_t value = 0; value < static_cast<int8_t>(ScalarType::NumOptions);
+  // The dtype table ends at UInt64, while ATen's ScalarType goes on past it.
+  for (int8_t value = 0; value <= static_cast<int8_t>(ScalarType::UInt64);
        ++value) {
     const auto scalar_type = static_cast<ScalarType>(value);
-    const auto& dtype = python_dtype(scalar_type);
-    if (torch_dtype == std::string("torch.") + dtype.torch_name) {
+    if (name == python_dtype(scalar_type).torch_name) {
       return scalar_type;
+    }
+  }
+  return std::nullopt;
+}
+
+inline executorch::aten::ScalarType scalar_type_from_torch_dtype(
+    const std::string& torch_dtype) {
+  const std::string prefix = "torch.";
+  if (torch_dtype.compare(0, prefix.size(), prefix) == 0) {
+    if (const auto scalar_type =
+            scalar_type_from_name(torch_dtype.substr(prefix.size()))) {
+      return *scalar_type;
     }
   }
   throw py::value_error("Unsupported torch dtype: " + torch_dtype);
@@ -97,10 +110,19 @@ inline PyObject* loaded_torch_module() {
   static PyObject* torch_module = nullptr;
   if (torch_module == nullptr) {
     PyObject* loaded = PyDict_GetItemString(PyImport_GetModuleDict(), "torch");
-    if (loaded != nullptr) {
-      Py_INCREF(loaded);
-      torch_module = loaded;
+    if (loaded == nullptr || loaded == Py_None) {
+      return nullptr;
     }
+    // Owned first: the lookups below run Python code, which can remove it
+    // from sys.modules.
+    auto module = py::reinterpret_borrow<py::object>(loaded);
+    // A torch that another thread is still importing is not usable yet.
+    const auto spec = py::getattr(module, "__spec__", py::none());
+    if (!spec.is_none() &&
+        py::getattr(spec, "_initializing", py::bool_(false)).cast<bool>()) {
+      return nullptr;
+    }
+    torch_module = module.release().ptr();
   }
   return torch_module;
 }
@@ -112,16 +134,19 @@ inline void synchronize_torch_cuda_device(int index) {
 }
 
 // Waits for every queued operation on a device. Bindings built without CUDA
-// support have no CUDA runtime of their own, so they wait through torch's,
-// which is loaded whenever such bindings see CUDA memory.
+// support have no CUDA runtime of their own, so they wait through torch's
+// once torch is imported.
 inline void synchronize_device(int index) {
 #ifndef EXECUTORCH_PYBINDINGS_CUDA
-  if (loaded_torch_module() != nullptr) {
-    synchronize_torch_cuda_device(index);
-    return;
+  if (loaded_torch_module() == nullptr) {
+    throw std::runtime_error(
+        "CUDA tensor interchange requires bindings built with CUDA support, "
+        "or torch imported to wait for CUDA work");
   }
-#endif
+  synchronize_torch_cuda_device(index);
+#else
   synchronize_cuda_device(index);
+#endif
 }
 
 /** Tensor result returned by portable Python bindings. */
@@ -334,7 +359,8 @@ class PyExecuTorchResult final
       throw py::buffer_error(
           move ? "Moving an ExecuTorchResult to another device needs a copy"
                : "A read-only ExecuTorchResult is shared without a copy only "
-                 "through a DLPack 1.0 capsule, which marks it read-only");
+                 "through a versioned DLPack capsule, which marks it "
+                 "read-only");
     }
     // Wait for the device before handing CUDA memory to another library: the
     // result may share memory a call still has work queued on, or an upload
@@ -524,7 +550,7 @@ class PyExecuTorchResult final
           0};
       managed.manager_ctx = this;
       managed.deleter = release_dlpack_holder;
-      versioned.version = {1, 0};
+      versioned.version = dlpack::kVersion;
       versioned.manager_ctx = this;
       versioned.deleter = release_versioned_dlpack_holder;
       versioned.dl_tensor = managed.dl_tensor;
@@ -629,6 +655,14 @@ class PyExecuTorchResult final
         return {dlpack::DataTypeCode::UInt, 32, 1};
       case ScalarType::UInt64:
         return {dlpack::DataTypeCode::UInt, 64, 1};
+      case ScalarType::Float8_e4m3fn:
+        return {dlpack::DataTypeCode::Float8_e4m3fn, 8, 1};
+      case ScalarType::Float8_e4m3fnuz:
+        return {dlpack::DataTypeCode::Float8_e4m3fnuz, 8, 1};
+      case ScalarType::Float8_e5m2:
+        return {dlpack::DataTypeCode::Float8_e5m2, 8, 1};
+      case ScalarType::Float8_e5m2fnuz:
+        return {dlpack::DataTypeCode::Float8_e5m2fnuz, 8, 1};
       default:
         throw py::value_error(
             "ExecuTorch result dtype cannot be represented by DLPack");

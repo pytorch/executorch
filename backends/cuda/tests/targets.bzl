@@ -7,6 +7,16 @@ def define_common_targets(is_fbcode = False):
     if not is_fbcode:
         return
 
+    python_unittest(
+        name = "test_cpu_count",
+        srcs = [
+            "test_cpu_count.py",
+        ],
+        deps = [
+            "//executorch/backends/cuda:cpu_count",
+        ],
+    )
+
     python_unittest_remote_gpu(
         name = "test_cuda_export",
         srcs = [
@@ -16,9 +26,11 @@ def define_common_targets(is_fbcode = False):
             "//executorch/...",
         ],
         deps = [
+            ":routing_test_utils",
             "//caffe2:torch",
             "//executorch/backends/cuda:cuda_backend",
             "//executorch/backends/cuda:cuda_partitioner",
+            "//executorch/backends/cuda:triton_replacement_pass",
             "//executorch/exir:lib",
             "//executorch/exir/backend:backend_api",
             "//executorch/exir/backend:compile_spec_schema",
@@ -29,6 +41,164 @@ def define_common_targets(is_fbcode = False):
             platform = "gpu-remote-execution",
             subplatform = "A100",
         ),
+    )
+
+    python_unittest_remote_gpu(
+        name = "test_measured_routing",
+        srcs = [
+            "test_measured_routing.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/cuda:cuda_backend",
+            "//executorch/backends/cuda:cuda_partitioner",
+            "//executorch/backends/cuda:triton_measured_routing",
+            "//executorch/backends/cuda:triton_replacement_pass",
+            "//executorch/backends/cuda:triton_routing",
+            "//executorch/exir:lib",
+            "//executorch/exir/backend:compile_spec_schema",
+            "//executorch/exir/dialects:lib",
+            "//executorch/export:export_utils",
+        ],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+            subplatform = "A100",
+        ),
+    )
+
+    python_unittest_remote_gpu(
+        name = "test_triton_replacement",
+        srcs = [
+            "test_triton_replacement.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/cuda:triton_replacement_pass",
+            "//executorch/backends/cuda:triton_routing",
+        ],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+            subplatform = "A100",
+        ),
+    )
+
+    python_unittest_remote_gpu(
+        name = "test_conv_binding",
+        srcs = [
+            "test_conv_binding.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/cuda:triton_kernels",
+            "//executorch/exir/dialects:lib",
+        ],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+            subplatform = "A100",
+        ),
+    )
+
+    python_unittest_remote_gpu(
+        name = "test_conv_routing",
+        srcs = [
+            "test_conv_routing.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/cuda:cuda_backend",
+            "//executorch/backends/cuda:cuda_partitioner",
+            "//executorch/backends/cuda:triton_kernels",
+            "//executorch/backends/cuda:triton_measured_routing",
+            "//executorch/backends/cuda:triton_replacement_pass",
+            "//executorch/exir:lib",
+            "//executorch/exir/backend:backend_details",
+            "//executorch/exir/backend:compile_spec_schema",
+        ],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+            subplatform = "A100",
+        ),
+    )
+
+    python_unittest_remote_gpu(
+        name = "test_conv_depthwise",
+        srcs = [
+            "test_conv_depthwise.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            ":routing_test_utils",
+            "//caffe2:torch",
+            "//executorch/backends/cuda:autotune",
+            "//executorch/backends/cuda:cuda_backend",
+            "//executorch/backends/cuda:cuda_partitioner",
+            "//executorch/backends/cuda:triton_kernels",
+            "//executorch/exir:lib",
+            "//executorch/export:export_utils",
+        ],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+            subplatform = "A100",
+        ),
+    )
+
+    python_unittest_remote_gpu(
+        name = "test_conv_implicit_gemm",
+        env = {"EXECUTORCH_CUDA_EXHAUSTIVE_TESTS": "1"},
+        srcs = [
+            "test_conv_implicit_gemm.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            ":routing_test_utils",
+            "//caffe2:torch",
+            "//executorch/backends/cuda:autotune",
+            "//executorch/backends/cuda:cuda_backend",
+            "//executorch/backends/cuda:cuda_partitioner",
+            "//executorch/backends/cuda:triton_kernels",
+            "//executorch/exir:lib",
+            "//executorch/export:export_utils",
+        ],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+            subplatform = "A100",
+        ),
+    )
+
+    runtime.python_library(
+        name = "routing_test_utils",
+        srcs = [
+            "routing_test_utils.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            "//executorch/backends/cuda:cuda_backend",
+            "//executorch/exir/backend:compile_spec_schema",
+        ],
     )
 
     runtime.python_library(
@@ -42,6 +212,7 @@ def define_common_targets(is_fbcode = False):
         deps = [
             "//caffe2:torch",
             "//executorch/backends/cuda:autotune",
+            "//executorch/backends/cuda:cpu_count",
         ],
     )
 
@@ -383,6 +554,7 @@ def define_common_targets(is_fbcode = False):
         deps = [
             "//caffe2:torch",
             "//executorch/backends/cuda:cuda_backend",
+            "//executorch/backends/cuda:cuda_partitioner",
             "//executorch/exir:lib",
         ],
         keep_gpu_sections = True,

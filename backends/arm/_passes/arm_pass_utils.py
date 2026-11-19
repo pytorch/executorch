@@ -10,7 +10,7 @@ import math
 import operator
 import traceback
 from inspect import isclass
-from typing import cast, Optional, Sequence
+from typing import Any, cast, Optional, Sequence
 
 import torch
 import torch.fx
@@ -394,6 +394,25 @@ def _get_constant_scalar_value(value) -> float | None:
                 return None
 
     return None
+
+
+def get_compute_dtype(node: torch.fx.Node) -> torch.dtype | None:
+    """Return the dtype ``node`` computes in: the promoted dtype of its first
+    two operands for a boolean output with tensor or scalar operands, otherwise
+    its output dtype.
+    """
+    value = node.meta.get("val")
+    if not isinstance(value, torch.Tensor):
+        return None
+    if value.dtype != torch.bool or len(node.args) < 2:
+        return value.dtype
+    operands: list[Any] = [
+        arg.meta["val"] if isinstance(arg, torch.fx.Node) else arg
+        for arg in node.args[:2]
+    ]
+    if not all(isinstance(operand, (torch.Tensor, int, float)) for operand in operands):
+        return value.dtype
+    return torch.result_type(*operands)
 
 
 def _get_tensor_dtype(value) -> torch.dtype | None:
