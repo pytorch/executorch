@@ -385,7 +385,7 @@ void GraphBuilder::set(ValueId id, RuntimeValue value) {
   if (!in_bounds(id, values_.size())) {
     throw std::runtime_error("ggml: value id is out of range");
   }
-  const auto* ref = std::get_if<TensorRef>(&value);
+  auto* ref = std::get_if<TensorRef>(&value);
   if (ref != nullptr) {
     const auto ne = reversed_extents(ref->sizes);
     if (!std::equal(ne.begin(), ne.end(), ref->tensor->ne)) {
@@ -393,8 +393,30 @@ void GraphBuilder::set(ValueId id, RuntimeValue value) {
           "ggml: lowered tensor shape disagrees with value '" +
           method_.graph.value(id).name + "'");
     }
+    ref->tensor = narrowed_to_declared(id, ref->tensor);
   }
   values_.at(static_cast<size_t>(id)) = std::move(value);
+}
+
+// Eager rounds each op's result to its dtype, so an F16 or BF16 node result
+// that a lowering left in F32 (ggml_mul_mat always returns F32) is rounded
+// before later ops read it. Constants keep the types the codec gave them.
+ggml_tensor* GraphBuilder::narrowed_to_declared(
+    ValueId id,
+    ggml_tensor* tensor) {
+  const Value& value = method_.graph.value(id);
+  if (value.role != ValueRole::Intermediate || !value.is_tensor() ||
+      tensor->type != GGML_TYPE_F32) {
+    return tensor;
+  }
+  const ScalarType dtype = value.tensor_meta().dtype;
+  if (dtype != ScalarType::Half && dtype != ScalarType::BFloat16) {
+    return tensor;
+  }
+  return ggml_cast(
+      instance_.context.get(),
+      tensor,
+      dtype == ScalarType::Half ? GGML_TYPE_F16 : GGML_TYPE_BF16);
 }
 
 const RuntimeValue& GraphBuilder::value(ValueId id) const {
@@ -838,6 +860,12 @@ ggml_tensor* GraphBuilder::as_f32(ggml_tensor* tensor) {
   return tensor->type == GGML_TYPE_F32
       ? tensor
       : ggml_cast(instance_.context.get(), tensor, GGML_TYPE_F32);
+}
+
+ggml_tensor* GraphBuilder::half_as_f32(ggml_tensor* tensor) {
+  return tensor->type == GGML_TYPE_F16 || tensor->type == GGML_TYPE_BF16
+      ? as_f32(tensor)
+      : tensor;
 }
 
 ggml_tensor* GraphBuilder::as_i32(ggml_tensor* tensor) {
