@@ -390,8 +390,9 @@ def to_native(
     Args:
         programs: The exported program(s) to lower.
         metadata: Values a runtime reads by name, the package's counterpart to a
-            PTE's ``constant_methods``: each a bool, int, float, str, or a list
-            of those. Saved as the package's metadata.json.
+            PTE's ``constant_methods``: each a bool, int, float, str, a list of
+            those, or a tensor. Tensors are saved as the package's
+            metadata.safetensors and the rest as its metadata.json.
 
     Returns:
         A ``NativeProgramManager``; call ``save`` to write a .ptn package.

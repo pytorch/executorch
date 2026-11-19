@@ -163,7 +163,7 @@ TEST(PackageTest, ReadsMetadataByName) {
   const TempPackage file(
       {},
       {{kMetadataEntry,
-        R"({"get_n_caches":2,"get_windows":[0,4096],"arch":"llama","tied":true})"}});
+        R"({"get_n_caches":2,"get_windows":[0,4096],"arch":"llama","tied":true,"temperature":0.3})"}});
   const Package package = Package::load(file.path());
 
   EXPECT_EQ(package.metadata_int("get_n_caches"), 2);
@@ -175,11 +175,53 @@ TEST(PackageTest, ReadsMetadataByName) {
   EXPECT_THROW(package.metadata_ints("get_n_caches"), std::runtime_error);
   EXPECT_THROW(package.metadata_int("arch"), std::runtime_error);
   EXPECT_THROW(package.metadata_int("tied"), std::runtime_error);
+  EXPECT_EQ(package.metadata_string("arch"), "llama");
+  EXPECT_EQ(package.metadata_string("missing"), std::nullopt);
+  EXPECT_THROW(package.metadata_string("tied"), std::runtime_error);
+  EXPECT_THROW(package.metadata_string("get_n_caches"), std::runtime_error);
+  EXPECT_THROW(package.metadata_string("get_windows"), std::runtime_error);
+  EXPECT_EQ(package.metadata_double("temperature"), 0.3);
+  EXPECT_EQ(package.metadata_double("get_n_caches"), 2.0);
+  EXPECT_EQ(package.metadata_double("missing"), std::nullopt);
+  EXPECT_THROW(package.metadata_double("arch"), std::runtime_error);
+  EXPECT_THROW(package.metadata_double("tied"), std::runtime_error);
+  EXPECT_THROW(package.metadata_double("get_windows"), std::runtime_error);
   EXPECT_NO_THROW(package.verify());
 
   const TempPackage none;
   EXPECT_EQ(
       Package::load(none.path()).metadata_int("get_n_caches"), std::nullopt);
+  EXPECT_EQ(Package::load(none.path()).metadata_string("arch"), std::nullopt);
+}
+
+TEST(PackageTest, ReadsMetadataTensorsByName) {
+  const std::array<float, 2> bos{0.5F, -1.0F};
+  const std::vector<uint8_t> tensors = make_safetensors(
+      R"({"bos_embeds":{"dtype":"F32","shape":[1,1,2],"data_offsets":[0,8]}})",
+      std::string_view(reinterpret_cast<const char*>(bos.data()), sizeof(bos)));
+  const TempPackage file(
+      {},
+      {{kMetadataEntry, R"({"temperature":0.3})"},
+       {kMetadataTensorsEntry, std::string(tensors.begin(), tensors.end())}});
+  const Package package = Package::load(file.path());
+
+  const std::optional<MetadataTensor> tensor =
+      package.metadata_tensor("bos_embeds");
+  ASSERT_TRUE(tensor);
+  EXPECT_EQ(tensor->dtype, kFloat);
+  EXPECT_EQ(tensor->sizes, (std::vector<int64_t>{1, 1, 2}));
+  std::array<float, 2> values{};
+  ASSERT_EQ(tensor->data.span().size(), sizeof(values));
+  std::memcpy(values.data(), tensor->data.span().data(), sizeof(values));
+  EXPECT_EQ(values, bos);
+  EXPECT_FALSE(package.metadata_tensor("missing"));
+  EXPECT_THROW(package.metadata_tensor("temperature"), std::runtime_error);
+  EXPECT_THROW(package.metadata_double("bos_embeds"), std::runtime_error);
+  EXPECT_EQ(package.metadata_double("temperature"), 0.3);
+  EXPECT_NO_THROW(package.verify());
+
+  const TempPackage none;
+  EXPECT_FALSE(Package::load(none.path()).metadata_tensor("bos_embeds"));
 }
 
 TEST(PackageTest, RejectsMalformedMetadata) {
@@ -197,6 +239,24 @@ TEST(PackageTest, RejectsMalformedMetadata) {
       {}, {{kMetadataEntry, R"({"n":18446744073709551615})"}});
   EXPECT_THROW(
       Package::load(huge.path()).metadata_int("n"), std::runtime_error);
+}
+
+TEST(PackageTest, RejectsMalformedMetadataTensors) {
+  const auto member = [](std::string_view header) {
+    const std::vector<uint8_t> bytes = make_safetensors(header, "x");
+    return std::string(bytes.begin(), bytes.end());
+  };
+  for (const std::string& tensors :
+       {std::string("short"),
+        member(
+            R"({"temperature":{"dtype":"U8","shape":[1],"data_offsets":[0,1]}})"),
+        member(R"({"":{"dtype":"U8","shape":[1],"data_offsets":[0,1]}})")}) {
+    const TempPackage file(
+        {},
+        {{kMetadataEntry, R"({"temperature":0.3})"},
+         {kMetadataTensorsEntry, tensors}});
+    EXPECT_THROW(Package::load(file.path()), std::runtime_error);
+  }
 }
 
 TEST(PackageTest, ReportsMissingConstantsAndWrongDestinations) {
