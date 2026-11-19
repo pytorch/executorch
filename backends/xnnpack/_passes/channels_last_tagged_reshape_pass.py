@@ -6,6 +6,7 @@
 
 # pyre-unsafe
 
+import importlib
 from enum import Enum
 from typing import List, Optional, Tuple
 
@@ -30,6 +31,10 @@ from executorch.backends.xnnpack.utils.utils import (
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassResult
 from torch.fx.experimental.symbolic_shapes import has_free_symbols
+
+# Registers the et_xnnpack ops. A bare `import` would stay deferred under lazy
+# imports, leaving the ops unregistered when they are looked up below.
+importlib.import_module("executorch.backends.xnnpack.custom_ops_lib")
 
 
 class InputDimOrder(Enum):
@@ -70,6 +75,7 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
         exir_ops.edge.aten.convolution.default,
         exir_ops.edge.aten.upsample_bilinear2d.vec,
         exir_ops.edge.aten.upsample_nearest2d.vec,
+        exir_ops.edge.et_xnnpack.depth_to_space_2d.default,
         exir_ops.edge.aten.max_pool2d.default,
         exir_ops.edge.aten.amax.default,
         exir_ops.edge.aten.max.dim,
@@ -82,6 +88,8 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
         exir_ops.edge.aten.squeeze_copy.dim,
         exir_ops.edge.aten.unsqueeze_copy.default,
         exir_ops.edge.aten.linear.default,
+        # XNNPACK softmax normalizes over the innermost dim, which is C in NHWC.
+        exir_ops.edge.aten._softmax.default,
     }
 
     # Broadcasting binary ops whose operands must share one memory format.

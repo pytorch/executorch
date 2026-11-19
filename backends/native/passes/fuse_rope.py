@@ -333,8 +333,31 @@ def _trig_source(
     return phase, scale
 
 
+def _broadcast_frequency_product(product: Node) -> "tuple[Node, Node] | None":
+    """Match ``position_ids[..., None].float() * inv_freq``, the outer product
+    some HF models (e.g. Muse Glimmer) build without a matmul."""
+    t = _fake_tensor(product)
+    if t is None or t.dtype != torch.float32 or t.dim() != 3:
+        return None
+    a, b = product.args[:2]
+    for pos, inv in ((a, b), (b, a)):
+        if not isinstance(pos, Node) or not isinstance(inv, Node):
+            continue
+        pos = _float_source(pos)
+        position_ids = _unsqueeze_source(pos, 2) if pos is not None else None
+        inv_freq = _float_source(inv)
+        if (
+            position_ids is not None
+            and _ndim(position_ids) == 2
+            and inv_freq is not None
+            and _ndim(inv_freq) == 1
+        ):
+            return position_ids, inv_freq
+    return None
+
+
 def _frequency_product(phase: Node) -> "tuple[Node, Node] | None":  # noqa: C901
-    """Recover positions/inverse frequencies from HF's duplicated batched outer product."""
+    """Recover positions/inverse frequencies from HF's duplicated outer product."""
     if not _is_op(phase, torch.ops.aten.cat.default):
         return None
     tensors = phase.args[0]
@@ -346,6 +369,8 @@ def _frequency_product(phase: Node) -> "tuple[Node, Node] | None":  # noqa: C901
         return None
     if (phase.args[1] if len(phase.args) > 1 else 0) not in (-1, 2):
         return None
+    if _is_op(tensors[0], torch.ops.aten.mul.Tensor):
+        return _broadcast_frequency_product(tensors[0])
     transposed = tensors[0]
     if _is_op(
         transposed, torch.ops.aten.permute_copy.default, torch.ops.aten.permute.default

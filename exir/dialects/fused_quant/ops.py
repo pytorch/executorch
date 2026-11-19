@@ -7,7 +7,7 @@
 
 import dataclasses
 from collections.abc import Sequence
-from typing import Callable, Generic, Optional, TypeVar, Union
+from typing import Callable, cast, Generic, Optional, TypeVar, Union
 
 import torch
 
@@ -1147,6 +1147,152 @@ def _sub_meta(
 
 
 _sub_impl.register_fake(_sub_meta)
+
+
+@torch.library.custom_op("fused_quant::minimum", mutates_args=())
+def _minimum_impl(
+    inp: torch.Tensor,
+    other: torch.Tensor,
+    inp_scale: Optional[torch.Tensor],
+    inp_zero_point: Optional[torch.Tensor],
+    inp_dtype: torch.dtype,
+    inp_quant_min: int,
+    inp_quant_max: int,
+    other_scale: Optional[torch.Tensor],
+    other_zero_point: Optional[torch.Tensor],
+    other_dtype: torch.dtype,
+    other_quant_min: int,
+    other_quant_max: int,
+    out_scale: Optional[torch.Tensor],
+    out_zero_point: Optional[torch.Tensor],
+    out_dtype: torch.dtype,
+    out_quant_min: int,
+    out_quant_max: int,
+) -> torch.Tensor:
+    return _binary_op_impl(
+        inp,
+        other,
+        _make_qp(inp_scale, inp_zero_point, inp_dtype, inp_quant_min, inp_quant_max),
+        _make_qp(
+            other_scale,
+            other_zero_point,
+            other_dtype,
+            other_quant_min,
+            other_quant_max,
+        ),
+        _make_qp(out_scale, out_zero_point, out_dtype, out_quant_min, out_quant_max),
+        fn=torch.minimum,
+    )
+
+
+def _minimum_meta(
+    inp: torch.Tensor,
+    other: torch.Tensor,
+    inp_scale: Optional[torch.Tensor],
+    inp_zero_point: Optional[torch.Tensor],
+    inp_dtype: torch.dtype,
+    inp_quant_min: int,
+    inp_quant_max: int,
+    other_scale: Optional[torch.Tensor],
+    other_zero_point: Optional[torch.Tensor],
+    other_dtype: torch.dtype,
+    other_quant_min: int,
+    other_quant_max: int,
+    out_scale: Optional[torch.Tensor],
+    out_zero_point: Optional[torch.Tensor],
+    out_dtype: torch.dtype,
+    out_quant_min: int,
+    out_quant_max: int,
+) -> torch.Tensor:
+    return _binary_op_meta(
+        inp,
+        other,
+        _make_qp(inp_scale, inp_zero_point, inp_dtype, inp_quant_min, inp_quant_max),
+        _make_qp(
+            other_scale,
+            other_zero_point,
+            other_dtype,
+            other_quant_min,
+            other_quant_max,
+        ),
+        _make_qp(out_scale, out_zero_point, out_dtype, out_quant_min, out_quant_max),
+    )
+
+
+_minimum_impl.register_fake(_minimum_meta)
+
+
+@torch.library.custom_op("fused_quant::maximum", mutates_args=())
+def _maximum_impl(
+    inp: torch.Tensor,
+    other: torch.Tensor,
+    inp_scale: Optional[torch.Tensor],
+    inp_zero_point: Optional[torch.Tensor],
+    inp_dtype: torch.dtype,
+    inp_quant_min: int,
+    inp_quant_max: int,
+    other_scale: Optional[torch.Tensor],
+    other_zero_point: Optional[torch.Tensor],
+    other_dtype: torch.dtype,
+    other_quant_min: int,
+    other_quant_max: int,
+    out_scale: Optional[torch.Tensor],
+    out_zero_point: Optional[torch.Tensor],
+    out_dtype: torch.dtype,
+    out_quant_min: int,
+    out_quant_max: int,
+) -> torch.Tensor:
+    return _binary_op_impl(
+        inp,
+        other,
+        _make_qp(inp_scale, inp_zero_point, inp_dtype, inp_quant_min, inp_quant_max),
+        _make_qp(
+            other_scale,
+            other_zero_point,
+            other_dtype,
+            other_quant_min,
+            other_quant_max,
+        ),
+        _make_qp(out_scale, out_zero_point, out_dtype, out_quant_min, out_quant_max),
+        fn=torch.maximum,
+    )
+
+
+def _maximum_meta(
+    inp: torch.Tensor,
+    other: torch.Tensor,
+    inp_scale: Optional[torch.Tensor],
+    inp_zero_point: Optional[torch.Tensor],
+    inp_dtype: torch.dtype,
+    inp_quant_min: int,
+    inp_quant_max: int,
+    other_scale: Optional[torch.Tensor],
+    other_zero_point: Optional[torch.Tensor],
+    other_dtype: torch.dtype,
+    other_quant_min: int,
+    other_quant_max: int,
+    out_scale: Optional[torch.Tensor],
+    out_zero_point: Optional[torch.Tensor],
+    out_dtype: torch.dtype,
+    out_quant_min: int,
+    out_quant_max: int,
+) -> torch.Tensor:
+    return _binary_op_meta(
+        inp,
+        other,
+        _make_qp(inp_scale, inp_zero_point, inp_dtype, inp_quant_min, inp_quant_max),
+        _make_qp(
+            other_scale,
+            other_zero_point,
+            other_dtype,
+            other_quant_min,
+            other_quant_max,
+        ),
+        _make_qp(out_scale, out_zero_point, out_dtype, out_quant_min, out_quant_max),
+    )
+
+
+_maximum_impl.register_fake(_maximum_meta)
 
 
 # =============================================================================
@@ -2586,3 +2732,122 @@ def _embedding_meta(
 
 
 _embedding_impl.register_fake(_embedding_meta)
+
+
+# =============================================================================
+# Reductions, softmax and elementwise math
+#
+# Each is ``dequantize -> ATen op -> quantize``, with the ATen op's own
+# non-tensor arguments, names and defaults passed through after the qparams
+# blocks. Mirroring the ATen schema is what lets fuse_aten and
+# DecomposeFusedQuant map one onto the other by name. ATen's keyword-only
+# ``dtype`` becomes positional, since the fused args are laid out positionally.
+# =============================================================================
+
+_QPARAM_BLOCK_SCHEMA = (
+    "Tensor? {0}_scale, Tensor? {0}_zero_point, ScalarType {0}_dtype, "
+    "SymInt {0}_quant_min, SymInt {0}_quant_max"
+)
+_QPARAM_BLOCK_SIZE = 5
+
+
+def _define_dq_op_q(
+    name: str,
+    inputs: tuple[str, ...],
+    extras: str,
+    aten_op: torch._ops.OpOverload,
+) -> None:
+    """Define ``fused_quant::<name>``: dequantize the inputs, run aten_op, quantize."""
+    blocks = ", ".join(_QPARAM_BLOCK_SCHEMA.format(p) for p in (*inputs, "out"))
+    tensors = ", ".join(f"Tensor {inp}" for inp in inputs)
+    _lib.define(
+        f"{name}({tensors}, {blocks}{', ' + extras if extras else ''}) -> Tensor"
+    )
+    count = len(inputs)
+
+    def split(
+        args: tuple[object, ...],
+    ) -> tuple[list[torch.Tensor], list[_QP], _QP, tuple[object, ...]]:
+        qparams = [
+            # pyrefly: ignore[bad-argument-type]
+            _make_qp(*args[start : start + _QPARAM_BLOCK_SIZE])
+            for start in range(
+                count, count + (count + 1) * _QPARAM_BLOCK_SIZE, _QPARAM_BLOCK_SIZE
+            )
+        ]
+        _validate_qparams(*qparams)
+        tensors = [cast(torch.Tensor, arg) for arg in args[:count]]
+        # Extras the dispatcher left at their defaults may be absent; aten_op
+        # shares the defaults, so passing the rest positionally is the same call.
+        return (
+            tensors,
+            qparams[:count],
+            qparams[count],
+            args[count + (count + 1) * _QPARAM_BLOCK_SIZE :],
+        )
+
+    def impl(*args: object) -> torch.Tensor:
+        tensors, inp_qps, out_qp, extra = split(args)
+        dequantized = [_maybe_dequantize(t, qp) for t, qp in zip(tensors, inp_qps)]
+        return _maybe_quantize(aten_op(*dequantized, *extra), out_qp)
+
+    def meta(*args: object) -> torch.Tensor:
+        tensors, inp_qps, out_qp, extra = split(args)
+        dequantized = [
+            t.new_empty(t.shape, dtype=dequantized_dtype(t, qp))
+            for t, qp in zip(tensors, inp_qps)
+        ]
+        out = aten_op(*dequantized, *extra)
+        return out.new_empty(out.shape, dtype=get_out_dtype(out_qp, out.dtype))
+
+    _lib.impl(name, impl, "CompositeExplicitAutograd")
+    register_fake(f"fused_quant::{name}", meta, lib=_lib)
+
+
+_REDUCE_EXTRAS = "int[1]? dim, bool keepdim=False, ScalarType? dtype=None"
+
+for _name, _inputs, _extras, _aten_op in (
+    ("mean.dim", ("inp",), _REDUCE_EXTRAS, torch.ops.aten.mean.dim),
+    ("sum.dim_IntList", ("inp",), _REDUCE_EXTRAS, torch.ops.aten.sum.dim_IntList),
+    (
+        "amax",
+        ("inp",),
+        "int[1] dim=[], bool keepdim=False",
+        torch.ops.aten.amax.default,
+    ),
+    (
+        "_softmax",
+        ("inp",),
+        "int dim, bool half_to_float",
+        torch.ops.aten._softmax.default,
+    ),
+    (
+        "_log_softmax",
+        ("inp",),
+        "int dim, bool half_to_float",
+        torch.ops.aten._log_softmax.default,
+    ),
+    ("rsqrt", ("inp",), "", torch.ops.aten.rsqrt.default),
+    ("sqrt", ("inp",), "", torch.ops.aten.sqrt.default),
+    (
+        "pow.Tensor_Scalar",
+        ("inp",),
+        "Scalar exponent",
+        torch.ops.aten.pow.Tensor_Scalar,
+    ),
+    (
+        "clamp",
+        ("inp",),
+        "Scalar? min=None, Scalar? max=None",
+        torch.ops.aten.clamp.default,
+    ),
+    ("div", ("inp", "other"), "", torch.ops.aten.div.Tensor),
+    ("div.Scalar", ("inp",), "Scalar other", torch.ops.aten.div.Scalar),
+    (
+        "leaky_relu",
+        ("inp",),
+        "Scalar negative_slope=0.01",
+        torch.ops.aten.leaky_relu.default,
+    ),
+):
+    _define_dq_op_q(_name, _inputs, _extras, _aten_op)

@@ -308,11 +308,13 @@ Registered convolution routes:
 
 | Operator | Routes and options |
 | --- | --- |
-| `aten.convolution.default`, `et_vk.conv_with_clamp.default`, `et_vk.conv2d.with_epilogue` | `auto`, `direct`, `im2col`. `direct` accepts `masked: true`, which disables the border-specialized shader variants. `im2col` accepts `intermediate_storage`: `buffer`, `texture2d`, or `texture3d`; omission uses the production choice. For batch-1 depthwise convolutions, `aten.convolution.default` and `et_vk.conv2d.with_epilogue` also accept `b1x1` and `b4x2`, which force the 1x1 output tile or the default tile. |
+| `aten.convolution.default`, `et_vk.conv_with_clamp.default`, `et_vk.conv2d.with_epilogue` | `auto`, `direct`, `im2col`, `winograd`. `direct` accepts `masked: true`, which disables the border-specialized shader variants. `im2col` accepts `intermediate_storage`: `buffer`, `texture2d`, or `texture3d`; omission uses the production choice. `winograd` accepts `chunk_rows`, a positive number of output tile rows per chunk, and `weight_storage`: `buffer` or `texture2d`; omission uses the production choice. For batch-1 depthwise convolutions, `aten.convolution.default` and `et_vk.conv2d.with_epilogue` also accept `b1x1` and `b4x2`, which force the 1x1 output tile or the default tile. |
 | `et_vk.q8ta_conv2d.default` | `auto`, `direct` (general convolution), `im2col`. No route options. |
 
 The floating-point forced routes currently support forward 2D convolution with
 batch 1 and channels-packed texture3d input/output. im2col requires groups 1.
+winograd requires groups 1, Half tensors, and a 3x3 kernel with stride 1,
+dilation 1, and padding 1.
 The Q8TA routes use packed int8 buffers and the production streaming feasibility
 checks. Route eligibility is separate from automatic performance heuristics:
 for example, forcing floating-point im2col can test dilated convolutions even
@@ -1048,9 +1050,8 @@ shapes, it includes the smallest performance-collection cases that dispatch a
 shader no correctness shape reaches. Performance collections exist to measure
 latency and are not run in CI. Correctness cases that fail because of known
 operator bugs live in separate collections named after the bug, such as
-`convolution/q8ta/cases/legacy_4w4c_padding.json` and
-`embedding/qw/q4gsw/cases/texture3d_multirow_indices.json`, so CI stays green
-while the cases remain available for a fix.
+`convolution/q8ta/cases/legacy_4w4c_padding.json`, so CI stays green while the
+cases remain available for a fix.
 
 ## Schema audits and validation-only runs
 

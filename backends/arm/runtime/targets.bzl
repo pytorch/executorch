@@ -30,7 +30,9 @@ def define_common_targets():
     )
     runtime.cxx_library(
         name = "ethosu_execution_stats",
-        srcs = ["EthosUExecutionStats.cpp"],
+        srcs = ["EthosUExecutionStats.cpp", "EthosUExecutionStats_CoreDriver.cpp"],
+        headers = ["EthosUExecutionStats_Internal.h"],
+        link_whole = True,
         compatible_with = ["ovr_config//cpu:arm32-embedded", "ovr_config//cpu:arm32-embedded-fpu"],
         exported_headers = ["EthosUExecutionStats.h"],
         exported_deps = [
