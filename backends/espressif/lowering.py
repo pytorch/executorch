@@ -51,7 +51,11 @@ def _operator_library_report(edge: EdgeProgramManager) -> dict:
 
 
 def to_espnn_edge(
-    program, allow_cpu_fallback: bool = True, *, use_operator_library: bool = False
+    program,
+    allow_cpu_fallback: bool = True,
+    *,
+    use_operator_library: bool = False,
+    delegate_mutable_buffers: bool = False,
 ):
     """
     Lower a PT2E-quantized torch.export program for the ESP32 ExecuTorch
@@ -63,6 +67,9 @@ def to_espnn_edge(
     operators and executable Q/DQ.
     Its report counts esp_nn_ops and lists remaining cpu_ops by method,
     excluding Q/DQ and structural getitem nodes.
+
+    With delegate_mutable_buffers=True, the delegates own the quantized mutable
+    buffers (streaming state) they read and update; see EspNNPartitioner.
     """
     if use_operator_library:
         edge = to_edge_transform_and_lower(
@@ -81,7 +88,10 @@ def to_espnn_edge(
             )
         return edge, report
 
-    partitioner = EspNNPartitioner(allow_cpu_fallback=allow_cpu_fallback)
+    partitioner = EspNNPartitioner(
+        allow_cpu_fallback=allow_cpu_fallback,
+        delegate_mutable_buffers=delegate_mutable_buffers,
+    )
     edge = to_edge_transform_and_lower(
         program,
         transform_passes=[DuplicateDequantNodePass()],
