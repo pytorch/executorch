@@ -782,6 +782,7 @@ def main():
             "winograd_boundary",
             "conv3d_boundary",
             "conv1d_boundary",
+            "pointwise_boundary",
         ],
     )
     parser.add_argument(
@@ -797,6 +798,12 @@ def main():
     )
     parser.add_argument(
         "--groups", help="shapes suite: comma-separated groups, e.g. 3x3,1d_k5"
+    )
+    parser.add_argument(
+        "--no-layout-optimization",
+        action="store_true",
+        help="Inductor with layout optimization off, as it decides for a graph "
+        "with few convolutions",
     )
     parser.add_argument("--shard", default="0/1", help="run cases i::n of the suite")
     parser.add_argument("--warm", action="store_true", help="do not flush L2")
@@ -820,7 +827,14 @@ def main():
             "conv3d boundary", implicit_gemm.conv3d_boundary_calls(), args.precision
         ),
         "conv1d_boundary": lambda: conv1d_corner_cases(args.precision),
+        "pointwise_boundary": lambda: corner_cases(
+            "pointwise boundary",
+            implicit_gemm.pointwise_boundary_calls(),
+            args.precision,
+        ),
     }[args.suite]()
+    if args.no_layout_optimization:
+        torch._inductor.config.layout_optimization = False
     index, count = map(int, args.shard.split("/"))
     l2_bytes = torch.cuda.get_device_properties(0).L2_cache_size
     flush = (

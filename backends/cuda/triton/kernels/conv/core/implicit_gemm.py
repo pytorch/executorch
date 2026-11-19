@@ -220,30 +220,24 @@ ROUTED_FAMILIES = (
 )
 
 
-# Dense 3x3 stage convolutions of convolutional backbones in strict FP32:
-# (kernel, stride, padding, C_out / C_in, smallest and largest C_in). The
+# Dense stage convolutions of convolutional backbones and encoders in strict
+# FP32: (kernel, stride, padding, C_out / C_in, smallest and largest C_in). The
 # benchmark's ``stage_boundary`` suite measures ``stage_boundary_calls()``,
 # every corner of these limits.
 STAGE_GEOMETRIES = (
     ((3, 3), (1, 1), (1, 1), 1, 64, 512),
-    ((3, 3), (2, 2), (1, 1), 2, 64, 256),
+    ((3, 3), (2, 2), (1, 1), 2, 64, 1024),
+    ((3, 3), (2, 2), (0, 0), 1, 64, 64),
+    ((5, 5), (2, 2), (0, 0), 1, 32, 64),
 )
 MAX_STAGE_BATCH = 8
 MAX_STAGE_EXTENT = 160
 MAX_STAGE_INPUT_PIXELS = 120 * 160
-# Larger outputs fill the GPU without splitting K, where the FFMA schedules are
-# no faster than Inductor's template.
-MAX_STAGE_OUTPUT_ELEMENTS = 160 * 1024
+# Fewer outputs are bound by launches; larger ones fill the GPU without
+# splitting K, where the FFMA schedules are no faster than Inductor's template.
+MIN_STAGE_OUTPUT_ELEMENTS = 512
+MAX_STAGE_OUTPUT_ELEMENTS = 240 * 1024
 STAGE_LAYOUTS = frozenset({("contiguous", "contiguous", "contiguous")})
-
-
-def _within_stage_limits(x: torch.Tensor) -> bool:
-    n, _, *extent = x.shape
-    return (
-        n <= MAX_STAGE_BATCH
-        and max(extent) <= MAX_STAGE_EXTENT
-        and n * math.prod(extent) <= MAX_STAGE_INPUT_PIXELS
-    )
 
 
 def _stage_reason(call: ConvCall) -> Optional[str]:
@@ -264,10 +258,13 @@ def _stage_reason(call: ConvCall) -> Optional[str]:
         return f"implicit GEMM: {channels} input channels are not benchmarked faster"
     if x.dtype != torch.float32 or conv_allows_tf32():
         return f"implicit GEMM: {x.dtype} stage convolutions are not benchmarked"
+    n, _, *extent = x.shape
+    outputs = n * math.prod(_output_size(call)) * w.shape[0]
     if (
-        not _within_stage_limits(x)
-        or x.shape[0] * math.prod(_output_size(call)) * w.shape[0]
-        > MAX_STAGE_OUTPUT_ELEMENTS
+        n > MAX_STAGE_BATCH
+        or max(extent) > MAX_STAGE_EXTENT
+        or n * math.prod(extent) > MAX_STAGE_INPUT_PIXELS
+        or not MIN_STAGE_OUTPUT_ELEMENTS <= outputs <= MAX_STAGE_OUTPUT_ELEMENTS
     ):
         return (
             f"implicit GEMM: input {list(x.shape)} is outside the benchmarked "
@@ -286,42 +283,54 @@ def stage_boundary_calls() -> (
 ):
     """(input shape, C_out, kernel, stride, padding) of every stage geometry at
     every corner of its limits: the fewest and most input channels; each
-    spatial dimension at its smallest (3) or largest extent, the largest
-    reduced until one image fits ``MAX_STAGE_INPUT_PIXELS`` and
-    ``MAX_STAGE_OUTPUT_ELEMENTS``; one image and the most images that fit."""
+    spatial dimension at its smallest or largest extent, the smallest (from 3,
+    or the kernel size) grown until one image has ``MIN_STAGE_OUTPUT_ELEMENTS``
+    outputs and the largest reduced until one image fits
+    ``MAX_STAGE_INPUT_PIXELS`` and ``MAX_STAGE_OUTPUT_ELEMENTS``; one image and
+    the most images that fit."""
     calls = []
     for kernel, stride, padding, multiplier, *channel_range in STAGE_GEOMETRIES:
-        for channels, extent in itertools.product(
-            channel_range, itertools.product((3, MAX_STAGE_EXTENT), repeat=2)
-        ):
+        for channels in channel_range:
             out_channels = multiplier * channels
             geometry = (kernel, stride, padding, out_channels)
-            extent = list(extent)
-            while (
-                math.prod(extent) > MAX_STAGE_INPUT_PIXELS
-                or _stage_outputs(extent, *geometry) > MAX_STAGE_OUTPUT_ELEMENTS
-            ):
-                i = max(range(2), key=lambda d: extent[d])
-                extent[i] -= 1
-            most = min(
-                MAX_STAGE_BATCH,
-                MAX_STAGE_INPUT_PIXELS // math.prod(extent),
-                MAX_STAGE_OUTPUT_ELEMENTS // _stage_outputs(extent, *geometry),
-            )
-            for batch in sorted({1, most}):
-                calls.append(
-                    ((batch, channels, *extent), out_channels, kernel, stride, padding)
+            smallest = max(3, *kernel)
+            while _stage_outputs([smallest] * 2, *geometry) < MIN_STAGE_OUTPUT_ELEMENTS:
+                smallest += 1
+            for extent in itertools.product((smallest, MAX_STAGE_EXTENT), repeat=2):
+                extent = list(extent)
+                while (
+                    math.prod(extent) > MAX_STAGE_INPUT_PIXELS
+                    or _stage_outputs(extent, *geometry) > MAX_STAGE_OUTPUT_ELEMENTS
+                ):
+                    i = max(range(2), key=lambda d: extent[d])
+                    extent[i] -= 1
+                most = min(
+                    MAX_STAGE_BATCH,
+                    MAX_STAGE_INPUT_PIXELS // math.prod(extent),
+                    MAX_STAGE_OUTPUT_ELEMENTS // _stage_outputs(extent, *geometry),
                 )
-    return calls
+                for batch in sorted({1, most}):
+                    calls.append(
+                        (
+                            (batch, channels, *extent),
+                            out_channels,
+                            kernel,
+                            stride,
+                            padding,
+                        )
+                    )
+    return list(dict.fromkeys(calls))
 
 
 # Strict-FP32 3x3 stride-1 convolutions with input and output channels in
-# WINOGRAD_CHANNELS, within the stage batch, extent and input-pixel limits, at
-# any output size: ``winograd_f4`` does a quarter of the multiplies of a direct
-# convolution such as Inductor's template. The benchmark's
-# ``winograd_boundary`` suite measures ``winograd_boundary_calls()``, every
-# corner of these limits.
+# WINOGRAD_CHANNELS, at any batch and extent ``winograd_f4`` can index:
+# it does a quarter of the multiplies of a direct convolution such as
+# Inductor's template, so it stays ahead as calls grow. The benchmark's
+# ``winograd_boundary`` suite measures ``winograd_boundary_calls()``.
 WINOGRAD_CHANNELS = (64, 512)
+# The large input the boundary calls measure; the range has no upper extent.
+WINOGRAD_LARGE_EXTENT = (240, 320)
+WINOGRAD_BATCHES = (1, 4)
 
 
 def _winograd_reason(call: ConvCall) -> Optional[str]:
@@ -338,11 +347,6 @@ def _winograd_reason(call: ConvCall) -> Optional[str]:
         )
     if conv_allows_tf32():
         return "implicit GEMM: winograd_f4 is not benchmarked against TF32"
-    if not _within_stage_limits(x):
-        return (
-            f"implicit GEMM: input {list(x.shape)} is outside the benchmarked "
-            "winograd_f4 range"
-        )
     reason = unbenchmarked_layout(call, STAGE_LAYOUTS)
     return None if reason is None else f"implicit GEMM: {reason}"
 
@@ -350,75 +354,92 @@ def _winograd_reason(call: ConvCall) -> Optional[str]:
 def winograd_boundary_calls() -> (
     list[tuple[tuple[int, ...], int, tuple[int, ...], tuple[int, ...], tuple[int, ...]]]
 ):
-    """(input shape, C_out, kernel, stride, padding) at every corner of the
-    Winograd range: the fewest and most input and output channels; each
-    spatial dimension at its smallest (3) or largest extent, the largest
-    reduced until one image fits ``MAX_STAGE_INPUT_PIXELS``; one image and the
-    most images that fit."""
-    calls = []
-    for channels, out_channels, extent in itertools.product(
-        WINOGRAD_CHANNELS,
-        WINOGRAD_CHANNELS,
-        itertools.product((3, MAX_STAGE_EXTENT), repeat=2),
-    ):
-        extent = list(extent)
-        while math.prod(extent) > MAX_STAGE_INPUT_PIXELS:
-            i = max(range(2), key=lambda d: extent[d])
-            extent[i] -= 1
-        most = min(MAX_STAGE_BATCH, MAX_STAGE_INPUT_PIXELS // math.prod(extent))
-        for batch in sorted({1, most}):
-            calls.append(
-                ((batch, channels, *extent), out_channels, (3, 3), (1, 1), (1, 1))
-            )
-    return calls
+    """(input shape, C_out, kernel, stride, padding) with the fewest and most
+    input and output channels, a 3x3 input and ``WINOGRAD_LARGE_EXTENT``, and
+    each of ``WINOGRAD_BATCHES`` images."""
+    return [
+        ((batch, channels, *extent), out_channels, (3, 3), (1, 1), (1, 1))
+        for channels, out_channels, extent, batch in itertools.product(
+            WINOGRAD_CHANNELS,
+            WINOGRAD_CHANNELS,
+            ((3, 3), WINOGRAD_LARGE_EXTENT),
+            WINOGRAD_BATCHES,
+        )
+    ]
 
 
-# Dense 3x3x3 stride-1 convolutions with padding 0 or 1 on tensor cores (FP16
-# and BF16), with CONV3D_CHANNELS input and output channels and at least
-# CONV3D_MIN_OUTPUT_PIXELS output pixels, at any larger batch and extent, with
-# contiguous input, weight and output. ``igemm_tc_packed`` reads both GEMM
-# operands along their contiguous dims, which Inductor's template does not for
-# a channel-first input, and stays compute-bound as calls grow; fewer output
-# pixels leave too few tiles to hide the operand copies. The benchmark's
-# ``conv3d_boundary`` suite measures ``conv3d_boundary_calls()``.
-CONV3D_GEOMETRIES = (
-    ((3, 3, 3), (1, 1, 1), (0, 0, 0)),
-    ((3, 3, 3), (1, 1, 1), (1, 1, 1)),
+# Dense 3-D convolutions on tensor cores (FP16 and BF16) with contiguous
+# input, weight and output: (kernel, stride, padding, input channels, output
+# channels, output pixels (batch times output volume; None: no upper bound),
+# the (batch, *extent) inputs the benchmark's ``conv3d_boundary`` suite
+# measures at each corner channel count, ``conv3d_boundary_calls()``).
+# ``igemm_tc_packed`` reads both GEMM operands along their contiguous dims,
+# which Inductor's template does not for a channel-first input. 3x3x3
+# convolutions stay compute-bound as calls grow; fewer output pixels leave too
+# few tiles to hide the operand copies. A (3,1,1) convolution with stride
+# (2,1,1) reduces over only three taps, and Inductor's template catches up on
+# larger outputs.
+CONV3D_RANGES = (
+    (
+        (3, 3, 3),
+        (1, 1, 1),
+        (0, 0, 0),
+        (64, 1024),
+        (64, 1024),
+        (64, None),
+        ((1, 6, 6, 6), (2, 6, 6, 6), (1, 18, 34, 34), (2, 18, 34, 34)),
+    ),
+    (
+        (3, 3, 3),
+        (1, 1, 1),
+        (1, 1, 1),
+        (64, 1024),
+        (64, 1024),
+        (64, None),
+        ((1, 4, 4, 4), (2, 4, 4, 4), (1, 18, 34, 34), (2, 18, 34, 34)),
+    ),
+    (
+        (3, 1, 1),
+        (2, 1, 1),
+        (0, 0, 0),
+        (256, 1024),
+        (128, 1024),
+        (64, 2048),
+        ((1, 3, 8, 8), (2, 3, 4, 8), (1, 17, 16, 16), (2, 9, 16, 16)),
+    ),
 )
-CONV3D_CHANNELS = (64, 1024)
-CONV3D_MIN_OUTPUT_PIXELS = 64
 CONV3D_DTYPES = frozenset({torch.float16, torch.bfloat16})
 CONV3D_LAYOUTS = frozenset({("contiguous", "contiguous", "contiguous")})
-# The large extent the boundary calls measure; the range has no upper extent.
-CONV3D_LARGE_EXTENT = (18, 34, 34)
 
 
-def _in_conv3d_geometry(call: ConvCall) -> bool:
+def _conv3d_range(call: ConvCall) -> Optional[tuple]:
     p = call.params
+    if p.rank != 3 or p.transposed or p.padding_after != p.padding_before:
+        return None
     geometry = (tuple(call.weight.shape[2:]), p.stride, p.padding_before)
-    return (
-        p.rank == 3
-        and not p.transposed
-        and p.padding_after == p.padding_before
-        and geometry in CONV3D_GEOMETRIES
-    )
+    return next((r for r in CONV3D_RANGES if r[:3] == geometry), None)
 
 
 def _conv3d_reason(call: ConvCall) -> Optional[str]:
-    """Why ``call`` is outside the benchmarked 3-D range, or None."""
+    """Why ``call`` is outside the benchmarked 3-D ranges, or None."""
     x, w = call.input, call.weight
-    if not _in_conv3d_geometry(call):
+    found = _conv3d_range(call)
+    if found is None:
         return "implicit GEMM: not a benchmarked 3-D geometry"
+    in_channels, out_channels, (fewest, most) = found[3:6]
     if x.dtype not in CONV3D_DTYPES:
         return f"implicit GEMM: {x.dtype} 3-D convolutions are not benchmarked"
-    fewest, most = CONV3D_CHANNELS
-    if not (fewest <= x.shape[1] <= most and fewest <= w.shape[0] <= most):
+    if not (
+        in_channels[0] <= x.shape[1] <= in_channels[1]
+        and out_channels[0] <= w.shape[0] <= out_channels[1]
+    ):
         return (
             f"implicit GEMM: {x.shape[1]} to {w.shape[0]} channels are not "
             "benchmarked faster in 3-D"
         )
-    if x.shape[0] * math.prod(_output_size(call)) < CONV3D_MIN_OUTPUT_PIXELS:
-        return "implicit GEMM: too few 3-D output pixels to be benchmarked faster"
+    pixels = x.shape[0] * math.prod(_output_size(call))
+    if pixels < fewest or (most is not None and pixels > most):
+        return f"implicit GEMM: {pixels} 3-D output pixels are not benchmarked faster"
     reason = unbenchmarked_layout(call, CONV3D_LAYOUTS)
     return None if reason is None else f"implicit GEMM: {reason}"
 
@@ -426,20 +447,16 @@ def _conv3d_reason(call: ConvCall) -> Optional[str]:
 def conv3d_boundary_calls() -> (
     list[tuple[tuple[int, ...], int, tuple[int, ...], tuple[int, ...], tuple[int, ...]]]
 ):
-    """(input shape, C_out, kernel, stride, padding) of each 3-D geometry with
-    the fewest and most input and output channels, an input giving 4x4x4
-    (``CONV3D_MIN_OUTPUT_PIXELS``) output pixels and ``CONV3D_LARGE_EXTENT``,
-    and one and two images."""
-    calls = []
-    for (kernel, stride, padding), channels, out_channels in itertools.product(
-        CONV3D_GEOMETRIES, CONV3D_CHANNELS, CONV3D_CHANNELS
-    ):
-        smallest = tuple(k - 2 * p + 3 for k, p in zip(kernel, padding))
-        for extent, batch in itertools.product((smallest, CONV3D_LARGE_EXTENT), (1, 2)):
-            calls.append(
-                ((batch, channels, *extent), out_channels, kernel, stride, padding)
-            )
-    return calls
+    """(input shape, C_out, kernel, stride, padding) of each 3-D range with the
+    fewest and most input and output channels and each of its corner
+    inputs."""
+    return [
+        ((batch, channels, *extent), out_channels, kernel, stride, padding)
+        for kernel, stride, padding, in_range, out_range, _, inputs in CONV3D_RANGES
+        for channels, out_channels, (batch, *extent) in itertools.product(
+            in_range, out_range, inputs
+        )
+    ]
 
 
 # Strict-FP32 1-D convolutions with few output rows (batch times output
@@ -537,6 +554,71 @@ def conv1d_boundary_calls() -> list[
     return list(dict.fromkeys(calls))
 
 
+# Strict-FP32 2-D 1x1 stride-1 convolutions, matrix multiplications over the
+# output pixels, with POINTWISE_IN_CHANNELS input and POINTWISE_OUT_CHANNELS
+# output channels and POINTWISE_OUTPUT_ELEMENTS outputs, in contiguous layouts.
+# Their deep reductions over few output tiles are what the split-K schedule
+# spreads over the GPU and Inductor's template does not. With fewer outputs
+# both are bound by launches; with fewer input channels or more outputs the
+# template fills the GPU. The benchmark's ``pointwise_boundary`` suite
+# measures ``pointwise_boundary_calls()``, every corner of these limits.
+POINTWISE_IN_CHANNELS = (512, 2048)
+POINTWISE_OUT_CHANNELS = (32, 256)
+POINTWISE_OUTPUT_ELEMENTS = (32 * 1024, 128 * 1024)
+POINTWISE_LAYOUTS = frozenset({("contiguous", "contiguous", "contiguous")})
+
+
+def _pointwise_reason(call: ConvCall) -> Optional[str]:
+    """Why a 1x1 ``call`` is outside the benchmarked range, or None."""
+    x, w, p = call.input, call.weight, call.params
+    if p.rank != 2 or p.stride != (1, 1) or any(p.padding_before + p.padding_after):
+        return "implicit GEMM: a 1x1 convolution keeps the regular lowering"
+    if x.dtype != torch.float32 or conv_allows_tf32():
+        return "implicit GEMM: only strict-FP32 1x1 convolutions are benchmarked"
+    if not (
+        POINTWISE_IN_CHANNELS[0] <= x.shape[1] <= POINTWISE_IN_CHANNELS[1]
+        and POINTWISE_OUT_CHANNELS[0] <= w.shape[0] <= POINTWISE_OUT_CHANNELS[1]
+    ):
+        return (
+            f"implicit GEMM: {x.shape[1]} to {w.shape[0]} channels are not "
+            "benchmarked faster in a 1x1 convolution"
+        )
+    outputs = x.shape[0] * math.prod(x.shape[2:]) * w.shape[0]
+    if not POINTWISE_OUTPUT_ELEMENTS[0] <= outputs <= POINTWISE_OUTPUT_ELEMENTS[1]:
+        return (
+            f"implicit GEMM: {outputs} outputs are not benchmarked faster in a "
+            "1x1 convolution"
+        )
+    reason = unbenchmarked_layout(call, POINTWISE_LAYOUTS)
+    return None if reason is None else f"implicit GEMM: {reason}"
+
+
+def pointwise_boundary_calls() -> (
+    list[tuple[tuple[int, ...], int, tuple[int, ...], tuple[int, ...], tuple[int, ...]]]
+):
+    """(input shape, C_out, kernel, stride, padding) with the fewest and most
+    input and output channels and outputs, in one image and in two."""
+    calls = []
+    for channels, out_channels, outputs, batch in itertools.product(
+        POINTWISE_IN_CHANNELS,
+        POINTWISE_OUT_CHANNELS,
+        POINTWISE_OUTPUT_ELEMENTS,
+        (1, 2),
+    ):
+        pixels = outputs // out_channels // batch
+        height = 2 ** (int(math.log2(pixels)) // 2)
+        calls.append(
+            (
+                (batch, channels, height, pixels // height),
+                out_channels,
+                (1, 1),
+                (1, 1),
+                (0, 0),
+            )
+        )
+    return calls
+
+
 def _family(call: ConvCall) -> Optional[RoutedFamily]:
     p = call.params
     if p.padding_before != p.padding_after:
@@ -553,7 +635,7 @@ def worth_routing(call: ConvCall) -> Optional[str]:
     if p.transposed:
         return "implicit GEMM: a transposed convolution is not benchmarked faster"
     if all(k == 1 for k in w.shape[2:]):
-        return "implicit GEMM: a 1x1 convolution keeps the regular lowering"
+        return _pointwise_reason(call)
     tensor_cores = x.dtype != torch.float32 or conv_allows_tf32()
     if tensor_cores and not device_supports(SCHEDULES[1].min_capability, x.device):
         return (
@@ -561,7 +643,7 @@ def worth_routing(call: ConvCall) -> Optional[str]:
             "is not benchmarked"
         )
     if x.shape[1] != ROUTED_CHANNELS:
-        if _in_conv3d_geometry(call):
+        if _conv3d_range(call) is not None:
             return _conv3d_reason(call)
         if _winograd_reason(call) is None:
             return None
