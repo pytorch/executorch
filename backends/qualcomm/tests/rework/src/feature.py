@@ -103,7 +103,7 @@ class GraphSplit:
     def _test(qnn_config, compile_specs, expected):
         def callback(device: Device, pattern):
             def verify(log):
-                msg = log.stdout
+                msg = log
                 assert pattern in msg, f"{pattern} in log"
 
             # QnnExecuTorchLogLevel.kLogLevelVerbose
@@ -187,7 +187,7 @@ class Logging:
     def _test(qnn_config, compile_specs, expected, aot):
         def callback(device: Device, pattern):
             def verify(log):
-                msg = log.stdout
+                msg = log
                 assert pattern in msg, f"{pattern} in log"
 
             # QnnExecuTorchLogLevel.kLogLevelVerbose
@@ -420,7 +420,7 @@ class Performance:
         # extend this for other backends
         def callback_htp(device: Device, voltage):
             def verify(log):
-                msg = log.stdout
+                msg = log
                 # refer to HtpDevice.cpp for the following values
                 min_voltage = f"coreVoltageCornerMin {voltage}"
                 assert min_voltage in msg, f"expecting '{min_voltage}' in log"
@@ -737,7 +737,7 @@ class SharedBuffer:
         qnn_config.shared_buffer = True
 
         def verify(log):
-            assert "Shared buffer initialized via libcdsprpc" in log.stdout
+            assert "Shared buffer initialized via libcdsprpc" in log
 
         export_and_verify(
             module=module,
