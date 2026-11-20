@@ -306,6 +306,7 @@ def _run_ggml(
     graph_ops: collections.Counter | None = None,
     method: str = "forward",
     allow_activation_quant_for_weight_only: bool = False,
+    exact_topk_for_testing: bool = False,
 ):
     """Runs each step's inputs in order on one executable and returns each
     step's outputs as (bytes, shape) pairs. `graph_ops`, if given, collects
@@ -337,6 +338,8 @@ def _run_ggml(
         command.append("--print_graph_ops")
     if allow_activation_quant_for_weight_only:
         command.append("--allow_activation_quant_for_weight_only")
+    if exact_topk_for_testing:
+        command.append("--exact_topk_for_testing")
     with as_file(files(__package__) / "ggml_ptn_runner") as runner:
         result = subprocess.run(
             [str(runner), *command],
@@ -444,6 +447,7 @@ class GgmlOpsTest(unittest.TestCase):
         rtol=1e-5,
         graph_ops=None,
         allow_activation_quant_for_weight_only=False,
+        exact_topk_for_testing=False,
     ):
         model = model.eval()
         # Eager writes buffers in place; the package must keep them as constructed.
@@ -463,6 +467,7 @@ class GgmlOpsTest(unittest.TestCase):
                 allow_activation_quant_for_weight_only=(
                     allow_activation_quant_for_weight_only
                 ),
+                exact_topk_for_testing=exact_topk_for_testing,
             )
         self.assertEqual(len(outputs), len(expected))
         for (raw, shape), reference in zip(outputs, expected):
@@ -693,6 +698,12 @@ class GgmlOpsTest(unittest.TestCase):
         self._check(Lambda(F.relu6), (torch.randn(2, 3, 4) * 8.0,))
         with self.assertRaisesRegex(AssertionError, "floating-point"):
             self._check(Lambda(F.relu6), (torch.arange(6).reshape(2, 3) - 2,))
+
+    def test_relu6_of_half_inputs(self):
+        x = torch.randn(2, 3, 4) * 8.0
+        for dtype in (torch.float16, torch.bfloat16):
+            with self.subTest(dtype=dtype):
+                self._check(Lambda(F.relu6), (x.to(dtype),), atol=0, rtol=0)
 
     def test_elu(self):
         self._check(Lambda(F.elu), (torch.randn(2, 3, 4) * 3.0,))
@@ -953,6 +964,40 @@ class GgmlOpsTest(unittest.TestCase):
         )
         self._check(Lambda(lambda x: x - x.amax(dim=[0, 1])), (torch.randn(80, 300),))
 
+    def _check_over_any_dims(self, fn):
+        x = torch.randn(2, 3, 4, 5)
+        for dims, keepdim in (((0,), False), ((1, 3), True), ((-3,), False)):
+            with self.subTest(dims=dims, keepdim=keepdim):
+                self._check(
+                    Lambda(
+                        lambda x, dims=dims, keepdim=keepdim: fn(
+                            x, dims, keepdim=keepdim
+                        )
+                    ),
+                    (x,),
+                )
+
+    def test_sum_over_any_dims(self):
+        self._check_over_any_dims(torch.sum)
+
+    def test_mean_over_any_dims(self):
+        self._check_over_any_dims(torch.mean)
+
+    def test_amax_over_any_dims(self):
+        self._check_over_any_dims(torch.amax)
+
+    def test_softmax_over_any_dim(self):
+        x = torch.randn(2, 3, 5, 8) * 4.0
+        for dim in (-1, 0, 1, -2):
+            with self.subTest(dim=dim):
+                self._check(
+                    Lambda(lambda x, dim=dim: torch.softmax(x, dim)), (x,), atol=1e-6
+                )
+
+    def test_softmax_over_an_empty_dim_is_refused(self):
+        with self.assertRaisesRegex(AssertionError, "empty dimension"):
+            self._check(Lambda(lambda x: torch.softmax(x, -1)), (torch.randn(2, 0),))
+
     def test_softmax_last_dim(self):
         self._check(
             Lambda(lambda x: torch.softmax(x, dim=-1)),
@@ -1085,12 +1130,20 @@ class GgmlOpsTest(unittest.TestCase):
             torch.nn.LayerNorm(16, elementwise_affine=False), (torch.randn(2, 3, 16),)
         )
 
-    def test_layer_norm_rejects_half(self):
-        with self.assertRaisesRegex(AssertionError, "F32 tensors only"):
-            self._check(
-                torch.nn.LayerNorm(16).half(),
-                (torch.randn(2, 3, 16, dtype=torch.float16),),
-            )
+    def test_layer_norm_half(self):
+        norm = torch.nn.LayerNorm(16)
+        torch.nn.init.uniform_(norm.weight, 0.5, 1.5)
+        torch.nn.init.uniform_(norm.bias, -0.5, 0.5)
+        x = torch.randn(2, 3, 16)
+        for dtype in (torch.float16, torch.bfloat16):
+            with self.subTest(dtype=dtype):
+                # One rounding of the output; eager normalizes in F32 too.
+                self._check(
+                    copy.deepcopy(norm).to(dtype),
+                    (x.to(dtype),),
+                    atol=1e-2 if dtype == torch.bfloat16 else 2e-3,
+                    rtol=1e-2 if dtype == torch.bfloat16 else 2e-3,
+                )
 
     def test_layer_norm_rejects_used_mean(self):
         def forward(x):
@@ -1160,6 +1213,10 @@ class GgmlOpsTest(unittest.TestCase):
                 torch.tensor([[1, 3, 9], [0, 2, 5]]),
             ),
         )
+
+    def test_cat_of_a_thousand_repeated_inputs(self):
+        # One node and two values, but a concat per list entry.
+        self._check(Lambda(lambda x: torch.cat([x] * 1000)), (torch.randn(3),))
 
     def test_cat_last_dim(self):
         self._check(
@@ -1322,6 +1379,127 @@ class GgmlOpsTest(unittest.TestCase):
             Lambda(lambda x: (x < 0.25).to(x.dtype)),
             (torch.tensor([[-1.0, 0.0, 0.25, 0.5]]),),
         )
+
+    def test_le_and_lt_check_the_integers_they_can_trace(self):
+        small = (torch.tensor([[7, 3, -5]]), torch.tensor([[6, 4, -5]]))
+        # 2^24 + 1 rounds to 2^24 in F32, which would then compare equal.
+        large = (torch.tensor([[16777217, 3]]), torch.tensor([[16777216, 4]]))
+        for name, fn in {"le": torch.le, "lt": torch.lt}.items():
+            with self.subTest(op=name):
+                self._check(Lambda(lambda a, b, fn=fn: fn(a, b).float()), small)
+                with self.assertRaisesRegex(AssertionError, r"2\^24"):
+                    self._check(Lambda(lambda a, b, fn=fn: fn(a, b).float()), large)
+                with self.assertRaisesRegex(AssertionError, r"2\^24"):
+                    self._check(
+                        Lambda(lambda a, fn=fn: fn(a, 16777217).float()), (small[0],)
+                    )
+                # Computed integers pass unchecked, as attention masks need.
+                self._check(
+                    Lambda(lambda a, b, fn=fn: fn(a + a, b).float()),
+                    (torch.tensor([[1, 2]]), torch.tensor([[2, 2]])),
+                )
+
+    def test_integer_compare_rechecks_its_inputs_on_every_run(self):
+        steps = [
+            (torch.tensor([[1, 2]]), torch.tensor([[2, 2]])),
+            (torch.tensor([[16777217, 2]]), torch.tensor([[16777216, 2]])),
+        ]
+        model = Lambda(lambda a, b: (a <= b).float())
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            package = outdir / "model.ptn"
+            to_native(torch.export.export(model, steps[0])).save(str(package))
+            # The second run replays the first run's graph.
+            with self.assertRaisesRegex(AssertionError, r"2\^24"):
+                _run_ggml(package, steps, outdir, 1)
+
+    def test_le_and_lt_round_to_half_types_as_eager(self):
+        x = torch.tensor([[0.5, 0.25, 0.75]])
+        cases = {
+            "le": lambda x: (x <= 0.49999).float(),
+            "lt": lambda x: (x < 0.50001).float(),
+        }
+        for dtype in (torch.float16, torch.bfloat16):
+            for name, fn in cases.items():
+                with self.subTest(op=name, dtype=dtype):
+                    self._check(Lambda(fn), (x.to(dtype),), atol=0, rtol=0)
+
+    def test_empty_tensors_are_refused(self):
+        # Eager splits an empty dim into one empty piece.
+        cases = {
+            "split": lambda x: torch.split(x, 2)[0] * 2.0,
+            "mul": lambda x: x * 2.0,
+        }
+        for name, fn in cases.items():
+            with self.subTest(case=name), self.assertRaisesRegex(
+                AssertionError, "without elements"
+            ):
+                self._check(Lambda(fn), (torch.randn(0, 2),))
+
+    def test_split(self):
+        x = torch.randn(4, 6, 5)
+        cases = {
+            "sizes last dim": lambda x: torch.split(x, [2, 1, 2], dim=-1),
+            "sizes middle dim": lambda x: torch.split(x, [2, 3, 1], dim=1),
+            "size outer dim": lambda x: torch.split(x, 3, dim=0),
+            "one piece used": lambda x: torch.split(x, [2, 4], dim=1)[1] * 2.0,
+        }
+        for name, fn in cases.items():
+            with self.subTest(case=name):
+                self._check(Lambda(fn), (x,))
+
+    def test_topk(self):
+        # Distinct values: ties may come out in another order.
+        x = torch.randperm(240).float().reshape(2, 3, 4, 10) / 7
+        for largest in (True, False):
+            with self.subTest(largest=largest):
+                ops = collections.Counter()
+                self._check(
+                    Lambda(
+                        lambda x, largest=largest: torch.topk(x, 4, largest=largest)
+                    ),
+                    (x,),
+                    graph_ops=ops,
+                )
+                # llama.cpp's ggml_argsort_top_k: one argsort and the values'
+                # gather per built graph, and no NaN key map.
+                self.assertEqual(ops["ARGSORT"], ops["GET_ROWS"])
+                self.assertEqual((ops["CONCAT"], ops["FILL"]), (0, 0))
+
+    def test_topk_rejects_an_inner_dim(self):
+        with self.assertRaisesRegex(AssertionError, "last dimension only"):
+            self._check(Lambda(lambda x: torch.topk(x, 2, dim=0)), (torch.randn(4, 3),))
+
+    def test_topk_ranks_nan_above_every_value_for_testing(self):
+        # Only with exact_topk_for_testing: by default topk sorts as
+        # llama.cpp, with no order for a row holding NaN.
+        nan, inf = float("nan"), float("inf")
+        x = torch.tensor(
+            [
+                [1.0, nan, -inf, 3.0, inf, 0.5],
+                [inf, -2.0, nan, -inf, 4.0, 2.0],
+                [nan, 0.0, -1.0, 5.0, -inf, inf],
+            ]
+        )
+        for largest in (True, False):
+            with self.subTest(largest=largest):
+                self._check(
+                    Lambda(
+                        lambda x, largest=largest: torch.topk(x, 4, largest=largest)
+                    ),
+                    (x,),
+                    atol=0,
+                    rtol=0,
+                    exact_topk_for_testing=True,
+                )
+
+    def test_topk_of_integers_checks_that_f32_holds_them(self):
+        def topk(x):
+            return torch.topk(x, 2).values
+
+        self._check(Lambda(topk), (torch.tensor([[4, 9, -1]]),))
+        with self.assertRaisesRegex(AssertionError, r"2\^24"):
+            self._check(Lambda(topk), (torch.tensor([[16777217, 2, 1]]),))
 
     def test_symbolic_neg_slices_from_the_end(self):
         class Tail(torch.nn.Module):
@@ -1966,6 +2144,34 @@ class GgmlOpsTest(unittest.TestCase):
                         atol=1e-2,
                         rtol=1e-2,
                     )
+
+    def test_layer_norm_and_hardtanh_of_half_intermediates(self):
+        # A half linear or embedding result is rounded to its dtype, so
+        # layer_norm, which computes in F32 only, and hardtanh, which ggml-cpu
+        # clamps in F32 and F16 only, must widen it again.
+        torch.manual_seed(0)
+        norm = torch.nn.LayerNorm(64)
+        torch.nn.init.uniform_(norm.weight, 0.5, 1.5)
+        torch.nn.init.uniform_(norm.bias, -0.5, 0.5)
+        linear = torch.nn.Linear(16, 64)
+        x = torch.randn(4, 16)
+        cases = {
+            "layer_norm of a linear": (linear, norm, x),
+            "layer_norm of an embedding": (
+                torch.nn.Embedding(10, 64),
+                norm,
+                torch.tensor([[1, 7, 3]]),
+            ),
+            "hardtanh of a linear": (linear, torch.nn.Hardtanh(-0.5, 0.5), x),
+            "relu6 of a linear": (linear, torch.nn.ReLU6(), x * 8),
+        }
+        for name, (first, second, x) in cases.items():
+            for dtype in (torch.float16, torch.bfloat16):
+                with self.subTest(case=name, dtype=dtype):
+                    model = torch.nn.Sequential(first, second)
+                    half = copy.deepcopy(model).to(dtype).requires_grad_(False)
+                    inputs = (x.to(dtype) if x.is_floating_point() else x,)
+                    self._check(half, inputs, atol=1e-2, rtol=1e-2)
 
     def test_rope_llama3(self):
         config = LlamaConfig(

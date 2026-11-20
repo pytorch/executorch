@@ -153,9 +153,13 @@ if(EXECUTORCH_BUILD_NATIVE_GGML)
             $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions>
   )
 
-  add_executable(native_ggml_sample_test runtime/ggml/ggml_ptn_runner.cpp)
+  add_executable(
+    native_ggml_sample_test runtime/ggml/ggml_ptn_runner.cpp
+                            ${EXECUTORCH_ROOT}/backends/native/runtime/engine/ggml/GgmlEngineFlags.cpp
+  )
   target_link_libraries(
     native_ggml_sample_test PRIVATE native_sample_test_main native_ggml_engine
+                                    ${_native_test_gflags}
   )
   add_dependencies(native_ggml_sample_test native_op_samples)
   add_test(NAME native_ggml_sample_test
@@ -166,19 +170,24 @@ if(EXECUTORCH_BUILD_NATIVE_GGML)
   set_tests_properties(native_ggml_sample_test PROPERTIES DISABLED TRUE)
   # native_ggml_sample_test_act_quant lets ggml quantize the activations of
   # weight-only quantized linears, judged against golden-int8_act.
-  # native_ggml_sample_test_no_linear judges the other ops without it. Both
-  # leave out the elu with alpha 0.5 that ggml rejects.
+  # native_ggml_sample_test_no_linear judges the other ops without it, except
+  # their quantized_* cases, which quantize through an nn.Linear. Both leave out
+  # the elu with alpha 0.5 that ggml rejects and the samples that match eager
+  # only with a testing option (runtime/ggml/BUCK).
+  set(_native_exact_topk_only topk_*.nan_and_inf_*)
+  list(JOIN _native_exact_topk_only ":" _native_exact_topk_filter)
   add_test(
     NAME native_ggml_sample_test_act_quant
     COMMAND
       native_ggml_sample_test --packages=${_native_op_samples} --device=cpu
       --allow_activation_quant_for_weight_only
-      --gtest_filter=-elu_float.elu_f32_alpha_*
+      --gtest_filter=-elu_float.elu_f32_alpha_*:${_native_exact_topk_filter}
   )
   add_test(
     NAME native_ggml_sample_test_no_linear
-    COMMAND native_ggml_sample_test --packages=${_native_op_samples}
-            --device=cpu --gtest_filter=-linear_*:elu_float.elu_f32_alpha_*
+    COMMAND
+      native_ggml_sample_test --packages=${_native_op_samples} --device=cpu
+      --gtest_filter=-linear_*:*.quantized_*:elu_float.elu_f32_alpha_*:${_native_exact_topk_filter}
   )
   target_compile_options(
     native_ggml_sample_test
@@ -246,9 +255,34 @@ if(EXECUTORCH_BUILD_NATIVE_CPU)
   )
   # TODO: Enable once the CPU engine runs quantized and dynamic-shape methods.
   set_tests_properties(native_cpu_sample_test PROPERTIES DISABLED TRUE)
+  # Float samples the CPU engine cannot run yet, by gap. Each entry is a known
+  # CPU-engine gap; remove it once the engine runs it. runtime/cpu/targets.bzl
+  # keeps the same list.
+  set(_native_cpu_engine_gaps
+      # CPU engine: topk runtime error 33.
+      topk_float.all_bf16
+      topk_float.all_f16
+      topk_float.all_f32
+      topk_float.nan_and_inf_largest_bf16
+      topk_float.nan_and_inf_largest_f16
+      topk_float.nan_and_inf_largest_f32
+      topk_float.nan_and_inf_smallest_bf16
+      topk_float.nan_and_inf_smallest_f16
+      topk_float.nan_and_inf_smallest_f32
+      topk_float.quantized_router_bf16
+      topk_float.quantized_router_f16
+      topk_float.quantized_router_f32
+      topk_float.router_bf16
+      topk_float.router_f16
+      topk_float.router_f32
+      topk_float.smallest_bf16
+      topk_float.smallest_f16
+      topk_float.smallest_f32
+  )
+  list(JOIN _native_cpu_engine_gaps ":" _native_cpu_gaps)
   add_test(NAME native_cpu_sample_test_static_float
            COMMAND native_cpu_sample_test --packages=${_native_op_samples}
-                   --gtest_filter=*_float.*:-*.dynamic_*
+                   --gtest_filter=*_float.*:-*.dynamic_*:${_native_cpu_gaps}
   )
   target_compile_options(
     native_cpu_sample_test
