@@ -145,9 +145,10 @@ class LLMEdgeManager:
                 )
             else:
                 # Two input arguments: tokens and input_pos but input_pos is static shape.
-                # Here we use -1 due to export limitation (same as non-kv-cache case above).
+                # No -1 here: the guard in the gist above comes from the no-KV-cache graph, and this
+                # bound must equal get_max_seq_len, the prefill chunk size the runner uses.
                 self.dynamic_shapes = (
-                    {1: torch.export.Dim("token_dim", max=self.max_seq_len - 1)},
+                    {1: torch.export.Dim("token_dim", max=self.max_seq_len)},
                     {"input_pos": {0: 1}},
                 )
 
