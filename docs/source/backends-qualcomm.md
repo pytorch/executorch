@@ -192,6 +192,27 @@ cd $env:EXECUTORCH_ROOT
 > The script supports building both x64 and cross-compiling ARM64 target artifacts on Windows x64 host. After the build completes, the ARM64 libraries and executables can be copied to a Windows on Snapdragon (WoS) device using `scp`.
 > This allows a `.pte` generated on Windows x64 host to be executed on WoS device.
 
+## Choosing a compilation mode
+
+For HTP deployment, choose a compilation mode based on the target SoCs,
+initialization time, and artifact size.
+
+| Mode | SoC coverage | Runtime initialization | Deployment trade-off |
+| --- | --- | --- | --- |
+| Single-SoC AOT compilation (default) | One fixed SoC specified by `--soc_model`. | Loads a context compiled on the host. | Avoids on-device graph compilation; separate `.pte` for each target SoC. |
+| On-target compilation | One `.pte` can be compiled on compatible HTP SoCs. | Compiles the graph on the device when the model is loaded. | Initialization can be slow for large graphs. During AOT preparation, `--soc_model` must be set to the oldest supported SoC among the deployment targets. |
+| Flexible Context Binary (FCB) | A predefined set of HTP SoCs. | Selects and loads a context already compiled on the host. | Supports multiple targets without on-device compilation, with larger `.pte` containing multiple contexts. |
+
+Enable on-target compilation with `--allow_ontarget_compilation` during host
+AOT preparation. It currently supports only non-generative AI models fully
+delegated to QNN. During AOT preparation, `--soc_model` must be set to the
+oldest supported SoC among your intended deployment targets so that operator
+validation and quantization use that SoC's constraints.
+
+Use FCB when the deployment targets are known in advance and avoiding on-device
+compilation is important. The following section describes how to specify its
+target SoCs and the restrictions that apply.
+
 ## Flexible Context Binary for multiple HTP SoCs
 
 A normal offline QNN context binary is specific to one SoC. A Flexible Context

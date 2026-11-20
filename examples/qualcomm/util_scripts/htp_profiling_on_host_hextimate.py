@@ -33,8 +33,8 @@ from executorch.backends.qualcomm.utils.utils import get_soc_to_chipset_map
 def main(args) -> None:
     qnn_config = QnnConfig.load_config(args.config_file if args.config_file else args)
     assert qnn_config.online_prepare, (
-        "This demo uses host-only Hextimate; pass --online_prepare "
-        "(or set online_prepare=True in your config file)."
+        "This demo uses host-only Hextimate; pass --allow_ontarget_compilation "
+        '(or set "allow_ontarget_compilation": true in your config file).'
     )
 
     model = SimpleModel()

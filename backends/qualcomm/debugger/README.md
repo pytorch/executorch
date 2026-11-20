@@ -66,11 +66,13 @@ The example demos keep the profiling route explicit:
 
 ### 1.1 Online Prepare Mode `.pte`
 
+This mode currently supports only non-generative AI models fully delegated to QNN. During AOT preparation, set `--soc_model` to the oldest supported SoC among the targets on which you intend to perform on-target compilation.
+
 **Demo script**:
 ```bash
 python -m examples.qualcomm.util_scripts.htp_profiling_on_device_op_trace_online \
     --host ${host} --device ${device} --soc_model ${SOC_MODEL} --build_folder build-android \
-    -a ${path_to_output_folder} --online_prepare
+    -a ${path_to_output_folder} --allow_ontarget_compilation
 ```
 
 **Export call**:
@@ -131,7 +133,7 @@ Use `estimate_htp_profile_result()` when you want host-only compile-time perform
 **Demo script**:
 ```bash
 python -m examples.qualcomm.util_scripts.htp_profiling_on_host_hextimate \
-    --soc_model QCS9100 -a ${path_to_output_folder} --online_prepare
+    --soc_model QCS9100 -a ${path_to_output_folder} --allow_ontarget_compilation
 ```
 
 ```python

@@ -34,6 +34,16 @@ Currently, users cannot add additional chipset models because the chipset ID is 
   - The skel library needs to be signed for LPAI to work. Please confirm if you are able to sign it. You can use [sign_library.sh](scripts/sign_library.sh) to sign the skel library.
   
 
+### On-target Compilation
+
+Pass `--allow_ontarget_compilation` during ahead-of-time (AOT) preparation to allow QNN graph compilation on the target device. This is currently supported only for non-generative AI models fully delegated to QNN.
+
+During AOT preparation, set `--soc_model` to the oldest supported SoC among the targets on which you intend to perform on-target compilation.
+
+The previous `--online_prepare` flag is deprecated and hidden from command-line help; it remains supported for backward compatibility.
+
+For JSON files passed with `--config_file`, use `"allow_ontarget_compilation": true` to enable on-target compilation. The previous `online_prepare` key remains supported for backward compatibility. Specify only one of these keys.
+
 ## Directory Structure
 
 ```
