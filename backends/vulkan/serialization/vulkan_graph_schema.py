@@ -31,6 +31,7 @@ class VkDataType(IntEnum):
     FLOAT32 = 5
     FLOAT64 = 6
     INT64 = 7
+    BFLOAT16 = 8
     UNSET = 127
 
 

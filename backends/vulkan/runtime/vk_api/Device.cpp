@@ -73,6 +73,11 @@ PhysicalDevice::PhysicalDevice(
           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES_KHR,
           nullptr},
 #endif /* VK_KHR_shader_float16_int8 */
+#ifdef VK_KHR_shader_bfloat16
+      shader_bfloat16_features{
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_BFLOAT16_FEATURES_KHR,
+          nullptr},
+#endif /* VK_KHR_shader_bfloat16 */
 #ifdef VK_KHR_shader_integer_dot_product
       shader_int_dot_product_features{
           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INTEGER_DOT_PRODUCT_FEATURES_KHR,
@@ -309,6 +314,11 @@ void PhysicalDevice::query_extensions_vk_1_1() {
   shader_int_dot_product_features.pNext = extension_list_top;
   extension_list_top = &shader_int_dot_product_features;
 #endif /* VK_KHR_shader_integer_dot_product */
+
+#ifdef VK_KHR_shader_bfloat16
+  shader_bfloat16_features.pNext = extension_list_top;
+  extension_list_top = &shader_bfloat16_features;
+#endif /* VK_KHR_shader_bfloat16 */
 
 #ifdef VK_KHR_cooperative_matrix
   cooperative_matrix_features.pNext = extension_list_top;
