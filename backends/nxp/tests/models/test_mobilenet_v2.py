@@ -36,7 +36,7 @@ def reseed_model_per_test_run():
 
 
 @pytest.mark.parametrize("channels_last", [False, True])
-def test_mobilenet_v2_mse_cpu_vs_npu(
+def test_mv2_mse_cpu_vs_npu(
     mocker,
     request,
     channels_last,
