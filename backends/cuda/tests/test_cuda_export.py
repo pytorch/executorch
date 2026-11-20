@@ -1280,7 +1280,6 @@ class TestCudaExport(unittest.TestCase):
         """AOTI gives two outputs one handle when they are the same tensor. With
         CUDA graphs on, three calls run eagerly, the fourth captures a graph and
         the fifth replays it."""
-        from executorch.runtime import Runtime
 
         class Twice(torch.nn.Module):
             def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, ...]:
@@ -1289,6 +1288,13 @@ class TestCudaExport(unittest.TestCase):
 
         model = Twice()
         edge = self._export_to_cuda_with_lower(model, (torch.randn(4, 8),))
+        from executorch.export.utils import is_fbcode
+
+        if is_fbcode():
+            # Running the program is skipped in fbcode.
+            return
+        from executorch.runtime import Runtime
+
         runtime = Runtime.get()
         option = "enable_cuda_graph_for_method"
         with tempfile.TemporaryDirectory() as directory:
