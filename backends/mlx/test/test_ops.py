@@ -8331,33 +8331,36 @@ class ArgsortTest(OpTestCase):
 
 
 class TopKValuesModel(nn.Module):
-    def __init__(self, k: int, dim: int):
+    def __init__(self, k: int, dim: int, largest: bool = True):
         super().__init__()
         self.k = k
         self.dim = dim
+        self.largest = largest
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.topk(x, self.k, dim=self.dim)[0]
+        return torch.topk(x, self.k, dim=self.dim, largest=self.largest)[0]
 
 
 class TopKIndicesModel(nn.Module):
-    def __init__(self, k: int, dim: int):
+    def __init__(self, k: int, dim: int, largest: bool = True):
         super().__init__()
         self.k = k
         self.dim = dim
+        self.largest = largest
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.topk(x, self.k, dim=self.dim)[1]
+        return torch.topk(x, self.k, dim=self.dim, largest=self.largest)[1]
 
 
 class TopKBothModel(nn.Module):
-    def __init__(self, k: int, dim: int):
+    def __init__(self, k: int, dim: int, largest: bool = True):
         super().__init__()
         self.k = k
         self.dim = dim
+        self.largest = largest
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        values, indices = torch.topk(x, self.k, dim=self.dim)
+        values, indices = torch.topk(x, self.k, dim=self.dim, largest=self.largest)
         return values, indices
 
 
@@ -8385,13 +8388,17 @@ class TopKTest(OpTestCase):
         k: int = 3,
         dim: int = -1,
         output: str = "values",
+        largest: bool = True,
     ):
         self.shape = shape
         self.k = k
         self.dim = dim
         self.output = output
+        self.largest = largest
         shape_str = "x".join(str(s) for s in shape)
         self.name = f"topk_k{k}_dim{dim}_{output}_{shape_str}"
+        if not largest:
+            self.name += "_smallest"
 
     @classmethod
     def get_test_configs(cls) -> List["TopKTest"]:
@@ -8404,19 +8411,23 @@ class TopKTest(OpTestCase):
             cls(shape=(4, 8), k=3, dim=-1, output="indices"),
             # Both values and indices
             cls(shape=(4, 8), k=3, dim=-1, output="both"),
+            # Smallest values and indices
+            cls(shape=(16,), k=5, dim=0, output="values", largest=False),
+            cls(shape=(4, 8), k=3, dim=-1, output="indices", largest=False),
+            cls(shape=(4, 8), k=3, dim=-1, output="both", largest=False),
             # Dynamic k
             cls(shape=(4, 8), k=3, dim=-1, output="dynamic_k"),
         ]
 
     def create_model(self) -> nn.Module:
         if self.output == "values":
-            return TopKValuesModel(self.k, self.dim)
+            return TopKValuesModel(self.k, self.dim, self.largest)
         elif self.output == "indices":
-            return TopKIndicesModel(self.k, self.dim)
+            return TopKIndicesModel(self.k, self.dim, self.largest)
         elif self.output == "dynamic_k":
             return TopKDynamicKModel(self.dim)
         else:
-            return TopKBothModel(self.k, self.dim)
+            return TopKBothModel(self.k, self.dim, self.largest)
 
     def get_dynamic_shapes(self) -> Optional[Dict[str, any]]:
         if self.output == "dynamic_k":
