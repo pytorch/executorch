@@ -577,7 +577,8 @@ def build_portable_lib(
         feature = None,
         expose_operator_symbols = False,
         visibility = ["PUBLIC"],
-        platforms = get_default_executorch_platforms()):
+        platforms = get_default_executorch_platforms(),
+        deps = []):
     """
     WARNING: Before using this, please consider using executorch_generated_lib instead. This
     function is only for special cases where you need to build a portable kernel library with
@@ -591,12 +592,13 @@ def build_portable_lib(
     because of the generated header `selected_op_variants.h`. The original portable kernel library
     doesn't have that header and thus include all the dtypes possible.
 
-    If no `portable_header_lib` is provided, try to create one based on the deps. In this case
-    we require `deps` to be present. Notice that this way we are always enabling dtype selective
-    build.
+    If no `portable_header_lib` is provided, try to create one from `et_operator_lib_deps`.
+    In this case we require those operator-selection dependencies to be present. Notice
+    that this way we are always enabling dtype selective build.
 
     Args:
         name: name of the new portable kernel library.
+        deps: extra C++ library dependencies, separate from operator-selection metadata.
         et_operator_lib_deps: list of deps to use to create the portable header library.
         oplist_header_name: the name of the header genrule (dtype_header_genrule)
         portable_header_lib: the name of the header library (build_portable_header_lib)
@@ -648,7 +650,7 @@ def build_portable_lib(
         name = name,
         srcs = portable_source_files,
         exported_preprocessor_flags = ["-DEXECUTORCH_SELECTIVE_BUILD_DTYPE"],
-        deps = get_portable_lib_deps() + [":" + portable_header_lib],
+        deps = get_portable_lib_deps() + [":" + portable_header_lib] + deps,
         compiler_flags = compiler_flags,
         # WARNING: using a deprecated API to avoid being built into a shared
         # library. In the case of dynamically loading so library we don't want
@@ -663,7 +665,7 @@ def build_portable_lib(
         platforms = platforms,
     )
 
-def build_optimized_lib(name, oplist_header_name, portable_header_lib, feature = None, expose_operator_symbols = False, platforms = get_default_executorch_platforms()):
+def build_optimized_lib(name, oplist_header_name, portable_header_lib, feature = None, expose_operator_symbols = False, platforms = get_default_executorch_platforms(), deps = []):
     """Build optimized lib from source. We build from source so that the generated header file,
     selected_op_variants.h, can be used to selectively build the lib for different dtypes.
     """
@@ -710,7 +712,7 @@ def build_optimized_lib(name, oplist_header_name, portable_header_lib, feature =
                 "fbsource//third-party/sleef:sleef",
             ],
             "DEFAULT": [],
-        }),
+        }) + deps,
         # WARNING: using a deprecated API to avoid being built into a shared
         # library. In the case of dynamically loading so library we don't want
         # it to depend on other so libraries because that way we have to
@@ -835,7 +837,8 @@ def executorch_generated_lib(
         compatible_with = None,
         expose_operator_symbols = False,
         support_exceptions = True,
-        include_all_prim_ops = True):
+        include_all_prim_ops = True,
+        cpp_deps = []):
     """Emits 0-3 C++ library targets (in fbcode or xplat) containing code to
     dispatch the operators specified in the provided yaml files.
 
@@ -875,7 +878,9 @@ def executorch_generated_lib(
             generate `<name>` target no matter whether we have `functions_yaml_target`.
         aten_mode: a boolean for whether we should use ATen kernels and ATen tensors.
         visibility: Visibility of the C++ library targets.
-        deps: Additinal deps of the main C++ library. Needs to be in either `//executorch` or `//caffe2` module.
+        deps: Operator-selection dependencies, also linked by the registration library.
+        cpp_deps: Additional compilation dependencies for the registration library and
+            dtype-specialized portable/optimized libraries; not operator-selection inputs.
         platforms: platforms args to runtime.cxx_library (only used when in xplat)
         manual_registration: if true, generate RegisterKernels.cpp and RegisterKernels.h.
         use_default_aten_ops_lib: If `aten_mode` is True AND this flag is True,
@@ -1034,7 +1039,7 @@ def executorch_generated_lib(
 
             # Build portable lib.
             portable_lib_name = name + "_portable_lib"
-            build_portable_lib(name = portable_lib_name, portable_header_lib = portable_header_lib, feature = feature, expose_operator_symbols = expose_operator_symbols, platforms = platforms)
+            build_portable_lib(name = portable_lib_name, portable_header_lib = portable_header_lib, feature = feature, expose_operator_symbols = expose_operator_symbols, platforms = platforms, deps = cpp_deps)
             kernel_deps.append(":{}".format(portable_lib_name))
 
         if "//executorch/kernels/optimized:optimized_operators" in kernel_deps:
@@ -1043,7 +1048,7 @@ def executorch_generated_lib(
 
             # Build optimized lib.
             optimized_lib_name = name + "_optimized_lib"
-            build_optimized_lib(optimized_lib_name, oplist_header_name, portable_header_lib, feature, expose_operator_symbols, platforms = platforms)
+            build_optimized_lib(optimized_lib_name, oplist_header_name, portable_header_lib, feature, expose_operator_symbols, platforms = platforms, deps = cpp_deps)
             kernel_deps.append(":{}".format(optimized_lib_name))
 
     # Exports headers that declare the function signatures of the C++ functions
@@ -1108,7 +1113,7 @@ def executorch_generated_lib(
                 prim_ops_registry_target,  # Use the appropriate prim ops registry
                 "//executorch/runtime/core:evalue" + aten_suffix,
                 "//executorch/codegen:macros",
-            ] + deps + kernel_deps,
+            ] + deps + kernel_deps + cpp_deps,
             exported_deps = [
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
                 "//executorch/runtime/kernel:kernel_runtime_context" + aten_suffix,
