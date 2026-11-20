@@ -67,6 +67,15 @@ logger: logging.Logger = logging.getLogger("")
 logger.setLevel(logging.INFO)
 
 
+def _tensor_dtypes(nodes: Iterable[torch.fx.Node]) -> Set[torch.dtype]:
+    return {
+        value.dtype
+        for node in nodes
+        for value in tree_leaves(node.meta.get("val"))
+        if isinstance(value, torch.Tensor)
+    }
+
+
 class VulkanSupportedOperators(OperatorSupportBase):
     def __init__(
         self,
@@ -106,22 +115,26 @@ class VulkanSupportedOperators(OperatorSupportBase):
         )
         # Create a set of all nodes that are part of fusable subgraphs for quick lookup
         self.fusable_nodes: Set[torch.fx.Node] = set()
-        self.unsupported_fusable_nodes: Set[torch.fx.Node] = set()
+        # Maps nodes of fusable patterns that must stay outside Vulkan to the reason.
+        self.unsupported_fusable_nodes: Dict[torch.fx.Node, str] = {}
         for match in self.fusable_subgraphs:
             nodes = {
                 node for node in match.all_nodes if isinstance(node, torch.fx.Node)
             }
             self.fusable_nodes.update(nodes)
             inputs = {arg for node in nodes for arg in node.all_input_nodes}
-            if not downcast_64_bit and any(
-                isinstance(value, torch.Tensor)
-                and value.dtype in (torch.int64, torch.float64)
-                for node in (nodes | inputs) - (constant_nodes or set())
-                for value in tree_leaves(node.meta.get("val"))
-            ):
-                # Keep the whole pattern outside Vulkan instead of splitting a fusion.
+
+            # Keep the whole pattern outside Vulkan instead of splitting a fusion.
+            reason = None
+            if not downcast_64_bit and _tensor_dtypes(
+                (nodes | inputs) - (constant_nodes or set())
+            ) & {torch.int64, torch.float64}:
                 # Constant quantization parameters may disappear during fusion.
-                self.unsupported_fusable_nodes.update(nodes)
+                reason = "fusable pattern requires 64-bit tensor downcasting"
+            elif torch.bfloat16 in _tensor_dtypes(nodes | inputs):
+                reason = "fused operators do not support bfloat16"
+            if reason is not None:
+                self.unsupported_fusable_nodes.update(dict.fromkeys(nodes, reason))
 
         self.nn_module_blocklist = nn_module_blocklist
         self.nn_module_allowlist = nn_module_allowlist
@@ -251,7 +264,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
 
     def _check_node_support(self, node: torch.fx.Node) -> bool:  # noqa: C901
         if node in self.unsupported_fusable_nodes:
-            self.log_skip(node, "fusable pattern requires 64-bit tensor downcasting")
+            self.log_skip(node, self.unsupported_fusable_nodes[node])
             return False
 
         # Asserts and the symbolic comparisons feeding them are removed during
@@ -302,7 +315,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
 
         if not self.downcast_64_bit:
             native_dtypes = utils.DtypeSetList(
-                utils.ALL_T - {torch.int64, torch.float64}
+                utils.VULKAN_T - {torch.int64, torch.float64}
             )
             dtype_valid, dtype_reason = utils.check_node_dtypes(
                 node, native_dtypes, native_dtypes

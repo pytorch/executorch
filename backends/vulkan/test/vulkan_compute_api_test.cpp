@@ -3986,7 +3986,7 @@ TEST(VulkanComputeGraphTest, buffer_copy_convert_preserves_order_after_resize) {
        {utils::kWidthPacked, utils::kHeightPacked, utils::kChannelsPacked}) {
     for (const auto out_layout :
          {utils::kWidthPacked, utils::kHeightPacked, utils::kChannelsPacked}) {
-      for (const auto dtype : {vkapi::kFloat, vkapi::kHalf}) {
+      for (const auto dtype : {vkapi::kFloat, vkapi::kHalf, vkapi::kBFloat16}) {
         SCOPED_TRACE(
             ::testing::Message() << "in_layout=" << in_layout << " out_layout="
                                  << out_layout << " dtype=" << dtype);
@@ -4014,6 +4014,13 @@ TEST(VulkanComputeGraphTest, buffer_copy_convert_preserves_order_after_resize) {
           graph.execute();
           if (dtype == vkapi::kHalf) {
             std::vector<executorch::aten::Half> output(data.size());
+            graph.maybe_cast_and_copy_from_staging(
+                staging, output.data(), output.size(), dtype);
+            for (size_t i = 0; i < data.size(); ++i) {
+              EXPECT_EQ(float(output[i]), data[i]);
+            }
+          } else if (dtype == vkapi::kBFloat16) {
+            std::vector<executorch::aten::BFloat16> output(data.size());
             graph.maybe_cast_and_copy_from_staging(
                 staging, output.data(), output.size(), dtype);
             for (size_t i = 0; i < data.size(); ++i) {
