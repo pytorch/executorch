@@ -24,6 +24,7 @@ from executorch.backends.transforms.fused_quant.graph_utils import (
 )
 from executorch.exir import to_edge, to_edge_transform_and_lower
 from executorch.exir._serialize._program import deserialize_pte_binary
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.export import export
 
 
@@ -51,6 +52,17 @@ class MultiplyWithConstants(torch.nn.Module):
 
     def forward(self, input, y):
         return input * y, torch.sin(input * self.scale), torch.cos(input + self.offset)
+
+
+class SpatialAndFloatUsers(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(4, 4, 3, groups=2)
+        self.pool = torch.nn.MaxPool2d(2)
+
+    def forward(self, x):
+        y = self.conv(x)
+        return self.pool(y), torch.sin(y)
 
 
 def _output_scale(program):
@@ -311,6 +323,73 @@ def test_lowering_is_isolated_and_idempotent(model, inputs):
         )
         program.validate()
     torch.testing.assert_close(reference.module()(*inputs), expected, atol=0, rtol=0)
+    tester.to_executorch().serialize()
+
+
+@pytest.mark.parametrize(
+    "model, channels, pools, permutes",
+    [
+        (torch.nn.Conv2d(4, 4, 3, groups=2), 4, 0, 0),
+        (torch.nn.AvgPool2d(2, divisor_override=3), 4, 0, 0),
+        (torch.nn.MaxPool2d(2), 5, 0, 0),
+        (
+            torch.nn.Sequential(
+                torch.nn.Conv2d(4, 4, 3, groups=2),
+                torch.nn.Conv2d(4, 4, 3, groups=2),
+            ),
+            4,
+            0,
+            0,
+        ),
+        (
+            torch.nn.Sequential(
+                torch.nn.Conv2d(4, 4, 3, groups=2), torch.nn.MaxPool2d(2)
+            ),
+            4,
+            1,
+            2,
+        ),
+        (
+            torch.nn.Sequential(
+                torch.nn.MaxPool2d(2), torch.nn.Conv2d(4, 4, 3, groups=2)
+            ),
+            4,
+            1,
+            2,
+        ),
+        (SpatialAndFloatUsers(), 4, 1, 2),
+        (torch.nn.Sequential(torch.nn.MaxPool2d(2), torch.nn.MaxPool2d(2)), 4, 2, 2),
+    ],
+    ids=[
+        "portable_conv",
+        "portable_avgpool",
+        "portable_maxpool",
+        "portable_conv_chain",
+        "portable_conv_to_esp_pool",
+        "esp_pool_to_portable_conv",
+        "float_users",
+        "esp_pool_chain",
+    ],
+)
+def test_spatial_fallback_removes_redundant_layout_copies(
+    model, channels, pools, permutes
+):
+    inputs = (torch.linspace(-1, 1, channels * 9 * 11).reshape(1, channels, 9, 11),)
+    tester = EspTester(model, inputs).export_fused_quant().to_edge()
+    expected = tester.get_artifact().exported_program().module()(*inputs)
+    tester.run_passes().check_node_count(
+        {
+            exir_ops.edge.aten.permute_copy.default: permutes,
+            exir_ops.edge.aten.view_copy.default: 0,
+            exir_ops.edge.esp_nn.quantized_max_pool2d_int8.default: pools,
+        }
+    )
+    torch.testing.assert_close(
+        tester.get_artifact().exported_program().module()(*inputs),
+        expected,
+        atol=0,
+        rtol=0,
+    )
     tester.to_executorch().serialize()
 
 
