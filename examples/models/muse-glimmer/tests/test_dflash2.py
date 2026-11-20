@@ -22,6 +22,7 @@ from executorch.examples.models.muse_glimmer.model.dflash2 import (
 from executorch.examples.models.muse_glimmer.model.dflash_model import (
     DFlashConfig,
     DFlashDraftModel,
+    DFlashPackedExportModel,
     MuseGlimmerWithDFlash,
 )
 from executorch.examples.models.muse_glimmer.tests.dflash_reference import (
@@ -218,10 +219,130 @@ class DFlash2OperationsTest(TestCase):
             {"conv_kernel_size": 2},
             {"selector_top_k": 16},
             {"output_multiplier": float("nan")},
-            {"final_logit_softcapping": -1},
+            {"final_logit_softcapping": float("nan")},
+            {"final_logit_softcapping": float("inf")},
+            {"final_logit_softcapping": float("-inf")},
         ):
             with self.subTest(metadata=metadata), self.assertRaises(ValueError):
                 DFlashConfig(**metadata)
+
+    def test_disabled_softcap_metadata(self):
+        for value in (None, 0, -1, 20):
+            with self.subTest(value=value):
+                config = DFlashConfig.from_gguf_metadata(
+                    {"dflash.final_logit_softcapping": value}
+                )
+                self.assertEqual(
+                    config.final_logit_softcapping, 20 if value == 20 else None
+                )
+
+    def test_embedding_scale_matches_packed_draft(self):
+        class EchoDraft(torch.nn.Module):
+            def __init__(self, config):
+                super().__init__()
+                self.config = config
+                self.candidate_selector = None
+
+            def forward(self, embedding, *unused):
+                return embedding
+
+        torch.manual_seed(12)
+        target = ReferenceTarget().eval()
+        tokens = torch.tensor([[1, 2, 3, 4], [5, 6, 7, 8]])
+        hidden, positions = torch.empty(1, 0, 32), torch.arange(8)
+        for scale in (1.0, 2.0, 0.25):
+            config = DFlashConfig.from_gguf_metadata(
+                {"dflash.embedding_scale": scale, "dflash.block_size": 4}
+            )
+            draft = EchoDraft(config)
+            wrapper = MuseGlimmerWithDFlash(target, draft, None, config)
+            expected = target.lm_head(target.embed_tokens(tokens) * scale)
+            with self.subTest(scale=scale):
+                torch.testing.assert_close(
+                    wrapper.draft_forward(tokens, hidden, positions), expected
+                )
+                for packed in (
+                    wrapper.draft_forward_packed,
+                    DFlashPackedExportModel(target, draft),
+                ):
+                    torch.testing.assert_close(
+                        packed(tokens, hidden, positions, positions),
+                        expected.reshape(1, 8, -1),
+                    )
+
+    def test_fixed_block_exports_dynamic_proposal_prefix(self):
+        from executorch.examples.models.muse_glimmer.export.common import (
+            BoundMethodForward,
+        )
+        from executorch.examples.models.muse_glimmer.source_transformations.mlx import (
+            dflash_mlx_source_transformations,
+        )
+        from executorch.extension.llm.cache.reference_cache import AttendSpec, MaskKind
+        from executorch.extension.llm.cache.update_and_attend import REGISTRY
+
+        for block in (2, 16):
+            torch.manual_seed(17)
+            config = DFlashConfig(
+                dim=32,
+                n_layers=1,
+                n_heads=4,
+                n_kv_heads=2,
+                head_dim=8,
+                ffn_dim=48,
+                vocab_size=96,
+                block_size=block,
+                target_layers=[0],
+                max_seq_len=64,
+                conv_kernel_size=2,
+                conv_group_size=8,
+                selector_rank=6,
+                selector_top_k=4,
+            )
+            draft = DFlashDraftModel(config, max_context_length=64).eval()
+            dflash_mlx_source_transformations(draft, use_offgraph_kv_cache=True)
+            wrapper = MuseGlimmerWithDFlash(
+                ReferenceTarget().eval(), draft, None, config
+            )
+            inputs = (
+                torch.randint(0, 96, (2, block)),
+                torch.randn(1, 2, 32),
+                torch.arange(2 + 2 * block),
+                torch.arange(2 + 2 * block),
+            )
+            with BoundMethodForward(wrapper, wrapper.draft_forward), torch.no_grad():
+                ep = torch.export.export(
+                    wrapper,
+                    (*inputs, torch.arange(1, block)),
+                    dynamic_shapes=(
+                        {},
+                        {},
+                        {},
+                        {},
+                        (
+                            {0: torch.export.Dim("proposals", min=1, max=block - 1)}
+                            if block > 2
+                            else None
+                        ),
+                    ),
+                    strict=True,
+                )
+            self.assertEqual(len(ep.graph_signature.user_inputs), 5)
+            with patch.object(REGISTRY, "current") as cache, torch.no_grad():
+                cache.return_value.update_and_fetch.side_effect = (
+                    lambda layer, k, v, pos, queries=2 * block: [
+                        AttendSpec(k, v, MaskKind.NONE, queries)
+                    ]
+                )
+                expected_ids, expected_scores = wrapper.draft_forward(
+                    *inputs, torch.arange(1, block)
+                )
+                for count in range(1, block):
+                    with self.subTest(block=block, proposals=count):
+                        ids, scores = ep.module()(
+                            *inputs, torch.full((count,), -7, dtype=torch.long)
+                        )
+                        torch.testing.assert_close(ids, expected_ids[:, :count])
+                        torch.testing.assert_close(scores, expected_scores[:, :count])
 
     def test_convolution_does_not_cross_request_boundaries(self):
         torch.manual_seed(4)
@@ -312,6 +433,62 @@ class DFlash2OperationsTest(TestCase):
 
 
 class DFlash2CheckpointTest(TestCase):
+    def test_dflash2_requires_explicit_attention_mode(self):
+        metadata = {
+            "dflash.conv_kernel_size": 2,
+            "dflash.conv_group_size": 16,
+            "dflash.selector_rank": 256,
+            "dflash.selector_top_k": 16,
+        }
+        with self.assertRaisesRegex(ValueError, "explicit dflash.attention.causal"):
+            DFlashConfig.from_gguf_metadata(metadata)
+        self.assertEqual(
+            DFlashConfig.from_gguf_metadata(
+                metadata | {"dflash.attention.causal": False}
+            ).selector_top_k,
+            16,
+        )
+        self.assertEqual(DFlashConfig.from_gguf_metadata({}).selector_top_k, 0)
+
+    def test_cuda_packed_rejects_dflash2_before_transform(self):
+        from executorch.examples.models.muse_glimmer.export.export_dflash import (
+            prepare_cuda_packed_draft,
+        )
+
+        draft = SimpleNamespace(
+            config=SimpleNamespace(selector_top_k=4, conv_kernel_size=2)
+        )
+        with self.assertRaisesRegex(ValueError, "DFlash2 currently requires"):
+            prepare_cuda_packed_draft(
+                None, None, draft, max_step_tokens=16, max_cells=128, max_owners=2
+            )
+
+    def test_invalid_gguf_rejects_before_target_weights(self):
+        from executorch.examples.models.muse_glimmer.export.export_dflash import (
+            export_dflash,
+        )
+        from gguf import GGUFWriter
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "draft.gguf"
+            writer = GGUFWriter(str(path), "dflash")
+            writer.add_uint32("dflash.conv_kernel_size", 2)
+            writer.write_header_to_file()
+            writer.write_kv_data_to_file()
+            writer.write_tensors_to_file()
+            writer.close()
+            with patch(
+                "executorch.examples.models.muse_glimmer.loaders.checkpoint_loader.load_gguf_model",
+                side_effect=AssertionError("target weights accessed"),
+            ), self.assertRaisesRegex(ValueError, "convolution and selector metadata"):
+                export_dflash(
+                    directory,
+                    target_gguf="unused.gguf",
+                    draft_gguf=str(path),
+                    backend="mlx",
+                    use_offgraph_kv_cache=True,
+                )
+
     def test_gguf_rejects_causal_attention(self):
         with self.assertRaisesRegex(
             ValueError, "Causal DFlash attention is unsupported"
@@ -334,6 +511,7 @@ class DFlash2CheckpointTest(TestCase):
                 "selector_top_k": 16,
             }.items():
                 writer.add_uint32("dflash." + key, value)
+            writer.add_bool("dflash.attention.causal", False)
             writer.write_header_to_file()
             writer.write_kv_data_to_file()
             writer.write_tensors_to_file()
@@ -361,6 +539,9 @@ class DFlash2CheckpointTest(TestCase):
                     )
 
     def test_mlx_dflash2_checkpoint_requires_gguf(self):
+        from executorch.examples.models.muse_glimmer.export.export_dflash import (
+            export_dflash,
+        )
         from executorch.examples.models.muse_glimmer.loaders.dflash_loader import (
             load_dflash_mlx,
         )
@@ -399,6 +580,17 @@ class DFlash2CheckpointTest(TestCase):
                     ValueError, "DFlash2 requires --draft-gguf"
                 ):
                     load_dflash_mlx(directory, max_seq_len=16)
+                with patch(
+                    "executorch.examples.models.muse_glimmer.loaders.checkpoint_loader.load_gguf_model",
+                    side_effect=AssertionError("target weights accessed"),
+                ), self.assertRaisesRegex(ValueError, "DFlash2 requires --draft-gguf"):
+                    export_dflash(
+                        directory,
+                        target_gguf="unused.gguf",
+                        draft_mlx=directory,
+                        backend="mlx",
+                        use_offgraph_kv_cache=True,
+                    )
 
     def test_gguf_preserves_converted_taps_and_selector_metadata(self):
         from executorch.examples.models.muse_glimmer.loaders.dflash_loader import (
@@ -408,6 +600,7 @@ class DFlash2CheckpointTest(TestCase):
         config = DFlashConfig.from_gguf_metadata(
             {
                 "dflash.target_layers": [2, 14, 26, 38, 50],
+                "dflash.attention.causal": False,
                 "dflash.conv_kernel_size": 2,
                 "dflash.conv_group_size": 16,
                 "dflash.selector_rank": 256,
@@ -460,6 +653,7 @@ class DFlash2CheckpointTest(TestCase):
                     "selector_top_k": 3,
                 }.items():
                     writer.add_uint32("dflash." + key, value)
+                writer.add_bool("dflash.attention.causal", False)
                 writer.add_tensor(name, torch.zeros(shape).numpy())
                 writer.write_header_to_file()
                 writer.write_kv_data_to_file()

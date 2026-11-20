@@ -323,8 +323,8 @@ a D = 16 artifact still processes 16 draft positions when N = 3. The block size
 comes from the drafter checkpoint configuration; changing it requires a new
 export.
 
-MLX draft proposals are greedy. Request temperature, top-p, and top-k control
-target sampling.
+MLX draft proposals are greedy. Per-request temperature, top-p, and top-k apply
+only to target sampling.
 
 Choose concurrency and prefix-cache limits to fit available memory. Prefix
 snapshots are disabled by default; omit `--prefix-cache-entries` to disable them.

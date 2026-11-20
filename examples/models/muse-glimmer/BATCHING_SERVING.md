@@ -42,12 +42,16 @@ an error. The three relevant limits are independent:
 The DFlash exporter accepts `--backend mlx --use-offgraph-kv-cache`.
 Serve that artifact with `--dflash`. Draft proposals are always greedy;
 temperature, top-p, and top-k apply only to the target distribution.
-Set `--dflash-n-draft N` at startup to propose N tokens using block size N+1.
+Set `--dflash-n-draft N` at startup to propose N tokens. On MLX, original DFlash uses
+block size N+1; DFlash2 keeps its trained block size as described below.
 Omitted or zero uses the exported maximum minus one; larger values are rejected.
 Re-export older fixed-block artifacts before using this option. One updated
 artifact supports different draft counts without another export. Draft tokens
-have separate `[owners, block_size]` axes; each block ranges from 2 to the
-exported maximum. Torch infers the concatenated context-plus-block K/V length.
+have separate `[owners, block_size]` axes. Original DFlash blocks range from 2
+to the exported maximum.
+
+Both draft formats use a per-query sliding window with the official PyTorch
+DFlash rule `abs(query - key) < window`, including within the draft block.
 
 ### DFlash2 on Apple Silicon
 
@@ -64,13 +68,8 @@ python -m executorch.examples.models.muse_glimmer.export.export_dflash \
 
 Serve the resulting artifact with the batching worker and `--dflash`. DFlash2
 requires the MLX off-graph path; legacy runners and CUDA export are not yet
-supported. Existing DFlash artifacts keep their logits ABI. The sliding-window
-correction also applies to original DFlash: each query now attends within its
-own window, so draft proposals can change without re-exporting off-graph artifacts.
-The mask follows official PyTorch DFlash's strict `abs(query - key) < window`
-rule, including within a block wider than the window. Transformers' original
-draft mask includes the boundary key; official MLX and llama.cpp leave future
-block keys visible even when the block exceeds the window.
+supported. Its GGUF must explicitly set `dflash.attention.causal` to false.
+Existing DFlash artifacts keep their logits ABI.
 
 DFlash2 runs its full trained block (16 positions for this checkpoint), even
 with `--dflash-n-draft 3`; this option limits the output projection and
@@ -86,16 +85,16 @@ DFlash2. The exporter reads this value from the GGUF's `dflash.selector_top_k`
 metadata. Renaming a model file does not change its behavior.
 
 The shared PyTorch model computes convolution, top-k candidates, and conditional
-candidate scores. DFlash2's `draft_forward` has a fifth input containing the
-contiguous proposal rows `[1, ..., N]`. It returns token IDs `[owners, N, K]`
-and float scores `[owners, N, K, K]`. The host walks the candidates conditioned
+candidate scores. DFlash2's `draft_forward` has a fifth, length-N selector input;
+only its length is used to select the first N proposals. Its values are ignored.
+It returns token IDs `[owners, N, K]` and float scores `[owners, N, K, K]`.
+The host walks the candidates conditioned
 on the previously selected token. MLX keeps greedy draft proposals and the
 existing target acceptance and residual sampling rules, including for nonzero
-target temperature. The shared
-candidate sampler also exposes conditional proposal probabilities for backends
-that choose stochastic proposals; a verifier must use those probabilities.
+target temperature.
 
-CUDA DFlash2 is future work; it can reuse the shared model and sampler.
+CUDA DFlash2 is future work. Its backend transformations must preserve the
+shared model's convolutions and candidate selector before export is enabled.
 
 ## Build
 

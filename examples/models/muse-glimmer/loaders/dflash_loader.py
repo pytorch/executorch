@@ -162,34 +162,12 @@ def load_dflash_gguf(
     return model, config
 
 
-def load_dflash_mlx(
-    mlx_dir: str,
-    backend: str = "mlx",
-    max_seq_len: int = 131072,
-    activation_dtype: torch.dtype = torch.bfloat16,
-) -> tuple:
-    """Load an MLX affine-quantized DFlash draft (e.g. dflash-3l_wind2048-mlx-q5).
-
-    The MLX draft's tensor names already match the ``DFlashDraftModel`` FQNs
-    (``fc``, ``hidden_norm``, ``norm``, per-layer ``self_attn`` / ``mlp`` /
-    layernorms / ``q_norm`` / ``k_norm``), so no key remap is needed:
-    ``iter_checkpoint`` auto-detects the MLX layout, ``_iter_mlx`` rebuilds each
-    ``(weight, scales, biases)`` triplet as a torchao intx tensor, and the draft
-    is already quantized. ``DFlashConfig`` is built
-    from the checkpoint's HF-style ``config.json``. Returns ``(model, config)``.
-    """
+def read_dflash_mlx_config(mlx_dir: str, max_seq_len: int = 131072) -> DFlashConfig:
+    """Read and validate an MLX draft config without loading weights."""
     import json
     import os
 
-    from executorch.examples.models.muse_glimmer.loaders.checkpoint_loader import (
-        _iter_mlx,
-    )
-    from executorch.examples.models.muse_glimmer.model.dflash_model import (
-        DFlashConfig,
-        DFlashDraftModel,
-    )
-    from executorch.extension.llm.export.load import load_checkpoint
-    from executorch.extension.llm.export.quant import to_default
+    from executorch.examples.models.muse_glimmer.model.dflash_model import DFlashConfig
 
     with open(os.path.join(mlx_dir, "config.json"), "r") as f:
         c = json.load(f)
@@ -207,7 +185,7 @@ def load_dflash_mlx(
             "DFlash2 requires --draft-gguf; --draft-mlx supports original DFlash"
         )
     layer_types = c.get("layer_types", [])
-    config = DFlashConfig(
+    return DFlashConfig(
         dim=c["hidden_size"],
         n_layers=c["num_hidden_layers"],
         n_heads=c["num_attention_heads"],
@@ -226,6 +204,34 @@ def load_dflash_mlx(
             [lt == "sliding_attention" for lt in layer_types] if layer_types else None
         ),
     )
+
+
+def load_dflash_mlx(
+    mlx_dir: str,
+    backend: str = "mlx",
+    max_seq_len: int = 131072,
+    activation_dtype: torch.dtype = torch.bfloat16,
+) -> tuple:
+    """Load an MLX affine-quantized DFlash draft (e.g. dflash-3l_wind2048-mlx-q5).
+
+    The MLX draft's tensor names already match the ``DFlashDraftModel`` FQNs
+    (``fc``, ``hidden_norm``, ``norm``, per-layer ``self_attn`` / ``mlp`` /
+    layernorms / ``q_norm`` / ``k_norm``), so no key remap is needed:
+    ``iter_checkpoint`` auto-detects the MLX layout, ``_iter_mlx`` rebuilds each
+    ``(weight, scales, biases)`` triplet as a torchao intx tensor, and the draft
+    is already quantized. ``DFlashConfig`` is built
+    from the checkpoint's HF-style ``config.json``. Returns ``(model, config)``.
+    """
+    from executorch.examples.models.muse_glimmer.loaders.checkpoint_loader import (
+        _iter_mlx,
+    )
+    from executorch.examples.models.muse_glimmer.model.dflash_model import (
+        DFlashDraftModel,
+    )
+    from executorch.extension.llm.export.load import load_checkpoint
+    from executorch.extension.llm.export.quant import to_default
+
+    config = read_dflash_mlx_config(mlx_dir, max_seq_len)
 
     print("Building DFlash draft model on meta device...")
     with torch.device("meta"):

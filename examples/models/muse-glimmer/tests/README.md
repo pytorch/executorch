@@ -1,11 +1,12 @@
 # Muse Glimmer MLX DFlash tests
 
 The native suite loads serialized PTEs through `MuseGlimmerMLXExecutor::create`.
-Fixtures use small hidden dimensions and the production vocabulary interface;
+Controlled fixtures use small hidden dimensions and a 200,096-token vocabulary;
 no model download or tokenizer is required. The export script generates a synthetic
 GGUF in its output directory with Q4_K/Q6_K weights and the production DFlash2
-block size, selector rank, top-k, and vocabulary. Layer count, hidden width, and
-context are reduced; it does not measure model quality or acceptance rate.
+block size, selector rank, top-k, and 202,048-token vocabulary. Layer count,
+hidden width, and context are reduced; it does not measure model quality or
+acceptance rate.
 
 After `make muse-glimmer-batching-mlx`:
 
@@ -17,13 +18,17 @@ cmake -S examples/models/muse-glimmer -B cmake-out/examples/models/muse-glimmer-
 cmake --build cmake-out/examples/models/muse-glimmer-batching \
   --target muse_glimmer_mlx_dflash_test sampling_test
 ctest --test-dir cmake-out/examples/models/muse-glimmer-batching \
-  -R '^muse_glimmer_(mlx_dflash|sampling)$' --output-on-failure --no-tests=error
+  -R '^muse_glimmer_sampling$' --output-on-failure --no-tests=error
+ctest --test-dir cmake-out/examples/models/muse-glimmer-batching \
+  -R '^muse_glimmer_mlx_dflash$' --output-on-failure --no-tests=error
 ```
 
 The tiny PTEs cover rejection, cache lifecycle, packed owners, and legacy
 artifacts against eager references. Seeded continuations are compared across
 prompt chunking and mixed prefill/decode batches for both draft formats.
-Input-sensitive continuations also check shared-payload slices against target-only decoding.
+Routing-sensitive fixtures also compare per-round tokens and acceptance counts
+between solo and packed execution with unequal prompts and reordered owners.
+Input-sensitive continuations check shared-payload slices against target-only decoding.
 A vendored stateless official reference separately checks DFlash2 model semantics,
 including sliding-window boundaries. Native sampling checks target-only,
 original DFlash, and DFlash2 at temperature 0.8 with top-k/top-p filtering;

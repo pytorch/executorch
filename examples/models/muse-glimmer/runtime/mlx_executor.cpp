@@ -235,10 +235,14 @@ runtime::Result<MuseGlimmerBackend> MuseGlimmerMLXExecutor::create(
       ET_ASSIGN_OR_RETURN(
           max_block,
           detail::read_required_positive_int(*module, "get_block_size"));
+      if (names.count("get_dflash_selector_top_k")) {
+        ET_CHECK_OK_OR_RETURN_ERROR(
+            check_constant_method(*module, "get_dflash_selector_top_k"));
+      }
       ET_ASSIGN_OR_RETURN(
-          selector,
+          selector_top_k,
           detail::read_int_method(*module, "get_dflash_selector_top_k"));
-      const int64_t top_k = selector.value_or(0);
+      const int64_t top_k = selector_top_k.value_or(0);
       if (top_k < 0 || top_k > vocab) {
         return Error::InvalidProgram;
       }
