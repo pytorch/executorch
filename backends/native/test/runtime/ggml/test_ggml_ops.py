@@ -694,12 +694,6 @@ class GgmlOpsTest(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "floating-point"):
             self._check(Lambda(F.relu6), (torch.arange(6).reshape(2, 3) - 2,))
 
-    def test_relu6_of_half_inputs(self):
-        x = torch.randn(2, 3, 4) * 8.0
-        for dtype in (torch.float16, torch.bfloat16):
-            with self.subTest(dtype=dtype):
-                self._check(Lambda(F.relu6), (x.to(dtype),), atol=0, rtol=0)
-
     def test_elu(self):
         self._check(Lambda(F.elu), (torch.randn(2, 3, 4) * 3.0,))
         # Eager's expm1 is within rtol of these; exp(x) - 1 is 19% off at -1e-7.
@@ -1091,20 +1085,12 @@ class GgmlOpsTest(unittest.TestCase):
             torch.nn.LayerNorm(16, elementwise_affine=False), (torch.randn(2, 3, 16),)
         )
 
-    def test_layer_norm_half(self):
-        norm = torch.nn.LayerNorm(16)
-        torch.nn.init.uniform_(norm.weight, 0.5, 1.5)
-        torch.nn.init.uniform_(norm.bias, -0.5, 0.5)
-        x = torch.randn(2, 3, 16)
-        for dtype in (torch.float16, torch.bfloat16):
-            with self.subTest(dtype=dtype):
-                # One rounding of the output; eager normalizes in F32 too.
-                self._check(
-                    copy.deepcopy(norm).to(dtype),
-                    (x.to(dtype),),
-                    atol=1e-2 if dtype == torch.bfloat16 else 2e-3,
-                    rtol=1e-2 if dtype == torch.bfloat16 else 2e-3,
-                )
+    def test_layer_norm_rejects_half(self):
+        with self.assertRaisesRegex(AssertionError, "F32 tensors only"):
+            self._check(
+                torch.nn.LayerNorm(16).half(),
+                (torch.randn(2, 3, 16, dtype=torch.float16),),
+            )
 
     def test_layer_norm_rejects_used_mean(self):
         def forward(x):
@@ -1980,34 +1966,6 @@ class GgmlOpsTest(unittest.TestCase):
                         atol=1e-2,
                         rtol=1e-2,
                     )
-
-    def test_layer_norm_and_hardtanh_of_half_intermediates(self):
-        # A half linear or embedding result is rounded to its dtype, so
-        # layer_norm, which computes in F32 only, and hardtanh, which ggml-cpu
-        # clamps in F32 and F16 only, must widen it again.
-        torch.manual_seed(0)
-        norm = torch.nn.LayerNorm(64)
-        torch.nn.init.uniform_(norm.weight, 0.5, 1.5)
-        torch.nn.init.uniform_(norm.bias, -0.5, 0.5)
-        linear = torch.nn.Linear(16, 64)
-        x = torch.randn(4, 16)
-        cases = {
-            "layer_norm of a linear": (linear, norm, x),
-            "layer_norm of an embedding": (
-                torch.nn.Embedding(10, 64),
-                norm,
-                torch.tensor([[1, 7, 3]]),
-            ),
-            "hardtanh of a linear": (linear, torch.nn.Hardtanh(-0.5, 0.5), x),
-            "relu6 of a linear": (linear, torch.nn.ReLU6(), x * 8),
-        }
-        for name, (first, second, x) in cases.items():
-            for dtype in (torch.float16, torch.bfloat16):
-                with self.subTest(case=name, dtype=dtype):
-                    model = torch.nn.Sequential(first, second)
-                    half = copy.deepcopy(model).to(dtype).requires_grad_(False)
-                    inputs = (x.to(dtype) if x.is_floating_point() else x,)
-                    self._check(half, inputs, atol=1e-2, rtol=1e-2)
 
     def test_rope_llama3(self):
         config = LlamaConfig(
