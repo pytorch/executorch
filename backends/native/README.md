@@ -277,6 +277,7 @@ numerics default to llama.cpp's behaviour; the testing ones end in
 | --- | --- | --- | --- | --- |
 | `allow_activation_quant_for_weight_only` | quantizes the activations of matmuls with weight-only quantized weights in their block format | false (debugging): those weights load dequantized to F32, about 4-12x their packed size by type | `linear` | all |
 | `exact_topk_for_testing` (`--exact_topk_for_testing`) | one argsort (`ggml_argsort_top_k`), which leaves a row holding NaN unordered | NaN ranks above every value, +inf included, at a NaN key map and a second argsort | `topk` | all |
+| `exact_gelu_for_testing` | one `ggml_gelu`, which ggml-cpu reads from an F16 table, a few 1e-4 off eager | the CPU builds tanh GELU from exact ops, at five more kernels | `gelu` (`approximate="tanh"`) | CPU |
 
 The CMake installation includes the GGML libraries and package configuration.
 It also copies the submodule's upstream MIT license, including its copyright
