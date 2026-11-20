@@ -147,15 +147,15 @@ TEST_F(OpMaskedScatterOutTest, ChannelsLastBroadcastMask) {
   TensorFactory<ScalarType::Int> tf;
   TensorFactory<ScalarType::Bool> tfBool;
 
-  Tensor in = tf.channels_last_like(
-      tf.make({1, 2, 2, 2}, {1, 2, 2, 4, 2, 4, 4, 8}));
+  Tensor in =
+      tf.channels_last_like(tf.make({1, 2, 2, 2}, {1, 2, 2, 4, 2, 4, 4, 8}));
   Tensor mask = tfBool.channels_last_like(
       tfBool.make({1, 1, 2, 2}, {false, true, true, false}));
   Tensor src = tf.make({4}, {2, 2, 4, 4});
   Tensor out = tf.zeros_channels_last({1, 2, 2, 2});
 
-  Tensor expected = tf.channels_last_like(
-      tf.make({1, 2, 2, 2}, {1, 2, 2, 4, 2, 4, 4, 8}));
+  Tensor expected =
+      tf.channels_last_like(tf.make({1, 2, 2, 2}, {1, 2, 2, 4, 2, 4, 4, 8}));
 
   op_masked_scatter_out(in, mask, src, out);
   EXPECT_TENSOR_EQ(out, expected);
@@ -165,8 +165,8 @@ TEST_F(OpMaskedScatterOutTest, ChannelsLastBroadcastMaskDistinctValues) {
   TensorFactory<ScalarType::Int> tf;
   TensorFactory<ScalarType::Bool> tfBool;
 
-  Tensor in = tf.channels_last_like(
-      tf.make({1, 2, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8}));
+  Tensor in =
+      tf.channels_last_like(tf.make({1, 2, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8}));
   Tensor mask = tfBool.channels_last_like(
       tfBool.make({1, 1, 2, 2}, {false, true, true, false}));
   Tensor src = tf.make({4}, {10, 20, 30, 40});
@@ -178,4 +178,3 @@ TEST_F(OpMaskedScatterOutTest, ChannelsLastBroadcastMaskDistinctValues) {
   op_masked_scatter_out(in, mask, src, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
-
