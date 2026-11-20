@@ -4181,9 +4181,15 @@ class I64toI32:
             squeeze_out = view_out.squeeze(-1)
             return squeeze_out, conv_out
 
+    class _AddmmIntAlpha(torch.nn.Module):
+        # DecomposeAddmm turns the int64 alpha into a get_attr at the graph head
+        def forward(self, b, x, y):
+            return torch.addmm(b, x, y, alpha=2)
+
     @staticmethod
     @unpack_pass_fixtures
     def test(
+        subtests,
         quantizer,
         compile_spec,
         backend_type: QnnExecuTorchBackendType,
@@ -4208,6 +4214,20 @@ class I64toI32:
         assertions.assert_target_count(
             gm, exir_ops.edge.aten._to_copy.default, expected_casts
         )
+
+        # The int32 cast of a constant must still follow it once the constant is lifted.
+        # Unquantized only: the quantizer annotates the int64 addmm, so export fails first.
+        if quantizer is None:
+            with subtests.test(msg="constant_cast_order"):
+                gm = pass_pipeline.lower_edge_ep(
+                    module=I64toI32._AddmmIntAlpha(),
+                    sample_input=tuple(torch.randint(0, 5, (2, 2)) for _ in range(3)),
+                    backend_type=backend_type,
+                    compile_spec=compile_spec,
+                    target_pass=target_pass,
+                    quantizer=quantizer,
+                ).graph_module
+                gm.graph.lint()
 
 
 class InsertCastForFpActQuantizedWeight:
