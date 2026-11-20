@@ -28,9 +28,11 @@ class AnnotateUnbind(ExportPass):
         partitions = get_source_partitions(graph_module.graph, self._SOURCE_OPS)
         for src_partitions in partitions.values():
             for src_partition in src_partitions:
-                if src_partition.input_nodes[0].target in dq_ops:
-                    q_node = src_partition.input_nodes[0].args[0]
-                    quant_attrs = get_quant_attrs(self.edge_program, q_node)
+                # read the dq rather than its q: a folded quantized constant
+                # feeds its dq directly, and a dq always carries its q's qparams
+                dq_node = src_partition.input_nodes[0]
+                if dq_node.target in dq_ops:
+                    quant_attrs = get_quant_attrs(self.edge_program, dq_node)
                     for n in src_partition.nodes:
                         n.meta[QCOM_QUANT_ATTRS] = quant_attrs.copy()
 

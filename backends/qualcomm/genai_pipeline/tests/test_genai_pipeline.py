@@ -320,6 +320,51 @@ class TestGenAIPipelineInvoke(unittest.TestCase):
         input_config = call_args[0][1]
         self.assertEqual(input_config.backend_type, mock_backend_type)
 
+    def test_compilation_receives_model_preparation_outputs(self):
+        """Without quantization, compilation gets the prepared model as is."""
+        from executorch.backends.qualcomm.genai_pipeline.compilation.model_layout import (
+            ModelLayout,
+        )
+
+        layout = ModelLayout(decoder_layer_prefixes=("model.layers",))
+        prep_output = ModelPreparationOutputConfig(
+            model_module={"text_decoder": MagicMock(name="decoder")},
+            example_inputs={"text_decoder": {"kv_forward": ("tokens",)}},
+            meta={"text_decoder": {"kv_forward": {"get_n_layers": 2}}},
+            num_shardings=None,
+            model_layout=layout,
+        )
+        mock_prep = MagicMock(spec=ModelPreparationStrategy)
+        mock_prep.invoke.return_value = prep_output
+        mock_compile = MagicMock(spec=CompilationStrategy)
+        mock_compile.invoke.return_value = CompilationOutputConfig(
+            artifact_paths=TEST_ARTIFACT_PATHS
+        )
+        proxy = EngineProxy(
+            {
+                STAGE_MODEL_PREPARATION: EngineType.EXECUTORCH,
+                STAGE_COMPILATION: EngineType.EXECUTORCH,
+            },
+            backend_type=TEST_BACKEND_TYPE,
+        )
+        pipeline = GenAIPipeline(
+            model_preparation_stage=ModelPreparationStage(mock_prep),
+            quantization_stage=None,
+            compilation_stage=CompilationStage(mock_compile),
+            inference_stage=None,
+            engine_proxy=proxy,
+        )
+
+        pipeline.invoke(make_test_context())
+
+        input_config = mock_compile.invoke.call_args[0][1]
+        self.assertIsNone(input_config.graphs)
+        self.assertIs(input_config.model, prep_output.model_module)
+        self.assertIs(input_config.example_inputs, prep_output.example_inputs)
+        self.assertIs(input_config.meta, prep_output.meta)
+        self.assertEqual(input_config.num_sharding, 1)
+        self.assertIs(input_config.model_layout, layout)
+
     def test_inference_receives_prompt(self):
         mock_infer = MagicMock(spec=InferenceStrategy)
         mock_infer.invoke.return_value = InferenceOutputConfig(

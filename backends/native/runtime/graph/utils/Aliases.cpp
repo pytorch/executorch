@@ -25,16 +25,18 @@ constexpr std::string_view kView = "torch.ops.aten.view.default";
 constexpr std::string_view kSqueezeDim = "torch.ops.aten.squeeze.dim";
 constexpr std::string_view kSqueezeDims = "torch.ops.aten.squeeze.dims";
 constexpr std::string_view kUnsqueeze = "torch.ops.aten.unsqueeze.default";
-constexpr std::array<std::string_view, 4> kReshapes{
+constexpr std::string_view kAlias = "torch.ops.aten.alias.default";
+constexpr std::array<std::string_view, 5> kReshapes{
     kView,
     kSqueezeDim,
     kSqueezeDims,
-    kUnsqueeze};
+    kUnsqueeze,
+    kAlias};
 constexpr std::array<std::string_view, 3> kInPlaceActivations{
     "torch.ops.aten.relu_.default",
     "torch.ops.aten.gelu_.default",
     "torch.ops.aten.sigmoid_.default"};
-constexpr std::array<std::pair<std::string_view, std::string_view>, 7>
+constexpr std::array<std::pair<std::string_view, std::string_view>, 8>
     kViewCopies{
         {{kView, "torch.ops.aten.view_copy.default"},
          {"torch.ops.aten.permute.default",
@@ -43,7 +45,8 @@ constexpr std::array<std::pair<std::string_view, std::string_view>, 7>
          {"torch.ops.aten.slice.Tensor", "torch.ops.aten.slice_copy.Tensor"},
          {kSqueezeDim, "torch.ops.aten.squeeze_copy.dim"},
          {kSqueezeDims, "torch.ops.aten.squeeze_copy.dims"},
-         {kUnsqueeze, "torch.ops.aten.unsqueeze_copy.default"}}};
+         {kUnsqueeze, "torch.ops.aten.unsqueeze_copy.default"},
+         {kAlias, "torch.ops.aten.alias_copy.default"}}};
 
 [[noreturn]] void fail(const std::string& reason) {
   throw std::runtime_error("functionalize_aliases: " + reason);
@@ -75,10 +78,10 @@ bool references_alias_group(
 }
 
 // Values with the same key, dtype and sizes read the same elements in the same
-// logical order: view, squeeze and unsqueeze reshape their operand in row-major
-// order, and an in-place activation keeps its operand's indexing. Any other
-// alias starts a new key. Keys follow producer operands, not alias_id, which
-// may name a more distant ancestor.
+// logical order: view, squeeze, unsqueeze and alias reshape their operand in
+// row-major order, and an in-place activation keeps its operand's indexing.
+// Any other alias starts a new key. Keys follow producer operands, not
+// alias_id, which may name a more distant ancestor.
 std::vector<ValueId> indexing_keys(const Graph& graph) {
   std::vector<ValueId> keys(graph.values.size());
   for (ValueId id = 0; std::cmp_less(id, graph.values.size()); ++id) {

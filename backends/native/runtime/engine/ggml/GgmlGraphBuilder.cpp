@@ -205,7 +205,8 @@ GraphBuilder::GraphBuilder(
     const std::unordered_map<ValueId, std::vector<uint8_t>>& rope_factor_bytes,
     const FoldedBatchNorms& batch_norms,
     std::unordered_map<ValueId, int64_t> key_extents,
-    size_t graph_size)
+    size_t graph_size,
+    const OffGraphCacheBinding* offgraph_cache)
     : method_(method),
       inputs_(inputs),
       outputs_(outputs),
@@ -215,6 +216,7 @@ GraphBuilder::GraphBuilder(
       batch_norms_(batch_norms),
       key_extents_(std::move(key_extents)),
       graph_size_(graph_size),
+      offgraph_cache_(offgraph_cache),
       values_(method.graph.values.size()) {
   for (const auto& [id, tensor] : persistent) {
     persistent_storage_.insert(tensor);
@@ -383,7 +385,7 @@ void GraphBuilder::set(ValueId id, RuntimeValue value) {
   if (!in_bounds(id, values_.size())) {
     throw std::runtime_error("ggml: value id is out of range");
   }
-  const auto* ref = std::get_if<TensorRef>(&value);
+  auto* ref = std::get_if<TensorRef>(&value);
   if (ref != nullptr) {
     const auto ne = reversed_extents(ref->sizes);
     if (!std::equal(ne.begin(), ne.end(), ref->tensor->ne)) {
@@ -391,8 +393,30 @@ void GraphBuilder::set(ValueId id, RuntimeValue value) {
           "ggml: lowered tensor shape disagrees with value '" +
           method_.graph.value(id).name + "'");
     }
+    ref->tensor = narrowed_to_declared(id, ref->tensor);
   }
   values_.at(static_cast<size_t>(id)) = std::move(value);
+}
+
+// Eager rounds each op's result to its dtype, so an F16 or BF16 node result
+// that a lowering left in F32 (ggml_mul_mat always returns F32) is rounded
+// before later ops read it. Constants keep the types the codec gave them.
+ggml_tensor* GraphBuilder::narrowed_to_declared(
+    ValueId id,
+    ggml_tensor* tensor) {
+  const Value& value = method_.graph.value(id);
+  if (value.role != ValueRole::Intermediate || !value.is_tensor() ||
+      tensor->type != GGML_TYPE_F32) {
+    return tensor;
+  }
+  const ScalarType dtype = value.tensor_meta().dtype;
+  if (dtype != ScalarType::Half && dtype != ScalarType::BFloat16) {
+    return tensor;
+  }
+  return ggml_cast(
+      instance_.context.get(),
+      tensor,
+      dtype == ScalarType::Half ? GGML_TYPE_F16 : GGML_TYPE_BF16);
 }
 
 const RuntimeValue& GraphBuilder::value(ValueId id) const {
@@ -715,6 +739,8 @@ void GraphBuilder::lower(const Node& node) {
     lower_sum(node);
   } else if (key == "aten.amax.default") {
     lower_amax(node);
+  } else if (key == "aten._softmax.default") {
+    lower_softmax(node);
   } else if (key == "aten.slice_copy.Tensor" || key == "aten.slice.Tensor") {
     lower_slice(node, key == "aten.slice_copy.Tensor");
   } else if (key == "aten.select_copy.int" || key == "aten.select.int") {
@@ -757,11 +783,14 @@ void GraphBuilder::lower(const Node& node) {
     lower_index_put(node);
   } else if (key == "aten.scaled_dot_product_attention.default") {
     lower_sdpa(node);
+  } else if (key == "kvcache.update_and_attend.default") {
+    lower_update_and_attend(node);
   } else if (key == "aten.sym_size.int") {
     lower_sym_size(node);
   } else if (
       key == "_operator.add" || key == "_operator.sub" ||
-      key == "_operator.mul" || key == "_operator.floordiv") {
+      key == "_operator.mul" || key == "_operator.floordiv" ||
+      key == "_operator.neg") {
     lower_symbolic(node, key);
   } else {
     throw std::runtime_error("ggml: unsupported PTG op '" + node.target + "'");
@@ -831,6 +860,12 @@ ggml_tensor* GraphBuilder::as_f32(ggml_tensor* tensor) {
   return tensor->type == GGML_TYPE_F32
       ? tensor
       : ggml_cast(instance_.context.get(), tensor, GGML_TYPE_F32);
+}
+
+ggml_tensor* GraphBuilder::half_as_f32(ggml_tensor* tensor) {
+  return tensor->type == GGML_TYPE_F16 || tensor->type == GGML_TYPE_BF16
+      ? as_f32(tensor)
+      : tensor;
 }
 
 ggml_tensor* GraphBuilder::as_i32(ggml_tensor* tensor) {
@@ -1083,14 +1118,17 @@ int64_t GraphBuilder::symbolic_operand(const Argument& arg) const {
 }
 
 void GraphBuilder::lower_symbolic(const Node& node, const std::string& key) {
-  if (node.inputs.size() < 2) {
+  const size_t operands = key == "_operator.neg" ? 1 : 2;
+  if (node.inputs.size() < operands) {
     throw std::runtime_error("ggml: symbolic arithmetic is missing operands");
   }
   const int64_t a = symbolic_operand(node.inputs[0].arg);
-  const int64_t b = symbolic_operand(node.inputs[1].arg);
+  const int64_t b = operands == 2 ? symbolic_operand(node.inputs[1].arg) : 0;
   int64_t result = 0;
   bool overflow = false;
-  if (key == "_operator.add") {
+  if (key == "_operator.neg") {
+    overflow = __builtin_sub_overflow(int64_t{0}, a, &result);
+  } else if (key == "_operator.add") {
     overflow = __builtin_add_overflow(a, b, &result);
   } else if (key == "_operator.sub") {
     overflow = __builtin_sub_overflow(a, b, &result);
