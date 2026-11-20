@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import torch
+from executorch.backends.qualcomm.builders.utils import is_parameter
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.passes import dead_code_elimination_pass
@@ -14,8 +15,9 @@ class RemoveRedundancy(ExportPass):
     Trim certain operators to reduce unnecessary overhead.
     """
 
-    def __init__(self, quantization_capture=False):
+    def __init__(self, quantization_capture=False, edge_program=None):
         super(RemoveRedundancy, self).__init__()
+        self.edge_program = edge_program
         self.redundant_ops_general = {
             torch.clone: self._default_condition,
             torch.ops.aten.clone.default: self._default_condition,
@@ -26,6 +28,7 @@ class RemoveRedundancy(ExportPass):
             exir_ops.edge.aten.expand_copy.default: self._same_shape_condition,
             exir_ops.edge.aten.lift_fresh_copy.default: self._default_condition,
             exir_ops.edge.aten.repeat.default: self._same_shape_condition,
+            exir_ops.edge.aten.view_copy.default: self._rms_norm_weight_view_condition,
             # remove this target if '_skip_dim_order' is set to False
             exir_ops.edge.dim_order_ops._to_dim_order_copy.default: self._dim_order_op_condition,
             # remove channel_last / contiguous _to_copy if '_skip_dim_order' is set to True
@@ -47,6 +50,22 @@ class RemoveRedundancy(ExportPass):
 
     def _same_shape_condition(self, node):
         return node.args[0].meta["val"].shape == node.meta["val"].shape
+
+    def _rms_norm_weight_view_condition(self, node):
+        source = node.args[0]
+        is_static = source.op == "get_attr" or (
+            self.edge_program is not None and is_parameter(source, self.edge_program)
+        )
+        if not is_static or not self._same_shape_condition(node):
+            return False
+        return all(
+            user.target == exir_ops.edge.aten.rms_norm.default
+            and (
+                (len(user.args) > 2 and user.args[2] is node)
+                or user.kwargs.get("weight") is node
+            )
+            for user in node.users
+        )
 
     def _to_copy_op_condition(self, node):
         return "memory_format" in node.kwargs
