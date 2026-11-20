@@ -77,6 +77,13 @@ def _increment(x: torch.Tensor) -> None:
         x[tile] = x[tile] + 1
 
 
+def _scale(x: torch.Tensor, scale: float) -> torch.Tensor:
+    result = torch.empty_like(x)
+    for tile in hl.tile(x.numel()):
+        result[tile] = x[tile] * scale
+    return result
+
+
 def _two_outputs(x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     first = torch.empty_like(x)
     second = torch.empty_like(x)
@@ -178,6 +185,84 @@ class HelionLaunchContractTest(unittest.TestCase):
         )
         self.assertIn("return max_propagate_nan(x, 0)", bound)
 
+    def test_rejects_old_helion_version(self) -> None:
+        with mock.patch.object(
+            lower_helion_to_triton.importlib.metadata,
+            "version",
+            return_value="1.5.1",
+        ):
+            with self.assertRaisesRegex(RuntimeError, "Helion 1.5.2 or newer"):
+                lower_helion_to_triton._check_helion_version()
+
+    def test_rejects_placeholder_mutation(self) -> None:
+        graph = Graph()
+        x, y = graph.placeholder("x"), graph.placeholder("y")
+        copied = graph.call_function(torch.ops.aten.copy_.default, (x, y))
+        graph.output((copied,))
+        traced = torch.fx.GraphModule({}, graph)
+        with self.assertRaisesRegex(NotImplementedError, "write to an input"):
+            lower_helion_to_triton._check_no_placeholder_mutation(traced, "add")
+
+    def test_rejects_helper_name_clash(self) -> None:
+        source = (
+            "from helion.runtime.triton import helpers as helion_triton_helpers\n"
+            "max_propagate_nan = 0\n"
+            "def f(x):\n"
+            "    return helion_triton_helpers.max_propagate_nan(x, 0)\n"
+        )
+        with self.assertRaisesRegex(NotImplementedError, "clashes"):
+            lower_helion_to_triton._bind_helion_jit_helpers(source)
+
+    def test_rejects_non_getitem_output_use(self) -> None:
+        graph = Graph()
+        hop, other = graph.placeholder("hop"), graph.placeholder("other")
+        graph.call_function(torch.ops.aten.add.Tensor, (hop, other))
+        with self.assertRaisesRegex(NotImplementedError, "accessed by getitem"):
+            lower_helion_to_triton._reroute_hop_outputs(
+                graph, hop, (other,), None
+            )
+
+    def _captured(self, **overrides) -> lower_helion_to_triton._CapturedHelionCall:
+        kernel = SimpleNamespace(
+            settings=SimpleNamespace(backend="triton", static_shapes=True),
+            configs=[{}],
+            signature=SimpleNamespace(parameters={}),
+        )
+        fields = dict(
+            kernel=kernel,
+            is_functional=False,
+            tensor_args={},
+            has_constant_args=False,
+            tensors_to_clone=(),
+            tensor_output_count=0,
+            aliases_inputs=False,
+            mutates_inputs=False,
+            output_spec={},
+        )
+        fields.update(overrides)
+        return lower_helion_to_triton._CapturedHelionCall(**fields)
+
+    def test_rejects_aliased_outputs(self) -> None:
+        with self.assertRaisesRegex(NotImplementedError, "aliased outputs"):
+            lower_helion_to_triton._parse_helion_call(
+                self._captured(aliases_inputs=True)
+            )
+
+    def test_rejects_unfunctionalized_mutation(self) -> None:
+        with self.assertRaisesRegex(NotImplementedError, "functionalized"):
+            lower_helion_to_triton._parse_helion_call(
+                self._captured(mutates_inputs=True)
+            )
+
+    def test_rejects_host_tensor_descriptors(self) -> None:
+        captured = self._captured()
+        captured.kernel.configs = [{"host_tensor_descriptors": True}]
+        call = lower_helion_to_triton._HelionCall(captured, [], (), ())
+        with self.assertRaisesRegex(
+            NotImplementedError, "host tensor descriptors"
+        ):
+            lower_helion_to_triton._render_triton_entrypoint(call)
+
     def test_rejects_non_triton_backend(self) -> None:
         kernel = SimpleNamespace(
             settings=SimpleNamespace(backend="cute", static_shapes=True)
@@ -209,6 +294,9 @@ class HelionLaunchContractTest(unittest.TestCase):
 
         program = torch.export.export(Model(), (torch.ones(4),), strict=True)
         original = program.graph_module.code
+        # An earlier test in this process may have cached the Helion modules;
+        # clear the cache so consulting Helion here would re-import it.
+        lower_helion_to_triton._helion_capture_modules.cache_clear()
         with mock.patch.object(
             lower_helion_to_triton.importlib,
             "import_module",
@@ -225,7 +313,12 @@ class LowerHelionToTritonTest(unittest.TestCase):
     ):
         exported = torch.export.export(model, (inputs,), strict=True)
         self.assertTrue(
-            any("helion_kernel_wrapper" in str(n.target) for n in exported.graph.nodes)
+            any(
+                "helion_kernel_wrapper" in str(n.target)
+                for module in exported.graph_module.modules()
+                if isinstance(module, torch.fx.GraphModule)
+                for n in module.graph.nodes
+            )
         )
         with mock.patch.object(
             lower_helion_to_triton,
@@ -362,6 +455,122 @@ class LowerHelionToTritonTest(unittest.TestCase):
                 return self.state + x
 
         self._export_and_run(Model(), x, x + 1, expected_second=x + 2)
+
+    def test_cond_branch_export_and_cpp_runtime(self) -> None:
+        kernel = helion.kernel(
+            config=helion.Config(block_sizes=[256]), static_shapes=True
+        )(_add)
+        x = torch.rand(257, device="cuda") + 0.5
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                # No constant in the other branch: the CUDA backend's other
+                # cond tests use the same shape, and a tensor constant inside
+                # a branch trips an unrelated AOTI retrace error.
+                return torch.cond(
+                    x.sum() > 0, lambda x: kernel(x, x), lambda x: x.neg(), (x,)
+                )
+
+        self._export_and_run(Model(), x, x * 2)
+
+    def test_conv1d_and_helion_export_and_cpp_runtime(self) -> None:
+        # nn.Conv1d is in the CUDA backend's decomposition table, so the AOTI
+        # backend retraces the program with run_decompositions after this
+        # pass; the spliced Triton launch must survive that retrace.
+        kernel = helion.kernel(
+            config=helion.Config(block_sizes=[256]), static_shapes=True
+        )(_add)
+        x = torch.randn(1, 4, 257, device="cuda")
+
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv1d(4, 4, kernel_size=3, padding=1)
+
+            def forward(self, x):
+                y = self.conv(x)
+                flat = y.reshape(-1)
+                return kernel(flat, flat).view_as(y)
+
+        model = Model().cuda()
+        for parameter in model.parameters():
+            parameter.requires_grad_(False)
+        # Loose tolerances: the point is the decomposition retrace, and the
+        # compiled conv accumulates differently from eager.
+        self._export_and_run(model, x, model.conv(x) * 2, rtol=1e-2, atol=1e-2)
+
+    def test_user_input_mutation_lowering_compiles_delegate(self) -> None:
+        # Compiles through CudaPartitioner and AOTI; executing the mutated
+        # input in the runtime is covered by the buffer mutation test above,
+        # which uses the same copy-back mechanism.
+        kernel = helion.kernel(
+            config=helion.Config(block_sizes=[256]), static_shapes=True
+        )(_increment)
+        x = torch.randn(257, device="cuda")
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                kernel(x)
+                return x * 2
+
+        exported = torch.export.export(Model(), (x.clone(),), strict=True)
+        edge = to_edge_transform_and_lower(
+            exported,
+            partitioner=[
+                CudaPartitioner(
+                    [CudaBackend.generate_method_name_compile_spec("forward")]
+                )
+            ],
+        )
+        self.assertIn(
+            "executorch_call_delegate", edge.exported_program().graph_module.code
+        )
+        self.assertFalse(
+            any(
+                "helion_kernel_wrapper" in str(n.target)
+                for module in edge.exported_program().graph_module.modules()
+                if isinstance(module, torch.fx.GraphModule)
+                for n in module.graph.nodes
+            )
+        )
+        edge.to_executorch()
+
+    def test_rejects_scalar_argument(self) -> None:
+        kernel = helion.kernel(
+            config=helion.Config(block_sizes=[256]), static_shapes=True
+        )(_scale)
+        x = torch.randn(257, device="cuda")
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return kernel(x, 2.5)
+
+        program = torch.export.export(Model(), (x,), strict=True)
+        with self.assertRaisesRegex(NotImplementedError, "tensor-only arguments"):
+            LowerHelionToTritonPass()(program)
+
+    def test_rejects_capture_missing_private_field(self) -> None:
+        kernel = helion.kernel(
+            config=helion.Config(block_sizes=[256]), static_shapes=True
+        )(_increment)
+        graph = Graph()
+        value = graph.placeholder("x")
+        with FakeTensorMode():
+            value.meta["val"] = torch.empty((257,), device="cuda")
+        node = graph.call_function(
+            helion_kernel_wrapper_functional,
+            kwargs={
+                "kernel_idx": helion_kernel_side_table.add_kernel(kernel),
+                "constant_args": {},
+                "tensor_args": {"x": value},
+                "output_spec": {
+                    "mutated_inputs": ["x"],
+                },
+                "tensors_to_clone": ["x"],
+            },
+        )
+        with self.assertRaisesRegex(RuntimeError, "lacks the expected field"):
+            lower_helion_to_triton._trace_helion_call_as_triton(node)
 
     def test_user_input_mutation_updates_signature(self) -> None:
         kernel = helion.kernel(

@@ -115,8 +115,9 @@ For a complete working example, see the [CUDA export script](https://github.com/
 ### Models with Helion Kernels
 
 A model can call [Helion](https://github.com/pytorch/helion) kernels in its `forward`, and export
-it with the same `CudaPartitioner` flow as any other model. Export needs Helion installed
-(`pip install helion`); the CUDA backend imports it only when a model calls Helion kernels. Give each
+it with the same `CudaPartitioner` flow as any other model. Export needs Helion 1.5.2 or newer
+installed (`pip install "helion==1.5.2"`; Helion 1.6.0 does not import on Python 3.11); the CUDA
+backend imports it only when a model calls Helion kernels. Give each
 kernel one config that you selected and validated offline for the target GPU:
 
 ```python
@@ -147,7 +148,8 @@ et_program = to_edge_transform_and_lower(
 exec_program = et_program.to_executorch()
 ```
 
-`torch.export` records each call as a Helion higher-order op. While lowering, the CUDA backend's
+Strict `torch.export` (`strict=True`, as in the example above, not torch's default) records each
+call as a Helion higher-order op. While lowering, the CUDA backend's
 `LowerHelionToTritonPass` renders the call with its config, captures the generated Triton launch and
 replaces the Helion op with it, so AOTInductor compiles it like any other Triton kernel. The pass
 runs after the backend's other passes and before AOTInductor. It neither tunes nor launches the
@@ -158,15 +160,15 @@ The pass supports:
 - Kernels on the Triton backend with `static_shapes=True` and exactly one config.
 - Tensor arguments, several calls per model, several tensor outputs and calls inside `torch.cond`
   branches.
-- Kernels that write their inputs or buffers in place, as long as a contiguous copy of the
-  written tensor keeps its strides.
+- Kernels that write their inputs or buffers in place, as long as the written tensor is dense
+  (non-overlapping, without gaps), so the copy made for the write keeps its strides.
 
 It rejects, with an error during export, calls it cannot lower exactly: kernels on other Helion
 backends such as CuTe, kernels that leave the choice of config to Helion (no `config=`, so
 Helion autotunes on the first call, or a `configs=[...]` list), scalar, container or defaulted arguments, dynamic shapes, outputs that alias inputs, outputs whose strides differ
 from the ones `torch.export` recorded, more than one launch site, host tensor descriptors, and
 launch options AOTInductor cannot reproduce, such as cooperative grids, clusters or PDL. It needs
-a Helion version that records each call's host-semantic fingerprint at export.
+Helion 1.5.2 or newer, which records each call's host-semantic fingerprint at export.
 
 
 ----
