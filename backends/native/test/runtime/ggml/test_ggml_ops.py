@@ -306,6 +306,7 @@ def _run_ggml(
     graph_ops: collections.Counter | None = None,
     method: str = "forward",
     allow_activation_quant_for_weight_only: bool = False,
+    exact_topk_for_testing: bool = False,
 ):
     """Runs each step's inputs in order on one executable and returns each
     step's outputs as (bytes, shape) pairs. `graph_ops`, if given, collects
@@ -337,6 +338,8 @@ def _run_ggml(
         command.append("--print_graph_ops")
     if allow_activation_quant_for_weight_only:
         command.append("--allow_activation_quant_for_weight_only")
+    if exact_topk_for_testing:
+        command.append("--exact_topk_for_testing")
     with as_file(files(__package__) / "ggml_ptn_runner") as runner:
         result = subprocess.run(
             [str(runner), *command],
@@ -444,6 +447,7 @@ class GgmlOpsTest(unittest.TestCase):
         rtol=1e-5,
         graph_ops=None,
         allow_activation_quant_for_weight_only=False,
+        exact_topk_for_testing=False,
     ):
         model = model.eval()
         # Eager writes buffers in place; the package must keep them as constructed.
@@ -463,6 +467,7 @@ class GgmlOpsTest(unittest.TestCase):
                 allow_activation_quant_for_weight_only=(
                     allow_activation_quant_for_weight_only
                 ),
+                exact_topk_for_testing=exact_topk_for_testing,
             )
         self.assertEqual(len(outputs), len(expected))
         for (raw, shape), reference in zip(outputs, expected):
@@ -1408,6 +1413,59 @@ class GgmlOpsTest(unittest.TestCase):
         for name, fn in cases.items():
             with self.subTest(case=name):
                 self._check(Lambda(fn), (x,))
+
+    def test_topk(self):
+        # Distinct values: ties may come out in another order.
+        x = torch.randperm(240).float().reshape(2, 3, 4, 10) / 7
+        for largest in (True, False):
+            with self.subTest(largest=largest):
+                ops = collections.Counter()
+                self._check(
+                    Lambda(
+                        lambda x, largest=largest: torch.topk(x, 4, largest=largest)
+                    ),
+                    (x,),
+                    graph_ops=ops,
+                )
+                # llama.cpp's ggml_argsort_top_k: one argsort and the values'
+                # gather per built graph, and no NaN key map.
+                self.assertEqual(ops["ARGSORT"], ops["GET_ROWS"])
+                self.assertEqual((ops["CONCAT"], ops["FILL"]), (0, 0))
+
+    def test_topk_rejects_an_inner_dim(self):
+        with self.assertRaisesRegex(AssertionError, "last dimension only"):
+            self._check(Lambda(lambda x: torch.topk(x, 2, dim=0)), (torch.randn(4, 3),))
+
+    def test_topk_ranks_nan_above_every_value_for_testing(self):
+        # Only with exact_topk_for_testing: by default topk sorts as
+        # llama.cpp, with no order for a row holding NaN.
+        nan, inf = float("nan"), float("inf")
+        x = torch.tensor(
+            [
+                [1.0, nan, -inf, 3.0, inf, 0.5],
+                [inf, -2.0, nan, -inf, 4.0, 2.0],
+                [nan, 0.0, -1.0, 5.0, -inf, inf],
+            ]
+        )
+        for largest in (True, False):
+            with self.subTest(largest=largest):
+                self._check(
+                    Lambda(
+                        lambda x, largest=largest: torch.topk(x, 4, largest=largest)
+                    ),
+                    (x,),
+                    atol=0,
+                    rtol=0,
+                    exact_topk_for_testing=True,
+                )
+
+    def test_topk_of_integers_checks_that_f32_holds_them(self):
+        def topk(x):
+            return torch.topk(x, 2).values
+
+        self._check(Lambda(topk), (torch.tensor([[4, 9, -1]]),))
+        with self.assertRaisesRegex(AssertionError, r"2\^24"):
+            self._check(Lambda(topk), (torch.tensor([[16777217, 2, 1]]),))
 
     def test_symbolic_neg_slices_from_the_end(self):
         class Tail(torch.nn.Module):
