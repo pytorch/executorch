@@ -12,7 +12,12 @@
 #include <executorch/extension/cuda/cuda_allocator.h>
 #include <gflags/gflags.h>
 #include <nlohmann/json.hpp>
+#if __has_include(<nvtx3/nvToolsExt.h>)
 #include <nvtx3/nvToolsExt.h>
+#define ET_RUNTIME_KV_PROBE_HAS_NVTX 1
+#else
+#define ET_RUNTIME_KV_PROBE_HAS_NVTX 0
+#endif
 #include <unistd.h>
 
 #include <algorithm>
@@ -49,10 +54,16 @@ namespace {
 class DiagnosticRange final {
  public:
   explicit DiagnosticRange(const std::string& label) {
+#if ET_RUNTIME_KV_PROBE_HAS_NVTX
     nvtxRangePushA(label.c_str());
+#else
+    (void)label;
+#endif
   }
   ~DiagnosticRange() {
+#if ET_RUNTIME_KV_PROBE_HAS_NVTX
     nvtxRangePop();
+#endif
   }
   DiagnosticRange(const DiagnosticRange&) = delete;
   DiagnosticRange& operator=(const DiagnosticRange&) = delete;

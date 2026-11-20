@@ -23,6 +23,7 @@
 #include <executorch/backends/aoti/slim/c10/core/ScalarType.h>
 #include <executorch/backends/aoti/slim/core/slim_tensor.h>
 #include <executorch/backends/aoti/slim/factory/from_blob.h>
+#include <executorch/backends/aoti/utils.h>
 #include <executorch/backends/cuda/runtime/cuda_kv_pool.h>
 #include <executorch/extension/cuda/cuda_allocator.h>
 #include <executorch/extension/cuda/device_guard.h>
@@ -802,9 +803,10 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
 // Batched-sequence layout: every sequence keeps a private history in its own
 // column of each layer's storage, as MLX's batched-sequence cache keeps one
 // buffer per sequence. A layer's storage is [rows, columns, H, D] (declared
-// [1, rows * columns, H, D]): row = the position, or position % rows on a ring
-// layer, so each sequence is contiguous by position and attention reads only
-// its own column, bounded by its own length. The last column is scratch,
+// [1, rows * declared_columns, H, D]): ABI 2 supplies the physical row pitch
+// in a fifth seq_info field. Row = the position, or position % rows on a ring
+// layer. Attention reads only its own column, bounded by its own length.
+// The last column is scratch,
 // written by static-width padding and never read.
 //
 // The neutral SequenceCache plans each sequence: admission against its
@@ -813,6 +815,7 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
 // token's column (seq_cols) and one (q_start, q_len, column, length) row per
 // run of one sequence's query rows (seq_info) into buffers the program reads
 // at fixed addresses, so a captured CUDA graph serves any mix of sequences.
+// ABI 2 grows owner columns on admission and reserves a final scratch column.
 //
 // A DFlash draft step declares, per owner, its new context then its block;
 // only the block is queried, it sees all of that owner's history, and it is
@@ -829,26 +832,28 @@ class CudaBatchedSequenceCache final : public cache::Cache,
   CudaBatchedSequenceCache(
       const cache::CacheGeometry& geometry,
       const cache::CacheConfig& cfg,
-      slimc10::ScalarType storage_dtype)
+      slimc10::ScalarType storage_dtype,
+      bool runtime_columns)
       : geometry_(geometry),
         cfg_(cfg),
         max_seqs_(*cfg.max_seqs),
-        columns_(cfg.runtime_sequence_columns ? 2 : *cfg.max_seqs + 1),
+        runtime_columns_(runtime_columns),
         max_write_(*cfg.max_write),
         max_segments_(batched_sequence_max_segments(*cfg.max_seqs)),
-        info_width_(cfg.runtime_sequence_columns ? 5 : 4),
+        info_width_(runtime_columns ? 5 : 4),
         dflash_block_size_(geometry.dflash_block_size),
+        columns_(runtime_columns ? 2 : *cfg.max_seqs + 1),
         pool_(
             pool_layers(geometry, cfg),
             {{kSeqColsFqn, slimc10::ScalarType::Long, {*cfg.max_write}},
              {kSeqInfoFqn,
               slimc10::ScalarType::Int,
               {batched_sequence_max_segments(*cfg.max_seqs),
-               cfg.runtime_sequence_columns ? 5 : 4}}},
+               runtime_columns ? 5 : 4}}},
             storage_dtype,
             static_cast<int64_t>(cfg.initial_capacity) * (*cfg.max_seqs + 1),
             *cfg.max_seqs + 1,
-            cfg.runtime_sequence_columns ? 2 : *cfg.max_seqs + 1) {
+            runtime_columns ? 2 : *cfg.max_seqs + 1) {
     for (const cache::LayerGeometry& layer : geometry.layers) {
       layer_rows_.push_back(rows_of(layer, cfg));
     }
@@ -878,8 +883,7 @@ class CudaBatchedSequenceCache final : public cache::Cache,
   // nor invalidates captured graphs.
   void clear() override {
     std::lock_guard<std::mutex> guard(mutex_);
-    if ((dflash_block_size_ || cfg_.runtime_sequence_columns) &&
-        pool_.allocated()) {
+    if ((dflash_block_size_ || runtime_columns_) && pool_.allocated()) {
       // A failed forward can be abandoned by a different host thread. Fence
       // the originating stream before reusing its sequence columns.
       if (pool_.synchronize(/*all_streams=*/true) != Error::Ok) {
@@ -936,13 +940,24 @@ class CudaBatchedSequenceCache final : public cache::Cache,
   std::optional<int32_t> seq_new() override {
     std::lock_guard<std::mutex> guard(mutex_);
     const auto id = free_sequence_id();
-    if (!id) {
+    if (!id || poisoned_ ||
+        (runtime_columns_ && inflight_ && !free_physical_column())) {
       return std::nullopt;
     }
-    const int column = cfg_.runtime_sequence_columns
-        ? free_physical_column().value_or(-1)
-        : *id;
+    const int column =
+        runtime_columns_ ? free_physical_column().value_or(-1) : *id;
     seqs_.emplace(*id, Sequence{column, cache::SequenceCache(geometry_, cfg_)});
+    bool admitted = false;
+    aoti::ScopeGuard rollback([&]() noexcept {
+      if (!admitted) {
+        seqs_.erase(*id);
+      }
+    });
+    if (runtime_columns_ &&
+        ensure_columns(false, 0, pool_.stream()) != Error::Ok) {
+      return std::nullopt;
+    }
+    admitted = true;
     return *id;
   }
 
@@ -953,8 +968,8 @@ class CudaBatchedSequenceCache final : public cache::Cache,
     std::lock_guard<std::mutex> guard(mutex_);
     const auto source = seqs_.find(src);
     const auto id = free_sequence_id();
-    if (source == seqs_.end() || !id || !pool_.allocated() ||
-        (cfg_.runtime_sequence_columns && inflight_)) {
+    if (source == seqs_.end() || !id || !pool_.allocated() || poisoned_ ||
+        (runtime_columns_ && inflight_)) {
       return std::nullopt;
     }
     // The copies below run on this thread's stream, which may not be the
@@ -970,13 +985,17 @@ class CudaBatchedSequenceCache final : public cache::Cache,
     if (keep <= 0 || !plan.rewind(keep)) {
       return std::nullopt;
     }
-    const int column = cfg_.runtime_sequence_columns
-        ? free_physical_column().value_or(-1)
-        : *id;
+    const int column =
+        runtime_columns_ ? free_physical_column().value_or(-1) : *id;
     seqs_.emplace(*id, Sequence{column, std::move(plan)});
-    if (cfg_.runtime_sequence_columns &&
+    bool admitted = false;
+    aoti::ScopeGuard rollback([&]() noexcept {
+      if (!admitted) {
+        seqs_.erase(*id);
+      }
+    });
+    if (runtime_columns_ &&
         ensure_columns(false, 0, pool_.stream()) != Error::Ok) {
-      seqs_.erase(*id);
       return std::nullopt;
     }
     if (copy_column(source->second.column, seqs_.at(*id).column, keep) !=
@@ -985,26 +1004,28 @@ class CudaBatchedSequenceCache final : public cache::Cache,
       // Only the runtime-column path fences here: an ABI-1 clone failure
       // previously just returned nullopt, and a device-wide sync plus
       // poisoning must not change its failure behaviour.
-      if (cfg_.runtime_sequence_columns &&
+      if (runtime_columns_ &&
           pool_.synchronize(/*all_streams=*/true) != Error::Ok) {
         poisoned_ = true;
       }
-      seqs_.erase(*id);
       return std::nullopt;
     }
+    admitted = true;
     return *id;
   }
 
   bool seq_rm(int32_t seq_id) override {
     std::lock_guard<std::mutex> guard(mutex_);
-    // Refuse while a step is in flight or declared, in both ABIs: removing
-    // a declared sequence would make the next prepare_step look it up in
-    // seqs_ and throw. The inflight part only ever applies to ABI 2.
-    if (inflight_ ||
-        std::find(step_seq_ids_.begin(), step_seq_ids_.end(), seq_id) !=
-            step_seq_ids_.end()) {
+    if (std::find(pending_owners_.begin(), pending_owners_.end(), seq_id) !=
+        pending_owners_.end()) {
       return false;
     }
+    if (std::find(step_seq_ids_.begin(), step_seq_ids_.end(), seq_id) !=
+        step_seq_ids_.end()) {
+      step_seq_ids_.clear();
+    }
+    // Logical removal does not free storage. prepare/compact fence an
+    // abandoned ABI-2 forward before its column can be written or moved.
     return seqs_.erase(seq_id) > 0;
   }
 
@@ -1056,13 +1077,14 @@ class CudaBatchedSequenceCache final : public cache::Cache,
         !poisoned_ && (!dflash_block_size_ || pending_owners_.empty()),
         InvalidState,
         "offgraph_kv: uncommitted or failed draft co-batch; clear required");
-    if (cfg_.runtime_sequence_columns && inflight_) {
+    if (runtime_columns_ && inflight_) {
       // The previous step was prepared but never committed: the backend
       // skips commit on any execute failure, so without recovery one
       // failed forward would wedge the cache until clear() dropped every
       // live sequence. Fence every stream first -- no forward can still
       // be reading or writing the columns -- then treat the step as
-      // aborted and proceed. Draft programs keep the stricter guard above.
+      // reusable and proceed, without rolling back the logical rows already
+      // claimed by prepare. Draft programs keep the stricter guard above.
       if (pool_.synchronize(/*all_streams=*/true) != Error::Ok) {
         poisoned_ = true;
         return Error::Internal;
@@ -1115,7 +1137,7 @@ class CudaBatchedSequenceCache final : public cache::Cache,
     for (const auto& [seq_id, end] : ends) {
       required = std::max<int64_t>(required, end);
     }
-    if (cfg_.runtime_sequence_columns) {
+    if (runtime_columns_) {
       ET_CHECK_OK_OR_RETURN_ERROR(ensure_columns(false, 0, stream));
     }
     ET_CHECK_OK_OR_RETURN_ERROR(pool_.prepare(
@@ -1130,7 +1152,7 @@ class CudaBatchedSequenceCache final : public cache::Cache,
     auto* info = reinterpret_cast<int32_t*>(cols + max_write_);
     std::fill(cols, cols + write_length, static_cast<int64_t>(columns_ - 1));
     std::fill(info, info + max_segments_ * info_width_, 0);
-    if (cfg_.runtime_sequence_columns) {
+    if (runtime_columns_) {
       for (int index = 0; index < max_segments_; ++index) {
         info[index * info_width_ + 4] = columns_;
       }
@@ -1169,7 +1191,7 @@ class CudaBatchedSequenceCache final : public cache::Cache,
       }
     }
     step_seq_ids_.clear();
-    inflight_ = cfg_.runtime_sequence_columns;
+    inflight_ = runtime_columns_;
     return Error::Ok;
   }
 
@@ -1220,18 +1242,24 @@ class CudaBatchedSequenceCache final : public cache::Cache,
   Error compact_columns(int spare_columns) override {
     std::lock_guard<std::mutex> guard(mutex_);
     ET_CHECK_OR_RETURN_ERROR(
-        cfg_.runtime_sequence_columns,
+        runtime_columns_,
         NotSupported,
         "offgraph_kv: program uses fixed physical columns");
     ET_CHECK_OR_RETURN_ERROR(
-        !poisoned_ && !inflight_ && step_seq_ids_.empty() &&
-            pending_owners_.empty(),
+        !poisoned_ && pending_owners_.empty(),
         InvalidState,
-        "offgraph_kv: compact only between committed steps");
+        "offgraph_kv: cannot compact a poisoned cache or pending draft step");
     ET_CHECK_OR_RETURN_ERROR(
         spare_columns >= 0 && spare_columns <= max_seqs_,
         InvalidArgument,
         "offgraph_kv: invalid spare columns");
+    if (inflight_) {
+      if (pool_.synchronize(/*all_streams=*/true) != Error::Ok) {
+        poisoned_ = true;
+        return Error::Internal;
+      }
+      inflight_ = false;
+    }
     return ensure_columns(true, spare_columns, pool_.stream());
   }
 
@@ -1275,9 +1303,9 @@ class CudaBatchedSequenceCache final : public cache::Cache,
   }
 
   std::optional<int> free_sequence_id() const {
-    for (int column = 0; column < max_seqs_; ++column) {
-      if (seqs_.count(column) == 0) {
-        return column;
+    for (int id = 0; id < max_seqs_; ++id) {
+      if (seqs_.count(id) == 0) {
+        return id;
       }
     }
     return std::nullopt;
@@ -1303,19 +1331,21 @@ class CudaBatchedSequenceCache final : public cache::Cache,
     // so admitting N sessions one column at a time costs N full copies.
     // The declared maximum still caps the width, and compact_columns()
     // is the only path that shrinks back down.
-    const int grown = std::max(live + 1, 2 * (columns_ - 1) + 1);
+    const int grown = live + 1 <= columns_
+        ? columns_
+        : static_cast<int>(std::min<int64_t>(
+              max_seqs_ + 1LL,
+              std::max<int64_t>(live + 1LL, 2LL * (columns_ - 1) + 1)));
     const int target = compact
         ? std::min(max_seqs_, std::max(1, live + spare_columns)) + 1
         : std::min(max_seqs_ + 1, std::max(columns_, grown));
     std::map<int32_t, int> next;
     std::unordered_set<int> used;
-    bool relocate = false;
     for (const auto& [id, sequence] : seqs_) {
       if (compact) {
         const int column = static_cast<int>(next.size());
         next.emplace(id, column);
         used.insert(column);
-        relocate |= sequence.column >= 0 && sequence.column != column;
       } else if (sequence.column >= 0) {
         ET_CHECK_OR_RETURN_ERROR(
             sequence.column < target - 1 && used.insert(sequence.column).second,
@@ -1339,18 +1369,27 @@ class CudaBatchedSequenceCache final : public cache::Cache,
       next.emplace(id, column);
       used.insert(column);
     }
-    if (target != columns_ || relocate || compact) {
+    if (target != columns_ || compact) {
       std::vector<std::pair<int, int>> retained;
       for (const auto& [id, sequence] : seqs_) {
         if (sequence.column >= 0) {
           retained.emplace_back(sequence.column, next.at(id));
         }
       }
+      int live_rows = 0;
+      for (const auto& [id, sequence] : seqs_) {
+        live_rows = std::max(live_rows, sequence.plan.length());
+      }
       bool committed = false;
       // Trim the allocator only on the compact path: trimming on every
       // growth hands back pool memory the next forward must re-allocate.
       const Error error = pool_.resize_columns(
-          target, retained, stream, /*trim_unused=*/compact, &committed);
+          target,
+          retained,
+          live_rows,
+          stream,
+          /*trim_unused=*/compact,
+          &committed);
       if (error != Error::Ok && !committed) {
         return error;
       }
@@ -1500,12 +1539,13 @@ class CudaBatchedSequenceCache final : public cache::Cache,
   const cache::CacheGeometry geometry_;
   const cache::CacheConfig cfg_;
   const int max_seqs_;
-  int columns_;
+  const bool runtime_columns_;
   const int max_write_;
   const int max_segments_;
   const int info_width_;
-  bool inflight_{false};
   const std::optional<int> dflash_block_size_;
+  int columns_;
+  bool inflight_{false};
   std::vector<int64_t> layer_rows_;
   CudaKVPool pool_;
   std::map<int32_t, Sequence> seqs_;
@@ -1515,8 +1555,7 @@ class CudaBatchedSequenceCache final : public cache::Cache,
   size_t staging_bytes_{0};
   cudaEvent_t staged_{nullptr};
   bool validated_{false};
-  // Set when a clear() fence fails; prepare/commit refuse until a later
-  // clear() fences cleanly.
+  // A failed device fence or post-commit resize requires a successful clear().
   bool poisoned_{false};
   Error error_{Error::Ok};
 };
@@ -1590,11 +1629,12 @@ std::shared_ptr<cache::Cache> make_cuda_cell_kv_cache(
 
 std::shared_ptr<cache::Cache> make_cuda_batched_sequence_kv_cache(
     const cache::CacheGeometry& geometry,
-    const cache::CacheConfig& cfg) {
+    const cache::CacheConfig& cfg,
+    bool runtime_columns) {
   slimc10::ScalarType storage_dtype = slimc10::ScalarType::BFloat16;
   if (!cache::valid(geometry, cfg) || cfg.initial_capacity <= 0 ||
       cfg.initial_capacity > cfg.capacity ||
-      (cfg.runtime_sequence_columns && geometry.dflash_block_size) ||
+      (runtime_columns && geometry.dflash_block_size) ||
       !storage_dtype_of(cfg.kv_dtype, storage_dtype)) {
     ET_LOG(Error, "offgraph_kv: invalid cache geometry or config");
     return nullptr;
@@ -1613,7 +1653,7 @@ std::shared_ptr<cache::Cache> make_cuda_batched_sequence_kv_cache(
     return nullptr;
   }
   return std::make_shared<CudaBatchedSequenceCache>(
-      geometry, cfg, storage_dtype);
+      geometry, cfg, storage_dtype, runtime_columns);
 }
 
 runtime::Error attach_offgraph_kv_cache(
@@ -1663,7 +1703,10 @@ const bool cuda_cache_builders_registered = [] {
   } builders[] = {
       {cache::kind::kSingle, make_cuda_sequence_kv_cache},
       {cache::kind::kBatchedCell, make_cuda_cell_kv_cache},
-      {cache::kind::kBatchedSequence, make_cuda_batched_sequence_kv_cache},
+      {cache::kind::kBatchedSequence,
+       [](const cache::CacheGeometry& geometry, const cache::CacheConfig& cfg) {
+         return make_cuda_batched_sequence_kv_cache(geometry, cfg);
+       }},
       // The cell layout is the batch layout this backend serves.
       {cache::kind::kBatched, make_cuda_cell_kv_cache},
   };

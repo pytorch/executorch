@@ -23,12 +23,15 @@ from executorch.backends.cuda.passes.lower_offgraph_kv import (
     batched_sequence_step,
     CheckOffGraphKVStepWidthPass,
     LowerOffGraphKVPass,
+    offgraph_kv_constant_methods,
     OFFGRAPH_KV_FQN_PREFIX,
     OFFGRAPH_KV_SEQ_COLS_FQN,
     OFFGRAPH_KV_SEQ_INFO_FQN,
+    OFFGRAPH_KV_SEQUENCE_INFO_ABI_METHOD,
     parse_offgraph_kv_manifest,
     ring_physical_capacity,
 )
+from executorch.backends.cuda.triton.kernels.sdpa_varlen import _num_splits, sdpa_varlen
 from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.extension.llm.cache.reference_cache import (
@@ -359,6 +362,58 @@ class RuntimeColumnPitchTest(unittest.TestCase):
     def test_ring_pitch_and_sparse_survivor(self):
         self._run(window=2)
 
+    def test_runtime_pitch_with_multiple_decode_splits(self):
+        torch.manual_seed(126)
+        rows, declared_columns, physical_columns = 1024, 9, 4
+        query = torch.randn(
+            1, N_Q_HEADS, 3, HEAD_DIM, device="cuda", dtype=torch.bfloat16
+        )
+        key = torch.full(
+            (rows, declared_columns, N_KV_HEADS, HEAD_DIM),
+            float("nan"),
+            device="cuda",
+            dtype=torch.bfloat16,
+        )
+        value = torch.full_like(key, float("nan"))
+        live_key = key.reshape(-1, N_KV_HEADS, HEAD_DIM)[
+            : rows * physical_columns
+        ].view(rows, physical_columns, N_KV_HEADS, HEAD_DIM)
+        live_value = value.reshape(-1, N_KV_HEADS, HEAD_DIM)[
+            : rows * physical_columns
+        ].view_as(live_key)
+        live_key.normal_()
+        live_value.normal_()
+        info = torch.tensor(
+            [
+                [0, 1, 2, rows, physical_columns],
+                [1, 1, 0, 768, physical_columns],
+                [0, 0, 0, 0, physical_columns],
+            ],
+            dtype=torch.int32,
+            device="cuda",
+        )
+        self.assertGreater(_num_splits(query.shape[2], rows), 1)
+        actual = sdpa_varlen(query, key, value, info, SCALE, rows_available=rows)
+        expected = torch.zeros_like(query)
+        for token, column, length in ((0, 2, rows), (1, 0, 768)):
+            k = (
+                live_key[:length, column]
+                .transpose(0, 1)
+                .repeat_interleave(N_Q_HEADS // N_KV_HEADS, dim=0)
+                .float()
+            )
+            v = (
+                live_value[:length, column]
+                .transpose(0, 1)
+                .repeat_interleave(N_Q_HEADS // N_KV_HEADS, dim=0)
+                .float()
+            )
+            scores = (query[0, :, token, None].float() * k).sum(-1) * SCALE
+            expected[0, :, token] = (
+                (scores.softmax(-1)[..., None] * v).sum(1).to(expected.dtype)
+            )
+        self.assertLess(_max_abs_diff(actual, expected), 2e-2)
+
 
 @unittest.skipUnless(torch.cuda.is_available(), "CUDA required")
 class LowerBatchedSequencePassTest(unittest.TestCase):
@@ -474,9 +529,17 @@ class LowerBatchedSequencePassTest(unittest.TestCase):
         ]
         self.assertEqual(len(calls), 2)
 
-    def test_lowered_program_matches_the_neutral_op(self) -> None:
+    def _check_lowered_program(self, runtime_columns: bool) -> None:
         torch.manual_seed(21)
-        lowered = self._lowered()
+        manifest = self.manifest(
+            version=2 if runtime_columns else 1, runtime_columns=runtime_columns
+        )
+        metadata = offgraph_kv_constant_methods(manifest)
+        self.assertEqual(
+            metadata[OFFGRAPH_KV_SEQUENCE_INFO_ABI_METHOD], 2 if runtime_columns else 1
+        )
+        self.assertEqual(metadata["get_offgraph_kv_max_seqs"], self.MAX_SEQS)
+        lowered = self._lowered(manifest)
         runtime = {}
         for name, value in list(lowered.constants.items()):
             if name.startswith(OFFGRAPH_KV_FQN_PREFIX):
@@ -487,7 +550,7 @@ class LowerBatchedSequencePassTest(unittest.TestCase):
         module = lowered.module()
         oracle = _Oracle(4 * self.CAPACITY, (0, self.WINDOW))
         self.addCleanup(oracle.close)
-        columns = {seq: seq for seq in range(self.MAX_SEQS)}
+        columns = {seq: self.MAX_SEQS - 1 - seq for seq in range(self.MAX_SEQS)}
         for groups in _STEPS:
             seq_ids, q, k, v, position = _batch(groups)
             flat, ring = oracle.step(seq_ids, q, k, v, position)
@@ -499,10 +562,24 @@ class LowerBatchedSequencePassTest(unittest.TestCase):
                 self.MAX_SEGMENTS,
                 self.MAX_SEQS,
             )
+            if runtime_columns:
+                seq_info = torch.cat(
+                    [
+                        seq_info,
+                        seq_info.new_full((self.MAX_SEGMENTS, 1), self.MAX_SEQS + 1),
+                    ],
+                    dim=1,
+                )
             runtime[OFFGRAPH_KV_SEQ_COLS_FQN].copy_(seq_cols)
             runtime[OFFGRAPH_KV_SEQ_INFO_FQN].copy_(seq_info)
             out = module(q, k, v, position.reshape(-1, 1))
             self.assertLess(_max_abs_diff(out, flat + ring), 3e-2)
+
+    def test_lowered_program_matches_the_neutral_op(self) -> None:
+        self._check_lowered_program(False)
+
+    def test_lowered_runtime_pitch_matches_the_neutral_op(self) -> None:
+        self._check_lowered_program(True)
 
     def test_non_causal_context_window_reaches_sdpa_varlen(self) -> None:
         lowered = self._lowered(

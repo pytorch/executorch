@@ -51,6 +51,16 @@ inline constexpr char kMaxCellsMethod[] = "get_offgraph_kv_max_cells";
 // Published instead of the cell count by a program whose KV cache keeps a
 // private history per sequence.
 inline constexpr char kMaxSeqsMethod[] = "get_offgraph_kv_max_seqs";
+inline constexpr char kSequenceInfoABIMethod[] =
+    "get_offgraph_kv_sequence_info_abi";
+
+namespace detail {
+inline bool
+valid_sequence_info_abi(int64_t version, bool sequence_layout, bool draft) {
+  return version == 1 || (version == 2 && sequence_layout && !draft);
+}
+} // namespace detail
+
 // Optional: the fewest selected rows forward_others was exported for. Its
 // selector is padded up to it. Defaults to 1.
 inline constexpr char kMinSelectedRowsMethod[] = "get_min_prefill_chunk";
@@ -227,6 +237,8 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
 
   // The cache's pool usage, for memory reporting.
   OffGraphKVMetrics kv_metrics() const;
+  // An idle boundary serialized with execute. The scratch column is additional
+  // to spare_columns unused owner columns.
   ::executorch::runtime::Error compact_kv_columns(int spare_columns = 1);
 
   // Every method, narrowest first, with how many forwards it ran. Read it

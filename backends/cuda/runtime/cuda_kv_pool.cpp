@@ -463,6 +463,7 @@ void CudaKVPool::invalidate_bindings() {
 Error CudaKVPool::resize_columns(
     int columns,
     const std::vector<std::pair<int, int>>& retained_columns,
+    int64_t live_rows,
     cudaStream_t stream,
     bool trim_unused,
     bool* committed) {
@@ -470,7 +471,8 @@ Error CudaKVPool::resize_columns(
     *committed = false;
   }
   ET_CHECK_OR_RETURN_ERROR(
-      declared_columns_ > 1 && columns >= 2 && columns <= declared_columns_,
+      declared_columns_ > 1 && columns >= 2 && columns <= declared_columns_ &&
+          live_rows >= 0,
       InvalidArgument,
       "offgraph_kv: invalid physical columns %d/%d",
       columns,
@@ -541,7 +543,11 @@ Error CudaKVPool::resize_columns(
     const Allocation& current = allocations_[index];
     const Allocation& replacement = replacements[index];
     const size_t slot = row_bytes(layers_[index]);
-    const size_t logical_rows = static_cast<size_t>(current.rows / old_columns);
+    const size_t logical_rows =
+        static_cast<size_t>(std::min(live_rows, current.rows / old_columns));
+    if (logical_rows == 0) {
+      continue;
+    }
     for (const auto& [from, to] : retained_columns) {
       for (const auto& [dst, src] :
            {std::pair{replacement.k, current.k},

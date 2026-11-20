@@ -30,12 +30,14 @@ struct OffGraphKVMetrics {
   int64_t logical_length{0};
   // Rows currently allocated for each flat layer.
   int64_t flat_capacity{0};
-  // Times flat storage has been reallocated. Every growth moves the storage,
-  // so this also identifies the addresses a compiled program was bound to.
+  // Times flat row storage has grown. Column resizes are counted separately.
   int64_t growth_count{0};
+  // Live K/V and step-buffer allocations, excluding allocator retention.
   int64_t allocated_bytes{0};
+  // Physical/declared widths include the final scratch column.
   int64_t physical_columns{0};
   int64_t declared_columns{0};
+  // Logical owners, including cloned prefix owners.
   int64_t live_sequences{0};
   int64_t column_resize_count{0};
 };
@@ -89,7 +91,8 @@ class CudaKVCache {
   virtual OffGraphKVMetrics metrics() const = 0;
 
   // An explicit idle boundary; callers must serialize this with execution.
-  virtual runtime::Error compact_columns(int) {
+  // spare_columns counts unused owner columns, excluding the scratch column.
+  virtual runtime::Error compact_columns(int spare_columns) {
     return runtime::Error::NotSupported;
   }
 };
@@ -217,9 +220,12 @@ inline int batched_sequence_max_segments(int max_seqs) {
 // fix shapes the program declared, so they must match the export exactly.
 // Every layer starts at cfg.initial_capacity rows and grows geometrically: a
 // flat layer to cfg.capacity, a ring layer to min(capacity, window +
-// max_write - 1).
+// max_write - 1). runtime_columns selects ABI 2: physical owner columns
+// start at one and grow on admission up to cfg.max_seqs; ABI 1 keeps the
+// declared width. Both reserve one additional scratch column.
 std::shared_ptr<cache::Cache> make_cuda_batched_sequence_kv_cache(
     const cache::CacheGeometry& geometry,
-    const cache::CacheConfig& cfg);
+    const cache::CacheConfig& cfg,
+    bool runtime_columns = false);
 
 } // namespace executorch::backends::cuda

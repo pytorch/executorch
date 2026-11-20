@@ -371,20 +371,14 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
   const bool sequence_layout = declared_seqs.has_value();
   ET_ASSIGN_OR_RETURN(
       sequence_info_abi,
-      metadata::detail::read_int_method(
-          *module, "get_offgraph_kv_sequence_info_abi"));
+      metadata::detail::read_int_method(*module, kSequenceInfoABIMethod));
   ET_CHECK_OR_RETURN_ERROR(
-      sequence_info_abi.value_or(1) == 1 ||
-          (sequence_layout && sequence_info_abi == 2),
+      detail::valid_sequence_info_abi(
+          sequence_info_abi.value_or(1),
+          sequence_layout,
+          geometry.dflash_block_size.has_value()),
       InvalidProgram,
       "CudaExecutor: unsupported sequence-info ABI");
-  // Runtime columns have not been qualified with draft (DFlash) programs:
-  // column moves interact with pending draft owners, and the combination
-  // is rejected by the factory as well as here.
-  ET_CHECK_OR_RETURN_ERROR(
-      !(sequence_info_abi == 2 && geometry.dflash_block_size),
-      InvalidProgram,
-      "CudaExecutor: runtime sequence columns do not support DFlash");
   std::int64_t max_cells = 0;
   if (sequence_layout) {
     ET_CHECK_OR_RETURN_ERROR(
@@ -543,7 +537,6 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
       static_cast<int>(sequence_layout ? max_context_length : max_cells);
   cfg.kv_dtype = kv_dtype;
   cfg.max_write = max_step_tokens;
-  cfg.runtime_sequence_columns = sequence_info_abi == 2;
   if (sequence_layout) {
     cfg.max_seqs = static_cast<int>(*declared_seqs);
   }
@@ -554,14 +547,27 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
       llm_cache::valid(geometry, cfg),
       InvalidProgram,
       "CudaExecutor: the program's layout is unusable");
-  auto built = llm_cache::CacheFactory::global().build(
-      backend_id,
-      sequence_layout ? llm_cache::kind::kBatchedSequence
-                      : llm_cache::kind::kBatchedCell,
-      geometry,
-      cfg);
-  ET_CHECK_OK_OR_RETURN_ERROR(built.error());
-  std::shared_ptr<llm_cache::Cache> cache = built.get();
+  std::shared_ptr<llm_cache::Cache> cache;
+  if (sequence_info_abi == 2) {
+    ET_CHECK_OR_RETURN_ERROR(
+        backend_id == kCudaBackendId,
+        InvalidProgram,
+        "CudaExecutor: runtime sequence columns require the CUDA backend");
+    cache = make_cuda_batched_sequence_kv_cache(geometry, cfg, true);
+    ET_CHECK_OR_RETURN_ERROR(
+        cache != nullptr,
+        InvalidProgram,
+        "CudaExecutor: invalid runtime-column cache geometry or config");
+  } else {
+    auto built = llm_cache::CacheFactory::global().build(
+        backend_id,
+        sequence_layout ? llm_cache::kind::kBatchedSequence
+                        : llm_cache::kind::kBatchedCell,
+        geometry,
+        cfg);
+    ET_CHECK_OK_OR_RETURN_ERROR(built.error());
+    cache = built.get();
+  }
   auto* const ctl = cache->as<llm_cache::BatchControl>();
   ET_CHECK_OR_RETURN_ERROR(
       ctl != nullptr && cache->as<CudaKVCache>() != nullptr,

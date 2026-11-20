@@ -694,10 +694,12 @@ jobs:
         make muse-glimmer-batching-cuda
         BATCHING_BIN_DIR="${PWD}/cmake-out/examples/models/muse-glimmer-batching"
         cmake -S "${PWD}/examples/models/muse-glimmer" -B "${BATCHING_BIN_DIR}" \
-          -DMUSE_GLIMMER_BUILD_BATCHING_TESTS=ON
+          -DMUSE_GLIMMER_BUILD_BATCHING_TESTS=ON \
+          -DMUSE_GLIMMER_BUILD_RUNTIME_KV_PROBE=ON
         bash .ci/scripts/build_muse_glimmer_batching_smoke.sh "${BATCHING_BIN_DIR}"
         cmake --build "${BATCHING_BIN_DIR}" \
-          --target muse_glimmer_batching_test muse_glimmer_cuda_dflash_test --parallel
+          --target muse_glimmer_batching_test muse_glimmer_cuda_dflash_test \
+          muse_glimmer_runtime_kv_probe --parallel
         ctest --test-dir "${BATCHING_BIN_DIR}" \
           -R '^muse_glimmer_batching$' --output-on-failure --no-tests=error
         test -x "${BATCHING_BIN_DIR}/muse_glimmer_batching_runner"
@@ -711,6 +713,10 @@ jobs:
           examples/models/muse-glimmer/tests/test_cuda_dflash_packed.py \
           examples/models/muse-glimmer/tests/test_dflash_token_sampler.py \
           examples/models/muse-glimmer/tests/test_checkpoint_context.py
+
+        python examples/models/muse-glimmer/tests/check_runtime_kv_columns.py \
+          --probe "${BATCHING_BIN_DIR}/muse_glimmer_runtime_kv_probe" \
+          --output-dir "${RUNNER_TEMP:-/tmp}/muse_glimmer_runtime_kv_columns"
 
         # CUDA DFlash executor on a tiny exported target + draft. The native
         # tests skip without the artifact, so fail if any skipped.

@@ -453,6 +453,7 @@ def export_cuda_batching(  # noqa: C901
     from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
     from executorch.backends.cuda.passes.lower_offgraph_kv import (
         OFFGRAPH_KV_COMPILE_SPEC,
+        offgraph_kv_constant_methods,
         OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC,
     )
     from executorch.examples.models.muse_glimmer.source_transformations.cuda import (
@@ -691,9 +692,7 @@ def export_cuda_batching(  # noqa: C901
     constant_methods["get_min_prefill_chunk"] = _CUDA_MIN_PREFILL_CHUNK
     constant_methods["use_sampling"] = False
     if sequence_layout:
-        constant_methods[MAX_KV_SEQS_METHOD] = max_kv_seqs
-        if runtime_kv_columns:
-            constant_methods["get_offgraph_kv_sequence_info_abi"] = 2
+        constant_methods.update(offgraph_kv_constant_methods(manifest.encode()))
     else:
         constant_methods[MAX_CELLS_METHOD] = max_cells
     if "draft_forward" in programs:

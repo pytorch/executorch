@@ -406,7 +406,9 @@ def sdpa_varlen(  # noqa: C901
     Args:
         query: ``[1, H_q, T, D]`` bfloat16, the step's queries in packed order.
         key, value: ``[rows, columns, H_kv, D]`` bfloat16 storage; one column per
-            sequence. Only the head dimension must be contiguous.
+            sequence. The head dimension must be contiguous. For 5-wide
+            seq_info, column/head lanes must also be contiguous and the row
+            pitch is field 4 times the column stride, not key.stride(0).
         seq_info: ``Int32[S, 4]`` (or ``Int32[S, 5]`` with the runtime
             pitch in field 4) on the query's device, ``(q_start, q_len,
             col, kv_end)`` per segment; see the module docstring.

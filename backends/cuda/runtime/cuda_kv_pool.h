@@ -87,10 +87,13 @@ class CudaKVPool final {
 
   // Flattened row counts remain multiples of the current physical width.
   // Each pair is a retained old column and its new column. Dummy data is not
-  // retained. The operation commits only after every replacement copy passes.
+  // retained. live_rows is the retained logical prefix, capped by each ring.
+  // Replacements commit only after all copies pass. committed may be true
+  // even on error if post-commit allocator trimming fails.
   runtime::Error resize_columns(
       int columns,
       const std::vector<std::pair<int, int>>& retained_columns,
+      int64_t live_rows,
       cudaStream_t stream,
       bool trim_unused,
       bool* committed = nullptr);
