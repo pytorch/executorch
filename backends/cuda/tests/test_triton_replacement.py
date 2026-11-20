@@ -72,10 +72,7 @@ class PlannedReplacementTest(unittest.TestCase):
 
         self.legal = {"inductor", "fake"}
         self.static_choice = "fake"
-        for patch in (
-            mock.patch.dict(replacement_pass.EDGE_TO_TRITON_KERNELS, {_RELU: _SIGMOID}),
-            mock.patch.dict(replacement_pass.PLANNERS, {_RELU: self.plan}),
-        ):
+        for patch in (mock.patch.dict(replacement_pass.PLANNERS, {_RELU: self.plan}),):
             patch.start()
             self.addCleanup(patch.stop)
 
@@ -176,6 +173,13 @@ class PlannedReplacementTest(unittest.TestCase):
                     (regular, routing.Candidate("fake", None, "", kernel, args)),
                     signature="relu(x)",
                 )
+        # Keyword arguments alone are enough.
+        plan = routing.ReplacementPlan(
+            "fake",
+            (regular, routing.Candidate("fake", None, "", _SIGMOID, (), {"self": 1})),
+            signature="relu(x)",
+        )
+        self.assertEqual(plan.candidate("fake").kwargs, {"self": 1})
 
     def test_no_implementation_fails_the_export(self):
         from executorch.backends.cuda.triton import routing
@@ -246,3 +250,30 @@ class PlannedReplacementTest(unittest.TestCase):
                 ):
                     self.run_pass(graph_module)
                 self.assertUnchanged(graph_module, before)
+
+
+class TopkPlanTest(unittest.TestCase):
+    def test_rows_the_kernel_loads_whole_are_replaced(self):
+        from executorch.backends.cuda.triton.kernels.topk import plan as plan_topk
+        from executorch.exir.dialects._ops import ops as exir_ops
+        from torch._subclasses.fake_tensor import FakeTensorMode
+
+        for n, replaced in ((4096, True), (4097, False)):
+            graph = torch.fx.Graph()
+            x = graph.placeholder("x")
+            with FakeTensorMode():
+                x.meta["val"] = torch.empty(2, n, device="cuda")
+            node = graph.call_function(
+                exir_ops.edge.aten.topk.default, (x, 8), {"largest": True}
+            )
+            with self.subTest(n=n):
+                plan = plan_topk(node)
+                self.assertEqual(len(plan.legal()), 2 if replaced else 1)
+                if replaced:
+                    candidate = plan.candidate(plan.static_choice)
+                    self.assertIs(candidate.kernel, torch.ops.triton.topk)
+                    self.assertEqual(
+                        (candidate.args, candidate.kwargs), (node.args, node.kwargs)
+                    )
+                else:
+                    self.assertIn("N=4097 > 4096", plan.candidates[1].reason)
