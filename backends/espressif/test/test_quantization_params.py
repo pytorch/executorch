@@ -35,6 +35,7 @@ _FUSED_ADD = exir_ops.edge.fused_quant.add.default
 _ESP_ADD = exir_ops.edge.esp_nn.quantized_add_int8.default
 _FUSED_MUL = exir_ops.edge.fused_quant.mul.default
 _ESP_MUL = exir_ops.edge.esp_nn.quantized_mul_int8.default
+_ESP_MUL_BROADCAST = exir_ops.edge.esp_nn.quantized_mul_broadcast_int8.default
 
 
 class Multiply(torch.nn.Module):
@@ -141,6 +142,37 @@ def test_folding_and_replacement(multiply_program):
     torch.testing.assert_close(lowered.module()(*inputs), expected, atol=0.5, rtol=0)
 
 
+@pytest.mark.parametrize("reverse", [False, True])
+def test_broadcast_keeps_qparams_with_operands(reverse):
+    inputs = (torch.linspace(-1, 1, 6).reshape(2, 3), torch.linspace(-2, 2, 3))
+    if reverse:
+        inputs = inputs[::-1]
+    program = (
+        EspTester(Multiply(), inputs)
+        .export_fused_quant()
+        .to_edge()
+        .get_artifact()
+        .exported_program()
+    )
+    source_inputs = _binary_node(program).args[:2]
+    for prefix, scale, zero_point in (
+        ("inp", 0.01, -17),
+        ("other", 0.02, 23),
+        ("out", 0.5, -7),
+    ):
+        _set_qparams(program, prefix, scale, zero_point)
+    expected = program.module()(*inputs)
+    lowered = EspPassManager()(program).exported_program
+    mul = next(
+        node for node in lowered.graph.nodes if node.target == _ESP_MUL_BROADCAST
+    )
+    assert [arg.name for arg in mul.args[:2]] == [
+        arg.name for arg in (source_inputs[::-1] if reverse else source_inputs)
+    ]
+    assert mul.args[2:4] == ((-23, 17) if reverse else (17, -23))
+    torch.testing.assert_close(lowered.module()(*inputs), expected, atol=0.5, rtol=0)
+
+
 @pytest.mark.parametrize(
     "rescale, input_zero_point, expected_shift",
     [
@@ -242,7 +274,10 @@ def test_float32_overflow_preserves_portable_results(
         program.module()(inputs, inputs), expected, atol=0, rtol=0
     )
     lowered = EspPassManager()(program).exported_program
-    assert not any(node.target in (_ESP_MUL, _ESP_ADD) for node in lowered.graph.nodes)
+    assert not any(
+        node.target in (_ESP_MUL, _ESP_MUL_BROADCAST, _ESP_ADD)
+        for node in lowered.graph.nodes
+    )
     torch.testing.assert_close(
         lowered.module()(inputs, inputs), expected, atol=0, rtol=0
     )
@@ -288,7 +323,7 @@ def test_invalid_qparams_fail_export(binary_program, prefix, qparams):
         torch.empty(1 << 31, dtype=torch.int8, device="meta"),
         torch.empty(2, 3, dtype=torch.uint8, device="meta"),
     ],
-    ids=["broadcast", "noncontiguous", "empty", "too_many_elements", "uint8"],
+    ids=["shape_mismatch", "noncontiguous", "empty", "too_many_elements", "uint8"],
 )
 def test_unsupported_storage_stays_portable(binary_program, value):
     _binary_node(binary_program).args[0].meta["val"] = value
