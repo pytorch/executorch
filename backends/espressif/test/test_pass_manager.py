@@ -472,7 +472,7 @@ def test_strict_export_rejects_portable_pool():
         )
 
 
-def test_strict_export_rejects_layout_without_accelerated_compute():
+def test_strict_export_accepts_layout_without_accelerated_compute():
     class PermuteAndReshape(torch.nn.Module):
         def forward(self, x):
             return x.permute(1, 0).reshape(-1)
@@ -482,7 +482,7 @@ def test_strict_export_rejects_layout_without_accelerated_compute():
     session = export(
         model,
         example_inputs=[inputs],
-        export_recipe=get_esp_fused_quant_recipe(),
+        export_recipe=get_esp_fused_quant_recipe(allow_cpu_fallback=False),
     )
     edge = session.get_edge_program_manager()
     report = get_operator_library_report(edge)
@@ -497,12 +497,6 @@ def test_strict_export_rejects_layout_without_accelerated_compute():
         edge.exported_program().module()(*inputs), model(*inputs)
     )
     assert session.get_executorch_program_manager().buffer
-    with pytest.raises(RuntimeError, match=r"aten::permute_copy"):
-        export(
-            model,
-            example_inputs=[inputs],
-            export_recipe=get_esp_fused_quant_recipe(allow_cpu_fallback=False),
-        )
 
 
 @pytest.mark.parametrize(
@@ -515,7 +509,7 @@ def test_strict_export_rejects_layout_without_accelerated_compute():
     ],
     ids=["conv2d", "depthwise", "maxpool", "avgpool"],
 )
-def test_strict_export_rejects_layout_after_hoisted_activation(spatial):
+def test_strict_export_accepts_layout_after_hoisted_activation(spatial):
     if (
         isinstance(spatial, torch.nn.Conv2d)
         and get_scratch_queries(EspTarget.ESP32S3, EspKernelMode.OPTIMIZED) is None
@@ -526,7 +520,7 @@ def test_strict_export_rejects_layout_after_hoisted_activation(spatial):
     session = export(
         model,
         example_inputs=[inputs],
-        export_recipe=get_esp_fused_quant_recipe(),
+        export_recipe=get_esp_fused_quant_recipe(allow_cpu_fallback=False),
     )
     report = get_operator_library_report(session.get_edge_program_manager())
     assert report["esp_nn_ops"] == 2
@@ -538,12 +532,6 @@ def test_strict_export_rejects_layout_after_hoisted_activation(spatial):
         "quantized_decomposed::dequantize_per_tensor.out",
     }
     assert session.get_executorch_program_manager().buffer
-    with pytest.raises(RuntimeError, match=r"aten::permute_copy"):
-        export(
-            model,
-            example_inputs=[inputs],
-            export_recipe=get_esp_fused_quant_recipe(allow_cpu_fallback=False),
-        )
 
 
 def test_strict_export_rejects_compute_after_layout():
@@ -551,12 +539,13 @@ def test_strict_export_rejects_compute_after_layout():
         def forward(self, x):
             return torch.sin(x.permute(1, 0))
 
-    with pytest.raises(RuntimeError, match=r"forward\.\w+ \(aten::sin\)"):
+    with pytest.raises(RuntimeError, match=r"forward\.\w+ \(aten::sin\)") as error:
         export(
             PermuteAndSin(),
             example_inputs=[(torch.ones(3, 4),)],
             export_recipe=get_esp_fused_quant_recipe(allow_cpu_fallback=False),
         )
+    assert "aten::permute_copy" not in str(error.value)
 
 
 @pytest.mark.parametrize(
