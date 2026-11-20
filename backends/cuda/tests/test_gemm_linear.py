@@ -113,7 +113,7 @@ class LayoutTest(_GemmTest):
         w = torch.randn(40, 24, device="cuda").t()
         self.check(self.linear(x, w), x, w)
 
-    def test_gemv_loads_vectors_only_from_aligned_rows_and_bases(self):
+    def test_vectors_load_only_from_aligned_rows_and_bases(self):
         from executorch.backends.cuda.triton.kernels.gemm import gemv
         from executorch.backends.cuda.triton.kernels.gemm.linear import linear_layout
 
@@ -132,11 +132,14 @@ class LayoutTest(_GemmTest):
             cases[f"input offset {offset}"] = (rows(offset, k + 8), w, 1)
             weight = weights[offset : offset + n * k].view(n, k)
             cases[f"weight offset {offset}"] = (rows(0, k), weight, 1)
-        for label, (x, weight, vec) in cases.items():
-            with self.subTest(label):
+        for (label, (x, weight, vec)), schedule in itertools.product(
+            cases.items(), ("gemv", *self.tiles())
+        ):
+            with self.subTest(label, schedule=schedule):
                 layout = linear_layout(x, weight, (n, 1))
                 self.assertEqual(gemv.vector_width(x, weight, layout), vec)
-                self.check(self.linear(x, weight, b, schedule="gemv"), x, weight, b)
+                out = self.linear(x, weight, b, schedule=schedule)
+                self.check(out, x, weight, b)
 
     def test_layouts_one_step_outside_are_refused(self):
         from executorch.backends.cuda.triton.kernels.gemm.linear import layout_reason
