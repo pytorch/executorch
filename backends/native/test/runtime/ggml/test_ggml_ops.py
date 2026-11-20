@@ -1385,6 +1385,30 @@ class GgmlOpsTest(unittest.TestCase):
                 with self.subTest(op=name, dtype=dtype):
                     self._check(Lambda(fn), (x.to(dtype),), atol=0, rtol=0)
 
+    def test_empty_tensors_are_refused(self):
+        # Eager splits an empty dim into one empty piece.
+        cases = {
+            "split": lambda x: torch.split(x, 2)[0] * 2.0,
+            "mul": lambda x: x * 2.0,
+        }
+        for name, fn in cases.items():
+            with self.subTest(case=name), self.assertRaisesRegex(
+                AssertionError, "without elements"
+            ):
+                self._check(Lambda(fn), (torch.randn(0, 2),))
+
+    def test_split(self):
+        x = torch.randn(4, 6, 5)
+        cases = {
+            "sizes last dim": lambda x: torch.split(x, [2, 1, 2], dim=-1),
+            "sizes middle dim": lambda x: torch.split(x, [2, 3, 1], dim=1),
+            "size outer dim": lambda x: torch.split(x, 3, dim=0),
+            "one piece used": lambda x: torch.split(x, [2, 4], dim=1)[1] * 2.0,
+        }
+        for name, fn in cases.items():
+            with self.subTest(case=name):
+                self._check(Lambda(fn), (x,))
+
     def test_symbolic_neg_slices_from_the_end(self):
         class Tail(torch.nn.Module):
             def forward(self, x, buffer):

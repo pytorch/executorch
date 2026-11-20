@@ -170,8 +170,9 @@ if(EXECUTORCH_BUILD_NATIVE_GGML)
   set_tests_properties(native_ggml_sample_test PROPERTIES DISABLED TRUE)
   # native_ggml_sample_test_act_quant lets ggml quantize the activations of
   # weight-only quantized linears, judged against golden-int8_act.
-  # native_ggml_sample_test_no_linear judges the other ops without it. Both
-  # leave out the elu with alpha 0.5 that ggml rejects.
+  # native_ggml_sample_test_no_linear judges the other ops without it, except
+  # their quantized_* cases, which quantize through an nn.Linear. Both leave out
+  # the elu with alpha 0.5 that ggml rejects.
   add_test(
     NAME native_ggml_sample_test_act_quant
     COMMAND
@@ -182,7 +183,7 @@ if(EXECUTORCH_BUILD_NATIVE_GGML)
   add_test(
     NAME native_ggml_sample_test_no_linear
     COMMAND native_ggml_sample_test --packages=${_native_op_samples}
-            --device=cpu --gtest_filter=-linear_*:elu_float.elu_f32_alpha_*
+            --device=cpu --gtest_filter=-linear_*:*.quantized_*:elu_float.elu_f32_alpha_*
   )
   target_compile_options(
     native_ggml_sample_test
