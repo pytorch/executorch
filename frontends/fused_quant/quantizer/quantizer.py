@@ -25,17 +25,34 @@ from torch.fx.passes.tools_common import stable_topological_sort
 from torchao.quantization.pt2e.quantizer import (
     ComposableQuantizer,
     QuantizationConfig,
+    QuantizationSpecBase,
     Quantizer,
     SharedQuantizationSpec,
+    utils as ao_utils,
 )
 from torchao.quantization.pt2e.quantizer.quantizer import (
     Q_ANNOTATION_KEY,
     QuantizationAnnotation,
 )
-from torchao.quantization.pt2e.quantizer.utils import (
-    annotate_input_qspec_map,
-    annotate_output_qspec,
-)
+
+
+# Annotations hold node references and do not survive export, but meta["custom"]
+# does, so annotating a node with a live qspec also marks it there for fusion.
+QUANTIZED_KEY = "fq_quantized"
+
+
+def annotate_input_qspec_map(
+    node: fx.Node, input_node: fx.Node, qspec: Optional[QuantizationSpecBase]
+) -> None:
+    ao_utils.annotate_input_qspec_map(node, input_node, qspec)
+    if qspec is not None:
+        node.meta.setdefault("custom", {})[QUANTIZED_KEY] = True
+
+
+def annotate_output_qspec(node: fx.Node, qspec: Optional[QuantizationSpecBase]) -> None:
+    ao_utils.annotate_output_qspec(node, qspec)
+    if qspec is not None:
+        node.meta.setdefault("custom", {})[QUANTIZED_KEY] = True
 
 
 class QuantizerBase(Quantizer, ABC):
@@ -70,10 +87,10 @@ class OpQuantizer(QuantizerBase):
         config: The per-instance quantization config.
         activation_names: Schema names of quantized activation inputs (annotated
             with config.input_activation).
-        weight_names: Schema names of quantized weight inputs (annotated with
-            config.weight).
-        other_names: Schema names of tensor passthroughs (e.g. "bias") that
-            occupy the fused op's tensor prefix with a null qparams block.
+        weight_names: Schema names of weight inputs. Existing Q/DQ is preserved;
+            remaining weights are annotated with config.weight.
+        other_names: Schema names of tensor inputs passed without observation
+            (e.g. "bias"). Fusion reuses their existing Q/DQ, if present.
         output_indices: Outputs to quantize with config.output_activation. Defaults
             to just output 0; a multi-output op can pass e.g. (0, 1). All quantized
             outputs share the single config.output_activation.
@@ -156,9 +173,11 @@ class OpQuantizer(QuantizerBase):
                 node, cast(fx.Node, get_arg(node, name)), config.input_activation
             )
         for name in self.weight_names:
-            annotate_input_qspec_map(
-                node, cast(fx.Node, get_arg(node, name)), config.weight
-            )
+            weight = cast(fx.Node, get_arg(node, name))
+            if is_dequantize_node(weight):
+                node.meta.setdefault("custom", {})[QUANTIZED_KEY] = True
+            else:
+                annotate_input_qspec_map(node, weight, config.weight)
         # output_node is None if a multi-output op's getitem(output_index) is unused.
         if config.output_activation is not None:
             for output_index in self.output_indices:
@@ -167,26 +186,16 @@ class OpQuantizer(QuantizerBase):
                     annotate_output_qspec(out, config.output_activation)
 
     def fuse(self, gm: fx.GraphModule) -> bool:
-        """Fold each owned, annotated op node into fused_op.
+        """Fold each owned quantized node into fused_op.
 
-        A node is fused only when it matches, carries an annotation, and that annotation
-        has a live qspec, so a node claimed by a no-op annotation or one merely
-        sandwiched between its neighbors' dq/q is left alone.
+        A node claimed by a no-op annotation, or one merely sandwiched between its
+        neighbors' dq/q, carries no mark and is left alone.
         """
         modified = False
         for node in list(gm.graph.find_nodes(op="call_function", target=self.op)):
-            if not self.matches(node):
-                continue
-            ann = node.meta.get(Q_ANNOTATION_KEY)
-            if ann is None:
-                continue
-            if (
-                not any(v is not None for v in ann.input_qspec_map.values())
-                and ann.output_qspec is None
-            ):
-                continue
-            self.fuse_node(gm, node)
-            modified = True
+            if node.meta.get("custom", {}).get(QUANTIZED_KEY) and self.matches(node):
+                self.fuse_node(gm, node)
+                modified = True
         return modified
 
     def fuse_node(self, gm: fx.GraphModule, node: fx.Node) -> fx.Node:
@@ -290,8 +299,9 @@ class FusedQuantQuantizer(ComposableQuantizer, QuantizerBase):
     def fuse(self, gm: fx.GraphModule) -> bool:
         """Fuse via every child quantizer; return whether anything fused.
 
-        ``gm`` is the output of ``convert_pt2e``, which is first cleaned up so
-        the children can match on it; see :func:`_repair_convert_output`.
+        ``gm`` is the output of ``convert_pt2e``, or the graph module of a program
+        exported from it, first cleaned up so the children can match on it; see
+        :func:`_repair_convert_output`.
         """
         _repair_convert_output(gm)
         modified = False
