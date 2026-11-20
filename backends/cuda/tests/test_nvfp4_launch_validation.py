@@ -40,6 +40,40 @@ def test_gemm_still_rejects_illegal_short_k_split():
         kernels._check_split(80, 4)
 
 
+def test_gemv_workspace_rejected_before_output_allocation():
+    x = torch.empty((2, 80), dtype=torch.bfloat16)
+    q = torch.empty((3, 40), dtype=torch.uint8)
+    s = torch.empty((3, 5), dtype=torch.uint8)
+    pts = torch.ones(1)
+    with (
+        mock.patch.object(kernels, "_split_workspace_limit", return_value=1),
+        mock.patch.object(torch, "empty", side_effect=AssertionError("allocated")),
+        pytest.raises(InvalidLaunchParam, match="768 workspace bytes"),
+    ):
+        kernels._launch_gemv_impl(x, q, s, pts, split_k=32)
+
+
+@pytest.mark.parametrize("k", [16, 80, 192])
+@pytest.mark.parametrize("split", [4, 32])
+def test_gemv_keeps_legal_short_k_splits(k, split):
+    x = torch.empty((2, k), dtype=torch.bfloat16)
+    q = torch.empty((3, k // 2), dtype=torch.uint8)
+    s = torch.empty((3, k // 16), dtype=torch.uint8)
+    pts = torch.ones(1)
+    token = kernels._QUEUING_ONLY.set(True)
+    try:
+        with (
+            mock.patch.object(kernels, "_split_workspace_limit", return_value=2**20),
+            mock.patch.object(kernels, "_has_native_fp4_conversion", return_value=False),
+            mock.patch.object(kernels, "launch_nvfp4_kernel") as launch,
+        ):
+            out = kernels._launch_gemv_impl(x, q, s, pts, split_k=split)
+        assert out.shape == (2, 3)
+        assert launch.call_args.args[2][-1] == split
+    finally:
+        kernels._QUEUING_ONLY.reset(token)
+
+
 @triton.jit
 def _offset_probe(OUT, M, SPLIT, N: tl.constexpr, BASE: tl.constexpr, BLOCK: tl.constexpr):
     lane = tl.arange(0, BLOCK)

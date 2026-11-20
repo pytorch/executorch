@@ -488,3 +488,584 @@ def nvfp4_w4a4(
     return launch(x, qdata, scale, per_tensor_scale, static_scale, **kwargs)
 
 
+@triton.jit
+def _scaled_pair(q, sf, HALF2: tl.constexpr):
+    packed = tl.inline_asm_elementwise(
+        "{ .reg .b8 tmp,z1,z2,z3; mov.b32 {tmp,z1,z2,z3}, $1; cvt.rn.f16x2.e2m1x2 $0, tmp; }",
+        constraints="=r,r",
+        args=[q.to(tl.uint32)],
+        dtype=tl.uint32,
+        is_pure=True,
+        pack=1,
+    )
+    if HALF2:
+        # E2M1*E4M3 needs <=6 significant bits. The nonzero magnitude
+        # range [2**-10, 2688] is normal FP16, so packed multiply is exact.
+        sf_bits = sf.to(tl.float16).to(tl.uint16, bitcast=True).to(tl.uint32)
+        sf_pair = sf_bits | (sf_bits << 16)
+        packed = tl.inline_asm_elementwise(
+            "mul.rn.f16x2 $0, $1, $2;",
+            constraints="=r,r,r",
+            args=[packed, sf_pair],
+            dtype=tl.uint32,
+            is_pure=True,
+            pack=1,
+        )
+    lo = (packed & 65535).to(tl.uint16).to(tl.float16, bitcast=True).to(tl.float32)
+    hi = (packed >> 16).to(tl.uint16).to(tl.float16, bitcast=True).to(tl.float32)
+    if not HALF2:
+        lo = lo * sf
+        hi = hi * sf
+    return lo, hi
+
+
+@triton.jit
+def _gemv_half2(
+    X,
+    Q,
+    S,
+    PTS,
+    Y,
+    M,
+    N: tl.constexpr,
+    K: tl.constexpr,
+    SPLIT: tl.constexpr,
+    BN: tl.constexpr,
+    BK: tl.constexpr,
+    HALF2: tl.constexpr,
+    SCALE_ONCE: tl.constexpr,
+    ROW_PTS: tl.constexpr = False,
+    UNIT_SCALE: tl.constexpr = False,
+):
+    n = tl.program_id(0) * BN + tl.arange(0, BN)
+    m = tl.program_id(1)
+    split = tl.program_id(2)
+    chunk: tl.constexpr = tl.cdiv(K, BK * SPLIT) * BK
+    pair = split * (chunk // 2) + tl.arange(0, BK // 2)
+    acc = tl.zeros((BN, BK // 2), tl.float32)
+    if UNIT_SCALE:
+        pts = 1.0
+    elif ROW_PTS:
+        pts = tl.load(PTS + n, n < N, 0)[:, None]
+    else:
+        pts = tl.load(PTS)
+    for off in range(tl.cdiv(chunk, BK)):
+        kk = pair + off * (BK // 2)
+        mask = (n[:, None] < N) & (kk[None, :] < K // 2)
+        q = tl.load(Q + n[:, None] * (K // 2) + kk[None, :], mask, 0)
+        if SCALE_ONCE:
+            group = split * (chunk // 16) + off * (BK // 16) + tl.arange(0, BK // 16)
+            sf = tl.load(
+                S + n[:, None] * (K // 16) + group[None, :],
+                (n[:, None] < N) & (group[None, :] < K // 16),
+                0,
+            ).to(tl.float8e4nv, bitcast=True)
+            if HALF2:
+                sf = sf.to(tl.float16)
+            else:
+                sf = sf.to(tl.float32)
+            sf = tl.broadcast_to(sf[:, :, None], (BN, BK // 16, 8)).reshape(
+                (BN, BK // 2)
+            )
+        else:
+            sf = tl.load(S + n[:, None] * (K // 16) + kk[None, :] // 8, mask, 0).to(
+                tl.float8e4nv, bitcast=True
+            )
+            if HALF2:
+                sf = sf.to(tl.float16)
+            else:
+                sf = sf.to(tl.float32)
+        lo, hi = _scaled_pair(q, sf, HALF2)
+        if UNIT_SCALE and X.dtype.element_ty == tl.bfloat16:
+            w0, w1 = lo, hi
+        elif X.dtype.element_ty == tl.bfloat16:
+            packed_bf16 = tl.inline_asm_elementwise(
+                "cvt.rn.bf16x2.f32 $0, $2, $1;",
+                constraints="=r,f,f",
+                args=[lo * pts, hi * pts],
+                dtype=tl.uint32,
+                is_pure=True,
+                pack=1,
+            )
+            w0 = (packed_bf16 << 16).to(tl.float32, bitcast=True)
+            w1 = (packed_bf16 & 0xFFFF0000).to(tl.float32, bitcast=True)
+        else:
+            w0 = (lo * pts).to(X.dtype.element_ty).to(tl.float32)
+            w1 = (hi * pts).to(X.dtype.element_ty).to(tl.float32)
+        x0 = tl.load(X + m * K + kk * 2, kk < K // 2, 0).to(tl.float32)
+        x1 = tl.load(X + m * K + kk * 2 + 1, kk < K // 2, 0).to(tl.float32)
+        acc = tl.fma(w0, x0[None, :], acc)
+        acc = tl.fma(w1, x1[None, :], acc)
+    val = tl.sum(acc, 1)
+    offsets, _ = _partial_offsets(split, m.to(tl.int64) * N + n, M, N)
+    tl.store(Y + offsets, val, n < N)
+
+
+@triton.jit
+def _gemv_original(
+    X,
+    Q,
+    S,
+    PTS,
+    Y,
+    M,
+    N: tl.constexpr,
+    K: tl.constexpr,
+    SPLIT: tl.constexpr,
+    BN: tl.constexpr,
+    BK: tl.constexpr,
+    NATIVE: tl.constexpr,
+    ROW_PTS: tl.constexpr = False,
+    UNIT_SCALE: tl.constexpr = False,
+):
+    n = tl.program_id(0) * BN + tl.arange(0, BN)
+    m = tl.program_id(1)
+    split = tl.program_id(2)
+    chunk: tl.constexpr = tl.cdiv(K, BK * SPLIT) * BK
+    pair = split * (chunk // 2) + tl.arange(0, BK // 2)
+    acc = tl.zeros((BN, BK // 2), tl.float32)
+    if UNIT_SCALE:
+        pts = 1.0
+    elif ROW_PTS:
+        pts = tl.load(PTS + n, n < N, 0)[:, None]
+    else:
+        pts = tl.load(PTS)
+    for off in range(tl.cdiv(chunk, BK)):
+        kk = pair + off * (BK // 2)
+        mask = (n[:, None] < N) & (kk[None, :] < K // 2)
+        q = tl.load(Q + n[:, None] * (K // 2) + kk[None, :], mask, 0)
+        if NATIVE:
+            packed = tl.inline_asm_elementwise(
+                "{ .reg .b8 tmp,z1,z2,z3; mov.b32 {tmp,z1,z2,z3}, $1; cvt.rn.f16x2.e2m1x2 $0, tmp; }",
+                constraints="=r,r",
+                args=[q.to(tl.uint32)],
+                dtype=tl.uint32,
+                is_pure=True,
+                pack=1,
+            )
+            lo = (
+                (packed & 65535)
+                .to(tl.uint16)
+                .to(tl.float16, bitcast=True)
+                .to(tl.float32)
+            )
+            hi = (
+                (packed >> 16).to(tl.uint16).to(tl.float16, bitcast=True).to(tl.float32)
+            )
+        else:
+            lo = _fp4(q & 15)
+            hi = _fp4(q >> 4)
+        sf = (
+            tl.load(S + n[:, None] * (K // 16) + kk[None, :] // 8, mask, 0)
+            .to(tl.float8e4nv, bitcast=True)
+            .to(tl.float32)
+        )
+        if UNIT_SCALE and NATIVE and X.dtype.element_ty == tl.bfloat16:
+            w0, w1 = lo * sf, hi * sf
+        else:
+            w0 = (lo * sf * pts).to(X.dtype.element_ty).to(tl.float32)
+            w1 = (hi * sf * pts).to(X.dtype.element_ty).to(tl.float32)
+        x0 = tl.load(X + m * K + kk * 2, kk < K // 2, 0).to(tl.float32)
+        x1 = tl.load(X + m * K + kk * 2 + 1, kk < K // 2, 0).to(tl.float32)
+        acc += w0 * x0[None, :] + w1 * x1[None, :]
+    val = tl.sum(acc, 1)
+    offsets, _ = _partial_offsets(split, m.to(tl.int64) * N + n, M, N)
+    tl.store(Y + offsets, val, n < N)
+
+
+@triton.autotune(
+    configs=[
+        triton.Config({"BN": bn, "BK": bk, "HALF2": half}, num_warps=w, num_stages=st)
+        for bn, bk, w in [
+            (4, 256, 8),
+            (4, 512, 4),
+            (8, 256, 4),
+            (8, 512, 4),
+            (8, 1024, 8),
+            (16, 256, 4),
+            (16, 512, 4),
+            (16, 512, 8),
+        ]
+        for half in (False, True)
+        for st in (1, 2, 3)
+    ],
+    key=["M", "N", "K", "SPLIT", "NATIVE", "ROW_PTS", "UNIT_SCALE"],
+    prune_configs_by={"early_config_prune": prune_nvfp4_stages},
+    do_bench=autotune_do_bench,
+)
+@triton.jit
+def _gemv(
+    X,
+    Q,
+    S,
+    PTS,
+    Y,
+    M,
+    N: tl.constexpr,
+    K: tl.constexpr,
+    SPLIT: tl.constexpr,
+    BN: tl.constexpr,
+    BK: tl.constexpr,
+    NATIVE: tl.constexpr,
+    HALF2: tl.constexpr = False,
+    ROW_PTS: tl.constexpr = False,
+    UNIT_SCALE: tl.constexpr = False,
+):
+    if NATIVE and HALF2:
+        _gemv_half2(
+            X, Q, S, PTS, Y, M, N, K, SPLIT, BN, BK, True, True, ROW_PTS, UNIT_SCALE
+        )
+    else:
+        _gemv_original(
+            X, Q, S, PTS, Y, M, N, K, SPLIT, BN, BK, NATIVE, ROW_PTS, UNIT_SCALE
+        )
+
+
+def _launch_gemv_impl(x, qdata, scale, pts, unit_scale=False, *, split_k):
+    m, k = x.shape
+    n = qdata.shape[0]
+    if split_k not in SPLIT_K_CANDIDATES:
+        raise InvalidLaunchParam(f"Illegal NVFP4 GEMV split-K={split_k}")
+    _check_split_workspace(split_k, m, n)
+    out = torch.empty((m, n), device=x.device, dtype=x.dtype)
+    partial = (
+        torch.empty((split_k, m, n), device=x.device, dtype=torch.float32)
+        if split_k > 1
+        else out
+    )
+    grid = lambda meta: (triton.cdiv(n, meta["BN"]), m, split_k)
+    launch_nvfp4_kernel(
+        _gemv,
+        grid,
+        (
+            x,
+            qdata,
+            scale,
+            pts,
+            partial,
+            m,
+            n,
+            k,
+            split_k,
+        ),
+        5,
+        NATIVE=_has_native_fp4_conversion(),
+        ROW_PTS=pts.numel() != 1,
+        UNIT_SCALE=unit_scale,
+    )
+    if split_k > 1 and not _QUEUING_ONLY.get():
+        wrap_triton(_reduce_partials)[(triton.cdiv(m * n, 256),)](
+            partial,
+            pts,
+            pts,
+            out,
+            m,
+            n,
+            split_k,
+            False,
+            256,
+            ROW_PTS=pts.numel() != 1,
+        )
+    return out
+
+
+_launch_gemv = autotune_launch_param(
+    "split_k",
+    SPLIT_K_CANDIDATES,
+    candidate_prepass=_compile_every_candidate_at_once,
+    do_bench=nvfp4_launch_bench,
+)(_launch_gemv_impl)
+
+
+@triton_op("triton::nvfp4_gemv", mutates_args={})
+def nvfp4_gemv(
+    x: torch.Tensor,
+    qdata: torch.Tensor,
+    scale: torch.Tensor,
+    per_tensor_scale: torch.Tensor,
+    split_k: int = -1,
+    unit_scale: bool = False,
+) -> torch.Tensor:
+    if split_k < 0:
+        return _launch_gemv(x, qdata, scale, per_tensor_scale, unit_scale)
+    return _launch_gemv_impl(
+        x, qdata, scale, per_tensor_scale, unit_scale, split_k=split_k
+    )
+
+
+@triton.jit
+def _w4a16_original(
+    X,
+    Q,
+    S,
+    PTS,
+    Y,
+    M,
+    N: tl.constexpr,
+    K: tl.constexpr,
+    SPLIT_K: tl.constexpr,
+    BM: tl.constexpr,
+    BN: tl.constexpr,
+    BK: tl.constexpr,
+    GROUP_M: tl.constexpr,
+    ROW_PTS: tl.constexpr = False,
+):
+    pid = tl.program_id(0)
+    split = tl.program_id(1)
+    nm = tl.cdiv(M, BM)
+    nn = tl.cdiv(N, BN)
+    first = (pid // (GROUP_M * nn)) * GROUP_M
+    gm = tl.minimum(nm - first, GROUP_M)
+    m = (first + pid % gm) * BM + tl.arange(0, BM)
+    n = ((pid % (GROUP_M * nn)) // gm) * BN + tl.arange(0, BN)
+    k = tl.arange(0, BK)
+    acc = tl.zeros((BM, BN), tl.float32)
+    if ROW_PTS:
+        pts = tl.load(PTS + n, n < N, 0)[None, :]
+    else:
+        pts = tl.load(PTS)
+    chunk: tl.constexpr = tl.cdiv(K, BK * SPLIT_K)
+    for off in range(chunk):
+        block = split * chunk + off
+        kk = k + block * BK
+        a = tl.load(
+            X + m[:, None] * K + kk[None, :], (m[:, None] < M) & (kk[None, :] < K), 0
+        )
+        mask = (kk[:, None] < K) & (n[None, :] < N)
+        q = tl.load(Q + n[None, :] * (K // 2) + kk[:, None] // 2, mask, 0)
+        code = (q >> ((kk[:, None] & 1) * 4)) & 15
+        s = (
+            tl.load(S + n[None, :] * (K // 16) + kk[:, None] // 16, mask, 0)
+            .to(tl.float8e4nv, bitcast=True)
+            .to(tl.float32)
+        )
+        b = (_fp4(code) * s * pts).to(X.dtype.element_ty)
+        acc = tl.dot(a, b, acc)
+    tl.store(
+        Y + split.to(tl.int64) * M * N + m[:, None] * N + n[None, :],
+        acc,
+        (m[:, None] < M) & (n[None, :] < N),
+    )
+
+
+@triton.jit
+def _w4a16_paired(
+    X,
+    Q,
+    S,
+    PTS,
+    Y,
+    M,
+    N: tl.constexpr,
+    K: tl.constexpr,
+    SPLIT: tl.constexpr,
+    BM: tl.constexpr,
+    BN: tl.constexpr,
+    BK: tl.constexpr,
+    GROUP_M: tl.constexpr,
+    ROW_PTS: tl.constexpr = False,
+):
+    pid = tl.program_id(0)
+    split = tl.program_id(1)
+    nm, nn = tl.cdiv(M, BM), tl.cdiv(N, BN)
+    first = (pid // (GROUP_M * nn)) * GROUP_M
+    gm = tl.minimum(nm - first, GROUP_M)
+    m = (first + pid % gm) * BM + tl.arange(0, BM)
+    n = ((pid % (GROUP_M * nn)) // gm) * BN + tl.arange(0, BN)
+    ki = tl.arange(0, BK)
+    pi = tl.arange(0, BK // 2)
+    acc = tl.zeros((BM, BN), tl.float32)
+    if ROW_PTS:
+        pts = tl.load(PTS + n, n < N, 0)[:, None]
+    else:
+        pts = tl.load(PTS)
+    chunk: tl.constexpr = tl.cdiv(K, BK * SPLIT)
+    for off in range(chunk):
+        block = split * chunk + off
+        kk = ki + block * BK
+        pair = pi + block * (BK // 2)
+        a = tl.load(
+            X + m[:, None] * K + kk[None, :], (m[:, None] < M) & (kk[None, :] < K), 0
+        )
+        mask = (n[:, None] < N) & (pair[None, :] < K // 2)
+        q = tl.load(Q + n[:, None] * (K // 2) + pair[None, :], mask, 0)
+        packed = tl.inline_asm_elementwise(
+            "{ .reg .b8 tmp,z1,z2,z3; mov.b32 {tmp,z1,z2,z3}, $1; cvt.rn.f16x2.e2m1x2 $0, tmp; }",
+            constraints="=r,r",
+            args=[q.to(tl.uint32)],
+            dtype=tl.uint32,
+            is_pure=True,
+            pack=1,
+        )
+        lo = (packed & 65535).to(tl.uint16).to(tl.float16, bitcast=True).to(tl.float32)
+        hi = (packed >> 16).to(tl.uint16).to(tl.float16, bitcast=True).to(tl.float32)
+        sf = (
+            tl.load(S + n[:, None] * (K // 16) + pair[None, :] // 8, mask, 0)
+            .to(tl.float8e4nv, bitcast=True)
+            .to(tl.float32)
+        )
+        w0 = (lo * sf * pts).to(X.dtype.element_ty)
+        w1 = (hi * sf * pts).to(X.dtype.element_ty)
+        b = tl.trans(tl.join(w0, w1).reshape((BN, BK)))
+        acc = tl.dot(a, b, acc)
+    tl.store(
+        Y + split.to(tl.int64) * M * N + m[:, None] * N + n[None, :],
+        acc,
+        (m[:, None] < M) & (n[None, :] < N),
+    )
+
+
+@triton.autotune(
+    configs=[
+        triton.Config(
+            {"BM": bm, "BN": bn, "BK": bk, "GROUP_M": gm}, num_warps=w, num_stages=st
+        )
+        for bm, bn, bk, gm, w in [
+            (16, 64, 64, 1, 4),
+            (32, 64, 64, 1, 4),
+            (64, 64, 64, 1, 4),
+            (64, 128, 64, 1, 8),
+            (32, 64, 128, 1, 4),
+            (64, 64, 128, 1, 4),
+            (64, 128, 64, 8, 8),
+            (128, 64, 64, 1, 4),
+            (128, 64, 64, 8, 4),
+            (128, 64, 64, 8, 8),
+            (128, 64, 128, 8, 8),
+            (128, 64, 128, 1, 8),
+        ]
+        for st in (1, 2, 3)
+    ],
+    key=["M", "N", "K", "SPLIT_K", "NATIVE", "ROW_PTS"],
+    prune_configs_by={"early_config_prune": prune_nvfp4_stages},
+    do_bench=autotune_do_bench,
+)
+@triton.jit
+def _w4a16(
+    X,
+    Q,
+    S,
+    PTS,
+    Y,
+    M,
+    N: tl.constexpr,
+    K: tl.constexpr,
+    SPLIT_K: tl.constexpr,
+    BM: tl.constexpr,
+    BN: tl.constexpr,
+    BK: tl.constexpr,
+    GROUP_M: tl.constexpr,
+    NATIVE: tl.constexpr = False,
+    ROW_PTS: tl.constexpr = False,
+):
+    if NATIVE:
+        _w4a16_paired(X, Q, S, PTS, Y, M, N, K, SPLIT_K, BM, BN, BK, GROUP_M, ROW_PTS)
+    else:
+        _w4a16_original(X, Q, S, PTS, Y, M, N, K, SPLIT_K, BM, BN, BK, GROUP_M, ROW_PTS)
+
+
+def _launch_w4a16_impl(x, qdata, scale, pts, *, split_k, output_dtype=None):
+    if x.dtype == torch.float32:
+        x = x.to(torch.bfloat16)
+    m, k = x.shape
+    n = qdata.shape[0]
+    _check_split(k, split_k, m=m, n=n)
+    out = torch.empty((m, n), device=x.device, dtype=output_dtype or x.dtype)
+    partial = (
+        torch.empty((split_k, m, n), device=x.device, dtype=torch.float32)
+        if split_k > 1
+        else out
+    )
+    grid = lambda meta: (
+        triton.cdiv(m, meta["BM"]) * triton.cdiv(n, meta["BN"]),
+        split_k,
+    )
+    launch_nvfp4_kernel(
+        _w4a16,
+        grid,
+        (x, qdata, scale, pts, partial, m, n, k, split_k),
+        5,
+        NATIVE=_has_native_fp4_conversion(),
+        ROW_PTS=pts.numel() != 1,
+    )
+    if split_k > 1 and not _QUEUING_ONLY.get():
+        wrap_triton(_reduce_partials)[(triton.cdiv(m * n, 256),)](
+            partial,
+            pts,
+            pts,
+            out,
+            m,
+            n,
+            split_k,
+            False,
+            256,
+            ROW_PTS=pts.numel() != 1,
+        )
+    return out
+
+
+_launch_w4a16 = autotune_launch_param(
+    "split_k",
+    SPLIT_K_CANDIDATES,
+    candidate_prepass=_compile_every_candidate_at_once,
+    do_bench=nvfp4_launch_bench,
+)(_launch_w4a16_impl)
+
+
+@triton_op("triton::nvfp4_w4a16", mutates_args={})
+def nvfp4_w4a16(
+    x: torch.Tensor,
+    qdata: torch.Tensor,
+    scale: torch.Tensor,
+    per_tensor_scale: torch.Tensor,
+    split_k: int = -1,
+    output_dtype: torch.dtype | None = None,
+) -> torch.Tensor:
+    launch = _launch_w4a16 if split_k < 0 else _launch_w4a16_impl
+    kwargs = {} if split_k < 0 else {"split_k": split_k}
+    if output_dtype is not None:
+        kwargs["output_dtype"] = output_dtype
+    return launch(x, qdata, scale, per_tensor_scale, **kwargs)
+
+
+@triton.jit
+def _embedding(
+    I, Q, S, PTS, Y, T, K: tl.constexpr, BK: tl.constexpr, ROW_PTS: tl.constexpr = False
+):
+    t = tl.program_id(0)
+    k = tl.program_id(1) * BK + tl.arange(0, BK)
+    n = tl.load(I + t)
+    q = tl.load(Q + n * (K // 2) + k // 2, k < K, 0)
+    c = (q >> ((k & 1) * 4)) & 15
+    s = (
+        tl.load(S + n * (K // 16) + k // 16, k < K, 0)
+        .to(tl.float8e4nv, bitcast=True)
+        .to(tl.float32)
+    )
+    pts = tl.load(PTS + n) if ROW_PTS else tl.load(PTS)
+    val = _fp4(c) * (s * pts)
+    tl.store(Y + t * K + k, val, k < K)
+
+
+@triton_op("triton::nvfp4_embedding", mutates_args={})
+def nvfp4_embedding(
+    indices: torch.Tensor,
+    qdata: torch.Tensor,
+    scale: torch.Tensor,
+    per_tensor_scale: torch.Tensor,
+    output_dtype: torch.dtype,
+) -> torch.Tensor:
+    k = qdata.shape[1] * 2
+    out = torch.empty((*indices.shape, k), device=qdata.device, dtype=output_dtype)
+    wrap_triton(_embedding)[(indices.numel(), triton.cdiv(k, 256))](
+        indices,
+        qdata,
+        scale,
+        per_tensor_scale,
+        out,
+        indices.numel(),
+        k,
+        256,
+        ROW_PTS=per_tensor_scale.numel() != 1,
+    )
+    return out
