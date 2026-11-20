@@ -343,7 +343,7 @@ def test_depthwise_without_sizing(monkeypatch, missing):
             pytest.skip("Build with EXECUTORCH_BUILD_ESP_NN_PYBINDS=ON")
         monkeypatch.delattr(queries, "depthwise_conv2d_scratch_size")
     case = test_cases["s16"]
-    EspTester(case.model, case.example_inputs).test_dialect(
+    EspTester(case.model, case.example_inputs, target=EspTarget.ESP32S3).test_dialect(
         {_FQ_CONV: 1}, {_ESP_DW: 0, _CONV: 1}, atol=0, rtol=0
     ).to_executorch().serialize()
 
@@ -360,7 +360,7 @@ def test_depthwise_falls_back_when_sizing_rejects_bounds(s3_queries):
         )
     model = EspDepthwiseConv2d(4800, kernel=7, padding=3, supported=False)
     inputs = (ramp_tensor(-3, 5, (1, 4800, 7, 7)),)
-    EspTester(model, inputs).test_dialect(
+    EspTester(model, inputs, target=EspTarget.ESP32S3).test_dialect(
         model.ops_before_transforms, model.ops_after_transforms, atol=0, rtol=0
     ).to_executorch().serialize()
 
@@ -380,7 +380,9 @@ def test_depthwise_spatial_index_bounds(
     model = EspDepthwiseConv2d(2, kernel=1, supported=supported)
     shape = [1, 2, 1, 1]
     shape[axis] = extent
-    EspTester(model, (ramp_tensor(-3, 5, shape),)).test_dialect(
+    EspTester(
+        model, (ramp_tensor(-3, 5, shape),), target=EspTarget.ESP32S3
+    ).test_dialect(
         model.ops_before_transforms,
         model.ops_after_transforms,
         qtol=int(supported),
@@ -402,6 +404,8 @@ def test_implementation_depthwise_undersized_scratch(pytestconfig, s3_queries):
     module = tester.get_artifact().exported_program().graph_module
     (node,) = module.graph.find_nodes(op="call_function", target=_ESP_DW)
     scratch = get_arg(node, "scratch")
+    if scratch.meta["val"].numel() == 0:
+        pytest.skip("The selected kernel does not require scratch")
     scratch.args = (((1,), torch.uint8),)
     scratch.meta["val"] = scratch.meta["val"].new_empty((1,))
     module.recompile()
@@ -426,7 +430,9 @@ def test_depthwise_padding_bound(s3_queries, monkeypatch):
     model = EspDepthwiseConv2d(
         2, kernel=1, stride=(65535, 1), padding=(32769, 0), supported=False
     )
-    EspTester(model, (ramp_tensor(-3, 5, (1, 2, 1, 1)),)).test_dialect(
+    EspTester(
+        model, (ramp_tensor(-3, 5, (1, 2, 1, 1)),), target=EspTarget.ESP32S3
+    ).test_dialect(
         model.ops_before_transforms, model.ops_after_transforms, atol=0, rtol=0
     ).to_executorch().serialize()
 
@@ -464,14 +470,13 @@ def test_implementation_depthwise_rejects_out_of_bounds_windows(
 
     monkeypatch.setattr(BundledProgram, "serialize_to_schema", invalid_stride)
     case = test_cases["s8_padded"]
+    tester = EspTester(case.model, case.example_inputs)
     with pytest.raises(AssertionError):
-        EspTester(case.model, case.example_inputs).test_implementation(
-            pytestconfig.rootpath
-        )
+        tester.test_implementation(pytestconfig.rootpath)
     worker = os.environ.get("PYTEST_XDIST_WORKER", "main")
     log = (
         Path(os.environ["ESPRESSIF_BUILD_DIR"])
-        / f"operator-library-{worker}-esp32s3-optimized"
+        / f"operator-library-{worker}-{tester.target.value}-{tester.kernel_mode.value}"
         / "emulator.log"
     )
     text = log.read_text()
