@@ -23,6 +23,16 @@ class _Fn(torch.nn.Module):
         return self.fn(*args)
 
 
+_NAN = float("nan")
+
+
+def _specials() -> list[Inputs]:
+    """Ordinary values beside NaN and both infinities."""
+    nan, inf = float("nan"), float("inf")
+    row = torch.tensor([-2.0, nan, 0.5, inf, 3.0, -inf, -0.25, 1.5])
+    return [(row.repeat(4, 8),)]
+
+
 class _OnLinear(torch.nn.Module):
     """`fn` of a linear's output, so weight-only schemes quantize its weight."""
 
@@ -220,3 +230,63 @@ def _softmax(fn: Callable[..., torch.Tensor]) -> Callable[[], list[Case]]:
 
 def softmax_cases() -> list[Case]:
     return _softmax(torch.softmax)()
+
+
+def _special_pairs() -> list[Inputs]:
+    """NaN, both infinities, both zeros and ordinary values, each against every
+    other."""
+    nan, inf = float("nan"), float("inf")
+    values = torch.tensor([nan, inf, -inf, 0.0, -0.0, 1.0, -1.0, 2.5])
+    return [(values.repeat(8, 1), values[:, None].repeat(1, 8))]
+
+
+def _equality(op: Callable[..., torch.Tensor]) -> Callable[[], list[Case]]:
+    def cases() -> list[Case]:
+        inf = float("inf")
+        return [
+            Case("ties", _Fn(lambda x, y: op(x, y).to(x.dtype)), _ties(8, 64)),
+            Case(
+                "special_pairs",
+                _Fn(lambda x, y: op(x, y).to(x.dtype)),
+                _special_pairs(),
+            ),
+            Case(
+                "broadcast",
+                _Fn(lambda x, y: op(x < 0, y < 0).to(x.dtype)),
+                draws(2, (2, 8, 64), (8, 1)),
+            ),
+            Case(
+                "scalar",
+                _Fn(lambda x: op((x < 0).to(x.dtype), 1.0).to(x.dtype)),
+                draws(4, (4, 256)),
+            ),
+            Case("nan_scalar", _Fn(lambda x: op(x, _NAN).to(x.dtype)), _specials()),
+            Case("inf_scalar", _Fn(lambda x: op(x, inf).to(x.dtype)), _specials()),
+            # Positions against a step, as a state reset at position 0 does.
+            Case(
+                "integer_positions",
+                _Fn(lambda x: x * op(torch.arange(x.shape[-1]), 5).to(x.dtype)),
+                draws(2, (4, 64)),
+            ),
+            Case(
+                "integer_tensors",
+                _Fn(lambda x, i: x * op(i, torch.arange(4)).to(x.dtype)),
+                [(torch.ones(2, 4), torch.tensor([[0, 2, 2, 3], [3, 1, -2, 0]]))],
+            ),
+            chain(
+                "dynamic_tokens",
+                _Fn(lambda x, y: op(x < 0, y < 0).to(x.dtype)),
+                *_pair(64),
+            ),
+            # A mask times y, so a mask flipped by rounding near y = 0 costs
+            # little.
+            _quantized(
+                "masked", lambda y: y * op((y < 0).to(y.dtype), 1.0).to(y.dtype)
+            ),
+        ]
+
+    return cases
+
+
+def ne_cases() -> list[Case]:
+    return _equality(torch.ne)()
