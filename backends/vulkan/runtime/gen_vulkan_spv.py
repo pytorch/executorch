@@ -185,6 +185,7 @@ def buffer_gvec_type(dtype: str, n: int) -> str:
 
     dtype_map = {
         "half": f"f16vec{n}",
+        "bfloat16": f"bf16vec{n}",
         "float": f"vec{n}",
         "double": f"vec{n}",  # No 64bit image format support in GLSL
         "int8": f"i8vec{n}",
@@ -208,6 +209,9 @@ def buffer_gvec_type(dtype: str, n: int) -> str:
 
 
 def texel_type(dtype: str) -> str:
+    # bfloat16 tensors are stored only in buffers and computed on in fp32.
+    if dtype == "bfloat16":
+        return "vec4"
     image_format = TYPE_MAPPINGS["IMAGE_FORMAT"][dtype]
     if image_format[-1:] == "f":
         return "vec4"
@@ -267,7 +271,8 @@ def get_higher_precision_dtype(dtype_a: str, dtype_b: str) -> str:
         beats any int dtype (e.g. int32 + float -> float), because integer
         values in these shaders are small enough to be exactly representable in
         the float compute type.
-      - Within the float family: double > float > half.
+      - Within the float family: double > float > half, bfloat16. Neither
+        half nor bfloat16 represents the other, so the pair gives float.
       - Within the int family: rank by bit width
         (int64/uint64 > int32/uint32 > int16/uint16 > int8/uint8/bool).
       - Signed-vs-unsigned tie at the same bit width resolves to the SIGNED
@@ -283,11 +288,13 @@ def get_higher_precision_dtype(dtype_a: str, dtype_b: str) -> str:
 
     if a == b:
         return a
+    if {a, b} == {"half", "bfloat16"}:
+        return "float"
 
     # (family_rank, bit_width, signed_rank). Higher tuple wins. family_rank 1 for
     # the float family ensures it always outranks the int family (family_rank 0).
     # signed_rank breaks same-width int ties in favor of signed.
-    float_ranks = {"half": 16, "float": 32, "double": 64}
+    float_ranks = {"half": 16, "bfloat16": 16, "float": 32, "double": 64}
     int_ranks = {
         "bool": 8,
         "uint8": 8,
@@ -524,13 +531,36 @@ def define_active_storage_type(storage_type: str):
         raise AssertionError(f"Invalid storage type: {storage_type}")
 
 
+# Some devices truncate conversions to bfloat16. The single-argument bfloat16_t
+# and bf16vec4 constructors instead round to the nearest bfloat16, ties to even,
+# and keep NaNs quiet so they cannot become infinity. Other bfloat16
+# conversions, such as to bf16vec2, are not rounded.
+BFLOAT16_EXTENSIONS = """#extension GL_EXT_bfloat16 : require
+#ifndef ROUND_BFLOAT16_CONVERSIONS
+#define ROUND_BFLOAT16_CONVERSIONS
+vec4 round_to_bf16(const vec4 v) {
+  const uvec4 u = floatBitsToUint(v);
+  const vec4 r = uintBitsToFloat((u + 0x7FFFu + ((u >> 16) & 1u)) & 0xFFFF0000u);
+  return mix(r, uintBitsToFloat(u | 0x400000u), isnan(v));
+}
+float round_to_bf16(const float v) { return round_to_bf16(vec4(v)).x; }
+bf16vec4 round_to_bf16(const bf16vec4 v) { return v; }
+bfloat16_t round_to_bf16(const bfloat16_t v) { return v; }
+#define bf16vec4(v) bf16vec4(round_to_bf16(v))
+#define bfloat16_t(v) bfloat16_t(round_to_bf16(v))
+#endif
+"""
+
+
 def define_explicit_type_extensions(dtypes: Union[str, List[str]]):
     out_str = "\n"
     dtype_list = dtypes if isinstance(dtypes, list) else [dtypes]
 
     for dtype in dtype_list:
         glsl_type = None
-        if dtype == "half":
+        if dtype == "bfloat16":
+            out_str += BFLOAT16_EXTENSIONS
+        elif dtype == "half":
             glsl_type = "float16"
         elif dtype == "double":
             # We only need to allow float64_t type usage
@@ -556,7 +586,9 @@ def define_required_extensions(storage_type: str, dtypes: Union[str, List[str]])
     for dtype in dtype_list:
         nbit = None
         glsl_type = None
-        if dtype == "half":
+        if dtype == "bfloat16" and storage_type.lower() == "buffer":
+            out_str += BFLOAT16_EXTENSIONS
+        elif dtype == "half":
             nbit = "16bit"
             glsl_type = "float16"
         elif dtype == "double":
@@ -1017,6 +1049,13 @@ class SPVGenerator:
 
                             default_params_copy["NAME"] = variant_name
                             default_params_copy["VARIANT_NAME"] = variant["NAME"]
+
+                            # bfloat16 tensors only use buffer storage.
+                            if default_params_copy.get("DTYPE") == "bfloat16" and any(
+                                key.endswith("STORAGE") and value != "buffer"
+                                for key, value in default_params_copy.items()
+                            ):
+                                continue
 
                             self.shader_template_params[template_path].append(
                                 default_params_copy
