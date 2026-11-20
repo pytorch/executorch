@@ -465,6 +465,26 @@ void GraphBuilder::lower_compare(const Node& node, Comparison comparison) {
   set_single_output(node, TensorRef{result, std::move(sizes)});
 }
 
+// Sets `id` to `result` in the value's declared type. Bools stay 0/1 floats.
+void GraphBuilder::set_as_output_type(ValueId id, TensorRef result) {
+  const TensorMeta& meta = method_.graph.value(id).tensor_meta();
+  if (meta.dtype != ScalarType::Bool) {
+    const ggml_type type = compute_type(meta);
+    if (result.tensor->type != type) {
+      result.tensor = ggml_cast(instance_.context.get(), result.tensor, type);
+    }
+  }
+  set(id, std::move(result));
+}
+
+// 1 where x is NaN, else 0, in F32: |x| + 1 is NaN only for a NaN x.
+ggml_tensor* GraphBuilder::nan_mask(ggml_tensor* x) {
+  ggml_context* ctx = instance_.context.get();
+  ggml_tensor* plus_one =
+      ggml_scale_bias(ctx, ggml_abs(ctx, contiguous(as_f32(x))), 1.0f, 1.0f);
+  return ggml_scale_bias(ctx, ggml_step(ctx, plus_one), -1.0f, 1.0f);
+}
+
 // The result is F32, which holds integers exactly up to 2^24, and ggml
 // derives the length from the F32 bounds.
 void GraphBuilder::lower_arange(const Node& node) {

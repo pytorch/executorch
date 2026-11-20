@@ -34,4 +34,5 @@ def ops() -> dict[str, Op]:
         "pad": Op(pad_pool.pad_cases),
         "max_pool2d": Op(pad_pool.max_pool2d_cases),
         "split": Op(core_ops.split_cases),
+        "topk": Op(core_ops.topk_cases),
     }

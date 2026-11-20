@@ -89,3 +89,58 @@ def split_cases() -> list[Case]:
         ),
         _quantized("fused_projection", lambda y: torch.split(y, [32, 16, 16], dim=-1)),
     ]
+
+
+def _permuted_rows(rows: int, cols: int, count: int) -> list[Inputs]:
+    """Rows of distinct integers, exact in every dtype for cols <= 256."""
+    generator = torch.Generator().manual_seed(0)
+    return [
+        (
+            torch.stack(
+                [torch.randperm(cols, generator=generator) for _ in range(rows)]
+            ).float()
+            - cols // 2,
+        )
+        for _ in range(count)
+    ]
+
+
+def _topk(k: int, largest: bool = True) -> _Fn:
+    def fn(x: torch.Tensor):
+        values, indices = torch.topk(x, k, largest=largest)
+        return values, indices.to(x.dtype)
+
+    return _Fn(fn)
+
+
+def _nan_rows() -> list[Inputs]:
+    nan, inf = float("nan"), float("inf")
+    return [
+        (
+            torch.tensor(
+                [
+                    [1.0, nan, -inf, 3.0, inf, 0.5],
+                    [inf, -2.0, nan, -inf, 4.0, 2.0],
+                    [nan, 0.0, -1.0, 5.0, -inf, inf],
+                ]
+            ),
+        )
+    ]
+
+
+def topk_cases() -> list[Case]:
+    return [
+        # MoE routing: 8 of 128 experts per token.
+        Case("router", _topk(8), _permuted_rows(16, 128, 2)),
+        Case("smallest", _topk(4, largest=False), _permuted_rows(4, 256, 2)),
+        Case("all", _topk(32), _permuted_rows(4, 32, 2)),
+        # Values only: half-type draws tie, and tied indices may come out in
+        # another order.
+        chain(
+            "dynamic_tokens", _Fn(lambda x: torch.topk(x, 8).values), (_tokens(), 128)
+        ),
+        _quantized("router", lambda s: torch.topk(s, 8).values),
+        # NaN ranks above every value, then +inf; -inf ranks last.
+        Case("nan_and_inf_largest", _topk(4), _nan_rows()),
+        Case("nan_and_inf_smallest", _topk(4, largest=False), _nan_rows()),
+    ]

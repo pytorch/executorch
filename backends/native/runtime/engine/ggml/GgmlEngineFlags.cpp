@@ -24,6 +24,12 @@ DEFINE_bool(
     print_graph_ops,
     false,
     "Print each built graph's node count per ggml op to stderr.");
+DEFINE_bool(
+    exact_topk_for_testing,
+    false,
+    "Testing only. Default: topk is one argsort, as in llama.cpp, which leaves "
+    "a row holding NaN unordered. Set: NaN ranks above every value as eager "
+    "does, at a NaN key map and a second argsort. Ops: topk.");
 
 namespace ptn {
 
@@ -41,6 +47,7 @@ GgmlEngineOptions ggml_engine_options_from_flags() {
   }
   options.max_cached_graphs = static_cast<size_t>(FLAGS_max_cached_graphs);
   options.print_graph_ops = FLAGS_print_graph_ops;
+  options.exact_topk_for_testing = FLAGS_exact_topk_for_testing;
   return options;
 }
 
