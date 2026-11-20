@@ -8,7 +8,6 @@
 set -euo pipefail
 
 et_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-build_dir="${ESPRESSIF_BUILD_DIR:-${et_root}/cmake-out-esp-emulator}"
 espnn_kernels="${ESPRESSIF_NN_KERNELS:-optimized}"
 target="${ESPRESSIF_TARGET:-esp32s3}"
 case "${target}" in
@@ -18,13 +17,15 @@ case "${target}" in
     *) echo "ESPRESSIF_TARGET must be esp32s3, esp32p4 or esp32s31" >&2; exit 1 ;;
 esac
 idf_version="${ESPRESSIF_IDF_VERSION:-${default_idf_version}}"
+idf_version_dir="${idf_version//\//-}"
+build_dir="${ESPRESSIF_BUILD_DIR:-${et_root}/cmake-out-esp-emulator/${target}/${idf_version_dir}}"
 export ESPRESSIF_TARGET="${target}"
 case "${espnn_kernels}" in
     optimized) espnn_config=CONFIG_NN_OPTIMIZED ;;
     ansi) espnn_config=CONFIG_NN_ANSI_C ;;
     *) echo "ESPRESSIF_NN_KERNELS must be optimized or ansi" >&2; exit 1 ;;
 esac
-export ESPRESSIF_TOOLS_DIR="${ESPRESSIF_TOOLS_DIR:-${RUNNER_TEMP:-/tmp}/executorch-espressif}"
+export ESPRESSIF_TOOLS_DIR="${ESPRESSIF_TOOLS_DIR:-${RUNNER_TEMP:-/tmp}/executorch-espressif/${idf_version_dir}}"
 mkdir -p "${build_dir}"
 build_dir=$(cd "${build_dir}" && pwd)
 cd "${et_root}"

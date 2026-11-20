@@ -284,14 +284,14 @@ or on the command line: `idf.py build -DET_ESP_METHOD_ALLOCATOR_POOL_SIZE=104857
 ## Loading Models
 
 By default the `.pte` is compiled into the firmware as a C array. For larger
-models, load it from a SPIFFS partition:
+models, the example's `storage` SPIFFS partition reserves 2 MB at `0x300000`:
 
-1. Build with `-DFILESYSTEM_LOAD=ON`.
-2. Add a partition and flash the image:
+1. Build and flash the firmware with `-DFILESYSTEM_LOAD=ON`, including its
+   partition table.
+2. Put the model at `model_dir/model.pte`, then create and flash the SPIFFS image:
    ```bash
-   # partitions.csv: storage, data, spiffs, , 0x200000
-   $IDF_PATH/components/spiffs/spiffsgen.py 0x200000 model_dir spiffs.bin
-   esptool.py write_flash 0x210000 spiffs.bin
+   python "$IDF_PATH/components/spiffs/spiffsgen.py" 0x200000 model_dir spiffs.bin
+   esptool.py write_flash 0x300000 spiffs.bin
    ```
 
 ## Configuration Options
