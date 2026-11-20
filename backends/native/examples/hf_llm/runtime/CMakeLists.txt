@@ -29,8 +29,13 @@ add_library(
 target_link_libraries(
   native_llm_runner
   PUBLIC native_engine
-  PRIVATE ${_native_runner_gflags} native_llm_runner_utils native_package
-          native_runner_utils native_runtime tokenizers::tokenizers
+  PRIVATE ${_native_runner_gflags}
+          native_llm_runner_utils
+          native_package
+          native_runner_utils
+          native_runtime
+          tokenizers::tokenizers
+          extension_llm_cache
 )
 foreach(target native_llm_runner native_llm_runner_utils)
   target_compile_options(

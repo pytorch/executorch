@@ -32,6 +32,7 @@ method and more correct, since per-method alias maps do not compose.
 from __future__ import annotations
 
 import operator
+import warnings
 from typing import TYPE_CHECKING
 
 import torch
@@ -47,7 +48,8 @@ from executorch.backends.native.serialization.graph_serialize import (
     validate_program,
 )
 from executorch.backends.native.serialization.schema import OutputKind, Program
-from executorch.exir._serialize._ptn import write_ptn
+from executorch.exir._serialize._ptn import _check_metadata, MetadataValue, write_ptn
+from torch.export.graph_signature import InputKind
 from torch.utils import _pytree as pytree
 
 if TYPE_CHECKING:
@@ -76,10 +78,12 @@ class NativeProgramManager:
         self,
         ptg: bytes,
         constants: dict[str, torch.Tensor],
+        metadata: dict[str, MetadataValue] | None = None,
     ) -> None:
         # TODO add args help
         self._ptg = ptg
         self._constants = constants
+        self._metadata = dict(metadata or {})
 
     @property
     def methods(self) -> set[str]:
@@ -89,7 +93,13 @@ class NativeProgramManager:
     def save(self, path: str) -> None:
         """Write the program and its constants to ``path`` as a .ptn package."""
         mutable_keys = frozenset(_mutable_data_keys(deserialize_program(self._ptg)))
-        write_ptn(path, self._ptg, self._constants, mutable_keys=mutable_keys)
+        write_ptn(
+            path,
+            self._ptg,
+            self._constants,
+            mutable_keys=mutable_keys,
+            metadata=self._metadata,
+        )
 
 
 def _check_delegate_outputs(
@@ -320,10 +330,73 @@ def _validate_merged_program(
         )
 
 
+# (user input name, dim, size) of a dim re-tracing made static.
+SpecializedDim = tuple[str, int, int]
+
+
+def _user_input_sizes(program: ExportedProgram) -> list[tuple[str, tuple]]:
+    """Each user input's name and example sizes: () for a zero-dim tensor too,
+    and for an input with no tensor value, e.g. a scalar or None."""
+    nodes = {node.name: node for node in program.graph.nodes}
+    sizes = []
+    for spec in program.graph_signature.input_specs:
+        if spec.kind != InputKind.USER_INPUT:
+            continue
+        name = str(getattr(spec.arg, "name", spec.arg))
+        val = nodes[name].meta.get("val") if name in nodes else None
+        sizes.append((name, tuple(val.shape) if isinstance(val, torch.Tensor) else ()))
+    return sizes
+
+
+def _is_symbolic(size: object) -> bool:
+    return isinstance(size, torch.SymInt) and size.node.maybe_as_int() is None
+
+
+def _specialized_dims(
+    symbolic: dict[str, tuple[bool, ...]],
+    program: ExportedProgram,
+) -> list[SpecializedDim]:
+    """The dims `symbolic` flags, per input name, that are static in `program`."""
+    return [
+        (name, d, int(size))
+        for name, sizes in _user_input_sizes(program)
+        for d, (was, size) in enumerate(zip(symbolic.get(name, ()), sizes))
+        if was and not _is_symbolic(size)
+    ]
+
+
+def _check_specialized_dims(
+    specialized: dict[str, list[SpecializedDim]], allow: bool
+) -> None:
+    """Re-tracing evaluates symbolic comparisons on the example sizes, and one it
+    guards on, e.g. functionalization comparing a size with another size equal
+    to it in the example, makes the dim static. The package would then accept
+    only that size, so refuse unless the caller allows it."""
+    dims = "; ".join(
+        f"method {method!r} input {name!r} dim {d} -> {size}"
+        for method, entries in specialized.items()
+        for name, d, size in entries
+    )
+    if not dims:
+        return
+    message = (
+        "to_native: torch.export left these input dims dynamic, but re-tracing "
+        f"for functionalization made them static: {dims}. The package would accept "
+        "only those sizes for them. One possible cause is a comparison of a dim "
+        "with another size that equals it in the example inputs."
+    )
+    if not allow:
+        raise ValueError(f"{message} Pass allow_specialized_dims=True to accept them.")
+    warnings.warn(message, stacklevel=3)
+
+
 def _normalize_programs(
     programs: "ExportedProgram | dict[str, ExportedProgram]",
-) -> dict[str, ExportedProgram]:
-    """Validate the public input, then functionalize each method for lowering."""
+) -> tuple[dict[str, ExportedProgram], dict[str, list[SpecializedDim]]]:
+    """Validate the public input, then functionalize each method for lowering.
+
+    Also returns each method's user-input dims that export left dynamic and
+    functionalization made static."""
     from torch.export import ExportedProgram as TorchExportedProgram
 
     if isinstance(programs, TorchExportedProgram):
@@ -337,6 +410,7 @@ def _normalize_programs(
         raise ValueError("to_native: programs must contain at least one method.")
 
     method_programs: dict[str, ExportedProgram] = {}
+    specialized: dict[str, list[SpecializedDim]] = {}
     for method_name, program in programs.items():
         if not isinstance(method_name, str):
             raise TypeError(
@@ -356,12 +430,21 @@ def _normalize_programs(
                 f"ExportedProgram, got {type(program).__name__}."
             )
         # Functionalize so each method's buffer writes appear in its signature.
+        # The flags are taken first: the re-trace shares export's ShapeEnv.
+        symbolic = {
+            name: tuple(_is_symbolic(size) for size in sizes)
+            for name, sizes in _user_input_sizes(program)
+        }
         method_programs[method_name] = program.run_decompositions({})
-    return method_programs
+        if entries := _specialized_dims(symbolic, method_programs[method_name]):
+            specialized[method_name] = entries
+    return method_programs, specialized
 
 
 def to_native(
     programs: "ExportedProgram | dict[str, ExportedProgram]",
+    metadata: dict[str, MetadataValue] | None = None,
+    allow_specialized_dims: bool = False,
 ) -> NativeProgramManager:
     """Lower ExportedProgram(s) through the native backend.
 
@@ -376,24 +459,36 @@ def to_native(
     Nothing about lowering is configurable yet. The passes, the partitioner, and
     the edge compile config are all owned here, because correctness of the package
     depends on them. Exposing the compile config is worth reconsidering.
-    ``constant_methods`` and ETRecord are likewise deferred.
+    ETRecord is likewise deferred.
 
     Args:
         programs: The exported program(s) to lower.
+        metadata: Values a runtime reads by name, the package's counterpart to a
+            PTE's ``constant_methods``: each a bool, int, float, str, or a list
+            of those. Saved as the package's metadata.json.
+        allow_specialized_dims: Accepts, with a warning, user-input dims that
+            export left dynamic and functionalization's re-trace made static;
+            by default they are refused.
 
     Returns:
         A ``NativeProgramManager``; call ``save`` to write a .ptn package.
 
     Raises:
         TypeError: If ``programs`` is not an ``ExportedProgram`` or a method-name
-            dictionary containing only ``ExportedProgram`` values.
+            dictionary containing only ``ExportedProgram`` values, or
+            ``metadata`` holds a name or value outside the types above.
         ValueError: If the method dictionary is empty, a method name is empty or
             in the reserved ``state`` namespace, a method does not fully delegate
-            to the native backend, a mutable constant differs between methods,
+            to the native backend, re-tracing made a dynamic input dim static
+            without ``allow_specialized_dims``, a mutable constant differs
+            between methods,
             namespaced keys conflict, or a data key the graph references has no
             backing tensor.
     """
-    method_programs = _normalize_programs(programs)
+    method_programs, specialized = _normalize_programs(programs)
+    _check_specialized_dims(specialized, allow_specialized_dims)
+    if metadata is not None:
+        _check_metadata(metadata, "to_native")
 
     from executorch.backends.native import get_default_compile_config
     from executorch.backends.native.partitioner import NativePartitioner
@@ -493,7 +588,9 @@ def to_native(
     constants = _merge_constants(method_constants)
     _validate_merged_program(program, constants)
 
-    return NativeProgramManager(ptg=_compile_to_bytes(program), constants=constants)
+    return NativeProgramManager(
+        ptg=_compile_to_bytes(program), constants=constants, metadata=metadata
+    )
 
 
 __all__ = ["NativeProgramManager", "to_native"]

@@ -365,6 +365,13 @@ _MATMUL_TOL = (
 )
 
 
+def _half_linear(weight: list[list[float]]) -> torch.nn.Linear:
+    linear = torch.nn.Linear(len(weight[0]), len(weight), bias=False).half()
+    with torch.no_grad():
+        linear.weight.copy_(torch.tensor(weight))
+    return linear.requires_grad_(False)
+
+
 class GgmlOpsTest(unittest.TestCase):
     def setUp(self):
         torch.manual_seed(0)
@@ -687,6 +694,37 @@ class GgmlOpsTest(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "floating-point"):
             self._check(Lambda(F.relu6), (torch.arange(6).reshape(2, 3) - 2,))
 
+    def test_elu(self):
+        self._check(Lambda(F.elu), (torch.randn(2, 3, 4) * 3.0,))
+        # Eager's expm1 is within rtol of these; exp(x) - 1 is 19% off at -1e-7.
+        special = torch.tensor(
+            [[float("nan"), float("inf"), -float("inf"), 0.0, -1e-7, -1e-30]]
+        )
+        self._check(Lambda(F.elu), (special,), atol=0)
+
+    def test_elu_in_place(self):
+        # Exports as elu, not elu_, unlike ReLU6(inplace=True) in ConvBN.
+        model = torch.nn.Sequential(torch.nn.Linear(3, 4), torch.nn.ELU(inplace=True))
+        self._check(model, (torch.randn(2, 3),), **_MATMUL_TOL)
+
+    def test_elu_half_and_bfloat16(self):
+        for dtype, rtol in ((torch.float16, 1e-3), (torch.bfloat16, 8e-3)):
+            with self.subTest(dtype=dtype):
+                self._check(
+                    Lambda(F.elu), (torch.randn(2, 3, 4, dtype=dtype),), rtol=rtol
+                )
+
+    def test_elu_rejects_other_parameters(self):
+        for args in ((0.5, 1.0, 1.0), (1.0, 2.0, 1.0), (1.0, 1.0, 0.5)):
+            with self.subTest(args=args):
+                with self.assertRaisesRegex(AssertionError, "input_scale 1"):
+                    self._check(
+                        Lambda(
+                            lambda x, args=args: torch.ops.aten.elu.default(x, *args)
+                        ),
+                        (torch.randn(2, 3),),
+                    )
+
     def test_sqrt(self):
         x = torch.tensor(
             [[0.0, -0.0, 4.0, 2.0], [float("inf"), -1.0, float("nan"), 9.0]]
@@ -694,9 +732,20 @@ class GgmlOpsTest(unittest.TestCase):
         self._check(Lambda(torch.sqrt), (x,))
         self._check(Lambda(lambda x: x.transpose(0, 1).sqrt()), (x,))
 
-    def test_sqrt_rejects_half(self):
-        with self.assertRaisesRegex(AssertionError, "F32"):
-            self._check(Lambda(torch.sqrt), (torch.ones(2, 3, dtype=torch.float16),))
+    def test_sqrt_of_half(self):
+        # ggml's sqrt kernels take half types, so no cast surrounds it.
+        for dtype in (torch.float16, torch.bfloat16):
+            with self.subTest(dtype=dtype):
+                ops = collections.Counter()
+                self._check(
+                    Lambda(torch.sqrt),
+                    (torch.rand(2, 3, dtype=dtype),),
+                    atol=0,
+                    rtol=0,
+                    graph_ops=ops,
+                )
+                self.assertGreater(ops["SQRT"], 0)
+                self.assertEqual(ops["CPY"], 0)
 
     def test_conv2d(self):
         self._check(
@@ -903,6 +952,13 @@ class GgmlOpsTest(unittest.TestCase):
             Lambda(lambda x: x.amax(dim=-1, keepdim=True)), (torch.randn(2, 3, 16, 32),)
         )
         self._check(Lambda(lambda x: x - x.amax(dim=[0, 1])), (torch.randn(80, 300),))
+
+    def test_softmax_last_dim(self):
+        self._check(
+            Lambda(lambda x: torch.softmax(x, dim=-1)),
+            (torch.randn(2, 3, 5, 40) * 4.0,),
+            atol=1e-6,
+        )
 
     def test_linear(self):
         self._check(Linear(bias=False), (torch.randn(4, 32),), **_MATMUL_TOL)
@@ -1120,12 +1176,15 @@ class GgmlOpsTest(unittest.TestCase):
                 Lambda(lambda x: F.pad(x, (1, 1), value=1.0)), (torch.randn(2, 3),)
             )
 
-    def test_constant_pad_rejects_half(self):
-        with self.assertRaisesRegex(AssertionError, "F32 tensors only"):
-            self._check(
-                Lambda(lambda x: F.pad(x, (1, 1))),
-                (torch.randn(2, 3, dtype=torch.float16),),
-            )
+    def test_constant_pad_of_half(self):
+        for dtype in (torch.float16, torch.bfloat16):
+            with self.subTest(dtype=dtype):
+                self._check(
+                    Lambda(lambda x: F.pad(x, (1, 1))),
+                    (torch.randn(2, 3, dtype=dtype),),
+                    atol=0,
+                    rtol=0,
+                )
 
     def test_clone(self):
         self._check(Lambda(lambda x: x.clone() + 1.0 * x), (torch.randn(2, 3),))
@@ -1264,6 +1323,36 @@ class GgmlOpsTest(unittest.TestCase):
             (torch.tensor([[-1.0, 0.0, 0.25, 0.5]]),),
         )
 
+    def test_symbolic_neg_slices_from_the_end(self):
+        class Tail(torch.nn.Module):
+            def forward(self, x, buffer):
+                return buffer[:, -x.shape[1] :] + x
+
+        model = Tail()
+        steps = [(torch.randn(2, n), torch.randn(2, 8)) for n in (5, 1, 7)]
+        # At n = 8 the slice would start at 0, which export specializes.
+        ep = torch.export.export(
+            model,
+            steps[0],
+            dynamic_shapes={"x": {1: Dim("n", min=1, max=7)}, "buffer": None},
+        )
+        self.assertIn(
+            "<built-in function neg>",
+            {str(n.target) for n in ep.graph.nodes if n.op == "call_function"},
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            package = outdir / "model.ptn"
+            to_native(ep).save(str(package))
+            actual = _run_ggml(package, steps, outdir, 1, resize=True)
+        for inputs, [(raw, shape)] in zip(steps, actual):
+            expected = model(*inputs)
+            self.assertEqual(shape, tuple(expected.shape))
+            torch.testing.assert_close(
+                torch.frombuffer(bytearray(raw), dtype=torch.float32).reshape(shape),
+                expected,
+            )
+
     def test_sdpa_mask_broadcasts_over_queries(self):
         # A [B, 1, 1, S] padding mask: every query reads the same row.
         keep = torch.rand(1, 1, 1, 8)
@@ -1327,8 +1416,9 @@ class GgmlOpsTest(unittest.TestCase):
 
     def test_fp16_kv_attention_reads_the_f32_query(self):
         # Flash attention rounds an F32 query to the F16 keys' precision
-        # itself, so the query's cast to the cache dtype is dropped: only k
-        # and v are cast for each attention.
+        # itself, so the query's cast to the cache dtype is dropped: each
+        # attention casts only k and v, and rounds its F32 result to the F16
+        # output and back for .float().
         def forward(q, k, v):
             return F.scaled_dot_product_attention(q.half(), k.half(), v.half()).float()
 
@@ -1344,7 +1434,7 @@ class GgmlOpsTest(unittest.TestCase):
             rtol=1e-2,
             graph_ops=ops,
         )
-        self.assertEqual(ops["CPY"], 2 * ops["FLASH_ATTN_EXT"])
+        self.assertEqual(ops["CPY"], 4 * ops["FLASH_ATTN_EXT"])
 
     def test_fp16_kv_attention_keeps_the_cast_of_a_written_query(self):
         # The query is cast from a buffer that is then written, so attention
@@ -1774,6 +1864,108 @@ class GgmlOpsTest(unittest.TestCase):
             atol=1e-4,
             rtol=1e-4,
         )
+
+    def test_half_linear_result_is_rounded_before_the_next_op(self):
+        # 256 * 256 * 2 = 131072 overflows F16, so eager reads inf and inf * 0
+        # is NaN; the F32 accumulation would give 0.
+        linear = _half_linear([[256.0, 256.0], [0.0, 0.0]])
+        self._check(
+            Lambda(lambda x: linear(x) * 0.0),
+            (torch.tensor([[256.0, 256.0]]).half(),),
+        )
+
+    def test_rope_of_a_bf16_linear(self):
+        class LinearRope(torch.nn.Module):
+            def __init__(self, config: LlamaConfig):
+                super().__init__()
+                self.proj = torch.nn.Linear(64, 64, bias=False)
+                self.rope = Rope(config)
+
+            def forward(self, x, position_ids):
+                return self.rope(self.proj(x), position_ids)
+
+        config = LlamaConfig(hidden_size=256, num_attention_heads=4, head_dim=64)
+        self._check(
+            LinearRope(config).to(torch.bfloat16),
+            (
+                torch.randn(1, 4, 5, 64).to(torch.bfloat16),
+                torch.tensor([[3, 4, 5, 6, 7]]),
+            ),
+            atol=5e-2,
+            rtol=5e-2,
+        )
+
+    def test_rope_of_a_bf16_input(self):
+        config = LlamaConfig(hidden_size=256, num_attention_heads=4, head_dim=64)
+        self._check(
+            Rope(config).to(torch.bfloat16),
+            (
+                torch.randn(1, 4, 5, 64).to(torch.bfloat16),
+                torch.tensor([[3, 4, 5, 6, 7]]),
+            ),
+            atol=5e-2,
+            rtol=5e-2,
+        )
+
+    def test_pad_and_max_pool_of_half_intermediates(self):
+        # A half linear or embedding result is rounded to its dtype, so a
+        # lowering that computes in F32 only must widen it again.
+        torch.manual_seed(0)
+        cases = {
+            "pad of a linear": (
+                torch.nn.Linear(16, 64),
+                lambda y: F.pad(y, (1, 2)),
+                torch.randn(4, 16),
+            ),
+            "max_pool2d of a linear": (
+                torch.nn.Linear(16, 64),
+                lambda y: F.max_pool2d(y.view(4, 1, 8, 8), 2),
+                torch.randn(4, 16),
+            ),
+            "pad of an embedding": (
+                torch.nn.Embedding(10, 8),
+                lambda y: F.pad(y, (0, 3)),
+                torch.tensor([[1, 7, 3]]),
+            ),
+        }
+        for name, (module, fn, x) in cases.items():
+            for dtype in (torch.float16, torch.bfloat16):
+                with self.subTest(case=name, dtype=dtype):
+                    half = copy.deepcopy(module).to(dtype).requires_grad_(False)
+                    inputs = (x.to(dtype) if x.is_floating_point() else x,)
+                    self._check(
+                        Lambda(lambda x, half=half, fn=fn: fn(half(x))),
+                        inputs,
+                        atol=1e-2,
+                        rtol=1e-2,
+                    )
+
+    def test_reductions_and_sqrt_of_half_linears(self):
+        # A half linear result is rounded to its dtype, so these lowerings,
+        # which compute in F32 only, must widen it again.
+        torch.manual_seed(0)
+        linear = torch.nn.Linear(16, 8)
+        with torch.no_grad():
+            linear.weight.abs_()
+            linear.bias.abs_()
+        x = torch.rand(4, 16)
+        cases = {
+            "mean": lambda y: y.mean(-1),
+            "sum": lambda y: y.sum(-1),
+            "amax": lambda y: y.amax(-1),
+            "sqrt": torch.sqrt,
+            "softmax": lambda y: y.softmax(-1),
+        }
+        for name, fn in cases.items():
+            for dtype in (torch.float16, torch.bfloat16):
+                with self.subTest(op=name, dtype=dtype):
+                    half = copy.deepcopy(linear).to(dtype).requires_grad_(False)
+                    self._check(
+                        Lambda(lambda x, half=half, fn=fn: fn(half(x))),
+                        (x.to(dtype),),
+                        atol=1e-2,
+                        rtol=1e-2,
+                    )
 
     def test_rope_llama3(self):
         config = LlamaConfig(

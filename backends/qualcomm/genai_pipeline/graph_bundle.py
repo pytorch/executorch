@@ -98,11 +98,10 @@ class GraphBundle:
             ``__post_init__`` rejects every other key combination.
         modality_inputs: Encoder inputs for a multimodal model, keyed by
             modality. ``None`` for a text-only model.
-        executorch_config: Optional override for the ``to_executorch``
-            configuration. A property of the *lowering call* rather than of one
-            graph, so a multi-method ``.pte`` uses one config for the whole
-            group; carried here so a caller can vary it without reaching into
-            ``extra_options``.
+        quantized: Whether ``module`` was quantized. ``False`` when
+            quantization was skipped for this graph's component (FP16 or GPU
+            flows); compilation then requests FP16 for it. An unquantized
+            bundle carries no ``quant_io_dtypes``.
     """
 
     module: Any
@@ -110,17 +109,21 @@ class GraphBundle:
     meta: Dict[str, Any] = field(default_factory=dict)
     quant_io_dtypes: Optional[Dict[str, Any]] = None
     modality_inputs: Optional[Dict[str, Any]] = None
-    executorch_config: Optional[Any] = None
+    quantized: bool = True
 
     def __post_init__(self) -> None:
         """Reject an unsupported ``quant_io_dtypes`` key combination.
 
         Raises:
             ValueError: If ``quant_io_dtypes`` is a mapping whose keys are not
-                ``io_type`` alone or ``kv_type`` and ``io_type`` together.
+                ``io_type`` alone or ``kv_type`` and ``io_type`` together, or if
+                an unquantized bundle carries dtypes.
         """
         if self.quant_io_dtypes is None:
             return
+
+        if not self.quantized:
+            raise ValueError("an unquantized graph cannot carry quant_io_dtypes")
 
         keys = frozenset(self.quant_io_dtypes)
         if keys not in _QUANT_IO_DTYPE_KEY_SETS:

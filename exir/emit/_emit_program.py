@@ -15,14 +15,13 @@ import torch.fx
 from executorch.exir.emit._emitter import (
     _DelegateDebugIdentifierMap,
     _EmitterState,
-    _normalize_constant_tensor,
     _ProgramState,
     _TopLevelEmitter,
 )
 from executorch.exir.error import ExportError, ExportErrorType
 
 from executorch.exir.schema import Buffer, Program, SubsegmentOffsets
-from executorch.exir.tensor import dim_order_from_stride
+from executorch.exir.tensor import dim_order_from_stride, placeholder_constant
 from executorch.exir.version import EXECUTORCH_SCHEMA_VERSION
 from torch.export.exported_program import ExportedProgram, OutputKind
 from torch.utils import _pytree as pytree
@@ -122,7 +121,7 @@ def _get_training_metadata(methods: Dict[str, ExportedProgram]) -> Dict[str, int
 def _external_constant_fingerprint(
     tensor: torch.Tensor,
 ) -> Tuple[torch.dtype, Tuple[int, ...], Tuple[int, ...], bytes]:
-    tensor = _normalize_constant_tensor(tensor.detach())
+    tensor = placeholder_constant(tensor.detach())
     storage = tensor.untyped_storage()
     data = (
         (ctypes.c_char * storage.nbytes()).from_address(storage.data_ptr())

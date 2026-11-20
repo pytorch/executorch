@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from typing import Callable, Optional
 
 import torch
@@ -39,7 +41,7 @@ from executorch.exir.backend.partitioner import (
     Partitioner,
     PartitionResult,
 )
-from executorch.exir.backend.utils import tag_constant_data
+from executorch.exir.backend.utils import tag_constant_data, tag_mutated_buffer
 from torch.export import ExportedProgram
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 from torch.fx.passes.operator_support import OperatorSupportBase
@@ -276,6 +278,60 @@ def _has_compute(nodes: set) -> bool:
     return any(not _is_passthrough(node) for node in nodes)
 
 
+def _qparams(node: torch.fx.Node, op: str) -> Optional[tuple]:
+    if node.op != "call_function" or not _operator_name(node.target).startswith(
+        f"quantized_decomposed.{op}."
+    ):
+        return None
+    return tuple(node.args[1:])
+
+
+def _int8_state_compatible(buffer: torch.fx.Node, writer: torch.fx.Node) -> bool:
+    """
+    Whether the delegate can keep a mutable buffer as int8: a float32 buffer
+    read only through quantize ops whose new value is dequantized, or an int8
+    buffer read only through dequantize ops whose new value is quantized, all
+    with the same parameters.
+    """
+    reader, producer = {
+        torch.float32: ("quantize_per_tensor", "dequantize_per_tensor"),
+        torch.int8: ("dequantize_per_tensor", "quantize_per_tensor"),
+    }.get(buffer.meta["val"].dtype, (None, None))
+    if reader is None or not buffer.users:
+        return False
+    reads = {_qparams(user, reader) for user in buffer.users}
+    return len(reads) == 1 and None not in reads and _qparams(writer, producer) in reads
+
+
+def _tag_quantized_mutable_buffers(exported_program: ExportedProgram) -> list[str]:
+    """
+    Give each mutable buffer to the partition that holds all its accesses,
+    unless the delegate could not keep it as int8. Returns the delegated
+    buffers' names.
+    """
+    tag_mutated_buffer(exported_program)
+    signature = exported_program.graph_signature
+    nodes = {node.name: node for node in exported_program.graph.nodes}
+    writers = {
+        buffer: nodes[output] for output, buffer in signature.buffers_to_mutate.items()
+    }
+    delegated = []
+    for node in exported_program.graph.find_nodes(op="placeholder"):
+        buffer = signature.inputs_to_buffers.get(node.name)
+        if buffer not in writers or "delegation_tag" not in node.meta:
+            continue
+        if _int8_state_compatible(node, writers[buffer]):
+            delegated.append(buffer)
+            continue
+        del node.meta["delegation_tag"]
+        logging.warning(
+            f"Mutable buffer {buffer} stays in the program: the ESP-NN delegate "
+            "owns a buffer only when it is read and written with the same "
+            "int8 quantization."
+        )
+    return delegated
+
+
 class EspNNPartitioner(Partitioner):
     """
     Delegates PT2E-quantized regions of a graph to the ESP32 ESP-NN backend.
@@ -286,18 +342,28 @@ class EspNNPartitioner(Partitioner):
     With allow_cpu_fallback=False any operator left outside a delegate is an
     error, whether it is unsupported or its region could not be delegated;
     the standalone XTS3 firmware path requires this.
+
+    With delegate_mutable_buffers, a quantized mutable buffer (streaming state)
+    whose readers and writer all fall in one partition is owned by that
+    delegate: it leaves the program's inputs and outputs, and the delegate
+    keeps it as int8 between executions. The buffer must be float32 and read
+    only through quantize ops, or int8 and read only through dequantize ops,
+    with the same quantization as its new value. Any other buffer stays in the
+    program.
     """
 
     def __init__(
         self,
         compile_specs: Optional[list[CompileSpec]] = None,
         allow_cpu_fallback: bool = True,
+        delegate_mutable_buffers: bool = False,
     ):
         specs = list(compile_specs or [])
         if not any(spec.key == INT8_FORMAT_SPEC.key for spec in specs):
             specs.append(INT8_FORMAT_SPEC)
         self.delegation_spec = DelegationSpec(EspNNBackend.__name__, specs)
         self.allow_cpu_fallback = allow_cpu_fallback
+        self.delegate_mutable_buffers = delegate_mutable_buffers
         self.report: dict = {}
 
     def ops_to_not_decompose(
@@ -347,7 +413,11 @@ class EspNNPartitioner(Partitioner):
             tag = f"espnn_{len(tags)}"
             for node in nodes:
                 node.meta["delegation_tag"] = tag
-            tags[tag] = self.delegation_spec
+            # Preprocessing adds conversion metadata specific to this partition.
+            tags[tag] = DelegationSpec(
+                self.delegation_spec.backend_id,
+                list(self.delegation_spec.compile_specs),
+            )
         delegated = {
             node
             for node in graph_module.graph.nodes
@@ -374,7 +444,13 @@ class EspNNPartitioner(Partitioner):
         if not tags and not self.allow_cpu_fallback:
             raise RuntimeError("No ESP32 int8 partition could be formed")
         tag_constant_data(exported_program)
+        delegated_buffers = (
+            _tag_quantized_mutable_buffers(exported_program)
+            if self.delegate_mutable_buffers
+            else []
+        )
         self.report = {
+            "delegated_buffers": delegated_buffers,
             "partitions": len(tags),
             "rejected_partitions": rejected,
             "delegated_ops": sum(1 for node in delegated if not _is_passthrough(node)),

@@ -456,6 +456,21 @@ def get_core_aten_quantizers(
         BinaryQuantizer(
             aten.sub.Tensor, fused_quant.sub.default, fused_quant.sub.Scalar, config
         ),
+        BinaryQuantizer(
+            aten.div.Tensor, fused_quant.div.default, fused_quant.div.Scalar, config
+        ),
+        OpQuantizer(
+            aten.minimum.default,
+            fused_quant.minimum.default,
+            config,
+            activation_names=("input", "other"),
+        ),
+        OpQuantizer(
+            aten.maximum.default,
+            fused_quant.maximum.default,
+            config,
+            activation_names=("input", "other"),
+        ),
         OpQuantizer(
             aten.bmm.default,
             fused_quant.bmm.default,
@@ -472,6 +487,18 @@ def get_core_aten_quantizers(
         OpQuantizer(aten.tanh.default, fused_quant.tanh.default, config),
         OpQuantizer(aten.hardtanh.default, fused_quant.hard_tanh.default, config),
         OpQuantizer(aten.gelu.default, fused_quant.gelu.default, config),
+        OpQuantizer(aten.leaky_relu.default, fused_quant.leaky_relu.default, config),
+        OpQuantizer(aten.rsqrt.default, fused_quant.rsqrt.default, config),
+        OpQuantizer(aten.sqrt.default, fused_quant.sqrt.default, config),
+        OpQuantizer(aten.pow.Tensor_Scalar, fused_quant.pow.Tensor_Scalar, config),
+        OpQuantizer(aten.clamp.default, fused_quant.clamp.default, config),
+        OpQuantizer(aten.mean.dim, fused_quant.mean.dim, config),
+        OpQuantizer(aten.sum.dim_IntList, fused_quant.sum.dim_IntList, config),
+        OpQuantizer(aten.amax.default, fused_quant.amax.default, config),
+        OpQuantizer(aten._softmax.default, fused_quant._softmax.default, config),
+        OpQuantizer(
+            aten._log_softmax.default, fused_quant._log_softmax.default, config
+        ),
         OpQuantizer(
             aten.native_layer_norm.default,
             fused_quant.native_layer_norm.default,

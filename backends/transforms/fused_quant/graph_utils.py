@@ -117,6 +117,17 @@ def get_qparams_from_node(
     )
 
 
+def has_only_per_tensor_qparams(node: fx.Node) -> bool:
+    """Whether every qparam block of the fused op ``node`` is per-tensor."""
+    assert isinstance(node.target, (EdgeOpOverload, OpOverload))
+    input_names, _ = split_fused_arg_names(node.target)
+    for prefix in (*input_names, "out"):
+        qparams = get_qparams_from_node(node, prefix)
+        if qparams is not None and not qparams.is_per_tensor():
+            return False
+    return True
+
+
 def get_qparams_flat(node: fx.Node, prefix: str) -> list[torch.fx.node.Argument]:
     """Get the 5 flat qparams values from a node for pass-through to another op."""
     return [
