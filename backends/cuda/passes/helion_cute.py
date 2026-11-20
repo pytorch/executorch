@@ -19,10 +19,11 @@ AOTInductor lowers to the shim.
 from __future__ import annotations
 
 import contextlib
+import functools
 import hashlib
 import importlib
+import importlib.metadata
 import importlib.util
-import os
 import re
 import shutil
 import string
@@ -40,6 +41,10 @@ from torch._subclasses.fake_tensor import unset_fake_temporarily
 from torch.multiprocessing.reductions import StorageWeakRef
 
 _OP_NAMESPACE = "helion_cute"
+_DSL_REQUIREMENT = (
+    "Helion with CuTe backend support and nvidia-cutlass-dsl 4.7 or newer"
+)
+_MIN_DSL_VERSION = (4, 7)
 _DSL_RUNTIME_LIBRARY = "cuda_dialect_runtime_static"
 _TVM_FFI_OPTION = "--enable-tvm-ffi"
 # The kwargs a Helion CuTe launch site may pass; the export reproduces both.
@@ -145,29 +150,34 @@ class _ExportedLaunch(NamedTuple):
     library_directory: Path
 
 
+class _ProgramLaunches(threading.local):
+    def __init__(self) -> None:
+        self.launches: dict[str, _ExportedLaunch] = {}
+
+
 class _ExportState:
     """The launches exported in this process, and those of each thread's program.
 
-    The CUDA backend lowers and compiles a program on one thread, so the
-    launches the pass exports on a thread are the ones its next AOTInductor
-    compile on that thread links.
+    Contract with the CUDA backend: ``AotiBackend.preprocess`` runs
+    ``LowerHelionPass`` and then, on the same thread, reads
+    ``exported_fallback_kernels`` and enters ``link_exported_launches`` for the
+    compile, so a thread's program launches are exactly the ones its next
+    compile on that thread accepts and links. Calling ``LowerHelionPass``
+    outside that flow leaves the thread's launches recorded until the next
+    pass run (``begin_program``) or link on that thread.
     """
 
     def __init__(self) -> None:
         self.lock = threading.Lock()
         self.library: torch.library.Library | None = None
         self.exported: dict[str, _ExportedLaunch] = {}
-        self.per_thread = threading.local()
+        self.per_thread = _ProgramLaunches()
 
     def program_launches(self) -> dict[str, _ExportedLaunch]:
-        if not hasattr(self.per_thread, "launches"):
-            self.per_thread.launches = {}
         return self.per_thread.launches
 
 
 _STATE = _ExportState()
-# AOTInductor finds custom op libraries through the process-wide LIBRARY_PATH.
-_LINK_LOCK = threading.Lock()
 
 
 class _CapturedLaunch(NamedTuple):
@@ -278,14 +288,63 @@ def _dsl_runtime_directory() -> Path:
     return max(flavors)[1]
 
 
+@functools.cache
+def _cute_launcher_modules() -> tuple[Any, Any, Any, Any]:
+    """Helion's private CuTe launcher modules, checked against what we call.
+
+    Lowering builds on private Helion launcher functions and the CuTe DSL, so
+    probe them up front: a Helion or DSL that renamed one must fail with the
+    requirement error instead of a bare AttributeError or ImportError.
+    """
+    try:
+        dsl_version: str | None = importlib.metadata.version("nvidia-cutlass-dsl")
+    except importlib.metadata.PackageNotFoundError:
+        dsl_version = None
+    if dsl_version is not None:
+        parsed = tuple(
+            int(part) for part in dsl_version.split(".")[:2] if part.isdigit()
+        )
+        if parsed and parsed < _MIN_DSL_VERSION:
+            raise RuntimeError(
+                f"Helion CuTe lowering needs {_DSL_REQUIREMENT}; "
+                f"found nvidia-cutlass-dsl {dsl_version}"
+            )
+    try:
+        launcher = importlib.import_module("helion.runtime.cute.launcher")
+        arg_signature = importlib.import_module("helion.runtime.cute.arg_signature")
+        sass_check = importlib.import_module("helion.runtime.cute.sass_check")
+        cute = importlib.import_module("cutlass.cute")
+    except ImportError as error:
+        raise RuntimeError(f"Helion CuTe lowering needs {_DSL_REQUIREMENT}") from error
+    required = (
+        (launcher, "_cute_stage_under_aligned_operands"),
+        (launcher, "_build_cute_schema_and_args"),
+        (launcher, "_ensure_cute_dsl_arch_env"),
+        (launcher, "_create_cute_wrapper"),
+        (launcher, "_cute_num_sm_from_arch_args"),
+        (launcher, "_cute_current_stream"),
+        (arg_signature, "schema_pointer_alignment"),
+        (sass_check, "verify_compiled"),
+        (cute, "compile"),
+    )
+    missing = [
+        f"{module.__name__}.{name}"
+        for module, name in required
+        if not hasattr(module, name)
+    ]
+    if missing:
+        raise RuntimeError(
+            f"Helion CuTe lowering needs {_DSL_REQUIREMENT}; "
+            f"this install lacks {', '.join(missing)}"
+        )
+    return launcher, arg_signature, sass_check, cute
+
+
 def _compile_and_export(
     captured: _CapturedLaunch, prefix: str, workdir: Path
 ) -> tuple[Any, tuple[Any, ...], list[int]]:
     """Compile the launch with Helion's own wrapper and export it to C."""
-    launcher = importlib.import_module("helion.runtime.cute.launcher")
-    arg_signature = importlib.import_module("helion.runtime.cute.arg_signature")
-    sass_check = importlib.import_module("helion.runtime.cute.sass_check")
-    cute = importlib.import_module("cutlass.cute")
+    launcher, arg_signature, sass_check, cute = _cute_launcher_modules()
     tensors = captured.tensors
     if launcher._cute_stage_under_aligned_operands(captured.cute_kernel, tensors):
         raise NotImplementedError(
@@ -330,6 +389,8 @@ def _compile_and_export(
         compiled = cute.compile(jit_function, *launch_args, stream, options=options)
     else:
         compiled = cute.compile(jit_function, *launch_args, stream)
+    # Helion sets _helion_cute_sass_checks only on kernels that declared SASS
+    # checks, so a missing attribute means none were requested.
     sass_checks = tuple(getattr(captured.cute_kernel, "_helion_cute_sass_checks", ()))
     sass_check.verify_compiled(compiled, sass_checks, prefix)
     compiled.export_to_c(
@@ -381,33 +442,45 @@ def _build_library(
             grid=", ".join(str(g) for g in grid),
         )
     )
-    subprocess.run(
-        [
-            get_cpp_compiler(),
-            "-c",
-            "-fPIC",
-            "-O2",
-            "-std=c++17",
-            f"-I{workdir}",
-            f"-I{CUDA_HOME}/include",
-            str(workdir / "shim.cpp"),
-            "-o",
-            str(workdir / "shim.o"),
-        ],
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        [
-            shutil.which("ar") or "ar",
-            "rcs",
-            str(workdir / f"lib{prefix}.a"),
-            str(workdir / "shim.o"),
-            str(workdir / f"{prefix}.o"),
-        ],
-        check=True,
-        capture_output=True,
-    )
+    try:
+        subprocess.run(
+            [
+                get_cpp_compiler(),
+                "-c",
+                "-fPIC",
+                "-O2",
+                "-std=c++17",
+                f"-I{workdir}",
+                f"-I{CUDA_HOME}/include",
+                str(workdir / "shim.cpp"),
+                "-o",
+                str(workdir / "shim.o"),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        subprocess.run(
+            [
+                shutil.which("ar") or "ar",
+                "rcs",
+                str(workdir / f"lib{prefix}.a"),
+                str(workdir / "shim.o"),
+                str(workdir / f"{prefix}.o"),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError as error:
+        raise RuntimeError(
+            f"Helion CuTe lowering failed to build the launch library: "
+            f"{error.stderr}"
+        ) from error
+    except OSError as error:
+        raise RuntimeError(
+            f"Helion CuTe lowering cannot run the C++ compiler or ar: {error}"
+        ) from error
     return f"AOTITorchError {shim}({parameters}, AtenTensorHandle* ret)"
 
 
@@ -446,7 +519,7 @@ def _register_op(
 def _export(
     prefix: str, captured: _CapturedLaunch, mutable: Sequence[bool]
 ) -> _ExportedLaunch:
-    launcher = importlib.import_module("helion.runtime.cute.launcher")
+    launcher = _cute_launcher_modules()[0]
     root = Path(cache_dir()) / "executorch_helion_cute"
     root.mkdir(parents=True, exist_ok=True)
     # A directory of its own per export, so a process never links an archive
@@ -462,13 +535,27 @@ def _export(
             workdir / f"lib{prefix}.a", library_directory / f"lib{prefix}.a"
         )
     cute_kernel, grid = captured.cute_kernel, captured.grid
+    compiled_args = captured.tensors
 
     def launch(tensors: tuple[torch.Tensor, ...]) -> None:
-        args = launcher._build_cute_schema_and_args(cute_kernel, tensors, grid)
-        if tuple(args.schema) != schema:
+        # The eager twin of the C shim's check: same sizes, strides and dtype
+        # as compiled for, and each pointer aligned at least as much as the
+        # compiled alignment. An exactly matching Helion schema would also
+        # reject a more-aligned pointer for an element-aligned operand, which
+        # the shim (and the compiled kernel) accepts.
+        if len(tensors) != len(compiled_args) or any(
+            tensor.shape != expected.shape
+            or tensor.stride() != expected.stride()
+            or tensor.dtype != expected.dtype
+            or tensor.data_ptr() % alignment != 0
+            for tensor, expected, alignment in zip(
+                tensors, compiled_args, alignments
+            )
+        ):
             raise RuntimeError(
                 f"{prefix} was compiled for other argument layouts or alignments"
             )
+        args = launcher._build_cute_schema_and_args(cute_kernel, tensors, grid)
         compiled(*args.launch_args, launcher._cute_current_stream())
 
     return _ExportedLaunch(
@@ -483,12 +570,13 @@ def export_cute_launch(
     fake_arguments: tuple[torch.Tensor, ...],
     mutated_arguments: frozenset[int],
     aligned_arguments: frozenset[int],
-) -> Callable[..., None]:
-    """Export the single CuTe launch of ``entrypoint`` and return a launcher.
+) -> tuple[Callable[..., None], Any]:
+    """Export the single CuTe launch of ``entrypoint``.
 
-    The returned launcher has Helion's launcher signature and calls the custom op
-    the launch was registered as, so tracing the entrypoint with it records the
-    op in place of the launch.
+    Returns a launcher with Helion's launcher signature that calls the custom
+    op the launch was registered as, together with that op, so tracing the
+    entrypoint with the launcher records the op in place of the launch and
+    the caller can check for exactly that op.
     """
     with unset_fake_temporarily():
         arguments = tuple(
@@ -522,6 +610,13 @@ def export_cute_launch(
         prefix = f"helion_cute_{hashlib.sha256(key.encode()).hexdigest()[:24]}"
         with _STATE.lock:
             exported = _STATE.exported.get(prefix)
+            if exported is not None and not (
+                exported.library_directory / f"lib{exported.library}.a"
+            ).is_file():
+                # The cached archive is gone (for example its cache directory
+                # was cleared under a long-lived process); export it again
+                # instead of linking a missing library.
+                exported = None
             if exported is None:
                 exported = _export(prefix, captured, mutable)
                 _STATE.exported[prefix] = exported
@@ -533,7 +628,7 @@ def export_cute_launch(
     ) -> None:
         op(*args)
 
-    return launch_op
+    return launch_op, op
 
 
 def begin_program() -> None:
@@ -546,42 +641,40 @@ def exported_fallback_kernels() -> dict[str, None]:
     return {f"{_OP_NAMESPACE}::{p}": None for p in _STATE.program_launches()}
 
 
-def is_exported_launch(target: object) -> bool:
-    return any(target is exported.op for exported in _STATE.exported.values())
+def program_link_options() -> tuple[list[str], list[str]]:
+    """Link directories and libraries for this thread's program launches.
+
+    The CUDA backend adds these to the AOTInductor link of the calling
+    thread only (through its compile patch), so no process-wide state
+    changes while other threads lower.
+    """
+    launches = list(_STATE.program_launches().values())
+    if not launches:
+        return [], []
+    directories = [str(e.library_directory) for e in launches]
+    directories.append(str(_dsl_runtime_directory()))
+    libraries = [e.library for e in launches] + [_DSL_RUNTIME_LIBRARY]
+    return directories, libraries
 
 
 @contextlib.contextmanager
 def link_exported_launches() -> Iterator[None]:
-    """Let AOTInductor call and link the CuTe launches of this thread's program."""
+    """Let AOTInductor call the CuTe launches of this thread's program.
+
+    Declares the launches' C shims to AOTInductor. Inductor config patches
+    are thread-local, and the archives themselves are added by the CUDA
+    backend's thread-scoped compile patch reading ``program_link_options``.
+    """
     launches = list(_STATE.program_launches().values())
     if not launches:
         yield
         return
-    aoti = torch._inductor.config.aot_inductor
-    shims = dict(aoti.custom_ops_to_c_shims)
+    shims = dict(torch._inductor.config.aot_inductor.custom_ops_to_c_shims)
     shims.update({e.op: [e.shim_declaration] for e in launches})
-    libraries = list(aoti.custom_op_libs or [])
-    libraries += [e.library for e in launches] + [_DSL_RUNTIME_LIBRARY]
-    directories = [str(e.library_directory) for e in launches]
-    directories.append(str(_dsl_runtime_directory()))
-    with _LINK_LOCK:
-        # AOTInductor links custom op libraries by name, so the linker finds
-        # them through LIBRARY_PATH.
-        previous = os.environ.get("LIBRARY_PATH")
-        os.environ["LIBRARY_PATH"] = os.pathsep.join(
-            directories if previous is None else [*directories, previous]
-        )
-        try:
-            with torch._inductor.config.patch(
-                {
-                    "aot_inductor.custom_ops_to_c_shims": shims,
-                    "aot_inductor.custom_op_libs": libraries,
-                }
-            ):
-                yield
-        finally:
-            if previous is None:
-                os.environ.pop("LIBRARY_PATH", None)
-            else:
-                os.environ["LIBRARY_PATH"] = previous
-            begin_program()
+    try:
+        with torch._inductor.config.patch(
+            {"aot_inductor.custom_ops_to_c_shims": shims}
+        ):
+            yield
+    finally:
+        begin_program()

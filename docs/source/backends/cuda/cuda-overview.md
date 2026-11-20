@@ -115,8 +115,9 @@ For a complete working example, see the [CUDA export script](https://github.com/
 ### Models with Helion Kernels
 
 A model can call [Helion](https://github.com/pytorch/helion) kernels in its `forward`, and export
-it with the same `CudaPartitioner` flow as any other model. Export needs Helion installed
-(`pip install helion`); the CUDA backend imports it only when a model calls Helion kernels. Give each
+it with the same `CudaPartitioner` flow as any other model. Export needs Helion 1.5.2 or newer
+installed (`pip install "helion==1.5.2"`; Helion 1.6.0 does not import on Python 3.11); the CUDA
+backend imports it only when a model calls Helion kernels. Give each
 kernel one config that you selected and validated offline for the target GPU:
 
 ```python
@@ -147,7 +148,8 @@ et_program = to_edge_transform_and_lower(
 exec_program = et_program.to_executorch()
 ```
 
-`torch.export` records each call as a Helion higher-order op. While lowering, the CUDA backend's
+Strict `torch.export` (`strict=True`, as in the example above, not torch's default) records each
+call as a Helion higher-order op. While lowering, the CUDA backend's
 `LowerHelionPass` renders the call with its config and replaces the Helion op, according to the
 kernel's Helion backend:
 
@@ -157,7 +159,13 @@ kernel's Helion backend:
   for the export GPU, exports it as an object file with a C entry point, and replaces the Helion op
   with a custom op whose C implementation AOTInductor links into its shared library. The kernel then
   lives in the `.pte` like the Triton kernels. Export needs `nvidia-cutlass-dsl` 4.7 or newer and a
-  CUDA toolkit; the program runs only on GPUs of the export GPU's architecture.
+  CUDA toolkit; the program runs only on GPUs of the export GPU's architecture, and CuTe kernels
+  are Linux-only (they are rejected when exporting for Windows). A CuTe kernel is compiled for the
+  exported sizes, strides and pointer alignments: only user inputs, parameters and buffers are
+  compiled as starting at their allocation, while every other operand (an activation, or a tensor
+  passed into a `torch.cond` branch) is compiled for element alignment only, which can rule out
+  vectorized or TMA staging for it. At run time each call checks its arguments against the
+  compiled layout and alignment and fails the call, rather than launching, on a mismatch.
 
 The pass runs after the backend's other passes and before AOTInductor. It never tunes or launches
 the kernel: picking the config, for example with Helion's autotuner, is a separate offline step.
@@ -167,16 +175,18 @@ The pass supports:
 - Kernels on the Triton or CuTe backend with `static_shapes=True` and exactly one config.
 - Tensor arguments, several calls per model, several tensor outputs and calls inside `torch.cond`
   branches.
-- Kernels that write their inputs or buffers in place, as long as a contiguous copy of the
-  written tensor keeps its strides.
+- Kernels that write their inputs or buffers in place, as long as the written tensor is dense
+  (non-overlapping, without gaps), so the copy made for the write keeps its strides.
 
 It rejects, with an error during export, calls it cannot lower exactly: kernels on other Helion
 backends, kernels that leave the choice of config to Helion (no `config=`, so
 Helion autotunes on the first call, or a `configs=[...]` list), scalar, container or defaulted arguments, dynamic shapes, outputs that alias inputs, outputs whose strides differ
 from the ones `torch.export` recorded, more than one launch site, host tensor descriptors, and
 launch options AOTInductor cannot reproduce, such as cooperative grids, clusters or PDL. For CuTe
-kernels it also rejects launches with scalar arguments, workspace tensors or dynamic layouts. It
-needs a Helion version that records each call's host-semantic fingerprint at export.
+kernels it also rejects launches with scalar arguments, workspace tensors, dynamic layouts, empty
+grids, launches that stage (copy) under-aligned operands, and launches with more than 26 tensor
+arguments. It needs Helion 1.5.2 or newer, which records each call's host-semantic fingerprint at
+export.
 
 
 ----

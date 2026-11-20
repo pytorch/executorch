@@ -8,10 +8,10 @@
 
 import unittest
 
+import executorch.backends.cuda.tests.test_lower_helion as helion_tests
 import torch
 
 try:
-    import executorch.backends.cuda.tests.test_lower_helion as helion_tests
     from helion._compiler.cute.cutedsl_compat import check_cute_backend_requirements
 except ImportError as error:
     raise unittest.SkipTest(
@@ -42,3 +42,22 @@ class LowerHelionCuteTest(helion_tests.LowerHelionTest):
     @unittest.skip("Helion's CuTe attention needs its own flash-attention config")
     def test_attention_export_and_cpp_runtime(self) -> None:
         pass
+
+    def test_mixed_triton_and_cute_export_and_cpp_runtime(self) -> None:
+        helion = helion_tests.helion
+        triton_kernel = helion.kernel(
+            backend="triton",
+            config=helion.Config(block_sizes=[256]),
+            static_shapes=True,
+        )(helion_tests._add)
+        cute_kernel = self._kernel(
+            helion_tests._add, helion.Config(block_sizes=[256]), static_shapes=True
+        )
+        x = torch.randn(2, 257, device="cuda")
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                first = triton_kernel(x[0], x[1])
+                return cute_kernel(first, x[1])
+
+        self._export_and_run(Model(), x, x[0] + 2 * x[1])
