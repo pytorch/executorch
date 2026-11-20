@@ -49,6 +49,9 @@ def _try_prequantize_embedding(ep: ExportedProgram, node: fx.Node) -> bool:
 
     weight_node = get_arg(node, "weight", fx.Node)
     indices = get_arg(node, "indices", fx.Node)
+    # The table is rewritten in place, which any other reader would see.
+    if len(weight_node.users) > 1:
+        return False
 
     table = get_constant(ep, weight_node)
     weight_scale = get_constant(ep, weight_qp.scale)

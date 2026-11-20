@@ -121,6 +121,20 @@ class ExecutorchBackendConfig:
     # If set to true, we run quant fusion and constant propagation passes
     do_quant_fusion_and_const_prop: bool = False
 
+    # If set to true, a transpose of a weight, such as the one each Linear layer
+    # adds, is computed once at export time instead of at every inference. A
+    # transpose is not folded when another constant input, or a tensor that a
+    # constant method returns, holds the same bytes, since the program would
+    # then store a second copy. Nothing is folded when external_constants is
+    # set. The fold runs first, so every pass in to_executorch, including
+    # `passes`, and the lowered program see a folded weight as a new constant,
+    # with no transpose. During export each folded weight is held twice, so
+    # peak memory grows by about the size of the folded weights. Once a
+    # to_executorch call has folded a transpose, calling to_executorch again on
+    # the same EdgeProgramManager with this set to false, or with
+    # external_constants, raises a RuntimeError. Copy the manager first.
+    fold_constant_transposes: bool = False
+
     # Experimental: If set to true, we run a pass to reinplace ops in the graph.
     run_reinplace_pass: bool = False
 
