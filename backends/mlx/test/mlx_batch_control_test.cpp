@@ -136,11 +136,9 @@ class MLXBatchedCacheTest : public ::testing::TestWithParam<std::string> {
       for (int h = 0; h < H; ++h) {
         for (size_t i = begin; i < begin + count; ++i) {
           for (int d = 0; d < D; ++d) {
-            values.push_back(
-                std::sin(
-                    static_cast<float>(prompt[i]) * 0.37f +
-                    static_cast<float>(h) * 0.41f +
-                    static_cast<float>(d) * 0.19f));
+            values.push_back(std::sin(
+                static_cast<float>(prompt[i]) * 0.37f +
+                static_cast<float>(h) * 0.41f + static_cast<float>(d) * 0.19f));
           }
         }
       }

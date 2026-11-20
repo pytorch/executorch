@@ -252,6 +252,9 @@ ExternalProject_Add(
              -DMLX_BUILD_CPU=OFF
              -DMLX_BUILD_CUDA=OFF
              -DMLX_BUILD_SHARED_LIBS=OFF
+             # Shared delegates must expose the runtime they bundle to
+             # consumers.
+             -DMLX_EXPORT_ALL_SYMBOLS=${EXECUTORCH_BUILD_SHARED}
              -DMLX_BUILD_PYTHON_BINDINGS=OFF
              -DMLX_BUILD_PYTHON_STUBS=OFF
              -DMLX_BUILD_TESTS=OFF
