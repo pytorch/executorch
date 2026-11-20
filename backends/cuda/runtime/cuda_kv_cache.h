@@ -34,6 +34,10 @@ struct OffGraphKVMetrics {
   // so this also identifies the addresses a compiled program was bound to.
   int64_t growth_count{0};
   int64_t allocated_bytes{0};
+  int64_t physical_columns{0};
+  int64_t declared_columns{0};
+  int64_t live_sequences{0};
+  int64_t column_resize_count{0};
 };
 
 // Backend face of the off-graph KV cache: what the CUDA delegate needs from
@@ -83,6 +87,11 @@ class CudaKVCache {
   virtual runtime::Error commit_step(int64_t write_length) = 0;
 
   virtual OffGraphKVMetrics metrics() const = 0;
+
+  // An explicit idle boundary; callers must serialize this with execution.
+  virtual runtime::Error compact_columns(int) {
+    return runtime::Error::NotSupported;
+  }
 };
 
 // Compile spec naming where a method's inputs carry the step width.

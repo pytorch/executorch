@@ -56,14 +56,18 @@ CudaKVPool::CudaKVPool(
     std::vector<Layer> layers,
     std::vector<SideBuffer> side_buffers,
     slimc10::ScalarType storage_dtype,
-    int64_t initial_rows)
+    int64_t initial_rows,
+    int declared_columns,
+    int initial_columns)
     : layers_(std::move(layers)),
       side_specs_(std::move(side_buffers)),
       storage_dtype_(storage_dtype),
-      initial_rows_(initial_rows) {
+      initial_rows_(initial_rows / declared_columns * initial_columns),
+      declared_columns_(declared_columns),
+      columns_(initial_columns) {
   for (const Layer& layer : layers_) {
     if (layer.growable) {
-      max_rows_ = std::max(max_rows_, layer.declared_rows);
+      max_rows_ = std::max(max_rows_, physical_limit(layer));
     }
   }
 }
@@ -220,6 +224,10 @@ size_t CudaKVPool::row_bytes(const Layer& layer) const {
       slimc10::elementSize(storage_dtype_);
 }
 
+int64_t CudaKVPool::physical_limit(const Layer& layer) const {
+  return layer.declared_rows / declared_columns_ * columns_;
+}
+
 // BSHD at the declared rows: no stride depends on the rows, so the storage
 // behind it may hold fewer.
 std::vector<int64_t> CudaKVPool::layer_sizes(const Layer& layer) {
@@ -295,7 +303,7 @@ Error CudaKVPool::allocate_initial(int64_t required_rows, cudaStream_t stream) {
   };
   for (const Layer& layer : layers_) {
     const int64_t rows = layer.growable
-        ? std::min(growable_rows, layer.declared_rows)
+        ? std::min(growable_rows, physical_limit(layer))
         : layer.declared_rows;
     Allocation allocation;
     const Error error = allocate_layer(layer, rows, stream, allocation);
@@ -377,7 +385,7 @@ Error CudaKVPool::grow(
   };
   for (size_t index = 0; index < layers_.size(); ++index) {
     const Layer& layer = layers_[index];
-    const int64_t rows = std::min(new_rows, layer.declared_rows);
+    const int64_t rows = std::min(new_rows, physical_limit(layer));
     if (!layer.growable || rows <= allocations_.at(index).rows) {
       continue;
     }
@@ -418,6 +426,19 @@ Error CudaKVPool::grow(
   }
   rows_ = new_rows;
   growth_count_++;
+  invalidate_bindings();
+  ET_LOG(
+      Info,
+      "offgraph_kv: grew flat_capacity=%lld->%lld allocated_bytes=%lld "
+      "growth_count=%lld",
+      static_cast<long long>(old_rows),
+      static_cast<long long>(new_rows),
+      static_cast<long long>(allocated_bytes_),
+      static_cast<long long>(growth_count_));
+  return Error::Ok;
+}
+
+void CudaKVPool::invalidate_bindings() {
   // Every program sharing this pool now points at freed storage: drop the
   // bindings so each rebinds before its next run, and any captured CUDA graph
   // so it is captured again against the new storage. Prefill usually grows
@@ -437,14 +458,143 @@ Error CudaKVPool::grow(
       graph.warmup_remaining = std::max(graph.warmup_remaining, 1);
     }
   }
+}
+
+Error CudaKVPool::resize_columns(
+    int columns,
+    const std::vector<std::pair<int, int>>& retained_columns,
+    cudaStream_t stream,
+    bool trim_unused,
+    bool* committed) {
+  if (committed != nullptr) {
+    *committed = false;
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      declared_columns_ > 1 && columns >= 2 && columns <= declared_columns_,
+      InvalidArgument,
+      "offgraph_kv: invalid physical columns %d/%d",
+      columns,
+      declared_columns_);
+  std::unordered_set<int> sources;
+  std::unordered_set<int> destinations;
+  bool relocate = false;
+  for (const auto& [from, to] : retained_columns) {
+    ET_CHECK_OR_RETURN_ERROR(
+        from >= 0 && from < columns_ - 1 && to >= 0 && to < columns - 1 &&
+            sources.insert(from).second && destinations.insert(to).second,
+        InvalidArgument,
+        "offgraph_kv: invalid retained column %d->%d",
+        from,
+        to);
+    relocate |= from != to;
+  }
+  for (const Layer& layer : layers_) {
+    ET_CHECK_OR_RETURN_ERROR(
+        layer.growable && layer.declared_rows % declared_columns_ == 0,
+        InvalidArgument,
+        "offgraph_kv: physical-column resizing needs growable whole-row layers");
+  }
+  if (!allocated_) {
+    initial_rows_ = initial_rows_ / columns_ * columns;
+    max_rows_ = max_rows_ / columns_ * columns;
+    columns_ = columns;
+    if (committed != nullptr) {
+      *committed = true;
+    }
+    return Error::Ok;
+  }
+  const auto device = CUDAGuard::create(device_);
+  ET_CHECK_OK_OR_RETURN_ERROR(device.error());
+  // Resize is an explicit boundary, not a synchronization in every forward.
+  ET_CHECK_OK_OR_RETURN_ERROR(synchronize(/*all_streams=*/true));
+  stream_ = stream;
+  if (trim_unused) {
+    CudaAllocator::release_cached_memory(device_);
+  }
+  if (columns == columns_ && !relocate) {
+    return Error::Ok;
+  }
+
+  const int old_columns = columns_;
+  std::vector<Allocation> replacements;
+  replacements.reserve(layers_.size());
+  auto roll_back = [&]() {
+    for (size_t index = 0; index < replacements.size(); ++index) {
+      discard(layers_[index], replacements[index], stream);
+    }
+    if (cudaStreamSynchronize(stream) == cudaSuccess && trim_unused) {
+      CudaAllocator::release_cached_memory(device_);
+    }
+  };
+  for (size_t index = 0; index < layers_.size(); ++index) {
+    const int64_t logical_rows = allocations_[index].rows / old_columns;
+    Allocation replacement;
+    const Error error = allocate_layer(
+        layers_[index], logical_rows * columns, stream, replacement);
+    if (error != Error::Ok) {
+      roll_back();
+      return error;
+    }
+    replacements.push_back(replacement);
+  }
+  for (size_t index = 0; index < layers_.size(); ++index) {
+    const Allocation& current = allocations_[index];
+    const Allocation& replacement = replacements[index];
+    const size_t slot = row_bytes(layers_[index]);
+    const size_t logical_rows = static_cast<size_t>(current.rows / old_columns);
+    for (const auto& [from, to] : retained_columns) {
+      for (const auto& [dst, src] :
+           {std::pair{replacement.k, current.k},
+            std::pair{replacement.v, current.v}}) {
+        const cudaError_t error = cudaMemcpy2DAsync(
+            static_cast<uint8_t*>(dst) + slot * to,
+            slot * columns,
+            static_cast<const uint8_t*>(src) + slot * from,
+            slot * old_columns,
+            slot,
+            logical_rows,
+            cudaMemcpyDeviceToDevice,
+            stream);
+        if (error != cudaSuccess) {
+          roll_back();
+          return Error::Internal;
+        }
+      }
+    }
+  }
+  if (cudaStreamSynchronize(stream) != cudaSuccess) {
+    roll_back();
+    return Error::Internal;
+  }
+  invalidate_bindings();
+  for (size_t index = 0; index < layers_.size(); ++index) {
+    discard(layers_[index], allocations_[index], stream);
+  }
+  allocations_ = std::move(replacements);
+  rows_ = rows_ / old_columns * columns;
+  initial_rows_ = initial_rows_ / old_columns * columns;
+  max_rows_ = max_rows_ / old_columns * columns;
+  columns_ = columns;
+  column_resize_count_++;
+  if (committed != nullptr) {
+    *committed = true;
+  }
+  if (trim_unused) {
+    ET_CHECK_OR_RETURN_ERROR(
+        cudaStreamSynchronize(stream) == cudaSuccess,
+        Internal,
+        "offgraph_kv: cannot finish freeing obsolete column storage");
+    CudaAllocator::release_cached_memory(device_);
+  }
   ET_LOG(
       Info,
-      "offgraph_kv: grew flat_capacity=%lld->%lld allocated_bytes=%lld "
-      "growth_count=%lld",
-      static_cast<long long>(old_rows),
-      static_cast<long long>(new_rows),
+      "offgraph_kv: resized columns=%d->%d live_columns=%zu "
+      "allocated_bytes=%lld column_resize_count=%lld",
+      old_columns,
+      columns_,
+      retained_columns.size(),
       static_cast<long long>(allocated_bytes_),
-      static_cast<long long>(growth_count_));
+      static_cast<long long>(column_resize_count_));
   return Error::Ok;
 }
 

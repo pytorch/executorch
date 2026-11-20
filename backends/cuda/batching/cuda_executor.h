@@ -227,6 +227,7 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
 
   // The cache's pool usage, for memory reporting.
   OffGraphKVMetrics kv_metrics() const;
+  ::executorch::runtime::Error compact_kv_columns(int spare_columns = 1);
 
   // Every method, narrowest first, with how many forwards it ran. Read it
   // between executes, not while one runs.
@@ -273,7 +274,7 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
   llm_cache::InstallGuard install_guard_;
   std::unique_ptr<::executorch::extension::Module> module_;
   llm_cache::BatchControl* const ctl_;
-  const CudaKVCache* const kv_;
+  CudaKVCache* const kv_;
   std::string backend_id_;
   std::int32_t vocab_size_;
   int max_session_tokens_;

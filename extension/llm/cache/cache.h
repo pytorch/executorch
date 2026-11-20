@@ -178,6 +178,8 @@ struct ET_EXPERIMENTAL CacheConfig {
   // storage width is fixed when the program is compiled. Unset = no fixed
   // bound; the capacity they share is the only limit.
   std::optional<int> max_seqs;
+  // Requires a batched-sequence program with the runtime-pitch ABI.
+  bool runtime_sequence_columns = false;
 };
 
 ET_EXPERIMENTAL inline bool valid(const CacheGeometry& geometry) {

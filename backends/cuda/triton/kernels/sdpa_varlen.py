@@ -24,6 +24,10 @@ segment of consecutive query rows of one sequence:
 * ``kv_end``: one past the logical position of the segment's last row, i.e. the
   sequence's length once this step's writes land.
 
+The runtime-column ABI uses ``Int32[S, 5]``. Its last field is the physical
+column count, shared by every segment, which sets the K/V row pitch even when
+the compiled tensor declares a larger maximum number of columns.
+
 Rows are the segment's newest positions: row ``r`` sits at
 ``kv_end - q_len + r``. Active segments must be disjoint and in bounds;
 ``seq_info`` is read on the device, so a captured CUDA graph replays it with new
@@ -65,6 +69,7 @@ def _sdpa_varlen_kernel(  # noqa: C901
     sm_scale,
     rows_available,
     num_qb,
+    INFO_WIDTH: tl.constexpr,
     NUM_SPLITS: tl.constexpr,
     IS_CAUSAL: tl.constexpr,
     CONTEXT_WINDOW: tl.constexpr,
@@ -82,10 +87,14 @@ def _sdpa_varlen_kernel(  # noqa: C901
     seg = pid0 // num_qb
     qb = pid0 % num_qb
 
-    q_start = tl.load(Info_ptr + seg * 4 + 0)
-    q_len = tl.load(Info_ptr + seg * 4 + 1)
-    col = tl.load(Info_ptr + seg * 4 + 2)
-    kv_end = tl.load(Info_ptr + seg * 4 + 3)
+    q_start = tl.load(Info_ptr + seg * INFO_WIDTH + 0)
+    q_len = tl.load(Info_ptr + seg * INFO_WIDTH + 1)
+    col = tl.load(Info_ptr + seg * INFO_WIDTH + 2)
+    kv_end = tl.load(Info_ptr + seg * INFO_WIDTH + 3)
+    if INFO_WIDTH == 5:
+        columns = tl.load(Info_ptr + seg * INFO_WIDTH + 4).to(tl.int64)
+        stride_kr = columns * stride_kc
+        stride_vr = columns * stride_vc
     if qb * BLOCK_M >= q_len * NUM_GROUPS:
         return
 
@@ -212,6 +221,7 @@ def _sdpa_varlen_decode_kernel(
     sm_scale,
     rows_available,
     NUM_SEGMENTS: tl.constexpr,
+    INFO_WIDTH: tl.constexpr,
     NUM_SPLITS: tl.constexpr,
     IS_CAUSAL: tl.constexpr,
     CONTEXT_WINDOW: tl.constexpr,
@@ -233,14 +243,18 @@ def _sdpa_varlen_decode_kernel(
     col = 0
     kv_end = 0
     for seg in range(NUM_SEGMENTS):
-        seg_q_start = tl.load(Info_ptr + seg * 4)
-        seg_q_len = tl.load(Info_ptr + seg * 4 + 1)
+        seg_q_start = tl.load(Info_ptr + seg * INFO_WIDTH)
+        seg_q_len = tl.load(Info_ptr + seg * INFO_WIDTH + 1)
         take = (t >= seg_q_start) & (t < seg_q_start + seg_q_len)
         owned |= take
         q_start = tl.where(take, seg_q_start, q_start)
         q_len = tl.where(take, seg_q_len, q_len)
-        col = tl.where(take, tl.load(Info_ptr + seg * 4 + 2), col)
-        kv_end = tl.where(take, tl.load(Info_ptr + seg * 4 + 3), kv_end)
+        col = tl.where(take, tl.load(Info_ptr + seg * INFO_WIDTH + 2), col)
+        kv_end = tl.where(take, tl.load(Info_ptr + seg * INFO_WIDTH + 3), kv_end)
+    if INFO_WIDTH == 5:
+        columns = tl.load(Info_ptr + 4).to(tl.int64)
+        stride_kr = columns * stride_kc
+        stride_vr = columns * stride_vc
 
     offs_g = tl.arange(0, BLOCK_G)
     offs_d = tl.arange(0, HEAD_DIM)
@@ -438,8 +452,12 @@ def sdpa_varlen(  # noqa: C901
         raise ValueError("head dimension must be a power of two in [16, 256]")
     if query.stride(-1) != 1 or key.stride(-1) != 1 or value.stride(-1) != 1:
         raise ValueError("sdpa_varlen needs a contiguous head dimension")
-    if seq_info.dtype != torch.int32 or seq_info.dim() != 2 or seq_info.shape[1] != 4:
-        raise ValueError("seq_info must be Int32[S, 4]")
+    if (
+        seq_info.dtype != torch.int32
+        or seq_info.dim() != 2
+        or seq_info.shape[1] not in (4, 5)
+    ):
+        raise ValueError("seq_info must be Int32[S, 4] or runtime-pitch Int32[S, 5]")
     if seq_info.device != query.device or not seq_info.is_contiguous():
         raise ValueError("seq_info must be contiguous on the query device")
     if context_window and is_causal:
@@ -490,6 +508,7 @@ def sdpa_varlen(  # noqa: C901
             scale,
             available,
             NUM_SEGMENTS=seq_info.shape[0],
+            INFO_WIDTH=seq_info.shape[1],
             NUM_SPLITS=splits,
             IS_CAUSAL=is_causal,
             CONTEXT_WINDOW=context_window,
@@ -528,6 +547,7 @@ def sdpa_varlen(  # noqa: C901
             scale,
             available,
             num_qb,
+            INFO_WIDTH=seq_info.shape[1],
             NUM_SPLITS=splits,
             IS_CAUSAL=is_causal,
             CONTEXT_WINDOW=context_window,

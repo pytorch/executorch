@@ -13,6 +13,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <executorch/backends/aoti/slim/c10/core/ScalarType.h>
@@ -57,7 +58,9 @@ class CudaKVPool final {
       std::vector<Layer> layers,
       std::vector<SideBuffer> side_buffers,
       ::executorch::backends::aoti::slim::c10::ScalarType storage_dtype,
-      int64_t initial_rows);
+      int64_t initial_rows,
+      int declared_columns = 1,
+      int initial_columns = 1);
 
   CudaKVPool(const CudaKVPool&) = delete;
   CudaKVPool& operator=(const CudaKVPool&) = delete;
@@ -81,6 +84,16 @@ class CudaKVPool final {
   // across a growth. The first call also allocates the fixed storage.
   runtime::Error
   prepare(int64_t required_rows, int64_t live_rows, cudaStream_t stream);
+
+  // Flattened row counts remain multiples of the current physical width.
+  // Each pair is a retained old column and its new column. Dummy data is not
+  // retained. The operation commits only after every replacement copy passes.
+  runtime::Error resize_columns(
+      int columns,
+      const std::vector<std::pair<int, int>>& retained_columns,
+      cudaStream_t stream,
+      bool trim_unused,
+      bool* committed = nullptr);
 
   // Records where the step's work ends on its stream, for the next step to
   // follow if it runs on another.
@@ -127,6 +140,12 @@ class CudaKVPool final {
   int64_t growth_count() const {
     return growth_count_;
   }
+  int columns() const {
+    return columns_;
+  }
+  int64_t column_resize_count() const {
+    return column_resize_count_;
+  }
 
  private:
   struct Allocation {
@@ -150,6 +169,8 @@ class CudaKVPool final {
   };
 
   size_t row_bytes(const Layer& layer) const;
+  int64_t physical_limit(const Layer& layer) const;
+  void invalidate_bindings();
   static std::vector<int64_t> layer_sizes(const Layer& layer);
   runtime::Error allocate_layer(
       const Layer& layer,
@@ -174,6 +195,9 @@ class CudaKVPool final {
   ::executorch::backends::aoti::slim::c10::ScalarType storage_dtype_;
   int64_t initial_rows_;
   int64_t max_rows_{0};
+  const int declared_columns_;
+  int columns_;
+  int64_t column_resize_count_{0};
 
   int device_{0};
   bool device_known_{false};

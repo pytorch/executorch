@@ -84,8 +84,8 @@ def ring_physical_capacity(window: int, max_write: int) -> int:
 
 def parse_offgraph_kv_manifest(value: bytes) -> dict[str, Any]:  # noqa: C901
     manifest = json.loads(value.decode("utf-8"))
-    if manifest.get("version") != 1:
-        raise ValueError("off-graph KV manifest version must be 1")
+    if manifest.get("version") not in (1, 2):
+        raise ValueError("off-graph KV manifest version must be 1 or 2")
     maximum_capacity = manifest.get("maximum_capacity")
     if not isinstance(maximum_capacity, int) or maximum_capacity <= 0:
         raise ValueError("off-graph maximum_capacity must be positive")
@@ -95,6 +95,16 @@ def parse_offgraph_kv_manifest(value: bytes) -> dict[str, Any]:  # noqa: C901
     layout = manifest.setdefault("layout", "sequence")
     if layout not in ("sequence", *PACKED_LAYOUTS):
         raise ValueError(f"invalid off-graph KV layout {layout!r}")
+    runtime_columns = manifest.setdefault("runtime_columns", False)
+    if not isinstance(runtime_columns, bool):
+        raise ValueError("off-graph runtime_columns must be a bool")
+    if manifest["version"] == 2:
+        if layout != "batched-sequence" or not runtime_columns:
+            raise ValueError(
+                "off-graph version 2 requires batched-sequence runtime columns"
+            )
+    elif runtime_columns:
+        raise ValueError("off-graph runtime columns require manifest version 2")
     if layout == "batched-sequence":
         for key in ("max_seqs", "max_segments"):
             if not isinstance(manifest.get(key), int) or manifest[key] <= 0:
@@ -297,6 +307,7 @@ def batched_sequence_step(
     causal: bool,
     out_dtype: torch.dtype | None = None,
     context_window: bool = False,
+    runtime_columns: bool = False,
 ) -> torch.Tensor:
     """Write this step's K/V into each sequence's column, then attend.
 
@@ -311,9 +322,12 @@ def batched_sequence_step(
     K/V-width entries. ``k``/``v`` are BHSD; the storage is BSHD.
     ``context_window`` gives every draft block query the same retained context
     before the block; ordinary attention uses each query's own window.
+    With ``runtime_columns``, ABI-5 ``seq_info[:, 4]`` supplies the physical
+    pitch for writes and attention; ``columns`` remains the declared maximum.
     """
     position = position.reshape(-1)
-    slots = (position % rows) * columns + seq_cols[: k.shape[2]]
+    pitch = seq_info[0, 4].to(torch.int64) if runtime_columns else columns
+    slots = (position % rows) * pitch + seq_cols[: k.shape[2]]
     _write(k_storage, slots, k)
     _write(v_storage, slots, v)
     heads, dim = k_storage.shape[2], k_storage.shape[3]
@@ -342,6 +356,7 @@ def _batched_sequence_step_fn(
     causal: bool,
     out_dtype,
     context_window: bool = False,
+    runtime_columns: bool = False,
 ):
     def fn(q, k, v, position, k_storage, v_storage, seq_cols, seq_info):
         return batched_sequence_step(
@@ -361,6 +376,7 @@ def _batched_sequence_step_fn(
             causal,
             out_dtype,
             context_window,
+            runtime_columns,
         )
 
     return fn
@@ -737,7 +753,10 @@ class LowerOffGraphKVPass:
         seq_info = self._cell_buffer(
             exported_program,
             OFFGRAPH_KV_SEQ_INFO_FQN,
-            (self._manifest["max_segments"], 4),
+            (
+                self._manifest["max_segments"],
+                5 if self._manifest.get("runtime_columns", False) else 4,
+            ),
             torch.int32,
             device,
         )
@@ -753,6 +772,7 @@ class LowerOffGraphKVPass:
             self._manifest["causal"],
             out_dtype,
             self._manifest.get("context_window", False),
+            self._manifest.get("runtime_columns", False),
         )
         return fn, call_args, example_args
 

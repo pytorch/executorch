@@ -369,6 +369,15 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
       declared_seqs,
       metadata::detail::read_int_method(*module, kMaxSeqsMethod));
   const bool sequence_layout = declared_seqs.has_value();
+  ET_ASSIGN_OR_RETURN(
+      sequence_info_abi,
+      metadata::detail::read_int_method(
+          *module, "get_offgraph_kv_sequence_info_abi"));
+  ET_CHECK_OR_RETURN_ERROR(
+      sequence_info_abi.value_or(1) == 1 ||
+          (sequence_layout && sequence_info_abi == 2),
+      InvalidProgram,
+      "CudaExecutor: unsupported sequence-info ABI");
   std::int64_t max_cells = 0;
   if (sequence_layout) {
     ET_CHECK_OR_RETURN_ERROR(
@@ -527,6 +536,7 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
       static_cast<int>(sequence_layout ? max_context_length : max_cells);
   cfg.kv_dtype = kv_dtype;
   cfg.max_write = max_step_tokens;
+  cfg.runtime_sequence_columns = sequence_info_abi == 2;
   if (sequence_layout) {
     cfg.max_seqs = static_cast<int>(*declared_seqs);
   }
@@ -1087,6 +1097,12 @@ std::optional<std::vector<Token>> CudaExecutor::run_device_sampler(
 
 OffGraphKVMetrics CudaExecutor::kv_metrics() const {
   return kv_->metrics();
+}
+
+Error CudaExecutor::compact_kv_columns(int spare_columns) {
+  ET_CHECK_OR_RETURN_ERROR(
+      !raw_executing_, InvalidState, "CudaExecutor: compact between executes");
+  return kv_->compact_columns(spare_columns);
 }
 
 std::vector<ForwardMethodCalls> CudaExecutor::method_calls() const {
