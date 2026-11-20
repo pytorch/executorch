@@ -26,12 +26,15 @@ class PrequantizeEmbeddingTest(unittest.TestCase):
     _NUM_GROUPS = 2
 
     def _build_quantized_embedding_program(
-        self, out_scale: float = 0.05, out_zp: int = 3
+        self, out_scale: float = 0.05, out_zp: int = 3, share_table: bool = False
     ) -> ExportedProgram:
         """fused_quant.embedding with a group-quantized table and a per-tensor
         quantized output -- the shape PrequantizeEmbedding folds into a plain int8
         gather. The gather feeds a nop view (not the graph output directly) so the
         rewrite replaces an interior node and the output signature stays stable.
+
+        With ``share_table``, a second embedding with a float output reads the
+        same table.
         """
         torch.manual_seed(0)
         builder = ProgramBuilder()
@@ -90,7 +93,28 @@ class PrequantizeEmbeddingTest(unittest.TestCase):
             op=exir_ops.edge.aten.view_copy.default,
             args=(embedding, [4, embedding_dim]),
         )
-        builder.output([out])
+        outputs = [out]
+        if share_table:
+            outputs.append(
+                builder.call_operator(
+                    op=exir_ops.edge.fused_quant.embedding.default,
+                    args=(
+                        table,
+                        scale,
+                        zp,
+                        torch.float32,
+                        -8,
+                        7,
+                        None,
+                        None,
+                        torch.int8,
+                        -128,
+                        127,
+                        indices,
+                    ),
+                )
+            )
+        builder.output(outputs)
         return builder.get_program()
 
     @staticmethod
@@ -155,6 +179,24 @@ class PrequantizeEmbeddingTest(unittest.TestCase):
         self.assertTrue(
             torch.equal(before, after),
             f"prequantization changed the gather result:\n{before}\nvs\n{after}",
+        )
+
+    def test_prequantize_skips_a_shared_table(self) -> None:
+        """Rewriting a table another embedding reads would change that one's
+        output."""
+        ep = self._build_quantized_embedding_program(share_table=True)
+
+        result = PrequantizeEmbedding().call(ep)
+
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            len(
+                result.exported_program.graph_module.graph.find_nodes(
+                    op="call_function",
+                    target=exir_ops.edge.fused_quant.embedding.default,
+                )
+            ),
+            2,
         )
 
     def test_prequantize_skips_float_output_embedding(self) -> None:

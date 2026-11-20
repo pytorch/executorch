@@ -65,6 +65,21 @@ def define_common_targets():
             preprocessor_flags = _operator_registry_preprocessor_flags(),
         )
 
+        # The same registry, linked whole. A shared library that must keep its own registry
+        # depends on the `_static` flavor of this target: a lazily linked registry object is
+        # dropped when another shared library on the link line already defines its symbols.
+        runtime.cxx_library(
+            name = "operator_registry_link_whole" + aten_suffix,
+            srcs = ["operator_registry.cpp"],
+            visibility = ["PUBLIC"],
+            exported_deps = [
+                "//executorch/runtime/kernel:operator_registry" + aten_suffix,
+            ],
+            preprocessor_flags = _operator_registry_preprocessor_flags(),
+            # @lint-ignore BUCKLINT link_whole
+            link_whole = True,
+        )
+
         runtime.cxx_library(
             name = "kernel_runtime_context" + aten_suffix,
             exported_headers = [

@@ -19,7 +19,6 @@ from typing import List, Optional, Tuple
 # Supported CUDA versions - modify this to add/remove supported versions
 # Format: tuple of (major, minor) version numbers
 SUPPORTED_CUDA_VERSIONS = (
-    (13, 0),
     (13, 2),
     (13, 4),
 )
@@ -116,6 +115,12 @@ def is_vulkan_available() -> bool:
     return False
 
 
+class UnsupportedCudaVersionError(RuntimeError):
+    def __init__(self, version: Tuple[int, int], message: str):
+        super().__init__(message)
+        self.version = version
+
+
 @functools.lru_cache(maxsize=1)
 def _get_cuda_version():
     """
@@ -143,9 +148,10 @@ def _get_cuda_version():
                 available_versions = ", ".join(
                     [f"{maj}.{min}" for maj, min in SUPPORTED_CUDA_VERSIONS]
                 )
-                raise RuntimeError(
+                raise UnsupportedCudaVersionError(
+                    (major, minor),
                     f"Detected CUDA version {major}.{minor} is not supported. "
-                    f"Supported versions: {available_versions}."
+                    f"Supported versions: {available_versions}.",
                 )
 
             return (major, minor)
@@ -371,6 +377,13 @@ def determine_torch_url(torch_nightly_url_base):
         cuda_version = _get_cuda_version()
     except Exception as err:
         print(f"CUDA detection failed ({err}), using CPU-only PyTorch")
+        if isinstance(err, UnsupportedCudaVersionError):
+            major, minor = err.version
+            print(
+                f"WARNING: CUDA {major}.{minor} is installed but not supported, "
+                "so CPU-only PyTorch is installed.",
+                file=sys.stderr,
+            )
         return f"{torch_nightly_url_base}/cpu"
 
     major, minor = cuda_version
