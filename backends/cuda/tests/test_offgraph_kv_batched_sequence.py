@@ -128,7 +128,7 @@ class _Oracle:
 
 
 def _max_abs_diff(actual, expected) -> float:
-    return (actual.float().cpu() - expected).abs().max().item()
+    return (actual.float().cpu() - expected.float().cpu()).abs().max().item()
 
 
 # Two sequences prefilling in one step, decoding together, then one decoding
