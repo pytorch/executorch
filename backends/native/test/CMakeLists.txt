@@ -153,9 +153,14 @@ if(EXECUTORCH_BUILD_NATIVE_GGML)
             $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions>
   )
 
-  add_executable(native_ggml_sample_test runtime/ggml/ggml_ptn_runner.cpp)
+  add_executable(
+    native_ggml_sample_test
+    runtime/ggml/ggml_ptn_runner.cpp
+    ${EXECUTORCH_ROOT}/backends/native/runtime/engine/ggml/GgmlEngineFlags.cpp
+  )
   target_link_libraries(
     native_ggml_sample_test PRIVATE native_sample_test_main native_ggml_engine
+                                    ${_native_test_gflags}
   )
   add_dependencies(native_ggml_sample_test native_op_samples)
   add_test(NAME native_ggml_sample_test
