@@ -20,6 +20,7 @@ TEST(CommonShimsSlimLinkTest, ShimsAreBindableFromTheHost) {
       "aoti_torch_device_type_cuda",
       "aoti_torch_dtype_bfloat16",
       "aoti_torch_dtype_bool",
+      "aoti_torch_dtype_element_size",
       "aoti_torch_dtype_float16",
       "aoti_torch_dtype_float32",
       "aoti_torch_dtype_float64",

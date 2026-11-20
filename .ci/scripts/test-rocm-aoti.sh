@@ -24,10 +24,9 @@ export TORCHINDUCTOR_COMPILE_THREADS=1
 
 read -r TORCH_VERSION TORCHAO_VERSION < <(
   python - <<'PY'
-from install_requirements import ROCM_TORCHAO_NIGHTLY_VERSION
-from torch_pin import TORCH_VERSION
+from install_requirements import ROCM_TORCH_VERSION, ROCM_TORCHAO_NIGHTLY_VERSION
 
-print(TORCH_VERSION, ROCM_TORCHAO_NIGHTLY_VERSION)
+print(ROCM_TORCH_VERSION, ROCM_TORCHAO_NIGHTLY_VERSION)
 PY
 )
 # TorchAO ROCm wheels are not exposed by the per-version pip index.
@@ -139,7 +138,7 @@ fi
 
 export EXECUTORCH_EXECUTOR_RUNNER="${PWD}/cmake-out-rocm-llm/executor_runner"
 ROCM_EXCLUDED_TESTS=(
-  # This focused job does not install the optional flash-linear-attention package.
+  # This focused job does not install the optional fla-core package.
   --ignore=backends/cuda/tests/test_chunk_gated_delta_rule.py
   # Defer specialized SDPA suites until their CI cost is measured.
   --ignore=backends/cuda/tests/test_tq4_sdpa.py
