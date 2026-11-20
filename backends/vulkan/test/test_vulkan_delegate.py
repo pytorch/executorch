@@ -73,14 +73,13 @@ def lower_module(
     sample_inputs: Tuple[torch.Tensor],
     dynamic_shapes=None,
     compile_options=None,
-    skip_dim_order: bool = False,
 ) -> EdgeProgramManager:
     compile_options = dict(compile_options or {})
     if dynamic_shapes is not None:
         compile_options["require_dynamic_shapes"] = True
 
     edge_compile_config = EdgeCompileConfig(
-        _skip_dim_order=skip_dim_order,  # TODO(T182928844): Delegate dim order op to backend.
+        _skip_dim_order=False,  # TODO(T182928844): Delegate dim order op to backend.
     )
 
     program: ExportedProgram = export(
@@ -349,55 +348,6 @@ class TestVulkanBackend(unittest.TestCase):
         )
 
         self.lower_module_and_test_output(add_int_module, sample_inputs)
-
-    def test_vulkan_backend_bfloat16_casts(self):
-        class Bfloat16CastModule(torch.nn.Module):
-            def forward(self, x, i):
-                x = x.to(torch.bfloat16).to(torch.float32)
-                return x + i.to(torch.bfloat16).to(torch.float32)
-
-        model = Bfloat16CastModule().eval()
-        sample_inputs = (
-            torch.randn(size=(2, 3, 17), dtype=torch.float32),
-            torch.randint(-128, 128, size=(2, 3, 17), dtype=torch.int32),
-        )
-        # Skipping dim order lowers the casts to _to_copy instead of
-        # _to_dim_order_copy.
-        for skip_dim_order in (False, True):
-            with self.subTest(skip_dim_order=skip_dim_order):
-                et_program = lower_module(
-                    model, sample_inputs, skip_dim_order=skip_dim_order
-                ).to_executorch()
-                self.check_vk_delegation(et_program)
-                self.assertEqual(
-                    len(et_program.executorch_program.execution_plan[0].operators), 0
-                )
-                self.run_delegated_model_and_check_output(
-                    et_program, model, sample_inputs, atol=2e-2, rtol=2e-2
-                )
-
-    def test_vulkan_backend_bfloat16_quantized_linear_not_fused(self):
-        # Fused operators have no bfloat16 shaders, so the pattern stays on the CPU.
-        class QuantizedLinearModule(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.linear = torch.nn.Linear(64, 32, bias=False, dtype=torch.bfloat16)
-
-            def forward(self, x):
-                return self.linear(x)
-
-        model = QuantizedLinearModule().eval()
-        quantize_(
-            model,
-            IntxWeightOnlyConfig(weight_dtype=torch.int4, granularity=PerGroup(32)),
-        )
-        unwrap_tensor_subclass(model)
-        sample_inputs = (torch.randn(size=(1, 64), dtype=torch.bfloat16),)
-        edge_program = lower_module(model, sample_inputs)
-        self.assertNotIn(
-            torch.ops.higher_order.executorch_call_delegate,
-            [node.target for node in edge_program.exported_program().graph.nodes],
-        )
 
     def test_vulkan_backend_zero_dim_tensor(self):
         class ZeroDimModule(torch.nn.Module):

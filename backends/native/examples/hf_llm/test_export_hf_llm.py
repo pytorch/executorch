@@ -126,6 +126,41 @@ def _ops_except_casts(ep: torch.export.ExportedProgram) -> collections.Counter:
     )
 
 
+def _tiny_muse_glimmer_dir(path: str) -> PreTrainedModel | None:
+    """Saves a 4-layer Muse Glimmer config, window 3 on the first three layers,
+    to `path` and returns the model, or None where transformers has none."""
+    try:
+        from transformers import MuseGlimmerConfig, MuseGlimmerForConditionalGeneration
+    except ImportError:
+        return None
+    config = MuseGlimmerConfig(
+        text_config={
+            "vocab_size": 128,
+            "hidden_size": 64,
+            "intermediate_size": 128,
+            "num_hidden_layers": 4,
+            "num_attention_heads": 4,
+            "num_key_value_heads": 2,
+            "head_dim": 16,
+            "sliding_window": 3,
+            "layer_types": ["sliding_attention"] * 3 + ["full_attention"],
+            "layer_rope_theta": [10000.0] * 3 + [0],
+        },
+        vision_config={
+            "hidden_size": 32,
+            "intermediate_size": 32,
+            "num_hidden_layers": 1,
+            "num_attention_heads": 2,
+        },
+        projector_hidden_size=32,
+        out_hidden_size=32,
+    )
+    config.save_pretrained(path)
+    model = MuseGlimmerForConditionalGeneration(config).eval().requires_grad_(False)
+    model.config._attn_implementation = "sdpa"
+    return model
+
+
 class ExportHfLlmTest(unittest.TestCase):
     def test_gguf_weights_reproduce_the_model(self) -> None:
         ids = torch.tensor([[3, 4, 5, 6, 7, 8]])
@@ -338,6 +373,103 @@ class ExportHfLlmTest(unittest.TestCase):
         # one native delegate.
         to_native(ep)
 
+    def test_muse_glimmer_exports_text_only_with_an_offgraph_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as path:
+            torch.manual_seed(7)
+            reference = _tiny_muse_glimmer_dir(path)
+            if reference is None:
+                self.skipTest("transformers has no Muse Glimmer")
+            with self.assertRaisesRegex(ValueError, "only with --offgraph_cache"):
+                _load(path, 0, True, False)
+            model = _load(path, 0, True, False, offgraph_cache=True)
+        missing, unexpected = model.load_state_dict(
+            reference.state_dict(), strict=False
+        )
+        self.assertFalse(missing)
+        self.assertTrue(all(".language_model." not in k for k in unexpected))
+        offgraph = OffGraphLastTokenLM(model, 32).eval()
+        prompts = [[3, 4, 5, 6, 7, 8, 9], [9, 10]]
+
+        samples = golden_samples(offgraph, prompts, 3)
+
+        for sample in samples.samples:
+            sequence = []
+            for call in sample.calls:
+                sequence += call.inputs[0][0].tolist()
+                with torch.no_grad():
+                    want = reference(torch.tensor([sequence])).logits[:, -1:]
+                torch.testing.assert_close(call.outputs[0], want, atol=1e-5, rtol=1e-5)
+        self.assertEqual(offgraph.metadata()["get_windows"], [3, 3, 3, 0])
+        seq = torch.export.Dim("seq", min=1, max=31)
+        with torch.no_grad():
+            ep = torch.export.export(
+                offgraph,
+                (torch.tensor([[3, 4, 5]]), torch.arange(3)),
+                dynamic_shapes={"input_ids": {1: seq}, "cache_position": {0: seq}},
+                strict=False,
+            )
+        ops = _ops_except_casts(ep)
+        self.assertEqual(ops["kvcache.update_and_attend.default"], 4)
+        self.assertNotIn("aten.eq.Scalar", ops)
+        selected = OffGraphLastTokenLM(model, 32, selected=True).eval()
+        ids = torch.tensor([[3, 4, 5]])
+        with torch.no_grad():
+            with selected.cache_scope():
+                got = selected(ids, torch.arange(3), torch.tensor([2]))
+            with offgraph.cache_scope():
+                offgraph.reset_cache()
+                want = offgraph(ids, torch.arange(3))
+        torch.testing.assert_close(got, want)
+
+    def test_offgraph_selected_logits_match_the_last_token(self) -> None:
+        torch.manual_seed(7)
+        register_offgraph_attention("offgraph")
+        model = _tiny()
+        model.config._attn_implementation = "offgraph"
+        last = OffGraphLastTokenLM(model, 32).eval()
+        selected = OffGraphLastTokenLM(model, 32, selected=True).eval()
+        prompts = [[3, 4, 5, 6, 7, 8], [9, 10]]
+
+        want = golden_samples(last, prompts, 2)
+        got = golden_samples(selected, prompts, 2)
+
+        for sample, expected in zip(got.samples, want.samples, strict=True):
+            for call, ref in zip(sample.calls, expected.calls, strict=True):
+                ids = call.inputs[0]
+                self.assertTrue(
+                    torch.equal(call.inputs[2], torch.tensor([ids.shape[1] - 1]))
+                )
+                self.assertTrue(torch.equal(call.outputs[0], ref.outputs[0]))
+        self.assertEqual(selected.metadata()["get_logits_to_keep_mode"], 2)
+        self.assertEqual(last.metadata()["get_logits_to_keep_mode"], 1)
+        seq = torch.export.Dim("seq", min=1, max=31)
+        rows = torch.export.Dim("rows", min=1, max=31)
+        with torch.no_grad():
+            ep = torch.export.export(
+                selected,
+                (torch.tensor([[3, 4, 5]]), torch.arange(3), torch.tensor([0, 2])),
+                dynamic_shapes={
+                    "input_ids": {1: seq},
+                    "cache_position": {0: seq},
+                    "logits_to_keep": {0: rows},
+                },
+                strict=True,
+            )
+            with selected.cache_scope():
+                logits = ep.module()(
+                    torch.tensor([[3, 4, 5]]), torch.arange(3), torch.tensor([0, 2])
+                )
+        self.assertEqual(tuple(logits.shape), (1, 2, 128))
+        self.assertEqual(len(ep.graph_signature.user_inputs), 3)
+
+    def test_selected_logits_need_an_offgraph_cache(self) -> None:
+        argv = ["export_hf_llm", "--model", "unused", "--logits_to_keep", "selected"]
+        with mock.patch.object(sys, "argv", argv):
+            with mock.patch.object(export_hf_llm, "_load") as load:
+                with self.assertRaises(SystemExit):
+                    export_hf_llm.main()
+        load.assert_not_called()
+
     def test_offgraph_cache_excludes_in_graph_cache_flags(self) -> None:
         for flags in (
             ["--max_context_length", "64"],
@@ -475,7 +607,7 @@ class ExportHfLlmTest(unittest.TestCase):
                             call.outputs[0], want, atol=1e-5, rtol=1e-5
                         )
 
-    def test_offgraph_cache_metadata_gives_each_layer_its_window(self) -> None:
+    def test_offgraph_metadata_gives_each_layer_its_window(self) -> None:
         for model, windows in (
             (_tiny(), [0, 0]),
             (_tiny("mistral", sliding_window=8), [8, 8]),
@@ -493,12 +625,14 @@ class ExportHfLlmTest(unittest.TestCase):
             with self.subTest(arch=model.config.model_type):
                 wrapper = OffGraphLastTokenLM(model, 32)
                 self.assertEqual(
-                    wrapper.cache_metadata(),
+                    wrapper.metadata(),
                     {
                         "get_n_caches": 2,
                         "get_kv_heads": [2, 2],
                         "get_head_dims": [16, 16],
                         "get_windows": windows,
+                        "get_max_context_len": 64,
+                        "get_logits_to_keep_mode": 1,
                     },
                 )
                 self.assertEqual(

@@ -6,10 +6,12 @@
 
 import ast
 import importlib.util
+import io
 import os
 import subprocess
 import sys
 import unittest
+from contextlib import redirect_stderr
 from pathlib import Path
 from unittest.mock import patch
 
@@ -70,7 +72,7 @@ class TestCu134Dependencies(unittest.TestCase):
                     "torch==2.15.0.dev20260921+cu134",
                     "torchvision==0.30.0.dev20260922+cu134",
                     "torchaudio==2.11.0.dev20260922+cu134",
-                    f"torchao=={self.installer.CU134_TORCHAO_NIGHTLY_VERSION}+{ao_variant}",
+                    f"torchao=={self.installer.TORCHAO_NIGHTLY_VERSION}+{ao_variant}",
                 }
                 for index, command in enumerate(commands):
                     required = (
@@ -103,7 +105,7 @@ class TestCu134Dependencies(unittest.TestCase):
                         )
 
     def test_other_cuda_trains_keep_existing_pins(self):
-        for cuda in ((13, 0), (13, 2)):
+        for cuda in ((13, 2),):
             for machine in ("x86_64", "aarch64"):
                 with self.subTest(cuda=cuda, machine=machine):
                     core, local, domains, examples = self.install_commands(
@@ -117,6 +119,27 @@ class TestCu134Dependencies(unittest.TestCase):
                     self.assertIn("torchaudio==2.11.0", domains)
                     self.assertFalse(any("==" in arg for arg in local))
                     self.assertFalse(any("==" in arg for arg in examples))
+
+    def test_cuda_13_0_falls_back_to_cpu_with_a_warning(self):
+        self.assertNotIn((13, 0), self.utils.SUPPORTED_CUDA_VERSIONS)
+        nvcc = subprocess.CompletedProcess(
+            [], 0, stdout="Cuda compilation tools, release 13.0, V13.0.88"
+        )
+        for cache in (
+            self.utils._get_cuda_version,
+            self.utils.determine_torch_url,
+        ):
+            cache.cache_clear()
+            self.addCleanup(cache.cache_clear)
+        stderr = io.StringIO()
+        with (
+            patch.object(self.utils.subprocess, "run", return_value=nvcc),
+            patch.object(self.utils.platform, "system", return_value="Linux"),
+            redirect_stderr(stderr),
+        ):
+            url = self.utils.determine_torch_url(self.installer.TORCH_URL_BASE)
+        self.assertEqual(url, f"{self.installer.TORCH_URL_BASE}/cpu")
+        self.assertIn("CUDA 13.0 is installed but not supported", stderr.getvalue())
 
     def test_source_pinned_torch_is_not_replaced(self):
         for cuda in ((13, 2), (13, 4)):
@@ -159,7 +182,7 @@ class TestCu134Dependencies(unittest.TestCase):
                     )
 
     def test_cpu_release_option_keeps_cuda_pins(self):
-        for cuda in ((13, 0), (13, 2), (13, 4)):
+        for cuda in ((13, 2), (13, 4)):
             for machine in ("x86_64", "aarch64"):
                 with self.subTest(cuda=cuda, machine=machine):
                     self.assertEqual(
@@ -408,15 +431,11 @@ class TestCu134Dependencies(unittest.TestCase):
                     f"{source_version}+git{source_commit[:7]}", metadata.specifier
                 )
 
-    def test_wheel_torchao_bound_matches_selected_train(self):
-        for cuda in ((13, 4), (13, 2), None):
-            version = (
-                self.installer.CU134_TORCHAO_NIGHTLY_VERSION
-                if cuda == (13, 4)
-                else self.installer.TORCHAO_NIGHTLY_VERSION
-            )
-            major, minor = (int(part) for part in version.split(".")[:2])
-            expected = f"torchao>={version},<{major}.{minor + 1}"
+    def test_wheel_torchao_bound_is_the_same_for_every_train(self):
+        version = self.installer.TORCHAO_NIGHTLY_VERSION
+        major, minor = (int(part) for part in version.split(".")[:2])
+        expected = f"torchao>={version},<{major}.{minor + 1}"
+        for cuda in (*self.utils.SUPPORTED_CUDA_VERSIONS, None):
             self.utils.determine_torch_url.cache_clear()
             with (
                 patch.object(

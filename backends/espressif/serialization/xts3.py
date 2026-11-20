@@ -19,10 +19,17 @@ from executorch.backends.espressif.utils.quantization import (
 )
 
 MAGIC = b"XTS3"
-XTS3_VERSION = 6
-XTS3_VERSIONS = (5, 6)
+# Version 7 is version 6 with the IO table padded to 4 bytes, so that the
+# runtime can use the tensor records and parameter blocks in place. Version 8
+# adds a state table after the IO table, and is written only for graphs that
+# own mutable buffers.
+XTS3_VERSION = 7
+XTS3_STATE_VERSION = 8
+XTS3_VERSIONS = (5, 6, 7, 8)
 IO_TABLE_HEADER = "<HH"
 IO_TABLE_HEADER_SIZE = struct.calcsize(IO_TABLE_HEADER)
+STATE_TABLE_HEADER = "<HH"
+STATE_TABLE_HEADER_SIZE = struct.calcsize(STATE_TABLE_HEADER)
 
 INT8_CONV_BASE_PARAMS = "<8BIii"
 INT8_CONV_BASE_PARAMS_SIZE = struct.calcsize(INT8_CONV_BASE_PARAMS)
@@ -56,6 +63,7 @@ UPSAMPLE_WEIGHT_ONE = 1 << UPSAMPLE_WEIGHT_BITS
 TRANSPOSE_CONV_PARAMS = "<13i"
 UPSAMPLE_MAX_EXTENT = 65535
 MAX_GRAPH_IO = 16
+MAX_GRAPH_STATES = 16
 MAX_GRAPH_TENSORS = 1024
 MAX_GRAPH_OPERATIONS = 1024
 TRANSPOSE_CONV_PARAMS_SIZE = struct.calcsize(TRANSPOSE_CONV_PARAMS)
@@ -113,6 +121,10 @@ TENSOR_FLAG_CONSTANT = 1 << 0
 TENSOR_FLAG_QUANTIZED = 1 << 1
 TENSOR_FLAG_GRAPH_INPUT = 1 << 2
 TENSOR_FLAG_GRAPH_OUTPUT = 1 << 3
+# Delegate-owned int8 state (a mutable buffer of the partition). Its initial
+# value is in the constant region at data_offset, but it is not a constant: the
+# state table pairs it with the tensor that replaces it after every invoke.
+TENSOR_FLAG_STATE = 1 << 4
 
 
 @dataclass
@@ -149,6 +161,20 @@ class XTS3Graph:
     tensor_names: dict[int, str] = field(default_factory=dict)
     inputs: list[int] = field(default_factory=list)
     outputs: list[int] = field(default_factory=list)
+    # (state tensor, update tensor) pairs; version 8 only
+    states: list[tuple[int, int]] = field(default_factory=list)
+
+
+def _mutated_buffer_placeholders(exported_program) -> set[str]:
+    signature = getattr(exported_program, "graph_signature", None)
+    if signature is None:
+        return set()
+    mutated = set(signature.buffers_to_mutate.values())
+    return {
+        name
+        for name, buffer in signature.inputs_to_buffers.items()
+        if buffer in mutated
+    }
 
 
 class ExportedTensorResolver:
@@ -167,6 +193,7 @@ class ExportedTensorResolver:
             )
             or {}
         )
+        self.mutated_buffers = _mutated_buffer_placeholders(exported_program)
 
     def _lookup_mapping(self, mapping, name):
         if mapping is None:
@@ -182,6 +209,8 @@ class ExportedTensorResolver:
         return None
 
     def resolve(self, node):  # noqa: C901
+        if node is not None and node.name in self.mutated_buffers:
+            return None
         if node is not None and node.op == "call_function":
             target = str(node.target)
             if "dequantize_per_channel" in target:
@@ -1753,7 +1782,7 @@ def _user_input_placeholders(exported_program):
     return [node for node in placeholders if node.name in user_inputs]
 
 
-def _mark_int8_graph_io(
+def _mark_int8_graph_io(  # noqa: C901
     exported_program, registry: TensorRegistry
 ) -> tuple[list[int], list[int]]:
     graph_module = exported_program.graph_module
@@ -1774,6 +1803,8 @@ def _mark_int8_graph_io(
         raise ValueError("Int8 graph has no quantized runtime input")
 
     outputs: list[int] = []
+    signature = getattr(exported_program, "graph_signature", None)
+    state_updates = set(signature.buffers_to_mutate) if signature else set()
     for node in graph_module.graph.nodes:
         if node.op != "output":
             continue
@@ -1781,6 +1812,8 @@ def _mark_int8_graph_io(
         if not isinstance(values, (list, tuple)):
             values = (values,)
         for value in values:
+            if getattr(value, "name", None) in state_updates:
+                continue
             source = _quantized_source(value)
             if source is None or source not in registry.node_to_id:
                 raise ValueError(
@@ -1793,6 +1826,111 @@ def _mark_int8_graph_io(
     if not outputs:
         raise ValueError("Int8 graph has no outputs")
     return inputs, outputs
+
+
+def _mark_int8_state(
+    exported_program, registry: TensorRegistry
+) -> list[tuple[int, int]]:
+    """
+    Pair each mutable buffer of the partition with the int8 tensor holding its
+    new value. The buffer's tensor becomes TENSOR_FLAG_STATE, with its
+    quantized initial value in the constant region.
+    """
+    signature = exported_program.graph_signature
+    if not signature.buffers_to_mutate:
+        return []
+    nodes = {node.name: node for node in exported_program.graph_module.graph.nodes}
+    writers = {
+        buffer: nodes[output] for output, buffer in signature.buffers_to_mutate.items()
+    }
+    states: list[tuple[int, int]] = []
+    for node in exported_program.graph_module.graph.nodes:
+        buffer = signature.inputs_to_buffers.get(node.name)
+        if node.op != "placeholder" or buffer not in writers:
+            continue
+        if node not in registry.node_to_id:
+            raise ValueError(f"Mutable buffer {buffer} is not read as an int8 tensor")
+        state = registry.tensors[registry.node_to_id[node]]
+        source = _quantized_source(writers[buffer])
+        if source is None or source not in registry.node_to_id:
+            raise ValueError(
+                f"The new value of mutable buffer {buffer} is not an int8 tensor"
+            )
+        update = registry.tensors[registry.node_to_id[source]]
+        if (
+            tuple(update.shape) != tuple(state.shape)
+            or update.quant_scale != state.quant_scale
+            or update.quant_zero_point != state.quant_zero_point
+        ):
+            raise ValueError(
+                f"Mutable buffer {buffer} and its new value have different "
+                "shapes or quantization parameters"
+            )
+        initial = exported_program.state_dict.get(
+            buffer, exported_program.constants.get(buffer)
+        )
+        if initial is None:
+            raise ValueError(f"Mutable buffer {buffer} has no initial value")
+        if initial.dtype == torch.float32:
+            initial = torch.ops.quantized_decomposed.quantize_per_tensor(
+                initial,
+                state.quant_scale,
+                state.quant_zero_point,
+                -128,
+                127,
+                torch.int8,
+            )
+        if initial.dtype != torch.int8:
+            raise ValueError(f"Mutable buffer {buffer} must be float32 or int8")
+        raw = _int8_device_bytes(
+            initial.detach().cpu().contiguous(), tuple(state.shape)
+        )
+        registry._align_constant_data()
+        state.data_offset = len(registry.constant_data)
+        state.data_size = len(raw)
+        registry.constant_data.extend(raw)
+        state.flags |= TENSOR_FLAG_STATE
+        states.append((state.tensor_id, update.tensor_id))
+    return _separate_state_updates(states, registry)
+
+
+def _separate_state_updates(
+    states: list[tuple[int, int]], registry: TensorRegistry
+) -> list[tuple[int, int]]:
+    """
+    Give a copy of its own to each update the runtime cannot write into a
+    state's slot: a graph input or output, a constant, a state, or an update
+    shared by several states. The copies run after every other operation.
+    """
+    from .int8_ops import copy_operation, copy_segment
+
+    shared = (
+        TENSOR_FLAG_GRAPH_INPUT
+        | TENSOR_FLAG_GRAPH_OUTPUT
+        | TENSOR_FLAG_CONSTANT
+        | TENSOR_FLAG_STATE
+    )
+    used: set[int] = set()
+    for index, (state_id, update_id) in enumerate(states):
+        update = registry.tensors[update_id]
+        if update.flags & shared or update_id in used:
+            copy = XTS3Tensor(
+                tensor_id=len(registry.tensors),
+                shape=tuple(update.shape),
+                dtype=XTS3DType.INT8,
+                quant_scale=update.quant_scale,
+                quant_zero_point=update.quant_zero_point,
+            )
+            registry.tensors.append(copy)
+            elements = prod(update.shape)
+            segment = copy_segment(0, [elements], [1], 0, [1], 0, update, copy)
+            registry.extra_operations.append(
+                copy_operation([update_id], copy.tensor_id, [segment])
+            )
+            update_id = copy.tensor_id
+            states[index] = (state_id, update_id)
+        used.add(update_id)
+    return states
 
 
 def build_graph(exported_program) -> XTS3Graph:
@@ -1817,11 +1955,16 @@ def build_graph(exported_program) -> XTS3Graph:
         lowered.op_id = len(operations)
         operations.append(lowered)
     graph_inputs, graph_outputs = _mark_int8_graph_io(exported_program, registry)
+    states = _mark_int8_state(exported_program, registry)
+    for extra in registry.extra_operations:
+        extra.op_id = len(operations)
+        operations.append(extra)
     return XTS3Graph(
         tensors=registry.tensors,
         operations=operations,
         constant_data=bytes(registry.constant_data),
-        version=XTS3_VERSION,
+        version=XTS3_STATE_VERSION if states else XTS3_VERSION,
+        states=states,
         tensor_names={
             tensor_id: node.name for node, tensor_id in registry.node_to_id.items()
         },
@@ -1868,7 +2011,7 @@ def _serialize_operation(operation: XTS3Operation, params_offset: int) -> bytes:
     )
 
 
-def check_runtime_limits(graph: XTS3Graph) -> None:
+def check_runtime_limits(graph: XTS3Graph) -> None:  # noqa: C901
     """
     Raise ValueError for graphs the device runtime would reject at init():
     the same limits espnn_runtime/src/xts3_graph.cpp enforces.
@@ -1879,6 +2022,13 @@ def check_runtime_limits(graph: XTS3Graph) -> None:
         raise ValueError(
             f"Partition has {len(graph.inputs)} inputs and {len(graph.outputs)} "
             f"outputs; the ESP-NN runtime supports at most {MAX_GRAPH_IO} of each"
+        )
+    if graph.states and graph.version < XTS3_STATE_VERSION:
+        raise ValueError("Delegate-owned state needs XTS3 version 8")
+    if len(graph.states) > MAX_GRAPH_STATES:
+        raise ValueError(
+            f"Partition owns {len(graph.states)} mutable buffers; the ESP-NN "
+            f"runtime supports at most {MAX_GRAPH_STATES}"
         )
     if len(graph.tensors) > MAX_GRAPH_TENSORS:
         raise ValueError(
@@ -1925,7 +2075,7 @@ def check_dataflow(graph: XTS3Graph) -> None:
     ready.update(
         tensor.tensor_id
         for tensor in graph.tensors
-        if tensor.flags & TENSOR_FLAG_CONSTANT
+        if tensor.flags & (TENSOR_FLAG_CONSTANT | TENSOR_FLAG_STATE)
     )
     for index, operation in enumerate(graph.operations):
         for tensor_id in operation.inputs:
@@ -1938,6 +2088,9 @@ def check_dataflow(graph: XTS3Graph) -> None:
     for tensor_id in graph.outputs:
         if tensor_id not in ready:
             raise ValueError(f"Graph output {tensor_id} is never written")
+    for state_id, update_id in graph.states:
+        if update_id not in ready:
+            raise ValueError(f"The new value of state {state_id} is never written")
 
 
 def serialize_graph(graph: XTS3Graph) -> bytes:
@@ -1948,6 +2101,8 @@ def serialize_graph(graph: XTS3Graph) -> bytes:
     parameter_data = bytearray()
     operation_data = bytearray()
     for operation in graph.operations:
+        if graph.version >= 7:
+            parameter_data += b"\x00" * (-len(parameter_data) % 4)
         operation_data += _serialize_operation(operation, len(parameter_data))
         parameter_data += operation.params
     io_table = b""
@@ -1959,6 +2114,12 @@ def serialize_graph(graph: XTS3Graph) -> bytes:
         ) + struct.pack(
             f"<{len(graph.inputs) + len(graph.outputs)}I", *graph.inputs, *graph.outputs
         )
+    if graph.version >= 8:
+        io_table += struct.pack(STATE_TABLE_HEADER, len(graph.states), 0)
+        for state_id, update_id in graph.states:
+            io_table += struct.pack("<2I", state_id, update_id)
+    if graph.version >= 7:
+        io_table += b"\x00" * ((-(HEADER_SIZE + len(io_table))) % 4)
     prefix = (
         HEADER_SIZE
         + len(io_table)
@@ -1987,7 +2148,7 @@ def serialize_graph(graph: XTS3Graph) -> bytes:
 
 
 def parse_graph(data: bytes) -> XTS3Graph:  # noqa: C901
-    """Parse and bounds-check an XTS3 v5 or v6 int8 graph."""
+    """Parse and bounds-check an XTS3 v5 to v8 int8 graph."""
     if len(data) < HEADER_SIZE:
         raise ValueError("Graph blob is smaller than the header")
     magic, version, tensor_count, operation_count, parameter_size, constant_size = (
@@ -2012,6 +2173,26 @@ def parse_graph(data: bytes) -> XTS3Graph:  # noqa: C901
         ids = struct.unpack_from(f"<{input_count + output_count}I", data, offset)
         graph_inputs, graph_outputs = list(ids[:input_count]), list(ids[input_count:])
         offset += 4 * (input_count + output_count)
+    states: list[tuple[int, int]] = []
+    if version >= 8:
+        if offset + STATE_TABLE_HEADER_SIZE > len(data):
+            raise ValueError("Graph state table exceeds blob")
+        state_count, reserved = struct.unpack_from(STATE_TABLE_HEADER, data, offset)
+        if reserved:
+            raise ValueError("Graph state table reserved field is not zero")
+        offset += STATE_TABLE_HEADER_SIZE
+        if offset + 8 * state_count > len(data):
+            raise ValueError("Graph state table exceeds blob")
+        pairs = struct.unpack_from(f"<{2 * state_count}I", data, offset)
+        if any(tensor_id >= tensor_count for tensor_id in pairs):
+            raise ValueError("Graph state table names an unknown tensor")
+        states = list(zip(pairs[0::2], pairs[1::2]))
+        offset += 8 * state_count
+    if version >= 7:
+        padding = (-offset) % 4
+        if data[offset : offset + padding] != b"\x00" * padding:
+            raise ValueError("Graph table padding is not zero")
+        offset += padding
 
     if offset + tensor_count * TENSOR_SIZE > len(data):
         raise ValueError("Graph tensor region exceeds blob")
@@ -2103,11 +2284,14 @@ def parse_graph(data: bytes) -> XTS3Graph:  # noqa: C901
         version=version,
         inputs=graph_inputs,
         outputs=graph_outputs,
+        states=states,
     )
 
 
 __all__ = [
     "MAGIC",
+    "TENSOR_FLAG_STATE",
+    "XTS3_STATE_VERSION",
     "check_runtime_limits",
     "XTS3_VERSION",
     "XTS3_VERSIONS",

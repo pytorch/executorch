@@ -5,11 +5,14 @@
 # LICENSE file in the root directory of this source tree.
 
 import copy
+import importlib
+import sys
 import tempfile
 import unittest
 from functools import partial
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
+from unittest.mock import patch
 
 import torch
 import torch.nn.functional as F
@@ -18,6 +21,14 @@ from executorch.backends.native.test.samples.cases import (
     chain,
     draws,
     suite_cases,
+)
+from executorch.backends.native.test.samples.generate import (
+    available_cpus,
+    available_memory,
+    BUDGET_ENV,
+    memory_budget,
+    WORKER_BYTES,
+    worker_count,
 )
 from executorch.backends.native.test.samples.record import DTYPES, record
 from executorch.backends.native.test.samples.schemes import (
@@ -36,6 +47,25 @@ from torchao.quantization import (
     quantize_,
 )
 from torchao.quantization.granularity import PerGroup
+
+
+# A host with 64 GiB available.
+_HOST = {"proc/meminfo": "MemTotal: 134217728 kB\nMemAvailable: 67108864 kB\n"}
+# /proc/self/mountinfo lines of the usual cgroup v2 and v1 memory mounts.
+_V2_MOUNT = "30 23 0:26 / /sys/fs/cgroup rw shared:4 - cgroup2 cgroup2 rw\n"
+_V1_MEMORY_MOUNT = (
+    "35 25 0:31 / /sys/fs/cgroup/memory rw shared:9 - cgroup cgroup rw,memory\n"
+)
+
+
+def _available_memory(files: dict[str, str]) -> int | None:
+    """available_memory() on a root holding only `files`."""
+    with tempfile.TemporaryDirectory() as root:
+        for name, text in files.items():
+            path = Path(root, name)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text)
+        return available_memory(Path(root))
 
 
 class RecordTest(unittest.TestCase):
@@ -137,6 +167,203 @@ class RecordTest(unittest.TestCase):
             path = Path(tmp) / "embedding.ptn"
             record([case], schemes()["int4wo_g32"], path, dtypes=["f32"])
             self.assertEqual(set(read_samples(str(path))), {"golden", "precise"})
+
+    def test_generate_imports_without_the_op_cases(self) -> None:
+        # OSS puts FACTO, which the linear op's cases import, on the path only
+        # to build the op samples; generate's memory helpers must import
+        # without it.
+        name = "executorch.backends.native.test.samples.generate"
+        blocked = {"executorch.backends.native.test.samples.ops": None}
+        with patch.dict(sys.modules, blocked):
+            del sys.modules[name]
+            generate = importlib.import_module(name)
+        self.assertEqual(generate.WORKER_BYTES, WORKER_BYTES)
+
+    def test_generate_runs_no_more_workers_than_memory_holds(self) -> None:
+        self.assertEqual(worker_count(100, 64, 5 * WORKER_BYTES + 1), 5)
+        self.assertEqual(worker_count(100, 64, WORKER_BYTES - 1), 1)
+        self.assertEqual(worker_count(100, 3, 64 * WORKER_BYTES), 3)
+        self.assertEqual(worker_count(2, 64, 64 * WORKER_BYTES), 2)
+        self.assertEqual(worker_count(1, 1, None), 1)
+
+    def test_generate_memory_budget_overrides_the_host(self) -> None:
+        self.assertEqual(memory_budget(None, {BUDGET_ENV: "8"}), 8 << 30)
+        self.assertEqual(memory_budget(4.0, {BUDGET_ENV: "8"}), 4 << 30)
+        with patch(
+            "executorch.backends.native.test.samples.generate.available_memory",
+            return_value=123,
+        ):
+            self.assertEqual(memory_budget(None, {}), 123)
+
+    def test_available_memory_is_the_host_s_without_a_cgroup_limit(self) -> None:
+        self.assertEqual(_available_memory(_HOST), 64 << 30)
+        files = {"proc/self/cgroup": "0::/\n", "proc/self/mountinfo": _V2_MOUNT}
+        self.assertEqual(_available_memory({**_HOST, **files}), 64 << 30)
+        self.assertIsNone(_available_memory({"proc/self/cgroup": "0::/\n"}))
+
+    def test_available_memory_reads_the_limit_of_the_process_cgroup(self) -> None:
+        # A systemd scope: its own memory.max, none at the cgroup root.
+        scope = "sys/fs/cgroup/user.slice/run-1.scope"
+        files = {
+            "proc/self/cgroup": "0::/user.slice/run-1.scope\n",
+            "proc/self/mountinfo": _V2_MOUNT,
+            f"{scope}/memory.max": f"{4 << 30}\n",
+            f"{scope}/memory.current": f"{1 << 29}\n",
+            f"{scope}/memory.stat": "anon 536870912\ninactive_file 0\n",
+        }
+        self.assertEqual(_available_memory({**_HOST, **files}), 7 << 29)
+
+    def test_available_memory_takes_the_tightest_ancestor_limit(self) -> None:
+        slice_ = "sys/fs/cgroup/user.slice"
+        scope = f"{slice_}/user-1.slice/run-1.scope"
+        files = {
+            "proc/self/cgroup": "0::/user.slice/user-1.slice/run-1.scope\n",
+            "proc/self/mountinfo": _V2_MOUNT,
+            f"{slice_}/memory.max": f"{2 << 30}\n",
+            f"{slice_}/memory.current": f"{1 << 30}\n",
+            f"{slice_}/memory.stat": "inactive_file 0\n",
+            f"{slice_}/user-1.slice/memory.max": "max\n",
+            f"{scope}/memory.max": f"{8 << 30}\n",
+            f"{scope}/memory.current": f"{1 << 29}\n",
+            f"{scope}/memory.stat": "inactive_file 0\n",
+        }
+        self.assertEqual(_available_memory({**_HOST, **files}), 1 << 30)
+
+    def test_available_memory_reads_cgroup_v1_limits(self) -> None:
+        root = "sys/fs/cgroup/memory"
+        files = {
+            "proc/self/cgroup": "12:memory:/user.slice\n"
+            "3:cpu,cpuacct:/user.slice\n1:name=systemd:/user.slice\n",
+            "proc/self/mountinfo": _V1_MEMORY_MOUNT,
+            # v1's "unlimited" is a huge number, not "max".
+            f"{root}/memory.limit_in_bytes": "9223372036854771712\n",
+            f"{root}/memory.usage_in_bytes": f"{100 << 30}\n",
+            f"{root}/memory.stat": "total_inactive_file 0\n",
+            f"{root}/user.slice/memory.limit_in_bytes": f"{4 << 30}\n",
+            f"{root}/user.slice/memory.usage_in_bytes": f"{3 << 30}\n",
+            f"{root}/user.slice/memory.stat": "inactive_file 0\n"
+            f"total_inactive_file {1 << 30}\n",
+        }
+        self.assertEqual(_available_memory({**_HOST, **files}), 2 << 30)
+
+    def test_available_memory_counts_page_cache_as_available(self) -> None:
+        # A container's own cgroup namespace, mostly filled with page cache.
+        files = {
+            "proc/self/cgroup": "0::/\n",
+            "proc/self/mountinfo": _V2_MOUNT,
+            "sys/fs/cgroup/memory.max": f"{4 << 30}\n",
+            "sys/fs/cgroup/memory.current": f"{7 << 29}\n",
+            "sys/fs/cgroup/memory.stat": f"anon {1 << 29}\ninactive_file {3 << 30}\n",
+        }
+        self.assertEqual(_available_memory({**_HOST, **files}), 7 << 29)
+
+    def test_available_memory_finds_cgroup_mounts_in_mountinfo(self) -> None:
+        def limit(directory: str, v1: bool = False) -> dict[str, str]:
+            names = ("limit_in_bytes", "usage_in_bytes") if v1 else ("max", "current")
+            return {
+                f"{directory}/memory.{names[0]}": f"{4 << 30}\n",
+                f"{directory}/memory.{names[1]}": f"{1 << 29}\n",
+                f"{directory}/memory.stat": "inactive_file 0\ntotal_inactive_file 0\n",
+            }
+
+        fixtures = {
+            # systemd's hybrid layout: cgroup2 at unified, under a tmpfs.
+            "hybrid_unified": {
+                "proc/self/cgroup": "0::/user.slice/run-1.scope\n",
+                "proc/self/mountinfo": (
+                    "25 1 0:23 / /sys/fs/cgroup ro - tmpfs tmpfs ro\n"
+                    "30 25 0:26 / /sys/fs/cgroup/unified rw - cgroup2 cgroup2 rw\n"
+                ),
+                **limit("sys/fs/cgroup/unified/user.slice/run-1.scope"),
+            },
+            "v1_memory_mounted_elsewhere": {
+                "proc/self/cgroup": "5:memory:/user.slice\n",
+                "proc/self/mountinfo": (
+                    "40 1 0:40 / /cgroup/memory rw - cgroup cgroup rw,memory\n"
+                ),
+                **limit("cgroup/memory/user.slice", v1=True),
+            },
+            "v1_combined_controllers": {
+                "proc/self/cgroup": "4:cpu,memory:/user.slice\n",
+                "proc/self/mountinfo": "36 25 0:32 / /sys/fs/cgroup/cpu,memory rw - "
+                "cgroup cgroup rw,cpu,memory\n",
+                **limit("sys/fs/cgroup/cpu,memory/user.slice", v1=True),
+            },
+            # A container without its own cgroup namespace: its cgroup is the
+            # mount's root.
+            "mount_root_below_the_hierarchy": {
+                "proc/self/cgroup": "0::/docker/abc/worker\n",
+                "proc/self/mountinfo": "30 23 0:26 /docker/abc /sys/fs/cgroup rw - "
+                "cgroup2 cgroup2 rw\n",
+                **limit("sys/fs/cgroup/worker"),
+            },
+        }
+        for name, files in fixtures.items():
+            with self.subTest(name):
+                self.assertEqual(_available_memory({**_HOST, **files}), 7 << 29)
+
+    def test_available_memory_warns_when_the_memory_cgroup_is_unmounted(self) -> None:
+        fixtures = {
+            "v2_without_a_cgroup2_mount": {
+                "proc/self/cgroup": "0::/user.slice/run-1.scope\n",
+                "proc/self/mountinfo": (
+                    "25 1 0:23 / /sys/fs/cgroup ro - tmpfs tmpfs ro\n"
+                ),
+            },
+            "v1_memory_without_its_mount": {
+                "proc/self/cgroup": "5:memory:/user.slice\n0::/user.slice\n",
+                "proc/self/mountinfo": _V2_MOUNT,
+            },
+        }
+        for name, files in fixtures.items():
+            with self.subTest(name):
+                with self.assertLogs(level="WARNING") as logs:
+                    self.assertEqual(_available_memory({**_HOST, **files}), 64 << 30)
+                self.assertIn("--memory-budget-gb", logs.output[0])
+
+    def test_generate_counts_the_cpus_the_process_may_use(self) -> None:
+        for fake, want in (
+            (
+                SimpleNamespace(
+                    process_cpu_count=lambda: 3,
+                    sched_getaffinity=lambda _: {0, 1},
+                    cpu_count=lambda: 64,
+                ),
+                3,
+            ),
+            (
+                SimpleNamespace(
+                    sched_getaffinity=lambda _: {0, 1}, cpu_count=lambda: 64
+                ),
+                2,
+            ),
+            (SimpleNamespace(cpu_count=lambda: 64), 64),
+            (SimpleNamespace(cpu_count=lambda: None), 1),
+        ):
+            with (
+                self.subTest(want=want),
+                patch("executorch.backends.native.test.samples.generate.os", fake),
+            ):
+                self.assertEqual(available_cpus(), want)
+
+    def test_generate_caps_workers_at_the_windows_process_pool_limit(self) -> None:
+        with patch.object(sys, "platform", "win32"):
+            self.assertEqual(worker_count(100, 128, None), 61)
+        with patch.object(sys, "platform", "linux"):
+            self.assertEqual(worker_count(100, 128, None), 100)
+
+    def test_generate_rejects_a_budget_that_holds_no_worker(self) -> None:
+        self.assertEqual(memory_budget(2.0, {}), WORKER_BYTES)
+        for budget in (0.0, -4.0, float("nan"), float("inf"), 1.0):
+            with self.subTest(budget=budget), self.assertRaisesRegex(
+                ValueError, "--memory-budget-gb"
+            ):
+                memory_budget(budget, {})
+        for text in ("0", "-1", "lots", "1.5"):
+            with self.subTest(text=text), self.assertRaisesRegex(
+                ValueError, BUDGET_ENV
+            ):
+                memory_budget(None, {BUDGET_ENV: text})
 
     def test_chain_visits_each_dims_bounds_starting_mid_range(self) -> None:
         a, b = Dim("a", min=1, max=8), Dim("b", min=2, max=4)

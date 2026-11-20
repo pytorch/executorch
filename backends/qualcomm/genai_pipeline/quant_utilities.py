@@ -99,7 +99,7 @@ def save_quantized_module(
     return qdq_ep_path
 
 
-def _logits_io_shape(meta: Dict[str, Any]) -> set:
+def get_logits_io_shape(meta: Dict[str, Any]) -> set:
     """The logits output shape, derived from the graph's metadata."""
     return {
         # logit output
@@ -111,7 +111,7 @@ def _logits_io_shape(meta: Dict[str, Any]) -> set:
     }
 
 
-def _kv_cache_shape(meta: Dict[str, Any]) -> set:
+def get_kv_cache_shape(meta: Dict[str, Any]) -> set:
     """The set of valid K/V cache shapes (last two dims), from the metadata.
 
     A model whose metadata carries ``get_global_head_dim`` has a per-layer
@@ -150,7 +150,7 @@ def save_logits_quant_attrs(
     tensor matches the logits shape, and writes ``get_logits_scale`` /
     ``get_logits_zero_point``.
     """
-    io_shape = _logits_io_shape(meta)
+    io_shape = get_logits_io_shape(meta)
     for node in graph_module.graph.nodes:
         if node.op == "output":
             for output_node in node.args[0]:
@@ -176,7 +176,7 @@ def save_output_kv_cache_quant_attrs(
     """
     from executorch.backends.qualcomm.builders.utils import is_graph_output
 
-    kv_cache_shape = _kv_cache_shape(meta)
+    kv_cache_shape = get_kv_cache_shape(meta)
     kv_idx = 0
     for node in graph_module.graph.nodes:
         if not is_graph_output(node):

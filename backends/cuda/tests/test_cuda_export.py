@@ -18,6 +18,9 @@ from executorch.backends.aoti.aoti_backend import AotiBackend
 from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 from executorch.backends.cuda.passes.remove_assert_async import RemoveAssertAsyncPass
+from executorch.backends.cuda.tests.routing_test_utils import (
+    static_routing_compile_specs,
+)
 from executorch.backends.cuda.triton.replacement_pass import (
     ReplaceEdgeOpWithTritonOpPass,
 )
@@ -290,6 +293,42 @@ class TestCudaBackendCompileOptions(unittest.TestCase):
                 self.assertTrue(inductor_utils.is_big_gpu(0))
             self.assertIs(inductor_utils.is_big_gpu, is_big_gpu)
 
+    def test_conv_choices_the_cpp_wrapper_cannot_call_are_dropped(self):
+        from executorch.backends.cuda.cuda_backend import (
+            _offer_only_cpp_callable_conv_choices,
+        )
+        from torch._inductor.kernel import conv
+        from torch._inductor.select_algorithm import ExternKernelCaller
+        from torch._inductor.virtualized import V
+
+        def extern(cpp_kernel_name, use_fallback_kernel=False):
+            caller = mock.create_autospec(ExternKernelCaller, instance=True)
+            caller.choice = mock.Mock(
+                cpp_kernel_name=cpp_kernel_name,
+                use_fallback_kernel=use_fallback_kernel,
+            )
+            return caller
+
+        python_only = extern(None)
+        aten = extern("at::convolution")
+        fallback = extern(None, use_fallback_kernel=True)
+        template = mock.Mock()
+        choices = [python_only, aten, fallback, template]
+        for cpp_wrapper, expected in (
+            (True, [aten, fallback, template]),
+            (False, choices),
+        ):
+            with self.subTest(cpp_wrapper=cpp_wrapper), mock.patch.object(
+                conv, "autotune_select_algorithm"
+            ) as select:
+                graph = mock.Mock(cpp_wrapper=cpp_wrapper)
+                with V.set_graph_handler(
+                    graph
+                ), _offer_only_cpp_callable_conv_choices():
+                    conv.autotune_select_algorithm("convolution", choices, [], None)
+                select.assert_called_once_with("convolution", expected, [], None)
+                self.assertIs(conv.autotune_select_algorithm, select)
+
     def test_cuda_include_ptx_compile_spec(self):
         with mock.patch.object(
             CudaBackend, "_setup_cuda_environment_for_fatbin", return_value=True
@@ -419,7 +458,8 @@ class TestCudaExport(unittest.TestCase):
             module: The torch.nn.Module to export
             inputs: The example inputs for the module
             compile_specs: Optional list of compile specs. If not provided, defaults to
-                          only the method name compile spec for "forward"
+                          the method name compile spec for "forward", with the
+                          static routing
             strict: Whether to export in strict mode
         """
         # Export the model
@@ -427,7 +467,7 @@ class TestCudaExport(unittest.TestCase):
 
         # Create partitioner with compile specs
         if compile_specs is None:
-            compile_specs = [CudaBackend.generate_method_name_compile_spec("forward")]
+            compile_specs = static_routing_compile_specs()
 
         partitioner = CudaPartitioner(compile_specs)
 
@@ -678,6 +718,80 @@ class TestCudaExport(unittest.TestCase):
         # Test export
         edge_program_manager = self._export_to_cuda_with_lower(module, inputs)
         self.assertIsNotNone(edge_program_manager, "Conv2d operation export failed")
+
+    def test_1x1_conv_lowered_as_a_convolution(self):
+        """A 1x1 convolution that Inductor lowers as a convolution, as it does
+        with layout optimization off in a graph with few convolutions,
+        compiles: Inductor's Python-only ``conv1x1_via_mm``, which the C++
+        wrapper cannot call, is not among its choices."""
+        from torch._inductor.kernel import conv
+
+        offered = []
+        original = conv.autotune_select_algorithm
+
+        def record(name, choices, *args, **kwargs):
+            offered.extend(c.name for c in choices)
+            return original(name, choices, *args, **kwargs)
+
+        module = torch.nn.Conv2d(256, 32, kernel_size=1).eval()
+        inputs = (torch.randn(5, 256, 3, 3),)
+        with mock.patch.object(
+            conv, "autotune_select_algorithm", record
+        ), torch._inductor.config.patch(layout_optimization=False):
+            self._export_to_cuda_with_lower(module, inputs)
+        self.assertTrue(offered)
+        self.assertNotIn("conv1x1_via_mm", offered)
+
+    def test_matmul_contiguity_hints_only_for_full_blocks(self):
+        """A LayerNorm of channel-first features seen as 147 tokens, fused as
+        a prologue into the matmul that follows, runs: the mm template's last
+        row block wraps, where its contiguity hint let Triton vectorize the
+        prologue's loads across the wrap and fault with a misaligned address.
+        Outside the backend's compile the template keeps its hint."""
+        from executorch.backends.cuda.cuda_backend import (
+            _allow_triton_templates_on_small_gpus,
+            _hint_matmul_contiguity_only_for_full_blocks,
+        )
+        from torch._inductor.utils import run_and_get_code
+
+        def tokens_then_linear(x, w, b, weight):
+            t = x.flatten(2).transpose(1, 2)
+            t = torch.nn.functional.layer_norm(t, (t.shape[-1],), w, b)
+            return t @ weight.t()
+
+        def compiled_code(batch, extent):
+            torch._dynamo.reset()
+            torch.manual_seed(0)
+            args = (
+                torch.randn(batch, 256, extent, extent, device="cuda"),
+                torch.randn(256, device="cuda"),
+                torch.randn(256, device="cuda"),
+                torch.randn(768, 256, device="cuda"),
+            )
+            # Triton-only autotuning, as in the backend's compile, which also
+            # keeps the mm templates on GPUs below Inductor's SM floor.
+            with torch._inductor.config.patch(
+                max_autotune=True,
+                max_autotune_gemm_backends="TRITON",
+                benchmark_epilogue_fusion=False,
+            ), _allow_triton_templates_on_small_gpus():
+                out, code = run_and_get_code(
+                    torch.compile(tokens_then_linear, fullgraph=True), *args
+                )
+            torch.cuda.synchronize()
+            torch.testing.assert_close(
+                out, tokens_then_linear(*args), atol=1e-3, rtol=1e-4
+            )
+            return "".join(code)
+
+        hint = "(M >= BLOCK_M and K > 1)"
+        with _hint_matmul_contiguity_only_for_full_blocks():
+            code = compiled_code(3, 7)
+        self.assertIn("(M % BLOCK_M == 0 and K > 1)", code)
+        self.assertNotIn(hint, code)
+        self.assertIn("(N % BLOCK_N == 0 and K > 1)", code)
+        self.assertNotIn("(N >= BLOCK_N and K > 1)", code)
+        self.assertIn(hint, compiled_code(4, 8))
 
     def test_linear(self):
         """Test CUDA export for linear layer."""
@@ -972,8 +1086,6 @@ class TestCudaExport(unittest.TestCase):
         "loads through the Python runtime, which the ROCm build does not include",
     )
     def test_sdpa_head_sizes(self):
-        from executorch.runtime import Runtime
-
         class Attention(torch.nn.Module):
             def forward(self, *qkv):
                 return tuple(
@@ -991,6 +1103,13 @@ class TestCudaExport(unittest.TestCase):
         )
         model = Attention()
         edge = self._export_to_cuda_with_lower(model, inputs)
+        from executorch.export.utils import is_fbcode
+
+        if is_fbcode():
+            # Running the program is skipped in fbcode.
+            return
+        from executorch.runtime import Runtime
+
         with tempfile.TemporaryDirectory() as directory:
             path = os.path.join(directory, "model.pte")
             with open(path, "wb") as f:
@@ -1014,7 +1133,29 @@ class TestCudaExport(unittest.TestCase):
                 [CompileSpec("triton_kernel_mode", b"OFF")]
             )
         self.assertEqual([type(p) for p in off], [type(p) for p in on])
-        self.assertIsInstance(off[-1], ReplaceEdgeOpWithTritonOpPass)
+        self.assertIn(ReplaceEdgeOpWithTritonOpPass, [type(p) for p in off])
+
+    def test_measured_routing_is_on_by_default(self):
+        """Without the compile spec, the passes that measure the calls several
+        implementations can run follow the replacement pass; OFF leaves them
+        out."""
+        from executorch.backends.cuda.triton.measured_routing import (
+            ApplyChoicesPass,
+            MeasureChoicesPass,
+        )
+
+        default = [type(p) for p in CudaBackend.get_custom_passes([])]
+        off = [
+            type(p)
+            for p in CudaBackend.get_custom_passes(
+                [CompileSpec("measured_routing", b"OFF")]
+            )
+        ]
+        self.assertEqual(
+            default[-3:],
+            [ReplaceEdgeOpWithTritonOpPass, MeasureChoicesPass, ApplyChoicesPass],
+        )
+        self.assertEqual(off, default[:-2])
 
     def test_missing_scatter_kernel_fails_at_export(self):
         """The scatter fallback writes its kernel call itself, and the check for
@@ -1076,7 +1217,6 @@ class TestCudaExport(unittest.TestCase):
     def test_fused_sdpa(self):
         """Decomposing attention on CUDA, as Torch-TensorRT does, gives fused
         variants that the backend has no kernel for."""
-        from executorch.runtime import Runtime
 
         class Attention(torch.nn.Module):
             def forward(self, q, k, v, mask):
@@ -1127,6 +1267,13 @@ class TestCudaExport(unittest.TestCase):
         output = "\n".join(logs.output)
         self.assertIn("Replaced 2 nodes with Triton kernels", output)
         self.assertIn("Using split-K decode SDPA", output)
+        from executorch.export.utils import is_fbcode
+
+        if is_fbcode():
+            # Running the program is skipped in fbcode.
+            return
+        from executorch.runtime import Runtime
+
         with tempfile.TemporaryDirectory() as directory:
             path = os.path.join(directory, "model.pte")
             with open(path, "wb") as f:
@@ -1144,7 +1291,6 @@ class TestCudaExport(unittest.TestCase):
         """AOTI gives two outputs one handle when they are the same tensor. With
         CUDA graphs on, three calls run eagerly, the fourth captures a graph and
         the fifth replays it."""
-        from executorch.runtime import Runtime
 
         class Twice(torch.nn.Module):
             def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, ...]:
@@ -1153,6 +1299,13 @@ class TestCudaExport(unittest.TestCase):
 
         model = Twice()
         edge = self._export_to_cuda_with_lower(model, (torch.randn(4, 8),))
+        from executorch.export.utils import is_fbcode
+
+        if is_fbcode():
+            # Running the program is skipped in fbcode.
+            return
+        from executorch.runtime import Runtime
+
         runtime = Runtime.get()
         option = "enable_cuda_graph_for_method"
         with tempfile.TemporaryDirectory() as directory:
