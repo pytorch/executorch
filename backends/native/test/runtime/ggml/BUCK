@@ -1,7 +1,7 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
 load("@fbsource//third-party/llama.cpp:ggml_ci.bzl", "ggml_ci_labels")
 load("@fbsource//tools/target_determinator/macros:ci.bzl", "ci")
-load("@fbsource//xplat/executorch/backends/native/runtime/engine:targets.bzl", "CPU_COMPAT", "CUDA_COMPAT", "HIP_COMPAT")
+load("@fbsource//xplat/executorch/backends/native/runtime/engine:targets.bzl", "CPU_COMPAT", "CUDA_COMPAT", "HIP_COMPAT", "TORCH_COMPAT")
 load("@fbcode_macros//build_defs/lib:re_test_utils.bzl", "re_test_utils")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
@@ -28,7 +28,7 @@ fbcode_target(
 # runner's --device, link deps and test env, the test host, and the CI
 # configuration differ.
 _VARIANTS = [
-    {"suffix": "", "engine": "ggml_engine_cpu", "compat": CPU_COMPAT, "device": "cpu"},
+    {"suffix": "", "engine": "ggml_engine_cpu", "compat": CPU_COMPAT, "torch_compat": TORCH_COMPAT, "device": "cpu"},
     {
         "suffix": "_cuda",
         "engine": "ggml_engine_cuda",
@@ -115,7 +115,7 @@ _VARIANTS = [
         labels = [] if v["suffix"] + name in ("_act_quant", "_no_linear") else ci.labels(ci.map(ci.skip_test())),
         test_main = "//executorch/backends/native/test/samples:sample_test_main",
         deps = [":ggml_engine_host" + v["suffix"]],
-        **v.get("compat", {})
+        **v.get("torch_compat", v.get("compat", {}))
     )
     for v in _VARIANTS
     for name, flags in [
@@ -141,7 +141,7 @@ _VARIANTS = [
             "//pytorch/ao:torchao",
             "fbsource//third-party/pypi/transformers:transformers",
         ],
-        **v.get("compat", {})
+        **v.get("torch_compat", v.get("compat", {}))
     )
     for v in _VARIANTS
 ]

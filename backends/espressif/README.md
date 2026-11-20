@@ -16,14 +16,29 @@ Each delegate payload is a compact int8 graph (XTS3) that the delegate's
 interpreter executes. A host reference interpreter reproduces the device
 arithmetic, so fully delegated programs are checked bit-exactly.
 
+The Fused Quant **operator-library flow is under development** alongside the
+delegate. Its experimental recipe is a standalone factory, following the shared
+Fused Quant frontend convention. The two flows have distinct quantizers:
+
+| Quantizer | Export flow |
+|---|---|
+| `EspNNQuantizer` | Existing delegate: PT2E Q/DQ graphs partitioned by `EspNNPartitioner` into `EspNNBackend` delegates |
+| `get_esp_fused_quant_quantizer` | Operator library: shared Fused Quant annotation and fusion, followed by `EspPassManager` lowering to direct ESP-NN operators or portable fallback |
+
+Both flows use ESP-NN kernels. See the operator-library
+[lowering code](passes/lower_to_esp.py) and [operator tests](test/ops/)
+for supported configurations. Shared quantization rules also cover
+operators that retain portable execution. The delegate's supported
+operators and export example are described below.
+
 ## Contents
 
 ```
 backends/espressif/
   espnn_preprocess.py        EspNNBackend: BackendDetails.preprocess -> XTS3 graph
   partition/                 EspNNPartitioner: int8 regions -> delegate, rest -> CPU
-  quantizer/                 EspNNQuantizer: PT2E int8 annotations ESP-NN can execute
-  lowering.py                to_espnn_edge(): export -> edge -> lowered program + report
+  quantizer/                 EspNNQuantizer (delegate), get_esp_fused_quant_quantizer (operator library)
+  lowering.py                delegate lowering, Fused Quant operator-library recipe + report
   serialization/             XTS3 format writer and parser, op lowering rules
   reference/                 bit-exact host model of the ESP-NN kernels and the CPU fallback
   espnn_runtime/             ESP-IDF component: XTS3 interpreter + ExecuTorch BackendInterface
@@ -35,7 +50,7 @@ examples/espressif/
   camera_stream/                  live camera classification on the ExecuTorch runtime
 ```
 
-Programs run on the board with the existing
+Delegate programs run on the board with the existing
 [`examples/espressif/project`](../../examples/espressif/project) runner, built
 with `-DET_ESPNN_BACKEND=ON`.
 
@@ -61,7 +76,7 @@ program and runs on the CPU, including float ops, LSTM, layer norm and
 attention matmuls. The partitioner reports what it delegated and what it left
 behind. Pass `allow_cpu_fallback=False` to make leftover operators an error.
 
-## Quantize and lower a model
+## Quantize and lower with the delegate
 
 [`examples/espressif/quantize_and_lower.py`](../../examples/espressif/quantize_and_lower.py)
 contains the whole flow:
@@ -90,8 +105,9 @@ edge, report = to_espnn_edge(torch.export.export(quantized, example_inputs))
 print(report["partitions"], report["delegated_ops"], report["cpu_ops"])
 
 # 4. Serialize the ExecuTorch program
+program = edge.to_executorch()
 with open("mobilenet_v2_espnn.pte", "wb") as f:
-    f.write(edge.to_executorch().buffer)
+    f.write(program.buffer)
 ```
 
 ```
@@ -248,6 +264,57 @@ for (;;) {
 }
 ```
 
+## Export with the Fused Quant operator library
+
+Use the shared export API with `get_esp_fused_quant_recipe()`. The recipe
+configures `get_esp_fused_quant_quantizer`, calibrates the model, fuses Q/DQ into Fused
+Quant operators, and runs `EspPassManager`. Unsupported operators decompose
+to portable kernels before serialization. No delegate partitions are created.
+
+```python
+from executorch.backends.espressif import (
+    get_esp_fused_quant_recipe,
+    get_operator_library_report,
+)
+from executorch.export import export
+
+session = export(
+    model.eval(),
+    example_inputs=[example_inputs],
+    export_recipe=get_esp_fused_quant_recipe(
+        calibration_inputs_fn=lambda: calibration_samples,
+    ),
+)
+edge = session.get_edge_program_manager()
+print(get_operator_library_report(edge))
+program = session.get_executorch_program_manager()
+with open("model_esp_ops.pte", "wb") as f:
+    f.write(program.buffer)
+```
+
+Each calibration sample is a tuple matching the model's inputs. Pass
+`allow_cpu_fallback=False` to the recipe to reject remaining portable compute;
+Q/DQ boundary operators are allowed. The report lists portable compute and
+counts accelerated operators across all methods.
+Reports also accept the graph after `to_executorch()`: memory views appear as
+layout operations, allocation nodes are omitted, and operator targets include
+their lowered `.out` overloads.
+
+`EspPassManager` expects Fused Quant Edge programs. Legacy PT2E Q/DQ graphs
+passed directly to it retain portable execution; export float models with
+`get_esp_fused_quant_recipe()` to use the operator library. The recipe uses
+explicit layout operations rather than dim-order operators, matching the
+ESP-IDF runtime and the operator implementation tests.
+When checking supported int8 operators, lowering rejects malformed per-tensor
+qparams, such as non-positive scales or out-of-range zero points. Valid
+unsupported configurations remain portable.
+
+For this flow, build the existing runner with `-DET_ESPRESSIF_OPS=ON` and
+`-DET_ESPNN_BACKEND=OFF`, using `model_esp_ops.pte` as the model. The runtime
+still needs the portable fallback operators and Q/DQ kernels described below.
+`to_espnn_edge()` is the separate delegate entry point; its former
+`use_operator_library` option is replaced by this recipe.
+
 ## Running on the ESP32-S3, ESP32-P4 and ESP32-S31
 
 You need ESP-IDF and an activated ESP-IDF shell.
@@ -258,15 +325,17 @@ matching ESP-IDF and the emulator.
 
 Build the runtime with the `esp-baremetal` preset. Select the portable CPU
 operators your program needs. The quantized kernels provide the
-quantize/dequantize operators at the delegate boundaries. The program lists
-its operators:
+quantize/dequantize operators, and the ESP-IDF component provides the ESP-NN
+operators. Both export examples above retain the serialized program manager
+as `program`; use it to collect portable operators across all methods:
 
 ```python
-plan = edge.to_executorch().executorch_program.execution_plan[0]
-print(",".join(sorted(
-    f"{op.name}.{op.overload}" for op in plan.operators
-    if not op.name.startswith("quantized_decomposed::")
-)))
+print(",".join(sorted({
+    f"{op.name}.{op.overload}"
+    for plan in program.executorch_program.execution_plan
+    for op in plan.operators
+    if not op.name.startswith(("quantized_decomposed::", "esp_nn::"))
+})))
 ```
 
 ```bash
@@ -291,7 +360,7 @@ when a project configures for the target, as described in
 - pthreadpool needs POSIX calls that ESP-IDF doesn't provide. With it off,
   the quantized kernels run single-threaded.
 - The runner links `executorch_selected_kernels`, which only exists when a
-  selection is given. A fully delegated program with no CPU operators
+  selection is given. A program with no portable CPU operators
   still needs at least one selected operator, such as `aten::add.out`.
 
 ### 2. Build the runner with the ESP-NN backend
