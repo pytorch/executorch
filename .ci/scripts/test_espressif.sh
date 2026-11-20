@@ -80,7 +80,7 @@ espnn_ops=$(tr -d '\n' < "${build_dir}/espnn-tests/operators.txt" \
     | tr ',' '\n' | grep -v '^quantized_decomposed::' | paste -sd, -)
 if [[ "${espnn_kernels}" == optimized ]]; then
     espnn_ops="${espnn_ops},aten::sub.out,aten::sin.out,aten::relu.out,aten::max_pool2d_with_indices.out,aten::avg_pool2d.out,aten::permute_copy.out,aten::convolution.out,aten::addmm.out,aten::mm.out,aten::mul.Scalar_out"
-    espnn_ops="${espnn_ops},aten::constant_pad_nd.out,aten::_softmax.out,aten::mean.out"
+    espnn_ops="${espnn_ops},aten::constant_pad_nd.out,aten::_softmax.out,aten::mean.out,aten::clone.out"
 fi
 
 toolchain_file="${IDF_PATH}/tools/cmake/toolchain-${target}.cmake"
