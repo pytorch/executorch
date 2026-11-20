@@ -20,7 +20,7 @@ set(_common_compile_options
     $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
     $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations -fPIC>
 )
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)$")
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64|ARM64)$")
   list(APPEND _common_compile_options
        "$<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-march=armv8.2-a+dotprod>"
   )
@@ -49,7 +49,7 @@ list(APPEND custom_ops_libs cpuinfo)
 list(APPEND custom_ops_libs cpublas)
 list(APPEND custom_ops_libs eigen_blas)
 
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|armv7)$")
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|armv7|ARM64)$")
   list(APPEND _custom_ops__srcs
        "extension/llm/custom_ops/spinquant/third-party/FFHT/fht_neon.c"
   )
@@ -104,7 +104,7 @@ function(_target_enable_quantized_moe_torchao target)
 endfunction()
 
 if(EXECUTORCH_BUILD_KERNELS_LLM_QUANTIZED_MOE_OPTIMIZED)
-  if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
+  if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$")
     message(
       FATAL_ERROR
         "EXECUTORCH_BUILD_KERNELS_LLM_QUANTIZED_MOE_OPTIMIZED=ON is supported only on "
