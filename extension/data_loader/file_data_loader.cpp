@@ -87,9 +87,11 @@ constexpr int kOpenFlags = O_RDONLY | kCloseOnExec;
 } // namespace
 
 FileDataLoader::~FileDataLoader() {
-  // file_name_ can be nullptr if this instance was moved from, but freeing a
-  // null pointer is safe.
-  et_aligned_free(const_cast<char*>(file_name_), alignment_);
+  // A moved-from instance has no name and a zero alignment, which the aligned
+  // delete does not accept even for a null pointer.
+  if (file_name_ != nullptr) {
+    et_aligned_free(const_cast<char*>(file_name_), alignment_);
+  }
   // fd_ can be -1 if this instance was moved from, but closing a negative fd is
   // safe (though it will return an error).
   if (fd_ == -1) {
