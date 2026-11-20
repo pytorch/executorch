@@ -1,0 +1,54 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+fbcode_target(_kind = runtime.python_library,
+    name = "fused_quant",
+    typing = True,
+    srcs = [
+        "convolution.py",
+        "elementwise.py",
+        "fold_activations.py",
+        "linear.py",
+        "lowering.py",
+        "ops.py",
+        "quantizer.py",
+        "recipe.py",
+        "utils.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/cortex_m:cmsis_nn",
+        "//executorch/backends/cortex_m:target_config",
+        "//executorch/backends/cortex_m:utils",
+        "//executorch/backends/cortex_m/ops:ops",
+        "//executorch/backends/cortex_m/passes:cortex_passes",
+        "//executorch/backends/cortex_m/quantizer:quantization_configs",
+        "//executorch/backends/transforms:permute_pass_utils",
+        "//executorch/backends/transforms:remove_unused_constants_pass",
+        "//executorch/backends/transforms:utils",
+        "//executorch/backends/transforms/fused_quant:decompose_fused_quant",
+        "//executorch/backends/transforms/fused_quant:graph_utils",
+        "//executorch/backends/transforms/fused_quant:passes",
+        "//executorch/backends/transforms/fused_quant:to_channels_first",
+        "//executorch/exir:_warnings",
+        "//executorch/exir:lib",
+        "//executorch/exir:pass_base",
+        "//executorch/exir:pass_manager",
+        "//executorch/exir/dialects:lib",
+        "//executorch/exir/dialects/edge:lib",
+        "//executorch/exir/dialects/fused_quant:ops",
+        "//executorch/exir/passes:lib",
+        "//executorch/export:recipe",
+        "//executorch/frontends/fused_quant:quantizer",
+        "//executorch/frontends/fused_quant:recipe",
+        "//pytorch/ao:torchao",
+    ],
+)
