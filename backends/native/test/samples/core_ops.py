@@ -144,3 +144,79 @@ def topk_cases() -> list[Case]:
         Case("nan_and_inf_largest", _topk(4), _nan_rows()),
         Case("nan_and_inf_smallest", _topk(4, largest=False), _nan_rows()),
     ]
+
+
+def _reduce(fn: Callable[..., torch.Tensor]) -> Callable[[], list[Case]]:
+    def cases() -> list[Case]:
+        tokens = Dim("tokens", min=1, max=64)
+        return [
+            Case("last", _Fn(lambda x: fn(x, (-1,))), draws(4, (4, 8, 32))),
+            Case(
+                "last_keepdim",
+                _Fn(lambda x: fn(x, (-1,), keepdim=True)),
+                draws(2, (4, 8, 32)),
+            ),
+            Case("leading", _Fn(lambda x: fn(x, (0,))), draws(2, (16, 8, 32))),
+            Case(
+                "inner_keepdim",
+                _Fn(lambda x: fn(x, (1,), keepdim=True)),
+                draws(2, (2, 16, 4, 8)),
+            ),
+            Case("outer_two", _Fn(lambda x: fn(x, (0, 2))), draws(2, (8, 4, 16, 2))),
+            chain("dynamic_tokens", _Fn(lambda x: fn(x, (-1,))), (tokens, 64)),
+            _quantized("last", lambda y: fn(y, (-1,))),
+        ]
+
+    return cases
+
+
+def sum_cases() -> list[Case]:
+    return _reduce(lambda x, dims, keepdim=False: x.sum(dims, keepdim=keepdim))()
+
+
+def mean_cases() -> list[Case]:
+    return _reduce(lambda x, dims, keepdim=False: x.mean(dims, keepdim=keepdim))()
+
+
+def amax_cases() -> list[Case]:
+    # A row with a NaN has NaN as its maximum. GPU argmax kernels find no
+    # index in a row of -inf or -FLT_MAX alone, mixed or not.
+    nan, inf = float("nan"), float("inf")
+    low = torch.finfo(torch.float32).min
+    rows = torch.tensor(
+        [
+            [1.0, nan, -2.0],
+            [3.0, 0.0, 1.0],
+            [nan, nan, nan],
+            [-inf, -inf, -inf],
+            [low, low, low],
+            [-inf, low, -inf],
+            [-inf, -inf, low],
+        ]
+    )
+    return _reduce(lambda x, dims, keepdim=False: x.amax(dims, keepdim=keepdim))() + [
+        Case("special_rows", _Fn(lambda x: x.amax(-1)), [(rows,)]),
+        Case("special_columns", _Fn(lambda x: x.amax(0)), [(rows.t().contiguous(),)]),
+    ]
+
+
+def _softmax(fn: Callable[..., torch.Tensor]) -> Callable[[], list[Case]]:
+    def cases() -> list[Case]:
+        tokens = Dim("tokens", min=1, max=64)
+        return [
+            Case("last", _Fn(lambda x: fn(x, -1)), draws(4, (4, 8, 32))),
+            # Logits a few units apart, as attention scores are.
+            Case("wide", _Fn(lambda x: fn(x, -1)), _scaled(draws(2, (4, 64)), 8.0)),
+            # Probabilities that would underflow in a log of a softmax.
+            Case("peaked", _Fn(lambda x: fn(x, -1)), _scaled(draws(2, (4, 16)), 60.0)),
+            Case("leading", _Fn(lambda x: fn(x, 0)), draws(2, (16, 8, 4))),
+            Case("inner", _Fn(lambda x: fn(x, 1)), draws(2, (2, 16, 4, 8))),
+            chain("dynamic_tokens", _Fn(lambda x: fn(x, -1)), (tokens, 64)),
+            _quantized("logits", lambda y: fn(y, -1)),
+        ]
+
+    return cases
+
+
+def softmax_cases() -> list[Case]:
+    return _softmax(torch.softmax)()

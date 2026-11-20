@@ -98,9 +98,10 @@ void GraphBuilder::lower_reshape(const Node& node) {
       TensorRef{reshape(instance_.context.get(), input.tensor, sizes), sizes});
 }
 
-void GraphBuilder::lower_permute(const Node& node) {
-  const TensorRef input = view_arg(node, "self", 0);
-  const std::vector<int64_t> dims = int_list(require_arg(node, "dims", 1).arg);
+// `input` with its dims in `dims` order, as aten.permute; a view.
+TensorRef GraphBuilder::permuted(
+    const TensorRef& input,
+    const std::vector<int64_t>& dims) {
   if (dims.size() != input.sizes.size() || dims.size() > 4) {
     throw std::runtime_error("ggml: invalid permutation rank");
   }
@@ -114,10 +115,7 @@ void GraphBuilder::lower_permute(const Node& node) {
     }
     seen[static_cast<size_t>(src_dim)] = true;
     sizes[out_dim] = input.sizes[static_cast<size_t>(src_dim)];
-  }
-  // ggml_permute maps source axis i to result axis axes[i].
-  for (size_t out_dim = 0; out_dim < dims.size(); ++out_dim) {
-    const int64_t src_dim = normalize_dim(dims[out_dim], dims.size());
+    // ggml_permute maps source axis i to result axis axes[i].
     axes[dims.size() - 1 - static_cast<size_t>(src_dim)] =
         static_cast<int>(dims.size() - 1 - out_dim);
   }
@@ -128,7 +126,15 @@ void GraphBuilder::lower_permute(const Node& node) {
       axes[1],
       axes[2],
       axes[3]);
-  set_single_view(node, TensorRef{result, std::move(sizes)});
+  return TensorRef{result, std::move(sizes)};
+}
+
+void GraphBuilder::lower_permute(const Node& node) {
+  set_single_view(
+      node,
+      permuted(
+          view_arg(node, "self", 0),
+          int_list(require_arg(node, "dims", 1).arg)));
 }
 
 void GraphBuilder::lower_transpose(const Node& node) {
