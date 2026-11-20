@@ -214,6 +214,30 @@ class _NegativeDimViews(torch.nn.Module):
         return self.out(y.permute(1, 0, -1).reshape(1, seq, 16))
 
 
+class _TailPastLength(torch.nn.Module):
+    """Sums the last n + 1 rows of a fixed buffer: the slice starts at
+    -(n + 1), whose operand is not a tensor size."""
+
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("buffer", torch.randn(1, 12, 16))
+
+    def forward(self, x):
+        return self.buffer[:, -(x.shape[1] + 1) :].sum(1, keepdim=True) + x
+
+
+class _TailOfBuffer(torch.nn.Module):
+    """Adds the last n rows of a fixed buffer, for n the dynamic sequence
+    length: the slice starts at the SymInt -n (operator.neg)."""
+
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("buffer", torch.randn(1, 12, 16))
+
+    def forward(self, x):
+        return self.buffer[:, -x.shape[1] :] + x
+
+
 class _PoolCloneLinear(torch.nn.Module):
     """A clone between a max pool, which ET-VK runs on channels-packed
     textures only, and a linear, which wants width-packed input: the clone
@@ -329,6 +353,40 @@ class CrossEngineTest(unittest.TestCase):
         steps = [(torch.randn(1, s, 16),) for s in (5, 3, 9)]
         seq = Dim("seq", min=2, max=12)
         self._check_dynamic(_NegativeDimViews(), steps, ({1: seq},))
+
+    def test_slice_from_the_end_by_dynamic_length(self):
+        torch.manual_seed(0)
+        steps = [(torch.randn(1, s, 16),) for s in (5, 3, 9)]
+        # At 12 the slice would start at 0, which export specializes.
+        seq = Dim("seq", min=2, max=11)
+        self._check_dynamic(_TailOfBuffer(), steps, ({1: seq},))
+
+    def test_symbolic_neg_bounds_on_vulkan(self):
+        # native-vk negates in int32: only a size bounded within int32 is
+        # accepted, and each run checks input sizes against their bounds.
+        x = torch.randn(1, 5, 16)
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            computed = outdir / "computed.ptn"
+            seq = Dim("seq", min=2, max=10)
+            to_native(
+                torch.export.export(_TailPastLength(), (x,), dynamic_shapes=({1: seq},))
+            ).save(str(computed))
+            with self.assertRaisesRegex(AssertionError, "symbolic neg"):
+                _run("vulkan_ptn_runner", computed, [(x,)], outdir)
+            size = outdir / "size.ptn"
+            seq = Dim("seq", min=2, max=11)
+            to_native(
+                torch.export.export(_TailOfBuffer(), (x,), dynamic_shapes=({1: seq},))
+            ).save(str(size))
+            with self.assertRaisesRegex(AssertionError, "bound"):
+                _run(
+                    "vulkan_ptn_runner",
+                    size,
+                    [(torch.randn(1, 12, 16),)],
+                    outdir,
+                    resize=True,
+                )
 
     def test_clone_between_pool_and_linear(self):
         torch.manual_seed(0)

@@ -63,6 +63,7 @@ _SUPPORTED_SYMBOLIC_OPS = {
     operator.add,
     operator.floordiv,
     operator.mul,
+    operator.neg,
     operator.sub,
 }
 
