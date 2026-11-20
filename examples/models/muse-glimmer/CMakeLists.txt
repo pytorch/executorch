@@ -350,12 +350,32 @@ if(MUSE_GLIMMER_BUILD_BATCHING OR MUSE_GLIMMER_BUILD_BATCHING_TESTS)
       message(FATAL_ERROR "MG batching tests require extension_llm_serving")
     endif()
     enable_testing()
+    add_test(NAME muse_glimmer_sampling COMMAND sampling_test)
     add_executable(muse_glimmer_batching_test tests/batching_runtime_test.cpp)
     target_link_libraries(
       muse_glimmer_batching_test PRIVATE muse_glimmer_batching_preparation
                                          extension_llm_serving Threads::Threads
     )
     add_test(NAME muse_glimmer_batching COMMAND muse_glimmer_batching_test)
+    if(MUSE_GLIMMER_BUILD_BATCHING AND _batching_backend STREQUAL "mlx")
+      add_executable(
+        muse_glimmer_mlx_dflash_test tests/mlx_dflash_native_test.cpp
+      )
+      target_link_libraries(
+        muse_glimmer_mlx_dflash_test PRIVATE muse_glimmer_batching_runtime
+      )
+      executorch_target_copy_mlx_metallib(muse_glimmer_mlx_dflash_test)
+      set(MUSE_GLIMMER_MLX_TEST_FIXTURES
+          ""
+          CACHE PATH "Directory containing exported MLX DFlash test fixtures"
+      )
+      if(MUSE_GLIMMER_MLX_TEST_FIXTURES)
+        add_test(NAME muse_glimmer_mlx_dflash
+                 COMMAND muse_glimmer_mlx_dflash_test
+                         ${MUSE_GLIMMER_MLX_TEST_FIXTURES}
+        )
+      endif()
+    endif()
     if(MUSE_GLIMMER_BUILD_BATCHING AND _batching_backend STREQUAL "cuda")
       # Tokenizer include paths contain regex.h; keep GoogleTest and its users
       # on the same simple-regex ABI instead of the shadowed POSIX header.

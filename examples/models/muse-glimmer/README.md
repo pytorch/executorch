@@ -1,9 +1,9 @@
 # Muse Glimmer 30B
 
 ExecuTorch export and runtime support for Muse Glimmer 30B, including text,
-vision, DFlash speculative decoding, and OpenAI-compatible serving. Quantized
-GGUF checkpoints are the recommended starting point and lower directly to the
-selected ExecuTorch backend.
+vision, DFlash and DFlash2 speculative decoding, and OpenAI-compatible serving.
+Quantized GGUF checkpoints are the recommended starting point and lower directly
+to the selected ExecuTorch backend.
 
 ## Supported backends
 
@@ -15,6 +15,8 @@ selected ExecuTorch backend.
 CPU export is not supported. For general environment setup, follow the
 [ExecuTorch README](../../../README.md) and
 [build-from-source guide](../../../docs/source/using-executorch-building-from-source.md).
+
+DFlash2 requires [MLX off-graph batching](#off-graph-kv-cache-and-batching).
 
 ## Model assets
 
@@ -48,8 +50,10 @@ the serving path uses it to render prompts and tools.
 | `Muse-Glimmer-30B-KQuant-Dynamic-Q4_K_XL.gguf` | Dynamic K-quant target checkpoint |
 | `mmproj-Muse-Glimmer-30B-Q4_K_M.gguf` | Optional vision projector |
 | `dflash-Muse-Glimmer-30B-Q4_K_M.gguf` | Optional DFlash draft checkpoint |
+| [Muse-Glimmer-30B-DFlash2-Q4_K_M.gguf](https://huggingface.co/incoai/Muse-Glimmer-30B-DFlash2-GGUF) | Optional DFlash2 draft, downloaded separately |
 
-Set paths once for the commands below:
+Set paths once for the commands below; for DFlash2, point `DRAFT` at its
+checkpoint instead:
 
 ```bash
 TARGET="$(find assets/quant -type f -name 'Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf' -print -quit)"
@@ -93,7 +97,7 @@ python -m executorch.examples.models.muse_glimmer.export.export_solo \
   --output-dir exports/solo
 ```
 
-DFlash:
+Original DFlash:
 
 ```bash
 python -m executorch.examples.models.muse_glimmer.export.export_dflash \
@@ -204,7 +208,7 @@ Smoke test:
 ```bash
 curl http://127.0.0.1:8000/v1/chat/completions \
   -H 'Content-Type: application/json' \
-  -d '{"model":"muse-glimmer-30B","messages":[{"role":"user","content":"What is the capital of France?"}],"max_tokens":32,"temperature":0}'
+  -d '{"model":"muse-glimmer-30B","messages":[{"role":"user","content":"What is the capital of France?"}],"max_tokens":32,"temperature":0.8}'
 ```
 
 Tool calling is supported with `--tool-parser atem`. The canonical Hugging Face
@@ -240,7 +244,7 @@ python -m executorch.examples.models.muse_glimmer.export.export_solo \
   --output-dir /path/to/exports/mg-offgraph
 ```
 
-Or export the target and drafter for DFlash:
+Or export the target and drafter for DFlash or DFlash2:
 
 ```bash
 python -m executorch.examples.models.muse_glimmer.export.export_dflash \
@@ -252,7 +256,8 @@ python -m executorch.examples.models.muse_glimmer.export.export_dflash \
   --output-dir /path/to/exports/mg-offgraph-dflash
 ```
 
-For CUDA exports, use `--backend cuda` and `--activation-dtype bfloat16` instead.
+For CUDA target and original DFlash exports, use `--backend cuda` and
+`--activation-dtype bfloat16` instead.
 
 To enable image input, add `--mmproj "$MMPROJ"` to either export command above.
 This includes the vision encoder and writes its position-embedding data alongside
@@ -306,18 +311,20 @@ python -m executorch.examples.models.muse_glimmer.serving.serve_batching \
   --port 8000
 ```
 
-For DFlash, use `/path/to/exports/mg-offgraph-dflash/model.pte` and add
+For DFlash or DFlash2, use `/path/to/exports/mg-offgraph-dflash/model.pte` and add
 `--dflash --dflash-n-draft 3` to the launch command. `--dflash-n-draft` is a
 runtime server option controlling the number of proposals per verification step
 (N). Set it when starting the server; changing N does not require re-exporting.
 N must be smaller than the exported drafter block size (D). Omitting the option,
 or setting it to zero, uses N = D - 1.
 
-On CUDA, D is fixed at export time from the drafter checkpoint configuration and
-cannot be changed at runtime. The exporter currently has no separate block-size
-override option. To use a different D, export a new artifact with the corresponding
-drafter configuration. Changing N does not change D: a D = 16 export still
-evaluates 16 drafter rows per session when N = 3, and its default is N = 15.
+CUDA DFlash and MLX DFlash2 evaluate the full exported block regardless of N:
+a D = 16 artifact still processes 16 draft positions when N = 3. The block size
+comes from the drafter checkpoint configuration; changing it requires a new
+export.
+
+MLX draft proposals are greedy. Request temperature, top-p, and top-k control
+target sampling.
 
 Choose concurrency and prefix-cache limits to fit available memory. Prefix
 snapshots are disabled by default; omit `--prefix-cache-entries` to disable them.

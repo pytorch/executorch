@@ -636,10 +636,12 @@ def _replace_dflash_layer_forward(layer: nn.Module) -> None:
         input_pos: torch.Tensor,
         kv_order: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        x = x + self.self_attn(
-            self.input_layernorm(x), target_hidden, input_pos, kv_order
-        )
-        x = x + self.mlp(self.post_attention_layernorm(x))
+        h, coefficients = self.prepare_attention(x)
+        if kv_order is not None:
+            h = h.reshape(1, -1, h.shape[-1])
+        h = self.self_attn(h, target_hidden, input_pos, kv_order).reshape_as(x)
+        x = x + self.finish_attention(h, coefficients)
+        x = x + self.feed_forward(x)
         return x
 
     layer.forward = types.MethodType(_mlx_dflash_layer_forward, layer)
@@ -662,12 +664,11 @@ def _replace_dflash_model_forward(model: nn.Module) -> None:
         ctx = self.hidden_norm(self.fc(target_hidden))
 
         x = noise_embedding
-        if kv_order is not None:
-            x = x.reshape(1, -1, x.shape[-1])
         for layer in self.layers:
             x = layer(x, ctx, input_pos, kv_order)
 
-        return self.norm(x)
+        x = self.norm(x)
+        return x.reshape(1, -1, x.shape[-1]) if kv_order is not None else x
 
     model.forward = types.MethodType(_mlx_dflash_forward, model)
 
