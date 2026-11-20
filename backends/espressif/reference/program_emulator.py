@@ -26,7 +26,13 @@ def delegate_output_dtypes(lowered_module) -> list[torch.dtype]:
     values = output.args[0]
     if not isinstance(values, (list, tuple)):
         values = (values,)
-    return [torch.float32 if _is_dequantize(value) else torch.int8 for value in values]
+    # New values of delegate-owned buffers stay in the delegate.
+    state_updates = set(program.graph_signature.buffers_to_mutate)
+    return [
+        torch.float32 if _is_dequantize(value) else torch.int8
+        for value in values
+        if value.name not in state_updates
+    ]
 
 
 class DelegateEmulator:
@@ -36,6 +42,9 @@ class DelegateEmulator:
         self.graph = parse_graph(bytes(lowered_module.processed_bytes))
         self.interpreter = reference.ReferenceInterpreter(self.graph)
         self.output_dtypes = delegate_output_dtypes(lowered_module)
+
+    def reset_states(self) -> None:
+        self.interpreter.reset_states()
 
     def __call__(self, *inputs: torch.Tensor) -> tuple[torch.Tensor, ...]:
         device_inputs = []
@@ -69,7 +78,8 @@ class ProgramEmulator(torch.fx.Interpreter):
     """
     Host model of an ExecuTorch program lowered with EspNNPartitioner:
     delegates run on the bit-exact ESP-NN reference, every other operator
-    runs in PyTorch (the device uses the ExecuTorch portable kernels).
+    runs in PyTorch (the device uses the ExecuTorch portable kernels). State
+    that a delegate owns persists from one call to the next, as on the device.
     """
 
     def __init__(self, exported_program):
@@ -93,6 +103,11 @@ class ProgramEmulator(torch.fx.Interpreter):
 
     def __call__(self, *inputs):
         return self.run(*inputs)
+
+    def reset_states(self) -> None:
+        """Restores the state that delegates own, as the runtime's reset does."""
+        for delegate in self.delegates.values():
+            delegate.reset_states()
 
 
 __all__ = ["DelegateEmulator", "ProgramEmulator", "delegate_output_dtypes"]

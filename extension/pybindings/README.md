@@ -77,8 +77,9 @@ the method runs.
 `Method.get_attribute()` returns a view of mutable state. A constant can sit
 in read-only memory, so it comes back read-only: NumPy and the buffer protocol
 see it as read-only, and a DLPack export copies it, unless the consumer asks
-for no copy through DLPack 1.0, which marks it read-only. In torch output mode
-a constant comes back as a copy, since a torch tensor cannot be read-only.
+for no copy through a versioned DLPack capsule, which marks it read-only. In
+torch output mode a constant comes back as a copy, since a torch tensor cannot
+be read-only.
 
 Calls on a shared method or module are serialized. A sequence of separate
 `set_inputs`, `execute`, and `get_outputs` calls on a shared method needs a lock
@@ -206,10 +207,11 @@ Other dtypes NumPy lacks, such as float8, are shown the same way, as integers of
 the same width. NumPy converts that view as integers, so
 `np.asarray(out, dtype=np.float32)` gives the bit patterns as numbers, not the
 bfloat16 values. DLPack consumers, such as `torch.from_dlpack(out)`, receive the
-original bfloat16 dtype. A bfloat16 result passed back in is read through DLPack
-too, so it keeps its dtype, shape, and dim order. A bfloat16 input does not
-accept 16-bit integers, so that integer data is never read as bfloat16 by
-mistake; pass the result itself or raw bytes.
+original bfloat16 or float8 dtype. A bfloat16 or float8 result passed back in is
+read through DLPack too, so it keeps its dtype, shape, and dim order. A bfloat16
+input does not accept 16-bit integers, so that integer data is never read as
+bfloat16 by mistake; pass the result itself or raw bytes. A float8 input accepts
+neither 8-bit integers nor raw bytes; pass the result itself or a float8 tensor.
 
 ```python
 import cupy as cp

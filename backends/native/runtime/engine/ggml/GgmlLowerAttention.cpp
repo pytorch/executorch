@@ -185,10 +185,16 @@ void GraphBuilder::lower_rope(const Node& node) {
   ggml_context* ctx = instance_.context.get();
   ggml_tensor* pos = ggml_reshape_1d(
       ctx, contiguous(as_i32(positions.tensor)), positions.sizes[1]);
+  // ggml-cpu ropes F32 and F16 only; a BF16 input is rotated in F32 and its
+  // result rounded back when it is set.
+  ggml_tensor* source = input.tensor;
+  if (source->type != GGML_TYPE_F32 && source->type != GGML_TYPE_F16) {
+    source = ggml_cast(ctx, source, GGML_TYPE_F32);
+  }
   // ggml_rope_ext rotates [D, heads, tokens, B]; torch order is [B,H,T,D].
   ggml_tensor* rotated = ggml_rope_ext(
       ctx,
-      ggml_permute(ctx, input.tensor, 0, 2, 1, 3),
+      ggml_permute(ctx, source, 0, 2, 1, 3),
       pos,
       factors,
       n_dims,
@@ -398,8 +404,8 @@ void GraphBuilder::lower_sdpa(const Node& node) {
 }
 
 // Writes this step's K/V into the cache rows the executor uploads, then
-// attends the layer's rows under the uploaded mask: a flat layer's prefix, or
-// all of a ring layer. Q/K/V are [B,H,T,D].
+// attends the layer's rows under the uploaded mask: a prefix, or all of a
+// ring layer. Q/K/V are [B,H,T,D].
 void GraphBuilder::lower_update_and_attend(const Node& node) {
   if (offgraph_cache_ == nullptr) {
     throw std::runtime_error(
@@ -416,7 +422,7 @@ void GraphBuilder::lower_update_and_attend(const Node& node) {
         "ggml: update_and_attend layer_id " + std::to_string(layer) +
         " is outside the cache's " + std::to_string(num_layers) + " layers");
   }
-  const auto [k_cache, v_cache, window] =
+  const auto [k_cache, v_cache, window, ring] =
       offgraph_cache_->layers[static_cast<size_t>(layer)];
   if (query.sizes.size() != 4 || key.sizes.size() != 4 ||
       val.sizes.size() != 4 || query.sizes[0] != 1 || key.sizes[0] != 1 ||
@@ -436,7 +442,7 @@ void GraphBuilder::lower_update_and_attend(const Node& node) {
         "ggml: update_and_attend layer " + std::to_string(layer) +
         " K/V shape disagrees with the cache geometry");
   }
-  const int64_t keys = window > 0 ? k_cache->ne[1] : offgraph_cache_->keys;
+  const int64_t keys = ring ? k_cache->ne[1] : offgraph_cache_->keys;
   ggml_context* ctx = instance_.context.get();
   if (!instance_.offgraph) {
     instance_.offgraph = OffGraphUploads{.tokens = tokens};

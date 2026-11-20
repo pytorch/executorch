@@ -160,7 +160,8 @@ for operators, use the `tensor` object inside each argument set in `args_sweep`.
 
 - `name`: optional tensor name; defaults to `arg_<index>`
   for operators and `binding_<index>` for shaders.
-- `dtype`: `float32` (default), `float16`, `int32`, `int8`, `uint8`, or `int8x4`.
+- `dtype`: `float32` (default), `float16`, `bfloat16`, `int32`, `int8`, `uint8`,
+  or `int8x4`.
 - `storage`: operator-only; `buffer` (default), `texture2d`, `texture3d`, or
   `constant`. Constant storage passes a CPU tensor reference to the operator's
   prepack route; the operator chooses its GPU storage.
@@ -174,9 +175,9 @@ for operators, use the `tensor` object inside each argument set in `args_sweep`.
 | `data` | Initialization |
 | --- | --- |
 | `{"fill":0.12}` | Fill every logical element with a value representable by the dtype. |
-| `{"rand_uniform_float":[0,1]}` | Uniform random values for FP32/FP16 tensors. |
+| `{"rand_uniform_float":[0,1]}` | Uniform random values for FP32/FP16/BF16 tensors. |
 | `{"rand_uniform_float":[0,1],"seed":42}` | Uniform values using an explicit uint32 seed. |
-| `{"rand_uniform_int":[-8,8]}` | Uniform integers, including both bounds; also supports integer-valued FP32/FP16 inputs. Optional `seed` is supported. |
+| `{"rand_uniform_int":[-8,8]}` | Uniform integers, including both bounds; also supports integer-valued FP32/FP16/BF16 inputs. Optional `seed` is supported. |
 | `{"repeat":[1,2,3]}` | Repeat a fixed sequence to fill the tensor. |
 | `{"abs_mod":{"bounds":[-128,127],"mod":5}}` | Generate uniform integers, then take `abs(value) % mod`. |
 | `{"pad_columns":{"source":{"rand_uniform_int":[-8,8]},"valid_columns":12}}` | Generate the entire padded tensor, then zero columns after the valid prefix. |
@@ -186,10 +187,10 @@ for operators, use the `tensor` object inside each argument set in `args_sweep`.
 
 Random data is reproducible. By default, each tensor name determines its seed,
 so dtype/storage variants use the same source values and different tensors use
-independent streams. FP16 conversion happens during tensor preparation. Flat
-`data` arrays and a tensor-level `fill` field are also accepted; use either `data`
-or `fill`. The tensor's `storage: "constant"` selects CPU prepacking inputs;
-`data.fill` only controls initialization.
+independent streams. FP16 and BF16 conversion happens during tensor preparation.
+Flat `data` arrays and a tensor-level `fill` field are also accepted; use either
+`data` or `fill`. The tensor's `storage: "constant"` selects CPU prepacking
+inputs; `data.fill` only controls initialization.
 Example inputs use random initialization; `fill` is used only for output tensors.
 `row_sum` resolves named tensor dependencies, including forward references, and
 rejects missing sources, cycles, noninteger sources, and int32 overflow.
@@ -529,7 +530,7 @@ Other report containers retain their indentation.
    arrays with one value per measured batch, in execution order.
 
 Tensor values are excluded. Dtype metadata reports the actual dtype;
-`requested_dtype` appears when promotion occurs, such as FP16 to FP32 on
+`requested_dtype` appears when promotion occurs, such as FP16 or BF16 to FP32 on
 SwiftShader.
 
 ### JSON summaries (`json`)
@@ -571,7 +572,12 @@ A batch is one recorded command buffer containing repeated executions of the
 case. For a raw shader, each repetition is one shader dispatch; for an operator,
 each repetition is the full execute chain, which may dispatch several shaders.
 The repetition count is reported as `dispatches_per_batch` or
-`operator_invocations_per_batch`, respectively.
+`operator_invocations_per_batch`, respectively. A full pipeline barrier precedes
+every repetition, so repetitions never overlap on the GPU and per-repetition
+latency is the serialized cost of one execution. Barriers derived from tensor
+accesses alone did not prevent overlap: on Adreno 750, repetitions of some
+pointwise convolutions overlapped despite write-after-write barriers on their
+output, and batch latency read 1.8-2.7x below the serialized cost.
 
 Calibration always warms and probes query-free batches, increasing repetitions
 until the measured wall time reaches roughly `target_ms` or `max_dispatches`.
@@ -590,7 +596,7 @@ submissions.
 | --- | --- | --- |
 | Wall time | Host monotonic clock from command-buffer submission through fence completion, without timestamp queries. Includes host submission overhead, queue/fence waiting, and GPU execution. | `wall_time_batch_us` contains batch totals. Dividing each total by the repetition count gives `wall_time_shader_us` or `wall_time_operator_us`. |
 | Whole-batch GPU timestamps | One timestamp pair brackets the entire repeated dispatch chain, including GPU dependency barriers and inter-dispatch gaps. | `gpu_timestamp_batch_us` describes batch totals. Dividing each total by the repetition count gives `gpu_timestamp_shader_us` or `gpu_timestamp_operator_us`. These are two views of the same capture. |
-| Per-dispatch GPU timestamps | Operator-only profiling pass with a timestamp pair around each executed shader, including its associated barriers. | `shader_breakdown[].gpu_timestamp_shader_us` describes each dispatch position, averaged across that profiling batch's operator repetitions. |
+| Per-dispatch GPU timestamps | Operator-only profiling pass with three timestamps per executed shader; see [Measurement boundaries and shader breakdowns](#measurement-boundaries-and-shader-breakdowns). | `shader_breakdown[].gpu_timestamp_shader_us`, `gpu_timestamp_barrier_us`, and `gpu_timestamp_gap_us` describe each dispatch position, averaged across that profiling batch's operator repetitions. |
 
 Pass selection depends on case type and timestamp support:
 
@@ -733,21 +739,49 @@ run within that definition.
 
 When GPU timestamps are available, operator reports also include `shader_breakdown`.
 Each entry describes an actual dispatch in execution order: `dispatch_index`,
-runtime-selected `shader_name`, resolved GWG/LWG, and `gpu_timestamp_shader_us`
-statistics. Repeated shader names remain separate entries; skipped nodes are
+runtime-selected `shader_name`, resolved GWG/LWG, and timing statistics.
+Repeated shader names remain separate entries; skipped nodes are
 omitted. Table output shows these shaders indented below their operator.
 
 The breakdown uses a separate profiling pass with the calibrated invocation count,
 capped by timestamp query-pool capacity. `shader_profile_invocations_per_batch`
 reports that count. Warmup and benchmark run counts are the same as the aggregate
-timing passes. Each shader sample averages that dispatch position over the batch
-and includes its dependency barrier.
-Per-dispatch timestamp overhead and inter-dispatch gaps mean the sum need not
-match the separately measured operator latency. The passes can also run under
-different GPU clock/cache conditions, and their repetition counts may differ.
-For small workloads, per-dispatch timestamps can substantially increase measured
-latency. Compare the batch GPU timestamps and query-free wall measurements
-when evaluating that overhead.
+timing passes. Each sample averages that dispatch position over the batch.
+
+The profiling pass records three bottom-of-pipe timestamps per dispatch. Each
+marks when all previously recorded GPU work had finished:
+
+```
+TS(previous work finish) ─ barrier ─ TS(barrier finish) ─ dispatch ─ TS(shader exec finish)
+◄──────── gpu_timestamp_barrier_us ────────►◄──────── gpu_timestamp_shader_us ────────►
+```
+
+- `gpu_timestamp_shader_us`: launch, execution, and drain of the dispatch.
+- `gpu_timestamp_barrier_us`: the dispatch's dependency barrier, including cache
+  maintenance that makes earlier writes visible. Its cost depends on the
+  preceding work, not on this shader. Whether the barrier finish timestamp waits
+  for cache maintenance is driver-dependent.
+- `gpu_timestamp_gap_us`: from the preceding dispatch's shader execution finish
+  to this dispatch's previous work finish; omitted for a batch's first dispatch.
+  Near zero unless other GPU work runs in between. For an operator's first
+  dispatch, it contains the full barrier between repetitions, which also makes
+  the previous repetition's writes visible; that dispatch's
+  `gpu_timestamp_barrier_us` therefore understates the barrier cost it would
+  pay after a different producer.
+
+While shaders are profiled, every dispatch's barrier is widened to a full
+pipeline barrier, so profiled dispatches never overlap. The report adds
+`shader_profile_order_violations`, the number of out-of-order timestamps (stale
+or unwritten queries; overlapping dispatches do not cause violations), and
+`shader_profile_overhead_ratio`, the profiled batch's per-invocation latency
+divided by the unprofiled `gpu_timestamp_operator_us` median. A ratio well above
+1 means timestamps and serialization change execution, and the breakdown
+misrepresents the unprofiled operator. Use `gpu_timestamp_operator_us` for
+latency comparisons and the breakdown for attribution.
+
+The sum of shader, barrier, and gap times need not match the separately
+measured operator latency: the passes can run under different GPU clock and
+cache conditions, and their repetition counts may differ.
 Prepacking remains outside timing.
 Breakdowns are omitted when timestamps are unavailable, including on this
 repository's SwiftShader build.
@@ -950,16 +984,17 @@ initializers from every reference source file.
 Linear references use a tiled, vectorizable CPU GEMM with up to eight threads.
 Convolution references parallelize output work. Validation does not skip cases
 based on tensor size. Inputs are rounded to their actual GPU precision,
-including FP16 constants, before computing reference results.
+including FP16 and BF16 constants, before computing reference results.
 
 The supported comparison is `is_close`: every element must satisfy
 `abs(actual - expected) <= atol + rtol * abs(expected)`. Nonfinite values,
 shape/count mismatches, and missing/unexpected outputs fail validation.
-Defaults are FP32 `atol=rtol=1e-4`, FP16 `atol=rtol=1e-2`, and exact integer
-comparison. `validation_method` overrides either tolerance; tolerances must be
-finite and nonnegative. FP16 accumulation may require larger tolerances for
-long reductions. Reports include per-output mismatch counts and error maxima,
-and `reference_wall_time_us`, without tensor values.
+Defaults are FP32 `atol=rtol=1e-4`, FP16 `atol=rtol=1e-2`, BF16
+`atol=rtol=2e-2`, and exact integer comparison. `validation_method` overrides
+either tolerance; tolerances must be finite and nonnegative. FP16 accumulation
+may require larger tolerances for long reductions. Reports include per-output
+mismatch counts and error maxima, and `reference_wall_time_us`, without tensor
+values.
 
 Each output also reports `mean_abs_error`, `rms_error`, and `reference_rms` over
 its finite elements. RMS error is a stable measure of precision: comparing
@@ -1087,6 +1122,39 @@ checks that the output named by `parameters.output_name` resized to
 `expected_output_sizes`, executes the graph, and validates the output unless the
 step sets `validate_output` to false. See the `dynamic_resize` cases in
 `convolution/conv2d/cases/correctness.json`.
+
+`wmma_family_route` (`operators/gemm/linear/qw/wmma/`) runs the same steps
+for the 4-bit linear operators and also checks the kernels each step
+dispatches, read from the shader profiling records. A step's
+`expected_kernels` maps a cooperative-matrix family (`xe2`, `nvidia`) to the
+name prefix of the kernel the step must dispatch on a device of that family;
+a family without an entry, and a device that matches no family, must dispatch
+no `_wmma` kernel. `ETVK_WMMA_EXPECTED_FAMILY` states the device's family
+independently of the selector under test: with `xe2`, `nvidia` or `none` the
+device must match that family, every step must have profiling records, and a
+case whose shader or route is unsupported fails instead of reporting `SKIP`.
+A step's `family_validation_method` replaces the case's `validation_method` on
+devices of that family, so a family kernel is held to its own measured
+tolerance while other devices validate the existing kernels at the case's; it
+also validates the output there when the step sets `validate_output` to false.
+`software` is for devices without timestamp queries, such as SwiftShader: no
+family, a case that does not run fails as well, and kernels are checked only
+where records exist (`route_asserted: false` otherwise). Unset, the selector's
+family is used, profiling records are still required, and a case that does not
+run reports `SKIP`. GitHub CI runs the collection with
+`nvidia` on the NVIDIA job and `software` on SwiftShader.
+
+```sh
+ETVK_WMMA_EXPECTED_FAMILY=nvidia etvk_ops_bench --validation_only \
+  --config=operators/gemm/linear/qw/wmma/cases/correctness.json
+```
+`wmma_family_shared_memory` checks, without GPU work, that the shared memory
+each family row declares for kernel selection equals the Workgroup variables
+of its variants' SPIR-V.
+`wmma_memory_model_gate` checks that on a device matching a family the Vulkan
+memory model is enabled and every family variant passes the capability gate.
+On every device it reports the gate's verdict on the listed upstream shaders
+that declare `VulkanMemoryModel`.
 
 To preserve a case's declared validation scope when an operator also updates
 auxiliary state, select outputs inside the comparison settings:

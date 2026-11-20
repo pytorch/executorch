@@ -260,7 +260,7 @@ std::vector<uint8_t> build_data(
     return result;
   }
   const std::string dtype = spec.value("dtype", "float32");
-  if (dtype == "float32" || dtype == "float16")
+  if (dtype == "float32" || dtype == "float16" || dtype == "bfloat16")
     return pack_data<float>(spec, count, seed, generate);
   if (dtype == "int32")
     return pack_data<int32_t>(spec, count, seed, generate);

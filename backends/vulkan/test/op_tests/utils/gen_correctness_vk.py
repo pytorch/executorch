@@ -40,6 +40,9 @@ class GeneratedOpsTest_{op_name} : public ::testing::TestWithParam< ::std::tuple
     if (test_dtype == at::kHalf) {{
       rtol = 1e-2;
       atol = 1e-2;
+    }} else if (test_dtype == at::kBFloat16) {{
+      rtol = 2e-2;
+      atol = 2e-2;
     }}
   }}
 
@@ -130,6 +133,8 @@ vkapi::ScalarType from_at_scalartype(c10::ScalarType at_scalartype) {
       return vkapi::kFloat;
     case c10::kHalf:
       return vkapi::kHalf;
+    case c10::kBFloat16:
+      return vkapi::kBFloat16;
     case c10::kInt:
       return vkapi::kInt;
     case c10::kLong:

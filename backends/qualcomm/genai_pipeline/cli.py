@@ -380,6 +380,7 @@ def _prepare_configs(args: argparse.Namespace) -> dict:
     from executorch.backends.qualcomm.genai_pipeline.model_lookup import (
         get_model_arch,
         get_model_config,
+        get_model_layout,
         get_model_num_sharding,
         get_quant_dtype,
         get_quant_recipe,
@@ -417,6 +418,7 @@ def _prepare_configs(args: argparse.Namespace) -> dict:
         "module_transforms": module_transforms,
         "embedding_quantize": args.embedding_quantize,
         "num_shardings": num_sharding,
+        "model_layout": get_model_layout(args.model),
         "state_dict_loader": state_dict_loaders,
     }
 

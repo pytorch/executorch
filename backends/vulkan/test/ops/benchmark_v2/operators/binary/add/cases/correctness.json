@@ -20,5 +20,41 @@
         {"tensor": {"name": "output", "sizes": "v_SIZES", "dtype": "v_DTYPE", "storage": "v_STORAGE", "layout": "width", "data": {"fill": 0}}}
       ]
     ]
+  },
+  {
+    "name": "add bfloat16 correctness",
+    "operator": "aten.add.Tensor",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1e-06, "rtol": 0},
+    "sweep_variables": {"v_SIZES": [[1, 64, 64], [1, 1, 1024], [16, 128, 64], [3, 7, 13]], "v_STORAGE": ["buffer", "texture3d"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "a", "sizes": "v_SIZES", "dtype": "bfloat16", "storage": "v_STORAGE", "layout": "width", "data": {"rand_uniform_float": [-4, 4]}}},
+        {"tensor": {"name": "b", "sizes": "v_SIZES", "dtype": "bfloat16", "storage": "v_STORAGE", "layout": "width", "data": {"rand_uniform_float": [-4, 4]}}},
+        {"float": 0.5},
+        {"tensor": {"name": "output", "sizes": "v_SIZES", "dtype": "bfloat16", "storage": "v_STORAGE", "layout": "width", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "add constant first correctness",
+    "operator": "aten.add.Tensor",
+    "target_ms": 100,
+    "warmup_runs": 1,
+    "benchmark_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1e-06, "rtol": 0},
+    "sweep_variables": {"v_DTYPE": ["float32", "float16", "bfloat16"], "v_SIZES": [[1, 64, 64], [3, 7, 13]], "v_STORAGE": ["buffer", "texture3d"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "a", "sizes": "v_SIZES", "dtype": "v_DTYPE", "storage": "constant", "data": {"rand_uniform_int": [-4, 4]}}},
+        {"tensor": {"name": "b", "sizes": "v_SIZES", "dtype": "v_DTYPE", "storage": "v_STORAGE", "layout": "width", "data": {"rand_uniform_int": [-4, 4]}}},
+        {"float": 0.5},
+        {"tensor": {"name": "output", "sizes": "v_SIZES", "dtype": "v_DTYPE", "storage": "v_STORAGE", "layout": "width", "data": {"fill": 0}}}
+      ]
+    ]
   }
 ]

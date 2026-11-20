@@ -203,7 +203,12 @@ void GraphBuilder::lower_unary(const Node& node, Unary fn) {
 
 void GraphBuilder::lower_sqrt(const Node& node) {
   const TensorRef input = tensor_arg(node, "self", 0);
-  require_f32(node, input.tensor);
+  // ggml's sqrt reads F16 and BF16 as they are and computes in F32, as eager
+  // does.
+  if (input.tensor->type != GGML_TYPE_F16 &&
+      input.tensor->type != GGML_TYPE_BF16) {
+    require_f32(node, input.tensor);
+  }
   set_single_output(
       node,
       TensorRef{
@@ -242,7 +247,9 @@ void GraphBuilder::lower_elu(const Node& node) {
 std::pair<ggml_tensor*, std::vector<int64_t>> GraphBuilder::trailing_rows(
     const Node& node,
     const std::string& op) {
-  const TensorRef input = tensor_arg(node, "self", 0);
+  TensorRef input = tensor_arg(node, "self", 0);
+  // Computed in F32, as eager does for F16 and BF16; set() rounds back.
+  input.tensor = half_as_f32(input.tensor);
   require_f32(node, input.tensor);
   const NamedArgument* dtype = find_arg(node, "dtype", 3);
   if (dtype != nullptr && dtype->arg.kind() != ArgKind::None) {
@@ -319,6 +326,24 @@ void GraphBuilder::lower_amax(const Node& node) {
       ggml_get_rows(ctx, ggml_reshape_3d(ctx, rows, 1, width, count), index);
   ggml_tensor* result = reshape(ctx, values, sizes);
   set_single_output(node, TensorRef{result, std::move(sizes)});
+}
+
+// ggml normalizes each row, so only the last dimension.
+void GraphBuilder::lower_softmax(const Node& node) {
+  TensorRef input = tensor_arg(node, "self", 0);
+  // Computed in F32, as eager does for F16 and BF16; set() rounds back.
+  input.tensor = half_as_f32(input.tensor);
+  require_f32(node, input.tensor);
+  const size_t rank = input.sizes.size();
+  if (rank == 0 ||
+      normalize_dim(int_arg(node, "dim", 1, -1), rank) !=
+          static_cast<int64_t>(rank) - 1) {
+    throw std::runtime_error("ggml: softmax supports the last dimension only");
+  }
+  ggml_context* ctx = instance_.context.get();
+  set_single_output(
+      node,
+      TensorRef{ggml_soft_max(ctx, contiguous(input.tensor)), input.sizes});
 }
 
 // Comparisons produce 0/1 floats: a <= b is 1 - step(a - b) and a < b is

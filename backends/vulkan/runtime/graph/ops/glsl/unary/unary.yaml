@@ -7,6 +7,7 @@ unary:
   generate_variant_forall:
     DTYPE:
       - VALUE: half
+      - VALUE: bfloat16
       - VALUE: float
       - VALUE: int32
     STORAGE:

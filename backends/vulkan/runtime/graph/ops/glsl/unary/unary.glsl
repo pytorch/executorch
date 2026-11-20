@@ -21,7 +21,7 @@ $else:
   #define PARAM_T float
 #define IN_T ${texel_type(DTYPE)}
 #define OUT_T IN_T
-$if DTYPE in ["half", "float"]:
+$if DTYPE in ["half", "bfloat16", "float"]:
   #define UNARY_OP_IS_FLOAT
 $elif DTYPE == "uint8":
   #define UNARY_OP_IS_BITWISE

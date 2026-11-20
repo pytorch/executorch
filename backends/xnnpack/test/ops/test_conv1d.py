@@ -294,10 +294,25 @@ class TestConv1d(unittest.TestCase):
             skip_to_executorch=True,
         )
 
+    class SharedConv1d(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv = torch.nn.Conv1d(2, 4, kernel_size=3)
+
+        def forward(self, x, z):
+            return self.conv(x) + self.conv(z)
+
+    def test_fp32_conv1d_shared_weight(self):
+        # Conv1dUnsqueezePass unsqueezes the shared weight once, for both convs.
+        inputs = (torch.randn(1, 2, 6), torch.randn(1, 2, 6))
+        self._test_conv1d(self.SharedConv1d(), inputs, 2)
+
     class ConvTranspose1dBiasReused(torch.nn.Module):
         def __init__(self):
             super().__init__()
-            self.convtr = torch.nn.ConvTranspose1d(8, 4, kernel_size=4, stride=2)
+            # DecomposeConvTransposePass skips kernels that are not a multiple
+            # of the stride, so the deconvolution keeps packing this bias.
+            self.convtr = torch.nn.ConvTranspose1d(8, 4, kernel_size=3, stride=2)
 
         def forward(self, x):
             return self.convtr(x) - self.convtr.bias.view(1, -1, 1)
@@ -317,6 +332,7 @@ class TestConv1d(unittest.TestCase):
             .export()
             .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .check_xnnpack_node_count({"XNNConvTranspose2d": 1})
             .check_not(
                 [
                     "executorch_exir_dialects_edge__ops_aten_convolution_default",
