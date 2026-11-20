@@ -28,4 +28,5 @@ from executorch.backends.cuda.quantize_op_dispatch import (  # noqa: F401
     int5_dispatch,
     int6_dispatch,
     int8_dispatch,
+    nvfp4_dispatch,
 )
