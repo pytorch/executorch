@@ -36,6 +36,15 @@
                 "lhs": "${hostSystemName}",
                 "rhs": "Darwin"
             }
+        },
+        {
+            "name": "muse-glimmer-native",
+            "displayName": "Muse Glimmer batching runner (native ggml engine)",
+            "inherits": ["muse-glimmer-base"],
+            "cacheVariables": {
+                "EXECUTORCH_BUILD_CUDA": "OFF",
+                "MUSE_GLIMMER_BUILD_BATCHING": "ON"
+            }
         }
     ],
     "buildPresets": [
