@@ -15,7 +15,9 @@
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/backend/options.h>
 
+#include <cstring>
 #include <memory>
+#include <tuple>
 
 namespace executorch {
 namespace backends {
@@ -200,37 +202,82 @@ Error QnnExecuTorchBackend::execute(
       bindable_outputs,
       args.size());
 
-  size_t args_index = 0;
-  input_tensor_structs.reserve(input_tensors.size());
+  // Bind each tensor's ExecuTorch buffer as registered shared memory where it
+  // is one; stage the rest through shared memory when any tensor is shared.
+  std::vector<std::pair<const std::shared_ptr<TensorWrapper>*, EValue*>>
+      bindings;
+  bindings.reserve(args.size());
   for (const auto& input_tensor : input_tensors) {
     if (input_tensor->GetName().find("mutbuf_") == std::string::npos) {
-      if (qnn_manager->RegisterMem(
-              args[args_index]->toTensor().mutable_data_ptr(), input_tensor) !=
-          Error::Ok) {
-        // update data ptr only should be fine
-        input_tensor->FillDataBuffer(
-            args[args_index]->toTensor().const_data_ptr());
-        // use the real input shape instead of nominal one to make sure
-        // dynamic shape is functional
-        auto dims = args[args_index]->toTensor().sizes();
-        input_tensor->SetDims(dims.data(), dims.size());
-      }
-      args_index++;
+      bindings.emplace_back(&input_tensor, args[bindings.size()]);
     }
-    input_tensor_structs.emplace_back(input_tensor->CloneTensorStruct());
   }
-
   for (const auto& output_tensor : output_tensors) {
     // pos=0 limits the search to the prefix
     if (output_tensor->GetName().rfind("output_", 0) == 0 &&
         output_tensor->GetName().find("mutbuf_") == std::string::npos) {
-      void* mutable_data_ptr = args[args_index]->toTensor().mutable_data_ptr();
-      if (qnn_manager->RegisterMem(mutable_data_ptr, output_tensor) !=
-          Error::Ok) {
-        output_tensor->FillDataBuffer(mutable_data_ptr);
-      }
-      args_index++;
+      bindings.emplace_back(&output_tensor, args[bindings.size()]);
     }
+  }
+  std::vector<bool> shared(bindings.size());
+  size_t num_shared = 0;
+  for (size_t i = 0; i < bindings.size(); ++i) {
+    shared[i] = qnn_manager->RegisterMem(
+                    bindings[i].second->toTensor().mutable_data_ptr(),
+                    *bindings[i].first) == Error::Ok;
+    num_shared += shared[i];
+  }
+  const bool stage = NeedsStaging(num_shared, bindings.size());
+  std::vector<size_t> staged_index;
+  std::vector<std::shared_ptr<TensorWrapper>> staged_tensors;
+  for (size_t i = 0; stage && i < bindings.size(); ++i) {
+    if (!shared[i] &&
+        bindings[i].second->toTensor().nbytes() ==
+            (*bindings[i].first)->GetBytes()) {
+      staged_index.push_back(i);
+      staged_tensors.push_back(*bindings[i].first);
+    }
+  }
+  const std::vector<void*> staging = staged_tensors.empty()
+      ? std::vector<void*>()
+      : qnn_manager->StagingBuffers(method_name, staged_tensors);
+  // (ExecuTorch output buffer, staging buffer, bytes), copied after execute.
+  std::vector<std::tuple<void*, const void*, size_t>> staged_outputs;
+  for (size_t i = 0, k = 0; i < bindings.size(); ++i) {
+    if (shared[i]) {
+      continue;
+    }
+    const auto& tensor_wrapper = *bindings[i].first;
+    auto& tensor = bindings[i].second->toTensor();
+    const bool is_input = i < bindable_inputs;
+    void* staged = nullptr;
+    if (k < staged_index.size() && staged_index[k] == i) {
+      staged = staging.empty() ? nullptr : staging[k];
+      ++k;
+    }
+    if (staged != nullptr && is_input) {
+      std::memcpy(staged, tensor.const_data_ptr(), tensor.nbytes());
+    } else if (staged != nullptr) {
+      staged_outputs.emplace_back(
+          tensor.mutable_data_ptr(), staged, tensor.nbytes());
+    } else if (is_input) {
+      // update data ptr only should be fine
+      tensor_wrapper->FillDataBuffer(tensor.const_data_ptr());
+      // use the real input shape instead of nominal one to make sure
+      // dynamic shape is functional
+      auto dims = tensor.sizes();
+      tensor_wrapper->SetDims(dims.data(), dims.size());
+    } else {
+      tensor_wrapper->FillDataBuffer(tensor.mutable_data_ptr());
+    }
+  }
+
+  input_tensor_structs.reserve(input_tensors.size());
+  for (const auto& input_tensor : input_tensors) {
+    input_tensor_structs.emplace_back(input_tensor->CloneTensorStruct());
+  }
+  output_tensor_structs.reserve(output_tensors.size());
+  for (const auto& output_tensor : output_tensors) {
     output_tensor_structs.push_back(output_tensor->CloneTensorStruct());
   }
 
@@ -242,6 +289,9 @@ Error QnnExecuTorchBackend::execute(
           context.event_tracer()) == Error::Ok,
       Internal,
       "Fail to execute graph");
+  for (const auto& [destination, source, nbytes] : staged_outputs) {
+    std::memcpy(destination, source, nbytes);
+  }
   ET_CHECK_OR_RETURN_ERROR(
       qnn_manager->ProfileExecuteData(method_name, context.event_tracer()) ==
           Error::Ok,
