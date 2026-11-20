@@ -304,9 +304,8 @@ TEST_P(MLXSequenceControlTest, WeightedAttentionMatchesIndependentReference) {
       std::vector<int32_t> positions(static_cast<size_t>(count));
       std::iota(positions.begin(), positions.end(), position);
       const auto chunk = [&](const std::vector<float>& data) {
-        return values(
-            std::vector<float>(
-                data.begin() + position, data.begin() + position + count));
+        return values(std::vector<float>(
+            data.begin() + position, data.begin() + position + count));
       };
       const auto q = chunk(queries), k = chunk(keys), v = chunk(vals);
       for (int layer = 0; layer < layers_; ++layer) {

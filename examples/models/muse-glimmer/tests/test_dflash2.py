@@ -274,12 +274,13 @@ class DFlash2OperationsTest(TestCase):
         from executorch.examples.models.muse_glimmer.export.common import (
             BoundMethodForward,
         )
-        from executorch.examples.models.muse_glimmer.source_transformations.mlx import (
-            dflash_mlx_source_transformations,
+        from executorch.examples.models.muse_glimmer.tests.test_mlx_pipeline import (
+            _require_mlx,
         )
         from executorch.extension.llm.cache.reference_cache import AttendSpec, MaskKind
         from executorch.extension.llm.cache.update_and_attend import REGISTRY
 
+        mlx = _require_mlx(self)
         for block in (2, 16):
             torch.manual_seed(17)
             config = DFlashConfig(
@@ -299,7 +300,7 @@ class DFlash2OperationsTest(TestCase):
                 selector_top_k=4,
             )
             draft = DFlashDraftModel(config, max_context_length=64).eval()
-            dflash_mlx_source_transformations(draft, use_offgraph_kv_cache=True)
+            mlx.dflash_mlx_source_transformations(draft, use_offgraph_kv_cache=True)
             wrapper = MuseGlimmerWithDFlash(
                 ReferenceTarget().eval(), draft, None, config
             )
