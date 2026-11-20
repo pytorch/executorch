@@ -268,6 +268,56 @@ class TestCudaBackendCompileOptions(unittest.TestCase):
                 seen["inside"] = inductor_utils.is_big_gpu(0)
         self.assertEqual({"inside": True, "other": False}, seen)
 
+    def test_triton_libdevice_is_chosen_before_any_kernel_compiles(self):
+        """Inductor points Triton at the CUDA toolkit's libdevice on its first
+        compile when it emulates precision casts. The backend's compile context
+        makes that choice up front, so a kernel compiled before an Inductor
+        compile has the same Triton cache key as one compiled after it."""
+        import triton
+        import triton.language as tl
+        from torch._inductor.runtime import compile_tasks
+        from triton import knobs
+
+        saved = (knobs.nvidia.libdevice_path, os.environ.get("TRITON_LIBDEVICE_PATH"))
+
+        def reset(path, env):
+            knobs.nvidia.libdevice_path = path
+            if env is None:
+                os.environ.pop("TRITON_LIBDEVICE_PATH", None)
+            else:
+                os.environ["TRITON_LIBDEVICE_PATH"] = env
+
+        self.addCleanup(reset, *saved)
+        reset(None, None)
+        compile_tasks._set_triton_libdevice_path_impl()
+        toolkit = knobs.nvidia.libdevice_path
+        if toolkit is None:
+            self.skipTest("no CUDA toolkit libdevice for Inductor to choose")
+        reset(None, None)
+
+        def add_one(x_ptr, BLOCK: tl.constexpr):
+            offsets = tl.arange(0, BLOCK)
+            tl.store(x_ptr + offsets, tl.load(x_ptr + offsets) + 1)
+
+        x = torch.zeros(16, device="cuda")
+
+        def cache_key():
+            # A new JIT function each time: one already compiled answers from
+            # its in-memory cache, which does not see the libdevice.
+            return triton.jit(add_one).warmup(x, BLOCK=16, grid=(1,)).hash
+
+        with CudaBackend.get_extra_aoti_compile_context_manager([]):
+            self.assertEqual(knobs.nvidia.libdevice_path, toolkit)
+            before = cache_key()
+            torch._dynamo.reset()
+            with torch._inductor.config.patch(
+                emulate_precision_casts=True, force_disable_caches=True
+            ):
+                torch.compile(lambda t: t.sin() + 1, fullgraph=True)(x)
+            after = cache_key()
+        self.assertEqual(knobs.nvidia.libdevice_path, toolkit)
+        self.assertEqual(before, after)
+
     def test_small_gpu_override_survives_a_thread_that_leaves_first(self):
         from executorch.backends.cuda.cuda_backend import (
             _allow_triton_templates_on_small_gpus,
@@ -1266,7 +1316,7 @@ class TestCudaExport(unittest.TestCase):
         # The masked call keeps a float bias, which the Triton kernels do not take.
         output = "\n".join(logs.output)
         self.assertIn("Replaced 2 nodes with Triton kernels", output)
-        self.assertIn("Using split-K decode SDPA", output)
+        self.assertIn("(split-K decode SDPA (L_kv=", output)
         from executorch.export.utils import is_fbcode
 
         if is_fbcode():
