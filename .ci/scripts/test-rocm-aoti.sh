@@ -150,6 +150,9 @@ ROCM_EXCLUDED_TESTS=(
   # CUDA-graph autotune timing is NVIDIA-only; the CUDA backend turns it off
   # on ROCm.
   --ignore=backends/cuda/tests/test_cuda_graph_timing.py
+  # Without CUDA-graph timing, the compiled SDPA pick is sometimes 1.66x slower
+  # than the CUDA-graph-timed best on MI350, so this comparison flakes.
+  --deselect=backends/cuda/tests/test_autotune_inputs.py::SdpaCellStepAutotuneTest::test_compiled_pick_is_fastest_at_live_extents
 )
 python -m pytest -v -o 'addopts=' \
   "${ROCM_EXCLUDED_TESTS[@]}" \
