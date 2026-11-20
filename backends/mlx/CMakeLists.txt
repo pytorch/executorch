@@ -316,6 +316,10 @@ set_target_properties(
   PROPERTIES INTERFACE_LINK_LIBRARIES
              "${METAL_FRAMEWORK};${FOUNDATION_FRAMEWORK};${QUARTZ_FRAMEWORK}"
 )
+if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+  find_library(IOKIT_FRAMEWORK IOKit REQUIRED)
+  target_link_libraries(mlx INTERFACE ${IOKIT_FRAMEWORK})
+endif()
 
 # -----------------------------------------------------------------------------
 # MLX Backend library
