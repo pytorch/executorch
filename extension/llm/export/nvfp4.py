@@ -73,9 +73,17 @@ class ExportableNVFP4Tensor(TorchAOBaseTensor):
     """NVFP4 tensor subclass that dequantizes via a registered custom op."""
 
     tensor_data_names = ["qdata", "scale", "per_tensor_scale"]
-    tensor_attribute_names = ["block_size", "orig_dtype"]
+    tensor_attribute_names = ["block_size", "orig_dtype", "act_per_tensor_scale"]
 
-    def __new__(cls, qdata, scale, per_tensor_scale, block_size, orig_dtype):
+    def __new__(
+        cls,
+        qdata,
+        scale,
+        per_tensor_scale,
+        block_size,
+        orig_dtype,
+        act_per_tensor_scale=None,
+    ):
         K = qdata.shape[-1] * 8  # 8 FP4 values per uint32
         shape = (qdata.shape[0], K)
         self = torch.Tensor._make_wrapper_subclass(
@@ -86,6 +94,7 @@ class ExportableNVFP4Tensor(TorchAOBaseTensor):
         self.per_tensor_scale = per_tensor_scale
         self.block_size = block_size
         self.orig_dtype = orig_dtype
+        self.act_per_tensor_scale = act_per_tensor_scale
         return self
 
     def dequantize(self, output_dtype=None):
@@ -118,6 +127,7 @@ class ExportableNVFP4Tensor(TorchAOBaseTensor):
             self.per_tensor_scale.to(device),
             self.block_size,
             dtype,
+            self.act_per_tensor_scale,
         )
 
     __torch_function__ = torch._C._disabled_torch_function_impl
