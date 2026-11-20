@@ -1,0 +1,31 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+fbcode_target(_kind = runtime.python_library,
+    name = "io_contracts",
+    srcs = [
+        "__init__.py",
+        "_transformers.py",
+        "hf_static.py",
+    ],
+    base_module = "executorch.extension.llm.io_contracts",
+    visibility = ["PUBLIC"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/extension/llm/export:hf_static",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_test,
+    name = "test_hf_static",
+    srcs = ["test/test_hf_static.py"],
+    deps = [
+        ":io_contracts",
+        "//caffe2:torch",
+        "//executorch/extension/llm/export:hf_static",
+        "//executorch/exir:lib",
+        "//executorch/runtime:runtime",
+    ],
+)
