@@ -22,6 +22,7 @@ on:
       - .ci/scripts/wheel/install_cuda_redist.py
       - install_requirements.py
       - install_utils.py
+      - torch_pin.py
       # Only unittest-cuda-runtime-windows runs for these alone; the other jobs
       # filter on their own paths and stay skipped.
       - .ci/scripts/test_cuda_runtime_windows.ps1
@@ -71,6 +72,7 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/wheel/install_cuda_redist.py') ||
         contains(needs.changed-files.outputs.changed-files, 'install_requirements.py') ||
         contains(needs.changed-files.outputs.changed-files, 'install_utils.py') ||
+        contains(needs.changed-files.outputs.changed-files, 'torch_pin.py') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
@@ -220,6 +222,7 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/wheel/install_cuda_redist.py') ||
         contains(needs.changed-files.outputs.changed-files, 'install_requirements.py') ||
         contains(needs.changed-files.outputs.changed-files, 'install_utils.py') ||
+        contains(needs.changed-files.outputs.changed-files, 'torch_pin.py') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
     uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
@@ -314,6 +317,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'tools/cmake/Test.cmake') ||
       contains(needs.changed-files.outputs.changed-files, 'install_requirements.py') ||
       contains(needs.changed-files.outputs.changed-files, 'install_utils.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'torch_pin.py') ||
       needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
     strategy:
