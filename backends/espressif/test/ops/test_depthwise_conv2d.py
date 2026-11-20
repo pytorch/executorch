@@ -308,19 +308,13 @@ def test_public_recipe_depthwise(s3_queries):
     session = export(
         case.model,
         example_inputs=[case.example_inputs],
-        export_recipe=get_esp_fused_quant_recipe(),
+        export_recipe=get_esp_fused_quant_recipe(allow_cpu_fallback=False),
     )
     report = get_operator_library_report(session.get_edge_program_manager())
     assert report["esp_nn_ops"] == 1
     assert not report["cpu_ops"]
     assert len(report["layout_ops"]) == 2
     assert session.get_executorch_program_manager().buffer
-    with pytest.raises(RuntimeError, match="aten::permute_copy"):
-        export(
-            case.model,
-            example_inputs=[case.example_inputs],
-            export_recipe=get_esp_fused_quant_recipe(allow_cpu_fallback=False),
-        )
 
     case = test_cases["dilation_fallback"]
     with pytest.raises(RuntimeError, match="aten::convolution"):
