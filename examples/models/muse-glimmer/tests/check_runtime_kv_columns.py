@@ -13,6 +13,7 @@ row growth, wrapped-history cloning, sparse-owner compaction and graph replay.
 import argparse
 import json
 import subprocess
+import sys
 from dataclasses import replace
 from pathlib import Path
 
@@ -135,9 +136,16 @@ def run(probe: Path, root: Path, runtime_columns: bool) -> tuple[dict, list[dict
     )
     (artifact / "probe.stderr.log").write_text(completed.stderr)
     (artifact / "probe.jsonl").write_text(completed.stdout)
+    if completed.returncode:
+        print(completed.stderr, file=sys.stderr)
+        print(completed.stdout, file=sys.stderr)
     completed.check_returncode()
     capture = "CUDA graph: captured and instantiated for 'forward_2"
-    assert completed.stderr.count(capture) >= (2 if runtime_columns else 1), (
+    enough_captures = completed.stderr.count(capture) >= (2 if runtime_columns else 1)
+    if not enough_captures:
+        print(completed.stderr, file=sys.stderr)
+        print(completed.stdout, file=sys.stderr)
+    assert enough_captures, (
         "forward_2 must capture, replay, and recapture after compaction; "
         "see probe.stderr.log"
     )
