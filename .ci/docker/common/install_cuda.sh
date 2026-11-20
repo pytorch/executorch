@@ -10,10 +10,10 @@
 
 set -ex
 
-# CUDA version must be specified (e.g., 13.0)
+# CUDA version must be specified (e.g., 13.2)
 CUDA_VERSION="${CUDA_VERSION:?CUDA_VERSION must be set}"
 
-# Convert version format (e.g., 13.0 -> 13-0 for package names)
+# Convert version format (e.g., 13.2 -> 13-2 for package names)
 CUDA_VERSION_DASH=$(echo "${CUDA_VERSION}" | tr '.' '-')
 
 # Add NVIDIA package repository

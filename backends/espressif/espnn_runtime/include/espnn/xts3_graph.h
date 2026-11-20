@@ -19,19 +19,28 @@
  * (backends/espressif/serialization/xts3.py). All multi-byte fields are
  * little-endian. A graph is a header, an optional input/output table
  * (version 6), fixed-size tensor and operation records, a parameter region
- * and a constant region. parse_graph() bounds-checks every region and record
- * before any accessor reads it.
+ * and a constant region. Version 7 pads the input/output table to a 4-byte
+ * boundary, so that the records and the parameter region are word-aligned and
+ * the runtime can use them where they are. Version 8 adds a state table after
+ * the input/output table: pairs of a state tensor, which persists across
+ * invokes, and the tensor holding its next value. parse_graph() bounds-checks
+ * every region and record before any accessor reads it.
  */
 
 namespace executorch {
 namespace backends {
 namespace espressif {
 
-/// Graph versions accepted by this runtime; 6 adds the input/output table.
+/// Graph versions accepted by this runtime; 6 adds the input/output table, 7
+/// aligns the tables that follow it and 8 adds the state table.
 static constexpr uint32_t GRAPH_ESP_NN_INT8_VERSION = 5;
 static constexpr uint32_t GRAPH_ESP_NN_INT8_IO_VERSION = 6;
+static constexpr uint32_t GRAPH_ESP_NN_INT8_ALIGNED_VERSION = 7;
+static constexpr uint32_t GRAPH_ESP_NN_INT8_STATE_VERSION = 8;
 static constexpr size_t GRAPH_HEADER_SIZE = 22;
 static constexpr size_t GRAPH_IO_TABLE_HEADER_SIZE = 4;
+static constexpr size_t GRAPH_STATE_TABLE_HEADER_SIZE = 4;
+static constexpr size_t MAX_GRAPH_STATES = 16;
 static constexpr size_t MAX_GRAPH_IO = 16;
 static constexpr size_t TENSOR_RECORD_SIZE = 36;
 static constexpr size_t OPERATION_RECORD_SIZE = 44;
@@ -43,6 +52,10 @@ static constexpr uint8_t TENSOR_FLAG_CONSTANT = 1U << 0;
 static constexpr uint8_t TENSOR_FLAG_QUANTIZED = 1U << 1;
 static constexpr uint8_t TENSOR_FLAG_GRAPH_INPUT = 1U << 2;
 static constexpr uint8_t TENSOR_FLAG_GRAPH_OUTPUT = 1U << 3;
+/// Delegate-owned int8 state (version 8): its initial value is in the constant
+/// region at constant_offset, and its state-table pair replaces it after every
+/// invoke.
+static constexpr uint8_t TENSOR_FLAG_STATE = 1U << 4;
 
 /// Serialized parameter block sizes and modes, mirrored in xts3.py.
 static constexpr size_t INT8_CONV_BASE_PARAMS_SIZE = 20;
@@ -148,6 +161,9 @@ struct GraphView {
   uint16_t num_inputs;
   uint16_t num_outputs;
   const uint8_t* io_ids;
+  uint16_t num_states;
+  /// num_states (state, update) tensor ID pairs, little-endian u32.
+  const uint8_t* state_ids;
 };
 
 /// Decoded convolution parameters; multipliers and shifts are per channel.
@@ -207,6 +223,13 @@ uint32_t graph_output_count(const GraphView& graph);
 uint32_t graph_input_id(const GraphView& graph, uint32_t index);
 /// Tensor ID of output @p index, or UINT32_MAX if out of range.
 uint32_t graph_output_id(const GraphView& graph, uint32_t index);
+/// State pair @p index: the persistent tensor and the tensor holding its next
+/// value. @retval false @p index is out of range.
+bool graph_state_pair(
+    const GraphView& graph,
+    uint32_t index,
+    uint32_t& state_id,
+    uint32_t& update_id);
 /// Decodes tensor record @p index. @retval false Out of range.
 bool read_tensor(const GraphView& graph, uint32_t index, TensorRecord& tensor);
 /// Decodes operation record @p index. @retval false Out of range.

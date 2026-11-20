@@ -29,6 +29,11 @@ To generate a JSON report:
 pytest -c /dev/nul backends/test/suite/operators/ -n auto --json-report --json-report-file="test_report.json"
 ```
 
+Each test has a timeout of 120 seconds for operator tests and 1200 seconds for model tests. This can be overridden, for example on slower platforms, by setting the `EXECUTORCH_OPERATORS_TEST_TIMEOUT_S` and `EXECUTORCH_MODELS_TEST_TIMEOUT_S` environment variables to the desired number of seconds:
+```
+EXECUTORCH_OPERATORS_TEST_TIMEOUT_S=240 pytest -c /dev/nul backends/test/suite/operators/ -m backend_nxp -n auto
+```
+
 See [pytest-json-report](https://pypi.org/project/pytest-json-report/) for information on the report format. The test logic in this repository attaches additional metadata to each test entry under the `metadata`/`subtests` keys. One entry is created for each call to `test_runner.lower_and_run_model`.
 
 Here is a excerpt from a test run, showing a successful run of the `test_add_f32_bcast_first[xnnpack]` test.

@@ -2312,6 +2312,26 @@ def get_gelu_inputs():
     return test_suite
 
 
+@register_test_suite("aten.elu.default")
+def get_elu_inputs():
+    test_suite = VkTestSuite(
+        [
+            (shape, alpha, scale)
+            for shape in ((M1,), (M1, M2), (S1, M1, M2), (S1, S2, S2, M2))
+            for alpha, scale in ((1.0, 1.0), (0.5, 1.0), (1.6732632, 1.0507010))
+        ]
+    )
+    test_suite.data_range = (-6, 6)
+    test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
+    test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kHeightPacked",
+        "utils::kChannelsPacked",
+    ]
+    test_suite.check_zero_padding = True
+    return test_suite
+
+
 @register_test_suite("aten.arange.start_step")
 def get_arange_inputs():
     test_suite = VkTestSuite(

@@ -45,6 +45,15 @@ A `.ptn` is an uncompressed zip with fixed entry names:
 | `program.ptg` | Methods as graphs; FlatBuffer defined by `serialization/native_graph.fbs`. |
 | `program.safetensors` | Constants. Byte-identical immutable tensors are stored once. |
 | `aliases.json` | Deduplicated key to owner key; present only when needed. |
+| `metadata.json` | Producer-defined values by name; present only when given. |
+
+`to_native(ep, metadata={...})` writes `metadata.json`, the counterpart to a
+PTE's constant methods: a JSON object whose values are each a bool, number,
+string, or a flat list of those. Names mean nothing to the format; a runner
+reads the ones it knows with `Package::metadata_int` and `metadata_ints`, and
+`exir.native.read_metadata` reads them back in Python. LLM exports reuse the
+constant-method names in `extension/llm/export/model_metadata.py`, such as
+`get_windows` for the per-layer sliding windows of an off-graph KV cache.
 
 ## Samples (optional)
 

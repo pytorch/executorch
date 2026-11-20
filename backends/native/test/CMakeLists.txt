@@ -61,7 +61,9 @@ add_custom_command(
     FLATC_EXECUTABLE=$<TARGET_FILE:flatc> ${PYTHON_EXECUTABLE} -m
     executorch.backends.native.test.samples.generate --out ${_native_op_samples}
   COMMAND ${CMAKE_COMMAND} -E touch ${_native_op_samples}.stamp
-  DEPENDS flatc ${_native_op_samples_srcs}
+  DEPENDS flatc
+          ${_native_op_samples_srcs}
+          ${EXECUTORCH_ROOT}/backends/test/suite/operators/test_elu.py
           ${EXECUTORCH_ROOT}/backends/test/suite/operators/test_embedding.py
           ${EXECUTORCH_ROOT}/backends/test/suite/operators/test_linear.py
   VERBATIM
@@ -141,7 +143,7 @@ if(EXECUTORCH_BUILD_NATIVE_GGML)
   add_executable(native_ggml_engine_test runtime/ggml/test_ggml_engine.cpp)
   target_link_libraries(
     native_ggml_engine_test PRIVATE native_ggml_engine native_graph_schema
-                                    GTest::gtest_main
+                                    extension_llm_cache GTest::gtest_main
   )
   add_dependencies(native_ggml_engine_test native_graph_schema_gen)
   add_test(NAME native_ggml_engine_test COMMAND native_ggml_engine_test)
@@ -164,14 +166,19 @@ if(EXECUTORCH_BUILD_NATIVE_GGML)
   set_tests_properties(native_ggml_sample_test PROPERTIES DISABLED TRUE)
   # native_ggml_sample_test_act_quant lets ggml quantize the activations of
   # weight-only quantized linears, judged against golden-int8_act.
-  # native_ggml_sample_test_no_linear judges the other ops without it.
-  add_test(NAME native_ggml_sample_test_act_quant
-           COMMAND native_ggml_sample_test --packages=${_native_op_samples}
-                   --device=cpu --allow_activation_quant_for_weight_only
+  # native_ggml_sample_test_no_linear judges the other ops without it. Both
+  # leave out the elu with alpha 0.5 that ggml rejects.
+  add_test(
+    NAME native_ggml_sample_test_act_quant
+    COMMAND
+      native_ggml_sample_test --packages=${_native_op_samples} --device=cpu
+      --allow_activation_quant_for_weight_only
+      --gtest_filter=-elu_float.elu_f32_alpha_*
   )
-  add_test(NAME native_ggml_sample_test_no_linear
-           COMMAND native_ggml_sample_test --packages=${_native_op_samples}
-                   --device=cpu --gtest_filter=-linear_*
+  add_test(
+    NAME native_ggml_sample_test_no_linear
+    COMMAND native_ggml_sample_test --packages=${_native_op_samples}
+            --device=cpu --gtest_filter=-linear_*:elu_float.elu_f32_alpha_*
   )
   target_compile_options(
     native_ggml_sample_test
