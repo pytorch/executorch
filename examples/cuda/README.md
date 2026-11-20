@@ -43,7 +43,7 @@ and weights can be combined so the runtime selects an exactly matching native
 AOTI library, or uses one explicitly designated PTX fallback.
 
 ```bash
-python -m executorch.backends.cuda.merge_ptes \
+python -m executorch.backends.cuda.scripts.merge_ptes \
   --input-pte a100/model.pte \
   --input-pte rtx5090/model.pte \
   --input-ptd a100/aoti_cuda_blob.ptd \

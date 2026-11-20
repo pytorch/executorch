@@ -152,11 +152,12 @@ fbcode_target(
     _kind = runtime.python_library,
     name = "merge_ptes",
     srcs = [
-        "merge_ptes.py",
+        "scripts/merge_ptes.py",
     ],
     visibility = ["PUBLIC"],
     deps = [
         ":cuda_backend",
+        ":scripts_atomic_output",
         "//caffe2:torch",
         "//executorch/exir/_serialize:lib",
         "//executorch/exir:schema",

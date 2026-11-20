@@ -601,3 +601,23 @@ def define_common_targets(is_fbcode = False):
             "//executorch/exir/backend/test:device_util",
         ],
     )
+
+    python_unittest(
+        name = "test_merge_ptes",
+        srcs = [
+            "test_merge_ptes.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/cuda:cuda_backend",
+            "//executorch/backends/cuda:merge_ptes",
+            "//executorch/exir:lib",
+            "//executorch/exir/_serialize:lib",
+            "//executorch/exir:schema",
+            "//executorch/exir/backend:compile_spec_schema",
+            "//executorch/extension/flat_tensor/serialize:serialize",
+        ],
+    )
