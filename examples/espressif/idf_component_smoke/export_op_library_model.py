@@ -10,13 +10,13 @@ import argparse
 from pathlib import Path
 
 import torch
-from executorch.backends.espressif.test.tester import EspTester
-from executorch.backends.test.harness.stages import StageType
+from executorch.backends.espressif import get_esp_fused_quant_recipe
 from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
 from executorch.devtools.bundled_program.core import BundledProgram
 from executorch.devtools.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
+from executorch.export import export, StageType
 from torch.utils._pytree import tree_flatten
 
 
@@ -31,12 +31,13 @@ def main():
     args = parser.parse_args()
 
     inputs = (torch.linspace(-1.5, 2.5, 17), torch.linspace(3, -4, 17))
-    tester = EspTester(Mul(), inputs)
-    tester.quantize().export().to_edge().run_passes()
+    recipe = get_esp_fused_quant_recipe()
+    recipe.pipeline_stages.remove(StageType.TO_EXECUTORCH)
+    session = export(Mul(), example_inputs=[inputs], export_recipe=recipe)
     expected, _ = tree_flatten(
-        tester.get_artifact().exported_program().module()(*inputs)
+        session.get_edge_program_manager().exported_program().module()(*inputs)
     )
-    program = tester.to_executorch().get_artifact(StageType.TO_EXECUTORCH)
+    program = session.get_edge_program_manager().to_executorch()
     operators = program.executorch_program.execution_plan[0].operators
     if "esp_nn::quantized_mul_int8" not in {op.name for op in operators}:
         raise SystemExit("the mul did not lower to esp_nn::quantized_mul_int8")
