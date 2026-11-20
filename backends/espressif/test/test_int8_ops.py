@@ -210,6 +210,17 @@ class TwoInputTwoOutput(nn.Module):
         return mask, logits
 
 
+class OddChannelPool(nn.Module):
+    """Max pooling over a channel count that is not a multiple of four."""
+
+    def __init__(self):
+        super().__init__()
+        self.conv = nn.Conv2d(3, 6, 3, padding=1)
+
+    def forward(self, x):
+        return F.max_pool2d(F.relu(self.conv(x)), 2)
+
+
 class TransposeSelect(nn.Module):
     def __init__(self):
         super().__init__()
@@ -263,6 +274,7 @@ CASES = [
     ("broadcast-pad-split-cat", BroadcastPadSplit(), [(1, 4, 6, 6)], 2),
     ("two-inputs-two-outputs", TwoInputTwoOutput(), [(1, 3, 12, 12), (1, 6)], 2),
     ("transpose-select-stack", TransposeSelect(), [(1, 3, 4, 5)], 2),
+    ("max-pool-six-channels", OddChannelPool(), [(1, 3, 8, 8)], 2),
 ]
 
 

@@ -237,7 +237,9 @@ def test_blend_payload_and_fake_output_contract(output_unsigned):
     assert source.count("imulExtended") == 8 + int(output_unsigned)
     assert "int(roundEven(float(value -" not in source
     assert payload["output_0_type"] == "Tensor"
-    assert payload["output_0_vkformat"] == "VK_FORMAT_R8_SINT"
+    assert payload["output_0_vkformat"] == (
+        "VK_FORMAT_R8_UINT" if output_unsigned else "VK_FORMAT_R8_SINT"
+    )
     assert not any(key.startswith(("output_1_", "output_2_")) for key in payload)
     image = torch.empty(1, 8, 12, 4, dtype=torch.int8)
     values = fuse._final_warps_fake(

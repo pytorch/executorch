@@ -5,34 +5,49 @@
 # LICENSE file in the root directory of this source tree.
 
 """Compare GGML LLM runner prefill and decoding with a tiny eager HF Llama,
-including a prompt longer than the method's token input."""
+including a prompt longer than the method's token input, for in-graph and
+off-graph KV cache packages."""
 
 import argparse
 import base64
+import copy
 import re
 import subprocess
 import tempfile
 from pathlib import Path
 
 import torch
-from executorch.backends.native.examples.hf_llm.export_hf_llm import LastTokenLM
+from executorch.backends.native.examples.hf_llm.export_hf_llm import (
+    LastTokenLM,
+    OffGraphLastTokenLM,
+)
 from executorch.exir.native import to_native
+from executorch.extension.llm.cache.hf_attention import register_offgraph_attention
 from transformers import LlamaConfig, LlamaForCausalLM
 
 
 def export_package(
-    model: LlamaForCausalLM, max_seq_length: int, max_tokens: int, path: Path
+    wrapper: torch.nn.Module,
+    max_tokens: int,
+    path: Path,
+    metadata: dict | None = None,
+    selected: bool = False,
 ) -> None:
-    """A last-token package whose method takes at most `max_tokens` tokens."""
-    wrapper = LastTokenLM(model, max_seq_length).eval()
+    """A package of `wrapper` whose method takes at most `max_tokens` tokens,
+    and with `selected` the token indices whose logits to return."""
     seq = torch.export.Dim("seq", min=1, max=max_tokens)
+    inputs = [torch.zeros((1, 6), dtype=torch.long), torch.arange(6)]
+    dynamic_shapes = {"input_ids": {1: seq}, "cache_position": {0: seq}}
+    if selected:
+        # Trace two rows: export specializes a size of 1.
+        inputs.append(torch.tensor([0, 5]))
+        dynamic_shapes["logits_to_keep"] = {
+            0: torch.export.Dim("rows", min=1, max=max_tokens)
+        }
     exported = torch.export.export(
-        wrapper,
-        (torch.zeros((1, 6), dtype=torch.long), torch.arange(6)),
-        dynamic_shapes={"input_ids": {1: seq}, "cache_position": {0: seq}},
-        strict=True,
+        wrapper, tuple(inputs), dynamic_shapes=dynamic_shapes, strict=True
     )
-    to_native(exported).save(str(path))
+    to_native(exported, metadata=metadata).save(str(path))
 
 
 def check_runner(
@@ -121,12 +136,34 @@ def main() -> None:
                 f"{base64.b64encode(bytes([i])).decode()} {i}\n" for i in range(256)
             )
         )
+        in_graph = LastTokenLM(model, max_seq_length).eval()
         full = root / "llama.ptn"
-        export_package(model, max_seq_length, max_seq_length - 1, full)
+        export_package(in_graph, max_seq_length - 1, full)
         # A 20-token prompt prefills in three calls of at most 7 tokens.
         chunked = root / "llama_chunked.ptn"
-        export_package(model, max_seq_length, 7, chunked)
-        for package, prompt in ((full, "abc"), (chunked, "the quick brown fox")):
+        export_package(in_graph, 7, chunked)
+        # The runner supplies the KV cache, sized from the package's metadata.
+        register_offgraph_attention("offgraph")
+        offgraph_model = copy.deepcopy(model)
+        offgraph_model.config._attn_implementation = "offgraph"
+        offgraph = OffGraphLastTokenLM(offgraph_model, max_seq_length).eval()
+        offgraph_chunked = root / "llama_offgraph_chunked.ptn"
+        export_package(offgraph, 7, offgraph_chunked, offgraph.metadata())
+        # A batching export; the runner selects the last token's logits.
+        selected = OffGraphLastTokenLM(
+            offgraph_model, max_seq_length, selected=True
+        ).eval()
+        selected_chunked = root / "llama_selected_chunked.ptn"
+        export_package(
+            selected, 7, selected_chunked, selected.metadata(), selected=True
+        )
+        long_prompt = "the quick brown fox"
+        for package, prompt in (
+            (full, "abc"),
+            (chunked, long_prompt),
+            (offgraph_chunked, long_prompt),
+            (selected_chunked, long_prompt),
+        ):
             check_runner(
                 args.runner,
                 model,
