@@ -14,6 +14,7 @@ import itertools
 import os
 import tempfile
 import unittest
+import warnings
 from types import SimpleNamespace
 from unittest import mock
 
@@ -135,6 +136,7 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
             ConvParams,
             out_shape_and_stride,
         )
+        from triton.runtime.errors import OutOfResources
 
         rank = x.dim() - 2
         params = ConvParams(
@@ -190,11 +192,27 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
                 and x.dtype == torch.float32
             ):
                 tolerance = _TF32_TOLERANCE
+            checked = 0
             for config in configs if every_config else configs[:1]:
-                with tf32, force_conv_candidate(schedule, config):
-                    out = self.convolution(
-                        x, w, b, stride, before, after, output_strides, output_padding
-                    )
+                try:
+                    with tf32, force_conv_candidate(schedule, config):
+                        out = self.convolution(
+                            x,
+                            w,
+                            b,
+                            stride,
+                            before,
+                            after,
+                            output_strides,
+                            output_padding,
+                        )
+                except OutOfResources as e:
+                    # The autotuner drops a config that does not fit the device (e.g.
+                    # igemm_tc_packed 128x128x64 x 3 stages in FP32 needs 128 KiB, and
+                    # an A10G has 99 KiB).
+                    warnings.warn(f"{schedule} {config}: {e}", stacklevel=1)
+                    continue
+                checked += 1
                 self.assertEqual((tuple(out.shape), out.stride()), layout)
                 torch.testing.assert_close(
                     out.double(),
@@ -204,6 +222,7 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
                     equal_nan=True,
                     msg=lambda m, s=schedule, c=config: f"{s} {c}: {m}",
                 )
+            self.assertGreater(checked, 0, f"no {schedule} config fits this device")
 
     def tensors(
         self,

@@ -213,7 +213,9 @@ jobs:
       id-token: write
       contents: read
     with:
-      timeout: 90
+      # Measured conv routing times every convolution of resnet18, mv2 and mv3 at
+      # export on a cold cache, which takes the job to about 100 minutes.
+      timeout: 120
       runner: mt-l-x86aavx2-11-41-a10g
       gpu-arch-type: cuda
       gpu-arch-version: "13.2"
