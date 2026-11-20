@@ -606,6 +606,24 @@ def test_op_behind_float_promoting_op_lowers_to_cortex_m(
 
 
 @pytest.mark.parametrize("use_explicit_layout", [False, True])
+def test_permute_after_quantized_linear_lowers_to_cortex_m(use_explicit_layout):
+    torch.manual_seed(0)
+    inputs = (torch.randn(1, 3, 8),)
+    model = torch.nn.Sequential(
+        torch.nn.Linear(8, 4), Apply(lambda x: x.permute(0, 2, 1))
+    ).eval()
+    tester = CortexMTester(model, inputs)
+    tester.quantize(Quantize(CortexMQuantizer(use_explicit_layout=use_explicit_layout)))
+    tester.export().to_edge()
+    program = _run_passes(tester, use_explicit_layout)
+
+    assert _count(program, exir_ops.edge.cortex_m.quantized_linear.default) == 1
+    assert _count(program, exir_ops.edge.cortex_m.transpose.default) == 1
+    assert _count(program, exir_ops.edge.aten.permute_copy.default) == 0
+    tester.run_method_and_compare_outputs(inputs=inputs, qtol=1)
+
+
+@pytest.mark.parametrize("use_explicit_layout", [False, True])
 def test_unquantized_int8_permute_lowers_to_transpose(use_explicit_layout):
     inputs = (torch.randint(-128, 127, (1, 8, 16), dtype=torch.int8),)
     tester = CortexMTester(Apply(lambda x: x.permute(0, 2, 1)).eval(), inputs)

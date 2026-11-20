@@ -38,21 +38,28 @@ test_cases = {
 }
 
 
+@parametrize("use_explicit_layout", {"legacy": False, "explicit": True})
 @parametrize("test_case", test_cases)
-def test_dialect_attention(test_case, cortex_m_target):
+def test_dialect_attention(test_case, use_explicit_layout, cortex_m_target):
     tester = CortexMTester(
-        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+        test_case.model,
+        test_case.get_example_inputs(use_explicit_layout),
+        target_config=cortex_m_target,
     )
     tester.test_dialect(
         test_case.model.ops_before_transforms,
         test_case.model.ops_after_transforms,
         qtol=2,
+        use_explicit_layout=use_explicit_layout,
     )
 
 
+@parametrize("use_explicit_layout", {"legacy": False, "explicit": True})
 @parametrize("test_case", test_cases)
-def test_implementation_attention(test_case, cortex_m_target):
+def test_implementation_attention(test_case, use_explicit_layout, cortex_m_target):
     tester = CortexMTester(
-        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+        test_case.model,
+        test_case.get_example_inputs(use_explicit_layout),
+        target_config=cortex_m_target,
     )
-    tester.test_implementation(qtol=2)
+    tester.test_implementation(qtol=2, use_explicit_layout=use_explicit_layout)
