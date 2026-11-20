@@ -41,8 +41,8 @@ struct GgmlEngineOptions {
   // Threads for the ggml CPU backend, which also runs ops the GPU backend
   // lacks. 0 keeps ggml's default of 4, not the host core count.
   int cpu_threads = 0;
-  // Node capacity of each ggml graph and of the backend scheduler; ggml
-  // aborts on a graph that outgrows it.
+  // Minimum node capacity of each ggml graph and of the backend scheduler;
+  // a method whose lowerings need more nodes gets the room they need.
   size_t graph_size = 4096;
   // Graphs each executable keeps, keyed by the shapes of all inputs and, for
   // each attention mask that leaves only a key prefix open, that prefix
