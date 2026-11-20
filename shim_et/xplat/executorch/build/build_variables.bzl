@@ -470,6 +470,7 @@ EXTENSION_LLM_CUSTOM_OPS_BUCK_SRCS = [
 ]
 
 CUSTOM_OPS_SRCS = ["extension/llm/custom_ops/" + x for x in EXTENSION_LLM_CUSTOM_OPS_BUCK_SRCS] + [
+    "extension/llm/custom_ops/op_sdpa_row_exact.cpp",
     "extension/llm/custom_ops/spinquant/fast_hadamard_transform.cpp",
 ]
 
