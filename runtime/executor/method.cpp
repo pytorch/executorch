@@ -415,8 +415,6 @@ Result<size_t> Method::get_num_external_constants() {
 }
 
 Error Method::parse_external_constants(const NamedDataMap* external_data_map) {
-  ET_CHECK_OR_RETURN_ERROR(
-      external_data_map != nullptr, InvalidState, "external_data_map is null");
   auto flatbuffer_values = serialization_plan_->values();
   size_t n_value = flatbuffer_values->size();
 
@@ -457,6 +455,11 @@ Error Method::parse_external_constants(const NamedDataMap* external_data_map) {
         nullptr) {
       continue;
     }
+    ET_CHECK_OR_RETURN_ERROR(
+        external_data_map != nullptr,
+        NotFound,
+        "Tensor %s is in a .ptd file, but no .ptd data was provided",
+        key);
     Result<const TensorLayout> tensor_layout =
         external_data_map->get_tensor_layout(key);
     if (!tensor_layout.ok()) {
