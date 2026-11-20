@@ -33,8 +33,11 @@ from executorch.backends.cadence.aot.quantizer.patterns import (
     MaxPool2dPattern,
     MaxPool2dWithoutIndicesPattern,
     MixedW8A32ConvPattern,
+    MixedW8A32Conv2dPattern,
     MixedW8A32GruPattern,
+    MixedW8A32LayerNormPattern,
     MixedW8A32LinearPattern,
+    MixedW8A32TransposeConv2dPattern,
     QuantizationPattern,
     ReluPattern0,
     ReluPattern1,
@@ -112,6 +115,15 @@ wgt_qspec_sym8s_per_channel = QuantizationSpec(
     observer_or_fake_quant_ctr=PerChannelMinMaxObserver,
 )
 
+wgt_qspec_sym8s_127 = QuantizationSpec(
+    dtype=torch.int8,
+    quant_min=-127,
+    quant_max=127,
+    qscheme=torch.per_tensor_symmetric,
+    is_dynamic=False,
+    observer_or_fake_quant_ctr=MinMaxObserver,
+)
+
 bias_qspec: Optional[QuantizationSpec] = None
 
 qconfig_A8W8 = QuantizationConfig(
@@ -183,11 +195,11 @@ qconfig_A16 = QuantizationConfig(
     None,
 )
 
-qconfig_A32W8sym = QuantizationConfig(
+qconfig_A32W8sym_127 = QuantizationConfig(
     input_activation=None,
     output_activation=None,
-    weight=wgt_qspec_sym8s,
-    bias=wgt_qspec_sym8s,
+    weight=wgt_qspec_sym8s_127,
+    bias=wgt_qspec_sym8s_127,
 )
 
 
@@ -492,13 +504,24 @@ class CadenceW8A32MixedQuantizer(CadenceQuantizer):
     def __init__(self) -> None:
         quantizers = []
         quantizers.append(
-            CadenceAtenQuantizer(MixedW8A32LinearPattern(), qconfig_A32W8sym)
+            CadenceAtenQuantizer(MixedW8A32LinearPattern(), qconfig_A32W8sym_127)
         )
         quantizers.append(
-            CadenceAtenQuantizer(MixedW8A32ConvPattern(), qconfig_A32W8sym)
+            CadenceAtenQuantizer(MixedW8A32ConvPattern(), qconfig_A32W8sym_127)
         )
         quantizers.append(
-            CadenceAtenQuantizer(MixedW8A32GruPattern(), qconfig_A32W8sym)
+            CadenceAtenQuantizer(MixedW8A32Conv2dPattern(), qconfig_A32W8sym_127)
+        )
+        quantizers.append(
+            CadenceAtenQuantizer(MixedW8A32GruPattern(), qconfig_A32W8sym_127)
+        )
+        quantizers.append(
+            CadenceAtenQuantizer(
+                MixedW8A32TransposeConv2dPattern(), qconfig_A32W8sym_127
+            )
+        )
+        quantizers.append(
+            CadenceAtenQuantizer(MixedW8A32LayerNormPattern(), qconfig_A32W8sym_127)
         )
         super().__init__(quantizers)
 

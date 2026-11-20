@@ -1552,6 +1552,301 @@ class MixedW8A32GruPattern(QuantizationPattern):
         )
 
 
+class MixedW8A32TransposeConv2dPattern(QuantizationPattern):
+    # [IC, OC, 1, kW] -> [OC, 1, kW, IC].
+    weight_perm: List[int] = [1, 2, 3, 0]
+
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.conv_transpose2d.input]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> Tuple[PartitionAnchors, fx.Node]:
+        transpose_conv_layer = fused_partition[0].nodes[-1]
+
+        if (
+            len(transpose_conv_layer.args) < 3
+            or transpose_conv_layer.args[2] is None
+            or len(transpose_conv_layer.kwargs) > 0
+        ):
+            return (PartitionAnchors(empty=True), transpose_conv_layer)
+
+        if len(transpose_conv_layer.args) > 3:
+            stride = transpose_conv_layer.args[3]
+            if isinstance(stride, (list, tuple)):
+                if len(stride) != 2:
+                    return (PartitionAnchors(empty=True), transpose_conv_layer)
+                s_h, s_w = stride[0], stride[1]
+            else:
+                s_h = s_w = stride
+        else:
+            s_h = s_w = 1
+        # H stride must be 1: kH=1 and H=1 by op contract, so any sH != 1
+        # would change output H, which the kernel cannot represent.
+        if s_h != 1 or not isinstance(s_w, int) or s_w < 1:
+            return (PartitionAnchors(empty=True), transpose_conv_layer)
+
+        if len(transpose_conv_layer.args) > 4:
+            padding = transpose_conv_layer.args[4]
+            if padding != [0, 0] and padding != 0:
+                return (PartitionAnchors(empty=True), transpose_conv_layer)
+        if len(transpose_conv_layer.args) > 5:
+            output_padding = transpose_conv_layer.args[5]
+            if output_padding != [0, 0] and output_padding != 0:
+                return (PartitionAnchors(empty=True), transpose_conv_layer)
+        if len(transpose_conv_layer.args) > 6:
+            groups = transpose_conv_layer.args[6]
+            if groups != 1:
+                return (PartitionAnchors(empty=True), transpose_conv_layer)
+        if len(transpose_conv_layer.args) > 7:
+            dilation = transpose_conv_layer.args[7]
+            if dilation != [1, 1] and dilation != 1:
+                return (PartitionAnchors(empty=True), transpose_conv_layer)
+
+        # Weight shape for ConvTranspose2d: [IC, OC, kH, kW].
+        tcnn_weights = transpose_conv_layer.args[1]
+        if "tensor_meta" in tcnn_weights.meta:
+            tcnn_weights_shape = tcnn_weights.meta["tensor_meta"].shape
+            # IC must be a multiple of 4 (SIMD).
+            if tcnn_weights_shape[0] % 4 != 0:
+                return (PartitionAnchors(empty=True), transpose_conv_layer)
+            if tcnn_weights_shape[2] != 1:
+                return (PartitionAnchors(empty=True), transpose_conv_layer)
+
+        # The kernel runs a single [1, C, 1, W] frame.
+        inputs = transpose_conv_layer.args[0]
+        if "tensor_meta" in inputs.meta:
+            inputs_shape = inputs.meta["tensor_meta"].shape
+            if inputs_shape[0] != 1 or inputs_shape[2] != 1:
+                return (PartitionAnchors(empty=True), transpose_conv_layer)
+
+        return (
+            PartitionAnchors(
+                inputs=[],
+                weights=[(transpose_conv_layer, 1)],
+                biases=[(transpose_conv_layer, 2)],
+                output=[],
+                others=[(transpose_conv_layer, 0)],
+            ),
+            transpose_conv_layer,
+        )
+
+    def replacement_op(self) -> OpOverload:
+        return torch.ops.cadence.quantized_w8a32_transpose_conv2d.default
+
+    def fuse(self, gm: fx.GraphModule, anchor_node: fx.Node) -> fx.Node | None:
+        if len(anchor_node.args) < 3 or len(anchor_node.kwargs) > 0:
+            return None
+        _arg1 = anchor_node.args[1]
+        dq_weight = (
+            _arg1
+            if isinstance(_arg1, fx.Node) and _arg1.target == DQ_PER_TENSOR
+            else None
+        )
+        _arg2 = anchor_node.args[2]
+        dq_bias = (
+            _arg2
+            if isinstance(_arg2, fx.Node) and _arg2.target == DQ_PER_TENSOR
+            else None
+        )
+        if dq_weight is None or dq_bias is None:
+            return None
+        input_node = anchor_node.args[0]
+        assert isinstance(input_node, fx.Node)
+        stride = get_arg(anchor_node, "stride", list[int])
+        weight_q = get_arg(dq_weight, "input", fx.Node)
+        # The kernel works in NHWC: [N, C, 1, W] -> [N, 1, W, C], with OHWI
+        # weights.
+        transposed_inputs = insert_node_with_meta(
+            gm,
+            torch.ops.aten.permute.default,
+            (input_node, [0, 2, 3, 1]),
+            None,
+            anchor_node,
+            input_node,
+        )
+        transposed_weights = insert_node_with_meta(
+            gm,
+            torch.ops.aten.permute.default,
+            (weight_q, self.weight_perm),
+            None,
+            anchor_node,
+            weight_q,
+        )
+        args = (
+            transposed_inputs,
+            transposed_weights,
+            get_arg(dq_weight, "scale", float),
+            get_arg(dq_bias, "input", fx.Node),
+            get_arg(dq_bias, "scale", float),
+            stride[1],
+        )
+        fused = insert_node_with_meta(
+            gm, self.replacement_op(), args, None, anchor_node, anchor_node
+        )
+        output = insert_node_with_meta(
+            gm,
+            torch.ops.aten.permute.default,
+            (fused, [0, 3, 1, 2]),
+            None,
+            anchor_node,
+            anchor_node,
+        )
+        anchor_node.replace_all_uses_with(output)
+        return output
+
+
+class MixedW8A32Conv2dPattern(MixedW8A32TransposeConv2dPattern):
+    # [OC, IC, 1, kW] -> [OC, 1, kW, IC].
+    weight_perm: List[int] = [0, 2, 3, 1]
+
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.conv2d.default]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> Tuple[PartitionAnchors, fx.Node]:
+        conv_layer = fused_partition[0].nodes[-1]
+
+        if (
+            len(conv_layer.args) < 3
+            or conv_layer.args[2] is None
+            or len(conv_layer.kwargs) > 0
+        ):
+            return (PartitionAnchors(empty=True), conv_layer)
+
+        # Stride defaults to [1, 1] when omitted (PyTorch conv2d default)
+        if len(conv_layer.args) > 3:
+            stride = conv_layer.args[3]
+            if isinstance(stride, (list, tuple)):
+                if len(stride) != 2:
+                    return (PartitionAnchors(empty=True), conv_layer)
+                s_h, s_w = stride[0], stride[1]
+            else:
+                s_h = s_w = stride
+        else:
+            s_h = s_w = 1
+
+        if s_h != 1 or not isinstance(s_w, int) or s_w < 1:
+            return (PartitionAnchors(empty=True), conv_layer)
+
+        if len(conv_layer.args) > 4:
+            padding = conv_layer.args[4]
+            if padding != [0, 0] and padding != 0:
+                return (PartitionAnchors(empty=True), conv_layer)
+        if len(conv_layer.args) > 5:
+            dilation = conv_layer.args[5]
+            if dilation != [1, 1] and dilation != 1:
+                return (PartitionAnchors(empty=True), conv_layer)
+        if len(conv_layer.args) > 6:
+            groups = conv_layer.args[6]
+            if groups != 1:
+                return (PartitionAnchors(empty=True), conv_layer)
+
+        cnn_weights = conv_layer.args[1]
+        if "tensor_meta" not in cnn_weights.meta:
+            return (PartitionAnchors(empty=True), conv_layer)
+        cnn_weights_shape = cnn_weights.meta["tensor_meta"].shape
+        # OC must be a multiple of 4 (SIMD).
+        if cnn_weights_shape[0] % 4 != 0:
+            return (PartitionAnchors(empty=True), conv_layer)
+        # IC must be a multiple of 4 (SIMD).
+        if cnn_weights_shape[1] % 4 != 0:
+            return (PartitionAnchors(empty=True), conv_layer)
+        if cnn_weights_shape[2] != 1:
+            return (PartitionAnchors(empty=True), conv_layer)
+
+        # The kernel runs a single [1, C, 1, W] frame.
+        inputs = conv_layer.args[0]
+        if "tensor_meta" not in inputs.meta:
+            return (PartitionAnchors(empty=True), conv_layer)
+        inputs_shape = inputs.meta["tensor_meta"].shape
+        if inputs_shape[0] != 1 or inputs_shape[2] != 1:
+            return (PartitionAnchors(empty=True), conv_layer)
+
+        return (
+            PartitionAnchors(
+                inputs=[],
+                weights=[(conv_layer, 1)],
+                biases=[(conv_layer, 2)],
+                output=[],
+                others=[(conv_layer, 0)],
+            ),
+            conv_layer,
+        )
+
+    def replacement_op(self) -> OpOverload:
+        return torch.ops.cadence.quantized_w8a32_conv2d.default
+
+
+class MixedW8A32LayerNormPattern(QuantizationPattern):
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.layer_norm.default]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> Tuple[PartitionAnchors, fx.Node]:
+        layer_norm_node = fused_partition[0].nodes[-1]
+
+        if len(layer_norm_node.args) < 4:
+            return (PartitionAnchors(empty=True), layer_norm_node)
+
+        if layer_norm_node.args[2] is None or layer_norm_node.args[3] is None:
+            return (PartitionAnchors(empty=True), layer_norm_node)
+
+        # The kernel normalizes over a SIMD-aligned last dim with the default
+        # epsilon.
+        normalized_shape = layer_norm_node.args[1]
+        if len(normalized_shape) != 1 or normalized_shape[0] % 4 != 0:
+            return (PartitionAnchors(empty=True), layer_norm_node)
+        if layer_norm_node.kwargs or (
+            len(layer_norm_node.args) > 4 and layer_norm_node.args[4] != 1e-5
+        ):
+            return (PartitionAnchors(empty=True), layer_norm_node)
+
+        return (
+            PartitionAnchors(
+                inputs=[],
+                weights=[(layer_norm_node, 2)],
+                biases=[(layer_norm_node, 3)],
+                output=[],
+                others=[(layer_norm_node, 0)],
+            ),
+            layer_norm_node,
+        )
+
+    def replacement_op(self) -> OpOverload:
+        return torch.ops.cadence.quantized_w8a32_layernorm.default
+
+    def fuse(self, gm: fx.GraphModule, anchor_node: fx.Node) -> fx.Node | None:
+        if len(anchor_node.args) < 4:
+            return None
+        _arg2 = anchor_node.args[2]
+        dq_weight = (
+            _arg2
+            if isinstance(_arg2, fx.Node) and _arg2.target == DQ_PER_TENSOR
+            else None
+        )
+        _arg3 = anchor_node.args[3]
+        dq_bias = (
+            _arg3
+            if isinstance(_arg3, fx.Node) and _arg3.target == DQ_PER_TENSOR
+            else None
+        )
+        if dq_weight is None or dq_bias is None:
+            return None
+        args = (
+            anchor_node.args[0],
+            get_arg(dq_weight, "input", fx.Node),
+            get_arg(dq_weight, "scale", float),
+            get_arg(dq_bias, "input", fx.Node),
+            get_arg(dq_bias, "scale", float),
+        )
+        return replace_with_op(
+            gm, anchor_node, self.replacement_op(), args, {}, anchor_node
+        )
+
+
 class RmsNormPattern(QuantizationPattern):
     """Pattern that preserves rms_norm from decomposition without matching anything."""
 
