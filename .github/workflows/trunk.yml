@@ -92,7 +92,11 @@ jobs:
       id-token: write
 
   test-models-linux-aarch64:
-    needs: docker-image
+    needs: [docker-image, run-decision]
+    # Sampled on push: see _ci-run-decision.yml for the sampling policy.
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
     name: test-models-linux-aarch64
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
@@ -197,7 +201,11 @@ jobs:
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash examples/selective_build/test_selective_build.sh "${BUILD_TOOL}"
 
   test-demo-backend-delegation:
-    needs: docker-image
+    needs: [docker-image, run-decision]
+    # Sampled on push: see _ci-run-decision.yml for the sampling policy.
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
     name: test-demo-backend-delegation
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
@@ -226,8 +234,10 @@ jobs:
 
   test-coreml-delegate:
     needs: [changed-files, run-decision]
-    # Path-filtered: see _ci-run-decision.yml for the sampling policy.
+    # Runs on every trunk PR (trunk only triggers on PRs touching CI scripts or
+    # the PyTorch pin); on push, path-filtered + sampled per _ci-run-decision.yml.
     if: |
+      github.event_name == 'pull_request' ||
       contains(needs.changed-files.outputs.changed-files, 'backends/apple/coreml') ||
       contains(needs.changed-files.outputs.changed-files, 'examples/apple/coreml') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-macos.sh') ||
@@ -319,7 +329,11 @@ jobs:
         ${CONDA_RUN} sh .ci/scripts/test_llama_torchao_lowbit.sh
 
   test-llama-runner-linux:
-    needs: docker-image
+    needs: [docker-image, run-decision]
+    # Sampled on push: see _ci-run-decision.yml for the sampling policy.
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
     # Test Both linux x86 and linux aarch64
     name: test-llama-runner-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
@@ -431,7 +445,11 @@ jobs:
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_llama.sh -model stories110M -build_tool cmake -dtype "${DTYPE}" -mode "${MODE}"
 
   test-torchao-huggingface-checkpoints:
-    needs: docker-image
+    needs: [docker-image, run-decision]
+    # Sampled on push: see _ci-run-decision.yml for the sampling policy.
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
     name: test-torchao-huggingface-checkpoints
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
@@ -526,7 +544,19 @@ jobs:
         echo "::endgroup::"
 
   test-qnn-model:
-    needs: docker-image
+    needs: [docker-image, changed-files, run-decision]
+    # Runs on every trunk PR (trunk only triggers on PRs touching CI scripts or
+    # the PyTorch pin); on push, path-filtered + sampled per _ci-run-decision.yml.
+    if: |
+      github.event_name == 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build-qnn-sdk.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-qnn-deps.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/docker/ci_commit_pins/pytorch.txt') ||
+      contains(needs.changed-files.outputs.changed-files, 'torch_pin.py') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
     name: test-qnn-model
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
@@ -553,7 +583,19 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh ${{ matrix.model }} "cmake" "qnn"
 
   test-qnn-optimum-model:
-    needs: docker-image
+    needs: [docker-image, changed-files, run-decision]
+    # Runs on every trunk PR (trunk only triggers on PRs touching CI scripts or
+    # the PyTorch pin); on push, path-filtered + sampled per _ci-run-decision.yml.
+    if: |
+      github.event_name == 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build-qnn-sdk.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-qnn-deps.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/docker/ci_commit_pins/pytorch.txt') ||
+      contains(needs.changed-files.outputs.changed-files, 'torch_pin.py') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
     name: test-qnn-optimum-model
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
@@ -631,9 +673,13 @@ jobs:
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
 
   test-huggingface-transformers-xnnpack:
-    needs: docker-image
+    needs: [docker-image, run-decision]
     # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
-    if: ${{ !github.event.pull_request.head.repo.fork }}
+    # Sampled on push: see _ci-run-decision.yml for the sampling policy.
+    if: |
+      (!github.event.pull_request.head.repo.fork) && (
+        github.event_name == 'pull_request' ||
+        needs.run-decision.outputs.is-full-run == 'true')
     name: test-huggingface-transformers-xnnpack
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
@@ -797,7 +843,22 @@ jobs:
         ${CONDA_RUN} python .ci/scripts/test_huggingface_optimum_model.py --model ${MODEL} --recipe ${RECIPE} ${QUANTIZE}
 
   test-llama-runner-qnn-linux:
-    needs: docker-image
+    needs: [docker-image, changed-files, run-decision]
+    # Runs on every trunk PR (trunk only triggers on PRs touching CI scripts or
+    # the PyTorch pin); on push, path-filtered + sampled per _ci-run-decision.yml.
+    if: |
+      github.event_name == 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/qualcomm') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build-qnn-sdk.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-qnn-deps.sh') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/llama') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_llama.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/docker/ci_commit_pins/pytorch.txt') ||
+      contains(needs.changed-files.outputs.changed-files, 'torch_pin.py') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
     name: test-llama-runner-qnn-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
@@ -853,6 +914,11 @@ jobs:
               - 'examples/models/llama/**'
 
   unittest-release:
+    needs: run-decision
+    # Sampled on push: see _ci-run-decision.yml for the sampling policy.
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
     uses: ./.github/workflows/_unittest.yml
     permissions:
       actions: read
@@ -919,10 +985,21 @@ jobs:
         }"
 
   test-samsung-quantmodels-linux:
-    needs: docker-image
+    needs: [docker-image, changed-files, run-decision]
+    # Runs on every trunk PR (trunk only triggers on PRs touching CI scripts or
+    # the PyTorch pin); on push, path-filtered + sampled per _ci-run-decision.yml.
+    if: |
+      (github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request') && (
+        github.event_name == 'pull_request' ||
+        contains(needs.changed-files.outputs.changed-files, 'backends/samsung') ||
+        contains(needs.changed-files.outputs.changed-files, 'examples/samsung') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-samsung-linux-deps.sh') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/docker/ci_commit_pins/pytorch.txt') ||
+        contains(needs.changed-files.outputs.changed-files, 'torch_pin.py') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml') ||
+        needs.run-decision.outputs.is-full-run == 'true')
     name: test-samsung-quantmodels-linux
     # Skip this job if the pull request is from a fork (secrets are not available)
-    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
@@ -958,10 +1035,21 @@ jobs:
         done
 
   test-samsung-models-linux:
-    needs: docker-image
+    needs: [docker-image, changed-files, run-decision]
+    # Runs on every trunk PR (trunk only triggers on PRs touching CI scripts or
+    # the PyTorch pin); on push, path-filtered + sampled per _ci-run-decision.yml.
+    if: |
+      (github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request') && (
+        github.event_name == 'pull_request' ||
+        contains(needs.changed-files.outputs.changed-files, 'backends/samsung') ||
+        contains(needs.changed-files.outputs.changed-files, 'examples/samsung') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-samsung-linux-deps.sh') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/docker/ci_commit_pins/pytorch.txt') ||
+        contains(needs.changed-files.outputs.changed-files, 'torch_pin.py') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml') ||
+        needs.run-decision.outputs.is-full-run == 'true')
     name: test-samsung-models-linux
     # Skip this job if the pull request is from a fork (secrets are not available)
-    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
