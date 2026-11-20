@@ -219,7 +219,7 @@ Result<FreeableBuffer> MmapDataLoader::load(
 
   if (mlock_config_ == MlockConfig::UseMlock ||
       mlock_config_ == MlockConfig::UseMlockIgnoreErrors) {
-    int err = ::mlock(pages, size);
+    int err = ::mlock(pages, map_size);
     if (err < 0) {
       if (mlock_config_ == MlockConfig::UseMlockIgnoreErrors) {
         ET_LOG(
@@ -229,7 +229,7 @@ Result<FreeableBuffer> MmapDataLoader::load(
             file_name_,
             offset,
             pages,
-            size,
+            map_size,
             ::strerror(errno),
             errno);
       } else {
@@ -239,10 +239,10 @@ Result<FreeableBuffer> MmapDataLoader::load(
             file_name_,
             offset,
             pages,
-            size,
+            map_size,
             ::strerror(errno),
             errno);
-        ::munmap(pages, size);
+        ::munmap(pages, map_size);
         return Error::NotSupported;
       }
     }

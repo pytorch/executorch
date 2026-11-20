@@ -48,7 +48,7 @@
 
 namespace {
 
-HRESULT try_grow_process_memory_working_set(DWORD dwSizeRequired) {
+HRESULT try_grow_process_memory_working_set(size_t sizeRequired) {
   // Get current working set
   size_t minWorkingSetInitial;
   size_t maxWorkingSet;
@@ -58,7 +58,7 @@ HRESULT try_grow_process_memory_working_set(DWORD dwSizeRequired) {
   }
 
   // Calculate new sizes
-  size_t minWorkingSet = minWorkingSetInitial + dwSizeRequired;
+  size_t minWorkingSet = minWorkingSetInitial + sizeRequired;
   if (minWorkingSet < minWorkingSetInitial) {
     return HRESULT_FROM_WIN32(ERROR_ARITHMETIC_OVERFLOW);
   }
@@ -75,20 +75,20 @@ HRESULT try_grow_process_memory_working_set(DWORD dwSizeRequired) {
   return S_OK;
 }
 
-HRESULT virtual_lock(void* pMem, DWORD dwSize) {
-  if (!VirtualLock(pMem, dwSize)) {
+HRESULT virtual_lock(void* pMem, size_t size) {
+  if (!VirtualLock(pMem, size)) {
     return GetLastError();
   }
   return S_OK;
 }
 
-HRESULT virtual_lock_allowing_working_set_growth(void* pMem, DWORD dwSize) {
-  HRESULT hr = virtual_lock(pMem, dwSize);
+HRESULT virtual_lock_allowing_working_set_growth(void* pMem, size_t size) {
+  HRESULT hr = virtual_lock(pMem, size);
 
   if (hr == HRESULT_FROM_WIN32(STATUS_SECTION_TOO_BIG)) {
     // Attempt to grow the process working set and try again
-    RETURN_IF_FAILED(try_grow_process_memory_working_set(dwSize));
-    RETURN_IF_FAILED(virtual_lock(pMem, dwSize));
+    RETURN_IF_FAILED(try_grow_process_memory_working_set(size));
+    RETURN_IF_FAILED(virtual_lock(pMem, size));
   }
 
   return hr;
