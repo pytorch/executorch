@@ -371,4 +371,67 @@ void GraphBuilder::lower_cat(const Node& node) {
   set_single_output(node, std::move(result));
 }
 
+void GraphBuilder::lower_split(const Node& node, const std::string& key) {
+  const TensorRef input = tensor_arg(node, "self", 0);
+  const size_t rank = input.sizes.size();
+  const auto dim = static_cast<size_t>(
+      normalize_dim(int_arg(node, "dim", 2, 0, true), rank));
+  const int64_t extent = input.sizes[dim];
+  if (node.outputs.size() != 1 ||
+      node.outputs.front().kind != OutputValueKind::TensorList) {
+    throw std::runtime_error("ggml: split must produce one tensor per piece");
+  }
+  const size_t outputs = node.outputs.front().elem_ids.size();
+  std::vector<int64_t> pieces;
+  if (key == "aten.split_with_sizes_copy.default" ||
+      key == "aten.split_with_sizes.default") {
+    pieces = int_list(require_arg(node, "split_sizes", 1).arg);
+  } else {
+    const int64_t size = int_arg(node, "split_size", 1, 0);
+    if (size <= 0) {
+      throw std::runtime_error("ggml: split size must be positive");
+    }
+    // Counted before the pieces are listed, so a huge extent costs nothing.
+    if (static_cast<uint64_t>(extent / size + (extent % size != 0)) !=
+        outputs) {
+      throw std::runtime_error("ggml: split must produce one tensor per piece");
+    }
+    for (int64_t start = 0; start < extent; start += size) {
+      pieces.push_back(std::min(size, extent - start));
+    }
+  }
+  if (pieces.size() != outputs) {
+    throw std::runtime_error("ggml: split must produce one tensor per piece");
+  }
+  int64_t total = 0;
+  for (const int64_t size : pieces) {
+    if (size < 0 || __builtin_add_overflow(total, size, &total)) {
+      throw std::runtime_error(
+          "ggml: split sizes must add up to the dimension's size");
+    }
+  }
+  if (total != extent) {
+    throw std::runtime_error(
+        "ggml: split sizes must add up to the dimension's size");
+  }
+  const size_t gdim = rank - 1 - dim;
+  int64_t start = 0;
+  for (size_t i = 0; i < pieces.size(); ++i) {
+    std::vector<int64_t> sizes = input.sizes;
+    sizes[dim] = pieces[i];
+    if (const ValueId id = node.outputs.front().elem_ids[i]; valid(id)) {
+      set_view(
+          id,
+          TensorRef{
+              view_with_shape(
+                  instance_.context.get(),
+                  input.tensor,
+                  sizes,
+                  static_cast<size_t>(start) * input.tensor->nb[gdim]),
+              sizes});
+    }
+    start += pieces[i];
+  }
+}
+
 } // namespace ptn::ggml_detail

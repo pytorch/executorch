@@ -157,6 +157,15 @@ def _gguf_weights(model: LlamaForCausalLM) -> list[tuple[str, torch.Tensor]]:
     return pairs
 
 
+class _Lambda(torch.nn.Module):
+    def __init__(self, fn):
+        super().__init__()
+        self.fn = fn
+
+    def forward(self, x):
+        return self.fn(x)
+
+
 class _ViewRelu(torch.nn.Module):
     """relu over a reshaping view of a linear output: the in-place relu the
     native passes emit writes through a view nothing else reads."""
@@ -386,6 +395,23 @@ class CrossEngineTest(unittest.TestCase):
                     [(torch.randn(1, 12, 16),)],
                     outdir,
                     resize=True,
+                )
+
+    def test_negative_dims(self):
+        torch.manual_seed(0)
+        steps = [(torch.randn(2, 3, 4, 8),)]
+        ops = {
+            "split": lambda x: torch.split(x, [1, 3], -2)[1] * 1.0,
+            "chunk": lambda x: torch.chunk(x, 2, -1)[0] * 1.0,
+        }
+        for name, fn in ops.items():
+            with self.subTest(op=name):
+                self._check_dynamic(
+                    _Lambda(fn),
+                    steps,
+                    None,
+                    atol_fraction=1e-5,
+                    engines=("ggml_ptn_runner",),
                 )
 
     def test_clone_between_pool_and_linear(self):
