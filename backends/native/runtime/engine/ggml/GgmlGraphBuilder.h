@@ -129,6 +129,8 @@ struct GraphInstance {
   // Input-driven row indices, rechecked on every replay.
   std::vector<RowIndexCheck> row_index_checks;
   std::optional<OffGraphUploads> offgraph;
+  // Integer inputs some op computes on in F32, rechecked on every replay.
+  std::vector<ValueId> exact_integer_checks;
 };
 
 // Inference batch norm is the per-channel map x * scale + shift of its
@@ -144,9 +146,20 @@ struct FoldedBatchNorms {
   std::unordered_map<ValueId, ggml_tensor*> conv_bias;
 };
 
+// Node capacity of a method's graphs: at least `graph_size`, and at least the
+// metadata room GraphBuilder sizes for every lowering's tensors, so no graph
+// can outgrow it.
+size_t graph_capacity(const Method& method, size_t graph_size);
+
 const ggml_tensor* storage_root(const ggml_tensor* tensor);
 
 void check_index_bytes(const InputSlot& input, int64_t rows);
+
+// F32 holds every integer within +-2^24 exactly.
+inline constexpr int64_t kExactF32Integer = int64_t{1} << 24;
+
+bool is_integer(ScalarType dtype);
+void check_exact_integer_bytes(const InputSlot& input);
 
 ggml_tensor* reshape(
     ggml_context* ctx,
@@ -172,6 +185,7 @@ class GraphBuilder {
       const FoldedBatchNorms& batch_norms,
       std::unordered_map<ValueId, int64_t> key_extents,
       size_t graph_size,
+      bool gpu,
       const OffGraphCacheBinding* offgraph_cache = nullptr);
 
   GraphInstance build();
@@ -225,6 +239,10 @@ class GraphBuilder {
   void lower_linear(const Node& node);
   void lower_row_gather(const Node& node);
   void check_row_indices(ValueId id, int64_t rows);
+  void require_exact_integers(
+      ValueId id,
+      const std::string& what,
+      bool traced_only = false);
   void lower_rms_norm(const Node& node);
   void lower_layer_norm(const Node& node);
   void lower_gelu(const Node& node);
@@ -288,6 +306,7 @@ class GraphBuilder {
   std::pair<ggml_tensor*, std::vector<int64_t>> trailing_rows(
       const Node& node,
       const std::string& op);
+  void lower_split(const Node& node, const std::string& key);
   void lower_slice(const Node& node, bool copy);
   void lower_select(const Node& node, bool copy);
   void lower_unsqueeze(const Node& node);
@@ -300,7 +319,8 @@ class GraphBuilder {
   TensorRef active_cache(const TensorRef& cache, int64_t length);
   TensorRef causal_mask(int64_t tokens, int64_t keys, int64_t start);
   void lower_custom_sdpa(const Node& node);
-  void lower_compare(const Node& node, bool strict);
+  enum class Comparison { Le, Lt };
+  void lower_compare(const Node& node, Comparison comparison);
   void lower_arange(const Node& node);
   DynamicQuant dynamic_quant_arg(
       const Node& node,
@@ -331,6 +351,8 @@ class GraphBuilder {
   // Mask values (and their producers) computed over a key prefix only.
   std::unordered_map<ValueId, int64_t> key_extents_;
   size_t graph_size_;
+  // The primary backend is a GPU.
+  bool gpu_;
   const OffGraphCacheBinding* offgraph_cache_;
   std::vector<RuntimeValue> values_;
   std::unordered_map<ValueId, ggml_tensor*> rope_factor_tensors_;
