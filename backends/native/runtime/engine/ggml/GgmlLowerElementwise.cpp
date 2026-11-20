@@ -43,7 +43,7 @@ void GraphBuilder::lower_rms_norm(const Node& node) {
 }
 
 void GraphBuilder::lower_layer_norm(const Node& node) {
-  const TensorRef input = tensor_arg(node, "input", 0);
+  TensorRef input = tensor_arg(node, "input", 0);
   const std::vector<int64_t> normalized =
       int_list(require_arg(node, "normalized_shape", 1).arg);
   if (input.sizes.empty() || normalized.size() != 1 ||
@@ -51,7 +51,9 @@ void GraphBuilder::lower_layer_norm(const Node& node) {
     throw std::runtime_error("ggml: layer_norm only normalizes the last dim");
   }
   require_only_first_output_used(node);
-  // ggml's norm kernels only read F32.
+  // ggml's norm kernels only read F32. Computed in F32, as eager does for F16
+  // and BF16; set() rounds back.
+  input.tensor = half_as_f32(input.tensor);
   require_f32(node, input.tensor);
   const double eps = float_arg(node, "eps", 4, 1e-5, true);
   ggml_context* ctx = instance_.context.get();
@@ -59,10 +61,10 @@ void GraphBuilder::lower_layer_norm(const Node& node) {
       ggml_norm(ctx, contiguous(input.tensor), static_cast<float>(eps));
   if (const std::optional<TensorRef> weight =
           optional_tensor(node, "weight", 2)) {
-    result = ggml_mul(ctx, result, weight->tensor);
+    result = ggml_mul(ctx, result, half_as_f32(weight->tensor));
   }
   if (const std::optional<TensorRef> bias = optional_tensor(node, "bias", 3)) {
-    result = ggml_add(ctx, result, bias->tensor);
+    result = ggml_add(ctx, result, half_as_f32(bias->tensor));
   }
   set(output_ids(node).at(0), TensorRef{result, input.sizes});
 }
@@ -217,8 +219,13 @@ void GraphBuilder::lower_sqrt(const Node& node) {
 }
 
 void GraphBuilder::lower_hardtanh(const Node& node) {
-  const TensorRef input = tensor_arg(node, "self", 0);
+  TensorRef input = tensor_arg(node, "self", 0);
   require_float(node, input.tensor);
+  // ggml-cpu clamps F32 and F16 only, so BF16 clamps in F32, exactly; set()
+  // rounds back.
+  if (input.tensor->type == GGML_TYPE_BF16) {
+    input.tensor = as_f32(input.tensor);
+  }
   const float min =
       static_cast<float>(float_arg(node, "min_val", 1, -1.0, true));
   const float max =
@@ -346,16 +353,75 @@ void GraphBuilder::lower_softmax(const Node& node) {
       TensorRef{ggml_soft_max(ctx, contiguous(input.tensor)), input.sizes});
 }
 
+namespace {
+
+// The dtype eager compares two tensors in, as far as it matters here: two
+// floating types in the wider one, F16 with BF16 in F32; a 0-d tensor takes a
+// dimensioned one's dtype unless its category is higher. Two integer types
+// compare exactly in F32 whatever their widths, so the left one stands in.
+ScalarType compare_dtype(
+    ScalarType a,
+    bool a_dimensioned,
+    ScalarType b,
+    bool b_dimensioned) {
+  const auto category = [](ScalarType t) {
+    return t == ScalarType::Bool ? 0 : is_integer(t) ? 1 : 2;
+  };
+  if (a_dimensioned != b_dimensioned) {
+    const ScalarType dimensioned = a_dimensioned ? a : b;
+    const ScalarType zero_dim = a_dimensioned ? b : a;
+    return category(zero_dim) > category(dimensioned) ? zero_dim : dimensioned;
+  }
+  if (a == b) {
+    return a;
+  }
+  if (category(a) != category(b)) {
+    return category(a) > category(b) ? a : b;
+  }
+  return category(a) == 2 ? ScalarType::Float : a;
+}
+
+} // namespace
+
 // Comparisons produce 0/1 floats: a <= b is 1 - step(a - b) and a < b is
-// step(b - a).
-void GraphBuilder::lower_compare(const Node& node, bool strict) {
+// step(b - a), with a and b in F32. Each operand is first rounded to its own
+// dtype (a lowering may have left an F16 result in F32), then to the dtype
+// eager compares in when that is F16 or BF16; a scalar takes a tensor's dtype
+// within its category. Two integers compare exactly, which F32 matches within
+// +-2^24; le and lt check the integers they can trace: attention masks compare
+// positions the graph computes, which le and lt accepted before any check.
+void GraphBuilder::lower_compare(const Node& node, Comparison comparison) {
+  const ValueId left_id = tensor_arg_id(node, "self", 0);
   TensorRef left = tensor_arg(node, "self", 0);
   const NamedArgument& other = require_arg(node, "other", 1);
   ggml_context* ctx = instance_.context.get();
+  const std::string op = comparison == Comparison::Le ? "le" : "lt";
+  const ScalarType left_dtype =
+      method_.graph.value(left_id).tensor_meta().dtype;
+  constexpr bool traced_only = true;
+  const auto round_to = [&](ggml_tensor* t, ScalarType dtype) {
+    if (dtype != ScalarType::Half && dtype != ScalarType::BFloat16) {
+      return t;
+    }
+    const ggml_type half =
+        dtype == ScalarType::Half ? GGML_TYPE_F16 : GGML_TYPE_BF16;
+    return t->type == half ? t : ggml_cast(ctx, as_f32(t), half);
+  };
   ggml_tensor* difference = nullptr;
   std::vector<int64_t> sizes = left.sizes;
   if (other.arg.kind() == ArgKind::Tensor) {
-    TensorRef right = tensor(other.arg.as_tensor().id);
+    const ValueId right_id = other.arg.as_tensor().id;
+    TensorRef right = tensor(right_id);
+    const ScalarType right_dtype =
+        method_.graph.value(right_id).tensor_meta().dtype;
+    const ScalarType dtype = compare_dtype(
+        left_dtype, !left.sizes.empty(), right_dtype, !right.sizes.empty());
+    if (is_integer(dtype)) {
+      require_exact_integers(left_id, op + "'s self", traced_only);
+      require_exact_integers(right_id, op + "'s other", traced_only);
+    }
+    left.tensor = round_to(round_to(left.tensor, left_dtype), dtype);
+    right.tensor = round_to(round_to(right.tensor, right_dtype), dtype);
     if (const std::optional<int64_t> extent = key_extent_of(node)) {
       // An attention mask over a key prefix: only the per-key operand
       // spans the key axis.
@@ -366,16 +432,57 @@ void GraphBuilder::lower_compare(const Node& node, bool strict) {
     difference = ggml_sub(ctx, operands.lhs, operands.rhs);
     sizes = std::move(operands.sizes);
   } else {
+    auto scalar = static_cast<float>(float_arg(node, "other", 1, 0));
+    if (is_integer(left_dtype) && other.arg.kind() == ArgKind::Int) {
+      require_exact_integers(left_id, op + "'s self", traced_only);
+      const int64_t value = int_value(other.arg);
+      if (value < -kExactF32Integer || value > kExactF32Integer) {
+        throw std::out_of_range(
+            "ggml: " + op +
+            "'s other is outside +-2^24, which F32 holds "
+            "exactly");
+      }
+    } else if (left_dtype == ScalarType::Half) {
+      scalar = ggml_fp16_to_fp32(ggml_fp32_to_fp16(scalar));
+    } else if (left_dtype == ScalarType::BFloat16) {
+      scalar = ggml_bf16_to_fp32(ggml_fp32_to_bf16(scalar));
+    }
     difference = ggml_scale_bias(
         ctx,
-        contiguous(as_f32(left.tensor)),
+        contiguous(as_f32(round_to(left.tensor, left_dtype))),
         1.0f,
-        -static_cast<float>(float_arg(node, "other", 1, 0)));
+        -scalar);
   }
-  ggml_tensor* result = strict
-      ? ggml_step(ctx, ggml_neg(ctx, difference))
-      : ggml_scale_bias(ctx, ggml_step(ctx, difference), -1.0f, 1.0f);
+  ggml_tensor* result = nullptr;
+  switch (comparison) {
+    case Comparison::Le:
+      result = ggml_scale_bias(ctx, ggml_step(ctx, difference), -1.0f, 1.0f);
+      break;
+    case Comparison::Lt:
+      result = ggml_step(ctx, ggml_neg(ctx, difference));
+      break;
+  }
   set_single_output(node, TensorRef{result, std::move(sizes)});
+}
+
+// Sets `id` to `result` in the value's declared type. Bools stay 0/1 floats.
+void GraphBuilder::set_as_output_type(ValueId id, TensorRef result) {
+  const TensorMeta& meta = method_.graph.value(id).tensor_meta();
+  if (meta.dtype != ScalarType::Bool) {
+    const ggml_type type = compute_type(meta);
+    if (result.tensor->type != type) {
+      result.tensor = ggml_cast(instance_.context.get(), result.tensor, type);
+    }
+  }
+  set(id, std::move(result));
+}
+
+// 1 where x is NaN, else 0, in F32: |x| + 1 is NaN only for a NaN x.
+ggml_tensor* GraphBuilder::nan_mask(ggml_tensor* x) {
+  ggml_context* ctx = instance_.context.get();
+  ggml_tensor* plus_one =
+      ggml_scale_bias(ctx, ggml_abs(ctx, contiguous(as_f32(x))), 1.0f, 1.0f);
+  return ggml_scale_bias(ctx, ggml_step(ctx, plus_one), -1.0f, 1.0f);
 }
 
 // The result is F32, which holds integers exactly up to 2^24, and ggml
