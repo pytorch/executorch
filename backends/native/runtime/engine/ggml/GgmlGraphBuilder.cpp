@@ -891,8 +891,6 @@ void GraphBuilder::lower(const Node& node) {
   }
 }
 
-namespace {
-
 // Ops whose integer result holds values of their `self`: casts, views and
 // repeats.
 bool keeps_integer_values(const std::string& key) {
@@ -911,8 +909,6 @@ bool keeps_integer_values(const std::string& key) {
   };
   return kOps.contains(key);
 }
-
-} // namespace
 
 // Row indices are checked on the host, which needs them to come from a
 // graph input through integer casts, views or repeats, or an integer arange
@@ -962,12 +958,14 @@ void GraphBuilder::check_row_indices(ValueId id, int64_t rows) {
 
 // Integers some ops compute on in F32 must be exact there: from a graph input,
 // checked on every run, or an arange whose bounds are known when building,
-// through integer casts, views or repeats. With `traced_only`, an integer
-// computed otherwise passes unchecked.
+// through integer casts, views or repeats. `defer_to_host` permits any other
+// integer and leaves it to the host, which refuses at compile one it can never
+// bound (it follows adds and subtracts too) and checks that it stays within
+// +-2^24: once per graph when constants and shapes bound it, else every run.
 void GraphBuilder::require_exact_integers(
     ValueId id,
     const std::string& what,
-    bool traced_only) {
+    bool defer_to_host) {
   const auto integer = [this](ValueId value) {
     return is_integer(method_.graph.value(value).tensor_meta().dtype);
   };
@@ -1013,7 +1011,8 @@ void GraphBuilder::require_exact_integers(
     }
     id = source->arg.as_tensor().id;
   }
-  if (traced_only) {
+  if (defer_to_host) {
+    instance_.host_integer_checks.push_back({.id = id, .what = what});
     return;
   }
   throw std::runtime_error(

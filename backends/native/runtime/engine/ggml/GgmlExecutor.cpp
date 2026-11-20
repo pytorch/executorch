@@ -185,7 +185,7 @@ class GgmlExecutable final : public EngineExecutable {
       *heap_copied_constant_bytes += heap_copied_constant_bytes_;
     }
     // Rejects unsupported ops and shapes at compile time.
-    build_graph(full_key_extents());
+    check_host_integers_boundable(build_graph(full_key_extents()));
   }
 
   ~GgmlExecutable() override {
@@ -280,6 +280,7 @@ class GgmlExecutable final : public EngineExecutable {
       }
       if (options_.max_cached_graphs == 0) {
         GraphInstance instance = build_graph(evaluate_key_extents());
+        check_host_integers(instance);
         if (const size_t size = scheduler_size(instance);
             size > scheduler_size_) {
           if (scheduler_) {
@@ -370,6 +371,7 @@ class GgmlExecutable final : public EngineExecutable {
     if (hit != cached_graphs_.end()) {
       std::rotate(hit, hit + 1, cached_graphs_.end());
       refresh_inputs(cached_graphs_.back().instance);
+      check_host_integers(cached_graphs_.back().instance);
       return cached_graphs_.back();
     }
     if (cached_graphs_.size() >= options_.max_cached_graphs) {
@@ -377,6 +379,7 @@ class GgmlExecutable final : public EngineExecutable {
       cached_graphs_.erase(cached_graphs_.begin());
     }
     GraphInstance instance = build_graph(key_extents);
+    check_host_integers(instance);
     ggml_backend_sched_ptr scheduler = make_scheduler(scheduler_size(instance));
     CachedGraph cached{
         .key_extents = key_extents,
@@ -1614,6 +1617,60 @@ class GgmlExecutable final : public EngineExecutable {
     }
   }
 
+  // The slow path, for integers whose bound needs this run's input values,
+  // e.g. positions a graph input offsets; build_graph drops the others.
+  void check_host_integers(const GraphInstance& instance) {
+    if (instance.host_integer_checks.empty()) {
+      return;
+    }
+    HostIntEvaluator host(
+        method_,
+        inputs_,
+        [this](ValueId id) { return host_constant(id); },
+        host_static_values_);
+    for (const HostIntegerCheck& check : instance.host_integer_checks) {
+      const std::optional<int64_t> peak = host.peak_bound(check.id);
+      if (!peak) {
+        throw unbounded_host_integer(check);
+      }
+      if (*peak > kExactF32Integer) {
+        throw inexact_host_integer(check);
+      }
+    }
+  }
+
+  // Whether the host can bound an integer at all depends on the graph alone,
+  // so one that no run could bound is refused at compile; each run checks
+  // only that its inputs keep the bound within +-2^24.
+  void check_host_integers_boundable(const GraphInstance& instance) {
+    HostIntEvaluator host = host_evaluator();
+    for (const HostIntegerCheck& check : instance.host_integer_checks) {
+      const std::optional<int64_t> floor = host.static_peak_bound(check.id);
+      if (!floor) {
+        throw unbounded_host_integer(check);
+      }
+      if (*floor > kExactF32Integer) {
+        throw inexact_host_integer(check);
+      }
+    }
+  }
+
+  static std::runtime_error unbounded_host_integer(
+      const HostIntegerCheck& check) {
+    return std::runtime_error(
+        "ggml: " + check.what +
+        " must be an integer F32 holds exactly: a graph input, a small "
+        "constant or an arange, through integer casts, views or repeats, "
+        "adds or subtracts");
+  }
+
+  static std::out_of_range inexact_host_integer(const HostIntegerCheck& check) {
+    return std::out_of_range(
+        "ggml: " + check.what +
+        " is computed through integers that can leave +-2^24, which F32 "
+        "holds exactly");
+  }
+
   // Small integer constants, e.g. a key offset, read once from the package.
   std::optional<HostInts> host_constant(ValueId id) {
     if (const auto found = host_constants_.find(id);
@@ -1749,6 +1806,32 @@ GraphInstance GgmlExecutable::build_graph(
           options_.exact_gelu_for_testing,
           valid(offgraph_position_) ? &offgraph_cache : nullptr)
           .build();
+  // Boundability without a per-run check: shapes are part of a graph's key,
+  // and every run rejects row indices outside [0, rows), such as the positions
+  // a KV cache is written at, as a hard error before computing (when building
+  // the graph, or in refresh_inputs on a replay). So an integer that
+  // constants, shapes and the row indices of tables of at most 2^24 rows bound
+  // within +-2^24 needs no check per run; check_host_integers bounds the rest.
+  if (!instance.host_integer_checks.empty()) {
+    std::unordered_map<ValueId, int64_t> row_peaks;
+    for (const RowIndexCheck& check : instance.row_index_checks) {
+      if (check.rows > kExactF32Integer) {
+        continue;
+      }
+      const int64_t peak = std::max<int64_t>(check.rows - 1, 0);
+      int64_t& known =
+          row_peaks.try_emplace(check.input_id, peak).first->second;
+      known = std::min(known, peak);
+    }
+    HostIntEvaluator host = host_evaluator();
+    std::erase_if(
+        instance.host_integer_checks,
+        [&host, &row_peaks](const HostIntegerCheck& check) {
+          const std::optional<int64_t> bound =
+              host.shape_bound(check.id, row_peaks);
+          return bound && *bound <= kExactF32Integer;
+        });
+  }
   if (options_.print_graph_ops) {
     std::map<std::string, int> counts;
     for (int i = 0; i < ggml_graph_n_nodes(instance.graph); ++i) {
@@ -1759,6 +1842,12 @@ GraphInstance GgmlExecutable::build_graph(
       line += " " + op + "=" + std::to_string(count);
     }
     std::fprintf(stderr, "%s\n", line.c_str());
+    if (!instance.host_integer_checks.empty()) {
+      std::fprintf(
+          stderr,
+          "ggml host integer checks per run: %zu\n",
+          instance.host_integer_checks.size());
+    }
   }
   return instance;
 }
