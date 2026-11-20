@@ -378,6 +378,13 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
           (sequence_layout && sequence_info_abi == 2),
       InvalidProgram,
       "CudaExecutor: unsupported sequence-info ABI");
+  // Runtime columns have not been qualified with draft (DFlash) programs:
+  // column moves interact with pending draft owners, and the combination
+  // is rejected by the factory as well as here.
+  ET_CHECK_OR_RETURN_ERROR(
+      !(sequence_info_abi == 2 && geometry.dflash_block_size),
+      InvalidProgram,
+      "CudaExecutor: runtime sequence columns do not support DFlash");
   std::int64_t max_cells = 0;
   if (sequence_layout) {
     ET_CHECK_OR_RETURN_ERROR(

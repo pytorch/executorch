@@ -522,7 +522,7 @@ def export_cuda_batching(  # noqa: C901
         raise ValueError("max_step_tokens must be below the model's context")
 
     inductor_config.coordinate_descent_tuning = False
-    inductor_config.aot_inductor.compile_wrapper_opt_level = "O2"
+    inductor_config.aot_inductor.compile_wrapper_opt_level = "O0"
     # The PCH path shells out to `openssl sha512` and is flaky; it is only a
     # compile-time optimization.
     inductor_config.aot_inductor.precompile_headers = False

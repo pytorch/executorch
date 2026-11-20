@@ -2992,6 +2992,29 @@ TEST_F(CudaRuntimeColumnCacheTest, PendingStepMustFinishBeforeContraction) {
   kv->forget_handle(&handle);
 }
 
+TEST_F(CudaRuntimeColumnCacheTest, UncommittedStepRecoversOnNextPrepare) {
+  auto cache_ptr = make();
+  auto* control = cache_ptr->as<cache::BatchControl>();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  const auto id = control->seq_new();
+  ASSERT_TRUE(id.has_value());
+  // Simulate a failed forward: prepare runs, commit never does.
+  ASSERT_TRUE(control->declare_step({*id}));
+  ASSERT_EQ(kv->prepare_step(1, cudaStreamPerThread), Error::Ok);
+  EXPECT_EQ(kv->compact_columns(0), Error::InvalidState);
+  // The next step must recover (after fencing) instead of wedging until
+  // clear() drops every live sequence.
+  ASSERT_TRUE(control->declare_step({*id}));
+  ASSERT_EQ(kv->prepare_step(1, cudaStreamPerThread), Error::Ok);
+  ASSERT_EQ(kv->commit_step(1), Error::Ok);
+  EXPECT_EQ(control->pos(*id), 2);
+  ASSERT_TRUE(control->seq_rm(*id));
+  kv->forget_handle(&handle);
+}
+
 TEST_F(CudaRuntimeColumnCacheTest, FixedInfoABIIsRejected) {
   auto cache_ptr = make();
   auto* kv = cache_ptr->as<cu::CudaKVCache>();
