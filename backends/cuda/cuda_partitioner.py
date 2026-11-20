@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import re
 from typing import final, List
 
 from executorch.backends.aoti.aoti_partitioner import AotiPartitioner
@@ -38,12 +39,27 @@ class CudaPartitioner(AotiPartitioner):
                          target CUDA device, include a CompileSpec with key
                          "target_device" (e.g., value "cuda:1"). If not
                          provided, defaults to "cuda:0".
+
+        The delegate runs on that one device at runtime, whichever device is
+        current when the program loads or runs; to use another GPU, export
+        for it. A method whose delegates target different devices is not
+        supported.
         """
+        target_devices = [
+            spec.value
+            for spec in compile_spec
+            if spec.key == TARGET_DEVICE_COMPILE_SPEC_KEY
+        ]
+        # The runtime reads the same spec to pick the device it runs on, and
+        # accepts only these forms, so refuse anything else here rather than
+        # when the program is loaded.
+        for value in target_devices:
+            if not re.fullmatch(rb"cuda(:[0-9]+)?", value):
+                raise ValueError(
+                    f"target_device must be 'cuda' or 'cuda:N', got {value!r}"
+                )
         # Add target_device compile spec for device propagation if not already present
-        has_target_device = any(
-            spec.key == TARGET_DEVICE_COMPILE_SPEC_KEY for spec in compile_spec
-        )
-        if not has_target_device:
+        if not target_devices:
             compile_spec = list(compile_spec) + [
                 CompileSpec(
                     TARGET_DEVICE_COMPILE_SPEC_KEY,
