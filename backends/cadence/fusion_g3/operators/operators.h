@@ -62,7 +62,6 @@ namespace native {
     int64_t quant_min,
     int64_t quant_max,
     ::executorch::aten::ScalarType dtype,
-    std::optional<::executorch::aten::ScalarType> out_dtype,
     ::executorch::aten::Tensor& out);
 
 ::executorch::aten::Tensor& div_out(
