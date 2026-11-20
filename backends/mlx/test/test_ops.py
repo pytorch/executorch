@@ -39,7 +39,7 @@ from executorch.backends.mlx.builder.op_helpers import torch_dtype_to_scalar_typ
 from executorch.backends.mlx.llm.sampling import SamplingHead
 from torch.export import Dim
 
-from .test_utils import OpTestCase, register_test
+from .test_utils import load_tensors_from_bin, OpTestCase, register_test
 
 
 class AddTensorModel(nn.Module):
@@ -8218,33 +8218,46 @@ class RepeatInterleaveTest(OpTestCase):
 
 
 class SortModel(nn.Module):
-    def __init__(self, dim: int):
+    def __init__(self, dim: int, descending: bool = False):
         super().__init__()
         self.dim = dim
+        self.descending = descending
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Only return sorted values
-        return torch.sort(x, dim=self.dim)[0]
+        return torch.sort(x, dim=self.dim, descending=self.descending)[0]
 
 
 class SortIndicesModel(nn.Module):
-    def __init__(self, dim: int):
+    def __init__(self, dim: int, descending: bool = False):
         super().__init__()
         self.dim = dim
+        self.descending = descending
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Only return sort indices
-        return torch.sort(x, dim=self.dim)[1]
+        return torch.sort(x, dim=self.dim, descending=self.descending)[1]
 
 
 class SortBothModel(nn.Module):
-    def __init__(self, dim: int):
+    def __init__(self, dim: int, descending: bool = False):
         super().__init__()
         self.dim = dim
+        self.descending = descending
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        values, indices = torch.sort(x, dim=self.dim)
+        values, indices = torch.sort(x, dim=self.dim, descending=self.descending)
         return values, indices
+
+
+class SortStableBothModel(nn.Module):
+    def __init__(self, dim: int, descending: bool = False):
+        super().__init__()
+        self.dim = dim
+        self.descending = descending
+
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        return torch.sort(x, dim=self.dim, descending=self.descending, stable=True)
 
 
 @register_test
@@ -8258,12 +8271,24 @@ class SortTest(OpTestCase):
         shape: Tuple[int, ...] = (3, 4),
         dim: int = -1,
         output: str = "values",
+        descending: bool = False,
+        duplicates: bool = False,
+        stable: bool = False,
     ):
         self.shape = shape
         self.dim = dim
         self.output = output
+        self.descending = descending
+        self.duplicates = duplicates
+        self.stable = stable
         shape_str = "x".join(str(s) for s in shape)
         self.name = f"sort_{output}_dim{dim}_{shape_str}"
+        if descending:
+            self.name += "_descending"
+        if duplicates:
+            self.name += "_duplicates"
+        if stable:
+            self.name += "_stable"
 
     @classmethod
     def get_test_configs(cls) -> List["SortTest"]:
@@ -8272,18 +8297,35 @@ class SortTest(OpTestCase):
             cls(shape=(3, 4), dim=-1, output="values"),
             cls(shape=(3, 4), dim=0, output="indices"),
             cls(shape=(2, 3, 4), dim=1, output="both"),
+            cls(shape=(8,), dim=0, output="values", descending=True),
+            cls(shape=(3, 4), dim=-1, output="indices", descending=True),
+            cls(shape=(3, 4), dim=0, output="both", descending=True),
+            cls(
+                shape=(2, 5),
+                dim=-1,
+                output="both",
+                descending=True,
+                duplicates=True,
+                stable=True,
+            ),
+            cls(shape=(2, 5), dim=1, output="both", descending=True, stable=True),
         ]
 
     def create_model(self) -> nn.Module:
+        if self.stable:
+            return SortStableBothModel(self.dim, self.descending)
         if self.output == "values":
-            return SortModel(self.dim)
+            return SortModel(self.dim, self.descending)
         elif self.output == "indices":
-            return SortIndicesModel(self.dim)
+            return SortIndicesModel(self.dim, self.descending)
         else:
-            return SortBothModel(self.dim)
+            return SortBothModel(self.dim, self.descending)
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.randn(self.shape),)
+        x = torch.randn(self.shape)
+        if self.duplicates:
+            x = torch.randint(-2, 3, self.shape).float()
+        return (x,)
 
     def get_expected_node_counts(self) -> Optional[Dict[str, int]]:
         if self.output == "values":
@@ -8294,13 +8336,83 @@ class SortTest(OpTestCase):
             return {"SortNode": 1, "ArgsortNode": 1}
 
 
+class SortNaNDescendingModel(nn.Module):
+    def __init__(self, dim: int):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        return torch.sort(x, dim=self.dim, descending=True, stable=True)
+
+
+@register_test
+class SortNaNTest(OpTestCase):
+    name = "sort_nan"
+
+    def __init__(self, dim: int = -1):
+        self.dim = dim
+        self.name = f"sort_nan_dim{dim}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["SortNaNTest"]:
+        return [cls(dim=-1)]
+
+    def create_model(self) -> nn.Module:
+        return SortNaNDescendingModel(self.dim)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (
+            torch.tensor(
+                [
+                    [3.0, float("nan"), 1.0, 2.0],
+                    [float("nan"), 4.0, 1.0, float("nan")],
+                ]
+            ),
+        )
+
+    def compare_with_actual(
+        self, actual_output_path, use_dtype_tolerances: bool = False
+    ) -> Tuple[bool, str]:
+        expected = load_tensors_from_bin(self.get_test_dir() / "expected_output.bin")
+        actual = load_tensors_from_bin(actual_output_path)
+        try:
+            assert actual[0].shape == expected[0].shape
+            assert torch.equal(torch.isnan(actual[0]), torch.isnan(expected[0]))
+            finite = ~torch.isnan(expected[0])
+            assert torch.equal(actual[0][finite], expected[0][finite])
+            torch.testing.assert_close(actual[1], expected[1], rtol=0, atol=0)
+        except AssertionError as e:
+            return False, str(e)
+        return True, "All outputs match (including NaN positions)"
+
+
 class ArgsortModel(nn.Module):
+    def __init__(self, dim: int, descending: bool = False):
+        super().__init__()
+        self.dim = dim
+        self.descending = descending
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.argsort(x, dim=self.dim, descending=self.descending)
+
+
+class ArgsortStableModel(nn.Module):
+    def __init__(self, dim: int, descending: bool = False):
+        super().__init__()
+        self.dim = dim
+        self.descending = descending
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.argsort(x, dim=self.dim, descending=self.descending, stable=True)
+
+
+class ArgsortFixedDuplicatesModel(nn.Module):
     def __init__(self, dim: int):
         super().__init__()
         self.dim = dim
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.argsort(x, dim=self.dim)
+        return torch.argsort(x, dim=self.dim, descending=True, stable=True)
 
 
 @register_test
@@ -8309,11 +8421,27 @@ class ArgsortTest(OpTestCase):
     rtol = 0.0
     atol = 0.0
 
-    def __init__(self, shape: Tuple[int, ...] = (3, 4), dim: int = -1):
+    def __init__(
+        self,
+        shape: Tuple[int, ...] = (3, 4),
+        dim: int = -1,
+        descending: bool = False,
+        duplicates: bool = False,
+        stable: bool = False,
+    ):
         self.shape = shape
         self.dim = dim
+        self.descending = descending
+        self.duplicates = duplicates
+        self.stable = stable
         shape_str = "x".join(str(s) for s in shape)
         self.name = f"argsort_dim{dim}_{shape_str}"
+        if descending:
+            self.name += "_descending"
+        if duplicates:
+            self.name += "_duplicates"
+        if stable:
+            self.name += "_stable"
 
     @classmethod
     def get_test_configs(cls) -> List["ArgsortTest"]:
@@ -8321,13 +8449,87 @@ class ArgsortTest(OpTestCase):
             cls(shape=(8,), dim=0),
             cls(shape=(3, 4), dim=-1),
             cls(shape=(3, 4), dim=0),
+            cls(shape=(8,), dim=0, descending=True),
+            cls(shape=(3, 4), dim=-1, descending=True),
+            cls(
+                shape=(2, 5),
+                dim=1,
+                descending=True,
+                duplicates=True,
+                stable=True,
+            ),
+            cls(
+                shape=(3, 4),
+                dim=0,
+                descending=True,
+                duplicates=True,
+                stable=True,
+            ),
         ]
 
     def create_model(self) -> nn.Module:
-        return ArgsortModel(self.dim)
+        if self.stable:
+            return ArgsortStableModel(self.dim, self.descending)
+        return ArgsortModel(self.dim, self.descending)
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.randn(self.shape),)
+        x = torch.randn(self.shape)
+        if self.duplicates:
+            x = torch.randint(-2, 3, self.shape).float()
+        return (x,)
+
+    def get_expected_node_counts(self) -> Optional[Dict[str, int]]:
+        return {"ArgsortNode": 1}
+
+
+@register_test
+class ArgsortDuplicatesTest(OpTestCase):
+    """Descending ties must keep PyTorch's stable order."""
+
+    name = "argsort_duplicates"
+    rtol = 0.0
+    atol = 0.0
+
+    def __init__(self, shape: Tuple[int, ...] = (4,), dim: int = 0, expected=None):
+        self.shape = shape
+        self.dim = dim
+        self.expected = expected
+        shape_str = "x".join(str(s) for s in shape)
+        self.name = f"argsort_duplicates_dim{dim}_{shape_str}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["ArgsortDuplicatesTest"]:
+        return [
+            cls(shape=(4,), dim=0, expected=[0, 2, 1, 3]),
+            cls(
+                shape=(2, 4),
+                dim=1,
+                expected=[[0, 2, 1, 3], [1, 3, 0, 2]],
+            ),
+            cls(
+                shape=(2, 4),
+                dim=0,
+                expected=[[0, 1, 0, 1], [1, 0, 1, 0]],
+            ),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return ArgsortFixedDuplicatesModel(self.dim)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        values = [[2.0, 1.0, 2.0, 1.0], [1.0, 2.0, 1.0, 2.0]]
+        if len(self.shape) == 1:
+            return (torch.tensor(values[0]),)
+        return (torch.tensor(values),)
+
+    def compute_expected_outputs(self, model, test_inputs):
+        actual = model(*test_inputs)
+        expected = torch.tensor(self.expected)
+        assert torch.equal(actual, expected), (
+            f"unexpected stable tie order for dim={self.dim}: got {actual}, "
+            f"expected {expected}"
+        )
+        return actual
 
 
 class TopKValuesModel(nn.Module):
