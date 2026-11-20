@@ -35,6 +35,9 @@ source .ci/scripts/torchci-report-args.sh unittest-linux-cmake
 
 source .ci/scripts/setup-hf-cache.sh
 
+python -m executorch.frontends.fused_quant.quick_start \
+  --output "${RUNNER_TEMP:-/tmp}/fused_quant_portable.pte"
+
 # Run pytest with coverage
 pytest -n auto --cov=./ --cov-report=xml \
   ${TORCHCI_REPORT_ARGS[@]+"${TORCHCI_REPORT_ARGS[@]}"}

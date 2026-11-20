@@ -1,0 +1,31 @@
+digraph representation {
+  graph [fontname="Helvetica,Arial,sans-serif", fontsize=16, nodesep=0.35, ranksep=0.4, pad=0.3, bgcolor="white", newrank=true];
+  node [shape=box, style="rounded,filled", fontname="Helvetica,Arial,sans-serif", fontsize=13, penwidth=1.6, margin="0.22,0.1"];
+  edge [color="#666666", penwidth=1.4, arrowsize=0.8];
+
+  subgraph cluster_qdq {
+    label=<<b>PT2E q/dq form</b>>; style="rounded,dashed"; color="#b0b0b0"; margin=18;
+    x1 [label="x (int8)", shape=plaintext, style="", fontsize=12];
+    w1 [label="weight (int8)", shape=plaintext, style="", fontsize=12];
+    b1 [label="bias", shape=plaintext, style="", fontsize=12];
+    dqx [label=<<b>dequantize</b><br/><font point-size="11">scale, zero_point</font>>, fillcolor="#ececec", color="#888888"];
+    dqw [label=<<b>dequantize</b><br/><font point-size="11">scale, zero_point</font>>, fillcolor="#ececec", color="#888888"];
+    conv1 [label=<<b>aten.convolution</b><br/><font point-size="11">float compute</font>>, fillcolor="#ececec", color="#888888"];
+    q1 [label=<<b>quantize</b><br/><font point-size="11">scale, zero_point</font>>, fillcolor="#ececec", color="#888888"];
+    y1 [label="y (int8)", shape=plaintext, style="", fontsize=12];
+    x1 -> dqx; w1 -> dqw; dqx -> conv1; dqw -> conv1; b1 -> conv1; conv1 -> q1; q1 -> y1;
+  }
+
+  subgraph cluster_fq {
+    label=<<b>fused_quant form</b>>; style="rounded,dashed"; color="#b0b0b0"; margin=18;
+    x2 [label="x (int8)", shape=plaintext, style="", fontsize=12];
+    w2 [label="weight (int8)", shape=plaintext, style="", fontsize=12];
+    b2 [label="bias", shape=plaintext, style="", fontsize=12];
+    conv2 [label=<<b>fused_quant.convolution</b><br/><font point-size="11">inp: scale, zero_point, dtype, quant_min, quant_max<br/>weight: scale, zero_point, dtype, quant_min, quant_max<br/>bias: scale, zero_point, dtype, quant_min, quant_max<br/>out: scale, zero_point, dtype, quant_min, quant_max</font>>, fillcolor="#d6e7f9", color="#2b6cb0"];
+    y2 [label="y (int8)", shape=plaintext, style="", fontsize=12];
+    x2 -> conv2; w2 -> conv2; b2 -> conv2; conv2 -> y2;
+  }
+  {rank=same; x1; w1; b1; x2; w2; b2;}
+  x1 -> w1 -> b1 [style=invis]; x2 -> w2 -> b2 [style=invis];
+  {rank=same; conv1; conv2;}
+}

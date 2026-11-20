@@ -1,0 +1,52 @@
+digraph stacks {
+  graph [fontname="Helvetica,Arial,sans-serif", fontsize=16, nodesep=0.3, ranksep=0.38, pad=0.3, bgcolor="white", newrank=true];
+  node [shape=box, style="rounded,filled", fontname="Helvetica,Arial,sans-serif", fontsize=13, penwidth=1.6, margin="0.2,0.1", width=2.6];
+  edge [color="#666666", penwidth=1.4, arrowsize=0.8];
+
+  subgraph cluster_separate {
+    label=<<b>Separate stacks</b>>; style="rounded,dashed"; color="#b0b0b0"; margin=16;
+    sa [label=<<b>Backend A qspecs</b><br/><font point-size="11">torchao QuantizationSpecs</font>>, fillcolor="#fde3c8", color="#e07b24"];
+    sb [label=<<b>Backend B qspecs</b><br/><font point-size="11">torchao QuantizationSpecs</font>>, fillcolor="#fde3c8", color="#e07b24"];
+    qa [label=<<b>Backend A quantizer</b><br/><font point-size="11">its own annotation and patterns</font>>, fillcolor="#fde3c8", color="#e07b24"];
+    qb [label=<<b>Backend B quantizer</b><br/><font point-size="11">its own annotation and patterns</font>>, fillcolor="#fde3c8", color="#e07b24"];
+    pa [label=<<b>PT2E</b><br/><font point-size="11">prepare, calibrate, convert</font>>, fillcolor="#ececec", color="#888888"];
+    pb [label=<<b>PT2E</b><br/><font point-size="11">prepare, calibrate, convert</font>>, fillcolor="#ececec", color="#888888"];
+    ra [label=<<b>Recover quantized ops</b><br/><font point-size="11">from the q/dq graph</font>>, fillcolor="#fde3c8", color="#e07b24"];
+    rb [label=<<b>Recover quantized ops</b><br/><font point-size="11">from the q/dq graph</font>>, fillcolor="#fde3c8", color="#e07b24"];
+    ga [label=<<b>Graph rewrites</b>>, fillcolor="#fde3c8", color="#e07b24"];
+    gb [label=<<b>Graph rewrites</b>>, fillcolor="#fde3c8", color="#e07b24"];
+    la [label=<<b>Backend A lowering</b>>, fillcolor="#fde3c8", color="#e07b24"];
+    lb [label=<<b>Backend B lowering</b>>, fillcolor="#fde3c8", color="#e07b24"];
+    sa -> qa -> pa -> ra -> ga -> la;
+    sb -> qb -> pb -> rb -> gb -> lb;
+  }
+
+  subgraph cluster_shared {
+    label=<<b>Shared frontend</b>>; style="rounded,dashed"; color="#b0b0b0"; margin=16;
+    xa [label=<<b>Backend A qspecs</b><br/><font point-size="11">torchao QuantizationSpecs</font>>, fillcolor="#fde3c8", color="#e07b24"];
+    xb [label=<<b>Backend B qspecs</b><br/><font point-size="11">torchao QuantizationSpecs</font>>, fillcolor="#fde3c8", color="#e07b24"];
+    fq [label=<<b>fused_quant quantizer</b><br/><font point-size="11">one torchao quantizer, configured with each backend's qspecs;<br/>fuses each quantized op into one fused_quant op after convert</font>>, fillcolor="#d6e7f9", color="#2b6cb0", width=5.6];
+    ps [label=<<b>PT2E</b><br/><font point-size="11">prepare, calibrate, convert</font>>, fillcolor="#ececec", color="#888888", width=5.6];
+    fu [label=<<b>Graph rewrites</b><br/><font point-size="11">shared, on the fused graph</font>>, fillcolor="#d6e7f9", color="#2b6cb0", width=5.6];
+    lla [label=<<b>Backend A lowering</b><br/><font point-size="11">transforms the graph for A</font>>, fillcolor="#fde3c8", color="#e07b24"];
+    llb [label=<<b>Backend B lowering</b><br/><font point-size="11">transforms the graph for B</font>>, fillcolor="#fde3c8", color="#e07b24"];
+    xa -> fq; xb -> fq; fq -> ps -> fu;
+    fu -> lla; fu -> llb;
+  }
+
+  legend [shape=plaintext, style="", margin=0, label=<
+    <table border="0" cellspacing="10" cellpadding="0"><tr>
+      <td bgcolor="#fde3c8" width="22" height="16"></td><td align="left"><font point-size="12">backend-specific</font></td>
+      <td width="18"></td>
+      <td bgcolor="#d6e7f9" width="22" height="16"></td><td align="left"><font point-size="12">Fused Quant, shared by backends</font></td>
+      <td width="18"></td>
+      <td bgcolor="#ececec" width="22" height="16"></td><td align="left"><font point-size="12">standard PyTorch</font></td>
+    </tr></table>>];
+  {rank=same; sa; sb; xa; xb;}
+  sa -> sb [style=invis]; xa -> xb [style=invis];
+  {rank=same; qa; qb; fq;}
+  {rank=same; pa; pb; ps;}
+  {rank=same; ga; gb; fu;}
+  {rank=same; la; lb; lla; llb;}
+  la -> legend [style=invis]; lla -> legend [style=invis];
+}

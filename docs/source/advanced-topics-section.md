@@ -17,6 +17,14 @@ Key topics:
 - Quantization strategies and techniques
 - Performance profiling and optimization
 
+### Fused Quant
+
+An experimental quantization frontend that backends share: one quantizer, one set of
+graph optimizations and one fallback to the portable kernels, so each backend only adds
+what is specific to its hardware.
+
+**→ {doc}`fused-quant` — How Fused Quant works, why share it, and how to build a backend on it**
+
 ## Model Export
 
 Learn the core ExecuTorch workflow, exporting PyTorch models to the `.pte` format for edge deployment.
@@ -127,6 +135,7 @@ After exploring advanced topics:
 :caption: Advanced Topics
 
 quantization-optimization
+fused-quant
 using-executorch-export
 working-with-cv-models
 kernel-library-advanced

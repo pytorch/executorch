@@ -1,0 +1,17 @@
+digraph fallback {
+  graph [fontname="Helvetica,Arial,sans-serif", fontsize=16, rankdir=TB, nodesep=0.35, ranksep=0.4, pad=0.3, bgcolor="white", newrank=true];
+  node [shape=box, style="rounded,filled", fontname="Helvetica,Arial,sans-serif", fontsize=13, penwidth=1.6, margin="0.22,0.1", width=4.4];
+  edge [color="#666666", penwidth=1.4, arrowsize=0.8];
+
+  g [label=<<b>Optimized fused graph</b>>, fillcolor="#d6e7f9", color="#2b6cb0"];
+  l [label=<<b>Backend lowering passes</b><br/><font point-size="11">transform the graph into the operators the backend wants</font>>, fillcolor="#fde3c8", color="#e07b24"];
+  dec [label=<<b>DecomposeFusedQuant</b><br/><font point-size="11">turns any fused ops that remain, which have no kernels,<br/>into quantize/dequantize plus ATen ops</font>>, fillcolor="#d6e7f9", color="#2b6cb0", style="rounded,filled,dashed"];
+
+    del [label=<<b>Delegated subgraphs</b>>, fillcolor="#fde3c8", color="#e07b24", width=2.6];
+    lib [label=<<b>Backend operators</b><br/><font point-size="11">run by the backend's own kernels</font>>, fillcolor="#fde3c8", color="#e07b24", width=2.6];
+    aten [label=<<b>ATen and quantize/dequantize ops</b><br/><font point-size="11">run by the kernels the program links:<br/>portable, optimized, or the backend's</font>>, fillcolor="#ececec", color="#888888", width=2.6];
+
+  g -> l -> dec;
+  dec -> del; dec -> lib; dec -> aten;
+  {rank=same; del; lib; aten;}
+}
