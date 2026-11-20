@@ -64,7 +64,7 @@ def to_espnn_edge(
 
 
 def get_operator_library_report(edge: EdgeProgramManager) -> dict:
-    """Count direct ESP-NN operators and list portable compute across methods."""
+    """Report ESP-NN compute, portable compute and layout copies by method."""
     esp_nn_ops = 0
     cpu_ops = []
     layout_ops = []
@@ -78,36 +78,25 @@ def get_operator_library_report(edge: EdgeProgramManager) -> dict:
                 ops = layout_ops
                 target = "executorch.exir.memory.view"
             elif isinstance(target, (EdgeOpOverload, OpOverload)):
-                if target._schema.name == "aten::permute_copy":
-                    dims = list(node.args[1])
-                    neighbors = (
-                        [node.args[0]]
-                        if dims == [0, 3, 1, 2]
-                        else list(node.users) if dims == [0, 2, 3, 1] else []
-                    )
-                    if any(
-                        isinstance(neighbor.target, (EdgeOpOverload, OpOverload))
-                        and neighbor.target._schema.name
-                        == "esp_nn::quantized_max_pool2d_int8"
-                        for neighbor in neighbors
-                    ):
-                        layout_ops.append(
-                            {
-                                "method": method,
-                                "name": node.name,
-                                "target": target.name(),
-                            }
-                        )
-                        continue
+                if target.namespace == "esp_nn":
+                    esp_nn_ops += 1
+                    continue
                 if target._schema.name in {
+                    "aten::alias_copy",
+                    "aten::clone",
+                    "aten::permute_copy",
+                    "aten::squeeze_copy",
+                    "aten::transpose_copy",
+                    "aten::unsqueeze_copy",
+                    "aten::view_copy",
+                }:
+                    ops = layout_ops
+                elif target._schema.name in {
                     "quantized_decomposed::quantize_per_tensor",
                     "quantized_decomposed::dequantize_per_tensor",
                     "quantized_decomposed::quantize_per_channel",
                     "quantized_decomposed::dequantize_per_channel",
                 }:
-                    continue
-                if target.namespace == "esp_nn":
-                    esp_nn_ops += 1
                     continue
                 target = target.name()
             ops.append({"method": method, "name": node.name, "target": str(target)})
@@ -116,12 +105,16 @@ def get_operator_library_report(edge: EdgeProgramManager) -> dict:
 
 def _require_no_portable_compute(edge: EdgeProgramManager) -> list:
     report = get_operator_library_report(edge)
-    if report["cpu_ops"]:
+    portable_ops = report["cpu_ops"] + [
+        op
+        for op in report["layout_ops"]
+        if op["target"] != "executorch.exir.memory.view"
+    ]
+    if portable_ops:
         raise RuntimeError(
             "The ESP-NN operator library left these operators on the CPU: "
             + ", ".join(
-                f"{op['method']}.{op['name']} ({op['target']})"
-                for op in report["cpu_ops"]
+                f"{op['method']}.{op['name']} ({op['target']})" for op in portable_ops
             )
         )
     return []
@@ -137,7 +130,8 @@ def get_esp_fused_quant_recipe(
 
     Use with executorch.export.export(). Supported Fused Quant operators become
     direct ESP-NN calls; other operators decompose to portable kernels. Setting
-    allow_cpu_fallback=False rejects remaining compute, excluding Q/DQ and required NHWC layout copies.
+    allow_cpu_fallback=False rejects remaining portable compute and layout copies,
+    including NHWC conversions. Q/DQ and zero-copy memory views are exempt.
     Use EspNNQuantizer and to_espnn_edge for the EspNNBackend delegate.
     """
     quantizer = quantizer if quantizer is not None else get_esp_fused_quant_quantizer()

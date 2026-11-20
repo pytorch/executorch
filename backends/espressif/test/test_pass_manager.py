@@ -393,18 +393,33 @@ def test_spatial_fallback_removes_redundant_layout_copies(
     tester.to_executorch().serialize()
 
 
-def test_strict_export_accepts_and_reports_required_layout_copies():
+@pytest.mark.parametrize(
+    "model, shape",
+    [
+        (torch.nn.MaxPool2d(2), (1, 4, 5, 7)),
+        (torch.nn.MaxPool2d(2), (4, 7, 9)),
+        (torch.nn.MaxPool2d((5, 7)), (1, 4, 5, 7)),
+    ],
+    ids=["batched", "unbatched", "global"],
+)
+def test_strict_export_rejects_required_layout_copies(model, shape):
+    inputs = (torch.linspace(-1, 1, math.prod(shape)).reshape(shape),)
     session = export(
-        torch.nn.MaxPool2d(2),
-        example_inputs=[(torch.linspace(-1, 1, 140).reshape(1, 4, 5, 7),)],
-        export_recipe=get_esp_fused_quant_recipe(allow_cpu_fallback=False),
+        model,
+        example_inputs=[inputs],
+        export_recipe=get_esp_fused_quant_recipe(),
     )
     report = get_operator_library_report(session.get_edge_program_manager())
     assert report["esp_nn_ops"] == 1
     assert report["cpu_ops"] == []
-    assert len(report["layout_ops"]) == 2
-    assert all(op["target"] == "aten::permute_copy.out" for op in report["layout_ops"])
+    assert "aten::permute_copy.out" in {op["target"] for op in report["layout_ops"]}
     assert session.get_executorch_program_manager().buffer
+    with pytest.raises(RuntimeError, match=r"aten::permute_copy"):
+        export(
+            model,
+            example_inputs=[inputs],
+            export_recipe=get_esp_fused_quant_recipe(allow_cpu_fallback=False),
+        )
 
 
 def test_strict_export_rejects_user_permute():
@@ -416,6 +431,33 @@ def test_strict_export_rejects_user_permute():
         export(
             PermuteAndPool(),
             example_inputs=[(torch.linspace(-1, 1, 140).reshape(1, 4, 5, 7),)],
+            export_recipe=get_esp_fused_quant_recipe(allow_cpu_fallback=False),
+        )
+
+
+def test_strict_export_rejects_user_permute_between_esp_operators():
+    class PoolPermuteAndPool(torch.nn.Module):
+        def forward(self, x):
+            pooled = torch.nn.functional.max_pool2d(x, 2)
+            return torch.nn.functional.max_pool2d(pooled.permute(0, 2, 3, 1), 2)
+
+    inputs = (
+        torch.linspace(-1, 1, 4).reshape(1, 4, 1, 1).expand(1, 4, 16, 16).contiguous(),
+    )
+    model = PoolPermuteAndPool()
+    session = export(
+        model,
+        example_inputs=[inputs],
+        export_recipe=get_esp_fused_quant_recipe(),
+    )
+    report = get_operator_library_report(session.get_edge_program_manager())
+    assert report["esp_nn_ops"] == 2
+    assert report["cpu_ops"] == []
+    assert "aten::permute_copy.out" in {op["target"] for op in report["layout_ops"]}
+    with pytest.raises(RuntimeError, match=r"aten::permute_copy"):
+        export(
+            model,
+            example_inputs=[inputs],
             export_recipe=get_esp_fused_quant_recipe(allow_cpu_fallback=False),
         )
 
