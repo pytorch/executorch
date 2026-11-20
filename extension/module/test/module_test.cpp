@@ -643,6 +643,24 @@ TEST_F(ModuleTest, TestSharedProgramLoadsItsDataMap) {
   EXPECT_EQ(module.forward(tensor).error(), Error::Ok);
 }
 
+TEST_F(ModuleTest, TestLoadRetriesAfterAMissingDataFile) {
+  const std::string late_path =
+      ::testing::TempDir() + "/module_test_late_data_file.ptd";
+  std::remove(late_path.c_str());
+  Module module(
+      add_mul_path_, std::vector<std::string>{add_mul_data_path_, late_path});
+  EXPECT_NE(module.load(), Error::Ok);
+
+  {
+    std::ifstream source(linear_data_path_, std::ios::binary);
+    std::ofstream destination(late_path, std::ios::binary);
+    destination << source.rdbuf();
+  }
+  // The first file must not be added twice by the second attempt.
+  EXPECT_EQ(module.load(), Error::Ok);
+  std::remove(late_path.c_str());
+}
+
 TEST_F(ModuleTest, TestLoadRetriesAfterAFailedProgramLoad) {
   const std::string bad_program_path =
       ::testing::TempDir() + "/module_test_bad_program.pte";

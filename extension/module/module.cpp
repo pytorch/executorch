@@ -361,13 +361,21 @@ runtime::Error Module::load_data_maps() {
   if (merged_data_map_ || (data_files_.empty() && data_map_loaders_.empty())) {
     return runtime::Error::Ok;
   }
+  // Open every file before keeping any, so a failed open can be retried.
+  std::vector<std::unique_ptr<runtime::DataLoader>> file_loaders;
+  file_loaders.reserve(data_files_.size());
   for (const auto& data_file : data_files_) {
     auto data_map_loader_result = make_data_loader(data_file, load_mode_);
     if (!data_map_loader_result.ok()) {
       return data_map_loader_result.error();
     }
-    data_map_loaders_.push_back(std::move(*data_map_loader_result));
+    file_loaders.push_back(std::move(*data_map_loader_result));
   }
+  for (auto& file_loader : file_loaders) {
+    data_map_loaders_.push_back(std::move(file_loader));
+  }
+  data_files_.clear();
+  named_data_maps_.clear();
   for (const auto& data_map_loader : data_map_loaders_) {
     auto res_flat_tensor = FlatTensorDataMap::load(data_map_loader.get());
     if (!res_flat_tensor.ok()) {
