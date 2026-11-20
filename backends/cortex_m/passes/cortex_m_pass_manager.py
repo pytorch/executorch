@@ -90,9 +90,15 @@ class LiftConstantTensorsPass(ExportedProgramPassBase):
         )
 
 
-# Once Q/DQ is folded these ops take int8, but their ATen fake kernels promote
-# it to float, so each retrace would label them and everything behind them float.
-_FLOAT_PROMOTING_OPS = frozenset({*_ACTIVATION_FNS, exir_ops.edge.aten.div.Tensor})
+# After Q/DQ folding, ATen can promote activations to float or linear outputs
+# to the int32 bias dtype. Keep the quantized output dtype across retraces.
+_DTYPE_PROMOTING_OPS = frozenset(
+    {
+        *_ACTIVATION_FNS,
+        exir_ops.edge.aten.div.Tensor,
+        exir_ops.edge.aten.linear.default,
+    }
+)
 
 
 class _PreserveQuantizedDtype(ExportPass):
@@ -101,7 +107,7 @@ class _PreserveQuantizedDtype(ExportPass):
         input_qparams = meta.data.get("input_qparams")
         output_qparams = meta.data.get("output_qparams")
         # Match AtenToCortexMPass, which only lowers these ops with both qparams.
-        if op not in _FLOAT_PROMOTING_OPS or not input_qparams or not output_qparams:
+        if op not in _DTYPE_PROMOTING_OPS or not input_qparams or not output_qparams:
             return result
         dtype = next(iter(output_qparams.values())).dtype
         data = torch.empty_like(result.data, dtype=dtype)
