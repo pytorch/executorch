@@ -3,10 +3,11 @@
 This backend is a **prototype under active development**.
 
 This backend runs int8-quantized PyTorch models on Espressif microcontrollers.
-It is tuned for the **ESP32-S3** and also runs on the original ESP32. It
-delegates quantized subgraphs to [ESP-NN](https://github.com/espressif/esp-nn),
-Espressif's kernel library. ESP-NN has SIMD kernels for the ESP32-S3 and
-portable C kernels for the other chips.
+It runs on the **ESP32-S3**, **ESP32-P4** and **ESP32-S31**, and on the
+original ESP32. It delegates quantized subgraphs to
+[ESP-NN](https://github.com/espressif/esp-nn), Espressif's kernel library.
+ESP-NN has SIMD kernels for the ESP32-S3, PIE SIMD kernels shared by the
+ESP32-P4 and ESP32-S31, and portable C kernels for the other chips.
 
 A lowered model is a normal `.pte` program. `EspNNBackend` runs the int8
 partitions with ESP-NN, and ExecuTorch's portable and quantized kernels run
@@ -314,7 +315,7 @@ still needs the portable fallback operators and Q/DQ kernels described below.
 `to_espnn_edge()` is the separate delegate entry point; its former
 `use_operator_library` option is replaced by this recipe.
 
-## Running on the ESP32-S3
+## Running on the ESP32-S3, ESP32-P4 and ESP32-S31
 
 You need ESP-IDF and an activated ESP-IDF shell.
 [`examples/espressif/setup.sh`](../../examples/espressif/setup.sh) installs a
@@ -349,6 +350,10 @@ cmake --preset esp-baremetal -G Ninja -B cmake-out-esp \
 cmake --build cmake-out-esp --target install
 ```
 
+For the ESP32-P4 and ESP32-S31, use the toolchain file that ESP-IDF writes
+when a project configures for the target, as described in
+[Cross-Compiling ExecuTorch](../../examples/espressif/README.md#cross-compiling-executorch).
+
 - `quantized_ops_lib` registers kernels beyond the selected list, so
   `MAX_KERNEL_NUM` is set explicitly instead of being sized from the
   selection.
@@ -377,7 +382,8 @@ against the ExecuTorch targets that `executor_runner` imports, and registers
 `esp_pal.cpp` provides it.
 
 ESP-NN defaults to `CONFIG_NN_OPTIMIZED=y` and selects its implementation from
-ESP-IDF's `IDF_TARGET`. For `esp32s3`, this enables the S3 assembly kernels.
+ESP-IDF's `IDF_TARGET`. For `esp32s3`, this enables the S3 assembly kernels;
+for `esp32p4` and `esp32s31`, the PIE kernels.
 `CONFIG_NN_ANSI_C=y` selects reference C kernels for verification and debugging.
 
 For a BundleIO program (`.bpte`), add `-DET_BUNDLE_IO=ON` and the tolerances
@@ -412,15 +418,15 @@ the quantized PyTorch model. `test_xts3_parser_host.py` builds the device
 parser for the host and feeds it corrupted graphs.
 
 End to end, `.ci/scripts/test_espressif.sh` runs the same models through the
-ExecuTorch runtime on an emulated ESP32-S3.
+ExecuTorch runtime on an emulated ESP32-S3, ESP32-P4 or ESP32-S31.
 `examples/espressif/export_espnn_test_programs.py` exports each one as a
 BundleIO program with the host reference's outputs. CI builds the runner with
 `-DET_ESPNN_BACKEND=ON` for each program and runs it in `esp-emu`. Fully
 delegated programs must match to float precision, which means bit-exact int8
 results. Programs with CPU regions get a tolerance for the portable kernels'
-float rounding. Separate CI jobs run ESP-NN's optimized S3 kernels and its
-ANSI C reference kernels against the same bundled outputs. Both jobs target
-ESP32-S3. Logs include the kernel configuration in their filenames; artifacts
+float rounding. Separate CI jobs run ESP-NN's optimized kernels on each
+chip, and its ANSI C reference kernels on ESP32-S3, against the same bundled
+outputs. Logs include the kernel configuration in their filenames; artifacts
 retain the bundled fixtures, SDK configuration, and resolved component versions.
 
 ### On the host
