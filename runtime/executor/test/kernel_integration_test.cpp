@@ -11,6 +11,7 @@
 
 #include <cstring>
 #include <memory>
+#include <stdexcept>
 
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/runner_util/inputs.h>
@@ -71,8 +72,12 @@ struct KernelControl {
   // The total size of all allocations.
   int total_allocated_size = 0;
 
+  // If true, the kernel throws after any temporary allocation.
+  bool throw_exception = false;
+
   void reset() {
     call_count = 0;
+    throw_exception = false;
     call_context_fail = false;
     fail_value = Error::Ok;
     allocate_temp_memory = false;
@@ -160,6 +165,12 @@ struct KernelControl {
       control->total_allocated_size += control->temp_memory_size;
       EXPECT_EQ(temp_mem_res.error(), Error::Ok);
     }
+
+#if ET_HAS_EXCEPTIONS
+    if (control->throw_exception) {
+      throw std::runtime_error("kernel throws");
+    }
+#endif
   }
 
   static bool registered_;
@@ -298,6 +309,35 @@ TEST_F(KernelIntegrationTest, KernelHookIsCalled) {
   EXPECT_EQ(control_->call_count, 2);
 }
 
+#if ET_HAS_EXCEPTIONS
+TEST_F(KernelIntegrationTest, ThrowingKernelLeavesMethodReadyToRunAgain) {
+  // ModuleAddMul runs mul before add, so add throws past the first instruction.
+  static const Error mul_registered =
+      executorch::runtime::register_kernel(Kernel(
+          "aten::mul.out",
+          KernelKey("v1/6;0,1|6;0,1|6;0,1|6;0,1"),
+          [](KernelRuntimeContext&, Span<EValue*>) {}));
+  ASSERT_EQ(mul_registered, Error::Ok);
+  Result<FileDataLoader> loader =
+      FileDataLoader::from(std::getenv("ET_MODULE_ADD_MUL_PATH"));
+  ASSERT_EQ(loader.error(), Error::Ok);
+  Result<Program> program = Program::load(&loader.get());
+  ASSERT_EQ(program.error(), Error::Ok);
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = program->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+  auto inputs = executorch::extension::prepare_input_tensors(*method);
+  ASSERT_EQ(inputs.error(), Error::Ok);
+
+  control_->throw_exception = true;
+  EXPECT_THROW((void)method->execute(), std::runtime_error);
+  EXPECT_FALSE(method->in_progress());
+
+  control_->throw_exception = false;
+  EXPECT_EQ(method->execute(), Error::Ok);
+}
+#endif
+
 TEST_F(KernelIntegrationTest, FailurePropagates) {
   // Tell the kernel to fail.
   control_->call_context_fail = true;
@@ -342,6 +382,18 @@ TEST_F(KernelIntegrationTest, DefaultPlatformMemoryAllocator) {
   EXPECT_EQ(control_->call_count, 2);
   EXPECT_EQ(control_->total_allocated_size, 12);
 }
+
+#if ET_HAS_EXCEPTIONS
+TEST_F(KernelTempMemoryAllocatorIntegrationTest, ThrowResetsTempMemory) {
+  control_->simulate_temp_memory_allocation = true;
+  control_->temp_memory_size = 4;
+  control_->throw_exception = true;
+
+  EXPECT_THROW((void)method_->execute(), std::runtime_error);
+  EXPECT_EQ(temp_allocator_->number_of_allocations, 1);
+  EXPECT_EQ(temp_allocator_->currently_allocated_size, 0);
+}
+#endif
 
 TEST_F(KernelTempMemoryAllocatorIntegrationTest, UsingTempMemoryAllocator) {
   // In this test we provide a temp allocator to the method, and tell the kernel

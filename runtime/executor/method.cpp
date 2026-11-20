@@ -1716,6 +1716,16 @@ Error Method::execute_instruction() {
   size_t next_instr_idx = step_state_.instr_idx + 1;
   Error err = Error::Ok;
 
+  // Reset the temp allocator for every instruction, even if a kernel throws.
+  struct TempMemoryReset {
+    MemoryAllocator* allocator;
+    ~TempMemoryReset() {
+      if (allocator != nullptr) {
+        allocator->reset();
+      }
+    }
+  } temp_memory_reset{temp_allocator_};
+
   switch (instruction->instr_args_type()) {
     case executorch_flatbuffer::InstructionArguments::KernelCall: {
       EXECUTORCH_SCOPE_PROF("OPERATOR_CALL");
@@ -1853,10 +1863,6 @@ Error Method::execute_instruction() {
           static_cast<uint8_t>(instruction->instr_args_type()));
       err = Error::InvalidProgram;
   }
-  // Reset the temp allocator for every instruction.
-  if (temp_allocator_ != nullptr) {
-    temp_allocator_->reset();
-  }
   if (err == Error::Ok) {
     step_state_.instr_idx = next_instr_idx;
   }
@@ -1972,6 +1978,13 @@ Error Method::execute() {
     temp_allocator_->reset();
   }
 
+  struct ExecutionGuard {
+    StepState& state;
+    ~ExecutionGuard() {
+      state = StepState{0, 0};
+    }
+  } guard{step_state_};
+
   // Chains are executed sequentially today, but future async designs may
   // branch and run many in parallel or out of order.
   size_t instruction_count = 0;
@@ -1999,7 +2012,6 @@ Error Method::execute() {
             kMaxInstructions,
             step_state_.chain_idx,
             step_state_.instr_idx);
-        step_state_ = StepState{0, 0};
         return Error::InvalidProgram;
       }
       ++instruction_count;
@@ -2013,7 +2025,6 @@ Error Method::execute() {
               static_cast<DebugHandle>(step_state_.instr_idx));
       auto status = execute_instruction();
       if (status != Error::Ok) {
-        step_state_ = StepState{0, 0};
         return status;
       }
     }
@@ -2021,9 +2032,7 @@ Error Method::execute() {
   internal::event_tracer_end_profiling_event(event_tracer_, event_tracer_entry);
   log_outputs();
 
-  // TODO(jakeszwe, dbort): Decide on calling execute back to back without
-  // going through the reset api first.
-  return reset_execution(); // @lint-ignore CLANGTIDY facebook-hte-Deprecated
+  return Error::Ok;
 }
 
 MethodMeta Method::method_meta() const {
