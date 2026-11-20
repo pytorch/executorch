@@ -2031,12 +2031,35 @@ exec_repeat(const RepeatNode& n, ExecutionState& st, StreamOrDevice s) {
 }
 
 inline void exec_sort(const SortNode& n, ExecutionState& st, StreamOrDevice s) {
-  st.set_tensor(n.out, sort(st.const_tensor_ref(n.x), n.axis, s));
+  const array& x = st.const_tensor_ref(n.x);
+  if (n.descending) {
+    // MLX sorts ascending, with NaNs at the end. Reverse before and after so
+    // NaNs stay first, matching torch.sort(descending=True).
+    st.set_tensor(n.out, flip(sort(flip(x, n.axis, s), n.axis, s), n.axis, s));
+    return;
+  }
+  st.set_tensor(n.out, sort(x, n.axis, s));
 }
 
 inline void
 exec_argsort(const ArgsortNode& n, ExecutionState& st, StreamOrDevice s) {
-  st.set_tensor(n.out, argsort(st.const_tensor_ref(n.x), n.axis, s));
+  const array& x = st.const_tensor_ref(n.x);
+  if (!n.descending) {
+    st.set_tensor(n.out, astype(argsort(x, n.axis, s), int64, s));
+    return;
+  }
+
+  // Reversing an ascending argsort would reverse the order of equal elements.
+  // Instead, argsort the reversed input and map the flipped indices back to
+  // the original axis positions: orig = axis_size - 1 - flipped.
+  const array sorted = argsort(flip(x, n.axis, s), n.axis, s);
+  const array rev_idx = flip(sorted, n.axis, s);
+  const int axis =
+      normalize_axis(n.axis, static_cast<int>(x.ndim()), "Argsort");
+  const int32_t axis_size = static_cast<int32_t>(x.shape(axis));
+  const array base = astype(rev_idx, int64, s);
+  st.set_tensor(
+      n.out, subtract(full(base.shape(), axis_size - 1, int64, s), base, s));
 }
 
 inline void
