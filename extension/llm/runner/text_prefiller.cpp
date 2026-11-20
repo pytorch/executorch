@@ -20,8 +20,10 @@ TextPrefiller::TextPrefiller(
     TextDecoderRunner* text_decoder_runner,
     bool use_kv_cache,
     bool enable_parallel_prefill,
-    int64_t max_seq_len)
+    int64_t max_seq_len,
+    TextDecoderRunner* decode_runner)
     : text_decoder_runner_(text_decoder_runner),
+      decode_runner_(decode_runner),
       use_kv_cache_(use_kv_cache),
       enable_parallel_prefill_(enable_parallel_prefill),
       max_seq_len_(max_seq_len > 0 ? max_seq_len : 128) {}
@@ -106,61 +108,39 @@ TextPrefiller::TextPrefiller(
   // When kv cache is not used, start pos is ignored
   int32_t num_prompt_tokens = prompt_tokens.size();
 
-  // store the token
-  uint64_t cur_token;
   if (enable_parallel_prefill_ || !use_kv_cache_) {
-    // initialize tensor wrappers
-    auto tokens = from_blob(
-        prompt_tokens.data(),
-        {1, num_prompt_tokens},
-        executorch::aten::ScalarType::Long);
-
-    auto outputs_res = text_decoder_runner_->step(tokens, start_pos);
-
-    ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
-    ET_LOG(
-        Info, "Prefill token result numel(): %zu", outputs_res.get().numel());
-
-    start_pos += num_prompt_tokens;
-    cur_token =
-        text_decoder_runner_->logits_to_token(outputs_res.get(), temperature);
-  } else { // sequential prefill
-    int64_t pos = 0; // position in the sequence
-    // NOLINTNEXTLINE(facebook-hte-ParameterUncheckedArrayBounds)
-    cur_token = prompt_tokens[0];
-
-    // initialize tensor wrappers
-    auto tokens =
-        from_blob(&cur_token, {1, 1}, executorch::aten::ScalarType::Long);
-
-    // run the first token and get back logits tensor. Assuming the first token
-    // is bos so don't callback.
-    auto logits_result = text_decoder_runner_->step(tokens, start_pos);
-    if (!logits_result.ok()) {
-      return logits_result.error();
+    const auto capacity = text_decoder_runner_->max_tokens_per_step(start_pos);
+    if (capacity != 0) {
+      auto tokens = from_blob(
+          prompt_tokens.data(),
+          {1, num_prompt_tokens},
+          executorch::aten::ScalarType::Long);
+      auto outputs = text_decoder_runner_->step(tokens, start_pos);
+      ET_CHECK_OK_OR_RETURN_ERROR(outputs.error());
+      start_pos += num_prompt_tokens;
+      return text_decoder_runner_->logits_to_token(*outputs, temperature);
     }
-    auto logits_tensor = std::move(*logits_result);
-
-    pos += 1; // start the loop from index 1
-    start_pos += 1;
-
-    while (pos < num_prompt_tokens) {
-      // Run the model
-      // NOLINTNEXTLINE(facebook-hte-ParameterUncheckedArrayBounds)
-      cur_token = prompt_tokens[pos];
-
-      auto step_result = text_decoder_runner_->step(tokens, start_pos);
-      if (!step_result.ok()) {
-        return step_result.error();
-      }
-      logits_tensor = std::move(*step_result);
-
-      pos++;
-      start_pos++;
+    ET_CHECK_OR_RETURN_ERROR(
+        use_kv_cache_ && decode_runner_ &&
+            decode_runner_ != text_decoder_runner_,
+        OutOfResources,
+        "No prompt step fits the remaining context.");
+    // Choose decode before execution: an execution error is not retryable.
+    ET_CHECK_OK_OR_RETURN_ERROR(decode_runner_->load());
+  }
+  auto* runner =
+      enable_parallel_prefill_ ? decode_runner_ : text_decoder_runner_;
+  uint64_t cur_token = 0;
+  auto tokens =
+      from_blob(&cur_token, {1, 1}, executorch::aten::ScalarType::Long);
+  for (size_t i = 0; i < prompt_tokens.size(); ++i) {
+    cur_token = prompt_tokens[i];
+    auto logits = runner->step(tokens, start_pos);
+    ET_CHECK_OK_OR_RETURN_ERROR(logits.error());
+    ++start_pos;
+    if (i + 1 == prompt_tokens.size()) {
+      cur_token = runner->logits_to_token(*logits, temperature);
     }
-
-    cur_token =
-        text_decoder_runner_->logits_to_token(logits_tensor, temperature);
   }
   return cur_token;
 }
