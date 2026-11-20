@@ -348,6 +348,17 @@ GraphInstance GraphBuilder::build() {
   for (ggml_tensor* copy : copies) {
     ggml_build_forward_expand(instance_.graph, copy);
   }
+  // ggml's allocator aborts on a tensor without elements.
+  for (int i = 0; i < ggml_graph_n_nodes(instance_.graph); ++i) {
+    const ggml_tensor* node = ggml_graph_node(instance_.graph, i);
+    if (ggml_nelements(node) == 0 ||
+        std::any_of(node->src, node->src + GGML_MAX_SRC, [](auto* src) {
+          return src != nullptr && ggml_nelements(src) == 0;
+        })) {
+      throw std::runtime_error(
+          "ggml: tensors without elements are not supported");
+    }
+  }
   return std::move(instance_);
 }
 
@@ -811,6 +822,11 @@ void GraphBuilder::lower(const Node& node) {
     lower_amax(node);
   } else if (key == "aten._softmax.default") {
     lower_softmax(node);
+  } else if (
+      key == "aten.split_with_sizes_copy.default" ||
+      key == "aten.split_with_sizes.default" ||
+      key == "aten.split_copy.Tensor" || key == "aten.split.Tensor") {
+    lower_split(node, key);
   } else if (key == "aten.slice_copy.Tensor" || key == "aten.slice.Tensor") {
     lower_slice(node, key == "aten.slice_copy.Tensor");
   } else if (key == "aten.select_copy.int" || key == "aten.select.int") {

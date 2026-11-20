@@ -403,6 +403,41 @@ class TestProgram {
         &outputs));
   }
 
+  // A node producing one tensor list whose elements, named `names`, are F32
+  // tensors of `shape`.
+  void call_list(
+      const std::string& name,
+      const char* target,
+      const std::vector<std::pair<std::string, TestArg>>& args,
+      const std::vector<std::string>& names,
+      const std::vector<int64_t>& shape) {
+    std::vector<flatbuffers::Offset<fbs::NamedArgument>> named;
+    for (const auto& [arg_name, arg] : args) {
+      named.push_back(fbs::CreateNamedArgumentDirect(
+          builder_, arg_name.c_str(), create_arg(arg)));
+    }
+    for (const std::string& element : names) {
+      values_.push_back(fbs::CreateTensorValueDirect(
+          builder_,
+          element.c_str(),
+          create_tensor_meta(builder_, fbs::ScalarType::FLOAT, shape)));
+    }
+    const std::vector<flatbuffers::Offset<fbs::Output>> outputs = {
+        fbs::CreateOutput(
+            builder_,
+            builder_.CreateString(""),
+            0,
+            fbs::OutputValueKind::TENSOR_LIST,
+            create_strings(builder_, names))};
+    nodes_.push_back(fbs::CreateNodeDirect(
+        builder_,
+        name.c_str(),
+        fbs::OpKind::CALL_FUNCTION,
+        target,
+        &named,
+        &outputs));
+  }
+
   std::vector<uint8_t> finish(
       const std::string& output,
       fbs::OutputKind kind = fbs::OutputKind::USER_OUTPUT,
@@ -3373,6 +3408,65 @@ TEST(GgmlEngineTest, AmaxOverTrailingDims) {
       }
     }
   }
+}
+
+// A split of an [extent] F32 input into `pieces` declared [1] outputs, with
+// `args` after self and dim 0; returns the first piece.
+std::vector<uint8_t> make_split_program(
+    int64_t extent,
+    const char* target,
+    const std::pair<std::string, TestArg>& sizes,
+    size_t pieces) {
+  TestProgram program;
+  program.input("x", fbs::ScalarType::FLOAT, {extent});
+  std::vector<std::string> names;
+  for (size_t i = 0; i < pieces; ++i) {
+    names.push_back("piece" + std::to_string(i));
+  }
+  program.call_list(
+      "split",
+      target,
+      {{"self", std::string("x")}, sizes, {"dim", int64_t{0}}},
+      names,
+      {1});
+  return program.finish(names.front());
+}
+
+TEST(GgmlEngineTest, SplitRefusesSizesThatOverflowOrOutnumberItsOutputs) {
+  // The sizes wrap around to 4 in int64.
+  constexpr int64_t kQuarter = int64_t{1} << 62;
+  expect_compile_error(
+      make_split_program(
+          4,
+          "torch.ops.aten.split_with_sizes_copy.default",
+          {"split_sizes",
+           std::vector<int64_t>{kQuarter, kQuarter, kQuarter, kQuarter + 4}},
+          4),
+      "add up");
+  // 2^31 - 1 pieces of one element for two declared outputs, refused before
+  // the pieces are listed.
+  expect_compile_error(
+      make_split_program(
+          (int64_t{1} << 31) - 1,
+          "torch.ops.aten.split_copy.Tensor",
+          {"split_size", int64_t{1}},
+          2),
+      "one tensor per piece");
+  auto host = GgmlEngineHost::create();
+  auto context = make_context(
+      *host,
+      make_split_program(
+          4,
+          "torch.ops.aten.split_with_sizes_copy.default",
+          {"split_sizes", std::vector<int64_t>{1, 1, 1, 1}},
+          4));
+  auto executable = context->compile("forward");
+  const std::vector<float> x{1.0f, 2.0f, 3.0f, 4.0f};
+  executable->set_input(0, x.data(), x.size(), ScalarType::Float);
+  executable->execute();
+  float first = 0.0f;
+  executable->get_output(0, &first, 1, ScalarType::Float);
+  EXPECT_EQ(first, 1.0f);
 }
 
 // y = x + expand(z) + expand(z) + ..., `count` adds: each a REPEAT node, its
