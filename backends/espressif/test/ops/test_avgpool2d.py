@@ -154,9 +154,7 @@ test_cases = {
     "divisor_override_fallback": EspTestCase(
         EspAvgPool2d(supported=False, divisor_override=2), (_input((1, 4, 7, 8)),)
     ),
-    "unbatched": EspTestCase(
-        EspAvgPool2d(supported=False), (_input((4, 7, 9)),)
-    ),
+    "unbatched": EspTestCase(EspAvgPool2d(supported=False), (_input((4, 7, 9)),)),
 }
 
 
