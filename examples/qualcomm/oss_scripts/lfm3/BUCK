@@ -1,0 +1,74 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain fbcode-only targets.
+
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load(":targets.bzl", "define_common_targets")
+
+oncall("executorch")
+
+define_common_targets()
+
+fbcode_target(_kind = runtime.python_library,
+    name = "lfm3",
+    srcs = [
+        "audio.py",
+        "codec.py",
+        "depth.py",
+        "preprocess.py",
+        "vision.py",
+    ],
+    base_module = "executorch.examples.qualcomm.oss_scripts.lfm3",
+    visibility = ["PUBLIC"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/qualcomm/oss_scripts/llama:masking_utils",
+        "//executorch/examples/qualcomm/oss_scripts/llama:static_llama",
+        "//pytorch/audio:torchaudio",
+        "fbsource//third-party/pypi/huggingface-hub:huggingface-hub",
+        "fbsource//third-party/pypi/numpy:numpy",
+        "fbsource//third-party/pypi/pillow:pillow",
+        "fbsource//third-party/pypi/safetensors:safetensors",
+        "fbsource//third-party/pypi/scipy:scipy",
+        "fbsource//third-party/pypi/transformers:transformers",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_binary,
+    name = "export_speech_components",
+    srcs = [
+        "export_speech_components.py",
+    ],
+    main_function = "executorch.examples.qualcomm.oss_scripts.lfm3.export_speech_components.main",
+    deps = [
+        ":lfm3",
+        ":speech_policy",
+        "//caffe2:torch",
+        "//executorch/backends/qualcomm/serialization:serialization",
+        "//executorch/backends/qualcomm/utils:utils",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_lfm3_speech",
+    srcs = [
+        "test_lfm3_speech.py",
+    ],
+    base_module = "executorch.examples.qualcomm.oss_scripts.lfm3",
+    deps = [
+        ":lfm3",
+        "//caffe2:torch",
+        "//executorch/examples/qualcomm/oss_scripts/llama:llama_lib",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_codec_window",
+    srcs = ["test_codec_window.py"],
+    base_module = "executorch.examples.qualcomm.oss_scripts.lfm3",
+    deps = [
+        ":lfm3",
+        "//caffe2:torch",
+    ],
+)

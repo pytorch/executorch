@@ -27,6 +27,7 @@
 #include <gflags/gflags.h>
 
 #include <fstream>
+#include <optional>
 #include <vector>
 
 using executorch::aten::ScalarType;
@@ -121,6 +122,25 @@ DEFINE_int32(
     0,
     "[Lookahead Decoding] Maximum number of speculations or candidate n-grams.");
 
+// Speech output (LFM3-Omni)
+DEFINE_string(depth_path, "", "Depth decoder .pte; enables speech output.");
+DEFINE_string(embed_frame_path, "", "Speech frame embedding .pte.");
+DEFINE_string(codec_path, "", "Speech codec decoder .pte.");
+DEFINE_string(speech_output_path, "speech.wav", "Generated 24 kHz speech.");
+DEFINE_string(
+    generation_mode,
+    "auto",
+    "auto: the model picks text or speech; audio: open the answer with speech.");
+DEFINE_double(
+    audio_temperature,
+    0.4,
+    "Speech code temperature; omitted uses exported policy.");
+DEFINE_double(
+    audio_repetition_penalty,
+    1.2,
+    "Speech code penalty; omitted uses exported policy.");
+DEFINE_int32(speech_seed, 0, "Seed for speech code sampling.");
+
 // Execution parameters
 DEFINE_int32(num_iters, 1, "Total number of iterations to run.");
 
@@ -148,6 +168,19 @@ void start_multimodal_runner(
       gflags::GetCommandLineFlagInfoOrDie("tokenized_prompt").is_default ? false
                                                                          : true;
 
+  const bool lfm3 = FLAGS_decoder_model_version == "lfm3" ||
+      FLAGS_decoder_model_version == "lfm3_speech";
+  ET_CHECK_MSG(
+      !lfm3 || (FLAGS_num_iters == 1 && prompts.size() == 1),
+      "LFM3 multimodal generation currently supports one prompt and one iteration; "
+      "use separate runner invocations for independent conversations");
+  ET_CHECK_MSG(
+      FLAGS_depth_path.empty()
+          ? (FLAGS_embed_frame_path.empty() && FLAGS_codec_path.empty())
+          : (!FLAGS_embed_frame_path.empty() && !FLAGS_codec_path.empty() &&
+             !FLAGS_speech_output_path.empty() && FLAGS_eval_mode != 2),
+      "Speech needs depth, embed_frame, codec and output paths, and no lookahead");
+
   // Create multimodal runner
   example::QNNMultimodalRunner runner(
       std::move(encoder),
@@ -164,6 +197,30 @@ void start_multimodal_runner(
       FLAGS_window,
       FLAGS_gcap);
 
+  if (!FLAGS_depth_path.empty()) {
+    auto load = [](const std::string& path) {
+      return std::make_unique<executorch::extension::Module>(
+          path,
+          executorch::extension::Module::LoadMode::MmapUseMlockIgnoreErrors);
+    };
+    std::optional<float> audio_temperature;
+    std::optional<float> audio_penalty;
+    if (!gflags::GetCommandLineFlagInfoOrDie("audio_temperature").is_default) {
+      audio_temperature = static_cast<float>(FLAGS_audio_temperature);
+    }
+    if (!gflags::GetCommandLineFlagInfoOrDie("audio_repetition_penalty")
+             .is_default) {
+      audio_penalty = static_cast<float>(FLAGS_audio_repetition_penalty);
+    }
+    runner.set_speech(
+        load(FLAGS_depth_path),
+        load(FLAGS_embed_frame_path),
+        load(FLAGS_codec_path),
+        FLAGS_speech_output_path,
+        audio_temperature,
+        audio_penalty,
+        static_cast<uint32_t>(FLAGS_speech_seed));
+  }
   auto model_version = runner.get_model_version().get();
 
   // Prepare output buffer (similar to qnn_llama_runner.cpp)
@@ -189,14 +246,24 @@ void start_multimodal_runner(
   std::vector<std::string> audio_raw_files;
   std::vector<std::string> image_raw_files;
   if (modality_of(model_version) == example::Modality::kAudio) {
+    // LFM3-Omni also takes text-only prompts (e.g. text to speech).
+    const auto* alm = std::get_if<example::AudioLanguageModel>(&model_version);
+    const bool audio_optional =
+        alm != nullptr && *alm == example::AudioLanguageModel::kLfm3OmniSpeech;
     ET_CHECK_MSG(
-        !FLAGS_audio_path.empty(), "For ALM, please specify audio path.");
-    audio_raw_files = example::load_raw_files(FLAGS_audio_path.c_str());
+        audio_optional || !FLAGS_audio_path.empty(),
+        "For ALM, please specify audio path.");
+    if (!FLAGS_audio_path.empty()) {
+      audio_raw_files = example::load_raw_files(FLAGS_audio_path.c_str());
+    }
   }
   if (modality_of(model_version) == example::Modality::kVision) {
     ET_CHECK_MSG(
-        !FLAGS_image_path.empty(), "For VLM, please specify image path.");
-    image_raw_files = example::load_raw_files(FLAGS_image_path.c_str());
+        lfm3 || !FLAGS_image_path.empty(),
+        "For VLM, please specify image path.");
+    if (!FLAGS_image_path.empty()) {
+      image_raw_files = example::load_raw_files(FLAGS_image_path.c_str());
+    }
   }
 
   // 2. Prepare messages for multi-turn simulation
@@ -240,13 +307,19 @@ void start_multimodal_runner(
       // 4.2 apply chat template for text input
       std::string formatted_prompt =
           apply_chat_template(prompt, FLAGS_system_prompt, model_version);
+      if (FLAGS_generation_mode == "audio") {
+        formatted_prompt.append("<|audio_start|>");
+      }
       inputs.emplace_back(make_text_input(formatted_prompt));
 
       // 4.3 dispatch inputs into correct order
       inputs = dispatch_inputs(inputs, formatted_prompt);
 
       // 4.4 generate text
-      runner.generate(inputs, config, callback);
+      ET_CHECK_MSG(
+          runner.generate(inputs, config, callback) ==
+              executorch::runtime::Error::Ok,
+          "Multimodal generation failed");
     }
   }
   fout.write(buf.data(), buf.size());
@@ -256,6 +329,21 @@ void start_multimodal_runner(
 int main(int argc, char** argv) {
   std::vector<std::string> prompts = CollectPrompts(argc, argv);
   gflags::ParseCommandLineFlags(&argc, &argv, true);
+  if (FLAGS_generation_mode != "auto" && FLAGS_generation_mode != "audio") {
+    ET_LOG(Error, "generation_mode must be auto or audio");
+    return 1;
+  }
+  if (FLAGS_generation_mode == "audio" &&
+      (FLAGS_depth_path.empty() ||
+       FLAGS_decoder_model_version != "lfm3_speech")) {
+    ET_LOG(
+        Error,
+        "Audio generation requires an LFM3 speech decoder and depth model");
+    return 1;
+  }
+  if (prompts.empty()) {
+    prompts.push_back(FLAGS_prompt);
+  }
   if (!gflags::GetCommandLineFlagInfoOrDie("prompt").is_default &&
       !gflags::GetCommandLineFlagInfoOrDie("tokenized_prompt").is_default) {
     ET_CHECK_MSG(false, "Only provide prompt or tokenized_input but not both.");

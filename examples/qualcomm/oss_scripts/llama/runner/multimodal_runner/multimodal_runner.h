@@ -13,14 +13,17 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <variant>
 
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/cache_utils.h>
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/conv_state_manager.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/decoder_runner.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/imem_alloc.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/kv_manager.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/encoder.h>
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/lfm3_speech_generator.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/multimodal_embedding_merger.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/multimodal_prompt_processor.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/multimodal_token_generator.h>
@@ -45,10 +48,12 @@ enum class Modality {
 enum class VisionLanguageModel {
   kSmolvlm = 0,
   kInternvl3,
+  kLfm3Omni,
 };
 
 enum class AudioLanguageModel {
   kGraniteSpeech = 0,
+  kLfm3OmniSpeech,
 };
 
 using ModelVersion = std::variant<VisionLanguageModel, AudioLanguageModel>;
@@ -101,6 +106,20 @@ class QNNMultimodalRunner
       std::function<void(const executorch::llm::Stats&)> stats_callback = {})
       override;
 
+  /**
+   * @brief Enable speech output (LFM3-Omni): depth decoder, frame embedding and
+   * codec modules; the decoded 24 kHz audio is written to `wav_path`. Call
+   * before load().
+   */
+  void set_speech(
+      std::unique_ptr<executorch::extension::Module> depth,
+      std::unique_ptr<executorch::extension::Module> embed_frame,
+      std::unique_ptr<executorch::extension::Module> codec,
+      const std::string& wav_path,
+      std::optional<float> audio_temperature,
+      std::optional<float> audio_repetition_penalty,
+      uint32_t seed);
+
   executorch::runtime::Result<ModelVersion> get_model_version();
   executorch::runtime::Result<executorch::runtime::MethodMeta>
   get_encoder_method_meta();
@@ -114,6 +133,7 @@ class QNNMultimodalRunner
   inline static const std::string kEncoderForwardName = "forward";
 
   int32_t context_len_{0};
+  int32_t embedding_dim_{0};
 
   int ngram_{0};
   int window_{0};
@@ -134,6 +154,7 @@ class QNNMultimodalRunner
   ModelVersion model_version_;
   std::unique_ptr<IMemAlloc> buffer_manager_;
   std::unique_ptr<KVManager> kv_manager_;
+  std::unique_ptr<ConvStateManager> conv_state_manager_;
   std::unique_ptr<tokenizers::Tokenizer> tokenizer_;
   std::unique_ptr<DecoderRunner> decoder_runner_;
   std::unique_ptr<MultimodalPromptProcessor> prompt_processor_;
@@ -143,6 +164,27 @@ class QNNMultimodalRunner
   std::unique_ptr<TokenEmbeddingProcessor> tok_embedding_processor_;
   std::unique_ptr<TokenEmbeddingProcessor> tok_embedding_generator_;
   std::unique_ptr<MultimodalEmbeddingMerger> embedding_merger_;
+
+  // Speech output (optional)
+  std::unique_ptr<executorch::extension::Module> depth_;
+  std::unique_ptr<executorch::extension::Module> embed_frame_;
+  std::unique_ptr<executorch::extension::Module> codec_;
+  std::string wav_path_;
+  std::optional<float> audio_temperature_;
+  std::optional<float> audio_repetition_penalty_;
+  uint32_t speech_seed_{0};
+  Lfm3SpeechTokenGenerator* speech_generator_{nullptr};
+  struct CodecConfig {
+    int32_t window = 0;
+    int32_t left = 0;
+    int32_t right = 0;
+    int32_t frame_samples = 0;
+    int32_t sample_rate = 0;
+    int32_t codebook_size = 0;
+    int32_t audio_eos_code = 0;
+  } codec_config_;
+  executorch::runtime::Error load_speech_components(int32_t hidden_dim);
+  executorch::runtime::Error write_speech();
 
   // stats
   executorch::llm::Stats stats_;

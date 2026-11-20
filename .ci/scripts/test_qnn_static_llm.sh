@@ -38,6 +38,11 @@ pip install graphviz
 
 set +e
 
+$PYTHON_EXECUTABLE backends/qualcomm/tests/test_qnn_delegate.py -k StaticLLMTest --compile_only
+if [ $? -ne 0 ]; then
+    exit 1
+fi
+
 echo "Executing task: $TASK_NAME"
 EXTRA_FLAGS=""
 if [[ "${TASK_NAME}" == "stories_110m" ]]; then

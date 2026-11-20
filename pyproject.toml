@@ -129,6 +129,9 @@ license-files = ["LICENSE"]
   # Some kernel libraries need their .yaml files.
   "*.yaml",
 ]
+"executorch.examples.models.lfm3" = [
+  "config/*.json",
+]
 "executorch.backends.arm.vgf.shaders" = [
   "*.glsl",
   "*.spirv.b64",

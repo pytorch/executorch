@@ -7,6 +7,15 @@
 # decode qdq file name
 DECODE_QDQ_FILENAME = "decode_qdq.pt2"
 
+
+def validate_lfm3_mode(decoder_model, model_mode, use_attention_sink):
+    if decoder_model in LFM3_DECODER_MODELS:
+        if model_mode == "lookahead":
+            raise ValueError("LFM3 decoder models do not support lookahead mode")
+        if use_attention_sink is not None:
+            raise ValueError("LFM3 decoder models do not support attention sink")
+
+
 # eval methods
 PROMPT_EVAL = "prompt_eval"
 TASKS_EVAL = "tasks_eval"
@@ -64,4 +73,16 @@ DECODER_MODEL_VERSION = {
     "smolvlm_500m_instruct": "smolvlm",
     "internvl3_1b": "internvl3",
     "gemma4-e2b": "gemma4",
+    "lfm3-1_7b": "lfm3",
+    "lfm3-1_7b_base": "lfm3_base",
+    "lfm3-2b_vl": "lfm3",
+    "lfm3-2b_omni": "lfm3",
+    "lfm3-2b_omni_speech": "lfm3_speech",
+}
+
+# Text decoders sharing the LFM3-1.7B backbone (multimodal variants: decoder only).
+LFM3_DECODER_MODELS = {
+    name
+    for name, version in DECODER_MODEL_VERSION.items()
+    if version.startswith("lfm3")
 }

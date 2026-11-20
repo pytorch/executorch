@@ -98,14 +98,25 @@ class ShortConv(nn.Module):
 
 
 class ShortConvBlock(nn.Module):
-    def __init__(self, dim: int, hidden_dim: int, norm_eps: float):
+    def __init__(
+        self,
+        dim: int,
+        hidden_dim: int,
+        norm_eps: float,
+        L_cache: int = 3,
+        post_norms: bool = False,
+    ):
         super().__init__()
-        self.L_cache = 3  # hardcode 3 for now
+        self.L_cache = L_cache
         self.conv = ShortConv(dim, self.L_cache, bias=False)
         self.feed_forward = FeedForward(dim, hidden_dim)
         self.ffn_norm = RMSNorm(dim, norm_eps)
         # use attention_norm norm instead of operator_norm to unify with TransformerBlock
         self.attention_norm = RMSNorm(dim, norm_eps)
+        # Sandwich norm (LFM3): normalize conv and FFN outputs before each residual.
+        if post_norms:
+            self.post_attention_norm = RMSNorm(dim, norm_eps)
+            self.post_ffn_norm = RMSNorm(dim, norm_eps)
 
     def forward(
         self,
@@ -116,8 +127,13 @@ class ShortConvBlock(nn.Module):
     ):  # x: 1xN
         input_pos = attn_options.get("input_pos") if attn_options else None
         h = self.conv.forward(self.attention_norm(x), input_pos)
+        if hasattr(self, "post_attention_norm"):
+            h = self.post_attention_norm(h)
         h = x + h
-        out = h + self.feed_forward(self.ffn_norm(h))
+        ffn_out = self.feed_forward(self.ffn_norm(h))
+        if hasattr(self, "post_ffn_norm"):
+            ffn_out = self.post_ffn_norm(ffn_out)
+        out = h + ffn_out
         return out, None
 
     def reset_cache(self):

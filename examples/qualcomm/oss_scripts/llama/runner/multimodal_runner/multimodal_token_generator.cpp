@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/hidden_state.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/multimodal_token_generator.h>
 #include <numeric>
 using executorch::aten::TensorImpl;
@@ -47,6 +48,7 @@ MultimodalTokenGenerator::MultimodalTokenGenerator(
   input_toks_.size = 0;
   input_embedding_.size =
       metadata_.ar_len * metadata_.embedding_dim * sizeof(float);
+  hidden_.size = metadata_.ar_len * metadata_.hidden_dim * sizeof(uint16_t);
 }
 
 void MultimodalTokenGenerator::init_io(
@@ -155,8 +157,14 @@ void MultimodalTokenGenerator::init_io(
   output_tensors_.emplace_back(logits_.tensor.get());
   buffer_manager->add_memory_info(logits_.data, logits_.size, logits.get());
 
+  // [O]: hidden state
+  if (metadata_.hidden_dim > 0) {
+    bind_hidden_output(
+        buffer_manager, method_meta.get(), hidden_, output_tensors_);
+  }
+
   // [O] kv_cache
-  index = 1;
+  index = metadata_.hidden_dim > 0 ? 2 : 1;
   for (int cache_group = 0; cache_group < 2; ++cache_group) {
     std::vector<std::unique_ptr<TensorImpl>>& cache =
         (cache_group == 0 ? k_cache_out_ : v_cache_out_);
@@ -179,6 +187,14 @@ void MultimodalTokenGenerator::init_io(
     }
   }
 
+  if (conv_state_manager_ != nullptr) {
+    conv_state_manager_->bind_io(
+        buffer_manager,
+        method_meta.get(),
+        conv_tensors_,
+        input_tensors_,
+        output_tensors_);
+  }
   // Prepare the vector of EValue to run inference
   inputs_.reserve(input_tensors_.size());
   for (auto& input_tensor : input_tensors_) {

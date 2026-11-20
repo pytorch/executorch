@@ -33,6 +33,9 @@ class KVManager {
     int32_t max_cache_len;
     int64_t num_heads;
     int64_t num_layers;
+    // Output index of k_cache_0 (2 when the decoder also returns its hidden
+    // state right after the logits).
+    int32_t first_kv_output = 1;
   };
   KVManager(
       Metadata metadata,

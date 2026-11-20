@@ -28,6 +28,8 @@ class MultimodalTokenGenerator : public example::TokenGenerator {
     int sliding_window;
     CacheMode cache_mode;
     int32_t embedding_dim = 0;
+    // > 0 when the decoder also returns its final hidden state (output 1).
+    int32_t hidden_dim = 0;
   };
 
   // Constructor with embedding generator support
@@ -55,7 +57,18 @@ class MultimodalTokenGenerator : public example::TokenGenerator {
 
   inline const size_t total_token_generator_io_size_in_bytes() const {
     return input_toks_.size + input_pos_.size + attention_mask_.size +
-        window_attention_mask_.size + logits_.size + input_embedding_.size;
+        window_attention_mask_.size + logits_.size + input_embedding_.size +
+        hidden_.size;
+  }
+
+  /**
+   * @brief Final hidden state (uint16, graph-output encoding) of the last
+   * step, or nullptr if the decoder has no hidden-state output.
+   */
+  const uint16_t* hidden() const {
+    return metadata_.hidden_dim == 0
+        ? nullptr
+        : reinterpret_cast<const uint16_t*>(hidden_.data);
   }
 
  protected:
@@ -68,20 +81,20 @@ class MultimodalTokenGenerator : public example::TokenGenerator {
   using TokenGenerator::output_tensors_;
   using TokenGenerator::window_attention_mask_;
 
+  using TokenGenerator::logits_;
+
   // Additional members specific to multimodal
   TensorStruct<float> input_embedding_;
+  TensorStructRaw hidden_{};
+  TokenEmbeddingProcessor* tok_embedding_runner_;
 
  private:
   // Reuse members from token_generator
   using TokenGenerator::input_toks_;
   using TokenGenerator::k_cache_in_;
   using TokenGenerator::k_cache_out_;
-  using TokenGenerator::logits_;
   using TokenGenerator::v_cache_in_;
   using TokenGenerator::v_cache_out_;
-
-  // Additional members specific to multimodal
-  TokenEmbeddingProcessor* tok_embedding_runner_;
 
   /**
    * @brief Fill in I/O buffers with prompt token and position.
@@ -90,6 +103,7 @@ class MultimodalTokenGenerator : public example::TokenGenerator {
    */
   void prepare_io(uint64_t cur_token, int64_t start_pos) override;
 
+ protected:
   // metadata specific to multimodal
   Metadata metadata_;
 };
