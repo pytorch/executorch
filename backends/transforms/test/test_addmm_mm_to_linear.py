@@ -7,8 +7,10 @@
 import unittest
 
 import torch
+from executorch.backends.transforms import addmm_mm_to_linear
 from executorch.backends.transforms.addmm_mm_to_linear import (
     addmm_can_be_linear,
+    AddmmToLinearTransform,
     apply_addmm_mm_to_linear_transform,
 )
 from executorch.exir import EdgeCompileConfig, to_edge
@@ -69,7 +71,7 @@ class _DequantizeLinearReadTwice(torch.nn.Module):
 class _DequantizeSelfProduct(torch.nn.Module):
     def forward(self, xq: torch.Tensor) -> torch.Tensor:
         flat = _dequantize(xq).view(-1, 16)
-        return (flat @ flat.t()).view(xq.shape[0], xq.shape[1], -1)
+        return torch.nn.functional.linear(flat, flat).view(xq.shape[0], xq.shape[1], -1)
 
 
 class _DequantizeLinearBias(torch.nn.Module):
@@ -168,7 +170,7 @@ class TestAddmmMmToLinear(unittest.TestCase):
     def _transform(self, model, example, dynamic_shapes=None, compile_config=None):
         ep = torch.export.export(model, (example,), dynamic_shapes=dynamic_shapes)
         program = to_edge(ep, compile_config=compile_config).exported_program()
-        apply_addmm_mm_to_linear_transform(program.graph_module.graph)
+        apply_addmm_mm_to_linear_transform(program.graph_module.graph, program)
         return program
 
     def _linears(self, program):
@@ -188,7 +190,7 @@ class TestAddmmMmToLinear(unittest.TestCase):
                 program = to_edge(ep).exported_program()
                 graph = program.graph_module.graph
                 view_val = graph.output_node().args[0][0].meta["val"]
-                apply_addmm_mm_to_linear_transform(graph)
+                apply_addmm_mm_to_linear_transform(graph, program)
                 output = graph.output_node().args[0][0]
                 self.assertEqual(output.target, _LINEAR)
                 self.assertEqual(output.args[0].target, _DEQUANTIZE)
@@ -238,11 +240,13 @@ class TestAddmmMmToLinear(unittest.TestCase):
                     torch.testing.assert_close(program.module()(x), model(x))
 
     def test_weight_that_is_also_the_input_is_kept(self):
-        # flat @ flat.t() becomes a linear whose input and weight are one node.
+        # A linear kept from export can read one node as its input and weight.
+        # (flat @ flat.t() stays a matmul, since its weight is not constant.)
         # Only the input is pointed at the dequantized tensor when the view goes.
         model = _DequantizeSelfProduct()
         x = _int8(2, 3, 16)
-        program = self._transform(model, x)
+        config = EdgeCompileConfig(preserve_ops=[torch.ops.aten.linear.default])
+        program = self._transform(model, x, compile_config=config)
         (linear,) = self._linears(program)
         self.assertEqual(linear.args[0].target, _DEQUANTIZE)
         self.assertEqual(linear.args[1].target, _VIEW)
@@ -337,6 +341,234 @@ class TestAddmmMmToLinear(unittest.TestCase):
                     any(n.target == _VIEW for n in program.graph_module.graph.nodes)
                 )
                 torch.testing.assert_close(program.module()(x), model(x))
+
+
+def count_targets(graph: torch.fx.Graph, target) -> int:
+    return sum(1 for n in graph.nodes if n.op == "call_function" and n.target == target)
+
+
+class TestAddmmToLinearTransform(unittest.TestCase):
+    def _transform(self, model, example_inputs):
+        edge = to_edge(torch.export.export(model, example_inputs, strict=True))
+        program = edge.exported_program()
+        transform = AddmmToLinearTransform(program)
+        return transform(program.graph_module).graph_module.graph
+
+    def test_constant_weight_is_rewritten_to_linear(self):
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.fc = torch.nn.Linear(8, 4)
+
+            def forward(self, x):
+                return self.fc(x)
+
+        graph = self._transform(Model().eval(), (torch.randn(2, 8),))
+        self.assertEqual(count_targets(graph, exir_ops.edge.aten.linear.default), 1)
+        self.assertEqual(count_targets(graph, exir_ops.edge.aten.addmm.default), 0)
+        self.assertEqual(count_targets(graph, exir_ops.edge.aten.mm.default), 0)
+
+    def test_dequantized_constant_weight_is_rewritten_to_linear(self):
+        # A quantized weight reaches addmm through a dequantize node, so the
+        # operand is a call_function rather than a placeholder. It is still
+        # known at build time, and backends fuse the dequantize+linear pair
+        # back into a quantized matmul, so the rewrite must still happen.
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer(
+                    "w", torch.randint(-128, 127, (4, 8), dtype=torch.int8)
+                )
+                self.register_buffer("scale", torch.rand(4) + 0.1)
+                self.register_buffer("zero", torch.zeros(4, dtype=torch.int8))
+                self.register_buffer("bias", torch.randn(4))
+
+            def forward(self, x):
+                w = torch.ops.quantized_decomposed.dequantize_per_channel.default(
+                    self.w, self.scale, self.zero, 0, -128, 127, torch.int8
+                )
+                return torch.addmm(self.bias, x, w.t())
+
+        graph = self._transform(Model().eval(), (torch.randn(2, 8),))
+        self.assertEqual(count_targets(graph, exir_ops.edge.aten.linear.default), 1)
+        self.assertEqual(count_targets(graph, exir_ops.edge.aten.addmm.default), 0)
+
+    def test_groupwise_dequantized_constant_weight_is_rewritten_to_linear(self):
+        # 4-bit groupwise (8da4w-style) weights are dequantized per channel
+        # group, and have to be rewritten like any other dequantized constant.
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer(
+                    "w", torch.randint(-8, 7, (4, 8), dtype=torch.int8)
+                )
+                self.register_buffer("scale", torch.rand(4, 2) + 0.1)
+                self.register_buffer("zero", torch.zeros(4, 2, dtype=torch.int8))
+
+            def forward(self, x):
+                w = torch.ops.quantized_decomposed.dequantize_per_channel_group.default(
+                    self.w, self.scale, self.zero, -8, 7, torch.int8, 4, torch.float32
+                )
+                return torch.mm(x, w.t())
+
+        graph = self._transform(Model().eval(), (torch.randn(2, 8),))
+        self.assertEqual(count_targets(graph, exir_ops.edge.aten.linear.default), 1)
+        self.assertEqual(count_targets(graph, exir_ops.edge.aten.mm.default), 0)
+
+    def test_unfolded_quantized_constant_weight_is_rewritten_to_linear(self):
+        # Without constant folding the weight reaches mm as dq(q(param)). The
+        # quantize node only reads constants, so the operand is still constant.
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.w = torch.nn.Parameter(torch.randn(4, 8))
+                self.register_buffer("scale", torch.rand(4) + 0.1)
+                self.register_buffer("zero", torch.zeros(4, dtype=torch.int64))
+
+            def forward(self, x):
+                q = torch.ops.quantized_decomposed.quantize_per_channel.default(
+                    self.w, self.scale, self.zero, 0, -128, 127, torch.int8
+                )
+                w = torch.ops.quantized_decomposed.dequantize_per_channel.default(
+                    q, self.scale, self.zero, 0, -128, 127, torch.int8
+                )
+                return torch.mm(x, w.t())
+
+        graph = self._transform(Model().eval(), (torch.randn(2, 8),))
+        self.assertEqual(count_targets(graph, exir_ops.edge.aten.linear.default), 1)
+        self.assertEqual(count_targets(graph, exir_ops.edge.aten.mm.default), 0)
+
+    def test_quantized_computed_weight_stays_a_matmul(self):
+        # The quantize node reads a value produced at runtime, so dq(q(.)) is
+        # runtime data too.
+        class Model(torch.nn.Module):
+            def forward(self, x, w):
+                q = torch.ops.quantized_decomposed.quantize_per_tensor.default(
+                    w * 2.0, 0.1, 0, -128, 127, torch.int8
+                )
+                w = torch.ops.quantized_decomposed.dequantize_per_tensor.default(
+                    q, 0.1, 0, -128, 127, torch.int8
+                )
+                return torch.mm(x, w.t())
+
+        graph = self._transform(Model().eval(), (torch.randn(2, 8), torch.randn(4, 8)))
+        self.assertEqual(count_targets(graph, exir_ops.edge.aten.linear.default), 0)
+        self.assertEqual(count_targets(graph, exir_ops.edge.aten.mm.default), 1)
+
+    def test_dequantized_runtime_input_stays_a_matmul(self):
+        # A dequantize is only constant when what it reads is: here it reads a
+        # value produced at runtime, so the matmul must stay a matmul.
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("scale", torch.rand(4) + 0.1)
+                self.register_buffer("zero", torch.zeros(4, dtype=torch.int8))
+
+            def forward(self, x, w_int):
+                w = torch.ops.quantized_decomposed.dequantize_per_channel.default(
+                    w_int + 1, self.scale, self.zero, 0, -128, 127, torch.int8
+                )
+                return torch.mm(x, w.t())
+
+        w_int = torch.randint(-128, 126, (4, 8), dtype=torch.int8)
+        graph = self._transform(Model().eval(), (torch.randn(2, 8), w_int))
+        self.assertEqual(count_targets(graph, exir_ops.edge.aten.linear.default), 0)
+        self.assertEqual(count_targets(graph, exir_ops.edge.aten.mm.default), 1)
+
+    def test_computed_weight_stays_a_matmul(self):
+        # `w` is produced at runtime, so the transposed matmul below is not a
+        # linear: backends prepack a linear's weight while building their graph
+        # and cannot do that for a value that only exists during execution.
+        class Model(torch.nn.Module):
+            def forward(self, x, w):
+                return torch.mm(x, (w * 2.0).t())
+
+        graph = self._transform(Model().eval(), (torch.randn(2, 8), torch.randn(4, 8)))
+        self.assertEqual(count_targets(graph, exir_ops.edge.aten.linear.default), 0)
+        self.assertEqual(count_targets(graph, exir_ops.edge.aten.mm.default), 1)
+
+    def test_computed_addmm_weight_stays_an_addmm(self):
+        class Model(torch.nn.Module):
+            def forward(self, x, w, b):
+                return torch.addmm(b, x, (w * 2.0).t())
+
+        graph = self._transform(
+            Model().eval(),
+            (torch.randn(2, 8), torch.randn(4, 8), torch.randn(4)),
+        )
+        self.assertEqual(count_targets(graph, exir_ops.edge.aten.linear.default), 0)
+        self.assertEqual(count_targets(graph, exir_ops.edge.aten.addmm.default), 1)
+
+    def test_user_input_weight_is_not_rewritten(self):
+        class Model(torch.nn.Module):
+            def forward(self, x, w):
+                return torch.nn.functional.linear(x, w)
+
+        edge = to_edge(
+            torch.export.export(
+                Model().eval(), (torch.randn(2, 8), torch.randn(4, 8)), strict=True
+            )
+        )
+        program = edge.exported_program()
+        graph = AddmmToLinearTransform(program)(program.graph_module).graph_module.graph
+        self.assertEqual(count_targets(graph, exir_ops.edge.aten.linear.default), 0)
+
+    def test_mutated_buffer_weight_is_not_rewritten(self):
+        # The buffer is a weight by shape but not by lifetime: forward() writes
+        # to it, so a delegate that prepacked it while building its graph would
+        # keep returning the value it was built with.
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("w", torch.randn(4, 8))
+
+            def forward(self, x):
+                # Read first, then write: functionalization leaves the matmul
+                # reading the placeholder itself, which is the case the pass
+                # has to reject.
+                y = torch.mm(x, self.w.t())
+                self.w.add_(1.0)
+                return y
+
+        graph = self._transform(Model().eval(), (torch.randn(2, 8),))
+        self.assertEqual(count_targets(graph, exir_ops.edge.aten.linear.default), 0)
+        self.assertEqual(count_targets(graph, exir_ops.edge.aten.mm.default), 1)
+
+    def test_frozen_buffer_weight_is_rewritten(self):
+        # The mirror of the case above: a buffer nothing writes to is as
+        # constant as a parameter, and has to keep being rewritten.
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("w", torch.randn(4, 8))
+
+            def forward(self, x):
+                return torch.mm(x, self.w.t())
+
+        graph = self._transform(Model().eval(), (torch.randn(2, 8),))
+        self.assertEqual(count_targets(graph, exir_ops.edge.aten.linear.default), 1)
+        self.assertEqual(count_targets(graph, exir_ops.edge.aten.mm.default), 0)
+
+    def test_no_program_leaves_placeholders_alone(self):
+        # Without the owning program a lifted parameter and a user input look
+        # the same, so nothing is rewritten.
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.fc = torch.nn.Linear(8, 4)
+
+            def forward(self, x):
+                return self.fc(x)
+
+        edge = to_edge(
+            torch.export.export(Model().eval(), (torch.randn(2, 8),), strict=True)
+        )
+        program = edge.exported_program()
+        # The skip is silent otherwise, so it is logged (once per process).
+        addmm_mm_to_linear._warn_no_exported_program.cache_clear()
+        with self.assertLogs(addmm_mm_to_linear.logger, level="WARNING"):
+            graph = AddmmToLinearTransform()(program.graph_module).graph_module.graph
+        self.assertEqual(count_targets(graph, exir_ops.edge.aten.linear.default), 0)
 
 
 if __name__ == "__main__":
