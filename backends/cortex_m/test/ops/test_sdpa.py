@@ -117,17 +117,12 @@ _SCALE_NOT_FOLDED = (
     "The attention scale mul is left as an fp32 aten.mul between dequantize "
     "and quantize, no pass folds it into the quantize yet"
 )
-_LINEAR_RETRACED_AS_INT32 = (
-    "Retracing a folded quantized linear gives an int32 output, which fails "
-    "the dtype check of the bmm consuming it"
-)
-
 xfail_cases_dialect: dict[str, xfail_type] = {
     "self_attention": (_SCALE_NOT_FOLDED, RuntimeError),
     "cross_attention": (_SCALE_NOT_FOLDED, RuntimeError),
     "rank3": (_SCALE_NOT_FOLDED, RuntimeError),
     "explicit_scale": (_SCALE_NOT_FOLDED, RuntimeError),
-    "multihead_attention": (_LINEAR_RETRACED_AS_INT32, Exception),
+    "multihead_attention": (_SCALE_NOT_FOLDED, RuntimeError),
 }
 
 
