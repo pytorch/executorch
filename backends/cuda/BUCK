@@ -221,6 +221,7 @@ fbcode_target(
         "triton/kernels/conv/routing.py",
         "triton/kernels/fused_moe.py",
         "triton/kernels/gemm/__init__.py",
+        "triton/kernels/gemm/gemv.py",
         "triton/kernels/gemm/linear.py",
         "triton/kernels/gemm/routing.py",
         "triton/kernels/gemm/tile.py",

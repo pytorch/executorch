@@ -36,7 +36,11 @@ from dataclasses import asdict, dataclass
 
 import torch
 import torch.nn.functional as F
-from executorch.backends.cuda.autotune.launch_params import autotune_launch_params
+from executorch.backends.cuda.autotune.launch_params import (
+    autotune_launch_params,
+    clear_launch_param_cache,
+)
+from executorch.backends.cuda.triton.kernels.gemm import routing
 from executorch.backends.cuda.triton.kernels.gemm.linear import (
     force_linear_candidate,
     linear,
@@ -51,6 +55,9 @@ class Case:
     k: int
     bias: bool
     graph: str
+    # "contiguous", "transposed" (x stored as the transpose of a [K, M]
+    # tensor) or "sliced" (x a slice of wider rows, at an offset).
+    x_layout: str = "contiguous"
 
 
 # Calls across the row classes: a few rows (a matrix-vector product), short
@@ -75,6 +82,31 @@ _SHAPES = (
 
 def shape_cases(graph):
     return [Case(label, lead, n, k, bias, graph) for label, lead, n, k, bias in _SHAPES]
+
+
+def envelope_cases(graph):
+    """Calls of at most four rows across the weight sizes."""
+    return [
+        Case("envelope", (m,), n, k, False, graph)
+        for m in (1, 4)
+        for n in (64, 256, 512, 1024, 2048, 4096, 16384, 65536)
+        for k in (64, 256, 1024, 4096, 16384)
+    ]
+
+
+def gemv_boundary_cases(graph):
+    """Every corner of the class the router takes to the matrix-vector
+    schedule without measurement, with and without bias and with an input
+    sliced from wider rows at an offset (which measurement does not take)."""
+    return [
+        Case("gemv boundary", (m,), n, k, bias, graph, layout)
+        for m, n, k in routing.gemv_boundary_calls()
+        for bias, layout in (
+            (False, "contiguous"),
+            (True, "contiguous"),
+            (False, "sliced"),
+        )
+    ]
 
 
 _CALLS_PER_GRAPH = 10
@@ -118,11 +150,14 @@ def summarize(times):
 
 
 def triton_runner(x, w, b):
+    # Times the schedules again, as the compile does for a new shape.
+    clear_launch_param_cache()
     stream = torch.cuda.Stream()
     with torch.cuda.stream(stream), autotune_launch_params() as stats:
         linear(x, w, b)
     stream.synchronize()
-    schedule = stats.picks[0].choice if stats.picks else "ieee_tile"
+    (pick,) = stats.picks
+    schedule = pick.choice
 
     def run():
         with force_linear_candidate(schedule):
@@ -158,6 +193,11 @@ def inductor_runner(x, w, b, case):
 def _tensors(case):
     torch.manual_seed(0)
     x = torch.randn(*case.lead, case.k, device="cuda")
+    if case.x_layout == "transposed":
+        x = x.reshape(-1, case.k).t().contiguous().t().reshape(x.shape)
+    elif case.x_layout == "sliced":
+        wide = torch.randn(*case.lead, case.k + 8, device="cuda")
+        x = wide[..., 4 : 4 + case.k]
     w = torch.randn(case.n, case.k, device="cuda") / case.k**0.5
     b = torch.randn(case.n, device="cuda") if case.bias else None
     return x, w, b
@@ -207,6 +247,9 @@ def run_case(case, flush, threshold):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument(
+        "--suite", default="shapes", choices=["shapes", "envelope", "gemv_boundary"]
+    )
     parser.add_argument("--graph", default="linear", choices=["linear", "core"])
     parser.add_argument("--shard", default="0/1", help="run cases i::n of the suite")
     parser.add_argument("--warm", action="store_true", help="do not flush L2")
@@ -225,15 +268,21 @@ def main():
         f"{torch.cuda.get_device_name()} {'warm' if args.warm else 'cold'} L2, "
         "median [p10, p90] us: ours, Inductor, cuBLAS"
     )
-    for case in shape_cases(args.graph)[index::count]:
+    cases = {
+        "shapes": shape_cases,
+        "envelope": envelope_cases,
+        "gemv_boundary": gemv_boundary_cases,
+    }[args.suite](args.graph)
+    for case in cases[index::count]:
         r = run_case(case, flush, args.threshold)
         times = " ".join(
             f"{t['median']:8.1f} [{t['p10']:7.1f},{t['p90']:8.1f}]"
             for t in (r["ours_us"], r["inductor_us"], r["cublas_us"])
         )
         print(
-            f"{case.label:10s} {case.graph:6s} {str(case.lead):10s} {case.n:6d} "
-            f"{case.k:6d} {'bias' if case.bias else '    '} {times} "
+            f"{case.label:13s} {case.graph:6s} {str(case.lead):10s} {case.n:6d} "
+            f"{case.k:6d} {'bias' if case.bias else '    '} "
+            f"{case.x_layout[:5]:5s} {times} "
             f"{r['speedup_vs_inductor']:6.2f}x {r['speedup_vs_cublas']:6.2f}x "
             f"err {r['error']['ours_abs']:.1e}/{r['error']['cublas_abs']:.1e} "
             f"{'pass' if r['error']['passes'] else 'FAIL'} {r['schedule']:10s} "
