@@ -62,6 +62,21 @@ fbcode_target(
 
 fbcode_target(
     _kind = runtime.python_library,
+    name = "nvfp4_tensor",
+    srcs = [
+        "nvfp4_tensor.py",
+    ],
+    visibility = [
+        "//executorch/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//pytorch/ao:torchao",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_library,
     name = "quantize_op_dispatch",
     srcs = [
         "quantize_op_dispatch/__init__.py",
@@ -196,6 +211,8 @@ fbcode_target(
         "triton/kernels/int5_quantized_gemm.py",
         "triton/kernels/int6_quantized_gemm.py",
         "triton/kernels/int8_quantized_gemm.py",
+        "triton/kernels/nvfp4_quantized_gemm.py",
+        "triton/kernels/nvfp4_tuning.py",
         "triton/kernels/int4_matmul.py",
         "triton/kernels/quantized_gemm_family.py",
         "triton/kernels/quantized_gemm_utils.py",

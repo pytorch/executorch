@@ -1,4 +1,5 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbcode_macros//build_defs:python_pytest.bzl", "python_pytest")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 load("@fbcode_macros//build_defs:python_unittest_remote_gpu.bzl", "python_unittest_remote_gpu")
 load("@fbcode_macros//build_defs/lib:re_test_utils.bzl", "re_test_utils")
@@ -579,4 +580,55 @@ def define_common_targets(is_fbcode = False):
             "//executorch/exir:lib",
             "//executorch/exir/backend:compile_spec_schema",
         ],
+    )
+
+    runtime.python_library(
+        name = "nvfp4_test_utils",
+        srcs = ["nvfp4_test_utils.py"],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/cuda:nvfp4_tensor",
+            "//executorch/extension/llm/export:nvfp4",
+        ],
+    )
+
+    python_pytest(
+        name = "test_nvfp4_tensor",
+        srcs = ["test_nvfp4_tensor.py"],
+        deps = ["//caffe2:torch", "//executorch/backends/cuda:nvfp4_tensor", "//executorch/extension/llm/export:nvfp4", "fbsource//third-party/pypi/pytest:pytest", ":nvfp4_test_utils"],
+    )
+
+    python_unittest_remote_gpu(
+        name = "test_nvfp4_w4a4",
+        srcs = ["test_nvfp4_w4a4.py"],
+        deps = ["//caffe2:torch", "//executorch/backends/cuda:nvfp4_tensor", "//executorch/extension/llm/export:nvfp4", "fbsource//third-party/pypi/pytest:pytest", "//executorch/backends/cuda:triton_kernels", ":nvfp4_test_utils"],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(platform = "gpu-remote-execution", subplatform = "A100"),
+        test_rule = python_pytest,
+    )
+
+    python_pytest(
+        name = "test_nvfp4_launch_validation_cpu",
+        srcs = ["test_nvfp4_launch_validation.py"],
+        pytest_expr = "not partial_offsets_and_masks",
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/cuda:autotune",
+            "//executorch/backends/cuda:triton_kernels",
+            "fbsource//third-party/pypi/pytest:pytest",
+        ],
+    )
+
+    python_unittest_remote_gpu(
+        name = "test_nvfp4_launch_validation",
+        srcs = ["test_nvfp4_launch_validation.py"],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/cuda:autotune",
+            "//executorch/backends/cuda:triton_kernels",
+            "fbsource//third-party/pypi/pytest:pytest",
+        ],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(platform = "gpu-remote-execution", subplatform = "A100"),
+        test_rule = python_pytest,
     )
