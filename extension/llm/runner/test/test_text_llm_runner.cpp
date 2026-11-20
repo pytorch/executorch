@@ -78,7 +78,8 @@ class MockModule : public ::executorch::extension::Module {
 
 class MockTextDecoderRunner : public TextDecoderRunner {
  public:
-  MockTextDecoderRunner() : TextDecoderRunner(nullptr, nullptr) {}
+  explicit MockTextDecoderRunner(std::string method = "forward")
+      : TextDecoderRunner(nullptr, nullptr, std::move(method)) {}
   MOCK_METHOD(
       Result<executorch::aten::Tensor>,
       step,
@@ -759,6 +760,54 @@ TEST_F(RunnerTest, TextTokenGeneratorWithoutProcessorPicksArgmax) {
   EXPECT_TRUE(result.ok());
   const std::vector<uint64_t> expected(3, 3);
   EXPECT_EQ(generated_tokens, expected);
+}
+
+class MockNamedIOManager : public executorch::extension::llm::IOManager {
+ public:
+  explicit MockNamedIOManager(executorch::extension::Module& module)
+      : IOManager(module) {}
+  MOCK_METHOD(
+      Error,
+      load,
+      (const std::string&, const std::string&),
+      (override));
+  MOCK_METHOD(
+      Error,
+      reset,
+      (const std::string&, const std::string&),
+      (override));
+};
+
+TEST_F(RunnerTest, LoadAndResetUseSelectedIOManagerMethods) {
+  auto module = std::make_unique<MockModule>();
+  auto io = std::make_unique<MockNamedIOManager>(*module);
+  EXPECT_CALL(*io, load("prompt_method", "decode_method"))
+      .WillOnce(Return(Error::Ok));
+  EXPECT_CALL(*io, reset("prompt_method", "decode_method"))
+      .WillOnce(Return(Error::Ok));
+  auto tokenizer = createMockTokenizer();
+  auto prefill = std::make_unique<MockTextDecoderRunner>("prompt_method");
+  auto decode = std::make_unique<MockTextDecoderRunner>("decode_method");
+  ON_CALL(*prefill, is_method_loaded()).WillByDefault(Return(false));
+  ON_CALL(*prefill, load()).WillByDefault(Return(Error::Ok));
+  ON_CALL(*decode, load()).WillByDefault(Return(Error::Ok));
+  auto prefiller = createMockTextPrefiller(prefill.get());
+  auto stats = std::make_unique<Stats>();
+  auto generator =
+      createTextTokenGenerator(tokenizer.get(), decode.get(), stats.get());
+  TextLLMRunner runner(
+      createDefaultMetadata(),
+      std::move(tokenizer),
+      std::move(module),
+      std::move(prefill),
+      std::move(prefiller),
+      std::move(io),
+      std::move(generator),
+      std::move(stats),
+      -1.0f,
+      std::move(decode));
+  EXPECT_EQ(runner.load(), Error::Ok);
+  runner.reset();
 }
 
 } // namespace
