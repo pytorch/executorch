@@ -6,9 +6,10 @@
 
 """Tests for CUDA-graph autotune timing (autotune/cuda_graph_timing.py).
 
-    python -m pytest backends/cuda/tests/test_cuda_graph_timing.py -v
+python -m pytest backends/cuda/tests/test_cuda_graph_timing.py -v
 """
 
+import contextlib
 import statistics
 import struct
 import unittest
@@ -65,6 +66,21 @@ class CudaGraphTimingTest(unittest.TestCase):
                 lambda: large.mul_(1.0001), device="cuda"
             )
         self.assertGreater(t_large, 10 * t_small)
+
+    def test_mean_timing_executes_three_graph_replays(self) -> None:
+        x = torch.zeros(1, device="cuda")
+        stream = torch.cuda.Stream()
+        stream.wait_stream(torch.cuda.current_stream())
+        with torch.cuda.stream(stream), cgt.cuda_graph_timing() as stats:
+            us = cgt.time_with_cuda_graph_us_counted(
+                lambda: x.add_(1), statistic="mean", replays=3
+            )
+        count = int(x.item()) - 2
+        self.assertGreater(us, 0.0)
+        self.assertEqual(stats.captured, 1)
+        self.assertEqual(count % 3, 0)
+        self.assertGreaterEqual(count // 3, cgt._MIN_CALLS)
+        self.assertLessEqual(count // 3, cgt._MAX_CALLS)
 
     def test_uncapturable_candidate_falls_back(self) -> None:
         x = torch.zeros(16, device="cuda")
@@ -125,9 +141,10 @@ class CudaGraphTimingTest(unittest.TestCase):
                     raise torch.OutOfMemoryError("simulated")
 
                 y = torch.zeros(16, device="cuda")
-                with mock.patch.object(
-                    cgt, "time_with_cuda_graph_us", side_effect=oom
-                ), mock.patch.object(cgt, "_restore_storage", side_effect=restore):
+                with (
+                    mock.patch.object(cgt, "time_with_cuda_graph_us", side_effect=oom),
+                    mock.patch.object(cgt, "_restore_storage", side_effect=restore),
+                ):
                     with self.assertRaises(cgt.ParkedTensorsNotRestored):
                         with cgt.cuda_graph_timing(
                             offload=lambda weights=weights, other=other: [
@@ -271,6 +288,35 @@ class RegretTest(unittest.TestCase):
                     self.assertGreater(self._regret_in_ticks(tick, best, best + 2), 1.0)
 
 
+class TimingStatisticRetryTest(unittest.TestCase):
+    def test_mean_statistic_survives_oom_retries_and_offload(self) -> None:
+        fn = lambda: None
+        with (
+            mock.patch.object(
+                cgt,
+                "time_with_cuda_graph_us",
+                side_effect=[
+                    torch.OutOfMemoryError("first"),
+                    torch.OutOfMemoryError("second"),
+                    7.0,
+                ],
+            ) as timing,
+            mock.patch.object(cgt, "_cleanup_after_oom"),
+            mock.patch.object(
+                cgt, "_parked_on_cpu", return_value=contextlib.nullcontext(1024)
+            ),
+            cgt.cuda_graph_timing(offload=lambda: []) as stats,
+        ):
+            actual = cgt.time_with_cuda_graph_us_counted(
+                fn, statistic="mean", replays=3
+            )
+        self.assertEqual(actual, 7.0)
+        self.assertEqual((stats.oom_retries, stats.offloads, stats.captured), (2, 1, 1))
+        self.assertEqual(
+            timing.call_args_list, [mock.call(fn, statistic="mean", replays=3)] * 3
+        )
+
+
 class SaturatedCpuExportTest(unittest.TestCase):
     # Picks may differ from the paused-CPU reference within measurement noise.
     MAX_REGRET = 1.20
@@ -283,9 +329,10 @@ class SaturatedCpuExportTest(unittest.TestCase):
     def test_autotune_picks_stay_right_while_the_cpu_is_saturated(self) -> None:
         patched = []
         # Every export must autotune from scratch rather than reuse picks.
-        with torch.compiler.config.patch(
-            force_disable_caches=True
-        ), SaturatedCpu() as cpu:
+        with (
+            torch.compiler.config.patch(force_disable_caches=True),
+            SaturatedCpu() as cpu,
+        ):
             with record_autotune_picks(cpu, patched):
                 _export_and_lower([])
         print("CUDA-graph timing:", summarize(patched))
