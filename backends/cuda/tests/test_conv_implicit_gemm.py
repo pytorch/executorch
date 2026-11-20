@@ -70,6 +70,22 @@ def _channels_last(t):
     )
 
 
+# (schedule, (BLOCK_M, BLOCK_N, BLOCK_K, num_warps, num_stages)) tiles that need more
+# shared memory in FP32 than a 99 KiB GPU (A10G, sm_86) has.
+_OVERSIZED_FP32_TILES = {("igemm_tc_packed", (128, 128, 64, 8, 3))}
+
+
+def _tile(config):
+    kwargs = config.kwargs
+    return (
+        kwargs["BLOCK_M"],
+        kwargs["BLOCK_N"],
+        kwargs["BLOCK_K"],
+        config.num_warps,
+        config.num_stages,
+    )
+
+
 class ImplicitGemmScheduleTest(unittest.TestCase):
     def setUp(self):
         if not torch.cuda.is_available() or torch.version.hip is not None:
@@ -122,7 +138,8 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
         each or every config, and checks the result and the layout (the fake
         implementation's, and ``output_strides`` if given); the tensor-core
         schedule runs FP32 operands in TF32. Transposed if ``output_padding`` is
-        given."""
+        given. With every config, the one tile known to need more shared memory
+        than the device has is skipped with a warning."""
         from executorch.backends.cuda.triton.kernels.conv.conv import (
             force_conv_candidate,
         )
@@ -207,9 +224,15 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
                             output_padding,
                         )
                 except OutOfResources as e:
-                    # The autotuner drops a config that does not fit the device (e.g.
-                    # igemm_tc_packed 128x128x64 x 3 stages in FP32 needs 128 KiB, and
-                    # an A10G has 99 KiB).
+                    # The autotuner drops a config that does not fit the device. Only
+                    # this tile is known not to fit: in FP32 it needs 128 KiB, and an
+                    # A10G has 99 KiB. Any other config that runs out is a regression.
+                    if not (
+                        every_config
+                        and x.dtype == torch.float32
+                        and (schedule, _tile(config)) in _OVERSIZED_FP32_TILES
+                    ):
+                        raise
                     warnings.warn(f"{schedule} {config}: {e}", stacklevel=1)
                     continue
                 checked += 1
@@ -222,7 +245,6 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
                     equal_nan=True,
                     msg=lambda m, s=schedule, c=config: f"{s} {c}: {m}",
                 )
-            self.assertGreater(checked, 0, f"no {schedule} config fits this device")
 
     def tensors(
         self,
