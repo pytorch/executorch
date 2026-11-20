@@ -355,7 +355,7 @@ def test_convolution_falls_back_without_sizing(monkeypatch, missing):
         rtol=0,
     ).to_executorch()
     case = test_cases["rgb_im2col"]
-    EspTester(case.model, case.example_inputs).test_dialect(
+    EspTester(case.model, case.example_inputs, target=EspTarget.ESP32S3).test_dialect(
         {_FQ_CONV: 1}, {_ESP_CONV: 0, _CONV: 1}, atol=0, rtol=0
     ).to_executorch().serialize()
     with pytest.raises(RuntimeError, match="aten::convolution"):
@@ -377,7 +377,7 @@ def test_convolution_falls_back_when_sizing_rejects_bounds(s3_queries):
         )
     model = EspConv2d(32768, 2, 1, supported=False)
     inputs = (ramp_tensor(-3, 5, (1, 32768, 1, 1)),)
-    EspTester(model, inputs).test_dialect(
+    EspTester(model, inputs, target=EspTarget.ESP32S3).test_dialect(
         model.ops_before_transforms, model.ops_after_transforms, atol=0, rtol=0
     ).to_executorch().serialize()
     with pytest.raises(RuntimeError, match="aten::convolution"):
@@ -448,8 +448,9 @@ def test_implementation_conv2d_zero_scratch(pytestconfig):
 
 
 def test_implementation_conv2d_without_sizing(pytestconfig, monkeypatch):
-    monkeypatch.setitem(
-        sys.modules, "executorch.backends.espressif._esp_nn_scratch_esp32s3", None
+    monkeypatch.setattr(
+        "executorch.backends.espressif.passes.lower_to_esp.get_scratch_queries",
+        lambda *_: None,
     )
     case = test_cases["rgb_im2col"]
     tester = EspTester(case.model, case.example_inputs)
