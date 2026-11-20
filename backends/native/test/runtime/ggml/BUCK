@@ -73,7 +73,10 @@ _VARIANTS = [
         link_whole = True,
         visibility = ["//executorch/backends/native/test/..."],
         exported_deps = ["//executorch/backends/native/test/runtime:engine_host"],
-        deps = ["//executorch/backends/native/runtime/engine:" + v["engine"]] +
+        deps = [
+            "//executorch/backends/native/runtime/engine:" +
+            v["engine"].replace("ggml_engine_", "ggml_engine_flags_"),
+        ] +
                v.get("deps", []),
         external_deps = ["gflags"] + v.get("external_deps", []),
         labels = v.get("labels", []),
