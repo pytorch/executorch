@@ -31,6 +31,8 @@ class MuseGlimmerBatchingCITest(unittest.TestCase):
         self.assertIn("-DMUSE_GLIMMER_BUILD_RUNTIME_KV_PROBE=ON", job)
         self.assertIn("muse_glimmer_runtime_kv_probe --parallel", job)
         self.assertIn("tests/check_runtime_kv_columns.py", job)
+        self.assertIn("-DEXECUTORCH_ENABLE_LOGGING=ON", job)
+        self.assertIn("cmake --build --preset llm-release-cuda-install", job)
 
     def test_e2e_builds_smoke_before_running_it(self):
         script = (SCRIPTS / "test_model_e2e.sh").read_text()

@@ -691,14 +691,18 @@ jobs:
 
         # The normal serving binaries and the opt-in correctness tool share
         # CudaExecutor; MG preparation tests also run on Linux.
-        make muse-glimmer-batching-cuda
+        # Capture qualification reads the native runtime's Info logs.
+        cmake --preset llm-release-cuda -DEXECUTORCH_ENABLE_LOGGING=ON
+        cmake --build --preset llm-release-cuda-install
         BATCHING_BIN_DIR="${PWD}/cmake-out/examples/models/muse-glimmer-batching"
-        cmake -S "${PWD}/examples/models/muse-glimmer" -B "${BATCHING_BIN_DIR}" \
+        cmake -S "${PWD}/examples/models/muse-glimmer" --preset muse-glimmer-cuda \
+          -B "${BATCHING_BIN_DIR}" -DMUSE_GLIMMER_BUILD_BATCHING=ON \
           -DMUSE_GLIMMER_BUILD_BATCHING_TESTS=ON \
           -DMUSE_GLIMMER_BUILD_RUNTIME_KV_PROBE=ON
         bash .ci/scripts/build_muse_glimmer_batching_smoke.sh "${BATCHING_BIN_DIR}"
         cmake --build "${BATCHING_BIN_DIR}" \
-          --target muse_glimmer_batching_test muse_glimmer_cuda_dflash_test \
+          --target muse_glimmer_batching_runner muse_glimmer_batching_worker \
+          muse_glimmer_batching_test muse_glimmer_cuda_dflash_test \
           muse_glimmer_runtime_kv_probe --parallel
         ctest --test-dir "${BATCHING_BIN_DIR}" \
           -R '^muse_glimmer_batching$' --output-on-failure --no-tests=error
