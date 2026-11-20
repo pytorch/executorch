@@ -80,6 +80,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         target_filters: (
             dict[EdgeOpOverload, Callable[[torch.fx.Node], bool]] | None
         ) = None,
+        extra_pad_ops: set | None = None,
     ) -> None:
         super().__init__()
         self._permutable_ops = {
@@ -109,6 +110,8 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             pass
         if extra_permutable_ops:
             self._permutable_ops |= extra_permutable_ops
+        # Ops with constant_pad_nd's ``pad`` argument, which a permutation remaps.
+        self._pad_ops = {*self._PAD_OPS, *(extra_pad_ops or ())}
         # Per-op predicates gating permutability. The pass only reasons about
         # per-tensor quantization: a numel-1 qparam broadcasts identically under
         # any permutation, while a per-channel one is tied to an axis this pass
@@ -709,7 +712,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         return False
 
     def is_node_permutable(self, node: torch.fx.Node) -> bool:
-        if node.target in self._PAD_OPS and not self._is_constant_pad(node):
+        if node.target in self._pad_ops and not self._is_constant_pad(node):
             return False
         target_filter = self._target_filters.get(node.target)
         if target_filter is not None and not target_filter(node):
@@ -729,10 +732,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         return self._is_pointwise(node.target)
 
     def _is_constant_pad(self, node: torch.fx.Node) -> bool:
-        if len(node.args) < 2:
-            return False
-
-        pad = node.args[1]
+        pad = get_arg(node, "pad")
         if not isinstance(pad, (list, tuple)):
             return False
 
@@ -740,8 +740,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             return False
 
         if node.target == exir_ops.edge.aten.pad.default:
-            mode = node.args[2] if len(node.args) > 2 else node.kwargs.get("mode")
-            if mode not in (None, "constant"):
+            if get_arg(node, "mode") not in (None, "constant"):
                 return False
 
         return True
@@ -851,7 +850,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                 self.update_slice_copy(node, node_start_perm)
             elif node.target == exir_ops.edge.aten.expand_copy.default:
                 self.update_expand_copy(node, node_start_perm)
-            elif node.target in self._PAD_OPS:
+            elif node.target in self._pad_ops:
                 self.update_pad(node, node_start_perm)
             elif node.target in self._VIEW_OPS:
                 if node in subgraph.view_shape_overrides:
@@ -1045,7 +1044,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         set_arg(node, "size", [size[start_permute.index(i)] for i in range(len(size))])
 
     def update_pad(self, node: torch.fx.Node, start_permute: list[int]) -> None:
-        pad = list(cast(list[int], node.args[1]))
+        pad = list(cast(list[int], get_arg(node, "pad")))
         rank = len(start_permute)
         pad_pairs = [[0, 0] for _ in range(rank)]
         for pair_idx, pair_start in enumerate(range(0, len(pad), 2)):
@@ -1060,7 +1059,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         while len(remapped_pad) > 2 and remapped_pad[-2:] == [0, 0]:
             remapped_pad = remapped_pad[:-2]
 
-        node.update_arg(1, remapped_pad)
+        set_arg(node, "pad", remapped_pad)
 
     def update_view_copy(self, node: torch.fx.Node, start_permute: list[int]) -> None:
         """Adjust view_copy shape arg after permute removal.
