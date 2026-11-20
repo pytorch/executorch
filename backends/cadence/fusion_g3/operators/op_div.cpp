@@ -450,18 +450,14 @@ Tensor& div_out_mode(
                     return static_cast<CTYPE_COMPUTE>(0);
                   }
                 }
-                CTYPE_COMPUTE value = val_a / val_b;
                 if (mode_is_trunc) {
-                  if constexpr (!std::is_integral_v<CTYPE_COMPUTE>) {
-                    value = std::trunc(value);
-                  }
-                } else {
-                  // We established above that the mode is either trunc or
-                  // floor, so it must be floor.
-                  value = torch::executor::native::utils::floor_divide(
+                  return torch::executor::native::utils::trunc_divide(
                       val_a, val_b);
                 }
-                return value;
+                // We established above that the mode is either trunc or
+                // floor, so it must be floor.
+                return torch::executor::native::utils::floor_divide(
+                    val_a, val_b);
               },
               ctx,
               a,
@@ -681,31 +677,26 @@ Tensor& div_scalar_mode_out(
         InvalidArgument,
         out);
 
-    // Check for intergral division by zero
-    ET_KERNEL_CHECK_MSG(
-        ctx,
-        !(executorch::runtime::isIntegralType(common_type, true) &&
-          torch::executor::native::utils::scalar_to<double>(b) == 0),
-        InvalidArgument,
-        out,
-        "Div mode operation encountered integer division by zero");
+    bool div_by_zero_error = false;
 
     ET_SWITCH_REAL_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+      // Like ATen, the scalar takes the compute dtype first, so a scalar such
+      // as 256 for an int8 tensor becomes 0.
       const CTYPE_COMPUTE val_b =
           torch::executor::native::utils::scalar_to<CTYPE_COMPUTE>(b);
+      if constexpr (std::is_integral_v<CTYPE_COMPUTE>) {
+        if (val_b == 0 && a.numel() > 0) {
+          div_by_zero_error = true;
+          return;
+        }
+      }
       torch::executor::native::utils::
           apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
               [val_b, mode_is_trunc](const CTYPE_COMPUTE val_a) {
-                CTYPE_COMPUTE value = val_a / val_b;
-                if (mode_is_trunc) {
-                  if constexpr (!std::is_integral_v<CTYPE_COMPUTE>) {
-                    value = std::trunc(value);
-                  }
-                } else {
-                  value = torch::executor::native::utils::floor_divide(
-                      val_a, val_b);
-                }
-                return value;
+                return mode_is_trunc
+                    ? torch::executor::native::utils::trunc_divide(val_a, val_b)
+                    : torch::executor::native::utils::floor_divide(
+                          val_a, val_b);
               },
               ctx,
               a,
@@ -713,6 +704,13 @@ Tensor& div_scalar_mode_out(
               out,
               torch::executor::native::utils::SupportedTensorDtypes::REALHBF16);
     });
+
+    ET_KERNEL_CHECK_MSG(
+        ctx,
+        !div_by_zero_error,
+        InvalidArgument,
+        out,
+        "Div mode operation encountered integer division by zero");
   }
 
   return out;
