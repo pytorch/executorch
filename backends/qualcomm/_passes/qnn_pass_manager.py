@@ -75,6 +75,7 @@ from executorch.backends.qualcomm._passes import (
     ReplaceArangeArgs,
     ResolveDebugHandle,
     TagQuantIO,
+    ValidateRuntimeConvFilterLayouts,
 )
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendType,
@@ -159,6 +160,7 @@ class QnnPassManager(PassManager):
             (I64toI32, True),
             (InsertCastForFpActQuantizedWeight, True),
             (LayoutTransform, True),
+            (ValidateRuntimeConvFilterLayouts, True),
             (RecomposePadMaxPool2d, True),
             (RecomposePixelUnshuffle, True),
             (RecomposeRmsNorm, True),
@@ -335,6 +337,7 @@ class QnnPassManager(PassManager):
                 ExpandBroadcastTensorShape,
                 FixedLinearKeepDim,
             ],
+            ValidateRuntimeConvFilterLayouts: [LayoutTransform],
             RecomposePadMaxPool2d: [DecomposeMaxPool3d, FoldQDQ],
             RecomposePixelUnshuffle: [RemoveRedundancy],
             RecomposeRmsNorm: [RemoveRedundancy],

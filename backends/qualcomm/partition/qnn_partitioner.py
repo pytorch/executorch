@@ -16,7 +16,11 @@ from executorch.backends.qualcomm.builders.node_visitor import (
     PER_CHANNEL_GROUP_ENCODING,
 )
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
-from executorch.backends.qualcomm.builders.utils import is_parameter
+from executorch.backends.qualcomm.builders.utils import (
+    is_parameter,
+    is_runtime_input,
+    mark_runtime_inputs,
+)
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.serialization.qc_schema import (
     HtpArch,
@@ -28,6 +32,7 @@ from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
 )
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_BYPASS_NODE,
+    QCOM_CUSTOM_OP_OUTPUT_AXIS_ORDERS,
     QCOM_FALLBACK_NODE,
 )
 
@@ -78,6 +83,58 @@ CPU_DQ_OPS = {
     exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
     exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
 }
+
+
+def _runtime_layout_adjacency(
+    edge_program: torch.export.ExportedProgram,
+) -> dict[torch.fx.Node, set[torch.fx.Node]]:
+    adjacency = defaultdict(set)
+    for node in edge_program.graph.nodes:
+        output_axis_orders = node.meta.get(QCOM_CUSTOM_OP_OUTPUT_AXIS_ORDERS)
+        if not output_axis_orders:
+            continue
+        outputs = node.meta.get("val")
+        if isinstance(outputs, tuple):
+            for user in node.users:
+                if user.target is operator.getitem:
+                    if user.args[1] not in output_axis_orders:
+                        continue
+                    adjacency[node].add(user)
+                    adjacency[user].add(node)
+                    for consumer in user.users:
+                        adjacency[user].add(consumer)
+                        adjacency[consumer].add(user)
+                else:
+                    adjacency[node].add(user)
+                    adjacency[user].add(node)
+        else:
+            for user in node.users:
+                adjacency[node].add(user)
+                adjacency[user].add(node)
+
+    return adjacency
+
+
+def _reconcile_runtime_layout_partitions(
+    edge_program: torch.export.ExportedProgram,
+) -> None:
+    adjacency = _runtime_layout_adjacency(edge_program)
+    visited = set()
+    for node in adjacency:
+        if node in visited:
+            continue
+        component = set()
+        pending = [node]
+        while pending:
+            current = pending.pop()
+            if current in component:
+                continue
+            component.add(current)
+            pending.extend(adjacency[current])
+        visited.update(component)
+        if len({item.meta.get("delegation_tag") for item in component}) > 1:
+            for item in component:
+                item.meta.pop("delegation_tag", None)
 
 
 class QnnOperatorSupport(OperatorSupportBase):
@@ -340,12 +397,16 @@ class QnnPartitioner(Partitioner):
         """
         signature = edge_program.graph_signature
         mutated = set(signature.buffers_to_mutate.values())
+        runtime_inputs = {
+            node.name for node in edge_program.graph.nodes if is_runtime_input(node)
+        }
         return {
             spec.arg.name
             for spec in signature.input_specs
             if spec.kind
             in (InputKind.PARAMETER, InputKind.BUFFER, InputKind.CONSTANT_TENSOR)
             and spec.target not in mutated
+            and spec.arg.name not in runtime_inputs
         }
 
     @staticmethod
@@ -501,11 +562,13 @@ class QnnPartitioner(Partitioner):
 
     # override
     def partition(self, edge_program: torch.export.ExportedProgram) -> PartitionResult:
+        mark_runtime_inputs(edge_program)
         # Generate partitions by QNN op_support checker
         partitions = self.generate_partitions(edge_program)
         del self.op_support_checker
         # If partitions are found, handle tagging of nodes, constant data, and mutated buffers for delegation
         self.tag_nodes(partitions, edge_program)
+        _reconcile_runtime_layout_partitions(edge_program)
         tag_constant_data(edge_program)
         if not self.skip_mutable_buffer:
             logger.info(
@@ -516,6 +579,9 @@ class QnnPartitioner(Partitioner):
                 "then please set `skip_mutable_buffer=True` and try again."
             )
             tag_mutated_buffer(edge_program)
+        for node in edge_program.graph.nodes:
+            if node.op == "placeholder" and is_runtime_input(node):
+                node.meta.pop("delegation_tag", None)
 
         return PartitionResult(
             tagged_exported_program=edge_program, partition_tags=self.partition_tags

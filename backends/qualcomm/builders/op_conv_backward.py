@@ -10,12 +10,21 @@ from typing import cast, Dict, List, Optional, Tuple
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 import numpy as np
 import torch
-from executorch.backends.qualcomm.utils.constants import QCOM_QUANT_ATTRS
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_FILTER_AXIS_ORDER_HWIO,
+    QCOM_FILTER_AXIS_ORDER_HWOI,
+    QCOM_QUANT_ATTRS,
+)
 
 from .node_visitor import dq_ops, NodeVisitor
 from .node_visitor_manager import register_node_visitor
-from .qnn_constants import OpTranspose, OpTransposeConv2d, QNN_OP_PACKAGE_NAME_QTI_AISW
-from .utils import get_parameter
+from .qnn_constants import (
+    OpCast,
+    OpTranspose,
+    OpTransposeConv2d,
+    QNN_OP_PACKAGE_NAME_QTI_AISW,
+)
+from .utils import get_custom_op_output_axis_order, get_parameter, is_parameter
 
 
 logger = logging.getLogger(__name__)
@@ -86,14 +95,32 @@ class ConvBackward(NodeVisitor):
 
     def _get_filter_and_grad_input_tensors(
         self, node: torch.fx.Node, filter_node: torch.fx.Node
-    ) -> Optional[Tuple[torch.Tensor, torch.Tensor]]:
-        filter_tensor = get_parameter(filter_node, self.edge_program)
-        if filter_tensor is None:
+    ) -> Optional[Tuple[torch.Tensor, torch.Tensor, bool, Optional[Tuple[int, ...]]]]:
+        is_static_filter = is_parameter(filter_node, self.edge_program)
+        runtime_filter_layout = None
+        if is_static_filter:
+            filter_tensor = get_parameter(filter_node, self.edge_program)
+        else:
+            filter_tensor = filter_node.meta.get("val")
+        if filter_tensor is None or filter_tensor.dim() != 4:
             logger.warning(
-                "ConvBackward %s is unsupported: weight must be a static parameter",
+                "ConvBackward %s is unsupported: weight must be rank 4; got rank %s",
                 node.name,
+                None if filter_tensor is None else filter_tensor.dim(),
             )
             return None
+        if not is_static_filter:
+            runtime_filter_layout = get_custom_op_output_axis_order(filter_node)
+            if runtime_filter_layout not in (
+                QCOM_FILTER_AXIS_ORDER_HWIO,
+                QCOM_FILTER_AXIS_ORDER_HWOI,
+            ):
+                logger.warning(
+                    "ConvBackward %s is unsupported: runtime weights must use HWIO or HWOI layout",
+                    node.name,
+                )
+                return None
+            filter_tensor = filter_tensor.permute(runtime_filter_layout).contiguous()
         if not filter_tensor.is_floating_point():
             logger.warning(
                 "ConvBackward %s is unsupported: weight must be floating point; got %s",
@@ -101,14 +128,6 @@ class ConvBackward(NodeVisitor):
                 filter_tensor.dtype,
             )
             return None
-        if filter_tensor.dim() != 4:
-            logger.warning(
-                "ConvBackward %s is unsupported: weight must be rank 4; got rank %s",
-                node.name,
-                filter_tensor.dim(),
-            )
-            return None
-
         grad_input_tensor = self.get_tensor(node, node, 0)
         if grad_input_tensor.dim() != 4:
             logger.warning(
@@ -117,13 +136,17 @@ class ConvBackward(NodeVisitor):
                 grad_input_tensor.dim(),
             )
             return None
-        return filter_tensor, grad_input_tensor
+        return (
+            filter_tensor,
+            grad_input_tensor,
+            is_static_filter,
+            runtime_filter_layout,
+        )
 
     def _get_transpose_conv_params(
         self,
         node: torch.fx.Node,
         grad_output_node: torch.fx.Node,
-        filter_tensor: torch.Tensor,
     ) -> Optional[Tuple[List[int], List[List[int]], List[int]]]:
         stride = cast(List[int], node.args[4])
         padding = cast(List[int], node.args[5])
@@ -156,9 +179,7 @@ class ConvBackward(NodeVisitor):
             padding = padding + padding
         padding_2d = [[value, value] for value in padding]
 
-        # Use unpermuted PyTorch metadata; QNN-layout tensors can place spatial
-        # axes differently.
-        _, _, kernel_height, kernel_width = filter_tensor.shape
+        kernel_height, kernel_width = node.args[2].meta["val"].shape[-2:]
         grad_output_height, grad_output_width = grad_output_node.meta["val"].shape[-2:]
         grad_input_height, grad_input_width = node.meta["val"][0].shape[-2:]
         # Derive QNN's output padding from the desired grad_input shape rather
@@ -190,23 +211,74 @@ class ConvBackward(NodeVisitor):
         node: torch.fx.Node,
         filter_node: torch.fx.Node,
         filter_tensor: torch.Tensor,
-        nodes_to_wrappers: Dict[str, PyQnnManager.TensorWrapper],
+        is_static_filter: bool,
+        runtime_filter_layout: Optional[Tuple[int, ...]],
+        grad_output_dtype: torch.dtype,
+        nodes_to_wrappers: Dict[str, Dict[int, PyQnnManager.TensorWrapper]],
     ) -> Tuple[PyQnnManager.TensorWrapper, List[PyQnnManager.PyQnnOpWrapper]]:
-        # Reuse the forward Conv2d's static HWIO wrapper, then transpose it to
-        # the HWOI layout required by TransposeConv2d.
-        filter_tensor_hwio = filter_tensor.permute(2, 3, 1, 0).contiguous()
-        filter_wrapper = self.define_tensor(
-            filter_node,
-            node,
-            filter_tensor_hwio,
-            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
-            nodes_to_wrappers,
-        )
-        filter_hwoi_name = f"{filter_node.name}_hwoi"
-        if filter_hwoi_name in nodes_to_wrappers:
-            return nodes_to_wrappers[filter_hwoi_name][0], []
+        cast_ops = []
+        dtype_name = str(grad_output_dtype).split(".")[-1]
+        if not is_static_filter:
+            filter_wrapper = self.define_tensor(
+                filter_node,
+                node,
+                filter_tensor,
+                PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+                nodes_to_wrappers,
+            )
+            if filter_tensor.dtype != grad_output_dtype:
+                cast_name = f"{filter_node.name}_to_{dtype_name}"
+                cast_tensor = filter_tensor.to(grad_output_dtype)
+                if cast_name in nodes_to_wrappers:
+                    filter_wrapper = nodes_to_wrappers[cast_name][0]
+                else:
+                    cast_wrapper = self.define_custom_tensor_wrapper(
+                        node_name=cast_name,
+                        tensor_type=PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+                        dtype=self.get_data_type(cast_tensor, {}),
+                        quant_encoding=PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED,
+                        quant_configs={},
+                        dims=cast_tensor.size(),
+                        tensor=cast_tensor,
+                        is_fake_tensor=True,
+                        nodes_to_wrappers=nodes_to_wrappers,
+                    )
+                    cast_op = PyQnnManager.PyQnnOpWrapper(
+                        f"{cast_name}_cast",
+                        QNN_OP_PACKAGE_NAME_QTI_AISW,
+                        OpCast.op_name,
+                    )
+                    cast_op.AddInputTensors([filter_wrapper])
+                    cast_op.AddOutputTensors([cast_wrapper])
+                    filter_wrapper = cast_wrapper
+                    cast_ops.append(cast_op)
+                filter_tensor = cast_tensor
+            if runtime_filter_layout == QCOM_FILTER_AXIS_ORDER_HWOI:
+                return filter_wrapper, cast_ops
+            filter_tensor_hwio = filter_tensor
+        else:
+            # Reuse the forward Conv2d's static HWIO wrapper, then transpose it to
+            # the HWOI layout required by TransposeConv2d.
+            filter_tensor_hwio = filter_tensor.permute(
+                QCOM_FILTER_AXIS_ORDER_HWIO
+            ).contiguous()
+            filter_wrapper = self.define_tensor(
+                filter_node,
+                node,
+                filter_tensor_hwio,
+                PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
+                nodes_to_wrappers,
+            )
 
-        filter_tensor_hwoi = filter_tensor_hwio.permute(0, 1, 3, 2)
+        filter_hwoi_name = (
+            f"{filter_node.name}_hwoi"
+            if is_static_filter
+            else f"{filter_node.name}_{dtype_name}_hwoi"
+        )
+        if filter_hwoi_name in nodes_to_wrappers:
+            return nodes_to_wrappers[filter_hwoi_name][0], cast_ops
+
+        filter_tensor_hwoi = filter_tensor_hwio.permute(0, 1, 3, 2).contiguous()
         filter_hwoi_wrapper = self.define_custom_tensor_wrapper(
             node_name=filter_hwoi_name,
             tensor_type=PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
@@ -233,7 +305,7 @@ class ConvBackward(NodeVisitor):
             np.array([0, 1, 3, 2], dtype=np.uint32),
             True,
         )
-        return filter_hwoi_wrapper, [weight_transpose_op]
+        return filter_hwoi_wrapper, cast_ops + [weight_transpose_op]
 
     def _define_transpose_conv_op(
         self,
@@ -281,7 +353,7 @@ class ConvBackward(NodeVisitor):
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[str, PyQnnManager.TensorWrapper],
+        nodes_to_wrappers: Dict[str, Dict[int, PyQnnManager.TensorWrapper]],
     ) -> Optional[List[PyQnnManager.PyQnnOpWrapper]]:
         supported_inputs = self._get_supported_input_nodes(node)
         if supported_inputs is None:
@@ -290,8 +362,10 @@ class ConvBackward(NodeVisitor):
         tensors = self._get_filter_and_grad_input_tensors(node, filter_node)
         if tensors is None:
             return None
-        filter_tensor, grad_input_tensor = tensors
-        params = self._get_transpose_conv_params(node, grad_output_node, filter_tensor)
+        filter_tensor, grad_input_tensor, is_static_filter, runtime_filter_layout = (
+            tensors
+        )
+        params = self._get_transpose_conv_params(node, grad_output_node)
         if params is None:
             return None
         stride, padding_2d, output_padding = params
@@ -304,7 +378,13 @@ class ConvBackward(NodeVisitor):
             nodes_to_wrappers,
         )
         filter_hwoi_wrapper, weight_transpose_ops = self._define_filter_hwoi(
-            node, filter_node, filter_tensor, nodes_to_wrappers
+            node,
+            filter_node,
+            filter_tensor,
+            is_static_filter,
+            runtime_filter_layout,
+            grad_output_tensor.dtype,
+            nodes_to_wrappers,
         )
 
         grad_input_wrapper = self.define_tensor(

@@ -59,6 +59,8 @@ def get_node_visitors(
     """Create a new class instance at runtime, and put them in a dict"""
     node_to_external_map = generate_node_to_external_map(edge_program)
     node_visitors = {}
+    # Conv and custom-op visitors share physical layouts for cached tensors.
+    wrapper_axis_orders = {}
     for target, visitor in _node_visitor_dict.items():
         assert callable(
             visitor
@@ -70,6 +72,7 @@ def get_node_visitors(
             is_qnn_partitioner,
             backend_type,
         )
+        node_visitors[target]._wrapper_axis_orders = wrapper_axis_orders
     if op_package_infos:
         custom_ops = []
         for op_package_info in op_package_infos:
@@ -82,6 +85,7 @@ def get_node_visitors(
                     is_qnn_partitioner,
                     backend_type,
                 )
+                custom_op_builder._wrapper_axis_orders = wrapper_axis_orders
                 node_visitors[op_package_info.custom_op_name] = custom_op_builder
                 custom_ops.append(op_package_info.custom_op_name)
     return node_visitors

@@ -151,6 +151,9 @@ class NodeVisitor:
         self.enable_tensor_dump = enable_tensor_dump
         self.is_qnn_partitioner = is_qnn_partitioner
         self.backend_type = backend_type
+        self._wrapper_axis_orders: dict[
+            tuple[str, int], tuple[PyQnnManager.TensorWrapper, tuple[int, ...]]
+        ] = {}
 
     def get_node(self, node):
         """
@@ -269,7 +272,12 @@ class NodeVisitor:
             quant_config,
         )
 
-    def make_qnn_per_channel_config(self, node: torch.fx.Node, quant_attrs: Dict):
+    def make_qnn_per_channel_config(
+        self,
+        node: torch.fx.Node,
+        quant_attrs: Dict,
+        axis_order: Optional[tuple[int, ...]] = None,
+    ):
         quant_config = {
             QCOM_DTYPE: quant_attrs[QCOM_DTYPE],
             QCOM_QUANT_MAX: quant_attrs[QCOM_QUANT_MAX],
@@ -288,10 +296,8 @@ class NodeVisitor:
         for i in range(len(scales)):
             scale_offset_arr[i] = (float(scales[i]), int(-zero_points[i]))
 
-        # skip dequantize op, e.g. frozen_param -> dq -> conv2d
-        user_0 = self.get_first_user(node)
-        # Memory layout of QNN conv weight always ends in Output. Like conv2d is HWIO
-        if user_0.target in {
+        # Without an explicit layout, preserve the legacy Conv weight heuristic.
+        if axis_order is None and self.get_first_user(node).target in {
             exir_ops.edge.aten.convolution.default,
         }:
             quant_config[QCOM_AXIS] = node.meta["val"].dim() - 1
@@ -346,7 +352,10 @@ class NodeVisitor:
         )
 
     def get_quant_encoding_conf(
-        self, node: torch.fx.Node, target_node: torch.fx.Node
+        self,
+        node: torch.fx.Node,
+        target_node: torch.fx.Node,
+        axis_order: Optional[tuple[int, ...]] = None,
     ) -> Tuple[Any, Dict]:
         if not node.meta.get(QCOM_QUANT_ATTRS, None):
             return (
@@ -368,12 +377,35 @@ class NodeVisitor:
             *PER_CHANNEL_GROUP_ENCODING,
         }
         if quant_attrs[QCOM_ENCODING] in per_block_encoding:
-            return self.make_qnn_per_block_config(node, quant_attrs)
+            quant_encoding, quant_configs = self.make_qnn_per_block_config(
+                node, quant_attrs
+            )
+            # Blockwise encodings already describe the physical filter layout.
+            if axis_order == quant_configs[QCOM_AXIS_ORDER]:
+                return quant_encoding, quant_configs
+        elif quant_attrs[QCOM_ENCODING] in PER_CHANNEL_ENCODING:
+            quant_encoding, quant_configs = self.make_qnn_per_channel_config(
+                node, quant_attrs, axis_order
+            )
+        else:
+            quant_encoding, quant_configs = self.make_qnn_per_tensor_config(quant_attrs)
 
-        if quant_attrs[QCOM_ENCODING] in PER_CHANNEL_ENCODING:
-            return self.make_qnn_per_channel_config(node, quant_attrs)
-
-        return self.make_qnn_per_tensor_config(quant_attrs)
+        if axis_order is not None and axis_order != tuple(range(len(axis_order))):
+            if quant_encoding not in {
+                PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET,
+                PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_BW_SCALE_OFFSET,
+                PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET,
+                PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_BW_AXIS_SCALE_OFFSET,
+            }:
+                raise ValueError(
+                    f"Tensor {node.name} has unsupported quantization encoding "
+                    f"{quant_encoding} for an axis transform."
+                )
+            if QCOM_AXIS in quant_configs:
+                quant_configs[QCOM_AXIS] = axis_order.index(
+                    quant_configs[QCOM_AXIS] % len(axis_order)
+                )
+        return quant_encoding, quant_configs
 
     def get_quant_tensor_value(
         self, tensor: torch.Tensor, quant_attrs: Dict, quant_configs: Dict
@@ -538,6 +570,7 @@ class NodeVisitor:
         nodes_to_wrappers: Dict[str, Dict[int, PyQnnManager.TensorWrapper]],
         node_name: str = None,
         wrapper_idx: int = 0,
+        axis_order: Optional[tuple[int, ...]] = None,
     ) -> PyQnnManager.TensorWrapper:
         """
         Covert torch.Tensor to TensorWrapper
@@ -548,6 +581,7 @@ class NodeVisitor:
             tensor: EdgeIR Tensor
             tensor_type: QNN tensor type
             nodes_to_wrappers: Set contains edge_graph values(node targets)
+            axis_order: Already-applied tensor permutation for quantization-axis remapping
         """
         if node_name is None:
             node_name = tensor_source_node.name
@@ -567,7 +601,7 @@ class NodeVisitor:
             tensor_source_node, tensor_type, output_index
         )
         quant_encoding, quant_configs = self.get_quant_encoding_conf(
-            tensor_source_node, target_build_node
+            tensor_source_node, target_build_node, axis_order
         )
         dtype = self.get_data_type(tensor, quant_configs)
         if isinstance(tensor, torch._subclasses.fake_tensor.FakeTensor):
