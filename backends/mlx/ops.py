@@ -5750,7 +5750,9 @@ def _topk_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     Decomposes into: partition → slice → sort → reverse (for values)
                      argpartition → slice → gather → argsort → reverse → reorder (for indices)
 
-    torch.topk returns (values, indices) sorted descending.
+    torch.topk returns (values, indices) sorted descending, or ascending with
+    largest=False. In that case the first k elements are kept after partitioning
+    and the reverse is skipped.
     """
     args = P.args(n)
     require_args(args, 2, 5, "aten.topk")
@@ -5758,6 +5760,7 @@ def _topk_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     x = args[0]
     k = args[1]
     dim = args[2] if len(args) > 2 else -1
+    largest = args[3] if len(args) > 3 else True
 
     output_slots = P.make_or_get_slots(n)
     values_slot, indices_slot = output_slots
@@ -5809,16 +5812,19 @@ def _topk_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         )
         rev_stop = P.to_int_or_vid(rev_stop_slot)
 
-    stop_val = P.to_int_or_vid(dim_size)
+    if largest:
+        kth, slice_start, slice_stop = neg_k, neg_k, P.to_int_or_vid(dim_size)
+    else:
+        kth, slice_start, slice_stop = rev_start, P.to_int_or_vid(0), P.to_int_or_vid(k)
 
     def emit_partition_and_slice(node_cls):
-        """Emit partition/argpartition → slice last k elements."""
+        """Emit partition/argpartition → slice the k selected elements."""
         _, part_tmp = P.make_tmp_slot()
         P.emit(
             node_cls(
                 x=P.slot_to_tid(x),
                 out=P.slot_to_tid(part_tmp),
-                kth=neg_k,
+                kth=kth,
                 axis=dim,
             )
         )
@@ -5828,8 +5834,8 @@ def _topk_handler(P: MLXProgramBuilder, n: Node) -> Slot:
                 x=P.slot_to_tid(part_tmp),
                 out=P.slot_to_tid(slice_tmp),
                 axis=P.to_int_or_vid(dim),
-                start=neg_k,
-                stop=stop_val,
+                start=slice_start,
+                stop=slice_stop,
                 step=1,
             )
         )
@@ -5849,9 +5855,12 @@ def _topk_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         )
 
     if 0 in used:
-        # partition → slice last k → sort ascending → reverse to descending
+        # partition → slice k → sort ascending → reverse to descending if largest
         slice_tmp = emit_partition_and_slice(PartitionNode)
-        _, sort_tmp = P.make_tmp_slot()
+        if largest:
+            _, sort_tmp = P.make_tmp_slot()
+        else:
+            sort_tmp = values_slot
         P.emit(
             SortNode(
                 x=P.slot_to_tid(slice_tmp),
@@ -5859,7 +5868,8 @@ def _topk_handler(P: MLXProgramBuilder, n: Node) -> Slot:
                 axis=dim,
             )
         )
-        emit_reverse(sort_tmp, values_slot)
+        if largest:
+            emit_reverse(sort_tmp, values_slot)
 
     if 1 in used:
         # argpartition → slice last k → gather values → argsort → reverse → reorder
@@ -5874,7 +5884,7 @@ def _topk_handler(P: MLXProgramBuilder, n: Node) -> Slot:
                 axis=dim,
             )
         )
-        # Argsort gathered values ascending → reverse → descending order
+        # Argsort gathered values ascending → reverse to descending if largest
         _, order_tmp = P.make_tmp_slot()
         P.emit(
             ArgsortNode(
@@ -5883,13 +5893,15 @@ def _topk_handler(P: MLXProgramBuilder, n: Node) -> Slot:
                 axis=dim,
             )
         )
-        _, rev_order_tmp = P.make_tmp_slot()
-        emit_reverse(order_tmp, rev_order_tmp)
-        # Apply descending order to indices
+        if largest:
+            _, final_order_tmp = P.make_tmp_slot()
+            emit_reverse(order_tmp, final_order_tmp)
+        else:
+            final_order_tmp = order_tmp
         P.emit(
             TakeAlongAxisNode(
                 x=P.slot_to_tid(idx_slice_tmp),
-                indices=P.slot_to_tid(rev_order_tmp),
+                indices=P.slot_to_tid(final_order_tmp),
                 out=P.slot_to_tid(indices_slot),
                 axis=dim,
             )
