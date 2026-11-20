@@ -15,7 +15,10 @@ from executorch.backends.transforms.fused_quant.fuse_aten import (
     fuse_aten,
     output_node,
 )
-from executorch.backends.transforms.fused_quant.graph_utils import is_dequantize_node
+from executorch.backends.transforms.fused_quant.graph_utils import (
+    is_dequantize_node,
+    split_fused_arg_names,
+)
 from executorch.backends.transforms.permute_pass_utils import get_arg
 from torch import fx
 from torch._export.utils import _detect_fake_mode_from_gm
@@ -25,17 +28,60 @@ from torch.fx.passes.tools_common import stable_topological_sort
 from torchao.quantization.pt2e.quantizer import (
     ComposableQuantizer,
     QuantizationConfig,
+    QuantizationSpec,
+    QuantizationSpecBase,
     Quantizer,
     SharedQuantizationSpec,
+    utils as ao_utils,
 )
 from torchao.quantization.pt2e.quantizer.quantizer import (
     Q_ANNOTATION_KEY,
     QuantizationAnnotation,
 )
-from torchao.quantization.pt2e.quantizer.utils import (
-    annotate_input_qspec_map,
-    annotate_output_qspec,
-)
+
+
+# Annotations hold node references and do not survive export, but meta["custom"]
+# does, so annotating a node with a live qspec also marks it there for fusion.
+QUANTIZED_KEY = "fq_quantized"
+
+
+def annotate_input_qspec_map(
+    node: fx.Node, input_node: fx.Node, qspec: Optional[QuantizationSpecBase]
+) -> None:
+    ao_utils.annotate_input_qspec_map(node, input_node, qspec)
+    if qspec is not None:
+        node.meta.setdefault("custom", {})[QUANTIZED_KEY] = True
+
+
+def annotate_output_qspec(node: fx.Node, qspec: Optional[QuantizationSpecBase]) -> None:
+    ao_utils.annotate_output_qspec(node, qspec)
+    if qspec is not None:
+        node.meta.setdefault("custom", {})[QUANTIZED_KEY] = True
+
+
+# node.meta["custom"] key holding each fused op slot's quantization constraints,
+# e.g. {"weight": {"symmetric": True, "per_channel": True}}. Kept in "custom" so it
+# is saved with the graph.
+QPARAMS_CONSTRAINTS_KEY = "qparams_constraints"
+
+_SYMMETRIC_QSCHEMES = (torch.per_tensor_symmetric, torch.per_channel_symmetric)
+_PER_CHANNEL_QSCHEMES = (torch.per_channel_symmetric, torch.per_channel_affine)
+
+
+def qspec_constraints(qspec: object) -> Optional[dict[str, Optional[bool]]]:
+    """Symmetric / per-channel constraints implied by a quantization spec.
+
+    None for specs that do not carry a qscheme of their own (e.g. shared specs);
+    a blockwise spec has no torch qscheme, so both fields are unknown (None).
+    """
+    if not isinstance(qspec, QuantizationSpec):
+        return None
+    if qspec.qscheme is None:
+        return {"symmetric": None, "per_channel": None}
+    return {
+        "symmetric": qspec.qscheme in _SYMMETRIC_QSCHEMES,
+        "per_channel": qspec.qscheme in _PER_CHANNEL_QSCHEMES,
+    }
 
 
 class QuantizerBase(Quantizer, ABC):
@@ -70,10 +116,10 @@ class OpQuantizer(QuantizerBase):
         config: The per-instance quantization config.
         activation_names: Schema names of quantized activation inputs (annotated
             with config.input_activation).
-        weight_names: Schema names of quantized weight inputs (annotated with
-            config.weight).
-        other_names: Schema names of tensor passthroughs (e.g. "bias") that
-            occupy the fused op's tensor prefix with a null qparams block.
+        weight_names: Schema names of weight inputs. Existing Q/DQ is preserved;
+            remaining weights are annotated with config.weight.
+        other_names: Schema names of tensor inputs passed without observation
+            (e.g. "bias"). Fusion reuses their existing Q/DQ, if present.
         output_indices: Outputs to quantize with config.output_activation. Defaults
             to just output 0; a multi-output op can pass e.g. (0, 1). All quantized
             outputs share the single config.output_activation.
@@ -156,9 +202,11 @@ class OpQuantizer(QuantizerBase):
                 node, cast(fx.Node, get_arg(node, name)), config.input_activation
             )
         for name in self.weight_names:
-            annotate_input_qspec_map(
-                node, cast(fx.Node, get_arg(node, name)), config.weight
-            )
+            weight = cast(fx.Node, get_arg(node, name))
+            if is_dequantize_node(weight):
+                node.meta.setdefault("custom", {})[QUANTIZED_KEY] = True
+            else:
+                annotate_input_qspec_map(node, weight, config.weight)
         # output_node is None if a multi-output op's getitem(output_index) is unused.
         if config.output_activation is not None:
             for output_index in self.output_indices:
@@ -167,27 +215,48 @@ class OpQuantizer(QuantizerBase):
                     annotate_output_qspec(out, config.output_activation)
 
     def fuse(self, gm: fx.GraphModule) -> bool:
-        """Fold each owned, annotated op node into fused_op.
+        """Fold each owned quantized node into fused_op.
 
-        A node is fused only when it matches, carries an annotation, and that annotation
-        has a live qspec, so a node claimed by a no-op annotation or one merely
-        sandwiched between its neighbors' dq/q is left alone.
+        A node claimed by a no-op annotation, or one merely sandwiched between its
+        neighbors' dq/q, carries no mark and is left alone.
         """
         modified = False
         for node in list(gm.graph.find_nodes(op="call_function", target=self.op)):
-            if not self.matches(node):
-                continue
-            ann = node.meta.get(Q_ANNOTATION_KEY)
-            if ann is None:
-                continue
-            if (
-                not any(v is not None for v in ann.input_qspec_map.values())
-                and ann.output_qspec is None
-            ):
-                continue
-            self.fuse_node(gm, node)
-            modified = True
+            if node.meta.get("custom", {}).get(QUANTIZED_KEY) and self.matches(node):
+                fused = self.fuse_node(gm, node)
+                self.record_constraints(fused)
+                modified = True
         return modified
+
+    def record_constraints(self, fused: fx.Node) -> None:
+        """Store each slot's quantization constraints on the fused node.
+
+        Tensor inputs map to the fused op's input slots by schema order, like
+        fusion itself; quantized outputs use the "out" slot.
+        """
+        if getattr(fused.target, "namespace", None) != "fused_quant":
+            return
+        qspecs = {
+            **{name: self.config.input_activation for name in self.activation_names},
+            **{name: self.config.weight for name in self.weight_names},
+        }
+        aten_inputs = [
+            name
+            for name in arg_names(self.op)
+            if name in qspecs or name in self.other_names
+        ]
+        fused_inputs, _ = split_fused_arg_names(cast(OpOverload, fused.target))
+        constraints = {
+            slot: qspec_constraints(qspecs.get(name))
+            for name, slot in zip(aten_inputs, fused_inputs)
+        }
+        constraints["out"] = qspec_constraints(self.config.output_activation)
+        fused.meta["custom"] = {
+            **fused.meta.get("custom", {}),
+            QPARAMS_CONSTRAINTS_KEY: {
+                slot: c for slot, c in constraints.items() if c is not None
+            },
+        }
 
     def fuse_node(self, gm: fx.GraphModule, node: fx.Node) -> fx.Node:
         """Fuse a generic aten op to a matching fused_quant op.
@@ -290,8 +359,9 @@ class FusedQuantQuantizer(ComposableQuantizer, QuantizerBase):
     def fuse(self, gm: fx.GraphModule) -> bool:
         """Fuse via every child quantizer; return whether anything fused.
 
-        ``gm`` is the output of ``convert_pt2e``, which is first cleaned up so
-        the children can match on it; see :func:`_repair_convert_output`.
+        ``gm`` is the output of ``convert_pt2e``, or the graph module of a program
+        exported from it, first cleaned up so the children can match on it; see
+        :func:`_repair_convert_output`.
         """
         _repair_convert_output(gm)
         modified = False

@@ -6,7 +6,6 @@
 
 
 import operator
-from operator import attrgetter
 from typing import Any, cast, Optional
 
 import executorch.exir.dialects.fused_quant.ops  # noqa
@@ -20,22 +19,11 @@ from executorch.backends.transforms.fused_quant.graph_utils import (
 )
 from executorch.backends.transforms.permute_pass_utils import get_arg
 from torch import fx
-from torch._export.utils import _detect_fake_mode_from_gm
 from torch._ops import OpOverload
 
 _NULL_QPARAMS: list[torch.fx.node.Argument] = [None, None, torch.uint8, 0, 0]
 
 QParamsFlat = tuple[fx.Node, fx.Node, torch.dtype, int, int]
-
-
-def _resolve_const_tensor(
-    node: fx.Node, owning_module: torch.nn.Module
-) -> torch.Tensor:
-    """Resolve a frozen get_attr constant to its backing tensor."""
-    assert (
-        node.op == "get_attr"
-    ), f"Expected a get_attr constant, got op={node.op} for {node.name}"
-    return attrgetter(str(node.target))(owning_module)
 
 
 def _add_scalar_constant(
@@ -105,31 +93,17 @@ def _create_qparams_from_node(
         zp_node = get_arg(node, "zero_points", fx.Node)
         axis = get_arg(node, "axis", int)
         input_node = get_arg(node, "input", fx.Node)
-        # The weight and scale/zero_point are frozen get_attr constants (convert
-        # folds the quantize into a frozen param); resolve them off the owning module.
-        owning_module = graph.owning_module
-        assert owning_module is not None
-        ndim = _resolve_const_tensor(input_node, owning_module).ndim
-        scale_tensor = _resolve_const_tensor(scale_node, owning_module)
-        zp_tensor = _resolve_const_tensor(zp_node, owning_module)
-        view_shape = [1] * ndim
+        view_shape = [1] * input_node.meta["val"].ndim
         view_shape[axis] = -1
         with graph.inserting_before(node):
-            fake_mode = _detect_fake_mode_from_gm(owning_module)
-            assert fake_mode, "Expected fake tensor mode!"
             scale_view = graph.call_function(
                 torch.ops.aten.view.default, args=(scale_node, view_shape)
             )
             zp_view = graph.call_function(
                 torch.ops.aten.view.default, args=(zp_node, view_shape)
             )
-            with fake_mode:
-                scale_view.meta["val"] = fake_mode.from_tensor(
-                    scale_tensor.reshape(view_shape)
-                )
-                zp_view.meta["val"] = fake_mode.from_tensor(
-                    zp_tensor.reshape(view_shape)
-                )
+        scale_view.meta["val"] = scale_node.meta["val"].reshape(view_shape)
+        zp_view.meta["val"] = zp_node.meta["val"].reshape(view_shape)
         # pyrefly: ignore [bad-return]
         return (scale_view, zp_view, out_dtype, quant_min, quant_max)
 
@@ -142,10 +116,11 @@ def create_qparams_from_dequant_node(
 ) -> QParamsFlat:
     """Extract QuantParams from a dequantize node."""
     assert is_dequantize_node(dequant_node)
-    # Affine dequant names its result dtype `output_dtype`; the quantized_decomposed
-    # per-tensor/channel ops name it `out_dtype`.
-    dtype_arg = "output_dtype" if is_affine_quant_node(dequant_node) else "out_dtype"
-    out_dtype = get_arg(dequant_node, dtype_arg, Optional[torch.dtype]) or torch.float32
+    out_dtype = (
+        dequant_node.meta["val"].dtype
+        if is_affine_quant_node(dequant_node)
+        else get_arg(dequant_node, "out_dtype", Optional[torch.dtype]) or torch.float32
+    )
     return _create_qparams_from_node(dequant_node, graph, out_dtype)
 
 
