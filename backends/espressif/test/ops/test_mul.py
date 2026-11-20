@@ -13,8 +13,13 @@ from executorch.backends.espressif.test.tester import (
     EspTester,
     ramp_tensor,
 )
+from executorch.backends.test.harness.stages import StageType
 from executorch.backends.test.suite.operators.test_mul import Model
-from executorch.backends.transforms.fused_quant.graph_utils import get_qparams_from_node
+from executorch.backends.transforms.fused_quant.graph_utils import (
+    get_qparams_from_node,
+    get_scale,
+    get_zero_point,
+)
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
 )
@@ -45,6 +50,24 @@ class EspMul(Model):
 class EspSelfMul(EspMul):
     def forward(self, x):
         return x * x
+
+
+class EspScalarMul(EspMul):
+    ops_before_transforms = {exir_ops.edge.fused_quant.mul.Scalar: 1}
+
+    def __init__(self, scalar):
+        super().__init__()
+        self.scalar = scalar
+        self.ops_after_transforms = {
+            _MUL: 0,
+            _ESP_MUL: 0,
+            _ESP_MUL_BROADCAST: 0,
+            exir_ops.edge.fused_quant.mul.Scalar: 0,
+            exir_ops.edge.aten.mul.Scalar: int(scalar <= 0),
+        }
+
+    def forward(self, x):
+        return x * self.scalar
 
 
 class EspConstantMul(EspMul):
@@ -114,6 +137,18 @@ test_cases = {
         (ramp_tensor(-1.5, 2.5, (1, 2, 3, 4)), ramp_tensor(3, -4, (1, 2, 3, 4))),
     ),
     "self": EspTestCase(EspSelfMul(), (ramp_tensor(-1, 2, (17,)),)),
+    "scalar_literal_positive": EspTestCase(
+        EspScalarMul(2.0), (ramp_tensor(-1.5, 2.5, (2, 3)),)
+    ),
+    "scalar_literal_fractional": EspTestCase(
+        EspScalarMul(0.7), (ramp_tensor(-1.5, 2.5, (2, 3)),)
+    ),
+    "scalar_literal_zero": EspTestCase(
+        EspScalarMul(0.0), (ramp_tensor(-1.5, 2.5, (2, 3)),)
+    ),
+    "scalar_literal_negative": EspTestCase(
+        EspScalarMul(-2.0), (ramp_tensor(-1.5, 2.5, (2, 3)),)
+    ),
     "constant": EspTestCase(EspConstantMul(), (ramp_tensor(-1, 2, (17,)),)),
     "chain": EspTestCase(
         EspMulChain(),
@@ -222,6 +257,9 @@ def test_dialect_mul(test_case):
         test_case.model.ops_after_transforms[op] > 0
         for op in (_ESP_MUL, _ESP_MUL_BROADCAST)
     )
+    folded_scalar = (
+        isinstance(test_case.model, EspScalarMul) and test_case.model.scalar > 0
+    )
     tester = EspTester(
         test_case.model,
         test_case.example_inputs,
@@ -231,8 +269,30 @@ def test_dialect_mul(test_case):
         {_FUSED_MUL: 0, **test_case.model.ops_after_transforms},
         qtol=1 if accelerated else 0,
         atol=0,
-        rtol=torch.finfo(torch.float32).eps if accelerated else 0,
+        rtol=torch.finfo(torch.float32).eps if accelerated or folded_scalar else 0,
     )
+    if folded_scalar:
+        reference = tester.get_artifact(StageType.TO_EDGE).exported_program()
+        (scalar_mul,) = reference.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.fused_quant.mul.Scalar
+        )
+        qparams = get_qparams_from_node(scalar_mul, "inp")
+        assert qparams is not None
+        graph = tester.get_artifact().exported_program().graph
+        (quantize,) = graph.find_nodes(
+            op="call_function",
+            target=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        )
+        (dequantize,) = graph.find_nodes(
+            op="call_function",
+            target=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+        )
+        assert dequantize.args[0] is quantize
+        assert quantize.args[1] == get_scale(reference, qparams)
+        assert dequantize.args[1] == quantize.args[1] * test_case.model.scalar
+        assert (
+            quantize.args[2] == dequantize.args[2] == get_zero_point(reference, qparams)
+        )
     if accelerated:
         tester.check_node_count({exir_ops.edge.aten.expand_copy.default: 0})
         for node in tester.get_artifact().exported_program().graph.nodes:
@@ -263,33 +323,6 @@ def test_implementation_mul(test_case, pytestconfig):
         test_case.example_inputs,
         calibration_samples=test_case.calibration_samples,
     ).test_implementation(pytestconfig.rootpath, rtol=torch.finfo(torch.float32).eps)
-
-
-def test_dialect_scalar_literal_mul_stays_portable():
-    class ScalarMul(torch.nn.Module):
-        def forward(self, x):
-            return x * 2.0
-
-    inputs = (ramp_tensor(-1.5, 2.5, (2, 3)),)
-    tester = EspTester(ScalarMul(), inputs).export_fused_quant().to_edge()
-    scalar_target = exir_ops.edge.fused_quant.mul.Scalar
-    tester.check_node_count({scalar_target: 1})
-    expected = tester.get_artifact().exported_program().module()(*inputs)
-    tester.run_passes().check_node_count(
-        {
-            scalar_target: 0,
-            _ESP_MUL: 0,
-            _ESP_MUL_BROADCAST: 0,
-            exir_ops.edge.aten.mul.Scalar: 1,
-        }
-    )
-    torch.testing.assert_close(
-        tester.get_artifact().exported_program().module()(*inputs),
-        expected,
-        atol=0,
-        rtol=0,
-    )
-    tester.to_executorch().serialize()
 
 
 @pytest.mark.parametrize("float_edge", ["input_activation", "output_activation"])
