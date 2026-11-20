@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <bitset>
 #include <cmath>
+#include <cstring>
 #include <iomanip>
 #include <limits>
 #include <numeric>
@@ -4599,6 +4600,53 @@ TEST(VulkanToFromGPUShaderTest, round_trip_tests) {
   }
 
 #undef RUN_TESTS
+}
+
+TEST(VulkanToFromGPUShaderTest, bfloat16_staging_rounds_to_nearest_even) {
+  if (!api::context()->adapter_ptr()->has_full_bfloat16_buffers_support()) {
+    GTEST_SKIP() << "kBFloat16 tensors are stored as float32 on this device";
+  }
+  const uint32_t nan_bits = 0x7F800001u;
+  float nan_with_dropped_payload;
+  std::memcpy(&nan_with_dropped_payload, &nan_bits, sizeof(nan_bits));
+  // Ties, their neighbors, values past the largest bfloat16 and a NaN whose
+  // payload lies in the dropped bits, where truncation differs from rounding to
+  // nearest even.
+  std::vector<float> values = {
+      1.0f + 0x1p-8f,
+      1.0f + 0x3p-8f,
+      -(1.0f + 0x3p-8f),
+      std::nextafter(1.0f + 0x1p-8f, 0.0f),
+      std::nextafter(1.0f + 0x1p-8f, 2.0f),
+      std::numeric_limits<float>::max(),
+      -std::numeric_limits<float>::max(),
+      nan_with_dropped_payload,
+  };
+
+  ComputeGraph graph(GraphConfig{});
+  const ValueRef tensor = graph.add_tensor(
+      {static_cast<int64_t>(values.size())}, vkapi::kBFloat16, utils::kBuffer);
+  // fp32 staging makes the GPU convert the input to bfloat16.
+  const ValueRef staging_in = graph.set_input_tensor(tensor, vkapi::kFloat);
+  const ValueRef staging_out = graph.set_output_tensor(tensor, vkapi::kFloat);
+  graph.prepare();
+  graph.prepack();
+
+  graph.maybe_cast_and_copy_into_staging(
+      staging_in, values.data(), values.size(), vkapi::kFloat);
+  graph.execute();
+  std::vector<float> out(values.size());
+  graph.maybe_cast_and_copy_from_staging(
+      staging_out, out.data(), out.size(), vkapi::kFloat);
+
+  for (size_t i = 0; i < values.size(); ++i) {
+    const float expected = float(executorch::aten::BFloat16(values[i]));
+    if (std::isnan(expected)) {
+      EXPECT_TRUE(std::isnan(out[i])) << "input " << i;
+    } else {
+      EXPECT_EQ(out[i], expected) << "input " << values[i];
+    }
+  }
 }
 
 //

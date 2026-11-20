@@ -44,7 +44,8 @@
   _(int8_t, VK_FORMAT_R8G8B8A8_SINT, QInt8)        \
   _(uint8_t, VK_FORMAT_R8G8B8A8_UINT, QUInt8)      \
   _(int32_t, VK_FORMAT_R32G32B32A32_SINT, QInt32)  \
-  _(int32_t, VK_FORMAT_R32G32B32A32_SINT, Int8x4)
+  _(int32_t, VK_FORMAT_R32G32B32A32_SINT, Int8x4)  \
+  _(uint16_t, VK_FORMAT_UNDEFINED, BFloat16)
 
 namespace vkcompute {
 namespace vkapi {
@@ -73,6 +74,9 @@ VK_FORALL_SCALAR_TYPES(DEFINE_CONSTANT)
  * by the `VK_FORALL_SCALAR_TYPE` macro in `api/Types.h`
  */
 inline VkFormat to_vkformat(const ScalarType t) {
+  if (t == ScalarType::BFloat16) {
+    VK_THROW("No image format stores BFloat16");
+  }
 #define CASE_VK_FORMAT(ctype, vkformat, name) \
   case ScalarType::name:                      \
     return vkformat;
