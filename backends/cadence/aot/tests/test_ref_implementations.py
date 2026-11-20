@@ -1906,6 +1906,51 @@ class TestRefImplementations(unittest.TestCase):
 
     @expand(
         [
+            ("stride2", 1, 2, 4),
+            ("stride1", 1, 1, 4),
+            ("batch2", 2, 2, 4),
+            ("out_channels1", 1, 2, 1),
+        ]
+    )
+    def test_quantized_w8a32_transpose_conv2d_matches_float(
+        self, name: str, batch: int, stride_w: int, out_channels: int
+    ) -> None:
+        # NHWC input and OHWI weights against aten conv_transpose2d on the
+        # dequantized weights in NCHW.
+        torch.manual_seed(0)
+        in_channels, kernel_w = 8, 3
+        x = torch.randn(batch, 1, 5, in_channels)
+        weight = torch.randint(
+            -127, 128, (out_channels, 1, kernel_w, in_channels), dtype=torch.int8
+        )
+        bias = torch.randint(-127, 128, (out_channels,), dtype=torch.int8)
+        w_scale, b_scale = 0.01, 0.005
+
+        output = torch.ops.cadence.quantized_w8a32_transpose_conv2d(
+            x, weight, w_scale, bias, b_scale, stride_w
+        )
+
+        expected = torch.nn.functional.conv_transpose2d(
+            x.permute(0, 3, 1, 2),
+            weight.float().permute(3, 0, 1, 2) * w_scale,
+            bias.float() * b_scale,
+            stride=(1, stride_w),
+        ).permute(0, 2, 3, 1)
+        torch.testing.assert_close(output, expected, rtol=1e-5, atol=1e-5)
+
+    def test_quantized_w8a32_transpose_conv2d_invalid_in_channels(self) -> None:
+        input_tensor = torch.zeros((1, 1, 4, 3), dtype=torch.float32)
+        weight = torch.zeros((4, 1, 2, 3), dtype=torch.int8)
+        bias = torch.zeros(4, dtype=torch.int8)
+        with self.assertRaisesRegex(
+            AssertionError, "in_channels must be multiple of 4"
+        ):
+            torch.ops.cadence.quantized_w8a32_transpose_conv2d(
+                input_tensor, weight, 1.0, bias, 1.0, 2
+            )
+
+    @expand(
+        [
             # Test case 1: Basic int8 case with negative scale
             *[
                 (
@@ -3881,6 +3926,174 @@ class TestRefImplementations(unittest.TestCase):
 
     @expand(
         [
+            (
+                "stride2_with_bias",
+                # input: [1, 1, 4, 4] NHWC, all ones
+                torch.ones((1, 1, 4, 4), dtype=torch.float32),
+                # weight: [4, 1, 2, 4] OHWI, all ones int8
+                torch.ones((4, 1, 2, 4), dtype=torch.int8),
+                0.5,  # w_scale
+                torch.tensor([1, 2, 3, 4], dtype=torch.int8),  # bias
+                0.5,  # b_scale
+                2,  # stride_w
+                # output_length = (4 - 2) / 2 + 1 = 2
+                # conv sum per position = 8 * 1.0 * 0.5 = 4.0
+                # + dequant bias = [0.5, 1.0, 1.5, 2.0]
+                torch.tensor(
+                    [[[[4.5, 5.0, 5.5, 6.0], [4.5, 5.0, 5.5, 6.0]]]],
+                    dtype=torch.float32,
+                ),
+            ),
+            (
+                "stride2_batch_size_2",
+                # input: [2, 1, 4, 4] NHWC, batch 0 = 1.0, batch 1 = 2.0
+                torch.cat(
+                    [
+                        torch.ones((1, 1, 4, 4), dtype=torch.float32),
+                        torch.full((1, 1, 4, 4), 2.0, dtype=torch.float32),
+                    ]
+                ),
+                torch.ones((4, 1, 2, 4), dtype=torch.int8),
+                1.0,  # w_scale
+                torch.zeros(4, dtype=torch.int8),
+                1.0,  # b_scale
+                2,  # stride_w
+                # batch 0: 8 * 1.0 = 8.0; batch 1: 8 * 2.0 = 16.0
+                torch.tensor(
+                    [
+                        [[[8.0, 8.0, 8.0, 8.0], [8.0, 8.0, 8.0, 8.0]]],
+                        [[[16.0, 16.0, 16.0, 16.0], [16.0, 16.0, 16.0, 16.0]]],
+                    ],
+                    dtype=torch.float32,
+                ),
+            ),
+            (
+                "stride2_negative_weights",
+                torch.ones((1, 1, 4, 4), dtype=torch.float32),
+                # weight all -1 int8
+                -torch.ones((4, 1, 2, 4), dtype=torch.int8),
+                0.5,  # w_scale
+                torch.tensor([2, 2, 2, 2], dtype=torch.int8),  # bias
+                1.0,  # b_scale
+                2,  # stride_w
+                # conv sum per position = 8 * 1.0 * (-0.5) = -4.0; + bias 2.0 = -2.0
+                torch.full((1, 1, 2, 4), -2.0, dtype=torch.float32),
+            ),
+            (
+                "stride1_with_bias",
+                # input: [1, 1, 4, 4] NHWC, all ones
+                torch.ones((1, 1, 4, 4), dtype=torch.float32),
+                # weight: [4, 1, 2, 4] OHWI, all ones int8
+                torch.ones((4, 1, 2, 4), dtype=torch.int8),
+                0.5,  # w_scale
+                torch.tensor([1, 2, 3, 4], dtype=torch.int8),  # bias
+                0.5,  # b_scale
+                1,  # stride_w
+                # output_length = (4 - 2) / 1 + 1 = 3
+                # conv sum per position = 8 * 1.0 * 0.5 = 4.0
+                # + dequant bias = [0.5, 1.0, 1.5, 2.0]
+                torch.tensor(
+                    [
+                        [
+                            [
+                                [4.5, 5.0, 5.5, 6.0],
+                                [4.5, 5.0, 5.5, 6.0],
+                                [4.5, 5.0, 5.5, 6.0],
+                            ]
+                        ]
+                    ],
+                    dtype=torch.float32,
+                ),
+            ),
+        ]
+    )
+    def test_quantized_w8a32_conv2d(
+        self,
+        name: str,
+        input_tensor: torch.Tensor,
+        weight: torch.Tensor,
+        w_scale: float,
+        bias: torch.Tensor,
+        b_scale: float,
+        stride_w: int,
+        expected_output: torch.Tensor,
+    ) -> None:
+        output = torch.ops.cadence.quantized_w8a32_conv2d(
+            input_tensor, weight, w_scale, bias, b_scale, stride_w
+        )
+
+        self.assertEqual(
+            output.dtype,
+            torch.float32,
+            f"Output dtype should be float32 in {name}",
+        )
+        self.assertEqual(
+            output.shape,
+            expected_output.shape,
+            f"Output shape should match expected shape in {name}",
+        )
+        self.assertTrue(
+            torch.allclose(output, expected_output, rtol=1e-4, atol=1e-4),
+            f"Output values don't match expected in {name}. Got {output}, expected {expected_output}",
+        )
+
+    def test_quantized_w8a32_conv2d_matches_float(self) -> None:
+        # NHWC input and OHWI weights against aten conv2d on the dequantized
+        # weights in NCHW.
+        torch.manual_seed(0)
+        in_channels, out_channels, kernel_w, stride_w = 8, 4, 3, 2
+        x = torch.randn(1, 1, 9, in_channels)
+        weight = torch.randint(
+            -127, 128, (out_channels, 1, kernel_w, in_channels), dtype=torch.int8
+        )
+        bias = torch.randint(-127, 128, (out_channels,), dtype=torch.int8)
+        w_scale, b_scale = 0.01, 0.005
+
+        output = torch.ops.cadence.quantized_w8a32_conv2d(
+            x, weight, w_scale, bias, b_scale, stride_w
+        )
+
+        expected = torch.nn.functional.conv2d(
+            x.permute(0, 3, 1, 2),
+            weight.float().permute(0, 3, 1, 2) * w_scale,
+            bias.float() * b_scale,
+            stride=(1, stride_w),
+        ).permute(0, 2, 3, 1)
+        torch.testing.assert_close(output, expected, rtol=1e-5, atol=1e-5)
+
+    @expand(
+        [
+            # IC = 3 -> weight.shape[3] = 3 trips the in_channels assert.
+            (
+                "invalid_in_channels",
+                torch.zeros((1, 1, 4, 3), dtype=torch.float32),
+                torch.zeros((4, 1, 2, 3), dtype=torch.int8),
+                "in_channels must be multiple of 4",
+            ),
+            # OC = 3 -> weight.shape[0] = 3 trips the out_channels assert.
+            (
+                "invalid_out_channels",
+                torch.zeros((1, 1, 4, 4), dtype=torch.float32),
+                torch.zeros((3, 1, 2, 4), dtype=torch.int8),
+                "out_channels must be multiple of 4",
+            ),
+        ]
+    )
+    def test_quantized_w8a32_conv2d_invalid_alignment(
+        self,
+        name: str,
+        input_tensor: torch.Tensor,
+        weight: torch.Tensor,
+        expected_msg: str,
+    ) -> None:
+        bias = torch.zeros(weight.shape[0], dtype=torch.int8)
+        with self.assertRaisesRegex(AssertionError, expected_msg):
+            torch.ops.cadence.quantized_w8a32_conv2d(
+                input_tensor, weight, 1.0, bias, 1.0, 2
+            )
+
+    @expand(
+        [
             # Basic 1D slice_scatter tests
             ("1d_basic", (10,), (3,), 0, 2, 5, 1),
             ("1d_with_step", (10,), (2,), 0, 0, 6, 3),
@@ -4227,3 +4440,236 @@ class TestRefImplementations(unittest.TestCase):
         # With padding=1, output length = (3 + 2*1 - 3) / 1 + 1 = 3
         self.assertEqual(output.shape, (batch_size, length, out_channels))
         self.assertEqual(output.dtype, torch.int8)
+
+    @expand(
+        [
+            (
+                "basic_3d",
+                # input [1, 4, 8] deterministic
+                torch.arange(32, dtype=torch.float32).reshape(1, 4, 8),
+                torch.ones(8, dtype=torch.int8),
+                0.5,  # w_scale
+                torch.zeros(8, dtype=torch.int8),
+                0.1,  # b_scale
+            ),
+            (
+                "basic_2d",
+                torch.arange(32, dtype=torch.float32).reshape(4, 8),
+                torch.ones(8, dtype=torch.int8),
+                0.5,  # w_scale
+                torch.zeros(8, dtype=torch.int8),
+                0.1,  # b_scale
+            ),
+            (
+                "basic_4d",
+                # input [1, 2, 3, 8] deterministic — exercises 4D path
+                torch.arange(48, dtype=torch.float32).reshape(1, 2, 3, 8),
+                torch.ones(8, dtype=torch.int8),
+                1.0,  # w_scale
+                torch.zeros(8, dtype=torch.int8),
+                1.0,  # b_scale
+            ),
+            (
+                "non_uniform_weight_bias",
+                # input [1, 4, 8] deterministic, non-uniform weight and bias
+                torch.arange(32, dtype=torch.float32).reshape(1, 4, 8),
+                torch.arange(-4, 4, dtype=torch.int8),  # weight varies in sign and magnitude
+                0.25,  # w_scale
+                torch.arange(8, dtype=torch.int8),  # bias varies per channel
+                0.5,  # b_scale
+            ),
+        ]
+    )
+    def test_quantized_w8a32_layernorm(
+        self,
+        name: str,
+        input_tensor: torch.Tensor,
+        weight: torch.Tensor,
+        w_scale: float,
+        bias: torch.Tensor,
+        b_scale: float,
+    ) -> None:
+        output = torch.ops.cadence.quantized_w8a32_layernorm(
+            input_tensor, weight, w_scale, bias, b_scale
+        )
+
+        self.assertEqual(
+            output.dtype,
+            torch.float32,
+            f"Output dtype should be float32 in {name}",
+        )
+        self.assertEqual(
+            output.shape,
+            input_tensor.shape,
+            f"Output shape should match input shape in {name}",
+        )
+
+        mean = input_tensor.mean(dim=-1, keepdim=True)
+        var = input_tensor.var(dim=-1, unbiased=False, keepdim=True)
+        expected = (input_tensor - mean) / torch.sqrt(var + 1e-5) * (
+            weight.float() * w_scale
+        ) + bias.float() * b_scale
+        self.assertTrue(
+            torch.allclose(output, expected, rtol=1e-4, atol=1e-4),
+            f"Output values don't match expected in {name}",
+        )
+
+    @expand(
+        [
+            # weight size must match input channels.
+            (
+                "channel_mismatch",
+                torch.ones(1, 4, 8, dtype=torch.float32),
+                torch.ones(4, dtype=torch.int8),
+                torch.zeros(8, dtype=torch.int8),
+            ),
+        ]
+    )
+    def test_quantized_w8a32_layernorm_invalid_inputs(
+        self,
+        name: str,
+        input_tensor: torch.Tensor,
+        weight: torch.Tensor,
+        bias: torch.Tensor,
+    ) -> None:
+        with self.assertRaises(AssertionError):
+            torch.ops.cadence.quantized_w8a32_layernorm(
+                input_tensor, weight, 1.0, bias, 1.0
+            )
+
+    @expand(
+        [
+            # uniform: same weights/scales for both splits
+            (
+                "uniform_weights",
+                torch.arange(8, dtype=torch.float32).reshape(1, 1, 8) * 0.1,
+                torch.arange(8, dtype=torch.float32).reshape(1, 1, 8) * 0.05,
+                # split 0
+                torch.ones((12, 4), dtype=torch.int8),
+                0.1,
+                torch.ones((12, 4), dtype=torch.int8),
+                0.1,
+                torch.ones(12, dtype=torch.int8),
+                0.1,
+                torch.ones(12, dtype=torch.int8),
+                0.1,
+                # split 1: same as split 0
+                torch.ones((12, 4), dtype=torch.int8),
+                0.1,
+                torch.ones((12, 4), dtype=torch.int8),
+                0.1,
+                torch.ones(12, dtype=torch.int8),
+                0.1,
+                torch.ones(12, dtype=torch.int8),
+                0.1,
+            ),
+            # non-uniform: different weights & scales per split — exercises
+            # per-split routing (split 0 must not leak into split 1's output).
+            (
+                "non_uniform_per_split",
+                torch.arange(8, dtype=torch.float32).reshape(1, 1, 8) * 0.1,
+                torch.arange(8, dtype=torch.float32).reshape(1, 1, 8) * 0.05,
+                # split 0: positive weights
+                torch.full((12, 4), 2, dtype=torch.int8),
+                0.25,
+                torch.full((12, 4), 1, dtype=torch.int8),
+                0.5,
+                torch.full((12,), 1, dtype=torch.int8),
+                0.1,
+                torch.full((12,), 2, dtype=torch.int8),
+                0.1,
+                # split 1: negative weights, different scales
+                torch.full((12, 4), -1, dtype=torch.int8),
+                0.5,
+                torch.full((12, 4), -2, dtype=torch.int8),
+                0.25,
+                torch.full((12,), -1, dtype=torch.int8),
+                0.2,
+                torch.full((12,), 0, dtype=torch.int8),
+                0.1,
+            ),
+        ]
+    )
+    def test_quantized_w8a32_split_gru(
+        self,
+        name: str,
+        inputs: torch.Tensor,
+        hidden: torch.Tensor,
+        w_i_0: torch.Tensor, w_i_0_scale: float,
+        w_h_0: torch.Tensor, w_h_0_scale: float,
+        b_i_0: torch.Tensor, b_i_0_scale: float,
+        b_h_0: torch.Tensor, b_h_0_scale: float,
+        w_i_1: torch.Tensor, w_i_1_scale: float,
+        w_h_1: torch.Tensor, w_h_1_scale: float,
+        b_i_1: torch.Tensor, b_i_1_scale: float,
+        b_h_1: torch.Tensor, b_h_1_scale: float,
+    ) -> None:
+        num_splits = 2
+        hidden_dim_per_split = hidden.shape[-1] // num_splits
+
+        output = torch.ops.cadence.quantized_w8a32_split_gru(
+            inputs, hidden,
+            w_i_0, w_i_0_scale, w_h_0, w_h_0_scale,
+            b_i_0, b_i_0_scale, b_h_0, b_h_0_scale,
+            w_i_1, w_i_1_scale, w_h_1, w_h_1_scale,
+            b_i_1, b_i_1_scale, b_h_1, b_h_1_scale,
+            num_splits,
+        )
+
+        # Oracle: one nn.GRU per split on the dequantized weights, fed the
+        # strided input features and its contiguous slice of the hidden state.
+        splits = [
+            (w_i_0, w_i_0_scale, w_h_0, w_h_0_scale),
+            (w_i_1, w_i_1_scale, w_h_1, w_h_1_scale),
+        ]
+        biases = [
+            (b_i_0, b_i_0_scale, b_h_0, b_h_0_scale),
+            (b_i_1, b_i_1_scale, b_h_1, b_h_1_scale),
+        ]
+        new_hiddens = []
+        for split in range(num_splits):
+            w_i, w_i_scale, w_h, w_h_scale = splits[split]
+            b_i, b_i_scale, b_h, b_h_scale = biases[split]
+            gru = torch.nn.GRU(w_i.shape[1], w_h.shape[1], batch_first=True)
+            start = split * hidden_dim_per_split
+            h0 = hidden[..., start : start + hidden_dim_per_split]
+            with torch.no_grad():
+                gru.weight_ih_l0.copy_(w_i.float() * w_i_scale)
+                gru.weight_hh_l0.copy_(w_h.float() * w_h_scale)
+                gru.bias_ih_l0.copy_(b_i.float() * b_i_scale)
+                gru.bias_hh_l0.copy_(b_h.float() * b_h_scale)
+                _, new_hidden = gru(inputs[..., split::num_splits], h0)
+            new_hiddens.append(new_hidden)
+        # One frame (batch 1, seq 1): the op returns the new hidden state.
+        expected = torch.cat(new_hiddens, dim=-1)
+
+        self.assertEqual(
+            output.dtype,
+            torch.float32,
+            f"Output dtype should be float32 in {name}",
+        )
+        self.assertEqual(
+            output.shape,
+            expected.shape,
+            f"Output shape mismatch in {name}",
+        )
+        self.assertTrue(
+            torch.allclose(output, expected, rtol=1e-4, atol=1e-4),
+            f"Output values don't match expected in {name}",
+        )
+
+    def test_quantized_w8a32_split_gru_num_splits_assertion(self) -> None:
+        # Op signature only carries weights/biases for 2 splits.
+        inputs = torch.zeros((1, 1, 8), dtype=torch.float32)
+        hidden = torch.zeros((1, 1, 8), dtype=torch.float32)
+        w_i = torch.ones((12, 4), dtype=torch.int8)
+        w_h = torch.ones((12, 4), dtype=torch.int8)
+        b_i = torch.ones(12, dtype=torch.int8)
+        b_h = torch.ones(12, dtype=torch.int8)
+        with self.assertRaises(AssertionError):
+            torch.ops.cadence.quantized_w8a32_split_gru(
+                inputs, hidden,
+                w_i, 0.1, w_h, 0.1, b_i, 0.1, b_h, 0.1,
+                w_i, 0.1, w_h, 0.1, b_i, 0.1, b_h, 0.1,
+                3,  # num_splits != 2
+            )
