@@ -104,15 +104,10 @@ def get_operator_library_report(edge: EdgeProgramManager) -> dict:
 
 
 def _require_no_portable_compute(edge: EdgeProgramManager) -> list:
-    report = get_operator_library_report(edge)
-    portable_ops = report["cpu_ops"] + [
-        op
-        for op in report["layout_ops"]
-        if op["target"] != "executorch.exir.memory.view"
-    ]
+    portable_ops = get_operator_library_report(edge)["cpu_ops"]
     if portable_ops:
         raise RuntimeError(
-            "The ESP-NN operator library left these operators on the CPU: "
+            "The ESP-NN operator library left these operators on portable kernels: "
             + ", ".join(
                 f"{op['method']}.{op['name']} ({op['target']})" for op in portable_ops
             )
@@ -130,8 +125,8 @@ def get_esp_fused_quant_recipe(
 
     Use with executorch.export.export(). Supported Fused Quant operators become
     direct ESP-NN calls; other operators decompose to portable kernels. Setting
-    allow_cpu_fallback=False rejects remaining portable compute and layout copies,
-    including NHWC conversions. Q/DQ and zero-copy memory views are exempt.
+    allow_cpu_fallback=False rejects remaining portable compute. Q/DQ and
+    structural operations such as views and layout copies remain allowed.
     Use EspNNQuantizer and to_espnn_edge for the EspNNBackend delegate.
     """
     quantizer = quantizer if quantizer is not None else get_esp_fused_quant_quantizer()
