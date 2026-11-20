@@ -107,11 +107,11 @@ class DFlashConfig:
             raise ValueError(
                 "DFlash embedding and logit scales must be finite and positive"
             )
-        if self.final_logit_softcapping is not None and (
-            not math.isfinite(self.final_logit_softcapping)
-            or self.final_logit_softcapping <= 0
-        ):
-            raise ValueError("DFlash logit softcapping must be finite and positive")
+        if self.final_logit_softcapping is not None:
+            if not math.isfinite(self.final_logit_softcapping):
+                raise ValueError("DFlash logit softcapping must be finite")
+            if self.final_logit_softcapping <= 0:
+                self.final_logit_softcapping = None
 
     @property
     def n_target_layers(self) -> int:
@@ -119,6 +119,13 @@ class DFlashConfig:
 
     @staticmethod
     def from_gguf_metadata(metadata: dict) -> DFlashConfig:
+        if (
+            metadata.get("dflash.selector_top_k", 0)
+            and "dflash.attention.causal" not in metadata
+        ):
+            raise ValueError(
+                "DFlash2 requires explicit dflash.attention.causal metadata"
+            )
         if metadata.get("dflash.attention.causal", False):
             raise ValueError("Causal DFlash attention is unsupported")
         return DFlashConfig(
@@ -523,6 +530,8 @@ def _packed_draft_forward(
     torch._check(draft_tokens.shape[1] == draft.config.block_size)
     torch._check(target_hidden.shape[0] == 1)
     noise_embedding = embed_tokens(draft_tokens.reshape(1, -1)).to(activation_dtype)
+    if draft.config.input_embedding_scale != 1.0:
+        noise_embedding = noise_embedding * draft.config.input_embedding_scale
     return lm_head(draft(noise_embedding, target_hidden, positions, kv_order)).float()
 
 
@@ -596,8 +605,8 @@ class MuseGlimmerWithDFlash(nn.Module):
             return self.target.lm_head(h).float()
         torch._check(draft_tokens.shape[1] == draft.config.block_size)
         h = h.reshape(draft_tokens.shape[0], draft_tokens.shape[1], -1)
-        # The caller supplies the contiguous proposal prefix [1, ..., N].
-        h = h[:, 1:] if proposal_rows is None else h.index_select(1, proposal_rows)
+        # Only the selector's length matters; proposals are always a prefix.
+        h = h[:, 1:] if proposal_rows is None else h[:, 1 : 1 + proposal_rows.shape[0]]
         logits = self.target.lm_head(h).float() * draft.config.output_multiplier
         softcap = draft.config.final_logit_softcapping
         if softcap is not None:

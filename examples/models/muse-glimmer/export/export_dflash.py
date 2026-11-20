@@ -25,9 +25,19 @@ if TYPE_CHECKING:
     from executorch.exir.passes.propagate_device_pass import PropagateDeviceConfig
 
 
-def validate_dflash_export_options(backend: str, use_offgraph_kv_cache=False) -> None:
+def validate_dflash_export_options(
+    backend: str, use_offgraph_kv_cache=False, draft_config=None
+) -> None:
     if backend not in {"cuda", "mlx"}:
         raise ValueError(f"Unsupported DFlash backend: {backend}")
+    if (
+        draft_config is not None
+        and (draft_config.selector_top_k or draft_config.conv_kernel_size)
+        and (backend != "mlx" or not use_offgraph_kv_cache)
+    ):
+        raise ValueError(
+            "DFlash2 currently requires --backend mlx --use-offgraph-kv-cache"
+        )
 
 
 def _share_graph_mutable_buffers(backend: str) -> bool:
@@ -203,13 +213,14 @@ def export_dflash(
         load_dflash_gguf,
         load_dflash_mlx,
         read_dflash_gguf_config,
+        read_dflash_mlx_config,
     )
 
-    if draft_gguf is not None and (backend != "mlx" or not use_offgraph_kv_cache):
-        if read_dflash_gguf_config(draft_gguf).selector_top_k:
-            raise ValueError(
-                "DFlash2 currently requires --backend mlx --use-offgraph-kv-cache"
-            )
+    if draft_gguf is not None:
+        draft_config = read_dflash_gguf_config(draft_gguf)
+        validate_dflash_export_options(backend, use_offgraph_kv_cache, draft_config)
+    if draft_mlx is not None:
+        read_dflash_mlx_config(draft_mlx, max_seq_len)
 
     # -- Load target model --
     print("=" * 60)
@@ -330,6 +341,8 @@ def prepare_cuda_packed_draft(
     On the sequence layout the draft keeps one private history per resident
     session, and each owner's block attends all of it and the whole block.
     """
+    validate_dflash_export_options("cuda", True, draft_model.config)
+
     from executorch.examples.models.muse_glimmer.export.export_solo import (
         batched_sequence_manifest,
         cell_manifest,
@@ -652,11 +665,8 @@ def _export_dflash_mlx(
     n_target = draft_config.n_target_layers
     dim = draft_config.dim
 
-    # Draft block length is dynamic: a single artifact can run any block length
-    # in [2, block_size] at runtime (min 2 avoids 0/1 specialization).
-    # DFlash2 keeps the full trained block; runtime limits verification instead.
-    # target_hidden keeps its dynamic new_ctx_len.
-    # Both dims feed the RoPE arange over (ctx_start + new_ctx_len + block_len).
+    # Original DFlash varies the block length in [2, block_size]. DFlash2 keeps
+    # the trained block and varies the proposal prefix after the draft layers.
     block_dim = (
         Dim.STATIC
         if draft_config.selector_top_k
@@ -681,20 +691,16 @@ def _export_dflash_mlx(
         draft_extra = (torch.arange(2 + sample_queries, dtype=torch.long),)
         draft_shapes = {0: Dim.AUTO}
 
-    proposal_inputs = (
-        (torch.arange(1, exported_block_size),) if draft_config.selector_top_k else ()
-    )
-    proposal_shapes = (
-        (
+    proposal_inputs, proposal_shapes = (), ()
+    if draft_config.selector_top_k:
+        proposal_inputs = (torch.arange(1, exported_block_size),)
+        proposal_shapes = (
             (
                 {0: Dim("draft_proposals", min=1, max=exported_block_size - 1)}
                 if exported_block_size > 2
                 else None
             ),
         )
-        if draft_config.selector_top_k
-        else ()
-    )
     with common.BoundMethodForward(combined, combined.draft_forward), torch.no_grad():
         draft_ep = export(
             combined,

@@ -385,7 +385,9 @@ jobs:
         ${CONDA_RUN} cmake --build "${BATCHING_BIN_DIR}" \
           --target muse_glimmer_batching_test muse_glimmer_mlx_dflash_test sampling_test
         ${CONDA_RUN} ctest --test-dir "${BATCHING_BIN_DIR}" \
-          -R '^muse_glimmer_(batching|mlx_dflash|sampling)$' --output-on-failure --no-tests=error
+          -R '^muse_glimmer_(batching|sampling)$' --output-on-failure --no-tests=error
+        ${CONDA_RUN} ctest --test-dir "${BATCHING_BIN_DIR}" \
+          -R '^muse_glimmer_mlx_dflash$' --output-on-failure --no-tests=error
         test -x "${BATCHING_BIN_DIR}/muse_glimmer_batching_runner"
         test -x "${BATCHING_BIN_DIR}/muse_glimmer_batching_worker"
         test -f "${BATCHING_BIN_DIR}/mlx.metallib"

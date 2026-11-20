@@ -390,7 +390,138 @@ void check_random_continuations(
   }
 }
 
-void check_draft_numerics(const std::string& directory) {
+std::vector<std::vector<Tokens>> routing_trace(
+    b::Executor& executor,
+    const std::vector<Tokens>& prompts,
+    bool reverse) {
+  std::vector<b::SessionId> sessions;
+  for (size_t i = 0; i < prompts.size(); ++i) {
+    const auto sid = executor.open_session();
+    require(sid.has_value(), "routing session allocation failed");
+    executor.set_sampling(*sid, {}, 42);
+    sessions.push_back(*sid);
+  }
+  std::vector<int> positions(prompts.size(), 0);
+  auto pending = prompts;
+  std::vector<std::vector<Tokens>> traces(prompts.size());
+  for (int round = 0; round < 4; ++round) {
+    std::vector<size_t> owners(prompts.size());
+    std::iota(owners.begin(), owners.end(), 0);
+    if (reverse != (round % 2 == 1)) {
+      std::reverse(owners.begin(), owners.end());
+    }
+    b::BatchInput batch;
+    for (auto owner : owners) {
+      batch.inputs.push_back(
+          input(sessions[owner], positions[owner], pending[owner]));
+    }
+    b::BatchOutput output;
+    require(executor.execute(batch, output), "routing execution failed");
+    require(output.outputs.size() == owners.size(), "routing lost an owner");
+    for (size_t row = 0; row < owners.size(); ++row) {
+      const auto owner = owners[row];
+      const auto& result = output.outputs[row];
+      require(result && !result->tokens.empty(), "missing routing output");
+      const auto& tokens = result->tokens;
+      require(
+          tokens == Tokens(tokens.size(), prompts[owner].back()),
+          "routing changed verified target tokens");
+      traces[owner].push_back(tokens);
+      positions[owner] +=
+          static_cast<int>(pending[owner].size() + tokens.size() - 1);
+      pending[owner] = {tokens.back()};
+    }
+  }
+  for (auto sid : sessions) {
+    executor.close_session(sid);
+  }
+  return traces;
+}
+
+void check_draft_routing(const std::string& path) {
+  // Verification repairs bad proposals, so compare complete rounds, not text
+  // alone.
+  const std::vector<Tokens> prompts{{8, 7}, {7, 7, 7, 8}};
+  for (int proposals : {1, 2, 3}) {
+    auto executor = create(path, proposals);
+    std::vector<std::vector<Tokens>> expected;
+    for (const auto& prompt : prompts) {
+      auto trace = routing_trace(*executor, {prompt}, false)[0];
+      require(
+          trace[0].size() >= 3, "routing fixture rejected its first proposal");
+      expected.push_back(std::move(trace));
+    }
+    for (bool reverse : {false, true}) {
+      const auto actual = routing_trace(*executor, prompts, reverse);
+      for (size_t owner = 0; owner < prompts.size(); ++owner) {
+        for (size_t round = 0; round < expected[owner].size(); ++round) {
+          if (actual[owner][round] != expected[owner][round]) {
+            std::cerr << path << " proposals=" << proposals
+                      << " owner=" << owner << " round=" << round
+                      << " packed=" << actual[owner][round].size()
+                      << " solo=" << expected[owner][round].size() << '\n';
+            throw std::runtime_error(
+                "packed draft acceptance differs from solo");
+          }
+        }
+      }
+    }
+  }
+}
+
+void check_selector_metadata(const std::string& path) {
+  executorch::extension::Module module(path);
+  const auto selector = module.execute("get_dflash_selector_top_k");
+  require(
+      selector.ok() && selector->size() == 1 && selector->at(0).isInt() &&
+          selector->at(0).toInt() == 3,
+      "nonconstant selector fixture must return a valid top-k");
+  llm::MuseGlimmerBackendConfig config;
+  config.model_path = path;
+  config.use_dflash = true;
+  const auto backend = llm::MuseGlimmerMLXExecutor::create(config);
+  require(
+      !backend.ok() &&
+          backend.error() == executorch::runtime::Error::InvalidProgram,
+      "nonconstant selector metadata was accepted");
+}
+
+void check_owner_proposals(const std::string& path) {
+  for (int proposals : {1, 2, 3}) {
+    for (bool reverse : {false, true}) {
+      auto executor = create(path, proposals);
+      std::vector<b::SessionId> sessions;
+      for (int i = 0; i < 2; ++i) {
+        const auto sid = executor->open_session();
+        require(sid.has_value(), "owner proposal session allocation failed");
+        executor->set_sampling(*sid, {}, 42);
+        sessions.push_back(*sid);
+      }
+      b::BatchInput batch;
+      batch.inputs = {
+          input(sessions[0], 0, {1, 7}), input(sessions[1], 0, {2, 3, 8})};
+      if (reverse) {
+        std::reverse(batch.inputs.begin(), batch.inputs.end());
+      }
+      b::BatchOutput output;
+      require(executor->execute(batch, output), "owner proposals failed");
+      require(output.outputs.size() == 2, "owner proposals lost a session");
+      for (int row = 0; row < 2; ++row) {
+        const int owner = reverse ? 1 - row : row;
+        const int accepted = std::min(1 + 2 * owner, proposals);
+        require(
+            output.outputs[row] &&
+                output.outputs[row]->tokens == Tokens(accepted + 2, 7 + owner),
+            "owner-specific accepted prefix/correction count differs");
+      }
+      for (auto sid : sessions) {
+        executor->close_session(sid);
+      }
+    }
+  }
+}
+
+void check_draft_numerics(const std::string& directory, int proposals) {
   namespace cache = llm::cache;
   namespace rt = executorch::runtime;
   namespace aten = executorch::aten;
@@ -398,7 +529,8 @@ void check_draft_numerics(const std::string& directory) {
   std::ifstream stream(directory + "/draft_reference.json");
   const auto reference = nlohmann::json::parse(stream);
   const int block = reference["block_size"], top_k = reference["top_k"],
-            hidden_size = reference["hidden_size"], proposals = block - 1;
+            hidden_size = reference["hidden_size"];
+  require(proposals > 0 && proposals < block, "invalid oracle proposal count");
   cache::CacheGeometry geometry;
   geometry.dflash_block_size = block;
   for (const auto& layer : reference["layers"]) {
@@ -455,10 +587,13 @@ void check_draft_numerics(const std::string& directory) {
         positions.push_back(position + p);
       context += count;
       const auto ids = row["ids"].get<std::vector<int64_t>>();
-      expected_ids.insert(expected_ids.end(), ids.begin(), ids.end());
+      expected_ids.insert(
+          expected_ids.end(), ids.begin(), ids.begin() + proposals * top_k);
       const auto scores = row["scores"].get<std::vector<float>>();
       expected_scores.insert(
-          expected_scores.end(), scores.begin(), scores.end());
+          expected_scores.end(),
+          scores.begin(),
+          scores.begin() + proposals * top_k * top_k);
     }
     int offset = 0;
     for (int owner_index = 0; owner_index < owners; ++owner_index) {
@@ -481,8 +616,7 @@ void check_draft_numerics(const std::string& directory) {
         make_tensor_ptr({context + owners * block}, std::move(positions));
     auto order_tensor =
         make_tensor_ptr({context + owners * block}, std::move(order));
-    std::vector<int64_t> proposal_indices(proposals);
-    std::iota(proposal_indices.begin(), proposal_indices.end(), 1);
+    std::vector<int64_t> proposal_indices(proposals, -7);
     auto proposal_tensor =
         make_tensor_ptr({proposals}, std::move(proposal_indices));
     require(
@@ -565,6 +699,16 @@ int main(int argc, char** argv) {
   try {
     require(argc == 2, "usage: muse_glimmer_mlx_dflash_test FIXTURE_DIRECTORY");
     const std::string root = argv[1];
+    check_selector_metadata(root + "/nonconstant_selector.pte");
+    {
+      auto executor = create(root + "/single_proposal/model.pte", 1);
+      const auto sid = executor->open_session();
+      require(sid.has_value(), "single proposal session allocation failed");
+      require(
+          forward(*executor, *sid, 0, {1, 2}).size() == 3,
+          "fixed single-proposal selector lost its input ABI");
+      executor->close_session(*sid);
+    }
     for (int rejected : {-1, 0, 1, 2}) {
       const auto path =
           root + "/reject_" + std::to_string(rejected) + "/model.pte";
@@ -573,9 +717,16 @@ int main(int argc, char** argv) {
       }
     }
     check_packed_replay(root + "/reject_-1/model.pte");
-    check_draft_numerics(root + "/random");
+    check_owner_proposals(root + "/owner_sensitive/model.pte");
+    check_draft_routing(root + "/routing/model.pte");
+    check_draft_routing(root + "/routing_legacy/model.pte");
+    for (int proposals = 1; proposals < 4; ++proposals) {
+      check_draft_numerics(root + "/random", proposals);
+    }
     check_random_continuations(root + "/random/model.pte", {1, 2, 3});
-    check_draft_numerics(root + "/quantized");
+    for (int proposals = 1; proposals < 16; ++proposals) {
+      check_draft_numerics(root + "/quantized", proposals);
+    }
     check_random_continuations(root + "/quantized/model.pte", {1, 7, 15});
     check_cycles(root + "/legacy/model.pte", 3, -1);
     check_temperature(root + "/reject_-1/model.pte", false);

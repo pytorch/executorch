@@ -29,6 +29,7 @@ from executorch.examples.models.muse_glimmer.model.dflash_model import (
 from executorch.examples.models.muse_glimmer.model.model import MuseGlimmerModel
 from executorch.examples.models.muse_glimmer.source_transformations.cuda import (
     add_dflash_hidden_tapping,
+    dflash_cuda_source_transformations,
     enable_dflash_offgraph_kv_cache,
 )
 from executorch.examples.models.muse_glimmer.tests.test_pipeline import TINY_CONFIG
@@ -187,6 +188,29 @@ class PackedDraftMathTest(unittest.TestCase):
                 prepare_cuda_packed_draft(target, target.config, draft, **options)
             self.assertFalse(hasattr(target, "_dflash_target_layer_ids"))
             self.assertTrue(hasattr(draft.layers[0].self_attn, "kv_cache"))
+
+    def test_dflash2_rejects_before_cuda_transform(self):
+        _, original = models(block=4)
+        config = replace(
+            original.config,
+            conv_kernel_size=2,
+            conv_group_size=8,
+            selector_rank=4,
+            selector_top_k=3,
+        )
+        for transform in (
+            dflash_cuda_source_transformations,
+            lambda model: enable_dflash_offgraph_kv_cache(model, 32),
+        ):
+            draft = DFlashDraftModel(config).eval()
+            layer_forward = draft.layers[0].forward.__func__
+            attention = draft.layers[0].self_attn
+            with self.subTest(transform=transform), self.assertRaisesRegex(
+                ValueError, "CUDA DFlash2 export is unsupported"
+            ):
+                transform(draft)
+            self.assertIs(draft.layers[0].forward.__func__, layer_forward)
+            self.assertIs(draft.layers[0].self_attn, attention)
 
     def test_single_owner_export_and_malformed_width(self):
         target, draft = models(block=16)
