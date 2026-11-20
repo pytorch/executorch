@@ -887,6 +887,91 @@ TEST_F(MethodTest, ExecuteResetsOnError) {
   EXPECT_EQ(err, Error::Ok);
 }
 
+TEST_F(MethodTest, UnallocatedOutputBoundBufferValidControlSucceeds) {
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = programs_["cat"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+  ASSERT_EQ(method->get_output(0).toTensor().const_data_ptr(), nullptr);
+  ASSERT_GT(method->get_output(0).toTensor().nbytes(), 0U);
+
+  float input[8] = {};
+  int32_t sizes[2] = {2, 4};
+  uint8_t dim_order[2] = {0, 1};
+  int32_t strides[2] = {4, 1};
+  executorch::aten::TensorImpl impl(
+      executorch::aten::ScalarType::Float, 2, sizes, input, dim_order, strides);
+  ASSERT_EQ(
+      method->set_input(EValue(executorch::aten::Tensor(&impl)), 0), Error::Ok);
+
+  float output[16] = {};
+  ASSERT_EQ(method->set_output_data_ptr(output, sizeof(output), 0), Error::Ok);
+  EXPECT_EQ(method->execute(), Error::Ok);
+  EXPECT_EQ(method->get_output(0).toTensor().sizes()[0], 3);
+  EXPECT_EQ(method->get_output(0).toTensor().sizes()[1], 4);
+}
+
+TEST_F(MethodTest, ExecuteRejectsUnboundOutputTensorAndRecovers) {
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = programs_["cat"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  float input[8] = {};
+  int32_t sizes[2] = {2, 4};
+  uint8_t dim_order[2] = {0, 1};
+  int32_t strides[2] = {4, 1};
+  executorch::aten::TensorImpl impl(
+      executorch::aten::ScalarType::Float, 2, sizes, input, dim_order, strides);
+  ASSERT_EQ(
+      method->set_input(EValue(executorch::aten::Tensor(&impl)), 0), Error::Ok);
+
+  // Output 0 is not memory-planned and has not been bound via
+  // set_output_data_ptr, so execution must fail cleanly instead of writing to a
+  // null data pointer.
+  EXPECT_EQ(method->execute(), Error::InvalidState);
+  EXPECT_FALSE(method->in_progress());
+
+  float output[16] = {};
+  ASSERT_EQ(method->set_output_data_ptr(output, sizeof(output), 0), Error::Ok);
+  EXPECT_EQ(method->execute(), Error::Ok);
+}
+
+TEST_F(MethodTest, ExecuteRejectsUnboundMutableStateTensorAndRecovers) {
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method =
+      programs_["stateful"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  auto state = method->get_attribute("state");
+  ASSERT_TRUE(state.ok());
+  ASSERT_EQ(state->const_data_ptr(), nullptr);
+  ASSERT_GT(state->nbytes(), 0U);
+
+  int32_t sizes[1] = {1};
+  uint8_t dim_order[1] = {0};
+  int32_t strides[1] = {1};
+  executorch::aten::TensorImpl impl(
+      executorch::aten::ScalarType::Float,
+      1,
+      sizes,
+      nullptr,
+      dim_order,
+      strides);
+  ASSERT_EQ(
+      method->set_input(
+          executorch::runtime::EValue(executorch::aten::Tensor(&impl)), 0),
+      Error::Ok);
+
+  // Executing before binding mutable attribute storage must return InvalidState
+  // rather than dereferencing nullptr inside the kernel.
+  EXPECT_EQ(method->execute(), Error::InvalidState);
+  EXPECT_FALSE(method->in_progress());
+
+  int32_t data = 0;
+  state->set_data(&data);
+  ASSERT_EQ(method->execute(), Error::Ok);
+  EXPECT_EQ(data, 1);
+}
+
 /*
  * TODO(T161163608): Test is disabled due to a resize bug in tensor_index_out of
  * the portable op lib
