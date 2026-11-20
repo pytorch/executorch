@@ -44,7 +44,7 @@ import torch
 from torch.fx import GraphModule, Node
 from torchao.quantization.pt2e.quantizer import QuantizationAnnotation
 
-from .qconfig import QuantizationConfig
+from .qconfig import get_weight_qspec, QuantizationConfig
 from .rules import _is_annotated, _mark_nodes_as_annotated, Q_ANNOTATION_KEY
 
 # Only the overloads torchao's `_fuse_conv_bn_qat` / `_fold_conv_bn_qat` can
@@ -148,7 +148,7 @@ def _annotate_partition(
 
     weight = conv.args[1]
     assert isinstance(weight, Node)
-    input_qspec_map[weight] = quantization_config.weight
+    input_qspec_map[weight] = get_weight_qspec(quantization_config)
 
     bias = _materialize_conv_bias(gm, conv)
     if bias is not None and quantization_config.bias is not None:
