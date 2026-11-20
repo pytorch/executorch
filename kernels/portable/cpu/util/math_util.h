@@ -73,20 +73,26 @@ FLOAT_T floor_divide(FLOAT_T a, FLOAT_T b) {
   return floordiv;
 }
 
-template <typename T>
-T trunc_divide(T a, T b) {
-  if constexpr (std::is_integral_v<T>) {
-    if constexpr (std::is_signed_v<T>) {
-      // Like floor_divide, the most negative value divided by -1 wraps to
-      // itself instead of overflowing.
-      if (a == std::numeric_limits<T>::min() && b == -1) {
-        return a;
-      }
+template <
+    typename INT_T,
+    typename std::enable_if<std::is_integral<INT_T>::value, bool>::type = true>
+INT_T trunc_divide(INT_T a, INT_T b) {
+  if constexpr (std::is_signed<INT_T>::value) {
+    // ATen's trunc kernel overflows here. Wrap to the dividend instead, like
+    // floor_divide.
+    if (a == std::numeric_limits<INT_T>::min() && b == -1) {
+      return a;
     }
-    return static_cast<T>(a / b);
-  } else {
-    return std::trunc(a / b);
   }
+  return static_cast<INT_T>(a / b);
+}
+
+template <
+    typename FLOAT_T,
+    typename std::enable_if<std::is_floating_point<FLOAT_T>::value, bool>::
+        type = true>
+FLOAT_T trunc_divide(FLOAT_T a, FLOAT_T b) {
+  return std::trunc(a / b);
 }
 
 /**
