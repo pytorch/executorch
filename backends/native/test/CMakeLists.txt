@@ -154,8 +154,9 @@ if(EXECUTORCH_BUILD_NATIVE_GGML)
   )
 
   add_executable(
-    native_ggml_sample_test runtime/ggml/ggml_ptn_runner.cpp
-                            ${EXECUTORCH_ROOT}/backends/native/runtime/engine/ggml/GgmlEngineFlags.cpp
+    native_ggml_sample_test
+    runtime/ggml/ggml_ptn_runner.cpp
+    ${EXECUTORCH_ROOT}/backends/native/runtime/engine/ggml/GgmlEngineFlags.cpp
   )
   target_link_libraries(
     native_ggml_sample_test PRIVATE native_sample_test_main native_ggml_engine
