@@ -19,6 +19,7 @@ import ast
 import builtins
 import functools
 import importlib
+import importlib.metadata
 import inspect
 import operator
 from collections.abc import Callable, Mapping
@@ -38,13 +39,17 @@ from torch.utils import _pytree as pytree
 from triton.runtime.jit import JITFunction
 
 # Launch options AOTI reproduces; anything else would be silently dropped.
+# wrap_triton records launch kwargs by name on the captured kernel call, and
+# Inductor materializes them as backend options for the AOTI compilation.
 _SUPPORTED_LAUNCH_OPTIONS = ("num_warps", "num_stages", "maxnreg", "enable_fp_fusion")
 
 # Helion has no public API for a call that torch.export captured: the HOPs, their
 # side table and their output spec belong to Helion's private torch.compile
 # integration, and so does the launcher parameter of a standalone entrypoint. The
 # pass reads that contract only through this section and otherwise uses Helion's
-# public API (Kernel.bind, BoundKernel.to_code).
+# public API (Kernel.bind, BoundKernel.to_code). The one other private trait the
+# pass relies on is the functional HOP's (outputs, {name: clone}) return layout,
+# which _make_hop_replacement mirrors and _reroute_hop_outputs indexes into.
 _HELION_HOP_NAMES = (
     "helion_kernel_wrapper_mutation",
     "helion_kernel_wrapper_functional",
@@ -52,6 +57,7 @@ _HELION_HOP_NAMES = (
 _LAUNCHER_PARAMETER = "_launcher"
 _HELION_RUNTIME_PREFIX = "helion."
 _HELION_REQUIREMENT = "Helion 1.5.2 or newer"
+_MIN_HELION_VERSION = (1, 5, 2)
 
 
 class _CapturedHelionCall(NamedTuple):
@@ -66,8 +72,38 @@ class _CapturedHelionCall(NamedTuple):
     output_spec: Mapping[str, Any]
 
 
+def _check_helion_version() -> None:
+    try:
+        version: str | None = importlib.metadata.version("helion")
+    except importlib.metadata.PackageNotFoundError:
+        # A Helion importable without distribution metadata (for example a
+        # source checkout) may still name its version on the module. When no
+        # version is discoverable, the attribute probes in
+        # _helion_capture_modules are the version evidence available.
+        helion = importlib.import_module("helion")
+        version = getattr(helion, "__version__", None)
+    if version is None:
+        return
+    parsed = []
+    for part in version.split(".")[:3]:
+        digits = ""
+        for character in part:
+            if not character.isdigit():
+                break
+            digits += character
+        if not digits:
+            return
+        parsed.append(int(digits))
+    if tuple(parsed) < _MIN_HELION_VERSION:
+        raise RuntimeError(
+            f"Lowering Helion calls needs {_HELION_REQUIREMENT}; "
+            f"found Helion {version}"
+        )
+
+
 @functools.cache
 def _helion_capture_modules() -> tuple[ModuleType, ModuleType]:
+    _check_helion_version()
     try:
         hops = importlib.import_module("helion._compiler._dynamo.higher_order_ops")
         variables = importlib.import_module("helion._compiler._dynamo.variables")
@@ -92,21 +128,36 @@ def _helion_capture_modules() -> tuple[ModuleType, ModuleType]:
 def _read_captured_call(node: Node) -> _CapturedHelionCall:
     hops, _ = _helion_capture_modules()
     kwargs = cast(Mapping[str, Any], node.kwargs)
-    spec = kwargs["output_spec"]
-    is_functional = node.target is hops.helion_kernel_wrapper_functional
-    return _CapturedHelionCall(
-        kernel=hops.helion_kernel_side_table.get_kernel(kwargs["kernel_idx"]),
-        is_functional=is_functional,
-        tensor_args=kwargs["tensor_args"],
-        has_constant_args=bool(kwargs["constant_args"]),
-        tensors_to_clone=tuple(kwargs["tensors_to_clone"]) if is_functional else (),
-        tensor_output_count=sum(
-            leaf["type"] == "tensor" for leaf in spec["leaf_specs"]
-        ),
-        aliases_inputs=bool(spec.get("direct_aliases")),
-        mutates_inputs=bool(spec.get("mutated_inputs")),
-        output_spec=spec,
-    )
+    # Read the private fields strictly: a Helion that renames one must fail
+    # with the requirement error instead of surfacing a bare KeyError. The
+    # two exceptions are direct_aliases and mutated_inputs: Helion omits them
+    # from a capture its functionalization rebuilt when they are empty, so a
+    # missing entry means "none". The traced replacement is checked for
+    # writes to its inputs and for outputs aliasing them either way, so a
+    # capture that understates either is still rejected after tracing.
+    try:
+        spec = kwargs["output_spec"]
+        is_functional = node.target is hops.helion_kernel_wrapper_functional
+        return _CapturedHelionCall(
+            kernel=hops.helion_kernel_side_table.get_kernel(kwargs["kernel_idx"]),
+            is_functional=is_functional,
+            tensor_args=kwargs["tensor_args"],
+            has_constant_args=bool(kwargs["constant_args"]),
+            tensors_to_clone=(
+                tuple(kwargs["tensors_to_clone"]) if is_functional else ()
+            ),
+            tensor_output_count=sum(
+                leaf["type"] == "tensor" for leaf in spec["leaf_specs"]
+            ),
+            aliases_inputs=bool(spec.get("direct_aliases")),
+            mutates_inputs=bool(spec.get("mutated_inputs")),
+            output_spec=spec,
+        )
+    except KeyError as error:
+        raise RuntimeError(
+            f"Lowering Helion calls needs {_HELION_REQUIREMENT}; "
+            f"this capture lacks the expected field {error}"
+        ) from error
 
 
 def _check_capture_semantics(bound: Any, captured: _CapturedHelionCall) -> None:
@@ -326,15 +377,50 @@ def _make_hop_replacement(
     return run
 
 
+def _check_no_placeholder_mutation(traced: GraphModule, kernel_name: str) -> None:
+    placeholders = {n for n in traced.graph.nodes if n.op == "placeholder"}
+    for node in traced.graph.nodes:
+        if node.op != "call_function":
+            continue
+        schema = getattr(node.target, "_schema", None)
+        if schema is None:
+            continue
+        for index, argument in enumerate(schema.arguments):
+            if argument.alias_info is None or not argument.alias_info.is_write:
+                continue
+            if index < len(node.args):
+                value = node.args[index]
+            elif argument.name in node.kwargs:
+                value = node.kwargs[argument.name]
+            else:
+                continue
+            if any(
+                leaf in placeholders for leaf in pytree.tree_leaves(value)
+            ):
+                raise NotImplementedError(
+                    f"Helion lowering traced a write to an input of kernel "
+                    f"{kernel_name!r} that Helion did not report as mutated; "
+                    "splicing it would mutate a graph input with no matching "
+                    "graph-signature entry"
+                )
+
+
 def _trace_helion_call_as_triton(node: Node) -> tuple[GraphModule, tuple[Node, ...]]:
-    call = _parse_helion_call(_read_captured_call(node))
-    run = _make_hop_replacement(call, _render_triton_entrypoint(call))
+    captured = _read_captured_call(node)
+    try:
+        call = _parse_helion_call(captured)
+        run = _make_hop_replacement(call, _render_triton_entrypoint(call))
+    except (NotImplementedError, ValueError) as error:
+        raise type(error)(
+            f"Helion kernel {captured.kernel.name!r}: {error}"
+        ) from error
     with set_wrap_triton_enabled(True):
         traced = make_fx(torch.func.functionalize(run), tracing_mode="fake")(
             *call.fake_arguments
         )
     if not any("triton_kernel_wrapper" in str(n.target) for n in traced.graph.nodes):
         raise RuntimeError("Helion lowering lost the Triton launch during capture")
+    _check_no_placeholder_mutation(traced, captured.kernel.name)
     _check_outputs_do_not_alias_inputs(traced)
     return traced, call.argument_nodes
 
