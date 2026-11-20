@@ -131,7 +131,13 @@ _VARIANTS = [
         name = "test_ggml_ops" + v["suffix"],
         srcs = ["test_ggml_ops.py"],
         env = {"GGML_PTN_DEVICE": v["device"]} | v.get("env", {}),
-        labels = v.get("labels", []),
+        # Unbundled, every case starts its own test process: ~19 s of imports
+        # for ~3 s of test.
+        labels = (
+            ggml_ci_labels(v["suffix"].lstrip("_"), bundle = 40)
+            if v["device"] == "gpu"
+            else v.get("labels", [])
+        ),
         remote_execution = v.get("remote_execution"),
         resources = {":ggml_ptn_runner" + v["suffix"]: "ggml_ptn_runner"},
         deps = [
