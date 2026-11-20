@@ -4,13 +4,19 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Lower native Helion kernel calls to ordinary Triton launches for AOTI.
+"""Lower native Helion kernel calls to launches AOTInductor can compile.
 
 AOTInductor cannot compile Helion's higher-order ops into a standalone C++
-wrapper, but it can compile Triton kernels wrapped by ``wrap_triton``. This pass
-renders each Helion call with its single, explicitly selected config, traces the
-generated host code with fake tensors and splices the resulting Triton launch
-into the exported program. Helion is imported only when a Helion call is found.
+wrapper. This pass renders each Helion call with its single, explicitly selected
+config, traces the generated host code with fake tensors and splices the result
+into the exported program:
+
+- Triton kernels become ordinary ``wrap_triton`` launches, which AOTInductor
+  compiles like any user Triton kernel.
+- CuTe kernels are compiled now and become calls to a custom op whose C
+  implementation AOTInductor links into its ``.so`` (see ``helion_cute.py``).
+
+Helion is imported only when a Helion call is found.
 """
 
 from __future__ import annotations
@@ -26,6 +32,8 @@ from types import ModuleType
 from typing import Any, cast, NamedTuple
 
 import torch
+
+from executorch.backends.cuda.passes import helion_cute
 from torch._inductor.codecache import PyCodeCache
 from torch._library.triton import set_wrap_triton_enabled
 from torch.export import ExportedProgram
@@ -50,6 +58,8 @@ _HELION_HOP_NAMES = (
     "helion_kernel_wrapper_functional",
 )
 _LAUNCHER_PARAMETER = "_launcher"
+_TRITON_BACKEND = "triton"
+_CUTE_BACKEND = "cute"
 _HELION_RUNTIME_PREFIX = "helion."
 _HELION_REQUIREMENT = "Helion 1.5.2 or newer"
 
@@ -183,10 +193,10 @@ def _launch_through_wrap_triton(kernel, grid, *args, **kwargs):
 
 def _parse_helion_call(captured: _CapturedHelionCall) -> _HelionCall:
     kernel = captured.kernel
-    if kernel.settings.backend != "triton":
+    if kernel.settings.backend not in (_TRITON_BACKEND, _CUTE_BACKEND):
         raise NotImplementedError(
-            "Helion lowering supports only the Triton backend; this kernel uses "
-            f"{kernel.settings.backend!r}"
+            "Helion lowering supports only the Triton and CuTe backends; this "
+            f"kernel uses {kernel.settings.backend!r}"
         )
     if not kernel.settings.static_shapes:
         raise NotImplementedError("Helion lowering requires static_shapes=True")
@@ -281,7 +291,7 @@ def _bind_helion_jit_helpers(source: str) -> str:
     return ast.unparse(ast.fix_missing_locations(tree))
 
 
-def _render_triton_entrypoint(call: _HelionCall) -> Callable[..., Any]:
+def _render_entrypoint(call: _HelionCall) -> tuple[Callable[..., Any], str]:
     kernel = call.captured.kernel
     config = kernel.configs[0]
     if config.get("host_tensor_descriptors", False):
@@ -295,14 +305,16 @@ def _render_triton_entrypoint(call: _HelionCall) -> Callable[..., Any]:
     # without inlining them. AOTInductor compiles the kernels, so inference
     # still needs no Helion.
     source = bound.to_code(config)
-    _check_single_launch_site(source, kernel.name)
-    return getattr(PyCodeCache.load(_bind_helion_jit_helpers(source)), kernel.name)
+    if kernel.settings.backend == _TRITON_BACKEND:
+        _check_single_launch_site(source, kernel.name)
+        source = _bind_helion_jit_helpers(source)
+    return getattr(PyCodeCache.load(source), kernel.name), source
 
 
 def _make_hop_replacement(
-    call: _HelionCall, entrypoint: Callable[..., Any]
+    call: _HelionCall, entrypoint: Callable[..., Any], launcher: Callable[..., Any]
 ) -> Callable[..., Any]:
-    """Call the Triton entrypoint and return outputs shaped like the Helion HOP's."""
+    """Call the entrypoint and return outputs shaped like the Helion HOP's."""
     captured = call.captured
 
     def run(*values):
@@ -311,9 +323,7 @@ def _make_hop_replacement(
         launch_args = (
             cloned.get(name, arguments[name]) for name in call.argument_names
         )
-        outputs = entrypoint(
-            *launch_args, **{_LAUNCHER_PARAMETER: _launch_through_wrap_triton}
-        )
+        outputs = entrypoint(*launch_args, **{_LAUNCHER_PARAMETER: launcher})
         flat = tuple(
             leaf
             for leaf in pytree.tree_leaves(outputs)
@@ -326,15 +336,54 @@ def _make_hop_replacement(
     return run
 
 
-def _trace_helion_call_as_triton(node: Node) -> tuple[GraphModule, tuple[Node, ...]]:
+def _is_cute_launch(node: Node) -> bool:
+    # A launch that writes its arguments is functionalized into an
+    # auto_functionalized node whose first argument is the op.
+    return helion_cute.is_exported_launch(node.target) or (
+        bool(node.args) and helion_cute.is_exported_launch(node.args[0])
+    )
+
+
+def _trace_helion_call(node: Node) -> tuple[GraphModule, tuple[Node, ...]]:
     call = _parse_helion_call(_read_captured_call(node))
-    run = _make_hop_replacement(call, _render_triton_entrypoint(call))
-    with set_wrap_triton_enabled(True):
-        traced = make_fx(torch.func.functionalize(run), tracing_mode="fake")(
-            *call.fake_arguments
+    entrypoint, source = _render_entrypoint(call)
+    if call.captured.kernel.settings.backend == _CUTE_BACKEND:
+        mutated = frozenset(
+            i
+            for i, name in enumerate(call.argument_names)
+            if name in call.captured.tensors_to_clone
         )
-    if not any("triton_kernel_wrapper" in str(n.target) for n in traced.graph.nodes):
-        raise RuntimeError("Helion lowering lost the Triton launch during capture")
+        # A program input starts at its allocation. Any other argument may be
+        # a view whose storage offset the CUDA backend's view rewrites hid
+        # from the exported metadata.
+        aligned = frozenset(
+            i for i, n in enumerate(call.argument_nodes) if n.op == "placeholder"
+        )
+        launcher = helion_cute.export_cute_launch(
+            entrypoint,
+            _LAUNCHER_PARAMETER,
+            source,
+            call.fake_arguments,
+            mutated,
+            aligned,
+        )
+        is_launch = _is_cute_launch
+    else:
+        launcher = _launch_through_wrap_triton
+
+        def is_launch(n: Node) -> bool:
+            return "triton_kernel_wrapper" in str(n.target)
+
+    run = _make_hop_replacement(call, entrypoint, launcher)
+    if call.captured.kernel.settings.backend == _TRITON_BACKEND:
+        run = torch.func.functionalize(run)
+    # torch.func.functionalize rejects custom ops that write their arguments, so
+    # a CuTe launch stays a write. It only writes tensors the replacement
+    # allocates or clones, and AOTInductor functionalizes it when it compiles.
+    with set_wrap_triton_enabled(True):
+        traced = make_fx(run, tracing_mode="fake")(*call.fake_arguments)
+    if not any(is_launch(n) for n in traced.graph.nodes):
+        raise RuntimeError("Helion lowering lost the kernel launch during capture")
     _check_outputs_do_not_alias_inputs(traced)
     return traced, call.argument_nodes
 
@@ -414,18 +463,20 @@ def _check_same_tensor_layout(original: Node, replacement: Node) -> None:
         )
 
 
-class LowerHelionToTritonPass:
-    """Replace native Helion calls with the Triton launches of their selected config.
+class LowerHelionPass:
+    """Replace native Helion calls with launches of their selected config.
 
-    Supported: one explicit config per kernel, static strided tensor arguments,
-    multiple tensor outputs and functionalized input mutation. Config selection
-    stays offline; the pass neither tunes nor launches kernels, and inference
-    needs neither Python nor Helion.
+    Supported: Triton and CuTe kernels with one explicit config, static strided
+    tensor arguments, multiple tensor outputs and functionalized input mutation.
+    Config selection stays offline; the pass neither tunes nor launches kernels
+    (CuTe kernels are compiled for the export GPU), and inference needs neither
+    Python nor Helion.
     """
 
     requires_exported_program = True
 
     def __call__(self, exported_program: ExportedProgram) -> None:
+        helion_cute.begin_program()
         root = exported_program.graph_module
         for module in root.modules():
             if not isinstance(module, GraphModule):
@@ -438,7 +489,7 @@ class LowerHelionToTritonPass:
                     or str(node.target) not in _HELION_HOP_NAMES
                 ):
                     continue
-                traced, inputs = _trace_helion_call_as_triton(node)
+                traced, inputs = _trace_helion_call(node)
                 replacement = _splice_traced_graph(module.graph, node, traced, inputs)
                 _reroute_hop_outputs(module.graph, node, replacement, signature)
                 modified = True

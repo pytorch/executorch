@@ -6,7 +6,7 @@ The CUDA backend is the ExecuTorch solution for running models on NVIDIA GPUs. I
 
 - **Optimized GPU Execution**: Uses AOTInductor to generate highly optimized CUDA kernels for model operators
 - **Triton Kernel Support**: Leverages Triton for GEMM (General Matrix Multiply), convolution, and SDPA (Scaled Dot-Product Attention) kernels.
-- **Helion Kernel Support**: Models can call [Helion](https://github.com/pytorch/helion) kernels directly. Export lowers each call to the Triton kernel of its selected config, so the runtime needs neither Python nor Helion.
+- **Helion Kernel Support**: Models can call [Helion](https://github.com/pytorch/helion) kernels on Helion's Triton or CuTe backend directly. Export compiles each call with its selected config into the program, so the runtime needs neither Python nor Helion.
 - **Quantization Support**: INT4 weight quantization with tile-packed format for improved performance and reduced memory footprint
 - **Cross-Platform**: Runs on Linux, and on Windows from C++. Programs for Windows are exported on Linux.
 - **Multiple Model Support**: Works with various models including LLMs, vision-language models, and audio models
@@ -148,25 +148,35 @@ exec_program = et_program.to_executorch()
 ```
 
 `torch.export` records each call as a Helion higher-order op. While lowering, the CUDA backend's
-`LowerHelionToTritonPass` renders the call with its config, captures the generated Triton launch and
-replaces the Helion op with it, so AOTInductor compiles it like any other Triton kernel. The pass
-runs after the backend's other passes and before AOTInductor. It neither tunes nor launches the
-kernel: picking the config, for example with Helion's autotuner, is a separate offline step.
+`LowerHelionPass` renders the call with its config and replaces the Helion op, according to the
+kernel's Helion backend:
+
+- **Triton** (Helion's default): the pass captures the generated Triton launch, and AOTInductor
+  compiles it like any other Triton kernel.
+- **CuTe** (`@helion.kernel(backend="cute", ...)`): the pass compiles the launch with the CuTe DSL
+  for the export GPU, exports it as an object file with a C entry point, and replaces the Helion op
+  with a custom op whose C implementation AOTInductor links into its shared library. The kernel then
+  lives in the `.pte` like the Triton kernels. Export needs `nvidia-cutlass-dsl` 4.7 or newer and a
+  CUDA toolkit; the program runs only on GPUs of the export GPU's architecture.
+
+The pass runs after the backend's other passes and before AOTInductor. It never tunes or launches
+the kernel: picking the config, for example with Helion's autotuner, is a separate offline step.
 
 The pass supports:
 
-- Kernels on the Triton backend with `static_shapes=True` and exactly one config.
+- Kernels on the Triton or CuTe backend with `static_shapes=True` and exactly one config.
 - Tensor arguments, several calls per model, several tensor outputs and calls inside `torch.cond`
   branches.
 - Kernels that write their inputs or buffers in place, as long as a contiguous copy of the
   written tensor keeps its strides.
 
 It rejects, with an error during export, calls it cannot lower exactly: kernels on other Helion
-backends such as CuTe, kernels that leave the choice of config to Helion (no `config=`, so
+backends, kernels that leave the choice of config to Helion (no `config=`, so
 Helion autotunes on the first call, or a `configs=[...]` list), scalar, container or defaulted arguments, dynamic shapes, outputs that alias inputs, outputs whose strides differ
 from the ones `torch.export` recorded, more than one launch site, host tensor descriptors, and
-launch options AOTInductor cannot reproduce, such as cooperative grids, clusters or PDL. It needs
-a Helion version that records each call's host-semantic fingerprint at export.
+launch options AOTInductor cannot reproduce, such as cooperative grids, clusters or PDL. For CuTe
+kernels it also rejects launches with scalar arguments, workspace tensors or dynamic layouts. It
+needs a Helion version that records each call's host-semantic fingerprint at export.
 
 
 ----

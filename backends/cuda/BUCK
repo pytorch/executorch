@@ -136,7 +136,7 @@ fbcode_target(
     deps = [
         ":autotune",
         ":cuda_passes",
-        ":lower_helion_to_triton",
+        ":lower_helion",
         ":triton_measured_routing",
         ":triton_replacement_pass",
         "//caffe2:torch",
@@ -151,10 +151,11 @@ fbcode_target(
 
 fbcode_target(
     _kind = runtime.python_library,
-    name = "lower_helion_to_triton",
+    name = "lower_helion",
     typing = True,
     srcs = [
-        "passes/lower_helion_to_triton.py",
+        "passes/helion_cute.py",
+        "passes/lower_helion.py",
     ],
     visibility = ["PUBLIC"],
     deps = [

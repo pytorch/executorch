@@ -36,9 +36,8 @@ from executorch.backends.cuda.cuda_weight_collector import (
     CudaWeightCollector,
     trim_host_memory,
 )
-from executorch.backends.cuda.passes.lower_helion_to_triton import (
-    LowerHelionToTritonPass,
-)
+from executorch.backends.cuda.passes import helion_cute
+from executorch.backends.cuda.passes.lower_helion import LowerHelionPass
 from executorch.backends.cuda.passes.lower_offgraph_kv import (
     CheckOffGraphKVStepWidthPass,
     LowerOffGraphKVPass,
@@ -1430,6 +1429,8 @@ class CudaBackend(AotiBackend, BackendDetails):
             "aoti_torch_cuda_scatter_src_out": None,
             "aoti_torch_cuda_masked_select": None,
             "aoti_torch_cuda_nonzero": None,
+            # The Helion CuTe launches LowerHelionPass compiled into C shims.
+            **helion_cute.exported_fallback_kernels(),
         }
 
     @classmethod
@@ -1464,13 +1465,13 @@ class CudaBackend(AotiBackend, BackendDetails):
         Return CUDA-specific passes, ending with ReplaceEdgeOpWithTritonOpPass
         and, with measured routing on, the passes that measure the
         implementations of the calls several can run and apply the choice,
-        followed by LowerHelionToTritonPass.
+        followed by LowerHelionPass.
 
         The replacement pass uses Triton kernels for the calls they support and
         leaves other calls to the regular lowering. The triton_kernel_mode
         compile spec is deprecated: "OFF" is treated as "ON".
 
-        LowerHelionToTritonPass runs last: it emits ATen and Triton nodes for
+        LowerHelionPass runs last: it emits ATen, Triton and custom op nodes for
         AOTI rather than Edge IR.
         """
         for spec in compile_specs:
@@ -1525,7 +1526,7 @@ class CudaBackend(AotiBackend, BackendDetails):
                 method_name = "method"
             passes.append(MeasureChoicesPass(cls, compile_specs, config))
             passes.append(ApplyChoicesPass(method_name, config))
-        passes.append(LowerHelionToTritonPass())
+        passes.append(LowerHelionPass())
         return passes
 
     @classmethod
@@ -1693,6 +1694,9 @@ class CudaBackend(AotiBackend, BackendDetails):
                 stack.enter_context(_pass_float_scalars_to_triton_as_floats())
                 stack.enter_context(_offer_only_cpp_callable_conv_choices())
                 stack.enter_context(_hint_matmul_contiguity_only_for_full_blocks())
+                # Let AOTI call and link the Helion CuTe launches LowerHelionPass
+                # compiled.
+                stack.enter_context(helion_cute.link_exported_launches())
                 # On ROCm, is_big_gpu gates on architecture, not SM count.
                 if torch.version.hip is None:
                     stack.enter_context(_allow_triton_templates_on_small_gpus())
