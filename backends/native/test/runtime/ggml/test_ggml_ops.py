@@ -1341,6 +1341,50 @@ class GgmlOpsTest(unittest.TestCase):
             (torch.tensor([[-1.0, 0.0, 0.25, 0.5]]),),
         )
 
+    def test_le_and_lt_check_the_integers_they_can_trace(self):
+        small = (torch.tensor([[7, 3, -5]]), torch.tensor([[6, 4, -5]]))
+        # 2^24 + 1 rounds to 2^24 in F32, which would then compare equal.
+        large = (torch.tensor([[16777217, 3]]), torch.tensor([[16777216, 4]]))
+        for name, fn in {"le": torch.le, "lt": torch.lt}.items():
+            with self.subTest(op=name):
+                self._check(Lambda(lambda a, b, fn=fn: fn(a, b).float()), small)
+                with self.assertRaisesRegex(AssertionError, r"2\^24"):
+                    self._check(Lambda(lambda a, b, fn=fn: fn(a, b).float()), large)
+                with self.assertRaisesRegex(AssertionError, r"2\^24"):
+                    self._check(
+                        Lambda(lambda a, fn=fn: fn(a, 16777217).float()), (small[0],)
+                    )
+                # Computed integers pass unchecked, as attention masks need.
+                self._check(
+                    Lambda(lambda a, b, fn=fn: fn(a + a, b).float()),
+                    (torch.tensor([[1, 2]]), torch.tensor([[2, 2]])),
+                )
+
+    def test_integer_compare_rechecks_its_inputs_on_every_run(self):
+        steps = [
+            (torch.tensor([[1, 2]]), torch.tensor([[2, 2]])),
+            (torch.tensor([[16777217, 2]]), torch.tensor([[16777216, 2]])),
+        ]
+        model = Lambda(lambda a, b: (a <= b).float())
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            package = outdir / "model.ptn"
+            to_native(torch.export.export(model, steps[0])).save(str(package))
+            # The second run replays the first run's graph.
+            with self.assertRaisesRegex(AssertionError, r"2\^24"):
+                _run_ggml(package, steps, outdir, 1)
+
+    def test_le_and_lt_round_to_half_types_as_eager(self):
+        x = torch.tensor([[0.5, 0.25, 0.75]])
+        cases = {
+            "le": lambda x: (x <= 0.49999).float(),
+            "lt": lambda x: (x < 0.50001).float(),
+        }
+        for dtype in (torch.float16, torch.bfloat16):
+            for name, fn in cases.items():
+                with self.subTest(op=name, dtype=dtype):
+                    self._check(Lambda(fn), (x.to(dtype),), atol=0, rtol=0)
+
     def test_symbolic_neg_slices_from_the_end(self):
         class Tail(torch.nn.Module):
             def forward(self, x, buffer):
