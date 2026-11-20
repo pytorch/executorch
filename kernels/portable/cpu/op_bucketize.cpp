@@ -9,7 +9,7 @@
 #include <executorch/kernels/portable/cpu/util/dtype_util.h>
 #include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
-#include <executorch/runtime/kernel/thread_parallel_interface.h>
+#include <executorch/runtime/kernel/thread_parallel_interface.h> // @manual
 
 namespace torch {
 namespace executor {
