@@ -80,3 +80,29 @@ as a shared-memory limit, required by its target GPU set. AOTI host code and its
 CUDA fatbin are linked into one shared library, so the merge step does not
 rewrite ELF sections. Instead, the merged metadata makes regular libraries
 native-only and marks the fallback library as PTX-only for runtime selection.
+
+## Run an export on different GPUs than it was made for
+
+The device ids a program records come from its `target_device` compile spec,
+which defaults to `cuda:0`; compiling on another GPU does not by itself record
+that GPU. But a program exported with an explicit non-zero `target_device`
+(`cuda:3`, say) does not load on a machine whose GPUs have other indices.
+Rewrite the recorded device ids before deploying:
+
+```bash
+python -m executorch.backends.cuda.scripts.remap_pte_devices \
+  --input-pte model.pte \
+  --output-pte model_dense.pte
+```
+
+By default the recorded ids are compressed to a dense range (3, 5, 7 become
+0, 1, 2). Pass `--mapping 3=0,5=0,7=0` to choose the targets explicitly,
+for example to put everything on one GPU. The `.ptd` needs no changes.
+Every remapped device must exist on the target machine; note that the CUDA
+runtime currently runs every delegate on the current device (per-device
+execution is tracked in pytorch/executorch#24890), so collapsing onto
+`cuda:0` is the remap that runs everywhere today. Leaving `target_device`
+at its default avoids needing the tool at all. The output is re-serialized
+with the default segment/constant/delegate alignments and named-data
+alignment is not preserved, so exports made with non-default alignments
+may be repacked.

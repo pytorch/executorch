@@ -89,7 +89,7 @@ void add_binary_op_node(
   std::string kernel_name(is_comparison ? "binary_cmp" : "binary_op");
   kernel_name.reserve(kShaderNameReserve);
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
-  add_dtype_suffix(kernel_name, graph.dtype_of(in1));
+  add_dtype_suffix(kernel_name, graph.dtype_of(arg1));
 
   vkapi::ParamsBindList ubos = {
       graph.meta_ubo(out), graph.meta_ubo(arg1), graph.meta_ubo(arg2)};

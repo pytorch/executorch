@@ -30,6 +30,7 @@ runtime.cxx_library(
     deps = [
         ":llm_runner_utils",
         "//executorch/backends/native/examples/runner_utils:runner_utils",
+        "//executorch/backends/native/runtime:offgraph_cache",
         "//executorch/backends/native/runtime:runtime",
         "//executorch/backends/native/runtime/deserialize:package",
         "//executorch/backends/native/runtime/deserialize:samples",

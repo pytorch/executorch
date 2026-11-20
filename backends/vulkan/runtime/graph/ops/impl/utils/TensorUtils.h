@@ -30,6 +30,13 @@ bool check_same_packed_dim(
     const ValueRef in,
     const ValueRef out);
 
+/*
+ * Returns true if a buffer tensor's packed dim has stride 1, so that each group
+ * of four elements along it, starting at a multiple of four, forms one vec4
+ * texel in the buffer.
+ */
+bool is_packed_dim_vec4_contiguous(ComputeGraph& graph, const ValueRef tensor);
+
 //
 // Work group size calculation functions
 //

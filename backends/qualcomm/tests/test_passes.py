@@ -2743,7 +2743,9 @@ class TestDeadChannelWeightScale(unittest.TestCase):
         prepare = prepare_qat_pt2e if is_qat else prepare_pt2e
         prepared = prepare(
             torch.export.export(conv, (x,)).module(),
-            make_quantizer(quant_dtype=quant_dtype, is_qat=is_qat),
+            make_quantizer(
+                quant_dtype=quant_dtype, is_qat=is_qat, per_channel_conv=True
+            ),
         )
         prepared(x)
         observer_types = (

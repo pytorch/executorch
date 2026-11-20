@@ -276,8 +276,9 @@ class TestPrograms(unittest.TestCase):
         self._check_swaps("vulkan", [7, 1, 2])
 
     def test_xnnpack_swaps_preserve_outputs(self):
-        # The depthwise upsampler, 2 decoder transposed convs.
-        self._check_swaps("xnnpack", [1, 2])
+        # The depthwise upsampler; XNNPACK lowers the decoder's transposed
+        # convs as convs itself.
+        self._check_swaps("xnnpack", [1])
 
     def test_cuda_swaps_preserve_outputs(self):
         self._check_swaps("cuda", [1, 2])
@@ -459,9 +460,23 @@ class TestExport(unittest.TestCase):
         self.assertLess(max_diff(module(x), want), 0.1)
 
     def test_xnnpack_lowering_delegates(self):
-        _, _, delegation, _ = self._lower("xnnpack")
+        _, program, delegation, _ = self._lower("xnnpack")
         for method in ("voice_embed", "flow_lm", "mimi_decode"):
             self.assertGreater(delegation[method]["delegates"], 0, method)
+        # DecomposeConvTransposePass runs the decoder's transposed convs as
+        # convs. Without it, XNNPACK would still delegate them, as its slower
+        # deconvolution.
+        try:
+            from executorch.backends.xnnpack.test.tester.tester import (
+                xnnpack_node_types,
+            )
+        except ImportError:
+            self.skipTest("ExecuTorch pybindings are not available")
+
+        node_types = xnnpack_node_types(
+            program.exported_program("mimi_decode").graph_module
+        )
+        self.assertEqual(node_types["XNNConvTranspose2d"], 0, node_types)
 
 
 class TestHost(unittest.TestCase):

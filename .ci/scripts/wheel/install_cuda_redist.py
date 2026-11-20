@@ -31,11 +31,9 @@ from pathlib import Path
 _REDIST = "https://developer.download.nvidia.com/compute/cuda/redist"
 
 # The patch release each train resolves to: one entry per train in filter_cuda_matrix.py's
-# SUPPORTED_CUDA_VERSIONS, which the end-to-end jobs take their matrix from, and 13.0, which
-# is no longer published but still builds from source and is what local tests of it use. A
-# train missing here fails the job at argument parsing rather than testing a different
-# release.
-_RELEASES = {"13.0": "13.0.2", "13.2": "13.2.2", "13.4": "13.4.1"}
+# SUPPORTED_CUDA_VERSIONS, which the end-to-end jobs take their matrix from. A train missing
+# here fails the job at argument parsing rather than testing a different release.
+_RELEASES = {"13.2": "13.2.2", "13.4": "13.4.1"}
 
 # What a build of the CUDA backend needs. "a|b" names one component a release publishes
 # under either name (CCCL was renamed between releases).

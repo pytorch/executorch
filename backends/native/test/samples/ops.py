@@ -9,7 +9,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from executorch.backends.native.test.samples import elu, embedding, linear
+from executorch.backends.native.test.samples import elu, embedding, linear, pad_pool
 from executorch.backends.native.test.samples.cases import Case
 from executorch.backends.native.test.samples.record import DTYPES
 
@@ -25,4 +25,6 @@ def ops() -> dict[str, Op]:
         "elu": Op(elu.cases),
         "embedding": Op(embedding.cases),
         "linear": Op(linear.cases),
+        "pad": Op(pad_pool.pad_cases),
+        "max_pool2d": Op(pad_pool.max_pool2d_cases),
     }
