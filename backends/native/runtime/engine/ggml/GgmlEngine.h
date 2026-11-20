@@ -41,8 +41,8 @@ struct GgmlEngineOptions {
   // Threads for the ggml CPU backend, which also runs ops the GPU backend
   // lacks. 0 keeps ggml's default of 4, not the host core count.
   int cpu_threads = 0;
-  // Node capacity of each ggml graph and of the backend scheduler; ggml
-  // aborts on a graph that outgrows it.
+  // Minimum node capacity of each ggml graph and of the backend scheduler;
+  // a method whose lowerings need more nodes gets the room they need.
   size_t graph_size = 4096;
   // Graphs each executable keeps, keyed by the shapes of all inputs and, for
   // each attention mask that leaves only a key prefix open, that prefix
@@ -59,6 +59,19 @@ struct GgmlEngineOptions {
   // dequantized activation is rejected unless the caller accepts that loss of
   // precision.
   bool allow_activation_quant_for_weight_only = false;
+  // Testing only. Default (false): topk is llama.cpp's ggml_argsort_top_k, one
+  // argsort that leaves a row holding NaN in an unspecified order.
+  // Set: NaN ranks above every value, +inf included (below, for the smallest),
+  // as eager does, at a NaN key map and a second argsort per topk.
+  // Ops: topk.
+  bool exact_topk_for_testing = false;
+  // Testing only. Default (false): tanh GELU is ggml_gelu, as in llama.cpp;
+  // ggml-cpu reads it from an F16 table, a few 1e-4 off eager in F32.
+  // Set: the CPU builds tanh GELU from exact ops, x * (1 + tanh(c * (x +
+  // 0.044715 x^3))) / 2, as eager does, at five more kernels per GELU.
+  // Ops: gelu with approximate="tanh"; CPU only (GPU backends evaluate
+  // ggml_gelu in F32 either way).
+  bool exact_gelu_for_testing = false;
 };
 
 class GgmlEngineContext;
