@@ -114,6 +114,28 @@ def test_native_w4a4(m, n, k):
     torch.testing.assert_close(actual, expected, rtol=0.02, atol=0.02)
 
 
+def test_embedding_bias_dispatch(monkeypatch):
+    import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
+
+    w = weight(97, 192)
+    ids = torch.tensor([[1, 3, 2, 1], [96, 0, 51, 72]], device="cuda")
+    torch.testing.assert_close(
+        nvfp4_embedding(ids, w.qdata, w.scale, w.per_tensor_scale, w.dtype),
+        w.dequantize()[ids],
+        rtol=0,
+        atol=0,
+    )
+    monkeypatch.setenv("ET_CUDA_NVFP4_ACT", "w4a16")
+    x = torch.randn(2, 3, 192, device="cuda", dtype=torch.bfloat16)
+    bias = torch.randn(97, device="cuda", dtype=torch.bfloat16)
+    torch.testing.assert_close(
+        torch.nn.functional.linear(x, w, bias),
+        torch.nn.functional.linear(x, w.dequantize(), bias),
+        rtol=0.03,
+        atol=0.02,
+    )
+
+
 @pytest.mark.parametrize("split_k", [1, 2, 4, 8, 16, 32])
 @pytest.mark.parametrize("mode", ["w4a4", "w4a16"])
 def test_gemm_split_k(mode, split_k):
@@ -204,14 +226,3 @@ def test_split_workspace_exceeds_int32(mode):
         )
         torch.cuda.synchronize()
         assert bool((y == 512).all())
-
-
-def test_embedding():
-    w = weight(97, 192)
-    ids = torch.tensor([[1, 3, 2, 1], [96, 0, 51, 72]], device="cuda")
-    torch.testing.assert_close(
-        nvfp4_embedding(ids, w.qdata, w.scale, w.per_tensor_scale, w.dtype),
-        w.dequantize()[ids], rtol=0, atol=0,
-    )
-
-
