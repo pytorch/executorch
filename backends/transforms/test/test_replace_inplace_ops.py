@@ -8,10 +8,7 @@ import unittest
 
 import torch
 from executorch.backends.transforms.replace_inplace_ops import ReplaceInplaceOpsPass
-from torch.testing._internal.common_utils import (
-    instantiate_parametrized_tests,
-    parametrize,
-)
+from parameterized import parameterized
 
 
 def _targets(gm: torch.fx.GraphModule):
@@ -32,7 +29,7 @@ class TestReplaceInplaceOps(unittest.TestCase):
         )
         return result
 
-    @parametrize("strict", [True, False])
+    @parameterized.expand([(True,), (False,)])
     def test_write_through_view_becomes_scatter(self, strict):
         class M(torch.nn.Module):
             def forward(self, x):
@@ -47,7 +44,7 @@ class TestReplaceInplaceOps(unittest.TestCase):
         self.assertIn(torch.ops.aten.select_scatter.default, targets)
         self.assertIn(torch.ops.aten.slice_scatter.default, targets)
 
-    @parametrize("strict", [True, False])
+    @parameterized.expand([(True,), (False,)])
     def test_writes_in_a_loop(self, strict):
         # Like torchvision's batch_images.
         class M(torch.nn.Module):
@@ -194,9 +191,6 @@ class TestReplaceInplaceOps(unittest.TestCase):
         self.assertFalse(ReplaceInplaceOpsPass()(gm).modified)
         gm(x)
         torch.testing.assert_close(gm.buf[0], x)
-
-
-instantiate_parametrized_tests(TestReplaceInplaceOps)
 
 
 if __name__ == "__main__":

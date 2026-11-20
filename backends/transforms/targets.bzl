@@ -707,6 +707,7 @@ def define_common_targets():
             "test/test_replace_inplace_ops.py",
         ],
         deps = [
+            "fbsource//third-party/pypi/parameterized:parameterized",
             "//caffe2:torch",
             ":replace_inplace_ops",
         ],
