@@ -136,6 +136,7 @@ class ExportedProgramPassManager(fx.PassManager):
         constraints: Optional[List[Callable[[Callable, Callable], bool]]] = None,
         run_checks_after_each_pass: bool = False,
         suppress_check_failures: bool = False,
+        checks: Optional[List[Callable[[ExportedProgram], None]]] = None,
         steps: int = 1,
     ) -> None:
         wrapped_passes = (
@@ -150,6 +151,7 @@ class ExportedProgramPassManager(fx.PassManager):
             if passes
             else []
         )
+        self.checks: List[Callable[[ExportedProgram], None]] = checks or []
 
         super().__init__(
             wrapped_passes,
@@ -173,6 +175,9 @@ class ExportedProgramPassManager(fx.PassManager):
                 )
 
         exported_program.validate()
+
+        for check in self.checks:
+            check(exported_program)
 
     # pyre-ignore[14]: Intentionally overriding with different signature for ExportedProgram
     def __call__(  # noqa: C901
