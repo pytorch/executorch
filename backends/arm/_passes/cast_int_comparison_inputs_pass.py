@@ -131,6 +131,26 @@ class CastIntComparisonInputsPass(ArmOpTargetedPass):
                     f"{op} cannot cast {arg_dtypes} to a {tosa_spec} comparison dtype."
                 )
 
+        # A zero-dimensional integer input wider than an int8 or int16 tensor
+        # wraps to the tensor dtype, as in PyTorch.
+        wider_dtypes = {
+            torch.int8: (torch.int16, torch.int32, torch.int64),
+            torch.int16: (torch.int32, torch.int64),
+        }
+        result_dtype = torch.result_type(args[0].data, args[1].data)
+        if result_dtype in wider_dtypes:
+            wrapped_args = []
+            for arg in args:
+                if arg.data.dtype in wider_dtypes[result_dtype]:
+                    arg = super().call_operator(
+                        exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+                        (arg,),
+                        {"dtype": result_dtype},
+                        meta,
+                    )
+                wrapped_args.append(arg)
+            args = tuple(wrapped_args)
+
         cast_dtype = self._decide_cast_dtype([arg.data for arg in args], tosa_spec)
 
         new_args = []

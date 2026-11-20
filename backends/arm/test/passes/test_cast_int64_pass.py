@@ -338,10 +338,8 @@ def test_zero_dim_int64_constant_narrows_for_integer_users(quantized):
     assert CastInt64BuffersToInt32Pass._narrows_zero_dim(constant, cast) != quantized
 
 
-@pytest.mark.parametrize(
-    ("dtype", "narrows"), ((torch.int8, False), (torch.int32, True))
-)
-def test_zero_dim_int64_constant_narrows_for_int32_comparisons(dtype, narrows):
+@pytest.mark.parametrize("dtype", (torch.int8, torch.int16, torch.int32))
+def test_zero_dim_int64_constant_narrows_for_comparisons(dtype):
     with FakeTensorMode() as mode:
         constant_val = mode.from_tensor(torch.empty((), dtype=torch.int64))
         x_val = mode.from_tensor(torch.empty((4,), dtype=dtype))
@@ -354,7 +352,7 @@ def test_zero_dim_int64_constant_narrows_for_int32_comparisons(dtype, narrows):
     gt = graph.call_function(exir_ops.edge.aten.gt.Tensor, (x, constant))
     gt.meta["val"] = output_val
 
-    assert CastInt64BuffersToInt32Pass._narrows_zero_dim(constant, gt) == narrows
+    assert CastInt64BuffersToInt32Pass._narrows_zero_dim(constant, gt)
 
 
 @pytest.mark.parametrize(
