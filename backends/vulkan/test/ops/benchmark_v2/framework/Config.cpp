@@ -180,8 +180,9 @@ void validate_config(const Json& spec) {
     tensor_numel(tensor.at("sizes"));
     const std::string dtype = tensor.value("dtype", "float32");
     require(
-        dtype == "float32" || dtype == "float16" || dtype == "int32" ||
-            dtype == "int8" || dtype == "uint8" || dtype == "int8x4",
+        dtype == "float32" || dtype == "float16" || dtype == "bfloat16" ||
+            dtype == "int32" || dtype == "int8" || dtype == "uint8" ||
+            dtype == "int8x4",
         "Unsupported tensor dtype: " + dtype);
     const std::string storage = tensor.value("storage", "buffer");
     require(

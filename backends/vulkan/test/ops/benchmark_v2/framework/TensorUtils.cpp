@@ -10,6 +10,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/ExecuteNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Int8x4Staging.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
+#include <executorch/runtime/core/portable_type/bfloat16.h>
 #include <executorch/runtime/core/portable_type/half.h>
 
 #include <cstring>
@@ -23,6 +24,7 @@ namespace {
 const std::map<std::string, vkapi::ScalarType> kScalarTypes = {
     {"float32", vkapi::kFloat},
     {"float16", vkapi::kHalf},
+    {"bfloat16", vkapi::kBFloat16},
     {"int32", vkapi::kInt},
     {"int8", vkapi::kChar},
     {"uint8", vkapi::kByte},
@@ -69,8 +71,9 @@ TensorData prepare_tensor_data(const Json& spec) {
   auto host_data = make_tensor_data(descriptions);
   for (const auto& item : descriptions.items()) {
     const Json& tensor = item.value();
+    const std::string dtype = tensor.value("dtype", "float32");
     if (tensor.value("storage", "buffer") != "constant" ||
-        tensor.value("dtype", "float32") != "float16") {
+        (dtype != "float16" && dtype != "bfloat16")) {
       continue;
     }
     auto& data = host_data.at(item.key());
@@ -78,8 +81,15 @@ TensorData prepare_tensor_data(const Json& spec) {
     for (size_t i = 0; i < data.size() / sizeof(float); ++i) {
       float value;
       std::memcpy(&value, data.data() + i * sizeof(float), sizeof(float));
-      const executorch::runtime::etensor::Half half(value);
-      std::memcpy(half_data.data() + i * sizeof(half), &half, sizeof(half));
+      uint16_t bits;
+      if (dtype == "float16") {
+        const executorch::runtime::etensor::Half half(value);
+        std::memcpy(&bits, &half, sizeof(bits));
+      } else {
+        const executorch::runtime::etensor::BFloat16 bfloat16(value);
+        std::memcpy(&bits, &bfloat16, sizeof(bits));
+      }
+      std::memcpy(half_data.data() + i * sizeof(bits), &bits, sizeof(bits));
     }
     data = std::move(half_data);
   }
@@ -100,7 +110,8 @@ std::map<std::string, ValueRef> create_tensors(
     const auto& data = host_data.at(item.key());
     const std::string storage = tensor.value("storage", "buffer");
     const bool constant = storage == "constant";
-    const vkapi::ScalarType source_dtype = dtype == vkapi::kHalf && !constant
+    const vkapi::ScalarType source_dtype =
+        (dtype == vkapi::kHalf || dtype == vkapi::kBFloat16) && !constant
         ? vkapi::kFloat
         : dtype == vkapi::kInt8x4 ? vkapi::kChar
                                   : dtype;

@@ -23,7 +23,7 @@ void copy_validation_inputs(
       continue;
     }
     auto dtype = scalar_type(description.value("dtype", "float32"));
-    if (dtype == vkapi::kHalf) {
+    if (dtype == vkapi::kHalf || dtype == vkapi::kBFloat16) {
       dtype = vkapi::kFloat;
     } else if (dtype == vkapi::kInt8x4) {
       dtype = vkapi::kChar;
@@ -67,7 +67,7 @@ std::map<std::string, ValueRef> add_validation_outputs(
     }
     const ValueRef tensor = tensors.at(name);
     auto dtype = graph.dtype_of(tensor);
-    if (dtype == vkapi::kHalf) {
+    if (dtype == vkapi::kHalf || dtype == vkapi::kBFloat16) {
       dtype = vkapi::kFloat;
     } else if (dtype == vkapi::kInt8x4) {
       dtype = vkapi::kChar;

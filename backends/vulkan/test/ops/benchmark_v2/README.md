@@ -160,7 +160,8 @@ for operators, use the `tensor` object inside each argument set in `args_sweep`.
 
 - `name`: optional tensor name; defaults to `arg_<index>`
   for operators and `binding_<index>` for shaders.
-- `dtype`: `float32` (default), `float16`, `int32`, `int8`, `uint8`, or `int8x4`.
+- `dtype`: `float32` (default), `float16`, `bfloat16`, `int32`, `int8`, `uint8`,
+  or `int8x4`.
 - `storage`: operator-only; `buffer` (default), `texture2d`, `texture3d`, or
   `constant`. Constant storage passes a CPU tensor reference to the operator's
   prepack route; the operator chooses its GPU storage.
@@ -174,9 +175,9 @@ for operators, use the `tensor` object inside each argument set in `args_sweep`.
 | `data` | Initialization |
 | --- | --- |
 | `{"fill":0.12}` | Fill every logical element with a value representable by the dtype. |
-| `{"rand_uniform_float":[0,1]}` | Uniform random values for FP32/FP16 tensors. |
+| `{"rand_uniform_float":[0,1]}` | Uniform random values for FP32/FP16/BF16 tensors. |
 | `{"rand_uniform_float":[0,1],"seed":42}` | Uniform values using an explicit uint32 seed. |
-| `{"rand_uniform_int":[-8,8]}` | Uniform integers, including both bounds; also supports integer-valued FP32/FP16 inputs. Optional `seed` is supported. |
+| `{"rand_uniform_int":[-8,8]}` | Uniform integers, including both bounds; also supports integer-valued FP32/FP16/BF16 inputs. Optional `seed` is supported. |
 | `{"repeat":[1,2,3]}` | Repeat a fixed sequence to fill the tensor. |
 | `{"abs_mod":{"bounds":[-128,127],"mod":5}}` | Generate uniform integers, then take `abs(value) % mod`. |
 | `{"pad_columns":{"source":{"rand_uniform_int":[-8,8]},"valid_columns":12}}` | Generate the entire padded tensor, then zero columns after the valid prefix. |
@@ -186,10 +187,10 @@ for operators, use the `tensor` object inside each argument set in `args_sweep`.
 
 Random data is reproducible. By default, each tensor name determines its seed,
 so dtype/storage variants use the same source values and different tensors use
-independent streams. FP16 conversion happens during tensor preparation. Flat
-`data` arrays and a tensor-level `fill` field are also accepted; use either `data`
-or `fill`. The tensor's `storage: "constant"` selects CPU prepacking inputs;
-`data.fill` only controls initialization.
+independent streams. FP16 and BF16 conversion happens during tensor preparation.
+Flat `data` arrays and a tensor-level `fill` field are also accepted; use either
+`data` or `fill`. The tensor's `storage: "constant"` selects CPU prepacking
+inputs; `data.fill` only controls initialization.
 Example inputs use random initialization; `fill` is used only for output tensors.
 `row_sum` resolves named tensor dependencies, including forward references, and
 rejects missing sources, cycles, noninteger sources, and int32 overflow.
@@ -529,7 +530,7 @@ Other report containers retain their indentation.
    arrays with one value per measured batch, in execution order.
 
 Tensor values are excluded. Dtype metadata reports the actual dtype;
-`requested_dtype` appears when promotion occurs, such as FP16 to FP32 on
+`requested_dtype` appears when promotion occurs, such as FP16 or BF16 to FP32 on
 SwiftShader.
 
 ### JSON summaries (`json`)
@@ -983,16 +984,17 @@ initializers from every reference source file.
 Linear references use a tiled, vectorizable CPU GEMM with up to eight threads.
 Convolution references parallelize output work. Validation does not skip cases
 based on tensor size. Inputs are rounded to their actual GPU precision,
-including FP16 constants, before computing reference results.
+including FP16 and BF16 constants, before computing reference results.
 
 The supported comparison is `is_close`: every element must satisfy
 `abs(actual - expected) <= atol + rtol * abs(expected)`. Nonfinite values,
 shape/count mismatches, and missing/unexpected outputs fail validation.
-Defaults are FP32 `atol=rtol=1e-4`, FP16 `atol=rtol=1e-2`, and exact integer
-comparison. `validation_method` overrides either tolerance; tolerances must be
-finite and nonnegative. FP16 accumulation may require larger tolerances for
-long reductions. Reports include per-output mismatch counts and error maxima,
-and `reference_wall_time_us`, without tensor values.
+Defaults are FP32 `atol=rtol=1e-4`, FP16 `atol=rtol=1e-2`, BF16
+`atol=rtol=2e-2`, and exact integer comparison. `validation_method` overrides
+either tolerance; tolerances must be finite and nonnegative. FP16 accumulation
+may require larger tolerances for long reductions. Reports include per-output
+mismatch counts and error maxima, and `reference_wall_time_us`, without tensor
+values.
 
 Each output also reports `mean_abs_error`, `rms_error`, and `reference_rms` over
 its finite elements. RMS error is a stable measure of precision: comparing
