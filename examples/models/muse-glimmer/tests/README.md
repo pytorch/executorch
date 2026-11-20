@@ -21,8 +21,11 @@ ctest --test-dir cmake-out/examples/models/muse-glimmer-batching \
 ```
 
 The tiny PTEs cover rejection, cache lifecycle, packed owners, and legacy
-artifacts against eager references. A vendored stateless official reference
-separately checks DFlash2 model semantics, including sliding-window boundaries. Native sampling checks target-only,
+artifacts against eager references. Seeded continuations are compared across
+prompt chunking and mixed prefill/decode batches for both draft formats.
+Input-sensitive continuations also check shared-payload slices against target-only decoding.
+A vendored stateless official reference separately checks DFlash2 model semantics,
+including sliding-window boundaries. Native sampling checks target-only,
 original DFlash, and DFlash2 at temperature 0.8 with top-k/top-p filtering;
 a separate temperature control detects ignored settings. The MLX CI job runs
 these fixtures; backend cache and primitive suites cover window semantics and TF32.

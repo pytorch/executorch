@@ -280,7 +280,7 @@ def export_fixture(
         draft.candidate_selector = RejectAt(draft.candidate_selector, reject_at)
 
     directory.mkdir(parents=True, exist_ok=True)
-    if not controlled:
+    if not controlled and not legacy:
         write_draft_reference(directory, target, draft, config, draft_config)
 
     original_constants = export_dflash._dflash_constant_methods
@@ -315,5 +315,6 @@ if __name__ == "__main__":
         export_fixture(args.output / f"reject_{reject_at}", reject_at)
     export_fixture(args.output / "legacy", -1, legacy=True)
     export_fixture(args.output / "random", -1, controlled=False)
+    export_fixture(args.output / "random_legacy", -1, legacy=True, controlled=False)
 
     export_quantized_fixture(args.output / "quantized")

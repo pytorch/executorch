@@ -91,9 +91,11 @@ void check_cycles(const std::string& path, int proposals, int rejected) {
   while (position + static_cast<int>(tokens.size()) <= 32) {
     const int end = position + static_cast<int>(tokens.size());
     auto output = forward(*executor, *sid, position, tokens);
-    if (end <= 28) {
+    const bool input_anchor = position > 0 && tokens.size() == 1;
+    if (end - static_cast<int>(input_anchor) <= 28) {
       require(
-          output.size() == expected, "wrong accepted prefix/correction count");
+          output.size() == expected - static_cast<size_t>(input_anchor),
+          "wrong accepted prefix/correction count");
       ++speculative_cycles;
     } else {
       require(output.size() == 1, "context-tail fallback did not run");
@@ -132,7 +134,7 @@ void check_packed_replay(const std::string& path) {
         "packed owner mismatch");
   }
   // Discard a speculative suffix as a token-budget stop would, then resume.
-  require(forward(*executor, *a, 4, {7}).size() == 5, "rewind/replay failed");
+  require(forward(*executor, *a, 4, {7}).size() == 4, "rewind/replay failed");
   const auto fork = executor->clone(*a, 8);
   require(fork.has_value(), "prefix clone failed");
   const auto source_output = forward(*executor, *a, 8, {7});
@@ -141,12 +143,63 @@ void check_packed_replay(const std::string& path) {
       "clone continuation differs");
   executor->close_session(*a);
   require(
-      forward(*executor, *b, 7, {7}).size() == 5,
+      forward(*executor, *b, 7, {7}).size() == 4,
       "closing another owner changed state");
 }
 
-void check_temperature(const std::string& path, bool speculative) {
+void check_input_anchors(const std::string& path) {
+  auto executor = create(path, 3);
+  const auto a = executor->open_session(), b = executor->open_session();
+  require(a.has_value() && b.has_value(), "anchor session allocation failed");
+  executor->set_sampling(*a, {}, 42);
+  executor->set_sampling(*b, {}, 42);
+  b::BatchInput batch;
+  batch.inputs = {input(*a, 0, {1, 2, 3}), input(*b, 0, {4, 5})};
+  for (auto& item : batch.inputs) {
+    item.produce_output = false;
+  }
+  b::BatchOutput output;
+  require(executor->execute(batch, output), "anchor prefill failed");
+  require(!output.outputs[0] && !output.outputs[1], "prefill emitted tokens");
+
+  batch.inputs = {input(*a, 2, {99, 5}), input(*b, 2, {6})};
+  batch.inputs[0].offset = 1;
+  batch.inputs[0].size = 1;
+  require(executor->execute(batch, output), "packed input anchors failed");
+  for (const auto& result : output.outputs) {
+    require(
+        result && result->tokens == Tokens(4, 7),
+        "input anchor was emitted or verification lost a prediction");
+  }
+
+  const auto fork = executor->clone(*a, 7);
+  require(fork.has_value(), "anchor prefix clone failed");
+  executor->set_sampling(*fork, {}, 42);
+  batch.inputs = {
+      input(*a, 7, {8}), input(*fork, 7, {8}), input(*b, 6, {3, 4})};
+  batch.inputs[2].produce_output = false;
+  require(
+      executor->execute(batch, output), "mixed anchor/prefill batch failed");
+  require(
+      output.outputs[0] && output.outputs[1] && !output.outputs[2] &&
+          output.outputs[0]->tokens == Tokens(5, 7) &&
+          output.outputs[1]->tokens == output.outputs[0]->tokens,
+      "mixed batch fallback changed a cloned continuation");
+  executor->close_session(*a);
+  executor->close_session(*b);
+  require(
+      forward(*executor, *fork, 7, {5}) == Tokens(5, 7),
+      "empty-context fallback changed after rewind");
+  executor->close_session(*fork);
+}
+
+void check_temperature(
+    const std::string& path,
+    bool speculative,
+    bool input_anchor = false) {
   auto executor = create(path, 3, speculative);
+  const size_t maximum = speculative ? (input_anchor ? 4 : 5) : 1;
+  const size_t minimum = speculative && !input_anchor ? 2 : 1;
   for (int variant = 0; variant < 4; ++variant) {
     const int trials = variant == 3 ? 128 : 1024;
     b::SamplingParams sampling;
@@ -182,6 +235,15 @@ void check_temperature(const std::string& path, bool speculative) {
         batch.inputs.push_back(input(*sid, 0, {1, 2}));
       }
       b::BatchOutput output;
+      if (input_anchor) {
+        for (auto& item : batch.inputs) {
+          item.produce_output = false;
+        }
+        require(executor->execute(batch, output), "temperature prefill failed");
+        for (size_t owner = 0; owner < sessions.size(); ++owner) {
+          batch.inputs[owner] = input(sessions[owner], 2, {5});
+        }
+      }
       require(executor->execute(batch, output), "temperature execution failed");
       require(output.outputs.size() == 4, "temperature batch lost an owner");
       for (size_t owner = 0; owner < 4; ++owner) {
@@ -189,8 +251,7 @@ void check_temperature(const std::string& path, bool speculative) {
             output.outputs[owner].has_value(), "missing temperature output");
         const auto& tokens = output.outputs[owner]->tokens;
         require(
-            speculative ? tokens.size() >= 2 && tokens.size() <= 5
-                        : tokens.size() == 1,
+            tokens.size() >= minimum && tokens.size() <= maximum,
             "unexpected temperature output length");
         for (size_t position = 0; position < tokens.size(); ++position) {
           const auto token = tokens[position];
@@ -204,28 +265,30 @@ void check_temperature(const std::string& path, bool speculative) {
           ++draws[position];
         }
         if (speculative) {
-          for (size_t position = 1; position + 1 < tokens.size(); ++position) {
+          for (size_t position = input_anchor ? 0 : 1;
+               position + 1 < tokens.size();
+               ++position) {
             require(
                 tokens[position] == 7,
                 "accepted draft proposal was not greedy");
           }
-          if (tokens.size() < 5) {
+          if (tokens.size() < maximum) {
             require(
                 tokens.back() != 7, "correction sampled the rejected proposal");
           }
-          rejections += tokens.size() == 2;
+          rejections += tokens.size() == minimum;
         }
         executor->close_session(sessions[owner]);
       }
     }
     if (speculative && variant != 3) {
       require(
-          draws[4] > 50 && rejections > 50,
+          draws[maximum - 1] > 50 && rejections > 50,
           "temperature test missed acceptance or rejection");
     }
     // Constant target logits make every reached position independently have p,
     // including anchors, later rejection corrections, and all-accepted bonuses.
-    for (int position = 0; position < (speculative ? 5 : 1); ++position) {
+    for (size_t position = 0; position < maximum; ++position) {
       require(
           draws[position] > 0, "temperature test missed an output position");
       for (size_t token = 0; token < 3; ++token) {
@@ -239,15 +302,87 @@ void check_temperature(const std::string& path, bool speculative) {
       }
     }
     std::cout << "temperature=" << sampling.temperature
-              << " speculative=" << speculative << " variant=" << variant
+              << " speculative=" << speculative
+              << " input_anchor=" << input_anchor << " variant=" << variant
               << " anchor_counts=" << counts[0][0] << ',' << counts[0][1] << ','
-              << counts[0][2] << " bonuses=" << draws[4]
+              << counts[0][2] << " bonuses=" << draws[maximum - 1]
               << " first_rejections=" << rejections << '\n';
   }
 }
 
-std::vector<Tokens>
-generate(b::Executor& executor, const std::vector<Tokens>& prompts, int count) {
+void check_sampling_schedules(const std::string& path) {
+  for (int filter = 0; filter < 3; ++filter) {
+    for (uint64_t seed : {0, 1, 42, 123}) {
+      Tokens expected;
+      for (int schedule = 0; schedule < 4; ++schedule) {
+        auto executor = create(path, 3);
+        const auto sid = executor->open_session();
+        require(sid.has_value(), "sampling schedule session failed");
+        b::SamplingParams sampling;
+        sampling.temperature = 0.8f;
+        sampling.top_k = filter == 1 ? 2 : 0;
+        sampling.top_p = filter == 2 ? 0.7f : 1.0f;
+        executor->set_sampling(*sid, sampling, seed);
+        int position = 0;
+        Tokens pending{1, 2, 5}, generated;
+        b::BatchOutput output;
+        if (schedule == 1 || schedule == 2) {
+          auto prefix = input(*sid, 0, {1, 2});
+          prefix.produce_output = false;
+          b::BatchInput prefill;
+          prefill.inputs = {prefix};
+          require(executor->execute(prefill, output), "chunked prefill failed");
+          position = 2;
+          pending = {5};
+        }
+        bool first = true;
+        while (generated.size() < 12) {
+          b::BatchInput batch;
+          batch.inputs = {input(*sid, position, pending)};
+          size_t row = 0;
+          if (first && schedule == 2) {
+            const auto other = executor->open_session();
+            require(other.has_value(), "mixed sampling session failed");
+            auto prefix = input(*other, 0, {6, 4});
+            prefix.produce_output = false;
+            batch.inputs.push_back(prefix);
+          } else if (first && schedule == 3) {
+            auto prefix = input(*sid, 0, {1, 2});
+            prefix.produce_output = false;
+            batch.inputs = {prefix, input(*sid, 2, {5})};
+            row = 1;
+          }
+          require(executor->execute(batch, output), "sampling schedule failed");
+          require(output.outputs[row].has_value(), "missing sampled output");
+          const auto& tokens = output.outputs[row]->tokens;
+          require(!tokens.empty(), "empty sampled output");
+          position += static_cast<int>(pending.size() + tokens.size() - 1);
+          pending = {tokens.back()};
+          generated.insert(generated.end(), tokens.begin(), tokens.end());
+          first = false;
+        }
+        generated.resize(12);
+        if (schedule == 0) {
+          expected = generated;
+        } else {
+          if (generated != expected) {
+            std::cerr << "seed=" << seed << " filter=" << filter
+                      << " schedule=" << schedule << '\n';
+          }
+          require(
+              generated == expected,
+              "seeded continuation depends on batching or prompt chunking");
+        }
+      }
+    }
+  }
+}
+
+std::vector<Tokens> generate(
+    b::Executor& executor,
+    const std::vector<Tokens>& prompts,
+    int count,
+    bool slice_prompts = false) {
   std::vector<b::SessionId> sessions;
   std::vector<int> positions(prompts.size(), 0);
   std::vector<Tokens> pending = prompts, completions(prompts.size());
@@ -257,12 +392,31 @@ generate(b::Executor& executor, const std::vector<Tokens>& prompts, int count) {
     executor.set_sampling(*sid, {}, 42);
     sessions.push_back(*sid);
   }
+  b::BatchInput sliced;
+  if (slice_prompts) {
+    for (size_t i = 0; i < prompts.size(); ++i) {
+      auto prefix = input(sessions[i], 0, prompts[i]);
+      prefix.produce_output = false;
+      --prefix.size;
+      sliced.inputs.push_back(prefix);
+    }
+    b::BatchOutput output;
+    require(executor.execute(sliced, output), "sliced prefill failed");
+    for (auto& suffix : sliced.inputs) {
+      suffix.produce_output = true;
+      suffix.offset = suffix.size;
+      suffix.size = 1;
+    }
+  }
   while (true) {
     b::BatchInput batch;
     std::vector<size_t> active;
     for (size_t i = 0; i < prompts.size(); ++i) {
       if (completions[i].size() < static_cast<size_t>(count)) {
-        batch.inputs.push_back(input(sessions[i], positions[i], pending[i]));
+        batch.inputs.push_back(
+            slice_prompts && completions[i].empty()
+                ? sliced.inputs[i]
+                : input(sessions[i], positions[i], pending[i]));
         active.push_back(i);
       }
     }
@@ -335,6 +489,9 @@ void check_random_continuations(
     require(
         generate(*executor, prompts, 20) == expected,
         "reset/replay changed random continuation");
+    require(
+        generate(*executor, prompts, 20, true) == expected,
+        "sliced input-anchor continuation differs from target-only");
 
     const auto source = executor->open_session();
     require(source.has_value(), "replay session allocation failed");
@@ -565,6 +722,8 @@ int main(int argc, char** argv) {
   try {
     require(argc == 2, "usage: muse_glimmer_mlx_dflash_test FIXTURE_DIRECTORY");
     const std::string root = argv[1];
+    check_sampling_schedules(root + "/reject_-1/model.pte");
+    check_sampling_schedules(root + "/legacy/model.pte");
     for (int rejected : {-1, 0, 1, 2}) {
       const auto path =
           root + "/reject_" + std::to_string(rejected) + "/model.pte";
@@ -573,14 +732,19 @@ int main(int argc, char** argv) {
       }
     }
     check_packed_replay(root + "/reject_-1/model.pte");
+    check_input_anchors(root + "/reject_-1/model.pte");
+    check_input_anchors(root + "/legacy/model.pte");
     check_draft_numerics(root + "/random");
     check_random_continuations(root + "/random/model.pte", {1, 2, 3});
+    check_random_continuations(root + "/random_legacy/model.pte", {1, 2, 3});
     check_draft_numerics(root + "/quantized");
     check_random_continuations(root + "/quantized/model.pte", {1, 7, 15});
     check_cycles(root + "/legacy/model.pte", 3, -1);
     check_temperature(root + "/reject_-1/model.pte", false);
     check_temperature(root + "/reject_-1/model.pte", true);
     check_temperature(root + "/legacy/model.pte", true);
+    check_temperature(root + "/reject_-1/model.pte", true, true);
+    check_temperature(root + "/legacy/model.pte", true, true);
     auto target = create(root + "/reject_-1/model.pte", 0, false);
     const auto sid = target->open_session();
     require(sid.has_value(), "target session allocation failed");
