@@ -396,6 +396,10 @@ class GgmlExecutable final : public EngineExecutable {
           *std::ranges::find(inputs_, check.input_id, &InputSlot::id),
           check.rows);
     }
+    for (const ValueId id : instance.exact_integer_checks) {
+      check_exact_integer_bytes(
+          *std::ranges::find(inputs_, id, &InputSlot::id));
+    }
     for (Upload& upload : instance.uploads) {
       if (upload.input) {
         const InputSlot& input = inputs_.at(*upload.input);
