@@ -68,7 +68,7 @@ python examples/espressif/export_espnn_test_programs.py \
 espnn_ops=$(tr -d '\n' < "${build_dir}/espnn-tests/operators.txt" \
     | tr ',' '\n' | grep -v '^quantized_decomposed::' | paste -sd, -)
 if [[ "${espnn_kernels}" == optimized ]]; then
-    espnn_ops="${espnn_ops},aten::sin.out"
+    espnn_ops="${espnn_ops},aten::sin.out,aten::relu.out,aten::mul.Scalar_out"
 fi
 
 cmake --preset esp-baremetal -G Ninja -B "${build_dir}/runtime" \
