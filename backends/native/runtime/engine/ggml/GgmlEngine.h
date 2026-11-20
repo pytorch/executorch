@@ -65,6 +65,13 @@ struct GgmlEngineOptions {
   // as eager does, at a NaN key map and a second argsort per topk.
   // Ops: topk.
   bool exact_topk_for_testing = false;
+  // Testing only. Default (false): tanh GELU is ggml_gelu, as in llama.cpp;
+  // ggml-cpu reads it from an F16 table, a few 1e-4 off eager in F32.
+  // Set: the CPU builds tanh GELU from exact ops, x * (1 + tanh(c * (x +
+  // 0.044715 x^3))) / 2, as eager does, at five more kernels per GELU.
+  // Ops: gelu with approximate="tanh"; CPU only (GPU backends evaluate
+  // ggml_gelu in F32 either way).
+  bool exact_gelu_for_testing = false;
 };
 
 class GgmlEngineContext;

@@ -77,12 +77,30 @@ void GraphBuilder::lower_gelu(const Node& node) {
       approximate->arg.kind() == ArgKind::String &&
       approximate->arg.as_string().value == "tanh";
   ggml_context* ctx = instance_.context.get();
-  set_single_output(
-      node,
-      TensorRef{
-          tanh ? ggml_gelu(ctx, input.tensor)
-               : ggml_gelu_erf(ctx, input.tensor),
-          input.sizes});
+  if (!tanh) {
+    set_single_output(
+        node, TensorRef{ggml_gelu_erf(ctx, input.tensor), input.sizes});
+    return;
+  }
+  // ggml_gelu, as llama.cpp: ggml-cpu reads it from an F16 table, a few 1e-4
+  // off PyTorch's in F32, and GPU backends evaluate the formula in F32 in one
+  // kernel. With exact_gelu_for_testing the CPU builds it from exact ops:
+  // x * (1 + tanh(c * (x + 0.044715 x^3))) / 2 with c = sqrt(2 / pi).
+  if (gpu_ || !exact_gelu_) {
+    set_single_output(
+        node, TensorRef{ggml_gelu(ctx, input.tensor), input.sizes});
+    return;
+  }
+  constexpr float kSqrt2OverPi = 0.7978845608028654f;
+  ggml_tensor* x = contiguous(as_f32(input.tensor));
+  ggml_tensor* cube = ggml_mul(ctx, x, ggml_mul(ctx, x, x));
+  ggml_tensor* inner = ggml_scale(
+      ctx, ggml_add(ctx, x, ggml_scale(ctx, cube, 0.044715f)), kSqrt2OverPi);
+  ggml_tensor* half_one_plus_tanh =
+      ggml_scale_bias(ctx, ggml_tanh(ctx, inner), 0.5f, 0.5f);
+  set_as_output_type(
+      output_ids(node).at(0),
+      TensorRef{ggml_mul(ctx, x, half_one_plus_tanh), input.sizes});
 }
 
 void GraphBuilder::lower_cast(const Node& node) {
