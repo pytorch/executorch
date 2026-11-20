@@ -136,9 +136,11 @@ class MLXBatchedCacheTest : public ::testing::TestWithParam<std::string> {
       for (int h = 0; h < H; ++h) {
         for (size_t i = begin; i < begin + count; ++i) {
           for (int d = 0; d < D; ++d) {
-            values.push_back(std::sin(
-                static_cast<float>(prompt[i]) * 0.37f +
-                static_cast<float>(h) * 0.41f + static_cast<float>(d) * 0.19f));
+            values.push_back(
+                std::sin(
+                    static_cast<float>(prompt[i]) * 0.37f +
+                    static_cast<float>(h) * 0.41f +
+                    static_cast<float>(d) * 0.19f));
           }
         }
       }
@@ -711,9 +713,18 @@ TEST_P(MLXBatchedCacheRegistryTest, GeometrySelectsPolicies) {
   for (int layer = 0; layer < 2; ++layer) {
     std::vector<float> means;
     if (block >= 0) {
-      // Uniform, noncausal attention over history + block; layer 1 retains
-      // only context values 3 and 4, but still attends to the entire block.
-      means.assign(queries, (static_cast<float>(n) + (layer ? 3 : 1)) / 2);
+      for (int row = 0; row < queries; ++row) {
+        const int query_position = n - queries + row;
+        float sum = 0;
+        int visible = 0;
+        for (int key_position = 0; key_position < n; ++key_position) {
+          if (!layer || std::abs(query_position - key_position) < 2) {
+            sum += key_position + 1;
+            ++visible;
+          }
+        }
+        means.push_back(sum / visible);
+      }
     } else {
       means = layer ? std::vector<float>{1, 1.5f, 2.5f, 3.5f}
                     : std::vector<float>{1, 1.5f, 2, 2.5f};
@@ -759,6 +770,76 @@ INSTANTIATE_TEST_SUITE_P(
     BlockSizes,
     MLXBatchedCacheRegistryTest,
     ::testing::Values(-1, 0, 1, 2));
+
+TEST(MLXDFlashWindowTest, AbsolutePositionsAcrossRingWraps) {
+  using namespace ::mlx::core;
+  for (int window : {1, 3, 7}) {
+    for (int block : {1, 4, 16}) {
+      SCOPED_TRACE(
+          ::testing::Message() << "window=" << window << " block=" << block);
+      auto args = ring_config(
+          32, window, 2, 1, 128, static_cast<int>(ScalarType::Float));
+      args.geometry.dflash_block_size = block;
+      auto owner = cache::CacheFactory::global().build(
+          kMLXBackendId,
+          cache::kind::kBatchedSequence,
+          args.geometry,
+          args.config);
+      ASSERT_TRUE(owner.ok());
+      auto* batch = (*owner)->as<cache::BatchControl>();
+      auto* attention = (*owner)->as<MLXCache>();
+      const auto id = batch->seq_new();
+      ASSERT_TRUE(id);
+      std::vector<float> history;
+      for (int context : {0, 1, 2, 2, 2, 2, 0}) {
+        const int start = static_cast<int>(history.size());
+        std::vector<float> incoming;
+        for (int i = 0; i < context; ++i) {
+          incoming.push_back(static_cast<float>(start + i + 1) / 16);
+          history.push_back(incoming.back());
+        }
+        for (int i = 0; i < block; ++i) {
+          incoming.push_back(static_cast<float>(32 + start + i) / 16);
+        }
+        auto all_values = history;
+        all_values.insert(
+            all_values.end(), incoming.begin() + context, incoming.end());
+        std::vector<float> expected;
+        for (int row = 0; row < block; ++row) {
+          const int query_position = static_cast<int>(history.size()) + row;
+          double sum = 0;
+          int visible = 0;
+          for (int key_position = 0;
+               key_position < static_cast<int>(all_values.size());
+               ++key_position) {
+            if (std::abs(query_position - key_position) < window) {
+              sum += all_values[key_position];
+              ++visible;
+            }
+          }
+          expected.push_back(static_cast<float>(sum / visible));
+        }
+        const int n = context + block;
+        std::vector<int32_t> positions(n);
+        std::iota(positions.begin(), positions.end(), start);
+        ASSERT_TRUE(batch->declare_step(std::vector<int32_t>(n, *id)));
+        const auto out = attention->attend(
+            0,
+            positions,
+            zeros({1, 1, block, 128}),
+            zeros({1, 1, n, 128}),
+            broadcast_to(array(incoming.data(), {1, 1, n, 1}), {1, 1, n, 128}),
+            1,
+            {});
+        const auto want = broadcast_to(
+            array(expected.data(), {1, 1, block, 1}), {1, 1, block, 128});
+        EXPECT_TRUE(allclose(out, want, 1e-5f))
+            << "context end=" << history.size();
+        EXPECT_EQ(batch->pos(*id), static_cast<int>(history.size()));
+      }
+    }
+  }
+}
 
 class MLXDFlashBatchedCacheTest
     : public ::testing::TestWithParam<std::tuple<std::string, int, int>> {
@@ -819,27 +900,40 @@ class MLXDFlashBatchedCacheTest
     const int n = context + block();
     std::vector<std::vector<float>> incoming;
     std::vector<int> starts;
-    std::vector<float> means;
+    std::vector<std::vector<float>> means;
     for (auto* row : rows) {
       starts.push_back(static_cast<int>(row->history.size()));
       std::vector<float> values;
       for (int p = 0; p < context; ++p) {
         values.push_back(
-            100 * (row->id + 1) + 10 * generation_ + starts.back() + p);
+            (100 * (row->id + 1) + 10 * generation_ + starts.back() + p) /
+            1024.0f);
       }
       row->history.insert(row->history.end(), values.begin(), values.end());
-      // Only persistent context enters the host oracle's history.
-      const int retained = window()
-          ? std::min(window(), static_cast<int>(row->history.size()))
-          : static_cast<int>(row->history.size());
-      float sum = std::accumulate(
-          row->history.end() - retained, row->history.end(), 0.0f);
+      auto history_and_block = row->history;
       for (int p = 0; p < block(); ++p) {
-        const float temporary = 1000 + 100 * generation_ + 10 * row->id + p;
+        const float temporary =
+            (1000 + 100 * generation_ + 10 * row->id + p) / 1024.0f;
         values.push_back(temporary);
-        sum += temporary;
+        history_and_block.push_back(temporary);
       }
-      means.push_back(sum / (retained + block()));
+      std::vector<float> row_means;
+      for (int p = 0; p < std::max(block(), 1); ++p) {
+        const int query_position =
+            static_cast<int>(row->history.size()) + (block() ? p : -1);
+        double sum = 0;
+        int visible = 0;
+        for (int key_position = 0;
+             key_position < static_cast<int>(history_and_block.size());
+             ++key_position) {
+          if (!window() || std::abs(query_position - key_position) < window()) {
+            sum += history_and_block[key_position];
+            ++visible;
+          }
+        }
+        row_means.push_back(static_cast<float>(sum / visible));
+      }
+      means.push_back(std::move(row_means));
       incoming.push_back(std::move(values));
     }
     ++generation_;
@@ -854,7 +948,7 @@ class MLXDFlashBatchedCacheTest
         positions.push_back(starts[r] + p);
         values.push_back(incoming[r][p]);
         if (block() ? p >= context : p == n - 1) {
-          expected.push_back(means[r]);
+          expected.push_back(means[r][block() ? p - context : 0]);
         }
       }
     }
@@ -977,6 +1071,9 @@ TEST_P(MLXDFlashBatchedCacheTest, InterleavedQueriesKeepTheirOwnWeights) {
         queries.push_back(query);
         float weighted = 0, weights = 0;
         for (int j = 0; j < n; ++j) {
+          if (window() && std::abs(p - j) >= window()) {
+            continue;
+          }
           const float weight = std::exp(query * 0.25f * (j + 1) * (r + 1));
           weighted += weight * (100 * r + 7 * j + 1);
           weights += weight;
