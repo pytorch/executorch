@@ -38,13 +38,13 @@ from executorch.backends.cuda.triton.kernels.conv.core.common import (
 )
 from executorch.backends.cuda.triton.routing import (
     Candidate,
+    is_static,
     REGULAR_LOWERING,
     regular_only,
     ReplacementError,
     ReplacementPlan,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
-from torch._subclasses.fake_tensor import FakeTensor
 from torch.fx import Node
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -83,13 +83,6 @@ def regular_lowering_gap(target: Any, call: ConvCall) -> Optional[str]:
     return None
 
 
-def _is_static(t: Optional[torch.Tensor]) -> bool:
-    return t is None or (
-        isinstance(t, FakeTensor)
-        and all(type(s) is int for s in (*t.shape, *t.stride(), t.storage_offset()))
-    )
-
-
 @dataclasses.dataclass(frozen=True)
 class _Support:
     # The first template that runs the call, and the first that is also
@@ -102,7 +95,7 @@ class _Support:
 
 def _check(node: Node, call: ConvCall) -> _Support:
     expected = node.meta.get("val")
-    if not all(_is_static(t) for t in (call.input, call.weight, call.bias, expected)):
+    if not all(is_static(t) for t in (call.input, call.weight, call.bias, expected)):
         return _Support(reason="symbolic shapes or missing fake tensors")
     if call.input.device.type != "cuda":
         return _Support(reason=f"input on {call.input.device}")

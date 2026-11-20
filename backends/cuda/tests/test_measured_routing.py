@@ -205,6 +205,39 @@ class WorkerWatchdogTest(unittest.TestCase):
         self.assertIsNone(self.wait(script))
 
 
+class SpecTest(unittest.TestCase):
+    """What a measurement describes of a recorded call."""
+
+    def test_an_input_the_replacement_takes_twice_is_unmeasurable(self):
+        from executorch.backends.cuda.triton import measured_routing, routing
+        from torch._subclasses.fake_tensor import FakeTensorMode
+
+        graph = torch.fx.Graph()
+        x = graph.placeholder("x")
+        with FakeTensorMode():
+            x.meta["val"] = torch.empty(4, 4)
+        node = graph.call_function(_TOY, (x, 1.0))
+        node.meta["val"] = x.meta["val"]
+        for label, args, kwargs in (
+            ("an argument and a keyword", (x,), {"other": x}),
+            ("two keywords", (), {"self": x, "other": x}),
+        ):
+            plan = routing.ReplacementPlan(
+                "toy",
+                (
+                    routing.Candidate(routing.REGULAR_LOWERING),
+                    routing.Candidate("toy", None, "toy", _TOY, args, kwargs),
+                ),
+                "toy",
+                signature="add(x, x)",
+                measure=True,
+            )
+            with self.subTest(label), self.assertRaisesRegex(
+                measured_routing.Unmeasurable, "passed more than once"
+            ):
+                measured_routing._spec(node, plan)
+
+
 @unittest.skipUnless(torch.cuda.is_available(), "CUDA required")
 class MeasureTest(unittest.TestCase):
     """What the worker reports for one call, with the compiles given."""
@@ -372,7 +405,6 @@ class ChoiceTest(_PassTest):
         self.results = lambda spec: _entry()
         self.worker = mock.Mock(side_effect=self.run_worker)
         for patch in (
-            mock.patch.dict(replacement_pass.EDGE_TO_TRITON_KERNELS, {self.add: _TOY}),
             mock.patch.dict(replacement_pass.PLANNERS, {self.add: self.plan}),
             mock.patch.object(measured_routing, "_run_worker", self.worker),
             mock.patch.object(measured_routing, "_capable_devices", set()),
@@ -931,10 +963,6 @@ class ProbeTest(_PassTest):
         sort = exir_ops.edge.aten.sort.stable
         for patch in (
             mock.patch.object(conv_routing, "regular_lowering_gap", return_value=None),
-            mock.patch.dict(
-                replacement_pass.EDGE_TO_TRITON_KERNELS,
-                {sort: torch.ops.aten.sort.stable},
-            ),
             mock.patch.dict(replacement_pass.PLANNERS, {sort: sort_plan}),
         ):
             patch.start()
