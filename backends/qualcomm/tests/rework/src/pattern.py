@@ -37,6 +37,8 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_PASS_ACTIVATE_KEY,
     QCOM_QUANT_ATTRS,
     QCOM_REQUANTIZE,
+    QCOM_SCALE,
+    QCOM_ZERO_POINT,
 )
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -282,6 +284,16 @@ class AnnotateUnbind:
         def forward(self, x):
             return torch.unbind(x, dim=0)
 
+    class _Constant(torch.nn.Module):
+        # quantized flows dequantize the constant straight from its folded data
+        def __init__(self):
+            super().__init__()
+            self.table = torch.tensor([[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]])
+
+        def forward(self, x):
+            a, b = torch.unbind(self.table, dim=0)
+            return x * a + b
+
     @staticmethod
     @unpack_pass_fixtures
     def test(
@@ -291,25 +303,35 @@ class AnnotateUnbind:
         assertions: Assertions,
         pass_pipeline: PassPipeline,
     ):
-        module = AnnotateUnbind._Basic()
-        inputs = (torch.randn(4, 4),)
         target_pass = _passes.AnnotateUnbind
         _ = assertions
-        gm = pass_pipeline.lower_edge_ep(
-            module=module,
-            sample_input=inputs,
-            backend_type=backend_type,
-            compile_spec=compile_spec,
-            target_pass=target_pass,
-            quantizer=quantizer,
-        ).graph_module
-        partitions = get_source_partitions(gm.graph, target_pass._SOURCE_OPS)
-        nodes = list(partitions.values())[0][0].nodes
-        # TODO: update this once lpai starts to support unpack
-        if backend_type != QnnExecuTorchBackendType.kLpaiBackend:
-            assert all(
-                QCOM_QUANT_ATTRS in n.meta for n in nodes
-            ), "unbind partition nodes should have QCOM_QUANT_ATTRS"
+        for module in (AnnotateUnbind._Basic(), AnnotateUnbind._Constant()):
+            gm = pass_pipeline.lower_edge_ep(
+                module=module,
+                sample_input=(torch.randn(4, 4),),
+                backend_type=backend_type,
+                compile_spec=compile_spec,
+                target_pass=target_pass,
+                quantizer=quantizer,
+            ).graph_module
+            # TODO: update this once lpai starts to support unpack
+            if backend_type != QnnExecuTorchBackendType.kLpaiBackend:
+                partitions = get_source_partitions(gm.graph, target_pass._SOURCE_OPS)
+                partition = list(partitions.values())[0][0]
+                assert all(
+                    QCOM_QUANT_ATTRS in n.meta for n in partition.nodes
+                ), "unbind partition nodes should have QCOM_QUANT_ATTRS"
+                if isinstance(module, AnnotateUnbind._Constant):
+                    # without folding this case would be the same as _Basic
+                    dq = partition.input_nodes[0]
+                    assert (
+                        dq.target in dq_ops and dq.args[0].target not in q_ops
+                    ), "the constant should feed its dq directly"
+                    quant_attrs = partition.nodes[0].meta[QCOM_QUANT_ATTRS]
+                    assert [
+                        quant_attrs[QCOM_SCALE],
+                        quant_attrs[QCOM_ZERO_POINT],
+                    ] == list(dq.args[1:3]), "unbind qparams should match its dq"
 
 
 class BuildQuantIo:
@@ -4186,6 +4208,52 @@ class I64toI32:
         assertions.assert_target_count(
             gm, exir_ops.edge.aten._to_copy.default, expected_casts
         )
+
+
+class InsertCastForFpActQuantizedWeight:
+    class _Conv2d(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            # 3x3: the HTP rejects it under fp16a8w, so it must stay valid on CPU
+            self.conv = torch.nn.Conv2d(8, 16, kernel_size=3, padding=1)
+
+        def forward(self, x):
+            return self.conv(x)
+
+    @staticmethod
+    @unpack_pass_fixtures
+    def test(
+        compile_spec,
+        backend_type: QnnExecuTorchBackendType,
+        pass_pipeline: PassPipeline,
+    ):
+        from executorch.backends.qualcomm.export_utils import make_quantizer
+        from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
+
+        module = InsertCastForFpActQuantizedWeight._Conv2d()
+        bias = module.conv.bias.detach().to(torch.float16)
+        ep = pass_pipeline.lower_edge_ep(
+            module=module,
+            sample_input=(torch.randn(1, 8, 16, 16),),
+            backend_type=backend_type,
+            compile_spec=compile_spec,
+            target_pass=_passes.InsertCastForFpActQuantizedWeight,
+            quantizer=make_quantizer(
+                quant_dtype=QuantDtype.use_fp16a8w, backend=backend_type
+            ),
+        )
+        (conv,) = [
+            n
+            for n in ep.graph.nodes
+            if n.target == exir_ops.edge.aten.convolution.default
+        ]
+        weight_dq, bias_node = conv.args[1], conv.args[2]
+        assert weight_dq.target in dq_ops
+        assert weight_dq.kwargs.get("out_dtype") == torch.float16
+        assert weight_dq.meta["val"].dtype == torch.float16
+        assert bias_node.meta["val"].dtype == torch.float16
+        bias_name = ep.graph_signature.inputs_to_buffers[bias_node.name]
+        assert torch.equal(ep.state_dict[bias_name], bias)
 
 
 class InsertIOQDQ:

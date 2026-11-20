@@ -11,15 +11,19 @@ import platform
 import subprocess
 import sys
 
-from install_utils import determine_torch_url, is_intel_mac_os, python_is_compatible
+from install_utils import (
+    determine_torch_url,
+    ensure_pip,
+    is_intel_mac_os,
+    python_is_compatible,
+)
 
 # The pip repository that hosts nightly torch packages.
 # This will be dynamically set based on CUDA availability and CUDA backend enabled/disabled.
 TORCH_URL_BASE = "https://download.pytorch.org/whl/test"
 TORCHAO_URL_BASE = "https://download.pytorch.org/whl/nightly"
 TORCHAO_STABLE_VERSION = "0.18.0"
-TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20261103"
-CU134_TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20261103"
+TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20261118"
 # Newest rocm7.2 TorchAO nightly with compiled kernels (cp310-abi3); later ROCm nightlies
 # are py3-none-any only, and none are published after 0.19.0.dev20260831.
 ROCM_TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20260805"
@@ -67,7 +71,7 @@ def cu134_requirements(torch_url, include_domains=False):
         torchao_variant = (
             "cpu" if platform.machine().lower() in ("aarch64", "arm64") else "cu134"
         )
-        packages.append(f"torchao=={CU134_TORCHAO_NIGHTLY_VERSION}+{torchao_variant}")
+        packages.append(f"torchao=={TORCHAO_NIGHTLY_VERSION}+{torchao_variant}")
     return packages
 
 
@@ -284,6 +288,7 @@ def main(args):
 if __name__ == "__main__":
     # Before doing anything, cd to the directory containing this script.
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
+    ensure_pip()
     if not python_is_compatible():
         sys.exit(1)
     main(sys.argv[1:])

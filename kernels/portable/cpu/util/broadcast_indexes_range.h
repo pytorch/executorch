@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <iterator>
 #include <tuple>
+#include <utility>
 
 #include <executorch/kernels/portable/cpu/util/delinearize_index.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
@@ -78,9 +79,43 @@ class BroadcastIndexesIterator {
     }
   }
 
+  template <typename... Args>
+  explicit BroadcastIndexesIterator(
+      ArrayRef<Tensor::SizesType> output_sizes,
+      const Args&... args)
+      : output_dim_or_zero_if_no_broadcasting_(
+            !support_noncontiguous_input_tensors &&
+                    (sizes_match_ignoring_leading_1s(
+                         args.sizes(),
+                         output_sizes) &&
+                     ...)
+                ? 0
+                : output_sizes.size()),
+        output_shape_(output_sizes) {
+    static_assert(
+        sizeof...(args) == kNumInputs && (std::is_same_v<Args, Tensor> && ...),
+        "BroadcastIndexesIterator constructor requires kNumInputs input tensor"
+        "arguments!");
+    if (support_noncontiguous_input_tensors ||
+        output_dim_or_zero_if_no_broadcasting_ != 0) {
+      effective_input_broadcast_strides_ = {
+          effective_input_broadcast_stride(output_sizes.size(), args)...};
+    }
+  }
+
   struct make_end_t {
     explicit constexpr make_end_t() = default;
   };
+
+  template <typename... Args>
+  BroadcastIndexesIterator(
+      make_end_t,
+      ssize_t output_numel,
+      const Args&... args)
+      : current_indexes_{
+            output_numel,
+            0,
+        } {}
 
   template <typename... Args>
   BroadcastIndexesIterator(make_end_t, const Tensor& t, const Args&... args)
@@ -221,6 +256,34 @@ class BroadcastIndexesIterator {
     return result;
   }
 
+  // Same as the overload above, for an output given by its sizes. The body is
+  // repeated rather than shared so the tensor overload generates the same code
+  // whether or not this one is used.
+  ShapeType effective_input_broadcast_stride(
+      ssize_t output_dim,
+      const Tensor& t) const {
+    ShapeType result = {0};
+    ET_CHECK_MSG(
+        t.dim() <= output_dim,
+        "input to broadcasting op should have dim at most output dim, but %d > %d!",
+        (int)t.dim(),
+        (int)output_dim);
+
+    const auto num_leading_ones = output_dim - t.dim();
+    for (const auto idx : c10::irange(num_leading_ones)) {
+      result[idx] = 0;
+    }
+    const auto t_sizes = t.sizes();
+    const auto t_strides = t.strides();
+    for (const auto idx :
+         c10::irange(num_leading_ones, num_leading_ones + t.dim())) {
+      result[idx] = t_sizes[idx - num_leading_ones] == 1
+          ? 0
+          : t_strides[idx - num_leading_ones];
+    }
+    return result;
+  }
+
   // The 0th entry is the current linear index into the output,
   // followed by kNumInputs input indexes.
   std::array<ssize_t, kNumInputs + 1> current_indexes_ = {0};
@@ -263,6 +326,16 @@ class BroadcastIndexesIterator<1, false> {
       const Tensor& output,
       [[maybe_unused]] const Tensor& input)
       : current_indexes_({output.numel(), output.numel()}) {}
+
+  explicit BroadcastIndexesIterator(
+      [[maybe_unused]] ArrayRef<Tensor::SizesType> output_sizes,
+      [[maybe_unused]] const Tensor& input) {}
+
+  BroadcastIndexesIterator(
+      make_end_t,
+      ssize_t output_numel,
+      [[maybe_unused]] const Tensor& input)
+      : current_indexes_({output_numel, output_numel}) {}
 
   bool operator==(const BroadcastIndexesIterator& rhs) const {
     return current_index() == rhs.current_index();
@@ -372,5 +445,53 @@ class BroadcastIndexesRange {
 
  private:
   std::array<const Tensor*, kNumInputs + 1> tensors_;
+};
+
+/**
+ * Like BroadcastIndexesRange, but takes the output's sizes instead of an
+ * output tensor. The sizes' storage must stay alive and unchanged while the
+ * range or its iterators are in use. With one input and
+ * support_noncontiguous_input_tensors=false, the input is assumed to have
+ * the output's shape and is not broadcast.
+ */
+template <
+    std::size_t kNumInputs,
+    bool support_noncontiguous_input_tensors = false>
+class BroadcastIndexesShapeRange {
+ public:
+  using iterator = internal::
+      BroadcastIndexesIterator<kNumInputs, support_noncontiguous_input_tensors>;
+
+  template <typename... Args>
+  BroadcastIndexesShapeRange(
+      ArrayRef<Tensor::SizesType> output_sizes,
+      const Args&... args)
+      : output_sizes_(output_sizes),
+        output_numel_(compute_numel(output_sizes.data(), output_sizes.size())),
+        inputs_{(&args)...} {}
+
+  iterator begin() const {
+    return begin_impl(std::make_index_sequence<kNumInputs>());
+  }
+
+  iterator end() const {
+    return end_impl(std::make_index_sequence<kNumInputs>());
+  }
+
+ private:
+  template <std::size_t... I>
+  iterator begin_impl(std::index_sequence<I...>) const {
+    return iterator(output_sizes_, (*inputs_[I])...);
+  }
+
+  template <std::size_t... I>
+  iterator end_impl(std::index_sequence<I...>) const {
+    return iterator(
+        typename iterator::make_end_t(), output_numel_, (*inputs_[I])...);
+  }
+
+  ArrayRef<Tensor::SizesType> output_sizes_;
+  ssize_t output_numel_;
+  std::array<const Tensor*, kNumInputs> inputs_;
 };
 } // namespace torch::executor

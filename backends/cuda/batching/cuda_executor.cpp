@@ -363,21 +363,46 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
       NotSupported,
       "CudaExecutor: the program must select its logits rows");
   ET_ASSIGN_OR_RETURN(geometry, metadata::read_cache_geometry(*module));
+  // The program fixes its cache layout: a private history per sequence when it
+  // publishes its sequence count, else one shared pool of cells.
   ET_ASSIGN_OR_RETURN(
-      max_cells,
-      metadata::detail::read_required_positive_int(*module, kMaxCellsMethod));
-
-  ET_CHECK_OR_RETURN_ERROR(
-      max_cells > 1 && max_cells <= std::numeric_limits<int>::max(),
-      InvalidProgram,
-      "CudaExecutor: cell count must fit an int and leave a padding row");
-  if (max_session_tokens == 0) {
-    max_session_tokens = static_cast<int>(
-        std::min(max_context_length, (max_cells - 1) / max_sessions));
+      declared_seqs,
+      metadata::detail::read_int_method(*module, kMaxSeqsMethod));
+  const bool sequence_layout = declared_seqs.has_value();
+  std::int64_t max_cells = 0;
+  if (sequence_layout) {
     ET_CHECK_OR_RETURN_ERROR(
-        max_session_tokens > 0,
+        *declared_seqs > 0 &&
+            *declared_seqs <= std::numeric_limits<int>::max() &&
+            max_context_length <= std::numeric_limits<int>::max(),
+        InvalidProgram,
+        "CudaExecutor: invalid sequence count or context length");
+    if (max_session_tokens == 0) {
+      max_session_tokens = static_cast<int>(max_context_length);
+    }
+    ET_CHECK_OR_RETURN_ERROR(
+        max_session_tokens <= max_context_length,
         InvalidArgument,
-        "CudaExecutor: no cell budget remains for each resident session");
+        "CudaExecutor: %d session tokens exceed the sequence capacity %" PRId64,
+        max_session_tokens,
+        max_context_length);
+  } else {
+    ET_ASSIGN_OR_RETURN(
+        cells,
+        metadata::detail::read_required_positive_int(*module, kMaxCellsMethod));
+    max_cells = cells;
+    ET_CHECK_OR_RETURN_ERROR(
+        max_cells > 1 && max_cells <= std::numeric_limits<int>::max(),
+        InvalidProgram,
+        "CudaExecutor: cell count must fit an int and leave a padding row");
+    if (max_session_tokens == 0) {
+      max_session_tokens = static_cast<int>(
+          std::min(max_context_length, (max_cells - 1) / max_sessions));
+      ET_CHECK_OR_RETURN_ERROR(
+          max_session_tokens > 0,
+          InvalidArgument,
+          "CudaExecutor: no cell budget remains for each resident session");
+    }
   }
 
   // Every forward_{N} and forward_others the program exports, narrowest first.
@@ -444,11 +469,11 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
       "CudaExecutor: more than one dynamic method");
   const int max_step_tokens = methods.back().max_tokens;
   ET_CHECK_OR_RETURN_ERROR(
-      max_step_tokens < max_cells,
+      sequence_layout ? max_step_tokens <= max_context_length
+                      : max_step_tokens < max_cells,
       InvalidProgram,
-      "CudaExecutor: a %d-token step does not fit %" PRId64 " cells",
-      max_step_tokens,
-      max_cells);
+      "CudaExecutor: a %d-token step does not fit the cache",
+      max_step_tokens);
   // A dynamic method whose kernels switch at a small width is exported from
   // more selected rows than one; its selector is padded up to that.
   int min_selected_rows = 1;
@@ -483,7 +508,9 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
   // them all, or a step could find no free cell mid-generation. One of the
   // program's cells is the padding scratch row, never handed out.
   ET_CHECK_OR_RETURN_ERROR(
-      static_cast<std::int64_t>(max_sessions) * max_session_tokens < max_cells,
+      sequence_layout ||
+          static_cast<std::int64_t>(max_sessions) * max_session_tokens <
+              max_cells,
       InvalidArgument,
       "CudaExecutor: %d sessions of %d tokens exceed the program's %" PRId64
       " cells, one of which is reserved",
@@ -493,10 +520,16 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
 
   // The pool is the program's: its size and widest step fix the shapes the
   // program declared for the step buffers.
+  // A sequence's columns hold the program's context; every sequence has its
+  // own.
   llm_cache::CacheConfig cfg{};
-  cfg.capacity = static_cast<int>(max_cells);
+  cfg.capacity =
+      static_cast<int>(sequence_layout ? max_context_length : max_cells);
   cfg.kv_dtype = kv_dtype;
   cfg.max_write = max_step_tokens;
+  if (sequence_layout) {
+    cfg.max_seqs = static_cast<int>(*declared_seqs);
+  }
   if (initial_capacity >= 0) {
     cfg.initial_capacity = std::min(initial_capacity, cfg.capacity);
   }
@@ -505,7 +538,11 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
       InvalidProgram,
       "CudaExecutor: the program's layout is unusable");
   auto built = llm_cache::CacheFactory::global().build(
-      backend_id, llm_cache::kind::kBatchedCell, geometry, cfg);
+      backend_id,
+      sequence_layout ? llm_cache::kind::kBatchedSequence
+                      : llm_cache::kind::kBatchedCell,
+      geometry,
+      cfg);
   ET_CHECK_OK_OR_RETURN_ERROR(built.error());
   std::shared_ptr<llm_cache::Cache> cache = built.get();
   auto* const ctl = cache->as<llm_cache::BatchControl>();

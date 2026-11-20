@@ -96,6 +96,16 @@ class ET_EXPERIMENTAL CellCache : public Cache,
   const CellStep* place_step(int layer, const int32_t* positions, int length)
       override;
 
+  // -- Forward outcome (the byte layer) -----------------------------------
+
+  // Ends the placed step once its forward has run, so a later forward
+  // declares again instead of re-serving it.
+  void end_step();
+  // Ends the placed step after its forward failed: each of its sequences
+  // drops back to its first position in the step, giving back the cells the
+  // step claimed. Does nothing without a placed step.
+  void abandon_step();
+
  protected:
   void* face(FaceId id) override {
     return expose<BatchControl, CellStepper>(this, id);

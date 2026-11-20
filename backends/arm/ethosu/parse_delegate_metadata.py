@@ -18,6 +18,7 @@ from typing import Any, Sequence
 
 _HEADER = Struct("<4sIIIIQQI")
 _COUNTER = Struct("<IQI")
+_PATH_LENGTH = Struct("<I")
 _MAGIC_PREFIX = b"EUC"
 _MAX_COUNTERS = 8
 
@@ -34,6 +35,7 @@ class EthosUPlatform(IntEnum):
     """Platform IDs from EthosUExecutionStats.h."""
 
     CoreDriver = 0
+    LinuxDriver = 1
 
 
 class EthosUPmuEvent(IntEnum):
@@ -285,7 +287,7 @@ class EthosUPmuProfileEvent:
     platform: EthosUPlatform
     macs_per_cycle: int
     success: bool
-    register_base: int
+    device_identifier: int | str
     cycle_count: float
     cycle_overflow: bool
     counters: tuple[EthosUPmuCounter, ...]
@@ -333,7 +335,7 @@ def _parse_pmu_profile_event_v1(metadata: bytes) -> EthosUPmuProfileEvent:
         macs_per_cycle,
         platform_id,
         flags,
-        register_base,
+        device_identifier,
         cycle_count,
         counter_count,
     ) = _HEADER.unpack_from(metadata)
@@ -351,6 +353,10 @@ def _parse_pmu_profile_event_v1(metadata: bytes) -> EthosUPmuProfileEvent:
         raise ValueError(f"Too many Ethos-U PMU counters: {counter_count}")
 
     expected_size = _HEADER.size + counter_count * _COUNTER.size
+    if platform is EthosUPlatform.LinuxDriver:
+        device_identifier, expected_size = _parse_linux_device_path(
+            metadata, expected_size
+        )
     if len(metadata) != expected_size:
         raise ValueError(
             f"Ethos-U PMU metadata has {len(metadata)} bytes; expected {expected_size}"
@@ -363,11 +369,24 @@ def _parse_pmu_profile_event_v1(metadata: bytes) -> EthosUPmuProfileEvent:
         platform=platform,
         macs_per_cycle=macs_per_cycle,
         success=bool(flags & 2),
-        register_base=register_base,
+        device_identifier=device_identifier,
         cycle_count=float("nan") if flags & 1 else float(cycle_count),
         cycle_overflow=bool(flags & 1),
         counters=counters,
     )
+
+
+def _parse_linux_device_path(metadata: bytes, offset: int) -> tuple[str, int]:
+    if len(metadata) < offset + _PATH_LENGTH.size:
+        raise ValueError("Linux Ethos-U metadata is missing its device path length")
+    path_length = _PATH_LENGTH.unpack_from(metadata, offset)[0]
+    path_offset = offset + _PATH_LENGTH.size
+    expected_size = path_offset + path_length
+    try:
+        path = metadata[path_offset:expected_size].decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError("Invalid UTF-8 Ethos-U device path") from exc
+    return path, expected_size
 
 
 def _parse_counters(
@@ -423,7 +442,7 @@ def parse_ethosu_delegate_pmu_metadata(
                 "platform": record.platform,
                 "macs_per_cycle": record.macs_per_cycle,
                 "success": record.success,
-                "register_base": record.register_base,
+                "device_identifier": record.device_identifier,
                 "cycle_count": record.cycle_count,
                 "cycle_overflow": record.cycle_overflow,
                 "counters": [

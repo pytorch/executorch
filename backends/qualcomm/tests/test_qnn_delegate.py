@@ -1196,6 +1196,21 @@ class TestQNNFloatingPointOperator(TestQNN):
                 )
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_fp16a8w_conv2d_cpu_fallback(self):
+        # the HTP rejects the fp16a8w 3x3 conv, which then runs in fp16 on CPU
+        module = torch.nn.Sequential(
+            torch.nn.Conv2d(8, 16, 1),
+            torch.nn.ReLU(),
+            torch.nn.Conv2d(16, 16, 3, padding=1),
+            torch.nn.ReLU(),
+            torch.nn.Conv2d(16, 8, 1),
+        ).eval()
+        sample_input = (torch.randn([1, 8, 16, 16]),)
+        module = self.get_qdq_module(
+            module, sample_input, quant_dtype=QuantDtype.use_fp16a8w
+        )
+        self.lower_module_and_test_output(module, sample_input, expected_partitions=2)
+
     def test_qnn_backend_fp16a8w_conv2d_qat(self):
         # fp16a8w QAT: FP16 activation + INT8 weight; weight kernel must be [1,1]
         # QAT fake quantize (FusedMovingAvgObsFakeQuantize) requires float32 tensors,
@@ -3816,6 +3831,29 @@ class TestQNNQuantizedOperator(TestQNN):
             with self.subTest(i=i):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_cast_int_to_float(self):
+        # absolute: the class rtol of 1 accepts the raw integer copied into the
+        # fixed-point tensor
+        self.atol, self.rtol = 1, 0
+        y = torch.randn(3, 3)
+        cases = {
+            # x + 1 runs after I64toI32, so the cast reads int32
+            "int32": (True, torch.randint(0, 80, size=(3, 3))),
+            # the int32 cast I64toI32 adds is fused into this one
+            "int64": (False, torch.randint(0, 80, size=(3, 3))),
+            "uint8": (False, torch.randint(0, 80, size=(3, 3), dtype=torch.uint8)),
+        }
+        for quant_dtype in (QuantDtype.use_8a8w, QuantDtype.use_16a8w):
+            for name, (add_one, x) in cases.items():
+                with self.subTest(quant_dtype=quant_dtype, input=name):
+                    sample_input = (x, y)
+                    module = self.get_qdq_module(
+                        CastIntToFloat(add_one),  # noqa: F405
+                        sample_input,
+                        quant_dtype=quant_dtype,
+                    )
+                    self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_cat(self):
         modules = [Cat2(), Cat3(), Cat4(), Cat5()]  # noqa: F405

@@ -153,6 +153,22 @@ class CudaGraphTimingTest(unittest.TestCase):
             self.assertIs(benchmarking._BENCHMARK_DISPATCH.get("cuda"), before)
         self.assertIs(benchmarking._BENCHMARK_DISPATCH.get("cuda"), before)
 
+    def test_captures_do_not_read_the_allocator_stats(self) -> None:
+        x = torch.zeros(1 << 16, device="cuda")
+        # The torch.cuda and torch.accelerator stats APIs all end in these.
+        with mock.patch.object(
+            torch._C, "_cuda_memoryStats", wraps=torch._C._cuda_memoryStats
+        ) as cuda_stats, mock.patch.object(
+            torch._C,
+            "_accelerator_getDeviceStats",
+            wraps=torch._C._accelerator_getDeviceStats,
+        ) as accelerator_stats, cgt.cuda_graph_timing() as stats:
+            for _ in range(8):
+                benchmarking.benchmarker.benchmark(lambda: x.add_(1), device="cuda")
+        self.assertEqual(stats.captured, 8)
+        self.assertEqual(cuda_stats.call_count, 0)
+        self.assertEqual(accelerator_stats.call_count, 0)
+
 
 # ---------------------------------------------------------------------------
 # End to end: export while the CPU is saturated, and check every pick.

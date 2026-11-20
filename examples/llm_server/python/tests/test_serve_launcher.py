@@ -157,19 +157,66 @@ def test_checkpoint_options_reach_worker(argv, launch):
     assert command[command.index("--prefix_checkpoint_interval") + 1] == "512"
 
 
+def test_prompt_end_capture_reaches_worker_and_requires_cache(argv, launch, capsys):
+    assert serve._parse_args(argv).prefix_checkpoint_prompt_end == "initial"
+    for value, error in (
+        ("every", "requires --prefix-cache-entries > 0"),
+        ("always", "invalid choice"),
+    ):
+        with pytest.raises(SystemExit):
+            serve._parse_args(argv + ["--prefix-checkpoint-prompt-end", value])
+        assert error in capsys.readouterr().err
+    serve.main(
+        argv
+        + ["--prefix-cache-entries", "3", "--prefix-checkpoint-prompt-end", "every"]
+    )
+    command = launch.stages["spawn"].call_args.args[0]
+    assert command[command.index("--prefix_checkpoint_prompt_end") + 1] == "every"
+
+
+def test_every_prompt_end_rejects_periodic_capture(argv, capsys):
+    with pytest.raises(SystemExit):
+        serve._parse_args(
+            argv
+            + [
+                "--prefix-cache-entries",
+                "3",
+                "--prefix-checkpoint-prompt-end",
+                "every",
+                "--prefix-checkpoint-interval",
+                "64",
+            ]
+        )
+    assert "cannot be combined" in capsys.readouterr().err
+    serve._parse_args(
+        argv
+        + [
+            "--prefix-cache-entries",
+            "3",
+            "--prefix-checkpoint-prompt-end",
+            "initial",
+            "--prefix-checkpoint-interval",
+            "64",
+        ]
+    )
+
+
 @pytest.mark.parametrize(
-    "sessions,requests,interval,override,expected",
+    "sessions,requests,interval,override,expected,prompt_end",
     [
-        (16, 8, 0, 0, 8),
-        (4, 8, 0, 0, 4),
-        (16, 8, 64, 0, 2),
-        (1, 8, 64, 0, 1),
-        (16, 8, 0, 1, 1),
-        (16, 8, 64, 3, 3),
+        (16, 8, 0, 0, 8, False),
+        (16, 8, 0, 0, 8, True),
+        (4, 8, 0, 0, 4, False),
+        (4, 8, 0, 0, 4, True),
+        (16, 8, 64, 0, 2, False),
+        (1, 8, 64, 0, 1, False),
+        (16, 8, 0, 1, 1, False),
+        (16, 8, 0, 1, 1, True),
+        (16, 8, 64, 3, 3, False),
     ],
 )
 def test_capture_capacity_validation_and_worker_override(
-    argv, launch, sessions, requests, interval, override, expected
+    argv, launch, sessions, requests, interval, override, expected, prompt_end
 ):
     serve.main(
         argv
@@ -185,9 +232,11 @@ def test_capture_capacity_validation_and_worker_override(
             "--prefix-capture-slots",
             str(override),
         ]
+        + (["--prefix-checkpoint-prompt-end", "every"] if prompt_end else [])
     )
     command = launch.stages["spawn"].call_args.args[0]
     assert command[command.index("--prefix_capture_slots") + 1] == str(override)
+    assert ("--prefix_checkpoint_prompt_end" in command) == prompt_end
     args = SimpleNamespace(
         max_context=1024,
         max_sessions=sessions,
@@ -198,7 +247,13 @@ def test_capture_capacity_validation_and_worker_override(
         port=8000,
     )
     assert (
-        serve._validate_limits(Mock(), args, prefix_capture_slots=override) == expected
+        serve._validate_limits(
+            Mock(),
+            args,
+            prefix_capture_slots=override,
+            prefix_checkpoint_prompt_end="every" if prompt_end else "initial",
+        )
+        == expected
     )
 
 

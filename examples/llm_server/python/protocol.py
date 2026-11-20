@@ -162,8 +162,8 @@ class ChatCompletionRequest(BaseModel):
 
 
 class PromptTokensDetails(BaseModel):
-    # Warm-resume accounting, SGLang-compatible shape: tokens served from the
-    # session's resident state instead of prefetched this request.
+    # Warm-resume accounting, SGLang-compatible shape: tokens reused from the
+    # session's resident state or a shared prefix snapshot instead of prefilled.
     cached_tokens: int = 0
 
 
