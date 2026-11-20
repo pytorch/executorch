@@ -128,6 +128,12 @@ jobs:
           ./cmake-out/backends/vulkan/test/ops/benchmark_v2/etvk_ops_bench --validation_only \
             --config=backends/vulkan/test/ops/benchmark_v2/operators/${op}/cases/correctness.json
         done
+        # Cooperative-matrix family kernels. The runner's GPU must match the nvidia
+        # family, every case must run, and each step's dispatched kernel is checked.
+        # No GitHub runner has an Intel Xe2 GPU: the xe2 rows are not covered in CI.
+        ETVK_WMMA_EXPECTED_FAMILY=nvidia \
+          ./cmake-out/backends/vulkan/test/ops/benchmark_v2/etvk_ops_bench --validation_only \
+          --config=backends/vulkan/test/ops/benchmark_v2/operators/gemm/linear/qw/wmma/cases/correctness.json
 
         PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_op.sh --build vulkan_sdpa_av_test
 

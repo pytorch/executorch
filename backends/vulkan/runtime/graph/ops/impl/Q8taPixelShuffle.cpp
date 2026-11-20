@@ -6,6 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taPixelShuffle.h>
+
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
@@ -13,6 +15,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/Logging.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 
@@ -100,6 +103,7 @@ void add_q8ta_pixel_shuffle_node(
     const ValueRef output_inv_scale,
     const ValueRef output_zp,
     const ValueRef upscale_factor,
+    const ActivationType activation,
     const ValueRef packed_int8_output) {
   // dtype must be the int8x4 packed type
   VK_CHECK_COND(graph.dtype_of(packed_int8_input) == vkapi::kInt8x4);
@@ -145,6 +149,12 @@ void add_q8ta_pixel_shuffle_node(
   float inv_scale_out = graph.extract_scalar<float>(output_inv_scale);
   int32_t zp_in = graph.extract_scalar<int32_t>(input_zp);
   int32_t zp_out = graph.extract_scalar<int32_t>(output_zp);
+  // quantize(relu(x)) == max(quantize(x), zp_out), so relu only raises the
+  // lower clamp bound of the requantized value.
+  int32_t q_min = -128;
+  if (activation == ActivationType::kRelu) {
+    q_min = std::clamp(zp_out, -128, 127);
+  }
 
   // Detect the pure-byte-shuffle case: same scale & same zero-point. In that
   // case the shader can skip the requantize math entirely.
@@ -152,7 +162,8 @@ void add_q8ta_pixel_shuffle_node(
   const float scale_diff = std::abs(scale_in - scale_out_actual);
   const float scale_thresh = 1e-7f * std::max(std::abs(scale_in), 1e-7f);
   int32_t passthrough = 0;
-  if (scale_diff <= scale_thresh && zp_in == zp_out) {
+  if (scale_diff <= scale_thresh && zp_in == zp_out &&
+      activation == ActivationType::kNone) {
     passthrough = 1;
   }
 
@@ -161,6 +172,7 @@ void add_q8ta_pixel_shuffle_node(
       PushConstantDataInfo(&inv_scale_out, sizeof(inv_scale_out)),
       PushConstantDataInfo(&zp_in, sizeof(zp_in)),
       PushConstantDataInfo(&zp_out, sizeof(zp_out)),
+      PushConstantDataInfo(&q_min, sizeof(q_min)),
   };
 
   // UBOs
@@ -209,6 +221,12 @@ void q8ta_pixel_shuffle(
   const ValueRef output_inv_scale = args.at(idx++);
   const ValueRef output_zp = args.at(idx++);
   const ValueRef upscale_factor = args.at(idx++);
+  // q8ta_pixel_shuffle.with_activation passes an activation before the output.
+  ActivationType activation = ActivationType::kNone;
+  if (args.size() == 8) {
+    activation =
+        activation_type_from_string(graph.extract_string(args.at(idx++)));
+  }
   const ValueRef packed_int8_output = args.at(idx);
 
   add_q8ta_pixel_shuffle_node(
@@ -219,11 +237,13 @@ void q8ta_pixel_shuffle(
       output_inv_scale,
       output_zp,
       upscale_factor,
+      activation,
       packed_int8_output);
 }
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(et_vk.q8ta_pixel_shuffle.default, q8ta_pixel_shuffle);
+  VK_REGISTER_OP(et_vk.q8ta_pixel_shuffle.with_activation, q8ta_pixel_shuffle);
 }
 
 } // namespace vkcompute

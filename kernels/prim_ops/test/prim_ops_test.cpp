@@ -346,6 +346,28 @@ TEST_F(RegisterPrimOpsTest, TestModTakesSignOfDivisor) {
   }
 }
 
+TEST_F(RegisterPrimOpsTest, TestFloordivRoundsTowardNegativeInfinity) {
+  // Same results as Python's //, which these ops implement.
+  const int64_t cases[][3] = {
+      {7, 3, 2},
+      {-5, 8, -1},
+      {5, -8, -1},
+      {-5, -8, 0},
+      {-17, 6, -3},
+      {-16, 8, -2},
+  };
+  for (const char* op_name :
+       {"executorch_prim::floordiv.int", "executorch_prim::floordiv.Scalar"}) {
+    for (const auto& c : cases) {
+      EValue values[3] = {EValue(c[0]), EValue(c[1]), EValue(int64_t(0))};
+      EValue* stack[3] = {&values[0], &values[1], &values[2]};
+      getOpsFn(op_name)(context_, Span<EValue*>(stack));
+      EXPECT_EQ(stack[2]->toInt(), c[2])
+          << op_name << "(" << c[0] << ", " << c[1] << ")";
+    }
+  }
+}
+
 TEST_F(RegisterPrimOpsTest, TestETCopyIndex) {
   EXPECT_TRUE(hasOpsFn("executorch_prim::et_copy_index.tensor"));
 

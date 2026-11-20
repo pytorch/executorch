@@ -12,16 +12,22 @@ ${define_required_extensions("buffer", DTYPE)}
 
 #define PRECISION ${PRECISION}
 
-#define VEC4_T ${texel_type(DTYPE)}
+#define VEC4_T ${texel_load_type(DTYPE, "buffer")}
 #define T ${buffer_scalar_type(DTYPE)}
 
 ${define_active_storage_type("buffer")}
+
+$if VEC4:
+  #define VEC4_OUTPUT
 
 layout(std430) buffer;
 
 #include "indexing.glslh"
 
-${layout_declare_tensor(B, "w", "t_outp", DTYPE, "buffer")}
+$if VEC4:
+  ${layout_declare_tensor(B, "w", "t_outp", DTYPE, "buffer", is_scalar_array=False)}
+$else:
+  ${layout_declare_tensor(B, "w", "t_outp", DTYPE, "buffer")}
 ${layout_declare_tensor(B, "r", "t_inp", DTYPE, "buffer")}
 
 ${layout_declare_ubo(B, "BufferMetadata", "outp")}
@@ -60,6 +66,32 @@ TensorIndex unpermute(const TensorIndex outp_tidx) {
 }
 
 void main() {
+#ifdef VEC4_OUTPUT
+  // Each thread writes one texel of four consecutive elements along the
+  // output's packed dim, which must have stride 1.
+  const int outp_packed_dim = get_packed_dim(outp_layout);
+  const uint texel_idx = linear_idx_from_gid();
+  if (texel_idx >= div_4(numel(outp))) {
+    return;
+  }
+
+  const TensorIndex outp_tidx =
+      linear_idx_to_tensor_idx(outp, mul_4(texel_idx), outp_layout);
+  VEC4_T texel = VEC4_T(0);
+  if (!out_of_bounds(outp_tidx, outp)) {
+    const TensorIndex inp_tidx = unpermute(outp_tidx);
+    const uint inp_bufi = tensor_idx_to_linear_idx(inp, inp_tidx);
+    const uint inp_lane_stride =
+        stride_at(inp, extract_4b(permute_order, outp_packed_dim));
+    const int valid_lanes = num_valid_lanes(outp_tidx, outp, outp_packed_dim);
+    [[unroll]] for (int i = 0; i < 4; ++i) {
+      if (i < valid_lanes) {
+        texel[i] = t_inp[inp_bufi + i * inp_lane_stride];
+      }
+    }
+  }
+  t_outp[texel_idx] = texel;
+#else
   const uint outp_bufi = linear_idx_from_gid();
   if (outp_bufi >= numel(outp)) {
     return;
@@ -77,4 +109,5 @@ void main() {
 
   // Copy data from input to output
   t_outp[outp_bufi] = t_inp[inp_bufi];
+#endif
 }
