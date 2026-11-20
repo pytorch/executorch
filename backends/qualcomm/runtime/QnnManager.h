@@ -44,6 +44,17 @@ class QnnManager {
   Qnn_ContextHandle_t GetContextHandle() const {
     return backend_params_ptr_->qnn_context_ptr_->GetHandle();
   }
+  // Deserialize only these graphs of the context binary in InitContext. Must
+  // be called before InitContext. Best effort: see IsGraphSubsetLoaded().
+  void SetEnabledGraphs(std::vector<std::string> graph_names) {
+    enabled_graph_names_ = std::move(graph_names);
+  }
+  // True if InitContext restricted the context to the graphs passed to
+  // SetEnabledGraphs; false if every graph of the binary was loaded.
+  bool IsGraphSubsetLoaded() {
+    return !backend_params_ptr_->qnn_backend_cache_ptr_->GetEnabledGraphNames()
+                .empty();
+  }
   // This function only initialize the context cache to get spill fill buffer
   // size
   executorch::runtime::Error InitContextCache();
@@ -164,6 +175,9 @@ class QnnManager {
 
   // Manager for handling DLC (Deep Learning Container)
   std::shared_ptr<QnnDlcManager> qnn_dlc_manager_;
+  std::vector<std::string> enabled_graph_names_;
+
+  bool SupportsEnableGraphs();
 };
 } // namespace qnn
 } // namespace backends

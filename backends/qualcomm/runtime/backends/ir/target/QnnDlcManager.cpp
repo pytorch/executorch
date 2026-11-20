@@ -46,7 +46,11 @@ Error QnnDlcManager::SetUpDlcEnvironment(
   return Error::Ok;
 }
 
-void QnnDlcManager::Destroy() {}
+void QnnDlcManager::Destroy() {
+  // RegisterGraphsFromDLC creates a logger on the QnnManager's implementation,
+  // so it must be freed before that implementation is released.
+  backend_bundle_ptr_.reset(new QnnBackendBundle());
+}
 
 } // namespace qnn
 } // namespace backends

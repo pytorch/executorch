@@ -26,6 +26,10 @@
 #define QNN_RUNTIME_LPAI_AFFINITY "qnn_runtime_lpai_affinity"
 #define QNN_RUNTIME_LPAI_CORE_SELECTION "qnn_runtime_lpai_core_selection"
 #define QNN_RUNTIME_HEAP_PROFILING_PATH "qnn_runtime_heap_profiling_path"
+// Load only the current method's graph from a multi-graph context binary
+// (best effort; falls back to all graphs). With weight sharing, each loaded
+// method keeps its own copy of the shared weights.
+#define QNN_RUNTIME_LOAD_METHOD_GRAPH_ONLY "qnn_runtime_load_method_graph_only"
 
 #if defined(_MSC_VER)
 #if defined(QNN_EXECUTORCH_BUILDING_DLL)

@@ -7195,6 +7195,8 @@ class TestQNNQuantizedModel(TestQNN):
 
 
 class TestQNNFloatingPointUtils(TestQNN):
+    _is_quantized_utils = False
+
     # TODO: refactor to support different backends
     def setUp(self):
         TestQNN.atol = 1e-1
@@ -7509,6 +7511,120 @@ class TestQNNFloatingPointUtils(TestQNN):
                 sample_inputs=sample_inputs[index],
                 executorch_prog=executorch_prog,
                 method_index=index,
+            )
+
+    def test_qnn_backend_runtime_option_load_method_graph_only(self):
+        if self.enable_x86_64:
+            self.skipTest("weight sharing is not supported on host machine")
+        modules, sample_inputs, graph_names, executorch_prog = (
+            self._lower_weight_shared_multi_graphs()
+        )
+        for index, module in enumerate(modules):
+            self.verify_output(
+                module=module,
+                sample_inputs=sample_inputs[index],
+                executorch_prog=executorch_prog,
+                method_index=index,
+                extra_cmds=" --load_method_graph_only",
+                output_callback=self._check_load_method_graph_only_log(
+                    graph_names[index]
+                ),
+            )
+
+    def test_qnn_backend_runtime_option_load_method_graph_only_single_graph(self):
+        # A single-graph binary must fall back to loading the whole context.
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        if self._is_quantized_utils:
+            module = self.get_qdq_module(module, sample_input)
+        backend_options = generate_htp_compiler_spec(
+            use_fp16=not self._is_quantized_utils
+        )
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.soc_model],
+            backend_options=backend_options,
+        )
+
+        def output_callback(msg):
+            self.assertNotIn("Loading only graph", msg)
+            self.assertIn("Loaded 1 graph(s) from the context binary", msg)
+
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            extra_cmds=" --load_method_graph_only",
+            output_callback=output_callback,
+        )
+
+    def test_qnn_backend_runtime_option_load_method_graph_only_reload(self):
+        # Load graph_a, then graph_b within one spill-fill group, destroying
+        # graph_a (the group owner) either before or after graph_b is loaded.
+        if self.enable_x86_64:
+            self.skipTest("weight sharing is not supported on host machine")
+        module = LargeTensorLinear()  # noqa: F405
+        sample_input = (torch.randn(1, 256, 512),)
+        graph_names = ["graph_a", "graph_b"]
+        backend_options = generate_htp_compiler_spec(
+            use_fp16=True,
+            use_weight_sharing=True,
+            use_multi_contexts=True,
+        )
+        compiler_spec = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.soc_model],
+            backend_options=backend_options,
+        )
+        delegated_program = to_edge_transform_and_lower_to_qnn(
+            {graph_name: module for graph_name in graph_names},
+            {graph_name: sample_input for graph_name in graph_names},
+            {graph_name: compiler_spec for graph_name in graph_names},
+        )
+        max_sf_size = update_spill_fill_size(
+            [delegated_program.exported_program(name) for name in graph_names]
+        )
+        self.assertNotEqual(0, max_sf_size)
+        executorch_prog = delegated_program.to_executorch()
+
+        def check_log(method_graph_only, num_groups, cache_hit=False):
+            def output_callback(msg):
+                if method_graph_only:
+                    for graph_name in graph_names:
+                        self.assertIn(
+                            f"Loading only graph {graph_name} from the context binary",
+                            msg,
+                        )
+                    self.assertEqual(
+                        2, msg.count("Loaded 1 graph(s) from the context binary")
+                    )
+                else:
+                    self.assertNotIn("Loading only graph", msg)
+                    self.assertEqual(
+                        1 if cache_hit else 2,
+                        msg.count("Loaded 2 graph(s) from the context binary"),
+                    )
+                self.assertEqual(
+                    num_groups, msg.count("Starting a new spill-fill group")
+                )
+                self.assertEqual(
+                    cache_hit,
+                    f"Use cached delegate handle for current method: {graph_names[1]}"
+                    in msg,
+                )
+
+            return output_callback
+
+        for extra_cmds, method_graph_only, num_groups, cache_hit in [
+            ("", False, 2, False),
+            (" --destroy_preload_after_load", False, 1, True),
+            (" --load_method_graph_only", True, 2, False),
+            (" --load_method_graph_only --destroy_preload_after_load", True, 1, False),
+        ]:
+            self.verify_output(
+                module=module,
+                sample_inputs=sample_input,
+                executorch_prog=executorch_prog,
+                method_index=1,
+                extra_cmds=f" --preload_method_index 0{extra_cmds}",
+                output_callback=check_log(method_graph_only, num_groups, cache_hit),
             )
 
     def test_qnn_backend_profile_op(self):
@@ -7984,6 +8100,8 @@ class TestQNNFloatingPointUtils(TestQNN):
 
 
 class TestQNNQuantizedUtils(TestQNN):
+    _is_quantized_utils = True
+
     def setUp(self):
         match get_backend_type(self.backend):
             case QnnExecuTorchBackendType.kHtpBackend:
@@ -8641,6 +8759,49 @@ class TestQNNQuantizedUtils(TestQNN):
                 executorch_prog=executorch_prog,
                 method_index=index,
             )
+
+    def test_qnn_backend_runtime_option_load_method_graph_only(self):
+        if self.enable_x86_64:
+            self.skipTest("weight sharing is not supported on host machine")
+        modules, sample_inputs, graph_names, executorch_prog = (
+            self._lower_weight_shared_multi_graphs()
+        )
+        for index, module in enumerate(modules):
+            self.verify_output(
+                module=module,
+                sample_inputs=sample_inputs[index],
+                executorch_prog=executorch_prog,
+                method_index=index,
+                extra_cmds=" --load_method_graph_only",
+                output_callback=self._check_load_method_graph_only_log(
+                    graph_names[index]
+                ),
+            )
+
+    def test_qnn_backend_runtime_option_load_method_graph_only_single_graph(self):
+        # A single-graph binary must fall back to loading the whole context.
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        if self._is_quantized_utils:
+            module = self.get_qdq_module(module, sample_input)
+        backend_options = generate_htp_compiler_spec(
+            use_fp16=not self._is_quantized_utils
+        )
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.soc_model],
+            backend_options=backend_options,
+        )
+
+        def output_callback(msg):
+            self.assertNotIn("Loading only graph", msg)
+            self.assertIn("Loaded 1 graph(s) from the context binary", msg)
+
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            extra_cmds=" --load_method_graph_only",
+            output_callback=output_callback,
+        )
 
     def test_qnn_backend_profile_op(self):
         TestQNN.profile_level = 2

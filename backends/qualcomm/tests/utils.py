@@ -42,6 +42,7 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
 from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
     flatbuffer_to_option,
 )
+from executorch.backends.qualcomm.tests.models import Conv2dSequential
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_DTYPE,
     QCOM_PASS_ACTIVATE_KEY,
@@ -50,6 +51,8 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_ZERO_POINT,
 )
 from executorch.backends.qualcomm.utils.utils import (
+    generate_htp_compiler_spec,
+    generate_qnn_executorch_compiler_spec,
     generate_qnn_executorch_option,
     get_qnn_context_binary_alignment,
     get_soc_to_chipset_map,
@@ -793,6 +796,41 @@ class TestQNN(unittest.TestCase):
                 expected_compared_events=expected_compared_events,
                 qnn_intermediate_debugger=qnn_intermediate_debugger,
             )
+
+    def _lower_weight_shared_multi_graphs(self):
+        seq_conv = Conv2dSequential()
+        modules = [seq_conv, seq_conv.second]
+        sample_inputs = [(torch.randn([1, 1, 3, 3]),), (torch.randn([1, 3, 3, 3]),)]
+        graph_names = ["seq_conv", "single_conv"]
+        backend_options = generate_htp_compiler_spec(
+            use_fp16=not self._is_quantized_utils,
+            use_weight_sharing=True,
+        )
+        compiler_spec = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.soc_model],
+            backend_options=backend_options,
+        )
+        lowered_modules = modules
+        if self._is_quantized_utils:
+            lowered_modules = [
+                self.get_qdq_module(module, sample_input)
+                for module, sample_input in zip(modules, sample_inputs)
+            ]
+        delegated_program = to_edge_transform_and_lower_to_qnn(
+            dict(zip(graph_names, lowered_modules)),
+            dict(zip(graph_names, sample_inputs)),
+            {graph_name: compiler_spec for graph_name in graph_names},
+        )
+        return modules, sample_inputs, graph_names, delegated_program.to_executorch()
+
+    def _check_load_method_graph_only_log(self, graph_name):
+        def output_callback(msg):
+            self.assertIn(
+                f"Loading only graph {graph_name} from the context binary", msg
+            )
+            self.assertIn("Loaded 1 graph(s) from the context binary", msg)
+
+        return output_callback
 
     def get_qdq_module(
         self,

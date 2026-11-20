@@ -69,16 +69,19 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
   }
 
   MemoryAllocator* runtime_allocator = context.get_runtime_allocator();
+  const std::string method_name = context.get_method_name();
+  const std::string enabled_graph =
+      get_load_method_graph_only() ? method_name : "";
   // TODO: this is a temporary solution for multi-graph support, will be
   //       removed once framework starts to accept runtime configuration
   // ---
   // check if current context binary has already been initialized
   // return cached one for reducing memory footprint
   const DelegateKey key{signature, runtime_allocator};
-  if (auto cached_handle = get_cached_delegate(key)) {
+  if (auto cached_handle = get_cached_delegate(key, enabled_graph)) {
     QNN_EXECUTORCH_LOG_INFO(
         "Use cached delegate handle for current method: %s",
-        context.get_method_name());
+        method_name.c_str());
     return *cached_handle;
   }
 
@@ -93,7 +96,7 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
       group = get_spill_fill_group(
           {runtime_allocator, htp_options->max_sf_buf_size()});
       group_lock = std::unique_lock<std::mutex>(group->mutex);
-      if (auto cached_handle = get_cached_delegate(key)) {
+      if (auto cached_handle = get_cached_delegate(key, enabled_graph)) {
         return *cached_handle;
       }
     }
@@ -114,6 +117,9 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
       qnn_manager->InitBackend() == Error::Ok,
       Internal,
       "Fail to initialize Qnn Manager");
+  if (!enabled_graph.empty()) {
+    qnn_manager->SetEnabledGraphs({enabled_graph});
+  }
   ET_CHECK_OR_RETURN_ERROR(
       qnn_manager->InitContext(
           std::nullopt,
@@ -122,6 +128,12 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
               : nullptr) == Error::Ok,
       Internal,
       "Fail to initialize Qnn Manager");
+  const bool graph_subset_loaded =
+      !enabled_graph.empty() && qnn_manager->IsGraphSubsetLoaded();
+  if (graph_subset_loaded) {
+    QNN_EXECUTORCH_LOG_INFO(
+        "Loading only graph %s from the context binary", method_name.c_str());
+  }
 
   if (qnn_manager->IsOnlinePrepare()) {
     ET_CHECK_OR_RETURN_ERROR(
@@ -129,6 +141,9 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
         Internal,
         "Fail to compile binary in Dlc format");
   } else {
+    QNN_EXECUTORCH_LOG_INFO(
+        "Loaded %zu graph(s) from the context binary",
+        qnn_manager->GetGraphNames().size());
     for (const std::string& graph_name : qnn_manager->GetGraphNames()) {
       ET_CHECK_OR_RETURN_ERROR(
           qnn_manager->AllocateTensor(graph_name) == Error::Ok,
@@ -136,9 +151,13 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
           "Fail to allocate tensor");
     }
   }
-  DelegateHandle* cached_handle =
-      add_cached_delegate(key, qnn_manager, manager_guard, group);
+  DelegateHandle* cached_handle = add_cached_delegate(
+      {signature, runtime_allocator, graph_subset_loaded ? method_name : ""},
+      qnn_manager,
+      manager_guard,
+      group);
   if (group && !group->owner && cached_handle == qnn_manager) {
+    QNN_EXECUTORCH_LOG_INFO("Starting a new spill-fill group");
     group->owner = manager_guard;
   }
 
@@ -311,6 +330,11 @@ executorch::runtime::Error QnnExecuTorchBackend::set_option(
         qnn_runtime_heap_profiling_path_.value = *val;
         qnn_runtime_heap_profiling_path_.is_set = true;
       }
+    } else if (strcmp(option.key, QNN_RUNTIME_LOAD_METHOD_GRAPH_ONLY) == 0) {
+      if (auto* val = std::get_if<bool>(&option.value)) {
+        qnn_runtime_load_method_graph_only_.value = *val;
+        qnn_runtime_load_method_graph_only_.is_set = true;
+      }
     } else {
       ET_LOG(
           Error,
@@ -374,6 +398,11 @@ executorch::runtime::Error QnnExecuTorchBackend::get_option(
         strcmp(backend_options[i].key, QNN_RUNTIME_HEAP_PROFILING_PATH) == 0 &&
         qnn_runtime_heap_profiling_path_.is_set) {
       backend_options[i].value = qnn_runtime_heap_profiling_path_.value;
+    } else if (
+        strcmp(backend_options[i].key, QNN_RUNTIME_LOAD_METHOD_GRAPH_ONLY) ==
+            0 &&
+        qnn_runtime_load_method_graph_only_.is_set) {
+      backend_options[i].value = qnn_runtime_load_method_graph_only_.value;
     } else {
       // either runtime never called set_option or key does not exist
       matches--;
@@ -390,10 +419,27 @@ bool QnnExecuTorchBackend::is_available() const {
   return true;
 }
 
+bool QnnExecuTorchBackend::get_load_method_graph_only() const {
+  std::lock_guard<std::mutex> guard(runtime_option_mutex_);
+  if (qnn_runtime_load_method_graph_only_.is_set) {
+    if (auto* val =
+            std::get_if<bool>(&qnn_runtime_load_method_graph_only_.value)) {
+      return *val;
+    }
+  }
+  return false;
+}
+
 std::optional<executorch::runtime::DelegateHandle*>
-QnnExecuTorchBackend::get_cached_delegate(const DelegateKey& key) const {
+QnnExecuTorchBackend::get_cached_delegate(
+    const DelegateKey& key,
+    const std::string& fallback_graph_name) const {
   std::lock_guard<std::mutex> guard(mutex_);
   auto iter = delegate_map_.find(key);
+  if (iter == delegate_map_.end() && !fallback_graph_name.empty()) {
+    iter =
+        delegate_map_.find({key.signature, key.allocator, fallback_graph_name});
+  }
   if (iter == delegate_map_.end()) {
     return std::nullopt;
   }

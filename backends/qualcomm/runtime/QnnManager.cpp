@@ -337,6 +337,26 @@ Error QnnManager::InitBackend() {
   return Error::Ok;
 }
 
+bool QnnManager::SupportsEnableGraphs() {
+#ifdef QNN_PROPERTY_CONTEXT_SUPPORT_CONFIG_ENABLE_GRAPHS
+  Qnn_ErrorHandle_t error =
+      backend_bundle_ptr_->implementation->GetQnnInterface()
+          .qnn_property_has_capability(
+              QNN_PROPERTY_CONTEXT_SUPPORT_CONFIG_ENABLE_GRAPHS);
+  if (error == QNN_PROPERTY_SUPPORTED) {
+    return true;
+  }
+  QNN_EXECUTORCH_LOG_WARN(
+      "Backend does not support QNN_CONTEXT_CONFIG_ENABLE_GRAPHS (error %d); "
+      "loading all graphs.",
+      QNN_GET_ERROR_CODE(error));
+#else
+  QNN_EXECUTORCH_LOG_WARN(
+      "QNN SDK lacks QNN_CONTEXT_CONFIG_ENABLE_GRAPHS; loading all graphs.");
+#endif
+  return false;
+}
+
 Error QnnManager::InitContext(
     const std::optional<std::vector<std::string>>& graph_names,
     Qnn_ContextHandle_t spill_fill_handle) {
@@ -366,6 +386,10 @@ Error QnnManager::InitContext(
             graph_names.value_or(std::vector<std::string>{})) == Error::Ok,
         Internal,
         "Fail to configure Qnn backend cache");
+    if (!enabled_graph_names_.empty() && SupportsEnableGraphs()) {
+      backend_params_ptr_->qnn_backend_cache_ptr_->EnableGraphs(
+          enabled_graph_names_);
+    }
     ET_CHECK_OR_RETURN_ERROR(
         backend_params_ptr_->qnn_context_ptr_->Configure() == Error::Ok,
         Internal,
