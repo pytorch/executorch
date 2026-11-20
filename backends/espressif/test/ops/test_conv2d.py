@@ -277,7 +277,7 @@ def test_public_recipe_conv2d(target, kernel_mode, expected_bytes):
         case.model,
         example_inputs=[case.example_inputs],
         export_recipe=get_esp_fused_quant_recipe(
-            target=target, kernel_mode=kernel_mode
+            allow_cpu_fallback=False, target=target, kernel_mode=kernel_mode
         ),
     )
     plan = deserialize_pte_binary(
@@ -296,14 +296,6 @@ def test_public_recipe_conv2d(target, kernel_mode, expected_bytes):
         i for i, arg in enumerate(_ESP_CONV._schema.arguments) if arg.name == "scratch"
     )
     assert plan.values[call.args[scratch_index]].val.sizes == [expected_bytes]
-    with pytest.raises(RuntimeError, match="aten::permute_copy"):
-        export(
-            case.model,
-            example_inputs=[case.example_inputs],
-            export_recipe=get_esp_fused_quant_recipe(
-                allow_cpu_fallback=False, target=target, kernel_mode=kernel_mode
-            ),
-        )
 
 
 @pytest.mark.parametrize(
