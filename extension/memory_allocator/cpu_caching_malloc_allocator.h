@@ -84,7 +84,7 @@ class CPUCachingAllocator : public executorch::runtime::MemoryAllocator {
       size_t size,
       size_t alignment = kCachingAllocatorDefaultAlignment) override;
   void reset() override;
-  ~CPUCachingAllocator();
+  ~CPUCachingAllocator() override;
 };
 
 } // namespace executorch::extension
