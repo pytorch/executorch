@@ -87,13 +87,8 @@ class _AvgPoolQuantizer(OpQuantizer):
 class _EspFusedQuantizer(FusedQuantQuantizer):
     """Fused Quant quantizer for the Espressif operator-library backend.
 
-    Uses int8 per-tensor affine activations and symmetric weights, with
-    per-channel weights for linear and convolution. Constant linear biases use
-    int32 with scales derived from the input and weight observers.
-    AvgPool2d without divisor_override shares input and output qparams.
-    EspPassManager lowers supported Fused Quant operators to ESP-NN and
-    decomposes the rest for portable execution. Use EspNNQuantizer for the
-    EspNNBackend delegate instead.
+    Uses int8 per-tensor affine activations and symmetric weights.
+    Use EspNNQuantizer for the EspNNBackend delegate instead.
     """
 
     def __init__(self) -> None:
