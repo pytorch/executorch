@@ -23,7 +23,8 @@ class ET_EXPERIMENTAL TextPrefiller {
       TextDecoderRunner* text_decoder_runner,
       bool use_kv_cache,
       bool enable_parallel_prefill,
-      int64_t max_seq_len = 128);
+      int64_t max_seq_len = 128,
+      TextDecoderRunner* decode_runner = nullptr);
 
   virtual ~TextPrefiller() = default;
   /**
@@ -94,6 +95,7 @@ class ET_EXPERIMENTAL TextPrefiller {
    * and passes the TextDecoderRunner instance to TextPrefiller.
    */
   TextDecoderRunner* text_decoder_runner_;
+  TextDecoderRunner* decode_runner_;
   bool use_kv_cache_;
   bool enable_parallel_prefill_;
   int64_t max_seq_len_;

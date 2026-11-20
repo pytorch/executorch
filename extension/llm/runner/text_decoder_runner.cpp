@@ -81,15 +81,9 @@ TextDecoderRunner::TextDecoderRunner(
         io_manager_->update_decode(outputs_res.get(), method_name_);
     ET_CHECK_OK_OR_RETURN_ERROR(update_err);
 
-    ET_CHECK_MSG(
-        outputs_res.get().size() == 1,
-        "More than one output returned from executing LLM.");
-    ET_CHECK_MSG(
-        outputs_res.get()[0].isTensor(),
-        "Non Tensor Output returned from executing LLM");
-
-    // Return the logits tensor
-    return outputs_res.get()[0].toTensor();
+    // The IOManager knows which output holds the logits (a model may also
+    // return its updated cache).
+    return io_manager_->logits(outputs_res.get(), method_name_);
   } else { // no kv cache
     (void)start_pos; // unused
 
