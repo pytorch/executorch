@@ -72,7 +72,7 @@ fi
 conda install -y -c conda-forge 'libstdcxx-ng>=12'
 
 python -m pip install 'fsspec[http]<=2025.3.0'
-python -m pip install datasets huggingface_hub librosa mistral-common safetensors soundfile
+python -m pip install datasets huggingface_hub mistral-common safetensors soundfile
 
 python - <<'PY'
 import os
