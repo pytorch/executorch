@@ -23,6 +23,7 @@ regular lowering can run it, and raises ``ReplacementError`` otherwise.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from dataclasses import dataclass
 from typing import Any, Optional
@@ -42,7 +43,7 @@ class ReplacementError(RuntimeError):
 @dataclass(frozen=True)
 class Candidate:
     """One implementation of a call: the regular lowering, or a replacement
-    ``kernel(*args)``."""
+    ``kernel(*args, **kwargs)``."""
 
     name: str
     # Why it cannot run the call; None if it can.
@@ -51,6 +52,7 @@ class Candidate:
     label: str = ""
     kernel: Any = None
     args: tuple[Any, ...] = ()
+    kwargs: dict[str, Any] = dataclasses.field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -77,7 +79,7 @@ class ReplacementPlan:
             )
         replacement = self.candidates[1]
         if replacement.reason is None and not (
-            callable(replacement.kernel) and replacement.args
+            callable(replacement.kernel) and (replacement.args or replacement.kwargs)
         ):
             raise ReplacementError(
                 f"{self.signature}: the replacement {replacement.name!r} can run "
@@ -124,8 +126,8 @@ def device_supports(min_capability: int, device: torch.device) -> bool:
 def replace(
     graph: Graph, node: Node, plan: ReplacementPlan, choice: Candidate
 ) -> Optional[Node]:
-    """Replaces ``node`` with ``choice.kernel(*choice.args)`` as one
-    transaction, and returns the new node.
+    """Replaces ``node`` with ``choice.kernel(*choice.args, **choice.kwargs)``
+    as one transaction, and returns the new node.
 
     Every user's arguments are saved before they are rewired, so a failure at
     any step restores them all and removes the new node; then, if the regular
@@ -136,7 +138,7 @@ def replace(
     new_node: Optional[Node] = None
     try:
         with graph.inserting_before(node):
-            new_node = graph.call_function(choice.kernel, choice.args)
+            new_node = graph.call_function(choice.kernel, choice.args, choice.kwargs)
         new_node.meta = node.meta.copy()
         for user in saved:
             user.replace_input_with(node, new_node)
