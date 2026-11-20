@@ -183,6 +183,7 @@ double tensor_bytes(const Json& tensor) {
   static const std::map<std::string, size_t> bytes_per_element = {
       {"float32", 4},
       {"float16", 2},
+      {"bfloat16", 2},
       {"int32", 4},
       {"int8", 1},
       {"uint8", 1},

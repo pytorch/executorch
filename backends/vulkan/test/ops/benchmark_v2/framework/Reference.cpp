@@ -7,6 +7,7 @@
 #include <executorch/backends/vulkan/test/ops/benchmark_v2/framework/Reference.h>
 
 #include <executorch/backends/vulkan/test/ops/benchmark_v2/framework/ReferenceRegistry.h>
+#include <executorch/runtime/core/portable_type/bfloat16.h>
 #include <executorch/runtime/core/portable_type/half.h>
 
 #include <algorithm>
@@ -70,6 +71,19 @@ bool int8_dot_product(const Json& spec) {
 namespace {
 
 using Half = executorch::runtime::etensor::Half;
+using BFloat16 = executorch::runtime::etensor::BFloat16;
+
+// Rounds a value to the precision of a 16-bit float dtype; other dtypes keep
+// it as is.
+double round_to_dtype(double value, const std::string& dtype) {
+  if (dtype == "float16") {
+    return float(Half(float(value)));
+  }
+  if (dtype == "bfloat16") {
+    return float(BFloat16(float(value)));
+  }
+  return value;
+}
 
 std::string tensor_dtype(
     const Json& spec,
@@ -92,11 +106,14 @@ reference::Tensor decode_tensor(
     const std::string& actual_dtype,
     const std::vector<uint8_t>& bytes) {
   const std::string source_dtype = description.value("dtype", "float32");
-  const bool constant_half = source_dtype == "float16" &&
-      description.value("storage", "buffer") == "constant";
-  const size_t element_size = constant_half                    ? sizeof(Half)
-      : source_dtype == "float32" || source_dtype == "float16" ? sizeof(float)
-      : source_dtype == "int32"                                ? sizeof(int32_t)
+  const bool floating = source_dtype == "float32" ||
+      source_dtype == "float16" || source_dtype == "bfloat16";
+  const bool constant = description.value("storage", "buffer") == "constant";
+  const bool constant_half = source_dtype == "float16" && constant;
+  const bool constant_bfloat16 = source_dtype == "bfloat16" && constant;
+  const size_t element_size = constant_half || constant_bfloat16 ? sizeof(Half)
+      : floating                                                 ? sizeof(float)
+      : source_dtype == "int32" ? sizeof(int32_t)
                                 : sizeof(uint8_t);
   const size_t count = tensor_numel(description.at("sizes"));
   reference::require(
@@ -109,7 +126,9 @@ reference::Tensor decode_tensor(
     double value;
     if (constant_half) {
       value = read_element<Half>(bytes, i);
-    } else if (source_dtype == "float32" || source_dtype == "float16") {
+    } else if (constant_bfloat16) {
+      value = read_element<BFloat16>(bytes, i);
+    } else if (floating) {
       value = read_element<float>(bytes, i);
     } else if (source_dtype == "int32") {
       value = read_element<int32_t>(bytes, i);
@@ -118,8 +137,7 @@ reference::Tensor decode_tensor(
     } else {
       value = read_element<int8_t>(bytes, i);
     }
-    result.values[i] =
-        actual_dtype == "float16" ? float(Half(float(value))) : value;
+    result.values[i] = round_to_dtype(value, actual_dtype);
   }
   return result;
 }
@@ -190,10 +208,9 @@ ReferenceOutputs reference_outputs(
             tensor_numel(spec.at("tensors").at(output.first).at("sizes")),
         "Reference output element count does not match declared shape: " +
             output.first);
-    if (tensor_dtype(spec, actual_dtypes, output.first) == "float16") {
-      for (double& value : output.second)
-        value = float(Half(float(value)));
-    }
+    const std::string dtype = tensor_dtype(spec, actual_dtypes, output.first);
+    for (double& value : output.second)
+      value = round_to_dtype(value, dtype);
   }
   return outputs;
 }
@@ -236,9 +253,10 @@ Report compare_outputs(
     if (!selected.empty() && !selected.count(item.first))
       continue;
     const std::string dtype = tensor_dtype(spec, actual_dtypes, item.first);
-    const double default_tolerance = dtype == "float16" ? 1e-2
-        : dtype == "float32"                            ? 1e-4
-                                                        : 0;
+    const double default_tolerance = dtype == "bfloat16" ? 2e-2
+        : dtype == "float16"                             ? 1e-2
+        : dtype == "float32"                             ? 1e-4
+                                                         : 0;
     const double atol = method.value("atol", default_tolerance);
     const double rtol = method.value("rtol", default_tolerance);
     reference::require(

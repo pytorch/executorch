@@ -87,6 +87,8 @@ vkcompute::vkapi::ScalarType from_at_scalartype(c10::ScalarType at_scalartype) {
   switch (at_scalartype) {
     case c10::kHalf:
       return vkapi::kHalf;
+    case c10::kBFloat16:
+      return vkapi::kBFloat16;
     case c10::kFloat:
       return vkapi::kFloat;
     case c10::kDouble:
