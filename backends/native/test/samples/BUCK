@@ -11,6 +11,7 @@ fbcode_target(
         "core_ops.py",
         "elu.py",
         "embedding.py",
+        "gelu.py",
         "linear.py",
         "ops.py",
         "pad_pool.py",
