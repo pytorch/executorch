@@ -586,3 +586,19 @@ TEST_F(MmapDataLoaderTest, LargeFileOffsetSupport) {
       0, std::memcmp(buffer.data(), test_marker.data(), test_marker.size()))
       << "load_into data at large offset does not match expected marker";
 }
+
+#if defined(O_CLOEXEC)
+TEST_F(MmapDataLoaderTest, FromPathIsCloseOnExec) {
+  uint8_t data[8] = {};
+  TempFile tf(data, sizeof(data));
+  // open() returns the lowest free descriptor, so the loader gets this one.
+  const int fd = ::open(tf.path().c_str(), O_RDONLY);
+  ASSERT_GE(fd, 0);
+  ::close(fd);
+  Result<MmapDataLoader> loader = MmapDataLoader::from(tf.path().c_str());
+  ASSERT_EQ(loader.error(), Error::Ok);
+  const int flags = ::fcntl(fd, F_GETFD);
+  ASSERT_GE(flags, 0);
+  EXPECT_NE(flags & FD_CLOEXEC, 0);
+}
+#endif

@@ -56,6 +56,14 @@ Range get_overlapping_pages(uintptr_t offset, size_t size, size_t page_size) {
   };
 }
 
+// Keeps the descriptor out of programs that the process starts.
+#if defined(O_CLOEXEC)
+constexpr int kCloseOnExec = O_CLOEXEC;
+#else
+constexpr int kCloseOnExec = 0;
+#endif
+constexpr int kOpenFlags = O_RDONLY | kCloseOnExec;
+
 } // namespace
 
 MmapDataLoader::~MmapDataLoader() {
@@ -84,7 +92,7 @@ Result<MmapDataLoader> MmapDataLoader::from(
   }
 
   // Use open() instead of fopen() because mmap() needs a file descriptor.
-  int fd = ::open(file_name, O_RDONLY);
+  int fd = ::open(file_name, kOpenFlags);
   if (fd < 0) {
     ET_LOG(
         Error,

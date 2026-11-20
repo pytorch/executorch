@@ -10,6 +10,11 @@
 
 #include <cstring>
 
+#if !defined(_WIN32)
+#include <fcntl.h>
+#include <unistd.h>
+#endif
+
 #include <gtest/gtest.h>
 
 #include <executorch/extension/testing_util/temp_file.h>
@@ -234,6 +239,23 @@ TEST_P(FileDataLoaderTest, DEPRECATEDFrom) {
   ASSERT_EQ(size.error(), Error::Ok);
   EXPECT_EQ(*size, sizeof(data));
 }
+
+#if defined(O_CLOEXEC)
+TEST_P(FileDataLoaderTest, FromPathIsCloseOnExec) {
+  uint8_t data[8] = {};
+  TempFile tf(data, sizeof(data));
+  // open() returns the lowest free descriptor, so the loader gets this one.
+  const int fd = ::open(tf.path().c_str(), O_RDONLY);
+  ASSERT_GE(fd, 0);
+  ::close(fd);
+  Result<FileDataLoader> loader =
+      FileDataLoader::from(tf.path().c_str(), alignment());
+  ASSERT_EQ(loader.error(), Error::Ok);
+  const int flags = ::fcntl(fd, F_GETFD);
+  ASSERT_GE(flags, 0);
+  EXPECT_NE(flags & FD_CLOEXEC, 0);
+}
+#endif
 
 // Run all FileDataLoaderTests multiple times, varying the return value of
 // `GetParam()` based on the `testing::Values` list. The tests will interpret
