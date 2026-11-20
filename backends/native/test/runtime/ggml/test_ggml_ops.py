@@ -964,6 +964,40 @@ class GgmlOpsTest(unittest.TestCase):
         )
         self._check(Lambda(lambda x: x - x.amax(dim=[0, 1])), (torch.randn(80, 300),))
 
+    def _check_over_any_dims(self, fn):
+        x = torch.randn(2, 3, 4, 5)
+        for dims, keepdim in (((0,), False), ((1, 3), True), ((-3,), False)):
+            with self.subTest(dims=dims, keepdim=keepdim):
+                self._check(
+                    Lambda(
+                        lambda x, dims=dims, keepdim=keepdim: fn(
+                            x, dims, keepdim=keepdim
+                        )
+                    ),
+                    (x,),
+                )
+
+    def test_sum_over_any_dims(self):
+        self._check_over_any_dims(torch.sum)
+
+    def test_mean_over_any_dims(self):
+        self._check_over_any_dims(torch.mean)
+
+    def test_amax_over_any_dims(self):
+        self._check_over_any_dims(torch.amax)
+
+    def test_softmax_over_any_dim(self):
+        x = torch.randn(2, 3, 5, 8) * 4.0
+        for dim in (-1, 0, 1, -2):
+            with self.subTest(dim=dim):
+                self._check(
+                    Lambda(lambda x, dim=dim: torch.softmax(x, dim)), (x,), atol=1e-6
+                )
+
+    def test_softmax_over_an_empty_dim_is_refused(self):
+        with self.assertRaisesRegex(AssertionError, "empty dimension"):
+            self._check(Lambda(lambda x: torch.softmax(x, -1)), (torch.randn(2, 0),))
+
     def test_softmax_last_dim(self):
         self._check(
             Lambda(lambda x: torch.softmax(x, dim=-1)),
