@@ -247,6 +247,27 @@ class _TailOfBuffer(torch.nn.Module):
         return self.buffer[:, -x.shape[1] :] + x
 
 
+class _SumThenIndex(torch.nn.Module):
+    def __init__(self, dims=0):
+        super().__init__()
+        self.dims = dims
+
+    def forward(self, x, index):
+        return x.sum(self.dims)[index]
+
+
+class _ProjectThenReduce(torch.nn.Module):
+    """A linear, then a reduction that drops the dims it reduces."""
+
+    def __init__(self, reduce):
+        super().__init__()
+        self.proj = torch.nn.Linear(16, 32)
+        self.reduce = reduce
+
+    def forward(self, x):
+        return self.reduce(self.proj(x).view(1, x.shape[1], 4, 8))
+
+
 class _PoolCloneLinear(torch.nn.Module):
     """A clone between a max pool, which ET-VK runs on channels-packed
     textures only, and a linear, which wants width-packed input: the clone
@@ -396,6 +417,38 @@ class CrossEngineTest(unittest.TestCase):
                     outdir,
                     resize=True,
                 )
+
+    def test_reductions_without_keepdim(self):
+        torch.manual_seed(0)
+        steps = [(torch.randn(1, s, 16),) for s in (5, 3, 9)]
+        seq = Dim("seq", min=2, max=12)
+        reductions = {
+            "sum": lambda y: y.sum(-1),
+            "mean": lambda y: y.mean(-1),
+            "amax": lambda y: y.amax(-1),
+            "sum over the last two dims": lambda y: y.sum((-2, -1)),
+            "sum over heads": lambda y: y.sum(2),
+        }
+        for name, reduce in reductions.items():
+            with self.subTest(reduction=name):
+                self._check_dynamic(
+                    _ProjectThenReduce(reduce),
+                    steps,
+                    ({1: seq},),
+                    atol_fraction=1e-5,
+                    engines=("ggml_ptn_runner",),
+                )
+
+    def test_reduction_feeding_advanced_indexing(self):
+        torch.manual_seed(0)
+        steps = [(torch.randn(2, 3, 4), torch.tensor([0, 2]))]
+        self._check_dynamic(
+            _SumThenIndex(),
+            steps,
+            None,
+            atol_fraction=1e-5,
+            engines=("ggml_ptn_runner",),
+        )
 
     def test_negative_dims(self):
         torch.manual_seed(0)

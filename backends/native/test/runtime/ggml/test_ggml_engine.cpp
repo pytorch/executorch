@@ -3344,19 +3344,18 @@ TEST(GgmlEngineTest, SumOverTrailingDims) {
   }
 }
 
-TEST(GgmlEngineTest, RejectsSumOverANonTrailingDim) {
+TEST(GgmlEngineTest, RejectsSumOverARepeatedDim) {
   TestProgram program;
   program.input("x", fbs::ScalarType::FLOAT, {2, 3, 4});
   program.call(
       "y",
       "torch.ops.aten.sum.dim_IntList",
       {{"self", std::string("x")},
-       {"dim", std::vector<int64_t>{1}},
+       {"dim", std::vector<int64_t>{1, -2}},
        {"keepdim", BoolValue{false}}},
       fbs::ScalarType::FLOAT,
       {2, 4});
-  expect_compile_error(
-      program.finish("y"), "sum supports trailing dimensions only");
+  expect_compile_error(program.finish("y"), "sum repeats a dimension");
 }
 
 TEST(GgmlEngineTest, AmaxOverTrailingDims) {
@@ -3576,21 +3575,6 @@ TEST(GgmlEngineTest, SizesTheSchedulerFromTheBuiltGraph) {
           << count << " adds, " << cached << " cached graphs";
     }
   }
-}
-
-TEST(GgmlEngineTest, RejectsAmaxOverANonTrailingDim) {
-  TestProgram program;
-  program.input("x", fbs::ScalarType::FLOAT, {2, 3, 4});
-  program.call(
-      "y",
-      "torch.ops.aten.amax.default",
-      {{"self", std::string("x")},
-       {"dim", std::vector<int64_t>{1}},
-       {"keepdim", BoolValue{false}}},
-      fbs::ScalarType::FLOAT,
-      {2, 4});
-  expect_compile_error(
-      program.finish("y"), "amax supports trailing dimensions only");
 }
 
 TEST(GgmlEngineTest, GpuUnavailableOnCpuVariant) {
