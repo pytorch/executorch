@@ -39,6 +39,9 @@ struct PhysicalDevice final {
   VkPhysicalDeviceMemoryProperties memory_properties;
 
   // Additional features available from extensions
+#ifdef VK_KHR_vulkan_memory_model
+  VkPhysicalDeviceVulkanMemoryModelFeaturesKHR vulkan_memory_model_features;
+#endif /* VK_KHR_vulkan_memory_model */
 #ifdef VK_KHR_16bit_storage
   VkPhysicalDevice16BitStorageFeatures shader_16bit_storage;
 #endif /* VK_KHR_16bit_storage */
@@ -60,6 +63,8 @@ struct PhysicalDevice final {
   // True when VK_COMPONENT_TYPE_SINT8_KHR appears in the enumerated coopmat
   // property list — required for coopmat<int8> shaders (e.g. dq8ca_q4gsw).
   bool supports_int8_coopmat;
+  // Every entry of vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR.
+  std::vector<VkCooperativeMatrixPropertiesKHR> cooperative_matrix_properties;
 #endif /* VK_KHR_cooperative_matrix */
 
 #ifdef VK_NV_cooperative_matrix2
@@ -106,6 +111,9 @@ struct PhysicalDevice final {
   // Device identity
   std::string device_name;
   DeviceType device_type;
+  // VkDriverId from VkPhysicalDeviceDriverProperties
+  // (VK_KHR_driver_properties); 0 when the device does not advertise it.
+  uint32_t driver_id;
 
   explicit PhysicalDevice(VkInstance instance, VkPhysicalDevice);
 

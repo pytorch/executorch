@@ -14,6 +14,7 @@
 #include <ggml-backend.h>
 
 #include <executorch/backends/native/runtime/engine/Engine.h>
+#include <executorch/backends/native/runtime/engine/ggml/GgmlCache.h>
 #include <executorch/backends/native/runtime/engine/ggml/GgmlEngine.h>
 
 namespace ptn {
@@ -31,7 +32,7 @@ using GgmlMutableKeyOwners = std::unordered_map<std::string, std::string>;
 // The executable holds the method's mutable buffer keys in
 // `mutable_key_owners` until it is destroyed. `kv_cache`, which must outlive
 // the executable, serves the method's kvcache::update_and_attend calls; a
-// method with such calls and a null cache does not compile.
+// method with such calls and no cache does not compile.
 std::unique_ptr<EngineExecutable> make_ggml_executable(
     const Method& method,
     const Package& package,
@@ -39,6 +40,6 @@ std::unique_ptr<EngineExecutable> make_ggml_executable(
     size_t* materialized_constant_bytes,
     size_t* heap_copied_constant_bytes,
     GgmlMutableKeyOwners& mutable_key_owners,
-    GgmlSequenceCache* kv_cache = nullptr);
+    GgmlKvCache kv_cache = {});
 
 } // namespace ptn

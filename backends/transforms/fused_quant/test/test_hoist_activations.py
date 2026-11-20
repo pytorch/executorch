@@ -14,6 +14,7 @@ from executorch.backends.transforms.fused_quant.optimization_passes.hoist_activa
     HoistActivations,
 )
 from executorch.backends.transforms.fused_quant.test.helpers import (
+    create_per_axis_qparams,
     create_per_tensor_qparams,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -146,6 +147,30 @@ class HoistActivationsTest(unittest.TestCase):
             result.modified,
             "Should not hoist when the data-movement op has multiple users",
         )
+
+    def test_no_hoist_with_per_axis_qparams(self) -> None:
+        """Per-axis qparams are laid out for the permuted tensor, so hoisting
+        the relu above the permute would apply them along the wrong axis."""
+        inp = torch.randn(1, 4, 8, 8).to(torch.int8)
+
+        builder = ProgramBuilder()
+        node = builder.placeholder("inp", inp)
+        inp_qparams = create_per_axis_qparams(builder, 4, ndim=4, axis=3)
+        out_qparams = create_per_axis_qparams(builder, 4, ndim=4, axis=3)
+        permute = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(node, [0, 2, 3, 1]),
+        )
+        relu = builder.call_operator(
+            op=exir_ops.edge.fused_quant.relu.default,
+            args=(permute, *inp_qparams, *out_qparams),
+        )
+        builder.output([relu])
+        graph_module = builder.get_program().graph_module
+
+        result = HoistActivations().call(graph_module)
+
+        self.assertFalse(result.modified)
 
     def test_requantizing_relu_keeps_output_dtype(self) -> None:
         """A requantizing relu (int8 -> int16) keeps its output dtype on hoist.

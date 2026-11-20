@@ -13,6 +13,10 @@ from executorch.backends.test.program_builder import ProgramBuilder
 from executorch.backends.transforms.fused_quant.optimization_passes.sink_constant_cat import (
     SinkConstantCat,
 )
+from executorch.backends.transforms.fused_quant.test.helpers import (
+    create_per_axis_qparams,
+    create_per_tensor_qparams,
+)
 from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import export
@@ -104,6 +108,21 @@ class _CatUnsqueezeConstModel(torch.nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         c = torch.cat([x, self.const], dim=0)
         return c.unsqueeze(0)
+
+
+class _CatViewAddsDimConstModel(torch.nn.Module):
+    """The unsqueeze above as the rank-changing view_copy it is canonicalized to,
+    which moves the cat dim from 0 to 1."""
+
+    const: torch.Tensor
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.register_buffer("const", torch.randn(4, 8))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        c = torch.cat([x, self.const], dim=0)
+        return c.view(1, 8, 8)
 
 
 class _CatMultiUserConstModel(torch.nn.Module):
@@ -241,6 +260,11 @@ class SinkConstantCatTest(unittest.TestCase):
         _, modified = self._run_pass(_CatUnsqueezeConstModel(), (x,))
         self.assertTrue(modified)
 
+    def test_cat_view_that_adds_a_dim_pushed(self) -> None:
+        x = torch.randn(4, 8)
+        _, modified = self._run_pass(_CatViewAddsDimConstModel(), (x,))
+        self.assertTrue(modified)
+
     def test_cat_multi_user_pushed(self) -> None:
         """Each user of the cat gets its own sunk chain.
 
@@ -319,6 +343,43 @@ class SinkConstantCatTest(unittest.TestCase):
         assert isinstance(cat_inputs, (list, tuple))
         self.assertIn(state_node, cat_inputs)
         self.assertIs(relu_node.args[0], cat_node)
+
+    def _sink_through_fused_relu(self, per_axis: bool) -> bool:
+        """cat([x, const], dim=1) -> fused relu, with per-tensor or per-axis
+        (along the cat axis) relu qparams."""
+        builder = ProgramBuilder()
+        x = builder.placeholder("x", torch.randint(-128, 127, (2, 4, 8)).to(torch.int8))
+        const = builder.placeholder(
+            "const",
+            torch.randint(-128, 127, (2, 4, 8)).to(torch.int8),
+            input_kind=InputKind.CONSTANT_TENSOR,
+        )
+        # An input block's dtype is the one it dequantizes to.
+        if per_axis:
+            inp_qparams = create_per_axis_qparams(
+                builder, 8, ndim=3, axis=1, dtype=torch.float32
+            )
+            out_qparams = create_per_axis_qparams(builder, 8, ndim=3, axis=1)
+        else:
+            inp_qparams = create_per_tensor_qparams(builder, dtype=torch.float32)
+            out_qparams = create_per_tensor_qparams(builder)
+        cat = builder.call_operator(
+            op=exir_ops.edge.aten.cat.default, args=([x, const], 1)
+        )
+        relu = builder.call_operator(
+            op=exir_ops.edge.fused_quant.relu.default,
+            args=(cat, *inp_qparams, *out_qparams),
+        )
+        builder.output([relu])
+        return SinkConstantCat()(builder.get_program()).modified
+
+    def test_fused_relu_with_per_tensor_qparams_pushed(self) -> None:
+        self.assertTrue(self._sink_through_fused_relu(per_axis=False))
+
+    def test_skips_fused_relu_with_qparams_along_cat_dim(self) -> None:
+        """Each branch gets a copy of the relu, and qparams sized for the whole
+        cat axis don't fit a branch."""
+        self.assertFalse(self._sink_through_fused_relu(per_axis=True))
 
     def test_skips_when_not_all_users_sinkable(self) -> None:
         """Should bail when only some users of the cat are sinkable."""

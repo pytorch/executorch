@@ -1188,6 +1188,39 @@ print("Input on a non-current device was read")
         with self.assertRaisesRegex(ValueError, "already on a device"):
             self.bindings.ExecuTorchResult.from_host(on_device, self.device.index)
 
+    def test_float8_host_bits_run_through_a_method(self):
+        # Python buffers have no float8 format, so the values come as bytes. exir
+        # cannot export fnuz dtypes, so only the others run through a method.
+        for dtype in (
+            torch.float8_e4m3fn,
+            torch.float8_e4m3fnuz,
+            torch.float8_e5m2,
+            torch.float8_e5m2fnuz,
+        ):
+            name = str(dtype).removeprefix("torch.")
+            with self.subTest(dtype=name):
+                value = torch.tensor([[1.0, -2.0, 0.5], [3.0, 0.0, -0.25]]).to(dtype)
+                host = memoryview(
+                    bytes(value.view(torch.uint8).flatten().tolist())
+                ).cast("B", value.shape)
+                uploaded = self.bindings.ExecuTorchResult.from_host(
+                    host, self.device.index, dtype=name
+                )
+                self.assertEqual(uploaded.dtype, name)
+                expected = value.to(self.device).view(torch.uint8)
+                as_torch = torch.from_dlpack(uploaded)
+                self.assertEqual(as_torch.dtype, dtype)
+                torch.testing.assert_close(as_torch.view(torch.uint8), expected)
+                if name.endswith("fnuz"):
+                    continue
+                data = self._device_identity(self.device.index, value)
+                method = self.bindings._load_program_from_buffer(data).load_method(
+                    "forward"
+                )
+                output = self._tensor(method(uploaded)[0])
+                self.assertEqual(output.dtype, dtype)
+                torch.testing.assert_close(output.view(torch.uint8), expected)
+
     def test_bfloat16_host_bits_move_to_the_device(self):
         # Host data without torch has no bfloat16 buffer format, so it comes as
         # 16-bit unsigned integers and from_host is told the dtype.
