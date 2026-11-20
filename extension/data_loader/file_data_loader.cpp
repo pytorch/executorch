@@ -76,6 +76,14 @@ void FreeSegment(void* context, void* data, ET_UNUSED size_t size) {
 static bool is_power_of_2(size_t value) {
   return value > 0 && (value & ~(value - 1)) == value;
 }
+
+// Keeps the descriptor out of programs that the process starts.
+#if defined(O_CLOEXEC)
+constexpr int kCloseOnExec = O_CLOEXEC;
+#else
+constexpr int kCloseOnExec = 0;
+#endif
+constexpr int kOpenFlags = O_RDONLY | kCloseOnExec;
 } // namespace
 
 FileDataLoader::~FileDataLoader() {
@@ -105,7 +113,7 @@ Result<FileDataLoader> FileDataLoader::from(
   // Use open() instead of fopen() to avoid the layer of buffering that
   // fopen() does. We will be reading large portions of the file in one shot,
   // so buffering does not help.
-  int fd = ::open(file_name, O_RDONLY);
+  int fd = ::open(file_name, kOpenFlags);
   if (fd < 0) {
     ET_LOG(
         Error, "Failed to open %s: %s (%d)", file_name, strerror(errno), errno);
@@ -234,7 +242,7 @@ ET_NODISCARD Error FileDataLoader::load_into(
   // Cannot use the standard dup() or fcntl() calls because the returned
   // duplicate will share the underlying file record and affect the original fd
   // when seeking on multiple threads simultaneously.
-  const auto dup_fd = ET_HAVE_PREAD ? fd_ : ::open(file_name_, O_RDONLY);
+  const auto dup_fd = ET_HAVE_PREAD ? fd_ : ::open(file_name_, kOpenFlags);
 
   while (needed > 0) {
     // Reads on macOS will fail with EINVAL if size > INT32_MAX.
