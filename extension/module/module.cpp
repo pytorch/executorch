@@ -379,8 +379,15 @@ runtime::Error Module::load_internal(
     auto program =
         std::make_unique<std::remove_reference_t<decltype(*res_program)>>(
             std::move(*res_program));
+    // The program reads from its loader, so it keeps the loader alive. The
+    // loader goes with the program, not with the last weak pointer to it.
+    std::shared_ptr<runtime::DataLoader> data_loader = std::move(data_loader_);
     program_ = std::shared_ptr<Program>(
-        program.release(), [](Program* pointer) { delete pointer; });
+        program.release(),
+        [data_loader = std::move(data_loader)](Program* pointer) mutable {
+          delete pointer;
+          data_loader.reset();
+        });
   }
   return runtime::Error::Ok;
 }
