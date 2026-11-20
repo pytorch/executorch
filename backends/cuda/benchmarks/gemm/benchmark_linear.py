@@ -157,13 +157,13 @@ def triton_runner(x, w, b):
         linear(x, w, b)
     stream.synchronize()
     (pick,) = stats.picks
-    schedule = pick.choice
+    name, split = pick.choice
 
     def run():
-        with force_linear_candidate(schedule):
+        with force_linear_candidate(name, split=split):
             return linear(x, w, b)
 
-    return run, schedule
+    return run, f"{name}/{split}"
 
 
 def _core(x, w, b):
@@ -285,7 +285,7 @@ def main():
             f"{case.x_layout[:5]:5s} {times} "
             f"{r['speedup_vs_inductor']:6.2f}x {r['speedup_vs_cublas']:6.2f}x "
             f"err {r['error']['ours_abs']:.1e}/{r['error']['cublas_abs']:.1e} "
-            f"{'pass' if r['error']['passes'] else 'FAIL'} {r['schedule']:10s} "
+            f"{'pass' if r['error']['passes'] else 'FAIL'} {r['schedule']:14s} "
             f"{'yes' if r['significantly_faster'] else 'no'}",
             flush=True,
         )
