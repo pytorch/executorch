@@ -780,6 +780,8 @@ class Module {
   LoadBackendOptionsMap backend_options_map_;
   bool share_memory_arenas_;
 
+  ET_NODISCARD runtime::Error load_data_maps();
+
   ET_NODISCARD runtime::Error load_internal(
       const Program::Verification verification,
       bool has_backend_options = false);

@@ -9,7 +9,9 @@
 #include <executorch/extension/module/module.h>
 
 #include <array>
+#include <cstdio>
 #include <cstring>
+#include <fstream>
 #include <thread>
 #include <variant>
 
@@ -622,6 +624,38 @@ TEST_F(ModuleTest, TestPTD) {
 
   auto tensor = make_tensor_ptr({2, 2}, {2.f, 3.f, 4.f, 2.f});
   ASSERT_EQ(module.forward(tensor).error(), Error::Ok);
+}
+
+TEST_F(ModuleTest, TestSharedProgramLoadsItsDataMap) {
+  Module owner(add_mul_path_);
+  ASSERT_EQ(owner.load(), Error::Ok);
+  auto loader = FileDataLoader::from(add_mul_data_path_.c_str());
+  ASSERT_EQ(loader.error(), Error::Ok);
+
+  Module module(
+      owner.program(),
+      nullptr,
+      nullptr,
+      nullptr,
+      std::make_unique<FileDataLoader>(std::move(*loader)));
+  ASSERT_EQ(module.load_method("forward"), Error::Ok);
+  auto tensor = make_tensor_ptr({2, 2}, {2.f, 3.f, 4.f, 2.f});
+  EXPECT_EQ(module.forward(tensor).error(), Error::Ok);
+}
+
+TEST_F(ModuleTest, TestLoadRetriesAfterAFailedProgramLoad) {
+  const std::string bad_program_path =
+      ::testing::TempDir() + "/module_test_bad_program.pte";
+  {
+    std::ofstream bad_program(bad_program_path, std::ios::binary);
+    bad_program << std::string(128, 'x');
+  }
+  Module module(bad_program_path, add_mul_data_path_);
+  const Error first_error = module.load();
+  EXPECT_NE(first_error, Error::Ok);
+  // A retry reports the program error again, not a repeated .ptd key.
+  EXPECT_EQ(module.load(), first_error);
+  std::remove(bad_program_path.c_str());
 }
 
 TEST_F(ModuleTest, TestPTD_Multiple) {
