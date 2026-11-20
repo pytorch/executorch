@@ -77,6 +77,8 @@ NONE_T: DtypeSet = set()  # Marker for non-tensor args (skip validation)
 # Composite dtype sets for specific operator requirements
 FP_INT_T: DtypeSet = FP_T | INT_T
 FP_INT_BOOL_T: DtypeSet = FP_T | INT_T | BOOL_T
+FP_BF16_T: DtypeSet = FP_T | {torch.bfloat16}
+FP_BF16_INT_T: DtypeSet = FP_INT_T | {torch.bfloat16}
 
 
 class DtypeSetList:

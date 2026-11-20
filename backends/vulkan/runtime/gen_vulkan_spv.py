@@ -260,6 +260,21 @@ def texel_load_component_type(dtype: str, storage_type: str) -> str:
         return texel_component_type(dtype)
 
 
+def texel_compute_type(dtype: str, storage_type: str) -> str:
+    # GLSL bfloat16 types support only conversion, dot products and cooperative
+    # matrix multiply-add, not general arithmetic, so bfloat16 texels are computed
+    # in fp32.
+    if dtype == "bfloat16":
+        return "vec4"
+    return texel_load_type(dtype, storage_type)
+
+
+def texel_compute_component_type(dtype: str, storage_type: str) -> str:
+    if dtype == "bfloat16":
+        return "float"
+    return texel_load_component_type(dtype, storage_type)
+
+
 def get_higher_precision_dtype(dtype_a: str, dtype_b: str) -> str:
     """Return the higher-precision of two dtypes, intended for picking the type
     in which to perform a mixed-dtype computation (e.g. a tensor of one dtype
@@ -628,6 +643,8 @@ UTILITY_FNS: Dict[str, Any] = {
     "texel_component_type": texel_component_type,
     "texel_load_type": texel_load_type,
     "texel_load_component_type": texel_load_component_type,
+    "texel_compute_type": texel_compute_type,
+    "texel_compute_component_type": texel_compute_component_type,
     "get_higher_precision_dtype": get_higher_precision_dtype,
     "layout_declare_buffer": layout_declare_buffer,
     "layout_declare_image": layout_declare_image,

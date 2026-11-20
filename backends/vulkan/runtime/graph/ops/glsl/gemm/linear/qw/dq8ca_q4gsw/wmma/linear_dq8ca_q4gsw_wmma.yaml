@@ -1,0 +1,71 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# Variants of the architecture-family 8da4w int8 cooperative-matrix linear
+# (4h4w int8 activations). Each one is referenced by a row in
+# impl/gemm/linear/qw/wmma/CoopmatFamily.cpp, which also carries its tile
+# geometry; the two must stay in sync.
+#
+# Name: an optional rowmajor_ prefix (ROWMAJOR_A), then
+# t<WG_TILE_M>x<WG_TILE_N>k<WG_TILE_K>g<SG_GRID_X><SG_GRID_Y>s<SUBGROUP_SIZE>
+# m8 (MMA_M = 8), then i (dispatch order) or n<ORDER_NB_MAX> (blocked order),
+# or mk32 (MMA_K = 32) for the row-major kernel. The storage, dtype and
+# zero-point suffixes come from generate_variant_forall; a variant built for
+# one IO storage sets it and names it in NAME.
+
+linear_dq8ca_q4gsw_wmma:
+  parameter_names_with_default_values:
+    IO_STORAGE: buffer
+    WEIGHT_STORAGE: texture2d
+    DTYPE: half
+    A_MAP_FULL: false
+    A_MULTI_BLOCK: false
+    A_BLOCKS: 1
+    MMA_M: 8
+    MMA_N: 16
+    MMA_K: 32
+    WG_TILE_M: 128
+    WG_TILE_N: 128
+    WG_TILE_K: 64
+    SG_GRID_X: 8
+    SG_GRID_Y: 4
+    SUBGROUP_SIZE: 16
+    ORDER_NB_MAX: 0
+    ROWMAJOR_A: false
+    ZP_DTYPE_MODE: zpint8
+  # The kernels are fp16 only and read a texture2d weight. Zero-point
+  # binding: int8 image (zpint8) or the float dtype of the scales
+  # (zpinherit), selected from the zero-point tensor's dtype as for
+  # linear_dq8ca_q4gsw_tiled.
+  generate_variant_forall:
+    IO_STORAGE:
+      - VALUE: texture3d
+      - VALUE: buffer
+    WEIGHT_STORAGE:
+      - VALUE: texture2d
+    DTYPE:
+      - VALUE: half
+    ZP_DTYPE_MODE:
+      - VALUE: zpint8
+      - VALUE: zpinherit
+  shader_variants:
+    # Intel Xe2: subgroup 16, int8 MMA 8x16x32, dispatch order.
+    - NAME: linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8i
+      A_MAP_FULL: true
+      A_MULTI_BLOCK: true
+    # Same tile, blocked workgroup order (weight-heavy projections).
+    - NAME: linear_dq8ca_q4gsw_wmma_t128x128k64g84s16m8n13
+      A_MAP_FULL: true
+      A_MULTI_BLOCK: true
+      ORDER_NB_MAX: 13
+    # NVIDIA: row-major int8 activations, subgroup 32, int8 MMA 16x16x32.
+    - NAME: linear_dq8ca_q4gsw_wmma_rowmajor_t128x128k64g24s32mk32_texture3d
+      IO_STORAGE: texture3d
+      ROWMAJOR_A: true
+      MMA_M: 16
+      SG_GRID_X: 2
+      SG_GRID_Y: 4
+      SUBGROUP_SIZE: 32

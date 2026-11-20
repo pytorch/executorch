@@ -68,6 +68,16 @@ class TestBFloat16Conversions(unittest.TestCase):
             gen_vulkan_spv.get_higher_precision_dtype("bfloat16", "half"), "float"
         )
 
+    def test_bfloat16_computes_in_fp32(self) -> None:
+        self.assertEqual(
+            gen_vulkan_spv.texel_compute_type("bfloat16", "buffer"), "vec4"
+        )
+        self.assertEqual(
+            gen_vulkan_spv.texel_compute_component_type("bfloat16", "buffer"),
+            "float",
+        )
+        self.assertEqual(gen_vulkan_spv.texel_compute_type("half", "buffer"), "f16vec4")
+
     def test_bfloat16_variants_require_buffer_storage(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             source_root = Path(temp_dir)

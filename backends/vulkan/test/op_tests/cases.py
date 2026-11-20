@@ -22,6 +22,9 @@ S1 = 7
 S = 5
 XS = 3
 
+# Floating point dtypes of operators that have bfloat16 shaders
+FP_BF16_DTYPES = ["at::kFloat", "at::kHalf", "at::kBFloat16"]
+
 test_suites = {}
 
 
@@ -98,6 +101,7 @@ def get_binary_elementwise_inputs():
         ]
 
     for suite in [test_suite, highdim_test_suite, large_buffer_test_suite]:
+        suite.dtypes = FP_BF16_DTYPES
         suite.check_zero_padding = True
 
     return [test_suite, highdim_test_suite, large_buffer_test_suite]
@@ -152,7 +156,7 @@ def get_floor_divide_inputs():
         # Negative operands tell floor division apart from truncation.
         suite.data_gen = "make_nonzero_randint_tensor"
         suite.data_range = (-16, 17)
-        suite.dtypes = ["at::kFloat", "at::kHalf", "at::kInt"]
+        suite.dtypes = FP_BF16_DTYPES + ["at::kInt"]
     return suites
 
 
@@ -1145,7 +1149,22 @@ def get_permute_inputs():
         "at::kFloat",
     ]
     test_suite.check_zero_padding = True
-    return test_suite
+
+    # Pixel shuffle decomposed into view -> permute -> view, which leaves a
+    # packed dim of size 2.
+    highdim_test_suite = VkTestSuite(
+        [
+            ((1, 3, 2, 2, 5, 6), (0, 1, 4, 2, 5, 3)),
+            ((2, 3, 2, 2, 5, 6), (0, 1, 4, 2, 5, 3)),
+        ]
+    )
+    highdim_test_suite.layouts = test_suite.layouts
+    highdim_test_suite.storage_types = ["utils::kBuffer"]
+    highdim_test_suite.dtypes = ["at::kFloat", "at::kInt"]
+    highdim_test_suite.data_gen = "make_seq_tensor"
+    highdim_test_suite.check_zero_padding = True
+    highdim_test_suite.test_name_suffix = "highdim"
+    return [test_suite, highdim_test_suite]
 
 
 @register_test_suite("aten.view_copy.default")
@@ -1183,11 +1202,14 @@ def get_view_inputs():
             ((1, 1, 3, 3, 3), (9, 3)),
             ((2, 3, 4, 6, 5, 4), (6, 4, 6, 5, 4)),
             ((2, 3, 3, 7, 8), (2, 3, 3, 8 * 7)),
+            ((1, 3, 5, 2, 6, 2), (1, 3, 10, 12)),
         ]
     )
     highdim_test_suite.storage_types = [
         "utils::kBuffer",
     ]
+    highdim_test_suite.dtypes = ["at::kFloat", "at::kHalf", "at::kInt"]
+    highdim_test_suite.check_zero_padding = True
     highdim_test_suite.test_name_suffix = "highdim"
     highdim_test_suite.data_gen = "make_seq_tensor"
 
@@ -2028,6 +2050,7 @@ def get_unary_ops_inputs():
             (S1, S2, S2, M2),
         ]
     )
+    test_suite.dtypes = FP_BF16_DTYPES
     test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
     test_suite.layouts = [
         "utils::kWidthPacked",
@@ -2057,6 +2080,7 @@ def get_activation_inputs():
             (S1, S2, S2, M2),
         ]
     )
+    test_suite.dtypes = FP_BF16_DTYPES
     test_suite.data_range = (-2, 2)
     test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
     test_suite.layouts = [
@@ -2078,6 +2102,7 @@ def get_clamp_inputs():
     test_suite = VkTestSuite(
         [(shape, low, high) for shape in shapes for low, high in bounds]
     )
+    test_suite.dtypes = FP_BF16_DTYPES
     test_suite.data_range = (-2, 2)
     test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
     test_suite.layouts = [
@@ -2096,6 +2121,7 @@ def get_clamp_optional_bound_inputs():
     float_suite = VkTestSuite(
         [(shape, low, high) for shape in shapes for low, high in bounds]
     )
+    float_suite.dtypes = FP_BF16_DTYPES
     float_suite.data_range = (-2, 2)
     float_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
     float_suite.layouts = ["utils::kWidthPacked", "utils::kChannelsPacked"]
@@ -2616,8 +2642,28 @@ def get_binary_scalar_inputs():
         "utils::kWidthPacked",
         "utils::kChannelsPacked",
     ]
-    test_suite.dtypes = ["at::kFloat"]
+    test_suite.dtypes = ["at::kFloat", "at::kBFloat16"]
     test_suite.check_zero_padding = True
+    return test_suite
+
+
+@register_test_suite("aten.pow.Tensor_Scalar")
+def get_pow_bfloat16_scalar_inputs():
+    # Like eager, bfloat16 pow rounds the exponent to bfloat16: 10.03 to 10. An
+    # unrounded exponent changes these results by over 1%.
+    test_suite = VkTestSuite([((M1, M2), 10.03)])
+    test_suite.data_range = (1.5, 2)
+    test_suite.storage_types = [
+        "utils::kBuffer",
+        "utils::kTexture3D",
+    ]
+    test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kChannelsPacked",
+    ]
+    test_suite.dtypes = ["at::kBFloat16"]
+    test_suite.case_tolerances = {0: {"at::kBFloat16": (8e-3, 0)}}
+    test_suite.test_name_suffix = "bfloat16_exponent"
     return test_suite
 
 
