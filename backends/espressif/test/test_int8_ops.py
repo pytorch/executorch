@@ -248,6 +248,20 @@ class ConvAvgPool(nn.Module):
         return F.avg_pool2d(self.conv(x), 2)
 
 
+class PointwiseConv(nn.Module):
+    """Exercise pointwise convolution over 65,792 output positions."""
+
+    def __init__(self, channels):
+        super().__init__()
+        self.stem = nn.Conv2d(channels, channels, 1)
+        self.conv = nn.Conv2d(channels, 1, 1)
+
+    def forward(self, x):
+        # Build the large map inside the delegate to keep bundled inputs small.
+        y = F.interpolate(self.stem(x), size=(256, 257), mode="nearest")
+        return self.conv(y)
+
+
 class GroupedConvs(nn.Module):
     """Grouped (not depthwise) convolutions: plain, strided and dilated."""
 
@@ -284,6 +298,8 @@ CASES = [
     ("two-inputs-two-outputs", TwoInputTwoOutput(), [(1, 3, 12, 12), (1, 6)], 2),
     ("transpose-select-stack", TransposeSelect(), [(1, 3, 4, 5)], 2),
     ("max-pool-six-channels", OddChannelPool(), [(1, 3, 8, 8)], 2),
+    ("pointwise-65792-positions-c8", PointwiseConv(8), [(1, 8, 8, 257)], 2),
+    ("pointwise-65792-positions-c4", PointwiseConv(4), [(1, 4, 8, 257)], 2),
     ("avgpool-wide-c4", ConvAvgPool(4), [(1, 4, 5, 7)], 2),
     ("avgpool-tall-c4", ConvAvgPool(4), [(1, 4, 7, 5)], 2),
     ("avgpool-wide-c8", ConvAvgPool(8), [(1, 8, 5, 7)], 2),
