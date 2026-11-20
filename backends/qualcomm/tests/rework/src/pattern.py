@@ -2675,6 +2675,12 @@ class DecomposeMinMaxDim:
             val, idx = torch.max(x, dim=1)
             return val, idx
 
+    class _MaxMethod(torch.nn.Module):
+        # Tensor.max is not recorded as a torch.max call
+        def forward(self, x):
+            val, idx = x.max(dim=1)
+            return val, idx
+
     @staticmethod
     @unpack_pass_fixtures
     def test(
@@ -2705,6 +2711,19 @@ class DecomposeMinMaxDim:
         with subtests.test(msg="max"):
             gm = pass_pipeline.lower_edge_ep(
                 module=DecomposeMinMaxDim._Max(),
+                sample_input=inputs,
+                backend_type=backend_type,
+                compile_spec=compile_spec,
+                target_pass=target_pass,
+                quantizer=quantizer,
+            ).graph_module
+            assertions.assert_target_count(gm, exir_ops.edge.aten.max.dim, 1)
+            assertions.assert_target_count(gm, exir_ops.edge.aten.argmax.default, 1)
+
+        # Tensor.max: same rewrite as torch.max
+        with subtests.test(msg="max_method"):
+            gm = pass_pipeline.lower_edge_ep(
+                module=DecomposeMinMaxDim._MaxMethod(),
                 sample_input=inputs,
                 backend_type=backend_type,
                 compile_spec=compile_spec,
