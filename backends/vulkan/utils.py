@@ -51,7 +51,6 @@ _VULKAN_DTYPES: Dict[torch.dtype, VkDataType] = {
     torch.int32: VkDataType.INT32,
     torch.int64: VkDataType.INT64,
     torch.float16: VkDataType.FLOAT16,
-    torch.bfloat16: VkDataType.BFLOAT16,
     torch.float32: VkDataType.FLOAT32,
     torch.float64: VkDataType.FLOAT64,
 }
@@ -66,19 +65,12 @@ FP_T: DtypeSet = {torch.float16, torch.float32}
 INT_T: DtypeSet = {torch.int32, torch.int64}
 QINT8_T: DtypeSet = {torch.int8}
 BOOL_T: DtypeSet = {torch.bool}
-# Every serializable dtype. bfloat16 is opt-in per operator, so ALL_T, the
-# default operator dtype set, excludes it. Devices without bfloat16 support store
-# and compute bfloat16 tensors in fp32 without rounding to bfloat16, so results
-# can differ from eager bfloat16.
-VULKAN_T: DtypeSet = set(_VULKAN_DTYPES.keys())
-ALL_T: DtypeSet = VULKAN_T - {torch.bfloat16}
+ALL_T: DtypeSet = set(_VULKAN_DTYPES.keys())
 NONE_T: DtypeSet = set()  # Marker for non-tensor args (skip validation)
 
 # Composite dtype sets for specific operator requirements
 FP_INT_T: DtypeSet = FP_T | INT_T
 FP_INT_BOOL_T: DtypeSet = FP_T | INT_T | BOOL_T
-FP_BF16_T: DtypeSet = FP_T | {torch.bfloat16}
-FP_BF16_INT_T: DtypeSet = FP_INT_T | {torch.bfloat16}
 
 
 class DtypeSetList:
@@ -1275,9 +1267,8 @@ def filter_invalid_reprs(
             if extents_are_valid(extents, texture_limits):
                 valid_texture_layouts.add(memory_layout)
 
-    # High dimensional tensors require buffer storage, as do bfloat16 tensors,
-    # since there is no bfloat16 image format.
-    if len(tensor_val.shape) > 4 or tensor_val.dtype == torch.bfloat16:
+    # High dimensional tensors require buffer storage
+    if len(tensor_val.shape) > 4:
         return TensorRepSet(tensor_repset.valid_buffer_layouts, set())
 
     return TensorRepSet(tensor_repset.valid_buffer_layouts, valid_texture_layouts)

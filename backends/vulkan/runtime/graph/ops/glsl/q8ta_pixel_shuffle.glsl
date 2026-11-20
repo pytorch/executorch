@@ -35,14 +35,16 @@ layout(push_constant) uniform restrict Block {
   float inv_scale_out;
   int zp_in;
   int zp_out;
+  // Lower clamp bound of requantized values; raised to zp_out to apply relu.
+  int q_min;
 };
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 ${layout_declare_spec_const(C, "int", "inp_layout", "CONTIG_LAYOUT_INT")}
 ${layout_declare_spec_const(C, "int", "outp_layout", "CONTIG_LAYOUT_INT")}
-// Set by the host when input and output quantization params match, making the
-// shader a pure byte shuffle.
+// Set by the host when input and output quantization params match and no
+// activation is applied, making the shader a pure byte shuffle.
 ${layout_declare_spec_const(C, "int", "passthrough", "0")}
 
 /*
@@ -66,7 +68,7 @@ int requantize_word(const int packed) {
     const int q_in = (packed << (24 - 8 * i)) >> 24;
     const float dq = float(q_in - zp_in) * scale_in;
     const int q_out =
-        clamp(int(round(dq * inv_scale_out)) + zp_out, -128, 127);
+        clamp(int(round(dq * inv_scale_out)) + zp_out, q_min, 127);
     result |= (q_out & 0xFF) << (8 * i);
   }
   return result;

@@ -14,7 +14,7 @@ import logging
 from typing import Callable
 
 import torch
-from executorch.backends.cuda.triton import routing
+from executorch.backends.cuda.triton import measured_routing, routing
 from executorch.backends.cuda.triton.kernels.conv import routing as conv_routing
 from executorch.backends.cuda.triton.kernels.sdpa import (
     _prepare_mask_params,
@@ -29,30 +29,17 @@ from torch.fx.passes.infra.pass_base import PassBase, PassResult
 logger = logging.getLogger(__name__)
 triton = torch.ops.triton
 
-CONV_TARGETS = (
-    exir_ops.edge.aten.conv1d.default,
-    exir_ops.edge.aten.conv2d.default,
-    exir_ops.edge.aten.conv3d.default,
-    exir_ops.edge.aten.conv1d.padding,
-    exir_ops.edge.aten.conv2d.padding,
-    exir_ops.edge.aten.conv3d.padding,
-    exir_ops.edge.aten.conv_transpose1d.default,
-    exir_ops.edge.aten.conv_transpose2d.input,
-    exir_ops.edge.aten.conv_transpose3d.input,
-    exir_ops.edge.aten.convolution.default,
-)
-
 # Global mapping from edge dialect operators to Triton kernel functions
 EDGE_TO_TRITON_KERNELS = {
     exir_ops.edge.aten.scaled_dot_product_attention.default: triton.sdpa,
     exir_ops.edge.aten.topk.default: triton.topk,
-    **{target: triton.convolution for target in CONV_TARGETS},
+    **{target: triton.convolution for target in conv_routing.CONV_TARGETS},
 }
 
 # Ops whose calls are classified before they are replaced (see routing.py):
 # edge op -> planner(node) returning a ``routing.ReplacementPlan``.
 PLANNERS: dict[object, Callable[[Node], routing.ReplacementPlan]] = {
-    target: conv_routing.plan for target in CONV_TARGETS
+    target: conv_routing.plan for target in conv_routing.CONV_TARGETS
 }
 
 
@@ -68,11 +55,19 @@ class ReplaceEdgeOpWithTritonOpPass(PassBase):
     optimized Triton implementations.
     """
 
-    def __init__(self):
-        """Initialize the pass."""
+    def __init__(self, measured_routing: bool = False):
+        """Initialize the pass.
+
+        Args:
+            measured_routing: Leave a planned call that several
+                implementations can run, of a family that opts in, to
+                ``MeasureChoicesPass`` and ``ApplyChoicesPass``; otherwise take
+                its plan's static choice.
+        """
         super().__init__()
+        self._measured_routing = measured_routing
         self._replacement_count = 0
-        self._plans: dict[Node, routing.ReplacementPlan] = {}
+        self._plans: dict[Node, tuple[routing.ReplacementPlan, routing.Candidate]] = {}
 
     def call(self, graph_module: GraphModule) -> PassResult:
         """
@@ -186,13 +181,26 @@ class ReplaceEdgeOpWithTritonOpPass(PassBase):
 
         if node.target in PLANNERS:
             plan = PLANNERS[node.target](node)
-            if plan.route is routing.Route.UNSUPPORTED:
+            legal = plan.legal()
+            if not legal:
+                raise routing.ReplacementError(
+                    f"{plan.signature}: nothing can run it ({plan.describe()})"
+                )
+            if len(legal) > 1 and self._measured_routing and plan.measure:
+                measured_routing.record_plan(node, plan)
+                logger.info(f"Measuring {node.name} ({plan.describe()})")
+                return False
+            choice = legal[0] if len(legal) == 1 else plan.candidate(plan.static_choice)
+            if choice.name == routing.REGULAR_LOWERING:
+                reasons = [c.reason for c in plan.candidates if c.reason]
+                reason = plan.static_reason if len(legal) > 1 else "; ".join(reasons)
                 logger.info(
-                    f"Skipping {plan.kind} replacement of {node.name}: {plan.reason}"
+                    f"Skipping {plan.kind} replacement of {node.name}: {reason}"
                 )
                 return False
-            self._plans[node] = plan
-            logger.info(f"Replacing {node.name} ({plan.route.value}, {plan.label})")
+            self._plans[node] = (plan, choice)
+            only = "" if plan.regular_lowering_runs_it() else ", only implementation"
+            logger.info(f"Replacing {node.name} ({choice.label}{only})")
 
         return True
 
@@ -250,7 +258,8 @@ class ReplaceEdgeOpWithTritonOpPass(PassBase):
             raise ValueError(f"No replacement kernel found for {target}")
 
         if target in PLANNERS:
-            return routing.replace(graph_module.graph, node, self._plans.pop(node))
+            plan, choice = self._plans.pop(node)
+            return routing.replace(graph_module.graph, node, plan, choice) is not None
 
         triton_kernel_fn = EDGE_TO_TRITON_KERNELS[target]
 

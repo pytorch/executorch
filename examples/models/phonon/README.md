@@ -59,8 +59,10 @@ cmake-out/examples/models/phonon/phonon_runner --model_path=... --text="..." --s
 XNNPACK delegates the linear and convolution ops; the flow LM's attention runs
 as the ExecuTorch custom op `llama::sdpa_with_kv_cache`.
 
-For XNNPACK, Vulkan, MLX and CUDA, the export rewrites the Mimi decoder's
-transposed convolutions as convolutions, which those backends run faster.
+For Vulkan, MLX and CUDA, the export rewrites the Mimi decoder's transposed
+convolutions as convolutions, which those backends run faster. XNNPACK's
+lowering does this itself for the dense ones; the XNNPACK export still swaps
+the depthwise upsampler for a multiply.
 For CUDA, the Mimi decoder also keeps its streaming state on the GPU between
 frames: its `mimi_decode` takes `(latent, reset)` instead of the latent and
 the state (see `phonon.json`).
