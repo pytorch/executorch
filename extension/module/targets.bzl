@@ -56,6 +56,7 @@ def define_common_targets():
             deps = [
                 "//executorch/extension/data_loader:buffer_data_loader",
                 "//executorch/extension/data_loader:file_data_loader",
+                "//executorch/extension/data_loader:shared_ptr_data_loader",
                 "//executorch/devtools/bundled_program:runtime" + aten_suffix,
                 "//executorch/devtools/bundled_program/schema:bundled_program_schema_fbs",
             ],
