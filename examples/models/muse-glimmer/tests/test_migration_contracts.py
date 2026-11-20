@@ -515,37 +515,19 @@ def test_composed_and_map_schemas_preserve_strings(schema):
 @pytest.mark.parametrize("stream", [False, True])
 def test_tool_result_names_survive_token_replay(stream):
     import asyncio
-    from pathlib import Path
 
     from executorch.examples.llm_server.python.protocol import (
         ChatCompletionRequest,
         ChatMessage,
     )
-    from executorch.examples.models.muse_glimmer.serving import chat_template
     from executorch.examples.models.muse_glimmer.tests.test_serve import _create_message
-    from jinja2 import Environment
 
-    jinja = Environment().from_string(
-        Path(chat_template.__file__).with_suffix(".jinja").read_text()
-    )
-
-    class Tokenizer:
-        all_special_tokens = []
-        eos_token = None
-
-        def apply_chat_template(self, messages, **kwargs):
-            return jinja.render(messages=messages, bos_token="", **kwargs)
-
-    template = chat_template.MuseGlimmerChatTemplate(
-        allow_fallback=True, assistant_header="<|start|>assistant"
-    )
-    template._hf = Tokenizer()
     serving, runtime = _glimmer_serving(
         [
             {"text": _atem("read_file.read_file", []), "gen_ids": [777]},
             {"text": " to=user<|message|>Done"},
         ],
-        template=template,
+        template=_bundled_template(),
     )
     serving._tool_detector_cls = AtemToolCallDetector
     tools = [{"type": "function", "function": {"name": "read_file", "parameters": {}}}]
@@ -610,34 +592,43 @@ def _bundled_template():
     return template
 
 
-def _tool_history(calls, results, between=()):
+def _tool_history(calls, results, between=(), split_calls=False):
     from executorch.examples.llm_server.python.protocol import (
         ChatMessage,
         FunctionCall,
         ToolCall,
     )
 
-    return [
-        ChatMessage(role="user", content="Run the jobs"),
+    assistants = [
         ChatMessage(
             role="assistant",
             tool_calls=[
                 ToolCall(id=call_id, function=FunctionCall(name=name, arguments="{}"))
-                for call_id, name in calls
+                for call_id, name in group
             ],
-        ),
+        )
+        for group in ([[call] for call in calls] if split_calls else [calls])
+    ]
+    return [
+        ChatMessage(role="user", content="Run the jobs"),
+        *assistants,
         *between,
         *(
             ChatMessage(
-                role="tool", **dict(zip(("tool_call_id", "content", "name"), result))
+                role="tool",
+                tool_call_id=result[0],
+                content=result[1],
+                name=result[2] if len(result) > 2 else None,
             )
             for result in results
         ),
     ]
 
 
-def test_repeated_tool_results_render_in_call_order():
+@pytest.mark.parametrize("split_calls", [False, True])
+def test_repeated_tool_results_render_in_call_order(split_calls):
     from executorch.examples.models.muse_glimmer.serving.chat_template import (
+        order_repeated_tool_results,
         resolve_tool_result_names,
     )
 
@@ -645,13 +636,22 @@ def test_repeated_tool_results_render_in_call_order():
     calls = [("call_alpha", "delegate"), ("call_beta", "delegate")]
 
     def render(results):
-        return template.render(resolve_tool_result_names(_tool_history(calls, results)))
+        messages = resolve_tool_result_names(
+            _tool_history(calls, results, split_calls=split_calls)
+        )
+        order_repeated_tool_results(messages)
+        return template.render(messages)
 
     completion_order = render([("call_beta", "B"), ("call_alpha", "A")])
     assert completion_order == render([("call_alpha", "A"), ("call_beta", "B")])
     assert completion_order != render([("call_alpha", "B"), ("call_beta", "A")])
+    result = '<tool_output name="delegate.delegate">\n{}\n</tool_output>'
+    assert completion_order.index(result.format("A")) < completion_order.index(
+        result.format("B")
+    )
 
 
+@pytest.mark.parametrize("split_calls", [False, True])
 @pytest.mark.parametrize(
     "calls,results,between,expected",
     [
@@ -697,6 +697,36 @@ def test_repeated_tool_results_render_in_call_order():
             ("user",),
             ["B", "A"],
         ),
+        (
+            [("a", "lookup"), ("b", "delegate"), ("c", "delegate")],
+            [("c", "C"), ("b", "B"), ("a", "A", "delegate")],
+            (),
+            ["B", "C", "A"],
+        ),
+        (
+            [("a", "delegate"), ("b", "delegate.delegate")],
+            [("b", "B"), ("a", "A")],
+            (),
+            ["A", "B"],
+        ),
+        (
+            [("a", "delegate"), ("b", "delegate")],
+            [("b", "B", "delegate.delegate"), ("a", "A", "delegate.delegate")],
+            (),
+            ["A", "B"],
+        ),
+        (
+            [("a", "delegate"), ("b", "delegate"), ("a", "delegate")],
+            [("a", "A"), ("b", "B")],
+            (),
+            ["A", "B"],
+        ),
+        (
+            [("a", ""), ("b", "")],
+            [("b", "B"), ("a", "A")],
+            (),
+            ["B", "A"],
+        ),
     ],
     ids=[
         "in-call-order",
@@ -706,17 +736,31 @@ def test_repeated_tool_results_render_in_call_order():
         "repeated-result-id",
         "explicit-other-name",
         "after-user-message",
+        "mismatched-call-name",
+        "equivalent-call-names",
+        "wire-result-names",
+        "repeated-call-id",
+        "empty-names",
     ],
 )
-def test_only_ambiguous_tool_results_are_reordered(calls, results, between, expected):
+def test_only_ambiguous_tool_results_are_reordered(
+    calls, results, between, expected, split_calls
+):
     from executorch.examples.llm_server.python.protocol import ChatMessage
     from executorch.examples.models.muse_glimmer.serving.chat_template import (
+        order_repeated_tool_results,
         resolve_tool_result_names,
     )
 
     between = [ChatMessage(role=role, content="interjection") for role in between]
-    messages = resolve_tool_result_names(_tool_history(calls, results, between))
+    history = _tool_history(calls, results, between, split_calls)
+    original = [m.model_dump() for m in history]
+    messages = resolve_tool_result_names(history)
+    non_tools = [(i, m) for i, m in enumerate(messages) if m.role != "tool"]
+    order_repeated_tool_results(messages)
     assert [m.content for m in messages if m.role == "tool"] == expected
+    assert all(messages[i] is m for i, m in non_tools)
+    assert [m.model_dump() for m in history] == original
 
 
 @pytest.mark.parametrize("stream", [False, True])
@@ -727,17 +771,23 @@ def test_repeated_tool_results_keep_token_replay(stream):
         ChatCompletionRequest,
         ChatMessage,
     )
-    from executorch.examples.models.muse_glimmer.tests.test_serve import _create_message
+    from executorch.examples.models.muse_glimmer.tests.test_serve import (
+        _assemble,
+        _benc,
+        _create_message,
+    )
 
+    raw1 = (
+        _atem("delegate.delegate", [("job", "alpha")])
+        + "\n"
+        + _atem("delegate.delegate", [("job", "beta")])
+    )
+    raw2 = " to=user<|message|>Done"
     serving, runtime = _glimmer_serving(
         [
-            {
-                "text": _atem("delegate.delegate", [("job", "alpha")])
-                + "\n"
-                + _atem("delegate.delegate", [("job", "beta")]),
-                "gen_ids": [777],
-            },
-            {"text": " to=user<|message|>Done"},
+            {"text": raw1, "gen_ids": _benc(raw1)},
+            {"text": raw2, "gen_ids": _benc(raw2)},
+            {"text": " to=user<|message|>Still done"},
         ],
         template=_bundled_template(),
     )
@@ -764,25 +814,46 @@ def test_repeated_tool_results_keep_token_replay(stream):
             ),
         )
         alpha, beta = (call["id"] for call in first["tool_calls"])
-        await _create_message(
+        history = [
+            user,
+            ChatMessage(**first),
+            ChatMessage(role="tool", tool_call_id=beta, content="B"),
+            ChatMessage(role="tool", tool_call_id=alpha, content="A"),
+        ]
+        second = await _create_message(
             serving,
             ChatCompletionRequest(
-                messages=[
-                    user,
-                    ChatMessage(**first),
-                    ChatMessage(role="tool", tool_call_id=beta, content="B"),
-                    ChatMessage(role="tool", tool_call_id=alpha, content="A"),
-                ],
+                messages=history,
                 tools=tools,
                 session_id="s",
                 stream=stream,
             ),
         )
         prompt = runtime.prompts[1]
-        assert any(segment.get("ids") == [777] for segment in prompt.segments or [])
+        assert [s["ids"] for s in prompt.segments or [] if "ids" in s] == [_benc(raw1)]
         text = "".join(segment.get("text", "") for segment in prompt.segments)
         result = '<tool_output name="delegate.delegate">\n{}\n</tool_output>'
         assert text.index(result.format("A")) < text.index(result.format("B"))
+        await _create_message(
+            serving,
+            ChatCompletionRequest(
+                messages=[
+                    *history,
+                    ChatMessage(**second),
+                    ChatMessage(role="user", content="And?"),
+                ],
+                tools=tools,
+                session_id="s",
+                stream=stream,
+            ),
+        )
+        third_prompt = runtime.prompts[2]
+        assert [s["ids"] for s in third_prompt.segments or [] if "ids" in s] == [
+            _benc(raw1),
+            _benc(raw2),
+        ]
+        resident = _assemble(prompt) + _benc(raw2)
+        assert _assemble(third_prompt)[: len(resident)] == resident
 
     asyncio.run(scenario())
 
