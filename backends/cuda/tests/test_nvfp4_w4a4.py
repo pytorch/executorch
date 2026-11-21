@@ -13,8 +13,10 @@ from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
 )
 
 pytestmark = pytest.mark.skipif(
-    not torch.cuda.is_available() or torch.cuda.get_device_capability() < (8, 9),
-    reason="CUDA with native E4M3 (SM89+) required",
+    not torch.cuda.is_available()
+    or torch.version.hip is not None
+    or torch.cuda.get_device_capability() < (8, 9),
+    reason="NVIDIA CUDA with native E4M3 (SM89+) required",
 )
 
 
@@ -32,11 +34,16 @@ def test_activation_reference(static):
         else x32.abs().amax(1) / (448 * 6)
     )
     rg = torch.where(rg > 0, rg, 1.0)
-    rs = (x32.reshape(7, -1, 16).abs().amax(2) / (6 * rg[:, None])).to(
-        torch.float8_e4m3fn
+    # The kernels' E4M3 conversion saturates to 448 (0x7E).
+    rs = (
+        (x32.reshape(7, -1, 16).abs().amax(2) / (6 * rg[:, None]))
+        .clamp(max=448)
+        .to(torch.float8_e4m3fn)
     )
     torch.testing.assert_close(g, rg, rtol=1e-6, atol=1e-9)
     assert torch.equal(s, rs.view(torch.uint8))
+    if static > 0:
+        assert (s == 0x7E).any()
     lut = torch.tensor([0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0], device="cuda")
     normalized = x32.reshape(7, -1, 16) / torch.where(
         rs.float()[:, :, None] > 0, rs.float()[:, :, None] * rg[:, None, None], 1.0

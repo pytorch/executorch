@@ -13,13 +13,36 @@ from executorch.backends.cuda.tests.nvfp4_test_utils import (
     portable_weight as weight,
     shards,
 )
+from executorch.extension.llm.export.nvfp4 import (
+    ExportableNVFP4Config,
+    ExportableNVFP4Tensor,
+)
 from torch._subclasses.fake_tensor import FakeTensorMode, is_fake
+from torchao.quantization import quantize_
+
+
+@pytest.mark.parametrize("use_per_tensor_scale", [False, True])
+def test_from_exportable_matches_portable_dequantize(use_per_tensor_scale):
+    torch.manual_seed(0)
+    linear = torch.nn.Linear(96, 48, bias=False, dtype=torch.bfloat16)
+    quantize_(linear, ExportableNVFP4Config(use_per_tensor_scale=use_per_tensor_scale))
+    w = linear.weight
+    packed = CudaNVFP4Tensor.from_exportable(w)
+    assert torch.equal(packed.dequantize(), w.dequantize())
+    assert torch.equal(
+        packed.dequantize(torch.float32), w.dequantize(output_dtype=torch.float32)
+    )
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
 def test_fusion_preserves_original_rows(dtype):
     pieces = shards(192, dtype=dtype)
-    pieces[1].per_tensor_scale = torch.linspace(0.01, 0.035, 19)
+    pieces[1] = CudaNVFP4Tensor(
+        pieces[1].qdata,
+        pieces[1].scale,
+        torch.linspace(0.01, 0.035, 19),
+        orig_dtype=dtype,
+    )
     fused = CudaNVFP4Tensor.fuse_along_output(pieces)
     assert fused.per_tensor_scale.shape == (97,)
     assert torch.equal(fused.qdata, torch.cat([w.qdata for w in pieces]))
@@ -34,14 +57,35 @@ def test_fusion_preserves_original_rows(dtype):
 
 def test_fusion_preserves_scalar_scale_and_rejects_mismatched_activation_scale():
     pieces = shards(192)
-    for w in pieces:
-        w.per_tensor_scale = pieces[0].per_tensor_scale
+    pts = pieces[0].per_tensor_scale
+    pieces = [CudaNVFP4Tensor(w.qdata, w.scale, pts) for w in pieces]
     fused = CudaNVFP4Tensor.fuse_along_output(pieces)
     assert fused.per_tensor_scale.numel() == 1
     assert torch.equal(fused.dequantize(), torch.cat([w.dequantize() for w in pieces]))
-    pieces[1].act_per_tensor_scale = 0.001
+    pieces[1] = CudaNVFP4Tensor(
+        pieces[1].qdata, pieces[1].scale, pts, act_per_tensor_scale=0.001
+    )
     with pytest.raises(ValueError, match="activation scale"):
         CudaNVFP4Tensor.fuse_along_output(pieces)
+
+
+def test_fusion_rejects_incompatible_weights():
+    a, b, _ = shards(192)
+    k_mismatch = shards(384)[1]
+    float_b = CudaNVFP4Tensor(
+        b.qdata, b.scale, b.per_tensor_scale, orig_dtype=torch.float32
+    )
+    for weights in ([], [a, b.dequantize()], [a, k_mismatch], [a, float_b]):
+        with pytest.raises(ValueError, match="CUDA NVFP4 fusion"):
+            CudaNVFP4Tensor.fuse_along_output(weights)
+
+
+def test_to_meta_keeps_layout():
+    w = CudaNVFP4Tensor.from_exportable(weight())
+    meta = w.to("meta")
+    assert meta.device.type == "meta"
+    assert meta.qdata.device.type == "meta" and meta.scale.device.type == "meta"
+    assert meta.shape == w.shape and meta.unit_scale
 
 
 def test_activation_scale_is_a_python_float():
@@ -68,6 +112,16 @@ def test_activation_scale_is_a_python_float():
 def test_unit_scale_inferred_only_for_exact_domain(pts, scale_byte, expected):
     actual = CudaNVFP4Tensor.from_exportable(weight(pts, scale_byte))
     assert actual.unit_scale is expected
+
+
+def test_unit_scale_requires_every_scale_byte():
+    w = weight()
+    scale = w.scale.clone()
+    scale[3, 5] = 127
+    mixed = ExportableNVFP4Tensor(
+        w.qdata, scale, w.per_tensor_scale, w.block_size, w.orig_dtype
+    )
+    assert not CudaNVFP4Tensor.from_exportable(mixed).unit_scale
 
 
 def test_unit_scale_metadata_survives_fake_to_fusion_and_serialization():
@@ -133,6 +187,7 @@ def test_dequantize_low_nibble_first(row_scales):
         "scale_shape",
         "scale_dtype",
         "global_scale",
+        "k_multiple",
     ],
 )
 def test_invalid_layout_rejected(invalid):
@@ -150,6 +205,8 @@ def test_invalid_layout_rejected(invalid):
         s = torch.zeros((2, 2), dtype=torch.uint8)
     elif invalid == "scale_dtype":
         s = s.float()
+    elif invalid == "k_multiple":
+        q = torch.zeros((2, 4), dtype=torch.uint8)
     else:
         pts = torch.ones(3)
     with pytest.raises(ValueError, match="CUDA NVFP4"):

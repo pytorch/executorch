@@ -1032,6 +1032,10 @@ def _build_method_graph(
     return graph, constant_refs, output_specs, mutable_buffers, constant_data
 
 
+# GGUF quant types the native engines decode (runtime/engine/ggml/GgmlTypes.cpp).
+_NATIVE_GGUF_TYPES = ("q4_k", "q5_k", "q6_k")
+
+
 def _fold_gguf_dequant(graph_module: torch.fx.GraphModule) -> None:
     """Tag GGUF dequantize nodes so serialization emits the consuming op over the
     packed weight, the way XNNPACK folds a weight dequantize at write time.
@@ -1044,6 +1048,11 @@ def _fold_gguf_dequant(graph_module: torch.fx.GraphModule) -> None:
         op = _resolve_op_overload(node.target) if node.op == "call_function" else None
         if op is None or op.name() != "torchao::dequantize_gguf" or len(node.args) < 2:
             continue
+        if node.args[1] not in _NATIVE_GGUF_TYPES:
+            raise ValueError(
+                f"Native backend does not support GGUF quant type {node.args[1]!r}; "
+                f"supported: {_NATIVE_GGUF_TYPES}"
+            )
         weight = node.args[0]
         val = node.meta.get("val")
         if not isinstance(weight, torch.fx.Node) or not isinstance(val, torch.Tensor):
