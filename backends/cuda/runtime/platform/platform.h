@@ -27,8 +27,6 @@ executorch::runtime::Result<void*> get_function(
     void* lib_handle,
     const std::string& fn_name);
 
-int32_t get_process_id();
-
 void* aligned_alloc(size_t alignment, size_t size);
 
 void aligned_free(void* ptr);

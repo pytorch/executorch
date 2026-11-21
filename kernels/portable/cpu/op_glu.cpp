@@ -98,9 +98,7 @@ Tensor& glu_out_tensor(
         op_name,
         utils::SupportedTensorDtypes::FLOATHBF16>(
         [](const auto val_a, const auto val_b) -> CTYPE_COMPUTE {
-          // TODO: rewrite this to be vectorization-capable? the
-          // tensors might not be contiguous; need to have
-          // apply_bitensor_elementwise_fn check that.
+          // TODO: rewrite this to be vectorization-capable?
           const auto one = static_cast<decltype(val_a)>(1.0);
           return val_a * (one / (one + std::exp(-val_b)));
         },

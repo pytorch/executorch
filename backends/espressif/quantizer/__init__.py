@@ -6,6 +6,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
+from .esp_fused_quantizer import get_esp_fused_quant_quantizer
 from .espnn_quantizer import EspNNQuantizer
 
-__all__ = ["EspNNQuantizer"]
+__all__ = ["get_esp_fused_quant_quantizer", "EspNNQuantizer"]
