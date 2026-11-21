@@ -133,8 +133,10 @@ def _read_captured_call(node: Node) -> _CapturedHelionCall:
     # two exceptions are direct_aliases and mutated_inputs: Helion omits them
     # from a capture its functionalization rebuilt when they are empty, so a
     # missing entry means "none". The traced replacement is checked for
-    # writes to its inputs and for outputs aliasing them either way, so a
-    # capture that understates either is still rejected after tracing.
+    # writes to its inputs and for outputs aliasing them, with one exception:
+    # an output that aliases a mutated input aliases the clone the trace
+    # launches on, which neither post-trace check sees, so only
+    # direct_aliases rejects that case.
     try:
         spec = kwargs["output_spec"]
         is_functional = node.target is hops.helion_kernel_wrapper_functional
@@ -254,7 +256,11 @@ def _parse_helion_call(captured: _CapturedHelionCall) -> _HelionCall:
             "Mutating Helion calls must be functionalized before CUDA lowering"
         )
     names = list(kernel.signature.parameters)
-    if captured.has_constant_args or set(names) != set(captured.tensor_args):
+    if (
+        captured.has_constant_args
+        or set(names) != set(captured.tensor_args)
+        or not all(isinstance(v, Node) for v in captured.tensor_args.values())
+    ):
         raise NotImplementedError(
             "Helion lowering currently requires tensor-only arguments"
         )
