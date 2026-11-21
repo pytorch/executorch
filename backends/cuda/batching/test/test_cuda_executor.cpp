@@ -39,17 +39,6 @@ namespace batching = ::executorch::extension::llm::batching;
 using ::executorch::extension::Module;
 using ::executorch::runtime::Error;
 
-TEST(CudaExecutorMetadataTest, SequenceInfoABIRejectsUnsupportedCombinations) {
-  EXPECT_TRUE(cb::detail::valid_sequence_info_abi(1, false, false));
-  EXPECT_TRUE(cb::detail::valid_sequence_info_abi(1, true, false));
-  EXPECT_TRUE(cb::detail::valid_sequence_info_abi(1, true, true));
-  EXPECT_TRUE(cb::detail::valid_sequence_info_abi(2, true, false));
-  EXPECT_FALSE(cb::detail::valid_sequence_info_abi(2, false, false));
-  EXPECT_FALSE(cb::detail::valid_sequence_info_abi(2, true, true));
-  EXPECT_FALSE(cb::detail::valid_sequence_info_abi(0, true, false));
-  EXPECT_FALSE(cb::detail::valid_sequence_info_abi(3, true, false));
-}
-
 namespace {
 
 // Must match export_toy_decoder.py.

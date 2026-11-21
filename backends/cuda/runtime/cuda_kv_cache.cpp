@@ -191,7 +191,7 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
     ET_CHECK_OR_RETURN_ERROR(
         step.has_value(), InvalidArgument, "offgraph_kv: uncommittable step");
     cache::SequenceCache::commit(*step);
-    return pool_.mark_step_done();
+    return pool_.mark_step_done(pool_.stream());
   }
 
   OffGraphKVMetrics metrics() const override {
@@ -533,13 +533,13 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
         write_length > 0, InvalidArgument, "write length must be positive");
     ET_CHECK_OK_OR_RETURN_ERROR(error_);
     if (!dflash_block_size_) {
-      return pool_.mark_step_done();
+      return pool_.mark_step_done(pool_.stream());
     }
     if (poisoned_ || pending_width_ == 0 || write_length != pending_width_) {
       poisoned_ = true;
       return Error::InvalidState;
     }
-    const Error marked = pool_.mark_step_done();
+    const Error marked = pool_.mark_step_done(pool_.stream());
     const Error fenced = marked == Error::Ok ? pool_.synchronize() : marked;
     if (fenced != Error::Ok) {
       poisoned_ = true;
@@ -954,7 +954,7 @@ class CudaBatchedSequenceCache final : public cache::Cache,
       }
     });
     if (runtime_columns_ &&
-        ensure_columns(false, 0, pool_.stream()) != Error::Ok) {
+        ensure_columns(false, 0, cudaStreamPerThread) != Error::Ok) {
       return std::nullopt;
     }
     admitted = true;
@@ -995,15 +995,16 @@ class CudaBatchedSequenceCache final : public cache::Cache,
       }
     });
     if (runtime_columns_ &&
-        ensure_columns(false, 0, pool_.stream()) != Error::Ok) {
+        ensure_columns(false, 0, cudaStreamPerThread) != Error::Ok) {
       return std::nullopt;
     }
-    if (copy_column(source->second.column, seqs_.at(*id).column, keep) !=
+    const cudaStream_t stream =
+        runtime_columns_ ? cudaStreamPerThread : pool_.stream();
+    if (copy_column(
+            source->second.column, seqs_.at(*id).column, keep, stream) !=
             Error::Ok ||
-        pool_.mark_step_done() != Error::Ok) {
-      // Only the runtime-column path fences here: an ABI-1 clone failure
-      // previously just returned nullopt, and a device-wide sync plus
-      // poisoning must not change its failure behaviour.
+        pool_.mark_step_done(stream) != Error::Ok) {
+      // A failed ABI-2 copy must finish before its column can be reused.
       if (runtime_columns_ &&
           pool_.synchronize(/*all_streams=*/true) != Error::Ok) {
         poisoned_ = true;
@@ -1016,16 +1017,11 @@ class CudaBatchedSequenceCache final : public cache::Cache,
 
   bool seq_rm(int32_t seq_id) override {
     std::lock_guard<std::mutex> guard(mutex_);
-    if (std::find(pending_owners_.begin(), pending_owners_.end(), seq_id) !=
-        pending_owners_.end()) {
-      return false;
-    }
     if (std::find(step_seq_ids_.begin(), step_seq_ids_.end(), seq_id) !=
         step_seq_ids_.end()) {
       step_seq_ids_.clear();
     }
-    // Logical removal does not free storage. prepare/compact fence an
-    // abandoned ABI-2 forward before its column can be written or moved.
+    // Logical removal does not free storage; verbs run between forwards.
     return seqs_.erase(seq_id) > 0;
   }
 
@@ -1077,20 +1073,8 @@ class CudaBatchedSequenceCache final : public cache::Cache,
         !poisoned_ && (!dflash_block_size_ || pending_owners_.empty()),
         InvalidState,
         "offgraph_kv: uncommitted or failed draft co-batch; clear required");
-    if (runtime_columns_ && inflight_) {
-      // The previous step was prepared but never committed: the backend
-      // skips commit on any execute failure, so without recovery one
-      // failed forward would wedge the cache until clear() dropped every
-      // live sequence. Fence every stream first -- no forward can still
-      // be reading or writing the columns -- then treat the step as
-      // reusable and proceed, without rolling back the logical rows already
-      // claimed by prepare. Draft programs keep the stricter guard above.
-      if (pool_.synchronize(/*all_streams=*/true) != Error::Ok) {
-        poisoned_ = true;
-        return Error::Internal;
-      }
-      inflight_ = false;
-    }
+    ET_CHECK_OR_RETURN_ERROR(
+        !inflight_, InvalidState, "offgraph_kv: a forward is still prepared");
     if (!validated_) {
       const Error valid = pool_.validate();
       if (valid != Error::Ok) {
@@ -1199,12 +1183,16 @@ class CudaBatchedSequenceCache final : public cache::Cache,
     std::lock_guard<std::mutex> guard(mutex_);
     ET_CHECK_OR_RETURN_ERROR(
         write_length > 0, InvalidArgument, "write length must be positive");
+    ET_CHECK_OR_RETURN_ERROR(
+        !runtime_columns_ || inflight_,
+        InvalidState,
+        "offgraph_kv: no prepared forward to commit");
     ET_CHECK_OK_OR_RETURN_ERROR(error_);
     ET_CHECK_OR_RETURN_ERROR(
         !poisoned_,
         InvalidState,
         "offgraph_kv: uncommitted or failed draft co-batch; clear required");
-    ET_CHECK_OK_OR_RETURN_ERROR(pool_.mark_step_done());
+    ET_CHECK_OK_OR_RETURN_ERROR(pool_.mark_step_done(pool_.stream()));
     inflight_ = false;
     // A draft's block is scratch: the next draft rewrites it.
     for (const int32_t owner : pending_owners_) {
@@ -1217,6 +1205,20 @@ class CudaBatchedSequenceCache final : public cache::Cache,
       }
     }
     pending_owners_.clear();
+    return Error::Ok;
+  }
+
+  Error abort_step() override {
+    std::lock_guard<std::mutex> guard(mutex_);
+    if (!inflight_) {
+      return Error::Ok;
+    }
+    const Error error = pool_.synchronize(/*all_streams=*/true);
+    if (error != Error::Ok) {
+      poisoned_ = true;
+      return error;
+    }
+    inflight_ = false;
     return Error::Ok;
   }
 
@@ -1253,14 +1255,11 @@ class CudaBatchedSequenceCache final : public cache::Cache,
         spare_columns >= 0 && spare_columns <= max_seqs_,
         InvalidArgument,
         "offgraph_kv: invalid spare columns");
-    if (inflight_) {
-      if (pool_.synchronize(/*all_streams=*/true) != Error::Ok) {
-        poisoned_ = true;
-        return Error::Internal;
-      }
-      inflight_ = false;
-    }
-    return ensure_columns(true, spare_columns, pool_.stream());
+    ET_CHECK_OR_RETURN_ERROR(
+        !inflight_,
+        InvalidState,
+        "offgraph_kv: cannot compact during a forward");
+    return ensure_columns(true, spare_columns, cudaStreamPerThread);
   }
 
  protected:
@@ -1342,11 +1341,7 @@ class CudaBatchedSequenceCache final : public cache::Cache,
     std::map<int32_t, int> next;
     std::unordered_set<int> used;
     for (const auto& [id, sequence] : seqs_) {
-      if (compact) {
-        const int column = static_cast<int>(next.size());
-        next.emplace(id, column);
-        used.insert(column);
-      } else if (sequence.column >= 0) {
+      if (sequence.column >= 0 && (!compact || sequence.column < target - 1)) {
         ET_CHECK_OR_RETURN_ERROR(
             sequence.column < target - 1 && used.insert(sequence.column).second,
             InvalidState,
@@ -1381,14 +1376,14 @@ class CudaBatchedSequenceCache final : public cache::Cache,
         live_rows = std::max(live_rows, sequence.plan.length());
       }
       bool committed = false;
-      // Trim the allocator only on the compact path: trimming on every
-      // growth hands back pool memory the next forward must re-allocate.
+      // Reallocation is already a synchronization boundary. Return replaced
+      // allocations rather than retaining every former column width.
       const Error error = pool_.resize_columns(
           target,
           retained,
           live_rows,
           stream,
-          /*trim_unused=*/compact,
+          /*trim_unused=*/true,
           &committed);
       if (error != Error::Ok && !committed) {
         return error;
@@ -1413,8 +1408,8 @@ class CudaBatchedSequenceCache final : public cache::Cache,
   // from one column to another, ordered behind the previous step: the copies
   // run on this thread's stream, which may not be the stream that step wrote
   // on.
-  Error copy_column(int from, int to, int keep) {
-    ET_CHECK_OK_OR_RETURN_ERROR(pool_.follow_previous_step(pool_.stream()));
+  Error copy_column(int from, int to, int keep, cudaStream_t stream) {
+    ET_CHECK_OK_OR_RETURN_ERROR(pool_.follow_previous_step(stream));
     for (size_t index = 0; index < geometry_.layers.size(); ++index) {
       const cache::LayerGeometry& layer = geometry_.layers[index];
       const size_t slot = static_cast<size_t>(layer.n_kv_heads) *
@@ -1434,12 +1429,12 @@ class CudaBatchedSequenceCache final : public cache::Cache,
             slot,
             static_cast<size_t>(rows),
             cudaMemcpyDeviceToDevice,
-            pool_.stream());
+            stream);
         if (error != cudaSuccess) {
           // Earlier layers may already have queued copies into the free
           // column. Fence them before a failed clone lets that column be
           // reused.
-          (void)pool_.synchronize();
+          (void)cudaStreamSynchronize(stream);
           ET_LOG(
               Error,
               "offgraph_kv: cannot copy a sequence's history: %s",
@@ -1706,6 +1701,10 @@ const bool cuda_cache_builders_registered = [] {
       {cache::kind::kBatchedSequence,
        [](const cache::CacheGeometry& geometry, const cache::CacheConfig& cfg) {
          return make_cuda_batched_sequence_kv_cache(geometry, cfg);
+       }},
+      {cache::kind::kBatchedSequenceRuntime,
+       [](const cache::CacheGeometry& geometry, const cache::CacheConfig& cfg) {
+         return make_cuda_batched_sequence_kv_cache(geometry, cfg, true);
        }},
       // The cell layout is the batch layout this backend serves.
       {cache::kind::kBatched, make_cuda_cell_kv_cache},

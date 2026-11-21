@@ -18,10 +18,12 @@
 // runs the method with the smallest width that holds it; a static method's
 // extra rows are padding.
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -51,15 +53,9 @@ inline constexpr char kMaxCellsMethod[] = "get_offgraph_kv_max_cells";
 // Published instead of the cell count by a program whose KV cache keeps a
 // private history per sequence.
 inline constexpr char kMaxSeqsMethod[] = "get_offgraph_kv_max_seqs";
+// Optional: seq_info field layout. Defaults to ABI 1 (fixed columns).
 inline constexpr char kSequenceInfoABIMethod[] =
     "get_offgraph_kv_sequence_info_abi";
-
-namespace detail {
-inline bool
-valid_sequence_info_abi(int64_t version, bool sequence_layout, bool draft) {
-  return version == 1 || (version == 2 && sequence_layout && !draft);
-}
-} // namespace detail
 
 // Optional: the fewest selected rows forward_others was exported for. Its
 // selector is padded up to it. Defaults to 1.
@@ -240,6 +236,7 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
   // An idle boundary serialized with execute. The scratch column is additional
   // to spare_columns unused owner columns.
   ::executorch::runtime::Error compact_kv_columns(int spare_columns = 1);
+  void on_idle() override;
 
   // Every method, narrowest first, with how many forwards it ran. Read it
   // between executes, not while one runs.
@@ -265,7 +262,8 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
       std::vector<ForwardMethod> methods,
       int min_selected_rows,
       bool has_sampler,
-      bool has_argmax);
+      bool has_argmax,
+      bool runtime_columns);
 
   // Draws one token per row of `logits`, rows [0, sessions.size()), on the
   // device; returns them in row order.
@@ -306,6 +304,7 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
   llm_batching::util::SessionTable sessions_;
   bool has_sampler_;
   bool has_argmax_;
+  const bool runtime_columns_;
   // Device staging for the sampler's params, grown to the widest row count.
   void* device_params_ = nullptr;
   std::size_t device_params_rows_ = 0;
@@ -313,7 +312,9 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
   // separate generators, so every forward must agree.
   std::optional<bool> device_logits_;
   bool initialized_ = false;
-  bool raw_executing_ = false;
+  std::mutex execution_mutex_;
+  std::chrono::steady_clock::time_point last_cache_activity_ =
+      std::chrono::steady_clock::now();
 };
 
 } // namespace executorch::backends::cuda::batching

@@ -268,7 +268,8 @@ CudaExecutor::CudaExecutor(
     std::vector<ForwardMethod> methods,
     int min_selected_rows,
     bool has_sampler,
-    bool has_argmax)
+    bool has_argmax,
+    bool runtime_columns)
     : install_guard_(cache),
       module_(std::move(module)),
       ctl_(cache->as<llm_cache::BatchControl>()),
@@ -281,7 +282,8 @@ CudaExecutor::CudaExecutor(
       min_selected_rows_(min_selected_rows),
       sessions_(*ctl_, max_sessions, max_session_tokens, vocab_size),
       has_sampler_(has_sampler),
-      has_argmax_(has_argmax) {}
+      has_argmax_(has_argmax),
+      runtime_columns_(runtime_columns) {}
 
 CudaExecutor::~CudaExecutor() {
   if (device_params_ != nullptr) {
@@ -373,10 +375,9 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
       sequence_info_abi,
       metadata::detail::read_int_method(*module, kSequenceInfoABIMethod));
   ET_CHECK_OR_RETURN_ERROR(
-      detail::valid_sequence_info_abi(
-          sequence_info_abi.value_or(1),
-          sequence_layout,
-          geometry.dflash_block_size.has_value()),
+      sequence_info_abi.value_or(1) == 1 ||
+          (sequence_info_abi == 2 && sequence_layout &&
+           !geometry.dflash_block_size.has_value()),
       InvalidProgram,
       "CudaExecutor: unsupported sequence-info ABI");
   std::int64_t max_cells = 0;
@@ -547,27 +548,13 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
       llm_cache::valid(geometry, cfg),
       InvalidProgram,
       "CudaExecutor: the program's layout is unusable");
-  std::shared_ptr<llm_cache::Cache> cache;
-  if (sequence_info_abi == 2) {
-    ET_CHECK_OR_RETURN_ERROR(
-        backend_id == kCudaBackendId,
-        InvalidProgram,
-        "CudaExecutor: runtime sequence columns require the CUDA backend");
-    cache = make_cuda_batched_sequence_kv_cache(geometry, cfg, true);
-    ET_CHECK_OR_RETURN_ERROR(
-        cache != nullptr,
-        InvalidProgram,
-        "CudaExecutor: invalid runtime-column cache geometry or config");
-  } else {
-    auto built = llm_cache::CacheFactory::global().build(
-        backend_id,
-        sequence_layout ? llm_cache::kind::kBatchedSequence
-                        : llm_cache::kind::kBatchedCell,
-        geometry,
-        cfg);
-    ET_CHECK_OK_OR_RETURN_ERROR(built.error());
-    cache = built.get();
-  }
+  const char* kind = sequence_info_abi == 2
+      ? llm_cache::kind::kBatchedSequenceRuntime
+      : sequence_layout ? llm_cache::kind::kBatchedSequence
+                        : llm_cache::kind::kBatchedCell;
+  ET_ASSIGN_OR_RETURN(
+      cache,
+      llm_cache::CacheFactory::global().build(backend_id, kind, geometry, cfg));
   auto* const ctl = cache->as<llm_cache::BatchControl>();
   ET_CHECK_OR_RETURN_ERROR(
       ctl != nullptr && cache->as<CudaKVCache>() != nullptr,
@@ -611,7 +598,8 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
       std::move(methods),
       min_selected_rows,
       has_sampler,
-      has_argmax));
+      has_argmax,
+      sequence_info_abi == 2));
   executor->embeddings_method_ = embeddings_method;
   return executor;
 }
@@ -663,14 +651,17 @@ bool CudaExecutor::initialize() {
 }
 
 std::optional<SessionId> CudaExecutor::open_session() {
+  last_cache_activity_ = std::chrono::steady_clock::now();
   return sessions_.open();
 }
 
 void CudaExecutor::close_session(SessionId session) {
+  last_cache_activity_ = std::chrono::steady_clock::now();
   sessions_.close(session);
 }
 
 std::optional<SessionId> CudaExecutor::clone(SessionId source, Position upto) {
+  last_cache_activity_ = std::chrono::steady_clock::now();
   return sessions_.clone(source, upto);
 }
 
@@ -703,7 +694,9 @@ Error CudaExecutor::set_input_embedder(InputEmbedder embedder) {
 bool CudaExecutor::execute_raw(
     const RawTargetStep& step,
     const std::function<bool(const RawTargetOutput&)>& consume) {
-  if (!initialized_ || raw_executing_ || !consume ||
+  std::unique_lock<std::mutex> execution_lock(
+      execution_mutex_, std::try_to_lock);
+  if (!execution_lock.owns_lock() || !initialized_ || !consume ||
       step.tokens.size() >
           static_cast<std::size_t>(std::numeric_limits<int>::max()) ||
       step.positions.size() != step.tokens.size() ||
@@ -722,19 +715,13 @@ bool CudaExecutor::execute_raw(
       return false;
     }
   }
-  struct Reset {
-    explicit Reset(bool& target) : flag(target) {
-      flag = true;
+  last_cache_activity_ = std::chrono::steady_clock::now();
+  struct IdleClock {
+    std::chrono::steady_clock::time_point& activity;
+    ~IdleClock() {
+      activity = std::chrono::steady_clock::now();
     }
-    Reset(const Reset&) = delete;
-    Reset& operator=(const Reset&) = delete;
-    Reset(Reset&&) = delete;
-    Reset& operator=(Reset&&) = delete;
-    ~Reset() {
-      flag = false;
-    }
-    bool& flag;
-  } reset(raw_executing_);
+  } idle_clock{last_cache_activity_};
   if (step.embeddings) {
     return execute_embeddings(step, consume);
   }
@@ -1113,9 +1100,39 @@ OffGraphKVMetrics CudaExecutor::kv_metrics() const {
 }
 
 Error CudaExecutor::compact_kv_columns(int spare_columns) {
+  std::unique_lock<std::mutex> execution_lock(
+      execution_mutex_, std::try_to_lock);
   ET_CHECK_OR_RETURN_ERROR(
-      !raw_executing_, InvalidState, "CudaExecutor: compact between executes");
+      execution_lock.owns_lock(),
+      InvalidState,
+      "CudaExecutor: compact between executes");
   return kv_->compact_columns(spare_columns);
+}
+
+void CudaExecutor::on_idle() {
+  if (!runtime_columns_) {
+    return;
+  }
+  std::unique_lock<std::mutex> execution_lock(
+      execution_mutex_, std::try_to_lock);
+  if (!execution_lock.owns_lock() ||
+      std::chrono::steady_clock::now() - last_cache_activity_ <
+          std::chrono::milliseconds(500)) {
+    return;
+  }
+  const auto metrics = kv_->metrics();
+  if (metrics.physical_columns <= 2 ||
+      2 * metrics.live_sequences + 1 >= metrics.physical_columns) {
+    return;
+  }
+  last_cache_activity_ = std::chrono::steady_clock::now();
+  const Error error = kv_->compact_columns(/*spare_columns=*/1);
+  if (error != Error::Ok && error != Error::NotSupported) {
+    ET_LOG(
+        Error,
+        "CudaExecutor: idle KV compaction failed (%d)",
+        static_cast<int>(error));
+  }
 }
 
 std::vector<ForwardMethodCalls> CudaExecutor::method_calls() const {

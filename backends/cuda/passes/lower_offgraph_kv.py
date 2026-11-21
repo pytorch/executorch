@@ -99,13 +99,8 @@ def parse_offgraph_kv_manifest(value: bytes) -> dict[str, Any]:  # noqa: C901
     runtime_columns = manifest.setdefault("runtime_columns", False)
     if not isinstance(runtime_columns, bool):
         raise ValueError("off-graph runtime_columns must be a bool")
-    if manifest["version"] == 2:
-        if layout != "batched-sequence" or not runtime_columns:
-            raise ValueError(
-                "off-graph version 2 requires batched-sequence runtime columns"
-            )
-    elif runtime_columns:
-        raise ValueError("off-graph runtime columns require manifest version 2")
+    if runtime_columns and layout != "batched-sequence":
+        raise ValueError("off-graph runtime columns require batched-sequence layout")
     if layout == "batched-sequence":
         for key in ("max_seqs", "max_segments"):
             if not isinstance(manifest.get(key), int) or manifest[key] <= 0:
@@ -157,7 +152,7 @@ def offgraph_kv_constant_methods(value: bytes) -> dict[str, int]:
         return {}
     return {
         "get_offgraph_kv_max_seqs": manifest["max_seqs"],
-        OFFGRAPH_KV_SEQUENCE_INFO_ABI_METHOD: manifest["version"],
+        OFFGRAPH_KV_SEQUENCE_INFO_ABI_METHOD: 2 if manifest["runtime_columns"] else 1,
     }
 
 

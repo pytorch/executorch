@@ -1905,12 +1905,73 @@ class VulkanEngineExecutable final : public EngineExecutable {
     return tensor;
   }
 
+  // ET-VK has no symbolic neg, so -a runs as sub(0, a), which ET-VK computes in
+  // int32. An int literal must negate within int32. A symbolic operand must be
+  // a graph input's size whose serialized upper bound is within int32: every
+  // execution checks input sizes against their bounds, so -a stays
+  // representable.
+  void dispatch_symbolic_neg(const Node& n) {
+    if (n.inputs.size() != 1 || n.outputs.size() != 1 ||
+        n.inputs.front().arg.kind() != ArgKind::Int) {
+      throw std::runtime_error("vulkan: symbolic neg takes one int operand");
+    }
+    const IntArg& operand = n.inputs.front().arg.as_int();
+    constexpr int64_t kMax = std::numeric_limits<int32_t>::max();
+    if (!valid(operand.id)) {
+      if (operand.value < -kMax || operand.value > kMax) {
+        throw std::runtime_error(
+            "vulkan: symbolic neg of " + std::to_string(operand.value) +
+            " does not fit int32");
+      }
+    } else if (!size_within_int32(operand.id)) {
+      throw std::runtime_error(
+          "vulkan: symbolic neg supports graph input sizes bounded within "
+          "int32 and int32 literals only");
+    }
+    VK_GET_OP_FN("sub")
+    (*graph_,
+     {graph_->add_scalar<int64_t>(0),
+      resolve_arg(n.inputs.front().arg),
+      vref_at(n.outputs.front().value_id)});
+  }
+
+  // Whether symbolic `id` is a graph input's size, at a literal dim, whose
+  // upper bound fits int32.
+  bool size_within_int32(ValueId id) const {
+    const NodeId producer = g().value(id).producer_id;
+    if (!valid(producer)) {
+      return false;
+    }
+    const Node& node = g().node(producer);
+    if (!node.is_call() || registry_key(node.target) != "sym_size.int") {
+      return false;
+    }
+    const Argument* self = find_input(node, "self");
+    const Argument* dim = find_input(node, "dim");
+    if (self == nullptr || self->kind() != ArgKind::Tensor || dim == nullptr ||
+        dim->kind() != ArgKind::Int || valid(dim->as_int().id) ||
+        std::ranges::find(g().input_ids, self->as_tensor().id) ==
+            g().input_ids.end()) {
+      return false;
+    }
+    const std::vector<int64_t>& sizes = meta_of(self->as_tensor().id).sizes;
+    const auto rank = static_cast<int64_t>(sizes.size());
+    int64_t d = dim->as_int().value;
+    d = d < 0 ? d + rank : d;
+    return d >= 0 && d < rank &&
+        sizes[static_cast<size_t>(d)] <= std::numeric_limits<int32_t>::max();
+  }
+
   TensorMeta device_meta(ValueId id) const {
     const TensorMeta& m = meta_of(id);
     return TensorMeta{.dtype = device_dtype(m.dtype), .sizes = m.sizes};
   }
 
   void dispatch(const Node& n) {
+    if (n.target == "_operator.neg") {
+      dispatch_symbolic_neg(n);
+      return;
+    }
     const std::string key = registry_key(n.target);
     if (!VK_HAS_OP(key)) {
       throw std::runtime_error(

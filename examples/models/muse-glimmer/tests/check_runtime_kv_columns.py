@@ -70,7 +70,7 @@ def commands(runtime_columns: bool) -> list[dict]:
             )
     requests.extend([{"op": "remove", "seq_id": 1}, {"op": "remove", "seq_id": 2}])
     if runtime_columns:
-        requests.append({"op": "compact", "spare_columns": 0})
+        requests.append({"op": "idle"})
     requests.extend(
         [
             {"op": "new"},
@@ -190,7 +190,9 @@ def main() -> None:
     assert steps[0]["snapshot"]["physical_columns"] == 2
     assert steps[2]["snapshot"]["physical_columns"] == 5
     assert steps[2]["snapshot"]["declared_columns"] == 9
-    compactions = [r["snapshot"] for r in responses if r.get("op") == "compact"]
+    compactions = [
+        r["snapshot"] for r in responses if r.get("op") in ("compact", "idle")
+    ]
     assert [m["physical_columns"] for m in compactions] == [3, 2]
     assert compactions[0]["live_KV_bytes"] < steps[2]["snapshot"]["live_KV_bytes"]
     print("ABI-2 native logits, ring cloning, compaction and graph replay passed")

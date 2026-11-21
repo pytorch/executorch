@@ -94,6 +94,11 @@ class ET_EXPERIMENTAL Executor {
   // double close is not an error, though Runner closes each owned id once.
   virtual void close_session(SessionId session) = 0;
 
+  // Engine-thread maintenance when no batch is ready, before waiting for work.
+  // Implementations may reclaim idle storage; live session contents must
+  // survive.
+  virtual void on_idle() {}
+
   // Independently writable state for source's committed [0, upto) prefix,
   // with a lifetime-unique id and no sampling policy. Called between forwards;
   // source may have an active generation or hold speculative state past upto.

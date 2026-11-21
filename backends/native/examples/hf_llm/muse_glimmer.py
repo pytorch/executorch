@@ -28,14 +28,16 @@ class MuseGlimmerTextLM(nn.Module):
         self,
         input_ids: torch.Tensor,
         position_ids: torch.Tensor | None = None,
-        logits_to_keep: int = 0,
+        logits_to_keep: int | torch.Tensor = 0,
         **_,
     ) -> CausalLMOutput:
         text_config = self.config.text_config
         hidden = self.model["language_model"](
             input_ids=input_ids, position_ids=position_ids, use_cache=False
         ).last_hidden_state
-        if logits_to_keep:
+        if isinstance(logits_to_keep, torch.Tensor):
+            hidden = hidden[:, logits_to_keep]
+        elif logits_to_keep:
             hidden = hidden[:, -logits_to_keep:]
         logits = self.lm_head(hidden) * text_config.output_multiplier
         cap = text_config.final_logit_softcapping

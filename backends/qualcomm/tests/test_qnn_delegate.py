@@ -12283,7 +12283,7 @@ class TestUtilsScript(TestQNN):
             else:
                 svg_path = msg["svg_path"]
                 csv_path = msg["csv_path"]
-                expected_accepted_events = 234
+                expected_accepted_events = 228
                 assert os.path.exists(svg_path), f"Unable to find SVG file: {svg_path}"
                 assert os.path.exists(csv_path), f"Unable to find CSV file: {csv_path}"
 

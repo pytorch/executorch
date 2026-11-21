@@ -20,7 +20,6 @@
 #include <array>
 #include <atomic>
 #include <filesystem>
-#include <fstream>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -42,6 +41,7 @@
 
 // Include our shim layer headers
 #include <executorch/backends/aoti/aoti_delegate_handle.h>
+#include <executorch/backends/aoti/temp_library.h>
 #include <executorch/backends/aoti/utils.h>
 #include <executorch/backends/cuda/runtime/backend_options.h>
 #include <executorch/backends/cuda/runtime/cuda_delegate_handle.h>
@@ -512,18 +512,12 @@ class ET_EXPERIMENTAL CudaBackend final
         so_blob_key.c_str(),
         static_cast<uint32_t>(aoti_dso_buffer.error()));
 
-    // Generate a unique temporary file path. so_blob_key already selected the
-    // blob above and is deliberately kept out of the filename: it can be an
-    // untrusted, variable-length payload key, so embedding it risks path
-    // traversal and cross-key collisions. Uniqueness comes from the pid
-    // (across processes) and an atomic counter (within a process, since two
-    // identical CUDA partitions would otherwise clobber each other's .so).
-    static std::atomic<uint64_t> so_file_counter{0};
-    filesystem::path temp_dir = filesystem::temp_directory_path();
-    filesystem::path so_path = temp_dir /
-        ("executorch_cuda_" + to_string(get_process_id()) + "_" +
-         to_string(so_file_counter.fetch_add(1, std::memory_order_relaxed)) +
-         ".so");
+    Result<filesystem::path> so_path_res =
+        write_temp_library(aoti_dso_buffer->data(), aoti_dso_buffer->size());
+    if (!so_path_res.ok()) {
+      return so_path_res.error();
+    }
+    const filesystem::path& so_path = so_path_res.get();
 
     // A failed init returns no handle, so destroy() never runs for it. Remove
     // the file here unless init succeeds.
@@ -540,26 +534,6 @@ class ET_EXPERIMENTAL CudaBackend final
           so_path.c_str(),
           remove_error.message().c_str());
     });
-
-    // Create a temporary file
-    ofstream outfile(so_path, ios::binary);
-
-    // Write the ELF buffer to the temporary file
-    ET_LOG(
-        Info,
-        "Writing %zu bytes to %s",
-        aoti_dso_buffer->size(),
-        so_path.c_str());
-
-    outfile.write(
-        static_cast<const char*>(aoti_dso_buffer->data()),
-        aoti_dso_buffer->size());
-
-    ET_CHECK_OR_RETURN_ERROR(
-        outfile, AccessFailed, "Failed to write to file %s", so_path.c_str());
-
-    // Finish writing the file to disk
-    outfile.close();
 
     // Free the buffer immediately after writing to disk
     aoti_dso_buffer->Free();
@@ -817,6 +791,14 @@ class ET_EXPERIMENTAL CudaBackend final
     // the step is driven from here rather than by the runner.
     int64_t kv_step_width = 0;
 #if defined(EXECUTORCH_BUILD_EXTENSION_LLM)
+    bool kv_prepared = false;
+    executorch::backends::aoti::ScopeGuard abort_kv_step([&]() noexcept {
+      if (kv_prepared) {
+        ET_CHECK_OR_LOG_ERROR(
+            handle->kv_cache->abort_step() == Error::Ok,
+            "offgraph_kv: failed to abort prepared forward");
+      }
+    });
     if (handle->kv_cache != nullptr) {
       const auto step_width = read_offgraph_kv_step_width(
           handle->kv_step_width, Span<EValue*>(args.data(), n_inputs));
@@ -828,6 +810,7 @@ class ET_EXPERIMENTAL CudaBackend final
       ET_CHECK_OK_OR_RETURN_ERROR(step_stream.error());
       ET_CHECK_OK_OR_RETURN_ERROR(
           handle->kv_cache->prepare_step(kv_step_width, step_stream.get()));
+      kv_prepared = true;
       ET_CHECK_OK_OR_RETURN_ERROR(handle->kv_cache->rebind_for_execute(handle));
     }
 #endif

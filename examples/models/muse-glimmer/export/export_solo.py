@@ -255,7 +255,6 @@ def _solo_constant_methods(
 MAX_CELLS_METHOD = "get_offgraph_kv_max_cells"
 # Read by CudaExecutor in place of the cell count when each sequence keeps a
 # private history: the sequence columns of every layer's storage.
-MAX_KV_SEQS_METHOD = "get_offgraph_kv_max_seqs"
 # Read by MuseGlimmerCudaDFlashExecutor for the draft's own sequence columns,
 # mirroring kMaxSeqs in runtime/cuda_dflash_executor.h.
 DRAFT_MAX_KV_SEQS_METHOD = "get_draft_offgraph_kv_max_seqs"
@@ -357,7 +356,6 @@ def batched_sequence_manifest(
     manifest["max_segments"] = batched_sequence_max_segments(max_seqs)
     manifest["causal"] = causal
     if runtime_columns:
-        manifest["version"] = 2
         manifest["runtime_columns"] = True
     if context_window:
         manifest["context_window"] = True
@@ -1237,7 +1235,8 @@ def main() -> None:
     parser.add_argument(
         "--runtime-kv-columns",
         action="store_true",
-        help="Export the experimental runtime-pitch ABI for CUDA sequence KV storage.",
+        help="Export the experimental runtime-pitch ABI for CUDA sequence KV storage: "
+        "owner columns grow on admission and compact after sustained serving idleness.",
     )
     parser.add_argument(
         "--activation-dtype",

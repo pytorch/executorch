@@ -30,6 +30,7 @@
 #include <map>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 DEFINE_string(pte, "", "Solo text-only CUDA model");
@@ -272,6 +273,9 @@ int main(int argc, char** argv) {
             executor->compact_kv_columns(request.value("spare_columns", 0)) ==
                 Error::Ok,
             "compact physical KV");
+      } else if (op == "idle") {
+        std::this_thread::sleep_for(std::chrono::milliseconds(550));
+        executor->on_idle();
       } else if (op == "step") {
         result = run_step(*executor, request);
       } else if (op != "metrics") {

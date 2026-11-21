@@ -491,13 +491,20 @@ class LowerBatchedSequencePassTest(unittest.TestCase):
             buffers[f"{OFFGRAPH_KV_FQN_PREFIX}layer_0_k"],
             (1, self.CAPACITY * (self.MAX_SEQS + 1), N_KV_HEADS, HEAD_DIM),
         )
-        for bad in (
-            self.manifest(version=1, runtime_columns=True),
-            self.manifest(version=2, runtime_columns=False),
-            self.manifest(version=2),
-        ):
-            with self.assertRaises(ValueError):
-                parse_offgraph_kv_manifest(bad)
+        for version in (1, 2):
+            for runtime_columns in (False, True):
+                with self.subTest(version=version, runtime_columns=runtime_columns):
+                    metadata = offgraph_kv_constant_methods(
+                        self.manifest(version=version, runtime_columns=runtime_columns)
+                    )
+                    self.assertEqual(
+                        metadata[OFFGRAPH_KV_SEQUENCE_INFO_ABI_METHOD],
+                        2 if runtime_columns else 1,
+                    )
+        with self.assertRaises(ValueError):
+            parse_offgraph_kv_manifest(
+                self.manifest(layout="sequence", runtime_columns=True)
+            )
 
     def test_declares_column_storage_and_step_buffers(self) -> None:
         lowered = self._lowered()
@@ -531,14 +538,19 @@ class LowerBatchedSequencePassTest(unittest.TestCase):
 
     def _check_lowered_program(self, runtime_columns: bool) -> None:
         torch.manual_seed(21)
+        declared_seqs = self.MAX_SEQS + 2 if runtime_columns else self.MAX_SEQS
+        segments = 2 * declared_seqs
+        pitch = self.MAX_SEQS + 1
         manifest = self.manifest(
-            version=2 if runtime_columns else 1, runtime_columns=runtime_columns
+            runtime_columns=runtime_columns,
+            max_seqs=declared_seqs,
+            max_segments=segments,
         )
         metadata = offgraph_kv_constant_methods(manifest)
         self.assertEqual(
             metadata[OFFGRAPH_KV_SEQUENCE_INFO_ABI_METHOD], 2 if runtime_columns else 1
         )
-        self.assertEqual(metadata["get_offgraph_kv_max_seqs"], self.MAX_SEQS)
+        self.assertEqual(metadata["get_offgraph_kv_max_seqs"], declared_seqs)
         lowered = self._lowered(manifest)
         runtime = {}
         for name, value in list(lowered.constants.items()):
@@ -546,6 +558,12 @@ class LowerBatchedSequencePassTest(unittest.TestCase):
                 runtime[name] = torch.zeros(
                     value.shape, device="cuda", dtype=value.dtype
                 )
+                if runtime_columns and name not in (
+                    OFFGRAPH_KV_SEQ_COLS_FQN,
+                    OFFGRAPH_KV_SEQ_INFO_FQN,
+                ):
+                    rows = value.shape[1] // (declared_seqs + 1)
+                    runtime[name][:, rows * pitch :].fill_(float("nan"))
                 lowered.constants[name] = runtime[name]
         module = lowered.module()
         oracle = _Oracle(4 * self.CAPACITY, (0, self.WINDOW))
@@ -559,14 +577,14 @@ class LowerBatchedSequencePassTest(unittest.TestCase):
                 position,
                 columns,
                 self.MAX_WRITE,
-                self.MAX_SEGMENTS,
-                self.MAX_SEQS,
+                segments,
+                pitch - 1,
             )
             if runtime_columns:
                 seq_info = torch.cat(
                     [
                         seq_info,
-                        seq_info.new_full((self.MAX_SEGMENTS, 1), self.MAX_SEQS + 1),
+                        seq_info.new_full((segments, 1), pitch),
                     ],
                     dim=1,
                 )
@@ -574,6 +592,11 @@ class LowerBatchedSequencePassTest(unittest.TestCase):
             runtime[OFFGRAPH_KV_SEQ_INFO_FQN].copy_(seq_info)
             out = module(q, k, v, position.reshape(-1, 1))
             self.assertLess(_max_abs_diff(out, flat + ring), 3e-2)
+            if runtime_columns:
+                for name, value in runtime.items():
+                    if name not in (OFFGRAPH_KV_SEQ_COLS_FQN, OFFGRAPH_KV_SEQ_INFO_FQN):
+                        rows = value.shape[1] // (declared_seqs + 1)
+                        self.assertTrue(torch.isnan(value[:, rows * pitch :]).all())
 
     def test_lowered_program_matches_the_neutral_op(self) -> None:
         self._check_lowered_program(False)

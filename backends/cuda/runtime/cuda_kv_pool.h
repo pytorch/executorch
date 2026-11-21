@@ -100,7 +100,7 @@ class CudaKVPool final {
 
   // Records where the step's work ends on its stream, for the next step to
   // follow if it runs on another.
-  runtime::Error mark_step_done();
+  runtime::Error mark_step_done(cudaStream_t stream);
 
   // Orders `stream` behind the previous step's stream, so work issued on
   // another host thread (where cudaStreamPerThread names another stream) still

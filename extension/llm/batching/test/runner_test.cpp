@@ -379,6 +379,41 @@ TEST(GenerationHandleTest, DefaultHandleIsInvalid) {
   handle.wait();
 }
 
+TEST(RunnerMaintenanceTest, IdleHookRunsBetweenBatchesOnTheEngineThread) {
+  class IdleExecutor : public FakeExecutor {
+   public:
+    void on_idle() override {
+      EXPECT_FALSE(in_execute());
+      EXPECT_NE(std::this_thread::get_id(), caller);
+      ++idle_calls;
+    }
+    const std::thread::id caller = std::this_thread::get_id();
+    std::atomic<int> idle_calls{0};
+  } executor;
+  Fixture fixture(executor);
+  Session session = open(fixture.runner);
+  executor.hold();
+  auto updates = std::make_shared<Updates>();
+  auto handle = generate(session, tokens(1), config(1), updates);
+  const auto deadline = std::chrono::steady_clock::now() + kTimeout;
+  while (!executor.in_execute() &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::yield();
+  }
+  EXPECT_TRUE(executor.in_execute());
+  const int idle_calls = executor.idle_calls.load();
+  std::this_thread::sleep_for(std::chrono::milliseconds(40));
+  EXPECT_EQ(executor.idle_calls.load(), idle_calls);
+  executor.release();
+  ASSERT_TRUE(updates->wait());
+  handle.wait();
+  while (executor.idle_calls.load() == idle_calls &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::yield();
+  }
+  EXPECT_GT(executor.idle_calls.load(), idle_calls);
+}
+
 TEST(GenerationHandleTest, MoveTransfersValidity) {
   FakeExecutor executor;
   Fixture fixture(executor);

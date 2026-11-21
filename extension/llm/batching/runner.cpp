@@ -24,6 +24,8 @@
 #include <utility>
 #include <variant>
 
+#include <executorch/runtime/platform/log.h>
+
 namespace executorch {
 namespace extension {
 namespace llm {
@@ -796,6 +798,15 @@ void RunnerImpl::run_() {
     if (execute_one_batch_()) {
       continue; // more work may be ready
     }
+#if ET_HAS_EXCEPTIONS
+    try {
+#endif
+      executor_.on_idle();
+#if ET_HAS_EXCEPTIONS
+    } catch (...) {
+      ET_LOG(Error, "Executor idle maintenance failed");
+    }
+#endif
     std::unique_lock<std::mutex> lock(control_mutex_);
     engine_cv_.wait_for(lock, std::chrono::milliseconds(20), [this] {
       return lifecycle_.load(std::memory_order_relaxed) != Lifecycle::Running ||

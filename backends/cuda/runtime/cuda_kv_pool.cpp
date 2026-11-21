@@ -165,7 +165,7 @@ Error CudaKVPool::prepare(
   return Error::Ok;
 }
 
-Error CudaKVPool::mark_step_done() {
+Error CudaKVPool::mark_step_done(cudaStream_t stream) {
   const auto device = CUDAGuard::create(device_);
   ET_CHECK_OK_OR_RETURN_ERROR(device.error());
   if (last_step_done_ == nullptr) {
@@ -177,12 +177,13 @@ Error CudaKVPool::mark_step_done() {
         "offgraph_kv: cannot create the step event: %s",
         cudaGetErrorString(error));
   }
-  const cudaError_t error = cudaEventRecord(last_step_done_, stream_);
+  const cudaError_t error = cudaEventRecord(last_step_done_, stream);
   ET_CHECK_OR_RETURN_ERROR(
       error == cudaSuccess,
       Internal,
       "offgraph_kv: cannot record the step event: %s",
       cudaGetErrorString(error));
+  stream_ = stream;
   return Error::Ok;
 }
 
@@ -505,6 +506,9 @@ Error CudaKVPool::resize_columns(
     }
     return Error::Ok;
   }
+  if (columns == columns_ && !relocate) {
+    return Error::Ok;
+  }
   const auto device = CUDAGuard::create(device_);
   ET_CHECK_OK_OR_RETURN_ERROR(device.error());
   // Resize is an explicit boundary, not a synchronization in every forward.
@@ -513,10 +517,6 @@ Error CudaKVPool::resize_columns(
   if (trim_unused) {
     CudaAllocator::release_cached_memory(device_);
   }
-  if (columns == columns_ && !relocate) {
-    return Error::Ok;
-  }
-
   const int old_columns = columns_;
   std::vector<Allocation> replacements;
   replacements.reserve(layers_.size());

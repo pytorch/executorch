@@ -32,7 +32,7 @@ struct OffGraphKVMetrics {
   int64_t flat_capacity{0};
   // Times flat row storage has grown. Column resizes are counted separately.
   int64_t growth_count{0};
-  // Live K/V and step-buffer allocations, excluding allocator retention.
+  // Live K/V allocations, excluding step buffers and allocator retention.
   int64_t allocated_bytes{0};
   // Physical/declared widths include the final scratch column.
   int64_t physical_columns{0};
@@ -87,6 +87,12 @@ class CudaKVCache {
       int64_t write_length,
       cudaStream_t stream) = 0;
   virtual runtime::Error commit_step(int64_t write_length) = 0;
+
+  // A prepared forward failed. Fence its queued work before permitting
+  // storage to move again. Claimed logical rows are not rolled back.
+  virtual runtime::Error abort_step() {
+    return runtime::Error::Ok;
+  }
 
   virtual OffGraphKVMetrics metrics() const = 0;
 
@@ -206,7 +212,7 @@ std::shared_ptr<cache::Cache> make_cuda_cell_kv_cache(
     const cache::CacheConfig& cfg);
 
 // Segments of a batched-sequence step: runs of one sequence's query rows. The
-// program declares its seq_info buffer [segments, 4] from the same rule.
+// program declares seq_info [segments, 4], or [segments, 5] for ABI 2.
 inline int batched_sequence_max_segments(int max_seqs) {
   return 2 * max_seqs;
 }
