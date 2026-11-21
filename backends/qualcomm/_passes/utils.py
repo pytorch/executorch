@@ -276,20 +276,23 @@ def get_runtime_inputs(edge_program) -> Set[str]:
         for spec in schema.arguments:
             if spec.alias_info is None or not spec.alias_info.is_write:
                 continue
-            arg = args.get(spec.name)
-            # getitem picks a view out of a split, unbind or chunk.
-            while isinstance(arg, torch.fx.Node) and (
-                arg.target is operator.getitem
-                or (
-                    isinstance(arg.target, torch._ops.OpOverload) and arg.target.is_view
-                )
-            ):
-                arg = arg.args[0]
-            if (
-                isinstance(arg, torch.fx.Node)
-                and arg.name in signature.inputs_to_buffers
-            ):
-                names.add(arg.name)
+            written = args.get(spec.name)
+            # A Tensor[] argument, like the out= of unbind_copy, writes each tensor.
+            for arg in written if isinstance(written, (list, tuple)) else [written]:
+                # getitem picks a view out of a split, unbind or chunk.
+                while isinstance(arg, torch.fx.Node) and (
+                    arg.target is operator.getitem
+                    or (
+                        isinstance(arg.target, torch._ops.OpOverload)
+                        and arg.target.is_view
+                    )
+                ):
+                    arg = arg.args[0]
+                if (
+                    isinstance(arg, torch.fx.Node)
+                    and arg.name in signature.inputs_to_buffers
+                ):
+                    names.add(arg.name)
     return names
 
 

@@ -33,6 +33,7 @@ from executorch.backends.qualcomm._passes import (
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_qnn_pass_manager_cls,
 )
+from executorch.backends.qualcomm._passes.utils import get_runtime_inputs
 from executorch.backends.qualcomm.builders.node_visitor import (
     NodeVisitor,
     to_dq_op,
@@ -3170,6 +3171,28 @@ class TestPasses(unittest.TestCase):
                 [self._is_fully_tagged(node) for node in sin_nodes],
                 [False, False, False, False, True],
             )
+
+    def test_runtime_inputs_include_buffers_written_through_a_list(self):
+        class ListWrites(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("listed", torch.zeros(4, 8))
+                self.register_buffer("row", torch.zeros(8))
+                self.register_buffer("table", torch.zeros(8))
+
+            def forward(self, x):
+                torch._foreach_add_([self.listed], [x])
+                torch.unbind_copy(x[:2], out=[self.row, torch.empty(8)])
+                return x + self.table
+
+        # A program fresh from torch.export lists no mutated buffers yet, and
+        # an op can write a list of tensors.
+        program = torch.export.export(ListWrites(), (torch.rand(4, 8),), strict=True)
+        buffers = program.graph_signature.inputs_to_buffers
+        self.assertEqual(
+            {buffers.get(name, name) for name in get_runtime_inputs(program)},
+            {"x", "listed", "row"},
+        )
 
     def test_tag_positional_sin_cos_long_integer_chain(self):
         class Chain(torch.nn.Module):
