@@ -378,6 +378,20 @@ class StaticClassTest(_RoutingTest):
             with self.subTest(m=m, n=n, k=k):
                 self.assertEqual(self.plan_for(m, n, k).static_choice, "linear")
 
+    def test_tile_sized_calls_keep_the_regular_lowering(self):
+        """Calls of more rows, which only the tile schedules run, are left to
+        the measurement."""
+        for m, n, k in (
+            (32, 2048, 512),
+            (50, 1024, 4096),
+            (302, 512, 3200),
+            (768, 1152, 1152),
+        ):
+            with self.subTest(m=m, n=n, k=k):
+                plan = self.plan_for(m, n, k)
+                self.assertEqual(plan.static_choice, "inductor")
+                self.assertIn("only calls of at most 4 rows", plan.static_reason)
+
     def test_one_step_past_each_limit_is_kept(self):
         from executorch.backends.cuda.triton.kernels.gemm import routing as r
         from executorch.backends.cuda.triton.kernels.gemm.gemv import MAX_ROWS
@@ -688,9 +702,9 @@ class RealMeasurementTest(unittest.TestCase):
             (final,) = [
                 m
                 for m in launches.output
-                if "linear.launch: schedule=" in m and "gemv:" in m
+                if "linear.launch: schedule=" in m and "('gemv', 1):" in m
             ]
-            self.assertIn(f"schedule={pick['choice']} ", final)
+            self.assertIn(f"schedule={tuple(pick['choice'])} ", final)
             et_program = edge.to_executorch()
             path = Path(directory) / "model.pte"
             path.write_bytes(et_program.buffer)

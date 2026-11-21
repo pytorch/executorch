@@ -39,12 +39,31 @@ from executorch.backends.cuda.triton.kernels.conv.core.common import (
     Schedule,
 )
 from executorch.backends.cuda.triton.kernels.gemm import gemv, tile
+from executorch.backends.cuda.triton.kernels.quantized_gemm_utils import check_split_k
 from executorch.backends.cuda.triton.routing import device_supports
 from torch.library import triton_op
 
 # The first is legal for every call (the fallback of the timed choice).
-SCHEDULES = (Schedule("ieee_tile", 0), Schedule("gemv", 0))
-_RUN = {"ieee_tile": tile.run, "gemv": gemv.run}
+SCHEDULES = (
+    Schedule("ieee_tile", 0),
+    Schedule("tf32x3_tile", 80),
+    Schedule("gemv", 0),
+)
+_TILE_PRECISIONS = {"ieee_tile": "ieee", "tf32x3_tile": "tf32x3"}
+# K split ways the tile schedules are timed with; each slice gets at least
+# SPLIT_K_UNIT elements of K.
+SPLITS = (1, 2, 4, 8, 16)
+SPLIT_K_UNIT = 128
+# The largest split-K workspace, in FP32 elements (256 MiB). It also keeps
+# workspace offsets within int32.
+MAX_WORKSPACE_ELEMENTS = 2**26
+# The timed candidates: (schedule, split). The first is legal for every call
+# and needs no workspace (the fallback of the timed choice).
+CANDIDATES = tuple(
+    (s.name, split)
+    for s in SCHEDULES
+    for split in (SPLITS if s.name in _TILE_PRECISIONS else (1,))
+)
 # The smallest tile any schedule launches, which bounds the grid.
 _MIN_TILE = (16, 32)
 _MAX_GRID = 2**31 - 1
@@ -188,19 +207,20 @@ def linear_layout(
     )
 
 
-_FORCED: contextvars.ContextVar[Optional[tuple[str, Optional[triton.Config]]]] = (
-    contextvars.ContextVar("forced_linear_schedule", default=None)
-)
+_FORCED: contextvars.ContextVar[
+    Optional[tuple[tuple[str, int], Optional[triton.Config]]]
+] = contextvars.ContextVar("forced_linear_schedule", default=None)
 
 
 @contextlib.contextmanager
 def force_linear_candidate(
-    schedule: str, config: Optional[triton.Config] = None
+    schedule: str, config: Optional[triton.Config] = None, split: int = 1
 ) -> Iterator[None]:
-    """For tests and benchmarks: ``triton::linear`` runs ``schedule`` without
-    timing, with ``config`` instead of its autotuned config if given, and
-    raises if the schedule cannot run the call."""
-    token = _FORCED.set((schedule, config))
+    """For tests and benchmarks: ``triton::linear`` runs ``schedule`` with K
+    split ``split`` ways, without timing, with ``config`` instead of its
+    autotuned config if given, and raises if the candidate cannot run the
+    call."""
+    token = _FORCED.set(((schedule, split), config))
     try:
         yield
     finally:
@@ -208,22 +228,36 @@ def force_linear_candidate(
 
 
 def schedule_supports(
-    name: str, x: torch.Tensor, layout: LinearLayout
+    candidate: tuple[str, int], x: torch.Tensor, layout: LinearLayout
 ) -> Optional[str]:
-    """Why schedule ``name`` cannot run a call ``layout_reason`` accepts, or
-    None."""
+    """Why ``(schedule, split)`` cannot run a call ``layout_reason`` accepts,
+    or None."""
+    name, split = candidate
     schedule = next((s for s in SCHEDULES if s.name == name), None)
     if schedule is None:
         return f"unknown schedule {name}"
     if not device_supports(schedule.min_capability, x.device):
         return f"{name} needs sm_{schedule.min_capability}"
-    if name == "gemv":
+    if name not in _TILE_PRECISIONS:
+        if split != 1:
+            return f"{name} does not split K"
         return gemv.supports(layout.m)
+    if split == 1:
+        return None
+    try:
+        check_split_k(split, layout.k, SPLIT_K_UNIT)
+    except InvalidLaunchParam as e:
+        return str(e)
+    if split * layout.m * layout.n > MAX_WORKSPACE_ELEMENTS:
+        return (
+            f"split_k={split} needs a {split}x{layout.m}x{layout.n} workspace, more "
+            f"than {MAX_WORKSPACE_ELEMENTS} elements"
+        )
     return None
 
 
 def run_schedule(
-    name: str,
+    candidate: tuple[str, int],
     x: torch.Tensor,
     weight: torch.Tensor,
     bias: Optional[torch.Tensor],
@@ -231,11 +265,16 @@ def run_schedule(
     layout: LinearLayout,
     config: Optional[triton.Config] = None,
 ) -> None:
-    """Launches schedule ``name``; ``config`` replaces its autotuned config."""
-    _RUN[name](x, weight, bias, out, layout, config)
+    """Launches ``(schedule, split)``; ``config`` replaces its autotuned
+    config."""
+    name, split = candidate
+    if name in _TILE_PRECISIONS:
+        tile.run(x, weight, bias, out, layout, _TILE_PRECISIONS[name], split, config)
+    else:
+        gemv.run(x, weight, bias, out, layout, config)
 
 
-@autotune_launch_param("schedule", tuple(s.name for s in SCHEDULES))
+@autotune_launch_param("schedule", CANDIDATES)
 def launch(
     x: torch.Tensor,
     weight: torch.Tensor,
@@ -243,9 +282,10 @@ def launch(
     out: torch.Tensor,
     layout: LinearLayout,
     *,
-    schedule: str,
+    schedule: tuple[str, int],
 ) -> None:
-    """Runs the linear into ``out``; during AOTI compile the schedule is timed."""
+    """Runs the linear into ``out``; during AOTI compile the ``(schedule,
+    split)`` candidates are timed."""
     reason = schedule_supports(schedule, x, layout)
     if reason is not None:
         raise InvalidLaunchParam(reason)
@@ -284,13 +324,13 @@ def linear(
     if forced is None:
         launch(x, weight, bias, out, layout)
         return out
-    schedule, config = forced
-    reason = schedule_supports(schedule, x, layout)
+    candidate, config = forced
+    reason = schedule_supports(candidate, x, layout)
     if reason is not None:
         raise ValueError(
             f"forced schedule cannot run {signature(x, weight, bias, strides)}: {reason}"
         )
-    run_schedule(schedule, x, weight, bias, out, layout, config)
+    run_schedule(candidate, x, weight, bias, out, layout, config)
     return out
 
 
