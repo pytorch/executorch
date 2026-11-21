@@ -24,6 +24,7 @@ fbcode_target(_kind = runtime.python_test,
         "//executorch/exir/program:lib",
         "//executorch/exir/tests:lib",
         "//executorch/exir/tests:models",
+        "//executorch/extension/export_util:export_util",
         "//executorch/extension/pybindings:portable_lib",  # @manual
     ],
 )

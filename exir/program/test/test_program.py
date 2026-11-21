@@ -7,11 +7,15 @@
 # pyre-unsafe
 
 import copy
+import os
+import tempfile
 import unittest
 from typing import Any, Dict
+from unittest import mock
 
 import torch
 from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig
+from executorch.exir._serialize._cord import Cord
 from executorch.exir.backend.test.op_partitioner_demo import (
     AddMulPartitionerDemo,
     NonDecompTestPartitioner,
@@ -31,6 +35,7 @@ from executorch.exir.program._program import (
 from executorch.exir.tracer import _default_decomposition_table
 from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
 
+from executorch.extension.export_util.utils import save_pte_program
 from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
 )
@@ -1225,6 +1230,55 @@ class TestProgramManagers(unittest.TestCase):
         et = edge.to_executorch()
         with self.assertRaises(ValueError):
             _ = et.save("/tmp/test_save.pt")
+
+    def test_save_raises_when_the_write_fails(self):
+        model = TestLinear()
+        et = to_edge(
+            torch.export.export(model, model._get_random_inputs(), strict=True)
+        ).to_executorch()
+        with tempfile.TemporaryDirectory() as directory:
+            with mock.patch.object(
+                Cord, "write_to_file", side_effect=OSError("disk full")
+            ):
+                with self.assertRaises(OSError):
+                    et.save(os.path.join(directory, "model.pte"))
+
+    def test_save_pte_program_still_writes_a_legacy_program(self):
+        class Legacy:  # Like the deprecated ExecutorchProgram, which has no save.
+            def write_to_file(self, f):
+                f.write(b"program")
+
+            def write_tensor_data_to_file(self, outdir):
+                self.outdir = outdir
+
+        legacy = Legacy()
+        with tempfile.TemporaryDirectory() as directory:
+            path = save_pte_program(legacy, "model", directory)
+            with open(path, "rb") as f:
+                self.assertEqual(b"program", f.read())
+            self.assertEqual(directory, legacy.outdir)
+
+    def test_save_pte_program_writes_the_data_files_and_raises_on_failure(self):
+        model = TestLinear()
+        et = to_edge(
+            torch.export.export(model, model._get_random_inputs(), strict=True)
+        ).to_executorch()
+        et._tensor_data = {"data": Cord(b"data")}
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "model.pte")
+            self.assertEqual(path, save_pte_program(et, path, directory))
+            with open(os.path.join(directory, "data.ptd"), "rb") as f:
+                self.assertEqual(b"data", f.read())
+            failures = {
+                "pte": (ExecutorchProgramManager, "write_to_file"),
+                "ptd": (ExecutorchProgramManager, "write_tensor_data_to_file"),
+            }
+            for name, (owner, method) in failures.items():
+                with self.subTest(write=name), mock.patch.object(
+                    owner, method, side_effect=OSError("disk full")
+                ):
+                    with self.assertRaises(OSError):
+                        save_pte_program(et, path, directory)
 
     def test__transform_override_verifiers(self):
         """Test that _transform can override verifiers in the exported program."""
