@@ -184,7 +184,7 @@ The pass supports:
 
 It rejects, with an error during export, calls it cannot lower exactly: kernels on other Helion
 backends, kernels that leave the choice of config to Helion (no `config=`, so
-Helion autotunes on the first call, or a `configs=[...]` list), scalar, container or defaulted arguments, dynamic shapes, outputs that alias inputs, outputs whose strides differ
+Helion autotunes on the first call, or more than one config), scalar, container or defaulted arguments, dynamic shapes, outputs that alias inputs, outputs whose strides differ
 from the ones `torch.export` recorded, more than one launch site, host tensor descriptors, and
 launch options AOTInductor cannot reproduce, such as cooperative grids, clusters or PDL. For CuTe
 kernels it also rejects launches with scalar arguments, workspace tensors, dynamic layouts, empty
