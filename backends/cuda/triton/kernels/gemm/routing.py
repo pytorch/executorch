@@ -26,8 +26,8 @@ The regular lowering (Inductor) runs every such call. ``triton::linear`` runs
 the calls its layout ABI accepts (``linear.layout_reason``). The family opts
 in to measured routing; its static choice, which decides with measurement off
 or for a call that cannot be measured, is ``triton::linear`` for the
-matrix-vector class ``worth_routing`` takes and the regular lowering
-otherwise.
+matrix-vector and short-rows classes ``worth_routing`` takes and the regular
+lowering otherwise.
 """
 
 from __future__ import annotations
@@ -79,8 +79,9 @@ class _Refused(Exception):
     pass
 
 
-# The matrix-vector class the static choice routes (``gemv_boundary_calls``
-# lists its corners; ``benchmarks/gemm/benchmark_linear.py`` measures them).
+# The classes the static choice routes (``*_boundary_calls`` list their
+# corners; ``benchmarks/gemm/benchmark_linear.py`` measures them). Calls of at
+# most ``MAX_ROWS`` rows: the matrix-vector class.
 GEMV_MIN_N = 64
 GEMV_MIN_K = 1024
 # Elements per 16 bytes: the rows of both operands and their bases must be
@@ -90,50 +91,84 @@ GEMV_K_ALIGNMENT = 4
 GEMV_MAX_N = 262144
 GEMV_MAX_K = 16384
 GEMV_MAX_WEIGHT = 2**29
+# Calls of ``MAX_ROWS + 1`` to ``SHORT_MAX_ROWS`` rows: the short-rows class,
+# which the tile schedules run. Past these limits Inductor's templates keep up
+# with them on some toolchains.
+SHORT_MAX_ROWS = 64
+SHORT_MIN_N = 64
+SHORT_MAX_N = 1024
+SHORT_MIN_K = 2048
+SHORT_MAX_K = 16384
+
+
+def _weight_reason(
+    name: str,
+    n: int,
+    k: int,
+    n_range: tuple[int, int],
+    k_range: tuple[int, int],
+    max_weight: int,
+) -> Optional[str]:
+    if (
+        n_range[0] <= n <= n_range[1]
+        and k_range[0] <= k <= k_range[1]
+        and n * k <= max_weight
+    ):
+        return None
+    return (
+        f"a [{n}, {k}] weight is outside the {name} class (N in [{n_range[0]}, "
+        f"{n_range[1]}], K in [{k_range[0]}, {k_range[1]}], at most {max_weight} "
+        "elements)"
+    )
 
 
 def worth_routing(
     x: torch.Tensor, weight: torch.Tensor, bias: Optional[torch.Tensor]
 ) -> Optional[str]:
     """Why a call ``triton::linear`` runs is left to the regular lowering when
-    it is not measured, or None: only calls of at most ``MAX_ROWS`` rows
-    whose weight is large enough to keep the matrix-vector schedule's memory
-    stream busy, with contiguous input rows, and with the rows and bases of
-    both operands aligned for vector loads, are routed."""
+    it is not measured, or None: only calls of at most ``SHORT_MAX_ROWS`` rows
+    with contiguous input rows, the rows and bases of both operands 16-byte
+    aligned, and a weight within their class's measured range, are routed."""
     m = math.prod(x.shape[:-1])
     n, k = weight.shape
-    if m > MAX_ROWS:
-        return f"{m} rows: only calls of at most {MAX_ROWS} rows are routed"
+    if m > SHORT_MAX_ROWS:
+        return f"{m} rows: only calls of at most {SHORT_MAX_ROWS} rows are routed"
     if x.stride(-1) != 1:
         return f"input strides {list(x.stride())}: its rows are not contiguous"
     if k % GEMV_K_ALIGNMENT:
         return (
             f"K={k} is not a multiple of {GEMV_K_ALIGNMENT}: the weight's rows are "
-            "not aligned for vector loads"
+            "not 16-byte aligned"
         )
     rows = row_stride(x.shape, x.stride())
     if m > 1 and rows % GEMV_K_ALIGNMENT:
         return (
             f"input row stride {rows} is not a multiple of {GEMV_K_ALIGNMENT}: its "
-            "rows are not aligned for vector loads"
+            "rows are not 16-byte aligned"
         )
     for name, t in (("input", x), ("weight", weight)):
         if t.storage_offset() % GEMV_K_ALIGNMENT:
             return (
                 f"{name} storage offset {t.storage_offset()} is not a multiple of "
-                f"{GEMV_K_ALIGNMENT}: its base is not aligned for vector loads"
+                f"{GEMV_K_ALIGNMENT}: its base is not 16-byte aligned"
             )
-    if not (
-        GEMV_MIN_N <= n <= GEMV_MAX_N
-        and GEMV_MIN_K <= k <= GEMV_MAX_K
-        and n * k <= GEMV_MAX_WEIGHT
-    ):
-        return (
-            f"a [{n}, {k}] weight is outside the matrix-vector class (N in "
-            f"[{GEMV_MIN_N}, {GEMV_MAX_N}], K in [{GEMV_MIN_K}, {GEMV_MAX_K}], "
-            f"at most {GEMV_MAX_WEIGHT} elements)"
+    if m <= MAX_ROWS:
+        return _weight_reason(
+            "matrix-vector",
+            n,
+            k,
+            (GEMV_MIN_N, GEMV_MAX_N),
+            (GEMV_MIN_K, GEMV_MAX_K),
+            GEMV_MAX_WEIGHT,
         )
-    return None
+    return _weight_reason(
+        "short-rows",
+        n,
+        k,
+        (SHORT_MIN_N, SHORT_MAX_N),
+        (SHORT_MIN_K, SHORT_MAX_K),
+        SHORT_MAX_N * SHORT_MAX_K,
+    )
 
 
 def gemv_boundary_calls() -> list[tuple[int, int, int]]:
@@ -144,6 +179,18 @@ def gemv_boundary_calls() -> list[tuple[int, int, int]]:
         for m in (1, 2, MAX_ROWS)
         for k in (GEMV_MIN_K, GEMV_MIN_K + GEMV_K_ALIGNMENT, GEMV_MAX_K)
         for n in (GEMV_MIN_N, GEMV_MIN_N + 1, min(GEMV_MAX_N, GEMV_MAX_WEIGHT // k))
+    ]
+
+
+def short_rows_boundary_calls() -> list[tuple[int, int, int]]:
+    """``(rows, N, K)`` at every corner of the short-rows class and at its
+    middle row count, with the first weight sizes past its floors that leave
+    tile remainders."""
+    return [
+        (m, n, k)
+        for m in (MAX_ROWS + 1, SHORT_MAX_ROWS // 2, SHORT_MAX_ROWS)
+        for k in (SHORT_MIN_K, SHORT_MIN_K + GEMV_K_ALIGNMENT, SHORT_MAX_K)
+        for n in (SHORT_MIN_N, SHORT_MIN_N + 1, SHORT_MAX_N)
     ]
 
 
