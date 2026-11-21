@@ -84,6 +84,29 @@ def commands(runtime_columns: bool) -> list[dict]:
             },
         ]
     )
+    requests.extend({"op": "new"} for _ in range(4))
+    requests.append(
+        {
+            "op": "step",
+            "tokens": [9, 10, 11, 12, 13],
+            "seq_ids": list(range(5)),
+            "select": list(range(5)),
+            "tag": "burst",
+        }
+    )
+    requests.extend([{"op": "remove", "seq_id": 3}, {"op": "remove", "seq_id": 4}])
+    if runtime_columns:
+        requests.extend([{"op": "idle"}, {"op": "idle"}])
+    requests.extend([{"op": "new"}, {"op": "new"}])
+    requests.append(
+        {
+            "op": "step",
+            "tokens": [14, 15, 16, 17, 18],
+            "seq_ids": list(range(5)),
+            "select": list(range(5)),
+            "tag": "burst-reused",
+        }
+    )
     for request in requests:
         if request["op"] == "step":
             request["save_logits"] = True
@@ -141,24 +164,16 @@ def run(probe: Path, root: Path, runtime_columns: bool) -> tuple[dict, list[dict
         print(completed.stderr, file=sys.stderr)
         print(completed.stdout, file=sys.stderr)
     completed.check_returncode()
-    capture = "CUDA graph: captured and instantiated for 'forward_2"
-    enough_captures = completed.stderr.count(capture) == (2 if runtime_columns else 1)
-    if not enough_captures:
-        print(completed.stderr, file=sys.stderr)
-        print(completed.stdout, file=sys.stderr)
-    assert enough_captures, (
-        "forward_2 must capture, replay, and recapture after compaction; "
-        "see probe.stderr.log"
-    )
-    for failure in (
-        "CUDA graph: capture failed for 'forward_2",
-        "CUDA graph: disabled for 'forward_2",
-    ):
-        assert (
-            failure not in completed.stderr
-        ), "eager fallback cannot qualify graph replay"
     responses = [json.loads(line) for line in completed.stdout.splitlines()]
     assert responses[0]["ready"] and len(responses) == len(requests) + 1
+    graph = next(
+        method
+        for method in responses[-1]["snapshot"]["method_calls"]
+        if method["method"] == "forward_2"
+    )
+    assert graph["captures"] == (2 if runtime_columns else 1), graph
+    assert graph["replays"] > graph["captures"], graph
+    assert graph["capture_failures"] == 0, graph
     logits = {}
     for request, response in zip(requests, responses[1:], strict=True):
         assert response["op"] == request["op"] and not response.get("failed")
@@ -190,10 +205,15 @@ def main() -> None:
     steps = [r for r in responses if r.get("op") == "step"]
     fixed_steps = [r for r in fixed_responses if r.get("op") == "step"]
     assert len(fixed_steps) == len(steps)
-    for reference, candidate in zip(fixed_steps, steps, strict=True):
+    for reference, candidate in zip(fixed_steps[:-2], steps[:-2], strict=True):
         assert (
             candidate["snapshot"]["live_KV_bytes"]
             < reference["snapshot"]["live_KV_bytes"]
+        )
+    for reference, candidate in zip(fixed_steps[-2:], steps[-2:], strict=True):
+        assert (
+            candidate["snapshot"]["live_KV_bytes"]
+            <= reference["snapshot"]["live_KV_bytes"]
         )
     assert steps[0]["snapshot"]["physical_columns"] == 2
     assert steps[2]["snapshot"]["physical_columns"] == 5
@@ -201,8 +221,26 @@ def main() -> None:
     compactions = [
         r["snapshot"] for r in responses if r.get("op") in ("compact", "idle")
     ]
-    assert [m["physical_columns"] for m in compactions] == [3, 2]
+    assert [m["physical_columns"] for m in compactions] == [3, 2, 7, 7]
     assert compactions[0]["live_KV_bytes"] < steps[2]["snapshot"]["live_KV_bytes"]
+    before_compaction = steps[7]["snapshot"]
+    assert (
+        compactions[0]["allocator_used_bytes"]
+        < before_compaction["allocator_used_bytes"]
+    )
+    assert (
+        compactions[0]["allocator_reserved_bytes"]
+        <= before_compaction["allocator_reserved_bytes"]
+    )
+    assert (
+        compactions[-1]["column_resize_count"] == compactions[-2]["column_resize_count"]
+    )
+    assert steps[-2]["snapshot"]["physical_columns"] == 9
+    assert steps[-1]["snapshot"]["physical_columns"] == 7
+    assert (
+        steps[-1]["snapshot"]["column_resize_count"]
+        == compactions[-1]["column_resize_count"]
+    )
     print("ABI-2 native logits, ring cloning, compaction and graph replay passed")
 
 

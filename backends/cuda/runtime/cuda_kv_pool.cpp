@@ -439,6 +439,19 @@ Error CudaKVPool::grow(
   return Error::Ok;
 }
 
+CudaGraphMetrics CudaKVPool::graph_metrics(std::string_view method) const {
+  CudaGraphMetrics result;
+  for (const auto& [handle, descriptors] : descriptors_) {
+    if (handle->method_name == method) {
+      const auto& metrics = handle->cuda_graph_state.metrics;
+      result.captures += metrics.captures;
+      result.replays += metrics.replays;
+      result.capture_failures += metrics.capture_failures;
+    }
+  }
+  return result;
+}
+
 void CudaKVPool::invalidate_bindings() {
   // Every program sharing this pool now points at freed storage: drop the
   // bindings so each rebinds before its next run, and any captured CUDA graph
@@ -562,13 +575,22 @@ Error CudaKVPool::resize_columns(
             cudaMemcpyDeviceToDevice,
             stream);
         if (error != cudaSuccess) {
+          ET_LOG(
+              Error,
+              "offgraph_kv: column copy failed: %s",
+              cudaGetErrorString(error));
           roll_back();
           return Error::Internal;
         }
       }
     }
   }
-  if (cudaStreamSynchronize(stream) != cudaSuccess) {
+  const cudaError_t synchronize_error = cudaStreamSynchronize(stream);
+  if (synchronize_error != cudaSuccess) {
+    ET_LOG(
+        Error,
+        "offgraph_kv: column copy fence failed: %s",
+        cudaGetErrorString(synchronize_error));
     roll_back();
     return Error::Internal;
   }

@@ -794,9 +794,11 @@ class ET_EXPERIMENTAL CudaBackend final
     bool kv_prepared = false;
     executorch::backends::aoti::ScopeGuard abort_kv_step([&]() noexcept {
       if (kv_prepared) {
+        const Error error = handle->kv_cache->abort_step();
         ET_CHECK_OR_LOG_ERROR(
-            handle->kv_cache->abort_step() == Error::Ok,
+            error == Error::Ok,
             "offgraph_kv: failed to abort prepared forward");
+        (void)error;
       }
     });
     if (handle->kv_cache != nullptr) {
@@ -872,6 +874,7 @@ class ET_EXPERIMENTAL CudaBackend final
           Internal,
           "cudaGraphLaunch failed: %s",
           cudaGetErrorString(gerr));
+      ++handle->cuda_graph_state.metrics.replays;
 
       // Copy outputs from static buffers into the planned GPU ET buffers (D2D)
       for (size_t i = 0; i < n_outputs; i++) {
@@ -895,6 +898,7 @@ class ET_EXPERIMENTAL CudaBackend final
     Error error = run_once(
         handle, args, n_inputs, n_outputs, is_capture_step, graph_launched);
     if (error != Error::Ok && is_capture_step && !graph_launched) {
+      ++handle->cuda_graph_state.metrics.capture_failures;
       // A capture records kernels without running them, so until the new graph
       // runs, the inputs and any state the program updates are untouched. A
       // program that keeps state in host memory, where host code does run
@@ -1316,6 +1320,7 @@ class ET_EXPERIMENTAL CudaBackend final
       }
 
       handle->cuda_graph_state.phase = CudaGraphPhase::Replay;
+      ++handle->cuda_graph_state.metrics.captures;
       ET_LOG(
           Info,
           "CUDA graph: captured and instantiated for '%s'",
@@ -1328,6 +1333,7 @@ class ET_EXPERIMENTAL CudaBackend final
           Internal,
           "cudaGraphLaunch (first replay) failed: %s",
           cudaGetErrorString(gerr));
+      ++handle->cuda_graph_state.metrics.replays;
       graph_launched = true;
       handle->cuda_graph_state.note_graph_allocations();
 

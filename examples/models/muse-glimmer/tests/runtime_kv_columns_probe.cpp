@@ -122,8 +122,13 @@ Json snapshot(cb::CudaExecutor& executor) {
   }
   result["method_calls"] = Json::array();
   for (const auto& method : executor.method_calls()) {
+    const auto graph = executor.graph_metrics(method.name);
     result["method_calls"].push_back(
-        {{"method", method.name}, {"calls", method.calls}});
+        {{"method", method.name},
+         {"calls", method.calls},
+         {"captures", graph.captures},
+         {"replays", graph.replays},
+         {"capture_failures", graph.capture_failures}});
   }
   return result;
 }

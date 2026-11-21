@@ -3173,12 +3173,14 @@ TEST_F(CudaRuntimeColumnCacheTest, SameWidthCompactionKeepsMappingAndBindings) {
   void* const pointer = fake.bound["flat_k"].data;
   const auto count = kv->metrics().column_resize_count;
   handle.cuda_graph_state.phase = cu::CudaGraphPhase::Warmup;
+  handle.cuda_graph_state.warmup_remaining = 0;
   ASSERT_EQ(kv->compact_columns(kMaxSeqs), Error::Ok);
   EXPECT_EQ(kv->metrics().physical_columns, 3);
   ASSERT_EQ(kv->compact_columns(0), Error::Ok);
   EXPECT_EQ(kv->metrics().column_resize_count, count);
   EXPECT_EQ(fake.bound["flat_k"].data, pointer);
   EXPECT_EQ(handle.cuda_graph_state.phase, cu::CudaGraphPhase::Warmup);
+  EXPECT_EQ(handle.cuda_graph_state.warmup_remaining, 0);
   EXPECT_EQ(read_column(pointer, 2, 3, 0), before);
   ASSERT_EQ(step(*cache_ptr, handle, {*first, *second}), Error::Ok);
   std::vector<std::array<int32_t, 5>> info(2);

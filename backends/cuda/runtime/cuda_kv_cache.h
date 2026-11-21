@@ -96,6 +96,12 @@ class CudaKVCache {
 
   virtual OffGraphKVMetrics metrics() const = 0;
 
+  // Successful captures/launches and failed captures for a named method.
+  // Read between executes under the executor's engine-thread contract.
+  virtual CudaGraphMetrics graph_metrics(std::string_view) const {
+    return {};
+  }
+
   // An explicit idle boundary; callers must serialize this with execution.
   // spare_columns counts unused owner columns, excluding the scratch column.
   virtual runtime::Error compact_columns(int spare_columns) {

@@ -85,8 +85,8 @@ def ring_physical_capacity(window: int, max_write: int) -> int:
 
 def parse_offgraph_kv_manifest(value: bytes) -> dict[str, Any]:  # noqa: C901
     manifest = json.loads(value.decode("utf-8"))
-    if manifest.get("version") not in (1, 2):
-        raise ValueError("off-graph KV manifest version must be 1 or 2")
+    if manifest.get("version") != 1:
+        raise ValueError("off-graph KV manifest version must be 1")
     maximum_capacity = manifest.get("maximum_capacity")
     if not isinstance(maximum_capacity, int) or maximum_capacity <= 0:
         raise ValueError("off-graph maximum_capacity must be positive")
@@ -118,6 +118,8 @@ def parse_offgraph_kv_manifest(value: bytes) -> dict[str, Any]:  # noqa: C901
             raise ValueError("off-graph context_window must be a bool")
         if manifest["context_window"] and manifest["causal"]:
             raise ValueError("off-graph context_window requires non-causal attention")
+        if runtime_columns and manifest["context_window"]:
+            raise ValueError("off-graph runtime columns do not support context_window")
     if layout == "cell":
         # A cell step packs tokens of several sequences into the shared pool,
         # so the pool bounds its width, not one sequence's capacity.

@@ -8,6 +8,9 @@
 
 #include <executorch/backends/cuda/runtime/backend_options.h>
 #include <executorch/backends/cuda/runtime/cuda_delegate_handle.h>
+#if defined(EXECUTORCH_BUILD_EXTENSION_LLM)
+#include <executorch/backends/cuda/runtime/cuda_kv_cache.h>
+#endif
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/platform/platform.h>
 
@@ -20,6 +23,7 @@ using namespace ::executorch::backends::cuda;
 namespace {
 
 bool program_ran = false;
+Error program_error = Error::Ok;
 
 Error one_tensor(aoti::AOTInductorModelContainerHandle, size_t* count) {
   *count = 1;
@@ -40,7 +44,7 @@ Error fake_run(
   for (size_t i = 0; i < num_inputs; ++i) {
     delete reinterpret_cast<aoti::slim::SlimTensor*>(inputs[i]);
   }
-  return Error::Ok;
+  return program_error;
 }
 
 class CudaBackendExecuteTest : public ::testing::Test {
@@ -59,6 +63,7 @@ class CudaBackendExecuteTest : public ::testing::Test {
     ASSERT_EQ(cudaMalloc(&input_, sizeof(float) * 4), cudaSuccess);
     ASSERT_EQ(cudaMalloc(&output_, sizeof(float) * 4), cudaSuccess);
     program_ran = false;
+    program_error = Error::Ok;
   }
 
   void TearDown() override {
@@ -123,5 +128,181 @@ TEST_F(CudaBackendExecuteTest, OutputWithBufferRuns) {
   EXPECT_EQ(execute(input_, output_), Error::Ok);
   EXPECT_TRUE(program_ran);
 }
+
+TEST_F(
+    CudaBackendExecuteTest,
+    GraphMetricsCountCapturesAndReplayAcrossRecapture) {
+  if (!handle_.cuda_graph_state.start_warmup()) {
+    GTEST_SKIP() << "CUDA graph allocator unavailable";
+  }
+  for (int i = 0; i < 8; ++i) {
+    ASSERT_EQ(execute(input_, output_), Error::Ok);
+  }
+  const auto first = handle_.cuda_graph_state.metrics;
+  EXPECT_EQ(first.captures, 1);
+  EXPECT_GT(first.replays, first.captures);
+  EXPECT_EQ(first.capture_failures, 0);
+  handle_.cuda_graph_state.recapture();
+  for (int i = 0; i < 4; ++i) {
+    ASSERT_EQ(execute(input_, output_), Error::Ok);
+  }
+  EXPECT_EQ(handle_.cuda_graph_state.metrics.captures, 2);
+  EXPECT_GT(handle_.cuda_graph_state.metrics.replays, first.replays);
+  EXPECT_EQ(handle_.cuda_graph_state.metrics.capture_failures, 0);
+}
+
+TEST(CudaGraphStateTest, MetricsSurviveMoveAndResourceRelease) {
+  CudaGraphState source;
+  source.metrics = {2, 11, 1};
+  CudaGraphState moved(std::move(source));
+  EXPECT_EQ(source.metrics.captures, 0);
+  EXPECT_EQ(moved.metrics.captures, 2);
+  moved.release();
+  EXPECT_EQ(moved.metrics.replays, 11);
+  CudaGraphState assigned;
+  assigned = std::move(moved);
+  EXPECT_EQ(moved.metrics.replays, 0);
+  EXPECT_EQ(assigned.metrics.captures, 2);
+  EXPECT_EQ(assigned.metrics.replays, 11);
+  EXPECT_EQ(assigned.metrics.capture_failures, 1);
+}
+
+#if defined(EXECUTORCH_BUILD_EXTENSION_LLM)
+class PreparedCache final : public CudaKVCache {
+ public:
+  Result<bool> note_handle(CudaDelegateHandle*) override {
+    return false;
+  }
+  void forget_handle(CudaDelegateHandle*) override {}
+  Error rebind_for_execute(CudaDelegateHandle*) override {
+    return rebind_error;
+  }
+  Error prepare_step(int64_t width, cudaStream_t) override {
+    ++prepares;
+    EXPECT_EQ(width, 4);
+    if (prepared) {
+      return Error::InvalidState;
+    }
+    prepared = prepare_error == Error::Ok;
+    return prepare_error;
+  }
+  Error commit_step(int64_t width) override {
+    ++commits;
+    EXPECT_EQ(width, 4);
+    if (commit_error == Error::Ok) {
+      prepared = false;
+    }
+    return commit_error;
+  }
+  Error abort_step() override {
+    ++aborts;
+    if (abort_error == Error::Ok) {
+      prepared = false;
+    }
+    return abort_error;
+  }
+  OffGraphKVMetrics metrics() const override {
+    return {};
+  }
+
+  bool prepared = false;
+  int prepares = 0;
+  int commits = 0;
+  int aborts = 0;
+  Error prepare_error = Error::Ok;
+  Error rebind_error = Error::Ok;
+  Error commit_error = Error::Ok;
+  Error abort_error = Error::Ok;
+};
+
+TEST_F(CudaBackendExecuteTest, FailedPreparationDoesNotAbort) {
+  PreparedCache cache;
+  handle_.kv_cache = &cache;
+  cache.prepare_error = Error::MemoryAllocationFailed;
+  EXPECT_EQ(execute(input_, output_), Error::MemoryAllocationFailed);
+  EXPECT_FALSE(program_ran);
+  EXPECT_FALSE(cache.prepared);
+  EXPECT_EQ(cache.prepares, 1);
+  EXPECT_EQ(cache.commits, 0);
+  EXPECT_EQ(cache.aborts, 0);
+}
+
+TEST_F(CudaBackendExecuteTest, FailedRebindAbortsAndAllowsNextForward) {
+  PreparedCache cache;
+  handle_.kv_cache = &cache;
+  cache.rebind_error = Error::InvalidArgument;
+  EXPECT_EQ(execute(input_, output_), Error::InvalidArgument);
+  EXPECT_FALSE(program_ran);
+  EXPECT_FALSE(cache.prepared);
+  EXPECT_EQ(cache.aborts, 1);
+  EXPECT_EQ(cache.commits, 0);
+
+  cache.rebind_error = Error::Ok;
+  EXPECT_EQ(execute(input_, output_), Error::Ok);
+  EXPECT_TRUE(program_ran);
+  EXPECT_FALSE(cache.prepared);
+  EXPECT_EQ(cache.prepares, 2);
+  EXPECT_EQ(cache.commits, 1);
+  EXPECT_EQ(cache.aborts, 1);
+}
+
+TEST_F(CudaBackendExecuteTest, FailedProgramAbortsAndAllowsNextForward) {
+  PreparedCache cache;
+  handle_.kv_cache = &cache;
+  program_error = Error::Internal;
+  EXPECT_EQ(execute(input_, output_), Error::Internal);
+  EXPECT_TRUE(program_ran);
+  EXPECT_FALSE(cache.prepared);
+  EXPECT_EQ(cache.commits, 0);
+  EXPECT_EQ(cache.aborts, 1);
+
+  program_error = Error::Ok;
+  EXPECT_EQ(execute(input_, output_), Error::Ok);
+  EXPECT_FALSE(cache.prepared);
+  EXPECT_EQ(cache.prepares, 2);
+  EXPECT_EQ(cache.commits, 1);
+  EXPECT_EQ(cache.aborts, 1);
+}
+
+TEST_F(CudaBackendExecuteTest, FailedCommitAbortsAndAllowsNextForward) {
+  PreparedCache cache;
+  handle_.kv_cache = &cache;
+  cache.commit_error = Error::Internal;
+  EXPECT_EQ(execute(input_, output_), Error::Internal);
+  EXPECT_TRUE(program_ran);
+  EXPECT_FALSE(cache.prepared);
+  EXPECT_EQ(cache.commits, 1);
+  EXPECT_EQ(cache.aborts, 1);
+
+  cache.commit_error = Error::Ok;
+  EXPECT_EQ(execute(input_, output_), Error::Ok);
+  EXPECT_FALSE(cache.prepared);
+  EXPECT_EQ(cache.prepares, 2);
+  EXPECT_EQ(cache.commits, 2);
+  EXPECT_EQ(cache.aborts, 1);
+}
+
+TEST_F(CudaBackendExecuteTest, SuccessfulForwardCommitsWithoutAbort) {
+  PreparedCache cache;
+  handle_.kv_cache = &cache;
+  EXPECT_EQ(execute(input_, output_), Error::Ok);
+  EXPECT_TRUE(program_ran);
+  EXPECT_FALSE(cache.prepared);
+  EXPECT_EQ(cache.prepares, 1);
+  EXPECT_EQ(cache.commits, 1);
+  EXPECT_EQ(cache.aborts, 0);
+}
+
+TEST_F(CudaBackendExecuteTest, FailedAbortPreservesOriginalError) {
+  PreparedCache cache;
+  handle_.kv_cache = &cache;
+  cache.rebind_error = Error::InvalidArgument;
+  cache.abort_error = Error::Internal;
+  EXPECT_EQ(execute(input_, output_), Error::InvalidArgument);
+  EXPECT_FALSE(program_ran);
+  EXPECT_TRUE(cache.prepared);
+  EXPECT_EQ(cache.aborts, 1);
+}
+#endif
 
 } // namespace

@@ -443,7 +443,7 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
     ET_CHECK_OR_RETURN_ERROR(
         !poisoned_ && (!dflash_block_size_ || pending_width_ == 0),
         InvalidState,
-        "offgraph_kv: uncommitted or failed draft co-batch; clear required");
+        "offgraph_kv: uncommitted step or failed cache operation; clear required");
     if (!validated_) {
       const Error valid = pool_.validate();
       if (valid != Error::Ok) {
@@ -943,8 +943,7 @@ class CudaBatchedSequenceCache final : public cache::Cache,
     if (!id || poisoned_ || (runtime_columns_ && inflight_)) {
       return std::nullopt;
     }
-    const int column =
-        runtime_columns_ ? free_physical_column().value_or(-1) : *id;
+    const int column = runtime_columns_ ? -1 : *id;
     seqs_.emplace(*id, Sequence{column, cache::SequenceCache(geometry_, cfg_)});
     bool admitted = false;
     aoti::ScopeGuard rollback([&]() noexcept {
@@ -984,8 +983,7 @@ class CudaBatchedSequenceCache final : public cache::Cache,
     if (keep <= 0 || !plan.rewind(keep)) {
       return std::nullopt;
     }
-    const int column =
-        runtime_columns_ ? free_physical_column().value_or(-1) : *id;
+    const int column = runtime_columns_ ? -1 : *id;
     seqs_.emplace(*id, Sequence{column, std::move(plan)});
     bool admitted = false;
     aoti::ScopeGuard rollback([&]() noexcept {
@@ -1071,7 +1069,7 @@ class CudaBatchedSequenceCache final : public cache::Cache,
     ET_CHECK_OR_RETURN_ERROR(
         !poisoned_ && (!dflash_block_size_ || pending_owners_.empty()),
         InvalidState,
-        "offgraph_kv: uncommitted or failed draft co-batch; clear required");
+        "offgraph_kv: uncommitted step or failed cache operation; clear required");
     ET_CHECK_OR_RETURN_ERROR(
         !inflight_, InvalidState, "offgraph_kv: a forward is still prepared");
     if (!validated_) {
@@ -1193,7 +1191,7 @@ class CudaBatchedSequenceCache final : public cache::Cache,
     ET_CHECK_OR_RETURN_ERROR(
         !poisoned_,
         InvalidState,
-        "offgraph_kv: uncommitted or failed draft co-batch; clear required");
+        "offgraph_kv: uncommitted step or failed cache operation; clear required");
     ET_CHECK_OK_OR_RETURN_ERROR(pool_.mark_step_done(pool_.stream()));
     inflight_ = false;
     // A draft's block is scratch: the next draft rewrites it.
@@ -1241,6 +1239,11 @@ class CudaBatchedSequenceCache final : public cache::Cache,
     metrics.live_sequences = seqs_.size();
     metrics.column_resize_count = pool_.column_resize_count();
     return metrics;
+  }
+
+  CudaGraphMetrics graph_metrics(std::string_view method) const override {
+    std::lock_guard<std::mutex> guard(mutex_);
+    return pool_.graph_metrics(method);
   }
 
   Error compact_columns(int spare_columns) override {
@@ -1307,19 +1310,6 @@ class CudaBatchedSequenceCache final : public cache::Cache,
     for (int id = 0; id < max_seqs_; ++id) {
       if (seqs_.count(id) == 0) {
         return id;
-      }
-    }
-    return std::nullopt;
-  }
-
-  std::optional<int> free_physical_column() const {
-    for (int column = 0; column < columns_ - 1; ++column) {
-      bool used = false;
-      for (const auto& [id, sequence] : seqs_) {
-        used |= sequence.column == column;
-      }
-      if (!used) {
-        return column;
       }
     }
     return std::nullopt;

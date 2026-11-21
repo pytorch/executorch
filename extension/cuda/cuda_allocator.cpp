@@ -785,6 +785,7 @@ void CudaAllocator::release_cached_memory(DeviceIndex index) {
 #if defined(EXECUTORCH_USE_HIP)
   (void)index;
 #else
+  std::pair<int, cudaMemPool_t> selected;
   std::vector<std::pair<int, cudaMemPool_t>> targets;
   {
     auto& state = mem_pool_state();
@@ -794,7 +795,7 @@ void CudaAllocator::release_cached_memory(DeviceIndex index) {
       if (it == state.pools.end()) {
         return;
       }
-      targets.emplace_back(it->first, it->second);
+      selected = {it->first, it->second};
     } else {
       // A caller asking for everything gets every pool this allocator created,
       // not whichever device the calling thread happens to be current on, since
@@ -805,7 +806,7 @@ void CudaAllocator::release_cached_memory(DeviceIndex index) {
 
   // The pools stay in the map. Trimming empties one without invalidating it, so
   // a later load reuses it rather than paying to create it again.
-  for (const auto& [device, pool] : targets) {
+  const auto trim = [](int device, cudaMemPool_t pool) {
     if (pool != nullptr) {
       // Only frees the driver has already observed can be released, and a free
       // still pending gives back nothing rather than less. The backend waits on
@@ -841,6 +842,15 @@ void CudaAllocator::release_cached_memory(DeviceIndex index) {
           device,
           cudaGetErrorString(graph_err));
       (void)cudaGetLastError();
+    }
+  };
+  if (index >= 0) {
+    // A column resize trims after committing its new storage. This path must
+    // not allocate a host snapshot that can throw before pitch reconciliation.
+    trim(selected.first, selected.second);
+  } else {
+    for (const auto& [device, pool] : targets) {
+      trim(device, pool);
     }
   }
 #endif

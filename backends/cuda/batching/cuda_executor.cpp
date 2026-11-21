@@ -1100,6 +1100,10 @@ OffGraphKVMetrics CudaExecutor::kv_metrics() const {
   return kv_->metrics();
 }
 
+CudaGraphMetrics CudaExecutor::graph_metrics(std::string_view method) const {
+  return kv_->graph_metrics(method);
+}
+
 Error CudaExecutor::compact_kv_columns(int spare_columns) {
   ET_CHECK_OR_RETURN_ERROR(
       !raw_executing_, InvalidState, "CudaExecutor: compact between executes");
@@ -1121,7 +1125,8 @@ void CudaExecutor::on_idle() {
     return;
   }
   last_cache_activity_ = std::chrono::steady_clock::now();
-  const Error error = kv_->compact_columns(/*spare_columns=*/1);
+  const Error error =
+      kv_->compact_columns(static_cast<int>(metrics.live_sequences));
   if (error != Error::Ok) {
     ET_LOG(
         Error,

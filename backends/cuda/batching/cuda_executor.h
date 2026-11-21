@@ -27,6 +27,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <executorch/backends/cuda/batching/step_plan.h>
@@ -234,6 +235,8 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
 
   // The cache's pool usage, for memory reporting.
   OffGraphKVMetrics kv_metrics() const;
+  // Read between executes, on the engine thread.
+  CudaGraphMetrics graph_metrics(std::string_view method) const;
   // Engine-thread only, between execute calls. A call from execute_raw's
   // consumer is rejected. The scratch column is additional to spare_columns
   // unused owner columns; compaction never increases the physical width.

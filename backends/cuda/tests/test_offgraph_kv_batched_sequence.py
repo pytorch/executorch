@@ -477,7 +477,7 @@ class LowerBatchedSequencePassTest(unittest.TestCase):
                 parse_offgraph_kv_manifest(self.manifest(**bad))
 
     def test_runtime_pitch_manifest_and_side_buffer(self) -> None:
-        manifest = self.manifest(version=2, runtime_columns=True)
+        manifest = self.manifest(runtime_columns=True)
         parsed = parse_offgraph_kv_manifest(manifest)
         self.assertTrue(parsed["runtime_columns"])
         lowered = self._lowered(manifest)
@@ -491,16 +491,23 @@ class LowerBatchedSequencePassTest(unittest.TestCase):
             buffers[f"{OFFGRAPH_KV_FQN_PREFIX}layer_0_k"],
             (1, self.CAPACITY * (self.MAX_SEQS + 1), N_KV_HEADS, HEAD_DIM),
         )
-        for version in (1, 2):
-            for runtime_columns in (False, True):
-                with self.subTest(version=version, runtime_columns=runtime_columns):
-                    metadata = offgraph_kv_constant_methods(
-                        self.manifest(version=version, runtime_columns=runtime_columns)
+        for runtime_columns in (False, True):
+            with self.subTest(runtime_columns=runtime_columns):
+                metadata = offgraph_kv_constant_methods(
+                    self.manifest(runtime_columns=runtime_columns)
+                )
+                self.assertEqual(
+                    metadata[OFFGRAPH_KV_SEQUENCE_INFO_ABI_METHOD],
+                    2 if runtime_columns else 1,
+                )
+                with self.assertRaises(ValueError):
+                    parse_offgraph_kv_manifest(
+                        self.manifest(version=2, runtime_columns=runtime_columns)
                     )
-                    self.assertEqual(
-                        metadata[OFFGRAPH_KV_SEQUENCE_INFO_ABI_METHOD],
-                        2 if runtime_columns else 1,
-                    )
+        with self.assertRaisesRegex(ValueError, "do not support context_window"):
+            parse_offgraph_kv_manifest(
+                self.manifest(runtime_columns=True, causal=False, context_window=True)
+            )
         with self.assertRaises(ValueError):
             parse_offgraph_kv_manifest(
                 self.manifest(layout="sequence", runtime_columns=True)

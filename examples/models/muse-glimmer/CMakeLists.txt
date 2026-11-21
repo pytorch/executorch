@@ -148,6 +148,9 @@ option(MUSE_GLIMMER_BUILD_RUNTIME_KV_PROBE "Build isolated CUDA KV diagnostic"
        OFF
 )
 if(MUSE_GLIMMER_BUILD_RUNTIME_KV_PROBE)
+  if(WIN32)
+    message(FATAL_ERROR "Runtime KV probe requires POSIX file descriptors")
+  endif()
   if(NOT EXECUTORCH_BUILD_CUDA)
     message(FATAL_ERROR "Runtime KV probe requires the CUDA batching executor")
   endif()

@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -109,6 +110,8 @@ class CudaKVPool final {
 
   // Host fence on the pool's device before cells can be reclaimed or reset.
   runtime::Error synchronize(bool all_streams = false);
+
+  CudaGraphMetrics graph_metrics(std::string_view method) const;
 
   // Points `handle`'s constants at the current storage. Cached until storage
   // moves. Precondition: allocated().
