@@ -40,7 +40,7 @@ ops_before_explicit_layout = ops_before_transforms
 ops_after_explicit_layout: dict[str, int] = {
     "executorch_exir_dialects_edge__ops_aten_view_copy_default": 1,
     "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
-    "executorch_exir_dialects_edge__ops_cortex_m_pad_default": 1,
+    "executorch_exir_dialects_edge__ops_cortex_m_pad_default": 0,
     "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_avg_pool2d_nhwc_default": 1,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_conv2d_packed_nhwc_default": 14,
