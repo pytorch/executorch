@@ -144,6 +144,7 @@ def EXIRATenDialectVerifier(  # noqa: C901
                     torch.ops.aten.max.default,  # TODO(T188268054)
                     torch.ops.aten.min.default,  # TODO(T188268054)
                     torch.ops.aten.full_like.default,  # TODO(T183507359)
+                    torch.ops.aten.masked_select.default,
                 ]
                 + list(_EXECUTORCH_SYM_OPS)
                 + DISALLOW_LIST
