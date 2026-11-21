@@ -6,7 +6,6 @@
 
 
 import operator
-from operator import attrgetter
 from typing import Any, cast, Optional
 
 import executorch.exir.dialects.fused_quant.ops  # noqa
@@ -19,45 +18,19 @@ from executorch.backends.transforms.fused_quant.graph_utils import (
     is_quantize_node,
 )
 from executorch.backends.transforms.permute_pass_utils import get_arg
+from executorch.backends.transforms.utils import add_constant
 from torch import fx
-from torch._export.utils import _detect_fake_mode_from_gm
 from torch._ops import OpOverload
+from torch.export import ExportedProgram
+from torch.export.graph_signature import InputKind
 
 _NULL_QPARAMS: list[torch.fx.node.Argument] = [None, None, torch.uint8, 0, 0]
 
 QParamsFlat = tuple[fx.Node, fx.Node, torch.dtype, int, int]
 
 
-def _resolve_const_tensor(
-    node: fx.Node, owning_module: torch.nn.Module
-) -> torch.Tensor:
-    """Resolve a frozen get_attr constant to its backing tensor."""
-    assert (
-        node.op == "get_attr"
-    ), f"Expected a get_attr constant, got op={node.op} for {node.name}"
-    return attrgetter(str(node.target))(owning_module)
-
-
-def _add_scalar_constant(
-    graph: fx.Graph, value: float | int, dtype: torch.dtype, name: str
-) -> fx.Node:
-    """Register a 0-dim scalar qparam as a frozen module attribute, return a get_attr.
-
-    ``name`` is a preferred base; ``graph.get_attr`` uniquifies it against the
-    graph, and the attribute is registered under the resulting unique name.
-    """
-    gm = graph.owning_module
-    assert gm is not None
-    # get_attr uniquifies node.name but not node.target, so sync target and
-    # register the attribute under the generated name.
-    const_node = graph.get_attr(name)
-    const_node.target = const_node.name
-    setattr(gm, const_node.name, torch.tensor(value, dtype=dtype))
-    return const_node
-
-
 def _create_qparams_from_node(
-    node: fx.Node, graph: fx.Graph, out_dtype: torch.dtype
+    node: fx.Node, exported_program: ExportedProgram, out_dtype: torch.dtype
 ) -> QParamsFlat:
     """Extract QuantParams from a quantize or dequantize node.
 
@@ -66,12 +39,13 @@ def _create_qparams_from_node(
 
     Args:
         node: A quantize or dequantize node (per-tensor or per-channel).
-        graph: The graph to insert new nodes into.
+        exported_program: The program to add new nodes and constants to.
         out_dtype: The dtype after applying quantization/dequantization
 
     Returns:
         A QuantParamsNode tuple.
     """
+    graph = exported_program.graph
     quant_min = get_arg(node, "quant_min")
     quant_max = get_arg(node, "quant_max")
 
@@ -87,13 +61,16 @@ def _create_qparams_from_node(
         return (scale_node, zp_node, out_dtype, quant_min, quant_max)
 
     if is_per_tensor_quant_node(node):
-        scale_val = get_arg(node, "scale", float)
-        zp_val = get_arg(node, "zero_point", int)
-        with graph.inserting_before(node):
-            # Per-tensor scale/zero_point arrive as inline scalars; lift them to
-            # frozen constants so they match the per-channel qparam representation.
-            scale_node = _add_scalar_constant(graph, scale_val, torch.float32, "_scale")
-            zp_node = _add_scalar_constant(graph, zp_val, torch.int64, "_zero_point")
+        # Per-tensor scale/zero_point arrive as inline scalars; lift them to
+        # constants so they match the per-channel qparam representation.
+        scale = torch.tensor(get_arg(node, "scale", float), dtype=torch.float32)
+        zero_point = torch.tensor(get_arg(node, "zero_point", int), dtype=torch.int64)
+        scale_node = add_constant(
+            exported_program, "_scale", scale, node, InputKind.CONSTANT_TENSOR
+        )
+        zp_node = add_constant(
+            exported_program, "_zero_point", zero_point, node, InputKind.CONSTANT_TENSOR
+        )
         # pyrefly: ignore [bad-return]
         return (scale_node, zp_node, out_dtype, quant_min, quant_max)
     elif is_per_channel_quant_node(node):
@@ -105,31 +82,17 @@ def _create_qparams_from_node(
         zp_node = get_arg(node, "zero_points", fx.Node)
         axis = get_arg(node, "axis", int)
         input_node = get_arg(node, "input", fx.Node)
-        # The weight and scale/zero_point are frozen get_attr constants (convert
-        # folds the quantize into a frozen param); resolve them off the owning module.
-        owning_module = graph.owning_module
-        assert owning_module is not None
-        ndim = _resolve_const_tensor(input_node, owning_module).ndim
-        scale_tensor = _resolve_const_tensor(scale_node, owning_module)
-        zp_tensor = _resolve_const_tensor(zp_node, owning_module)
-        view_shape = [1] * ndim
+        view_shape = [1] * input_node.meta["val"].ndim
         view_shape[axis] = -1
         with graph.inserting_before(node):
-            fake_mode = _detect_fake_mode_from_gm(owning_module)
-            assert fake_mode, "Expected fake tensor mode!"
             scale_view = graph.call_function(
                 torch.ops.aten.view.default, args=(scale_node, view_shape)
             )
             zp_view = graph.call_function(
                 torch.ops.aten.view.default, args=(zp_node, view_shape)
             )
-            with fake_mode:
-                scale_view.meta["val"] = fake_mode.from_tensor(
-                    scale_tensor.reshape(view_shape)
-                )
-                zp_view.meta["val"] = fake_mode.from_tensor(
-                    zp_tensor.reshape(view_shape)
-                )
+        scale_view.meta["val"] = scale_node.meta["val"].reshape(view_shape)
+        zp_view.meta["val"] = zp_node.meta["val"].reshape(view_shape)
         # pyrefly: ignore [bad-return]
         return (scale_view, zp_view, out_dtype, quant_min, quant_max)
 
@@ -138,20 +101,21 @@ def _create_qparams_from_node(
 
 def create_qparams_from_dequant_node(
     dequant_node: fx.Node,
-    graph: fx.Graph,
+    exported_program: ExportedProgram,
 ) -> QParamsFlat:
     """Extract QuantParams from a dequantize node."""
     assert is_dequantize_node(dequant_node)
-    # Affine dequant names its result dtype `output_dtype`; the quantized_decomposed
-    # per-tensor/channel ops name it `out_dtype`.
-    dtype_arg = "output_dtype" if is_affine_quant_node(dequant_node) else "out_dtype"
-    out_dtype = get_arg(dequant_node, dtype_arg, Optional[torch.dtype]) or torch.float32
-    return _create_qparams_from_node(dequant_node, graph, out_dtype)
+    out_dtype = (
+        dequant_node.meta["val"].dtype
+        if is_affine_quant_node(dequant_node)
+        else get_arg(dequant_node, "out_dtype", Optional[torch.dtype]) or torch.float32
+    )
+    return _create_qparams_from_node(dequant_node, exported_program, out_dtype)
 
 
 def create_qparams_from_quant_node(
     quant_node: fx.Node,
-    graph: fx.Graph,
+    exported_program: ExportedProgram,
 ) -> QParamsFlat:
     """Extract QuantParams from a quantize node."""
     assert is_quantize_node(quant_node)
@@ -159,7 +123,7 @@ def create_qparams_from_quant_node(
     # per-tensor/channel ops name it `dtype`.
     dtype_arg = "output_dtype" if is_affine_quant_node(quant_node) else "dtype"
     out_dtype = get_arg(quant_node, dtype_arg, torch.dtype)
-    return _create_qparams_from_node(quant_node, graph, out_dtype)
+    return _create_qparams_from_node(quant_node, exported_program, out_dtype)
 
 
 def arg_names(target: OpOverload) -> list[str]:
@@ -215,6 +179,7 @@ def _get_extra_args(
 
 
 def _build_fused_args(
+    exported_program: ExportedProgram,
     node: fx.Node,
     dequant_inputs: dict[str, fx.Node],
     quant_outputs: dict[int, fx.Node],
@@ -233,14 +198,15 @@ def _build_fused_args(
     Newly created qparams (scale/zero_point) nodes may not be topologically
     ordered relative to the fused op; the caller relies on a later legalize_graph.
     """
-    graph = node.graph
     tensor_inputs: list[torch.fx.node.Argument] = []
     input_qparams: list[Optional[QParamsFlat]] = []
     for name in ordered_input_names:
         dequant = dequant_inputs.get(name)
         if dequant is not None:
             tensor_inputs.append(get_arg(dequant, "input"))
-            input_qparams.append(create_qparams_from_dequant_node(dequant, graph))
+            input_qparams.append(
+                create_qparams_from_dequant_node(dequant, exported_program)
+            )
         else:
             tensor_inputs.append(get_arg(node, name))
             input_qparams.append(None)
@@ -249,7 +215,7 @@ def _build_fused_args(
     for output_index in output_indices:
         quant_node = quant_outputs.get(output_index)
         out_qparams_blocks.append(
-            create_qparams_from_quant_node(quant_node, graph)
+            create_qparams_from_quant_node(quant_node, exported_program)
             if quant_node is not None
             else None
         )
@@ -323,6 +289,7 @@ def _fused_meta(
 
 
 def fuse_aten(
+    exported_program: ExportedProgram,
     node: fx.Node,
     fused_target: OpOverload,
     activation_names: tuple[str, ...],
@@ -373,6 +340,7 @@ def fuse_aten(
     multi_output = isinstance(node.meta["val"], (tuple, list))
 
     fused_args_list = _build_fused_args(
+        exported_program,
         node,
         dequant_inputs,
         quant_outputs,
