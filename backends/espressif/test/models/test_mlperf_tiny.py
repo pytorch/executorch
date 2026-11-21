@@ -57,16 +57,17 @@ test_cases = {
             _FQ.relu.default: 9,
             _FQ.avg_pool2d.default: 1,
             _FQ.linear.default: 1,
+            _FQ._softmax.default: 1,
         },
         {
             _ESP.quantized_conv2d_int8.default: 5,
             _ESP.quantized_depthwise_conv2d_int8.default: 4,
             _ESP.quantized_linear_int8.default: 1,
+            _ESP.quantized_softmax_int8.default: 1,
         },
         {
             "aten::avg_pool2d": 1,
             "aten::constant_pad_nd": 1,
-            "aten::_softmax": 1,
         },
         quantization_ops={
             "quantized_decomposed::quantize_per_tensor": 3,
@@ -82,16 +83,17 @@ test_cases = {
             _FQ.add.default: 3,
             _FQ.linear.default: 1,
             _FQ.mean.dim: 1,
+            _FQ._softmax.default: 1,
         },
         {
             _ESP.quantized_conv2d_int8.default: 9,
             _ESP.quantized_add_int8.default: 3,
             _ESP.quantized_linear_int8.default: 1,
             _ESP.quantized_mean_int8.default: 1,
+            _ESP.quantized_softmax_int8.default: 1,
         },
         {
             "aten::constant_pad_nd": 2,
-            "aten::_softmax": 1,
         },
         quantization_ops={
             "quantized_decomposed::quantize_per_tensor": 4,
@@ -106,16 +108,17 @@ test_cases = {
             _FQ.relu.default: 27,
             _FQ.linear.default: 1,
             _FQ.mean.dim: 1,
+            _FQ._softmax.default: 1,
         },
         {
             _ESP.quantized_conv2d_int8.default: 14,
             _ESP.quantized_depthwise_conv2d_int8.default: 13,
             _ESP.quantized_linear_int8.default: 1,
             _ESP.quantized_mean_int8.default: 1,
+            _ESP.quantized_softmax_int8.default: 1,
         },
         {
             "aten::constant_pad_nd": 5,
-            "aten::_softmax": 1,
         },
         quantization_ops={
             "quantized_decomposed::quantize_per_tensor": 6,

@@ -13,6 +13,7 @@ idf_component_register(
   "ops/op_quantized_max_pool2d.cpp"
   "ops/op_quantized_avg_pool2d.cpp"
   "ops/op_quantized_mean.cpp"
+  "ops/op_quantized_softmax.cpp"
   "ops/op_quantized_linear.cpp"
   "ops/op_quantized_conv2d.cpp"
   "ops/op_quantized_depthwise_conv2d.cpp"
