@@ -47,7 +47,11 @@ class _LinearQuantizer(OpQuantizer):
             return
         super().annotate_node(node)
         bias = get_arg(node, "bias")
-        if not isinstance(bias, torch.fx.Node) or bias.op != "get_attr":
+        if (
+            not isinstance(bias, torch.fx.Node)
+            or bias.op != "get_attr"
+            or bias.meta["val"].dim() != 1
+        ):
             return
         if len(bias.users) > 1:
             # PT2E's implicit sharing ignores DerivedQuantizationSpec inputs.
