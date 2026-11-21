@@ -8218,32 +8218,35 @@ class RepeatInterleaveTest(OpTestCase):
 
 
 class SortModel(nn.Module):
-    def __init__(self, dim: int):
+    def __init__(self, dim: int, descending: bool = False):
         super().__init__()
         self.dim = dim
+        self.descending = descending
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Only return sorted values
-        return torch.sort(x, dim=self.dim)[0]
+        return torch.sort(x, dim=self.dim, descending=self.descending)[0]
 
 
 class SortIndicesModel(nn.Module):
-    def __init__(self, dim: int):
+    def __init__(self, dim: int, descending: bool = False):
         super().__init__()
         self.dim = dim
+        self.descending = descending
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Only return sort indices
-        return torch.sort(x, dim=self.dim)[1]
+        return torch.sort(x, dim=self.dim, descending=self.descending)[1]
 
 
 class SortBothModel(nn.Module):
-    def __init__(self, dim: int):
+    def __init__(self, dim: int, descending: bool = False):
         super().__init__()
         self.dim = dim
+        self.descending = descending
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        values, indices = torch.sort(x, dim=self.dim)
+        values, indices = torch.sort(x, dim=self.dim, descending=self.descending)
         return values, indices
 
 
@@ -8258,12 +8261,15 @@ class SortTest(OpTestCase):
         shape: Tuple[int, ...] = (3, 4),
         dim: int = -1,
         output: str = "values",
+        descending: bool = False,
     ):
         self.shape = shape
         self.dim = dim
         self.output = output
+        self.descending = descending
         shape_str = "x".join(str(s) for s in shape)
-        self.name = f"sort_{output}_dim{dim}_{shape_str}"
+        desc_str = "_desc" if descending else ""
+        self.name = f"sort_{output}_dim{dim}{desc_str}_{shape_str}"
 
     @classmethod
     def get_test_configs(cls) -> List["SortTest"]:
@@ -8272,20 +8278,34 @@ class SortTest(OpTestCase):
             cls(shape=(3, 4), dim=-1, output="values"),
             cls(shape=(3, 4), dim=0, output="indices"),
             cls(shape=(2, 3, 4), dim=1, output="both"),
+            # descending=True: the delegate must reverse the ascending sort.
+            cls(shape=(8,), dim=0, output="values", descending=True),
+            cls(shape=(3, 4), dim=-1, output="values", descending=True),
+            cls(shape=(3, 4), dim=0, output="indices", descending=True),
+            cls(shape=(2, 3, 4), dim=1, output="both", descending=True),
         ]
 
     def create_model(self) -> nn.Module:
         if self.output == "values":
-            return SortModel(self.dim)
+            return SortModel(self.dim, self.descending)
         elif self.output == "indices":
-            return SortIndicesModel(self.dim)
+            return SortIndicesModel(self.dim, self.descending)
         else:
-            return SortBothModel(self.dim)
+            return SortBothModel(self.dim, self.descending)
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         return (torch.randn(self.shape),)
 
     def get_expected_node_counts(self) -> Optional[Dict[str, int]]:
+        if self.descending:
+            # Each output is an ascending sort/argsort into a tmp slot,
+            # followed by a step=-1 SliceNode.
+            if self.output == "values":
+                return {"SortNode": 1, "SliceNode": 1}
+            elif self.output == "indices":
+                return {"ArgsortNode": 1, "SliceNode": 1}
+            else:
+                return {"SortNode": 1, "ArgsortNode": 1, "SliceNode": 2}
         if self.output == "values":
             return {"SortNode": 1, "ArgsortNode": 0}
         elif self.output == "indices":
@@ -8295,12 +8315,13 @@ class SortTest(OpTestCase):
 
 
 class ArgsortModel(nn.Module):
-    def __init__(self, dim: int):
+    def __init__(self, dim: int, descending: bool = False):
         super().__init__()
         self.dim = dim
+        self.descending = descending
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.argsort(x, dim=self.dim)
+        return torch.argsort(x, dim=self.dim, descending=self.descending)
 
 
 @register_test
@@ -8309,11 +8330,18 @@ class ArgsortTest(OpTestCase):
     rtol = 0.0
     atol = 0.0
 
-    def __init__(self, shape: Tuple[int, ...] = (3, 4), dim: int = -1):
+    def __init__(
+        self,
+        shape: Tuple[int, ...] = (3, 4),
+        dim: int = -1,
+        descending: bool = False,
+    ):
         self.shape = shape
         self.dim = dim
+        self.descending = descending
         shape_str = "x".join(str(s) for s in shape)
-        self.name = f"argsort_dim{dim}_{shape_str}"
+        desc_str = "_desc" if descending else ""
+        self.name = f"argsort_dim{dim}{desc_str}_{shape_str}"
 
     @classmethod
     def get_test_configs(cls) -> List["ArgsortTest"]:
@@ -8321,10 +8349,14 @@ class ArgsortTest(OpTestCase):
             cls(shape=(8,), dim=0),
             cls(shape=(3, 4), dim=-1),
             cls(shape=(3, 4), dim=0),
+            # descending=True: the delegate must reverse the ascending argsort.
+            cls(shape=(8,), dim=0, descending=True),
+            cls(shape=(3, 4), dim=-1, descending=True),
+            cls(shape=(2, 3, 4), dim=1, descending=True),
         ]
 
     def create_model(self) -> nn.Module:
-        return ArgsortModel(self.dim)
+        return ArgsortModel(self.dim, self.descending)
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         return (torch.randn(self.shape),)
