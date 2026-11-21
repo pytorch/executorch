@@ -101,6 +101,7 @@ from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.lowered_backend_module import get_lowered_backend_modules
 from executorch.exir.program._program import _replace_aten_ops_with_transformed_ops
+from torch._subclasses.fake_tensor import FakeTensorMode
 from torch.export.exported_program import OutputKind
 from torch.export.graph_signature import ExportGraphSignature
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partition
@@ -1772,10 +1773,18 @@ class TestPasses(unittest.TestCase):
                 torch.testing.assert_close(gm(*sample_input)[0], module(*sample_input))
 
     def test_convert_full_like_to_full(self):
-        sample_input = (torch.randn(2, 3), torch.randn(2, 3))
         # An int fill on a float input must still give a float tensor.
-        for dynamic, fill in ((False, 0.5), (False, 1), (True, 0.5)):
-            with self.subTest(dynamic=dynamic, fill=fill):
+        for dynamic, fill, channels_last in (
+            (False, 0.5, False),
+            (False, 1, False),
+            (True, 0.5, False),
+            (False, 0.5, True),
+        ):
+            with self.subTest(dynamic=dynamic, fill=fill, channels_last=channels_last):
+                x = torch.randn(2, 3, 4, 5)
+                if channels_last:
+                    x = x.to(memory_format=torch.channels_last)
+                sample_input = (x, torch.randn(2, 3))
                 module = FullLikeShapeOnly(fill=fill)
                 dynamic_shapes = (
                     {"x": {0: torch.export.Dim("n", min=2, max=4)}, "y": None}
@@ -1792,22 +1801,34 @@ class TestPasses(unittest.TestCase):
                 ).exported_program()
                 graph_module = ConvertFullLikeToFull()(ep.graph_module).graph_module
                 targets = {node.target for node in graph_module.graph.nodes}
-                x = next(n for n in graph_module.graph.nodes if n.name == "x")
-                # A dynamic shape has to be read at runtime. Otherwise the ops
-                # that only gave full_like its shape are removed, so nothing
-                # reads x.
-                self.assertEqual(
-                    exir_ops.edge.aten.full_like.default in targets, dynamic
-                )
-                self.assertEqual(
-                    exir_ops.edge.aten.full.default in targets, not dynamic
-                )
-                self.assertEqual(len(x.users) > 0, dynamic)
+                x_node = next(n for n in graph_module.graph.nodes if n.name == "x")
+                # A dynamic shape has to be read at runtime, and a full is
+                # never channels last. Otherwise the ops that only gave
+                # full_like its shape are removed, so nothing reads x.
+                kept = dynamic or channels_last
+                self.assertEqual(exir_ops.edge.aten.full_like.default in targets, kept)
+                self.assertEqual(exir_ops.edge.aten.full.default in targets, not kept)
+                self.assertEqual(len(x_node.users) > 0, kept)
                 # The pass rewrites ep's graph in place.
                 for result, expected in zip(
                     ep.module()(*sample_input), module(*sample_input)
                 ):
                     torch.testing.assert_close(result, expected)
+
+    def test_convert_full_like_to_full_keeps_the_device(self):
+        class FullLikeAdd(torch.nn.Module):
+            def forward(self, x):
+                return x + torch.full_like(x, 0.5)
+
+        # Fake tensors can be on CUDA without a GPU.
+        with FakeTensorMode() as mode:
+            x = torch.empty(2, 3, device="cuda")
+        ep = to_edge(
+            torch.export.export(FullLikeAdd(), (x,), strict=True)
+        ).exported_program()
+        graph_module = ConvertFullLikeToFull()(ep.graph_module).graph_module
+        with mode:
+            self.assertEqual(graph_module(x)[0].device, x.device)
 
     def test_i64_to_i32_casts_any_int64_result(self):
         # A sum of bools and topk indices are int64, and masked_scatter needs
