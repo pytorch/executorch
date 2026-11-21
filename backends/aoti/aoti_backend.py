@@ -8,6 +8,7 @@ import contextlib
 import hashlib
 import os
 import re
+import threading
 import typing
 from abc import ABC, abstractmethod
 from enum import Enum
@@ -67,6 +68,11 @@ def _written_buffer_options(program: ExportedProgram) -> Dict[str, Any]:
     if program.graph_signature.buffers_to_mutate:
         return {"joint_graph_constant_folding": False}
     return {}
+
+
+class _CollectorLocal(threading.local):
+    def __init__(self) -> None:
+        self.collectors: list = []
 
 
 @experimental(
@@ -203,6 +209,92 @@ class AotiBackend(ABC):
         """
         return
 
+    _collector_lock = threading.Lock()
+    _collector_local = _CollectorLocal()
+    _collector_refcount: typing.ClassVar[int] = 0
+    _collector_originals: typing.ClassVar[typing.Optional[tuple]] = None
+
+    @classmethod
+    def _collector_stack(cls) -> list:
+        return AotiBackend._collector_local.collectors
+
+    @classmethod
+    def _record_missing_kernel(cls, kernel: str) -> None:
+        # Each collector belongs to the compiling thread that entered it;
+        # hooks installed once dispatch there (and ignore codegen from
+        # threads that are not in a collector scope). The snapshot is taken
+        # when the collector is entered, after the backend's passes have
+        # run, so every kernel this compile may call is already in it.
+        stack = AotiBackend._collector_local.collectors
+        if not stack:
+            return
+        supported_kernels, missing = stack[-1]
+        if kernel not in supported_kernels:
+            missing.add(kernel)
+
+    @classmethod
+    def _install_collector_hooks_locked(cls) -> None:
+        originals = (
+            CppWrapperCpu.generate_c_shim_extern_kernel_call,
+            CppWrapperCpu.generate_fallback_kernel_with_runtime_lookup_aot,
+            CppWrapperCpu._generate_scatter_fallback,
+            CppWrapperCpu._generate_index_put_fallback,
+        )
+        AotiBackend._collector_originals = originals
+        (
+            original_extern,
+            original_lookup,
+            original_scatter,
+            original_index_put,
+        ) = originals
+
+        def generate_extern(self, kernel: str, *args: Any, **kwargs: Any) -> None:
+            AotiBackend._record_missing_kernel(kernel)
+            return original_extern(self, kernel, *args, **kwargs)
+
+        def generate_lookup(self, op_overload: Any, *args: Any, **kwargs: Any) -> None:
+            AotiBackend._record_missing_kernel(
+                getattr(op_overload, "_name", str(op_overload))
+            )
+            return original_lookup(self, op_overload, *args, **kwargs)
+
+        def collect_writes(original: Any) -> Any:
+            # These fallbacks write their shim call directly, so read the
+            # kernel names from the lines they write.
+            def generate_and_collect(self, *args: Any, **kwargs: Any) -> None:
+                lines: List[str] = []
+                writeline = self.writeline
+                self.writeline = lambda line: (
+                    lines.append(str(line)),
+                    writeline(line),
+                )
+                try:
+                    return original(self, *args, **kwargs)
+                finally:
+                    self.writeline = writeline
+                    for line in lines:
+                        for kernel in re.findall(r"\b(aoti_torch_\w+)\(", line):
+                            AotiBackend._record_missing_kernel(kernel)
+
+            return generate_and_collect
+
+        CppWrapperCpu.generate_c_shim_extern_kernel_call = generate_extern
+        CppWrapperCpu.generate_fallback_kernel_with_runtime_lookup_aot = generate_lookup
+        CppWrapperCpu._generate_scatter_fallback = collect_writes(original_scatter)
+        CppWrapperCpu._generate_index_put_fallback = collect_writes(original_index_put)
+
+    @classmethod
+    def _remove_collector_hooks_locked(cls) -> None:
+        originals = AotiBackend._collector_originals
+        assert originals is not None
+        (
+            CppWrapperCpu.generate_c_shim_extern_kernel_call,
+            CppWrapperCpu.generate_fallback_kernel_with_runtime_lookup_aot,
+            CppWrapperCpu._generate_scatter_fallback,
+            CppWrapperCpu._generate_index_put_fallback,
+        ) = originals
+        AotiBackend._collector_originals = None
+
     @classmethod
     @contextlib.contextmanager
     def collect_unsupported_fallback_kernels(cls, missing_fallback_kernels: Set[str]):
@@ -210,87 +302,33 @@ class AotiBackend(ABC):
         Context manager to collect unsupported fallback kernels during compilation.
         Monitors extern kernel calls, runtime lookup, and the scatter and
         index_put fallbacks, which call their kernels directly.
+
+        The CppWrapperCpu hooks are class-level, so they are installed once
+        and reference-counted instead of being wrapped per compile; each
+        collector lives on its entering thread's stack, so overlapping
+        compiles record only their own kernels and leave no wrapper behind.
         """
-        supported_kernels = cls.get_supported_fallback_kernels()
-
-        original_generate_c_shim_extern_kernel_call = (
-            CppWrapperCpu.generate_c_shim_extern_kernel_call
+        collector = (
+            cls.get_supported_fallback_kernels(),
+            missing_fallback_kernels,
         )
-        original_generate_fallback_kernel_with_runtime_lookup_aot = (
-            CppWrapperCpu.generate_fallback_kernel_with_runtime_lookup_aot
-        )
-        original_generate_scatter_fallback = CppWrapperCpu._generate_scatter_fallback
-        original_generate_index_put_fallback = (
-            CppWrapperCpu._generate_index_put_fallback
-        )
-
-        def generate_c_shim_extern_kernel_call_and_collect_unsupported_kernels(
-            self, kernel: str, *args: Any, **kwargs: Any
-        ) -> None:
-            if kernel not in supported_kernels:
-                missing_fallback_kernels.add(kernel)
-
-            return original_generate_c_shim_extern_kernel_call(
-                self, kernel, *args, **kwargs
-            )
-
-        def generate_fallback_kernel_with_runtime_lookup_aot_and_collect_unsupported_kernels(
-            self, op_overload: Any, *args: Any, **kwargs: Any
-        ) -> None:
-            kernel_name = getattr(op_overload, "_name", str(op_overload))
-            if kernel_name not in supported_kernels:
-                missing_fallback_kernels.add(kernel_name)
-
-            return original_generate_fallback_kernel_with_runtime_lookup_aot(
-                self, op_overload, *args, **kwargs
-            )
-
-        def collect_kernels_it_writes(original: Any) -> Any:
-            # These fallbacks write their shim call directly, so read the
-            # kernel names from the lines they write.
-            def generate_and_collect_unsupported_kernels(
-                self, *args: Any, **kwargs: Any
-            ) -> None:
-                lines: List[str] = []
-                writeline = self.writeline
-                self.writeline = lambda line: (lines.append(str(line)), writeline(line))
-                try:
-                    return original(self, *args, **kwargs)
-                finally:
-                    self.writeline = writeline
-                    for line in lines:
-                        for kernel in re.findall(r"\b(aoti_torch_\w+)\(", line):
-                            if kernel not in supported_kernels:
-                                missing_fallback_kernels.add(kernel)
-
-            return generate_and_collect_unsupported_kernels
-
-        CppWrapperCpu.generate_c_shim_extern_kernel_call = (
-            generate_c_shim_extern_kernel_call_and_collect_unsupported_kernels
-        )
-        CppWrapperCpu.generate_fallback_kernel_with_runtime_lookup_aot = generate_fallback_kernel_with_runtime_lookup_aot_and_collect_unsupported_kernels
-        CppWrapperCpu._generate_scatter_fallback = collect_kernels_it_writes(
-            original_generate_scatter_fallback
-        )
-        CppWrapperCpu._generate_index_put_fallback = collect_kernels_it_writes(
-            original_generate_index_put_fallback
-        )
-
+        with cls._collector_lock:
+            if AotiBackend._collector_refcount == 0:
+                cls._install_collector_hooks_locked()
+            AotiBackend._collector_refcount += 1
+        cls._collector_stack().append(collector)
         try:
             yield
         finally:
-            CppWrapperCpu.generate_c_shim_extern_kernel_call = (
-                original_generate_c_shim_extern_kernel_call
-            )
-            CppWrapperCpu.generate_fallback_kernel_with_runtime_lookup_aot = (
-                original_generate_fallback_kernel_with_runtime_lookup_aot
-            )
-            CppWrapperCpu._generate_scatter_fallback = (
-                original_generate_scatter_fallback
-            )
-            CppWrapperCpu._generate_index_put_fallback = (
-                original_generate_index_put_fallback
-            )
+            stack = cls._collector_stack()
+            for index in range(len(stack) - 1, -1, -1):
+                if stack[index] is collector:
+                    del stack[index]
+                    break
+            with cls._collector_lock:
+                AotiBackend._collector_refcount -= 1
+                if AotiBackend._collector_refcount == 0:
+                    cls._remove_collector_hooks_locked()
 
     @classmethod
     def preprocess(
