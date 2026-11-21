@@ -16,7 +16,7 @@ Each handler converts a specific PyTorch operation to the corresponding MLX grap
 from __future__ import annotations
 
 import operator
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union
 
 import torch
 from executorch.backends.mlx.builder.op_helpers import (
@@ -5696,12 +5696,22 @@ def _sort_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     require_kwargs(P.kwargs(n), set(), "aten.sort")
     x = args[0]
     dim = args[1] if len(args) > 1 else -1
+    descending = bool(args[2]) if len(args) > 2 else False
 
     # torch.sort returns (values, indices) - 2 outputs
     output_slots = P.make_or_get_slots(n)
     values_slot, indices_slot = output_slots
 
     used = used_getitem_indices(n)
+
+    if descending:
+        targets: List[Tuple[type, Slot]] = []
+        if 0 in used:
+            targets.append((SortNode, values_slot))
+        if 1 in used:
+            targets.append((ArgsortNode, indices_slot))
+        _emit_descending_sort(P, n, x, dim, targets)
+        return output_slots
 
     if 0 in used:
         P.emit(
@@ -5723,6 +5733,46 @@ def _sort_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     return output_slots
 
 
+def _emit_descending_sort(
+    P: MLXProgramBuilder,
+    n: Node,
+    x: Slot,
+    dim: int,
+    targets: Sequence[Tuple[type, Slot]],
+) -> None:
+    """Emit each ``(node_cls, out_slot)`` target as a descending sort/argsort.
+
+    Emits an ascending ``SortNode``/``ArgsortNode`` into a tmp slot, then
+    reverses along ``dim`` with a step=-1 slice (the same trick
+    ``_topk_handler`` uses) to obtain descending order.
+    """
+    x_meta = n.args[0].meta.get("val")
+    if x_meta is None:
+        raise ValueError("Input tensor metadata not found for aten.sort")
+    norm_axis = dim if dim >= 0 else dim + len(x_meta.shape)
+    dim_size = x_meta.shape[norm_axis]
+
+    for node_cls, out_slot in targets:
+        _, sort_tmp = P.make_tmp_slot()
+        P.emit(
+            node_cls(
+                x=P.slot_to_tid(x),
+                out=P.slot_to_tid(sort_tmp),
+                axis=dim,
+            )
+        )
+        P.emit(
+            SliceNode(
+                x=P.slot_to_tid(sort_tmp),
+                out=P.slot_to_tid(out_slot),
+                axis=P.to_int_or_vid(dim),
+                start=P.to_int_or_vid(dim_size - 1),
+                stop=P.to_int_or_vid(-(dim_size + 1)),
+                step=-1,
+            )
+        )
+
+
 @REGISTRY.register(target=[torch.ops.aten.argsort.default])
 def _argsort_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """Handle aten.argsort - indices that sort elements along an axis."""
@@ -5731,8 +5781,13 @@ def _argsort_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     require_kwargs(P.kwargs(n), set(), "aten.argsort")
     x = args[0]
     dim = args[1] if len(args) > 1 else -1
+    descending = bool(args[2]) if len(args) > 2 else False
 
     out = P.make_or_get_slot(n)
+    if descending:
+        _emit_descending_sort(P, n, x, dim, [(ArgsortNode, out)])
+        return out
+
     P.emit(
         ArgsortNode(
             x=P.slot_to_tid(x),
