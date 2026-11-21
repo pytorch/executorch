@@ -140,6 +140,20 @@ install(
   DESTINATION lib
 )
 
+# Runs two programs in one process for tests/test_modules.py. Only built on
+# request, by tests/run_metal_test.sh --build.
+if(EXECUTORCH_BUILD_EXECUTOR_RUNNER AND EXECUTORCH_BUILD_EXTENSION_MODULE)
+  add_executable(
+    metal_multi_delegate_runner EXCLUDE_FROM_ALL
+    runtime/test/multi_delegate_runner.cpp
+  )
+  target_link_libraries(
+    metal_multi_delegate_runner
+    PRIVATE extension_module_static extension_tensor portable_ops_lib
+            metal_backend
+  )
+endif()
+
 if(BUILD_TESTING)
   include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
