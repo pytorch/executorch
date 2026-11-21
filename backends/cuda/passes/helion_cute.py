@@ -35,10 +35,10 @@ from pathlib import Path
 from typing import Any, cast, NamedTuple
 
 import torch
+from torch.multiprocessing.reductions import StorageWeakRef
 from torch._inductor.cpp_builder import get_cpp_compiler
 from torch._inductor.runtime.cache_dir_utils import cache_dir
 from torch._subclasses.fake_tensor import unset_fake_temporarily
-from torch.multiprocessing.reductions import StorageWeakRef
 
 _OP_NAMESPACE = "helion_cute"
 _DSL_REQUIREMENT = (
@@ -158,7 +158,6 @@ class _ProgramLaunches(threading.local):
     def __init__(self) -> None:
         self.launches: dict[str, _ExportedLaunch] = {}
         self.last_had_launches = False
-        self.multimethod_libraries: set[str] | None = None
 
 
 class _ExportState:
@@ -283,7 +282,17 @@ def _example_like(fake: torch.Tensor, aligned: bool) -> torch.Tensor:
     metadata does not show, gets an example one element into its storage, so
     the kernel assumes only element alignment for it.
     """
-    offset = 0 if aligned else 1
+    # A root parameter or buffer that is itself a view keeps its storage
+    # offset in the .pte (AOTI does not clone parameters), so even an
+    # "aligned" argument must be compiled for its offset's alignment
+    # class: only the offset modulo the 16-byte assumption matters to
+    # Helion, and reproducing a huge real offset would just waste export
+    # memory. Other aligned arguments start at their allocation.
+    if aligned:
+        elements_per_16_bytes = max(1, 16 // fake.element_size())
+        offset = fake.storage_offset() % elements_per_16_bytes
+    else:
+        offset = 1
     extent = 1 + sum((n - 1) * s for n, s in zip(fake.shape, fake.stride()))
     base = torch.empty(offset + extent, dtype=fake.dtype, device=fake.device)
     return base.as_strided(fake.shape, fake.stride(), offset)
@@ -697,7 +706,6 @@ def export_cute_launch(
             )
         )
         prefix = f"helion_cute_{hashlib.sha256(key.encode()).hexdigest()[:24]}"
-        check_one_launch(prefix)
         # The global lock guards only the exported map; compiling takes the
         # per-prefix lock, so other lowerings are not stuck behind this
         # kernel's CuTe compile and the same prefix is still built once.
@@ -764,47 +772,14 @@ def note_existing_launches(modules: Any) -> None:
                     record_program_launch(launch)
 
 
-def check_one_launch(prefix: str) -> None:
-    """Reject a second distinct launch in this program (or .pte) early."""
-    others = set(_STATE.program_launches()) - {prefix}
-    multi = _STATE.per_thread.multimethod_libraries
-    if multi is not None:
-        others |= multi - {prefix}
-    if others:
-        raise NotImplementedError(
-            "Helion CuTe lowering supports only one distinct CuTe "
-            "launch per program for now; an earlier call or method "
-            f"already lowers {sorted(others)}"
-        )
-
-
 def record_program_launch(exported: _ExportedLaunch) -> None:
-    check_one_launch(exported.library)
-    _STATE.program_launches()[exported.library] = exported
-    multi = _STATE.per_thread.multimethod_libraries
-    if multi is not None:
-        multi.add(exported.library)
+    """Record a launch as part of this thread's program.
 
-
-@contextlib.contextmanager
-def one_launch_per_program() -> Iterator[None]:
-    """Enforce the one-distinct-launch limit across a whole .pte.
-
-    Entered by CudaBackend.preprocess_multimethod around its per-method
-    loop; nested entries join the outer accumulation. Only that
-    EdgeProgramManager path is covered: the low-level
-    backend_api.to_backend overloads reach preprocess per partition
-    without this scope, so a program composed from separately lowered
-    submodules is not checked.
+    Any number of distinct launches may be recorded: each was exported
+    under its own prefix, registered as its own op and archived in its
+    own library, and the link adds every recorded archive.
     """
-    if _STATE.per_thread.multimethod_libraries is not None:
-        yield
-        return
-    _STATE.per_thread.multimethod_libraries = set()
-    try:
-        yield
-    finally:
-        _STATE.per_thread.multimethod_libraries = None
+    _STATE.program_launches()[exported.library] = exported
 
 
 def last_program_had_launches() -> bool:
