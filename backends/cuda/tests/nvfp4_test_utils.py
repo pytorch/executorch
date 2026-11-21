@@ -24,6 +24,11 @@ def shards(k, device="cpu", dtype=torch.bfloat16):
     return result
 
 
+def static_scale(value, device="cuda"):
+    """A static activation scale as the kernels take it (None: dynamic)."""
+    return None if value is None else torch.tensor([[value]], device=device)
+
+
 def portable_weight(pts=1.0, scale_byte=40):
     return ExportableNVFP4Tensor(
         torch.zeros((70, 24), dtype=torch.uint32),
