@@ -6,14 +6,17 @@
 
 import torch
 from torch._subclasses.fake_tensor import is_fake
+from torchao.prototype.mx_formats.kernels import f4_unpacked_to_f32, unpack_uint4
 from torchao.utils import TorchAOBaseTensor
 
 
 class CudaNVFP4Tensor(TorchAOBaseTensor):
-    """``unit_scale`` is True only when ``per_tensor_scale`` is 1 and every
-    scale byte is below 0x7F (non-negative, non-NaN E4M3), which lets kernels
-    skip the global-scale multiply. ``from_exportable`` sets it from the values;
-    the constructor trusts the passed flag.
+    """``unit_scale`` asserts two facts kernels may rely on: ``per_tensor_scale``
+    is 1, so the global-scale multiply can be skipped, and every scale byte is
+    below 0x7F, a non-negative finite E4M3 value, so each E2M1 x E4M3 product
+    is finite with at most 6 significant bits and exact in BF16 without
+    rounding. ``from_exportable`` sets it from the values; the constructor
+    trusts the passed flag.
     """
 
     tensor_data_names = ["qdata", "scale", "per_tensor_scale"]
@@ -45,6 +48,10 @@ class CudaNVFP4Tensor(TorchAOBaseTensor):
             raise ValueError(
                 "CUDA NVFP4 per_tensor_scale must be scalar or have N values"
             )
+        if per_tensor_scale.dtype != torch.float32:
+            raise ValueError("CUDA NVFP4 per_tensor_scale must be float32")
+        if scale.device != qdata.device or per_tensor_scale.device != qdata.device:
+            raise ValueError("CUDA NVFP4 fields must be on one device")
         qdata, scale = qdata.contiguous(), scale.contiguous()
         # A length-one tensor remains a device pointer during AOTI lowering.
         # A CPU zero-dimensional tensor may be folded into an IR scalar,
@@ -93,8 +100,10 @@ class CudaNVFP4Tensor(TorchAOBaseTensor):
         # data and block scales together. Keep differing global scales per output
         # row so the fused weights need no requantization.
         weights = list(weights)
-        if not weights or any(not isinstance(w, cls) for w in weights):
-            raise ValueError("CUDA NVFP4 fusion requires NVFP4 weights")
+        if not weights:
+            raise ValueError("CUDA NVFP4 fusion requires at least one weight")
+        if any(not isinstance(w, cls) for w in weights):
+            raise TypeError("CUDA NVFP4 fusion requires NVFP4 weights")
         first = weights[0]
         if any(
             w.shape[1] != first.shape[1]
@@ -125,32 +134,10 @@ class CudaNVFP4Tensor(TorchAOBaseTensor):
         )
 
     def dequantize(self, output_dtype=None):
-        n, k = self.shape
-        q = torch.stack((self.qdata & 15, self.qdata >> 4), dim=-1).reshape(n, k).long()
-        lut = torch.tensor(
-            [
-                0.0,
-                0.5,
-                1.0,
-                1.5,
-                2.0,
-                3.0,
-                4.0,
-                6.0,
-                -0.0,
-                -0.5,
-                -1.0,
-                -1.5,
-                -2.0,
-                -3.0,
-                -4.0,
-                -6.0,
-            ],
-            device=q.device,
-        )
+        values = f4_unpacked_to_f32(unpack_uint4(self.qdata))
         s = self.scale.view(torch.float8_e4m3fn).float().repeat_interleave(16, dim=1)
         pts = self.per_tensor_scale.reshape(-1, 1)
-        return (lut[q] * (s * pts)).to(output_dtype or self.orig_dtype)
+        return (values * (s * pts)).to(output_dtype or self.orig_dtype)
 
     def to(self, *args, **kwargs):
         kwargs = self._get_to_kwargs(*args, **kwargs)
