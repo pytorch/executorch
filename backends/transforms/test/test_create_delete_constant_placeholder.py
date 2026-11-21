@@ -309,3 +309,46 @@ def test_delete_inside_a_pass_non_persistent_buffer():
 
 def test_delete_inside_a_pass_constant_tensor():
     _test_delete_inside_a_pass(InputKind.CONSTANT_TENSOR)
+
+
+class DeleteUnusedConstantPass:
+    def __init__(self, exported_program, node: torch.fx.Node) -> None:
+        self.exported_program = exported_program
+        self.node = node
+
+    def __call__(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        delete_constant_placeholder(self.exported_program, self.node)
+        return PassResult(graph_module, True)
+
+
+def test_delete_inside_a_pass_after_a_modifying_pass():
+    # After a pass returns modified=True the manager rebuilds the copy's
+    # signature, so the copy no longer shares input_specs with the original
+    # program. The deleting pass must be pointed at the copy to reach it.
+    module = EmptyNetwork()
+    exported_program = to_edge(
+        export(module, args=module.test_data, strict=True)
+    ).exported_program()
+    graph = exported_program.graph_module.graph
+    input_node = next(n for n in graph.nodes if n.op == "placeholder")
+    with graph.inserting_before(input_node):
+        const_node = create_constant_placeholder(
+            exp_program=exported_program,
+            graph=graph,
+            kind=InputKind.PARAMETER,
+            name="const",
+            data=torch.ones(1),
+        )
+
+    def modifying_pass(graph_module: torch.fx.GraphModule) -> PassResult:
+        return PassResult(graph_module, True)
+
+    delete_pass = DeleteUnusedConstantPass(exported_program, const_node)
+    result = ExportedProgramPassManager([modifying_pass, delete_pass])(exported_program)
+    transformed = result.exported_program
+
+    assert delete_pass.exported_program is exported_program
+    assert len(transformed.graph_signature.input_specs) == 1
+    assert "const" not in transformed.graph_signature.inputs_to_parameters
+    assert len(transformed.state_dict) == 0
+    assert transformed.module()(torch.zeros(1)) == 0
