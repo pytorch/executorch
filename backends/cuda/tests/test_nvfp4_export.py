@@ -20,7 +20,7 @@ from executorch.backends.cuda.quantize_op_dispatch.nvfp4_dispatch import (
     _has_native_fp4,
     _MODE_STRIDE,
 )
-from executorch.backends.cuda.tests.nvfp4_test_utils import PackedLinear
+from executorch.backends.cuda.tests.nvfp4_test_utils import GemmaPacked, PackedLinear
 from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
     nvfp4_quantize_activation,
 )
@@ -150,3 +150,52 @@ def test_packed_linear_pte(mode, m, dynamic, fp32, monkeypatch):
                     result, reference(value), rtol=0.03, atol=0.03
                 )
     torch.testing.assert_close(actual.cpu(), reference(x), rtol=0.03, atol=0.03)
+
+
+@pytest.mark.parametrize("mode", ["w4a16", "w4a4"])
+def test_gemma_packed_modules_pte(mode, monkeypatch):
+    if mode == "w4a4" and not _has_native_fp4():
+        pytest.skip("native FP4 required")
+    monkeypatch.setenv("ET_CUDA_NVFP4_ACT", mode)
+    monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_OUTPUT", "input")
+    module = GemmaPacked().eval()
+    ids = torch.tensor([[1, 5], [69, 0]])
+    x = torch.randn(37, 192, dtype=torch.bfloat16)
+    lowered = to_edge_transform_and_lower(
+        torch.export.export(module, (ids, x), strict=True),
+        partitioner=[
+            CudaPartitioner([CudaBackend.generate_method_name_compile_spec("forward")])
+        ],
+        compile_config=EdgeCompileConfig(_check_ir_validity=False),
+    ).to_executorch()
+    weight = module.linear.weight
+    if mode == "w4a16":
+        expected = F.linear(x, weight.dequantize())
+    else:
+        q, s, g = nvfp4_quantize_activation(
+            x.cuda(), weight.act_per_tensor_scale.cuda()
+        )
+        a = CudaNVFP4Tensor(q.cpu(), s.cpu(), torch.ones(1), orig_dtype=torch.float32)
+        expected = (
+            (a.dequantize() * g.cpu()[:, None]) @ weight.dequantize(torch.float32).T
+        ).bfloat16()
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "gemma_packed.pte"
+        with path.open("wb") as f:
+            lowered.write_to_file(f)
+        lowered.write_tensor_data_to_file(tmp)
+        data = next(Path(tmp).glob("*.ptd"))
+        from executorch.export.utils import is_fbcode
+
+        if is_fbcode():
+            return
+        from executorch.runtime import Runtime
+
+        method = (
+            Runtime.get()
+            .load_program(str(path), data_path=str(data))
+            .load_method("forward")
+        )
+        rows, out = (t.cpu() for t in method.execute([ids, x]))
+    assert torch.equal(rows, module.embedding.weight.dequantize()[ids])
+    torch.testing.assert_close(out, expected, rtol=0.03, atol=0.03)

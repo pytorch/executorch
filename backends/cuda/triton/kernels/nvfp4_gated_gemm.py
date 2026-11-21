@@ -224,7 +224,7 @@ def nvfp4_w4a4_gate_up(
     qdata: torch.Tensor,
     scale: torch.Tensor,
     per_tensor_scale: torch.Tensor,
-    static_scale: float = 0.0,
+    static_scale: torch.Tensor | None = None,
     split_k: int = -1,
     output_dtype: torch.dtype | None = None,
 ) -> torch.Tensor:
