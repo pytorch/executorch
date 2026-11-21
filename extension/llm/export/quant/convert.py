@@ -142,6 +142,12 @@ def fuse_along_output(tensors: Sequence[torch.Tensor]) -> torch.Tensor:
     )
     from torchao.quantization import IntxUnpackedToInt8Tensor
 
+    if isinstance(first, ExportableGGUFTensor) and first.ggml_type == "nvfp4":
+        raise TypeError(
+            "fuse_along_output cannot fuse GGUF NVFP4 blocks without their "
+            ".scale tensors; convert with to_exportable_nvfp4_tensor first"
+        )
+
     # Per-data-field concat axis (the output-channel dim) by subclass layout. An
     # axis of ``None`` means the field is not per-output-channel (e.g. NVFP4's
     # scalar ``per_tensor_scale``): it must match across inputs and is kept as-is.
