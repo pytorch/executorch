@@ -92,15 +92,23 @@ bool ThreadPool::_unsafe_reset_threadpool(uint32_t new_thread_count) {
   std::lock_guard<std::mutex> lock{mutex_};
   std::lock_guard<std::mutex> threadpool_lock{threadpool_mutex_};
 
+  auto threadpool = create_pthreadpool(new_thread_count);
+  if (!threadpool) {
+    ET_LOG(
+        Error,
+        "Cannot create a threadpool of %u threads; keeping the one of %zu threads.",
+        new_thread_count,
+        thread_count_);
+    return false;
+  }
   if (threadpool_.use_count() > 1) {
     ET_LOG(
         Info,
         "Methods loaded before this reset keep the old threadpool of %zu threads until they are destroyed.",
         thread_count_);
   }
-  threadpool_ = create_pthreadpool(new_thread_count);
-  thread_count_ =
-      threadpool_ ? pthreadpool_get_threads_count(threadpool_.get()) : 0;
+  threadpool_ = std::move(threadpool);
+  thread_count_ = pthreadpool_get_threads_count(threadpool_.get());
   return true;
 }
 
