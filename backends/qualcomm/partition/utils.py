@@ -5,13 +5,29 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-from typing import List, Optional
+import operator
+from typing import Callable, List, Optional, Set, Tuple
 
 import torch
 from executorch.backends.qualcomm.builders.node_visitor import (
     dq_ops,
     q_ops,
     QNN_TENSOR_TYPE_MAP,
+)
+from executorch.backends.qualcomm.builders.node_visitor_manager import (
+    _node_visitor_dict,
+)
+from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
+from executorch.backends.qualcomm.builders.utils import (
+    is_mutable_buffer_input,
+    is_parameter,
+)
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+    QnnExecuTorchHtpPrecision,
+)
+from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
+    flatbuffer_to_option,
 )
 
 from executorch.backends.qualcomm.utils.constants import (
@@ -23,6 +39,13 @@ from executorch.backends.qualcomm.utils.constants import (
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.utils import _pytree as pytree
+
+from .common_defs import (
+    allow_list_operator,
+    constant_operator,
+    not_supported_operator,
+    to_be_implemented_operator,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -207,6 +230,178 @@ def must_stay_on_cpu(node: torch.fx.Node) -> bool:
     return (
         has_unsupported_dtype(node) and not _unsupported_dtypes_are_quantized(node)
     ) or has_data_dependent_shape(node)
+
+
+def get_backend_info(compiler_specs) -> Tuple[bool, bool, Set[str]]:
+    """
+    Whether `compiler_specs` target HTP and HTP float16, and the ops that
+    their op packages build. Without specs the backend is not known, so HTP
+    is assumed, but not float16.
+    """
+    if compiler_specs is None:
+        return True, False, set()
+    options = flatbuffer_to_option(generate_qnn_executorch_option(compiler_specs))
+    backend_options = options.backend_options
+    is_htp = backend_options.backend_type == QnnExecuTorchBackendType.kHtpBackend
+    is_htp_fp16 = (
+        is_htp
+        and backend_options.htp_options is not None
+        and backend_options.htp_options.precision == QnnExecuTorchHtpPrecision.kHtpFp16
+    )
+    op_package_ops = {
+        info.custom_op_name for info in options.op_package_options.op_package_infos
+    }
+    return is_htp, is_htp_fp16, op_package_ops
+
+
+def _is_bool_cat_of_static_tensor(
+    node: torch.fx.Node, edge_program: torch.export.ExportedProgram
+) -> bool:
+    if (
+        node.target != exir_ops.edge.aten.cat.default
+        or node.meta["val"].dtype != torch.bool
+    ):
+        return False
+    views = (
+        exir_ops.edge.aten.view_copy.default,
+        exir_ops.edge.aten.squeeze_copy.dims,
+        exir_ops.edge.aten.unsqueeze_copy.default,
+        exir_ops.edge.aten.permute_copy.default,
+        exir_ops.edge.aten.expand_copy.default,
+    )
+    static = False
+    for arg in node.args[0]:
+        while arg.target in views:
+            arg = arg.args[0]
+        static |= arg.target in constant_operator or (
+            is_parameter(arg, edge_program)
+            and not is_mutable_buffer_input(arg, edge_program)
+        )
+    return static
+
+
+def get_htp_skip_reason(
+    node: torch.fx.Node,
+    edge_program: torch.export.ExportedProgram,
+    is_htp: bool,
+    is_htp_fp16: bool,
+) -> Optional[str]:
+    """
+    Why HTP cannot take the node although QNN's op check may accept it, or
+    None. QnnOperatorSupport and the passes that estimate its decisions both
+    ask this, so they apply the same rules.
+    - Constant ops skip the QNN op check, but HTP cannot build one of more
+      than 5 dims as a partition output (see define_constant). Whether it
+      will be one is not known per node, so every such constant stays on CPU.
+    - In fp16, HTP Concat can read a static bool input of all True as False,
+      with no error, for example torch.cat([x > 0, torch.full((2, 2), True)], 1).
+      Whether it does also depends on the shapes, so every such cat stays on
+      CPU. A static tensor read through a reshape is read wrong too, so ops
+      that only change the shape or the order of the dims are looked through.
+      Quantized HTP graphs read it right.
+    """
+    if is_htp and node.target in constant_operator and node.meta["val"].dim() > 5:
+        return "more than 5 dims"
+    # TODO: https://github.com/pytorch/executorch/issues/24750, seen on the
+    # x86 simulator of QNN SDK 2.51, not checked on a device. Remove this
+    # once HTP fp16 Concat reads a static bool input right, which
+    # CatBoolConstant in test_qnn_backend_cat checks.
+    if is_htp_fp16 and _is_bool_cat_of_static_tensor(node, edge_program):
+        return "bool concat of a static tensor"
+    return None
+
+
+def may_be_delegated(
+    node: torch.fx.Node,
+    edge_program: Optional[torch.export.ExportedProgram],
+    skip_node_id_set: Set[str],
+    skip_node_op_set: Set[str],
+    backend_info: Tuple[bool, bool, Set[str]],
+) -> bool:
+    """
+    Whether QnnPartitioner may take the node, as far as can be told without
+    QNN's op validation. `backend_info` comes from get_backend_info.
+    """
+    is_htp, is_htp_fp16, op_package_ops = backend_info
+    if node.op != "call_function":
+        return False
+    if (
+        node.target in allow_list_operator
+        or getattr(node.target, "namespace", None) == OpContextLoader.namespace
+    ):
+        return True
+    return (
+        (
+            getattr(node.target, "__name__", None) in _node_visitor_dict
+            or getattr(node.target, "__name__", None) in op_package_ops
+        )
+        and node.target not in not_supported_operator
+        and node.target not in to_be_implemented_operator
+        and node.name not in skip_node_id_set
+        and node.target.__name__ not in skip_node_op_set
+        and not must_stay_on_cpu(node)
+        and get_htp_skip_reason(node, edge_program, is_htp, is_htp_fp16) is None
+    )
+
+
+def find_nodes_left_on_cpu(
+    nodes: List[torch.fx.Node],
+    qnn: Set[torch.fx.Node],
+    is_runtime_input: Callable[[torch.fx.Node], bool],
+) -> Set[torch.fx.Node]:
+    """
+    Estimates which of the `qnn` nodes, the ones QNN may take, HTP leaves on
+    CPU because no partition that takes them reads a runtime value: an input
+    outside `qnn` that `is_runtime_input` accepts, such as a user input or
+    the output of a CPU op. `nodes` are all the nodes of the graph, in order.
+    The partitioner merges partitions that are not connected, too, unless
+    that makes a cycle. So a QNN op that reads no runtime value is left on
+    CPU when:
+    - it reaches a QNN op through a CPU op before any QNN op that reads a
+      runtime value, since the partitioner may split it off to avoid a cycle;
+    - the only QNN ops that read a runtime value are getitems of CPU ops,
+      since the partitioner moves those getitems out of their partitions;
+    - such a getitem follows a QNN op, and no chain of QNN ops links the op
+      to a QNN op that reads a runtime value.
+    Ops that QNN rejects or removes later are not known here.
+    """
+    runtime, after_qnn = set(), set()
+    for node in nodes:
+        if node in qnn or not after_qnn.isdisjoint(node.all_input_nodes):
+            after_qnn.add(node)
+        if node in qnn and any(
+            arg in runtime if arg in qnn else is_runtime_input(arg)
+            for arg in node.all_input_nodes
+        ):
+            runtime.add(node)
+    to_qnn, before_cpu = set(), set()
+    for node in reversed(nodes):
+        if node in qnn or not to_qnn.isdisjoint(node.users):
+            to_qnn.add(node)
+        if any(
+            (user in before_cpu and user not in runtime)
+            or (user in to_qnn and user not in qnn)
+            for user in node.users
+        ):
+            before_cpu.add(node)
+    left_on_cpu = (qnn - runtime) & before_cpu
+    cpu_getitems = {
+        node
+        for node in runtime
+        if node.target is operator.getitem and node.args[0] not in qnn
+    }
+    if runtime <= cpu_getitems:
+        return qnn - runtime
+    if not any(node.args[0] in after_qnn for node in cpu_getitems):
+        return left_on_cpu
+    linked, stack = set(runtime), list(runtime)
+    while stack:
+        node = stack.pop()
+        for neighbor in (*node.all_input_nodes, *node.users):
+            if neighbor in qnn and neighbor not in linked:
+                linked.add(neighbor)
+                stack.append(neighbor)
+    return left_on_cpu | (qnn - runtime - linked)
 
 
 def is_quantized(node: torch.fx.Node) -> bool:

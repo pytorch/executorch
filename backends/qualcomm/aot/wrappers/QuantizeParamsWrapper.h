@@ -70,7 +70,9 @@ class UndefinedQuantizeParamsWrapper final : public QuantizeParamsWrapper {
   }
 
   Qnn_QuantizeParams_t CreateQuantizeParams() override {
-    Qnn_QuantizeParams_t rval;
+    // QNN reads the encoding union even when the encoding is undefined, so
+    // zero all of it. Brace initialization may set only its first member.
+    Qnn_QuantizeParams_t rval = Qnn_QuantizeParams_t();
     rval.encodingDefinition = GetEncodingDefinition();
     rval.quantizationEncoding = GetQuantizationEncoding();
     return rval;
@@ -119,7 +121,7 @@ class BwAxisScaleOffsetQuantizeParamsWrapper final
   }
 
   Qnn_QuantizeParams_t CreateQuantizeParams() override {
-    Qnn_QuantizeParams_t rval;
+    Qnn_QuantizeParams_t rval = Qnn_QuantizeParams_t();
     rval.encodingDefinition = GetEncodingDefinition();
     rval.quantizationEncoding = GetQuantizationEncoding();
     rval.bwAxisScaleOffsetEncoding.bitwidth = bitwidth_;
@@ -173,7 +175,7 @@ class BwScaleOffsetQuantizeParamsWrapper final : public QuantizeParamsWrapper {
   }
 
   Qnn_QuantizeParams_t CreateQuantizeParams() override {
-    Qnn_QuantizeParams_t rval;
+    Qnn_QuantizeParams_t rval = Qnn_QuantizeParams_t();
     rval.encodingDefinition = GetEncodingDefinition();
     rval.quantizationEncoding = GetQuantizationEncoding();
     rval.bwScaleOffsetEncoding.bitwidth = bitwidth_;
@@ -217,7 +219,7 @@ class ScaleOffsetQuantizeParamsWrapper final : public QuantizeParamsWrapper {
   }
 
   Qnn_QuantizeParams_t CreateQuantizeParams() override {
-    Qnn_QuantizeParams_t rval;
+    Qnn_QuantizeParams_t rval = Qnn_QuantizeParams_t();
     rval.encodingDefinition = GetEncodingDefinition();
     rval.quantizationEncoding = GetQuantizationEncoding();
     rval.scaleOffsetEncoding.scale = scale_;
@@ -265,7 +267,7 @@ class AxisScaleOffsetQuantizeParamsWrapper final
   }
 
   Qnn_QuantizeParams_t CreateQuantizeParams() override {
-    Qnn_QuantizeParams_t rval;
+    Qnn_QuantizeParams_t rval = Qnn_QuantizeParams_t();
     rval.encodingDefinition = GetEncodingDefinition();
     rval.quantizationEncoding = GetQuantizationEncoding();
     rval.axisScaleOffsetEncoding.axis = axis_;
@@ -323,7 +325,7 @@ class BlockwiseExpansionQuantizeParamsWrapper final
   }
 
   Qnn_QuantizeParams_t CreateQuantizeParams() override {
-    Qnn_QuantizeParams_t rval;
+    Qnn_QuantizeParams_t rval = Qnn_QuantizeParams_t();
     rval.encodingDefinition = GetEncodingDefinition();
     rval.quantizationEncoding = GetQuantizationEncoding();
     block_expansion_.axis = axis_;
