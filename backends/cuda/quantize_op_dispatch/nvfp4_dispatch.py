@@ -31,6 +31,7 @@ from executorch.backends.cuda.triton.kernels.nvfp4_output import (
 )
 from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
     _has_native_fp4_conversion as _has_native_fp4,
+    _max_rows,
     SPLIT_K_CANDIDATES,
 )
 from executorch.backends.cuda.triton.kernels.nvfp4_tuning import nvfp4_launch_bench
@@ -52,7 +53,9 @@ _MODE_SPLITS = tuple(
     candidate_prepass=_compile_every_candidate_at_once,
     do_bench=nvfp4_launch_bench,
 )
-def _prefill(x, wq, ws, pts, act_scale, *, mode_split, output_dtype=None):
+def _prefill(x, wq, ws, pts, act_scale, max_rows, *, mode_split, output_dtype=None):
+    # max_rows is the traced M's bound: timing (at hinted sizes) rejects the
+    # same splits as the final traced call.
     from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
         _check_split,
         nvfp4_w4a16,
@@ -60,7 +63,7 @@ def _prefill(x, wq, ws, pts, act_scale, *, mode_split, output_dtype=None):
     )
 
     fp4, split = divmod(mode_split, _MODE_STRIDE)
-    _check_split(x.shape[-1], split)
+    _check_split(x.shape[-1], split, m=max_rows, n=wq.shape[0])
     if fp4:
         return nvfp4_w4a4(
             x, wq, ws, pts, act_scale, split_k=split, output_dtype=output_dtype
@@ -100,7 +103,15 @@ def nvfp4_auto_prefill(
 ) -> torch.Tensor:
     """Keep mode selection inside the op so AOTI can time both precisions."""
     kwargs = {} if output_dtype is None else {"output_dtype": output_dtype}
-    return _prefill(x, qdata, scale, per_tensor_scale, act_scale, **kwargs)
+    return _prefill(
+        x,
+        qdata,
+        scale,
+        per_tensor_scale,
+        act_scale,
+        _max_rows(x.shape[0]),
+        **kwargs,
+    )
 
 
 @triton_op("triton::nvfp4_auto_decode", mutates_args={})
@@ -208,8 +219,8 @@ def _linear(func, types, args, kwargs):
 def _embedding(func, types, args, kwargs):
     if func is F.embedding:
         indices, w = args[:2]
-        max_norm = args[3] if len(args) > 3 else kwargs.get("max_norm")
-        if max_norm is not None:
+        # F.embedding passes everything after weight by keyword.
+        if kwargs.get("max_norm") is not None:
             raise ValueError("NVFP4 embedding does not support in-place max_norm")
     else:
         w, indices = args[:2]
