@@ -123,9 +123,9 @@ class To(NodeVisitor):
         # in preprocess stage.
         # HTP casts uint8 to float32 as if the input were bool, while uint8 to
         # int32 and int32 to float32 are right, so on HTP a plain uint8 to
-        # float32 cast goes through int32 too, as does float64, which is built
-        # as float32, and a uint8 cast into a quantized tensor. Here the step is
-        # needed for the values, and nothing fuses it away.
+        # float32 cast goes through int32 too, as does a uint8 cast into a
+        # quantized tensor. Here the step is needed for the values, and nothing
+        # fuses it away.
         ops = []
         if (
             (
@@ -141,7 +141,7 @@ class To(NodeVisitor):
                 and (
                     int_to_quantized
                     or (
-                        node.meta["val"].dtype in (torch.float32, torch.float64)
+                        node.meta["val"].dtype == torch.float32
                         and not node.meta.get(QCOM_QUANT_ATTRS)
                     )
                 )

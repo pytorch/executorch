@@ -6,7 +6,6 @@
 import copy
 import functools
 import logging
-import operator
 from collections import defaultdict
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
@@ -16,7 +15,10 @@ from executorch.backends.qualcomm.builders.node_visitor import (
     PER_CHANNEL_GROUP_ENCODING,
 )
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
-from executorch.backends.qualcomm.builders.utils import is_parameter
+from executorch.backends.qualcomm.builders.utils import (
+    is_mutable_buffer_input,
+    is_parameter,
+)
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.serialization.qc_schema import (
     HtpArch,
@@ -29,6 +31,7 @@ from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_BYPASS_NODE,
     QCOM_FALLBACK_NODE,
+    QCOM_INSERTED_CAST,
 )
 
 from executorch.backends.qualcomm.utils.qnn_manager_lifecycle import (
@@ -60,7 +63,9 @@ from .common_defs import (
 )
 from .utils import (
     filter_fn,
+    find_nodes_left_on_cpu,
     generate_qnn_executorch_option,
+    get_htp_skip_reason,
     get_skip_decomp_table,
     has_data_dependent_shape,
     has_unsupported_dtype,
@@ -92,6 +97,7 @@ class QnnOperatorSupport(OperatorSupportBase):
     ):
         option = generate_qnn_executorch_option(compiler_specs)
         python_options = flatbuffer_to_option(option)
+        self.edge_program = edge_program
         self.node_visitors = node_visitor_manager.get_node_visitors(
             edge_program,
             op_package_infos=python_options.op_package_options.op_package_infos,
@@ -108,12 +114,7 @@ class QnnOperatorSupport(OperatorSupportBase):
         self.soc_info = python_options.soc_info
         self.backend_type = python_options.backend_options.backend_type
         htp_options = python_options.backend_options.htp_options
-        # Gate for the VTCM diagnostic in is_node_supported. Only fp16 HTP: the
-        # quantized path rejects an untileable dilated conv at finalize, so it
-        # needs no warning. Not gated on log level, unlike the backend's other
-        # diagnostics -- the failure it points at is a silent unresponsive DSP
-        # with no other clue in the log, so it has to be visible by default.
-        self.warn_dilated_conv_vtcm = (
+        self.is_htp_fp16 = (
             self.backend_type == QnnExecuTorchBackendType.kHtpBackend
             and htp_options is not None
             and htp_options.precision == QnnExecuTorchHtpPrecision.kHtpFp16
@@ -208,10 +209,27 @@ class QnnOperatorSupport(OperatorSupportBase):
             )
             return False
 
+        htp_skip_reason = get_htp_skip_reason(
+            node,
+            self.edge_program,
+            self.backend_type == QnnExecuTorchBackendType.kHtpBackend,
+            self.is_htp_fp16,
+        )
+        if htp_skip_reason is not None:
+            logger.info(
+                f"[{self.phase}] {node.target.__name__} | Skipped, {htp_skip_reason}"
+            )
+            return False
+
         # TODO: workaround for https://github.com/pytorch/executorch/issues/23096.
         # Remove this once the fp16 path performs the TCM-fit check the quantized
         # path does.
-        if self.warn_dilated_conv_vtcm:
+        # Only fp16 HTP: the quantized path rejects an untileable dilated conv
+        # at finalize, so it needs no warning. Not gated on log level, unlike
+        # the backend's other diagnostics -- the failure it points at is a
+        # silent unresponsive DSP with no other clue in the log, so it has to
+        # be visible by default.
+        if self.is_htp_fp16:
             warn_if_dilated_conv_may_not_fit_vtcm(
                 node, self.soc_info.htp_info.vtcm_size_in_mb, self.phase
             )
@@ -299,7 +317,7 @@ class QnnPartitioner(Partitioner):
             partitions = self._drop_partitions_without_runtime_inputs(
                 partitions, edge_program
             )
-        return partitions
+        return self._drop_partitions_of_inserted_casts(partitions)
 
     @staticmethod
     def _drop_orphaned_parameter_dequants(
@@ -331,6 +349,21 @@ class QnnPartitioner(Partitioner):
                     and arg.meta.get(QCOM_BYPASS_NODE, False)
                 )
         return [partition for partition in partitions if partition.nodes]
+
+    @staticmethod
+    def _drop_partitions_of_inserted_casts(
+        partitions: List[Partition],
+    ) -> List[Partition]:
+        """
+        I64toI32 casts int64 inputs and results to int32, and int64 outputs
+        back. When the ops around such a cast stay on CPU, the casts alone
+        would make a delegate that only converts dtypes, so they stay on CPU.
+        """
+        return [
+            partition
+            for partition in partitions
+            if not all(node.meta.get(QCOM_INSERTED_CAST) for node in partition.nodes)
+        ]
 
     @staticmethod
     def _constant_inputs(edge_program: torch.export.ExportedProgram) -> Set[str]:
@@ -406,67 +439,19 @@ class QnnPartitioner(Partitioner):
         """
 
         # Partitioning here would take time quadratic in the graph size, so
-        # only the ops that _may_run_on_qnn rules out count as CPU ops. A QNN
-        # op that reads no runtime value is left on CPU when:
-        # - it reaches a QNN op through a CPU op before any QNN op that reads
-        #   a runtime value, since the partitioner may split it off to avoid a
-        #   cycle;
-        # - the only QNN ops that read a runtime value are getitems of CPU
-        #   ops, since the partitioner moves those getitems out of their
-        #   partitions;
-        # - such a getitem follows a QNN op, and no chain of QNN ops links the
-        #   op to a QNN op that reads a runtime value.
+        # only the ops that _may_run_on_qnn rules out count as CPU ops.
         # Skips are left out, since a skip that changed what is decomposed
         # would rename later nodes, so a skip_node_id_set entry could name a
         # different node.
-        # Ops that QNN rejects or removes later are not known here either. So
-        # an op cut off only by them still fails as before.
         # An op can also be decomposed although a partition that reads a
         # runtime value takes it.
         nodes = list(ep.graph.nodes)
-        qnn = set(filter(QnnPartitioner._may_run_on_qnn, nodes))
         constant_inputs = QnnPartitioner._constant_inputs(ep)
-        runtime, after_qnn = set(), set()
-        for node in nodes:
-            if node in qnn or not after_qnn.isdisjoint(node.all_input_nodes):
-                after_qnn.add(node)
-            if node in qnn and any(
-                (
-                    arg in runtime
-                    if arg in qnn
-                    else QnnPartitioner._is_runtime_input(arg, constant_inputs)
-                )
-                for arg in node.all_input_nodes
-            ):
-                runtime.add(node)
-        to_qnn, before_cpu = set(), set()
-        for node in reversed(nodes):
-            if node in qnn or not to_qnn.isdisjoint(node.users):
-                to_qnn.add(node)
-            if any(
-                (user in before_cpu and user not in runtime)
-                or (user in to_qnn and user not in qnn)
-                for user in node.users
-            ):
-                before_cpu.add(node)
-        left_on_cpu = (qnn - runtime) & before_cpu
-        cpu_getitems = {
-            node
-            for node in runtime
-            if node.target is operator.getitem and node.args[0] not in qnn
-        }
-        if runtime <= cpu_getitems:
-            return qnn - runtime
-        if not any(node.args[0] in after_qnn for node in cpu_getitems):
-            return left_on_cpu
-        linked, stack = set(runtime), list(runtime)
-        while stack:
-            node = stack.pop()
-            for neighbor in (*node.all_input_nodes, *node.users):
-                if neighbor in qnn and neighbor not in linked:
-                    linked.add(neighbor)
-                    stack.append(neighbor)
-        return left_on_cpu | (qnn - runtime - linked)
+        return find_nodes_left_on_cpu(
+            nodes,
+            set(filter(QnnPartitioner._may_run_on_qnn, nodes)),
+            lambda arg: QnnPartitioner._is_runtime_input(arg, constant_inputs),
+        )
 
     def tag_nodes(
         self, partitions: List[Partition], edge_program: torch.export.ExportedProgram
@@ -510,12 +495,27 @@ class QnnPartitioner(Partitioner):
         if not self.skip_mutable_buffer:
             logger.info(
                 "Qnn partitioner will delegate torch mutable buffer with the same I/O address during the runtime, "
+                "except buffers that are not floating point, which stay on CPU, "
                 "so if your model contains mutable buffer, "
                 "then you can get the better performance with skip_mutable_buffer=False. "
                 "If you encounter accuracy issue during the runtime, "
                 "then please set `skip_mutable_buffer=True` and try again."
             )
             tag_mutated_buffer(edge_program)
+            # The QNN runtime does not load the starting value of a buffer that
+            # a delegate owns, so the buffer starts from leftover memory.
+            # Integer buffers, whose updates I64toI32 can make delegable, and
+            # other buffers that are not floating point stay on CPU and start
+            # like any other ExecuTorch buffer.
+            # TODO: https://github.com/pytorch/executorch/issues/24749, a
+            # delegated floating-point buffer still starts from leftover memory
+            # unless skip_mutable_buffer=True. Remove this special case once the
+            # QNN runtime initializes the buffers it owns.
+            for node in edge_program.graph.nodes:
+                if is_mutable_buffer_input(node, edge_program) and not (
+                    node.meta["val"].is_floating_point()
+                ):
+                    node.meta.pop("delegation_tag", None)
 
         return PartitionResult(
             tagged_exported_program=edge_program, partition_tags=self.partition_tags

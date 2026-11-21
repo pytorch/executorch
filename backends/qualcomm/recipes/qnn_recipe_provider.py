@@ -192,7 +192,12 @@ class QNNRecipeProvider(BackendRecipeProvider):
             edge_transform_passes=[
                 lambda method_, ep: get_qnn_pass_manager_cls(
                     QnnExecuTorchBackendType.kHtpBackend
-                )().get_to_edge_transform_passes(ep)
+                )().get_to_edge_transform_passes(
+                    ep,
+                    compiler_specs=compile_specs,
+                    skip_node_id_set=skip_node_id_set,
+                    skip_node_op_set=skip_node_op_set,
+                )
             ],
             edge_compile_config=edge_compile_config,
         )

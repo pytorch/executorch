@@ -4,7 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Callable, Dict, List
+import operator
+from typing import Callable, Dict, List, Set
 
 import torch
 from executorch.backends.qualcomm.builders.node_visitor import (
@@ -248,6 +249,48 @@ def merge_decomposed_graph(  # noqa: C901
                 if target_fake_mode is not None:
                     _unify_fake_mode(copied, target_fake_mode)
                 remap[decomposed_node] = copied
+
+
+def get_runtime_inputs(edge_program) -> Set[str]:
+    """
+    The names of the placeholders whose values are known only at runtime: the
+    user inputs and the buffers that the program updates.
+    """
+    signature = edge_program.graph_signature
+    mutated = set(signature.buffers_to_mutate.values())
+    names = set(signature.user_inputs) | {
+        name
+        for name, buffer in signature.inputs_to_buffers.items()
+        if buffer in mutated
+    }
+    # A program fresh from torch.export lists no mutated buffers yet: it
+    # still writes them in place, directly or through a view.
+    for node in edge_program.graph.nodes:
+        if not isinstance(node.target, torch._ops.OpOverload):
+            continue
+        schema = node.target._schema
+        args = {
+            **dict(zip((spec.name for spec in schema.arguments), node.args)),
+            **node.kwargs,
+        }
+        for spec in schema.arguments:
+            if spec.alias_info is None or not spec.alias_info.is_write:
+                continue
+            arg = args.get(spec.name)
+            # getitem picks a view out of a split, unbind or chunk.
+            while isinstance(arg, torch.fx.Node) and (
+                arg.target is operator.getitem
+                or (
+                    isinstance(arg.target, torch._ops.OpOverload) and arg.target.is_view
+                )
+            ):
+                arg = arg.args[0]
+            if (
+                isinstance(arg, torch.fx.Node)
+                and arg.name in signature.inputs_to_buffers
+            ):
+                names.add(arg.name)
+    return names
 
 
 def is_float_tensor(node: torch.fx.Node) -> bool:
