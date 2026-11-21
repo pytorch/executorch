@@ -32,3 +32,14 @@ def portable_weight(pts=1.0, scale_byte=40):
         16,
         torch.bfloat16,
     )
+
+
+def weight(n, k):
+    torch.manual_seed(42)
+    q = torch.randint(0, 256, (n, k // 2), device="cuda", dtype=torch.uint8)
+    s = (
+        (0.05 + torch.rand(n, k // 16, device="cuda") * 0.1)
+        .to(torch.float8_e4m3fn)
+        .view(torch.uint8)
+    )
+    return CudaNVFP4Tensor(q, s, torch.tensor(0.25, device="cuda"))
