@@ -80,6 +80,7 @@ espnn_ops=$(tr -d '\n' < "${build_dir}/espnn-tests/operators.txt" \
     | tr ',' '\n' | grep -v '^quantized_decomposed::' | paste -sd, -)
 if [[ "${espnn_kernels}" == optimized ]]; then
     espnn_ops="${espnn_ops},aten::sub.out,aten::sin.out,aten::relu.out,aten::max_pool2d_with_indices.out,aten::avg_pool2d.out,aten::permute_copy.out,aten::convolution.out,aten::addmm.out,aten::mm.out,aten::mul.Scalar_out"
+    espnn_ops="${espnn_ops},aten::constant_pad_nd.out,aten::_softmax.out,aten::mean.out,aten::clone.out"
 fi
 
 toolchain_file="${IDF_PATH}/tools/cmake/toolchain-${target}.cmake"
@@ -194,9 +195,12 @@ if [[ "${espnn_kernels}" == optimized ]]; then
     logged "operator-library-host-tests.log" python -m pytest -q \
         backends/espressif/test/test_pass_manager.py \
         backends/espressif/test/ops -k 'not implementation'
+    logged "model-coverage-tests.log" python -m pytest -q -s \
+        backends/espressif/test/models -k 'not implementation'
     # Stop on failure so later cases cannot overwrite its firmware and logs.
     ESPRESSIF_BUILD_DIR="${build_dir}" python -m pytest \
-        -x -v --tb=short backends/espressif/test/ops -k implementation \
+        -x -v --tb=short backends/espressif/test/ops \
+        backends/espressif/test/models -k implementation \
         2>&1 | tee "${build_dir}/operator-library-tests.log"
     for sdkconfig in "${build_dir}"/operator-library-*/sdkconfig; do
         expected_config=CONFIG_NN_OPTIMIZED
