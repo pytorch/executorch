@@ -14,6 +14,7 @@ import itertools
 import os
 import tempfile
 import unittest
+import warnings
 from types import SimpleNamespace
 from unittest import mock
 
@@ -69,6 +70,22 @@ def _channels_last(t):
     )
 
 
+# (schedule, (BLOCK_M, BLOCK_N, BLOCK_K, num_warps, num_stages)) tiles that need more
+# shared memory in FP32 than a 99 KiB GPU (A10G, sm_86) has.
+_OVERSIZED_FP32_TILES = {("igemm_tc_packed", (128, 128, 64, 8, 3))}
+
+
+def _tile(config):
+    kwargs = config.kwargs
+    return (
+        kwargs["BLOCK_M"],
+        kwargs["BLOCK_N"],
+        kwargs["BLOCK_K"],
+        config.num_warps,
+        config.num_stages,
+    )
+
+
 class ImplicitGemmScheduleTest(unittest.TestCase):
     def setUp(self):
         if not torch.cuda.is_available() or torch.version.hip is not None:
@@ -121,7 +138,8 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
         each or every config, and checks the result and the layout (the fake
         implementation's, and ``output_strides`` if given); the tensor-core
         schedule runs FP32 operands in TF32. Transposed if ``output_padding`` is
-        given."""
+        given. With every config, the one tile known to need more shared memory
+        than the device has is skipped with a warning."""
         from executorch.backends.cuda.triton.kernels.conv.conv import (
             force_conv_candidate,
         )
@@ -135,6 +153,7 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
             ConvParams,
             out_shape_and_stride,
         )
+        from triton.runtime.errors import OutOfResources
 
         rank = x.dim() - 2
         params = ConvParams(
@@ -190,11 +209,33 @@ class ImplicitGemmScheduleTest(unittest.TestCase):
                 and x.dtype == torch.float32
             ):
                 tolerance = _TF32_TOLERANCE
+            checked = 0
             for config in configs if every_config else configs[:1]:
-                with tf32, force_conv_candidate(schedule, config):
-                    out = self.convolution(
-                        x, w, b, stride, before, after, output_strides, output_padding
-                    )
+                try:
+                    with tf32, force_conv_candidate(schedule, config):
+                        out = self.convolution(
+                            x,
+                            w,
+                            b,
+                            stride,
+                            before,
+                            after,
+                            output_strides,
+                            output_padding,
+                        )
+                except OutOfResources as e:
+                    # The autotuner drops a config that does not fit the device. Only
+                    # this tile is known not to fit: in FP32 it needs 128 KiB, and an
+                    # A10G has 99 KiB. Any other config that runs out is a regression.
+                    if not (
+                        every_config
+                        and x.dtype == torch.float32
+                        and (schedule, _tile(config)) in _OVERSIZED_FP32_TILES
+                    ):
+                        raise
+                    warnings.warn(f"{schedule} {config}: {e}", stacklevel=1)
+                    continue
+                checked += 1
                 self.assertEqual((tuple(out.shape), out.stride()), layout)
                 torch.testing.assert_close(
                     out.double(),
