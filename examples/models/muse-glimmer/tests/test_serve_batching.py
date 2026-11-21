@@ -53,6 +53,40 @@ def test_prefix_capture_override_reaches_worker(arguments, captures):
     assert f"--prefix_capture_slots={captures}" in serve_batching._worker_command(args)
 
 
+def test_prompt_end_capture_is_opt_in_and_reaches_worker(arguments, capsys):
+    default = serve_batching._parse_args(arguments + ["--prefix-cache-entries", "4"])
+    assert default.prefix_checkpoint_prompt_end == "initial"
+    assert not any(
+        "prefix_checkpoint_prompt_end" in flag
+        for flag in serve_batching._worker_command(default)
+    )
+    enabled = serve_batching._parse_args(
+        arguments
+        + ["--prefix-cache-entries", "4", "--prefix-checkpoint-prompt-end", "every"]
+    )
+    assert "--prefix_checkpoint_prompt_end=every" in serve_batching._worker_command(
+        enabled
+    )
+    with pytest.raises(SystemExit):
+        serve_batching._parse_args(
+            arguments + ["--prefix-checkpoint-prompt-end", "every"]
+        )
+    assert "requires --prefix-cache-entries > 0" in capsys.readouterr().err
+    with pytest.raises(SystemExit):
+        serve_batching._parse_args(
+            arguments
+            + [
+                "--prefix-cache-entries",
+                "4",
+                "--prefix-checkpoint-prompt-end",
+                "every",
+                "--prefix-checkpoint-interval",
+                "64",
+            ]
+        )
+    assert "cannot be combined" in capsys.readouterr().err
+
+
 def test_worker_forwards_mg_options(arguments):
     args = serve_batching._parse_args(
         arguments
@@ -113,6 +147,7 @@ def test_draft_count_forwarded(arguments, n_draft):
         ("--max-vision-patches", str(1 << 31)),
         ("--prefix-checkpoint-interval", "8"),
         ("--prefix-checkpoint-interval", "-1"),
+        ("--prefix-checkpoint-prompt-end", "true"),
         ("--prefix-capture-slots", "-1"),
         ("--prefix-capture-slots", str(1 << 31)),
     ],

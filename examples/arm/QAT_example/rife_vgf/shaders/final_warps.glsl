@@ -14,7 +14,11 @@ layout(set=0, binding=3) uniform tensorARM<int8_t, 4> tailPhase;
 #define FUSE_BLEND @FUSE_BLEND@
 #define OUTPUT_UNSIGNED @OUTPUT_UNSIGNED@
 #if FUSE_BLEND
+#if OUTPUT_UNSIGNED
+layout(set=0, binding=4) uniform tensorARM<uint8_t, 4> output0;
+#else
 layout(set=0, binding=4) uniform tensorARM<int8_t, 4> output0;
+#endif
 #else
 layout(set=0, binding=4, rgba8_snorm) uniform writeonly image2D warped0;
 layout(set=0, binding=5, rgba8_snorm) uniform writeonly image2D warped1;
@@ -72,13 +76,12 @@ void main() {
     int left = clamp(rescaleMul0((image0Codes[c] - IMAGE0_ZERO_POINT) * sigmoid), -128, 127);
     int right = clamp(rescaleMul1((image1Codes[c] - IMAGE1_ZERO_POINT) * complement), -128, 127);
     int code = clamp(rescaleOutput(rescaleAdd0(left) + rescaleAdd1(right)), -128, 127);
-#if OUTPUT_UNSIGNED
-    int unsignedCode = clamp(rescaleToUint8(code), 0, 255);
-    // Preserve the UINT8 bits in the TOSA tensor's INT8 storage.
-    code = unsignedCode < 128 ? unsignedCode : unsignedCode - 256;
-#endif
     uint outputCoords[4] = uint[](0u, c, uint(p.y), uint(p.x));
+#if OUTPUT_UNSIGNED
+    tensorWriteARM(output0, outputCoords, uint8_t(clamp(rescaleToUint8(code), 0, 255)));
+#else
     tensorWriteARM(output0, outputCoords, int8_t(code));
+#endif
   }
 #else
   imageStore(warped0, p, vec4(image0Codes) / 127.0);

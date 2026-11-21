@@ -122,11 +122,13 @@ class Verifier:
         rhs_lifetime = rhs_spec.lifetime
         internal_assert(
             lhs_lifetime[0] is not None and lhs_lifetime[1] is not None,
-            f"{lhs_spec} should have valid start and end",
+            "%s should have valid start and end",
+            lhs_spec,
         )
         internal_assert(
             rhs_lifetime[0] is not None and rhs_lifetime[1] is not None,
-            f"{rhs_spec} should have valid start and end",
+            "%s should have valid start and end",
+            rhs_spec,
         )
         return cls.has_overlap(lhs_lifetime, rhs_lifetime)
 
@@ -138,11 +140,13 @@ class Verifier:
         for spec in [lhs_spec, rhs_spec]:
             internal_assert(
                 spec.allocated_memory >= 0,
-                f"{spec} should have non-zero allocated memory",
+                "%s should have non-zero allocated memory",
+                spec,
             )
             internal_assert(
                 isinstance(spec.mem_offset, int) and spec.mem_offset >= 0,
-                f"{spec} should have specified memory offset",
+                "%s should have specified memory offset",
+                spec,
             )
             intervals.append(
                 [spec.mem_offset, spec.mem_offset + spec.allocated_memory - 1]
@@ -271,6 +275,14 @@ class Verifier:
         for nd in graph_module.graph.nodes:
             if nd.op in check_list:
                 if not (specs := get_node_tensor_specs(nd)):
+                    # A node that carries no tensor specs has nothing to
+                    # allocate. An output node can legitimately be in that
+                    # position, e.g. when a delegated subgraph's only results
+                    # are symints, and skipping it silently leaves
+                    # graph_output_allocated unset so the assert below fires on
+                    # a graph that is in fact fully planned.
+                    if nd.op == "output":
+                        graph_output_allocated = self.alloc_graph_output
                     continue
                 if _is_mutable_buffer(nd, self.graph_signature):
                     continue
@@ -524,7 +536,9 @@ def collect_specs_from_nodes(  # noqa: C901
                     torch.ops.higher_order.map_impl,
                     executorch_call_delegate,
                 ],
-                f"Unexpected op {node.op}, target {node.target}",
+                "Unexpected op %s, target %s",
+                node.op,
+                node.target,
             )
         for spec in specs:
             if spec is None:
@@ -916,7 +930,11 @@ def _resolve_storage_base_specs(
             )
             internal_assert(
                 (base_alloc_offset + storage_base_offset) % spec.alignment == 0,
-                f"Storage-backed TensorSpec allocation must respect alignment, got offset {storage_base_offset} inside parent with offset {base_alloc_offset} for alignment {spec.alignment}.",
+                "Storage-backed TensorSpec allocation must respect alignment, got offset %s "
+                "inside parent with offset %s for alignment %s.",
+                storage_base_offset,
+                base_alloc_offset,
+                spec.alignment,
             )
             internal_assert(
                 storage_base_offset + allocated_memory <= base_allocated_memory,

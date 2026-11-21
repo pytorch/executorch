@@ -10,14 +10,17 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/q8ta/Q8taConv2dCommon.h>
+
 namespace vkcompute {
 
 //
 // Fused PixelShuffle operating on int8x4 packed tensors.
 //
 // Replaces the decomposed chain:
-//   q8ta_dequantize -> view -> permute -> view -> q8ta_quantize
-// with a single byte-shuffle (and optional requantize when scales differ).
+//   q8ta_dequantize -> view -> permute -> view -> [relu] -> q8ta_quantize
+// with a single byte-shuffle (and optional requantize when scales differ or an
+// activation is applied).
 //
 
 void add_q8ta_pixel_shuffle_node(
@@ -28,6 +31,7 @@ void add_q8ta_pixel_shuffle_node(
     const ValueRef output_inv_scale,
     const ValueRef output_zp,
     const ValueRef upscale_factor,
+    const ActivationType activation,
     const ValueRef packed_int8_output);
 
 } // namespace vkcompute

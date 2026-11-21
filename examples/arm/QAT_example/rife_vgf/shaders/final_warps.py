@@ -135,7 +135,11 @@ def build_final_warps_payload(payloads, rescales, sigmoid_table, *, blend=None):
                 f"{prefix}_binding": binding,
                 f"{prefix}_descriptorset": 0,
                 f"{prefix}_type": kind,
-                f"{prefix}_vkformat": "VK_FORMAT_R8_SINT",
+                f"{prefix}_vkformat": (
+                    "VK_FORMAT_R8_UINT"
+                    if prefix == "output_0" and output_unsigned
+                    else "VK_FORMAT_R8_SINT"
+                ),
                 f"{prefix}_vkdescriptortype": (
                     "VK_DESCRIPTOR_TYPE_TENSOR_ARM"
                     if kind == "Tensor"

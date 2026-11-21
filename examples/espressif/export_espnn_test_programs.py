@@ -40,6 +40,7 @@ from backends.espressif.test import (  # noqa: E402
     test_cpu_fallback as fallback_cases,
     test_int8_lowering as lowering_cases,
     test_int8_ops as op_cases,
+    test_mutable_buffers as state_cases,
 )
 
 from executorch.backends.espressif import to_espnn_edge  # noqa: E402
@@ -66,6 +67,8 @@ def cases():
         yield name, model, shapes
     for name, model, shapes, _ in fallback_cases.CASES:
         yield name, model, shapes
+    # A delegate-owned mutable buffer; the runner checks the first step.
+    yield "streaming-state", state_cases.ShiftRegister(), [(1, 4, 1, 1)]
 
 
 def as_list(value):
@@ -73,8 +76,14 @@ def as_list(value):
 
 
 def export_case(name, model, shapes, seed):
-    _, program = op_cases.quantize(model, shapes)
-    edge, report = to_espnn_edge(program)
+    stateful = isinstance(model, state_cases.ShiftRegister)
+    if stateful:
+        program = torch.export.export(
+            state_cases.quantize_stateful(model), (torch.zeros(shapes[0]),)
+        )
+    else:
+        _, program = op_cases.quantize(model, shapes)
+    edge, report = to_espnn_edge(program, delegate_mutable_buffers=stateful)
     exported = edge.exported_program()
     generator = torch.Generator().manual_seed(seed)
     inputs = [torch.randn(shape, generator=generator) for shape in shapes]
@@ -84,7 +93,12 @@ def export_case(name, model, shapes, seed):
 
     executorch_program = edge.to_executorch()
     plan = executorch_program.executorch_program.execution_plan[0]
-    operators = sorted({f"{op.name}.{op.overload}" for op in plan.operators})
+    operators = sorted(
+        {
+            f"{op.name}.{op.overload}" if op.overload else op.name
+            for op in plan.operators
+        }
+    )
     bundle = BundledProgram(
         executorch_program,
         [MethodTestSuite("forward", [MethodTestCase(inputs, expected)])],

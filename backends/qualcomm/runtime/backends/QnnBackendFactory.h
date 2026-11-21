@@ -68,7 +68,8 @@ class QnnBackendFactory {
       QnnDevice* qnn_device_ptr,
       const QnnExecuTorchContextBinary& qnn_context_blob,
       const QnnExecuTorchOptions* options,
-      QnnDlcManager* qnn_dlc_manager);
+      QnnDlcManager* qnn_dlc_manager,
+      Qnn_ContextHandle_t spill_fill_handle = nullptr);
 };
 } // namespace qnn
 } // namespace backends

@@ -222,6 +222,17 @@ at::Tensor make_casted_randint_tensor(
   return at::randint(1, 20, sizes, at::device(at::kCPU).dtype(dtype));
 }}
 
+at::Tensor make_nonzero_randint_tensor(
+    std::vector<int64_t> sizes,
+    at::ScalarType dtype = at::kFloat,
+    int64_t low = 1,
+    int64_t high = 20) {{
+  // Draws from [low, high), replacing zeros so the values can be divisors.
+  const at::Tensor values =
+      at::randint(low, high, sizes, at::device(at::kCPU).dtype(dtype));
+  return values.masked_fill(values == 0, 1);
+}}
+
 at::Tensor make_rand_tensor(
     std::vector<int64_t> sizes,
     at::ScalarType dtype = at::kFloat,
@@ -308,7 +319,7 @@ void process_querypool_results(
     QueryPoolResults& results,
     ShaderTimes& shader_times) {{
   for (const vkcompute::vkapi::ShaderResult& r : results) {{
-    uint64_t duration_ns = r.end_time_ns - r.start_time_ns;
+    uint64_t duration_ns = r.shader_exec_finish_ns - r.barrier_finish_ns;
     if (shader_times.find(r.kernel_name) == shader_times.end()) {{
       shader_times[r.kernel_name] = std::vector<uint64_t>();
     }}

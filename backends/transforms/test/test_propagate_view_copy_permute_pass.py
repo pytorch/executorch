@@ -5,7 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 import pytest
 import sympy  # type: ignore[import-untyped]
@@ -15,16 +15,19 @@ from executorch.backends.transforms.propagate_view_copy_permute_pass import (
     PropagateViewCopyPermuteDownPass,
     PropagateViewCopyPermuteUpPass,
 )
+from executorch.exir import to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch._subclasses.fake_tensor import FakeTensorMode
 from torch.fx.experimental.symbolic_shapes import ShapeEnv
 
 PERMUTE = exir_ops.edge.aten.permute_copy.default
 ABS = exir_ops.edge.aten.abs.default
+EXP = exir_ops.edge.aten.exp.default
 NEG = exir_ops.edge.aten.neg.default
 SIGMOID = exir_ops.edge.aten.sigmoid.default
 ADD = exir_ops.edge.aten.add.Tensor
 SUM = exir_ops.edge.aten.sum.dim_IntList
+SLICE = exir_ops.edge.aten.slice_copy.Tensor
 WHERE = exir_ops.edge.aten.where.self
 
 
@@ -299,6 +302,96 @@ def test_downward_permute_crosses_reduction_over_all_dims() -> None:
 
     assert call_targets == [SUM]
     torch.testing.assert_close(result(values), expected)
+
+
+@pytest.mark.parametrize(
+    ("target", "args", "expected_dims"),
+    [(SLICE, (1, 0, 4), 3), (SUM, ([1], True), [3])],
+    ids=["slice", "keepdim_sum"],
+)
+def test_downward_permute_crosses_arg_update_op_before_unsplittable_fork(
+    target: Callable[..., object],
+    args: tuple[object, ...],
+    expected_dims: int | list[int],
+) -> None:
+    """Keep a crossed op's dims valid when the fork after it cannot be split.
+
+    Here ``P`` means permute:
+
+        P(x) -> abs -> op --+-> P -> output
+                            +-> neg -> output
+
+    Crossing ``op`` rewrites its dims for the unpermuted input, so the first
+    permute must not then move past ``abs`` alone.
+
+    """
+    values = torch.randn(1, 3, 5, 8)
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = values
+    permute = graph.call_function(PERMUTE, args=(x, [0, 3, 1, 2]))
+    permute.meta["val"] = values.permute(0, 3, 1, 2)
+    absolute = graph.call_function(ABS, args=(permute,))
+    absolute.meta["val"] = permute.meta["val"].abs()
+    crossed = graph.call_function(target, args=(absolute, *args))
+    crossed.meta["val"] = target(absolute.meta["val"], *args)
+    restored = graph.call_function(PERMUTE, args=(crossed, [0, 2, 3, 1]))
+    restored.meta["val"] = crossed.meta["val"].permute(0, 2, 3, 1)
+    neg = graph.call_function(NEG, args=(crossed,))
+    neg.meta["val"] = -crossed.meta["val"]
+    graph.output((restored, neg))
+    graph_module = torch.fx.GraphModule(torch.nn.Module(), graph)
+    expected = graph_module(values)
+
+    result = PropagateViewCopyPermuteDownPass().call(graph_module).graph_module
+    moved_op = next(node for node in result.graph.nodes if node.target == target)
+
+    assert moved_op.args[1] == expected_dims
+    torch.testing.assert_close(result(values), expected)
+
+
+class _BackendElementwiseExpPass(PropagateViewCopyPermuteDownPass):
+    def is_elementwise(self, node: torch.fx.Node) -> bool:
+        return node.target != EXP and super().is_elementwise(node)
+
+    def is_backend_elementwise(self, node: torch.fx.Node) -> bool:
+        return node.target == EXP
+
+
+class _BiasAfterExp(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.bias = torch.nn.Parameter(torch.randn(1, 8, 1, 1))
+
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        y = torch.exp(x.permute(0, 3, 1, 2).abs()) + self.bias
+        return y.permute(0, 2, 3, 1), -y
+
+
+def test_downward_permute_crosses_constant_before_unsplittable_fork() -> None:
+    """Keep a crossed constant valid when the fork after it cannot be split.
+
+    Here ``P`` means permute and ``exp`` stands in for a backend op that the
+    pass may cross but not include in a pointwise region:
+
+        P(x) -> abs -> exp -> add(bias) --+-> P -> output
+                                          +-> neg -> output
+
+    Crossing ``add`` permutes ``bias`` for the unpermuted input, so the first
+    permute must not then move past ``abs`` alone.
+
+    """
+    values = torch.randn(1, 3, 5, 8)
+    model = _BiasAfterExp()
+    expected = model(values)
+    exported_program = to_edge(torch.export.export(model, (values,))).exported_program()
+
+    result = _BackendElementwiseExpPass(exported_program=exported_program).call(
+        exported_program.graph_module
+    )
+    bias = exported_program.state_dict["bias"]
+
+    torch.testing.assert_close(result.graph_module(bias, values), expected)
 
 
 def test_upward_permute_crosses_rank_expanding_binary_after_reduction() -> None:

@@ -107,6 +107,8 @@ _AOTI_SHIM_SYMBOLS = (
     "aoti_torch_index_put_out",
     "aoti_torch_cuda_scatter_reduce_two_out",
     "aoti_torch_cuda_scatter_src_out",
+    "aoti_torch_cuda_masked_select",
+    "aoti_torch_cuda_nonzero",
 )
 
 _QUANTIZED_KERNEL_SYMBOLS = (
@@ -166,7 +168,7 @@ _BUNDLED_XNNPACK_SYMBOLS = ("xnn_create_runtime_v4",)
 # rather than depended on, so it gets its own row for the same reason XNNPACK's
 # does: a second copy means two MLX runtimes in one process.
 _MLX_SYMBOLS = ("executorch::backends::mlx::mutable_state_note_handle",)
-_BUNDLED_MLX_SYMBOLS = ("mlx::core::allocator::free",)
+_BUNDLED_MLX_SYMBOLS = ("mlx::core::allocator::allocator",)
 # A representative symbol from the Core ML delegate, exported from the shipped
 # library. get_registered_delegate() rather than the constructor, which demangles
 # to two entries (complete and base object), while this is a single definition.
@@ -1217,7 +1219,7 @@ def _wheel_cuda_train() -> str:
     """The CUDA train the installed wheel was built for, or "" for a CPU wheel.
 
     Read from the local version segment, which is the only place the wheel states what
-    it was built for. `1.5.0+cu126` gives "126".
+    it was built for. `1.5.0+cu132` gives "132".
     """
     local = importlib.metadata.version("executorch").partition("+")[2]
     return local[2:] if local.startswith("cu") else ""
@@ -1360,7 +1362,7 @@ _OWNED_COMPONENTS = (
     ),
     # The CUDA components. Required exactly when the wheel says it is a CUDA wheel,
     # which is decided at check time rather than here: a fixed False meant a wheel
-    # tagged +cu126 carrying no CUDA library at all passed every check in this file,
+    # tagged +cu132 carrying no CUDA library at all passed every check in this file,
     # while a fixed True would fail every CPU wheel. The marker is the string these
     # rows are keyed on below.
     (
@@ -1457,7 +1459,7 @@ def test_each_component_has_one_owner() -> None:
     shipped = {path.name for path in _shipped_shared_objects(_installed_package_dir())}
     for what, symbols, owner, required in _OWNED_COMPONENTS:
         # Resolved here rather than in the table, because it depends on the installed
-        # wheel. A fixed False let a wheel tagged +cu126 ship with no CUDA library at
+        # wheel. A fixed False let a wheel tagged +cu132 ship with no CUDA library at
         # all and still pass, which is the whole point of the conditional rows.
         required = _resolve_required(required)
         present = any(name.startswith(owner) for name in shipped)

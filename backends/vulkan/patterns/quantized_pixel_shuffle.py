@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import List, Optional, Set
+from typing import Dict, List, Optional, Set
 
 import executorch.backends.vulkan.utils as utils
 
@@ -28,6 +28,12 @@ from torch.fx.node import Argument
 _NOOP_PASSTHROUGH_TARGETS: Set[object] = {
     exir_ops.edge.aten.clone.default,
     exir_ops.edge.dim_order_ops._clone_dim_order.default,
+}
+
+# Activations that can follow the pixel_shuffle, mapped to the activation name
+# passed to q8ta_pixel_shuffle.with_activation.
+_ACTIVATIONS: Dict[object, str] = {
+    exir_ops.edge.aten.relu.default: "relu",
 }
 
 
@@ -61,6 +67,8 @@ class QuantizedPixelShuffleMatch(PatternMatch):
       [optional] clone / _clone_dim_order
       aten.pixel_shuffle.default (upscale_factor = r)
       [optional] clone / _clone_dim_order
+      [optional] activation (aten.relu.default)
+      [optional] clone / _clone_dim_order
       q8ta_quantize_per_tensor (fp32 -> int8)
 
     The anchor is the dequantize node since it is a unique entry point.
@@ -88,8 +96,14 @@ class QuantizedPixelShuffleMatch(PatternMatch):
         if pixel_shuffle_node.target != exir_ops.edge.aten.pixel_shuffle.default:
             return
 
-        # Walk forward to the quantize node (skipping any clones).
+        # Walk forward to the quantize node (skipping any clones), through an
+        # optional activation.
         quantize_node = _skip_passthrough_user(pixel_shuffle_node, self.all_nodes)
+        self.activation_node: Optional[torch.fx.Node] = None
+        if quantize_node is not None and quantize_node.target in _ACTIVATIONS:
+            self.activation_node = quantize_node
+            self.all_nodes.append(self.activation_node)
+            quantize_node = _skip_passthrough_user(self.activation_node, self.all_nodes)
         if quantize_node is None or not utils.is_quant_node(quantize_node):
             return
 
@@ -139,8 +153,6 @@ def make_quantized_pixel_shuffle_custom_op(
     graph_module: torch.fx.GraphModule,
     match: QuantizedPixelShuffleMatch,
 ) -> None:
-    op_target = exir_ops.edge.et_vk.q8ta_pixel_shuffle.default
-
     # The fused op takes the *inverse* of the output scale to match the
     # runtime kernel's expectation.
     output_scale = match.output_scales_node
@@ -162,19 +174,21 @@ def make_quantized_pixel_shuffle_custom_op(
             "quantized_pixel_shuffle pattern only supports scalar output scales"
         )
 
+    args = (
+        match.input_int8_node,
+        match.input_scales_node,
+        match.input_zeros_node,
+        inv_output_scale,
+        match.output_zeros_node,
+        match.upscale_factor,
+    )
+    op_target = exir_ops.edge.et_vk.q8ta_pixel_shuffle.default
+    if match.activation_node is not None:
+        op_target = exir_ops.edge.et_vk.q8ta_pixel_shuffle.with_activation
+        args = (*args, _ACTIVATIONS[match.activation_node.target])
+
     with graph_module.graph.inserting_before(match.output_node):
-        new_node = graph_module.graph.create_node(
-            "call_function",
-            op_target,
-            args=(
-                match.input_int8_node,
-                match.input_scales_node,
-                match.input_zeros_node,
-                inv_output_scale,
-                match.output_zeros_node,
-                match.upscale_factor,
-            ),
-        )
+        new_node = graph_module.graph.create_node("call_function", op_target, args)
 
     new_node.meta["val"] = match.output_node.meta["val"]
     match.quantize_output_node.replace_all_uses_with(new_node)

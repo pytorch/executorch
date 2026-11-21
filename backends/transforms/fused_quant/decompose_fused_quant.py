@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import operator
+from collections.abc import Iterable
 from typing import cast
 
 import executorch.exir.dialects.fused_quant.ops  # noqa: F401
@@ -29,12 +30,19 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.dialects.fused_quant.ops import QuantParamsStruct
 from executorch.exir.pass_base import ExportedProgramPassBase, ExportedProgramPassResult
+from executorch.exir.passes import base_pre_op_replace_passes, OpReplacePass
+from executorch.exir.tracer import _default_decomposition_table
+from executorch.frontends.fused_quant.colorer import CLAIM_KEY, is_colored
 from torch import fx
 from torch._C import Argument
+from torch._export.passes import ReplaceViewOpsWithViewCopyOpsPass
+from torch._guards import detect_fake_mode
 from torch._ops import OpOverload
 from torch._subclasses.fake_tensor import UnsupportedOperatorException
 from torch.export import ExportedProgram
 from torch.export.graph_signature import InputKind
+from torch.fx.experimental.proxy_tensor import make_fx
+from torch.utils._pytree import tree_flatten, tree_unflatten
 
 _OpOverload = EdgeOpOverload | OpOverload
 
@@ -320,12 +328,90 @@ def _qparam_blocks(
     return blocks
 
 
-def _decompose_fused_op(exported_program: ExportedProgram, node: fx.Node) -> None:
+def _decompose_to_core_aten(
+    exported_program: ExportedProgram,
+    node: fx.Node,
+    table: dict[torch._ops.OperatorBase, object],
+) -> None:
+    """Replace the edge ATen op ``node`` with the core ATen ops ``to_edge`` would
+    have decomposed it into, in edge dialect."""
+    target = cast(EdgeOpOverload, node.target)
+    flat_args, spec = tree_flatten((node.args, node.kwargs))
+    tensor_positions = [
+        index for index, arg in enumerate(flat_args) if isinstance(arg, fx.Node)
+    ]
+
+    def call(*tensors: torch.Tensor) -> object:
+        values = list(flat_args)
+        for index, tensor in zip(tensor_positions, tensors, strict=True):
+            values[index] = tensor
+        args, kwargs = tree_unflatten(values, spec)
+        return target._op(*args, **kwargs)
+
+    fake_inputs = [
+        cast(fx.Node, flat_args[index]).meta["val"] for index in tensor_positions
+    ]
+    with detect_fake_mode(fake_inputs):
+        traced = make_fx(call, decomposition_table=table, tracing_mode="real")(
+            *fake_inputs
+        )
+    for edge_pass in (
+        ReplaceViewOpsWithViewCopyOpsPass(),
+        *base_pre_op_replace_passes,
+        OpReplacePass(),
+    ):
+        traced = edge_pass(traced).graph_module
+
+    graph = node.graph
+    env: dict[fx.Node, fx.Node] = dict(
+        zip(
+            traced.graph.find_nodes(op="placeholder"),
+            (cast(fx.Node, flat_args[index]) for index in tensor_positions),
+            strict=True,
+        )
+    )
+    with graph.inserting_before(node):
+        for traced_node in traced.graph.nodes:
+            if traced_node.op == "placeholder":
+                continue
+            if traced_node.op == "output":
+                output = traced_node.args[0]
+                break
+            if traced_node.op == "get_attr":
+                env[traced_node] = add_constant(
+                    exported_program,
+                    f"{node.name}_{traced_node.target}",
+                    getattr(traced, cast(str, traced_node.target)),
+                    node,
+                    InputKind.CONSTANT_TENSOR,
+                )
+                continue
+            copied = graph.node_copy(traced_node, lambda arg: env[arg])
+            _copy_meta_and_compute(copied, node)
+            env[traced_node] = copied
+
+    if isinstance(output, (tuple, list)):
+        for user in list(node.users):
+            assert user.target is operator.getitem
+            user.replace_all_uses_with(env[output[cast(int, user.args[1])]])
+            graph.erase_node(user)
+    else:
+        node.replace_all_uses_with(env[cast(fx.Node, output)])
+    graph.erase_node(node)
+
+
+def _decompose_fused_op(
+    exported_program: ExportedProgram, node: fx.Node
+) -> fx.Node | None:
+    """Replace ``node`` with dequantize, its ATen op and quantize.
+
+    Returns the ATen node, or ``None`` for a requantize, which has none.
+    """
     fused_target = cast(_OpOverload, node.target)
     fused_name = fused_target._schema.name.split("::", 1)[1]
     if fused_name == "requantize":
         _decompose_requantize(exported_program, node)
-        return
+        return None
 
     input_names, extra_names = split_fused_arg_names(fused_target)
     input_tensors = [get_arg(node, name, fx.Node | None) for name in input_names]
@@ -372,16 +458,44 @@ def _decompose_fused_op(exported_program: ExportedProgram, node: fx.Node) -> Non
 
         if isinstance(node.meta.get("val"), (tuple, list)):
             _replace_multi_output(exported_program, node, aten_node, out_qparams)
-            return
+            return aten_node
 
         output = _quantize(exported_program, graph, aten_node, out_qparams, node)
 
     node.replace_all_uses_with(output)
     graph.erase_node(node)
+    return aten_node
 
 
 class DecomposeFusedQuant(ExportedProgramPassBase):
-    """Decompose fused-quant ops into per-tensor/channel dq, ATen, and q ops."""
+    """Decompose fused-quant ops into per-tensor/channel dq, ATen, and q ops.
+
+    Colored nodes are left alone: a backend that claimed an op is going to lower
+    it itself, and defusing it would take it away. See
+    :class:`executorch.frontends.fused_quant.colorer.ColorerBase`.
+
+    Unclaimed channels-last ops have no ATen equivalent and are rejected: run
+    ``ToChannelsFirst`` first.
+
+    An unclaimed op ends up as its float counterpart would after ``to_edge``: a
+    non-core ATen op that has a decomposition is decomposed to core ATen unless
+    it is in ``keep_whole``, which should be the ``preserve_ops`` of the
+    program's ``EdgeCompileConfig``.
+    """
+
+    def __init__(self, keep_whole: Iterable[OpOverload] = ()) -> None:
+        super().__init__()
+        self._keep_whole = frozenset(keep_whole)
+
+    def _decomposes(
+        self, aten_node: fx.Node, table: dict[torch._ops.OperatorBase, object]
+    ) -> bool:
+        op = cast(EdgeOpOverload, aten_node.target)._op
+        return (
+            torch.Tag.core not in op.tags
+            and op not in self._keep_whole
+            and (op in table or op._can_decompose())
+        )
 
     def call(self, exported_program: ExportedProgram) -> ExportedProgramPassResult:
         graph_module = exported_program.graph_module
@@ -389,7 +503,7 @@ class DecomposeFusedQuant(ExportedProgramPassBase):
         nodes = [
             node
             for node in graph.nodes
-            if is_fused_quant_node(node) and "delegation_tag" not in node.meta
+            if is_fused_quant_node(node) and not is_colored(node)
         ]
         if not nodes:
             return ExportedProgramPassResult(exported_program, False)
@@ -398,6 +512,11 @@ class DecomposeFusedQuant(ExportedProgramPassBase):
         # any of the graph has been rewritten.
         qparam_placeholders: set[fx.Node] = set()
         for node in nodes:
+            if cast(_OpOverload, node.target)._schema.name.endswith("_channels_last"):
+                raise ValueError(
+                    f"Cannot decompose {node.name}: channels-last ops have no ATen "
+                    "equivalent; run ToChannelsFirst before DecomposeFusedQuant"
+                )
             for qparams, value in _qparam_blocks(node):
                 per_tensor = _qparam_granularity(qparams, value) == "per_tensor"
                 for qparam in (qparams.scale, qparams.zero_point):
@@ -411,8 +530,11 @@ class DecomposeFusedQuant(ExportedProgramPassBase):
                     if qparam.op == "placeholder":
                         qparam_placeholders.add(qparam)
 
+        table = _default_decomposition_table().materialize()
         for node in nodes:
-            _decompose_fused_op(exported_program, node)
+            aten_node = _decompose_fused_op(exported_program, node)
+            if aten_node is not None and self._decomposes(aten_node, table):
+                _decompose_to_core_aten(exported_program, aten_node, table)
 
         graph.eliminate_dead_code()
         for placeholder in qparam_placeholders:
@@ -441,21 +563,28 @@ class AssertNoFusedQuantOps(ExportedProgramPassBase):
     """Fail if any fused_quant op is left in the graph.
 
     fused_quant ops are an ahead-of-time IR with no runtime kernels. Run this
-    after lowering, once every backend has taken what it claimed and
-    :class:`DecomposeFusedQuant` has decomposed the rest, so a leak surfaces here
-    rather than as a missing out-variant at ``to_executorch``.
+    once lowering is done: every backend has lowered what it claimed, and
+    :class:`DecomposeFusedQuant` has decomposed the rest. A leak then surfaces
+    here rather than as a missing out-variant at ``to_executorch``.
     """
 
     def call(self, exported_program: ExportedProgram) -> ExportedProgramPassResult:
         leaked = [
-            node.name
+            (
+                f"{node.name} (claimed by {node.meta[CLAIM_KEY]})"
+                if is_colored(node)
+                else node.name
+            )
             for node in exported_program.graph_module.graph.nodes
             if is_fused_quant_node(node)
         ]
         if leaked:
             raise RuntimeError(
-                f"fused_quant ops remain after lowering: {leaked}. Colored nodes a "
-                "backend did not lower must be decomposed with DecomposeFusedQuant "
-                "after to_backend."
+                f"fused_quant ops remain after lowering: {leaked}. A backend must "
+                "lower every node it claims: its coloring and partitioning must "
+                "match. Unclaimed ops must go through DecomposeFusedQuant. As a "
+                "transition aid only, ReleaseClaims, then ToChannelsFirst and "
+                "DecomposeFusedQuant after to_backend fall claimed leftovers back "
+                "to the portable kernels."
             )
         return ExportedProgramPassResult(exported_program, False)

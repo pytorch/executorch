@@ -104,7 +104,7 @@ class EthosUBackend(BackendDetails):
             PreprocessResult: Result containing the compiled Ethos-U binary.
 
         """
-        logger.info(f"{EthosUBackend.__name__} preprocess")
+        logger.debug(f"{EthosUBackend.__name__} preprocess")
 
         compile_spec = EthosUCompileSpec._from_list(compile_specs)
         # deduce TOSA compile_spec from Ethos-U compile spec. We get a new
@@ -151,6 +151,7 @@ class EthosUBackend(BackendDetails):
             return PreprocessResult(
                 processed_bytes=compile_result.processed_bytes,
                 scratch_specs=scratch_specs,
+                _delegate_info_meta={"vela_io": compile_result.io_layout},
             )
 
         data_store = NamedDataStore()
@@ -165,4 +166,5 @@ class EthosUBackend(BackendDetails):
             processed_bytes=compile_result.processed_bytes,
             data_store_output=data_store.get_named_data_store_output(),
             scratch_specs=scratch_specs,
+            _delegate_info_meta={"vela_io": compile_result.io_layout},
         )

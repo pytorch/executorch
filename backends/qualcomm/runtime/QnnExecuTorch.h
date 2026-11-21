@@ -89,7 +89,8 @@ QNN_EXECUTORCH_EXPORT void QnnExecuTorchAddCustomMemTensorAddr(
     void* tensor_addr,
     void* custom_mem);
 
-/// Free the allocated shared memory.
+/// Free the allocated shared memory. The caller must wait for all registration
+/// and execution using this allocation or its tensor aliases to finish.
 QNN_EXECUTORCH_EXPORT void QnnExecuTorchFreeCustomMem(void* buffer_ptr);
 
 /// Register the QNN backend with the ExecuTorch runtime living in the caller's

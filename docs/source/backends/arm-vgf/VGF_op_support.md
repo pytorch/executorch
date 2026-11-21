@@ -8,7 +8,7 @@ This page lists VGF-supported PyTorch APIs and the dtype and quantization modes 
 
 `FP8E4M3` and `FP8E5M2` require their respective TOSA extensions (`fp8e4m3`, `fp8e5m2`); they are not enabled by the default VGF compile spec. 
 
-Total supported PyTorch APIs: **164**.
+Total supported PyTorch APIs: **165**.
 
 | PyTorch API | Support profile | DType | Quantization mode |
 | --- | --- | --- | --- |
@@ -121,6 +121,7 @@ Total supported PyTorch APIs: **164**.
 | `torch.nn.Linear` / `torch.nn.functional.linear` | FP, INT | `FP32`, `INT8`, `INT4` | 8x8, 8x4 |
 | `torch.nn.LogSoftmax` / `torch.nn.functional.log_softmax` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.nn.MaxPool2d` / `torch.nn.functional.max_pool2d` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.nn.Mish` / `torch.nn.functional.mish` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.nn.SELU` / `torch.nn.functional.selu` | FP | `FP32` | - |
 | `torch.nn.SiLU` / `torch.nn.functional.silu` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.nn.Softmax` / `torch.nn.functional.softmax` | FP, INT | `FP32`, `INT8` | 8x8 |

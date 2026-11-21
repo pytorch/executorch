@@ -29,8 +29,13 @@ add_library(
 target_link_libraries(
   native_llm_runner
   PUBLIC native_engine
-  PRIVATE ${_native_runner_gflags} native_llm_runner_utils native_package
-          native_runner_utils native_runtime tokenizers::tokenizers
+  PRIVATE ${_native_runner_gflags}
+          native_llm_runner_utils
+          native_package
+          native_runner_utils
+          native_runtime
+          tokenizers::tokenizers
+          extension_llm_cache
 )
 foreach(target native_llm_runner native_llm_runner_utils)
   target_compile_options(
@@ -46,7 +51,11 @@ if(EXECUTORCH_BUILD_NATIVE_VULKAN)
   list(APPEND _llm_runners run_hf_llm_vulkan)
 endif()
 if(EXECUTORCH_BUILD_NATIVE_GGML)
-  add_executable(run_hf_llm_ggml run_hf_llm_ggml.cpp)
+  add_executable(
+    run_hf_llm_ggml
+    run_hf_llm_ggml.cpp
+    ${EXECUTORCH_ROOT}/backends/native/runtime/engine/ggml/GgmlEngineFlags.cpp
+  )
   target_link_libraries(run_hf_llm_ggml PRIVATE native_ggml_engine)
   list(APPEND _llm_runners run_hf_llm_ggml)
 endif()

@@ -22,7 +22,10 @@ from executorch.backends.transforms.fused_quant.test.helpers import (
 )
 from executorch.backends.transforms.permute_pass_utils import get_arg
 from executorch.backends.transforms.utils import add_constant, get_constant
+from executorch.exir import EdgeCompileConfig
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
+from executorch.frontends.fused_quant.colorer import CLAIM_KEY
 from torch import fx
 from torch.export import ExportedProgram
 from torch.export.graph_signature import InputKind
@@ -116,6 +119,67 @@ class DecomposeFusedQuantTest(unittest.TestCase):
                 decomposed.exported_program.graph.find_nodes(
                     op="call_function",
                     target=exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+                )
+            ),
+            1,
+        )
+
+    def _linear(self) -> tuple[ExportedProgram, torch.Tensor, torch.Tensor]:
+        """A fused linear, whose ATen op is not core."""
+        inp = torch.randint(-8, 8, (2, 4), dtype=torch.int8)
+        weight = torch.randint(-8, 8, (3, 4), dtype=torch.int8)
+        builder = ProgramBuilder()
+        inp_node = builder.placeholder("inp", inp)
+        weight_node = builder.placeholder("weight", weight)
+        linear = builder.call_operator(
+            exir_ops.edge.fused_quant.linear.default,
+            args=(
+                inp_node,
+                weight_node,
+                None,
+                *create_per_tensor_qparams(builder, 0.5, dtype=torch.float32),
+                *create_per_tensor_qparams(builder, 0.25, dtype=torch.float32),
+                None,
+                None,
+                torch.float32,
+                0,
+                0,
+                *create_per_tensor_qparams(builder, 2.0),
+            ),
+        )
+        builder.output([linear])
+        return builder.get_program(), inp, weight
+
+    def test_decomposes_a_non_core_op_to_core_aten(self) -> None:
+        """An unclaimed op ends up as its float counterpart would after to_edge."""
+        program, inp, weight = self._linear()
+        expected = program.module()(inp, weight)
+
+        result = DecomposeFusedQuant()(program)
+
+        decomposed = result.exported_program
+        self.assert_bit_exact(expected, decomposed.module()(inp, weight))
+        self._assert_no_fused_quant_ops(decomposed)
+        self.assertFalse(
+            decomposed.graph.find_nodes(
+                op="call_function", target=exir_ops.edge.aten.linear.default
+            )
+        )
+        EXIREdgeDialectVerifier(
+            edge_compile_config=EdgeCompileConfig(_skip_dim_order=True)
+        )(decomposed.graph_module)
+
+    def test_keeps_a_non_core_op_whole_when_asked(self) -> None:
+        program, _, _ = self._linear()
+
+        result = DecomposeFusedQuant(keep_whole=[torch.ops.aten.linear.default])(
+            program
+        )
+
+        self.assertEqual(
+            len(
+                result.exported_program.graph.find_nodes(
+                    op="call_function", target=exir_ops.edge.aten.linear.default
                 )
             ),
             1,
@@ -299,12 +363,12 @@ class DecomposeFusedQuantTest(unittest.TestCase):
             op="call_function",
             target=exir_ops.edge.fused_quant.requantize.default,
         )
-        requantize_node.meta["delegation_tag"] = "test_backend"
+        requantize_node.meta[CLAIM_KEY] = "test_backend"
 
         result = DecomposeFusedQuant()(program)
 
         self.assertFalse(result.modified)
-        self.assertEqual(requantize_node.meta["delegation_tag"], "test_backend")
+        self.assertEqual(requantize_node.meta[CLAIM_KEY], "test_backend")
         self.assertIn(requantize_node, result.exported_program.graph.nodes)
 
     def test_rejects_group_quantization(self) -> None:
@@ -379,5 +443,39 @@ class DecomposeFusedQuantTest(unittest.TestCase):
         before = str(program.graph)
 
         with self.assertRaisesRegex(ValueError, "must be a lifted constant"):
+            DecomposeFusedQuant()(program)
+        self.assertEqual(str(program.graph), before)
+
+    def test_rejects_channels_last_ops_before_rewriting(self) -> None:
+        inp = torch.randint(-8, 8, (1, 4, 4, 2), dtype=torch.int8)
+        builder = ProgramBuilder()
+        inp_node = builder.placeholder("inp", inp)
+        first = builder.call_operator(
+            exir_ops.edge.fused_quant.relu.default,
+            args=(
+                inp_node,
+                *create_per_tensor_qparams(builder, dtype=torch.float32),
+                *create_per_tensor_qparams(builder),
+            ),
+        )
+        second = builder.call_operator(
+            exir_ops.edge.fused_quant.avg_pool2d_channels_last.default,
+            args=(
+                first,
+                *create_per_tensor_qparams(builder, dtype=torch.float32),
+                *create_per_tensor_qparams(builder),
+                [2, 2],
+                [2, 2],
+                [0, 0],
+                False,
+                True,
+                None,
+            ),
+        )
+        builder.output([second])
+        program = builder.get_program()
+        before = str(program.graph)
+
+        with self.assertRaisesRegex(ValueError, "run ToChannelsFirst"):
             DecomposeFusedQuant()(program)
         self.assertEqual(str(program.graph), before)

@@ -23,7 +23,7 @@ include(FetchContent)
 
 # CMSIS-NN configuration with dynamic path detection
 set(CMSIS_NN_VERSION
-    "v8.0.0"
+    "63119cb8e783f4bd2bf9ac84e0a1a4bc9c6d6919"
     CACHE STRING "CMSIS-NN version to download"
 )
 set(CMSIS_NN_LOCAL_PATH
@@ -33,6 +33,9 @@ set(CMSIS_NN_LOCAL_PATH
 option(CORTEX_M_ENABLE_RUNTIME_CHECKS
        "Enable additional Cortex-M runtime assertions and validation checks"
        OFF
+)
+option(ARM_NN_ENABLE_AOT "Enable CMSIS-NN AOT support such as weight packing"
+       ON
 )
 
 set(CMSISNN_BUILD_PYBIND

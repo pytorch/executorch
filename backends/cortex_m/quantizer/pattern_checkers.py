@@ -149,9 +149,19 @@ class CortexMLinearCheck(PatternCheck):
         cls, pattern: list[Node], quantization_config: QuantizationConfig
     ) -> bool:
         """
-        Checks that the quantization config uses per-tensor int8 quantization.
+        Checks that the quantization config uses int8 activations, and that
+        per-channel weights are quantized per output feature (axis 0).
         """
         is_int8 = cls.is_int8_activations(quantization_config)
+        weight_qspec = quantization_config.get_weight_qspec(
+            pattern[0] if pattern else None
+        )
+        if cls.is_per_channel(weight_qspec):
+            return (
+                is_int8
+                and isinstance(weight_qspec, QuantizationSpec)
+                and weight_qspec.ch_axis == 0
+            )
         return is_int8
 
 

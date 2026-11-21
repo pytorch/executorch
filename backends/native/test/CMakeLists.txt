@@ -61,13 +61,19 @@ add_custom_command(
     FLATC_EXECUTABLE=$<TARGET_FILE:flatc> ${PYTHON_EXECUTABLE} -m
     executorch.backends.native.test.samples.generate --out ${_native_op_samples}
   COMMAND ${CMAKE_COMMAND} -E touch ${_native_op_samples}.stamp
-  DEPENDS flatc ${_native_op_samples_srcs}
+  DEPENDS flatc
+          ${_native_op_samples_srcs}
+          ${EXECUTORCH_ROOT}/backends/test/suite/operators/test_elu.py
+          ${EXECUTORCH_ROOT}/backends/test/suite/operators/test_embedding.py
           ${EXECUTORCH_ROOT}/backends/test/suite/operators/test_linear.py
   VERBATIM
 )
 add_custom_target(native_op_samples DEPENDS ${_native_op_samples}.stamp)
 
-if(EXECUTORCH_BUILD_NATIVE_GGML OR EXECUTORCH_BUILD_NATIVE_VULKAN)
+if(EXECUTORCH_BUILD_NATIVE_GGML
+   OR EXECUTORCH_BUILD_NATIVE_VULKAN
+   OR EXECUTORCH_BUILD_NATIVE_CPU
+)
   if(NOT TARGET gflags AND NOT TARGET gflags::gflags)
     find_package(gflags REQUIRED)
   endif()
@@ -100,6 +106,7 @@ if(EXECUTORCH_BUILD_NATIVE_VULKAN)
     runtime/vulkan/test_insert_prepack.cpp
     runtime/vulkan/test_lower_hf_attention.cpp
     runtime/vulkan/test_lower_rms_norm.cpp
+    runtime/vulkan/test_lower_sdpa.cpp
     runtime/vulkan/test_materialize_view_copies.cpp
     runtime/vulkan/test_vulkan_constant_materialization_tracker.cpp
     ../runtime/vulkan/VulkanConstantMaterializationTracker.cpp
@@ -136,7 +143,7 @@ if(EXECUTORCH_BUILD_NATIVE_GGML)
   add_executable(native_ggml_engine_test runtime/ggml/test_ggml_engine.cpp)
   target_link_libraries(
     native_ggml_engine_test PRIVATE native_ggml_engine native_graph_schema
-                                    GTest::gtest_main
+                                    extension_llm_cache GTest::gtest_main
   )
   add_dependencies(native_ggml_engine_test native_graph_schema_gen)
   add_test(NAME native_ggml_engine_test COMMAND native_ggml_engine_test)
@@ -146,9 +153,14 @@ if(EXECUTORCH_BUILD_NATIVE_GGML)
             $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions>
   )
 
-  add_executable(native_ggml_sample_test runtime/ggml/ggml_ptn_runner.cpp)
+  add_executable(
+    native_ggml_sample_test
+    runtime/ggml/ggml_ptn_runner.cpp
+    ${EXECUTORCH_ROOT}/backends/native/runtime/engine/ggml/GgmlEngineFlags.cpp
+  )
   target_link_libraries(
     native_ggml_sample_test PRIVATE native_sample_test_main native_ggml_engine
+                                    ${_native_test_gflags}
   )
   add_dependencies(native_ggml_sample_test native_op_samples)
   add_test(NAME native_ggml_sample_test
@@ -159,9 +171,19 @@ if(EXECUTORCH_BUILD_NATIVE_GGML)
   set_tests_properties(native_ggml_sample_test PROPERTIES DISABLED TRUE)
   # native_ggml_sample_test_act_quant lets ggml quantize the activations of
   # weight-only quantized linears, judged against golden-int8_act.
-  add_test(NAME native_ggml_sample_test_act_quant
-           COMMAND native_ggml_sample_test --packages=${_native_op_samples}
-                   --device=cpu --allow_activation_quant_for_weight_only
+  # native_ggml_sample_test_no_linear judges the other ops without it. Both
+  # leave out the elu with alpha 0.5 that ggml rejects.
+  add_test(
+    NAME native_ggml_sample_test_act_quant
+    COMMAND
+      native_ggml_sample_test --packages=${_native_op_samples} --device=cpu
+      --allow_activation_quant_for_weight_only
+      --gtest_filter=-elu_float.elu_f32_alpha_*
+  )
+  add_test(
+    NAME native_ggml_sample_test_no_linear
+    COMMAND native_ggml_sample_test --packages=${_native_op_samples}
+            --device=cpu --gtest_filter=-linear_*:elu_float.elu_f32_alpha_*
   )
   target_compile_options(
     native_ggml_sample_test
@@ -215,6 +237,26 @@ if(EXECUTORCH_BUILD_NATIVE_CPU)
   add_test(NAME native_cpu_engine_test COMMAND native_cpu_engine_test)
   target_compile_options(
     native_cpu_engine_test
+    PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/EHsc>
+            $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions>
+  )
+
+  add_executable(native_cpu_sample_test runtime/cpu/cpu_ptn_runner.cpp)
+  target_link_libraries(
+    native_cpu_sample_test PRIVATE native_sample_test_main native_cpu_engine
+  )
+  add_dependencies(native_cpu_sample_test native_op_samples)
+  add_test(NAME native_cpu_sample_test COMMAND native_cpu_sample_test
+                                               --packages=${_native_op_samples}
+  )
+  # TODO: Enable once the CPU engine runs quantized and dynamic-shape methods.
+  set_tests_properties(native_cpu_sample_test PROPERTIES DISABLED TRUE)
+  add_test(NAME native_cpu_sample_test_static_float
+           COMMAND native_cpu_sample_test --packages=${_native_op_samples}
+                   --gtest_filter=*_float.*:-*.dynamic_*
+  )
+  target_compile_options(
+    native_cpu_sample_test
     PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/EHsc>
             $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions>
   )

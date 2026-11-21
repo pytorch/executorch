@@ -6,6 +6,7 @@
 from typing import cast
 
 import pytest
+import sympy  # type: ignore[import-untyped]
 import torch
 from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
 from executorch.backends.arm._passes.tosa_lowering_utils import create_const
@@ -16,6 +17,7 @@ from executorch.backends.arm.tosa.specification import (
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch._subclasses.fake_tensor import FakeTensorMode
+from torch.fx.experimental.symbolic_shapes import ShapeEnv
 
 
 def test_match_arg_ranks_handles_tosa_binary_ops() -> None:
@@ -149,3 +151,45 @@ def test_match_arg_ranks_preserves_consumer_provenance(use_tosa: bool) -> None:
     # Retracing must recalculate the view's shape, not retain ADD's shape.
     assert tuple(view.meta["val"].shape) == (1, 3)
     assert tuple(consumer.meta["val"].shape) == (2, 3)
+
+
+def test_match_arg_ranks_materializes_dynamic_view_shape() -> None:
+    shape_env = ShapeEnv()
+    width = shape_env.create_symintnode(sympy.Symbol("width"), hint=14)
+    assert isinstance(width, torch.SymInt)
+    shape_env.constrain_symbol_range(width.node.expr, compiler_min=1, compiler_max=16)
+
+    with FakeTensorMode(shape_env=shape_env, allow_non_fake_inputs=True):
+        graph = torch.fx.Graph()
+        x = graph.placeholder("x")
+        x.meta["val"] = torch.empty(size=(1, width * 16, 1, 1))
+        y = graph.placeholder("y")
+        y.meta["val"] = torch.empty(size=(width * 16,))
+        shift = graph.placeholder("shift")
+        shift.meta["val"] = torch.zeros(
+            size=[
+                1,
+            ],
+            dtype=torch.int8,
+        )
+        mul = graph.call_function(exir_ops.backend.tosa.MUL.default, args=(x, y, shift))
+        mul.meta["val"] = torch.empty(size=(1, width * 16, 1, 1))
+        graph.output(mul)
+        graph_module = torch.fx.GraphModule(torch.nn.Module(), graph)
+
+        with TosaLoweringContext(
+            TosaSpecification.create_from_string("TOSA-1.1+FP+shape")
+        ):
+            result = MatchArgRanksPass(cast(ExportedProgram, None)).call(graph_module)
+
+    view = next(
+        node
+        for node in result.graph_module.graph.nodes
+        if node.target == exir_ops.edge.aten.view_copy.default
+    )
+    materialized_shape = view.args[1]
+
+    assert result.modified
+    assert materialized_shape[:3] == [1, 1, 1]
+    assert isinstance(materialized_shape[3], torch.fx.Node)
+    assert not any(isinstance(dim, torch.SymInt) for dim in materialized_shape)

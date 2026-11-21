@@ -159,6 +159,46 @@ TEST(PackageTest, IgnoresSampleMembers) {
   EXPECT_NO_THROW(package.verify());
 }
 
+TEST(PackageTest, ReadsMetadataByName) {
+  const TempPackage file(
+      {},
+      {{kMetadataEntry,
+        R"({"get_n_caches":2,"get_windows":[0,4096],"arch":"llama","tied":true})"}});
+  const Package package = Package::load(file.path());
+
+  EXPECT_EQ(package.metadata_int("get_n_caches"), 2);
+  EXPECT_EQ(
+      package.metadata_ints("get_windows"), (std::vector<int64_t>{0, 4096}));
+  EXPECT_EQ(package.metadata_int("missing"), std::nullopt);
+  EXPECT_EQ(package.metadata_ints("missing"), std::nullopt);
+  EXPECT_THROW(package.metadata_int("get_windows"), std::runtime_error);
+  EXPECT_THROW(package.metadata_ints("get_n_caches"), std::runtime_error);
+  EXPECT_THROW(package.metadata_int("arch"), std::runtime_error);
+  EXPECT_THROW(package.metadata_int("tied"), std::runtime_error);
+  EXPECT_NO_THROW(package.verify());
+
+  const TempPackage none;
+  EXPECT_EQ(
+      Package::load(none.path()).metadata_int("get_n_caches"), std::nullopt);
+}
+
+TEST(PackageTest, RejectsMalformedMetadata) {
+  for (const std::string metadata :
+       {R"([1])",
+        R"({"nested":[[1]]})",
+        R"({"object":{"a":1}})",
+        R"({"":1})",
+        R"({"null":null})",
+        "{"}) {
+    const TempPackage file({}, {{kMetadataEntry, metadata}});
+    EXPECT_THROW(Package::load(file.path()), std::runtime_error) << metadata;
+  }
+  const TempPackage huge(
+      {}, {{kMetadataEntry, R"({"n":18446744073709551615})"}});
+  EXPECT_THROW(
+      Package::load(huge.path()).metadata_int("n"), std::runtime_error);
+}
+
 TEST(PackageTest, ReportsMissingConstantsAndWrongDestinations) {
   const TempPackage file;
   const Package package = Package::load(file.path());

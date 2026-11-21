@@ -1,5 +1,0 @@
-# Minimal op profile for the ESP-IDF component smoke test
-# (.ci/scripts/test_espressif_idf_component.sh): the add/multiply model
-# from export_smoke_model.py.
-aten::add.out
-aten::mul.out
