@@ -105,12 +105,12 @@ class CudaGraphTimingTest(unittest.TestCase):
         sizes_during_capture = []
         real = cgt.time_with_cuda_graph_us
 
-        def flaky(fn):
+        def flaky(fn, **kwargs):
             if len(sizes_during_capture) < 2:
                 sizes_during_capture.append(weights.untyped_storage().nbytes())
                 raise torch.OutOfMemoryError("simulated")
             sizes_during_capture.append(weights.untyped_storage().nbytes())
-            return real(fn)
+            return real(fn, **kwargs)
 
         y = torch.zeros(16, device="cuda")
         with mock.patch.object(cgt, "time_with_cuda_graph_us", side_effect=flaky):
@@ -137,7 +137,7 @@ class CudaGraphTimingTest(unittest.TestCase):
                         raise error
                     real(storage, host)
 
-                def oom(fn):
+                def oom(fn, **kwargs):
                     raise torch.OutOfMemoryError("simulated")
 
                 y = torch.zeros(16, device="cuda")
@@ -288,12 +288,31 @@ class RegretTest(unittest.TestCase):
                     self.assertGreater(self._regret_in_ticks(tick, best, best + 2), 1.0)
 
 
+class TimingStatisticTest(unittest.TestCase):
+    def test_median_of_replay_statistics(self) -> None:
+        replays = [[1.0, 3.0], [10.0, 10.0], [2.0, 4.0]]
+        with mock.patch.object(
+            cgt, "_replay_call_times_us", return_value=replays
+        ) as times:
+            mean = cgt.time_with_cuda_graph_us(int, statistic="mean", replays=3)
+            minimum = cgt.time_with_cuda_graph_us(int, statistic="min", replays=3)
+        self.assertEqual((mean, minimum), (3.0, 2.0))
+        self.assertEqual(times.call_args_list, [mock.call(int, 3)] * 2)
+
+    def test_rejects_unknown_statistic_and_replays(self) -> None:
+        for kwargs in ({"statistic": "max"}, {"replays": 0}):
+            with self.subTest(**kwargs), self.assertRaises(ValueError):
+                cgt.time_with_cuda_graph_us(int, **kwargs)
+
+
 class TimingStatisticRetryTest(unittest.TestCase):
     def setUp(self) -> None:
         _require_cuda(self)
 
     def test_mean_statistic_survives_oom_retries_and_offload(self) -> None:
-        fn = lambda: None
+        def fn():
+            return None
+
         with (
             mock.patch.object(
                 cgt,

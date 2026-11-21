@@ -27,7 +27,10 @@ These only convert a weight's *representation*; assigning it into a model
 :func:`fuse_along_output` is the multi-weight companion: it concatenates several
 weights (e.g. ``gate_proj|up_proj`` or ``q|k|v``) along the output-channel dim,
 subclass-aware, so fusion happens once on the portable form before backend
-packing. It handles the same tensor types as :func:`maybe_cast`.
+packing. It handles the same tensor types as :func:`maybe_cast`. NVFP4 weights
+with differing global scales are rejected here; the CUDA backend fuses those
+after packing with ``CudaNVFP4Tensor.fuse_along_output``, which keeps one
+global scale per output row.
 """
 
 from collections.abc import Sequence
@@ -101,6 +104,9 @@ def fuse_along_output(tensors: Sequence[torch.Tensor]) -> torch.Tensor:
       dim 1 (they are stored transposed as ``(K // group_size, N)``).
     * ``IntxUnpackedToInt8Tensor`` / ``ExportableGGUFTensor`` -> every packed
       field on dim 0 (all are ``N``-major).
+    * ``ExportableNVFP4Tensor`` / ``ExportableMXTensor`` -> ``qdata``/``scale`` on
+      dim 0; NVFP4's scalar ``per_tensor_scale`` must match (see the module
+      docstring for CUDA's per-row alternative).
 
     Exact: ``scale``/``zero_point`` are per-(group, output-channel) and each
     packed row is an independent group / GGUF super-block, so concatenating

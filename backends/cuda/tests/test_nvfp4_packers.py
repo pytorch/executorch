@@ -7,6 +7,7 @@ import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
 import pytest
 import torch
 from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
+from executorch.backends.cuda.tests.nvfp4_test_utils import portable_weight
 from executorch.examples.models.gemma4_31b.cuda_packers import (
     pack_embedding_for_cuda,
     pack_linear_for_cuda,
@@ -40,6 +41,16 @@ def test_prepacked_nvfp4_replaces_meta_weight_without_repacking(kind, parameter)
     torch.testing.assert_close(
         module.weight.dequantize(), packed.dequantize(), rtol=0, atol=0
     )
+
+
+@pytest.mark.parametrize("pack", [pack_linear_for_cuda, pack_embedding_for_cuda])
+def test_portable_nvfp4_is_packed(pack):
+    w = portable_weight(pts=0.5)
+    module = torch.nn.Linear(192, 70, bias=False, device="meta", dtype=torch.bfloat16)
+    pack(module, {"weight": w})
+    assert isinstance(module.weight, CudaNVFP4Tensor)
+    assert not module.weight.requires_grad
+    assert torch.equal(module.weight.dequantize(), w.dequantize())
 
 
 @pytest.mark.parametrize("pack", [pack_linear_for_cuda, pack_embedding_for_cuda])

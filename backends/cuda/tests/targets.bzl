@@ -621,16 +621,6 @@ def define_common_targets(is_fbcode = False):
     )
 
     python_unittest_remote_gpu(
-        name = "test_nvfp4_w4a4",
-        srcs = ["test_nvfp4_kernels.py"],
-        deps = ["//caffe2:torch", "//executorch/backends/cuda:nvfp4_tensor", "//executorch/extension/llm/export:nvfp4", "fbsource//third-party/pypi/pytest:pytest", "//executorch/backends/cuda:triton_kernels", ":nvfp4_test_utils"],
-        pytest_expr = ["activation or w4a4"],
-        keep_gpu_sections = True,
-        remote_execution = re_test_utils.remote_execution(platform = "gpu-remote-execution", subplatform = "A100"),
-        test_rule = python_pytest,
-    )
-
-    python_unittest_remote_gpu(
         name = "test_nvfp4_kernels",
         srcs = ["test_nvfp4_kernels.py"],
         deps = ["//caffe2:torch", "//executorch/backends/cuda:nvfp4_tensor", "//executorch/extension/llm/export:nvfp4", "fbsource//third-party/pypi/pytest:pytest", "//executorch/backends/cuda:triton_kernels", ":nvfp4_test_utils", "//executorch/backends/cuda:quantize_op_dispatch"],
@@ -648,12 +638,13 @@ def define_common_targets(is_fbcode = False):
             "//executorch/backends/cuda:quantize_op_dispatch",
             "//executorch/examples/models/gemma4_31b:quant",
             "fbsource//third-party/pypi/pytest:pytest",
+            ":nvfp4_test_utils",
         ],
     )
 
     python_unittest_remote_gpu(
         name = "test_nvfp4_dispatch",
-        srcs = ["test_nvfp4_fusion.py", "test_nvfp4_unit_scale.py", "test_nvfp4_export.py", "test_nvfp4_fixed_prefill.py", "test_nvfp4_split_k_export.py"],
+        srcs = ["test_nvfp4_fusion.py", "test_nvfp4_unit_scale.py", "test_nvfp4_export.py", "test_nvfp4_fixed_prefill.py", "test_nvfp4_split_k_export.py", "test_nvfp4_gate_up.py"],
         deps = ["//caffe2:torch", "//executorch/backends/cuda:nvfp4_tensor", "//executorch/extension/llm/export:nvfp4", "fbsource//third-party/pypi/pytest:pytest", "//executorch/backends/cuda:triton_kernels", ":nvfp4_test_utils", "//executorch/backends/cuda:quantize_op_dispatch", "//executorch/backends/cuda:cuda_backend", "//executorch/backends/cuda:cuda_partitioner", "//executorch/exir:lib", "//executorch/export:export_utils", "//executorch/runtime:runtime"],
         keep_gpu_sections = True,
         remote_execution = re_test_utils.remote_execution(platform = "gpu-remote-execution", subplatform = "A100"),
@@ -681,15 +672,6 @@ def define_common_targets(is_fbcode = False):
             "//executorch/backends/cuda:triton_kernels",
             "fbsource//third-party/pypi/pytest:pytest",
         ],
-        keep_gpu_sections = True,
-        remote_execution = re_test_utils.remote_execution(platform = "gpu-remote-execution", subplatform = "A100"),
-        test_rule = python_pytest,
-    )
-
-    python_unittest_remote_gpu(
-        name = "test_nvfp4_gate_up",
-        srcs = ["test_nvfp4_gate_up.py"],
-        deps = ["//caffe2:torch", "//executorch/backends/cuda:nvfp4_tensor", "//executorch/extension/llm/export:nvfp4", "fbsource//third-party/pypi/pytest:pytest", "//executorch/backends/cuda:triton_kernels", ":nvfp4_test_utils", "//executorch/backends/cuda:quantize_op_dispatch", "//executorch/backends/cuda:cuda_backend", "//executorch/backends/cuda:cuda_partitioner", "//executorch/exir:lib", "//executorch/export:export_utils", "//executorch/runtime:runtime"],
         keep_gpu_sections = True,
         remote_execution = re_test_utils.remote_execution(platform = "gpu-remote-execution", subplatform = "A100"),
         test_rule = python_pytest,

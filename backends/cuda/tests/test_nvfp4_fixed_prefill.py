@@ -5,7 +5,6 @@
 """Keep a prefill compiled at M=4096 valid down to a single input token."""
 
 import contextlib
-import os
 import tempfile
 from pathlib import Path
 
@@ -25,17 +24,17 @@ from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
     nvfp4_quantize_activation,
 )
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
-from executorch.export.utils import is_fbcode
-from executorch.runtime import Runtime
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+@pytest.mark.skipif(
+    not torch.cuda.is_available() or torch.version.hip is not None,
+    reason="NVIDIA CUDA required",
+)
 @pytest.mark.parametrize("mode", ["auto", "w4a4"])
 def test_prefill_4096_keeps_compiled_mode_for_dynamic_m(mode, monkeypatch):
     if not _has_native_fp4():
         pytest.skip("native FP4 required")
-    previous = os.environ.get("ET_CUDA_NVFP4_ACT")
-    os.environ["ET_CUDA_NVFP4_ACT"] = mode
+    monkeypatch.setenv("ET_CUDA_NVFP4_ACT", mode)
     original_context = cuda_backend.autotune_launch_params
     observed = []
 
@@ -46,66 +45,62 @@ def test_prefill_4096_keeps_compiled_mode_for_dynamic_m(mode, monkeypatch):
         observed.extend(stats.picks)
 
     monkeypatch.setattr(cuda_backend, "autotune_launch_params", capture_tuning)
-    try:
-        module = PackedLinear().eval()
-        x = torch.randn(4096, 192, dtype=torch.bfloat16)
-        ep = torch.export.export(
-            module,
-            (x,),
-            dynamic_shapes=({0: torch.export.Dim("tokens", min=1, max=4096)},),
-            strict=True,
+    module = PackedLinear().eval()
+    x = torch.randn(4096, 192, dtype=torch.bfloat16)
+    ep = torch.export.export(
+        module,
+        (x,),
+        dynamic_shapes=({0: torch.export.Dim("tokens", min=1, max=4096)},),
+        strict=True,
+    )
+    lowered = to_edge_transform_and_lower(
+        ep,
+        partitioner=[
+            CudaPartitioner([CudaBackend.generate_method_name_compile_spec("forward")])
+        ],
+        compile_config=EdgeCompileConfig(_check_ir_validity=False),
+    ).to_executorch()
+    if mode == "auto":
+        picks = [pick for pick in observed if pick.param == "mode_split"]
+        assert len(picks) == 1
+        selected_fp4 = bool(picks[0].choice // _MODE_STRIDE)
+    else:
+        selected_fp4 = True
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "fixed-prefill.pte"
+        with path.open("wb") as stream:
+            lowered.write_to_file(stream)
+        lowered.write_tensor_data_to_file(tmp)
+        data = next(Path(tmp).glob("*.ptd"))
+        from executorch.export.utils import is_fbcode
+
+        if is_fbcode():
+            # The in-process runtime in fbcode has no CUDA backend.
+            return
+        from executorch.runtime import Runtime
+
+        method = (
+            Runtime.get()
+            .load_program(str(path), data_path=str(data))
+            .load_method("forward")
         )
-        lowered = to_edge_transform_and_lower(
-            ep,
-            partitioner=[
-                CudaPartitioner(
-                    [CudaBackend.generate_method_name_compile_spec("forward")]
+        # Runtime environment changes must not change the compiled precision.
+        monkeypatch.setenv("ET_CUDA_NVFP4_ACT", "w4a16" if selected_fp4 else "w4a4")
+        weights = module.weight.dequantize().double()
+        for m in (1, 5, 37, 64, 4096):
+            value = torch.randn(m, 192, dtype=x.dtype)
+            if selected_fp4:
+                q, s, pts = nvfp4_quantize_activation(value.cuda())
+                quantized = (
+                    CudaNVFP4Tensor(
+                        q.cpu(), s.cpu(), torch.ones(1), orig_dtype=torch.float64
+                    ).dequantize()
+                    * pts.cpu().double()[:, None]
                 )
-            ],
-            compile_config=EdgeCompileConfig(_check_ir_validity=False),
-        ).to_executorch()
-        if mode == "auto":
-            picks = [pick for pick in observed if pick.param == "mode_split"]
-            assert len(picks) == 1
-            selected_fp4 = bool(picks[0].choice // _MODE_STRIDE)
-        else:
-            selected_fp4 = True
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "fixed-prefill.pte"
-            with path.open("wb") as stream:
-                lowered.write_to_file(stream)
-            lowered.write_tensor_data_to_file(tmp)
-            data = next(Path(tmp).glob("*.ptd"))
-            if is_fbcode():
-                # The in-process runtime in fbcode has no CUDA backend.
-                return
-            method = (
-                Runtime.get()
-                .load_program(str(path), data_path=str(data))
-                .load_method("forward")
-            )
-            # Runtime environment changes must not change the compiled precision.
-            os.environ["ET_CUDA_NVFP4_ACT"] = "w4a16" if selected_fp4 else "w4a4"
-            weights = module.weight.dequantize().double()
-            for m in (1, 5, 37, 64, 4096):
-                value = torch.randn(m, 192, dtype=x.dtype)
-                if selected_fp4:
-                    q, s, pts = nvfp4_quantize_activation(value.cuda())
-                    quantized = (
-                        CudaNVFP4Tensor(
-                            q.cpu(), s.cpu(), torch.ones(1), orig_dtype=torch.float64
-                        ).dequantize()
-                        * pts.cpu().double()[:, None]
-                    )
-                    reference = (quantized @ weights.T).bfloat16() + module.bias
-                else:
-                    reference = torch.nn.functional.linear(
-                        value, module.weight.dequantize(), module.bias
-                    )
-                actual = method.execute([value])[0].cpu()
-                torch.testing.assert_close(actual, reference, rtol=0.03, atol=0.03)
-    finally:
-        if previous is None:
-            os.environ.pop("ET_CUDA_NVFP4_ACT", None)
-        else:
-            os.environ["ET_CUDA_NVFP4_ACT"] = previous
+                reference = (quantized @ weights.T).bfloat16() + module.bias
+            else:
+                reference = torch.nn.functional.linear(
+                    value, module.weight.dequantize(), module.bias
+                )
+            actual = method.execute([value])[0].cpu()
+            torch.testing.assert_close(actual, reference, rtol=0.03, atol=0.03)

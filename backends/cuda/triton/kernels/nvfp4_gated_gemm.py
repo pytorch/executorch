@@ -161,6 +161,8 @@ def _gate_up_epilogue(X, Y, M, N: tl.constexpr, BLOCK: tl.constexpr):
 @triton_op("triton::nvfp4_gate_up_epilogue", mutates_args={})
 def nvfp4_gate_up_epilogue(x: torch.Tensor) -> torch.Tensor:
     m, n = x.shape
+    if n % 2:
+        raise ValueError("NVFP4 gate/up requires an even output dimension")
     out = torch.empty((m, n // 2), device=x.device, dtype=x.dtype)
     if not _QUEUING_ONLY.get():
         wrap_triton(_gate_up_epilogue)[(triton.cdiv(m * (n // 2), 1024),)](
@@ -184,10 +186,13 @@ def _launch_w4a4_gate_up_impl(
         if split_k > 1
         else out
     )
-    grid = lambda meta: (
-        triton.cdiv(m, meta["BM"]) * triton.cdiv(n // 2, meta["BN"] // 2),
-        split_k,
-    )
+
+    def grid(meta):
+        return (
+            triton.cdiv(m, meta["BM"]) * triton.cdiv(n // 2, meta["BN"] // 2),
+            split_k,
+        )
+
     launch_nvfp4_kernel(
         _gate_up,
         grid,
