@@ -149,6 +149,9 @@ ROCM_EXCLUDED_TESTS=(
   # CUDA-graph autotune timing is NVIDIA-only; the CUDA backend turns it off
   # on ROCm.
   --ignore=backends/cuda/tests/test_cuda_graph_timing.py
+  # Flaky on gfx950: the compiled pick was 1.66x the best at live=4650 in 2 of
+  # 13 main runs (#25397).
+  --deselect=backends/cuda/tests/test_autotune_inputs.py::SdpaCellStepAutotuneTest::test_compiled_pick_is_fastest_at_live_extents
 )
 python -m pytest -v -o 'addopts=' \
   "${ROCM_EXCLUDED_TESTS[@]}" \
