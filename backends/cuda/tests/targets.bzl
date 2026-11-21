@@ -1,4 +1,5 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbcode_macros//build_defs:python_pytest.bzl", "python_pytest")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 load("@fbcode_macros//build_defs:python_unittest_remote_gpu.bzl", "python_unittest_remote_gpu")
 load("@fbcode_macros//build_defs/lib:re_test_utils.bzl", "re_test_utils")
@@ -601,4 +602,20 @@ def define_common_targets(is_fbcode = False):
             "//executorch/exir/backend:compile_spec_schema",
             "//executorch/exir/backend/test:device_util",
         ],
+    )
+
+    runtime.python_library(
+        name = "nvfp4_test_utils",
+        srcs = ["nvfp4_test_utils.py"],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/cuda:nvfp4_tensor",
+            "//executorch/extension/llm/export:nvfp4",
+        ],
+    )
+
+    python_pytest(
+        name = "test_nvfp4_tensor",
+        srcs = ["test_nvfp4_tensor.py"],
+        deps = ["//caffe2:torch", "//executorch/backends/cuda:nvfp4_tensor", "//executorch/extension/llm/export:nvfp4", "fbsource//third-party/pypi/pytest:pytest", ":nvfp4_test_utils"],
     )
