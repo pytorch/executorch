@@ -64,6 +64,7 @@ OPERATORS = [
     "quantized_linear",
     "softmax",
     "transpose",
+    "strided_copy",
     "pad",
     "quantized_conv2d",
     "quantized_depthwise_conv2d",

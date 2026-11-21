@@ -72,18 +72,19 @@ def test_representative_portable_exports(op):
         program.load_method(name)
 
 
-def test_cortex_m_kernel_presence_assertion():
+@pytest.mark.parametrize("op", ["quantized_add", "strided_copy"])
+def test_cortex_m_kernel_presence_assertion(op):
     """A Cortex-M export must contain its own cortex_m:: kernel, and the
     assertion must reject a graph that lowered to a different kernel (the
     silent float-fallback failure mode).
     """
     import generate_test_models as gen  # type: ignore[import-not-found]
 
-    recipe = op_recipes.RECIPES[("Cortex-M", "quantized_add")]
+    recipe = op_recipes.RECIPES[("Cortex-M", op)]
     model, inputs = recipe.make()
     program = gen._export_cortex_m(model, inputs, recipe)
 
-    gen._assert_kernel_present(program, "Cortex-M", "quantized_add")
+    gen._assert_kernel_present(program, "Cortex-M", op)
     with pytest.raises(RuntimeError, match="no cortex_m.quantized_conv2d"):
         gen._assert_kernel_present(program, "Cortex-M", "quantized_conv2d")
     # Non-Cortex-M categories are exempt.
