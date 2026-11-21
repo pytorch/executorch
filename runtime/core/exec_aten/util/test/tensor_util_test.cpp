@@ -586,6 +586,102 @@ TEST_F(TensorUtilTest, TensorIsContiguous) {
   EXPECT_TRUE(tensor_is_contiguous(d));
 }
 
+TEST_F(TensorUtilTest, TensorDataIsInDefaultDimOrder) {
+  using namespace executorch::ET_RUNTIME_NAMESPACE;
+  EXPECT_TRUE(
+      tensor_data_is_in_default_dim_order(tf_float_.ones({2, 3, 4, 5})));
+  EXPECT_FALSE(tensor_data_is_in_default_dim_order(
+      tf_float_.full_channels_last({2, 3, 4, 5}, 1)));
+  // These dim orders differ from the default one only in dims of size 1.
+  EXPECT_TRUE(tensor_data_is_in_default_dim_order(
+      tf_float_.full_channels_last({8, 3, 1, 1}, 1)));
+  EXPECT_TRUE(tensor_data_is_in_default_dim_order(
+      tf_float_.make_with_dimorder({3, 1}, {1, 2, 3}, {1, 0})));
+  EXPECT_TRUE(tensor_data_is_in_default_dim_order(tf_float_.ones({})));
+  EXPECT_TRUE(tensor_data_is_in_default_dim_order(
+      tf_float_.full_channels_last({0, 3, 2, 2}, 1)));
+}
+
+namespace {
+
+// Copies a [2, 3, 4] tensor stored in each dim order to and from a buffer in
+// the default dim order.
+template <ScalarType DTYPE>
+void expect_copies_with_default_dim_order() {
+  using namespace executorch::ET_RUNTIME_NAMESPACE;
+  using CTYPE = typename TensorFactory<DTYPE>::ctype;
+  TensorFactory<DTYPE> tf;
+  std::vector<CTYPE> storage(24);
+  for (const auto i : c10::irange(storage.size())) {
+    storage[i] = static_cast<CTYPE>(i);
+  }
+  std::vector<uint8_t> dim_order = {0, 1, 2};
+  do {
+    Tensor stored = tf.make_with_dimorder({2, 3, 4}, storage, dim_order);
+    const auto strides = stored.strides();
+    std::vector<CTYPE> expected;
+    for (const auto i : c10::irange(2)) {
+      for (const auto j : c10::irange(3)) {
+        for (const auto k : c10::irange(4)) {
+          expected.push_back(
+              storage[i * strides[0] + j * strides[1] + k * strides[2]]);
+        }
+      }
+    }
+    std::vector<CTYPE> buffer(storage.size());
+    copy_to_default_dim_order(stored, buffer.data());
+    EXPECT_EQ(buffer, expected);
+
+    Tensor written = tf.make_with_dimorder(
+        {2, 3, 4}, std::vector<CTYPE>(storage.size()), dim_order);
+    copy_from_default_dim_order(expected.data(), written);
+    const CTYPE* data = written.const_data_ptr<CTYPE>();
+    EXPECT_EQ(std::vector<CTYPE>(data, data + written.numel()), storage);
+
+    // The same copies with the element size known only at run time.
+    std::vector<CTYPE> runtime_buffer(storage.size());
+    executorch::ET_RUNTIME_NAMESPACE::internal::
+        copy_with_default_dim_order_impl</*kToBuffer=*/true, 0>(
+            stored,
+            static_cast<const char*>(stored.const_data_ptr()),
+            reinterpret_cast<char*>(runtime_buffer.data()));
+    EXPECT_EQ(runtime_buffer, expected);
+    Tensor runtime_written = tf.make_with_dimorder(
+        {2, 3, 4}, std::vector<CTYPE>(storage.size()), dim_order);
+    executorch::ET_RUNTIME_NAMESPACE::internal::
+        copy_with_default_dim_order_impl</*kToBuffer=*/false, 0>(
+            runtime_written,
+            reinterpret_cast<const char*>(expected.data()),
+            static_cast<char*>(runtime_written.mutable_data_ptr()));
+    data = runtime_written.const_data_ptr<CTYPE>();
+    EXPECT_EQ(std::vector<CTYPE>(data, data + written.numel()), storage);
+  } while (std::next_permutation(dim_order.begin(), dim_order.end()));
+}
+
+} // namespace
+
+TEST_F(TensorUtilTest, CopyWithDefaultDimOrder) {
+  expect_copies_with_default_dim_order<ScalarType::Byte>();
+  expect_copies_with_default_dim_order<ScalarType::Short>();
+  expect_copies_with_default_dim_order<ScalarType::Float>();
+  expect_copies_with_default_dim_order<ScalarType::Double>();
+}
+
+TEST_F(TensorUtilTest, CopyWithDefaultDimOrderOfScalarAndEmptyTensors) {
+  using namespace executorch::ET_RUNTIME_NAMESPACE;
+  Tensor scalar = tf_float_.make({}, {5});
+  float value = 0;
+  copy_to_default_dim_order(scalar, &value);
+  EXPECT_EQ(value, 5);
+  value = 7;
+  copy_from_default_dim_order(&value, scalar);
+  EXPECT_EQ(scalar.const_data_ptr<float>()[0], 7);
+  // An empty tensor reads and writes nothing.
+  Tensor empty = tf_float_.full_channels_last({0, 3, 2, 2}, 1);
+  copy_to_default_dim_order(empty, nullptr);
+  copy_from_default_dim_order(nullptr, empty);
+}
+
 TEST_F(TensorUtilTest, ResizeZeroDimTensor) {
   Tensor a = tf_float_.ones({});
 
