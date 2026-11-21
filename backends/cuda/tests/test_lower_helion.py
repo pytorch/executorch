@@ -488,23 +488,24 @@ class HelionCuteContractTest(unittest.TestCase):
         helion_cute.begin_program()
         self.assertFalse(helion_cute.last_program_had_launches())
 
-    def test_fallback_kernels_cover_every_export(self) -> None:
+    def test_fallback_kernels_cover_program_launches(self) -> None:
         fake = helion_cute._ExportedLaunch(
             op=torch.ops.aten.add.Tensor,
             shim_declaration="AOTITorchError aoti_torch_cuda_q();",
-            library="q",
+            library="q_probe",
             library_directory=Path("/tmp"),
         )
-        with helion_cute._STATE.lock:
-            helion_cute._STATE.exported["q_probe"] = fake
+        helion_cute.begin_program()
         try:
-            helion_cute.begin_program()
+            self.assertNotIn(
+                "helion_cute::q_probe", helion_cute.exported_fallback_kernels()
+            )
+            helion_cute._STATE.program_launches()["q_probe"] = fake
             self.assertIn(
                 "helion_cute::q_probe", helion_cute.exported_fallback_kernels()
             )
         finally:
-            with helion_cute._STATE.lock:
-                del helion_cute._STATE.exported["q_probe"]
+            helion_cute.begin_program()
 
     def test_compile_and_export_rejections(self) -> None:
         tensor = torch.zeros(2)
@@ -575,26 +576,61 @@ class HelionCuteContractTest(unittest.TestCase):
 
     def test_collector_scopes_overlap_per_thread(self) -> None:
         original = CppWrapperCpu.generate_c_shim_extern_kernel_call
-        barrier = threading.Barrier(2)
+
+        def stub_extern(self, kernel, *args, **kwargs):
+            return None
+
+        both_entered = threading.Barrier(2)
+        a_exited = threading.Event()
         results = {}
 
-        def collect(name: str) -> None:
+        def collect(name: str, exit_first: bool) -> None:
             missing: set[str] = set()
             with CudaBackend.collect_unsupported_fallback_kernels(missing):
-                barrier.wait(timeout=60)
-                aoti_backend.AotiBackend._record_missing_kernel(name)
+                both_entered.wait(timeout=60)
+                if exit_first:
+                    CppWrapperCpu.generate_c_shim_extern_kernel_call(object(), name)
+                else:
+                    # Record only after the other scope has exited: with
+                    # per-compile wrapping its exit removed the hooks.
+                    a_exited.wait(timeout=60)
+                    CppWrapperCpu.generate_c_shim_extern_kernel_call(object(), name)
+            if exit_first:
+                a_exited.set()
             results[name] = missing
 
-        threads = [
-            threading.Thread(target=collect, args=(name,))
-            for name in ("kernel_from_a", "kernel_from_b")
-        ]
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join(timeout=120)
+        with mock.patch.object(
+            CppWrapperCpu, "generate_c_shim_extern_kernel_call", stub_extern
+        ):
+            threads = [
+                threading.Thread(target=collect, args=("kernel_from_a", True)),
+                threading.Thread(target=collect, args=("kernel_from_b", False)),
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=120)
+            self.assertIs(CppWrapperCpu.generate_c_shim_extern_kernel_call, stub_extern)
         self.assertEqual(results["kernel_from_a"], {"kernel_from_a"})
         self.assertEqual(results["kernel_from_b"], {"kernel_from_b"})
+        self.assertIs(CppWrapperCpu.generate_c_shim_extern_kernel_call, original)
+
+        # Nested scopes on one thread record into the innermost one.
+        outer: set[str] = set()
+        inner: set[str] = set()
+        with mock.patch.object(
+            CppWrapperCpu, "generate_c_shim_extern_kernel_call", stub_extern
+        ):
+            with CudaBackend.collect_unsupported_fallback_kernels(outer):
+                with CudaBackend.collect_unsupported_fallback_kernels(inner):
+                    CppWrapperCpu.generate_c_shim_extern_kernel_call(
+                        object(), "kernel_inner"
+                    )
+                CppWrapperCpu.generate_c_shim_extern_kernel_call(
+                    object(), "kernel_outer"
+                )
+        self.assertEqual(inner, {"kernel_inner"})
+        self.assertEqual(outer, {"kernel_outer"})
         self.assertIs(CppWrapperCpu.generate_c_shim_extern_kernel_call, original)
 
     def test_error_check_macro_guard(self) -> None:

@@ -424,10 +424,46 @@ def _check_no_placeholder_mutation(traced: GraphModule, kernel_name: str) -> Non
                 )
 
 
+def _weakest_aligned_arguments(
+    calls: list[tuple[Node, frozenset[str]]],
+) -> dict[Node, frozenset[int]]:
+    """Weakest aligned argument indexes of each CuTe kernel across its calls.
+
+    One kernel called first on a user input and then on an activation must
+    not become two launches just because the first operand may assume more
+    alignment: every call is exported at the intersection, so they share
+    one launch. Calls that fail to parse are skipped here; tracing them
+    raises the real error.
+    """
+    weakest: dict[int, set[int]] = {}
+    parsed: list[tuple[Node, int, set[int]]] = []
+    for node, aligned_names in calls:
+        try:
+            captured = _read_captured_call(node)
+            if captured.kernel.settings.backend != _CUTE_BACKEND:
+                continue
+            call = _parse_helion_call(captured)
+        except Exception:
+            continue
+        aligned = {
+            i
+            for i, n in enumerate(call.argument_nodes)
+            if n.op == "placeholder" and n.name in aligned_names
+        }
+        key = id(captured.kernel)
+        parsed.append((node, key, aligned))
+        if key in weakest:
+            weakest[key] &= aligned
+        else:
+            weakest[key] = set(aligned)
+    return {node: frozenset(weakest[key]) for node, key, _ in parsed}
+
+
 def _trace_helion_call(
     node: Node,
     aligned_names: frozenset[str] = frozenset(),
     target_platform: str | None = None,
+    aligned_arguments: frozenset[int] | None = None,
 ) -> tuple[GraphModule, tuple[Node, ...]]:
     captured = _read_captured_call(node)
     call = _parse_helion_call(captured)
@@ -451,10 +487,14 @@ def _trace_helion_call(
         # a torch.cond branch, which is just a branch operand) may be a view
         # whose storage offset the CUDA backend's view rewrites hid from the
         # exported metadata, so it is compiled for element alignment only.
-        aligned = frozenset(
-            i
-            for i, n in enumerate(call.argument_nodes)
-            if n.op == "placeholder" and n.name in aligned_names
+        aligned = (
+            aligned_arguments
+            if aligned_arguments is not None
+            else frozenset(
+                i
+                for i, n in enumerate(call.argument_nodes)
+                if n.op == "placeholder" and n.name in aligned_names
+            )
         )
         launcher, launch_op = helion_cute.export_cute_launch(
             entrypoint,
@@ -611,9 +651,16 @@ class LowerHelionPass:
             if spec.kind
             in (InputKind.USER_INPUT, InputKind.PARAMETER, InputKind.BUFFER)
         )
-        for module in root.modules():
-            if not isinstance(module, GraphModule):
-                continue
+        modules = [m for m in root.modules() if isinstance(m, GraphModule)]
+        weakest = _weakest_aligned_arguments(
+            [
+                (node, aligned_names if module is root else frozenset())
+                for module in modules
+                for node in module.graph.nodes
+                if node.op == "call_function" and str(node.target) in _HELION_HOP_NAMES
+            ]
+        )
+        for module in modules:
             is_root = module is root
             modified = False
             for node in list(module.graph.nodes):
@@ -627,6 +674,7 @@ class LowerHelionPass:
                         node,
                         aligned_names if is_root else frozenset(),
                         self.target_platform,
+                        weakest.get(node),
                     )
                     replacement = _splice_traced_graph(
                         module.graph, node, traced, inputs

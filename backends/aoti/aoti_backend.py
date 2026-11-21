@@ -221,16 +221,14 @@ class AotiBackend(ABC):
     def _record_missing_kernel(cls, kernel: str) -> None:
         # Each collector belongs to the compiling thread that entered it;
         # hooks installed once dispatch there (and ignore codegen from
-        # threads that are not in a collector scope). Re-check the live
-        # supported set: a kernel another thread registered after the
-        # snapshot (for example a helion_cute op) is not missing.
+        # threads that are not in a collector scope). The snapshot is taken
+        # when the collector is entered, after the backend's passes have
+        # run, so every kernel this compile may call is already in it.
         stack = getattr(AotiBackend._collector_local, "collectors", [])
         if not stack:
             return
-        backend, supported_kernels, missing = stack[-1]
-        if kernel not in supported_kernels and (
-            kernel not in backend.get_supported_fallback_kernels()
-        ):
+        _backend, supported_kernels, missing = stack[-1]
+        if kernel not in supported_kernels:
             missing.add(kernel)
 
     @classmethod

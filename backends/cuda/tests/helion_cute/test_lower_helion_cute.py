@@ -70,6 +70,31 @@ class LowerHelionCuteTest(helion_tests.LowerHelionTest):
 
         self._export_and_run(Model(), x, x[0] + 2 * x[1])
 
+    def test_chained_calls_share_one_launch(self) -> None:
+        # The first call sees a user input (fully aligned), the second an
+        # activation (element alignment): both must share the launch
+        # exported at the weakest alignment, not split into two launches.
+        kernel = self._kernel(
+            helion_tests._add,
+            helion_tests.helion.Config(block_sizes=[256]),
+            static_shapes=True,
+        )
+        x = torch.randn(257, device="cuda")
+        w = torch.randn(257, device="cuda")
+
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("w", w)
+
+            def forward(self, x):
+                return kernel(kernel(x, self.w), self.w)
+
+        # Succeeding at all proves the calls shared one launch: two
+        # prefixes would trip the one-distinct-launch rejection.
+        self._export_and_run(Model(), x, x + w * 2)
+        helion_cute.begin_program()
+
     def test_rejects_two_distinct_cute_launches(self) -> None:
         add = self._kernel(
             helion_tests._add,
@@ -203,18 +228,18 @@ class LowerHelionCuteTest(helion_tests.LowerHelionTest):
                 seen.append(
                     (
                         outside,
-                        helion_cute.exported_fallback_kernels(),
                         shims.get(exported.op),
                         helion_cute.program_link_options(),
                     )
                 )
 
         with helion_cute.link_exported_launches():
+            fallbacks = helion_cute.exported_fallback_kernels()
             thread = threading.Thread(target=observe)
             thread.start()
             thread.join(timeout=60)
         self.assertFalse(thread.is_alive())
-        ((outside_shim, fallbacks, shim, options),) = seen
+        ((outside_shim, shim, options),) = seen
         self.assertIsNone(outside_shim)
         self.assertIn(f"helion_cute::{exported.library}", fallbacks)
         self.assertEqual(shim, [exported.shim_declaration])

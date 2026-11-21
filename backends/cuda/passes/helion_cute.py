@@ -163,13 +163,10 @@ class _ProgramLaunches(threading.local):
 class _ExportState:
     """The launches exported in this process, and those of each thread's program.
 
-    The supported fallback kernels are process-wide: an exported op is
-    never undefined, and AOTInductor's fallback-kernel collection wraps
-    class-level codegen shared by every thread, so a per-thread supported
-    set would fail other threads' compiles. Shim declarations are
-    (re)written on the compiling thread by ``link_exported_launches``,
-    because Inductor's config is thread-local. Only the
-    archive *link* is per thread: ``AotiBackend.preprocess`` runs
+    Shim declarations are (re)written on the compiling thread by
+    ``link_exported_launches``, because Inductor's config is thread-local.
+    The supported fallback kernels and the archive *link* are per program:
+    ``AotiBackend.preprocess`` runs
     ``LowerHelionPass`` and then, on the same thread, enters
     ``link_exported_launches`` for the compile, so a thread's program
     launches are exactly the archives its next compile on that thread links.
@@ -699,6 +696,13 @@ def export_cute_launch(
             )
         )
         prefix = f"helion_cute_{hashlib.sha256(key.encode()).hexdigest()[:24]}"
+        recorded = _STATE.program_launches()
+        if recorded and prefix not in recorded:
+            raise NotImplementedError(
+                "Helion CuTe lowering supports only one distinct CuTe "
+                "launch per program for now; this program already lowers "
+                f"{sorted(recorded)}"
+            )
         # The global lock guards only the exported map; compiling takes the
         # per-prefix lock, so other lowerings are not stuck behind this
         # kernel's CuTe compile and the same prefix is still built once.
@@ -780,17 +784,18 @@ def current_program_launches() -> list[_ExportedLaunch]:
 
 
 def exported_fallback_kernels() -> dict[str, None]:
-    """Every exported custom op, as supported fallback kernels.
+    """This thread's program launches, as supported fallback kernels.
 
-    Process-wide on purpose: AOTInductor's fallback-kernel collection wraps
-    class-level codegen shared by every thread, so a per-thread set fails
-    other threads' compiles. An exported op is never undefined, so accepting
-    all of them is safe; only the archives a program actually calls are
-    linked, through ``program_link_options``.
+    The collector that reads this set records only into the compiling
+    thread's collector, so a per-program set cannot fail another thread's
+    compile, and an op the program contains but this compile never
+    recorded (for example a scan miss) is reported missing at export time
+    instead of linking a `.so` with an undefined shim symbol.
     """
-    with _STATE.lock:
-        prefixes = list(_STATE.exported)
-    return {f"{_OP_NAMESPACE}::{p}": None for p in prefixes}
+    return {
+        f"{_OP_NAMESPACE}::{launch.library}": None
+        for launch in current_program_launches()
+    }
 
 
 def program_link_options() -> tuple[list[str], list[str]]:
