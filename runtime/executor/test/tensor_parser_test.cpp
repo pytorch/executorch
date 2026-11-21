@@ -27,6 +27,7 @@ using executorch::runtime::Program;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
 using executorch::runtime::TensorLayout;
+using executorch::runtime::deserialization::getTensorDataPtr;
 using executorch::runtime::deserialization::parseListOptionalType;
 using executorch::runtime::deserialization::parseTensor;
 using executorch::runtime::deserialization::parseTensorList;
@@ -348,4 +349,46 @@ TEST_F(TensorParserTest, ParseListOptionalTypeRejectsWrongType) {
 
   auto result = parseListOptionalType<Tensor>(indices, values, 2, &mmm.get());
   EXPECT_EQ(result.error(), Error::InvalidType);
+}
+
+TEST(GetTensorDataPtrTest, MutableExternalTensorWithoutDataIsNotFound) {
+  flatbuffers::FlatBufferBuilder builder;
+  std::vector<int32_t> sizes = {1};
+  std::vector<uint8_t> dim_order = {0};
+  auto sizes_offset = builder.CreateVector(sizes);
+  auto dim_order_offset = builder.CreateVector(dim_order);
+  // Allocation details make the tensor mutable, so its data is loaded from
+  // the .ptd data into planned memory.
+  auto allocation_info = executorch_flatbuffer::CreateAllocationDetails(
+      builder, /*memory_id=*/1, /*memory_offset_low=*/0);
+  auto extra_tensor_info = executorch_flatbuffer::CreateExtraTensorInfo(
+      builder,
+      /*mutable_data_segments_idx=*/0,
+      builder.CreateString("state"),
+      executorch_flatbuffer::TensorDataLocation::EXTERNAL);
+  auto tensor_offset = executorch_flatbuffer::CreateTensor(
+      builder,
+      executorch_flatbuffer::ScalarType::FLOAT,
+      /*storage_offset=*/0,
+      sizes_offset,
+      dim_order_offset,
+      /*requires_grad=*/false,
+      /*data_buffer_idx=*/0,
+      allocation_info,
+      /*layout=*/0,
+      executorch_flatbuffer::TensorShapeDynamism::STATIC,
+      extra_tensor_info);
+  builder.Finish(tensor_offset);
+  const auto* s_tensor = flatbuffers::GetRoot<executorch_flatbuffer::Tensor>(
+      builder.GetBufferPointer());
+
+  ManagedMemoryManager mmm(
+      /*planned_memory_bytes=*/64, /*method_allocator_bytes=*/64);
+  Result<void*> data = getTensorDataPtr(
+      s_tensor,
+      /*program=*/nullptr,
+      /*nbytes=*/sizeof(float),
+      mmm.get().planned_memory(),
+      /*named_data_map=*/nullptr);
+  EXPECT_EQ(data.error(), Error::NotFound);
 }

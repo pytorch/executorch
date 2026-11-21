@@ -132,6 +132,43 @@ TEST_F(MergedDataMapTest, LoadNullDataMap) {
   EXPECT_EQ(merged_map.error(), Error::InvalidArgument);
 }
 
+namespace {
+// A data map with no keys, like a .ptd file with no tensors.
+class EmptyDataMap final : public NamedDataMap {
+ public:
+  Result<const TensorLayout> get_tensor_layout(
+      std::string_view /*key*/) const override {
+    return Error::NotFound;
+  }
+  Result<executorch::runtime::FreeableBuffer> get_data(
+      std::string_view /*key*/) const override {
+    return Error::NotFound;
+  }
+  Error load_data_into(
+      std::string_view /*key*/,
+      void* /*buffer*/,
+      size_t /*size*/) const override {
+    return Error::NotFound;
+  }
+  Result<uint32_t> get_num_keys() const override {
+    return 0;
+  }
+  Result<const char*> get_key(uint32_t /*index*/) const override {
+    return Error::InvalidArgument;
+  }
+};
+} // namespace
+
+TEST_F(MergedDataMapTest, LoadEmptyDataMap) {
+  EmptyDataMap empty;
+  std::vector<const NamedDataMap*> ndms = {&empty};
+  Result<MergedDataMap> merged_map =
+      MergedDataMap::load(Span<const NamedDataMap*>(ndms.data(), ndms.size()));
+  ASSERT_EQ(merged_map.error(), Error::Ok);
+  EXPECT_EQ(merged_map->get_num_keys().get(), 0);
+  EXPECT_EQ(merged_map->get_tensor_layout("a").error(), Error::NotFound);
+}
+
 TEST_F(MergedDataMapTest, LoadSingleDataMap) {
   std::vector<const NamedDataMap*> ndms = {data_maps_["addmul"].get(), nullptr};
   Result<MergedDataMap> merged_map =

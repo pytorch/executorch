@@ -24,17 +24,21 @@ namespace executorch::extension {
 namespace ET_MERGED_DATA_MAP_NAMESPACE {
 /*static*/ Result<MergedDataMap> MergedDataMap::load(
     Span<const NamedDataMap*> named_data_maps) {
+  // A map with no keys, such as a .ptd file with no tensors, is valid and
+  // adds nothing.
+  bool any_data_map = false;
   std::vector<const NamedDataMap*> valid_data_maps;
   for (auto i : c10::irange(named_data_maps.size())) {
-    if (named_data_maps[i] != nullptr &&
-        named_data_maps[i]->get_num_keys().get() > 0) {
+    if (named_data_maps[i] == nullptr) {
+      continue;
+    }
+    any_data_map = true;
+    if (named_data_maps[i]->get_num_keys().get() > 0) {
       valid_data_maps.push_back(named_data_maps[i]);
     }
   }
   ET_CHECK_OR_RETURN_ERROR(
-      !valid_data_maps.empty(),
-      InvalidArgument,
-      "No non-empty named data maps provided to merge");
+      any_data_map, InvalidArgument, "No named data maps provided to merge");
 
   // Check for duplicate keys.
   KeyToMapIndex key_to_map_index;

@@ -625,6 +625,60 @@ TEST_F(ProgramTest, ShortDataHeader) {
       Program::HeaderStatus::ShortData);
 }
 
+TEST_F(ProgramTest, LoadShortDataIsInvalidProgram) {
+  const uint8_t data[8] = {};
+  BufferDataLoader loader(data, sizeof(data));
+  EXPECT_EQ(Program::load(&loader).error(), Error::InvalidProgram);
+}
+
+namespace {
+// Reads the whole program and gives it a header from before segment_data_size
+// existed, which a loader of unknown size can still load.
+std::vector<uint8_t> read_with_legacy_header(FileDataLoader& loader) {
+  const size_t size = loader.size().get();
+  Result<FreeableBuffer> bytes = loader.load(
+      0, size, DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
+  EXPECT_EQ(bytes.error(), Error::Ok);
+  const auto* begin = static_cast<const uint8_t*>(bytes->data());
+  std::vector<uint8_t> data(begin, begin + size);
+  EXPECT_EQ(std::memcmp(data.data() + 8, "eh00", 4), 0);
+  const uint64_t no_segment_data_size = 0;
+  // segment_data_size follows program_size and segment_base_offset.
+  std::memcpy(data.data() + 32, &no_segment_data_size, sizeof(uint64_t));
+  return data;
+}
+
+class UnknownSizeLoader final : public DataLoader {
+ public:
+  UnknownSizeLoader(const void* data, size_t size) : loader_(data, size) {}
+  Result<FreeableBuffer> load(
+      size_t offset,
+      size_t size,
+      const SegmentInfo& segment_info) const override {
+    return loader_.load(offset, size, segment_info);
+  }
+  Result<size_t> size() const override {
+    return Error::NotSupported;
+  }
+
+ private:
+  BufferDataLoader loader_;
+};
+} // namespace
+
+TEST_F(ProgramTest, LoadLegacyHeaderWithoutDataSize) {
+  std::vector<uint8_t> data = read_with_legacy_header(*multi_loader_);
+  UnknownSizeLoader loader(data.data(), data.size());
+  EXPECT_EQ(Program::load(&loader).error(), Error::Ok);
+}
+
+TEST_F(ProgramTest, LoadProgramShorterThanItsHeaderSaysIsInvalidProgram) {
+  std::vector<uint8_t> data = read_with_legacy_header(*multi_loader_);
+  // Keep the header, but less than the program size it states.
+  BufferDataLoader loader(data.data(), Program::kMinHeadBytes + 16);
+  EXPECT_EQ(Program::load(&loader).error(), Error::InvalidProgram);
+}
+
 TEST_F(ProgramTest, IncompatibleHeader) {
   // Make a local copy of the header.
   size_t data_len = Program::kMinHeadBytes;

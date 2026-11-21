@@ -16,6 +16,8 @@
 #include <executorch/runtime/platform/runtime.h>
 
 #include <array>
+#include <cstdio>
+#include <fstream>
 #include <limits>
 
 #include <gtest/gtest.h>
@@ -177,6 +179,13 @@ TEST_F(FlatTensorDataMapTest, LoadAndCheckSize) {
   Result<FlatTensorDataMap> truncated_program =
       FlatTensorDataMap::load(&truncated_loader);
   ASSERT_EQ(truncated_program.error(), Error::InvalidExternalData);
+}
+
+TEST_F(FlatTensorDataMapTest, DataShorterThanHeaderIsInvalidExternalData) {
+  const uint8_t data[8] = {};
+  BufferDataLoader loader(data, sizeof(data));
+  EXPECT_EQ(
+      FlatTensorDataMap::load(&loader).error(), Error::InvalidExternalData);
 }
 
 namespace {
@@ -696,4 +705,44 @@ TEST_F(FlatTensorDataMapTest, RejectsOverflowingFlatbufferExtent) {
 
   EXPECT_EQ(
       FlatTensorDataMap::load(&loader).error(), Error::InvalidExternalData);
+}
+
+TEST_F(FlatTensorDataMapTest, RejectsFlatbufferPastTheEndOfTheData) {
+  std::vector<uint8_t> data =
+      CreateDataWithVersion(FlatTensorDataMap::kMaxSupportedSchemaVersion);
+
+  const uint64_t flatbuffer_size = data.size();
+  std::memcpy(
+      data.data() + kFlatbufferSizeFieldOffset,
+      &flatbuffer_size,
+      sizeof(flatbuffer_size));
+
+  alignas(std::max_align_t) std::array<uint8_t, 1024> aligned_buffer{};
+  ASSERT_LE(data.size(), aligned_buffer.size());
+  std::memcpy(aligned_buffer.data(), data.data(), data.size());
+  BufferDataLoader loader(aligned_buffer.data(), data.size());
+
+  EXPECT_EQ(
+      FlatTensorDataMap::load(&loader).error(), Error::InvalidExternalData);
+}
+
+TEST_F(FlatTensorDataMapTest, RejectsFlatbufferShorterThanItsIdentifier) {
+  std::vector<uint8_t> data =
+      CreateDataWithVersion(FlatTensorDataMap::kMaxSupportedSchemaVersion);
+  const uint64_t zero = 0;
+  std::memcpy(data.data() + kFlatbufferOffsetFieldOffset, &zero, sizeof(zero));
+  std::memcpy(data.data() + kFlatbufferSizeFieldOffset, &zero, sizeof(zero));
+
+  // FileDataLoader returns no memory for an empty load.
+  const std::string path =
+      ::testing::TempDir() + "/flatbuffer_shorter_than_identifier.ptd";
+  std::ofstream(path, std::ios::binary)
+      .write(reinterpret_cast<const char*>(data.data()), data.size());
+  Result<FileDataLoader> loader = FileDataLoader::from(path.c_str());
+  ASSERT_EQ(loader.error(), Error::Ok);
+
+  EXPECT_EQ(
+      FlatTensorDataMap::load(&loader.get()).error(),
+      Error::InvalidExternalData);
+  std::remove(path.c_str());
 }

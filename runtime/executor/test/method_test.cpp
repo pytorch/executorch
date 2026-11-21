@@ -757,6 +757,13 @@ TEST_F(MethodTest, ProgramDataSeparationTest) {
   ASSERT_EQ(err, Error::Ok);
 }
 
+TEST_F(MethodTest, MissingExternalDataIsNotFound) {
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method =
+      programs_["add_mul_program"]->load_method("forward", &mmm.get());
+  EXPECT_EQ(method.error(), Error::NotFound);
+}
+
 TEST_F(MethodTest, MethodGetAttributeTest) {
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
   Result<Method> method =
