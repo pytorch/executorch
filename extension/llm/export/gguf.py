@@ -490,20 +490,15 @@ class ExportableGGUFTensor(TorchAOBaseTensor):
         pts = torch.as_tensor(
             per_tensor_scale, dtype=torch.float32, device=self.raw.device
         )
-        act = (
-            None
-            if act_per_tensor_scale is None
-            else torch.as_tensor(act_per_tensor_scale)
-        )
-        if pts.numel() != 1 or (act is not None and act.numel() != 1):
-            raise ValueError("NVFP4 per-tensor scales must be scalars")
+        if pts.numel() != 1:
+            raise ValueError("NVFP4 per_tensor_scale must be a scalar")
         return ExportableNVFP4Tensor(
             pack_uint4(codes).contiguous().view(torch.uint32),
             e4m3,
             pts.reshape(()),
             NVFP4_GROUP_SIZE,
             output_dtype or self.orig_dtype,
-            None if act is None else float(act),
+            act_per_tensor_scale,
         )
 
     def to_exportable_int4_tensor(
