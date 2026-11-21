@@ -30,6 +30,53 @@ from executorch.examples.models.muse_glimmer.tests.dflash_reference import (
 )
 
 
+def write_original_dflash_gguf(path: Path) -> None:
+    from gguf import GGUFWriter
+
+    metadata = {
+        "embedding_length": 32,
+        "block_count": 1,
+        "attention.head_count": 4,
+        "attention.head_count_kv": 2,
+        "attention.key_length": 8,
+        "feed_forward_length": 64,
+        "block_size": 4,
+        "context_length": 64,
+    }
+    config = DFlashConfig.from_gguf_metadata(
+        {"dflash." + key: value for key, value in metadata.items()}
+        | {"dflash.target_layers": [0, 1], "tokenizer.ggml.mask_token_id": 0}
+    )
+    weights = dict(DFlashDraftModel(config).named_parameters())
+    names = {
+        "fc.weight": "fc.weight",
+        "enc.output_norm.weight": "hidden_norm.weight",
+        "output_norm.weight": "norm.weight",
+        "blk.0.attn_q.weight": "layers.0.self_attn.q_proj.weight",
+        "blk.0.attn_k.weight": "layers.0.self_attn.k_proj.weight",
+        "blk.0.attn_v.weight": "layers.0.self_attn.v_proj.weight",
+        "blk.0.attn_output.weight": "layers.0.self_attn.o_proj.weight",
+        "blk.0.attn_q_norm.weight": "layers.0.self_attn.q_norm.weight",
+        "blk.0.attn_k_norm.weight": "layers.0.self_attn.k_norm.weight",
+        "blk.0.attn_norm.weight": "layers.0.input_layernorm.weight",
+        "blk.0.ffn_norm.weight": "layers.0.post_attention_layernorm.weight",
+        "blk.0.ffn_gate.weight": "layers.0.mlp.gate_proj.weight",
+        "blk.0.ffn_up.weight": "layers.0.mlp.up_proj.weight",
+        "blk.0.ffn_down.weight": "layers.0.mlp.down_proj.weight",
+    }
+    writer = GGUFWriter(str(path), "dflash")
+    for key, value in metadata.items():
+        writer.add_uint32("dflash." + key, value)
+    writer.add_array("dflash.target_layers", [0, 1])
+    writer.add_uint32("tokenizer.ggml.mask_token_id", 0)
+    for name, parameter in names.items():
+        writer.add_tensor(name, weights[parameter].detach().numpy())
+    writer.write_header_to_file()
+    writer.write_kv_data_to_file()
+    writer.write_tensors_to_file()
+    writer.close()
+
+
 class ReferenceTarget(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -214,6 +261,26 @@ class DFlash2OfficialReferenceTest(TestCase):
 
 
 class DFlash2OperationsTest(TestCase):
+    def test_gguf_preserves_checkpoint_capacity(self):
+        from executorch.examples.models.muse_glimmer.loaders.dflash_loader import (
+            load_dflash_gguf,
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "draft.gguf"
+            write_original_dflash_gguf(path)
+            for backend in ("cuda", "mlx"):
+                for max_seq_len in (32, 128):
+                    with self.subTest(backend=backend, max_seq_len=max_seq_len):
+                        draft, config = load_dflash_gguf(
+                            str(path), backend=backend, max_seq_len=max_seq_len
+                        )
+                        self.assertEqual(config.max_seq_len, 64)
+                        self.assertEqual(
+                            draft.layers[0].self_attn.kv_cache.k_cache.shape[2],
+                            max_seq_len,
+                        )
+
     def test_invalid_metadata(self):
         for metadata in (
             {"conv_kernel_size": 2},

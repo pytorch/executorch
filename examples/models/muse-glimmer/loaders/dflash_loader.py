@@ -84,7 +84,6 @@ def _validate_no_meta(model: nn.Module) -> None:
 def read_dflash_gguf_config(gguf_path: str) -> DFlashConfig:
     """Read and validate draft metadata without loading checkpoint weights."""
     from executorch.examples.models.muse_glimmer.model.dflash_model import DFlashConfig
-
     from gguf import GGUFReader
 
     reader = GGUFReader(gguf_path)
@@ -116,7 +115,8 @@ def load_dflash_gguf(
     """Load a DFlash draft GGUF, remap keys, and return (model, config).
 
     Streams weights through ``load_checkpoint`` with a DFlash key remap. The
-    caller applies backend-specific packing after loading.
+    caller applies backend-specific packing after loading. ``max_seq_len`` sizes
+    runtime buffers; the config retains the checkpoint's context capacity.
 
     Returns ``(model, config)`` where config is a ``DFlashConfig``.
     """
@@ -127,7 +127,6 @@ def load_dflash_gguf(
     from executorch.extension.llm.export.quant import to_default
 
     config = read_dflash_gguf_config(gguf_path)
-    config.max_seq_len = max_seq_len
 
     print(
         f"DFlash config: {config.n_layers} layers, dim={config.dim}, "
