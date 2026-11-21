@@ -36,6 +36,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/exir/backend:backend_api",
             "//executorch/exir/backend:compile_spec_schema",
             "//executorch/examples/models/toy_model:toy_model",
+            "//executorch/export:export_utils",
         ],
         keep_gpu_sections = True,
         remote_execution = re_test_utils.remote_execution(
@@ -582,6 +583,27 @@ def define_common_targets(is_fbcode = False):
         ],
     )
 
+    python_unittest(
+        name = "test_remap_pte_devices",
+        srcs = [
+            "test_remap_pte_devices.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/cuda:remap_pte_devices",
+            "//executorch/backends/cuda:scripts_atomic_output",
+            "//executorch/exir:lib",
+            "//executorch/exir:scalar_type",
+            "//executorch/exir/_serialize:lib",
+            "//executorch/exir:schema",
+            "//executorch/exir/backend:compile_spec_schema",
+            "//executorch/exir/backend/test:device_util",
+        ],
+    )
+
     runtime.python_library(
         name = "nvfp4_test_utils",
         srcs = ["nvfp4_test_utils.py"],
@@ -602,7 +624,7 @@ def define_common_targets(is_fbcode = False):
         name = "test_nvfp4_w4a4",
         srcs = ["test_nvfp4_kernels.py"],
         deps = ["//caffe2:torch", "//executorch/backends/cuda:nvfp4_tensor", "//executorch/extension/llm/export:nvfp4", "fbsource//third-party/pypi/pytest:pytest", "//executorch/backends/cuda:triton_kernels", ":nvfp4_test_utils"],
-        pytest_expr = "activation or w4a4",
+        pytest_expr = ["activation or w4a4"],
         keep_gpu_sections = True,
         remote_execution = re_test_utils.remote_execution(platform = "gpu-remote-execution", subplatform = "A100"),
         test_rule = python_pytest,
@@ -620,7 +642,7 @@ def define_common_targets(is_fbcode = False):
     python_pytest(
         name = "test_nvfp4_launch_validation_cpu",
         srcs = ["test_nvfp4_launch_validation.py"],
-        pytest_expr = "not partial_offsets_and_masks",
+        pytest_expr = ["not partial_offsets_and_masks"],
         deps = [
             "//caffe2:torch",
             "//executorch/backends/cuda:autotune",

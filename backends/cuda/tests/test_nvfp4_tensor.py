@@ -9,7 +9,10 @@ import io
 import pytest
 import torch
 from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
-from executorch.backends.cuda.tests.nvfp4_test_utils import portable_weight as weight, shards
+from executorch.backends.cuda.tests.nvfp4_test_utils import (
+    portable_weight as weight,
+    shards,
+)
 from torch._subclasses.fake_tensor import FakeTensorMode, is_fake
 
 
@@ -39,6 +42,17 @@ def test_fusion_preserves_scalar_scale_and_rejects_mismatched_activation_scale()
     pieces[1].act_per_tensor_scale = 0.001
     with pytest.raises(ValueError, match="activation scale"):
         CudaNVFP4Tensor.fuse_along_output(pieces)
+
+
+def test_activation_scale_is_a_python_float():
+    w = shards(192)[0]
+    w = CudaNVFP4Tensor(
+        w.qdata, w.scale, w.per_tensor_scale, act_per_tensor_scale=torch.tensor([0.5])
+    )
+    assert w.act_per_tensor_scale == 0.5
+    assert type(w.act_per_tensor_scale) is float
+    assert CudaNVFP4Tensor.fuse_along_output([w, w]).act_per_tensor_scale == 0.5
+    assert w.to(dtype=torch.float16).act_per_tensor_scale == 0.5
 
 
 @pytest.mark.parametrize(
@@ -83,14 +97,44 @@ def test_dequantize_low_nibble_first(row_scales):
     scales = torch.full((2, 1), 56, dtype=torch.uint8)
     pts = torch.tensor([0.25, 0.5] if row_scales else [0.25])
     tensor = CudaNVFP4Tensor(packed, scales, pts, orig_dtype=torch.float32)
-    lut = torch.tensor([0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0,
-                        -0.0, -0.5, -1.0, -1.5, -2.0, -3.0, -4.0, -6.0])
-    torch.testing.assert_close(tensor.dequantize(), lut.repeat(2, 1) * pts[:, None], rtol=0, atol=0)
+    lut = torch.tensor(
+        [
+            0.0,
+            0.5,
+            1.0,
+            1.5,
+            2.0,
+            3.0,
+            4.0,
+            6.0,
+            -0.0,
+            -0.5,
+            -1.0,
+            -1.5,
+            -2.0,
+            -3.0,
+            -4.0,
+            -6.0,
+        ]
+    )
+    torch.testing.assert_close(
+        tensor.dequantize(), lut.repeat(2, 1) * pts[:, None], rtol=0, atol=0
+    )
     assert tensor.qdata.is_contiguous() and tensor.scale.is_contiguous()
     assert tensor.per_tensor_scale.ndim == 1
 
 
-@pytest.mark.parametrize("invalid", ["qdata_dtype", "qdata_shape", "block_size", "scale_shape", "scale_dtype", "global_scale"])
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        "qdata_dtype",
+        "qdata_shape",
+        "block_size",
+        "scale_shape",
+        "scale_dtype",
+        "global_scale",
+    ],
+)
 def test_invalid_layout_rejected(invalid):
     q = torch.zeros((2, 8), dtype=torch.uint8)
     s = torch.full((2, 1), 56, dtype=torch.uint8)

@@ -1,4 +1,4 @@
-# ExecuTorch on Espressif ESP32 and ESP32-S3
+# ExecuTorch on Espressif ESP32, ESP32-S3, ESP32-P4 and ESP32-S31
 
 This directory runs ExecuTorch models on Espressif microcontrollers with an
 executor runner built by ESP-IDF.
@@ -12,6 +12,11 @@ To add ExecuTorch to your own ESP-IDF project, use the
 |----------|---------------|---------------|------------------|
 | ESP32    | Xtensa LX6 (dual-core, 240MHz) | ~520KB | 4-8MB |
 | ESP32-S3 | Xtensa LX7 (dual-core, 240MHz) | ~512KB | 2-32MB (Octal) |
+| ESP32-P4 | RISC-V (dual-core, 400MHz), rev v3.0 or later | 768KB | Hex |
+| ESP32-S31 | RISC-V (dual-core, 320MHz) | 512KB | Octal |
+
+ESP-NN has SIMD kernels for the ESP32-S3, and PIE SIMD kernels shared by the
+ESP32-P4 and ESP32-S31. ESP-IDF supports the ESP32-S31 from v6.2.
 
 ## Project Structure
 
@@ -122,7 +127,7 @@ libraries, since they cannot link without the ESP-IDF project's linker
 configuration.
 
 ```bash
-export IDF_TARGET=esp32s3  # or esp32
+export IDF_TARGET=esp32s3  # or esp32, esp32p4, esp32s31
 
 # Adjust the op list for your model, or use another selective build method.
 cmake --preset esp-baremetal -B cmake-out-esp \
@@ -137,10 +142,29 @@ cmake --build cmake-out-esp -j$(nproc)
 cmake --build cmake-out-esp --target install
 ```
 
+On the ESP32-P4 and ESP32-S31 (RISC-V), the chip toolchain file alone carries
+no `-march` or `-mabi`, so the runtime would build soft-float and fail to link
+with the firmware. ESP-IDF writes these flags next to a copy of the toolchain
+file when a project configures. Configure any project for the target first and
+use that copy, as
+[test_espressif.sh](../../.ci/scripts/test_espressif.sh) does:
+
+```bash
+idf.py -C "$IDF_PATH/examples/get-started/hello_world" -B cmake-out-esp-flags \
+    -DIDF_TARGET=$IDF_TARGET -DSDKCONFIG="$PWD/cmake-out-esp-flags/sdkconfig" \
+    -DSDKCONFIG_DEFAULTS="$PWD/examples/espressif/project/sdkconfig.defaults.$IDF_TARGET" \
+    reconfigure
+# Then pass this to cmake instead:
+#   -DCMAKE_TOOLCHAIN_FILE=$PWD/cmake-out-esp-flags/toolchain/toolchain-$IDF_TARGET.cmake
+```
+
 ## Emulator Smoke Test
 
-[esp-emulator](https://github.com/espressif/esp-emulator) runs the ESP32-S3
-firmware without a board; it does not support the original ESP32. These steps
+[esp-emulator](https://github.com/espressif/esp-emulator) runs ESP32-S3,
+ESP32-P4 and ESP32-S31 firmware without a board; it does not support the
+original ESP32. The steps below use the ESP32-S3; for another chip, change
+`esp32s3` and see the RISC-V note in
+[Cross-Compiling ExecuTorch](#cross-compiling-executorch). These steps
 export a model with two inputs and two outputs (`x + y` and `x * y`) and its
 PyTorch reference outputs, then run the runner with 8 MB of octal PSRAM. Run
 them from the repository root with your ExecuTorch environment active. Each
@@ -158,12 +182,13 @@ and installs ESP-IDF's Python dependencies into your active environment. In a
 new shell, activate the same environment and source `setup_path.sh` again.
 Options:
 
-- `--minimal`: only the Xtensa compiler, the SDK's Python packages and the
+- `--minimal`: only the targets' compilers, the SDK's Python packages and the
   emulator, as CI uses. The full install also needs your platform's USB
   libraries (`libusb-1.0-0` on Ubuntu) for OpenOCD.
 - `--skip-idf`, `--skip-emulator`: install only one of them.
 - `--targets=<chip>,...`: compilers for other targets.
-- `--idf-version=<tag>`: another ESP-IDF release, such as `v6.0.1`; use a separate
+- `--idf-version=<tag>`: another ESP-IDF release, such as `v6.0.1`, or a branch
+  such as `release/v6.2` for the ESP32-S31; use a separate
   `ESPRESSIF_TOOLS_DIR` for it.
 - `ESPRESSIF_TOOLS_DIR` picks the install directory; `IDF_PATH` and
   `IDF_TOOLS_PATH` reuse an existing ESP-IDF.
@@ -231,8 +256,10 @@ runs the emulator's `--timeout` ends early.
 
 [test_espressif.sh](../../.ci/scripts/test_espressif.sh) runs these steps in CI,
 plus the ESP-NN delegate's fixtures with optimized and ANSI C reference
-kernels. It covers execution and ESP-IDF integration on ESP32-S3, not
-performance or peripherals on real boards.
+kernels. `ESPRESSIF_TARGET` selects the chip (`esp32s3` by default, `esp32p4`
+or `esp32s31`), and the script picks the ESP-IDF version for it. It covers
+execution and ESP-IDF integration, not performance or peripherals on real
+boards.
 
 ## Memory Considerations
 
@@ -257,14 +284,14 @@ or on the command line: `idf.py build -DET_ESP_METHOD_ALLOCATOR_POOL_SIZE=104857
 ## Loading Models
 
 By default the `.pte` is compiled into the firmware as a C array. For larger
-models, load it from a SPIFFS partition:
+models, the example's `storage` SPIFFS partition reserves 2 MB at `0x300000`:
 
-1. Build with `-DFILESYSTEM_LOAD=ON`.
-2. Add a partition and flash the image:
+1. Build and flash the firmware with `-DFILESYSTEM_LOAD=ON`, including its
+   partition table.
+2. Put the model at `model_dir/model.pte`, then create and flash the SPIFFS image:
    ```bash
-   # partitions.csv: storage, data, spiffs, , 0x200000
-   $IDF_PATH/components/spiffs/spiffsgen.py 0x200000 model_dir spiffs.bin
-   esptool.py write_flash 0x210000 spiffs.bin
+   python "$IDF_PATH/components/spiffs/spiffsgen.py" 0x200000 model_dir spiffs.bin
+   esptool.py write_flash 0x300000 spiffs.bin
    ```
 
 ## Configuration Options
