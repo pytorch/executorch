@@ -204,8 +204,8 @@ jobs:
   test-model-cuda-windows-e2e:
     name: test-model-cuda-windows-e2e-${{ matrix.cuda-version }} (${{ matrix.model_name }}, ${{ matrix.quant }})
     # Same path filter as the export job above. Not gated on the export succeeding: that
-    # result covers the whole matrix, so one row's failed export (say a train whose torch
-    # pin expired) would skip every row here. Each row downloads its own artifact and
+    # result covers the whole matrix, so one row's failed export (say one model's) would
+    # skip every row here. Each row downloads its own artifact and
     # fails on the download if its export failed. The skipped check keeps a fork pull
     # request, where nothing was exported, from running this and failing on the download.
     needs: [changed-files, export-model-cuda-windows-artifact, run-decision]

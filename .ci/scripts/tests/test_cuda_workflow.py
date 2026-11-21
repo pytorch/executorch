@@ -36,9 +36,11 @@ def _matrix_cuda_versions(job):
     axis = matrix.get(key, [])
     assert isinstance(axis, list), axis
     # GitHub drops a combination only when it matches every key of an exclude row, and
-    # applies include after exclude. Ignoring multi-key excludes can only add a version
-    # that never runs, never skip one that does.
-    excluded = {row[key] for row in matrix.get("exclude", []) if row.keys() == {key}}
+    # applies include after exclude. An exclude that names other keys too could drop
+    # every row of a version without this seeing it, so it isn't allowed.
+    excludes = [row for row in matrix.get("exclude", []) if key in row]
+    assert all(row.keys() == {key} for row in excludes), excludes
+    excluded = {row[key] for row in excludes}
     versions = [version for version in axis if version not in excluded]
     return versions + [row[key] for row in matrix.get("include", []) if key in row]
 
