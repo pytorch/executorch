@@ -673,6 +673,27 @@ def _replace_dflash_model_forward(model: nn.Module) -> None:
     model.forward = types.MethodType(_mlx_dflash_forward, model)
 
 
+def share_rope_frequencies(model: nn.Module) -> None:
+    """Share identical frequency buffers after the final dtype conversion.
+
+    Export then lifts one buffer, allowing CSE to share phase, cosine and sine
+    calculations across layers without changing the FP32 arithmetic.
+    """
+    frequencies = {}
+    for module in model.modules():
+        if not isinstance(module, (MLXMuseGlimmerAttention, MLXDFlashAttention)):
+            continue
+        if not module.use_offgraph_kv_cache or (
+            isinstance(module, MLXMuseGlimmerAttention) and not module.use_rope
+        ):
+            continue
+        key = (module.head_dim, module.rope_theta, module.inv_freq.device)
+        if key in frequencies and torch.equal(module.inv_freq, frequencies[key]):
+            module.inv_freq = frequencies[key]
+        else:
+            frequencies[key] = module.inv_freq
+
+
 def dflash_mlx_source_transformations(
     model: nn.Module,
     max_context_length: int = 4096,

@@ -14,3 +14,9 @@ from executorch.backends.mlx.builder.op_registry import REGISTRY  # noqa: F401
 from executorch.backends.mlx.builder.program_builder import (  # noqa: F401
     MLXProgramBuilder,
 )
+from executorch.backends.mlx.custom_kernel_ops import (  # noqa: F401
+    pointwise_gates,
+    rms_norm_add,
+    rotary,
+    soft_cap,
+)
