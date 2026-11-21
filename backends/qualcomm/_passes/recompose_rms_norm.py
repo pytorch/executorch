@@ -11,15 +11,8 @@ from executorch.backends.qualcomm.builders.node_visitor import (
 )
 from executorch.backends.qualcomm.partition.utils import (
     find_nodes_left_on_cpu,
-    generate_qnn_executorch_option,
+    get_backend_info,
     may_be_delegated,
-)
-from executorch.backends.qualcomm.serialization.qc_schema import (
-    QnnExecuTorchBackendType,
-    QnnExecuTorchHtpPrecision,
-)
-from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
-    flatbuffer_to_option,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -101,25 +94,8 @@ class RecomposeRmsNorm(ExportPass):
         self.edge_program = edge_program
         self.skip_node_id_set = skip_node_id_set or set()
         self.skip_node_op_set = skip_node_op_set or set()
-        self.may_be_htp, self.htp_fp16, self.op_package_ops = True, False, set()
-        if compiler_specs is not None:
-            options = flatbuffer_to_option(
-                generate_qnn_executorch_option(compiler_specs)
-            )
-            backend_options = options.backend_options
-            self.may_be_htp = (
-                backend_options.backend_type == QnnExecuTorchBackendType.kHtpBackend
-            )
-            self.htp_fp16 = (
-                self.may_be_htp
-                and backend_options.htp_options is not None
-                and backend_options.htp_options.precision
-                == QnnExecuTorchHtpPrecision.kHtpFp16
-            )
-            self.op_package_ops = {
-                info.custom_op_name
-                for info in options.op_package_options.op_package_infos
-            }
+        self.backend_info = get_backend_info(compiler_specs)
+        self.may_be_htp, self.htp_fp16, _ = self.backend_info
         self.rms_norm_target = exir_ops.edge.aten.rms_norm.default
         self.skip_targets = [
             exir_ops.edge.aten.to.dtype,
@@ -258,9 +234,10 @@ class RecomposeRmsNorm(ExportPass):
                 for node in nodes
                 if may_be_delegated(
                     node,
+                    self.edge_program,
                     self.skip_node_id_set,
                     self.skip_node_op_set,
-                    self.op_package_ops,
+                    self.backend_info,
                 )
             },
             lambda arg: arg.op == "call_function" or arg in self.runtime_placeholders,

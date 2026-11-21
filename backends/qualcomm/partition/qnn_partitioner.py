@@ -65,6 +65,7 @@ from .utils import (
     filter_fn,
     find_nodes_left_on_cpu,
     generate_qnn_executorch_option,
+    get_htp_skip_reason,
     get_skip_decomp_table,
     has_data_dependent_shape,
     has_unsupported_dtype,
@@ -162,38 +163,6 @@ class QnnOperatorSupport(OperatorSupportBase):
 
         return True
 
-    def _is_bool_cat_of_static_tensor(self, node: torch.fx.Node) -> bool:
-        """
-        In fp16, HTP Concat can read a static bool input of all True as False,
-        with no error, for example torch.cat([x > 0, torch.full((2, 2), True)], 1).
-        Whether it does also depends on the shapes, so every such cat stays on
-        CPU. A static tensor read through a reshape is read wrong too, so ops
-        that only change the shape or the order of the dims are looked through.
-        Quantized HTP graphs read it right.
-        """
-        if (
-            not self.is_htp_fp16
-            or node.target != exir_ops.edge.aten.cat.default
-            or node.meta["val"].dtype != torch.bool
-        ):
-            return False
-        views = (
-            exir_ops.edge.aten.view_copy.default,
-            exir_ops.edge.aten.squeeze_copy.dims,
-            exir_ops.edge.aten.unsqueeze_copy.default,
-            exir_ops.edge.aten.permute_copy.default,
-            exir_ops.edge.aten.expand_copy.default,
-        )
-        static = False
-        for arg in node.args[0]:
-            while arg.target in views:
-                arg = arg.args[0]
-            static |= arg.target in constant_operator or (
-                is_parameter(arg, self.edge_program)
-                and not is_mutable_buffer_input(arg, self.edge_program)
-            )
-        return static
-
     def is_node_supported(self, _, node: torch.fx.Node) -> bool:  # noqa: C901
         if node.op != "call_function" or node.target in not_supported_operator:
             return False
@@ -240,13 +209,15 @@ class QnnOperatorSupport(OperatorSupportBase):
             )
             return False
 
-        # TODO: https://github.com/pytorch/executorch/issues/24750, seen on the
-        # x86 simulator of QNN SDK 2.51, not checked on a device. Remove this
-        # once HTP fp16 Concat reads a static bool input right, which
-        # CatBoolConstant in test_qnn_backend_cat checks.
-        if self._is_bool_cat_of_static_tensor(node):
+        htp_skip_reason = get_htp_skip_reason(
+            node,
+            self.edge_program,
+            self.backend_type == QnnExecuTorchBackendType.kHtpBackend,
+            self.is_htp_fp16,
+        )
+        if htp_skip_reason is not None:
             logger.info(
-                f"[{self.phase}] {node.target.__name__} | Skipped, bool concat of a static tensor"
+                f"[{self.phase}] {node.target.__name__} | Skipped, {htp_skip_reason}"
             )
             return False
 
@@ -273,16 +244,6 @@ class QnnOperatorSupport(OperatorSupportBase):
             node, self.nodes_to_wrappers
         )
         if node.target in constant_operator:
-            # Constant ops skip the QNN op check, but HTP cannot build one of
-            # more than 5 dims as a partition output (see define_constant).
-            if (
-                self.backend_type == QnnExecuTorchBackendType.kHtpBackend
-                and node.meta["val"].dim() > 5
-            ):
-                logger.info(
-                    f"[{self.phase}] {node.target.__name__} | Skipped, more than 5 dims"
-                )
-                return False
             return True
 
         op_wrapper_list = []

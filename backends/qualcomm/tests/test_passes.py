@@ -1525,6 +1525,36 @@ class TestPasses(unittest.TestCase):
                 )
                 torch.testing.assert_close(ep.module()(x), model(x))
 
+    def test_recompose_rms_norm_applies_the_htp_rules_of_the_partitioner(self):
+        class TableNormBoolCat(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("table", torch.linspace(1, 200, 8).reshape(2, 4))
+                self.register_buffer("scale", torch.tensor(2.0))
+                self.register_buffer("mask", torch.ones(2, 1, dtype=torch.bool))
+
+            def forward(self, x):
+                t = self.table
+                norm = t * torch.rsqrt(t.pow(2).mean(-1, keepdim=True) + 1e-6)
+                return x + torch.cat([norm * self.scale > 0, self.mask], 1).float()
+
+        # In fp16, HTP leaves a bool cat of a static tensor on CPU. Then
+        # nothing in the norm's partition reads a runtime value, so HTP drops
+        # it, and rms_norm has no CPU kernel.
+        sample_input = (torch.randn(2, 5),)
+        try:
+            edge = to_edge_transform_and_lower_to_qnn(
+                TableNormBoolCat(),
+                sample_input,
+                self._htp_compiler_specs(True),
+                passes_job=passes_job_without_constant_folding(),
+            )
+        except RuntimeError as e:
+            if "Failed to initialize QNN backend" in str(e):
+                skip_without_qnn_sdk(self, e)
+            raise
+        self.assertIn(exir_ops.edge.aten.add.Tensor, delegated_ops(edge))
+
     def test_tester_rebuilds_a_normalization_for_htp_fp16(self):
         # The backend test suite lowers through this stage, with HTP float16
         # specs by default.

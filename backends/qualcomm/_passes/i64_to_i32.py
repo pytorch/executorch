@@ -16,14 +16,8 @@ from executorch.backends.qualcomm.builders.utils import (
 )
 from executorch.backends.qualcomm.partition.utils import (
     find_nodes_left_on_cpu,
-    generate_qnn_executorch_option,
+    get_backend_info,
     may_be_delegated,
-)
-from executorch.backends.qualcomm.serialization.qc_schema import (
-    QnnExecuTorchBackendType,
-)
-from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
-    flatbuffer_to_option,
 )
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_INDEX_CAST,
@@ -78,19 +72,8 @@ class I64toI32(ExportPass):
         self.skip_node = skip_node
         self.skip_node_id_set = skip_node_id_set or set()
         self.skip_node_op_set = skip_node_op_set or set()
-        self.may_be_htp, self.op_package_ops = True, set()
-        if compiler_specs is not None:
-            options = flatbuffer_to_option(
-                generate_qnn_executorch_option(compiler_specs)
-            )
-            self.may_be_htp = (
-                options.backend_options.backend_type
-                == QnnExecuTorchBackendType.kHtpBackend
-            )
-            self.op_package_ops = {
-                info.custom_op_name
-                for info in options.op_package_options.op_package_infos
-            }
+        self.backend_info = get_backend_info(compiler_specs)
+        self.may_be_htp = self.backend_info[0]
 
     # pyre-ignore[2]
     def _is_tensor_of_dtype(self, node_val, dtype: torch.dtype) -> bool:
@@ -102,7 +85,11 @@ class I64toI32(ExportPass):
             node
             for node in nodes
             if may_be_delegated(
-                node, self.skip_node_id_set, self.skip_node_op_set, self.op_package_ops
+                node,
+                self.edge_program,
+                self.skip_node_id_set,
+                self.skip_node_op_set,
+                self.backend_info,
             )
         }
         kept = set(nodes) - delegable
