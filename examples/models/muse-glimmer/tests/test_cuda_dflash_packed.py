@@ -9,6 +9,7 @@
 import copy
 import importlib.resources
 import json
+import tempfile
 import unittest
 import unittest.mock
 from dataclasses import replace
@@ -90,6 +91,35 @@ class PackedOracleCache:
 
 
 class PackedDraftMathTest(unittest.TestCase):
+    def test_gguf_context_capacity_survives_sequence_export(self):
+        from executorch.examples.models.muse_glimmer.loaders.dflash_loader import (
+            load_dflash_gguf,
+        )
+        from executorch.examples.models.muse_glimmer.tests.test_dflash2 import (
+            write_original_dflash_gguf,
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "draft.gguf"
+            write_original_dflash_gguf(path)
+            draft, config = load_dflash_gguf(str(path), backend="cuda", max_seq_len=32)
+        target, _ = models()
+        target.config.max_seq_len = 32
+        _, manifest, methods = prepare_cuda_packed_draft(
+            target,
+            target.config,
+            draft,
+            max_step_tokens=8,
+            max_cells=64,
+            max_owners=1,
+            kv_layout="sequence",
+            max_kv_seqs=2,
+        )
+        capacity = methods["get_draft_offgraph_kv_seq_capacity"]
+        self.assertEqual(capacity, 64)
+        self.assertEqual(json.loads(manifest)["maximum_capacity"], capacity)
+        self.assertGreaterEqual(capacity - config.block_size, target.config.max_seq_len)
+
     def test_uneven_context_nonidentity_order_and_zero_new_context(self):
         target, draft = models()
         refs = [copy.deepcopy(draft), copy.deepcopy(draft)]

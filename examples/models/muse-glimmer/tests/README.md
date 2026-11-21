@@ -23,8 +23,10 @@ ctest --test-dir cmake-out/examples/models/muse-glimmer-batching \
   -R '^muse_glimmer_mlx_dflash$' --output-on-failure --no-tests=error
 ```
 
-The tiny PTEs cover rejection, cache lifecycle, packed owners, and legacy
-artifacts against eager references.
+Random and quantized PTE fixtures compare draft numerics against eager references.
+Controlled rejection and cache-lifecycle checks assert expected tokens and
+acceptance counts; continuation checks compare with target-only execution,
+including legacy artifacts.
 Routing-sensitive fixtures also compare per-round tokens and acceptance counts
 between solo and packed execution with unequal prompts and reordered owners.
 A vendored stateless official reference separately checks DFlash2 model semantics,
