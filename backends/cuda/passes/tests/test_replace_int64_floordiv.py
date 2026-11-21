@@ -7,8 +7,8 @@
 import unittest
 
 import torch
-from backends.cuda.cuda_backend import CudaBackend
-from backends.cuda.passes.replace_int64_floordiv import (
+from executorch.backends.cuda.cuda_backend import CudaBackend
+from executorch.backends.cuda.passes.replace_int64_floordiv import (
     ReplaceInt64FloorDivWithFloatPass,
 )
 from executorch.exir import to_edge
