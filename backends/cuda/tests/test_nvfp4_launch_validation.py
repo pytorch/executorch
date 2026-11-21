@@ -61,7 +61,10 @@ def test_rejects_malformed_operands(invalid, op):
         op(x, q, s, pts)
 
 
-@pytest.mark.parametrize("static", [-1.0, float("nan"), float("inf")])
+@pytest.mark.parametrize(
+    "static",
+    [torch.ones(2), torch.ones(1, dtype=torch.float64), torch.ones(1, device="meta")],
+)
 def test_activation_rejects_invalid_static_scale(static):
     with pytest.raises(ValueError, match="static activation scale"):
         kernels.nvfp4_quantize_activation(torch.empty((2, 16)), static)

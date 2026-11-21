@@ -5,6 +5,7 @@
 """CPU-only NVFP4 packing, fusion and serialized metadata contracts."""
 
 import io
+import math
 
 import pytest
 import torch
@@ -96,15 +97,37 @@ def test_to_meta_keeps_layout():
     assert meta.shape == w.shape and meta.unit_scale
 
 
-def test_activation_scale_is_a_python_float():
+def test_activation_scale_is_a_scalar_tensor():
     w = shards(192)[0]
     w = CudaNVFP4Tensor(
         w.qdata, w.scale, w.per_tensor_scale, act_per_tensor_scale=torch.tensor([0.5])
     )
-    assert w.act_per_tensor_scale == 0.5
-    assert type(w.act_per_tensor_scale) is float
-    assert CudaNVFP4Tensor.fuse_along_output([w, w]).act_per_tensor_scale == 0.5
-    assert w.to(dtype=torch.float16).act_per_tensor_scale == 0.5
+    for t in (
+        w,
+        CudaNVFP4Tensor.fuse_along_output([w, w]),
+        w.to(dtype=torch.float16),
+    ):
+        act = t.act_per_tensor_scale
+        assert act.shape == (1, 1) and act.dtype == torch.float32
+        assert act.item() == 0.5
+    other = CudaNVFP4Tensor(
+        w.qdata, w.scale, w.per_tensor_scale, act_per_tensor_scale=0.25
+    )
+    with pytest.raises(ValueError, match="activation scale"):
+        CudaNVFP4Tensor.fuse_along_output([w, other])
+    stream = io.BytesIO()
+    torch.save(w, stream)
+    stream.seek(0)
+    assert torch.load(stream, weights_only=True).act_per_tensor_scale.item() == 0.5
+    with FakeTensorMode() as mode:
+        assert is_fake(mode.from_tensor(w).act_per_tensor_scale)
+
+
+@pytest.mark.parametrize("act", [0.0, -1.0, math.inf, math.nan, torch.ones(2)])
+def test_invalid_activation_scale_rejected(act):
+    w = shards(192)[0]
+    with pytest.raises(ValueError, match="act_per_tensor_scale"):
+        CudaNVFP4Tensor(w.qdata, w.scale, w.per_tensor_scale, act_per_tensor_scale=act)
 
 
 @pytest.mark.parametrize(
@@ -203,6 +226,7 @@ def test_dequantize_low_nibble_first(row_scales):
         "global_scale_dtype",
         "device",
         "k_multiple",
+        "orig_dtype",
     ],
 )
 def test_invalid_layout_rejected(invalid):
@@ -210,6 +234,7 @@ def test_invalid_layout_rejected(invalid):
     s = torch.full((2, 1), 56, dtype=torch.uint8)
     pts = torch.ones(1)
     block = 16
+    orig_dtype = torch.bfloat16
     if invalid == "qdata_dtype":
         q = q.float()
     elif invalid == "qdata_shape":
@@ -226,7 +251,9 @@ def test_invalid_layout_rejected(invalid):
         pts = torch.ones(1, device="meta")
     elif invalid == "k_multiple":
         q = torch.zeros((2, 12), dtype=torch.uint8)
+    elif invalid == "orig_dtype":
+        orig_dtype = torch.int8
     else:
         pts = torch.ones(3)
-    with pytest.raises(ValueError, match="CUDA NVFP4"):
-        CudaNVFP4Tensor(q, s, pts, block_size=block)
+    with pytest.raises(ValueError, match="NVFP4"):
+        CudaNVFP4Tensor(q, s, pts, block_size=block, orig_dtype=orig_dtype)

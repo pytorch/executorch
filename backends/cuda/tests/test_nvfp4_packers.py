@@ -7,7 +7,7 @@ import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
 import pytest
 import torch
 from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
-from executorch.backends.cuda.tests.nvfp4_test_utils import portable_weight
+from executorch.backends.cuda.tests.nvfp4_test_utils import GemmaPacked, portable_weight
 from executorch.examples.models.gemma4_31b.cuda_packers import (
     pack_embedding_for_cuda,
     pack_linear_for_cuda,
@@ -59,6 +59,32 @@ def test_portable_nvfp4_is_packed(pack):
     assert isinstance(module.weight, CudaNVFP4Tensor)
     assert not module.weight.requires_grad
     assert torch.equal(module.weight.dequantize(), w.dequantize())
+
+
+@pytest.mark.parametrize("native", [False, True])
+def test_packed_modules_export_nvfp4_ops(native, monkeypatch):
+    from executorch.backends.cuda.quantize_op_dispatch import nvfp4_dispatch
+
+    monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: native)
+    monkeypatch.delenv("ET_CUDA_NVFP4_ACT", raising=False)
+    model = GemmaPacked()
+    for packed in (model.embedding.weight, model.linear.weight):
+        assert packed.unit_scale
+        assert packed.act_per_tensor_scale.shape == (1, 1)
+        assert packed.act_per_tensor_scale.item() == pytest.approx(0.02)
+    ids = torch.tensor([[1, 5], [69, 0]])
+    x = torch.randn(37, 192, dtype=torch.bfloat16)
+    ep = torch.export.export(model, (ids, x), strict=True)
+    nodes = {
+        str(node.target): node for node in ep.graph.nodes if node.op == "call_function"
+    }
+    assert "triton.nvfp4_embedding.default" in nodes
+    if native:
+        # The static activation scale reaches the op as a lifted constant.
+        prefill = nodes["triton.nvfp4_auto_prefill.default"]
+        assert isinstance(prefill.args[4], torch.fx.Node)
+    else:
+        assert len([t for t in nodes if t.startswith("triton.nvfp4_")]) == 2
 
 
 @pytest.mark.parametrize("pack", [pack_linear_for_cuda, pack_embedding_for_cuda])
