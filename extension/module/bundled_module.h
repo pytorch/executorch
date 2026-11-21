@@ -56,12 +56,6 @@ class BundledModule : public Module {
   // Disallow copying
   BundledModule(BundledModule&&) = delete;
   BundledModule& operator=(BundledModule&&) = delete;
-  // Default destructor
-  ~BundledModule() {
-    if (is_loaded_from_file_) {
-      delete[] static_cast<const uint8_t*>(bundled_program_ptr_);
-    }
-  }
 
   /**
    * Constructs an instance by loading a bundled program from a file with
@@ -125,8 +119,16 @@ class BundledModule : public Module {
       double atol = 1e-8);
 
  private:
+  BundledModule(
+      const void* bundled_program_ptr,
+      std::unique_ptr<runtime::DataLoader> program_loader,
+      std::unique_ptr<runtime::MemoryAllocator> memory_allocator,
+      std::unique_ptr<runtime::MemoryAllocator> temp_allocator,
+      std::unique_ptr<runtime::EventTracer> event_tracer,
+      std::unique_ptr<runtime::DataLoader> data_map_loader);
+
   const void* bundled_program_ptr_;
-  bool is_loaded_from_file_ = false;
+  std::shared_ptr<uint8_t[]> file_data_;
 };
 
 } // namespace ET_BUNDLED_MODULE_NAMESPACE
