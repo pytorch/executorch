@@ -1,0 +1,57 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+"""NVFP4 launches using the INT4 family's compilation and tile selection."""
+
+import functools
+
+from executorch.backends.cuda.autotune.cuda_graph_timing import time_with_cuda_graph_us
+from executorch.backends.cuda.autotune.launch_params import _size_hint
+from executorch.backends.cuda.triton.kernels import quantized_gemm_utils
+from executorch.backends.cuda.triton.kernels.quantized_gemm_family import (
+    _precompile_untuned_configs,
+    _queue_untuned_configs,
+    _QUEUING_ONLY,
+    _tuned_kernel,
+)
+from torch.library import wrap_triton
+
+
+def nvfp4_launch_bench(kernel_call):
+    return time_with_cuda_graph_us(kernel_call, statistic="mean", replays=3)
+
+
+# NVFP4 tile timing: median of three cold CUDA-graph means.
+autotune_do_bench = functools.partial(
+    quantized_gemm_utils.autotune_do_bench, statistic="mean", replays=3
+)
+
+
+def launch_nvfp4_kernel(kernel, grid, args, m_argument, **constexprs):
+    if _QUEUING_ONLY.get():
+        _queue_untuned_configs(kernel, args, constexprs)
+        return
+    _precompile_untuned_configs(kernel, args, constexprs)
+    hinted = list(args)
+    hinted[m_argument] = _size_hint(hinted[m_argument])
+    selected = _tuned_kernel(kernel, tuple(hinted), constexprs)
+    wrap_triton(selected)[grid](*args, **constexprs)
+
+
+def prune_nvfp4_stages(configs, named_args, **kwargs):
+    values = {**named_args, **kwargs}
+    split = values.get("SPLIT_K", values.get("SPLIT", 1))
+    eligible = [
+        config
+        for config in configs
+        if not config.kwargs.get("HALF2", False) or values.get("NATIVE", False)
+    ]
+    kept = [
+        config
+        for config in eligible
+        if config.num_stages
+        <= (int(values["K"]) + config.kwargs["BK"] * split - 1)
+        // (config.kwargs["BK"] * split)
+    ]
+    return kept or [min(eligible, key=lambda config: config.num_stages)]

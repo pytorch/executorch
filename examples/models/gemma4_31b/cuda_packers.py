@@ -59,11 +59,29 @@ def pack_linear_for_cuda(module: nn.Module, weights: dict[str, torch.Tensor]) ->
     from executorch.backends.cuda.dp4a_planar_int6_tensor import (
         CudaDp4aPlanarInt6Tensor,
     )
+    from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
     from executorch.extension.llm.export.gguf import ExportableGGUFTensor
     from executorch.extension.llm.export.int4 import ExportableInt4Tensor
+
+    from executorch.extension.llm.export.nvfp4 import ExportableNVFP4Tensor
     from torchao.quantization import IntxUnpackedToInt8Tensor
 
     w = weights["weight"]
+    if isinstance(w, ExportableGGUFTensor) and w.ggml_type == "nvfp4":
+        # The per-tensor scale is a separate GGUF ".scale" tensor; the loader
+        # pairs it by name and calls to_exportable_nvfp4_tensor itself.
+        raise ValueError(
+            "GGUF NVFP4 weights need their .scale tensor: convert them with "
+            "to_exportable_nvfp4_tensor(per_tensor_scale) before packing"
+        )
+    if isinstance(w, ExportableNVFP4Tensor):
+        module.weight = nn.Parameter(
+            CudaNVFP4Tensor.from_exportable(w), requires_grad=False
+        )
+        return
+    if isinstance(w, CudaNVFP4Tensor):
+        module.weight = nn.Parameter(w, requires_grad=False)
+        return
     if isinstance(w, ExportableInt4Tensor):
         # Canonical portable int4 (what load_checkpoint produces by default).
         # CudaCoalescedInt4Tensor reuses the nibble-packed qdata untouched and
@@ -116,11 +134,29 @@ def pack_embedding_for_cuda(
     safetensors int8 embedding) is assigned unchanged. INT4 is unsupported (no
     int4 embedding op).
     """
+    from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
     from executorch.extension.llm.export.gguf import ExportableGGUFTensor
     from executorch.extension.llm.export.int4 import ExportableInt4Tensor
+
+    from executorch.extension.llm.export.nvfp4 import ExportableNVFP4Tensor
     from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
 
     w = weights["weight"]
+    if isinstance(w, ExportableGGUFTensor) and w.ggml_type == "nvfp4":
+        # The per-tensor scale is a separate GGUF ".scale" tensor; the loader
+        # pairs it by name and calls to_exportable_nvfp4_tensor itself.
+        raise ValueError(
+            "GGUF NVFP4 weights need their .scale tensor: convert them with "
+            "to_exportable_nvfp4_tensor(per_tensor_scale) before packing"
+        )
+    if isinstance(w, ExportableNVFP4Tensor):
+        module.weight = nn.Parameter(
+            CudaNVFP4Tensor.from_exportable(w), requires_grad=False
+        )
+        return
+    if isinstance(w, CudaNVFP4Tensor):
+        module.weight = nn.Parameter(w, requires_grad=False)
+        return
     if isinstance(w, ExportableGGUFTensor):
         w = w.to_intx_unpacked_to_int8_tensor(scale_dtype=torch.bfloat16)
     elif isinstance(w, (Int4Tensor, ExportableInt4Tensor)):
