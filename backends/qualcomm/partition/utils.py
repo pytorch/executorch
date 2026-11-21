@@ -6,7 +6,7 @@
 
 import logging
 import operator
-from typing import Callable, List, Optional, Set
+from typing import Callable, List, Optional, Set, Tuple
 
 import torch
 from executorch.backends.qualcomm.builders.node_visitor import (
@@ -18,6 +18,17 @@ from executorch.backends.qualcomm.builders.node_visitor_manager import (
     _node_visitor_dict,
 )
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
+from executorch.backends.qualcomm.builders.utils import (
+    is_mutable_buffer_input,
+    is_parameter,
+)
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+    QnnExecuTorchHtpPrecision,
+)
+from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
+    flatbuffer_to_option,
+)
 
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_BYPASS_NODE,
@@ -31,6 +42,7 @@ from torch.utils import _pytree as pytree
 
 from .common_defs import (
     allow_list_operator,
+    constant_operator,
     not_supported_operator,
     to_be_implemented_operator,
 )
@@ -220,17 +232,97 @@ def must_stay_on_cpu(node: torch.fx.Node) -> bool:
     ) or has_data_dependent_shape(node)
 
 
+def get_backend_info(compiler_specs) -> Tuple[bool, bool, Set[str]]:
+    """
+    Whether `compiler_specs` target HTP and HTP float16, and the ops that
+    their op packages build. Without specs the backend is not known, so HTP
+    is assumed, but not float16.
+    """
+    if compiler_specs is None:
+        return True, False, set()
+    options = flatbuffer_to_option(generate_qnn_executorch_option(compiler_specs))
+    backend_options = options.backend_options
+    is_htp = backend_options.backend_type == QnnExecuTorchBackendType.kHtpBackend
+    is_htp_fp16 = (
+        is_htp
+        and backend_options.htp_options is not None
+        and backend_options.htp_options.precision == QnnExecuTorchHtpPrecision.kHtpFp16
+    )
+    op_package_ops = {
+        info.custom_op_name for info in options.op_package_options.op_package_infos
+    }
+    return is_htp, is_htp_fp16, op_package_ops
+
+
+def _is_bool_cat_of_static_tensor(
+    node: torch.fx.Node, edge_program: torch.export.ExportedProgram
+) -> bool:
+    if (
+        node.target != exir_ops.edge.aten.cat.default
+        or node.meta["val"].dtype != torch.bool
+    ):
+        return False
+    views = (
+        exir_ops.edge.aten.view_copy.default,
+        exir_ops.edge.aten.squeeze_copy.dims,
+        exir_ops.edge.aten.unsqueeze_copy.default,
+        exir_ops.edge.aten.permute_copy.default,
+        exir_ops.edge.aten.expand_copy.default,
+    )
+    static = False
+    for arg in node.args[0]:
+        while arg.target in views:
+            arg = arg.args[0]
+        static |= arg.target in constant_operator or (
+            is_parameter(arg, edge_program)
+            and not is_mutable_buffer_input(arg, edge_program)
+        )
+    return static
+
+
+def get_htp_skip_reason(
+    node: torch.fx.Node,
+    edge_program: torch.export.ExportedProgram,
+    is_htp: bool,
+    is_htp_fp16: bool,
+) -> Optional[str]:
+    """
+    Why HTP cannot take the node although QNN's op check may accept it, or
+    None. QnnOperatorSupport and the passes that estimate its decisions both
+    ask this, so they apply the same rules.
+    - Constant ops skip the QNN op check, but HTP cannot build one of more
+      than 5 dims as a partition output (see define_constant). Whether it
+      will be one is not known per node, so every such constant stays on CPU.
+    - In fp16, HTP Concat can read a static bool input of all True as False,
+      with no error, for example torch.cat([x > 0, torch.full((2, 2), True)], 1).
+      Whether it does also depends on the shapes, so every such cat stays on
+      CPU. A static tensor read through a reshape is read wrong too, so ops
+      that only change the shape or the order of the dims are looked through.
+      Quantized HTP graphs read it right.
+    """
+    if is_htp and node.target in constant_operator and node.meta["val"].dim() > 5:
+        return "more than 5 dims"
+    # TODO: https://github.com/pytorch/executorch/issues/24750, seen on the
+    # x86 simulator of QNN SDK 2.51, not checked on a device. Remove this
+    # once HTP fp16 Concat reads a static bool input right, which
+    # CatBoolConstant in test_qnn_backend_cat checks.
+    if is_htp_fp16 and _is_bool_cat_of_static_tensor(node, edge_program):
+        return "bool concat of a static tensor"
+    return None
+
+
 def may_be_delegated(
     node: torch.fx.Node,
+    edge_program: Optional[torch.export.ExportedProgram],
     skip_node_id_set: Set[str],
     skip_node_op_set: Set[str],
-    op_package_ops: Set[str],
+    backend_info: Tuple[bool, bool, Set[str]],
 ) -> bool:
     """
     Whether QnnPartitioner may take the node, as far as can be told without
-    QNN's op validation. `op_package_ops` names the ops that the op packages
-    in the compiler specs build.
+    QNN's op validation. `backend_info` comes from get_backend_info.
     """
+    is_htp, is_htp_fp16, op_package_ops = backend_info
     if node.op != "call_function":
         return False
     if (
@@ -248,6 +340,7 @@ def may_be_delegated(
         and node.name not in skip_node_id_set
         and node.target.__name__ not in skip_node_op_set
         and not must_stay_on_cpu(node)
+        and get_htp_skip_reason(node, edge_program, is_htp, is_htp_fp16) is None
     )
 
 
