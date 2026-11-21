@@ -532,8 +532,8 @@ if(BUILD_TESTING)
       EXTRA_LIBS aoti_cuda_backend
     )
     et_cxx_test(
-      test_cuda_private_row_layout SOURCES runtime/test/test_private_row_layout.cpp
-      EXTRA_LIBS aoti_cuda_backend
+      test_cuda_private_row_layout SOURCES
+      runtime/test/test_private_row_layout.cpp EXTRA_LIBS aoti_cuda_backend
     )
     et_cxx_test(
       test_cuda_kv_cache SOURCES runtime/test/test_cuda_kv_cache.cpp EXTRA_LIBS

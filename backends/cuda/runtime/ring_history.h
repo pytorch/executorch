@@ -45,6 +45,24 @@ class RingHistory final {
     int count;
   };
 
+  struct RestorePlan {
+    // [start, resident_start) comes from undo history; the remaining rows
+    // through end are still in the source's device Ring.
+    int start;
+    int resident_start;
+    int end;
+  };
+
+  static std::optional<RestorePlan>
+  restore_plan(int window, int keep, int resident_end) {
+    if (window <= 0 || keep < 0 || resident_end < keep) {
+      return std::nullopt;
+    }
+    const int start = std::max(0, keep - window + 1);
+    const int resident = std::max(0, resident_end - window + 1);
+    return RestorePlan{start, std::min(keep, std::max(start, resident)), keep};
+  }
+
   static runtime::Result<std::unique_ptr<RingHistory>> create(
       int window,
       int max_write,

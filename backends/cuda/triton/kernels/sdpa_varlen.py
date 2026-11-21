@@ -58,6 +58,7 @@ def _private_rows(
     stride_row,
     stride_head,
     RING: tl.constexpr,
+    WINDOW: tl.constexpr,
 ):
     base = tl.load(Layout_ptr + col * 2).to(tl.int64)
     capacity = tl.load(Layout_ptr + col * 2 + 1)
@@ -66,27 +67,33 @@ def _private_rows(
         absolute_start = tl.load(Step_ptr + col * 3 + 1)
         count = tl.load(Step_ptr + col * 3 + 2)
         staged = (positions >= absolute_start) & (positions < absolute_start + count)
-        retained = (positions >= tl.maximum(0, absolute_start - capacity)) & (
+        # Clone/rewind need only W-1 old rows. The remaining slot can contain
+        # arbitrary allocator bytes; even a zero attention weight times NaN
+        # would corrupt the value reduction if we loaded it.
+        history_rows = tl.minimum(capacity, WINDOW - 1)
+        retained = (positions >= tl.maximum(0, absolute_start - history_rows)) & (
             positions < absolute_start
         )
         physical = positions % tl.maximum(capacity, 1)
-        old = tl.load(
+        old_ptr = (
             Storage_ptr
             + (base + physical[:, None]) * stride_row
             + h_kv * stride_head
-            + offs_d[None, :],
-            mask=(valid & retained & (capacity > 0))[:, None],
-            other=0.0,
+            + offs_d[None, :]
         )
-        new = tl.load(
+        new_ptr = (
             Stage_ptr
             + (stage_start + positions[:, None] - absolute_start) * stride_row
             + h_kv * stride_head
-            + offs_d[None, :],
-            mask=(valid & staged)[:, None],
+            + offs_d[None, :]
+        )
+        # Select addresses before loading, so pipelining holds one K/V tile
+        # rather than separate history and staging tiles in shared memory.
+        return tl.load(
+            tl.where(staged[:, None], new_ptr, old_ptr),
+            mask=(valid & (staged | (retained & (capacity > 0))))[:, None],
             other=0.0,
         )
-        return tl.where(staged[:, None], new, old)
     else:
         return tl.load(
             Storage_ptr
@@ -221,6 +228,7 @@ def _sdpa_varlen_kernel(  # noqa: C901
                 stride_kc,
                 stride_kh,
                 RING,
+                WINDOW,
             )
         else:
             k = tl.load(
@@ -258,6 +266,7 @@ def _sdpa_varlen_kernel(  # noqa: C901
                 stride_vc,
                 stride_vh,
                 RING,
+                WINDOW,
             )
         else:
             v = tl.load(
@@ -407,6 +416,7 @@ def _sdpa_varlen_decode_kernel(  # noqa: C901
                 stride_kc,
                 stride_kh,
                 RING,
+                WINDOW,
             )
         else:
             k = tl.load(
@@ -444,6 +454,7 @@ def _sdpa_varlen_decode_kernel(  # noqa: C901
                 stride_vc,
                 stride_vh,
                 RING,
+                WINDOW,
             )
         else:
             v = tl.load(

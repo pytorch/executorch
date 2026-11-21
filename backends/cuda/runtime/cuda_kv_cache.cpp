@@ -928,7 +928,8 @@ class CudaBatchedSequenceCache final : public cache::Cache,
   // nor invalidates captured graphs.
   void clear() override {
     std::lock_guard<std::mutex> guard(mutex_);
-    if ((dflash_block_size_ || runtime_columns_) && pool_.allocated()) {
+    if ((dflash_block_size_ || runtime_columns_) &&
+        (pool_.allocated() || pool_.requires_clear())) {
       // A failed forward can be abandoned by a different host thread. Fence
       // the originating stream before reusing its sequence columns.
       if (pool_.synchronize(/*all_streams=*/true) != Error::Ok) {
@@ -948,6 +949,7 @@ class CudaBatchedSequenceCache final : public cache::Cache,
         history->clear();
       }
     }
+    pool_.reset_failure_after_clear();
     poisoned_ = false;
     inflight_ = false;
   }
@@ -963,7 +965,8 @@ class CudaBatchedSequenceCache final : public cache::Cache,
     std::map<int32_t, int> counts;
     int runs = 0;
     for (size_t i = 0; i < seq_ids.size(); ++i) {
-      if (seqs_.count(seq_ids[i]) == 0) {
+      const auto sequence = seqs_.find(seq_ids[i]);
+      if (sequence == seqs_.end() || sequence->second.failed) {
         return false;
       }
       ++counts[seq_ids[i]];
@@ -1021,8 +1024,8 @@ class CudaBatchedSequenceCache final : public cache::Cache,
     std::lock_guard<std::mutex> guard(mutex_);
     const auto source = seqs_.find(src);
     const auto id = free_sequence_id();
-    if (source == seqs_.end() || !id || !pool_.allocated() || poisoned_ ||
-        (runtime_columns_ && inflight_)) {
+    if (source == seqs_.end() || source->second.failed || !id ||
+        !pool_.allocated() || poisoned_ || (runtime_columns_ && inflight_)) {
       return std::nullopt;
     }
     // The copies below run on this thread's stream, which may not be the
@@ -1099,12 +1102,18 @@ class CudaBatchedSequenceCache final : public cache::Cache,
     std::lock_guard<std::mutex> guard(mutex_);
     const auto it = seqs_.find(seq_id);
     if (private_rows_) {
-      if (it == seqs_.end() || inflight_ || poisoned_) {
+      if (it == seqs_.end() || it->second.failed || inflight_ || poisoned_) {
         return false;
       }
       cache::SequenceCache plan(it->second.plan);
-      if (!plan.rewind(position) ||
-          restore_private(seq_id, seq_id, position) != Error::Ok) {
+      if (!plan.rewind(position)) {
+        return false;
+      }
+      if (position == it->second.plan.length()) {
+        return true;
+      }
+      if (restore_private(seq_id, seq_id, position) != Error::Ok) {
+        it->second.failed = true;
         return false;
       }
       for (auto& history : histories_) {
@@ -1305,7 +1314,7 @@ class CudaBatchedSequenceCache final : public cache::Cache,
           "offgraph_kv: commit width differs from preparation");
       const Error archived = archive_private_step();
       if (archived != Error::Ok) {
-        poisoned_ = true;
+        // abort_step fences the failed forward and retires only its owners.
         return archived;
       }
     }
@@ -1339,9 +1348,13 @@ class CudaBatchedSequenceCache final : public cache::Cache,
     }
     inflight_ = false;
     if (private_rows_) {
+      poisoned_ |= pool_.requires_clear();
       // A failed forward may already have overwritten physical Ring slots;
-      // its claimed rows have no completed undo history.
-      poisoned_ = true;
+      // only its owners have uncertain contents. The runner retires them;
+      // unrelated owners must remain usable without a whole-cache clear.
+      for (const auto& run : pending_runs_) {
+        seqs_.at(run.owner).failed = true;
+      }
       pending_runs_.clear();
       pending_width_ = 0;
     }
@@ -1419,7 +1432,9 @@ class CudaBatchedSequenceCache final : public cache::Cache,
       ET_CHECK_OK_OR_RETURN_ERROR(prepare_private(
           {}, 0, cudaStreamPerThread, /*compact=*/true, spare_columns));
       // Owner geometry now agrees with the committed storage.
-      ET_CHECK_OK_OR_RETURN_ERROR(pool_.synchronize(/*all_streams=*/true));
+      const Error fenced = pool_.synchronize(/*all_streams=*/true);
+      poisoned_ |= pool_.requires_clear();
+      ET_CHECK_OK_OR_RETURN_ERROR(fenced);
       extension::cuda::CudaAllocator::release_cached_memory(pool_.device());
       return Error::Ok;
     }
@@ -1435,6 +1450,7 @@ class CudaBatchedSequenceCache final : public cache::Cache,
   struct Sequence {
     int column;
     cache::SequenceCache plan;
+    bool failed{false};
   };
 
   // A ring never needs more rows than a sequence can hold; it then never wraps.
@@ -1547,8 +1563,10 @@ class CudaBatchedSequenceCache final : public cache::Cache,
         spare -= held;
       }
     }
-    ET_CHECK_OK_OR_RETURN_ERROR(pool_.prepare_private(
-        private_required_, private_live_, width, stream, compact));
+    const Error prepared = pool_.prepare_private(
+        private_required_, private_live_, width, stream, compact);
+    poisoned_ |= pool_.requires_clear();
+    ET_CHECK_OK_OR_RETURN_ERROR(prepared);
     columns_ = 1;
     for (int owner = 0; owner < max_seqs_; ++owner) {
       columns_ += pool_.private_layout(0).spans[owner].capacity > 0;
@@ -1685,41 +1703,70 @@ class CudaBatchedSequenceCache final : public cache::Cache,
     ET_CHECK_OK_OR_RETURN_ERROR(device.error());
     ET_CHECK_OK_OR_RETURN_ERROR(
         pool_.follow_previous_step(cudaStreamPerThread));
+    bool copied = false;
+    aoti::ScopeGuard fence([&]() noexcept {
+      if (!copied && pool_.synchronize(/*all_streams=*/true) != Error::Ok) {
+        poisoned_ = true;
+      }
+    });
+    const int resident_end = seqs_.at(source).plan.length();
     for (size_t layer = 0; layer < histories_.size(); ++layer) {
       if (!histories_[layer]) {
         continue;
       }
-      const auto span = pool_.private_layout(layer).spans[destination];
+      const auto& spans = pool_.private_layout(layer).spans;
+      const auto src = spans[source];
+      const auto dst = spans[destination];
+      const auto restore = RingHistory::restore_plan(
+          geometry_.layers[layer].policy.window, keep, resident_end);
+      ET_CHECK_OR_RETURN_ERROR(
+          restore.has_value(), InvalidArgument, "invalid Ring restore plan");
       const size_t bytes =
           static_cast<size_t>(geometry_.layers[layer].n_kv_heads) *
           geometry_.layers[layer].head_dim * sizeof(uint16_t);
       for (int plane = 0; plane < 2; ++plane) {
-        int position =
-            std::max(0, keep - geometry_.layers[layer].policy.window + 1);
-        while (position < keep) {
-          const int physical = position % span.capacity;
+        auto* data = static_cast<uint8_t*>(pool_.layer_data(layer, plane != 0));
+        int position = restore->start;
+        while (position < restore->resident_start) {
+          const int physical = position % dst.capacity;
           const auto rows = histories_[layer]->read(
               source,
               position,
-              std::min(keep - position, span.capacity - physical),
+              std::min(
+                  restore->resident_start - position, dst.capacity - physical),
               plane);
-          if (!rows) {
-            (void)pool_.synchronize(/*all_streams=*/true);
-            return Error::InvalidArgument;
-          }
+          ET_CHECK_OR_RETURN_ERROR(
+              rows.has_value(), InvalidArgument, "missing Ring undo rows");
           const auto error = cudaMemcpyAsync(
-              static_cast<uint8_t*>(pool_.layer_data(layer, plane != 0)) +
-                  (static_cast<int64_t>(span.base) + physical) * bytes,
+              data + (static_cast<int64_t>(dst.base) + physical) * bytes,
               rows->data,
               static_cast<size_t>(rows->count) * bytes,
               cudaMemcpyHostToDevice,
               cudaStreamPerThread);
-          if (error != cudaSuccess) {
-            poisoned_ = true;
-            (void)pool_.synchronize(/*all_streams=*/true);
-            return Error::Internal;
-          }
+          ET_CHECK_OR_RETURN_ERROR(
+              error == cudaSuccess, Internal, "Ring undo copy failed");
           position += rows->count;
+        }
+        // A rewind leaves resident rows in place. A clone copies that portion
+        // device-to-device; only already evicted rows need pageable H2D.
+        if (source != destination) {
+          while (position < keep) {
+            const int from = position % src.capacity;
+            const int to = position % dst.capacity;
+            const int count = std::min(
+                keep - position,
+                std::min(src.capacity - from, dst.capacity - to));
+            ET_CHECK_OR_RETURN_ERROR(
+                cudaMemcpyAsync(
+                    data + (static_cast<int64_t>(dst.base) + to) * bytes,
+                    data + (static_cast<int64_t>(src.base) + from) * bytes,
+                    static_cast<size_t>(count) * bytes,
+                    cudaMemcpyDeviceToDevice,
+                    cudaStreamPerThread) == cudaSuccess,
+                Internal,
+                "Ring clone copy failed");
+            position += count;
+          }
         }
       }
     }
@@ -1728,6 +1775,7 @@ class CudaBatchedSequenceCache final : public cache::Cache,
       poisoned_ = true;
       return Error::Internal;
     }
+    copied = true;
     const Error marked = pool_.mark_step_done(cudaStreamPerThread);
     poisoned_ |= marked != Error::Ok;
     return marked;
@@ -1741,6 +1789,9 @@ class CudaBatchedSequenceCache final : public cache::Cache,
     bool admitted = false;
     aoti::ScopeGuard rollback([&]() noexcept {
       if (!admitted) {
+        if (pool_.synchronize(/*all_streams=*/true) != Error::Ok) {
+          poisoned_ = true;
+        }
         seqs_.erase(destination);
         for (auto& history : histories_) {
           if (history) {
@@ -1780,8 +1831,7 @@ class CudaBatchedSequenceCache final : public cache::Cache,
         }
       }
     }
-    if (restore_private(destination, destination, keep) != Error::Ok) {
-      poisoned_ = true;
+    if (restore_private(source, destination, keep) != Error::Ok) {
       return std::nullopt;
     }
     admitted = true;

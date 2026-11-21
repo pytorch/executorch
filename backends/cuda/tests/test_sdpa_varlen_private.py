@@ -15,7 +15,9 @@ from executorch.backends.cuda.passes.lower_offgraph_kv import (
 from executorch.backends.cuda.triton.kernels.sdpa_varlen import sdpa_varlen
 
 
-def _case(owners, previous, window, heads=2, dim=128, groups=4, padding=0):
+def _case(
+    owners, previous, window, heads=2, dim=128, groups=4, padding=0, restored=False
+):
     """Same logical K/V in legacy columns and packed private spans.
 
     Torch owns full declared storage here; NaNs mark every byte outside the
@@ -69,7 +71,8 @@ def _case(owners, previous, window, heads=2, dim=128, groups=4, padding=0):
         ):
             positions = torch.arange(max(0, end - rows), end, device="cuda")
             legacy[positions % rows, owner] = values[positions]
-            old = torch.arange(max(0, start - capacity), start, device="cuda")
+            retained = min(capacity, window - 1) if restored and window else capacity
+            old = torch.arange(max(0, start - retained), start, device="cuda")
             physical = old % capacity if window else old
             private.reshape(-1, heads, dim)[base + physical] = values[old]
         base += capacity
@@ -148,6 +151,21 @@ class PrivateVarlenTest(unittest.TestCase):
             for width in (1, 2, 4, 8, 16, 32, 64, 128, 512):
                 with self.subTest(window=window, width=width):
                     self.check_case([0] * width, {0: 1024}, window)
+
+    def test_restored_ring_does_not_read_unwritten_nan_slot(self):
+        # All slots except the restored W-1 rows remain NaN. Exercise both
+        # decode split-K and regular prefill, including the W=1 boundary.
+        for window in (1, 31, 257):
+            for dim in (128, 256):
+                for width in (1, 4, 8, 64):
+                    with self.subTest(window=window, dim=dim, width=width):
+                        self.check_case(
+                            [0] * width,
+                            {0: 1024},
+                            window,
+                            dim=dim,
+                            restored=True,
+                        )
 
     def test_heterogeneous_interleaved_owners_and_padding(self):
         owners = [0, 1, 0, 2, 1, 2] * 12

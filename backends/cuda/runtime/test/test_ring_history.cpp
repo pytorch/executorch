@@ -12,6 +12,7 @@
 #include <array>
 #include <cstring>
 #include <memory>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -88,6 +89,41 @@ class RingHistoryTest : public ::testing::Test {
   }
   std::unique_ptr<RingHistory> history;
 };
+
+TEST(RingRestorePlanTest, RestoresOnlyTheOverwrittenPrefix) {
+  const auto plan = RingHistory::restore_plan(2048, 9999, 10000);
+  ASSERT_TRUE(plan);
+  EXPECT_EQ(plan->start, 7952);
+  EXPECT_EQ(plan->resident_start, 7953);
+  EXPECT_EQ(plan->end, 9999);
+  EXPECT_EQ(plan->resident_start - plan->start, 1);
+}
+
+TEST(RingRestorePlanTest, NoopAndUnwrappedRewindsNeedNoHostCopies) {
+  for (const auto& [keep, end] :
+       {std::pair{10000, 10000}, std::pair{7, 11}, std::pair{0, 0}}) {
+    const auto plan = RingHistory::restore_plan(2048, keep, end);
+    ASSERT_TRUE(plan);
+    EXPECT_EQ(plan->resident_start, plan->start);
+    EXPECT_EQ(plan->end, keep);
+  }
+}
+
+TEST(RingRestorePlanTest, OldCloneAndWindowOneBoundaries) {
+  const auto old = RingHistory::restore_plan(2048, 5000, 10000);
+  ASSERT_TRUE(old);
+  EXPECT_EQ(old->start, 2953);
+  EXPECT_EQ(old->resident_start, 5000);
+  EXPECT_EQ(old->end, 5000);
+  const auto single = RingHistory::restore_plan(1, 5000, 10000);
+  ASSERT_TRUE(single);
+  EXPECT_EQ(single->start, 5000);
+  EXPECT_EQ(single->resident_start, 5000);
+  EXPECT_EQ(single->end, 5000);
+  EXPECT_FALSE(RingHistory::restore_plan(0, 1, 2));
+  EXPECT_FALSE(RingHistory::restore_plan(8, -1, 2));
+  EXPECT_FALSE(RingHistory::restore_plan(8, 3, 2));
+}
 
 TEST_F(RingHistoryTest, InterleavedOwnersAndPlanesRemainIndependent) {
   append(*history, {{0, 0, 3, 0}, {1, 3, 2, 0}, {0, 5, 4, 3}}, 16);

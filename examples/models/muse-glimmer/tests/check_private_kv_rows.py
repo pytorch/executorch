@@ -7,7 +7,8 @@
 """Native ABI-2/ABI-3 equality, allocation and same-work timing qualification.
 
 Tests MG- and Gemma-style head dimensions on the same tiny model weights.
-Timing includes shared-stage undo transfers; it excludes logits file writes.
+Timing covers undo transfers, staggered growth and clone/rewind cycles;
+it excludes logits file writes.
 """
 
 import argparse
@@ -82,6 +83,48 @@ def commands():
             step(list(range(concurrency)), f"bench-c{concurrency}-{i}", save=False)
             for i in range(20)
         ]
+        # Each owner has 88 tokens. Leave one free slot at c64 for a fork.
+        destination = max(1, concurrency - 1)
+        if concurrency > 1:
+            requests.append({"op": "remove", "seq_id": destination})
+        for i in range(8):
+            tag = f"restore-c{concurrency}-{i}"
+            requests += [
+                {"op": "clone", "seq_id": 0, "upto": 87, "tag": tag + "-clone"},
+                {
+                    "op": "rewind",
+                    "seq_id": destination,
+                    "position": 86,
+                    "tag": tag + "-rewind",
+                },
+                step([destination], tag + "-step", save=False),
+                {"op": "remove", "seq_id": destination, "tag": tag + "-remove"},
+            ]
+        requests += [{"op": "clear"}, {"op": "compact", "spare_columns": 0}]
+        for owner in range(concurrency):
+            tag = f"growth-c{concurrency}-{owner}"
+            seed = step([owner] * 8, tag + "-seed", save=False)
+            seed["select"] = [7]
+            requests += [
+                {"op": "new", "tag": tag + "-new"},
+                seed,
+                step(list(range(owner + 1)), tag + "-decode", save=False),
+            ]
+        requests.append(step(list(range(concurrency)), f"growth-verify-c{concurrency}"))
+    # Free enough private history to exceed CUDA pool page granularity. This
+    # phase is separate from timing and keeps 48 short owners alive throughout.
+    requests += [{"op": "clear"}, {"op": "compact", "spare_columns": 0}]
+    requests += [{"op": "new"} for _ in range(64)]
+    requests.append(step(list(range(64)), "driver-seed", save=False))
+    for owner in range(16):
+        for chunk in range(16):
+            prefill = step([owner] * 128, f"driver-prefill-{owner}-{chunk}", save=False)
+            prefill["select"] = [127]
+            requests.append(prefill)
+    requests.append(step(list(range(64)), "driver-before", save=False))
+    requests += [{"op": "remove", "seq_id": owner} for owner in range(16)]
+    requests.append({"op": "compact", "spare_columns": 0, "tag": "driver-compact"})
+    requests.append(step(list(range(16, 64)), "driver-after"))
     return requests
 
 
@@ -108,7 +151,7 @@ def run(probe, root, head_dim, abi, repeat=0):
             n_layers=2,
             n_heads=2,
             n_kv_heads=1,
-            max_seq_len=256,
+            max_seq_len=4096,
             global_attn_cfg="[16,0]",
         )
         model = MuseGlimmerModel(config).to(torch.bfloat16).eval()
@@ -118,7 +161,7 @@ def run(probe, root, head_dim, abi, repeat=0):
             config,
             str(artifact),
             max_step_tokens=128,
-            max_cells=16384,
+            max_cells=64 * 4096,
             forward_sizes=(1, 2, 4, 8, 16, 32, 64),
             kv_layout="sequence",
             max_kv_seqs=64,
@@ -137,7 +180,7 @@ def run(probe, root, head_dim, abi, repeat=0):
             f"--data_path={artifact / 'aoti_cuda_blob.ptd'}",
             f"--output_dir={logits_dir}",
             "--max_sessions=64",
-            "--max_context=256",
+            "--max_context=4096",
             "--initial_kv_capacity=2",
         ],
         input="".join(json.dumps(r) + "\n" for r in requests),
@@ -171,15 +214,89 @@ def graph(snapshot, name):
 
 
 def require_performance(evidence):
-    """Block qualification on a median of three same-work throughput regressions."""
+    """Block qualification on decode or lifecycle median regressions."""
     regressions = [
-        f"d{dim}/c{c}"
+        f"d{dim}/{'c' if str(c).isdigit() else ''}{c}"
         for dim, result in evidence.items()
-        for c, timing in result["same_work_timings"].items()
+        for c, timing in {
+            **result["same_work_timings"],
+            **result.get("lifecycle_timings", {}),
+        }.items()
         if timing["throughput_ratio"] < 0.98
     ]
     if regressions:
         raise RuntimeError("Over 2% throughput regression: " + ", ".join(regressions))
+
+
+def require_driver_contraction(before, compact):
+    released = before["live_KV_bytes"] - compact["live_KV_bytes"]
+    reserved_drop = (
+        before["allocator_reserved_bytes"] - compact["allocator_reserved_bytes"]
+    )
+    driver_drop = before["device_used_bytes"] - compact["device_used_bytes"]
+    # Require a material fixture and actual release, with room for CUDA pool
+    # page granularity and graph bookkeeping; lower live bytes alone do not pass.
+    if released < 16 * 1024**2:
+        raise RuntimeError("Driver contraction fixture released less than 16 MiB")
+    if reserved_drop < 8 * 1024**2 or driver_drop < 8 * 1024**2:
+        raise RuntimeError("Compaction did not return at least 8 MiB to the driver")
+    return {
+        "live_KV_drop_bytes": released,
+        "allocator_reserved_drop_bytes": reserved_drop,
+        "driver_used_drop_bytes": driver_drop,
+    }
+
+
+def paired_timings(repeats):
+    timings = {}
+    for c in (1, 2, 4, 8, 16, 32, 64):
+        rounds = []
+        for old_steps, new_steps, _, _ in repeats:
+            old = [old_steps[f"bench-c{c}-{i}"]["elapsed_seconds"] for i in range(20)]
+            new = [new_steps[f"bench-c{c}-{i}"]["elapsed_seconds"] for i in range(20)]
+            old_median, new_median = statistics.median(old), statistics.median(new)
+            rounds.append(
+                {
+                    "abi2_median_s": old_median,
+                    "abi3_median_s": new_median,
+                    "throughput_ratio": old_median / new_median,
+                }
+            )
+        ratio = statistics.median(r["throughput_ratio"] for r in rounds)
+        timings[c] = {
+            "rounds": rounds,
+            "throughput_ratio": ratio,
+            "investigate_over_2_percent_regression": ratio < 0.98,
+        }
+    lifecycle = {}
+    for phase in ("growth", "restore"):
+        for c in (1, 2, 4, 8, 16, 32, 64):
+            prefix = f"{phase}-c{c}-"
+            rounds = []
+            for _, _, old_pairs, new_pairs in repeats:
+                totals = [
+                    sum(
+                        response["elapsed_seconds"]
+                        for request, response in pairs
+                        if request.get("tag", "").startswith(prefix)
+                    )
+                    for pairs in (old_pairs, new_pairs)
+                ]
+                assert all(t > 0 for t in totals)
+                rounds.append(
+                    {
+                        "abi2_total_s": totals[0],
+                        "abi3_total_s": totals[1],
+                        "throughput_ratio": totals[0] / totals[1],
+                    }
+                )
+            ratio = statistics.median(r["throughput_ratio"] for r in rounds)
+            lifecycle[f"{phase}-c{c}"] = {
+                "rounds": rounds,
+                "throughput_ratio": ratio,
+                "investigate_over_2_percent_regression": ratio < 0.98,
+            }
+    return timings, lifecycle
 
 
 def main():
@@ -188,11 +305,18 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--probe", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
+    parser.add_argument(
+        "--report-performance",
+        action="store_true",
+        help="Report timing regressions without failing PR CI; does not qualify perf",
+    )
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
     evidence = {}
     for dim in (128, 256):
-        baseline, old_steps, _ = run(args.probe.resolve(), args.output_dir, dim, 2)
+        baseline, old_steps, old_pairs = run(
+            args.probe.resolve(), args.output_dir, dim, 2
+        )
         candidate, new_steps, pairs = run(args.probe.resolve(), args.output_dir, dim, 3)
         assert baseline.keys() == candidate.keys()
         for tag in baseline:
@@ -200,6 +324,10 @@ def main():
                 candidate[tag], baseline[tag], err_msg=f"d{dim}/{tag}"
             )
         memory = {}
+        # One Ring layer, one KV head, BF16 K/V, 64 tagged rows per page.
+        undo_rows = min(4096, 16 + 128 - 1)
+        undo_pages = (undo_rows + 63) // 64
+        undo_budget = 64 * undo_pages * (2 * 64 * dim * 2 + 64 * 4) + 2 * 128 * dim * 2
         for tag in ("decode64-first", "decode64-mixed", "before-6", "after-4"):
             old = old_steps[tag]["snapshot"]
             new = new_steps[tag]["snapshot"]
@@ -209,12 +337,14 @@ def main():
                 "abi3_live_KV_bytes": new["live_KV_bytes"],
                 "abi3_device_staging_bytes": new["device_staging_bytes"],
                 "abi3_host_undo_bytes": new["host_undo_bytes"],
+                "abi3_host_undo_budget_bytes": undo_budget,
             }
             # Before either ring reaches its window there is little duplicated
             # headroom to remove; shared staging can cost more at this point.
             if tag != "decode64-first":
                 assert combined < old["live_KV_bytes"], (tag, old, new)
             assert new["host_undo_bytes"] > 0
+            assert new["host_undo_bytes"] <= undo_budget, (tag, new, undo_budget)
         compact = next(
             reply["snapshot"] for request, reply in pairs if request["op"] == "compact"
         )
@@ -227,49 +357,50 @@ def main():
         assert new_graph["captures"] - old_graph["captures"] == 1
         assert new_graph["replays"] - old_graph["replays"] > 1
         assert new_graph["capture_failures"] == 0
-        repeats = [(old_steps, new_steps)]
-        for repeat in (1, 2):
-            # Reverse the order for the middle round without re-exporting.
-            order = (3, 2) if repeat == 1 else (2, 3)
+        driver_before = new_steps["driver-before"]["snapshot"]
+        driver_compact = next(
+            reply["snapshot"]
+            for request, reply in pairs
+            if request.get("tag") == "driver-compact"
+        )
+        driver = require_driver_contraction(driver_before, driver_compact)
+        driver["before"] = driver_before
+        driver["compact"] = driver_compact
+        driver["after"] = new_steps["driver-after"]["snapshot"]
+        repeats = [(old_steps, new_steps, old_pairs, pairs)]
+        for repeat in (1, 2, 3):
+            # Four rounds balance AB/BA order without re-exporting.
+            order = (3, 2) if repeat % 2 else (2, 3)
             results = {
                 abi: run(args.probe.resolve(), args.output_dir, dim, abi, repeat)
                 for abi in order
             }
-            repeats.append((results[2][1], results[3][1]))
-        timings = {}
-        for c in (1, 2, 4, 8, 16, 32, 64):
-            rounds = []
-            for old_steps, new_steps in repeats:
-                old = [
-                    old_steps[f"bench-c{c}-{i}"]["elapsed_seconds"] for i in range(20)
-                ]
-                new = [
-                    new_steps[f"bench-c{c}-{i}"]["elapsed_seconds"] for i in range(20)
-                ]
-                old_median, new_median = statistics.median(old), statistics.median(new)
-                rounds.append(
-                    {
-                        "abi2_median_s": old_median,
-                        "abi3_median_s": new_median,
-                        "throughput_ratio": old_median / new_median,
-                    }
+            for tag in results[2][0]:
+                np.testing.assert_array_equal(
+                    results[3][0][tag], results[2][0][tag], err_msg=f"d{dim}/{tag}"
                 )
-            ratio = statistics.median(r["throughput_ratio"] for r in rounds)
-            timings[c] = {
-                "rounds": rounds,
-                "throughput_ratio": ratio,
-                "investigate_over_2_percent_regression": ratio < 0.98,
-            }
+            repeats.append((results[2][1], results[3][1], results[2][2], results[3][2]))
+        timings, lifecycle = paired_timings(repeats)
         evidence[dim] = {
             "exact_logits": True,
             "memory": memory,
+            "driver_contraction": driver,
             "same_work_timings": timings,
+            "lifecycle_timings": lifecycle,
         }
     (args.output_dir / "qualification.json").write_text(
         json.dumps(evidence, indent=2) + "\n"
     )
     print(json.dumps(evidence, indent=2))
-    require_performance(evidence)
+    if args.report_performance:
+        try:
+            require_performance(evidence)
+        except RuntimeError as error:
+            print(f"PERFORMANCE_NOT_QUALIFIED: {error}")
+        else:
+            print("PERFORMANCE_QUALIFIED: all median ratios >= 0.98")
+    else:
+        require_performance(evidence)
     print(
         "ABI-3 native logits, private memory, shared staging and per-stage replay passed"
     )

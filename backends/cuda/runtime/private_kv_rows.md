@@ -8,12 +8,22 @@ Absent this option, existing ABI 1/2 exports and runtime paths are unchanged.
 
 The export still declares its maximum context, owner count, and step width.
 These are addressing and admission ceilings, not initial allocations. Each
-layer packs independently sized owner spans `(base_row, capacity)` followed by
-one scratch row. A newly opened owner has no rows until it is touched. Its
+layer stores independently sized owner spans `(base_row, capacity)` in an arena,
+plus one scratch row. A newly opened owner has no rows until it is touched. Its
 capacity then grows geometrically from `initial_capacity`, capped by the context
 for a flat layer or the sliding window for a Ring layer. A long owner does not
-increase other owners' row capacities. Removed owners' spans can be retained
-for burst reuse; an explicit idle compaction releases unused spans.
+increase other owners' row capacities. Geometric arena slack amortizes owner
+admission; unrelated spans keep their positions. Growth uses free regions
+disjoint from old payloads, so it can relocate one owner without changing device
+addresses or recapturing graphs. Arena exhaustion or fragmentation at the
+addressing ceiling creates a packed replacement. Removed owners' spans can be
+retained for burst reuse; an explicit idle compaction releases unused spans and
+arena slack.
+
+The executor's automatic idle heuristic still uses owner counts. Closing a few
+long owners while many short owners remain may therefore retain their spans
+until explicit compaction. Byte-aware idle reclamation is a separate allocator
+maintenance change; this layout does not yet provide that policy.
 
 ## Frozen program and runtime contract
 
@@ -37,15 +47,22 @@ that staging, and only then write the newest retained rows into the Ring.
 This prevents a long chunk from overwriting history needed by its earlier
 queries, without reserving `max_write - 1` extra device rows for every owner.
 Stage allocations grow with the actual prepared step width, up to the export
-ceiling. Logical visibility and reduction order follow the legacy virtual
+ceiling. Attention selects a history or staging address before loading each
+row, avoiding separate pipelined K/V tiles and their shared-memory overhead.
+Logical visibility and reduction order follow the legacy virtual
 key sweep; private placement does not reorder keys or change split-K dispatch.
 
 Preparation uploads descriptor contents before execution. Descriptor addresses
-stay fixed; stage or history relocation fences the previous step and invalidates
-affected bindings and CUDA graphs. Stable allocations replay graphs with new
+stay fixed; stage or arena address changes fence the previous step and invalidate
+bindings and CUDA graphs. Within-arena relocation copies only that owner's
+retained rows, preserving every old source until commit. Failed preparation
+fences queued copies before returning, including copies into unused arena rows.
+Stable allocations replay graphs with new
 metadata. The cache verbs and execution must remain serialized by the engine
-thread. An aborted ABI 3 forward poisons the cache because the Ring write may
-have happened; only a successful fenced `clear()` permits reuse.
+thread. An aborted ABI 3 forward fences queued work and retires only the owners
+in that step, whose Ring writes may have happened. `seq_rm` releases those
+owners for reuse; unrelated owners can keep serving. A failed device fence
+poisons the whole cache until a successful fenced `clear()`.
 
 ## Clone, rewind, and memory accounting
 
@@ -55,7 +72,11 @@ preserves the legacy rewind and clone window while device Ring history holds
 only its window. Commit includes this transfer and synchronization; it is a
 performance cost that same-work benchmarks must include. Clone does not mutate
 its source. Restore validates the retained window before copying and fences
-host page use before reuse or destruction.
+host page use before reuse or destruction. Rewind restores only the prefix
+overwritten since the target position, and a no-op rewind performs no copies.
+Clone copies still-resident Ring rows device-to-device and reads only evicted
+rows from host history. The unused oldest Ring slot is masked out of both
+key and value loads, so an unwritten slot cannot inject NaNs into attention.
 
 `allocated_bytes` counts device K/V history only. `device_staging_bytes` counts
 shared device K/V staging separately. `host_undo_bytes` counts unique undo-page
@@ -63,9 +84,28 @@ payloads, tags, and pinned archive buffers; it excludes container overhead.
 Driver/allocator peaks also include metadata, model weights, activations,
 temporary replacement allocations, and retained allocator memory.
 
+Undo pages trade host RAM for device headroom; they are not free or hidden from
+the accounting. For each Ring layer, the retained host bound is
+`max_seqs * ceil(min(context, W + max_write - 1) / 64) *
+(2 * 64 * row_bytes + 64 * sizeof(int32_t)) + 2 * max_write * row_bytes`,
+including BF16 K/V pages, row tags, and pinned transfer staging. There is no
+separate RAM-budget knob; the session and export limits bound this storage.
+For 39 Ring layers with W=2048 and 2 KV heads of dimension 128, max_write=4096
+and 64 owners, this is about 14.8 GiB of retained host storage. The mini checker
+asserts its corresponding bound and reports host bytes beside the device saving.
+
 `check_private_kv_rows.py` compares identical mini model weights against ABI 2
 for exact logits, clone/rewind boundaries, heterogeneous owner lengths, graph
 recapture/replay, driver memory contraction, and c1 through c64 same-work timing.
-It alternates ABI order across three timing rounds and fails qualification
-if their median throughput regresses beyond 2%; a numerical pass alone does
-not qualify performance or full-model serving.
+Four rounds balance AB/BA order. Timing covers steady decode, staggered
+admission/growth, and clone/rewind cycles including GPU completion. A median
+throughput regression beyond 2% fails performance qualification. PR CI reports
+timing independently from its blocking numerical/memory/graph checks; the same
+checker enforces timing on non-PR runs or when invoked without
+`--report-performance`. A green report-only check does not qualify performance
+or full-model serving.
+
+A separate 4K-context phase keeps 48 short owners alive while closing 16 long
+owners. It requires at least 16 MiB less live KV and at least 8 MiB less allocator
+reservation and driver-used memory after compaction, exceeding pool page
+granularity. Lower live-byte counters without actual driver release do not pass.

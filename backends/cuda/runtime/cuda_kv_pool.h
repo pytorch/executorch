@@ -132,6 +132,15 @@ class CudaKVPool final {
   // Host fence on the pool's device before cells can be reclaimed or reset.
   runtime::Error synchronize(bool all_streams = false);
 
+  bool requires_clear() const {
+    return private_fence_failed_;
+  }
+
+  // Only the owning cache's successful device-wide clear permits reuse.
+  void reset_failure_after_clear() {
+    private_fence_failed_ = false;
+  }
+
   CudaGraphMetrics graph_metrics(std::string_view method) const;
 
   // Points `handle`'s constants at the current storage. Cached until storage
@@ -175,6 +184,12 @@ class CudaKVPool final {
   }
 
  private:
+  friend struct CudaKVPoolTestPeer;
+  using FenceFunction = cudaError_t (*)(cudaStream_t, bool);
+  // Isolated per-thread fault injection by the native CUDA unit tests.
+  static thread_local FenceFunction private_fence_for_testing_;
+  bool private_fence_failed_{false};
+
   struct Allocation {
     void* k{nullptr};
     void* v{nullptr};

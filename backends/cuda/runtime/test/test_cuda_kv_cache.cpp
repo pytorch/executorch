@@ -34,6 +34,45 @@ namespace slimc10 = ::executorch::backends::aoti::slim::c10;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::EValue;
 
+namespace executorch::backends::cuda {
+
+struct CudaKVPoolTestPeer {
+  CudaKVPoolTestPeer()
+      : previous_hook(CudaKVPool::private_fence_for_testing_),
+        previous(active) {
+    active = this;
+    CudaKVPool::private_fence_for_testing_ = fence;
+  }
+  ~CudaKVPoolTestPeer() {
+    CudaKVPool::private_fence_for_testing_ = previous_hook;
+    active = previous;
+  }
+  int device_fences{0};
+  bool fail_stream_fence{false};
+  bool fail_device_fence{false};
+
+ private:
+  static cudaError_t fence(cudaStream_t stream, bool all_streams) {
+    const auto result =
+        all_streams ? cudaDeviceSynchronize() : cudaStreamSynchronize(stream);
+    active->device_fences += all_streams;
+    bool& fail =
+        all_streams ? active->fail_device_fence : active->fail_stream_fence;
+    if (result == cudaSuccess && fail) {
+      fail = false;
+      return cudaErrorUnknown;
+    }
+    return result;
+  }
+  CudaKVPool::FenceFunction previous_hook;
+  CudaKVPoolTestPeer* previous;
+  static thread_local CudaKVPoolTestPeer* active;
+};
+
+thread_local CudaKVPoolTestPeer* CudaKVPoolTestPeer::active = nullptr;
+
+} // namespace executorch::backends::cuda
+
 namespace {
 
 struct Binding {
@@ -1207,7 +1246,7 @@ class CudaPrivatePoolTest : public CudaKVCacheTest {
   static constexpr int kRingRows = 12;
   static constexpr int kWindow = 5;
 
-  std::unique_ptr<cu::CudaKVPool> make_private_pool() {
+  std::unique_ptr<cu::CudaKVPool> make_private_pool(bool huge_stage = false) {
     return std::make_unique<cu::CudaKVPool>(
         std::vector<cu::CudaKVPool::Layer>{
             {kHeads, kDim, kFlatRows * kColumns, true, 0},
@@ -1218,11 +1257,14 @@ class CudaPrivatePoolTest : public CudaKVCacheTest {
              {kColumns, 2}},
             {"__et_offgraph_kv_stage_k",
              slimc10::ScalarType::BFloat16,
-             {1, 8, kHeads, kDim},
+             {1,
+              huge_stage ? 1 << 20 : 8,
+              huge_stage ? 1 : kHeads,
+              huge_stage ? 1 << 20 : kDim},
              true},
             {"__et_offgraph_kv_stage_v",
              slimc10::ScalarType::BFloat16,
-             {1, 8, kHeads, kDim},
+             {1, huge_stage ? 1 << 20 : 8, kHeads, kDim},
              true}},
         slimc10::ScalarType::BFloat16,
         2 * kColumns,
@@ -1231,7 +1273,7 @@ class CudaPrivatePoolTest : public CudaKVCacheTest {
         true);
   }
 
-  static FakeContainer private_container() {
+  static FakeContainer private_container(bool huge_stage = false) {
     FakeContainer container{
         {"flat_k",
          "flat_v",
@@ -1269,7 +1311,14 @@ class CudaPrivatePoolTest : public CudaKVCacheTest {
     for (const char* fqn :
          {"__et_offgraph_kv_stage_k", "__et_offgraph_kv_stage_v"}) {
       declare(
-          container, fqn, slimc10::ScalarType::BFloat16, {1, 8, kHeads, kDim});
+          container,
+          fqn,
+          slimc10::ScalarType::BFloat16,
+          huge_stage
+              ? (std::string(fqn) == "__et_offgraph_kv_stage_k"
+                     ? std::initializer_list<int64_t>{1, 1 << 20, 1, 1 << 20}
+                     : std::initializer_list<int64_t>{1, 1 << 20, kHeads, kDim})
+              : std::initializer_list<int64_t>{1, 8, kHeads, kDim});
     }
     return container;
   }
@@ -1370,7 +1419,7 @@ TEST_F(
     expect_row(*pool, 0, owner, 0, owner * 100);
     expect_row(*pool, 1, owner, 0, owner * 100 + 50);
   }
-  EXPECT_EQ(pool->private_layout(0).rows, 63 * 2 + 17 + 1);
+  EXPECT_EQ(pool->private_layout(0).rows, 4 * kOwners + 1);
   pool->forget_handle(&handle);
 }
 
@@ -1449,6 +1498,97 @@ TEST_F(
   pool->forget_handle(&handle);
 }
 
+TEST_F(CudaPrivatePoolTest, StaggeredAdmissionsAmortizeGraphInvalidation) {
+  auto pool = make_private_pool();
+  auto fake = private_container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(pool->note_handle(&handle).get());
+  std::vector<std::vector<int64_t>> rows(2, std::vector<int64_t>(kOwners, 0));
+  std::vector<int64_t> live(kOwners, 0);
+  int moves = 0;
+  for (int owner = 0; owner < kOwners; ++owner) {
+    const bool allocated = pool->allocated();
+    void* old_key = allocated ? pool->layer_data(0, false) : nullptr;
+    const auto previous = allocated ? pool->private_layout(0).spans
+                                    : std::vector<cu::PrivateRowSpan>{};
+    rows[0][owner] = rows[1][owner] = 1;
+    handle.cuda_graph_state.phase = cu::CudaGraphPhase::Replay;
+    ASSERT_EQ(
+        pool->prepare_private(rows, live, 1, cudaStreamPerThread), Error::Ok);
+    ASSERT_EQ(pool->bind(&handle), Error::Ok);
+    const bool moved = old_key != pool->layer_data(0, false);
+    moves += moved;
+    if (allocated) {
+      EXPECT_EQ(
+          handle.cuda_graph_state.phase,
+          moved ? cu::CudaGraphPhase::Warmup : cu::CudaGraphPhase::Replay);
+    }
+    for (int old = 0; old < owner; ++old) {
+      EXPECT_EQ(pool->private_layout(0).spans[old].base, previous[old].base);
+      expect_row(*pool, 0, old, 0, old * 100);
+      expect_row(*pool, 1, old, 0, old * 100 + 50);
+    }
+    write_row(*pool, 0, owner, 0, owner * 100);
+    write_row(*pool, 1, owner, 0, owner * 100 + 50);
+    live[owner] = 1;
+    ASSERT_EQ(pool->mark_step_done(cudaStreamPerThread), Error::Ok);
+  }
+  EXPECT_LE(moves, 7);
+  pool->forget_handle(&handle);
+}
+
+TEST_F(CudaPrivatePoolTest, PrivateRelocationWithinArenaPreservesReplay) {
+  auto pool = make_private_pool();
+  auto fake = private_container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(pool->note_handle(&handle).get());
+  std::vector<std::vector<int64_t>> rows(2, std::vector<int64_t>(kOwners, 0));
+  std::vector<int64_t> live(kOwners, 0);
+  for (int owner = 0; owner < 3; ++owner) {
+    rows[0][owner] = rows[1][owner] = 1;
+  }
+  ASSERT_EQ(
+      pool->prepare_private(rows, live, 1, cudaStreamPerThread), Error::Ok);
+  for (int owner = 0; owner < 3; ++owner) {
+    write_row(*pool, 0, owner, 0, owner * 100);
+    write_row(*pool, 1, owner, 0, owner * 100 + 50);
+    live[owner] = 1;
+  }
+  ASSERT_EQ(pool->mark_step_done(cudaStreamPerThread), Error::Ok);
+  rows[0][3] = rows[1][3] = 1;
+  ASSERT_EQ(
+      pool->prepare_private(rows, live, 1, cudaStreamPerThread), Error::Ok);
+  ASSERT_EQ(pool->bind(&handle), Error::Ok);
+  write_row(*pool, 0, 3, 0, 300);
+  write_row(*pool, 1, 3, 0, 350);
+  live[3] = 1;
+  ASSERT_EQ(pool->mark_step_done(cudaStreamPerThread), Error::Ok);
+  const auto previous = pool->private_layout(0).spans;
+  void* key = pool->layer_data(0, false);
+  void* ring = pool->layer_data(1, false);
+  const int updates = fake.updates;
+  handle.cuda_graph_state.phase = cu::CudaGraphPhase::Replay;
+  rows[0][0] = rows[1][0] = 3;
+  ASSERT_EQ(
+      pool->prepare_private(rows, live, 1, cudaStreamPerThread), Error::Ok);
+  EXPECT_NE(pool->private_layout(0).spans[0].base, previous[0].base);
+  EXPECT_EQ(pool->private_layout(0).spans[0].capacity, 4);
+  EXPECT_EQ(pool->layer_data(0, false), key);
+  EXPECT_EQ(pool->layer_data(1, false), ring);
+  EXPECT_EQ(handle.cuda_graph_state.phase, cu::CudaGraphPhase::Replay);
+  ASSERT_EQ(pool->bind(&handle), Error::Ok);
+  EXPECT_EQ(fake.updates, updates);
+  for (int owner = 0; owner < 4; ++owner) {
+    if (owner > 0) {
+      EXPECT_EQ(
+          pool->private_layout(0).spans[owner].base, previous[owner].base);
+    }
+    expect_row(*pool, 0, owner, 0, owner * 100);
+    expect_row(*pool, 1, owner, 0, owner * 100 + 50);
+  }
+  pool->forget_handle(&handle);
+}
+
 TEST_F(
     CudaPrivatePoolTest,
     InvalidPreparationLeavesCommittedPointersAndLayoutsUsable) {
@@ -1479,6 +1619,68 @@ TEST_F(
   ASSERT_EQ(
       pool->prepare_private(rows, live, 1, cudaStreamPerThread), Error::Ok);
   ASSERT_EQ(pool->bind(&handle), Error::Ok);
+  pool->forget_handle(&handle);
+}
+
+TEST_F(CudaPrivatePoolTest, FailedStageGrowthFencesUncommittedArenaCopies) {
+  auto pool = make_private_pool(/*huge_stage=*/true);
+  auto fake = private_container(/*huge_stage=*/true);
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(pool->note_handle(&handle).get());
+  std::vector<std::vector<int64_t>> rows(2, std::vector<int64_t>(kOwners, 0));
+  std::vector<int64_t> live(kOwners, 0);
+  for (int owner = 0; owner < 3; ++owner) {
+    rows[0][owner] = rows[1][owner] = 1;
+  }
+  ASSERT_EQ(
+      pool->prepare_private(rows, live, 1, cudaStreamPerThread), Error::Ok);
+  for (int owner = 0; owner < 3; ++owner) {
+    write_row(*pool, 0, owner, 0, owner * 100);
+    write_row(*pool, 1, owner, 0, owner * 100 + 50);
+    live[owner] = 1;
+  }
+  ASSERT_EQ(pool->mark_step_done(cudaStreamPerThread), Error::Ok);
+  rows[0][3] = rows[1][3] = 1;
+  ASSERT_EQ(
+      pool->prepare_private(rows, live, 1, cudaStreamPerThread), Error::Ok);
+  ASSERT_EQ(pool->bind(&handle), Error::Ok);
+  write_row(*pool, 0, 3, 0, 300);
+  write_row(*pool, 1, 3, 0, 350);
+  live[3] = 1;
+  ASSERT_EQ(pool->mark_step_done(cudaStreamPerThread), Error::Ok);
+  const auto previous = pool->private_layout(0).spans;
+  const auto bytes = pool->allocated_bytes();
+  void* key = pool->layer_data(0, false);
+  const int updates = fake.updates;
+  handle.cuda_graph_state.phase = cu::CudaGraphPhase::Replay;
+  rows[0][0] = rows[1][0] = 3;
+  cu::CudaKVPoolTestPeer fences;
+  // The owner copy uses spare rows of the existing arena. Only the later
+  // 2-TiB staging allocation fails, after that copy has been enqueued.
+  EXPECT_EQ(
+      pool->prepare_private(rows, live, 1 << 20, cudaStreamPerThread),
+      Error::MemoryAllocationFailed);
+  EXPECT_EQ(fences.device_fences, 2);
+  EXPECT_FALSE(pool->requires_clear());
+  EXPECT_EQ(pool->allocated_bytes(), bytes);
+  EXPECT_EQ(pool->layer_data(0, false), key);
+  EXPECT_EQ(pool->private_layout(0).spans[0].base, previous[0].base);
+  EXPECT_EQ(pool->private_layout(0).spans[0].capacity, previous[0].capacity);
+  EXPECT_EQ(handle.cuda_graph_state.phase, cu::CudaGraphPhase::Replay);
+  cudaStream_t retry_stream;
+  ASSERT_EQ(
+      cudaStreamCreateWithFlags(&retry_stream, cudaStreamNonBlocking),
+      cudaSuccess);
+  EXPECT_EQ(pool->prepare_private(rows, live, 1, retry_stream), Error::Ok);
+  EXPECT_EQ(pool->bind(&handle), Error::Ok);
+  EXPECT_EQ(fake.updates, updates);
+  EXPECT_NE(pool->private_layout(0).spans[0].base, previous[0].base);
+  for (int owner = 0; owner < 4; ++owner) {
+    expect_row(*pool, 0, owner, 0, owner * 100);
+    expect_row(*pool, 1, owner, 0, owner * 100 + 50);
+  }
+  EXPECT_EQ(cudaStreamSynchronize(retry_stream), cudaSuccess);
+  EXPECT_EQ(cudaStreamDestroy(retry_stream), cudaSuccess);
   pool->forget_handle(&handle);
 }
 
@@ -3898,7 +4100,7 @@ TEST_F(CudaPrivateCacheTest, SixtyFourOwnersHaveIndependentRowsAndSharedStage) {
   const int64_t row_bytes = kRow * sizeof(uint16_t);
   EXPECT_EQ(
       kv->metrics().allocated_bytes,
-      2 * (128 + 63 * 2 + 1 + kPrivateWindow + 63 * 2 + 1) * row_bytes);
+      2 * (flat[kOwners * 2] + ring[kOwners * 2] + 2) * row_bytes);
   expect_history(fake, 0, 128);
   expect_history(fake, 63, 1);
   kv->forget_handle(&handle);
@@ -3996,7 +4198,7 @@ TEST_F(CudaPrivateCacheTest, ExactRewindFloorAndCloneMatchTheLegacyContract) {
   }
 }
 
-TEST_F(CudaPrivateCacheTest, AbortedPrivateForwardRequiresClearBeforeReuse) {
+TEST_F(CudaPrivateCacheTest, AbortedForwardRetiresOnlyItsOwners) {
   auto ptr = make_private();
   auto* ctl = ptr->as<cache::BatchControl>();
   auto* kv = ptr->as<cu::CudaKVCache>();
@@ -4004,18 +4206,139 @@ TEST_F(CudaPrivateCacheTest, AbortedPrivateForwardRequiresClearBeforeReuse) {
   auto handle = make_handle(fake);
   ASSERT_TRUE(kv->note_handle(&handle).get());
   ASSERT_EQ(ctl->seq_new(), 0);
-  ASSERT_TRUE(ctl->declare_step({0}));
-  ASSERT_EQ(kv->prepare_step(1, cudaStreamPerThread), Error::Ok);
+  ASSERT_EQ(ctl->seq_new(), 1);
+  ASSERT_EQ(ctl->seq_new(), 2);
+  ASSERT_EQ(write_step(*ptr, fake, handle, {0, 1, 2}), Error::Ok);
+  ASSERT_TRUE(ctl->declare_step({0, 2}));
+  ASSERT_EQ(kv->prepare_step(2, cudaStreamPerThread), Error::Ok);
+  ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
+  const auto layout =
+      read_ints(fake.bound["ring_layout"].data, (kOwners + 1) * 2);
+  for (const int owner : {0, 2}) {
+    // Simulate a partially executed Ring write, with both an old and the new
+    // row corrupted. Admission must never reuse this owner's claimed history.
+    ASSERT_EQ(
+        cudaMemset(
+            static_cast<uint16_t*>(fake.bound["ring_v"].data) +
+                layout[owner * 2] * kRow,
+            0xff,
+            layout[owner * 2 + 1] * kRow * sizeof(uint16_t)),
+        cudaSuccess);
+  }
   EXPECT_FALSE(ctl->seq_rm(0));
   EXPECT_FALSE(ctl->seq_clone(0, 1));
   ASSERT_EQ(kv->abort_step(), Error::Ok);
-  EXPECT_FALSE(ctl->seq_new().has_value());
-  EXPECT_EQ(kv->compact_columns(0), Error::InvalidState);
-  ctl->clear();
+  ASSERT_EQ(kv->abort_step(), Error::Ok);
+  EXPECT_FALSE(ctl->declare_step({0}));
+  EXPECT_FALSE(ctl->declare_step({1, 2}));
+  EXPECT_FALSE(ctl->seq_clone(0, 1));
+  EXPECT_FALSE(ctl->rewind(2, 1));
+  expect_history(fake, 1, 1);
+  ASSERT_EQ(write_step(*ptr, fake, handle, {1}), Error::Ok);
+  expect_history(fake, 1, 2);
+  ASSERT_EQ(ctl->seq_new(), 3);
+  ASSERT_TRUE(ctl->seq_rm(0));
   ASSERT_EQ(ctl->seq_new(), 0);
-  ASSERT_EQ(write_step(*ptr, fake, handle, {0}), Error::Ok);
+  ASSERT_EQ(write_step(*ptr, fake, handle, {0, 3}), Error::Ok);
   expect_history(fake, 0, 1);
+  expect_history(fake, 3, 1);
+  ASSERT_TRUE(ctl->seq_rm(2));
+  ASSERT_EQ(kv->compact_columns(0), Error::Ok);
+  ASSERT_EQ(write_step(*ptr, fake, handle, {0, 1, 3}), Error::Ok);
   kv->forget_handle(&handle);
+}
+
+TEST_F(CudaPrivateCacheTest, CurrentCloneAndRewindPreserveResidentRows) {
+  auto ptr = make_private();
+  auto* ctl = ptr->as<cache::BatchControl>();
+  auto* kv = ptr->as<cu::CudaKVCache>();
+  auto fake = private_container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  ASSERT_EQ(ctl->seq_new(), 0);
+  ASSERT_EQ(
+      write_step(*ptr, fake, handle, std::vector<int32_t>(12, 0)), Error::Ok);
+  auto& graph = handle.cuda_graph_state;
+  graph.phase = cu::CudaGraphPhase::Replay;
+  const void* flat_before_clone = fake.bound["flat_k"].data;
+  ASSERT_EQ(ctl->seq_clone(0, 12), 1);
+  ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
+  if (fake.bound["flat_k"].data != flat_before_clone) {
+    EXPECT_EQ(graph.phase, cu::CudaGraphPhase::Warmup);
+    EXPECT_EQ(graph.warmup_remaining, 1);
+  } else {
+    EXPECT_EQ(graph.phase, cu::CudaGraphPhase::Replay);
+  }
+  for (bool value : {false, true}) {
+    auto* data =
+        static_cast<uint16_t*>(fake.bound[value ? "ring_v" : "ring_k"].data);
+    for (int position = 8; position < 12; ++position) {
+      EXPECT_EQ(
+          read_rows(
+              data + (kPrivateWindow + position % kPrivateWindow) * kRow, 1),
+          payload(0, position, value));
+    }
+  }
+  graph.phase = cu::CudaGraphPhase::Replay;
+  const auto growth = kv->metrics().growth_count;
+  const auto bytes = kv->metrics().allocated_bytes;
+  ASSERT_TRUE(ctl->rewind(1, 12));
+  EXPECT_EQ(graph.phase, cu::CudaGraphPhase::Replay);
+  EXPECT_EQ(kv->metrics().growth_count, growth);
+  EXPECT_EQ(kv->metrics().allocated_bytes, bytes);
+  ASSERT_TRUE(ctl->rewind(1, 11));
+  EXPECT_EQ(graph.phase, cu::CudaGraphPhase::Replay);
+  for (bool value : {false, true}) {
+    auto* data =
+        static_cast<uint16_t*>(fake.bound[value ? "ring_v" : "ring_k"].data);
+    for (int position = 7; position < 11; ++position) {
+      EXPECT_EQ(
+          read_rows(
+              data + (kPrivateWindow + position % kPrivateWindow) * kRow, 1),
+          payload(0, position, value));
+    }
+  }
+  ASSERT_EQ(write_step(*ptr, fake, handle, {1}), Error::Ok);
+  EXPECT_EQ(ctl->pos(0), 12);
+  EXPECT_EQ(ctl->pos(1), 12);
+  kv->forget_handle(&handle);
+}
+
+TEST_F(CudaPrivateCacheTest, FailedPreparationOrCompactionFenceRequiresClear) {
+  for (bool compact : {false, true}) {
+    SCOPED_TRACE(compact);
+    auto ptr = make_private();
+    auto* ctl = ptr->as<cache::BatchControl>();
+    auto* kv = ptr->as<cu::CudaKVCache>();
+    auto fake = private_container();
+    auto handle = make_handle(fake);
+    ASSERT_TRUE(kv->note_handle(&handle).get());
+    ASSERT_EQ(ctl->seq_new(), 0);
+    ASSERT_EQ(ctl->seq_new(), 1);
+    ASSERT_EQ(write_step(*ptr, fake, handle, {0, 1}), Error::Ok);
+    if (compact) {
+      ASSERT_TRUE(ctl->seq_rm(1));
+    }
+    cu::CudaKVPoolTestPeer fences;
+    if (compact) {
+      fences.fail_device_fence = true;
+      EXPECT_EQ(kv->compact_columns(0), Error::Internal);
+    } else {
+      ASSERT_TRUE(ctl->declare_step({0, 0}));
+      fences.fail_stream_fence = true;
+      EXPECT_EQ(kv->prepare_step(2, cudaStreamPerThread), Error::Internal);
+      EXPECT_EQ(kv->abort_step(), Error::Ok);
+    }
+    EXPECT_FALSE(ctl->declare_step({0}));
+    EXPECT_FALSE(ctl->seq_new());
+    EXPECT_FALSE(ctl->seq_clone(0, 1));
+    EXPECT_EQ(kv->compact_columns(0), Error::InvalidState);
+    ctl->clear();
+    ASSERT_EQ(ctl->seq_new(), 0);
+    ASSERT_EQ(write_step(*ptr, fake, handle, {0}), Error::Ok);
+    expect_history(fake, 0, 1);
+    kv->forget_handle(&handle);
+  }
 }
 
 TEST_F(CudaPrivateCacheTest, IdleCompactionDropsClosedPrivateSpans) {

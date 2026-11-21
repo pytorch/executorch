@@ -93,7 +93,9 @@ class CudaKVCache {
   virtual runtime::Error commit_step(int64_t write_length) = 0;
 
   // A prepared forward failed. Fence its queued work before permitting
-  // storage to move again. Claimed logical rows are not rolled back.
+  // storage to move again. Claimed logical rows are not rolled back. ABI 3
+  // retires only owners in that forward until seq_rm; other owners remain
+  // usable. A failed device fence requires a fenced clear of the whole cache.
   virtual runtime::Error abort_step() {
     return runtime::Error::Ok;
   }

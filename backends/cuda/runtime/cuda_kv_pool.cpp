@@ -32,6 +32,9 @@ using ::executorch::backends::aoti::slim::SlimTensor;
 using ::executorch::extension::cuda::CUDAGuard;
 using ::executorch::runtime::Error;
 
+thread_local CudaKVPool::FenceFunction CudaKVPool::private_fence_for_testing_ =
+    nullptr;
+
 std::string offgraph_kv_layer_fqn(int64_t layer_id, const char* suffix) {
   return std::string(kOffGraphKVFqnPrefix) + "layer_" +
       std::to_string(layer_id) + "_" + suffix;
@@ -179,6 +182,10 @@ Error CudaKVPool::prepare_private(
     cudaStream_t stream,
     bool compact) {
   ET_CHECK_OR_RETURN_ERROR(
+      !private_fence_failed_,
+      InvalidState,
+      "offgraph_kv: failed private fence requires a fenced clear");
+  ET_CHECK_OR_RETURN_ERROR(
       private_rows_ && device_known_ && declared_columns_ > 1 &&
           required_rows.size() == layers_.size() &&
           live_lengths.size() == static_cast<size_t>(declared_columns_ - 1) &&
@@ -209,6 +216,7 @@ Error CudaKVPool::prepare_private(
       const int64_t limit = layer.private_window > 0
           ? std::min(layer.private_window, virtual_rows)
           : virtual_rows;
+      int64_t occupied_rows = 1;
       for (size_t owner = 0; owner < live_lengths.size(); ++owner) {
         const int64_t required = required_rows[index][owner];
         const int64_t capacity = private_layouts_[index].spans[owner].capacity;
@@ -220,12 +228,14 @@ Error CudaKVPool::prepare_private(
             ? std::min(live_lengths[owner], limit)
             : live_lengths[owner];
         ET_CHECK_OR_RETURN_ERROR(
-            retained <= capacity,
+            retained <= capacity && required >= retained,
             InvalidArgument,
             "offgraph_kv: retained history exceeds its private span");
         change |=
             required > capacity || (compact && required == 0 && capacity > 0);
+        occupied_rows += capacity;
       }
+      change |= compact && occupied_rows < private_layouts_[index].rows;
     }
     for (size_t index = 0; index < side_specs_.size(); ++index) {
       const SideBuffer& spec = side_specs_[index];
@@ -281,10 +291,16 @@ Error CudaKVPool::prepare_private(
       }
     }
     auto result = make_private_row_layout(
-        {required.data(), required.size()}, previous, initial_rows_, limit);
+        {required.data(), required.size()},
+        previous,
+        initial_rows_,
+        limit,
+        compact);
     ET_CHECK_OK_OR_RETURN_ERROR(result.error());
     const auto& spans = result.get().spans;
     if (allocated_) {
+      layout_changed |= result.get().rows != private_layouts_[index].rows ||
+          result.get().repacked;
       for (size_t owner = 0; owner < spans.size(); ++owner) {
         layout_changed |= spans[owner].base != previous[owner].base ||
             spans[owner].capacity != previous[owner].capacity;
@@ -334,7 +350,12 @@ Error CudaKVPool::prepare_private(
   if (!layout_changed && !side_changed) {
     return Error::Ok;
   }
-  if (allocated_) {
+  bool storage_moves = side_changed;
+  for (size_t index = 0; index < plans.size(); ++index) {
+    storage_moves |= !allocated_ || plans[index].repacked ||
+        plans[index].rows != allocations_[index].rows;
+  }
+  if (allocated_ && storage_moves) {
     ET_CHECK_OK_OR_RETURN_ERROR(synchronize(/*all_streams=*/true));
   }
 
@@ -347,8 +368,15 @@ Error CudaKVPool::prepare_private(
   std::vector<void*> next_sides = side_buffers_;
   next_sides.resize(side_specs_.size(), nullptr);
   bool committed = false;
+  bool work_queued = false;
+  bool payload_copied = false;
   aoti::ScopeGuard rollback([&]() noexcept {
     if (!committed) {
+      // A failed allocation can follow a copy into a free region of the live
+      // arena. The preceding completed-step event does not cover that copy.
+      if (work_queued) {
+        (void)synchronize(/*all_streams=*/true);
+      }
       for (size_t index = 0; index < replacements.size(); ++index) {
         if (replacements[index].k != nullptr) {
           discard(layers_[index], replacements[index], stream);
@@ -361,7 +389,6 @@ Error CudaKVPool::prepare_private(
   });
   if (layout_changed) {
     for (size_t index = 0; index < layers_.size(); ++index) {
-      // Changing one span may move every later span in this layer.
       const auto& next = plans[index];
       bool changed = !allocated_;
       if (allocated_) {
@@ -374,9 +401,14 @@ Error CudaKVPool::prepare_private(
       if (!changed) {
         continue;
       }
-      ET_CHECK_OK_OR_RETURN_ERROR(allocate_layer(
-          layers_[index], next.rows, stream, replacements[index]));
-      next_allocations[index] = replacements[index];
+      const bool replace =
+          !allocated_ || next.repacked || next.rows != allocations_[index].rows;
+      if (replace) {
+        work_queued = true;
+        ET_CHECK_OK_OR_RETURN_ERROR(allocate_layer(
+            layers_[index], next.rows, stream, replacements[index]));
+        next_allocations[index] = replacements[index];
+      }
       if (!allocated_) {
         continue;
       }
@@ -389,6 +421,9 @@ Error CudaKVPool::prepare_private(
         if (live == 0) {
           continue;
         }
+        if (!replace && src.base == dst.base) {
+          continue;
+        }
         ET_CHECK_OR_RETURN_ERROR(
             layers_[index].private_window == 0 ||
                 src.capacity == dst.capacity ||
@@ -396,8 +431,9 @@ Error CudaKVPool::prepare_private(
             InvalidState,
             "offgraph_kv: a wrapped Ring cannot change its private modulus");
         for (const auto& [from, to] :
-             {std::pair{allocations_[index].k, replacements[index].k},
-              std::pair{allocations_[index].v, replacements[index].v}}) {
+             {std::pair{allocations_[index].k, next_allocations[index].k},
+              std::pair{allocations_[index].v, next_allocations[index].v}}) {
+          work_queued = true;
           const cudaError_t error = cudaMemcpyAsync(
               static_cast<uint8_t*>(to) + dst.base * bytes_per_row,
               static_cast<const uint8_t*>(from) + src.base * bytes_per_row,
@@ -409,6 +445,7 @@ Error CudaKVPool::prepare_private(
               Internal,
               "offgraph_kv: private row copy failed: %s",
               cudaGetErrorString(error));
+          payload_copied = true;
         }
       }
     }
@@ -417,6 +454,7 @@ Error CudaKVPool::prepare_private(
     if (allocated_ && next_side_bytes[index] == side_allocated_bytes_[index]) {
       continue;
     }
+    work_queued = true;
     auto result =
         CudaAllocator::allocate_async(next_side_bytes[index], device_, stream);
     ET_CHECK_OK_OR_RETURN_ERROR(result.error());
@@ -430,11 +468,12 @@ Error CudaKVPool::prepare_private(
           "offgraph_kv: cannot clear private metadata");
     }
   }
-  ET_CHECK_OR_RETURN_ERROR(
-      cudaStreamSynchronize(stream) == cudaSuccess,
-      Internal,
-      "offgraph_kv: private replacement copy fence failed");
-  invalidate_bindings();
+  if (storage_moves || payload_copied) {
+    ET_CHECK_OK_OR_RETURN_ERROR(synchronize());
+  }
+  if (storage_moves) {
+    invalidate_bindings();
+  }
   for (size_t index = 0; index < replacements.size(); ++index) {
     if (replacements[index].k != nullptr && allocated_) {
       discard(layers_[index], allocations_[index], stream);
@@ -489,9 +528,18 @@ Error CudaKVPool::synchronize(bool all_streams) {
     return Error::Ok;
   }
   const auto device = CUDAGuard::create(device_);
-  ET_CHECK_OK_OR_RETURN_ERROR(device.error());
+  if (device.error() != Error::Ok) {
+    private_fence_failed_ |= private_rows_;
+    return device.error();
+  }
   const cudaError_t error =
-      all_streams ? cudaDeviceSynchronize() : cudaStreamSynchronize(stream_);
+      private_rows_ && private_fence_for_testing_ != nullptr
+      ? private_fence_for_testing_(stream_, all_streams)
+      : (all_streams ? cudaDeviceSynchronize()
+                     : cudaStreamSynchronize(stream_));
+  if (private_rows_) {
+    private_fence_failed_ |= error != cudaSuccess;
+  }
   ET_CHECK_OR_RETURN_ERROR(
       error == cudaSuccess,
       Internal,
