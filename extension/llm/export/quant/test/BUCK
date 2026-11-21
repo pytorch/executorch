@@ -16,6 +16,7 @@ fbcode_target(_kind = runtime.python_test,
         "//caffe2:torch",
         "//executorch/extension/llm/export:int4",
         "//executorch/extension/llm/export:load",
+        "//executorch/extension/llm/export:nvfp4",
         "//executorch/extension/llm/export:quant",
     ],
 )

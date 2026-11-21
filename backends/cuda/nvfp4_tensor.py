@@ -14,9 +14,11 @@ class CudaNVFP4Tensor(TorchAOBaseTensor):
     """Layout read by the CUDA kernels: ``qdata`` is ``(N, K / 2)`` uint8 with
     element ``2j`` in the low nibble of byte ``j`` (torchao order, unlike
     GGML's eight-lows-then-eight-highs); ``scale`` is ``(N, K / 16)`` E4M3
-    bytes, N-major; ``per_tensor_scale`` is float32 of shape ``(1,)`` or
+    bytes, N-major; ``per_tensor_scale`` is float32 of shape ``(1, 1)`` or
     ``(N,)`` (``fuse_along_output`` picks per-row scales when the inputs'
-    scalars differ), so kernels handle both. ``act_per_tensor_scale`` keeps
+    scalars differ), so kernels handle both. The scalar is 2-D because
+    Inductor inlines 1-D constants of <= 8 elements as fill kernels that run on
+    every call. ``act_per_tensor_scale`` keeps
     its ``ExportableNVFP4Tensor`` meaning.
 
     ``unit_scale`` asserts two facts kernels may rely on: ``per_tensor_scale``
@@ -61,10 +63,12 @@ class CudaNVFP4Tensor(TorchAOBaseTensor):
         if scale.device != qdata.device or per_tensor_scale.device != qdata.device:
             raise ValueError("CUDA NVFP4 fields must be on one device")
         qdata, scale = qdata.contiguous(), scale.contiguous()
-        # A length-one tensor remains a device pointer during AOTI lowering.
+        # A one-element tensor remains a device pointer during AOTI lowering.
         # A CPU zero-dimensional tensor may be folded into an IR scalar,
         # which cannot be passed to a Triton pointer argument.
-        per_tensor_scale = per_tensor_scale.reshape(-1).contiguous()
+        per_tensor_scale = per_tensor_scale.reshape(
+            (1, 1) if per_tensor_scale.numel() == 1 else (-1,)
+        ).contiguous()
         obj = torch.Tensor._make_wrapper_subclass(
             cls,
             (n, half_k * 2),
@@ -81,7 +85,8 @@ class CudaNVFP4Tensor(TorchAOBaseTensor):
         return obj
 
     @classmethod
-    def from_exportable(cls, w):
+    def from_exportable(cls, w) -> "CudaNVFP4Tensor":
+        """Repack a portable ``ExportableNVFP4Tensor`` (uint32 ``qdata``)."""
         # Infer once on materialized weights. Fake reconstruction receives the
         # serialized metadata through __new__, without reading tensor values.
         unit_scale = (
@@ -130,7 +135,9 @@ class CudaNVFP4Tensor(TorchAOBaseTensor):
             w.per_tensor_scale.numel() == 1 and torch.equal(w.per_tensor_scale, pts)
             for w in weights
         ):
-            pts = torch.cat([w.per_tensor_scale.expand(w.shape[0]) for w in weights])
+            pts = torch.cat(
+                [w.per_tensor_scale.reshape(-1).expand(w.shape[0]) for w in weights]
+            )
         return cls(
             torch.cat([w.qdata for w in weights]),
             torch.cat([w.scale for w in weights]),
