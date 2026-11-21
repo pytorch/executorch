@@ -378,6 +378,27 @@ def define_common_targets(is_fbcode = False):
     )
 
     python_unittest_remote_gpu(
+        name = "test_int4_w4a8_prefill_gemm",
+        srcs = [
+            "test_int4_w4a8_prefill_gemm.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/cuda:coalesced_int4_tensor",
+            "//executorch/backends/cuda:quantize_op_dispatch",
+            "//executorch/backends/cuda:triton_kernels",
+        ],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+            subplatform = "A100",
+        ),
+    )
+
+    python_unittest_remote_gpu(
         name = "test_int5_quantized_gemm",
         srcs = [
             "test_int5_dispatch.py",
