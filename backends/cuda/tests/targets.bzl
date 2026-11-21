@@ -610,6 +610,7 @@ def define_common_targets(is_fbcode = False):
         deps = [
             "//caffe2:torch",
             "//executorch/backends/cuda:nvfp4_tensor",
+            "//executorch/examples/models/gemma4_31b:quant",
             "//executorch/extension/llm/export:nvfp4",
         ],
     )

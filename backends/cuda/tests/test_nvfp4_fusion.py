@@ -33,22 +33,45 @@ CUDA = pytest.mark.skipif(
 from executorch.backends.cuda.tests.nvfp4_test_utils import dynamic_rows, shards
 
 
+@pytest.fixture(autouse=True)
+def default_policy(monkeypatch):
+    for name in ("ET_CUDA_NVFP4_ACT", "ET_CUDA_NVFP4_PREFILL_OUTPUT"):
+        monkeypatch.delenv(name, raising=False)
+
+
 def test_cpu_fallback_matches_dequantized_weight(monkeypatch):
-    from executorch.backends.cuda.quantize_op_dispatch import _gemm_family_dispatch
+    from executorch.backends.cuda.quantize_op_dispatch import (
+        _gemm_family_dispatch,
+        nvfp4_dispatch,
+    )
 
     # Dequantize the 97-row weight in 32-row chunks, as for a huge lm_head.
     monkeypatch.setattr(_gemm_family_dispatch, "_DEQUANT_N_THRESHOLD", 16)
     monkeypatch.setattr(_gemm_family_dispatch, "_DEQUANT_N_CHUNK", 32)
+    chunks = []
+    weight_rows = nvfp4_dispatch._weight_rows
+
+    def record_chunk(w, rows):
+        chunks.append((rows.start, rows.stop))
+        return weight_rows(w, rows)
 
     w = CudaNVFP4Tensor.fuse_along_output(shards(192))
     ids = torch.tensor([[0, 40], [96, 5]])
     assert torch.equal(F.embedding(ids, w), F.embedding(ids, w.dequantize()))
+    for invalid in (-1, 97):
+        with pytest.raises(IndexError, match="out of range for 97 rows"):
+            F.embedding(torch.tensor([0, invalid]), w)
     x = torch.randn(5, 192, dtype=torch.bfloat16)
-    assert torch.equal(F.linear(x, w), F.linear(x, w.dequantize()))
+    with monkeypatch.context() as patch:
+        patch.setattr(nvfp4_dispatch, "_weight_rows", record_chunk)
+        assert torch.equal(F.linear(x, w), F.linear(x, w.dequantize()))
+    assert chunks == [(0, 32), (32, 64), (64, 96), (96, 97)]
     monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_OUTPUT", "fp32")
     out = F.linear(x, w)
     assert out.dtype == torch.float32
     torch.testing.assert_close(out, F.linear(x.float(), w.dequantize(torch.float32)))
+    # Decode (M <= 4) keeps the activation dtype under the FP32 policy.
+    assert F.linear(x[:2], w).dtype == torch.bfloat16
 
 
 def record_calls(monkeypatch, module, names, calls):
@@ -74,6 +97,7 @@ def record_calls(monkeypatch, module, names, calls):
         ("auto", True, 37, True, "nvfp4_auto_prefill"),
         ("auto", True, 1, True, "nvfp4_auto_decode"),
         ("w4a4", True, 37, False, "nvfp4_w4a4"),
+        ("w4a4", True, 1, True, "nvfp4_w4a4"),
         # A dynamic M (bounded by 64) is never statically small: prefill.
         ("auto", True, None, True, "nvfp4_auto_prefill"),
         ("w4a16", False, None, False, "nvfp4_w4a16"),
@@ -145,22 +169,23 @@ def test_auto_bodies_forward_mode_split(fp4, monkeypatch):
     decode_op = "nvfp4_w4a4" if fp4 else "nvfp4_gemv"
 
     x = torch.randn(37, 512, dtype=torch.bfloat16)
+    act_scale = torch.full((1, 1), 0.5)
     out = nvfp4_dispatch._prefill(
-        x, *weight, 0.5, 64, mode_split=mode_split, output_dtype=torch.float32
+        x, *weight, act_scale, 64, mode_split=mode_split, output_dtype=torch.float32
     )
-    act = (0.5,) if fp4 else ()
+    act = (act_scale,) if fp4 else ()
     assert calls.pop() == (
         prefill_op,
         act,
         {"split_k": split, "output_dtype": torch.float32},
     )
     assert out.dtype == torch.float32
-    nvfp4_dispatch._decode(x[:2], *weight, 0.5, True, mode_split=mode_split)
+    nvfp4_dispatch._decode(x[:2], *weight, act_scale, True, mode_split=mode_split)
     expected = {"split_k": split} if fp4 else {"split_k": split, "unit_scale": True}
     assert calls.pop() == (decode_op, act, expected)
     # An unbounded M (None) rejects split-K before any kernel is called.
     with pytest.raises(InvalidLaunchParam, match="bounded M"):
-        nvfp4_dispatch._prefill(x, *weight, 0.5, None, mode_split=mode_split)
+        nvfp4_dispatch._prefill(x, *weight, act_scale, None, mode_split=mode_split)
     assert not calls
 
 
@@ -202,7 +227,8 @@ def test_calibrated_activation_scale_reaches_w4a4(mode, rows, op, monkeypatch):
     weight = fake.from_tensor(w)
     with fake:
         F.linear(x, weight)
-    assert calls == [(op, 0.002)]
+    assert [name for name, _ in calls] == [op]
+    assert calls[0][1] is weight.act_per_tensor_scale
 
 
 def test_auto_ops_run_their_first_candidate_outside_tuning(monkeypatch):
@@ -216,9 +242,11 @@ def test_auto_ops_run_their_first_candidate_outside_tuning(monkeypatch):
     w = shards(512)[0]
     weight = (w.qdata, w.scale, w.per_tensor_scale)
     x = torch.randn(37, 512, dtype=torch.bfloat16)
-    out = nvfp4_dispatch.nvfp4_auto_prefill(x, *weight, 0.0, output_dtype=torch.float32)
+    out = nvfp4_dispatch.nvfp4_auto_prefill(
+        x, *weight, None, output_dtype=torch.float32
+    )
     assert out.dtype == torch.float32
-    nvfp4_dispatch.nvfp4_auto_decode(x[:2], *weight, 0.0, False)
+    nvfp4_dispatch.nvfp4_auto_decode(x[:2], *weight, None, False)
     assert calls == [("nvfp4_w4a16", torch.float32), ("nvfp4_gemv", None)]
 
 
