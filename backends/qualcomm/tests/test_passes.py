@@ -9,7 +9,6 @@ from unittest.mock import MagicMock, patch, PropertyMock
 import torch
 from executorch.backends.qualcomm._passes import (
     AnnotateQuantAttrs,
-    ConstantFolding,
     ConvertBmmToMatmul,
     ConvertMhaToSha,
     DecomposeColIm,
@@ -70,7 +69,6 @@ from executorch.backends.qualcomm.tests.models import (
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_DTYPE,
     QCOM_ENCODING,
-    QCOM_PASS_ACTIVATE_KEY,
     QCOM_QUANT_ATTRS,
     QCOM_QUANT_MAX,
     QCOM_QUANT_MIN,
@@ -348,14 +346,6 @@ def stubbed_compiler_specs(backend_options):
         return generate_qnn_executorch_compiler_spec(
             soc_model=QcomChipset.SM8650, backend_options=backend_options
         )
-
-
-def passes_job_without_constant_folding():
-    # ConstantFolding precomputes constant-only ops, so the partitioner
-    # decisions on them can't be observed after lowering.
-    passes_job = get_qnn_pass_manager_cls().get_capture_program_passes()
-    passes_job[ConstantFolding][QCOM_PASS_ACTIVATE_KEY] = False
-    return passes_job
 
 
 def delegated_ops(edge):
@@ -1572,7 +1562,6 @@ class TestPasses(unittest.TestCase):
                         model.eval(),
                         sample_input,
                         compiler_specs,
-                        passes_job=passes_job_without_constant_folding(),
                         skip_node_op_set={"aten.relu.default"},
                     )
                 except RuntimeError as e:
@@ -1591,10 +1580,7 @@ class TestPasses(unittest.TestCase):
         sample_input = (torch.randn(4, 16),)
         with stubbed_qnn_backend():
             edge = to_edge_transform_and_lower_to_qnn(
-                ConstantBranches().eval(),
-                sample_input,
-                compiler_specs,
-                passes_job=passes_job_without_constant_folding(),
+                ConstantBranches().eval(), sample_input, compiler_specs
             )
             for model in (
                 NoRuntimeInput(),
@@ -1633,10 +1619,7 @@ class TestPasses(unittest.TestCase):
         ):
             with self.subTest(model=type(model).__name__), stubbed_qnn_backend():
                 edge = to_edge_transform_and_lower_to_qnn(
-                    model.eval(),
-                    sample_input,
-                    compiler_specs,
-                    passes_job=passes_job_without_constant_folding(),
+                    model.eval(), sample_input, compiler_specs
                 )
                 self.assertIn(exir_ops.edge.aten.linear.default, delegated_ops(edge))
 
@@ -1655,7 +1638,6 @@ class TestPasses(unittest.TestCase):
                 convert_pt2e(quantized),
                 sample_input,
                 stubbed_compiler_specs(generate_htp_compiler_spec(use_fp16=False)),
-                passes_job=passes_job_without_constant_folding(),
             )
         self.assertIn(exir_ops.edge.aten.linear.default, delegated_ops(edge))
 
