@@ -46,7 +46,10 @@ def test_prepacked_nvfp4_replaces_meta_weight_without_repacking(kind, parameter)
 @pytest.mark.parametrize("pack", [pack_linear_for_cuda, pack_embedding_for_cuda])
 def test_portable_nvfp4_is_packed(pack):
     w = portable_weight(pts=0.5)
-    module = torch.nn.Linear(192, 70, bias=False, device="meta", dtype=torch.bfloat16)
+    if pack is pack_linear_for_cuda:
+        module = torch.nn.Linear(192, 70, bias=False, device="meta")
+    else:
+        module = torch.nn.Embedding(70, 192, device="meta")
     pack(module, {"weight": w})
     assert isinstance(module.weight, CudaNVFP4Tensor)
     assert not module.weight.requires_grad
@@ -59,5 +62,9 @@ def test_gguf_nvfp4_without_its_scale_is_rejected(pack):
 
     raw = torch.zeros(7, 36, dtype=torch.uint8)
     weight = ExportableGGUFTensor(raw, "nvfp4", torch.bfloat16)
+    if pack is pack_linear_for_cuda:
+        module = torch.nn.Linear(64, 7, bias=False, device="meta")
+    else:
+        module = torch.nn.Embedding(7, 64, device="meta")
     with pytest.raises(ValueError, match=r"\.scale"):
-        pack(torch.nn.Linear(64, 7, bias=False, device="meta"), {"weight": weight})
+        pack(module, {"weight": weight})

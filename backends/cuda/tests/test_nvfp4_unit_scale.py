@@ -19,8 +19,10 @@ from executorch.backends.cuda.quantize_op_dispatch.nvfp4_dispatch import (
 from executorch.backends.cuda.tests.nvfp4_test_utils import portable_weight as weight
 
 CUDA = pytest.mark.skipif(
-    not torch.cuda.is_available() or torch.version.hip is not None,
-    reason="NVIDIA CUDA required",
+    not torch.cuda.is_available()
+    or torch.version.hip is not None
+    or torch.cuda.get_device_capability() < (8, 9),
+    reason="NVIDIA CUDA with native E4M3 (SM89+) required",
 )
 
 
@@ -88,7 +90,7 @@ class UnitLinear(torch.nn.Module):
 @CUDA
 @pytest.mark.parametrize("mode", ["auto", "w4a16"])
 def test_unit_scale_linear_pte(mode, monkeypatch):
-    if not _has_native_fp4():
+    if mode == "auto" and not _has_native_fp4():
         pytest.skip("native FP4 required")
     import executorch.backends.cuda.cuda_backend as cuda_backend
     import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401

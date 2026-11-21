@@ -289,20 +289,19 @@ def _time_candidates_within_memory(
     with the offload tensors parked on the CPU. Returns no times when the device
     still runs out of memory."""
     timing_args = (fn, param, candidates, args, kwargs, candidate_prepass)
-    timing_kwargs = {} if do_bench is None else {"do_bench": do_bench}
     try:
-        return _time_candidates(*timing_args, **timing_kwargs)
+        return _time_candidates(*timing_args, do_bench=do_bench)
     except torch.OutOfMemoryError:
         _free_device_memory()
     try:
-        return _time_candidates(*timing_args, **timing_kwargs)
+        return _time_candidates(*timing_args, do_bench=do_bench)
     except torch.OutOfMemoryError:
         _free_device_memory()
     if _STATE.offload is not None:
         try:
             with _parked_on_cpu(_STATE.offload()):
                 stats.offloads += 1
-                return _time_candidates(*timing_args, **timing_kwargs)
+                return _time_candidates(*timing_args, do_bench=do_bench)
         except torch.OutOfMemoryError:
             _free_device_memory()
     logger.warning(
@@ -368,7 +367,6 @@ def autotune_launch_param(
                     stats.cache_hits += 1
                     times = None
                 else:
-                    timing_kwargs = {} if do_bench is None else {"do_bench": do_bench}
                     times, rejected = _time_candidates_within_memory(
                         fn,
                         name,
@@ -378,7 +376,7 @@ def autotune_launch_param(
                         kwargs,
                         stats,
                         candidate_prepass,
-                        **timing_kwargs,
+                        do_bench=do_bench,
                     )
                     if times is None:
                         stats.out_of_memory += 1
