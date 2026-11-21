@@ -135,6 +135,17 @@ class TestGGUFNVFP4(unittest.TestCase):
         ):
             with self.assertRaisesRegex(ValueError, "scalars"):
                 w.to_exportable_nvfp4_tensor(**scales)
+        # A loader's dtype cast would round the F32 scale before pairing.
+        for scales in (
+            {"per_tensor_scale": torch.tensor(0.25, dtype=torch.bfloat16)},
+            {"per_tensor_scale": ONE, "act_per_tensor_scale": ONE.bfloat16()},
+        ):
+            with self.assertRaisesRegex(ValueError, "float32"):
+                w.to_exportable_nvfp4_tensor(**scales)
+        self.assert_bits_equal(
+            w.to_exportable_nvfp4_tensor(per_tensor_scale=0.25).dequantize(),
+            expected * 0.25,
+        )
 
     def test_act_per_tensor_scale_survives_to(self):
         w = ExportableGGUFTensor(
