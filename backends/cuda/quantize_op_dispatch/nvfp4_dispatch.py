@@ -2,7 +2,17 @@
 # All rights reserved.
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-"""NVFP4 linear/embedding dispatch captured at eager and torch.export time."""
+"""NVFP4 linear/embedding dispatch captured at eager and torch.export time.
+
+Environment variables, read when the model is traced, fix the policy that
+is compiled into the program:
+
+* ``ET_CUDA_NVFP4_ACT``: ``auto`` (default) times W4A16 against native W4A4
+  per layer when native FP4 is available, ``w4a16`` forces weight-only, and
+  ``w4a4`` forces FP4 activations (native FP4 required).
+* ``ET_CUDA_NVFP4_PREFILL_OUTPUT``: ``input`` (default) keeps the activation
+  dtype; ``fp32`` returns FP32 from prefill linears (M not statically <= 4).
+"""
 
 import os
 
@@ -16,10 +26,10 @@ from executorch.backends.cuda.quantize_op_dispatch._gemm_family_dispatch import 
 )
 from executorch.backends.cuda.triton.kernels.nvfp4_output import (
     NVFP4_DECODE_MAX_ROWS,
-    nvfp4_prefill_fp32_enabled,
     nvfp4_prefill_output_dtype,
 )
 from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
+    _has_native_fp4_conversion as _has_native_fp4,
     SPLIT_K_CANDIDATES,
 )
 from executorch.backends.cuda.triton.kernels.nvfp4_tuning import nvfp4_launch_bench
@@ -28,12 +38,6 @@ from executorch.backends.cuda.triton.kernels.quantized_gemm_family import (
 )
 from torch.fx.experimental.symbolic_shapes import statically_known_true
 from torch.library import triton_op
-
-
-@torch._dynamo.assume_constant_result
-def _has_native_fp4():
-    return torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 12
-
 
 _MODE_STRIDE = 64
 _MODE_SPLITS = tuple(
@@ -127,7 +131,8 @@ def _linear(func, types, args, kwargs):
         x.dtype == torch.float32 and output_dtype == torch.float32
     )
     if not can_launch_triton(flat) or not allowed_dtype:
-        out = F.linear(flat, w.dequantize(x.dtype))
+        dtype = output_dtype or x.dtype
+        out = F.linear(flat.to(dtype), w.dequantize(dtype))
     else:
         from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
             nvfp4_gemv,
@@ -192,7 +197,15 @@ def _embedding(func, types, args, kwargs):
     else:
         w, indices = args[:2]
     if not can_launch_triton(indices):
-        return F.embedding(indices, w.dequantize())
+        ids = indices.reshape(-1)
+        pts = w.per_tensor_scale
+        rows = CudaNVFP4Tensor(
+            w.qdata[ids],
+            w.scale[ids],
+            pts if pts.numel() == 1 else pts[ids],
+            orig_dtype=w.orig_dtype,
+        )
+        return rows.dequantize().reshape(*indices.shape, w.shape[1])
     from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
         nvfp4_embedding,
     )

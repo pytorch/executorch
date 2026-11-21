@@ -20,12 +20,12 @@ from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
     nvfp4_w4a4,
 )
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
-from executorch.export.utils import is_fbcode
-from executorch.runtime import Runtime
 
 pytestmark = pytest.mark.skipif(
-    not torch.cuda.is_available() or torch.cuda.get_device_capability() < (8, 9),
-    reason="CUDA with native E4M3 (SM89+) required",
+    not torch.cuda.is_available()
+    or torch.version.hip is not None
+    or torch.cuda.get_device_capability() < (8, 9),
+    reason="NVIDIA CUDA with native E4M3 (SM89+) required",
 )
 
 
@@ -85,9 +85,13 @@ def test_split_k_pte(mode, row_scales, split):
             lowered.write_to_file(output)
         lowered.write_tensor_data_to_file(folder)
         data = next(Path(folder).glob("*.ptd"))
+        from executorch.export.utils import is_fbcode
+
         if is_fbcode():
             # The in-process runtime in fbcode has no CUDA backend.
             return
+        from executorch.runtime import Runtime
+
         method = (
             Runtime.get()
             .load_program(str(path), data_path=str(data))

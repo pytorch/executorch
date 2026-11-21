@@ -21,6 +21,33 @@ def test_activation_rejects_partial_k16_group(k):
         kernels.nvfp4_quantize_activation(x)
 
 
+@pytest.mark.parametrize(
+    "op", [kernels.nvfp4_w4a4, kernels.nvfp4_w4a16, kernels.nvfp4_gemv]
+)
+@pytest.mark.parametrize("invalid", ["k_mismatch", "scale_k", "strided"])
+def test_rejects_malformed_operands(invalid, op):
+    x = torch.empty((2, 64), dtype=torch.bfloat16)
+    q = torch.empty((3, 32), dtype=torch.uint8)
+    s = torch.empty((3, 4), dtype=torch.uint8)
+    if invalid == "k_mismatch":
+        q = torch.empty((3, 16), dtype=torch.uint8)
+    elif invalid == "scale_k":
+        s = torch.empty((3, 2), dtype=torch.uint8)
+    else:
+        x = torch.empty((64, 2), dtype=torch.bfloat16).t()
+    with pytest.raises(ValueError, match="NVFP4"):
+        op(x, q, s, torch.ones(1))
+
+
+def test_w4a4_requires_native_fp4():
+    x = torch.empty((2, 64), dtype=torch.bfloat16)
+    q = torch.empty((3, 32), dtype=torch.uint8)
+    s = torch.empty((3, 4), dtype=torch.uint8)
+    with mock.patch.object(kernels, "_has_native_fp4_conversion", return_value=False):
+        with pytest.raises(RuntimeError, match="SM120"):
+            kernels.nvfp4_w4a4(x, q, s, torch.ones(1))
+
+
 def test_split_workspace_boundary():
     with mock.patch.object(kernels, "_split_workspace_limit", return_value=64):
         kernels._check_split_workspace(2, 2, 4)

@@ -12,11 +12,16 @@ import pytest
 import torch
 import torch.nn.functional as F
 from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
-from executorch.backends.cuda.quantize_op_dispatch.nvfp4_dispatch import _has_native_fp4
+from executorch.backends.cuda.quantize_op_dispatch.nvfp4_dispatch import (
+    _has_native_fp4,
+    _MODE_STRIDE,
+)
 from executorch.backends.cuda.tests.nvfp4_test_utils import portable_weight as weight
-from executorch.export.utils import is_fbcode
 
-CUDA = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+CUDA = pytest.mark.skipif(
+    not torch.cuda.is_available() or torch.version.hip is not None,
+    reason="NVIDIA CUDA required",
+)
 
 
 @CUDA
@@ -129,6 +134,8 @@ def test_unit_scale_linear_pte(mode, monkeypatch):
             lowered.write_to_file(output)
         lowered.write_tensor_data_to_file(folder)
         data = next(Path(folder).glob("*.ptd"))
+        from executorch.export.utils import is_fbcode
+
         if is_fbcode():
             # The in-process runtime in fbcode has no CUDA backend.
             return
@@ -142,7 +149,7 @@ def test_unit_scale_linear_pte(mode, monkeypatch):
     if mode == "auto":
         mode_picks = [pick for pick in picks if pick.param == "mode_split"]
         assert len(mode_picks) == 1
-        selected = "w4a4" if mode_picks[0].choice // 64 else "w4a16"
+        selected = "w4a4" if mode_picks[0].choice // _MODE_STRIDE else "w4a16"
     if selected == "w4a4":
         q, s, g = kernels.nvfp4_quantize_activation(x.cuda())
         quantized = (
