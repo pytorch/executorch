@@ -416,6 +416,7 @@ target_link_libraries(
   PUBLIC cuda_platform extension_tensor ${_cuda_runtime_libraries}
          extension_cuda ${CMAKE_DL_LIBS}
 )
+target_link_libraries(aoti_cuda_backend PRIVATE aoti_temp_library)
 if(EXECUTORCH_BUILD_EXTENSION_LLM)
   target_link_libraries(aoti_cuda_backend PUBLIC extension_llm_cache)
   target_compile_definitions(
