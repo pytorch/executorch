@@ -82,6 +82,9 @@ Error TextLLMRunner::generate(
     stats_->model_load_end_ms = time_in_ms();
   }
 
+  // A stop() from here on, including during prefill, ends this generation.
+  text_token_generator_->reset_stop();
+
   if (config.warming) {
     ET_LOG(Info, "Doing a warmup run...");
   }
@@ -242,7 +245,12 @@ Error TextLLMRunner::generate(
 
   // Generate max_new_tokens - 1 because prefill already generated 1 token.
   auto generate_result = text_token_generator_->generate(
-      prompt_tokens, pos_, max_new_tokens - 1, resolved_temp, wrapped_callback);
+      prompt_tokens,
+      pos_,
+      max_new_tokens - 1,
+      resolved_temp,
+      wrapped_callback,
+      /*reset_stop=*/false);
 
   if (!generate_result.ok()) {
     return generate_result.error();
