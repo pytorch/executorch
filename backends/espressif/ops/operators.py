@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import math
+
 import torch
 from executorch.backends.espressif.utils.quantization import requantize
 from torch.library import impl, Library, register_fake
@@ -73,6 +75,14 @@ lib.define(
 lib.define(
     "quantized_mean_int8.out(Tensor input, int input_zero_point, int output_zero_point, "
     "int output_multiplier, int output_shift, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "quantized_softmax_int8(Tensor input, int input_multiplier, int input_shift, "
+    "int diff_min, Tensor scratch) -> Tensor"
+)
+lib.define(
+    "quantized_softmax_int8.out(Tensor input, int input_multiplier, int input_shift, "
+    "int diff_min, Tensor scratch, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
     "quantized_linear_int8(Tensor input, Tensor weight, Tensor? bias, "
@@ -176,6 +186,27 @@ def quantized_mean_int8(
 ):
     total = (input.to(torch.int64) - input_zero_point).sum((1, 2))
     result = requantize(total, output_multiplier, output_shift) + output_zero_point
+    return result.clamp(-128, 127).to(torch.int8)
+
+
+@register_fake("esp_nn::quantized_softmax_int8")
+def quantized_softmax_int8_meta(
+    input, input_multiplier, input_shift, diff_min, scratch
+):
+    return input.new_empty(input.shape)
+
+
+@impl(lib, "quantized_softmax_int8", "CompositeExplicitAutograd")
+def quantized_softmax_int8(input, input_multiplier, input_shift, diff_min, scratch):
+    scale = math.ldexp(input_multiplier / float(1 << 31), input_shift - 26)
+    differences = input.to(torch.int32) - input.amax(dim=-1, keepdim=True).to(
+        torch.int32
+    )
+    logits = torch.where(
+        differences >= diff_min, differences.float() * scale, -math.inf
+    )
+    # ESP-NN's fixed-point exponential can differ by one output quantization step.
+    result = torch.round(torch.softmax(logits, dim=-1) * 256) - 128
     return result.clamp(-128, 127).to(torch.int8)
 
 
