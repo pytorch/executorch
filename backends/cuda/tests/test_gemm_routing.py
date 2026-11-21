@@ -325,7 +325,7 @@ class PlannerTest(_RoutingTest):
             self.assertEqual(plan.candidates[1].reason, "ROCm")
 
     def test_without_measurement_the_static_class_decides(self):
-        """A call of a few rows with a weight in the matrix-vector class is
+        """Calls of a few and of short rows with a weight in their class are
         replaced; one with more rows keeps the regular lowering."""
         from executorch.backends.cuda.triton.kernels.gemm import routing
         from executorch.backends.cuda.triton.kernels.gemm.gemv import MAX_ROWS
@@ -333,7 +333,8 @@ class PlannerTest(_RoutingTest):
             ReplaceEdgeOpWithTritonOpPass,
         )
 
-        n, k = routing.GEMV_MIN_N, routing.GEMV_MIN_K
+        n, k = routing.SHORT_MIN_N, routing.SHORT_MIN_K
+        too_many = routing.SHORT_MAX_ROWS + 1
 
         class Head(nn.Module):
             def __init__(self):
@@ -343,7 +344,11 @@ class PlannerTest(_RoutingTest):
             def forward(self, x):
                 return self.linear(x)
 
-        for rows, replaced in ((MAX_ROWS, True), (5, False)):
+        for rows, replaced in (
+            (MAX_ROWS, True),
+            (MAX_ROWS + 1, True),
+            (too_many, False),
+        ):
             graphs = backend_graphs(Head, lambda rows=rows: torch.randn(rows, k))
             for api, graph_module in graphs.items():
                 with self.subTest(rows=rows, api=api), self.assertLogs(
@@ -357,12 +362,14 @@ class PlannerTest(_RoutingTest):
                     self.assertIn("(strict FP32 linear)", output)
                     self.assertNotIn("permute_copy", graph_module.code)
                 else:
-                    self.assertIn("5 rows: only calls of at most 4 rows", output)
+                    self.assertIn(
+                        f"{too_many} rows: only calls of at most 64 rows", output
+                    )
 
 
 class StaticClassTest(_RoutingTest):
-    """The matrix-vector class the static choice routes: every corner the
-    benchmark measures is routed and one step past each limit is kept."""
+    """The classes the static choice routes: every corner the benchmark
+    measures is routed and one step past each limit is kept."""
 
     def plan_for(self, m, n, k):
         from executorch.exir.dialects._ops import ops as exir_ops
@@ -374,23 +381,35 @@ class StaticClassTest(_RoutingTest):
     def test_the_benchmarked_corners_are_routed(self):
         from executorch.backends.cuda.triton.kernels.gemm import routing
 
-        for m, n, k in routing.gemv_boundary_calls():
+        for m, n, k in (
+            routing.gemv_boundary_calls() + routing.short_rows_boundary_calls()
+        ):
             with self.subTest(m=m, n=n, k=k):
                 self.assertEqual(self.plan_for(m, n, k).static_choice, "linear")
 
-    def test_tile_sized_calls_keep_the_regular_lowering(self):
-        """Calls of more rows, which only the tile schedules run, are left to
-        the measurement."""
-        for m, n, k in (
-            (32, 2048, 512),
-            (50, 1024, 4096),
-            (302, 512, 3200),
-            (768, 1152, 1152),
-        ):
+    def test_many_rows_keep_the_regular_lowering(self):
+        """Calls of more than 64 rows are left to the measurement."""
+        for m, n, k in ((65, 512, 1024), (302, 512, 3200), (768, 1152, 1152)):
             with self.subTest(m=m, n=n, k=k):
                 plan = self.plan_for(m, n, k)
                 self.assertEqual(plan.static_choice, "inductor")
-                self.assertIn("only calls of at most 4 rows", plan.static_reason)
+                self.assertIn("only calls of at most 64 rows", plan.static_reason)
+
+    def test_one_step_past_each_short_rows_limit_is_kept(self):
+        from executorch.backends.cuda.triton.kernels.gemm import routing as r
+
+        m, n, k = r.SHORT_MAX_ROWS, r.SHORT_MIN_N, r.SHORT_MIN_K
+        cases = {
+            "N below the floor": (m, n - 1, k),
+            "N above the measured range": (m, r.SHORT_MAX_N + 1, k),
+            "K below the floor": (m, n, k - r.GEMV_K_ALIGNMENT),
+            "K above the measured range": (m, n, r.SHORT_MAX_K + r.GEMV_K_ALIGNMENT),
+        }
+        for label, call in cases.items():
+            with self.subTest(label):
+                plan = self.plan_for(*call)
+                self.assertEqual(plan.static_choice, "inductor")
+                self.assertIn("outside the short-rows class", plan.static_reason)
 
     def test_one_step_past_each_limit_is_kept(self):
         from executorch.backends.cuda.triton.kernels.gemm import routing as r
@@ -398,7 +417,7 @@ class StaticClassTest(_RoutingTest):
 
         n, k = r.GEMV_MIN_N, r.GEMV_MIN_K
         cases = {
-            "5 rows": (5, n, k),
+            "65 rows": (65, n, k),
             "N below the floor": (1, n - 1, k),
             "K below the floor": (1, n, k - r.GEMV_K_ALIGNMENT),
             "K not aligned": (1, n, k + 1),
@@ -431,33 +450,40 @@ class StaticClassTest(_RoutingTest):
         self.assertEqual(self.plan(sliced).static_choice, "linear")
 
     def test_misaligned_rows_and_bases_are_kept(self):
-        """Vector loads need 16-byte aligned input rows and operand bases."""
+        """Both classes need 16-byte aligned input rows and operand bases."""
         from executorch.backends.cuda.triton.kernels.gemm import routing as r
         from executorch.backends.cuda.triton.kernels.gemm.gemv import MAX_ROWS
         from executorch.exir.dialects._ops import ops as exir_ops
 
-        n, k = r.GEMV_MIN_N, r.GEMV_MIN_K
+        # A weight within both classes.
+        n, k = r.SHORT_MIN_N, r.SHORT_MIN_K
         padded = (k + 8, 1)
-        cases = {
-            f"input row stride {k + 1} is not a multiple of 4": (
-                _fake(MAX_ROWS, k, strides=(k + 1, 1)),
-                _fake(n, k),
-            ),
-        }
-        for offset in (1, 2, 3):
-            cases[f"input storage offset {offset} is not a multiple of 4"] = (
-                _fake(MAX_ROWS, k, strides=padded, offset=offset),
-                _fake(n, k),
+        for rows in (MAX_ROWS, r.SHORT_MAX_ROWS):
+            cases = {
+                f"input row stride {k + 1} is not a multiple of 4": (
+                    _fake(rows, k, strides=(k + 1, 1)),
+                    _fake(n, k),
+                ),
+            }
+            for offset in (1, 2, 3):
+                cases[f"input storage offset {offset} is not a multiple of 4"] = (
+                    _fake(rows, k, strides=padded, offset=offset),
+                    _fake(n, k),
+                )
+                cases[f"weight storage offset {offset} is not a multiple of 4"] = (
+                    _fake(rows, k),
+                    _fake(n, k, offset=offset),
+                )
+            for expected, (x, w) in cases.items():
+                with self.subTest(expected, rows=rows):
+                    plan = self.plan(_graph(exir_ops.edge.aten.linear.default, x, w))
+                    self.assertEqual(plan.static_choice, "inductor")
+                    self.assertIn(expected, plan.static_reason)
+            aligned = _fake(rows, k, strides=padded, offset=4)
+            plan = self.plan(
+                _graph(exir_ops.edge.aten.linear.default, aligned, _fake(n, k))
             )
-            cases[f"weight storage offset {offset} is not a multiple of 4"] = (
-                _fake(MAX_ROWS, k),
-                _fake(n, k, offset=offset),
-            )
-        for expected, (x, w) in cases.items():
-            with self.subTest(expected):
-                plan = self.plan(_graph(exir_ops.edge.aten.linear.default, x, w))
-                self.assertEqual(plan.static_choice, "inductor")
-                self.assertIn(expected, plan.static_reason)
+            self.assertEqual(plan.static_choice, "linear")
         # The row stride of a single row is never used.
         one_row = _fake(1, k, strides=(k + 1, 1))
         plan = self.plan(
