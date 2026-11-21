@@ -36,15 +36,18 @@ def test_from_exportable_matches_portable_dequantize(use_per_tensor_scale):
     )
 
 
+@pytest.mark.parametrize("row_scales", [False, True])
 @pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
-def test_fusion_preserves_original_rows(dtype):
+def test_fusion_preserves_original_rows(dtype, row_scales):
+    # Differing scalar global scales (0.25, 0.37, 0.083) also become per-row.
     pieces = shards(192, dtype=dtype)
-    pieces[1] = CudaNVFP4Tensor(
-        pieces[1].qdata,
-        pieces[1].scale,
-        torch.linspace(0.01, 0.035, 19),
-        orig_dtype=dtype,
-    )
+    if row_scales:
+        pieces[1] = CudaNVFP4Tensor(
+            pieces[1].qdata,
+            pieces[1].scale,
+            torch.linspace(0.01, 0.035, 19),
+            orig_dtype=dtype,
+        )
     fused = CudaNVFP4Tensor.fuse_along_output(pieces)
     assert fused.per_tensor_scale.shape == (97,)
     assert torch.equal(fused.qdata, torch.cat([w.qdata for w in pieces]))

@@ -11,7 +11,15 @@ from torchao.utils import TorchAOBaseTensor
 
 
 class CudaNVFP4Tensor(TorchAOBaseTensor):
-    """``unit_scale`` asserts two facts kernels may rely on: ``per_tensor_scale``
+    """Layout read by the CUDA kernels: ``qdata`` is ``(N, K / 2)`` uint8 with
+    element ``2j`` in the low nibble of byte ``j`` (torchao order, unlike
+    GGML's eight-lows-then-eight-highs); ``scale`` is ``(N, K / 16)`` E4M3
+    bytes, N-major; ``per_tensor_scale`` is float32 of shape ``(1,)`` or
+    ``(N,)`` (``fuse_along_output`` picks per-row scales when the inputs'
+    scalars differ), so kernels handle both. ``act_per_tensor_scale`` keeps
+    its ``ExportableNVFP4Tensor`` meaning.
+
+    ``unit_scale`` asserts two facts kernels may rely on: ``per_tensor_scale``
     is 1, so the global-scale multiply can be skipped, and every scale byte is
     below 0x7F, a non-negative finite E4M3 value, so each E2M1 x E4M3 product
     is finite with at most 6 significant bits and exact in BF16 without

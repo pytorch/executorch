@@ -66,6 +66,46 @@ def test_activation_rejects_invalid_static_scale(static):
         kernels.nvfp4_quantize_activation(torch.empty((2, 16)), static)
 
 
+@pytest.mark.parametrize("invalid", ["float_ids", "device"])
+def test_embedding_rejects_malformed_ids(invalid):
+    q = torch.empty((5, 32), dtype=torch.uint8)
+    s = torch.empty((5, 4), dtype=torch.uint8)
+    ids = (
+        torch.tensor([1.0])
+        if invalid == "float_ids"
+        else torch.tensor([1], device="meta")
+    )
+    with pytest.raises(ValueError, match="NVFP4 embedding ids"):
+        kernels.nvfp4_embedding(ids, q, s, torch.ones(1), torch.bfloat16)
+
+
+def test_embedding_skips_id_check_under_fake_tensors():
+    # Compiled graphs trace with fake ids, whose values are unknown.
+    from torch._subclasses.fake_tensor import FakeTensorMode
+
+    mode = FakeTensorMode()
+    ids = mode.from_tensor(torch.tensor([[0, 99]]))
+    q, s, pts = (
+        mode.from_tensor(t)
+        for t in (
+            torch.zeros((5, 32), dtype=torch.uint8),
+            torch.zeros((5, 4), dtype=torch.uint8),
+            torch.ones(1),
+        )
+    )
+    with mode:
+        out = kernels.nvfp4_embedding(ids, q, s, pts, torch.bfloat16)
+    assert out.shape == (1, 2, 64) and out.dtype == torch.bfloat16
+
+
+def test_gemv_rejects_more_rows_than_grid_axis_1():
+    x = torch.empty((65536, 64), dtype=torch.bfloat16)
+    q = torch.empty((3, 32), dtype=torch.uint8)
+    s = torch.empty((3, 4), dtype=torch.uint8)
+    with pytest.raises(ValueError, match="65535 rows"):
+        kernels.nvfp4_gemv(x, q, s, torch.ones(1))
+
+
 def test_w4a4_requires_native_fp4():
     x = torch.empty((2, 64), dtype=torch.bfloat16)
     q = torch.empty((3, 32), dtype=torch.uint8)
@@ -82,30 +122,73 @@ def test_split_workspace_boundary():
             kernels._check_split_workspace(2, 3, 4)
 
 
-def test_split_workspace_uses_dynamic_m_upper_bound():
-    from torch._subclasses.fake_tensor import FakeTensorMode
+def dynamic_rows(mode, tensor, upper):
+    """``tensor`` as a fake tensor whose dim 0 is dynamic, bounded by ``upper``
+    (None: unbounded)."""
     from torch.fx.experimental.symbolic_shapes import (
         DimDynamic,
-        ShapeEnv,
         StatelessSymbolicContext,
         StrictMinMaxConstraint,
     )
     from torch.utils._sympy.value_ranges import ValueRanges
 
-    def rows(constraint):
-        context = StatelessSymbolicContext(
-            dynamic_sizes=[DimDynamic.DYNAMIC], constraint_sizes=[constraint]
-        )
-        mode = FakeTensorMode(shape_env=ShapeEnv())
-        return mode.from_tensor(torch.empty(2), symbolic_context=context).shape[0]
+    constraint = (
+        None
+        if upper is None
+        else StrictMinMaxConstraint(vr=ValueRanges(1, upper), warn_only=False)
+    )
+    context = StatelessSymbolicContext(
+        dynamic_sizes=[DimDynamic.DYNAMIC] + [DimDynamic.STATIC] * (tensor.ndim - 1),
+        constraint_sizes=[constraint] + [None] * (tensor.ndim - 1),
+    )
+    return mode.from_tensor(tensor, symbolic_context=context)
 
-    bounded = rows(StrictMinMaxConstraint(vr=ValueRanges(1, 3), warn_only=False))
+
+def test_split_workspace_uses_dynamic_m_upper_bound():
+    from torch._subclasses.fake_tensor import FakeTensorMode
+    from torch.fx.experimental.symbolic_shapes import ShapeEnv
+
+    def rows(upper):
+        mode = FakeTensorMode(shape_env=ShapeEnv())
+        return dynamic_rows(mode, torch.empty(2), upper).shape[0]
+
+    bounded = rows(3)
     with mock.patch.object(kernels, "_split_workspace_limit", return_value=64):
         # The hint (2 rows) fits; the upper bound (3 rows) does not.
         with pytest.raises(InvalidLaunchParam, match="96 workspace bytes"):
             kernels._check_split_workspace(2, bounded, 4)
         with pytest.raises(InvalidLaunchParam, match="bounded M"):
             kernels._check_split_workspace(2, rows(None), 4)
+        with pytest.raises(InvalidLaunchParam, match="bounded M"):
+            kernels._check_split_workspace(2, None, 4)
+
+
+@pytest.mark.parametrize("upper", [None, 64])
+def test_w4a4_passes_traced_m_bound_to_the_autotuned_launch(upper):
+    # Timing sees hinted sizes; the bound must come from the traced M so the
+    # timed candidates and the final traced call reject the same splits.
+    from torch._subclasses.fake_tensor import FakeTensorMode
+    from torch.fx.experimental.symbolic_shapes import ShapeEnv
+
+    mode = FakeTensorMode(shape_env=ShapeEnv())
+    x = dynamic_rows(mode, torch.empty(17, 64, dtype=torch.bfloat16), upper)
+    q, s, pts = (
+        mode.from_tensor(t)
+        for t in (
+            torch.empty((3, 32), dtype=torch.uint8),
+            torch.empty((3, 4), dtype=torch.uint8),
+            torch.ones(1),
+        )
+    )
+    with mode, mock.patch.object(
+        kernels, "_has_native_fp4_conversion", return_value=True
+    ), mock.patch.object(
+        kernels,
+        "_launch_w4a4",
+        side_effect=lambda x, q, *args: x.new_empty((x.shape[0], q.shape[0])),
+    ) as launch:
+        kernels.nvfp4_w4a4(x, q, s, pts)
+    assert launch.call_args.args[5] == upper
 
 
 def test_unsplit_launch_needs_no_partial_workspace():
@@ -130,7 +213,7 @@ def test_gemv_workspace_rejected_before_output_allocation():
         mock.patch.object(torch, "empty", side_effect=AssertionError("allocated")),
         pytest.raises(InvalidLaunchParam, match="768 workspace bytes"),
     ):
-        kernels._launch_gemv_impl(x, q, s, pts, split_k=32)
+        kernels._launch_gemv_impl(x, q, s, pts, 2, split_k=32)
 
 
 @pytest.mark.parametrize("k", [16, 80, 192])
@@ -149,7 +232,7 @@ def test_gemv_keeps_legal_short_k_splits(k, split):
             ),
             mock.patch.object(kernels, "launch_nvfp4_kernel") as launch,
         ):
-            out = kernels._launch_gemv_impl(x, q, s, pts, split_k=split)
+            out = kernels._launch_gemv_impl(x, q, s, pts, 2, split_k=split)
         assert out.shape == (2, 3)
         assert launch.call_args.args[2][-1] == split
     finally:

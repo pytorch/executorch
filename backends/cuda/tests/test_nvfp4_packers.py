@@ -12,6 +12,7 @@ from executorch.examples.models.gemma4_31b.cuda_packers import (
     pack_embedding_for_cuda,
     pack_linear_for_cuda,
 )
+from executorch.extension.llm.export.nvfp4 import ExportableNVFP4Tensor
 
 
 @pytest.mark.parametrize("kind", ["linear", "embedding"])
@@ -45,7 +46,11 @@ def test_prepacked_nvfp4_replaces_meta_weight_without_repacking(kind, parameter)
 
 @pytest.mark.parametrize("pack", [pack_linear_for_cuda, pack_embedding_for_cuda])
 def test_portable_nvfp4_is_packed(pack):
-    w = portable_weight(pts=0.5)
+    portable = portable_weight(pts=0.5)
+    qdata = torch.randint(0, 256, (70, 96), dtype=torch.uint8).view(torch.uint32)
+    w = ExportableNVFP4Tensor(
+        qdata, portable.scale, portable.per_tensor_scale, 16, portable.orig_dtype
+    )
     if pack is pack_linear_for_cuda:
         module = torch.nn.Linear(192, 70, bias=False, device="meta")
     else:
