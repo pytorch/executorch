@@ -359,6 +359,16 @@ def skip_without_qnn_sdk(test, reason):
         test.skipTest(f"QNN SDK not available: {reason}")
 
 
+def skip_if_qnn_sdk_is_missing(test, error):
+    # Lowering sets up the SDK first, then starts the backend, and without
+    # an SDK either step fails.
+    if any(
+        message in str(error)
+        for message in ("Failed to set up QNN SDK", "Failed to initialize QNN backend")
+    ):
+        skip_without_qnn_sdk(test, error)
+
+
 @contextlib.contextmanager
 def stubbed_recipe_setup():
     # Builds QNN recipes without setting up the QNN SDK or changing torch
@@ -1278,6 +1288,7 @@ class TestPasses(unittest.TestCase):
                 )
                 torch.testing.assert_close(ep.module()(x), model(x))
 
+    @stubbed_recipe_setup()
     def test_recompose_rms_norm_rebuilds_a_normalization_for_htp_fp16_only(self):
         def manager_passes(compiler_specs):
             # As in to_edge_transform_and_lower_to_qnn, which passes the specs.
@@ -1332,6 +1343,7 @@ class TestPasses(unittest.TestCase):
                     self._rms_norm_kept_weights(ep.graph_module), kept_weights
                 )
 
+    @stubbed_recipe_setup()
     def test_recompose_rms_norm_leaves_a_norm_the_partitioner_skips(self):
         class Norm(torch.nn.Module):
             def __init__(self, weight):
@@ -1448,10 +1460,7 @@ class TestPasses(unittest.TestCase):
                     ep = to_edge(exported).exported_program()
                     compiler_specs = None
                     if backend_options is not None:
-                        compiler_specs = generate_qnn_executorch_compiler_spec(
-                            soc_model=QcomChipset.SM8650,
-                            backend_options=backend_options,
-                        )
+                        compiler_specs = stubbed_compiler_specs(backend_options)
                     RecomposeRmsNorm(
                         edge_program=exported, compiler_specs=compiler_specs
                     )(ep.graph_module)
@@ -1497,10 +1506,7 @@ class TestPasses(unittest.TestCase):
                 ep = to_edge(exported).exported_program()
                 RecomposeRmsNorm(
                     edge_program=exported,
-                    compiler_specs=generate_qnn_executorch_compiler_spec(
-                        soc_model=QcomChipset.SM8650,
-                        backend_options=generate_htp_compiler_spec(use_fp16=True),
-                    ),
+                    compiler_specs=self._htp_compiler_specs(True),
                     skip_node_op_set=skip_ops,
                 )(ep.graph_module)
                 self.assertEqual(
@@ -1567,8 +1573,7 @@ class TestPasses(unittest.TestCase):
                 passes_job=passes_job_without_constant_folding(),
             )
         except RuntimeError as e:
-            if "Failed to initialize QNN backend" in str(e):
-                skip_without_qnn_sdk(self, e)
+            skip_if_qnn_sdk_is_missing(self, e)
             raise
         self.assertIn(exir_ops.edge.aten.add.Tensor, delegated_ops(edge))
 
@@ -1587,14 +1592,13 @@ class TestPasses(unittest.TestCase):
             ),
         ):
             with self.subTest(stage=name):
-                stage = make_stage()
                 try:
+                    stage = make_stage()
                     stage.run(
                         torch.export.export(ScaledRmsNorm(), sample_input, strict=True)
                     )
                 except RuntimeError as e:
-                    if "Failed to initialize QNN backend" in str(e):
-                        skip_without_qnn_sdk(self, e)
+                    skip_if_qnn_sdk_is_missing(self, e)
                     raise
                 graph_module = (
                     stage.edge_dialect_program.exported_program().graph_module
@@ -1613,13 +1617,13 @@ class TestPasses(unittest.TestCase):
             self._htp_compiler_specs(True),
             skip_node_op_set={"aten.rms_norm.default"},
         )
-        stage = ToEdgeTransformAndLower(partitioners=[partitioner])
         sample_input = (torch.linspace(-1000, 1000, 128).reshape(4, 32),)
         try:
+            # The stage builds default compiler specs, which set up the SDK.
+            stage = ToEdgeTransformAndLower(partitioners=[partitioner])
             stage.run(torch.export.export(ScaledRmsNorm(), sample_input, strict=True))
         except RuntimeError as e:
-            if "Failed to initialize QNN backend" in str(e):
-                skip_without_qnn_sdk(self, e)
+            skip_if_qnn_sdk_is_missing(self, e)
             raise
         graph_module = stage.edge_dialect_program.exported_program().graph_module
         self.assertNotIn(
@@ -2603,10 +2607,7 @@ class TestPasses(unittest.TestCase):
                 return x * 2, self.count + 0, self.total + 0
 
         sample_input = (torch.tensor([[0.1, 0.9, 0.2], [0.7, 0.1, 0.3]]),)
-        compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=QcomChipset.SM8650,
-            backend_options=generate_htp_compiler_spec(use_fp16=True),
-        )
+        compiler_specs = self._htp_compiler_specs(True)
         steps = {"one": lambda x: 1, "argmax": lambda x: x.argmax(-1)}
         for name, step in steps.items():
             for dtype in (torch.int64, torch.int32):
@@ -2616,8 +2617,7 @@ class TestPasses(unittest.TestCase):
                             Counter(step, dtype).eval(), sample_input, compiler_specs
                         )
                     except RuntimeError as e:
-                        if "Failed to initialize QNN backend" in str(e):
-                            skip_without_qnn_sdk(self, e)
+                        skip_if_qnn_sdk_is_missing(self, e)
                         raise
                     ep = edge.exported_program()
                     self.assertIn(
@@ -2641,10 +2641,7 @@ class TestPasses(unittest.TestCase):
             def forward(self, x):
                 return x * 2, self.use(torch.zeros(1, 2, 1, 1, 3, 4))
 
-        compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=QcomChipset.SM8650,
-            backend_options=generate_htp_compiler_spec(use_fp16=True),
-        )
+        compiler_specs = self._htp_compiler_specs(True)
         # Either way the constant would be an output of the multiply's partition.
         uses = {"graph output": lambda c: c, "CPU op": lambda c: c.cumsum(5)}
         for name, use in uses.items():
@@ -2654,8 +2651,7 @@ class TestPasses(unittest.TestCase):
                         Rank6Constant(use).eval(), (torch.randn(2, 3),), compiler_specs
                     )
                 except RuntimeError as e:
-                    if "Failed to initialize QNN backend" in str(e):
-                        skip_without_qnn_sdk(self, e)
+                    skip_if_qnn_sdk_is_missing(self, e)
                     raise
                 self.assertIn(exir_ops.edge.aten.mul.Tensor, delegated_ops(edge))
                 self.assertNotIn(exir_ops.edge.aten.full.default, delegated_ops(edge))
@@ -2702,8 +2698,7 @@ class TestPasses(unittest.TestCase):
                 ),
             )
         except RuntimeError as e:
-            if "Failed to initialize QNN backend" in str(e):
-                skip_without_qnn_sdk(self, e)
+            skip_if_qnn_sdk_is_missing(self, e)
             raise
         self.assertIn(exir_ops.edge.aten.cat.default, delegated_ops(edge))
 
@@ -2721,8 +2716,7 @@ class TestPasses(unittest.TestCase):
                             compiler_specs,
                         )
                     except RuntimeError as e:
-                        if "Failed to initialize QNN backend" in str(e):
-                            skip_without_qnn_sdk(self, e)
+                        skip_if_qnn_sdk_is_missing(self, e)
                         raise
                     self.assertIn(exir_ops.edge.aten.gt.Tensor, delegated_ops(edge))
                     self.assertEqual(
@@ -2811,10 +2805,7 @@ class TestPasses(unittest.TestCase):
                 )
 
         sample_input = (torch.rand(4, 1), torch.randn(4, 8))
-        compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=QcomChipset.SM8650,
-            backend_options=generate_htp_compiler_spec(use_fp16=True),
-        )
+        compiler_specs = self._htp_compiler_specs(True)
         passes_job = get_qnn_pass_manager_cls().get_capture_program_passes()
         passes_job[TagPositionalSinCos][QCOM_PASS_ACTIVATE_KEY] = False
         for job in (None, passes_job):
@@ -2827,8 +2818,7 @@ class TestPasses(unittest.TestCase):
                         passes_job=job,
                     )
                 except RuntimeError as e:
-                    if "Failed to initialize QNN backend" in str(e):
-                        skip_without_qnn_sdk(self, e)
+                    skip_if_qnn_sdk_is_missing(self, e)
                     raise
                 nodes = [
                     node
