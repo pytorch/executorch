@@ -28,6 +28,7 @@ from executorch.backends.cuda.triton.kernels.quantized_gemm_family import (
     _QUEUING_ONLY,
 )
 from torch.library import triton_op, wrap_triton
+from torch.utils._sympy.numbers import int_oo
 
 SPLIT_K_CANDIDATES = (1, 2, 4, 8, 16, 32)
 
@@ -39,9 +40,22 @@ def _split_workspace_limit():
     )
 
 
+def _max_rows(m):
+    """M, or the upper bound of a dynamic M (None when unbounded)."""
+    if isinstance(m, int):
+        return m
+    upper = m.node.shape_env.bound_sympy(m.node.expr).upper
+    return None if upper == int_oo else int(upper)
+
+
 def _check_split_workspace(split_k, m, n):
+    # The (split_k, M, N) workspace is allocated at the runtime M, so a split
+    # picked at the export hint must fit M's upper bound.
     if split_k > 1:
-        workspace = split_k * _size_hint(m) * _size_hint(n) * 4
+        rows = _max_rows(m)
+        if rows is None:
+            raise InvalidLaunchParam(f"NVFP4 split-K={split_k} needs a bounded M")
+        workspace = split_k * rows * _size_hint(n) * 4
         if workspace > _split_workspace_limit():
             raise InvalidLaunchParam(
                 f"NVFP4 split-K={split_k} needs {workspace} workspace bytes; "
@@ -56,14 +70,38 @@ def _check_split(k, split_k, *, m=None, n=None):
         _check_split_workspace(split_k, m, n)
 
 
-def _check_operands(x, qdata, scale):
+def _check_weight(qdata, scale, per_tensor_scale):
+    n, half_k = qdata.shape
+    if half_k % 8 or scale.shape != (n, half_k // 8):
+        raise ValueError(
+            f"NVFP4 scale {tuple(scale.shape)} must be (N, K/16) for qdata "
+            f"{tuple(qdata.shape)}"
+        )
+    if per_tensor_scale.numel() not in (1, n):
+        raise ValueError("NVFP4 per_tensor_scale must have 1 or N values")
+    if (qdata.dtype, scale.dtype, per_tensor_scale.dtype) != (
+        torch.uint8,
+        torch.uint8,
+        torch.float32,
+    ):
+        raise ValueError("NVFP4 qdata/scale must be uint8, per_tensor_scale float32")
+    if not all(t.is_contiguous() for t in (qdata, scale, per_tensor_scale)):
+        raise ValueError("NVFP4 weight tensors must be contiguous")
+    if scale.device != qdata.device or per_tensor_scale.device != qdata.device:
+        raise ValueError("NVFP4 weight tensors must be on one device")
+
+
+def _check_operands(x, qdata, scale, per_tensor_scale):
+    _check_weight(qdata, scale, per_tensor_scale)
     k = x.shape[-1]
-    if qdata.shape[-1] * 2 != k or scale.shape[-1] * 16 != k:
+    if qdata.shape[-1] * 2 != k:
         raise ValueError(
             f"NVFP4 weight K ({qdata.shape[-1] * 2}) must match activation K ({k})"
         )
-    if not (x.is_contiguous() and qdata.is_contiguous() and scale.is_contiguous()):
-        raise ValueError("NVFP4 activation and weight tensors must be contiguous")
+    if not x.is_contiguous():
+        raise ValueError("NVFP4 activation must be contiguous")
+    if x.device != qdata.device:
+        raise ValueError("NVFP4 activation and weight must be on one device")
 
 
 @triton.jit
@@ -184,6 +222,8 @@ def nvfp4_quantize_activation(
         raise ValueError("NVFP4 activation K must be divisible by 16")
     if not x.is_contiguous():
         raise ValueError("NVFP4 activation must be contiguous")
+    if not static_scale >= 0:
+        raise ValueError("NVFP4 static activation scale must be >= 0 (0 = dynamic)")
     q = torch.empty((m, k // 2), device=x.device, dtype=torch.uint8)
     s = torch.empty((m, k // 16), device=x.device, dtype=torch.uint8)
     g = torch.empty((m,), device=x.device, dtype=torch.float32)
@@ -401,11 +441,8 @@ def _w4a4(
     else:
         pts = tl.load(PTS)
     value = acc if SPLIT_K > 1 else acc * g[:, None] * pts
-    tl.store(
-        C + split.to(tl.int64) * M * N + m[:, None] * N + n[None, :],
-        value,
-        (m[:, None] < M) & (n[None, :] < N),
-    )
+    offsets, _ = _partial_offsets(split, m[:, None] * N + n[None, :], M, N)
+    tl.store(C + offsets, value, (m[:, None] < M) & (n[None, :] < N))
 
 
 @triton.jit
@@ -499,7 +536,7 @@ def nvfp4_w4a4(
     split_k: int = -1,
     output_dtype: torch.dtype | None = None,
 ) -> torch.Tensor:
-    _check_operands(x, qdata, scale)
+    _check_operands(x, qdata, scale, per_tensor_scale)
     if not _has_native_fp4_conversion():
         raise RuntimeError("Native NVFP4 W4A4 requires an SM120 or newer CUDA target")
     launch = _launch_w4a4 if split_k < 0 else _launch_w4a4_impl
