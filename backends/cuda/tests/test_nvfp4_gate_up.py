@@ -5,6 +5,7 @@
 """Fused NVFP4 gate/up: the gated-linear op, its epilogue, and serialized
 programs for every split and row scales."""
 
+import contextlib
 import tempfile
 from pathlib import Path
 
@@ -251,16 +252,56 @@ class GatedLinear(torch.nn.Module):
         return nvfp4_gated_linear(x, self.weight)
 
 
-@CUDA
-@NATIVE_FP4
-def test_gated_linear_parameter_pte(monkeypatch):
-    monkeypatch.setenv("ET_CUDA_NVFP4_ACT", "w4a4")
+def test_gated_linear_auto_export_traces_the_auto_op(monkeypatch):
+    # CPU: export in the default auto mode as on a native-FP4 GPU.
     calls = []
     monkeypatch.setattr(
-        nvfp4_gated_gemm,
-        "nvfp4_w4a4_gate_up",
-        recorder("nvfp4_w4a4_gate_up", calls, nvfp4_w4a4_gate_up),
+        nvfp4_dispatch,
+        "nvfp4_auto_gate_up_prefill",
+        recorder("nvfp4_auto_gate_up_prefill", calls),
     )
+    monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: True)
+    monkeypatch.setenv("ET_CUDA_NVFP4_ACT", "auto")
+    torch.export.export(
+        GatedLinear().eval(),
+        (torch.randn(17, 192, dtype=torch.bfloat16),),
+        dynamic_shapes=({0: torch.export.Dim("tokens", min=1, max=64)},),
+        strict=True,
+    ).run_decompositions()
+    assert calls and set(calls) == {("nvfp4_auto_gate_up_prefill", None)}
+
+
+@CUDA
+@NATIVE_FP4
+@pytest.mark.parametrize("mode", ["w4a4", "auto"])
+def test_gated_linear_parameter_pte(mode, monkeypatch):
+    import executorch.backends.cuda.cuda_backend as cuda_backend
+
+    monkeypatch.setenv("ET_CUDA_NVFP4_ACT", mode)
+    calls = []
+    if mode == "w4a4":
+        monkeypatch.setattr(
+            nvfp4_gated_gemm,
+            "nvfp4_w4a4_gate_up",
+            recorder("nvfp4_w4a4_gate_up", calls, nvfp4_w4a4_gate_up),
+        )
+    else:
+        monkeypatch.setattr(
+            nvfp4_dispatch,
+            "nvfp4_auto_gate_up_prefill",
+            recorder("nvfp4_auto_gate_up_prefill", calls, nvfp4_auto_gate_up_prefill),
+        )
+    picks = []
+    original_context = cuda_backend.autotune_launch_params
+
+    @contextlib.contextmanager
+    def capture_tuning(*args, **kwargs):
+        with original_context(*args, **kwargs) as stats:
+            yield stats
+        picks.extend(stats.picks)
+
+    monkeypatch.setattr(cuda_backend, "autotune_launch_params", capture_tuning)
+    clear_launch_param_cache()
     module = GatedLinear().eval()
     x = torch.randn(17, 192, dtype=torch.bfloat16)
     exported = torch.export.export(
@@ -276,7 +317,11 @@ def test_gated_linear_parameter_pte(monkeypatch):
         ],
         compile_config=EdgeCompileConfig(_check_ir_validity=False),
     ).to_executorch()
-    assert calls, "export must trace the fused W4A4 gate/up op"
+    assert calls, "export must trace the fused gate/up op"
+    fp4 = True
+    if mode == "auto":
+        (pick,) = [p for p in picks if p.param == "mode_split"]
+        fp4 = bool(pick.choice // _MODE_STRIDE)
     with tempfile.TemporaryDirectory() as folder:
         path = Path(folder) / "gated_linear.pte"
         with path.open("wb") as output:
@@ -299,9 +344,10 @@ def test_gated_linear_parameter_pte(monkeypatch):
         weight = CudaNVFP4Tensor(
             w.qdata.cuda(), w.scale.cuda(), w.per_tensor_scale.cuda()
         )
+        reference = w4a4_gated_reference if fp4 else gated_reference
         for rows in (1, 5, 17, 64):
             value = torch.randn(rows, 192, dtype=x.dtype)
-            expected = w4a4_gated_reference(value.cuda(), weight).to(x.dtype)
+            expected = reference(value.cuda(), weight).to(x.dtype)
             actual = method.execute([value])[0].cpu()
             torch.testing.assert_close(actual, expected.cpu(), rtol=0.03, atol=0.04)
 
