@@ -387,7 +387,11 @@ class NodeVisitor:
             scale = quant_attrs[QCOM_SCALE]
             zero_point = quant_attrs[QCOM_ZERO_POINT]
             tensor = (
-                tensor.div(scale).add(zero_point).round().to(quant_configs[QCOM_DTYPE])
+                tensor.div(scale)
+                .add(zero_point)
+                .round()
+                .clamp(quant_attrs[QCOM_QUANT_MIN], quant_attrs[QCOM_QUANT_MAX])
+                .to(quant_configs[QCOM_DTYPE])
             )
         # Since we're using torch.int32 to store 16bit data
         # need to make it compact here for QNN to correctly retrieve data

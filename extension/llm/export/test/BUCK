@@ -5,7 +5,6 @@ load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-load("@fbcode_macros//build_defs:python_pytest.bzl", "python_pytest")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
@@ -40,7 +39,7 @@ fbcode_target(_kind = runtime.python_test,
     ],
 )
 
-fbcode_target(_kind = python_pytest,
+fbcode_target(_kind = runtime.python_test,
     name = "test_gguf_nvfp4",
     srcs = ["test_gguf_nvfp4.py"],
     deps = [
@@ -49,6 +48,5 @@ fbcode_target(_kind = python_pytest,
         "//executorch/extension/llm/export:nvfp4",
         "fbsource//third-party/pypi/gguf:gguf",
         "fbsource//third-party/pypi/numpy:numpy",
-        "fbsource//third-party/pypi/pytest:pytest",
     ],
 )

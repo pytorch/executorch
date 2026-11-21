@@ -11,6 +11,7 @@ on:
       - .gitmodules
       - CMakeLists.txt
       - install_requirements.py
+      - torch_pin.py
       - install_requirements.sh
       - requirements-dev.txt
       - requirements-examples.txt
