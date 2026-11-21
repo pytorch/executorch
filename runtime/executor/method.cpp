@@ -1447,23 +1447,53 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
         input_idx,
         numel,
         executorch::runtime::elementSize(t_src.scalar_type()));
-    auto tensor_meta = this->method_meta().input_tensor_meta(input_idx);
-    ET_CHECK_OK_OR_RETURN_ERROR(
-        tensor_meta.error(),
-        "Error getting tensor metadata at input %" ET_PRIsize_t,
+    // Read from the serialized tensor rather than method_meta(), which looks
+    // the method up by name and builds a TensorInfo on every call.
+    const auto* s_tensor = serialization_plan_->values()
+                               ->Get(get_input_index(input_idx))
+                               ->val_as_Tensor();
+    ET_CHECK_OR_RETURN_ERROR(
+        s_tensor != nullptr && s_tensor->sizes() != nullptr &&
+            s_tensor->dim_order() != nullptr,
+        InvalidProgram,
+        "Null tensor metadata for input %" ET_PRIsize_t,
         input_idx);
+    // Load checked a planned input's slot against this byte count, so an
+    // overflowed count could pass a slot too small for the copy below. Other
+    // inputs are not copied. Not validate_tensor(), so that builds without
+    // program verification do not link program_validation.cpp.
+    const bool memory_planned = deserialization::is_memory_planned(*s_tensor);
+    if (memory_planned) {
+      ssize_t bound_numel = 1;
+      bool bound_overflow = false;
+      for (const int32_t size : *s_tensor->sizes()) {
+        bound_overflow =
+            bound_overflow ||
+            c10::mul_overflows(
+                bound_numel, static_cast<ssize_t>(size), &bound_numel);
+      }
+      size_t bound_nbytes;
+      ET_CHECK_OR_RETURN_ERROR(
+          !bound_overflow &&
+              !c10::mul_overflows(
+                  static_cast<size_t>(bound_numel),
+                  executorch::runtime::elementSize(t_dst.scalar_type()),
+                  &bound_nbytes),
+          InvalidArgument,
+          "Input %" ET_PRIsize_t
+          " has serialized sizes whose byte count overflows",
+          input_idx);
+    }
 
     // For DYNAMIC_BOUND the serialized sizes are the per-dimension upper
     // bound, but numel_bound_ is initialized to their product, so the resize
     // below only rejects shapes whose total numel exceeds it. A shape that
     // trades size between dimensions stays under that product and would
     // otherwise be accepted. Rank mismatches are left to resize_tensor.
-    const auto* s_tensor = serialization_plan_->values()
-                               ->Get(get_input_index(input_idx))
-                               ->val_as_Tensor();
     if (s_tensor->shape_dynamism() ==
         executorch_flatbuffer::TensorShapeDynamism::DYNAMIC_BOUND) {
-      const Span<const int32_t> bound_sizes = tensor_meta->sizes();
+      const Span<const int32_t> bound_sizes(
+          s_tensor->sizes()->data(), s_tensor->sizes()->size());
       if (static_cast<size_t>(t_src.dim()) == bound_sizes.size()) {
         for (size_t i = 0; i < bound_sizes.size(); ++i) {
           ET_CHECK_OR_RETURN_ERROR(
@@ -1487,7 +1517,10 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
         input_idx);
     ET_CHECK_OK_OR_RETURN_ERROR(
         validate_input_tensor_layout(
-            t_dst, t_src, tensor_meta->dim_order(), input_idx),
+            t_dst,
+            t_src,
+            {s_tensor->dim_order()->data(), s_tensor->dim_order()->size()},
+            input_idx),
         "Error validating tensor layout at input %" ET_PRIsize_t,
         input_idx);
 #ifdef USE_ATEN_LIB
@@ -1496,7 +1529,7 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
     t_dst.unsafeGetTensorImpl()->set_sizes_and_strides(
         t_src.sizes(), t_src.strides());
 #endif
-    if (tensor_meta->is_memory_planned()) {
+    if (memory_planned) {
       ET_CHECK_OK_OR_RETURN_ERROR(
           internal::copy_tensor_data(t_dst, t_src),
           "Error copying tensor data at input %" ET_PRIsize_t,

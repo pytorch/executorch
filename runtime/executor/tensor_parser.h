@@ -48,6 +48,14 @@ ET_NODISCARD Result<BoxedEvalueList<executorch::aten::Tensor>> parseTensorList(
     size_t values_len,
     MemoryManager* memory_manager);
 
+// True if a serialized tensor has a slot in the memory plan or a nonzero
+// data_buffer_idx. The second case counts constant outputs as memory planned,
+// so their data is not replaced by a caller's buffer.
+inline bool is_memory_planned(const executorch_flatbuffer::Tensor& s_tensor) {
+  return s_tensor.allocation_info() != nullptr ||
+      s_tensor.data_buffer_idx() != 0;
+}
+
 // Checks that the sizes, dim_order and scalar_type match between tensors
 // stored in the PTE and externally.
 ET_NODISCARD Error validateTensorLayout(

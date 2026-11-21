@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <unordered_map>
 
+#include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
 #include <executorch/extension/runner_util/inputs.h>
@@ -18,18 +19,21 @@
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/executor/test/managed_memory_manager.h>
 #include <executorch/runtime/platform/runtime.h>
+#include <executorch/schema/program_generated.h>
 #include <executorch/test/utils/DeathTest.h>
 #include <gtest/gtest.h>
 
 using namespace ::testing;
 using executorch::extension::FlatTensorDataMap;
 using executorch::extension::prepare_input_tensors;
+using executorch::runtime::DataLoader;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::Method;
 using executorch::runtime::Program;
 using executorch::runtime::Result;
 using executorch::runtime::testing::ManagedMemoryManager;
+using torch::executor::util::BufferDataLoader;
 using torch::executor::util::FileDataLoader;
 
 constexpr size_t kDefaultNonConstMemBytes = 32 * 1024U;
@@ -369,6 +373,80 @@ TEST_F(MethodTest, SetInputRejectsOverflowingSizes) {
   auto input_err =
       method->set_input(EValue(executorch::aten::Tensor(&impl)), 0);
   EXPECT_NE(input_err, Error::Ok);
+}
+
+namespace {
+
+// Program validation skips the byte count check for a dynamic input and leaves
+// it to set_input(), and with minimal verification nothing checks it at load.
+// This gives the dynamic input of the cat program at `path` a ComplexDouble
+// upper bound whose element count fits in ssize_t but whose byte count wraps
+// to 0, and checks what set_input() returns for a 2 x 2 tensor.
+void expect_set_input_with_overflowing_bound(const char* path, Error expected) {
+  Result<FileDataLoader> file_loader = FileDataLoader::from(path);
+  ASSERT_EQ(file_loader.error(), Error::Ok);
+  auto file_data = file_loader->load(
+      /*offset=*/0,
+      file_loader->size().get(),
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
+  ASSERT_EQ(file_data.error(), Error::Ok);
+  const auto* file_bytes = static_cast<const uint8_t*>(file_data->data());
+  std::vector<uint8_t> bytes(file_bytes, file_bytes + file_data->size());
+  auto* plan = executorch_flatbuffer::GetMutableProgram(bytes.data())
+                   ->mutable_execution_plan()
+                   ->GetMutableObject(0);
+  auto* input = static_cast<executorch_flatbuffer::Tensor*>(
+      plan->mutable_values()
+          ->GetMutableObject(plan->inputs()->Get(0))
+          ->mutable_val());
+  ASSERT_EQ(
+      input->shape_dynamism(),
+      executorch_flatbuffer::TensorShapeDynamism::DYNAMIC_BOUND);
+  ASSERT_EQ(input->sizes()->size(), 2);
+  ASSERT_TRUE(
+      input->mutate_scalar_type(static_cast<executorch_flatbuffer::ScalarType>(
+          executorch::aten::ScalarType::ComplexDouble)));
+  constexpr int32_t kBound = sizeof(size_t) == 8 ? 1 << 30 : 1 << 14;
+  input->mutable_sizes()->Mutate(0, kBound);
+  input->mutable_sizes()->Mutate(1, kBound);
+
+  BufferDataLoader loader(bytes.data(), bytes.size());
+  Result<Program> program =
+      Program::load(&loader, Program::Verification::InternalConsistency);
+  ASSERT_EQ(program.error(), Error::Ok);
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = program->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  executorch::aten::complex<double> data[4] = {};
+  int32_t sizes[2] = {2, 2};
+  uint8_t dim_order[2] = {0, 1};
+  int32_t strides[2] = {2, 1};
+  executorch::aten::TensorImpl impl(
+      executorch::aten::ScalarType::ComplexDouble,
+      2,
+      sizes,
+      data,
+      dim_order,
+      strides);
+  EXPECT_EQ(
+      method->set_input(EValue(executorch::aten::Tensor(&impl)), 0), expected);
+}
+
+} // namespace
+
+// Load checked the planned slot against the wrapped byte count, so the copy
+// into it would overrun.
+TEST_F(MethodTest, SetInputRejectsAPlannedBoundWhoseByteCountOverflows) {
+  expect_set_input_with_overflowing_bound(
+      std::getenv("ET_MODULE_DYNAMIC_CAT_PATH"), Error::InvalidArgument);
+}
+
+// A caller-owned input shares the caller's buffer, so only the element count
+// of the bound matters, and it fits.
+TEST_F(MethodTest, SetInputAcceptsACallerOwnedBoundWhoseByteCountOverflows) {
+  expect_set_input_with_overflowing_bound(
+      std::getenv("ET_MODULE_DYNAMIC_CAT_UNALLOCATED_IO_PATH"), Error::Ok);
 }
 
 // The "cat" model (ModuleDynamicCatUnallocatedIO) is DYNAMIC_BOUND with a
