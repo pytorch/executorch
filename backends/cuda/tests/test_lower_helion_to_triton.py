@@ -107,6 +107,13 @@ def _increment_and_return(x: torch.Tensor) -> torch.Tensor:
     return x
 
 
+def _add_2d(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    result = torch.empty_like(x)
+    for tile_m, tile_n in hl.tile([x.size(0), x.size(1)]):
+        result[tile_m, tile_n] = x[tile_m, tile_n] + y[tile_m, tile_n]
+    return result
+
+
 def _scale(x: torch.Tensor, scale: float) -> torch.Tensor:
     result = torch.empty_like(x)
     for tile in hl.tile(x.numel()):
@@ -223,6 +230,14 @@ class HelionLaunchContractTest(unittest.TestCase):
         ):
             with self.assertRaisesRegex(RuntimeError, "Helion 1.5.2 or newer"):
                 lower_helion_to_triton._check_helion_version()
+            # The check is wired into capture-module loading, not only a
+            # standalone helper nobody calls.
+            lower_helion_to_triton._helion_capture_modules.cache_clear()
+            try:
+                with self.assertRaisesRegex(RuntimeError, "Helion 1.5.2 or newer"):
+                    lower_helion_to_triton._helion_capture_modules()
+            finally:
+                lower_helion_to_triton._helion_capture_modules.cache_clear()
 
     def test_rejects_placeholder_mutation(self) -> None:
         graph = Graph()
@@ -269,6 +284,12 @@ class HelionLaunchContractTest(unittest.TestCase):
         }
         fields.update(overrides)
         return lower_helion_to_triton._CapturedHelionCall(**fields)
+
+    def test_rejects_container_argument(self) -> None:
+        captured = self._captured(tensor_args={"xs": [None]})
+        captured.kernel.signature.parameters = {"xs": None}
+        with self.assertRaisesRegex(NotImplementedError, "tensor-only arguments"):
+            lower_helion_to_triton._parse_helion_call(captured)
 
     def test_rejects_aliased_outputs(self) -> None:
         with self.assertRaisesRegex(NotImplementedError, "aliased outputs"):
@@ -457,25 +478,35 @@ class LowerHelionToTritonTest(unittest.TestCase):
 
         self._export_and_run(Model(), x, (x + 1) - x * 2)
 
+    @unittest.skipIf(
+        torch.cuda.is_available() and torch.cuda.get_device_capability() == (8, 0),
+        "the matmul consumer takes an unsupported TLX path on SM80",
+    )
     def test_padded_intermediate_export_and_cpp_runtime(self) -> None:
-        # The Helion argument is a 2-D intermediate with an unaligned row
-        # that a reduction also consumes: if Inductor pads its strides after
-        # the pass specialized the kernel to the exported strides, the
-        # result is silently wrong, so this must keep matching eager.
+        # The Helion kernel receives the 2-D intermediate itself, whose row
+        # is unaligned, and a matmul consumes it too: if Inductor pads its
+        # strides after the pass specialized the kernel to the exported
+        # strides, the result is silently wrong, so this must keep
+        # matching eager.
         kernel = helion.kernel(
-            config=helion.Config(block_sizes=[256]), static_shapes=True
-        )(_add)
+            config=helion.Config(block_sizes=[32, 256]), static_shapes=True
+        )(_add_2d)
         x = torch.randn(64, 1500, device="cuda")
 
         class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                weight = torch.randn(1500, 8, device="cuda")
+                self.weight = torch.nn.Parameter(weight, requires_grad=False)
+
             def forward(self, x):
                 y = x * 2
-                flat = y.reshape(-1)
-                return kernel(flat, flat) + y.sum()
+                return kernel(y, y) + (y @ self.weight).sum()
 
+        model = Model()
         y = x * 2
-        expected = y.reshape(-1) * 2 + y.sum()
-        self._export_and_run(Model(), x, expected, rtol=1e-3, atol=1e-3)
+        expected = y * 2 + (y @ model.weight).sum()
+        self._export_and_run(model, x, expected, rtol=1e-3, atol=1e-3)
 
     def test_mutation_and_new_output_export_and_cpp_runtime(self) -> None:
         kernel = helion.kernel(
