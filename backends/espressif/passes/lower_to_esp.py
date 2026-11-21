@@ -421,6 +421,75 @@ def _lower_mean(program, node) -> bool:
     return True
 
 
+def _softmax_parameters(input_scale):
+    try:
+        multiplier, shift = quantize_multiplier(input_scale * (1 << 26))
+    except ValueError:
+        return None
+    if shift < 0:
+        return None
+    diff_min = -(((1 << 5) - 1) * (1 << 26) >> shift)
+    return multiplier, shift, diff_min
+
+
+def _lower_softmax(program, node, target, kernel_mode) -> bool:
+    inp = get_arg(node, "inp", torch.fx.Node)
+    value = inp.meta.get("val")
+    if (
+        not isinstance(value, torch.Tensor)
+        or value.dim() == 0
+        or value.dtype != torch.int8
+        or any(type(dim) is not int or dim <= 0 for dim in value.shape)
+        or value.numel() > torch.iinfo(torch.int32).max
+        or not value.is_contiguous()
+        or get_arg(node, "dim") not in (-1, value.dim() - 1)
+        or get_arg(node, "half_to_float")
+    ):
+        return False
+    width = value.shape[-1]
+    # Each exp(0) adds 2**19. Keep the vendor's final division exponent,
+    # 35 - clz(sum), below 31 for its signed int32 (1 << exponent) mask.
+    if width > 255:
+        return False
+    input_params, output_params = (
+        _qparams(program, node, prefix) for prefix in ("inp", "out")
+    )
+    if (
+        input_params is None
+        or output_params is None
+        or output_params != _QParams(1 / 256, -128)
+    ):
+        return False
+    parameters = _softmax_parameters(input_params.scale)
+    if parameters is None:
+        return False
+    queries = get_scratch_queries(target, kernel_mode)
+    if queries is None:
+        return False
+    try:
+        scratch_bytes = queries.softmax_scratch_size(
+            width=width, height=value.numel() // width
+        )
+    except (AttributeError, ValueError):
+        return False
+    if not 0 <= scratch_bytes <= torch.iinfo(torch.int32).max:
+        raise RuntimeError("ESP-NN returned an invalid softmax scratch size")
+    with node.graph.inserting_before(node):
+        scratch = make_alloc_node(
+            program.graph_module,
+            value.new_empty((scratch_bytes,), dtype=torch.uint8),
+            None,
+        )
+        replacement = node.graph.call_function(
+            exir_ops.edge.esp_nn.quantized_softmax_int8.default,
+            (inp, *parameters, scratch),
+        )
+    replacement.meta = node.meta.copy()
+    node.replace_all_uses_with(replacement)
+    node.graph.erase_node(node)
+    return True
+
+
 def _weighted_multipliers(input_params, output_params, weight, scales, bias):
     rescales = [
         quantize_multiplier(input_params.scale * scale / output_params.scale)
@@ -805,6 +874,11 @@ class LowerToEsp(ExportedProgramPassBase):
             unary_lowering = _UNARY_LOWERINGS.get(node.target)
             if unary_lowering is not None:
                 modified |= unary_lowering(exported_program, node)
+                continue
+            if node.target == exir_ops.edge.fused_quant._softmax.default:
+                modified |= _lower_softmax(
+                    exported_program, node, self.target, self.kernel_mode
+                )
                 continue
             if node.target == exir_ops.edge.fused_quant.linear.default:
                 modified |= _lower_linear(exported_program, node, constants)
