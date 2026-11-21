@@ -79,6 +79,8 @@ inline constexpr const char* kBatchedSequence = "batched-sequence";
 // Batched-sequence ABI 2: physical width can change between forwards.
 inline constexpr const char* kBatchedSequenceRuntime =
     "batched-sequence-runtime";
+inline constexpr const char* kBatchedSequencePrivate =
+    "batched-sequence-private";
 } // namespace kind
 
 // Cache kind is expressed by which factory you call: backends register a

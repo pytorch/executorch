@@ -16,6 +16,7 @@
 #include <executorch/backends/aoti/slim/factory/from_blob.h>
 #include <executorch/backends/aoti/slim/util/array_ref_util.h>
 #include <executorch/backends/aoti/slim/util/size_util.h>
+#include <executorch/backends/aoti/utils.h>
 #include <executorch/extension/cuda/cuda_allocator.h>
 #include <executorch/extension/cuda/device_guard.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_shape_to_c_string.h>
@@ -58,13 +59,17 @@ CudaKVPool::CudaKVPool(
     slimc10::ScalarType storage_dtype,
     int64_t initial_rows,
     int declared_columns,
-    int initial_columns)
+    int initial_columns,
+    bool private_rows)
     : layers_(std::move(layers)),
       side_specs_(std::move(side_buffers)),
       storage_dtype_(storage_dtype),
-      initial_rows_(initial_rows / declared_columns * initial_columns),
+      initial_rows_(
+          initial_rows / declared_columns *
+          (private_rows ? 1 : initial_columns)),
       declared_columns_(declared_columns),
-      columns_(initial_columns) {
+      columns_(initial_columns),
+      private_rows_(private_rows) {
   for (const Layer& layer : layers_) {
     if (layer.growable) {
       max_rows_ = std::max(max_rows_, physical_limit(layer));
@@ -150,6 +155,8 @@ Error CudaKVPool::prepare(
     int64_t required_rows,
     int64_t live_rows,
     cudaStream_t stream) {
+  ET_CHECK_OR_RETURN_ERROR(
+      !private_rows_, InvalidState, "private storage requires owner row plans");
   const auto device = CUDAGuard::create(device_);
   ET_CHECK_OK_OR_RETURN_ERROR(device.error());
   ET_CHECK_OK_OR_RETURN_ERROR(follow_previous_step(stream));
@@ -162,6 +169,296 @@ Error CudaKVPool::prepare(
         max_rows_, std::max<int64_t>(required_rows, rows_ * 2));
     ET_CHECK_OK_OR_RETURN_ERROR(grow(next, live_rows, stream));
   }
+  return Error::Ok;
+}
+
+Error CudaKVPool::prepare_private(
+    const std::vector<std::vector<int64_t>>& required_rows,
+    const std::vector<int64_t>& live_lengths,
+    int64_t step_rows,
+    cudaStream_t stream,
+    bool compact) {
+  ET_CHECK_OR_RETURN_ERROR(
+      private_rows_ && device_known_ && declared_columns_ > 1 &&
+          required_rows.size() == layers_.size() &&
+          live_lengths.size() == static_cast<size_t>(declared_columns_ - 1) &&
+          step_rows >= 0 && (allocated_ || step_rows > 0),
+      InvalidArgument,
+      "offgraph_kv: invalid private row preparation");
+  for (int64_t length : live_lengths) {
+    ET_CHECK_OR_RETURN_ERROR(
+        length >= 0 && (allocated_ || length == 0),
+        InvalidArgument,
+        "offgraph_kv: invalid retained length");
+  }
+  // Steady decode updates metadata, not allocation geometry. Validate its
+  // bounds without building replacement vectors or allocating host memory.
+  if (allocated_) {
+    bool change = false;
+    for (size_t index = 0; index < layers_.size(); ++index) {
+      const Layer& layer = layers_[index];
+      ET_CHECK_OR_RETURN_ERROR(
+          layer.growable && layer.private_window >= 0 &&
+              layer.declared_rows > 0 &&
+              layer.declared_rows % declared_columns_ == 0 &&
+              required_rows[index].size() == live_lengths.size(),
+          InvalidArgument,
+          "offgraph_kv: invalid private layer %zu",
+          index);
+      const int64_t virtual_rows = layer.declared_rows / declared_columns_;
+      const int64_t limit = layer.private_window > 0
+          ? std::min(layer.private_window, virtual_rows)
+          : virtual_rows;
+      for (size_t owner = 0; owner < live_lengths.size(); ++owner) {
+        const int64_t required = required_rows[index][owner];
+        const int64_t capacity = private_layouts_[index].spans[owner].capacity;
+        ET_CHECK_OR_RETURN_ERROR(
+            required >= 0 && required <= limit,
+            InvalidArgument,
+            "offgraph_kv: owner requirement is out of bounds");
+        const int64_t retained = layer.private_window > 0
+            ? std::min(live_lengths[owner], limit)
+            : live_lengths[owner];
+        ET_CHECK_OR_RETURN_ERROR(
+            retained <= capacity,
+            InvalidArgument,
+            "offgraph_kv: retained history exceeds its private span");
+        change |=
+            required > capacity || (compact && required == 0 && capacity > 0);
+      }
+    }
+    for (size_t index = 0; index < side_specs_.size(); ++index) {
+      const SideBuffer& spec = side_specs_[index];
+      if (!spec.step_rows) {
+        continue;
+      }
+      ET_CHECK_OR_RETURN_ERROR(
+          step_rows <= spec.sizes[1],
+          InvalidArgument,
+          "offgraph_kv: step staging is out of bounds");
+      const size_t row_bytes =
+          contiguous_nbytes(spec.sizes, spec.dtype) / spec.sizes[1];
+      change |= step_rows >
+          static_cast<int64_t>(side_allocated_bytes_[index] / row_bytes);
+    }
+    if (!change) {
+      const auto device = CUDAGuard::create(device_);
+      ET_CHECK_OK_OR_RETURN_ERROR(device.error());
+      ET_CHECK_OK_OR_RETURN_ERROR(follow_previous_step(stream));
+      stream_ = stream;
+      return Error::Ok;
+    }
+  }
+  std::vector<PrivateRowLayout> plans;
+  plans.reserve(layers_.size());
+  bool layout_changed = !allocated_;
+  bool grew = false;
+  for (size_t index = 0; index < layers_.size(); ++index) {
+    const Layer& layer = layers_[index];
+    ET_CHECK_OR_RETURN_ERROR(
+        layer.growable && layer.private_window >= 0 &&
+            layer.declared_rows > 0 &&
+            layer.declared_rows % declared_columns_ == 0 &&
+            required_rows[index].size() == live_lengths.size(),
+        InvalidArgument,
+        "offgraph_kv: invalid private layer %zu",
+        index);
+    const int64_t virtual_rows = layer.declared_rows / declared_columns_;
+    const int64_t limit = layer.private_window > 0
+        ? std::min(layer.private_window, virtual_rows)
+        : virtual_rows;
+    std::vector<int64_t> required = required_rows[index];
+    runtime::Span<const PrivateRowSpan> previous;
+    if (allocated_) {
+      const auto& spans = private_layouts_.at(index).spans;
+      previous = {spans.data(), spans.size()};
+      if (!compact) {
+        for (size_t owner = 0; owner < required.size(); ++owner) {
+          if (required[owner] == 0) {
+            required[owner] = spans[owner].capacity;
+          }
+        }
+      }
+    }
+    auto result = make_private_row_layout(
+        {required.data(), required.size()}, previous, initial_rows_, limit);
+    ET_CHECK_OK_OR_RETURN_ERROR(result.error());
+    const auto& spans = result.get().spans;
+    if (allocated_) {
+      for (size_t owner = 0; owner < spans.size(); ++owner) {
+        layout_changed |= spans[owner].base != previous[owner].base ||
+            spans[owner].capacity != previous[owner].capacity;
+        grew |= spans[owner].capacity > previous[owner].capacity;
+      }
+    }
+    ET_CHECK_OR_RETURN_ERROR(
+        result.get().rows <= layer.declared_rows,
+        InvalidArgument,
+        "offgraph_kv: private rows exceed declared storage");
+    plans.push_back(std::move(result.get()));
+  }
+
+  std::vector<size_t> next_side_bytes(side_specs_.size());
+  bool side_changed = !allocated_;
+  for (size_t index = 0; index < side_specs_.size(); ++index) {
+    const SideBuffer& spec = side_specs_[index];
+    auto sizes = spec.sizes;
+    if (spec.step_rows) {
+      ET_CHECK_OR_RETURN_ERROR(
+          sizes.size() == 4 && sizes[0] == 1 && sizes[1] > 0 && sizes[2] > 0 &&
+              sizes[3] > 0 && step_rows <= sizes[1],
+          InvalidArgument,
+          "offgraph_kv: invalid step staging %s",
+          spec.fqn.c_str());
+      const size_t row_bytes = contiguous_nbytes(sizes, spec.dtype) / sizes[1];
+      ET_CHECK_OR_RETURN_ERROR(
+          row_bytes > 0,
+          InvalidArgument,
+          "offgraph_kv: empty step staging row");
+      const int64_t old =
+          allocated_ ? side_allocated_bytes_[index] / row_bytes : 0;
+      int64_t capacity = old > 0 ? old : std::min(initial_rows_, sizes[1]);
+      if (step_rows > capacity) {
+        capacity = std::min(sizes[1], std::max(step_rows, capacity * 2));
+      }
+      sizes[1] = capacity;
+    }
+    next_side_bytes[index] = contiguous_nbytes(sizes, spec.dtype);
+    side_changed |=
+        !allocated_ || next_side_bytes[index] != side_allocated_bytes_[index];
+  }
+  const auto device = CUDAGuard::create(device_);
+  ET_CHECK_OK_OR_RETURN_ERROR(device.error());
+  ET_CHECK_OK_OR_RETURN_ERROR(follow_previous_step(stream));
+  stream_ = stream;
+  if (!layout_changed && !side_changed) {
+    return Error::Ok;
+  }
+  if (allocated_) {
+    ET_CHECK_OK_OR_RETURN_ERROR(synchronize(/*all_streams=*/true));
+  }
+
+  // Construct all host bookkeeping before allocating or committing device
+  // storage. Side staging carries no state across completed forwards.
+  std::vector<Allocation> replacements(layers_.size());
+  std::vector<Allocation> next_allocations = allocations_;
+  next_allocations.resize(layers_.size());
+  std::vector<void*> side_replacements(side_specs_.size(), nullptr);
+  std::vector<void*> next_sides = side_buffers_;
+  next_sides.resize(side_specs_.size(), nullptr);
+  bool committed = false;
+  aoti::ScopeGuard rollback([&]() noexcept {
+    if (!committed) {
+      for (size_t index = 0; index < replacements.size(); ++index) {
+        if (replacements[index].k != nullptr) {
+          discard(layers_[index], replacements[index], stream);
+        }
+      }
+      for (void* replacement : side_replacements) {
+        release(replacement, stream);
+      }
+    }
+  });
+  if (layout_changed) {
+    for (size_t index = 0; index < layers_.size(); ++index) {
+      // Changing one span may move every later span in this layer.
+      const auto& next = plans[index];
+      bool changed = !allocated_;
+      if (allocated_) {
+        const auto& old = private_layouts_[index];
+        for (size_t owner = 0; owner < next.spans.size(); ++owner) {
+          changed |= old.spans[owner].base != next.spans[owner].base ||
+              old.spans[owner].capacity != next.spans[owner].capacity;
+        }
+      }
+      if (!changed) {
+        continue;
+      }
+      ET_CHECK_OK_OR_RETURN_ERROR(allocate_layer(
+          layers_[index], next.rows, stream, replacements[index]));
+      next_allocations[index] = replacements[index];
+      if (!allocated_) {
+        continue;
+      }
+      const size_t bytes_per_row = row_bytes(layers_[index]);
+      for (size_t owner = 0; owner < live_lengths.size(); ++owner) {
+        const PrivateRowSpan& src = private_layouts_[index].spans[owner];
+        const PrivateRowSpan& dst = next.spans[owner];
+        const int64_t live = std::min<int64_t>(
+            live_lengths[owner], std::min(src.capacity, dst.capacity));
+        if (live == 0) {
+          continue;
+        }
+        ET_CHECK_OR_RETURN_ERROR(
+            layers_[index].private_window == 0 ||
+                src.capacity == dst.capacity ||
+                live_lengths[owner] <= src.capacity,
+            InvalidState,
+            "offgraph_kv: a wrapped Ring cannot change its private modulus");
+        for (const auto& [from, to] :
+             {std::pair{allocations_[index].k, replacements[index].k},
+              std::pair{allocations_[index].v, replacements[index].v}}) {
+          const cudaError_t error = cudaMemcpyAsync(
+              static_cast<uint8_t*>(to) + dst.base * bytes_per_row,
+              static_cast<const uint8_t*>(from) + src.base * bytes_per_row,
+              live * bytes_per_row,
+              cudaMemcpyDeviceToDevice,
+              stream);
+          ET_CHECK_OR_RETURN_ERROR(
+              error == cudaSuccess,
+              Internal,
+              "offgraph_kv: private row copy failed: %s",
+              cudaGetErrorString(error));
+        }
+      }
+    }
+  }
+  for (size_t index = 0; index < side_specs_.size(); ++index) {
+    if (allocated_ && next_side_bytes[index] == side_allocated_bytes_[index]) {
+      continue;
+    }
+    auto result =
+        CudaAllocator::allocate_async(next_side_bytes[index], device_, stream);
+    ET_CHECK_OK_OR_RETURN_ERROR(result.error());
+    side_replacements[index] = result.get();
+    next_sides[index] = result.get();
+    if (!side_specs_[index].step_rows) {
+      ET_CHECK_OR_RETURN_ERROR(
+          cudaMemsetAsync(result.get(), 0, next_side_bytes[index], stream) ==
+              cudaSuccess,
+          Internal,
+          "offgraph_kv: cannot clear private metadata");
+    }
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      cudaStreamSynchronize(stream) == cudaSuccess,
+      Internal,
+      "offgraph_kv: private replacement copy fence failed");
+  invalidate_bindings();
+  for (size_t index = 0; index < replacements.size(); ++index) {
+    if (replacements[index].k != nullptr && allocated_) {
+      discard(layers_[index], allocations_[index], stream);
+    }
+  }
+  for (size_t index = 0; index < side_replacements.size(); ++index) {
+    if (side_replacements[index] != nullptr && allocated_) {
+      release(side_buffers_[index], stream);
+    }
+  }
+  if (allocated_ && layout_changed) {
+    ++column_resize_count_;
+    growth_count_ += grew;
+  }
+  allocations_.swap(next_allocations);
+  side_buffers_.swap(next_sides);
+  side_allocated_bytes_.swap(next_side_bytes);
+  private_layouts_.swap(plans);
+  rows_ = 0;
+  for (const auto& layout : private_layouts_) {
+    rows_ = std::max<int64_t>(rows_, layout.rows);
+  }
+  allocated_ = true;
+  committed = true;
   return Error::Ok;
 }
 
@@ -215,6 +512,9 @@ void* CudaKVPool::side_buffer(size_t index) const {
 }
 
 size_t CudaKVPool::side_buffer_bytes(size_t index) const {
+  if (index < side_allocated_bytes_.size()) {
+    return side_allocated_bytes_[index];
+  }
   const SideBuffer& spec = side_specs_.at(index);
   return contiguous_nbytes(spec.sizes, spec.dtype);
 }
@@ -334,7 +634,9 @@ Error CudaKVPool::allocate_initial(int64_t required_rows, cudaStream_t stream) {
 // a well-defined value rather than whatever the allocator handed back.
 Error CudaKVPool::allocate_side_buffers(cudaStream_t stream) {
   std::vector<void*> buffers;
+  std::vector<size_t> sizes;
   buffers.reserve(side_specs_.size());
+  sizes.reserve(side_specs_.size());
   auto roll_back = [&]() {
     for (void* buffer : buffers) {
       release(buffer, stream);
@@ -348,6 +650,7 @@ Error CudaKVPool::allocate_side_buffers(cudaStream_t stream) {
       return buffer.error();
     }
     buffers.push_back(buffer.get());
+    sizes.push_back(bytes);
     const cudaError_t error = cudaMemsetAsync(buffer.get(), 0, bytes, stream);
     if (error != cudaSuccess) {
       roll_back();
@@ -360,6 +663,7 @@ Error CudaKVPool::allocate_side_buffers(cudaStream_t stream) {
     }
   }
   side_buffers_ = std::move(buffers);
+  side_allocated_bytes_ = std::move(sizes);
   return Error::Ok;
 }
 
@@ -485,8 +789,8 @@ Error CudaKVPool::resize_columns(
     *committed = false;
   }
   ET_CHECK_OR_RETURN_ERROR(
-      declared_columns_ > 1 && columns >= 2 && columns <= declared_columns_ &&
-          live_rows >= 0,
+      !private_rows_ && declared_columns_ > 1 && columns >= 2 &&
+          columns <= declared_columns_ && live_rows >= 0,
       InvalidArgument,
       "offgraph_kv: invalid physical columns %d/%d",
       columns,
@@ -709,6 +1013,17 @@ Error CudaKVPool::build_descriptors(CudaDelegateHandle* handle) {
       "offgraph_kv: program carries %zu of %zu side buffers",
       found_side,
       side_specs_.size());
+  for (const auto& [fqn, constant] : compiled) {
+    (void)constant;
+    ET_CHECK_OR_RETURN_ERROR(
+        fqn.compare(0, kOffGraphKVFqnPrefix.size(), kOffGraphKVFqnPrefix) !=
+                0 ||
+            std::find(found_fqns.begin(), found_fqns.end(), fqn) !=
+                found_fqns.end(),
+        InvalidProgram,
+        "offgraph_kv: unsupported storage metadata %s",
+        fqn.c_str());
+  }
   discovered_fqns_.insert(found_fqns.begin(), found_fqns.end());
   // A reload of the same handle replaces what it had rather than adding to
   // it, so its constants are never bound twice.

@@ -14,6 +14,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <numeric>
 #include <optional>
 #include <set>
 #include <string>
@@ -25,6 +26,7 @@
 #include <executorch/backends/aoti/slim/factory/from_blob.h>
 #include <executorch/backends/aoti/utils.h>
 #include <executorch/backends/cuda/runtime/cuda_kv_pool.h>
+#include <executorch/backends/cuda/runtime/ring_history.h>
 #include <executorch/extension/cuda/cuda_allocator.h>
 #include <executorch/extension/cuda/device_guard.h>
 #include <executorch/extension/llm/cache/cache_registry.h>
@@ -822,6 +824,8 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
 // dropped again after the forward, as on the cell layout.
 constexpr char kSeqColsFqn[] = "__et_offgraph_kv_seq_cols";
 constexpr char kSeqInfoFqn[] = "__et_offgraph_kv_seq_info";
+constexpr char kOwnerStepFqn[] = "__et_offgraph_kv_owner_step";
+constexpr char kStageRowsFqn[] = "__et_offgraph_kv_stage_rows";
 constexpr size_t kSeqColsBuffer = 0;
 constexpr size_t kSeqInfoBuffer = 1;
 
@@ -833,29 +837,60 @@ class CudaBatchedSequenceCache final : public cache::Cache,
       const cache::CacheGeometry& geometry,
       const cache::CacheConfig& cfg,
       slimc10::ScalarType storage_dtype,
-      bool runtime_columns)
+      bool runtime_columns,
+      bool private_rows)
       : geometry_(geometry),
         cfg_(cfg),
         max_seqs_(*cfg.max_seqs),
-        runtime_columns_(runtime_columns),
+        runtime_columns_(runtime_columns || private_rows),
+        private_rows_(private_rows),
         max_write_(*cfg.max_write),
         max_segments_(batched_sequence_max_segments(*cfg.max_seqs)),
         info_width_(runtime_columns ? 5 : 4),
         dflash_block_size_(geometry.dflash_block_size),
-        columns_(runtime_columns ? 2 : *cfg.max_seqs + 1),
+        columns_(
+            private_rows          ? 1
+                : runtime_columns ? 2
+                                  : *cfg.max_seqs + 1),
         pool_(
-            pool_layers(geometry, cfg),
-            {{kSeqColsFqn, slimc10::ScalarType::Long, {*cfg.max_write}},
-             {kSeqInfoFqn,
-              slimc10::ScalarType::Int,
-              {batched_sequence_max_segments(*cfg.max_seqs),
-               runtime_columns ? 5 : 4}}},
+            pool_layers(geometry, cfg, private_rows),
+            side_buffers(geometry, cfg, runtime_columns, private_rows),
             storage_dtype,
             static_cast<int64_t>(cfg.initial_capacity) * (*cfg.max_seqs + 1),
             *cfg.max_seqs + 1,
-            runtime_columns ? 2 : *cfg.max_seqs + 1) {
+            runtime_columns || private_rows ? 2 : *cfg.max_seqs + 1,
+            private_rows) {
     for (const cache::LayerGeometry& layer : geometry.layers) {
       layer_rows_.push_back(rows_of(layer, cfg));
+    }
+    if (private_rows_) {
+      private_required_.resize(
+          geometry.layers.size(), std::vector<int64_t>(max_seqs_, 0));
+      private_live_.resize(max_seqs_, 0);
+      int side = has_ring(geometry) ? 4 : 3;
+      for (const auto& layer : geometry.layers) {
+        private_layout_buffers_.push_back(side++);
+        private_stage_buffers_.push_back(is_ring(layer) ? side : -1);
+        std::unique_ptr<RingHistory> history;
+        if (is_ring(layer)) {
+          side += 2;
+          auto result = RingHistory::create(
+              layer.policy.window,
+              max_write_,
+              cfg.capacity,
+              static_cast<size_t>(layer.n_kv_heads) * layer.head_dim *
+                  slimc10::elementSize(storage_dtype),
+              2);
+          if (!result.ok()) {
+            error_ = result.error();
+            return;
+          }
+          history = std::move(result.get());
+        }
+        histories_.push_back(std::move(history));
+      }
+      archive_staging_.resize(geometry.layers.size(), nullptr);
+      archive_bytes_.resize(geometry.layers.size(), 0);
     }
   }
 
@@ -863,12 +898,22 @@ class CudaBatchedSequenceCache final : public cache::Cache,
   CudaBatchedSequenceCache& operator=(const CudaBatchedSequenceCache&) = delete;
 
   ~CudaBatchedSequenceCache() override {
+    if (private_rows_) {
+      // Undo pages and pinned destinations can still be referenced by a failed
+      // restore/archive. Drain them before member destruction releases bytes.
+      (void)pool_.synchronize(/*all_streams=*/true);
+    }
     if (staged_ != nullptr) {
       (void)cudaEventSynchronize(staged_);
       (void)cudaEventDestroy(staged_);
     }
     if (staging_ != nullptr) {
       (void)cudaFreeHost(staging_);
+    }
+    for (void* data : archive_staging_) {
+      if (data != nullptr) {
+        (void)cudaFreeHost(data);
+      }
     }
   }
 
@@ -896,12 +941,22 @@ class CudaBatchedSequenceCache final : public cache::Cache,
     seqs_.clear();
     step_seq_ids_.clear();
     pending_owners_.clear();
+    pending_runs_.clear();
+    pending_width_ = 0;
+    for (auto& history : histories_) {
+      if (history) {
+        history->clear();
+      }
+    }
     poisoned_ = false;
     inflight_ = false;
   }
 
   bool declare_step(const std::vector<int32_t>& seq_ids) override {
     std::lock_guard<std::mutex> guard(mutex_);
+    if (private_rows_ && (poisoned_ || inflight_)) {
+      return false;
+    }
     if (seq_ids.empty() || seq_ids.size() > static_cast<size_t>(max_write_)) {
       return false;
     }
@@ -943,7 +998,7 @@ class CudaBatchedSequenceCache final : public cache::Cache,
     if (!id || poisoned_ || (runtime_columns_ && inflight_)) {
       return std::nullopt;
     }
-    const int column = runtime_columns_ ? -1 : *id;
+    const int column = runtime_columns_ && !private_rows_ ? -1 : *id;
     seqs_.emplace(*id, Sequence{column, cache::SequenceCache(geometry_, cfg_)});
     bool admitted = false;
     aoti::ScopeGuard rollback([&]() noexcept {
@@ -951,7 +1006,7 @@ class CudaBatchedSequenceCache final : public cache::Cache,
         seqs_.erase(*id);
       }
     });
-    if (runtime_columns_ &&
+    if (runtime_columns_ && !private_rows_ &&
         ensure_columns(false, 0, cudaStreamPerThread) != Error::Ok) {
       return std::nullopt;
     }
@@ -982,6 +1037,9 @@ class CudaBatchedSequenceCache final : public cache::Cache,
     cache::SequenceCache plan(source->second.plan);
     if (keep <= 0 || !plan.rewind(keep)) {
       return std::nullopt;
+    }
+    if (private_rows_) {
+      return clone_private(src, *id, keep, std::move(plan));
     }
     const int column = runtime_columns_ ? -1 : *id;
     seqs_.emplace(*id, Sequence{column, std::move(plan)});
@@ -1014,6 +1072,21 @@ class CudaBatchedSequenceCache final : public cache::Cache,
 
   bool seq_rm(int32_t seq_id) override {
     std::lock_guard<std::mutex> guard(mutex_);
+    if (private_rows_) {
+      if (inflight_ || poisoned_) {
+        return false;
+      }
+      if (pool_.allocated() &&
+          pool_.synchronize(/*all_streams=*/true) != Error::Ok) {
+        poisoned_ = true;
+        return false;
+      }
+      for (auto& history : histories_) {
+        if (history) {
+          history->erase(seq_id);
+        }
+      }
+    }
     if (std::find(step_seq_ids_.begin(), step_seq_ids_.end(), seq_id) !=
         step_seq_ids_.end()) {
       step_seq_ids_.clear();
@@ -1025,6 +1098,26 @@ class CudaBatchedSequenceCache final : public cache::Cache,
   bool rewind(int32_t seq_id, int position) override {
     std::lock_guard<std::mutex> guard(mutex_);
     const auto it = seqs_.find(seq_id);
+    if (private_rows_) {
+      if (it == seqs_.end() || inflight_ || poisoned_) {
+        return false;
+      }
+      cache::SequenceCache plan(it->second.plan);
+      if (!plan.rewind(position) ||
+          restore_private(seq_id, seq_id, position) != Error::Ok) {
+        return false;
+      }
+      for (auto& history : histories_) {
+        if (history && position > 0 && !history->rewind(seq_id, position)) {
+          poisoned_ = true;
+          return false;
+        }
+        if (history && position == 0) {
+          history->erase(seq_id);
+        }
+      }
+      return it->second.plan.rewind(position);
+    }
     return it != seqs_.end() && it->second.plan.rewind(position);
   }
 
@@ -1118,28 +1211,40 @@ class CudaBatchedSequenceCache final : public cache::Cache,
     for (const auto& [seq_id, end] : ends) {
       required = std::max<int64_t>(required, end);
     }
-    if (runtime_columns_) {
+    if (runtime_columns_ && !private_rows_) {
       ET_CHECK_OR_RETURN_ERROR(
           static_cast<int>(seqs_.size()) < columns_,
           InvalidState,
           "offgraph_kv: admission must provide every owner a column");
     }
-    ET_CHECK_OK_OR_RETURN_ERROR(pool_.prepare(
-        std::min<int64_t>(required, cfg_.capacity) * columns_,
-        live * columns_,
-        stream));
+    if (private_rows_) {
+      ET_CHECK_OK_OR_RETURN_ERROR(prepare_private(ends, write_length, stream));
+      ET_CHECK_OK_OR_RETURN_ERROR(reserve_archive_staging(write_length));
+    } else {
+      ET_CHECK_OK_OR_RETURN_ERROR(pool_.prepare(
+          std::min<int64_t>(required, cfg_.capacity) * columns_,
+          live * columns_,
+          stream));
+    }
 
     ET_CHECK_OK_OR_RETURN_ERROR(reserve_staging(
         static_cast<size_t>(max_write_) * sizeof(int64_t) +
-        static_cast<size_t>(max_segments_) * info_width_ * sizeof(int32_t)));
+        static_cast<size_t>(max_segments_) * info_width_ * sizeof(int32_t) +
+        (private_rows_ ? private_metadata_bytes() : 0)));
     auto* cols = reinterpret_cast<int64_t*>(staging_);
     auto* info = reinterpret_cast<int32_t*>(cols + max_write_);
-    std::fill(cols, cols + write_length, static_cast<int64_t>(columns_ - 1));
+    std::fill(
+        cols,
+        cols + write_length,
+        static_cast<int64_t>(private_rows_ ? max_seqs_ : columns_ - 1));
     std::fill(info, info + max_segments_ * info_width_, 0);
-    if (runtime_columns_) {
+    if (runtime_columns_ && !private_rows_) {
       for (int index = 0; index < max_segments_; ++index) {
         info[index * info_width_ + 4] = columns_;
       }
+    }
+    if (private_rows_) {
+      build_private_step(ends, tokens, static_cast<int>(write_length));
     }
     int q_start = 0;
     for (size_t index = 0; index < runs.size(); ++index) {
@@ -1175,6 +1280,7 @@ class CudaBatchedSequenceCache final : public cache::Cache,
       }
     }
     step_seq_ids_.clear();
+    pending_width_ = private_rows_ ? static_cast<int>(write_length) : 0;
     inflight_ = runtime_columns_;
     return Error::Ok;
   }
@@ -1192,8 +1298,21 @@ class CudaBatchedSequenceCache final : public cache::Cache,
         !poisoned_,
         InvalidState,
         "offgraph_kv: uncommitted step or failed cache operation; clear required");
+    if (private_rows_) {
+      ET_CHECK_OR_RETURN_ERROR(
+          write_length == pending_width_,
+          InvalidArgument,
+          "offgraph_kv: commit width differs from preparation");
+      const Error archived = archive_private_step();
+      if (archived != Error::Ok) {
+        poisoned_ = true;
+        return archived;
+      }
+    }
     ET_CHECK_OK_OR_RETURN_ERROR(pool_.mark_step_done(pool_.stream()));
     inflight_ = false;
+    pending_runs_.clear();
+    pending_width_ = 0;
     // A draft's block is scratch: the next draft rewrites it.
     for (const int32_t owner : pending_owners_) {
       const auto it = seqs_.find(owner);
@@ -1219,10 +1338,17 @@ class CudaBatchedSequenceCache final : public cache::Cache,
       return error;
     }
     inflight_ = false;
+    if (private_rows_) {
+      // A failed forward may already have overwritten physical Ring slots;
+      // its claimed rows have no completed undo history.
+      poisoned_ = true;
+      pending_runs_.clear();
+      pending_width_ = 0;
+    }
     return Error::Ok;
   }
 
-  // logical_length is the longest sequence: every column holds that many rows.
+  // Logical length is the longest owner; physical capacities may differ.
   OffGraphKVMetrics metrics() const override {
     std::lock_guard<std::mutex> guard(mutex_);
     OffGraphKVMetrics metrics;
@@ -1230,14 +1356,36 @@ class CudaBatchedSequenceCache final : public cache::Cache,
       metrics.logical_length =
           std::max<int64_t>(metrics.logical_length, sequence.plan.length());
     }
-    metrics.flat_capacity =
-        std::min<int64_t>(pool_.rows() / columns_, cfg_.capacity);
+    if (private_rows_) {
+      if (pool_.allocated()) {
+        for (size_t layer = 0; layer < geometry_.layers.size(); ++layer) {
+          for (const auto& span : pool_.private_layout(layer).spans) {
+            metrics.flat_capacity =
+                std::max<int64_t>(metrics.flat_capacity, span.capacity);
+          }
+        }
+      }
+    } else {
+      metrics.flat_capacity =
+          std::min<int64_t>(pool_.rows() / columns_, cfg_.capacity);
+    }
     metrics.growth_count = pool_.growth_count();
     metrics.allocated_bytes = pool_.allocated_bytes();
     metrics.physical_columns = columns_;
     metrics.declared_columns = max_seqs_ + 1;
     metrics.live_sequences = seqs_.size();
     metrics.column_resize_count = pool_.column_resize_count();
+    for (size_t layer = 0; layer < histories_.size(); ++layer) {
+      if (histories_[layer]) {
+        metrics.host_undo_bytes +=
+            histories_[layer]->resident_bytes() + archive_bytes_[layer];
+        if (pool_.allocated()) {
+          metrics.device_staging_bytes +=
+              pool_.side_buffer_bytes(private_stage_buffers_[layer]) +
+              pool_.side_buffer_bytes(private_stage_buffers_[layer] + 1);
+        }
+      }
+    }
     return metrics;
   }
 
@@ -1264,6 +1412,17 @@ class CudaBatchedSequenceCache final : public cache::Cache,
         !inflight_,
         InvalidState,
         "offgraph_kv: cannot compact during a forward");
+    if (private_rows_) {
+      if (!pool_.allocated()) {
+        return Error::Ok;
+      }
+      ET_CHECK_OK_OR_RETURN_ERROR(prepare_private(
+          {}, 0, cudaStreamPerThread, /*compact=*/true, spare_columns));
+      // Owner geometry now agrees with the committed storage.
+      ET_CHECK_OK_OR_RETURN_ERROR(pool_.synchronize(/*all_streams=*/true));
+      extension::cuda::CudaAllocator::release_cached_memory(pool_.device());
+      return Error::Ok;
+    }
     return ensure_columns(true, spare_columns, cudaStreamPerThread);
   }
 
@@ -1292,7 +1451,8 @@ class CudaBatchedSequenceCache final : public cache::Cache,
 
   static std::vector<CudaKVPool::Layer> pool_layers(
       const cache::CacheGeometry& geometry,
-      const cache::CacheConfig& cfg) {
+      const cache::CacheConfig& cfg,
+      bool private_rows) {
     std::vector<CudaKVPool::Layer> layers;
     for (const cache::LayerGeometry& layer : geometry.layers) {
       layers.push_back(CudaKVPool::Layer{
@@ -1301,9 +1461,331 @@ class CudaBatchedSequenceCache final : public cache::Cache,
           rows_of(layer, cfg) * (*cfg.max_seqs + 1),
           // A ring cannot wrap before it holds all its rows, so until then it
           // grows with the flat layers.
-          /*growable=*/true});
+          /*growable=*/true,
+          private_rows && is_ring(layer) ? layer.policy.window : 0});
     }
     return layers;
+  }
+
+  static bool has_ring(const cache::CacheGeometry& geometry) {
+    return std::any_of(geometry.layers.begin(), geometry.layers.end(), is_ring);
+  }
+
+  static std::vector<CudaKVPool::SideBuffer> side_buffers(
+      const cache::CacheGeometry& geometry,
+      const cache::CacheConfig& cfg,
+      bool runtime_columns,
+      bool private_rows) {
+    std::vector<CudaKVPool::SideBuffer> buffers{
+        {kSeqColsFqn, slimc10::ScalarType::Long, {*cfg.max_write}},
+        {kSeqInfoFqn,
+         slimc10::ScalarType::Int,
+         {batched_sequence_max_segments(*cfg.max_seqs),
+          runtime_columns ? 5 : 4}}};
+    if (!private_rows) {
+      return buffers;
+    }
+    buffers.push_back(
+        {kOwnerStepFqn, slimc10::ScalarType::Int, {*cfg.max_seqs + 1, 3}});
+    if (has_ring(geometry)) {
+      buffers.push_back(
+          {kStageRowsFqn, slimc10::ScalarType::Long, {*cfg.max_write}});
+    }
+    for (size_t index = 0; index < geometry.layers.size(); ++index) {
+      const auto& layer = geometry.layers[index];
+      buffers.push_back(
+          {offgraph_kv_layer_fqn(index, "owner_layout"),
+           slimc10::ScalarType::Int,
+           {*cfg.max_seqs + 1, 2}});
+      if (is_ring(layer)) {
+        for (const char* lane : {"k_stage", "v_stage"}) {
+          buffers.push_back(
+              {offgraph_kv_layer_fqn(index, lane),
+               slimc10::ScalarType::BFloat16,
+               {1, *cfg.max_write, layer.n_kv_heads, layer.head_dim},
+               true});
+        }
+      }
+    }
+    return buffers;
+  }
+
+  Error prepare_private(
+      const std::map<int32_t, int>& ends,
+      int64_t width,
+      cudaStream_t stream,
+      bool compact = false,
+      int spare = 0,
+      int new_owner = -1) {
+    std::fill(private_live_.begin(), private_live_.end(), 0);
+    for (auto& layer : private_required_) {
+      std::fill(layer.begin(), layer.end(), 0);
+    }
+    for (const auto& [owner, sequence] : seqs_) {
+      private_live_[owner] = owner == new_owner ? 0 : sequence.plan.length();
+      const auto found = ends.find(owner);
+      const int64_t end =
+          found == ends.end() ? sequence.plan.length() : found->second;
+      for (size_t layer = 0; layer < geometry_.layers.size(); ++layer) {
+        private_required_[layer][owner] = is_ring(geometry_.layers[layer])
+            ? std::min<int64_t>(end, geometry_.layers[layer].policy.window)
+            : end;
+      }
+    }
+    if (compact) {
+      for (int owner = 0; owner < max_seqs_ && spare > 0; ++owner) {
+        if (seqs_.count(owner) != 0) {
+          continue;
+        }
+        bool held = false;
+        for (size_t layer = 0; layer < geometry_.layers.size(); ++layer) {
+          const int capacity =
+              pool_.private_layout(layer).spans[owner].capacity;
+          private_required_[layer][owner] = capacity;
+          held |= capacity > 0;
+        }
+        spare -= held;
+      }
+    }
+    ET_CHECK_OK_OR_RETURN_ERROR(pool_.prepare_private(
+        private_required_, private_live_, width, stream, compact));
+    columns_ = 1;
+    for (int owner = 0; owner < max_seqs_; ++owner) {
+      columns_ += pool_.private_layout(0).spans[owner].capacity > 0;
+    }
+    return Error::Ok;
+  }
+
+  size_t private_metadata_bytes() const {
+    return static_cast<size_t>(max_write_) * sizeof(int64_t) +
+        static_cast<size_t>(max_seqs_ + 1) * sizeof(int32_t) *
+        (3 + 2 * geometry_.layers.size());
+  }
+
+  void build_private_step(
+      const std::map<int32_t, int>& ends,
+      int tokens,
+      int width) {
+    auto* info = reinterpret_cast<int32_t*>(
+        reinterpret_cast<int64_t*>(staging_) + max_write_);
+    auto* rows = reinterpret_cast<int64_t*>(info + max_segments_ * info_width_);
+    auto* steps = reinterpret_cast<int32_t*>(rows + max_write_);
+    auto* layouts = steps + (max_seqs_ + 1) * 3;
+    std::fill(steps, layouts, 0);
+    std::iota(rows, rows + width, int64_t{0});
+    std::vector<int> next(max_seqs_, 0);
+    pending_runs_.clear();
+    int cursor = 0;
+    for (const auto& [owner, end] : ends) {
+      const int start = seqs_.at(owner).plan.length();
+      steps[owner * 3] = cursor;
+      steps[owner * 3 + 1] = start;
+      steps[owner * 3 + 2] = end - start;
+      pending_runs_.push_back({owner, cursor, end - start, start});
+      next[owner] = cursor;
+      cursor += end - start;
+    }
+    for (int token = 0; token < tokens; ++token) {
+      rows[token] = next[step_seq_ids_[token]]++;
+    }
+    for (size_t layer = 0; layer < geometry_.layers.size(); ++layer) {
+      const auto& layout = pool_.private_layout(layer);
+      for (int owner = 0; owner < max_seqs_; ++owner) {
+        layouts[owner * 2] = layout.spans[owner].base;
+        layouts[owner * 2 + 1] = layout.spans[owner].capacity;
+      }
+      layouts[max_seqs_ * 2] = layout.rows - 1;
+      layouts[max_seqs_ * 2 + 1] = 1;
+      layouts += (max_seqs_ + 1) * 2;
+    }
+  }
+
+  Error reserve_archive_staging(int width) {
+    for (size_t layer = 0; layer < histories_.size(); ++layer) {
+      if (!histories_[layer]) {
+        continue;
+      }
+      const auto& geometry = geometry_.layers[layer];
+      const size_t bytes = static_cast<size_t>(width) * 2 *
+          geometry.n_kv_heads * geometry.head_dim * sizeof(uint16_t);
+      if (bytes <= archive_bytes_[layer]) {
+        continue;
+      }
+      void* replacement = nullptr;
+      ET_CHECK_OR_RETURN_ERROR(
+          cudaMallocHost(&replacement, bytes) == cudaSuccess,
+          MemoryAllocationFailed,
+          "offgraph_kv: cannot allocate Ring undo staging");
+      if (archive_staging_[layer]) {
+        (void)cudaFreeHost(archive_staging_[layer]);
+      }
+      archive_staging_[layer] = static_cast<uint8_t*>(replacement);
+      archive_bytes_[layer] = bytes;
+    }
+    return Error::Ok;
+  }
+
+  Error archive_private_step() {
+    if (!has_ring(geometry_)) {
+      return Error::Ok;
+    }
+    const auto device = CUDAGuard::create(pool_.device());
+    ET_CHECK_OK_OR_RETURN_ERROR(device.error());
+    for (size_t layer = 0; layer < histories_.size(); ++layer) {
+      if (!histories_[layer]) {
+        continue;
+      }
+      const auto& geometry = geometry_.layers[layer];
+      const size_t bytes = static_cast<size_t>(pending_width_) *
+          geometry.n_kv_heads * geometry.head_dim * sizeof(uint16_t);
+      for (int plane = 0; plane < 2; ++plane) {
+        const auto error = cudaMemcpyAsync(
+            archive_staging_[layer] + plane * bytes,
+            pool_.side_buffer(private_stage_buffers_[layer] + plane),
+            bytes,
+            cudaMemcpyDeviceToHost,
+            pool_.stream());
+        if (error != cudaSuccess) {
+          (void)pool_.synchronize(/*all_streams=*/true);
+          return Error::Internal;
+        }
+      }
+    }
+    ET_CHECK_OK_OR_RETURN_ERROR(pool_.synchronize());
+    for (size_t layer = 0; layer < histories_.size(); ++layer) {
+      if (histories_[layer]) {
+        ET_CHECK_OK_OR_RETURN_ERROR(histories_[layer]->append(
+            {pending_runs_.data(), pending_runs_.size()},
+            {archive_staging_[layer],
+             static_cast<size_t>(pending_width_) * 2 *
+                 geometry_.layers[layer].n_kv_heads *
+                 geometry_.layers[layer].head_dim * sizeof(uint16_t)},
+            pending_width_));
+      }
+    }
+    return Error::Ok;
+  }
+
+  Error restore_private(int32_t source, int32_t destination, int keep) {
+    if (keep == 0) {
+      return Error::Ok;
+    }
+    // Validate every layer before a rewind modifies any physical history.
+    for (size_t layer = 0; layer < histories_.size(); ++layer) {
+      if (histories_[layer]) {
+        ET_CHECK_OR_RETURN_ERROR(
+            histories_[layer]->has_window(source, keep) &&
+                pool_.private_layout(layer).spans[destination].capacity >=
+                    std::min(keep, geometry_.layers[layer].policy.window),
+            InvalidArgument,
+            "offgraph_kv: unavailable Ring restore window");
+      }
+    }
+    const auto device = CUDAGuard::create(pool_.device());
+    ET_CHECK_OK_OR_RETURN_ERROR(device.error());
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        pool_.follow_previous_step(cudaStreamPerThread));
+    for (size_t layer = 0; layer < histories_.size(); ++layer) {
+      if (!histories_[layer]) {
+        continue;
+      }
+      const auto span = pool_.private_layout(layer).spans[destination];
+      const size_t bytes =
+          static_cast<size_t>(geometry_.layers[layer].n_kv_heads) *
+          geometry_.layers[layer].head_dim * sizeof(uint16_t);
+      for (int plane = 0; plane < 2; ++plane) {
+        int position =
+            std::max(0, keep - geometry_.layers[layer].policy.window + 1);
+        while (position < keep) {
+          const int physical = position % span.capacity;
+          const auto rows = histories_[layer]->read(
+              source,
+              position,
+              std::min(keep - position, span.capacity - physical),
+              plane);
+          if (!rows) {
+            (void)pool_.synchronize(/*all_streams=*/true);
+            return Error::InvalidArgument;
+          }
+          const auto error = cudaMemcpyAsync(
+              static_cast<uint8_t*>(pool_.layer_data(layer, plane != 0)) +
+                  (static_cast<int64_t>(span.base) + physical) * bytes,
+              rows->data,
+              static_cast<size_t>(rows->count) * bytes,
+              cudaMemcpyHostToDevice,
+              cudaStreamPerThread);
+          if (error != cudaSuccess) {
+            poisoned_ = true;
+            (void)pool_.synchronize(/*all_streams=*/true);
+            return Error::Internal;
+          }
+          position += rows->count;
+        }
+      }
+    }
+    // The host pages may be reused by rewind or erased by clone rollback.
+    if (cudaStreamSynchronize(cudaStreamPerThread) != cudaSuccess) {
+      poisoned_ = true;
+      return Error::Internal;
+    }
+    const Error marked = pool_.mark_step_done(cudaStreamPerThread);
+    poisoned_ |= marked != Error::Ok;
+    return marked;
+  }
+
+  std::optional<int32_t> clone_private(
+      int32_t source,
+      int32_t destination,
+      int keep,
+      cache::SequenceCache plan) {
+    bool admitted = false;
+    aoti::ScopeGuard rollback([&]() noexcept {
+      if (!admitted) {
+        seqs_.erase(destination);
+        for (auto& history : histories_) {
+          if (history) {
+            history->erase(destination);
+          }
+        }
+      }
+    });
+    for (auto& history : histories_) {
+      if (history && !history->clone(source, destination, keep)) {
+        return std::nullopt;
+      }
+    }
+    seqs_.emplace(destination, Sequence{destination, std::move(plan)});
+    if (prepare_private({}, 0, cudaStreamPerThread, false, 0, destination) !=
+        Error::Ok) {
+      return std::nullopt;
+    }
+    for (size_t layer = 0; layer < geometry_.layers.size(); ++layer) {
+      if (histories_[layer]) {
+        continue;
+      }
+      const auto& spans = pool_.private_layout(layer).spans;
+      const size_t bytes =
+          static_cast<size_t>(geometry_.layers[layer].n_kv_heads) *
+          geometry_.layers[layer].head_dim * sizeof(uint16_t);
+      for (bool value : {false, true}) {
+        auto* data = static_cast<uint8_t*>(pool_.layer_data(layer, value));
+        if (cudaMemcpyAsync(
+                data + static_cast<int64_t>(spans[destination].base) * bytes,
+                data + static_cast<int64_t>(spans[source].base) * bytes,
+                static_cast<size_t>(keep) * bytes,
+                cudaMemcpyDeviceToDevice,
+                cudaStreamPerThread) != cudaSuccess) {
+          poisoned_ = pool_.synchronize(/*all_streams=*/true) != Error::Ok;
+          return std::nullopt;
+        }
+      }
+    }
+    if (restore_private(destination, destination, keep) != Error::Ok) {
+      poisoned_ = true;
+      return std::nullopt;
+    }
+    admitted = true;
+    return destination;
   }
 
   std::optional<int> free_sequence_id() const {
@@ -1467,6 +1949,50 @@ class CudaBatchedSequenceCache final : public cache::Cache,
           "offgraph_kv: cannot write the step's sequences: %s",
           cudaGetErrorString(error));
     }
+    if (private_rows_) {
+      size_t offset = cols_bytes +
+          static_cast<size_t>(max_segments_) * info_width_ * sizeof(int32_t);
+      if (has_ring(geometry_)) {
+        ET_CHECK_OR_RETURN_ERROR(
+            cudaMemcpyAsync(
+                pool_.side_buffer(3),
+                staging_ + offset,
+                width * sizeof(int64_t),
+                cudaMemcpyHostToDevice,
+                stream) == cudaSuccess,
+            Internal,
+            "offgraph_kv: cannot upload Ring step permutation");
+      }
+      offset += static_cast<size_t>(max_write_) * sizeof(int64_t);
+      const size_t step_bytes =
+          static_cast<size_t>(max_seqs_ + 1) * 3 * sizeof(int32_t);
+      ET_CHECK_OR_RETURN_ERROR(
+          cudaMemcpyAsync(
+              pool_.side_buffer(2),
+              staging_ + offset,
+              step_bytes,
+              cudaMemcpyHostToDevice,
+              stream) == cudaSuccess,
+          Internal,
+          "offgraph_kv: cannot upload private owner step");
+      offset += step_bytes;
+      if (layout_uploaded_ != pool_.column_resize_count()) {
+        const size_t bytes =
+            static_cast<size_t>(max_seqs_ + 1) * 2 * sizeof(int32_t);
+        for (size_t layer = 0; layer < geometry_.layers.size(); ++layer) {
+          ET_CHECK_OR_RETURN_ERROR(
+              cudaMemcpyAsync(
+                  pool_.side_buffer(private_layout_buffers_[layer]),
+                  staging_ + offset + layer * bytes,
+                  bytes,
+                  cudaMemcpyHostToDevice,
+                  stream) == cudaSuccess,
+              Internal,
+              "offgraph_kv: cannot upload private owner layout");
+        }
+        layout_uploaded_ = pool_.column_resize_count();
+      }
+    }
     return Error::Ok;
   }
 
@@ -1529,6 +2055,7 @@ class CudaBatchedSequenceCache final : public cache::Cache,
   const cache::CacheConfig cfg_;
   const int max_seqs_;
   const bool runtime_columns_;
+  const bool private_rows_;
   const int max_write_;
   const int max_segments_;
   const int info_width_;
@@ -1540,6 +2067,16 @@ class CudaBatchedSequenceCache final : public cache::Cache,
   std::map<int32_t, Sequence> seqs_;
   std::vector<int32_t> step_seq_ids_;
   std::vector<int32_t> pending_owners_;
+  std::vector<std::vector<int64_t>> private_required_;
+  std::vector<int64_t> private_live_;
+  std::vector<int> private_layout_buffers_;
+  std::vector<int> private_stage_buffers_;
+  std::vector<std::unique_ptr<RingHistory>> histories_;
+  std::vector<uint8_t*> archive_staging_;
+  std::vector<size_t> archive_bytes_;
+  std::vector<RingHistory::Run> pending_runs_;
+  int pending_width_{0};
+  int64_t layout_uploaded_{-1};
   uint8_t* staging_{nullptr};
   size_t staging_bytes_{0};
   cudaEvent_t staged_{nullptr};
@@ -1619,12 +2156,15 @@ std::shared_ptr<cache::Cache> make_cuda_cell_kv_cache(
 std::shared_ptr<cache::Cache> make_cuda_batched_sequence_kv_cache(
     const cache::CacheGeometry& geometry,
     const cache::CacheConfig& cfg,
-    bool runtime_columns) {
+    bool runtime_columns,
+    bool private_rows) {
   slimc10::ScalarType storage_dtype = slimc10::ScalarType::BFloat16;
   if (!cache::valid(geometry, cfg) || cfg.initial_capacity <= 0 ||
       cfg.initial_capacity > cfg.capacity ||
-      (runtime_columns && geometry.dflash_block_size) ||
-      !storage_dtype_of(cfg.kv_dtype, storage_dtype)) {
+      ((runtime_columns || private_rows) && geometry.dflash_block_size) ||
+      (runtime_columns && private_rows) ||
+      !storage_dtype_of(cfg.kv_dtype, storage_dtype) ||
+      (private_rows && storage_dtype != slimc10::ScalarType::BFloat16)) {
     ET_LOG(Error, "offgraph_kv: invalid cache geometry or config");
     return nullptr;
   }
@@ -1642,7 +2182,7 @@ std::shared_ptr<cache::Cache> make_cuda_batched_sequence_kv_cache(
     return nullptr;
   }
   return std::make_shared<CudaBatchedSequenceCache>(
-      geometry, cfg, storage_dtype, runtime_columns);
+      geometry, cfg, storage_dtype, runtime_columns, private_rows);
 }
 
 runtime::Error attach_offgraph_kv_cache(
@@ -1699,6 +2239,10 @@ const bool cuda_cache_builders_registered = [] {
       {cache::kind::kBatchedSequenceRuntime,
        [](const cache::CacheGeometry& geometry, const cache::CacheConfig& cfg) {
          return make_cuda_batched_sequence_kv_cache(geometry, cfg, true);
+       }},
+      {cache::kind::kBatchedSequencePrivate,
+       [](const cache::CacheGeometry& geometry, const cache::CacheConfig& cfg) {
+         return make_cuda_batched_sequence_kv_cache(geometry, cfg, false, true);
        }},
       // The cell layout is the batch layout this backend serves.
       {cache::kind::kBatched, make_cuda_cell_kv_cache},

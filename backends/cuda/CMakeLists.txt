@@ -528,6 +528,14 @@ if(BUILD_TESTING)
 
   if(EXECUTORCH_BUILD_EXTENSION_LLM)
     et_cxx_test(
+      test_cuda_ring_history SOURCES runtime/test/test_ring_history.cpp
+      EXTRA_LIBS aoti_cuda_backend
+    )
+    et_cxx_test(
+      test_cuda_private_row_layout SOURCES runtime/test/test_private_row_layout.cpp
+      EXTRA_LIBS aoti_cuda_backend
+    )
+    et_cxx_test(
       test_cuda_kv_cache SOURCES runtime/test/test_cuda_kv_cache.cpp EXTRA_LIBS
       aoti_cuda_backend
     )

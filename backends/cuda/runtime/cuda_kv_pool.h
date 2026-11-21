@@ -20,6 +20,7 @@
 #include <executorch/backends/aoti/slim/c10/core/ScalarType.h>
 #include <executorch/backends/aoti/slim/core/slim_tensor.h>
 #include <executorch/backends/cuda/runtime/cuda_delegate_handle.h>
+#include <executorch/backends/cuda/runtime/private_row_layout.h>
 #include <executorch/extension/cuda/runtime_api.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
@@ -45,6 +46,9 @@ class CudaKVPool final {
     // Rows the compiled program declares for this layer's storage.
     int64_t declared_rows{0};
     bool growable{false};
+    // Private storage caps physical history at this window, while the program
+    // retains its legacy virtual Ring extent. Zero denotes a flat layer.
+    int64_t private_window{0};
   };
 
   // A constant the program declares by FQN with a fixed, contiguous shape.
@@ -53,6 +57,8 @@ class CudaKVPool final {
     ::executorch::backends::aoti::slim::c10::ScalarType dtype{
         ::executorch::backends::aoti::slim::c10::ScalarType::Byte};
     std::vector<int64_t> sizes;
+    // BSHD step staging can grow along dimension 1 up to its declared shape.
+    bool step_rows{false};
   };
 
   CudaKVPool(
@@ -61,7 +67,8 @@ class CudaKVPool final {
       ::executorch::backends::aoti::slim::c10::ScalarType storage_dtype,
       int64_t initial_rows,
       int declared_columns = 1,
-      int initial_columns = 1);
+      int initial_columns = 1,
+      bool private_rows = false);
 
   CudaKVPool(const CudaKVPool&) = delete;
   CudaKVPool& operator=(const CudaKVPool&) = delete;
@@ -85,6 +92,20 @@ class CudaKVPool final {
   // across a growth. The first call also allocates the fixed storage.
   runtime::Error
   prepare(int64_t required_rows, int64_t live_rows, cudaStream_t stream);
+
+  // Per-layer requirements and prior logical lengths, indexed by stable owner
+  // id. All spans and staging replacements commit together after their copies
+  // finish. No allocator trimming or fallible work follows the commit.
+  runtime::Error prepare_private(
+      const std::vector<std::vector<int64_t>>& required_rows,
+      const std::vector<int64_t>& live_lengths,
+      int64_t step_rows,
+      cudaStream_t stream,
+      bool compact = false);
+
+  const PrivateRowLayout& private_layout(size_t layer) const {
+    return private_layouts_.at(layer);
+  }
 
   // Flattened row counts remain multiples of the current physical width.
   // Each pair is a retained old column and its new column. Dummy data is not
@@ -203,6 +224,7 @@ class CudaKVPool final {
   int64_t max_rows_{0};
   const int declared_columns_;
   int columns_;
+  const bool private_rows_;
   int64_t column_resize_count_{0};
 
   int device_{0};
@@ -219,6 +241,8 @@ class CudaKVPool final {
   int64_t growth_count_{0};
   std::vector<Allocation> allocations_;
   std::vector<void*> side_buffers_;
+  std::vector<size_t> side_allocated_bytes_;
+  std::vector<PrivateRowLayout> private_layouts_;
 
   std::unordered_map<CudaDelegateHandle*, std::vector<Descriptor>> descriptors_;
   std::unordered_map<CudaDelegateHandle*, Bound> bound_;

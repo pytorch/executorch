@@ -127,11 +127,21 @@ def export_and_lower(
     kv_layout: str = "cell",
     max_kv_seqs: int = 4,
     runtime_kv_columns: bool = False,
+    private_kv_rows: bool = False,
 ) -> None:
     if runtime_kv_columns and not (
         backend == "cuda" and use_offgraph_kv_cache and kv_layout == "sequence"
     ):
         raise ValueError("runtime KV columns require CUDA off-graph sequence layout")
+    if private_kv_rows and (
+        runtime_kv_columns
+        or backend != "cuda"
+        or not use_offgraph_kv_cache
+        or kv_layout != "sequence"
+    ):
+        raise ValueError(
+            "private KV rows require CUDA off-graph sequence layout without ABI 2"
+        )
     if use_offgraph_kv_cache and use_turboquant:
         raise ValueError("off-graph KV cache and TurboQuant are mutually exclusive")
     if backend == "mlx" and use_offgraph_kv_cache:
@@ -155,6 +165,7 @@ def export_and_lower(
             kv_layout=kv_layout,
             max_kv_seqs=max_kv_seqs,
             runtime_kv_columns=runtime_kv_columns,
+            private_kv_rows=private_kv_rows,
             vision_model=vision_model,
             pos_embed_table=pos_embed_table,
             max_vision_patches=max_vision_patches,
@@ -344,6 +355,7 @@ def batched_sequence_manifest(
     causal: bool = True,
     context_window: bool = False,
     runtime_columns: bool = False,
+    private_rows: bool = False,
 ) -> str:
     """The batched-sequence lowering manifest: one column per sequence."""
     from executorch.backends.cuda.passes.lower_offgraph_kv import (
@@ -357,6 +369,8 @@ def batched_sequence_manifest(
     manifest["causal"] = causal
     if runtime_columns:
         manifest["runtime_columns"] = True
+    if private_rows:
+        manifest["private_rows"] = True
     if context_window:
         manifest["context_window"] = True
     return json.dumps(manifest, sort_keys=True, separators=(",", ":"))
@@ -432,6 +446,7 @@ def export_cuda_batching(  # noqa: C901
     kv_layout: str = "cell",
     max_kv_seqs: int = 4,
     runtime_kv_columns: bool = False,
+    private_kv_rows: bool = False,
 ):
     """Exports the forward methods and writes the artifact.
 
@@ -476,6 +491,12 @@ def export_cuda_batching(  # noqa: C901
     sequence_layout = kv_layout == "sequence"
     if runtime_kv_columns and (not sequence_layout or dflash_draft is not None):
         raise ValueError("runtime KV columns require solo sequence-layout export")
+    if private_kv_rows and (
+        runtime_kv_columns or not sequence_layout or dflash_draft is not None
+    ):
+        raise ValueError(
+            "private KV rows require solo sequence-layout export without ABI 2"
+        )
     if sequence_layout and max_kv_seqs <= 0:
         raise ValueError("the sequence layout needs max_kv_seqs > 0")
     has_vision = vision_model is not None and pos_embed_table is not None
@@ -531,7 +552,10 @@ def export_cuda_batching(  # noqa: C901
     single_manifest = enable_offgraph_kv_cache(model, max_step_tokens)
     manifest = (
         batched_sequence_manifest(
-            single_manifest, max_kv_seqs, runtime_columns=runtime_kv_columns
+            single_manifest,
+            max_kv_seqs,
+            runtime_columns=runtime_kv_columns,
+            private_rows=private_kv_rows,
         )
         if sequence_layout
         else cell_manifest(single_manifest, max_cells)
@@ -1239,6 +1263,12 @@ def main() -> None:
         "owner columns grow on admission and compact after sustained serving idleness.",
     )
     parser.add_argument(
+        "--private-kv-rows",
+        action="store_true",
+        help="Export experimental ABI 3: independent session row capacities and "
+        "per-layer Ring staging shared by the packed step (CUDA solo sequence layout).",
+    )
+    parser.add_argument(
         "--activation-dtype",
         default=None,
         choices=list(common.ACTIVATION_DTYPES),
@@ -1379,6 +1409,7 @@ def main() -> None:
         kv_layout=args.kv_layout,
         max_kv_seqs=args.max_kv_seqs,
         runtime_kv_columns=args.runtime_kv_columns,
+        private_kv_rows=args.private_kv_rows,
     )
 
 

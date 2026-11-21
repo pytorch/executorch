@@ -128,7 +128,7 @@ def define_common_targets(is_fbcode = False):
             "cuda_delegate_handle.h",
             "cuda_mutable_state.h",
             "cuda_weight_cache.h",
-        ] + (["cuda_kv_cache.h", "cuda_kv_pool.h"] if with_llm_cache else []),
+        ] + (["cuda_kv_cache.h", "cuda_kv_pool.h", "ring_history.h", "private_row_layout.h"] if with_llm_cache else []),
         # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
         link_whole = True,
         supports_python_dlopen = True,
@@ -221,6 +221,24 @@ def define_common_targets(is_fbcode = False):
         remote_execution = re_test_utils.remote_execution(
             platform = "gpu-remote-execution",
         ),
+    )
+
+    cpp_unittest(
+        name = "test_cuda_ring_history",
+        srcs = ["test/test_ring_history.cpp"],
+        deps = [
+            ":cuda_backend",
+            "//executorch/runtime/core:core",
+        ],
+    )
+
+    cpp_unittest(
+        name = "test_cuda_private_row_layout",
+        srcs = ["test/test_private_row_layout.cpp"],
+        deps = [
+            ":cuda_backend",
+            "//executorch/runtime/core:core",
+        ],
     )
 
     cpp_unittest(

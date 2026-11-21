@@ -45,6 +45,60 @@ _SPLITK_MAX_SPLITS = 16
 
 
 @triton.jit
+def _private_rows(
+    Storage_ptr,
+    Stage_ptr,
+    Layout_ptr,
+    Step_ptr,
+    col,
+    h_kv,
+    positions,
+    valid,
+    offs_d,
+    stride_row,
+    stride_head,
+    RING: tl.constexpr,
+):
+    base = tl.load(Layout_ptr + col * 2).to(tl.int64)
+    capacity = tl.load(Layout_ptr + col * 2 + 1)
+    if RING > 0:
+        stage_start = tl.load(Step_ptr + col * 3)
+        absolute_start = tl.load(Step_ptr + col * 3 + 1)
+        count = tl.load(Step_ptr + col * 3 + 2)
+        staged = (positions >= absolute_start) & (positions < absolute_start + count)
+        retained = (positions >= tl.maximum(0, absolute_start - capacity)) & (
+            positions < absolute_start
+        )
+        physical = positions % tl.maximum(capacity, 1)
+        old = tl.load(
+            Storage_ptr
+            + (base + physical[:, None]) * stride_row
+            + h_kv * stride_head
+            + offs_d[None, :],
+            mask=(valid & retained & (capacity > 0))[:, None],
+            other=0.0,
+        )
+        new = tl.load(
+            Stage_ptr
+            + (stage_start + positions[:, None] - absolute_start) * stride_row
+            + h_kv * stride_head
+            + offs_d[None, :],
+            mask=(valid & staged)[:, None],
+            other=0.0,
+        )
+        return tl.where(staged[:, None], new, old)
+    else:
+        return tl.load(
+            Storage_ptr
+            + (base + positions[:, None]) * stride_row
+            + h_kv * stride_head
+            + offs_d[None, :],
+            mask=(valid & (positions >= 0) & (positions < capacity))[:, None],
+            other=0.0,
+        )
+
+
+@triton.jit
 def _sdpa_varlen_kernel(  # noqa: C901
     Q_ptr,
     K_ptr,
@@ -54,6 +108,10 @@ def _sdpa_varlen_kernel(  # noqa: C901
     M_part_ptr,
     L_part_ptr,
     Info_ptr,
+    Layout_ptr,
+    Step_ptr,
+    K_stage_ptr,
+    V_stage_ptr,
     Hq,
     T,
     stride_qh,
@@ -70,6 +128,7 @@ def _sdpa_varlen_kernel(  # noqa: C901
     rows_available,
     num_qb,
     INFO_WIDTH: tl.constexpr,
+    PRIVATE: tl.constexpr,
     NUM_SPLITS: tl.constexpr,
     IS_CAUSAL: tl.constexpr,
     CONTEXT_WINDOW: tl.constexpr,
@@ -143,17 +202,33 @@ def _sdpa_varlen_kernel(  # noqa: C901
     for n0 in tl.range(start, stop, BLOCK_N):
         offs_n = n0 + tl.arange(0, BLOCK_N)
         n_valid = offs_n < stop
-        k = tl.load(
-            k_base + offs_n[:, None] * stride_kr + offs_d[None, :],
-            mask=n_valid[:, None],
-            other=0.0,
-        )
-        qk = tl.dot(q, tl.trans(k)).to(tl.float32) * sm_scale
         if RING > 0:
             # The newest logical position that landed in each ring row.
             kv_pos = offs_n + RING * ((kv_end - 1 - offs_n) // RING)
         else:
             kv_pos = offs_n
+        if PRIVATE:
+            k = _private_rows(
+                K_ptr,
+                K_stage_ptr,
+                Layout_ptr,
+                Step_ptr,
+                col,
+                h_kv,
+                kv_pos,
+                n_valid,
+                offs_d,
+                stride_kc,
+                stride_kh,
+                RING,
+            )
+        else:
+            k = tl.load(
+                k_base + offs_n[:, None] * stride_kr + offs_d[None, :],
+                mask=n_valid[:, None],
+                other=0.0,
+            )
+        qk = tl.dot(q, tl.trans(k)).to(tl.float32) * sm_scale
         visible = n_valid[None, :] & row_valid[:, None] & (kv_pos[None, :] >= 0)
         if IS_CAUSAL:
             visible = visible & (kv_pos[None, :] <= pos[:, None])
@@ -169,11 +244,27 @@ def _sdpa_varlen_kernel(  # noqa: C901
         m_ij = tl.maximum(m_i, tl.max(qk, axis=1))
         p = tl.where(m_ij[:, None] > -float("inf"), tl.exp(qk - m_ij[:, None]), 0.0)
         alpha = tl.where(m_ij > -float("inf"), tl.exp(m_i - m_ij), 0.0)
-        v = tl.load(
-            v_base + offs_n[:, None] * stride_vr + offs_d[None, :],
-            mask=n_valid[:, None],
-            other=0.0,
-        )
+        if PRIVATE:
+            v = _private_rows(
+                V_ptr,
+                V_stage_ptr,
+                Layout_ptr,
+                Step_ptr,
+                col,
+                h_kv,
+                kv_pos,
+                n_valid,
+                offs_d,
+                stride_vc,
+                stride_vh,
+                RING,
+            )
+        else:
+            v = tl.load(
+                v_base + offs_n[:, None] * stride_vr + offs_d[None, :],
+                mask=n_valid[:, None],
+                other=0.0,
+            )
         acc = acc * alpha[:, None] + tl.dot(p.to(v.dtype), v)
         l_i = l_i * alpha + tl.sum(p, axis=1)
         m_i = m_ij
@@ -197,7 +288,7 @@ def _sdpa_varlen_kernel(  # noqa: C901
 
 
 @triton.jit
-def _sdpa_varlen_decode_kernel(
+def _sdpa_varlen_decode_kernel(  # noqa: C901
     Q_ptr,
     K_ptr,
     V_ptr,
@@ -206,6 +297,10 @@ def _sdpa_varlen_decode_kernel(
     M_part_ptr,
     L_part_ptr,
     Info_ptr,
+    Layout_ptr,
+    Step_ptr,
+    K_stage_ptr,
+    V_stage_ptr,
     Hq,
     T,
     stride_qh,
@@ -222,6 +317,7 @@ def _sdpa_varlen_decode_kernel(
     rows_available,
     NUM_SEGMENTS: tl.constexpr,
     INFO_WIDTH: tl.constexpr,
+    PRIVATE: tl.constexpr,
     NUM_SPLITS: tl.constexpr,
     IS_CAUSAL: tl.constexpr,
     CONTEXT_WINDOW: tl.constexpr,
@@ -293,16 +389,32 @@ def _sdpa_varlen_decode_kernel(
     for n0 in tl.range(start, stop, BLOCK_N):
         offs_n = n0 + tl.arange(0, BLOCK_N)
         n_valid = offs_n < stop
-        k = tl.load(
-            k_base + offs_n[:, None] * stride_kr + offs_d[None, :],
-            mask=n_valid[:, None] & owned,
-            other=0.0,
-        )
-        qk = tl.dot(q, tl.trans(k)).to(tl.float32) * sm_scale
         if RING > 0:
             kv_pos = offs_n + RING * ((kv_end - 1 - offs_n) // RING)
         else:
             kv_pos = offs_n
+        if PRIVATE:
+            k = _private_rows(
+                K_ptr,
+                K_stage_ptr,
+                Layout_ptr,
+                Step_ptr,
+                col,
+                h_kv,
+                kv_pos,
+                n_valid & owned,
+                offs_d,
+                stride_kc,
+                stride_kh,
+                RING,
+            )
+        else:
+            k = tl.load(
+                k_base + offs_n[:, None] * stride_kr + offs_d[None, :],
+                mask=n_valid[:, None] & owned,
+                other=0.0,
+            )
+        qk = tl.dot(q, tl.trans(k)).to(tl.float32) * sm_scale
         visible = n_valid[None, :] & row_valid[:, None] & (kv_pos[None, :] >= 0)
         if IS_CAUSAL:
             visible &= kv_pos[None, :] <= pos
@@ -318,11 +430,27 @@ def _sdpa_varlen_decode_kernel(
         m_ij = tl.maximum(m_i, tl.max(qk, axis=1))
         p = tl.where(m_ij[:, None] > -float("inf"), tl.exp(qk - m_ij[:, None]), 0.0)
         alpha = tl.where(m_ij > -float("inf"), tl.exp(m_i - m_ij), 0.0)
-        v = tl.load(
-            v_base + offs_n[:, None] * stride_vr + offs_d[None, :],
-            mask=n_valid[:, None] & owned,
-            other=0.0,
-        )
+        if PRIVATE:
+            v = _private_rows(
+                V_ptr,
+                V_stage_ptr,
+                Layout_ptr,
+                Step_ptr,
+                col,
+                h_kv,
+                kv_pos,
+                n_valid & owned,
+                offs_d,
+                stride_vc,
+                stride_vh,
+                RING,
+            )
+        else:
+            v = tl.load(
+                v_base + offs_n[:, None] * stride_vr + offs_d[None, :],
+                mask=n_valid[:, None] & owned,
+                other=0.0,
+            )
         acc = acc * alpha[:, None] + tl.dot(p.to(v.dtype), v)
         l_i = l_i * alpha + tl.sum(p, axis=1)
         m_i = m_ij
@@ -388,8 +516,7 @@ def _num_splits(T: int, rows: int) -> int:
     return max(1, min(_SPLITK_MAX_SPLITS, triton.cdiv(rows, _SPLITK_ROWS_PER_SPLIT)))
 
 
-@triton_op("triton::sdpa_varlen", mutates_args={})
-def sdpa_varlen(  # noqa: C901
+def _sdpa_varlen_impl(  # noqa: C901
     query: torch.Tensor,
     key: torch.Tensor,
     value: torch.Tensor,
@@ -400,6 +527,10 @@ def sdpa_varlen(  # noqa: C901
     ring: int = 0,
     rows_available: int = -1,
     context_window: bool = False,
+    owner_layout: torch.Tensor | None = None,
+    owner_step: torch.Tensor | None = None,
+    k_stage: torch.Tensor | None = None,
+    v_stage: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Attend each segment of ``query`` to its own sequence's K/V.
 
@@ -465,6 +596,37 @@ def sdpa_varlen(  # noqa: C901
         raise ValueError("seq_info must be contiguous on the query device")
     if context_window and is_causal:
         raise ValueError("context_window requires non-causal attention")
+    private = owner_layout is not None
+    if private:
+        if context_window or not is_causal or seq_info.shape[1] != 4:
+            raise ValueError("private rows require causal, four-wide sequence info")
+        for metadata, width in ((owner_layout, 2), (owner_step, 3)):
+            if (
+                metadata is None
+                or metadata.dtype != torch.int32
+                or metadata.shape != (key.shape[1], width)
+                or metadata.device != query.device
+                or not metadata.is_contiguous()
+            ):
+                raise ValueError("private owner metadata has invalid shape or storage")
+        if (
+            key.stride(1) != Hkv * D
+            or key.stride(2) != D
+            or (value.stride(1) != Hkv * D or value.stride(2) != D)
+        ):
+            raise ValueError("private K/V rows require dense head lanes")
+        if ring > 0:
+            for stage in (k_stage, v_stage):
+                if (
+                    stage is None
+                    or stage.dim() != 4
+                    or stage.shape[0] != 1
+                    or stage.shape[2:] != (Hkv, D)
+                    or stage.dtype != key.dtype
+                    or stage.device != query.device
+                    or not stage.is_contiguous()
+                ):
+                    raise ValueError("private Ring staging must be dense BSHD K/V")
     groups = Hq // Hkv
     available = rows if rows_available < 0 else min(rows_available, rows)
     # Branching on a symbolic T would guard (and AOTI then pin) the exported
@@ -496,6 +658,10 @@ def sdpa_varlen(  # noqa: C901
             m_part,
             l_part,
             seq_info,
+            owner_layout if private else query,
+            owner_step if private else query,
+            k_stage if private and ring > 0 else query,
+            v_stage if private and ring > 0 else query,
             Hq,
             T,
             query.stride(1),
@@ -512,6 +678,7 @@ def sdpa_varlen(  # noqa: C901
             available,
             NUM_SEGMENTS=seq_info.shape[0],
             INFO_WIDTH=seq_info.shape[1],
+            PRIVATE=private,
             NUM_SPLITS=splits,
             IS_CAUSAL=is_causal,
             CONTEXT_WINDOW=context_window,
@@ -535,6 +702,10 @@ def sdpa_varlen(  # noqa: C901
             m_part,
             l_part,
             seq_info,
+            owner_layout if private else query,
+            owner_step if private else query,
+            k_stage if private and ring > 0 else query,
+            v_stage if private and ring > 0 else query,
             Hq,
             T,
             query.stride(1),
@@ -551,6 +722,7 @@ def sdpa_varlen(  # noqa: C901
             available,
             num_qb,
             INFO_WIDTH=seq_info.shape[1],
+            PRIVATE=private,
             NUM_SPLITS=splits,
             IS_CAUSAL=is_causal,
             CONTEXT_WINDOW=context_window,
@@ -578,6 +750,88 @@ def sdpa_varlen(  # noqa: C901
             HEAD_DIM=D,
         )
     return out
+
+
+@triton_op("triton::sdpa_varlen", mutates_args={})
+def sdpa_varlen(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    seq_info: torch.Tensor,
+    scale: float,
+    is_causal: bool = True,
+    window: int = 0,
+    ring: int = 0,
+    rows_available: int = -1,
+    context_window: bool = False,
+) -> torch.Tensor:
+    return _sdpa_varlen_impl(
+        query,
+        key,
+        value,
+        seq_info,
+        scale,
+        is_causal,
+        window,
+        ring,
+        rows_available,
+        context_window,
+    )
+
+
+@triton_op("triton::sdpa_varlen_private", mutates_args={})
+def sdpa_varlen_private(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    seq_info: torch.Tensor,
+    owner_layout: torch.Tensor,
+    owner_step: torch.Tensor,
+    k_stage: torch.Tensor,
+    v_stage: torch.Tensor,
+    scale: float,
+    window: int = 0,
+    ring: int = 0,
+) -> torch.Tensor:
+    """ABI 3: legacy key sweep over packed private history and shared step K/V.
+
+    ``owner_layout`` is Int32[columns, 2] (base row, capacity), and
+    ``owner_step`` is Int32[columns, 3] (stage start, absolute start, count).
+    The declared key/value shape retains the legacy virtual Ring extent;
+    device storage needs only the sum of private capacities plus scratch.
+    Metadata values are checked by the runtime before graph replay.
+    """
+    return _sdpa_varlen_impl(
+        query,
+        key,
+        value,
+        seq_info,
+        scale,
+        True,
+        window,
+        ring,
+        owner_layout=owner_layout,
+        owner_step=owner_step,
+        k_stage=k_stage,
+        v_stage=v_stage,
+    )
+
+
+@sdpa_varlen_private.register_fake
+def _sdpa_varlen_private_fake(
+    query,
+    key,
+    value,
+    seq_info,
+    owner_layout,
+    owner_step,
+    k_stage,
+    v_stage,
+    scale,
+    window=0,
+    ring=0,
+):
+    return torch.empty_like(query)
 
 
 @sdpa_varlen.register_fake

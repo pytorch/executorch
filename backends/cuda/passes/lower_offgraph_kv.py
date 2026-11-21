@@ -10,12 +10,17 @@ import json
 from typing import Any
 
 import torch
+from executorch.backends.cuda.triton.kernels.private_kv_write import (  # noqa: F401
+    private_kv_stage,
+    private_kv_write,
+)
 
 # Imported for its registration side effect: the decomposition calls
 # torch.ops.triton.sdpa, which only exists once this module has been loaded.
 from executorch.backends.cuda.triton.kernels.sdpa import sdpa  # noqa: F401
 from executorch.backends.cuda.triton.kernels.sdpa_varlen import (  # noqa: F401
     sdpa_varlen,
+    sdpa_varlen_private,
 )
 from executorch.backends.transforms.utils import create_constant_placeholder
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -46,6 +51,8 @@ OFFGRAPH_KV_READ_LEN_FQN = OFFGRAPH_KV_FQN_PREFIX + "read_len"
 # forward. Declared once per program at a fixed shape, like the cell buffers.
 OFFGRAPH_KV_SEQ_COLS_FQN = OFFGRAPH_KV_FQN_PREFIX + "seq_cols"
 OFFGRAPH_KV_SEQ_INFO_FQN = OFFGRAPH_KV_FQN_PREFIX + "seq_info"
+OFFGRAPH_KV_OWNER_STEP_FQN = OFFGRAPH_KV_FQN_PREFIX + "owner_step"
+OFFGRAPH_KV_STAGE_ROWS_FQN = OFFGRAPH_KV_FQN_PREFIX + "stage_rows"
 
 # Layouts whose step packs tokens of several sequences on one axis.
 PACKED_LAYOUTS = ("cell", "batched-sequence")
@@ -101,6 +108,11 @@ def parse_offgraph_kv_manifest(value: bytes) -> dict[str, Any]:  # noqa: C901
         raise ValueError("off-graph runtime_columns must be a bool")
     if runtime_columns and layout != "batched-sequence":
         raise ValueError("off-graph runtime columns require batched-sequence layout")
+    private_rows = manifest.setdefault("private_rows", False)
+    if not isinstance(private_rows, bool):
+        raise ValueError("off-graph private_rows must be a bool")
+    if private_rows and (layout != "batched-sequence" or runtime_columns):
+        raise ValueError("private rows require batched-sequence layout without ABI 2")
     if layout == "batched-sequence":
         for key in ("max_seqs", "max_segments"):
             if not isinstance(manifest.get(key), int) or manifest[key] <= 0:
@@ -120,6 +132,10 @@ def parse_offgraph_kv_manifest(value: bytes) -> dict[str, Any]:  # noqa: C901
             raise ValueError("off-graph context_window requires non-causal attention")
         if runtime_columns and manifest["context_window"]:
             raise ValueError("off-graph runtime columns do not support context_window")
+        if private_rows and (manifest["context_window"] or not manifest["causal"]):
+            raise ValueError(
+                "private rows do not support draft or non-causal attention"
+            )
     if layout == "cell":
         # A cell step packs tokens of several sequences into the shared pool,
         # so the pool bounds its width, not one sequence's capacity.
@@ -154,7 +170,9 @@ def offgraph_kv_constant_methods(value: bytes) -> dict[str, int]:
         return {}
     return {
         "get_offgraph_kv_max_seqs": manifest["max_seqs"],
-        OFFGRAPH_KV_SEQUENCE_INFO_ABI_METHOD: 2 if manifest["runtime_columns"] else 1,
+        OFFGRAPH_KV_SEQUENCE_INFO_ABI_METHOD: (
+            3 if manifest["private_rows"] else 2 if manifest["runtime_columns"] else 1
+        ),
     }
 
 
@@ -355,6 +373,67 @@ def batched_sequence_step(
     if out_dtype is not None and out.dtype != out_dtype:
         out = out.to(out_dtype)
     return out
+
+
+def _private_batched_sequence_step_fn(scale, rows, columns, window, ring, out_dtype):
+    def fn(
+        q,
+        k,
+        v,
+        position,
+        k_storage,
+        v_storage,
+        seq_cols,
+        seq_info,
+        owner_layout,
+        owner_step,
+        stage_rows,
+        k_stage,
+        v_stage,
+    ):
+        position = position.reshape(-1)
+        if ring:
+            torch.ops.triton.private_kv_stage(k, v, stage_rows, k_stage, v_stage)
+        else:
+            torch.ops.triton.private_kv_write(
+                k,
+                v,
+                position,
+                seq_cols,
+                owner_layout,
+                owner_step,
+                k_storage,
+                v_storage,
+            )
+        heads, dim = k_storage.shape[2:]
+        out = torch.ops.triton.sdpa_varlen_private(
+            q,
+            k_storage.view(rows, columns, heads, dim),
+            v_storage.view(rows, columns, heads, dim),
+            seq_info,
+            owner_layout,
+            owner_step,
+            k_stage,
+            v_stage,
+            scale,
+            window,
+            rows if ring else 0,
+        )
+        if ring:
+            torch.ops.triton.private_kv_write(
+                k,
+                v,
+                position,
+                seq_cols,
+                owner_layout,
+                owner_step,
+                k_storage,
+                v_storage,
+                True,
+            )
+        return out if out_dtype is None else out.to(out_dtype)
+
+    return fn
 
 
 def _batched_sequence_step_fn(
@@ -771,8 +850,60 @@ class LowerOffGraphKVPass:
             device,
         )
         call_args = (*node.args[0:4], k_storage, v_storage, seq_cols, seq_info)
-        example_args = tuple(n.meta["val"] for n in call_args)
         ring = layer["policy"] == "ring"
+        if self._manifest.get("private_rows", False):
+            prefix = f"{OFFGRAPH_KV_FQN_PREFIX}layer_{layer['layer_id']}"
+            layout = self._cell_buffer(
+                exported_program,
+                f"{prefix}_owner_layout",
+                (self._columns, 2),
+                torch.int32,
+                device,
+            )
+            owner_step = self._cell_buffer(
+                exported_program,
+                OFFGRAPH_KV_OWNER_STEP_FQN,
+                (self._columns, 3),
+                torch.int32,
+                device,
+            )
+            stage_rows = seq_cols
+            stages = (k_storage, v_storage)
+            if ring:
+                stage_rows = self._cell_buffer(
+                    exported_program,
+                    OFFGRAPH_KV_STAGE_ROWS_FQN,
+                    (self._manifest["max_write"],),
+                    torch.int64,
+                    device,
+                )
+                kv = node.args[1].meta["val"]
+                shape = (1, self._manifest["max_write"], kv.shape[1], kv.shape[3])
+                stages = tuple(
+                    self._cell_buffer(
+                        exported_program,
+                        f"{prefix}_{lane}_stage",
+                        shape,
+                        kv.dtype,
+                        device,
+                    )
+                    for lane in ("k", "v")
+                )
+            call_args += (layout, owner_step, stage_rows, *stages)
+            example_args = tuple(n.meta["val"] for n in call_args)
+            return (
+                _private_batched_sequence_step_fn(
+                    node.args[5],
+                    self._layer_capacity(layer),
+                    self._columns,
+                    layer["window"] if ring else 0,
+                    ring,
+                    out_dtype,
+                ),
+                call_args,
+                example_args,
+            )
+        example_args = tuple(n.meta["val"] for n in call_args)
         fn = _batched_sequence_step_fn(
             node.args[5],
             self._layer_capacity(layer),

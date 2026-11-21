@@ -376,8 +376,8 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
       metadata::detail::read_int_method(*module, kSequenceInfoABIMethod));
   ET_CHECK_OR_RETURN_ERROR(
       sequence_info_abi.value_or(1) == 1 ||
-          (sequence_info_abi == 2 && sequence_layout &&
-           !geometry.dflash_block_size.has_value()),
+          ((sequence_info_abi == 2 || sequence_info_abi == 3) &&
+           sequence_layout && !geometry.dflash_block_size.has_value()),
       InvalidProgram,
       "CudaExecutor: unsupported sequence-info ABI");
   std::int64_t max_cells = 0;
@@ -548,10 +548,11 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
       llm_cache::valid(geometry, cfg),
       InvalidProgram,
       "CudaExecutor: the program's layout is unusable");
-  const char* kind = sequence_info_abi == 2
-      ? llm_cache::kind::kBatchedSequenceRuntime
-      : sequence_layout ? llm_cache::kind::kBatchedSequence
-                        : llm_cache::kind::kBatchedCell;
+  const char* kind = sequence_info_abi == 3
+      ? llm_cache::kind::kBatchedSequencePrivate
+      : sequence_info_abi == 2 ? llm_cache::kind::kBatchedSequenceRuntime
+      : sequence_layout        ? llm_cache::kind::kBatchedSequence
+                               : llm_cache::kind::kBatchedCell;
   ET_ASSIGN_OR_RETURN(
       cache,
       llm_cache::CacheFactory::global().build(backend_id, kind, geometry, cfg));
@@ -599,7 +600,7 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
       min_selected_rows,
       has_sampler,
       has_argmax,
-      sequence_info_abi == 2));
+      sequence_info_abi == 2 || sequence_info_abi == 3));
   executor->embeddings_method_ = embeddings_method;
   return executor;
 }

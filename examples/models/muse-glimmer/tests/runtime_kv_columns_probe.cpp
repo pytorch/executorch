@@ -93,6 +93,8 @@ Json snapshot(cb::CudaExecutor& executor) {
       {"logical_length", kv.logical_length},
       {"flat_capacity", kv.flat_capacity},
       {"live_KV_bytes", kv.allocated_bytes},
+      {"device_staging_bytes", kv.device_staging_bytes},
+      {"host_undo_bytes", kv.host_undo_bytes},
       {"row_growth_count", kv.growth_count},
       {"column_resize_count", kv.column_resize_count},
       {"device_used_bytes", total_bytes - free_bytes},
@@ -282,6 +284,14 @@ int main(int argc, char** argv) {
             request.at("seq_id").get<int32_t>(), request.at("upto").get<int>());
         require(id.has_value(), "clone owner");
         result["seq_id"] = *id;
+      } else if (op == "rewind") {
+        require(
+            control.rewind(
+                request.at("seq_id").get<int32_t>(),
+                request.at("position").get<int>()),
+            "rewind owner");
+      } else if (op == "clear") {
+        control.clear();
       } else if (op == "compact") {
         require(
             executor->compact_kv_columns(request.value("spare_columns", 0)) ==

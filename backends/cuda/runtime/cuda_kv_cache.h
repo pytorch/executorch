@@ -28,7 +28,7 @@ namespace cache = ::executorch::extension::llm::cache;
 
 struct OffGraphKVMetrics {
   int64_t logical_length{0};
-  // Rows currently allocated for each flat layer.
+  // Maximum private owner row capacity, or the shared flat row capacity.
   int64_t flat_capacity{0};
   // Times flat row storage has grown. Column resizes are counted separately.
   int64_t growth_count{0};
@@ -40,6 +40,10 @@ struct OffGraphKVMetrics {
   // Logical owners, including cloned prefix owners.
   int64_t live_sequences{0};
   int64_t column_resize_count{0};
+  // ABI 3 per-layer shared device K/V staging, separate from live history.
+  int64_t device_staging_bytes{0};
+  // ABI 3 host undo pages and pinned transfer buffers; excludes containers.
+  int64_t host_undo_bytes{0};
 };
 
 // Backend face of the off-graph KV cache: what the CUDA delegate needs from
@@ -235,9 +239,13 @@ inline int batched_sequence_max_segments(int max_seqs) {
 // max_write - 1). runtime_columns selects ABI 2: physical owner columns
 // start at one and grow on admission up to cfg.max_seqs; ABI 1 keeps the
 // declared width. Both reserve one additional scratch column.
+// private_rows selects ABI 3 instead: stable owner descriptors address
+// independent row spans; Ring history caps at the window and per-layer step
+// staging is shared. Host undo history preserves clone/rewind semantics.
 std::shared_ptr<cache::Cache> make_cuda_batched_sequence_kv_cache(
     const cache::CacheGeometry& geometry,
     const cache::CacheConfig& cfg,
-    bool runtime_columns = false);
+    bool runtime_columns = false,
+    bool private_rows = false);
 
 } // namespace executorch::backends::cuda
