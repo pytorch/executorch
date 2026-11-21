@@ -584,17 +584,25 @@ class MeasurementSpecTest(_RoutingTest):
         self.assertTrue(all(len(specs) == 1 for specs in keys.values()))
         self.assertGreater(len(keys), 4)
 
-    def test_offset_inputs_are_not_measured(self):
+    def test_offset_inputs_are_measured_as_views(self):
+        """An input at an offset, and a weight sliced from a fused projection
+        as constant propagation leaves it, are described with their offsets
+        on both sides."""
         from executorch.backends.cuda.triton import measured_routing
         from executorch.exir.dialects._ops import ops as exir_ops
 
         node = _graph(
-            exir_ops.edge.aten.linear.default, _fake(5, _K, offset=7), _fake(_N, _K)
+            exir_ops.edge.aten.linear.default,
+            _fake(5, _K, offset=7),
+            _fake(_N, _K, offset=_N * _K),
         )
         plan = self.plan(node)
         self.assertEqual([c.name for c in plan.legal()], ["inductor", "linear"])
-        with self.assertRaisesRegex(measured_routing.Unmeasurable, "storage offset"):
-            measured_routing._spec(node, plan)
+        spec = measured_routing._spec(node, plan)
+        for args in (spec["args"], spec["replacement"]["args"]):
+            self.assertEqual(
+                [args[0]["storage"], args[1]["storage"]], [[0, 7], [1, _N * _K]]
+            )
 
 
 def _entry(ours, theirs):
