@@ -34,6 +34,7 @@ from executorch.frontends.fused_quant.quantizer.quantizer import (
     QuantizerBase,
 )
 from executorch.frontends.fused_quant.recipe import (
+    get_fused_quant_aten_transform_passes,
     get_fused_quant_edge_compile_config,
     get_fused_quant_portable_recipe,
     get_fused_quant_quantization_recipe,
@@ -176,6 +177,7 @@ def _backend_recipe(quantizer: FusedQuantQuantizer) -> ExportRecipe:
         name="backend",
         strict=False,
         quantization_recipe=get_fused_quant_quantization_recipe(quantizer),
+        aten_transform_passes=get_fused_quant_aten_transform_passes(quantizer),
         lowering_recipe=LoweringRecipe(
             edge_transform_passes=[edge_passes],
             edge_compile_config=get_fused_quant_edge_compile_config(
@@ -205,6 +207,7 @@ def _flagged_recipe(quantizer: FusedQuantQuantizer, **flags: bool) -> ExportReci
         name="flagged",
         strict=False,
         quantization_recipe=get_fused_quant_quantization_recipe(quantizer),
+        aten_transform_passes=get_fused_quant_aten_transform_passes(quantizer),
         lowering_recipe=LoweringRecipe(
             edge_transform_passes=[edge_passes],
             edge_compile_config=get_fused_quant_edge_compile_config(()),
@@ -230,8 +233,8 @@ class PortableRecipeTest(unittest.TestCase):
     def test_quantizes_into_fused_quant_ops(self) -> None:
         session = _export(ConvReluLinear(), _calibration_inputs())
 
-        quantized = session.get_stage_artifacts()[StageType.QUANTIZE].data["forward"]
-        targets = _targets(quantized.graph)
+        program = session.get_stage_artifacts()[StageType.TORCH_EXPORT].data["forward"]
+        targets = _targets(program.graph)
         self.assertTrue(
             any("fused_quant" in target for target in targets),
             f"expected fused_quant ops, got {targets}",
@@ -287,8 +290,8 @@ class PortableRecipeTest(unittest.TestCase):
 
         session = _export(model, inputs, _quantizer(_linear_quantizer()))
 
-        quantized = session.get_stage_artifacts()[StageType.QUANTIZE].data["forward"]
-        self.assertIn("fused_quant.linear.default", _targets(quantized.graph))
+        program = session.get_stage_artifacts()[StageType.TORCH_EXPORT].data["forward"]
+        self.assertIn("fused_quant.linear.default", _targets(program.graph))
         self.assertNotIn(
             "aten.linear.default",
             _targets(session.get_executorch_program_manager().exported_program().graph),
@@ -385,7 +388,7 @@ class _KeepsSafeSoftmax(QuantizerBase):
     def annotate(self, model: torch.fx.GraphModule) -> torch.fx.GraphModule:
         return model
 
-    def fuse(self, gm: torch.fx.GraphModule) -> bool:
+    def fuse(self, exported_program: ExportedProgram) -> bool:
         return False
 
     def preserved_ops(self) -> list[torch._ops.OpOverload]:
