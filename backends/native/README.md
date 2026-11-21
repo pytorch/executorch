@@ -268,6 +268,15 @@ ExecuTorch with the desired GGML backend (for example, `GGML_CUDA=ON`,
 `GGML_HIP=ON`, or `GGML_METAL=ON`) and set `ptn::GgmlEngineOptions::device` to
 `ptn::GgmlDevice::Gpu`. CPU support is required even when selecting a GPU.
 
+The ggml runners (`run_hf_llm_ggml`, `ggml_ptn_runner`) share their engine
+flags (`runtime/engine/ggml/GgmlEngineFlags.h`). Engine options that change
+numerics default to llama.cpp's behaviour; the testing ones end in
+`_for_testing` and turn on eager's exact behaviour where ggml's differs.
+
+| Option (flag) | Default, as in llama.cpp | Set | Ops | Backends |
+| --- | --- | --- | --- | --- |
+| `allow_activation_quant_for_weight_only` | quantizes the activations of matmuls with weight-only quantized weights in their block format | false (debugging): those weights load dequantized to F32, about 4-12x their packed size by type | `linear` | all |
+
 The CMake installation includes the GGML libraries and package configuration.
 It also copies the submodule's upstream MIT license, including its copyright
 notice, to `share/licenses/executorch/ggml/LICENSE` under the installation
