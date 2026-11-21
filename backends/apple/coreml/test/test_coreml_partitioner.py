@@ -1674,6 +1674,8 @@ class TestCoreMLPartitioner(unittest.TestCase):
             (Returned, (x,), CoreMLPartitioner()),
         ):
             with self.subTest(model=model_class.__name__):
+                if model_class is ReadOnCpu and is_fbcode():
+                    self.skipTest("skipping for fbcode")
                 ep = torch.export.export(model_class().eval(), inputs, strict=True)
                 edge = executorch.exir.to_edge_transform_and_lower(
                     ep, partitioner=[partitioner]
