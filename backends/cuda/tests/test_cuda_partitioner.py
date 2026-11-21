@@ -16,6 +16,7 @@ from unittest.mock import patch
 import torch
 from executorch.backends.cuda.cuda_backend import (
     _aoti_device_type_for_weight,
+    _moved_program_tensors,
     CudaBackend,
 )
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
@@ -45,6 +46,15 @@ from torch._inductor.compile_fx import clone_preserve_strides
 from torch.export import export
 from torch.export.pt2_archive._package_weights import TensorProperties, Weights
 from torch.fx.passes.utils.fuser_utils import validate_partition
+
+
+class _LinearModule(torch.nn.Module):
+    def __init__(self, device=None) -> None:
+        super().__init__()
+        self.linear = torch.nn.Linear(256, 256, device=device)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.linear(x)
 
 
 class TestCudaLowMemoryExport(unittest.TestCase):
@@ -587,19 +597,24 @@ class TestCudaLowMemoryExport(unittest.TestCase):
             self.assertEqual(hashlib.sha256(data).hexdigest(), digest)
             self.assertFalse(os.path.exists(path))
 
-    def test_low_memory_program_copy_shares_tensor_storage(self) -> None:
+    def test_program_copy_shares_tensor_storage_when_asked(self) -> None:
         module = torch.nn.Linear(4, 3)
         program = export(module, (torch.randn(2, 4),), strict=True)
 
-        copied = CudaBackend.copy_exported_program_for_preprocess(
-            program, [CompileSpec("low_memory_mode", b"ON")]
-        )
+        for spec in (
+            CompileSpec("low_memory_mode", b"ON"),
+            CompileSpec("share_weights", b"ON"),
+        ):
+            with self.subTest(spec=spec):
+                copied = CudaBackend.copy_exported_program_for_preprocess(
+                    program, [spec]
+                )
 
-        self.assertIsNot(program, copied)
-        self.assertIsNot(program.graph_module, copied.graph_module)
-        self.assertIs(program.state_dict["weight"], copied.state_dict["weight"])
-        copied._state_dict["weight"] = torch.nn.Parameter(torch.zeros(3, 4))
-        self.assertFalse(torch.count_nonzero(program.state_dict["weight"]) == 0)
+                self.assertIsNot(program, copied)
+                self.assertIsNot(program.graph_module, copied.graph_module)
+                self.assertIs(program.state_dict["weight"], copied.state_dict["weight"])
+                copied._state_dict["weight"] = torch.nn.Parameter(torch.zeros(3, 4))
+                self.assertFalse(torch.count_nonzero(program.state_dict["weight"]) == 0)
 
     def test_default_program_copy_has_independent_tensor_storage(self) -> None:
         module = torch.nn.Linear(4, 3)
@@ -612,6 +627,82 @@ class TestCudaLowMemoryExport(unittest.TestCase):
             program.state_dict["weight"].data_ptr(),
             copied.state_dict["weight"].data_ptr(),
         )
+
+    @unittest.skipUnless(torch.cuda.is_available(), "needs a CUDA device")
+    def test_sharing_move_copies_gpu_tensors_the_graph_writes(self) -> None:
+        class State(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("count", torch.zeros(4, device="cuda"))
+                self.scale = torch.nn.Parameter(
+                    torch.ones(4, device="cuda"), requires_grad=False
+                )
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                self.count.add_(1)
+                self.scale.mul_(2)
+                return self.count * self.scale + x
+
+        program = to_edge(
+            export(State(), (torch.ones(4, device="cuda"),), strict=True)
+        ).exported_program()
+        caller = [program.state_dict[name] for name in ("count", "scale")]
+        share = CompileSpec("share_weights", b"ON")
+        low_memory = CompileSpec("low_memory_mode", b"ON")
+        off = CompileSpec("autotune_at_compile_time", b"OFF")
+        for compile_specs, copies in (
+            ([share], False),
+            ([low_memory], False),
+            ([share, off], True),
+            ([low_memory, off], True),
+        ):
+            with self.subTest(compile_specs=compile_specs):
+                copied = CudaBackend.copy_exported_program_for_preprocess(
+                    program, compile_specs
+                )
+                with CudaWeightCollector().capture(_aoti_device_type_for_weight):
+                    moved = CudaBackend.move_program_to_device(
+                        copied, "cuda", compile_specs
+                    )
+                moved.module()  # Fails unless a copied parameter stays a Parameter.
+                compiled = [moved.state_dict[name] for name in ("count", "scale")]
+                moved_pointers = [t.data_ptr() for t in _moved_program_tensors()]
+                for tensor, value in zip(caller, compiled):
+                    self.assertEqual(copies, tensor.data_ptr() != value.data_ptr())
+                    self.assertEqual(copies, value.data_ptr() in moved_pointers)
+                    self.assertTrue(torch.equal(tensor, value))
+                CudaBackend.release_moved_tensors(moved, compile_specs)
+
+                for tensor, value in zip(caller, compiled):
+                    self.assertEqual(16, tensor.untyped_storage().nbytes())
+                    self.assertEqual(
+                        0 if copies else 16, value.untyped_storage().nbytes()
+                    )
+
+    @unittest.skipUnless(torch.cuda.is_available(), "needs a CUDA device")
+    def test_sharing_release_frees_only_what_the_move_created(self) -> None:
+        module = _LinearModule(device="cuda")
+        module.register_buffer("scale", torch.ones(256))
+        expected = module.linear.weight.detach().clone()
+        program = export(module, (torch.randn(2, 256, device="cuda"),), strict=True)
+        compile_specs = [CompileSpec("share_weights", b"ON")]
+
+        copied = CudaBackend.copy_exported_program_for_preprocess(
+            program, compile_specs
+        )
+        moved = CudaBackend.move_program_to_device(copied, "cuda", compile_specs)
+        scale = moved.state_dict["scale"]
+        self.assertEqual(
+            [scale.data_ptr()], [t.data_ptr() for t in _moved_program_tensors()]
+        )
+        CudaBackend.release_moved_tensors(moved, compile_specs)
+
+        self.assertEqual(0, scale.untyped_storage().nbytes())
+        self.assertEqual(
+            expected.untyped_storage().nbytes(),
+            module.linear.weight.untyped_storage().nbytes(),
+        )
+        self.assertTrue(torch.equal(expected, module.linear.weight))
 
 
 class TestCudaPartitioner(unittest.TestCase):

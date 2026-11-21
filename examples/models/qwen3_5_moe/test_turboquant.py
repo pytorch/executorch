@@ -56,7 +56,7 @@ TINY_CONFIG = Qwen35MoEConfig(
 
 def _make_model(turboquant=False):
     """Create a tiny quantized model, optionally with TurboQuant KV cache."""
-    import executorch.backends.cuda.triton.kernels  # noqa: F401
+    import executorch.backends.cuda.triton.kernels.chunk_gated_delta_rule  # noqa: F401
 
     torch.manual_seed(42)
     model = Qwen35MoE(TINY_CONFIG)
