@@ -23,9 +23,9 @@ def main() -> None:
     root = Path(sys.argv[1])
     (ptd,) = root.glob("*.ptd")
     module = cuda_lib._load_for_executorch(str(root / "model.pte"), data_path=str(ptd))
-    (output,) = module.forward([np.load(root / "input.npy")])
+    output = module.forward([np.load(root / "input.npy")])[0]
     np.save(root / "output.npy", np.asarray(output))
     second_input = root / "input2.npy"
     if second_input.exists():
-        (second_output,) = module.forward([np.load(second_input)])
+        second_output = module.forward([np.load(second_input)])[0]
         np.save(root / "output2.npy", np.asarray(second_output))

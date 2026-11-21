@@ -161,10 +161,11 @@ kernel's Helion backend:
   lives in the `.pte` like the Triton kernels. Export needs `nvidia-cutlass-dsl` 4.7 or newer and a
   CUDA toolkit; the program runs only on GPUs of the export GPU's architecture, and CuTe kernels
   are Linux-only (they are rejected when exporting for Windows). A CuTe kernel is compiled for the
-  exported sizes, strides and pointer alignments: only user inputs, parameters and buffers are
-  compiled as starting at their allocation, while every other operand (an activation, or a tensor
-  passed into a `torch.cond` branch) is compiled for element alignment only, which can rule out
-  vectorized or TMA staging for it. At run time each call checks its arguments against the
+  exported sizes, strides and pointer alignments: user inputs, parameters, buffers and outputs
+  allocated by the kernel's host code are compiled as starting at their allocation, while every
+  other operand (an activation, or a tensor passed into a `torch.cond` branch) is compiled for
+  element alignment only, which can rule out vectorized or TMA staging for it. At run time each
+  call checks its arguments against the
   compiled layout and alignment and fails the call, rather than launching, on a mismatch.
 
 The pass runs after the backend's other passes and before AOTInductor. It never tunes or launches
@@ -184,8 +185,8 @@ Helion autotunes on the first call, or a `configs=[...]` list), scalar, containe
 from the ones `torch.export` recorded, more than one launch site, host tensor descriptors, and
 launch options AOTInductor cannot reproduce, such as cooperative grids, clusters or PDL. For CuTe
 kernels it also rejects launches with scalar arguments, workspace tensors, dynamic layouts, empty
-grids, launches that stage (copy) under-aligned operands, and launches with more than 26 tensor
-arguments. It needs Helion 1.5.2 or newer, which records each call's host-semantic fingerprint at
+grids, and launches that stage (copy) under-aligned operands. It needs Helion 1.5.2 or newer,
+which records each call's host-semantic fingerprint at
 export.
 
 

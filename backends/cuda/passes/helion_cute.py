@@ -18,6 +18,7 @@ AOTInductor lowers to the shim.
 
 from __future__ import annotations
 
+import atexit
 import contextlib
 import functools
 import hashlib
@@ -26,7 +27,6 @@ import importlib.metadata
 import importlib.util
 import re
 import shutil
-import string
 import subprocess
 import tempfile
 import threading
@@ -153,28 +153,44 @@ class _ExportedLaunch(NamedTuple):
 class _ProgramLaunches(threading.local):
     def __init__(self) -> None:
         self.launches: dict[str, _ExportedLaunch] = {}
+        self.last_had_launches = False
 
 
 class _ExportState:
     """The launches exported in this process, and those of each thread's program.
 
-    Contract with the CUDA backend: ``AotiBackend.preprocess`` runs
-    ``LowerHelionPass`` and then, on the same thread, reads
-    ``exported_fallback_kernels`` and enters ``link_exported_launches`` for the
-    compile, so a thread's program launches are exactly the ones its next
-    compile on that thread accepts and links. Calling ``LowerHelionPass``
-    outside that flow leaves the thread's launches recorded until the next
-    pass run (``begin_program``) or link on that thread.
+    The shim declarations and supported fallback kernels are process-wide
+    and append-only: an exported op is never undefined, and AOTInductor's
+    fallback-kernel collection (like a config patch) is not isolated per
+    thread, so a per-thread set would fail other threads' compiles. Only the
+    archive *link* is per thread: ``AotiBackend.preprocess`` runs
+    ``LowerHelionPass`` and then, on the same thread, enters
+    ``link_exported_launches`` for the compile, so a thread's program
+    launches are exactly the archives its next compile on that thread links.
+    Calling ``LowerHelionPass`` outside that flow leaves the thread's
+    launches recorded until the next pass run (``begin_program``) or link.
     """
 
     def __init__(self) -> None:
         self.lock = threading.Lock()
         self.library: torch.library.Library | None = None
         self.exported: dict[str, _ExportedLaunch] = {}
+        self.library_directories: set[Path] = set()
+        self.cleanup_registered = False
         self.per_thread = _ProgramLaunches()
 
     def program_launches(self) -> dict[str, _ExportedLaunch]:
         return self.per_thread.launches
+
+    def track_library_directory(self, directory: Path) -> None:
+        self.library_directories.add(directory)
+        if not self.cleanup_registered:
+            self.cleanup_registered = True
+            atexit.register(self._remove_library_directories)
+
+    def _remove_library_directories(self) -> None:
+        for directory in self.library_directories:
+            shutil.rmtree(directory, ignore_errors=True)
 
 
 _STATE = _ExportState()
@@ -489,13 +505,8 @@ def _register_op(
     mutable: Sequence[bool],
     launch: Callable[[tuple[torch.Tensor, ...]], None],
 ) -> Any:
-    if len(mutable) > len(string.ascii_lowercase):
-        raise NotImplementedError(
-            "Helion CuTe lowering supports at most 26 tensor arguments"
-        )
     arguments = ", ".join(
-        f"Tensor({string.ascii_lowercase[i]}!) t{i}" if m else f"Tensor t{i}"
-        for i, m in enumerate(mutable)
+        f"Tensor(a{i}!) t{i}" if m else f"Tensor t{i}" for i, m in enumerate(mutable)
     )
     if _STATE.library is None:
         _STATE.library = torch.library.Library(_OP_NAMESPACE, "FRAGMENT")
@@ -516,26 +527,43 @@ def _register_op(
     return getattr(getattr(torch.ops, _OP_NAMESPACE), prefix).default
 
 
+def _build_launch_archive(
+    prefix: str, captured: _CapturedLaunch
+) -> tuple[Any, list[int], str, Path]:
+    """Compile the launch and archive it, without registering any op."""
+    # Resolve the DSL runtime now, so a missing archive fails at export
+    # instead of inside the AOTInductor link at the end of the compile.
+    _dsl_runtime_directory()
+    root = Path(cache_dir()) / "executorch_helion_cute"
+    root.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory() as directory:
+        workdir = Path(directory)
+        compiled, _schema, alignments = _compile_and_export(captured, prefix, workdir)
+        declaration = _build_library(
+            prefix, workdir, captured.tensors, alignments, captured.grid
+        )
+        # A directory of its own per export, created only once the build
+        # succeeded, so a process never links an archive another process
+        # wrote under the same name.
+        library_directory = Path(tempfile.mkdtemp(prefix=f"{prefix}_", dir=root))
+        shutil.copyfile(
+            workdir / f"lib{prefix}.a", library_directory / f"lib{prefix}.a"
+        )
+    _STATE.track_library_directory(library_directory)
+    return compiled, alignments, declaration, library_directory
+
+
 def _export(
     prefix: str, captured: _CapturedLaunch, mutable: Sequence[bool]
 ) -> _ExportedLaunch:
     launcher = _cute_launcher_modules()[0]
-    root = Path(cache_dir()) / "executorch_helion_cute"
-    root.mkdir(parents=True, exist_ok=True)
-    # A directory of its own per export, so a process never links an archive
-    # another process wrote under the same name.
-    library_directory = Path(tempfile.mkdtemp(prefix=f"{prefix}_", dir=root))
-    with tempfile.TemporaryDirectory() as directory:
-        workdir = Path(directory)
-        compiled, schema, alignments = _compile_and_export(captured, prefix, workdir)
-        declaration = _build_library(
-            prefix, workdir, captured.tensors, alignments, captured.grid
-        )
-        shutil.copyfile(
-            workdir / f"lib{prefix}.a", library_directory / f"lib{prefix}.a"
-        )
+    compiled, alignments, declaration, library_directory = _build_launch_archive(
+        prefix, captured
+    )
     cute_kernel, grid = captured.cute_kernel, captured.grid
-    compiled_args = captured.tensors
+    # Only layouts: keeping the example tensors themselves alive would pin
+    # their GPU memory (weights included) for the life of the process.
+    layouts = tuple((tuple(t.shape), t.stride(), t.dtype) for t in captured.tensors)
 
     def launch(tensors: tuple[torch.Tensor, ...]) -> None:
         # The eager twin of the C shim's check: same sizes, strides and dtype
@@ -543,13 +571,13 @@ def _export(
         # compiled alignment. An exactly matching Helion schema would also
         # reject a more-aligned pointer for an element-aligned operand, which
         # the shim (and the compiled kernel) accepts.
-        if len(tensors) != len(compiled_args) or any(
-            tensor.shape != expected.shape
-            or tensor.stride() != expected.stride()
-            or tensor.dtype != expected.dtype
+        if len(tensors) != len(layouts) or any(
+            tuple(tensor.shape) != shape
+            or tensor.stride() != stride
+            or tensor.dtype != dtype
             or tensor.data_ptr() % alignment != 0
-            for tensor, expected, alignment in zip(
-                tensors, compiled_args, alignments
+            for tensor, (shape, stride, dtype), alignment in zip(
+                tensors, layouts, alignments
             )
         ):
             raise RuntimeError(
@@ -610,16 +638,27 @@ def export_cute_launch(
         prefix = f"helion_cute_{hashlib.sha256(key.encode()).hexdigest()[:24]}"
         with _STATE.lock:
             exported = _STATE.exported.get(prefix)
-            if exported is not None and not (
-                exported.library_directory / f"lib{exported.library}.a"
-            ).is_file():
+            if (
+                exported is not None
+                and not (
+                    exported.library_directory / f"lib{exported.library}.a"
+                ).is_file()
+            ):
                 # The cached archive is gone (for example its cache directory
-                # was cleared under a long-lived process); export it again
-                # instead of linking a missing library.
-                exported = None
+                # was cleared under a long-lived process). Rebuild only the
+                # archive: the op is still registered, and defining it again
+                # would raise.
+                _, _, _, directory = _build_launch_archive(prefix, captured)
+                exported = exported._replace(library_directory=directory)
+                _STATE.exported[prefix] = exported
             if exported is None:
                 exported = _export(prefix, captured, mutable)
                 _STATE.exported[prefix] = exported
+                # Append-only, process-wide: declare the shim once, for the
+                # life of the process, like the op itself.
+                torch._inductor.config.aot_inductor.custom_ops_to_c_shims[
+                    exported.op
+                ] = [exported.shim_declaration]
     _STATE.program_launches()[prefix] = exported
     op = exported.op
 
@@ -634,11 +673,26 @@ def export_cute_launch(
 def begin_program() -> None:
     """Forget the launches of the previous program lowered on this thread."""
     _STATE.program_launches().clear()
+    _STATE.per_thread.last_had_launches = False
+
+
+def last_program_had_launches() -> bool:
+    """Whether this thread's last completed compile linked CuTe launches."""
+    return _STATE.per_thread.last_had_launches
 
 
 def exported_fallback_kernels() -> dict[str, None]:
-    """The custom ops the CUDA backend must accept as supported fallbacks."""
-    return {f"{_OP_NAMESPACE}::{p}": None for p in _STATE.program_launches()}
+    """Every exported custom op, as supported fallback kernels.
+
+    Process-wide on purpose: AOTInductor's fallback-kernel collection wraps
+    class-level codegen shared by every thread, so a per-thread set fails
+    other threads' compiles. An exported op is never undefined, so accepting
+    all of them is safe; only the archives a program actually calls are
+    linked, through ``program_link_options``.
+    """
+    with _STATE.lock:
+        prefixes = list(_STATE.exported)
+    return {f"{_OP_NAMESPACE}::{p}": None for p in prefixes}
 
 
 def program_link_options() -> tuple[list[str], list[str]]:
@@ -659,22 +713,29 @@ def program_link_options() -> tuple[list[str], list[str]]:
 
 @contextlib.contextmanager
 def link_exported_launches() -> Iterator[None]:
-    """Let AOTInductor call the CuTe launches of this thread's program.
+    """Scope this thread's program launches to one AOTInductor compile.
 
-    Declares the launches' C shims to AOTInductor. Inductor config patches
-    are thread-local, and the archives themselves are added by the CUDA
-    backend's thread-scoped compile patch reading ``program_link_options``.
+    Inductor's config is thread-local, so shim declarations written at
+    export time are only visible on the exporting thread; (re)declare every
+    exported shim on the compiling thread here. The archives are added by
+    the CUDA backend's thread-scoped compile patch reading
+    ``program_link_options``. On exit the thread's launches are forgotten,
+    remembering only whether the compile had any
+    (``last_program_had_launches``).
     """
     launches = list(_STATE.program_launches().values())
-    if not launches:
-        yield
-        return
+    with _STATE.lock:
+        exported = list(_STATE.exported.values())
     shims = dict(torch._inductor.config.aot_inductor.custom_ops_to_c_shims)
-    shims.update({e.op: [e.shim_declaration] for e in launches})
+    shims.update({e.op: [e.shim_declaration] for e in exported})
     try:
-        with torch._inductor.config.patch(
-            {"aot_inductor.custom_ops_to_c_shims": shims}
-        ):
+        if exported:
+            with torch._inductor.config.patch(
+                {"aot_inductor.custom_ops_to_c_shims": shims}
+            ):
+                yield
+        else:
             yield
     finally:
-        begin_program()
+        _STATE.per_thread.last_had_launches = bool(launches)
+        _STATE.program_launches().clear()

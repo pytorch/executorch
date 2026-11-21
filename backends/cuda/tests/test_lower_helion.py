@@ -15,6 +15,7 @@ from unittest import mock
 
 import numpy as np
 import torch
+from executorch.backends.aoti import aoti_backend
 from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 from executorch.backends.cuda.passes import helion_cute, lower_helion
@@ -28,14 +29,17 @@ from triton.runtime.jit import JITFunction
 try:
     import helion
     import helion.language as hl
-    from helion._compiler._dynamo.higher_order_ops import (
-        helion_kernel_side_table,
-        helion_kernel_wrapper_functional,
-    )
-    from helion.runtime.kernel import BoundKernel
 except ImportError as error:
     # Helion is an optional dependency of the CUDA backend.
     raise unittest.SkipTest(f"Helion is not installed: {error}") from error
+
+# Outside the guard on purpose: Helion being present but its private capture
+# modules having moved must fail this test, not skip the whole file.
+from helion._compiler._dynamo.higher_order_ops import (
+    helion_kernel_side_table,
+    helion_kernel_wrapper_functional,
+)
+from helion.runtime.kernel import BoundKernel
 
 
 def _run_twice(program, inputs: torch.Tensor) -> list[np.ndarray]:
@@ -73,6 +77,12 @@ def _add(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
 def _increment(x: torch.Tensor) -> None:
     for tile in hl.tile(x.numel()):
         x[tile] = x[tile] + 1
+
+
+def _increment_and_return(x: torch.Tensor) -> torch.Tensor:
+    for tile in hl.tile(x.numel()):
+        x[tile] = x[tile] + 1
+    return x
 
 
 def _scale(x: torch.Tensor, scale: float) -> torch.Tensor:
@@ -214,9 +224,7 @@ class HelionLaunchContractTest(unittest.TestCase):
         hop, other = graph.placeholder("hop"), graph.placeholder("other")
         graph.call_function(torch.ops.aten.add.Tensor, (hop, other))
         with self.assertRaisesRegex(NotImplementedError, "accessed by getitem"):
-            lower_helion._reroute_hop_outputs(
-                graph, hop, (other,), None
-            )
+            lower_helion._reroute_hop_outputs(graph, hop, (other,), None)
 
     def _captured(self, **overrides) -> lower_helion._CapturedHelionCall:
         kernel = SimpleNamespace(
@@ -224,39 +232,33 @@ class HelionLaunchContractTest(unittest.TestCase):
             configs=[{}],
             signature=SimpleNamespace(parameters={}),
         )
-        fields = dict(
-            kernel=kernel,
-            is_functional=False,
-            tensor_args={},
-            has_constant_args=False,
-            tensors_to_clone=(),
-            tensor_output_count=0,
-            aliases_inputs=False,
-            mutates_inputs=False,
-            output_spec={},
-        )
+        fields = {
+            "kernel": kernel,
+            "is_functional": False,
+            "tensor_args": {},
+            "has_constant_args": False,
+            "tensors_to_clone": (),
+            "tensor_output_count": 0,
+            "aliases_inputs": False,
+            "mutates_inputs": False,
+            "output_spec": {},
+        }
         fields.update(overrides)
         return lower_helion._CapturedHelionCall(**fields)
 
     def test_rejects_aliased_outputs(self) -> None:
         with self.assertRaisesRegex(NotImplementedError, "aliased outputs"):
-            lower_helion._parse_helion_call(
-                self._captured(aliases_inputs=True)
-            )
+            lower_helion._parse_helion_call(self._captured(aliases_inputs=True))
 
     def test_rejects_unfunctionalized_mutation(self) -> None:
         with self.assertRaisesRegex(NotImplementedError, "functionalized"):
-            lower_helion._parse_helion_call(
-                self._captured(mutates_inputs=True)
-            )
+            lower_helion._parse_helion_call(self._captured(mutates_inputs=True))
 
     def test_rejects_host_tensor_descriptors(self) -> None:
         captured = self._captured()
         captured.kernel.configs = [{"host_tensor_descriptors": True}]
         call = lower_helion._HelionCall(captured, [], (), ())
-        with self.assertRaisesRegex(
-            NotImplementedError, "host tensor descriptors"
-        ):
+        with self.assertRaisesRegex(NotImplementedError, "host tensor descriptors"):
             lower_helion._render_entrypoint(call)
 
     def test_rejects_unsupported_backend(self) -> None:
@@ -371,11 +373,49 @@ class HelionCuteContractTest(unittest.TestCase):
         self.assertIn("aoti_torch_cuda_helion_cute_x(AtenTensorHandle t0", shim)
         self.assertIn("kAlignments[kCount] = {16}", shim)
         self.assertIn("cute_dsl_helion_cute_x_wrapper", shim)
+        # Compile the rendered shim against a stub of the exported header
+        # when a CUDA toolkit is available, so template breakage is caught
+        # without a Blackwell GPU.
+        from torch._inductor.cpp_builder import get_cpp_compiler
+        from torch.utils.cpp_extension import CUDA_HOME
+
+        if CUDA_HOME is None:
+            self.skipTest("no CUDA toolkit to compile the rendered shim")
+        stub = (
+            "#pragma once\n#include <cstdint>\n"
+            "struct helion_cute_x_Kernel_Module_t { int unused; };\n"
+            "static void helion_cute_x_Kernel_Module_Load(\n"
+            "    helion_cute_x_Kernel_Module_t*) {}\n"
+            "static int32_t cute_dsl_helion_cute_x_wrapper(\n"
+            "    helion_cute_x_Kernel_Module_t*, void*, int, int, int,\n"
+            "    cudaStream_t) { return 0; }\n"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "helion_cute_x.h").write_text(stub)
+            (root / "shim.cpp").write_text(shim)
+            subprocess.run(
+                [
+                    get_cpp_compiler(),
+                    "-c",
+                    "-fPIC",
+                    "-O2",
+                    "-std=c++17",
+                    f"-I{root}",
+                    f"-I{CUDA_HOME}/include",
+                    str(root / "shim.cpp"),
+                    "-o",
+                    str(root / "shim.o"),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
 
     def test_dsl_runtime_directory_picks_newest_supported_cuda(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            for flavor in ("cu12", "cu13"):
+            for flavor in ("cu11", "cu12", "cu13"):
                 library = root / flavor / "lib" / "libcuda_dialect_runtime_static.a"
                 library.parent.mkdir(parents=True)
                 library.touch()
@@ -387,30 +427,115 @@ class HelionCuteContractTest(unittest.TestCase):
                     helion_cute._dsl_runtime_directory(), root / "cu12" / "lib"
                 )
                 with self.assertRaisesRegex(RuntimeError, "cannot find"):
-                    with mock.patch.object(torch.version, "cuda", "11.8"):
+                    with mock.patch.object(torch.version, "cuda", "10.2"):
                         helion_cute._dsl_runtime_directory()
 
-    def test_link_exported_launches_restores_config_and_clears(self) -> None:
-        op = torch.ops.aten.add.Tensor
+    def test_link_exported_launches_clears_and_remembers(self) -> None:
         helion_cute.begin_program()
         helion_cute._STATE.program_launches()["p"] = helion_cute._ExportedLaunch(
-            op=op,
+            op=torch.ops.aten.add.Tensor,
             shim_declaration="AOTITorchError aoti_torch_cuda_p();",
             library="p",
             library_directory=Path("/tmp"),
         )
-        before = dict(torch._inductor.config.aot_inductor.custom_ops_to_c_shims)
         with helion_cute.link_exported_launches():
-            shims = torch._inductor.config.aot_inductor.custom_ops_to_c_shims
-            self.assertIn(op, shims)
-        self.assertEqual(
-            dict(torch._inductor.config.aot_inductor.custom_ops_to_c_shims), before
-        )
+            self.assertIn("p", helion_cute._STATE.program_launches())
         self.assertEqual(helion_cute._STATE.program_launches(), {})
+        self.assertTrue(helion_cute.last_program_had_launches())
+        helion_cute.begin_program()
+        self.assertFalse(helion_cute.last_program_had_launches())
 
-    def test_register_op_rejects_more_than_26_arguments(self) -> None:
-        with self.assertRaisesRegex(NotImplementedError, "26 tensor arguments"):
-            helion_cute._register_op("p", [False] * 27, lambda tensors: None)
+    def test_fallback_kernels_cover_every_export(self) -> None:
+        fake = helion_cute._ExportedLaunch(
+            op=torch.ops.aten.add.Tensor,
+            shim_declaration="AOTITorchError aoti_torch_cuda_q();",
+            library="q",
+            library_directory=Path("/tmp"),
+        )
+        with helion_cute._STATE.lock:
+            helion_cute._STATE.exported["q_probe"] = fake
+        try:
+            helion_cute.begin_program()
+            self.assertIn(
+                "helion_cute::q_probe", helion_cute.exported_fallback_kernels()
+            )
+        finally:
+            with helion_cute._STATE.lock:
+                del helion_cute._STATE.exported["q_probe"]
+
+    def test_compile_and_export_rejections(self) -> None:
+        tensor = torch.zeros(2)
+        captured = helion_cute._CapturedLaunch(
+            cute_kernel=object(),
+            grid=(1, 1, 1),
+            block=(1, 1, 1),
+            compile_options=None,
+            tensors=(tensor,),
+        )
+
+        def fake_modules(build_result, stage=False):
+            launcher = SimpleNamespace(
+                _cute_stage_under_aligned_operands=lambda k, t: stage,
+                _build_cute_schema_and_args=lambda k, t, g: build_result,
+            )
+            arg_signature = SimpleNamespace(schema_pointer_alignment=lambda entry: 16)
+            return launcher, arg_signature, object(), object()
+
+        valid = SimpleNamespace(
+            schema=(("tensor", 0, 0, 0, 0),),
+            owned_tensors=[],
+            launch_args=(tensor, 1, 1, 1),
+        )
+        cases = (
+            (fake_modules(valid, stage=True), "under-aligned"),
+            (
+                fake_modules(
+                    SimpleNamespace(
+                        schema=valid.schema,
+                        owned_tensors=[tensor],
+                        launch_args=valid.launch_args,
+                    )
+                ),
+                "workspace",
+            ),
+            (
+                fake_modules(
+                    SimpleNamespace(
+                        schema=(("scalar", 0, 0, 0, 0),),
+                        owned_tensors=[],
+                        launch_args=valid.launch_args,
+                    )
+                ),
+                "static tensor arguments only",
+            ),
+            (
+                fake_modules(
+                    SimpleNamespace(
+                        schema=valid.schema,
+                        owned_tensors=[],
+                        launch_args=(tensor,),
+                    )
+                ),
+                "unexpected launch ABI",
+            ),
+        )
+        for modules, message in cases:
+            with self.subTest(message=message):
+                with mock.patch.object(
+                    helion_cute, "_cute_launcher_modules", return_value=modules
+                ):
+                    with tempfile.TemporaryDirectory() as directory:
+                        with self.assertRaisesRegex(NotImplementedError, message):
+                            helion_cute._compile_and_export(
+                                captured, "probe", Path(directory)
+                            )
+
+    def test_register_op_supports_more_than_26_arguments(self) -> None:
+        op = helion_cute._register_op(
+            "many_args_probe", [i == 29 for i in range(30)], lambda tensors: None
+        )
+        self.assertEqual(len(op._schema.arguments), 30)
+        self.assertIn("a29!", str(op._schema))
 
 
 @unittest.skipUnless(torch.cuda.is_available(), "CUDA required")
@@ -623,14 +748,28 @@ class LowerHelionTest(unittest.TestCase):
         model = Model().cuda()
         for parameter in model.parameters():
             parameter.requires_grad_(False)
-        # Loose tolerances: the point is the decomposition retrace, and the
-        # compiled conv accumulates differently from eager.
-        self._export_and_run(model, x, model.conv(x) * 2, rtol=1e-2, atol=1e-2)
+        # Measured routing can replace the conv with a Triton template, in
+        # which case no decomposition-table op survives and the backend
+        # skips the retrace this test exists to cover. Record the backend's
+        # own check and require that the retrace really ran.
+        contains_results = []
+        contains = aoti_backend.contains_any_call_fn_target_op
 
-    def test_user_input_mutation_lowering_compiles_delegate(self) -> None:
-        # Compiles through CudaPartitioner and AOTI; executing the mutated
-        # input in the runtime is covered by the buffer mutation test above,
-        # which uses the same copy-back mechanism.
+        def recording_contains(module, table):
+            results = contains(module, table)
+            contains_results.append(results)
+            return results
+
+        expected = model.conv(x) * 2
+        with mock.patch.object(
+            aoti_backend, "contains_any_call_fn_target_op", recording_contains
+        ):
+            # Loose tolerances: the compiled conv accumulates differently
+            # from eager.
+            self._export_and_run(model, x, expected, rtol=1e-2, atol=1e-2)
+        self.assertIn(True, contains_results)
+
+    def test_user_input_mutation_export_and_cpp_runtime(self) -> None:
         kernel = self._kernel(
             _increment, helion.Config(block_sizes=[256]), static_shapes=True
         )
@@ -638,30 +777,13 @@ class LowerHelionTest(unittest.TestCase):
 
         class Model(torch.nn.Module):
             def forward(self, x):
+                # Returning the mutated input itself: _run_twice checks the
+                # first output, which for a mutated user input is the
+                # written-back tensor.
                 kernel(x)
-                return x * 2
+                return x
 
-        exported = torch.export.export(Model(), (x.clone(),), strict=True)
-        edge = to_edge_transform_and_lower(
-            exported,
-            partitioner=[
-                CudaPartitioner(
-                    [CudaBackend.generate_method_name_compile_spec("forward")]
-                )
-            ],
-        )
-        self.assertIn(
-            "executorch_call_delegate", edge.exported_program().graph_module.code
-        )
-        self.assertFalse(
-            any(
-                "helion_kernel_wrapper" in str(n.target)
-                for module in edge.exported_program().graph_module.modules()
-                if isinstance(module, torch.fx.GraphModule)
-                for n in module.graph.nodes
-            )
-        )
-        edge.to_executorch()
+        self._export_and_run(Model(), x, x + 1)
 
     def test_rejects_scalar_argument(self) -> None:
         kernel = self._kernel(
@@ -674,7 +796,26 @@ class LowerHelionTest(unittest.TestCase):
                 return kernel(x, 2.5)
 
         program = torch.export.export(Model(), (x,), strict=True)
-        with self.assertRaisesRegex(NotImplementedError, "tensor-only arguments"):
+        with self.assertRaisesRegex(
+            NotImplementedError, "tensor-only arguments"
+        ) as raised:
+            LowerHelionPass()(program)
+        self.assertTrue(
+            any("_scale" in note for note in getattr(raised.exception, "__notes__", []))
+        )
+
+    def test_rejects_real_kernel_output_aliasing_input(self) -> None:
+        kernel = helion.kernel(
+            config=helion.Config(block_sizes=[256]), static_shapes=True
+        )(_increment_and_return)
+        x = torch.randn(257, device="cuda")
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return kernel(x.clone())
+
+        program = torch.export.export(Model(), (x,), strict=True)
+        with self.assertRaisesRegex(NotImplementedError, "alias"):
             LowerHelionPass()(program)
 
     def test_rejects_capture_missing_private_field(self) -> None:
@@ -825,6 +966,9 @@ class LowerHelionTest(unittest.TestCase):
                 return kernel(x, x)
 
         program = torch.export.export(Model(), (x,), strict=True)
+        for node in program.graph.nodes:
+            if "helion_kernel_wrapper" in str(node.target):
+                node.meta["stack_trace"] = "probe-stack-trace"
         with mock.patch.object(
             BoundKernel, "autotune", side_effect=AssertionError("unexpected tuning")
         ), mock.patch.object(
@@ -838,12 +982,20 @@ class LowerHelionTest(unittest.TestCase):
         # is what proves the pass did not launch it either.
         self.assertEqual(capture.call_count, 1 if self.BACKEND == "cute" else 0)
         program.validate()
-        self.assertTrue(self._has_launch(program.graph))
+        launches = [
+            n
+            for n in program.graph.nodes
+            if self.LAUNCH_MARKER in str(n.target)
+            or (n.args and self.LAUNCH_MARKER in str(n.args[0]))
+        ]
+        self.assertTrue(launches)
+        self.assertEqual(
+            [n.meta.get("stack_trace") for n in launches],
+            ["probe-stack-trace"] * len(launches),
+        )
         if self.BACKEND == "cute":
             launch = next(
-                n
-                for n in program.graph.nodes
-                if self.LAUNCH_MARKER in str(n.target)
+                n for n in program.graph.nodes if self.LAUNCH_MARKER in str(n.target)
             )
             self.assertIn(torch.Tag.needs_exact_strides, launch.target.tags)
         self.assertFalse(

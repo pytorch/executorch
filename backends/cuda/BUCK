@@ -157,7 +157,9 @@ fbcode_target(
         "passes/helion_cute.py",
         "passes/lower_helion.py",
     ],
-    visibility = ["PUBLIC"],
+    visibility = [
+        "//executorch/backends/cuda/...",
+    ],
     deps = [
         "//caffe2:torch",
     ],

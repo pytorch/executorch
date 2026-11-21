@@ -1310,8 +1310,14 @@ class CudaBackend(AotiBackend, BackendDetails):
                 raise RuntimeError(f"Unsupported CUDA architecture: {compiled_arch}")
             target_sm = int(target_arch)
             # Architecture-accelerated PTX targets such as compute_90a and
-            # compute_120a are not forward-compatible fallback images.
-            if cls._should_include_ptx(compile_specs) and compiled_arch.isdigit():
+            # compute_120a are not forward-compatible fallback images. Helion
+            # CuTe kernels are compiled for the export GPU only, so a program
+            # containing them must not be picked as a PTX fallback either.
+            if (
+                cls._should_include_ptx(compile_specs)
+                and compiled_arch.isdigit()
+                and not helion_cute.last_program_had_launches()
+            ):
                 ptx_compute = int(compiled_arch)
         collector.add_preprocess_result(
             result,
