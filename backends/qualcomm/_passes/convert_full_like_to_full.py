@@ -20,8 +20,9 @@ class ConvertFullLikeToFull(ExportPass):
     drops the ops that only feed it together with the delegate input, which
     ExecuTorch still passes. A full reads nothing, so those ops are removed
     here instead. A full_like the partitioner skips stays on CPU, so it is
-    kept. I64toI32 casts every int64 full to int32 but not a full_like, so
-    an int64 full_like is kept too.
+    kept. A full is always contiguous, so a full_like of another dim order is
+    kept too. I64toI32 casts every int64 full to int32 but not a full_like,
+    so an int64 full_like is kept as well.
     """
 
     def __init__(
@@ -44,8 +45,10 @@ class ConvertFullLikeToFull(ExportPass):
             ):
                 continue
             val = node.meta["val"]
-            if val.dtype == torch.int64 or not all(
-                isinstance(dim, int) for dim in val.shape
+            if (
+                val.dtype == torch.int64
+                or not all(isinstance(dim, int) for dim in val.shape)
+                or val.dim_order() != tuple(range(val.dim()))
             ):
                 continue
             with graph.inserting_before(node):
@@ -53,7 +56,7 @@ class ConvertFullLikeToFull(ExportPass):
                     "call_function",
                     exir_ops.edge.aten.full.default,
                     (list(val.shape), node.args[1]),
-                    {"dtype": val.dtype},
+                    {"dtype": val.dtype, "device": val.device},
                 )
             full.meta = copy_meta(node.meta)
             node.replace_all_uses_with(full)

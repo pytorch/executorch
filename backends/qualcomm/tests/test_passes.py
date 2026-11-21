@@ -97,6 +97,7 @@ from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.lowered_backend_module import get_lowered_backend_modules
 from executorch.exir.program._program import _replace_aten_ops_with_transformed_ops
+from torch._subclasses.fake_tensor import FakeTensorMode
 from torch.export.exported_program import OutputKind
 from torch.export.graph_signature import ExportGraphSignature
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partition
@@ -1767,19 +1768,23 @@ class TestPasses(unittest.TestCase):
                 torch.testing.assert_close(gm(*sample_input)[0], module(*sample_input))
 
     def test_convert_full_like_to_full(self):
-        sample_input = (torch.randn(2, 3), torch.randn(2, 3))
         # An int fill on a float input must still give a float tensor.
-        # A dynamic shape has to be read at runtime, and I64toI32 would cast
-        # an int64 full to int32, so both keep the full_like.
-        cases = (
-            (False, 0.5, None, False),
-            (False, 1, None, False),
-            (False, 3, torch.int64, True),
-            (False, 2**40, torch.int64, True),
-            (True, 0.5, None, True),
-        )
-        for dynamic, fill, dtype, kept in cases:
-            with self.subTest(dynamic=dynamic, fill=fill):
+        # A dynamic shape has to be read at runtime, a full is never channels
+        # last, and I64toI32 would cast an int64 full to int32, so these keep
+        # the full_like.
+        for dynamic, fill, dtype, channels_last, kept in (
+            (False, 0.5, None, False, False),
+            (False, 1, None, False, False),
+            (False, 3, torch.int64, False, True),
+            (False, 2**40, torch.int64, False, True),
+            (True, 0.5, None, False, True),
+            (False, 0.5, None, True, True),
+        ):
+            with self.subTest(dynamic=dynamic, fill=fill, channels_last=channels_last):
+                x = torch.randn(2, 3, 4, 5)
+                if channels_last:
+                    x = x.to(memory_format=torch.channels_last)
+                sample_input = (x, torch.randn(2, 3))
                 module = FullLikeShapeOnly(fill=fill, dtype=dtype)
                 dynamic_shapes = (
                     {"x": {0: torch.export.Dim("n", min=2, max=4)}, "y": None}
@@ -1796,17 +1801,32 @@ class TestPasses(unittest.TestCase):
                 ).exported_program()
                 graph_module = ConvertFullLikeToFull()(ep.graph_module).graph_module
                 targets = {node.target for node in graph_module.graph.nodes}
-                x = next(n for n in graph_module.graph.nodes if n.name == "x")
+                x_node = next(n for n in graph_module.graph.nodes if n.name == "x")
                 # Otherwise the ops that only gave full_like its shape are
                 # removed, so nothing reads x.
                 self.assertEqual(exir_ops.edge.aten.full_like.default in targets, kept)
                 self.assertEqual(exir_ops.edge.aten.full.default in targets, not kept)
-                self.assertEqual(len(x.users) > 0, kept)
+                self.assertEqual(len(x_node.users) > 0, kept)
                 # The pass rewrites ep's graph in place.
                 for result, expected in zip(
                     ep.module()(*sample_input), module(*sample_input)
                 ):
                     torch.testing.assert_close(result, expected)
+
+    def test_convert_full_like_to_full_keeps_the_device(self):
+        class FullLikeAdd(torch.nn.Module):
+            def forward(self, x):
+                return x + torch.full_like(x, 0.5)
+
+        # Fake tensors can be on CUDA without a GPU.
+        with FakeTensorMode() as mode:
+            x = torch.empty(2, 3, device="cuda")
+        ep = to_edge(
+            torch.export.export(FullLikeAdd(), (x,), strict=True)
+        ).exported_program()
+        graph_module = ConvertFullLikeToFull()(ep.graph_module).graph_module
+        with mode:
+            self.assertEqual(graph_module(x)[0].device, x.device)
 
     def test_mha_to_sha(self):
         from executorch.backends.qualcomm.utils.utils import convert_linear_to_conv2d
