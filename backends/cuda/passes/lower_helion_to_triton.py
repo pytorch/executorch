@@ -537,12 +537,10 @@ class LowerHelionToTritonPass:
                         kernel_name = _read_captured_call(node).kernel.name
                     except Exception:
                         pass
-                    add_note = getattr(error, "add_note", None)
-                    if add_note is not None:
-                        add_note(
-                            f"while lowering Helion kernel {kernel_name!r} "
-                            f"(node {node.name})"
-                        )
+                    error.add_note(
+                        f"while lowering Helion kernel {kernel_name!r} "
+                        f"(node {node.name})"
+                    )
                     raise
                 modified = True
             if modified:
