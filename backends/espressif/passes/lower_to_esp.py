@@ -173,6 +173,52 @@ _BINARY_LOWERINGS = {
 }
 
 
+_LUT_OPS = {
+    exir_ops.edge.fused_quant.sigmoid.default,
+    exir_ops.edge.fused_quant.tanh.default,
+    exir_ops.edge.fused_quant.gelu.default,
+    exir_ops.edge.fused_quant.silu.default,
+    exir_ops.edge.fused_quant.hardswish.default,
+    exir_ops.edge.fused_quant.hardsigmoid.default,
+    exir_ops.edge.fused_quant.relu.default,
+    exir_ops.edge.fused_quant.hard_tanh.default,
+}
+
+
+def _lower_lut(program, node) -> bool:
+    inp = get_arg(node, "inp", torch.fx.Node)
+    if not all(
+        isinstance(value, torch.Tensor)
+        and value.dtype == torch.int8
+        and all(type(dim) is int for dim in value.shape)
+        and 0 < value.numel() <= torch.iinfo(torch.int32).max
+        and value.is_contiguous()
+        for value in (inp.meta.get("val"), node.meta.get("val"))
+    ):
+        return False
+    if any(_qparams(program, node, prefix) is None for prefix in ("inp", "out")):
+        return False
+
+    # ESP-NN indexes the table by casting int8 input to uint8.
+    codes = torch.arange(256, dtype=torch.int32).to(torch.int8)
+    args, kwargs = torch.fx.map_arg(
+        (node.args, node.kwargs),
+        lambda arg: codes if arg is inp else get_constant(program, arg),
+    )
+    table = node.target(*args, **kwargs)
+    table_node = add_constant(
+        program, f"{node.name}_table", table, node, InputKind.CONSTANT_TENSOR
+    )
+    with node.graph.inserting_before(node):
+        replacement = node.graph.call_function(
+            exir_ops.edge.esp_nn.quantized_lut_int8.default, (inp, table_node)
+        )
+    replacement.meta = node.meta.copy()
+    node.replace_all_uses_with(replacement)
+    node.graph.erase_node(node)
+    return True
+
+
 def _pool_kernel_args(program, node, output_value) -> tuple | None:
     inp = get_arg(node, "inp", torch.fx.Node)
     input_value = inp.meta.get("val")
@@ -644,6 +690,9 @@ class LowerToEsp(ExportedProgramPassBase):
 
         modified = False
         for node in list(graph.nodes):
+            if node.target in _LUT_OPS:
+                modified |= _lower_lut(exported_program, node)
+                continue
             if node.target == exir_ops.edge.fused_quant.linear.default:
                 modified |= _lower_linear(exported_program, node, constants)
                 continue
