@@ -1011,6 +1011,11 @@ if(EXECUTORCH_BUILD_EXTENSION_LLM)
     )
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
   endif()
+  if(EXECUTORCH_BUILD_TOKENIZERS_WASM)
+    # HF tokenizers (Llama 3, Qwen, Tekken...) use lookahead patterns that only
+    # the regex_lookahead engine supports.
+    set(SUPPORT_REGEX_LOOKAHEAD ON)
+  endif()
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/tokenizers)
   if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER
      OR EXECUTORCH_BUILD_NATIVE_LLM_RUNNER
