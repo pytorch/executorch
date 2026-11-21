@@ -164,10 +164,12 @@ kernel's Helion backend:
   exported sizes, strides and pointer alignments: user inputs, parameters, buffers and outputs
   allocated by the kernel's host code are compiled as starting at their allocation, while every
   other operand (an activation, or a tensor passed into a `torch.cond` branch) is compiled for
-  element alignment only: a config that needs more than element alignment on such an operand
-  stages (copies) it, which this lowering rejects, so it cannot be exported at all. At run time
-  each
-  call checks its arguments against the
+  element alignment only. A kernel called more than once is compiled once, at the weakest
+  alignment among its calls, so such an operand in one call also makes the matching operand of
+  the other calls element-aligned even if it is a user input there. A config that needs more
+  than element alignment on an element-aligned operand stages (copies) it, which this lowering
+  rejects, so it cannot be exported at all. At run time each call checks its arguments against
+  the
   compiled layout and alignment and fails the call, rather than launching, on a mismatch.
 
 The pass runs after the backend's other passes and before AOTInductor. It never tunes or launches

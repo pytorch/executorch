@@ -158,6 +158,7 @@ class _ProgramLaunches(threading.local):
     def __init__(self) -> None:
         self.launches: dict[str, _ExportedLaunch] = {}
         self.last_had_launches = False
+        self.multimethod_libraries: set[str] | None = None
 
 
 class _ExportState:
@@ -696,13 +697,7 @@ def export_cute_launch(
             )
         )
         prefix = f"helion_cute_{hashlib.sha256(key.encode()).hexdigest()[:24]}"
-        recorded = _STATE.program_launches()
-        if recorded and prefix not in recorded:
-            raise NotImplementedError(
-                "Helion CuTe lowering supports only one distinct CuTe "
-                "launch per program for now; this program already lowers "
-                f"{sorted(recorded)}"
-            )
+        check_one_launch(prefix)
         # The global lock guards only the exported map; compiling takes the
         # per-prefix lock, so other lowerings are not stuck behind this
         # kernel's CuTe compile and the same prefix is still built once.
@@ -727,7 +722,7 @@ def export_cute_launch(
                 exported = _export(prefix, captured, mutable)
                 with _STATE.lock:
                     _STATE.exported[prefix] = exported
-    _STATE.program_launches()[prefix] = exported
+    record_program_launch(exported)
     op = exported.op
 
     def launch_op(
@@ -756,12 +751,8 @@ def note_existing_launches(modules: Any) -> None:
         exported = list(_STATE.exported.values())
     if not exported:
         return
-    launches = _STATE.program_launches()
     for module in modules:
-        graph = getattr(module, "graph", None)
-        if graph is None:
-            continue
-        for node in graph.nodes:
+        for node in module.graph.nodes:
             # Edge conversion rewraps the op target, and functionalization
             # wraps a writing call in auto_functionalized with the op as its
             # first argument, so match the launch's unique prefix in either.
@@ -770,7 +761,46 @@ def note_existing_launches(modules: Any) -> None:
                 target += str(node.args[0])
             for launch in exported:
                 if launch.library in target:
-                    launches[launch.library] = launch
+                    record_program_launch(launch)
+
+
+def check_one_launch(prefix: str) -> None:
+    """Reject a second distinct launch in this program (or .pte) early."""
+    others = set(_STATE.program_launches()) - {prefix}
+    multi = _STATE.per_thread.multimethod_libraries
+    if multi is not None:
+        others |= multi - {prefix}
+    if others:
+        raise NotImplementedError(
+            "Helion CuTe lowering supports only one distinct CuTe "
+            "launch per program for now; this program already lowers "
+            f"{sorted(others)}"
+        )
+
+
+def record_program_launch(exported: _ExportedLaunch) -> None:
+    check_one_launch(exported.library)
+    _STATE.program_launches()[exported.library] = exported
+    multi = _STATE.per_thread.multimethod_libraries
+    if multi is not None:
+        multi.add(exported.library)
+
+
+@contextlib.contextmanager
+def one_launch_per_program() -> Iterator[None]:
+    """Enforce the one-distinct-launch limit across a whole .pte.
+
+    Entered by CudaBackend.preprocess_multimethod around its per-method
+    loop; nested entries join the outer accumulation.
+    """
+    if _STATE.per_thread.multimethod_libraries is not None:
+        yield
+        return
+    _STATE.per_thread.multimethod_libraries = set()
+    try:
+        yield
+    finally:
+        _STATE.per_thread.multimethod_libraries = None
 
 
 def last_program_had_launches() -> bool:

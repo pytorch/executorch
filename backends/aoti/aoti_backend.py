@@ -73,6 +73,11 @@ def _written_buffer_options(program: ExportedProgram) -> Dict[str, Any]:
 @experimental(
     "This API and all of aoti-driven backend related functionality are experimental."
 )
+class _CollectorLocal(threading.local):
+    def __init__(self) -> None:
+        self.collectors: list = []
+
+
 class AotiBackend(ABC):
     """
     Base mixin class for AOTInductor-based backends.
@@ -205,17 +210,13 @@ class AotiBackend(ABC):
         return
 
     _collector_lock = threading.Lock()
-    _collector_local = threading.local()
+    _collector_local = _CollectorLocal()
     _collector_refcount: typing.ClassVar[int] = 0
     _collector_originals: typing.ClassVar[typing.Optional[tuple]] = None
 
     @classmethod
     def _collector_stack(cls) -> list:
-        stack = getattr(AotiBackend._collector_local, "collectors", None)
-        if stack is None:
-            stack = []
-            AotiBackend._collector_local.collectors = stack
-        return stack
+        return AotiBackend._collector_local.collectors
 
     @classmethod
     def _record_missing_kernel(cls, kernel: str) -> None:
@@ -224,10 +225,10 @@ class AotiBackend(ABC):
         # threads that are not in a collector scope). The snapshot is taken
         # when the collector is entered, after the backend's passes have
         # run, so every kernel this compile may call is already in it.
-        stack = getattr(AotiBackend._collector_local, "collectors", [])
+        stack = AotiBackend._collector_local.collectors
         if not stack:
             return
-        _backend, supported_kernels, missing = stack[-1]
+        supported_kernels, missing = stack[-1]
         if kernel not in supported_kernels:
             missing.add(kernel)
 
@@ -308,7 +309,6 @@ class AotiBackend(ABC):
         compiles record only their own kernels and leave no wrapper behind.
         """
         collector = (
-            cls,
             cls.get_supported_fallback_kernels(),
             missing_fallback_kernels,
         )

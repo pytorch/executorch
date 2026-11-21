@@ -461,9 +461,8 @@ def _weakest_aligned_arguments(
 
 def _trace_helion_call(
     node: Node,
-    aligned_names: frozenset[str] = frozenset(),
     target_platform: str | None = None,
-    aligned_arguments: frozenset[int] | None = None,
+    aligned_arguments: frozenset[int] = frozenset(),
 ) -> tuple[GraphModule, tuple[Node, ...]]:
     captured = _read_captured_call(node)
     call = _parse_helion_call(captured)
@@ -487,15 +486,7 @@ def _trace_helion_call(
         # a torch.cond branch, which is just a branch operand) may be a view
         # whose storage offset the CUDA backend's view rewrites hid from the
         # exported metadata, so it is compiled for element alignment only.
-        aligned = (
-            aligned_arguments
-            if aligned_arguments is not None
-            else frozenset(
-                i
-                for i, n in enumerate(call.argument_nodes)
-                if n.op == "placeholder" and n.name in aligned_names
-            )
-        )
+        aligned = aligned_arguments
         launcher, launch_op = helion_cute.export_cute_launch(
             entrypoint,
             _LAUNCHER_PARAMETER,
@@ -632,9 +623,10 @@ class LowerHelionPass:
     def __call__(self, exported_program: ExportedProgram) -> None:
         helion_cute.begin_program()
         root = exported_program.graph_module
+        modules = [m for m in root.modules() if isinstance(m, GraphModule)]
         # A program an earlier pass run already lowered contains helion_cute
         # ops but no Helion calls; their archives still have to link.
-        helion_cute.note_existing_launches(root.modules())
+        helion_cute.note_existing_launches(modules)
         if self.target_platform == "windows" and (
             helion_cute.current_program_launches()
         ):
@@ -651,7 +643,6 @@ class LowerHelionPass:
             if spec.kind
             in (InputKind.USER_INPUT, InputKind.PARAMETER, InputKind.BUFFER)
         )
-        modules = [m for m in root.modules() if isinstance(m, GraphModule)]
         weakest = _weakest_aligned_arguments(
             [
                 (node, aligned_names if module is root else frozenset())
@@ -672,9 +663,8 @@ class LowerHelionPass:
                 try:
                     traced, inputs = _trace_helion_call(
                         node,
-                        aligned_names if is_root else frozenset(),
                         self.target_platform,
-                        weakest.get(node),
+                        weakest.get(node, frozenset()),
                     )
                     replacement = _splice_traced_graph(
                         module.graph, node, traced, inputs
