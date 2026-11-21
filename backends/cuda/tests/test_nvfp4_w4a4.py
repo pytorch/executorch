@@ -4,8 +4,9 @@
 # LICENSE file in the root directory of this source tree.
 import pytest
 import torch
+from executorch.backends.cuda.autotune.launch_params import autotune_launch_params
 from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
-from executorch.backends.cuda.tests.nvfp4_test_utils import weight
+from executorch.backends.cuda.tests.nvfp4_test_utils import shards, weight
 from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
     _has_native_fp4_conversion,
     nvfp4_quantize_activation,
@@ -92,6 +93,49 @@ def test_native_w4a4(m, n, k):
     )
     actual = nvfp4_w4a4(x, w.qdata, w.scale, w.per_tensor_scale)
     torch.testing.assert_close(actual, expected, rtol=0.02, atol=0.02)
+
+
+def w4a4_reference(x, w, static_scale=0.0):
+    q, s, g = nvfp4_quantize_activation(x, static_scale)
+    one = torch.ones(1, device="cuda")
+    a = CudaNVFP4Tensor(q, s, one, orig_dtype=torch.float32).dequantize()
+    return (a * g[:, None]) @ w.dequantize(torch.float32).T
+
+
+@pytest.mark.parametrize("split_k", [1, 4])
+@pytest.mark.parametrize("static_scale", [0.0, 0.002])
+def test_w4a4_row_scale_static_scale_and_output_dtype(static_scale, split_k):
+    if not _has_native_fp4_conversion():
+        pytest.skip("native FP4 required")
+    # Fused shards keep one global scale per output row.
+    w = CudaNVFP4Tensor.fuse_along_output(shards(512, device="cuda"))
+    assert w.per_tensor_scale.numel() == w.shape[0]
+    x = torch.randn(17, 512, device="cuda", dtype=torch.bfloat16)
+    actual = nvfp4_w4a4(
+        x,
+        w.qdata,
+        w.scale,
+        w.per_tensor_scale,
+        static_scale,
+        split_k=split_k,
+        output_dtype=torch.float32,
+    )
+    assert actual.dtype == torch.float32
+    expected = w4a4_reference(x, w, static_scale)
+    torch.testing.assert_close(actual, expected, rtol=0.01, atol=0.01)
+
+
+def test_w4a4_autotuned_split_k():
+    if not _has_native_fp4_conversion():
+        pytest.skip("native FP4 required")
+    w = weight(97, 2176)
+    x = torch.randn(17, 2176, device="cuda", dtype=torch.bfloat16)
+    with autotune_launch_params() as stats:
+        actual = nvfp4_w4a4(x, w.qdata, w.scale, w.per_tensor_scale)
+    picks = [pick for pick in stats.picks if pick.param == "split_k"]
+    assert len(picks) == 1 and len(picks[0].times_us) > 1
+    expected = nvfp4_w4a4(x, w.qdata, w.scale, w.per_tensor_scale, split_k=1)
+    torch.testing.assert_close(actual, expected, rtol=0.025, atol=0.02)
 
 
 @pytest.mark.parametrize("split_k", [1, 2, 4, 8, 16, 32])
