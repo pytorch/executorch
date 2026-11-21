@@ -155,6 +155,25 @@ def test_scalar_linear_bias_stays_float(out_features):
     )
 
 
+@pytest.mark.parametrize("groups", [1, 4])
+@pytest.mark.parametrize(
+    "activation", [torch.nn.Identity, torch.nn.ReLU, torch.nn.Hardtanh]
+)
+def test_convolution_preservation_and_int32_bias(groups, activation):
+    conv = torch.nn.Conv2d(4, 8, 3, groups=groups)
+    inputs = (torch.linspace(-2, 3, 4 * 5 * 7).reshape(1, 4, 5, 7),)
+    interpreter = _quantize(torch.nn.Sequential(conv, activation()), inputs)
+    (node,) = interpreter.module.graph.find_nodes(
+        op="call_function", target=torch.ops.fused_quant.convolution.default
+    )
+    weights = interpreter.env[get_arg(node, "weight")]
+    params = get_qparams_from_node(node, "weight")
+    assert weights.dtype == torch.int8
+    assert interpreter.env[params.scale].shape == (8, 1, 1, 1)
+    assert torch.count_nonzero(interpreter.env[params.zero_point]) == 0
+    _check_bias(interpreter, node, conv.bias)
+
+
 def test_runtime_linear_weights_stay_float():
     class Model(torch.nn.Module):
         def forward(self, x, weight):

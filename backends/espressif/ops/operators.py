@@ -80,24 +80,28 @@ lib.define(
 lib.define(
     "quantized_conv2d_int8(Tensor input, Tensor weight, Tensor? bias, "
     "int[2] stride, int[2] padding, Tensor output_multiplier, Tensor output_shift, "
-    "int input_offset, int output_offset, Tensor scratch) -> Tensor"
+    "int input_offset, int output_offset, int activation_min, int activation_max, "
+    "Tensor scratch) -> Tensor"
 )
 lib.define(
     "quantized_conv2d_int8.out(Tensor input, Tensor weight, Tensor? bias, "
     "int[2] stride, int[2] padding, Tensor output_multiplier, Tensor output_shift, "
-    "int input_offset, int output_offset, Tensor scratch, *, Tensor(a!) out) -> Tensor(a!)"
+    "int input_offset, int output_offset, int activation_min, int activation_max, "
+    "Tensor scratch, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
     "quantized_depthwise_conv2d_int8(Tensor input, Tensor weight, Tensor? bias, "
     "int[2] stride, int[2] padding, int channel_multiplier, "
     "Tensor output_multiplier, Tensor output_shift, "
-    "int input_offset, int output_offset, Tensor scratch) -> Tensor"
+    "int input_offset, int output_offset, int activation_min, int activation_max, "
+    "Tensor scratch) -> Tensor"
 )
 lib.define(
     "quantized_depthwise_conv2d_int8.out(Tensor input, Tensor weight, Tensor? bias, "
     "int[2] stride, int[2] padding, int channel_multiplier, "
     "Tensor output_multiplier, Tensor output_shift, "
-    "int input_offset, int output_offset, Tensor scratch, *, Tensor(a!) out) -> Tensor(a!)"
+    "int input_offset, int output_offset, int activation_min, int activation_max, "
+    "Tensor scratch, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
 
@@ -299,6 +303,8 @@ def quantized_conv2d_int8_meta(
     output_shift,
     input_offset,
     output_offset,
+    activation_min,
+    activation_max,
     scratch,
 ):
     batch, height, width, _ = input.shape
@@ -324,6 +330,8 @@ def quantized_conv2d_int8(
     output_shift,
     input_offset,
     output_offset,
+    activation_min,
+    activation_max,
     scratch,
 ):
     centered = input.to(torch.int64).permute(0, 3, 1, 2) + input_offset
@@ -342,8 +350,8 @@ def quantized_conv2d_int8(
         output_shift,
         0,
         output_offset,
-        -128,
-        127,
+        activation_min,
+        activation_max,
     )
 
 
@@ -359,6 +367,8 @@ def quantized_depthwise_conv2d_int8_meta(
     output_shift,
     input_offset,
     output_offset,
+    activation_min,
+    activation_max,
     scratch,
 ):
     batch, height, width, channels = input.shape
@@ -385,6 +395,8 @@ def quantized_depthwise_conv2d_int8(
     output_shift,
     input_offset,
     output_offset,
+    activation_min,
+    activation_max,
     scratch,
 ):
     centered = input.to(torch.int64).permute(0, 3, 1, 2) + input_offset
@@ -410,4 +422,4 @@ def quantized_depthwise_conv2d_int8(
         ],
         dim=-1,
     )
-    return (result + output_offset).clamp(-128, 127).to(torch.int8)
+    return (result + output_offset).clamp(activation_min, activation_max).to(torch.int8)
