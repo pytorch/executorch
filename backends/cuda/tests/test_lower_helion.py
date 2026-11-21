@@ -114,6 +114,13 @@ def _add_2d(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     return result
 
 
+def _add3(x: torch.Tensor, y: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
+    result = torch.empty_like(x)
+    for tile in hl.tile(x.numel()):
+        result[tile] = x[tile] + y[tile] + z[tile]
+    return result
+
+
 def _scale(x: torch.Tensor, scale: float) -> torch.Tensor:
     result = torch.empty_like(x)
     for tile in hl.tile(x.numel()):
@@ -488,7 +495,7 @@ class HelionCuteContractTest(unittest.TestCase):
         helion_cute.begin_program()
         self.assertFalse(helion_cute.last_program_had_launches())
 
-    def test_one_launch_limit_spans_methods_in_program(self) -> None:
+    def test_multiple_launches_recorded_for_linking(self) -> None:
         def fake_launch(library: str) -> helion_cute._ExportedLaunch:
             return helion_cute._ExportedLaunch(
                 op=torch.ops.aten.add.Tensor,
@@ -498,18 +505,17 @@ class HelionCuteContractTest(unittest.TestCase):
             )
 
         self.addCleanup(helion_cute.begin_program)
-        with helion_cute.one_launch_per_program():
-            helion_cute.record_program_launch(fake_launch("launch_a"))
-            # The next method starts a fresh per-method program set, but
-            # the per-.pte accumulation survives.
-            helion_cute.begin_program()
-            helion_cute.record_program_launch(fake_launch("launch_a"))
-            with self.assertRaisesRegex(
-                NotImplementedError, "only one distinct CuTe launch"
-            ):
-                helion_cute.record_program_launch(fake_launch("launch_b"))
+        helion_cute.record_program_launch(fake_launch("launch_a"))
+        # The next method starts a fresh per-method program set.
         helion_cute.begin_program()
+        # Recording is per method, so the link set of a later compile is
+        # rebuilt from what its own pass runs record.
+        helion_cute.record_program_launch(fake_launch("launch_a"))
         helion_cute.record_program_launch(fake_launch("launch_b"))
+        self.assertEqual(
+            {e.library for e in helion_cute.current_program_launches()},
+            {"launch_a", "launch_b"},
+        )
 
     def test_fallback_kernels_cover_program_launches(self) -> None:
         fake = helion_cute._ExportedLaunch(
@@ -864,7 +870,18 @@ class LowerHelionTest(unittest.TestCase):
         y = x * 2
         self._export_and_run(model, x, (y * 2, y @ model.weight), rtol=1e-3, atol=1e-3)
 
-    def test_mutation_and_new_output_export_and_cpp_runtime(self) -> None:
+    def test_two_kernels_export_and_cpp_runtime(self) -> None:
+        add = self._kernel(_add, helion.Config(block_sizes=[256]), static_shapes=True)
+        add3 = self._kernel(_add3, helion.Config(block_sizes=[256]), static_shapes=True)
+        x = torch.randn(2, 257, device="cuda")
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                summed = add(x[0], x[1])
+                return add3(summed, x[0], x[1])
+
+        self._export_and_run(Model(), x, 2 * (x[0] + x[1]))
+
         kernel = self._kernel(
             _increment_and_double, helion.Config(block_sizes=[256]), static_shapes=True
         )

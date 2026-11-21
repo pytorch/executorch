@@ -94,7 +94,7 @@ class LowerHelionCuteTest(helion_tests.LowerHelionTest):
         # prefixes would trip the one-distinct-launch rejection.
         self._export_and_run(Model(), x, x + w * 2)
 
-    def test_rejects_two_distinct_cute_launches(self) -> None:
+    def test_two_distinct_cute_launches_export_and_cpp_runtime(self) -> None:
         add = self._kernel(
             helion_tests._add,
             helion_tests.helion.Config(block_sizes=[256]),
@@ -109,13 +109,25 @@ class LowerHelionCuteTest(helion_tests.LowerHelionTest):
 
         class Model(torch.nn.Module):
             def forward(self, x):
-                working = x[1].clone()
+                working = (x[1] * 1).clone()
                 return add(x[0], scale(working))
 
+        self._export_and_run(Model(), x, x[0] + (x[1] + 1) * 2)
+
+    def test_rejects_mutated_view_argument(self) -> None:
+        scale = self._kernel(
+            helion_tests._increment_and_double,
+            helion_tests.helion.Config(block_sizes=[256]),
+            static_shapes=True,
+        )
+        x = torch.randn(2, 257, device="cuda")
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return scale(x[1])
+
         program = torch.export.export(Model(), (x,), strict=True)
-        with self.assertRaisesRegex(
-            NotImplementedError, "only one distinct CuTe launch"
-        ):
+        with self.assertRaisesRegex(NotImplementedError, "view or a clone"):
             to_edge_transform_and_lower(
                 program,
                 partitioner=[
