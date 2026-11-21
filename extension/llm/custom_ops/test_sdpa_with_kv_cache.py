@@ -4,8 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
-
 import unittest
 
 import torch
@@ -683,3 +681,85 @@ class SDPATestReducedPrecision(unittest.TestCase):
 
     def test_sdpa_float16(self):
         self._run_dtype(torch.float16, atol=1e-3, rtol=1e-3)
+
+
+class CustomSDPAMaskTest(unittest.TestCase):
+    def setUp(self):
+        torch.manual_seed(42)
+        _unsafe_reset_threadpool(3)
+
+    def test_masked_kv_tail_preserves_legacy_behavior_by_default(self):
+        q = torch.zeros((1, 1, 1, 4))
+        k = torch.zeros((1, 4, 1, 4))
+        k[:, 1:] = float("nan")
+        v = torch.ones_like(k)
+        mask = torch.tensor([[0.0, float("-inf"), float("-inf"), float("-inf")]])
+        actual = torch.ops.llama.custom_sdpa(q, k, v, 0, mask)
+        self.assertTrue(torch.isnan(actual).all())
+        previous = torch.ops.llama.set_sdpa_masked_kv_tail_enabled(True)
+        try:
+            actual = torch.ops.llama.custom_sdpa(q, k, v, 0, mask)
+            torch.testing.assert_close(actual, v[:, :1])
+        finally:
+            torch.ops.llama.set_sdpa_masked_kv_tail_enabled(previous)
+        restored = torch.ops.llama.custom_sdpa(q, k, v, 0, mask)
+        self.assertTrue(torch.isnan(restored).all())
+
+    def _check_padded_ring_cache(self, dtype, queries, keys, key_end):
+        q = torch.randn((2, queries, 4, 32), dtype=dtype)
+        k = torch.randn((2, keys, 2, 32), dtype=dtype)
+        v = torch.randn((2, keys, 2, 32), dtype=dtype)
+        mask = torch.full((queries, keys + 13), float("-inf"))[:, :keys]
+        for row in range(queries):
+            if queries > 1 and row == 0:
+                continue
+            begin, end = row % 7, key_end - row % 5
+            if end > begin:
+                mask[row, begin:end] = torch.randn(end - begin) * 0.2
+                mask[row, begin:end:3] = float("-inf")
+        previous = torch.ops.llama.set_sdpa_masked_kv_tail_enabled(True)
+        try:
+            actual = torch.ops.llama.custom_sdpa(q, k, v, 0, mask)
+        finally:
+            torch.ops.llama.set_sdpa_masked_kv_tail_enabled(previous)
+        expected = F.scaled_dot_product_attention(
+            q.transpose(1, 2),
+            k.transpose(1, 2).repeat_interleave(2, dim=1),
+            v.transpose(1, 2).repeat_interleave(2, dim=1),
+            attn_mask=mask,
+        ).transpose(1, 2)
+        fully_masked = torch.isneginf(mask).all(dim=1)
+        self.assertTrue(torch.isnan(actual[:, fully_masked]).all())
+        tolerance = 1e-5 if dtype == torch.float32 else 5e-3
+        torch.testing.assert_close(
+            actual[:, ~fully_masked],
+            expected[:, ~fully_masked],
+            atol=tolerance,
+            rtol=tolerance,
+        )
+
+    def test_padded_ring_cache_matches_aten(self):
+        for dtype in (torch.float32, torch.float16, torch.bfloat16):
+            for queries, keys, key_end in (
+                (1, 500, 7),
+                (33, 1025, 513),
+                (65, 500, 31),
+                (257, 1025, 771),
+                (3, 500, 500),
+                (2, 500, 0),
+            ):
+                with self.subTest(dtype=dtype, queries=queries, key_end=key_end):
+                    self._check_padded_ring_cache(dtype, queries, keys, key_end)
+
+    def test_finite_mask_column_is_retained(self):
+        q = torch.randn((1, 2, 1, 32))
+        k = torch.randn((1, 500, 1, 32))
+        v = torch.randn((1, 500, 1, 32))
+        mask = torch.full((2, 500), float("-inf"))
+        mask[:, -1] = -80.0
+        previous = torch.ops.llama.set_sdpa_masked_kv_tail_enabled(True)
+        try:
+            actual = torch.ops.llama.custom_sdpa(q, k, v, 0, mask)
+        finally:
+            torch.ops.llama.set_sdpa_masked_kv_tail_enabled(previous)
+        torch.testing.assert_close(actual, v[:, -1:].expand_as(q))

@@ -17,6 +17,28 @@ namespace executor {
 
 namespace native {
 
+// Default-off on each calling thread; worker threads must opt in separately.
+bool sdpa_masked_kv_tail_enabled() noexcept;
+bool set_sdpa_masked_kv_tail_enabled(bool enabled) noexcept;
+
+class SdpaMaskedKvTailGuard final {
+ public:
+  explicit SdpaMaskedKvTailGuard(bool enabled) noexcept
+      : previous_(set_sdpa_masked_kv_tail_enabled(enabled)) {}
+
+  ~SdpaMaskedKvTailGuard() {
+    set_sdpa_masked_kv_tail_enabled(previous_);
+  }
+
+  SdpaMaskedKvTailGuard(const SdpaMaskedKvTailGuard&) = delete;
+  SdpaMaskedKvTailGuard& operator=(const SdpaMaskedKvTailGuard&) = delete;
+  SdpaMaskedKvTailGuard(SdpaMaskedKvTailGuard&&) = delete;
+  SdpaMaskedKvTailGuard& operator=(SdpaMaskedKvTailGuard&&) = delete;
+
+ private:
+  const bool previous_;
+};
+
 Tensor& sdpa_with_kv_cache_out(
     KernelRuntimeContext& ctx,
     const Tensor& q_projected,

@@ -10,12 +10,14 @@
 
 #include <ATen/cpu/vec/vec.h>
 #include <ATen/cpu/vec/vec_n.h>
+#include <executorch/extension/llm/custom_ops/op_sdpa.h>
 #include <executorch/kernels/optimized/blas/CPUBlas.h>
 #include <executorch/kernels/optimized/vec/functional.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 // @lint-ignore CLANGTIDY facebook-unused-include-check
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 
+#include <limits>
 #include <vector>
 
 #ifdef ET_USE_THREADPOOL
@@ -846,6 +848,29 @@ void cpu_flash_attention(
         "attn_mask.size(1)=%zd kvSize=%" PRId64,
         attn_mask.value().size(1),
         kvSize);
+
+    if (sdpa_masked_kv_tail_enabled()) {
+      const auto* mask = attn_mask.value().const_data_ptr<float>();
+      const auto mask_strides = attn_mask.value().strides();
+      int64_t key_end = kvSize;
+      while (key_end > 0) {
+        bool fully_masked = true;
+        for (int64_t row = 0; row < qSize; ++row) {
+          if (mask[row * mask_strides[0] + (key_end - 1) * mask_strides[1]] !=
+              -std::numeric_limits<float>::infinity()) {
+            fully_masked = false;
+            break;
+          }
+        }
+        if (!fully_masked) {
+          break;
+        }
+        --key_end;
+      }
+      if (key_end > 0) {
+        kvSize = key_end;
+      }
+    }
   }
 
   bool is_quantized_sdpa = false;

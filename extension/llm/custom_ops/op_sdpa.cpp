@@ -42,6 +42,22 @@ namespace native {
 
 namespace {
 
+thread_local bool masked_kv_tail_enabled = false;
+
+} // namespace
+
+bool sdpa_masked_kv_tail_enabled() noexcept {
+  return masked_kv_tail_enabled;
+}
+
+bool set_sdpa_masked_kv_tail_enabled(bool enabled) noexcept {
+  const bool previous = masked_kv_tail_enabled;
+  masked_kv_tail_enabled = enabled;
+  return previous;
+}
+
+namespace {
+
 bool validate_flash_attention_args(
     const Tensor& query,
     const Tensor& key,
