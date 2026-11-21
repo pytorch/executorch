@@ -16,6 +16,8 @@ namespace torch {
 namespace executor {
 
 using Tensor = executorch::aten::Tensor;
+using executorch::ET_RUNTIME_NAMESPACE::memoizeTrailingDims;
+using executorch::ET_RUNTIME_NAMESPACE::tensor_data_is_in_default_dim_order;
 
 bool check_narrow_copy_args(
     const Tensor& in,
@@ -184,6 +186,68 @@ void compute_slice(
       InvalidArgument,
       /* void */,
       "Requested slice is larger than the dim size");
+
+  // The block copy below moves the dims after dim as whole blocks. That is
+  // right when both tensors hold their data in the default dim order, or have
+  // the same dim order and it starts with dims 0 to dim in order, as a
+  // channels-last tensor sliced along dim 0. Otherwise, as for the result of
+  // nonzero or a channels-last tensor sliced along C, H or W, copy element by
+  // element through the strides of both.
+  // A tensor without strides holds its data in the default dim order.
+  const bool in_is_default = tensor_data_is_in_default_dim_order(in);
+  const bool out_is_default = tensor_data_is_in_default_dim_order(out);
+  bool block_copy = in_is_default && out_is_default;
+  if (!block_copy && in.dim_order() == out.dim_order()) {
+    block_copy = true;
+    for (const auto d : c10::irange(dim + 1)) {
+      block_copy = block_copy && in.dim_order()[d] == d;
+    }
+  }
+  if (!block_copy) {
+    // The loop walks out, so out must have the shape of the slice.
+    bool out_is_slice = out.dim() == in.dim();
+    for (const auto d : c10::irange(in.dim())) {
+      out_is_slice =
+          out_is_slice && out.size(d) == (d == dim ? length : in.size(d));
+    }
+    ET_KERNEL_CHECK_MSG(
+        ctx,
+        out_is_slice,
+        InvalidArgument,
+        /* void */,
+        "out does not have the shape of the slice.");
+    const char* in_data = in.const_data_ptr<char>();
+    char* out_data = out.mutable_data_ptr<char>();
+    const size_t element_size = in.element_size();
+    size_t in_strides[kTensorDimensionLimit];
+    memoizeTrailingDims(in, in_strides);
+    if (!in_is_default) {
+      std::copy(in.strides().begin(), in.strides().end(), in_strides);
+    }
+    size_t out_strides[kTensorDimensionLimit];
+    memoizeTrailingDims(out, out_strides);
+    if (!out_is_default) {
+      std::copy(out.strides().begin(), out.strides().end(), out_strides);
+    }
+    size_t coord[kTensorDimensionLimit];
+    for (const auto i : c10::irange(out.numel())) {
+      indexToCoordinate(out, i, coord);
+      size_t out_index = 0;
+      for (const auto d : c10::irange(out.dim())) {
+        out_index += coord[d] * out_strides[d];
+      }
+      coord[dim] = start + coord[dim] * step;
+      size_t in_index = 0;
+      for (const auto d : c10::irange(in.dim())) {
+        in_index += coord[d] * in_strides[d];
+      }
+      memcpy(
+          out_data + out_index * element_size,
+          in_data + in_index * element_size,
+          element_size);
+    }
+    return;
+  }
 
   size_t leading_dims = getLeadingDims(in, dim);
   size_t trailing_dims = getTrailingDims(in, dim);

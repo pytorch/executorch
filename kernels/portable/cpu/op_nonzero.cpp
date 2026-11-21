@@ -21,6 +21,7 @@ namespace native {
 using Tensor = executorch::aten::Tensor;
 using ScalarType = executorch::aten::ScalarType;
 using SizesType = executorch::aten::SizesType;
+using executorch::ET_RUNTIME_NAMESPACE::tensor_data_is_in_default_dim_order;
 
 namespace {
 
@@ -66,14 +67,31 @@ void nonzero(KernelRuntimeContext& ctx, const Tensor& input, Tensor& output) {
   memset(index, 0, sizeof(index));
 
   int64_t* out_data = output.mutable_data_ptr<int64_t>();
-  size_t out_idx = 0;
+  // ATen returns nonzero column by column, and exported programs keep that.
+  // A tensor without strides holds its data in the default dim order.
+  const bool out_is_default = tensor_data_is_in_default_dim_order(output);
+  const size_t row_stride = out_is_default ? input.dim() : output.strides()[0];
+  const size_t col_stride = out_is_default ? 1 : output.strides()[1];
+  // The input can be in another dim order too, like the result of nonzero.
+  const auto in_strides = input.strides();
+  const bool in_contiguous = is_contiguous_dim_order(
+      input.dim_order().data(), input.dim_order().size());
+  size_t out_row = 0;
 
   // Loop again and this time write the proper indices into out
   for (const auto i : c10::irange(lim)) {
-    if (in_data[i] != 0) {
+    size_t in_index = i;
+    if (!in_contiguous) {
+      in_index = 0;
       for (const auto j : c10::irange(input.dim())) {
-        out_data[out_idx++] = index[j];
+        in_index += index[j] * in_strides[j];
       }
+    }
+    if (in_data[in_index] != 0) {
+      for (const auto j : c10::irange(input.dim())) {
+        out_data[out_row * row_stride + j * col_stride] = index[j];
+      }
+      out_row++;
     }
     increment_index(index, input.sizes());
   }

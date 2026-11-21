@@ -737,3 +737,45 @@ TEST_F(OpSliceCopyTensorOutTest, DynamicShapeUnbound) {
   op_slice_copy_tensor_out(x, 1, 1, 5, 2, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
+
+TEST_F(OpSliceCopyTensorOutTest, ChannelsLastSliceAlongChannels) {
+  TensorFactory<ScalarType::Float> tf;
+  // x[0, c, h, w] is 4 * c + 2 * h + w, stored channels last.
+  Tensor x = tf.make_channels_last({1, 2, 2, 2}, {0, 4, 1, 5, 2, 6, 3, 7});
+  Tensor out = tf.zeros_channels_last({1, 1, 2, 2});
+  op_slice_copy_tensor_out(
+      x, /*dim=*/1, /*start=*/1, /*end=*/2, /*step=*/1, out);
+  EXPECT_TENSOR_EQ(out, tf.make_channels_last({1, 1, 2, 2}, {4, 5, 6, 7}));
+}
+
+TEST_F(OpSliceCopyTensorOutTest, ChannelsLastSliceAlongWidthWithStep) {
+  TensorFactory<ScalarType::Float> tf;
+  // x[0, c, h, w] is 8 * c + 4 * h + w, stored channels last.
+  Tensor x = tf.make_channels_last(
+      {1, 2, 2, 4}, {0, 8, 1, 9, 2, 10, 3, 11, 4, 12, 5, 13, 6, 14, 7, 15});
+  Tensor out = tf.zeros_channels_last({1, 2, 2, 2});
+  op_slice_copy_tensor_out(
+      x, /*dim=*/3, /*start=*/1, /*end=*/4, /*step=*/2, out);
+  EXPECT_TENSOR_EQ(
+      out, tf.make_channels_last({1, 2, 2, 2}, {1, 9, 3, 11, 5, 13, 7, 15}));
+}
+
+#ifndef USE_ATEN_LIB
+TEST_F(OpSliceCopyTensorOutTest, TensorsWithoutStrides) {
+  using executorch::runtime::etensor::TensorImpl;
+  TensorImpl::SizesType in_sizes[2] = {2, 3};
+  float in_data[6] = {1, 2, 3, 4, 5, 6};
+  TensorImpl in_impl(ScalarType::Float, 2, in_sizes, in_data);
+  TensorImpl::SizesType out_sizes[2] = {2, 2};
+  float out_data[4] = {};
+  TensorImpl out_impl(ScalarType::Float, 2, out_sizes, out_data);
+  Tensor in(&in_impl);
+  Tensor out(&out_impl);
+
+  op_slice_copy_tensor_out(
+      in, /*dim=*/1, /*start=*/1, /*end=*/3, /*step=*/1, out);
+  EXPECT_EQ(
+      std::vector<float>(out_data, out_data + 4),
+      std::vector<float>({2, 3, 5, 6}));
+}
+#endif // USE_ATEN_LIB
