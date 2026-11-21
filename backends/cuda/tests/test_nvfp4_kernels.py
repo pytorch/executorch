@@ -181,6 +181,45 @@ def test_w4a4_unbounded_dynamic_m_tunes_only_split_1():
     assert pick.choice == 1 and set(pick.times_us) == {1}
 
 
+def test_embedding_bias_dispatch(monkeypatch):
+    import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
+
+    w = weight(97, 192)
+    ids = torch.tensor([[1, 3, 2, 1], [96, 0, 51, 72]], device="cuda")
+    expected = w.dequantize()[ids]
+    for actual in (
+        torch.nn.functional.embedding(ids, w),
+        torch.ops.aten.embedding.default(w, ids),
+    ):
+        torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+    monkeypatch.setenv("ET_CUDA_NVFP4_ACT", "w4a16")
+    x = torch.randn(2, 3, 192, device="cuda", dtype=torch.bfloat16)
+    bias = torch.randn(97, device="cuda", dtype=torch.bfloat16)
+    torch.testing.assert_close(
+        torch.nn.functional.linear(x, w, bias),
+        torch.nn.functional.linear(x, w.dequantize(), bias),
+        rtol=0.03,
+        atol=0.02,
+    )
+
+
+def test_fp32_prefill_output_policy(monkeypatch):
+    import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
+
+    monkeypatch.setenv("ET_CUDA_NVFP4_ACT", "w4a16")
+    monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_OUTPUT", "fp32")
+    w = weight(97, 192)
+    for dtype in (torch.bfloat16, torch.float32):
+        x = torch.randn(17, 192, device="cuda", dtype=dtype)
+        out = torch.nn.functional.linear(x, w)
+        assert out.dtype == torch.float32
+        mma = x.bfloat16().float() @ w.dequantize().float().T
+        torch.testing.assert_close(out, mma, rtol=0.01, atol=0.01)
+    # Decode (M statically <= 4) keeps the activation dtype.
+    x = torch.randn(2, 192, device="cuda", dtype=torch.bfloat16)
+    assert torch.nn.functional.linear(x, w).dtype == torch.bfloat16
+
+
 @pytest.mark.parametrize("split_k", [1, 2, 4, 8, 16, 32])
 @pytest.mark.parametrize("mode", ["w4a4", "w4a16"])
 def test_gemm_split_k(mode, split_k):
@@ -387,17 +426,6 @@ def test_split_workspace_exceeds_int32(mode):
         )
         torch.cuda.synchronize()
         assert bool((y == 512).all())
-
-
-def test_embedding():
-    w = weight(97, 192)
-    ids = torch.tensor([[1, 3, 2, 1], [96, 0, 51, 72]], device="cuda")
-    torch.testing.assert_close(
-        nvfp4_embedding(ids, w.qdata, w.scale, w.per_tensor_scale, w.dtype),
-        w.dequantize()[ids],
-        rtol=0,
-        atol=0,
-    )
 
 
 def test_embedding_non_contiguous_ids():
