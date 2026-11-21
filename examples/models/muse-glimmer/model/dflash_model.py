@@ -101,20 +101,15 @@ def build_dflash_swa_mask(
     buf_size: int,
     window_size: int,
 ) -> torch.Tensor:
-    """Build boolean validity mask for ring-buffer context + block K/V.
-
-    The SWA ring buffer evicts entries beyond ``window_size``. This mask
-    marks which ring slots are filled — uniform for all Q positions (the
-    draft model's cross-attention is non-causal).  Block entries are always
-    valid.
-
-    Returns [1, 1, 1, buf_size + block_len] boolean mask (True = attend).
-    """
+    """Per-query noncausal window over ring-buffer context and draft K/V."""
     slots = torch.arange(buf_size, dtype=torch.long)
     ring_pos = slots + ((total_ctx - 1 - slots) // buf_size) * buf_size
-    valid = (ring_pos >= 0) & (ring_pos >= total_ctx - window_size)
-    blk_valid = torch.ones(block_len, dtype=torch.bool)
-    return torch.cat([valid, blk_valid]).unsqueeze(0).unsqueeze(0).unsqueeze(0)
+    query_pos = total_ctx + torch.arange(block_len, dtype=torch.long)
+    key_pos = torch.cat([ring_pos, query_pos])
+    visible = (key_pos >= 0) & (
+        (query_pos[:, None] - key_pos[None, :]).abs() < window_size
+    )
+    return visible[None, None]
 
 
 class DFlashAttention(nn.Module):
