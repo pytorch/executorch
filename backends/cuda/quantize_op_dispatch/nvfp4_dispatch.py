@@ -98,7 +98,7 @@ def nvfp4_auto_prefill(
     qdata: torch.Tensor,
     scale: torch.Tensor,
     per_tensor_scale: torch.Tensor,
-    act_scale: float = 0.0,
+    act_scale: torch.Tensor | None = None,
     output_dtype: torch.dtype | None = None,
 ) -> torch.Tensor:
     """Keep mode selection inside the op so AOTI can time both precisions."""
@@ -120,7 +120,7 @@ def nvfp4_auto_decode(
     qdata: torch.Tensor,
     scale: torch.Tensor,
     per_tensor_scale: torch.Tensor,
-    act_scale: float = 0.0,
+    act_scale: torch.Tensor | None = None,
     unit_scale: bool = False,
 ) -> torch.Tensor:
     """Compare NVFP4 GEMV and native FP4 in the AOTI launch context."""
@@ -181,7 +181,7 @@ def _linear(func, types, args, kwargs):
                 w.qdata,
                 w.scale,
                 w.per_tensor_scale,
-                w.act_per_tensor_scale or 0.0,
+                w.act_per_tensor_scale,
                 output_dtype=output_dtype,
             )
         elif small and mode == "auto":
@@ -190,7 +190,7 @@ def _linear(func, types, args, kwargs):
                 w.qdata,
                 w.scale,
                 w.per_tensor_scale,
-                w.act_per_tensor_scale or 0.0,
+                w.act_per_tensor_scale,
                 w.unit_scale,
             )
         elif small:
@@ -207,7 +207,7 @@ def _linear(func, types, args, kwargs):
                 w.qdata,
                 w.scale,
                 w.per_tensor_scale,
-                w.act_per_tensor_scale or 0.0,
+                w.act_per_tensor_scale,
                 output_dtype=output_dtype,
             )
     out = out.reshape(*x.shape[:-1], w.shape[0])
@@ -225,8 +225,12 @@ def _embedding(func, types, args, kwargs):
     else:
         w, indices = args[:2]
     if not can_launch_triton(indices):
-        rows = _weight_rows(w, indices.reshape(-1))
-        return rows.dequantize().reshape(*indices.shape, w.shape[1])
+        flat = indices.reshape(-1)
+        if flat.numel() and bool(((flat < 0) | (flat >= w.shape[0])).any()):
+            raise IndexError(
+                f"NVFP4 embedding index out of range for {w.shape[0]} rows"
+            )
+        return _weight_rows(w, flat).dequantize().reshape(*indices.shape, w.shape[1])
     from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
         nvfp4_embedding,
     )
