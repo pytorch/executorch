@@ -56,6 +56,14 @@ Range get_overlapping_pages(uintptr_t offset, size_t size, size_t page_size) {
   };
 }
 
+// Keeps the descriptor out of programs that the process starts.
+#if defined(O_CLOEXEC)
+constexpr int kCloseOnExec = O_CLOEXEC;
+#else
+constexpr int kCloseOnExec = 0;
+#endif
+constexpr int kOpenFlags = O_RDONLY | kCloseOnExec;
+
 } // namespace
 
 MmapDataLoader::~MmapDataLoader() {
@@ -84,7 +92,7 @@ Result<MmapDataLoader> MmapDataLoader::from(
   }
 
   // Use open() instead of fopen() because mmap() needs a file descriptor.
-  int fd = ::open(file_name, O_RDONLY);
+  int fd = ::open(file_name, kOpenFlags);
   if (fd < 0) {
     ET_LOG(
         Error,
@@ -219,7 +227,7 @@ Result<FreeableBuffer> MmapDataLoader::load(
 
   if (mlock_config_ == MlockConfig::UseMlock ||
       mlock_config_ == MlockConfig::UseMlockIgnoreErrors) {
-    int err = ::mlock(pages, size);
+    int err = ::mlock(pages, map_size);
     if (err < 0) {
       if (mlock_config_ == MlockConfig::UseMlockIgnoreErrors) {
         ET_LOG(
@@ -229,7 +237,7 @@ Result<FreeableBuffer> MmapDataLoader::load(
             file_name_,
             offset,
             pages,
-            size,
+            map_size,
             ::strerror(errno),
             errno);
       } else {
@@ -239,10 +247,10 @@ Result<FreeableBuffer> MmapDataLoader::load(
             file_name_,
             offset,
             pages,
-            size,
+            map_size,
             ::strerror(errno),
             errno);
-        ::munmap(pages, size);
+        ::munmap(pages, map_size);
         return Error::NotSupported;
       }
     }
