@@ -204,9 +204,17 @@ class TestGGUFNVFP4(unittest.TestCase):
             w.to_exportable_nvfp4_tensor(per_tensor_scale=ONE)
 
     def test_export(self):
+        for act_scale in (None, 0.25):
+            with self.subTest(act_per_tensor_scale=act_scale):
+                self._check_export(act_scale)
+
+    def _check_export(self, act_scale):
         generator = torch.Generator().manual_seed(0)
         w = ExportableGGUFTensor(random_raw(4, 128, generator), "nvfp4", torch.bfloat16)
-        weight = w.to_exportable_nvfp4_tensor(per_tensor_scale=torch.tensor(0.5))
+        weight = w.to_exportable_nvfp4_tensor(
+            per_tensor_scale=torch.tensor(0.5), act_per_tensor_scale=act_scale
+        )
+        self.assertEqual(weight.act_per_tensor_scale, act_scale)
         linear = torch.nn.Linear(128, 4, bias=False)
         linear.weight = torch.nn.Parameter(weight, requires_grad=False)
         x = torch.randn(2, 128, dtype=torch.bfloat16)
