@@ -7,7 +7,7 @@
 
 # Checks build_idf_component.sh's version stamping guards in a scratch git
 # repository holding only the generator, gen_kernels.py, version.txt, the
-# install_requirements.py it reads the torch pin from, a FlatBuffers
+# install_requirements.py and torch_pin.py it reads the torch pin from, a FlatBuffers
 # submodule without its sources, and a README the generator does not read.
 # Needs git and a Python with PyYAML, which gen_kernels.py imports.
 
@@ -23,7 +23,8 @@ mkdir -p "${repo}/examples/espressif/idf_component_template/tools"
 cp "${script_dir}/idf_component_template/tools/gen_kernels.py" \
     "${repo}/examples/espressif/idf_component_template/tools/"
 echo 1.6.0 > "${repo}/version.txt"
-cp "${script_dir}/../../install_requirements.py" "${script_dir}/../../install_utils.py" "${repo}/"
+cp "${script_dir}/../../install_requirements.py" "${script_dir}/../../install_utils.py" \
+    "${script_dir}/../../torch_pin.py" "${repo}/"
 echo readme > "${repo}/README.md"
 
 export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.com
@@ -78,11 +79,10 @@ expect_error() {
 }
 
 expect_error "release stamp off a tag" "release tag" --version --version-suffix ""
-pin=$(<"${repo}/install_requirements.py")
-printf '%s\n' "${pin//\"torch==/\"torch>=}" > "${repo}/install_requirements.py"
-expect_error "a torch pin the generator cannot read" "does not name one torch==X" \
+echo 'TORCH_VERSION = "2.15"' >> "${repo}/torch_pin.py"
+expect_error "a torch pin that is not X.Y.Z" "TORCH_VERSION must be X.Y.Z" \
     --version --allow-dev-stamp
-git checkout -q -- install_requirements.py
+git checkout -q -- torch_pin.py
 echo "import no_such_module" >> "${repo}/install_utils.py"
 expect_error "an install_requirements.py that does not import" "No module named 'no_such_module'" \
     --version --allow-dev-stamp

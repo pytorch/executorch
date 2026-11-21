@@ -37,6 +37,7 @@ def define_common_targets():
             "//executorch/exir/dialects/fused_quant:ops",
             "//caffe2:torch",
             "//executorch/backends/transforms:permute_pass_utils",
+            "//executorch/backends/transforms:utils",
         ],
     )
 
