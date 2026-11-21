@@ -10,6 +10,12 @@ from torchao.utils import TorchAOBaseTensor
 
 
 class CudaNVFP4Tensor(TorchAOBaseTensor):
+    """``unit_scale`` is True only when ``per_tensor_scale`` is 1 and every
+    scale byte is below 0x7F (non-negative, non-NaN E4M3), which lets kernels
+    skip the global-scale multiply. ``from_exportable`` sets it from the values;
+    the constructor trusts the passed flag.
+    """
+
     tensor_data_names = ["qdata", "scale", "per_tensor_scale"]
     tensor_attribute_names = [
         "block_size",
