@@ -138,7 +138,7 @@ class EspTester(Tester):
     def test_implementation(self, repo: Path, *, atol=0, rtol=0):
         build_path = os.environ.get("ESPRESSIF_BUILD_DIR")
         if not build_path:
-            pytest.skip("Set ESPRESSIF_BUILD_DIR to the ESP32-S3 build directory")
+            pytest.skip("Set ESPRESSIF_BUILD_DIR to the ESP32 build directory")
 
         if self.cur is None:
             self.export_fused_quant().to_edge().run_passes()
@@ -157,6 +157,7 @@ class EspTester(Tester):
         )
 
         build_dir = Path(build_path).resolve()
+        target = os.environ.get("ESPRESSIF_TARGET", "esp32s3")
         worker = os.environ.get("PYTEST_XDIST_WORKER", "main")
         firmware_dir = build_dir / f"operator-library-{worker}"
         firmware_dir.mkdir(parents=True, exist_ok=True)
@@ -170,7 +171,7 @@ class EspTester(Tester):
                     "idf.py",
                     f"--project-dir={repo / 'examples/espressif/project'}",
                     f"--build-dir={firmware_dir}",
-                    "-DIDF_TARGET=esp32s3",
+                    f"-DIDF_TARGET={target}",
                     f"-DSDKCONFIG={firmware_dir / 'sdkconfig'}",
                     "-DET_ESPRESSIF_OPS=ON",
                     "-DET_ESPNN_BACKEND=OFF",
@@ -189,7 +190,7 @@ class EspTester(Tester):
                 90,
                 [
                     "esp-emu",
-                    "--chip=esp32s3",
+                    f"--chip={target}",
                     f"--firmware={firmware_dir / 'merged-binary.bin'}",
                     f"--elf={firmware_dir / 'executorch_esp_runner.elf'}",
                     "--net=user",
