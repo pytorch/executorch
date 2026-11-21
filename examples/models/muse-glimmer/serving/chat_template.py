@@ -3,8 +3,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Muse's role-complete template and canonical OpenAI tool-name translation."""
+"""Muse's template, tool-name translation, and tool-result ordering."""
 
+from collections import Counter
 from copy import deepcopy
 from functools import cached_property
 from pathlib import Path
@@ -30,6 +31,54 @@ def resolve_tool_result_names(messages):
             message = message.model_copy(update={"name": names[message.tool_call_id]})
         result.append(message)
     return result
+
+
+def order_repeated_tool_results(messages):
+    """Put results with the same rendered name in call order, in place.
+
+    The template labels a result only with its function name, so the model can
+    tell results of calls to the same function apart only by their order. Each
+    such group is reordered within the positions it already occupies. Results
+    already in call order, results of other functions, and results that do not
+    match the preceding consecutive assistant messages' calls keep their
+    positions. Repeated call IDs and repeated result IDs within a run are
+    excluded from reordering. Non-tool messages never move.
+    """
+    calls = []
+    start = 0
+    while start < len(messages):
+        if messages[start].role != "tool":
+            if messages[start].role == "assistant":
+                calls.extend(messages[start].tool_calls or [])
+            else:
+                calls.clear()
+            start += 1
+            continue
+        end = start
+        while end < len(messages) and messages[end].role == "tool":
+            end += 1
+        call_ids = Counter(call.id for call in calls)
+        call_order = {
+            call.id: (index, wire_tool_name(call.function.name))
+            for index, call in enumerate(calls)
+            if call_ids[call.id] == 1 and call.function.name
+        }
+        ids = Counter(message.tool_call_id for message in messages[start:end])
+        groups = {}
+        for position in range(start, end):
+            message = messages[position]
+            call = call_order.get(message.tool_call_id)
+            if call is None or not message.name or ids[message.tool_call_id] != 1:
+                continue
+            index, name = call
+            if name == wire_tool_name(message.name):
+                groups.setdefault(name, []).append((index, position))
+        for positions in groups.values():
+            ordered = [messages[position] for _, position in sorted(positions)]
+            for (_, position), message in zip(positions, ordered):
+                messages[position] = message
+        calls.clear()
+        start = end
 
 
 class MuseGlimmerChatTemplate(ChatTemplate):

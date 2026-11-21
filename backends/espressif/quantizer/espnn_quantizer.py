@@ -200,7 +200,9 @@ def annotate_fused_activations(
 
 class EspNNQuantizer(XNNPACKQuantizer):
     """
-    PT2E quantizer matching the ESP-NN int8 kernel contract.
+    PT2E quantizer for the EspNNBackend delegate.
+
+    Use get_esp_fused_quant_quantizer for the Fused Quant operator-library flow.
 
     Activations: int8 per-tensor affine.
     Weights: int8 per-output-channel symmetric.
