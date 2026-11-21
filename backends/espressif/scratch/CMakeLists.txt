@@ -19,37 +19,7 @@ if(MSVC
   )
 endif()
 
-set(ESP_NN_LOCAL_PATH
-    ""
-    CACHE PATH "ESP-NN 1.5.0 sources for scratch sizing"
-)
-if(ESP_NN_LOCAL_PATH)
-  if(NOT EXISTS "${ESP_NN_LOCAL_PATH}/include/esp_nn.h"
-     OR NOT EXISTS "${ESP_NN_LOCAL_PATH}/idf_component.yml"
-  )
-    message(
-      FATAL_ERROR "ESP_NN_LOCAL_PATH must name an ESP-NN 1.5.0 source tree."
-    )
-  endif()
-  file(STRINGS "${ESP_NN_LOCAL_PATH}/idf_component.yml" esp_nn_version
-       REGEX "^version:[ \t]*['\"]?1\\.5\\.0['\"]?[ \t]*$"
-  )
-  if(NOT esp_nn_version)
-    message(FATAL_ERROR "ESP_NN_LOCAL_PATH must contain ESP-NN version 1.5.0.")
-  endif()
-  set(esp_nn_SOURCE_DIR "${ESP_NN_LOCAL_PATH}")
-else()
-  include(FetchContent)
-  FetchContent_Declare(
-    esp_nn
-    URL https://github.com/espressif/esp-nn/archive/refs/tags/v1.5.0.tar.gz
-    URL_HASH
-      SHA256=63e8432b00c354eecb7dfab7133c47bc50023337cd6ea1c4dec67ca1060fef17
-    # Populate sources without adding ESP-NN's ESP-IDF component CMake project.
-    SOURCE_SUBDIR src/convolution
-  )
-  FetchContent_MakeAvailable(esp_nn)
-endif()
+include(${CMAKE_CURRENT_LIST_DIR}/../esp_nn_sources.cmake)
 
 find_package(Python REQUIRED COMPONENTS Interpreter Development.Module)
 if(NOT TARGET pybind11::module)
@@ -82,15 +52,15 @@ set(generic_sources
 add_custom_target(_esp_nn_scratch)
 foreach(profile esp32s3 riscv_pie generic ansi)
   set(sources ${common_sources} ${${profile}_sources})
-  list(TRANSFORM sources PREPEND "${esp_nn_SOURCE_DIR}/")
+  list(TRANSFORM sources PREPEND "${espnn_source_dir}/")
   set(module "_esp_nn_scratch_${profile}")
   pybind11_add_module(${module} MODULE bindings.cpp ${sources})
   target_compile_features(${module} PRIVATE cxx_std_17)
   add_dependencies(_esp_nn_scratch ${module})
   target_include_directories(
     ${module}
-    PRIVATE "${esp_nn_SOURCE_DIR}/include" "${esp_nn_SOURCE_DIR}/src/common"
-            "${esp_nn_SOURCE_DIR}/src/convolution"
+    PRIVATE "${espnn_source_dir}/include" "${espnn_source_dir}/src/common"
+            "${espnn_source_dir}/src/convolution"
   )
   target_compile_definitions(${module} PRIVATE ESP_NN_SCRATCH_MODULE=${module})
   if(NOT profile STREQUAL "ansi")
@@ -104,7 +74,10 @@ foreach(profile esp32s3 riscv_pie generic ansi)
 
   # Some getters share a source file with kernels; retain only the sizing code.
   set_target_properties(${module} PROPERTIES C_VISIBILITY_PRESET hidden)
-  target_compile_options(${module} PRIVATE -ffunction-sections -fdata-sections)
+  target_compile_options(
+    ${module} PRIVATE -ffunction-sections -fdata-sections
+                      "$<$<COMPILE_LANGUAGE:CXX>:-fexceptions;-frtti>"
+  )
   if(APPLE)
     target_link_options(${module} PRIVATE -Wl,-dead_strip)
   else()

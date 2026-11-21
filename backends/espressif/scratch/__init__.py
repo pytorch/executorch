@@ -13,7 +13,7 @@ from executorch.backends.espressif.target import EspKernelMode, EspTarget
 def get_scratch_queries(
     target: EspTarget, kernel_mode: EspKernelMode
 ) -> ModuleType | None:
-    """Load the vendor getters selected by ESP-NN 1.5.0's device configuration."""
+    """Load the vendor getters selected by ESP-NN's device configuration."""
     target = EspTarget(target)
     kernel_mode = EspKernelMode(kernel_mode)
     if kernel_mode == EspKernelMode.ANSI:
