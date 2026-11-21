@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 
 #include <executorch/backends/xnnpack/runtime/XNNPACKBackend.h>
+#include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
 
@@ -16,7 +17,17 @@
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/platform/runtime.h>
+#include <algorithm>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <fstream>
+#include <functional>
+#include <iterator>
+#include <string>
+#include <vector>
+
+#include <unistd.h>
 
 using namespace ::testing;
 
@@ -29,11 +40,13 @@ using executorch::backends::xnnpack::weight_cache_option_key;
 using executorch::backends::xnnpack::workspace_sharing_mode_option_key;
 using executorch::backends::xnnpack::WorkspaceSharingMode;
 using executorch::backends::xnnpack::xnnpack_backend_key;
+using executorch::extension::BufferDataLoader;
 using executorch::extension::Module;
 using executorch::extension::TensorPtr;
 using executorch::runtime::BackendOption;
 using executorch::runtime::BackendOptions;
 using executorch::runtime::Error;
+using executorch::runtime::EValue;
 using executorch::runtime::LoadBackendOptionsMap;
 
 static void set_and_check_weight_cache_enabled(bool enabled) {
@@ -219,12 +232,161 @@ TEST(PackedCacheStats, GlobalAccessorReachesTheBackendSingleton) {
   }
 }
 
-// NOTE: the warm path — load_packed_cache() succeeding and its mapped bytes
-// being counted — is deliberately NOT covered here. Producing a loadable
-// cache file needs a model with packed weights and a populated index; the
-// models wired into this target (ModuleAddLarge / ModuleSubLarge) are
-// elementwise and pack nothing, so a cold run writes a zero-entry trailer
-// that load_packed_cache correctly rejects. Covering it needs ModuleLinear
-// plus its external .ptd and a NamedDataMap, as test_xnn_data_separation
-// does. Until then the warm path is verified on device by the
-// PackedWeights log line reporting non-zero mapped/cache_file.
+// The warm path, load_packed_cache() succeeding and the second load hitting
+// its entries, is covered by WeightCacheQuantizedNames below.
+
+// Loads the model at `model_path_env` with the weight cache set to
+// `weight_cache`, runs forward on deterministic inputs and returns every
+// output as floats. `from_buffer` serves the program from memory, where the
+// named data map hands out one pointer per constant name instead of a fresh
+// copy per load. A non-empty `packed_cache_path` backs the cache with that
+// file, so a second load of the program hits the entries the first one saved.
+// `while_loaded` runs after forward, while the module and its cache exist.
+static void run_quantized_model(
+    const char* model_path_env,
+    bool weight_cache,
+    bool from_buffer,
+    std::vector<std::vector<float>>& outputs,
+    const std::string& packed_cache_path = "",
+    const std::function<void()>& while_loaded = nullptr) {
+  const char* path = std::getenv(model_path_env);
+  ASSERT_NE(path, nullptr) << model_path_env;
+
+  std::vector<uint8_t> program_bytes;
+  std::unique_ptr<Module> module;
+  if (from_buffer) {
+    std::ifstream file(path, std::ios::binary);
+    program_bytes.assign(std::istreambuf_iterator<char>(file), {});
+    ASSERT_FALSE(program_bytes.empty());
+    module = std::make_unique<Module>(std::make_unique<BufferDataLoader>(
+        program_bytes.data(), program_bytes.size()));
+  } else {
+    module = std::make_unique<Module>(path);
+  }
+
+  BackendOptions<2> xnnpack_opts;
+  xnnpack_opts.set_option(weight_cache_option_key, weight_cache);
+  if (!packed_cache_path.empty()) {
+    xnnpack_opts.set_option(
+        packed_cache_path_option_key, packed_cache_path.c_str());
+  }
+  LoadBackendOptionsMap map;
+  map.set_options(xnnpack_backend_key, xnnpack_opts.view());
+  ASSERT_EQ(module->load(map), Error::Ok);
+
+  auto meta = module->method_meta("forward");
+  ASSERT_TRUE(meta.ok());
+  std::vector<TensorPtr> inputs;
+  for (size_t i = 0; i < meta->num_inputs(); i++) {
+    auto tensor_meta = meta->input_tensor_meta(i);
+    ASSERT_TRUE(tensor_meta.ok());
+    std::vector<executorch::aten::SizesType> sizes(
+        tensor_meta->sizes().begin(), tensor_meta->sizes().end());
+    size_t numel = 1;
+    for (auto size : sizes) {
+      numel *= size;
+    }
+    std::vector<float> data(numel);
+    for (size_t j = 0; j < numel; j++) {
+      data[j] = static_cast<float>(static_cast<int>((j * 7) % 23) - 11) / 5.0f *
+          static_cast<float>(i + 1);
+    }
+    inputs.push_back(
+        executorch::extension::make_tensor_ptr(sizes, std::move(data)));
+  }
+  std::vector<EValue> args;
+  for (const TensorPtr& input : inputs) {
+    args.emplace_back(*input);
+  }
+
+  auto result = module->forward(args);
+  ASSERT_TRUE(result.ok());
+  outputs.clear();
+  for (const EValue& value : result.get()) {
+    ASSERT_TRUE(value.isTensor());
+    const auto& tensor = value.toTensor();
+    outputs.emplace_back(
+        tensor.const_data_ptr<float>(),
+        tensor.const_data_ptr<float>() + tensor.numel());
+  }
+  if (while_loaded) {
+    while_loaded();
+  }
+}
+
+// Entry count from the cache file footer:
+// [index_start:u64][entry_count:u32][magic:u32][version:u32].
+static uint32_t packed_cache_entry_count(const std::string& cache_path) {
+  std::ifstream file(cache_path, std::ios::binary | std::ios::ate);
+  const std::streamoff size = file.tellg();
+  if (size < 20) {
+    return 0;
+  }
+  uint8_t footer[20];
+  file.seekg(size - 20);
+  file.read(reinterpret_cast<char*>(footer), sizeof(footer));
+  uint32_t entry_count = 0;
+  std::memcpy(&entry_count, footer + 8, sizeof(entry_count));
+  return entry_count;
+}
+
+// The models (see test/models/export_delegated_program.py) pair quantized
+// kernels whose int8 codes dedup to one constant name with different scales,
+// or feed one kernel to nodes with different activation quantization. The
+// cache keys packed weights by that name, so without the quantization
+// qualifiers XNNCompiler adds to it the second node of each pair runs on the
+// first one's packing and the outputs diverge from the run without a cache.
+class WeightCacheQuantizedNames : public TestWithParam<const char*> {};
+
+TEST_P(WeightCacheQuantizedNames, MatchesRunWithoutCache) {
+  executorch::runtime::runtime_init();
+
+  std::vector<std::vector<float>> reference, in_memory, packed, loaded,
+      from_buffer;
+  run_quantized_model(GetParam(), false, false, reference);
+  ASSERT_FALSE(reference.empty());
+
+  run_quantized_model(GetParam(), true, false, in_memory);
+  ASSERT_EQ(in_memory, reference);
+
+  // The first file-backed load packs every kernel into the file, the second
+  // one loads the file and hits the cache. Same outputs alone would not show
+  // that: a cold re-pack computes them too. The footer proves the first run
+  // saved named entries, and the per-cache stats of the second run, read
+  // while its module is still loaded, prove nothing was re-packed after the
+  // load.
+  const std::string cache_path = ::testing::TempDir() + GetParam() + "_" +
+      std::to_string(::getpid()) + ".packed_cache";
+  std::remove(cache_path.c_str());
+  run_quantized_model(GetParam(), true, false, packed, cache_path);
+  ASSERT_EQ(packed, reference);
+  ASSERT_GT(packed_cache_entry_count(cache_path), 0u);
+  run_quantized_model(GetParam(), true, false, loaded, cache_path, [&] {
+    const auto report = get_packed_cache_report();
+    const auto entry = std::find_if(
+        report.per_cache.begin(), report.per_cache.end(), [&](const auto& e) {
+          return e.path == cache_path;
+        });
+    ASSERT_NE(entry, report.per_cache.end());
+    EXPECT_GT(entry->stats.mapped_bytes, 0);
+    EXPECT_EQ(
+        entry->stats.heap_bytes_by_reason[static_cast<size_t>(
+            PackedCacheHeapReason::RepackAfterLoad)],
+        0);
+  });
+  ASSERT_EQ(loaded, reference);
+  std::remove(cache_path.c_str());
+
+  run_quantized_model(GetParam(), true, true, from_buffer);
+  ASSERT_EQ(from_buffer, reference);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    XNNPACK,
+    WeightCacheQuantizedNames,
+    Values(
+        "ET_XNNPACK_GENERATED_QUANT_SHARED_LINEAR_PTE_PATH",
+        "ET_XNNPACK_GENERATED_QUANT_PER_TENSOR_LINEAR_PTE_PATH",
+        "ET_XNNPACK_GENERATED_QUANT_DOUBLED_CONV_PTE_PATH",
+        "ET_XNNPACK_GENERATED_DYN_QUANT_SHARED_LINEAR_PTE_PATH",
+        "ET_XNNPACK_GENERATED_GROUPWISE_QUANT_LINEAR_PTE_PATH"));
