@@ -8,6 +8,7 @@ import math
 import os
 import subprocess
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -18,11 +19,10 @@ import torch
 from executorch.backends.aoti import aoti_backend
 from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
-from executorch.backends.cuda.passes import lower_helion_to_triton
-from executorch.backends.cuda.passes.lower_helion_to_triton import (
-    LowerHelionToTritonPass,
-)
+from executorch.backends.cuda.passes import helion_cute, lower_helion
+from executorch.backends.cuda.passes.lower_helion import LowerHelionPass
 from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
+from torch._inductor.codegen.cpp_wrapper_cpu import CppWrapperCpu
 from torch._subclasses.fake_tensor import FakeTensorMode
 from torch.fx import Graph
 from torch.fx.experimental.proxy_tensor import make_fx
@@ -177,9 +177,7 @@ def _depthwise_conv1d(x: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
 class HelionLaunchContractTest(unittest.TestCase):
     def test_accepts_ordinary_launch(self) -> None:
         source = "def add(x):\n    _launcher(k, (1,), x, num_warps=4, num_stages=1, launch_cooperative_grid=False)\n"
-        self.assertIsNone(
-            lower_helion_to_triton._check_single_launch_site(source, "add")
-        )
+        self.assertIsNone(lower_helion._check_single_launch_site(source, "add"))
 
     def test_rejects_unsupported_launch_options(self) -> None:
         for option in (
@@ -192,7 +190,7 @@ class HelionLaunchContractTest(unittest.TestCase):
         ):
             with self.subTest(option=option):
                 with self.assertRaisesRegex(NotImplementedError, "launch option"):
-                    lower_helion_to_triton._check_single_launch_site(
+                    lower_helion._check_single_launch_site(
                         f"def add(x):\n    _launcher(k, (1,), x, {option})\n", "add"
                     )
 
@@ -202,11 +200,11 @@ class HelionLaunchContractTest(unittest.TestCase):
                 with self.assertRaisesRegex(
                     NotImplementedError, "single Triton launch"
                 ):
-                    lower_helion_to_triton._check_single_launch_site(
+                    lower_helion._check_single_launch_site(
                         f"def add(x):\n    {body}\n", "add"
                     )
         with self.assertRaisesRegex(ValueError, "entrypoint"):
-            lower_helion_to_triton._check_single_launch_site(
+            lower_helion._check_single_launch_site(
                 "def other(x):\n    return x\n", "add"
             )
 
@@ -216,7 +214,7 @@ class HelionLaunchContractTest(unittest.TestCase):
             "def f(x):\n"
             "    return helion_triton_helpers.max_propagate_nan(x, 0)\n"
         )
-        bound = lower_helion_to_triton._bind_helion_jit_helpers(source)
+        bound = lower_helion._bind_helion_jit_helpers(source)
         self.assertIn(
             "max_propagate_nan = helion_triton_helpers.max_propagate_nan", bound
         )
@@ -224,20 +222,20 @@ class HelionLaunchContractTest(unittest.TestCase):
 
     def test_rejects_old_helion_version(self) -> None:
         with mock.patch.object(
-            lower_helion_to_triton.importlib.metadata,
+            lower_helion.importlib.metadata,
             "version",
             return_value="1.5.1",
         ):
             with self.assertRaisesRegex(RuntimeError, "Helion 1.5.2 or newer"):
-                lower_helion_to_triton._check_helion_version()
+                lower_helion._check_helion_version()
             # The check is wired into capture-module loading, not only a
             # standalone helper nobody calls.
-            lower_helion_to_triton._helion_capture_modules.cache_clear()
+            lower_helion._helion_capture_modules.cache_clear()
             try:
                 with self.assertRaisesRegex(RuntimeError, "Helion 1.5.2 or newer"):
-                    lower_helion_to_triton._helion_capture_modules()
+                    lower_helion._helion_capture_modules()
             finally:
-                lower_helion_to_triton._helion_capture_modules.cache_clear()
+                lower_helion._helion_capture_modules.cache_clear()
 
     def test_rejects_placeholder_mutation(self) -> None:
         graph = Graph()
@@ -246,7 +244,7 @@ class HelionLaunchContractTest(unittest.TestCase):
         graph.output((copied,))
         traced = torch.fx.GraphModule({}, graph)
         with self.assertRaisesRegex(NotImplementedError, "write to an input"):
-            lower_helion_to_triton._check_no_placeholder_mutation(traced, "add")
+            lower_helion._check_no_placeholder_mutation(traced, "add")
 
     def test_rejects_helper_name_clash(self) -> None:
         source = (
@@ -256,16 +254,16 @@ class HelionLaunchContractTest(unittest.TestCase):
             "    return helion_triton_helpers.max_propagate_nan(x, 0)\n"
         )
         with self.assertRaisesRegex(NotImplementedError, "clashes"):
-            lower_helion_to_triton._bind_helion_jit_helpers(source)
+            lower_helion._bind_helion_jit_helpers(source)
 
     def test_rejects_non_getitem_output_use(self) -> None:
         graph = Graph()
         hop, other = graph.placeholder("hop"), graph.placeholder("other")
         graph.call_function(torch.ops.aten.add.Tensor, (hop, other))
         with self.assertRaisesRegex(NotImplementedError, "accessed by getitem"):
-            lower_helion_to_triton._reroute_hop_outputs(graph, hop, (other,), None)
+            lower_helion._reroute_hop_outputs(graph, hop, (other,), None)
 
-    def _captured(self, **overrides) -> lower_helion_to_triton._CapturedHelionCall:
+    def _captured(self, **overrides) -> lower_helion._CapturedHelionCall:
         kernel = SimpleNamespace(
             settings=SimpleNamespace(backend="triton", static_shapes=True),
             configs=[{}],
@@ -283,38 +281,34 @@ class HelionLaunchContractTest(unittest.TestCase):
             "output_spec": {},
         }
         fields.update(overrides)
-        return lower_helion_to_triton._CapturedHelionCall(**fields)
+        return lower_helion._CapturedHelionCall(**fields)
 
     def test_rejects_container_argument(self) -> None:
         captured = self._captured(tensor_args={"xs": [None]})
         captured.kernel.signature.parameters = {"xs": None}
         with self.assertRaisesRegex(NotImplementedError, "tensor-only arguments"):
-            lower_helion_to_triton._parse_helion_call(captured)
+            lower_helion._parse_helion_call(captured)
 
     def test_rejects_aliased_outputs(self) -> None:
         with self.assertRaisesRegex(NotImplementedError, "aliased outputs"):
-            lower_helion_to_triton._parse_helion_call(
-                self._captured(aliases_inputs=True)
-            )
+            lower_helion._parse_helion_call(self._captured(aliases_inputs=True))
 
     def test_rejects_unfunctionalized_mutation(self) -> None:
         with self.assertRaisesRegex(NotImplementedError, "functionalized"):
-            lower_helion_to_triton._parse_helion_call(
-                self._captured(mutates_inputs=True)
-            )
+            lower_helion._parse_helion_call(self._captured(mutates_inputs=True))
 
     def test_rejects_host_tensor_descriptors(self) -> None:
         captured = self._captured()
         captured.kernel.configs = [{"host_tensor_descriptors": True}]
-        call = lower_helion_to_triton._HelionCall(captured, [], (), ())
+        call = lower_helion._HelionCall(captured, [], (), ())
         with self.assertRaisesRegex(NotImplementedError, "host tensor descriptors"):
-            lower_helion_to_triton._render_triton_entrypoint(call)
+            lower_helion._render_entrypoint(call)
 
-    def test_rejects_non_triton_backend(self) -> None:
+    def test_rejects_unsupported_backend(self) -> None:
         kernel = SimpleNamespace(
-            settings=SimpleNamespace(backend="cute", static_shapes=True)
+            settings=SimpleNamespace(backend="pallas", static_shapes=True)
         )
-        captured = lower_helion_to_triton._CapturedHelionCall(
+        captured = lower_helion._CapturedHelionCall(
             kernel=kernel,
             is_functional=False,
             tensor_args={},
@@ -326,13 +320,14 @@ class HelionLaunchContractTest(unittest.TestCase):
             output_spec={},
         )
         with self.assertRaisesRegex(
-            NotImplementedError, "only the Triton backend; this kernel uses 'cute'"
+            NotImplementedError,
+            "only the Triton and CuTe backends; this kernel uses 'pallas'",
         ):
-            lower_helion_to_triton._parse_helion_call(captured)
+            lower_helion._parse_helion_call(captured)
 
     def test_cuda_backend_runs_helion_lowering_last(self) -> None:
         passes = CudaBackend.get_custom_passes([])
-        self.assertIsInstance(passes[-1], LowerHelionToTritonPass)
+        self.assertIsInstance(passes[-1], LowerHelionPass)
 
     def test_ordinary_graph_does_not_import_helion(self) -> None:
         class Model(torch.nn.Module):
@@ -343,18 +338,374 @@ class HelionLaunchContractTest(unittest.TestCase):
         original = program.graph_module.code
         # An earlier test in this process may have cached the Helion modules;
         # clear the cache so consulting Helion here would re-import it.
-        lower_helion_to_triton._helion_capture_modules.cache_clear()
+        lower_helion._helion_capture_modules.cache_clear()
         with mock.patch.object(
-            lower_helion_to_triton.importlib,
+            lower_helion.importlib,
             "import_module",
             side_effect=AssertionError("unexpected Helion import"),
         ):
-            LowerHelionToTritonPass()(program)
+            LowerHelionPass()(program)
         self.assertEqual(program.graph_module.code, original)
 
 
+class HelionCuteContractTest(unittest.TestCase):
+    """GPU-free tests of the CuTe export helpers OSS CI can run anywhere."""
+
+    def test_xyz_pads_and_rejects_dynamic_dimensions(self) -> None:
+        self.assertEqual(helion_cute._xyz((2,)), (2, 1, 1))
+        self.assertEqual(helion_cute._xyz((2, 3, 4)), (2, 3, 4))
+        with self.assertRaisesRegex(NotImplementedError, "static launch dimensions"):
+            helion_cute._xyz((2.0,))
+
+    def test_capture_launch_contract(self) -> None:
+        x = torch.zeros(4)
+        kernel = object()
+
+        def entrypoint(t, _launcher):
+            return _launcher(kernel, (4,), t)
+
+        captured = helion_cute._capture_launch(entrypoint, "_launcher", (x,))
+        self.assertIs(captured.cute_kernel, kernel)
+        self.assertEqual(captured.grid, (4, 1, 1))
+        self.assertEqual(captured.block, helion_cute._DEFAULT_BLOCK)
+        self.assertEqual(captured.tensors, (x,))
+
+        def two_launches(t, _launcher):
+            _launcher(kernel, (4,), t)
+            _launcher(kernel, (4,), t)
+
+        with self.assertRaisesRegex(NotImplementedError, "single launch"):
+            helion_cute._capture_launch(two_launches, "_launcher", (x,))
+
+        def extra_kwarg(t, _launcher):
+            return _launcher(kernel, (4,), t, num_warps=4)
+
+        with self.assertRaisesRegex(NotImplementedError, "launch options"):
+            helion_cute._capture_launch(extra_kwarg, "_launcher", (x,))
+
+        def scalar_arg(t, _launcher):
+            return _launcher(kernel, (4,), t, 1)
+
+        with self.assertRaisesRegex(NotImplementedError, "tensor arguments only"):
+            helion_cute._capture_launch(scalar_arg, "_launcher", (x,))
+
+        def empty_grid(t, _launcher):
+            return _launcher(kernel, (0,), t)
+
+        with self.assertRaisesRegex(NotImplementedError, "empty grid"):
+            helion_cute._capture_launch(empty_grid, "_launcher", (x,))
+
+    def test_shim_template_renders(self) -> None:
+        shim = helion_cute._SHIM_TEMPLATE.format(
+            prefix="helion_cute_x",
+            shim="aoti_torch_cuda_helion_cute_x",
+            parameters="AtenTensorHandle t0",
+            count=1,
+            ranks="1",
+            layout_arrays=(
+                "constexpr int64_t kSizes0[] = {4};\n"
+                "constexpr int64_t kStrides0[] = {1};"
+            ),
+            sizes="kSizes0",
+            strides="kStrides0",
+            handles="t0",
+            alignments="16",
+            pointer_args="pointers[0]",
+            grid="4, 1, 1",
+        )
+        self.assertIn("aoti_torch_cuda_helion_cute_x(AtenTensorHandle t0", shim)
+        self.assertIn("kAlignments[kCount] = {16}", shim)
+        self.assertIn("cute_dsl_helion_cute_x_wrapper", shim)
+        # Compile the rendered shim against a stub of the exported header
+        # when a CUDA toolkit is available, so template breakage is caught
+        # without a Blackwell GPU.
+        from torch._inductor.cpp_builder import get_cpp_compiler
+        from torch.utils.cpp_extension import CUDA_HOME
+
+        if CUDA_HOME is None:
+            self.skipTest("no CUDA toolkit to compile the rendered shim")
+        stub = (
+            "#pragma once\n#include <cstdint>\n"
+            "struct helion_cute_x_Kernel_Module_t { int unused; };\n"
+            "static void helion_cute_x_Kernel_Module_Load(\n"
+            "    helion_cute_x_Kernel_Module_t*) {}\n"
+            "static int32_t cute_dsl_helion_cute_x_wrapper(\n"
+            "    helion_cute_x_Kernel_Module_t*, void*, int, int, int,\n"
+            "    cudaStream_t) { return 0; }\n"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "helion_cute_x.h").write_text(stub)
+            (root / "shim.cpp").write_text(shim)
+            subprocess.run(
+                [
+                    get_cpp_compiler(),
+                    "-c",
+                    "-fPIC",
+                    "-O2",
+                    "-std=c++17",
+                    f"-I{root}",
+                    f"-I{CUDA_HOME}/include",
+                    str(root / "shim.cpp"),
+                    "-o",
+                    str(root / "shim.o"),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+    def test_dsl_runtime_directory_picks_newest_supported_cuda(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for flavor in ("cu11", "cu12", "cu13"):
+                library = root / flavor / "lib" / "libcuda_dialect_runtime_static.a"
+                library.parent.mkdir(parents=True)
+                library.touch()
+            spec = SimpleNamespace(submodule_search_locations=[str(root)])
+            with mock.patch.object(
+                helion_cute.importlib.util, "find_spec", return_value=spec
+            ), mock.patch.object(torch.version, "cuda", "12.8"):
+                self.assertEqual(
+                    helion_cute._dsl_runtime_directory(), root / "cu12" / "lib"
+                )
+                with self.assertRaisesRegex(RuntimeError, "cannot find"):
+                    with mock.patch.object(torch.version, "cuda", "10.2"):
+                        helion_cute._dsl_runtime_directory()
+
+    def test_link_exported_launches_clears_and_remembers(self) -> None:
+        helion_cute.begin_program()
+        helion_cute._STATE.program_launches()["p"] = helion_cute._ExportedLaunch(
+            op=torch.ops.aten.add.Tensor,
+            shim_declaration="AOTITorchError aoti_torch_cuda_p();",
+            library="p",
+            library_directory=Path("/tmp"),
+        )
+        with helion_cute.link_exported_launches():
+            self.assertIn("p", helion_cute._STATE.program_launches())
+        self.assertEqual(helion_cute._STATE.program_launches(), {})
+        self.assertTrue(helion_cute.last_program_had_launches())
+        helion_cute.begin_program()
+        self.assertFalse(helion_cute.last_program_had_launches())
+
+    def test_one_launch_limit_spans_methods_in_program(self) -> None:
+        def fake_launch(library: str) -> helion_cute._ExportedLaunch:
+            return helion_cute._ExportedLaunch(
+                op=torch.ops.aten.add.Tensor,
+                shim_declaration="",
+                library=library,
+                library_directory=Path("/tmp"),
+            )
+
+        self.addCleanup(helion_cute.begin_program)
+        with helion_cute.one_launch_per_program():
+            helion_cute.record_program_launch(fake_launch("launch_a"))
+            # The next method starts a fresh per-method program set, but
+            # the per-.pte accumulation survives.
+            helion_cute.begin_program()
+            helion_cute.record_program_launch(fake_launch("launch_a"))
+            with self.assertRaisesRegex(
+                NotImplementedError, "only one distinct CuTe launch"
+            ):
+                helion_cute.record_program_launch(fake_launch("launch_b"))
+        helion_cute.begin_program()
+        helion_cute.record_program_launch(fake_launch("launch_b"))
+
+    def test_fallback_kernels_cover_program_launches(self) -> None:
+        fake = helion_cute._ExportedLaunch(
+            op=torch.ops.aten.add.Tensor,
+            shim_declaration="AOTITorchError aoti_torch_cuda_q();",
+            library="q_probe",
+            library_directory=Path("/tmp"),
+        )
+        helion_cute.begin_program()
+        try:
+            self.assertNotIn(
+                "helion_cute::q_probe", helion_cute.exported_fallback_kernels()
+            )
+            helion_cute._STATE.program_launches()["q_probe"] = fake
+            self.assertIn(
+                "helion_cute::q_probe", helion_cute.exported_fallback_kernels()
+            )
+        finally:
+            helion_cute.begin_program()
+
+    def test_compile_and_export_rejections(self) -> None:
+        tensor = torch.zeros(2)
+        captured = helion_cute._CapturedLaunch(
+            cute_kernel=object(),
+            grid=(1, 1, 1),
+            block=(1, 1, 1),
+            compile_options=None,
+            tensors=(tensor,),
+        )
+
+        def fake_modules(build_result, stage=False):
+            launcher = SimpleNamespace(
+                _cute_stage_under_aligned_operands=lambda k, t: stage,
+                _build_cute_schema_and_args=lambda k, t, g: build_result,
+            )
+            arg_signature = SimpleNamespace(schema_pointer_alignment=lambda entry: 16)
+            return launcher, arg_signature, object(), object()
+
+        valid = SimpleNamespace(
+            schema=(("tensor", 0, 0, 0, 0),),
+            owned_tensors=[],
+            launch_args=(tensor, 1, 1, 1),
+        )
+        cases = (
+            (fake_modules(valid, stage=True), "under-aligned"),
+            (
+                fake_modules(
+                    SimpleNamespace(
+                        schema=valid.schema,
+                        owned_tensors=[tensor],
+                        launch_args=valid.launch_args,
+                    )
+                ),
+                "workspace",
+            ),
+            (
+                fake_modules(
+                    SimpleNamespace(
+                        schema=(("scalar", 0, 0, 0, 0),),
+                        owned_tensors=[],
+                        launch_args=valid.launch_args,
+                    )
+                ),
+                "static tensor arguments only",
+            ),
+            (
+                fake_modules(
+                    SimpleNamespace(
+                        schema=valid.schema,
+                        owned_tensors=[],
+                        launch_args=(tensor,),
+                    )
+                ),
+                "unexpected launch ABI",
+            ),
+        )
+        for modules, message in cases:
+            with self.subTest(message=message):
+                with mock.patch.object(
+                    helion_cute, "_cute_launcher_modules", return_value=modules
+                ):
+                    with tempfile.TemporaryDirectory() as directory:
+                        with self.assertRaisesRegex(NotImplementedError, message):
+                            helion_cute._compile_and_export(
+                                captured, "probe", Path(directory)
+                            )
+
+    def test_collector_scopes_overlap_per_thread(self) -> None:
+        original = CppWrapperCpu.generate_c_shim_extern_kernel_call
+
+        def stub_extern(self, kernel, *args, **kwargs):
+            return None
+
+        both_entered = threading.Barrier(2)
+        a_exited = threading.Event()
+        results = {}
+
+        def collect(name: str, exit_first: bool) -> None:
+            missing: set[str] = set()
+            with CudaBackend.collect_unsupported_fallback_kernels(missing):
+                both_entered.wait(timeout=60)
+                if exit_first:
+                    CppWrapperCpu.generate_c_shim_extern_kernel_call(object(), name)
+                else:
+                    # Record only after the other scope has exited: with
+                    # per-compile wrapping its exit removed the hooks.
+                    a_exited.wait(timeout=60)
+                    CppWrapperCpu.generate_c_shim_extern_kernel_call(object(), name)
+            if exit_first:
+                a_exited.set()
+            results[name] = missing
+
+        with mock.patch.object(
+            CppWrapperCpu, "generate_c_shim_extern_kernel_call", stub_extern
+        ):
+            threads = [
+                threading.Thread(target=collect, args=("kernel_from_a", True)),
+                threading.Thread(target=collect, args=("kernel_from_b", False)),
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=120)
+            self.assertIs(CppWrapperCpu.generate_c_shim_extern_kernel_call, stub_extern)
+        self.assertEqual(results["kernel_from_a"], {"kernel_from_a"})
+        self.assertEqual(results["kernel_from_b"], {"kernel_from_b"})
+        self.assertIs(CppWrapperCpu.generate_c_shim_extern_kernel_call, original)
+
+        # Nested scopes on one thread record into the innermost one.
+        outer: set[str] = set()
+        inner: set[str] = set()
+        with mock.patch.object(
+            CppWrapperCpu, "generate_c_shim_extern_kernel_call", stub_extern
+        ):
+            with CudaBackend.collect_unsupported_fallback_kernels(outer):
+                with CudaBackend.collect_unsupported_fallback_kernels(inner):
+                    CppWrapperCpu.generate_c_shim_extern_kernel_call(
+                        object(), "kernel_inner"
+                    )
+                CppWrapperCpu.generate_c_shim_extern_kernel_call(
+                    object(), "kernel_outer"
+                )
+        self.assertEqual(inner, {"kernel_inner"})
+        self.assertEqual(outer, {"kernel_outer"})
+        self.assertIs(CppWrapperCpu.generate_c_shim_extern_kernel_call, original)
+
+    def test_error_check_macro_guard(self) -> None:
+        helion_cute._check_error_check_macro(
+            "#ifndef CUTE_DSL_CUDA_ERROR_CHECK\n"
+            "#define CUTE_DSL_CUDA_ERROR_CHECK(err) (void)(err)\n"
+            "#endif\n"
+            "CUTE_DSL_CUDA_ERROR_CHECK(load());\n"
+        )
+        with self.assertRaisesRegex(NotImplementedError, "never uses"):
+            helion_cute._check_error_check_macro("int placeholder;\n")
+        with self.assertRaisesRegex(NotImplementedError, "#ifndef guard"):
+            helion_cute._check_error_check_macro(
+                "#define CUTE_DSL_CUDA_ERROR_CHECK(err) (void)(err)\n"
+                "CUTE_DSL_CUDA_ERROR_CHECK(load());\n"
+            )
+
+    def test_register_op_supports_more_than_26_arguments(self) -> None:
+        op = helion_cute._register_op(
+            "many_args_probe", [i == 29 for i in range(30)], lambda tensors: None
+        )
+        self.assertEqual(len(op._schema.arguments), 30)
+        self.assertIn("a29!", str(op._schema))
+
+
 @unittest.skipUnless(torch.cuda.is_available(), "CUDA required")
-class LowerHelionToTritonTest(unittest.TestCase):
+class LowerHelionTest(unittest.TestCase):
+    """End-to-end and pass tests, run for each Helion backend the pass lowers."""
+
+    BACKEND = "triton"
+    # Names the node the pass leaves for a kernel launch of BACKEND.
+    LAUNCH_MARKER = "triton_kernel_wrapper"
+
+    def setUp(self) -> None:
+        # Tests that run the pass without compiling would otherwise leak
+        # recorded CuTe launches into later fallback-kernel assertions.
+        self.addCleanup(helion_cute.begin_program)
+
+    def _kernel(self, fn, config, static_shapes=True):
+        return helion.kernel(
+            backend=self.BACKEND, config=config, static_shapes=static_shapes
+        )(fn)
+
+    def _has_launch(self, graph) -> bool:
+        # A launch that writes its arguments may be functionalized into a node
+        # whose first argument is the launch op.
+        return any(
+            self.LAUNCH_MARKER in str(n.target)
+            or (n.args and self.LAUNCH_MARKER in str(n.args[0]))
+            for n in graph.nodes
+        )
+
     def _export_and_run(
         self, model, inputs, expected, expected_second=None, rtol=1e-5, atol=1e-6
     ):
@@ -368,9 +719,9 @@ class LowerHelionToTritonTest(unittest.TestCase):
             )
         )
         with mock.patch.object(
-            lower_helion_to_triton,
-            "_trace_helion_call_as_triton",
-            wraps=lower_helion_to_triton._trace_helion_call_as_triton,
+            lower_helion,
+            "_trace_helion_call",
+            wraps=lower_helion._trace_helion_call,
         ) as trace:
             edge = to_edge_transform_and_lower(
                 exported,
@@ -402,10 +753,11 @@ class LowerHelionToTritonTest(unittest.TestCase):
                 )
 
     def test_attention_export_and_cpp_runtime(self) -> None:
-        kernel = helion.kernel(
-            config=helion.Config(block_sizes=[1, 64, 32], num_warps=4, num_stages=2),
+        kernel = self._kernel(
+            _attention,
+            helion.Config(block_sizes=[1, 64, 32], num_warps=4, num_stages=2),
             static_shapes=True,
-        )(_attention)
+        )
         qkv = torch.randn(3, 2, 4, 256, 64, device="cuda", dtype=torch.float16)
 
         class Model(torch.nn.Module):
@@ -418,9 +770,9 @@ class LowerHelionToTritonTest(unittest.TestCase):
         self._export_and_run(Model(), qkv, expected, rtol=2e-2, atol=2e-2)
 
     def test_depthwise_conv1d_with_weight_export_and_cpp_runtime(self) -> None:
-        kernel = helion.kernel(
-            config=helion.Config(block_sizes=[16, 64]), static_shapes=True
-        )(_depthwise_conv1d)
+        kernel = self._kernel(
+            _depthwise_conv1d, helion.Config(block_sizes=[16, 64]), static_shapes=True
+        )
         x = torch.randn(64, 515, device="cuda")
 
         class Model(torch.nn.Module):
@@ -439,9 +791,9 @@ class LowerHelionToTritonTest(unittest.TestCase):
         self._export_and_run(model, x, expected, rtol=1e-4, atol=1e-4)
 
     def test_native_model_export_and_cpp_runtime(self) -> None:
-        kernel = helion.kernel(
-            config=helion.Config(block_sizes=[256]), static_shapes=True
-        )(_add)
+        kernel = self._kernel(
+            _add, helion.Config(block_sizes=[256]), static_shapes=True
+        )
         inputs = torch.randn(2, 257, device="cuda")
 
         class Model(torch.nn.Module):
@@ -452,9 +804,9 @@ class LowerHelionToTritonTest(unittest.TestCase):
         torch.testing.assert_close(Model()(inputs), (inputs[0] + inputs[1]) * 2)
 
     def test_multiple_calls_export_and_cpp_runtime(self) -> None:
-        kernel = helion.kernel(
-            config=helion.Config(block_sizes=[256]), static_shapes=True
-        )(_add)
+        kernel = self._kernel(
+            _add, helion.Config(block_sizes=[256]), static_shapes=True
+        )
         inputs = torch.randn(2, 257, device="cuda")
 
         class Model(torch.nn.Module):
@@ -465,9 +817,9 @@ class LowerHelionToTritonTest(unittest.TestCase):
         self._export_and_run(Model(), inputs, inputs[0] + 2 * inputs[1])
 
     def test_multiple_outputs_export_and_cpp_runtime(self) -> None:
-        kernel = helion.kernel(
-            config=helion.Config(block_sizes=[256]), static_shapes=True
-        )(_two_outputs)
+        kernel = self._kernel(
+            _two_outputs, helion.Config(block_sizes=[256]), static_shapes=True
+        )
         x = torch.randn(257, device="cuda")
 
         class Model(torch.nn.Module):
@@ -493,9 +845,9 @@ class LowerHelionToTritonTest(unittest.TestCase):
         # strides after the pass specialized the kernel to the exported
         # strides, the result is silently wrong, so this must keep
         # matching eager.
-        kernel = helion.kernel(
-            config=helion.Config(block_sizes=[32, 256]), static_shapes=True
-        )(_add_2d)
+        kernel = self._kernel(
+            _add_2d, helion.Config(block_sizes=[32, 256]), static_shapes=True
+        )
         x = torch.randn(64, 1500, device="cuda")
 
         class Model(torch.nn.Module):
@@ -510,14 +862,12 @@ class LowerHelionToTritonTest(unittest.TestCase):
 
         model = Model()
         y = x * 2
-        self._export_and_run(
-            model, x, (y * 2, y @ model.weight), rtol=1e-3, atol=1e-3
-        )
+        self._export_and_run(model, x, (y * 2, y @ model.weight), rtol=1e-3, atol=1e-3)
 
     def test_mutation_and_new_output_export_and_cpp_runtime(self) -> None:
-        kernel = helion.kernel(
-            config=helion.Config(block_sizes=[256]), static_shapes=True
-        )(_increment_and_double)
+        kernel = self._kernel(
+            _increment_and_double, helion.Config(block_sizes=[256]), static_shapes=True
+        )
         x = torch.randn(257, device="cuda")
 
         class Model(torch.nn.Module):
@@ -531,9 +881,9 @@ class LowerHelionToTritonTest(unittest.TestCase):
         self._export_and_run(Model(), x, (x + 1) * 21)
 
     def test_functional_mutation_export_and_cpp_runtime(self) -> None:
-        kernel = helion.kernel(
-            config=helion.Config(block_sizes=[256]), static_shapes=True
-        )(_increment)
+        kernel = self._kernel(
+            _increment, helion.Config(block_sizes=[256]), static_shapes=True
+        )
         x = torch.randn(257, device="cuda")
 
         class Model(torch.nn.Module):
@@ -545,9 +895,9 @@ class LowerHelionToTritonTest(unittest.TestCase):
         self._export_and_run(Model(), x, x + 1)
 
     def test_buffer_mutation_export_and_cpp_runtime(self) -> None:
-        kernel = helion.kernel(
-            config=helion.Config(block_sizes=[256]), static_shapes=True
-        )(_increment)
+        kernel = self._kernel(
+            _increment, helion.Config(block_sizes=[256]), static_shapes=True
+        )
         x = torch.randn(257, device="cuda")
 
         class Model(torch.nn.Module):
@@ -562,9 +912,9 @@ class LowerHelionToTritonTest(unittest.TestCase):
         self._export_and_run(Model(), x, x + 1, expected_second=x + 2)
 
     def test_cond_branch_export_and_cpp_runtime(self) -> None:
-        kernel = helion.kernel(
-            config=helion.Config(block_sizes=[256]), static_shapes=True
-        )(_add)
+        kernel = self._kernel(
+            _add, helion.Config(block_sizes=[256]), static_shapes=True
+        )
         x = torch.rand(257, device="cuda") + 0.5
 
         class Model(torch.nn.Module):
@@ -581,10 +931,10 @@ class LowerHelionToTritonTest(unittest.TestCase):
     def test_conv1d_and_helion_export_and_cpp_runtime(self) -> None:
         # nn.Conv1d is in the CUDA backend's decomposition table, so the AOTI
         # backend retraces the program with run_decompositions after this
-        # pass; the spliced Triton launch must survive that retrace.
-        kernel = helion.kernel(
-            config=helion.Config(block_sizes=[256]), static_shapes=True
-        )(_add)
+        # pass; the spliced launch must survive that retrace.
+        kernel = self._kernel(
+            _add, helion.Config(block_sizes=[256]), static_shapes=True
+        )
         x = torch.randn(1, 4, 257, device="cuda")
 
         class Model(torch.nn.Module):
@@ -616,9 +966,9 @@ class LowerHelionToTritonTest(unittest.TestCase):
         self.assertTrue(contains.called)
 
     def test_user_input_mutation_export_and_cpp_runtime(self) -> None:
-        kernel = helion.kernel(
-            config=helion.Config(block_sizes=[256]), static_shapes=True
-        )(_increment)
+        kernel = self._kernel(
+            _increment, helion.Config(block_sizes=[256]), static_shapes=True
+        )
         x = torch.randn(257, device="cuda")
 
         class Model(torch.nn.Module):
@@ -630,9 +980,9 @@ class LowerHelionToTritonTest(unittest.TestCase):
         self._export_and_run(Model(), x, (x + 1, (x + 1) * 2))
 
     def test_rejects_scalar_argument(self) -> None:
-        kernel = helion.kernel(
-            config=helion.Config(block_sizes=[256]), static_shapes=True
-        )(_scale)
+        kernel = self._kernel(
+            _scale, helion.Config(block_sizes=[256]), static_shapes=True
+        )
         x = torch.randn(257, device="cuda")
 
         class Model(torch.nn.Module):
@@ -643,13 +993,13 @@ class LowerHelionToTritonTest(unittest.TestCase):
         with self.assertRaisesRegex(
             NotImplementedError, "tensor-only arguments"
         ) as raised:
-            LowerHelionToTritonPass()(program)
+            LowerHelionPass()(program)
         self.assertTrue(any("_scale" in note for note in raised.exception.__notes__))
 
     def test_rejects_real_kernel_output_aliasing_input(self) -> None:
-        kernel = helion.kernel(
-            config=helion.Config(block_sizes=[256]), static_shapes=True
-        )(_increment_and_return)
+        kernel = self._kernel(
+            _increment_and_return, helion.Config(block_sizes=[256]), static_shapes=True
+        )
         x = torch.randn(257, device="cuda")
 
         class Model(torch.nn.Module):
@@ -676,9 +1026,9 @@ class LowerHelionToTritonTest(unittest.TestCase):
         self.assertTrue(any("_increment_and_return" in note for note in notes))
 
     def test_rejects_capture_missing_private_field(self) -> None:
-        kernel = helion.kernel(
-            config=helion.Config(block_sizes=[256]), static_shapes=True
-        )(_increment)
+        kernel = self._kernel(
+            _increment, helion.Config(block_sizes=[256]), static_shapes=True
+        )
         graph = Graph()
         value = graph.placeholder("x")
         with FakeTensorMode():
@@ -696,12 +1046,12 @@ class LowerHelionToTritonTest(unittest.TestCase):
             },
         )
         with self.assertRaisesRegex(RuntimeError, "lacks the expected field"):
-            lower_helion_to_triton._trace_helion_call_as_triton(node)
+            lower_helion._trace_helion_call(node)
 
     def test_user_input_mutation_updates_signature(self) -> None:
-        kernel = helion.kernel(
-            config=helion.Config(block_sizes=[256]), static_shapes=True
-        )(_increment)
+        kernel = self._kernel(
+            _increment, helion.Config(block_sizes=[256]), static_shapes=True
+        )
         x = torch.randn(257, device="cuda")
 
         class Model(torch.nn.Module):
@@ -714,7 +1064,7 @@ class LowerHelionToTritonTest(unittest.TestCase):
         program = to_edge(
             exported, compile_config=EdgeCompileConfig(_check_ir_validity=False)
         ).exported_program()
-        LowerHelionToTritonPass()(program)
+        LowerHelionPass()(program)
         self.assertFalse(
             any("helion_kernel_wrapper" in str(n.target) for n in program.graph.nodes)
         )
@@ -727,9 +1077,9 @@ class LowerHelionToTritonTest(unittest.TestCase):
         torch.testing.assert_close(actual, x + 1)
 
     def test_call_inside_cond_branch(self) -> None:
-        kernel = helion.kernel(
-            config=helion.Config(block_sizes=[256]), static_shapes=True
-        )(_add)
+        kernel = self._kernel(
+            _add, helion.Config(block_sizes=[256]), static_shapes=True
+        )
         x = torch.randn(257, device="cuda")
 
         class Model(torch.nn.Module):
@@ -739,7 +1089,7 @@ class LowerHelionToTritonTest(unittest.TestCase):
                 )
 
         program = torch.export.export(Model(), (x,), strict=True)
-        LowerHelionToTritonPass()(program)
+        LowerHelionPass()(program)
         program.validate()
         for module in program.graph_module.modules():
             self.assertFalse(
@@ -751,6 +1101,27 @@ class LowerHelionToTritonTest(unittest.TestCase):
             expected = value * 2 if value.sum() > 0 else value - 1
             torch.testing.assert_close(program.module()(value), expected)
 
+    def test_cond_branch_sliced_operand_export_and_cpp_runtime(self) -> None:
+        # The cond operand is a view one element into its storage. Inside the
+        # branch it is a placeholder, but it is not a program input, so a
+        # CuTe kernel must not be compiled as if it were fully aligned: the
+        # exported program has to run, not fail its alignment check per call.
+        kernel = self._kernel(
+            _add, helion.Config(block_sizes=[256]), static_shapes=True
+        )
+        x = torch.rand(257, device="cuda") + 0.5
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return torch.cond(
+                    x.sum() > 0,
+                    lambda v: kernel(v, v),
+                    lambda v: v.neg(),
+                    (x[1:],),
+                )
+
+        self._export_and_run(Model(), x, x[1:] * 2)
+
     def test_rejects_layout_change_of_exported_output(self) -> None:
         graph = Graph()
         original, replacement = graph.placeholder("original"), graph.placeholder(
@@ -760,19 +1131,19 @@ class LowerHelionToTritonTest(unittest.TestCase):
             original.meta["val"] = torch.empty((4, 8), device="cuda")
             replacement.meta["val"] = torch.empty((8, 4), device="cuda").t()
         with self.assertRaisesRegex(NotImplementedError, "exported as"):
-            lower_helion_to_triton._check_same_tensor_layout(original, replacement)
+            lower_helion._check_same_tensor_layout(original, replacement)
 
     def test_rejects_outputs_aliasing_inputs(self) -> None:
         traced = make_fx(lambda x: x[1:], tracing_mode="fake")(
             torch.randn(8, device="cuda")
         )
         with self.assertRaisesRegex(NotImplementedError, "alias inputs"):
-            lower_helion_to_triton._check_outputs_do_not_alias_inputs(traced)
+            lower_helion._check_outputs_do_not_alias_inputs(traced)
 
     def test_rejects_capture_without_semantic_fingerprint(self) -> None:
-        kernel = helion.kernel(
-            config=helion.Config(block_sizes=[256]), static_shapes=True
-        )(_add)
+        kernel = self._kernel(
+            _add, helion.Config(block_sizes=[256]), static_shapes=True
+        )
         x = torch.randn(257, device="cuda")
 
         class Model(torch.nn.Module):
@@ -789,12 +1160,12 @@ class LowerHelionToTritonTest(unittest.TestCase):
                 }
                 node.kwargs = {**node.kwargs, "output_spec": spec}
         with self.assertRaisesRegex(RuntimeError, "host-semantic fingerprints"):
-            LowerHelionToTritonPass()(program)
+            LowerHelionPass()(program)
 
     def test_pass_does_not_tune_or_launch(self) -> None:
-        kernel = helion.kernel(
-            config=helion.Config(block_sizes=[256]), static_shapes=True
-        )(_add)
+        kernel = self._kernel(
+            _add, helion.Config(block_sizes=[256]), static_shapes=True
+        )
         x = torch.randn(257, device="cuda")
 
         class Model(torch.nn.Module):
@@ -808,27 +1179,46 @@ class LowerHelionToTritonTest(unittest.TestCase):
         with mock.patch.object(
             BoundKernel, "autotune", side_effect=AssertionError("unexpected tuning")
         ), mock.patch.object(
+            BoundKernel,
+            "__call__",
+            side_effect=AssertionError("unexpected Helion launch"),
+        ), mock.patch.object(
             JITFunction, "run", side_effect=AssertionError("unexpected launch")
-        ):
-            LowerHelionToTritonPass()(program)
+        ), mock.patch.object(
+            helion_cute, "_capture_launch", wraps=helion_cute._capture_launch
+        ) as capture:
+            LowerHelionPass()(program)
+        # A CuTe launch never goes through JITFunction.run; capturing the
+        # launch (instead of calling the entrypoint with Helion's launcher)
+        # is what proves the pass did not launch it either.
+        self.assertEqual(capture.call_count, 1 if self.BACKEND == "cute" else 0)
         program.validate()
+        self.assertTrue(self._has_launch(program.graph))
         launches = [
-            n for n in program.graph.nodes if "triton_kernel_wrapper" in str(n.target)
+            n
+            for n in program.graph.nodes
+            if self.LAUNCH_MARKER in str(n.target)
+            or (n.args and self.LAUNCH_MARKER in str(n.args[0]))
         ]
         self.assertTrue(launches)
         self.assertEqual(
             [n.meta.get("stack_trace") for n in launches],
             ["probe-stack-trace"] * len(launches),
         )
+        if self.BACKEND == "cute":
+            launch = next(
+                n for n in program.graph.nodes if self.LAUNCH_MARKER in str(n.target)
+            )
+            self.assertIn(torch.Tag.needs_exact_strides, launch.target.tags)
         self.assertFalse(
             any("helion_kernel_wrapper" in str(n.target) for n in program.graph.nodes)
         )
         torch.testing.assert_close(program.module()(x), x * 2)
 
     def test_rejects_dynamic_kernel(self) -> None:
-        kernel = helion.kernel(
-            config=helion.Config(block_sizes=[256]), static_shapes=False
-        )(_add)
+        kernel = self._kernel(
+            _add, helion.Config(block_sizes=[256]), static_shapes=False
+        )
         x = torch.randn(257, device="cuda")
 
         class Model(torch.nn.Module):
@@ -837,12 +1227,12 @@ class LowerHelionToTritonTest(unittest.TestCase):
 
         program = torch.export.export(Model(), (x,), strict=True)
         with self.assertRaisesRegex(NotImplementedError, "static_shapes=True"):
-            LowerHelionToTritonPass()(program)
+            LowerHelionPass()(program)
 
     def test_rejects_mutation_clone_layout_change(self) -> None:
-        kernel = helion.kernel(
-            config=helion.Config(block_sizes=[256]), static_shapes=True
-        )(_increment)
+        kernel = self._kernel(
+            _increment, helion.Config(block_sizes=[256]), static_shapes=True
+        )
         graph = Graph()
         value = graph.placeholder("x")
         with FakeTensorMode():
@@ -864,12 +1254,12 @@ class LowerHelionToTritonTest(unittest.TestCase):
         with self.assertRaisesRegex(
             NotImplementedError, "mutation clones that change strides"
         ):
-            lower_helion_to_triton._trace_helion_call_as_triton(node)
+            lower_helion._trace_helion_call(node)
 
     def test_rejects_changed_capture_semantics(self) -> None:
-        kernel = helion.kernel(
-            config=helion.Config(block_sizes=[256]), static_shapes=True
-        )(_add)
+        kernel = self._kernel(
+            _add, helion.Config(block_sizes=[256]), static_shapes=True
+        )
         x = torch.randn(257, device="cuda")
 
         class Model(torch.nn.Module):
@@ -883,10 +1273,11 @@ class LowerHelionToTritonTest(unittest.TestCase):
                 spec["_host_semantic_fingerprint"] = "different capture"
                 node.kwargs = {**node.kwargs, "output_spec": spec}
         with self.assertRaisesRegex(RuntimeError, "different host semantics"):
-            LowerHelionToTritonPass()(program)
+            LowerHelionPass()(program)
 
     def test_rejects_config_list(self) -> None:
         kernel = helion.kernel(
+            backend=self.BACKEND,
             configs=[
                 helion.Config(block_sizes=[128]),
                 helion.Config(block_sizes=[256]),
@@ -901,10 +1292,10 @@ class LowerHelionToTritonTest(unittest.TestCase):
 
         program = torch.export.export(Model(), (x,), strict=True)
         with self.assertRaisesRegex(ValueError, "Select one Helion config offline"):
-            LowerHelionToTritonPass()(program)
+            LowerHelionPass()(program)
 
     def test_rejects_unselected_config(self) -> None:
-        kernel = helion.kernel(static_shapes=True)(_add)
+        kernel = helion.kernel(backend=self.BACKEND, static_shapes=True)(_add)
         x = torch.randn(257, device="cuda")
 
         class Model(torch.nn.Module):
@@ -913,4 +1304,4 @@ class LowerHelionToTritonTest(unittest.TestCase):
 
         program = torch.export.export(Model(), (x,), strict=True)
         with self.assertRaisesRegex(ValueError, "Select one Helion config offline"):
-            LowerHelionToTritonPass()(program)
+            LowerHelionPass()(program)

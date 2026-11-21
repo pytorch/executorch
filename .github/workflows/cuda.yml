@@ -616,7 +616,7 @@ jobs:
             exit 1
           fi
 
-          # Helion kernels for backends/cuda/tests/test_lower_helion_to_triton.py.
+          # Helion kernels for backends/cuda/tests/test_lower_helion.py.
           # Helion does not depend on torch, so this keeps the pinned torch
           # nightly. 1.6.0 does not import on Python 3.11 (a dataclass with a
           # mappingproxy default). The probe covers the private modules the
@@ -631,7 +631,7 @@ jobs:
           # on a skip. Run them here, before the long builds, and treat a
           # skip as a failure like the device placement test above.
           set +e
-          python -m pytest backends/cuda/tests/test_lower_helion_to_triton.py -v -rs -o "addopts=" \
+          python -m pytest backends/cuda/tests/test_lower_helion.py -v -rs -o "addopts=" \
             2>&1 | tee /tmp/lower_helion_test.log
           lower_helion_status=${PIPESTATUS[0]}
           set -e
@@ -665,7 +665,7 @@ jobs:
           python -m pytest "${KERNEL_TESTS[@]}" -v -o "addopts=" --durations=20
         else
           IGNORES=()
-          for t in "${KERNEL_TESTS[@]}" "${QUANTIZED_GEMM_TESTS[@]}" backends/cuda/tests/test_device_placement.py backends/cuda/tests/test_lower_helion_to_triton.py; do
+          for t in "${KERNEL_TESTS[@]}" "${QUANTIZED_GEMM_TESTS[@]}" backends/cuda/tests/test_device_placement.py backends/cuda/tests/test_lower_helion.py; do
             IGNORES+=("--ignore=${t}")
           done
           python -m pytest backends/cuda/tests backends/cuda/passes/tests -v -o "addopts=" --durations=20 \
