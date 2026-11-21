@@ -2,6 +2,8 @@
 # All rights reserved.
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import re
+
 import pytest
 import torch
 from executorch.backends.cuda.autotune.launch_params import (
@@ -9,7 +11,12 @@ from executorch.backends.cuda.autotune.launch_params import (
     clear_launch_param_cache,
 )
 from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
-from executorch.backends.cuda.tests.nvfp4_test_utils import dynamic_rows, shards, weight
+from executorch.backends.cuda.tests.nvfp4_test_utils import (
+    dynamic_rows,
+    shards,
+    static_scale as act_scale,
+    weight,
+)
 from executorch.backends.cuda.triton.kernels import nvfp4_quantized_gemm as kernels
 from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
     _has_native_fp4_conversion,
@@ -35,18 +42,18 @@ def use_quantizer(monkeypatch, software):
 
 
 @pytest.mark.parametrize("software", [False, True])
-@pytest.mark.parametrize("static", [0.0, 0.001])
+@pytest.mark.parametrize("static", [None, 0.001])
 def test_activation_reference(static, software, monkeypatch):
     use_quantizer(monkeypatch, software)
     torch.manual_seed(123)
     x = torch.randn(7, 192, device="cuda", dtype=torch.bfloat16)
     x[0] = 0
-    q, s, g = nvfp4_quantize_activation(x, static)
+    q, s, g = nvfp4_quantize_activation(x, act_scale(static))
     # Independently choose global/block scales and nearest E2M1 codes.
     x32 = x.float()
     rg = (
         torch.full((7,), static, device="cuda")
-        if static > 0
+        if static
         else x32.abs().amax(1) / (448 * 6)
     )
     rg = torch.where(rg > 0, rg, 1.0)
@@ -58,7 +65,7 @@ def test_activation_reference(static, software, monkeypatch):
     )
     torch.testing.assert_close(g, rg, rtol=1e-6, atol=1e-9)
     assert torch.equal(s, rs.view(torch.uint8))
-    if static > 0:
+    if static:
         assert (s == 0x7E).any()
     lut = torch.tensor([0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0], device="cuda")
     normalized = x32.reshape(7, -1, 16) / torch.where(
@@ -85,7 +92,7 @@ def test_activation_rounding_boundaries(software, monkeypatch):
         device="cuda",
         dtype=torch.bfloat16,
     )
-    q, s, g = nvfp4_quantize_activation(x, static_scale=1.0)
+    q, s, g = nvfp4_quantize_activation(x, act_scale(1.0))
     actual = torch.stack((q & 15, q >> 4), dim=-1).reshape(2, 16)
     expected = torch.tensor(
         [[0, 2, 2, 4, 4, 6, 6, 7, 8, 10, 10, 12, 12, 14, 14, 15], [0] * 16],
@@ -105,7 +112,7 @@ def test_fused_and_software_quantizers_match(monkeypatch):
     x[0] = 0
     x[1, ::2] = -0.0
     x[2, :16] = 1e-30
-    for static in (0.0, 0.002):
+    for static in (None, act_scale(0.002)):
         fused = nvfp4_quantize_activation(x, static)
         with monkeypatch.context() as patch:
             patch.setattr(kernels, "_has_native_fp4_conversion", lambda: False)
@@ -129,7 +136,7 @@ def test_native_w4a4(m, n, k):
     torch.testing.assert_close(actual, expected, rtol=0.02, atol=0.02)
 
 
-def w4a4_reference(x, w, static_scale=0.0):
+def w4a4_reference(x, w, static_scale=None):
     q, s, g = nvfp4_quantize_activation(x, static_scale)
     one = torch.ones(1, device="cuda")
     a = CudaNVFP4Tensor(q, s, one, orig_dtype=torch.float32).dequantize()
@@ -137,14 +144,15 @@ def w4a4_reference(x, w, static_scale=0.0):
 
 
 @pytest.mark.parametrize("split_k", [1, 4])
-@pytest.mark.parametrize("static_scale", [0.0, 0.002])
-def test_w4a4_row_scale_static_scale_and_output_dtype(static_scale, split_k):
+@pytest.mark.parametrize("static", [None, 0.002])
+def test_w4a4_row_scale_static_scale_and_output_dtype(static, split_k):
     if not _has_native_fp4_conversion():
         pytest.skip("native FP4 required")
     # Fused shards keep one global scale per output row.
     w = CudaNVFP4Tensor.fuse_along_output(shards(512, device="cuda"))
     assert w.per_tensor_scale.numel() == w.shape[0]
     x = torch.randn(17, 512, device="cuda", dtype=torch.bfloat16)
+    static_scale = act_scale(static)
     actual = nvfp4_w4a4(
         x,
         w.qdata,
@@ -171,6 +179,35 @@ def test_w4a4_autotuned_split_k():
     assert len(picks) == 1 and len(picks[0].times_us) > 1
     expected = nvfp4_w4a4(x, w.qdata, w.scale, w.per_tensor_scale, split_k=1)
     torch.testing.assert_close(actual, expected, rtol=0.025, atol=0.02)
+
+
+def test_static_scales_share_one_tuning_and_kernel():
+    # Per-layer calibrated scales must not make each layer its own launch
+    # tuning, Triton autotune key or compiled kernel.
+    if not _has_native_fp4_conversion():
+        pytest.skip("native FP4 required")
+    w = weight(97, 2176)
+    x = torch.randn(23, 2176, device="cuda", dtype=torch.bfloat16)
+    clear_launch_param_cache()
+    tuned = len(kernels._fused_activation.cache)
+    with autotune_launch_params() as stats:
+        for value in (0.002, 0.003):
+            nvfp4_w4a4(x, w.qdata, w.scale, w.per_tensor_scale, act_scale(value))
+    assert (stats.measured, stats.cache_hits) == (1, 1)
+    assert len(kernels._fused_activation.cache) == tuned + 1
+
+
+def test_static_scales_share_one_inductor_kernel():
+    from torch._inductor.utils import run_and_get_code
+
+    def quantize(x, a, b):
+        return nvfp4_quantize_activation(x, a)[0], nvfp4_quantize_activation(x, b)[0]
+
+    x = torch.randn(5, 192, device="cuda", dtype=torch.bfloat16)
+    scales = act_scale(0.002), act_scale(0.003)
+    _, code = run_and_get_code(torch.compile(quantize, fullgraph=True), x, *scales)
+    name = "_fused_activation" if _has_native_fp4_conversion() else "_row_scale"
+    assert len(re.findall(rf"\b{name}_\d+ = async_compile\.triton", code[0])) == 1
 
 
 def test_w4a4_unbounded_dynamic_m_tunes_only_split_1():

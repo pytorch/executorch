@@ -8,8 +8,6 @@ Packed weights use low nibble first. Scales remain N-major; dot_scaled's
 lowering owns the architecture-specific scale operand layout.
 """
 
-import math
-
 import torch
 import triton
 import triton.language as tl
@@ -125,11 +123,16 @@ def _fp4(code):
 
 
 @triton.jit
-def _row_scale(X, G, M, K: tl.constexpr, STATIC: tl.constexpr, BK: tl.constexpr):
+def _row_scale(
+    X, G, STATIC, M, K: tl.constexpr, HAS_STATIC: tl.constexpr, BK: tl.constexpr
+):
     row = tl.program_id(0).to(tl.int64)
-    k = tl.arange(0, BK)
-    x = tl.load(X + row * K + k, k < K, 0).to(tl.float32)
-    g = STATIC if STATIC > 0 else tl.max(tl.abs(x), 0) / (448.0 * 6.0)
+    if HAS_STATIC:
+        g = tl.load(STATIC)
+    else:
+        k = tl.arange(0, BK)
+        x = tl.load(X + row * K + k, k < K, 0).to(tl.float32)
+        g = tl.max(tl.abs(x), 0) / (448.0 * 6.0)
     tl.store(G + row, tl.where(g > 0, g, 1.0))
 
 
@@ -177,12 +180,20 @@ def _has_native_fp4_conversion():
 
 @triton.autotune(
     configs=[triton.Config({}, num_warps=w) for w in (4, 8, 16)],
-    key=["M", "K", "STATIC"],
+    key=["M", "K", "HAS_STATIC"],
     do_bench=autotune_do_bench,
 )
 @triton.jit
 def _fused_activation(
-    X, Q, S, G, M, K: tl.constexpr, STATIC: tl.constexpr, BK: tl.constexpr
+    X,
+    Q,
+    S,
+    G,
+    STATIC,
+    M,
+    K: tl.constexpr,
+    HAS_STATIC: tl.constexpr,
+    BK: tl.constexpr,
 ):
     # One row load supplies both global amax and K16 scales. The native
     # conversion packs two E2M1 values in one instruction, low nibble first.
@@ -191,7 +202,10 @@ def _fused_activation(
     idx = group[:, None] * 16 + tl.arange(0, 16)[None, :]
     x = tl.load(X + row * K + idx, idx < K, 0).to(tl.float32)
     block_max = tl.max(tl.abs(x), 1)
-    g = STATIC if STATIC > 0 else tl.max(block_max, 0) / (448.0 * 6.0)
+    if HAS_STATIC:
+        g = tl.load(STATIC)
+    else:
+        g = tl.max(block_max, 0) / (448.0 * 6.0)
     g = tl.where(g > 0, g, 1.0)
     sf = (block_max / (6.0 * g)).to(tl.float8e4nv)
     v = x / tl.where(
@@ -221,30 +235,39 @@ def _fused_activation(
 
 @triton_op("triton::nvfp4_quantize_activation", mutates_args={})
 def nvfp4_quantize_activation(
-    x: torch.Tensor, static_scale: float = 0.0
+    x: torch.Tensor, static_scale: torch.Tensor | None = None
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """``static_scale``: an optional one-element float32 activation global
+    scale, read by the kernels at run time (``None``: per-row dynamic)."""
     m, k = x.shape
     if k % 16:
         raise ValueError("NVFP4 activation K must be divisible by 16")
     if not x.is_contiguous():
         raise ValueError("NVFP4 activation must be contiguous")
-    if not (math.isfinite(static_scale) and static_scale >= 0):
+    if static_scale is not None and (
+        static_scale.numel() != 1
+        or static_scale.dtype != torch.float32
+        or static_scale.device != x.device
+    ):
         raise ValueError(
-            "NVFP4 static activation scale must be finite and >= 0 (0 = dynamic)"
+            "NVFP4 static activation scale must be a one-element float32 tensor "
+            "on the activation's device"
         )
     q = torch.empty((m, k // 2), device=x.device, dtype=torch.uint8)
     s = torch.empty((m, k // 16), device=x.device, dtype=torch.uint8)
     g = torch.empty((m,), device=x.device, dtype=torch.float32)
+    has_static = static_scale is not None
+    static = static_scale if has_static else g
     if _has_native_fp4_conversion():
         launch_nvfp4_kernel(
             _fused_activation,
             (m,),
-            (x, q, s, g, m, k, static_scale, triton.next_power_of_2(k)),
-            4,
+            (x, q, s, g, static, m, k, has_static, triton.next_power_of_2(k)),
+            5,
         )
     else:
         wrap_triton(_row_scale)[(m,)](
-            x, g, m, k, static_scale, triton.next_power_of_2(k)
+            x, g, static, m, k, has_static, triton.next_power_of_2(k)
         )
         wrap_triton(_activation)[(m, triton.cdiv(k // 16, 32))](
             x, g, q, s, m, k, 32, num_warps=4
@@ -540,7 +563,7 @@ def nvfp4_w4a4(
     qdata: torch.Tensor,
     scale: torch.Tensor,
     per_tensor_scale: torch.Tensor,
-    static_scale: float = 0.0,
+    static_scale: torch.Tensor | None = None,
     split_k: int = -1,
     output_dtype: torch.dtype | None = None,
 ) -> torch.Tensor:
