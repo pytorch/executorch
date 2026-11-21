@@ -15,6 +15,7 @@ from unittest import mock
 
 import numpy as np
 import torch
+from executorch.backends.aoti import aoti_backend
 from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 from executorch.backends.cuda.passes import lower_helion_to_triton
@@ -30,14 +31,17 @@ from triton.runtime.jit import JITFunction
 try:
     import helion
     import helion.language as hl
-    from helion._compiler._dynamo.higher_order_ops import (
-        helion_kernel_side_table,
-        helion_kernel_wrapper_functional,
-    )
-    from helion.runtime.kernel import BoundKernel
 except ImportError as error:
     # Helion is an optional dependency of the CUDA backend.
     raise unittest.SkipTest(f"Helion is not installed: {error}") from error
+
+# Outside the guard on purpose: Helion being present but its private capture
+# modules having moved must fail this test, not skip the whole file.
+from helion._compiler._dynamo.higher_order_ops import (
+    helion_kernel_side_table,
+    helion_kernel_wrapper_functional,
+)
+from helion.runtime.kernel import BoundKernel
 
 
 def _run_twice(program, inputs: torch.Tensor) -> list[np.ndarray]:
@@ -75,6 +79,12 @@ def _add(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
 def _increment(x: torch.Tensor) -> None:
     for tile in hl.tile(x.numel()):
         x[tile] = x[tile] + 1
+
+
+def _increment_and_return(x: torch.Tensor) -> torch.Tensor:
+    for tile in hl.tile(x.numel()):
+        x[tile] = x[tile] + 1
+    return x
 
 
 def _scale(x: torch.Tensor, scale: float) -> torch.Tensor:
@@ -218,9 +228,7 @@ class HelionLaunchContractTest(unittest.TestCase):
         hop, other = graph.placeholder("hop"), graph.placeholder("other")
         graph.call_function(torch.ops.aten.add.Tensor, (hop, other))
         with self.assertRaisesRegex(NotImplementedError, "accessed by getitem"):
-            lower_helion_to_triton._reroute_hop_outputs(
-                graph, hop, (other,), None
-            )
+            lower_helion_to_triton._reroute_hop_outputs(graph, hop, (other,), None)
 
     def _captured(self, **overrides) -> lower_helion_to_triton._CapturedHelionCall:
         kernel = SimpleNamespace(
@@ -228,17 +236,17 @@ class HelionLaunchContractTest(unittest.TestCase):
             configs=[{}],
             signature=SimpleNamespace(parameters={}),
         )
-        fields = dict(
-            kernel=kernel,
-            is_functional=False,
-            tensor_args={},
-            has_constant_args=False,
-            tensors_to_clone=(),
-            tensor_output_count=0,
-            aliases_inputs=False,
-            mutates_inputs=False,
-            output_spec={},
-        )
+        fields = {
+            "kernel": kernel,
+            "is_functional": False,
+            "tensor_args": {},
+            "has_constant_args": False,
+            "tensors_to_clone": (),
+            "tensor_output_count": 0,
+            "aliases_inputs": False,
+            "mutates_inputs": False,
+            "output_spec": {},
+        }
         fields.update(overrides)
         return lower_helion_to_triton._CapturedHelionCall(**fields)
 
@@ -258,9 +266,7 @@ class HelionLaunchContractTest(unittest.TestCase):
         captured = self._captured()
         captured.kernel.configs = [{"host_tensor_descriptors": True}]
         call = lower_helion_to_triton._HelionCall(captured, [], (), ())
-        with self.assertRaisesRegex(
-            NotImplementedError, "host tensor descriptors"
-        ):
+        with self.assertRaisesRegex(NotImplementedError, "host tensor descriptors"):
             lower_helion_to_triton._render_triton_entrypoint(call)
 
     def test_rejects_non_triton_backend(self) -> None:
@@ -495,14 +501,28 @@ class LowerHelionToTritonTest(unittest.TestCase):
         model = Model().cuda()
         for parameter in model.parameters():
             parameter.requires_grad_(False)
-        # Loose tolerances: the point is the decomposition retrace, and the
-        # compiled conv accumulates differently from eager.
-        self._export_and_run(model, x, model.conv(x) * 2, rtol=1e-2, atol=1e-2)
+        # Measured routing can replace the conv with a Triton template, in
+        # which case no decomposition-table op survives and the backend
+        # skips the retrace this test exists to cover. Record the backend's
+        # own check and require that the retrace really ran.
+        contains_results = []
+        contains = aoti_backend.contains_any_call_fn_target_op
 
-    def test_user_input_mutation_lowering_compiles_delegate(self) -> None:
-        # Compiles through CudaPartitioner and AOTI; executing the mutated
-        # input in the runtime is covered by the buffer mutation test above,
-        # which uses the same copy-back mechanism.
+        def recording_contains(module, table):
+            results = contains(module, table)
+            contains_results.append(results)
+            return results
+
+        expected = model.conv(x) * 2
+        with mock.patch.object(
+            aoti_backend, "contains_any_call_fn_target_op", recording_contains
+        ):
+            # Loose tolerances: the compiled conv accumulates differently
+            # from eager.
+            self._export_and_run(model, x, expected, rtol=1e-2, atol=1e-2)
+        self.assertIn(True, contains_results)
+
+    def test_user_input_mutation_export_and_cpp_runtime(self) -> None:
         kernel = helion.kernel(
             config=helion.Config(block_sizes=[256]), static_shapes=True
         )(_increment)
@@ -510,30 +530,13 @@ class LowerHelionToTritonTest(unittest.TestCase):
 
         class Model(torch.nn.Module):
             def forward(self, x):
+                # Returning the mutated input itself: _run_twice checks the
+                # first output, which for a mutated user input is the
+                # written-back tensor.
                 kernel(x)
-                return x * 2
+                return x
 
-        exported = torch.export.export(Model(), (x.clone(),), strict=True)
-        edge = to_edge_transform_and_lower(
-            exported,
-            partitioner=[
-                CudaPartitioner(
-                    [CudaBackend.generate_method_name_compile_spec("forward")]
-                )
-            ],
-        )
-        self.assertIn(
-            "executorch_call_delegate", edge.exported_program().graph_module.code
-        )
-        self.assertFalse(
-            any(
-                "helion_kernel_wrapper" in str(n.target)
-                for module in edge.exported_program().graph_module.modules()
-                if isinstance(module, torch.fx.GraphModule)
-                for n in module.graph.nodes
-            )
-        )
-        edge.to_executorch()
+        self._export_and_run(Model(), x, x + 1)
 
     def test_rejects_scalar_argument(self) -> None:
         kernel = helion.kernel(
@@ -546,7 +549,26 @@ class LowerHelionToTritonTest(unittest.TestCase):
                 return kernel(x, 2.5)
 
         program = torch.export.export(Model(), (x,), strict=True)
-        with self.assertRaisesRegex(NotImplementedError, "tensor-only arguments"):
+        with self.assertRaisesRegex(
+            NotImplementedError, "tensor-only arguments"
+        ) as raised:
+            LowerHelionToTritonPass()(program)
+        self.assertTrue(
+            any("_scale" in note for note in getattr(raised.exception, "__notes__", []))
+        )
+
+    def test_rejects_real_kernel_output_aliasing_input(self) -> None:
+        kernel = helion.kernel(
+            config=helion.Config(block_sizes=[256]), static_shapes=True
+        )(_increment_and_return)
+        x = torch.randn(257, device="cuda")
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return kernel(x.clone())
+
+        program = torch.export.export(Model(), (x,), strict=True)
+        with self.assertRaisesRegex(NotImplementedError, "alias"):
             LowerHelionToTritonPass()(program)
 
     def test_rejects_capture_missing_private_field(self) -> None:
@@ -676,6 +698,9 @@ class LowerHelionToTritonTest(unittest.TestCase):
                 return kernel(x, x)
 
         program = torch.export.export(Model(), (x,), strict=True)
+        for node in program.graph.nodes:
+            if "helion_kernel_wrapper" in str(node.target):
+                node.meta["stack_trace"] = "probe-stack-trace"
         with mock.patch.object(
             BoundKernel, "autotune", side_effect=AssertionError("unexpected tuning")
         ), mock.patch.object(
@@ -683,8 +708,13 @@ class LowerHelionToTritonTest(unittest.TestCase):
         ):
             LowerHelionToTritonPass()(program)
         program.validate()
-        self.assertTrue(
-            any("triton_kernel_wrapper" in str(n.target) for n in program.graph.nodes)
+        launches = [
+            n for n in program.graph.nodes if "triton_kernel_wrapper" in str(n.target)
+        ]
+        self.assertTrue(launches)
+        self.assertEqual(
+            [n.meta.get("stack_trace") for n in launches],
+            ["probe-stack-trace"] * len(launches),
         )
         self.assertFalse(
             any("helion_kernel_wrapper" in str(n.target) for n in program.graph.nodes)

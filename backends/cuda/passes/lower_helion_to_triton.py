@@ -394,9 +394,7 @@ def _check_no_placeholder_mutation(traced: GraphModule, kernel_name: str) -> Non
                 value = node.kwargs[argument.name]
             else:
                 continue
-            if any(
-                leaf in placeholders for leaf in pytree.tree_leaves(value)
-            ):
+            if any(leaf in placeholders for leaf in pytree.tree_leaves(value)):
                 raise NotImplementedError(
                     f"Helion lowering traced a write to an input of kernel "
                     f"{kernel_name!r} that Helion did not report as mutated; "
@@ -407,13 +405,8 @@ def _check_no_placeholder_mutation(traced: GraphModule, kernel_name: str) -> Non
 
 def _trace_helion_call_as_triton(node: Node) -> tuple[GraphModule, tuple[Node, ...]]:
     captured = _read_captured_call(node)
-    try:
-        call = _parse_helion_call(captured)
-        run = _make_hop_replacement(call, _render_triton_entrypoint(call))
-    except (NotImplementedError, ValueError) as error:
-        raise type(error)(
-            f"Helion kernel {captured.kernel.name!r}: {error}"
-        ) from error
+    call = _parse_helion_call(captured)
+    run = _make_hop_replacement(call, _render_triton_entrypoint(call))
     with set_wrap_triton_enabled(True):
         traced = make_fx(torch.func.functionalize(run), tracing_mode="fake")(
             *call.fake_arguments
@@ -454,9 +447,13 @@ def _splice_traced_graph(
             if traced_node.op == "output":
                 result = map_arg(traced_node.args[0], environment.__getitem__)
             elif traced_node.op == "call_function":
-                environment[traced_node] = graph.node_copy(
-                    traced_node, environment.__getitem__
-                )
+                copied = graph.node_copy(traced_node, environment.__getitem__)
+                # Keep the Helion call's provenance on the replacement region;
+                # node_copy alone keeps only the make_fx metadata.
+                for key in ("stack_trace", "nn_module_stack", "from_node"):
+                    if key in before.meta:
+                        copied.meta[key] = before.meta[key]
+                environment[traced_node] = copied
             else:
                 raise NotImplementedError(
                     f"Helion lowering cannot inline {traced_node.op} nodes"
@@ -488,7 +485,11 @@ def _check_same_tensor_layout(original: Node, replacement: Node) -> None:
     # have specialized on that layout.
     expected, actual = original.meta.get("val"), replacement.meta["val"]
     if not isinstance(expected, torch.Tensor):
-        return
+        raise NotImplementedError(
+            f"Helion lowering replaced node {original.name!r}, whose exported "
+            "value is missing or not a tensor, with a tensor; the captured "
+            "output structure does not match what the pass expected"
+        )
     if (expected.shape, expected.stride(), expected.dtype) != (
         actual.shape,
         actual.stride(),
@@ -524,9 +525,25 @@ class LowerHelionToTritonPass:
                     or str(node.target) not in _HELION_HOP_NAMES
                 ):
                     continue
-                traced, inputs = _trace_helion_call_as_triton(node)
-                replacement = _splice_traced_graph(module.graph, node, traced, inputs)
-                _reroute_hop_outputs(module.graph, node, replacement, signature)
+                try:
+                    traced, inputs = _trace_helion_call_as_triton(node)
+                    replacement = _splice_traced_graph(
+                        module.graph, node, traced, inputs
+                    )
+                    _reroute_hop_outputs(module.graph, node, replacement, signature)
+                except Exception as error:
+                    kernel_name = "unknown"
+                    try:
+                        kernel_name = _read_captured_call(node).kernel.name
+                    except Exception:
+                        pass
+                    add_note = getattr(error, "add_note", None)
+                    if add_note is not None:
+                        add_note(
+                            f"while lowering Helion kernel {kernel_name!r} "
+                            f"(node {node.name})"
+                        )
+                    raise
                 modified = True
             if modified:
                 module.graph.lint()

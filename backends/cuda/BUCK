@@ -156,7 +156,9 @@ fbcode_target(
     srcs = [
         "passes/lower_helion_to_triton.py",
     ],
-    visibility = ["PUBLIC"],
+    visibility = [
+        "//executorch/backends/cuda/...",
+    ],
     deps = [
         "//caffe2:torch",
     ],
