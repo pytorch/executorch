@@ -1621,6 +1621,8 @@ AOTITorchError aoti_torch_mps__linear_fp_act_4bit_weight(
     return Error::Internal;
   }
 
+  // Owns the output buffer once created: deleted if anything after fails.
+  AOTITensorHandle out_tensor_handle = nullptr;
   try {
     @autoreleasepool {
       // Convert AOTITensorHandle to ExecutorTorch tensors
@@ -1806,7 +1808,6 @@ AOTITorchError aoti_torch_mps__linear_fp_act_4bit_weight(
       std::vector<int64_t> output_sizes = {M, N};
       std::vector<int64_t> output_strides = {N, 1};
 
-      AOTITensorHandle out_tensor_handle = nullptr;
       AOTITorchError create_out_result = aoti_torch_create_tensor_from_blob_v2(
           out_contents_ptr,
           2,  // ndim
@@ -1865,7 +1866,7 @@ AOTITorchError aoti_torch_mps__linear_fp_act_4bit_weight(
           kernel_func->setArg(1, *s_tensor);     // scales
           kernel_func->setArg(2, *z_tensor);     // biases
           kernel_func->setArg(3, *a_tensor);     // x
-          kernel_func->setArg(4, *out_tensor);   // y
+          kernel_func->setArg(4, *out_tensor, ETMetalKernelFunction::ArgAccess::kWrite);   // y
           int32_t K_val = K, N_val = N, M_val = M;
           kernel_func->setArg(5, &K_val, sizeof(int32_t));
           kernel_func->setArg(6, &N_val, sizeof(int32_t));
@@ -1882,7 +1883,7 @@ AOTITorchError aoti_torch_mps__linear_fp_act_4bit_weight(
           kernel_func->setArg(1, *b_tensor);
           kernel_func->setArg(2, *s_tensor);
           kernel_func->setArg(3, *z_tensor);
-          kernel_func->setArg(4, *out_tensor);
+          kernel_func->setArg(4, *out_tensor, ETMetalKernelFunction::ArgAccess::kWrite);
           kernel_func->setArg(5, sizes.data(), sizeof(uint32_t) * sizes.size());
         }
 
@@ -1936,9 +1937,15 @@ AOTITorchError aoti_torch_mps__linear_fp_act_4bit_weight(
 
   } catch (const std::exception& e) {
     ET_LOG(Error, "aoti_torch_mps__linear_fp_act_4bit_weight exception: %s", e.what());
+    if (out_tensor_handle) {
+      aoti_torch_delete_tensor_object(out_tensor_handle);
+    }
     return Error::Internal;
   } catch (...) {
     ET_LOG(Error, "aoti_torch_mps__linear_fp_act_4bit_weight: unknown exception");
+    if (out_tensor_handle) {
+      aoti_torch_delete_tensor_object(out_tensor_handle);
+    }
     return Error::Internal;
   }
 }
