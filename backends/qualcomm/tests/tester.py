@@ -80,8 +80,22 @@ class ToEdgeTransformAndLower(BaseStages.ToEdgeTransformAndLower):
     ) -> None:
         pass_manager = get_qnn_pass_manager_cls(self.backend_type)()
         ep = pass_manager.transform_for_export_pipeline(artifact)
+        qnn_partitioners = [
+            p for p in self.partitioners if isinstance(p, QnnPartitioner)
+        ]
         transform_passes = pass_manager.get_to_edge_transform_passes(
-            ep, compiler_specs=self.compiler_specs
+            ep,
+            compiler_specs=(
+                qnn_partitioners[0].compiler_specs_snapshot
+                if qnn_partitioners
+                else self.compiler_specs
+            ),
+            skip_node_id_set=set().union(
+                *(p.skip_node_id_set for p in qnn_partitioners)
+            ),
+            skip_node_op_set=set().union(
+                *(p.skip_node_op_set for p in qnn_partitioners)
+            ),
         )
 
         self.edge_dialect_program = to_edge_transform_and_lower(
