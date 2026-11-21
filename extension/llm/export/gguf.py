@@ -648,9 +648,10 @@ def iter_gguf(
 ) -> Iterator[Tuple[str, Union[ExportableGGUFTensor, Tensor]]]:
     """Stream ``(name, value)`` for every tensor in a GGUF file (low peak mem).
 
-    Quantized tensors (Q4_K, Q5_K, Q6_K) are wrapped as ``ExportableGGUFTensor``
-    with the raw block bytes; F32/F16/BF16 are returned as plain float tensors in
-    their native dtype. GGUF shapes are reversed to PyTorch ``(N, K)`` convention.
+    Quantized tensors (Q4_K, Q5_K, Q6_K, NVFP4) are wrapped as
+    ``ExportableGGUFTensor`` with the raw block bytes; F32/F16/BF16 are returned
+    as plain float tensors in their native dtype. GGUF shapes are reversed to
+    PyTorch ``(N, K)`` convention.
     """
     from gguf import GGMLQuantizationType, GGUFReader
 
