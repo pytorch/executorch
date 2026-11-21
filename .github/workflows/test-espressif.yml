@@ -31,6 +31,7 @@ on:
       - setup.py
       - CMakeLists.txt
       - tools/cmake/preset/default.cmake
+      - third-party/pybind11
       # Exported by the consumer test.
       - examples/models/mlperf_tiny/**
       - devtools/bundled_program/**
