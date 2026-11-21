@@ -936,6 +936,9 @@ class ProbeTest(_PassTest):
     "replacement" is the aten op."""
 
     def setUp(self):
+        # The base class skips without Triton on CUDA; that has to come first, since
+        # executorch.export imports pandas, which the ROCm job doesn't install.
+        super().setUp()
         from executorch.export.utils import is_fbcode
 
         if is_fbcode():
@@ -943,7 +946,6 @@ class ProbeTest(_PassTest):
                 "this build does not export torch's C shims, so the worker "
                 "cannot load modules compiled with Inductor's C++ wrapper"
             )
-        super().setUp()
         from executorch.backends.cuda.triton import replacement_pass, routing
         from executorch.backends.cuda.triton.kernels.conv import routing as conv_routing
         from executorch.exir.dialects._ops import ops as exir_ops
