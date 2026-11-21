@@ -773,8 +773,8 @@ def check_one_launch(prefix: str) -> None:
     if others:
         raise NotImplementedError(
             "Helion CuTe lowering supports only one distinct CuTe "
-            "launch per program for now; this program already lowers "
-            f"{sorted(others)}"
+            "launch per program for now; an earlier call or method "
+            f"already lowers {sorted(others)}"
         )
 
 
@@ -791,7 +791,11 @@ def one_launch_per_program() -> Iterator[None]:
     """Enforce the one-distinct-launch limit across a whole .pte.
 
     Entered by CudaBackend.preprocess_multimethod around its per-method
-    loop; nested entries join the outer accumulation.
+    loop; nested entries join the outer accumulation. Only that
+    EdgeProgramManager path is covered: the low-level
+    backend_api.to_backend overloads reach preprocess per partition
+    without this scope, so a program composed from separately lowered
+    submodules is not checked.
     """
     if _STATE.per_thread.multimethod_libraries is not None:
         yield

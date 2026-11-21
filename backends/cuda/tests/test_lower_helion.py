@@ -488,6 +488,29 @@ class HelionCuteContractTest(unittest.TestCase):
         helion_cute.begin_program()
         self.assertFalse(helion_cute.last_program_had_launches())
 
+    def test_one_launch_limit_spans_methods_in_program(self) -> None:
+        def fake_launch(library: str) -> helion_cute._ExportedLaunch:
+            return helion_cute._ExportedLaunch(
+                op=torch.ops.aten.add.Tensor,
+                shim_declaration="",
+                library=library,
+                library_directory=Path("/tmp"),
+            )
+
+        self.addCleanup(helion_cute.begin_program)
+        with helion_cute.one_launch_per_program():
+            helion_cute.record_program_launch(fake_launch("launch_a"))
+            # The next method starts a fresh per-method program set, but
+            # the per-.pte accumulation survives.
+            helion_cute.begin_program()
+            helion_cute.record_program_launch(fake_launch("launch_a"))
+            with self.assertRaisesRegex(
+                NotImplementedError, "only one distinct CuTe launch"
+            ):
+                helion_cute.record_program_launch(fake_launch("launch_b"))
+        helion_cute.begin_program()
+        helion_cute.record_program_launch(fake_launch("launch_b"))
+
     def test_fallback_kernels_cover_program_launches(self) -> None:
         fake = helion_cute._ExportedLaunch(
             op=torch.ops.aten.add.Tensor,
@@ -663,6 +686,11 @@ class LowerHelionTest(unittest.TestCase):
     BACKEND = "triton"
     # Names the node the pass leaves for a kernel launch of BACKEND.
     LAUNCH_MARKER = "triton_kernel_wrapper"
+
+    def setUp(self) -> None:
+        # Tests that run the pass without compiling would otherwise leak
+        # recorded CuTe launches into later fallback-kernel assertions.
+        self.addCleanup(helion_cute.begin_program)
 
     def _kernel(self, fn, config, static_shapes=True):
         return helion.kernel(

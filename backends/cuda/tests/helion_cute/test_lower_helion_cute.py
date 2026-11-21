@@ -93,7 +93,6 @@ class LowerHelionCuteTest(helion_tests.LowerHelionTest):
         # Succeeding at all proves the calls shared one launch: two
         # prefixes would trip the one-distinct-launch rejection.
         self._export_and_run(Model(), x, x + w * 2)
-        helion_cute.begin_program()
 
     def test_rejects_two_distinct_cute_launches(self) -> None:
         add = self._kernel(
@@ -246,7 +245,6 @@ class LowerHelionCuteTest(helion_tests.LowerHelionTest):
         # Archives are per program: another thread links none of them
         # unless its own program recorded the launch.
         self.assertEqual(options, ([], []))
-        helion_cute.begin_program()
 
     def test_prelowered_program_still_links_and_runs(self) -> None:
         # Lowering once by hand leaves helion_cute ops and no Helion calls;

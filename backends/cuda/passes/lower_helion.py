@@ -481,19 +481,13 @@ def _trace_helion_call(
             for i, name in enumerate(call.argument_names)
             if name in call.captured.tensors_to_clone
         )
-        # Only a root-graph user input, parameter or buffer starts at its
-        # allocation. Any other argument (an activation, or a placeholder of
-        # a torch.cond branch, which is just a branch operand) may be a view
-        # whose storage offset the CUDA backend's view rewrites hid from the
-        # exported metadata, so it is compiled for element alignment only.
-        aligned = aligned_arguments
         launcher, launch_op = helion_cute.export_cute_launch(
             entrypoint,
             _LAUNCHER_PARAMETER,
             source,
             call.fake_arguments,
             mutated,
-            aligned,
+            aligned_arguments,
         )
 
         def is_launch(n: Node) -> bool:
@@ -608,7 +602,8 @@ class LowerHelionPass:
 
     Supported: Triton and CuTe kernels with one explicit config, static strided
     tensor arguments, multiple tensor outputs and functionalized input mutation.
-    A program may contain only one distinct CuTe launch.
+    One LowerHelionPass run may lower only one distinct CuTe launch; the
+    per-.pte form is enforced by CudaBackend.preprocess_multimethod.
     Config selection stays offline; the pass neither tunes nor launches kernels
     (CuTe kernels are compiled for the export GPU), and inference needs neither
     Python nor Helion. CuTe kernels are rejected when ``target_platform`` is
@@ -690,10 +685,3 @@ class LowerHelionPass:
             if modified:
                 module.graph.lint()
                 module.recompile()
-        launches = helion_cute.current_program_launches()
-        if len(launches) > 1:
-            raise NotImplementedError(
-                "Helion CuTe lowering supports only one distinct CuTe "
-                "launch per program for now; this program lowers "
-                f"{len(launches)} ({', '.join(e.library for e in launches)})"
-            )

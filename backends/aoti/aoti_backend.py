@@ -70,14 +70,14 @@ def _written_buffer_options(program: ExportedProgram) -> Dict[str, Any]:
     return {}
 
 
-@experimental(
-    "This API and all of aoti-driven backend related functionality are experimental."
-)
 class _CollectorLocal(threading.local):
     def __init__(self) -> None:
         self.collectors: list = []
 
 
+@experimental(
+    "This API and all of aoti-driven backend related functionality are experimental."
+)
 class AotiBackend(ABC):
     """
     Base mixin class for AOTInductor-based backends.

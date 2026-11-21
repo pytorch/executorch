@@ -1521,7 +1521,9 @@ class CudaBackend(AotiBackend, BackendDetails):
         return table
 
     @classmethod
-    def get_custom_passes(cls, compile_specs: List[CompileSpec]) -> List[typing.Any]:
+    def get_custom_passes(  # noqa: C901
+        cls, compile_specs: List[CompileSpec]
+    ) -> List[typing.Any]:
         """
         Return CUDA-specific passes, ending with ReplaceEdgeOpWithTritonOpPass
         and, with measured routing on, the passes that measure the
@@ -1587,14 +1589,10 @@ class CudaBackend(AotiBackend, BackendDetails):
                 method_name = "method"
             passes.append(MeasureChoicesPass(cls, compile_specs, config))
             passes.append(ApplyChoicesPass(method_name, config))
-        platform = next(
-            (
-                spec.value.decode("utf-8")
-                for spec in compile_specs
-                if spec.key == "platform"
-            ),
-            "linux",
-        )
+        platform = "linux"
+        for spec in compile_specs:
+            if spec.key == "platform":
+                platform = spec.value.decode("utf-8")
         passes.append(LowerHelionPass(target_platform=platform))
         return passes
 
