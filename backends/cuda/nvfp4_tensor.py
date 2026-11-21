@@ -4,6 +4,8 @@
 # LICENSE file in the root directory of this source tree.
 """CUDA NVFP4 weights: byte-packed E2M1 and N-major K16 E4M3 scales."""
 
+import math
+
 import torch
 from torch._subclasses.fake_tensor import is_fake
 from torchao.prototype.mx_formats.kernels import f4_unpacked_to_f32, unpack_uint4
@@ -18,8 +20,9 @@ class CudaNVFP4Tensor(TorchAOBaseTensor):
     ``(N,)`` (``fuse_along_output`` picks per-row scales when the inputs'
     scalars differ), so kernels handle both. The scalar is 2-D because
     Inductor inlines 1-D constants of <= 8 elements as fill kernels that run on
-    every call. ``act_per_tensor_scale`` keeps
-    its ``ExportableNVFP4Tensor`` meaning.
+    every call. ``act_per_tensor_scale``, the optional static activation
+    global scale, is likewise a float32 ``(1, 1)`` tensor: kernels read it from
+    memory, so layers with different scales share compiled kernels and tuning.
 
     ``unit_scale`` asserts two facts kernels may rely on: ``per_tensor_scale``
     is 1, so the global-scale multiply can be skipped, and every scale byte is
@@ -33,9 +36,9 @@ class CudaNVFP4Tensor(TorchAOBaseTensor):
     tensor_attribute_names = [
         "block_size",
         "orig_dtype",
-        "act_per_tensor_scale",
         "unit_scale",
     ]
+    optional_tensor_data_names = ["act_per_tensor_scale"]
 
     def __new__(
         cls,
@@ -44,16 +47,20 @@ class CudaNVFP4Tensor(TorchAOBaseTensor):
         per_tensor_scale,
         block_size=16,
         orig_dtype=torch.bfloat16,
-        act_per_tensor_scale=None,
         unit_scale=False,
+        act_per_tensor_scale=None,
     ):
         if qdata.dtype != torch.uint8 or qdata.ndim != 2 or block_size != 16:
             raise ValueError(
                 "CUDA NVFP4 requires 2D packed uint8 weights and block_size=16"
             )
         n, half_k = qdata.shape
-        if half_k % 8 or scale.shape != (n, half_k // 8) or scale.dtype != torch.uint8:
+        if half_k % 8:
+            raise ValueError("CUDA NVFP4 K must be a multiple of 16")
+        if scale.shape != (n, half_k // 8) or scale.dtype != torch.uint8:
             raise ValueError("CUDA NVFP4 scale shape must be (N, K/16) uint8")
+        if not orig_dtype.is_floating_point:
+            raise ValueError("NVFP4 output dtype must be floating point")
         if per_tensor_scale.numel() not in (1, n):
             raise ValueError(
                 "CUDA NVFP4 per_tensor_scale must be scalar or have N values"
@@ -62,10 +69,20 @@ class CudaNVFP4Tensor(TorchAOBaseTensor):
             raise ValueError("CUDA NVFP4 per_tensor_scale must be float32")
         if scale.device != qdata.device or per_tensor_scale.device != qdata.device:
             raise ValueError("CUDA NVFP4 fields must be on one device")
+        if act_per_tensor_scale is not None:
+            if not isinstance(act_per_tensor_scale, torch.Tensor) and not (
+                math.isfinite(act_per_tensor_scale) and act_per_tensor_scale > 0
+            ):
+                raise ValueError(
+                    "CUDA NVFP4 act_per_tensor_scale must be finite and positive"
+                )
+            act_per_tensor_scale = torch.as_tensor(
+                act_per_tensor_scale, dtype=torch.float32, device=qdata.device
+            )
+            if act_per_tensor_scale.numel() != 1:
+                raise ValueError("CUDA NVFP4 act_per_tensor_scale must be a scalar")
+            act_per_tensor_scale = act_per_tensor_scale.reshape(1, 1).contiguous()
         qdata, scale = qdata.contiguous(), scale.contiguous()
-        # A one-element tensor remains a device pointer during AOTI lowering.
-        # A CPU zero-dimensional tensor may be folded into an IR scalar,
-        # which cannot be passed to a Triton pointer argument.
         per_tensor_scale = per_tensor_scale.reshape(
             (1, 1) if per_tensor_scale.numel() == 1 else (-1,)
         ).contiguous()
@@ -78,10 +95,7 @@ class CudaNVFP4Tensor(TorchAOBaseTensor):
         )
         obj.qdata, obj.scale, obj.per_tensor_scale = qdata, scale, per_tensor_scale
         obj.block_size, obj.orig_dtype = block_size, orig_dtype
-        obj.act_per_tensor_scale = (
-            None if act_per_tensor_scale is None else float(act_per_tensor_scale)
-        )
-        obj.unit_scale = unit_scale
+        obj.unit_scale, obj.act_per_tensor_scale = unit_scale, act_per_tensor_scale
         return obj
 
     @classmethod
@@ -103,8 +117,8 @@ class CudaNVFP4Tensor(TorchAOBaseTensor):
             w.per_tensor_scale,
             w.block_size,
             w.orig_dtype,
-            w.act_per_tensor_scale,
             unit_scale,
+            w.act_per_tensor_scale,
         )
 
     @classmethod
@@ -118,11 +132,13 @@ class CudaNVFP4Tensor(TorchAOBaseTensor):
         if any(not isinstance(w, cls) for w in weights):
             raise TypeError("CUDA NVFP4 fusion requires NVFP4 weights")
         first = weights[0]
+        act = first.act_per_tensor_scale
         if any(
             w.shape[1] != first.shape[1]
             or w.orig_dtype != first.orig_dtype
             or w.device != first.device
-            or w.act_per_tensor_scale != first.act_per_tensor_scale
+            or (w.act_per_tensor_scale is None) != (act is None)
+            or (act is not None and not torch.equal(w.act_per_tensor_scale, act))
             for w in weights[1:]
         ):
             raise ValueError(
@@ -144,8 +160,8 @@ class CudaNVFP4Tensor(TorchAOBaseTensor):
             pts,
             first.block_size,
             first.orig_dtype,
-            first.act_per_tensor_scale,
             all(w.unit_scale for w in weights),
+            act,
         )
 
     def dequantize(self, output_dtype=None):
@@ -157,16 +173,15 @@ class CudaNVFP4Tensor(TorchAOBaseTensor):
     def to(self, *args, **kwargs):
         kwargs = self._get_to_kwargs(*args, **kwargs)
         device, dtype = kwargs["device"], kwargs["dtype"]
-        if not dtype.is_floating_point:
-            raise ValueError("NVFP4 output dtype must be floating point")
+        act = self.act_per_tensor_scale
         return type(self)(
             self.qdata.to(device),
             self.scale.to(device),
             self.per_tensor_scale.to(device),
             self.block_size,
             dtype,
-            self.act_per_tensor_scale,
             self.unit_scale,
+            None if act is None else act.to(device),
         )
 
 
