@@ -106,7 +106,9 @@ jobs:
         # Baselines recorded from the MLX v0.32.2 Release build on 2026-09-02.
         check_artifact_size cmake-out/backends/mlx/libmlxdelegate.a 5000000 4159552
         check_artifact_size cmake-out/backends/mlx/mlx/libmlx.a 14000000 11458544
-        check_artifact_size cmake-out/backends/mlx/mlx/mlx/backend/metal/kernels/mlx.metallib 2000000 1460840
+        # MLX 14dc9c6 (v0.32.5), Release, Xcode 27.1, 2026-11-19:
+        # additional bundled attention and gated-delta kernels increase metallib size.
+        check_artifact_size cmake-out/backends/mlx/mlx/mlx/backend/metal/kernels/mlx.metallib 4600000 3817016
         echo "::endgroup::"
         if (( size_check_failed )); then
           exit 1

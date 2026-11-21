@@ -10,6 +10,7 @@ Available hardware acceleration backends for embedded systems.
 ## CPU Acceleration
 
 - {doc}`embedded-arm-cortex-m` — Arm Cortex-M CMSIS-NN acceleration
+- {doc}`embedded-espressif` — Espressif ESP32 ESP-NN acceleration (prototype)
 
 ## NPU Acceleration
 
@@ -21,6 +22,7 @@ Available hardware acceleration backends for embedded systems.
 :hidden:
 embedded-arm-cortex-m
 embedded-cadence
+embedded-espressif
 embedded-arm-ethos-u
 embedded-nxp
 ```
