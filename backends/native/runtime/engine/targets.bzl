@@ -6,7 +6,10 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "is_xplat", "runti
 # its constraint so builds for other platforms skip them. The CUDA and HIP sets
 # also link the x86_64 Linux CPU backend, so their settings require it too, and
 # stay compatible_with to match the ggml backend targets they link.
-CPU_COMPAT = {"target_compatible_with": ["ovr_config//cpu:x86_64", "ovr_config//os:linux"]}
+CPU_COMPAT = {"compatible_with": ["ovr_config//os:linux-x86_64", "ovr_config//os:macos-arm64"]}
+
+# For ggml CPU targets that also run torch, which builds only for Linux.
+TORCH_COMPAT = {"target_compatible_with": ["ovr_config//cpu:x86_64", "ovr_config//os:linux"]}
 CUDA_COMPAT = {"compatible_with": ["fbsource//xplat/executorch/backends/native/runtime/engine:ggml_cuda_platform"]}
 HIP_COMPAT = {"compatible_with": ["fbsource//xplat/executorch/backends/native/runtime/engine:ggml_hip_platform"]}
 METAL_COMPAT = {"target_compatible_with": ["ovr_config//cpu:arm64", "ovr_config//os:macos"]}

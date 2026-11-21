@@ -156,6 +156,7 @@ def define_common_targets(is_fbcode = False):
             ":cuda_platform",
             ":runtime_shims",
             "//executorch/backends/aoti:aoti_common_slim",
+            "//executorch/backends/aoti:temp_library",
             "//executorch/backends/aoti/slim/factory:empty",
             "//executorch/backends/aoti/slim/factory:from_blob",
             "//executorch/backends/aoti/slim/factory:from_etensor",

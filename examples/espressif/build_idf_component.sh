@@ -129,7 +129,7 @@ COPIED_TREES=(runtime/core/portable_type/c10/c10 runtime/core/portable_type/c10/
 OTHER_INPUTS=(version.txt LICENSE shim_et/xplat/executorch/build/build_variables.bzl
   extension/data_loader/buffer_data_loader.h extension/flat_tensor/serialize
   backends/cadence/aot/functions.yaml .ci/docker/ci_commit_pins/pytorch.txt examples/espressif
-  install_requirements.py install_utils.py)
+  install_requirements.py install_utils.py torch_pin.py)
 
 # Uncommitted changes to what the generator reads: to tracked files, or
 # untracked files where it globs, including in the flatbuffers submodule.
@@ -253,15 +253,15 @@ fi
 # The torch that install_requirements.py installs to build ExecuTorch's wheels,
 # which declare none, and the CPU index it installs it from. Read before
 # --version exits, so a stamp check also catches a pin this cannot read.
-TORCH_REQUIREMENT=$(sed -n 's/.*"\(torch==[^"]*\)" if use_pytorch_nightly.*/\1/p' \
-  "$ET_ROOT/install_requirements.py")
-if [ "$(printf '%s\n' "$TORCH_REQUIREMENT" | grep -c .)" != 1 ]; then
-  stamp_error "install_requirements.py does not name one torch==X for the wheel builds."
+READ_TORCH_PIN='import sys; sys.path.insert(0, sys.argv[1]); from install_requirements import TORCH_URL_BASE, TORCH_VERSION; print(TORCH_VERSION); print(TORCH_URL_BASE)'
+if ! TORCH_PIN=$("$PYTHON" -I -c "$READ_TORCH_PIN" "$ET_ROOT" 2> /dev/null); then
+  stamp_error "$PYTHON cannot import the torch pin from install_requirements.py: $("$PYTHON" -I -c "$READ_TORCH_PIN" "$ET_ROOT" 2>&1 | tail -n 1)"
 fi
-READ_TORCH_URL_BASE='import sys; sys.path.insert(0, sys.argv[1]); from install_requirements import TORCH_URL_BASE; print(TORCH_URL_BASE)'
-if ! TORCH_URL_BASE=$("$PYTHON" -I -c "$READ_TORCH_URL_BASE" "$ET_ROOT" 2> /dev/null); then
-  stamp_error "$PYTHON cannot import TORCH_URL_BASE from install_requirements.py: $("$PYTHON" -I -c "$READ_TORCH_URL_BASE" "$ET_ROOT" 2>&1 | tail -n 1)"
+{ read -r TORCH_VERSION; read -r TORCH_URL_BASE; } <<< "$TORCH_PIN"
+if [[ ! "$TORCH_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  stamp_error "torch_pin.py's TORCH_VERSION must be X.Y.Z, not '$TORCH_VERSION'."
 fi
+TORCH_REQUIREMENT="torch==$TORCH_VERSION"
 TORCH_INDEX="$TORCH_URL_BASE/cpu"
 if [ "$PRINT_VERSION" = true ]; then
   echo "$ET_COMPONENT_VERSION"

@@ -1086,8 +1086,6 @@ class TestCudaExport(unittest.TestCase):
         "loads through the Python runtime, which the ROCm build does not include",
     )
     def test_sdpa_head_sizes(self):
-        from executorch.runtime import Runtime
-
         class Attention(torch.nn.Module):
             def forward(self, *qkv):
                 return tuple(
@@ -1105,6 +1103,13 @@ class TestCudaExport(unittest.TestCase):
         )
         model = Attention()
         edge = self._export_to_cuda_with_lower(model, inputs)
+        from executorch.export.utils import is_fbcode
+
+        if is_fbcode():
+            # Running the program is skipped in fbcode.
+            return
+        from executorch.runtime import Runtime
+
         with tempfile.TemporaryDirectory() as directory:
             path = os.path.join(directory, "model.pte")
             with open(path, "wb") as f:
@@ -1212,7 +1217,6 @@ class TestCudaExport(unittest.TestCase):
     def test_fused_sdpa(self):
         """Decomposing attention on CUDA, as Torch-TensorRT does, gives fused
         variants that the backend has no kernel for."""
-        from executorch.runtime import Runtime
 
         class Attention(torch.nn.Module):
             def forward(self, q, k, v, mask):
@@ -1263,6 +1267,13 @@ class TestCudaExport(unittest.TestCase):
         output = "\n".join(logs.output)
         self.assertIn("Replaced 2 nodes with Triton kernels", output)
         self.assertIn("Using split-K decode SDPA", output)
+        from executorch.export.utils import is_fbcode
+
+        if is_fbcode():
+            # Running the program is skipped in fbcode.
+            return
+        from executorch.runtime import Runtime
+
         with tempfile.TemporaryDirectory() as directory:
             path = os.path.join(directory, "model.pte")
             with open(path, "wb") as f:
@@ -1280,7 +1291,6 @@ class TestCudaExport(unittest.TestCase):
         """AOTI gives two outputs one handle when they are the same tensor. With
         CUDA graphs on, three calls run eagerly, the fourth captures a graph and
         the fifth replays it."""
-        from executorch.runtime import Runtime
 
         class Twice(torch.nn.Module):
             def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, ...]:
@@ -1289,6 +1299,13 @@ class TestCudaExport(unittest.TestCase):
 
         model = Twice()
         edge = self._export_to_cuda_with_lower(model, (torch.randn(4, 8),))
+        from executorch.export.utils import is_fbcode
+
+        if is_fbcode():
+            # Running the program is skipped in fbcode.
+            return
+        from executorch.runtime import Runtime
+
         runtime = Runtime.get()
         option = "enable_cuda_graph_for_method"
         with tempfile.TemporaryDirectory() as directory:
