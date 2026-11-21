@@ -4,7 +4,10 @@
 # LICENSE file in the root directory of this source tree.
 import pytest
 import torch
-from executorch.backends.cuda.autotune.launch_params import autotune_launch_params
+from executorch.backends.cuda.autotune.launch_params import (
+    autotune_launch_params,
+    clear_launch_param_cache,
+)
 from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
 from executorch.backends.cuda.tests.nvfp4_test_utils import shards, weight
 from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
@@ -130,12 +133,32 @@ def test_w4a4_autotuned_split_k():
         pytest.skip("native FP4 required")
     w = weight(97, 2176)
     x = torch.randn(17, 2176, device="cuda", dtype=torch.bfloat16)
+    clear_launch_param_cache()
     with autotune_launch_params() as stats:
         actual = nvfp4_w4a4(x, w.qdata, w.scale, w.per_tensor_scale)
     picks = [pick for pick in stats.picks if pick.param == "split_k"]
     assert len(picks) == 1 and len(picks[0].times_us) > 1
     expected = nvfp4_w4a4(x, w.qdata, w.scale, w.per_tensor_scale, split_k=1)
     torch.testing.assert_close(actual, expected, rtol=0.025, atol=0.02)
+
+
+def test_w4a4_unbounded_dynamic_m_tunes_only_split_1():
+    if not _has_native_fp4_conversion():
+        pytest.skip("native FP4 required")
+    from executorch.backends.cuda.tests.test_nvfp4_launch_validation import dynamic_rows
+    from torch._subclasses.fake_tensor import FakeTensorMode
+    from torch.fx.experimental.symbolic_shapes import ShapeEnv
+
+    w = weight(97, 2176)
+    clear_launch_param_cache()
+    mode = FakeTensorMode(shape_env=ShapeEnv())
+    x = torch.randn(17, 2176, device="cuda", dtype=torch.bfloat16)
+    x = dynamic_rows(mode, x, None)
+    args = [mode.from_tensor(t) for t in (w.qdata, w.scale, w.per_tensor_scale)]
+    with mode, autotune_launch_params() as stats:
+        nvfp4_w4a4(x, *args)
+    (pick,) = [pick for pick in stats.picks if pick.param == "split_k"]
+    assert pick.choice == 1 and set(pick.times_us) == {1}
 
 
 @pytest.mark.parametrize("split_k", [1, 2, 4, 8, 16, 32])
