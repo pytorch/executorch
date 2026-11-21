@@ -8,6 +8,7 @@
 #include <executorch/examples/models/muse-glimmer/runtime/mlx_executor.h>
 
 #include <executorch/backends/mlx/runtime/backend_options.h>
+#include <executorch/examples/models/muse-glimmer/runtime/engine/dflash2_sampling.h>
 #include <executorch/examples/models/muse-glimmer/runtime/engine/sampling.h>
 #include <executorch/examples/models/muse-glimmer/runtime/model_embeddings.h>
 #include <executorch/extension/llm/batching/executor_utils.h>
@@ -21,6 +22,7 @@
 #include <exception>
 #include <initializer_list>
 #include <limits>
+#include <numeric>
 #include <random>
 
 namespace executorch::extension::llm {
@@ -64,6 +66,7 @@ struct MuseGlimmerMLXExecutor::DFlash {
   std::unique_ptr<cache::InstallGuard> guard;
   cache::BatchControl* ctl = nullptr;
   int block = 0, mask = 0, hidden = 0, context = 0, max_owners = 0;
+  int verify_block = 0, selector_top_k = 0;
   size_t row_bytes() const {
     return static_cast<size_t>(hidden) * runtime::elementSize(activation_dtype);
   }
@@ -232,12 +235,26 @@ runtime::Result<MuseGlimmerBackend> MuseGlimmerMLXExecutor::create(
       ET_ASSIGN_OR_RETURN(
           max_block,
           detail::read_required_positive_int(*module, "get_block_size"));
-      const int64_t block = config.dflash_n_draft
+      if (names.count("get_dflash_selector_top_k")) {
+        ET_CHECK_OK_OR_RETURN_ERROR(
+            check_constant_method(*module, "get_dflash_selector_top_k"));
+      }
+      ET_ASSIGN_OR_RETURN(
+          selector_top_k,
+          detail::read_int_method(*module, "get_dflash_selector_top_k"));
+      const int64_t top_k = selector_top_k.value_or(0);
+      if (top_k < 0 || top_k > vocab) {
+        return Error::InvalidProgram;
+      }
+      const int64_t verify_block = config.dflash_n_draft
           ? static_cast<int64_t>(config.dflash_n_draft) + 1
           : max_block;
-      if (block < 2 || block > max_block) {
+      if (verify_block < 2 || verify_block > max_block) {
         return Error::InvalidArgument;
       }
+      // DFlash2 attention and convolution use the full trained block, even
+      // when the caller asks to verify fewer proposals.
+      const int64_t block = top_k ? max_block : verify_block;
       ET_ASSIGN_OR_RETURN(
           mask, detail::read_int_method(*module, "get_mask_token_id"));
       ET_ASSIGN_OR_RETURN(
@@ -255,10 +272,10 @@ runtime::Result<MuseGlimmerBackend> MuseGlimmerMLXExecutor::create(
           detail::read_int_tensor_method(*module, "get_draft_windows"));
       ET_ASSIGN_OR_RETURN(dm, module->method_meta("draft_forward"));
       ET_CHECK_OK_OR_RETURN_ERROR(check_mlx_backends(dm));
-      if (dm.num_inputs() != 4 || dm.num_outputs() != 1 || block > context ||
-          !mask || *mask < 0 || *mask >= vocab ||
-          taps > geometry.layers.size() || nc != heads.size() ||
-          nc != dims.size() || nc != windows.size()) {
+      if (dm.num_inputs() != (top_k ? 5 : 4) ||
+          dm.num_outputs() != (top_k ? 2 : 1) || block > context || !mask ||
+          *mask < 0 || *mask >= vocab || taps > geometry.layers.size() ||
+          nc != heads.size() || nc != dims.size() || nc != windows.size()) {
         return Error::InvalidProgram;
       }
       ET_ASSIGN_OR_RETURN(dt, dm.input_tensor_meta(0));
@@ -281,8 +298,23 @@ runtime::Result<MuseGlimmerBackend> MuseGlimmerMLXExecutor::create(
           !tensor_abi(dh, dtype, {1, c, h}) ||
           !tensor_abi(dp, aten::ScalarType::Long, {c + q}) ||
           !tensor_abi(order, aten::ScalarType::Long, {c + q}) ||
-          !tensor_abi(dl, aten::ScalarType::Float, {1, q, vocab}) ||
           !tensor_abi(th, dtype, {1, width, h})) {
+        return Error::InvalidProgram;
+      }
+      if (top_k) {
+        ET_ASSIGN_OR_RETURN(proposal_rows, dm.input_tensor_meta(4));
+        ET_ASSIGN_OR_RETURN(scores, dm.output_tensor_meta(1));
+        if (!tensor_abi(
+                proposal_rows, aten::ScalarType::Long, {max_block - 1}) ||
+            !tensor_abi(
+                dl, aten::ScalarType::Long, {owners, max_block - 1, top_k}) ||
+            !tensor_abi(
+                scores,
+                aten::ScalarType::Float,
+                {owners, max_block - 1, top_k, top_k})) {
+          return Error::InvalidProgram;
+        }
+      } else if (!tensor_abi(dl, aten::ScalarType::Float, {1, q, vocab})) {
         return Error::InvalidProgram;
       }
       cache::CacheGeometry dg;
@@ -314,6 +346,8 @@ runtime::Result<MuseGlimmerBackend> MuseGlimmerMLXExecutor::create(
       dflash->guard = std::make_unique<cache::InstallGuard>(dcache);
       dflash->ctl = dctl;
       dflash->block = static_cast<int>(block);
+      dflash->verify_block = static_cast<int>(verify_block);
+      dflash->selector_top_k = static_cast<int>(top_k);
       dflash->mask = static_cast<int>(*mask);
       dflash->hidden = static_cast<int>(h);
       dflash->context = static_cast<int>(c);
@@ -407,6 +441,14 @@ bool MuseGlimmerMLXExecutor::initialize() {
       return false;
     }
     initialized_ = true;
+    if (dflash_) {
+      ET_LOG(
+          Info,
+          "Muse Glimmer %s: draft block %d, up to %d greedy proposals per round",
+          dflash_->selector_top_k ? "DFlash2" : "DFlash",
+          dflash_->block,
+          dflash_->verify_block - 1);
+    }
     return true;
 #if ET_HAS_EXCEPTIONS
   } catch (const std::exception& error) {
@@ -760,14 +802,45 @@ bool MuseGlimmerMLXExecutor::draft(
   if (!dflash_->ctl->declare_step(ids)) {
     return false;
   }
-  auto result = module_->execute(
-      "draft_forward",
-      {token_tensor, hidden_tensor, position_tensor, order_tensor});
-  if (!result.ok() || result->size() != 1 || !result->at(0).isTensor()) {
+  const int k = dflash_->selector_top_k;
+  const int v = dflash_->verify_block;
+  const int proposals = verification ? v - 1 : 1;
+  std::vector<runtime::EValue> inputs{
+      *token_tensor, *hidden_tensor, *position_tensor, *order_tensor};
+  TensorPtr proposal_tensor;
+  if (k) {
+    std::vector<int64_t> proposal_rows(proposals);
+    std::iota(proposal_rows.begin(), proposal_rows.end(), 1);
+    proposal_tensor = make_tensor_ptr({proposals}, std::move(proposal_rows));
+    inputs.emplace_back(*proposal_tensor);
+  }
+  auto result = module_->execute("draft_forward", inputs);
+  if (!result.ok() || result->size() != (k ? 2 : 1) ||
+      !result->at(0).isTensor()) {
     return false;
   }
   auto logits = result->at(0).toTensor();
-  if (logits.dim() != 3 || logits.size(0) != 1 || logits.size(1) != q ||
+  const int64_t* candidate_ids = nullptr;
+  const float* candidate_scores = nullptr;
+  if (k) {
+    if (!result->at(1).isTensor()) {
+      return false;
+    }
+    const auto scores = result->at(1).toTensor();
+    if (logits.dim() != 3 || logits.size(0) != owners.size() ||
+        logits.size(1) != proposals || logits.size(2) != k ||
+        logits.scalar_type() != aten::ScalarType::Long ||
+        !dense_tensor(logits) || scores.dim() != 4 ||
+        scores.size(0) != owners.size() || scores.size(1) != proposals ||
+        scores.size(2) != k || scores.size(3) != k ||
+        scores.scalar_type() != aten::ScalarType::Float ||
+        !dense_tensor(scores)) {
+      return false;
+    }
+    candidate_ids = logits.const_data_ptr<int64_t>();
+    candidate_scores = scores.const_data_ptr<float>();
+  } else if (
+      logits.dim() != 3 || logits.size(0) != 1 || logits.size(1) != q ||
       logits.size(2) != spec_->vocab_size ||
       logits.scalar_type() != aten::ScalarType::Float ||
       !dense_tensor(logits)) {
@@ -783,16 +856,38 @@ bool MuseGlimmerMLXExecutor::draft(
         state.hidden.begin() + counts[i] * dflash_->row_bytes());
     if (verification) {
       auto block =
-          std::make_shared<std::vector<batching::Token>>(b, anchors[i]);
-      for (int j = 1; j < b; ++j) {
-        auto token = sample_row(
-            logits, i * b + j, owners[i], ends[i] + j, nullptr, true);
-        if (!token) {
+          std::make_shared<std::vector<batching::Token>>(v, anchors[i]);
+      if (k) {
+        std::vector<std::vector<float>> probabilities;
+        muse_glimmer::SamplingWorkspace workspace;
+        auto rng = draw_rng(state.seed, ends[i], 1);
+        // Preserve the existing greedy proposal policy: verification below
+        // accepts against a point-mass draft distribution.
+        if (!muse_glimmer::sample_dflash2_path(
+                rng,
+                candidate_ids + i * proposals * k,
+                candidate_scores + i * proposals * k * k,
+                v - 1,
+                k,
+                spec_->vocab_size,
+                0,
+                true,
+                *block,
+                probabilities,
+                workspace)) {
           return false;
         }
-        (*block)[j] = *token;
+      } else {
+        for (int j = 1; j < v; ++j) {
+          auto token = sample_row(
+              logits, i * b + j, owners[i], ends[i] + j, nullptr, true);
+          if (!token) {
+            return false;
+          }
+          (*block)[j] = *token;
+        }
       }
-      for (int j = 0; j < b; ++j) {
+      for (int j = 0; j < v; ++j) {
         verification->inputs.push_back(
             {owners[i],
              true,
@@ -809,7 +904,7 @@ bool MuseGlimmerMLXExecutor::draft(
 bool MuseGlimmerMLXExecutor::speculate(
     const batching::BatchInput& batch,
     batching::BatchOutput& out) {
-  const int b = dflash_->block;
+  const int b = dflash_->verify_block;
   size_t cursor = 0;
   while (cursor < batch.inputs.size()) {
     std::vector<batching::SessionId> owners;
@@ -821,7 +916,7 @@ bool MuseGlimmerMLXExecutor::speculate(
       auto& state = sessions_.at(input.sid);
       const int end = input.position + input.offset + input.size;
       if (!out.outputs[cursor] || end != ctl_->pos(state.seq_id) ||
-          end > spec_->max_context_length - b) {
+          end > spec_->max_context_length - dflash_->block) {
         ++cursor;
         continue;
       }

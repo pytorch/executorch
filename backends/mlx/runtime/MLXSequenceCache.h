@@ -686,7 +686,16 @@ class DFlash final : public KVAttentionPolicy {
           ::mlx::core::concatenate(values, 2, s)};
     }();
     return ::mlx::core::fast::scaled_dot_product_attention(
-        q, kv.k, kv.v, scale, -1, "", std::nullopt, std::nullopt, false, s);
+        q,
+        kv.k,
+        kv.v,
+        scale,
+        window_.value_or(-1),
+        "",
+        std::nullopt,
+        std::nullopt,
+        false,
+        s);
   }
 
   const int block_size_;
