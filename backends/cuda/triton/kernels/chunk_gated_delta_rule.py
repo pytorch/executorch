@@ -23,16 +23,32 @@ FLA kernels use @triton.heuristics which wrap_triton doesn't support directly.
 We unwrap via kernel.fn to get the inner @triton.autotune kernel and pass the
 heuristic-computed constexprs explicitly.
 
-Requires: pip install flash-linear-attention
+Requires: pip install "fla-core==0.6.0"
 """
+
+import importlib.metadata
 
 import torch
 import triton
+
+# Older FLA raises ValueError (not ImportError) at import under triton 3.9, which
+# would break importing the whole CUDA backend; fail as ImportError first instead.
+# The calls below use 0.6's private kernel signatures, so accept only 0.6.x.
+try:
+    _FLA_VERSION = importlib.metadata.version("fla-core")
+except importlib.metadata.PackageNotFoundError:
+    _FLA_VERSION = None
+if _FLA_VERSION is None or not _FLA_VERSION.startswith("0.6."):
+    raise ImportError(
+        f"chunk_gated_delta_rule needs fla-core 0.6.0, found {_FLA_VERSION or 'none'}: "
+        'pip install "fla-core==0.6.0"'
+    )
 
 from fla.ops.common.chunk_delta_h import chunk_gated_delta_rule_fwd_kernel_h_blockdim64
 from fla.ops.common.chunk_o import chunk_fwd_kernel_o
 from fla.ops.common.chunk_scaled_dot_kkt import chunk_scaled_dot_kkt_fwd_kernel
 from fla.ops.gated_delta_rule.wy_fast import recompute_w_u_fwd_kernel
+from fla.ops.utils.constant import RCP_LN2
 from fla.ops.utils.cumsum import chunk_local_cumsum_scalar_kernel
 from fla.ops.utils.solve_tril import merge_16x16_to_64x64_inverse_kernel
 from fla.utils import IS_TMA_SUPPORTED
@@ -112,22 +128,23 @@ def chunk_gated_delta_rule(
     NT = triton.cdiv(T, BT)
     scale = K**-0.5
 
-    # 1. chunk_local_cumsum: cumulative sum of g within each chunk
+    # 1. chunk_local_cumsum: cumulative sum of g within each chunk, in log2 space
+    # because the FLA kernels below gate with exp2.
     g_cumsum = torch.empty(B, T, H, dtype=torch.float32, device=q.device)
-    wrap_triton(_unwrap(chunk_local_cumsum_scalar_kernel))[(NT, B * H)](
+    wrap_triton(_unwrap(chunk_local_cumsum_scalar_kernel))[(NT * B * H,)](
         s=g,
         o=g_cumsum,
-        scale=0,
+        scale=RCP_LN2,
         cu_seqlens=0,
         chunk_indices=0,
         T=T,
         B=B,
         H=H,
         BT=BT,
-        HEAD_FIRST=False,
         REVERSE=False,
-        HAS_SCALE=False,
+        HAS_SCALE=True,
         IS_VARLEN=False,
+        USE_GRAPH=False,
     )
 
     # 2. chunk_scaled_dot_kkt: compute beta * K * K^T with gating
@@ -141,6 +158,7 @@ def chunk_gated_delta_rule(
         chunk_indices=0,
         T=T,
         H=H,
+        HV=H,
         K=K,
         BT=BT,
         USE_G=True,
@@ -177,6 +195,7 @@ def chunk_gated_delta_rule(
         chunk_indices=0,
         T=T,
         H=H,
+        HV=H,
         K=K,
         V=V,
         BT=BT,
@@ -192,7 +211,7 @@ def chunk_gated_delta_rule(
     v_new = torch.empty_like(v)
 
     def grid_h(meta):
-        return (triton.cdiv(V, meta["BV"]), B * H)
+        return (triton.cdiv(V, meta["BV"]) * B * H,)
 
     wrap_triton(_unwrap(chunk_gated_delta_rule_fwd_kernel_h_blockdim64))[grid_h](
         k=k,
@@ -208,16 +227,16 @@ def chunk_gated_delta_rule(
         chunk_offsets=0,
         T=T,
         H=H,
+        HV=H,
         K=K,
         V=V,
         BT=BT,
-        USE_EXP2=False,
-        TRANSPOSE_STATE=False,
         USE_G=True,
         USE_GK=False,
         USE_INITIAL_STATE=True,
         STORE_FINAL_STATE=True,
         SAVE_NEW_VALUE=True,
+        STATE_V_FIRST=False,
         IS_VARLEN=False,
     )
 
@@ -225,7 +244,7 @@ def chunk_gated_delta_rule(
     o = torch.empty_like(v)
 
     def grid_o(meta):
-        return (triton.cdiv(V, meta["BV"]), NT, B * H)
+        return (triton.cdiv(V, meta["BV"]) * NT, B * H)
 
     wrap_triton(_unwrap(chunk_fwd_kernel_o))[grid_o](
         q=q,
@@ -240,12 +259,13 @@ def chunk_gated_delta_rule(
         scale=scale,
         T=T,
         H=H,
+        HV=H,
         K=K,
         V=V,
         BT=BT,
-        TRANSPOSE_STATE=False,
         USE_G=True,
         USE_G_GAMMA=False,
+        STATE_V_FIRST=False,
         IS_VARLEN=False,
     )
 
