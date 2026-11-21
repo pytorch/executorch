@@ -168,10 +168,9 @@ _BINARY_LOWERINGS = {
 }
 
 
-def _pool_kernel_args(program, node) -> tuple | None:
+def _pool_kernel_args(program, node, output_value) -> tuple | None:
     inp = get_arg(node, "inp", torch.fx.Node)
     input_value = inp.meta.get("val")
-    output_value = node.meta["val"][0]
     if not all(
         isinstance(value, torch.Tensor)
         and value.dim() == 4
@@ -182,7 +181,7 @@ def _pool_kernel_args(program, node) -> tuple | None:
         for value in (input_value, output_value)
     ):
         return None
-    # The optimized S3 kernel returns without writing for other channel counts.
+    # Select the S3 assembly kernels, which require four-channel alignment.
     if input_value.shape[3] % 4:
         return None
     input_params = _qparams(program, node, "inp")
@@ -196,15 +195,15 @@ def _pool_kernel_args(program, node) -> tuple | None:
     kernel = get_arg(node, "kernel_size")
     stride = get_arg(node, "stride") or kernel
     pairs = []
-    for arg in (kernel, stride, get_arg(node, "padding"), get_arg(node, "dilation")):
+    for arg in (kernel, stride, get_arg(node, "padding")):
         if not isinstance(arg, (list, tuple)) or len(arg) not in (1, 2):
             return None
         pair = list(arg) * (2 if len(arg) == 1 else 1)
         if any(type(dim) is not int or not 0 <= dim <= 65535 for dim in pair):
             return None
         pairs.append(pair)
-    kernel, stride, padding, dilation = pairs
-    if get_arg(node, "ceil_mode") or dilation != [1, 1] or min(*kernel, *stride) == 0:
+    kernel, stride, padding = pairs
+    if get_arg(node, "ceil_mode") or min(*kernel, *stride) == 0:
         return None
     if any(pad > window // 2 for pad, window in zip(padding, kernel)):
         return None
@@ -224,12 +223,14 @@ def _pool_kernel_args(program, node) -> tuple | None:
 
 
 def _lower_max_pool2d(program, node) -> bool:
+    if get_arg(node, "dilation") not in ([1], [1, 1], (1,), (1, 1)):
+        return False
     values = list(node.users)
     if not values or any(
         user.target != operator.getitem or user.args[1] != 0 for user in values
     ):
         return False
-    args = _pool_kernel_args(program, node)
+    args = _pool_kernel_args(program, node, node.meta["val"][0])
     if args is None:
         return False
     graph = node.graph
@@ -246,6 +247,35 @@ def _lower_max_pool2d(program, node) -> bool:
     return True
 
 
+def _lower_avg_pool2d(program, node) -> bool:
+    if get_arg(node, "divisor_override") is not None:
+        return False
+    args = _pool_kernel_args(program, node, node.meta["val"])
+    if args is None:
+        return False
+    output_height, output_width = node.meta["val"].shape[1:3]
+    # ESP-NN 1.4.1's S3 assembly uses output height for the output row stride.
+    if output_height != 1 and output_height != output_width:
+        return False
+    inp, kernel, _, padding = args
+    if get_arg(node, "count_include_pad") and any(padding):
+        return False
+    height, width = inp.meta["val"].shape[1:3]
+    count = min(height, kernel[0]) * min(width, kernel[1])
+    # The vendor adds a signed rounding nudge to the int32 sum.
+    if 128 * count + count // 2 > torch.iinfo(torch.int32).max:
+        return False
+    graph = node.graph
+    with graph.inserting_before(node):
+        replacement = graph.call_function(
+            exir_ops.edge.esp_nn.quantized_avg_pool2d_int8.default, args
+        )
+    replacement.meta = node.meta.copy()
+    node.replace_all_uses_with(replacement)
+    graph.erase_node(node)
+    return True
+
+
 class LowerToEsp(ExportedProgramPassBase):
     """Lower supported fused-quant operators to ESP-NN."""
 
@@ -255,6 +285,12 @@ class LowerToEsp(ExportedProgramPassBase):
 
         modified = False
         for node in list(graph.nodes):
+            if (
+                node.target
+                == exir_ops.edge.fused_quant.avg_pool2d_channels_last.default
+            ):
+                modified |= _lower_avg_pool2d(exported_program, node)
+                continue
             if (
                 node.target
                 == exir_ops.edge.fused_quant.max_pool2d_with_indices_channels_last.default
