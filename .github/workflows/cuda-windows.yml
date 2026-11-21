@@ -115,9 +115,9 @@ jobs:
             quant: "non-quantized"
             cuda-version: "13.2"
           # Each train installs its own toolkit and, for the export, its own torch, so each
-          # needs rows of its own. The other trains get only the smallest model and the
-          # tile-packed int4 model, the only quant here that lowers to _weight_int4pack_mm
-          # and so runs the int4mm shim that train's nvcc built.
+          # needs rows of its own. Trains other than the image's (13.2) get only the
+          # smallest model and the tile-packed int4 model, the only quant here that lowers
+          # to _weight_int4pack_mm and so runs the int4mm shim that train's nvcc built.
           - model_repo: "facebook"
             model_name: "dinov2-small-imagenet1k-1-layer"
             quant: "non-quantized"
@@ -157,7 +157,8 @@ jobs:
         echo "::endgroup::"
 
         # The image carries one train's toolkits; another train fetches its own Linux nvcc,
-        # which decides the torch install_executorch picks, and the Windows runtime it links.
+        # which decides the torch install_executorch picks, and its own Windows runtime to
+        # link against.
         # Under the job's temp directory: the image runs as ci-user, which cannot write to /opt.
         if [ "$(nvcc --version | sed -n 's/.*release \([0-9.]*\),.*/\1/p')" != "${{ matrix.cuda-version }}" ]; then
           echo "::group::Install the CUDA ${{ matrix.cuda-version }} toolkits"
@@ -205,9 +206,9 @@ jobs:
     name: test-model-cuda-windows-e2e-${{ matrix.cuda-version }} (${{ matrix.model_name }}, ${{ matrix.quant }})
     # Same path filter as the export job above. Not gated on the export succeeding: that
     # result covers the whole matrix, so one row's failed export (say one model's) would
-    # skip every row here. Each row downloads its own artifact and
-    # fails on the download if its export failed. The skipped check keeps a fork pull
-    # request, where nothing was exported, from running this and failing on the download.
+    # skip every row here. Each row downloads its own artifact and fails on the download
+    # if its export failed. The `result != 'skipped'` condition keeps a fork pull request,
+    # where nothing was exported, from running this and failing on the download.
     needs: [changed-files, export-model-cuda-windows-artifact, run-decision]
     if: |
       !cancelled() &&

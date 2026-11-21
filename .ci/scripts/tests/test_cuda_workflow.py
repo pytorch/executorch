@@ -169,7 +169,7 @@ class CudaWorkflowTest(unittest.TestCase):
         self.assertIn("!cancelled()", gate)
         self.assertIn("export-model-cuda-windows-artifact.result != 'skipped'", gate)
 
-    def test_windows_export_image_matches_the_export_job(self):
+    def test_windows_export_fetches_toolkits_the_image_lacks(self):
         build = (ROOT / ".ci" / "docker" / "build.sh").read_text()
         match = re.search(
             r"executorch-ubuntu-22\.04-cuda-windows\)(.*?);;", build, re.S
@@ -205,6 +205,15 @@ class CudaWorkflowTest(unittest.TestCase):
             'export WINDOWS_CUDA_HOME="${TOOLKITS}/cuda-windows-${{ matrix.cuda-version }}"',
             script,
         )
+        # The fetched nvcc decides the torch train install_executorch picks, and the
+        # e2e runs CPU torch on Windows, so only this assert sees which torch exported.
+        for line in (
+            'export PATH="${CUDA_HOME}/bin:${PATH}"',
+            'export CUDACXX="${CUDA_HOME}/bin/nvcc"',
+            "assert v == '${{ matrix.cuda-version }}'",
+        ):
+            with self.subTest(line=line):
+                self.assertIn(line, script)
 
     def test_cuda_builds_take_the_node_driver_on_an_unpinned_v3(self):
         # This job used to pin linux_job_v2 to a test-infra SHA because that was
