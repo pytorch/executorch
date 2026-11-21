@@ -82,7 +82,7 @@ class EspSubRelu(EspSub):
     ops_after_transforms = {
         _SUB: 0,
         _ESP_ADD: 1,
-        exir_ops.edge.esp_nn.quantized_lut_int8.default: 1,
+        exir_ops.edge.esp_nn.quantized_lut_int8.default: 0,
         exir_ops.edge.aten.relu.default: 0,
     }
 
