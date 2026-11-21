@@ -625,10 +625,11 @@ jobs:
           pip install "helion==1.5.2"
           python -c "import helion._compiler._dynamo.higher_order_ops, helion._compiler._dynamo.variables, helion.runtime.kernel"
 
-          # With Helion installed, the only skip left in the lowering tests is
-          # a missing GPU, and pytest exits 0 on a skip. Run them here, before
-          # the long builds, and treat a skip as a failure like the device
-          # placement test above.
+          # With Helion installed on this job's runner, the only skip left in
+          # the lowering tests is a missing GPU (the SM80 padded case is
+          # skipped only under the internal Buck runner), and pytest exits 0
+          # on a skip. Run them here, before the long builds, and treat a
+          # skip as a failure like the device placement test above.
           set +e
           python -m pytest backends/cuda/tests/test_lower_helion_to_triton.py -v -rs -o "addopts=" \
             2>&1 | tee /tmp/lower_helion_test.log
