@@ -13,17 +13,24 @@ defers all unpacking, serving as the canonical GGUF loading representation:
 * ``iter_gguf(path)`` -> streams ``(name, ExportableGGUFTensor | Tensor)`` pairs
   (quantized tensors become subclasses; F32/F16 stay plain). No unpacking at load.
 * As a weight, it dequantizes via the ``torchao::dequantize_gguf`` custom op
-  (gguf-package eager body) then a plain ``linear`` / ``embedding`` -- a backend
-  can pattern-match ``dequantize_gguf`` -> linear/embedding to fuse.
-* ``.to_exportable_int4_tensor()`` / ``.to_intx_unpacked_to_int8_tensor()`` convert
-  into ExecuTorch/torchao subclasses (``ExportableInt4Tensor`` /
-  ``IntxUnpackedToInt8Tensor``) instead.
+  (k-quants through the gguf package; NVFP4 decoded in torch) then a plain
+  ``linear`` / ``embedding`` -- a backend can pattern-match ``dequantize_gguf``
+  -> linear/embedding to fuse.
+* ``.to_exportable_int4_tensor()`` / ``.to_intx_unpacked_to_int8_tensor()`` /
+  ``.to_exportable_nvfp4_tensor()`` convert into ExecuTorch/torchao subclasses
+  (``ExportableInt4Tensor`` / ``IntxUnpackedToInt8Tensor`` /
+  ``ExportableNVFP4Tensor``) instead.
 
-The quant type is a string (``"q4_k"`` / ``"q5_k"`` / ``"q6_k"``); the ``gguf``
-package's integer ``GGMLQuantizationType`` ids are an internal lookup detail.
-Which tensors to convert is the caller's policy.
+The quant type is a string (``"q4_k"`` / ``"q5_k"`` / ``"q6_k"`` / ``"nvfp4"``);
+the ``gguf`` package's integer ``GGMLQuantizationType`` ids are an internal
+lookup detail. Which tensors to convert is the caller's policy.
 
-Attribution: Q4_K / Q5_K / Q6_K block layouts follow llama.cpp / gguf-py
+NVFP4 blocks are not self-contained: GGUF stores the per-tensor scale of
+``<name>.weight`` in a separate F32 ``<name>.scale`` tensor. The NVFP4 values
+here exclude it; callers pair it by name and pass it to
+``to_exportable_nvfp4_tensor``.
+
+Attribution: Q4_K / Q5_K / Q6_K / NVFP4 block layouts follow llama.cpp / gguf-py
 (``ggml-common.h``), MIT-licensed (Copyright (c) 2023-2024 The ggml authors).
 """
 
@@ -34,6 +41,7 @@ from typing import Iterator, Optional, Tuple, Union
 import numpy as np
 import torch
 from torch import Tensor
+from torchao.prototype.mx_formats.kernels import f4_unpacked_to_f32
 from torchao.utils import TorchAOBaseTensor
 
 aten = torch.ops.aten
@@ -50,6 +58,12 @@ _Q4_K_BLOCK_BYTES = 2 + 2 + 12 + QK_K // 2  # 144
 _Q5_K_BLOCK_BYTES = 2 + 2 + 12 + QK_K // 8 + QK_K // 2  # 176
 _Q6_K_BLOCK_BYTES = 2 + QK_K // 2 + QK_K // 4 + QK_K // 16  # 210
 
+# GGML NVFP4: four K16 groups per block, four UE4M3 scale bytes then E2M1 codes.
+QK_NVFP4 = 64
+NVFP4_GROUP_SIZE = 16
+_NVFP4_GROUPS = QK_NVFP4 // NVFP4_GROUP_SIZE  # 4
+_NVFP4_BLOCK_BYTES = _NVFP4_GROUPS + QK_NVFP4 // 2  # 36
+
 # ``gguf.GGMLQuantizationType`` integer ids.
 GGML_F32 = 0
 GGML_F16 = 1
@@ -57,8 +71,6 @@ GGML_Q4_K = 12
 GGML_Q5_K = 13
 GGML_Q6_K = 14
 GGML_NVFP4 = 40
-QK_NVFP4 = 64
-_NVFP4_BLOCK_BYTES = 36
 
 # String quant-type names are the user-facing identifier (op arg + subclass attr).
 # These dicts map names to the internal ids / block sizes.
@@ -86,44 +98,20 @@ def _read_f16(raw: Tensor, col_start: int, col_end: int) -> Tensor:
 
 
 def _dequantize_gguf(raw: Tensor, ggml_type: str, output_dtype: torch.dtype) -> Tensor:
-    """Dequantize a raw GGUF block blob to a float tensor via the ``gguf`` package.
+    """Dequantize a raw GGUF block blob to a float tensor (k-quants via the
+    ``gguf`` package, NVFP4 in torch without its per-tensor scale).
 
     ``raw`` is ``(N, row_bytes)`` uint8; the result is ``(N, K)`` in
     ``output_dtype``.
     """
     if ggml_type == "nvfp4":
-        n, row_bytes = raw.shape
-        blocks = raw.reshape(n, row_bytes // _NVFP4_BLOCK_BYTES, _NVFP4_BLOCK_BYTES)
-        raw_scales = blocks[..., :4]
-        scales = raw_scales & 0x7F
-        scales = torch.where(raw_scales == 0x7F, 0, scales).to(torch.uint8)
-        scales = scales.contiguous().view(torch.float8_e4m3fn).float()
+        n = raw.shape[0]
+        raw_scale, scale, codes = _nvfp4_fields(raw)
+        scale = scale.view(torch.float8_e4m3fn).float()
         # GGML checks 0x7f before ignoring bit 7, so 0xff decodes to 480.
-        scales = torch.where(raw_scales == 0xFF, 480.0, scales)
-        packed = blocks[..., 4:].reshape(n, -1, 4, 8)
-        codes = torch.cat((packed & 15, packed >> 4), dim=-1).long()
-        lut = torch.tensor(
-            [
-                0.0,
-                0.5,
-                1.0,
-                1.5,
-                2.0,
-                3.0,
-                4.0,
-                6.0,
-                0.0,
-                -0.5,
-                -1.0,
-                -1.5,
-                -2.0,
-                -3.0,
-                -4.0,
-                -6.0,
-            ],
-            device=raw.device,
-        )
-        return (lut[codes] * scales[..., None]).reshape(n, -1).to(output_dtype)
+        scale = torch.where(raw_scale == 0xFF, 480.0, scale)
+        values = f4_unpacked_to_f32(codes).reshape(n, -1, NVFP4_GROUP_SIZE)
+        return (values * scale[..., None]).reshape(n, -1).to(output_dtype)
 
     import gguf
 
@@ -137,7 +125,7 @@ def _dequantize_gguf(raw: Tensor, ggml_type: str, output_dtype: torch.dtype) -> 
     )
 
 
-# Fused ops (eager = gguf.dequantize + torch op; a backend may lower to kernels)
+# Fused ops (eager = dequantize + torch op; a backend may lower to kernels)
 
 
 @torch.library.custom_op("torchao::dequantize_gguf", mutates_args=())
@@ -159,6 +147,24 @@ def _(weight, ggml_type, output_dtype=torch.bfloat16):
 
 
 # Per-type field extraction (used by the to_*_tensor conversions)
+
+
+def _nvfp4_fields(raw: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
+    """Decode NVFP4 rows ``(N, row_bytes)``.
+
+    Returns ``(raw_scale, scale, codes)``: the raw scale bytes and the scale
+    bytes canonicalized to ``float8_e4m3fn`` (GGML UE4M3 ignores the sign bit
+    and treats 0x7f as zero), both ``(N, K // 16)`` uint8, and the ``(N, K)``
+    uint8 E2M1 codes in element order (GGML packs eight lows then eight highs
+    per K16 group) with code 8 (-0) canonicalized to +0.
+    """
+    n, row_bytes = raw.shape
+    blocks = raw.reshape(n, row_bytes // _NVFP4_BLOCK_BYTES, _NVFP4_BLOCK_BYTES)
+    raw_scale = blocks[..., :_NVFP4_GROUPS].reshape(n, -1)
+    scale = torch.where(raw_scale == 0x7F, 0, raw_scale & 0x7F).to(torch.uint8)
+    packed = blocks[..., _NVFP4_GROUPS:].reshape(n, -1, NVFP4_GROUP_SIZE // 2)
+    codes = torch.cat((packed & 15, packed >> 4), dim=-1).reshape(n, -1)
+    return raw_scale, scale, torch.where(codes == 8, 0, codes).to(torch.uint8)
 
 
 def _q4_k_fields(raw: Tensor, N: int, K: int) -> Tuple[Tensor, Tensor, Tensor]:
@@ -353,12 +359,13 @@ def _max_uniform_group_size(
 class ExportableGGUFTensor(TorchAOBaseTensor):
     """Wraps the raw GGUF block bytes for one quantized weight.
 
-    Stores the exact GGUF ``block_q*_K`` byte layout (no repacking) plus the
-    quant type string (``"q4_k"`` / ``"q5_k"`` / ``"q6_k"``). ``aten.linear`` /
+    Stores the exact GGUF block byte layout (no repacking) plus the quant type
+    string (``"q4_k"`` / ``"q5_k"`` / ``"q6_k"`` / ``"nvfp4"``). ``aten.linear`` /
     ``aten.embedding`` dequantize via the ``torchao::dequantize_gguf`` op (then a
     plain linear/embedding); :meth:`to_exportable_int4_tensor` /
-    :meth:`to_intx_unpacked_to_int8_tensor` convert to ExecuTorch/torchao
-    subclasses instead.
+    :meth:`to_intx_unpacked_to_int8_tensor` / :meth:`to_exportable_nvfp4_tensor`
+    convert to ExecuTorch/torchao subclasses instead. An NVFP4 tensor holds only
+    the blocks; its per-tensor scale is the separate GGUF ``.scale`` tensor.
     """
 
     tensor_data_names = ["raw"]
@@ -416,59 +423,51 @@ class ExportableGGUFTensor(TorchAOBaseTensor):
         return ExportableGGUFTensor(self.raw.to(device), self.ggml_type, dtype)
 
     def dequantize(self, output_dtype: Optional[torch.dtype] = None) -> Tensor:
-        """Dequantize to a plain float tensor using the ``gguf`` package."""
+        """Dequantize to a plain float tensor (NVFP4 excludes the per-tensor scale)."""
         return torch.ops.torchao.dequantize_gguf(
             self.raw, self.ggml_type, output_dtype or self.orig_dtype
         )
 
     def to_exportable_nvfp4_tensor(
         self,
-        per_tensor_scale: Optional[Tensor] = None,
+        *,
+        per_tensor_scale: Tensor,
         output_dtype: Optional[torch.dtype] = None,
         act_per_tensor_scale: Optional[float] = None,
     ) -> Tensor:
         """Losslessly repack GGML NVFP4 blocks to the portable torchao layout.
 
+        ``per_tensor_scale`` is the scalar from the GGUF ``<name>.scale``
+        companion and ``act_per_tensor_scale`` the optional ``<name>.input_scale``
+        (see ``ExportableNVFP4Tensor``); the caller pairs them by name.
+
         GGML packs eight lows followed by eight highs in each K16 group;
-        torchao packs the even element in the low nibble. GGML UE4M3 ignores
-        the sign bit and treats 0x7f as zero, which must be canonicalized before
-        interpreting the scales as torch.float8_e4m3fn. GGML's 0xff scale
-        decodes to 480 (outside finite E4M3), so conversion rejects it. GGML
-        represents both zero codes as integer zero; code 8 is canonicalized
-        to code 0 to preserve the positive-zero bit pattern.
+        torchao packs the even element in the low nibble. GGML's 0xff scale
+        decodes to 480 (outside finite E4M3), so conversion rejects it.
         """
         from executorch.extension.llm.export.nvfp4 import ExportableNVFP4Tensor
+        from torch._subclasses.fake_tensor import is_fake
         from torchao.prototype.mx_formats.kernels import pack_uint4
 
         if self.ggml_type != "nvfp4":
-            raise ValueError(f"Expected nvfp4, got {self.ggml_type!r}")
-        n, k = self.shape
-        blocks = self.raw.reshape(n, k // QK_NVFP4, _NVFP4_BLOCK_BYTES)
-        raw_scale = blocks[..., :4]
-        from torch._subclasses.fake_tensor import is_fake
-
+            raise NotImplementedError(
+                f"to_exportable_nvfp4_tensor only supports nvfp4; got {self.ggml_type!r}"
+            )
+        raw_scale, scale, codes = _nvfp4_fields(self.raw)
         if not is_fake(raw_scale) and bool(torch.any(raw_scale == 0xFF)):
             raise ValueError(
                 "GGML NVFP4 scale 0xff decodes to 480, which cannot be represented losslessly as E4M3"
             )
-        scale = raw_scale & 0x7F
-        scale = torch.where(raw_scale == 0x7F, 0, scale).to(torch.uint8)
-        packed = blocks[..., 4:].reshape(n, -1, 8)
-        codes = torch.cat((packed & 15, packed >> 4), dim=-1).reshape(n, k)
-        codes = torch.where(codes == 8, 0, codes).to(torch.uint8)
-        qdata = pack_uint4(codes).contiguous().view(torch.uint32)
         pts = torch.as_tensor(
-            1.0 if per_tensor_scale is None else per_tensor_scale,
-            dtype=torch.float32,
-            device=self.raw.device,
+            per_tensor_scale, dtype=torch.float32, device=self.raw.device
         )
         if pts.numel() != 1:
             raise ValueError("NVFP4 per_tensor_scale must be a scalar")
         return ExportableNVFP4Tensor(
-            qdata,
-            scale.reshape(n, k // 16).contiguous(),
+            pack_uint4(codes).contiguous().view(torch.uint32),
+            scale,
             pts.reshape(()),
-            16,
+            NVFP4_GROUP_SIZE,
             output_dtype or self.orig_dtype,
             act_per_tensor_scale,
         )
@@ -651,7 +650,9 @@ def iter_gguf(
     Quantized tensors (Q4_K, Q5_K, Q6_K, NVFP4) are wrapped as
     ``ExportableGGUFTensor`` with the raw block bytes; F32/F16/BF16 are returned
     as plain float tensors in their native dtype. GGUF shapes are reversed to
-    PyTorch ``(N, K)`` convention.
+    PyTorch ``(N, K)`` convention. The per-tensor scale of an NVFP4
+    ``<name>.weight`` is yielded as its own ``<name>.scale`` F32 tensor; callers
+    pair it by name (see :meth:`ExportableGGUFTensor.to_exportable_nvfp4_tensor`).
     """
     from gguf import GGMLQuantizationType, GGUFReader
 

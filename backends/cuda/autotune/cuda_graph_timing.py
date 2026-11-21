@@ -101,16 +101,9 @@ def time_with_cuda_graph_us_counted(
     and fallback counts of the active ``cuda_graph_timing()``."""
     stats = _STATE.stats
     if stats is None:
-        if statistic == "min" and replays == 1:
-            return time_with_cuda_graph_us(fn)
         return time_with_cuda_graph_us(fn, statistic=statistic, replays=replays)
     try:
-        if statistic == "min" and replays == 1:
-            us = _time_capturing_robustly(fn, stats)
-        else:
-            us = _time_capturing_robustly(
-                fn, stats, statistic=statistic, replays=replays
-            )
+        us = _time_capturing_robustly(fn, stats, statistic=statistic, replays=replays)
     except Exception:
         stats.fallbacks += 1
         raise
@@ -287,19 +280,13 @@ def _time_capturing_robustly(
     statistic: str = "min",
     replays: int = 1,
 ) -> float:
-    if statistic == "min" and replays == 1:
-        timer = time_with_cuda_graph_us
-    else:
-        timer = lambda fn: time_with_cuda_graph_us(
-            fn, statistic=statistic, replays=replays
-        )
     try:
-        return timer(fn)
+        return time_with_cuda_graph_us(fn, statistic=statistic, replays=replays)
     except torch.OutOfMemoryError:
         stats.oom_retries += 1
         _cleanup_after_oom()
     try:
-        return timer(fn)
+        return time_with_cuda_graph_us(fn, statistic=statistic, replays=replays)
     except torch.OutOfMemoryError:
         stats.oom_retries += 1
         _cleanup_after_oom()
@@ -311,7 +298,7 @@ def _time_capturing_robustly(
             "CUDA-graph autotune timing: parked %.1f GiB of model tensors on the CPU to capture a candidate",
             parked_bytes / (1 << 30),
         )
-        return timer(fn)
+        return time_with_cuda_graph_us(fn, statistic=statistic, replays=replays)
 
 
 def _time_candidate_with_cuda_graph(
