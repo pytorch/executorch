@@ -38,14 +38,17 @@ from executorch.backends.cuda.triton.kernels.conv.core.common import (
     dense_strides,
     Schedule,
 )
-from executorch.backends.cuda.triton.kernels.gemm import tile
+from executorch.backends.cuda.triton.kernels.gemm import gemv, tile
 from executorch.backends.cuda.triton.routing import device_supports
 from torch.library import triton_op
 
-SCHEDULES = (Schedule("ieee_tile", 0),)
+# The first is legal for every call (the fallback of the timed choice).
+SCHEDULES = (Schedule("ieee_tile", 0), Schedule("gemv", 0))
+_RUN = {"ieee_tile": tile.run, "gemv": gemv.run}
 # The smallest tile any schedule launches, which bounds the grid.
 _MIN_TILE = (16, 32)
 _MAX_GRID = 2**31 - 1
+_INT32_MAX = 2**31 - 1
 
 
 def matmul_allows_tf32() -> bool:
@@ -92,6 +95,21 @@ class LinearLayout:
     x: tuple[int, int]
     weight: tuple[int, int]
     out: tuple[int, int]
+
+    def index_64(self) -> bool:
+        """Whether an offset exceeds the int32 range."""
+
+        def max_offset(size: tuple[int, int], strides: tuple[int, int]) -> int:
+            return sum((n - 1) * s for n, s in zip(size, strides) if n > 0)
+
+        return (
+            max(
+                max_offset((self.m, self.k), self.x),
+                max_offset((self.n, self.k), self.weight),
+                max_offset((self.m, self.n), self.out),
+            )
+            > _INT32_MAX
+        )
 
 
 def output_shape(x: torch.Tensor, weight: torch.Tensor) -> tuple[int, ...]:
@@ -189,7 +207,9 @@ def force_linear_candidate(
         _FORCED.reset(token)
 
 
-def schedule_supports(name: str, x: torch.Tensor) -> Optional[str]:
+def schedule_supports(
+    name: str, x: torch.Tensor, layout: LinearLayout
+) -> Optional[str]:
     """Why schedule ``name`` cannot run a call ``layout_reason`` accepts, or
     None."""
     schedule = next((s for s in SCHEDULES if s.name == name), None)
@@ -197,6 +217,8 @@ def schedule_supports(name: str, x: torch.Tensor) -> Optional[str]:
         return f"unknown schedule {name}"
     if not device_supports(schedule.min_capability, x.device):
         return f"{name} needs sm_{schedule.min_capability}"
+    if name == "gemv":
+        return gemv.supports(layout.m)
     return None
 
 
@@ -210,7 +232,7 @@ def run_schedule(
     config: Optional[triton.Config] = None,
 ) -> None:
     """Launches schedule ``name``; ``config`` replaces its autotuned config."""
-    tile.run(x, weight, bias, out, layout, config)
+    _RUN[name](x, weight, bias, out, layout, config)
 
 
 @autotune_launch_param("schedule", tuple(s.name for s in SCHEDULES))
@@ -224,7 +246,7 @@ def launch(
     schedule: str,
 ) -> None:
     """Runs the linear into ``out``; during AOTI compile the schedule is timed."""
-    reason = schedule_supports(schedule, x)
+    reason = schedule_supports(schedule, x, layout)
     if reason is not None:
         raise InvalidLaunchParam(reason)
     run_schedule(schedule, x, weight, bias, out, layout)
@@ -263,7 +285,7 @@ def linear(
         launch(x, weight, bias, out, layout)
         return out
     schedule, config = forced
-    reason = schedule_supports(schedule, x)
+    reason = schedule_supports(schedule, x, layout)
     if reason is not None:
         raise ValueError(
             f"forced schedule cannot run {signature(x, weight, bias, strides)}: {reason}"
