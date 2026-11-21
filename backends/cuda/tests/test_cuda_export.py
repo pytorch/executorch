@@ -164,7 +164,7 @@ class TestCudaBackendCompileOptions(unittest.TestCase):
     def test_move_and_compile_agree_on_autotune_at_compile_time(self):
         on = CompileSpec(key="autotune_at_compile_time", value=b"ON")
         off = CompileSpec(key="autotune_at_compile_time", value=b"OFF")
-        for specs in ([on], [off], [on, off], [off, on]):
+        for specs in ([], [on], [off], [on, off], [off, on]):
             with self.subTest(specs=specs):
                 options = CudaBackend.get_aoti_compile_options(specs)
                 self.assertEqual(
@@ -173,10 +173,25 @@ class TestCudaBackendCompileOptions(unittest.TestCase):
                 )
 
     def test_invalid_autotune_at_compile_time_compile_spec(self):
-        with self.assertRaisesRegex(ValueError, "Invalid autotune_at_compile_time"):
-            CudaBackend.get_aoti_compile_options(
-                [CompileSpec(key="autotune_at_compile_time", value=b"MAYBE")]
-            )
+        maybe = CompileSpec(key="autotune_at_compile_time", value=b"MAYBE")
+        on = CompileSpec(key="autotune_at_compile_time", value=b"ON")
+        for specs in ([maybe], [maybe, on]):
+            with self.subTest(specs=specs):
+                with self.assertRaisesRegex(
+                    ValueError, "Invalid autotune_at_compile_time"
+                ):
+                    CudaBackend.get_aoti_compile_options(specs)
+
+    def test_low_memory_mode_rejects_share_weights_off_or_invalid(self):
+        self.assertTrue(
+            CudaBackend._shares_weights([_LOW_MEMORY_ON, _SHARE_WEIGHTS_ON])
+        )
+        off = CompileSpec(key="share_weights", value=b"OFF")
+        with self.assertRaisesRegex(ValueError, "share_weights=OFF"):
+            CudaBackend._shares_weights([_LOW_MEMORY_ON, off])
+        invalid = CompileSpec(key="share_weights", value=b"YES")
+        with self.assertRaisesRegex(ValueError, "Invalid share_weights"):
+            CudaBackend._shares_weights([_LOW_MEMORY_ON, invalid])
 
     def test_target_smem_context_is_applied(self):
         with patch(

@@ -1594,7 +1594,6 @@ class CudaBackend(AotiBackend, BackendDetails):
         platform = "linux"
         emulate_precision_casts = True
         max_autotune = True
-        autotune_at_compile_time = None
         shim_library_path = None
         for spec in compile_specs:
             if spec.key == "platform":
@@ -1603,14 +1602,15 @@ class CudaBackend(AotiBackend, BackendDetails):
                 emulate_precision_casts = _on_off_compile_spec_value(spec)
             elif spec.key == "max_autotune":
                 max_autotune = _on_off_compile_spec_value(spec)
-            elif spec.key == "autotune_at_compile_time":
-                autotune_at_compile_time = _on_off_compile_spec_value(spec)
             elif spec.key == "shim_library_path":
                 shim_library_path = spec.value.decode("utf-8")
         options["emulate_precision_casts"] = emulate_precision_casts
         options["max_autotune"] = max_autotune
-        if autotune_at_compile_time is not None:
-            options["triton.autotune_at_compile_time"] = autotune_at_compile_time
+        # Set even without a spec, so the compile uses the same value that
+        # move_program_to_device used to decide what to copy.
+        options["triton.autotune_at_compile_time"] = cls._autotunes_at_compile_time(
+            compile_specs
+        )
         # The final autotuning pass picks each kernel's launch settings by
         # running it on random tensors shaped like its inputs, weights included,
         # so in low-memory mode the real weights wait in a file meanwhile instead
@@ -1780,19 +1780,27 @@ class CudaBackend(AotiBackend, BackendDetails):
     @classmethod
     def _shares_weights(cls, compile_specs: List[CompileSpec]) -> bool:
         """Return True if preprocess shares the program's tensors with the caller."""
-        if cls._is_low_memory_mode(compile_specs):
-            return True
-        for spec in reversed(compile_specs):
+        share_weights = None
+        for spec in compile_specs:
             if spec.key == SHARE_WEIGHTS_COMPILE_SPEC:
-                return _on_off_compile_spec_value(spec)
-        return False
+                share_weights = _on_off_compile_spec_value(spec)
+        if cls._is_low_memory_mode(compile_specs):
+            if share_weights is False:
+                raise ValueError(
+                    "low_memory_mode always shares the weights, so it cannot be "
+                    "combined with share_weights=OFF."
+                )
+            return True
+        return bool(share_weights)
 
     @staticmethod
     def _autotunes_at_compile_time(compile_specs: List[CompileSpec]) -> bool:
-        # The last spec wins, as in ``get_aoti_compile_options``.
-        for spec in reversed(compile_specs):
+        autotune = None
+        for spec in compile_specs:
             if spec.key == "autotune_at_compile_time":
-                return _on_off_compile_spec_value(spec)
+                autotune = _on_off_compile_spec_value(spec)
+        if autotune is not None:
+            return autotune
         # Inductor's default (None) turns it on for AOT compiles.
         return torch._inductor.config.triton.autotune_at_compile_time is not False
 
