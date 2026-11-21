@@ -23,22 +23,27 @@ placeholder itself; only the GEMM node is replaced, and a transpose left
 without users is removed with it.
 
 The regular lowering (Inductor) runs every such call. ``triton::linear`` runs
-the calls its layout ABI accepts (``linear.layout_reason``). The family does
-not opt in to measured routing yet: its static choice decides, and it is the
-regular lowering unless ``worth_routing`` takes the call.
+the calls its layout ABI accepts (``linear.layout_reason``). The family opts
+in to measured routing; its static choice, which decides with measurement off
+or for a call that cannot be measured, is ``triton::linear`` for the
+matrix-vector class ``worth_routing`` takes and the regular lowering
+otherwise.
 """
 
 from __future__ import annotations
 
 import logging
+import math
 from typing import Any, Optional
 
 import torch
+from executorch.backends.cuda.triton.kernels.gemm.gemv import MAX_ROWS
 from executorch.backends.cuda.triton.kernels.gemm.linear import (
     describe,
     layout_reason,
     matmul_allows_tf32,
     output_shape,
+    row_stride,
     signature,
 )
 from executorch.backends.cuda.triton.routing import (
@@ -74,12 +79,72 @@ class _Refused(Exception):
     pass
 
 
+# The matrix-vector class the static choice routes (``gemv_boundary_calls``
+# lists its corners; ``benchmarks/gemm/benchmark_linear.py`` measures them).
+GEMV_MIN_N = 64
+GEMV_MIN_K = 1024
+# Elements per 16 bytes: the rows of both operands and their bases must be
+# aligned to it for the streamed slabs to load as vectors.
+GEMV_K_ALIGNMENT = 4
+# The largest weights measured.
+GEMV_MAX_N = 262144
+GEMV_MAX_K = 16384
+GEMV_MAX_WEIGHT = 2**29
+
+
 def worth_routing(
     x: torch.Tensor, weight: torch.Tensor, bias: Optional[torch.Tensor]
 ) -> Optional[str]:
     """Why a call ``triton::linear`` runs is left to the regular lowering when
-    it is not measured, or None."""
-    return "no shape class is routed without measurement"
+    it is not measured, or None: only calls of at most ``MAX_ROWS`` rows
+    whose weight is large enough to keep the matrix-vector schedule's memory
+    stream busy, with contiguous input rows, and with the rows and bases of
+    both operands aligned for vector loads, are routed."""
+    m = math.prod(x.shape[:-1])
+    n, k = weight.shape
+    if m > MAX_ROWS:
+        return f"{m} rows: only calls of at most {MAX_ROWS} rows are routed"
+    if x.stride(-1) != 1:
+        return f"input strides {list(x.stride())}: its rows are not contiguous"
+    if k % GEMV_K_ALIGNMENT:
+        return (
+            f"K={k} is not a multiple of {GEMV_K_ALIGNMENT}: the weight's rows are "
+            "not aligned for vector loads"
+        )
+    rows = row_stride(x.shape, x.stride())
+    if m > 1 and rows % GEMV_K_ALIGNMENT:
+        return (
+            f"input row stride {rows} is not a multiple of {GEMV_K_ALIGNMENT}: its "
+            "rows are not aligned for vector loads"
+        )
+    for name, t in (("input", x), ("weight", weight)):
+        if t.storage_offset() % GEMV_K_ALIGNMENT:
+            return (
+                f"{name} storage offset {t.storage_offset()} is not a multiple of "
+                f"{GEMV_K_ALIGNMENT}: its base is not aligned for vector loads"
+            )
+    if not (
+        GEMV_MIN_N <= n <= GEMV_MAX_N
+        and GEMV_MIN_K <= k <= GEMV_MAX_K
+        and n * k <= GEMV_MAX_WEIGHT
+    ):
+        return (
+            f"a [{n}, {k}] weight is outside the matrix-vector class (N in "
+            f"[{GEMV_MIN_N}, {GEMV_MAX_N}], K in [{GEMV_MIN_K}, {GEMV_MAX_K}], "
+            f"at most {GEMV_MAX_WEIGHT} elements)"
+        )
+    return None
+
+
+def gemv_boundary_calls() -> list[tuple[int, int, int]]:
+    """``(rows, N, K)`` at every corner of the matrix-vector class, with the
+    first weight sizes past its floors that leave tile remainders."""
+    return [
+        (m, n, k)
+        for m in (1, 2, MAX_ROWS)
+        for k in (GEMV_MIN_K, GEMV_MIN_K + GEMV_K_ALIGNMENT, GEMV_MAX_K)
+        for n in (GEMV_MIN_N, GEMV_MIN_N + 1, min(GEMV_MAX_N, GEMV_MAX_WEIGHT // k))
+    ]
 
 
 def _bind(node: Node) -> dict[str, Any]:
@@ -194,4 +259,5 @@ def plan(node: Node) -> ReplacementPlan:
         REGULAR_LOWERING if worth is not None else REPLACEMENT,
         worth or "",
         signature(xv, wv, bv, strides),
+        measure=True,
     )
