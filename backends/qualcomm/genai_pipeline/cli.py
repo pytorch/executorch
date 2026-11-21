@@ -31,28 +31,42 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 from dataclasses import replace
 from typing import Any, Dict, List, Optional
 
+from executorch.backends.qualcomm.genai_pipeline.configs.inference_output_config import (
+    InferenceOutputConfig,
+)
 from executorch.backends.qualcomm.genai_pipeline.control_args import (
+    ControlArgs,
     DEFAULT_ARTIFACT,
     DEFAULT_BACKEND,
     DEFAULT_BATCH_SIZE,
     DEFAULT_CALIB_HF_LIMIT,
     DEFAULT_CALIB_LIMIT,
     DEFAULT_DTYPE_OVERRIDE,
+    DEFAULT_EVAL_LIMIT,
+    DEFAULT_EVAL_METHOD,
     DEFAULT_GCAP,
     DEFAULT_MAX_SEQ_LEN,
     DEFAULT_MODEL_MODE,
     DEFAULT_NGRAM,
     DEFAULT_PREFILL_AR_LEN,
+    DEFAULT_TARGET,
+    DEFAULT_TEMPERATURE,
     DEFAULT_WINDOW,
+    PROMPT_EVAL,
+    SQNR_EVAL,
+    TASKS_EVAL,
 )
-from executorch.backends.qualcomm.genai_pipeline.genai_pipeline import QuantizationStage
-from executorch.backends.qualcomm.genai_pipeline.stages.model_preparation_stage import (
+from executorch.backends.qualcomm.genai_pipeline.stages import (
+    CompilationStage,
+    InferenceStage,
     ModelPreparationStage,
+    QuantizationStage,
 )
 
 logger = logging.getLogger(__name__)
@@ -194,6 +208,40 @@ def build_parser() -> argparse.ArgumentParser:
         f"(default: {DEFAULT_CALIB_HF_LIMIT}).",
     )
 
+    # --- Evaluation ---
+    parser.add_argument(
+        "--eval-methods",
+        choices=[PROMPT_EVAL, TASKS_EVAL, SQNR_EVAL],
+        type=str,
+        nargs="+",
+        default=[DEFAULT_EVAL_METHOD],
+        help=f"Choose eval methods(default: {DEFAULT_EVAL_METHOD}). Users can provide more than 1 eval methods. For example: --eval-methods tasks_eval sqnr_eval."
+        "Following eval methods are supported:"
+        "1) prompt_eval: Model will generate the output response based on the provided prompt through the flag --prompt."
+        "2) tasks_eval: This will eval the tasks provided through the flag --eval-tasks."
+        "3) sqnr_eval: This will eval the sqnr between QNN's output logit V.S. Static Llama nn.Module's output logit. Eval is based on the provided prompt through the --prompt flag. Please note that sqnr will only eval the prompt's logit but not the new generated token's logit.",
+    )
+    parser.add_argument(
+        "--eval-tasks",
+        type=str,
+        nargs="+",
+        default=None,
+        help="lm-eval tasks to evaluate on, e.g. --eval-tasks wikitext.",
+    )
+    parser.add_argument(
+        "--eval-limit",
+        type=int,
+        default=DEFAULT_EVAL_LIMIT,
+        help=f"How many samples to evaluate on (default: {DEFAULT_EVAL_LIMIT}).",
+    )
+    parser.add_argument(
+        "--eval-num-fewshot",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Number of few-shot examples in each evaluation sample.",
+    )
+
     # --- Backend and SoC selection ---
     parser.add_argument(
         "--soc",
@@ -209,13 +257,45 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"QNN backend type (default: {DEFAULT_BACKEND}).",
     )
 
-    # --- Runtime prompt ---
+    # --- Runtime prompts, multimodal inputs and runtime tokenizer path ---
     parser.add_argument(
         "--prompt",
         type=str,
         nargs="+",
         default=["Hello, how are you?"],
         help="User prompt(s) for text generation.",
+    )
+    parser.add_argument(
+        "--system-prompt",
+        type=str,
+        default="",
+        help="System prompt for models that support one.",
+    )
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=DEFAULT_TEMPERATURE,
+        help=f"Sampling temperature for text generation (default: {DEFAULT_TEMPERATURE}).",
+    )
+    parser.add_argument(
+        "--audio-path",
+        type=str,
+        nargs="+",
+        default=[],
+        help="Audio file(s) for multimodal (ALM) models.",
+    )
+    parser.add_argument(
+        "--image-path",
+        type=str,
+        nargs="+",
+        default=[],
+        help="Image file(s) for multimodal (VLM) models.",
+    )
+    parser.add_argument(
+        "--runtime-tokenizer-path",
+        type=str,
+        default=None,
+        help="Path to the runtime tokenizer.",
     )
 
     # Graph shapes and modes
@@ -283,10 +363,55 @@ def build_parser() -> argparse.ArgumentParser:
         help="Only compile the model (skip inference).",
     )
     parser.add_argument(
+        "--pre-gen-pte",
+        type=str,
+        default=None,
+        help="Directory of .pte artifacts from a previous genai_pipeline "
+        "compilation; legacy llama.py artifacts are not recognized.",
+    )
+    parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
         help="Enable verbose logging.",
+    )
+
+    # --- Device ---
+    parser.add_argument(
+        "--build-folder",
+        type=str,
+        default=None,
+        help="path to cmake binary directory for target platform, e.g., /path/to/build-android",
+    )
+    parser.add_argument(
+        "--target",
+        type=str,
+        default=DEFAULT_TARGET,
+        help="Target platform for deployment",
+    )
+    parser.add_argument(
+        "--host",
+        type=str,
+        default=None,
+        help="hostname where android device is connected.",
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default=None,
+        help="serial number for android device communicated via ADB.",
+    )
+    parser.add_argument(
+        "--enable-x86-64",
+        "--enable_x86_64",
+        dest="enable_x86_64",
+        action="store_true",
+        help="Run with the x86 QNN runner.",
+    )
+    parser.add_argument(
+        "--online-prepare",
+        action="store_true",
+        help="If specified, compose QNN graph on device.",
     )
 
     # --- Features ---
@@ -345,9 +470,99 @@ def _validate_args(args: argparse.Namespace) -> None:
             "`use_attention_sink` is currently unsupported in GenAI Pipeline."
         )
 
-    from executorch.backends.qualcomm.genai_pipeline.model_lookup import is_multimodal
+    # Mirrors the legacy flow's restriction.
+    if args.model_mode == "hybrid" and args.online_prepare:
+        raise ValueError("Currently hybrid mode is not compatible with online_prepare.")
 
-    if is_multimodal(args.model) and args.batch_size != 1:
+    # As in the legacy flow: with both, every stage is skipped and nothing runs.
+    if args.compile_only and args.pre_gen_pte:
+        raise ValueError("Cannot set both compile_only and pre_gen_pte as true")
+
+    _validate_eval_args(args)
+    _validate_multimodal_args(args)
+
+    # Pre-generated PTEs skip quantization, as in the legacy flow.
+    if not (args.use_fp16 or args.pre_gen_pte) and not (
+        args.calib_tasks or args.calib_samples or args.calib_hf_dataset
+    ):
+        raise ValueError(
+            "Quantization requires calibration data. Provide --calib-tasks, "
+            "--calib-samples, or --calib-hf-dataset."
+        )
+
+
+def _validate_eval_args(args: argparse.Namespace) -> None:
+    """Validate the evaluation methods and the arguments each one needs.
+
+    Repeated methods are dropped in place, keeping their first occurrence.
+
+    Args:
+        args: Parsed CLI arguments.
+
+    Raises:
+        ValueError: If a requested method lacks an argument it needs, or
+            tasks_eval is requested for a mode other than kv or hybrid.
+    """
+    # Each method runs once, as in the legacy flow: a repeat would overwrite its
+    # result and share its output directory.
+    eval_methods = list(dict.fromkeys(args.eval_methods))
+    if eval_methods != args.eval_methods:
+        logger.warning("Ignoring repeated --eval-methods: %s", args.eval_methods)
+        args.eval_methods = eval_methods
+
+    # The runner evaluates logits in KV mode only, as in the legacy flow.
+    if TASKS_EVAL in args.eval_methods:
+        if args.model_mode not in {"kv", "hybrid"}:
+            raise ValueError(
+                "tasks_eval is only supported for KV mode. Hybrid mode will only "
+                "use KV mode when evaluating tasks."
+            )
+        if args.model_mode != "kv":
+            logger.warning(
+                "tasks_eval runs its forwards in kv mode; other methods keep %s",
+                args.model_mode,
+            )
+        if not args.eval_tasks:
+            raise ValueError(
+                "--eval-tasks is required when --eval-methods includes tasks_eval"
+            )
+
+    if SQNR_EVAL in args.eval_methods:
+        if args.model_mode != "kv":
+            logger.warning(
+                "sqnr_eval runs its forward in kv mode; other methods keep %s",
+                args.model_mode,
+            )
+        if len(args.prompt) != 1:
+            raise ValueError("sqnr_eval takes exactly one --prompt")
+        if args.batch_size != 1:
+            raise ValueError("sqnr_eval supports only --batch-size 1")
+
+
+def _validate_multimodal_args(args: argparse.Namespace) -> None:
+    """Validate the media inputs against whether and how the model is multimodal.
+
+    A multimodal model's batch size is forced to 1 in place, as multi-batch is
+    not supported for it yet.
+
+    Args:
+        args: Parsed CLI arguments.
+
+    Raises:
+        ValueError: If media is given to a text model, or does not fit the
+            multimodal model's modality.
+    """
+    from executorch.backends.qualcomm.genai_pipeline.model_lookup import (
+        is_multimodal,
+        validate_modality_inputs,
+    )
+
+    if not is_multimodal(args.model):
+        if args.audio_path or args.image_path:
+            raise ValueError("--audio-path and --image-path require a multimodal model")
+        return
+
+    if args.batch_size != 1:
         logger.warning(
             "Multi-batch is not supported for multimodal LLMs yet; "
             "forcing batch_size from %d to 1.",
@@ -355,13 +570,56 @@ def _validate_args(args: argparse.Namespace) -> None:
         )
         args.batch_size = 1
 
-    if not args.use_fp16 and not (
-        args.calib_tasks or args.calib_samples or args.calib_hf_dataset
-    ):
-        raise ValueError(
-            "Quantization requires calibration data. Provide --calib-tasks, "
-            "--calib-samples, or --calib-hf-dataset."
-        )
+    # Media inputs matter only when inference runs.
+    if not args.compile_only:
+        validate_modality_inputs(args.model, args.image_path, args.audio_path)
+
+
+def _skips_model_preparation(args: argparse.Namespace) -> bool:
+    """Whether model preparation is skipped for pre-generated PTEs.
+
+    tasks_eval needs the tokenizer and sqnr_eval the FP32 model, both from model
+    preparation, so they keep it even with pre-generated PTEs.
+
+    Args:
+        args: Parsed CLI arguments.
+
+    Returns:
+        ``True`` when ``--pre-gen-pte`` is given and no evaluation method needs
+        model preparation.
+    """
+    return bool(args.pre_gen_pte) and not {TASKS_EVAL, SQNR_EVAL} & set(
+        args.eval_methods
+    )
+
+
+def _load_runtime_tokenizer_path(args: argparse.Namespace, model_config: Any) -> str:
+    """Resolve the runtime tokenizer as model preparation's ``TokenizerWrapper`` does.
+
+    Used when model preparation is skipped, so the runner still gets the same
+    tokenizer file -- the ``.bin`` or tiktoken file the user supplied, or the
+    HF ``tokenizer.json`` saved into the artifact directory -- rather than a
+    guessed path.
+
+    Args:
+        args: Parsed CLI arguments.
+        model_config: The model's registry config.
+
+    Returns:
+        The runtime tokenizer path.
+    """
+    from executorch.examples.qualcomm.oss_scripts.llama.tokenizer import (
+        TokenizerWrapper,
+    )
+
+    # A copy carrying TokenizerWrapper's legacy field names, so ``args`` stays
+    # untouched.
+    control_args = replace(
+        ControlArgs.from_namespace(args),
+        decoder_model=args.model,
+        artifact=args.artifact_dir,
+    )
+    return TokenizerWrapper(control_args, model_config).runtime_tokenizer_path
 
 
 def _prepare_configs(args: argparse.Namespace) -> dict:
@@ -378,6 +636,7 @@ def _prepare_configs(args: argparse.Namespace) -> dict:
         DatasetOptions,
     )
     from executorch.backends.qualcomm.genai_pipeline.model_lookup import (
+        get_modality,
         get_model_arch,
         get_model_config,
         get_model_layout,
@@ -386,6 +645,7 @@ def _prepare_configs(args: argparse.Namespace) -> dict:
         get_quant_recipe,
         get_source_transform,
         get_state_dict_loader,
+        is_multimodal,
     )
 
     # TODO: Separate sequence and context lengths once attention sink is
@@ -426,6 +686,21 @@ def _prepare_configs(args: argparse.Namespace) -> dict:
         "quant_dtype": get_quant_dtype(args.model),
         "quant_recipe": get_quant_recipe(args.model),
     }
+    # Multi-image conversations keep the encoder in FP16, as the legacy flow
+    # does: quantization makes the images harder for the model to tell apart.
+    if is_multimodal(args.model) and len(args.image_path) > 1:
+        quantize_options["skip_quantize"] = [get_modality(args.model)]
+
+    # Device and build settings reach the runner through QnnConfig.load_config(args).
+    inference_options = {
+        "temperature": args.temperature,
+        "system_prompt": args.system_prompt,
+        "ngram": args.ngram,
+        "window": args.window,
+        "gcap": args.gcap,
+        "audio_path": args.audio_path,
+        "image_path": args.image_path,
+    }
 
     dataset_options = replace(
         DatasetOptions.from_namespace(args),
@@ -436,10 +711,35 @@ def _prepare_configs(args: argparse.Namespace) -> dict:
         "dataset_options": dataset_options,
         "model_options": model_options,
         "quantize_options": quantize_options,
+        "inference_options": inference_options,
+        # An explicit path wins; without model preparation, resolve it here.
+        "runtime_tokenizer_path": (
+            args.runtime_tokenizer_path
+            or (
+                _load_runtime_tokenizer_path(args, model_config)
+                if _skips_model_preparation(args)
+                else None
+            )
+        ),
     }
 
 
-def get_model_preparation_stage(args: argparse.Namespace) -> "ModelPreparationStage":
+def get_model_preparation_stage(
+    args: argparse.Namespace,
+) -> Optional["ModelPreparationStage"]:
+    """Construct the model preparation stage.
+
+    Args:
+        args: Parsed CLI arguments.
+
+    Returns:
+        The model preparation stage, or ``None`` when pre-generated PTEs make it
+        unnecessary; see ``_skips_model_preparation``.
+    """
+    if _skips_model_preparation(args):
+        logger.info("Skipping model preparation: using pre-generated PTE artifacts")
+        return None
+
     from executorch.backends.qualcomm.genai_pipeline.model_lookup import (
         get_model_loader_adapter,
     )
@@ -451,6 +751,7 @@ def get_model_preparation_stage(args: argparse.Namespace) -> "ModelPreparationSt
     model_preparation_stage = ModelPreparationStage(
         ExecuTorchModelPreparationStrategy(model_loader_adapter=model_loader_adapter)
     )
+    logger.info("Created model preparation stage for model '%s'", args.model)
     return model_preparation_stage
 
 
@@ -458,7 +759,24 @@ def get_quantization_stage(
     args: argparse.Namespace,
     dataset_options: Dict[str, Any],
     quantize_options: Dict[str, Any],
-) -> "QuantizationStage":
+) -> Optional["QuantizationStage"]:
+    """Construct the quantization stage.
+
+    Args:
+        args: Parsed CLI arguments.
+        dataset_options: Calibration dataset options.
+        quantize_options: Per-component quantization dtype and recipes.
+
+    Returns:
+        The quantization stage, or ``None`` with pre-generated PTEs or FP16.
+    """
+    if args.pre_gen_pte:
+        logger.info("Skipping quantization: using pre-generated PTE artifacts")
+        return None
+    if args.use_fp16:
+        logger.info("Skipping quantization: FP16 inference requested")
+        return None
+
     from executorch.backends.qualcomm.genai_pipeline.datasets import (
         get_calibration_dataset_adapter,
     )
@@ -496,11 +814,96 @@ def get_quantization_stage(
     return quantization_stage
 
 
-def run_pipeline(args: argparse.Namespace) -> None:
+def get_compilation_stage(
+    args: argparse.Namespace,
+) -> Optional[CompilationStage]:
+    """Construct the compilation stage with the default compiler adapter.
+
+    Args:
+        args: Parsed CLI arguments.
+
+    Returns:
+        The compilation stage, or ``None`` with pre-generated PTEs.
+    """
+    if args.pre_gen_pte:
+        logger.info("Skipping compilation: using pre-generated PTE artifacts")
+        return None
+
+    from executorch.backends.qualcomm.genai_pipeline.strategies.compilation.default_compiler_adapter import (
+        DefaultCompilerAdapter,
+    )
+    from executorch.backends.qualcomm.genai_pipeline.strategies.compilation.executorch_compilation_strategy import (
+        ExecuTorchCompilationStrategy,
+    )
+
+    compilation_stage = CompilationStage(
+        ExecuTorchCompilationStrategy(compiler_adapter=DefaultCompilerAdapter())
+    )
+    logger.info("Created compilation stage for model '%s'", args.model)
+    return compilation_stage
+
+
+def get_inference_stage(args: argparse.Namespace) -> Optional[InferenceStage]:
+    """Construct the inference stage from the model and evaluation-method lookups.
+
+    Args:
+        args: Parsed CLI arguments.
+
+    Returns:
+        The inference stage, or ``None`` when only compiling.
+    """
+    if args.compile_only:
+        logger.info("Skipping inference: compile-only requested")
+        return None
+
+    from executorch.backends.qualcomm.export_utils import QnnConfig
+    from executorch.backends.qualcomm.genai_pipeline.evaluation.evaluator_lookup import (
+        get_evaluators,
+    )
+    from executorch.backends.qualcomm.genai_pipeline.inference.platforms import (
+        get_runner_platform,
+    )
+    from executorch.backends.qualcomm.genai_pipeline.model_lookup import is_multimodal
+    from executorch.backends.qualcomm.genai_pipeline.strategies.inference.executorch_inference_strategy import (
+        ExecuTorchInferenceStrategy,
+    )
+    from executorch.backends.qualcomm.genai_pipeline.strategies.inference.llm_runner_adapter import (
+        LLMRunnerAdapter,
+    )
+    from executorch.backends.qualcomm.genai_pipeline.strategies.inference.mllm_runner_adapter import (
+        MLLMRunnerAdapter,
+    )
+
+    qnn_config = QnnConfig.load_config(
+        argparse.Namespace(**vars(args), soc_model=args.soc)
+    )
+    platform = get_runner_platform(qnn_config, args.enable_x86_64)
+    adapter = (
+        MLLMRunnerAdapter(platform)
+        if is_multimodal(args.model)
+        else LLMRunnerAdapter(platform)
+    )
+
+    evaluators = get_evaluators(args.eval_methods, multimodal=is_multimodal(args.model))
+
+    inference_stage = InferenceStage(
+        ExecuTorchInferenceStrategy(
+            device_runner_adapter=adapter, evaluators=evaluators
+        )
+    )
+    logger.info("Created inference stage for model '%s'", args.model)
+    return inference_stage
+
+
+def run_pipeline(args: argparse.Namespace) -> InferenceOutputConfig:
     """Run the GenAI Pipeline with the given arguments.
 
     Args:
         args: Parsed CLI arguments.
+
+    Returns:
+        The inference results keyed by evaluation method; empty when inference
+        is skipped.
     """
     from executorch.backends.qualcomm.genai_pipeline.engine_proxy import EngineProxy
     from executorch.backends.qualcomm.genai_pipeline.genai_pipeline import GenAIPipeline
@@ -509,6 +912,8 @@ def run_pipeline(args: argparse.Namespace) -> None:
     )
     from executorch.backends.qualcomm.genai_pipeline.pipeline_types import (
         EngineType,
+        STAGE_COMPILATION,
+        STAGE_INFERENCE,
         STAGE_MODEL_PREPARATION,
         STAGE_QUANTIZATION,
     )
@@ -527,15 +932,29 @@ def run_pipeline(args: argparse.Namespace) -> None:
     # Build pipeline context
     extra_options = {
         "backend": args.backend,
+        # Compilation reads it from the context to compile for the x86 emulator.
+        "enable_x86_64": args.enable_x86_64,
         "model_mode": args.model_mode,
+        # Compilation reads it from the context to compose the graph on device.
+        "online_prepare": args.online_prepare,
         "max_context_len": args.max_context_len,
         "max_seq_len": args.max_seq_len,
         "use_fp16": args.use_fp16,
         "compile_only": args.compile_only,
+        "pre_gen_pte": args.pre_gen_pte,
+        # The inference strategy prefers it over model preparation's tokenizer.
+        "runtime_tokenizer_path": configs["runtime_tokenizer_path"],
+        # Model preparation reports TokenizerWrapper's runtime tokenizer.
+        "export_tokenizer": True,
         "verbose": args.verbose,
         "model_options": configs["model_options"],
         "quantize_options": configs["quantize_options"],
         "dataset_options": configs["dataset_options"],
+        "inference_options": configs["inference_options"],
+        "eval_methods": args.eval_methods,
+        "eval_tasks": args.eval_tasks,
+        "eval_limit": args.eval_limit,
+        "eval_num_fewshot": args.eval_num_fewshot,
     }
     context = (
         PipelineContext.builder()
@@ -553,25 +972,28 @@ def run_pipeline(args: argparse.Namespace) -> None:
     logger.info("Artifact dir: %s", args.artifact_dir)
     logger.info("Mode: %s", args.model_mode)
 
+    # Get pipeline stages
+    model_preparation_stage = get_model_preparation_stage(args)
+    quantization_stage = get_quantization_stage(
+        args,
+        dataset_options=configs["dataset_options"],
+        quantize_options=configs["quantize_options"],
+    )
+    compilation_stage = get_compilation_stage(args)
+    inference_stage = get_inference_stage(args)
+
     # Build GenAI Pipeline
     pipeline = GenAIPipeline(
-        model_preparation_stage=get_model_preparation_stage(args),
-        quantization_stage=(
-            # FP16 skips quantization.
-            get_quantization_stage(
-                args,
-                dataset_options=configs["dataset_options"],
-                quantize_options=configs["quantize_options"],
-            )
-            if not args.use_fp16
-            else None
-        ),
-        compilation_stage=None,
-        inference_stage=None,
+        model_preparation_stage=model_preparation_stage,
+        quantization_stage=quantization_stage,
+        compilation_stage=compilation_stage,
+        inference_stage=inference_stage,
         engine_proxy=EngineProxy(
             stage_engines={
                 STAGE_MODEL_PREPARATION: EngineType.EXECUTORCH,
                 STAGE_QUANTIZATION: EngineType.EXECUTORCH,
+                STAGE_COMPILATION: EngineType.EXECUTORCH,
+                STAGE_INFERENCE: EngineType.EXECUTORCH,
             },
             backend_type=QnnExecuTorchBackendType[
                 f"k{args.backend.capitalize()}Backend"
@@ -579,14 +1001,31 @@ def run_pipeline(args: argparse.Namespace) -> None:
         ),
     )
 
-    pipeline.invoke(context)
+    result = pipeline.invoke(context)
+    return result
 
-    # Currently, only model preparation and quantization are supported.
-    # TODO: Add support for compilation and inference.
-    if args.compile_only:
-        logger.info(
-            "--compile-only is reserved until compilation and inference stages are added"
-        )
+
+def show_inference_results(result: InferenceOutputConfig) -> None:
+    """Log results returned by each configured evaluation method.
+
+    Args:
+        result: Pipeline inference output with results keyed by evaluation method.
+    """
+    for method, inference_result in result.results.items():
+        logger.info("\n========== %s =========", method)
+        if inference_result.generations:
+            for output in inference_result.generations:
+                logger.info("Output: %s", output.rstrip())
+        if inference_result.eval_results:
+            logger.info(
+                "Evaluation results:\n%s",
+                json.dumps(inference_result.eval_results, indent=2, default=str),
+            )
+        if inference_result.performance_metrics:
+            logger.info(
+                "Performance metrics: %s",
+                inference_result.performance_metrics,
+            )
 
 
 def main(argv: Optional[List[str]] = None) -> None:
@@ -617,7 +1056,9 @@ def main(argv: Optional[List[str]] = None) -> None:
 
     # Run pipeline
     try:
-        run_pipeline(args)
+        result = run_pipeline(args)
+        show_inference_results(result)
+        logger.info("Pipeline completed")
     except KeyError as e:
         logger.error("Error: %s", e)
         sys.exit(1)

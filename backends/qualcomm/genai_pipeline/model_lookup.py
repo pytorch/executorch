@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 import logging
 from functools import partial
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Sequence, Tuple
 
 from executorch.backends.qualcomm.genai_pipeline.artifact_keys import (
     ARTIFACT_AUDIO_ENCODER,
@@ -629,6 +629,66 @@ def is_multimodal(model_name: str) -> bool:
     """
     config = get_model_config(model_name)
     return hasattr(config, "audio_encoder") or hasattr(config, "vision_encoder")
+
+
+def get_modality(model_name: str) -> str:
+    """Return the artifact key of a multimodal model's modality encoder.
+
+    Args:
+        model_name: Model identifier.
+
+    Returns:
+        ``ARTIFACT_VISION_ENCODER`` or ``ARTIFACT_AUDIO_ENCODER``.
+
+    Raises:
+        KeyError: If model_name is not found.
+        ValueError: If the model defines both or neither modality encoder.
+    """
+    config = get_model_config(model_name)
+    modalities = [
+        artifact_key
+        for artifact_key in (ARTIFACT_VISION_ENCODER, ARTIFACT_AUDIO_ENCODER)
+        if hasattr(config, artifact_key)
+    ]
+    if len(modalities) != 1:
+        raise ValueError(
+            f"multimodal models must define exactly one of {ARTIFACT_VISION_ENCODER} "
+            f"or {ARTIFACT_AUDIO_ENCODER}; {model_name!r} defines {modalities}"
+        )
+    return modalities[0]
+
+
+def validate_modality_inputs(
+    model_name: str,
+    image_paths: Sequence[str],
+    audio_paths: Sequence[str],
+) -> None:
+    """Check the media inputs fit what the multimodal runner takes for the model.
+
+    As in the legacy flow, a vision model takes one or more images and an audio
+    model one or more audio clips; media of the other kind is rejected. The CLI checks
+    this before any stage runs; the multimodal runner adapter checks it again
+    for callers that drive it directly.
+
+    Args:
+        model_name: Model identifier.
+        image_paths: The image inputs.
+        audio_paths: The audio inputs.
+
+    Raises:
+        KeyError: If model_name is not found.
+        ValueError: If the inputs do not fit the model's modality.
+    """
+    if get_modality(model_name) == ARTIFACT_VISION_ENCODER:
+        if audio_paths:
+            raise ValueError("audio inputs are unsupported for a vision model")
+        if not image_paths:
+            raise ValueError("vision inference requires at least one image")
+        return
+    if image_paths:
+        raise ValueError("image inputs are unsupported for an audio model")
+    if not audio_paths:
+        raise ValueError("audio inference requires at least one audio clip")
 
 
 def get_model_loader_adapter(

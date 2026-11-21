@@ -28,9 +28,6 @@ from executorch.backends.qualcomm.genai_pipeline.model_lookup import get_model_l
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY,
 )
-from executorch.examples.qualcomm.oss_scripts.llama.wrappers.llm_wrappers import (
-    TextDecoder,
-)
 from executorch.exir.dialects._ops import ops as exir_ops
 
 _DTYPES = {"kv_type": torch.uint8, "io_type": torch.uint16}
@@ -89,6 +86,10 @@ def _make_nodes():
 
 def _legacy_tag_ios(meta, decoder_model):
     """Bind the legacy ``TextDecoder._tag_ios`` to a minimal stub decoder."""
+    from executorch.examples.qualcomm.oss_scripts.llama.wrappers.llm_wrappers import (
+        TextDecoder,
+    )
+
     head_dims = {meta["get_head_dim"]}
     if decoder_model == "gemma4-e2b":
         head_dims.add(meta["get_global_head_dim"])
