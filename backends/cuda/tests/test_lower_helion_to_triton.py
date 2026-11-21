@@ -479,8 +479,13 @@ class LowerHelionToTritonTest(unittest.TestCase):
         self._export_and_run(Model(), x, (x + 1) - x * 2)
 
     @unittest.skipIf(
-        torch.cuda.is_available() and torch.cuda.get_device_capability() == (8, 0),
-        "the matmul consumer takes an unsupported TLX path on SM80",
+        # Only the internal Buck run sets RUN_CUDA_PROGRAM; its SM80
+        # workers take an unsupported TLX matmul path. Other SM80 runners
+        # still exercise this case.
+        torch.cuda.is_available()
+        and torch.cuda.get_device_capability() == (8, 0)
+        and os.environ.get("RUN_CUDA_PROGRAM") is not None,
+        "the matmul consumer takes an unsupported TLX path on internal SM80",
     )
     def test_padded_intermediate_export_and_cpp_runtime(self) -> None:
         # The Helion kernel receives the 2-D intermediate itself, whose row
@@ -501,12 +506,13 @@ class LowerHelionToTritonTest(unittest.TestCase):
 
             def forward(self, x):
                 y = x * 2
-                return kernel(y, y) + (y @ self.weight).sum()
+                return kernel(y, y), y @ self.weight
 
         model = Model()
         y = x * 2
-        expected = y * 2 + (y @ model.weight).sum()
-        self._export_and_run(model, x, expected, rtol=1e-3, atol=1e-3)
+        self._export_and_run(
+            model, x, (y * 2, y @ model.weight), rtol=1e-3, atol=1e-3
+        )
 
     def test_mutation_and_new_output_export_and_cpp_runtime(self) -> None:
         kernel = helion.kernel(
