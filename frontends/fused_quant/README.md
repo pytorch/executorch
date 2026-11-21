@@ -83,7 +83,8 @@ ATen graph
   |  prepare_pt2e (folds batch norms, annotates) -> calibrate -> convert_pt2e
   v
 q/dq graph
-  |  FusedQuantQuantizer.fuse: each annotated dq -> op -> q becomes one fused_quant op
+  |  torch.export, then FusedQuantQuantizer.fuse: each annotated dq -> op -> q
+  |  becomes one fused_quant op
   v
 fused_quant graph
   |  to_edge (same ops kept whole), then get_fused_quant_passes()
@@ -97,7 +98,7 @@ to_executorch: delegated ops + q/dq and portable kernels for the rest
 ```
 
 The quantizer is a torchao PT2E quantizer, so annotation, calibration and conversion are
-the standard PT2E flow. What `fused_quant` adds is the fuse step after `convert_pt2e`, the
+the standard PT2E flow. What `fused_quant` adds is the fuse step on the exported program, the
 passes on the fused graph, and the contract (claims, decomposition) between that graph
 and a backend.
 
