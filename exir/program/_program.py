@@ -44,6 +44,7 @@ from executorch.exir.passes import (
     convert_constant_dim_order_pass,
     dead_code_elimination_pass,
     EdgeToBackendOpsPass,
+    FoldNonzeroCopyPass,
     LegalizePortableDimOrderPass,
     MemoryFormatOpsPass,
     NonzeroDimOrderPass,
@@ -792,6 +793,7 @@ def edge_to_executorch_passes(
         # there exists an unbacked symint operation.
         *config.passes,
         SpecPropPass(),
+        FoldNonzeroCopyPass(),
         PropagateDevicePass(
             skip_h2d_for_method_inputs=device_cfg.skip_h2d_for_method_inputs,
             skip_d2h_for_method_outputs=device_cfg.skip_d2h_for_method_outputs,
