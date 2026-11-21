@@ -644,6 +644,18 @@ TEST_F(OpScatterSrcOutTest, ValidOneDimInputAndZeroDimIndex) {
   EXPECT_TENSOR_CLOSE(out, tf_data.make({3}, {10, 20, 5}));
 }
 
+TEST_F(OpScatterSrcOutTest, ValidOneDimInputZeroDimIndexAndOneDimSrc) {
+  TensorFactory<ScalarType::Long> tf_index;
+  TensorFactory<ScalarType::Float> tf_data;
+
+  Tensor self = tf_data.make({3}, {10, 20, 30});
+  Tensor index = tf_index.make({}, {1});
+  Tensor src = tf_data.make({3}, {5, 6, 7});
+  Tensor out = tf_data.make({3}, {1729, 1729, 1729});
+  op_scatter_src_out(self, 0, index, src, out);
+  EXPECT_TENSOR_CLOSE(out, tf_data.make({3}, {10, 5, 30}));
+}
+
 TEST_F(OpScatterSrcOutTest, InvalidZeroDimInputAndOneDimIndex) {
   TensorFactory<ScalarType::Long> tf_index;
   TensorFactory<ScalarType::Float> tf_data;
