@@ -3,6 +3,8 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import operator
+
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -32,9 +34,13 @@ class RemoveRedundancy(ExportPass):
             exir_ops.edge.aten._to_copy.default: self._to_copy_op_condition,
             torch.ops.aten._assert_tensor_metadata.default: self._default_condition,
             torch.ops.aten._assert_scalar.default: self._default_condition,
+            # QNN's Split rejects a single output, and a one-chunk split is its input
+            exir_ops.edge.aten.split_with_sizes.default: self._single_chunk_split_condition,
+            exir_ops.edge.aten.split_with_sizes_copy.default: self._single_chunk_split_condition,
         }
         self.redundant_ops_annotation = {
             torch.ops.aten._assert_tensor_metadata.default: self._default_condition,
+            torch.ops.aten.split_with_sizes.default: self._single_chunk_split_condition,
         }
         self.redundant_ops = (
             self.redundant_ops_annotation
@@ -54,6 +60,9 @@ class RemoveRedundancy(ExportPass):
     def _default_condition(self, ndoe):
         return True
 
+    def _single_chunk_split_condition(self, node):
+        return len(node.args[1]) == 1
+
     def _remove(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
         for n in graph_module.graph.nodes:
             if n.target in self.redundant_ops and self.redundant_ops[n.target](n):
@@ -63,7 +72,12 @@ class RemoveRedundancy(ExportPass):
                     n.args = ()
                 # normal case
                 for user_n in list(n.users.keys()):
-                    user_n.replace_input_with(n, n.args[0])
+                    # multi-output op: bypass getitem and forward the input directly
+                    if user_n.target == operator.getitem:
+                        user_n.replace_all_uses_with(n.args[0])
+                        graph_module.graph.erase_node(user_n)
+                    else:
+                        user_n.replace_input_with(n, n.args[0])
                 graph_module.graph.erase_node(to_be_remove)
 
     def call(self, graph_module: torch.fx.GraphModule):
