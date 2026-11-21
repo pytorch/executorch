@@ -24,6 +24,7 @@ pytest.importorskip("torchao")
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from executorch.backends.espressif.lowering import to_espnn_edge
 from executorch.backends.espressif.quantizer.espnn_quantizer import EspNNQuantizer
 
 from executorch.backends.espressif.reference import esp_nn_reference as reference
@@ -34,6 +35,7 @@ from executorch.backends.espressif.serialization.xts3 import (
     XTS3_VERSION,
     XTS3OpCode,
 )
+from executorch.exir.lowered_backend_module import LoweredBackendModule
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
@@ -316,6 +318,32 @@ def test_v6_lowering_tracks_pytorch_int8(name, model, shapes, tolerance):
     assert len(graph.inputs) == len(shapes)
     error = max_int8_error(converted, graph, shapes)
     assert error <= tolerance, f"{name}: worst int8 difference {error}"
+
+
+@pytest.mark.parametrize(
+    "name, expected_opcode",
+    [
+        ("max-pool-six-channels", XTS3OpCode.MAX_POOL2D),
+        ("pointwise-65792-positions-c8", XTS3OpCode.CONV2D),
+        ("pointwise-65792-positions-c4", XTS3OpCode.CONV2D),
+        ("avgpool-wide-c4", XTS3OpCode.AVG_POOL2D),
+        ("avgpool-tall-c4", XTS3OpCode.AVG_POOL2D),
+        ("avgpool-wide-c8", XTS3OpCode.AVG_POOL2D),
+        ("avgpool-tall-c8", XTS3OpCode.AVG_POOL2D),
+    ],
+)
+def test_vendor_regressions_are_delegated(name, expected_opcode):
+    _, model, shapes, _ = next(case for case in CASES if case[0] == name)
+    _, program = quantize(model, shapes)
+    edge, report = to_espnn_edge(program)
+    assert not report["cpu_ops"], report
+    operations = [
+        op
+        for module in edge.exported_program().graph_module.children()
+        if isinstance(module, LoweredBackendModule)
+        for op in parse_graph(module.processed_bytes).operations
+    ]
+    assert any(op.opcode == expected_opcode for op in operations)
 
 
 def test_detection_head_uses_copy_and_no_rank5_tensors():
