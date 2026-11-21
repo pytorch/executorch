@@ -16,6 +16,7 @@ import torch.nn.functional as F
 from executorch.backends.cuda.autotune.launch_params import (
     autotune_launch_params,
     clear_launch_param_cache,
+    InvalidLaunchParam,
 )
 from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
@@ -59,7 +60,7 @@ def gated_reference(x, weight):
 def w4a4_gated_reference(x, weight):
     """W4A4 numerics: activations quantized like the kernel, FP32 output."""
     flat = x.reshape(-1, x.shape[-1])
-    q, s, g = nvfp4_quantize_activation(flat, weight.act_per_tensor_scale or 0.0)
+    q, s, g = nvfp4_quantize_activation(flat, weight.act_per_tensor_scale)
     one = torch.ones(1, device=x.device)
     a = CudaNVFP4Tensor(q, s, one, orig_dtype=torch.float32).dequantize()
     gate, up = ((a * g[:, None]) @ weight.dequantize(torch.float32).T).chunk(2, -1)
@@ -89,25 +90,35 @@ def recorder(name, calls, original=None):
 
 
 @pytest.mark.parametrize(
-    "mode,dtype,rows,fp32,expected",
+    "mode,dtype,rows,fp32,native,expected",
     [
-        ("auto", torch.bfloat16, 37, False, ("nvfp4_auto_gate_up_prefill", None)),
-        ("w4a4", torch.bfloat16, 37, False, ("nvfp4_w4a4_gate_up", None)),
-        ("w4a16", torch.bfloat16, 37, False, ("nvfp4_w4a16", None)),
-        ("auto", torch.float16, 37, False, ("nvfp4_auto_prefill", None)),
+        (
+            "auto",
+            torch.bfloat16,
+            37,
+            False,
+            True,
+            ("nvfp4_auto_gate_up_prefill", None),
+        ),
+        # Without native FP4, auto never reaches the fused W4A4 candidates.
+        ("auto", torch.bfloat16, 37, False, False, ("nvfp4_w4a16", None)),
+        ("w4a4", torch.bfloat16, 37, False, True, ("nvfp4_w4a4_gate_up", None)),
+        ("w4a16", torch.bfloat16, 37, False, True, ("nvfp4_w4a16", None)),
+        ("auto", torch.float16, 37, False, True, ("nvfp4_auto_prefill", None)),
         (
             "auto",
             torch.float32,
             37,
             True,
+            True,
             ("nvfp4_auto_gate_up_prefill", torch.float32),
         ),
         # Decode-size FP32 under the FP32 policy falls back like _linear,
         # which dequantizes (no kernel call).
-        ("auto", torch.float32, 2, True, None),
+        ("auto", torch.float32, 2, True, True, None),
     ],
 )
-def test_gated_linear_routing(mode, dtype, rows, fp32, expected, monkeypatch):
+def test_gated_linear_routing(mode, dtype, rows, fp32, native, expected, monkeypatch):
     # Export traces with fake tensors; record which path the op takes.
     calls = []
     for module, names in (
@@ -120,7 +131,7 @@ def test_gated_linear_routing(mode, dtype, rows, fp32, expected, monkeypatch):
     ):
         for name in names:
             monkeypatch.setattr(module, name, recorder(name, calls))
-    monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: True)
+    monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: native)
     monkeypatch.setenv("ET_CUDA_NVFP4_ACT", mode)
     monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_OUTPUT", "fp32" if fp32 else "input")
     fake = FakeTensorMode()
@@ -130,6 +141,74 @@ def test_gated_linear_routing(mode, dtype, rows, fp32, expected, monkeypatch):
         out = nvfp4_gated_linear(x, weight)
     assert calls == ([expected] if expected else [])
     assert out.shape == (rows, weight.shape[0] // 2)
+
+
+@pytest.mark.parametrize(
+    "mode,module,op",
+    [
+        ("w4a4", nvfp4_gated_gemm, "nvfp4_w4a4_gate_up"),
+        ("auto", nvfp4_dispatch, "nvfp4_auto_gate_up_prefill"),
+    ],
+)
+def test_calibrated_activation_scale_reaches_gated_ops(mode, module, op, monkeypatch):
+    seen = []
+
+    def fake_op(x, qdata, scale, per_tensor_scale, act_scale, output_dtype=None):
+        seen.append(act_scale)
+        n = qdata.shape[0] // 2
+        return x.new_empty((x.shape[0], n), dtype=output_dtype or x.dtype)
+
+    monkeypatch.setattr(module, op, fake_op)
+    monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: True)
+    monkeypatch.setenv("ET_CUDA_NVFP4_ACT", mode)
+    monkeypatch.delenv("ET_CUDA_NVFP4_PREFILL_OUTPUT", raising=False)
+    fake = FakeTensorMode()
+    x = fake.from_tensor(torch.randn(37, 192, dtype=torch.bfloat16))
+    weight = fake.from_tensor(gate_up_weight("cpu", act_scale=0.002))
+    with fake:
+        nvfp4_gated_linear(x, weight)
+    assert len(seen) == 1 and seen[0] is weight.act_per_tensor_scale
+
+
+@pytest.mark.parametrize("fp4", [False, True])
+def test_auto_gate_up_body_forwards_mode_split(fp4, monkeypatch):
+    # The real _prefill_gate_up body runs; only the kernels it calls record.
+    calls, epilogues = [], []
+
+    def recorder(name):
+        def op(x, qdata, *args, **kwargs):
+            calls.append((name, args[2:], kwargs))
+            n = qdata.shape[0] // (2 if fp4 else 1)
+            return x.new_empty((x.shape[0], n), dtype=kwargs["output_dtype"])
+
+        return op
+
+    def epilogue(y):
+        epilogues.append(y.shape)
+        return y[:, : y.shape[1] // 2]
+
+    monkeypatch.setattr(
+        nvfp4_gated_gemm, "nvfp4_w4a4_gate_up", recorder("nvfp4_w4a4_gate_up")
+    )
+    monkeypatch.setattr(nvfp4_gated_gemm, "nvfp4_gate_up_epilogue", epilogue)
+    monkeypatch.setattr(nvfp4_quantized_gemm, "nvfp4_w4a16", recorder("nvfp4_w4a16"))
+    monkeypatch.setattr(nvfp4_quantized_gemm, "_split_workspace_limit", lambda: 2**40)
+    w = gate_up_weight("cpu", act_scale=0.002)
+    weight = (w.qdata, w.scale, w.per_tensor_scale, w.act_per_tensor_scale)
+    x = torch.randn(37, 192, dtype=torch.bfloat16)
+    mode_split = int(fp4) * _MODE_STRIDE + 2
+    out = nvfp4_dispatch._prefill_gate_up(
+        x, *weight, 64, mode_split=mode_split, output_dtype=torch.float32
+    )
+    name = "nvfp4_w4a4_gate_up" if fp4 else "nvfp4_w4a16"
+    act = (w.act_per_tensor_scale,) if fp4 else ()
+    assert calls == [(name, act, {"split_k": 2, "output_dtype": torch.float32})]
+    assert epilogues == ([] if fp4 else [(37, w.shape[0])])
+    assert out.shape == (37, w.shape[0] // 2) and out.dtype == torch.float32
+    calls.clear()
+    with pytest.raises(InvalidLaunchParam, match="bounded M"):
+        nvfp4_dispatch._prefill_gate_up(x, *weight, None, mode_split=mode_split)
+    assert not calls
 
 
 def test_plain_weights_are_rejected():

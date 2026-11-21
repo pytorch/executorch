@@ -28,8 +28,9 @@ from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
 
 
 @pytest.fixture(autouse=True)
-def cold_pick_cache():
+def cold_pick_cache(monkeypatch):
     clear_launch_param_cache()
+    monkeypatch.delenv("ET_CUDA_NVFP4_PREFILL_OUTPUT", raising=False)
 
 
 @pytest.mark.skipif(
