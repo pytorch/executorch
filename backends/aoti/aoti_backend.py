@@ -205,22 +205,33 @@ class AotiBackend(ABC):
         return
 
     _collector_lock = threading.Lock()
-    _collectors: typing.ClassVar[list] = []
+    _collector_local = threading.local()
+    _collector_refcount: typing.ClassVar[int] = 0
     _collector_originals: typing.ClassVar[typing.Optional[tuple]] = None
 
     @classmethod
+    def _collector_stack(cls) -> list:
+        stack = getattr(AotiBackend._collector_local, "collectors", None)
+        if stack is None:
+            stack = []
+            AotiBackend._collector_local.collectors = stack
+        return stack
+
+    @classmethod
     def _record_missing_kernel(cls, kernel: str) -> None:
-        # Re-check the live supported set of each collector's backend: a
-        # kernel another thread registered after a collector's snapshot
-        # (for example a helion_cute op) is not missing for anyone, and a
-        # wrapper installed once may serve several concurrent collectors.
-        with cls._collector_lock:
-            collectors = list(AotiBackend._collectors)
-        for backend, supported_kernels, missing in collectors:
-            if kernel not in supported_kernels and (
-                kernel not in backend.get_supported_fallback_kernels()
-            ):
-                missing.add(kernel)
+        # Each collector belongs to the compiling thread that entered it;
+        # hooks installed once dispatch there (and ignore codegen from
+        # threads that are not in a collector scope). Re-check the live
+        # supported set: a kernel another thread registered after the
+        # snapshot (for example a helion_cute op) is not missing.
+        stack = getattr(AotiBackend._collector_local, "collectors", [])
+        if not stack:
+            return
+        backend, supported_kernels, missing = stack[-1]
+        if kernel not in supported_kernels and (
+            kernel not in backend.get_supported_fallback_kernels()
+        ):
+            missing.add(kernel)
 
     @classmethod
     def _install_collector_hooks_locked(cls) -> None:
@@ -294,9 +305,9 @@ class AotiBackend(ABC):
         index_put fallbacks, which call their kernels directly.
 
         The CppWrapperCpu hooks are class-level, so they are installed once
-        (reference-counted by the registered collectors) instead of being
-        wrapped per compile; overlapping compiles then neither lose their
-        collector early nor leave a wrapper installed afterwards.
+        and reference-counted instead of being wrapped per compile; each
+        collector lives on its entering thread's stack, so overlapping
+        compiles record only their own kernels and leave no wrapper behind.
         """
         collector = (
             cls,
@@ -304,15 +315,21 @@ class AotiBackend(ABC):
             missing_fallback_kernels,
         )
         with cls._collector_lock:
-            if not AotiBackend._collectors:
+            if AotiBackend._collector_refcount == 0:
                 cls._install_collector_hooks_locked()
-            AotiBackend._collectors.append(collector)
+            AotiBackend._collector_refcount += 1
+        cls._collector_stack().append(collector)
         try:
             yield
         finally:
+            stack = cls._collector_stack()
+            for index in range(len(stack) - 1, -1, -1):
+                if stack[index] is collector:
+                    del stack[index]
+                    break
             with cls._collector_lock:
-                AotiBackend._collectors.remove(collector)
-                if not AotiBackend._collectors:
+                AotiBackend._collector_refcount -= 1
+                if AotiBackend._collector_refcount == 0:
                     cls._remove_collector_hooks_locked()
 
     @classmethod

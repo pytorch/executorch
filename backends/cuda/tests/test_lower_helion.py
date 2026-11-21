@@ -8,6 +8,7 @@ import math
 import os
 import subprocess
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -21,6 +22,7 @@ from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 from executorch.backends.cuda.passes import helion_cute, lower_helion
 from executorch.backends.cuda.passes.lower_helion import LowerHelionPass
 from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
+from torch._inductor.codegen.cpp_wrapper_cpu import CppWrapperCpu
 from torch._subclasses.fake_tensor import FakeTensorMode
 from torch.fx import Graph
 from torch.fx.experimental.proxy_tensor import make_fx
@@ -550,6 +552,30 @@ class HelionCuteContractTest(unittest.TestCase):
                                 captured, "probe", Path(directory)
                             )
 
+    def test_collector_scopes_overlap_per_thread(self) -> None:
+        original = CppWrapperCpu.generate_c_shim_extern_kernel_call
+        barrier = threading.Barrier(2)
+        results = {}
+
+        def collect(name: str) -> None:
+            missing: set[str] = set()
+            with CudaBackend.collect_unsupported_fallback_kernels(missing):
+                barrier.wait(timeout=60)
+                aoti_backend.AotiBackend._record_missing_kernel(name)
+            results[name] = missing
+
+        threads = [
+            threading.Thread(target=collect, args=(name,))
+            for name in ("kernel_from_a", "kernel_from_b")
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=120)
+        self.assertEqual(results["kernel_from_a"], {"kernel_from_a"})
+        self.assertEqual(results["kernel_from_b"], {"kernel_from_b"})
+        self.assertIs(CppWrapperCpu.generate_c_shim_extern_kernel_call, original)
+
     def test_error_check_macro_guard(self) -> None:
         helion_cute._check_error_check_macro(
             "#ifndef CUTE_DSL_CUDA_ERROR_CHECK\n"
@@ -724,9 +750,9 @@ class LowerHelionTest(unittest.TestCase):
         # that a reduction also consumes: if Inductor pads its strides after
         # the pass specialized the kernel to the exported strides, the
         # result is silently wrong, so this must keep matching eager.
-        kernel = helion.kernel(
-            config=helion.Config(block_sizes=[256]), static_shapes=True
-        )(_add)
+        kernel = self._kernel(
+            _add, helion.Config(block_sizes=[256]), static_shapes=True
+        )
         x = torch.randn(64, 1500, device="cuda")
 
         class Model(torch.nn.Module):
@@ -740,9 +766,9 @@ class LowerHelionTest(unittest.TestCase):
         self._export_and_run(Model(), x, expected, rtol=1e-3, atol=1e-3)
 
     def test_mutation_and_new_output_export_and_cpp_runtime(self) -> None:
-        kernel = helion.kernel(
-            config=helion.Config(block_sizes=[256]), static_shapes=True
-        )(_increment_and_double)
+        kernel = self._kernel(
+            _increment_and_double, helion.Config(block_sizes=[256]), static_shapes=True
+        )
         x = torch.randn(257, device="cuda")
 
         class Model(torch.nn.Module):
@@ -872,9 +898,9 @@ class LowerHelionTest(unittest.TestCase):
         self.assertTrue(any("_scale" in note for note in raised.exception.__notes__))
 
     def test_rejects_real_kernel_output_aliasing_input(self) -> None:
-        kernel = helion.kernel(
-            config=helion.Config(block_sizes=[256]), static_shapes=True
-        )(_increment_and_return)
+        kernel = self._kernel(
+            _increment_and_return, helion.Config(block_sizes=[256]), static_shapes=True
+        )
         x = torch.randn(257, device="cuda")
 
         class Model(torch.nn.Module):
