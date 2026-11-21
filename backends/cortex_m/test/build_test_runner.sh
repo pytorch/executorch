@@ -48,6 +48,7 @@ ops_list=(
     aten::clamp.out
     aten::mul.out
     aten::convolution.out
+    aten::avg_pool2d.out
     aten::max_pool2d_with_indices.out
     dim_order_ops::_clone_dim_order.out
     aten::view_copy.out
