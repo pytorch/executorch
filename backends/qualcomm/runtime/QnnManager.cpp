@@ -339,7 +339,9 @@ Error QnnManager::InitBackend() {
 
 Error QnnManager::InitContext(
     const std::optional<std::vector<std::string>>& graph_names,
-    Qnn_ContextHandle_t spill_fill_handle) {
+    Qnn_ContextHandle_t spill_fill_handle,
+    std::optional<uint32_t> partition_index) {
+  partition_index_ = partition_index.value_or(0);
   if (backend_params_ptr_->backend_init_state_ ==
       BackendInitializeState::UNINITIALIZED) {
     QNN_EXECUTORCH_LOG_INFO(
@@ -383,7 +385,7 @@ Error QnnManager::InitContext(
         BackendInitializeState::INITIALIZED;
   }
 
-  if (IsOnlinePrepare() &&
+  if ((IsOnlinePrepare() || IsDumpQnnGraph()) &&
       backend_params_ptr_->qnn_backend_cache_ptr_->GetCacheState() ==
           QnnBackendCache::SERIALIZE) {
     // Set up DLC environment at AOT time
@@ -625,23 +627,26 @@ bool QnnManager::IsNodeSupportedByBackend(
 
 Error QnnManager::GetContextBinary(
     QnnExecuTorchContextBinary& qnn_executorch_context_binary) {
-  if (IsOnlinePrepare() &&
-      qnn_dlc_manager_->backend_params_ptr_->qnn_context_ptr_.get() !=
-          nullptr) {
-    ET_CHECK_OR_RETURN_ERROR(
-        qnn_dlc_manager_->backend_params_ptr_->qnn_context_ptr_
-                ->GetContextBinary(qnn_executorch_context_binary) == Error::Ok,
-        Internal,
-        "Fail to get context binary.");
-  }
+  ET_CHECK_OR_RETURN_ERROR(
+      backend_params_ptr_->qnn_context_ptr_->GetContextBinary(
+          qnn_executorch_context_binary) == Error::Ok,
+      Internal,
+      "Fail to get context binary.");
+  return Error::Ok;
+}
 
-  else {
-    ET_CHECK_OR_RETURN_ERROR(
-        backend_params_ptr_->qnn_context_ptr_->GetContextBinary(
-            qnn_executorch_context_binary) == Error::Ok,
-        Internal,
-        "Fail to get context binary.");
-  }
+Error QnnManager::GetIrContextBinary(
+    QnnExecuTorchContextBinary& qnn_executorch_context_binary) {
+  ET_CHECK_OR_RETURN_ERROR(
+      qnn_dlc_manager_->backend_params_ptr_->qnn_context_ptr_.get() != nullptr,
+      Internal,
+      "Ir DLC environment isn't set up; InitContext must run with "
+      "online_prepare or dump_qnn_graph enabled.");
+  ET_CHECK_OR_RETURN_ERROR(
+      qnn_dlc_manager_->backend_params_ptr_->qnn_context_ptr_->GetContextBinary(
+          qnn_executorch_context_binary) == Error::Ok,
+      Internal,
+      "Fail to get Ir context binary.");
   return Error::Ok;
 }
 
@@ -726,13 +731,72 @@ Error QnnManager::Compile(
   // OpWrapper>>& op_wrappers this also resolve race condition if we compile
   // same wrapper in multiple thread.
   OpWrapperGraphStateGuard reset_graph_state(op_wrappers);
-  Qnn_ErrorHandle_t error = QNN_SUCCESS;
-  QnnGraph* qnn_graph_ptr = backend_params_ptr_->qnn_graph_ptr_.get();
+  return BuildGraph(
+      backend_params_ptr_->qnn_graph_ptr_.get(), graph_name, op_wrappers);
+}
 
-  if (IsOnlinePrepare() &&
-      qnn_dlc_manager_->backend_params_ptr_->qnn_graph_ptr_.get() != nullptr) {
-    qnn_graph_ptr = qnn_dlc_manager_->backend_params_ptr_->qnn_graph_ptr_.get();
+Error QnnManager::CompileIrGraph(
+    const std::string& graph_name,
+    std::vector<std::shared_ptr<OpWrapper>>& op_wrappers) {
+  OpWrapperGraphStateGuard reset_graph_state(op_wrappers);
+  ET_CHECK_OR_RETURN_ERROR(
+      qnn_dlc_manager_->backend_params_ptr_->qnn_graph_ptr_.get() != nullptr,
+      Internal,
+      "Ir DLC environment isn't set up; InitContext must run with "
+      "online_prepare or dump_qnn_graph enabled.");
+  Error err = BuildGraph(
+      qnn_dlc_manager_->backend_params_ptr_->qnn_graph_ptr_.get(),
+      graph_name,
+      op_wrappers);
+  if (err != Error::Ok) {
+    return err;
   }
+
+  // Dump failures are logged but never fail CompileIrGraph.
+  if (IsDumpQnnGraph()) {
+    // GraphFinalize just wrote <graph_name>.dlc to cwd; copy it out to
+    // dump_qnn_graph_path under its own name so every graph in the context
+    // gets its own dump file.
+    std::string src_name = graph_name + ".dlc";
+    std::ifstream src_file(src_name, std::ios::binary | std::ios::ate);
+    if (!src_file.is_open()) {
+      QNN_EXECUTORCH_LOG_WARN(
+          "Expected the Ir backend to write '%s' for dump_qnn_graph_path, "
+          "but it wasn't found; skipping dump for this graph.",
+          src_name.c_str());
+      return Error::Ok;
+    }
+    std::streamsize size = src_file.tellg();
+    src_file.seekg(0, std::ios::beg);
+    std::vector<char> buffer(size);
+    src_file.read(buffer.data(), size);
+
+    std::string dest_name = options_->dump_qnn_graph_path()->str() + "/" +
+        graph_name + "_" + std::to_string(partition_index_) + ".dlc";
+    std::ofstream dest_file(dest_name, std::ios::binary);
+    if (!dest_file.is_open()) {
+      QNN_EXECUTORCH_LOG_WARN(
+          "Failed to open '%s' for the dump_qnn_graph_path copy of '%s'.",
+          dest_name.c_str(),
+          src_name.c_str());
+      return Error::Ok;
+    }
+    dest_file.write(buffer.data(), size);
+    if (!dest_file.good()) {
+      QNN_EXECUTORCH_LOG_WARN(
+          "Failed to write the dump_qnn_graph_path copy of '%s' to '%s'.",
+          src_name.c_str(),
+          dest_name.c_str());
+    }
+  }
+  return Error::Ok;
+}
+
+Error QnnManager::BuildGraph(
+    QnnGraph* qnn_graph_ptr,
+    const std::string& graph_name,
+    std::vector<std::shared_ptr<OpWrapper>>& op_wrappers) {
+  Qnn_ErrorHandle_t error = QNN_SUCCESS;
   for (std::shared_ptr<OpWrapper>& op_wrapper : op_wrappers) {
     for (const auto& tensor_wrapper : op_wrapper->GetInputTensors()) {
       ET_CHECK_OR_RETURN_ERROR(

@@ -39,7 +39,8 @@ class QnnManager {
   // graph name will be obtained from the binary.
   executorch::runtime::Error InitContext(
       const std::optional<std::vector<std::string>>& graph_names = std::nullopt,
-      Qnn_ContextHandle_t spill_fill_handle = nullptr);
+      Qnn_ContextHandle_t spill_fill_handle = nullptr,
+      std::optional<uint32_t> partition_index = std::nullopt);
 
   Qnn_ContextHandle_t GetContextHandle() const {
     return backend_params_ptr_->qnn_context_ptr_->GetHandle();
@@ -77,6 +78,11 @@ class QnnManager {
     return options_->online_prepare();
   }
 
+  bool IsDumpQnnGraph() {
+    return options_->dump_qnn_graph_path() != nullptr &&
+        options_->dump_qnn_graph_path()->size() > 0;
+  }
+
   bool IsTensorDump() {
     return options_->dump_intermediate_outputs();
   }
@@ -87,8 +93,16 @@ class QnnManager {
   executorch::runtime::Error GetContextBinary(
       QnnExecuTorchContextBinary& qnn_executorch_context_binary);
 
+  // Retrieves the DLC built by CompileIrGraph, via the Ir backend
+  executorch::runtime::Error GetIrContextBinary(
+      QnnExecuTorchContextBinary& qnn_executorch_context_binary);
+
   executorch::runtime::Error CompileDlc();
   executorch::runtime::Error Compile(
+      const std::string& graph_name,
+      std::vector<std::shared_ptr<OpWrapper>>& op_wrappers);
+  // Builds the given ops into the Ir backend's graph
+  executorch::runtime::Error CompileIrGraph(
       const std::string& graph_name,
       std::vector<std::shared_ptr<OpWrapper>>& op_wrappers);
   executorch::runtime::Error CreateDlc(void** dlc_handle);
@@ -131,6 +145,9 @@ class QnnManager {
 
  private:
   QnnExecuTorchContextBinary qnn_context_blob_;
+  // Set by InitContext; used by CompileIrGraph to name the dump_qnn_graph_path
+  // file it moves each finalized Ir graph's DLC to.
+  uint32_t partition_index_ = 0;
   std::unique_ptr<BackendConfigParameters> backend_params_ptr_;
   std::shared_ptr<QnnBackendBundle>
       backend_bundle_ptr_; // New member to hold shared resources
@@ -146,6 +163,12 @@ class QnnManager {
       void* data_ptr,
       void* custom_mem_base,
       const std::shared_ptr<TensorWrapper>& tensor_wrapper);
+  // Shared by Compile and CompileIrGraph: adds op_wrappers'
+  // tensors/params/nodes to qnn_graph_ptr and finalizes it.
+  executorch::runtime::Error BuildGraph(
+      QnnGraph* qnn_graph_ptr,
+      const std::string& graph_name,
+      std::vector<std::shared_ptr<OpWrapper>>& op_wrappers);
   std::unordered_map<Qnn_DataType_t, executorch::aten::ScalarType>
       qnn_dtype_to_scalar_type_ = {
           {Qnn_DataType_t::QNN_DATATYPE_INT_32,

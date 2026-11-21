@@ -267,9 +267,16 @@ class QnnPartitioner(Partitioner):
             skip_mutable_buffer (bool, optional): If True, mutable buffers are not delegated to QNN.
         """
         self.compiler_specs_snapshot = copy.deepcopy(compiler_specs)
-        self.backend = flatbuffer_to_option(
+        option = flatbuffer_to_option(
             generate_qnn_executorch_option(self.compiler_specs_snapshot)
-        ).backend_options.backend_type
+        )
+        self.backend = option.backend_options.backend_type
+        self.lpai_custom_prepare_config_file = (
+            option.backend_options.lpai_options.custom_prepare_config_file
+            if self.backend == QnnExecuTorchBackendType.kLpaiBackend
+            and option.backend_options.lpai_options is not None
+            else ""
+        )
 
         self.delegation_spec = DelegationSpec(
             QnnBackend.__name__, self.compiler_specs_snapshot
@@ -504,6 +511,21 @@ class QnnPartitioner(Partitioner):
         # Generate partitions by QNN op_support checker
         partitions = self.generate_partitions(edge_program)
         del self.op_support_checker
+        if (
+            self.backend == QnnExecuTorchBackendType.kLpaiBackend
+            and self.lpai_custom_prepare_config_file
+            and len(partitions) > 1
+        ):
+            logger.warning(
+                "lpai_custom_prepare_config_file=%s is set, but the graph was "
+                "split into %d QNN partitions instead of being fully "
+                "delegated. The depth-first cut plan is applied once to the "
+                "LPAI backend and shared by every partition's compile, but "
+                "its node names only exist in the partition the cut plan was "
+                "written for; other partitions may fail to compile.",
+                self.lpai_custom_prepare_config_file,
+                len(partitions),
+            )
         # If partitions are found, handle tagging of nodes, constant data, and mutated buffers for delegation
         self.tag_nodes(partitions, edge_program)
         tag_constant_data(edge_program)

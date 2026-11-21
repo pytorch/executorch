@@ -40,7 +40,7 @@ def compile_specs():
 @pytest.fixture(scope="session")
 def fcb_compile_specs():
     @lru_cache()
-    def _build(soc_models, fcb_reference_weight_sharing=True):
+    def _build(soc_models, fcb_reference_weight_sharing=True, dump_qnn_graph_path=""):
         return generate_qnn_executorch_compiler_spec(
             soc_model=list(soc_models),
             backend_options=[
@@ -51,6 +51,7 @@ def fcb_compile_specs():
                 for _ in soc_models
             ],
             fcb_reference_weight_sharing=fcb_reference_weight_sharing,
+            dump_qnn_graph_path=dump_qnn_graph_path,
         )
 
     return _build

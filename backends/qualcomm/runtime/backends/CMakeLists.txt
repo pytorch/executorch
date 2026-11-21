@@ -143,6 +143,7 @@ target_sources(
           ${CMAKE_CURRENT_LIST_DIR}/lpai/LpaiBackend.cpp
           ${CMAKE_CURRENT_LIST_DIR}/lpai/LpaiBackendCustomConfig.h
           ${CMAKE_CURRENT_LIST_DIR}/lpai/LpaiBackendCustomConfig.cpp
+          ${HOST_ARCHITECTURE_LPAI}/LpaiBackendCustomConfig.cpp
 )
 
 # qnn_mem_manager

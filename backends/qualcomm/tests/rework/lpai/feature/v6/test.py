@@ -13,6 +13,45 @@ from executorch.backends.qualcomm.tests.rework.src.feature import *  # noqa: F40
 
 
 @pytest.mark.parametrize(
+    "kwargs",
+    [
+        pytest.param(
+            {
+                "cut_plan": [
+                    {
+                        "nodes": ["aten_convolution_default"],
+                        "h_branches": 2,
+                        "w_branches": 1,
+                    }
+                ],
+                "expected": Tolerance(),
+                "raises": None,
+            },
+            id="valid_cut",
+        ),
+        pytest.param(
+            {
+                # equal to a no-op cut; dfcut_gt rejects it as an invalid
+                # cutting plan.
+                "cut_plan": [
+                    {
+                        "nodes": ["aten_convolution_default"],
+                        "h_branches": 1,
+                        "w_branches": 1,
+                    }
+                ],
+                "expected": nullcontext(),
+                "raises": AssertionError,
+            },
+            id="invalid_cut",
+        ),
+    ],
+)
+def test_depth_first_cut(request, kwargs):
+    DepthFirstCut.test(request, kwargs)  # noqa: F405
+
+
+@pytest.mark.parametrize(
     "kwargs", [pytest.param({"expected": nullcontext()}, id="e2e")]
 )
 def test_logging(request, kwargs):
@@ -31,6 +70,11 @@ def test_multi_graph_inference(request, kwargs):
 @pytest.mark.parametrize("kwargs", [pytest.param({"expected": Tolerance()}, id="e2e")])
 def test_online_prepare(request, kwargs):
     OnlinePrepare.test(request, kwargs)  # noqa: F405
+
+
+@pytest.mark.parametrize("kwargs", [pytest.param({"expected": Tolerance()}, id="e2e")])
+def test_dump_qnn_graph(request, kwargs):
+    DumpQnnGraph.test(request, kwargs)  # noqa: F405
 
 
 @pytest.mark.parametrize(

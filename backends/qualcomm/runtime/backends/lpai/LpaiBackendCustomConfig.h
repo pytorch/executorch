@@ -28,9 +28,12 @@ class LpaiBackendCustomConfig {
       const SocInfo* soc_info,
       const QnnExecuTorchLpaiBackendOptions* lpai_options);
 
+  // custom_prepare_config_file only applies during offline graph preparation
+  // (host side); it has no effect on the target/runtime path.
   std::vector<QnnBackend_CustomConfig_t> CreateBackendCustomConfig();
 
  private:
+  std::vector<QnnBackend_CustomConfig_t> CreateBackendCustomConfigCommon();
   QnnLpaiBackend_CustomConfig_t* AllocBackendCustomConfig();
   std::vector<std::unique_ptr<QnnLpaiBackend_CustomConfig_t>>
       lpai_backend_config_;
