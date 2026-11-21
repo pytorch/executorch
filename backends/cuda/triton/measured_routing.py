@@ -193,6 +193,12 @@ def _spec(node: Node, plan: ReplacementPlan) -> dict[str, Any]:
     args = _encode(node.args, seen)
     kwargs = {k: _encode(v, seen) for k, v in node.kwargs.items()}
     (replacement,) = [c for c in plan.candidates if c.name != REGULAR_LOWERING]
+    # The replacement's own inputs: one may alias another the same way.
+    replacement_seen: set[Node] = set()
+    replacement_args = _encode(replacement.args, replacement_seen)
+    replacement_kwargs = {
+        k: _encode(v, replacement_seen) for k, v in replacement.kwargs.items()
+    }
     return {
         "original": _op_name(node.target),
         "args": args,
@@ -201,7 +207,8 @@ def _spec(node: Node, plan: ReplacementPlan) -> dict[str, Any]:
         "replacement": {
             "name": replacement.name,
             "op": _op_name(replacement.kernel),
-            "args": _encode(replacement.args, set()),
+            "args": replacement_args,
+            **({"kwargs": replacement_kwargs} if replacement_kwargs else {}),
         },
     }
 
@@ -389,9 +396,12 @@ def _compile_replacement(
     backend's AOTI context) picks its schedule and config."""
     op = _op(replacement["op"])
     args = _materialize(replacement["args"], device)
-    op(*args)
+    kwargs = {
+        k: _materialize(v, device) for k, v in replacement.get("kwargs", {}).items()
+    }
+    op(*args, **kwargs)
     torch.cuda.synchronize(device)
-    return lambda: op(*args)
+    return lambda: op(*args, **kwargs)
 
 
 def _compile_inductor(
@@ -1057,9 +1067,14 @@ class ApplyChoicesPass(PassBase):
             if choice == REGULAR_LOWERING:
                 continue
             candidate = plan.candidate(choice)
-            args = map_arg(candidate.args, lambda n: replaced.get(n, n))
+            args, kwargs = map_arg(
+                (candidate.args, candidate.kwargs), lambda n: replaced.get(n, n)
+            )
             new_node = replace(
-                graph, node, plan, dataclasses.replace(candidate, args=args)
+                graph,
+                node,
+                plan,
+                dataclasses.replace(candidate, args=args, kwargs=kwargs),
             )
             info["result"]["replaced"] = new_node is not None
             if new_node is not None:
