@@ -29,6 +29,22 @@ def define_common_targets():
         ],
     )
 
+    # Writes a compiled AOTI library to a new private temporary file, for every
+    # AOTI backend that loads that library by path.
+    runtime.cxx_library(
+        name = "temp_library",
+        srcs = [
+            "temp_library.cpp",
+        ],
+        exported_headers = [
+            "temp_library.h",
+        ],
+        visibility = ["PUBLIC"],
+        exported_deps = [
+            "//executorch/runtime/core:core",
+        ],
+    )
+
     # AOTI model container functionality
     runtime.cxx_library(
         name = "delegate_handle",

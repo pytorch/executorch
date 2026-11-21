@@ -44,8 +44,8 @@ EOF
 done
 
 tools_dir="${ESPRESSIF_TOOLS_DIR:-${HOME}/.cache/executorch-espressif}"
-emulator_version=0.51.0
-emulator_installer_sha256=7d116867e9a54b8ab90b12fffec93eb5782b3b01f74191078be5278fa6fd5688
+emulator_version=1.1.0
+emulator_installer_sha256=3222d96d6e57ad15a11a85e9882662f2cfe6d9e816450888bd8303af6c215290
 mkdir -p "${tools_dir}"
 tools_dir=$(cd "${tools_dir}" && pwd)
 

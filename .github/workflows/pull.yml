@@ -958,6 +958,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'pyproject.toml') ||
       contains(needs.changed-files.outputs.changed-files, 'install_executorch') ||
       contains(needs.changed-files.outputs.changed-files, 'install_requirements') ||
+      contains(needs.changed-files.outputs.changed-files, 'torch_pin.py') ||
       contains(needs.changed-files.outputs.changed-files, 'install_utils.py') ||
       contains(needs.changed-files.outputs.changed-files, 'requirements-') ||
       contains(needs.changed-files.outputs.changed-files, 'src/executorch') ||
@@ -1049,6 +1050,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'install_executorch.py') ||
       contains(needs.changed-files.outputs.changed-files, 'install_requirements.sh') ||
       contains(needs.changed-files.outputs.changed-files, 'install_requirements.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'torch_pin.py') ||
       contains(needs.changed-files.outputs.changed-files, 'pyproject.toml') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/_get-changed-files.yml') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml')
@@ -2172,6 +2174,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'install_executorch.py') ||
       contains(needs.changed-files.outputs.changed-files, 'install_executorch.sh') ||
       contains(needs.changed-files.outputs.changed-files, 'install_requirements.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'torch_pin.py') ||
       contains(needs.changed-files.outputs.changed-files, 'install_requirements.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
       needs.run-decision.outputs.is-full-run == 'true'
