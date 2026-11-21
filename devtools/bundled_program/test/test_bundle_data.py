@@ -253,6 +253,83 @@ class TestBundle(unittest.TestCase):
                 self.assertEqual(value.val.sizes, [2, 3])
                 self.assertEqual(value.val.data, source.contiguous().numpy().tobytes())
 
+    def test_bundle_validates_method_inputs_and_outputs(self) -> None:
+        class Model(torch.nn.Module):
+            def forward(self, x, y, scale):
+                return x + y * scale, x - y * scale
+
+        inputs = [torch.zeros(2, 3), torch.ones(2, 3), 2]
+        model = Model()
+        outputs = list(model(*inputs))
+        program = to_edge(export(model, tuple(inputs))).to_executorch()
+        cases = [
+            ("unknown", inputs, outputs, "method"),
+            ("forward", inputs[:-1], outputs, "input"),
+            ("forward", inputs + [2], outputs, "input"),
+            ("forward", inputs, outputs[:1], "output"),
+            ("forward", inputs, outputs + outputs[:1], "output"),
+            ("forward", [0, *inputs[1:]], outputs, "type"),
+            ("forward", [inputs[0].double(), *inputs[1:]], outputs, "dtype"),
+            ("forward", [inputs[0].flatten(), *inputs[1:]], outputs, "rank"),
+            ("forward", [*inputs[:2], True], outputs, "type"),
+            ("forward", [*inputs[:2], torch.tensor(2)], outputs, "type"),
+            ("forward", inputs, [0, outputs[1]], "output"),
+            ("forward", inputs, [outputs[0].double(), outputs[1]], "dtype"),
+            ("forward", inputs, [outputs[0].flatten(), outputs[1]], "rank"),
+        ]
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            pte_path = f"{tmp_dir}/model.pte"
+            with open(pte_path, "wb") as pte_file:
+                pte_file.write(program.buffer)
+            for from_file in (False, True):
+                for index, (method, test_inputs, expected, message) in enumerate(cases):
+                    with self.subTest(
+                        from_file=from_file, case=index, mismatch=message
+                    ):
+                        suites = [
+                            MethodTestSuite(
+                                method, [MethodTestCase(test_inputs, expected)]
+                            )
+                        ]
+                        with self.assertRaisesRegex(AssertionError, message):
+                            BundledProgram(
+                                None if from_file else program,
+                                suites,
+                                pte_file_path=pte_path if from_file else None,
+                            ).serialize_to_schema()
+
+                for test_inputs, expected in (
+                    (inputs, None),
+                    (inputs, []),
+                    (
+                        [inputs[0][:1], inputs[1][:1], 2],
+                        [outputs[0][:1], outputs[1][:1]],
+                    ),
+                ):
+                    with self.subTest(from_file=from_file, expected=expected):
+                        suites = [
+                            MethodTestSuite(
+                                "forward", [MethodTestCase(test_inputs, expected)]
+                            )
+                        ]
+                        bundle = BundledProgram(
+                            None if from_file else program,
+                            suites,
+                            pte_file_path=pte_path if from_file else None,
+                        )
+                        case = (
+                            bundle.serialize_to_schema()
+                            .method_test_suites[0]
+                            .test_cases[0]
+                        )
+                        self.assertEqual(len(case.inputs), 3)
+                        self.assertEqual(
+                            len(case.expected_outputs), len(expected or [])
+                        )
+                        self.assertEqual(
+                            case.inputs[0].val.sizes, list(test_inputs[0].shape)
+                        )
+
     def assertIOsetDataEqual(
         self,
         program_ioset_data: List[bp_schema.Value],
