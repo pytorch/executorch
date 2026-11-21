@@ -112,9 +112,6 @@ struct CudaDFlashTestPeer {
       b::SessionId sid) {
     return executor.sessions_.at(sid).hidden;
   }
-  static std::optional<b::Token> pending(DFlash& executor, b::SessionId sid) {
-    return executor.sessions_.at(sid).pending;
-  }
   static void check(DFlash& executor, b::SessionId sid, int expected) {
     const auto& state = executor.sessions_.at(sid);
     EXPECT_FALSE(state.poisoned);
@@ -136,9 +133,9 @@ struct CudaDFlashTestPeer {
       b::SessionId sid) {
     return executor.sessions_.at(sid).seed;
   }
-  static std::vector<float>
-  verify_params(DFlash& executor, b::SessionId sid, b::Position first) {
-    return executor.verify_params(executor.sessions_.at(sid), first);
+  static std::array<float, 4>
+  sample_params(DFlash& executor, b::SessionId sid, b::Position position) {
+    return executor.sample_params(executor.sessions_.at(sid), position);
   }
 };
 } // namespace executorch::extension::llm
@@ -203,9 +200,8 @@ class FixtureModule final : public Module {
     }
     const auto stream = executorch::extension::cuda::getCallerStream().value_or(
         cudaStreamPerThread);
-    // Verification samples through the device verifier, preambles through
-    // sample_argmax; either is the target sampler.
-    if (name == "sample_argmax" || name == "dflash_verify_argmax") {
+    // Preambles and verification both sample through the target sampler.
+    if (name == "sample_argmax") {
       if (taps_ && cudaMemsetAsync(taps_, 0, 32 * 256, stream) != cudaSuccess) {
         return rt::Error::Internal;
       }
@@ -347,7 +343,6 @@ class CudaDFlashNative : public ::testing::Test {
     ASSERT_TRUE(
         executor_->execute({{input(sid, 0, Tokens(rows, 1), false)}}, out));
     Peer::check(*executor_, sid, rows);
-    EXPECT_FALSE(Peer::pending(*executor_, sid));
     EXPECT_EQ(Peer::hidden(*executor_, sid), hidden_rows(0, rows));
   }
   std::string dir_;
@@ -366,11 +361,13 @@ TEST_F(
   executor_->set_sampling(sid, {0.8f, 0.9f, 7}, 0);
   ASSERT_TRUE(Peer::sampling_seed(*executor_, sid));
   EXPECT_EQ(*Peer::sampling_seed(*executor_, sid), 0);
-  const auto params = Peer::verify_params(*executor_, sid, 100);
-  ASSERT_EQ(params.size(), 19);
-  EXPECT_EQ(params[3], llm::cuda_dflash_detail::positional_uniform(0, 100, 2));
   EXPECT_EQ(
-      params.back(), llm::cuda_dflash_detail::positional_uniform(0, 100, 3));
+      Peer::sample_params(*executor_, sid, 100),
+      (std::array<float, 4>{
+          0.8f,
+          0.9f,
+          7.0f,
+          llm::cuda_dflash_detail::positional_uniform(0, 100, 0)}));
   executor_->set_sampling(sid, {0.8f, 0.9f, 7}, 42);
   ASSERT_TRUE(Peer::sampling_seed(*executor_, sid));
   EXPECT_EQ(*Peer::sampling_seed(*executor_, sid), 42);
@@ -378,7 +375,7 @@ TEST_F(
   EXPECT_TRUE(Peer::sampling_seed(*executor_, sid));
 }
 
-TEST_F(CudaDFlashNative, MixedOwnerVerifyParamsSkipOnlyGreedyCoins) {
+TEST_F(CudaDFlashNative, MixedOwnerSampleParamsSkipOnlyGreedyCoins) {
   create();
   ASSERT_TRUE(executor_);
   const std::array<b::SamplingParams, 4> sampling{
@@ -394,24 +391,17 @@ TEST_F(CudaDFlashNative, MixedOwnerVerifyParamsSkipOnlyGreedyCoins) {
     executor_->set_sampling(owners[owner], sampling[owner], seeds[owner]);
   }
   for (const int owner : {3, 0, 2, 1, 3}) {
-    const auto params =
-        Peer::verify_params(*executor_, owners[owner], positions[owner]);
-    ASSERT_EQ(params.size(), 19);
-    EXPECT_EQ(params[0], sampling[owner].temperature);
-    EXPECT_EQ(params[1], sampling[owner].top_k);
-    EXPECT_EQ(params[2], sampling[owner].top_p);
-    for (int proposal = 0; proposal < 15; ++proposal) {
-      const float expected = sampling[owner].temperature > 0.0f
-          ? llm::cuda_dflash_detail::positional_uniform(
-                seeds[owner], positions[owner] + proposal, 2)
-          : 0.0f;
-      EXPECT_EQ(params[3 + proposal], expected);
-    }
-    const float correction = sampling[owner].temperature > 0.0f
+    const float coin = sampling[owner].temperature > 0.0f
         ? llm::cuda_dflash_detail::positional_uniform(
-              seeds[owner], positions[owner], 3)
+              seeds[owner], positions[owner], 0)
         : 0.0f;
-    EXPECT_EQ(params.back(), correction);
+    EXPECT_EQ(
+        Peer::sample_params(*executor_, owners[owner], positions[owner]),
+        (std::array<float, 4>{
+            sampling[owner].temperature,
+            sampling[owner].top_p,
+            static_cast<float>(sampling[owner].top_k),
+            coin}));
   }
 }
 
@@ -423,14 +413,18 @@ TEST_F(CudaDFlashNative, EveryRejectionPositionAndFullBonus) {
     const auto sid = open();
     seed(sid, 3);
     fixture_->rejected.fill(rejected);
-    b::BatchOutput preamble;
-    ASSERT_TRUE(executor_->execute({{input(sid, 3, {1})}}, preamble));
-    ASSERT_TRUE(preamble.outputs[0]);
-    EXPECT_EQ(preamble.outputs[0]->tokens, predictions(3, rejected + 2));
-    const int start = 5 + rejected;
+    // The final prompt token is the first anchor; verification commits it.
+    const auto seeded = executor_->stats();
+    b::BatchOutput first;
+    ASSERT_TRUE(executor_->execute({{input(sid, 3, {1})}}, first));
+    ASSERT_TRUE(first.outputs[0]);
+    EXPECT_EQ(first.outputs[0]->tokens, predictions(3, rejected + 1));
+    const int start = 4 + rejected;
     Peer::check(*executor_, sid, start);
-    EXPECT_EQ(Peer::hidden(*executor_, sid), hidden_rows(4, rejected + 1));
+    EXPECT_EQ(Peer::draft_position(*executor_, sid), 3);
+    EXPECT_EQ(Peer::hidden(*executor_, sid), hidden_rows(3, rejected + 1));
     const auto before = executor_->stats();
+    EXPECT_EQ(before.target_preamble_calls, seeded.target_preamble_calls);
     b::BatchOutput decode;
     ASSERT_TRUE(executor_->execute(
         {{input(sid, start, {prediction(start - 1)})}}, decode));
@@ -439,7 +433,6 @@ TEST_F(CudaDFlashNative, EveryRejectionPositionAndFullBonus) {
     Peer::check(*executor_, sid, start + rejected + 1);
     EXPECT_EQ(Peer::draft_position(*executor_, sid), start);
     EXPECT_EQ(Peer::hidden(*executor_, sid), hidden_rows(start, rejected + 1));
-    EXPECT_EQ(Peer::pending(*executor_, sid), prediction(start + rejected));
     const auto after = executor_->stats();
     EXPECT_EQ(after.target_preamble_calls, before.target_preamble_calls);
     EXPECT_EQ(after.target_verify_calls - before.target_verify_calls, 1);
@@ -475,8 +468,8 @@ TEST_F(CudaDFlashNative, FourUnequalOwnersSplitCallbacksAndMixedFallback) {
         executor_->execute({{input(owners[owner], owner + 2, {1})}}, out));
     ASSERT_TRUE(out.outputs[0]);
     EXPECT_EQ(
-        out.outputs[0]->tokens, predictions(owner + 2, rejected[owner] + 2));
-    starts[owner] = owner + 4 + rejected[owner];
+        out.outputs[0]->tokens, predictions(owner + 2, rejected[owner] + 1));
+    starts[owner] = owner + 3 + rejected[owner];
   }
   fixture_->rejected = rejected;
   const auto before = executor_->stats();
@@ -526,65 +519,85 @@ TEST_F(CudaDFlashNative, FourUnequalOwnersSplitCallbacksAndMixedFallback) {
 }
 
 TEST_F(CudaDFlashNative, PartialVerificationWidthExcludesStaticPadding) {
-  create(true, 5);
-  ASSERT_TRUE(executor_);
-  for (int rejected : {2, 5}) {
-    const auto sid = open();
-    seed(sid, 3);
-    fixture_->rejected.fill(rejected);
-    b::BatchOutput out;
-    ASSERT_TRUE(executor_->execute({{input(sid, 3, {1})}}, out));
-    ASSERT_TRUE(out.outputs[0]);
-    EXPECT_EQ(out.outputs[0]->tokens, predictions(3, rejected + 2));
-    const int start = rejected + 5;
-    const auto before = executor_->stats();
-    ASSERT_TRUE(executor_->execute(
-        {{input(sid, start, {prediction(start - 1)})}}, out));
-    ASSERT_TRUE(out.outputs[0]);
-    EXPECT_EQ(out.outputs[0]->tokens, predictions(start, rejected + 1));
-    EXPECT_EQ(Peer::hidden(*executor_, sid), hidden_rows(start, rejected + 1));
-    Peer::check(*executor_, sid, start + rejected + 1);
-    const auto after = executor_->stats();
-    EXPECT_EQ(after.target_verify_forwards - before.target_verify_forwards, 1);
-    EXPECT_EQ(after.hidden_rows_d2d - before.hidden_rows_d2d, 6);
-    EXPECT_EQ(after.hidden_rows_d2h - before.hidden_rows_d2h, rejected + 1);
-    executor_->close_session(sid);
+  for (const int proposals : {5, 1}) {
+    executor_.reset();
+    create(true, proposals);
+    ASSERT_TRUE(executor_);
+    for (const int rejected : {0, proposals}) {
+      SCOPED_TRACE(testing::Message() << proposals << " " << rejected);
+      const auto sid = open();
+      seed(sid, 3);
+      fixture_->rejected.fill(rejected);
+      b::BatchOutput out;
+      ASSERT_TRUE(executor_->execute({{input(sid, 3, {1})}}, out));
+      ASSERT_TRUE(out.outputs[0]);
+      EXPECT_EQ(out.outputs[0]->tokens, predictions(3, rejected + 1));
+      const int start = rejected + 4;
+      const auto before = executor_->stats();
+      ASSERT_TRUE(executor_->execute(
+          {{input(sid, start, {prediction(start - 1)})}}, out));
+      ASSERT_TRUE(out.outputs[0]);
+      EXPECT_EQ(out.outputs[0]->tokens, predictions(start, rejected + 1));
+      EXPECT_EQ(
+          Peer::hidden(*executor_, sid), hidden_rows(start, rejected + 1));
+      Peer::check(*executor_, sid, start + rejected + 1);
+      const auto after = executor_->stats();
+      EXPECT_EQ(
+          after.target_verify_forwards - before.target_verify_forwards, 1);
+      EXPECT_EQ(after.hidden_rows_d2d - before.hidden_rows_d2d, proposals + 1);
+      EXPECT_EQ(after.hidden_rows_d2h - before.hidden_rows_d2h, rejected + 1);
+      executor_->close_session(sid);
+    }
   }
 }
 
-TEST_F(CudaDFlashNative, WrongFeedbackAndNonOutputSlicesKeepPreamble) {
+TEST_F(CudaDFlashNative, AnyInputTokenDraftsAndOnlyEmptyContextKeepsPreamble) {
   create();
   ASSERT_TRUE(executor_);
+  fixture_->rejected.fill(0);
+  // Without a committed context row a lone token runs the target first.
+  const auto fresh = open();
+  const auto start = executor_->stats();
+  b::BatchOutput out;
+  ASSERT_TRUE(executor_->execute({{input(fresh, 0, {1})}}, out));
+  ASSERT_TRUE(out.outputs[0]);
+  EXPECT_EQ(out.outputs[0]->tokens, predictions(0, 2));
+  EXPECT_EQ(
+      executor_->stats().target_preamble_calls - start.target_preamble_calls,
+      1);
+  EXPECT_EQ(executor_->stats().pending_decode_batches, 0);
+  executor_->close_session(fresh);
+
   const auto sid = open();
   seed(sid, 3);
-  fixture_->rejected.fill(0);
-  b::BatchOutput out;
   ASSERT_TRUE(executor_->execute({{input(sid, 3, {1})}}, out));
-  Peer::check(*executor_, sid, 5);
+  Peer::check(*executor_, sid, 4);
   const auto before = executor_->stats();
-  ASSERT_TRUE(executor_->execute({{input(sid, 5, {1})}}, out));
+  // A token the executor did not emit drafts the same way.
+  ASSERT_TRUE(executor_->execute({{input(sid, 4, {1})}}, out));
   ASSERT_TRUE(out.outputs[0]);
-  EXPECT_EQ(out.outputs[0]->tokens, predictions(5, 2));
+  EXPECT_EQ(out.outputs[0]->tokens, predictions(4, 1));
   EXPECT_EQ(
-      executor_->stats().pending_decode_batches, before.pending_decode_batches);
+      executor_->stats().pending_decode_batches - before.pending_decode_batches,
+      1);
+  EXPECT_EQ(
+      executor_->stats().target_preamble_calls, before.target_preamble_calls);
+  ASSERT_TRUE(
+      executor_->execute({{input(sid, 5, {prediction(4)}, false)}}, out));
+  EXPECT_FALSE(out.outputs[0]);
+  Peer::check(*executor_, sid, 6);
+  ASSERT_TRUE(executor_->execute({{input(sid, 6, {1})}}, out));
+  EXPECT_EQ(out.outputs[0]->tokens, predictions(6, 1));
+  EXPECT_EQ(
+      executor_->stats().pending_decode_batches - before.pending_decode_batches,
+      2);
   EXPECT_EQ(
       executor_->stats().target_preamble_calls - before.target_preamble_calls,
       1);
-  ASSERT_TRUE(
-      executor_->execute({{input(sid, 7, {prediction(6)}, false)}}, out));
-  EXPECT_FALSE(out.outputs[0]);
-  EXPECT_FALSE(Peer::pending(*executor_, sid));
-  Peer::check(*executor_, sid, 8);
-  ASSERT_TRUE(executor_->execute({{input(sid, 8, {1})}}, out));
-  EXPECT_EQ(
-      executor_->stats().pending_decode_batches, before.pending_decode_batches);
-  EXPECT_EQ(
-      executor_->stats().target_preamble_calls - before.target_preamble_calls,
-      3);
   // An invalid temperature is refused before a forward, without poisoning.
   executor_->set_sampling(sid, {-0.5f, 1.0f, 0}, 0);
   const auto valid = executor_->stats();
-  EXPECT_FALSE(executor_->execute({{input(sid, 10, {prediction(9)})}}, out));
+  EXPECT_FALSE(executor_->execute({{input(sid, 7, {prediction(6)})}}, out));
   EXPECT_FALSE(out.outputs[0]);
   EXPECT_EQ(
       executor_->stats().target_preamble_calls, valid.target_preamble_calls);
@@ -607,12 +620,13 @@ TEST_F(CudaDFlashNative, FinalWholeBlockFitsExactlyAndPreservesAllPrefillRows) {
   const auto prefilled = executor_->stats();
   EXPECT_GT(prefilled.draft_forwards - start.draft_forwards, 0);
   EXPECT_EQ(prefilled.static_draft_forwards, start.static_draft_forwards);
-  fixture_->rejected.fill(0);
+  fixture_->rejected.fill(1);
   ASSERT_TRUE(executor_->execute({{input(sid, 78, {1})}}, out));
   EXPECT_EQ(out.outputs[0]->tokens, predictions(78, 2));
   Peer::check(*executor_, sid, 80);
   // The drained remainder fits one block: the decode drafts statically.
   const auto drafted = executor_->stats();
+  EXPECT_EQ(drafted.target_preamble_calls, prefilled.target_preamble_calls);
   EXPECT_EQ(drafted.draft_forwards - prefilled.draft_forwards, 1);
   EXPECT_EQ(drafted.static_draft_forwards - prefilled.static_draft_forwards, 1);
   fixture_->rejected.fill(15);
@@ -629,9 +643,9 @@ TEST_F(CudaDFlashNative, CloneBudgetRewindCapacityAndFailureAreClosed) {
   create();
   ASSERT_TRUE(executor_);
   const auto sid = open();
-  seed(sid, 3);
+  seed(sid, 4);
   b::BatchOutput out;
-  ASSERT_TRUE(executor_->execute({{input(sid, 3, {1})}}, out));
+  ASSERT_TRUE(executor_->execute({{input(sid, 4, {1})}}, out));
   Peer::check(*executor_, sid, 20);
   auto full = executor_->clone(sid, 20);
   auto clipped = executor_->clone(sid, 7);
@@ -640,8 +654,6 @@ TEST_F(CudaDFlashNative, CloneBudgetRewindCapacityAndFailureAreClosed) {
   Peer::check(*executor_, *full, 20);
   Peer::check(*executor_, *clipped, 7);
   EXPECT_EQ(Peer::hidden(*executor_, *clipped), hidden_rows(4, 3));
-  EXPECT_EQ(Peer::pending(*executor_, *full), prediction(19));
-  EXPECT_FALSE(Peer::pending(*executor_, *clipped));
   EXPECT_FALSE(executor_->clone(sid, 21));
   executor_->set_sampling(*full, {}, 0);
   executor_->set_sampling(*clipped, {}, 0);
@@ -653,15 +665,25 @@ TEST_F(CudaDFlashNative, CloneBudgetRewindCapacityAndFailureAreClosed) {
       executor_->stats().target_preamble_calls, before.target_preamble_calls);
   Peer::check(*executor_, sid, 20);
   ASSERT_TRUE(Peer::rewind(*executor_, sid, 7));
-  EXPECT_FALSE(Peer::pending(*executor_, sid));
   EXPECT_EQ(Peer::hidden(*executor_, sid), hidden_rows(4, 3));
+  // A replay after a budget rewind drafts from its retained context.
   ASSERT_TRUE(executor_->execute({{input(sid, 7, {prediction(6)})}}, out));
+  EXPECT_EQ(
+      executor_->stats().target_preamble_calls, before.target_preamble_calls);
+  EXPECT_EQ(out.outputs[0]->tokens, Tokens({prediction(7)}));
+  // A clone at its draft frontier has no context row, so it runs the target.
+  auto empty = executor_->clone(sid, 7);
+  ASSERT_TRUE(empty);
+  EXPECT_TRUE(Peer::hidden(*executor_, *empty).empty());
+  executor_->set_sampling(*empty, {}, 0);
+  ASSERT_TRUE(executor_->execute({{input(*empty, 7, {prediction(6)})}}, out));
   EXPECT_EQ(
       executor_->stats().target_preamble_calls - before.target_preamble_calls,
       1);
   EXPECT_EQ(out.outputs[0]->tokens, predictions(7, 2));
+  executor_->close_session(*empty);
   // Refill without output to the final trained-block boundary, then decode.
-  ASSERT_TRUE(executor_->execute({{input(sid, 9, Tokens(72, 1), false)}}, out));
+  ASSERT_TRUE(executor_->execute({{input(sid, 8, Tokens(73, 1), false)}}, out));
   Peer::check(*executor_, sid, 81);
   const auto capacity_before = executor_->stats();
   ASSERT_TRUE(executor_->execute({{input(sid, 81, {1})}}, out));
@@ -681,7 +703,6 @@ TEST_F(CudaDFlashNative, CloneBudgetRewindCapacityAndFailureAreClosed) {
   for (const auto owner : {sid, *full, *clipped}) {
     EXPECT_TRUE(Peer::poisoned(*executor_, owner));
     EXPECT_TRUE(Peer::hidden(*executor_, owner).empty());
-    EXPECT_FALSE(Peer::pending(*executor_, owner));
   }
   EXPECT_FALSE(executor_->open_session());
   EXPECT_FALSE(executor_->clone(*full, 0));
@@ -744,6 +765,59 @@ TEST_F(CudaDFlashNative, UnmodifiedOldArtifactRunsSoloAndFourOwnerDecode) {
       1);
   EXPECT_EQ(
       executor_->stats().target_preamble_calls, before.target_preamble_calls);
+  EXPECT_EQ(executor_->stats().failed_batches, 0);
+}
+
+// Every emitted token is the target sampler's positional draw, so a seed
+// reproduces a generation whether its final prompt token is a draft anchor or
+// a target preamble.
+TEST_F(CudaDFlashNative, SeededSamplingIgnoresPromptChunking) {
+  create(/*deterministic=*/false);
+  ASSERT_TRUE(executor_);
+  const Tokens prompt{3, 14, 15, 92, 65, 35};
+  constexpr std::size_t kLength = 40;
+  auto generate = [&](bool split) {
+    Tokens emitted;
+    const auto sid = open();
+    executor_->set_sampling(sid, {0.8f, 0.95f, 0}, 42);
+    b::BatchOutput out;
+    const int last = static_cast<int>(prompt.size()) - 1;
+    if (split) {
+      EXPECT_TRUE(executor_->execute(
+          {{input(sid, 0, Tokens(prompt.begin(), prompt.end() - 1), false)}},
+          out));
+    }
+    const auto before = executor_->stats();
+    const int start = split ? last : 0;
+    EXPECT_TRUE(executor_->execute(
+        {{input(sid, start, Tokens(prompt.begin() + start, prompt.end()))}},
+        out));
+    EXPECT_EQ(
+        executor_->stats().pending_decode_batches -
+            before.pending_decode_batches,
+        split ? 1 : 0);
+    while (emitted.size() < kLength) {
+      if (!out.outputs[0] || out.outputs[0]->tokens.empty()) {
+        ADD_FAILURE() << "no output after " << emitted.size() << " tokens";
+        break;
+      }
+      const auto& tokens = out.outputs[0]->tokens;
+      emitted.insert(emitted.end(), tokens.begin(), tokens.end());
+      if (!executor_->execute(
+              {{input(sid, Peer::frontier(*executor_, sid), {emitted.back()})}},
+              out)) {
+        ADD_FAILURE() << "decode failed after " << emitted.size() << " tokens";
+        break;
+      }
+    }
+    executor_->close_session(sid);
+    emitted.resize(std::min(emitted.size(), kLength));
+    return emitted;
+  };
+  const auto whole = generate(false);
+  const auto split = generate(true);
+  ASSERT_EQ(whole.size(), kLength);
+  EXPECT_EQ(whole, split);
   EXPECT_EQ(executor_->stats().failed_batches, 0);
 }
 

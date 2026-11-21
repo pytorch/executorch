@@ -17,7 +17,6 @@ from pathlib import Path
 import torch
 from executorch.examples.models.muse_glimmer.export import common
 from executorch.examples.models.muse_glimmer.export.export_dflash import (
-    cuda_owner_verifier_programs,
     prepare_cuda_packed_draft,
 )
 from executorch.examples.models.muse_glimmer.export.export_solo import step_forward
@@ -448,8 +447,6 @@ class PackedDraftCudaTest(unittest.TestCase):
                 "draft_forward_2",
                 "sample",
                 "sample_argmax",
-                "dflash_verify",
-                "dflash_verify_argmax",
             },
         )
         from executorch.backends.cuda.cuda_weight_collector import (
@@ -488,19 +485,6 @@ class PackedDraftCudaTest(unittest.TestCase):
         self.assertEqual(set(shared_keys[0]), {"embed_tokens.weight", "lm_head.weight"})
         self.assertEqual(shared_keys[0], shared_keys[1])
         self.assertEqual(shared_keys[0], shared_keys[2])
-
-
-class SingleOwnerVerifierExportTest(unittest.TestCase):
-    def test_single_owner_accepts_runtime_draft_widths(self):
-        methods = cuda_owner_verifier_programs(32, 1, 16)
-        verifier = methods["dflash_verify_argmax"].module()
-        for width in (3, 4, 16):
-            logits = torch.zeros(1, width, 32)
-            logits[:, :, 7] = 1
-            candidates = torch.full((1, width), 7, dtype=torch.long)
-            self.assertEqual(verifier(logits, candidates).tolist(), [[width - 1, 7]])
-            candidates[0, 2] = 5
-            self.assertEqual(verifier(logits, candidates).tolist(), [[1, 7]])
 
 
 if __name__ == "__main__":

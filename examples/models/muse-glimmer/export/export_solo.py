@@ -387,7 +387,7 @@ def sampler_programs(vocab_size: int, max_rows: int = MAX_SAMPLE_ROWS):
     }
 
 
-def device_residency(forward_methods, device_sampling: bool, samplers=()):
+def device_residency(forward_methods, device_sampling: bool):
     """Per-method ``PropagateDeviceConfig`` for ``to_executorch``.
 
     With device sampling the forwards keep their logits in device memory, and
@@ -400,7 +400,7 @@ def device_residency(forward_methods, device_sampling: bool, samplers=()):
         for name in forward_methods
     }
     if device_sampling:
-        for name in (SAMPLE_METHOD, ARGMAX_METHOD, *samplers):
+        for name in (SAMPLE_METHOD, ARGMAX_METHOD):
             device[name] = PropagateDeviceConfig(skip_h2d_for_method_inputs=True)
     return device
 
@@ -618,22 +618,9 @@ def export_cuda_batching(  # noqa: C901
         del draft_programs, dflash_draft
     draft_methods = [name for name in programs if name.startswith("draft_forward")]
     cache_methods = forward_methods + draft_methods
-    verifiers = {}
     if device_sampling:
         print(f"Exporting {SAMPLE_METHOD} and {ARGMAX_METHOD}...")
         programs.update(sampler_programs(config.vocab_size))
-        if "draft_forward" in programs:
-            from executorch.examples.models.muse_glimmer.export.export_dflash import (
-                cuda_owner_verifier_programs,
-            )
-
-            verifiers = cuda_owner_verifier_programs(
-                config.vocab_size,
-                max_draft_owners,
-                draft_metadata["get_block_size"],
-            )
-            print(f"Exporting {', '.join(verifiers)}...")
-            programs.update(verifiers)
 
     def partitioner(name: str) -> CudaPartitioner:
         if name not in cache_methods:
@@ -701,9 +688,7 @@ def export_cuda_batching(  # noqa: C901
             extract_delegate_segments=True,
             do_quant_fusion_and_const_prop=True,
             memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
-            propagate_device_config=device_residency(
-                cache_methods, device_sampling, tuple(verifiers)
-            ),
+            propagate_device_config=device_residency(cache_methods, device_sampling),
             emit_mutable_buffer_names=True,
         ),
     )
