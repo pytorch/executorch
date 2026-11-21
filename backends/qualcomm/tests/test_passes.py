@@ -1558,8 +1558,46 @@ class TestPasses(unittest.TestCase):
 
     def test_tester_rebuilds_a_normalization_for_htp_fp16(self):
         # The backend test suite lowers through this stage, with HTP float16
-        # specs by default.
-        stage = ToEdgeTransformAndLower()
+        # specs by default. The passes follow the specs of the partitioner.
+        sample_input = (torch.linspace(-1000, 1000, 128).reshape(4, 32),)
+        for name, make_stage in (
+            ("default", ToEdgeTransformAndLower),
+            (
+                "fp16 partitioner",
+                lambda: ToEdgeTransformAndLower(
+                    partitioners=[QnnPartitioner(self._htp_compiler_specs(True))],
+                    use_fp16=False,
+                ),
+            ),
+        ):
+            with self.subTest(stage=name):
+                stage = make_stage()
+                try:
+                    stage.run(
+                        torch.export.export(ScaledRmsNorm(), sample_input, strict=True)
+                    )
+                except RuntimeError as e:
+                    if "Failed to initialize QNN backend" in str(e):
+                        skip_without_qnn_sdk(self, e)
+                    raise
+                graph_module = (
+                    stage.edge_dialect_program.exported_program().graph_module
+                )
+                self.assertIn(
+                    exir_ops.edge.aten.rms_norm.default,
+                    [
+                        node.target
+                        for _, lowered in graph_module.named_children()
+                        for node in lowered.original_module.graph.nodes
+                    ],
+                )
+
+    def test_tester_keeps_a_norm_its_partitioner_skips(self):
+        partitioner = QnnPartitioner(
+            self._htp_compiler_specs(True),
+            skip_node_op_set={"aten.rms_norm.default"},
+        )
+        stage = ToEdgeTransformAndLower(partitioners=[partitioner])
         sample_input = (torch.linspace(-1000, 1000, 128).reshape(4, 32),)
         try:
             stage.run(torch.export.export(ScaledRmsNorm(), sample_input, strict=True))
@@ -1568,13 +1606,9 @@ class TestPasses(unittest.TestCase):
                 skip_without_qnn_sdk(self, e)
             raise
         graph_module = stage.edge_dialect_program.exported_program().graph_module
-        self.assertIn(
+        self.assertNotIn(
             exir_ops.edge.aten.rms_norm.default,
-            [
-                node.target
-                for _, lowered in graph_module.named_children()
-                for node in lowered.original_module.graph.nodes
-            ],
+            [node.target for node in graph_module.graph.nodes],
         )
 
     def test_recompose_rms_norm_takes_no_runtime_weight(self):
