@@ -707,12 +707,14 @@ table SortNode {
     x: Tid (required);
     out: Tid (required);
     axis: int32;
+    descending: bool = false;
 }
 
 table ArgsortNode {
     x: Tid (required);
     out: Tid (required);
     axis: int32;
+    descending: bool = false;
 }
 
 table PartitionNode {

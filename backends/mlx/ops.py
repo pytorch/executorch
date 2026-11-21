@@ -5685,7 +5685,7 @@ def _repeat_interleave_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     return out
 
 
-@REGISTRY.register(target=[torch.ops.aten.sort.default])
+@REGISTRY.register(target=[torch.ops.aten.sort.default, torch.ops.aten.sort.stable])
 def _sort_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """Handle aten.sort - sort elements along an axis.
 
@@ -5693,9 +5693,11 @@ def _sort_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """
     args = P.args(n)
     require_args(args, 1, 3, "aten.sort")
-    require_kwargs(P.kwargs(n), set(), "aten.sort")
+    kwargs = P.kwargs(n)
+    require_kwargs(kwargs, {"stable", "dim", "descending"}, "aten.sort")
     x = args[0]
-    dim = args[1] if len(args) > 1 else -1
+    dim = args[1] if len(args) > 1 else kwargs.get("dim", -1)
+    descending = args[2] if len(args) > 2 else kwargs.get("descending", False)
 
     # torch.sort returns (values, indices) - 2 outputs
     output_slots = P.make_or_get_slots(n)
@@ -5709,6 +5711,7 @@ def _sort_handler(P: MLXProgramBuilder, n: Node) -> Slot:
                 x=P.slot_to_tid(x),
                 out=P.slot_to_tid(values_slot),
                 axis=dim,
+                descending=descending,
             )
         )
     if 1 in used:
@@ -5717,20 +5720,25 @@ def _sort_handler(P: MLXProgramBuilder, n: Node) -> Slot:
                 x=P.slot_to_tid(x),
                 out=P.slot_to_tid(indices_slot),
                 axis=dim,
+                descending=descending,
             )
         )
 
     return output_slots
 
 
-@REGISTRY.register(target=[torch.ops.aten.argsort.default])
+@REGISTRY.register(
+    target=[torch.ops.aten.argsort.default, torch.ops.aten.argsort.stable]
+)
 def _argsort_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """Handle aten.argsort - indices that sort elements along an axis."""
     args = P.args(n)
     require_args(args, 1, 3, "aten.argsort")
-    require_kwargs(P.kwargs(n), set(), "aten.argsort")
+    kwargs = P.kwargs(n)
+    require_kwargs(kwargs, {"stable", "dim", "descending"}, "aten.argsort")
     x = args[0]
-    dim = args[1] if len(args) > 1 else -1
+    dim = args[1] if len(args) > 1 else kwargs.get("dim", -1)
+    descending = args[2] if len(args) > 2 else kwargs.get("descending", False)
 
     out = P.make_or_get_slot(n)
     P.emit(
@@ -5738,6 +5746,7 @@ def _argsort_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             x=P.slot_to_tid(x),
             out=P.slot_to_tid(out),
             axis=dim,
+            descending=descending,
         )
     )
     return out
