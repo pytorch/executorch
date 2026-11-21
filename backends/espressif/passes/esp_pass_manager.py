@@ -6,6 +6,7 @@
 
 import copy
 
+from executorch.backends.espressif.target import EspKernelMode, EspTarget
 from executorch.backends.transforms.fuse_cascaded_transpose_or_permute_ops import (
     FuseCascadedTransposeOrPermuteOps,
 )
@@ -39,13 +40,18 @@ class EspPassManager(ExportedProgramPassManager):
     report changes even when the executable graph is unchanged.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        target: EspTarget = EspTarget.ESP32S3,
+        kernel_mode: EspKernelMode = EspKernelMode.OPTIMIZED,
+    ) -> None:
         super().__init__(
             passes=[
                 *get_fused_quant_passes(channels_last=True),
                 # Refresh contiguous tensor metadata after the layout rewrites.
                 ExportPass(),
-                LowerToEsp(),
+                LowerToEsp(target=target, kernel_mode=kernel_mode),
                 ToChannelsFirst(),
                 FuseCascadedTransposeOrPermuteOps(),
                 ConstantFold(),

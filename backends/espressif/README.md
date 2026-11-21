@@ -39,6 +39,24 @@ Spatial operators use contiguous NHWC tensors; model inputs and outputs
 retain their original layout. Layout copies remain visible in the
 operator-library report.
 
+Set the recipe's `EspTarget` and `EspKernelMode` to match the device's ESP-NN
+configuration when planning scratch:
+
+```python
+recipe = get_esp_fused_quant_recipe(
+    target=EspTarget.ESP32P4, kernel_mode=EspKernelMode.OPTIMIZED
+)
+```
+
+The defaults are `EspTarget.ESP32S3` and `EspKernelMode.OPTIMIZED`.
+Accelerated Conv2d export requires the optional [scratch-size bindings](#scratch-size-queries).
+If the selected binding or query is unavailable, convolution retains portable
+execution; strict export rejects that fallback. Other operator exports do not
+require the bindings.
+
+Scratch storage uses the planned arena. Applications must serialize
+operator-library inference, delegate inference, and other ESP-NN calls.
+
 ## Scratch-size queries
 
 Optional Python bindings expose ESP-NN 1.5.0's convolution, depthwise, softmax,

@@ -16,6 +16,7 @@ import executorch.kernels.quantized  # noqa: F401  registers quantize/dequantize
 from executorch.backends.espressif.partition.espnn_partitioner import EspNNPartitioner
 from executorch.backends.espressif.passes import EspPassManager
 from executorch.backends.espressif.quantizer import get_esp_fused_quant_quantizer
+from executorch.backends.espressif.target import EspKernelMode, EspTarget
 from executorch.exir import (
     EdgeCompileConfig,
     EdgeProgramManager,
@@ -120,6 +121,8 @@ def get_esp_fused_quant_recipe(
     *,
     quantizer: FusedQuantQuantizer | None = None,
     allow_cpu_fallback: bool = True,
+    target: EspTarget = EspTarget.ESP32S3,
+    kernel_mode: EspKernelMode = EspKernelMode.OPTIMIZED,
 ) -> ExportRecipe:
     """Quantize and lower a float model for the Espressif operator library.
 
@@ -127,13 +130,15 @@ def get_esp_fused_quant_recipe(
     direct ESP-NN calls; other operators decompose to portable kernels. Setting
     allow_cpu_fallback=False rejects remaining portable compute. Q/DQ and
     structural operations such as views and layout copies remain allowed.
+    Set target and kernel_mode to match the device's ESP-NN configuration
+    when planning scratch.
     Use EspNNQuantizer and to_espnn_edge for the EspNNBackend delegate.
     """
     quantizer = quantizer if quantizer is not None else get_esp_fused_quant_quantizer()
     quantization_recipe = get_fused_quant_quantization_recipe(quantizer)
     quantization_recipe.calibration_inputs_fn = calibration_inputs_fn
 
-    transforms = [lambda _: EspPassManager()]
+    transforms = [lambda _: EspPassManager(target=target, kernel_mode=kernel_mode)]
     if not allow_cpu_fallback:
         transforms.append(_require_no_portable_compute)
     return ExportRecipe(
