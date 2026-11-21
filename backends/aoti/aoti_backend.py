@@ -227,7 +227,12 @@ class AotiBackend(ABC):
         def generate_c_shim_extern_kernel_call_and_collect_unsupported_kernels(
             self, kernel: str, *args: Any, **kwargs: Any
         ) -> None:
-            if kernel not in supported_kernels:
+            # Re-check the live supported set: another thread may have
+            # registered this kernel (for example a helion_cute op) after
+            # this collector's snapshot was taken.
+            if kernel not in supported_kernels and (
+                kernel not in cls.get_supported_fallback_kernels()
+            ):
                 missing_fallback_kernels.add(kernel)
 
             return original_generate_c_shim_extern_kernel_call(
@@ -238,7 +243,9 @@ class AotiBackend(ABC):
             self, op_overload: Any, *args: Any, **kwargs: Any
         ) -> None:
             kernel_name = getattr(op_overload, "_name", str(op_overload))
-            if kernel_name not in supported_kernels:
+            if kernel_name not in supported_kernels and (
+                kernel_name not in cls.get_supported_fallback_kernels()
+            ):
                 missing_fallback_kernels.add(kernel_name)
 
             return original_generate_fallback_kernel_with_runtime_lookup_aot(
@@ -260,7 +267,9 @@ class AotiBackend(ABC):
                     self.writeline = writeline
                     for line in lines:
                         for kernel in re.findall(r"\b(aoti_torch_\w+)\(", line):
-                            if kernel not in supported_kernels:
+                            if kernel not in supported_kernels and (
+                                kernel not in cls.get_supported_fallback_kernels()
+                            ):
                                 missing_fallback_kernels.add(kernel)
 
             return generate_and_collect_unsupported_kernels

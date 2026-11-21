@@ -164,7 +164,9 @@ kernel's Helion backend:
   exported sizes, strides and pointer alignments: user inputs, parameters, buffers and outputs
   allocated by the kernel's host code are compiled as starting at their allocation, while every
   other operand (an activation, or a tensor passed into a `torch.cond` branch) is compiled for
-  element alignment only, which can rule out vectorized or TMA staging for it. At run time each
+  element alignment only: a config that needs more than element alignment on such an operand
+  stages (copies) it, which this lowering rejects, so it cannot be exported at all. At run time
+  each
   call checks its arguments against the
   compiled layout and alignment and fails the call, rather than launching, on a mismatch.
 

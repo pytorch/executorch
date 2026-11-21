@@ -42,8 +42,8 @@ from helion._compiler._dynamo.higher_order_ops import (
 from helion.runtime.kernel import BoundKernel
 
 
-def _run_twice(program, inputs: torch.Tensor) -> list[np.ndarray]:
-    """Run the program's forward method twice in the ExecuTorch runtime."""
+def _run_twice(program, inputs: torch.Tensor) -> list[list[np.ndarray]]:
+    """Run forward twice; each run returns all of the method's outputs."""
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         (root / "model.pte").write_bytes(program.buffer)
@@ -58,13 +58,25 @@ def _run_twice(program, inputs: torch.Tensor) -> list[np.ndarray]:
                 .load_program(root / "model.pte", data_path=root / "aoti_cuda_blob.ptd")
                 .load_method("forward")
             )
-            return [method.execute([inputs.cpu()])[0].cpu().numpy() for _ in range(2)]
+            return [
+                [output.cpu().numpy() for output in method.execute([inputs.cpu()])]
+                for _ in range(2)
+            ]
         # In Buck, LibTorch and the CUDA shims define the same aoti_torch_*
         # symbols, so the program runs in a LibTorch-free process.
         np.save(root / "input.npy", inputs.cpu().numpy())
         np.save(root / "input2.npy", inputs.cpu().numpy())
         subprocess.run([runner, directory], check=True, timeout=120)
-        return [np.load(root / "output.npy"), np.load(root / "output2.npy")]
+
+        def load_outputs(prefix: str) -> list[np.ndarray]:
+            outputs = [np.load(root / f"{prefix}.npy")]
+            index = 1
+            while (root / f"{prefix}_{index}.npy").exists():
+                outputs.append(np.load(root / f"{prefix}_{index}.npy"))
+                index += 1
+            return outputs
+
+        return [load_outputs("output"), load_outputs("output2")]
 
 
 def _add(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
@@ -77,6 +89,14 @@ def _add(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
 def _increment(x: torch.Tensor) -> None:
     for tile in hl.tile(x.numel()):
         x[tile] = x[tile] + 1
+
+
+def _increment_and_double(x: torch.Tensor) -> torch.Tensor:
+    result = torch.empty_like(x)
+    for tile in hl.tile(x.numel()):
+        x[tile] = x[tile] + 1
+        result[tile] = x[tile] * 2
+    return result
 
 
 def _increment_and_return(x: torch.Tensor) -> torch.Tensor:
@@ -530,6 +550,18 @@ class HelionCuteContractTest(unittest.TestCase):
                                 captured, "probe", Path(directory)
                             )
 
+    def test_error_check_macro_guard(self) -> None:
+        helion_cute._check_error_check_macro(
+            "#ifndef CUTE_DSL_CUDA_ERROR_CHECK\n"
+            "#define CUTE_DSL_CUDA_ERROR_CHECK(err) (void)(err)\n"
+            "#endif\n"
+        )
+        helion_cute._check_error_check_macro("int placeholder;\n")
+        with self.assertRaisesRegex(NotImplementedError, "#ifndef guard"):
+            helion_cute._check_error_check_macro(
+                "#define CUTE_DSL_CUDA_ERROR_CHECK(err) (void)(err)\n"
+            )
+
     def test_register_op_supports_more_than_26_arguments(self) -> None:
         op = helion_cute._register_op(
             "many_args_probe", [i == 29 for i in range(30)], lambda tensors: None
@@ -593,13 +625,18 @@ class LowerHelionTest(unittest.TestCase):
         )
         first, second = _run_twice(edge.to_executorch(), inputs)
         second_expected = expected if expected_second is None else expected_second
-        for actual, value in ((first, expected), (second, second_expected)):
-            np.testing.assert_allclose(
-                actual.astype(np.float32),
-                value.float().cpu().numpy(),
-                rtol=rtol,
-                atol=atol,
+        for actual_outputs, values in ((first, expected), (second, second_expected)):
+            expected_outputs = (
+                values if isinstance(values, (tuple, list)) else (values,)
             )
+            self.assertEqual(len(actual_outputs), len(expected_outputs))
+            for actual, value in zip(actual_outputs, expected_outputs):
+                np.testing.assert_allclose(
+                    actual.astype(np.float32),
+                    value.float().cpu().numpy(),
+                    rtol=rtol,
+                    atol=atol,
+                )
 
     def test_attention_export_and_cpp_runtime(self) -> None:
         kernel = self._kernel(
@@ -674,9 +711,26 @@ class LowerHelionTest(unittest.TestCase):
         class Model(torch.nn.Module):
             def forward(self, x):
                 first, second = kernel(x)
-                return first + second
+                # Subtraction, not addition, so swapped outputs fail.
+                return first - second
 
-        self._export_and_run(Model(), x, (x + 1) + x * 2)
+        self._export_and_run(Model(), x, (x + 1) - x * 2)
+
+    def test_mutation_and_new_output_export_and_cpp_runtime(self) -> None:
+        kernel = helion.kernel(
+            config=helion.Config(block_sizes=[256]), static_shapes=True
+        )(_increment_and_double)
+        x = torch.randn(257, device="cuda")
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                working = x.clone()
+                doubled = kernel(working)
+                # Distinct coefficients, so swapping the kernel's new
+                # output with its mutated clone changes the result.
+                return doubled * 10 + working
+
+        self._export_and_run(Model(), x, (x + 1) * 21)
 
     def test_functional_mutation_export_and_cpp_runtime(self) -> None:
         kernel = self._kernel(
@@ -748,26 +802,20 @@ class LowerHelionTest(unittest.TestCase):
         model = Model().cuda()
         for parameter in model.parameters():
             parameter.requires_grad_(False)
-        # Measured routing can replace the conv with a Triton template, in
-        # which case no decomposition-table op survives and the backend
-        # skips the retrace this test exists to cover. Record the backend's
-        # own check and require that the retrace really ran.
-        contains_results = []
-        contains = aoti_backend.contains_any_call_fn_target_op
-
-        def recording_contains(module, table):
-            results = contains(module, table)
-            contains_results.append(results)
-            return results
-
+        # Measured routing can replace the conv with a Triton template,
+        # leaving no decomposition-table op. run_decompositions retraces
+        # the whole program even then, so force the backend's check on
+        # instead of depending on which conv measures faster here.
         expected = model.conv(x) * 2
         with mock.patch.object(
-            aoti_backend, "contains_any_call_fn_target_op", recording_contains
-        ):
+            aoti_backend,
+            "contains_any_call_fn_target_op",
+            return_value=True,
+        ) as contains:
             # Loose tolerances: the compiled conv accumulates differently
             # from eager.
             self._export_and_run(model, x, expected, rtol=1e-2, atol=1e-2)
-        self.assertIn(True, contains_results)
+        self.assertTrue(contains.called)
 
     def test_user_input_mutation_export_and_cpp_runtime(self) -> None:
         kernel = self._kernel(
@@ -777,13 +825,11 @@ class LowerHelionTest(unittest.TestCase):
 
         class Model(torch.nn.Module):
             def forward(self, x):
-                # Returning the mutated input itself: _run_twice checks the
-                # first output, which for a mutated user input is the
-                # written-back tensor.
                 kernel(x)
-                return x
+                return x * 2
 
-        self._export_and_run(Model(), x, x + 1)
+        # Outputs are the written-back mutated input, then the model output.
+        self._export_and_run(Model(), x, (x + 1, (x + 1) * 2))
 
     def test_rejects_scalar_argument(self) -> None:
         kernel = self._kernel(
@@ -800,9 +846,7 @@ class LowerHelionTest(unittest.TestCase):
             NotImplementedError, "tensor-only arguments"
         ) as raised:
             LowerHelionPass()(program)
-        self.assertTrue(
-            any("_scale" in note for note in getattr(raised.exception, "__notes__", []))
-        )
+        self.assertTrue(any("_scale" in note for note in raised.exception.__notes__))
 
     def test_rejects_real_kernel_output_aliasing_input(self) -> None:
         kernel = helion.kernel(
@@ -816,7 +860,14 @@ class LowerHelionTest(unittest.TestCase):
 
         program = torch.export.export(Model(), (x,), strict=True)
         with self.assertRaisesRegex(NotImplementedError, "alias"):
-            LowerHelionPass()(program)
+            to_edge_transform_and_lower(
+                program,
+                partitioner=[
+                    CudaPartitioner(
+                        [CudaBackend.generate_method_name_compile_spec("forward")]
+                    )
+                ],
+            )
 
     def test_rejects_capture_missing_private_field(self) -> None:
         kernel = self._kernel(

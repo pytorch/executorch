@@ -144,9 +144,11 @@ def _read_captured_call(node: Node) -> _CapturedHelionCall:
     # with the requirement error instead of surfacing a bare KeyError. The
     # two exceptions are direct_aliases and mutated_inputs: Helion omits them
     # from a capture its functionalization rebuilt when they are empty, so a
-    # missing entry means "none". The traced replacement is checked for
-    # writes to its inputs and for outputs aliasing them either way, so a
-    # capture that understates either is still rejected after tracing.
+    # missing entry means "none". For Triton launches the traced replacement
+    # cross-checks both (torch's mutation analysis plus the placeholder and
+    # aliasing checks below). CuTe launches rely on Helion's report: their
+    # op schema's writes come from the same tensors_to_clone set, so an
+    # unreported CuTe kernel write cannot be caught after tracing.
     try:
         spec = kwargs["output_spec"]
         is_functional = node.target is hops.helion_kernel_wrapper_functional
@@ -582,6 +584,9 @@ class LowerHelionPass:
     def __call__(self, exported_program: ExportedProgram) -> None:
         helion_cute.begin_program()
         root = exported_program.graph_module
+        # A program an earlier pass run already lowered contains helion_cute
+        # ops but no Helion calls; their archives still have to link.
+        helion_cute.note_existing_launches(root.modules())
         signature = exported_program.graph_signature
         # The operands a CuTe kernel may assume start at their allocation:
         # the root graph's user inputs, parameters and buffers.
@@ -623,12 +628,10 @@ class LowerHelionPass:
                         kernel_name = _read_captured_call(node).kernel.name
                     except Exception:
                         pass
-                    add_note = getattr(error, "add_note", None)
-                    if add_note is not None:
-                        add_note(
-                            f"while lowering Helion kernel {kernel_name!r} "
-                            f"(node {node.name})"
-                        )
+                    error.add_note(
+                        f"while lowering Helion kernel {kernel_name!r} "
+                        f"(node {node.name})"
+                    )
                     raise
                 modified = True
             if modified:

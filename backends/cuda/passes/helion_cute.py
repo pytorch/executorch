@@ -99,7 +99,11 @@ bool matches_export(AtenTensorHandle tensor, int i, void** pointer) {{
     return false;
   }}
   for (int64_t d = 0; d < rank; ++d) {{
-    if (sizes[d] != kSizes[i][d] || strides[d] != kStrides[i][d]) {{
+    // A size-1 dimension's stride never affects an address, and Inductor's
+    // exact-stride matching ignores it, so the caller's stride there is
+    // free to differ from the exported one.
+    if (sizes[d] != kSizes[i][d] ||
+        (sizes[d] != 1 && strides[d] != kStrides[i][d])) {{
       return false;
     }}
   }}
@@ -159,10 +163,12 @@ class _ProgramLaunches(threading.local):
 class _ExportState:
     """The launches exported in this process, and those of each thread's program.
 
-    The shim declarations and supported fallback kernels are process-wide
-    and append-only: an exported op is never undefined, and AOTInductor's
-    fallback-kernel collection (like a config patch) is not isolated per
-    thread, so a per-thread set would fail other threads' compiles. Only the
+    The supported fallback kernels are process-wide: an exported op is
+    never undefined, and AOTInductor's fallback-kernel collection wraps
+    class-level codegen shared by every thread, so a per-thread supported
+    set would fail other threads' compiles. Shim declarations are
+    (re)written on the compiling thread by ``link_exported_launches``,
+    because Inductor's config is thread-local. Only the
     archive *link* is per thread: ``AotiBackend.preprocess`` runs
     ``LowerHelionPass`` and then, on the same thread, enters
     ``link_exported_launches`` for the compile, so a thread's program
@@ -175,12 +181,21 @@ class _ExportState:
         self.lock = threading.Lock()
         self.library: torch.library.Library | None = None
         self.exported: dict[str, _ExportedLaunch] = {}
+        self.prefix_locks: dict[str, threading.Lock] = {}
         self.library_directories: set[Path] = set()
         self.cleanup_registered = False
         self.per_thread = _ProgramLaunches()
 
     def program_launches(self) -> dict[str, _ExportedLaunch]:
         return self.per_thread.launches
+
+    def prefix_lock(self, prefix: str) -> threading.Lock:
+        with self.lock:
+            lock = self.prefix_locks.get(prefix)
+            if lock is None:
+                lock = threading.Lock()
+                self.prefix_locks[prefix] = lock
+            return lock
 
     def track_library_directory(self, directory: Path) -> None:
         self.library_directories.add(directory)
@@ -356,6 +371,27 @@ def _cute_launcher_modules() -> tuple[Any, Any, Any, Any]:
     return launcher, arg_signature, sass_check, cute
 
 
+def _check_error_check_macro(header: str) -> None:
+    """Reject a header that would replace the shim's load-error override.
+
+    The shim defines ``CUTE_DSL_CUDA_ERROR_CHECK`` before including the
+    exported header so module-load failures are recorded. A header that
+    defines the macro again outside an ``#ifndef`` guard silently replaces
+    that override (a warning the captured compiler output never surfaces).
+    """
+    lines = header.splitlines()
+    for index, line in enumerate(lines):
+        if not re.match(r"\s*#\s*define\s+CUTE_DSL_CUDA_ERROR_CHECK\b", line):
+            continue
+        previous = [text.strip() for text in lines[:index] if text.strip()]
+        if previous and previous[-1].startswith("#ifndef CUTE_DSL_CUDA_ERROR_CHECK"):
+            continue
+        raise NotImplementedError(
+            "Helion CuTe lowering found an exported header that redefines "
+            "CUTE_DSL_CUDA_ERROR_CHECK without an #ifndef guard"
+        )
+
+
 def _compile_and_export(
     captured: _CapturedLaunch, prefix: str, workdir: Path
 ) -> tuple[Any, tuple[Any, ...], list[int]]:
@@ -413,6 +449,7 @@ def _compile_and_export(
         file_path=str(workdir), file_name=prefix, function_prefix=prefix
     )
     header = (workdir / f"{prefix}.h").read_text()
+    _check_error_check_macro(header)
     expected = len(tensors) + 3
     signature = re.search(rf"cute_dsl_{prefix}_wrapper\(([^)]*)\)", header)
     if signature is None or len(signature.group(1).split(",")) != expected + 2:
@@ -508,9 +545,10 @@ def _register_op(
     arguments = ", ".join(
         f"Tensor(a{i}!) t{i}" if m else f"Tensor t{i}" for i, m in enumerate(mutable)
     )
-    if _STATE.library is None:
-        _STATE.library = torch.library.Library(_OP_NAMESPACE, "FRAGMENT")
-    library = _STATE.library
+    with _STATE.lock:
+        if _STATE.library is None:
+            _STATE.library = torch.library.Library(_OP_NAMESPACE, "FRAGMENT")
+        library = _STATE.library
     # The kernel is compiled for the exported sizes and strides.
     library.define(
         f"{prefix}({arguments}) -> ()", tags=(torch.Tag.needs_exact_strides,)
@@ -573,7 +611,11 @@ def _export(
         # the shim (and the compiled kernel) accepts.
         if len(tensors) != len(layouts) or any(
             tuple(tensor.shape) != shape
-            or tensor.stride() != stride
+            or any(
+                actual != expected
+                for actual, expected, size in zip(tensor.stride(), stride, shape)
+                if size != 1
+            )
             or tensor.dtype != dtype
             or tensor.data_ptr() % alignment != 0
             for tensor, (shape, stride, dtype), alignment in zip(
@@ -636,8 +678,12 @@ def export_cute_launch(
             )
         )
         prefix = f"helion_cute_{hashlib.sha256(key.encode()).hexdigest()[:24]}"
-        with _STATE.lock:
-            exported = _STATE.exported.get(prefix)
+        # The global lock guards only the exported map; compiling takes the
+        # per-prefix lock, so other lowerings are not stuck behind this
+        # kernel's CuTe compile and the same prefix is still built once.
+        with _STATE.prefix_lock(prefix):
+            with _STATE.lock:
+                exported = _STATE.exported.get(prefix)
             if (
                 exported is not None
                 and not (
@@ -650,15 +696,12 @@ def export_cute_launch(
                 # would raise.
                 _, _, _, directory = _build_launch_archive(prefix, captured)
                 exported = exported._replace(library_directory=directory)
-                _STATE.exported[prefix] = exported
+                with _STATE.lock:
+                    _STATE.exported[prefix] = exported
             if exported is None:
                 exported = _export(prefix, captured, mutable)
-                _STATE.exported[prefix] = exported
-                # Append-only, process-wide: declare the shim once, for the
-                # life of the process, like the op itself.
-                torch._inductor.config.aot_inductor.custom_ops_to_c_shims[
-                    exported.op
-                ] = [exported.shim_declaration]
+                with _STATE.lock:
+                    _STATE.exported[prefix] = exported
     _STATE.program_launches()[prefix] = exported
     op = exported.op
 
@@ -674,6 +717,32 @@ def begin_program() -> None:
     """Forget the launches of the previous program lowered on this thread."""
     _STATE.program_launches().clear()
     _STATE.per_thread.last_had_launches = False
+
+
+def note_existing_launches(modules: Any) -> None:
+    """Record launches a program already contains as this thread's launches.
+
+    A program lowered by an earlier ``LowerHelionPass`` call holds
+    ``helion_cute::`` ops but no Helion calls, so nothing new is exported
+    when the backend lowers it; its archives must still link (and its PTX
+    flag must still be suppressed).
+    """
+    with _STATE.lock:
+        exported = list(_STATE.exported.values())
+    if not exported:
+        return
+    launches = _STATE.program_launches()
+    for module in modules:
+        graph = getattr(module, "graph", None)
+        if graph is None:
+            continue
+        for node in graph.nodes:
+            # Edge conversion rewraps the op target, so match on the
+            # launch's unique prefix in the target name, not identity.
+            target = str(node.target)
+            for launch in exported:
+                if launch.library in target:
+                    launches[launch.library] = launch
 
 
 def last_program_had_launches() -> bool:
@@ -696,13 +765,17 @@ def exported_fallback_kernels() -> dict[str, None]:
 
 
 def program_link_options() -> tuple[list[str], list[str]]:
-    """Link directories and libraries for this thread's program launches.
+    """Link directories and libraries for every launch exported so far.
 
     The CUDA backend adds these to the AOTInductor link of the calling
-    thread only (through its compile patch), so no process-wide state
-    changes while other threads lower.
+    thread only (through its compile patch). Linking every exported
+    archive is safe -- the linker keeps only the objects the program
+    calls -- and it covers programs that already contained helion_cute
+    ops when lowering started, whose launches this pass run did not
+    export itself.
     """
-    launches = list(_STATE.program_launches().values())
+    with _STATE.lock:
+        launches = list(_STATE.exported.values())
     if not launches:
         return [], []
     directories = [str(e.library_directory) for e in launches]
