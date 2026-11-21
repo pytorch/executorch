@@ -380,15 +380,25 @@ def _check_error_check_macro(header: str) -> None:
     that override (a warning the captured compiler output never surfaces).
     """
     lines = header.splitlines()
+    uses = 0
     for index, line in enumerate(lines):
-        if not re.match(r"\s*#\s*define\s+CUTE_DSL_CUDA_ERROR_CHECK\b", line):
-            continue
-        previous = [text.strip() for text in lines[:index] if text.strip()]
-        if previous and previous[-1].startswith("#ifndef CUTE_DSL_CUDA_ERROR_CHECK"):
-            continue
+        if re.match(r"\s*#\s*define\s+CUTE_DSL_CUDA_ERROR_CHECK\b", line):
+            previous = [text.strip() for text in lines[:index] if text.strip()]
+            if previous and previous[-1].startswith(
+                "#ifndef CUTE_DSL_CUDA_ERROR_CHECK"
+            ):
+                continue
+            raise NotImplementedError(
+                "Helion CuTe lowering found an exported header that redefines "
+                "CUTE_DSL_CUDA_ERROR_CHECK without an #ifndef guard"
+            )
+        if "CUTE_DSL_CUDA_ERROR_CHECK(" in line:
+            uses += 1
+    if uses == 0:
         raise NotImplementedError(
-            "Helion CuTe lowering found an exported header that redefines "
-            "CUTE_DSL_CUDA_ERROR_CHECK without an #ifndef guard"
+            "Helion CuTe lowering found an exported header that never uses "
+            "CUTE_DSL_CUDA_ERROR_CHECK, so module load errors would not be "
+            "reported"
         )
 
 
@@ -667,7 +677,18 @@ def export_cute_launch(
             (
                 source,
                 [
-                    (t.shape, t.stride(), t.storage_offset(), t.dtype)
+                    (
+                        tuple(t.shape),
+                        # Size-1 strides never affect an address (both
+                        # runtime checks ignore them), so do not let them
+                        # split one effective layout into two prefixes.
+                        tuple(
+                            1 if size == 1 else stride
+                            for stride, size in zip(t.stride(), t.shape)
+                        ),
+                        t.storage_offset(),
+                        t.dtype,
+                    )
                     for t in captured.tensors
                 ],
                 captured.grid,
@@ -737,9 +758,12 @@ def note_existing_launches(modules: Any) -> None:
         if graph is None:
             continue
         for node in graph.nodes:
-            # Edge conversion rewraps the op target, so match on the
-            # launch's unique prefix in the target name, not identity.
+            # Edge conversion rewraps the op target, and functionalization
+            # wraps a writing call in auto_functionalized with the op as its
+            # first argument, so match the launch's unique prefix in either.
             target = str(node.target)
+            if node.args:
+                target += str(node.args[0])
             for launch in exported:
                 if launch.library in target:
                     launches[launch.library] = launch
@@ -748,6 +772,11 @@ def note_existing_launches(modules: Any) -> None:
 def last_program_had_launches() -> bool:
     """Whether this thread's last completed compile linked CuTe launches."""
     return _STATE.per_thread.last_had_launches
+
+
+def current_program_launches() -> list[_ExportedLaunch]:
+    """The launches recorded for this thread's program so far."""
+    return list(_STATE.program_launches().values())
 
 
 def exported_fallback_kernels() -> dict[str, None]:
@@ -765,19 +794,23 @@ def exported_fallback_kernels() -> dict[str, None]:
 
 
 def program_link_options() -> tuple[list[str], list[str]]:
-    """Link directories and libraries for every launch exported so far.
+    """Link directories and libraries for this thread's program launches.
 
-    The CUDA backend adds these to the AOTInductor link of the calling
-    thread only (through its compile patch). Linking every exported
-    archive is safe -- the linker keeps only the objects the program
-    calls -- and it covers programs that already contained helion_cute
-    ops when lowering started, whose launches this pass run did not
-    export itself.
+    Only this compile's launches (exported or noted by the pass on this
+    thread) are linked, so an unrelated compile never sees these archives.
     """
-    with _STATE.lock:
-        launches = list(_STATE.exported.values())
+    launches = list(_STATE.program_launches().values())
     if not launches:
         return [], []
+    missing = [
+        str(e.library_directory / f"lib{e.library}.a")
+        for e in launches
+        if not (e.library_directory / f"lib{e.library}.a").is_file()
+    ]
+    if missing:
+        raise RuntimeError(
+            "Helion CuTe launch archives are missing: " + ", ".join(missing)
+        )
     directories = [str(e.library_directory) for e in launches]
     directories.append(str(_dsl_runtime_directory()))
     libraries = [e.library for e in launches] + [_DSL_RUNTIME_LIBRARY]

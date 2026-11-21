@@ -70,6 +70,37 @@ class LowerHelionCuteTest(helion_tests.LowerHelionTest):
 
         self._export_and_run(Model(), x, x[0] + 2 * x[1])
 
+    def test_rejects_two_distinct_cute_launches(self) -> None:
+        add = self._kernel(
+            helion_tests._add,
+            helion_tests.helion.Config(block_sizes=[256]),
+            static_shapes=True,
+        )
+        scale = self._kernel(
+            helion_tests._increment_and_double,
+            helion_tests.helion.Config(block_sizes=[256]),
+            static_shapes=True,
+        )
+        x = torch.randn(2, 257, device="cuda")
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                working = x[1].clone()
+                return add(x[0], scale(working))
+
+        program = torch.export.export(Model(), (x,), strict=True)
+        with self.assertRaisesRegex(
+            NotImplementedError, "only one distinct CuTe launch"
+        ):
+            to_edge_transform_and_lower(
+                program,
+                partitioner=[
+                    CudaPartitioner(
+                        [CudaBackend.generate_method_name_compile_spec("forward")]
+                    )
+                ],
+            )
+
     def test_rejects_windows_target(self) -> None:
         kernel = self._kernel(
             helion_tests._add,
@@ -136,11 +167,11 @@ class LowerHelionCuteTest(helion_tests.LowerHelionTest):
         self.assertTrue(rebuilt.is_file())
         torch.testing.assert_close(program.module()(x), x * 2)
 
-    def test_export_link_set_is_process_wide(self) -> None:
+    def test_export_visible_process_wide_links_per_program(self) -> None:
         # The hand-off contract other threads rely on: the exported op, its
-        # shim declaration, its fallback-kernel entry and its archive are
-        # all visible process-wide, so a compile on any thread can call and
-        # link a launch another thread exported. (Concurrent full lowerings
+        # shim declaration and its fallback-kernel entry are visible from
+        # any thread's link context, while archives link only into the
+        # program that recorded the launch. (Concurrent full lowerings
         # still race inside torch's own global registrations, before any of
         # this state is read.)
         kernel = self._kernel(
@@ -162,24 +193,34 @@ class LowerHelionCuteTest(helion_tests.LowerHelionTest):
         seen = []
 
         def observe() -> None:
+            # No link context on this thread yet: if Inductor's config were
+            # process-wide, the main thread's patch would be visible here.
+            outside = torch._inductor.config.aot_inductor.custom_ops_to_c_shims.get(
+                exported.op
+            )
             with helion_cute.link_exported_launches():
                 shims = torch._inductor.config.aot_inductor.custom_ops_to_c_shims
                 seen.append(
                     (
+                        outside,
                         helion_cute.exported_fallback_kernels(),
                         shims.get(exported.op),
                         helion_cute.program_link_options(),
                     )
                 )
 
-        thread = threading.Thread(target=observe)
-        thread.start()
-        thread.join(timeout=60)
+        with helion_cute.link_exported_launches():
+            thread = threading.Thread(target=observe)
+            thread.start()
+            thread.join(timeout=60)
         self.assertFalse(thread.is_alive())
-        ((fallbacks, shim, options),) = seen
+        ((outside_shim, fallbacks, shim, options),) = seen
+        self.assertIsNone(outside_shim)
         self.assertIn(f"helion_cute::{exported.library}", fallbacks)
         self.assertEqual(shim, [exported.shim_declaration])
-        self.assertIn(exported.library, options[1])
+        # Archives are per program: another thread links none of them
+        # unless its own program recorded the launch.
+        self.assertEqual(options, ([], []))
         helion_cute.begin_program()
 
     def test_prelowered_program_still_links_and_runs(self) -> None:
@@ -208,3 +249,5 @@ class LowerHelionCuteTest(helion_tests.LowerHelionTest):
         )
         first, _second = helion_tests._run_twice(edge.to_executorch(), x)
         torch.testing.assert_close(torch.as_tensor(first[0], device="cuda"), x * 2)
+        # The flag that keeps this program out of the PTX fallback set.
+        self.assertTrue(helion_cute.last_program_had_launches())

@@ -299,7 +299,12 @@ def _install_helion_cute_links(active):
 
     def device_options(device_type, aot_mode=False, *args, **kwargs):
         result = original(device_type, aot_mode, *args, **kwargs)
-        if not (aot_mode and active()):
+        if not (
+            aot_mode
+            and active()
+            and sys.platform.startswith("linux")
+            and torch._inductor.config.aot_inductor.cross_target_platform is None
+        ):
             return result
         # Link the archives of the Helion CuTe launches this thread's program
         # compiled. Reading them per calling thread keeps the link free of

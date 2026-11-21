@@ -146,9 +146,12 @@ def _read_captured_call(node: Node) -> _CapturedHelionCall:
     # from a capture its functionalization rebuilt when they are empty, so a
     # missing entry means "none". For Triton launches the traced replacement
     # cross-checks both (torch's mutation analysis plus the placeholder and
-    # aliasing checks below). CuTe launches rely on Helion's report: their
-    # op schema's writes come from the same tensors_to_clone set, so an
-    # unreported CuTe kernel write cannot be caught after tracing.
+    # aliasing checks below), with one exception: an output that aliases a
+    # mutated input aliases the clone the trace launches on, which neither
+    # post-trace check sees, so only direct_aliases rejects that case. CuTe
+    # launches rely on Helion's report entirely: their op schema's writes
+    # come from the same tensors_to_clone set, so an unreported CuTe kernel
+    # write cannot be caught after tracing.
     try:
         spec = kwargs["output_spec"]
         is_functional = node.target is hops.helion_kernel_wrapper_functional
@@ -268,7 +271,11 @@ def _parse_helion_call(captured: _CapturedHelionCall) -> _HelionCall:
             "Mutating Helion calls must be functionalized before CUDA lowering"
         )
     names = list(kernel.signature.parameters)
-    if captured.has_constant_args or set(names) != set(captured.tensor_args):
+    if (
+        captured.has_constant_args
+        or set(names) != set(captured.tensor_args)
+        or not all(isinstance(v, Node) for v in captured.tensor_args.values())
+    ):
         raise NotImplementedError(
             "Helion lowering currently requires tensor-only arguments"
         )
@@ -570,6 +577,7 @@ class LowerHelionPass:
 
     Supported: Triton and CuTe kernels with one explicit config, static strided
     tensor arguments, multiple tensor outputs and functionalized input mutation.
+    A program may contain only one distinct CuTe launch.
     Config selection stays offline; the pass neither tunes nor launches kernels
     (CuTe kernels are compiled for the export GPU), and inference needs neither
     Python nor Helion. CuTe kernels are rejected when ``target_platform`` is
@@ -587,6 +595,13 @@ class LowerHelionPass:
         # A program an earlier pass run already lowered contains helion_cute
         # ops but no Helion calls; their archives still have to link.
         helion_cute.note_existing_launches(root.modules())
+        if self.target_platform == "windows" and (
+            helion_cute.current_program_launches()
+        ):
+            raise NotImplementedError(
+                "Helion CuTe lowering is Linux-only; it cannot export a "
+                "kernel for Windows"
+            )
         signature = exported_program.graph_signature
         # The operands a CuTe kernel may assume start at their allocation:
         # the root graph's user inputs, parameters and buffers.
@@ -637,3 +652,10 @@ class LowerHelionPass:
             if modified:
                 module.graph.lint()
                 module.recompile()
+        launches = helion_cute.current_program_launches()
+        if len(launches) > 1:
+            raise NotImplementedError(
+                "Helion CuTe lowering supports only one distinct CuTe "
+                "launch per program for now; this program lowers "
+                f"{len(launches)} ({', '.join(e.library for e in launches)})"
+            )

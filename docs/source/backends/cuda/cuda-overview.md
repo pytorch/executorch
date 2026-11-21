@@ -177,7 +177,8 @@ The pass supports:
 
 - Kernels on the Triton or CuTe backend with `static_shapes=True` and exactly one config.
 - Tensor arguments, several calls per model, several tensor outputs and calls inside `torch.cond`
-  branches.
+  branches. A program may contain only one distinct CuTe launch (one kernel, config and set of
+  argument layouts); repeated calls to that launch are fine.
 - Kernels that write their inputs or buffers in place, as long as the written tensor is dense
   (non-overlapping, without gaps), so the copy made for the write keeps its strides.
 
@@ -187,7 +188,8 @@ Helion autotunes on the first call, or a `configs=[...]` list), scalar, containe
 from the ones `torch.export` recorded, more than one launch site, host tensor descriptors, and
 launch options AOTInductor cannot reproduce, such as cooperative grids, clusters or PDL. For CuTe
 kernels it also rejects launches with scalar arguments, workspace tensors, dynamic layouts, empty
-grids, and launches that stage (copy) under-aligned operands. It needs Helion 1.5.2 or newer,
+grids, launches that stage (copy) under-aligned operands, and programs with more than one
+distinct CuTe launch. It needs Helion 1.5.2 or newer,
 which records each call's host-semantic fingerprint at
 export.
 
