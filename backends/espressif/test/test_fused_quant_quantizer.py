@@ -9,10 +9,13 @@ import math
 
 import pytest
 import torch
+from executorch.backends.espressif.lowering import get_esp_fused_quant_recipe
 from executorch.backends.espressif.quantizer import get_esp_fused_quant_quantizer
 from executorch.backends.espressif.test.tester import EspTester
 from executorch.backends.transforms.fused_quant.graph_utils import get_qparams_from_node
 from executorch.backends.transforms.permute_pass_utils import get_arg
+from executorch.exir._serialize._program import deserialize_pte_binary
+from executorch.export import export
 from torchao.quantization.pt2e.quantizer import QuantizationAnnotation
 from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
@@ -72,6 +75,41 @@ def test_linear_without_bias():
     )
     assert get_arg(node, "bias") is None
     assert get_qparams_from_node(node, "bias") is None
+
+
+@pytest.mark.parametrize("out_features", [1, 3])
+def test_scalar_linear_bias_stays_float(out_features):
+    class Model(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.register_buffer(
+                "weight", torch.arange(out_features * 2).reshape(out_features, 2) * 0.05
+            )
+            self.register_buffer("bias", torch.tensor(0.125))
+
+        def forward(self, x):
+            return torch.nn.functional.linear(x, self.weight, self.bias)
+
+    inputs = (torch.tensor([[1.0, -2.0], [0.5, 3.0]]),)
+    session = export(
+        Model(), example_inputs=[inputs], export_recipe=get_esp_fused_quant_recipe()
+    )
+    reference = session.get_exported_program()
+    (node,) = reference.graph.find_nodes(
+        op="call_function", target=torch.ops.fused_quant.linear.default
+    )
+    assert get_qparams_from_node(node, "bias") is None
+    buffer = session.get_executorch_program_manager().buffer
+    operators = deserialize_pte_binary(buffer).program.execution_plan[0].operators
+    assert any(op.name == "aten::addmm" for op in operators)
+    assert all(
+        not op.name.startswith(("esp_nn::", "fused_quant::")) for op in operators
+    )
+    portable = pytest.importorskip("executorch.extension.pybindings.portable_lib")
+    runtime = portable._load_for_executorch_from_buffer(buffer)
+    torch.testing.assert_close(
+        runtime.forward(inputs)[0], reference.module()(*inputs), atol=1e-6, rtol=1e-6
+    )
 
 
 def test_runtime_linear_weights_stay_float():
