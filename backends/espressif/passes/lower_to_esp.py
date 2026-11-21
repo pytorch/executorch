@@ -4,8 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import copy
 import math
+import operator
 from ctypes import c_float
 from dataclasses import dataclass
 
@@ -18,7 +18,6 @@ from executorch.backends.transforms.permute_pass_utils import get_arg
 from executorch.backends.transforms.utils import get_constant
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportedProgramPassBase, ExportedProgramPassResult
-from torch.fx import GraphModule
 
 
 @dataclass(frozen=True)
@@ -169,26 +168,99 @@ _BINARY_LOWERINGS = {
 }
 
 
+def _pool_kernel_args(program, node) -> tuple | None:
+    inp = get_arg(node, "inp", torch.fx.Node)
+    input_value = inp.meta.get("val")
+    output_value = node.meta["val"][0]
+    if not all(
+        isinstance(value, torch.Tensor)
+        and value.dim() == 4
+        and value.dtype == torch.int8
+        and value.is_contiguous()
+        and all(type(dim) is int and 0 < dim <= 65535 for dim in value.shape)
+        and value.numel() <= torch.iinfo(torch.int32).max
+        for value in (input_value, output_value)
+    ):
+        return None
+    # The optimized S3 kernel returns without writing for other channel counts.
+    if input_value.shape[3] % 4:
+        return None
+    input_params = _qparams(program, node, "inp")
+    if input_params is None or input_params != _qparams(program, node, "out"):
+        return None
+    max_input = max(abs(-128 - input_params.zp), abs(127 - input_params.zp))
+    if not math.isfinite(c_float(1.0 / input_params.scale).value) or not math.isfinite(
+        c_float(max_input * c_float(input_params.scale).value).value
+    ):
+        return None
+    kernel = get_arg(node, "kernel_size")
+    stride = get_arg(node, "stride") or kernel
+    pairs = []
+    for arg in (kernel, stride, get_arg(node, "padding"), get_arg(node, "dilation")):
+        if not isinstance(arg, (list, tuple)) or len(arg) not in (1, 2):
+            return None
+        pair = list(arg) * (2 if len(arg) == 1 else 1)
+        if any(type(dim) is not int or not 0 <= dim <= 65535 for dim in pair):
+            return None
+        pairs.append(pair)
+    kernel, stride, padding, dilation = pairs
+    if get_arg(node, "ceil_mode") or dilation != [1, 1] or min(*kernel, *stride) == 0:
+        return None
+    if any(pad > window // 2 for pad, window in zip(padding, kernel)):
+        return None
+    if (
+        input_value.shape[0] != output_value.shape[0]
+        or input_value.shape[3] != output_value.shape[3]
+    ):
+        return None
+    if any(
+        (size + 2 * pad - window) // step + 1 != out_size
+        for size, pad, window, step, out_size in zip(
+            input_value.shape[1:3], padding, kernel, stride, output_value.shape[1:3]
+        )
+    ):
+        return None
+    return inp, kernel, stride, padding
+
+
+def _lower_max_pool2d(program, node) -> bool:
+    values = list(node.users)
+    if not values or any(
+        user.target != operator.getitem or user.args[1] != 0 for user in values
+    ):
+        return False
+    args = _pool_kernel_args(program, node)
+    if args is None:
+        return False
+    graph = node.graph
+    with graph.inserting_before(node):
+        replacement = graph.call_function(
+            exir_ops.edge.esp_nn.quantized_max_pool2d_int8.default,
+            args,
+        )
+    replacement.meta = values[0].meta.copy()
+    for value in values:
+        value.replace_all_uses_with(replacement)
+        graph.erase_node(value)
+    graph.erase_node(node)
+    return True
+
+
 class LowerToEsp(ExportedProgramPassBase):
     """Lower supported fused-quant operators to ESP-NN."""
 
     def call(self, exported_program):
-        # The pass manager copies programs shallowly; decomposition also retires
-        # qparam constants, so isolate both graph and constant dictionaries.
-        graph = copy.deepcopy(exported_program.graph)
-        for original, cloned in zip(exported_program.graph.nodes, graph.nodes):
-            cloned.name = original.name
-        module = GraphModule(exported_program.graph_module, graph)
-        module.meta = exported_program.graph_module.meta.copy()
-        exported_program._graph_module = module
-        exported_program._graph_signature = copy.deepcopy(
-            exported_program.graph_signature
-        )
-        exported_program._state_dict = exported_program.state_dict.copy()
-        exported_program._constants = exported_program.constants.copy()
+        module = exported_program.graph_module
+        graph = module.graph
 
         modified = False
         for node in list(graph.nodes):
+            if (
+                node.target
+                == exir_ops.edge.fused_quant.max_pool2d_with_indices_channels_last.default
+            ):
+                modified |= _lower_max_pool2d(exported_program, node)
+                continue
             lowering = _BINARY_LOWERINGS.get(node.target)
             if lowering is None:
                 continue
