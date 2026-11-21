@@ -57,14 +57,35 @@ Tensor& unsqueeze_copy_out(
       InvalidArgument,
       out);
 
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(out), InvalidArgument, out);
+
   ET_KERNEL_CHECK(
       ctx, check_unsqueeze_copy_args(self, dim, out), InvalidArgument, out);
 
-  if (self.nbytes() > 0) {
+  if (self.nbytes() == 0) {
     // Note that this check is important. It's valid for a tensor with numel 0
     // to have a null data pointer, but in some environments it's invalid to
     // pass a null pointer to memcpy() even when the size is zero.
+    return out;
+  }
+  if (is_contiguous_dim_order(
+          self.dim_order().data(), self.dim_order().size())) {
     memcpy(out.mutable_data_ptr(), self.const_data_ptr(), self.nbytes());
+  } else {
+    // self can be in another dim order, like the result of nonzero, while out
+    // is contiguous, as PyTorch's unsqueeze_copy returns it. Copy the elements
+    // in logical order.
+    const auto* input_data = self.const_data_ptr<uint8_t>();
+    auto* output_data = out.mutable_data_ptr<uint8_t>();
+    const auto element_size = self.element_size();
+    for (const auto [output_index, input_index] :
+         BroadcastIndexesRange<1, /*support_noncontiguous_input_tensors=*/true>(
+             self, self)) {
+      memcpy(
+          output_data + output_index * element_size,
+          input_data + input_index * element_size,
+          element_size);
+    }
   }
   return out;
 }

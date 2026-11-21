@@ -737,3 +737,25 @@ TEST_F(OpSliceCopyTensorOutTest, DynamicShapeUnbound) {
   op_slice_copy_tensor_out(x, 1, 1, 5, 2, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
+
+TEST_F(OpSliceCopyTensorOutTest, ChannelsLastSliceAlongChannels) {
+  TensorFactory<ScalarType::Float> tf;
+  // x[0, c, h, w] is 4 * c + 2 * h + w, stored channels last.
+  Tensor x = tf.make_channels_last({1, 2, 2, 2}, {0, 4, 1, 5, 2, 6, 3, 7});
+  Tensor out = tf.zeros_channels_last({1, 1, 2, 2});
+  op_slice_copy_tensor_out(
+      x, /*dim=*/1, /*start=*/1, /*end=*/2, /*step=*/1, out);
+  EXPECT_TENSOR_EQ(out, tf.make_channels_last({1, 1, 2, 2}, {4, 5, 6, 7}));
+}
+
+TEST_F(OpSliceCopyTensorOutTest, ChannelsLastSliceAlongWidthWithStep) {
+  TensorFactory<ScalarType::Float> tf;
+  // x[0, c, h, w] is 8 * c + 4 * h + w, stored channels last.
+  Tensor x = tf.make_channels_last(
+      {1, 2, 2, 4}, {0, 8, 1, 9, 2, 10, 3, 11, 4, 12, 5, 13, 6, 14, 7, 15});
+  Tensor out = tf.zeros_channels_last({1, 2, 2, 2});
+  op_slice_copy_tensor_out(
+      x, /*dim=*/3, /*start=*/1, /*end=*/4, /*step=*/2, out);
+  EXPECT_TENSOR_EQ(
+      out, tf.make_channels_last({1, 2, 2, 2}, {1, 9, 3, 11, 5, 13, 7, 15}));
+}

@@ -377,3 +377,19 @@ TEST_F(OpGatherOutTest, InvalidOneDimInputAndZeroDimIndex) {
   ET_EXPECT_KERNEL_FAILURE(
       context_, op_gather_out(self, 0, index, sparse_grad, out));
 }
+
+TEST_F(OpGatherOutTest, ColumnMajorInputs) {
+  TensorFactory<ScalarType::Long> tf_index;
+  TensorFactory<ScalarType::Float> tf_data;
+
+  // self is [[1, 2, 3], [4, 5, 6]] and the index is [[2, 0], [1, 1]], both
+  // stored column by column like the result of nonzero.
+  Tensor self = tf_data.make_with_dimorder(
+      {2, 3}, {1, 4, 2, 5, 3, 6}, /*dim_order=*/{1, 0});
+  Tensor index =
+      tf_index.make_with_dimorder({2, 2}, {2, 1, 0, 1}, /*dim_order=*/{1, 0});
+  bool sparse_grad = false;
+  Tensor out = tf_data.zeros({2, 2});
+  op_gather_out(self, 1, index, sparse_grad, out);
+  EXPECT_TENSOR_EQ(out, tf_data.make({2, 2}, {3, 1, 5, 5}));
+}
