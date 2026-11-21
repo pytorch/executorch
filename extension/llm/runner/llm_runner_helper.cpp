@@ -8,6 +8,8 @@
 // @lint-ignore-every CLANGTIDY facebook-hte-Deprecated
 // Implementation of helper utilities for creating and configuring LLM runners
 
+#include <algorithm>
+
 #include <executorch/extension/llm/runner/image_prefiller.h>
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
 #include <executorch/extension/llm/runner/multimodal_decoder_runner.h>
@@ -316,12 +318,26 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
       ? decode_text_decoder_runner.get()
       : text_decoder_runner.get();
 
+  auto prefill_meta = module->method_meta(prefill_method_name);
+  if (!prefill_meta.ok()) {
+    ET_LOG(Error, "Failed to read prefill method metadata");
+    return nullptr;
+  }
+  auto token_meta = prefill_meta->input_tensor_meta(0);
+  if (!token_meta.ok() || token_meta->sizes().size() != 2 ||
+      token_meta->sizes()[1] <= 0) {
+    ET_LOG(Error, "Expected a bounded rank-two token input");
+    return nullptr;
+  }
+  const int64_t max_prefill_chunk =
+      std::min<int64_t>(metadata.at(kMaxSeqLen), token_meta->sizes()[1]);
+
   // Create text_prefiller
   auto text_prefiller = std::make_unique<TextPrefiller>(
       text_decoder_runner.get(),
       metadata.at(kUseKVCache),
       metadata.at(kEnableDynamicShape),
-      metadata.at(kMaxSeqLen));
+      max_prefill_chunk);
 
   // Create text_token_generator with stats
   auto text_token_generator = std::make_unique<TextTokenGenerator>(
