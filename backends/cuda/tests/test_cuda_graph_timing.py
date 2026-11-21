@@ -289,6 +289,9 @@ class RegretTest(unittest.TestCase):
 
 
 class TimingStatisticRetryTest(unittest.TestCase):
+    def setUp(self) -> None:
+        _require_cuda(self)
+
     def test_mean_statistic_survives_oom_retries_and_offload(self) -> None:
         fn = lambda: None
         with (

@@ -6,7 +6,11 @@ import pytest
 import torch
 from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
 from executorch.backends.cuda.tests.nvfp4_test_utils import weight
-from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import nvfp4_quantize_activation, nvfp4_w4a4
+from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
+    _has_native_fp4_conversion,
+    nvfp4_quantize_activation,
+    nvfp4_w4a4,
+)
 
 pytestmark = pytest.mark.skipif(
     not torch.cuda.is_available() or torch.cuda.get_device_capability() < (8, 9),
@@ -70,8 +74,8 @@ def test_activation_rounding_boundaries():
 
 @pytest.mark.parametrize("m,n,k", [(1, 71, 192), (16, 97, 80), (37, 65, 256)])
 def test_native_w4a4(m, n, k):
-    if torch.cuda.get_device_capability()[0] < 12:
-        pytest.skip("SM120 required")
+    if not _has_native_fp4_conversion():
+        pytest.skip("native FP4 required")
     w = weight(n, k)
     x = torch.randn(m, k, device="cuda", dtype=torch.bfloat16)
     q, s, g = nvfp4_quantize_activation(x)
@@ -86,8 +90,8 @@ def test_native_w4a4(m, n, k):
 @pytest.mark.parametrize("split_k", [1, 2, 4, 8, 16, 32])
 @pytest.mark.parametrize("mode", ["w4a4"])
 def test_gemm_split_k(mode, split_k):
-    if mode == "w4a4" and torch.cuda.get_device_capability()[0] < 12:
-        pytest.skip("SM120 required")
+    if mode == "w4a4" and not _has_native_fp4_conversion():
+        pytest.skip("native FP4 required")
     k = 4224 if split_k == 32 else 2176
     w = weight(97, k)
     x = torch.randn(17, k, device="cuda", dtype=torch.bfloat16)
@@ -104,8 +108,8 @@ def test_split_workspace_exceeds_int32(mode):
     from executorch.backends.cuda.triton.kernels import nvfp4_quantized_gemm as kernels
     from torch._library.triton import set_wrap_triton_enabled
 
-    if mode == "w4a4" and torch.cuda.get_device_capability()[0] < 12:
-        pytest.skip("SM120 required")
+    if mode == "w4a4" and not _has_native_fp4_conversion():
+        pytest.skip("native FP4 required")
     if torch.cuda.mem_get_info()[0] < 13 * 1024**3:
         pytest.skip("Large split workspace needs 13 GiB of free VRAM")
     m, n, k, split = 4096, 39936, 2048, 16
@@ -142,5 +146,3 @@ def test_split_workspace_exceeds_int32(mode):
         )
         torch.cuda.synchronize()
         assert bool((y == 512).all())
-
-

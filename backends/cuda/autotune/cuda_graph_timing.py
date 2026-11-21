@@ -171,9 +171,7 @@ def cuda_graph_call_times_us(fn: Callable[[], Any]) -> list[float]:
     return _replay_call_times_us(fn, 1)[0]
 
 
-def _replay_call_times_us(
-    fn: Callable[[], Any], replays: int
-) -> list[list[float]]:
+def _replay_call_times_us(fn: Callable[[], Any], replays: int) -> list[list[float]]:
     """Per-replay device times of the ``fn()`` calls captured into one CUDA
     graph, each with a cold L2, in microseconds."""
     stream = torch.cuda.current_stream()
