@@ -91,11 +91,8 @@ class DiffusionRunner:
     ) -> "DiffusionRunner":
         try:
             import diffusers
-            from transformers import AutoTokenizer
         except ImportError as error:
-            raise ImportError(
-                "The Hugging Face factory requires diffusers and transformers"
-            ) from error
+            raise ImportError("The Hugging Face factory requires diffusers") from error
         metadata = cls._read_program_metadata(program)
         try:
             pipeline_behavior = PIPELINE_BEHAVIORS[metadata.pipeline]
@@ -103,10 +100,7 @@ class DiffusionRunner:
             raise ValueError(
                 f"unsupported diffusion pipeline {metadata.pipeline!r}"
             ) from error
-        tokenizers = [
-            AutoTokenizer.from_pretrained(model_id, subfolder=slot, revision=revision)
-            for slot in pipeline_behavior.tokenizer_slots
-        ]
+        tokenizers = pipeline_behavior.load_tokenizers(model_id, revision)
         scheduler_class = getattr(diffusers, scheduler_name or metadata.scheduler)
         scheduler = scheduler_class.from_pretrained(
             model_id, subfolder="scheduler", revision=revision
@@ -182,12 +176,8 @@ class DiffusionRunner:
             self.metadata.max_sequence_lengths,
             self.pipeline_behavior.text_encoder_input_names,
         ):
-            encoding = tokenizer(
-                prompt,
-                padding="max_length",
-                max_length=length,
-                truncation=True,
-                return_tensors="pt",
+            encoding = self.pipeline_behavior.tokenize_prompt(
+                tokenizer, prompt, max_length=length
             )
             input_ids = getattr(encoding, "input_ids", None)
             if input_ids is None and isinstance(encoding, dict):
