@@ -35,6 +35,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/exir/backend:backend_api",
             "//executorch/exir/backend:compile_spec_schema",
             "//executorch/examples/models/toy_model:toy_model",
+            "//executorch/export:export_utils",
         ],
         keep_gpu_sections = True,
         remote_execution = re_test_utils.remote_execution(
