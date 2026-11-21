@@ -16,6 +16,7 @@ import argparse
 import gc
 import json
 import logging
+import os
 from typing import TYPE_CHECKING
 
 import torch
@@ -561,6 +562,7 @@ def _export_dflash_mlx(
     from executorch.examples.models.muse_glimmer.source_transformations.mlx import (
         dflash_mlx_source_transformations,
         mlx_source_transformations_dflash_target,
+        share_rope_frequencies,
     )
     from executorch.exir import (
         EdgeCompileConfig,
@@ -605,6 +607,9 @@ def _export_dflash_mlx(
     # quantized_matmul -- which surfaces as an SDPA dtype mismatch (query in the
     # activation dtype, cached K/V in float32) when exporting draft_forward.
     combined.to(activation_dtype)
+
+    if os.environ.get("ET_MLX_SHARE_ROPE_PHASE", "0") == "1":
+        share_rope_frequencies(combined)
 
     # -- Export the target contract --
     target_seq_dim = Dim("target_seq_len", min=1, max=max_prefill)

@@ -91,6 +91,20 @@ lists, graph dumps, per-node support decisions, and serialization details:
 ET_MLX_DEBUG=1 python -m executorch.backends.mlx.examples.llm.export_llm_hf ...
 ```
 
+### Experimental decode fusions
+
+`ET_MLX_FUSE_GATES=1` experimentally fuses FP16 SwiGLU and sigmoid gating while
+retaining native MLX matmuls and FP16 rounding boundaries. It supports strided
+inputs; shared activation outputs and broadcasting retain their existing paths.
+
+Additional opt-in fusions are `ET_MLX_FUSE_ROPE=1` (FP32 rotation around FP16
+activations), `ET_MLX_FUSE_NORM_ADD=1` (FP16 RMSNorm and residual addition), and
+`ET_MLX_FUSE_SOFT_CAP=1` (FP32 logit soft cap). Muse Glimmer's MLX DFlash export
+also accepts `ET_MLX_SHARE_ROPE_PHASE=1` to share identical RoPE phase calculations.
+These preserve the native quantized matmuls and remain disabled by default.
+See the [saved M5 measurements](benchmarks/native_decode_fusions.md) for results
+and validation limits.
+
 ---
 
 ## Directory Layout

@@ -1,0 +1,416 @@
+{
+  "measured_requests": 192,
+  "warmups": 192,
+  "configurations": [
+    {
+      "mode": "solo",
+      "proposals": 0,
+      "temperature": 0.0,
+      "baseline_requests": 12,
+      "fused_requests": 12,
+      "pairs": 12,
+      "retained_pairs": 7,
+      "complete": true,
+      "same_text": true,
+      "blocks": [
+        {
+          "block": 0,
+          "pairs": 3,
+          "gain_percent": {
+            "decode_tok_s": 3.609844247482985,
+            "prefill_tok_s": -2.7520915896081077,
+            "http_tok_s": 3.190048790118394
+          }
+        },
+        {
+          "block": 1,
+          "pairs": 4,
+          "gain_percent": {
+            "decode_tok_s": 0.9804858875893441,
+            "prefill_tok_s": -0.9906858594411538,
+            "http_tok_s": 0.5992657523059775
+          }
+        }
+      ],
+      "baseline": {
+        "decode_tok_s": 26.35935996365875,
+        "prefill_tok_s": 911.4124375067438,
+        "http_tok_s": 22.932961304132768
+      },
+      "fused": {
+        "decode_tok_s": 26.912725874663593,
+        "prefill_tok_s": 899.7940487181309,
+        "http_tok_s": 23.300256528299887
+      },
+      "gain_percent": {
+        "decode_tok_s": 2.0993146714023414,
+        "prefill_tok_s": -1.2747674170868417,
+        "http_tok_s": 1.6016039939025672
+      }
+    },
+    {
+      "mode": "solo",
+      "proposals": 0,
+      "temperature": 0.8,
+      "baseline_requests": 12,
+      "fused_requests": 12,
+      "pairs": 12,
+      "retained_pairs": 7,
+      "complete": true,
+      "same_text": true,
+      "blocks": [
+        {
+          "block": 0,
+          "pairs": 4,
+          "gain_percent": {
+            "decode_tok_s": 3.625614510934061,
+            "prefill_tok_s": 1.327195056198427,
+            "http_tok_s": 3.1523680427031575
+          }
+        },
+        {
+          "block": 1,
+          "pairs": 3,
+          "gain_percent": {
+            "decode_tok_s": 1.2108382726502942,
+            "prefill_tok_s": -0.2824060999717548,
+            "http_tok_s": 0.815558070730904
+          }
+        }
+      ],
+      "baseline": {
+        "decode_tok_s": 26.014015714589082,
+        "prefill_tok_s": 1000.2441604948319,
+        "http_tok_s": 20.46358824146284
+      },
+      "fused": {
+        "decode_tok_s": 26.687807121589888,
+        "prefill_tok_s": 1005.3580923555155,
+        "http_tok_s": 20.895090037076347
+      },
+      "gain_percent": {
+        "decode_tok_s": 2.590109171891264,
+        "prefill_tok_s": 0.5112683545339225,
+        "http_tok_s": 2.1086321251285067
+      }
+    },
+    {
+      "mode": "dflash",
+      "proposals": 7,
+      "temperature": 0.0,
+      "baseline_requests": 12,
+      "fused_requests": 12,
+      "pairs": 12,
+      "retained_pairs": 12,
+      "complete": true,
+      "same_text": true,
+      "blocks": [
+        {
+          "block": 0,
+          "pairs": 6,
+          "gain_percent": {
+            "decode_tok_s": 2.5263979320603758,
+            "prefill_tok_s": 2.017449869891319,
+            "http_tok_s": 2.284727615085247
+          }
+        },
+        {
+          "block": 1,
+          "pairs": 6,
+          "gain_percent": {
+            "decode_tok_s": 1.371152685576349,
+            "prefill_tok_s": 1.8186256560478453,
+            "http_tok_s": 1.536586737164214
+          }
+        }
+      ],
+      "baseline": {
+        "decode_tok_s": 89.9614450949593,
+        "prefill_tok_s": 862.4722605409944,
+        "http_tok_s": 50.810022771150074
+      },
+      "fused": {
+        "decode_tok_s": 91.71195652173913,
+        "prefill_tok_s": 879.0134022036463,
+        "http_tok_s": 51.78012844513666
+      },
+      "gain_percent": {
+        "decode_tok_s": 1.945846273291929,
+        "prefill_tok_s": 1.917875208215536,
+        "http_tok_s": 1.909280140172287
+      }
+    },
+    {
+      "mode": "dflash",
+      "proposals": 7,
+      "temperature": 0.8,
+      "baseline_requests": 12,
+      "fused_requests": 12,
+      "pairs": 12,
+      "retained_pairs": 11,
+      "complete": true,
+      "same_text": true,
+      "blocks": [
+        {
+          "block": 0,
+          "pairs": 5,
+          "gain_percent": {
+            "decode_tok_s": 0.547467357864373,
+            "prefill_tok_s": 1.5663949336387706,
+            "http_tok_s": 0.9609712212091726
+          }
+        },
+        {
+          "block": 1,
+          "pairs": 6,
+          "gain_percent": {
+            "decode_tok_s": 1.5775331541995286,
+            "prefill_tok_s": 2.2338026452124016,
+            "http_tok_s": 1.888169238671189
+          }
+        }
+      ],
+      "baseline": {
+        "decode_tok_s": 78.40874376294084,
+        "prefill_tok_s": 888.4109391189676,
+        "http_tok_s": 46.177102973159634
+      },
+      "fused": {
+        "decode_tok_s": 79.26431733177779,
+        "prefill_tok_s": 905.44,
+        "http_tok_s": 46.846383849719274
+      },
+      "gain_percent": {
+        "decode_tok_s": 1.0911711217101772,
+        "prefill_tok_s": 1.9168000000000074,
+        "http_tok_s": 1.4493782274489053
+      }
+    },
+    {
+      "mode": "dflash2",
+      "proposals": 7,
+      "temperature": 0.0,
+      "baseline_requests": 12,
+      "fused_requests": 12,
+      "pairs": 12,
+      "retained_pairs": 11,
+      "complete": true,
+      "same_text": true,
+      "blocks": [
+        {
+          "block": 0,
+          "pairs": 6,
+          "gain_percent": {
+            "decode_tok_s": 1.6762877442273671,
+            "prefill_tok_s": 0.529068718811998,
+            "http_tok_s": 1.080001445410761
+          }
+        },
+        {
+          "block": 1,
+          "pairs": 5,
+          "gain_percent": {
+            "decode_tok_s": 2.49766427904079,
+            "prefill_tok_s": 2.1990508655838514,
+            "http_tok_s": 2.3298402767865767
+          }
+        }
+      ],
+      "baseline": {
+        "decode_tok_s": 99.64341174440673,
+        "prefill_tok_s": 883.9149042516635,
+        "http_tok_s": 52.566584315456154
+      },
+      "fused": {
+        "decode_tok_s": 101.699392445188,
+        "prefill_tok_s": 895.5814395138317,
+        "http_tok_s": 53.44455486530862
+      },
+      "gain_percent": {
+        "decode_tok_s": 2.0633383229139213,
+        "prefill_tok_s": 1.3198708615559829,
+        "http_tok_s": 1.6702065794948595
+      }
+    },
+    {
+      "mode": "dflash2",
+      "proposals": 7,
+      "temperature": 0.8,
+      "baseline_requests": 12,
+      "fused_requests": 12,
+      "pairs": 12,
+      "retained_pairs": 11,
+      "complete": true,
+      "same_text": true,
+      "blocks": [
+        {
+          "block": 0,
+          "pairs": 6,
+          "gain_percent": {
+            "decode_tok_s": 1.5649491204936083,
+            "prefill_tok_s": 0.5502227804192517,
+            "http_tok_s": 1.130866000830344
+          }
+        },
+        {
+          "block": 1,
+          "pairs": 5,
+          "gain_percent": {
+            "decode_tok_s": 3.7966627002795184,
+            "prefill_tok_s": 2.620799893436332,
+            "http_tok_s": 3.2291907616526228
+          }
+        }
+      ],
+      "baseline": {
+        "decode_tok_s": 88.47072040443757,
+        "prefill_tok_s": 878.1676262007106,
+        "http_tok_s": 49.18564369693862
+      },
+      "fused": {
+        "decode_tok_s": 90.78999082929386,
+        "prefill_tok_s": 891.6023318103041,
+        "http_tok_s": 50.230250076001305
+      },
+      "gain_percent": {
+        "decode_tok_s": 2.6215118564129503,
+        "prefill_tok_s": 1.5298566251772616,
+        "http_tok_s": 2.123803412026315
+      }
+    },
+    {
+      "mode": "dflash2",
+      "proposals": 15,
+      "temperature": 0.0,
+      "baseline_requests": 12,
+      "fused_requests": 12,
+      "pairs": 12,
+      "retained_pairs": 10,
+      "complete": true,
+      "same_text": true,
+      "blocks": [
+        {
+          "block": 0,
+          "pairs": 5,
+          "gain_percent": {
+            "decode_tok_s": 0.5365103159887807,
+            "prefill_tok_s": 1.113600421718508,
+            "http_tok_s": 0.8979002100425904
+          }
+        },
+        {
+          "block": 1,
+          "pairs": 5,
+          "gain_percent": {
+            "decode_tok_s": 1.6366677285760023,
+            "prefill_tok_s": 1.7429554173832518,
+            "http_tok_s": 1.6562712669952129
+          }
+        }
+      ],
+      "baseline": {
+        "decode_tok_s": 123.51003764115433,
+        "prefill_tok_s": 905.732836476657,
+        "http_tok_s": 56.72581645605106
+      },
+      "fused": {
+        "decode_tok_s": 124.8488932046531,
+        "prefill_tok_s": 918.6637618010167,
+        "http_tok_s": 57.44960103442536
+      },
+      "gain_percent": {
+        "decode_tok_s": 1.084005469570548,
+        "prefill_tok_s": 1.427675447283283,
+        "http_tok_s": 1.275935056721611
+      }
+    },
+    {
+      "mode": "dflash2",
+      "proposals": 15,
+      "temperature": 0.8,
+      "baseline_requests": 12,
+      "fused_requests": 12,
+      "pairs": 12,
+      "retained_pairs": 11,
+      "complete": true,
+      "same_text": true,
+      "blocks": [
+        {
+          "block": 0,
+          "pairs": 6,
+          "gain_percent": {
+            "decode_tok_s": 3.2848011363636465,
+            "prefill_tok_s": 1.2002824193927841,
+            "http_tok_s": 2.2300824121164187
+          }
+        },
+        {
+          "block": 1,
+          "pairs": 5,
+          "gain_percent": {
+            "decode_tok_s": 2.102901105946464,
+            "prefill_tok_s": 1.640904466541948,
+            "http_tok_s": 1.866789256963708
+          }
+        }
+      ],
+      "baseline": {
+        "decode_tok_s": 103.81555885128758,
+        "prefill_tok_s": 865.6743816065227,
+        "http_tok_s": 53.129115943380725
+      },
+      "fused": {
+        "decode_tok_s": 106.63671195777617,
+        "prefill_tok_s": 877.867924235608,
+        "http_tok_s": 54.22203558567154
+      },
+      "gain_percent": {
+        "decode_tok_s": 2.717466570237126,
+        "prefill_tok_s": 1.4085599491181044,
+        "http_tok_s": 2.05710112597306
+      }
+    }
+  ],
+  "hardware": {
+    "chip": "Apple M5 Max",
+    "memory_gib": 64,
+    "os": "macOS 27.2"
+  },
+  "comparison": "gate-only baseline versus gates + rotary + norm/add + target soft cap + shared phases",
+  "mlx_commit": "14dc9c673bce9a51dca4e58f5b2ccae80736431d",
+  "executorch_parent": "f9e14fe3817871f34ec8bb6f70b63ecdb112c143",
+  "correctness": {
+    "measured_requests": 192,
+    "paired_requests": 96,
+    "matching_outputs": 96,
+    "clock_matched_pairs": 80,
+    "excluded_pairs": 16,
+    "output_mismatches": []
+  },
+  "checkpoints": {
+    "dflash": {
+      "target": {
+        "file": "Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf",
+        "bytes": 16756683904,
+        "sha256": "4cc57c0f51040a226e5a72cc47b7613f7772950e460a665f7083de89f183f60e"
+      },
+      "draft": {
+        "file": "dflash-Muse-Glimmer-30B-Q4_K_M.gguf",
+        "bytes": 1631208128,
+        "sha256": "b2e808bf656086fe86bd0d0bd990f01d33e377537a07c02d45371517c8b264ef"
+      }
+    },
+    "dflash2": {
+      "target": {
+        "file": "Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf",
+        "bytes": 16756683904,
+        "sha256": "4cc57c0f51040a226e5a72cc47b7613f7772950e460a665f7083de89f183f60e"
+      },
+      "draft": {
+        "file": "Muse-Glimmer-30B-DFlash2-Q4_K_M.gguf",
+        "bytes": 1645657280,
+        "sha256": "0f1e7959d032007430ed19747bf49cea873b208590fb3b8176f353033912ab6f"
+      }
+    }
+  }
+}

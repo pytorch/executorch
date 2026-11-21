@@ -186,6 +186,10 @@ void write_output(
         " bytes, output has " + std::to_string(out_nbytes) + " bytes");
   }
 
+  if (out_nbytes == 0) {
+    return;
+  }
+
   const void* src = snapshot.empty() ? arr.data<void>() : snapshot.data();
   if (!src) {
     throw std::runtime_error(
