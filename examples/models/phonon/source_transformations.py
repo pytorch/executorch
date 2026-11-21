@@ -177,8 +177,7 @@ class DepthwiseConvTranspose1dAsMul(nn.Module):
         y = x.unsqueeze(3) * self.weight  # [b, c, n, 2s]
         head = y[..., :s].reshape(b, c, n * s)
         tail = y[..., s:].reshape(b, c, n * s)
-        zeros = x.new_zeros(b, c, s)
-        return torch.cat([head, zeros], 2) + torch.cat([zeros, tail], 2)
+        return F.pad(head, (0, s)) + F.pad(tail, (s, 0))
 
 
 def _swap(root: nn.Module, cls: type, make) -> int:
