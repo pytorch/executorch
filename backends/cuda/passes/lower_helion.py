@@ -28,7 +28,7 @@ import importlib
 import importlib.metadata
 import inspect
 import operator
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Set
 from types import ModuleType
 from typing import Any, cast, NamedTuple
 
@@ -374,14 +374,31 @@ def _render_entrypoint(call: _HelionCall) -> tuple[Callable[..., Any], str]:
 
 
 def _make_hop_replacement(
-    call: _HelionCall, entrypoint: Callable[..., Any], launcher: Callable[..., Any]
+    call: _HelionCall,
+    entrypoint: Callable[..., Any],
+    launcher: Callable[..., Any],
 ) -> Callable[..., Any]:
     """Call the entrypoint and return outputs shaped like the Helion HOP's."""
     captured = call.captured
 
     def run(*values):
         arguments = dict(zip(call.argument_names, values))
-        cloned = {name: arguments[name].clone() for name in captured.tensors_to_clone}
+
+        def clone_for_write(tensor: torch.Tensor) -> torch.Tensor:
+            # A plain clone of a view is materialized by Inductor as its
+            # own kernel, which can drop the view's storage offset when
+            # the consumer is an extern kernel call. Gathering the
+            # elements through index_select materializes the same copy
+            # with the load indexing composed through the view.
+            if captured.kernel.settings.backend == "cute" and tensor.is_contiguous():
+                flat = tensor.reshape(-1)
+                index = torch.arange(flat.numel(), device=flat.device)
+                return flat.index_select(0, index).reshape(tensor.shape)
+            return tensor.clone()
+
+        cloned = {
+            name: clone_for_write(arguments[name]) for name in captured.tensors_to_clone
+        }
         launch_args = (
             cloned.get(name, arguments[name]) for name in call.argument_names
         )
@@ -398,8 +415,16 @@ def _make_hop_replacement(
     return run
 
 
-def _check_no_placeholder_mutation(traced: GraphModule, kernel_name: str) -> None:
-    placeholders = {n for n in traced.graph.nodes if n.op == "placeholder"}
+def _check_no_placeholder_mutation(
+    traced: GraphModule,
+    kernel_name: str,
+    reported_mutated: Set[Node] = frozenset(),
+) -> None:
+    placeholders = {
+        n
+        for n in traced.graph.nodes
+        if n.op == "placeholder" and n not in reported_mutated
+    }
     for node in traced.graph.nodes:
         if node.op != "call_function":
             continue
@@ -476,6 +501,38 @@ def _trace_helion_call(
         )
     entrypoint, source = _render_entrypoint(call)
     if call.captured.kernel.settings.backend == _CUTE_BACKEND:
+        # A mutated argument that is a view (or a clone of one) cannot be
+        # trusted to AOTInductor: it materializes the replacement's clone
+        # of a view as its own kernel and can drop the view's storage
+        # offset there, so the kernel would read the wrong elements
+        # without any error. Reject it at export instead.
+        view_marks = (
+            "select",
+            "slice",
+            "as_strided",
+            "narrow",
+            "view",
+            "reshape",
+            "transpose",
+            "permute",
+            "squeeze",
+            "unsqueeze",
+            "expand",
+        )
+        for name, argument_node, fake in zip(
+            call.argument_names, call.argument_nodes, call.fake_arguments
+        ):
+            if name not in call.captured.tensors_to_clone:
+                continue
+            if fake.storage_offset() != 0 or any(
+                mark in str(argument_node.target) for mark in view_marks
+            ):
+                raise NotImplementedError(
+                    f"mutated argument {name!r} is a view or a clone of "
+                    "one; Helion CuTe lowering cannot materialize its "
+                    "clone reliably"
+                )
+
         mutated = frozenset(
             i
             for i, name in enumerate(call.argument_names)
@@ -509,7 +566,15 @@ def _trace_helion_call(
         traced = make_fx(run, tracing_mode="fake")(*call.fake_arguments)
     if not any(is_launch(n) for n in traced.graph.nodes):
         raise RuntimeError("Helion lowering lost the kernel launch during capture")
-    _check_no_placeholder_mutation(traced, captured.kernel.name)
+    reported_mutated = {
+        placeholder
+        for placeholder, name in zip(
+            (n for n in traced.graph.nodes if n.op == "placeholder"),
+            call.argument_names,
+        )
+        if name in call.captured.tensors_to_clone
+    }
+    _check_no_placeholder_mutation(traced, captured.kernel.name, reported_mutated)
     _check_outputs_do_not_alias_inputs(traced)
     return traced, call.argument_nodes
 
@@ -520,7 +585,18 @@ def _check_outputs_do_not_alias_inputs(traced: GraphModule) -> None:
         for n in traced.graph.nodes
         if n.op == "placeholder"
     }
-    for output in pytree.tree_leaves(traced.graph.output_node().args[0]):
+    returned = traced.graph.output_node().args[0]
+    # A functional call returns (outputs, {name: mutated tensor}); only the
+    # outputs must not alias inputs -- the mutated tensors are inputs by
+    # construction (a clone, or the argument itself when written directly).
+    outputs = (
+        returned[0]
+        if isinstance(returned, tuple)
+        and len(returned) == 2
+        and isinstance(returned[1], dict)
+        else returned
+    )
+    for output in pytree.tree_leaves(outputs):
         if (
             isinstance(output, Node)
             and StorageWeakRef(output.meta["val"].untyped_storage()) in inputs
@@ -602,8 +678,8 @@ class LowerHelionPass:
 
     Supported: Triton and CuTe kernels with one explicit config, static strided
     tensor arguments, multiple tensor outputs and functionalized input mutation.
-    One LowerHelionPass run may lower only one distinct CuTe launch; the
-    per-.pte form is enforced by CudaBackend.preprocess_multimethod.
+    Any number of distinct launches may be lowered: each CuTe call is
+    exported under its own prefix and linked from its own archive.
     Config selection stays offline; the pass neither tunes nor launches kernels
     (CuTe kernels are compiled for the export GPU), and inference needs neither
     Python nor Helion. CuTe kernels are rejected when ``target_platform`` is
