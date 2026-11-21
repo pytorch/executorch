@@ -10,7 +10,9 @@ import triton.language as tl
 
 from executorch.backends.cuda.autotune.launch_params import autotune_launch_param
 from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
+    _check_operands,
     _check_split,
+    _has_native_fp4_conversion,
     _prune_w4a4,
     _w4a4,
     nvfp4_quantize_activation,
@@ -72,7 +74,7 @@ def _gate_up(
     tile = (pid % (GROUP_M * nn)) // gm
     lane = tl.arange(0, BN)
     column = tile * (BN // 2) + lane % (BN // 2)
-    n = column + (lane // (BN // 2)) * (N // 2)
+    n = (column + (lane // (BN // 2)) * (N // 2)).to(tl.int64)
     kp = tl.arange(0, BK // 2)
     sp = tl.arange(0, BK // 16)
     acc = tl.zeros((BM, BN), tl.float32)
@@ -161,8 +163,8 @@ def _gate_up_epilogue(X, Y, M, N: tl.constexpr, BLOCK: tl.constexpr):
 @triton_op("triton::nvfp4_gate_up_epilogue", mutates_args={})
 def nvfp4_gate_up_epilogue(x: torch.Tensor) -> torch.Tensor:
     m, n = x.shape
-    if n % 2:
-        raise ValueError("NVFP4 gate/up requires an even output dimension")
+    if n % 2 or not x.is_contiguous():
+        raise ValueError("NVFP4 gate/up epilogue requires a contiguous, even-N input")
     out = torch.empty((m, n // 2), device=x.device, dtype=x.dtype)
     if not _QUEUING_ONLY.get():
         wrap_triton(_gate_up_epilogue)[(triton.cdiv(m * (n // 2), 1024),)](
@@ -225,6 +227,9 @@ def nvfp4_w4a4_gate_up(
     split_k: int = -1,
     output_dtype: torch.dtype | None = None,
 ) -> torch.Tensor:
+    _check_operands(x, qdata, scale, per_tensor_scale)
+    if not _has_native_fp4_conversion():
+        raise RuntimeError("Native NVFP4 W4A4 requires an SM120 or newer CUDA target")
     launch = _launch_w4a4_gate_up if split_k < 0 else _launch_w4a4_gate_up_impl
     kwargs = {} if split_k < 0 else {"split_k": split_k}
     if output_dtype is not None:

@@ -149,8 +149,6 @@ def time_with_cuda_graph_us(
     """
     if statistic not in ("min", "mean") or replays < 1:
         raise ValueError("CUDA graph timing requires min/mean and positive replays")
-    if statistic == "min" and replays == 1:
-        return min(cuda_graph_call_times_us(fn))
     samples = [
         statistics.mean(times) if statistic == "mean" else min(times)
         for times in _replay_call_times_us(fn, replays)

@@ -88,7 +88,7 @@ class UnitLinear(torch.nn.Module):
 @CUDA
 @pytest.mark.parametrize("mode", ["auto", "w4a16"])
 def test_unit_scale_linear_pte(mode, monkeypatch):
-    if not _has_native_fp4():
+    if mode == "auto" and not _has_native_fp4():
         pytest.skip("native FP4 required")
     import executorch.backends.cuda.cuda_backend as cuda_backend
     import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401

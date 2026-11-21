@@ -19,6 +19,7 @@ from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
     nvfp4_w4a16,
     nvfp4_w4a4,
 )
+from torch._subclasses.fake_tensor import FakeTensorMode
 
 CUDA = pytest.mark.skipif(
     not torch.cuda.is_available() or torch.version.hip is not None,
@@ -30,7 +31,11 @@ from executorch.backends.cuda.tests.nvfp4_test_utils import shards
 
 
 def test_cpu_fallback_matches_dequantized_weight(monkeypatch):
-    import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
+    from executorch.backends.cuda.quantize_op_dispatch import _gemm_family_dispatch
+
+    # Dequantize the 97-row weight in 32-row chunks, as for a huge lm_head.
+    monkeypatch.setattr(_gemm_family_dispatch, "_DEQUANT_N_THRESHOLD", 16)
+    monkeypatch.setattr(_gemm_family_dispatch, "_DEQUANT_N_CHUNK", 32)
 
     w = CudaNVFP4Tensor.fuse_along_output(shards(192))
     ids = torch.tensor([[0, 40], [96, 5]])
@@ -40,7 +45,87 @@ def test_cpu_fallback_matches_dequantized_weight(monkeypatch):
     monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_OUTPUT", "fp32")
     out = F.linear(x, w)
     assert out.dtype == torch.float32
-    assert torch.equal(out, F.linear(x.float(), w.dequantize(torch.float32)))
+    torch.testing.assert_close(out, F.linear(x.float(), w.dequantize(torch.float32)))
+
+
+def record_calls(monkeypatch, module, names, calls):
+    def recorder(name):
+        def op(x, qdata, *args, output_dtype=None, **kwargs):
+            calls.append((name, output_dtype))
+            dtype = output_dtype or x.dtype
+            return x.new_empty((x.shape[0], qdata.shape[0]), dtype=dtype)
+
+        return op
+
+    for name in names:
+        monkeypatch.setattr(module, name, recorder(name))
+
+
+@pytest.mark.parametrize(
+    "mode,native,rows,fp32,expected",
+    [
+        ("w4a16", False, 37, False, "nvfp4_w4a16"),
+        ("w4a16", False, 1, False, "nvfp4_gemv"),
+        ("auto", False, 37, False, "nvfp4_w4a16"),
+        ("auto", True, 37, False, "nvfp4_auto_prefill"),
+        ("auto", True, 37, True, "nvfp4_auto_prefill"),
+        ("auto", True, 1, True, "nvfp4_auto_decode"),
+        ("w4a4", True, 37, False, "nvfp4_w4a4"),
+    ],
+)
+def test_linear_routing(mode, native, rows, fp32, expected, monkeypatch):
+    # Export traces with fake tensors; record which op each policy emits.
+    from executorch.backends.cuda.quantize_op_dispatch import nvfp4_dispatch
+    from executorch.backends.cuda.triton.kernels import nvfp4_quantized_gemm
+
+    calls = []
+    record_calls(
+        monkeypatch,
+        nvfp4_quantized_gemm,
+        ("nvfp4_gemv", "nvfp4_w4a16", "nvfp4_w4a4"),
+        calls,
+    )
+    record_calls(
+        monkeypatch,
+        nvfp4_dispatch,
+        ("nvfp4_auto_decode", "nvfp4_auto_prefill"),
+        calls,
+    )
+    monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: native)
+    monkeypatch.setenv("ET_CUDA_NVFP4_ACT", mode)
+    monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_OUTPUT", "fp32" if fp32 else "input")
+    w = shards(192)[0]
+    with FakeTensorMode() as fake:
+        x = fake.from_tensor(torch.randn(rows, 192, dtype=torch.bfloat16))
+        out = F.linear(x, fake.from_tensor(w))
+    # Prefill (M not statically <= 4) takes the FP32 output policy; decode
+    # keeps the activation dtype.
+    output_dtype = torch.float32 if fp32 and rows > 4 else None
+    assert calls == [(expected, output_dtype)]
+    assert out.shape == (rows, w.shape[0])
+    assert out.dtype == (output_dtype or torch.bfloat16)
+
+
+def test_embedding_routing(monkeypatch):
+    from executorch.backends.cuda.triton.kernels import nvfp4_quantized_gemm
+
+    calls = []
+
+    def embedding(indices, qdata, scale, per_tensor_scale, output_dtype):
+        calls.append(tuple(indices.shape))
+        return indices.new_empty((*indices.shape, qdata.shape[1] * 2)).to(output_dtype)
+
+    monkeypatch.setattr(nvfp4_quantized_gemm, "nvfp4_embedding", embedding)
+    w = shards(192)[0]
+    with FakeTensorMode() as fake:
+        ids = fake.from_tensor(torch.tensor([[0, 3]]))
+        weight = fake.from_tensor(w)
+        outputs = (
+            F.embedding(ids, weight),
+            torch.ops.aten.embedding.default(weight, ids),
+        )
+    assert calls == [(1, 2), (1, 2)]
+    assert all(o.shape == (1, 2, 192) and o.dtype == w.dtype for o in outputs)
 
 
 @pytest.mark.parametrize("positional", [False, True])

@@ -29,6 +29,7 @@ from executorch.backends.cuda.triton.kernels.quantized_gemm_family import (
 )
 from torch._subclasses.fake_tensor import is_fake
 from torch.library import triton_op, wrap_triton
+from torch.utils._sympy.numbers import int_oo
 
 SPLIT_K_CANDIDATES = (1, 2, 4, 8, 16, 32)
 
@@ -40,9 +41,22 @@ def _split_workspace_limit():
     )
 
 
+def _max_rows(m):
+    """M, or the upper bound of a dynamic M (None when unbounded)."""
+    if isinstance(m, int):
+        return m
+    upper = m.node.shape_env.bound_sympy(m.node.expr).upper
+    return None if upper == int_oo else int(upper)
+
+
 def _check_split_workspace(split_k, m, n):
+    # The (split_k, M, N) workspace is allocated at the runtime M, so a split
+    # picked at the export hint must fit M's upper bound.
     if split_k > 1:
-        workspace = split_k * _size_hint(m) * _size_hint(n) * 4
+        rows = _max_rows(m)
+        if rows is None:
+            raise InvalidLaunchParam(f"NVFP4 split-K={split_k} needs a bounded M")
+        workspace = split_k * rows * _size_hint(n) * 4
         if workspace > _split_workspace_limit():
             raise InvalidLaunchParam(
                 f"NVFP4 split-K={split_k} needs {workspace} workspace bytes; "
@@ -57,14 +71,38 @@ def _check_split(k, split_k, *, m=None, n=None):
         _check_split_workspace(split_k, m, n)
 
 
-def _check_operands(x, qdata, scale):
+def _check_weight(qdata, scale, per_tensor_scale):
+    n, half_k = qdata.shape
+    if half_k % 8 or scale.shape != (n, half_k // 8):
+        raise ValueError(
+            f"NVFP4 scale {tuple(scale.shape)} must be (N, K/16) for qdata "
+            f"{tuple(qdata.shape)}"
+        )
+    if per_tensor_scale.numel() not in (1, n):
+        raise ValueError("NVFP4 per_tensor_scale must have 1 or N values")
+    if (qdata.dtype, scale.dtype, per_tensor_scale.dtype) != (
+        torch.uint8,
+        torch.uint8,
+        torch.float32,
+    ):
+        raise ValueError("NVFP4 qdata/scale must be uint8, per_tensor_scale float32")
+    if not all(t.is_contiguous() for t in (qdata, scale, per_tensor_scale)):
+        raise ValueError("NVFP4 weight tensors must be contiguous")
+    if scale.device != qdata.device or per_tensor_scale.device != qdata.device:
+        raise ValueError("NVFP4 weight tensors must be on one device")
+
+
+def _check_operands(x, qdata, scale, per_tensor_scale):
+    _check_weight(qdata, scale, per_tensor_scale)
     k = x.shape[-1]
-    if qdata.shape[-1] * 2 != k or scale.shape[-1] * 16 != k:
+    if qdata.shape[-1] * 2 != k:
         raise ValueError(
             f"NVFP4 weight K ({qdata.shape[-1] * 2}) must match activation K ({k})"
         )
-    if not (x.is_contiguous() and qdata.is_contiguous() and scale.is_contiguous()):
-        raise ValueError("NVFP4 activation and weight tensors must be contiguous")
+    if not x.is_contiguous():
+        raise ValueError("NVFP4 activation must be contiguous")
+    if x.device != qdata.device:
+        raise ValueError("NVFP4 activation and weight must be on one device")
 
 
 @triton.jit
@@ -123,45 +161,28 @@ def _activation(X, G, Q, S, M, K: tl.constexpr, BG: tl.constexpr):
     )
 
 
-# SM89+ decodes E4M3 natively; older GPUs (e.g. SM80) build the FP32 bits
-# exactly in integer math (no FP32 denormal arithmetic).
-def _native_e4m3():
-    # Forked compile workers cannot initialize CUDA; ask nvidia-smi there.
-    try:
-        return bool(
-            torch.cuda.is_available() and torch.cuda.get_device_capability() >= (8, 9)
-        )
-    except RuntimeError:
-        import os
-        import subprocess
-
-        first = os.environ.get("CUDA_VISIBLE_DEVICES", "0").split(",")[0] or "0"
-        cap = subprocess.run(
-            [
-                "nvidia-smi",
-                "-i",
-                first,
-                "--query-gpu=compute_cap",
-                "--format=csv,noheader",
-            ],
-            capture_output=True,
-            text=True,
-        ).stdout.split()
-        return bool(cap) and tuple(map(int, cap[0].split("."))) >= (8, 9)
-
-
-_NATIVE_E4M3 = tl.constexpr(_native_e4m3())
+@torch._dynamo.assume_constant_result
+def _has_native_e4m3():
+    return (
+        torch.cuda.is_available()
+        and torch.version.hip is None
+        and torch.cuda.get_device_capability() >= (8, 9)
+    )
 
 
 @triton.jit
-def _e4m3_to_f32(b):
-    if _NATIVE_E4M3:
+def _e4m3_to_f32(b, NATIVE_E4M3: tl.constexpr):
+    """E4M3 bytes to FP32: native on SM89+, else built bit-exactly in integer
+    math (no FP32 denormal arithmetic); 0x7F/0xFF decode to NaN either way."""
+    if NATIVE_E4M3:
         return b.to(tl.float8e4nv, bitcast=True).to(tl.float32)
     else:
         u = b.to(tl.int32)
         e = (u >> 3) & 15
         normal = (((u & 0x7F) << 20) + (120 << 23)).to(tl.float32, bitcast=True)
         mag = tl.where(e == 0, (u & 7).to(tl.float32) * 0.001953125, normal)
+        nan = tl.full(mag.shape, 0x7FC00000, tl.int32).to(tl.float32, bitcast=True)
+        mag = tl.where((u & 0x7F) == 0x7F, nan, mag)
         # OR the sign bit in: float negation of +0 does not yield -0 here.
         sign = (u & 0x80) << 24
         return (mag.to(tl.int32, bitcast=True) | sign).to(tl.float32, bitcast=True)
@@ -229,6 +250,8 @@ def nvfp4_quantize_activation(
         raise ValueError("NVFP4 activation K must be divisible by 16")
     if not x.is_contiguous():
         raise ValueError("NVFP4 activation must be contiguous")
+    if not static_scale >= 0:
+        raise ValueError("NVFP4 static activation scale must be >= 0 (0 = dynamic)")
     q = torch.empty((m, k // 2), device=x.device, dtype=torch.uint8)
     s = torch.empty((m, k // 16), device=x.device, dtype=torch.uint8)
     g = torch.empty((m,), device=x.device, dtype=torch.float32)
@@ -446,11 +469,8 @@ def _w4a4(
     else:
         pts = tl.load(PTS)
     value = acc if SPLIT_K > 1 else acc * g[:, None] * pts
-    tl.store(
-        C + split.to(tl.int64) * M * N + m[:, None] * N + n[None, :],
-        value,
-        (m[:, None] < M) & (n[None, :] < N),
-    )
+    offsets, _ = _partial_offsets(split, m[:, None] * N + n[None, :], M, N)
+    tl.store(C + offsets, value, (m[:, None] < M) & (n[None, :] < N))
 
 
 @triton.jit
@@ -544,7 +564,7 @@ def nvfp4_w4a4(
     split_k: int = -1,
     output_dtype: torch.dtype | None = None,
 ) -> torch.Tensor:
-    _check_operands(x, qdata, scale)
+    _check_operands(x, qdata, scale, per_tensor_scale)
     if not _has_native_fp4_conversion():
         raise RuntimeError("Native NVFP4 W4A4 requires an SM120 or newer CUDA target")
     launch = _launch_w4a4 if split_k < 0 else _launch_w4a4_impl
@@ -598,12 +618,10 @@ def _gemv_half2(
     SPLIT: tl.constexpr,
     BN: tl.constexpr,
     BK: tl.constexpr,
-    HALF2: tl.constexpr,
-    SCALE_ONCE: tl.constexpr,
     ROW_PTS: tl.constexpr = False,
     UNIT_SCALE: tl.constexpr = False,
 ):
-    n = tl.program_id(0) * BN + tl.arange(0, BN)
+    n = (tl.program_id(0) * BN + tl.arange(0, BN)).to(tl.int64)
     m = tl.program_id(1).to(tl.int64)
     split = tl.program_id(2)
     chunk: tl.constexpr = tl.cdiv(K, BK * SPLIT) * BK
@@ -619,27 +637,19 @@ def _gemv_half2(
         kk = pair + off * (BK // 2)
         mask = (n[:, None] < N) & (kk[None, :] < K // 2)
         q = tl.load(Q + n[:, None] * (K // 2) + kk[None, :], mask, 0)
-        if SCALE_ONCE:
-            group = split * (chunk // 16) + off * (BK // 16) + tl.arange(0, BK // 16)
-            sf = tl.load(
+        # One scale load per K16 group, broadcast to its eight byte pairs.
+        group = split * (chunk // 16) + off * (BK // 16) + tl.arange(0, BK // 16)
+        sf = (
+            tl.load(
                 S + n[:, None] * (K // 16) + group[None, :],
                 (n[:, None] < N) & (group[None, :] < K // 16),
                 0,
             )
-            if HALF2:
-                sf = sf.to(tl.float8e4nv, bitcast=True).to(tl.float16)
-            else:
-                sf = _e4m3_to_f32(sf)
-            sf = tl.broadcast_to(sf[:, :, None], (BN, BK // 16, 8)).reshape(
-                (BN, BK // 2)
-            )
-        else:
-            sf = tl.load(S + n[:, None] * (K // 16) + kk[None, :] // 8, mask, 0)
-            if HALF2:
-                sf = sf.to(tl.float8e4nv, bitcast=True).to(tl.float16)
-            else:
-                sf = _e4m3_to_f32(sf)
-        lo, hi = _scaled_pair(q, sf, HALF2)
+            .to(tl.float8e4nv, bitcast=True)
+            .to(tl.float16)
+        )
+        sf = tl.broadcast_to(sf[:, :, None], (BN, BK // 16, 8)).reshape((BN, BK // 2))
+        lo, hi = _scaled_pair(q, sf, True)
         if UNIT_SCALE and X.dtype.element_ty == tl.bfloat16:
             w0, w1 = lo, hi
         elif X.dtype.element_ty == tl.bfloat16:
@@ -681,8 +691,9 @@ def _gemv_original(
     NATIVE: tl.constexpr,
     ROW_PTS: tl.constexpr = False,
     UNIT_SCALE: tl.constexpr = False,
+    NATIVE_E4M3: tl.constexpr = False,
 ):
-    n = tl.program_id(0) * BN + tl.arange(0, BN)
+    n = (tl.program_id(0) * BN + tl.arange(0, BN)).to(tl.int64)
     m = tl.program_id(1).to(tl.int64)
     split = tl.program_id(2)
     chunk: tl.constexpr = tl.cdiv(K, BK * SPLIT) * BK
@@ -720,7 +731,7 @@ def _gemv_original(
             lo = _fp4(q & 15)
             hi = _fp4(q >> 4)
         sf = _e4m3_to_f32(
-            tl.load(S + n[:, None] * (K // 16) + kk[None, :] // 8, mask, 0)
+            tl.load(S + n[:, None] * (K // 16) + kk[None, :] // 8, mask, 0), NATIVE_E4M3
         )
         if UNIT_SCALE and NATIVE and X.dtype.element_ty == tl.bfloat16:
             w0, w1 = lo * sf, hi * sf
@@ -772,14 +783,27 @@ def _gemv(
     HALF2: tl.constexpr = False,
     ROW_PTS: tl.constexpr = False,
     UNIT_SCALE: tl.constexpr = False,
+    NATIVE_E4M3: tl.constexpr = False,
 ):
     if NATIVE and HALF2:
-        _gemv_half2(
-            X, Q, S, PTS, Y, M, N, K, SPLIT, BN, BK, True, True, ROW_PTS, UNIT_SCALE
-        )
+        _gemv_half2(X, Q, S, PTS, Y, M, N, K, SPLIT, BN, BK, ROW_PTS, UNIT_SCALE)
     else:
         _gemv_original(
-            X, Q, S, PTS, Y, M, N, K, SPLIT, BN, BK, NATIVE, ROW_PTS, UNIT_SCALE
+            X,
+            Q,
+            S,
+            PTS,
+            Y,
+            M,
+            N,
+            K,
+            SPLIT,
+            BN,
+            BK,
+            NATIVE,
+            ROW_PTS,
+            UNIT_SCALE,
+            NATIVE_E4M3,
         )
 
 
@@ -815,6 +839,7 @@ def _launch_gemv_impl(x, qdata, scale, pts, unit_scale=False, *, split_k):
         ),
         5,
         NATIVE=_has_native_fp4_conversion(),
+        NATIVE_E4M3=_has_native_e4m3(),
         ROW_PTS=pts.numel() != 1,
         UNIT_SCALE=unit_scale,
     )
@@ -829,7 +854,7 @@ def _launch_gemv_impl(x, qdata, scale, pts, unit_scale=False, *, split_k):
             split_k,
             False,
             256,
-            ROW_PTS=pts.numel() != 1,
+            ROW_PTS=False,
         )
     return out
 
@@ -857,7 +882,7 @@ def nvfp4_gemv(
     ``CudaNVFP4Tensor.unit_scale`` contract (global scale 1, scale bytes below
     0x7F); it is not checked here.
     """
-    _check_operands(x, qdata, scale)
+    _check_operands(x, qdata, scale, per_tensor_scale)
     if split_k < 0:
         return _launch_gemv(x, qdata, scale, per_tensor_scale, unit_scale)
     return _launch_gemv_impl(
@@ -881,6 +906,7 @@ def _w4a16_original(
     BK: tl.constexpr,
     GROUP_M: tl.constexpr,
     ROW_PTS: tl.constexpr = False,
+    NATIVE_E4M3: tl.constexpr = False,
 ):
     pid = tl.program_id(0)
     split = tl.program_id(1)
@@ -889,7 +915,7 @@ def _w4a16_original(
     first = (pid // (GROUP_M * nn)) * GROUP_M
     gm = tl.minimum(nm - first, GROUP_M)
     m = ((first + pid % gm) * BM + tl.arange(0, BM)).to(tl.int64)
-    n = ((pid % (GROUP_M * nn)) // gm) * BN + tl.arange(0, BN)
+    n = (((pid % (GROUP_M * nn)) // gm) * BN + tl.arange(0, BN)).to(tl.int64)
     k = tl.arange(0, BK)
     acc = tl.zeros((BM, BN), tl.float32)
     if ROW_PTS:
@@ -907,7 +933,8 @@ def _w4a16_original(
         q = tl.load(Q + n[None, :] * (K // 2) + kk[:, None] // 2, mask, 0)
         code = (q >> ((kk[:, None] & 1) * 4)) & 15
         s = _e4m3_to_f32(
-            tl.load(S + n[None, :] * (K // 16) + kk[:, None] // 16, mask, 0)
+            tl.load(S + n[None, :] * (K // 16) + kk[:, None] // 16, mask, 0),
+            NATIVE_E4M3,
         )
         b = (_fp4(code) * s * pts).to(X.dtype.element_ty)
         acc = tl.dot(a, b, acc)
@@ -934,6 +961,7 @@ def _w4a16_paired(
     BK: tl.constexpr,
     GROUP_M: tl.constexpr,
     ROW_PTS: tl.constexpr = False,
+    NATIVE_E4M3: tl.constexpr = False,
 ):
     pid = tl.program_id(0)
     split = tl.program_id(1)
@@ -941,7 +969,7 @@ def _w4a16_paired(
     first = (pid // (GROUP_M * nn)) * GROUP_M
     gm = tl.minimum(nm - first, GROUP_M)
     m = ((first + pid % gm) * BM + tl.arange(0, BM)).to(tl.int64)
-    n = ((pid % (GROUP_M * nn)) // gm) * BN + tl.arange(0, BN)
+    n = (((pid % (GROUP_M * nn)) // gm) * BN + tl.arange(0, BN)).to(tl.int64)
     ki = tl.arange(0, BK)
     pi = tl.arange(0, BK // 2)
     acc = tl.zeros((BM, BN), tl.float32)
@@ -970,7 +998,8 @@ def _w4a16_paired(
         lo = (packed & 65535).to(tl.uint16).to(tl.float16, bitcast=True).to(tl.float32)
         hi = (packed >> 16).to(tl.uint16).to(tl.float16, bitcast=True).to(tl.float32)
         sf = _e4m3_to_f32(
-            tl.load(S + n[:, None] * (K // 16) + pair[None, :] // 8, mask, 0)
+            tl.load(S + n[:, None] * (K // 16) + pair[None, :] // 8, mask, 0),
+            NATIVE_E4M3,
         )
         w0 = (lo * sf * pts).to(X.dtype.element_ty)
         w1 = (hi * sf * pts).to(X.dtype.element_ty)
@@ -1025,11 +1054,16 @@ def _w4a16(
     GROUP_M: tl.constexpr,
     NATIVE: tl.constexpr = False,
     ROW_PTS: tl.constexpr = False,
+    NATIVE_E4M3: tl.constexpr = False,
 ):
     if NATIVE:
-        _w4a16_paired(X, Q, S, PTS, Y, M, N, K, SPLIT_K, BM, BN, BK, GROUP_M, ROW_PTS)
+        _w4a16_paired(
+            X, Q, S, PTS, Y, M, N, K, SPLIT_K, BM, BN, BK, GROUP_M, ROW_PTS, NATIVE_E4M3
+        )
     else:
-        _w4a16_original(X, Q, S, PTS, Y, M, N, K, SPLIT_K, BM, BN, BK, GROUP_M, ROW_PTS)
+        _w4a16_original(
+            X, Q, S, PTS, Y, M, N, K, SPLIT_K, BM, BN, BK, GROUP_M, ROW_PTS, NATIVE_E4M3
+        )
 
 
 def _launch_w4a16_impl(x, qdata, scale, pts, *, split_k, output_dtype=None):
@@ -1055,6 +1089,7 @@ def _launch_w4a16_impl(x, qdata, scale, pts, *, split_k, output_dtype=None):
         (x, qdata, scale, pts, partial, m, n, k, split_k),
         5,
         NATIVE=_has_native_fp4_conversion(),
+        NATIVE_E4M3=_has_native_e4m3(),
         ROW_PTS=pts.numel() != 1,
     )
     if split_k > 1 and not _QUEUING_ONLY.get():
@@ -1068,7 +1103,7 @@ def _launch_w4a16_impl(x, qdata, scale, pts, *, split_k, output_dtype=None):
             split_k,
             False,
             256,
-            ROW_PTS=pts.numel() != 1,
+            ROW_PTS=False,
         )
     return out
 
@@ -1090,7 +1125,9 @@ def nvfp4_w4a16(
     split_k: int = -1,
     output_dtype: torch.dtype | None = None,
 ) -> torch.Tensor:
-    _check_operands(x, qdata, scale)
+    """NVFP4 weight-only GEMM; FP32 activations are rounded to BF16 (the GEMV
+    keeps FP32 math), and the output is ``output_dtype`` or ``x.dtype``."""
+    _check_operands(x, qdata, scale, per_tensor_scale)
     launch = _launch_w4a16 if split_k < 0 else _launch_w4a16_impl
     kwargs = {} if split_k < 0 else {"split_k": split_k}
     if output_dtype is not None:
@@ -1105,11 +1142,11 @@ def _embedding(
     S,
     PTS,
     Y,
-    T,
     V,
     K: tl.constexpr,
     BK: tl.constexpr,
     ROW_PTS: tl.constexpr = False,
+    NATIVE_E4M3: tl.constexpr = False,
 ):
     t = tl.program_id(0).to(tl.int64)
     k = tl.program_id(1) * BK + tl.arange(0, BK)
@@ -1121,7 +1158,7 @@ def _embedding(
     mask = (k < K) & valid
     q = tl.load(Q + n * (K // 2) + k // 2, mask, 0)
     c = (q >> ((k & 1) * 4)) & 15
-    s = _e4m3_to_f32(tl.load(S + n * (K // 16) + k // 16, mask, 0))
+    s = _e4m3_to_f32(tl.load(S + n * (K // 16) + k // 16, mask, 0), NATIVE_E4M3)
     pts = tl.load(PTS + n) if ROW_PTS else tl.load(PTS)
     val = _fp4(c) * (s * pts)
     tl.store(Y + t * K + k, val, k < K)
@@ -1135,12 +1172,13 @@ def nvfp4_embedding(
     per_tensor_scale: torch.Tensor,
     output_dtype: torch.dtype,
 ) -> torch.Tensor:
-    """Eager calls reject out-of-range ids; compiled graphs do not validate
-    them and return zero rows instead."""
+    """Eager calls outside CUDA-graph capture reject out-of-range ids; compiled
+    graphs and captured calls do not validate them and return zero rows."""
+    _check_weight(qdata, scale, per_tensor_scale)
     v, k = qdata.shape[0], qdata.shape[1] * 2
     if (
-        indices.numel()
-        and not is_fake(indices)
+        not is_fake(indices)
+        and indices.numel()
         and not torch.cuda.is_current_stream_capturing()
         and bool(((indices < 0) | (indices >= v)).any())
     ):
@@ -1153,10 +1191,10 @@ def nvfp4_embedding(
         scale,
         per_tensor_scale,
         out,
-        indices.numel(),
         v,
         k,
         256,
         ROW_PTS=per_tensor_scale.numel() != 1,
+        NATIVE_E4M3=_has_native_e4m3(),
     )
     return out

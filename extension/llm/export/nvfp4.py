@@ -72,10 +72,12 @@ def _(qdata, scale, per_tensor_scale, block_size, output_dtype=torch.float32):
 class ExportableNVFP4Tensor(TorchAOBaseTensor):
     """NVFP4 tensor subclass that dequantizes via a registered custom op.
 
-    ``act_per_tensor_scale`` is an optional static activation global scale
-    (ModelOpt / GGUF ``input_scale``, i.e. ``amax / (6 * 448)``); None means
-    activations are scaled dynamically per row. ``dequantize`` and ``linear``
-    ignore it; only backends that quantize activations (W4A4) read it.
+    ``act_per_tensor_scale`` is an optional static activation global scale, a
+    Python float (ModelOpt / GGUF ``input_scale``, i.e. ``amax / (6 * 448)``);
+    None means activations are scaled dynamically per row. ``dequantize`` and
+    ``linear`` ignore it and ``torchao::dequantize_nvfp4`` has no argument for
+    it, so it never reaches an exported graph: backends that quantize
+    activations (W4A4) read it from the tensor when they pack the weight.
     """
 
     tensor_data_names = ["qdata", "scale", "per_tensor_scale"]
