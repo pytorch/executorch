@@ -1137,8 +1137,11 @@ class TestCudaExport(unittest.TestCase):
 
     def test_measured_routing_is_on_by_default(self):
         """Without the compile spec, the passes that measure the calls several
-        implementations can run follow the replacement pass; OFF leaves them
-        out."""
+        implementations can run follow the replacement pass, before the Helion
+        lowering that always runs last; OFF leaves them out."""
+        from executorch.backends.cuda.passes.lower_helion_to_triton import (
+            LowerHelionToTritonPass,
+        )
         from executorch.backends.cuda.triton.measured_routing import (
             ApplyChoicesPass,
             MeasureChoicesPass,
@@ -1152,10 +1155,15 @@ class TestCudaExport(unittest.TestCase):
             )
         ]
         self.assertEqual(
-            default[-3:],
-            [ReplaceEdgeOpWithTritonOpPass, MeasureChoicesPass, ApplyChoicesPass],
+            default[-4:],
+            [
+                ReplaceEdgeOpWithTritonOpPass,
+                MeasureChoicesPass,
+                ApplyChoicesPass,
+                LowerHelionToTritonPass,
+            ],
         )
-        self.assertEqual(off, default[:-2])
+        self.assertEqual(off, default[:-3] + default[-1:])
 
     def test_missing_scatter_kernel_fails_at_export(self):
         """The scatter fallback writes its kernel call itself, and the check for
