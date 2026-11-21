@@ -8367,13 +8367,14 @@ class TopKBothModel(nn.Module):
 class TopKDynamicKModel(nn.Module):
     """TopK with k derived from a dynamic tensor shape (exercises dynamic k path)."""
 
-    def __init__(self, dim: int):
+    def __init__(self, dim: int, largest: bool = True):
         super().__init__()
         self.dim = dim
+        self.largest = largest
 
     def forward(self, x: torch.Tensor, k_source: torch.Tensor) -> torch.Tensor:
         k = k_source.shape[0]
-        return torch.topk(x, k, dim=self.dim)[0]
+        return torch.topk(x, k, dim=self.dim, largest=self.largest)[0]
 
 
 @register_test
@@ -8417,6 +8418,7 @@ class TopKTest(OpTestCase):
             cls(shape=(4, 8), k=3, dim=-1, output="both", largest=False),
             # Dynamic k
             cls(shape=(4, 8), k=3, dim=-1, output="dynamic_k"),
+            cls(shape=(4, 8), k=3, dim=-1, output="dynamic_k", largest=False),
         ]
 
     def create_model(self) -> nn.Module:
@@ -8425,7 +8427,7 @@ class TopKTest(OpTestCase):
         elif self.output == "indices":
             return TopKIndicesModel(self.k, self.dim, self.largest)
         elif self.output == "dynamic_k":
-            return TopKDynamicKModel(self.dim)
+            return TopKDynamicKModel(self.dim, self.largest)
         else:
             return TopKBothModel(self.k, self.dim, self.largest)
 

@@ -5771,46 +5771,37 @@ def _topk_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     norm_axis = dim if dim >= 0 else dim + len(x_meta.shape)
     dim_size = x_meta.shape[norm_axis]
 
-    # Compute the partition indices and reverse bounds.
-    if isinstance(k, int):
-        neg_k = P.to_int_or_vid(-k)
-        k_minus_one = P.to_int_or_vid(k - 1)
-        rev_stop = P.to_int_or_vid(-(k + 1))
+    k_minus_one = emit_sub_int(P, P.to_int_or_vid(k), IntOrVid.from_literal(1))
+    if largest:
+        if isinstance(k, int):
+            neg_k = P.to_int_or_vid(-k)
+            rev_stop = P.to_int_or_vid(-(k + 1))
+        else:
+            _, neg_k_slot = P.make_tmp_value_slot()
+            P.emit(
+                MultiplyIntNode(
+                    a=P.to_int_or_vid(k),
+                    b=IntOrVid.from_literal(-1),
+                    out=P.slot_to_vid(neg_k_slot),
+                )
+            )
+            neg_k = P.to_int_or_vid(neg_k_slot)
+            # rev_stop = -(k + 1) = neg_k - 1
+            _, rev_stop_slot = P.make_tmp_value_slot()
+            P.emit(
+                AddIntNode(
+                    a=neg_k,
+                    b=IntOrVid.from_literal(-1),
+                    out=P.slot_to_vid(rev_stop_slot),
+                )
+            )
+            rev_stop = P.to_int_or_vid(rev_stop_slot)
+        partition_kth = slice_start = neg_k
+        slice_stop = P.to_int_or_vid(dim_size)
     else:
-        # k is dynamic — emit neg_k = k * -1 at runtime
-        _, neg_k_slot = P.make_tmp_value_slot()
-        P.emit(
-            MultiplyIntNode(
-                a=P.to_int_or_vid(k),
-                b=IntOrVid.from_literal(-1),
-                out=P.slot_to_vid(neg_k_slot),
-            )
-        )
-        neg_k = P.to_int_or_vid(neg_k_slot)
-        # k_minus_one = k - 1
-        _, k_minus_one_slot = P.make_tmp_value_slot()
-        P.emit(
-            AddIntNode(
-                a=P.to_int_or_vid(k),
-                b=IntOrVid.from_literal(-1),
-                out=P.slot_to_vid(k_minus_one_slot),
-            )
-        )
-        k_minus_one = P.to_int_or_vid(k_minus_one_slot)
-        # rev_stop = -(k + 1) = neg_k - 1
-        _, rev_stop_slot = P.make_tmp_value_slot()
-        P.emit(
-            AddIntNode(
-                a=neg_k,
-                b=IntOrVid.from_literal(-1),
-                out=P.slot_to_vid(rev_stop_slot),
-            )
-        )
-        rev_stop = P.to_int_or_vid(rev_stop_slot)
-
-    partition_kth = neg_k if largest else k_minus_one
-    slice_start = neg_k if largest else P.to_int_or_vid(0)
-    slice_stop = P.to_int_or_vid(dim_size) if largest else P.to_int_or_vid(k)
+        partition_kth = k_minus_one
+        slice_start = P.to_int_or_vid(0)
+        slice_stop = P.to_int_or_vid(k)
 
     def emit_partition_and_slice(node_cls):
         """Emit partition/argpartition followed by a k-element slice."""
