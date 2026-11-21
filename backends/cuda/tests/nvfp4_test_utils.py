@@ -30,5 +30,3 @@ def portable_weight(pts=1.0, scale_byte=40):
         16,
         torch.bfloat16,
     )
-
-
