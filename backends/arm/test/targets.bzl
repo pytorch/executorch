@@ -82,6 +82,8 @@ def define_arm_tests():
     # Quantization
     test_files += [
         "quantizer/test_generic_annotater.py",
+        "quantizer/test_quantization_config.py",
+        "quantizer/test_sdpa_quantization.py",
         "quantizer/test_uint8_io_quantization.py",
         "quantizer/test_vgf_snorm_quantization.py",
     ]
@@ -214,6 +216,10 @@ def define_arm_tests():
                 "fbsource//third-party/pypi/transformers:transformers",
                 "fbsource//third-party/pypi/typing-extensions:typing-extensions",
             ] if test_file == "modules/test_moe.py" else []) + ([
+                "//executorch/examples/models/llama:custom_kv_cache",
+                "//executorch/examples/models/llama:transformer_modules",
+                "fbsource//third-party/pypi/ethos-u-vela:ethos-u-vela",
+            ] if test_file == "quantizer/test_sdpa_quantization.py" else []) + ([
                 "fbsource//third-party/pypi/ethos-u-vela:ethos-u-vela",
                 "fbsource//third-party/pypi/packaging:packaging",
             ] if test_file == "misc/test_version_xfail.py" else []) + ([

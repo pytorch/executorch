@@ -5,11 +5,49 @@
 
 import unittest
 
+import pytest
 import torch
 from executorch.backends.transforms.decompose_sdpa import (
     DecomposeScaledDotProductAttention,
 )
 from torch.export import export
+from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
+
+
+@pytest.mark.parametrize("strict", [False, True])
+def test_decompose_sdpa_preserves_source_ancestry_and_partition_identity(strict):
+    class Model(torch.nn.Module):
+        def forward(self, q, k, v):
+            first = torch.nn.functional.scaled_dot_product_attention(q, k, v)
+            second = torch.nn.functional.scaled_dot_product_attention(q, k, v)
+            return first + second, torch.matmul(q, k.transpose(-2, -1))
+
+    inputs = tuple(torch.randn(1, 2, 3, 4) for _ in range(3))
+    graph_module = export(Model(), inputs, strict=strict).module()
+    sdpa = torch.ops.aten.scaled_dot_product_attention.default
+    parents = {
+        node.name: list(node.meta.get("source_fn_stack", []))
+        for node in graph_module.graph.nodes
+        if node.target == sdpa
+    }
+    expected = graph_module(*inputs)
+    DecomposeScaledDotProductAttention()(graph_module)
+    descendants = {name: [] for name in parents}
+    for node in graph_module.graph.nodes:
+        stack = node.meta.get("source_fn_stack", [])
+        for name, prefix in parents.items():
+            if (name, sdpa) in stack:
+                descendants[name].append(node)
+                assert stack[: len(prefix)] == prefix
+                assert stack[-1] == (node.name, node.target)
+    assert all(descendants.values())
+    first, second = descendants.values()
+    assert not set(first) & set(second)
+    bmm = torch.ops.aten.bmm.default
+    partitions = get_source_partitions(graph_module.graph, [bmm])
+    assert len(partitions[bmm]) == 4
+    assert all(len(partition.nodes) == 1 for partition in partitions[bmm])
+    torch.testing.assert_close(graph_module(*inputs), expected)
 
 
 class TestDecomposeScaledDotProductAttention(unittest.TestCase):
