@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -35,6 +36,13 @@ using executorch::runtime::Result;
 using executorch::runtime::TensorLayout;
 
 namespace {
+
+class VelaExternalBlocksTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    executorch::runtime::runtime_init();
+  }
+};
 
 constexpr std::string_view kExternalKey =
     "g123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
@@ -129,13 +137,6 @@ class FakeNamedDataMap final : public NamedDataMap {
 
  private:
   std::vector<Entry> entries_;
-};
-
-class VelaExternalBlocksTest : public ::testing::Test {
- protected:
-  void SetUp() override {
-    executorch::runtime::runtime_init();
-  }
 };
 
 } // namespace
@@ -383,3 +384,12 @@ TEST_F(VelaExternalBlocksTest, RejectsIoCountExceedingPayload) {
           &handles),
       Error::InvalidProgram);
 }
+
+#ifdef EXECUTORCH_ARM_VELA_TEST_NO_GLOBAL_INIT
+// Only the OSS isolation target overrides the test main. Leave runtime
+// initialization to the fixture so each case proves it initializes the PAL.
+int main(int argc, char** argv) {
+  ::testing::InitGoogleTest(&argc, argv);
+  return RUN_ALL_TESTS();
+}
+#endif
