@@ -81,10 +81,6 @@ def test_gate_up_epilogue():
 
 
 @CUDA
-@pytest.mark.skipif(
-    torch.cuda.is_available() and torch.cuda.get_device_capability() < (8, 9),
-    reason="native E4M3 (SM89+) required",
-)
 @pytest.mark.parametrize("m", [1, 37])
 def test_gated_linear_weight_only(m, monkeypatch):
     monkeypatch.setenv("ET_CUDA_NVFP4_ACT", "w4a16")

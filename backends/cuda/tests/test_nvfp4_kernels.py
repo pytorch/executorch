@@ -16,10 +16,13 @@ from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
 )
 
 pytestmark = pytest.mark.skipif(
-    not torch.cuda.is_available()
-    or torch.version.hip is not None
-    or torch.cuda.get_device_capability() < (8, 9),
-    reason="NVIDIA CUDA with native E4M3 (SM89+) required",
+    not torch.cuda.is_available() or torch.version.hip is not None,
+    reason="NVIDIA CUDA required",
+)
+# The activation quantizer only feeds native W4A4 and rounds through FP8 E4M3.
+native_e4m3 = pytest.mark.skipif(
+    torch.cuda.is_available() and torch.cuda.get_device_capability() < (8, 9),
+    reason="native E4M3 (SM89+) required",
 )
 
 
@@ -38,6 +41,7 @@ def test_w4a16(m, n, k):
     torch.testing.assert_close(actual, expected, rtol=0.015, atol=0.015)
 
 
+@native_e4m3
 @pytest.mark.parametrize("static", [0.0, 0.001])
 def test_activation_reference(static):
     torch.manual_seed(123)
@@ -76,6 +80,7 @@ def test_activation_reference(static):
     assert torch.equal(unpack, ref)
 
 
+@native_e4m3
 def test_activation_rounding_boundaries():
     # Every E2M1 midpoint, both signs; exact global/block scales make the
     # expected ties independent of floating-point scale calculation.
