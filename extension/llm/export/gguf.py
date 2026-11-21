@@ -458,7 +458,9 @@ class ExportableGGUFTensor(TorchAOBaseTensor):
         ``per_tensor_scale`` is the scalar from the GGUF ``<name>.scale``
         companion and ``act_per_tensor_scale`` the optional scalar
         ``<name>.input_scale`` (stored as a Python float, see
-        ``ExportableNVFP4Tensor``); the caller pairs them by name.
+        ``ExportableNVFP4Tensor``); the caller pairs them by name. GGUF stores
+        both as F32, so tensor scales must still be float32: pair them before
+        any dtype cast (e.g. a loader's ``dtype=``), which would round them.
 
         GGML packs eight lows followed by eight highs in each K16 group;
         torchao packs the even element in the low nibble. Scales E4M3 cannot
@@ -478,6 +480,12 @@ class ExportableGGUFTensor(TorchAOBaseTensor):
         ):
             raise ValueError(
                 "GGML NVFP4 scale 0xff decodes to 480, which cannot be represented losslessly as E4M3"
+            )
+        scales = (per_tensor_scale, act_per_tensor_scale)
+        if any(isinstance(s, Tensor) and s.dtype != torch.float32 for s in scales):
+            raise ValueError(
+                "NVFP4 per-tensor scales must be float32 (GGUF F32); a cast "
+                "before pairing rounds them"
             )
         pts = torch.as_tensor(
             per_tensor_scale, dtype=torch.float32, device=self.raw.device
@@ -678,7 +686,8 @@ def iter_gguf(
     as plain float tensors in their native dtype. GGUF shapes are reversed to
     PyTorch ``(N, K)`` convention. The per-tensor scale of an NVFP4
     ``<name>.weight`` is yielded as its own ``<name>.scale`` F32 tensor; callers
-    pair it by name (see :meth:`ExportableGGUFTensor.to_exportable_nvfp4_tensor`).
+    pair it by name before any dtype cast (see
+    :meth:`ExportableGGUFTensor.to_exportable_nvfp4_tensor`).
     """
     from gguf import GGMLQuantizationType, GGUFReader
 
