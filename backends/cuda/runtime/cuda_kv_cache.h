@@ -44,6 +44,12 @@ struct OffGraphKVMetrics {
   int64_t device_staging_bytes{0};
   // ABI 3 host undo pages and pinned transfer buffers; excludes containers.
   int64_t host_undo_bytes{0};
+  // Cumulative batched-sequence cache CPU wall time, including device waits.
+  // These are diagnostics, not GPU-kernel durations; clear does not reset them.
+  uint64_t prepare_time_ns{0};
+  uint64_t commit_time_ns{0};
+  uint64_t archive_transfer_time_ns{0};
+  uint64_t archive_append_time_ns{0};
 };
 
 // Backend face of the off-graph KV cache: what the CUDA delegate needs from

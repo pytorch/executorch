@@ -4,8 +4,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import ast
 import json
 import unittest
+from pathlib import Path
 
 from executorch.backends.cuda.passes.lower_offgraph_kv import (
     offgraph_kv_constant_methods,
@@ -15,6 +17,37 @@ from executorch.backends.cuda.passes.lower_offgraph_kv import (
 
 
 class PrivateKVManifestTest(unittest.TestCase):
+    def test_imported_kernels_are_in_buck_package(self):
+        cuda = Path(__file__).resolve().parent.parent
+        tree = ast.parse((cuda / "BUCK").read_text())
+        targets = [
+            node.value
+            for node in tree.body
+            if isinstance(node, ast.Expr)
+            and isinstance(node.value, ast.Call)
+            and any(
+                keyword.arg == "name"
+                and isinstance(keyword.value, ast.Constant)
+                and keyword.value.value == "triton_kernels"
+                for keyword in node.value.keywords
+            )
+        ]
+        self.assertEqual(len(targets), 1)
+        sources = next(
+            ast.literal_eval(keyword.value)
+            for keyword in targets[0].keywords
+            if keyword.arg == "srcs"
+        )
+        imports = ast.parse((cuda / "passes/lower_offgraph_kv.py").read_text())
+        prefix = "executorch.backends.cuda."
+        for node in imports.body:
+            if isinstance(node, ast.ImportFrom) and node.module.startswith(
+                prefix + "triton.kernels."
+            ):
+                source = node.module.removeprefix(prefix).replace(".", "/") + ".py"
+                with self.subTest(imported_module=node.module):
+                    self.assertIn(source, sources)
+
     @staticmethod
     def manifest(**overrides):
         fields = {

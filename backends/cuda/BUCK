@@ -230,6 +230,7 @@ fbcode_target(
         "triton/kernels/int6_quantized_gemm.py",
         "triton/kernels/int8_quantized_gemm.py",
         "triton/kernels/int4_matmul.py",
+        "triton/kernels/private_kv_write.py",
         "triton/kernels/quantized_gemm_family.py",
         "triton/kernels/quantized_gemm_utils.py",
         "triton/kernels/sdpa.py",

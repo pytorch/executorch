@@ -9,6 +9,7 @@
 #include <executorch/backends/cuda/runtime/cuda_kv_cache.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <limits>
 #include <map>
@@ -40,6 +41,23 @@ namespace {
 namespace slimc10 = ::executorch::backends::aoti::slim::c10;
 using ::executorch::extension::cuda::CUDAGuard;
 using ::executorch::runtime::Error;
+
+class CachePhaseTimer final {
+ public:
+  explicit CachePhaseTimer(uint64_t& elapsed)
+      : elapsed_(elapsed), start_(std::chrono::steady_clock::now()) {}
+  ~CachePhaseTimer() {
+    elapsed_ += std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    std::chrono::steady_clock::now() - start_)
+                    .count();
+  }
+  CachePhaseTimer(const CachePhaseTimer&) = delete;
+  CachePhaseTimer& operator=(const CachePhaseTimer&) = delete;
+
+ private:
+  uint64_t& elapsed_;
+  const std::chrono::steady_clock::time_point start_;
+};
 
 bool is_ring(const cache::LayerGeometry& layer) {
   return layer.policy.kind == cache::LayerPolicy::Kind::Ring;
@@ -1167,6 +1185,7 @@ class CudaBatchedSequenceCache final : public cache::Cache,
 
   Error prepare_step(int64_t write_length, cudaStream_t stream) override {
     std::lock_guard<std::mutex> guard(mutex_);
+    const CachePhaseTimer timer(prepare_time_ns_);
     ET_CHECK_OK_OR_RETURN_ERROR(error_);
     ET_CHECK_OR_RETURN_ERROR(
         !poisoned_ && (!dflash_block_size_ || pending_owners_.empty()),
@@ -1296,6 +1315,7 @@ class CudaBatchedSequenceCache final : public cache::Cache,
 
   Error commit_step(int64_t write_length) override {
     std::lock_guard<std::mutex> guard(mutex_);
+    const CachePhaseTimer timer(commit_time_ns_);
     ET_CHECK_OR_RETURN_ERROR(
         write_length > 0, InvalidArgument, "write length must be positive");
     ET_CHECK_OR_RETURN_ERROR(
@@ -1365,6 +1385,10 @@ class CudaBatchedSequenceCache final : public cache::Cache,
   OffGraphKVMetrics metrics() const override {
     std::lock_guard<std::mutex> guard(mutex_);
     OffGraphKVMetrics metrics;
+    metrics.prepare_time_ns = prepare_time_ns_;
+    metrics.commit_time_ns = commit_time_ns_;
+    metrics.archive_transfer_time_ns = archive_transfer_time_ns_;
+    metrics.archive_append_time_ns = archive_append_time_ns_;
     for (const auto& [seq_id, sequence] : seqs_) {
       metrics.logical_length =
           std::max<int64_t>(metrics.logical_length, sequence.plan.length());
@@ -1649,27 +1673,31 @@ class CudaBatchedSequenceCache final : public cache::Cache,
     }
     const auto device = CUDAGuard::create(pool_.device());
     ET_CHECK_OK_OR_RETURN_ERROR(device.error());
-    for (size_t layer = 0; layer < histories_.size(); ++layer) {
-      if (!histories_[layer]) {
-        continue;
-      }
-      const auto& geometry = geometry_.layers[layer];
-      const size_t bytes = static_cast<size_t>(pending_width_) *
-          geometry.n_kv_heads * geometry.head_dim * sizeof(uint16_t);
-      for (int plane = 0; plane < 2; ++plane) {
-        const auto error = cudaMemcpyAsync(
-            archive_staging_[layer] + plane * bytes,
-            pool_.side_buffer(private_stage_buffers_[layer] + plane),
-            bytes,
-            cudaMemcpyDeviceToHost,
-            pool_.stream());
-        if (error != cudaSuccess) {
-          (void)pool_.synchronize(/*all_streams=*/true);
-          return Error::Internal;
+    {
+      const CachePhaseTimer transfer_timer(archive_transfer_time_ns_);
+      for (size_t layer = 0; layer < histories_.size(); ++layer) {
+        if (!histories_[layer]) {
+          continue;
+        }
+        const auto& geometry = geometry_.layers[layer];
+        const size_t bytes = static_cast<size_t>(pending_width_) *
+            geometry.n_kv_heads * geometry.head_dim * sizeof(uint16_t);
+        for (int plane = 0; plane < 2; ++plane) {
+          const auto error = cudaMemcpyAsync(
+              archive_staging_[layer] + plane * bytes,
+              pool_.side_buffer(private_stage_buffers_[layer] + plane),
+              bytes,
+              cudaMemcpyDeviceToHost,
+              pool_.stream());
+          if (error != cudaSuccess) {
+            (void)pool_.synchronize(/*all_streams=*/true);
+            return Error::Internal;
+          }
         }
       }
+      ET_CHECK_OK_OR_RETURN_ERROR(pool_.synchronize());
     }
-    ET_CHECK_OK_OR_RETURN_ERROR(pool_.synchronize());
+    const CachePhaseTimer append_timer(archive_append_time_ns_);
     for (size_t layer = 0; layer < histories_.size(); ++layer) {
       if (histories_[layer]) {
         ET_CHECK_OK_OR_RETURN_ERROR(histories_[layer]->append(
@@ -2112,6 +2140,10 @@ class CudaBatchedSequenceCache final : public cache::Cache,
   const std::optional<int> dflash_block_size_;
   int columns_;
   bool inflight_{false};
+  uint64_t prepare_time_ns_{0};
+  uint64_t commit_time_ns_{0};
+  uint64_t archive_transfer_time_ns_{0};
+  uint64_t archive_append_time_ns_{0};
   std::vector<int64_t> layer_rows_;
   CudaKVPool pool_;
   std::map<int32_t, Sequence> seqs_;

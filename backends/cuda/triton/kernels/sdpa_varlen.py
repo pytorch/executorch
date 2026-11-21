@@ -38,10 +38,20 @@ import torch
 import triton
 import triton.language as tl
 from torch.library import triton_op, wrap_triton
+from triton.compiler import compiler as triton_compiler
 
 _SPLITK_MAX_QUERY = 4
 _SPLITK_ROWS_PER_SPLIT = 256
 _SPLITK_MAX_SPLITS = 16
+
+
+def _num_stages(head_dim: int, requested: int, device_index: int) -> int:
+    # D=256 pipelined tiles exceed the 99-KiB opt-in limit on smaller-SMEM
+    # GPUs. Keep the existing pipeline on devices with at least 160 KiB;
+    # changing only buffering preserves the key sweep and split-K reduction.
+    if head_dim == 256 and triton_compiler.max_shared_mem(device_index) < 160 * 1024:
+        return 1
+    return requested
 
 
 @triton.jit
@@ -646,7 +656,13 @@ def _sdpa_varlen_impl(  # noqa: C901
     use_decode = static and T <= _SPLITK_MAX_QUERY
     block_m = 16 if static and T * groups <= 16 else 64
     num_qb = (T * groups + block_m - 1) // block_m
-    generic_num_stages = 3 if static and T <= 64 else 2
+    requested_stages = 2 if use_decode else (3 if static and T <= 64 else 2)
+    device_index = (
+        query.device.index
+        if query.device.index is not None
+        else torch.cuda.current_device()
+    )
+    num_stages = _num_stages(D, requested_stages, device_index)
     splits = _num_splits(T, rows) if static else 1
     # The row-complete decode path writes uncovered rows and empty split slots.
     out = torch.empty_like(query) if use_decode else torch.zeros_like(query)
@@ -700,7 +716,7 @@ def _sdpa_varlen_impl(  # noqa: C901
             NUM_GROUPS=groups,
             BLOCK_G=triton.next_power_of_2(groups),
             num_warps=4,
-            num_stages=2,
+            num_stages=num_stages,
         )
     else:
         grid = (seq_info.shape[0] * num_qb, Hkv, splits)
@@ -744,7 +760,7 @@ def _sdpa_varlen_impl(  # noqa: C901
             HEAD_DIM=D,
             NUM_GROUPS=groups,
             num_warps=4,
-            num_stages=generic_num_stages,
+            num_stages=num_stages,
         )
     if splits > 1:
         wrap_triton(_sdpa_varlen_reduce_kernel)[(Hq * T,)](

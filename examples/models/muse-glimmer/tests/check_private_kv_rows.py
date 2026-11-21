@@ -196,8 +196,20 @@ def run(probe, root, head_dim, abi, repeat=0):
     assert replies[0]["ready"] and len(replies) == len(requests) + 1
     pairs = list(zip(requests, replies[1:], strict=True))
     logits, steps = {}, {}
+    previous_snapshot = replies[0]["snapshot"]
     for request, response in pairs:
         assert not response.get("failed") and request["op"] == response["op"]
+        response["cache_phase_seconds"] = {
+            name: (response["snapshot"][name] - previous_snapshot[name]) * 1e-9
+            for name in (
+                "cache_prepare_time_ns",
+                "cache_commit_time_ns",
+                "archive_transfer_time_ns",
+                "archive_append_time_ns",
+            )
+        }
+        assert all(t >= 0 for t in response["cache_phase_seconds"].values())
+        previous_snapshot = response["snapshot"]
         if request["op"] == "step":
             steps[request["tag"]] = response
             if request["save_logits"]:
@@ -260,6 +272,18 @@ def paired_timings(repeats):
                     "abi2_median_s": old_median,
                     "abi3_median_s": new_median,
                     "throughput_ratio": old_median / new_median,
+                    "cache_cpu_wall_s": {
+                        f"abi{abi}": {
+                            phase: statistics.median(
+                                steps[f"bench-c{c}-{i}"]["cache_phase_seconds"][phase]
+                                for i in range(20)
+                            )
+                            for phase in steps[f"bench-c{c}-0"].get(
+                                "cache_phase_seconds", {}
+                            )
+                        }
+                        for abi, steps in ((2, old_steps), (3, new_steps))
+                    },
                 }
             )
         ratio = statistics.median(r["throughput_ratio"] for r in rounds)

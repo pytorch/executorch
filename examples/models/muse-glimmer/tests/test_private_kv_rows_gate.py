@@ -16,6 +16,36 @@ spec.loader.exec_module(checker)
 
 
 class PrivateKVRowsPerformanceGateTest(unittest.TestCase):
+    def test_cpu_phase_report_keeps_total_throughput_gate(self):
+        steps, pairs = {}, []
+        for c in (1, 2, 4, 8, 16, 32, 64):
+            for i in range(20):
+                steps[f"bench-c{c}-{i}"] = {
+                    "elapsed_seconds": 0.002,
+                    "cache_phase_seconds": {
+                        "cache_prepare_time_ns": 0.0001,
+                        "cache_commit_time_ns": 0.0003,
+                        "archive_transfer_time_ns": 0.0002,
+                        "archive_append_time_ns": 0.00001,
+                    },
+                }
+            for phase in ("growth", "restore"):
+                pairs.append(({"tag": f"{phase}-c{c}-0"}, {"elapsed_seconds": 0.001}))
+        old_steps = {
+            tag: {**response, "elapsed_seconds": 0.001}
+            for tag, response in steps.items()
+        }
+        timings, lifecycle = checker.paired_timings([(old_steps, steps, pairs, pairs)])
+        self.assertEqual(timings[1]["throughput_ratio"], 0.5)
+        self.assertEqual(
+            timings[1]["rounds"][0]["cache_cpu_wall_s"]["abi3"]["cache_commit_time_ns"],
+            0.0003,
+        )
+        with self.assertRaisesRegex(RuntimeError, "d128/c1"):
+            checker.require_performance(
+                {128: {"same_work_timings": timings, "lifecycle_timings": lifecycle}}
+            )
+
     def test_boundary_and_improvements_qualify(self):
         checker.require_performance(
             {

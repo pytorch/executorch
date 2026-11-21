@@ -51,6 +51,9 @@ ceiling. Attention selects a history or staging address before loading each
 row, avoiding separate pipelined K/V tiles and their shared-memory overhead.
 Logical visibility and reduction order follow the legacy virtual
 key sweep; private placement does not reorder keys or change split-K dispatch.
+For D=256, pipeline buffering is reduced on targets below 160 KiB of effective
+shared memory. The original pipeline remains on large-SMEM targets; tiles are
+unchanged on both.
 
 Preparation uploads descriptor contents before execution. Descriptor addresses
 stay fixed; stage or arena address changes fence the previous step and invalidate
@@ -104,6 +107,13 @@ timing independently from its blocking numerical/memory/graph checks; the same
 checker enforces timing on non-PR runs or when invoked without
 `--report-performance`. A green report-only check does not qualify performance
 or full-model serving.
+
+The probe also reports cumulative CPU wall-time counters for preparation,
+commit, archive transfer plus its device wait, and host-page append. The checker
+differences these counters per operation and reports balanced-round medians.
+Archive transfer and append are subcomponents of commit, not additional times
+to sum with it. These measurements locate cache-side overhead; they are not
+isolated GPU-kernel timings. Clear preserves counters for a complete run.
 
 A separate 4K-context phase keeps 48 short owners alive while closing 16 long
 owners. It requires at least 16 MiB less live KV and at least 8 MiB less allocator

@@ -4248,6 +4248,38 @@ TEST_F(CudaPrivateCacheTest, AbortedForwardRetiresOnlyItsOwners) {
   kv->forget_handle(&handle);
 }
 
+TEST_F(CudaPrivateCacheTest, CachePhaseTimesAreCumulativeAcrossClear) {
+  auto ptr = make_private();
+  auto* ctl = ptr->as<cache::BatchControl>();
+  auto* kv = ptr->as<cu::CudaKVCache>();
+  auto fake = private_container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  EXPECT_EQ(kv->metrics().prepare_time_ns, 0);
+  EXPECT_EQ(kv->metrics().commit_time_ns, 0);
+  ASSERT_EQ(ctl->seq_new(), 0);
+  ASSERT_EQ(write_step(*ptr, fake, handle, {0}), Error::Ok);
+  const auto before = kv->metrics();
+  EXPECT_GT(before.prepare_time_ns, 0);
+  EXPECT_GT(before.archive_transfer_time_ns, 0);
+  EXPECT_GT(before.archive_append_time_ns, 0);
+  EXPECT_GE(
+      before.commit_time_ns,
+      before.archive_transfer_time_ns + before.archive_append_time_ns);
+  ctl->clear();
+  const auto cleared = kv->metrics();
+  EXPECT_EQ(cleared.prepare_time_ns, before.prepare_time_ns);
+  EXPECT_EQ(cleared.commit_time_ns, before.commit_time_ns);
+  EXPECT_EQ(cleared.archive_transfer_time_ns, before.archive_transfer_time_ns);
+  EXPECT_EQ(cleared.archive_append_time_ns, before.archive_append_time_ns);
+  ASSERT_EQ(ctl->seq_new(), 0);
+  ASSERT_EQ(write_step(*ptr, fake, handle, {0}), Error::Ok);
+  const auto after = kv->metrics();
+  EXPECT_GT(after.prepare_time_ns, before.prepare_time_ns);
+  EXPECT_GT(after.commit_time_ns, before.commit_time_ns);
+  kv->forget_handle(&handle);
+}
+
 TEST_F(CudaPrivateCacheTest, CurrentCloneAndRewindPreserveResidentRows) {
   auto ptr = make_private();
   auto* ctl = ptr->as<cache::BatchControl>();

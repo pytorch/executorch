@@ -6,13 +6,57 @@
 
 import collections
 import unittest
+from unittest import mock
 
 import torch
 
 from executorch.backends.cuda.passes.lower_offgraph_kv import (
     _private_batched_sequence_step_fn,
 )
-from executorch.backends.cuda.triton.kernels.sdpa_varlen import sdpa_varlen
+from executorch.backends.cuda.triton.kernels.sdpa_varlen import _num_stages, sdpa_varlen
+from triton.compiler import compiler as triton_compiler
+
+
+class VarlenLaunchPolicyTest(unittest.TestCase):
+    def test_device_optin_limit_selects_pipeline(self):
+        # All are BF16 launches. A100 keeps the prior pipeline; A10G/5090
+        # fit D=256 without shrinking attention tiles or changing split-K.
+        for limit in (101376, 166912, 232448):
+            with self.subTest(shared_memory_limit=limit), mock.patch.object(
+                triton_compiler,
+                "max_shared_mem",
+                return_value=limit,
+            ) as properties:
+                for dim in (16, 32, 64, 128, 256):
+                    for requested in (2, 3):
+                        selected = _num_stages(dim, requested, 0)
+                        expected = 1 if dim == 256 and limit < 160 * 1024 else requested
+                        self.assertEqual(selected, expected)
+                self.assertEqual(properties.call_count, 2)
+
+    def test_device_limits_are_selected_separately(self):
+        with mock.patch.object(
+            triton_compiler,
+            "max_shared_mem",
+            side_effect=lambda device_index: (101376, 166912)[device_index],
+        ) as query:
+            self.assertEqual(_num_stages(256, 2, 0), 1)
+            self.assertEqual(_num_stages(256, 2, 1), 2)
+            self.assertEqual(_num_stages(256, 2, 0), 1)
+            self.assertEqual(_num_stages(256, 2, 1), 2)
+            self.assertEqual(query.call_count, 4)
+
+    def test_export_target_budget_is_not_stale_on_same_device(self):
+        # target_smem_context changes Triton's effective limit when an export
+        # targets a GPU with less shared memory than its host.
+        with mock.patch.object(
+            triton_compiler,
+            "max_shared_mem",
+            side_effect=(166912, 101376, 166912),
+        ):
+            self.assertEqual(_num_stages(256, 2, 0), 2)
+            self.assertEqual(_num_stages(256, 2, 0), 1)
+            self.assertEqual(_num_stages(256, 2, 0), 2)
 
 
 def _case(
