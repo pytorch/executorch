@@ -10,6 +10,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <new>
 
 using namespace executorch::extension::cuda;
 
@@ -19,9 +20,10 @@ void* rounded = nullptr;
 executorch::runtime::DeviceAllocator* allocator = nullptr;
 int frees = 0;
 int trims = 0;
+bool forbid_host_allocation = false;
 const auto fake_pool = reinterpret_cast<cudaMemPool_t>(storage + 256);
 
-void fail(const char* message) {
+[[noreturn]] void fail(const char* message) {
   std::fprintf(stderr, "%s\n", message);
   std::_Exit(1);
 }
@@ -41,6 +43,26 @@ void free_at_exit() {
   }
 }
 } // namespace
+
+// A per-device trim is called after the KV pool commits its replacement. It
+// must not allocate a snapshot that could throw before pitch reconciliation.
+void* operator new(std::size_t size) {
+  if (forbid_host_allocation) {
+    fail("per-device trim allocated host memory after storage commit");
+  }
+  if (void* memory = std::malloc(size == 0 ? 1 : size)) {
+    return memory;
+  }
+  fail("host allocation failed");
+}
+
+void operator delete(void* memory) noexcept {
+  std::free(memory);
+}
+
+void operator delete(void* memory, std::size_t) noexcept {
+  std::free(memory);
+}
 
 // Stand-ins keep the test independent of GPU packing and driver teardown order.
 extern "C" {
@@ -118,5 +140,13 @@ int main() {
     fail("allocate_async did not create the pool");
   }
   CudaAllocator::deallocate_async(pooled.get(), -1, nullptr);
+  forbid_host_allocation = true;
+  CudaAllocator::release_cached_memory(0);
+  CudaAllocator::release_cached_memory(1);
+  forbid_host_allocation = false;
+  if (trims != 1) {
+    fail("per-device trim did not reach exactly one existing pool");
+  }
+  trims = 0;
   return 0;
 }

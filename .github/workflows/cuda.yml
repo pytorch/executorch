@@ -695,13 +695,19 @@ jobs:
 
         # The normal serving binaries and the opt-in correctness tool share
         # CudaExecutor; MG preparation tests also run on Linux.
-        make muse-glimmer-batching-cuda
+        # Capture qualification uses native counters in the release build.
+        cmake --preset llm-release-cuda -DEXECUTORCH_ENABLE_LOGGING=OFF
+        cmake --build --preset llm-release-cuda-install
         BATCHING_BIN_DIR="${PWD}/cmake-out/examples/models/muse-glimmer-batching"
-        cmake -S "${PWD}/examples/models/muse-glimmer" -B "${BATCHING_BIN_DIR}" \
-          -DMUSE_GLIMMER_BUILD_BATCHING_TESTS=ON
+        cmake -S "${PWD}/examples/models/muse-glimmer" --preset muse-glimmer-cuda \
+          -B "${BATCHING_BIN_DIR}" -DMUSE_GLIMMER_BUILD_BATCHING=ON \
+          -DMUSE_GLIMMER_BUILD_BATCHING_TESTS=ON \
+          -DMUSE_GLIMMER_BUILD_RUNTIME_KV_PROBE=ON
         bash .ci/scripts/build_muse_glimmer_batching_smoke.sh "${BATCHING_BIN_DIR}"
         cmake --build "${BATCHING_BIN_DIR}" \
-          --target muse_glimmer_batching_test muse_glimmer_cuda_dflash_test --parallel
+          --target muse_glimmer_batching_runner muse_glimmer_batching_worker \
+          muse_glimmer_batching_test muse_glimmer_cuda_dflash_test \
+          muse_glimmer_runtime_kv_probe --parallel
         ctest --test-dir "${BATCHING_BIN_DIR}" \
           -R '^muse_glimmer_batching$' --output-on-failure --no-tests=error
         test -x "${BATCHING_BIN_DIR}/muse_glimmer_batching_runner"
@@ -710,6 +716,10 @@ jobs:
 
         # The batching export on a tiny model, and the CLI's backend dispatch.
         pip install gguf
+        python examples/models/muse-glimmer/tests/check_runtime_kv_columns.py \
+          --probe "${BATCHING_BIN_DIR}/muse_glimmer_runtime_kv_probe" \
+          --output-dir "${RUNNER_TEMP:-/tmp}/muse_glimmer_runtime_kv_columns"
+
         python -m pytest -v -o "addopts=" \
           examples/models/muse-glimmer/tests/test_cuda_batching_pipeline.py \
           examples/models/muse-glimmer/tests/test_cuda_dflash_packed.py \
@@ -806,7 +816,7 @@ jobs:
           backends/cuda/tests/test_merge_ptes.py \
           -v -o "addopts="
 
-        cmake --preset llm-release-cuda -DEXECUTORCH_BUILD_TESTS=ON
+        cmake --preset llm-release-cuda -DEXECUTORCH_BUILD_TESTS=ON -DEXECUTORCH_ENABLE_LOGGING=OFF
         cmake --build cmake-out --target test_cuda_allocator test_cuda_allocator_exit test_cuda_mutable_state test_cuda_weight_cache test_cuda_output_copy test_cuda_backend_execute test_cuda_sort_rand test_cuda_current_stream test_cuda_kv_cache test_cuda_guard test_cuda_stream_guard test_step_plan test_cuda_executor -j$(nproc)
         ctest --test-dir cmake-out -R test_cuda_allocator --output-on-failure -V
         ctest --test-dir cmake-out -R test_cuda_mutable_state --output-on-failure -V

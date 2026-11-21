@@ -112,7 +112,8 @@ class ET_EXPERIMENTAL BatchControl : public CacheControl {
   // cache asks this before it hands out work seq_new would refuse.
   virtual std::optional<int> max_seqs() const = 0;
   // An id no live sequence is using, held until that sequence's last slot is
-  // freed. nullopt = every id is in use. Ids may also be chosen by the caller;
+  // freed. nullopt = no free id or insufficient resources to admit it.
+  // Ids may also be chosen by the caller;
   // this only guarantees the one it returns is not already taken.
   virtual std::optional<int32_t> seq_new() = 0;
   // An independently writable snapshot of src below `upto`, all of it when

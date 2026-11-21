@@ -23,6 +23,17 @@ CORRECTNESS_PATHS = (
 
 
 class MuseGlimmerBatchingCITest(unittest.TestCase):
+    def test_runtime_columns_probe_runs_in_cuda_ci(self):
+        workflow = (ROOT / ".github/workflows/cuda.yml").read_text()
+        job = workflow.split("  unittest-cuda-muse-glimmer-batching:", 1)[1].split(
+            "  unittest-cuda-quantized-gemm:", 1
+        )[0]
+        self.assertIn("-DMUSE_GLIMMER_BUILD_RUNTIME_KV_PROBE=ON", job)
+        self.assertIn("muse_glimmer_runtime_kv_probe --parallel", job)
+        self.assertIn("tests/check_runtime_kv_columns.py", job)
+        self.assertIn("-DEXECUTORCH_ENABLE_LOGGING=OFF", job)
+        self.assertIn("cmake --build --preset llm-release-cuda-install", job)
+
     def test_e2e_builds_smoke_before_running_it(self):
         script = (SCRIPTS / "test_model_e2e.sh").read_text()
         build = script.index("bash .ci/scripts/build_muse_glimmer_batching_smoke.sh")

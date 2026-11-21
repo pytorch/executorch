@@ -126,7 +126,12 @@ def export_and_lower(
     max_cells: int = 65536,
     kv_layout: str = "cell",
     max_kv_seqs: int = 4,
+    runtime_kv_columns: bool = False,
 ) -> None:
+    if runtime_kv_columns and not (
+        backend == "cuda" and use_offgraph_kv_cache and kv_layout == "sequence"
+    ):
+        raise ValueError("runtime KV columns require CUDA off-graph sequence layout")
     if use_offgraph_kv_cache and use_turboquant:
         raise ValueError("off-graph KV cache and TurboQuant are mutually exclusive")
     if backend == "mlx" and use_offgraph_kv_cache:
@@ -149,6 +154,7 @@ def export_and_lower(
             device_sampling=sample,
             kv_layout=kv_layout,
             max_kv_seqs=max_kv_seqs,
+            runtime_kv_columns=runtime_kv_columns,
             vision_model=vision_model,
             pos_embed_table=pos_embed_table,
             max_vision_patches=max_vision_patches,
@@ -249,7 +255,6 @@ def _solo_constant_methods(
 MAX_CELLS_METHOD = "get_offgraph_kv_max_cells"
 # Read by CudaExecutor in place of the cell count when each sequence keeps a
 # private history: the sequence columns of every layer's storage.
-MAX_KV_SEQS_METHOD = "get_offgraph_kv_max_seqs"
 # Read by MuseGlimmerCudaDFlashExecutor for the draft's own sequence columns,
 # mirroring kMaxSeqs in runtime/cuda_dflash_executor.h.
 DRAFT_MAX_KV_SEQS_METHOD = "get_draft_offgraph_kv_max_seqs"
@@ -338,6 +343,7 @@ def batched_sequence_manifest(
     max_seqs: int,
     causal: bool = True,
     context_window: bool = False,
+    runtime_columns: bool = False,
 ) -> str:
     """The batched-sequence lowering manifest: one column per sequence."""
     from executorch.backends.cuda.passes.lower_offgraph_kv import (
@@ -349,6 +355,8 @@ def batched_sequence_manifest(
     manifest["max_seqs"] = max_seqs
     manifest["max_segments"] = batched_sequence_max_segments(max_seqs)
     manifest["causal"] = causal
+    if runtime_columns:
+        manifest["runtime_columns"] = True
     if context_window:
         manifest["context_window"] = True
     return json.dumps(manifest, sort_keys=True, separators=(",", ":"))
@@ -423,6 +431,7 @@ def export_cuda_batching(  # noqa: C901
     max_vision_patches: int = 16384,
     kv_layout: str = "cell",
     max_kv_seqs: int = 4,
+    runtime_kv_columns: bool = False,
 ):
     """Exports the forward methods and writes the artifact.
 
@@ -442,6 +451,7 @@ def export_cuda_batching(  # noqa: C901
     from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
     from executorch.backends.cuda.passes.lower_offgraph_kv import (
         OFFGRAPH_KV_COMPILE_SPEC,
+        offgraph_kv_constant_methods,
         OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC,
     )
     from executorch.examples.models.muse_glimmer.source_transformations.cuda import (
@@ -464,6 +474,8 @@ def export_cuda_batching(  # noqa: C901
     if kv_layout not in KV_LAYOUTS:
         raise ValueError(f"kv_layout must be one of {KV_LAYOUTS}, got {kv_layout!r}")
     sequence_layout = kv_layout == "sequence"
+    if runtime_kv_columns and (not sequence_layout or dflash_draft is not None):
+        raise ValueError("runtime KV columns require solo sequence-layout export")
     if sequence_layout and max_kv_seqs <= 0:
         raise ValueError("the sequence layout needs max_kv_seqs > 0")
     has_vision = vision_model is not None and pos_embed_table is not None
@@ -518,7 +530,9 @@ def export_cuda_batching(  # noqa: C901
 
     single_manifest = enable_offgraph_kv_cache(model, max_step_tokens)
     manifest = (
-        batched_sequence_manifest(single_manifest, max_kv_seqs)
+        batched_sequence_manifest(
+            single_manifest, max_kv_seqs, runtime_columns=runtime_kv_columns
+        )
         if sequence_layout
         else cell_manifest(single_manifest, max_cells)
     )
@@ -676,7 +690,7 @@ def export_cuda_batching(  # noqa: C901
     constant_methods["get_min_prefill_chunk"] = _CUDA_MIN_PREFILL_CHUNK
     constant_methods["use_sampling"] = False
     if sequence_layout:
-        constant_methods[MAX_KV_SEQS_METHOD] = max_kv_seqs
+        constant_methods.update(offgraph_kv_constant_methods(manifest.encode()))
     else:
         constant_methods[MAX_CELLS_METHOD] = max_cells
     if "draft_forward" in programs:
@@ -1219,6 +1233,12 @@ def main() -> None:
     )
     add_kv_layout_arguments(parser)
     parser.add_argument(
+        "--runtime-kv-columns",
+        action="store_true",
+        help="Export the experimental runtime-pitch ABI for CUDA sequence KV storage: "
+        "owner columns grow on admission and compact after sustained serving idleness.",
+    )
+    parser.add_argument(
         "--activation-dtype",
         default=None,
         choices=list(common.ACTIVATION_DTYPES),
@@ -1358,6 +1378,7 @@ def main() -> None:
         max_cells=args.max_cells,
         kv_layout=args.kv_layout,
         max_kv_seqs=args.max_kv_seqs,
+        runtime_kv_columns=args.runtime_kv_columns,
     )
 
 
