@@ -29,6 +29,7 @@ from executorch.exir.memory import alloc, view
 from executorch.export import ExportRecipe, LoweringRecipe, StageType
 from executorch.frontends.fused_quant.quantizer.quantizer import FusedQuantQuantizer
 from executorch.frontends.fused_quant.recipe import (
+    get_fused_quant_aten_transform_passes,
     get_fused_quant_edge_compile_config,
     get_fused_quant_quantization_recipe,
 )
@@ -128,6 +129,7 @@ def get_esp_fused_quant_recipe(
     return ExportRecipe(
         strict=False,
         quantization_recipe=quantization_recipe,
+        aten_transform_passes=get_fused_quant_aten_transform_passes(quantizer),
         lowering_recipe=LoweringRecipe(
             edge_compile_config=get_fused_quant_edge_compile_config(()),
             edge_manager_transform_passes=transforms,
