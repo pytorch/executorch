@@ -108,9 +108,10 @@ if not any(l.startswith("generator: ") and l.endswith(" --version-suffix ''") fo
     sys.exit("FAIL: the release component's VERSION does not record --version-suffix ''")
 sys.path.insert(0, clone)
 from install_requirements import TORCH_URL_BASE
+from torch_pin import TORCH_VERSION
 
-if not any(re.fullmatch(r"torch_requirement: torch==\d+\.\d+\.\d+\S*", l) for l in lines):
-    sys.exit("FAIL: the release component's VERSION has no torch_requirement: torch==X.Y.Z")
+if f"torch_requirement: torch=={TORCH_VERSION}" not in lines:
+    sys.exit(f"FAIL: the release component's VERSION has no torch_requirement: torch=={TORCH_VERSION}")
 if f"torch_index: {TORCH_URL_BASE}/cpu" not in lines:
     sys.exit(f"FAIL: the release component's VERSION has no torch_index: {TORCH_URL_BASE}/cpu")
 if f'version: "{version}"' not in (component / "idf_component.yml").read_text().splitlines():
