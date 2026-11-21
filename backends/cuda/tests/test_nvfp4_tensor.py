@@ -28,7 +28,8 @@ def test_from_exportable_matches_portable_dequantize(use_per_tensor_scale):
     quantize_(linear, ExportableNVFP4Config(use_per_tensor_scale=use_per_tensor_scale))
     w = linear.weight
     packed = CudaNVFP4Tensor.from_exportable(w)
-    assert w.per_tensor_scale.ndim == 0 and packed.per_tensor_scale.shape == (1,)
+    # A scalar stays a 2-D (1, 1) weight constant (see the class docstring).
+    assert w.per_tensor_scale.ndim == 0 and packed.per_tensor_scale.shape == (1, 1)
     assert packed.unit_scale is not use_per_tensor_scale
     assert torch.equal(packed.dequantize(), w.dequantize())
     assert torch.equal(
@@ -187,7 +188,7 @@ def test_dequantize_low_nibble_first(row_scales):
         tensor.dequantize(), lut.repeat(2, 1) * pts[:, None], rtol=0, atol=0
     )
     assert tensor.qdata.is_contiguous() and tensor.scale.is_contiguous()
-    assert tensor.per_tensor_scale.ndim == 1
+    assert tensor.per_tensor_scale.shape == ((2,) if row_scales else (1, 1))
 
 
 @pytest.mark.parametrize(

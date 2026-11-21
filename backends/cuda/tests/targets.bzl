@@ -617,5 +617,5 @@ def define_common_targets(is_fbcode = False):
     python_pytest(
         name = "test_nvfp4_tensor",
         srcs = ["test_nvfp4_tensor.py"],
-        deps = ["//caffe2:torch", "//executorch/backends/cuda:nvfp4_tensor", "//executorch/extension/llm/export:nvfp4", "fbsource//third-party/pypi/pytest:pytest", ":nvfp4_test_utils"],
+        deps = ["//caffe2:torch", "//executorch/backends/cuda:nvfp4_tensor", "//executorch/extension/llm/export:nvfp4", "//pytorch/ao:torchao", "fbsource//third-party/pypi/pytest:pytest", ":nvfp4_test_utils"],
     )
