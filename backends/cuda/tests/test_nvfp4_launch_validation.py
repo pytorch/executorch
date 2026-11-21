@@ -24,19 +24,46 @@ def test_activation_rejects_partial_k16_group(k):
 @pytest.mark.parametrize(
     "op", [kernels.nvfp4_w4a4, kernels.nvfp4_w4a16, kernels.nvfp4_gemv]
 )
-@pytest.mark.parametrize("invalid", ["k_mismatch", "scale_k", "strided"])
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        "k_mismatch",
+        "scale_k",
+        "scale_rows",
+        "strided",
+        "pts_len",
+        "pts_dtype",
+        "pts_strided",
+    ],
+)
 def test_rejects_malformed_operands(invalid, op):
     x = torch.empty((2, 64), dtype=torch.bfloat16)
     q = torch.empty((3, 32), dtype=torch.uint8)
     s = torch.empty((3, 4), dtype=torch.uint8)
+    pts = torch.ones(1)
     if invalid == "k_mismatch":
         q = torch.empty((3, 16), dtype=torch.uint8)
+        s = torch.empty((3, 2), dtype=torch.uint8)
     elif invalid == "scale_k":
         s = torch.empty((3, 2), dtype=torch.uint8)
-    else:
+    elif invalid == "scale_rows":
+        s = torch.empty((2, 4), dtype=torch.uint8)
+    elif invalid == "strided":
         x = torch.empty((64, 2), dtype=torch.bfloat16).t()
+    elif invalid == "pts_len":
+        pts = torch.ones(2)
+    elif invalid == "pts_dtype":
+        pts = torch.ones(1, dtype=torch.bfloat16)
+    else:
+        pts = torch.ones(1).expand(3)
     with pytest.raises(ValueError, match="NVFP4"):
-        op(x, q, s, torch.ones(1))
+        op(x, q, s, pts)
+
+
+@pytest.mark.parametrize("static", [-1.0, float("nan")])
+def test_activation_rejects_invalid_static_scale(static):
+    with pytest.raises(ValueError, match="static activation scale"):
+        kernels.nvfp4_quantize_activation(torch.empty((2, 16)), static)
 
 
 def test_w4a4_requires_native_fp4():
@@ -53,6 +80,32 @@ def test_split_workspace_boundary():
         kernels._check_split_workspace(2, 2, 4)
         with pytest.raises(InvalidLaunchParam, match="96 workspace bytes"):
             kernels._check_split_workspace(2, 3, 4)
+
+
+def test_split_workspace_uses_dynamic_m_upper_bound():
+    from torch._subclasses.fake_tensor import FakeTensorMode
+    from torch.fx.experimental.symbolic_shapes import (
+        DimDynamic,
+        ShapeEnv,
+        StatelessSymbolicContext,
+        StrictMinMaxConstraint,
+    )
+    from torch.utils._sympy.value_ranges import ValueRanges
+
+    def rows(constraint):
+        context = StatelessSymbolicContext(
+            dynamic_sizes=[DimDynamic.DYNAMIC], constraint_sizes=[constraint]
+        )
+        mode = FakeTensorMode(shape_env=ShapeEnv())
+        return mode.from_tensor(torch.empty(2), symbolic_context=context).shape[0]
+
+    bounded = rows(StrictMinMaxConstraint(vr=ValueRanges(1, 3), warn_only=False))
+    with mock.patch.object(kernels, "_split_workspace_limit", return_value=64):
+        # The hint (2 rows) fits; the upper bound (3 rows) does not.
+        with pytest.raises(InvalidLaunchParam, match="96 workspace bytes"):
+            kernels._check_split_workspace(2, bounded, 4)
+        with pytest.raises(InvalidLaunchParam, match="bounded M"):
+            kernels._check_split_workspace(2, rows(None), 4)
 
 
 def test_unsplit_launch_needs_no_partial_workspace():
