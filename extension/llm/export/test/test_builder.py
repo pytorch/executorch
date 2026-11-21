@@ -88,8 +88,9 @@ class TestLLMEdgeManager(unittest.TestCase):
         # Check first element (tokens dimension)
         self.assertIsInstance(result[0], dict)
         self.assertIn(1, result[0])
-        # max is max_seq_len - 1 due to export limitation
-        self.assertEqual(result[0][1].max, self.max_seq_len - 1)
+        # The runner prefills in chunks of get_max_seq_len tokens, so a chunk
+        # that size must fit the token dim.
+        self.assertEqual(result[0][1].max, manager.metadata["get_max_seq_len"])
 
         # Check second element (input_pos dimension)
         self.assertIsInstance(result[1], dict)
