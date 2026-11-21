@@ -11,6 +11,7 @@ import triton
 import triton.language as tl
 
 from executorch.backends.cuda.autotune.launch_params import InvalidLaunchParam
+from executorch.backends.cuda.tests.nvfp4_test_utils import dynamic_rows
 from executorch.backends.cuda.triton.kernels import nvfp4_quantized_gemm as kernels
 
 
@@ -60,7 +61,7 @@ def test_rejects_malformed_operands(invalid, op):
         op(x, q, s, pts)
 
 
-@pytest.mark.parametrize("static", [-1.0, float("nan")])
+@pytest.mark.parametrize("static", [-1.0, float("nan"), float("inf")])
 def test_activation_rejects_invalid_static_scale(static):
     with pytest.raises(ValueError, match="static activation scale"):
         kernels.nvfp4_quantize_activation(torch.empty((2, 16)), static)
@@ -98,6 +99,44 @@ def test_embedding_skips_id_check_under_fake_tensors():
     assert out.shape == (1, 2, 64) and out.dtype == torch.bfloat16
 
 
+def symbolic_operands(upper):
+    from torch._subclasses.fake_tensor import FakeTensorMode
+    from torch.fx.experimental.symbolic_shapes import ShapeEnv
+
+    mode = FakeTensorMode(shape_env=ShapeEnv())
+    x = dynamic_rows(mode, torch.empty(17, 64, dtype=torch.bfloat16), upper)
+    weight = [
+        mode.from_tensor(t)
+        for t in (
+            torch.empty((3, 32), dtype=torch.uint8),
+            torch.empty((3, 4), dtype=torch.uint8),
+            torch.ones(1),
+        )
+    ]
+    return mode, x, weight
+
+
+@pytest.mark.parametrize(
+    "op,launch", [("gemv", "_launch_gemv"), ("w4a16", "_launch_w4a16")]
+)
+@pytest.mark.parametrize("upper", [None, 64])
+def test_dynamic_m_bound_reaches_the_autotuned_launch(op, launch, upper):
+    mode, x, weight = symbolic_operands(upper)
+    call = kernels.nvfp4_gemv if op == "gemv" else kernels.nvfp4_w4a16
+    with mode, mock.patch.object(
+        kernels,
+        launch,
+        side_effect=lambda x, q, *args, **kwargs: x.new_empty((x.shape[0], q.shape[0])),
+    ) as launched:
+        if op == "gemv" and upper is None:
+            # Grid axis 1 holds M, so the GEMV needs a bounded M.
+            with pytest.raises(ValueError, match="65535 rows"):
+                call(x, *weight)
+            return
+        call(x, *weight)
+    assert launched.call_args.args[4] == upper
+
+
 def test_gemv_rejects_more_rows_than_grid_axis_1():
     x = torch.empty((65536, 64), dtype=torch.bfloat16)
     q = torch.empty((3, 32), dtype=torch.uint8)
@@ -120,28 +159,6 @@ def test_split_workspace_boundary():
         kernels._check_split_workspace(2, 2, 4)
         with pytest.raises(InvalidLaunchParam, match="96 workspace bytes"):
             kernels._check_split_workspace(2, 3, 4)
-
-
-def dynamic_rows(mode, tensor, upper):
-    """``tensor`` as a fake tensor whose dim 0 is dynamic, bounded by ``upper``
-    (None: unbounded)."""
-    from torch.fx.experimental.symbolic_shapes import (
-        DimDynamic,
-        StatelessSymbolicContext,
-        StrictMinMaxConstraint,
-    )
-    from torch.utils._sympy.value_ranges import ValueRanges
-
-    constraint = (
-        None
-        if upper is None
-        else StrictMinMaxConstraint(vr=ValueRanges(1, upper), warn_only=False)
-    )
-    context = StatelessSymbolicContext(
-        dynamic_sizes=[DimDynamic.DYNAMIC] + [DimDynamic.STATIC] * (tensor.ndim - 1),
-        constraint_sizes=[constraint] + [None] * (tensor.ndim - 1),
-    )
-    return mode.from_tensor(tensor, symbolic_context=context)
 
 
 def test_split_workspace_uses_dynamic_m_upper_bound():
