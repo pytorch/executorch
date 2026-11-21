@@ -694,9 +694,7 @@ Error CudaExecutor::set_input_embedder(InputEmbedder embedder) {
 bool CudaExecutor::execute_raw(
     const RawTargetStep& step,
     const std::function<bool(const RawTargetOutput&)>& consume) {
-  std::unique_lock<std::mutex> execution_lock(
-      execution_mutex_, std::try_to_lock);
-  if (!execution_lock.owns_lock() || !initialized_ || !consume ||
+  if (raw_executing_ || !initialized_ || !consume ||
       step.tokens.size() >
           static_cast<std::size_t>(std::numeric_limits<int>::max()) ||
       step.positions.size() != step.tokens.size() ||
@@ -716,12 +714,15 @@ bool CudaExecutor::execute_raw(
     }
   }
   last_cache_activity_ = std::chrono::steady_clock::now();
-  struct IdleClock {
+  raw_executing_ = true;
+  struct ExecutionScope {
+    bool& executing;
     std::chrono::steady_clock::time_point& activity;
-    ~IdleClock() {
+    ~ExecutionScope() {
+      executing = false;
       activity = std::chrono::steady_clock::now();
     }
-  } idle_clock{last_cache_activity_};
+  } execution_scope{raw_executing_, last_cache_activity_};
   if (step.embeddings) {
     return execute_embeddings(step, consume);
   }
@@ -1100,12 +1101,8 @@ OffGraphKVMetrics CudaExecutor::kv_metrics() const {
 }
 
 Error CudaExecutor::compact_kv_columns(int spare_columns) {
-  std::unique_lock<std::mutex> execution_lock(
-      execution_mutex_, std::try_to_lock);
   ET_CHECK_OR_RETURN_ERROR(
-      execution_lock.owns_lock(),
-      InvalidState,
-      "CudaExecutor: compact between executes");
+      !raw_executing_, InvalidState, "CudaExecutor: compact between executes");
   return kv_->compact_columns(spare_columns);
 }
 
@@ -1113,9 +1110,7 @@ void CudaExecutor::on_idle() {
   if (!runtime_columns_) {
     return;
   }
-  std::unique_lock<std::mutex> execution_lock(
-      execution_mutex_, std::try_to_lock);
-  if (!execution_lock.owns_lock() ||
+  if (raw_executing_ ||
       std::chrono::steady_clock::now() - last_cache_activity_ <
           std::chrono::milliseconds(500)) {
     return;
@@ -1127,7 +1122,7 @@ void CudaExecutor::on_idle() {
   }
   last_cache_activity_ = std::chrono::steady_clock::now();
   const Error error = kv_->compact_columns(/*spare_columns=*/1);
-  if (error != Error::Ok && error != Error::NotSupported) {
+  if (error != Error::Ok) {
     ET_LOG(
         Error,
         "CudaExecutor: idle KV compaction failed (%d)",

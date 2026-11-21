@@ -815,6 +815,15 @@ class ET_EXPERIMENTAL CudaBackend final
     }
 #endif
     ET_CHECK_OK_OR_RETURN_ERROR(mutable_state_rebind_for_execute(handle));
+    const auto commit_kv_step = [&]() {
+      const Error error = commit_offgraph_kv_step(handle, kv_step_width);
+#if defined(EXECUTORCH_BUILD_EXTENSION_LLM)
+      if (error == Error::Ok) {
+        kv_prepared = false;
+      }
+#endif
+      return error;
+    };
 
     // ---------------------------------------------------------------
     // CUDA graph REPLAY path — skip all tensor setup and just replay
@@ -876,7 +885,7 @@ class ET_EXPERIMENTAL CudaBackend final
       }
       ET_CUDA_CHECK_OR_RETURN_ERROR(cudaStreamSynchronize(cs));
 
-      return commit_offgraph_kv_step(handle, kv_step_width);
+      return commit_kv_step();
     }
 
     const bool is_capture_step =
@@ -906,7 +915,7 @@ class ET_EXPERIMENTAL CudaBackend final
           graph_launched);
     }
     ET_CHECK_OK_OR_RETURN_ERROR(error);
-    return commit_offgraph_kv_step(handle, kv_step_width);
+    return commit_kv_step();
   }
 
   void destroy(DelegateHandle* handle_) const override {

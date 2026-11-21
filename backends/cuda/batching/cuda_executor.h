@@ -17,13 +17,14 @@
 // and optionally one dynamic `forward_others` for anything wider. Each forward
 // runs the method with the smallest width that holds it; a static method's
 // extra rows are padding.
+// All execution, session and maintenance calls are confined to the engine
+// thread, matching Executor. execute_raw rejects re-entrant execution.
 
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -233,8 +234,9 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
 
   // The cache's pool usage, for memory reporting.
   OffGraphKVMetrics kv_metrics() const;
-  // An idle boundary serialized with execute. The scratch column is additional
-  // to spare_columns unused owner columns.
+  // Engine-thread only, between execute calls. A call from execute_raw's
+  // consumer is rejected. The scratch column is additional to spare_columns
+  // unused owner columns; compaction never increases the physical width.
   ::executorch::runtime::Error compact_kv_columns(int spare_columns = 1);
   void on_idle() override;
 
@@ -312,7 +314,7 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
   // separate generators, so every forward must agree.
   std::optional<bool> device_logits_;
   bool initialized_ = false;
-  std::mutex execution_mutex_;
+  bool raw_executing_ = false;
   std::chrono::steady_clock::time_point last_cache_activity_ =
       std::chrono::steady_clock::now();
 };

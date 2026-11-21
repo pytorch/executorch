@@ -940,8 +940,7 @@ class CudaBatchedSequenceCache final : public cache::Cache,
   std::optional<int32_t> seq_new() override {
     std::lock_guard<std::mutex> guard(mutex_);
     const auto id = free_sequence_id();
-    if (!id || poisoned_ ||
-        (runtime_columns_ && inflight_ && !free_physical_column())) {
+    if (!id || poisoned_ || (runtime_columns_ && inflight_)) {
       return std::nullopt;
     }
     const int column =
@@ -1122,7 +1121,10 @@ class CudaBatchedSequenceCache final : public cache::Cache,
       required = std::max<int64_t>(required, end);
     }
     if (runtime_columns_) {
-      ET_CHECK_OK_OR_RETURN_ERROR(ensure_columns(false, 0, stream));
+      ET_CHECK_OR_RETURN_ERROR(
+          static_cast<int>(seqs_.size()) < columns_,
+          InvalidState,
+          "offgraph_kv: admission must provide every owner a column");
     }
     ET_CHECK_OK_OR_RETURN_ERROR(pool_.prepare(
         std::min<int64_t>(required, cfg_.capacity) * columns_,
@@ -1336,7 +1338,9 @@ class CudaBatchedSequenceCache final : public cache::Cache,
               max_seqs_ + 1LL,
               std::max<int64_t>(live + 1LL, 2LL * (columns_ - 1) + 1)));
     const int target = compact
-        ? std::min(max_seqs_, std::max(1, live + spare_columns)) + 1
+        ? std::min(
+              columns_,
+              std::min(max_seqs_, std::max(1, live + spare_columns)) + 1)
         : std::min(max_seqs_ + 1, std::max(columns_, grown));
     std::map<int32_t, int> next;
     std::unordered_set<int> used;

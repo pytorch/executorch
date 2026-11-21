@@ -36,6 +36,7 @@ def commands(runtime_columns: bool) -> list[dict]:
             "seq_ids": [0] * 32,
             "select": [31],
             "tag": "prefill",
+            "check_reentrancy": True,
         },
         {
             "op": "step",
@@ -141,7 +142,7 @@ def run(probe: Path, root: Path, runtime_columns: bool) -> tuple[dict, list[dict
         print(completed.stdout, file=sys.stderr)
     completed.check_returncode()
     capture = "CUDA graph: captured and instantiated for 'forward_2"
-    enough_captures = completed.stderr.count(capture) >= (2 if runtime_columns else 1)
+    enough_captures = completed.stderr.count(capture) == (2 if runtime_columns else 1)
     if not enough_captures:
         print(completed.stderr, file=sys.stderr)
         print(completed.stdout, file=sys.stderr)
@@ -177,7 +178,7 @@ def main() -> None:
     parser.add_argument("--output-dir", required=True, type=Path)
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    fixed, _ = run(args.probe.resolve(), args.output_dir, False)
+    fixed, fixed_responses = run(args.probe.resolve(), args.output_dir, False)
     dynamic, responses = run(args.probe.resolve(), args.output_dir, True)
     assert fixed.keys() == dynamic.keys()
     for tag in fixed:
@@ -187,6 +188,13 @@ def main() -> None:
         dynamic["grow"][0], dynamic["grow"][1], atol=5e-2, rtol=0
     )
     steps = [r for r in responses if r.get("op") == "step"]
+    fixed_steps = [r for r in fixed_responses if r.get("op") == "step"]
+    assert len(fixed_steps) == len(steps)
+    for reference, candidate in zip(fixed_steps, steps, strict=True):
+        assert (
+            candidate["snapshot"]["live_KV_bytes"]
+            < reference["snapshot"]["live_KV_bytes"]
+        )
     assert steps[0]["snapshot"]["physical_columns"] == 2
     assert steps[2]["snapshot"]["physical_columns"] == 5
     assert steps[2]["snapshot"]["declared_columns"] == 9

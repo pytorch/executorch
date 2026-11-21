@@ -155,6 +155,15 @@ Json run_step(cb::CudaExecutor& executor, const Json& request) {
   size_t part = 0;
   const bool ok =
       executor.execute_raw(step, [&](const cb::RawTargetOutput& out) {
+        if (request.value("check_reentrancy", false)) {
+          require(
+              !executor.execute_raw(
+                  step, [](const cb::RawTargetOutput&) { return true; }),
+              "nested execute must be rejected");
+          require(
+              executor.compact_kv_columns(0) == Error::InvalidState,
+              "nested compaction must be rejected");
+        }
         const size_t rows = out.selected_indices.size();
         if (rows == 0) {
           return true;

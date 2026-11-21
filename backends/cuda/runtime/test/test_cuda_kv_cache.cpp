@@ -2847,15 +2847,17 @@ TEST_F(CudaRuntimeColumnCacheTest, GrowthAndSparseIdCompactionPreserveAllKV) {
   int old_columns = 0;
   for (const int sessions : {1, 2, 4, 8, 16}) {
     const int live_rows = ids.empty() ? 0 : control->pos(ids.front());
-    std::array<std::vector<uint16_t>, 4> retained;
+    std::vector<std::array<std::vector<uint16_t>, 4>> retained(ids.size());
     if (old_columns != 0) {
       seed(fake, live_rows, old_columns);
-      for (size_t layer = 0; layer < 4; ++layer) {
-        retained[layer] = read_column(
-            fake.bound[fake.internal_names[layer]].data,
-            live_rows,
-            old_columns,
-            0);
+      for (size_t owner = 0; owner < retained.size(); ++owner) {
+        for (size_t layer = 0; layer < 4; ++layer) {
+          retained[owner][layer] = read_column(
+              fake.bound[fake.internal_names[layer]].data,
+              live_rows,
+              old_columns,
+              owner);
+        }
       }
     }
     while (ids.size() < static_cast<size_t>(sessions)) {
@@ -2873,14 +2875,16 @@ TEST_F(CudaRuntimeColumnCacheTest, GrowthAndSparseIdCompactionPreserveAllKV) {
         fake.bound["flat_k"].sizes,
         std::vector<int64_t>({1, kCapacity * kDeclaredColumns, kHeads, kDim}));
     if (old_columns != 0) {
-      for (size_t layer = 0; layer < 4; ++layer) {
-        EXPECT_EQ(
-            read_column(
-                fake.bound[fake.internal_names[layer]].data,
-                live_rows,
-                sessions + 1,
-                0),
-            retained[layer]);
+      for (size_t owner = 0; owner < retained.size(); ++owner) {
+        for (size_t layer = 0; layer < 4; ++layer) {
+          EXPECT_EQ(
+              read_column(
+                  fake.bound[fake.internal_names[layer]].data,
+                  live_rows,
+                  sessions + 1,
+                  owner),
+              retained[owner][layer]);
+        }
       }
     }
     old_columns = sessions + 1;
@@ -2955,9 +2959,22 @@ TEST_F(CudaRuntimeColumnCacheTest, CloneAndContractionCopyWrappedRingHistory) {
       step(*cache_ptr, handle, std::vector<int32_t>(32, *source)), Error::Ok);
   ASSERT_EQ(
       step(*cache_ptr, handle, std::vector<int32_t>(8, *source)), Error::Ok);
+  std::array<std::vector<uint16_t>, 4> expected;
   for (size_t layer = 0; layer < 4; ++layer) {
     const int rows = layer < 2 ? 40 : 33;
-    std::vector<uint16_t> values(rows * 2 * kRow, 1234 + layer);
+    std::vector<uint16_t> values(rows * 2 * kRow);
+    for (int row = 0; row < rows; ++row) {
+      for (int column = 0; column < 2; ++column) {
+        for (int element = 0; element < kRow; ++element) {
+          const uint16_t value =
+              1000 * layer + 100 * row + 20 * column + element;
+          values[(row * 2 + column) * kRow + element] = value;
+          if (column == 0) {
+            expected[layer].push_back(value);
+          }
+        }
+      }
+    }
     ASSERT_EQ(
         cudaMemcpy(
             fake.bound[fake.internal_names[layer]].data,
@@ -2984,7 +3001,7 @@ TEST_F(CudaRuntimeColumnCacheTest, CloneAndContractionCopyWrappedRingHistory) {
     const int rows = layer < 2 ? 40 : 33;
     EXPECT_EQ(
         read_column(fake.bound[fake.internal_names[layer]].data, rows, 2, 0),
-        std::vector<uint16_t>(rows * kRow, 1234 + layer));
+        expected[layer]);
   }
   ASSERT_EQ(step(*cache_ptr, handle, {*clone}), Error::Ok);
   EXPECT_EQ(control->pos(*clone), 41);
@@ -3156,6 +3173,8 @@ TEST_F(CudaRuntimeColumnCacheTest, SameWidthCompactionKeepsMappingAndBindings) {
   void* const pointer = fake.bound["flat_k"].data;
   const auto count = kv->metrics().column_resize_count;
   handle.cuda_graph_state.phase = cu::CudaGraphPhase::Warmup;
+  ASSERT_EQ(kv->compact_columns(kMaxSeqs), Error::Ok);
+  EXPECT_EQ(kv->metrics().physical_columns, 3);
   ASSERT_EQ(kv->compact_columns(0), Error::Ok);
   EXPECT_EQ(kv->metrics().column_resize_count, count);
   EXPECT_EQ(fake.bound["flat_k"].data, pointer);
