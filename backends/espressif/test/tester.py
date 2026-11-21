@@ -146,6 +146,7 @@ class EspTester(Tester):
         expected, _ = tree_flatten(
             self.get_artifact().exported_program().module()(*self.example_inputs)
         )
+        expected = [output.detach() for output in expected]
         self.to_executorch().serialize()
         bundle = BundledProgram(
             self.get_artifact(StageType.TO_EXECUTORCH),
