@@ -9,9 +9,11 @@ git_dir=$(git rev-parse --git-dir)
 mkdir -p "$git_dir/hooks"
 (
   cd "$git_dir/hooks" || exit 1
-  if [ -e "pre-push" ] || [ -L "pre-push" ]; then
-      echo "Hook '$git_dir/hooks/pre-push' already exists. Please remove it before running $(basename "$0")."
-  else
-      ln -s "../../backends/arm/scripts/pre-push" "pre-push"
-  fi
+  for hook in pre-commit pre-push; do
+      if [ -e "$hook" ] || [ -L "$hook" ]; then
+          echo "Hook '$git_dir/hooks/$hook' already exists. Please remove it before running $(basename "$0")."
+      else
+          ln -s "../../backends/arm/scripts/$hook" "$hook"
+      fi
+  done
 )

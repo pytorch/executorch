@@ -27,6 +27,12 @@ if git diff --cached --name-only | grep -q "^torch_pin.py$"; then
     fi
 fi
 
+# Use a locally installed pre-commit hook when present (e.g., the Arm hook).
+local_hook="$(git rev-parse --git-dir)/hooks/pre-commit"
+if [ -x "$local_hook" ]; then
+    exec "$local_hook" "$@"
+fi
+
 # --- lintrunner ---
 
 if ! command -v lintrunner >/dev/null 2>&1; then
