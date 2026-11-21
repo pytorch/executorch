@@ -166,6 +166,33 @@ def _activation(X, G, Q, S, M, K: tl.constexpr, BG: tl.constexpr):
 
 
 @torch._dynamo.assume_constant_result
+def _has_native_e4m3():
+    return (
+        torch.cuda.is_available()
+        and torch.version.hip is None
+        and torch.cuda.get_device_capability() >= (8, 9)
+    )
+
+
+@triton.jit
+def _e4m3_to_f32(b, NATIVE_E4M3: tl.constexpr):
+    """E4M3 bytes to FP32: native on SM89+, else built bit-exactly in integer
+    math (no FP32 denormal arithmetic); 0x7F/0xFF decode to NaN either way."""
+    if NATIVE_E4M3:
+        return b.to(tl.float8e4nv, bitcast=True).to(tl.float32)
+    else:
+        u = b.to(tl.int32)
+        e = (u >> 3) & 15
+        normal = (((u & 0x7F) << 20) + (120 << 23)).to(tl.float32, bitcast=True)
+        mag = tl.where(e == 0, (u & 7).to(tl.float32) * 0.001953125, normal)
+        nan = tl.full(mag.shape, 0x7FC00000, tl.int32).to(tl.float32, bitcast=True)
+        mag = tl.where((u & 0x7F) == 0x7F, nan, mag)
+        # OR the sign bit in: float negation of +0 does not yield -0 here.
+        sign = (u & 0x80) << 24
+        return (mag.to(tl.int32, bitcast=True) | sign).to(tl.float32, bitcast=True)
+
+
+@torch._dynamo.assume_constant_result
 def _has_native_fp4_conversion():
     return (
         torch.cuda.is_available()
@@ -676,6 +703,7 @@ def _gemv_original(
     NATIVE: tl.constexpr,
     ROW_PTS: tl.constexpr = False,
     UNIT_SCALE: tl.constexpr = False,
+    NATIVE_E4M3: tl.constexpr = False,
 ):
     n = (tl.program_id(0) * BN + tl.arange(0, BN)).to(tl.int64)
     m = tl.program_id(1).to(tl.int64)
@@ -714,10 +742,8 @@ def _gemv_original(
         else:
             lo = _fp4(q & 15)
             hi = _fp4(q >> 4)
-        sf = (
-            tl.load(S + n[:, None] * (K // 16) + kk[None, :] // 8, mask, 0)
-            .to(tl.float8e4nv, bitcast=True)
-            .to(tl.float32)
+        sf = _e4m3_to_f32(
+            tl.load(S + n[:, None] * (K // 16) + kk[None, :] // 8, mask, 0), NATIVE_E4M3
         )
         if UNIT_SCALE and NATIVE and X.dtype.element_ty == tl.bfloat16:
             w0, w1 = lo * sf, hi * sf
@@ -748,7 +774,7 @@ def _gemv_original(
         for half in (False, True)
         for st in (1, 2, 3)
     ],
-    key=["M", "N", "K", "SPLIT", "NATIVE", "ROW_PTS", "UNIT_SCALE"],
+    key=["M", "N", "K", "SPLIT", "NATIVE", "ROW_PTS", "UNIT_SCALE", "NATIVE_E4M3"],
     prune_configs_by={"early_config_prune": prune_nvfp4_stages},
     do_bench=autotune_do_bench,
 )
@@ -769,12 +795,27 @@ def _gemv(
     HALF2: tl.constexpr = False,
     ROW_PTS: tl.constexpr = False,
     UNIT_SCALE: tl.constexpr = False,
+    NATIVE_E4M3: tl.constexpr = False,
 ):
     if NATIVE and HALF2:
         _gemv_half2(X, Q, S, PTS, Y, M, N, K, SPLIT, BN, BK, ROW_PTS, UNIT_SCALE)
     else:
         _gemv_original(
-            X, Q, S, PTS, Y, M, N, K, SPLIT, BN, BK, NATIVE, ROW_PTS, UNIT_SCALE
+            X,
+            Q,
+            S,
+            PTS,
+            Y,
+            M,
+            N,
+            K,
+            SPLIT,
+            BN,
+            BK,
+            NATIVE,
+            ROW_PTS,
+            UNIT_SCALE,
+            NATIVE_E4M3,
         )
 
 
@@ -810,6 +851,7 @@ def _launch_gemv_impl(x, qdata, scale, pts, max_rows, unit_scale=False, *, split
         ),
         5,
         NATIVE=_has_native_fp4_conversion(),
+        NATIVE_E4M3=_has_native_e4m3(),
         ROW_PTS=pts.numel() != 1,
         UNIT_SCALE=unit_scale,
     )
@@ -878,6 +920,7 @@ def _w4a16_original(
     BK: tl.constexpr,
     GROUP_M: tl.constexpr,
     ROW_PTS: tl.constexpr = False,
+    NATIVE_E4M3: tl.constexpr = False,
 ):
     pid = tl.program_id(0)
     split = tl.program_id(1)
@@ -903,10 +946,9 @@ def _w4a16_original(
         mask = (kk[:, None] < K) & (n[None, :] < N)
         q = tl.load(Q + n[None, :] * (K // 2) + kk[:, None] // 2, mask, 0)
         code = (q >> ((kk[:, None] & 1) * 4)) & 15
-        s = (
-            tl.load(S + n[None, :] * (K // 16) + kk[:, None] // 16, mask, 0)
-            .to(tl.float8e4nv, bitcast=True)
-            .to(tl.float32)
+        s = _e4m3_to_f32(
+            tl.load(S + n[None, :] * (K // 16) + kk[:, None] // 16, mask, 0),
+            NATIVE_E4M3,
         )
         b = (_fp4(code) * s * pts).to(X.dtype.element_ty)
         acc = tl.dot(a, b, acc)
@@ -1005,7 +1047,7 @@ def _w4a16_paired(
         ]
         for st in (1, 2, 3)
     ],
-    key=["M", "N", "K", "SPLIT_K", "NATIVE", "ROW_PTS"],
+    key=["M", "N", "K", "SPLIT_K", "NATIVE", "ROW_PTS", "NATIVE_E4M3"],
     prune_configs_by={"early_config_prune": prune_nvfp4_stages},
     do_bench=autotune_do_bench,
 )
@@ -1026,11 +1068,15 @@ def _w4a16(
     GROUP_M: tl.constexpr,
     NATIVE: tl.constexpr = False,
     ROW_PTS: tl.constexpr = False,
+    NATIVE_E4M3: tl.constexpr = False,
 ):
     if NATIVE:
+        # Only native FP4 (SM120) reaches the paired kernel: native E4M3 too.
         _w4a16_paired(X, Q, S, PTS, Y, M, N, K, SPLIT_K, BM, BN, BK, GROUP_M, ROW_PTS)
     else:
-        _w4a16_original(X, Q, S, PTS, Y, M, N, K, SPLIT_K, BM, BN, BK, GROUP_M, ROW_PTS)
+        _w4a16_original(
+            X, Q, S, PTS, Y, M, N, K, SPLIT_K, BM, BN, BK, GROUP_M, ROW_PTS, NATIVE_E4M3
+        )
 
 
 def _launch_w4a16_impl(x, qdata, scale, pts, max_rows, *, split_k, output_dtype=None):
@@ -1056,6 +1102,7 @@ def _launch_w4a16_impl(x, qdata, scale, pts, max_rows, *, split_k, output_dtype=
         (x, qdata, scale, pts, partial, m, n, k, split_k),
         5,
         NATIVE=_has_native_fp4_conversion(),
+        NATIVE_E4M3=_has_native_e4m3(),
         ROW_PTS=pts.numel() != 1,
     )
     if split_k > 1 and not _QUEUING_ONLY.get():
@@ -1112,6 +1159,7 @@ def _embedding(
     K: tl.constexpr,
     BK: tl.constexpr,
     ROW_PTS: tl.constexpr = False,
+    NATIVE_E4M3: tl.constexpr = False,
 ):
     t = tl.program_id(0).to(tl.int64)
     k = tl.program_id(1) * BK + tl.arange(0, BK)
@@ -1123,11 +1171,7 @@ def _embedding(
     mask = (k < K) & valid
     q = tl.load(Q + n * (K // 2) + k // 2, mask, 0)
     c = (q >> ((k & 1) * 4)) & 15
-    s = (
-        tl.load(S + n * (K // 16) + k // 16, mask, 0)
-        .to(tl.float8e4nv, bitcast=True)
-        .to(tl.float32)
-    )
+    s = _e4m3_to_f32(tl.load(S + n * (K // 16) + k // 16, mask, 0), NATIVE_E4M3)
     pts = tl.load(PTS + n) if ROW_PTS else tl.load(PTS)
     val = _fp4(c) * (s * pts)
     tl.store(Y + t * K + k, val, k < K)
@@ -1168,5 +1212,6 @@ def nvfp4_embedding(
         k,
         256,
         ROW_PTS=per_tensor_scale.numel() != 1,
+        NATIVE_E4M3=_has_native_e4m3(),
     )
     return out
