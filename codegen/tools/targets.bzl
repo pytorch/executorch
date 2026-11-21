@@ -116,6 +116,22 @@ def define_common_targets(is_fbcode = False):
     )
 
     runtime.python_test(
+        name = "test_combine_prim_ops_headers",
+        srcs = [
+            "test/test_combine_prim_ops_headers.py",
+        ],
+        package_style = "inplace",
+        visibility = [
+            "PUBLIC",
+        ],
+        deps = [
+            ":combine_prim_ops_headers_lib",
+            ":gen_selected_prim_ops_lib",
+        ],
+        _is_external_target = True,
+    )
+
+    runtime.python_test(
         name = "test_gen_all_oplist",
         srcs = [
             "test/test_gen_all_oplist.py",

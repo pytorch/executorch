@@ -84,7 +84,8 @@ def define_selective_build_prim_ops_example():
         include_all_prim_ops = False,
     )
 
-    # No prim ops selected. So include all prim ops.
+    # No prim ops selected, so no prim ops are registered. Use
+    # include_all_prim_ops = True to register them all.
     executorch_generated_lib(
         name = "library_with_combined_prim_ops_2",
         deps = [
