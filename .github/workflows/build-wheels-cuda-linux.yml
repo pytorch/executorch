@@ -12,6 +12,7 @@ on:
       - examples/**/*
       - extension/cuda/**/*
       - install_requirements.py
+      - torch_pin.py
       - install_utils.py
       - pyproject.toml
       - setup.py

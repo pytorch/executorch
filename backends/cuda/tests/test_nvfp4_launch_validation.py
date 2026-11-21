@@ -41,7 +41,9 @@ def test_gemm_still_rejects_illegal_short_k_split():
 
 
 @triton.jit
-def _offset_probe(OUT, M, SPLIT, N: tl.constexpr, BASE: tl.constexpr, BLOCK: tl.constexpr):
+def _offset_probe(
+    OUT, M, SPLIT, N: tl.constexpr, BASE: tl.constexpr, BLOCK: tl.constexpr
+):
     lane = tl.arange(0, BLOCK)
     index = lane.to(tl.int64) + BASE
     offsets, plane = kernels._partial_offsets(SPLIT, index, M, N)
@@ -51,7 +53,12 @@ def _offset_probe(OUT, M, SPLIT, N: tl.constexpr, BASE: tl.constexpr, BLOCK: tl.
 
 @triton.jit
 def _constexpr_offset_probe(
-    OUT, M: tl.constexpr, SPLIT: tl.constexpr, N: tl.constexpr, BASE: tl.constexpr, BLOCK: tl.constexpr
+    OUT,
+    M: tl.constexpr,
+    SPLIT: tl.constexpr,
+    N: tl.constexpr,
+    BASE: tl.constexpr,
+    BLOCK: tl.constexpr,
 ):
     _offset_probe(OUT, M, SPLIT, N, BASE, BLOCK)
 
@@ -60,7 +67,11 @@ def _constexpr_offset_probe(
 @pytest.mark.parametrize("constant", [False, True])
 @pytest.mark.parametrize(
     "m,n,split,base",
-    [(1, 128, 1, 124), (4096, 39936, 15, 4096 * 39936 - 4), (3, 715827886, 2, 2**31 + 6)],
+    [
+        (1, 128, 1, 124),
+        (4096, 39936, 15, 4096 * 39936 - 4),
+        (3, 715827886, 2, 2**31 + 6),
+    ],
 )
 def test_partial_offsets_and_masks_are_int64(m, n, split, base, constant):
     out = torch.empty(16, device="cuda", dtype=torch.int64)

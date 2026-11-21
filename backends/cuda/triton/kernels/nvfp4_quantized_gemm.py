@@ -70,7 +70,7 @@ def _fp4(code):
 
 @triton.jit
 def _row_scale(X, G, M, K: tl.constexpr, STATIC: tl.constexpr, BK: tl.constexpr):
-    row = tl.program_id(0)
+    row = tl.program_id(0).to(tl.int64)
     k = tl.arange(0, BK)
     x = tl.load(X + row * K + k, k < K, 0).to(tl.float32)
     g = STATIC if STATIC > 0 else tl.max(tl.abs(x), 0) / (448.0 * 6.0)
@@ -79,7 +79,7 @@ def _row_scale(X, G, M, K: tl.constexpr, STATIC: tl.constexpr, BK: tl.constexpr)
 
 @triton.jit
 def _activation(X, G, Q, S, M, K: tl.constexpr, BG: tl.constexpr):
-    row = tl.program_id(0)
+    row = tl.program_id(0).to(tl.int64)
     group = tl.program_id(1) * BG + tl.arange(0, BG)
     k = group[:, None] * 16 + tl.arange(0, 16)[None, :]
     x = tl.load(X + row * K + k, k < K, 0).to(tl.float32)
@@ -126,7 +126,7 @@ def _fused_activation(
 ):
     # One row load supplies both global amax and K16 scales. The native
     # conversion packs two E2M1 values in one instruction, low nibble first.
-    row = tl.program_id(0)
+    row = tl.program_id(0).to(tl.int64)
     group = tl.arange(0, BK // 16)
     idx = group[:, None] * 16 + tl.arange(0, 16)[None, :]
     x = tl.load(X + row * K + idx, idx < K, 0).to(tl.float32)
@@ -346,7 +346,7 @@ def _w4a4(
     nn = tl.cdiv(N, BN)
     first = (pid // (GROUP_M * nn)) * GROUP_M
     gm = tl.minimum(nm - first, GROUP_M)
-    m = (first + pid % gm) * BM + tl.arange(0, BM)
+    m = ((first + pid % gm) * BM + tl.arange(0, BM)).to(tl.int64)
     n = ((pid % (GROUP_M * nn)) // gm) * BN + tl.arange(0, BN)
     kp = tl.arange(0, BK // 2)
     sp = tl.arange(0, BK // 16)
@@ -486,5 +486,3 @@ def nvfp4_w4a4(
     if output_dtype is not None:
         kwargs["output_dtype"] = output_dtype
     return launch(x, qdata, scale, per_tensor_scale, static_scale, **kwargs)
-
-
