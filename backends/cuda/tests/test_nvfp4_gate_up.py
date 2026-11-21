@@ -12,10 +12,14 @@ import pytest
 import torch
 import torch.nn.functional as F
 
-from executorch.backends.cuda.autotune.launch_params import autotune_launch_params
+from executorch.backends.cuda.autotune.launch_params import (
+    autotune_launch_params,
+    clear_launch_param_cache,
+)
 from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
+from executorch.backends.cuda.quantize_op_dispatch import nvfp4_dispatch
 from executorch.backends.cuda.quantize_op_dispatch.nvfp4_dispatch import (
     _has_native_fp4,
     _MODE_STRIDE,
@@ -23,6 +27,10 @@ from executorch.backends.cuda.quantize_op_dispatch.nvfp4_dispatch import (
     nvfp4_gated_linear,
 )
 from executorch.backends.cuda.tests.nvfp4_test_utils import shards
+from executorch.backends.cuda.triton.kernels import (
+    nvfp4_gated_gemm,
+    nvfp4_quantized_gemm,
+)
 from executorch.backends.cuda.triton.kernels.nvfp4_gated_gemm import (
     nvfp4_gate_up_epilogue,
     nvfp4_w4a4_gate_up,
@@ -63,6 +71,64 @@ def gate_up_weight(device, act_scale=None):
     return CudaNVFP4Tensor(
         w.qdata, w.scale, w.per_tensor_scale, act_per_tensor_scale=act_scale
     )
+
+
+def recorder(name, calls, original=None):
+    """Records calls as ``name``; calls ``original``, or returns an empty
+    result of the right shape when there is none."""
+
+    def op(x, qdata, *args, output_dtype=None, **kwargs):
+        calls.append((name, output_dtype))
+        if original is not None:
+            return original(x, qdata, *args, output_dtype=output_dtype, **kwargs)
+        n = qdata.shape[0] // 2 if "gate_up" in name else qdata.shape[0]
+        return x.new_empty((x.shape[0], n), dtype=output_dtype or x.dtype)
+
+    return op
+
+
+@pytest.mark.parametrize(
+    "mode,dtype,rows,fp32,expected",
+    [
+        ("auto", torch.bfloat16, 37, False, ("nvfp4_auto_gate_up_prefill", None)),
+        ("w4a4", torch.bfloat16, 37, False, ("nvfp4_w4a4_gate_up", None)),
+        ("w4a16", torch.bfloat16, 37, False, ("nvfp4_w4a16", None)),
+        ("auto", torch.float16, 37, False, ("nvfp4_auto_prefill", None)),
+        (
+            "auto",
+            torch.float32,
+            37,
+            True,
+            ("nvfp4_auto_gate_up_prefill", torch.float32),
+        ),
+        # Decode-size FP32 under the FP32 policy falls back like _linear,
+        # which dequantizes (no kernel call).
+        ("auto", torch.float32, 2, True, None),
+    ],
+)
+def test_gated_linear_routing(mode, dtype, rows, fp32, expected, monkeypatch):
+    # Export traces with fake tensors; record which path the op takes.
+    calls = []
+    for module, names in (
+        (nvfp4_gated_gemm, ("nvfp4_w4a4_gate_up",)),
+        (nvfp4_quantized_gemm, ("nvfp4_gemv", "nvfp4_w4a16", "nvfp4_w4a4")),
+        (
+            nvfp4_dispatch,
+            ("nvfp4_auto_gate_up_prefill", "nvfp4_auto_prefill", "nvfp4_auto_decode"),
+        ),
+    ):
+        for name in names:
+            monkeypatch.setattr(module, name, recorder(name, calls))
+    monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: True)
+    monkeypatch.setenv("ET_CUDA_NVFP4_ACT", mode)
+    monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_OUTPUT", "fp32" if fp32 else "input")
+    fake = FakeTensorMode()
+    x = fake.from_tensor(torch.randn(rows, 192, dtype=dtype))
+    weight = fake.from_tensor(gate_up_weight("cpu"))
+    with fake:
+        out = nvfp4_gated_linear(x, weight)
+    assert calls == ([expected] if expected else [])
+    assert out.shape == (rows, weight.shape[0] // 2)
 
 
 def test_plain_weights_are_rejected():
@@ -123,7 +189,14 @@ def test_gated_linear_fused_w4a4(shape, fp32, monkeypatch):
     monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_OUTPUT", "fp32" if fp32 else "input")
     weight = gate_up_weight("cuda", act_scale=0.002)
     x = torch.randn(shape, device="cuda", dtype=torch.bfloat16)
+    calls = []
+    monkeypatch.setattr(
+        nvfp4_gated_gemm,
+        "nvfp4_w4a4_gate_up",
+        recorder("nvfp4_w4a4_gate_up", calls, nvfp4_w4a4_gate_up),
+    )
     actual = nvfp4_gated_linear(x, weight)
+    assert [name for name, _ in calls] == ["nvfp4_w4a4_gate_up"]
     assert actual.dtype == (torch.float32 if fp32 else torch.bfloat16)
     expected = w4a4_gated_reference(x, weight)
     torch.testing.assert_close(actual.float(), expected, rtol=0.03, atol=0.04)
@@ -135,11 +208,19 @@ def test_gated_linear_auto_and_autotuned_prefill(monkeypatch):
     monkeypatch.setenv("ET_CUDA_NVFP4_ACT", "auto")
     weight = gate_up_weight("cuda")
     x = torch.randn(37, 192, device="cuda", dtype=torch.bfloat16)
+    calls = []
+    monkeypatch.setattr(
+        nvfp4_dispatch,
+        "nvfp4_auto_gate_up_prefill",
+        recorder("nvfp4_auto_gate_up_prefill", calls, nvfp4_auto_gate_up_prefill),
+    )
     # Outside AOTI tuning, auto runs its first candidate: W4A16 + epilogue.
     torch.testing.assert_close(
         nvfp4_gated_linear(x, weight), gated_reference(x, weight), rtol=0.02, atol=0.02
     )
+    assert [name for name, _ in calls] == ["nvfp4_auto_gate_up_prefill"]
     args = (x, weight.qdata, weight.scale, weight.per_tensor_scale)
+    clear_launch_param_cache()
     with autotune_launch_params() as stats:
         tuned = nvfp4_auto_gate_up_prefill(*args)
         split = nvfp4_w4a4_gate_up(*args)
@@ -170,6 +251,12 @@ class GatedLinear(torch.nn.Module):
 @NATIVE_FP4
 def test_gated_linear_parameter_pte(monkeypatch):
     monkeypatch.setenv("ET_CUDA_NVFP4_ACT", "w4a4")
+    calls = []
+    monkeypatch.setattr(
+        nvfp4_gated_gemm,
+        "nvfp4_w4a4_gate_up",
+        recorder("nvfp4_w4a4_gate_up", calls, nvfp4_w4a4_gate_up),
+    )
     module = GatedLinear().eval()
     x = torch.randn(17, 192, dtype=torch.bfloat16)
     exported = torch.export.export(
@@ -185,6 +272,7 @@ def test_gated_linear_parameter_pte(monkeypatch):
         ],
         compile_config=EdgeCompileConfig(_check_ir_validity=False),
     ).to_executorch()
+    assert calls, "export must trace the fused W4A4 gate/up op"
     with tempfile.TemporaryDirectory() as folder:
         path = Path(folder) / "gated_linear.pte"
         with path.open("wb") as output:

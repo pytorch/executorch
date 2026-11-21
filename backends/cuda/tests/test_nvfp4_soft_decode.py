@@ -30,11 +30,12 @@ def finite_e4m3_bytes():
     return b[(b & 0x7F) != 0x7F].to(torch.uint8).cuda()
 
 
-def relative_error_per_row(actual, expected):
-    """Error of each output column (one weight row) relative to its own scale,
-    so a wrong small or subnormal scale cannot hide behind larger rows."""
+def relative_error_per_row(actual, expected, x, w):
+    """Error of each output column (one weight row) relative to that row's
+    magnitude, so a wrong small or subnormal scale cannot hide behind larger
+    rows; |x| @ |w| does not shrink when a column's terms cancel."""
     err = (actual.float() - expected).abs().amax(0)
-    size = expected.abs().amax(0)
+    size = (x.float().abs() @ w.abs().T).amax(0)
     return torch.where(size > 0, err / size, err)
 
 
@@ -87,10 +88,6 @@ def test_e4m3_decode_is_exact(native):
     assert y[~finite].isnan().all()
 
 
-def test_has_native_e4m3_matches_device():
-    assert kernels._has_native_e4m3() == (torch.cuda.get_device_capability() >= (8, 9))
-
-
 @pytest.mark.parametrize("row_pts", [False, True])
 def test_kernels_decode_every_scale(row_pts):
     k = 512
@@ -111,7 +108,7 @@ def test_kernels_decode_every_scale(row_pts):
                 if m <= 4
                 else nvfp4_w4a16(x, q, s, pts, split_k=split_k)
             )
-            error = relative_error_per_row(actual, expected)
+            error = relative_error_per_row(actual, expected, x, w)
             assert bool((error < 1e-2).all()), (m, split_k)
 
 

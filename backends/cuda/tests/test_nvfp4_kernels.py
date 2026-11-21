@@ -5,11 +5,15 @@
 import pytest
 import torch
 import triton
-from executorch.backends.cuda.autotune.launch_params import autotune_launch_params
+from executorch.backends.cuda.autotune.launch_params import (
+    autotune_launch_params,
+    clear_launch_param_cache,
+)
 from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
 from executorch.backends.cuda.tests.nvfp4_test_utils import shards, weight
 from executorch.backends.cuda.triton.kernels import nvfp4_quantized_gemm as kernels
 from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
+    _has_native_e4m3,
     _has_native_fp4_conversion,
     nvfp4_embedding,
     nvfp4_gemv,
@@ -155,6 +159,7 @@ def test_w4a4_autotuned_split_k():
         pytest.skip("native FP4 required")
     w = weight(97, 2176)
     x = torch.randn(17, 2176, device="cuda", dtype=torch.bfloat16)
+    clear_launch_param_cache()
     with autotune_launch_params() as stats:
         actual = nvfp4_w4a4(x, w.qdata, w.scale, w.per_tensor_scale)
     picks = [pick for pick in stats.picks if pick.param == "split_k"]
@@ -163,17 +168,36 @@ def test_w4a4_autotuned_split_k():
     torch.testing.assert_close(actual, expected, rtol=0.025, atol=0.02)
 
 
+def test_w4a4_unbounded_dynamic_m_tunes_only_split_1():
+    if not _has_native_fp4_conversion():
+        pytest.skip("native FP4 required")
+    from executorch.backends.cuda.tests.test_nvfp4_launch_validation import dynamic_rows
+    from torch._subclasses.fake_tensor import FakeTensorMode
+    from torch.fx.experimental.symbolic_shapes import ShapeEnv
+
+    w = weight(97, 2176)
+    clear_launch_param_cache()
+    mode = FakeTensorMode(shape_env=ShapeEnv())
+    x = torch.randn(17, 2176, device="cuda", dtype=torch.bfloat16)
+    x = dynamic_rows(mode, x, None)
+    args = [mode.from_tensor(t) for t in (w.qdata, w.scale, w.per_tensor_scale)]
+    with mode, autotune_launch_params() as stats:
+        nvfp4_w4a4(x, *args)
+    (pick,) = [pick for pick in stats.picks if pick.param == "split_k"]
+    assert pick.choice == 1 and set(pick.times_us) == {1}
+
+
 def test_embedding_bias_dispatch(monkeypatch):
     import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
 
     w = weight(97, 192)
     ids = torch.tensor([[1, 3, 2, 1], [96, 0, 51, 72]], device="cuda")
-    torch.testing.assert_close(
-        nvfp4_embedding(ids, w.qdata, w.scale, w.per_tensor_scale, w.dtype),
-        w.dequantize()[ids],
-        rtol=0,
-        atol=0,
-    )
+    expected = w.dequantize()[ids]
+    for actual in (
+        torch.nn.functional.embedding(ids, w),
+        torch.ops.aten.embedding.default(w, ids),
+    ):
+        torch.testing.assert_close(actual, expected, rtol=0, atol=0)
     monkeypatch.setenv("ET_CUDA_NVFP4_ACT", "w4a16")
     x = torch.randn(2, 3, 192, device="cuda", dtype=torch.bfloat16)
     bias = torch.randn(97, device="cuda", dtype=torch.bfloat16)
@@ -183,6 +207,23 @@ def test_embedding_bias_dispatch(monkeypatch):
         rtol=0.03,
         atol=0.02,
     )
+
+
+def test_fp32_prefill_output_policy(monkeypatch):
+    import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
+
+    monkeypatch.setenv("ET_CUDA_NVFP4_ACT", "w4a16")
+    monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_OUTPUT", "fp32")
+    w = weight(97, 192)
+    for dtype in (torch.bfloat16, torch.float32):
+        x = torch.randn(17, 192, device="cuda", dtype=dtype)
+        out = torch.nn.functional.linear(x, w)
+        assert out.dtype == torch.float32
+        mma = x.bfloat16().float() @ w.dequantize().float().T
+        torch.testing.assert_close(out, mma, rtol=0.01, atol=0.01)
+    # Decode (M statically <= 4) keeps the activation dtype.
+    x = torch.randn(2, 192, device="cuda", dtype=torch.bfloat16)
+    assert torch.nn.functional.linear(x, w).dtype == torch.bfloat16
 
 
 @pytest.mark.parametrize("split_k", [1, 2, 4, 8, 16, 32])
@@ -210,6 +251,17 @@ def test_gemv_split_k(m, split_k):
     torch.testing.assert_close(actual, expected, rtol=0.015, atol=0.015)
 
 
+def skip_unbuilt_variant(native, native_e4m3):
+    """The launchers build NATIVE_E4M3 from the device: native E4M3 on SM89+,
+    the software decode below (selectable anywhere); native FP4 implies both."""
+    if native and not _has_native_fp4_conversion():
+        pytest.skip("native FP4 required")
+    if native_e4m3 and not _has_native_e4m3():
+        pytest.skip("native E4M3 (SM89+) required")
+    if native and not native_e4m3:
+        pytest.skip("native FP4 always builds the native E4M3 decode")
+
+
 def pinned_weight(row_pts, unit_scale):
     if row_pts:
         return CudaNVFP4Tensor.fuse_along_output(shards(512, device="cuda"))
@@ -221,43 +273,55 @@ def pinned_weight(row_pts, unit_scale):
 # The autotuner picks the decode variant by timing; pin each one here.
 @pytest.mark.parametrize("unit_scale", [False, True])
 @pytest.mark.parametrize("row_pts", [False, True])
+@pytest.mark.parametrize("native_e4m3", [False, True])
 @pytest.mark.parametrize("native,half2", [(False, False), (True, False), (True, True)])
-def test_pinned_gemv_variants(native, half2, row_pts, unit_scale):
-    if native and not _has_native_fp4_conversion():
-        pytest.skip("native FP4 required")
+@pytest.mark.parametrize("split", [1, 2])
+def test_pinned_gemv_variants(native, half2, row_pts, unit_scale, split, native_e4m3):
+    skip_unbuilt_variant(native, native_e4m3)
     if unit_scale and row_pts:
         pytest.skip("unit_scale requires a scalar global scale")
     w = pinned_weight(row_pts, unit_scale)
+    # K = 512 with BK = 256 gives both splits real work.
     m, n, k = 3, w.shape[0], w.shape[1]
     x = torch.randn(m, k, device="cuda", dtype=torch.bfloat16)
     y = torch.empty((m, n), device="cuda", dtype=x.dtype)
-    kernels._gemv.fn[(triton.cdiv(n, 16), m, 1)](
+    partial = (
+        torch.empty((split, m, n), device="cuda", dtype=torch.float32)
+        if split > 1
+        else y
+    )
+    kernels._gemv.fn[(triton.cdiv(n, 16), m, split)](
         x,
         w.qdata,
         w.scale,
         w.per_tensor_scale,
-        y,
+        partial,
         m,
         n,
         k,
-        1,
+        split,
         BN=16,
         BK=256,
         NATIVE=native,
+        NATIVE_E4M3=native_e4m3,
         HALF2=half2,
         ROW_PTS=row_pts,
         UNIT_SCALE=unit_scale,
         num_warps=4,
     )
+    if split > 1:
+        kernels._reduce_partials[(triton.cdiv(m * n, 256),)](
+            partial, partial, partial, y, m, n, split, False, 256, ROW_PTS=False
+        )
     expected = (x.float() @ w.dequantize().float().T).to(x.dtype)
     torch.testing.assert_close(y, expected, rtol=0.015, atol=0.015)
 
 
 @pytest.mark.parametrize("row_pts", [False, True])
+@pytest.mark.parametrize("native_e4m3", [False, True])
 @pytest.mark.parametrize("native", [False, True])
-def test_pinned_w4a16_variants(native, row_pts):
-    if native and not _has_native_fp4_conversion():
-        pytest.skip("native FP4 required")
+def test_pinned_w4a16_variants(native, row_pts, native_e4m3):
+    skip_unbuilt_variant(native, native_e4m3)
     w = pinned_weight(row_pts, False)
     m, n, k = 37, w.shape[0], w.shape[1]
     x = torch.randn(m, k, device="cuda", dtype=torch.bfloat16)
@@ -277,6 +341,7 @@ def test_pinned_w4a16_variants(native, row_pts):
         BK=128,
         GROUP_M=1,
         NATIVE=native,
+        NATIVE_E4M3=native_e4m3,
         ROW_PTS=row_pts,
         num_warps=4,
     )
@@ -372,6 +437,7 @@ def test_split_workspace_exceeds_int32(mode):
                 BK=64,
                 GROUP_M=1,
                 NATIVE=_has_native_fp4_conversion(),
+                NATIVE_E4M3=_has_native_e4m3(),
                 num_warps=4,
                 num_stages=3,
             )
@@ -410,7 +476,15 @@ def test_embedding_kernel_returns_zero_rows_for_invalid_ids():
     ids = torch.tensor([3, -1, 97], device="cuda")
     out = torch.empty((3, 192), device="cuda", dtype=torch.float32)
     kernels._embedding[(3, 1)](
-        ids, w.qdata, w.scale, w.per_tensor_scale, out, 97, 192, 256
+        ids,
+        w.qdata,
+        w.scale,
+        w.per_tensor_scale,
+        out,
+        97,
+        192,
+        256,
+        NATIVE_E4M3=_has_native_e4m3(),
     )
     torch.testing.assert_close(out[0], w.dequantize(torch.float32)[3], rtol=0, atol=0)
     assert not out[1:].any()
@@ -424,14 +498,44 @@ def test_embedding_rejects_out_of_range_ids(bad):
         nvfp4_embedding(ids, w.qdata, w.scale, w.per_tensor_scale, w.dtype)
 
 
-def test_w4a16_keeps_float32_output():
+@pytest.mark.parametrize("dtype", [torch.float16, torch.float32])
+def test_activation_dtypes(dtype):
     w = weight(97, 192)
-    x = torch.randn(17, 192, device="cuda")
-    out = nvfp4_w4a16(x, w.qdata, w.scale, w.per_tensor_scale)
-    assert out.dtype == torch.float32
-    assert (
-        nvfp4_gemv(x[:1], w.qdata, w.scale, w.per_tensor_scale).dtype == torch.float32
+    x = torch.randn(17, 192, device="cuda", dtype=dtype)
+    args = (w.qdata, w.scale, w.per_tensor_scale)
+    # The GEMV rounds weights to x.dtype; W4A16 computes FP32 inputs in BF16.
+    gemv = nvfp4_gemv(x[:2], *args)
+    expected = x[:2].float() @ w.dequantize(dtype).float().T
+    assert gemv.dtype == dtype
+    torch.testing.assert_close(gemv.float(), expected, rtol=0.015, atol=0.015)
+    w4a16 = nvfp4_w4a16(x, *args)
+    mma = torch.bfloat16 if dtype == torch.float32 else dtype
+    expected = x.to(mma).float() @ w.dequantize(mma).float().T
+    assert w4a16.dtype == dtype
+    torch.testing.assert_close(w4a16.float(), expected, rtol=0.015, atol=0.015)
+
+
+def test_w4a16_output_dtype():
+    w = weight(97, 192)
+    x = torch.randn(17, 192, device="cuda", dtype=torch.bfloat16)
+    out = nvfp4_w4a16(
+        x, w.qdata, w.scale, w.per_tensor_scale, output_dtype=torch.float32
     )
+    assert out.dtype == torch.float32
+    expected = x.float() @ w.dequantize().float().T
+    torch.testing.assert_close(out, expected, rtol=0.01, atol=0.01)
+
+
+def test_gemv_autotuned_split_k():
+    w = weight(71, 2176)
+    x = torch.randn(2, 2176, device="cuda", dtype=torch.bfloat16)
+    clear_launch_param_cache()
+    with autotune_launch_params() as stats:
+        actual = nvfp4_gemv(x, w.qdata, w.scale, w.per_tensor_scale)
+    (pick,) = [pick for pick in stats.picks if pick.param == "split_k"]
+    assert len(pick.times_us) > 1
+    expected = (x.float() @ w.dequantize().float().T).to(x.dtype)
+    torch.testing.assert_close(actual, expected, rtol=0.015, atol=0.015)
 
 
 def test_w4a16_output_offsets_exceed_int32():

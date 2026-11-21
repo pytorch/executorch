@@ -91,6 +91,7 @@ fbcode_target(
         "//executorch/...",
     ],
     deps = [
+        ":autotune",
         ":coalesced_int4_tensor",
         ":dp4a_planar_int5_tensor",
         ":dp4a_planar_int6_tensor",

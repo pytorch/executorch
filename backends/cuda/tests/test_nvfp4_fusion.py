@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 import torch
 import torch.nn.functional as F
+from executorch.backends.cuda.autotune.launch_params import InvalidLaunchParam
 from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
 from executorch.backends.cuda.quantize_op_dispatch.nvfp4_dispatch import _has_native_fp4
 from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
@@ -71,6 +72,9 @@ def record_calls(monkeypatch, module, names, calls):
         ("auto", True, 37, True, "nvfp4_auto_prefill"),
         ("auto", True, 1, True, "nvfp4_auto_decode"),
         ("w4a4", True, 37, False, "nvfp4_w4a4"),
+        # A dynamic M (bounded by 64) is never statically small: prefill.
+        ("auto", True, None, True, "nvfp4_auto_prefill"),
+        ("w4a16", False, None, False, "nvfp4_w4a16"),
     ],
 )
 def test_linear_routing(mode, native, rows, fp32, expected, monkeypatch):
@@ -94,16 +98,83 @@ def test_linear_routing(mode, native, rows, fp32, expected, monkeypatch):
     monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: native)
     monkeypatch.setenv("ET_CUDA_NVFP4_ACT", mode)
     monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_OUTPUT", "fp32" if fp32 else "input")
+    from executorch.backends.cuda.tests.test_nvfp4_launch_validation import dynamic_rows
+    from torch.fx.experimental.symbolic_shapes import ShapeEnv
+
     w = shards(192)[0]
-    with FakeTensorMode() as fake:
-        x = fake.from_tensor(torch.randn(rows, 192, dtype=torch.bfloat16))
-        out = F.linear(x, fake.from_tensor(w))
+    fake = FakeTensorMode(shape_env=ShapeEnv())
+    x = torch.randn(rows or 17, 192, dtype=torch.bfloat16)
+    x = fake.from_tensor(x) if rows else dynamic_rows(fake, x, 64)
+    weight = fake.from_tensor(w)
+    with fake:
+        out = F.linear(x, weight)
     # Prefill (M not statically <= 4) takes the FP32 output policy; decode
     # keeps the activation dtype.
-    output_dtype = torch.float32 if fp32 and rows > 4 else None
+    output_dtype = torch.float32 if fp32 and (rows is None or rows > 4) else None
     assert calls == [(expected, output_dtype)]
-    assert out.shape == (rows, w.shape[0])
+    assert out.shape == (x.shape[0], w.shape[0])
     assert out.dtype == (output_dtype or torch.bfloat16)
+
+
+@pytest.mark.parametrize("fp4", [False, True])
+def test_auto_bodies_forward_mode_split(fp4, monkeypatch):
+    # The real _prefill/_decode bodies run; only the kernels they call record.
+    from executorch.backends.cuda.quantize_op_dispatch import nvfp4_dispatch
+    from executorch.backends.cuda.triton.kernels import nvfp4_quantized_gemm
+
+    calls = []
+
+    def recorder(name):
+        def op(x, qdata, *args, **kwargs):
+            calls.append((name, kwargs))
+            dtype = kwargs.get("output_dtype") or x.dtype
+            return x.new_empty((x.shape[0], qdata.shape[0]), dtype=dtype)
+
+        return op
+
+    for name in ("nvfp4_gemv", "nvfp4_w4a16", "nvfp4_w4a4"):
+        monkeypatch.setattr(nvfp4_quantized_gemm, name, recorder(name))
+    monkeypatch.setattr(nvfp4_quantized_gemm, "_split_workspace_limit", lambda: 2**40)
+    w = shards(512)[0]
+    weight = (w.qdata, w.scale, w.per_tensor_scale)
+    split = 4
+    mode_split = int(fp4) * nvfp4_dispatch._MODE_STRIDE + split
+    prefill_op = "nvfp4_w4a4" if fp4 else "nvfp4_w4a16"
+    decode_op = "nvfp4_w4a4" if fp4 else "nvfp4_gemv"
+
+    x = torch.randn(37, 512, dtype=torch.bfloat16)
+    out = nvfp4_dispatch._prefill(
+        x, *weight, 0.5, 64, mode_split=mode_split, output_dtype=torch.float32
+    )
+    assert calls.pop() == (
+        prefill_op,
+        {"split_k": split, "output_dtype": torch.float32},
+    )
+    assert out.dtype == torch.float32
+    nvfp4_dispatch._decode(x[:2], *weight, 0.5, True, mode_split=mode_split)
+    expected = {"split_k": split} if fp4 else {"split_k": split, "unit_scale": True}
+    assert calls.pop() == (decode_op, expected)
+    # An unbounded M (None) rejects split-K before any kernel is called.
+    with pytest.raises(InvalidLaunchParam, match="bounded M"):
+        nvfp4_dispatch._prefill(x, *weight, 0.5, None, mode_split=mode_split)
+    assert not calls
+
+
+def test_auto_ops_run_their_first_candidate_outside_tuning(monkeypatch):
+    from executorch.backends.cuda.quantize_op_dispatch import nvfp4_dispatch
+    from executorch.backends.cuda.triton.kernels import nvfp4_quantized_gemm
+
+    calls = []
+    record_calls(
+        monkeypatch, nvfp4_quantized_gemm, ("nvfp4_gemv", "nvfp4_w4a16"), calls
+    )
+    w = shards(512)[0]
+    weight = (w.qdata, w.scale, w.per_tensor_scale)
+    x = torch.randn(37, 512, dtype=torch.bfloat16)
+    out = nvfp4_dispatch.nvfp4_auto_prefill(x, *weight, 0.0, output_dtype=torch.float32)
+    assert out.dtype == torch.float32
+    nvfp4_dispatch.nvfp4_auto_decode(x[:2], *weight, 0.0, False)
+    assert calls == [("nvfp4_w4a16", torch.float32), ("nvfp4_gemv", None)]
 
 
 def test_embedding_routing(monkeypatch):

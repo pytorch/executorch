@@ -13,6 +13,7 @@ from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
     _check_operands,
     _check_split,
     _has_native_fp4_conversion,
+    _max_rows,
     _prune_w4a4,
     _w4a4,
     nvfp4_quantize_activation,
@@ -174,13 +175,13 @@ def nvfp4_gate_up_epilogue(x: torch.Tensor) -> torch.Tensor:
 
 
 def _launch_w4a4_gate_up_impl(
-    x, qdata, scale, pts, static_scale, *, split_k, output_dtype=None
+    x, qdata, scale, pts, static_scale, max_rows, *, split_k, output_dtype=None
 ):
     m, k = x.shape
     n = qdata.shape[0]
     if n % 2:
         raise ValueError("NVFP4 gate/up requires an even output dimension")
-    _check_split(k, split_k, m=m, n=n)
+    _check_split(k, split_k, m=max_rows, n=n)
     a, sa, g = nvfp4_quantize_activation(x, static_scale)
     out = torch.empty((m, n // 2), device=x.device, dtype=output_dtype or x.dtype)
     partial = (
@@ -234,4 +235,12 @@ def nvfp4_w4a4_gate_up(
     kwargs = {} if split_k < 0 else {"split_k": split_k}
     if output_dtype is not None:
         kwargs["output_dtype"] = output_dtype
-    return launch(x, qdata, scale, per_tensor_scale, static_scale, **kwargs)
+    return launch(
+        x,
+        qdata,
+        scale,
+        per_tensor_scale,
+        static_scale,
+        _max_rows(x.shape[0]),
+        **kwargs,
+    )

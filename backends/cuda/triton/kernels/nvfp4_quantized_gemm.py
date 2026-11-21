@@ -43,17 +43,19 @@ def _split_workspace_limit():
 
 def _max_rows(m):
     """M, or the upper bound of a dynamic M (None when unbounded)."""
-    if isinstance(m, int):
+    if m is None or isinstance(m, int):
         return m
     upper = m.node.shape_env.bound_sympy(m.node.expr).upper
     return None if upper == int_oo else int(upper)
 
 
-def _check_split_workspace(split_k, m, n):
+def _check_split_workspace(split_k, max_rows, n):
     # The (split_k, M, N) workspace is allocated at the runtime M, so a split
-    # picked at the export hint must fit M's upper bound.
+    # must fit M's upper bound. The ops compute the bound from the traced M and
+    # pass it to the autotuned launch, so timing (which sees hinted sizes) and
+    # the traced call reject the same splits; None means unbounded.
     if split_k > 1:
-        rows = _max_rows(m)
+        rows = _max_rows(max_rows)
         if rows is None:
             raise InvalidLaunchParam(f"NVFP4 split-K={split_k} needs a bounded M")
         workspace = split_k * rows * _size_hint(n) * 4
@@ -65,9 +67,11 @@ def _check_split_workspace(split_k, m, n):
 
 
 def _check_split(k, split_k, *, m=None, n=None):
+    """``m`` is M or its upper bound (None: unbounded); the workspace is only
+    checked when ``n`` is given."""
     if split_k not in SPLIT_K_CANDIDATES or split_k > triton.cdiv(k, 128):
         raise InvalidLaunchParam(f"Illegal NVFP4 split-K={split_k} for K={k}")
-    if m is not None and n is not None:
+    if n is not None:
         _check_split_workspace(split_k, m, n)
 
 
@@ -507,11 +511,11 @@ def _reduce_partials(
 
 
 def _launch_w4a4_impl(
-    x, qdata, scale, pts, static_scale, *, split_k, output_dtype=None
+    x, qdata, scale, pts, static_scale, max_rows, *, split_k, output_dtype=None
 ):
     m, k = x.shape
     n = qdata.shape[0]
-    _check_split(k, split_k, m=m, n=n)
+    _check_split(k, split_k, m=max_rows, n=n)
     a, sa, g = nvfp4_quantize_activation(x, static_scale)
     out = torch.empty((m, n), device=x.device, dtype=output_dtype or x.dtype)
     partial = (
@@ -571,7 +575,15 @@ def nvfp4_w4a4(
     kwargs = {} if split_k < 0 else {"split_k": split_k}
     if output_dtype is not None:
         kwargs["output_dtype"] = output_dtype
-    return launch(x, qdata, scale, per_tensor_scale, static_scale, **kwargs)
+    return launch(
+        x,
+        qdata,
+        scale,
+        per_tensor_scale,
+        static_scale,
+        _max_rows(x.shape[0]),
+        **kwargs,
+    )
 
 
 @triton.jit
@@ -762,7 +774,7 @@ def _gemv_original(
         for half in (False, True)
         for st in (1, 2, 3)
     ],
-    key=["M", "N", "K", "SPLIT", "NATIVE", "ROW_PTS", "UNIT_SCALE"],
+    key=["M", "N", "K", "SPLIT", "NATIVE", "ROW_PTS", "UNIT_SCALE", "NATIVE_E4M3"],
     prune_configs_by={"early_config_prune": prune_nvfp4_stages},
     do_bench=autotune_do_bench,
 )
@@ -807,12 +819,12 @@ def _gemv(
         )
 
 
-def _launch_gemv_impl(x, qdata, scale, pts, unit_scale=False, *, split_k):
+def _launch_gemv_impl(x, qdata, scale, pts, max_rows, unit_scale=False, *, split_k):
     m, k = x.shape
     n = qdata.shape[0]
     if split_k not in SPLIT_K_CANDIDATES:
         raise InvalidLaunchParam(f"Illegal NVFP4 GEMV split-K={split_k}")
-    _check_split_workspace(split_k, m, n)
+    _check_split_workspace(split_k, max_rows, n)
     out = torch.empty((m, n), device=x.device, dtype=x.dtype)
     partial = (
         torch.empty((split_k, m, n), device=x.device, dtype=torch.float32)
@@ -880,14 +892,16 @@ def nvfp4_gemv(
 
     ``unit_scale=True`` skips the global scale and requires the
     ``CudaNVFP4Tensor.unit_scale`` contract (global scale 1, scale bytes below
-    0x7F); it is not checked here.
+    0x7F); it is not checked here. M is grid axis 1, so at most 65535.
     """
     _check_operands(x, qdata, scale, per_tensor_scale)
+    max_rows = _max_rows(x.shape[0])
+    if max_rows is None or max_rows > 65535:
+        raise ValueError("NVFP4 GEMV supports at most 65535 rows")
+    args = (x, qdata, scale, per_tensor_scale, max_rows, unit_scale)
     if split_k < 0:
-        return _launch_gemv(x, qdata, scale, per_tensor_scale, unit_scale)
-    return _launch_gemv_impl(
-        x, qdata, scale, per_tensor_scale, unit_scale, split_k=split_k
-    )
+        return _launch_gemv(*args)
+    return _launch_gemv_impl(*args, split_k=split_k)
 
 
 @triton.jit
@@ -961,7 +975,6 @@ def _w4a16_paired(
     BK: tl.constexpr,
     GROUP_M: tl.constexpr,
     ROW_PTS: tl.constexpr = False,
-    NATIVE_E4M3: tl.constexpr = False,
 ):
     pid = tl.program_id(0)
     split = tl.program_id(1)
@@ -997,9 +1010,10 @@ def _w4a16_paired(
         )
         lo = (packed & 65535).to(tl.uint16).to(tl.float16, bitcast=True).to(tl.float32)
         hi = (packed >> 16).to(tl.uint16).to(tl.float16, bitcast=True).to(tl.float32)
-        sf = _e4m3_to_f32(
-            tl.load(S + n[:, None] * (K // 16) + pair[None, :] // 8, mask, 0),
-            NATIVE_E4M3,
+        sf = (
+            tl.load(S + n[:, None] * (K // 16) + pair[None, :] // 8, mask, 0)
+            .to(tl.float8e4nv, bitcast=True)
+            .to(tl.float32)
         )
         w0 = (lo * sf * pts).to(X.dtype.element_ty)
         w1 = (hi * sf * pts).to(X.dtype.element_ty)
@@ -1033,7 +1047,7 @@ def _w4a16_paired(
         ]
         for st in (1, 2, 3)
     ],
-    key=["M", "N", "K", "SPLIT_K", "NATIVE", "ROW_PTS"],
+    key=["M", "N", "K", "SPLIT_K", "NATIVE", "ROW_PTS", "NATIVE_E4M3"],
     prune_configs_by={"early_config_prune": prune_nvfp4_stages},
     do_bench=autotune_do_bench,
 )
@@ -1057,19 +1071,18 @@ def _w4a16(
     NATIVE_E4M3: tl.constexpr = False,
 ):
     if NATIVE:
-        _w4a16_paired(
-            X, Q, S, PTS, Y, M, N, K, SPLIT_K, BM, BN, BK, GROUP_M, ROW_PTS, NATIVE_E4M3
-        )
+        # Only native FP4 (SM120) reaches the paired kernel: native E4M3 too.
+        _w4a16_paired(X, Q, S, PTS, Y, M, N, K, SPLIT_K, BM, BN, BK, GROUP_M, ROW_PTS)
     else:
         _w4a16_original(
             X, Q, S, PTS, Y, M, N, K, SPLIT_K, BM, BN, BK, GROUP_M, ROW_PTS, NATIVE_E4M3
         )
 
 
-def _launch_w4a16_impl(x, qdata, scale, pts, *, split_k, output_dtype=None):
+def _launch_w4a16_impl(x, qdata, scale, pts, max_rows, *, split_k, output_dtype=None):
     m, k = x.shape
     n = qdata.shape[0]
-    _check_split(k, split_k, m=m, n=n)
+    _check_split(k, split_k, m=max_rows, n=n)
     output_dtype = output_dtype or x.dtype
     if x.dtype == torch.float32:
         x = x.to(torch.bfloat16)
@@ -1132,7 +1145,7 @@ def nvfp4_w4a16(
     kwargs = {} if split_k < 0 else {"split_k": split_k}
     if output_dtype is not None:
         kwargs["output_dtype"] = output_dtype
-    return launch(x, qdata, scale, per_tensor_scale, **kwargs)
+    return launch(x, qdata, scale, per_tensor_scale, _max_rows(x.shape[0]), **kwargs)
 
 
 @triton.jit
@@ -1175,6 +1188,10 @@ def nvfp4_embedding(
     """Eager calls outside CUDA-graph capture reject out-of-range ids; compiled
     graphs and captured calls do not validate them and return zero rows."""
     _check_weight(qdata, scale, per_tensor_scale)
+    if indices.dtype not in (torch.int32, torch.int64):
+        raise ValueError("NVFP4 embedding ids must be int32 or int64")
+    if indices.device != qdata.device:
+        raise ValueError("NVFP4 embedding ids and weight must be on one device")
     v, k = qdata.shape[0], qdata.shape[1] * 2
     if (
         not is_fake(indices)
