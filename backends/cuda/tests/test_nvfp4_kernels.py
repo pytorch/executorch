@@ -4,8 +4,11 @@
 # LICENSE file in the root directory of this source tree.
 import pytest
 import torch
+import triton
+from executorch.backends.cuda.autotune.launch_params import autotune_launch_params
 from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
 from executorch.backends.cuda.tests.nvfp4_test_utils import shards, weight
+from executorch.backends.cuda.triton.kernels import nvfp4_quantized_gemm as kernels
 from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
     _has_native_fp4_conversion,
     nvfp4_embedding,
@@ -112,6 +115,49 @@ def test_native_w4a4(m, n, k):
     torch.testing.assert_close(actual, expected, rtol=0.02, atol=0.02)
 
 
+def w4a4_reference(x, w, static_scale=0.0):
+    q, s, g = nvfp4_quantize_activation(x, static_scale)
+    one = torch.ones(1, device="cuda")
+    a = CudaNVFP4Tensor(q, s, one, orig_dtype=torch.float32).dequantize()
+    return (a * g[:, None]) @ w.dequantize(torch.float32).T
+
+
+@pytest.mark.parametrize("split_k", [1, 4])
+@pytest.mark.parametrize("static_scale", [0.0, 0.002])
+def test_w4a4_row_scale_static_scale_and_output_dtype(static_scale, split_k):
+    if not _has_native_fp4_conversion():
+        pytest.skip("native FP4 required")
+    # Fused shards keep one global scale per output row.
+    w = CudaNVFP4Tensor.fuse_along_output(shards(512, device="cuda"))
+    assert w.per_tensor_scale.numel() == w.shape[0]
+    x = torch.randn(17, 512, device="cuda", dtype=torch.bfloat16)
+    actual = nvfp4_w4a4(
+        x,
+        w.qdata,
+        w.scale,
+        w.per_tensor_scale,
+        static_scale,
+        split_k=split_k,
+        output_dtype=torch.float32,
+    )
+    assert actual.dtype == torch.float32
+    expected = w4a4_reference(x, w, static_scale)
+    torch.testing.assert_close(actual, expected, rtol=0.01, atol=0.01)
+
+
+def test_w4a4_autotuned_split_k():
+    if not _has_native_fp4_conversion():
+        pytest.skip("native FP4 required")
+    w = weight(97, 2176)
+    x = torch.randn(17, 2176, device="cuda", dtype=torch.bfloat16)
+    with autotune_launch_params() as stats:
+        actual = nvfp4_w4a4(x, w.qdata, w.scale, w.per_tensor_scale)
+    picks = [pick for pick in stats.picks if pick.param == "split_k"]
+    assert len(picks) == 1 and len(picks[0].times_us) > 1
+    expected = nvfp4_w4a4(x, w.qdata, w.scale, w.per_tensor_scale, split_k=1)
+    torch.testing.assert_close(actual, expected, rtol=0.025, atol=0.02)
+
+
 def test_embedding_bias_dispatch(monkeypatch):
     import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
 
@@ -151,13 +197,86 @@ def test_gemm_split_k(mode, split_k):
 @pytest.mark.parametrize("m", [1, 2, 4])
 @pytest.mark.parametrize("split_k", [1, 2, 4, 8, 16, 32])
 def test_gemv_split_k(m, split_k):
-    # A non-power-of-two global scale checks rounding of the BF16 weights.
     w = weight(71, 2176)
     w = CudaNVFP4Tensor(w.qdata, w.scale, torch.tensor([0.37], device="cuda"))
     x = torch.randn(m, 2176, device="cuda", dtype=torch.bfloat16)
     expected = (x.float() @ w.dequantize().float().T).to(x.dtype)
     actual = nvfp4_gemv(x, w.qdata, w.scale, w.per_tensor_scale, split_k=split_k)
     torch.testing.assert_close(actual, expected, rtol=0.015, atol=0.015)
+
+
+def pinned_weight(row_pts, unit_scale):
+    if row_pts:
+        return CudaNVFP4Tensor.fuse_along_output(shards(512, device="cuda"))
+    w = weight(97, 512)
+    pts = torch.ones(1, device="cuda") if unit_scale else w.per_tensor_scale
+    return CudaNVFP4Tensor(w.qdata, w.scale, pts)
+
+
+# The autotuner picks the decode variant by timing; pin each one here.
+@pytest.mark.parametrize("unit_scale", [False, True])
+@pytest.mark.parametrize("row_pts", [False, True])
+@pytest.mark.parametrize("native,half2", [(False, False), (True, False), (True, True)])
+def test_pinned_gemv_variants(native, half2, row_pts, unit_scale):
+    if native and not _has_native_fp4_conversion():
+        pytest.skip("native FP4 required")
+    if unit_scale and row_pts:
+        pytest.skip("unit_scale requires a scalar global scale")
+    w = pinned_weight(row_pts, unit_scale)
+    m, n, k = 3, w.shape[0], w.shape[1]
+    x = torch.randn(m, k, device="cuda", dtype=torch.bfloat16)
+    y = torch.empty((m, n), device="cuda", dtype=x.dtype)
+    kernels._gemv.fn[(triton.cdiv(n, 16), m, 1)](
+        x,
+        w.qdata,
+        w.scale,
+        w.per_tensor_scale,
+        y,
+        m,
+        n,
+        k,
+        1,
+        BN=16,
+        BK=256,
+        NATIVE=native,
+        HALF2=half2,
+        ROW_PTS=row_pts,
+        UNIT_SCALE=unit_scale,
+        num_warps=4,
+    )
+    expected = (x.float() @ w.dequantize().float().T).to(x.dtype)
+    torch.testing.assert_close(y, expected, rtol=0.015, atol=0.015)
+
+
+@pytest.mark.parametrize("row_pts", [False, True])
+@pytest.mark.parametrize("native", [False, True])
+def test_pinned_w4a16_variants(native, row_pts):
+    if native and not _has_native_fp4_conversion():
+        pytest.skip("native FP4 required")
+    w = pinned_weight(row_pts, False)
+    m, n, k = 37, w.shape[0], w.shape[1]
+    x = torch.randn(m, k, device="cuda", dtype=torch.bfloat16)
+    y = torch.empty((m, n), device="cuda", dtype=x.dtype)
+    kernels._w4a16.fn[(triton.cdiv(m, 32) * triton.cdiv(n, 32), 1)](
+        x,
+        w.qdata,
+        w.scale,
+        w.per_tensor_scale,
+        y,
+        m,
+        n,
+        k,
+        1,
+        BM=32,
+        BN=32,
+        BK=128,
+        GROUP_M=1,
+        NATIVE=native,
+        ROW_PTS=row_pts,
+        num_warps=4,
+    )
+    expected = (x.float() @ w.dequantize().float().T).to(x.dtype)
+    torch.testing.assert_close(y, expected, rtol=0.015, atol=0.015)
 
 
 @pytest.mark.parametrize("split_k", [1, 2])
@@ -196,8 +315,6 @@ def test_gemv_unit_scale(unit_scale, split_k):
 @pytest.mark.parametrize("mode", ["w4a4", "w4a16"])
 def test_split_workspace_exceeds_int32(mode):
     """Exercise a real-model workspace whose element offsets exceed 2**31."""
-    import triton
-    from executorch.backends.cuda.triton.kernels import nvfp4_quantized_gemm as kernels
     from torch._library.triton import set_wrap_triton_enabled
 
     if mode == "w4a4" and not _has_native_fp4_conversion():
@@ -249,6 +366,7 @@ def test_split_workspace_exceeds_int32(mode):
                 BN=64,
                 BK=64,
                 GROUP_M=1,
+                NATIVE=_has_native_fp4_conversion(),
                 num_warps=4,
                 num_stages=3,
             )
@@ -279,6 +397,18 @@ def test_embedding_row_global_scale():
         rtol=0,
         atol=0,
     )
+
+
+def test_embedding_kernel_returns_zero_rows_for_invalid_ids():
+    # Compiled graphs skip the host check; the kernel must not read past the table.
+    w = weight(97, 192)
+    ids = torch.tensor([3, -1, 97], device="cuda")
+    out = torch.empty((3, 192), device="cuda", dtype=torch.float32)
+    kernels._embedding[(3, 1)](
+        ids, w.qdata, w.scale, w.per_tensor_scale, out, 97, 192, 256
+    )
+    torch.testing.assert_close(out[0], w.dequantize(torch.float32)[3], rtol=0, atol=0)
+    assert not out[1:].any()
 
 
 @pytest.mark.parametrize("bad", [-1, 97])

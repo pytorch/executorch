@@ -10,6 +10,8 @@ from executorch.backends.cuda.autotune.cuda_graph_timing import time_with_cuda_g
 from executorch.backends.cuda.autotune.launch_params import _size_hint
 from executorch.backends.cuda.triton.kernels import quantized_gemm_utils
 from executorch.backends.cuda.triton.kernels.quantized_gemm_family import (
+    _async_compile,
+    _parallel_compile_available,
     _precompile_untuned_configs,
     _queue_untuned_configs,
     _QUEUING_ONLY,
@@ -17,12 +19,10 @@ from executorch.backends.cuda.triton.kernels.quantized_gemm_family import (
 )
 from torch.library import wrap_triton
 
-
-def nvfp4_launch_bench(kernel_call):
-    return time_with_cuda_graph_us(kernel_call, statistic="mean", replays=3)
-
-
-# NVFP4 tile timing: median of three cold CUDA-graph means.
+# NVFP4 split and tile timing: median of three cold CUDA-graph means.
+nvfp4_launch_bench = functools.partial(
+    time_with_cuda_graph_us, statistic="mean", replays=3
+)
 autotune_do_bench = functools.partial(
     quantized_gemm_utils.autotune_do_bench, statistic="mean", replays=3
 )
@@ -30,6 +30,11 @@ autotune_do_bench = functools.partial(
 
 def launch_nvfp4_kernel(kernel, grid, args, m_argument, **constexprs):
     if _QUEUING_ONLY.get():
+        if (
+            not _parallel_compile_available()
+            or _async_compile.active_mode.get() is None
+        ):
+            raise RuntimeError("candidate prepass lost its active compile pool")
         _queue_untuned_configs(kernel, args, constexprs)
         return
     _precompile_untuned_configs(kernel, args, constexprs)

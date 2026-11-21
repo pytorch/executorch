@@ -19,6 +19,7 @@ from executorch.backends.cuda.quantize_op_dispatch.nvfp4_dispatch import (
     _has_native_fp4,
     _MODE_STRIDE,
 )
+from executorch.backends.cuda.tests.nvfp4_test_utils import PackedLinear
 from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
     nvfp4_quantize_activation,
 )
@@ -32,22 +33,16 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-class PackedLinear(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        torch.manual_seed(42)
-        q = torch.randint(0, 256, (96, 96), dtype=torch.uint8)
-        s = torch.full((96, 12), 0.0625).to(torch.float8_e4m3fn).view(torch.uint8)
-        self.register_buffer("weight", CudaNVFP4Tensor(q, s, torch.tensor(0.25)))
-        self.register_buffer("bias", torch.randn(96, dtype=torch.bfloat16))
-
-    def forward(self, x):
-        return F.linear(x, self.weight, self.bias)
-
-
 @pytest.mark.parametrize(
     "mode,m,dynamic",
-    [("w4a16", 1, False), ("w4a4", 16, False), ("auto", 1, False), ("auto", 16, True)],
+    [
+        ("w4a16", 1, False),
+        # A hint no other case tunes, so its tiles are timed here.
+        ("w4a16", 37, True),
+        ("w4a4", 16, False),
+        ("auto", 1, False),
+        ("auto", 16, True),
+    ],
 )
 def test_packed_linear_pte(mode, m, dynamic, monkeypatch):
     if mode != "w4a16" and not _has_native_fp4():

@@ -23,6 +23,7 @@ from executorch.backends.cuda.autotune.launch_params import autotune_launch_para
 from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
 from executorch.backends.cuda.quantize_op_dispatch._gemm_family_dispatch import (
     can_launch_triton,
+    chunked_dequant_linear,
 )
 from executorch.backends.cuda.triton.kernels.nvfp4_output import (
     NVFP4_DECODE_MAX_ROWS,
@@ -115,6 +116,17 @@ def nvfp4_auto_decode(
     return _decode(x, qdata, scale, per_tensor_scale, act_scale, unit_scale)
 
 
+def _weight_rows(w, rows):
+    """Rows ``rows`` (a slice or index tensor) of ``w`` as a CudaNVFP4Tensor."""
+    pts = w.per_tensor_scale
+    return CudaNVFP4Tensor(
+        w.qdata[rows],
+        w.scale[rows],
+        pts if pts.numel() == 1 else pts[rows],
+        orig_dtype=w.orig_dtype,
+    )
+
+
 @CudaNVFP4Tensor.implements([torch.ops.aten.linear.default])
 @CudaNVFP4Tensor.implements_torch_function([F.linear])
 def _linear(func, types, args, kwargs):
@@ -132,7 +144,12 @@ def _linear(func, types, args, kwargs):
     )
     if not can_launch_triton(flat) or not allowed_dtype:
         dtype = output_dtype or x.dtype
-        out = F.linear(flat.to(dtype), w.dequantize(dtype))
+        flat = flat.to(dtype)
+        out = chunked_dequant_linear(
+            flat,
+            w.shape[0],
+            lambda i, j: F.linear(flat, _weight_rows(w, slice(i, j)).dequantize(dtype)),
+        )
     else:
         from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
             nvfp4_gemv,
@@ -197,14 +214,7 @@ def _embedding(func, types, args, kwargs):
     else:
         w, indices = args[:2]
     if not can_launch_triton(indices):
-        ids = indices.reshape(-1)
-        pts = w.per_tensor_scale
-        rows = CudaNVFP4Tensor(
-            w.qdata[ids],
-            w.scale[ids],
-            pts if pts.numel() == 1 else pts[ids],
-            orig_dtype=w.orig_dtype,
-        )
+        rows = _weight_rows(w, indices.reshape(-1))
         return rows.dequantize().reshape(*indices.shape, w.shape[1])
     from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
         nvfp4_embedding,
