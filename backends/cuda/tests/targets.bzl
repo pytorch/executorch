@@ -637,6 +637,8 @@ def define_common_targets(is_fbcode = False):
             "//executorch/backends/cuda:nvfp4_tensor",
             "//executorch/backends/cuda:quantize_op_dispatch",
             "//executorch/examples/models/gemma4_31b:quant",
+            "//executorch/extension/llm/export:gguf",
+            "//executorch/extension/llm/export:nvfp4",
             "fbsource//third-party/pypi/pytest:pytest",
             ":nvfp4_test_utils",
         ],

@@ -12,6 +12,7 @@ import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
 import pytest
 import torch
 import torch.nn.functional as F
+from executorch.backends.cuda.autotune.launch_params import clear_launch_param_cache
 from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
@@ -33,21 +34,29 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+@pytest.fixture(autouse=True)
+def cold_pick_cache():
+    clear_launch_param_cache()
+
+
 @pytest.mark.parametrize(
-    "mode,m,dynamic",
+    "mode,m,dynamic,fp32",
     [
-        ("w4a16", 1, False),
-        # A hint no other case tunes, so its tiles are timed here.
-        ("w4a16", 37, True),
-        ("w4a4", 16, False),
-        ("auto", 1, False),
-        ("auto", 16, True),
+        ("w4a16", 1, False, False),
+        # Hints no other case tunes, so their tiles are timed here.
+        ("w4a16", 37, True, False),
+        ("w4a16", 45, True, True),
+        ("w4a4", 16, False, False),
+        ("auto", 1, False, False),
+        ("auto", 16, True, False),
     ],
 )
-def test_packed_linear_pte(mode, m, dynamic, monkeypatch):
+def test_packed_linear_pte(mode, m, dynamic, fp32, monkeypatch):
     if mode != "w4a16" and not _has_native_fp4():
         pytest.skip("native FP4 required")
     monkeypatch.setenv("ET_CUDA_NVFP4_ACT", mode)
+    # The FP32 prefill policy is read at export and baked into the program.
+    monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_OUTPUT", "fp32" if fp32 else "input")
     import executorch.backends.cuda.cuda_backend as cuda_backend
     from executorch.backends.cuda.triton.kernels import quantized_gemm_utils
 
@@ -101,6 +110,9 @@ def test_packed_linear_pte(mode, m, dynamic, monkeypatch):
         selected_mode = mode
 
     def reference(value):
+        if fp32:
+            weight = module.weight.dequantize(torch.float32)
+            return F.linear(value.float(), weight, module.bias.float())
         if selected_mode == "w4a16":
             return F.linear(value, module.weight.dequantize(), module.bias)
         q, s, pts = nvfp4_quantize_activation(value.cuda())
@@ -133,14 +145,10 @@ def test_packed_linear_pte(mode, m, dynamic, monkeypatch):
         if dynamic:
             # Exercise grouped M tiling and the split-K workspace at sizes
             # different from the shape used by compilation/autotuning.
-            monkeypatch.setenv(
-                "ET_CUDA_NVFP4_ACT", "w4a16" if selected_mode == "w4a4" else "w4a4"
-            )
             for rows in [1, 5, 37, 64]:
                 value = torch.randn(rows, 192, dtype=x.dtype)
                 result = method.execute([value])[0].cpu()
                 torch.testing.assert_close(
                     result, reference(value), rtol=0.03, atol=0.03
                 )
-            monkeypatch.setenv("ET_CUDA_NVFP4_ACT", mode)
     torch.testing.assert_close(actual.cpu(), reference(x), rtol=0.03, atol=0.03)

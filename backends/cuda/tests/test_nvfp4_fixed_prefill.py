@@ -12,6 +12,7 @@ import executorch.backends.cuda.cuda_backend as cuda_backend
 
 import pytest
 import torch
+from executorch.backends.cuda.autotune.launch_params import clear_launch_param_cache
 from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
@@ -24,6 +25,11 @@ from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
     nvfp4_quantize_activation,
 )
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
+
+
+@pytest.fixture(autouse=True)
+def cold_pick_cache():
+    clear_launch_param_cache()
 
 
 @pytest.mark.skipif(
@@ -84,8 +90,6 @@ def test_prefill_4096_keeps_compiled_mode_for_dynamic_m(mode, monkeypatch):
             .load_program(str(path), data_path=str(data))
             .load_method("forward")
         )
-        # Runtime environment changes must not change the compiled precision.
-        monkeypatch.setenv("ET_CUDA_NVFP4_ACT", "w4a16" if selected_fp4 else "w4a4")
         weights = module.weight.dequantize().double()
         for m in (1, 5, 37, 64, 4096):
             value = torch.randn(m, 192, dtype=x.dtype)

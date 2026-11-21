@@ -11,12 +11,19 @@ from pathlib import Path
 import pytest
 import torch
 import torch.nn.functional as F
+from executorch.backends.cuda.autotune.launch_params import clear_launch_param_cache
 from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
 from executorch.backends.cuda.quantize_op_dispatch.nvfp4_dispatch import (
     _has_native_fp4,
     _MODE_STRIDE,
 )
 from executorch.backends.cuda.tests.nvfp4_test_utils import portable_weight as weight
+
+
+@pytest.fixture(autouse=True)
+def cold_pick_cache():
+    clear_launch_param_cache()
+
 
 CUDA = pytest.mark.skipif(
     not torch.cuda.is_available()
