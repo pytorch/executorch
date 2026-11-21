@@ -4,25 +4,16 @@
 # LICENSE file in the root directory of this source tree.
 """NVFP4 launches using the INT4 family's compilation and tile selection."""
 
-import torch
-import triton.testing
-from executorch.backends.cuda.autotune.cuda_graph_timing import (
-    graph_timing_active,
-    ParkedTensorsNotRestored,
-    time_with_cuda_graph_us,
-    time_with_cuda_graph_us_counted,
-)
+import functools
+
+from executorch.backends.cuda.autotune.cuda_graph_timing import time_with_cuda_graph_us
 from executorch.backends.cuda.autotune.launch_params import _size_hint
+from executorch.backends.cuda.triton.kernels import quantized_gemm_utils
 from executorch.backends.cuda.triton.kernels.quantized_gemm_family import (
     _precompile_untuned_configs,
     _queue_untuned_configs,
     _QUEUING_ONLY,
     _tuned_kernel,
-)
-from executorch.backends.cuda.triton.kernels.quantized_gemm_utils import (
-    _warn_graph_timing_fallback,
-    AUTOTUNE_REP_MS,
-    AUTOTUNE_WARMUP_MS,
 )
 from torch.library import wrap_triton
 
@@ -31,29 +22,10 @@ def nvfp4_launch_bench(kernel_call):
     return time_with_cuda_graph_us(kernel_call, statistic="mean", replays=3)
 
 
-def autotune_do_bench(kernel_call, quantiles):
-    """NVFP4 tile timing: median of three cold CUDA-graph means."""
-    if graph_timing_active() and torch.cuda.current_stream().cuda_stream != 0:
-        try:
-            ms = (
-                time_with_cuda_graph_us_counted(
-                    kernel_call, statistic="mean", replays=3
-                )
-                / 1000.0
-            )
-        except ParkedTensorsNotRestored:
-            raise
-        except RuntimeError as error:
-            _warn_graph_timing_fallback(error)
-        else:
-            return [ms] * len(quantiles) if quantiles else ms
-    ms = triton.testing.do_bench(
-        kernel_call,
-        warmup=AUTOTUNE_WARMUP_MS,
-        rep=AUTOTUNE_REP_MS,
-        return_mode="mean",
-    )
-    return [ms] * len(quantiles) if quantiles else ms
+# NVFP4 tile timing: median of three cold CUDA-graph means.
+autotune_do_bench = functools.partial(
+    quantized_gemm_utils.autotune_do_bench, statistic="mean", replays=3
+)
 
 
 def launch_nvfp4_kernel(kernel, grid, args, m_argument, **constexprs):

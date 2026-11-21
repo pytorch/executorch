@@ -8,12 +8,14 @@ from executorch.extension.llm.export.nvfp4 import ExportableNVFP4Tensor
 
 
 def shards(k, device="cpu", dtype=torch.bfloat16):
-    torch.manual_seed(2026)
+    generator = torch.Generator(device).manual_seed(2026)
     result = []
     for n, global_scale in zip((31, 19, 47), (0.25, 0.37, 0.083)):
-        q = torch.randint(0, 256, (n, k // 2), dtype=torch.uint8, device=device)
+        q = torch.randint(
+            0, 256, (n, k // 2), dtype=torch.uint8, device=device, generator=generator
+        )
         s = (
-            (0.03 + torch.rand(n, k // 16, device=device) * 0.12)
+            (0.03 + torch.rand(n, k // 16, device=device, generator=generator) * 0.12)
             .to(torch.float8_e4m3fn)
             .view(torch.uint8)
         )
