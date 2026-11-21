@@ -28,7 +28,7 @@ CUDA = pytest.mark.skipif(
 )
 
 
-from executorch.backends.cuda.tests.nvfp4_test_utils import shards
+from executorch.backends.cuda.tests.nvfp4_test_utils import dynamic_rows, shards
 
 
 def test_cpu_fallback_matches_dequantized_weight(monkeypatch):
@@ -98,7 +98,6 @@ def test_linear_routing(mode, native, rows, fp32, expected, monkeypatch):
     monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: native)
     monkeypatch.setenv("ET_CUDA_NVFP4_ACT", mode)
     monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_OUTPUT", "fp32" if fp32 else "input")
-    from executorch.backends.cuda.tests.test_nvfp4_launch_validation import dynamic_rows
     from torch.fx.experimental.symbolic_shapes import ShapeEnv
 
     w = shards(192)[0]
@@ -126,7 +125,8 @@ def test_auto_bodies_forward_mode_split(fp4, monkeypatch):
 
     def recorder(name):
         def op(x, qdata, *args, **kwargs):
-            calls.append((name, kwargs))
+            # Positional args after the weight scales: W4A4's act_scale.
+            calls.append((name, args[2:], kwargs))
             dtype = kwargs.get("output_dtype") or x.dtype
             return x.new_empty((x.shape[0], qdata.shape[0]), dtype=dtype)
 
@@ -146,18 +146,61 @@ def test_auto_bodies_forward_mode_split(fp4, monkeypatch):
     out = nvfp4_dispatch._prefill(
         x, *weight, 0.5, 64, mode_split=mode_split, output_dtype=torch.float32
     )
+    act = (0.5,) if fp4 else ()
     assert calls.pop() == (
         prefill_op,
+        act,
         {"split_k": split, "output_dtype": torch.float32},
     )
     assert out.dtype == torch.float32
     nvfp4_dispatch._decode(x[:2], *weight, 0.5, True, mode_split=mode_split)
     expected = {"split_k": split} if fp4 else {"split_k": split, "unit_scale": True}
-    assert calls.pop() == (decode_op, expected)
+    assert calls.pop() == (decode_op, act, expected)
     # An unbounded M (None) rejects split-K before any kernel is called.
     with pytest.raises(InvalidLaunchParam, match="bounded M"):
         nvfp4_dispatch._prefill(x, *weight, 0.5, None, mode_split=mode_split)
     assert not calls
+
+
+@pytest.mark.parametrize(
+    "mode,rows,op",
+    [
+        ("w4a4", 37, "nvfp4_w4a4"),
+        ("w4a4", 1, "nvfp4_w4a4"),
+        ("auto", 37, "nvfp4_auto_prefill"),
+        ("auto", 1, "nvfp4_auto_decode"),
+    ],
+)
+def test_calibrated_activation_scale_reaches_w4a4(mode, rows, op, monkeypatch):
+    # A ModelOpt/GGUF input_scale must reach every op that can run W4A4.
+    from executorch.backends.cuda.quantize_op_dispatch import nvfp4_dispatch
+    from executorch.backends.cuda.triton.kernels import nvfp4_quantized_gemm
+
+    calls = []
+
+    def recorder(name):
+        def fake_op(x, qdata, scale, per_tensor_scale, act_scale, *args, **kwargs):
+            calls.append((name, act_scale))
+            dtype = kwargs.get("output_dtype") or x.dtype
+            return x.new_empty((x.shape[0], qdata.shape[0]), dtype=dtype)
+
+        return fake_op
+
+    monkeypatch.setattr(nvfp4_quantized_gemm, "nvfp4_w4a4", recorder("nvfp4_w4a4"))
+    for name in ("nvfp4_auto_prefill", "nvfp4_auto_decode"):
+        monkeypatch.setattr(nvfp4_dispatch, name, recorder(name))
+    monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: True)
+    monkeypatch.setenv("ET_CUDA_NVFP4_ACT", mode)
+    w = shards(192)[0]
+    w = CudaNVFP4Tensor(
+        w.qdata, w.scale, w.per_tensor_scale, act_per_tensor_scale=0.002
+    )
+    fake = FakeTensorMode()
+    x = fake.from_tensor(torch.randn(rows, 192, dtype=torch.bfloat16))
+    weight = fake.from_tensor(w)
+    with fake:
+        F.linear(x, weight)
+    assert calls == [(op, 0.002)]
 
 
 def test_auto_ops_run_their_first_candidate_outside_tuning(monkeypatch):

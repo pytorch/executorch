@@ -10,7 +10,7 @@ from executorch.backends.cuda.autotune.launch_params import (
     clear_launch_param_cache,
 )
 from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
-from executorch.backends.cuda.tests.nvfp4_test_utils import shards, weight
+from executorch.backends.cuda.tests.nvfp4_test_utils import dynamic_rows, shards, weight
 from executorch.backends.cuda.triton.kernels import nvfp4_quantized_gemm as kernels
 from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
     _has_native_e4m3,
@@ -28,8 +28,7 @@ pytestmark = pytest.mark.skipif(
 )
 # The activation quantizer only feeds native W4A4 and rounds through FP8 E4M3.
 native_e4m3 = pytest.mark.skipif(
-    torch.cuda.is_available() and torch.cuda.get_device_capability() < (8, 9),
-    reason="native E4M3 (SM89+) required",
+    not _has_native_e4m3(), reason="native E4M3 (SM89+) required"
 )
 
 
@@ -48,9 +47,20 @@ def test_w4a16(m, n, k):
     torch.testing.assert_close(actual, expected, rtol=0.015, atol=0.015)
 
 
+def use_quantizer(monkeypatch, software):
+    # The fused quantizer needs native FP4 (SM120); the software one runs
+    # wherever E4M3 encodes natively (SM89+).
+    if software:
+        monkeypatch.setattr(kernels, "_has_native_fp4_conversion", lambda: False)
+    elif not _has_native_fp4_conversion():
+        pytest.skip("the fused quantizer needs native FP4")
+
+
 @native_e4m3
+@pytest.mark.parametrize("software", [False, True])
 @pytest.mark.parametrize("static", [0.0, 0.001])
-def test_activation_reference(static):
+def test_activation_reference(static, software, monkeypatch):
+    use_quantizer(monkeypatch, software)
     torch.manual_seed(123)
     x = torch.randn(7, 192, device="cuda", dtype=torch.bfloat16)
     x[0] = 0
@@ -88,7 +98,9 @@ def test_activation_reference(static):
 
 
 @native_e4m3
-def test_activation_rounding_boundaries():
+@pytest.mark.parametrize("software", [False, True])
+def test_activation_rounding_boundaries(software, monkeypatch):
+    use_quantizer(monkeypatch, software)
     # Every E2M1 midpoint, both signs; exact global/block scales make the
     # expected ties independent of floating-point scale calculation.
     positive = [0.25, 0.75, 1.25, 1.75, 2.5, 3.5, 5.0, 6.0]
@@ -107,6 +119,23 @@ def test_activation_rounding_boundaries():
     assert torch.equal(actual, expected)
     assert torch.equal(s, torch.tensor([[56], [0]], device="cuda", dtype=torch.uint8))
     torch.testing.assert_close(g, torch.ones_like(g), rtol=0, atol=0)
+
+
+def test_fused_and_software_quantizers_match(monkeypatch):
+    if not _has_native_fp4_conversion():
+        pytest.skip("the fused quantizer needs native FP4")
+    torch.manual_seed(7)
+    x = torch.randn(9, 320, device="cuda", dtype=torch.bfloat16)
+    x[0] = 0
+    x[1, ::2] = -0.0
+    x[2, :16] = 1e-30
+    for static in (0.0, 0.002):
+        fused = nvfp4_quantize_activation(x, static)
+        with monkeypatch.context() as patch:
+            patch.setattr(kernels, "_has_native_fp4_conversion", lambda: False)
+            software = nvfp4_quantize_activation(x, static)
+        for a, b in zip(fused, software):
+            assert torch.equal(a.view(torch.uint8), b.view(torch.uint8))
 
 
 @pytest.mark.parametrize("m,n,k", [(1, 71, 192), (16, 97, 80), (37, 65, 256)])
@@ -171,7 +200,6 @@ def test_w4a4_autotuned_split_k():
 def test_w4a4_unbounded_dynamic_m_tunes_only_split_1():
     if not _has_native_fp4_conversion():
         pytest.skip("native FP4 required")
-    from executorch.backends.cuda.tests.test_nvfp4_launch_validation import dynamic_rows
     from torch._subclasses.fake_tensor import FakeTensorMode
     from torch.fx.experimental.symbolic_shapes import ShapeEnv
 

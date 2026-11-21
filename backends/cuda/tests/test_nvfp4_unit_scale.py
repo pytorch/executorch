@@ -119,6 +119,8 @@ def test_unit_scale_linear_pte(mode, monkeypatch):
 
     def capture(kernel, *args, **kwargs):
         if kernel is kernels._gemv:
+            # The launcher builds the decode the device supports natively.
+            assert kwargs.get("NATIVE_E4M3") == kernels._has_native_e4m3()
             observed.append(kwargs["UNIT_SCALE"])
         return original(kernel, *args, **kwargs)
 

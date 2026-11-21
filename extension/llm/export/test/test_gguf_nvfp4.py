@@ -9,6 +9,7 @@ import unittest
 import numpy as np
 import torch
 from executorch.extension.llm.export.gguf import ExportableGGUFTensor, iter_gguf
+from executorch.extension.llm.export.nvfp4 import ExportableNVFP4Tensor
 from executorch.extension.llm.export.quant.convert import fuse_along_output
 from torch._subclasses.fake_tensor import FakeTensorMode
 
@@ -82,6 +83,28 @@ class TestGGUFNVFP4(unittest.TestCase):
         self.assertEqual(q.tolist(), [0x10, 0x32, 0x54, 0x76, 0x90, 0xBA, 0xDC, 0xFE])
         self.assertEqual(converted.scale[0].tolist(), [0x38, 0x40, 0x38, 0x00])
 
+    def test_rows_blocks_and_groups_keep_their_order(self):
+        # Two rows of two blocks: every K16 group has its own scale and codes,
+        # so a row, block or group mix-up changes the result.
+        raw = torch.zeros(2, 2, 36, dtype=torch.uint8)
+        expected = torch.zeros(2, 2, 4, 16)
+        for r in range(2):
+            for b in range(2):
+                for g in range(4):
+                    i = (r * 2 + b) * 4 + g
+                    codes = torch.tensor([(i + j) % 16 for j in range(16)])
+                    raw[r, b, g] = 0x30 + i  # E4M3 0.5 .. 1.375
+                    raw[r, b, 4 + 8 * g : 12 + 8 * g] = codes[:8] | (codes[8:] << 4)
+                    scale = torch.tensor([0x30 + i], dtype=torch.uint8)
+                    expected[r, b, g] = (
+                        E2M1[codes] * scale.view(torch.float8_e4m3fn).float()
+                    )
+        w = ExportableGGUFTensor(raw.reshape(2, 72), "nvfp4", torch.float32)
+        expected = expected.reshape(2, 128)
+        self.assertTrue(torch.equal(blocks(w), expected))
+        converted = w.to_exportable_nvfp4_tensor(per_tensor_scale=ONE)
+        self.assertTrue(torch.equal(converted.dequantize(), expected))
+
     @requires_gguf_nvfp4
     def test_all_scale_bytes_and_codes(self):
         # All 256 scale bytes and every E2M1 code, including negative zero.
@@ -133,7 +156,7 @@ class TestGGUFNVFP4(unittest.TestCase):
             {"per_tensor_scale": torch.ones(2)},
             {"per_tensor_scale": ONE, "act_per_tensor_scale": torch.ones(2)},
         ):
-            with self.assertRaisesRegex(ValueError, "scalars"):
+            with self.assertRaisesRegex(ValueError, "scalar"):
                 w.to_exportable_nvfp4_tensor(**scales)
         # A loader's dtype cast would round the F32 scale before pairing.
         for scales in (
@@ -146,6 +169,16 @@ class TestGGUFNVFP4(unittest.TestCase):
             w.to_exportable_nvfp4_tensor(per_tensor_scale=0.25).dequantize(),
             expected * 0.25,
         )
+
+    def test_act_per_tensor_scale_is_a_float(self):
+        w = ExportableGGUFTensor(
+            torch.zeros(1, 36, dtype=torch.uint8), "nvfp4", torch.float32
+        ).to_exportable_nvfp4_tensor(per_tensor_scale=ONE)
+        fields = (w.qdata, w.scale, w.per_tensor_scale, 16, torch.float32)
+        built = ExportableNVFP4Tensor(*fields, torch.tensor([0.5]))
+        self.assertIs(type(built.act_per_tensor_scale), float)
+        with self.assertRaisesRegex(ValueError, "scalar"):
+            ExportableNVFP4Tensor(*fields, torch.ones(2))
 
     def test_act_per_tensor_scale_survives_to(self):
         w = ExportableGGUFTensor(
