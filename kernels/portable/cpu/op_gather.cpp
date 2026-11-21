@@ -20,6 +20,8 @@ namespace native {
 
 using Tensor = executorch::aten::Tensor;
 using ScalarType = executorch::aten::ScalarType;
+using executorch::ET_RUNTIME_NAMESPACE::memoizeTrailingDims;
+using executorch::ET_RUNTIME_NAMESPACE::tensor_data_is_in_default_dim_order;
 
 namespace {
 
@@ -41,7 +43,12 @@ void gather_helper(
   // The input and the index can be in any dim order, like the result of
   // nonzero, so both are read through their strides. A contiguous index, the
   // usual case, is read in order.
-  const auto in_strides = in.strides();
+  // A tensor without strides holds its data in the default dim order.
+  size_t in_strides[kTensorDimensionLimit];
+  memoizeTrailingDims(in, in_strides);
+  if (!tensor_data_is_in_default_dim_order(in)) {
+    std::copy(in.strides().begin(), in.strides().end(), in_strides);
+  }
   const auto index_strides = index.strides();
   const bool index_contiguous = is_contiguous_dim_order(
       index.dim_order().data(), index.dim_order().size());

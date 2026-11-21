@@ -22,13 +22,17 @@ namespace native {
 
 using Tensor = executorch::aten::Tensor;
 using ScalarType = executorch::aten::ScalarType;
+using executorch::ET_RUNTIME_NAMESPACE::memoizeTrailingDims;
+using executorch::ET_RUNTIME_NAMESPACE::tensor_data_is_in_default_dim_order;
 
 namespace {
 
 // self can be in another dim order than out, like the result of nonzero.
 template <typename CTYPE>
 void copy_self_to_out(const Tensor& in, Tensor& out) {
-  if (in.strides() == out.strides()) {
+  if (in.strides() == out.strides() ||
+      (tensor_data_is_in_default_dim_order(in) &&
+       tensor_data_is_in_default_dim_order(out))) {
     memcpy(
         out.mutable_data_ptr<CTYPE>(), in.const_data_ptr<CTYPE>(), in.nbytes());
   } else {
@@ -62,7 +66,12 @@ void scatter_src_helper(
   // both are read through their strides. A contiguous index, the usual case,
   // is read in order.
   const auto index_strides = index.strides();
-  const auto src_strides = src.strides();
+  // A tensor without strides holds its data in the default dim order.
+  size_t src_strides[kTensorDimensionLimit];
+  memoizeTrailingDims(src, src_strides);
+  if (!tensor_data_is_in_default_dim_order(src)) {
+    std::copy(src.strides().begin(), src.strides().end(), src_strides);
+  }
   const bool index_contiguous = is_contiguous_dim_order(
       index.dim_order().data(), index.dim_order().size());
   for (const auto ix : c10::irange(index.numel())) {

@@ -15,7 +15,6 @@
 #include <cinttypes> // PRId64
 #include <cmath>
 #include <cstddef> // size_t
-#include <cstring> // std::memcpy
 
 #include <limits>
 
@@ -1058,7 +1057,8 @@ inline void indexToCoordinate(
  * order puts it, so its data can be read and written as if the tensor were in
  * the default dim order. Besides the default dim order, this holds for a dim
  * order that differs from it only in dims of size 1, such as channels last
- * with a height and a width of 1, and for a tensor with no elements.
+ * with a height and a width of 1, for a tensor with no elements, and for a
+ * tensor without strides.
  *
  * @param[in] tensor The tensor to check.
  * @returns Whether the data of the tensor is laid out as in the default dim
@@ -1066,7 +1066,7 @@ inline void indexToCoordinate(
  */
 inline bool tensor_data_is_in_default_dim_order(
     const executorch::aten::Tensor& tensor) {
-  if (tensor.numel() == 0) {
+  if (tensor.numel() == 0 || tensor.strides().empty()) {
     return true;
   }
   size_t default_stride = 1;
@@ -1191,7 +1191,7 @@ inline void copy_to_default_dim_order(
  *
  * @param[in] buffer A buffer of tensor.nbytes() bytes that does not overlap
  * the data of the tensor.
- * @param[in] tensor The tensor to write.
+ * @param[out] tensor The tensor to write.
  */
 inline void copy_from_default_dim_order(
     const void* buffer,

@@ -759,3 +759,23 @@ TEST_F(OpSliceCopyTensorOutTest, ChannelsLastSliceAlongWidthWithStep) {
   EXPECT_TENSOR_EQ(
       out, tf.make_channels_last({1, 2, 2, 2}, {1, 9, 3, 11, 5, 13, 7, 15}));
 }
+
+#ifndef USE_ATEN_LIB
+TEST_F(OpSliceCopyTensorOutTest, TensorsWithoutStrides) {
+  using executorch::runtime::etensor::TensorImpl;
+  TensorImpl::SizesType in_sizes[2] = {2, 3};
+  float in_data[6] = {1, 2, 3, 4, 5, 6};
+  TensorImpl in_impl(ScalarType::Float, 2, in_sizes, in_data);
+  TensorImpl::SizesType out_sizes[2] = {2, 2};
+  float out_data[4] = {};
+  TensorImpl out_impl(ScalarType::Float, 2, out_sizes, out_data);
+  Tensor in(&in_impl);
+  Tensor out(&out_impl);
+
+  op_slice_copy_tensor_out(
+      in, /*dim=*/1, /*start=*/1, /*end=*/3, /*step=*/1, out);
+  EXPECT_EQ(
+      std::vector<float>(out_data, out_data + 4),
+      std::vector<float>({2, 3, 5, 6}));
+}
+#endif // USE_ATEN_LIB

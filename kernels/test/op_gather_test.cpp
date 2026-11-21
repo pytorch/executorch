@@ -393,3 +393,21 @@ TEST_F(OpGatherOutTest, ColumnMajorInputs) {
   op_gather_out(self, 1, index, sparse_grad, out);
   EXPECT_TENSOR_EQ(out, tf_data.make({2, 2}, {3, 1, 5, 5}));
 }
+
+#ifndef USE_ATEN_LIB
+TEST_F(OpGatherOutTest, InputWithoutStrides) {
+  using executorch::runtime::etensor::TensorImpl;
+  TensorFactory<ScalarType::Long> tf_index;
+  TensorFactory<ScalarType::Float> tf_data;
+
+  TensorImpl::SizesType sizes[2] = {2, 3};
+  float data[6] = {1, 2, 3, 4, 5, 6};
+  TensorImpl impl(ScalarType::Float, 2, sizes, data);
+  Tensor self(&impl);
+  Tensor index = tf_index.make({2, 2}, {2, 0, 1, 1});
+  bool sparse_grad = false;
+  Tensor out = tf_data.zeros({2, 2});
+  op_gather_out(self, 1, index, sparse_grad, out);
+  EXPECT_TENSOR_EQ(out, tf_data.make({2, 2}, {3, 1, 5, 5}));
+}
+#endif // USE_ATEN_LIB

@@ -701,6 +701,30 @@ TEST_F(OpScatterSrcOutTest, ColumnMajorInputs) {
   // clang-format on
 }
 
+#ifndef USE_ATEN_LIB
+TEST_F(OpScatterSrcOutTest, InputsWithoutStrides) {
+  using executorch::runtime::etensor::TensorImpl;
+  TensorFactory<ScalarType::Long> tf_index;
+  TensorFactory<ScalarType::Float> tf_data;
+
+  TensorImpl::SizesType self_sizes[2] = {2, 3};
+  float self_data[6] = {10, 20, 30, 40, 50, 60};
+  TensorImpl self_impl(ScalarType::Float, 2, self_sizes, self_data);
+  TensorImpl::SizesType src_sizes[2] = {2, 2};
+  float src_data[4] = {1, 2, 3, 4};
+  TensorImpl src_impl(ScalarType::Float, 2, src_sizes, src_data);
+  Tensor self(&self_impl);
+  Tensor src(&src_impl);
+  Tensor index = tf_index.make({2, 2}, {2, 0, 1, 0});
+  Tensor out = tf_data.zeros({2, 3});
+  op_scatter_src_out(self, 1, index, src, out);
+  // clang-format off
+  EXPECT_TENSOR_EQ(out, tf_data.make({2, 3}, {2, 20, 1,
+                                              4,  3, 60}));
+  // clang-format on
+}
+#endif // USE_ATEN_LIB
+
 TEST_F(OpScatterValueOutTest, ColumnMajorInputs) {
   TensorFactory<ScalarType::Long> tf_index;
   TensorFactory<ScalarType::Float> tf_data;

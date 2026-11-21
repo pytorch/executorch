@@ -682,6 +682,28 @@ TEST_F(TensorUtilTest, CopyWithDefaultDimOrderOfScalarAndEmptyTensors) {
   copy_from_default_dim_order(nullptr, empty);
 }
 
+#ifndef USE_ATEN_LIB
+TEST_F(TensorUtilTest, CopyWithDefaultDimOrderOfTensorWithoutStrides) {
+  using namespace executorch::ET_RUNTIME_NAMESPACE;
+  executorch::runtime::etensor::TensorImpl::SizesType sizes[2] = {2, 3};
+  float data[6] = {0, 1, 2, 3, 4, 5};
+  executorch::runtime::etensor::TensorImpl impl(
+      ScalarType::Float, 2, sizes, data);
+  Tensor tensor(&impl);
+  EXPECT_TRUE(tensor_data_is_in_default_dim_order(tensor));
+  float buffer[6] = {};
+  copy_to_default_dim_order(tensor, buffer);
+  EXPECT_EQ(
+      std::vector<float>(buffer, buffer + 6),
+      std::vector<float>(data, data + 6));
+  const float written[6] = {6, 7, 8, 9, 10, 11};
+  copy_from_default_dim_order(written, tensor);
+  EXPECT_EQ(
+      std::vector<float>(data, data + 6),
+      std::vector<float>(written, written + 6));
+}
+#endif // USE_ATEN_LIB
+
 TEST_F(TensorUtilTest, ResizeZeroDimTensor) {
   Tensor a = tf_float_.ones({});
 

@@ -114,6 +114,23 @@ TEST_F(OpNonzeroTest, ColumnMajorOut) {
       tf_long.make_with_dimorder(
           {3, 2}, {0, 0, 1, 1, 2, 0}, /*dim_order=*/{1, 0}));
 }
+
+TEST_F(OpNonzeroTest, TensorsWithoutStrides) {
+  using executorch::runtime::etensor::TensorImpl;
+  TensorImpl::SizesType in_sizes[2] = {2, 2};
+  float in_data[4] = {2, 0, 2, 4};
+  TensorImpl in_impl(ScalarType::Float, 2, in_sizes, in_data);
+  TensorImpl::SizesType out_sizes[2] = {3, 2};
+  int64_t out_data[6] = {};
+  TensorImpl out_impl(ScalarType::Long, 2, out_sizes, out_data);
+  Tensor in(&in_impl);
+  Tensor out(&out_impl);
+
+  op_nonzero_out(in, out);
+  EXPECT_EQ(
+      std::vector<int64_t>(out_data, out_data + 6),
+      std::vector<int64_t>({0, 0, 1, 0, 1, 1}));
+}
 #endif
 
 TEST_F(OpNonzeroTest, ColumnMajorInput) {

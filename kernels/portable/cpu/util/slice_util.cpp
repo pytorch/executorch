@@ -16,6 +16,7 @@ namespace torch {
 namespace executor {
 
 using Tensor = executorch::aten::Tensor;
+using executorch::ET_RUNTIME_NAMESPACE::memoizeTrailingDims;
 using executorch::ET_RUNTIME_NAMESPACE::tensor_data_is_in_default_dim_order;
 
 bool check_narrow_copy_args(
@@ -192,13 +193,16 @@ void compute_slice(
   // channels-last tensor sliced along dim 0. Otherwise, as for the result of
   // nonzero or a channels-last tensor sliced along C, H or W, copy element by
   // element through the strides of both.
-  bool block_copy = in.dim_order() == out.dim_order();
-  for (const auto d : c10::irange(dim + 1)) {
-    block_copy = block_copy && in.dim_order()[d] == d;
+  // A tensor without strides holds its data in the default dim order.
+  const bool in_is_default = tensor_data_is_in_default_dim_order(in);
+  const bool out_is_default = tensor_data_is_in_default_dim_order(out);
+  bool block_copy = in_is_default && out_is_default;
+  if (!block_copy && in.dim_order() == out.dim_order()) {
+    block_copy = true;
+    for (const auto d : c10::irange(dim + 1)) {
+      block_copy = block_copy && in.dim_order()[d] == d;
+    }
   }
-  block_copy = block_copy ||
-      (tensor_data_is_in_default_dim_order(in) &&
-       tensor_data_is_in_default_dim_order(out));
   if (!block_copy) {
     // The loop walks out, so out must have the shape of the slice.
     bool out_is_slice = out.dim() == in.dim();
@@ -215,17 +219,27 @@ void compute_slice(
     const char* in_data = in.const_data_ptr<char>();
     char* out_data = out.mutable_data_ptr<char>();
     const size_t element_size = in.element_size();
+    size_t in_strides[kTensorDimensionLimit];
+    memoizeTrailingDims(in, in_strides);
+    if (!in_is_default) {
+      std::copy(in.strides().begin(), in.strides().end(), in_strides);
+    }
+    size_t out_strides[kTensorDimensionLimit];
+    memoizeTrailingDims(out, out_strides);
+    if (!out_is_default) {
+      std::copy(out.strides().begin(), out.strides().end(), out_strides);
+    }
     size_t coord[kTensorDimensionLimit];
     for (const auto i : c10::irange(out.numel())) {
       indexToCoordinate(out, i, coord);
       size_t out_index = 0;
       for (const auto d : c10::irange(out.dim())) {
-        out_index += coord[d] * out.strides()[d];
+        out_index += coord[d] * out_strides[d];
       }
       coord[dim] = start + coord[dim] * step;
       size_t in_index = 0;
       for (const auto d : c10::irange(in.dim())) {
-        in_index += coord[d] * in.strides()[d];
+        in_index += coord[d] * in_strides[d];
       }
       memcpy(
           out_data + out_index * element_size,
