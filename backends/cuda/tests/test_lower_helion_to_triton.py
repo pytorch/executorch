@@ -457,6 +457,26 @@ class LowerHelionToTritonTest(unittest.TestCase):
 
         self._export_and_run(Model(), x, (x + 1) - x * 2)
 
+    def test_padded_intermediate_export_and_cpp_runtime(self) -> None:
+        # The Helion argument is a 2-D intermediate with an unaligned row
+        # that a reduction also consumes: if Inductor pads its strides after
+        # the pass specialized the kernel to the exported strides, the
+        # result is silently wrong, so this must keep matching eager.
+        kernel = helion.kernel(
+            config=helion.Config(block_sizes=[256]), static_shapes=True
+        )(_add)
+        x = torch.randn(64, 1500, device="cuda")
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                y = x * 2
+                flat = y.reshape(-1)
+                return kernel(flat, flat) + y.sum()
+
+        y = x * 2
+        expected = y.reshape(-1) * 2 + y.sum()
+        self._export_and_run(Model(), x, expected, rtol=1e-3, atol=1e-3)
+
     def test_mutation_and_new_output_export_and_cpp_runtime(self) -> None:
         kernel = helion.kernel(
             config=helion.Config(block_sizes=[256]), static_shapes=True
@@ -600,7 +620,9 @@ class LowerHelionToTritonTest(unittest.TestCase):
                 return kernel(x.clone())
 
         program = torch.export.export(Model(), (x,), strict=True)
-        with self.assertRaisesRegex(NotImplementedError, "alias"):
+        with self.assertRaisesRegex(
+            NotImplementedError, "does not yet support aliased outputs"
+        ) as raised:
             to_edge_transform_and_lower(
                 program,
                 partitioner=[
@@ -609,6 +631,12 @@ class LowerHelionToTritonTest(unittest.TestCase):
                     )
                 ],
             )
+        notes = []
+        error = raised.exception
+        while error is not None:
+            notes.extend(getattr(error, "__notes__", []))
+            error = error.__cause__ or error.__context__
+        self.assertTrue(any("_increment_and_return" in note for note in notes))
 
     def test_rejects_capture_missing_private_field(self) -> None:
         kernel = helion.kernel(
