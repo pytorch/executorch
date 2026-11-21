@@ -659,7 +659,6 @@ std::optional<batching::Token> MuseGlimmerMLXExecutor::sample_row(
     int row,
     batching::SessionId session,
     batching::Position prediction_position,
-    std::vector<float>* probabilities,
     bool draft) {
   const auto it = sessions_.find(session);
   if (it == sessions_.end() || !it->second.sampling || row < 0 ||
@@ -675,18 +674,10 @@ std::optional<batching::Token> MuseGlimmerMLXExecutor::sample_row(
         })) {
       return std::nullopt;
     }
-    if (draft) {
+    if (draft || params.temperature == 0) {
       return muse_glimmer::argmax_index(values, spec_->vocab_size);
     }
-    std::vector<float> scratch;
-    auto& p = probabilities ? *probabilities : scratch;
-    if (params.temperature == 0) {
-      const auto token = muse_glimmer::argmax_index(values, spec_->vocab_size);
-      p.assign(spec_->vocab_size, 0.0f);
-      p[token] = 1.0f;
-      return token;
-    }
-    p = muse_glimmer::sampling_probabilities(
+    const auto p = muse_glimmer::sampling_probabilities(
         values,
         spec_->vocab_size,
         params.temperature,
@@ -879,8 +870,8 @@ bool MuseGlimmerMLXExecutor::draft(
         }
       } else {
         for (int j = 1; j < v; ++j) {
-          auto token = sample_row(
-              logits, i * b + j, owners[i], ends[i] + j, nullptr, true);
+          auto token =
+              sample_row(logits, i * b + j, owners[i], ends[i] + j, true);
           if (!token) {
             return false;
           }
@@ -903,7 +894,8 @@ bool MuseGlimmerMLXExecutor::draft(
 
 bool MuseGlimmerMLXExecutor::speculate(
     const batching::BatchInput& batch,
-    batching::BatchOutput& out) {
+    batching::BatchOutput& out,
+    bool input_anchors) {
   const int b = dflash_->verify_block;
   size_t cursor = 0;
   while (cursor < batch.inputs.size()) {
@@ -914,7 +906,8 @@ bool MuseGlimmerMLXExecutor::speculate(
     while (cursor < batch.inputs.size()) {
       const auto& input = batch.inputs[cursor];
       auto& state = sessions_.at(input.sid);
-      const int end = input.position + input.offset + input.size;
+      const int end = input.position + input.offset + input.size -
+          static_cast<int>(input_anchors);
       if (!out.outputs[cursor] || end != ctl_->pos(state.seq_id) ||
           end > spec_->max_context_length - dflash_->block) {
         ++cursor;
@@ -930,7 +923,10 @@ bool MuseGlimmerMLXExecutor::speculate(
       }
       context += count;
       owners.push_back(input.sid);
-      anchors.push_back(out.outputs[cursor]->tokens.front());
+      anchors.push_back(
+          input_anchors ? (*std::get<batching::TokenInputPtr>(
+                              input.payload))[input.offset]
+                        : out.outputs[cursor]->tokens.front());
       indices.push_back(cursor++);
     }
     if (owners.empty()) {
@@ -940,9 +936,8 @@ bool MuseGlimmerMLXExecutor::speculate(
     if (!draft(owners, anchors, dflash_->context, &verification)) {
       return false;
     }
-    Probabilities p(verification.inputs.size());
     batching::BatchOutput predictions;
-    if (!execute_impl(verification, predictions, &p)) {
+    if (!execute_impl(verification, predictions, true)) {
       return false;
     }
     for (size_t i = 0; i < owners.size(); ++i) {
@@ -951,28 +946,18 @@ bool MuseGlimmerMLXExecutor::speculate(
       const auto& input = verification.inputs[i * b];
       const auto& block = *std::get<batching::TokenInputPtr>(input.payload);
       for (int j = 0; j < b; ++j) {
-        auto& target = p[i * b + j];
+        const auto& prediction = predictions.outputs[i * b + j];
+        if (!prediction || prediction->tokens.size() != 1) {
+          return false;
+        }
+        const auto token = prediction->tokens.front();
         const int position = input.position + j + 1;
-        if (j + 1 < b) {
-          const auto proposal = block[j + 1];
-          auto rng = draw_rng(state.seed, position, 2);
-          if (muse_glimmer::accept_with_probability(rng, target[proposal])) {
-            output.push_back(proposal);
-            continue;
-          }
+        // For a greedy draft, matching a target draw accepts with p(proposal).
+        // Reuse its per-position RNG so batching/chunking cannot change draws.
+        output.push_back(token);
+        if (j + 1 < b && token == block[j + 1]) {
+          continue;
         }
-        auto rng = draw_rng(state.seed, position, j + 1 == b ? 4 : 3);
-        batching::Token correction;
-        if (state.sampling->temperature == 0) {
-          correction = muse_glimmer::argmax_index(target.data(), target.size());
-        } else if (j + 1 == b) {
-          correction = muse_glimmer::categorical_sample(
-              rng, target.data(), target.size());
-        } else {
-          correction = muse_glimmer::sample_excluding_token_in_place(
-              rng, target, block[j + 1]);
-        }
-        output.push_back(correction);
         // Leave the returned correction/bonus uncommitted.
         if (!rewind(state, position)) {
           return false;
@@ -987,13 +972,13 @@ bool MuseGlimmerMLXExecutor::speculate(
 bool MuseGlimmerMLXExecutor::execute(
     const batching::BatchInput& batch,
     batching::BatchOutput& out) {
-  return execute_impl(batch, out, nullptr);
+  return execute_impl(batch, out, false);
 }
 
 bool MuseGlimmerMLXExecutor::execute_impl(
     const batching::BatchInput& batch,
     batching::BatchOutput& out,
-    Probabilities* probabilities) {
+    bool verification) {
 #if ET_HAS_EXCEPTIONS
   try {
 #endif
@@ -1014,6 +999,42 @@ bool MuseGlimmerMLXExecutor::execute_impl(
     }
     batching::BatchOutput pending;
     pending.outputs.resize(batch.inputs.size());
+    // Verification can commit a single input token as the draft anchor.
+    if (dflash_ && !verification && !batch.inputs.empty()) {
+      std::vector<batching::SessionId> owners;
+      bool input_anchors = true;
+      for (const auto& input : batch.inputs) {
+        const auto& state = sessions_.at(input.sid);
+        const int start = input.position + input.offset;
+        // Older draft artifacts require at least one new context row.
+        if (!input.produce_output || input.size != 1 ||
+            !std::holds_alternative<batching::TokenInputPtr>(input.payload) ||
+            start != ctl_->pos(state.seq_id) || state.hidden.empty() ||
+            start > spec_->max_context_length - dflash_->block ||
+            std::find(owners.begin(), owners.end(), input.sid) !=
+                owners.end()) {
+          input_anchors = false;
+          break;
+        }
+        owners.push_back(input.sid);
+      }
+      if (input_anchors) {
+        for (size_t i = 0; i < batch.inputs.size(); ++i) {
+          pending.outputs[i] = batching::Output{batch.inputs[i].sid, {}};
+        }
+        if (!speculate(batch, pending, true) ||
+            std::any_of(
+                pending.outputs.begin(),
+                pending.outputs.end(),
+                [](const auto& output) {
+                  return !output || output->tokens.empty();
+                })) {
+          return false;
+        }
+        out = std::move(pending);
+        return true;
+      }
+    }
     size_t input_index = 0;
     size_t consumed = 0;
     while (input_index < batch.inputs.size()) {
@@ -1055,7 +1076,7 @@ bool MuseGlimmerMLXExecutor::execute_impl(
         selectors.push_back(n - 1);
       }
       const auto rows = static_cast<aten::SizesType>(selectors.size());
-      if (dflash_ && !probabilities) {
+      if (dflash_ && !verification) {
         for (const auto& slice : slices) {
           if (!drain(slice.sid)) {
             return false;
@@ -1119,12 +1140,8 @@ bool MuseGlimmerMLXExecutor::execute_impl(
         const auto& input = batch.inputs[index];
         const auto end = static_cast<batching::Position>(
             static_cast<int64_t>(input.position) + input.offset + input.size);
-        const auto token = sample_row(
-            logits,
-            static_cast<int>(row),
-            input.sid,
-            end,
-            probabilities ? &probabilities->at(index) : nullptr);
+        const auto token =
+            sample_row(logits, static_cast<int>(row), input.sid, end);
         if (!token) {
           return false;
         }
@@ -1132,7 +1149,7 @@ bool MuseGlimmerMLXExecutor::execute_impl(
         pending.outputs[index] = batching::Output{input.sid, {*token}};
       }
     }
-    if (dflash_ && !probabilities && !speculate(batch, pending)) {
+    if (dflash_ && !verification && !speculate(batch, pending)) {
       return false;
     }
     out = std::move(pending);

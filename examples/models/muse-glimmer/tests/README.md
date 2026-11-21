@@ -26,9 +26,11 @@ ctest --test-dir cmake-out/examples/models/muse-glimmer-batching \
 Random and quantized PTE fixtures compare draft numerics against eager references.
 Controlled rejection and cache-lifecycle checks assert expected tokens and
 acceptance counts; continuation checks compare with target-only execution,
-including legacy artifacts.
+including legacy artifacts. Seeded continuations are compared across
+prompt chunking and mixed prefill/decode batches for both draft formats.
 Routing-sensitive fixtures also compare per-round tokens and acceptance counts
 between solo and packed execution with unequal prompts and reordered owners.
+Input-sensitive continuations check shared-payload slices against target-only decoding.
 A vendored stateless official reference separately checks DFlash2 model semantics,
 including sliding-window boundaries. Native sampling checks target-only,
 original DFlash, and DFlash2 at temperature 0.8 with top-k/top-p filtering;
