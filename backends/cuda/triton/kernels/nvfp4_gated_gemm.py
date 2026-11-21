@@ -68,7 +68,7 @@ def _gate_up(
     nn = tl.cdiv(N // 2, BN // 2)
     first = (pid // (GROUP_M * nn)) * GROUP_M
     gm = tl.minimum(nm - first, GROUP_M)
-    m = (first + pid % gm) * BM + tl.arange(0, BM)
+    m = ((first + pid % gm) * BM + tl.arange(0, BM)).to(tl.int64)
     tile = (pid % (GROUP_M * nn)) // gm
     lane = tl.arange(0, BN)
     column = tile * (BN // 2) + lane % (BN // 2)
@@ -134,9 +134,9 @@ def _reduce_gate_up(
     BLOCK: tl.constexpr,
     ROW_PTS: tl.constexpr,
 ):
-    index = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
+    index = tl.program_id(0).to(tl.int64) * BLOCK + tl.arange(0, BLOCK)
     row, column = index // (N // 2), index % (N // 2)
-    mask = index < M * (N // 2)
+    mask = index < tl.cast(M, tl.int64) * (N // 2)
     split = tl.arange(0, SPLIT_K)
     offset = split[:, None].to(tl.int64) * M * N + row[None, :] * N + column[None, :]
     gate = tl.sum(tl.load(P + offset, mask[None, :], 0), 0)
@@ -150,9 +150,9 @@ def _reduce_gate_up(
 
 @triton.jit
 def _gate_up_epilogue(X, Y, M, N: tl.constexpr, BLOCK: tl.constexpr):
-    index = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
+    index = tl.program_id(0).to(tl.int64) * BLOCK + tl.arange(0, BLOCK)
     column, row = index % (N // 2), index // (N // 2)
-    mask = index < M * (N // 2)
+    mask = index < tl.cast(M, tl.int64) * (N // 2)
     gate = tl.load(X + row * N + column, mask, 0)
     up = tl.load(X + row * N + column + N // 2, mask, 0)
     tl.store(Y + index, _silu_mul(gate, up, Y.dtype.element_ty), mask)

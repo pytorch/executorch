@@ -52,10 +52,9 @@ class CudaNVFP4Tensor(TorchAOBaseTensor):
             requires_grad=False,
         )
         obj.qdata, obj.scale, obj.per_tensor_scale = qdata, scale, per_tensor_scale
-        obj.block_size, obj.orig_dtype, obj.act_per_tensor_scale = (
-            block_size,
-            orig_dtype,
-            act_per_tensor_scale,
+        obj.block_size, obj.orig_dtype = block_size, orig_dtype
+        obj.act_per_tensor_scale = (
+            None if act_per_tensor_scale is None else float(act_per_tensor_scale)
         )
         obj.unit_scale = unit_scale
         return obj

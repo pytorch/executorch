@@ -15,8 +15,16 @@ from executorch.backends.cuda.quantize_op_dispatch._gemm_family_dispatch import 
     can_launch_triton,
 )
 from executorch.backends.cuda.triton.kernels.nvfp4_output import (
+    NVFP4_DECODE_MAX_ROWS,
     nvfp4_prefill_fp32_enabled,
     nvfp4_prefill_output_dtype,
+)
+from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
+    SPLIT_K_CANDIDATES,
+)
+from executorch.backends.cuda.triton.kernels.nvfp4_tuning import nvfp4_launch_bench
+from executorch.backends.cuda.triton.kernels.quantized_gemm_family import (
+    _compile_every_candidate_at_once,
 )
 from torch.fx.experimental.symbolic_shapes import statically_known_true
 from torch.library import triton_op
@@ -26,14 +34,6 @@ from torch.library import triton_op
 def _has_native_fp4():
     return torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 12
 
-
-from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
-    SPLIT_K_CANDIDATES,
-)
-from executorch.backends.cuda.triton.kernels.nvfp4_tuning import nvfp4_launch_bench
-from executorch.backends.cuda.triton.kernels.quantized_gemm_family import (
-    _compile_every_candidate_at_once,
-)
 
 _MODE_STRIDE = 64
 _MODE_SPLITS = tuple(
@@ -234,7 +234,7 @@ def _linear(func, types, args, kwargs):
                     "Native NVFP4 W4A4 requires an SM120 or newer CUDA target"
                 )
             mode = "w4a16"
-        small = statically_known_true(flat.shape[0] <= 4)
+        small = statically_known_true(flat.shape[0] <= NVFP4_DECODE_MAX_ROWS)
         if mode == "w4a4":
             out = nvfp4_w4a4(
                 flat,

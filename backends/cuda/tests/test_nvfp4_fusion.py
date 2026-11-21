@@ -11,6 +11,7 @@ import pytest
 import torch
 import torch.nn.functional as F
 from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
+from executorch.backends.cuda.quantize_op_dispatch.nvfp4_dispatch import _has_native_fp4
 from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
     nvfp4_embedding,
     nvfp4_gemv,
@@ -18,6 +19,7 @@ from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
     nvfp4_w4a16,
     nvfp4_w4a4,
 )
+from executorch.export.utils import is_fbcode
 
 CUDA = pytest.mark.skipif(
     not torch.cuda.is_available() or torch.cuda.get_device_capability() < (8, 9),
@@ -77,8 +79,8 @@ def test_row_scale_gemv(m, split):
 @pytest.mark.parametrize("split", [1, 2, 4, 8, 16, 32])
 @pytest.mark.parametrize("mode", ["w4a4", "w4a16"])
 def test_row_scale_gemm(mode, split):
-    if mode == "w4a4" and torch.cuda.get_device_capability()[0] < 12:
-        pytest.skip("SM120 required")
+    if mode == "w4a4" and not _has_native_fp4():
+        pytest.skip("native FP4 required")
     k = 4224 if split == 32 else 2176
     w = CudaNVFP4Tensor.fuse_along_output(shards(k, "cuda"))
     x = torch.randn(17, k, device="cuda", dtype=torch.bfloat16)
@@ -120,8 +122,8 @@ class FusedLinear(torch.nn.Module):
 @CUDA
 @pytest.mark.parametrize("mode,m,dynamic", [("w4a16", 1, False), ("w4a4", 16, True)])
 def test_fused_row_scale_pte(mode, m, dynamic, monkeypatch):
-    if mode == "w4a4" and torch.cuda.get_device_capability()[0] < 12:
-        pytest.skip("SM120 required")
+    if mode == "w4a4" and not _has_native_fp4():
+        pytest.skip("native FP4 required")
     import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
     from executorch.backends.cuda.cuda_backend import CudaBackend
     from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
@@ -146,6 +148,9 @@ def test_fused_row_scale_pte(mode, m, dynamic, monkeypatch):
             lowered.write_to_file(output)
         lowered.write_tensor_data_to_file(folder)
         data = next(Path(folder).glob("*.ptd"))
+        if is_fbcode():
+            # The in-process runtime in fbcode has no CUDA backend.
+            return
         method = (
             Runtime.get()
             .load_program(str(path), data_path=str(data))

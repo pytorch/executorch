@@ -12,6 +12,7 @@ and 209.5 TFLOPS for BF16, at the nominal clock. Small cached weights may
 exceed DRAM bandwidth; these are effective throughput ratios, not hardware
 counter measurements.
 """
+
 import argparse
 import csv
 import json

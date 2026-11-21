@@ -27,6 +27,7 @@ from executorch.backends.cuda.triton.kernels.quantized_gemm_family import (
     _compile_every_candidate_at_once,
     _QUEUING_ONLY,
 )
+from torch._subclasses.fake_tensor import is_fake
 from torch.library import triton_op, wrap_triton
 
 SPLIT_K_CANDIDATES = (1, 2, 4, 8, 16, 32)
@@ -70,7 +71,7 @@ def _fp4(code):
 
 @triton.jit
 def _row_scale(X, G, M, K: tl.constexpr, STATIC: tl.constexpr, BK: tl.constexpr):
-    row = tl.program_id(0)
+    row = tl.program_id(0).to(tl.int64)
     k = tl.arange(0, BK)
     x = tl.load(X + row * K + k, k < K, 0).to(tl.float32)
     g = STATIC if STATIC > 0 else tl.max(tl.abs(x), 0) / (448.0 * 6.0)
@@ -79,7 +80,7 @@ def _row_scale(X, G, M, K: tl.constexpr, STATIC: tl.constexpr, BK: tl.constexpr)
 
 @triton.jit
 def _activation(X, G, Q, S, M, K: tl.constexpr, BG: tl.constexpr):
-    row = tl.program_id(0)
+    row = tl.program_id(0).to(tl.int64)
     group = tl.program_id(1) * BG + tl.arange(0, BG)
     k = group[:, None] * 16 + tl.arange(0, 16)[None, :]
     x = tl.load(X + row * K + k, k < K, 0).to(tl.float32)
@@ -126,7 +127,7 @@ def _fused_activation(
 ):
     # One row load supplies both global amax and K16 scales. The native
     # conversion packs two E2M1 values in one instruction, low nibble first.
-    row = tl.program_id(0)
+    row = tl.program_id(0).to(tl.int64)
     group = tl.arange(0, BK // 16)
     idx = group[:, None] * 16 + tl.arange(0, 16)[None, :]
     x = tl.load(X + row * K + idx, idx < K, 0).to(tl.float32)
@@ -346,7 +347,7 @@ def _w4a4(
     nn = tl.cdiv(N, BN)
     first = (pid // (GROUP_M * nn)) * GROUP_M
     gm = tl.minimum(nm - first, GROUP_M)
-    m = (first + pid % gm) * BM + tl.arange(0, BM)
+    m = ((first + pid % gm) * BM + tl.arange(0, BM)).to(tl.int64)
     n = ((pid % (GROUP_M * nn)) // gm) * BN + tl.arange(0, BN)
     kp = tl.arange(0, BK // 2)
     sp = tl.arange(0, BK // 16)
@@ -538,7 +539,7 @@ def _gemv_half2(
     UNIT_SCALE: tl.constexpr = False,
 ):
     n = tl.program_id(0) * BN + tl.arange(0, BN)
-    m = tl.program_id(1)
+    m = tl.program_id(1).to(tl.int64)
     split = tl.program_id(2)
     chunk: tl.constexpr = tl.cdiv(K, BK * SPLIT) * BK
     pair = split * (chunk // 2) + tl.arange(0, BK // 2)
@@ -619,7 +620,7 @@ def _gemv_original(
     UNIT_SCALE: tl.constexpr = False,
 ):
     n = tl.program_id(0) * BN + tl.arange(0, BN)
-    m = tl.program_id(1)
+    m = tl.program_id(1).to(tl.int64)
     split = tl.program_id(2)
     chunk: tl.constexpr = tl.cdiv(K, BK * SPLIT) * BK
     pair = split * (chunk // 2) + tl.arange(0, BK // 2)
@@ -816,7 +817,7 @@ def _w4a16_original(
     nn = tl.cdiv(N, BN)
     first = (pid // (GROUP_M * nn)) * GROUP_M
     gm = tl.minimum(nm - first, GROUP_M)
-    m = (first + pid % gm) * BM + tl.arange(0, BM)
+    m = ((first + pid % gm) * BM + tl.arange(0, BM)).to(tl.int64)
     n = ((pid % (GROUP_M * nn)) // gm) * BN + tl.arange(0, BN)
     k = tl.arange(0, BK)
     acc = tl.zeros((BM, BN), tl.float32)
@@ -870,7 +871,7 @@ def _w4a16_paired(
     nm, nn = tl.cdiv(M, BM), tl.cdiv(N, BN)
     first = (pid // (GROUP_M * nn)) * GROUP_M
     gm = tl.minimum(nm - first, GROUP_M)
-    m = (first + pid % gm) * BM + tl.arange(0, BM)
+    m = ((first + pid % gm) * BM + tl.arange(0, BM)).to(tl.int64)
     n = ((pid % (GROUP_M * nn)) // gm) * BN + tl.arange(0, BN)
     ki = tl.arange(0, BK)
     pi = tl.arange(0, BK // 2)
@@ -965,12 +966,13 @@ def _w4a16(
 
 
 def _launch_w4a16_impl(x, qdata, scale, pts, *, split_k, output_dtype=None):
+    output_dtype = output_dtype or x.dtype
     if x.dtype == torch.float32:
         x = x.to(torch.bfloat16)
     m, k = x.shape
     n = qdata.shape[0]
     _check_split(k, split_k, m=m, n=n)
-    out = torch.empty((m, n), device=x.device, dtype=output_dtype or x.dtype)
+    out = torch.empty((m, n), device=x.device, dtype=output_dtype)
     partial = (
         torch.empty((split_k, m, n), device=x.device, dtype=torch.float32)
         if split_k > 1
@@ -1030,15 +1032,29 @@ def nvfp4_w4a16(
 
 @triton.jit
 def _embedding(
-    I, Q, S, PTS, Y, T, K: tl.constexpr, BK: tl.constexpr, ROW_PTS: tl.constexpr = False
+    I,
+    Q,
+    S,
+    PTS,
+    Y,
+    T,
+    V,
+    K: tl.constexpr,
+    BK: tl.constexpr,
+    ROW_PTS: tl.constexpr = False,
 ):
-    t = tl.program_id(0)
+    t = tl.program_id(0).to(tl.int64)
     k = tl.program_id(1) * BK + tl.arange(0, BK)
-    n = tl.load(I + t)
-    q = tl.load(Q + n * (K // 2) + k // 2, k < K, 0)
+    n = tl.load(I + t).to(tl.int64)
+    # Out-of-range ids are rejected on the host in eager mode; never read
+    # outside the table for them.
+    valid = (n >= 0) & (n < V)
+    n = tl.where(valid, n, 0)
+    mask = (k < K) & valid
+    q = tl.load(Q + n * (K // 2) + k // 2, mask, 0)
     c = (q >> ((k & 1) * 4)) & 15
     s = (
-        tl.load(S + n * (K // 16) + k // 16, k < K, 0)
+        tl.load(S + n * (K // 16) + k // 16, mask, 0)
         .to(tl.float8e4nv, bitcast=True)
         .to(tl.float32)
     )
@@ -1055,7 +1071,15 @@ def nvfp4_embedding(
     per_tensor_scale: torch.Tensor,
     output_dtype: torch.dtype,
 ) -> torch.Tensor:
-    k = qdata.shape[1] * 2
+    v, k = qdata.shape[0], qdata.shape[1] * 2
+    if (
+        indices.numel()
+        and not is_fake(indices)
+        and not torch.cuda.is_current_stream_capturing()
+        and bool(((indices < 0) | (indices >= v)).any())
+    ):
+        raise IndexError(f"NVFP4 embedding index out of range for {v} rows")
+    indices = indices.contiguous()
     out = torch.empty((*indices.shape, k), device=qdata.device, dtype=output_dtype)
     wrap_triton(_embedding)[(indices.numel(), triton.cdiv(k, 256))](
         indices,
@@ -1064,6 +1088,7 @@ def nvfp4_embedding(
         per_tensor_scale,
         out,
         indices.numel(),
+        v,
         k,
         256,
         ROW_PTS=per_tensor_scale.numel() != 1,
