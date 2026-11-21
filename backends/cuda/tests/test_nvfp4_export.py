@@ -15,11 +15,15 @@ import torch.nn.functional as F
 from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
-from executorch.backends.cuda.quantize_op_dispatch.nvfp4_dispatch import _MODE_STRIDE
+from executorch.backends.cuda.quantize_op_dispatch.nvfp4_dispatch import (
+    _has_native_fp4,
+    _MODE_STRIDE,
+)
 from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
     nvfp4_quantize_activation,
 )
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
+from executorch.export.utils import is_fbcode
 from executorch.runtime import Runtime
 
 pytestmark = pytest.mark.skipif(
@@ -46,8 +50,8 @@ class PackedLinear(torch.nn.Module):
     [("w4a16", 1, False), ("w4a4", 16, False), ("auto", 1, False), ("auto", 16, True)],
 )
 def test_packed_linear_pte(mode, m, dynamic, monkeypatch):
-    if mode != "w4a16" and torch.cuda.get_device_capability()[0] < 12:
-        pytest.skip("SM120 required")
+    if mode != "w4a16" and not _has_native_fp4():
+        pytest.skip("native FP4 required")
     monkeypatch.setenv("ET_CUDA_NVFP4_ACT", mode)
     import executorch.backends.cuda.cuda_backend as cuda_backend
     from executorch.backends.cuda.triton.kernels import nvfp4_tuning
@@ -121,6 +125,9 @@ def test_packed_linear_pte(mode, m, dynamic, monkeypatch):
             lowered.write_to_file(f)
         lowered.write_tensor_data_to_file(tmp)
         data = next(Path(tmp).glob("*.ptd"))
+        if is_fbcode():
+            # The in-process runtime in fbcode has no CUDA backend.
+            return
         runtime = Runtime.get().load_program(str(path), data_path=str(data))
         method = runtime.load_method("forward")
         actual = method.execute([x])[0].clone()

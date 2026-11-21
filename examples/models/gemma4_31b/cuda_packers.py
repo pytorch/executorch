@@ -68,7 +68,12 @@ def pack_linear_for_cuda(module: nn.Module, weights: dict[str, torch.Tensor]) ->
 
     w = weights["weight"]
     if isinstance(w, ExportableGGUFTensor) and w.ggml_type == "nvfp4":
-        w = w.to_exportable_nvfp4_tensor(output_dtype=torch.bfloat16)
+        # The per-tensor scale is a separate GGUF ".scale" tensor; the loader
+        # pairs it by name and calls to_exportable_nvfp4_tensor itself.
+        raise ValueError(
+            "GGUF NVFP4 weights need their .scale tensor: convert them with "
+            "to_exportable_nvfp4_tensor(per_tensor_scale) before packing"
+        )
     if isinstance(w, ExportableNVFP4Tensor):
         module.weight = nn.Parameter(
             CudaNVFP4Tensor.from_exportable(w), requires_grad=False
@@ -138,7 +143,12 @@ def pack_embedding_for_cuda(
 
     w = weights["weight"]
     if isinstance(w, ExportableGGUFTensor) and w.ggml_type == "nvfp4":
-        w = w.to_exportable_nvfp4_tensor(output_dtype=torch.bfloat16)
+        # The per-tensor scale is a separate GGUF ".scale" tensor; the loader
+        # pairs it by name and calls to_exportable_nvfp4_tensor itself.
+        raise ValueError(
+            "GGUF NVFP4 weights need their .scale tensor: convert them with "
+            "to_exportable_nvfp4_tensor(per_tensor_scale) before packing"
+        )
     if isinstance(w, ExportableNVFP4Tensor):
         module.weight = nn.Parameter(
             CudaNVFP4Tensor.from_exportable(w), requires_grad=False

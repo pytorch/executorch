@@ -16,20 +16,24 @@ import torch
 from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
-from executorch.backends.cuda.quantize_op_dispatch.nvfp4_dispatch import _MODE_STRIDE
+from executorch.backends.cuda.quantize_op_dispatch.nvfp4_dispatch import (
+    _has_native_fp4,
+    _MODE_STRIDE,
+)
 from executorch.backends.cuda.tests.test_nvfp4_export import PackedLinear
 from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
     nvfp4_quantize_activation,
 )
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
+from executorch.export.utils import is_fbcode
 from executorch.runtime import Runtime
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
 @pytest.mark.parametrize("mode", ["auto", "w4a4"])
 def test_prefill_4096_keeps_compiled_mode_for_dynamic_m(mode, monkeypatch):
-    if torch.cuda.get_device_capability()[0] < 12:
-        pytest.skip("SM120 required")
+    if not _has_native_fp4():
+        pytest.skip("native FP4 required")
     previous = os.environ.get("ET_CUDA_NVFP4_ACT")
     os.environ["ET_CUDA_NVFP4_ACT"] = mode
     original_context = cuda_backend.autotune_launch_params
@@ -72,6 +76,9 @@ def test_prefill_4096_keeps_compiled_mode_for_dynamic_m(mode, monkeypatch):
                 lowered.write_to_file(stream)
             lowered.write_tensor_data_to_file(tmp)
             data = next(Path(tmp).glob("*.ptd"))
+            if is_fbcode():
+                # The in-process runtime in fbcode has no CUDA backend.
+                return
             method = (
                 Runtime.get()
                 .load_program(str(path), data_path=str(data))

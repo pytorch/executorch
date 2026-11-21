@@ -11,6 +11,8 @@ on:
       - backends/cuda/**/*
       - extension/cuda/**/*
       - install_utils.py
+      - install_requirements.py
+      - torch_pin.py
       - pyproject.toml
       - setup.py
       - docs/source/using-executorch-cpp.md

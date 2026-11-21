@@ -12,8 +12,9 @@ import pytest
 import torch
 import torch.nn.functional as F
 from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
+from executorch.backends.cuda.quantize_op_dispatch.nvfp4_dispatch import _has_native_fp4
 from executorch.backends.cuda.tests.nvfp4_test_utils import portable_weight as weight
-
+from executorch.export.utils import is_fbcode
 
 CUDA = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
 
@@ -24,8 +25,8 @@ CUDA = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
 @pytest.mark.parametrize("row_pts", [False, True])
 @pytest.mark.parametrize("split", [1, 2, 4, 8, 16, 32])
 def test_unit_scale_gemv_bitwise_same_tile(dtype, half2, row_pts, split):
-    if torch.cuda.get_device_capability()[0] < 12:
-        pytest.skip("SM120 required")
+    if not _has_native_fp4():
+        pytest.skip("native FP4 required")
     from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import _gemv
 
     torch.manual_seed(17)
@@ -82,8 +83,8 @@ class UnitLinear(torch.nn.Module):
 @CUDA
 @pytest.mark.parametrize("mode", ["auto", "w4a16"])
 def test_unit_scale_linear_pte(mode, monkeypatch):
-    if torch.cuda.get_device_capability()[0] < 12:
-        pytest.skip("SM120 required")
+    if not _has_native_fp4():
+        pytest.skip("native FP4 required")
     import executorch.backends.cuda.cuda_backend as cuda_backend
     import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
     from executorch.backends.cuda.cuda_backend import CudaBackend
@@ -128,6 +129,9 @@ def test_unit_scale_linear_pte(mode, monkeypatch):
             lowered.write_to_file(output)
         lowered.write_tensor_data_to_file(folder)
         data = next(Path(folder).glob("*.ptd"))
+        if is_fbcode():
+            # The in-process runtime in fbcode has no CUDA backend.
+            return
         method = (
             Runtime.get()
             .load_program(str(pte), data_path=str(data))

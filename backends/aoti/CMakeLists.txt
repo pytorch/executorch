@@ -26,6 +26,37 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 find_package_torch()
 
 # ==============================================================================
+# Writes a compiled AOTI library to a new private temporary file, for every AOTI
+# backend that loads that library by path
+# ==============================================================================
+add_library(aoti_temp_library STATIC temp_library.cpp)
+target_include_directories(
+  aoti_temp_library
+  PUBLIC $<BUILD_INTERFACE:${EXECUTORCH_ROOT}> $<INSTALL_INTERFACE:include>
+         $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
+)
+target_compile_options(
+  aoti_temp_library
+  PRIVATE
+    $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:MSVC>>:/EHsc>
+    $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<NOT:$<CXX_COMPILER_ID:MSVC>>>:-fexceptions
+    -fPIC>
+)
+# Same choice as cuda_platform: a shared library that links this one must reach
+# the runtime that ships beside it, or the process gets two platform layers.
+if(EXECUTORCH_BUILD_SHARED)
+  target_link_libraries(aoti_temp_library PRIVATE executorch_shared)
+else()
+  target_link_libraries(aoti_temp_library PRIVATE executorch_core)
+endif()
+
+install(
+  TARGETS aoti_temp_library
+  EXPORT ExecuTorchTargets
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
+
+# ==============================================================================
 # AOTI common shims using ETensor (for Metal backend)
 # TODO(gasoonjia): Remove this after metal migration
 # ==============================================================================
