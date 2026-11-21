@@ -23,12 +23,12 @@ from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
     nvfp4_quantize_activation,
 )
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
-from executorch.export.utils import is_fbcode
-from executorch.runtime import Runtime
 
 pytestmark = pytest.mark.skipif(
-    not torch.cuda.is_available() or torch.cuda.get_device_capability() < (8, 9),
-    reason="CUDA with native E4M3 (SM89+) required",
+    not torch.cuda.is_available()
+    or torch.version.hip is not None
+    or torch.cuda.get_device_capability() < (8, 9),
+    reason="NVIDIA CUDA with native E4M3 (SM89+) required",
 )
 
 
@@ -54,22 +54,22 @@ def test_packed_linear_pte(mode, m, dynamic, monkeypatch):
         pytest.skip("native FP4 required")
     monkeypatch.setenv("ET_CUDA_NVFP4_ACT", mode)
     import executorch.backends.cuda.cuda_backend as cuda_backend
-    from executorch.backends.cuda.triton.kernels import nvfp4_tuning
+    from executorch.backends.cuda.triton.kernels import quantized_gemm_utils
 
     original_context = cuda_backend.autotune_launch_params
     observed_picks = []
     config_graph_timings = []
-    original_config_timing = nvfp4_tuning.time_with_cuda_graph_us_counted
+    original_config_timing = quantized_gemm_utils.time_with_cuda_graph_us_counted
 
     def capture_config_timing(kernel_call, **kwargs):
         assert kwargs == {"statistic": "mean", "replays": 3}
         result = original_config_timing(kernel_call, **kwargs)
-        if nvfp4_tuning.graph_timing_active():
+        if quantized_gemm_utils.graph_timing_active():
             config_graph_timings.append(result)
         return result
 
     monkeypatch.setattr(
-        nvfp4_tuning,
+        quantized_gemm_utils,
         "time_with_cuda_graph_us_counted",
         capture_config_timing,
     )
@@ -125,9 +125,13 @@ def test_packed_linear_pte(mode, m, dynamic, monkeypatch):
             lowered.write_to_file(f)
         lowered.write_tensor_data_to_file(tmp)
         data = next(Path(tmp).glob("*.ptd"))
+        from executorch.export.utils import is_fbcode
+
         if is_fbcode():
             # The in-process runtime in fbcode has no CUDA backend.
             return
+        from executorch.runtime import Runtime
+
         runtime = Runtime.get().load_program(str(path), data_path=str(data))
         method = runtime.load_method("forward")
         actual = method.execute([x])[0].clone()

@@ -19,15 +19,30 @@ from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
     nvfp4_w4a16,
     nvfp4_w4a4,
 )
-from executorch.export.utils import is_fbcode
 
 CUDA = pytest.mark.skipif(
-    not torch.cuda.is_available() or torch.cuda.get_device_capability() < (8, 9),
-    reason="CUDA with native E4M3 (SM89+) required",
+    not torch.cuda.is_available()
+    or torch.version.hip is not None
+    or torch.cuda.get_device_capability() < (8, 9),
+    reason="NVIDIA CUDA with native E4M3 (SM89+) required",
 )
 
 
 from executorch.backends.cuda.tests.nvfp4_test_utils import shards
+
+
+def test_cpu_fallback_matches_dequantized_weight(monkeypatch):
+    import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
+
+    w = CudaNVFP4Tensor.fuse_along_output(shards(192))
+    ids = torch.tensor([[0, 40], [96, 5]])
+    assert torch.equal(F.embedding(ids, w), F.embedding(ids, w.dequantize()))
+    x = torch.randn(5, 192, dtype=torch.bfloat16)
+    assert torch.equal(F.linear(x, w), F.linear(x, w.dequantize()))
+    monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_OUTPUT", "fp32")
+    out = F.linear(x, w)
+    assert out.dtype == torch.float32
+    assert torch.equal(out, F.linear(x.float(), w.dequantize(torch.float32)))
 
 
 @pytest.mark.parametrize("positional", [False, True])
@@ -148,6 +163,8 @@ def test_fused_row_scale_pte(mode, m, dynamic, monkeypatch):
             lowered.write_to_file(output)
         lowered.write_tensor_data_to_file(folder)
         data = next(Path(folder).glob("*.ptd"))
+        from executorch.export.utils import is_fbcode
+
         if is_fbcode():
             # The in-process runtime in fbcode has no CUDA backend.
             return

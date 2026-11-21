@@ -57,6 +57,16 @@ def _check_split(k, split_k, *, m=None, n=None):
         _check_split_workspace(split_k, m, n)
 
 
+def _check_operands(x, qdata, scale):
+    k = x.shape[-1]
+    if qdata.shape[-1] * 2 != k or scale.shape[-1] * 16 != k:
+        raise ValueError(
+            f"NVFP4 weight K ({qdata.shape[-1] * 2}) must match activation K ({k})"
+        )
+    if not (x.is_contiguous() and qdata.is_contiguous() and scale.is_contiguous()):
+        raise ValueError("NVFP4 activation and weight tensors must be contiguous")
+
+
 @triton.jit
 def _fp4(code):
     mag = code & 7
@@ -66,7 +76,9 @@ def _fp4(code):
         (((mag >> 1).to(tl.int32) + 126) << 23).to(tl.float32, bitcast=True)
         * (1.0 + (mag & 1).to(tl.float32) * 0.5),
     )
-    return tl.where((code & 8) != 0, -val, val)
+    # OR the sign bit in: float negation of +0 does not yield -0 here.
+    sign = (code & 8).to(tl.uint32) << 28
+    return (val.to(tl.uint32, bitcast=True) | sign).to(tl.float32, bitcast=True)
 
 
 @triton.jit
@@ -113,7 +125,11 @@ def _activation(X, G, Q, S, M, K: tl.constexpr, BG: tl.constexpr):
 
 @torch._dynamo.assume_constant_result
 def _has_native_fp4_conversion():
-    return torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 12
+    return (
+        torch.cuda.is_available()
+        and torch.version.hip is None
+        and torch.cuda.get_device_capability()[0] >= 12
+    )
 
 
 @triton.autotune(
@@ -167,6 +183,8 @@ def nvfp4_quantize_activation(
     m, k = x.shape
     if k % 16:
         raise ValueError("NVFP4 activation K must be divisible by 16")
+    if not x.is_contiguous():
+        raise ValueError("NVFP4 activation must be contiguous")
     q = torch.empty((m, k // 2), device=x.device, dtype=torch.uint8)
     s = torch.empty((m, k // 16), device=x.device, dtype=torch.uint8)
     g = torch.empty((m,), device=x.device, dtype=torch.float32)
@@ -348,7 +366,7 @@ def _w4a4(
     first = (pid // (GROUP_M * nn)) * GROUP_M
     gm = tl.minimum(nm - first, GROUP_M)
     m = ((first + pid % gm) * BM + tl.arange(0, BM)).to(tl.int64)
-    n = ((pid % (GROUP_M * nn)) // gm) * BN + tl.arange(0, BN)
+    n = (((pid % (GROUP_M * nn)) // gm) * BN + tl.arange(0, BN)).to(tl.int64)
     kp = tl.arange(0, BK // 2)
     sp = tl.arange(0, BK // 16)
     acc = tl.zeros((BM, BN), tl.float32)
@@ -437,10 +455,10 @@ def _launch_w4a4_impl(
         if split_k > 1
         else out
     )
-    grid = lambda meta: (
-        triton.cdiv(m, meta["BM"]) * triton.cdiv(n, meta["BN"]),
-        split_k,
-    )
+
+    def grid(meta):
+        return (triton.cdiv(m, meta["BM"]) * triton.cdiv(n, meta["BN"]), split_k)
+
     launch_nvfp4_kernel(
         _w4a4,
         grid,
@@ -482,6 +500,9 @@ def nvfp4_w4a4(
     split_k: int = -1,
     output_dtype: torch.dtype | None = None,
 ) -> torch.Tensor:
+    _check_operands(x, qdata, scale)
+    if not _has_native_fp4_conversion():
+        raise RuntimeError("Native NVFP4 W4A4 requires an SM120 or newer CUDA target")
     launch = _launch_w4a4 if split_k < 0 else _launch_w4a4_impl
     kwargs = {} if split_k < 0 else {"split_k": split_k}
     if output_dtype is not None:
@@ -734,7 +755,10 @@ def _launch_gemv_impl(x, qdata, scale, pts, unit_scale=False, *, split_k):
         if split_k > 1
         else out
     )
-    grid = lambda meta: (triton.cdiv(n, meta["BN"]), m, split_k)
+
+    def grid(meta):
+        return (triton.cdiv(n, meta["BN"]), m, split_k)
+
     launch_nvfp4_kernel(
         _gemv,
         grid,
@@ -787,6 +811,13 @@ def nvfp4_gemv(
     split_k: int = -1,
     unit_scale: bool = False,
 ) -> torch.Tensor:
+    """NVFP4 GEMV for small M; the output keeps ``x.dtype``.
+
+    ``unit_scale=True`` skips the global scale and requires the
+    ``CudaNVFP4Tensor.unit_scale`` contract (global scale 1, scale bytes below
+    0x7F); it is not checked here.
+    """
+    _check_operands(x, qdata, scale)
     if split_k < 0:
         return _launch_gemv(x, qdata, scale, per_tensor_scale, unit_scale)
     return _launch_gemv_impl(
@@ -966,22 +997,22 @@ def _w4a16(
 
 
 def _launch_w4a16_impl(x, qdata, scale, pts, *, split_k, output_dtype=None):
-    output_dtype = output_dtype or x.dtype
-    if x.dtype == torch.float32:
-        x = x.to(torch.bfloat16)
     m, k = x.shape
     n = qdata.shape[0]
     _check_split(k, split_k, m=m, n=n)
+    output_dtype = output_dtype or x.dtype
+    if x.dtype == torch.float32:
+        x = x.to(torch.bfloat16)
     out = torch.empty((m, n), device=x.device, dtype=output_dtype)
     partial = (
         torch.empty((split_k, m, n), device=x.device, dtype=torch.float32)
         if split_k > 1
         else out
     )
-    grid = lambda meta: (
-        triton.cdiv(m, meta["BM"]) * triton.cdiv(n, meta["BN"]),
-        split_k,
-    )
+
+    def grid(meta):
+        return (triton.cdiv(m, meta["BM"]) * triton.cdiv(n, meta["BN"]), split_k)
+
     launch_nvfp4_kernel(
         _w4a16,
         grid,
@@ -1023,6 +1054,7 @@ def nvfp4_w4a16(
     split_k: int = -1,
     output_dtype: torch.dtype | None = None,
 ) -> torch.Tensor:
+    _check_operands(x, qdata, scale)
     launch = _launch_w4a16 if split_k < 0 else _launch_w4a16_impl
     kwargs = {} if split_k < 0 else {"split_k": split_k}
     if output_dtype is not None:
@@ -1071,6 +1103,8 @@ def nvfp4_embedding(
     per_tensor_scale: torch.Tensor,
     output_dtype: torch.dtype,
 ) -> torch.Tensor:
+    """Eager calls reject out-of-range ids; compiled graphs do not validate
+    them and return zero rows instead."""
     v, k = qdata.shape[0], qdata.shape[1] * 2
     if (
         indices.numel()
