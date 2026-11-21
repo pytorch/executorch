@@ -8,6 +8,8 @@ Packed weights use low nibble first. Scales remain N-major; dot_scaled's
 lowering owns the architecture-specific scale operand layout.
 """
 
+import math
+
 import torch
 import triton
 import triton.language as tl
@@ -226,8 +228,10 @@ def nvfp4_quantize_activation(
         raise ValueError("NVFP4 activation K must be divisible by 16")
     if not x.is_contiguous():
         raise ValueError("NVFP4 activation must be contiguous")
-    if not static_scale >= 0:
-        raise ValueError("NVFP4 static activation scale must be >= 0 (0 = dynamic)")
+    if not (math.isfinite(static_scale) and static_scale >= 0):
+        raise ValueError(
+            "NVFP4 static activation scale must be finite and >= 0 (0 = dynamic)"
+        )
     q = torch.empty((m, k // 2), device=x.device, dtype=torch.uint8)
     s = torch.empty((m, k // 16), device=x.device, dtype=torch.uint8)
     g = torch.empty((m,), device=x.device, dtype=torch.float32)

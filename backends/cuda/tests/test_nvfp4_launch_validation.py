@@ -11,6 +11,7 @@ import triton
 import triton.language as tl
 
 from executorch.backends.cuda.autotune.launch_params import InvalidLaunchParam
+from executorch.backends.cuda.tests.nvfp4_test_utils import dynamic_rows
 from executorch.backends.cuda.triton.kernels import nvfp4_quantized_gemm as kernels
 
 
@@ -57,7 +58,7 @@ def test_w4a4_rejects_malformed_operands(invalid):
         kernels.nvfp4_w4a4(x, q, s, pts)
 
 
-@pytest.mark.parametrize("static", [-1.0, float("nan")])
+@pytest.mark.parametrize("static", [-1.0, float("nan"), float("inf")])
 def test_activation_rejects_invalid_static_scale(static):
     with pytest.raises(ValueError, match="static activation scale"):
         kernels.nvfp4_quantize_activation(torch.empty((2, 16)), static)
@@ -77,28 +78,6 @@ def test_split_workspace_boundary():
         kernels._check_split_workspace(2, 2, 4)
         with pytest.raises(InvalidLaunchParam, match="96 workspace bytes"):
             kernels._check_split_workspace(2, 3, 4)
-
-
-def dynamic_rows(mode, tensor, upper):
-    """``tensor`` as a fake tensor whose dim 0 is dynamic, bounded by ``upper``
-    (None: unbounded)."""
-    from torch.fx.experimental.symbolic_shapes import (
-        DimDynamic,
-        StatelessSymbolicContext,
-        StrictMinMaxConstraint,
-    )
-    from torch.utils._sympy.value_ranges import ValueRanges
-
-    constraint = (
-        None
-        if upper is None
-        else StrictMinMaxConstraint(vr=ValueRanges(1, upper), warn_only=False)
-    )
-    context = StatelessSymbolicContext(
-        dynamic_sizes=[DimDynamic.DYNAMIC] + [DimDynamic.STATIC] * (tensor.ndim - 1),
-        constraint_sizes=[constraint] + [None] * (tensor.ndim - 1),
-    )
-    return mode.from_tensor(tensor, symbolic_context=context)
 
 
 def test_split_workspace_uses_dynamic_m_upper_bound():
