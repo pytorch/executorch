@@ -181,6 +181,16 @@ for entry in json.load(open(sys.argv[1])):
 ' "${build_dir}/espnn-tests/manifest.json")
 
 if [[ "${espnn_kernels}" == optimized ]]; then
+    esp_python_dir=$(python -c 'import executorch.backends.espressif as esp; print(next(iter(esp.__path__)))')
+    logged "scratch-configure.log" cmake -S . \
+        -B "${build_dir}/scratch-sizing" -DCMAKE_BUILD_TYPE=Release \
+        -DEXECUTORCH_BUILD_ESP_NN_PYBINDS=ON -DEXECUTORCH_OPTIMIZE_SIZE=ON \
+        -DESPNN_LOCAL_PATH="${PWD}/examples/espressif/project/managed_components/espressif__esp-nn" \
+        -DCMAKE_LIBRARY_OUTPUT_DIRECTORY="${esp_python_dir}"
+    logged "scratch-build.log" cmake --build "${build_dir}/scratch-sizing" \
+        --target _esp_nn_scratch
+    logged "scratch-tests.log" env EXECUTORCH_REQUIRE_ESP_NN_SCRATCH=1 \
+        python -m pytest -q backends/espressif/test/test_scratch.py
     # Stop on failure so later cases cannot overwrite its firmware and logs.
     ESPRESSIF_BUILD_DIR="${build_dir}" python -m pytest \
         -x -v --tb=short backends/espressif/test/ops -k implementation \
