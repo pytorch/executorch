@@ -221,6 +221,7 @@ fbcode_target(
         "triton/kernels/conv/routing.py",
         "triton/kernels/fused_moe.py",
         "triton/kernels/int4_quantized_gemm.py",
+        "triton/kernels/int4_w4a8_prefill_gemm.py",
         "triton/kernels/int5_quantized_gemm.py",
         "triton/kernels/int6_quantized_gemm.py",
         "triton/kernels/int8_quantized_gemm.py",

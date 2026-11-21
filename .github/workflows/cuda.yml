@@ -543,6 +543,7 @@ jobs:
           backends/cuda/tests/test_int4_matmul.py
           backends/cuda/tests/test_int5_large_quantized_gemm.py
           backends/cuda/tests/test_quantized_gemm_family.py
+          backends/cuda/tests/test_int4_w4a8_prefill_gemm.py
           backends/cuda/tests/test_fused_moe.py
           backends/cuda/tests/test_fused_deltanet_decode.py
           backends/cuda/tests/test_chunk_gated_delta_rule.py
