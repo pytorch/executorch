@@ -35,10 +35,9 @@ export HF_TOKEN
 
 read -r TORCH_VERSION TORCHAO_VERSION < <(
   python - <<'PY'
-from install_requirements import ROCM_TORCHAO_NIGHTLY_VERSION
-from torch_pin import TORCH_VERSION
+from install_requirements import ROCM_TORCH_VERSION, ROCM_TORCHAO_NIGHTLY_VERSION
 
-print(TORCH_VERSION, ROCM_TORCHAO_NIGHTLY_VERSION)
+print(ROCM_TORCH_VERSION, ROCM_TORCHAO_NIGHTLY_VERSION)
 PY
 )
 # TorchAO ROCm wheels are not exposed by the per-version pip index.
@@ -69,12 +68,10 @@ if ! command -v conda >/dev/null; then
   echo "The ROCm CI image must provide conda for its runtime libraries"
   exit 1
 fi
-conda install -y -c conda-forge ffmpeg 'libstdcxx-ng>=12'
+conda install -y -c conda-forge 'libstdcxx-ng>=12'
 
 python -m pip install 'fsspec[http]<=2025.3.0'
-python -m pip install datasets huggingface_hub librosa mistral-common safetensors soundfile
-python -m pip install torchcodec==0.11.0 \
-  --extra-index-url https://download.pytorch.org/whl/test/cpu
+python -m pip install datasets huggingface_hub mistral-common safetensors soundfile
 
 python - <<'PY'
 import os
@@ -124,15 +121,17 @@ snapshot_download(
 PY
 
 python - "${VOXTRAL_AUDIO}" <<'PY'
+import io
 import sys
 
 import soundfile as sf
-from datasets import load_dataset
+from datasets import Audio, load_dataset
 
-sample = load_dataset("distil-whisper/librispeech_long", "clean", split="validation")[0][
-    "audio"
-]
-sf.write(sys.argv[1], sample["array"][: sample["sampling_rate"] * 30], sample["sampling_rate"])
+# The rows are WAV bytes, so soundfile decodes them without torchcodec or FFmpeg.
+dataset = load_dataset("distil-whisper/librispeech_long", "clean", split="validation")
+sample = dataset.cast_column("audio", Audio(decode=False))[0]["audio"]
+array, sampling_rate = sf.read(io.BytesIO(sample["bytes"]))
+sf.write(sys.argv[1], array[: sampling_rate * 30], sampling_rate)
 PY
 
 CMAKE_PREFIX_PATH="$(python -c 'import torch; print(torch.utils.cmake_prefix_path)')"

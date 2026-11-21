@@ -41,5 +41,3 @@ def weight(n, k):
         .view(torch.uint8)
     )
     return CudaNVFP4Tensor(q, s, torch.tensor(0.25, device="cuda"))
-
-
