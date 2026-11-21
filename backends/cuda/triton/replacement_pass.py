@@ -15,6 +15,7 @@ from typing import Callable
 
 from executorch.backends.cuda.triton import measured_routing, routing
 from executorch.backends.cuda.triton.kernels.conv import routing as conv_routing
+from executorch.backends.cuda.triton.kernels.gemm import routing as gemm_routing
 from executorch.backends.cuda.triton.kernels.sdpa import plan as plan_sdpa
 from executorch.backends.cuda.triton.kernels.topk import plan as plan_topk
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -31,6 +32,7 @@ PLANNERS: dict[object, Callable[[Node], routing.ReplacementPlan]] = {
     exir_ops.edge.aten.scaled_dot_product_attention.default: plan_sdpa,
     exir_ops.edge.aten.topk.default: plan_topk,
     **{target: conv_routing.plan for target in conv_routing.CONV_TARGETS},
+    **{target: gemm_routing.plan for target in gemm_routing.GEMM_TARGETS},
 }
 
 
