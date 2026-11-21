@@ -1164,15 +1164,21 @@ inline void exec_metal_kernel(
         std::to_string(n.template_arg_values.size()) + ")");
   }
 
-  // Build the kernel function (cached internally by MLX based on name+source)
-  auto kernel_fn = ::mlx::core::fast::metal_kernel(
-      n.name,
-      n.input_names,
-      n.output_names,
-      n.source ? *n.source : std::string{},
-      n.header ? *n.header : std::string{},
-      n.ensure_row_contiguous,
-      n.atomic_outputs);
+  auto kernel = st.metal_kernels.find(&n);
+  if (kernel == st.metal_kernels.end()) {
+    kernel = st.metal_kernels
+                 .emplace(
+                     &n,
+                     ::mlx::core::fast::metal_kernel(
+                         n.name,
+                         n.input_names,
+                         n.output_names,
+                         n.source ? *n.source : std::string{},
+                         n.header ? *n.header : std::string{},
+                         n.ensure_row_contiguous,
+                         n.atomic_outputs))
+                 .first;
+  }
 
   // Resolve inputs
   std::vector<array> inputs;
@@ -1233,7 +1239,7 @@ inline void exec_metal_kernel(
   }
 
   // Invoke the kernel
-  auto results = kernel_fn(
+  auto results = kernel->second(
       inputs,
       output_shapes,
       output_dtypes,

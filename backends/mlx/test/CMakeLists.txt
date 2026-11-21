@@ -53,6 +53,33 @@ add_dependencies(op_test_runner strict_compile_test)
 # Multi-threaded inference test
 include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
+if(ET_MLX_ALLOW_CUSTOM_KERNEL_EXECUTION)
+  et_cxx_test(
+    mlx_custom_kernel_test
+    SOURCES
+    ${CMAKE_CURRENT_LIST_DIR}/mlx_custom_kernel_test.cpp
+    EXTRA_LIBS
+    mlxdelegate
+    mlx_schema
+    mlx
+  )
+  target_include_directories(
+    mlx_custom_kernel_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
+  )
+  target_compile_definitions(
+    mlx_custom_kernel_test PRIVATE ET_MLX_ALLOW_CUSTOM_KERNEL_EXECUTION
+  )
+  if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
+    target_compile_options(
+      mlx_custom_kernel_test PRIVATE -fsanitize=address,undefined
+                                     -fno-omit-frame-pointer
+    )
+    target_link_options(
+      mlx_custom_kernel_test PRIVATE ${_mlx_sanitizer_link_options}
+    )
+  endif()
+endif()
+
 et_cxx_test(
   mlx_speculative_ops_test
   SOURCES

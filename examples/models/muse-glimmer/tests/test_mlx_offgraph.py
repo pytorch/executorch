@@ -68,6 +68,58 @@ def _cache(config=CONFIG, batched=False):
 
 
 class MLXOffgraphTest(unittest.TestCase):
+    def test_shared_rope_phases(self):
+        from executorch.examples.models.muse_glimmer.source_transformations.mlx import (
+            mlx_source_transformations,
+            share_rope_frequencies,
+        )
+        from executorch.exir.passes.cse_pass import CSEPass
+
+        model = _model()
+        mlx_source_transformations(
+            model, dtype=torch.float16, use_offgraph_kv_cache=True
+        )
+        model.to(torch.float16)
+
+        class Phases(torch.nn.Module):
+            def __init__(self, target):
+                super().__init__()
+                self.target = target
+
+            def forward(self, positions):
+                values = []
+                for layer in self.target.layers:
+                    if layer.self_attn.use_rope:
+                        phase = (
+                            positions.float()[:, None]
+                            * layer.self_attn.inv_freq[None, :]
+                        )
+                        values.extend((phase.cos(), phase.sin()))
+                return torch.stack(values)
+
+        phases = Phases(model)
+        positions = torch.tensor([0, 131071, 1, 1048577])
+        before = phases(positions)
+        share_rope_frequencies(model)
+        torch.testing.assert_close(phases(positions), before, rtol=0, atol=0)
+        self.assertIs(
+            model.layers[0].self_attn.inv_freq, model.layers[2].self_attn.inv_freq
+        )
+        ep = torch.export.export(phases, (positions,))
+        CSEPass()(ep.graph_module)
+        for op in (torch.ops.aten.cos.default, torch.ops.aten.sin.default):
+            self.assertEqual(sum(node.target == op for node in ep.graph.nodes), 1)
+
+        model.layers[1].self_attn.inv_freq = (
+            model.layers[1].self_attn.inv_freq.clone() * 2
+        )
+        different = phases(positions)
+        share_rope_frequencies(model)
+        torch.testing.assert_close(phases(positions), different, rtol=0, atol=0)
+        self.assertIsNot(
+            model.layers[0].self_attn.inv_freq, model.layers[1].self_attn.inv_freq
+        )
+
     def setUp(self):
         self.mlx = _require_mlx(self)
         self.addCleanup(REGISTRY.uninstall, "mg_test")
