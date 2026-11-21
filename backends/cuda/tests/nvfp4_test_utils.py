@@ -46,6 +46,28 @@ def weight(n, k):
     return CudaNVFP4Tensor(q, s, torch.tensor(0.25, device="cuda"))
 
 
+def dynamic_rows(mode, tensor, upper):
+    """``tensor`` as a fake tensor whose dim 0 is dynamic, bounded by ``upper``
+    (None: unbounded)."""
+    from torch.fx.experimental.symbolic_shapes import (
+        DimDynamic,
+        StatelessSymbolicContext,
+        StrictMinMaxConstraint,
+    )
+    from torch.utils._sympy.value_ranges import ValueRanges
+
+    constraint = (
+        None
+        if upper is None
+        else StrictMinMaxConstraint(vr=ValueRanges(1, upper), warn_only=False)
+    )
+    context = StatelessSymbolicContext(
+        dynamic_sizes=[DimDynamic.DYNAMIC] + [DimDynamic.STATIC] * (tensor.ndim - 1),
+        constraint_sizes=[constraint] + [None] * (tensor.ndim - 1),
+    )
+    return mode.from_tensor(tensor, symbolic_context=context)
+
+
 class PackedLinear(torch.nn.Module):
     def __init__(self):
         super().__init__()
