@@ -8,8 +8,17 @@ from contextlib import nullcontext
 
 import pytest
 import torch
-from executorch.backends.cortex_m.test.tester import CortexMTester
+from executorch.backends.cortex_m.passes.fuse_conv_padding_pass import (
+    FuseConvPaddingPass,
+)
+from executorch.backends.cortex_m.test.ops.test_nhwc_conv import Conv2dNhwc
+from executorch.backends.cortex_m.test.tester import (
+    CortexMQuantize,
+    CortexMRunPasses,
+    CortexMTester,
+)
 from executorch.backends.test.harness.stages import StageType
+from executorch.exir import to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch._subclasses.fake_tensor import FakeTensorMode
 
@@ -109,14 +118,38 @@ pad_cases = [
         4, 8, 1, (3, 3), (2, 2), (1, 0, 1, 0), 0, False, False, id="same_lower"
     ),
     pytest.param(4, 8, 1, (3, 3), (2, 2), (0, 1, 0, 1), 0, True, True, id="shared_pad"),
+    pytest.param(
+        1,
+        64,
+        1,
+        (10, 4),
+        (2, 2),
+        (1, 1, 4, 5),
+        0,
+        True,
+        True,
+        id="shared_single_channel_pad",
+    ),
 ]
 
 
 @pytest.mark.parametrize(
+    "use_explicit_layout", [False, True], ids=["legacy", "explicit"]
+)
+@pytest.mark.parametrize(
     "channels,out_channels,groups,kernel,stride,padding,value,shared,fused", pad_cases
 )
 def test_fuse_conv_padding(
-    channels, out_channels, groups, kernel, stride, padding, value, shared, fused
+    channels,
+    out_channels,
+    groups,
+    kernel,
+    stride,
+    padding,
+    value,
+    shared,
+    fused,
+    use_explicit_layout,
 ):
     model = PaddedConv(
         channels, out_channels, groups, kernel, stride, padding, value, shared
@@ -124,8 +157,14 @@ def test_fuse_conv_padding(
     size = (49, 10) if channels == 1 else (8, 8)
     if kernel[0] == 1:
         size = (1, 8)
-    x = (torch.rand(1, channels, *size) * 5 - 1).to(memory_format=torch.channels_last)
-    tester = CortexMTester(model, (x,)).quantize().export().to_edge().run_passes()
+    x = torch.rand(1, channels, *size) * 5 - 1
+    if not use_explicit_layout:
+        x = x.to(memory_format=torch.channels_last)
+    tester = CortexMTester(model, (x,))
+    tester.quantize(
+        CortexMQuantize(use_explicit_layout=use_explicit_layout)
+    ).export().to_edge()
+    tester.run_passes(CortexMRunPasses(use_explicit_layout=use_explicit_layout))
     tester.run_method_and_compare_outputs(inputs=(x,), qtol=1)
     graph = tester.get_artifact(StageType.RUN_PASSES).exported_program().graph
     convs = [n for n in graph.nodes if "conv2d" in str(n.target)]
@@ -137,11 +176,53 @@ def test_fuse_conv_padding(
     assert (len(conv.args[4]) == 4) == fused
     pads = [n for n in graph.nodes if n.target == exir_ops.edge.cortex_m.pad.default]
     assert len(pads) == (not fused or shared)
+    tester.to_executorch()
 
 
 @pytest.mark.parametrize(
+    "layout", ["transpose", "reshape", "other_permutation", "shared"]
+)
+def test_fuse_only_unshared_nchw_to_nhwc_layout(layout):
+    class PadLayoutConv(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv = Conv2dNhwc(padding=(0, 0))
+
+        def forward(self, x, scratch):
+            padded = torch.ops.cortex_m.pad.default(x, [0, 0, 0, 1], [0, 0, 1, 1], 0)
+            if layout == "reshape":
+                converted = torch.ops.aten.view_copy.default(padded, [1, 8, 10, 3])
+            else:
+                permutation = (
+                    [0, 3, 2, 1] if layout == "other_permutation" else [0, 2, 3, 1]
+                )
+                converted = torch.ops.cortex_m.transpose.default(padded, permutation)
+            result = self.conv(converted, scratch)
+            return (result, converted) if layout == "shared" else result
+
+    model = PadLayoutConv().eval()
+    inputs = (
+        (torch.arange(3 * 7 * 8).reshape(1, 3, 7, 8) % 17 - 8).to(torch.int8),
+        torch.empty(0, dtype=torch.uint8),
+    )
+    expected = model(*inputs)
+    edge = to_edge(torch.export.export(model, inputs))
+    lowered = edge.transform([FuseConvPaddingPass()])
+    program = lowered.exported_program()
+    pads = [
+        n for n in program.graph.nodes if n.target == exir_ops.edge.cortex_m.pad.default
+    ]
+    assert len(pads) == (layout != "transpose")
+    torch.testing.assert_close(program.module()(*inputs), expected, rtol=0, atol=0)
+    lowered.to_executorch()
+
+
+@pytest.mark.parametrize(
+    "use_explicit_layout", [False, True], ids=["legacy", "explicit"]
+)
+@pytest.mark.parametrize(
     "channels,out_channels,groups,kernel,stride,padding,value,shared,fused",
-    pad_cases[:6],
+    pad_cases,
 )
 def test_implementation_fused_conv_padding(
     channels,
@@ -153,13 +234,18 @@ def test_implementation_fused_conv_padding(
     value,
     shared,
     fused,
+    use_explicit_layout,
     cortex_m_target,
 ):
-    model = PaddedConv(channels, out_channels, groups, kernel, stride, padding).eval()
+    model = PaddedConv(
+        channels, out_channels, groups, kernel, stride, padding, value, shared
+    ).eval()
     size = (49, 10) if channels == 1 else (8, 8)
     if kernel[0] == 1:
         size = (1, 8)
-    x = (torch.rand(1, channels, *size) * 5 - 1).to(memory_format=torch.channels_last)
+    x = torch.rand(1, channels, *size) * 5 - 1
+    if not use_explicit_layout:
+        x = x.to(memory_format=torch.channels_last)
     CortexMTester(model, (x,), target_config=cortex_m_target).test_implementation(
-        qtol=1
+        qtol=1, use_explicit_layout=use_explicit_layout
     )
