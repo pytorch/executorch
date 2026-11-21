@@ -8,6 +8,7 @@
 
 #include <executorch/extension/llm/custom_ops/op_sdpa.h>
 #include <executorch/extension/llm/custom_ops/op_sdpa_impl.h>
+#include <executorch/extension/llm/custom_ops/op_sdpa_row_exact.h>
 
 #include <ATen/cpu/vec/functional.h>
 #include <ATen/cpu/vec/vec.h>
@@ -20,9 +21,11 @@
 #include <executorch/runtime/kernel/operator_registry.h>
 #include <executorch/runtime/platform/compiler.h>
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <memory>
 #include <new>
+#include <optional>
 #include <vector>
 #if defined(__APPLE__) && defined(__ARM_NEON)
 #include <arm_neon.h>
@@ -41,6 +44,41 @@ namespace executor {
 namespace native {
 
 namespace {
+
+// Row `row` of `t` along `axis`, sharing t's storage and strides.
+struct RowView {
+  RowView(const Tensor& t, int64_t axis, int64_t row) {
+    ET_DCHECK(t.dim() <= 4);
+    for (ssize_t i = 0; i < t.dim(); ++i) {
+      sizes[i] = t.size(i);
+      strides[i] = t.strides()[i];
+      dim_order[i] = static_cast<::executorch::aten::DimOrderType>(i);
+    }
+    sizes[axis] = 1;
+    impl.emplace(
+        t.scalar_type(),
+        t.dim(),
+        sizes.data(),
+        static_cast<char*>(t.mutable_data_ptr()) +
+            row * t.strides()[axis] * t.element_size(),
+        dim_order.data(),
+        strides.data(),
+        ::executorch::aten::TensorShapeDynamism::STATIC);
+  }
+  RowView(const RowView&) = delete;
+  Tensor tensor() {
+    return Tensor(&*impl);
+  }
+
+  std::array<::executorch::aten::SizesType, 4> sizes{};
+  std::array<::executorch::aten::StridesType, 4> strides{};
+  std::array<::executorch::aten::DimOrderType, 4> dim_order{};
+  std::optional<TensorImpl> impl;
+};
+
+optional<Tensor> view_of(std::optional<RowView>& row) {
+  return row.has_value() ? optional<Tensor>(row->tensor()) : optional<Tensor>();
+}
 
 bool validate_flash_attention_args(
     const Tensor& query,
@@ -511,6 +549,48 @@ Tensor& custom_sdpa_out_impl(
       resize_tensor(output, q.sizes()) == Error::Ok,
       InvalidArgument,
       output);
+
+  const int64_t seq_axis = seq_dim == SeqDim::ONE ? 1 : 2;
+  const int64_t num_rows = q.size(seq_axis);
+  // A float query with the sequence at dim 2 takes its row count from dim 1
+  // above, so a one-row call would not cover one row; it keeps the default
+  // path.
+  const bool rows_on_seq_axis =
+      q.scalar_type() == ScalarType::Char || seq_dim == SeqDim::ONE;
+  if (sdpa_row_exact_enabled() && rows_on_seq_axis && num_rows > 1 &&
+      is_causal && !attn_mask.has_value()) {
+    for (int64_t row = 0; row < num_rows && ctx.failure_state() == Error::Ok;
+         ++row) {
+      RowView q_row(q, seq_axis, row);
+      RowView out_row(output, seq_axis, row);
+      std::optional<RowView> zero_points_row;
+      std::optional<RowView> scales_row;
+      if (q.scalar_type() == ScalarType::Char) {
+        zero_points_row.emplace(q_zero_points.value(), seq_axis, row);
+        scales_row.emplace(q_scales.value(), seq_axis, row);
+      }
+      Tensor out = out_row.tensor();
+      custom_sdpa_out_impl(
+          ctx,
+          q_row.tensor(),
+          k,
+          v,
+          start_pos + row,
+          attn_mask,
+          dropout_p,
+          is_causal,
+          scale,
+          out,
+          view_of(zero_points_row),
+          view_of(scales_row),
+          k_zero_points,
+          k_scales,
+          v_zero_points,
+          v_scales,
+          is_seq_at_dim_2);
+    }
+    return output;
+  }
 
   // TODO(task): replace the template param selection logic
   // with whatever apprpriately makes more sense for
