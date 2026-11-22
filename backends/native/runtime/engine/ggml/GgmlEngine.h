@@ -59,6 +59,12 @@ struct GgmlEngineOptions {
   // dequantized activation is rejected unless the caller accepts that loss of
   // precision.
   bool allow_activation_quant_for_weight_only = false;
+  // Testing only. Default (false): topk is llama.cpp's ggml_argsort_top_k, one
+  // argsort that leaves a row holding NaN in an unspecified order.
+  // Set: NaN ranks above every value, +inf included (below, for the smallest),
+  // as eager does, at a NaN key map and a second argsort per topk.
+  // Ops: topk.
+  bool exact_topk_for_testing = false;
 };
 
 class GgmlEngineContext;

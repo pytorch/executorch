@@ -240,6 +240,7 @@ GraphBuilder::GraphBuilder(
     std::unordered_map<ValueId, int64_t> key_extents,
     size_t graph_size,
     bool gpu,
+    bool exact_topk,
     const OffGraphCacheBinding* offgraph_cache)
     : method_(method),
       inputs_(inputs),
@@ -251,6 +252,7 @@ GraphBuilder::GraphBuilder(
       key_extents_(std::move(key_extents)),
       graph_size_(graph_size),
       gpu_(gpu),
+      exact_topk_(exact_topk),
       offgraph_cache_(offgraph_cache),
       values_(method.graph.values.size()) {
   for (const auto& [id, tensor] : persistent) {
@@ -827,6 +829,8 @@ void GraphBuilder::lower(const Node& node) {
       key == "aten.split_with_sizes.default" ||
       key == "aten.split_copy.Tensor" || key == "aten.split.Tensor") {
     lower_split(node, key);
+  } else if (key == "aten.topk.default") {
+    lower_topk(node);
   } else if (key == "aten.slice_copy.Tensor" || key == "aten.slice.Tensor") {
     lower_slice(node, key == "aten.slice_copy.Tensor");
   } else if (key == "aten.select_copy.int" || key == "aten.select.int") {

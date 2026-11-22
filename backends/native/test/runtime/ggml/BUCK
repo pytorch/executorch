@@ -100,11 +100,15 @@ _VARIANTS = [
     for v in _VARIANTS
 ]
 
+# llama.cpp's topk leaves a row holding NaN unordered; these samples match
+# eager only with the testing option exact_topk_for_testing.
+_EXACT_TOPK_ONLY = ["topk_*.nan_and_inf_*"]
+
 # ggml_sample_test_act_quant lets ggml quantize the activations of weight-only
 # quantized linears, judged against golden-int8_act. ggml_sample_test_no_linear
 # judges the other ops without it, except their quantized_* cases, which
 # quantize through an nn.Linear. Both leave out the elu with alpha 0.5 that
-# ggml rejects.
+# ggml rejects and the samples that match eager only with a testing option.
 [
     fbcode_target(
         _kind = runtime.cxx_test,
@@ -124,8 +128,10 @@ _VARIANTS = [
     for v in _VARIANTS
     for name, flags in [
         ("", []),
-        ("_act_quant", ["--allow_activation_quant_for_weight_only", "--gtest_filter=-elu_float.elu_f32_alpha_*"]),
-        ("_no_linear", ["--gtest_filter=-linear_*:*.quantized_*:elu_float.elu_f32_alpha_*"]),
+        ("_act_quant", ["--allow_activation_quant_for_weight_only", "--gtest_filter=-" + ":".join(["elu_float.elu_f32_alpha_*"] + _EXACT_TOPK_ONLY)]),
+        ("_no_linear", ["--gtest_filter=-" + ":".join(["linear_*", "*.quantized_*", "elu_float.elu_f32_alpha_*"] + _EXACT_TOPK_ONLY)]),
+        # Every sample with the engine's testing options on.
+        ("_testing_options", ["--exact_topk_for_testing"]),
     ]
 ]
 
