@@ -517,9 +517,18 @@ def test_gated_linear_parameter_pte(mode, monkeypatch):
 def test_gated_linear_dequant_prefill_pte(monkeypatch):
     """Without native FP4 (forced, so any GPU runs it), auto gated prefill of a
     fused weight with per-row global scales takes F.linear -> dequant +
-    matmul; the lowered program matches eager on both sides of M = 64."""
+    matmul, chosen once from M's upper bound (256), so every M runs it; the
+    lowered program matches eager."""
     monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: False)
     monkeypatch.setenv("ET_CUDA_NVFP4_ACT", "auto")
+    routes = []
+    dequant_linear = nvfp4_dispatch._dequant_linear
+
+    def spy(flat, w):
+        routes.append(tuple(w.shape))
+        return dequant_linear(flat, w)
+
+    monkeypatch.setattr(nvfp4_dispatch, "_dequant_linear", spy)
     module = GatedLinear().eval()
     x = torch.randn(100, 192, dtype=torch.bfloat16)
     exported = torch.export.export(
@@ -535,6 +544,7 @@ def test_gated_linear_dequant_prefill_pte(monkeypatch):
         ],
         compile_config=EdgeCompileConfig(_check_ir_validity=False),
     ).to_executorch()
+    assert routes and all(shape == module.weight.shape for shape in routes)
     from executorch.export.utils import is_fbcode
 
     with tempfile.TemporaryDirectory() as folder:

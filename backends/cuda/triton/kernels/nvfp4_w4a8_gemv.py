@@ -148,8 +148,8 @@ def _w4a8_gemv(
     # Byte tensors read as 32-bit words (no dtype view in the AOTI graph).
     XQ = XQ.to(tl.pointer_type(tl.int32))
     Q = Q.to(tl.pointer_type(tl.int32))
-    n = tl.program_id(0) * BN + tl.arange(0, BN)
-    m = tl.program_id(1)
+    n = (tl.program_id(0) * BN + tl.arange(0, BN)).to(tl.int64)
+    m = tl.program_id(1).to(tl.int64)
     split = tl.program_id(2)
     chunk: tl.constexpr = tl.cdiv(K, BK * SPLIT) * BK
     W: tl.constexpr = BK // 8

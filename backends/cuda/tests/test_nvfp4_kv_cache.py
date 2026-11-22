@@ -124,7 +124,8 @@ class TestNVFP4KVCache(unittest.TestCase):
         self.assertEqual(kc[0][:, :, untouched].count_nonzero().item(), 0)
         self.assertEqual(vc[1][:, :, untouched].count_nonzero().item(), 0)
 
-    def test_write_out_of_range_dropped(self):
+    def test_write_kernel_never_stores_out_of_range(self):
+        # The op raises for a flat cache past its end; the kernel still masks.
         L = 64
         k = torch.randn(1, 4, HKV, D, device="cuda", dtype=torch.bfloat16)
         v = torch.randn(1, 4, HKV, D, device="cuda", dtype=torch.bfloat16)
@@ -138,7 +139,7 @@ class TestNVFP4KVCache(unittest.TestCase):
             cache = [f[f.numel() // 3 : 2 * f.numel() // 3] for f in flat]
             cache = [c.view(1, HKV, L, -1) for c in cache]
             pos_t = torch.tensor(pos, device="cuda")
-            torch.ops.triton.nvfp4_kv_write(k, v, pos_t, *cache, None, ring, None)
+            K._nvfp4_kv_write_impl(k, v, pos_t, *cache, None, ring, None)
             expected = new_cache(L) + new_cache(L)
             torch.ops.triton.nvfp4_kv_write(
                 k[:, 1:2], v[:, 1:2], pos_t[1:2], *expected, None, ring, None
@@ -356,6 +357,8 @@ class TestNVFP4KVValidation(unittest.TestCase):
             lambda: sdpa(q[..., :64], *cache(), *cache()),
             # A negative eps is not "no K norm"; that is None.
             lambda: write(k, k, pos, *cache(), *cache(), None, False, -1.0),
+            # A flat cache does not drop keys past its end silently.
+            lambda: write(k, k, torch.arange(15, 17), *cache(), *cache()),
             # The kernel reads positions and frequencies with unit stride.
             lambda: write(k, k, torch.arange(4)[::2], *cache(), *cache()),
             lambda: write(k, k, pos, *cache(), *cache(), torch.ones(D)[::2]),
@@ -470,12 +473,18 @@ class TestLowerNVFP4KVWrite(unittest.TestCase):
             expected = layer(ring, rope)(*args)
             # Older exporters emit auto_functionalized, newer ones _v2.
             for v2 in (False, True):
+                # run_decompositions creates the auto_functionalized nodes.
                 with torch._export.config.patch(
                     enable_auto_functionalized_v2_for_export=v2
                 ):
                     ep = torch.export.export(layer(ring, rope), args, strict=True)
-                ep = ep.run_decompositions({})
-                self.assertIn("auto_functionalized", str(ep.graph))
+                    ep = ep.run_decompositions({})
+                hop = (
+                    torch.ops.higher_order.auto_functionalized_v2
+                    if v2
+                    else torch.ops.higher_order.auto_functionalized
+                )
+                self.assertIn(hop, {node.target for node in ep.graph.nodes})
                 ep = LowerNVFP4KVWritePass()(ep)
                 graph = str(ep.graph)
                 self.assertNotIn("auto_functionalized", graph)

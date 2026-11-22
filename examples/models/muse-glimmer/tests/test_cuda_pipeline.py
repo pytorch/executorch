@@ -421,6 +421,9 @@ class TestNVFP4KVCacheTest(unittest.TestCase):
                 self.assertLess(error, 0.1, (start, end))
 
     def test_export_lowers_nvfp4_kv_cache(self):
+        from executorch.examples.models.muse_glimmer.source_transformations.nvfp4_kv import (
+            NVFP4KVCache,
+        )
         from executorch.runtime import Runtime, Verification
 
         with (
@@ -432,6 +435,9 @@ class TestNVFP4KVCacheTest(unittest.TestCase):
                 ckpt_dir, max_seq_len=TINY_CONFIG.max_seq_len
             )
             export_and_lower(model, config, out_dir, kv_cache_dtype="nvfp4")
+            # A BF16 export would leave the model's caches as they were.
+            for layer in model.layers:
+                self.assertIsInstance(layer.self_attn.kv_cache, NVFP4KVCache)
             pte = os.path.join(out_dir, "model.pte")
             program = Runtime.get().load_program(pte, verification=Verification.Minimal)
             self.assertIn("forward_from_embeddings", program.method_names)

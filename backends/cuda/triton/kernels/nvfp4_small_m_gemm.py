@@ -11,16 +11,17 @@ op (``triton::nvfp4_small_m_gemm_m{M}``) times three kernels and split-K at AOTI
 compile time and keeps the fastest:
 
 - ``rows``: CUDA-core GEMV that decodes each weight tile once and applies it to
-  all M rows (activations stay BF16).
+  all M rows (activations stay BF16/FP16).
 - ``w4a4``: native FP4 tensor-core GEMM (``dot_scaled``) on a 16-row tile; the
-  activation is quantized to NVFP4 per row (K16 E4M3 + row global scale).
+  activation is quantized to NVFP4 per row (K16 E4M3 + a row global scale, or
+  the static activation scale when the weight has one).
 - ``w4a16``: BF16 tensor-core GEMM on a 16-row tile with the weights dequantized
   in registers.
 
 Weights are the same packed NVFP4 tensor for all three. With ``weight_only``
-(any forced ``ET_CUDA_NVFP4_ACT`` other than ``auto``) the ``w4a4`` candidates
-are rejected. Near-ties
-go to the higher-precision candidate.
+(``ET_CUDA_NVFP4_ACT=w4a16`` or ``w4a8``; a forced ``w4a4`` never reaches these
+ops) the ``w4a4`` candidates are rejected. Near-ties go to the
+higher-precision candidate.
 """
 
 import torch

@@ -72,13 +72,15 @@ def cold_pick_cache(monkeypatch):
         # Small-M bucket ops: static M 2..16 and a dynamic M bounded by 16.
         ("w4a16", 8, None, False),
         ("auto", 4, None, False),
+        ("auto", 8, None, False),
+        ("w4a8", 8, None, False),
         ("w4a16", 12, 16, False),
     ],
 )
 def test_packed_linear_pte(mode, m, dynamic, fp32, monkeypatch):  # noqa: C901
-    # Decode-size auto needs no native FP4 (W4A16 against W4A8 at M=1, the
-    # small-M buckets at M 2..4 without native FP4).
-    if mode == "w4a4" or (mode == "auto" and m > 4):
+    # Auto up to 16 rows needs no native FP4 (W4A16 against W4A8 at M=1, the
+    # small-M buckets above); its prefill pick asserts W4A4 timing.
+    if mode == "w4a4" or (mode == "auto" and (dynamic or m) > 16):
         if not _has_native_fp4():
             pytest.skip("native FP4 required")
     monkeypatch.setenv("ET_CUDA_NVFP4_ACT", mode)
@@ -128,7 +130,8 @@ def test_packed_linear_pte(mode, m, dynamic, fp32, monkeypatch):  # noqa: C901
         "as activation mode and split-K candidates do"
     )
     rows = dynamic or m
-    bucketed = mode in ("auto", "w4a16") and not fp32 and m > 1 and rows <= 16
+    bucketed = mode in ("auto", "w4a16") or (mode == "w4a8" and rows > 4)
+    bucketed &= not fp32 and m > 1 and rows <= 16
     # With native FP4, decode-size auto keeps nvfp4_auto_decode.
     bucketed &= not (rows <= 4 and _has_native_fp4())
     small_m_picks = [
@@ -151,7 +154,8 @@ def test_packed_linear_pte(mode, m, dynamic, fp32, monkeypatch):  # noqa: C901
         else:
             selected_mode = ("w4a16", "w4a4", "w4a8")[mode_id]
     else:
-        selected_mode = mode
+        # Forced modes run the buckets weight-only (BF16 activations).
+        selected_mode = "w4a16" if small_m_picks else mode
 
     def reference(value):
         if fp32:
