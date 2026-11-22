@@ -527,6 +527,7 @@ class RecordTest(unittest.TestCase):
                 "float",
                 "int4wo_g32",
                 "int4wo_g128",
+                "gguf_q4_0",
                 "gguf_q8_0",
                 "gguf_q2_k",
                 "gguf_q3_k",
