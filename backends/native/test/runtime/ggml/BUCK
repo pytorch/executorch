@@ -163,6 +163,7 @@ _EXACT_GELU_ONLY_ON_CPU = [
         resources = {":ggml_ptn_runner" + v["suffix"]: "ggml_ptn_runner"},
         deps = [
             "//caffe2:torch",
+            "//executorch/backends/native/examples/hf_llm:export_hf_llm_lib",
             "//executorch/exir/native:native",
             "//executorch/extension/llm/export:gguf",
             "//pytorch/ao:torchao",
