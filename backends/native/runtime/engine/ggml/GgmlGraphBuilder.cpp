@@ -11,6 +11,7 @@
 #include <cstring>
 #include <iterator>
 #include <limits>
+#include <numeric>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -132,6 +133,38 @@ void check_index_bytes(const InputSlot& input, int64_t rows) {
   }
 }
 
+bool is_integer(ScalarType dtype) {
+  return dtype == ScalarType::Byte || dtype == ScalarType::Char ||
+      dtype == ScalarType::Short || dtype == ScalarType::Int ||
+      dtype == ScalarType::Long;
+}
+
+// Integer inputs that ops compute on in F32 must be ones F32 holds exactly.
+void check_exact_integer_bytes(const InputSlot& input) {
+  if (input.bytes.empty()) {
+    return;
+  }
+  const auto exact = [](int64_t value) {
+    return value >= -kExactF32Integer && value <= kExactF32Integer;
+  };
+  bool ok = true;
+  if (input.meta.dtype == ScalarType::Long) {
+    std::vector<int64_t> values(input.bytes.size() / sizeof(int64_t));
+    std::memcpy(
+        values.data(), input.bytes.data(), values.size() * sizeof(int64_t));
+    ok = std::ranges::all_of(values, exact);
+  } else if (input.meta.dtype == ScalarType::Int) {
+    std::vector<int32_t> values(input.bytes.size() / sizeof(int32_t));
+    std::memcpy(
+        values.data(), input.bytes.data(), values.size() * sizeof(int32_t));
+    ok = std::ranges::all_of(values, exact);
+  }
+  if (!ok) {
+    throw std::out_of_range(
+        "ggml: an integer input is outside +-2^24, which F32 holds exactly");
+  }
+}
+
 // cppcheck-suppress unusedFunction
 ggml_tensor* reshape(
     ggml_context* ctx,
@@ -141,7 +174,7 @@ ggml_tensor* reshape(
     tensor = ggml_cont(ctx, tensor);
   }
   const auto ne = reversed_extents(sizes);
-  switch (sizes.size()) {
+  switch (fold_leading_ones(sizes).size()) {
     case 0:
     case 1:
       return ggml_reshape_1d(ctx, tensor, ne[0]);
@@ -152,7 +185,8 @@ ggml_tensor* reshape(
     case 4:
       return ggml_reshape_4d(ctx, tensor, ne[0], ne[1], ne[2], ne[3]);
     default:
-      throw std::runtime_error("ggml: reshape supports rank 0 through 4");
+      throw std::runtime_error(
+          "ggml: reshape needs rank 4 or below after folding leading 1s");
   }
 }
 
@@ -163,7 +197,7 @@ ggml_tensor* view_with_shape(
     const std::vector<int64_t>& sizes,
     size_t offset) {
   const auto ne = reversed_extents(sizes);
-  switch (sizes.size()) {
+  switch (fold_leading_ones(sizes).size()) {
     case 0:
     case 1:
       return ggml_view_1d(ctx, tensor, ne[0], offset);
@@ -192,7 +226,8 @@ ggml_tensor* view_with_shape(
           tensor->nb[3],
           offset);
     default:
-      throw std::runtime_error("ggml: view supports rank 0 through 4");
+      throw std::runtime_error(
+          "ggml: view needs rank 4 or below after folding leading 1s");
   }
 }
 
@@ -206,6 +241,10 @@ GraphBuilder::GraphBuilder(
     const FoldedBatchNorms& batch_norms,
     std::unordered_map<ValueId, int64_t> key_extents,
     size_t graph_size,
+    bool gpu,
+    bool exact_topk,
+    bool exact_gelu,
+    bool f32_accumulation,
     const OffGraphCacheBinding* offgraph_cache)
     : method_(method),
       inputs_(inputs),
@@ -216,6 +255,10 @@ GraphBuilder::GraphBuilder(
       batch_norms_(batch_norms),
       key_extents_(std::move(key_extents)),
       graph_size_(graph_size),
+      gpu_(gpu),
+      exact_topk_(exact_topk),
+      exact_gelu_(exact_gelu),
+      f32_accumulation_(f32_accumulation),
       offgraph_cache_(offgraph_cache),
       values_(method.graph.values.size()) {
   for (const auto& [id, tensor] : persistent) {
@@ -223,18 +266,53 @@ GraphBuilder::GraphBuilder(
   }
 }
 
-GraphInstance GraphBuilder::build() {
-  // Metadata room for the tensors lowering creates: a generous allowance per
-  // value and per node for views, casts and shape helpers, plus a reserve for
-  // per-graph tensors such as masks. ggml aborts if a graph outgrows it.
+namespace {
+
+// Metadata room for the tensors lowering creates: a generous allowance per
+// value and per node for views, casts and shape helpers, plus a reserve for
+// per-graph tensors such as masks. ggml aborts if a graph outgrows it.
+size_t metadata_budget(const Method& method) {
   constexpr size_t kTensorsPerValue = 12;
-  constexpr size_t kTensorsPerNode = 8;
+  // Lowerings expand a node into dozens of tensors (views, casts, argument
+  // reductions and fallbacks), which 80 per node and 12 for its output value
+  // cover. The context holds tensor metadata only, and pages it never touches
+  // stay uncommitted.
+  constexpr size_t kTensorsPerNode = 80;
+  // cat casts and concatenates each entry of its list, which may repeat one
+  // value any number of times.
+  constexpr size_t kTensorsPerListEntry = 4;
   constexpr size_t kReservedTensors = 256;
-  const size_t tensor_budget = method_.graph.values.size() * kTensorsPerValue +
-      method_.graph.nodes.size() * kTensorsPerNode + kReservedTensors;
+  const size_t list_entries = std::accumulate(
+      method.graph.nodes.begin(),
+      method.graph.nodes.end(),
+      size_t{0},
+      [](size_t total, const Node& node) {
+        return std::accumulate(
+            node.inputs.begin(),
+            node.inputs.end(),
+            total,
+            [](size_t sum, const NamedArgument& input) {
+              return input.arg.kind() == ArgKind::TensorList
+                  ? sum + input.arg.as_tensor_list().ids.size()
+                  : sum;
+            });
+      });
+  return method.graph.values.size() * kTensorsPerValue +
+      method.graph.nodes.size() * kTensorsPerNode +
+      list_entries * kTensorsPerListEntry + kReservedTensors;
+}
+
+} // namespace
+
+size_t graph_capacity(const Method& method, size_t graph_size) {
+  return std::max(graph_size, metadata_budget(method));
+}
+
+GraphInstance GraphBuilder::build() {
+  const size_t capacity = graph_capacity(method_, graph_size_);
   ggml_init_params params{
-      .mem_size = ggml_tensor_overhead() * tensor_budget +
-          ggml_graph_overhead_custom(graph_size_, false),
+      .mem_size = ggml_tensor_overhead() * metadata_budget(method_) +
+          ggml_graph_overhead_custom(capacity, false),
       .mem_buffer = nullptr,
       .no_alloc = true,
   };
@@ -242,8 +320,8 @@ GraphInstance GraphBuilder::build() {
   if (!instance_.context) {
     throw std::runtime_error("ggml: failed to allocate graph metadata");
   }
-  instance_.graph = ggml_new_graph_custom(
-      instance_.context.get(), graph_size_, /*grads=*/false);
+  instance_.graph =
+      ggml_new_graph_custom(instance_.context.get(), capacity, /*grads=*/false);
   if (instance_.graph == nullptr) {
     throw std::runtime_error("ggml: failed to create cgraph");
   }
@@ -277,6 +355,17 @@ GraphInstance GraphBuilder::build() {
   }
   for (ggml_tensor* copy : copies) {
     ggml_build_forward_expand(instance_.graph, copy);
+  }
+  // ggml's allocator aborts on a tensor without elements.
+  for (int i = 0; i < ggml_graph_n_nodes(instance_.graph); ++i) {
+    const ggml_tensor* node = ggml_graph_node(instance_.graph, i);
+    if (ggml_nelements(node) == 0 ||
+        std::any_of(node->src, node->src + GGML_MAX_SRC, [](auto* src) {
+          return src != nullptr && ggml_nelements(src) == 0;
+        })) {
+      throw std::runtime_error(
+          "ggml: tensors without elements are not supported");
+    }
   }
   return std::move(instance_);
 }
@@ -704,6 +793,8 @@ void GraphBuilder::lower(const Node& node) {
     lower_unary(node, ggml_sigmoid);
   } else if (key == "aten.tanh.default") {
     lower_unary(node, ggml_tanh);
+  } else if (key == "aten.softplus.default") {
+    lower_softplus(node);
   } else if (key == "aten.gelu.default" || key == "aten.gelu_.default") {
     lower_gelu(node);
   } else if (key == "aten.native_layer_norm.default") {
@@ -741,6 +832,13 @@ void GraphBuilder::lower(const Node& node) {
     lower_amax(node);
   } else if (key == "aten._softmax.default") {
     lower_softmax(node);
+  } else if (
+      key == "aten.split_with_sizes_copy.default" ||
+      key == "aten.split_with_sizes.default" ||
+      key == "aten.split_copy.Tensor" || key == "aten.split.Tensor") {
+    lower_split(node, key);
+  } else if (key == "aten.topk.default") {
+    lower_topk(node);
   } else if (key == "aten.slice_copy.Tensor" || key == "aten.slice.Tensor") {
     lower_slice(node, key == "aten.slice_copy.Tensor");
   } else if (key == "aten.select_copy.int" || key == "aten.select.int") {
@@ -766,9 +864,11 @@ void GraphBuilder::lower(const Node& node) {
   } else if (key == "llama.custom_sdpa.default") {
     lower_custom_sdpa(node);
   } else if (key == "aten.le.Tensor" || key == "aten.le.Scalar") {
-    lower_compare(node, /*strict=*/false);
+    lower_compare(node, Comparison::Le);
   } else if (key == "aten.lt.Tensor" || key == "aten.lt.Scalar") {
-    lower_compare(node, /*strict=*/true);
+    lower_compare(node, Comparison::Lt);
+  } else if (key == "aten.ne.Tensor" || key == "aten.ne.Scalar") {
+    lower_compare(node, Comparison::Ne);
   } else if (key == "aten.arange.start_step") {
     lower_arange(node);
   } else if (key == "torchao.choose_qparams_affine.default") {
@@ -797,11 +897,10 @@ void GraphBuilder::lower(const Node& node) {
   }
 }
 
-// Row indices are checked on the host, which needs them to come from a
-// graph input through integer casts, views or repeats, or an integer arange
-// whose bounds are resolved when building the graph.
-void GraphBuilder::check_row_indices(ValueId id, int64_t rows) {
-  static const std::unordered_set<std::string> kSameValues = {
+// Ops whose integer result holds values of their `self`: casts, views and
+// repeats.
+bool keeps_integer_values(const std::string& key) {
+  static const std::unordered_set<std::string> kOps = {
       "aten._to_copy.default",     "aten.alias.default",
       "aten.clone.default",        "aten.contiguous.default",
       "aten.expand.default",       "aten.expand_copy.default",
@@ -814,6 +913,13 @@ void GraphBuilder::check_row_indices(ValueId id, int64_t rows) {
       "aten.unsqueeze.default",    "aten.unsqueeze_copy.default",
       "aten.view.default",         "aten.view_copy.default",
   };
+  return kOps.contains(key);
+}
+
+// Row indices are checked on the host, which needs them to come from a
+// graph input through integer casts, views or repeats, or an integer arange
+// whose bounds are resolved when building the graph.
+void GraphBuilder::check_row_indices(ValueId id, int64_t rows) {
   const auto is_index = [this](ValueId value) {
     const ScalarType dtype = method_.graph.value(value).tensor_meta().dtype;
     return dtype == ScalarType::Long || dtype == ScalarType::Int;
@@ -845,7 +951,7 @@ void GraphBuilder::check_row_indices(ValueId id, int64_t rows) {
       return;
     }
     const NamedArgument* source = find_arg(node, "self", 0);
-    if (!node.is_call() || !kSameValues.contains(op_key(node.target)) ||
+    if (!node.is_call() || !keeps_integer_values(op_key(node.target)) ||
         source == nullptr || source->arg.kind() != ArgKind::Tensor) {
       break;
     }
@@ -854,6 +960,71 @@ void GraphBuilder::check_row_indices(ValueId id, int64_t rows) {
   throw std::runtime_error(
       "ggml: row indices must come from a graph input, through integer "
       "casts, views or repeats, or an integer arange");
+}
+
+// Integers some ops compute on in F32 must be exact there: from a graph input,
+// checked on every run, or an arange whose bounds are known when building,
+// through integer casts, views or repeats. `defer_to_host` permits any other
+// integer and leaves it to the host, which refuses at compile one it can never
+// bound (it follows adds and subtracts too) and checks that it stays within
+// +-2^24: once per graph when constants and shapes bound it, else every run.
+void GraphBuilder::require_exact_integers(
+    ValueId id,
+    const std::string& what,
+    bool defer_to_host) {
+  const auto integer = [this](ValueId value) {
+    return is_integer(method_.graph.value(value).tensor_meta().dtype);
+  };
+  if (!integer(id)) {
+    return;
+  }
+  while (integer(id)) {
+    const auto input = std::ranges::find(inputs_, id, &InputSlot::id);
+    if (input != inputs_.end()) {
+      check_exact_integer_bytes(*input);
+      instance_.exact_integer_checks.push_back(id);
+      return;
+    }
+    const NodeId producer = method_.graph.value(id).producer_id;
+    if (!valid(producer)) {
+      break;
+    }
+    const Node& node = method_.graph.node(producer);
+    if (!node.is_call()) {
+      break;
+    }
+    if (op_key(node.target) == "aten.arange.start_step") {
+      const int64_t start = int_arg(node, "start", 0, 0);
+      const int64_t step = int_arg(node, "step", 2, 1, true);
+      const int64_t count = ggml_nelements(tensor(id).tensor);
+      int64_t last = start;
+      if (count > 0 &&
+          (__builtin_mul_overflow(count - 1, step, &last) ||
+           __builtin_add_overflow(start, last, &last) ||
+           std::min(start, last) < -kExactF32Integer ||
+           std::max(start, last) > kExactF32Integer)) {
+        throw std::out_of_range(
+            "ggml: " + what +
+            " is an arange outside +-2^24, which F32 holds "
+            "exactly");
+      }
+      return;
+    }
+    const NamedArgument* source = find_arg(node, "self", 0);
+    if (!keeps_integer_values(op_key(node.target)) || source == nullptr ||
+        source->arg.kind() != ArgKind::Tensor) {
+      break;
+    }
+    id = source->arg.as_tensor().id;
+  }
+  if (defer_to_host) {
+    instance_.host_integer_checks.push_back({.id = id, .what = what});
+    return;
+  }
+  throw std::runtime_error(
+      "ggml: " + what +
+      " must be an integer F32 holds exactly: a graph input "
+      "or an arange, through integer casts, views or repeats");
 }
 
 ggml_tensor* GraphBuilder::as_f32(ggml_tensor* tensor) {
@@ -1021,11 +1192,12 @@ GraphBuilder::BinaryOperands GraphBuilder::tensor_operands(
   };
   // ggml has no integer arithmetic kernels; F32 holds the I32 values the
   // engine carries exactly up to 2^24.
-  const auto is_integer = [](const ggml_tensor* t) {
+  const auto is_integer_tensor = [](const ggml_tensor* t) {
     return t->type == GGML_TYPE_I8 || t->type == GGML_TYPE_I16 ||
         t->type == GGML_TYPE_I32 || t->type == GGML_TYPE_I64;
   };
-  if (force_f32 || out.lhs->type != out.rhs->type || is_integer(out.lhs)) {
+  if (force_f32 || out.lhs->type != out.rhs->type ||
+      is_integer_tensor(out.lhs)) {
     out.lhs = as_f32(out.lhs);
     out.rhs = as_f32(out.rhs);
   }
