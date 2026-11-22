@@ -221,6 +221,35 @@ std::vector<uint8_t> affine_int4_to_q4_0(
   return out;
 }
 
+// cppcheck-suppress unusedFunction
+std::vector<uint8_t> affine_int4_to_f32(
+    const TensorMeta& meta,
+    ByteSpan packed,
+    const std::vector<float>& scales) {
+  const AffineGroupQuant& quant = q4_affine(meta);
+  const size_t rows = static_cast<size_t>(meta.sizes[0]);
+  const size_t cols = static_cast<size_t>(meta.sizes[1]);
+  const size_t group = static_cast<size_t>(quant.group_size);
+  if (packed.size() != rows * cols / 2 ||
+      scales.size() != rows * cols / group) {
+    throw std::runtime_error("ggml: int4 weight or scale size mismatch");
+  }
+  std::vector<uint8_t> out(rows * cols * sizeof(float));
+  // cppcheck-suppress invalidPointerCast ; the byte buffer is sized for floats
+  // and only accessed as float
+  auto* values = reinterpret_cast<float*>(out.data());
+  // Column c sits in the low nibble when c is even, stored as q + 8.
+  for (size_t r = 0; r < rows; ++r) {
+    const uint8_t* row = packed.data() + r * cols / 2;
+    for (size_t c = 0; c < cols; ++c) {
+      const int q = ((row[c / 2] >> (4 * (c & 1))) & 0xF) - 8;
+      values[r * cols + c] =
+          static_cast<float>(q) * scales[r * (cols / group) + c / group];
+    }
+  }
+  return out;
+}
+
 static ggml_type to_ggml_type(const TensorMeta& meta) {
   if (affine_quant(meta) != nullptr) {
     q4_affine(meta);
