@@ -1918,6 +1918,22 @@ class VulkanEngineExecutable final : public EngineExecutable {
     return tensor;
   }
 
+  // ET-VK's gather maps dim to WHCN as rank - 1 - dim, so it needs dim >= 0.
+  VkRef nonnegative_gather_dim(const Node& n, const Argument& dim_arg) {
+    const Argument* input = find_input(n, "self");
+    if (dim_arg.kind() != ArgKind::Int || valid(dim_arg.as_int().id) ||
+        input == nullptr || input->kind() != ArgKind::Tensor) {
+      throw std::runtime_error("vulkan: gather needs a constant dim");
+    }
+    const auto rank =
+        static_cast<int64_t>(meta_of(input->as_tensor().id).sizes.size());
+    const int64_t dim = dim_arg.as_int().value;
+    if (dim < -rank || dim >= rank) {
+      throw std::runtime_error("vulkan: gather dim is out of range");
+    }
+    return graph_->add_scalar<int64_t>(dim < 0 ? dim + rank : dim);
+  }
+
   // ET-VK has no symbolic neg, so -a runs as sub(0, a), which ET-VK computes in
   // int32. An int literal must negate within int32. A symbolic operand must be
   // a graph input's size whose serialized upper bound is within int32: every
@@ -2023,7 +2039,9 @@ class VulkanEngineExecutable final : public EngineExecutable {
         args.push_back(synth_zero_bias(n));
         continue;
       }
-      VkRef a = resolve_arg(na.arg);
+      VkRef a = key == "aten.gather.default" && na.name == "dim"
+          ? nonnegative_gather_dim(n, na.arg)
+          : resolve_arg(na.arg);
       if (width && na.arg.kind() == ArgKind::Tensor) {
         const ValueId value_id = na.arg.as_tensor().id;
         if (valid(value_id)) {
