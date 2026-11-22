@@ -3706,15 +3706,22 @@ TEST(GgmlEngineTest, GpuUnavailableOnCpuVariant) {
 std::vector<uint8_t> make_cache_attention_program(
     bool custom,
     const std::vector<int64_t>& query,
-    const std::vector<int64_t>& cache) {
+    const std::vector<int64_t>& cache,
+    const std::vector<int64_t>& mask = {}) {
   TestProgram program;
   program.input("q", fbs::ScalarType::FLOAT, query);
+  if (!mask.empty()) {
+    program.input("mask", fbs::ScalarType::FLOAT, mask);
+  }
   program.buffer("k_cache", cache);
   program.buffer("v_cache", cache);
   std::vector<std::pair<std::string, TestArg>> args = {
       {"query", std::string("q")},
       {"key", std::string("k_cache")},
       {"value", std::string("v_cache")}};
+  if (!mask.empty()) {
+    args.push_back({"attn_mask", std::string("mask")});
+  }
   if (custom) {
     args.push_back({"start_pos", int64_t{0}});
   }
@@ -3728,12 +3735,14 @@ std::vector<uint8_t> make_cache_attention_program(
   return program.finish("attended");
 }
 
-void run_with_zero_query(GgmlEngineContext& context) {
+void run_with_zero_inputs(GgmlEngineContext& context) {
   auto executable = context.compile("forward");
-  const std::vector<int64_t> sizes = executable->input_sizes(0);
-  const std::vector<float> query(std::accumulate(
-      sizes.begin(), sizes.end(), int64_t{1}, std::multiplies<>()));
-  executable->set_input(0, query.data(), query.size(), ScalarType::Float);
+  for (size_t i = 0; i < executable->num_inputs(); ++i) {
+    const std::vector<int64_t> sizes = executable->input_sizes(i);
+    const std::vector<float> input(std::accumulate(
+        sizes.begin(), sizes.end(), int64_t{1}, std::multiplies<>()));
+    executable->set_input(i, input.data(), input.size(), ScalarType::Float);
+  }
   executable->execute();
 }
 
@@ -3762,7 +3771,7 @@ std::pair<size_t, int> f16_kv_cache_bytes_on_cpu(
       .gpu_runs_f16_attention_for_testing = answer,
       .f32_gpu_kv_cache_for_testing = f32_gpu_kv_cache_for_testing});
   auto context = make_context(*host, program);
-  run_with_zero_query(*context);
+  run_with_zero_inputs(*context);
   return {context->f16_kv_cache_bytes(), gpu_attention_asked};
 }
 
@@ -3823,7 +3832,7 @@ TEST(GgmlEngineGpuTest, AttentionOnlyKvCachesAreF16) {
       GgmlEngineHost::create(GgmlEngineOptions{.device = GgmlDevice::Gpu});
   auto context = make_context(
       *host, make_cache_attention_program(true, {1, 1, 2, 64}, {1, 8, 2, 64}));
-  run_with_zero_query(*context);
+  run_with_zero_inputs(*context);
   EXPECT_EQ(context->f16_kv_cache_bytes(), 2 * 8 * 2 * 64 * 2);
 }
 
@@ -3837,6 +3846,24 @@ TEST(GgmlEngineGpuTest, RefusedAttentionShapesFailToLoad) {
         make_context(*host, program)->compile("forward"), std::runtime_error);
   }
 }
+
+// ggml-cuda's flash attention takes one mask plane: the caches of an attention
+// with a per-head mask, which ggml runs on the CPU, keep F32, while a mask
+// shared by the heads leaves them F16.
+TEST(GgmlEngineGpuTest, KvCachesOfPerHeadMaskedAttentionKeepF32) {
+  for (const int64_t mask_heads : {1, 2}) {
+    auto host =
+        GgmlEngineHost::create(GgmlEngineOptions{.device = GgmlDevice::Gpu});
+    auto context = make_context(
+        *host,
+        make_cache_attention_program(
+            false, {1, 2, 1, 64}, {1, 2, 8, 64}, {1, mask_heads, 1, 8}));
+    run_with_zero_inputs(*context);
+    EXPECT_EQ(
+        context->f16_kv_cache_bytes(),
+        mask_heads == 1 ? 2 * 8 * 2 * 64 * 2 : 0);
+  }
+}
 #endif
 
 // Engine tests of testing options; the GPU targets run them on a GPU.
@@ -3846,18 +3873,30 @@ constexpr GgmlDevice kOptionTestDevice = GgmlDevice::Gpu;
 constexpr GgmlDevice kOptionTestDevice = GgmlDevice::Cpu;
 #endif
 
-// One decode step of custom_sdpa over [1, 8, 2, head] F32 key and value
-// caches that update_cache writes at position 2; with `read_cache`, the output
-// is the key cache times 1 instead, a read outside attention.
-std::vector<uint8_t> make_cached_attention_program(
-    bool read_cache,
-    int64_t head = 64) {
+// One decode step of custom_sdpa over [1, cache_len, kv_heads, head] F32 key
+// and value caches that update_cache writes at position 2, for a query of
+// q_heads heads; with `masked`, an explicit [1, cache_len] mask input lets it
+// attend the first 3 keys. With `read_cache`, the output is the key cache
+// times 1 instead, a read outside attention.
+struct CachedAttention {
+  bool read_cache = false;
+  int64_t head = 64;
+  int64_t q_heads = 2;
+  int64_t kv_heads = 2;
+  int64_t cache_len = 8;
+  bool masked = false;
+};
+
+std::vector<uint8_t> make_cached_attention_program(const CachedAttention& a) {
   TestProgram program;
-  program.input("q", fbs::ScalarType::FLOAT, {1, 1, 2, head});
-  program.input("k", fbs::ScalarType::FLOAT, {1, 1, 2, head});
-  program.input("v", fbs::ScalarType::FLOAT, {1, 1, 2, head});
-  program.buffer("k_cache", {1, 8, 2, head});
-  program.buffer("v_cache", {1, 8, 2, head});
+  program.input("q", fbs::ScalarType::FLOAT, {1, 1, a.q_heads, a.head});
+  program.input("k", fbs::ScalarType::FLOAT, {1, 1, a.kv_heads, a.head});
+  program.input("v", fbs::ScalarType::FLOAT, {1, 1, a.kv_heads, a.head});
+  if (a.masked) {
+    program.input("mask", fbs::ScalarType::FLOAT, {1, a.cache_len});
+  }
+  program.buffer("k_cache", {1, a.cache_len, a.kv_heads, a.head});
+  program.buffer("v_cache", {1, a.cache_len, a.kv_heads, a.head});
   for (const char* name : {"k", "v"}) {
     const std::string cache = std::string(name) + "_cache";
     program.call(
@@ -3867,24 +3906,29 @@ std::vector<uint8_t> make_cached_attention_program(
          {"cache", cache},
          {"start_pos", int64_t{2}}},
         fbs::ScalarType::FLOAT,
-        {1, 1, 2, head});
+        {1, 1, a.kv_heads, a.head});
+  }
+  std::vector<std::pair<std::string, TestArg>> attention = {
+      {"query", std::string("q")},
+      {"key", std::string("k_cache")},
+      {"value", std::string("v_cache")},
+      {"start_pos", int64_t{2}}};
+  if (a.masked) {
+    attention.push_back({"attn_mask", std::string("mask")});
   }
   program.call(
       "attended",
       "torch.ops.llama.custom_sdpa.default",
-      {{"query", std::string("q")},
-       {"key", std::string("k_cache")},
-       {"value", std::string("v_cache")},
-       {"start_pos", int64_t{2}}},
+      attention,
       fbs::ScalarType::FLOAT,
-      {1, 1, 2, head});
-  if (read_cache) {
+      {1, 1, a.q_heads, a.head});
+  if (a.read_cache) {
     program.call(
         "read",
         "torch.ops.aten.mul.Tensor",
         {{"self", std::string("k_cache")}, {"other", 1.0}},
         fbs::ScalarType::FLOAT,
-        {1, 8, 2, head});
+        {1, a.cache_len, a.kv_heads, a.head});
     return program.finish("read");
   }
   return program.finish("attended");
@@ -3892,19 +3936,30 @@ std::vector<uint8_t> make_cached_attention_program(
 
 std::vector<float> run_cached_attention(
     GgmlEngineContext& context,
-    size_t output_size,
-    size_t row_size = 128) {
+    const CachedAttention& a) {
   auto executable = context.compile("forward");
-  std::vector<float> q(row_size), k(row_size), v(row_size);
+  std::vector<float> q(a.q_heads * a.head), k(a.kv_heads * a.head),
+      v(a.kv_heads * a.head);
   for (size_t i = 0; i < q.size(); ++i) {
     q[i] = static_cast<float>(i % 5) / 3;
+  }
+  for (size_t i = 0; i < k.size(); ++i) {
     k[i] = static_cast<float>(i % 7) / 9;
     v[i] = static_cast<float>(i % 3) / 7 - 0.1f;
   }
   executable->set_input(0, q.data(), q.size(), ScalarType::Float);
   executable->set_input(1, k.data(), k.size(), ScalarType::Float);
   executable->set_input(2, v.data(), v.size(), ScalarType::Float);
+  if (a.masked) {
+    std::vector<float> mask(
+        a.cache_len, -std::numeric_limits<float>::infinity());
+    std::fill(mask.begin(), mask.begin() + 3, 0.0f);
+    executable->set_input(3, mask.data(), mask.size(), ScalarType::Float);
+  }
   executable->execute();
+  const size_t output_size = a.read_cache
+      ? static_cast<size_t>(a.cache_len * a.kv_heads * a.head)
+      : static_cast<size_t>(a.q_heads * a.head);
   std::vector<float> output(output_size);
   executable->get_output(0, output.data(), output.size(), ScalarType::Float);
   return output;
@@ -3921,9 +3976,8 @@ TEST(GgmlEngineOptionTest, AttentionOnlyKvCachesAreF16OnGpus) {
   for (const bool f32 : {false, true}) {
     auto host = GgmlEngineHost::create(GgmlEngineOptions{
         .device = kOptionTestDevice, .f32_gpu_kv_cache_for_testing = f32});
-    auto context = make_context(
-        *host, make_cached_attention_program(/*read_cache=*/false));
-    outputs.push_back(run_cached_attention(*context, 128));
+    auto context = make_context(*host, make_cached_attention_program({}));
+    outputs.push_back(run_cached_attention(*context, {}));
     EXPECT_EQ(context->f16_kv_cache_bytes(), f32 ? 0 : f16_bytes);
   }
   EXPECT_EQ(outputs[0], outputs[1]);
@@ -3934,9 +3988,9 @@ TEST(GgmlEngineOptionTest, AttentionOnlyKvCachesAreF16OnGpus) {
 TEST(GgmlEngineOptionTest, KvCachesOfCpuAttentionKeepF32) {
   auto host =
       GgmlEngineHost::create(GgmlEngineOptions{.device = kOptionTestDevice});
-  auto context = make_context(
-      *host, make_cached_attention_program(/*read_cache=*/false, /*head=*/8));
-  run_cached_attention(*context, 16, 16);
+  const CachedAttention attention{.head = 8};
+  auto context = make_context(*host, make_cached_attention_program(attention));
+  run_cached_attention(*context, attention);
   EXPECT_EQ(context->f16_kv_cache_bytes(), 0);
 }
 
@@ -3945,14 +3999,53 @@ TEST(GgmlEngineOptionTest, KvCachesOfCpuAttentionKeepF32) {
 TEST(GgmlEngineOptionTest, KvCacheReadOutsideAttentionKeepsF32) {
   auto host =
       GgmlEngineHost::create(GgmlEngineOptions{.device = kOptionTestDevice});
-  auto context =
-      make_context(*host, make_cached_attention_program(/*read_cache=*/true));
-  const std::vector<float> cache = run_cached_attention(*context, 1024);
+  const CachedAttention attention{.read_cache = true};
+  auto context = make_context(*host, make_cached_attention_program(attention));
+  const std::vector<float> cache = run_cached_attention(*context, attention);
   EXPECT_EQ(
       context->f16_kv_cache_bytes(),
       kOptionTestDevice == GgmlDevice::Gpu ? 8 * 2 * 64 * 2 : 0);
   // Row 2 holds k, whose values i % 7 / 9 F16 would round.
   EXPECT_EQ(cache[2 * 128 + 1], 1.0f / 9);
+}
+
+// ggml-cuda runs head size 512 only with a mask, a grouped query and a key
+// count divisible by 256; a cache that a masked attention of that kind reads
+// is F16 on a GPU, with results equal to F32 storage.
+TEST(GgmlEngineOptionTest, MaskedHead512GroupedKvCachesAreF16OnGpus) {
+  const CachedAttention attention{
+      .head = 512,
+      .q_heads = 2,
+      .kv_heads = 1,
+      .cache_len = 256,
+      .masked = true};
+  constexpr size_t kCacheF16Bytes = 256 * 1 * 512 * 2;
+  std::vector<std::vector<float>> outputs;
+  for (const bool f32 : {false, true}) {
+    auto host = GgmlEngineHost::create(GgmlEngineOptions{
+        .device = kOptionTestDevice, .f32_gpu_kv_cache_for_testing = f32});
+    auto context =
+        make_context(*host, make_cached_attention_program(attention));
+    outputs.push_back(run_cached_attention(*context, attention));
+    EXPECT_EQ(
+        context->f16_kv_cache_bytes(),
+        kOptionTestDevice == GgmlDevice::Gpu && !f32 ? 2 * kCacheF16Bytes : 0);
+  }
+  EXPECT_EQ(outputs[0], outputs[1]);
+  // Keys 0 and 1 are the caches' zeros and key 2 is k: each head's output is
+  // v weighted by key 2's softmax share.
+  for (int64_t h = 0; h < attention.q_heads; ++h) {
+    double score = 0;
+    for (int64_t d = 0; d < attention.head; ++d) {
+      score += static_cast<double>((h * attention.head + d) % 5) / 3 *
+          (static_cast<double>(d % 7) / 9);
+    }
+    const double share = 1 / (1 + 2 * std::exp(-score / std::sqrt(512.0)));
+    for (int64_t d = 0; d < attention.head; ++d) {
+      const double v = static_cast<double>(d % 3) / 7 - 0.1;
+      EXPECT_NEAR(outputs[0][h * attention.head + d], share * v, 1e-3);
+    }
+  }
 }
 
 } // namespace
