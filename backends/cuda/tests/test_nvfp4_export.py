@@ -12,6 +12,7 @@ import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
 import pytest
 import torch
 import torch.nn.functional as F
+import triton
 from executorch.backends.cuda.autotune.launch_params import clear_launch_param_cache
 from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
@@ -22,6 +23,10 @@ from executorch.backends.cuda.quantize_op_dispatch.nvfp4_dispatch import (
 )
 from executorch.backends.cuda.tests.nvfp4_gemma_test_utils import GemmaPacked
 from executorch.backends.cuda.tests.nvfp4_test_utils import PackedLinear
+from executorch.backends.cuda.triton.kernels import (
+    nvfp4_quantized_gemm,
+    nvfp4_w4a8_gemv,
+)
 from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
     nvfp4_quantize_activation,
 )
@@ -34,8 +39,21 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.fixture(autouse=True)
-def cold_pick_cache():
+def cold_pick_cache(monkeypatch):
     clear_launch_param_cache()
+    # Tile picks live in each kernel's triton.autotune cache: without native
+    # FP4, decode-size auto would reuse the GEMV tiles earlier cases tuned and
+    # time none.
+    for module in (nvfp4_quantized_gemm, nvfp4_w4a8_gemv):
+        for value in vars(module).values():
+            if isinstance(value, triton.runtime.Autotuner):
+                value.cache.clear()
+    for name in (
+        "ET_CUDA_NVFP4_ACT",
+        "ET_CUDA_NVFP4_PREFILL_OUTPUT",
+        "ET_CUDA_NVFP4_PREFILL_IMPL",
+    ):
+        monkeypatch.delenv(name, raising=False)
 
 
 @pytest.mark.parametrize(
@@ -57,8 +75,6 @@ def test_packed_linear_pte(mode, m, dynamic, fp32, monkeypatch):
         if not _has_native_fp4():
             pytest.skip("native FP4 required")
     monkeypatch.setenv("ET_CUDA_NVFP4_ACT", mode)
-    # M <= 64 keeps the fused kernels (no dequant + matmul) on every GPU.
-    monkeypatch.delenv("ET_CUDA_NVFP4_PREFILL_IMPL", raising=False)
     # The FP32 prefill policy is read at export and baked into the program.
     monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_OUTPUT", "fp32" if fp32 else "input")
     import executorch.backends.cuda.cuda_backend as cuda_backend
@@ -195,17 +211,17 @@ def test_dequant_prefill_pte(impl, monkeypatch):
     ).to_executorch()
     from executorch.export.utils import is_fbcode
 
-    if is_fbcode():
-        # The in-process runtime in fbcode has no CUDA backend.
-        return
-    from executorch.runtime import Runtime
-
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "nvfp4.pte"
         with path.open("wb") as f:
             lowered.write_to_file(f)
         lowered.write_tensor_data_to_file(tmp)
         data = next(Path(tmp).glob("*.ptd"))
+        if is_fbcode():
+            # The in-process runtime in fbcode has no CUDA backend.
+            return
+        from executorch.runtime import Runtime
+
         method = (
             Runtime.get()
             .load_program(str(path), data_path=str(data))

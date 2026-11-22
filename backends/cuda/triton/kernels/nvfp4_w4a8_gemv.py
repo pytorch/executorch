@@ -28,7 +28,9 @@ from executorch.backends.cuda.autotune.launch_params import (
 )
 from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
     _check_operands,
+    _check_split_workspace,
     _e4m3_f16,
+    _max_rows,
     _reduce_partials,
     SPLIT_K_CANDIDATES,
 )
@@ -185,7 +187,7 @@ def _w4a8_gemv(
         val = val * tl.load(PTS + n, n < N, 0)
     else:
         val = val * tl.load(PTS)
-    tl.store(Y + split * M * N + m * N + n, val, n < N)
+    tl.store(Y + (split.to(tl.int64) * M + m) * N + n, val, n < N)
 
 
 def launch_w4a8_gemv(x, qdata, scale, pts, *, split_k):
@@ -193,6 +195,7 @@ def launch_w4a8_gemv(x, qdata, scale, pts, *, split_k):
     n = qdata.shape[0]
     if split_k not in SPLIT_K_CANDIDATES or k % 16 or split_k > triton.cdiv(k, 256):
         raise InvalidLaunchParam(f"Illegal NVFP4 W4A8 GEMV split-K={split_k} for K={k}")
+    _check_split_workspace(split_k, m, n)
     xq = torch.empty((m, k), device=x.device, dtype=torch.int8)
     xs = torch.empty((m, k // 16), device=x.device, dtype=torch.float32)
     if not _QUEUING_ONLY.get():
@@ -233,8 +236,12 @@ def nvfp4_w4a8_gemv(
     per_tensor_scale: torch.Tensor,
     split_k: int = -1,
 ) -> torch.Tensor:
-    """NVFP4 W4A8 GEMV for small M; the output keeps ``x.dtype``."""
+    """NVFP4 W4A8 GEMV for small M (M is grid axis 1, so at most 65535); the
+    output keeps ``x.dtype``."""
     _check_operands(x, qdata, scale, per_tensor_scale)
+    max_rows = _max_rows(x.shape[0])
+    if max_rows is None or max_rows > 65535:
+        raise ValueError("NVFP4 W4A8 GEMV supports at most 65535 rows")
     if split_k < 0:
         return _launch_w4a8(x, qdata, scale, per_tensor_scale)
     return launch_w4a8_gemv(x, qdata, scale, per_tensor_scale, split_k=split_k)
