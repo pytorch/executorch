@@ -98,6 +98,7 @@ _MIXED_TYPES = {
     "ffn_up": "q4_k",
     "ffn_down": "q6_k",
     "blk.1.attn_v": "q8_0",
+    "blk.1.attn_q": "q3_k",
 }
 _LAYER_ROLES = (
     "attn_q",
@@ -135,6 +136,7 @@ _SCALE_OFFSETS = {
     "q5_k": (0, 2),
     "q6_k": (208,),
     "q8_0": (0,),
+    "q3_k": (108,),
 }
 
 
