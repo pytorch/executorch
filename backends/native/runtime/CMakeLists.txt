@@ -53,8 +53,8 @@ add_dependencies(native_program native_graph_schema_gen)
 set(_native_runtime_targets native_graph native_program)
 
 if(EXECUTORCH_BUILD_NATIVE)
-  add_library(native_reference_gguf_kquant utils/ReferenceGgufKQuant.cpp)
-  target_link_libraries(native_reference_gguf_kquant PRIVATE Threads::Threads)
+  add_library(native_reference_gguf_quant utils/ReferenceGgufQuant.cpp)
+  target_link_libraries(native_reference_gguf_quant PRIVATE Threads::Threads)
 
   add_library(
     native_package
@@ -85,7 +85,7 @@ if(EXECUTORCH_BUILD_NATIVE)
   list(
     APPEND
     _native_runtime_targets
-    native_reference_gguf_kquant
+    native_reference_gguf_quant
     native_package
     native_runtime
     native_engine
