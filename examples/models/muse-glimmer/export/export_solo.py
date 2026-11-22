@@ -31,11 +31,13 @@ linears take dequant + matmul, which ``forward_others`` runs unpadded.
 import argparse
 import gc
 import json
+import os
 import types
 import warnings
 
 import torch
 import torch.nn as nn
+
 from executorch.examples.models.muse_glimmer.export import common
 from executorch.examples.models.muse_glimmer.model.model import (
     materialize_runtime_buffers,
@@ -730,6 +732,7 @@ def _export_cuda(
     vision_fp32_mm: str = "none",
 ) -> None:
     import torch._inductor.config as inductor_config
+
     from executorch.backends.cuda.cuda_backend import CudaBackend
     from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
     from executorch.exir import (
@@ -777,7 +780,6 @@ def _export_cuda(
 
     if sample:
         add_on_device_sampler(model)
-
     hidden = config.dim
     temp = torch.tensor([1.0], dtype=torch.float32)
     et_seq = Dim("embed_seq_len", min=1, max=max_prefill)
@@ -969,6 +971,7 @@ def _export_mlx(
         to_edge_transform_and_lower,
     )
     from executorch.exir.passes import MemoryPlanningPass
+
     from torch.export import Dim, export
 
     has_vision = vision_model is not None
@@ -1259,7 +1262,14 @@ def main() -> None:
         help="Optional FP32-output linear implementation for vision blocks "
         "0-34. The default preserves the original all-BF16 encoder.",
     )
+    parser.add_argument(
+        "--nvfp4-act",
+        choices=("auto", "w4a4", "w4a16"),
+        default="auto",
+        help="NVFP4 CUDA activation mode: auto times W4A4/W4A16 and split-K per shape; w4a4 forces native FP4 activations.",
+    )
     args = parser.parse_args()
+    os.environ["ET_CUDA_NVFP4_ACT"] = args.nvfp4_act
 
     _validate_offgraph_prefill(parser, args)
 

@@ -16,6 +16,7 @@ import argparse
 import gc
 import json
 import logging
+import os
 from typing import TYPE_CHECKING
 
 import torch
@@ -1170,9 +1171,13 @@ def main() -> None:
 
     add_kv_layout_arguments(parser)
     parser.add_argument("--forward-sizes", default="1,2,4,8,16,32,64")
+    parser.add_argument(
+        "--nvfp4-act", choices=("auto", "w4a4", "w4a16"), default="auto"
+    )
     args = parser.parse_args()
     logging.basicConfig()
     logging.getLogger("executorch.backends.cuda.cuda_backend").setLevel(logging.INFO)
+    os.environ["ET_CUDA_NVFP4_ACT"] = args.nvfp4_act
 
     try:
         validate_dflash_export_options(args.backend, args.use_offgraph_kv_cache)

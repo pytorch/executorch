@@ -400,3 +400,41 @@ export.
 For direct HTTP requests, the opt-out is
 `"chat_template_kwargs": { "return_reasoning": false }`. The flag must be a JSON
 boolean; strings, numbers, and `null` return a 400 error.
+
+
+## NVFP4 GGUF on CUDA
+
+NVFP4 (GGML type 40) GGUF weights load through the portable
+`ExportableNVFP4Tensor` and are packed for the CUDA kernels at export time.
+Weight `.scale` companions are paired by tensor name and are not model parameters.
+At export/AOT time, `auto` measures W4A4 and W4A16, including split-K factors
+1/2/4/8/16/32, separately for the prefill and decode methods. Prefill is tuned
+with the export example's M (4096 for the default Muse Glimmer configuration),
+and decode with M=1. The selected activation precision and tile config are
+compiled into each method; a smaller runtime M does not switch precision.
+Triton tunes M/N/K tiles, grouped M launch order, warps and stages. Native
+W4A4 requires an SM120 Blackwell GPU and a compatible CUDA toolkit and driver.
+NVFP4 candidates use the median of three cold CUDA-graph call means. The
+default timing for other quantized formats is unchanged. RTN weights with
+unit global scales and finite nonnegative E4M3 block scales can omit redundant
+BF16 rounding in native decode GEMV. This property is inferred once when the
+weight is packed and carried through export as static metadata. Packed scales
+are immutable after conversion; rebuild the packed tensor if they change.
+
+```bash
+python -m executorch.examples.models.muse_glimmer.export.export_solo \
+  --backend cuda --gguf /path/to/model-nvfp4.gguf \
+  --output-dir /path/to/export --max-seq-len 131072 --nvfp4-act auto
+```
+
+`--nvfp4-act w4a4` and `--nvfp4-act w4a16` force the activation path.
+W4A4 uses NVFP4 activations and weights; W4A16 uses BF16 activations with
+NVFP4 weights. Both accumulate in FP32 and return BF16 to the model.
+Set `ET_CUDA_NVFP4_STATIC_ACT=1` to opt into checkpoint `.input_scale`
+metadata; the default uses dynamic row scales, as current llama.cpp does.
+
+The converter follows llama.cpp's bit patterns, including positive zero for
+FP4 code 8. It rejects GGML scale byte `0xff`: llama.cpp decodes that byte as
+480, which cannot be represented losslessly by a finite E4M3 scale.
+
+Kernel timings are available in `backends/cuda/benchmarks/nvfp4_gemm_bench.py`.

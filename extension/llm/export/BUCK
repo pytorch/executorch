@@ -108,6 +108,7 @@ fbcode_target(_kind = runtime.python_library,
     ],
     deps = [
         ":int4",
+        ":nvfp4",
         "//caffe2:torch",
         "//pytorch/ao:torchao",
         "fbsource//third-party/pypi/gguf:gguf",
