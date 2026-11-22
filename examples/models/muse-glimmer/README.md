@@ -416,10 +416,10 @@ python -m executorch.examples.models.muse_glimmer.export.export_solo \
 
 `--nvfp4-act` (also accepted by `export_dflash`) sets `ET_CUDA_NVFP4_ACT`:
 `auto` times NVFP4 (W4A4) against BF16 (W4A16) activations per shape at export
-time where native FP4 is available (SM120), and elsewhere times decode W4A16
-against INT8 activations (W4A8, dp4a); `w4a4` forces NVFP4 activations (SM120
-required), `w4a8` forces the W4A8 decode GEMV, and `w4a16` forces BF16
-activations. The choice is compiled
+time where native FP4 is available (SM120), and on other NVIDIA GPUs times
+decode W4A16 against INT8 activations (W4A8, dp4a); `w4a4` forces NVFP4
+activations (SM120 required), `w4a8` forces the W4A8 decode GEMV (NVIDIA only),
+and `w4a16` forces BF16 activations. The choice is compiled
 into each exported method. `--nvfp4-static-act` (`export_solo` only) uses the checkpoint's
 `.input_scale` as a static activation scale; by default activations are scaled
 per row, as llama.cpp does. A fused group whose shards carry different

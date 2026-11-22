@@ -155,6 +155,8 @@ def test_gated_linear_routing(mode, dtype, rows, fp32, native, expected, monkeyp
         for name in names:
             monkeypatch.setattr(module, name, recorder(name, calls))
     monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: native)
+    # The routing is NVIDIA's; w4a8 raises on ROCm.
+    monkeypatch.setattr(torch.version, "hip", None)
     monkeypatch.setenv("ET_CUDA_NVFP4_ACT", mode)
     monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_OUTPUT", "fp32" if fp32 else "input")
     fake = FakeTensorMode()
@@ -180,9 +182,10 @@ def test_gated_linear_dequant_prefill(mode, rows, expected, monkeypatch):
 
     calls = []
 
-    def dequant(qdata, scale, per_tensor_scale, dtype):
+    def dequant(qdata, scale, per_tensor_scale, output_dtype):
         calls.append(("nvfp4_dequant", None))
-        return qdata.new_empty((qdata.shape[0], qdata.shape[1] * 2), dtype=dtype)
+        shape = (qdata.shape[0], qdata.shape[1] * 2)
+        return qdata.new_empty(shape, dtype=output_dtype)
 
     monkeypatch.setattr(nvfp4_dequant, "nvfp4_dequant", dequant)
     monkeypatch.setattr(
@@ -505,6 +508,58 @@ def test_gated_linear_parameter_pte(mode, monkeypatch):
         for rows in (1, 5, 17, 64):
             value = torch.randn(rows, 192, dtype=x.dtype)
             expected = reference(value.cuda(), weight).to(x.dtype)
+            actual = method.execute([value])[0].cpu()
+            torch.testing.assert_close(actual, expected.cpu(), rtol=0.03, atol=0.04)
+
+
+@CUDA
+def test_gated_linear_dequant_prefill_pte(monkeypatch):
+    """Without native FP4 (forced, so any GPU runs it), auto gated prefill of a
+    fused weight with per-row global scales takes F.linear -> dequant +
+    matmul; the lowered program matches eager on both sides of M = 64."""
+    monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: False)
+    monkeypatch.setenv("ET_CUDA_NVFP4_ACT", "auto")
+    module = GatedLinear().eval()
+    x = torch.randn(100, 192, dtype=torch.bfloat16)
+    exported = torch.export.export(
+        module,
+        (x,),
+        dynamic_shapes=({0: torch.export.Dim("tokens", min=5, max=256)},),
+        strict=True,
+    )
+    lowered = to_edge_transform_and_lower(
+        exported,
+        partitioner=[
+            CudaPartitioner([CudaBackend.generate_method_name_compile_spec("forward")])
+        ],
+        compile_config=EdgeCompileConfig(_check_ir_validity=False),
+    ).to_executorch()
+    from executorch.export.utils import is_fbcode
+
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder) / "gated_dequant.pte"
+        with path.open("wb") as output:
+            lowered.write_to_file(output)
+        lowered.write_tensor_data_to_file(folder)
+        data = next(Path(folder).glob("*.ptd"))
+        if is_fbcode():
+            # The in-process runtime in fbcode has no CUDA backend.
+            return
+        from executorch.runtime import Runtime
+
+        method = (
+            Runtime.get()
+            .load_program(str(path), data_path=str(data))
+            .load_method("forward")
+        )
+        w = module.weight
+        weight = CudaNVFP4Tensor(
+            w.qdata.cuda(), w.scale.cuda(), w.per_tensor_scale.cuda()
+        )
+        assert weight.per_tensor_scale.numel() > 1
+        for rows in (5, 64, 65, 256):
+            value = torch.randn(rows, 192, dtype=x.dtype)
+            expected = gated_reference(value.cuda(), weight)
             actual = method.execute([value])[0].cpu()
             torch.testing.assert_close(actual, expected.cpu(), rtol=0.03, atol=0.04)
 
