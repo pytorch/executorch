@@ -123,15 +123,12 @@ class CudaNVFP4Tensor(TorchAOBaseTensor):
         # Infer once on materialized weights. Fake reconstruction receives the
         # serialized metadata through __new__, without reading tensor values.
         real = w.scale.device.type != "meta" and not is_fake(w.scale)
-        if real and bool(((w.scale & 0x7F) == 0x7F).any().item()):
-            raise ValueError("NVFP4 E4M3 scales must be finite (no 0x7F/0xFF bytes)")
         unit_scale = (
             real
             and not is_fake(w.per_tensor_scale)
-            and w.scale.numel() > 0
             and bool(torch.all(w.per_tensor_scale == 1).item())
         )
-        return cls(
+        packed = cls(
             w.qdata.contiguous().view(torch.uint8),
             w.scale,
             w.per_tensor_scale,
@@ -140,6 +137,10 @@ class CudaNVFP4Tensor(TorchAOBaseTensor):
             unit_scale,
             w.act_per_tensor_scale,
         )
+        # After the constructor's dtype checks: the scale is uint8 here.
+        if real and bool(((packed.scale & 0x7F) == 0x7F).any().item()):
+            raise ValueError("NVFP4 E4M3 scales must be finite (no 0x7F/0xFF bytes)")
+        return packed
 
     @classmethod
     def fuse_along_output(cls, weights):

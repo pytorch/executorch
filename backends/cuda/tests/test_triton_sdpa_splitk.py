@@ -298,14 +298,18 @@ class TestTritonSdpaSplitK(unittest.TestCase):
 
     def test_small_query_without_mask_matches_reference(self):
         """No mask, not causal, bounded by kv_len (the DFlash draft's call),
-        and a 32x512 query tile (8:1 GQA at head_dim 512, Gemma 4 globals)."""
+        including the widest unmasked tiles (64x256, and 32x512 at head_dim 512,
+        Gemma 4 globals) and a 128x256 tile, which takes the prefill kernel."""
         B, Lk = 1, 512
         kv_len = torch.tensor([300], dtype=torch.int64, device="cuda")
-        for H_q, H_kv, D, Lq in (
-            (8, 2, 128, 5),
-            (8, 2, 128, 8),
-            (8, 2, 128, 16),
-            (32, 4, 512, 4),
+        for H_q, H_kv, D, Lq, small_query in (
+            (8, 2, 128, 5, True),
+            (8, 2, 128, 8, True),
+            (8, 2, 128, 16, True),
+            (32, 4, 512, 4, True),
+            (8, 2, 256, 16, True),
+            # Without a mask a 128x256 tile fits no kept config: prefill.
+            (16, 2, 256, 16, False),
         ):
             with self.subTest(H_q=H_q, D=D, Lq=Lq):
                 torch.manual_seed(Lq)
@@ -318,7 +322,7 @@ class TestTritonSdpaSplitK(unittest.TestCase):
                     wraps=self.sdpa_module._launch_small_query_splitk,
                 ) as small_query_launcher:
                     out = self.sdpa(q, k, v, enable_gqa=True, kv_len=kv_len)
-                self.assertEqual(small_query_launcher.call_count, 1)
+                self.assertEqual(small_query_launcher.call_count, int(small_query))
                 ref = _reference_sdpa(q, k[:, :, :300], v[:, :, :300])
                 self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
 
