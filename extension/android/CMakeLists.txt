@@ -338,6 +338,9 @@ if(EXECUTORCH_BUILD_XNNPACK_BACKEND_SHARED
   # The AAR packages this library as libexecutorch.so, so a backend's DT_NEEDED
   # entry names libexecutorch.so. Without this the SONAME stays
   # libexecutorch_jni.so and the loader looks for a file the APK does not carry.
+  # NO_SONAME drops CMake's own -soname, which it places after LINK_OPTIONS and
+  # would otherwise win.
+  set_target_properties(executorch_jni PROPERTIES NO_SONAME TRUE)
   target_link_options(executorch_jni PRIVATE "LINKER:-soname,libexecutorch.so")
 endif()
 target_link_options_gc_sections(executorch_jni)
