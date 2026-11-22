@@ -568,6 +568,20 @@ class CrossEngineTest(unittest.TestCase):
                     resize=True,
                 )
 
+    def test_two_dim_reduction_feeding_advanced_indexing(self):
+        # native-vk only: the index makes it squeeze dims 1 and 3 out of a
+        # buffer, once per input size.
+        torch.manual_seed(0)
+        steps = [(torch.randn(1, 3, s, 5), torch.tensor([0, 0])) for s in (4, 2, 6)]
+        seq = Dim("seq", min=2, max=8)
+        self._check_dynamic(
+            _SumThenIndex((1, 3)),
+            steps,
+            ({2: seq}, None),
+            atol_fraction=1e-5,
+            engines=("vulkan_ptn_runner",),
+        )
+
     def test_reductions_without_keepdim(self):
         torch.manual_seed(0)
         steps = [(torch.randn(1, s, 16),) for s in (5, 3, 9)]
@@ -582,23 +596,40 @@ class CrossEngineTest(unittest.TestCase):
         for name, reduce in reductions.items():
             with self.subTest(reduction=name):
                 self._check_dynamic(
-                    _ProjectThenReduce(reduce),
-                    steps,
-                    ({1: seq},),
-                    atol_fraction=1e-5,
-                    engines=("ggml_ptn_runner",),
+                    _ProjectThenReduce(reduce), steps, ({1: seq},), atol_fraction=1e-5
                 )
 
     def test_reduction_feeding_advanced_indexing(self):
+        # On native-vk the index makes the reduction's output a buffer, while
+        # its texture input reduces into a texture.
         torch.manual_seed(0)
         steps = [(torch.randn(2, 3, 4), torch.tensor([0, 2]))]
-        self._check_dynamic(
-            _SumThenIndex(),
-            steps,
-            None,
-            atol_fraction=1e-5,
-            engines=("ggml_ptn_runner",),
-        )
+        self._check_dynamic(_SumThenIndex(), steps, None, atol_fraction=1e-5)
+
+    def test_rank_one_reductions_over_every_dim(self):
+        class Reduce(torch.nn.Module):
+            def __init__(self, fn):
+                super().__init__()
+                self.fn = fn
+
+            def forward(self, x):
+                return self.fn(x)
+
+        x = torch.randn(8)
+        cases = {
+            "amax": lambda x: torch.amax(x * 2.0),
+            "amin": lambda x: torch.amin(x * 2.0),
+            "mean": lambda x: torch.mean(x * 2.0, dim=None),
+        }
+        for name, fn in cases.items():
+            with self.subTest(op=name), tempfile.TemporaryDirectory() as tmp:
+                outdir = Path(tmp)
+                package = outdir / "model.ptn"
+                to_native(torch.export.export(Reduce(fn), (x,))).save(str(package))
+                (out,) = _run("vulkan_ptn_runner", package, [(x,)], outdir)
+                expected = fn(x)
+                self.assertEqual(out.shape, expected.shape)
+                torch.testing.assert_close(out, expected, atol=1e-5, rtol=1e-5)
 
     def test_negative_dims(self):
         torch.manual_seed(0)
