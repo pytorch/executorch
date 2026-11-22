@@ -39,7 +39,7 @@
 #include <executorch/backends/native/runtime/graph/TensorMeta.h>
 #include <executorch/backends/native/runtime/graph/Value.h>
 #include <executorch/backends/native/runtime/graph/utils/GraphUtils.h>
-#include <executorch/backends/native/runtime/utils/ReferenceGgufKQuant.h>
+#include <executorch/backends/native/runtime/utils/ReferenceGgufQuant.h>
 #include <executorch/backends/native/runtime/vulkan/VulkanConstantMaterializationTracker.h>
 #include <executorch/backends/native/runtime/vulkan/passes/FuseQuantizedEmbedding.h>
 #include <executorch/backends/native/runtime/vulkan/passes/FuseQuantizedLinear.h>
@@ -48,7 +48,8 @@
 #include <executorch/backends/native/runtime/vulkan/passes/LowerRMSNorm.h>
 #include <executorch/backends/native/runtime/vulkan/passes/LowerSDPA.h>
 #include <executorch/backends/native/runtime/vulkan/passes/MaterializeViewCopies.h>
-#include <executorch/backends/native/runtime/vulkan/passes/UseReferenceGgufKQuant.h>
+#include <executorch/backends/native/runtime/vulkan/passes/NormalizeDims.h>
+#include <executorch/backends/native/runtime/vulkan/passes/UseReferenceGgufQuant.h>
 #include <executorch/runtime/core/freeable_buffer.h>
 
 #include <executorch/backends/vulkan/runtime/api/api.h>
@@ -294,6 +295,25 @@ size_t dynamic_dims(const TensorMeta& meta) {
   return count;
 }
 
+// Ops that read an input in a packing other than their output's: copies that
+// convert it, ops whose dispatch repacks their own inputs, and fused ops with
+// layouts of their own.
+bool reads_any_input_layout(std::string_view key) {
+  constexpr std::array<std::string_view, 9> kOps{
+      "aten.clone.default",
+      "aten.view_copy.default",
+      "aten.convolution.default",
+      "aten.embedding.default",
+      "aten.index.Tensor",
+      "aten.constant_pad_nd.default",
+      "llama.custom_sdpa.default",
+      "update_cache.default",
+      "et_vk.prepack.default",
+  };
+  return key.starts_with("et_vk.") ||
+      std::ranges::find(kOps, key) != kOps.end();
+}
+
 bool preserves_packed_layout(std::string_view key) {
   constexpr std::array<std::string_view, 7> kOps{
       "aten._to_copy.default",
@@ -306,6 +326,13 @@ bool preserves_packed_layout(std::string_view key) {
   return std::ranges::find(kOps, key) != kOps.end();
 }
 
+constexpr std::array<std::string_view, 4> kReduceOps{
+    "aten.amax.default",
+    "aten.amin.default",
+    "aten.mean.dim",
+    "aten.sum.dim_IntList",
+};
+
 struct Reduce2dLayoutConstraint {
   ValueId input_id;
   std::array<bool, 3> allowed_packed_dims;
@@ -314,12 +341,6 @@ struct Reduce2dLayoutConstraint {
 std::optional<Reduce2dLayoutConstraint> reduce2d_layout_constraint(
     const Graph& graph,
     const Node& node) {
-  constexpr std::array<std::string_view, 4> kReduceOps{
-      "aten.amax.default",
-      "aten.amin.default",
-      "aten.mean.dim",
-      "aten.sum.dim_IntList",
-  };
   if (std::ranges::find(kReduceOps, registry_key(node.target)) ==
       kReduceOps.end()) {
     return std::nullopt;
@@ -654,6 +675,8 @@ class VulkanEngineExecutable final : public EngineExecutable {
       source_constants_;
   std::unordered_map<std::string, std::shared_ptr<OwnedBytes>>
       derived_constants_;
+  // Owners whose GGUF source bytes this executable has recorded.
+  std::unordered_set<std::string> gguf_source_owners_;
 
   // vref_ and layout_ are sized to the method graph's value list, so every
   // ValueId the graph hands out addresses them. An id that does not means the
@@ -696,13 +719,15 @@ class VulkanEngineExecutable final : public EngineExecutable {
         mutable_state_claim_(mutable_state_owners, method),
         graph_(std::make_unique<ComputeGraph>(config)) {
     method_.graph.rebuild_def_use();
-    warn_reference_fallback(vulkan::use_reference_gguf_kquant(method_));
+    warn_reference_fallback(vulkan::use_reference_gguf(method_));
     vulkan::lower_hf_attention(method_.graph);
     vulkan::lower_sdpa(method_.graph);
     vulkan::fuse_quantized_embeddings(method_);
     vulkan::fuse_quantized_linears(method_);
     vulkan::lower_rms_norms(method_.graph);
     vulkan::insert_prepack_nodes(method_);
+    // After the fusions, which match dims as exported.
+    vulkan::make_dims_non_negative(method_.graph);
     validate_graph(method_.graph);
     validate_user_io(method_);
     nodes_ = method_.graph.schedule;
@@ -1192,13 +1217,13 @@ class VulkanEngineExecutable final : public EngineExecutable {
       const Package& package,
       const DataBinding& b,
       const Value& v) {
-    const auto gguf = v.attrs.find(vulkan::kReferenceGgufKQuantAttr);
+    const auto gguf = v.attrs.find(vulkan::kReferenceGgufAttr);
     if (gguf != v.attrs.end()) {
       const auto* codec = std::any_cast<std::string>(&gguf->second);
       if (codec == nullptr) {
-        throw std::runtime_error("vulkan: malformed GGUF K-quant annotation");
+        throw std::runtime_error("vulkan: malformed GGUF annotation");
       }
-      return gguf_kquant_buffer(package, b, v, *codec);
+      return gguf_buffer(package, b, v, *codec);
     }
     if (v.tensor_meta().quant.has_value()) {
       throw std::runtime_error(
@@ -1263,7 +1288,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
   }
 
   static void warn_reference_fallback(
-      const vulkan::ReferenceGgufKQuantFallback& fallback) {
+      const vulkan::ReferenceGgufFallback& fallback) {
     if (fallback.constants == 0) {
       return;
     }
@@ -1281,9 +1306,12 @@ class VulkanEngineExecutable final : public EngineExecutable {
         fallback.decoded_bytes);
   }
 
-  // use_reference_gguf_kquant retyped this constant as the fp32 tensor that
-  // its stored GGUF K-quant blocks decode to.
-  executorch::runtime::FreeableBuffer gguf_kquant_buffer(
+  // use_reference_gguf retyped this constant as the fp32 tensor that its
+  // stored GGUF blocks decode to. The package keeps one copy of byte-identical
+  // constants, and codecs whose rows have the same byte count decode the same
+  // bytes differently, so a decoded copy is shared only by the same owner,
+  // codec and shape.
+  executorch::runtime::FreeableBuffer gguf_buffer(
       const Package& package,
       const DataBinding& b,
       const Value& v,
@@ -1297,26 +1325,32 @@ class VulkanEngineExecutable final : public EngineExecutable {
     const int64_t cols = meta.sizes.empty() ? 0 : meta.sizes.back();
     const int64_t rows = cols == 0 ? 0 : meta.numel() / cols;
     const size_t decoded_nbytes = logical_nbytes(meta);
-    std::shared_ptr<OwnedBytes>& storage =
-        derived_constants_["gguf:" + info->owner];
+    size_t stored_nbytes = 0;
+    if (__builtin_mul_overflow(
+            static_cast<size_t>(rows),
+            reference::gguf_row_nbytes(codec, cols),
+            &stored_nbytes) ||
+        info->nbytes != stored_nbytes) {
+      throw std::runtime_error(
+          "vulkan: GGUF constant '" + b.key +
+          "' does not hold its declared shape");
+    }
+    std::shared_ptr<OwnedBytes>& storage = derived_constants_
+        [std::to_string(info->owner.size()) + ":" + info->owner + ":" + codec +
+         ":" + std::to_string(rows) + "x" + std::to_string(cols)];
     if (!storage) {
       std::optional<OwnedBytes> raw = load_constant(package, *info);
       if (!raw) {
         throw std::runtime_error(
             "vulkan: package could not load constant for key '" + b.key + "'");
       }
-      size_t stored_nbytes = 0;
-      if (__builtin_mul_overflow(
-              static_cast<size_t>(rows),
-              reference::gguf_kquant_row_nbytes(codec, cols),
-              &stored_nbytes) ||
-          raw->span().size() != stored_nbytes) {
+      if (raw->span().size() != stored_nbytes) {
         throw std::runtime_error(
-            "vulkan: GGUF K-quant constant '" + b.key +
+            "vulkan: GGUF constant '" + b.key +
             "' does not hold its declared shape");
       }
       std::vector<uint8_t> bytes(decoded_nbytes);
-      reference::decode_gguf_kquant(
+      reference::decode_gguf(
           codec,
           raw->span().data(),
           raw->span().size(),
@@ -1326,11 +1360,13 @@ class VulkanEngineExecutable final : public EngineExecutable {
           reinterpret_cast<float*>(bytes.data()));
       storage = std::make_shared<OwnedBytes>(
           OwnedBytes::from_vector(std::move(bytes)));
-      materializations_.record(info->package_id, info->owner, info->nbytes);
+      if (gguf_source_owners_.insert(info->owner).second) {
+        materializations_.record(info->package_id, info->owner, info->nbytes);
+      }
     }
     if (storage->span().size() != decoded_nbytes) {
       throw std::runtime_error(
-          "vulkan: GGUF K-quant constant '" + b.key +
+          "vulkan: GGUF constant '" + b.key +
           "' does not match its declared size");
     }
     const ByteSpan bytes = storage->span();
@@ -1339,7 +1375,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
         bytes.data(), bytes.size(), release_owned_bytes, context);
   }
 
-  // Package bytes are acquired only here and in gguf_kquant_buffer; both
+  // Package bytes are acquired only here and in gguf_buffer; both
   // record each owner's source bytes once.
   std::shared_ptr<OwnedBytes> source_constant(
       const Package& package,
@@ -1779,6 +1815,31 @@ class VulkanEngineExecutable final : public EngineExecutable {
     throw std::runtime_error("vulkan: unhandled argument kind");
   }
 
+  // `ref`, the value of `id`, repacked to `layout` unless it is prepacked or
+  // already in `layout`.
+  VkRef in_layout(ValueId id, VkRef ref, utils::GPUMemoryLayout layout) {
+    if (!valid(id) || graph_->val_is_tref(ref) || !g().value(id).is_tensor() ||
+        layout_at(id) == layout) {
+      return ref;
+    }
+    return repack(ref, g().value(id), storage_at(id), layout);
+  }
+
+  VkRef tensor_list_in_layout(
+      const TensorListArg& list,
+      utils::GPUMemoryLayout layout) {
+    std::vector<VkRef> refs;
+    refs.reserve(list.ids.size());
+    std::transform(
+        list.ids.begin(),
+        list.ids.end(),
+        std::back_inserter(refs),
+        [&](const ValueId id) {
+          return valid(id) ? in_layout(id, vref_at(id), layout) : none_ref_;
+        });
+    return graph_->add_value_list(std::move(refs));
+  }
+
   // Insert a same-shape clone into a fresh width-packed tensor when an
   // activation's current layout or storage cannot satisfy its consumer.
   VkRef repack_to_width(VkRef src, const Value& v, utils::StorageType storage) {
@@ -1905,6 +1966,118 @@ class VulkanEngineExecutable final : public EngineExecutable {
     return tensor;
   }
 
+  // ET-VK's texture reductions write the reduced dims as size 1 whatever
+  // keepdim says (its own partitioner sends them only keepdim=True), so a
+  // keepdim=False reduction writes a keepdim temporary and squeeze_copy then
+  // drops the reduced dims. Buffer inputs take ET-VK's per-row path, which
+  // honors keepdim, or are rejected by ET-VK.
+  bool dispatch_squeezed_reduce(const Node& n, const std::string& key) {
+    const Argument* self = find_input(n, "self");
+    const Argument* dims = find_input(n, "dim");
+    if (std::ranges::find(kReduceOps, key) == kReduceOps.end() ||
+        constant_bool_input(n, "keepdim", false) || self == nullptr ||
+        self->kind() != ArgKind::Tensor) {
+      return false;
+    }
+    std::vector<int64_t> reduced_dims;
+    const bool listed = dims != nullptr && dims->kind() == ArgKind::IntList &&
+        dims->as_int_list().ids.empty();
+    if (listed && !dims->as_int_list().values.empty()) {
+      reduced_dims = dims->as_int_list().values;
+    } else if (
+        (dims == nullptr || dims->kind() == ArgKind::None ||
+         (listed && dims->as_int_list().values.empty())) &&
+        meta_of(self->as_tensor().id).sizes.size() == 1) {
+      // A rank-1 reduction over every dim (None or []) reduces dim 0.
+      reduced_dims = {0};
+    } else {
+      return false;
+    }
+    const bool every_dim = !listed || dims->as_int_list().values.empty();
+    const auto rank =
+        static_cast<int64_t>(meta_of(self->as_tensor().id).sizes.size());
+    std::vector<int64_t> squeezed(reduced_dims.size());
+    std::ranges::transform(reduced_dims, squeezed.begin(), [rank](int64_t dim) {
+      return dim < 0 ? dim + rank : dim;
+    });
+    std::ranges::sort(squeezed);
+    if (std::ranges::adjacent_find(squeezed) != squeezed.end()) {
+      throw std::runtime_error("vulkan: " + key + " repeats a reduced dim");
+    }
+    const VkRef input = resolve_arg(*self);
+    if (graph_->is_buffer_storage(input)) {
+      return false;
+    }
+    std::vector<int64_t> sizes = graph_->sizes_of(input);
+    for (const int64_t dim : squeezed) {
+      sizes.at(static_cast<size_t>(dim)) = 1;
+    }
+    const VkRef out = vref_at(n.outputs.at(0).value_id);
+    VkRef reduced = graph_->add_tensor(
+        sizes,
+        graph_->dtype_of(out),
+        graph_->storage_type_of(input),
+        graph_->estimate_memory_layout_of(input));
+    std::vector<VkRef> args;
+    for (const NamedArgument& na : n.inputs) {
+      if (na.name == "dim" && every_dim) {
+        args.push_back(graph_->add_scalar_list(std::vector<int64_t>{0}));
+        continue;
+      }
+      args.push_back(
+          na.name == "keepdim"    ? graph_->add_scalar<bool>(true)
+              : na.name == "self" ? input
+                                  : resolve_arg(na.arg));
+    }
+    args.push_back(reduced);
+    VK_GET_OP_FN(key)(*graph_, args);
+    // squeeze_copy's permute needs its input stored and packed like its output.
+    if (graph_->storage_type_of(reduced) != graph_->storage_type_of(out) ||
+        graph_->packed_dim_of(reduced) != graph_->packed_dim_of(out)) {
+      const VkRef repacked = graph_->add_tensor(
+          sizes,
+          graph_->dtype_of(out),
+          graph_->storage_type_of(out),
+          graph_->estimate_memory_layout_of(out));
+      VK_GET_OP_FN("aten.clone.default")
+      (*graph_, {reduced, none_ref_, repacked});
+      reduced = repacked;
+    }
+    // A buffer squeeze_copy shifts the dims it stores down on every resize,
+    // which keeps only a single dim right, so squeeze one dim per node, highest
+    // first, which shifts no dim still to squeeze.
+    for (auto dim = squeezed.rbegin(); dim != squeezed.rend(); ++dim) {
+      sizes.erase(sizes.begin() + *dim);
+      const VkRef next = std::next(dim) == squeezed.rend()
+          ? out
+          : graph_->add_tensor(
+                sizes,
+                graph_->dtype_of(out),
+                graph_->storage_type_of(out),
+                graph_->estimate_memory_layout_of(out));
+      VK_GET_OP_FN("aten.squeeze_copy.dims")
+      (*graph_,
+       {reduced, graph_->add_scalar_list(std::vector<int64_t>{*dim}), next});
+      reduced = next;
+    }
+    return true;
+  }
+
+  // A squeeze of a scalar is a copy: ET-VK's squeeze_copy reads its input's
+  // first size, which a scalar does not have.
+  bool dispatch_scalar_squeeze(const Node& n, const std::string& key) {
+    const Argument* self = find_input(n, "self");
+    if (!key.starts_with("aten.squeeze_copy.") || self == nullptr ||
+        self->kind() != ArgKind::Tensor ||
+        !meta_of(self->as_tensor().id).sizes.empty()) {
+      return false;
+    }
+    VK_GET_OP_FN("aten.clone.default")
+    (*graph_,
+     {resolve_arg(*self), none_ref_, vref_at(n.outputs.at(0).value_id)});
+    return true;
+  }
+
   // ET-VK has no symbolic neg, so -a runs as sub(0, a), which ET-VK computes in
   // int32. An int literal must negate within int32. A symbolic operand must be
   // a graph input's size whose serialized upper bound is within int32: every
@@ -1973,6 +2146,12 @@ class VulkanEngineExecutable final : public EngineExecutable {
       return;
     }
     const std::string key = registry_key(n.target);
+    if (dispatch_scalar_squeeze(n, key)) {
+      return;
+    }
+    if (dispatch_squeezed_reduce(n, key)) {
+      return;
+    }
     if (!VK_HAS_OP(key)) {
       throw std::runtime_error(
           "vulkan: unsupported op '" + key + "' (target " + n.target + ")");
@@ -2002,6 +2181,13 @@ class VulkanEngineExecutable final : public EngineExecutable {
       }
     }
 
+    std::optional<utils::GPUMemoryLayout> output_layout;
+    for_each_output_value(n, [&](ValueId id) {
+      if (!output_layout && g().value(id).is_tensor()) {
+        output_layout = layout_at(id);
+      }
+    });
+
     std::vector<VkRef> args;
     args.reserve(n.inputs.size() + 1);
     for (const NamedArgument& na : n.inputs) {
@@ -2010,7 +2196,19 @@ class VulkanEngineExecutable final : public EngineExecutable {
         args.push_back(synth_zero_bias(n));
         continue;
       }
-      VkRef a = resolve_arg(na.arg);
+      // Layout assignment packs a width-packed op's neighbors along width,
+      // which leaves an op that reads and writes one packing, such as a
+      // reduction, expand or cat, with inputs in another packing. Ops that
+      // read `self` or bind inputs as their output are converted below.
+      const bool in_output_layout = !width && output_layout.has_value() &&
+          !reads_any_input_layout(key) && !reads_self_as_output(key) &&
+          !binds_output;
+      VkRef a = in_output_layout && na.arg.kind() == ArgKind::TensorList
+          ? tensor_list_in_layout(na.arg.as_tensor_list(), *output_layout)
+          : resolve_arg(na.arg);
+      if (in_output_layout && na.arg.kind() == ArgKind::Tensor) {
+        a = in_layout(na.arg.as_tensor().id, a, *output_layout);
+      }
       if (width && na.arg.kind() == ArgKind::Tensor) {
         const ValueId value_id = na.arg.as_tensor().id;
         if (valid(value_id)) {
@@ -2439,6 +2637,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
     // references and releases each source after its final prepack consumer.
     source_constants_.clear();
     derived_constants_.clear();
+    gguf_source_owners_.clear();
     graph_->prepare();
     graph_->prepare_pipelines();
     graph_->prepack();
