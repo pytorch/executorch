@@ -4,12 +4,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import hashlib
 import json
 import os
 import struct
 import tempfile
 import unittest
 import zipfile
+from unittest import mock
 
 import torch
 
@@ -62,6 +64,18 @@ class WritePtnTest(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self.path = os.path.join(self._tmp.name, "m.ptn")
+
+    def test_equal_inputs_write_equal_bytes(self):
+        constants = {"a": torch.arange(4.0), "b": torch.arange(4.0), "c": torch.ones(3)}
+        digests = []
+        for i, now in enumerate((1.7e9, 1.7e9 + 3600)):
+            path = os.path.join(self._tmp.name, f"{i}.ptn")
+            with mock.patch("time.time", return_value=now):
+                write_ptn(path, _PTG, constants)
+            with open(path, "rb") as f:
+                digests.append(hashlib.sha256(f.read()).hexdigest())
+        self.assertEqual(_entries(path), {PTG_ENTRY, SAFETENSORS_ENTRY, ALIASES_ENTRY})
+        self.assertEqual(digests[0], digests[1])
 
     def test_no_constants_omits_safetensors(self):
         write_ptn(self.path, _PTG, {})
