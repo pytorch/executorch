@@ -8,6 +8,7 @@
 
 #include <executorch/backends/native/runtime/Validation.h>
 
+#include <bit>
 #include <cstdint>
 #include <stdexcept>
 #include <string>
@@ -553,6 +554,20 @@ TEST(ValidationTest, ValidateMethodConstants_AffineGroupRejects) {
     SCOPED_TRACE(name);
     EXPECT_THROW(
         validate_method_constants(method, package), std::runtime_error);
+  }
+}
+
+TEST(PackageTest, LittleEndianHostCheckRefusesBigEndianHosts) {
+  EXPECT_NO_THROW(check_little_endian_host());
+  EXPECT_NO_THROW(check_little_endian_host(std::endian::little));
+  try {
+    check_little_endian_host(std::endian::big);
+    FAIL() << "a big-endian host was accepted";
+  } catch (const std::runtime_error& error) {
+    EXPECT_STREQ(
+        error.what(),
+        "package: PTN data is little-endian; big-endian hosts are not "
+        "supported yet");
   }
 }
 
