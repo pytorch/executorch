@@ -12,10 +12,11 @@ adapter from ``transformers.integrations.executorch``, and exports the
 ``(input_ids [1, T], cache_position [T])`` signature. Reports which operators
 the native partitioner leaves behind. ``--gguf`` takes the weights from a GGUF
 file of an architecture ``gguf_hf`` supports instead, keeping its quantized blocks
-packed in the PTN. ``--offgraph_cache`` exports attention as
+packed in the PTN; with ``--dequantize_gguf`` they become the float32 weights
+eager computes from them instead. ``--offgraph_cache`` exports attention as
 ``kvcache::update_and_attend`` with no KV cache in the graph; the runner owns the
-cache. ``--samples`` appends a ``golden`` sample set: eager logits
-for a prefill and a few greedy decode steps per prompt.
+cache. ``--samples`` appends a ``golden`` sample set:
+eager logits for a prefill and a few greedy decode steps per prompt.
 """
 
 import argparse
@@ -43,13 +44,14 @@ from executorch.extension.llm.cache.reference_cache import (
     SequenceReferenceCache,
 )
 from executorch.extension.llm.cache.update_and_attend import REGISTRY
-from executorch.extension.llm.export.gguf import iter_gguf
+from executorch.extension.llm.export.gguf import ExportableGGUFTensor, iter_gguf
 from executorch.extension.llm.export.load import assign_one, iter_checkpoint, RawIter
 from executorch.extension.llm.export.model_metadata import (
     write_cache_geometry,
     write_logits_to_keep_mode,
     write_max_context_len,
 )
+from executorch.extension.llm.export.quant.convert import Convert
 from torch.export import Dim, export
 from torchao.quantization import (
     Int8DynamicActivationIntxWeightConfig,
@@ -156,17 +158,36 @@ def load_gguf(
     architecture: str | None = None,
     raw_iter: RawIter | None = None,
     truncated: bool = False,
+    dequantize: bool = False,
 ) -> None:
     """Replace every parameter with a GGUF file's weights; quantized ones stay
     ``ExportableGGUFTensor`` so the PTN carries the GGUF blocks. ``architecture``
     defaults to the file's ``general.architecture``. ``truncated`` loads a model
-    built with fewer layers from the file's first blocks."""
+    built with fewer layers from the file's first blocks.
+
+    ``dequantize`` replaces each quantized weight, after the same mapping and
+    conversions, with the float32 tensor eager dequantizes it to, so the model
+    computes what the quantized one computes in eager and exports without packed
+    blocks.
+
+    A GGUF tensor that loads into several parameters (a tied lm_head) is
+    converted once, and every one of them is bound to the same parameter, so
+    export emits one constant for all its consumers, quantized or not.
+
+    ``ExportableGGUFTensor``'s ``aten.embedding`` drops ``padding_idx``, which
+    only affects gradients, so the dequantized twin clears it on each embedding
+    whose weight it dequantized; both then export the same ``aten.embedding``."""
     architecture = architecture or gguf_architecture(path)
     key_map, convert = gguf_to_hf(model, architecture, truncated)
+    dequantized: set[str] = set()
+    if dequantize:
+        convert = _dequantizing(convert, dequantized)
     read = raw_iter or iter_gguf
     shapes = {n: p.shape for n, p in model.named_parameters(remove_duplicate=False)}
     expected = set(shapes)
     loaded = set()
+    # id(value) -> (value, its first FQN); holding value keeps the id unique.
+    bound: dict[int, tuple[torch.Tensor, str]] = {}
     for fqn, value in iter_checkpoint(
         path,
         key_map=key_map,
@@ -183,10 +204,36 @@ def load_gguf(
             want = (value.shape[0], *want[1:])
         if tuple(value.shape) != want:
             raise ValueError(f"{fqn}: GGUF shape {tuple(value.shape)} != model {want}")
-        assign_one(model, fqn, value)
+        if id(value) in bound:
+            module, _, attr = fqn.rpartition(".")
+            setattr(
+                model.get_submodule(module),
+                attr,
+                model.get_parameter(bound[id(value)][1]),
+            )
+        else:
+            assign_one(model, fqn, value)
+            bound[id(value)] = (value, fqn)
         loaded.add(fqn)
     if loaded != expected:
         raise ValueError(f"GGUF is missing {sorted(expected - loaded)}")
+    for name, module in model.named_modules():
+        if isinstance(module, torch.nn.Embedding) and f"{name}.weight" in dequantized:
+            module.padding_idx = None
+
+
+def _dequantizing(convert: Convert, dequantized: set[str]) -> Convert:
+    """`convert`, then dequantizes GGUF weights, adding their FQNs to
+    `dequantized`."""
+
+    def convert_and_dequantize(fqn: str, value: torch.Tensor) -> torch.Tensor:
+        value = convert(fqn, value)
+        if isinstance(value, ExportableGGUFTensor):
+            dequantized.add(fqn)
+            return value.dequantize(torch.float32)
+        return value
+
+    return convert_and_dequantize
 
 
 _EXPORT_ATTENTION = "native_export"
@@ -702,6 +749,14 @@ def _parse_args() -> argparse.Namespace:
         default="",
         help="GGUF file with the model's weights; --model supplies the config.",
     )
+    parser.add_argument(
+        "--dequantize_gguf",
+        action="store_true",
+        help="With --gguf, export each quantized weight as the float32 tensor "
+        "eager dequantizes it to: a plain-float twin of the quantized export, "
+        "with the same mapping, and the same graph once the quantized one's "
+        "dequantize_gguf nodes are removed.",
+    )
     parser.add_argument("--kv_cache_dtype", choices=["fp32", "fp16"], default="fp32")
     parser.add_argument(
         "--offgraph_cache",
@@ -728,6 +783,8 @@ def _parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if not 0 <= args.samples <= len(_PROMPTS) or (args.samples and not args.output):
         parser.error(f"--samples takes 0 to {len(_PROMPTS)} and needs --output")
+    if args.dequantize_gguf and not args.gguf:
+        parser.error("--dequantize_gguf needs --gguf")
     if args.gguf and (args.random_weights or args.quantize != "none"):
         parser.error(
             "--gguf loads every weight; it excludes --random_weights and --quantize"
@@ -770,7 +827,12 @@ def main() -> None:
         offgraph_cache=args.offgraph_cache,
     )
     if args.gguf:
-        load_gguf(model, args.gguf, truncated=bool(args.layers))
+        load_gguf(
+            model,
+            args.gguf,
+            truncated=bool(args.layers),
+            dequantize=args.dequantize_gguf,
+        )
     if args.quantize == "8da4w":
         _quantize_8da4w(model, args.group_size, args.embedding_group_size)
     if args.offgraph_cache:
