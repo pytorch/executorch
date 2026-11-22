@@ -20,6 +20,7 @@ from pathlib import Path
 
 import gguf
 import torch
+import torch.nn.functional as F
 import torchvision
 from executorch.backends.native.examples.hf_llm.export_hf_llm import (
     golden_samples,
@@ -607,14 +608,6 @@ class CrossEngineTest(unittest.TestCase):
         self._check_dynamic(_SumThenIndex(), steps, None, atol_fraction=1e-5)
 
     def test_rank_one_reductions_over_every_dim(self):
-        class Reduce(torch.nn.Module):
-            def __init__(self, fn):
-                super().__init__()
-                self.fn = fn
-
-            def forward(self, x):
-                return self.fn(x)
-
         x = torch.randn(8)
         cases = {
             "amax": lambda x: torch.amax(x * 2.0),
@@ -625,7 +618,7 @@ class CrossEngineTest(unittest.TestCase):
             with self.subTest(op=name), tempfile.TemporaryDirectory() as tmp:
                 outdir = Path(tmp)
                 package = outdir / "model.ptn"
-                to_native(torch.export.export(Reduce(fn), (x,))).save(str(package))
+                to_native(torch.export.export(_Lambda(fn), (x,))).save(str(package))
                 (out,) = _run("vulkan_ptn_runner", package, [(x,)], outdir)
                 expected = fn(x)
                 self.assertEqual(out.shape, expected.shape)
@@ -635,18 +628,23 @@ class CrossEngineTest(unittest.TestCase):
         torch.manual_seed(0)
         steps = [(torch.randn(2, 3, 4, 8),)]
         ops = {
+            "softmax": lambda x: F.softmax(x, -1),
+            "cat": lambda x: torch.cat([x, x * 2.0], -3),
+            "narrow": lambda x: x.narrow(-2, 1, 2) * 1.0,
+            "select": lambda x: x.select(-3, 1) * 1.0,
+            "sum keepdim": lambda x: x.sum((-1, -2), keepdim=True),
+            "mean": lambda x: x.mean(-1),
+            "amax": lambda x: x.amax(-1),
+            "transpose": lambda x: x.transpose(-1, -2) * 1.0,
+            "permute": lambda x: x.permute(0, -1, -3, -2) * 1.0,
             "split": lambda x: torch.split(x, [1, 3], -2)[1] * 1.0,
+            "unbind": lambda x: torch.unbind(x, -3)[2] * 1.0,
             "chunk": lambda x: torch.chunk(x, 2, -1)[0] * 1.0,
+            "glu": lambda x: F.glu(x, -1),
         }
         for name, fn in ops.items():
             with self.subTest(op=name):
-                self._check_dynamic(
-                    _Lambda(fn),
-                    steps,
-                    None,
-                    atol_fraction=1e-5,
-                    engines=("ggml_ptn_runner",),
-                )
+                self._check_dynamic(_Lambda(fn), steps, None, atol_fraction=1e-5)
 
     def test_clone_between_pool_and_linear(self):
         torch.manual_seed(0)

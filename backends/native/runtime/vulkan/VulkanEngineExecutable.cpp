@@ -48,6 +48,7 @@
 #include <executorch/backends/native/runtime/vulkan/passes/LowerRMSNorm.h>
 #include <executorch/backends/native/runtime/vulkan/passes/LowerSDPA.h>
 #include <executorch/backends/native/runtime/vulkan/passes/MaterializeViewCopies.h>
+#include <executorch/backends/native/runtime/vulkan/passes/NormalizeDims.h>
 #include <executorch/backends/native/runtime/vulkan/passes/UseReferenceGgufQuant.h>
 #include <executorch/runtime/core/freeable_buffer.h>
 
@@ -706,6 +707,8 @@ class VulkanEngineExecutable final : public EngineExecutable {
     vulkan::fuse_quantized_linears(method_);
     vulkan::lower_rms_norms(method_.graph);
     vulkan::insert_prepack_nodes(method_);
+    // After the fusions, which match dims as exported.
+    vulkan::make_dims_non_negative(method_.graph);
     validate_graph(method_.graph);
     validate_user_io(method_);
     nodes_ = method_.graph.schedule;
@@ -1919,22 +1922,6 @@ class VulkanEngineExecutable final : public EngineExecutable {
     return tensor;
   }
 
-  // ET-VK's gather maps dim to WHCN as rank - 1 - dim, so it needs dim >= 0.
-  VkRef nonnegative_gather_dim(const Node& n, const Argument& dim_arg) {
-    const Argument* input = find_input(n, "self");
-    if (dim_arg.kind() != ArgKind::Int || valid(dim_arg.as_int().id) ||
-        input == nullptr || input->kind() != ArgKind::Tensor) {
-      throw std::runtime_error("vulkan: gather needs a constant dim");
-    }
-    const auto rank =
-        static_cast<int64_t>(meta_of(input->as_tensor().id).sizes.size());
-    const int64_t dim = dim_arg.as_int().value;
-    if (dim < -rank || dim >= rank) {
-      throw std::runtime_error("vulkan: gather dim is out of range");
-    }
-    return graph_->add_scalar<int64_t>(dim < 0 ? dim + rank : dim);
-  }
-
   // ET-VK's texture reductions write the reduced dims as size 1 whatever
   // keepdim says (its own partitioner sends them only keepdim=True), so a
   // keepdim=False reduction writes a keepdim temporary and squeeze_copy then
@@ -2032,6 +2019,21 @@ class VulkanEngineExecutable final : public EngineExecutable {
     return true;
   }
 
+  // A squeeze of a scalar is a copy: ET-VK's squeeze_copy reads its input's
+  // first size, which a scalar does not have.
+  bool dispatch_scalar_squeeze(const Node& n, const std::string& key) {
+    const Argument* self = find_input(n, "self");
+    if (!key.starts_with("aten.squeeze_copy.") || self == nullptr ||
+        self->kind() != ArgKind::Tensor ||
+        !meta_of(self->as_tensor().id).sizes.empty()) {
+      return false;
+    }
+    VK_GET_OP_FN("aten.clone.default")
+    (*graph_,
+     {resolve_arg(*self), none_ref_, vref_at(n.outputs.at(0).value_id)});
+    return true;
+  }
+
   // ET-VK has no symbolic neg, so -a runs as sub(0, a), which ET-VK computes in
   // int32. An int literal must negate within int32. A symbolic operand must be
   // a graph input's size whose serialized upper bound is within int32: every
@@ -2100,6 +2102,9 @@ class VulkanEngineExecutable final : public EngineExecutable {
       return;
     }
     const std::string key = registry_key(n.target);
+    if (dispatch_scalar_squeeze(n, key)) {
+      return;
+    }
     if (dispatch_squeezed_reduce(n, key)) {
       return;
     }
@@ -2140,9 +2145,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
         args.push_back(synth_zero_bias(n));
         continue;
       }
-      VkRef a = key == "aten.gather.default" && na.name == "dim"
-          ? nonnegative_gather_dim(n, na.arg)
-          : resolve_arg(na.arg);
+      VkRef a = resolve_arg(na.arg);
       if (width && na.arg.kind() == ArgKind::Tensor) {
         const ValueId value_id = na.arg.as_tensor().id;
         if (valid(value_id)) {
