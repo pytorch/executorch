@@ -25,6 +25,7 @@ eager logits for a prefill and a few greedy decode steps per prompt.
 import argparse
 import contextlib
 import logging
+import weakref
 from collections.abc import Iterator
 
 import torch
@@ -56,6 +57,7 @@ from executorch.extension.llm.export.model_metadata import (
 )
 from executorch.extension.llm.export.quant.convert import Convert
 from torch.export import Dim, export
+from torch.utils.hooks import RemovableHandle
 from torchao.quantization import (
     Int8DynamicActivationIntxWeightConfig,
     IntxWeightOnlyConfig,
@@ -187,8 +189,11 @@ def load_gguf(
     ``ExportableGGUFTensor``'s ``aten.embedding`` drops ``padding_idx``, which
     only affects gradients, so the dequantized twin clears it on each embedding
     whose weight it dequantized; both then export the same ``aten.embedding``."""
+    permutations: dict[str, torch.Tensor] = {}
     architecture = architecture or gguf_architecture(path)
-    key_map, convert = gguf_to_hf(model, architecture, truncated)
+    key_map, convert = gguf_to_hf(
+        model, architecture, truncated, input_permutations=permutations
+    )
     dequantized: set[str] = set()
     if dequantize:
         convert = _dequantizing(convert, dequantized)
@@ -230,6 +235,56 @@ def load_gguf(
     for name, module in model.named_modules():
         if isinstance(module, torch.nn.Embedding) and f"{name}.weight" in dequantized:
             module.padding_idx = None
+    _register_input_permutations(model, permutations)
+
+
+# The hooks _register_input_permutations installed on each model.
+_INPUT_PERMUTATION_HANDLES: weakref.WeakKeyDictionary[
+    nn.Module, list[RemovableHandle]
+] = weakref.WeakKeyDictionary()
+
+
+def _register_input_permutations(
+    model: nn.Module, permutations: dict[str, torch.Tensor]
+) -> None:
+    """Reorder the input of each weight's module in `permutations`, replacing
+    the reorderings an earlier load registered."""
+    for handle in _INPUT_PERMUTATION_HANDLES.pop(model, []):
+        handle.remove()
+    _INPUT_PERMUTATION_HANDLES[model] = [
+        model.get_submodule(fqn.rpartition(".")[0]).register_forward_pre_hook(
+            _PermuteInput(permutation)
+        )
+        for fqn, permutation in permutations.items()
+    ]
+
+
+class _PermuteInput:
+    """A forward pre-hook computing ``x[..., permutation]`` for a module whose
+    GGUF weight keeps its blocks in the stored column order. Only swaps of
+    two axes of the last dim are supported: they export as a view and a
+    transpose, which every engine supports, rather than a gather."""
+
+    def __init__(self, permutation: torch.Tensor) -> None:
+        n = permutation.numel()
+        indices = torch.arange(n)
+        for outer in (d for d in range(2, n + 1) if n % d == 0):
+            for inner in (d for d in range(2, n // outer + 1) if n // outer % d == 0):
+                axes = (outer, inner, n // outer // inner)
+                if torch.equal(
+                    indices.view(axes).transpose(0, 1).flatten(), permutation
+                ):
+                    self.axes = axes
+                    return
+        raise NotImplementedError(
+            "a packed GGUF weight's input reordering swaps no two axes"
+        )
+
+    def __call__(
+        self, module: nn.Module, args: tuple[torch.Tensor, ...]
+    ) -> tuple[torch.Tensor, ...]:
+        x, *rest = args
+        return (x.unflatten(-1, self.axes).transpose(-3, -2).flatten(-3), *rest)
 
 
 def _dequantizing(convert: Convert, dequantized: set[str]) -> Convert:
