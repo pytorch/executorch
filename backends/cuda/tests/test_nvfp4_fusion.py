@@ -139,6 +139,27 @@ def test_linear_routing(mode, native, rows, fp32, expected, monkeypatch):
     assert out.dtype == (output_dtype or torch.bfloat16)
 
 
+@pytest.mark.parametrize(
+    "act,output,native,error,match",
+    [
+        ("w4a4", "input", False, RuntimeError, "SM120"),
+        ("w8a8", "input", True, ValueError, "ET_CUDA_NVFP4_ACT"),
+        ("auto", "fp16", True, ValueError, "ET_CUDA_NVFP4_PREFILL_OUTPUT"),
+    ],
+)
+def test_linear_policy_errors(act, output, native, error, match, monkeypatch):
+    from executorch.backends.cuda.quantize_op_dispatch import nvfp4_dispatch
+
+    monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: native)
+    monkeypatch.setenv("ET_CUDA_NVFP4_ACT", act)
+    monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_OUTPUT", output)
+    fake = FakeTensorMode()
+    x = fake.from_tensor(torch.randn(37, 192, dtype=torch.bfloat16))
+    weight = fake.from_tensor(shards(192)[0])
+    with fake, pytest.raises(error, match=match):
+        F.linear(x, weight)
+
+
 @pytest.mark.parametrize("fp4", [False, True])
 def test_auto_bodies_forward_mode_split(fp4, monkeypatch):
     # The real _prefill/_decode bodies run; only the kernels they call record.

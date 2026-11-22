@@ -20,7 +20,8 @@ from executorch.backends.cuda.quantize_op_dispatch.nvfp4_dispatch import (
     _has_native_fp4,
     _MODE_STRIDE,
 )
-from executorch.backends.cuda.tests.nvfp4_test_utils import GemmaPacked, PackedLinear
+from executorch.backends.cuda.tests.nvfp4_gemma_test_utils import GemmaPacked
+from executorch.backends.cuda.tests.nvfp4_test_utils import PackedLinear
 from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
     nvfp4_quantize_activation,
 )
