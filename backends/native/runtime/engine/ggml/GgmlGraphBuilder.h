@@ -171,6 +171,18 @@ bool is_integer(ScalarType dtype);
 bool keeps_integer_values(const std::string& key);
 void check_exact_integer_bytes(const InputSlot& input);
 
+// Whether the attention lowerings accept these query, key and value sizes:
+// [B, H, T, D] for aten SDPA, [B, T, H, D] for custom_sdpa. ggml asserts on
+// the sizes they refuse.
+bool sdpa_shapes_compatible(
+    const std::vector<int64_t>& query,
+    const std::vector<int64_t>& key,
+    const std::vector<int64_t>& value);
+bool custom_sdpa_shapes_compatible(
+    const std::vector<int64_t>& query,
+    const std::vector<int64_t>& key,
+    const std::vector<int64_t>& value);
+
 ggml_tensor* reshape(
     ggml_context* ctx,
     ggml_tensor* tensor,

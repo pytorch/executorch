@@ -167,6 +167,7 @@ class GgmlExecutable final : public EngineExecutable {
       const GgmlEngineOptions& options,
       size_t* materialized_constant_bytes,
       size_t* heap_copied_constant_bytes,
+      size_t* f16_kv_cache_bytes,
       GgmlMutableKeyOwners& mutable_key_owners,
       GgmlKvCache kv_cache)
       : mutable_key_claim_(mutable_key_owners, method),
@@ -177,7 +178,8 @@ class GgmlExecutable final : public EngineExecutable {
     index_signature();
     initialize_backends();
     fold_batch_norms();
-    initialize_persistent_tensors(materialized_constant_bytes);
+    initialize_persistent_tensors(
+        materialized_constant_bytes, f16_kv_cache_bytes);
     index_rope_frequencies();
     index_mask_extents();
     index_offgraph_attention();
@@ -519,9 +521,13 @@ class GgmlExecutable final : public EngineExecutable {
             ggml_backend_dev_name(device));
       }
       primary_backend_ = gpu.get();
-      f32_accumulation_ = options_.cuda_f32_accumulation_for_testing &&
-          std::string_view(ggml_backend_reg_name(
-              ggml_backend_dev_backend_reg(device))) == "CUDA";
+      const std::string_view backend =
+          ggml_backend_reg_name(ggml_backend_dev_backend_reg(device));
+      f32_accumulation_ =
+          options_.cuda_f32_accumulation_for_testing && backend == "CUDA";
+      f16_kv_caches_ = !options_.f32_gpu_kv_cache_for_testing &&
+          (backend == "CUDA" || backend == "ROCm");
+      gpu_device_ = device;
       backends_.push_back(std::move(gpu));
     }
     ggml_backend_ptr cpu(ggml_backend_cpu_init());
@@ -591,6 +597,173 @@ class GgmlExecutable final : public EngineExecutable {
     return valid(binding.value_id) &&
         method_.graph.value(binding.value_id).is_tensor() &&
         is_used(binding.value_id);
+  }
+
+  // Whether the GPU runs this attention over F16 keys and values. The SDPA
+  // lowering's shape checks come first: ggml asserts on the shapes they
+  // refuse, which then load as F32 caches and fail in the lowering.
+  bool supports_f16_attention(const Node& node, bool custom) const {
+    const auto sizes = [&](std::string_view name, size_t position) {
+      return method_.graph
+          .value(require_arg(node, name, position).arg.as_tensor().id)
+          .tensor_meta()
+          .sizes;
+    };
+    const std::vector<int64_t> q = sizes("query", 0);
+    const std::vector<int64_t> k = sizes("key", 1);
+    const std::vector<int64_t> v = sizes("value", 2);
+    if (custom ? !custom_sdpa_shapes_compatible(q, k, v)
+               : !sdpa_shapes_compatible(q, k, v)) {
+      return false;
+    }
+    if (options_.gpu_runs_f16_attention_for_testing) {
+      return options_.gpu_runs_f16_attention_for_testing();
+    }
+    return gpu_runs_f16_attention(node, custom);
+  }
+
+  // A zero-initialized F32 buffer on a backend that keeps KV caches in F16,
+  // whose every use writes rows into it or reads it as attention keys or
+  // values; see GgmlEngineOptions::f32_gpu_kv_cache_for_testing.
+  bool stores_f16_kv_cache(const DataBinding& binding) const {
+    const bool f16_kv_caches = options_.gpu_runs_f16_attention_for_testing
+        ? !options_.f32_gpu_kv_cache_for_testing
+        : f16_kv_caches_;
+    if (!f16_kv_caches || binding.has_data) {
+      return false;
+    }
+    const TensorMeta& meta =
+        method_.graph.value(binding.value_id).tensor_meta();
+    return meta.dtype == ScalarType::Float && !meta.quant &&
+        only_f16_gpu_attention_reads(binding.value_id);
+  }
+
+  // Whether every use of `id`, followed through views and the results of row
+  // writes into it, writes rows into it or reads it as attention keys or
+  // values, at least one attention reads it, and the GPU runs each of those
+  // attentions over F16 keys and values. A node that uses `id` more times
+  // than it has those roles also reads it some other way.
+  bool only_f16_gpu_attention_reads(ValueId id) const {
+    static const std::unordered_set<std::string> kViews = {
+        "aten._unsafe_view.default",
+        "aten.alias.default",
+        "aten.permute.default",
+        "aten.permute_copy.default",
+        "aten.reshape.default",
+        "aten.select.int",
+        "aten.slice.Tensor",
+        "aten.squeeze.dims",
+        "aten.squeeze_copy.dims",
+        "aten.transpose_copy.int",
+        "aten.unsqueeze.default",
+        "aten.unsqueeze_copy.default",
+        "aten.view.default",
+        "aten.view_copy.default",
+    };
+    std::vector<ValueId> pending = {id};
+    std::unordered_set<ValueId> seen;
+    bool attended = false;
+    while (!pending.empty()) {
+      const ValueId value = pending.back();
+      pending.pop_back();
+      if (!seen.insert(value).second) {
+        continue;
+      }
+      const std::vector<ValueId>& outputs = method_.graph.output_ids;
+      for (size_t i = 0; i < outputs.size(); ++i) {
+        if (outputs[i] == value &&
+            method_.output_specs[i].kind != OutputKind::BufferMutation) {
+          return false;
+        }
+      }
+      for (const NodeId consumer : method_.graph.value(value).consumer_ids) {
+        const Node& node = method_.graph.node(consumer);
+        if (node.is_output()) {
+          continue;
+        }
+        const std::string op = node.is_call() ? op_key(node.target) : "";
+        const auto is_arg = [&](std::string_view name, size_t position) {
+          const NamedArgument* arg = find_arg(node, name, position);
+          return arg != nullptr && arg->arg.kind() == ArgKind::Tensor &&
+              arg->arg.as_tensor().id == value;
+        };
+        const bool attention =
+            op == "aten.scaled_dot_product_attention.default" ||
+            op == "llama.custom_sdpa.default";
+        size_t roles = 0;
+        if ((op == "aten.index_put_.default" && is_arg("self", 0)) ||
+            (op == "llama.update_cache.default" && is_arg("cache", 1)) ||
+            (kViews.contains(op) && is_arg("self", 0))) {
+          ++roles;
+          // cppcheck-suppress-begin useStlAlgorithm ; the explicit loop reads
+          // clearer here
+          for (const ValueId result : node.output_value_ids()) {
+            pending.push_back(result);
+          }
+          // cppcheck-suppress-end useStlAlgorithm
+        }
+        if (attention && (is_arg("key", 1) || is_arg("value", 2))) {
+          if (!supports_f16_attention(
+                  node, op == "llama.custom_sdpa.default")) {
+            return false;
+          }
+          roles += (is_arg("key", 1) ? 1 : 0) + (is_arg("value", 2) ? 1 : 0);
+          attended = true;
+        }
+        const auto uses = std::ranges::count(node.input_value_ids(), value);
+        if (roles == 0 || static_cast<size_t>(uses) != roles) {
+          return false;
+        }
+      }
+    }
+    return attended;
+  }
+
+  // Whether the GPU runs this attention's flash attention, for one query and
+  // for all of them, over F16 keys and values. ggml leaves an attention the
+  // GPU lacks a kernel for (a head size, say) to the CPU, whose kernel would
+  // accumulate F16 values in F16; its caches stay F32.
+  bool gpu_runs_f16_attention(const Node& node, bool custom) const {
+    const auto meta = [&](std::string_view name, size_t position) {
+      return method_.graph
+          .value(require_arg(node, name, position).arg.as_tensor().id)
+          .tensor_meta()
+          .sizes;
+    };
+    const std::vector<int64_t> q = meta("query", 0);
+    const std::vector<int64_t> k = meta("key", 1);
+    const std::vector<int64_t> v = meta("value", 2);
+    if (q.size() != 4 || k.size() != 4 || v.size() != 4) {
+      return false;
+    }
+    // [B, H, T, D] for aten SDPA; [B, T, H, D] for custom_sdpa.
+    const size_t heads = custom ? 2 : 1;
+    const size_t tokens = custom ? 1 : 2;
+    const ggml_init_params params{
+        .mem_size = 8 * ggml_tensor_overhead(),
+        .mem_buffer = nullptr,
+        .no_alloc = true,
+    };
+    const ggml_context_ptr ctx(ggml_init(params));
+    for (const int64_t rows : {int64_t{1}, q[tokens]}) {
+      ggml_tensor* attention = ggml_flash_attn_ext(
+          ctx.get(),
+          ggml_new_tensor_4d(
+              ctx.get(), GGML_TYPE_F32, q[3], rows, q[heads], q[0]),
+          ggml_new_tensor_4d(
+              ctx.get(), GGML_TYPE_F16, k[3], k[tokens], k[heads], k[0]),
+          ggml_new_tensor_4d(
+              ctx.get(), GGML_TYPE_F16, v[3], v[tokens], v[heads], v[0]),
+          nullptr,
+          1.0f,
+          0.0f,
+          0.0f);
+      ggml_prec_set_acc(attention, GGML_PREC_F32);
+      if (!ggml_backend_dev_supports_op(gpu_device_, attention)) {
+        return false;
+      }
+    }
+    return true;
   }
 
   static size_t stored_nbytes(const TensorMeta& meta) {
@@ -937,7 +1110,9 @@ class GgmlExecutable final : public EngineExecutable {
         batch_norm_buffer_.get(), GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
   }
 
-  void initialize_persistent_tensors(size_t* materialized_constant_bytes) {
+  void initialize_persistent_tensors(
+      size_t* materialized_constant_bytes,
+      size_t* f16_kv_cache_bytes) {
     size_t count = 0;
     // The float scales of int4 weights that load as unit-scale blocks.
     std::unordered_map<ValueId, std::vector<float>> float_scales;
@@ -976,8 +1151,14 @@ class GgmlExecutable final : public EngineExecutable {
       }
       const TensorMeta& meta =
           method_.graph.value(binding.value_id).tensor_meta();
-      ggml_tensor* tensor =
-          new_tensor(persistent_context_.get(), compute_type(meta), meta.sizes);
+      const bool f16_kv_cache = stores_f16_kv_cache(binding);
+      ggml_tensor* tensor = new_tensor(
+          persistent_context_.get(),
+          f16_kv_cache ? GGML_TYPE_F16 : compute_type(meta),
+          meta.sizes);
+      if (f16_kv_cache && f16_kv_cache_bytes != nullptr) {
+        *f16_kv_cache_bytes += ggml_nbytes(tensor);
+      }
       ggml_set_name(tensor, binding.key.c_str());
       persistent_.emplace(binding.value_id, tensor);
       if (float_scales.contains(binding.value_id)) {
@@ -1758,6 +1939,8 @@ class GgmlExecutable final : public EngineExecutable {
   std::vector<ggml_backend_ptr> backends_;
   ggml_backend_t primary_backend_ = nullptr;
   bool f32_accumulation_ = false;
+  bool f16_kv_caches_ = false;
+  ggml_backend_dev_t gpu_device_ = nullptr;
   ggml_backend_sched_ptr scheduler_;
   size_t scheduler_size_ = 0;
   std::vector<CachedGraph> cached_graphs_;
@@ -1885,6 +2068,7 @@ std::unique_ptr<EngineExecutable> make_ggml_executable(
     const GgmlEngineOptions& options,
     size_t* materialized_constant_bytes,
     size_t* heap_copied_constant_bytes,
+    size_t* f16_kv_cache_bytes,
     GgmlMutableKeyOwners& mutable_key_owners,
     GgmlKvCache kv_cache) {
   return std::make_unique<GgmlExecutable>(
@@ -1893,6 +2077,7 @@ std::unique_ptr<EngineExecutable> make_ggml_executable(
       options,
       materialized_constant_bytes,
       heap_copied_constant_bytes,
+      f16_kv_cache_bytes,
       mutable_key_owners,
       kv_cache);
 }
