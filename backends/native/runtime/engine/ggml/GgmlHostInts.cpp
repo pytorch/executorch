@@ -284,6 +284,51 @@ std::optional<HostInts> HostIntEvaluator::compute(ValueId id) {
     const HostInts* self = arg_tensor(node, "self", 0);
     return self ? std::optional(*self) : std::nullopt;
   }
+  if (op == "aten.slice.Tensor" || op == "aten.slice_copy.Tensor") {
+    const HostInts* self = arg_tensor(node, "self", 0);
+    const std::optional<int64_t> dim = arg_int(node, "dim", 1, 0);
+    if (self == nullptr || !dim || arg_int(node, "step", 4, 1) != 1) {
+      return std::nullopt;
+    }
+    const auto rank = static_cast<int64_t>(self->sizes.size());
+    const int64_t axis = *dim < 0 ? *dim + rank : *dim;
+    if (axis < 0 || axis >= rank) {
+      return std::nullopt;
+    }
+    const int64_t extent = self->sizes[axis];
+    const std::optional<int64_t> start = arg_int(node, "start", 2, 0);
+    const std::optional<int64_t> end = arg_int(node, "end", 3, extent);
+    if (!start || !end) {
+      return std::nullopt;
+    }
+    // Python bounds: negative ones count from the end, then clamp.
+    const auto bound = [extent](int64_t v) {
+      return std::clamp<int64_t>(v < 0 ? v + extent : v, 0, extent);
+    };
+    const int64_t begin = bound(*start);
+    const int64_t count = std::max<int64_t>(bound(*end) - begin, 0);
+    HostInts out{self->sizes, {}};
+    out.sizes[axis] = count;
+    if (checked_numel(self->sizes) != self->data.size()) {
+      return std::nullopt;
+    }
+    // An empty input or slice copies nothing, however large its other extents.
+    if (self->data.empty() || count == 0) {
+      return out;
+    }
+    // Every extent is now positive, and their product is the budgeted size.
+    int64_t inner = 1;
+    for (int64_t d = axis + 1; d < rank; ++d) {
+      inner *= self->sizes[d];
+    }
+    const int64_t outer =
+        static_cast<int64_t>(self->data.size()) / (extent * inner);
+    for (int64_t o = 0; o < outer; ++o) {
+      const auto first = self->data.begin() + (o * extent + begin) * inner;
+      out.data.insert(out.data.end(), first, first + count * inner);
+    }
+    return out;
+  }
   if (op == "aten.unsqueeze.default" || op == "aten.unsqueeze_copy.default") {
     const HostInts* self = arg_tensor(node, "self", 0);
     std::optional<int64_t> dim = arg_int(node, "dim", 1);
