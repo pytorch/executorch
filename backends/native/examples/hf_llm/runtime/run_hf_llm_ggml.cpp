@@ -9,11 +9,14 @@
 #include <executorch/backends/native/runtime/engine/ggml/GgmlEngineFlags.h>
 #include <gflags/gflags.h>
 
+DECLARE_string(kv_dtype);
+
 DEFINE_bool(
     allow_activation_quant_for_weight_only,
-    false,
-    "Run weight-only quantized linears, such as GGUF k-quants, with ggml's "
-    "quantized activations.");
+    true,
+    "Run matmuls of weight-only quantized weights, such as GGUF k-quants, "
+    "with ggml's quantized activations, as llama.cpp does; false dequantizes "
+    "those weights to F32 and runs them without, for debugging.");
 
 int main(int argc, char** argv) {
   gflags::SetUsageMessage(
@@ -21,9 +24,11 @@ int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   ptn::register_ggml_cache_builders();
   ptn::GgmlEngineOptions options = ptn::ggml_engine_options_from_flags();
+  options.f32_gpu_kv_cache_for_testing = FLAGS_kv_dtype == "fp32";
   options.allow_activation_quant_for_weight_only =
       FLAGS_allow_activation_quant_for_weight_only;
   return ptn::run_llm(
       [options] { return ptn::GgmlEngineHost::create(options); },
-      ptn::kGgmlCacheBackendId);
+      ptn::kGgmlCacheBackendId,
+      /*half_kv_cache=*/options.device == ptn::GgmlDevice::Gpu);
 }

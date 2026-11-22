@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import hashlib
 import json
 import operator
 import os
@@ -868,6 +869,69 @@ class MetadataTest(unittest.TestCase):
                 to_native(program, metadata=metadata)
         with self.assertRaisesRegex(ValueError, "non-finite"):
             to_native(program, metadata={"nan": float("nan")})
+
+
+class PackageDeterminismTest(unittest.TestCase):
+    def test_identical_exports_write_identical_files(self):
+        class Model(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = nn.Linear(8, 8)
+                self.register_buffer("a", torch.ones(8))
+                self.register_buffer("b", torch.ones(8))
+
+            def forward(self, x):
+                return self.linear(x) + self.a + self.b
+
+        x = torch.randn(2, 8)
+        golden = SampleSet([Sample([Call("forward", [x])])])
+        digests = []
+        with tempfile.TemporaryDirectory() as td:
+            # Saved an hour apart: no writer clock may reach the bytes.
+            for i, now in enumerate((1.7e9, 1.7e9 + 3600)):
+                torch.manual_seed(0)
+                ep = torch.export.export(Model().eval(), (x,))
+                path = os.path.join(td, f"{i}.ptn")
+                with mock.patch("time.time", return_value=now):
+                    to_native(ep).save(path)
+                    write_samples(path, "golden", golden)
+                with open(path, "rb") as f:
+                    digests.append(hashlib.sha256(f.read()).hexdigest())
+        self.assertEqual(digests[0], digests[1])
+
+    def test_buffer_access_order_does_not_reach_the_program(self):
+        # Gemma 4 computes one rotary table per layer type in the iteration
+        # order of a set of strings, which follows the process's hash seed;
+        # strict export lifts the buffers it reads in that order.
+        class PerTypeTables(nn.Module):
+            def __init__(self, order):
+                super().__init__()
+                self.order = order
+                self.register_buffer("full_inv_freq", torch.rand(4), persistent=False)
+                self.register_buffer(
+                    "sliding_inv_freq", torch.rand(4), persistent=False
+                )
+                self.linear = nn.Linear(4, 4)
+
+            def forward(self, x):
+                tables = {k: getattr(self, f"{k}_inv_freq") for k in self.order}
+                return self.linear(x * tables["sliding"]) + x * tables["full"]
+
+        x = torch.randn(2, 4)
+        for strict in (False, True):
+            programs = []
+            for order in (("full", "sliding"), ("sliding", "full")):
+                torch.manual_seed(0)
+                ep = torch.export.export(
+                    PerTypeTables(order).eval(), (x,), strict=strict
+                )
+                with tempfile.TemporaryDirectory() as td:
+                    path = os.path.join(td, "m.ptn")
+                    to_native(ep).save(path)
+                    with zipfile.ZipFile(path) as pkg:
+                        programs.append(pkg.read(PTG_ENTRY))
+            with self.subTest(strict=strict):
+                self.assertEqual(programs[0], programs[1])
 
 
 if __name__ == "__main__":

@@ -63,6 +63,56 @@ class FuseGGUFPassTest(unittest.TestCase):
         self.assertEqual(packed[0].meta.quant.scheme.codec, "gguf:q4_k")
         self.assertEqual(packed[0].meta.dtype, ScalarType.BYTE)
 
+    def test_gguf_stacked_experts_serialize_as_packed_index(self):
+        # Experts stacked as [E, rows, cols] stay packed: the expert gather
+        # reads a PackedQuant constant whose logical shape keeps the stack.
+        e, n, k = 4, 8, 256
+        blob = torch.randint(0, 256, (e, n, (k // 256) * 144), dtype=torch.uint8)
+
+        class Experts(nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("raw", blob)
+
+            def forward(self, x: torch.Tensor, ids: torch.Tensor) -> torch.Tensor:
+                w = torch.ops.torchao.dequantize_gguf(self.raw, "q4_k", torch.float32)
+                return torch.bmm(w[ids], x.unsqueeze(-1)).squeeze(-1)
+
+        example = (torch.randn(3, k), torch.tensor([0, 3, 1]))
+        program = deserialize_program(_get_delegate_blob(_lower(Experts(), example)))
+        targets = _call_function_targets(program.methods[0].graph)
+        self.assertTrue(any(t and "index" in t for t in targets))
+        self.assertFalse(any(t and "dequantize_gguf" in t for t in targets))
+
+        packed = self._packed_constants(program)
+        self.assertEqual(len(packed), 1)
+        self.assertEqual(packed[0].meta.quant.scheme.codec, "gguf:q4_k")
+        self.assertEqual([d.max for d in packed[0].meta.sizes], [e, n, k])
+
+    def test_gguf_stacked_expert_weight_serializes_packed(self):
+        # The ExportableGGUFTensor form of the same: a 3-D expert parameter.
+        e, n, k = 4, 8, 256
+        blob = torch.randint(0, 256, (e, n, (k // 256) * 144), dtype=torch.uint8)
+
+        class Experts(nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.w = nn.Parameter(
+                    ExportableGGUFTensor.from_raw(blob, "q4_k", torch.float32),
+                    requires_grad=False,
+                )
+
+            def forward(self, x: torch.Tensor, ids: torch.Tensor) -> torch.Tensor:
+                return torch.bmm(self.w[ids], x.unsqueeze(-1)).squeeze(-1)
+
+        example = (torch.randn(3, k), torch.tensor([0, 3, 1]))
+        program = deserialize_program(_get_delegate_blob(_lower(Experts(), example)))
+        targets = _call_function_targets(program.methods[0].graph)
+        self.assertFalse(any(t and "dequantize_gguf" in t for t in targets))
+        packed = self._packed_constants(program)
+        self.assertEqual(len(packed), 1)
+        self.assertEqual([d.max for d in packed[0].meta.sizes], [e, n, k])
+
     def test_activation_dtype_in_metadata(self):
         # The activation compute dtype must round-trip into the serialized
         # TensorMeta of every value in the graph (the packed weight stays BYTE).
