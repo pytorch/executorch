@@ -402,3 +402,15 @@ TEST_F(OpScatterAddOutTest, DynamicShapeUnbound) {
   test_dynamic_shape(
       {1, 1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
 }
+
+TEST_F(OpScatterAddOutTest, ValidOneDimInputZeroDimIndexAndOneDimSrc) {
+  TensorFactory<ScalarType::Long> tf_index;
+  TensorFactory<ScalarType::Float> tf_data;
+
+  Tensor self = tf_data.make({3}, {10, 20, 30});
+  Tensor index = tf_index.make({}, {1});
+  Tensor src = tf_data.make({3}, {5, 6, 7});
+  Tensor out = tf_data.zeros({3});
+  op_scatter_add_out(self, 0, index, src, out);
+  EXPECT_TENSOR_EQ(out, tf_data.make({3}, {10, 25, 30}));
+}
