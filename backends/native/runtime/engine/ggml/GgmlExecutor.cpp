@@ -818,6 +818,10 @@ class GgmlExecutable final : public EngineExecutable {
   }
 
   void check_q4_consumers(ValueId id, const std::string& key) const {
+    if (method_.graph.value(id).tensor_meta().ndim() == 3) {
+      check_expert_consumers(id, key);
+      return;
+    }
     for (const NodeId consumer : method_.graph.value(id).consumer_ids) {
       const Node& node = method_.graph.node(consumer);
       const std::string op = op_key(node.target);
@@ -843,9 +847,9 @@ class GgmlExecutable final : public EngineExecutable {
     }
   }
 
-  // Without activation quantization: a quantized weight that a linear reads,
-  // unless a linear reading it quantizes its own activations. Embeddings
-  // gather rows exactly from either form.
+  // Without activation quantization: a quantized weight that a matmul reads,
+  // a linear or an expert gather, unless a linear reading it quantizes its
+  // own activations. Embeddings gather rows exactly from either form.
   bool dequantizes_to_f32(ValueId id) const {
     const TensorMeta& meta = method_.graph.value(id).tensor_meta();
     if (options_.allow_activation_quant_for_weight_only ||
@@ -855,14 +859,35 @@ class GgmlExecutable final : public EngineExecutable {
     bool matmul = false;
     for (const NodeId consumer : method_.graph.value(id).consumer_ids) {
       const Node& node = method_.graph.node(consumer);
-      if (op_key(node.target) == "aten.linear.default") {
+      const std::string op = op_key(node.target);
+      if (op == "aten.linear.default") {
         if (has_dequantized_input(node)) {
           return false;
         }
         matmul = true;
+      } else if (expert_matmul(method_, node) != nullptr) {
+        matmul = true;
       }
     }
     return matmul;
+  }
+
+  // Quantized experts are only read by expert gathers, whose bmm runs as
+  // ggml_mul_mat_id and, like a linear, quantizes its activations.
+  void check_expert_consumers(ValueId id, const std::string& key) const {
+    for (const NodeId consumer : method_.graph.value(id).consumer_ids) {
+      const Node& node = method_.graph.node(consumer);
+      const NamedArgument* self = find_arg(node, "self", 0);
+      if (self == nullptr || self->arg.kind() != ArgKind::Tensor ||
+          self->arg.as_tensor().id != id ||
+          expert_matmul(method_, node) == nullptr) {
+        throw std::runtime_error(
+            "ggml: 3-D quantized weight '" + key +
+            "' may only feed expert gathers (aten.index.Tensor on dim 0 read "
+            "only by bmm's weight side), not '" +
+            node.target + "'");
+      }
+    }
   }
 
   bool has_dequantized_input(const Node& linear) const {

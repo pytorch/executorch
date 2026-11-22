@@ -10,6 +10,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <cstdint>
@@ -19,9 +20,11 @@
 #include <fstream>
 #include <functional>
 #include <limits>
+#include <map>
 #include <memory>
 #include <numeric>
 #include <optional>
+#include <random>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -92,6 +95,7 @@ flatbuffers::Offset<fbs::Argument> create_none_arg(
 
 constexpr size_t kQ4KBlockBytes = 144;
 constexpr size_t kQ4_0BlockBytes = 18;
+constexpr size_t kQ8_0BlockBytes = 34;
 
 // The safetensors header of the affine linear program's constants.
 constexpr const char* kQ4_0SafeTensorsHeader =
@@ -350,6 +354,25 @@ class TestProgram {
     placeholder(name, meta);
     bindings_.push_back(fbs::CreateNamedTensorRefDirect(
         builder_, name.c_str(), "weight", meta, fbs::InputKind::PARAMETER));
+  }
+
+  // A parameter whose data is the package's constant `name`, packed with
+  // `packed_codec` if given.
+  void constant(
+      const std::string& name,
+      fbs::ScalarType dtype,
+      const std::vector<int64_t>& shape,
+      const char* packed_codec = nullptr) {
+    const auto quant = packed_codec == nullptr
+        ? flatbuffers::Offset<fbs::QuantSpec>()
+        : fbs::CreateQuantSpec(
+              builder_,
+              fbs::QuantScheme::PackedQuant,
+              fbs::CreatePackedQuantDirect(builder_, packed_codec).Union());
+    const auto meta = create_tensor_meta(builder_, dtype, shape, quant);
+    placeholder(name, meta);
+    bindings_.push_back(fbs::CreateNamedTensorRefDirect(
+        builder_, name.c_str(), name.c_str(), meta, fbs::InputKind::PARAMETER));
   }
 
   // Symmetric int4 AffineGroup weights `weight` with float scales
@@ -3740,6 +3763,468 @@ TEST(GgmlEngineTest, SizesTheSchedulerFromTheBuiltGraph) {
           "")
           << count << " adds, " << cached << " cached graphs";
     }
+  }
+}
+
+// A package constant: raw bytes, stored as `dtype` of `shape` (U8 bytes by
+// default, as packed constants are).
+struct PackagedConstant {
+  std::string key;
+  std::vector<uint8_t> bytes;
+  std::string dtype = "U8";
+  std::vector<int64_t> shape;
+};
+
+std::unique_ptr<GgmlEngineContext> make_constants_context(
+    GgmlEngineHost& host,
+    const std::vector<uint8_t>& program_bytes,
+    const std::vector<PackagedConstant>& constants) {
+  std::string header = "{";
+  size_t offset = 0;
+  for (const PackagedConstant& constant : constants) {
+    std::string shape;
+    for (const int64_t size : constant.shape.empty()
+             ? std::vector<int64_t>{static_cast<int64_t>(constant.bytes.size())}
+             : constant.shape) {
+      shape += (shape.empty() ? "" : ",") + std::to_string(size);
+    }
+    header += (header.size() == 1 ? "\"" : ",\"") + constant.key +
+        R"(":{"dtype":")" + constant.dtype + R"(","shape":[)" + shape +
+        R"(],"data_offsets":[)" + std::to_string(offset) + "," +
+        std::to_string(offset + constant.bytes.size()) + "]}";
+    offset += constant.bytes.size();
+  }
+  header += "}";
+  std::vector<uint8_t> safetensors = testing::make_safetensors(header, offset);
+  uint8_t* payload = safetensors.data() + safetensors.size() - offset;
+  for (const PackagedConstant& constant : constants) {
+    payload = std::ranges::copy(constant.bytes, payload).out;
+  }
+  auto package = std::make_shared<const Package>(
+      Package::load(OwnedBytes::from_vector(testing::make_zip({
+          {kProgramEntry, program_bytes},
+          {kSafeTensorsEntry, std::move(safetensors)},
+      }))));
+  auto program = std::make_shared<const Program>(
+      Program::load(program_bytes.data(), program_bytes.size()));
+  return host.create_ggml_context(std::move(program), std::move(package));
+}
+
+// The batched MoE expert form: y[s] = experts[ids[s]] @ x[s] for experts
+// [E, O, I] and activations x [S, I], through an index on dim 0 and a bmm.
+std::vector<uint8_t> make_expert_matmul_program(
+    fbs::ScalarType dtype,
+    const std::vector<int64_t>& experts,
+    int64_t count,
+    const char* codec = nullptr) {
+  const int64_t out = experts[1];
+  const int64_t in = experts[2];
+  TestProgram program;
+  program.input("x", fbs::ScalarType::FLOAT, {count, in});
+  program.input("ids", fbs::ScalarType::LONG, {count});
+  program.constant("experts", dtype, experts, codec);
+  program.call(
+      "selected",
+      "torch.ops.aten.index.Tensor",
+      {{"self", std::string("experts")},
+       {"indices", TestOptionalTensors{"ids"}}},
+      fbs::ScalarType::FLOAT,
+      {count, out, in});
+  program.call(
+      "column",
+      "torch.ops.aten.unsqueeze_copy.default",
+      {{"self", std::string("x")}, {"dim", int64_t{-1}}},
+      fbs::ScalarType::FLOAT,
+      {count, in, 1});
+  program.call(
+      "product",
+      "torch.ops.aten.bmm.default",
+      {{"self", std::string("selected")}, {"mat2", std::string("column")}},
+      fbs::ScalarType::FLOAT,
+      {count, out, 1});
+  program.call(
+      "y",
+      "torch.ops.aten.squeeze_copy.dims",
+      {{"self", std::string("product")}, {"dim", std::vector<int64_t>{-1}}},
+      fbs::ScalarType::FLOAT,
+      {count, out});
+  return program.finish("y");
+}
+
+// `tokens` tokens routed to `k` distinct experts each, as batched MoE layers
+// flatten them: token t's experts are ids[t * k .. t * k + k).
+std::vector<int64_t> routed_expert_ids(
+    int64_t tokens,
+    int64_t k,
+    int64_t experts,
+    std::mt19937& rng) {
+  std::vector<int64_t> all(static_cast<size_t>(experts));
+  std::iota(all.begin(), all.end(), 0);
+  std::vector<int64_t> ids;
+  for (int64_t t = 0; t < tokens; ++t) {
+    std::ranges::shuffle(all, rng);
+    ids.insert(ids.end(), all.begin(), all.begin() + k);
+  }
+  return ids;
+}
+
+std::vector<float> run_expert_matmul(
+    GgmlEngineContext& context,
+    const std::vector<float>& x,
+    const std::vector<int64_t>& ids,
+    size_t outputs) {
+  auto executable = context.compile("forward");
+  executable->set_input(0, x.data(), x.size(), ScalarType::Float);
+  executable->set_input(1, ids.data(), ids.size(), ScalarType::Long);
+  executable->execute();
+  std::vector<float> y(outputs);
+  executable->get_output(0, y.data(), y.size(), ScalarType::Float);
+  return y;
+}
+
+// Weights and activations in quarters within [-0.5, 0.5] over 32 inputs keep
+// every product and partial sum exact in F16, BF16, TF32 and F32, so ggml and
+// the reference agree exactly whatever their conversions and summation order.
+TEST(GgmlEngineTest, LowersFloatExpertGathersToMulMatId) {
+  constexpr int64_t kOut = 8;
+  constexpr int64_t kIn = 32;
+  std::mt19937 rng(7);
+  std::uniform_int_distribution<int> quarter(-2, 2);
+  auto host = GgmlEngineHost::create();
+  for (const fbs::ScalarType dtype :
+       {fbs::ScalarType::FLOAT,
+        fbs::ScalarType::HALF,
+        fbs::ScalarType::BFLOAT16}) {
+    for (const int64_t experts : {4, 8}) {
+      for (const int64_t k : {1, 2}) {
+        for (const int64_t tokens : {1, 3, 5}) {
+          SCOPED_TRACE(
+              std::string(fbs::EnumNameScalarType(dtype)) +
+              " E=" + std::to_string(experts) + " k=" + std::to_string(k) +
+              " T=" + std::to_string(tokens));
+          const int64_t count = tokens * k;
+          std::vector<float> weights(static_cast<size_t>(experts * kOut * kIn));
+          std::ranges::generate(
+              weights, [&] { return static_cast<float>(quarter(rng)) / 4; });
+          std::vector<uint8_t> bytes;
+          for (const float w : weights) {
+            if (dtype == fbs::ScalarType::FLOAT) {
+              const auto* raw = reinterpret_cast<const uint8_t*>(&w);
+              bytes.insert(bytes.end(), raw, raw + sizeof(float));
+            } else {
+              const uint16_t bits = to_16_bit(w, dtype);
+              bytes.push_back(static_cast<uint8_t>(bits & 0xFF));
+              bytes.push_back(static_cast<uint8_t>(bits >> 8));
+            }
+          }
+          std::vector<float> x;
+          for (int64_t t = 0; t < tokens; ++t) {
+            std::vector<float> token(kIn);
+            std::ranges::generate(
+                token, [&] { return static_cast<float>(quarter(rng)) / 4; });
+            for (int64_t j = 0; j < k; ++j) {
+              x.insert(x.end(), token.begin(), token.end());
+            }
+          }
+          const std::vector<int64_t> ids =
+              routed_expert_ids(tokens, k, experts, rng);
+          auto context = make_constants_context(
+              *host,
+              make_expert_matmul_program(dtype, {experts, kOut, kIn}, count),
+              {{.key = "experts",
+                .bytes = bytes,
+                .dtype = dtype == fbs::ScalarType::FLOAT ? "F32"
+                    : dtype == fbs::ScalarType::HALF     ? "F16"
+                                                         : "BF16",
+                .shape = {experts, kOut, kIn}}});
+          const std::vector<float> y = run_expert_matmul(
+              *context, x, ids, static_cast<size_t>(count * kOut));
+          std::vector<float> expected(y.size());
+          for (int64_t s = 0; s < count; ++s) {
+            for (int64_t o = 0; o < kOut; ++o) {
+              double sum = 0.0;
+              for (int64_t i = 0; i < kIn; ++i) {
+                sum += static_cast<double>(
+                           weights[((ids[s] * kOut) + o) * kIn + i]) *
+                    x[s * kIn + i];
+              }
+              expected[s * kOut + o] = static_cast<float>(sum);
+            }
+          }
+          EXPECT_EQ(y, expected);
+        }
+      }
+    }
+  }
+}
+
+// Random blocks of a gguf:<type> weight, with each fp16 super-block scale set
+// at its byte offset so that the weights are finite and of moderate size.
+std::vector<uint8_t>
+random_gguf_blocks(std::string_view type, size_t blocks, std::mt19937& rng) {
+  static const std::map<std::string_view, std::vector<std::pair<size_t, float>>>
+      kScales = {
+          {"q4_k", {{0, 0x1p-8f}, {2, 0x1p-5f}}},
+          {"q5_k", {{0, 0x1p-8f}, {2, 0x1p-4f}}},
+          {"q6_k", {{208, 0x1p-14f}}},
+          {"q8_0", {{0, 0x1p-8f}}},
+          {"q5_1", {{0, 0x1p-5f}, {2, -15 * 0x1p-5f}}},
+      };
+  const auto* layout =
+      std::ranges::find(kGgufBlockLayouts, type, &GgufBlockLayout::type);
+  std::uniform_int_distribution<int> byte(0, 255);
+  std::vector<uint8_t> bytes(blocks * layout->bytes);
+  std::ranges::generate(bytes, [&] { return static_cast<uint8_t>(byte(rng)); });
+  for (size_t b = 0; b < blocks; ++b) {
+    for (const auto& [offset, scale] : kScales.at(type)) {
+      const uint16_t bits = to_16_bit(scale, fbs::ScalarType::HALF);
+      bytes[b * layout->bytes + offset] = static_cast<uint8_t>(bits & 0xFF);
+      bytes[b * layout->bytes + offset + 1] = static_cast<uint8_t>(bits >> 8);
+    }
+  }
+  return bytes;
+}
+
+// ggml quantizes the activations of a quantized matmul in its own blocks, so
+// each expert's rows are compared against the same expert through the packed
+// linear lowering. Activations of +-127/1024 survive that requantization
+// exactly (see test_ggml_ops.py), so both paths multiply the same values and
+// differ only in summation order.
+TEST(GgmlEngineTest, LowersPackedExpertGathersLikePackedLinears) {
+  constexpr int64_t kOut = 8;
+  constexpr int64_t kIn = 512;
+  std::mt19937 rng(11);
+  std::bernoulli_distribution negative(0.5);
+  auto host = GgmlEngineHost::create(kAllowActivationQuant);
+  for (const std::string type : {"q4_k", "q5_k", "q6_k", "q8_0", "q5_1"}) {
+    const std::string codec = "gguf:" + type;
+    const auto* layout =
+        std::ranges::find(kGgufBlockLayouts, type, &GgufBlockLayout::type);
+    const size_t row_bytes =
+        static_cast<size_t>(kIn / layout->values) * layout->bytes;
+    for (const auto& [experts, k, tokens] : std::vector<std::array<int64_t, 3>>{
+             {4, 1, 1}, {4, 2, 3}, {8, 2, 1}, {8, 1, 6}, {8, 2, 16}}) {
+      SCOPED_TRACE(
+          type + " E=" + std::to_string(experts) + " k=" + std::to_string(k) +
+          " T=" + std::to_string(tokens));
+      const int64_t count = tokens * k;
+      const std::vector<uint8_t> blocks = random_gguf_blocks(
+          type,
+          static_cast<size_t>(experts * kOut) * row_bytes / layout->bytes,
+          rng);
+      std::vector<float> x;
+      for (int64_t t = 0; t < tokens; ++t) {
+        std::vector<float> token(kIn);
+        std::ranges::generate(
+            token, [&] { return (negative(rng) ? -127.0f : 127.0f) / 1024; });
+        for (int64_t j = 0; j < k; ++j) {
+          x.insert(x.end(), token.begin(), token.end());
+        }
+      }
+      const std::vector<int64_t> ids =
+          routed_expert_ids(tokens, k, experts, rng);
+      auto context = make_constants_context(
+          *host,
+          make_expert_matmul_program(
+              fbs::ScalarType::BYTE,
+              {experts, kOut, kIn},
+              count,
+              codec.c_str()),
+          {{.key = "experts", .bytes = blocks}});
+      const std::vector<float> y = run_expert_matmul(
+          *context, x, ids, static_cast<size_t>(count * kOut));
+      ASSERT_TRUE(std::ranges::any_of(y, [](float v) { return v != 0.0f; }));
+      for (int64_t e = 0; e < experts; ++e) {
+        TestProgram linear;
+        linear.input("x", fbs::ScalarType::FLOAT, {count, kIn});
+        linear.constant("w", fbs::ScalarType::BYTE, {kOut, kIn}, codec.c_str());
+        linear.call(
+            "y",
+            "torch.ops.aten.linear.default",
+            {{"input", std::string("x")}, {"weight", std::string("w")}},
+            fbs::ScalarType::FLOAT,
+            {count, kOut});
+        const auto begin =
+            blocks.begin() + static_cast<std::ptrdiff_t>(e * kOut * row_bytes);
+        auto reference = make_constants_context(
+            *host,
+            linear.finish("y"),
+            {{.key = "w",
+              .bytes = {
+                  begin,
+                  begin + kOut * static_cast<std::ptrdiff_t>(row_bytes)}}});
+        auto executable = reference->compile("forward");
+        executable->set_input(0, x.data(), x.size(), ScalarType::Float);
+        executable->execute();
+        std::vector<float> expected(static_cast<size_t>(count * kOut));
+        executable->get_output(
+            0, expected.data(), expected.size(), ScalarType::Float);
+        for (int64_t s = 0; s < count; ++s) {
+          if (ids[s] != e) {
+            continue;
+          }
+          for (int64_t o = 0; o < kOut; ++o) {
+            const float want = expected[s * kOut + o];
+            EXPECT_NEAR(y[s * kOut + o], want, 1e-5f * (1 + std::abs(want)))
+                << "row " << s << " output " << o;
+          }
+        }
+      }
+    }
+  }
+}
+
+TEST(GgmlEngineTest, RejectsExpertIdsOutsideTheExpertsAtRunTime) {
+  auto host = GgmlEngineHost::create();
+  auto context = make_constants_context(
+      *host,
+      make_expert_matmul_program(fbs::ScalarType::FLOAT, {4, 2, 32}, 2),
+      {{.key = "experts",
+        .bytes = std::vector<uint8_t>(4 * 2 * 32 * sizeof(float)),
+        .dtype = "F32",
+        .shape = {4, 2, 32}}});
+  auto executable = context->compile("forward");
+  const std::vector<float> x(64, 1.0f);
+  executable->set_input(0, x.data(), x.size(), ScalarType::Float);
+  for (const std::vector<int64_t>& ids :
+       {std::vector<int64_t>{0, 4}, std::vector<int64_t>{-1, 0}}) {
+    executable->set_input(1, ids.data(), ids.size(), ScalarType::Long);
+    try {
+      executable->execute();
+      FAIL() << "execute accepted expert ids " << ids[0] << ", " << ids[1];
+    } catch (const std::out_of_range& error) {
+      EXPECT_NE(
+          std::string(error.what()).find("row index is outside [0, 4)"),
+          std::string::npos)
+          << error.what();
+    }
+  }
+}
+
+// Without activation quantization, GGUF experts load dequantized to F32 and
+// each expert gather's result is the exact product, where ggml's 8-bit
+// activations are more than 10x further off.
+TEST(GgmlEngineTest, PackedExpertsRunInF32WithoutActivationQuant) {
+  constexpr int64_t kExperts = 4;
+  constexpr int64_t kOut = 2;
+  constexpr int64_t kIn = 256;
+  // q8_0 blocks of 32 quants q = (n % 7) - 3 at scale 1/64 (F16 0x2400).
+  std::vector<uint8_t> blocks;
+  std::vector<float> weights;
+  for (int64_t n = 0; n < kExperts * kOut * kIn; ++n) {
+    if (n % 32 == 0) {
+      blocks.insert(blocks.end(), {0x00, 0x24});
+    }
+    const int q = static_cast<int>(n % 7) - 3;
+    blocks.push_back(static_cast<uint8_t>(static_cast<int8_t>(q)));
+    weights.push_back(static_cast<float>(q) / 64);
+  }
+  const std::vector<int64_t> ids{3, 1};
+  std::vector<float> x;
+  for (int64_t s = 0; s < 2; ++s) {
+    for (int64_t i = 0; i < kIn; ++i) {
+      x.push_back(static_cast<float>((i + s) % 7) / 7 - 0.3f);
+    }
+  }
+  std::vector<double> exact;
+  for (int64_t s = 0; s < 2; ++s) {
+    for (int64_t o = 0; o < kOut; ++o) {
+      double sum = 0;
+      for (int64_t i = 0; i < kIn; ++i) {
+        sum += weights[(ids[s] * kOut + o) * kIn + i] * x[s * kIn + i];
+      }
+      exact.push_back(sum);
+    }
+  }
+  std::vector<double> errors;
+  for (const bool allow : {true, false}) {
+    auto host = GgmlEngineHost::create(
+        GgmlEngineOptions{.allow_activation_quant_for_weight_only = allow});
+    auto context = make_constants_context(
+        *host,
+        make_expert_matmul_program(
+            fbs::ScalarType::BYTE, {kExperts, kOut, kIn}, 2, "gguf:q8_0"),
+        {{.key = "experts", .bytes = blocks}});
+    const std::vector<float> y = run_expert_matmul(*context, x, ids, 4);
+    double error = 0;
+    for (size_t j = 0; j < y.size(); ++j) {
+      error = std::max(error, std::abs(y[j] - exact[j]));
+    }
+    errors.push_back(error);
+    EXPECT_EQ(
+        context->materialized_constant_bytes(),
+        allow ? blocks.size() : weights.size() * sizeof(float));
+  }
+  EXPECT_LT(errors[1], 1e-5);
+  EXPECT_GT(errors[0], 10 * errors[1]);
+}
+
+// [E, O, I] packed experts read other than as an expert gather's weights.
+TEST(GgmlEngineTest, RejectsPackedExpertsOutsideExpertGathers) {
+  const auto gather = [](const TestOptionalTensors& indices, bool bmm) {
+    TestProgram program;
+    program.input("ids", fbs::ScalarType::LONG, {2});
+    program.input("x", fbs::ScalarType::FLOAT, {2, 32, 1});
+    program.constant("experts", fbs::ScalarType::BYTE, {4, 2, 32}, "gguf:q8_0");
+    program.call(
+        "selected",
+        "torch.ops.aten.index.Tensor",
+        {{"self", std::string("experts")}, {"indices", indices}},
+        fbs::ScalarType::FLOAT,
+        {2, 2, 32});
+    program.call(
+        "y",
+        bmm ? "torch.ops.aten.bmm.default" : "torch.ops.aten.mul.Tensor",
+        {{"self", std::string("selected")},
+         {bmm ? "mat2" : "other",
+          bmm ? TestArg(std::string("x")) : TestArg(2.0)}},
+        fbs::ScalarType::FLOAT,
+        {2, 2, bmm ? int64_t{1} : int64_t{32}});
+    return program.finish("y");
+  };
+  auto host = GgmlEngineHost::create(kAllowActivationQuant);
+  for (const auto& [indices, bmm] :
+       std::vector<std::pair<TestOptionalTensors, bool>>{
+           {TestOptionalTensors{"ids"}, false},
+           {TestOptionalTensors{std::nullopt, "ids"}, true},
+           {TestOptionalTensors{"ids", "ids"}, true}}) {
+    expect_compile_error(
+        *make_constants_context(
+            *host,
+            gather(indices, bmm),
+            {{.key = "experts",
+              .bytes = std::vector<uint8_t>(4 * 2 * kQ8_0BlockBytes)}}),
+        "may only feed expert gathers");
+  }
+}
+
+TEST(GgmlEngineTest, IndexRefusesInnerDimsAndSeveralIndexTensors) {
+  const auto gather = [](const TestOptionalTensors& indices) {
+    TestProgram program;
+    program.input("ids", fbs::ScalarType::LONG, {2});
+    program.constant("table", fbs::ScalarType::FLOAT, {4, 2, 32});
+    program.call(
+        "y",
+        "torch.ops.aten.index.Tensor",
+        {{"self", std::string("table")}, {"indices", indices}},
+        fbs::ScalarType::FLOAT,
+        {2, 2, 32});
+    return program.finish("y");
+  };
+  auto host = GgmlEngineHost::create();
+  for (const auto& [indices, message] :
+       std::vector<std::pair<TestOptionalTensors, std::string>>{
+           {TestOptionalTensors{std::nullopt, "ids"}, "indexing dim 0 only"},
+           {TestOptionalTensors{"ids", "ids"}, "a single index tensor"}}) {
+    expect_compile_error(
+        *make_constants_context(
+            *host,
+            gather(indices),
+            {{.key = "table",
+              .bytes = std::vector<uint8_t>(4 * 2 * 32 * sizeof(float)),
+              .dtype = "F32",
+              .shape = {4, 2, 32}}}),
+        message);
   }
 }
 

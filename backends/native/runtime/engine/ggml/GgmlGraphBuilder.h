@@ -194,6 +194,15 @@ ggml_tensor* view_with_shape(
     const std::vector<int64_t>& sizes,
     size_t offset);
 
+// The bmm that reads `index`'s result as its weight side when `index` gathers
+// whole matrices of a 3-D constant [E, O, I] by one 1-D integer index on dim 0
+// and that bmm, with activations [S, I, 1], is its only reader: the batched
+// MoE expert form, lowered to one ggml_mul_mat_id. Otherwise nullptr.
+const Node* expert_matmul(const Method& method, const Node& index);
+
+// The expert gather whose expert_matmul is `matmul`, or nullptr.
+const Node* expert_gather(const Method& method, const Node& matmul);
+
 class GraphBuilder {
  public:
   GraphBuilder(
@@ -263,6 +272,7 @@ class GraphBuilder {
   void lower(const Node& node);
   void lower_linear(const Node& node);
   void lower_row_gather(const Node& node);
+  void lower_expert_matmul(const Node& bmm, const Node& index);
   void check_row_indices(ValueId id, int64_t rows);
   void require_exact_integers(
       ValueId id,
