@@ -446,6 +446,13 @@ bool is_metadata_only_view(std::string_view key) {
       std::ranges::find(kOps, key) != kOps.end();
 }
 
+void resize_to_input_sizes(
+    ComputeGraph* graph,
+    const std::vector<vkcompute::ArgGroup>& /*args*/,
+    const std::vector<VkRef>& resize_args) {
+  graph->virtual_resize(resize_args.at(0), graph->sizes_of(resize_args.at(1)));
+}
+
 // View shapes must be validated and updated whenever their source resizes.
 void resize_view(
     ComputeGraph* graph,
@@ -2321,6 +2328,12 @@ class VulkanEngineExecutable final : public EngineExecutable {
     return !meta_of(id).lower_bounds.empty();
   }
 
+  void add_input_sizes_resize(const Node& n) {
+    graph_->execute_nodes().emplace_back(new vkcompute::ExecuteNode(
+        resize_to_input_sizes,
+        {vref_at(n.outputs.at(0).value_id), resolve_arg(n.inputs.at(0).arg)}));
+  }
+
   void add_view_resize(const Node& n) {
     graph_->execute_nodes().emplace_back(new vkcompute::ExecuteNode(
         resize_view,
@@ -2606,6 +2619,11 @@ class VulkanEngineExecutable final : public EngineExecutable {
       }
       if (key == "aten.view_copy.default") {
         add_view_resize(n);
+      }
+      // ET-VK runs a same-dtype or float/half _to_copy as a blit, which has no
+      // resize hook, so its output would keep the sizes it was built with.
+      if (key == "aten._to_copy.default") {
+        add_input_sizes_resize(n);
       }
       try {
         dispatch(n);
