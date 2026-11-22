@@ -25,6 +25,40 @@ fbcode_target(
     **CPU_COMPAT
 )
 
+# ggml's GPU kernels multiply Q4_1 and Q5_1 block scales in fp16 (README: Known
+# ggml GPU numerics), which the GPU samples allow in linears. They cannot bound
+# it in these quantized_* cases, whose linear feeds another op or, in Gated
+# DeltaNet layers, reads an intermediate the samples do not record, and which
+# fail on CUDA and HIP.
+_FP16_SCALE_UNBOUNDED = [
+    "gdn_gguf_q4_1.quantized_layer_decode_f32",
+    "gdn_gguf_q4_1.quantized_layer_decode_restart_f32",
+    "gdn_gguf_q4_1.quantized_layer_decode_saved_state_f32",
+    "gdn_gguf_q4_1.quantized_layer_decode_wide_f32",
+    "gdn_gguf_q5_1.quantized_layer_decode_f32",
+    "gdn_gguf_q5_1.quantized_layer_decode_restart_f32",
+    "gdn_gguf_q5_1.quantized_layer_decode_saved_state_f32",
+    "gdn_gguf_q5_1.quantized_layer_decode_wide_f32",
+    "mean_gguf_q4_1.quantized_last_bf16",
+    "mean_gguf_q4_1.quantized_last_f16",
+    "mean_gguf_q4_1.quantized_last_f32",
+    "mean_gguf_q5_1.quantized_last_bf16",
+    "mean_gguf_q5_1.quantized_last_f16",
+    "mean_gguf_q5_1.quantized_last_f32",
+    "sum_gguf_q4_1.quantized_last_bf16",
+    "sum_gguf_q4_1.quantized_last_f16",
+    "sum_gguf_q4_1.quantized_last_f32",
+    "sum_gguf_q5_1.quantized_last_bf16",
+    "sum_gguf_q5_1.quantized_last_f16",
+    "sum_gguf_q5_1.quantized_last_f32",
+]
+
+# This filter replaces the act_quant target's own, so it keeps its exclusions.
+_GPU_ACT_QUANT_ARGS = [
+    "--gpu_fp16_block_scales",
+    "--gtest_filter=-" + ":".join(["elu_float.elu_f32_alpha_*"] + _FP16_SCALE_UNBOUNDED + ["topk_*.nan_and_inf_*"]),
+]
+
 # The op suite runs once per ggml backend set; only the engine variant, the
 # runner's --device, link deps and test env, the test host, and the CI
 # configuration differ.
@@ -52,6 +86,8 @@ _VARIANTS = [
             "GGML_CUDA_CUBLAS_COMPUTE_TYPE": "f32",
             "NVIDIA_TF32_OVERRIDE": "0",
         },
+
+        "act_quant_args": _GPU_ACT_QUANT_ARGS,
     },
     {
         "suffix": "_hip",
@@ -63,6 +99,7 @@ _VARIANTS = [
             platform = "amd-gpu",
             subplatform = "MI300",
         ),
+        "act_quant_args": _GPU_ACT_QUANT_ARGS,
     },
 ]
 
@@ -127,7 +164,7 @@ _EXACT_GELU_ONLY_ON_CPU = [
         args = [
             "--packages=$(location //executorch/backends/native/test/samples:op_samples)",
             "--device=" + v["device"],
-        ] + flags,
+        ] + flags + (v.get("act_quant_args", []) if name == "_act_quant" else []),
         env = v.get("env", {}) | v.get("sample_env", {}),
         remote_execution = v.get("remote_execution"),
         # TODO: run the others in CI once they pass.
@@ -151,7 +188,10 @@ _EXACT_GELU_ONLY_ON_CPU = [
         _kind = runtime.python_test,
         name = "test_ggml_ops" + v["suffix"],
         srcs = ["test_ggml_ops.py"],
-        env = {"GGML_PTN_DEVICE": v["device"]} | v.get("env", {}),
+        env = {
+            "GGML_PTN_BACKEND": v["suffix"].lstrip("_") or "cpu",
+            "GGML_PTN_DEVICE": v["device"],
+        } | v.get("env", {}),
         # Unbundled, every case starts its own test process: ~19 s of imports
         # for ~3 s of test.
         labels = (

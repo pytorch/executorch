@@ -11,6 +11,7 @@ gpu)."""
 import collections
 import copy
 import os
+import re
 import subprocess
 import tempfile
 import unittest
@@ -424,6 +425,15 @@ def _run_ggml(  # noqa: C901
     return [outputs[i : i + num_outputs] for i in range(0, len(outputs), num_outputs)]
 
 
+def _hip_accumulates_half_gemms_in_f32() -> bool:
+    """ggml-hip accumulates F16 GEMMs in F32 on CDNA and RDNA4 GPUs only."""
+    try:
+        arch = torch.cuda.get_device_properties(0).gcnArchName
+    except (AssertionError, AttributeError, RuntimeError):
+        return False
+    return re.match(r"gfx(908|90a|94\d|95\d|12\d\d)", arch) is not None
+
+
 # ggml-cuda runs F32 cuBLAS matmuls in TF32, with a 10-bit mantissa.
 _MATMUL_TOL = (
     {"atol": 5e-3, "rtol": 1e-2}
@@ -448,11 +458,12 @@ _GGUF_SUPER_SCALES = {
 }
 
 
+# The ggml backend under test: cpu, cuda or hip.
+_BACKEND = os.environ.get("GGML_PTN_BACKEND", "cpu")
+
 # ggml-cuda is built with -use_fast_math, whose tanhf is a few 1e-6 off.
 _GELU_TOL = (
-    {"atol": 1e-5, "rtol": 1e-5}
-    if os.environ.get("GGML_PTN_DEVICE", "cpu") == "gpu"
-    else {"atol": 1e-6, "rtol": 1e-5}
+    {"atol": 1e-5, "rtol": 1e-5} if _BACKEND == "cuda" else {"atol": 1e-6, "rtol": 1e-5}
 )
 
 
@@ -1702,6 +1713,116 @@ class GgmlOpsTest(unittest.TestCase):
             Lambda(lambda x: (x < 0.25).to(x.dtype)),
             (torch.tensor([[-1.0, 0.0, 0.25, 0.5]]),),
         )
+
+    # Known ggml GPU numerics, listed in the README. Each test compares with eager
+    # at the tolerance the CPU passes and fails on the backend that skips it.
+    @unittest.skipIf(_BACKEND == "cuda", "ggml-cuda runs F32 cuBLAS GEMMs in TF32")
+    def test_f32_linear_matches_eager(self):
+        # TF32 keeps 10 mantissa bits, so 1 + 2^-12 reaches the GEMM as 1.
+        linear = torch.nn.Linear(1024, 4, bias=False)
+        with torch.no_grad():
+            linear.weight.fill_(1.0)
+        self._check(linear, (torch.full((512, 1024), 1.0 + 2.0**-12),))
+
+    def _check_f32_linear_rows(self, rows):
+        # TF32 and XF32 keep 10 mantissa bits, so 1 + 2^-12 reaches the MMA as 1.
+        linear = torch.nn.Linear(1024, 64, bias=False)
+        with torch.no_grad():
+            linear.weight.fill_(1.0)
+        self._check(linear, (torch.full((rows, 1024), 1.0 + 2.0**-12),))
+
+    def test_f32_linear_of_up_to_three_rows_matches_eager(self):
+        for rows in (1, 3):
+            with self.subTest(rows=rows):
+                self._check_f32_linear_rows(rows)
+
+    @unittest.skipIf(
+        _BACKEND in ("cuda", "hip"),
+        "ggml's MMF kernel takes TF32 (CUDA) or XF32 (HIP) inputs for F32 weights "
+        "against 4-16 rows",
+    )
+    def test_f32_linear_of_four_to_sixteen_rows_matches_eager(self):
+        for rows in (4, 16):
+            with self.subTest(rows=rows):
+                self._check_f32_linear_rows(rows)
+
+    @unittest.skipIf(_BACKEND == "cuda", "ggml-cuda runs F32 cuBLAS GEMMs in TF32")
+    def test_f32_linear_of_seventeen_rows_matches_eager(self):
+        self._check_f32_linear_rows(17)
+
+    @unittest.skipIf(
+        _BACKEND == "cuda",
+        "ggml-cuda accumulates F16 GEMMs in F16 unless "
+        "cuda_f32_accumulation_for_testing is set",
+    )
+    def test_half_linear_matches_eager(self):
+        if _BACKEND == "hip" and not _hip_accumulates_half_gemms_in_f32():
+            self.skipTest(
+                "ggml-hip accumulates F16 GEMMs in F16 on AMD GPUs other than CDNA "
+                "and RDNA4"
+            )
+        self._check_half_linear_sum()
+
+    @unittest.skipIf(
+        _BACKEND in ("cuda", "hip"),
+        "ggml-cuda and ggml-hip multiply Q4_1 and Q5_1 block scales in fp16 for "
+        "up to 8 activation rows",
+    )
+    def test_small_scale_q4_1_and_q5_1_linear_matches_eager(self):
+        # Weight scales of 3.1e-4 times the exact 2^-10 int8 scale of +-127/1024
+        # activations make products of about five fp16 subnormal steps.
+        x = torch.full((8, 512), 127 / 1024)
+        x[1::2, ::2] *= -1
+        for ggml_type, d, m in (("q4_1", 3.1e-4, -2.3e-3), ("q5_1", 3.1e-4, -4.8e-3)):
+            with self.subTest(ggml_type):
+                block, block_bytes = GGML_QUANT_SIZES[
+                    GGMLQuantizationType[ggml_type.upper()]
+                ]
+                raw = torch.randint(0, 256, (8, 512 // block, block_bytes))
+                raw = raw.to(torch.uint8)
+                raw[..., :4] = torch.tensor([d, m]).half().view(torch.uint8)
+                model = torch.nn.Linear(512, 8, bias=False)
+                model.weight = torch.nn.Parameter(
+                    ExportableGGUFTensor.from_raw(
+                        raw.reshape(8, -1), ggml_type, torch.float32
+                    ),
+                    requires_grad=False,
+                )
+                self._check(
+                    model,
+                    (x,),
+                    atol=1e-6,
+                    rtol=1e-5,
+                    allow_activation_quant_for_weight_only=True,
+                )
+
+    @unittest.skipIf(
+        _BACKEND == "cuda", "ggml-cuda builds tanh and GELU with fast-math tanhf"
+    )
+    def test_tanh_and_gelu_match_eager(self):
+        x = torch.linspace(-3.0, 3.0, 193)
+        self._check(Lambda(torch.tanh), (x,), atol=1e-6, rtol=1e-5)
+        # ggml-cpu's default GELU reads an F16 table, as in llama.cpp.
+        self._check(
+            Lambda(lambda x: F.gelu(x, approximate="tanh")),
+            (x,),
+            atol=1e-6,
+            rtol=1e-5,
+            exact_gelu_for_testing=True,
+        )
+
+    @unittest.skipIf(
+        _BACKEND == "hip", "ggml-hip rounds BF16 GEMM results before adding the bias"
+    )
+    def test_bfloat16_linear_rounds_once_with_its_bias(self):
+        # 1 + 2^-8 + 2^-12 - 2^-9 rounds to 1 in BF16; rounding the product
+        # first gives 1 + 2^-7, and adding the bias keeps it there.
+        linear = torch.nn.Linear(3, 4).bfloat16()
+        with torch.no_grad():
+            linear.weight.fill_(1.0)
+            linear.bias.fill_(-(2.0**-9))
+        row = torch.tensor([1.0, 2.0**-8, 2.0**-12])
+        self._check(linear, (row.repeat(64, 1).bfloat16(),))
 
     def _check_traced_integer_compare(self, fn):
         small = (torch.tensor([[7, 3, -5]]), torch.tensor([[6, 4, -5]]))
