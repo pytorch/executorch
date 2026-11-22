@@ -254,6 +254,9 @@ class TestTritonSdpaSplitK(unittest.TestCase):
             (12, 34, 2, 128, 0),
             # 512 rows at head_dim 64: within the tile area, over the row cap.
             (16, 64, 2, 64, 0),
+            # head_dim 512: 32 rows fit ~99 KB of shared memory, 64 do not.
+            (4, 32, 4, 512, 1),
+            (8, 32, 4, 512, 0),
         ]:
             with self.subTest(Lq=Lq, H_q=H_q, H_kv=H_kv, D=D):
                 q = torch.randn(B, H_q, Lq, D, dtype=torch.bfloat16, device="cuda")
@@ -294,11 +297,17 @@ class TestTritonSdpaSplitK(unittest.TestCase):
                 self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
 
     def test_small_query_without_mask_matches_reference(self):
-        """No mask, not causal, bounded by kv_len (the DFlash draft's call)."""
-        B, H_q, H_kv, Lk, D = 1, 8, 2, 512, 128
+        """No mask, not causal, bounded by kv_len (the DFlash draft's call),
+        and a 32x512 query tile (8:1 GQA at head_dim 512, Gemma 4 globals)."""
+        B, Lk = 1, 512
         kv_len = torch.tensor([300], dtype=torch.int64, device="cuda")
-        for Lq in (5, 8, 16):
-            with self.subTest(Lq=Lq):
+        for H_q, H_kv, D, Lq in (
+            (8, 2, 128, 5),
+            (8, 2, 128, 8),
+            (8, 2, 128, 16),
+            (32, 4, 512, 4),
+        ):
+            with self.subTest(H_q=H_q, D=D, Lq=Lq):
                 torch.manual_seed(Lq)
                 q = torch.randn(B, H_q, Lq, D, dtype=torch.bfloat16, device="cuda")
                 k = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")

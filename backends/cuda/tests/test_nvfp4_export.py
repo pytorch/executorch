@@ -63,7 +63,7 @@ def cold_pick_cache():
         ("auto", 16, True, False),
     ],
 )
-def test_packed_linear_pte(mode, m, dynamic, fp32, monkeypatch):
+def test_packed_linear_pte(mode, m, dynamic, fp32, monkeypatch):  # noqa: C901
     # Decode-size auto times W4A16 against W4A8 without native FP4.
     if mode == "w4a4" or (mode == "auto" and m > 4):
         if not _has_native_fp4():

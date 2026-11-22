@@ -129,6 +129,8 @@ def test_linear_routing(mode, native, rows, fp32, expected, monkeypatch):
     )
     record_calls(monkeypatch, nvfp4_w4a8_gemv, ("nvfp4_w4a8_gemv",), calls)
     monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: native)
+    # The routing is NVIDIA's; w4a8 raises on ROCm.
+    monkeypatch.setattr(torch.version, "hip", None)
     monkeypatch.setenv("ET_CUDA_NVFP4_ACT", mode)
     monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_OUTPUT", "fp32" if fp32 else "input")
     from torch.fx.experimental.symbolic_shapes import ShapeEnv
