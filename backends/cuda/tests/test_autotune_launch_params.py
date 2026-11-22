@@ -21,6 +21,7 @@ from executorch.backends.cuda.autotune.launch_params import (
     InvalidLaunchParam,
 )
 from torch._subclasses.fake_tensor import FakeTensorMode, is_fake
+from torch._subclasses.functional_tensor import FunctionalTensorMode
 from torch.library import triton_op, wrap_triton
 
 # Matmul repetitions per candidate: split_k=4 is clearly the fastest.
@@ -89,8 +90,9 @@ class AutotuneLaunchParamTest(unittest.TestCase):
         self.assertEqual(pick.choice, 2)
 
     def test_no_legal_candidate_raises(self) -> None:
-        with autotune_launch_params(), self.assertRaisesRegex(
-            ValueError, "no legal split_k"
+        with (
+            autotune_launch_params(),
+            self.assertRaisesRegex(ValueError, "no legal split_k"),
         ):
             _toy_launch(self.x, 0)
 
@@ -109,9 +111,14 @@ class AutotuneLaunchParamTest(unittest.TestCase):
         self.assertEqual(stats.picks[0].choice, 4)
 
     def test_out_of_memory_falls_back_to_the_first_candidate(self) -> None:
-        with mock.patch.object(
-            launch_params, "_time_candidates", side_effect=torch.OutOfMemoryError("oom")
-        ) as timing, autotune_launch_params() as stats:
+        with (
+            mock.patch.object(
+                launch_params,
+                "_time_candidates",
+                side_effect=torch.OutOfMemoryError("oom"),
+            ) as timing,
+            autotune_launch_params() as stats,
+        ):
             _toy_launch(self.x, 16)
         self.assertEqual(timing.call_count, 2)
         self.assertEqual((stats.out_of_memory, stats.measured, _CALLS), (1, 0, [1]))
@@ -127,9 +134,10 @@ class AutotuneLaunchParamTest(unittest.TestCase):
                 raise torch.OutOfMemoryError("oom")
             return real(*args, **kwargs)
 
-        with mock.patch.object(
-            launch_params, "_time_candidates", side_effect=timing
-        ), autotune_launch_params(offload=lambda: [weight]) as stats:
+        with (
+            mock.patch.object(launch_params, "_time_candidates", side_effect=timing),
+            autotune_launch_params(offload=lambda: [weight]) as stats,
+        ):
             _toy_launch(self.x, 16)
         # Parked (storage freed on the device) only for the third attempt.
         self.assertEqual(weight_bytes, [4096, 4096, 0])
@@ -137,6 +145,66 @@ class AutotuneLaunchParamTest(unittest.TestCase):
             (stats.offloads, stats.out_of_memory, stats.picks[0].choice), (1, 0, 4)
         )
         self.assertEqual(weight.untyped_storage().nbytes(), 4096)
+
+    def test_custom_timing_survives_oom_retries(self) -> None:
+        timer = mock.Mock(return_value=3.0)
+        launch = autotune_launch_param("split_k", (1, 2), do_bench=timer)(
+            _toy_tie.__wrapped__
+        )
+        real = launch_params._time_candidates
+        attempts = []
+
+        def timing(*args, **kwargs):
+            attempts.append(kwargs["do_bench"])
+            if len(attempts) == 1:
+                raise torch.OutOfMemoryError("simulated")
+            return real(*args, **kwargs)
+
+        with (
+            mock.patch.object(launch_params, "_time_candidates", side_effect=timing),
+            mock.patch.object(
+                launch_params,
+                "time_with_cuda_graph_us",
+                side_effect=AssertionError("default timing used"),
+            ),
+            autotune_launch_params() as stats,
+        ):
+            launch(self.x)
+        self.assertEqual(attempts, [timer, timer])
+        self.assertEqual(timer.call_count, 2 * launch_params._ROUNDS)
+        self.assertEqual(stats.picks[0].choice, 1)
+
+    def test_offload_restores_real_weights_during_fake_functional_export(self) -> None:
+        weight = torch.arange(1024, dtype=torch.float32, device="cuda")
+        alias = weight[17:65]
+        expected = weight.clone()
+        real = launch_params._time_candidates
+        weight_bytes = []
+
+        def timing(*args, **kwargs):
+            weight_bytes.append(weight.untyped_storage().nbytes())
+            if len(weight_bytes) < 3:
+                raise torch.OutOfMemoryError("simulated NVFP4 split workspace")
+            return real(*args, **kwargs)
+
+        with FakeTensorMode() as mode:
+            fake = mode.from_tensor(self.x)
+            with (
+                FunctionalTensorMode(),
+                mock.patch.object(
+                    launch_params, "_time_candidates", side_effect=timing
+                ),
+                autotune_launch_params(offload=lambda: [weight, alias]) as stats,
+            ):
+                result = _toy_launch(fake, 16)
+            self.assertEqual(tuple(result.shape), tuple(fake.shape))
+        self.assertEqual(weight_bytes, [4096, 4096, 0])
+        self.assertEqual((stats.offloads, stats.out_of_memory), (1, 0))
+        self.assertEqual(set(stats.picks[0].times_us), {1, 2, 4, 8, 16})
+        torch.testing.assert_close(weight, expected, rtol=0, atol=0)
+        self.assertEqual(
+            alias.data_ptr(), weight.data_ptr() + 17 * weight.element_size()
+        )
 
     def test_overlapping_input_layouts_are_timed(self) -> None:
         expanded = torch.randn(1, 1024, device="cuda").expand(1024, 1024)
