@@ -276,6 +276,19 @@ TEST(ReferenceGgufQuantTest, DecodesQ5_1Block) {
   EXPECT_EQ(decode_one_row("gguf:q5_1", block, 32), expected);
 }
 
+TEST(ReferenceGgufQuantTest, DecodesQ4_1Block) {
+  std::vector<uint8_t> block = {0x00, 0x38, 0x00, 0xC0}; // d = 0.5, m = -2
+  std::vector<float> expected(32);
+  for (int j = 0; j < 16; ++j) {
+    block.push_back(static_cast<uint8_t>(j | (15 - j) << 4));
+    expected[j] = 0.5f * j - 2.0f;
+    expected[j + 16] = 0.5f * (15 - j) - 2.0f;
+  }
+  ASSERT_EQ(block.size(), 20);
+
+  EXPECT_EQ(decode_one_row("gguf:q4_1", block, 32), expected);
+}
+
 TEST(ReferenceGgufQuantTest, SizesWholeBlockRows) {
   EXPECT_TRUE(can_decode_gguf("gguf:q4_k"));
   EXPECT_TRUE(can_decode_gguf("gguf:q5_k"));
@@ -286,6 +299,7 @@ TEST(ReferenceGgufQuantTest, SizesWholeBlockRows) {
   EXPECT_TRUE(can_decode_gguf("gguf:q4_0"));
   EXPECT_TRUE(can_decode_gguf("gguf:q5_0"));
   EXPECT_TRUE(can_decode_gguf("gguf:q5_1"));
+  EXPECT_TRUE(can_decode_gguf("gguf:q4_1"));
   EXPECT_FALSE(can_decode_gguf("gguf:iq4_xs"));
   EXPECT_FALSE(can_decode_gguf("q4_k"));
   EXPECT_EQ(gguf_row_nbytes("gguf:q4_k", 512), 288);
@@ -301,6 +315,8 @@ TEST(ReferenceGgufQuantTest, SizesWholeBlockRows) {
   EXPECT_THROW(gguf_row_nbytes("gguf:q5_0", 48), std::invalid_argument);
   EXPECT_EQ(gguf_row_nbytes("gguf:q5_1", 64), 48);
   EXPECT_THROW(gguf_row_nbytes("gguf:q5_1", 48), std::invalid_argument);
+  EXPECT_EQ(gguf_row_nbytes("gguf:q4_1", 64), 40);
+  EXPECT_THROW(gguf_row_nbytes("gguf:q4_1", 48), std::invalid_argument);
   EXPECT_THROW(gguf_row_nbytes("gguf:q4_k", 255), std::invalid_argument);
   EXPECT_THROW(gguf_row_nbytes("gguf:q4_k", 0), std::invalid_argument);
   EXPECT_THROW(gguf_row_nbytes("gguf:q4_k", -256), std::invalid_argument);
@@ -337,6 +353,7 @@ TEST(ReferenceGgufQuantTest, MatchesGgmlDequantization) {
   };
   for (const auto& [codec, type, scale_offsets] :
        {std::tuple{"gguf:q4_0", GGML_TYPE_Q4_0, std::vector<size_t>{0}},
+        std::tuple{"gguf:q4_1", GGML_TYPE_Q4_1, std::vector<size_t>{0, 2}},
         std::tuple{"gguf:q5_0", GGML_TYPE_Q5_0, std::vector<size_t>{0}},
         std::tuple{"gguf:q5_1", GGML_TYPE_Q5_1, std::vector<size_t>{0, 2}},
         std::tuple{"gguf:q8_0", GGML_TYPE_Q8_0, std::vector<size_t>{0}},
