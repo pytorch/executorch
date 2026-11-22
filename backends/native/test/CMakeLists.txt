@@ -65,6 +65,7 @@ add_custom_command(
           ${_native_op_samples_srcs}
           ${EXECUTORCH_ROOT}/backends/test/suite/operators/test_elu.py
           ${EXECUTORCH_ROOT}/backends/test/suite/operators/test_embedding.py
+          ${EXECUTORCH_ROOT}/backends/test/suite/operators/test_gelu.py
           ${EXECUTORCH_ROOT}/backends/test/suite/operators/test_linear.py
   VERBATIM
 )
@@ -175,20 +176,27 @@ if(EXECUTORCH_BUILD_NATIVE_GGML)
   # their quantized_* cases, which quantize through an nn.Linear. Both leave out
   # the elu with alpha 0.5 that ggml rejects and the samples that match eager
   # only with a testing option (runtime/ggml/BUCK).
-  set(_native_exact_topk_only topk_*.nan_and_inf_*)
-  list(JOIN _native_exact_topk_only ":" _native_exact_topk_filter)
+  set(_native_exact_only
+      topk_*.nan_and_inf_*
+      gelu_float.dynamic_tokens_tanh_f32
+      gelu_float.gelu_f32_tanh_approximation_0_f32
+      gelu_float.gelu_f32_tanh_boundary_values_0_f32
+      gelu_float.tanh_f32
+      gelu_float.tanh_wide_f32
+  )
+  list(JOIN _native_exact_only ":" _native_exact_filter)
   add_test(
     NAME native_ggml_sample_test_act_quant
     COMMAND
       native_ggml_sample_test --packages=${_native_op_samples} --device=cpu
       --allow_activation_quant_for_weight_only
-      --gtest_filter=-elu_float.elu_f32_alpha_*:${_native_exact_topk_filter}
+      --gtest_filter=-elu_float.elu_f32_alpha_*:${_native_exact_filter}
   )
   add_test(
     NAME native_ggml_sample_test_no_linear
     COMMAND
       native_ggml_sample_test --packages=${_native_op_samples} --device=cpu
-      --gtest_filter=-linear_*:*.quantized_*:elu_float.elu_f32_alpha_*:${_native_exact_topk_filter}
+      --gtest_filter=-linear_*:*.quantized_*:elu_float.elu_f32_alpha_*:${_native_exact_filter}
   )
   target_compile_options(
     native_ggml_sample_test

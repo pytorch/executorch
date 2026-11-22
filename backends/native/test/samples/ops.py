@@ -13,6 +13,7 @@ from executorch.backends.native.test.samples import (
     core_ops,
     elu,
     embedding,
+    gelu,
     linear,
     pad_pool,
 )
@@ -33,6 +34,7 @@ def ops() -> dict[str, Op]:
         "linear": Op(linear.cases),
         "pad": Op(pad_pool.pad_cases),
         "max_pool2d": Op(pad_pool.max_pool2d_cases),
+        "gelu": Op(gelu.cases),
         "split": Op(core_ops.split_cases),
         "topk": Op(core_ops.topk_cases),
         "sum": Op(core_ops.sum_cases, ("f32",)),
