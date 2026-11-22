@@ -21,7 +21,6 @@ import executorch.backends.cuda.triton.kernels.sdpa  # noqa: F401
 # Register the TurboQuant attention operator.
 import executorch.backends.cuda.triton.kernels.tq4_sdpa  # noqa: F401
 import executorch.extension.llm.cache.update_and_attend  # noqa: F401
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -762,6 +761,7 @@ def cuda_source_transformations(
     model: nn.Module,
     *,
     use_turboquant: bool = False,
+    use_nvfp4_kv_cache: bool = False,
 ) -> None:
     """Apply CUDA source transformations to a Muse Glimmer model in place.
 
@@ -777,6 +777,9 @@ def cuda_source_transformations(
             their attention through ``torch.ops.triton.tq4_sdpa``. When False,
             keep the bf16 ``FlatKVCache`` but route global attention through the
             length-aware ``torch.ops.triton.sdpa``.
+        use_nvfp4_kv_cache: When True, every layer's KV cache becomes an
+            ``NVFP4KVCache`` read by ``torch.ops.triton.nvfp4_sdpa`` (see
+            ``source_transformations/nvfp4_kv.py``); excludes TurboQuant.
     """
     from executorch.examples.models.muse_glimmer.source_transformations.nvfp4 import (
         install_nvfp4_gate_up_epilogues,
@@ -785,6 +788,15 @@ def cuda_source_transformations(
     nvfp4_epilogues = install_nvfp4_gate_up_epilogues(model)
     if nvfp4_epilogues:
         print(f"[muse_glimmer cuda] NVFP4 gate/up epilogues: {nvfp4_epilogues}")
+    if use_nvfp4_kv_cache:
+        if use_turboquant:
+            raise ValueError("The NVFP4 KV cache and TurboQuant are exclusive")
+        from executorch.examples.models.muse_glimmer.source_transformations.nvfp4_kv import (
+            install_nvfp4_kv_cache,
+        )
+
+        install_nvfp4_kv_cache(model)
+        return
     if not use_turboquant:
         # Non-TurboQuant path: keep the bf16 FlatKVCache but bound global
         # attention to the valid context via a runtime kv_len scalar (routes

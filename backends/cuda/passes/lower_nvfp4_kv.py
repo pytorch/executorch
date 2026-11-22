@@ -34,7 +34,7 @@ from torch.fx.experimental.proxy_tensor import make_fx
 _MUTATED = ("k_q", "k_s", "v_q", "v_s")
 
 
-def _write_fn(ring: bool, eps: float, has_rope: bool):
+def _write_fn(ring: bool, eps: float | None, has_rope: bool):
     # Imported here so that importing the CUDA backend does not load the
     # NVFP4 kernel modules.
     from executorch.backends.cuda.triton.kernels.nvfp4_kv import _nvfp4_kv_write_impl
@@ -80,6 +80,15 @@ class LowerNVFP4KVWritePass:
             # (op_out, *mutated args in schema order); v2 passes them as
             # `_all_bases` and returns (op_out, *bases).
             if "_all_bases" in kw:
+                # Each mutated arg must be its base: view kwargs would rebuild
+                # a view whose offsets the kernel does not apply.
+                views = [
+                    key
+                    for key in kw
+                    for name in _MUTATED
+                    if key.startswith(f"_{name}_") and key != f"_{name}_base_index"
+                ]
+                assert not views, f"nvfp4_kv_write on cache views: {views}"
                 bases = list(kw["_all_bases"])
                 out_index = [kw[f"_{name}_base_index"] for name in _MUTATED]
                 base_of = [bases[i] for i in out_index]
@@ -92,9 +101,7 @@ class LowerNVFP4KVWritePass:
                 [inv] if has_rope else []
             )
             example = [a.meta["val"] for a in call_args]
-            fn = _write_fn(
-                bool(kw.get("ring", False)), float(kw.get("k_norm_eps", -1.0)), has_rope
-            )
+            fn = _write_fn(bool(kw.get("ring", False)), kw.get("k_norm_eps"), has_rope)
             traced = make_fx(
                 torch.func.functionalize(fn, remove="mutations_and_views")
             )(*example)
