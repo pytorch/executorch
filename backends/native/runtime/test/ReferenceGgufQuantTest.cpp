@@ -4,7 +4,7 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
-#include <executorch/backends/native/runtime/utils/ReferenceGgufKQuant.h>
+#include <executorch/backends/native/runtime/utils/ReferenceGgufQuant.h>
 
 #include <array>
 #include <cstdint>
@@ -20,17 +20,14 @@
 namespace ptn::reference {
 namespace {
 
+constexpr int64_t kSuperBlockElements = 256;
+
 std::vector<float> decode_one_row(
     std::string_view codec,
-    const std::vector<uint8_t>& block) {
-  std::vector<float> out(kGgufKQuantBlockElements);
-  decode_gguf_kquant(
-      codec,
-      block.data(),
-      block.size(),
-      1,
-      kGgufKQuantBlockElements,
-      out.data());
+    const std::vector<uint8_t>& block,
+    int64_t cols = kSuperBlockElements) {
+  std::vector<float> out(cols);
+  decode_gguf(codec, block.data(), block.size(), 1, cols, out.data());
   return out;
 }
 
@@ -50,7 +47,7 @@ std::array<uint8_t, 12> pack_q4_k_scales(
 }
 
 // cppcheck-suppress syntaxError
-TEST(ReferenceGgufKQuantTest, DecodesQ4KBlock) {
+TEST(ReferenceGgufQuantTest, DecodesQ4KBlock) {
   const std::array<uint8_t, 8> scales = {1, 2, 3, 4, 17, 5, 33, 63};
   const std::array<uint8_t, 8> mins = {0, 1, 2, 3, 4, 18, 5, 40};
   std::vector<uint8_t> block = {0x00, 0x3C, 0x00, 0x38}; // d = 1, dmin = 0.5
@@ -83,7 +80,7 @@ TEST(ReferenceGgufKQuantTest, DecodesQ4KBlock) {
   EXPECT_EQ(decode_one_row("gguf:q4_k", block), expected);
 }
 
-TEST(ReferenceGgufKQuantTest, DecodesQ5KBlock) {
+TEST(ReferenceGgufQuantTest, DecodesQ5KBlock) {
   const std::array<uint8_t, 8> scales = {1, 2, 3, 4, 17, 5, 33, 63};
   const std::array<uint8_t, 8> mins = {0, 1, 2, 3, 4, 18, 5, 40};
   // Weight e stores the 5-bit value u, with scale pair e / 32. Its low four
@@ -112,7 +109,7 @@ TEST(ReferenceGgufKQuantTest, DecodesQ5KBlock) {
   EXPECT_EQ(decode_one_row("gguf:q5_k", block), expected);
 }
 
-TEST(ReferenceGgufKQuantTest, DecodesQ6KBlock) {
+TEST(ReferenceGgufQuantTest, DecodesQ6KBlock) {
   std::array<int8_t, 16> scales{};
   for (int i = 0; i < 16; ++i) {
     scales[i] = static_cast<int8_t>(i - 8);
@@ -147,31 +144,30 @@ TEST(ReferenceGgufKQuantTest, DecodesQ6KBlock) {
   EXPECT_EQ(decode_one_row("gguf:q6_k", block), expected);
 }
 
-TEST(ReferenceGgufKQuantTest, SizesWholeSuperBlockRows) {
-  EXPECT_TRUE(is_gguf_kquant("gguf:q4_k"));
-  EXPECT_TRUE(is_gguf_kquant("gguf:q5_k"));
-  EXPECT_TRUE(is_gguf_kquant("gguf:q6_k"));
-  EXPECT_FALSE(is_gguf_kquant("gguf:q4_0"));
-  EXPECT_EQ(gguf_kquant_row_nbytes("gguf:q4_k", 512), 288);
-  EXPECT_EQ(gguf_kquant_row_nbytes("gguf:q5_k", 256), 176);
-  EXPECT_EQ(gguf_kquant_row_nbytes("gguf:q6_k", 256), 210);
-  EXPECT_THROW(gguf_kquant_row_nbytes("gguf:q4_k", 255), std::invalid_argument);
-  EXPECT_THROW(gguf_kquant_row_nbytes("gguf:q4_k", 0), std::invalid_argument);
-  EXPECT_THROW(
-      gguf_kquant_row_nbytes("gguf:q4_k", -256), std::invalid_argument);
-  EXPECT_THROW(gguf_kquant_row_nbytes("gguf:q8_0", 256), std::invalid_argument);
+TEST(ReferenceGgufQuantTest, SizesWholeBlockRows) {
+  EXPECT_TRUE(can_decode_gguf("gguf:q4_k"));
+  EXPECT_TRUE(can_decode_gguf("gguf:q5_k"));
+  EXPECT_TRUE(can_decode_gguf("gguf:q6_k"));
+  EXPECT_FALSE(can_decode_gguf("gguf:iq4_xs"));
+  EXPECT_FALSE(can_decode_gguf("q4_k"));
+  EXPECT_EQ(gguf_row_nbytes("gguf:q4_k", 512), 288);
+  EXPECT_EQ(gguf_row_nbytes("gguf:q5_k", 256), 176);
+  EXPECT_EQ(gguf_row_nbytes("gguf:q6_k", 256), 210);
+  EXPECT_THROW(gguf_row_nbytes("gguf:q4_k", 255), std::invalid_argument);
+  EXPECT_THROW(gguf_row_nbytes("gguf:q4_k", 0), std::invalid_argument);
+  EXPECT_THROW(gguf_row_nbytes("gguf:q4_k", -256), std::invalid_argument);
+  EXPECT_THROW(gguf_row_nbytes("gguf:iq4_xs", 256), std::invalid_argument);
   std::vector<uint8_t> data(2 * 144 - 1);
   std::vector<float> out(2 * 256);
   EXPECT_THROW(
-      decode_gguf_kquant(
-          "gguf:q4_k", data.data(), data.size(), 2, 256, out.data()),
+      decode_gguf("gguf:q4_k", data.data(), data.size(), 2, 256, out.data()),
       std::invalid_argument);
   EXPECT_THROW(
-      decode_gguf_kquant("gguf:q4_k", data.data(), 0, -1, 256, out.data()),
+      decode_gguf("gguf:q4_k", data.data(), 0, -1, 256, out.data()),
       std::invalid_argument);
   // rows * 144 wraps to 144 bytes.
   EXPECT_THROW(
-      decode_gguf_kquant(
+      decode_gguf(
           "gguf:q4_k",
           data.data(),
           144,
@@ -181,8 +177,9 @@ TEST(ReferenceGgufKQuantTest, SizesWholeSuperBlockRows) {
       std::invalid_argument);
 }
 
-// Random blocks with finite fp16 scales, decoded by ggml's own dequantization.
-TEST(ReferenceGgufKQuantTest, MatchesGgmlDequantization) {
+// Random blocks, with finite fp16 scales at their byte offsets in each block,
+// decoded by ggml's own dequantization.
+TEST(ReferenceGgufQuantTest, MatchesGgmlDequantization) {
   std::mt19937 rng(0);
   std::uniform_int_distribution<int> byte(0, 255);
   std::uniform_real_distribution<float> scale(-2.0f, 2.0f);
@@ -190,31 +187,28 @@ TEST(ReferenceGgufKQuantTest, MatchesGgmlDequantization) {
     const ggml_fp16_t h = ggml_fp32_to_fp16(scale(rng));
     std::memcpy(bytes, &h, sizeof(h));
   };
-  for (const auto& [codec, type, block_bytes] :
-       {std::tuple{"gguf:q4_k", GGML_TYPE_Q4_K, size_t{144}},
-        std::tuple{"gguf:q5_k", GGML_TYPE_Q5_K, size_t{176}},
-        std::tuple{"gguf:q6_k", GGML_TYPE_Q6_K, size_t{210}}}) {
+  for (const auto& [codec, type, scale_offsets] :
+       {std::tuple{"gguf:q4_k", GGML_TYPE_Q4_K, std::vector<size_t>{0, 2}},
+        std::tuple{"gguf:q5_k", GGML_TYPE_Q5_K, std::vector<size_t>{0, 2}},
+        std::tuple{"gguf:q6_k", GGML_TYPE_Q6_K, std::vector<size_t>{208}}}) {
     SCOPED_TRACE(codec);
     constexpr int64_t kRows = 5;
-    constexpr int64_t kCols = 2 * kGgufKQuantBlockElements;
+    const int64_t cols = 2 * ggml_blck_size(type);
+    const size_t block_bytes = ggml_type_size(type);
     std::vector<uint8_t> data(kRows * 2 * block_bytes);
     for (uint8_t& value : data) {
       value = static_cast<uint8_t>(byte(rng));
     }
     for (size_t block = 0; block < data.size(); block += block_bytes) {
-      if (type == GGML_TYPE_Q6_K) {
-        put_half(&data[block + 208]);
-      } else {
-        put_half(&data[block]);
-        put_half(&data[block + 2]);
+      for (const size_t offset : scale_offsets) {
+        put_half(&data[block + offset]);
       }
     }
-    std::vector<float> actual(kRows * kCols);
-    decode_gguf_kquant(
-        codec, data.data(), data.size(), kRows, kCols, actual.data());
-    std::vector<float> expected(kRows * kCols);
+    std::vector<float> actual(kRows * cols);
+    decode_gguf(codec, data.data(), data.size(), kRows, cols, actual.data());
+    std::vector<float> expected(kRows * cols);
     ggml_get_type_traits(type)->to_float(
-        data.data(), expected.data(), kRows * kCols);
+        data.data(), expected.data(), kRows * cols);
     EXPECT_EQ(
         std::memcmp(
             actual.data(), expected.data(), actual.size() * sizeof(float)),
@@ -224,21 +218,21 @@ TEST(ReferenceGgufKQuantTest, MatchesGgmlDequantization) {
 
 // Every fp16 d, subnormals and infinities included, except NaNs, whose
 // payload ggml's fp16 conversion may quiet.
-TEST(ReferenceGgufKQuantTest, MatchesGgmlForEveryFp16Scale) {
+TEST(ReferenceGgufQuantTest, MatchesGgmlForEveryFp16Scale) {
   // Every weight stores u = 33 and every scale is 1, so each decodes to d.
   std::vector<uint8_t> block(128, 0x11); // ql: low nibbles 1
   block.resize(192, 0xAA); // qh: top bits 2
   block.resize(208, 1); // scales
   block.resize(210); // d
   const auto to_float = ggml_get_type_traits(GGML_TYPE_Q6_K)->to_float;
-  std::vector<float> expected(kGgufKQuantBlockElements);
+  std::vector<float> expected(kSuperBlockElements);
   for (uint32_t h = 0; h <= 0xFFFF; ++h) {
     if ((h & 0x7C00) == 0x7C00 && (h & 0x3FF) != 0) {
       continue;
     }
     block[208] = static_cast<uint8_t>(h);
     block[209] = static_cast<uint8_t>(h >> 8);
-    to_float(block.data(), expected.data(), kGgufKQuantBlockElements);
+    to_float(block.data(), expected.data(), kSuperBlockElements);
     const std::vector<float> actual = decode_one_row("gguf:q6_k", block);
     ASSERT_EQ(
         std::memcmp(
@@ -248,21 +242,21 @@ TEST(ReferenceGgufKQuantTest, MatchesGgmlForEveryFp16Scale) {
   }
 }
 
-TEST(ReferenceGgufKQuantTest, ThreadedDecodeMatchesSerialDecode) {
+TEST(ReferenceGgufQuantTest, ThreadedDecodeMatchesSerialDecode) {
   // Just over four threads' worth of weights (2^20 each), in rows that do not
   // split evenly; the bytes need not be meaningful.
   constexpr int64_t kRows = 8193;
   constexpr int64_t kCols = 512;
-  const size_t row_bytes = gguf_kquant_row_nbytes("gguf:q6_k", kCols);
+  const size_t row_bytes = gguf_row_nbytes("gguf:q6_k", kCols);
   std::vector<uint8_t> data(kRows * row_bytes);
   for (size_t i = 0; i < data.size(); ++i) {
     data[i] = static_cast<uint8_t>((i * 2654435761u) >> 24);
   }
   std::vector<float> threaded(kRows * kCols);
-  decode_gguf_kquant(
+  decode_gguf(
       "gguf:q6_k", data.data(), data.size(), kRows, kCols, threaded.data(), 4);
   std::vector<float> serial(kRows * kCols);
-  decode_gguf_kquant(
+  decode_gguf(
       "gguf:q6_k", data.data(), data.size(), kRows, kCols, serial.data(), 1);
   EXPECT_EQ(
       std::memcmp(
