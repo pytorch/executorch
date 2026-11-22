@@ -9,6 +9,7 @@ import importlib
 import sys
 import tempfile
 import unittest
+from contextlib import nullcontext
 from functools import partial
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -34,10 +35,12 @@ from executorch.backends.native.test.samples.record import DTYPES, record
 from executorch.backends.native.test.samples.schemes import (
     Gguf,
     GGUF_SUPER_SCALES,
+    int8_activations,
     Scheme,
     schemes,
     Torchao,
 )
+from executorch.exir._serialize._ptn import read_ptn
 from executorch.exir.native import read_samples
 from executorch.extension.llm.export.gguf import ExportableGGUFTensor
 from torch.export import Dim
@@ -480,6 +483,75 @@ class RecordTest(unittest.TestCase):
                 sets["golden"].samples[0].calls, case.inputs, strict=True
             ):
                 torch.testing.assert_close(call.outputs[0], model(*x), rtol=0, atol=0)
+
+    def test_record_keeps_a_chain_s_state_out_of_its_references(self) -> None:
+        class Accumulate(torch.nn.Module):
+            """A chain's state that no call resets; the package saves a
+            persistent buffer's initial value and zeroes a non-persistent one."""
+
+            def __init__(self, initial: torch.Tensor, persistent: bool) -> None:
+                super().__init__()
+                self.linear = torch.nn.Linear(32, 8, bias=False)
+                self.register_buffer("total", initial, persistent)
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                self.total.add_(self.linear(x))
+                return self.total * 2
+
+        scheme = schemes()["int4wo_g32"]
+        for initial, persistent in (
+            (torch.arange(8.0)[None], True),
+            (torch.zeros(1, 8), False),
+        ):
+            case = Case(
+                "acc",
+                Accumulate(initial, persistent),
+                draws(3, (1, 32)),
+                dynamic_shapes=({},),
+            )
+            want = {}
+            for name, act in (("golden", False), ("golden-int8_act", True)):
+                model = copy.deepcopy(case.model)
+                scheme.quantize(model)
+                with torch.no_grad(), int8_activations(model) if act else nullcontext():
+                    want[name] = [model(*x) for x in case.inputs]
+            want["precise"] = want["golden"]
+            with self.subTest(persistent=persistent):
+                with tempfile.TemporaryDirectory() as tmp:
+                    path = Path(tmp) / "acc.ptn"
+                    record([case], scheme, path, dtypes=["f32"])
+                    sets = read_samples(str(path))
+                    _, constants = read_ptn(str(path))
+                    for name, outputs in want.items():
+                        (sample,) = sets[name].samples
+                        for call, output in zip(sample.calls, outputs, strict=True):
+                            torch.testing.assert_close(call.outputs[0], output)
+                    state = [v for k, v in constants.items() if k.endswith(".total")]
+                    self.assertEqual(len(state), 1 if persistent else 0)
+                    for v in state:
+                        torch.testing.assert_close(v, initial, rtol=0, atol=0)
+
+    def test_precise_keeps_a_non_persistent_state_at_reference_precision(
+        self,
+    ) -> None:
+        class Accumulate(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("total", torch.zeros(1, 8), persistent=False)
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                self.total.add_(x)
+                return self.total * 2
+
+        case = Case("acc", Accumulate(), draws(4, (1, 8)), dynamic_shapes=({},))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "acc.ptn"
+            record([case], Scheme(), path, dtypes=["f16"])
+            (sample,) = read_samples(str(path))["precise"].samples
+        inputs = torch.cat([x.half().double() for (x,) in case.inputs])
+        want = (inputs.cumsum(0) * 2).float()
+        got = torch.cat([call.outputs[0] for call in sample.calls])
+        torch.testing.assert_close(got, want, rtol=0, atol=0)
 
     def test_record_keeps_integer_outputs_precise(self) -> None:
         class Argmax(torch.nn.Module):
