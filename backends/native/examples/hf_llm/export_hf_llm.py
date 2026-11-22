@@ -66,12 +66,15 @@ from transformers import (
     AutoTokenizer,
     PreTrainedModel,
 )
-from transformers.cache_utils import StaticLayer
+from transformers.cache_utils import StaticCache, StaticLayer, StaticSlidingWindowLayer
 from transformers.integrations.executorch import TorchExportableModuleForDecoderOnlyLM
 from transformers.integrations.sdpa_attention import sdpa_attention_forward
 from transformers.masking_utils import (
-    ALL_MASK_ATTENTION_FUNCTIONS,
+    and_masks,
     AttentionMaskInterface,
+    causal_mask_function,
+    chunked_overlay,
+    sliding_window_overlay,
 )
 
 
@@ -130,11 +133,14 @@ def _load(
         register_offgraph_attention(_OFFGRAPH_ATTENTION)
     attn = _OFFGRAPH_ATTENTION if offgraph_cache else "sdpa"
     kwargs = {"dtype": torch.float32, "attn_implementation": attn}
+    # Without the checkpoint's own weights, a multimodal config builds only its
+    # text decoder, unless a text-only module takes the whole model.
+    build_config = config if text_only else text_config
     if empty_weights:
         with _parameters_on_meta():
-            model = auto_class.from_config(config, **kwargs)
+            model = auto_class.from_config(build_config, **kwargs)
     elif random_weights:
-        model = auto_class.from_config(config, **kwargs)
+        model = auto_class.from_config(build_config, **kwargs)
     else:
         model = auto_class.from_pretrained(path, config=config, **kwargs)
     if text_only:
@@ -183,17 +189,202 @@ def load_gguf(
         raise ValueError(f"GGUF is missing {sorted(expected - loaded)}")
 
 
-# TEMPORARY: an FP16 KV cache for an FP32 model. Remove this knob once PTN moves
-# to ExecuTorch's off-graph KV cache (extension/llm/cache), where the KV dtype is
-# runtime cache configuration rather than part of the exported graph.
-_CACHE_DTYPE_SDPA = "sdpa_in_cache_dtype"
+_EXPORT_ATTENTION = "native_export"
+# Attention arguments `_attention` implements besides query, key, value, the
+# mask and its own `softcap`: both paths apply the scale, and the mask, always
+# materialized, carries causality and the sliding window, so `is_causal` changes
+# nothing. `dropout` passes only when zero.
+_IMPLEMENTED_ATTENTION_ARGS = frozenset({"scaling", "is_causal", "sliding_window"})
+# Model-level flags transformers forwards to every attention call; they select
+# outputs, not the attention itself. Packed-sequence arguments (`cu_seq_lens_*`,
+# `max_length_*`, `seq_idx`) are not here: export runs one sequence and leaves
+# them None.
+_INERT_ATTENTION_ARGS = frozenset(
+    {
+        "position_ids",
+        "use_cache",
+        "output_attentions",
+        "output_hidden_states",
+        "output_router_logits",
+        "num_items_in_batch",
+        "deterministic",
+        # transformers 5 forwards it to every attention; the mask encodes it.
+        "cache_position",
+    }
+)
 
 
-def _sdpa_in_cache_dtype(module, query, key, value, attention_mask, **kwargs):
+def _check_attention_args(module: nn.Module, kwargs: dict) -> None:
+    """Raise for an attention argument export would drop: SDPA ignores what it
+    does not know, e.g. attention sinks, and the PTN would then differ from
+    eager."""
+    for name, value in kwargs.items():
+        if value is None or name in _INERT_ATTENTION_ARGS:
+            continue
+        if name in _IMPLEMENTED_ATTENTION_ARGS:
+            continue
+        if name == "dropout" and not value:
+            continue
+        raise NotImplementedError(
+            f"{type(module).__name__} (layer {getattr(module, 'layer_idx', '?')}) "
+            f"passes {name}={_describe(value)} to attention, which export does "
+            "not implement"
+        )
+
+
+def _describe(value: object) -> str:
+    if isinstance(value, torch.Tensor):
+        return f"<tensor {tuple(value.shape)}>"
+    return repr(value)
+
+
+def _softcapped_attention(
+    query, key, value, attention_mask, softcap, scaling=None, **kwargs
+):
+    """Transformers' eager attention, which caps the attention logits; SDPA
+    cannot. Each KV head's group of query heads attends as one batch row, the
+    pairing ``repeat_kv`` makes, so every tensor stays 4-D."""
+    batch, heads, tokens, head_dim = query.shape
+    kv_heads, num_keys = key.shape[1], key.shape[2]
+    if scaling is None:
+        scaling = head_dim**-0.5
+    grouped = query.reshape(batch, kv_heads, heads // kv_heads * tokens, head_dim)
+    scores = torch.matmul(grouped, key.to(query.dtype).transpose(2, 3)) * scaling
+    scores = scores.reshape(batch, heads, tokens, num_keys)
+    scores = torch.tanh(scores / softcap) * softcap
+    if attention_mask is not None:
+        # The boolean mask as eager's additive one: 0 where attended, the
+        # dtype's minimum elsewhere.
+        low = torch.finfo(scores.dtype).min
+        scores = scores + (attention_mask.to(scores.dtype) * -low + low)
+    weights = nn.functional.softmax(scores, dim=-1, dtype=torch.float32)
+    weights = weights.to(query.dtype)
+    output = torch.matmul(
+        weights.reshape(batch, kv_heads, -1, num_keys), value.to(query.dtype)
+    )
+    return (
+        output.reshape(batch, heads, tokens, -1).transpose(1, 2).contiguous(),
+        weights,
+    )
+
+
+def _attention(module, query, key, value, attention_mask, softcap=None, **kwargs):
+    _check_attention_args(module, kwargs)
+    if softcap is not None:
+        return _softcapped_attention(
+            query, key, value, attention_mask, softcap, **kwargs
+        )
+    if key.dtype == query.dtype:
+        return sdpa_attention_forward(
+            module, query, key, value, attention_mask, **kwargs
+        )
+    # TEMPORARY: an FP16 KV cache for an FP32 model. Remove this once PTN moves
+    # to ExecuTorch's off-graph KV cache (extension/llm/cache), where the KV
+    # dtype is runtime cache configuration rather than part of the graph.
     output, weights = sdpa_attention_forward(
         module, query.to(key.dtype), key, value, attention_mask, **kwargs
     )
     return output.to(query.dtype), weights
+
+
+# Mask arguments transformers passes that `_layer_mask` reads (`config`,
+# `device`) or can ignore: it rebuilds the causal, sliding-window or chunked mask
+# transformers builds from `mask_function`, as a boolean mask SDPA takes as is.
+_KNOWN_MASK_ARGS = frozenset(
+    {"config", "device", "dtype", "mask_function", "allow_is_causal_skip", "use_vmap"}
+)
+
+
+def _check_mask_args(kwargs: dict) -> None:
+    """Raise for a mask `_layer_mask` would not reproduce: transformers passes
+    ``use_vmap=True`` when a model composes its own overlay onto the mask, e.g.
+    Gemma 3's bidirectional attention, and ``allow_is_bidirectional_skip`` only
+    for a bidirectional mask; refuse any other argument it does not know."""
+    if kwargs.get("use_vmap"):
+        raise NotImplementedError(
+            "export does not implement a model's own attention mask overlay"
+        )
+    for name, value in kwargs.items():
+        if value is not None and name not in _KNOWN_MASK_ARGS:
+            raise NotImplementedError(
+                f"export does not implement the attention mask argument {name}"
+            )
+
+
+def _code(function: object) -> object:
+    # Every function one def statement creates shares that def's code object, so
+    # code identity tells which factory built a closure.
+    return getattr(function, "__code__", None)
+
+
+def _closure(function: object) -> dict[str, object]:
+    """The values a nested function closes over, by name."""
+    cells = function.__closure__ or ()
+    return {
+        name: cell.cell_contents
+        for name, cell in zip(function.__code__.co_freevars, cells)
+    }
+
+
+def _local_overlay(mask_function: object) -> tuple[str, int | None]:
+    """What ``mask_function`` adds to causality: ``("causal", None)``,
+    ``("sliding", window)`` or ``("chunked", size)``, the masks transformers
+    builds from its factories. Raise for any other function, e.g. one composed
+    with packed sequences, bidirectional blocks or a bidirectional mask, which
+    `_layer_mask` would drop. A chunked mask's left padding is zero: export
+    takes no padding mask."""
+    if mask_function is causal_mask_function:
+        return "causal", None
+    if _code(mask_function) is _code(and_masks(causal_mask_function)):
+        parts = _closure(mask_function)["mask_functions"]
+        if len(parts) == 2 and parts[1] is causal_mask_function:
+            overlay = _code(parts[0])
+            if overlay is _code(sliding_window_overlay(0)):
+                return "sliding", _closure(parts[0])["sliding_window"]
+            if overlay is _code(chunked_overlay(0, torch.zeros(1))):
+                return "chunked", _closure(parts[0])["chunk_size"]
+    raise NotImplementedError(
+        f"export does not implement the attention mask function {mask_function!r}"
+    )
+
+
+def _layer_mask(
+    batch_size: int,
+    cache_position: torch.Tensor | None = None,
+    kv_length: int = 0,
+    kv_offset: int = 0,
+    attention_mask: torch.Tensor | None = None,
+    local_size: int | None = None,
+    q_length: int | None = None,
+    q_offset: int | torch.Tensor = 0,
+    **kwargs,
+) -> torch.Tensor:
+    """One layer's mask, always materialized from comparisons. transformers 4's
+    ``sdpa_mask_without_vmap`` applies the config's sliding window or chunks to
+    every layer; transformers 5's ``sdpa_mask`` drops masks that SDPA's
+    ``is_causal`` could stand in for and builds windows from a scalar ``full``.
+    transformers 5 passes ``q_length`` and ``q_offset`` instead of
+    ``cache_position``. Only sliding-window and chunked masks pass a
+    ``local_size``."""
+    _check_mask_args(kwargs)
+    if attention_mask is not None:
+        raise ValueError("export takes no padding mask")
+    kind, size = _local_overlay(kwargs.get("mask_function", causal_mask_function))
+    if size != local_size:
+        raise NotImplementedError(
+            f"the mask function's local size {size} is not local_size {local_size}"
+        )
+    if cache_position is None:
+        cache_position = torch.arange(q_length, device=kwargs.get("device")) + q_offset
+    kv_arange = torch.arange(kv_length, device=cache_position.device)
+    kv_arange += kv_offset
+    positions = cache_position.view(-1, 1)
+    mask = kv_arange <= positions
+    if kind == "sliding":
+        mask *= (positions - size) < kv_arange
+    elif kind == "chunked":
+        mask *= (kv_arange // size) == (positions // size)
+    return mask[None, None, :, :].expand(batch_size, -1, -1, -1)
 
 
 class LastTokenLM(nn.Module):
@@ -206,6 +397,19 @@ class LastTokenLM(nn.Module):
         kv_cache_dtype: torch.dtype = torch.float32,
     ) -> None:
         super().__init__()
+        # transformers' export wrapper turns sliding-window layers into plain
+        # StaticLayers and the rewrite below keeps only keys and values, so
+        # refuse static layers that keep more, e.g. an indexer's keys or a
+        # linear attention's, before either runs.
+        layers = StaticCache(config=model.config, max_cache_len=max_cache_len).layers
+        for layer in layers:
+            if isinstance(layer, StaticLayer) and type(layer) not in (
+                StaticLayer,
+                StaticSlidingWindowLayer,
+            ):
+                raise NotImplementedError(
+                    f"export does not support {type(layer).__name__} cache layers"
+                )
         # TODO(PTN): attention exports as masked, non-causal GQA aten.sdpa over
         # the whole static cache; engines must pattern-match it back to causal
         # SDPA.
@@ -217,34 +421,37 @@ class LastTokenLM(nn.Module):
             if hasattr(self.cached, "static_cache")
             else self.cached.cache
         )
-        change_dtype = kv_cache_dtype != model.dtype
-        self._write_cache_at_input_positions(kv_cache_dtype, change_dtype)
-        if change_dtype:
-            self._attend_in_cache_dtype(model)
+        self._write_cache_at_input_positions(
+            max_cache_len, kv_cache_dtype, kv_cache_dtype != model.dtype
+        )
+        self._use_export_attention(model)
 
     def _write_cache_at_input_positions(
-        self, dtype: torch.dtype, change_dtype: bool
+        self, max_cache_len: int, dtype: torch.dtype, change_dtype: bool
     ) -> None:
+        # Sliding-window and chunked layers keep every position too: their
+        # attention mask, not a rolling buffer, limits what they attend.
         for i, old in enumerate(self.cache.layers):
-            if type(old) is not StaticLayer:
+            if not isinstance(old, StaticLayer):
                 if change_dtype:
                     raise ValueError(
                         f"cannot change the KV dtype of {type(old).__name__}"
                     )
                 continue
-            layer = PositionedStaticLayer.replacing(old, dtype)
+            layer = PositionedStaticLayer.replacing(old, dtype, max_cache_len)
             self.cache.layers[i] = layer
             self.cached.register_buffer(f"key_cache_{i}", layer.keys, persistent=False)
             self.cached.register_buffer(
                 f"value_cache_{i}", layer.values, persistent=False
             )
 
-    def _attend_in_cache_dtype(self, model: PreTrainedModel) -> None:
-        # Keep the vmap-free mask TorchExportableModuleForDecoderOnlyLM selected.
-        mask = ALL_MASK_ATTENTION_FUNCTIONS[model.config._attn_implementation]
-        AttentionInterface.register(_CACHE_DTYPE_SDPA, _sdpa_in_cache_dtype)
-        AttentionMaskInterface.register(_CACHE_DTYPE_SDPA, mask)
-        model.config._attn_implementation = _CACHE_DTYPE_SDPA
+    def _use_export_attention(self, model: PreTrainedModel) -> None:
+        # Whatever attention the model was configured with: transformers keeps
+        # registrations process-wide, so every wrapper registers the same
+        # functions, and `_attention` takes the boolean mask `_layer_mask` builds.
+        AttentionInterface.register(_EXPORT_ATTENTION, _attention)
+        AttentionMaskInterface.register(_EXPORT_ATTENTION, _layer_mask)
+        model.config._attn_implementation = _EXPORT_ATTENTION
 
     def forward(
         self, input_ids: torch.Tensor, cache_position: torch.Tensor
