@@ -39,7 +39,7 @@
 #include <executorch/backends/native/runtime/graph/TensorMeta.h>
 #include <executorch/backends/native/runtime/graph/Value.h>
 #include <executorch/backends/native/runtime/graph/utils/GraphUtils.h>
-#include <executorch/backends/native/runtime/utils/ReferenceGgufKQuant.h>
+#include <executorch/backends/native/runtime/utils/ReferenceGgufQuant.h>
 #include <executorch/backends/native/runtime/vulkan/VulkanConstantMaterializationTracker.h>
 #include <executorch/backends/native/runtime/vulkan/passes/FuseQuantizedEmbedding.h>
 #include <executorch/backends/native/runtime/vulkan/passes/FuseQuantizedLinear.h>
@@ -48,7 +48,7 @@
 #include <executorch/backends/native/runtime/vulkan/passes/LowerRMSNorm.h>
 #include <executorch/backends/native/runtime/vulkan/passes/LowerSDPA.h>
 #include <executorch/backends/native/runtime/vulkan/passes/MaterializeViewCopies.h>
-#include <executorch/backends/native/runtime/vulkan/passes/UseReferenceGgufKQuant.h>
+#include <executorch/backends/native/runtime/vulkan/passes/UseReferenceGgufQuant.h>
 #include <executorch/runtime/core/freeable_buffer.h>
 
 #include <executorch/backends/vulkan/runtime/api/api.h>
@@ -698,7 +698,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
         mutable_state_claim_(mutable_state_owners, method),
         graph_(std::make_unique<ComputeGraph>(config)) {
     method_.graph.rebuild_def_use();
-    warn_reference_fallback(vulkan::use_reference_gguf_kquant(method_));
+    warn_reference_fallback(vulkan::use_reference_gguf(method_));
     vulkan::lower_hf_attention(method_.graph);
     vulkan::lower_sdpa(method_.graph);
     vulkan::fuse_quantized_embeddings(method_);
@@ -1194,13 +1194,13 @@ class VulkanEngineExecutable final : public EngineExecutable {
       const Package& package,
       const DataBinding& b,
       const Value& v) {
-    const auto gguf = v.attrs.find(vulkan::kReferenceGgufKQuantAttr);
+    const auto gguf = v.attrs.find(vulkan::kReferenceGgufAttr);
     if (gguf != v.attrs.end()) {
       const auto* codec = std::any_cast<std::string>(&gguf->second);
       if (codec == nullptr) {
-        throw std::runtime_error("vulkan: malformed GGUF K-quant annotation");
+        throw std::runtime_error("vulkan: malformed GGUF annotation");
       }
-      return gguf_kquant_buffer(package, b, v, *codec);
+      return gguf_buffer(package, b, v, *codec);
     }
     if (v.tensor_meta().quant.has_value()) {
       throw std::runtime_error(
@@ -1265,7 +1265,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
   }
 
   static void warn_reference_fallback(
-      const vulkan::ReferenceGgufKQuantFallback& fallback) {
+      const vulkan::ReferenceGgufFallback& fallback) {
     if (fallback.constants == 0) {
       return;
     }
@@ -1283,12 +1283,12 @@ class VulkanEngineExecutable final : public EngineExecutable {
         fallback.decoded_bytes);
   }
 
-  // use_reference_gguf_kquant retyped this constant as the fp32 tensor that
-  // its stored GGUF K-quant blocks decode to. The package keeps one copy of
-  // byte-identical constants, and different codecs decode the same bytes
-  // differently, so a decoded copy is shared only by the same owner, codec and
-  // shape.
-  executorch::runtime::FreeableBuffer gguf_kquant_buffer(
+  // use_reference_gguf retyped this constant as the fp32 tensor that its
+  // stored GGUF blocks decode to. The package keeps one copy of byte-identical
+  // constants, and codecs whose rows have the same byte count decode the same
+  // bytes differently, so a decoded copy is shared only by the same owner,
+  // codec and shape.
+  executorch::runtime::FreeableBuffer gguf_buffer(
       const Package& package,
       const DataBinding& b,
       const Value& v,
@@ -1305,11 +1305,11 @@ class VulkanEngineExecutable final : public EngineExecutable {
     size_t stored_nbytes = 0;
     if (__builtin_mul_overflow(
             static_cast<size_t>(rows),
-            reference::gguf_kquant_row_nbytes(codec, cols),
+            reference::gguf_row_nbytes(codec, cols),
             &stored_nbytes) ||
         info->nbytes != stored_nbytes) {
       throw std::runtime_error(
-          "vulkan: GGUF K-quant constant '" + b.key +
+          "vulkan: GGUF constant '" + b.key +
           "' does not hold its declared shape");
     }
     std::shared_ptr<OwnedBytes>& storage = derived_constants_
@@ -1323,11 +1323,11 @@ class VulkanEngineExecutable final : public EngineExecutable {
       }
       if (raw->span().size() != stored_nbytes) {
         throw std::runtime_error(
-            "vulkan: GGUF K-quant constant '" + b.key +
+            "vulkan: GGUF constant '" + b.key +
             "' does not hold its declared shape");
       }
       std::vector<uint8_t> bytes(decoded_nbytes);
-      reference::decode_gguf_kquant(
+      reference::decode_gguf(
           codec,
           raw->span().data(),
           raw->span().size(),
@@ -1343,7 +1343,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
     }
     if (storage->span().size() != decoded_nbytes) {
       throw std::runtime_error(
-          "vulkan: GGUF K-quant constant '" + b.key +
+          "vulkan: GGUF constant '" + b.key +
           "' does not match its declared size");
     }
     const ByteSpan bytes = storage->span();
@@ -1352,7 +1352,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
         bytes.data(), bytes.size(), release_owned_bytes, context);
   }
 
-  // Package bytes are acquired only here and in gguf_kquant_buffer; both
+  // Package bytes are acquired only here and in gguf_buffer; both
   // record each owner's source bytes once.
   std::shared_ptr<OwnedBytes> source_constant(
       const Package& package,
