@@ -220,6 +220,30 @@ def _e4m3_to_f32(b, NATIVE_E4M3: tl.constexpr):
         return (mag.to(tl.int32, bitcast=True) | sign).to(tl.float32, bitcast=True)
 
 
+@triton.jit
+def _fp4_pair_f16(q):
+    """Byte of two E2M1 codes -> (low, high) FP32 values times 2**-14, exact."""
+    u = q.to(tl.uint32)
+    lo = (((u & 8) << 12) | ((u & 7) << 9)).to(tl.uint16)
+    hi = (((u & 0x80) << 8) | ((u & 0x70) << 5)).to(tl.uint16)
+    return (
+        lo.to(tl.float16, bitcast=True).to(tl.float32),
+        hi.to(tl.float16, bitcast=True).to(tl.float32),
+    )
+
+
+@triton.jit
+def _e4m3_f16(b):
+    """E4M3 byte -> FP32 value times 2**-8, exact (FP16 holds every E4M3 value)."""
+    u = b.to(tl.uint32)
+    bits = (((u & 0x80) << 8) | ((u & 0x7F) << 7)).to(tl.uint16)
+    return bits.to(tl.float16, bitcast=True).to(tl.float32)
+
+
+# 2**14 (E2M1 FP16 placement) * 2**8 (E4M3 FP16 placement).
+_SOFT_FP4_RESCALE = tl.constexpr(4194304.0)
+
+
 @torch._dynamo.assume_constant_result
 def _has_native_fp4_conversion():
     return (
@@ -788,13 +812,20 @@ def _gemv_original(
             hi = (
                 (packed >> 16).to(tl.uint16).to(tl.float16, bitcast=True).to(tl.float32)
             )
+            sf = _e4m3_to_f32(
+                tl.load(S + n[:, None] * (K // 16) + kk[None, :] // 8, mask, 0),
+                NATIVE_E4M3,
+            )
         else:
-            lo = _fp4(q & 15)
-            hi = _fp4(q >> 4)
-        sf = _e4m3_to_f32(
-            tl.load(S + n[:, None] * (K // 16) + kk[None, :] // 8, mask, 0), NATIVE_E4M3
-        )
-        if UNIT_SCALE and NATIVE and X.dtype.element_ty == tl.bfloat16:
+            lo, hi = _fp4_pair_f16(q)
+            sf = (
+                _e4m3_f16(
+                    tl.load(S + n[:, None] * (K // 16) + kk[None, :] // 8, mask, 0)
+                )
+                * _SOFT_FP4_RESCALE
+            )
+        # Unit-scale E2M1*E4M3 products have <=6 significant bits: exact in BF16.
+        if UNIT_SCALE and X.dtype.element_ty == tl.bfloat16:
             w0, w1 = lo * sf, hi * sf
         else:
             w0 = (lo * sf * pts).to(X.dtype.element_ty).to(tl.float32)
@@ -954,61 +985,6 @@ def nvfp4_gemv(
 
 
 @triton.jit
-def _w4a16_original(
-    X,
-    Q,
-    S,
-    PTS,
-    Y,
-    M,
-    N: tl.constexpr,
-    K: tl.constexpr,
-    SPLIT_K: tl.constexpr,
-    BM: tl.constexpr,
-    BN: tl.constexpr,
-    BK: tl.constexpr,
-    GROUP_M: tl.constexpr,
-    ROW_PTS: tl.constexpr = False,
-    NATIVE_E4M3: tl.constexpr = False,
-):
-    pid = tl.program_id(0)
-    split = tl.program_id(1)
-    nm = tl.cdiv(M, BM)
-    nn = tl.cdiv(N, BN)
-    first = (pid // (GROUP_M * nn)) * GROUP_M
-    gm = tl.minimum(nm - first, GROUP_M)
-    m = ((first + pid % gm) * BM + tl.arange(0, BM)).to(tl.int64)
-    n = (((pid % (GROUP_M * nn)) // gm) * BN + tl.arange(0, BN)).to(tl.int64)
-    k = tl.arange(0, BK)
-    acc = tl.zeros((BM, BN), tl.float32)
-    if ROW_PTS:
-        pts = tl.load(PTS + n, n < N, 0)[None, :]
-    else:
-        pts = tl.load(PTS)
-    chunk: tl.constexpr = tl.cdiv(K, BK * SPLIT_K)
-    for off in range(chunk):
-        block = split * chunk + off
-        kk = k + block * BK
-        a = tl.load(
-            X + m[:, None] * K + kk[None, :], (m[:, None] < M) & (kk[None, :] < K), 0
-        )
-        mask = (kk[:, None] < K) & (n[None, :] < N)
-        q = tl.load(Q + n[None, :] * (K // 2) + kk[:, None] // 2, mask, 0)
-        code = (q >> ((kk[:, None] & 1) * 4)) & 15
-        s = _e4m3_to_f32(
-            tl.load(S + n[None, :] * (K // 16) + kk[:, None] // 16, mask, 0),
-            NATIVE_E4M3,
-        )
-        b = (_fp4(code) * s * pts).to(X.dtype.element_ty)
-        acc = tl.dot(a, b, acc)
-    tl.store(
-        Y + split.to(tl.int64) * M * N + m[:, None] * N + n[None, :],
-        acc,
-        (m[:, None] < M) & (n[None, :] < N),
-    )
-
-
-@triton.jit
 def _w4a16_paired(
     X,
     Q,
@@ -1024,6 +1000,7 @@ def _w4a16_paired(
     BK: tl.constexpr,
     GROUP_M: tl.constexpr,
     ROW_PTS: tl.constexpr = False,
+    NATIVE: tl.constexpr = True,
 ):
     pid = tl.program_id(0)
     split = tl.program_id(1)
@@ -1049,21 +1026,37 @@ def _w4a16_paired(
         )
         mask = (n[:, None] < N) & (pair[None, :] < K // 2)
         q = tl.load(Q + n[:, None] * (K // 2) + pair[None, :], mask, 0)
-        packed = tl.inline_asm_elementwise(
-            "{ .reg .b8 tmp,z1,z2,z3; mov.b32 {tmp,z1,z2,z3}, $1; cvt.rn.f16x2.e2m1x2 $0, tmp; }",
-            constraints="=r,r",
-            args=[q.to(tl.uint32)],
-            dtype=tl.uint32,
-            is_pure=True,
-            pack=1,
-        )
-        lo = (packed & 65535).to(tl.uint16).to(tl.float16, bitcast=True).to(tl.float32)
-        hi = (packed >> 16).to(tl.uint16).to(tl.float16, bitcast=True).to(tl.float32)
-        sf = (
-            tl.load(S + n[:, None] * (K // 16) + pair[None, :] // 8, mask, 0)
-            .to(tl.float8e4nv, bitcast=True)
-            .to(tl.float32)
-        )
+        if NATIVE:
+            packed = tl.inline_asm_elementwise(
+                "{ .reg .b8 tmp,z1,z2,z3; mov.b32 {tmp,z1,z2,z3}, $1; cvt.rn.f16x2.e2m1x2 $0, tmp; }",
+                constraints="=r,r",
+                args=[q.to(tl.uint32)],
+                dtype=tl.uint32,
+                is_pure=True,
+                pack=1,
+            )
+            lo = (
+                (packed & 65535)
+                .to(tl.uint16)
+                .to(tl.float16, bitcast=True)
+                .to(tl.float32)
+            )
+            hi = (
+                (packed >> 16).to(tl.uint16).to(tl.float16, bitcast=True).to(tl.float32)
+            )
+            sf = (
+                tl.load(S + n[:, None] * (K // 16) + pair[None, :] // 8, mask, 0)
+                .to(tl.float8e4nv, bitcast=True)
+                .to(tl.float32)
+            )
+        else:
+            lo, hi = _fp4_pair_f16(q)
+            sf = (
+                _e4m3_f16(
+                    tl.load(S + n[:, None] * (K // 16) + pair[None, :] // 8, mask, 0)
+                )
+                * _SOFT_FP4_RESCALE
+            )
         w0 = (lo * sf * pts).to(X.dtype.element_ty)
         w1 = (hi * sf * pts).to(X.dtype.element_ty)
         b = tl.trans(tl.join(w0, w1).reshape((BN, BK)))
@@ -1096,7 +1089,7 @@ def _w4a16_paired(
         ]
         for st in (1, 2, 3)
     ],
-    key=["M", "N", "K", "SPLIT_K", "NATIVE", "ROW_PTS", "NATIVE_E4M3"],
+    key=["M", "N", "K", "SPLIT_K", "NATIVE", "ROW_PTS"],
     prune_configs_by={"early_config_prune": prune_nvfp4_stages},
     do_bench=autotune_do_bench,
 )
@@ -1117,15 +1110,10 @@ def _w4a16(
     GROUP_M: tl.constexpr,
     NATIVE: tl.constexpr = False,
     ROW_PTS: tl.constexpr = False,
-    NATIVE_E4M3: tl.constexpr = False,
 ):
-    if NATIVE:
-        # Only native FP4 (SM120) reaches the paired kernel: native E4M3 too.
-        _w4a16_paired(X, Q, S, PTS, Y, M, N, K, SPLIT_K, BM, BN, BK, GROUP_M, ROW_PTS)
-    else:
-        _w4a16_original(
-            X, Q, S, PTS, Y, M, N, K, SPLIT_K, BM, BN, BK, GROUP_M, ROW_PTS, NATIVE_E4M3
-        )
+    _w4a16_paired(
+        X, Q, S, PTS, Y, M, N, K, SPLIT_K, BM, BN, BK, GROUP_M, ROW_PTS, NATIVE
+    )
 
 
 def _launch_w4a16_impl(x, qdata, scale, pts, max_rows, *, split_k, output_dtype=None):
@@ -1151,7 +1139,6 @@ def _launch_w4a16_impl(x, qdata, scale, pts, max_rows, *, split_k, output_dtype=
         (x, qdata, scale, pts, partial, m, n, k, split_k),
         5,
         NATIVE=_has_native_fp4_conversion(),
-        NATIVE_E4M3=_has_native_e4m3(),
         ROW_PTS=pts.numel() != 1,
     )
     if split_k > 1 and not _QUEUING_ONLY.get():

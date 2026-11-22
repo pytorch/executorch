@@ -396,10 +396,10 @@ def test_pinned_gemv_variants(native, half2, row_pts, unit_scale, split, native_
 
 @pytest.mark.parametrize("split", [1, 2])
 @pytest.mark.parametrize("row_pts", [False, True])
-@pytest.mark.parametrize("native_e4m3", [False, True])
 @pytest.mark.parametrize("native", [False, True])
-def test_pinned_w4a16_variants(native, row_pts, native_e4m3, split):
-    skip_unbuilt_variant(native, native_e4m3)
+def test_pinned_w4a16_variants(native, row_pts, split):
+    if native and not _has_native_fp4_conversion():
+        pytest.skip("native FP4 required")
     w = pinned_weight(row_pts, False)
     m, n, k = 37, w.shape[0], w.shape[1]
     x = torch.randn(m, k, device="cuda", dtype=torch.bfloat16)
@@ -424,7 +424,6 @@ def test_pinned_w4a16_variants(native, row_pts, native_e4m3, split):
         BK=128,
         GROUP_M=1,
         NATIVE=native,
-        NATIVE_E4M3=native_e4m3,
         ROW_PTS=row_pts,
         num_warps=4,
     )
@@ -524,7 +523,6 @@ def test_split_workspace_exceeds_int32(mode):
                 BK=64,
                 GROUP_M=1,
                 NATIVE=_has_native_fp4_conversion(),
-                NATIVE_E4M3=_has_native_e4m3(),
                 num_warps=4,
                 num_stages=3,
             )
