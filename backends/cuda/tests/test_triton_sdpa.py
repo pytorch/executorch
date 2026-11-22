@@ -705,7 +705,10 @@ class TestTritonSdpa(unittest.TestCase):
                 self.assertLess(_max_abs_error(out_dense, ref), MAX_ABS_TOL)
 
     def test_mask_is_causal_small_query_splitk(self):
-        """Verifier-sized query blocks retain bottom-right causal masking."""
+        """Small-query split-K (L_q 2..16) keeps bottom-right causal masking."""
+        sdpa_module = importlib.import_module(
+            "executorch.backends.cuda.triton.kernels.sdpa"
+        )
         B, H_q, H_kv, D = 1, 8, 2, 128
         kv_len, Lk = 131, 256
         for Lq in (2, 3, 4, 5, 8, 16):
@@ -717,14 +720,20 @@ class TestTritonSdpa(unittest.TestCase):
                 kv_len_t = torch.tensor([kv_len], dtype=torch.int32, device="cuda")
                 dense = self._dense_bottom_right_causal_mask(B, Lq, kv_len, Lk, "cuda")
 
-                out = self.sdpa(
-                    q,
-                    k,
-                    v,
-                    enable_gqa=True,
-                    kv_len=kv_len_t,
-                    is_causal=True,
-                )
+                with mock.patch.object(
+                    sdpa_module,
+                    "_launch_small_query_splitk",
+                    wraps=sdpa_module._launch_small_query_splitk,
+                ) as small_query_launcher:
+                    out = self.sdpa(
+                        q,
+                        k,
+                        v,
+                        enable_gqa=True,
+                        kv_len=kv_len_t,
+                        is_causal=True,
+                    )
+                self.assertEqual(small_query_launcher.call_count, 1)
                 ref = _reference_sdpa(q, k, v, attn_mask=dense)
 
                 self.assertFalse(torch.isnan(out).any())
