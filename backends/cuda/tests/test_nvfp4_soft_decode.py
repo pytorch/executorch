@@ -275,3 +275,36 @@ def test_w4a16_soft_fp4_matches_reference(native, row_pts):
                 **meta,
             )
             assert relative_error(y, expected) < 1e-2, config
+
+
+@pytest.mark.parametrize("native", native_modes())
+@pytest.mark.parametrize("pts_kind", ["unit", "scalar", "row"])
+def test_half2_gemv_matches_reference(native, pts_kind):
+    """HALF2 GEMV: packed FP16x2 decode and scale multiply, exact before the
+    BF16/FP32 accumulation, with or without native E2M1 conversion."""
+    n, k = 97, 2048
+    q, s = random_weight(n, k, 4)
+    pts = {
+        "unit": torch.ones(1, device="cuda"),
+        "scalar": torch.tensor([0.37], device="cuda"),
+        "row": torch.rand(n, device="cuda") + 0.5,
+    }[pts_kind]
+    w = reference_weight(q, s, pts).to(torch.bfloat16).float()
+    for m in (1, 3):
+        x = torch.randn(m, k, device="cuda", dtype=torch.bfloat16)
+        expected = x.float() @ w.T
+        for config in gemv_configs(half2=True):
+            for split_k in (1, 4):
+                actual = fixed_gemv(
+                    x, q, s, pts, pts_kind == "unit", split_k, config, native
+                )
+                assert relative_error(actual, expected) < 1e-2, (m, config, split_k)
+
+
+def test_half2_configs_survive_pruning_without_native_fp4():
+    named_args = {"K": 4096, "SPLIT": 1, "NATIVE": False}
+    from executorch.backends.cuda.triton.kernels.nvfp4_tuning import prune_nvfp4_stages
+
+    kept = prune_nvfp4_stages(kernels._gemv.configs, named_args)
+    assert any(config.kwargs["HALF2"] for config in kept)
+    assert any(not config.kwargs["HALF2"] for config in kept)

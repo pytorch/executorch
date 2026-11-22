@@ -659,16 +659,34 @@ def nvfp4_w4a4(
     )
 
 
+# FP16x2 2**14: rescales FP16-placed E2M1 codes to their exact values.
+_SOFT_E2M1_HALF2 = tl.constexpr(0x74007400)
+
+
 @triton.jit
-def _scaled_pair(q, sf, HALF2: tl.constexpr):
-    packed = tl.inline_asm_elementwise(
-        "{ .reg .b8 tmp,z1,z2,z3; mov.b32 {tmp,z1,z2,z3}, $1; cvt.rn.f16x2.e2m1x2 $0, tmp; }",
-        constraints="=r,r",
-        args=[q.to(tl.uint32)],
-        dtype=tl.uint32,
-        is_pure=True,
-        pack=1,
-    )
+def _scaled_pair(q, sf, HALF2: tl.constexpr, NATIVE: tl.constexpr = True):
+    if NATIVE:
+        packed = tl.inline_asm_elementwise(
+            "{ .reg .b8 tmp,z1,z2,z3; mov.b32 {tmp,z1,z2,z3}, $1; cvt.rn.f16x2.e2m1x2 $0, tmp; }",
+            constraints="=r,r",
+            args=[q.to(tl.uint32)],
+            dtype=tl.uint32,
+            is_pure=True,
+            pack=1,
+        )
+    else:
+        u = q.to(tl.uint32)
+        bits = (
+            ((u & 8) << 12) | ((u & 7) << 9) | ((u & 0x80) << 24) | ((u & 0x70) << 21)
+        )
+        packed = tl.inline_asm_elementwise(
+            "mul.rn.f16x2 $0, $1, $2;",
+            constraints="=r,r,r",
+            args=[bits, tl.full(bits.shape, _SOFT_E2M1_HALF2, tl.uint32)],
+            dtype=tl.uint32,
+            is_pure=True,
+            pack=1,
+        )
     if HALF2:
         # E2M1*E4M3 needs <=6 significant bits. The nonzero magnitude
         # range [2**-10, 2688] is normal FP16, so packed multiply is exact.
@@ -705,6 +723,7 @@ def _gemv_half2(
     BK: tl.constexpr,
     ROW_PTS: tl.constexpr = False,
     UNIT_SCALE: tl.constexpr = False,
+    NATIVE: tl.constexpr = True,
 ):
     n = (tl.program_id(0) * BN + tl.arange(0, BN)).to(tl.int64)
     m = tl.program_id(1).to(tl.int64)
@@ -724,17 +743,17 @@ def _gemv_half2(
         q = tl.load(Q + n[:, None] * (K // 2) + kk[None, :], mask, 0)
         # One scale load per K16 group, broadcast to its eight byte pairs.
         group = split * (chunk // 16) + off * (BK // 16) + tl.arange(0, BK // 16)
-        sf = (
-            tl.load(
-                S + n[:, None] * (K // 16) + group[None, :],
-                (n[:, None] < N) & (group[None, :] < K // 16),
-                0,
-            )
-            .to(tl.float8e4nv, bitcast=True)
-            .to(tl.float16)
+        sf = tl.load(
+            S + n[:, None] * (K // 16) + group[None, :],
+            (n[:, None] < N) & (group[None, :] < K // 16),
+            0,
         )
+        if NATIVE:
+            sf = sf.to(tl.float8e4nv, bitcast=True).to(tl.float16)
+        else:
+            sf = (_e4m3_f16(sf) * 256.0).to(tl.float16)
         sf = tl.broadcast_to(sf[:, :, None], (BN, BK // 16, 8)).reshape((BN, BK // 2))
-        lo, hi = _scaled_pair(q, sf, True)
+        lo, hi = _scaled_pair(q, sf, True, NATIVE)
         if UNIT_SCALE and X.dtype.element_ty == tl.bfloat16:
             w0, w1 = lo, hi
         elif X.dtype.element_ty == tl.bfloat16:
@@ -850,6 +869,9 @@ def _gemv_original(
             (16, 256, 4),
             (16, 512, 4),
             (16, 512, 8),
+            (16, 1024, 8),
+            (32, 256, 4),
+            (32, 512, 8),
         ]
         for half in (False, True)
         for st in (1, 2, 3)
@@ -877,8 +899,10 @@ def _gemv(
     UNIT_SCALE: tl.constexpr = False,
     NATIVE_E4M3: tl.constexpr = False,
 ):
-    if NATIVE and HALF2:
-        _gemv_half2(X, Q, S, PTS, Y, M, N, K, SPLIT, BN, BK, ROW_PTS, UNIT_SCALE)
+    if HALF2:
+        _gemv_half2(
+            X, Q, S, PTS, Y, M, N, K, SPLIT, BN, BK, ROW_PTS, UNIT_SCALE, NATIVE
+        )
     else:
         _gemv_original(
             X,
@@ -1086,6 +1110,10 @@ def _w4a16_paired(
             (128, 64, 64, 8, 8),
             (128, 64, 128, 8, 8),
             (128, 64, 128, 1, 8),
+            (128, 128, 64, 8, 8),
+            (256, 64, 64, 8, 8),
+            (256, 128, 64, 8, 8),
+            (128, 128, 32, 8, 4),
         ]
         for st in (1, 2, 3)
     ],

@@ -47,11 +47,9 @@ def launch_nvfp4_kernel(kernel, grid, args, m_argument, **constexprs):
 def prune_nvfp4_stages(configs, named_args, **kwargs):
     values = {**named_args, **kwargs}
     split = values.get("SPLIT_K", values.get("SPLIT", 1))
-    eligible = [
-        config
-        for config in configs
-        if not config.kwargs.get("HALF2", False) or values.get("NATIVE", False)
-    ]
+    # HALF2 GEMV runs everywhere: natively on SM100+, via exact FP16 bit
+    # placement elsewhere.
+    eligible = list(configs)
     kept = [
         config
         for config in eligible
