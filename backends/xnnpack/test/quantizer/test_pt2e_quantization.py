@@ -788,6 +788,34 @@ class TestQuantizePT2E(PT2EQuantizationTestCase):
             },
         )
 
+    def test_scalar_write_through_view_is_not_lifted(self):
+        class M(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.conv = torch.nn.Conv2d(3, 3, 3)
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                y = self.conv(x)
+                y.select(1, 0).mul_(0.5)
+                return y
+
+        m = export(M().eval(), (torch.randn(1, 3, 8, 8),), strict=True).module()
+        quantizer = XNNPACKQuantizer().set_global(get_symmetric_quantization_config())
+        m = prepare_pt2e(m, quantizer)
+        self.checkGraphModuleNodes(
+            m,
+            expected_node_occurrence={
+                ns.call_function(torch.ops.aten.mul.Scalar): 1,
+                ns.call_function(torch.ops.aten.mul.Tensor): 0,
+            },
+        )
+        self.assertFalse(
+            any(
+                n.op == "get_attr" and "_tensor_constant" in n.target
+                for n in m.graph.nodes
+            )
+        )
+
 
 instantiate_parametrized_tests(TestQuantizePT2E)
 

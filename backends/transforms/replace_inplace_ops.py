@@ -40,7 +40,22 @@ _INPLACE_TO_FUNCTIONAL: Dict[torch._ops.OpOverload, torch._ops.OpOverload] = {
     aten.div_.Tensor: aten.div.Tensor,
 }
 
-_PROVENANCE_KEYS = ("stack_trace", "nn_module_stack", "source_fn_stack")
+# Functional ops used instead when the other operand is a Python scalar, so a
+# quantizer does not lift and quantize the scalar the in-place op kept.
+_TENSOR_TO_SCALAR: Dict[torch._ops.OpOverload, torch._ops.OpOverload] = {
+    aten.add.Tensor: aten.add.Scalar,
+    aten.sub.Tensor: aten.sub.Scalar,
+    aten.mul.Tensor: aten.mul.Scalar,
+    aten.div.Tensor: aten.div.Scalar,
+}
+
+_PROVENANCE_KEYS = (
+    "stack_trace",
+    "nn_module_stack",
+    "source_fn_stack",
+    "custom",
+    "from_node",
+)
 
 
 def _returns_alias(node: Any) -> bool:
@@ -112,7 +127,7 @@ def _rewrite(graph: Graph, node: Node) -> Optional[str]:
     if not views:
         return "the write does not go through select, slice or diagonal"
     if base.op != "call_function" or _is_alias(base):
-        return "the written tensor is an input, get_attr or view"
+        return "the written tensor is an input, get_attr, view or in-place result"
     if node.target not in _INPLACE_TO_FUNCTIONAL:
         return "the op has no functional replacement here"
     # Only `base` is redirected to the new value below, so every later access
@@ -123,6 +138,8 @@ def _rewrite(graph: Graph, node: Node) -> Optional[str]:
     ):
         return "an alias of the written tensor is read after the write"
     functional_op = _INPLACE_TO_FUNCTIONAL[node.target]
+    if functional_op in _TENSOR_TO_SCALAR and not isinstance(node.args[1], Node):
+        functional_op = _TENSOR_TO_SCALAR[functional_op]
     value = _fake_run(functional_op, node.args, node.kwargs)
     written = node.args[0].meta.get("val")
     if not (
@@ -159,11 +176,14 @@ class ReplaceInplaceOpsPass(PassBase):
     kept, logged at debug level, and still hit the issue above:
 
     - writes through other views (`view`, `permute`, `unbind`, ...);
-    - writes to graph inputs and to `get_attr` parameters, buffers and
-      constants;
+    - writes to graph inputs, to `get_attr` parameters, buffers and constants,
+      and to tensors that are themselves views or in-place results, such as
+      `torch.zeros(n * m).view(n, m)` or `torch.empty(n).fill_(0)`;
     - writes after which a view of the same tensor, or the in-place op's own
       result, is read;
-    - writes whose functional op would change the dtype.
+    - writes whose functional op would change the dtype or shape;
+    - writes inside control-flow subgraphs (`cond`, `while_loop`, `scan`),
+      since only the top-level graph is visited.
 
     Direct in-place ops such as `relu_` are left alone: later reads already use
     the in-place node, so an observer sees the written value.

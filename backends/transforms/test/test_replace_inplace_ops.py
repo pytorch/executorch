@@ -119,7 +119,20 @@ class TestReplaceInplaceOps(unittest.TestCase):
         for fn in (first, augmented, chained, base_written_later):
             with self.subTest(fn.__name__):
                 M = type(fn.__name__, (torch.nn.Module,), {"forward": staticmethod(fn)})
-                self._run(M(), torch.randn(3))
+                self.assertFalse(self._run(M(), torch.randn(3)).modified)
+
+    def test_scalar_write_uses_scalar_overload(self):
+        class M(torch.nn.Module):
+            def forward(self, x):
+                buf = x * 1
+                buf.select(0, 0).mul_(0.5)
+                buf.select(0, 1).add_(2, alpha=3)
+                return buf + 0
+
+        result = self._run(M(), torch.randn(2, 3))
+        targets = _targets(result.graph_module)
+        self.assertIn(torch.ops.aten.mul.Scalar, targets)
+        self.assertIn(torch.ops.aten.add.Scalar, targets)
 
     def test_alias_read_after_write_is_kept(self):
         class M(torch.nn.Module):
