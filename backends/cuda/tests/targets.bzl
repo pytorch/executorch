@@ -610,6 +610,15 @@ def define_common_targets(is_fbcode = False):
         deps = [
             "//caffe2:torch",
             "//executorch/backends/cuda:nvfp4_tensor",
+            "//executorch/extension/llm/export:nvfp4",
+        ],
+    )
+
+    runtime.python_library(
+        name = "nvfp4_gemma_test_utils",
+        srcs = ["nvfp4_gemma_test_utils.py"],
+        deps = [
+            "//caffe2:torch",
             "//executorch/examples/models/gemma4_31b:quant",
             "//executorch/extension/llm/export:nvfp4",
         ],
@@ -641,6 +650,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/extension/llm/export:gguf",
             "//executorch/extension/llm/export:nvfp4",
             "fbsource//third-party/pypi/pytest:pytest",
+            ":nvfp4_gemma_test_utils",
             ":nvfp4_test_utils",
         ],
     )
@@ -648,7 +658,7 @@ def define_common_targets(is_fbcode = False):
     python_unittest_remote_gpu(
         name = "test_nvfp4_dispatch",
         srcs = ["test_nvfp4_fusion.py", "test_nvfp4_unit_scale.py", "test_nvfp4_export.py", "test_nvfp4_fixed_prefill.py", "test_nvfp4_split_k_export.py"],
-        deps = ["//caffe2:torch", "//executorch/backends/cuda:autotune", "//executorch/backends/cuda:nvfp4_tensor", "//executorch/extension/llm/export:nvfp4", "fbsource//third-party/pypi/pytest:pytest", "//executorch/backends/cuda:triton_kernels", ":nvfp4_test_utils", "//executorch/backends/cuda:quantize_op_dispatch", "//executorch/backends/cuda:cuda_backend", "//executorch/backends/cuda:cuda_partitioner", "//executorch/exir:lib", "//executorch/export:export_utils", "//executorch/runtime:runtime"],
+        deps = ["//caffe2:torch", "//executorch/backends/cuda:autotune", "//executorch/backends/cuda:nvfp4_tensor", "//executorch/extension/llm/export:nvfp4", "fbsource//third-party/pypi/pytest:pytest", "//executorch/backends/cuda:triton_kernels", ":nvfp4_test_utils", "//executorch/backends/cuda:quantize_op_dispatch", "//executorch/backends/cuda:cuda_backend", "//executorch/backends/cuda:cuda_partitioner", "//executorch/exir:lib", "//executorch/export:export_utils", "//executorch/runtime:runtime", ":nvfp4_gemma_test_utils"],
         keep_gpu_sections = True,
         remote_execution = re_test_utils.remote_execution(platform = "gpu-remote-execution", subplatform = "A100"),
         test_rule = python_pytest,
