@@ -297,10 +297,11 @@ int main(int argc, char** argv) {
       } else if (op == "clear") {
         control.clear();
       } else if (op == "compact") {
-        require(
-            executor->compact_kv_columns(request.value("spare_columns", 0)) ==
-                Error::Ok,
-            "compact physical KV");
+        const Error compact_error =
+            executor->compact_kv_columns(request.value("spare_columns", 0));
+        const std::string detail = "compact physical KV: error=" +
+            std::to_string(static_cast<unsigned int>(compact_error));
+        require(compact_error == Error::Ok, detail.c_str());
       } else if (op == "idle") {
         std::this_thread::sleep_for(std::chrono::milliseconds(550));
         executor->on_idle();

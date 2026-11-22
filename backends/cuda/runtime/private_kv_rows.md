@@ -28,6 +28,11 @@ slack. It retains bounded geometric growth slack (at most the current span's
 capacity), so resumed decode does not immediately regrow partially filled
 spans. A wrapped Ring retains its window and modulus during compaction.
 
+ABI 2 width contraction with allocator trimming also sheds unused row height
+before allocating the replacement pitch, keeping initial capacity and bounded
+geometric slack for live prefixes. All replacements and copies still succeed
+before commit; wrapped Rings keep their modulus when the live prefix exceeds it.
+
 The executor's automatic idle heuristic still uses owner counts. Closing a few
 long owners while many short owners remain may therefore retain their spans
 until explicit compaction. Byte-aware idle reclamation is a separate allocator
@@ -50,8 +55,8 @@ graph-owned cache clones keep their existing zero-initialization behavior.
 Autotuning continues to hydrate real inputs and measure the original shapes.
 The generated AOTI constant metadata still declares each runtime buffer's
 logical byte extent, using Inductor's existing alignment rule. Only that size
-field is corrected for identified empty storage; no KV payload is initialized
-or serialized. An unexpected or missing size emission fails export rather than
+field is corrected for identified empty storage after constructor generation;
+no KV payload is initialized or serialized. An unexpected or missing size emission fails export rather than
 silently producing an incompatible library.
 
 `seq_cols[T]` supplies stable owner IDs in the original query order and
@@ -163,7 +168,7 @@ Archive transfer and append are subcomponents of commit, not additional times
 to sum with it. These measurements locate cache-side overhead; they are not
 isolated GPU-kernel timings. Clear preserves counters for a complete run.
 
-A separate 4K-context phase keeps 48 short owners alive while closing 16 long
+A separate pressure phase keeps 48 short owners alive while closing 16 long
 owners. It requires at least 16 MiB less live KV and at least 8 MiB less allocator
 reservation and driver-used memory after compaction, exceeding pool page
 granularity. Lower live-byte counters without actual driver release do not pass.

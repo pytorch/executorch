@@ -81,35 +81,29 @@ class RuntimeOwnedKVCompileBuffers:
         if not sizes:
             yield
             return
-        prefix = wrapper.prefix
+        lines = wrapper.prefix.get_lines_ref()
+        first = len(lines)
+        yield
+        replacements = {}
         seen = set()
-
-        class ConstantInfoWriter:
-            def __getattr__(self, name):
-                return getattr(prefix, name)
-
-            def writeline(self, line=""):
-                match = (
-                    re.fullmatch(
-                        r"constants_info_\[(\d+)\]\.data_size = (\d+);", line.strip()
+        for line_index in range(first, len(lines)):
+            line = lines[line_index]
+            match = (
+                re.fullmatch(r"(\s*)constants_info_\[(\d+)\]\.data_size = (\d+);", line)
+                if isinstance(line, str)
+                else None
+            )
+            if match is not None and int(match[2]) in sizes:
+                index = int(match[2])
+                if int(match[3]) != 0 or index in seen:
+                    raise RuntimeError(
+                        "Unexpected runtime-owned AOTI constant size emission"
                     )
-                    if isinstance(line, str)
-                    else None
+                replacements[line_index] = (
+                    f"{match[1]}constants_info_[{index}].data_size = {sizes[index]};"
                 )
-                if match is not None and int(match[1]) in sizes:
-                    index = int(match[1])
-                    if int(match[2]) != 0 or index in seen:
-                        raise RuntimeError(
-                            "Unexpected runtime-owned AOTI constant size emission"
-                        )
-                    line = f"constants_info_[{index}].data_size = {sizes[index]};"
-                    seen.add(index)
-                prefix.writeline(line)
-
-        wrapper.prefix = ConstantInfoWriter()
-        try:
-            yield
-            if seen != sizes.keys():
-                raise RuntimeError("Missing runtime-owned AOTI constant size emission")
-        finally:
-            wrapper.prefix = prefix
+                seen.add(index)
+        if seen != sizes.keys():
+            raise RuntimeError("Missing runtime-owned AOTI constant size emission")
+        for line_index, line in replacements.items():
+            lines[line_index] = line

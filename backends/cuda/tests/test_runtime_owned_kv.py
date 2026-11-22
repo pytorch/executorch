@@ -174,17 +174,18 @@ class ConstantInfoCodegenTest(unittest.TestCase):
         buffers = RuntimeOwnedKVCompileBuffers(
             program(**{PREFIX + "layer_0_k": value}), PREFIX
         )
-        with self.lowered_constants([value]):
-            wrapper = CppWrapperCpu()
-            with buffers.constant_info_sizes(wrapper, [value], 64):
-                wrapper.codegen_model_constructor()
-            generated = wrapper.prefix.getvalue()
-            self.assertIn("constants_info_[0].data_size = 64;", generated)
-            self.assertIn("constants_info_[0].offset = 4;", generated)
-            self.assertIn("constants_info_[0].stride = {9, 2};", generated)
-            self.assertEqual(value.untyped_storage().nbytes(), 0)
+        for alignment, expected in ((1, 36), (64, 64)):
+            with self.subTest(alignment=alignment), self.lowered_constants([value]):
+                wrapper = CppWrapperCpu()
+                with buffers.constant_info_sizes(wrapper, [value], alignment):
+                    wrapper.codegen_model_constructor()
+                generated = wrapper.prefix.getvalue()
+                self.assertIn(f"constants_info_[0].data_size = {expected};", generated)
+                self.assertIn("constants_info_[0].offset = 4;", generated)
+                self.assertIn("constants_info_[0].stride = {9, 2};", generated)
+                self.assertEqual(value.untyped_storage().nbytes(), 0)
 
-    def test_constant_writer_restores_prefix_and_rejects_changed_emission(self):
+    def test_constant_sizes_preserve_prefix_and_reject_changed_emission(self):
         from torch._inductor.utils import IndentedBuffer
 
         value = empty_view((2, 3))

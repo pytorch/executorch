@@ -885,6 +885,8 @@ class CudaBatchedSequenceCache final : public cache::Cache,
       private_required_.resize(
           geometry.layers.size(), std::vector<int64_t>(max_seqs_, 0));
       private_live_.resize(max_seqs_, 0);
+      archive_staging_.resize(geometry.layers.size(), nullptr);
+      archive_bytes_.resize(geometry.layers.size(), 0);
       int side = has_ring(geometry) ? 4 : 3;
       for (const auto& layer : geometry.layers) {
         private_layout_buffers_.push_back(side++);
@@ -907,8 +909,6 @@ class CudaBatchedSequenceCache final : public cache::Cache,
         }
         histories_.push_back(std::move(history));
       }
-      archive_staging_.resize(geometry.layers.size(), nullptr);
-      archive_bytes_.resize(geometry.layers.size(), 0);
     }
   }
 

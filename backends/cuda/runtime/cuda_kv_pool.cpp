@@ -882,6 +882,20 @@ Error CudaKVPool::resize_columns(
     CudaAllocator::release_cached_memory(device_);
   }
   const int old_columns = columns_;
+  int64_t next_rows = rows_ / old_columns;
+  if (trim_unused && columns < old_columns) {
+    // Drop unused height before allocating the new pitch. Retaining a former
+    // long owner's height in every replacement can exhaust memory while both
+    // layouts are live. A wrapped Ring keeps its modulus whenever live_rows
+    // extends beyond it; shorter histories fit below the new modulus.
+    const int64_t limit = next_rows;
+    next_rows =
+        std::min(limit, std::max<int64_t>(1, initial_rows_ / old_columns));
+    const int64_t required = std::min(live_rows, limit - 1) + 1;
+    while (next_rows < required) {
+      next_rows = std::min(limit, next_rows * 2);
+    }
+  }
   std::vector<Allocation> replacements;
   replacements.reserve(layers_.size());
   auto roll_back = [&]() {
@@ -893,7 +907,8 @@ Error CudaKVPool::resize_columns(
     }
   };
   for (size_t index = 0; index < layers_.size(); ++index) {
-    const int64_t logical_rows = allocations_[index].rows / old_columns;
+    const int64_t logical_rows =
+        std::min(allocations_[index].rows / old_columns, next_rows);
     Allocation replacement;
     const Error error = allocate_layer(
         layers_[index], logical_rows * columns, stream, replacement);
@@ -950,7 +965,7 @@ Error CudaKVPool::resize_columns(
     discard(layers_[index], allocations_[index], stream);
   }
   allocations_ = std::move(replacements);
-  rows_ = rows_ / old_columns * columns;
+  rows_ = next_rows * columns;
   initial_rows_ = initial_rows_ / old_columns * columns;
   max_rows_ = max_rows_ / old_columns * columns;
   columns_ = columns;

@@ -112,6 +112,8 @@ class CudaKVPool final {
   // retained. live_rows is the retained logical prefix, capped by each ring.
   // Replacements commit only after all copies pass. committed may be true
   // even on error if post-commit allocator trimming fails.
+  // A shrinking pitch with trim_unused also sheds unused row capacity before
+  // allocating replacements; live history and wrapped Ring moduli survive.
   runtime::Error resize_columns(
       int columns,
       const std::vector<std::pair<int, int>>& retained_columns,

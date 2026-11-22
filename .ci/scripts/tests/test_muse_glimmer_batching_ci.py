@@ -91,6 +91,15 @@ class MuseGlimmerBatchingCITest(unittest.TestCase):
         )[0]
         self.assertIn("runner: mt-l-x86iavx512-11-125-a100", job)
         self.assertIn("--profile mg-ring", job)
+        self.assertIn("'backends/aoti'", job)
+        self.assertIn("'extension/llm/batching'", job)
+        self.assertIn(
+            "PrivateVarlenTest::test_muse_glimmer_and_gemma_head_geometry", job
+        )
+        self.assertIn(
+            "PrivateVarlenTest::test_restored_ring_does_not_read_unwritten_nan_slot",
+            job,
+        )
         self.assertIn("export PYTHONUNBUFFERED=1", job)
         self.assertIn("-DEXECUTORCH_ENABLE_LOGGING=OFF", job)
         self.assertIn("--target muse_glimmer_runtime_kv_probe --parallel", job)

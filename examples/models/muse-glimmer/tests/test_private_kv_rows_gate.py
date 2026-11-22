@@ -8,6 +8,7 @@ import ast
 import importlib.util
 import io
 import json
+import tempfile
 import types
 import unittest
 from contextlib import redirect_stdout
@@ -94,10 +95,10 @@ class PrivateKVRowsPerformanceGateTest(unittest.TestCase):
                 steps[f"bench-c{c}-{i}"] = {
                     "elapsed_seconds": 0.002,
                     "cache_phase_seconds": {
-                        "cache_prepare_time_ns": 0.0001,
-                        "cache_commit_time_ns": 0.0003,
-                        "archive_transfer_time_ns": 0.0002,
-                        "archive_append_time_ns": 0.00001,
+                        "cache_prepare_time_s": 0.0001,
+                        "cache_commit_time_s": 0.0003,
+                        "archive_transfer_time_s": 0.0002,
+                        "archive_append_time_s": 0.00001,
                     },
                 }
             for phase in ("growth", "restore"):
@@ -109,13 +110,88 @@ class PrivateKVRowsPerformanceGateTest(unittest.TestCase):
         timings, lifecycle = checker.paired_timings([(old_steps, steps, pairs, pairs)])
         self.assertEqual(timings[1]["throughput_ratio"], 0.5)
         self.assertEqual(
-            timings[1]["rounds"][0]["cache_cpu_wall_s"]["abi3"]["cache_commit_time_ns"],
+            timings[1]["rounds"][0]["cache_cpu_wall_s"]["abi3"]["cache_commit_time_s"],
             0.0003,
         )
         with self.assertRaisesRegex(RuntimeError, "d128/c1"):
             checker.require_performance(
                 {128: {"same_work_timings": timings, "lifecycle_timings": lifecycle}}
             )
+
+    def test_artifact_and_output_distinguish_report_only_from_qualification(self):
+        for report_only in (True, False):
+            for ratio in (0.98, 0.97):
+                with (
+                    self.subTest(report_only=report_only, ratio=ratio),
+                    tempfile.TemporaryDirectory() as directory,
+                    redirect_stdout(io.StringIO()) as output,
+                ):
+                    evidence = {
+                        128: {"same_work_timings": {1: {"throughput_ratio": ratio}}}
+                    }
+                    if not report_only and ratio < 0.98:
+                        with self.assertRaisesRegex(RuntimeError, "d128/c1"):
+                            checker.write_qualification(
+                                Path(directory), evidence, False
+                            )
+                    else:
+                        checker.write_qualification(
+                            Path(directory), evidence, report_only
+                        )
+                    artifact = json.loads(
+                        (Path(directory) / "qualification.json").read_text()
+                    )
+                    self.assertEqual(
+                        artifact["timing_mode"],
+                        "report-only" if report_only else "enforced",
+                    )
+                    self.assertEqual(artifact["timing_threshold_met"], ratio >= 0.98)
+                    self.assertEqual(
+                        artifact["performance_qualified"],
+                        not report_only and ratio >= 0.98,
+                    )
+                    self.assertEqual(
+                        artifact["results"]["128"]["same_work_timings"]["1"][
+                            "throughput_ratio"
+                        ],
+                        ratio,
+                    )
+                    if report_only:
+                        self.assertIn("PERFORMANCE_REPORT_ONLY", output.getvalue())
+                        self.assertNotIn("PERFORMANCE_QUALIFIED:", output.getvalue())
+
+    def test_compaction_graph_gate_checks_each_exported_stage(self):
+        before = {
+            "method_calls": [
+                {
+                    "method": f"forward_{width}",
+                    "captures": 1,
+                    "replays": 2,
+                    "capture_failures": 0,
+                }
+                for width in (1, 2, 4, 8, 16, 32, 64)
+            ]
+        }
+        after = {
+            "method_calls": [
+                {**method, "captures": 2, "replays": 3}
+                for method in before["method_calls"]
+            ]
+        }
+        checker.require_graph_contraction(before, after)
+        for width in (1, 2, 4, 8, 16, 32, 64):
+            method = checker.graph(after, f"forward_{width}")
+            for field, invalid in (
+                ("captures", 3),
+                ("replays", 2),
+                ("capture_failures", 1),
+            ):
+                with self.subTest(width=width, field=field):
+                    original = method[field]
+                    method[field] = invalid
+                    with self.assertRaisesRegex(AssertionError, f"forward_{width}"):
+                        checker.require_graph_contraction(before, after)
+                    method[field] = original
 
     def test_boundary_and_improvements_qualify(self):
         checker.require_performance(

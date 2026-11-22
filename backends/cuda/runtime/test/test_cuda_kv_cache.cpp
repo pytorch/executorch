@@ -3424,10 +3424,10 @@ TEST_F(CudaRuntimeColumnCacheTest, GrowthAndSparseIdCompactionPreserveAllKV) {
   const auto after = kv->metrics();
   EXPECT_EQ(after.physical_columns, 2);
   EXPECT_EQ(after.live_sequences, 1);
-  EXPECT_EQ(after.flat_capacity, before.flat_capacity);
+  EXPECT_EQ(after.flat_capacity, 4);
   EXPECT_EQ(control->pos(survivor), position);
   EXPECT_LT(after.allocated_bytes, before.allocated_bytes);
-  EXPECT_EQ(after.allocated_bytes * 17, before.allocated_bytes * 2);
+  EXPECT_LT(after.allocated_bytes * 17, before.allocated_bytes * 2);
   ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
   for (size_t layer = 0; layer < 4; ++layer) {
     EXPECT_EQ(
@@ -3456,6 +3456,65 @@ TEST_F(CudaRuntimeColumnCacheTest, GrowthAndSparseIdCompactionPreserveAllKV) {
   EXPECT_EQ(info[3], position + 1);
   for (int row = 0; row < kSegments; ++row) {
     EXPECT_EQ(info[row * 5 + 4], 2);
+  }
+  kv->forget_handle(&handle);
+}
+
+TEST_F(
+    CudaRuntimeColumnCacheTest,
+    ContractionDropsClosedOwnersUnusedRowCapacity) {
+  auto cache_ptr = make();
+  auto* control = cache_ptr->as<cache::BatchControl>();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  const auto long_owner = control->seq_new();
+  const auto short_owner = control->seq_new();
+  ASSERT_TRUE(long_owner.has_value());
+  ASSERT_TRUE(short_owner.has_value());
+  for (int chunk = 0; chunk < 2; ++chunk) {
+    ASSERT_EQ(
+        step(*cache_ptr, handle, std::vector<int32_t>(32, *long_owner)),
+        Error::Ok);
+  }
+  ASSERT_EQ(
+      step(*cache_ptr, handle, std::vector<int32_t>(3, *short_owner)),
+      Error::Ok);
+  seed(fake, 3, 3);
+  std::array<std::vector<uint16_t>, 4> expected;
+  for (size_t layer = 0; layer < expected.size(); ++layer) {
+    expected[layer] =
+        read_column(fake.bound[fake.internal_names[layer]].data, 3, 3, 1);
+  }
+  const auto before = kv->metrics();
+  ASSERT_GE(before.flat_capacity, 64);
+  ASSERT_TRUE(control->seq_rm(*long_owner));
+  ASSERT_EQ(kv->compact_columns(0), Error::Ok);
+  ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
+  const auto after = kv->metrics();
+  EXPECT_EQ(after.physical_columns, 2);
+  EXPECT_EQ(after.flat_capacity, 4);
+  EXPECT_EQ(control->pos(*short_owner), 3);
+  EXPECT_EQ(control->max_seqs(), kMaxSeqs);
+  EXPECT_LT(after.allocated_bytes * 8, before.allocated_bytes);
+  EXPECT_EQ(
+      fake.bound["flat_k"].sizes,
+      std::vector<int64_t>({1, kCapacity * kDeclaredColumns, kHeads, kDim}));
+  for (size_t layer = 0; layer < expected.size(); ++layer) {
+    EXPECT_EQ(
+        read_column(fake.bound[fake.internal_names[layer]].data, 3, 2, 0),
+        expected[layer]);
+  }
+  const auto growth = after.growth_count;
+  ASSERT_EQ(step(*cache_ptr, handle, {*short_owner}), Error::Ok);
+  EXPECT_EQ(kv->metrics().growth_count, growth);
+  ASSERT_EQ(step(*cache_ptr, handle, {*short_owner}), Error::Ok);
+  EXPECT_GT(kv->metrics().growth_count, growth);
+  for (size_t layer = 0; layer < expected.size(); ++layer) {
+    EXPECT_EQ(
+        read_column(fake.bound[fake.internal_names[layer]].data, 3, 2, 0),
+        expected[layer]);
   }
   kv->forget_handle(&handle);
 }
@@ -4069,6 +4128,22 @@ class CudaPrivateCacheTest : public CudaBatchedSequenceCacheTest {
 };
 
 } // namespace
+
+TEST_F(CudaPrivateCacheTest, MetricsRemainSafeAfterLaterHistoryCreationFails) {
+  auto geometry = flat_and_ring(kPrivateWindow);
+  auto invalid_ring = geometry.layers.back();
+  invalid_ring.n_kv_heads = 1 << 30;
+  invalid_ring.head_dim = 1 << 30;
+  geometry.layers.push_back(invalid_ring);
+  auto cache_ptr = cu::make_cuda_batched_sequence_kv_cache(
+      geometry, private_config(), false, true);
+  ASSERT_NE(cache_ptr, nullptr);
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  const auto metrics = kv->metrics();
+  EXPECT_EQ(metrics.host_undo_bytes, 0);
+  EXPECT_EQ(metrics.device_staging_bytes, 0);
+  EXPECT_EQ(kv->prepare_step(1, cudaStreamPerThread), Error::InvalidArgument);
+}
 
 TEST_F(CudaPrivateCacheTest, SixtyFourOwnersHaveIndependentRowsAndSharedStage) {
   auto ptr = make_private();

@@ -804,6 +804,8 @@ jobs:
     needs: [changed-files, run-decision]
     if: |
       contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/batching') ||
       contains(needs.changed-files.outputs.changed-files, 'extension/llm/cache') ||
       contains(needs.changed-files.outputs.changed-files, 'examples/models/muse-glimmer') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
@@ -836,6 +838,9 @@ jobs:
         assert torch.cuda.get_device_capability() == (8, 0)
         print(torch.cuda.get_device_properties(0))
         PY
+
+        # A100 exercises D=256's unchanged multi-stage pipeline as well.
+        python -m pytest backends/cuda/tests/test_sdpa_varlen_private.py::PrivateVarlenTest::test_muse_glimmer_and_gemma_head_geometry backends/cuda/tests/test_sdpa_varlen_private.py::PrivateVarlenTest::test_restored_ring_does_not_read_unwritten_nan_slot -v -o "addopts="
 
         cmake --preset llm-release-cuda -DEXECUTORCH_ENABLE_LOGGING=OFF
         cmake --build --preset llm-release-cuda-install

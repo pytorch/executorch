@@ -155,6 +155,29 @@ def diversify_tokens(requests):
     return requests
 
 
+def graph_commands():
+    # Exercise every exported captured stage across the same contraction.
+    requests = [{"op": "clear"}, {"op": "compact", "spare_columns": 0}]
+    requests += [{"op": "new"} for _ in range(64)]
+    for first in range(0, 64, 2):
+        seed = step(
+            [owner for owner in (first, first + 1) for _ in range(64)],
+            f"graph-seed-{first}",
+            save=False,
+        )
+        seed["select"] = [63, 127]
+        requests.append(seed)
+    for phase, owners in (("before", 64), ("after", 48)):
+        if phase == "after":
+            requests += [{"op": "remove", "seq_id": owner} for owner in range(48, 64)]
+            requests.append({"op": "compact", "spare_columns": 0})
+        for repeat in range(2):
+            for width in (1, 2, 4, 8, 16, 32, 64):
+                batch = sorted(row % owners for row in range(width))
+                requests.append(step(batch, f"graph-{phase}-{repeat}-{width}"))
+    return requests
+
+
 def commands(profile="mini"):
     geometry = qualification_config(profile, 128)
     seed_length = geometry["seed_length"]
@@ -175,6 +198,7 @@ def commands(profile="mini"):
         {"op": "compact", "spare_columns": 0},
     ]
     requests += [step(list(range(1, 63)), f"after-{i}") for i in range(5)]
+    requests += graph_commands()
     requests += [
         {"op": "clear"},
         {"op": "compact", "spare_columns": 0},
@@ -345,6 +369,14 @@ def run(probe, root, head_dim, abi, repeat=0, profile="mini"):
     )
     (run_dir / "probe.stderr.log").write_text(completed.stderr)
     (run_dir / "probe.jsonl").write_text(completed.stdout)
+    if completed.returncode != 0:
+        replies = completed.stdout.splitlines()
+        print(
+            f"PRIVATE_KV_PROBE_FAILURE {profile}/d{head_dim}/abi{abi}: "
+            f"{replies[-1] if replies else 'no protocol response'}",
+            flush=True,
+        )
+        print(completed.stderr[-2000:], file=sys.stderr, flush=True)
     completed.check_returncode()
     replies = [json.loads(line) for line in completed.stdout.splitlines()]
     assert replies[0]["ready"] and len(replies) == len(requests) + 1
@@ -354,7 +386,8 @@ def run(probe, root, head_dim, abi, repeat=0, profile="mini"):
     for request, response in pairs:
         assert not response.get("failed") and request["op"] == response["op"]
         response["cache_phase_seconds"] = {
-            name: (response["snapshot"][name] - previous_snapshot[name]) * 1e-9
+            name.removesuffix("_ns")
+            + "_s": (response["snapshot"][name] - previous_snapshot[name]) * 1e-9
             for name in (
                 "cache_prepare_time_ns",
                 "cache_commit_time_ns",
@@ -377,6 +410,16 @@ def run(probe, root, head_dim, abi, repeat=0, profile="mini"):
 
 def graph(snapshot, name):
     return next(x for x in snapshot["method_calls"] if x["method"] == name)
+
+
+def require_graph_contraction(before, after):
+    for width in (1, 2, 4, 8, 16, 32, 64):
+        name = f"forward_{width}"
+        old_graph, new_graph = graph(before, name), graph(after, name)
+        assert old_graph["captures"] > 0, name
+        assert new_graph["captures"] - old_graph["captures"] == 1, name
+        assert new_graph["replays"] - old_graph["replays"] > 0, name
+        assert new_graph["capture_failures"] == 0, name
 
 
 def host_undo_budget(geometry):
@@ -500,6 +543,33 @@ def paired_timings(repeats):
     return timings, lifecycle
 
 
+def write_qualification(output_dir, evidence, report_performance):
+    failure = None
+    try:
+        require_performance(evidence)
+    except RuntimeError as error:
+        failure = error
+    result = {
+        "timing_mode": "report-only" if report_performance else "enforced",
+        "performance_qualified": not report_performance and failure is None,
+        "timing_threshold_met": failure is None,
+        "performance_error": None if failure is None else str(failure),
+        "results": evidence,
+    }
+    (output_dir / "qualification.json").write_text(json.dumps(result, indent=2) + "\n")
+    print(json.dumps(result, indent=2))
+    if report_performance:
+        print(
+            "PERFORMANCE_REPORT_ONLY: "
+            + (str(failure) if failure is not None else "all median ratios >= 0.98")
+            + "; performance not qualified"
+        )
+    elif failure is not None:
+        raise failure
+    else:
+        print("PERFORMANCE_QUALIFIED: all median ratios >= 0.98")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--probe", required=True, type=Path)
@@ -548,11 +618,18 @@ def main():
                 "abi3_device_staging_bytes": new["device_staging_bytes"],
                 "abi3_host_undo_bytes": new["host_undo_bytes"],
                 "abi3_host_undo_budget_bytes": undo_budget,
+                "abi2_allocator_used_bytes": old["allocator_used_bytes"],
+                "abi3_allocator_used_bytes": new["allocator_used_bytes"],
             }
             # Before either ring reaches its window there is little duplicated
             # headroom to remove; shared staging can cost more at this point.
             if tag in savings_tags:
                 assert combined < old["live_KV_bytes"], (tag, old, new)
+                assert new["allocator_used_bytes"] < old["allocator_used_bytes"], (
+                    tag,
+                    old,
+                    new,
+                )
             assert new["host_undo_bytes"] > 0
             assert new["host_undo_bytes"] <= undo_budget, (tag, new, undo_budget)
         peak_host_undo = max(reply["snapshot"]["host_undo_bytes"] for _, reply in pairs)
@@ -561,14 +638,13 @@ def main():
             reply["snapshot"] for request, reply in pairs if request["op"] == "compact"
         )
         before = new_steps["before-6"]["snapshot"]
-        after = new_steps["after-4"]["snapshot"]
         assert compact["live_KV_bytes"] < before["live_KV_bytes"]
         assert compact["allocator_used_bytes"] < before["allocator_used_bytes"]
         assert compact["allocator_reserved_bytes"] <= before["allocator_reserved_bytes"]
-        old_graph, new_graph = graph(before, "forward_64"), graph(after, "forward_64")
-        assert new_graph["captures"] - old_graph["captures"] == 1
-        assert new_graph["replays"] - old_graph["replays"] > 1
-        assert new_graph["capture_failures"] == 0
+        require_graph_contraction(
+            new_steps["graph-before-1-64"]["snapshot"],
+            new_steps["graph-after-1-64"]["snapshot"],
+        )
         driver_before = new_steps["driver-before"]["snapshot"]
         driver_compact = next(
             reply["snapshot"]
@@ -624,19 +700,7 @@ def main():
             "same_work_timings": timings,
             "lifecycle_timings": lifecycle,
         }
-    (args.output_dir / "qualification.json").write_text(
-        json.dumps(evidence, indent=2) + "\n"
-    )
-    print(json.dumps(evidence, indent=2))
-    if args.report_performance:
-        try:
-            require_performance(evidence)
-        except RuntimeError as error:
-            print(f"PERFORMANCE_NOT_QUALIFIED: {error}")
-        else:
-            print("PERFORMANCE_QUALIFIED: all median ratios >= 0.98")
-    else:
-        require_performance(evidence)
+    write_qualification(args.output_dir, evidence, args.report_performance)
     print(
         "ABI-3 native logits, private memory, shared staging and per-stage replay passed"
     )
