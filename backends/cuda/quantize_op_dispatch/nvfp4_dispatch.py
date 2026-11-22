@@ -10,9 +10,10 @@ is compiled into the program:
 * ``ET_CUDA_NVFP4_ACT``: ``auto`` (default) times W4A16 against native W4A4
   per layer when native FP4 is available, and decode (M statically <= 4)
   W4A16 against the W4A8 dp4a GEMV (int8 activations per 16 elements)
-  otherwise; ``w4a16`` forces BF16/FP16 activations, ``w4a8`` forces the W4A8
-  GEMV for decode (other M run W4A16), and ``w4a4`` forces FP4 activations
-  (native FP4 required).
+  otherwise on NVIDIA (W4A16 only on ROCm); ``w4a16`` forces BF16/FP16
+  activations, ``w4a8`` forces the W4A8 GEMV for decode (other M run W4A16;
+  NVIDIA only, it raises on ROCm), and ``w4a4`` forces FP4 activations (native
+  FP4 required).
 * ``ET_CUDA_NVFP4_PREFILL_OUTPUT``: ``input`` (default) keeps the activation
   dtype; ``fp32`` returns FP32 from prefill linears (M not statically <= 4).
 """

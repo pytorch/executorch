@@ -342,9 +342,9 @@ def add_nvfp4_act_argument(parser) -> None:
         help="CUDA NVFP4 activation mode, sets ET_CUDA_NVFP4_ACT (default: "
         "the environment's value, else auto). auto times W4A4 against W4A16 "
         "per shape when native FP4 is available, and decode W4A16 against the "
-        "INT8-activation W4A8 GEMV otherwise; w4a4 forces FP4 activations "
-        "(native FP4 required), w4a8 forces the W4A8 decode GEMV, w4a16 "
-        "forces BF16 activations.",
+        "INT8-activation W4A8 GEMV on other NVIDIA GPUs; w4a4 forces FP4 "
+        "activations (native FP4 required), w4a8 forces the W4A8 decode GEMV "
+        "(NVIDIA only), w4a16 forces BF16 activations.",
     )
 
 

@@ -151,6 +151,8 @@ def test_gated_linear_routing(mode, dtype, rows, fp32, native, expected, monkeyp
         for name in names:
             monkeypatch.setattr(module, name, recorder(name, calls))
     monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: native)
+    # The routing is NVIDIA's; w4a8 raises on ROCm.
+    monkeypatch.setattr(torch.version, "hip", None)
     monkeypatch.setenv("ET_CUDA_NVFP4_ACT", mode)
     monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_OUTPUT", "fp32" if fp32 else "input")
     fake = FakeTensorMode()
