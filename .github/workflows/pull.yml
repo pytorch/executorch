@@ -2162,6 +2162,7 @@ jobs:
         # route in the future.
         python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*pt2e*"
         python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*torchao*"
+        python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*another_dim_order*" -k "*channels_last_input_and_output*"
         python -m unittest backends/vulkan/test/test_vulkan_graph_builder.py
         python -m unittest backends/vulkan/test/test_vulkan_dynamic.py
 
