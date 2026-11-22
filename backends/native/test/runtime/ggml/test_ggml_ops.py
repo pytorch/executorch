@@ -922,6 +922,41 @@ class GgmlOpsTest(unittest.TestCase):
     def test_silu(self):
         self._check(Lambda(F.silu), (torch.randn(2, 3, 4),))
 
+    def test_softplus(self):
+        # Above 88, exp overflows in the branch softplus does not take.
+        x = torch.tensor([[-100.0, -20.0, -1.0, 0.0, 1e-3, 1.0, 19.0, 21.0, 100.0]])
+        self._check(Lambda(F.softplus), (x,), atol=1e-7, rtol=2e-6)
+        self._check(Lambda(F.softplus), (torch.randn(2, 3, 4) * 10,), rtol=2e-6)
+
+    def test_softplus_is_one_ggml_softplus(self):
+        # Both sides of the threshold of 20 and far tails.
+        x = torch.cat([torch.linspace(-40, 40, 161), torch.randn(39)]).reshape(4, 50)
+        ops = collections.Counter()
+        self._check(Lambda(F.softplus), (x,), atol=1e-6, rtol=1e-6, graph_ops=ops)
+        self.assertGreater(ops["SOFTPLUS"], 0)
+        self.assertEqual((ops["LOG"], ops["EXP"], ops["CONCAT"]), (0, 0, 0))
+
+    def test_softplus_with_other_beta_or_threshold(self):
+        # Each side of thresholds below, at and above ggml's 20.
+        x = torch.cat([torch.linspace(-40, 40, 161), torch.randn(39)]).reshape(4, 50)
+        for kwargs in (
+            {"beta": 2.0},
+            {"beta": 0.5, "threshold": 30.0},
+            {"threshold": 10.0},
+            {"beta": -1.0},
+        ):
+            with self.subTest(**kwargs):
+                ops = collections.Counter()
+                self._check(
+                    Lambda(lambda t, kw=kwargs: F.softplus(t, **kw)),
+                    (x,),
+                    atol=1e-6,
+                    rtol=1e-6,
+                    graph_ops=ops,
+                )
+                self.assertGreater(ops["SOFTPLUS"], 0)
+                self.assertGreater(ops["GET_ROWS"], 0)
+
     def test_swiglu_arithmetic_with_shared_silu(self):
         def forward(x, up):
             silu = x * torch.sigmoid(x)
