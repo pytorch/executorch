@@ -176,8 +176,9 @@ if(EXECUTORCH_BUILD_NATIVE_GGML)
   # weight-only quantized linears, judged against golden-int8_act.
   # native_ggml_sample_test_no_linear judges the other ops without it, except
   # their quantized_* cases, which quantize through an nn.Linear. Both leave out
-  # the elu with alpha 0.5 that ggml rejects and the samples that match eager
-  # only with a testing option (runtime/ggml/BUCK).
+  # the elu with alpha 0.5 that ggml rejects, Gated DeltaNet layers on
+  # transformers' ATen rule, which ggml does not run (--gdn_op aten), and the
+  # samples that match eager only with a testing option (runtime/ggml/BUCK).
   set(_native_exact_only
       topk_*.nan_and_inf_*
       gelu_float.dynamic_tokens_tanh_f32
@@ -192,13 +193,13 @@ if(EXECUTORCH_BUILD_NATIVE_GGML)
     COMMAND
       native_ggml_sample_test --packages=${_native_op_samples} --device=cpu
       --allow_activation_quant_for_weight_only
-      --gtest_filter=-elu_float.elu_f32_alpha_*:${_native_exact_filter}
+      --gtest_filter=-elu_float.elu_f32_alpha_*:gdn_*.recurrent_*:gdn_*.quantized_layer_decode*:${_native_exact_filter}
   )
   add_test(
     NAME native_ggml_sample_test_no_linear
     COMMAND
       native_ggml_sample_test --packages=${_native_op_samples} --device=cpu
-      --gtest_filter=-linear_*:*.quantized_*:elu_float.elu_f32_alpha_*:${_native_exact_filter}
+      --gtest_filter=-linear_*:*.quantized_*:elu_float.elu_f32_alpha_*:gdn_*.recurrent_*:${_native_exact_filter}
   )
   target_compile_options(
     native_ggml_sample_test
@@ -289,6 +290,14 @@ if(EXECUTORCH_BUILD_NATIVE_CPU)
       topk_float.smallest_bf16
       topk_float.smallest_f16
       topk_float.smallest_f32
+      # CPU engine: mutable buffers are not supported.
+      gdn_float.quantized_layer_decode_f32
+      gdn_float.quantized_layer_decode_restart_f32
+      gdn_float.quantized_layer_decode_saved_state_f32
+      gdn_float.quantized_layer_decode_wide_f32
+      # CPU engine: functionalize_aliases rejects the select.int view.
+      gdn_float.recurrent_qwen35_f32
+      gdn_float.recurrent_small_f32
   )
   list(JOIN _native_cpu_engine_gaps ":" _native_cpu_gaps)
   add_test(NAME native_cpu_sample_test_static_float
