@@ -143,7 +143,7 @@ endif()
 if(EXECUTORCH_BUILD_NATIVE_GGML)
   add_executable(native_ggml_engine_test runtime/ggml/test_ggml_engine.cpp)
   target_link_libraries(
-    native_ggml_engine_test PRIVATE native_ggml_engine native_graph_schema
+    native_ggml_engine_test PRIVATE native_ggml_engine native_graph_schema ggml
                                     extension_llm_cache GTest::gtest_main
   )
   add_dependencies(native_ggml_engine_test native_graph_schema_gen)
