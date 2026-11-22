@@ -965,9 +965,10 @@ def nvfp4_gemv(
 ) -> torch.Tensor:
     """NVFP4 GEMV for small M; the output keeps ``x.dtype``.
 
-    ``unit_scale=True`` skips the global scale and requires the
-    ``CudaNVFP4Tensor.unit_scale`` contract (global scale 1, scale bytes below
-    0x7F); it is not checked here. M is grid axis 1, so at most 65535.
+    Scale bytes must be finite E4M3 (no 0x7F/0xFF), as ``CudaNVFP4Tensor``
+    guarantees; it is not checked here. ``unit_scale=True`` skips the global
+    scale and requires the ``CudaNVFP4Tensor.unit_scale`` contract (global
+    scale 1). M is grid axis 1, so at most 65535.
     """
     _check_operands(x, qdata, scale, per_tensor_scale)
     max_rows = _max_rows(x.shape[0])
@@ -1119,7 +1120,9 @@ def nvfp4_w4a16(
     output_dtype: torch.dtype | None = None,
 ) -> torch.Tensor:
     """NVFP4 weight-only GEMM; FP32 activations are rounded to BF16 (the GEMV
-    keeps FP32 math), and the output is ``output_dtype`` or ``x.dtype``."""
+    keeps FP32 math), and the output is ``output_dtype`` or ``x.dtype``. Scale
+    bytes must be finite E4M3 (no 0x7F/0xFF), as ``CudaNVFP4Tensor``
+    guarantees; it is not checked here."""
     _check_operands(x, qdata, scale, per_tensor_scale)
     launch = _launch_w4a16 if split_k < 0 else _launch_w4a16_impl
     kwargs = {} if split_k < 0 else {"split_k": split_k}

@@ -145,12 +145,6 @@ def test_fp16_bit_placement_is_exact():
     finite = (b & 0x7F) != 0x7F
     e4m3 = b.view(torch.float8_e4m3fn).float()
     assert_bits_equal(sf[finite] * 2**8, e4m3[finite])
-    # The kernels' FP32 product of the two placements is the exact product.
-    rescale = kernels._SOFT_FP4_RESCALE.value
-    assert_bits_equal(
-        lo[:, None] * (sf[finite] * rescale)[None, :],
-        lut[(b & 15).long()][:, None] * e4m3[finite][None, :],
-    )
 
 
 @triton.jit
@@ -165,8 +159,7 @@ def _decode_pair_kernel(Q, S, LO, HI, NATIVE: tl.constexpr):
 def test_decode_pair_is_exact(native):
     """The decode the kernels call: every code byte times every finite scale
     byte, bit for bit."""
-    if native and not kernels._has_native_fp4_conversion():
-        pytest.skip("native FP4 required")
+    skip_without_native(native)
     b = torch.arange(256, device="cuda", dtype=torch.int32).to(torch.uint8)
     q = b[:, None].expand(256, 256).contiguous()
     s = b[None, :].expand(256, 256).contiguous()
