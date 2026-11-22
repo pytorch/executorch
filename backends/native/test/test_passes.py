@@ -38,12 +38,16 @@ def _rotate_half(t):
     return torch.cat((-t[..., half:], t[..., :half]), dim=-1)
 
 
-def _hf_rope_tables(x, position_ids, inv_freq, attention_scale=1.0):
-    inv_freq_expanded = (
-        inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1)
-    )
-    position_ids_expanded = position_ids[:, None, :].float()
-    freqs = (inv_freq_expanded @ position_ids_expanded).transpose(1, 2)
+def _hf_rope_tables(x, position_ids, inv_freq, attention_scale=1.0, broadcast=False):
+    if broadcast:
+        # The outer product as transformers forms it from 5.19.
+        freqs = position_ids[..., None].float() * inv_freq.float()
+    else:
+        inv_freq_expanded = (
+            inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1)
+        )
+        position_ids_expanded = position_ids[:, None, :].float()
+        freqs = (inv_freq_expanded @ position_ids_expanded).transpose(1, 2)
     emb = torch.cat((freqs, freqs), dim=-1)
     cos = (emb.cos() * attention_scale).to(x.dtype).unsqueeze(1)
     sin = (emb.sin() * attention_scale).to(x.dtype).unsqueeze(1)
@@ -60,12 +64,15 @@ def _apply_rope_tables(x, cos, sin):
 
 
 class _HFRoPE(nn.Module):
-    def __init__(self, attention_scale=1.0):
+    def __init__(self, attention_scale=1.0, broadcast=False):
         super().__init__()
         self.attention_scale = attention_scale
+        self.broadcast = broadcast
 
     def forward(self, x, position_ids, inv_freq):
-        cos, sin = _hf_rope_tables(x, position_ids, inv_freq, self.attention_scale)
+        cos, sin = _hf_rope_tables(
+            x, position_ids, inv_freq, self.attention_scale, self.broadcast
+        )
         return _apply_rope_tables(x, cos, sin)
 
 
@@ -372,16 +379,21 @@ class ReplaceCopyWithAliasPassTest(unittest.TestCase):
 class FuseRopePassTest(unittest.TestCase):
     def test_hf_rope_fusion_preserves_numerics(self):
         torch.manual_seed(0)
-        for dtype, rotary, scale in itertools.product(
-            (torch.float32, torch.float16, torch.bfloat16), (4, 8), (1.0, 1.25)
+        for dtype, rotary, scale, broadcast in itertools.product(
+            (torch.float32, torch.float16, torch.bfloat16),
+            (4, 8),
+            (1.0, 1.25),
+            (False, True),
         ):
-            with self.subTest(dtype=dtype, rotary=rotary, scale=scale):
+            with self.subTest(
+                dtype=dtype, rotary=rotary, scale=scale, broadcast=broadcast
+            ):
                 x = torch.randn(2, 3, 4, 8, dtype=dtype)
                 bpos = 1 if scale == 1.0 else 2
                 positions = torch.arange(bpos * 4).reshape(bpos, 4) + 2049
                 inv_freq = torch.linspace(0.01, 0.9, rotary // 2)
                 inputs = (x, positions, inv_freq)
-                model = _HFRoPE(scale).eval()
+                model = _HFRoPE(scale, broadcast).eval()
                 ep = _transformed(model, inputs, [FuseRoPEPass()])
                 targets = [n.target for n in ep.graph.nodes if n.op == "call_function"]
                 self.assertEqual(targets, [torch.ops.native.rope.default])
@@ -489,18 +501,24 @@ class FuseRopePassTest(unittest.TestCase):
 
     def test_mismatched_tables_and_layouts_not_fused(self):
         class NotRoPE(nn.Module):
-            def __init__(self, mismatch):
+            def __init__(self, mismatch, product):
                 super().__init__()
                 self.mismatch = mismatch
+                self.product = product
 
             def forward(self, x, position_ids, inv_freq):
-                cos, sin = _hf_rope_tables(x, position_ids, inv_freq)
+                def tables(position_ids, inv_freq):
+                    return _hf_rope_tables(
+                        x, position_ids, inv_freq, broadcast=self.product
+                    )
+
+                cos, sin = tables(position_ids, inv_freq)
                 if self.mismatch == "scale":
                     sin = sin * 1.25
                 elif self.mismatch == "phase":
-                    _, sin = _hf_rope_tables(x, position_ids + 1, inv_freq)
+                    _, sin = tables(position_ids + 1, inv_freq)
                 elif self.mismatch == "frequency":
-                    _, sin = _hf_rope_tables(x, position_ids, inv_freq * 2)
+                    _, sin = tables(position_ids, inv_freq * 2)
                 elif self.mismatch == "broadcast":
                     cos, sin = cos.squeeze(1).unsqueeze(2), sin.squeeze(1).unsqueeze(2)
                 elif self.mismatch == "interleaved_tables":
@@ -517,16 +535,20 @@ class FuseRopePassTest(unittest.TestCase):
             torch.arange(6).reshape(2, 3),
             torch.tensor([1.0, 0.1, 0.01, 0.001]),
         )
-        for mismatch in (
-            "scale",
-            "phase",
-            "frequency",
-            "broadcast",
-            "interleaved_tables",
-            "rotation",
+        # `product` selects the broadcast-multiply frequency product.
+        for mismatch, product in itertools.product(
+            (
+                "scale",
+                "phase",
+                "frequency",
+                "broadcast",
+                "interleaved_tables",
+                "rotation",
+            ),
+            (False, True),
         ):
-            with self.subTest(mismatch=mismatch):
-                model = NotRoPE(mismatch).eval()
+            with self.subTest(mismatch=mismatch, product=product):
+                model = NotRoPE(mismatch, product).eval()
                 ep = _transformed(model, inputs, [FuseRoPEPass()])
                 targets = [n.target for n in ep.graph.nodes if n.op == "call_function"]
                 self.assertNotIn(torch.ops.native.rope.default, targets)
@@ -559,12 +581,49 @@ class FuseRopePassTest(unittest.TestCase):
             torch.arange(8).reshape(2, 4),
             torch.tensor([1.0, 0.1, 0.01, 0.001]),
         )
-        model = _HFRoPE()
-        ep = _transformed(model, inputs, [FuseRoPEPass()])
-        self.assertNotIn(
-            torch.ops.native.rope.default, [n.target for n in ep.graph.nodes]
-        )
-        torch.testing.assert_close(ep.module()(*inputs), model(*inputs))
+        for product in (False, True):
+            with self.subTest(product=product):
+                model = _HFRoPE(broadcast=product)
+                ep = _transformed(model, inputs, [FuseRoPEPass()])
+                self.assertNotIn(
+                    torch.ops.native.rope.default, [n.target for n in ep.graph.nodes]
+                )
+                torch.testing.assert_close(ep.module()(*inputs), model(*inputs))
+
+    def test_broadcast_product_off_the_fp32_contract_is_not_fused(self):
+        class OffContractRoPE(nn.Module):
+            def __init__(self, dtype):
+                super().__init__()
+                self.dtype = dtype
+
+            def forward(self, x, position_ids, inv_freq):
+                freqs = position_ids[..., None].to(self.dtype) * inv_freq.to(self.dtype)
+                emb = torch.cat((freqs, freqs), dim=-1)
+                cos = emb.cos().to(x.dtype).unsqueeze(1)
+                sin = emb.sin().to(x.dtype).unsqueeze(1)
+                return _apply_rope_tables(x, cos, sin)
+
+        x = torch.randn(2, 3, 4, 8)
+        positions = torch.arange(8).reshape(2, 4)
+        inv_freq = torch.tensor([1.0, 0.1, 0.01, 0.001])
+        for name, dtype, frequencies in (
+            # One frequency row per position, not RoPE, though it has the
+            # shapes the fused op checks.
+            (
+                "rank-2 frequencies",
+                torch.float32,
+                torch.stack([inv_freq * (1 + i) for i in range(4)]),
+            ),
+            ("float64 product", torch.float64, inv_freq),
+        ):
+            with self.subTest(name):
+                model = OffContractRoPE(dtype).eval()
+                inputs = (x, positions, frequencies)
+                ep = _transformed(model, inputs, [FuseRoPEPass()])
+                self.assertNotIn(
+                    torch.ops.native.rope.default, [n.target for n in ep.graph.nodes]
+                )
+                torch.testing.assert_close(ep.module()(*inputs), model(*inputs))
 
     def test_shared_tables_with_unfused_consumer_are_preserved(self):
         class RoPEWithTables(nn.Module):
@@ -669,28 +728,34 @@ class FuseRopePassTest(unittest.TestCase):
     def test_hf_rope_fuses_symbolic_batch_and_sequence(self):
         batch = torch.export.Dim("batch", min=1, max=8)
         sequence = torch.export.Dim("sequence", min=1, max=16)
-        model = _HFRoPE(1.25)
-        exported = torch.export.export(
-            model,
-            (
-                torch.randn(2, 3, 4, 8),
-                torch.ones(2, 4, dtype=torch.long),
-                torch.randn(2),
-            ),
-            dynamic_shapes=({0: batch, 2: sequence}, {0: batch, 1: sequence}, {}),
-        )
-        edge = to_edge(exported, compile_config=get_default_compile_config())
-        ep = edge.transform([FuseRoPEPass()]).exported_program()
-        self.assertEqual(
-            [n.target for n in ep.graph.nodes if n.op == "call_function"],
-            [torch.ops.native.rope.default],
-        )
-        inputs = (
-            torch.randn(3, 3, 5, 8),
-            torch.arange(15).reshape(3, 5),
-            torch.tensor([1.0, 0.01]),
-        )
-        torch.testing.assert_close(ep.module()(*inputs), model(*inputs))
+        for broadcast in (False, True):
+            with self.subTest(broadcast=broadcast):
+                model = _HFRoPE(1.25, broadcast)
+                exported = torch.export.export(
+                    model,
+                    (
+                        torch.randn(2, 3, 4, 8),
+                        torch.ones(2, 4, dtype=torch.long),
+                        torch.randn(2),
+                    ),
+                    dynamic_shapes=(
+                        {0: batch, 2: sequence},
+                        {0: batch, 1: sequence},
+                        {},
+                    ),
+                )
+                edge = to_edge(exported, compile_config=get_default_compile_config())
+                ep = edge.transform([FuseRoPEPass()]).exported_program()
+                self.assertEqual(
+                    [n.target for n in ep.graph.nodes if n.op == "call_function"],
+                    [torch.ops.native.rope.default],
+                )
+                inputs = (
+                    torch.randn(3, 3, 5, 8),
+                    torch.arange(15).reshape(3, 5),
+                    torch.tensor([1.0, 0.01]),
+                )
+                torch.testing.assert_close(ep.module()(*inputs), model(*inputs))
 
     def test_rope_fake_supports_symbolic_batch_and_sequence(self):
         class RoPEOp(nn.Module):
