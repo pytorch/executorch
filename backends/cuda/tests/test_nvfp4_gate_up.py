@@ -167,7 +167,6 @@ def test_calibrated_activation_scale_reaches_gated_ops(mode, module, op, monkeyp
     monkeypatch.setattr(module, op, fake_op)
     monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: True)
     monkeypatch.setenv("ET_CUDA_NVFP4_ACT", mode)
-    monkeypatch.delenv("ET_CUDA_NVFP4_PREFILL_OUTPUT", raising=False)
     fake = FakeTensorMode()
     x = fake.from_tensor(torch.randn(37, 192, dtype=torch.bfloat16))
     weight = fake.from_tensor(gate_up_weight("cpu", act_scale=0.002))
@@ -194,9 +193,12 @@ def test_auto_gate_up_body_forwards_mode_split(fp4, monkeypatch):
         return y[:, : y.shape[1] // 2]
 
     monkeypatch.setattr(
-        nvfp4_gated_gemm, "nvfp4_w4a4_gate_up", recorder("nvfp4_w4a4_gate_up")
+        nvfp4_gated_gemm,
+        "_launch_w4a4_gate_up_impl",
+        recorder("_launch_w4a4_gate_up_impl"),
     )
     monkeypatch.setattr(nvfp4_gated_gemm, "nvfp4_gate_up_epilogue", epilogue)
+    monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: True)
     monkeypatch.setattr(nvfp4_quantized_gemm, "nvfp4_w4a16", recorder("nvfp4_w4a16"))
     monkeypatch.setattr(nvfp4_quantized_gemm, "_split_workspace_limit", lambda: 2**40)
     w = gate_up_weight("cpu", act_scale=0.002)
@@ -206,14 +208,19 @@ def test_auto_gate_up_body_forwards_mode_split(fp4, monkeypatch):
     out = nvfp4_dispatch._prefill_gate_up(
         x, *weight, 64, mode_split=mode_split, output_dtype=torch.float32
     )
-    name = "nvfp4_w4a4_gate_up" if fp4 else "nvfp4_w4a16"
-    act = (w.act_per_tensor_scale,) if fp4 else ()
+    name = "_launch_w4a4_gate_up_impl" if fp4 else "nvfp4_w4a16"
+    act = (w.act_per_tensor_scale, 64) if fp4 else ()
     assert calls == [(name, act, {"split_k": 2, "output_dtype": torch.float32})]
     assert epilogues == ([] if fp4 else [(37, w.shape[0])])
     assert out.shape == (37, w.shape[0] // 2) and out.dtype == torch.float32
     calls.clear()
     with pytest.raises(InvalidLaunchParam, match="bounded M"):
         nvfp4_dispatch._prefill_gate_up(x, *weight, None, mode_split=mode_split)
+    if fp4:
+        # Without native FP4, timing skips the W4A4 candidates.
+        monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: False)
+        with pytest.raises(InvalidLaunchParam, match="native FP4"):
+            nvfp4_dispatch._prefill_gate_up(x, *weight, 64, mode_split=mode_split)
     assert not calls
 
 
@@ -352,12 +359,17 @@ def test_gated_linear_auto_export_traces_the_auto_op(monkeypatch):
     )
     monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: True)
     monkeypatch.setenv("ET_CUDA_NVFP4_ACT", "auto")
-    torch.export.export(
+    exported = torch.export.export(
         GatedLinear().eval(),
         (torch.randn(17, 192, dtype=torch.bfloat16),),
         dynamic_shapes=({0: torch.export.Dim("tokens", min=1, max=64)},),
         strict=True,
-    ).run_decompositions()
+    )
+    # The NVFP4 weight stays a named parameter, not anonymous constants that
+    # other methods could not share.
+    assert not exported.graph_signature.lifted_tensor_constants
+    assert any("weight" in name for name in exported.graph_signature.parameters)
+    exported.run_decompositions()
     assert calls and set(calls) == {("nvfp4_auto_gate_up_prefill", None)}
 
 

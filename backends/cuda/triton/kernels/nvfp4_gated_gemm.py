@@ -16,8 +16,8 @@ from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
     _has_native_fp4_conversion,
     _max_rows,
     _prune_w4a4,
+    _quantize_activation,
     _w4a4,
-    nvfp4_quantize_activation,
     SPLIT_K_CANDIDATES,
 )
 from executorch.backends.cuda.triton.kernels.nvfp4_tuning import (
@@ -183,7 +183,7 @@ def _launch_w4a4_gate_up_impl(
     if n % 2:
         raise ValueError("NVFP4 gate/up requires an even output dimension")
     _check_split(k, split_k, m=max_rows, n=n)
-    a, sa, g = nvfp4_quantize_activation(x, static_scale)
+    a, sa, g = _quantize_activation(x, static_scale)
     out = torch.empty((m, n // 2), device=x.device, dtype=output_dtype or x.dtype)
     partial = (
         torch.empty((split_k, m, n), device=x.device, dtype=torch.float32)

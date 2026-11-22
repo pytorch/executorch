@@ -16,7 +16,6 @@ from executorch.backends.cuda.autotune.launch_params import (
     _size_hint,
     autotune_launch_param,
     InvalidLaunchParam,
-    timing_on_random_inputs,
 )
 from executorch.backends.cuda.triton.kernels.nvfp4_tuning import (
     autotune_do_bench,
@@ -109,13 +108,11 @@ def _check_static_scale(static_scale, x):
             "NVFP4 static activation scale must be a one-element float32 tensor "
             "on the activation's device"
         )
-    # Only eager calls on real data have values to check: fake tensors carry
-    # none, launch timing runs on random stand-ins, and a CUDA graph capture
-    # cannot synchronize.
+    # Only eager calls have values to check: fake tensors carry none, and a
+    # CUDA graph capture cannot synchronize.
     if (
         not is_fake(static_scale)
         and static_scale.device.type != "meta"
-        and not timing_on_random_inputs()
         and not (static_scale.is_cuda and torch.cuda.is_current_stream_capturing())
         and not bool((torch.isfinite(static_scale) & (static_scale > 0)).all())
     ):
@@ -293,12 +290,18 @@ def nvfp4_quantize_activation(
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """``static_scale``: an optional one-element float32 activation global
     scale, read by the kernels at run time (``None``: per-row dynamic)."""
-    m, k = x.shape
-    if k % 16:
+    if x.shape[1] % 16:
         raise ValueError("NVFP4 activation K must be divisible by 16")
     if not x.is_contiguous():
         raise ValueError("NVFP4 activation must be contiguous")
     _check_static_scale(static_scale, x)
+    return _quantize_activation(x, static_scale)
+
+
+def _quantize_activation(x, static_scale):
+    # Unchecked: the public ops validate once at entry, and launch timing
+    # calls this on random stand-ins whose values mean nothing.
+    m, k = x.shape
     q = torch.empty((m, k // 2), device=x.device, dtype=torch.uint8)
     s = torch.empty((m, k // 16), device=x.device, dtype=torch.uint8)
     g = torch.empty((m,), device=x.device, dtype=torch.float32)
@@ -561,7 +564,7 @@ def _launch_w4a4_impl(
     m, k = x.shape
     n = qdata.shape[0]
     _check_split(k, split_k, m=max_rows, n=n)
-    a, sa, g = nvfp4_quantize_activation(x, static_scale)
+    a, sa, g = _quantize_activation(x, static_scale)
     out = torch.empty((m, n), device=x.device, dtype=output_dtype or x.dtype)
     partial = (
         torch.empty((split_k, m, n), device=x.device, dtype=torch.float32)
