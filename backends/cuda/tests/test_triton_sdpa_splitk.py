@@ -13,6 +13,8 @@ expanded KV heads in float32.
 import importlib
 import itertools
 import math
+import os
+import tempfile
 import unittest
 from unittest import mock
 
@@ -242,14 +244,18 @@ class TestTritonSdpaSplitK(unittest.TestCase):
 
     def test_small_query_tile_limits_dispatch(self):
         """Dispatch bounds the per-CTA tile (L_q * GQA rows by head_dim)."""
-        B, Lq, Lk = 1, 16, 256
-        for H_q, H_kv, D, small_query_calls in [
-            (32, 2, 128, 1),
-            (16, 2, 256, 1),
-            (64, 2, 128, 0),
-            (32, 2, 256, 0),
+        B, Lk = 1, 256
+        for Lq, H_q, H_kv, D, small_query_calls in [
+            (16, 32, 2, 128, 1),
+            (16, 16, 2, 256, 1),
+            (16, 64, 2, 128, 0),
+            (16, 32, 2, 256, 0),
+            # 17 groups round up to 32: a 384x128 tile, over the cap.
+            (12, 34, 2, 128, 0),
+            # 512 rows at head_dim 64: within the tile area, over the row cap.
+            (16, 64, 2, 64, 0),
         ]:
-            with self.subTest(H_q=H_q, H_kv=H_kv, D=D):
+            with self.subTest(Lq=Lq, H_q=H_q, H_kv=H_kv, D=D):
                 q = torch.randn(B, H_q, Lq, D, dtype=torch.bfloat16, device="cuda")
                 k = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
                 v = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
@@ -287,6 +293,91 @@ class TestTritonSdpaSplitK(unittest.TestCase):
                 self.assertTrue(torch.isfinite(out).all())
                 self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
 
+    def test_small_query_without_mask_matches_reference(self):
+        """No mask, not causal, bounded by kv_len (the DFlash draft's call)."""
+        B, H_q, H_kv, Lk, D = 1, 8, 2, 512, 128
+        kv_len = torch.tensor([300], dtype=torch.int64, device="cuda")
+        for Lq in (5, 8, 16):
+            with self.subTest(Lq=Lq):
+                torch.manual_seed(Lq)
+                q = torch.randn(B, H_q, Lq, D, dtype=torch.bfloat16, device="cuda")
+                k = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+                v = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+                with mock.patch.object(
+                    self.sdpa_module,
+                    "_launch_small_query_splitk",
+                    wraps=self.sdpa_module._launch_small_query_splitk,
+                ) as small_query_launcher:
+                    out = self.sdpa(q, k, v, enable_gqa=True, kv_len=kv_len)
+                self.assertEqual(small_query_launcher.call_count, 1)
+                ref = _reference_sdpa(q, k[:, :, :300], v[:, :, :300])
+                self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
+
+    def test_symbolic_query_length_takes_the_general_kernel(self):
+        """A query length bounded within [2, 16] but symbolic (the DFlash draft
+        block) must not reach the constexpr-L_q launcher; the program lowered
+        through the CUDA backend serves every width."""
+        from executorch.backends.cuda.cuda_backend import CudaBackend
+        from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+        from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
+        from executorch.export.utils import is_fbcode
+
+        class Attend(torch.nn.Module):
+            def forward(self, q, k, v, kv_len):
+                return torch.ops.triton.sdpa(
+                    q, k, v, None, 0.0, False, 0.0, True, kv_len
+                )
+
+        B, H_q, H_kv, Lk, D = 1, 32, 2, 512, 128
+        k = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+        v = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+        kv_len = torch.tensor([300], dtype=torch.int64, device="cuda")
+        q = torch.randn(B, H_q, 16, D, dtype=torch.bfloat16, device="cuda")
+        block = torch.export.Dim("block", min=2, max=16)
+        with mock.patch.object(
+            self.sdpa_module,
+            "_launch_small_query_splitk",
+            side_effect=AssertionError("symbolic L_q reached the split-K launcher"),
+        ):
+            ep = torch.export.export(
+                Attend(),
+                (q, k, v, kv_len),
+                dynamic_shapes=({2: block}, None, None, None),
+            )
+            lowered = to_edge_transform_and_lower(
+                ep,
+                partitioner=[
+                    CudaPartitioner(
+                        [CudaBackend.generate_method_name_compile_spec("forward")]
+                    )
+                ],
+                compile_config=EdgeCompileConfig(_check_ir_validity=False),
+            ).to_executorch()
+        with tempfile.TemporaryDirectory() as folder:
+            path = os.path.join(folder, "attend.pte")
+            with open(path, "wb") as f:
+                lowered.write_to_file(f)
+            lowered.write_tensor_data_to_file(folder)
+            if is_fbcode():
+                # The in-process runtime in fbcode has no CUDA backend.
+                return
+            from executorch.runtime import Runtime
+
+            data = [f for f in os.listdir(folder) if f.endswith(".ptd")]
+            method = (
+                Runtime.get()
+                .load_program(
+                    path, data_path=os.path.join(folder, data[0]) if data else None
+                )
+                .load_method("forward")
+            )
+            for Lq in (5, 16):
+                query = torch.randn(B, H_q, Lq, D, dtype=torch.bfloat16, device="cuda")
+                inputs = [t.cpu() for t in (query, k, v, kv_len)]
+                out = method.execute(inputs)[0].to("cuda")
+                ref = _reference_sdpa(query, k[:, :, :300], v[:, :, :300])
+                self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
+
     def test_small_query_packed_sequences_skip_masked_tiles(self):
         """Packed multi-sequence decode: each row sees only its own cells.
 
@@ -294,7 +385,17 @@ class TestTritonSdpaSplitK(unittest.TestCase):
         least 256 cells from a visible one, so a tile is NaN-free only if it
         is skipped. Visible spans start and end inside tiles.
         """
-        B, H_q, H_kv, D, gap = 1, 8, 2, 128, 1024
+        B, H_q, H_kv, D, gap = (
+            1,
+            8,
+            2,
+            128,
+            4
+            * max(
+                c.kwargs["BLOCK_N"]
+                for c in self.sdpa_module._sdpa_small_query_splitk_kernel.configs
+            ),
+        )
         for Lq in [8, 16]:
             with self.subTest(Lq=Lq):
                 torch.manual_seed(Lq)
@@ -306,8 +407,16 @@ class TestTritonSdpaSplitK(unittest.TestCase):
                 for i in range(Lq):
                     mask[0, 0, i, i * gap + 5 : i * gap + 100] = True
                 visible = mask[0, 0].any(0).float()
+                # NaN cells are a whole tile away from every visible cell.
+                reach = max(
+                    c.kwargs["BLOCK_N"]
+                    for c in self.sdpa_module._sdpa_small_query_splitk_kernel.configs
+                )
                 near = torch.nn.functional.max_pool1d(
-                    visible[None, None], kernel_size=511, stride=1, padding=255
+                    visible[None, None],
+                    kernel_size=2 * reach - 1,
+                    stride=1,
+                    padding=reach - 1,
                 )[0, 0].bool()
                 poisoned = v.clone()
                 poisoned[:, :, ~near] = float("nan")
