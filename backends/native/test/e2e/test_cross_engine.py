@@ -922,6 +922,15 @@ class CrossEngineTest(unittest.TestCase):
             engines=("ggml_ptn_runner",),
         )
 
+    def test_tiny_gemma2_attention_softcapping(self):
+        torch.manual_seed(0)
+        self._check_llama(
+            _tiny_gemma2(attn_logit_softcapping=1.0),
+            torch.float32,
+            atol_fraction=1e-3,
+            engines=("ggml_ptn_runner",),
+        )
+
     # native-vk: Gemma2's aten.rms_norm.default is not lowered, so loading fails.
     @unittest.expectedFailure
     def test_tiny_gemma2_sliding_window_vulkan(self):
