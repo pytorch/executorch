@@ -306,6 +306,8 @@ def _run_ggml(
     graph_ops: collections.Counter | None = None,
     method: str = "forward",
     allow_activation_quant_for_weight_only: bool = False,
+    exact_topk_for_testing: bool = False,
+    exact_gelu_for_testing: bool = False,
 ):
     """Runs each step's inputs in order on one executable and returns each
     step's outputs as (bytes, shape) pairs. `graph_ops`, if given, collects
@@ -337,6 +339,10 @@ def _run_ggml(
         command.append("--print_graph_ops")
     if allow_activation_quant_for_weight_only:
         command.append("--allow_activation_quant_for_weight_only")
+    if exact_topk_for_testing:
+        command.append("--exact_topk_for_testing")
+    if exact_gelu_for_testing:
+        command.append("--exact_gelu_for_testing")
     with as_file(files(__package__) / "ggml_ptn_runner") as runner:
         result = subprocess.run(
             [str(runner), *command],
@@ -362,6 +368,14 @@ _MATMUL_TOL = (
     {"atol": 5e-3, "rtol": 1e-2}
     if os.environ.get("GGML_PTN_DEVICE", "cpu") == "gpu"
     else {"atol": 1e-4, "rtol": 1e-5}
+)
+
+
+# ggml-cuda is built with -use_fast_math, whose tanhf is a few 1e-6 off.
+_GELU_TOL = (
+    {"atol": 1e-5, "rtol": 1e-5}
+    if os.environ.get("GGML_PTN_DEVICE", "cpu") == "gpu"
+    else {"atol": 1e-6, "rtol": 1e-5}
 )
 
 
@@ -444,6 +458,8 @@ class GgmlOpsTest(unittest.TestCase):
         rtol=1e-5,
         graph_ops=None,
         allow_activation_quant_for_weight_only=False,
+        exact_topk_for_testing=False,
+        exact_gelu_for_testing=False,
     ):
         model = model.eval()
         # Eager writes buffers in place; the package must keep them as constructed.
@@ -463,6 +479,8 @@ class GgmlOpsTest(unittest.TestCase):
                 allow_activation_quant_for_weight_only=(
                     allow_activation_quant_for_weight_only
                 ),
+                exact_topk_for_testing=exact_topk_for_testing,
+                exact_gelu_for_testing=exact_gelu_for_testing,
             )
         self.assertEqual(len(outputs), len(expected))
         for (raw, shape), reference in zip(outputs, expected):
@@ -654,18 +672,34 @@ class GgmlOpsTest(unittest.TestCase):
         self.assertGreater(ops["GELU_ERF"], 0)
 
     def test_gelu_tanh(self):
-        # ggml-cpu's tanh GELU looks its result up in an FP16 table, which
-        # hides the difference from the erf form.
+        # ggml's GELU, as llama.cpp: ggml-cpu reads it from an F16 table, a few
+        # 1e-4 off in F32, which GPUs evaluate in F32.
+        gpu = os.environ.get("GGML_PTN_DEVICE", "cpu") == "gpu"
         ops = collections.Counter()
         self._check(
             Lambda(lambda x: F.gelu(x, approximate="tanh")),
-            (torch.randn(2, 3, 4) * 3.0,),
-            atol=1e-3,
-            rtol=2e-3,
+            (torch.linspace(-12.0, 12.0, 96).reshape(2, 3, 16),),
+            **(_GELU_TOL if gpu else {"atol": 1e-3, "rtol": 2e-3}),
             graph_ops=ops,
         )
         self.assertEqual(ops["GELU_ERF"], 0)
         self.assertGreater(ops["GELU"], 0)
+        self.assertEqual(ops["TANH"], 0)
+
+    def test_gelu_tanh_exact_for_testing(self):
+        # With exact_gelu_for_testing the CPU builds it from tanh and
+        # arithmetic; GPUs keep ggml's GELU, which is F32 already.
+        gpu = os.environ.get("GGML_PTN_DEVICE", "cpu") == "gpu"
+        ops = collections.Counter()
+        self._check(
+            Lambda(lambda x: F.gelu(x, approximate="tanh")),
+            (torch.linspace(-12.0, 12.0, 96).reshape(2, 3, 16),),
+            **_GELU_TOL,
+            graph_ops=ops,
+            exact_gelu_for_testing=True,
+        )
+        self.assertEqual(ops["GELU"] > 0, gpu)
+        self.assertEqual(ops["TANH"] > 0, not gpu)
 
     def test_log(self):
         self._check(Lambda(torch.log), (torch.rand(2, 3, 4) + 0.1,))
@@ -959,6 +993,40 @@ class GgmlOpsTest(unittest.TestCase):
         )
         self._check(Lambda(lambda x: x - x.amax(dim=[0, 1])), (torch.randn(80, 300),))
 
+    def _check_over_any_dims(self, fn):
+        x = torch.randn(2, 3, 4, 5)
+        for dims, keepdim in (((0,), False), ((1, 3), True), ((-3,), False)):
+            with self.subTest(dims=dims, keepdim=keepdim):
+                self._check(
+                    Lambda(
+                        lambda x, dims=dims, keepdim=keepdim: fn(
+                            x, dims, keepdim=keepdim
+                        )
+                    ),
+                    (x,),
+                )
+
+    def test_sum_over_any_dims(self):
+        self._check_over_any_dims(torch.sum)
+
+    def test_mean_over_any_dims(self):
+        self._check_over_any_dims(torch.mean)
+
+    def test_amax_over_any_dims(self):
+        self._check_over_any_dims(torch.amax)
+
+    def test_softmax_over_any_dim(self):
+        x = torch.randn(2, 3, 5, 8) * 4.0
+        for dim in (-1, 0, 1, -2):
+            with self.subTest(dim=dim):
+                self._check(
+                    Lambda(lambda x, dim=dim: torch.softmax(x, dim)), (x,), atol=1e-6
+                )
+
+    def test_softmax_over_an_empty_dim_is_refused(self):
+        with self.assertRaisesRegex(AssertionError, "empty dimension"):
+            self._check(Lambda(lambda x: torch.softmax(x, -1)), (torch.randn(2, 0),))
+
     def test_softmax_last_dim(self):
         self._check(
             Lambda(lambda x: torch.softmax(x, dim=-1)),
@@ -1175,6 +1243,10 @@ class GgmlOpsTest(unittest.TestCase):
             ),
         )
 
+    def test_cat_of_a_thousand_repeated_inputs(self):
+        # One node and two values, but a concat per list entry.
+        self._check(Lambda(lambda x: torch.cat([x] * 1000)), (torch.randn(3),))
+
     def test_cat_last_dim(self):
         self._check(
             Lambda(lambda x, y: torch.cat([x, y], dim=-1)),
@@ -1336,6 +1408,127 @@ class GgmlOpsTest(unittest.TestCase):
             Lambda(lambda x: (x < 0.25).to(x.dtype)),
             (torch.tensor([[-1.0, 0.0, 0.25, 0.5]]),),
         )
+
+    def test_le_and_lt_check_the_integers_they_can_trace(self):
+        small = (torch.tensor([[7, 3, -5]]), torch.tensor([[6, 4, -5]]))
+        # 2^24 + 1 rounds to 2^24 in F32, which would then compare equal.
+        large = (torch.tensor([[16777217, 3]]), torch.tensor([[16777216, 4]]))
+        for name, fn in {"le": torch.le, "lt": torch.lt}.items():
+            with self.subTest(op=name):
+                self._check(Lambda(lambda a, b, fn=fn: fn(a, b).float()), small)
+                with self.assertRaisesRegex(AssertionError, r"2\^24"):
+                    self._check(Lambda(lambda a, b, fn=fn: fn(a, b).float()), large)
+                with self.assertRaisesRegex(AssertionError, r"2\^24"):
+                    self._check(
+                        Lambda(lambda a, fn=fn: fn(a, 16777217).float()), (small[0],)
+                    )
+                # Computed integers pass unchecked, as attention masks need.
+                self._check(
+                    Lambda(lambda a, b, fn=fn: fn(a + a, b).float()),
+                    (torch.tensor([[1, 2]]), torch.tensor([[2, 2]])),
+                )
+
+    def test_integer_compare_rechecks_its_inputs_on_every_run(self):
+        steps = [
+            (torch.tensor([[1, 2]]), torch.tensor([[2, 2]])),
+            (torch.tensor([[16777217, 2]]), torch.tensor([[16777216, 2]])),
+        ]
+        model = Lambda(lambda a, b: (a <= b).float())
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            package = outdir / "model.ptn"
+            to_native(torch.export.export(model, steps[0])).save(str(package))
+            # The second run replays the first run's graph.
+            with self.assertRaisesRegex(AssertionError, r"2\^24"):
+                _run_ggml(package, steps, outdir, 1)
+
+    def test_le_and_lt_round_to_half_types_as_eager(self):
+        x = torch.tensor([[0.5, 0.25, 0.75]])
+        cases = {
+            "le": lambda x: (x <= 0.49999).float(),
+            "lt": lambda x: (x < 0.50001).float(),
+        }
+        for dtype in (torch.float16, torch.bfloat16):
+            for name, fn in cases.items():
+                with self.subTest(op=name, dtype=dtype):
+                    self._check(Lambda(fn), (x.to(dtype),), atol=0, rtol=0)
+
+    def test_empty_tensors_are_refused(self):
+        # Eager splits an empty dim into one empty piece.
+        cases = {
+            "split": lambda x: torch.split(x, 2)[0] * 2.0,
+            "mul": lambda x: x * 2.0,
+        }
+        for name, fn in cases.items():
+            with self.subTest(case=name), self.assertRaisesRegex(
+                AssertionError, "without elements"
+            ):
+                self._check(Lambda(fn), (torch.randn(0, 2),))
+
+    def test_split(self):
+        x = torch.randn(4, 6, 5)
+        cases = {
+            "sizes last dim": lambda x: torch.split(x, [2, 1, 2], dim=-1),
+            "sizes middle dim": lambda x: torch.split(x, [2, 3, 1], dim=1),
+            "size outer dim": lambda x: torch.split(x, 3, dim=0),
+            "one piece used": lambda x: torch.split(x, [2, 4], dim=1)[1] * 2.0,
+        }
+        for name, fn in cases.items():
+            with self.subTest(case=name):
+                self._check(Lambda(fn), (x,))
+
+    def test_topk(self):
+        # Distinct values: ties may come out in another order.
+        x = torch.randperm(240).float().reshape(2, 3, 4, 10) / 7
+        for largest in (True, False):
+            with self.subTest(largest=largest):
+                ops = collections.Counter()
+                self._check(
+                    Lambda(
+                        lambda x, largest=largest: torch.topk(x, 4, largest=largest)
+                    ),
+                    (x,),
+                    graph_ops=ops,
+                )
+                # llama.cpp's ggml_argsort_top_k: one argsort and the values'
+                # gather per built graph, and no NaN key map.
+                self.assertEqual(ops["ARGSORT"], ops["GET_ROWS"])
+                self.assertEqual((ops["CONCAT"], ops["FILL"]), (0, 0))
+
+    def test_topk_rejects_an_inner_dim(self):
+        with self.assertRaisesRegex(AssertionError, "last dimension only"):
+            self._check(Lambda(lambda x: torch.topk(x, 2, dim=0)), (torch.randn(4, 3),))
+
+    def test_topk_ranks_nan_above_every_value_for_testing(self):
+        # Only with exact_topk_for_testing: by default topk sorts as
+        # llama.cpp, with no order for a row holding NaN.
+        nan, inf = float("nan"), float("inf")
+        x = torch.tensor(
+            [
+                [1.0, nan, -inf, 3.0, inf, 0.5],
+                [inf, -2.0, nan, -inf, 4.0, 2.0],
+                [nan, 0.0, -1.0, 5.0, -inf, inf],
+            ]
+        )
+        for largest in (True, False):
+            with self.subTest(largest=largest):
+                self._check(
+                    Lambda(
+                        lambda x, largest=largest: torch.topk(x, 4, largest=largest)
+                    ),
+                    (x,),
+                    atol=0,
+                    rtol=0,
+                    exact_topk_for_testing=True,
+                )
+
+    def test_topk_of_integers_checks_that_f32_holds_them(self):
+        def topk(x):
+            return torch.topk(x, 2).values
+
+        self._check(Lambda(topk), (torch.tensor([[4, 9, -1]]),))
+        with self.assertRaisesRegex(AssertionError, r"2\^24"):
+            self._check(Lambda(topk), (torch.tensor([[16777217, 2, 1]]),))
 
     def test_symbolic_neg_slices_from_the_end(self):
         class Tail(torch.nn.Module):
