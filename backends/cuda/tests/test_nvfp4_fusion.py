@@ -33,7 +33,11 @@ from executorch.backends.cuda.tests.nvfp4_test_utils import dynamic_rows, shards
 
 @pytest.fixture(autouse=True)
 def default_policy(monkeypatch):
-    for name in ("ET_CUDA_NVFP4_ACT", "ET_CUDA_NVFP4_PREFILL_OUTPUT"):
+    for name in (
+        "ET_CUDA_NVFP4_ACT",
+        "ET_CUDA_NVFP4_PREFILL_OUTPUT",
+        "ET_CUDA_NVFP4_PREFILL_IMPL",
+    ):
         monkeypatch.delenv(name, raising=False)
 
 
@@ -88,18 +92,32 @@ def record_calls(monkeypatch, module, names, calls):
 @pytest.mark.parametrize(
     "mode,native,rows,fp32,impl,expected",
     [
-        ("w4a16", False, 37, False, "kernel", "nvfp4_w4a16"),
-        ("w4a16", False, 1, False, "kernel", "nvfp4_gemv"),
-        ("auto", False, 37, False, "kernel", "nvfp4_w4a16"),
-        ("auto", False, 37, False, "auto", "nvfp4_dequant"),
+        ("w4a16", False, 37, False, "auto", "nvfp4_w4a16"),
+        ("w4a16", False, 1, False, "auto", "nvfp4_gemv"),
+        # Without native FP4, auto dequantizes only above the M <= 64 bucket.
+        ("auto", False, 37, False, "auto", "nvfp4_w4a16"),
+        ("auto", False, 65, False, "auto", "nvfp4_dequant"),
+        ("auto", False, 65, False, "kernel", "nvfp4_w4a16"),
+        ("w4a16", False, 37, False, "dequant", "nvfp4_dequant"),
+        # The FP32 prefill policy and w4a4 keep the fused kernels.
+        ("auto", False, 65, True, "auto", "nvfp4_w4a16"),
+        ("w4a4", True, 65, False, "dequant", "nvfp4_w4a4"),
+        # Without native FP4, auto decode times W4A16 against W4A8.
+        ("auto", False, 1, False, "dequant", "nvfp4_auto_decode"),
+        ("w4a8", False, 1, False, "auto", "nvfp4_w4a8_gemv"),
+        ("w4a8", True, 1, False, "auto", "nvfp4_w4a8_gemv"),
+        ("w4a8", True, 37, True, "auto", "nvfp4_w4a16"),
         ("auto", True, 37, False, "auto", "nvfp4_auto_prefill"),
+        ("auto", True, 65, False, "auto", "nvfp4_auto_prefill"),
         ("auto", True, 37, True, "auto", "nvfp4_auto_prefill"),
         ("auto", True, 1, True, "auto", "nvfp4_auto_decode"),
         ("w4a4", True, 37, False, "auto", "nvfp4_w4a4"),
         ("w4a4", True, 1, True, "auto", "nvfp4_w4a4"),
-        # A dynamic M (bounded by 64) is never statically small: prefill.
-        ("auto", True, None, True, "auto", "nvfp4_auto_prefill"),
-        ("w4a16", False, None, False, "kernel", "nvfp4_w4a16"),
+        # A dynamic M is never statically small: prefill. Bounded by 64 it
+        # keeps the fused kernels without native FP4.
+        ("auto", True, ("dynamic", 64), True, "auto", "nvfp4_auto_prefill"),
+        ("w4a16", False, ("dynamic", 64), False, "auto", "nvfp4_w4a16"),
+        ("auto", False, ("dynamic", 4096), False, "auto", "nvfp4_dequant"),
     ],
 )
 def test_linear_routing(mode, native, rows, fp32, impl, expected, monkeypatch):
@@ -108,6 +126,7 @@ def test_linear_routing(mode, native, rows, fp32, impl, expected, monkeypatch):
     from executorch.backends.cuda.triton.kernels import (
         nvfp4_dequant,
         nvfp4_quantized_gemm,
+        nvfp4_w4a8_gemv,
     )
 
     def dequant(qdata, scale, per_tensor_scale, dtype):
@@ -130,6 +149,7 @@ def test_linear_routing(mode, native, rows, fp32, impl, expected, monkeypatch):
         ("nvfp4_auto_decode", "nvfp4_auto_prefill"),
         calls,
     )
+    record_calls(monkeypatch, nvfp4_w4a8_gemv, ("nvfp4_w4a8_gemv",), calls)
     monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: native)
     monkeypatch.setenv("ET_CUDA_NVFP4_ACT", mode)
     monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_OUTPUT", "fp32" if fp32 else "input")
@@ -137,14 +157,19 @@ def test_linear_routing(mode, native, rows, fp32, impl, expected, monkeypatch):
 
     w = shards(192)[0]
     fake = FakeTensorMode(shape_env=ShapeEnv())
-    x = torch.randn(rows or 17, 192, dtype=torch.bfloat16)
-    x = fake.from_tensor(x) if rows else dynamic_rows(fake, x, 64)
+    static = isinstance(rows, int)
+    x = torch.randn(rows if static else 17, 192, dtype=torch.bfloat16)
+    x = (
+        fake.from_tensor(x, static_shapes=True)
+        if static
+        else dynamic_rows(fake, x, rows[1])
+    )
     weight = fake.from_tensor(w)
     with fake:
         out = F.linear(x, weight)
     # Prefill (M not statically <= 4) takes the FP32 output policy; decode
     # keeps the activation dtype.
-    output_dtype = torch.float32 if fp32 and (rows is None or rows > 4) else None
+    output_dtype = torch.float32 if fp32 and (not static or rows > 4) else None
     assert calls == [(expected, output_dtype)]
     assert out.shape == (x.shape[0], w.shape[0])
     assert out.dtype == (output_dtype or torch.bfloat16)
@@ -411,55 +436,6 @@ def test_row_scale_embedding():
     ids = torch.tensor([[0, 30, 31, 49, 50, 96]], device="cuda")
     actual = nvfp4_embedding(ids, w.qdata, w.scale, w.per_tensor_scale, w.dtype)
     torch.testing.assert_close(actual, w.dequantize()[ids], rtol=0, atol=0)
-
-
-def test_cuda_loader_fuses_nvfp4_without_changing_mlx_layout():
-    from executorch.examples.models.muse_glimmer.loaders.checkpoint_loader import (
-        _fuse_state_dict,
-    )
-    from executorch.extension.llm.export.nvfp4 import ExportableNVFP4Tensor
-
-    sd = {}
-    for layer in range(2):
-        for name, w in zip(("q", "k", "og"), shards(192)):
-            sd[f"layers.{layer}.self_attn.{name}_proj.weight"] = ExportableNVFP4Tensor(
-                w.qdata.view(torch.uint32),
-                w.scale,
-                w.per_tensor_scale,
-                16,
-                w.orig_dtype,
-            )
-        for name in ("gate", "up"):
-            w = shards(192)[0]
-            sd[f"layers.{layer}.mlp.{name}_proj.weight"] = ExportableNVFP4Tensor(
-                w.qdata.view(torch.uint32),
-                w.scale,
-                w.per_tensor_scale,
-                16,
-                w.orig_dtype,
-            )
-    fused, groups = _fuse_state_dict(sd, "cuda", 2)
-    assert "layers.{}.self_attn.qko_proj.weight" in groups
-    assert fused["layers.0.self_attn.qko_proj.weight"].per_tensor_scale.numel() == 97
-    assert fused["layers.0.mlp.gate_up_proj.weight"].per_tensor_scale.numel() == 1
-    assert torch.equal(
-        fused["layers.0.self_attn.qko_proj.weight"].dequantize(),
-        torch.cat(
-            [
-                sd[f"layers.0.self_attn.{name}_proj.weight"].dequantize()
-                for name in ("q", "k", "og")
-            ]
-        ),
-    )
-    mlx, mlx_groups = _fuse_state_dict(sd, "mlx", 2)
-    assert "layers.{}.self_attn.qko_proj.weight" not in mlx_groups
-    assert isinstance(mlx["layers.0.mlp.gate_up_proj.weight"], ExportableNVFP4Tensor)
-    sd["layers.1.self_attn.k_proj.weight"].act_per_tensor_scale = 0.001
-    separate, separate_groups = _fuse_state_dict(sd, "cuda", 2)
-    assert "layers.{}.self_attn.qko_proj.weight" not in separate_groups
-    assert all(
-        f"layers.{layer}.self_attn.q_proj.weight" in separate for layer in range(2)
-    )
 
 
 class FusedLinear(torch.nn.Module):

@@ -174,7 +174,8 @@ class TestTritonSdpaSplitK(unittest.TestCase):
     def test_small_query_blocks(self):
         """Split-K supports each small-query length up to the packed-decode size."""
         B, H_q, H_kv, Lk, D = 1, 8, 2, 512, 128
-        for Lq in [2, 3, 4, 5, 8, 13, 16]:
+        max_lq = self.sdpa_module._SMALL_QUERY_MAX_LQ
+        for Lq in [2, 3, 4, 5, 8, 13, max_lq]:
             with self.subTest(Lq=Lq):
                 torch.manual_seed(42)
                 q = torch.randn(B, H_q, Lq, D, dtype=torch.bfloat16, device="cuda")
@@ -210,13 +211,14 @@ class TestTritonSdpaSplitK(unittest.TestCase):
         k = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
         v = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
         kv_len = torch.tensor(Lk, dtype=torch.int64, device="cuda")
+        max_lq = self.sdpa_module._SMALL_QUERY_MAX_LQ
 
         for Lq, legacy_calls, small_query_calls in [
             (1, 1, 0),
             (4, 0, 1),
             (8, 0, 1),
-            (16, 0, 1),
-            (17, 0, 0),
+            (max_lq, 0, 1),
+            (max_lq + 1, 0, 0),
         ]:
             with self.subTest(Lq=Lq):
                 q = torch.randn(B, H_q, Lq, D, dtype=torch.bfloat16, device="cuda")
@@ -238,47 +240,81 @@ class TestTritonSdpaSplitK(unittest.TestCase):
                 self.assertEqual(legacy_launcher.call_count, legacy_calls)
                 self.assertEqual(small_query_launcher.call_count, small_query_calls)
 
-    def test_small_query_max_lq_limits_dispatch(self):
-        """Blocks above the configured maximum keep the prefill kernel."""
-        B, H_q, H_kv, Lq, Lk, D = 1, 8, 2, 8, 256, 64
-        q = torch.randn(B, H_q, Lq, D, dtype=torch.bfloat16, device="cuda")
-        k = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
-        v = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
-        mask = torch.ones(B, 1, Lq, Lk, dtype=torch.bool, device="cuda")
-        kv_len = torch.tensor(Lk, dtype=torch.int64, device="cuda")
-        with mock.patch.object(
-            self.sdpa_module, "_SMALL_QUERY_MAX_LQ", 4
-        ), mock.patch.object(
-            self.sdpa_module, "_launch_small_query_splitk"
-        ) as small_query_launcher:
-            out = self.sdpa(q, k, v, attn_mask=mask, enable_gqa=True, kv_len=kv_len)
-        self.assertEqual(small_query_launcher.call_count, 0)
-        ref = _reference_sdpa(q, k, v, attn_mask=mask)
-        self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
+    def test_small_query_tile_limits_dispatch(self):
+        """Dispatch bounds the per-CTA tile (L_q * GQA rows by head_dim)."""
+        B, Lq, Lk = 1, 16, 256
+        for H_q, H_kv, D, small_query_calls in [
+            (32, 2, 128, 1),
+            (16, 2, 256, 1),
+            (64, 2, 128, 0),
+            (32, 2, 256, 0),
+        ]:
+            with self.subTest(H_q=H_q, H_kv=H_kv, D=D):
+                q = torch.randn(B, H_q, Lq, D, dtype=torch.bfloat16, device="cuda")
+                k = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+                v = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+                mask = torch.ones(B, 1, Lq, Lk, dtype=torch.bool, device="cuda")
+                kv_len = torch.tensor(Lk, dtype=torch.int64, device="cuda")
+                with mock.patch.object(
+                    self.sdpa_module, "_launch_small_query_splitk"
+                ) as small_query_launcher:
+                    self.sdpa(q, k, v, attn_mask=mask, enable_gqa=True, kv_len=kv_len)
+                self.assertEqual(small_query_launcher.call_count, small_query_calls)
+
+    def test_small_query_widest_tiles_match_reference(self):
+        """L_q 16 at 16:1 GQA (head_dim 128) and 8:1 GQA (head_dim 256)."""
+        B, Lq, Lk = 1, 16, 1024
+        for H_q, H_kv, D in [(32, 2, 128), (16, 2, 256)]:
+            with self.subTest(H_q=H_q, H_kv=H_kv, D=D):
+                torch.manual_seed(D)
+                q = torch.randn(B, H_q, Lq, D, dtype=torch.bfloat16, device="cuda")
+                k = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+                v = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+                q_pos = torch.arange(Lk - Lq, Lk, device="cuda")
+                k_pos = torch.arange(Lk, device="cuda")
+                mask = (q_pos[:, None] >= k_pos[None, :])[None, None]
+                kv_len = torch.tensor(Lk, dtype=torch.int64, device="cuda")
+                with mock.patch.object(
+                    self.sdpa_module,
+                    "_launch_small_query_splitk",
+                    wraps=self.sdpa_module._launch_small_query_splitk,
+                ) as small_query_launcher:
+                    out = self.sdpa(
+                        q, k, v, attn_mask=mask, enable_gqa=True, kv_len=kv_len
+                    )
+                self.assertEqual(small_query_launcher.call_count, 1)
+                ref = _reference_sdpa(q, k, v, attn_mask=mask)
+                self.assertTrue(torch.isfinite(out).all())
+                self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
 
     def test_small_query_packed_sequences_skip_masked_tiles(self):
         """Packed multi-sequence decode: each row sees only its own cells.
 
-        Most KV tiles are hidden from every row of the block and are skipped;
-        the result must still match the reference, including rows whose
-        visible span starts or ends inside a tile and an unused tail.
+        Hidden gaps are wider than any KV tile, and V is NaN in every cell at
+        least 256 cells from a visible one, so a tile is NaN-free only if it
+        is skipped. Visible spans start and end inside tiles.
         """
-        B, H_q, H_kv, D = 1, 8, 2, 128
-        for Lq, Lk in [(8, 2048), (16, 2048)]:
-            with self.subTest(Lq=Lq, Lk=Lk):
+        B, H_q, H_kv, D, gap = 1, 8, 2, 128, 1024
+        for Lq in [8, 16]:
+            with self.subTest(Lq=Lq):
                 torch.manual_seed(Lq)
+                Lk = Lq * gap
                 q = torch.randn(B, H_q, Lq, D, dtype=torch.bfloat16, device="cuda")
                 k = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
                 v = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
-                seg = Lk // Lq
-                used = int(seg * 0.6) + 3
                 mask = torch.zeros(B, 1, Lq, Lk, dtype=torch.bool, device="cuda")
                 for i in range(Lq):
-                    mask[0, 0, i, i * seg + 5 : i * seg + used] = True
-                kv_len = torch.tensor(
-                    (Lq - 1) * seg + used, dtype=torch.int64, device="cuda"
+                    mask[0, 0, i, i * gap + 5 : i * gap + 100] = True
+                visible = mask[0, 0].any(0).float()
+                near = torch.nn.functional.max_pool1d(
+                    visible[None, None], kernel_size=511, stride=1, padding=255
+                )[0, 0].bool()
+                poisoned = v.clone()
+                poisoned[:, :, ~near] = float("nan")
+                kv_len = torch.tensor(Lk, dtype=torch.int64, device="cuda")
+                out = self.small_query_splitk(
+                    q, k, poisoned, attn_mask=mask, kv_len=kv_len
                 )
-                out = self.small_query_splitk(q, k, v, attn_mask=mask, kv_len=kv_len)
                 ref = _reference_sdpa(q, k, v, attn_mask=mask)
                 self.assertTrue(torch.isfinite(out).all())
                 self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
@@ -621,10 +657,11 @@ class TestTritonSdpaSplitK(unittest.TestCase):
 
     def test_small_query_lq_out_of_range_rejected(self):
         """The small-query op accepts only L_q values 2 through 16."""
+        max_lq = self.sdpa_module._SMALL_QUERY_MAX_LQ
         B, H_q, H_kv, D = 1, 8, 2, 64
         k = torch.randn(B, H_kv, 64, D, dtype=torch.bfloat16, device="cuda")
         v = torch.randn(B, H_kv, 64, D, dtype=torch.bfloat16, device="cuda")
-        for Lq in [1, 17]:
+        for Lq in [1, max_lq + 1]:
             with self.subTest(Lq=Lq):
                 q = torch.randn(B, H_q, Lq, D, dtype=torch.bfloat16, device="cuda")
                 with self.assertRaises(RuntimeError):
