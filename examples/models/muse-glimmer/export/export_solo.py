@@ -37,7 +37,6 @@ import warnings
 
 import torch
 import torch.nn as nn
-
 from executorch.examples.models.muse_glimmer.export import common
 from executorch.examples.models.muse_glimmer.model.model import (
     materialize_runtime_buffers,
@@ -333,6 +332,26 @@ def add_kv_layout_arguments(parser) -> None:
         default=4,
         help="CUDA with --kv-layout sequence: sequences resident at once.",
     )
+
+
+def add_nvfp4_act_argument(parser) -> None:
+    parser.add_argument(
+        "--nvfp4-act",
+        choices=("auto", "w4a4", "w4a16"),
+        default=None,
+        help="CUDA NVFP4 activation mode, sets ET_CUDA_NVFP4_ACT (default: "
+        "the environment's value, else auto). auto times W4A4 against W4A16 "
+        "per shape when native FP4 is available, w4a4 forces FP4 activations "
+        "(native FP4 required), w4a16 forces BF16 activations.",
+    )
+
+
+def apply_nvfp4_act_argument(parser, args) -> None:
+    if args.nvfp4_act is None:
+        return
+    if args.backend != "cuda":
+        parser.error("--nvfp4-act is only supported with --backend cuda.")
+    os.environ["ET_CUDA_NVFP4_ACT"] = args.nvfp4_act
 
 
 def batched_sequence_manifest(
@@ -732,7 +751,6 @@ def _export_cuda(
     vision_fp32_mm: str = "none",
 ) -> None:
     import torch._inductor.config as inductor_config
-
     from executorch.backends.cuda.cuda_backend import CudaBackend
     from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
     from executorch.exir import (
@@ -780,6 +798,7 @@ def _export_cuda(
 
     if sample:
         add_on_device_sampler(model)
+
     hidden = config.dim
     temp = torch.tensor([1.0], dtype=torch.float32)
     et_seq = Dim("embed_seq_len", min=1, max=max_prefill)
@@ -971,7 +990,6 @@ def _export_mlx(
         to_edge_transform_and_lower,
     )
     from executorch.exir.passes import MemoryPlanningPass
-
     from torch.export import Dim, export
 
     has_vision = vision_model is not None
@@ -1262,14 +1280,17 @@ def main() -> None:
         help="Optional FP32-output linear implementation for vision blocks "
         "0-34. The default preserves the original all-BF16 encoder.",
     )
+    add_nvfp4_act_argument(parser)
     parser.add_argument(
-        "--nvfp4-act",
-        choices=("auto", "w4a4", "w4a16"),
-        default="auto",
-        help="NVFP4 CUDA activation mode: auto times W4A4/W4A16 and split-K per shape; w4a4 forces native FP4 activations.",
+        "--nvfp4-static-act",
+        action="store_true",
+        help="CUDA with an NVFP4 GGUF: use each weight's .input_scale as a "
+        "static activation scale instead of dynamic per-row scales.",
     )
     args = parser.parse_args()
-    os.environ["ET_CUDA_NVFP4_ACT"] = args.nvfp4_act
+    apply_nvfp4_act_argument(parser, args)
+    if args.nvfp4_static_act and (args.backend != "cuda" or not args.gguf):
+        parser.error("--nvfp4-static-act requires --backend cuda and --gguf.")
 
     _validate_offgraph_prefill(parser, args)
 
@@ -1304,6 +1325,7 @@ def main() -> None:
             max_seq_len=max_seq_len,
             backend=args.backend,
             activation_dtype=activation_dtype,
+            nvfp4_static_act_scale=args.nvfp4_static_act,
             **loader_kwargs,
         )
     elif args.mlx:
