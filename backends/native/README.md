@@ -325,7 +325,7 @@ numerics default to llama.cpp's behaviour; the testing ones end in
 | `exact_topk_for_testing` (`--exact_topk_for_testing`) | one argsort (`ggml_argsort_top_k`), which leaves a row holding NaN unordered | NaN ranks above every value, +inf included, at a NaN key map and a second argsort | `topk` | all |
 | `exact_gelu_for_testing` | one `ggml_gelu`, which ggml-cpu reads from an F16 table, a few 1e-4 off eager | the CPU builds tanh GELU from exact ops, at five more kernels | `gelu` (`approximate="tanh"`) | CPU |
 | `cuda_f32_accumulation_for_testing` | matrix multiplies with an F16 operand accumulate in F16 | they accumulate in F32, at 2-3x prefill and 4x decode GEMM time | F16 `linear`, `matmul`, `mm`, `bmm`, `convolution` | CUDA |
-| `f32_gpu_kv_cache_for_testing` (`ggml_ptn_runner`) | an in-graph F32 KV cache that only attention reads is stored in F16 | it stays F32; off-graph caches take the cache config's dtype | in-graph KV caches read by `scaled_dot_product_attention` and the custom SDPA | CUDA, HIP |
+| `f32_gpu_kv_cache_for_testing` (`ggml_ptn_runner`; `run_hf_llm_ggml --kv_dtype=fp32`) | an in-graph F32 KV cache that only attention reads is stored in F16 | it stays F32; off-graph caches take the cache config's dtype | in-graph KV caches read by `scaled_dot_product_attention` and the custom SDPA | CUDA, HIP |
 
 The CMake installation includes the GGML libraries and package configuration.
 It also copies the submodule's upstream MIT license, including its copyright
@@ -454,6 +454,11 @@ enable the desired `GGML_*` backend when configuring ExecuTorch, as above.
 GGML quantizes the activations of its quantized matmuls, so it rejects
 weight-only quantized linears, including GGUF weights, unless
 `--allow_activation_quant_for_weight_only` accepts that loss of precision.
+
+`--kv_dtype=auto|fp32|fp16` sets the KV cache storage. `auto`, the default,
+takes the engine's, as llama.cpp stores it: F16 on a ggml GPU, F32 on the
+ggml CPU and on Vulkan. `fp32` also keeps ggml's in-graph caches in F32,
+and an engine refuses a type it cannot store.
 
 Both runners prefill a prompt in calls of at most the token input's upper
 bound, so a linear-attention model, which exports a one-token `forward`,
