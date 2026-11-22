@@ -36,8 +36,9 @@ CUDA = pytest.mark.skipif(
 @pytest.mark.parametrize("half2", [False, True])
 @pytest.mark.parametrize("row_pts", [False, True])
 @pytest.mark.parametrize("split", [1, 2, 4, 8, 16, 32])
-def test_unit_scale_gemv_bitwise_same_tile(dtype, half2, row_pts, split):
-    if not _has_native_fp4():
+@pytest.mark.parametrize("native", [False, True])
+def test_unit_scale_gemv_bitwise_same_tile(native, dtype, half2, row_pts, split):
+    if native and not _has_native_fp4():
         pytest.skip("native FP4 required")
     from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import _gemv
 
@@ -64,8 +65,7 @@ def test_unit_scale_gemv_bitwise_same_tile(dtype, half2, row_pts, split):
             split,
             BN=8,
             BK=256,
-            NATIVE=True,
-            NATIVE_E4M3=True,
+            NATIVE=native,
             HALF2=half2,
             ROW_PTS=row_pts,
             UNIT_SCALE=unit,
@@ -119,8 +119,6 @@ def test_unit_scale_linear_pte(mode, monkeypatch):
 
     def capture(kernel, *args, **kwargs):
         if kernel is kernels._gemv:
-            # The launcher builds the decode the device supports natively.
-            assert kwargs.get("NATIVE_E4M3") == kernels._has_native_e4m3()
             observed.append(kwargs["UNIT_SCALE"])
         return original(kernel, *args, **kwargs)
 
