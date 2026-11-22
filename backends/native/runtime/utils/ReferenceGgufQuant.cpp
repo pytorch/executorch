@@ -161,6 +161,27 @@ void decode_q3_k_block(const uint8_t* block, float* y) {
   }
 }
 
+// block_q2_K: 16 bytes, each a 4-bit scale and a 4-bit min for 16 weights,
+// then 64 bytes of 2-bit codes, fp16 d and dmin. The codes are laid out as in
+// block_q3_K: four 2-bit planes of 32 code bytes per 128-weight half.
+void decode_q2_k_block(const uint8_t* block, float* y) {
+  const uint8_t* scales = block;
+  const float d = half_to_float(block + 80);
+  const float dmin = half_to_float(block + 82);
+  for (int half = 0; half < 2; ++half) {
+    const uint8_t* q = block + 16 + 32 * half;
+    for (int shift = 0; shift < 8; shift += 2) {
+      for (int l0 = 0; l0 < 32; l0 += 16) {
+        const float dl = d * static_cast<float>(*scales & 0xF);
+        const float ml = dmin * static_cast<float>(*scales++ >> 4);
+        for (int l = l0; l < l0 + 16; ++l) {
+          *y++ = dl * static_cast<float>((q[l] >> shift) & 3) - ml;
+        }
+      }
+    }
+  }
+}
+
 struct Codec {
   std::string_view name;
   int64_t block_elements;
@@ -170,6 +191,7 @@ struct Codec {
 
 constexpr Codec kCodecs[] = {
     {"gguf:q8_0", 32, 34, decode_q8_0_block},
+    {"gguf:q2_k", 256, 84, decode_q2_k_block},
     {"gguf:q3_k", 256, 110, decode_q3_k_block},
     {"gguf:q4_k", 256, 144, decode_q4_k_block},
     {"gguf:q5_k", 256, 176, decode_q5_k_block},
