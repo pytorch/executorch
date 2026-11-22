@@ -212,6 +212,21 @@ void decode_q5_0_block(const uint8_t* block, float* y) {
   }
 }
 
+// block_q5_1: fp16 d and m, the fifth bits, then low nibbles laid out as in
+// block_q4_1; each weight is code * d + m.
+void decode_q5_1_block(const uint8_t* block, float* y) {
+  const float d = half_to_float(block);
+  const float m = half_to_float(block + 2);
+  const uint32_t qh = fifth_bits(block + 4);
+  const uint8_t* q = block + 8;
+  for (int j = 0; j < 16; ++j) {
+    const int x0 = (q[j] & 0xF) | (((qh >> j) << 4) & 0x10);
+    const int x1 = (q[j] >> 4) | ((qh >> (j + 12)) & 0x10);
+    y[j] = static_cast<float>(x0) * d + m;
+    y[j + 16] = static_cast<float>(x1) * d + m;
+  }
+}
+
 struct Codec {
   std::string_view name;
   int64_t block_elements;
@@ -222,6 +237,7 @@ struct Codec {
 constexpr Codec kCodecs[] = {
     {"gguf:q4_0", 32, 18, decode_q4_0_block},
     {"gguf:q5_0", 32, 22, decode_q5_0_block},
+    {"gguf:q5_1", 32, 24, decode_q5_1_block},
     {"gguf:q8_0", 32, 34, decode_q8_0_block},
     {"gguf:q2_k", 256, 84, decode_q2_k_block},
     {"gguf:q3_k", 256, 110, decode_q3_k_block},
