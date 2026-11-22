@@ -102,22 +102,40 @@ void GraphBuilder::lower_reshape(const Node& node) {
 TensorRef GraphBuilder::permuted(
     const TensorRef& input,
     const std::vector<int64_t>& dims) {
-  if (dims.size() != input.sizes.size() || dims.size() > 4) {
+  const size_t rank = input.sizes.size();
+  if (dims.size() != rank) {
     throw std::runtime_error("ggml: invalid permutation rank");
   }
-  std::array<int, 4> axes{0, 1, 2, 3};
-  std::vector<int64_t> sizes(dims.size());
-  std::vector<bool> seen(dims.size());
-  for (size_t out_dim = 0; out_dim < dims.size(); ++out_dim) {
-    const int64_t src_dim = normalize_dim(dims[out_dim], dims.size());
-    if (seen[static_cast<size_t>(src_dim)]) {
+  std::vector<size_t> src(rank);
+  std::vector<bool> seen(rank);
+  for (size_t out_dim = 0; out_dim < rank; ++out_dim) {
+    src[out_dim] = static_cast<size_t>(normalize_dim(dims[out_dim], rank));
+    if (seen[src[out_dim]]) {
       throw std::runtime_error("ggml: repeated permutation dimension");
     }
-    seen[static_cast<size_t>(src_dim)] = true;
-    sizes[out_dim] = input.sizes[static_cast<size_t>(src_dim)];
-    // ggml_permute maps source axis i to result axis axes[i].
-    axes[dims.size() - 1 - static_cast<size_t>(src_dim)] =
-        static_cast<int>(dims.size() - 1 - out_dim);
+    seen[src[out_dim]] = true;
+  }
+  // Above rank 4 the tensor runs at rank 4 without its leading 1s, which the
+  // permute must keep in front.
+  const size_t lead = rank - fold_leading_ones(input.sizes).size();
+  if (rank - lead > 4) {
+    throw std::runtime_error(
+        "ggml: a permute above rank 4 needs every extra leading dim to be 1");
+  }
+  if (std::any_of(src.begin(), src.begin() + lead, [&](size_t d) {
+        return d >= lead;
+      })) {
+    throw std::runtime_error(
+        "ggml: a permute above rank 4 must keep its leading 1s in front");
+  }
+  std::array<int, 4> axes{0, 1, 2, 3};
+  std::vector<int64_t> sizes(rank);
+  for (size_t out_dim = 0; out_dim < rank; ++out_dim) {
+    sizes[out_dim] = input.sizes[src[out_dim]];
+    if (out_dim >= lead) {
+      // ggml_permute maps source axis i to result axis axes[i].
+      axes[rank - 1 - src[out_dim]] = static_cast<int>(rank - 1 - out_dim);
+    }
   }
   ggml_tensor* result = ggml_permute(
       instance_.context.get(),
@@ -179,6 +197,19 @@ void GraphBuilder::lower_copy_or_alias(const Node& node, bool alias) {
   set_single_output(node, TensorRef{result, input.sizes});
 }
 
+namespace {
+
+// The ggml axis of `dim`, or none for a leading 1 that a tensor above rank 4
+// folds away; a view along such a dim can only start at 0.
+std::optional<size_t> ggml_axis(const std::vector<int64_t>& sizes, size_t dim) {
+  if (sizes.size() - dim > fold_leading_ones(sizes).size()) {
+    return std::nullopt;
+  }
+  return sizes.size() - 1 - dim;
+}
+
+} // namespace
+
 void GraphBuilder::lower_slice(const Node& node, bool copy) {
   const TensorRef input = tensor_arg(node, "self", 0);
   const int64_t dim =
@@ -195,12 +226,13 @@ void GraphBuilder::lower_slice(const Node& node, bool copy) {
   end = std::clamp(end < 0 ? end + extent : end, start, extent);
   std::vector<int64_t> sizes = input.sizes;
   sizes[static_cast<size_t>(dim)] = end - start;
-  const size_t gdim = sizes.size() - 1 - static_cast<size_t>(dim);
+  const std::optional<size_t> gdim =
+      ggml_axis(input.sizes, static_cast<size_t>(dim));
   ggml_tensor* result = view_with_shape(
       instance_.context.get(),
       input.tensor,
       sizes,
-      static_cast<size_t>(start) * input.tensor->nb[gdim]);
+      gdim ? static_cast<size_t>(start) * input.tensor->nb[*gdim] : 0);
   if (copy) {
     result = materialize(result);
   }
@@ -219,12 +251,13 @@ void GraphBuilder::lower_select(const Node& node, bool copy) {
   }
   std::vector<int64_t> view_sizes = input.sizes;
   view_sizes[static_cast<size_t>(dim)] = 1;
-  const size_t gdim = view_sizes.size() - 1 - static_cast<size_t>(dim);
+  const std::optional<size_t> gdim =
+      ggml_axis(input.sizes, static_cast<size_t>(dim));
   ggml_tensor* result = view_with_shape(
       instance_.context.get(),
       input.tensor,
       view_sizes,
-      static_cast<size_t>(index) * input.tensor->nb[gdim]);
+      gdim ? static_cast<size_t>(index) * input.tensor->nb[*gdim] : 0);
   result = copy ? materialize(result) : contiguous(result);
   std::vector<int64_t> sizes = input.sizes;
   sizes.erase(sizes.begin() + dim);
@@ -341,7 +374,13 @@ void GraphBuilder::lower_cat(const Node& node) {
   TensorRef result = tensor(ids.front());
   const int64_t dim =
       normalize_dim(int_arg(node, "dim", 1, 0, true), result.sizes.size());
-  const int gdim = static_cast<int>(result.sizes.size() - 1 - dim);
+  const std::optional<size_t> gdim =
+      ggml_axis(result.sizes, static_cast<size_t>(dim));
+  if (!gdim && ids.size() > 1) {
+    throw std::runtime_error(
+        "ggml: cat along a leading 1 folded away above rank 4 is not "
+        "supported");
+  }
   // Producers may carry one dtype as different ggml types (an F16 linear
   // result is F32), so mismatched operands take the output's type. ggml
   // converts I32 only to F32.
@@ -369,8 +408,11 @@ void GraphBuilder::lower_cat(const Node& node) {
       result.tensor = to_output_type(result.tensor);
       next.tensor = to_output_type(next.tensor);
     }
-    result.tensor =
-        ggml_concat(instance_.context.get(), result.tensor, next.tensor, gdim);
+    result.tensor = ggml_concat(
+        instance_.context.get(),
+        result.tensor,
+        next.tensor,
+        static_cast<int>(*gdim));
     result.sizes[static_cast<size_t>(dim)] +=
         next.sizes.at(static_cast<size_t>(dim));
   }
@@ -420,7 +462,7 @@ void GraphBuilder::lower_split(const Node& node, const std::string& key) {
     throw std::runtime_error(
         "ggml: split sizes must add up to the dimension's size");
   }
-  const size_t gdim = rank - 1 - dim;
+  const std::optional<size_t> gdim = ggml_axis(input.sizes, dim);
   int64_t start = 0;
   for (size_t i = 0; i < pieces.size(); ++i) {
     std::vector<int64_t> sizes = input.sizes;
@@ -433,7 +475,8 @@ void GraphBuilder::lower_split(const Node& node, const std::string& key) {
                   instance_.context.get(),
                   input.tensor,
                   sizes,
-                  static_cast<size_t>(start) * input.tensor->nb[gdim]),
+                  gdim ? static_cast<size_t>(start) * input.tensor->nb[*gdim]
+                       : 0),
               sizes});
     }
     start += pieces[i];
