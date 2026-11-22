@@ -51,13 +51,15 @@ from triton.language.extra import libdevice
 @triton.jit
 def _act_q8(X, XQ, XS, K: tl.constexpr, BG: tl.constexpr):
     """Per-16 symmetric int8 activation blocks: scale = amax / 127."""
-    row = tl.program_id(0)
+    row = tl.program_id(0).to(tl.int64)
     g = tl.program_id(1) * BG + tl.arange(0, BG)
     k = g[:, None] * 16 + tl.arange(0, 16)[None, :]
     x = tl.load(X + row * K + k, k < K, 0).to(tl.float32)
     amax = tl.max(tl.abs(x), 1)
     inv = tl.where(amax > 0, 127.0 / amax, 0.0)
     q = libdevice.rint(x * inv[:, None])
+    # NaN elements quantize to 0, as in the W4A4 activation quantizer.
+    q = tl.where(q == q, q, 0.0)
     q = tl.minimum(tl.maximum(q, -127.0), 127.0).to(tl.int8)
     tl.store(XQ + row * K + k, q, k < K)
     tl.store(XS + row * (K // 16) + g, amax / 127.0, g < K // 16)
@@ -190,12 +192,12 @@ def _w4a8_gemv(
     tl.store(Y + (split.to(tl.int64) * M + m) * N + n, val, n < N)
 
 
-def launch_w4a8_gemv(x, qdata, scale, pts, *, split_k):
+def launch_w4a8_gemv(x, qdata, scale, pts, max_rows, *, split_k):
     m, k = x.shape
     n = qdata.shape[0]
     if split_k not in SPLIT_K_CANDIDATES or k % 16 or split_k > triton.cdiv(k, 256):
         raise InvalidLaunchParam(f"Illegal NVFP4 W4A8 GEMV split-K={split_k} for K={k}")
-    _check_split_workspace(split_k, m, n)
+    _check_split_workspace(split_k, max_rows, n)
     xq = torch.empty((m, k), device=x.device, dtype=torch.int8)
     xs = torch.empty((m, k // 16), device=x.device, dtype=torch.float32)
     if not _QUEUING_ONLY.get():
@@ -215,7 +217,7 @@ def launch_w4a8_gemv(x, qdata, scale, pts, *, split_k):
     )
     if split_k > 1 and not _QUEUING_ONLY.get():
         wrap_triton(_reduce_partials)[(triton.cdiv(m * n, 256),)](
-            partial, pts, pts, out, m, n, split_k, False, 256, ROW_PTS=pts.numel() != 1
+            partial, pts, pts, out, m, n, split_k, False, 256, ROW_PTS=False
         )
     return out
 
@@ -238,10 +240,13 @@ def nvfp4_w4a8_gemv(
 ) -> torch.Tensor:
     """NVFP4 W4A8 GEMV for small M (M is grid axis 1, so at most 65535); the
     output keeps ``x.dtype``."""
+    if torch.version.hip is not None:
+        raise RuntimeError("NVFP4 W4A8 (dp4a PTX) requires an NVIDIA GPU")
     _check_operands(x, qdata, scale, per_tensor_scale)
     max_rows = _max_rows(x.shape[0])
     if max_rows is None or max_rows > 65535:
         raise ValueError("NVFP4 W4A8 GEMV supports at most 65535 rows")
+    args = (x, qdata, scale, per_tensor_scale, max_rows)
     if split_k < 0:
-        return _launch_w4a8(x, qdata, scale, per_tensor_scale)
-    return launch_w4a8_gemv(x, qdata, scale, per_tensor_scale, split_k=split_k)
+        return _launch_w4a8(*args)
+    return launch_w4a8_gemv(*args, split_k=split_k)

@@ -685,50 +685,34 @@ def nvfp4_w4a4(
     )
 
 
-# FP16x2 2**14: rescales FP16-placed E2M1 codes to their exact values.
-_SOFT_E2M1_HALF2 = tl.constexpr(0x74007400)
-
-
 @triton.jit
-def _scaled_pair(q, sf, NATIVE: tl.constexpr):
-    """Byte of two E2M1 codes times an FP16 scale -> FP32 (low, high), with the
-    decode and the multiply in packed FP16x2."""
-    if NATIVE:
-        packed = tl.inline_asm_elementwise(
-            "{ .reg .b8 tmp,z1,z2,z3; mov.b32 {tmp,z1,z2,z3}, $1; cvt.rn.f16x2.e2m1x2 $0, tmp; }",
-            constraints="=r,r",
-            args=[q.to(tl.uint32)],
-            dtype=tl.uint32,
-            is_pure=True,
-            pack=1,
-        )
-    else:
-        u = q.to(tl.uint32)
-        bits = (
-            ((u & 8) << 12) | ((u & 7) << 9) | ((u & 0x80) << 24) | ((u & 0x70) << 21)
-        )
-        packed = tl.inline_asm_elementwise(
-            "mul.rn.f16x2 $0, $1, $2;",
-            constraints="=r,r,r",
-            args=[bits, tl.full(bits.shape, _SOFT_E2M1_HALF2, tl.uint32)],
-            dtype=tl.uint32,
-            is_pure=True,
-            pack=1,
-        )
-    # E2M1*E4M3 needs <=6 significant bits. The nonzero magnitude range
-    # [2**-10, 2688] is normal FP16, so the packed multiply is exact.
-    sf_bits = sf.to(tl.float16).to(tl.uint16, bitcast=True).to(tl.uint32)
-    sf_pair = sf_bits | (sf_bits << 16)
+def _scaled_pair(q, sf, HALF2: tl.constexpr):
     packed = tl.inline_asm_elementwise(
-        "mul.rn.f16x2 $0, $1, $2;",
-        constraints="=r,r,r",
-        args=[packed, sf_pair],
+        "{ .reg .b8 tmp,z1,z2,z3; mov.b32 {tmp,z1,z2,z3}, $1; cvt.rn.f16x2.e2m1x2 $0, tmp; }",
+        constraints="=r,r",
+        args=[q.to(tl.uint32)],
         dtype=tl.uint32,
         is_pure=True,
         pack=1,
     )
+    if HALF2:
+        # E2M1*E4M3 needs <=6 significant bits. The nonzero magnitude
+        # range [2**-10, 2688] is normal FP16, so packed multiply is exact.
+        sf_bits = sf.to(tl.float16).to(tl.uint16, bitcast=True).to(tl.uint32)
+        sf_pair = sf_bits | (sf_bits << 16)
+        packed = tl.inline_asm_elementwise(
+            "mul.rn.f16x2 $0, $1, $2;",
+            constraints="=r,r,r",
+            args=[packed, sf_pair],
+            dtype=tl.uint32,
+            is_pure=True,
+            pack=1,
+        )
     lo = (packed & 65535).to(tl.uint16).to(tl.float16, bitcast=True).to(tl.float32)
     hi = (packed >> 16).to(tl.uint16).to(tl.float16, bitcast=True).to(tl.float32)
+    if not HALF2:
+        lo = lo * sf
+        hi = hi * sf
     return lo, hi
 
 
@@ -745,7 +729,6 @@ def _gemv_half2(
     SPLIT: tl.constexpr,
     BN: tl.constexpr,
     BK: tl.constexpr,
-    NATIVE: tl.constexpr,
     ROW_PTS: tl.constexpr = False,
     UNIT_SCALE: tl.constexpr = False,
 ):
@@ -767,17 +750,17 @@ def _gemv_half2(
         q = tl.load(Q + n[:, None] * (K // 2) + kk[None, :], mask, 0)
         # One scale load per K16 group, broadcast to its eight byte pairs.
         group = split * (chunk // 16) + off * (BK // 16) + tl.arange(0, BK // 16)
-        sf = tl.load(
-            S + n[:, None] * (K // 16) + group[None, :],
-            (n[:, None] < N) & (group[None, :] < K // 16),
-            0,
+        sf = (
+            tl.load(
+                S + n[:, None] * (K // 16) + group[None, :],
+                (n[:, None] < N) & (group[None, :] < K // 16),
+                0,
+            )
+            .to(tl.float8e4nv, bitcast=True)
+            .to(tl.float16)
         )
-        if NATIVE:
-            sf = sf.to(tl.float8e4nv, bitcast=True).to(tl.float16)
-        else:
-            sf = (_e4m3_f16(sf) * 256.0).to(tl.float16)
         sf = tl.broadcast_to(sf[:, :, None], (BN, BK // 16, 8)).reshape((BN, BK // 2))
-        lo, hi = _scaled_pair(q, sf, NATIVE)
+        lo, hi = _scaled_pair(q, sf, True)
         if UNIT_SCALE and X.dtype.element_ty == tl.bfloat16:
             w0, w1 = lo, hi
         elif X.dtype.element_ty == tl.bfloat16:
@@ -867,7 +850,6 @@ def _gemv_original(
             (16, 512, 8),
             (16, 1024, 8),
             (32, 256, 4),
-            (32, 512, 8),
         ]
         for half in (False, True)
         for st in (1, 2, 3)
@@ -894,10 +876,8 @@ def _gemv(
     ROW_PTS: tl.constexpr = False,
     UNIT_SCALE: tl.constexpr = False,
 ):
-    if HALF2:
-        _gemv_half2(
-            X, Q, S, PTS, Y, M, N, K, SPLIT, BN, BK, NATIVE, ROW_PTS, UNIT_SCALE
-        )
+    if NATIVE and HALF2:
+        _gemv_half2(X, Q, S, PTS, Y, M, N, K, SPLIT, BN, BK, ROW_PTS, UNIT_SCALE)
     else:
         _gemv_original(
             X,
@@ -987,9 +967,10 @@ def nvfp4_gemv(
 ) -> torch.Tensor:
     """NVFP4 GEMV for small M; the output keeps ``x.dtype``.
 
-    ``unit_scale=True`` skips the global scale and requires the
-    ``CudaNVFP4Tensor.unit_scale`` contract (global scale 1, scale bytes below
-    0x7F); it is not checked here. M is grid axis 1, so at most 65535.
+    Scale bytes must be finite E4M3 (no 0x7F/0xFF), as ``CudaNVFP4Tensor``
+    guarantees; it is not checked here. ``unit_scale=True`` skips the global
+    scale and requires the ``CudaNVFP4Tensor.unit_scale`` contract (global
+    scale 1). M is grid axis 1, so at most 65535.
     """
     _check_operands(x, qdata, scale, per_tensor_scale)
     max_rows = _max_rows(x.shape[0])
@@ -1019,10 +1000,6 @@ def nvfp4_gemv(
             (128, 64, 64, 8, 8),
             (128, 64, 128, 8, 8),
             (128, 64, 128, 1, 8),
-            (128, 128, 64, 8, 8),
-            (256, 64, 64, 8, 8),
-            (256, 128, 64, 8, 8),
-            (128, 128, 32, 8, 4),
         ]
         for st in (1, 2, 3)
     ],
@@ -1145,7 +1122,9 @@ def nvfp4_w4a16(
     output_dtype: torch.dtype | None = None,
 ) -> torch.Tensor:
     """NVFP4 weight-only GEMM; FP32 activations are rounded to BF16 (the GEMV
-    keeps FP32 math), and the output is ``output_dtype`` or ``x.dtype``."""
+    keeps FP32 math), and the output is ``output_dtype`` or ``x.dtype``. Scale
+    bytes must be finite E4M3 (no 0x7F/0xFF), as ``CudaNVFP4Tensor``
+    guarantees; it is not checked here."""
     _check_operands(x, qdata, scale, per_tensor_scale)
     launch = _launch_w4a16 if split_k < 0 else _launch_w4a16_impl
     kwargs = {} if split_k < 0 else {"split_k": split_k}
