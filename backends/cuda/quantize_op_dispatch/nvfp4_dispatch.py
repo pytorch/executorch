@@ -19,7 +19,10 @@ import os
 import torch
 import torch.nn.functional as F
 
-from executorch.backends.cuda.autotune.launch_params import autotune_launch_param
+from executorch.backends.cuda.autotune.launch_params import (
+    autotune_launch_param,
+    InvalidLaunchParam,
+)
 from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
 from executorch.backends.cuda.quantize_op_dispatch._gemm_family_dispatch import (
     can_launch_triton,
@@ -30,6 +33,8 @@ from executorch.backends.cuda.triton.kernels.nvfp4_output import (
     nvfp4_prefill_output_dtype,
 )
 from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
+    _check_operands,
+    _check_static_scale,
     _has_native_fp4_conversion as _has_native_fp4,
     _max_rows,
     SPLIT_K_CANDIDATES,
@@ -58,15 +63,26 @@ def _prefill(x, wq, ws, pts, act_scale, max_rows, *, mode_split, output_dtype=No
     # same splits as the final traced call.
     from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
         _check_split,
+        _launch_w4a4_impl,
         nvfp4_w4a16,
-        nvfp4_w4a4,
     )
 
     fp4, split = divmod(mode_split, _MODE_STRIDE)
     _check_split(x.shape[-1], split, m=max_rows, n=wq.shape[0])
     if fp4:
-        return nvfp4_w4a4(
-            x, wq, ws, pts, act_scale, split_k=split, output_dtype=output_dtype
+        if not _has_native_fp4():
+            raise InvalidLaunchParam("NVFP4 W4A4 needs native FP4 (SM120+)")
+        # Unchecked launch: the op validated its operands, and timing runs
+        # this on random stand-ins.
+        return _launch_w4a4_impl(
+            x,
+            wq,
+            ws,
+            pts,
+            act_scale,
+            max_rows,
+            split_k=split,
+            output_dtype=output_dtype,
         )
     return nvfp4_w4a16(x, wq, ws, pts, split_k=split, output_dtype=output_dtype)
 
@@ -80,15 +96,17 @@ def _prefill(x, wq, ws, pts, act_scale, max_rows, *, mode_split, output_dtype=No
 def _decode(x, wq, ws, pts, act_scale, unit_scale=False, *, mode_split):
     # Activation mode * 64 + split-K; explicit splits bypass nested tuners.
     from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
-        _check_split,
+        _launch_w4a4_impl,
         nvfp4_gemv,
-        nvfp4_w4a4,
     )
 
     fp4, split = divmod(mode_split, _MODE_STRIDE)
     if fp4:
-        _check_split(x.shape[-1], split)
-        return nvfp4_w4a4(x, wq, ws, pts, act_scale, split_k=split)
+        if not _has_native_fp4():
+            raise InvalidLaunchParam("NVFP4 W4A4 needs native FP4 (SM120+)")
+        return _launch_w4a4_impl(
+            x, wq, ws, pts, act_scale, _max_rows(x.shape[0]), split_k=split
+        )
     return nvfp4_gemv(x, wq, ws, pts, split_k=split, unit_scale=unit_scale)
 
 
@@ -102,6 +120,8 @@ def nvfp4_auto_prefill(
     output_dtype: torch.dtype | None = None,
 ) -> torch.Tensor:
     """Keep mode selection inside the op so AOTI can time both precisions."""
+    _check_operands(x, qdata, scale, per_tensor_scale)
+    _check_static_scale(act_scale, x)
     kwargs = {} if output_dtype is None else {"output_dtype": output_dtype}
     return _prefill(
         x,
@@ -124,6 +144,8 @@ def nvfp4_auto_decode(
     unit_scale: bool = False,
 ) -> torch.Tensor:
     """Compare NVFP4 GEMV and native FP4 in the AOTI launch context."""
+    _check_operands(x, qdata, scale, per_tensor_scale)
+    _check_static_scale(act_scale, x)
     return _decode(x, qdata, scale, per_tensor_scale, act_scale, unit_scale)
 
 
@@ -137,8 +159,8 @@ def _prefill_gate_up(
     x, wq, ws, pts, act_scale, max_rows, *, mode_split, output_dtype=None
 ):
     from executorch.backends.cuda.triton.kernels.nvfp4_gated_gemm import (
+        _launch_w4a4_gate_up_impl,
         nvfp4_gate_up_epilogue,
-        nvfp4_w4a4_gate_up,
     )
     from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
         _check_split,
@@ -148,8 +170,17 @@ def _prefill_gate_up(
     fp4, split = divmod(mode_split, _MODE_STRIDE)
     _check_split(x.shape[-1], split, m=max_rows, n=wq.shape[0])
     if fp4:
-        return nvfp4_w4a4_gate_up(
-            x, wq, ws, pts, act_scale, split_k=split, output_dtype=output_dtype
+        if not _has_native_fp4():
+            raise InvalidLaunchParam("NVFP4 W4A4 needs native FP4 (SM120+)")
+        return _launch_w4a4_gate_up_impl(
+            x,
+            wq,
+            ws,
+            pts,
+            act_scale,
+            max_rows,
+            split_k=split,
+            output_dtype=output_dtype,
         )
     return nvfp4_gate_up_epilogue(
         nvfp4_w4a16(x, wq, ws, pts, split_k=split, output_dtype=output_dtype)
@@ -165,6 +196,8 @@ def nvfp4_auto_gate_up_prefill(
     act_scale: torch.Tensor | None = None,
     output_dtype: torch.dtype | None = None,
 ) -> torch.Tensor:
+    _check_operands(x, qdata, scale, per_tensor_scale)
+    _check_static_scale(act_scale, x)
     kwargs = {} if output_dtype is None else {"output_dtype": output_dtype}
     return _prefill_gate_up(
         x,

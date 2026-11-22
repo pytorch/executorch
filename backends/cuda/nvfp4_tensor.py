@@ -10,6 +10,32 @@ from torchao.prototype.mx_formats.kernels import f4_unpacked_to_f32, unpack_uint
 from torchao.utils import TorchAOBaseTensor
 
 
+def _act_scale_tensor(act, device):
+    """``act_per_tensor_scale`` as a checked float32 ``(1, 1)`` tensor."""
+    if not isinstance(act, torch.Tensor):
+        # Checked on the host, so meta and fake weights are checked too
+        # and nothing is read back from the device.
+        f32 = torch.finfo(torch.float32)
+        if not f32.tiny <= act <= f32.max:
+            raise ValueError(
+                "CUDA NVFP4 act_per_tensor_scale must be finite and positive"
+            )
+        act = torch.tensor(act, dtype=torch.float32, device=device)
+    elif act.numel() != 1 or act.dtype != torch.float32 or act.device != device:
+        raise ValueError(
+            "CUDA NVFP4 act_per_tensor_scale must be a scalar or a "
+            "one-element float32 tensor on the weight's device"
+        )
+    # Fake and meta tensors carry no values to check.
+    elif (
+        act.device.type != "meta"
+        and not is_fake(act)
+        and not bool((torch.isfinite(act) & (act > 0)).all())
+    ):
+        raise ValueError("CUDA NVFP4 act_per_tensor_scale must be finite and positive")
+    return act.reshape(1, 1).contiguous()
+
+
 class CudaNVFP4Tensor(TorchAOBaseTensor):
     """Layout read by the CUDA kernels: ``qdata`` is ``(N, K / 2)`` uint8 with
     element ``2j`` in the low nibble of byte ``j`` (torchao order, unlike
@@ -21,6 +47,9 @@ class CudaNVFP4Tensor(TorchAOBaseTensor):
     every call. ``act_per_tensor_scale``, the optional static activation
     global scale, is likewise a float32 ``(1, 1)`` tensor: kernels read it from
     memory, so layers with different scales share compiled kernels and tuning.
+    Its value keeps the ``ExportableNVFP4Tensor`` convention, the ModelOpt/GGUF
+    ``input_scale`` ``amax / (6 * 448)`` (not its reciprocal); ``None`` means
+    activations are scaled dynamically per row.
 
     ``unit_scale`` asserts two facts kernels may rely on: ``per_tensor_scale``
     is 1, so the global-scale multiply can be skipped, and every scale byte is
@@ -68,28 +97,7 @@ class CudaNVFP4Tensor(TorchAOBaseTensor):
         if scale.device != qdata.device or per_tensor_scale.device != qdata.device:
             raise ValueError("CUDA NVFP4 fields must be on one device")
         if act_per_tensor_scale is not None:
-            act = act_per_tensor_scale
-            if not isinstance(act, torch.Tensor):
-                act = torch.tensor(act, dtype=torch.float32, device=qdata.device)
-            if (
-                act.numel() != 1
-                or act.dtype != torch.float32
-                or act.device != qdata.device
-            ):
-                raise ValueError(
-                    "CUDA NVFP4 act_per_tensor_scale must be a scalar or a "
-                    "one-element float32 tensor on the weight's device"
-                )
-            # Fake and meta tensors carry no values to check.
-            if (
-                act.device.type != "meta"
-                and not is_fake(act)
-                and not bool((torch.isfinite(act) & (act > 0)).all())
-            ):
-                raise ValueError(
-                    "CUDA NVFP4 act_per_tensor_scale must be finite and positive"
-                )
-            act_per_tensor_scale = act.reshape(1, 1).contiguous()
+            act_per_tensor_scale = _act_scale_tensor(act_per_tensor_scale, qdata.device)
         qdata, scale = qdata.contiguous(), scale.contiguous()
         per_tensor_scale = per_tensor_scale.reshape(
             (1, 1) if per_tensor_scale.numel() == 1 else (-1,)
