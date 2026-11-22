@@ -887,6 +887,10 @@ class CudaBatchedSequenceCache final : public cache::Cache,
       private_live_.resize(max_seqs_, 0);
       archive_staging_.resize(geometry.layers.size(), nullptr);
       archive_bytes_.resize(geometry.layers.size(), 0);
+      const size_t copies = 4 + geometry.layers.size() * 2;
+      copy_destinations_.reserve(copies);
+      copy_sources_.reserve(copies);
+      copy_sizes_.reserve(copies);
       int side = has_ring(geometry) ? 4 : 3;
       for (const auto& layer : geometry.layers) {
         private_layout_buffers_.push_back(side++);
@@ -1630,6 +1634,9 @@ class CudaBatchedSequenceCache final : public cache::Cache,
     for (int token = 0; token < tokens; ++token) {
       rows[token] = next[step_seq_ids_[token]]++;
     }
+    if (layout_uploaded_ == pool_.column_resize_count()) {
+      return;
+    }
     for (size_t layer = 0; layer < geometry_.layers.size(); ++layer) {
       const auto& layout = pool_.private_layout(layer);
       for (int owner = 0; owner < max_seqs_; ++owner) {
@@ -1667,6 +1674,41 @@ class CudaBatchedSequenceCache final : public cache::Cache,
     return Error::Ok;
   }
 
+  Error enqueue_private_copies(cudaStream_t stream, cudaMemcpyKind kind) {
+#if CUDART_VERSION >= 13020
+    if (stream != nullptr && stream != cudaStreamLegacy) {
+      cudaMemcpyAttributes attributes{};
+      attributes.srcAccessOrder = cudaMemcpySrcAccessOrderStream;
+      size_t first = 0;
+      ET_CHECK_OR_RETURN_ERROR(
+          cudaMemcpyBatchAsync(
+              copy_destinations_.data(),
+              copy_sources_.data(),
+              copy_sizes_.data(),
+              copy_sizes_.size(),
+              &attributes,
+              &first,
+              1,
+              stream) == cudaSuccess,
+          Internal,
+          "offgraph_kv: cannot enqueue private copy batch");
+      return Error::Ok;
+    }
+#endif
+    for (size_t index = 0; index < copy_sizes_.size(); ++index) {
+      ET_CHECK_OR_RETURN_ERROR(
+          cudaMemcpyAsync(
+              copy_destinations_[index],
+              copy_sources_[index],
+              copy_sizes_[index],
+              kind,
+              stream) == cudaSuccess,
+          Internal,
+          "offgraph_kv: cannot enqueue private copy");
+    }
+    return Error::Ok;
+  }
+
   Error archive_private_step() {
     if (!has_ring(geometry_)) {
       return Error::Ok;
@@ -1675,6 +1717,9 @@ class CudaBatchedSequenceCache final : public cache::Cache,
     ET_CHECK_OK_OR_RETURN_ERROR(device.error());
     {
       const CachePhaseTimer transfer_timer(archive_transfer_time_ns_);
+      copy_destinations_.clear();
+      copy_sources_.clear();
+      copy_sizes_.clear();
       for (size_t layer = 0; layer < histories_.size(); ++layer) {
         if (!histories_[layer]) {
           continue;
@@ -1683,17 +1728,17 @@ class CudaBatchedSequenceCache final : public cache::Cache,
         const size_t bytes = static_cast<size_t>(pending_width_) *
             geometry.n_kv_heads * geometry.head_dim * sizeof(uint16_t);
         for (int plane = 0; plane < 2; ++plane) {
-          const auto error = cudaMemcpyAsync(
-              archive_staging_[layer] + plane * bytes,
-              pool_.side_buffer(private_stage_buffers_[layer] + plane),
-              bytes,
-              cudaMemcpyDeviceToHost,
-              pool_.stream());
-          if (error != cudaSuccess) {
-            (void)pool_.synchronize(/*all_streams=*/true);
-            return Error::Internal;
-          }
+          copy_destinations_.push_back(archive_staging_[layer] + plane * bytes);
+          copy_sources_.push_back(
+              pool_.side_buffer(private_stage_buffers_[layer] + plane));
+          copy_sizes_.push_back(bytes);
         }
+      }
+      const Error copied =
+          enqueue_private_copies(pool_.stream(), cudaMemcpyDeviceToHost);
+      if (copied != Error::Ok) {
+        (void)pool_.synchronize(/*all_streams=*/true);
+        return copied;
       }
       ET_CHECK_OK_OR_RETURN_ERROR(pool_.synchronize());
     }
@@ -2007,6 +2052,9 @@ class CudaBatchedSequenceCache final : public cache::Cache,
   }
 
   Error upload(size_t width, cudaStream_t stream) {
+    if (private_rows_) {
+      return upload_private(width, stream);
+    }
     const size_t cols_bytes = static_cast<size_t>(max_write_) * sizeof(int64_t);
     for (const auto& [index, offset, bytes] :
          {std::tuple{kSeqColsBuffer, size_t{0}, width * sizeof(int64_t)},
@@ -2027,49 +2075,51 @@ class CudaBatchedSequenceCache final : public cache::Cache,
           "offgraph_kv: cannot write the step's sequences: %s",
           cudaGetErrorString(error));
     }
-    if (private_rows_) {
-      size_t offset = cols_bytes +
-          static_cast<size_t>(max_segments_) * info_width_ * sizeof(int32_t);
-      if (has_ring(geometry_)) {
-        ET_CHECK_OR_RETURN_ERROR(
-            cudaMemcpyAsync(
-                pool_.side_buffer(3),
-                staging_ + offset,
-                width * sizeof(int64_t),
-                cudaMemcpyHostToDevice,
-                stream) == cudaSuccess,
-            Internal,
-            "offgraph_kv: cannot upload Ring step permutation");
+
+    return Error::Ok;
+  }
+
+  Error upload_private(size_t width, cudaStream_t stream) {
+    const size_t cols_bytes = static_cast<size_t>(max_write_) * sizeof(int64_t);
+    const size_t info_bytes =
+        static_cast<size_t>(max_segments_) * info_width_ * sizeof(int32_t);
+    copy_destinations_.clear();
+    copy_sources_.clear();
+    copy_sizes_.clear();
+    copy_destinations_.push_back(pool_.side_buffer(kSeqColsBuffer));
+    copy_sources_.push_back(staging_);
+    copy_sizes_.push_back(width * sizeof(int64_t));
+    copy_destinations_.push_back(pool_.side_buffer(kSeqInfoBuffer));
+    copy_sources_.push_back(staging_ + cols_bytes);
+    copy_sizes_.push_back(info_bytes);
+    size_t offset = cols_bytes + info_bytes;
+    if (has_ring(geometry_)) {
+      copy_destinations_.push_back(pool_.side_buffer(3));
+      copy_sources_.push_back(staging_ + offset);
+      copy_sizes_.push_back(width * sizeof(int64_t));
+    }
+    offset += static_cast<size_t>(max_write_) * sizeof(int64_t);
+    const size_t step_bytes =
+        static_cast<size_t>(max_seqs_ + 1) * 3 * sizeof(int32_t);
+    copy_destinations_.push_back(pool_.side_buffer(2));
+    copy_sources_.push_back(staging_ + offset);
+    copy_sizes_.push_back(step_bytes);
+    offset += step_bytes;
+    const bool layout_changed = layout_uploaded_ != pool_.column_resize_count();
+    if (layout_changed) {
+      const size_t bytes =
+          static_cast<size_t>(max_seqs_ + 1) * 2 * sizeof(int32_t);
+      for (size_t layer = 0; layer < geometry_.layers.size(); ++layer) {
+        copy_destinations_.push_back(
+            pool_.side_buffer(private_layout_buffers_[layer]));
+        copy_sources_.push_back(staging_ + offset + layer * bytes);
+        copy_sizes_.push_back(bytes);
       }
-      offset += static_cast<size_t>(max_write_) * sizeof(int64_t);
-      const size_t step_bytes =
-          static_cast<size_t>(max_seqs_ + 1) * 3 * sizeof(int32_t);
-      ET_CHECK_OR_RETURN_ERROR(
-          cudaMemcpyAsync(
-              pool_.side_buffer(2),
-              staging_ + offset,
-              step_bytes,
-              cudaMemcpyHostToDevice,
-              stream) == cudaSuccess,
-          Internal,
-          "offgraph_kv: cannot upload private owner step");
-      offset += step_bytes;
-      if (layout_uploaded_ != pool_.column_resize_count()) {
-        const size_t bytes =
-            static_cast<size_t>(max_seqs_ + 1) * 2 * sizeof(int32_t);
-        for (size_t layer = 0; layer < geometry_.layers.size(); ++layer) {
-          ET_CHECK_OR_RETURN_ERROR(
-              cudaMemcpyAsync(
-                  pool_.side_buffer(private_layout_buffers_[layer]),
-                  staging_ + offset + layer * bytes,
-                  bytes,
-                  cudaMemcpyHostToDevice,
-                  stream) == cudaSuccess,
-              Internal,
-              "offgraph_kv: cannot upload private owner layout");
-        }
-        layout_uploaded_ = pool_.column_resize_count();
-      }
+    }
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        enqueue_private_copies(stream, cudaMemcpyHostToDevice));
+    if (layout_changed) {
+      layout_uploaded_ = pool_.column_resize_count();
     }
     return Error::Ok;
   }
@@ -2157,6 +2207,9 @@ class CudaBatchedSequenceCache final : public cache::Cache,
   std::vector<uint8_t*> archive_staging_;
   std::vector<size_t> archive_bytes_;
   std::vector<RingHistory::Run> pending_runs_;
+  std::vector<void*> copy_destinations_;
+  std::vector<const void*> copy_sources_;
+  std::vector<size_t> copy_sizes_;
   int pending_width_{0};
   int64_t layout_uploaded_{-1};
   uint8_t* staging_{nullptr};

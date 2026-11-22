@@ -97,6 +97,11 @@ class RingHistory final {
     }
     // Validate the whole step before changing any owner or shared page.
     int packed_end = 0;
+    const bool unique_sorted =
+        std::adjacent_find(
+            runs.begin(), runs.end(), [](const Run& first, const Run& second) {
+              return first.owner >= second.owner;
+            }) == runs.end();
     std::map<int32_t, int> ends;
     for (const auto& run : runs) {
       if (run.owner < 0 || run.packed_start < packed_end || run.length <= 0 ||
@@ -107,14 +112,19 @@ class RingHistory final {
         return runtime::Error::InvalidArgument;
       }
       const auto existing = owners_.find(run.owner);
-      auto end = ends.emplace(
-                         run.owner,
-                         existing == owners_.end() ? 0 : existing->second.end)
-                     .first;
-      if (run.absolute_start != end->second) {
-        return runtime::Error::InvalidState;
+      const int retained_end =
+          existing == owners_.end() ? 0 : existing->second.end;
+      if (unique_sorted) {
+        if (run.absolute_start != retained_end) {
+          return runtime::Error::InvalidState;
+        }
+      } else {
+        auto end = ends.emplace(run.owner, retained_end).first;
+        if (run.absolute_start != end->second) {
+          return runtime::Error::InvalidState;
+        }
+        end->second += run.length;
       }
-      end->second += run.length;
       packed_end = run.packed_start + run.length;
     }
     for (const auto& run : runs) {

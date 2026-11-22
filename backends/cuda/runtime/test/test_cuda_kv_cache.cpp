@@ -4057,15 +4057,19 @@ class CudaPrivateCacheTest : public CudaBatchedSequenceCacheTest {
       cache::Cache& ptr,
       FakeContainer& fake,
       cu::CudaDelegateHandle& handle,
-      const std::vector<int32_t>& owners) {
+      const std::vector<int32_t>& owners,
+      cudaStream_t stream = cudaStreamPerThread) {
     auto* control = ptr.as<cache::BatchControl>();
     auto* kv = ptr.as<cu::CudaKVCache>();
     if (!control->declare_step(owners)) {
       return Error::InvalidArgument;
     }
-    ET_CHECK_OK_OR_RETURN_ERROR(
-        kv->prepare_step(owners.size(), cudaStreamPerThread));
+    ET_CHECK_OK_OR_RETURN_ERROR(kv->prepare_step(owners.size(), stream));
     ET_CHECK_OK_OR_RETURN_ERROR(kv->rebind_for_execute(&handle));
+    ET_CHECK_OR_RETURN_ERROR(
+        cudaStreamSynchronize(stream) == cudaSuccess,
+        Internal,
+        "complete test metadata uploads");
     const auto flat =
         read_ints(fake.bound["flat_layout"].data, (kOwners + 1) * 2);
     const auto ring =
@@ -4179,6 +4183,46 @@ TEST_F(CudaPrivateCacheTest, SixtyFourOwnersHaveIndependentRowsAndSharedStage) {
   expect_history(fake, 0, 128);
   expect_history(fake, 63, 1);
   kv->forget_handle(&handle);
+}
+
+TEST_F(
+    CudaPrivateCacheTest,
+    CopyBatchesPreserveMetadataAcrossStreamsAndGrowth) {
+  auto ptr = make_private();
+  auto* ctl = ptr->as<cache::BatchControl>();
+  auto* kv = ptr->as<cu::CudaKVCache>();
+  auto fake = private_container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  ASSERT_EQ(ctl->seq_new(), 0);
+  ASSERT_EQ(ctl->seq_new(), 1);
+  cudaStream_t stream = nullptr;
+  ASSERT_EQ(
+      cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking), cudaSuccess);
+  const std::array<cudaStream_t, 3> streams{
+      nullptr, cudaStreamPerThread, stream};
+  for (int round = 0; round < 9; ++round) {
+    ASSERT_EQ(
+        write_step(*ptr, fake, handle, {1, 0, 1}, streams[round % 3]),
+        Error::Ok);
+    const auto steps = read_ints(fake.bound["steps"].data, (kOwners + 1) * 3);
+    EXPECT_EQ(steps[1], round);
+    EXPECT_EQ(steps[2], 1);
+    EXPECT_EQ(steps[4], round * 2);
+    EXPECT_EQ(steps[5], 2);
+    EXPECT_EQ(
+        read_cols(fake.bound["stage_rows"].data, 3),
+        (std::vector<int64_t>{1, 0, 2}));
+    expect_history(fake, 0, round + 1);
+    expect_history(fake, 1, (round + 1) * 2);
+  }
+  ASSERT_EQ(ctl->seq_clone(0, 8), 2);
+  ASSERT_TRUE(ctl->rewind(0, 8));
+  ASSERT_EQ(write_step(*ptr, fake, handle, {0}, stream), Error::Ok);
+  expect_history(fake, 0, 9);
+  kv->forget_handle(&handle);
+  ptr.reset();
+  EXPECT_EQ(cudaStreamDestroy(stream), cudaSuccess);
 }
 
 TEST_F(CudaPrivateCacheTest, FragmentationRetainsSlackAcrossDecodeSteps) {

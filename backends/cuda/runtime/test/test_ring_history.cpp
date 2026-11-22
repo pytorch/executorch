@@ -134,6 +134,43 @@ TEST_F(RingHistoryTest, InterleavedOwnersAndPlanesRemainIndependent) {
   EXPECT_FALSE(history->read(2, 0, 1, 0));
 }
 
+TEST_F(RingHistoryTest, SortedSparseOwnersKeepValidationTransactional) {
+  const std::vector<RingHistory::Run> initial{
+      {1, 0, 2, 0}, {7, 3, 3, 0}, {63, 6, 1, 0}};
+  append(*history, initial, 8);
+  const auto bytes = history->resident_bytes();
+  const std::vector<RingHistory::Run> bad{
+      {1, 0, 2, 2}, {7, 2, 2, 3}, {63, 4, 2, 2}};
+  const auto packed = pack(bad, 8);
+  EXPECT_EQ(
+      history->append(
+          {bad.data(), bad.size()}, {packed.data(), packed.size()}, 8),
+      Error::InvalidState);
+  EXPECT_EQ(history->resident_bytes(), bytes);
+  expect_rows(*history, 1, 0, 2);
+  expect_rows(*history, 7, 0, 3);
+  expect_rows(*history, 63, 0, 1);
+  EXPECT_FALSE(history->read(1, 2, 1, 0));
+  append(*history, {{1, 0, 2, 2}, {7, 2, 2, 3}, {63, 4, 2, 1}}, 8);
+  expect_rows(*history, 1, 0, 4);
+  expect_rows(*history, 7, 0, 5);
+  expect_rows(*history, 63, 0, 3);
+}
+
+TEST_F(RingHistoryTest, AdjacentRepeatedOwnersValidateTheirCombinedEnd) {
+  append(*history, {{7, 0, 2, 0}, {7, 2, 2, 2}, {9, 4, 1, 0}}, 8);
+  expect_rows(*history, 7, 0, 4);
+  expect_rows(*history, 9, 0, 1);
+  const std::vector<RingHistory::Run> bad{{7, 0, 2, 4}, {7, 2, 2, 4}};
+  const auto packed = pack(bad, 8);
+  EXPECT_EQ(
+      history->append(
+          {bad.data(), bad.size()}, {packed.data(), packed.size()}, 8),
+      Error::InvalidState);
+  expect_rows(*history, 7, 0, 4);
+  EXPECT_FALSE(history->read(7, 4, 1, 0));
+}
+
 TEST_F(RingHistoryTest, PageAndArchiveBoundariesPreserveExactRows) {
   append(*history, {{0, 0, 96, 0}}, 96);
   append(*history, {{0, 0, 96, 96}}, 96);

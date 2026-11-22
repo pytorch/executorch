@@ -81,6 +81,14 @@ For D=256, pipeline buffering is reduced on targets below 160 KiB of effective
 shared memory. The original pipeline remains on large-SMEM targets; tiles are
 unchanged on both.
 
+Private descriptor uploads and Ring undo transfers use one independent-copy
+batch on CUDA 13.2+ streams using the batch API; older runtimes and the
+legacy default stream retain individual copies. Both paths keep the same
+stream ordering and host fences, and share reusable copy descriptors. Owner
+layout contents are rebuilt only when the physical-layout generation changes.
+Sorted unique archive runs validate without temporary per-owner map nodes;
+interleaved or repeated-owner runs retain combined-end validation.
+
 Preparation uploads descriptor contents before execution. Descriptor addresses
 stay fixed; stage or arena address changes fence the previous step and invalidate
 bindings and CUDA graphs. Within-arena relocation copies only that owner's
