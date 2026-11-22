@@ -63,11 +63,34 @@ def test_rejects_malformed_operands(invalid, op):
 
 @pytest.mark.parametrize(
     "static",
-    [torch.ones(2), torch.ones(1, dtype=torch.float64), torch.ones(1, device="meta")],
+    [
+        torch.ones(2),
+        torch.ones(1, dtype=torch.float64),
+        torch.ones(1, device="meta"),
+        torch.tensor([0.0]),
+        torch.tensor([-1.0]),
+        torch.tensor([float("inf")]),
+        torch.tensor([float("nan")]),
+    ],
 )
 def test_activation_rejects_invalid_static_scale(static):
+    x = torch.empty((2, 64), dtype=torch.bfloat16)
+    q = torch.empty((3, 32), dtype=torch.uint8)
+    s = torch.empty((3, 4), dtype=torch.uint8)
     with pytest.raises(ValueError, match="static activation scale"):
-        kernels.nvfp4_quantize_activation(torch.empty((2, 16)), static)
+        kernels.nvfp4_quantize_activation(x, static)
+    with pytest.raises(ValueError, match="static activation scale"):
+        kernels.nvfp4_w4a4(x, q, s, torch.ones(1), static)
+
+
+def test_static_scale_values_are_not_read_under_fake_tensors():
+    from torch._subclasses.fake_tensor import FakeTensorMode
+
+    mode = FakeTensorMode()
+    x = mode.from_tensor(torch.empty((2, 64), dtype=torch.bfloat16))
+    static = mode.from_tensor(torch.tensor([[0.5]]))
+    with mode:
+        kernels._check_static_scale(static, x)
 
 
 @pytest.mark.parametrize("invalid", ["float_ids", "device"])

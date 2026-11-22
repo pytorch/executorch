@@ -96,6 +96,21 @@ class AutotuneLaunchParamTest(unittest.TestCase):
         ):
             _toy_launch(self.x, 0)
 
+    def test_timing_is_flagged_as_running_on_random_inputs(self) -> None:
+        seen = []
+
+        @autotune_launch_param("split_k", (1, 2))
+        def launch(x: torch.Tensor, *, split_k: int) -> torch.Tensor:
+            seen.append(launch_params.timing_on_random_inputs())
+            return x @ x
+
+        with autotune_launch_params():
+            launch(self.x)
+        # Every timed run sees the flag; the final call on the real input does not.
+        self.assertTrue(all(seen[:-1]) and len(seen) > 1)
+        self.assertFalse(seen[-1])
+        self.assertFalse(launch_params.timing_on_random_inputs())
+
     def test_ties_go_to_the_smallest_candidate(self) -> None:
         with autotune_launch_params() as stats:
             _toy_tie(self.x)
