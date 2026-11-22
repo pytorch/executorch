@@ -40,6 +40,8 @@ std::vector<uint8_t> affine_int4_to_q4_0(
 
 ggml_type compute_type(const TensorMeta& meta);
 
+std::vector<int64_t> fold_leading_ones(const std::vector<int64_t>& sizes);
+
 std::array<int64_t, GGML_MAX_DIMS> reversed_extents(
     const std::vector<int64_t>& sizes);
 

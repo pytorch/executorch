@@ -6,10 +6,14 @@
 
 #include <executorch/backends/native/runtime/engine/ggml/GgmlEngine.h>
 
+#include <sys/resource.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -17,8 +21,10 @@
 #include <memory>
 #include <numeric>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <utility>
 #include <variant>
@@ -33,6 +39,7 @@
 #include <executorch/extension/llm/cache/cache_registry.h>
 #include <executorch/runtime/backend/options.h>
 #include <flatbuffers/flatbuffers.h>
+#include <ggml.h>
 #include <gtest/gtest.h>
 
 namespace ptn {
@@ -327,14 +334,16 @@ class TestProgram {
     mutations_.emplace_back(name, value);
   }
 
-  // make_context's packaged block_q4_K as a parameter, by default [1, 256].
+  // make_context's packaged block_q4_K as a parameter, by default [1, 256],
+  // labeled with `codec`.
   void q4_k_weight(
       const std::string& name,
-      const std::vector<int64_t>& shape = {1, 256}) {
+      const std::vector<int64_t>& shape = {1, 256},
+      const char* codec = "gguf:q4_k") {
     const auto quant = fbs::CreateQuantSpec(
         builder_,
         fbs::QuantScheme::PackedQuant,
-        fbs::CreatePackedQuantDirect(builder_, "gguf:q4_k").Union());
+        fbs::CreatePackedQuantDirect(builder_, codec).Union());
     const auto meta =
         create_tensor_meta(builder_, fbs::ScalarType::BYTE, shape, quant);
     placeholder(name, meta);
@@ -391,6 +400,41 @@ class TestProgram {
         builder_, name.c_str(), create_tensor_meta(builder_, dtype, shape)));
     const std::vector<flatbuffers::Offset<fbs::Output>> outputs = {
         fbs::CreateOutputDirect(builder_, name.c_str())};
+    nodes_.push_back(fbs::CreateNodeDirect(
+        builder_,
+        name.c_str(),
+        fbs::OpKind::CALL_FUNCTION,
+        target,
+        &named,
+        &outputs));
+  }
+
+  // A node producing one tensor list whose elements, named `names`, are F32
+  // tensors of `shape`.
+  void call_list(
+      const std::string& name,
+      const char* target,
+      const std::vector<std::pair<std::string, TestArg>>& args,
+      const std::vector<std::string>& names,
+      const std::vector<int64_t>& shape) {
+    std::vector<flatbuffers::Offset<fbs::NamedArgument>> named;
+    for (const auto& [arg_name, arg] : args) {
+      named.push_back(fbs::CreateNamedArgumentDirect(
+          builder_, arg_name.c_str(), create_arg(arg)));
+    }
+    for (const std::string& element : names) {
+      values_.push_back(fbs::CreateTensorValueDirect(
+          builder_,
+          element.c_str(),
+          create_tensor_meta(builder_, fbs::ScalarType::FLOAT, shape)));
+    }
+    const std::vector<flatbuffers::Offset<fbs::Output>> outputs = {
+        fbs::CreateOutput(
+            builder_,
+            builder_.CreateString(""),
+            0,
+            fbs::OutputValueKind::TENSOR_LIST,
+            create_strings(builder_, names))};
     nodes_.push_back(fbs::CreateNodeDirect(
         builder_,
         name.c_str(),
@@ -3095,6 +3139,114 @@ TEST(GgmlEngineTest, RejectsPackedWeightWithPartialBlocks) {
       *make_context(*host, program.finish("y")), "divisible by 256");
 }
 
+// A linear of make_context's packaged block, labeled with `codec`.
+std::vector<uint8_t> make_packed_linear_program(const char* codec) {
+  TestProgram program;
+  program.q4_k_weight("weight", {1, 256}, codec);
+  program.input("x", fbs::ScalarType::FLOAT, {1, 256});
+  program.call(
+      "y",
+      "torch.ops.aten.linear.default",
+      {{"input", std::string("x")}, {"weight", std::string("weight")}},
+      fbs::ScalarType::FLOAT,
+      {1, 1});
+  return program.finish("y");
+}
+
+TEST(GgmlEngineTest, RejectsCodecsOfNoGgmlWeightType) {
+  // q8_K only quantizes activations, f16 stores no blocks, and the others
+  // are not "gguf:" and a lowercase ggml type name.
+  auto host = GgmlEngineHost::create(kAllowActivationQuant);
+  for (const char* codec :
+       {"gguf:q8_k", "gguf:f16", "gguf:q4_2", "gguf:Q4_K", "gguf:", "q4_k"}) {
+    SCOPED_TRACE(codec);
+    expect_compile_error(
+        *make_context(*host, make_packed_linear_program(codec)),
+        "unsupported PackedQuant codec");
+  }
+}
+
+TEST(GgmlEngineTest, RejectsGgufTypesNotYetValidated) {
+  // tq1_0 is a ggml weight type that no op sample validates.
+  auto host = GgmlEngineHost::create(kAllowActivationQuant);
+  expect_compile_error(
+      *make_context(*host, make_packed_linear_program("gguf:tq1_0")),
+      "codec gguf:tq1_0 not yet validated");
+}
+
+TEST(GgmlEngineTest, SizesGgufWeightsWithGgmlBlockGeometry) {
+  // make_context packages one 144-byte block_q4_K, while a [1, 256]
+  // gguf:q6_k weight is one 210-byte block_q6_K.
+  auto host = GgmlEngineHost::create(kAllowActivationQuant);
+  expect_compile_error(
+      *make_context(*host, make_packed_linear_program("gguf:q6_k")),
+      "stored byte count disagrees");
+}
+
+// Values and bytes per block of each gguf:<type> codec the engine accepts,
+// summed from the fields of its block struct in ggml-common.h (fp16 scales
+// take 2 bytes). The exporter's tests check gguf-py against the same table.
+struct GgufBlockLayout {
+  std::string_view type;
+  int64_t values;
+  size_t bytes;
+};
+
+constexpr GgufBlockLayout kGgufBlockLayouts[] = {
+    {"q4_0", 32, 2 + 32 / 2}, // d, qs
+    {"q8_0", 32, 2 + 32}, // d, qs
+    {"q2_k", 256, 256 / 16 + 256 / 4 + 2 + 2}, // scales, qs, d, dmin
+    {"q3_k", 256, 256 / 8 + 256 / 4 + 12 + 2}, // hmask, qs, scales, d
+    {"q4_k", 256, 2 + 2 + 12 + 256 / 2}, // d, dmin, scales, qs
+    {"q5_k", 256, 2 + 2 + 12 + 256 / 8 + 256 / 2}, // d, dmin, scales, qh, qs
+    {"q6_k", 256, 256 / 2 + 256 / 4 + 256 / 16 + 2}, // ql, qh, scales, d
+};
+
+// Whether compiling a linear of a `codec` weight gets past the codec check.
+bool accepts_codec(GgmlEngineHost& host, const std::string& codec) {
+  try {
+    make_context(host, make_packed_linear_program(codec.c_str()))
+        ->compile("forward");
+  } catch (const std::runtime_error& error) {
+    const std::string_view message = error.what();
+    return message.find("not yet validated") == std::string_view::npos &&
+        message.find("unsupported PackedQuant codec") == std::string_view::npos;
+  }
+  return true;
+}
+
+TEST(GgmlEngineTest, AcceptsTheGgufTypesOfKnownBlockLayoutOnly) {
+  auto host = GgmlEngineHost::create(kAllowActivationQuant);
+  std::set<std::string> accepted;
+  for (int i = 0; i < GGML_TYPE_COUNT; ++i) {
+    const auto type = static_cast<ggml_type>(i);
+    const char* type_name = ggml_type_name(type);
+    if (type_name == nullptr) {
+      continue;
+    }
+    std::string name = type_name;
+    std::ranges::transform(name, name.begin(), [](unsigned char c) {
+      return static_cast<char>(std::tolower(c));
+    });
+    if (!accepts_codec(*host, "gguf:" + name)) {
+      continue;
+    }
+    SCOPED_TRACE(name);
+    accepted.insert(name);
+    const auto* layout =
+        std::ranges::find(kGgufBlockLayouts, name, &GgufBlockLayout::type);
+    ASSERT_NE(layout, std::ranges::end(kGgufBlockLayouts))
+        << "no expected block layout";
+    EXPECT_EQ(ggml_blck_size(type), layout->values);
+    EXPECT_EQ(ggml_type_size(type), layout->bytes);
+  }
+  std::set<std::string> expected;
+  for (const GgufBlockLayout& layout : kGgufBlockLayouts) {
+    expected.emplace(layout.type);
+  }
+  EXPECT_EQ(accepted, expected);
+}
+
 TEST(GgmlEngineTest, RejectsUnsupportedOpOnUnquantizedInput) {
   TestProgram program;
   program.input("x", fbs::ScalarType::FLOAT, {1, 256});
@@ -3306,19 +3458,18 @@ TEST(GgmlEngineTest, SumOverTrailingDims) {
   }
 }
 
-TEST(GgmlEngineTest, RejectsSumOverANonTrailingDim) {
+TEST(GgmlEngineTest, RejectsSumOverARepeatedDim) {
   TestProgram program;
   program.input("x", fbs::ScalarType::FLOAT, {2, 3, 4});
   program.call(
       "y",
       "torch.ops.aten.sum.dim_IntList",
       {{"self", std::string("x")},
-       {"dim", std::vector<int64_t>{1}},
+       {"dim", std::vector<int64_t>{1, -2}},
        {"keepdim", BoolValue{false}}},
       fbs::ScalarType::FLOAT,
       {2, 4});
-  expect_compile_error(
-      program.finish("y"), "sum supports trailing dimensions only");
+  expect_compile_error(program.finish("y"), "sum repeats a dimension");
 }
 
 TEST(GgmlEngineTest, AmaxOverTrailingDims) {
@@ -3372,19 +3523,171 @@ TEST(GgmlEngineTest, AmaxOverTrailingDims) {
   }
 }
 
-TEST(GgmlEngineTest, RejectsAmaxOverANonTrailingDim) {
+// A split of an [extent] F32 input into `pieces` declared [1] outputs, with
+// `args` after self and dim 0; returns the first piece.
+std::vector<uint8_t> make_split_program(
+    int64_t extent,
+    const char* target,
+    const std::pair<std::string, TestArg>& sizes,
+    size_t pieces) {
   TestProgram program;
-  program.input("x", fbs::ScalarType::FLOAT, {2, 3, 4});
-  program.call(
-      "y",
-      "torch.ops.aten.amax.default",
-      {{"self", std::string("x")},
-       {"dim", std::vector<int64_t>{1}},
-       {"keepdim", BoolValue{false}}},
-      fbs::ScalarType::FLOAT,
-      {2, 4});
+  program.input("x", fbs::ScalarType::FLOAT, {extent});
+  std::vector<std::string> names;
+  for (size_t i = 0; i < pieces; ++i) {
+    names.push_back("piece" + std::to_string(i));
+  }
+  program.call_list(
+      "split",
+      target,
+      {{"self", std::string("x")}, sizes, {"dim", int64_t{0}}},
+      names,
+      {1});
+  return program.finish(names.front());
+}
+
+TEST(GgmlEngineTest, SplitRefusesSizesThatOverflowOrOutnumberItsOutputs) {
+  // The sizes wrap around to 4 in int64.
+  constexpr int64_t kQuarter = int64_t{1} << 62;
   expect_compile_error(
-      program.finish("y"), "amax supports trailing dimensions only");
+      make_split_program(
+          4,
+          "torch.ops.aten.split_with_sizes_copy.default",
+          {"split_sizes",
+           std::vector<int64_t>{kQuarter, kQuarter, kQuarter, kQuarter + 4}},
+          4),
+      "add up");
+  // 2^31 - 1 pieces of one element for two declared outputs, refused before
+  // the pieces are listed.
+  expect_compile_error(
+      make_split_program(
+          (int64_t{1} << 31) - 1,
+          "torch.ops.aten.split_copy.Tensor",
+          {"split_size", int64_t{1}},
+          2),
+      "one tensor per piece");
+  auto host = GgmlEngineHost::create();
+  auto context = make_context(
+      *host,
+      make_split_program(
+          4,
+          "torch.ops.aten.split_with_sizes_copy.default",
+          {"split_sizes", std::vector<int64_t>{1, 1, 1, 1}},
+          4));
+  auto executable = context->compile("forward");
+  const std::vector<float> x{1.0f, 2.0f, 3.0f, 4.0f};
+  executable->set_input(0, x.data(), x.size(), ScalarType::Float);
+  executable->execute();
+  float first = 0.0f;
+  executable->get_output(0, &first, 1, ScalarType::Float);
+  EXPECT_EQ(first, 1.0f);
+}
+
+// y = x + expand(z) + expand(z) + ..., `count` adds: each a REPEAT node, its
+// shape leaf and an ADD node.
+std::vector<uint8_t> make_expand_add_chain(int count) {
+  TestProgram program;
+  program.input("x", fbs::ScalarType::FLOAT, {1, 64});
+  program.input("z", fbs::ScalarType::FLOAT, {1, 1});
+  std::string last = "x";
+  for (int i = 0; i < count; ++i) {
+    const std::string expanded = "e" + std::to_string(i);
+    const std::string sum = "y" + std::to_string(i);
+    program.call(
+        expanded,
+        "torch.ops.aten.expand_copy.default",
+        {{"self", std::string("z")}, {"size", std::vector<int64_t>{1, 64}}},
+        fbs::ScalarType::FLOAT,
+        {1, 64});
+    program.call(
+        sum,
+        "torch.ops.aten.add.Tensor",
+        {{"self", last}, {"other", expanded}},
+        fbs::ScalarType::FLOAT,
+        {1, 64});
+    last = sum;
+  }
+  return program.finish(last);
+}
+
+// GCC defines __SANITIZE_*__ but has __has_feature only from version 14.
+#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
+#define PTN_TEST_SANITIZED
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer) || \
+    __has_feature(memory_sanitizer)
+#define PTN_TEST_SANITIZED
+#endif
+#endif
+
+bool limit_address_space_to_4gib() {
+  const rlimit limit{.rlim_cur = 4ULL << 30, .rlim_max = 4ULL << 30};
+  rlimit applied{};
+  return setrlimit(RLIMIT_AS, &limit) == 0 &&
+      getrlimit(RLIMIT_AS, &applied) == 0 && applied.rlim_cur == limit.rlim_cur;
+}
+
+// macOS refuses any finite RLIMIT_AS. The probe child only makes system calls,
+// so forking this threaded process is safe for it.
+bool can_limit_address_space() {
+  const pid_t pid = fork();
+  if (pid == 0) {
+    _exit(limit_address_space_to_4gib() ? 0 : 2);
+  }
+  int status = 0;
+  return pid > 0 && waitpid(pid, &status, 0) == pid && WIFEXITED(status) &&
+      WEXITSTATUS(status) == 0;
+}
+
+// Runs make_expand_add_chain(count) once under a 4 GiB address-space limit and
+// exits 0 if its result is right, 2 if the limit could not be set.
+[[noreturn]] void run_chain_under_limit(
+    const std::vector<uint8_t>& program,
+    int count,
+    size_t cached) {
+  if (!limit_address_space_to_4gib()) {
+    std::exit(2);
+  }
+  auto host = GgmlEngineHost::create(
+      GgmlEngineOptions{.cpu_threads = 2, .max_cached_graphs = cached});
+  auto context = make_context(*host, program);
+  auto executable = context->compile("forward");
+  const std::vector<float> x(64, 1.0f);
+  const float z = 0.5f;
+  executable->set_input(0, x.data(), x.size(), ScalarType::Float);
+  executable->set_input(1, &z, 1, ScalarType::Float);
+  executable->execute();
+  std::vector<float> y(64);
+  executable->get_output(0, y.data(), y.size(), ScalarType::Float);
+  std::exit(y[63] == 1.0f + 0.5f * static_cast<float>(count) ? 0 : 1);
+}
+
+// ggml mallocs a scheduler's split context in proportion to its size, about
+// 20 KB per unit, so a scheduler sized from a method's metadata budget, 80
+// tensors per node, takes gigabytes. An address-space limit refuses that even
+// though the pages are never touched; each chain runs in a child under 4 GiB.
+// Earlier tests leave the CPU backend's OpenMP threads running, and a forked
+// child of a threaded process can deadlock in them, so each child re-executes
+// the test binary and runs only this test ("threadsafe" death tests).
+TEST(GgmlEngineTest, SizesTheSchedulerFromTheBuiltGraph) {
+#ifdef PTN_TEST_SANITIZED
+  GTEST_SKIP() << "sanitizers reserve more address space than the limit";
+#endif
+  if (!can_limit_address_space()) {
+    GTEST_SKIP() << "this host refuses a 4 GiB address-space limit";
+  }
+  ::testing::GTEST_FLAG(death_test_style) = "threadsafe";
+  // 2,000 and 10,000 method nodes; the second builds about 10,000 graph nodes
+  // and 5,000 leafs.
+  for (const int count : {1000, 5000}) {
+    const std::vector<uint8_t> program = make_expand_add_chain(count);
+    for (const size_t cached : {size_t{0}, size_t{1}}) {
+      EXPECT_EXIT(
+          run_chain_under_limit(program, count, cached),
+          ::testing::ExitedWithCode(0),
+          "")
+          << count << " adds, " << cached << " cached graphs";
+    }
+  }
 }
 
 TEST(GgmlEngineTest, GpuUnavailableOnCpuVariant) {
