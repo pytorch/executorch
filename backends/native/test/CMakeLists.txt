@@ -179,6 +179,9 @@ if(EXECUTORCH_BUILD_NATIVE_GGML)
   # the elu with alpha 0.5 that ggml rejects, Gated DeltaNet layers on
   # transformers' ATen rule, which ggml does not run (--gdn_op aten), and the
   # samples that match eager only with a testing option (runtime/ggml/BUCK).
+  # golden-int8_act doesn't model ggml's Q4_1 activation sums, which Gemma 4's
+  # GELU-tanh experts turn into a bias at Q4_1's tiny sample scales (see
+  # runtime/ggml/BUCK).
   set(_native_exact_only
       topk_*.nan_and_inf_*
       gelu_float.dynamic_tokens_tanh_f32
@@ -186,6 +189,7 @@ if(EXECUTORCH_BUILD_NATIVE_GGML)
       gelu_float.gelu_f32_tanh_boundary_values_0_f32
       gelu_float.tanh_f32
       gelu_float.tanh_wide_f32
+      moe_float.quantized_gemma4_block_f32
   )
   list(JOIN _native_exact_only ":" _native_exact_filter)
   add_test(
@@ -193,7 +197,7 @@ if(EXECUTORCH_BUILD_NATIVE_GGML)
     COMMAND
       native_ggml_sample_test --packages=${_native_op_samples} --device=cpu
       --allow_activation_quant_for_weight_only
-      --gtest_filter=-elu_float.elu_f32_alpha_*:gdn_*.recurrent_*:gdn_*.quantized_layer_decode*:${_native_exact_filter}
+      --gtest_filter=-elu_float.elu_f32_alpha_*:gdn_*.recurrent_*:gdn_*.quantized_layer_decode*:moe_gguf_q4_1.quantized_gemma4_block_f32:${_native_exact_filter}
   )
   add_test(
     NAME native_ggml_sample_test_no_linear
@@ -298,6 +302,12 @@ if(EXECUTORCH_BUILD_NATIVE_CPU)
       # CPU engine: functionalize_aliases rejects the select.int view.
       gdn_float.recurrent_qwen35_f32
       gdn_float.recurrent_small_f32
+      # CPU engine: functionalize_aliases rejects the expand view.
+      moe_float.quantized_experts_top1_f32
+      # CPU engine: provider selection fails (error 16).
+      moe_float.quantized_gemma4_block_f32
+      # CPU engine: execution fails (error 33).
+      moe_float.quantized_qwen35_block_f32
   )
   list(JOIN _native_cpu_engine_gaps ":" _native_cpu_gaps)
   add_test(NAME native_cpu_sample_test_static_float

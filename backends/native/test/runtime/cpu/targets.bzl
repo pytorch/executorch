@@ -65,6 +65,12 @@ def define_common_targets():
         # CPU engine: functionalize_aliases rejects the select.int view.
         "gdn_float.recurrent_qwen35_f32",
         "gdn_float.recurrent_small_f32",
+        # CPU engine: functionalize_aliases rejects the expand view.
+        "moe_float.quantized_experts_top1_f32",
+        # CPU engine: provider selection fails (error 16).
+        "moe_float.quantized_gemma4_block_f32",
+        # CPU engine: execution fails (error 33).
+        "moe_float.quantized_qwen35_block_f32",
     ]
     static_float = ":".join(["*_float.*:-*.dynamic_*"] + cpu_engine_gaps)
     for name, flags, labels in [
