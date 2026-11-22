@@ -47,6 +47,12 @@ TOK_EMBEDDING_GRAPH_NAMES = [
     GRAPH_TOK_EMBEDDING_PREFILL_FORWARD,
 ]
 
+# The decoder graph whose shapes and dtypes each embedding graph is tagged with.
+TOK_EMBEDDING_DECODER_GRAPH = {
+    GRAPH_TOK_EMBEDDING_KV_FORWARD: GRAPH_KV_FORWARD,
+    GRAPH_TOK_EMBEDDING_PREFILL_FORWARD: GRAPH_PREFILL_FORWARD,
+}
+
 # The name ExecuTorch gives a module exported as a single graph.
 #
 # Used for the components that build one graph rather than a decode/prefill pair

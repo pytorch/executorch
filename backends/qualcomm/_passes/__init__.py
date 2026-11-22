@@ -11,6 +11,7 @@ from .annotate_stack import AnnotateStack
 from .annotate_unbind import AnnotateUnbind
 from .build_quant_io import BuildQuantIo
 from .canonicalize_conv import CanonicalizeConv
+from .constant_folding import ConstantFolding
 from .convert_bmm_to_matmul import ConvertBmmToMatmul
 from .convert_complex_stft import ConvertComplexStft
 from .convert_linear_to_conv2d import ConvertLinearToConv2d
@@ -30,7 +31,6 @@ from .decompose_einsum import DecomposeEinsum
 from .decompose_empty import DecomposeEmpty
 from .decompose_expm1 import DecomposeExpM1
 from .decompose_fill import DecomposeFill
-from .decompose_floor_divide import DecomposeFloorDivide
 from .decompose_glu import DecomposeGlu
 from .decompose_hardsigmoid import DecomposeHardsigmoid
 from .decompose_hyperbolic_variants import DecomposeHyperbolicVariants
@@ -85,6 +85,7 @@ __all__ = [
     AnnotateUnbind,
     BuildQuantIo,
     CanonicalizeConv,
+    ConstantFolding,
     ConvertBmmToMatmul,
     ConvertComplexStft,
     ConvertLinearToConv2d,
@@ -104,7 +105,6 @@ __all__ = [
     DecomposeEmpty,
     DecomposeExpM1,
     DecomposeFill,
-    DecomposeFloorDivide,
     DecomposeGlu,
     DecomposeHyperbolicVariants,
     DecomposeHardsigmoid,

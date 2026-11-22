@@ -103,33 +103,35 @@ def quantize_per_tensor_cmsis(
 
 def requantize_cmsis(
     tensor: torch.Tensor,
-    multiplier: int,
-    shift: int,
+    multiplier: int | torch.Tensor,
+    shift: int | torch.Tensor,
 ) -> torch.Tensor:
-    """Simulate CMSIS-NN's arm_nn_requantize helper."""
+    """Simulate CMSIS-NN's arm_nn_requantize helper.
+
+    Tensor `multiplier` and `shift` broadcast against `tensor`, e.g. one per
+    channel of its last dimension.
+    """
 
     tensor_64 = tensor.to(torch.int64)
-    left_shift = max(shift, 0)
-    right_shift = max(-shift, 0)
+    multiplier_64 = torch.as_tensor(multiplier, dtype=torch.int64)
+    shift_64 = torch.as_tensor(shift, dtype=torch.int64)
+    left_shift = shift_64.clamp(min=0)
+    right_shift = (-shift_64).clamp(min=0)
 
     # Equivalent to val * (1 << LEFT_SHIFT(shift))
     value = tensor_64 << left_shift
 
     # arm_nn_doubling_high_mult_no_sat(value, multiplier)
-    product = value * int(multiplier)
+    product = value * multiplier_64
     product = product + (1 << 30)
     result = product >> 31
 
-    if right_shift:
-        remainder_mask = (1 << right_shift) - 1
-        remainder = torch.bitwise_and(result, remainder_mask)
-        result = result >> right_shift
-        threshold = remainder_mask >> 1
-        threshold_tensor = torch.full_like(result, threshold, dtype=torch.int64)
-        threshold_tensor = torch.where(
-            result < 0, threshold_tensor + 1, threshold_tensor
-        )
-        result = result + torch.where(remainder > threshold_tensor, 1, 0)
+    # Rounding right shift; a no-op where right_shift is 0.
+    remainder_mask = (torch.ones_like(right_shift) << right_shift) - 1
+    remainder = torch.bitwise_and(result, remainder_mask)
+    result = result >> right_shift
+    threshold = (remainder_mask >> 1) + (result < 0)
+    result = result + (remainder > threshold)
 
     return result.to(torch.int32)
 

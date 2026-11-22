@@ -8,10 +8,17 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock
 
+from executorch.backends.qualcomm.genai_pipeline.artifact_keys import (
+    ARTIFACT_TEXT_DECODER,
+)
 from executorch.backends.qualcomm.genai_pipeline.configs.compilation_input_config import (
     CompilationInputConfig,
 )
 from executorch.backends.qualcomm.genai_pipeline.graph_bundle import GraphBundle
+from executorch.backends.qualcomm.genai_pipeline.graph_names import (
+    DECODER_GRAPH_NAMES,
+    GRAPH_PREFILL_FORWARD,
+)
 
 
 class TestCompilationInputConfig(unittest.TestCase):
@@ -40,17 +47,29 @@ class TestCompilationInputConfig(unittest.TestCase):
         )
         self.assertIs(config.example_inputs, example_inputs)
 
-    def test_graphs_are_addressable_by_graph_name(self):
-        graphs = {
+    def test_graphs_are_addressable_by_component_then_graph_name(self):
+        """One .pte per component, one method per graph within it."""
+        decoder = {
             name: GraphBundle(module=MagicMock(name=name), inputs=(MagicMock(),))
-            for name in ("kv_forward", "prefill_forward")
+            for name in DECODER_GRAPH_NAMES
         }
         config = CompilationInputConfig(
             soc_model=MagicMock(),
             backend_type=MagicMock(),
-            graphs=graphs,
+            graphs={ARTIFACT_TEXT_DECODER: decoder},
         )
-        self.assertIs(config.graphs["prefill_forward"], graphs["prefill_forward"])
+        self.assertIs(
+            config.graphs[ARTIFACT_TEXT_DECODER][GRAPH_PREFILL_FORWARD],
+            decoder[GRAPH_PREFILL_FORWARD],
+        )
+
+    def test_num_sharding_defaults_to_one(self):
+        """An unsharded graph must not request multiple contexts by default."""
+        config = CompilationInputConfig(
+            soc_model=MagicMock(),
+            backend_type=MagicMock(),
+        )
+        self.assertEqual(config.num_sharding, 1)
 
 
 if __name__ == "__main__":

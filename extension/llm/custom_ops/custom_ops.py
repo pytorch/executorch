@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -21,17 +22,29 @@ from torch._inductor.lowering import lowerings as L, register_lowering
 from torch.library import impl
 
 aten = torch.ops.aten
+_CUSTOM_SDPA_SUPPORTED_DTYPES = (torch.float32, torch.bfloat16, torch.float16)
 
-try:
-    op = torch.ops.llama.sdpa_with_kv_cache.default
-    assert op is not None
-    op2 = torch.ops.llama.fast_hadamard_transform.default
-    assert op2 is not None
-    op3 = torch.ops.llama.quantized_moe_ffn.default
-    assert op3 is not None
-except:
-    # This is needed to ensure that custom ops are registered
-    from executorch.extension.pybindings import portable_lib  # noqa # usort: skip
+
+def _native_custom_ops_are_registered() -> bool:
+    try:
+        return all(
+            op is not None
+            for op in (
+                torch.ops.llama.sdpa_with_kv_cache.default,
+                torch.ops.llama.fast_hadamard_transform.default,
+                torch.ops.llama.quantized_moe_ffn.default,
+                torch.ops.llama.custom_sdpa.default,
+            )
+        )
+    except (AttributeError, RuntimeError):
+        return False
+
+
+def _ensure_native_custom_ops_loaded() -> None:
+    if _native_custom_ops_are_registered():
+        return
+
+    import executorch.extension.pybindings.portable_lib  # noqa: F401  # usort: skip
 
     # Ideally package is installed in only one location but usage of
     # PYATHONPATH can result in multiple locations.
@@ -42,16 +55,18 @@ except:
     logging.info(f"Looking for libcustom_ops_aot_lib.so in {package_path}")
 
     libs = list(package_path.glob("**/*custom_ops_aot_lib.*"))
+    if not libs:
+        raise RuntimeError(f"custom_ops_aot_lib was not found under {package_path}")
+    if len(libs) != 1:
+        raise RuntimeError(f"Expected 1 library but got {len(libs)}")
 
-    assert len(libs) == 1, f"Expected 1 library but got {len(libs)}"
     logging.info(f"Loading custom ops library: {libs[0]}")
     torch.ops.load_library(libs[0])
-    op = torch.ops.llama.sdpa_with_kv_cache.default
-    assert op is not None
-    op2 = torch.ops.llama.fast_hadamard_transform.default
-    assert op2 is not None
-    op3 = torch.ops.llama.quantized_moe_ffn.default
-    assert op3 is not None
+    if not _native_custom_ops_are_registered():
+        raise RuntimeError("Native LLM custom op registration is incomplete")
+
+
+_ensure_native_custom_ops_loaded()
 
 custom_ops_lib = torch.library.Library("llama", "IMPL")
 
@@ -79,9 +94,8 @@ def _validate_params(
         value.dim() == 4
     ), f"Expected value to be 4 dimensional but got {value.dim()} dimensions."
 
-    supported_dtypes = (torch.float32, torch.bfloat16, torch.float16)
     assert (
-        query.dtype in supported_dtypes
+        query.dtype in _CUSTOM_SDPA_SUPPORTED_DTYPES
     ), f"Expected query to be float32, bfloat16, or float16 but got {query.dtype}"
     assert (
         key.dtype == query.dtype
@@ -104,9 +118,35 @@ def _validate_params(
         value_cache.dtype == query.dtype
     ), f"Expected value_cache to have the same dtype as query but got {value_cache.dtype}"
 
-    assert (
-        key_cache.size() == value_cache.size()
-    ), f"Key cache and value cache must have same size but got {key_cache.size()} and {value_cache.size()}"
+    assert key_cache.size(0) == value_cache.size(0), (
+        "Key cache and value cache must have matching batch sizes but got "
+        f"{key_cache.size(0)} and {value_cache.size(0)}"
+    )
+    assert key_cache.size(1) == value_cache.size(1), (
+        "Key cache and value cache must have matching sequence lengths but got "
+        f"{key_cache.size(1)} and {value_cache.size(1)}"
+    )
+    assert key_cache.size(2) == value_cache.size(2), (
+        "Key cache and value cache must have matching KV head counts but got "
+        f"{key_cache.size(2)} and {value_cache.size(2)}"
+    )
+    assert key_cache.size(3) == value_cache.size(3), (
+        "Key cache and value cache must have matching head dimensions but got "
+        f"{key_cache.size(3)} and {value_cache.size(3)}"
+    )
+    assert query.size(0) == key_cache.size(0) == value_cache.size(0), (
+        "Query, key cache, and value cache must have matching batch sizes but got "
+        f"{query.size(0)}, {key_cache.size(0)}, and {value_cache.size(0)}"
+    )
+    assert query.size(3) == key_cache.size(3) == value_cache.size(3), (
+        "Query, key cache, and value cache must have matching head dimensions "
+        f"but got {query.size(3)}, {key_cache.size(3)}, and {value_cache.size(3)}"
+    )
+    assert key_cache.size(2) > 0, "Expected key/value cache to have at least one head."
+    assert query.size(2) % key_cache.size(2) == 0, (
+        "Query head count must match the KV head count or be divisible by it, "
+        f"but got {query.size(2)} and {key_cache.size(2)}"
+    )
 
     # These asserts are real but they require me to add constrain_as_size/value calls to the model and I dont want to do that right now
     # assert start_pos < key_cache.size(
@@ -120,9 +160,42 @@ def _validate_params(
         assert (
             attn_mask.dim() == 2
         ), f"Expected attn_mask to be 2 dimensional but got {attn_mask.dim()} dimensions."
-        assert (attn_mask.dtype == torch.float32) or (
-            attn_mask.dtype == torch.float16
-        ), f"Expected attn_mask to be float but got {attn_mask.dtype}"
+        assert (
+            attn_mask.dtype == torch.float32
+        ), f"Expected attn_mask to be float32 but got {attn_mask.dtype}"
+        assert not is_causal, "attn_mask and is_causal cannot be set at the same time"
+        assert attn_mask.shape == (query.size(1), key_cache.size(1)), (
+            "Expected attn_mask to match [q_len, kv_len], but got "
+            f"{tuple(attn_mask.shape)} for q_len={query.size(1)} "
+            f"and kv_len={key_cache.size(1)}"
+        )
+
+
+@impl(custom_ops_lib, "custom_sdpa", "Meta")
+def custom_sdpa(
+    query,
+    key_cache,
+    value_cache,
+    start_pos,
+    attn_mask=None,
+    drpout_p=0.0,
+    is_causal=False,
+    scale=None,
+):
+    _validate_params(
+        query,
+        key_cache,
+        value_cache,
+        key_cache,
+        value_cache,
+        start_pos,
+        query.size(1),
+        attn_mask,
+        drpout_p,
+        is_causal,
+        scale,
+    )
+    return torch.empty(query.shape, dtype=query.dtype, device=query.device)
 
 
 @impl(custom_ops_lib, "sdpa_with_kv_cache", "Meta")
@@ -263,35 +336,6 @@ def quantized_moe_ffn_meta(
         route_scale,
     )
     return torch.empty((x.size(0), dim), dtype=torch.float32, device=x.device)
-
-
-@impl(custom_ops_lib, "custom_sdpa", "Meta")
-def custom_sdpa(
-    query,
-    key_cache,
-    value_cache,
-    start_pos,
-    attn_mask=None,
-    drpout_p=0.0,
-    is_causal=False,
-    scale=None,
-):
-    seq_len = query.size(1)
-    _validate_params(
-        query,
-        key_cache,
-        value_cache,
-        key_cache,
-        value_cache,
-        start_pos,
-        seq_len,
-        attn_mask,
-        drpout_p,
-        is_causal,
-        scale,
-    )
-
-    return torch.empty(query.shape, dtype=query.dtype, device=query.device)
 
 
 def _validate_update_cache_params(

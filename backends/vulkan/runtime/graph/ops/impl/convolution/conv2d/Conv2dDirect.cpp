@@ -131,11 +131,6 @@ struct Conv2dParams final {
 
 } // namespace
 
-struct OutputParams final {
-  float out_min;
-  float out_max;
-};
-
 Conv2dParams create_conv2d_params(
     ComputeGraph& graph,
     const ValueRef weight,
@@ -184,24 +179,22 @@ enum class Conv2dShader {
 struct Conv2dVariant {
   const char* name;
   std::array<uint32_t, 3> tile;
-  bool full_grid;
   bool tune_channels;
-  bool transposed = false;
 };
 
 constexpr std::array<Conv2dVariant, 12> kConv2dVariants{{
-    {"conv2d_2x2x8_border", {2, 2, 2}, false, true},
-    {"conv2d_2x2x4_buffer", {2, 2, 1}, false, false},
-    {"conv2d_2x2x8_border_buffer_offset", {2, 2, 2}, false, true},
-    {"conv2d_2x2x4", {2, 2, 1}, false, false},
-    {"conv2d_2x2x4_border", {2, 2, 1}, false, false},
-    {"conv2d_1x1x4", {1, 1, 1}, false, false},
-    {"conv2d_2x1x4", {2, 1, 1}, false, false},
-    {"conv2d_2x1x4_border", {2, 1, 1}, false, false},
-    {"conv2d_2x2x8_border_buffer", {2, 2, 2}, false, false},
-    {"conv2d_1x1x4_buffer", {1, 1, 1}, false, false},
-    {"conv2d_2x2x4_grouped_gather", {2, 2, 1}, false, false},
-    {"conv_transpose2d", {1, 1, 1}, true, false, true},
+    {"conv2d_2x2x8_border", {2, 2, 2}, true},
+    {"conv2d_2x2x4_buffer", {2, 2, 1}, false},
+    {"conv2d_2x2x8_border_buffer_offset", {2, 2, 2}, true},
+    {"conv2d_2x2x4", {2, 2, 1}, false},
+    {"conv2d_2x2x4_border", {2, 2, 1}, false},
+    {"conv2d_1x1x4", {1, 1, 1}, false},
+    {"conv2d_2x1x4", {2, 1, 1}, false},
+    {"conv2d_2x1x4_border", {2, 1, 1}, false},
+    {"conv2d_2x2x8_border_buffer", {2, 2, 2}, false},
+    {"conv2d_1x1x4_buffer", {1, 1, 1}, false},
+    {"conv2d_2x2x4_grouped_gather", {2, 2, 1}, false},
+    {"conv_transpose2d", {1, 1, 1}, false},
 }};
 
 /*
@@ -238,11 +231,8 @@ constexpr std::array<Conv2dVariant, 12> kConv2dVariants{{
  *      the Mali offline compiler; not timed), or for grouped Half on Adreno and
  *      irregular shapes on AMD (two slices measured slower).
  *
- * Mali Half 2x2 tiles dispatch one invocation per output texel, with the
- * excess exiting immediately. That is the dispatch the Mali Half variants were
- * tuned with, and it measured up to 5x faster than a direct shader computing
- * one output texel per invocation. The tiled grid, which measured faster on the
- * other GPUs, was not timed on Mali Half.
+ * Tiled shaders dispatch one invocation per output tile, so no invocation
+ * starts beyond the output tensor.
  *
  * Fast tiled convolutions computing two output slices per invocation use tuned
  * local sizes on Mali Half, and on other GPUs when the tiled grid has at least
@@ -263,13 +253,13 @@ Conv2dVariant pick_conv2d_variant(
   const ValueRef in = args.at(1).refs.at(0);
   const ValueRef weight = args.at(1).refs.at(1);
   const ValueRef weight_data = resize_args.at(0);
-  const int64_t groups = graph->get_int(resize_args.at(8));
+  const int64_t groups = graph->get_int(resize_args.at(7));
   const int64_t in_group = graph->size_at<int64_t>(1, weight_data);
   const int64_t out_group = graph->size_at<int64_t>(0, weight_data) / groups;
   const int32_t out_slices = graph->logical_limits_of(out)[2];
   const int64_t height = graph->size_at<int64_t>(-2, out);
   const int64_t width = graph->size_at<int64_t>(-1, out);
-  const bool fast_tiled = graph->get_bool(resize_args.at(9));
+  const bool fast_tiled = graph->get_bool(resize_args.at(8));
   const bool grouped = groups > 1;
   const bool half = graph->dtype_of(out) == vkapi::kHalf;
   const bool mali = graph->device_is_mali();
@@ -325,12 +315,11 @@ Conv2dVariant pick_conv2d_variant(
   }
 
   Conv2dVariant variant = kConv2dVariants[static_cast<size_t>(shader)];
-  const bool mali_grid =
+  const bool mali_tile =
       half && mali && variant.tile[0] == 2 && variant.tile[1] == 2;
-  variant.full_grid = mali_grid;
   variant.tune_channels = variant.tune_channels &&
       (shader != Conv2dShader::TextureBorder8 || even_slices) && fast_tiled &&
-      (mali_grid || invocations >= kMinTunedInvocations);
+      (mali_tile || invocations >= kMinTunedInvocations);
   return variant;
 }
 
@@ -338,11 +327,7 @@ vkapi::ShaderInfo pick_conv2d_tiled_shader(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
-  const Conv2dVariant variant = pick_conv2d_variant(graph, args, resize_args);
-  std::string name = variant.name;
-  if (variant.transposed && graph->get_bool(resize_args.at(7))) {
-    name += "_clamp";
-  }
+  std::string name = pick_conv2d_variant(graph, args, resize_args).name;
   add_dtype_suffix(name, graph->dtype_of(args.at(0).refs.at(0)));
   return VK_KERNEL_FROM_STR(name);
 }
@@ -355,9 +340,6 @@ GlobalWorkGrid conv2d_gwg(
   (void)shader;
   const Conv2dVariant variant = pick_conv2d_variant(graph, args, resize_args);
   const GlobalWorkGrid grid = graph->create_gwg(args.at(0).refs.at(0));
-  if (variant.full_grid) {
-    return grid;
-  }
   return GlobalWorkGrid(
       {utils::div_up(grid[0], variant.tile[0]),
        utils::div_up(grid[1], variant.tile[1]),
@@ -366,10 +348,13 @@ GlobalWorkGrid conv2d_gwg(
 }
 
 /*
- * Tuned dispatches size the workgroup by GPU family and grid depth (output
- * slices): Adreno uses 16x1x16 from a depth of 32 and 8x1x16 from 16, other
- * GPUs use 8x1x8 from 16, and shallower grids use 8x2x4. All other dispatches
- * use the default local size for their grid.
+ * Tuned dispatches size the workgroup by GPU family and depth: Adreno uses
+ * 16x1x16 from a depth of 32 and 8x1x16 from 16, other GPUs use 8x1x8 from 16,
+ * and shallower grids use 8x2x4. All other dispatches use the default local
+ * size for their grid. The depth is the grid depth, except on Mali, where it is
+ * the output's slice count: Mali Half sizes were tuned with one invocation per
+ * output texel, and keeping that depth keeps the workgroups that cover each
+ * output tile.
  *
  * The sizes come from sweeping 12 local sizes over large Half 3x3 / 5x5
  * convolutions (32 to 128 output channels, one invocation per output texel) on
@@ -387,7 +372,8 @@ LocalWorkGroup conv2d_lwg(
   (void)shader;
   const Conv2dVariant variant = pick_conv2d_variant(graph, args, resize_args);
   if (variant.tune_channels) {
-    const uint32_t slices = gwg[2];
+    const uint32_t slices =
+        graph->device_is_mali() ? gwg[2] * variant.tile[2] : gwg[2];
     const bool adreno = graph->device_is_adreno();
     if (slices >= 32u && adreno) {
       return LocalWorkGroup(16u, 1u, 16u, 256u);
@@ -475,35 +461,43 @@ void add_conv2d_direct_node(
     const ValueRef out,
     const Kernel2dParams& kernel_params,
     const Conv2dParams& extra_params,
-    const OutputParams& out_params,
+    const Conv2dEpilogue& epilogue,
+    const Conv2dEpilogueArgs& epilogue_args,
     const ValueRef groups,
     const int64_t groups_val,
     const bool has_bias,
     const bool force_masked,
-    const bool fast_tiled,
-    const bool clamp_out) {
+    const bool fast_tiled) {
+  const Conv2dEpilogueParams epilogue_params = create_conv2d_epilogue_params(
+      epilogue,
+      graph.dtype_of(out) == vkapi::kHalf && !graph.get_bool(transposed));
   vkapi::ParamsBindList param_buffers = {
       graph.logical_limits_ubo(out),
       graph.sizes_ubo(in),
       graph.create_params_buffer(kernel_params),
       graph.create_params_buffer(extra_params),
-      graph.create_params_buffer(out_params),
+      graph.create_params_buffer(epilogue_params),
   };
 
-  const int32_t in_quads = extra_params.in_group_size / 4;
-  vkapi::SpecVarList spec_vars = {utils::safe_downcast<int32_t>(groups_val)};
+  vkapi::SpecVarList spec_vars;
   if (!graph.get_bool(transposed)) {
-    spec_vars.append(vkapi::SpecVar(in_quads));
-    spec_vars.append(vkapi::SpecVar(kernel_params.kernel_size[0]));
-    spec_vars.append(vkapi::SpecVar(clamp_out));
-    spec_vars.append(vkapi::SpecVar(has_bias));
-    spec_vars.append(vkapi::SpecVar(graph.size_at<int32_t>(1, weight_data)));
-    spec_vars.append(vkapi::SpecVar(utils::safe_downcast<int32_t>(
-        graph.size_at<int64_t>(0, weight_data) / groups_val)));
+    const int32_t in_quads = extra_params.in_group_size / 4;
+    spec_vars = {
+        utils::safe_downcast<int32_t>(groups_val),
+        in_quads,
+        kernel_params.kernel_size[0],
+        has_bias,
+        graph.size_at<int32_t>(1, weight_data),
+        utils::safe_downcast<int32_t>(
+            graph.size_at<int64_t>(0, weight_data) / groups_val)};
   }
+  append_conv2d_epilogue_spec_vars(spec_vars, epilogue);
 
   const std::vector<ArgGroup> args = {
-      {out, vkapi::kWrite}, {{in, arg_weight, arg_bias}, vkapi::kRead}};
+      {out, vkapi::kWrite},
+      {{in, arg_weight, arg_bias, epilogue_args.residual, epilogue_args.scale},
+       vkapi::kRead}};
+
   const std::vector<ValueRef> resize_args = {
       weight_data,
       stride,
@@ -512,9 +506,9 @@ void add_conv2d_direct_node(
       transposed,
       output_padding,
       graph.add_scalar<bool>(force_masked),
-      graph.add_scalar<bool>(clamp_out),
       groups,
-      graph.add_scalar<bool>(fast_tiled)};
+      graph.add_scalar<bool>(fast_tiled),
+      epilogue.residual};
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       pick_conv2d_tiled_shader,
@@ -540,9 +534,7 @@ void conv2d_direct_impl(
     const ValueRef output_padding,
     const ValueRef groups,
     const ValueRef out,
-    const bool clamp_out,
-    const float out_min_val,
-    const float out_max_val,
+    const Conv2dEpilogue& epilogue,
     const bool force_masked) {
   const bool transposed_val = graph.get_bool(transposed);
   const int64_t groups_val = graph.get_int(groups);
@@ -574,6 +566,8 @@ void conv2d_direct_impl(
       transposed_val,
       /* storage_type = */ utils::kTexture2D,
       /* memory_layout = */ utils::kWidthPacked);
+  const ValueRef packed_scale = prepack_conv2d_residual_scale(
+      graph, epilogue, weight_data, transposed_val);
 
   const std::vector<int64_t> in_sizes = graph.sizes_of(in);
   if (in_sizes.at(0) > 1) {
@@ -584,8 +578,6 @@ void conv2d_direct_impl(
 
   Conv2dParams extra_params =
       create_conv2d_params(graph, weight_data, kernel_params, transposed_val);
-
-  OutputParams out_params = {out_min_val, out_max_val};
 
   check_conv2d_params(kernel_params, transposed_val);
   if (!transposed_val) {
@@ -611,13 +603,13 @@ void conv2d_direct_impl(
       out,
       kernel_params,
       extra_params,
-      out_params,
+      epilogue,
+      Conv2dEpilogueArgs(epilogue, in, arg_bias, packed_scale),
       groups,
       groups_val,
       !graph.val_is_none(bias),
       force_masked,
-      fast_tiled,
-      clamp_out);
+      fast_tiled);
 }
 
 } // namespace vkcompute

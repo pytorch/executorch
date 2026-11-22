@@ -19,7 +19,7 @@ import json
 import os
 
 import torch
-from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
+from executorch.backends.webgpu.partitioner import WebGPUPartitioner
 
 # Importing cases populates op_test_registry via the @register_op_test decorators.
 from executorch.backends.webgpu.test.op_tests import cases  # noqa: F401
@@ -67,7 +67,7 @@ def export_case(suite: WebGPUTestSuite, case) -> tuple[torch.nn.Module, tuple, o
         export_inputs = tuple(_materialize(s) for s in case.export_inputs)
     ep = torch.export.export(module, export_inputs, dynamic_shapes=case.dynamic_shapes)
     prog = to_edge_transform_and_lower(
-        ep, partitioner=[VulkanPartitioner()]
+        ep, partitioner=[WebGPUPartitioner()]
     ).to_executorch()
     return module, inputs, prog
 
@@ -100,6 +100,7 @@ def _write_golden_output(
     atol: float,
     rtol: float,
     path: str,
+    equal_nan: bool = False,
 ) -> tuple[torch.Tensor, str]:
     if raw.dtype == torch.bool:
         # bool-output ops (comparisons): byte-exact 0/1 golden written as int8.
@@ -124,6 +125,7 @@ def _write_golden_output(
                 out_t,
                 atol=atol,
                 rtol=rtol,
+                equal_nan=equal_nan,
             )
 
     if out_dtype in ("bool", "int8"):
@@ -201,6 +203,7 @@ def generate_case(op: str, suite: WebGPUTestSuite, case, out_dir: str) -> list[d
             atol,
             rtol,
             os.path.join(out_dir, golden_rel),
+            case.equal_nan,
         )
         entries.append(
             {
@@ -216,6 +219,7 @@ def generate_case(op: str, suite: WebGPUTestSuite, case, out_dir: str) -> list[d
                 },
                 "atol": atol,
                 "rtol": rtol,
+                "equal_nan": case.equal_nan,
                 "required": case.required,
                 "heavy": case.heavy,
             }

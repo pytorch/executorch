@@ -11,6 +11,7 @@ on:
       - .gitmodules
       - CMakeLists.txt
       - install_requirements.py
+      - torch_pin.py
       - install_requirements.sh
       - requirements-dev.txt
       - requirements-examples.txt
@@ -18,6 +19,8 @@ on:
       - backends/cpu/runtime/**
       - backends/native/**
       - backends/cadence/utils/FACTO
+      - backends/test/suite/operators/test_elu.py
+      - backends/test/suite/operators/test_embedding.py
       - backends/test/suite/operators/test_linear.py
       - backends/vulkan/CMakeLists.txt
       - backends/vulkan/cmake/**
@@ -115,7 +118,7 @@ jobs:
           export CMAKE_PREFIX_PATH="/tmp/native-deps:${CMAKE_PREFIX_PATH:-}"
           export PATH="/tmp/native-deps/bin:${PATH}"
 
-          if [[ "${NATIVE_COMPONENT}" == "ggml" ]]; then
+          if [[ "${NATIVE_COMPONENT}" == "ggml" || "${NATIVE_COMPONENT}" == "cpu" ]]; then
             ./install_requirements.sh --use-pt-pinned-commit
             # The LLM runner test and the op sample generator import executorch from
             # src/ without installing the wheel, so install their export-time

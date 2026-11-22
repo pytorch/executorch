@@ -115,6 +115,16 @@ def define_common_targets(is_fbcode = False):
     )
 
     python_unittest(
+        name = "import_order",
+        srcs = [
+            "test_import_order.py",
+        ],
+        deps = [
+            "//executorch/exir:lib",
+        ],
+    )
+
+    python_unittest(
         name = "tensor",
         srcs = [
             "test_tensor.py",
@@ -233,6 +243,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/exir:pass_base",
             "//executorch/exir:schema",
             "//executorch/exir:tensor",
+            "//executorch/exir/backend/test:op_partitioner_demo",
             "//executorch/exir/dialects:lib",
             "//executorch/exir/dialects/edge:lib",
             "//executorch/exir/emit:lib",

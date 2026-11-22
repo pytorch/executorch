@@ -108,6 +108,27 @@ def test_compile_spec_vgf_no_quant():
         EthosUCompileSpec._from_list(spec_list)
 
 
+def test_compile_spec_vgf_default_enables_bf16():
+    """The default VGF spec advertises BF16 without dropping other
+    extensions.
+    """
+    spec = VgfCompileSpec()
+    assert spec.tosa_spec.support_float()
+    assert spec.tosa_spec.support_integer()
+    assert spec.tosa_spec.support_extension("int4")
+    assert spec.tosa_spec.support_extension("int16")
+    assert spec.tosa_spec.support_extension("bf16")
+
+    roundtripped = VgfCompileSpec._from_list(spec._to_list())
+    assert roundtripped.tosa_spec.support_extension("bf16")
+
+
+def test_compile_spec_vgf_explicit_tosa_spec_does_not_enable_bf16():
+    """Opting into a narrower TOSA spec must still remain possible."""
+    spec = VgfCompileSpec("TOSA-1.0+FP+INT+int4+int16")
+    assert not spec.tosa_spec.support_extension("bf16")
+
+
 def test_compile_spec_vgf_defaults_leaky_relu_to_decompose():
     compile_spec = VgfCompileSpec()
     pipeline_config = compile_spec._get_pass_pipeline_config()
