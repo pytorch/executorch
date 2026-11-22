@@ -20,6 +20,7 @@ fbcode_target(
         "//executorch/backends/native/runtime/engine:engine",
         "//executorch/backends/native/runtime/engine:ggml_engine_cpu",
         "//executorch/extension/llm/cache:kv_cache",
+        "fbsource//third-party/llama.cpp:ggml_cpu",
     ],
     **CPU_COMPAT
 )
@@ -100,10 +101,25 @@ _VARIANTS = [
     for v in _VARIANTS
 ]
 
+# llama.cpp's topk leaves a row holding NaN unordered; these samples match
+# eager only with the testing option exact_topk_for_testing.
+_EXACT_TOPK_ONLY = ["topk_*.nan_and_inf_*"]
+
+# ggml-cpu reads tanh GELU from an F16 table, as in llama.cpp; these samples
+# match eager on the CPU only with the testing option exact_gelu_for_testing.
+_EXACT_GELU_ONLY_ON_CPU = [
+    "gelu_float.dynamic_tokens_tanh_f32",
+    "gelu_float.gelu_f32_tanh_approximation_0_f32",
+    "gelu_float.gelu_f32_tanh_boundary_values_0_f32",
+    "gelu_float.tanh_f32",
+    "gelu_float.tanh_wide_f32",
+]
+
 # ggml_sample_test_act_quant lets ggml quantize the activations of weight-only
 # quantized linears, judged against golden-int8_act. ggml_sample_test_no_linear
-# judges the other ops without it. Both leave out the elu with alpha 0.5 that
-# ggml rejects.
+# judges the other ops without it, except their quantized_* cases, which
+# quantize through an nn.Linear. Both leave out the elu with alpha 0.5 that
+# ggml rejects and the samples that match eager only with a testing option.
 [
     fbcode_target(
         _kind = runtime.cxx_test,
@@ -123,8 +139,10 @@ _VARIANTS = [
     for v in _VARIANTS
     for name, flags in [
         ("", []),
-        ("_act_quant", ["--allow_activation_quant_for_weight_only", "--gtest_filter=-elu_float.elu_f32_alpha_*"]),
-        ("_no_linear", ["--gtest_filter=-linear_*:elu_float.elu_f32_alpha_*"]),
+        ("_act_quant", ["--allow_activation_quant_for_weight_only", "--gtest_filter=-" + ":".join(["elu_float.elu_f32_alpha_*"] + _EXACT_TOPK_ONLY + (_EXACT_GELU_ONLY_ON_CPU if v["device"] == "cpu" else []))]),
+        ("_no_linear", ["--gtest_filter=-" + ":".join(["linear_*", "*.quantized_*", "elu_float.elu_f32_alpha_*"] + _EXACT_TOPK_ONLY + (_EXACT_GELU_ONLY_ON_CPU if v["device"] == "cpu" else []))]),
+        # Every sample with the engine's testing options on.
+        ("_testing_options", ["--exact_topk_for_testing", "--exact_gelu_for_testing"]),
     ]
 ]
 
@@ -145,9 +163,11 @@ _VARIANTS = [
         resources = {":ggml_ptn_runner" + v["suffix"]: "ggml_ptn_runner"},
         deps = [
             "//caffe2:torch",
+            "//executorch/backends/native/examples/hf_llm:export_hf_llm_lib",
             "//executorch/exir/native:native",
             "//executorch/extension/llm/export:gguf",
             "//pytorch/ao:torchao",
+            "fbsource//third-party/pypi/gguf:gguf",
             "fbsource//third-party/pypi/transformers:transformers",
         ],
         **v.get("torch_compat", v.get("compat", {}))

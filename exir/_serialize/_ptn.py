@@ -38,6 +38,9 @@ Sits alongside the PTE and PTD serializers here because the format is independen
 of any backend: write_ptn treats the graph blob as opaque bytes. Its producer is
 ``exir.native.to_native``, whose NativeProgramManager.save calls it.
 
+Members carry fixed metadata (timestamp, permissions, host system) rather than the
+writer's clock, so equal inputs give byte-identical packages.
+
 The safetensors payload is written a tensor at a time, straight into the zip entry,
 so the writer never materializes the whole model as Python bytes. Owner tensors are
 still retained until the write completes, and normalizing non-CPU or non-contiguous
@@ -53,7 +56,6 @@ import hashlib
 import json
 import math
 import os
-import time
 import zipfile
 
 import torch
@@ -74,6 +76,12 @@ _ALIGNMENT_EXTRA_ID = 0xD935
 # zipfile appends to it when force_zip64 is set.
 _LOCAL_HEADER_SIZE = 30
 _ZIP64_LOCAL_EXTRA_SIZE = 20
+
+# Every member's zip metadata: the earliest zip timestamp, owner read/write, and
+# Unix as the host system so the permissions are read as such.
+_ZIP_DATE_TIME = (1980, 1, 1, 0, 0, 0)
+_ZIP_EXTERNAL_ATTR = 0o600 << 16
+_ZIP_CREATE_SYSTEM = 3
 
 # safetensors dtype codes; mirrors safetensors.torch._TYPES inverted.
 _DTYPE_CODES: dict[torch.dtype, str] = {
@@ -215,6 +223,15 @@ def _dedup(
     return owners, aliases
 
 
+def _zip_entry(name: str) -> zipfile.ZipInfo:
+    """A stored member with fixed metadata, so equal inputs write equal bytes."""
+    info = zipfile.ZipInfo(name, _ZIP_DATE_TIME)
+    info.compress_type = zipfile.ZIP_STORED
+    info.external_attr = _ZIP_EXTERNAL_ATTR
+    info.create_system = _ZIP_CREATE_SYSTEM
+    return info
+
+
 def _safetensors_header(owners: dict[str, torch.Tensor]) -> tuple[bytes, list[str]]:
     """Encode the safetensors length prefix and JSON header.
 
@@ -256,7 +273,7 @@ def _write_safetensors(
     size = len(header) + sum(t.numel() * t.element_size() for t in owners.values())
     zip64 = size > zipfile.ZIP64_LIMIT
 
-    zinfo = zipfile.ZipInfo(entry, time.localtime(time.time())[:6])
+    zinfo = _zip_entry(entry)
     local_header_size = (
         _LOCAL_HEADER_SIZE
         + len(entry.encode("utf-8"))
@@ -347,12 +364,13 @@ def write_ptn(
     # ZIP_STORED keeps entries byte-addressable; allowZip64 lifts the format's
     # 4GiB per-entry and total-size limits.
     with zipfile.ZipFile(path, "w", zipfile.ZIP_STORED, allowZip64=True) as pkg:
-        pkg.writestr(PTG_ENTRY, ptg)
+        pkg.writestr(_zip_entry(PTG_ENTRY), ptg)
         if owners:
             _write_safetensors(pkg, owners)
             if aliases:
                 pkg.writestr(
-                    ALIASES_ENTRY, json.dumps(aliases, indent=2, sort_keys=True)
+                    _zip_entry(ALIASES_ENTRY),
+                    json.dumps(aliases, indent=2, sort_keys=True),
                 )
         if metadata:
             pkg.writestr(
