@@ -13,7 +13,8 @@ import torch.nn as nn
 from executorch.backends.native import get_default_compile_config
 from executorch.backends.native.partitioner import NativePartitioner
 from executorch.backends.native.passes import get_default_passes
-from executorch.backends.native.passes.fuse_rope import FuseRoPEPass
+from executorch.backends.native.passes._utils import _resolve_aten
+from executorch.backends.native.passes.fuse_rope import _arange_row_mask, FuseRoPEPass
 from executorch.backends.native.passes.reinplace import NativeReinplacePass
 from executorch.backends.native.passes.remove_runtime_asserts import (
     RemoveRuntimeAssertsPass,
@@ -31,6 +32,8 @@ from executorch.backends.native.test.utils import (
 )
 from executorch.exir import to_edge, to_edge_transform_and_lower
 from executorch.exir.passes.cse_pass import CSEPass
+from torch._subclasses.fake_tensor import FakeTensorMode
+from torch.fx.experimental.symbolic_shapes import ShapeEnv
 
 
 def _rotate_half(t):
@@ -61,6 +64,42 @@ def _apply_rope_tables(x, cos, sin):
     if rotary == x.shape[-1]:
         return out
     return torch.cat((out, x[..., rotary:]), dim=-1)
+
+
+def _mrope_tables(x, position_rows, inv_freq, sections, attention_scale=1.0):
+    """transformers' interleaved M-RoPE tables, as Qwen3.5 builds them: one
+    product per position row (time, height, width), then the time row's
+    frequencies overwritten by the others' at interleaved slots."""
+    freqs = position_rows[..., None].float() * inv_freq.float()
+
+    def recompose(table):
+        rows = table[0]
+        for dim, offset in enumerate((1, 2), start=1):
+            length = sections[dim] * 3
+            rows[..., offset:length:3] = table[dim, ..., offset:length:3]
+        return torch.cat((rows, rows), dim=-1)
+
+    cos = recompose(freqs.cos() * attention_scale).to(x.dtype).unsqueeze(1)
+    sin = recompose(freqs.sin() * attention_scale).to(x.dtype).unsqueeze(1)
+    return cos, sin
+
+
+class _MRoPE(nn.Module):
+    """M-RoPE over position rows [3, B, T]: the text positions [B, T] repeated
+    in all three rows, as transformers' Qwen3.5 rotary does, or given."""
+
+    def __init__(self, sections, attention_scale=1.0, rows=False):
+        super().__init__()
+        self.sections = sections
+        self.attention_scale = attention_scale
+        self.rows = rows
+
+    def forward(self, x, positions, inv_freq):
+        position_rows = positions if self.rows else positions.expand(3, -1, -1)
+        cos, sin = _mrope_tables(
+            x, position_rows, inv_freq, self.sections, self.attention_scale
+        )
+        return _apply_rope_tables(x, cos, sin)
 
 
 class _HFRoPE(nn.Module):
@@ -427,6 +466,103 @@ class FuseRopePassTest(unittest.TestCase):
                 targets = [n.target for n in ep.graph.nodes if n.op == "call_function"]
                 self.assertEqual(targets, [torch.ops.native.rope.default])
                 torch.testing.assert_close(ep.module()(*inputs), model(*inputs))
+
+    def test_mrope_of_text_positions_fuses(self):
+        # Every row holds the same positions, so the interleaving changes no
+        # frequency: one rope by those positions.
+        torch.manual_seed(0)
+        for dtype, dim, scale in itertools.product(
+            (torch.float32, torch.float16), (8, 32), (1.0, 1.25)
+        ):
+            with self.subTest(dtype=dtype, dim=dim, scale=scale):
+                inputs = (
+                    torch.randn(1, 4, 5, dim, dtype=dtype),
+                    torch.arange(5).reshape(1, 5) + 2049,
+                    torch.linspace(0.01, 0.9, 4),
+                )
+                model = _MRoPE([2, 1, 1], scale).eval()
+                ep = _transformed(model, inputs, [FuseRoPEPass()])
+                targets = {
+                    _resolve_aten(n.target)
+                    for n in ep.graph.nodes
+                    if n.op == "call_function"
+                }
+                self.assertIn(torch.ops.native.rope.default, targets)
+                for decomposed in (
+                    torch.ops.aten.cos.default,
+                    torch.ops.aten.sin.default,
+                    torch.ops.aten.cat.default,
+                    torch.ops.aten.where.self,
+                ):
+                    self.assertNotIn(decomposed, targets)
+                actual = ep.module()(*inputs)
+                torch.testing.assert_close(actual, model(*inputs))
+                self.assertEqual(actual.dtype, dtype)
+
+    def test_mrope_row_mask_over_a_data_dependent_row_count_is_skipped(self):
+        # The arange's end is compared with the rows of the select_scatter's
+        # base; an unbacked row count cannot be compared and is not a match.
+        shape_env = ShapeEnv()
+        with FakeTensorMode(shape_env=shape_env):
+            row_ids_val = torch.empty(3, 1, 1, 1, dtype=torch.long)
+            bases = {
+                "static": torch.empty(3, 1, 5, 4),
+                "unbacked": torch.empty(shape_env.create_unbacked_symint(), 1, 5, 4),
+            }
+        for name, base_val in bases.items():
+            with self.subTest(rows=name):
+                graph = torch.fx.Graph()
+                base = graph.placeholder("base")
+                base.meta["val"] = base_val
+                arange = graph.call_function(torch.ops.aten.arange.start_step, (0, 3))
+                row_ids = graph.call_function(
+                    torch.ops.aten.view.default, (arange, [-1, 1, 1, 1])
+                )
+                row_ids.meta["val"] = row_ids_val
+                mask = graph.call_function(torch.ops.aten.eq.Scalar, (row_ids, 1))
+                expected = 1 if name == "static" else None
+                self.assertEqual(_arange_row_mask(mask, base), expected)
+
+    def test_mrope_of_distinct_position_rows_stays_decomposed(self):
+        inputs = (
+            torch.randn(1, 4, 5, 8),
+            torch.stack([torch.arange(5), torch.arange(5) * 2, torch.zeros(5)])
+            .long()
+            .reshape(3, 1, 5),
+            torch.linspace(0.01, 0.9, 4),
+        )
+        model = _MRoPE([2, 1, 1], rows=True).eval()
+        ep = _transformed(model, inputs, [FuseRoPEPass()])
+        targets = [n.target for n in ep.graph.nodes if n.op == "call_function"]
+        self.assertNotIn(torch.ops.native.rope.default, targets)
+        torch.testing.assert_close(ep.module()(*inputs), model(*inputs))
+
+    def test_mrope_interleaving_phases_before_the_trig_stays_decomposed(self):
+        # transformers before 5.17 interleaved the phases, then took cos/sin:
+        # a form the pass does not match, so the tables stay decomposed.
+        class PhaseMRoPE(nn.Module):
+            def forward(self, x, positions, inv_freq):
+                rows = positions.expand(3, -1, -1)
+                inv = inv_freq[None, None, :, None].float().expand(3, 1, -1, 1)
+                freqs = (inv @ rows[:, :, None, :].float()).transpose(2, 3)
+                phase = freqs[0]
+                for dim, offset in enumerate((1, 2), start=1):
+                    phase[..., offset:3:3] = freqs[dim, ..., offset:3:3]
+                emb = torch.cat((phase, phase), dim=-1)
+                cos = emb.cos().to(x.dtype).unsqueeze(1)
+                sin = emb.sin().to(x.dtype).unsqueeze(1)
+                return _apply_rope_tables(x, cos, sin)
+
+        inputs = (
+            torch.randn(1, 4, 5, 8),
+            torch.arange(5).reshape(1, 5),
+            torch.linspace(0.01, 0.9, 4),
+        )
+        model = PhaseMRoPE().eval()
+        ep = _transformed(model, inputs, [FuseRoPEPass()])
+        targets = [n.target for n in ep.graph.nodes if n.op == "call_function"]
+        self.assertNotIn(torch.ops.native.rope.default, targets)
+        torch.testing.assert_close(ep.module()(*inputs), model(*inputs))
 
     def test_hf_rope_serializes_five_arguments(self):
         for rotary, scale in ((8, 1.0), (4, 1.25)):
