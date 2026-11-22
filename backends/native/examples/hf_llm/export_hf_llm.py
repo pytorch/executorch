@@ -9,8 +9,11 @@
 Builds the model with ``AutoModelForCausalLM`` from a Hugging Face model
 directory (or only its config, with random weights), wraps it with the cache
 adapter from ``transformers.integrations.executorch``, and exports the
-``(input_ids [1, T], cache_position [T])`` signature. Reports which operators
-the native partitioner leaves behind. ``--gguf`` takes the weights from a GGUF
+``(input_ids [1, T], cache_position [T])`` signature. A model with
+linear-attention layers exports a static one-token ``forward`` instead, its
+recurrent states held as buffers, so its driver must feed a prompt one token
+per call; the runners in ``runtime`` prefill a prompt in one call. Reports which operators the native
+partitioner leaves behind. ``--gguf`` takes the weights from a GGUF
 file of an architecture ``gguf_hf`` supports instead, keeping its quantized blocks
 packed in the PTN; with ``--dequantize_gguf`` they become the float32 weights
 eager computes from them instead. ``--offgraph_cache`` exports attention as
@@ -68,7 +71,14 @@ from transformers import (
     AutoTokenizer,
     PreTrainedModel,
 )
-from transformers.cache_utils import StaticCache, StaticLayer, StaticSlidingWindowLayer
+from transformers.cache_utils import (
+    LinearAttentionCacheLayerMixin,
+    LinearAttentionLayer,
+    StaticCache,
+    StaticLayer,
+    StaticSlidingWindowLayer,
+)
+from transformers.configuration_utils import get_head_shapes
 from transformers.integrations.executorch import TorchExportableModuleForDecoderOnlyLM
 from transformers.integrations.sdpa_attention import sdpa_attention_forward
 from transformers.masking_utils import (
@@ -450,19 +460,31 @@ class LastTokenLM(nn.Module):
         # linear attention's, before either runs.
         layers = StaticCache(config=model.config, max_cache_len=max_cache_len).layers
         for layer in layers:
-            if isinstance(layer, StaticLayer) and type(layer) not in (
-                StaticLayer,
-                StaticSlidingWindowLayer,
+            if (
+                isinstance(layer, StaticLayer)
+                and type(layer) not in (StaticLayer, StaticSlidingWindowLayer)
+            ) or (
+                isinstance(layer, LinearAttentionCacheLayerMixin)
+                and type(layer) is not LinearAttentionLayer
             ):
                 raise NotImplementedError(
                     f"export does not support {type(layer).__name__} cache layers"
                 )
+        # Linear-attention layers keep recurrent states, not keys and values,
+        # which transformers' export wrapper cannot hold. Their models export
+        # static one-token calls: the chunked path their prompts take in eager
+        # does not export with a dynamic token count.
+        self.recurrent = any(type(layer) is LinearAttentionLayer for layer in layers)
+        self.tokens_per_call = 1 if self.recurrent else None
         # TODO(PTN): attention exports as masked, non-causal GQA aten.sdpa over
         # the whole static cache; engines must pattern-match it back to causal
         # SDPA.
-        self.cached = TorchExportableModuleForDecoderOnlyLM(
-            model, batch_size=1, max_cache_len=max_cache_len
-        ).model
+        if self.recurrent:
+            self.cached = _RecurrentCacheModule(model, max_cache_len)
+        else:
+            self.cached = TorchExportableModuleForDecoderOnlyLM(
+                model, batch_size=1, max_cache_len=max_cache_len
+            ).model
         self.cache = (
             self.cached.static_cache
             if hasattr(self.cached, "static_cache")
@@ -472,6 +494,54 @@ class LastTokenLM(nn.Module):
             max_cache_len, kv_cache_dtype, kv_cache_dtype != model.dtype
         )
         self._use_export_attention(model)
+        if self.recurrent:
+            self._register_recurrent_states()
+
+    def _register_recurrent_states(self) -> None:
+        """transformers creates linear-attention states in the model's own
+        forward: one eager call creates them, and they become buffers every
+        call reads and writes. They start at zero, so the PTN stores no
+        values for them."""
+        with torch.no_grad():
+            self(
+                torch.zeros((1, 1), dtype=torch.long), torch.zeros(1, dtype=torch.long)
+            )
+        for i, layer in enumerate(self.cache.layers):
+            if not isinstance(layer, LinearAttentionLayer):
+                continue
+            for s in range(layer.number_of_states):
+                if layer.is_conv_states_initialized[s]:
+                    self.cached.register_buffer(
+                        f"conv_state_{i}_{s}", layer.conv_states[s], persistent=False
+                    )
+                if layer.is_recurrent_states_initialized[s]:
+                    self.cached.register_buffer(
+                        f"recurrent_state_{i}_{s}",
+                        layer.recurrent_states[s],
+                        persistent=False,
+                    )
+        self.cache.reset()
+
+    def _continue_or_reset_recurrent_states(self, cache_position: torch.Tensor) -> None:
+        """A call continues the recurrent states, except one at position 0,
+        which starts a sequence: the graph multiplies them by 0 there, so the
+        runtime needs no reset call. That clears finite states only: a NaN or
+        infinity left by an earlier sequence survives (0 * NaN is NaN) and
+        persists until the program is reloaded."""
+        keep = cache_position[:1] != 0
+        for layer in self.cache.layers:
+            if not isinstance(layer, LinearAttentionLayer):
+                continue
+            for s in range(layer.number_of_states):
+                # Traced as a constant: the graph always takes transformers'
+                # path that reads the states.
+                layer.has_previous_state[s] = layer.is_conv_states_initialized[s]
+                if layer.is_conv_states_initialized[s]:
+                    state = layer.conv_states[s]
+                    state.mul_(keep.to(state.dtype))
+                if layer.is_recurrent_states_initialized[s]:
+                    state = layer.recurrent_states[s]
+                    state.mul_(keep.to(state.dtype))
 
     def _write_cache_at_input_positions(
         self, max_cache_len: int, dtype: torch.dtype, change_dtype: bool
@@ -508,6 +578,8 @@ class LastTokenLM(nn.Module):
             layer.cumulative_length = cache_position[:1].clone()
             if isinstance(layer, PositionedStaticLayer):
                 layer.positions = cache_position
+        if self.recurrent:
+            self._continue_or_reset_recurrent_states(cache_position)
         return self.cached.model(
             input_ids=input_ids,
             cache_position=cache_position,
@@ -561,6 +633,10 @@ class OffGraphLastTokenLM(nn.Module):
     samples) run inside ``cache_scope()``, which makes a reference cache of
     ``capacity`` positions the active one.
     """
+
+    # Off-graph caches export full and sliding attention only, never a static
+    # token count.
+    tokens_per_call = 0
 
     def __init__(self, model: nn.Module, capacity: int, selected: bool = False) -> None:
         super().__init__()
@@ -643,6 +719,21 @@ class OffGraphLastTokenLM(nn.Module):
             REGISTRY.uninstall(self._key)
 
 
+class _RecurrentCacheModule(nn.Module):
+    """A model and its transformers StaticCache, for caches with
+    linear-attention layers, which TorchExportableModuleForDecoderOnlyLM
+    cannot hold: it registers every layer's keys and values."""
+
+    def __init__(self, model: PreTrainedModel, max_cache_len: int) -> None:
+        super().__init__()
+        self.model = model
+        self.cache = StaticCache(config=model.config, max_cache_len=max_cache_len)
+        num_heads, head_dim = get_head_shapes(model.config.get_text_config())
+        self.cache.early_initialization(
+            1, num_heads, head_dim, model.dtype, model.device
+        )
+
+
 # TEMPORARY: use torchao-based 8da4w quantization until PTN export has its own
 # quantization flow.
 def _quantize_8da4w(
@@ -699,22 +790,30 @@ def golden_samples(
     prompts: list[list[int]],
     decode_steps: int,
 ) -> SampleSet:
-    """Per tokenized prompt, from an empty cache: a prefill call, then
-    `decode_steps` calls each fed the previous call's eager argmax."""
+    """Per tokenized prompt, from an empty cache: the prompt in one call, or
+    in calls of the wrapper's `tokens_per_call` tokens, then `decode_steps`
+    calls each fed the previous call's eager argmax."""
     quantized = any(isinstance(p, TorchAOBaseTensor) for p in wrapper.parameters())
     samples = []
     with torch.no_grad(), wrapper.cache_scope():
         for ids in prompts:
             wrapper.reset_cache()
-            input_ids = torch.tensor([ids], dtype=torch.long)
-            positions = torch.arange(len(ids), dtype=torch.long)
+            chunk = wrapper.tokens_per_call or len(ids)
             calls = []
-            for _ in range(decode_steps + 1):
+            for start in range(0, len(ids), chunk):
+                input_ids = torch.tensor([ids[start : start + chunk]], dtype=torch.long)
+                positions = torch.arange(
+                    start, start + input_ids.shape[1], dtype=torch.long
+                )
                 inputs = wrapper.call_inputs(input_ids, positions)
                 logits = wrapper(*inputs)
                 calls.append(Call("forward", inputs, [logits]))
+            for _ in range(decode_steps):
                 input_ids = logits[:, -1].argmax(dim=-1, keepdim=True)
                 positions = positions[-1:] + 1
+                inputs = wrapper.call_inputs(input_ids, positions)
+                logits = wrapper(*inputs)
+                calls.append(Call("forward", inputs, [logits]))
             samples.append(Sample(calls))
     wrapper.reset_cache()
     tol = _QUANTIZED_TOL if quantized else _FLOAT_TOL
@@ -845,11 +944,17 @@ def main() -> None:
         )
         wrapper = LastTokenLM(model, cache_len, kv_cache_dtype).eval()
 
-    input_ids = torch.zeros((1, 6), dtype=torch.long)
+    if wrapper.tokens_per_call:
+        tokens = wrapper.tokens_per_call
+        print(f"linear-attention model: exporting a static {tokens}-token forward")
+        input_ids = torch.zeros((1, tokens), dtype=torch.long)
+        dynamic_shapes = None
+    else:
+        input_ids = torch.zeros((1, 6), dtype=torch.long)
+        seq = Dim("seq", min=1, max=args.max_seq_length - 1)
+        dynamic_shapes = {"input_ids": {1: seq}, "cache_position": {0: seq}}
     cache_position = torch.arange(input_ids.shape[1], dtype=torch.long)
-    seq = Dim("seq", min=1, max=args.max_seq_length - 1)
     inputs = wrapper.call_inputs(input_ids, cache_position)
-    dynamic_shapes = {"input_ids": {1: seq}, "cache_position": {0: seq}}
     if len(inputs) == 3:
         # Trace two rows: export specializes a size of 1.
         inputs[2] = torch.tensor([0, input_ids.shape[1] - 1])
@@ -863,11 +968,14 @@ def main() -> None:
             dynamic_shapes=dynamic_shapes,
             strict=not args.non_strict,
         )
+    # Before the report: its re-trace shares export's ShapeEnv, so a dim it made
+    # static would look static to to_native, which then would not report it.
+    metadata = wrapper.metadata() if args.offgraph_cache else None
+    package = to_native(ep, metadata=metadata) if args.output else None
     report_lowering(ep, "forward")
 
-    if args.output:
-        metadata = wrapper.metadata() if args.offgraph_cache else None
-        to_native(ep, metadata=metadata).save(args.output)
+    if package is not None:
+        package.save(args.output)
         print(f"saved {args.output}")
     if prompts:
         samples = golden_samples(wrapper, prompts, _DECODE_STEPS)
