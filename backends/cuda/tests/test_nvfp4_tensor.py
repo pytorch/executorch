@@ -123,11 +123,42 @@ def test_activation_scale_is_a_scalar_tensor():
         assert is_fake(mode.from_tensor(w).act_per_tensor_scale)
 
 
-@pytest.mark.parametrize("act", [0.0, -1.0, math.inf, math.nan, torch.ones(2)])
+@pytest.mark.parametrize(
+    "act",
+    [
+        0.0,
+        -1.0,
+        math.inf,
+        math.nan,
+        1e39,
+        torch.tensor(0.0),
+        torch.tensor(-1.0),
+        torch.tensor(math.inf),
+        torch.tensor(math.nan),
+        torch.ones(2),
+        torch.ones(1, dtype=torch.bfloat16),
+        torch.ones(1, device="meta"),
+    ],
+)
 def test_invalid_activation_scale_rejected(act):
     w = shards(192)[0]
     with pytest.raises(ValueError, match="act_per_tensor_scale"):
         CudaNVFP4Tensor(w.qdata, w.scale, w.per_tensor_scale, act_per_tensor_scale=act)
+
+
+def test_from_exportable_carries_activation_scale():
+    portable = weight()
+    fields = (portable.qdata, portable.scale, portable.per_tensor_scale, 16)
+    packed = CudaNVFP4Tensor.from_exportable(
+        ExportableNVFP4Tensor(*fields, torch.bfloat16, act_per_tensor_scale=0.02)
+    )
+    act = packed.act_per_tensor_scale
+    assert act.shape == (1, 1) and act.dtype == torch.float32
+    assert act.item() == torch.tensor(0.02).item()
+    # The portable class accepts a zero scale; packing rejects it.
+    zero = ExportableNVFP4Tensor(*fields, torch.bfloat16, act_per_tensor_scale=0.0)
+    with pytest.raises(ValueError, match="finite and positive"):
+        CudaNVFP4Tensor.from_exportable(zero)
 
 
 @pytest.mark.parametrize(
