@@ -290,3 +290,25 @@ def _equality(op: Callable[..., torch.Tensor]) -> Callable[[], list[Case]]:
 
 def ne_cases() -> list[Case]:
     return _equality(torch.ne)()
+
+
+def repeat_interleave_cases() -> list[Case]:
+    # repeat_interleave decomposes to unsqueeze, expand and reshape through a
+    # rank-5 tensor with a leading 1.
+    return [
+        Case(
+            "heads",
+            _Fn(lambda x: x.repeat_interleave(2, dim=2) * 2),
+            draws(2, (1, 4, 2, 16)),
+        ),
+        Case(
+            "rank5_permute",
+            _Fn(lambda x: x.permute(0, 2, 1, 3, 4) * 2),
+            draws(2, (1, 2, 3, 4, 5)),
+        ),
+        chain(
+            "dynamic_tokens",
+            _Fn(lambda x: x.repeat_interleave(2, dim=2) * 2),
+            (1, _tokens(), 2, 16),
+        ),
+    ]

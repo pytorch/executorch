@@ -42,4 +42,5 @@ def ops() -> dict[str, Op]:
         "mean": Op(core_ops.mean_cases, ("f32",)),
         "amax": Op(core_ops.amax_cases, ("f32",)),
         "softmax": Op(core_ops.softmax_cases, ("f32",)),
+        "repeat_interleave": Op(core_ops.repeat_interleave_cases),
     }
