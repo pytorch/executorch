@@ -4574,6 +4574,7 @@ struct EqualSizeCodecs {
 TEST(VulkanEngineTest, DecodesByteIdenticalGgufWeightsOfEqualShape) {
   for (const EqualSizeCodecs& c : std::vector<EqualSizeCodecs>{
            {"gguf:q4_k", "gguf:q4_0", 144, 8.0f},
+           {"gguf:q5_k", "gguf:q5_0", 176, 16.0f},
        }) {
     std::vector<uint8_t> bytes(kQ4KOut * c.row_bytes);
     for (int64_t n = 0; n < kQ4KOut; ++n) {

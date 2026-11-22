@@ -237,6 +237,26 @@ TEST(ReferenceGgufQuantTest, DecodesQ4_0Block) {
   EXPECT_EQ(decode_one_row("gguf:q4_0", block, 32), expected);
 }
 
+TEST(ReferenceGgufQuantTest, DecodesQ5_0Block) {
+  // Weight j's 5-bit code keeps its low nibble in byte j % 16 of the codes,
+  // low for j < 16 and high otherwise, and its fifth bit in bit j of qh.
+  std::vector<uint8_t> qh(4);
+  std::vector<uint8_t> qs(16);
+  std::vector<float> expected(32);
+  for (int j = 0; j < 32; ++j) {
+    const int code = (7 * j + 3) % 32;
+    qs[j % 16] |= static_cast<uint8_t>((code & 0xF) << (4 * (j / 16)));
+    qh[j / 8] |= static_cast<uint8_t>((code >> 4) << (j % 8));
+    expected[j] = -0.25f * (code - 16);
+  }
+  std::vector<uint8_t> block = {0x00, 0xB4}; // d = -0.25
+  block.insert(block.end(), qh.begin(), qh.end());
+  block.insert(block.end(), qs.begin(), qs.end());
+  ASSERT_EQ(block.size(), 22);
+
+  EXPECT_EQ(decode_one_row("gguf:q5_0", block, 32), expected);
+}
+
 TEST(ReferenceGgufQuantTest, SizesWholeBlockRows) {
   EXPECT_TRUE(can_decode_gguf("gguf:q4_k"));
   EXPECT_TRUE(can_decode_gguf("gguf:q5_k"));
@@ -245,6 +265,7 @@ TEST(ReferenceGgufQuantTest, SizesWholeBlockRows) {
   EXPECT_TRUE(can_decode_gguf("gguf:q3_k"));
   EXPECT_TRUE(can_decode_gguf("gguf:q2_k"));
   EXPECT_TRUE(can_decode_gguf("gguf:q4_0"));
+  EXPECT_TRUE(can_decode_gguf("gguf:q5_0"));
   EXPECT_FALSE(can_decode_gguf("gguf:iq4_xs"));
   EXPECT_FALSE(can_decode_gguf("q4_k"));
   EXPECT_EQ(gguf_row_nbytes("gguf:q4_k", 512), 288);
@@ -256,6 +277,8 @@ TEST(ReferenceGgufQuantTest, SizesWholeBlockRows) {
   EXPECT_EQ(gguf_row_nbytes("gguf:q2_k", 512), 168);
   EXPECT_EQ(gguf_row_nbytes("gguf:q4_0", 64), 36);
   EXPECT_THROW(gguf_row_nbytes("gguf:q4_0", 16), std::invalid_argument);
+  EXPECT_EQ(gguf_row_nbytes("gguf:q5_0", 64), 44);
+  EXPECT_THROW(gguf_row_nbytes("gguf:q5_0", 48), std::invalid_argument);
   EXPECT_THROW(gguf_row_nbytes("gguf:q4_k", 255), std::invalid_argument);
   EXPECT_THROW(gguf_row_nbytes("gguf:q4_k", 0), std::invalid_argument);
   EXPECT_THROW(gguf_row_nbytes("gguf:q4_k", -256), std::invalid_argument);
@@ -292,6 +315,7 @@ TEST(ReferenceGgufQuantTest, MatchesGgmlDequantization) {
   };
   for (const auto& [codec, type, scale_offsets] :
        {std::tuple{"gguf:q4_0", GGML_TYPE_Q4_0, std::vector<size_t>{0}},
+        std::tuple{"gguf:q5_0", GGML_TYPE_Q5_0, std::vector<size_t>{0}},
         std::tuple{"gguf:q8_0", GGML_TYPE_Q8_0, std::vector<size_t>{0}},
         std::tuple{"gguf:q2_k", GGML_TYPE_Q2_K, std::vector<size_t>{80, 82}},
         std::tuple{"gguf:q3_k", GGML_TYPE_Q3_K, std::vector<size_t>{108}},
