@@ -424,6 +424,50 @@ TEST_F(ModuleTest, TestProgramPersistenceAndReuseAfterModuleDestruction) {
   EXPECT_TENSOR_CLOSE(result->at(0).toTensor(), *expected.get());
 }
 
+namespace {
+class TrackedLoader final : public DataLoader {
+ public:
+  TrackedLoader(std::unique_ptr<DataLoader> loader, bool& destroyed)
+      : loader_(std::move(loader)), destroyed_(destroyed) {}
+  ~TrackedLoader() override {
+    destroyed_ = true;
+  }
+  Result<FreeableBuffer> load(
+      size_t offset,
+      size_t size,
+      const SegmentInfo& segment_info) const override {
+    return loader_->load(offset, size, segment_info);
+  }
+  Result<size_t> size() const override {
+    return loader_->size();
+  }
+
+ private:
+  std::unique_ptr<DataLoader> loader_;
+  bool& destroyed_;
+};
+} // namespace
+
+TEST_F(ModuleTest, TestProgramKeepsItsLoaderAlive) {
+  auto file = FileDataLoader::from(model_path_.c_str());
+  ASSERT_EQ(file.error(), Error::Ok);
+  bool destroyed = false;
+  std::shared_ptr<Program> program;
+  {
+    Module owner(std::make_unique<TrackedLoader>(
+        std::make_unique<FileDataLoader>(std::move(*file)), destroyed));
+    ASSERT_EQ(owner.load(), Error::Ok);
+    program = owner.program();
+  }
+  // Programs load delegate and data segments through the loader on demand.
+  EXPECT_FALSE(destroyed);
+  // A weak pointer keeps the control block, but not the program or its loader.
+  std::weak_ptr<Program> weak_program = program;
+  program.reset();
+  EXPECT_TRUE(weak_program.expired());
+  EXPECT_TRUE(destroyed);
+}
+
 TEST_F(ModuleTest, TestConcurrentExecutionWithSharedProgram) {
   std::shared_ptr<Program> program;
   {

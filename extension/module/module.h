@@ -255,7 +255,9 @@ class Module {
 
   /**
    * Get the program. The data loader used by the program is guaranteed to be
-   * valid for the lifetime of the program.
+   * valid for the lifetime of the program. If that loader only borrows memory
+   * owned by the caller, such as a BufferDataLoader, the caller must keep that
+   * memory alive for as long as it holds the program.
    *
    * @returns Shared pointer to the PTE program, or nullptr if the Module is not
    *          loaded or contains a different format.
