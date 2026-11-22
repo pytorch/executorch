@@ -53,7 +53,11 @@ NATIVE_FP4 = pytest.mark.skipif(not _has_native_fp4(), reason="native FP4 requir
 
 @pytest.fixture(autouse=True)
 def default_policy(monkeypatch):
-    for name in ("ET_CUDA_NVFP4_ACT", "ET_CUDA_NVFP4_PREFILL_OUTPUT"):
+    for name in (
+        "ET_CUDA_NVFP4_ACT",
+        "ET_CUDA_NVFP4_PREFILL_OUTPUT",
+        "ET_CUDA_NVFP4_PREFILL_IMPL",
+    ):
         monkeypatch.delenv(name, raising=False)
 
 
@@ -111,6 +115,9 @@ def recorder(name, calls, original=None):
         ("w4a4", torch.bfloat16, 37, False, True, ("nvfp4_w4a4_gate_up", None)),
         ("w4a16", torch.bfloat16, 37, False, True, ("nvfp4_w4a16", None)),
         ("auto", torch.float16, 37, False, True, ("nvfp4_auto_prefill", None)),
+        # Decode-size M takes the per-row decode kernels through F.linear.
+        ("auto", torch.bfloat16, 1, False, True, ("nvfp4_auto_decode", None)),
+        ("w4a4", torch.bfloat16, 4, False, True, ("nvfp4_w4a4", None)),
         (
             "auto",
             torch.float32,
@@ -140,8 +147,6 @@ def test_gated_linear_routing(mode, dtype, rows, fp32, native, expected, monkeyp
     monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: native)
     monkeypatch.setenv("ET_CUDA_NVFP4_ACT", mode)
     monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_OUTPUT", "fp32" if fp32 else "input")
-    # The unfused fallback's dequant prefill is routed in test_nvfp4_fusion.py.
-    monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_IMPL", "kernel")
     fake = FakeTensorMode()
     x = fake.from_tensor(torch.randn(rows, 192, dtype=dtype))
     weight = fake.from_tensor(gate_up_weight("cpu"))
@@ -149,6 +154,44 @@ def test_gated_linear_routing(mode, dtype, rows, fp32, native, expected, monkeyp
         out = nvfp4_gated_linear(x, weight)
     assert calls == ([expected] if expected else [])
     assert out.shape == (rows, weight.shape[0] // 2)
+
+
+@pytest.mark.parametrize(
+    "mode,rows,expected",
+    [
+        ("auto", 37, "nvfp4_dequant"),
+        ("auto", 1, "nvfp4_auto_decode"),
+        ("w4a4", 37, "nvfp4_w4a4_gate_up"),
+    ],
+)
+def test_gated_linear_dequant_prefill(mode, rows, expected, monkeypatch):
+    """An explicit dequant prefill unfuses only where F.linear dequantizes."""
+    from executorch.backends.cuda.triton.kernels import nvfp4_dequant
+
+    calls = []
+
+    def dequant(qdata, scale, per_tensor_scale, dtype):
+        calls.append(("nvfp4_dequant", None))
+        return qdata.new_empty((qdata.shape[0], qdata.shape[1] * 2), dtype=dtype)
+
+    monkeypatch.setattr(nvfp4_dequant, "nvfp4_dequant", dequant)
+    monkeypatch.setattr(
+        nvfp4_gated_gemm,
+        "nvfp4_w4a4_gate_up",
+        recorder("nvfp4_w4a4_gate_up", calls),
+    )
+    monkeypatch.setattr(
+        nvfp4_dispatch, "nvfp4_auto_decode", recorder("nvfp4_auto_decode", calls)
+    )
+    monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: True)
+    monkeypatch.setenv("ET_CUDA_NVFP4_ACT", mode)
+    monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_IMPL", "dequant")
+    fake = FakeTensorMode()
+    x = fake.from_tensor(torch.randn(rows, 192, dtype=torch.bfloat16))
+    weight = fake.from_tensor(gate_up_weight("cpu"))
+    with fake:
+        nvfp4_gated_linear(x, weight)
+    assert calls == [(expected, None)]
 
 
 @pytest.mark.parametrize(

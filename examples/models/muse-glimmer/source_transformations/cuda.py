@@ -21,7 +21,6 @@ import executorch.backends.cuda.triton.kernels.sdpa  # noqa: F401
 # Register the TurboQuant attention operator.
 import executorch.backends.cuda.triton.kernels.tq4_sdpa  # noqa: F401
 import executorch.extension.llm.cache.update_and_attend  # noqa: F401
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
