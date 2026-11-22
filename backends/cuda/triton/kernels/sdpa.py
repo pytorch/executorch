@@ -34,7 +34,6 @@ and improves tile utilization, especially during decode (seqlen_q=1).
 
 import functools
 import math
-import os
 from typing import Optional
 
 import torch
@@ -74,8 +73,13 @@ def _is_power_of_2(n: int) -> bool:
 # triton.sdpa_decode_splitk.
 _SPLITK_LKV_THRESHOLD = 256
 # Widest query block the small-query split-K kernel serves (verify blocks,
-# packed multi-sequence decode). Its rows are L_q * GQA groups per CTA.
-_SMALL_QUERY_MAX_LQ = int(os.environ.get("ET_CUDA_SDPA_SMALL_QUERY_MAX_LQ", "16"))
+# packed multi-sequence decode).
+_SMALL_QUERY_MAX_LQ = 16
+# One CTA holds all L_q * next_pow2(GQA groups) rows of a KV head in a
+# [rows, HEAD_DIM] FP32 accumulator. sdpa() routes to the kernel up to the
+# largest tile measured faster than the prefill kernel (Muse Glimmer packed
+# decode: L_q 16, 16:1 GQA, head_dim 128).
+_SMALL_QUERY_MAX_TILE = 256 * 128
 
 
 _TMA_PREFILL_LKV_THRESHOLD = 16384
@@ -1374,7 +1378,8 @@ def sdpa(
 
     # Split-K dispatch with a kv_len bound, power-of-2 head dimension, and a
     # large KV buffer. The legacy decode launcher remains isolated at L_q == 1;
-    # the generalized launcher handles only verifier-sized query blocks.
+    # the generalized launcher handles small query blocks (verify blocks,
+    # packed multi-sequence decode) whose per-CTA tile fits.
     if HAS_KV_LEN and _is_power_of_2(D) and L_kv >= _SPLITK_LKV_THRESHOLD:
         if L_q == 1:
             _launch_decode_splitk(
@@ -1398,8 +1403,13 @@ def sdpa(
                 HAS_KV_LEN,
             )
             return out
-        if statically_known_true(L_q >= 2) and statically_known_true(
-            L_q <= _SMALL_QUERY_MAX_LQ
+        if (
+            statically_known_true(L_q >= 2)
+            and statically_known_true(L_q <= _SMALL_QUERY_MAX_LQ)
+            and statically_known_true(
+                L_q * _next_power_of_2_unclamped(num_groups) * D
+                <= _SMALL_QUERY_MAX_TILE
+            )
         ):
             _launch_small_query_splitk(
                 query,
@@ -2085,7 +2095,6 @@ def _sdpa_small_query_splitk_kernel(
         offs_n = tile_start + offs_n_init
         n_valid = offs_n < end_n
 
-        visible = 1
         if HAS_MASK:
             mask_ptrs = Mask_ptr + (
                 b * stride_mb
@@ -2097,8 +2106,10 @@ def _sdpa_small_query_splitk_kernel(
                 mask=row_valid[:, None] & n_valid[None, :],
                 other=False,
             )
-            visible = tl.max(tl.max(mask_block.to(tl.int32), axis=1), axis=0)
-        if visible > 0:
+            block_active = tl.sum(mask_block.to(tl.int32)) > 0
+        else:
+            block_active = True
+        if block_active:
             k_ptrs = K_ptr + (
                 b * stride_kb
                 + h_kv * stride_kh
@@ -2407,8 +2418,7 @@ def sdpa_small_query_splitk(
     phi: float = 5.0,
     kv_len: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
-    """Split-K flash-decoding SDPA for small query blocks (2 <= L_q <=
-    ``ET_CUDA_SDPA_SMALL_QUERY_MAX_LQ``, default 16).
+    """Split-K flash-decoding SDPA for small query blocks (2 <= L_q <= 16).
 
     Tracks a stable online-softmax maximum per split, then rescales partial
     results by the global maximum during reduction.

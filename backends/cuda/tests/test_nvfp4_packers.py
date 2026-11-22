@@ -129,8 +129,15 @@ def test_gguf_q8_0_packs_to_int8(pack):
     scale = torch.full((7, 1), 0.125, dtype=torch.float16)
     raw = torch.cat((scale.view(torch.uint8), q.view(torch.uint8)), dim=-1)
     weight = ExportableGGUFTensor(raw, "q8_0", torch.bfloat16)
-    module = torch.nn.Linear(32, 7, bias=False, device="meta")
+    if pack is pack_linear_for_cuda:
+        module = torch.nn.Linear(32, 7, bias=False, device="meta")
+    else:
+        module = torch.nn.Embedding(7, 32, device="meta")
     pack(module, {"weight": weight})
     assert isinstance(module.weight, IntxUnpackedToInt8Tensor)
+    assert not module.weight.requires_grad
     assert torch.equal(module.weight.qdata, q)
     assert module.weight.block_size == (1, 32)
+    assert module.weight.scale.dtype == torch.bfloat16
+    assert module.weight.zero_point.dtype == torch.int8
+    assert torch.equal(module.weight.dequantize(), weight.dequantize())
