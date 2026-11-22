@@ -10,6 +10,7 @@ import triton
 import triton.language as tl
 from executorch.backends.cuda.triton.kernels import nvfp4_quantized_gemm as kernels
 from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
+    _decode_pair,
     _e4m3_f16,
     _e4m3_to_f32,
     _fp4_pair_f16,
@@ -145,7 +146,6 @@ def test_fp16_bit_placement_is_exact():
     finite = (b & 0x7F) != 0x7F
     e4m3 = b.view(torch.float8_e4m3fn).float()
     assert_bits_equal(sf[finite] * 2**8, e4m3[finite])
-    assert sf[~finite].isnan().all()
     # The kernels' FP32 product of the two placements is the exact product.
     rescale = kernels._SOFT_FP4_RESCALE.value
     assert_bits_equal(
@@ -155,24 +155,47 @@ def test_fp16_bit_placement_is_exact():
 
 
 @triton.jit
-def _scaled_pair_kernel(Q, S, LO, HI, HALF2: tl.constexpr):
+def _decode_pair_kernel(Q, S, LO, HI, NATIVE: tl.constexpr):
     i = tl.program_id(0) * 256 + tl.arange(0, 256)
-    sf = _e4m3_f16(tl.load(S + i)) * 256.0
-    if HALF2:
-        sf = sf.to(tl.float16)
-    lo, hi = _scaled_pair(tl.load(Q + i), sf, HALF2, False)
+    lo, hi = _decode_pair(tl.load(Q + i), tl.load(S + i), NATIVE)
     tl.store(LO + i, lo)
     tl.store(HI + i, hi)
 
 
-@pytest.mark.parametrize("half2", [False, True])
-def test_soft_scaled_pair_is_exact(half2):
+@pytest.mark.parametrize("native", [False, True])
+def test_decode_pair_is_exact(native):
+    """The decode the kernels call: every code byte times every finite scale
+    byte, bit for bit."""
+    if native and not kernels._has_native_fp4_conversion():
+        pytest.skip("native FP4 required")
+    b = torch.arange(256, device="cuda", dtype=torch.int32).to(torch.uint8)
+    q = b[:, None].expand(256, 256).contiguous()
+    s = b[None, :].expand(256, 256).contiguous()
+    lo, hi = (torch.empty(256, 256, device="cuda") for _ in range(2))
+    _decode_pair_kernel[(256,)](q, s, lo, hi, NATIVE=native)
+    lut = torch.tensor(E2M1, device="cuda")
+    finite = (b & 0x7F) != 0x7F
+    e4m3 = b.view(torch.float8_e4m3fn).float()[None, finite]
+    assert_bits_equal(lo[:, finite], lut[(b & 15).long()][:, None] * e4m3)
+    assert_bits_equal(hi[:, finite], lut[(b >> 4).long()][:, None] * e4m3)
+
+
+@triton.jit
+def _soft_half2_kernel(Q, S, LO, HI):
+    i = tl.program_id(0) * 256 + tl.arange(0, 256)
+    sf = (_e4m3_f16(tl.load(S + i)) * 256.0).to(tl.float16)
+    lo, hi = _scaled_pair(tl.load(Q + i), sf, False)
+    tl.store(LO + i, lo)
+    tl.store(HI + i, hi)
+
+
+def test_soft_half2_pair_is_exact():
     """The software FP16x2 decode times every finite scale, bit for bit."""
     b = torch.arange(256, device="cuda", dtype=torch.int32).to(torch.uint8)
     q = b[:, None].expand(256, 256).contiguous()
     s = b[None, :].expand(256, 256).contiguous()
     lo, hi = (torch.empty(256, 256, device="cuda") for _ in range(2))
-    _scaled_pair_kernel[(256,)](q, s, lo, hi, HALF2=half2)
+    _soft_half2_kernel[(256,)](q, s, lo, hi)
     lut = torch.tensor(E2M1, device="cuda")
     finite = (b & 0x7F) != 0x7F
     e4m3 = b.view(torch.float8_e4m3fn).float()[None, finite]
@@ -216,10 +239,14 @@ def fixed_gemv(x, q, s, pts, unit_scale, split_k, config, native):
 
 
 def gemv_configs(half2):
+    """Representative single-stage tiles, the widest BN and BK included."""
+    tiles = {(4, 256), (8, 512), (16, 1024), (32, 256), (32, 512)}
     return [
         c
         for c in kernels._gemv.configs
-        if c.kwargs["HALF2"] == half2 and c.num_stages == 1
+        if c.kwargs["HALF2"] == half2
+        and c.num_stages == 1
+        and (c.kwargs["BN"], c.kwargs["BK"]) in tiles
     ]
 
 

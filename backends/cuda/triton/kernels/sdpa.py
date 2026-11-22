@@ -40,7 +40,6 @@ import torch
 import triton
 import triton.language as tl
 from executorch.backends.cuda.autotune.inputs import autotune_inputs
-from torch.fx.experimental.symbolic_shapes import statically_known_true
 from torch.library import triton_op, wrap_triton
 
 
@@ -78,8 +77,9 @@ _SMALL_QUERY_MAX_LQ = 16
 # One CTA holds all L_q * next_pow2(GQA groups) rows of a KV head in a
 # [rows, HEAD_DIM] FP32 accumulator. sdpa() routes to the kernel up to the
 # largest tile measured faster than the prefill kernel (Muse Glimmer packed
-# decode: L_q 16, 16:1 GQA, head_dim 128).
+# decode: L_q 16, 16:1 GQA, head_dim 128), and at most that many rows.
 _SMALL_QUERY_MAX_TILE = 256 * 128
+_SMALL_QUERY_MAX_ROWS = 256
 
 
 _TMA_PREFILL_LKV_THRESHOLD = 16384
@@ -1334,8 +1334,9 @@ def sdpa(
             updates correctly under CUDA-graph replay (decode). For decode pass
             ``input_pos + 1``; for a prefill chunk pass ``chunk_end``. When None
             the loop runs over the full ``L_kv`` (original behavior). Supplying
-            it for an L_q==1 decode with a large buffer also routes through the
-            split-K flash-decoding kernel for occupancy.
+            it with a large buffer also routes an L_q==1 decode, and a concrete
+            2 <= L_q <= 16 whose per-CTA tile fits, through the split-K
+            flash-decoding kernels for occupancy.
     Returns:
         Output tensor [B, H_q, L_q, D], dtype torch.bfloat16
     """
@@ -1403,13 +1404,14 @@ def sdpa(
                 HAS_KV_LEN,
             )
             return out
+        # The launcher bakes L_q into the kernel as a constexpr: a symbolic
+        # L_q (even one bounded within [2, 16]) takes the prefill kernel.
+        block_g = _next_power_of_2_unclamped(num_groups)
         if (
-            statically_known_true(L_q >= 2)
-            and statically_known_true(L_q <= _SMALL_QUERY_MAX_LQ)
-            and statically_known_true(
-                L_q * _next_power_of_2_unclamped(num_groups) * D
-                <= _SMALL_QUERY_MAX_TILE
-            )
+            isinstance(L_q, int)
+            and 2 <= L_q <= _SMALL_QUERY_MAX_LQ
+            and L_q * block_g <= _SMALL_QUERY_MAX_ROWS
+            and L_q * block_g * D <= _SMALL_QUERY_MAX_TILE
         ):
             _launch_small_query_splitk(
                 query,

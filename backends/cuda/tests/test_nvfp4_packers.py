@@ -68,6 +68,7 @@ def test_packed_modules_export_nvfp4_ops(native, monkeypatch):
 
     monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: native)
     monkeypatch.delenv("ET_CUDA_NVFP4_ACT", raising=False)
+    monkeypatch.delenv("ET_CUDA_NVFP4_PREFILL_IMPL", raising=False)
     model = GemmaPacked()
     for packed in (model.embedding.weight, model.linear.weight):
         assert packed.unit_scale
