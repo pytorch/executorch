@@ -8,8 +8,10 @@ fbcode_target(
     name = "record",
     srcs = [
         "cases.py",
+        "core_ops.py",
         "elu.py",
         "embedding.py",
+        "gelu.py",
         "linear.py",
         "ops.py",
         "pad_pool.py",
