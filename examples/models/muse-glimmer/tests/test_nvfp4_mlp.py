@@ -35,9 +35,7 @@ def make_mlp(nvfp4):
     return module
 
 
-@pytest.mark.parametrize("mode", ["auto", "w4a4", "w4a16"])
-def test_adapter_preserves_parameters_and_cpu_fallback(monkeypatch, mode):
-    monkeypatch.setenv("ET_CUDA_NVFP4_ACT", mode)
+def test_adapter_preserves_parameters_and_cpu_fallback():
     original = make_mlp(True)
     other = make_mlp(False)
     model = SimpleNamespace(
@@ -57,16 +55,21 @@ def test_adapter_preserves_parameters_and_cpu_fallback(monkeypatch, mode):
         torch.testing.assert_close(adapted(x), expected, rtol=0, atol=0)
 
 
+def test_adapter_rejects_unknown_activation_mode(monkeypatch):
+    monkeypatch.setenv("ET_CUDA_NVFP4_ACT", "w4a8x")
+    module = CudaNVFP4MLP(make_mlp(True))
+    with pytest.raises(ValueError, match="ET_CUDA_NVFP4_ACT"):
+        module(torch.randn(1, 5, 192, dtype=torch.bfloat16))
+
+
 def test_gate_up_export_preserves_parameter_fqns(monkeypatch):
     from executorch.backends.cuda.quantize_op_dispatch import nvfp4_dispatch
     from executorch.backends.cuda.triton.kernels import nvfp4_gated_gemm
-    from executorch.examples.models.muse_glimmer.source_transformations import nvfp4
 
     monkeypatch.setenv("ET_CUDA_NVFP4_ACT", "w4a4")
-    monkeypatch.setattr(nvfp4, "_has_native_fp4", lambda: True)
     monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: True)
     monkeypatch.setattr(nvfp4_gated_gemm, "_has_native_fp4_conversion", lambda: True)
-    module = CudaNVFP4MLP.from_mlp(make_mlp(True)).eval()
+    module = CudaNVFP4MLP(make_mlp(True)).eval()
     exported = torch.export.export(
         module,
         (torch.randn(1, 17, 192, dtype=torch.bfloat16),),
@@ -81,6 +84,9 @@ def test_gate_up_export_preserves_parameter_fqns(monkeypatch):
         "gate_up_proj.parametrizations.weight.original2",
     } <= targets
     assert not any(item.kind.name == "CONSTANT_TENSOR" for item in inputs)
+    assert any(
+        "nvfp4_w4a4_gate_up" in str(node.target) for node in exported.graph.nodes
+    )
 
 
 @pytest.mark.skipif(
@@ -95,9 +101,9 @@ def test_adapter_serialized_dynamic_m(monkeypatch):
 
     monkeypatch.setenv("ET_CUDA_NVFP4_ACT", "w4a4")
     torch.manual_seed(42)
-    module = CudaNVFP4MLP.from_mlp(make_mlp(True)).eval()
+    module = CudaNVFP4MLP(make_mlp(True)).eval()
     torch.manual_seed(42)
-    reference = CudaNVFP4MLP.from_mlp(make_mlp(True)).eval().cuda()
+    reference = CudaNVFP4MLP(make_mlp(True)).eval().cuda()
     x = torch.randn(1, 17, 192, dtype=torch.bfloat16)
     exported = torch.export.export(
         module,

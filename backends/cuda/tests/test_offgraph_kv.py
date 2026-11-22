@@ -734,8 +734,8 @@ class OffGraphKVCellDecompositionTest(unittest.TestCase):
         )
 
     def test_read_len_bounds_both_split_k_kernels(self) -> None:
-        # sdpa takes split-K only for one, or two to four, query rows over a
-        # pool past its threshold. After a long prefill, decode one token,
+        # sdpa takes split-K only for one, or two to sixteen, query rows over
+        # a pool past its threshold. After a long prefill, decode one token,
         # then three, so each split-K kernel runs over a poisoned tail.
         torch.manual_seed(21)
         steps = (

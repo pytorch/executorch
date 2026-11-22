@@ -234,14 +234,40 @@ def _fp4_pair_f16(q):
 
 @triton.jit
 def _e4m3_f16(b):
-    """E4M3 byte -> FP32 value times 2**-8, exact (FP16 holds every E4M3 value)."""
+    """E4M3 byte -> FP32 value times 2**-8, exact for every finite byte (FP16
+    holds every finite E4M3 value); 0x7F/0xFF decode to NaN."""
     u = b.to(tl.uint32)
     bits = (((u & 0x80) << 8) | ((u & 0x7F) << 7)).to(tl.uint16)
-    return bits.to(tl.float16, bitcast=True).to(tl.float32)
+    value = bits.to(tl.float16, bitcast=True).to(tl.float32)
+    nan = tl.full(value.shape, 0x7FC00000, tl.int32).to(tl.float32, bitcast=True)
+    return tl.where((u & 0x7F) == 0x7F, nan, value)
 
 
 # 2**14 (E2M1 FP16 placement) * 2**8 (E4M3 FP16 placement).
 _SOFT_FP4_RESCALE = tl.constexpr(4194304.0)
+
+
+@triton.jit
+def _decode_pair(q, s, NATIVE: tl.constexpr):
+    """Byte of two E2M1 codes and its E4M3 scale byte -> FP32 (low, high,
+    scale) whose products are exact: native conversion on SM120, FP16 bit
+    placement elsewhere."""
+    if NATIVE:
+        packed = tl.inline_asm_elementwise(
+            "{ .reg .b8 tmp,z1,z2,z3; mov.b32 {tmp,z1,z2,z3}, $1; cvt.rn.f16x2.e2m1x2 $0, tmp; }",
+            constraints="=r,r",
+            args=[q.to(tl.uint32)],
+            dtype=tl.uint32,
+            is_pure=True,
+            pack=1,
+        )
+        lo = (packed & 65535).to(tl.uint16).to(tl.float16, bitcast=True)
+        hi = (packed >> 16).to(tl.uint16).to(tl.float16, bitcast=True)
+        sf = s.to(tl.float8e4nv, bitcast=True).to(tl.float32)
+        return lo.to(tl.float32), hi.to(tl.float32), sf
+    else:
+        lo, hi = _fp4_pair_f16(q)
+        return lo, hi, _e4m3_f16(s) * _SOFT_FP4_RESCALE
 
 
 @torch._dynamo.assume_constant_result
@@ -776,7 +802,6 @@ def _gemv_original(
     NATIVE: tl.constexpr,
     ROW_PTS: tl.constexpr = False,
     UNIT_SCALE: tl.constexpr = False,
-    NATIVE_E4M3: tl.constexpr = False,
 ):
     n = (tl.program_id(0) * BN + tl.arange(0, BN)).to(tl.int64)
     m = tl.program_id(1).to(tl.int64)
@@ -794,36 +819,9 @@ def _gemv_original(
         kk = pair + off * (BK // 2)
         mask = (n[:, None] < N) & (kk[None, :] < K // 2)
         q = tl.load(Q + n[:, None] * (K // 2) + kk[None, :], mask, 0)
-        if NATIVE:
-            packed = tl.inline_asm_elementwise(
-                "{ .reg .b8 tmp,z1,z2,z3; mov.b32 {tmp,z1,z2,z3}, $1; cvt.rn.f16x2.e2m1x2 $0, tmp; }",
-                constraints="=r,r",
-                args=[q.to(tl.uint32)],
-                dtype=tl.uint32,
-                is_pure=True,
-                pack=1,
-            )
-            lo = (
-                (packed & 65535)
-                .to(tl.uint16)
-                .to(tl.float16, bitcast=True)
-                .to(tl.float32)
-            )
-            hi = (
-                (packed >> 16).to(tl.uint16).to(tl.float16, bitcast=True).to(tl.float32)
-            )
-            sf = _e4m3_to_f32(
-                tl.load(S + n[:, None] * (K // 16) + kk[None, :] // 8, mask, 0),
-                NATIVE_E4M3,
-            )
-        else:
-            lo, hi = _fp4_pair_f16(q)
-            sf = (
-                _e4m3_f16(
-                    tl.load(S + n[:, None] * (K // 16) + kk[None, :] // 8, mask, 0)
-                )
-                * _SOFT_FP4_RESCALE
-            )
+        lo, hi, sf = _decode_pair(
+            q, tl.load(S + n[:, None] * (K // 16) + kk[None, :] // 8, mask, 0), NATIVE
+        )
         # Unit-scale E2M1*E4M3 products have <=6 significant bits: exact in BF16.
         if UNIT_SCALE and X.dtype.element_ty == tl.bfloat16:
             w0, w1 = lo * sf, hi * sf
@@ -854,7 +852,7 @@ def _gemv_original(
         for half in (False, True)
         for st in (1, 2, 3)
     ],
-    key=["M", "N", "K", "SPLIT", "NATIVE", "ROW_PTS", "UNIT_SCALE", "NATIVE_E4M3"],
+    key=["M", "N", "K", "SPLIT", "NATIVE", "ROW_PTS", "UNIT_SCALE"],
     prune_configs_by={"early_config_prune": prune_nvfp4_stages},
     do_bench=autotune_do_bench,
 )
@@ -875,7 +873,6 @@ def _gemv(
     HALF2: tl.constexpr = False,
     ROW_PTS: tl.constexpr = False,
     UNIT_SCALE: tl.constexpr = False,
-    NATIVE_E4M3: tl.constexpr = False,
 ):
     if NATIVE and HALF2:
         _gemv_half2(X, Q, S, PTS, Y, M, N, K, SPLIT, BN, BK, ROW_PTS, UNIT_SCALE)
@@ -895,7 +892,6 @@ def _gemv(
             NATIVE,
             ROW_PTS,
             UNIT_SCALE,
-            NATIVE_E4M3,
         )
 
 
@@ -931,7 +927,6 @@ def _launch_gemv_impl(x, qdata, scale, pts, max_rows, unit_scale=False, *, split
         ),
         5,
         NATIVE=_has_native_fp4_conversion(),
-        NATIVE_E4M3=_has_native_e4m3(),
         ROW_PTS=pts.numel() != 1,
         UNIT_SCALE=unit_scale,
     )
@@ -984,90 +979,6 @@ def nvfp4_gemv(
     return _launch_gemv_impl(*args, split_k=split_k)
 
 
-@triton.jit
-def _w4a16_paired(
-    X,
-    Q,
-    S,
-    PTS,
-    Y,
-    M,
-    N: tl.constexpr,
-    K: tl.constexpr,
-    SPLIT: tl.constexpr,
-    BM: tl.constexpr,
-    BN: tl.constexpr,
-    BK: tl.constexpr,
-    GROUP_M: tl.constexpr,
-    ROW_PTS: tl.constexpr = False,
-    NATIVE: tl.constexpr = True,
-):
-    pid = tl.program_id(0)
-    split = tl.program_id(1)
-    nm, nn = tl.cdiv(M, BM), tl.cdiv(N, BN)
-    first = (pid // (GROUP_M * nn)) * GROUP_M
-    gm = tl.minimum(nm - first, GROUP_M)
-    m = ((first + pid % gm) * BM + tl.arange(0, BM)).to(tl.int64)
-    n = (((pid % (GROUP_M * nn)) // gm) * BN + tl.arange(0, BN)).to(tl.int64)
-    ki = tl.arange(0, BK)
-    pi = tl.arange(0, BK // 2)
-    acc = tl.zeros((BM, BN), tl.float32)
-    if ROW_PTS:
-        pts = tl.load(PTS + n, n < N, 0)[:, None]
-    else:
-        pts = tl.load(PTS)
-    chunk: tl.constexpr = tl.cdiv(K, BK * SPLIT)
-    for off in range(chunk):
-        block = split * chunk + off
-        kk = ki + block * BK
-        pair = pi + block * (BK // 2)
-        a = tl.load(
-            X + m[:, None] * K + kk[None, :], (m[:, None] < M) & (kk[None, :] < K), 0
-        )
-        mask = (n[:, None] < N) & (pair[None, :] < K // 2)
-        q = tl.load(Q + n[:, None] * (K // 2) + pair[None, :], mask, 0)
-        if NATIVE:
-            packed = tl.inline_asm_elementwise(
-                "{ .reg .b8 tmp,z1,z2,z3; mov.b32 {tmp,z1,z2,z3}, $1; cvt.rn.f16x2.e2m1x2 $0, tmp; }",
-                constraints="=r,r",
-                args=[q.to(tl.uint32)],
-                dtype=tl.uint32,
-                is_pure=True,
-                pack=1,
-            )
-            lo = (
-                (packed & 65535)
-                .to(tl.uint16)
-                .to(tl.float16, bitcast=True)
-                .to(tl.float32)
-            )
-            hi = (
-                (packed >> 16).to(tl.uint16).to(tl.float16, bitcast=True).to(tl.float32)
-            )
-            sf = (
-                tl.load(S + n[:, None] * (K // 16) + pair[None, :] // 8, mask, 0)
-                .to(tl.float8e4nv, bitcast=True)
-                .to(tl.float32)
-            )
-        else:
-            lo, hi = _fp4_pair_f16(q)
-            sf = (
-                _e4m3_f16(
-                    tl.load(S + n[:, None] * (K // 16) + pair[None, :] // 8, mask, 0)
-                )
-                * _SOFT_FP4_RESCALE
-            )
-        w0 = (lo * sf * pts).to(X.dtype.element_ty)
-        w1 = (hi * sf * pts).to(X.dtype.element_ty)
-        b = tl.trans(tl.join(w0, w1).reshape((BN, BK)))
-        acc = tl.dot(a, b, acc)
-    tl.store(
-        Y + split.to(tl.int64) * M * N + m[:, None] * N + n[None, :],
-        acc,
-        (m[:, None] < M) & (n[None, :] < N),
-    )
-
-
 @triton.autotune(
     configs=[
         triton.Config(
@@ -1111,8 +1022,41 @@ def _w4a16(
     NATIVE: tl.constexpr = False,
     ROW_PTS: tl.constexpr = False,
 ):
-    _w4a16_paired(
-        X, Q, S, PTS, Y, M, N, K, SPLIT_K, BM, BN, BK, GROUP_M, ROW_PTS, NATIVE
+    pid = tl.program_id(0)
+    split = tl.program_id(1)
+    nm, nn = tl.cdiv(M, BM), tl.cdiv(N, BN)
+    first = (pid // (GROUP_M * nn)) * GROUP_M
+    gm = tl.minimum(nm - first, GROUP_M)
+    m = ((first + pid % gm) * BM + tl.arange(0, BM)).to(tl.int64)
+    n = (((pid % (GROUP_M * nn)) // gm) * BN + tl.arange(0, BN)).to(tl.int64)
+    ki = tl.arange(0, BK)
+    pi = tl.arange(0, BK // 2)
+    acc = tl.zeros((BM, BN), tl.float32)
+    if ROW_PTS:
+        pts = tl.load(PTS + n, n < N, 0)[:, None]
+    else:
+        pts = tl.load(PTS)
+    chunk: tl.constexpr = tl.cdiv(K, BK * SPLIT_K)
+    for off in range(chunk):
+        block = split * chunk + off
+        kk = ki + block * BK
+        pair = pi + block * (BK // 2)
+        a = tl.load(
+            X + m[:, None] * K + kk[None, :], (m[:, None] < M) & (kk[None, :] < K), 0
+        )
+        mask = (n[:, None] < N) & (pair[None, :] < K // 2)
+        q = tl.load(Q + n[:, None] * (K // 2) + pair[None, :], mask, 0)
+        lo, hi, sf = _decode_pair(
+            q, tl.load(S + n[:, None] * (K // 16) + pair[None, :] // 8, mask, 0), NATIVE
+        )
+        w0 = (lo * sf * pts).to(X.dtype.element_ty)
+        w1 = (hi * sf * pts).to(X.dtype.element_ty)
+        b = tl.trans(tl.join(w0, w1).reshape((BN, BK)))
+        acc = tl.dot(a, b, acc)
+    tl.store(
+        Y + split.to(tl.int64) * M * N + m[:, None] * N + n[None, :],
+        acc,
+        (m[:, None] < M) & (n[None, :] < N),
     )
 
 

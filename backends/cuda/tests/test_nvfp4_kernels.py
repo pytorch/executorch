@@ -328,15 +328,10 @@ def test_gemv_split_k(m, split_k):
     torch.testing.assert_close(actual, expected, rtol=0.015, atol=0.015)
 
 
-def skip_unbuilt_variant(native, native_e4m3):
-    """The launchers build NATIVE_E4M3 from the device: native E4M3 on SM89+,
-    the software decode below (selectable anywhere); native FP4 implies both."""
+def skip_unbuilt_variant(native):
+    """The software decode is selectable on any GPU; native needs SM120."""
     if native and not _has_native_fp4_conversion():
         pytest.skip("native FP4 required")
-    if native_e4m3 and not _has_native_e4m3():
-        pytest.skip("native E4M3 (SM89+) required")
-    if native and not native_e4m3:
-        pytest.skip("native FP4 always builds the native E4M3 decode")
 
 
 def pinned_weight(row_pts, unit_scale):
@@ -350,11 +345,10 @@ def pinned_weight(row_pts, unit_scale):
 # The autotuner picks the decode variant by timing; pin each one here.
 @pytest.mark.parametrize("unit_scale", [False, True])
 @pytest.mark.parametrize("row_pts", [False, True])
-@pytest.mark.parametrize("native_e4m3", [False, True])
 @pytest.mark.parametrize("native,half2", [(False, False), (True, False), (True, True)])
 @pytest.mark.parametrize("split", [1, 2])
-def test_pinned_gemv_variants(native, half2, row_pts, unit_scale, split, native_e4m3):
-    skip_unbuilt_variant(native, native_e4m3)
+def test_pinned_gemv_variants(native, half2, row_pts, unit_scale, split):
+    skip_unbuilt_variant(native)
     if unit_scale and row_pts:
         pytest.skip("unit_scale requires a scalar global scale")
     w = pinned_weight(row_pts, unit_scale)
@@ -380,7 +374,6 @@ def test_pinned_gemv_variants(native, half2, row_pts, unit_scale, split, native_
         BN=16,
         BK=256,
         NATIVE=native,
-        NATIVE_E4M3=native_e4m3,
         HALF2=half2,
         ROW_PTS=row_pts,
         UNIT_SCALE=unit_scale,
