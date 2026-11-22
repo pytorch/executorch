@@ -116,8 +116,11 @@ def _decode(x, wq, ws, pts, act_scale, unit_scale=False, *, mode_split):
             x, wq, ws, pts, act_scale, _max_rows(x.shape[0]), split_k=split
         )
     if mode == 2:
-        if _has_native_fp4():
-            raise InvalidLaunchParam("NVFP4 auto decode times W4A8 without native FP4")
+        # W4A8 serves NVIDIA GPUs without native FP4 (its asm is NVIDIA PTX).
+        if _has_native_fp4() or torch.version.hip is not None:
+            raise InvalidLaunchParam(
+                "NVFP4 auto decode times W4A8 only on NVIDIA without native FP4"
+            )
         from executorch.backends.cuda.triton.kernels.nvfp4_w4a8_gemv import (
             launch_w4a8_gemv,
         )
@@ -234,10 +237,10 @@ def nvfp4_gated_linear(x: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
     ``weight`` rows are ``[gate; up]`` as produced by
     ``CudaNVFP4Tensor.fuse_along_output([gate, up])`` (per-row global scales
     in the same order), so N must be even. With native FP4 and BF16 (or FP32
-    under the FP32 prefill policy) activations, outside ``w4a16``/``w4a8`` and for
-    M not statically <= ``NVFP4_DECODE_MAX_ROWS``, it runs the fused prefill
-    kernels; otherwise it is ``F.linear`` (NVFP4 dispatch, including decode
-    kernels for small M) followed by SiLU-gating.
+    under the FP32 prefill policy) activations, outside ``w4a16``/``w4a8``, it
+    runs the fused kernels (in ``auto`` only for M not statically <=
+    ``NVFP4_DECODE_MAX_ROWS``, whose decode kernels ``F.linear`` times);
+    otherwise it is ``F.linear`` (NVFP4 dispatch) followed by SiLU-gating.
 
     The weight stays an op argument until subclass decomposition: accessing a
     parametrized NVFP4 weight's fields in a model forward makes Dynamo capture
@@ -266,7 +269,10 @@ def _gated_linear(func, types, args, kwargs):
     # policy at prefill size, like _linear.
     if (
         mode in ("w4a16", "w4a8")
-        or statically_known_true(flat.shape[0] <= NVFP4_DECODE_MAX_ROWS)
+        or (
+            mode != "w4a4"
+            and statically_known_true(flat.shape[0] <= NVFP4_DECODE_MAX_ROWS)
+        )
         or (
             x.dtype != torch.bfloat16
             and not (x.dtype == torch.float32 and output_dtype == torch.float32)
@@ -338,6 +344,8 @@ def _linear(func, types, args, kwargs):
             raise RuntimeError(
                 "Native NVFP4 W4A4 requires an SM120 or newer CUDA target"
             )
+        if mode == "w4a8" and torch.version.hip is not None:
+            raise RuntimeError("NVFP4 W4A8 (dp4a PTX) requires an NVIDIA GPU")
         small = statically_known_true(flat.shape[0] <= NVFP4_DECODE_MAX_ROWS)
         if mode == "w4a4":
             out = nvfp4_w4a4(
@@ -349,12 +357,13 @@ def _linear(func, types, args, kwargs):
                 output_dtype=output_dtype,
             )
         elif small and mode == "auto":
+            # Only W4A4 reads the static activation scale.
             out = nvfp4_auto_decode(
                 flat,
                 w.qdata,
                 w.scale,
                 w.per_tensor_scale,
-                w.act_per_tensor_scale,
+                w.act_per_tensor_scale if _has_native_fp4() else None,
                 w.unit_scale,
             )
         elif small and mode == "w4a8":

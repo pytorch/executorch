@@ -32,6 +32,7 @@ from executorch.backends.cuda.tests.nvfp4_test_utils import shards
 from executorch.backends.cuda.triton.kernels import (
     nvfp4_gated_gemm,
     nvfp4_quantized_gemm,
+    nvfp4_w4a8_gemv,
 )
 from executorch.backends.cuda.triton.kernels.nvfp4_gated_gemm import (
     nvfp4_gate_up_epilogue,
@@ -110,10 +111,16 @@ def recorder(name, calls, original=None):
         ("auto", torch.bfloat16, 37, False, False, ("nvfp4_w4a16", None)),
         ("w4a4", torch.bfloat16, 37, False, True, ("nvfp4_w4a4_gate_up", None)),
         ("w4a16", torch.bfloat16, 37, False, True, ("nvfp4_w4a16", None)),
+        # w4a8 never takes the fused FP4 kernels.
+        ("w4a8", torch.bfloat16, 37, False, True, ("nvfp4_w4a16", None)),
+        ("w4a8", torch.bfloat16, 2, False, True, ("nvfp4_w4a8_gemv", None)),
+        # Without native FP4, decode auto times W4A16 against W4A8.
+        ("auto", torch.bfloat16, 1, False, False, ("nvfp4_auto_decode", None)),
         ("auto", torch.float16, 37, False, True, ("nvfp4_auto_prefill", None)),
-        # Decode-size M takes the per-row decode kernels through F.linear.
+        # Decode-size auto takes the decode kernels through F.linear; forced
+        # w4a4 keeps the fused W4A4 kernel.
         ("auto", torch.bfloat16, 1, False, True, ("nvfp4_auto_decode", None)),
-        ("w4a4", torch.bfloat16, 4, False, True, ("nvfp4_w4a4", None)),
+        ("w4a4", torch.bfloat16, 4, False, True, ("nvfp4_w4a4_gate_up", None)),
         (
             "auto",
             torch.float32,
@@ -133,6 +140,7 @@ def test_gated_linear_routing(mode, dtype, rows, fp32, native, expected, monkeyp
     for module, names in (
         (nvfp4_gated_gemm, ("nvfp4_w4a4_gate_up",)),
         (nvfp4_quantized_gemm, ("nvfp4_gemv", "nvfp4_w4a16", "nvfp4_w4a4")),
+        (nvfp4_w4a8_gemv, ("nvfp4_w4a8_gemv",)),
         (
             nvfp4_dispatch,
             ("nvfp4_auto_gate_up_prefill", "nvfp4_auto_prefill", "nvfp4_auto_decode"),
