@@ -307,6 +307,7 @@ def _run_ggml(
     method: str = "forward",
     allow_activation_quant_for_weight_only: bool = False,
     exact_topk_for_testing: bool = False,
+    exact_gelu_for_testing: bool = False,
 ):
     """Runs each step's inputs in order on one executable and returns each
     step's outputs as (bytes, shape) pairs. `graph_ops`, if given, collects
@@ -340,6 +341,8 @@ def _run_ggml(
         command.append("--allow_activation_quant_for_weight_only")
     if exact_topk_for_testing:
         command.append("--exact_topk_for_testing")
+    if exact_gelu_for_testing:
+        command.append("--exact_gelu_for_testing")
     with as_file(files(__package__) / "ggml_ptn_runner") as runner:
         result = subprocess.run(
             [str(runner), *command],
@@ -365,6 +368,14 @@ _MATMUL_TOL = (
     {"atol": 5e-3, "rtol": 1e-2}
     if os.environ.get("GGML_PTN_DEVICE", "cpu") == "gpu"
     else {"atol": 1e-4, "rtol": 1e-5}
+)
+
+
+# ggml-cuda is built with -use_fast_math, whose tanhf is a few 1e-6 off.
+_GELU_TOL = (
+    {"atol": 1e-5, "rtol": 1e-5}
+    if os.environ.get("GGML_PTN_DEVICE", "cpu") == "gpu"
+    else {"atol": 1e-6, "rtol": 1e-5}
 )
 
 
@@ -448,6 +459,7 @@ class GgmlOpsTest(unittest.TestCase):
         graph_ops=None,
         allow_activation_quant_for_weight_only=False,
         exact_topk_for_testing=False,
+        exact_gelu_for_testing=False,
     ):
         model = model.eval()
         # Eager writes buffers in place; the package must keep them as constructed.
@@ -468,6 +480,7 @@ class GgmlOpsTest(unittest.TestCase):
                     allow_activation_quant_for_weight_only
                 ),
                 exact_topk_for_testing=exact_topk_for_testing,
+                exact_gelu_for_testing=exact_gelu_for_testing,
             )
         self.assertEqual(len(outputs), len(expected))
         for (raw, shape), reference in zip(outputs, expected):
@@ -659,18 +672,34 @@ class GgmlOpsTest(unittest.TestCase):
         self.assertGreater(ops["GELU_ERF"], 0)
 
     def test_gelu_tanh(self):
-        # ggml-cpu's tanh GELU looks its result up in an FP16 table, which
-        # hides the difference from the erf form.
+        # ggml's GELU, as llama.cpp: ggml-cpu reads it from an F16 table, a few
+        # 1e-4 off in F32, which GPUs evaluate in F32.
+        gpu = os.environ.get("GGML_PTN_DEVICE", "cpu") == "gpu"
         ops = collections.Counter()
         self._check(
             Lambda(lambda x: F.gelu(x, approximate="tanh")),
-            (torch.randn(2, 3, 4) * 3.0,),
-            atol=1e-3,
-            rtol=2e-3,
+            (torch.linspace(-12.0, 12.0, 96).reshape(2, 3, 16),),
+            **(_GELU_TOL if gpu else {"atol": 1e-3, "rtol": 2e-3}),
             graph_ops=ops,
         )
         self.assertEqual(ops["GELU_ERF"], 0)
         self.assertGreater(ops["GELU"], 0)
+        self.assertEqual(ops["TANH"], 0)
+
+    def test_gelu_tanh_exact_for_testing(self):
+        # With exact_gelu_for_testing the CPU builds it from tanh and
+        # arithmetic; GPUs keep ggml's GELU, which is F32 already.
+        gpu = os.environ.get("GGML_PTN_DEVICE", "cpu") == "gpu"
+        ops = collections.Counter()
+        self._check(
+            Lambda(lambda x: F.gelu(x, approximate="tanh")),
+            (torch.linspace(-12.0, 12.0, 96).reshape(2, 3, 16),),
+            **_GELU_TOL,
+            graph_ops=ops,
+            exact_gelu_for_testing=True,
+        )
+        self.assertEqual(ops["GELU"] > 0, gpu)
+        self.assertEqual(ops["TANH"] > 0, not gpu)
 
     def test_log(self):
         self._check(Lambda(torch.log), (torch.rand(2, 3, 4) + 0.1,))
