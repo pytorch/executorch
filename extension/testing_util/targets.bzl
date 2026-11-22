@@ -15,6 +15,7 @@ def define_common_targets():
             "//executorch/devtools/etdump/tests/...",
             "//executorch/extension/data_loader/test/...",
             "//executorch/extension/llm/runner/test/...",
+            "//executorch/extension/module/test/...",
             "//executorch/extension/testing_util/test/...",
             "//executorch/extension/fb/ptez/decompression_methods/test/...",
             "//executorch/extension/fb/ptez/test/...",
