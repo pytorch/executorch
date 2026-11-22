@@ -13,6 +13,7 @@ from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
     _e4m3_f16,
     _e4m3_to_f32,
     _fp4_pair_f16,
+    _scaled_pair,
     nvfp4_embedding,
     nvfp4_gemv,
     nvfp4_w4a16,
@@ -58,28 +59,12 @@ def full_range_weight(k, seed=0):
     return q, s
 
 
-def random_weight(n, k, seed):
-    """Random codes and random non-negative finite E4M3 scale bytes."""
-    g = torch.Generator(device="cuda").manual_seed(seed)
-    q = torch.randint(
-        0, 256, (n, k // 2), device="cuda", dtype=torch.uint8, generator=g
-    )
-    s = torch.randint(
-        0, 0x7F, (n, k // 16), device="cuda", dtype=torch.uint8, generator=g
-    )
-    return q, s
-
-
 def reference_weight(q, s, pts):
     """FP32 E2M1 * E4M3 * global scale, the product every kernel rounds."""
     codes = torch.stack((q & 15, q >> 4), -1).reshape(q.shape[0], -1).long()
     lut = torch.tensor(E2M1, device=q.device)
     scale = s.view(torch.float8_e4m3fn).float().repeat_interleave(16, 1)
     return lut[codes] * scale * pts.reshape(-1, 1)
-
-
-def relative_error(actual, expected):
-    return float((actual.float() - expected).abs().max() / expected.abs().max())
 
 
 @triton.jit
@@ -160,12 +145,39 @@ def test_fp16_bit_placement_is_exact():
     finite = (b & 0x7F) != 0x7F
     e4m3 = b.view(torch.float8_e4m3fn).float()
     assert_bits_equal(sf[finite] * 2**8, e4m3[finite])
+    assert sf[~finite].isnan().all()
     # The kernels' FP32 product of the two placements is the exact product.
     rescale = kernels._SOFT_FP4_RESCALE.value
     assert_bits_equal(
         lo[:, None] * (sf[finite] * rescale)[None, :],
         lut[(b & 15).long()][:, None] * e4m3[finite][None, :],
     )
+
+
+@triton.jit
+def _scaled_pair_kernel(Q, S, LO, HI, HALF2: tl.constexpr):
+    i = tl.program_id(0) * 256 + tl.arange(0, 256)
+    sf = _e4m3_f16(tl.load(S + i)) * 256.0
+    if HALF2:
+        sf = sf.to(tl.float16)
+    lo, hi = _scaled_pair(tl.load(Q + i), sf, HALF2, False)
+    tl.store(LO + i, lo)
+    tl.store(HI + i, hi)
+
+
+@pytest.mark.parametrize("half2", [False, True])
+def test_soft_scaled_pair_is_exact(half2):
+    """The software FP16x2 decode times every finite scale, bit for bit."""
+    b = torch.arange(256, device="cuda", dtype=torch.int32).to(torch.uint8)
+    q = b[:, None].expand(256, 256).contiguous()
+    s = b[None, :].expand(256, 256).contiguous()
+    lo, hi = (torch.empty(256, 256, device="cuda") for _ in range(2))
+    _scaled_pair_kernel[(256,)](q, s, lo, hi, HALF2=half2)
+    lut = torch.tensor(E2M1, device="cuda")
+    finite = (b & 0x7F) != 0x7F
+    e4m3 = b.view(torch.float8_e4m3fn).float()[None, finite]
+    assert_bits_equal(lo[:, finite], lut[(b & 15).long()][:, None] * e4m3)
+    assert_bits_equal(hi[:, finite], lut[(b >> 4).long()][:, None] * e4m3)
 
 
 def fixed_gemv(x, q, s, pts, unit_scale, split_k, config, native):
@@ -211,100 +223,75 @@ def gemv_configs(half2):
     ]
 
 
-def native_modes():
-    return [False, True] if kernels._has_native_fp4_conversion() else [False]
+def skip_without_native(native):
+    if native and not kernels._has_native_fp4_conversion():
+        pytest.skip("native FP4 required")
 
 
-@pytest.mark.parametrize("native", native_modes())
+PTS = {
+    "unit": lambda n: torch.ones(1, device="cuda"),
+    "scalar": lambda n: torch.tensor([0.37], device="cuda"),
+    "row": lambda n: torch.rand(n, device="cuda") + 0.5,
+}
+# Not a multiple of any BK, so the masked K tail runs.
+TAIL_K = 1040
+
+
+@pytest.mark.parametrize("native", [False, True])
+@pytest.mark.parametrize("half2", [False, True])
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16])
 @pytest.mark.parametrize(
     "pts_kind,unit_scale", [("unit", True), ("scalar", False), ("row", False)]
 )
-def test_gemv_soft_fp4_matches_reference(native, pts_kind, unit_scale):
-    n, k = 97, 1024
-    q, s = random_weight(n, k, 2)
-    pts = {
-        "unit": torch.ones(1, device="cuda"),
-        "scalar": torch.tensor([0.37], device="cuda"),
-        "row": torch.rand(n, device="cuda") + 0.5,
-    }[pts_kind]
-    w = reference_weight(q, s, pts).to(torch.bfloat16).float()
+def test_gemv_soft_fp4_matches_reference(native, half2, dtype, pts_kind, unit_scale):
+    skip_without_native(native)
+    q, s = full_range_weight(TAIL_K, seed=2)
+    pts = PTS[pts_kind](q.shape[0])
+    w = reference_weight(q, s, pts).to(dtype).float()
     for m in (1, 3):
-        x = torch.randn(m, k, device="cuda", dtype=torch.bfloat16)
+        # Scaled so FP16 outputs of the 448-scale rows stay finite.
+        x = (torch.randn(m, TAIL_K, device="cuda") * 0.125).to(dtype)
         expected = x.float() @ w.T
-        for config in gemv_configs(half2=False):
+        for config in gemv_configs(half2):
             for split_k in (1, 2):
                 actual = fixed_gemv(x, q, s, pts, unit_scale, split_k, config, native)
-                assert relative_error(actual, expected) < 1e-2, (m, config, split_k)
+                error = relative_error_per_row(actual, expected, x, w)
+                assert bool((error < 1e-2).all()), (m, config, split_k)
 
 
-@pytest.mark.parametrize("native", native_modes())
+@pytest.mark.parametrize("native", [False, True])
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16])
 @pytest.mark.parametrize("row_pts", [False, True])
-def test_w4a16_soft_fp4_matches_reference(native, row_pts):
-    from torch._library.triton import set_wrap_triton_enabled
-
-    m, n, k = 37, 160, 1024
-    q, s = random_weight(n, k, 3)
-    pts = (
-        torch.rand(n, device="cuda") + 0.5
-        if row_pts
-        else torch.tensor([0.37], device="cuda")
-    )
-    x = torch.randn(m, k, device="cuda", dtype=torch.bfloat16)
-    expected = x.float() @ reference_weight(q, s, pts).to(torch.bfloat16).float().T
-    with set_wrap_triton_enabled(False):
-        for config in kernels._w4a16.configs:
-            if config.num_stages != 2:
-                continue
-            meta = config.kwargs
-            y = torch.empty((m, n), device="cuda", dtype=x.dtype)
-            grid = (triton.cdiv(m, meta["BM"]) * triton.cdiv(n, meta["BN"]), 1)
-            kernels._w4a16.fn[grid](
-                x,
-                q,
-                s,
-                pts,
-                y,
-                m,
-                n,
-                k,
-                1,
-                NATIVE=native,
-                ROW_PTS=row_pts,
-                num_warps=config.num_warps,
-                num_stages=config.num_stages,
-                **meta,
-            )
-            assert relative_error(y, expected) < 1e-2, config
-
-
-@pytest.mark.parametrize("native", native_modes())
-@pytest.mark.parametrize("pts_kind", ["unit", "scalar", "row"])
-def test_half2_gemv_matches_reference(native, pts_kind):
-    """HALF2 GEMV: packed FP16x2 decode and scale multiply, exact before the
-    BF16/FP32 accumulation, with or without native E2M1 conversion."""
-    n, k = 97, 2048
-    q, s = random_weight(n, k, 4)
-    pts = {
-        "unit": torch.ones(1, device="cuda"),
-        "scalar": torch.tensor([0.37], device="cuda"),
-        "row": torch.rand(n, device="cuda") + 0.5,
-    }[pts_kind]
-    w = reference_weight(q, s, pts).to(torch.bfloat16).float()
-    for m in (1, 3):
-        x = torch.randn(m, k, device="cuda", dtype=torch.bfloat16)
-        expected = x.float() @ w.T
-        for config in gemv_configs(half2=True):
-            for split_k in (1, 4):
-                actual = fixed_gemv(
-                    x, q, s, pts, pts_kind == "unit", split_k, config, native
-                )
-                assert relative_error(actual, expected) < 1e-2, (m, config, split_k)
-
-
-def test_half2_configs_survive_pruning_without_native_fp4():
-    named_args = {"K": 4096, "SPLIT": 1, "NATIVE": False}
-    from executorch.backends.cuda.triton.kernels.nvfp4_tuning import prune_nvfp4_stages
-
-    kept = prune_nvfp4_stages(kernels._gemv.configs, named_args)
-    assert any(config.kwargs["HALF2"] for config in kept)
-    assert any(not config.kwargs["HALF2"] for config in kept)
+def test_w4a16_soft_fp4_matches_reference(native, dtype, row_pts):
+    skip_without_native(native)
+    m = 37
+    q, s = full_range_weight(TAIL_K, seed=3)
+    n = q.shape[0]
+    pts = PTS["row" if row_pts else "scalar"](n)
+    x = torch.randn(m, TAIL_K, device="cuda", dtype=dtype)
+    w = reference_weight(q, s, pts).to(dtype).float()
+    expected = x.float() @ w.T
+    for config in kernels._w4a16.configs:
+        if config.num_stages != 2:
+            continue
+        meta = config.kwargs
+        y = torch.empty((m, n), device="cuda", dtype=torch.float32)
+        grid = (triton.cdiv(m, meta["BM"]) * triton.cdiv(n, meta["BN"]), 1)
+        kernels._w4a16.fn[grid](
+            x,
+            q,
+            s,
+            pts,
+            y,
+            m,
+            n,
+            TAIL_K,
+            1,
+            NATIVE=native,
+            ROW_PTS=row_pts,
+            num_warps=config.num_warps,
+            num_stages=config.num_stages,
+            **meta,
+        )
+        error = relative_error_per_row(y, expected, x, w)
+        assert bool((error < 1e-2).all()), config

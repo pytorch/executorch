@@ -2,7 +2,8 @@
 # All rights reserved.
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-"""NVFP4 W4A8 decode GEMV for GPUs without native FP4 (SM80/SM86/SM89/SM90).
+"""NVFP4 W4A8 decode GEMV for GPUs without native FP4 (compute capability
+below 12).
 
 Without FP4 tensor cores the W4A16 GEMV is ALU bound: every weight is decoded to
 floating point and multiplied in FP32. Here activations are quantized to int8
@@ -12,8 +13,9 @@ negatives) through three PRMT byte permutes per word, and dp4a accumulates
 exact integer dot products per block. Each block's integer sum is scaled by its
 weight E4M3 scale and its activation scale in FP32. The weights are unchanged;
 only the activation precision differs from W4A16 (like llama.cpp's MMQ q8
-activations). `nvfp4_auto_decode_soft` times this against the W4A16 GEMV (with
-split-K) at AOTI compile time and keeps the faster one.
+activations). Without native FP4, `triton::nvfp4_auto_decode` times this
+against the W4A16 GEMV (with split-K) at AOTI compile time and keeps the faster
+one; `ET_CUDA_NVFP4_ACT=w4a8` forces it.
 """
 
 import torch
@@ -25,9 +27,9 @@ from executorch.backends.cuda.autotune.launch_params import (
     InvalidLaunchParam,
 )
 from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
+    _check_operands,
     _e4m3_f16,
     _reduce_partials,
-    nvfp4_gemv,
     SPLIT_K_CANDIDATES,
 )
 from executorch.backends.cuda.triton.kernels.nvfp4_tuning import (
@@ -215,32 +217,24 @@ def launch_w4a8_gemv(x, qdata, scale, pts, *, split_k):
     return out
 
 
-_MODE_STRIDE = 64
-_SOFT_DECODE_CANDIDATES = tuple(
-    mode * _MODE_STRIDE + s for mode in (0, 2) for s in SPLIT_K_CANDIDATES
-)
-
-
-@autotune_launch_param(
-    "mode_split",
-    _SOFT_DECODE_CANDIDATES,
+_launch_w4a8 = autotune_launch_param(
+    "split_k",
+    SPLIT_K_CANDIDATES,
     candidate_prepass=_compile_every_candidate_at_once,
     do_bench=nvfp4_launch_bench,
-)
-def _decode_soft(x, wq, ws, pts, unit_scale=False, *, mode_split):
-    mode, split = divmod(mode_split, _MODE_STRIDE)
-    if mode == 0:
-        return nvfp4_gemv(x, wq, ws, pts, split_k=split, unit_scale=unit_scale)
-    return launch_w4a8_gemv(x, wq, ws, pts, split_k=split)
+)(launch_w4a8_gemv)
 
 
-@triton_op("triton::nvfp4_auto_decode_soft", mutates_args={})
-def nvfp4_auto_decode_soft(
+@triton_op("triton::nvfp4_w4a8_gemv", mutates_args={})
+def nvfp4_w4a8_gemv(
     x: torch.Tensor,
     qdata: torch.Tensor,
     scale: torch.Tensor,
     per_tensor_scale: torch.Tensor,
-    unit_scale: bool = False,
+    split_k: int = -1,
 ) -> torch.Tensor:
-    """M<=4 NVFP4 linear without native FP4: W4A16 GEMV vs W4A8 dp4a GEMV."""
-    return _decode_soft(x.contiguous(), qdata, scale, per_tensor_scale, unit_scale)
+    """NVFP4 W4A8 GEMV for small M; the output keeps ``x.dtype``."""
+    _check_operands(x, qdata, scale, per_tensor_scale)
+    if split_k < 0:
+        return _launch_w4a8(x, qdata, scale, per_tensor_scale)
+    return launch_w4a8_gemv(x, qdata, scale, per_tensor_scale, split_k=split_k)

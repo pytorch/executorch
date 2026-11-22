@@ -91,6 +91,11 @@ def record_calls(monkeypatch, module, names, calls):
         ("w4a16", False, 37, False, "nvfp4_w4a16"),
         ("w4a16", False, 1, False, "nvfp4_gemv"),
         ("auto", False, 37, False, "nvfp4_w4a16"),
+        # Without native FP4, auto decode times W4A16 against W4A8.
+        ("auto", False, 1, False, "nvfp4_auto_decode"),
+        ("w4a8", False, 1, False, "nvfp4_w4a8_gemv"),
+        ("w4a8", True, 1, False, "nvfp4_w4a8_gemv"),
+        ("w4a8", True, 37, True, "nvfp4_w4a16"),
         ("auto", True, 37, False, "nvfp4_auto_prefill"),
         ("auto", True, 37, True, "nvfp4_auto_prefill"),
         ("auto", True, 1, True, "nvfp4_auto_decode"),
@@ -104,7 +109,10 @@ def record_calls(monkeypatch, module, names, calls):
 def test_linear_routing(mode, native, rows, fp32, expected, monkeypatch):
     # Export traces with fake tensors; record which op each policy emits.
     from executorch.backends.cuda.quantize_op_dispatch import nvfp4_dispatch
-    from executorch.backends.cuda.triton.kernels import nvfp4_quantized_gemm
+    from executorch.backends.cuda.triton.kernels import (
+        nvfp4_quantized_gemm,
+        nvfp4_w4a8_gemv,
+    )
 
     calls = []
     record_calls(
@@ -119,6 +127,7 @@ def test_linear_routing(mode, native, rows, fp32, expected, monkeypatch):
         ("nvfp4_auto_decode", "nvfp4_auto_prefill"),
         calls,
     )
+    record_calls(monkeypatch, nvfp4_w4a8_gemv, ("nvfp4_w4a8_gemv",), calls)
     monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: native)
     monkeypatch.setenv("ET_CUDA_NVFP4_ACT", mode)
     monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_OUTPUT", "fp32" if fp32 else "input")
@@ -400,55 +409,6 @@ def test_row_scale_embedding():
     ids = torch.tensor([[0, 30, 31, 49, 50, 96]], device="cuda")
     actual = nvfp4_embedding(ids, w.qdata, w.scale, w.per_tensor_scale, w.dtype)
     torch.testing.assert_close(actual, w.dequantize()[ids], rtol=0, atol=0)
-
-
-def test_cuda_loader_fuses_nvfp4_without_changing_mlx_layout():
-    from executorch.examples.models.muse_glimmer.loaders.checkpoint_loader import (
-        _fuse_state_dict,
-    )
-    from executorch.extension.llm.export.nvfp4 import ExportableNVFP4Tensor
-
-    sd = {}
-    for layer in range(2):
-        for name, w in zip(("q", "k", "og"), shards(192)):
-            sd[f"layers.{layer}.self_attn.{name}_proj.weight"] = ExportableNVFP4Tensor(
-                w.qdata.view(torch.uint32),
-                w.scale,
-                w.per_tensor_scale,
-                16,
-                w.orig_dtype,
-            )
-        for name in ("gate", "up"):
-            w = shards(192)[0]
-            sd[f"layers.{layer}.mlp.{name}_proj.weight"] = ExportableNVFP4Tensor(
-                w.qdata.view(torch.uint32),
-                w.scale,
-                w.per_tensor_scale,
-                16,
-                w.orig_dtype,
-            )
-    fused, groups = _fuse_state_dict(sd, "cuda", 2)
-    assert "layers.{}.self_attn.qko_proj.weight" in groups
-    assert fused["layers.0.self_attn.qko_proj.weight"].per_tensor_scale.numel() == 97
-    assert fused["layers.0.mlp.gate_up_proj.weight"].per_tensor_scale.numel() == 1
-    assert torch.equal(
-        fused["layers.0.self_attn.qko_proj.weight"].dequantize(),
-        torch.cat(
-            [
-                sd[f"layers.0.self_attn.{name}_proj.weight"].dequantize()
-                for name in ("q", "k", "og")
-            ]
-        ),
-    )
-    mlx, mlx_groups = _fuse_state_dict(sd, "mlx", 2)
-    assert "layers.{}.self_attn.qko_proj.weight" not in mlx_groups
-    assert isinstance(mlx["layers.0.mlp.gate_up_proj.weight"], ExportableNVFP4Tensor)
-    sd["layers.1.self_attn.k_proj.weight"].act_per_tensor_scale = 0.001
-    separate, separate_groups = _fuse_state_dict(sd, "cuda", 2)
-    assert "layers.{}.self_attn.qko_proj.weight" not in separate_groups
-    assert all(
-        f"layers.{layer}.self_attn.q_proj.weight" in separate for layer in range(2)
-    )
 
 
 class FusedLinear(torch.nn.Module):

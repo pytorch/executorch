@@ -29,14 +29,16 @@ E2M1 = E2M1 + [-v for v in E2M1]
 
 
 def weight(n, k, seed=0):
+    """Random codes; row r has the (r % 254)-th finite E4M3 byte as its only
+    scale, so 254 rows cover both signs and every subnormal."""
     g = torch.Generator(device="cuda").manual_seed(seed)
     q = torch.randint(
         0, 256, (n, k // 2), device="cuda", dtype=torch.uint8, generator=g
     )
-    s = torch.randint(
-        0x20, 0x48, (n, k // 16), device="cuda", dtype=torch.uint8, generator=g
-    )
-    return q, s
+    b = torch.arange(256, device="cuda")
+    finite = b[(b & 0x7F) != 0x7F].to(torch.uint8)
+    s = finite[torch.arange(n, device="cuda") % finite.numel(), None]
+    return q, s.expand(n, k // 16).contiguous()
 
 
 def codes(q):
@@ -78,6 +80,17 @@ def relative_error(actual, expected):
     return float((actual.float() - expected).abs().max() / expected.abs().max())
 
 
+def relative_error_per_row(actual, expected, x, q, s, pts):
+    """Error of each output column relative to that weight row's magnitude, so
+    a wrong small or subnormal scale cannot hide behind larger rows."""
+    lut = torch.tensor(E2M1, device="cuda")
+    scale = s.view(torch.float8_e4m3fn).float().repeat_interleave(16, 1)
+    w = lut[codes(q)] * scale * pts.reshape(-1, 1)
+    err = (actual.float() - expected).abs().amax(0)
+    size = (x.float().abs() @ w.abs().T).amax(0)
+    return torch.where(size > 0, err / size, err)
+
+
 def test_activation_quantization_matches_reference():
     torch.manual_seed(0)
     m, k = 3, 1040
@@ -117,10 +130,12 @@ def test_e2m1_to_int8_permute_is_exact():
     assert torch.equal(actual.cpu(), lut2[nibbles])
 
 
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16])
 @pytest.mark.parametrize("row_pts", [False, True])
 @pytest.mark.parametrize("split_k", [1, 2, 4, 8])
-def test_w4a8_gemv_matches_integer_reference(row_pts, split_k):
-    n, k = 200, 4096
+def test_w4a8_gemv_matches_integer_reference(dtype, row_pts, split_k):
+    # K = 2880 is not a multiple of any BK: the tail masks run.
+    n, k = 254, 2880
     q, s = weight(n, k)
     pts = (
         torch.rand(n, device="cuda") + 0.5
@@ -129,13 +144,18 @@ def test_w4a8_gemv_matches_integer_reference(row_pts, split_k):
     )
     for m in (1, 2, 4):
         torch.manual_seed(m)
-        x = torch.randn(m, k, device="cuda", dtype=torch.bfloat16)
+        # Scaled so FP16 outputs of the 448-scale rows stay finite.
+        x = (torch.randn(m, k, device="cuda") * 0.0625).to(dtype)
         xq, xs = act_q8_reference(x)
         y = w4a8.launch_w4a8_gemv(x, q, s, pts, split_k=split_k)
         assert y.shape == (m, n) and y.dtype == x.dtype
-        # Only FP32 accumulation order and the BF16 output rounding differ.
-        assert relative_error(y, w4a8_reference(xq, xs, q, s, pts)) < 8e-3
-        assert relative_error(y, dense_reference(x, q, s, pts)) < 3e-2
+        # Only FP32 accumulation order and the output rounding differ.
+        exact = relative_error_per_row(
+            y, w4a8_reference(xq, xs, q, s, pts), x, q, s, pts
+        )
+        assert bool((exact < 8e-3).all())
+        dense = relative_error_per_row(y, dense_reference(x, q, s, pts), x, q, s, pts)
+        assert bool((dense < 3e-2).all())
 
 
 def test_w4a8_rejects_illegal_split():
@@ -148,36 +168,72 @@ def test_w4a8_rejects_illegal_split():
         w4a8.launch_w4a8_gemv(x, q, s, pts, split_k=2)
 
 
-@pytest.mark.parametrize("unit_scale", [False, True])
-def test_auto_decode_soft_op(unit_scale):
+def test_w4a8_op_validates_and_matches_reference():
     n, k = 160, 2048
     q, s = weight(n, k, seed=5)
-    pts = (
-        torch.ones(1, device="cuda")
-        if unit_scale
-        else torch.tensor([0.37], device="cuda")
-    )
+    pts = torch.tensor([0.37], device="cuda")
     x = torch.randn(3, k, device="cuda", dtype=torch.bfloat16)
-    y = w4a8.nvfp4_auto_decode_soft(x, q, s, pts, unit_scale)
-    assert relative_error(y, dense_reference(x, q, s, pts)) < 3e-2
+    xq, xs = act_q8_reference(x)
+    y = w4a8.nvfp4_w4a8_gemv(x, q, s, pts)
+    assert relative_error(y, w4a8_reference(xq, xs, q, s, pts)) < 8e-3
+    with pytest.raises(ValueError):
+        w4a8.nvfp4_w4a8_gemv(x[:, :-16], q, s, pts)
 
 
-@pytest.mark.parametrize("enabled", ["1", "0"])
-def test_linear_dispatch_without_native_fp4(enabled, monkeypatch):
+@pytest.mark.parametrize("split", [1, 4])
+def test_auto_decode_runs_w4a8_mode(split, monkeypatch):
     from executorch.backends.cuda.quantize_op_dispatch import nvfp4_dispatch
 
-    monkeypatch.setenv("ET_CUDA_NVFP4_SOFT_W4A8", enabled)
-    monkeypatch.delenv("ET_CUDA_NVFP4_ACT", raising=False)
-    monkeypatch.setenv("ET_CUDA_NVFP4_SMALL_M", "0")
+    monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: False)
+    n, k = 160, 2048
+    q, s = weight(n, k, seed=7)
+    pts = torch.tensor([0.37], device="cuda")
+    x = torch.randn(2, k, device="cuda", dtype=torch.bfloat16)
+    xq, xs = act_q8_reference(x)
+    y = nvfp4_dispatch._decode(
+        x, q, s, pts, None, mode_split=2 * nvfp4_dispatch._MODE_STRIDE + split
+    )
+    assert relative_error(y, w4a8_reference(xq, xs, q, s, pts)) < 8e-3
+
+
+@pytest.mark.parametrize("native", [False, True])
+def test_auto_decode_times_w4a8_only_without_native_fp4(native, monkeypatch):
+    from executorch.backends.cuda.autotune.launch_params import (
+        autotune_launch_params,
+        clear_launch_param_cache,
+    )
+    from executorch.backends.cuda.quantize_op_dispatch import nvfp4_dispatch
+
+    if native and not nvfp4_dispatch._has_native_fp4():
+        pytest.skip("native FP4 required")
+    monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: native)
+    n, k = 160, 2048
+    q, s = weight(n, k, seed=8)
+    pts = torch.tensor([0.37], device="cuda")
+    x = torch.randn(1, k, device="cuda", dtype=torch.bfloat16)
+    clear_launch_param_cache()
+    with autotune_launch_params() as stats:
+        out = nvfp4_dispatch.nvfp4_auto_decode(x, q, s, pts)
+    (pick,) = [p for p in stats.picks if p.param == "mode_split"]
+    modes = {c // nvfp4_dispatch._MODE_STRIDE for c in pick.times_us}
+    assert modes == ({0, 1} if native else {0, 2})
+    assert relative_error(out, dense_reference(x, q, s, pts)) < 3e-2
+
+
+@pytest.mark.parametrize("mode", ["auto", "w4a8", "w4a16"])
+def test_linear_dispatch_without_native_fp4(mode, monkeypatch):
+    from executorch.backends.cuda.quantize_op_dispatch import nvfp4_dispatch
+
+    monkeypatch.setenv("ET_CUDA_NVFP4_ACT", mode)
     n, k = 96, 512
     q, s = weight(n, k, seed=6)
     w = CudaNVFP4Tensor(q, s, torch.tensor(0.5, device="cuda"))
     x = torch.randn(2, 2, k, device="cuda", dtype=torch.bfloat16)
-    soft = mock.Mock(wraps=w4a8.nvfp4_auto_decode_soft)
+    forced = mock.Mock(wraps=w4a8.nvfp4_w4a8_gemv)
     with mock.patch.object(
         nvfp4_dispatch, "_has_native_fp4", return_value=False
-    ), mock.patch.object(w4a8, "nvfp4_auto_decode_soft", soft):
+    ), mock.patch.object(w4a8, "nvfp4_w4a8_gemv", forced):
         y = F.linear(x, w)
-    assert soft.call_count == (1 if enabled == "1" else 0)
+    assert forced.call_count == (mode == "w4a8")
     expected = dense_reference(x.reshape(4, k), q, s, w.per_tensor_scale)
     assert relative_error(y.reshape(4, n), expected) < 3e-2
