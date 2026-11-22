@@ -4486,14 +4486,18 @@ TEST(VulkanEngineTest, RejectsGgufQ4KWeightOfWrongSize) {
   }
 }
 
-TEST(VulkanEngineTest, KeepsNonKQuantPackedConstantsQuantized) {
+TEST(VulkanEngineTest, RejectsPackedConstantsItCannotDecode) {
   try {
     compile_program(
-        make_gguf_q4_k_linear_program("gguf:q8_0"),
+        make_gguf_q4_k_linear_program("gguf:iq4_xs"),
         make_gguf_q4_k_linear_tensors({{{2, 1}, {3, 1}}}));
-    FAIL() << "expected the gguf:q8_0 weight to stay quantized";
+    FAIL() << "expected the gguf:iq4_xs weight to be rejected";
   } catch (const std::runtime_error& e) {
-    EXPECT_NE(std::string(e.what()).find("does not lower"), std::string::npos)
+    EXPECT_NE(
+        std::string(e.what()).find(
+            "has PackedQuant codec 'gguf:iq4_xs', which the Vulkan engine "
+            "cannot decode"),
+        std::string::npos)
         << e.what();
   }
 }
