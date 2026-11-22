@@ -3195,6 +3195,7 @@ struct GgufBlockLayout {
 constexpr GgufBlockLayout kGgufBlockLayouts[] = {
     {"q4_0", 32, 2 + 32 / 2}, // d, qs
     {"q5_0", 32, 2 + 4 + 32 / 2}, // d, qh, qs
+    {"q5_1", 32, 2 + 2 + 4 + 32 / 2}, // d, m, qh, qs
     {"q8_0", 32, 2 + 32}, // d, qs
     {"q2_k", 256, 256 / 16 + 256 / 4 + 2 + 2}, // scales, qs, d, dmin
     {"q3_k", 256, 256 / 8 + 256 / 4 + 12 + 2}, // hmask, qs, scales, d

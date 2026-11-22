@@ -257,6 +257,25 @@ TEST(ReferenceGgufQuantTest, DecodesQ5_0Block) {
   EXPECT_EQ(decode_one_row("gguf:q5_0", block, 32), expected);
 }
 
+TEST(ReferenceGgufQuantTest, DecodesQ5_1Block) {
+  // The codes are laid out as in block_q5_0, each decoding to code * d + m.
+  std::vector<uint8_t> qh(4);
+  std::vector<uint8_t> qs(16);
+  std::vector<float> expected(32);
+  for (int j = 0; j < 32; ++j) {
+    const int code = (5 * j + 1) % 32;
+    qs[j % 16] |= static_cast<uint8_t>((code & 0xF) << (4 * (j / 16)));
+    qh[j / 8] |= static_cast<uint8_t>((code >> 4) << (j % 8));
+    expected[j] = 0.125f * code + 1.0f;
+  }
+  std::vector<uint8_t> block = {0x00, 0x30, 0x00, 0x3C}; // d = 0.125, m = 1
+  block.insert(block.end(), qh.begin(), qh.end());
+  block.insert(block.end(), qs.begin(), qs.end());
+  ASSERT_EQ(block.size(), 24);
+
+  EXPECT_EQ(decode_one_row("gguf:q5_1", block, 32), expected);
+}
+
 TEST(ReferenceGgufQuantTest, SizesWholeBlockRows) {
   EXPECT_TRUE(can_decode_gguf("gguf:q4_k"));
   EXPECT_TRUE(can_decode_gguf("gguf:q5_k"));
@@ -266,6 +285,7 @@ TEST(ReferenceGgufQuantTest, SizesWholeBlockRows) {
   EXPECT_TRUE(can_decode_gguf("gguf:q2_k"));
   EXPECT_TRUE(can_decode_gguf("gguf:q4_0"));
   EXPECT_TRUE(can_decode_gguf("gguf:q5_0"));
+  EXPECT_TRUE(can_decode_gguf("gguf:q5_1"));
   EXPECT_FALSE(can_decode_gguf("gguf:iq4_xs"));
   EXPECT_FALSE(can_decode_gguf("q4_k"));
   EXPECT_EQ(gguf_row_nbytes("gguf:q4_k", 512), 288);
@@ -279,6 +299,8 @@ TEST(ReferenceGgufQuantTest, SizesWholeBlockRows) {
   EXPECT_THROW(gguf_row_nbytes("gguf:q4_0", 16), std::invalid_argument);
   EXPECT_EQ(gguf_row_nbytes("gguf:q5_0", 64), 44);
   EXPECT_THROW(gguf_row_nbytes("gguf:q5_0", 48), std::invalid_argument);
+  EXPECT_EQ(gguf_row_nbytes("gguf:q5_1", 64), 48);
+  EXPECT_THROW(gguf_row_nbytes("gguf:q5_1", 48), std::invalid_argument);
   EXPECT_THROW(gguf_row_nbytes("gguf:q4_k", 255), std::invalid_argument);
   EXPECT_THROW(gguf_row_nbytes("gguf:q4_k", 0), std::invalid_argument);
   EXPECT_THROW(gguf_row_nbytes("gguf:q4_k", -256), std::invalid_argument);
@@ -316,6 +338,7 @@ TEST(ReferenceGgufQuantTest, MatchesGgmlDequantization) {
   for (const auto& [codec, type, scale_offsets] :
        {std::tuple{"gguf:q4_0", GGML_TYPE_Q4_0, std::vector<size_t>{0}},
         std::tuple{"gguf:q5_0", GGML_TYPE_Q5_0, std::vector<size_t>{0}},
+        std::tuple{"gguf:q5_1", GGML_TYPE_Q5_1, std::vector<size_t>{0, 2}},
         std::tuple{"gguf:q8_0", GGML_TYPE_Q8_0, std::vector<size_t>{0}},
         std::tuple{"gguf:q2_k", GGML_TYPE_Q2_K, std::vector<size_t>{80, 82}},
         std::tuple{"gguf:q3_k", GGML_TYPE_Q3_K, std::vector<size_t>{108}},
