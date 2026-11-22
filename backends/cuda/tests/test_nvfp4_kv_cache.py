@@ -9,6 +9,7 @@
 import math
 import unittest
 
+import executorch.backends.cuda.triton.kernels.nvfp4_kv as K
 import torch
 
 from executorch.backends.cuda.triton.kernels.nvfp4_kv import (
@@ -53,6 +54,13 @@ def new_cache(length):
 
 def rel(a, b):
     return ((a.float() - b.float()).norm() / b.float().norm()).item()
+
+
+def row_err(a, b):
+    """Worst query row's max error relative to that row's magnitude, so a few
+    wrong rows (tail tiles, mask edges, split-K merge) cannot hide."""
+    err = (a.float() - b.float()).abs().amax(-1)
+    return (err / b.float().abs().amax(-1).clamp_min(1e-6)).max().item()
 
 
 def ref_attn(q, kd, vd, mask):
@@ -127,10 +135,10 @@ class TestNVFP4KVCache(unittest.TestCase):
             cache = [f[f.numel() // 3 : 2 * f.numel() // 3] for f in flat]
             cache = [c.view(1, HKV, L, -1) for c in cache]
             pos_t = torch.tensor(pos, device="cuda")
-            torch.ops.triton.nvfp4_kv_write(k, v, pos_t, *cache, None, ring, -1.0)
+            torch.ops.triton.nvfp4_kv_write(k, v, pos_t, *cache, None, ring, None)
             expected = new_cache(L) + new_cache(L)
             torch.ops.triton.nvfp4_kv_write(
-                k[:, 1:2], v[:, 1:2], pos_t[1:2], *expected, None, ring, -1.0
+                k[:, 1:2], v[:, 1:2], pos_t[1:2], *expected, None, ring, None
             )
             for c, e in zip(cache, expected):
                 self.assertTrue(torch.equal(c, e), f"ring={ring}")
@@ -146,7 +154,7 @@ class TestNVFP4KVCache(unittest.TestCase):
         x = (sign * mag).to(torch.bfloat16)
         kc, vc = new_cache(16), new_cache(16)
         pos = torch.arange(2, device="cuda")
-        torch.ops.triton.nvfp4_kv_write(x, x, pos, *kc, *vc, None, False, -1.0)
+        torch.ops.triton.nvfp4_kv_write(x, x, pos, *kc, *vc, None, False, None)
         for c in (kc, vc):
             self.assertTrue(
                 torch.equal(deq(*c)[:, :, :2].transpose(1, 2), 2688.0 * sign)
@@ -173,14 +181,31 @@ class TestNVFP4KVCache(unittest.TestCase):
         ]
         ref = ref_attn(q, deq(*kc)[:, :, :n_total], deq(*vc)[:, :, :n_total], mask)
         self.assertLess(rel(out, ref), 1e-2, f"global kv={n_total} Lq={lq}")
+        self.assertLess(row_err(out, ref), 2e-2, f"global kv={n_total} Lq={lq}")
+        return kc, vc, q, ref
 
     def test_global_decode(self):
         for n in (1, 777, 70001):
             self._global(131072, n, 1)
 
     def test_global_small_query(self):
+        # L_q 2 and 16 bound the split-K dispatch; 17 takes the prefill kernel.
+        self._global(131072, 5000, 2)
         self._global(131072, 5000, 4)
         self._global(131072, 33333, 16)
+        self._global(131072, 33333, 17)
+
+    def test_prefill_kernel_small_query(self):
+        """The prefill kernel serves every chunk of a dynamic-length export,
+        including 1..16-token chunks and lengths that are not tile multiples."""
+        for n_total, lq in ((5000, 1), (5000, 5), (777, 16), (4100, 100)):
+            kc, vc, q, ref = self._global(8192, n_total, lq)
+            out = torch.empty_like(q)
+            kv_len = torch.tensor([n_total], device="cuda", dtype=torch.int32)
+            K._launch_nvfp4_prefill(q, *kc, *vc, out, None, kv_len, SCALE, True)
+            tag = f"prefill kernel kv={n_total} Lq={lq}"
+            self.assertLess(rel(out, ref), 1e-2, tag)
+            self.assertLess(row_err(out, ref), 2e-2, tag)
 
     def test_global_prefill(self):
         self._global(131072, 512, 512)
@@ -210,16 +235,19 @@ class TestNVFP4KVCache(unittest.TestCase):
         tag = f"sliding ring={buf} pos={n_before} Lq={lq} keep={keep}"
         out = torch.ops.triton.nvfp4_sdpa(q, *kc, *vc, mask, False, SCALE, None)
         self.assertLess(rel(out, ref), 1e-2, f"{tag} dense mask")
+        self.assertLess(row_err(out, ref), 2e-2, f"{tag} dense mask")
         kv_len = torch.tensor([n_total], device="cuda")
         if keep == 1.0:
             out = torch.ops.triton.nvfp4_sdpa(
                 q, *kc, *vc, None, False, SCALE, kv_len, window
             )
             self.assertLess(rel(out, ref), 1e-2, f"{tag} in-kernel window")
+            self.assertLess(row_err(out, ref), 2e-2, f"{tag} in-kernel window")
         out = torch.ops.triton.nvfp4_sdpa(
             q, *kc, *vc, mask, False, SCALE, kv_len, window
         )
         self.assertLess(rel(out, ref), 1e-2, f"{tag} window + slot-indexed mask")
+        self.assertLess(row_err(out, ref), 2e-2, f"{tag} window + slot-indexed mask")
         return mask
 
     def test_sliding_decode(self):
@@ -274,11 +302,77 @@ class _WriteAndAttend(torch.nn.Module):
         )
 
 
+class TestNVFP4KVValidation(unittest.TestCase):
+    """The ops reject malformed operands before launching (no GPU needed)."""
+
+    def test_rejects_malformed_operands(self):
+        def cache(batch=1, heads=HKV, length=16, dtype=torch.uint8):
+            return [
+                torch.zeros(batch, heads, length, D // 2, dtype=dtype),
+                torch.zeros(batch, heads, length, D // 16, dtype=dtype),
+            ]
+
+        k = torch.zeros(1, 2, HKV, D, dtype=torch.bfloat16)
+        pos = torch.arange(2)
+        q = torch.zeros(1, HQ, 2, D, dtype=torch.bfloat16)
+        write = torch.ops.triton.nvfp4_kv_write
+        sdpa = torch.ops.triton.nvfp4_sdpa
+        bad = [
+            lambda: write(k, k, pos, *cache(dtype=torch.int8), *cache()),
+            lambda: write(k, k, pos, *cache(batch=2), *cache(batch=2)),
+            lambda: write(k, k[..., :64], pos, *cache(), *cache()),
+            lambda: write(k, k, pos[:1], *cache(), *cache()),
+            lambda: write(k, k, pos, *cache(), *cache(length=8)),
+            lambda: sdpa(q.half(), *cache(), *cache()),
+            lambda: sdpa(q[:, :3], *cache(), *cache()),
+            lambda: sdpa(q[..., :64], *cache(), *cache()),
+        ]
+        for i, call in enumerate(bad):
+            with self.assertRaises(ValueError, msg=str(i)):
+                call()
+
+
 class TestLowerNVFP4KVWrite(unittest.TestCase):
     def setUp(self):
         if not torch.cuda.is_available() or torch.version.hip is not None:
             self.skipTest("CUDA required")
         torch.manual_seed(0)
+
+    def test_pass_with_dynamic_seq_len_matches_eager(self):
+        """Prefill then decode through one dynamic-T export: the outputs and
+        the cache buffers match eager after both calls."""
+        from executorch.backends.cuda.passes.lower_nvfp4_kv import LowerNVFP4KVWritePass
+
+        def inputs(start, T):
+            return (
+                torch.randn(1, HQ, T, D, device="cuda", dtype=torch.bfloat16),
+                torch.randn(1, T, HKV, D, device="cuda", dtype=torch.bfloat16),
+                torch.randn(1, T, HKV, D, device="cuda", dtype=torch.bfloat16),
+                torch.arange(start, start + T, device="cuda"),
+            )
+
+        steps = [inputs(0, 8), inputs(8, 1)]
+        T = torch.export.Dim("T", min=1, max=64)
+        shapes = ({2: T}, {1: T}, {1: T}, {0: T})
+        for ring in (False, True):
+            eager = _WriteAndAttend(256, ring)
+            expected = [eager(*args) for args in steps]
+            ep = torch.export.export(
+                _WriteAndAttend(256, ring), steps[0], dynamic_shapes=shapes, strict=True
+            )
+            ep = LowerNVFP4KVWritePass()(ep.run_decompositions({}))
+            self.assertNotIn("auto_functionalized", str(ep.graph))
+            module = ep.module()
+            for args, want in zip(steps, expected):
+                # A dynamic T takes the prefill kernel; eager takes split-K.
+                out = module(*args)
+                self.assertLess(rel(out, want), 1e-2, f"ring={ring}")
+                self.assertLess(row_err(out, want), 2e-2, f"ring={ring}")
+            for name in ("k_q", "k_s", "v_q", "v_s"):
+                self.assertTrue(
+                    torch.equal(getattr(module, name), getattr(eager, name)),
+                    f"ring={ring} {name}",
+                )
 
     def test_pass_inlines_write_kernel(self):
         from executorch.backends.cuda.passes.lower_nvfp4_kv import LowerNVFP4KVWritePass

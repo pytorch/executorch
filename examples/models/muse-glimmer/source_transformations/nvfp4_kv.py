@@ -22,7 +22,8 @@ Sliding-window layers keep the model's ring geometry (``RingKVCache``: slot
 ``pos % capacity``); the kernel derives the dense ring mask's visibility from
 the absolute positions, so the ring capacity is the only geometry parameter.
 
-Enabled by ``export_solo.py --kv-cache-dtype nvfp4``.
+Enabled by ``export_solo.py --kv-cache-dtype nvfp4``
+(``cuda_source_transformations(use_nvfp4_kv_cache=True)``).
 """
 
 from __future__ import annotations
@@ -46,7 +47,6 @@ class NVFP4KVCache(nn.Module):
         super().__init__()
         assert head_dim % 32 == 0 and head_dim & (head_dim - 1) == 0
         self.ring = ring
-        self.length = length
         for kind in ("k", "v"):
             self.register_buffer(
                 f"{kind}_q",
@@ -66,9 +66,6 @@ class NVFP4KVCache(nn.Module):
                 ),
                 persistent=False,
             )
-
-    def nbytes(self) -> int:
-        return sum(b.numel() * b.element_size() for b in self.buffers())
 
 
 def _nvfp4_kv_attention_forward(
@@ -103,7 +100,7 @@ def _nvfp4_kv_attention_forward(
         c.v_s,
         self.inv_freq if self.use_rope else None,
         c.ring,
-        self.k_norm.eps if self.k_norm is not None else -1.0,
+        self.k_norm.eps if self.k_norm is not None else None,
     )
     # Absolute number of tokens written after this step (CUDA-graph safe).
     kv_len = input_pos[0] + input_pos.shape[0]
@@ -140,31 +137,18 @@ def _nvfp4_kv_attention_forward(
     return self.o_proj(y.reshape(B, T, -1))
 
 
-def install_nvfp4_kv_cache(model: nn.Module, ring_capacity: int | None = None) -> dict:
-    """Swap every layer to the NVFP4 KV cache.  Returns a size summary.
-
-    ``ring_capacity``: slots of each sliding-window ring; ``None`` keeps the
-    model's BF16 ring size. It must cover ``window + longest step - 1`` for
-    every query row of a step to see its whole window.
-    """
-    new_bytes = old_bytes = 0
+def install_nvfp4_kv_cache(model: nn.Module) -> None:
+    """Swap every layer to the NVFP4 KV cache (same lengths as the BF16 caches)."""
     for layer in model.layers:
         attn = layer.self_attn
         old = attn.kv_cache
-        old_bytes += sum(b.numel() * b.element_size() for b in old.buffers())
-        length = old.k_cache.shape[2]
-        if attn.is_sliding and ring_capacity is not None:
-            length = ring_capacity
         device = old.k_cache.device if old.k_cache.device.type != "meta" else "cpu"
         attn.kv_cache = NVFP4KVCache(
-            attn.n_kv_heads, length, attn.head_dim, attn.is_sliding, device
+            attn.n_kv_heads,
+            old.k_cache.shape[2],
+            attn.head_dim,
+            attn.is_sliding,
+            device,
         )
-        new_bytes += attn.kv_cache.nbytes()
         attn.forward = types.MethodType(_nvfp4_kv_attention_forward, attn)
-    summary = {
-        "layers": len(model.layers),
-        "bf16_kv_bytes_equiv": int(old_bytes if old_bytes else 0),
-        "nvfp4_kv_bytes": int(new_bytes),
-    }
-    print(f"[muse_glimmer cuda] NVFP4 KV cache installed: {summary}")
-    return summary
+    print(f"[muse_glimmer cuda] NVFP4 KV cache: {len(model.layers)} layers")
