@@ -24,9 +24,36 @@ DEFINE_bool(
     print_graph_ops,
     false,
     "Print each built graph's node count per ggml op to stderr.");
-
+DEFINE_bool(
+    exact_topk_for_testing,
+    false,
+    "Testing only. Default: topk is one argsort, as in llama.cpp, which leaves "
+    "a row holding NaN unordered. Set: NaN ranks above every value as eager "
+    "does, at a NaN key map and a second argsort. Ops: topk.");
+DEFINE_bool(
+    exact_gelu_for_testing,
+    false,
+    "Testing only. Default: tanh GELU is one ggml_gelu, as in llama.cpp, which "
+    "ggml-cpu reads from an F16 table. Set: the CPU builds it from exact ops "
+    "as eager does, at five more kernels. Ops: gelu with approximate=tanh; "
+    "CPU only.");
+DEFINE_bool(
+    cuda_f32_accumulation_for_testing,
+    false,
+    "Testing only. Default: matrix multiplies with an F16 operand accumulate "
+    "in F16 on CUDA, as in llama.cpp. Set: they accumulate in F32, at 2-3x "
+    "prefill and 4x decode GEMM time. Ops: F16 linear, matmul, mm, bmm and "
+    "convolution; CUDA only.");
+DEFINE_bool(
+    fold_constants,
+    true,
+    "Default: nodes that read only unquantized constants are computed once, "
+    "at compile, and every call reads their results. False (testing only): "
+    "they are computed on every call.");
 namespace ptn {
 
+// cppcheck-suppress unusedFunction ; called by the ggml runners
+// (run_hf_llm_ggml, ggml_ptn_runner)
 GgmlEngineOptions ggml_engine_options_from_flags() {
   GgmlEngineOptions options;
   if (FLAGS_device == "gpu") {
@@ -41,6 +68,11 @@ GgmlEngineOptions ggml_engine_options_from_flags() {
   }
   options.max_cached_graphs = static_cast<size_t>(FLAGS_max_cached_graphs);
   options.print_graph_ops = FLAGS_print_graph_ops;
+  options.exact_topk_for_testing = FLAGS_exact_topk_for_testing;
+  options.exact_gelu_for_testing = FLAGS_exact_gelu_for_testing;
+  options.cuda_f32_accumulation_for_testing =
+      FLAGS_cuda_f32_accumulation_for_testing;
+  options.fold_constants = FLAGS_fold_constants;
   return options;
 }
 

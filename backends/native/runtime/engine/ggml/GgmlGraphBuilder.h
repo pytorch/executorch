@@ -121,6 +121,14 @@ struct OffGraphUploads {
   std::vector<Group> groups;
 };
 
+// An integer a comparison leaves to the host, such as an attention position
+// that adds and subtracts compute from a graph input, which the host bounds
+// on every run.
+struct HostIntegerCheck {
+  ValueId id = kInvalid;
+  std::string what;
+};
+
 struct GraphInstance {
   ggml_context_ptr context;
   ggml_cgraph* graph = nullptr;
@@ -129,6 +137,16 @@ struct GraphInstance {
   // Input-driven row indices, rechecked on every replay.
   std::vector<RowIndexCheck> row_index_checks;
   std::optional<OffGraphUploads> offgraph;
+  // Integer inputs some op computes on in F32, rechecked on every replay.
+  std::vector<ValueId> exact_integer_checks;
+  std::vector<HostIntegerCheck> host_integer_checks;
+};
+
+// Results of nodes that read only constants, computed once: `instance` outputs
+// `values` in order.
+struct FoldGraph {
+  GraphInstance instance;
+  std::vector<ValueId> values;
 };
 
 // Inference batch norm is the per-channel map x * scale + shift of its
@@ -144,9 +162,33 @@ struct FoldedBatchNorms {
   std::unordered_map<ValueId, ggml_tensor*> conv_bias;
 };
 
+// Node capacity of a method's graphs: at least `graph_size`, and at least the
+// metadata room GraphBuilder sizes for every lowering's tensors, so no graph
+// can outgrow it.
+size_t graph_capacity(const Method& method, size_t graph_size);
+
 const ggml_tensor* storage_root(const ggml_tensor* tensor);
 
 void check_index_bytes(const InputSlot& input, int64_t rows);
+
+// F32 holds every integer within +-2^24 exactly.
+inline constexpr int64_t kExactF32Integer = int64_t{1} << 24;
+
+bool is_integer(ScalarType dtype);
+bool keeps_integer_values(const std::string& key);
+void check_exact_integer_bytes(const InputSlot& input);
+
+// Whether the attention lowerings accept these query, key and value sizes:
+// [B, H, T, D] for aten SDPA, [B, T, H, D] for custom_sdpa. ggml asserts on
+// the sizes they refuse.
+bool sdpa_shapes_compatible(
+    const std::vector<int64_t>& query,
+    const std::vector<int64_t>& key,
+    const std::vector<int64_t>& value);
+bool custom_sdpa_shapes_compatible(
+    const std::vector<int64_t>& query,
+    const std::vector<int64_t>& key,
+    const std::vector<int64_t>& value);
 
 ggml_tensor* reshape(
     ggml_context* ctx,
@@ -158,6 +200,15 @@ ggml_tensor* view_with_shape(
     ggml_tensor* tensor,
     const std::vector<int64_t>& sizes,
     size_t offset);
+
+// The bmm that reads `index`'s result as its weight side when `index` gathers
+// whole matrices of a 3-D constant [E, O, I] by one 1-D integer index on dim 0
+// and that bmm, with activations [S, I, 1], is its only reader: the batched
+// MoE expert form, lowered to one ggml_mul_mat_id. Otherwise nullptr.
+const Node* expert_matmul(const Method& method, const Node& index);
+
+// The expert gather whose expert_matmul is `matmul`, or nullptr.
+const Node* expert_gather(const Method& method, const Node& matmul);
 
 class GraphBuilder {
  public:
@@ -172,11 +223,24 @@ class GraphBuilder {
       const FoldedBatchNorms& batch_norms,
       std::unordered_map<ValueId, int64_t> key_extents,
       size_t graph_size,
+      bool gpu,
+      bool exact_topk,
+      bool exact_gelu,
+      bool f32_accumulation,
       const OffGraphCacheBinding* offgraph_cache = nullptr);
 
   GraphInstance build();
 
+  // A graph of `nodes` alone, which read only persistent tensors, whose
+  // outputs are those of `values` that compute something; a value that only
+  // views a persistent tensor costs nothing per call and is left out.
+  FoldGraph build_folds(
+      const std::vector<NodeId>& nodes,
+      const std::vector<ValueId>& values);
+
  private:
+  void begin();
+  bool folded(const Node& node) const;
   ggml_tensor* as_output(ggml_tensor* result, const TensorMeta& meta);
   void expand_write(ggml_tensor* write);
   ggml_tensor* write_back(ValueId value_id, ValueId target_id);
@@ -224,7 +288,14 @@ class GraphBuilder {
   void lower(const Node& node);
   void lower_linear(const Node& node);
   void lower_row_gather(const Node& node);
+  void lower_expert_matmul(const Node& bmm, const Node& index);
+  std::optional<std::pair<ValueId, int64_t>> repeated_tokens(
+      ValueId mat2) const;
   void check_row_indices(ValueId id, int64_t rows);
+  void require_exact_integers(
+      ValueId id,
+      const std::string& what,
+      bool defer_to_host = false);
   void lower_rms_norm(const Node& node);
   void lower_layer_norm(const Node& node);
   void lower_gelu(const Node& node);
@@ -240,6 +311,7 @@ class GraphBuilder {
   ggml_tensor* as_i32(ggml_tensor* tensor);
   void invalidate_cached_transforms(const ggml_tensor* target);
   ggml_tensor* contiguous(ggml_tensor* tensor);
+  ggml_tensor* mul_mat(ggml_tensor* a, ggml_tensor* b);
   void index_written_values();
   bool touches_written_value(const Node& node) const;
   ggml_tensor* materialize(ggml_tensor* tensor);
@@ -283,11 +355,21 @@ class GraphBuilder {
   void lower_sum(const Node& node);
   void lower_amax(const Node& node);
   void lower_softmax(const Node& node);
-  // The `self` of a mean, sum or amax over trailing dims as ggml rows of the
-  // reduced elements, and the result sizes.
-  std::pair<ggml_tensor*, std::vector<int64_t>> trailing_rows(
+  void lower_softplus(const Node& node);
+  ggml_tensor* nan_mask(ggml_tensor* x);
+  TensorRef permuted(const TensorRef& input, const std::vector<int64_t>& dims);
+  // The `self` of a reduction as ggml rows of the reduced elements, and the
+  // result sizes.
+  std::pair<ggml_tensor*, std::vector<int64_t>> reduced_rows(
       const Node& node,
       const std::string& op);
+  ggml_tensor* row_argmax(ggml_tensor* rows);
+  ggml_tensor* row_max(ggml_tensor* rows);
+  ggml_tensor* nan_where_rows_hold_nan(ggml_tensor* rows, ggml_tensor* values);
+  void lower_split(const Node& node, const std::string& key);
+  void lower_topk(const Node& node);
+  void set_as_output_type(ValueId id, TensorRef result);
+  ggml_tensor* last_dim_gather(ggml_tensor* table, ggml_tensor* indices);
   void lower_slice(const Node& node, bool copy);
   void lower_select(const Node& node, bool copy);
   void lower_unsqueeze(const Node& node);
@@ -300,7 +382,8 @@ class GraphBuilder {
   TensorRef active_cache(const TensorRef& cache, int64_t length);
   TensorRef causal_mask(int64_t tokens, int64_t keys, int64_t start);
   void lower_custom_sdpa(const Node& node);
-  void lower_compare(const Node& node, bool strict);
+  enum class Comparison { Le, Lt, Ne };
+  void lower_compare(const Node& node, Comparison comparison);
   void lower_arange(const Node& node);
   DynamicQuant dynamic_quant_arg(
       const Node& node,
@@ -312,6 +395,7 @@ class GraphBuilder {
   void lower_dequantize_affine(const Node& node);
   ggml_tensor* rope_factor_tensor(ValueId inv_freq);
   void lower_rope(const Node& node);
+  void lower_gated_delta_rule(const Node& node);
   ggml_tensor* skip_f16_cast(ggml_tensor* rows) const;
   void lower_index_put(const Node& node);
   ggml_tensor* attention_mask(ValueId id, int64_t tokens, int64_t keys);
@@ -331,6 +415,14 @@ class GraphBuilder {
   // Mask values (and their producers) computed over a key prefix only.
   std::unordered_map<ValueId, int64_t> key_extents_;
   size_t graph_size_;
+  // The primary backend is a GPU.
+  bool gpu_;
+  // GgmlEngineOptions::exact_topk_for_testing.
+  bool exact_topk_;
+  // GgmlEngineOptions::exact_gelu_for_testing.
+  bool exact_gelu_;
+  // Matrix multiplies with an F16 operand request F32 accumulation.
+  bool f32_accumulation_;
   const OffGraphCacheBinding* offgraph_cache_;
   std::vector<RuntimeValue> values_;
   std::unordered_map<ValueId, ggml_tensor*> rope_factor_tensors_;

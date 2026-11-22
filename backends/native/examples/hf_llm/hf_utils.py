@@ -34,8 +34,10 @@ class PositionedStaticLayer(StaticLayer):
     positions: torch.Tensor
 
     @classmethod
-    def replacing(cls, old: StaticLayer, dtype: torch.dtype) -> "PositionedStaticLayer":
-        layer = cls(old.max_cache_len)
+    def replacing(
+        cls, old: StaticLayer, dtype: torch.dtype, max_cache_len: int | None = None
+    ) -> "PositionedStaticLayer":
+        layer = cls(max_cache_len or old.max_cache_len)
         keys = old.keys[:, :, :1].to(dtype)
         values = old.values[:, :, :1].to(dtype)
         # transformers 4 sizes both buffers from the keys alone.
