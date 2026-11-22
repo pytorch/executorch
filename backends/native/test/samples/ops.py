@@ -16,6 +16,7 @@ from executorch.backends.native.test.samples import (
     gdn,
     gelu,
     linear,
+    moe,
     pad_pool,
 )
 from executorch.backends.native.test.samples.cases import Case
@@ -46,4 +47,5 @@ def ops() -> dict[str, Op]:
         "softmax": Op(core_ops.softmax_cases, ("f32",)),
         "repeat_interleave": Op(core_ops.repeat_interleave_cases),
         "gdn": Op(gdn.cases, dtypes=("f32",)),
+        "moe": Op(moe.cases, dtypes=("f32",)),
     }

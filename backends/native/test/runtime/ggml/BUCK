@@ -57,10 +57,35 @@ _FP16_SCALE_UNBOUNDED = [
 # (`--gdn_op aten`); et-cpu runs these cases.
 _ATEN_GDN_RULE = ["gdn_*.recurrent_*", "gdn_*.quantized_layer_decode*"]
 
+# golden-int8_act's int8 emulation doesn't model ggml's Q4_1 activation sums,
+# whose rounding Gemma 4's GELU-tanh experts turn into a bias at Q4_1's tiny
+# sample scales. The experts-only and Qwen3.5 MoE Q4_1 cases pass, and GGUF MoE
+# models don't ship Q4_1.
+_INT8_ACT_UNMODELED = [
+    "moe_gguf_q4_1.quantized_gemma4_block_f32",
+]
+
+# ggml's GPU F32 matmuls (MMF, which takes every expert mul_mat_id) read their
+# inputs as TF32 or XF32, dropping the low mantissa bits (README, Known ggml
+# GPU numerics); these F32 experts, routers and shared-expert gates fail on
+# CUDA and HIP, rel_bias about -2.2e-3, which eager with truncated TF32 matmul
+# inputs reproduces.
+_GPU_TF32_INPUTS = [
+    "moe_8da4w_g128.quantized_qwen35_block_f32",
+    "moe_8da4w_g32.quantized_qwen35_block_f32",
+    "moe_float.quantized_experts_top1_f32",
+    "moe_float.quantized_experts_top2_f32",
+    "moe_float.quantized_experts_top8_f32",
+    "moe_float.quantized_gemma4_block_f32",
+    "moe_float.quantized_qwen35_block_f32",
+    "moe_int4wo_g128.quantized_qwen35_block_f32",
+    "moe_int4wo_g32.quantized_qwen35_block_f32",
+]
+
 # This filter replaces the act_quant target's own, so it keeps its exclusions.
 _GPU_ACT_QUANT_ARGS = [
     "--gpu_fp16_block_scales",
-    "--gtest_filter=-" + ":".join(["elu_float.elu_f32_alpha_*"] + _ATEN_GDN_RULE + _FP16_SCALE_UNBOUNDED + ["topk_*.nan_and_inf_*"]),
+    "--gtest_filter=-" + ":".join(["elu_float.elu_f32_alpha_*"] + _ATEN_GDN_RULE + _FP16_SCALE_UNBOUNDED + _INT8_ACT_UNMODELED + _GPU_TF32_INPUTS + ["topk_*.nan_and_inf_*"]),
 ]
 
 # The op suite runs once per ggml backend set; only the engine variant, the
@@ -154,6 +179,7 @@ _EXACT_GELU_ONLY_ON_CPU = [
     "gelu_float.gelu_f32_tanh_boundary_values_0_f32",
     "gelu_float.tanh_f32",
     "gelu_float.tanh_wide_f32",
+    "moe_float.quantized_gemma4_block_f32",
 ]
 
 # The engine's tests on GPUs: GPU CI runs the tests of default behavior,
@@ -209,7 +235,7 @@ _EXACT_GELU_ONLY_ON_CPU = [
     for v in _VARIANTS
     for name, flags in [
         ("", []),
-        ("_act_quant", ["--allow_activation_quant_for_weight_only", "--gtest_filter=-" + ":".join(["elu_float.elu_f32_alpha_*"] + _ATEN_GDN_RULE + _EXACT_TOPK_ONLY + (_EXACT_GELU_ONLY_ON_CPU if v["device"] == "cpu" else []))]),
+        ("_act_quant", ["--allow_activation_quant_for_weight_only", "--gtest_filter=-" + ":".join(["elu_float.elu_f32_alpha_*"] + _ATEN_GDN_RULE + _INT8_ACT_UNMODELED + _EXACT_TOPK_ONLY + (_EXACT_GELU_ONLY_ON_CPU if v["device"] == "cpu" else []))]),
         ("_no_linear", ["--gtest_filter=-" + ":".join(["linear_*", "*.quantized_*", "elu_float.elu_f32_alpha_*"] + _ATEN_GDN_RULE + _EXACT_TOPK_ONLY + (_EXACT_GELU_ONLY_ON_CPU if v["device"] == "cpu" else []))]),
         # Every sample with the engine's testing options on.
         ("_testing_options", ["--exact_topk_for_testing", "--exact_gelu_for_testing"]),

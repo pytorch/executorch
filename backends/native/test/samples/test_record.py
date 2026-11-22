@@ -410,7 +410,7 @@ class RecordTest(unittest.TestCase):
 
     def test_core_op_cases_fit_quantized_schemes_only_through_a_linear(self) -> None:
         for op_name, op in ops().items():
-            if op_name in ("linear", "embedding", "gdn"):
+            if op_name in ("linear", "embedding", "gdn", "moe"):
                 continue
             for case in op.cases():
                 quantized = case.name.startswith("quantized_")
@@ -419,6 +419,17 @@ class RecordTest(unittest.TestCase):
                         self.assertEqual(
                             scheme.fits(case.model), quantized or name == "float"
                         )
+
+    def test_moe_cases_fit_gguf_schemes_through_their_experts(self) -> None:
+        # GGUF schemes quantize stacked experts; torchao's only nn.Linears.
+        for case in ops()["moe"].cases():
+            linear = any(isinstance(m, torch.nn.Linear) for m in case.model.modules())
+            for name, scheme in schemes().items():
+                with self.subTest(case=case.name, scheme=name):
+                    self.assertEqual(
+                        scheme.fits(case.model),
+                        name == "float" or name.startswith("gguf_") or linear,
+                    )
 
     def test_wide_gdn_layer_fits_the_gguf_k_quants(self) -> None:
         layers = {c.name: c.model for c in ops()["gdn"].cases()}
