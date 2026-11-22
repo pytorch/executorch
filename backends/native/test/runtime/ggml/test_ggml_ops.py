@@ -224,6 +224,25 @@ class TransposedCacheWrite(torch.nn.Module):
         return self.cache * 1.0
 
 
+class CachedAttention(torch.nn.Module):
+    """Writes each call's keys and values into zero-initialized F32 caches and
+    attends every written position, as the HF exporter's static-cache
+    attention does."""
+
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("k_cache", torch.zeros(1, 2, 16, 64), persistent=False)
+        self.register_buffer("v_cache", torch.zeros(1, 2, 16, 64), persistent=False)
+
+    def forward(self, q, k, v, positions):
+        self.k_cache.index_copy_(2, positions, k)
+        self.v_cache.index_copy_(2, positions, v)
+        mask = torch.arange(16).le(positions[:, None])
+        return F.scaled_dot_product_attention(
+            q, self.k_cache, self.v_cache, attn_mask=mask
+        )
+
+
 class HalfCacheWrite(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -366,6 +385,7 @@ def _run_ggml(  # noqa: C901
     allow_activation_quant_for_weight_only: bool = False,
     exact_topk_for_testing: bool = False,
     exact_gelu_for_testing: bool = False,
+    f32_gpu_kv_cache_for_testing: bool = False,
 ):
     """Runs each step's inputs in order on one executable and returns each
     step's outputs as (bytes, shape) pairs. `graph_ops`, if given, collects
@@ -403,6 +423,8 @@ def _run_ggml(  # noqa: C901
         command.append("--exact_topk_for_testing")
     if exact_gelu_for_testing:
         command.append("--exact_gelu_for_testing")
+    if f32_gpu_kv_cache_for_testing:
+        command.append("--f32_gpu_kv_cache_for_testing")
     with as_file(files(__package__) / "ggml_ptn_runner") as runner:
         result = subprocess.run(
             [str(runner), *command],
@@ -2563,6 +2585,67 @@ class GgmlOpsTest(unittest.TestCase):
                 rtol=0,
                 atol=0,
             )
+
+    @staticmethod
+    def _run_cached_attention(f32_gpu_kv_cache_options):
+        """A prefill of 3 positions, then one decode step each at 3 and 4, run
+        once per given f32_gpu_kv_cache_for_testing value; also returns eager's
+        outputs."""
+        t = Dim("t", min=1, max=8)
+        steps = []
+        for start, count in ((0, 3), (3, 1), (4, 1)):
+            steps.append(
+                (
+                    torch.randn(1, 2, count, 64),
+                    torch.randn(1, 2, count, 64),
+                    torch.randn(1, 2, count, 64),
+                    torch.arange(start, start + count),
+                )
+            )
+        model = CachedAttention()
+        ep = torch.export.export(
+            CachedAttention(),
+            steps[0],
+            dynamic_shapes=({2: t}, {2: t}, {2: t}, {0: t}),
+        )
+        expected = [model(*inputs) for inputs in steps]
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            package = outdir / "model.ptn"
+            to_native(ep).save(str(package))
+            runs = {
+                f32: _run_ggml(
+                    package,
+                    steps,
+                    outdir,
+                    1,
+                    resize=True,
+                    f32_gpu_kv_cache_for_testing=f32,
+                )
+                for f32 in f32_gpu_kv_cache_options
+            }
+        return runs, expected
+
+    def test_attention_over_written_caches(self):
+        # On CUDA and HIP the engine stores these caches in F16.
+        runs, expected = self._run_cached_attention((False,))
+        for [(raw, shape)], reference in zip(runs[False], expected):
+            self.assertEqual(shape, tuple(reference.shape))
+            torch.testing.assert_close(
+                torch.frombuffer(bytearray(raw), dtype=torch.float32).reshape(shape),
+                reference,
+                atol=1e-2,
+                rtol=1e-2,
+            )
+
+    @requires_option_tests
+    def test_f32_gpu_kv_cache_matches_f16_storage(self):
+        # Flash attention rounds the F32 caches the testing option keeps to F16
+        # on every call, as the F16 rows of the default storage are rounded
+        # once: the results are equal bit for bit.
+        runs, _ = self._run_cached_attention((False, True))
+        for [(raw, _)], [(kept_raw, _)] in zip(runs[False], runs[True]):
+            self.assertEqual(raw, kept_raw)
 
     def test_index_put_rejects_out_of_range(self):
         inputs = (torch.randn(1, 2, 3, 4), torch.tensor([5, 1, 6]))

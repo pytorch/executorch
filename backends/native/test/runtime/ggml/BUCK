@@ -1,5 +1,5 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
-load("@fbsource//third-party/llama.cpp:ggml_ci.bzl", "ggml_ci_labels")
+load("@fbsource//third-party/llama.cpp:ggml_ci.bzl", "ggml_ci_labels", "ggml_ci_test_kwargs")
 load("@fbsource//tools/target_determinator/macros:ci.bzl", "ci")
 load("@fbsource//xplat/executorch/backends/native/runtime/engine:targets.bzl", "CPU_COMPAT", "CUDA_COMPAT", "HIP_COMPAT", "TORCH_COMPAT")
 load("@fbcode_macros//build_defs/lib:re_test_utils.bzl", "re_test_utils")
@@ -154,6 +154,35 @@ _EXACT_GELU_ONLY_ON_CPU = [
     "gelu_float.gelu_f32_tanh_boundary_values_0_f32",
     "gelu_float.tanh_f32",
     "gelu_float.tanh_wide_f32",
+]
+
+# The engine's tests on GPUs: GPU CI runs the tests of default behavior,
+# ggml_engine_gpu_test, while the tests of testing options,
+# ggml_engine_option_test, are run by hand: GPU CI runs no testing options.
+[
+    fbcode_target(
+        _kind = runtime.cxx_test,
+        name = "ggml_engine_" + kind + "_test" + v["suffix"],
+        srcs = ["test_ggml_engine.cpp"],
+        args = ["--gtest_filter=" + suite + ".*"],
+        env = v.get("env", {}),
+        preprocessor_flags = ["-DPTN_GGML_TEST_DEVICE_GPU"],
+        deps = [
+            "//executorch/backends/native/runtime:native_graph_schema",
+            "//executorch/backends/native/runtime:runtime",
+            "//executorch/backends/native/runtime/deserialize:owned_bytes",
+            "//executorch/backends/native/runtime/deserialize:package",
+            "//executorch/backends/native/runtime/deserialize:package_test_data",
+            "//executorch/backends/native/runtime/engine:engine",
+            "//executorch/backends/native/runtime/engine:" + v["engine"],
+            "//executorch/extension/llm/cache:kv_cache",
+            "fbsource//third-party/llama.cpp:ggml_" + v["suffix"].lstrip("_"),
+        ] + v.get("deps", []),
+        external_deps = v.get("external_deps", []),
+        **(v.get("compat", {}) | ggml_ci_test_kwargs(v, ci_run = kind == "gpu"))
+    )
+    for v in _VARIANTS[1:]
+    for kind, suite in [("gpu", "GgmlEngineGpuTest"), ("option", "GgmlEngineOptionTest")]
 ]
 
 # ggml_sample_test_act_quant lets ggml quantize the activations of weight-only
