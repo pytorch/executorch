@@ -12,6 +12,7 @@ import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
 import pytest
 import torch
 import torch.nn.functional as F
+import triton
 from executorch.backends.cuda.autotune.launch_params import clear_launch_param_cache
 from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
@@ -22,6 +23,10 @@ from executorch.backends.cuda.quantize_op_dispatch.nvfp4_dispatch import (
 )
 from executorch.backends.cuda.tests.nvfp4_gemma_test_utils import GemmaPacked
 from executorch.backends.cuda.tests.nvfp4_test_utils import PackedLinear
+from executorch.backends.cuda.triton.kernels import (
+    nvfp4_quantized_gemm,
+    nvfp4_w4a8_gemv,
+)
 from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
     nvfp4_quantize_activation,
 )
@@ -36,6 +41,13 @@ pytestmark = pytest.mark.skipif(
 @pytest.fixture(autouse=True)
 def cold_pick_cache():
     clear_launch_param_cache()
+    # Tile picks live in each kernel's triton.autotune cache: without native
+    # FP4, decode-size auto would reuse the GEMV tiles earlier cases tuned and
+    # time none.
+    for module in (nvfp4_quantized_gemm, nvfp4_w4a8_gemv):
+        for value in vars(module).values():
+            if isinstance(value, triton.runtime.Autotuner):
+                value.cache.clear()
 
 
 @pytest.mark.parametrize(

@@ -335,11 +335,11 @@ def test_partial_offsets_and_masks_are_int64(m, n, split, base, constant):
     torch.testing.assert_close(out[8:], (index < m * n).to(torch.int64), rtol=0, atol=0)
 
 
-@pytest.mark.parametrize("hip", [None, "6.2"])
-def test_half2_gemv_configs_are_pruned_only_on_rocm(hip, monkeypatch):
+@pytest.mark.parametrize("native", [False, True])
+def test_half2_gemv_configs_are_timed_only_with_native_fp4(native):
     from executorch.backends.cuda.triton.kernels.nvfp4_tuning import prune_nvfp4_stages
 
-    monkeypatch.setattr(torch.version, "hip", hip)
-    kept = prune_nvfp4_stages(kernels._gemv.configs, {"K": 4096, "SPLIT": 1})
+    args = {"K": 4096, "SPLIT": 1, "NATIVE": native}
+    kept = prune_nvfp4_stages(kernels._gemv.configs, args)
     assert any(not config.kwargs["HALF2"] for config in kept)
-    assert any(config.kwargs["HALF2"] for config in kept) == (hip is None)
+    assert any(config.kwargs["HALF2"] for config in kept) == native
