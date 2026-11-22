@@ -183,7 +183,26 @@ TEST_F(OpUnsqueezeTest, DimOutOfRangeDies) {
   }
 }
 
+TEST_F(OpUnsqueezeTest, ColumnMajorInput) {
+  TensorFactory<ScalarType::Long> tf;
+  // self is [[0, 1], [0, 2], [1, 0]], stored column by column like the result
+  // of nonzero.
+  Tensor self =
+      tf.make_with_dimorder({3, 2}, {0, 0, 1, 1, 2, 0}, /*dim_order=*/{1, 0});
+  Tensor out = tf.zeros({3, 1, 2});
+  op_unsqueeze_copy_out(self, 1, out);
+  EXPECT_TENSOR_EQ(out, tf.make({3, 1, 2}, {0, 1, 0, 2, 1, 0}));
+}
+
 #ifndef USE_ATEN_LIB
+TEST_F(OpUnsqueezeTest, OutInAnotherDimOrderDies) {
+  TensorFactory<ScalarType::Long> tf;
+  Tensor self = tf.make({3, 2}, {0, 1, 0, 2, 1, 0});
+  Tensor out = tf.make_with_dimorder(
+      {3, 1, 2}, {0, 0, 0, 0, 0, 0}, /*dim_order=*/{1, 2, 0});
+  ET_EXPECT_KERNEL_FAILURE(context_, op_unsqueeze_copy_out(self, 1, out));
+}
+
 TEST_F(OpUnsqueezeTest, UpperBoundOutTensor) {
   TensorFactory<ScalarType::Float> tf;
   Tensor input = tf.make(/*sizes=*/{2, 4}, /*data=*/{0, 1, 1, 1, 0, 1, 0, 1});

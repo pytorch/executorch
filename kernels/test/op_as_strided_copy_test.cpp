@@ -368,3 +368,17 @@ TEST_F(OpAsStridedCopyOutTest, DynamicShapeUnbound) {
   op_as_strided_copy_out(x, size, stride, storage_offset, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
+
+TEST_F(OpAsStridedCopyOutTest, ColumnMajorInput) {
+  TensorFactory<ScalarType::Float> tf;
+  // in is [[1, 2, 3], [4, 5, 6]], stored column by column like the result of
+  // nonzero. The strides index that storage.
+  Tensor in =
+      tf.make_with_dimorder({2, 3}, {1, 4, 2, 5, 3, 6}, /*dim_order=*/{1, 0});
+  Tensor out = tf.zeros({2, 2});
+  int64_t size[2] = {2, 2};
+  int64_t stride[2] = {1, 3};
+  op_as_strided_copy_out(
+      in, ArrayRef<int64_t>{size, 2}, ArrayRef<int64_t>{stride, 2}, {}, out);
+  EXPECT_TENSOR_EQ(out, tf.make({2, 2}, {1, 5, 4, 3}));
+}

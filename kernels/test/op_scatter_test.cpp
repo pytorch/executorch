@@ -668,4 +668,66 @@ TEST_F(OpScatterSrcOutTest, InvalidOneDimInputAndZeroDimIndex) {
       context_, op_scatter_src_out(self, 0, index, src, out));
 }
 
+TEST_F(OpScatterSrcOutTest, ColumnMajorInputs) {
+  TensorFactory<ScalarType::Long> tf_index;
+  TensorFactory<ScalarType::Float> tf_data;
+
+  // self is [[10, 20, 30], [40, 50, 60]], the index is [[2, 0], [1, 0]] and
+  // src is [[1, 2], [3, 4]], all stored column by column like the result of
+  // nonzero.
+  Tensor self = tf_data.make_with_dimorder(
+      {2, 3}, {10, 40, 20, 50, 30, 60}, /*dim_order=*/{1, 0});
+  Tensor index =
+      tf_index.make_with_dimorder({2, 2}, {2, 1, 0, 0}, /*dim_order=*/{1, 0});
+  Tensor src =
+      tf_data.make_with_dimorder({2, 2}, {1, 3, 2, 4}, /*dim_order=*/{1, 0});
+  Tensor out = tf_data.zeros({2, 3});
+  op_scatter_src_out(self, 1, index, src, out);
+  // clang-format off
+  EXPECT_TENSOR_EQ(out, tf_data.make({2, 3}, {2, 20, 1,
+                                              4,  3, 60}));
+  // clang-format on
+}
+
+#ifndef USE_ATEN_LIB
+TEST_F(OpScatterSrcOutTest, ColumnMajorInputAndOutputWithoutStrides) {
+  using executorch::runtime::etensor::TensorImpl;
+  TensorFactory<ScalarType::Long> tf_index;
+  TensorFactory<ScalarType::Float> tf_data;
+
+  // self is [[10, 20, 30], [40, 50, 60]], stored column by column like the
+  // result of nonzero.
+  Tensor self = tf_data.make_with_dimorder(
+      {2, 3}, {10, 40, 20, 50, 30, 60}, /*dim_order=*/{1, 0});
+  Tensor index = tf_index.make({2, 2}, {2, 0, 1, 0});
+  Tensor src = tf_data.make({2, 2}, {1, 2, 3, 4});
+  TensorImpl::SizesType out_sizes[2] = {2, 3};
+  float out_data[6] = {};
+  TensorImpl out_impl(ScalarType::Float, 2, out_sizes, out_data);
+  Tensor out(&out_impl);
+  op_scatter_src_out(self, 1, index, src, out);
+  EXPECT_EQ(
+      std::vector<float>(out_data, out_data + 6),
+      std::vector<float>({2, 20, 1, 4, 3, 60}));
+}
+#endif // USE_ATEN_LIB
+
+TEST_F(OpScatterValueOutTest, ColumnMajorInputs) {
+  TensorFactory<ScalarType::Long> tf_index;
+  TensorFactory<ScalarType::Float> tf_data;
+
+  // self is [[10, 20, 30], [40, 50, 60]] and the index is [[2, 0], [1, 1]],
+  // both stored column by column like the result of nonzero.
+  Tensor self = tf_data.make_with_dimorder(
+      {2, 3}, {10, 40, 20, 50, 30, 60}, /*dim_order=*/{1, 0});
+  Tensor index =
+      tf_index.make_with_dimorder({2, 2}, {2, 1, 0, 1}, /*dim_order=*/{1, 0});
+  Tensor out = tf_data.zeros({2, 3});
+  op_scatter_value_out(self, 1, index, 1, out);
+  // clang-format off
+  EXPECT_TENSOR_EQ(out, tf_data.make({2, 3}, {1, 20, 1,
+                                              40, 1, 60}));
+  // clang-format on
+}
+
 GENERATE_SCALAR_OVERFLOW_TESTS(OpScatterValueOutTest)
