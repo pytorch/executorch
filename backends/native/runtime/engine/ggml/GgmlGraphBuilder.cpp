@@ -11,6 +11,7 @@
 #include <cstring>
 #include <iterator>
 #include <limits>
+#include <numeric>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -206,6 +207,7 @@ GraphBuilder::GraphBuilder(
     const FoldedBatchNorms& batch_norms,
     std::unordered_map<ValueId, int64_t> key_extents,
     size_t graph_size,
+    bool gpu,
     const OffGraphCacheBinding* offgraph_cache)
     : method_(method),
       inputs_(inputs),
@@ -216,6 +218,7 @@ GraphBuilder::GraphBuilder(
       batch_norms_(batch_norms),
       key_extents_(std::move(key_extents)),
       graph_size_(graph_size),
+      gpu_(gpu),
       offgraph_cache_(offgraph_cache),
       values_(method.graph.values.size()) {
   for (const auto& [id, tensor] : persistent) {
@@ -223,18 +226,53 @@ GraphBuilder::GraphBuilder(
   }
 }
 
-GraphInstance GraphBuilder::build() {
-  // Metadata room for the tensors lowering creates: a generous allowance per
-  // value and per node for views, casts and shape helpers, plus a reserve for
-  // per-graph tensors such as masks. ggml aborts if a graph outgrows it.
+namespace {
+
+// Metadata room for the tensors lowering creates: a generous allowance per
+// value and per node for views, casts and shape helpers, plus a reserve for
+// per-graph tensors such as masks. ggml aborts if a graph outgrows it.
+size_t metadata_budget(const Method& method) {
   constexpr size_t kTensorsPerValue = 12;
-  constexpr size_t kTensorsPerNode = 8;
+  // Lowerings expand a node into dozens of tensors (views, casts, argument
+  // reductions and fallbacks), which 80 per node and 12 for its output value
+  // cover. The context holds tensor metadata only, and pages it never touches
+  // stay uncommitted.
+  constexpr size_t kTensorsPerNode = 80;
+  // cat casts and concatenates each entry of its list, which may repeat one
+  // value any number of times.
+  constexpr size_t kTensorsPerListEntry = 4;
   constexpr size_t kReservedTensors = 256;
-  const size_t tensor_budget = method_.graph.values.size() * kTensorsPerValue +
-      method_.graph.nodes.size() * kTensorsPerNode + kReservedTensors;
+  const size_t list_entries = std::accumulate(
+      method.graph.nodes.begin(),
+      method.graph.nodes.end(),
+      size_t{0},
+      [](size_t total, const Node& node) {
+        return std::accumulate(
+            node.inputs.begin(),
+            node.inputs.end(),
+            total,
+            [](size_t sum, const NamedArgument& input) {
+              return input.arg.kind() == ArgKind::TensorList
+                  ? sum + input.arg.as_tensor_list().ids.size()
+                  : sum;
+            });
+      });
+  return method.graph.values.size() * kTensorsPerValue +
+      method.graph.nodes.size() * kTensorsPerNode +
+      list_entries * kTensorsPerListEntry + kReservedTensors;
+}
+
+} // namespace
+
+size_t graph_capacity(const Method& method, size_t graph_size) {
+  return std::max(graph_size, metadata_budget(method));
+}
+
+GraphInstance GraphBuilder::build() {
+  const size_t capacity = graph_capacity(method_, graph_size_);
   ggml_init_params params{
-      .mem_size = ggml_tensor_overhead() * tensor_budget +
-          ggml_graph_overhead_custom(graph_size_, false),
+      .mem_size = ggml_tensor_overhead() * metadata_budget(method_) +
+          ggml_graph_overhead_custom(capacity, false),
       .mem_buffer = nullptr,
       .no_alloc = true,
   };
@@ -242,8 +280,8 @@ GraphInstance GraphBuilder::build() {
   if (!instance_.context) {
     throw std::runtime_error("ggml: failed to allocate graph metadata");
   }
-  instance_.graph = ggml_new_graph_custom(
-      instance_.context.get(), graph_size_, /*grads=*/false);
+  instance_.graph =
+      ggml_new_graph_custom(instance_.context.get(), capacity, /*grads=*/false);
   if (instance_.graph == nullptr) {
     throw std::runtime_error("ggml: failed to create cgraph");
   }

@@ -144,6 +144,11 @@ struct FoldedBatchNorms {
   std::unordered_map<ValueId, ggml_tensor*> conv_bias;
 };
 
+// Node capacity of a method's graphs: at least `graph_size`, and at least the
+// metadata room GraphBuilder sizes for every lowering's tensors, so no graph
+// can outgrow it.
+size_t graph_capacity(const Method& method, size_t graph_size);
+
 const ggml_tensor* storage_root(const ggml_tensor* tensor);
 
 void check_index_bytes(const InputSlot& input, int64_t rows);
@@ -172,6 +177,7 @@ class GraphBuilder {
       const FoldedBatchNorms& batch_norms,
       std::unordered_map<ValueId, int64_t> key_extents,
       size_t graph_size,
+      bool gpu,
       const OffGraphCacheBinding* offgraph_cache = nullptr);
 
   GraphInstance build();
@@ -331,6 +337,8 @@ class GraphBuilder {
   // Mask values (and their producers) computed over a key prefix only.
   std::unordered_map<ValueId, int64_t> key_extents_;
   size_t graph_size_;
+  // The primary backend is a GPU.
+  bool gpu_;
   const OffGraphCacheBinding* offgraph_cache_;
   std::vector<RuntimeValue> values_;
   std::unordered_map<ValueId, ggml_tensor*> rope_factor_tensors_;
