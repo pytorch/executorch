@@ -21,6 +21,7 @@ import torch
 import torch.nn.functional as F
 from executorch.exir.native import to_native
 from executorch.extension.llm.export.gguf import ExportableGGUFTensor
+from gguf import GGML_QUANT_SIZES, GGMLQuantizationType
 from torch.export import Dim
 from torchao.quantization import (
     Int8DynamicActivationIntxWeightConfig,
@@ -409,6 +410,13 @@ _MATMUL_TOL = (
     else {"atol": 1e-4, "rtol": 1e-5}
 )
 
+# GGUF quant types the linear and embedding tests cover, with the fp16
+# super-block scales of their random blocks by byte offset in a block. Each
+# min scale centers the weights near zero.
+_GGUF_SUPER_SCALES = {
+    "q5_k": {0: 2**-8, 2: 2**-4},
+}
+
 
 # ggml-cuda is built with -use_fast_math, whose tanhf is a few 1e-6 off.
 _GELU_TOL = (
@@ -488,6 +496,69 @@ class GgmlOpsTest(unittest.TestCase):
         model = torch.nn.Embedding(8, 256)
         model.weight = torch.nn.Parameter(self._q6_k_weights(8), requires_grad=False)
         self._check(model, (torch.tensor([[0, 3, 6], [7, 1, 4]]),))
+
+    @staticmethod
+    def _random_gguf_weights(ggml_type, rows, cols):
+        # Random blocks, with each fp16 super-block scale set at its byte
+        # offset so that the weights are finite and of moderate size.
+        qtype = GGMLQuantizationType[ggml_type.upper()]
+        block, block_bytes = GGML_QUANT_SIZES[qtype]
+        raw = torch.randint(
+            0, 256, (rows, cols // block, block_bytes), dtype=torch.uint8
+        )
+        for offset, scale in _GGUF_SUPER_SCALES[ggml_type].items():
+            raw[..., offset : offset + 2] = torch.tensor(
+                [scale], dtype=torch.float16
+            ).view(torch.uint8)
+        return ExportableGGUFTensor.from_raw(
+            raw.reshape(rows, -1), ggml_type, torch.float32
+        )
+
+    def _check_random_gguf_linear(self, ggml_type):
+        weight = self._random_gguf_weights(ggml_type, 8, 512)
+        model = torch.nn.Linear(512, 8, bias=False)
+        model.weight = torch.nn.Parameter(weight, requires_grad=False)
+        # Activations of +-127/1024 survive every int8 requantization ggml
+        # does exactly: each block's scale, max|x| / 127 = 2^-10, is exact even
+        # in fp16, and so are the block sums some kernels keep.
+        representable = torch.full((2, 512), 127 / 1024)
+        representable[1, ::2] *= -1
+        self._check(
+            model,
+            (representable,),
+            atol=5e-4,
+            rtol=1e-5,
+            allow_activation_quant_for_weight_only=True,
+        )
+        # ggml rounds each block of activations to int8 in steps of at most
+        # max|x| / 127. Modeling the rounding errors as independent and
+        # uniform, an output's error has a standard deviation of
+        # step / sqrt(12) times its weight row's norm; allow five. The model
+        # is rough on GPUs, whose kernels for some types take a block's min
+        # term from the sum of its unquantized activations.
+        x = torch.randn(2, 512) / 8
+        rounding = x.abs().max() / 127 / 12**0.5
+        row_norm = weight.dequantize(torch.float32).norm(dim=1).max()
+        self._check(
+            model,
+            (x,),
+            atol=float(5 * rounding * row_norm),
+            rtol=0,
+            allow_activation_quant_for_weight_only=True,
+        )
+
+    def _check_random_gguf_embedding(self, ggml_type):
+        model = torch.nn.Embedding(8, 512)
+        model.weight = torch.nn.Parameter(
+            self._random_gguf_weights(ggml_type, 8, 512), requires_grad=False
+        )
+        self._check(model, (torch.tensor([[0, 3, 6], [7, 1, 4]]),))
+
+    def test_gguf_q5_k_linear_within_rounding_bound(self):
+        self._check_random_gguf_linear("q5_k")
+
+    def test_gguf_q5_k_embedding(self):
+        self._check_random_gguf_embedding("q5_k")
 
     def _check(
         self,
