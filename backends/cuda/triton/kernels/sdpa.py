@@ -81,16 +81,20 @@ _SMALL_QUERY_MAX_LQ = 16
 _SMALL_QUERY_MAX_TILE = 256 * 128
 _SMALL_QUERY_MAX_ROWS = 256
 # Per-block shared memory of the smallest supported GPUs (SM86/89/120): the
-# BF16 query tile and double-buffered 32-key K and V tiles must fit (a 64x512
-# tile fits no config there).
+# BF16 query tile plus a 32-key K and V tile must fit, which drops 64x512.
 _SMALL_QUERY_MAX_SMEM = 99 * 1024
+# Without a mask the K/V loads are unconditional and get software-pipelined;
+# on an RTX 5090 a 128x256 tile then fits no config the accumulator prune
+# keeps, while 64x256 and 32x512 do.
+_SMALL_QUERY_MAX_UNMASKED_TILE = 64 * 256
 
 
-def _small_query_tile_fits(rows, head_dim):
+def _small_query_tile_fits(rows, head_dim, has_mask):
     return (
         rows <= _SMALL_QUERY_MAX_ROWS
         and rows * head_dim <= _SMALL_QUERY_MAX_TILE
         and (rows + 64) * head_dim * 2 <= _SMALL_QUERY_MAX_SMEM
+        and (has_mask or rows * head_dim <= _SMALL_QUERY_MAX_UNMASKED_TILE)
     )
 
 
@@ -1422,7 +1426,7 @@ def sdpa(
         if (
             isinstance(L_q, int)
             and 2 <= L_q <= _SMALL_QUERY_MAX_LQ
-            and _small_query_tile_fits(L_q * block_g, D)
+            and _small_query_tile_fits(L_q * block_g, D, HAS_MASK)
         ):
             _launch_small_query_splitk(
                 query,
@@ -2483,7 +2487,7 @@ def sdpa_small_query_splitk(
             f"sdpa_small_query_splitk requires power-of-2 head dim; got D={D}"
         )
     rows = L_q * _next_power_of_2_unclamped(H_q // H_kv)
-    if not _small_query_tile_fits(rows, D):
+    if not _small_query_tile_fits(rows, D, attn_mask is not None):
         raise RuntimeError(
             f"sdpa_small_query_splitk: a {rows}x{D} tile exceeds the "
             f"{_SMALL_QUERY_MAX_ROWS}-row, {_SMALL_QUERY_MAX_TILE}-element or "
