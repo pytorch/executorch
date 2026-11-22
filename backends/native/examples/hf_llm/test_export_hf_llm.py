@@ -6,6 +6,7 @@
 
 import collections
 import copy
+import io
 import re
 import sys
 import tempfile
@@ -14,10 +15,13 @@ from unittest import mock
 
 import gguf
 import torch
+from executorch.backends.native import get_default_compile_config
 from executorch.backends.native.examples.hf_llm import export_hf_llm
 from executorch.backends.native.examples.hf_llm.export_hf_llm import (
+    _check_attention_args,
     _DECODE_STEPS,
     _FLOAT_TOL,
+    _layer_mask,
     _load,
     _PROMPTS,
     _quantize_8da4w,
@@ -28,23 +32,47 @@ from executorch.backends.native.examples.hf_llm.export_hf_llm import (
     load_gguf,
     OffGraphLastTokenLM,
 )
+from executorch.backends.native.passes import FuseRoPEPass
+from executorch.backends.native.passes._utils import _resolve_aten
+from executorch.exir import to_edge
 from executorch.exir.native import to_native
-from executorch.export.utils import is_fbcode
 from executorch.extension.llm.cache.hf_attention import register_offgraph_attention
 from executorch.extension.llm.cache.reference_cache import LayerPolicy
 from executorch.extension.llm.cache.update_and_attend import REGISTRY
+from executorch.extension.llm.export.gguf import ExportableGGUFTensor
+from torchao.utils import TorchAOBaseTensor
 from transformers import (
     AutoModelForCausalLM,
+    DeepseekV32Config,
     Gemma2Config,
+    Gemma3Config,
     Gemma3TextConfig,
     GemmaConfig,
+    GptOssConfig,
     GraniteConfig,
+    Llama4TextConfig,
     LlamaConfig,
     MistralConfig,
     PreTrainedModel,
     Qwen2Config,
+    Qwen3_5TextConfig,
     Qwen3Config,
+    ZayaConfig,
 )
+from transformers.masking_utils import (
+    and_masks,
+    bidirectional_mask_function,
+    blockwise_overlay,
+    causal_mask_function,
+    chunked_causal_mask_function,
+    or_masks,
+    packed_sequence_mask_function,
+    sdpa_mask,
+    sliding_window_bidirectional_mask_function,
+    sliding_window_causal_mask_function,
+)
+from transformers.models.qwen3_5 import modeling_qwen3_5 as qwen35
+from transformers.models.qwen3_5_moe import modeling_qwen3_5_moe as qwen35moe
 
 # Architectures gguf_hf maps; the GGUF test covers each.
 _CONFIGS = {
@@ -80,6 +108,95 @@ def _tiny(
     return model
 
 
+_IDS = [[3, 4, 5, 6, 7, 8, 9, 10, 11, 12]]
+
+
+def _tiny_qwen35() -> PreTrainedModel:
+    """A tiny Qwen3.5: three gated DeltaNet layers, then full attention, with
+    more value heads than key heads and interleaved M-RoPE, as the real ones."""
+    torch.manual_seed(5)
+    config = Qwen3_5TextConfig(
+        vocab_size=128,
+        hidden_size=64,
+        intermediate_size=128,
+        num_hidden_layers=4,
+        layer_types=["linear_attention"] * 3 + ["full_attention"],
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        head_dim=32,
+        linear_num_key_heads=2,
+        linear_num_value_heads=4,
+        linear_key_head_dim=16,
+        linear_value_head_dim=16,
+        linear_conv_kernel_dim=4,
+        max_position_embeddings=64,
+        tie_word_embeddings=False,
+        rope_parameters={
+            "rope_type": "default",
+            "rope_theta": 1e7,
+            "partial_rotary_factor": 0.25,
+            "mrope_section": [2, 1, 1],
+            "mrope_interleaved": True,
+        },
+    )
+    model = AutoModelForCausalLM.from_config(config).eval().requires_grad_(False)
+    model.config._attn_implementation = "sdpa"
+    model.generation_config.use_cache = True
+    model.generation_config.cache_implementation = "static"
+    return model
+
+
+def _hf_greedy_logits(
+    model: PreTrainedModel, ids: list[int], decode_steps: int
+) -> list[torch.Tensor]:
+    """transformers' own logits for `ids` in one call, then `decode_steps`
+    greedy steps, on its dynamic cache: no export wrapper involved."""
+    with torch.no_grad():
+        out = model(input_ids=torch.tensor([ids]), use_cache=True)
+        cache, logits = out.past_key_values, [out.logits[:, -1:]]
+        for step in range(decode_steps):
+            out = model(
+                input_ids=logits[-1][:, -1].argmax(-1, keepdim=True),
+                past_key_values=cache,
+                use_cache=True,
+                cache_position=torch.tensor([len(ids) + step]),
+            )
+            logits.append(out.logits[:, -1:])
+    return logits
+
+
+def _one_token_logits(
+    run, ids: list[int], reference: list[torch.Tensor]
+) -> list[torch.Tensor]:
+    """`run`'s last-position logits for `ids` fed one token per call from
+    position 0, then for the greedy tokens `reference` chose."""
+    with torch.no_grad():
+        for position, token in enumerate(ids):
+            logits = run(torch.tensor([[token]]), torch.tensor([position]))
+        got = [logits]
+        for step, previous in enumerate(reference[:-1]):
+            token = previous[:, -1].argmax(-1, keepdim=True)
+            got.append(run(token, torch.tensor([len(ids) + step])))
+    return got
+
+
+def _random_gemma(arch: str, **config) -> PreTrainedModel:
+    """A tiny Gemma with a sliding-window layer, then a full-attention one."""
+    torch.manual_seed(3)
+    model = _tiny(arch, layer_types=["sliding_attention", "full_attention"], **config)
+    for weight in model.parameters():
+        weight.uniform_(-0.5, 0.5)
+    return model
+
+
+def _eager_logits(model: PreTrainedModel, ids: torch.Tensor) -> torch.Tensor:
+    """Logits of one uncached pass through transformers' eager attention."""
+    eager = copy.deepcopy(model)
+    eager.config._attn_implementation = "eager"
+    with torch.no_grad():
+        return eager(ids, use_cache=False).logits
+
+
 def _as_gguf_tensors(
     model: PreTrainedModel, arch: str
 ) -> list[tuple[str, torch.Tensor]]:
@@ -111,11 +228,48 @@ def _as_gguf_tensors(
     return pairs
 
 
+def _k_quant_pairs(
+    model: PreTrainedModel, generator: torch.Generator
+) -> list[tuple[str, torch.Tensor]]:
+    """The model's GGUF tensors with every matrix replaced by random Q4_K
+    blocks; d = 2^-12 and dmin = 2^-9 keep the weights at HF-init magnitude."""
+    pairs = []
+    for name, tensor in _as_gguf_tensors(model, "llama"):
+        if tensor.dim() == 2:
+            rows, blocks = tensor.shape[0], tensor.shape[1] // 256
+            raw = torch.randint(0, 256, (rows, blocks, 144), generator=generator)
+            raw = raw.to(torch.uint8)
+            raw[..., 0:2] = torch.tensor([0x00, 0x0C], dtype=torch.uint8)
+            raw[..., 2:4] = torch.tensor([0x00, 0x18], dtype=torch.uint8)
+            tensor = ExportableGGUFTensor.from_raw(
+                raw.reshape(rows, -1), "q4_k", torch.float32
+            )
+        pairs.append((name, tensor))
+    return pairs
+
+
 _CASTS = (
     "aten._assert_tensor_metadata.default",
     "aten._to_copy.default",
     "aten.to.dtype",
 )
+
+
+def _constant_consumers(
+    ep: torch.export.ExportedProgram,
+) -> dict[str, list[str]]:
+    """Each parameter, buffer or constant the graph reads -> the ops reading it."""
+    sig = ep.graph_signature
+    names = {
+        **sig.inputs_to_parameters,
+        **sig.inputs_to_buffers,
+        **sig.inputs_to_lifted_tensor_constants,
+    }
+    return {
+        names[n.name]: sorted(str(user.target) for user in n.users)
+        for n in ep.graph.nodes
+        if n.op == "placeholder" and n.name in names
+    }
 
 
 def _ops_except_casts(ep: torch.export.ExportedProgram) -> collections.Counter:
@@ -253,6 +407,28 @@ class ExportHfLlmTest(unittest.TestCase):
             got, want = loaded(ids).logits, reference(ids).logits
         self.assertTrue(torch.equal(got, want))
 
+    def test_gguf_loads_the_text_decoder_of_a_multimodal_config(self) -> None:
+        ids = torch.tensor([[3, 4, 5, 6, 7, 8]])
+        torch.manual_seed(1)
+        reference = _tiny("gemma3")
+        config = Gemma3Config(
+            text_config=reference.config.to_dict(),
+            vision_config={"hidden_size": 16, "num_hidden_layers": 1},
+        )
+        pairs = _as_gguf_tensors(reference, "gemma3")
+        with tempfile.TemporaryDirectory() as path:
+            config.save_pretrained(path)
+            loaded = _load(path, 0, False, empty_weights=True)
+            random = _load(path, 0, True, empty_weights=False)
+
+        for model in (loaded, random):
+            self.assertEqual(type(model), type(reference))
+        load_gguf(loaded, "model.gguf", "gemma3", lambda _: iter(pairs))
+
+        with torch.no_grad():
+            got, want = loaded(ids).logits, reference(ids).logits
+        self.assertTrue(torch.allclose(got, want, atol=1e-4, rtol=0))
+
     def test_gguf_derives_head_dim_when_config_has_none(self) -> None:
         torch.manual_seed(1)
         reference = _tiny()
@@ -305,6 +481,67 @@ class ExportHfLlmTest(unittest.TestCase):
         self.assertTrue(caches)
         self.assertEqual({t.dtype for t in caches.values()}, {torch.float16})
         self.assertEqual(_ops_except_casts(ep), _ops_except_casts(ep32))
+
+    def test_qwen35_rotary_fuses_into_one_rope_per_projection(self) -> None:
+        # Text positions fill all of M-RoPE's rows, so transformers' rotary
+        # and apply rotate the queries and keys by one rope each.
+        rope = {
+            "rope_type": "default",
+            "rope_theta": 1e7,
+            "partial_rotary_factor": 0.25,
+            "mrope_section": [2, 1, 1],
+            "mrope_interleaved": True,
+        }
+        for modeling, rotary_cls, config_cls in (
+            (qwen35, qwen35.Qwen3_5TextRotaryEmbedding, qwen35.Qwen3_5TextConfig),
+            (
+                qwen35moe,
+                qwen35moe.Qwen3_5MoeTextRotaryEmbedding,
+                qwen35moe.Qwen3_5MoeTextConfig,
+            ),
+        ):
+            with self.subTest(rotary_cls.__name__):
+                rotary = rotary_cls(config_cls(head_dim=32, rope_parameters=rope))
+
+                class Rotate(torch.nn.Module):
+                    apply_rope = staticmethod(modeling.apply_rotary_pos_emb)
+
+                    def __init__(self, rotary=rotary):
+                        super().__init__()
+                        self.rotary = rotary
+
+                    def forward(self, q, k, position_ids):
+                        cos, sin = self.rotary(q, position_ids)
+                        return self.apply_rope(q, k, cos, sin)
+
+                model = Rotate().eval()
+                inputs = (
+                    torch.randn(1, 4, 5, 32),
+                    torch.randn(1, 2, 5, 32),
+                    torch.arange(5).reshape(1, 5) + 7,
+                )
+                fused = (
+                    to_edge(
+                        torch.export.export(model, inputs, strict=True),
+                        compile_config=get_default_compile_config(),
+                    )
+                    .transform([FuseRoPEPass()])
+                    .exported_program()
+                )
+                ops = collections.Counter(
+                    _resolve_aten(n.target)
+                    for n in fused.graph.nodes
+                    if n.op == "call_function"
+                )
+                self.assertEqual(ops[torch.ops.native.rope.default], 2)
+                for table_op in (
+                    torch.ops.aten.cos.default,
+                    torch.ops.aten.sin.default,
+                    torch.ops.aten.where.self,
+                    torch.ops.aten.slice_scatter.default,
+                ):
+                    self.assertEqual(ops[table_op], 0)
+                torch.testing.assert_close(fused.module()(*inputs), model(*inputs))
 
     def test_golden_samples_teacher_force_eager_argmax(self) -> None:
         torch.manual_seed(7)
@@ -531,10 +768,12 @@ class ExportHfLlmTest(unittest.TestCase):
 
     def test_cache_writes_index_the_cache_position_input(self) -> None:
         seq = torch.export.Dim("seq", min=1, max=31)
-        for arch, kv_dtype in (("llama", torch.float32), ("gemma3", torch.float16)):
+        for arch, kv_dtype in (
+            ("llama", torch.float32),
+            ("gemma2", torch.float32),
+            ("gemma3", torch.float16),
+        ):
             with self.subTest(arch=arch, kv_dtype=kv_dtype):
-                if arch == "gemma3" and is_fbcode():
-                    self.skipTest("skipping for fbcode")
                 torch.manual_seed(7)
                 model = _tiny(arch)
                 fp32 = LastTokenLM(model, 32).eval()
@@ -651,3 +890,503 @@ class ExportHfLlmTest(unittest.TestCase):
         with wrapper.cache_scope():
             self.assertIn(wrapper._key, REGISTRY._caches)
         self.assertNotIn(wrapper._key, REGISTRY._caches)
+
+    def test_cache_layers_with_more_state_than_keys_and_values_are_refused(
+        self,
+    ) -> None:
+        # DeepSeek V3.2's sparse attention caches its indexer's keys too.
+        config = DeepseekV32Config(
+            vocab_size=128,
+            hidden_size=64,
+            intermediate_size=128,
+            num_hidden_layers=1,
+            num_attention_heads=4,
+            num_key_value_heads=4,
+            kv_lora_rank=16,
+            q_lora_rank=32,
+            qk_rope_head_dim=8,
+            qk_nope_head_dim=8,
+            v_head_dim=16,
+            index_topk=4,
+            index_head_dim=16,
+            index_n_heads=2,
+            max_position_embeddings=64,
+        )
+        model = AutoModelForCausalLM.from_config(config).eval().requires_grad_(False)
+        model.generation_config.cache_implementation = "static"
+
+        with self.assertRaisesRegex(NotImplementedError, "StaticIndexedLayer"):
+            LastTokenLM(model, 16)
+
+    def test_hybrid_cache_layers_are_refused_before_the_export_wrapper(self) -> None:
+        # The wrapper would turn a hybrid sliding-window layer into a plain
+        # StaticLayer, dropping its linear-attention state.
+        for layer_types, sliding_window, refused in (
+            (["hybrid"], None, "LinearAttentionAndStaticFullAttentionLayer"),
+            (
+                ["hybrid_sliding"],
+                4,
+                "LinearAttentionAndStaticSlidingWindowAttentionLayer",
+            ),
+        ):
+            with self.subTest(layer_types=layer_types):
+                config = ZayaConfig(
+                    vocab_size=128,
+                    hidden_size=64,
+                    num_hidden_layers=1,
+                    num_attention_heads=4,
+                    num_key_value_heads=2,
+                    head_dim=16,
+                    moe_intermediate_size=32,
+                    num_experts=2,
+                    router_hidden_size=16,
+                    max_position_embeddings=64,
+                    layer_types=layer_types,
+                    sliding_window=sliding_window,
+                )
+                model = AutoModelForCausalLM.from_config(config)
+                model = model.eval().requires_grad_(False)
+                model.generation_config.cache_implementation = "static"
+                with self.assertRaisesRegex(NotImplementedError, refused):
+                    LastTokenLM(model, 16)
+
+    def test_linear_attention_models_export_one_token_calls_with_state_buffers(
+        self,
+    ) -> None:
+        wrapper = LastTokenLM(_tiny_qwen35(), 32).eval()
+        self.assertEqual(wrapper.tokens_per_call, 1)
+        with torch.no_grad():
+            ep = torch.export.export(
+                wrapper,
+                (
+                    torch.zeros((1, 1), dtype=torch.long),
+                    torch.zeros(1, dtype=torch.long),
+                ),
+                strict=True,
+            )
+        signature = ep.run_decompositions({}).graph_signature
+        mutated = set(signature.buffers_to_mutate.values())
+        states = {name for name in mutated if "_state_" in name}
+        # Three linear-attention layers, each with a conv and a recurrent state.
+        self.assertEqual(len(states), 6)
+        self.assertTrue(states <= set(signature.non_persistent_buffers))
+
+    def test_linear_attention_matches_transformers_after_a_restart(self) -> None:
+        # Independent of the export wrapper: transformers' own dynamic cache,
+        # the prompt in one call. The wrapper and its exported program take one
+        # token per call, and the second prompt restarts at position 0 with no
+        # reset call: the graph zeroes the states there.
+        model = _tiny_qwen35()
+        wrapper = LastTokenLM(copy.deepcopy(model), 32).eval()
+        with torch.no_grad():
+            ep = torch.export.export(
+                wrapper,
+                (
+                    torch.zeros((1, 1), dtype=torch.long),
+                    torch.zeros(1, dtype=torch.long),
+                ),
+                strict=True,
+            )
+        for run in (wrapper, ep.module()):
+            for ids in ([3, 4, 5, 6, 7, 8, 9], [10, 11, 12]):
+                with self.subTest(run=type(run).__name__, ids=ids):
+                    want = _hf_greedy_logits(model, ids, 3)
+                    got = _one_token_logits(run, ids, want)
+                    for a, b in zip(got, want, strict=True):
+                        torch.testing.assert_close(a, b, atol=1e-5, rtol=1e-5)
+
+    def test_golden_samples_feed_linear_attention_prompts_one_token_per_call(
+        self,
+    ) -> None:
+        wrapper = LastTokenLM(_tiny_qwen35(), 32).eval()
+        samples = golden_samples(wrapper, [[3, 4, 5], [6]], 2)
+        for ids, sample in zip([[3, 4, 5], [6]], samples.samples, strict=True):
+            self.assertEqual(len(sample.calls), len(ids) + 2)
+            for position, call in enumerate(sample.calls):
+                self.assertEqual(call.inputs[0].shape, (1, 1))
+                self.assertTrue(torch.equal(call.inputs[1], torch.tensor([position])))
+                if position < len(ids):
+                    self.assertEqual(call.inputs[0].item(), ids[position])
+                else:
+                    previous = sample.calls[position - 1].outputs[0]
+                    self.assertEqual(
+                        call.inputs[0].item(), previous[0, -1].argmax().item()
+                    )
+        self.assertFalse(
+            any(
+                state.any()
+                for name, state in wrapper.named_buffers()
+                if "_state_" in name
+            )
+        )
+
+    def test_chunked_attention_layers_match_eager_past_a_chunk(self) -> None:
+        ids = torch.tensor(_IDS)
+        torch.manual_seed(3)
+        config = Llama4TextConfig(
+            vocab_size=128,
+            hidden_size=64,
+            intermediate_size=128,
+            intermediate_size_mlp=128,
+            num_hidden_layers=2,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            head_dim=16,
+            max_position_embeddings=64,
+            moe_layers=[],
+            no_rope_layers=[1, 0],
+            attention_chunk_size=3,
+        )
+        model = AutoModelForCausalLM.from_config(config).eval().requires_grad_(False)
+        model.config._attn_implementation = "sdpa"
+        model.generation_config.use_cache = True
+        model.generation_config.cache_implementation = "static"
+        self.assertEqual(
+            model.config.layer_types, ["chunked_attention", "full_attention"]
+        )
+        unchunked = copy.deepcopy(model)
+        unchunked.config.attention_chunk_size = 64
+        self.assertFalse(
+            torch.allclose(
+                _eager_logits(unchunked, ids), _eager_logits(model, ids), atol=1e-3
+            )
+        )
+        self._check_matches_eager(model)
+
+    def test_export_attention_ignores_the_configured_attention(self) -> None:
+        # transformers keeps registered attention process-wide, so a wrapper
+        # built later must not change what an earlier one exports.
+        ids = torch.tensor([[3, 4, 5, 6]])
+
+        def ops(wrapper: LastTokenLM) -> collections.Counter:
+            with torch.no_grad():
+                ep = torch.export.export(wrapper, (ids, torch.arange(4)), strict=True)
+            return _ops_except_casts(ep)
+
+        wrapper = LastTokenLM(_tiny(), 16).eval()
+        before = ops(wrapper)
+        eager = _tiny()
+        eager.config._attn_implementation = "eager"
+        self.assertEqual(ops(LastTokenLM(eager, 16).eval()), before)
+        self.assertEqual(ops(wrapper), before)
+
+    def test_masks_export_cannot_build_are_refused(self) -> None:
+        # Gemma 3's bidirectional attention overlays the causal mask.
+        wrapper = LastTokenLM(_tiny("gemma3", use_bidirectional_attention=True), 16)
+        with torch.no_grad():
+            with self.assertRaisesRegex(NotImplementedError, "attention mask"):
+                wrapper.eval()(torch.tensor([[3, 4, 5, 6]]), torch.arange(4))
+        config = _tiny().config
+        with self.assertRaisesRegex(NotImplementedError, "argument new_argument"):
+            _layer_mask(1, kv_length=4, q_length=4, config=config, new_argument=True)
+
+    def test_mask_functions_export_cannot_reproduce_are_refused(self) -> None:
+        config = _tiny().config
+        ids = torch.tensor([[0, 0, 1, 1]])
+        for name, mask_function, local_size in (
+            (
+                "packed sequences",
+                and_masks(causal_mask_function, packed_sequence_mask_function(ids)),
+                None,
+            ),
+            (
+                "bidirectional blocks",
+                or_masks(causal_mask_function, blockwise_overlay(ids)),
+                None,
+            ),
+            ("bidirectional", bidirectional_mask_function, None),
+            ("bidirectional window", sliding_window_bidirectional_mask_function(2), 2),
+            ("another window", sliding_window_causal_mask_function(3), 2),
+        ):
+            with self.subTest(name), self.assertRaises(NotImplementedError):
+                _layer_mask(
+                    1,
+                    kv_length=4,
+                    q_length=4,
+                    local_size=local_size,
+                    config=config,
+                    mask_function=mask_function,
+                )
+
+    def test_layer_masks_match_transformers_mask_functions(self) -> None:
+        # A Llama config has no sliding_window: the mask function alone says
+        # which local mask a layer takes.
+        config = _tiny().config
+        for name, mask_function, local_size in (
+            ("causal", causal_mask_function, None),
+            ("sliding", sliding_window_causal_mask_function(3), 3),
+            (
+                "chunked",
+                chunked_causal_mask_function(3, torch.zeros(1, dtype=torch.long)),
+                3,
+            ),
+        ):
+            with self.subTest(name):
+                want = sdpa_mask(
+                    1,
+                    q_length=3,
+                    kv_length=9,
+                    q_offset=5,
+                    mask_function=mask_function,
+                    local_size=local_size,
+                    allow_is_causal_skip=False,
+                )
+                got = _layer_mask(
+                    1,
+                    kv_length=9,
+                    q_length=3,
+                    q_offset=5,
+                    local_size=local_size,
+                    config=config,
+                    mask_function=mask_function,
+                )
+                self.assertTrue(torch.equal(got, want))
+
+    def _check_matches_eager(self, model: PreTrainedModel) -> None:
+        """The wrapper and its export match an uncached pass through the model's
+        transformers eager attention, over a prefill and single-token decodes."""
+        ids = torch.tensor(_IDS)
+        prefill = 6
+        calls = [(0, prefill)] + [(i, i + 1) for i in range(prefill, ids.shape[1])]
+        seq = torch.export.Dim("seq", min=1, max=15)
+        want = _eager_logits(model, ids)
+        wrapper = LastTokenLM(model, 16).eval()
+        with torch.no_grad():
+            exported = torch.export.export(
+                wrapper,
+                (ids[:, :prefill], torch.arange(prefill)),
+                dynamic_shapes={"input_ids": {1: seq}, "cache_position": {0: seq}},
+                strict=True,
+            ).module()
+            for module in (wrapper, exported):
+                for start, end in calls:
+                    got = module(ids[:, start:end], torch.arange(start, end))
+                    self.assertTrue(
+                        torch.allclose(
+                            got[:, -1], want[:, end - 1], atol=1e-5, rtol=1e-4
+                        )
+                    )
+
+    def test_sliding_window_layers_match_eager_past_the_window(self) -> None:
+        ids = torch.tensor(_IDS)
+        for arch in ("gemma2", "gemma3"):
+            with self.subTest(arch=arch):
+                model = _random_gemma(
+                    arch, sliding_window=3, attn_logit_softcapping=None
+                )
+                unwindowed = copy.deepcopy(model)
+                unwindowed.config.sliding_window = 64
+                self.assertFalse(
+                    torch.allclose(
+                        _eager_logits(unwindowed, ids),
+                        _eager_logits(model, ids),
+                        atol=1e-3,
+                    )
+                )
+                self._check_matches_eager(model)
+
+    def test_attention_logit_softcapping_matches_eager_when_configured_eager(
+        self,
+    ) -> None:
+        # Eager's own mask is additive; the export takes a boolean one.
+        model = _random_gemma("gemma2", sliding_window=3, attn_logit_softcapping=1.0)
+        model.config._attn_implementation = "eager"
+        self._check_matches_eager(model)
+
+    def test_attention_logit_softcapping_matches_eager(self) -> None:
+        ids = torch.tensor(_IDS)
+        model = _random_gemma("gemma2", sliding_window=3, attn_logit_softcapping=1.0)
+        uncapped = copy.deepcopy(model)
+        for layer in uncapped.model.layers:
+            layer.self_attn.attn_logit_softcapping = None
+        self.assertFalse(
+            torch.allclose(
+                _eager_logits(uncapped, ids), _eager_logits(model, ids), atol=1e-3
+            )
+        )
+        self._check_matches_eager(model)
+
+    def test_attention_rejects_arguments_export_would_drop(self) -> None:
+        config = GptOssConfig(
+            vocab_size=128,
+            hidden_size=64,
+            intermediate_size=64,
+            num_hidden_layers=2,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            head_dim=16,
+            num_local_experts=2,
+            num_experts_per_tok=1,
+        )
+        model = AutoModelForCausalLM.from_config(config).eval().requires_grad_(False)
+        model.config._attn_implementation = "sdpa"
+        model.generation_config.cache_implementation = "static"
+        wrapper = LastTokenLM(model, 16).eval()
+        ids = torch.tensor([[3, 4, 5, 6]])
+        # GPT-OSS passes its attention sinks, which SDPA would drop.
+        message = r"GptOssAttention \(layer 0\) passes s_aux=<tensor \(4,\)>"
+
+        with torch.no_grad():
+            with self.assertRaisesRegex(NotImplementedError, message):
+                wrapper(ids, torch.arange(4))
+            with self.assertRaisesRegex(Exception, message):
+                torch.export.export(wrapper, (ids, torch.arange(4)), strict=True)
+
+    def test_attention_checks_argument_values(self) -> None:
+        module = torch.nn.Linear(1, 1)
+        _check_attention_args(
+            module,
+            {
+                "scaling": 0.25,
+                "dropout": 0.0,
+                "sliding_window": 4096,
+                "use_cache": True,
+                "position_ids": torch.arange(4),
+                "cache_position": torch.arange(4),
+                "cu_seq_lens_q": None,
+            },
+        )
+        for name, value in (
+            ("dropout", 0.1),
+            ("cu_seq_lens_q", torch.tensor([0, 4])),
+            ("head_mask", torch.ones(4)),
+        ):
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(NotImplementedError, f"passes {name}="):
+                    _check_attention_args(module, {name: value})
+
+    def test_attention_accepts_every_mapped_architecture(self) -> None:
+        ids = torch.tensor([[3, 4, 5, 6]])
+        for arch in _CONFIGS:
+            with self.subTest(arch=arch):
+                wrapper = LastTokenLM(_tiny(arch), 16).eval()
+                with torch.no_grad():
+                    logits = wrapper(ids, torch.arange(4))
+                self.assertEqual(logits.shape, (1, 1, 128))
+
+    def test_gguf_dequantized_twin_is_the_quantized_model_in_float(self) -> None:
+        config = LlamaConfig(
+            vocab_size=256,
+            hidden_size=256,
+            intermediate_size=512,
+            num_hidden_layers=2,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            head_dim=64,
+            max_position_embeddings=64,
+            tie_word_embeddings=True,
+            pad_token_id=0,
+        )
+        base = AutoModelForCausalLM.from_config(config).eval().requires_grad_(False)
+        base.config._attn_implementation = "sdpa"
+        base.generation_config.cache_implementation = "static"
+        pairs = _k_quant_pairs(base, torch.Generator().manual_seed(5))
+        quantized, twin = copy.deepcopy(base), copy.deepcopy(base)
+        load_gguf(quantized, "model.gguf", "llama", lambda _: iter(pairs))
+
+        load_gguf(twin, "model.gguf", "llama", lambda _: iter(pairs), dequantize=True)
+
+        self.assertFalse(
+            any(isinstance(p, TorchAOBaseTensor) for p in twin.parameters())
+        )
+        self.assertEqual({p.dtype for p in twin.parameters()}, {torch.float32})
+        self.assertIs(twin.lm_head.weight, twin.model.embed_tokens.weight)
+        ids = torch.tensor([[3, 4, 5, 6, 7, 8]])
+        with torch.no_grad():
+            self.assertTrue(torch.equal(twin(ids).logits, quantized(ids).logits))
+        seq = torch.export.Dim("seq", min=1, max=15)
+        graphs, consumers, embeddings = [], [], []
+        for model in (quantized, twin):
+            with torch.no_grad():
+                ep = torch.export.export(
+                    LastTokenLM(model, 16).eval(),
+                    (ids, torch.arange(6)),
+                    dynamic_shapes={"input_ids": {1: seq}, "cache_position": {0: seq}},
+                    strict=True,
+                )
+            consumers.append(_constant_consumers(ep))
+            # Decomposing unwraps the GGUF weights into dequantize_gguf nodes, as
+            # lowering does.
+            graph = ep.run_decompositions({}).graph
+            graphs.append([n.target for n in graph.nodes if n.op == "call_function"])
+            embeddings.append(
+                [
+                    n.args[2:]
+                    for n in graph.nodes
+                    if n.target == torch.ops.aten.embedding.default
+                ]
+            )
+        # One constant feeds both the embedding and the tied lm_head, in both.
+        self.assertEqual(consumers[0], consumers[1])
+        self.assertEqual(
+            consumers[1]["cached.model.model.embed_tokens.weight"],
+            ["aten.embedding.default", "aten.linear.default"],
+        )
+        self.assertNotIn("cached.model.lm_head.weight", consumers[1])
+        dequantize_gguf = torch.ops.torchao.dequantize_gguf.default
+        # 14 decoder matrices, the embedding and its tied lm_head.
+        self.assertEqual(graphs[0].count(dequantize_gguf), 16)
+        self.assertNotIn(dequantize_gguf, graphs[1])
+        self.assertEqual([t for t in graphs[0] if t != dequantize_gguf], graphs[1])
+        # The same embedding literals, padding_idx included.
+        self.assertEqual(embeddings[0], embeddings[1])
+
+    def test_dequantize_gguf_flag_needs_gguf(self) -> None:
+        argv = ["export_hf_llm", "--model", "unused", "--dequantize_gguf"]
+        stderr = io.StringIO()
+        with (
+            mock.patch.object(sys, "argv", argv),
+            mock.patch.object(sys, "stderr", stderr),
+        ):
+            with mock.patch.object(export_hf_llm, "_load") as load:
+                with self.assertRaises(SystemExit):
+                    export_hf_llm.main()
+        load.assert_not_called()
+        self.assertIn("--dequantize_gguf needs --gguf", stderr.getvalue())
+
+    def test_main_takes_the_package_before_the_lowering_report(self) -> None:
+        argv = ["export_hf_llm", "--model", "config", "--output", "out.ptn"]
+        calls = mock.Mock()
+        with (
+            mock.patch.object(sys, "argv", argv),
+            mock.patch.object(export_hf_llm, "_load"),
+            mock.patch.object(export_hf_llm, "LastTokenLM") as wrapper,
+            mock.patch.object(export_hf_llm, "export") as export,
+            mock.patch.object(export_hf_llm, "to_native", calls.to_native),
+            mock.patch.object(export_hf_llm, "report_lowering", calls.report_lowering),
+        ):
+            wrapper.return_value.eval.return_value.tokens_per_call = None
+            export_hf_llm.main()
+        ep = export.return_value
+        self.assertEqual(
+            calls.mock_calls,
+            [
+                mock.call.to_native(ep, metadata=None),
+                mock.call.report_lowering(ep, "forward"),
+                mock.call.to_native().save("out.ptn"),
+            ],
+        )
+
+    def test_gguf_flags_reach_load_gguf(self) -> None:
+        for dequantize in (False, True):
+            argv = ["export_hf_llm", "--model", "config", "--gguf", "model.gguf"]
+            argv += ["--dequantize_gguf"] if dequantize else []
+            with (
+                self.subTest(dequantize=dequantize),
+                mock.patch.object(sys, "argv", argv),
+                mock.patch.object(export_hf_llm, "_load") as load,
+                mock.patch.object(
+                    export_hf_llm, "load_gguf", side_effect=RuntimeError("loaded")
+                ) as load_gguf,
+            ):
+                with self.assertRaisesRegex(RuntimeError, "loaded"):
+                    export_hf_llm.main()
+                load.assert_called_once_with(
+                    "config", 0, False, empty_weights=True, offgraph_cache=False
+                )
+                load_gguf.assert_called_once_with(
+                    load.return_value,
+                    "model.gguf",
+                    truncated=False,
+                    dequantize=dequantize,
+                )

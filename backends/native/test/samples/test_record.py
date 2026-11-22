@@ -9,6 +9,7 @@ import importlib
 import sys
 import tempfile
 import unittest
+from contextlib import nullcontext
 from functools import partial
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -34,10 +35,12 @@ from executorch.backends.native.test.samples.record import DTYPES, record
 from executorch.backends.native.test.samples.schemes import (
     Gguf,
     GGUF_SUPER_SCALES,
+    int8_activations,
     Scheme,
     schemes,
     Torchao,
 )
+from executorch.exir._serialize._ptn import read_ptn
 from executorch.exir.native import read_samples
 from executorch.extension.llm.export.gguf import ExportableGGUFTensor
 from torch.export import Dim
@@ -66,6 +69,23 @@ def _available_memory(files: dict[str, str]) -> int | None:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text)
         return available_memory(Path(root))
+
+
+def ops() -> dict:
+    """Every op's samples; skips the test where FACTO, which the linear op's
+    cases import, is missing (OSS puts it on the path only to build the op
+    samples), or where transformers lacks what an op's cases import (OSS unit
+    tests run an older transformers than Native needs)."""
+    try:
+        module = importlib.import_module("executorch.backends.native.test.samples.ops")
+    except ImportError as e:
+        package = (e.name or "").partition(".")[0]
+        if package == "facto" and isinstance(e, ModuleNotFoundError):
+            raise unittest.SkipTest("op samples need FACTO") from e
+        if package == "transformers":
+            raise unittest.SkipTest(f"op samples need a newer transformers: {e}") from e
+        raise
+    return module.ops()
 
 
 class RecordTest(unittest.TestCase):
@@ -167,6 +187,29 @@ class RecordTest(unittest.TestCase):
             path = Path(tmp) / "embedding.ptn"
             record([case], schemes()["int4wo_g32"], path, dtypes=["f32"])
             self.assertEqual(set(read_samples(str(path))), {"golden", "precise"})
+
+    def test_tests_of_every_op_skip_only_without_facto_or_transformers(
+        self,
+    ) -> None:
+        # Another package named facto on the path leaves facto.inputgen missing.
+        # An older transformers lacks transformers.integrations.gguf, or a name
+        # in a module it has.
+        expected = {
+            ModuleNotFoundError("", name="facto"): unittest.SkipTest,
+            ModuleNotFoundError("", name="facto.inputgen"): unittest.SkipTest,
+            ModuleNotFoundError(
+                "", name="transformers.integrations.gguf"
+            ): unittest.SkipTest,
+            ImportError("", name="transformers.models.qwen3_5"): unittest.SkipTest,
+            ModuleNotFoundError("", name="gguf"): ModuleNotFoundError,
+            ImportError("", name="facto.inputgen"): ImportError,
+        }
+        for error, raised in expected.items():
+            with self.subTest(error=repr(error), name=error.name), patch(
+                "importlib.import_module", side_effect=error
+            ), self.assertRaises((unittest.SkipTest, ImportError)) as caught:
+                ops()
+            self.assertIs(type(caught.exception), raised)
 
     def test_generate_imports_without_the_op_cases(self) -> None:
         # OSS puts FACTO, which the linear op's cases import, on the path only
@@ -365,6 +408,27 @@ class RecordTest(unittest.TestCase):
             ):
                 memory_budget(None, {BUDGET_ENV: text})
 
+    def test_core_op_cases_fit_quantized_schemes_only_through_a_linear(self) -> None:
+        for op_name, op in ops().items():
+            if op_name in ("linear", "embedding", "gdn"):
+                continue
+            for case in op.cases():
+                quantized = case.name.startswith("quantized_")
+                for name, scheme in schemes().items():
+                    with self.subTest(op=op_name, case=case.name, scheme=name):
+                        self.assertEqual(
+                            scheme.fits(case.model), quantized or name == "float"
+                        )
+
+    def test_wide_gdn_layer_fits_the_gguf_k_quants(self) -> None:
+        layers = {c.name: c.model for c in ops()["gdn"].cases()}
+        for name in ("gguf_q8_0", "gguf_q4_k", "gguf_q5_k"):
+            with self.subTest(scheme=name):
+                self.assertTrue(
+                    schemes()[name].fits(layers["quantized_layer_decode_wide"])
+                )
+                self.assertFalse(schemes()[name].fits(layers["recurrent_qwen35"]))
+
     def test_chain_visits_each_dims_bounds_starting_mid_range(self) -> None:
         a, b = Dim("a", min=1, max=8), Dim("b", min=2, max=4)
         case = chain("pair", torch.nn.Identity(), (a, 3), (b, a))
@@ -429,6 +493,75 @@ class RecordTest(unittest.TestCase):
             ):
                 torch.testing.assert_close(call.outputs[0], model(*x), rtol=0, atol=0)
 
+    def test_record_keeps_a_chain_s_state_out_of_its_references(self) -> None:
+        class Accumulate(torch.nn.Module):
+            """A chain's state that no call resets; the package saves a
+            persistent buffer's initial value and zeroes a non-persistent one."""
+
+            def __init__(self, initial: torch.Tensor, persistent: bool) -> None:
+                super().__init__()
+                self.linear = torch.nn.Linear(32, 8, bias=False)
+                self.register_buffer("total", initial, persistent)
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                self.total.add_(self.linear(x))
+                return self.total * 2
+
+        scheme = schemes()["int4wo_g32"]
+        for initial, persistent in (
+            (torch.arange(8.0)[None], True),
+            (torch.zeros(1, 8), False),
+        ):
+            case = Case(
+                "acc",
+                Accumulate(initial, persistent),
+                draws(3, (1, 32)),
+                dynamic_shapes=({},),
+            )
+            want = {}
+            for name, act in (("golden", False), ("golden-int8_act", True)):
+                model = copy.deepcopy(case.model)
+                scheme.quantize(model)
+                with torch.no_grad(), int8_activations(model) if act else nullcontext():
+                    want[name] = [model(*x) for x in case.inputs]
+            want["precise"] = want["golden"]
+            with self.subTest(persistent=persistent):
+                with tempfile.TemporaryDirectory() as tmp:
+                    path = Path(tmp) / "acc.ptn"
+                    record([case], scheme, path, dtypes=["f32"])
+                    sets = read_samples(str(path))
+                    _, constants = read_ptn(str(path))
+                    for name, outputs in want.items():
+                        (sample,) = sets[name].samples
+                        for call, output in zip(sample.calls, outputs, strict=True):
+                            torch.testing.assert_close(call.outputs[0], output)
+                    state = [v for k, v in constants.items() if k.endswith(".total")]
+                    self.assertEqual(len(state), 1 if persistent else 0)
+                    for v in state:
+                        torch.testing.assert_close(v, initial, rtol=0, atol=0)
+
+    def test_precise_keeps_a_non_persistent_state_at_reference_precision(
+        self,
+    ) -> None:
+        class Accumulate(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("total", torch.zeros(1, 8), persistent=False)
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                self.total.add_(x)
+                return self.total * 2
+
+        case = Case("acc", Accumulate(), draws(4, (1, 8)), dynamic_shapes=({},))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "acc.ptn"
+            record([case], Scheme(), path, dtypes=["f16"])
+            (sample,) = read_samples(str(path))["precise"].samples
+        inputs = torch.cat([x.half().double() for (x,) in case.inputs])
+        want = (inputs.cumsum(0) * 2).float()
+        got = torch.cat([call.outputs[0] for call in sample.calls])
+        torch.testing.assert_close(got, want, rtol=0, atol=0)
+
     def test_record_keeps_integer_outputs_precise(self) -> None:
         class Argmax(torch.nn.Module):
             def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -475,6 +608,13 @@ class RecordTest(unittest.TestCase):
                 "float",
                 "int4wo_g32",
                 "int4wo_g128",
+                "gguf_q4_0",
+                "gguf_q4_1",
+                "gguf_q5_0",
+                "gguf_q5_1",
+                "gguf_q8_0",
+                "gguf_q2_k",
+                "gguf_q3_k",
                 "gguf_q4_k",
                 "gguf_q5_k",
                 "gguf_q6_k",
