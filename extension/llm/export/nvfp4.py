@@ -103,7 +103,7 @@ class ExportableNVFP4Tensor(TorchAOBaseTensor):
         self.block_size = block_size
         self.orig_dtype = orig_dtype
         if act_per_tensor_scale is not None:
-            act = torch.as_tensor(act_per_tensor_scale)
+            act = torch.as_tensor(act_per_tensor_scale, dtype=torch.float32)
             if act.numel() != 1:
                 raise ValueError("NVFP4 act_per_tensor_scale must be a scalar")
             act_per_tensor_scale = float(act)
