@@ -50,10 +50,10 @@ from executorch.backends.cuda.triton.kernels.sdpa import (
     _next_power_of_2_unclamped,
     _sdpa_small_query_reduce_kernel,
     _SMALL_QUERY_MAX_LQ,
-    _SMALL_QUERY_MAX_ROWS,
-    _SMALL_QUERY_MAX_TILE,
+    _small_query_tile_fits,
     _visible_mask_scenarios,
 )
+from torch._subclasses.fake_tensor import is_fake
 from torch.fx.experimental.symbolic_shapes import statically_known_true
 from torch.library import triton_op, wrap_triton
 from triton.language.extra import libdevice
@@ -421,9 +421,18 @@ def nvfp4_kv_write(
     k, v: [B, T, H_kv, D] (any strides; bf16/fp16/fp32), *pre* k-norm/RoPE when
     ``k_norm_eps`` / ``inv_freq`` are given (those are fused here).
     input_pos: [T] absolute positions.  ring: store at ``pos % L``.  Tokens at
-    negative positions, or at ``pos >= L`` without ``ring``, are not written.
+    negative positions are not written. Without ``ring``, a position past the
+    cache raises in eager (it would otherwise lose keys silently, where the BF16
+    cache's ``index_copy_`` fails); compiled programs cannot check it.
     """
     _check_write(k, v, input_pos, k_q, k_s, v_q, v_s, inv_freq, k_norm_eps)
+    real = not is_fake(input_pos) and input_pos.device.type != "meta"
+    if not ring and real and input_pos.numel():
+        if int(input_pos.max()) >= k_q.shape[2]:
+            raise ValueError(
+                f"nvfp4_kv_write: position {int(input_pos.max())} is past the "
+                f"{k_q.shape[2]}-slot cache"
+            )
     _nvfp4_kv_write_impl(
         k, v, input_pos, k_q, k_s, v_q, v_s, inv_freq, ring, k_norm_eps
     )
@@ -1015,8 +1024,7 @@ def nvfp4_sdpa(
     if statically_known_true(L_q == 1) or (
         isinstance(L_q, int)
         and 2 <= L_q <= _SMALL_QUERY_MAX_LQ
-        and rows <= _SMALL_QUERY_MAX_ROWS
-        and rows * D <= _SMALL_QUERY_MAX_TILE
+        and _small_query_tile_fits(rows, D, attn_mask is not None)
     ):
         _launch_nvfp4_splitk(
             query,

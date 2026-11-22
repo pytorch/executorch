@@ -316,8 +316,10 @@ class TestTritonSdpa(unittest.TestCase):
             kernel.configs, None, HEAD_DIM=D, NUM_GROUPS=H_q // H_kv
         )
         self.assertEqual({c.kwargs["PACK_GQA"] for c in configs}, {False, True})
-        # 37 is above the small-query split-K range and not a tile multiple.
-        for Lq in (37, 32, 64):
+        # 5 is the narrowest (each packed tile spans the most heads) and 37 is
+        # not a tile multiple; small-query split-K is switched off so the
+        # standard kernel serves every width, as for symbolic widths.
+        for Lq in (5, 37, 32, 64):
             q = torch.randn(B, H_q, Lq, D, dtype=torch.bfloat16, device="cuda")
             # Query i sees an interleaved subset of the live cells, as a cell
             # step's mask does.
@@ -335,6 +337,8 @@ class TestTritonSdpa(unittest.TestCase):
                 single = triton.autotune(configs=[config], key=kernel.keys)(kernel.fn)
                 with self.subTest(Lq=Lq, config=str(config)), mock.patch.object(
                     sdpa_module, "_sdpa_fwd_kernel", single
+                ), mock.patch.object(
+                    sdpa_module, "_small_query_tile_fits", lambda *args: False
                 ), mock.patch.object(
                     sdpa_module,
                     "_launch_small_query_splitk",
