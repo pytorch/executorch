@@ -20,6 +20,7 @@ import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
 
 import torch
 import torch.nn.functional as F
+import triton
 from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
 from executorch.backends.cuda.quantize_op_dispatch import nvfp4_dispatch
 from executorch.backends.cuda.triton.kernels import (
@@ -126,8 +127,8 @@ def _ceil_log2(r):
     bits = r.contiguous().view(torch.int32)
     ex = (bits >> 23) & 255
     e = ex - 127 + ((bits & 8388607) != 0).int()
-    e = torch.where(ex == 0, torch.full_like(e, -127), e)
-    return e.clamp(-127, 127)
+    e = torch.where(ex == 0, torch.full_like(e, -126), e)
+    return e.clamp(-126, 127)
 
 
 def _pow2(e):
@@ -306,7 +307,8 @@ class TestDispatchDecisions(CleanEnv):
     def test_mxfp8_never_w4a4(self):
         expected = {
             True: {1: "nvfp4_gemv", 64: "nvfp4_w4a8", 4096: "nvfp4_w4a8"},
-            False: {1: "nvfp4_auto_decode", 64: "dequant", 4096: "dequant"},
+            # Static M <= 64 keeps the fused W4A16 kernel, like fp4 weights.
+            False: {1: "nvfp4_auto_decode", 64: "nvfp4_w4a16", 4096: "dequant"},
         }
         for native in (True, False):
             for m in (1, 2, 3, 4, 5, 8, 9, 16, 17, 64, 4096):
@@ -321,28 +323,36 @@ class TestDispatchDecisions(CleanEnv):
                 elif m in expected[native]:
                     self.assertEqual(calls[0], expected[native][m], (native, m))
             calls = self._calls("mxfp8", 64, native, dynamic=True)
-            self.assertEqual(calls, [expected[native][64]], native)
+            self.assertEqual(calls, [expected[native][4096]], native)
 
     def test_bf16_weight_only(self):
         for native in (True, False):
             for m, kernel in (
                 (1, "nvfp4_gemv"),
                 (8, "nvfp4_small_m_gemm_m8:weight_only"),
-                (64, "dequant"),
+                (64, "nvfp4_w4a16"),
+                (4096, "dequant"),
             ):
                 self.assertEqual(self._calls("bf16", m, native), [kernel], (native, m))
 
     def test_policies(self):
         cases = [
             # w4a16 keeps BF16 activations: no MXFP8 prefill, no W4A8 decode.
-            ("mxfp8", 64, True, {"ET_CUDA_NVFP4_ACT": "w4a16"}, "dequant"),
+            ("mxfp8", 64, True, {"ET_CUDA_NVFP4_ACT": "w4a16"}, "nvfp4_w4a16"),
+            ("mxfp8", 4096, True, {"ET_CUDA_NVFP4_ACT": "w4a16"}, "dequant"),
             ("mxfp8", 1, False, {"ET_CUDA_NVFP4_ACT": "w4a16"}, "nvfp4_gemv"),
             # w4a8 forces the INT8-activation decode where 8 bits are allowed.
             ("mxfp8", 1, True, {"ET_CUDA_NVFP4_ACT": "w4a8"}, "nvfp4_w4a8_gemv"),
             ("bf16", 1, False, {"ET_CUDA_NVFP4_ACT": "w4a8"}, "nvfp4_gemv"),
             # w4a4 never applies to these weights.
             ("mxfp8", 64, True, {"ET_CUDA_NVFP4_ACT": "w4a4"}, "nvfp4_w4a8"),
-            ("bf16", 64, True, {"ET_CUDA_NVFP4_PREFILL_IMPL": "kernel"}, "nvfp4_w4a16"),
+            (
+                "bf16",
+                4096,
+                True,
+                {"ET_CUDA_NVFP4_PREFILL_IMPL": "kernel"},
+                "nvfp4_w4a16",
+            ),
             ("mxfp8", 64, True, {"ET_CUDA_NVFP4_PREFILL_IMPL": "dequant"}, "dequant"),
             ("mxfp8", 8, True, {"ET_CUDA_NVFP4_SMALL_M": "0"}, "nvfp4_w4a8"),
             (
@@ -352,6 +362,8 @@ class TestDispatchDecisions(CleanEnv):
                 {"ET_CUDA_NVFP4_MXFP8_EMULATE": "1"},
                 "mxfp8_emulated",
             ),
+            # The emulation reproduces SM120 decode too: the W4A16 GEMV.
+            ("mxfp8", 1, False, {"ET_CUDA_NVFP4_MXFP8_EMULATE": "1"}, "nvfp4_gemv"),
         ]
         for act, m, native, env, kernel in cases:
             self.assertEqual(self._calls(act, m, native, env=env), [kernel], env)
@@ -362,7 +374,10 @@ class TestDispatchDecisions(CleanEnv):
         for native in (True, False):
             env = {"ET_CUDA_NVFP4_MXFP8_EMULATE": "1"}
             self.assertEqual(
-                self._calls("mxfp8", 64, native, env=env, k=1040), ["dequant"]
+                self._calls("mxfp8", 64, native, env=env, k=1040), ["nvfp4_w4a16"]
+            )
+            self.assertEqual(
+                self._calls("mxfp8", 4096, native, env=env, k=1040), ["dequant"]
             )
 
     def test_fp4_unchanged(self):
@@ -411,6 +426,59 @@ def mxfp8_cases():
         ("fp16", make_weight(512, 1024, seed=8), torch.float16),
         ("tails", make_weight(500, 1056, seed=9), torch.bfloat16),
     )
+
+
+class TestNativeCompiles(unittest.TestCase):
+    """CI has no SM120 GPU: build the native MXFP8 kernels for sm_120 offline."""
+
+    def test_native_kernels_compile_for_sm120(self):
+        from triton.backends.compiler import GPUTarget
+        from triton.compiler import ASTSource
+        from triton.runtime.jit import JITFunction
+
+        cases = (
+            (
+                W8._act_mxfp8,
+                {"X": "*bf16", "Q": "*u8", "S": "*u8", "M": "i32"},
+                {"K": 1024, "BK": 1024},
+            ),
+            (
+                W8._w4a8_mx,
+                {
+                    "A": "*u8",
+                    "AS": "*u8",
+                    "B": "*u8",
+                    "BS": "*u8",
+                    "PTS": "*fp32",
+                    "C": "*bf16",
+                    "M": "i32",
+                },
+                {"N": 512, "K": 1024, "BM": 64, "BN": 64, "BK": 128, "GROUP_M": 8},
+            ),
+        )
+        for fn, signature, constants in cases:
+            while not isinstance(fn, JITFunction):
+                fn = fn.fn
+            names = fn.arg_names
+            constants = {**constants, "ROW_PTS": True}
+            signature = {
+                name: "constexpr" if name in constants else signature[name]
+                for name in names
+                if name in constants or name in signature
+            }
+            source = ASTSource(
+                fn=fn,
+                signature=signature,
+                constexprs={
+                    (names.index(k),): v for k, v in constants.items() if k in names
+                },
+            )
+            try:
+                triton.compile(source, target=GPUTarget("cuda", 120, 32))
+            except Exception as error:  # noqa: B902
+                if "sm_120" in str(error) or "gpu-name" in str(error):
+                    self.skipTest(f"toolchain cannot target sm_120: {error}")
+                raise
 
 
 class TestNative(CleanEnv):
@@ -507,7 +575,8 @@ class TestNative(CleanEnv):
 
 
 class TestEmulationKernels(CleanEnv):
-    """The emulation kernels on every CUDA GPU (both E4M3 decode paths)."""
+    """The emulation kernels on every CUDA GPU (the ARCH >= 89 E4M3 branch
+    needs SM89+; CI's A10G/A100 run the software one)."""
 
     def setUp(self):
         super().setUp()
@@ -521,6 +590,8 @@ class TestEmulationKernels(CleanEnv):
         )
         x[:, ::97] *= 64
         x[3, :64] = 0
+        # Block maxima below 448 * 2**-126 share the smallest UE8M0 scale.
+        x[4, :32] = 3e-36
         # Block maxima at the UE8M0 boundaries 448 * 2**j and one BF16 ulp
         # around them (446 * 2**j and 450 * 2**j survive the BF16 cast).
         b = torch.tensor([448.0 * 2.0**j for j in range(-20, 10)], device="cuda")
@@ -590,7 +661,7 @@ class TestEmulated(CleanEnv):
         self.assertEqual(
             linear_ops("mxfp8", 256), {"nvfp4_mxfp8_act_qdq", "nvfp4_dequant_mxfp8"}
         )
-        self.assertEqual(linear_ops("mxfp8", 1), {"nvfp4_auto_decode"})
+        self.assertEqual(linear_ops("mxfp8", 1), {"nvfp4_gemv"})
         self.assertEqual(linear_ops("mxfp8", 4), {"nvfp4_small_m_gemm_m4:weight_only"})
         self.assertEqual(linear_ops("bf16", 256), {"nvfp4_dequant"})
         self.assertEqual(linear_ops("bf16", 1), {"nvfp4_gemv"})
@@ -598,7 +669,7 @@ class TestEmulated(CleanEnv):
     def test_export_graph(self):
         for m, dynamic, op in (
             (64, True, "nvfp4_dequant_mxfp8"),
-            (1, False, "nvfp4_auto_decode"),
+            (1, False, "nvfp4_gemv"),
             (16, False, "nvfp4_small_m_gemm_m16:weight_only"),
         ):
             ops = exported_ops("mxfp8", m, dynamic)

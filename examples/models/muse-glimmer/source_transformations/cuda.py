@@ -765,10 +765,13 @@ def cuda_source_transformations(
 ) -> None:
     """Apply CUDA source transformations to a Muse Glimmer model in place.
 
-    Always bounds global-attention SDPA to the valid context via a runtime
-    ``kv_len`` (O(context) decode). Optionally also swaps the global KV caches
-    for TurboQuant TQ4. Sliding-window layers are untouched in both cases (they
-    already use a bounded ring buffer).
+    First swaps fused NVFP4 gate/up MLPs for ``CudaNVFP4MLP`` (the fused
+    gated kernel; ``source_transformations/nvfp4.py``). With
+    ``use_nvfp4_kv_cache`` every layer, sliding-window ones included, gets an
+    NVFP4 KV cache. Otherwise global-attention SDPA is bounded to the valid
+    context via a runtime ``kv_len`` (O(context) decode), and optionally the
+    global KV caches become TurboQuant TQ4; sliding-window layers are
+    untouched in both cases (they already use a bounded ring buffer).
 
     Args:
         model: ``MuseGlimmerModel`` instance to transform.

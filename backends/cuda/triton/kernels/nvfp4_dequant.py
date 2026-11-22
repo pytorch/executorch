@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 """Whole-weight NVFP4 -> BF16/FP16 dequantization for dequant + matmul prefill.
 
-The same path the integer GGUF formats take for M > 64
+The same path the integer GGUF formats take above their buckets
 (``_gemm_family_dispatch.chunked_dequant_linear``): dequantize the packed
 weight once per forward and let Inductor compile the dense matmul. Each value
 is ``(e2m1 * e4m3_scale * per_tensor_scale).to(dtype)``, bit-identical to the
@@ -41,13 +41,13 @@ def _nvfp4_dequant_kernel(
     mask = (n[:, None] < N) & (kk[None, :] < K // 2)
     q = tl.load(Q + n[:, None].to(tl.int64) * (K // 2) + kk[None, :], mask, 0)
     b = tl.load(S + n[:, None].to(tl.int64) * (K // 16) + kk[None, :] // 8, mask, 0)
-    lo, hi, sf = _decode_pair(q, b, False)
+    lo, hi = _decode_pair(q, b, False)
     if ROW_PTS:
         pts = tl.load(PTS + n, n < N, 1.0)[:, None]
     else:
         pts = tl.load(PTS)
-    w0 = (lo * sf * pts).to(Y.dtype.element_ty)
-    w1 = (hi * sf * pts).to(Y.dtype.element_ty)
+    w0 = (lo * pts).to(Y.dtype.element_ty)
+    w1 = (hi * pts).to(Y.dtype.element_ty)
     w = tl.join(w0, w1).reshape((BN, 2 * BKH))
     k = tl.program_id(1) * (2 * BKH) + tl.arange(0, 2 * BKH)
     tl.store(

@@ -19,8 +19,10 @@ rounded once, to nearest even, to E4M3. The product runs on the block-scaled
 tensor cores (``tl.dot_scaled`` e4m3 x e4m3 with ue8m0 scales) with FP32
 accumulation, and the per-tensor scale is applied in the epilogue.
 
-The conversion is exact for products with at most 4 significant bits; the
-others (rare in practice) move by at most half an E4M3 ulp.
+The conversion is exact for products with at most 4 significant bits. The
+others are common: any code of magnitude 1.5, 3 or 6 times a K16 scale whose
+mantissa is 1, 3, 5, 6 or 7 needs 5-6 bits and moves by at most half an E4M3
+ulp (e.g. 1.5 x 1.125 = 1.6875 becomes 1.75).
 
 Packed weights: low nibble first; scales N-major (N, K/16) E4M3.
 """
@@ -40,12 +42,13 @@ from torch.library import triton_op
 
 @triton.jit
 def _ceil_log2(r):
-    # ceil(log2(r)) for r >= 0 (r == 0 -> -127), clamped to the UE8M0 range.
+    # ceil(log2(r)) for r >= 0, clamped to [-126, 127] (r zero or an FP32
+    # subnormal -> -126) so the stored exponent matches the _pow2 multiplier.
     bits = r.to(tl.int32, bitcast=True)
     ex = (bits >> 23) & 255
     e = ex - 127 + ((bits & 8388607) != 0).to(tl.int32)
-    e = tl.where(ex == 0, -127, e)
-    return tl.minimum(tl.maximum(e, -127), 127)
+    e = tl.where(ex == 0, -126, e)
+    return tl.minimum(tl.maximum(e, -126), 127)
 
 
 @triton.jit
@@ -281,8 +284,8 @@ def nvfp4_to_mxfp8_weight_reference(qdata, scale):
     g = exact.reshape(n, k // 32, 32)
     smax = scale.view(torch.float8_e4m3fn).float().reshape(n, k // 32, 2).amax(-1)
     r = smax * 6.0 / 448.0
-    e = torch.where(r > 0, torch.ceil(torch.log2(r)), torch.full_like(r, -127.0)).clamp(
-        -127, 127
+    e = torch.where(r > 0, torch.ceil(torch.log2(r)), torch.full_like(r, -126.0)).clamp(
+        -126, 127
     )
     conv = (g * torch.exp2(-e)[..., None]).to(torch.float8_e4m3fn).float()
     return (conv * torch.exp2(e)[..., None]).reshape(n, k), exact

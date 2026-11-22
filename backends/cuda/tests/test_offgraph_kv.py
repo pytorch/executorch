@@ -971,8 +971,8 @@ class OffGraphKVCellCompileTest(unittest.TestCase):
 
     The batching executor routes one-token steps to the first and wider ones to
     the second, so the second's width starts at 2. triton::sdpa dispatches on
-    the query length (one token, 2..4 tokens, wider), and a pool past its
-    split-K threshold makes those branches live under a symbolic length.
+    the query length (one token, a concrete 2..16 tokens, wider); under the
+    second method's symbolic width it takes the general kernel.
     """
 
     MAX_CELLS = 512

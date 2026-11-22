@@ -43,29 +43,40 @@ from executorch.examples.models.muse_glimmer.source_transformations.cuda import 
 class NVFP4KVCache(nn.Module):
     """K/V cache stored as NVFP4 (E2M1 codes, E4M3 K16 scales, unit global scale)."""
 
-    def __init__(self, n_kv_heads: int, length: int, head_dim: int, ring: bool, device):
+    def __init__(
+        self,
+        batch: int,
+        n_kv_heads: int,
+        length: int,
+        head_dim: int,
+        ring: bool,
+        device,
+    ):
         super().__init__()
         assert head_dim % 32 == 0 and head_dim & (head_dim - 1) == 0
         self.ring = ring
-        for kind in ("k", "v"):
-            self.register_buffer(
-                f"{kind}_q",
-                torch.zeros(
-                    (1, n_kv_heads, length, head_dim // 2),
-                    dtype=torch.uint8,
-                    device=device,
-                ),
-                persistent=False,
-            )
-            self.register_buffer(
-                f"{kind}_s",
-                torch.zeros(
-                    (1, n_kv_heads, length, head_dim // 16),
-                    dtype=torch.uint8,
-                    device=device,
-                ),
-                persistent=False,
-            )
+        codes = (batch, n_kv_heads, length, head_dim // 2)
+        scales = (batch, n_kv_heads, length, head_dim // 16)
+        self.register_buffer(
+            "k_q",
+            torch.zeros(codes, dtype=torch.uint8, device=device),
+            persistent=False,
+        )
+        self.register_buffer(
+            "k_s",
+            torch.zeros(scales, dtype=torch.uint8, device=device),
+            persistent=False,
+        )
+        self.register_buffer(
+            "v_q",
+            torch.zeros(codes, dtype=torch.uint8, device=device),
+            persistent=False,
+        )
+        self.register_buffer(
+            "v_s",
+            torch.zeros(scales, dtype=torch.uint8, device=device),
+            persistent=False,
+        )
 
 
 def _nvfp4_kv_attention_forward(
@@ -144,6 +155,7 @@ def install_nvfp4_kv_cache(model: nn.Module) -> None:
         old = attn.kv_cache
         device = old.k_cache.device if old.k_cache.device.type != "meta" else "cpu"
         attn.kv_cache = NVFP4KVCache(
+            old.k_cache.shape[0],
             attn.n_kv_heads,
             old.k_cache.shape[2],
             attn.head_dim,

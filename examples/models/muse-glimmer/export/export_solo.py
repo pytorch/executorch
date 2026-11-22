@@ -357,12 +357,14 @@ def add_kv_layout_arguments(parser) -> None:
 def add_nvfp4_act_argument(parser) -> None:
     parser.add_argument(
         "--nvfp4-act",
-        choices=("auto", "w4a4", "w4a16"),
+        choices=("auto", "w4a4", "w4a8", "w4a16"),
         default=None,
         help="CUDA NVFP4 activation mode, sets ET_CUDA_NVFP4_ACT (default: "
         "the environment's value, else auto). auto times W4A4 against W4A16 "
-        "per shape when native FP4 is available, w4a4 forces FP4 activations "
-        "(native FP4 required), w4a16 forces BF16 activations.",
+        "per shape when native FP4 is available, and decode W4A16 against the "
+        "INT8-activation W4A8 GEMV otherwise; w4a4 forces FP4 activations "
+        "(native FP4 required), w4a8 forces the W4A8 decode GEMV, w4a16 "
+        "forces BF16 activations.",
     )
 
 
@@ -489,6 +491,9 @@ def export_cuda_batching(  # noqa: C901
         enable_offgraph_kv_cache,
         offgraph_kv_cache_geometry,
     )
+    from executorch.examples.models.muse_glimmer.source_transformations.nvfp4 import (
+        install_nvfp4_gate_up_epilogues,
+    )
     from executorch.exir import (
         EdgeCompileConfig,
         ExecutorchBackendConfig,
@@ -557,6 +562,7 @@ def export_cuda_batching(  # noqa: C901
     if hasattr(inductor_config, "cpp_cache_precompile_headers"):
         inductor_config.cpp_cache_precompile_headers = False
 
+    install_nvfp4_gate_up_epilogues(model)
     single_manifest = enable_offgraph_kv_cache(model, max_step_tokens)
     manifest = (
         batched_sequence_manifest(single_manifest, max_kv_seqs)
@@ -806,9 +812,10 @@ def _export_cuda(
         vision_cuda_source_transformations,
     )
 
-    # Always applied: bounds global-attention SDPA to the valid context via a
-    # runtime kv_len (O(context) decode). With use_turboquant=True it also swaps
-    # the global KV caches for TurboQuant TQ4.
+    # Bounds global-attention SDPA to the valid context via a runtime kv_len
+    # (O(context) decode). With use_turboquant=True it also swaps the global KV
+    # caches for TurboQuant TQ4; with kv_cache_dtype="nvfp4" every layer gets an
+    # NVFP4 KV cache instead.
 
     max_prefill = min(config.max_seq_len - 1, model._sliding_window * 2)
     model.set_max_prefill_chunk(max_prefill)
@@ -1338,6 +1345,8 @@ def main() -> None:
     apply_nvfp4_act_argument(parser, args)
     if args.nvfp4_static_act and (args.backend != "cuda" or not args.gguf):
         parser.error("--nvfp4-static-act requires --backend cuda and --gguf.")
+    if args.nvfp4_attn_act != "fp4" and args.backend != "cuda":
+        parser.error("--nvfp4-attn-act requires --backend cuda.")
     if args.kv_cache_dtype == "nvfp4" and (
         args.backend != "cuda" or args.turboquant or args.use_offgraph_kv_cache
     ):

@@ -2,7 +2,7 @@
 # All rights reserved.
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-"""NVFP4 linears for small static M (2..16): rows / W4A4 / W4A16 per bucket."""
+"""NVFP4 linears for small M (2..16): rows / W4A4 / W4A16 per bucket."""
 
 from unittest import mock
 
@@ -23,6 +23,17 @@ pytestmark = pytest.mark.skipif(
 
 E2M1 = [0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0]
 E2M1 = E2M1 + [-v for v in E2M1]
+
+
+@pytest.fixture(autouse=True)
+def default_policy(monkeypatch):
+    for name in (
+        "ET_CUDA_NVFP4_ACT",
+        "ET_CUDA_NVFP4_PREFILL_OUTPUT",
+        "ET_CUDA_NVFP4_PREFILL_IMPL",
+        "ET_CUDA_NVFP4_SMALL_M",
+    ):
+        monkeypatch.delenv(name, raising=False)
 
 
 def native_fp4():
@@ -143,7 +154,6 @@ def test_bucket_selection():
     x = lambda m, k=256, dtype=torch.bfloat16: torch.empty(  # noqa: E731
         m, k, device="cuda", dtype=dtype
     )
-    assert bucket_of(x(1), q, s, pts) is None
     assert [bucket_of(x(m), q, s, pts) for m in (2, 3, 4, 5, 8, 9, 16)] == [
         2,
         4,
@@ -188,9 +198,6 @@ def test_linear_dispatch_routes_small_m(m, monkeypatch):
         nvfp4_dispatch,
     )
 
-    monkeypatch.delenv("ET_CUDA_NVFP4_ACT", raising=False)
-    monkeypatch.delenv("ET_CUDA_NVFP4_SMALL_M", raising=False)
-    monkeypatch.delenv("ET_CUDA_NVFP4_PREFILL_IMPL", raising=False)
     n, k = 96, 512
     q, s = weight(n, k, seed=3, scales=(0x30, 0x40))
     w = CudaNVFP4Tensor(q, s, torch.tensor(0.5, device="cuda"))

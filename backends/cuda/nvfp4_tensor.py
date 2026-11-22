@@ -70,6 +70,10 @@ class CudaNVFP4Tensor(TorchAOBaseTensor):
     is finite with at most 6 significant bits and exact in BF16 without
     rounding. ``from_exportable`` sets it from the values; the constructor
     trusts the passed flag.
+
+    Kernels assume every scale byte is a finite E4M3 value: ``from_exportable``
+    rejects the NaN bytes 0x7F/0xFF (the GGUF converter already maps 0x7F to 0
+    and rejects 0xFF).
     """
 
     tensor_data_names = ["qdata", "scale", "per_tensor_scale"]
@@ -139,9 +143,11 @@ class CudaNVFP4Tensor(TorchAOBaseTensor):
         """Repack a portable ``ExportableNVFP4Tensor`` (uint32 ``qdata``)."""
         # Infer once on materialized weights. Fake reconstruction receives the
         # serialized metadata through __new__, without reading tensor values.
+        real = w.scale.device.type != "meta" and not is_fake(w.scale)
+        if real and bool(((w.scale & 0x7F) == 0x7F).any().item()):
+            raise ValueError("NVFP4 E4M3 scales must be finite (no 0x7F/0xFF bytes)")
         unit_scale = (
-            w.scale.device.type != "meta"
-            and not is_fake(w.scale)
+            real
             and not is_fake(w.per_tensor_scale)
             and w.scale.numel() > 0
             and bool(torch.all(w.per_tensor_scale == 1).item())

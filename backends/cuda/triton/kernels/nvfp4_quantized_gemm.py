@@ -234,13 +234,12 @@ def _fp4_pair_f16(q):
 
 @triton.jit
 def _e4m3_f16(b):
-    """E4M3 byte -> FP32 value times 2**-8, exact for every finite byte (FP16
-    holds every finite E4M3 value); 0x7F/0xFF decode to NaN."""
+    """Finite E4M3 byte -> FP32 value times 2**-8, exact (FP16 holds every
+    finite E4M3 value). ``CudaNVFP4Tensor`` scales are finite (NaN bytes are
+    rejected at packing), so no NaN select runs in the hot loops."""
     u = b.to(tl.uint32)
     bits = (((u & 0x80) << 8) | ((u & 0x7F) << 7)).to(tl.uint16)
-    value = bits.to(tl.float16, bitcast=True).to(tl.float32)
-    nan = tl.full(value.shape, 0x7FC00000, tl.int32).to(tl.float32, bitcast=True)
-    return tl.where((u & 0x7F) == 0x7F, nan, value)
+    return bits.to(tl.float16, bitcast=True).to(tl.float32)
 
 
 # 2**14 (E2M1 FP16 placement) * 2**8 (E4M3 FP16 placement).
@@ -249,8 +248,8 @@ _SOFT_FP4_RESCALE = tl.constexpr(4194304.0)
 
 @triton.jit
 def _decode_pair(q, s, NATIVE: tl.constexpr):
-    """Byte of two E2M1 codes and its E4M3 scale byte -> FP32 (low, high,
-    scale) whose products are exact: native conversion on SM120, FP16 bit
+    """Byte of two E2M1 codes and its E4M3 scale byte -> the exact FP32
+    products (low * scale, high * scale): native conversion on SM120, FP16 bit
     placement elsewhere."""
     if NATIVE:
         packed = tl.inline_asm_elementwise(
@@ -264,10 +263,11 @@ def _decode_pair(q, s, NATIVE: tl.constexpr):
         lo = (packed & 65535).to(tl.uint16).to(tl.float16, bitcast=True)
         hi = (packed >> 16).to(tl.uint16).to(tl.float16, bitcast=True)
         sf = s.to(tl.float8e4nv, bitcast=True).to(tl.float32)
-        return lo.to(tl.float32), hi.to(tl.float32), sf
+        return lo.to(tl.float32) * sf, hi.to(tl.float32) * sf
     else:
         lo, hi = _fp4_pair_f16(q)
-        return lo, hi, _e4m3_f16(s) * _SOFT_FP4_RESCALE
+        sf = _e4m3_f16(s) * _SOFT_FP4_RESCALE
+        return lo * sf, hi * sf
 
 
 @torch._dynamo.assume_constant_result
@@ -690,7 +690,9 @@ _SOFT_E2M1_HALF2 = tl.constexpr(0x74007400)
 
 
 @triton.jit
-def _scaled_pair(q, sf, HALF2: tl.constexpr, NATIVE: tl.constexpr = True):
+def _scaled_pair(q, sf, NATIVE: tl.constexpr):
+    """Byte of two E2M1 codes times an FP16 scale -> FP32 (low, high), with the
+    decode and the multiply in packed FP16x2."""
     if NATIVE:
         packed = tl.inline_asm_elementwise(
             "{ .reg .b8 tmp,z1,z2,z3; mov.b32 {tmp,z1,z2,z3}, $1; cvt.rn.f16x2.e2m1x2 $0, tmp; }",
@@ -713,24 +715,20 @@ def _scaled_pair(q, sf, HALF2: tl.constexpr, NATIVE: tl.constexpr = True):
             is_pure=True,
             pack=1,
         )
-    if HALF2:
-        # E2M1*E4M3 needs <=6 significant bits. The nonzero magnitude
-        # range [2**-10, 2688] is normal FP16, so packed multiply is exact.
-        sf_bits = sf.to(tl.float16).to(tl.uint16, bitcast=True).to(tl.uint32)
-        sf_pair = sf_bits | (sf_bits << 16)
-        packed = tl.inline_asm_elementwise(
-            "mul.rn.f16x2 $0, $1, $2;",
-            constraints="=r,r,r",
-            args=[packed, sf_pair],
-            dtype=tl.uint32,
-            is_pure=True,
-            pack=1,
-        )
+    # E2M1*E4M3 needs <=6 significant bits. The nonzero magnitude range
+    # [2**-10, 2688] is normal FP16, so the packed multiply is exact.
+    sf_bits = sf.to(tl.float16).to(tl.uint16, bitcast=True).to(tl.uint32)
+    sf_pair = sf_bits | (sf_bits << 16)
+    packed = tl.inline_asm_elementwise(
+        "mul.rn.f16x2 $0, $1, $2;",
+        constraints="=r,r,r",
+        args=[packed, sf_pair],
+        dtype=tl.uint32,
+        is_pure=True,
+        pack=1,
+    )
     lo = (packed & 65535).to(tl.uint16).to(tl.float16, bitcast=True).to(tl.float32)
     hi = (packed >> 16).to(tl.uint16).to(tl.float16, bitcast=True).to(tl.float32)
-    if not HALF2:
-        lo = lo * sf
-        hi = hi * sf
     return lo, hi
 
 
@@ -747,9 +745,9 @@ def _gemv_half2(
     SPLIT: tl.constexpr,
     BN: tl.constexpr,
     BK: tl.constexpr,
+    NATIVE: tl.constexpr,
     ROW_PTS: tl.constexpr = False,
     UNIT_SCALE: tl.constexpr = False,
-    NATIVE: tl.constexpr = True,
 ):
     n = (tl.program_id(0) * BN + tl.arange(0, BN)).to(tl.int64)
     m = tl.program_id(1).to(tl.int64)
@@ -779,7 +777,7 @@ def _gemv_half2(
         else:
             sf = (_e4m3_f16(sf) * 256.0).to(tl.float16)
         sf = tl.broadcast_to(sf[:, :, None], (BN, BK // 16, 8)).reshape((BN, BK // 2))
-        lo, hi = _scaled_pair(q, sf, True, NATIVE)
+        lo, hi = _scaled_pair(q, sf, NATIVE)
         if UNIT_SCALE and X.dtype.element_ty == tl.bfloat16:
             w0, w1 = lo, hi
         elif X.dtype.element_ty == tl.bfloat16:
@@ -838,15 +836,15 @@ def _gemv_original(
         kk = pair + off * (BK // 2)
         mask = (n[:, None] < N) & (kk[None, :] < K // 2)
         q = tl.load(Q + n[:, None] * (K // 2) + kk[None, :], mask, 0)
-        lo, hi, sf = _decode_pair(
+        lo, hi = _decode_pair(
             q, tl.load(S + n[:, None] * (K // 16) + kk[None, :] // 8, mask, 0), NATIVE
         )
         # Unit-scale E2M1*E4M3 products have <=6 significant bits: exact in BF16.
         if UNIT_SCALE and X.dtype.element_ty == tl.bfloat16:
-            w0, w1 = lo * sf, hi * sf
+            w0, w1 = lo, hi
         else:
-            w0 = (lo * sf * pts).to(X.dtype.element_ty).to(tl.float32)
-            w1 = (hi * sf * pts).to(X.dtype.element_ty).to(tl.float32)
+            w0 = (lo * pts).to(X.dtype.element_ty).to(tl.float32)
+            w1 = (hi * pts).to(X.dtype.element_ty).to(tl.float32)
         x0 = tl.load(X + m * K + kk * 2, kk < K // 2, 0).to(tl.float32)
         x1 = tl.load(X + m * K + kk * 2 + 1, kk < K // 2, 0).to(tl.float32)
         acc += w0 * x0[None, :] + w1 * x1[None, :]
@@ -898,7 +896,7 @@ def _gemv(
 ):
     if HALF2:
         _gemv_half2(
-            X, Q, S, PTS, Y, M, N, K, SPLIT, BN, BK, ROW_PTS, UNIT_SCALE, NATIVE
+            X, Q, S, PTS, Y, M, N, K, SPLIT, BN, BK, NATIVE, ROW_PTS, UNIT_SCALE
         )
     else:
         _gemv_original(
@@ -1074,11 +1072,11 @@ def _w4a16(
         )
         mask = (n[:, None] < N) & (pair[None, :] < K // 2)
         q = tl.load(Q + n[:, None] * (K // 2) + pair[None, :], mask, 0)
-        lo, hi, sf = _decode_pair(
+        lo, hi = _decode_pair(
             q, tl.load(S + n[:, None] * (K // 16) + pair[None, :] // 8, mask, 0), NATIVE
         )
-        w0 = (lo * sf * pts).to(X.dtype.element_ty)
-        w1 = (hi * sf * pts).to(X.dtype.element_ty)
+        w0 = (lo * pts).to(X.dtype.element_ty)
+        w1 = (hi * pts).to(X.dtype.element_ty)
         b = tl.trans(tl.join(w0, w1).reshape((BN, BK)))
         acc = tl.dot(a, b, acc)
     tl.store(

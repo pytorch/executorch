@@ -6,8 +6,11 @@
 
 """NVFP4 KV cache kernels (fused write, exact FP16 attention) vs PyTorch references."""
 
+import itertools
 import math
+import tempfile
 import unittest
+from pathlib import Path
 
 import executorch.backends.cuda.triton.kernels.nvfp4_kv as K
 import torch
@@ -170,7 +173,7 @@ class TestNVFP4KVCache(unittest.TestCase):
         for s in range(0, n_total, 4096):
             e = min(n_total, s + 4096)
             torch.ops.triton.nvfp4_kv_write(
-                k[:, s:e], v[:, s:e], pos[s:e], *kc, *vc, None, False, -1.0
+                k[:, s:e], v[:, s:e], pos[s:e], *kc, *vc, None, False, None
             )
         q = unit_rows(torch.randn(1, HQ, lq, D, device="cuda", dtype=torch.bfloat16))
         kv_len = torch.tensor([n_total], device="cuda")
@@ -279,27 +282,52 @@ class TestNVFP4KVCache(unittest.TestCase):
 
 
 class _WriteAndAttend(torch.nn.Module):
-    def __init__(self, length, ring):
+    """One attention layer over an NVFP4 cache, called as production does: a
+    ring (sliding window) or flat (causal) cache, RoPE or NoPE, and a 0-d
+    ``kv_len`` of tokens written so far."""
+
+    def __init__(self, length, ring, rope=True, window=16):
         super().__init__()
         self.ring = ring
-        for kind in ("k", "v"):
-            for name, t in zip(("q", "s"), new_cache(length)):
-                self.register_buffer(f"{kind}_{name}", t, persistent=False)
-        self.register_buffer(
-            "inv_freq",
-            1.0 / (10000.0 ** (torch.arange(0, D, 2, device="cuda") / D)),
-            persistent=False,
-        )
+        self.window = window if ring else 0
+        k_q, k_s = new_cache(length)
+        v_q, v_s = new_cache(length)
+        self.register_buffer("k_q", k_q, persistent=False)
+        self.register_buffer("k_s", k_s, persistent=False)
+        self.register_buffer("v_q", v_q, persistent=False)
+        self.register_buffer("v_s", v_s, persistent=False)
+        inv_freq = 1.0 / (10000.0 ** (torch.arange(0, D, 2, device="cuda") / D))
+        self.register_buffer("inv_freq", inv_freq if rope else None, persistent=False)
 
     def forward(self, q, k, v, input_pos):
         cache = (self.k_q, self.k_s, self.v_q, self.v_s)
         torch.ops.triton.nvfp4_kv_write(
             k, v, input_pos, *cache, self.inv_freq, self.ring, 1e-5
         )
-        kv_len = input_pos[-1:] + 1
+        kv_len = input_pos[0] + input_pos.shape[0]
         return torch.ops.triton.nvfp4_sdpa(
-            q, *cache, None, not self.ring, SCALE, kv_len, 64 if self.ring else 0
+            q, *cache, None, not self.ring, SCALE, kv_len, self.window
         )
+
+
+def step_inputs(start, T):
+    return (
+        torch.randn(1, HQ, T, D, device="cuda", dtype=torch.bfloat16),
+        torch.randn(1, T, HKV, D, device="cuda", dtype=torch.bfloat16),
+        torch.randn(1, T, HKV, D, device="cuda", dtype=torch.bfloat16),
+        torch.arange(start, start + T, device="cuda"),
+    )
+
+
+# Prefill, decode, then chunks that wrap a 48-slot ring (window 16 + the
+# longest chunk - 1 <= 48) and stay inside a 64-slot flat cache.
+STEPS = ((0, 24), (24, 1), (25, 8), (33, 20))
+SEQ_DIM = torch.export.Dim("T", min=1, max=64)
+SEQ_SHAPES = ({2: SEQ_DIM}, {1: SEQ_DIM}, {1: SEQ_DIM}, {0: SEQ_DIM})
+
+
+def layer(ring, rope=True):
+    return _WriteAndAttend(48 if ring else 64, ring, rope)
 
 
 class TestNVFP4KVValidation(unittest.TestCase):
@@ -326,10 +354,17 @@ class TestNVFP4KVValidation(unittest.TestCase):
             lambda: sdpa(q.half(), *cache(), *cache()),
             lambda: sdpa(q[:, :3], *cache(), *cache()),
             lambda: sdpa(q[..., :64], *cache(), *cache()),
+            # A negative eps is not "no K norm"; that is None.
+            lambda: write(k, k, pos, *cache(), *cache(), None, False, -1.0),
+            # SDPA-style additive float masks would invert visibility.
+            lambda: sdpa(q, *cache(), *cache(), torch.zeros(1, 1, 2, 16)),
+            lambda: sdpa(q, *cache(), *cache(), torch.ones(1, HQ, 2, 16).bool()),
         ]
         for i, call in enumerate(bad):
             with self.assertRaises(ValueError, msg=str(i)):
                 call()
+        with self.assertRaises(RuntimeError):
+            sdpa(q, *cache(), *cache(), None, True)
 
 
 class TestLowerNVFP4KVWrite(unittest.TestCase):
@@ -339,61 +374,91 @@ class TestLowerNVFP4KVWrite(unittest.TestCase):
         torch.manual_seed(0)
 
     def test_pass_with_dynamic_seq_len_matches_eager(self):
-        """Prefill then decode through one dynamic-T export: the outputs and
-        the cache buffers match eager after both calls."""
+        """Prefill, decode and ring-wrapping chunks through one dynamic-T
+        export: the outputs and the cache buffers match eager after each step."""
         from executorch.backends.cuda.passes.lower_nvfp4_kv import LowerNVFP4KVWritePass
 
-        def inputs(start, T):
-            return (
-                torch.randn(1, HQ, T, D, device="cuda", dtype=torch.bfloat16),
-                torch.randn(1, T, HKV, D, device="cuda", dtype=torch.bfloat16),
-                torch.randn(1, T, HKV, D, device="cuda", dtype=torch.bfloat16),
-                torch.arange(start, start + T, device="cuda"),
-            )
-
-        steps = [inputs(0, 8), inputs(8, 1)]
-        T = torch.export.Dim("T", min=1, max=64)
-        shapes = ({2: T}, {1: T}, {1: T}, {0: T})
-        for ring in (False, True):
-            eager = _WriteAndAttend(256, ring)
-            expected = [eager(*args) for args in steps]
+        steps = [step_inputs(*s) for s in STEPS]
+        for ring, rope in ((False, False), (True, True)):
+            eager = layer(ring, rope)
             ep = torch.export.export(
-                _WriteAndAttend(256, ring), steps[0], dynamic_shapes=shapes, strict=True
+                layer(ring, rope), steps[0], dynamic_shapes=SEQ_SHAPES, strict=True
             )
             ep = LowerNVFP4KVWritePass()(ep.run_decompositions({}))
             self.assertNotIn("auto_functionalized", str(ep.graph))
             module = ep.module()
-            for args, want in zip(steps, expected):
-                # A dynamic T takes the prefill kernel; eager takes split-K.
+            for args in steps:
+                want = eager(*args)
+                # A dynamic T takes the prefill kernel; eager may take split-K.
                 out = module(*args)
-                self.assertLess(rel(out, want), 1e-2, f"ring={ring}")
-                self.assertLess(row_err(out, want), 2e-2, f"ring={ring}")
-            for name in ("k_q", "k_s", "v_q", "v_s"):
-                self.assertTrue(
-                    torch.equal(getattr(module, name), getattr(eager, name)),
-                    f"ring={ring} {name}",
+                tag = f"ring={ring} rope={rope} pos={int(args[3][0])}"
+                self.assertLess(rel(out, want), 1e-2, tag)
+                self.assertLess(row_err(out, want), 2e-2, tag)
+                for got, ref in (
+                    (module.k_q, eager.k_q),
+                    (module.k_s, eager.k_s),
+                    (module.v_q, eager.v_q),
+                    (module.v_s, eager.v_s),
+                ):
+                    self.assertTrue(torch.equal(got, ref), tag)
+
+    def test_lowered_program_matches_eager(self):
+        """The CUDA backend lowers the cache write and attention (with the
+        pass), and the program carries the cache from prefill into decode."""
+        from executorch.backends.cuda.cuda_backend import CudaBackend
+        from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+        from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
+        from executorch.export.utils import is_fbcode
+
+        steps = [step_inputs(*s) for s in STEPS]
+        for ring in (False, True):
+            eager = layer(ring)
+            expected = [eager(*args) for args in steps]
+            ep = torch.export.export(
+                layer(ring), steps[0], dynamic_shapes=SEQ_SHAPES, strict=True
+            )
+            lowered = to_edge_transform_and_lower(
+                ep,
+                partitioner=[
+                    CudaPartitioner(
+                        [CudaBackend.generate_method_name_compile_spec("forward")]
+                    )
+                ],
+                compile_config=EdgeCompileConfig(_check_ir_validity=False),
+            ).to_executorch()
+            with tempfile.TemporaryDirectory() as folder:
+                path = Path(folder) / "kv.pte"
+                with path.open("wb") as f:
+                    lowered.write_to_file(f)
+                lowered.write_tensor_data_to_file(folder)
+                if is_fbcode():
+                    # The in-process runtime in fbcode has no CUDA backend.
+                    continue
+                from executorch.runtime import Runtime
+
+                data = next(Path(folder).glob("*.ptd"), None)
+                program = Runtime.get().load_program(
+                    str(path), data_path=None if data is None else str(data)
                 )
+                method = program.load_method("forward")
+                for args, want in zip(steps, expected):
+                    out = method.execute([a.cpu() for a in args])[0].to(want.device)
+                    tag = f"ring={ring} pos={int(args[3][0])}"
+                    self.assertLess(rel(out, want), 1e-2, tag)
+                    self.assertLess(row_err(out, want), 2e-2, tag)
 
     def test_pass_inlines_write_kernel(self):
         from executorch.backends.cuda.passes.lower_nvfp4_kv import LowerNVFP4KVWritePass
 
-        T = 8
-        args = (
-            torch.randn(1, HQ, T, D, device="cuda", dtype=torch.bfloat16),
-            torch.randn(1, T, HKV, D, device="cuda", dtype=torch.bfloat16),
-            torch.randn(1, T, HKV, D, device="cuda", dtype=torch.bfloat16),
-            torch.arange(100, 100 + T, device="cuda"),
-        )
-        for ring in (False, True):
-            expected = _WriteAndAttend(256, ring)(*args)
+        args = step_inputs(40, 8)
+        for ring, rope in itertools.product((False, True), repeat=2):
+            expected = layer(ring, rope)(*args)
             # Older exporters emit auto_functionalized, newer ones _v2.
             for v2 in (False, True):
                 with torch._export.config.patch(
                     enable_auto_functionalized_v2_for_export=v2
                 ):
-                    ep = torch.export.export(
-                        _WriteAndAttend(256, ring), args, strict=True
-                    )
+                    ep = torch.export.export(layer(ring, rope), args, strict=True)
                 ep = ep.run_decompositions({})
                 self.assertIn("auto_functionalized", str(ep.graph))
                 ep = LowerNVFP4KVWritePass()(ep)
@@ -401,7 +466,8 @@ class TestLowerNVFP4KVWrite(unittest.TestCase):
                 self.assertNotIn("auto_functionalized", graph)
                 self.assertIn("triton_kernel_wrapper_functional", graph)
                 out = ep.module()(*args)
-                self.assertTrue(torch.equal(out, expected), f"ring={ring} v2={v2}")
+                tag = f"ring={ring} rope={rope} v2={v2}"
+                self.assertTrue(torch.equal(out, expected), tag)
                 mutated = [
                     spec
                     for spec in ep.graph_signature.output_specs

@@ -97,6 +97,10 @@ def act_mxfp8_qdq_codes(x, store_codes=False):
 @triton_op("triton::nvfp4_mxfp8_act_qdq", mutates_args={})
 def mxfp8_act_qdq(x: torch.Tensor) -> torch.Tensor:
     """BF16 [M, K] -> BF16 values exactly on the MXFP8 grid (E4M3 x UE8M0 per 32)."""
+    if x.dim() != 2 or not x.is_contiguous() or x.shape[1] % 32:
+        raise ValueError(
+            "nvfp4_mxfp8_act_qdq: x must be contiguous [M, K], K % 32 == 0"
+        )
     return act_mxfp8_qdq_codes(x)[0]
 
 
@@ -153,6 +157,17 @@ def nvfp4_dequant_mxfp8(qdata: torch.Tensor, scale: torch.Tensor) -> torch.Tenso
     """Packed NVFP4 [N, K/2] + E4M3 [N, K/16] -> BF16 [N, K] on the MXFP8 grid
     (per-tensor scale excluded), bit-identical to the native kernel's conversion."""
     n, half_k = qdata.shape
+    if (
+        (qdata.dtype, scale.dtype) != (torch.uint8, torch.uint8)
+        or scale.shape != (n, half_k // 8)
+        or half_k % 16
+        or not (qdata.is_contiguous() and scale.is_contiguous())
+        or scale.device != qdata.device
+    ):
+        raise ValueError(
+            "nvfp4_dequant_mxfp8: contiguous uint8 qdata [N, K/2] and scale "
+            "[N, K/16] on one device, K % 32 == 0"
+        )
     k = half_k * 2
     out = torch.empty((n, k), device=qdata.device, dtype=torch.bfloat16)
     bn, bkh = 32, 128
