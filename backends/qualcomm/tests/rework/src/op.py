@@ -3974,19 +3974,21 @@ class PowScalar(torch.nn.Module):
     @staticmethod
     @unpack_fixtures
     def test(subtests, qnn_config, quantizer, compile_spec, expected):
-        inputs = (torch.rand(10, 10) + 0.1,)
         bases = [2.0, 3.0, 9, 0.5]
-        for base in bases:
-            with subtests.test(msg=f"base:{base}"):
-                with expected as metrics:
-                    export_and_verify(
-                        module=__class__(base=base),
-                        inputs=inputs,
-                        qnn_config=qnn_config,
-                        quantizer=quantizer,
-                        compile_specs=compile_spec,
-                        metrics=metrics,
-                    )
+        shapes = [(10, 10), (1, 4, 8, 8)]
+        for shape in shapes:
+            inputs = (torch.rand(shape) + 0.1,)
+            for base in bases:
+                with subtests.test(msg=f"shape:{shape}, base:{base}"):
+                    with expected as metrics:
+                        export_and_verify(
+                            module=__class__(base=base),
+                            inputs=inputs,
+                            qnn_config=qnn_config,
+                            quantizer=quantizer,
+                            compile_specs=compile_spec,
+                            metrics=metrics,
+                        )
 
 
 class PowTensorScalar(torch.nn.Module):
