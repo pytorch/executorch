@@ -67,9 +67,8 @@ TENSORS = [
 ]
 
 
-@pytest.mark.parametrize("static_act_scale", [False, True])
-def test_gguf_nvfp4_companions_pair_by_name(static_act_scale):
-    sd = load(TENSORS, static_act_scale)
+def test_gguf_nvfp4_companions_pair_by_name():
+    sd = load(TENSORS)
     assert set(sd) == {
         "layers.0.mlp.down_proj.weight",
         "layers.0.mlp.up_proj.weight",
@@ -84,10 +83,25 @@ def test_gguf_nvfp4_companions_pair_by_name(static_act_scale):
     assert float(down.per_tensor_scale) == 0.25
     assert float(up.per_tensor_scale) == 0.5
     assert float(gate.per_tensor_scale) == 1.0
-    assert down.act_per_tensor_scale == (
-        pytest.approx(0.002) if static_act_scale else None
+    assert down.act_per_tensor_scale is None
+
+
+def test_gguf_nvfp4_static_act_scale():
+    tensors = [
+        *TENSORS,
+        ("blk.0.ffn_up.input_scale", scalar(0.003)),
+        ("blk.0.ffn_gate.input_scale", scalar(0.004)),
+    ]
+    sd = load(tensors, static_act_scale=True)
+    assert sd["layers.0.mlp.down_proj.weight"].act_per_tensor_scale == (
+        pytest.approx(0.002)
     )
-    assert up.act_per_tensor_scale is None
+    assert sd["layers.0.mlp.gate_proj.weight"].act_per_tensor_scale == (
+        pytest.approx(0.004)
+    )
+    # A static scale is requested but some weights have none.
+    with pytest.raises(ValueError, match="without .input_scale"):
+        load(TENSORS, static_act_scale=True)
 
 
 def test_gguf_nvfp4_rejects_non_scalar_companion():
@@ -168,4 +182,29 @@ def test_cuda_nvfp4_group_stays_separate_when_unfusable():
     sd["layers.0.mlp.up_proj.weight"] = sd["layers.0.mlp.up_proj.weight"].dequantize()
     fused, groups = _fuse_state_dict(sd, "cuda", 2)
     assert groups == {"layers.{}.self_attn.qko_proj.weight"}
-    assert torch.is_tensor(fused["layers.0.mlp.up_proj.weight"])
+    assert fused["layers.0.mlp.up_proj.weight"] is sd["layers.0.mlp.up_proj.weight"]
+
+
+def test_load_gguf_model_swaps_every_nvfp4_mlp():
+    """An NVFP4 GGUF loads with fused gate/up weights the MLP swap accepts."""
+    pytest.importorskip("triton")
+    from dataclasses import replace
+
+    from executorch.examples.models.muse_glimmer.loaders.checkpoint_loader import (
+        load_gguf_model,
+    )
+    from executorch.examples.models.muse_glimmer.source_transformations.nvfp4 import (
+        install_nvfp4_gate_up_epilogues,
+    )
+    from executorch.examples.models.muse_glimmer.tests.test_pipeline import (
+        build_muse_glimmer_gguf,
+        GGUF_CONFIG,
+    )
+
+    config = replace(GGUF_CONFIG)
+    with tempfile.TemporaryDirectory() as folder:
+        path = os.path.join(folder, "model.gguf")
+        build_muse_glimmer_gguf(path, config, nvfp4_ffn=True)
+        model, config = load_gguf_model(path, backend="cuda", config=config)
+    assert config.fuse_gate_up
+    assert install_nvfp4_gate_up_epilogues(model) == config.n_layers
