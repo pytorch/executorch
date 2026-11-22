@@ -115,15 +115,19 @@ size_t packed_nbytes(const TensorMeta& meta) {
   }
   const ggml_type type = gguf_type(*packed);
   const int64_t block = ggml_blck_size(type);
-  if (meta.sizes.size() != 2 || meta.sizes[0] <= 0 || meta.sizes[1] <= 0 ||
-      meta.sizes[1] % block != 0) {
+  // A 3-D weight stacks E experts' [O, I] matrices, expert-major as in GGUF.
+  if ((meta.sizes.size() != 2 && meta.sizes.size() != 3) ||
+      std::ranges::any_of(meta.sizes, [](int64_t size) { return size <= 0; }) ||
+      meta.sizes.back() % block != 0) {
     throw std::runtime_error(
         "ggml: " + packed->codec +
-        " weight must have logical shape [O, I] with I divisible by " +
+        " weight must have logical shape [O, I] or [E, O, I] with I "
+        "divisible by " +
         std::to_string(block));
   }
-  const size_t rows = static_cast<size_t>(meta.sizes[0]);
-  const size_t blocks = static_cast<size_t>(meta.sizes[1] / block);
+  const std::vector<int64_t> leading(meta.sizes.begin(), meta.sizes.end() - 1);
+  const size_t rows = checked_numel(leading);
+  const size_t blocks = static_cast<size_t>(meta.sizes.back() / block);
   const size_t block_bytes = ggml_type_size(type);
   if (blocks > SIZE_MAX / block_bytes ||
       rows > SIZE_MAX / (blocks * block_bytes)) {
