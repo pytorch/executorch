@@ -21,6 +21,7 @@ import executorch.backends.cuda.triton.kernels.sdpa  # noqa: F401
 # Register the TurboQuant attention operator.
 import executorch.backends.cuda.triton.kernels.tq4_sdpa  # noqa: F401
 import executorch.extension.llm.cache.update_and_attend  # noqa: F401
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -777,6 +778,13 @@ def cuda_source_transformations(
             keep the bf16 ``FlatKVCache`` but route global attention through the
             length-aware ``torch.ops.triton.sdpa``.
     """
+    from executorch.examples.models.muse_glimmer.source_transformations.nvfp4 import (
+        install_nvfp4_gate_up_epilogues,
+    )
+
+    nvfp4_epilogues = install_nvfp4_gate_up_epilogues(model)
+    if nvfp4_epilogues:
+        print(f"[muse_glimmer cuda] NVFP4 gate/up epilogues: {nvfp4_epilogues}")
     if not use_turboquant:
         # Non-TurboQuant path: keep the bf16 FlatKVCache but bound global
         # attention to the valid context via a runtime kv_len scalar (routes

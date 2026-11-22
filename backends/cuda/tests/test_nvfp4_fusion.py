@@ -402,6 +402,55 @@ def test_row_scale_embedding():
     torch.testing.assert_close(actual, w.dequantize()[ids], rtol=0, atol=0)
 
 
+def test_cuda_loader_fuses_nvfp4_without_changing_mlx_layout():
+    from executorch.examples.models.muse_glimmer.loaders.checkpoint_loader import (
+        _fuse_state_dict,
+    )
+    from executorch.extension.llm.export.nvfp4 import ExportableNVFP4Tensor
+
+    sd = {}
+    for layer in range(2):
+        for name, w in zip(("q", "k", "og"), shards(192)):
+            sd[f"layers.{layer}.self_attn.{name}_proj.weight"] = ExportableNVFP4Tensor(
+                w.qdata.view(torch.uint32),
+                w.scale,
+                w.per_tensor_scale,
+                16,
+                w.orig_dtype,
+            )
+        for name in ("gate", "up"):
+            w = shards(192)[0]
+            sd[f"layers.{layer}.mlp.{name}_proj.weight"] = ExportableNVFP4Tensor(
+                w.qdata.view(torch.uint32),
+                w.scale,
+                w.per_tensor_scale,
+                16,
+                w.orig_dtype,
+            )
+    fused, groups = _fuse_state_dict(sd, "cuda", 2)
+    assert "layers.{}.self_attn.qko_proj.weight" in groups
+    assert fused["layers.0.self_attn.qko_proj.weight"].per_tensor_scale.numel() == 97
+    assert fused["layers.0.mlp.gate_up_proj.weight"].per_tensor_scale.numel() == 1
+    assert torch.equal(
+        fused["layers.0.self_attn.qko_proj.weight"].dequantize(),
+        torch.cat(
+            [
+                sd[f"layers.0.self_attn.{name}_proj.weight"].dequantize()
+                for name in ("q", "k", "og")
+            ]
+        ),
+    )
+    mlx, mlx_groups = _fuse_state_dict(sd, "mlx", 2)
+    assert "layers.{}.self_attn.qko_proj.weight" not in mlx_groups
+    assert isinstance(mlx["layers.0.mlp.gate_up_proj.weight"], ExportableNVFP4Tensor)
+    sd["layers.1.self_attn.k_proj.weight"].act_per_tensor_scale = 0.001
+    separate, separate_groups = _fuse_state_dict(sd, "cuda", 2)
+    assert "layers.{}.self_attn.qko_proj.weight" not in separate_groups
+    assert all(
+        f"layers.{layer}.self_attn.q_proj.weight" in separate for layer in range(2)
+    )
+
+
 class FusedLinear(torch.nn.Module):
     def __init__(self):
         super().__init__()
