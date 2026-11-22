@@ -1428,6 +1428,25 @@ class GgmlOpsTest(unittest.TestCase):
                     (torch.tensor([[1, 2]]), torch.tensor([[2, 2]])),
                 )
 
+    def test_ne_of_integers_checks_that_f32_holds_them(self):
+        # 2^24 + 1 rounds to 2^24 in F32.
+        with self.assertRaisesRegex(AssertionError, r"2\^24"):
+            self._check(
+                Lambda(lambda a, b: torch.ne(a, b).float()),
+                (torch.tensor([[16777217, 3]]), torch.tensor([[16777216, 4]])),
+            )
+        with self.assertRaisesRegex(AssertionError, r"2\^24"):
+            self._check(
+                Lambda(lambda a: torch.ne(a, 16777217).float()),
+                (torch.tensor([[16777216, 4]]),),
+            )
+        # ne cannot trace a computed integer to a bound, so it refuses it.
+        with self.assertRaisesRegex(AssertionError, "must be an integer"):
+            self._check(
+                Lambda(lambda a, b: torch.ne(a + a, b).float()),
+                (torch.tensor([[1, 2]]), torch.tensor([[2, 2]])),
+            )
+
     def test_integer_compare_rechecks_its_inputs_on_every_run(self):
         steps = [
             (torch.tensor([[1, 2]]), torch.tensor([[2, 2]])),
