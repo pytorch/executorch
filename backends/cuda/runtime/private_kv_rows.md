@@ -9,7 +9,7 @@ Absent this option, existing ABI 1/2 exports and runtime paths are unchanged.
 The export still declares its maximum context, owner count, and step width.
 These are addressing and admission ceilings, not initial allocations. Each
 layer stores independently sized owner spans `(base_row, capacity)` in an arena,
-plus one scratch row. A newly opened owner has no rows until it is touched. Its
+plus one scratch row. An owner ID with no retained span has no rows until touched. Its
 capacity then grows geometrically from `initial_capacity`, capped by the context
 for a flat layer or the sliding window for a Ring layer. A long owner does not
 increase other owners' row capacities. Geometric arena slack amortizes owner
@@ -17,8 +17,10 @@ admission; unrelated spans keep their positions. Growth uses free regions
 disjoint from old payloads, so it can relocate one owner without changing device
 addresses or recapturing graphs. Arena exhaustion or fragmentation at the
 addressing ceiling creates a packed replacement. Removed owners' spans can be
-retained for burst reuse; an explicit idle compaction releases unused spans and
-arena slack.
+retained for burst reuse. Reusing an ID can temporarily inherit that capacity;
+explicit compaction plans live spans from their current requirements and the
+initial capacity, releasing inherited excess as well as unused spans and arena
+slack. A wrapped Ring retains its window and modulus during compaction.
 
 The executor's automatic idle heuristic still uses owner counts. Closing a few
 long owners while many short owners remain may therefore retain their spans
@@ -94,19 +96,41 @@ the accounting. For each Ring layer, the retained host bound is
 including BF16 K/V pages, row tags, and pinned transfer staging. There is no
 separate RAM-budget knob; the session and export limits bound this storage.
 For 39 Ring layers with W=2048 and 2 KV heads of dimension 128, max_write=4096
-and 64 owners, this is about 14.8 GiB of retained host storage. The mini checker
-asserts its corresponding bound and reports host bytes beside the device saving.
+and 64 owners, this is about 14.8 GiB of retained host storage. The checker
+asserts each profile's corresponding bound and reports host bytes beside the
+device saving, including peak accounted undo storage across the workload.
 
 `check_private_kv_rows.py` compares identical mini model weights against ABI 2
 for exact logits, clone/rewind boundaries, heterogeneous owner lengths, graph
 recapture/replay, driver memory contraction, and c1 through c64 same-work timing.
 Four rounds balance AB/BA order. Timing covers steady decode, staggered
 admission/growth, and clone/rewind cycles including GPU completion. A median
-throughput regression beyond 2% fails performance qualification. PR CI reports
-timing independently from its blocking numerical/memory/graph checks; the same
-checker enforces timing on non-PR runs or when invoked without
-`--report-performance`. A green report-only check does not qualify performance
+throughput regression beyond 2% fails performance qualification. Inputs vary by
+owner, position and session lifetime so row-placement and stale-owner errors
+change the selected logits; matching non-finite output is rejected. PR CI reports
+timing independently from its blocking numerical/memory/graph checks. Automatic
+CI reports timing; an explicit workflow dispatch can enforce it with
+`enforce_private_kv_performance=true`. The same checker enforces timing when
+invoked without `--report-performance`. A green report-only check does not qualify performance
 or full-model serving.
+
+`--profile mg-ring` uses 52 layers, 32 query heads, two KV heads of dimension
+128, the production `[2048,2048,2048,0]` attention pattern, a 4096-token write
+budget, and a 128K logical context. Embedding/MLP dimensions and vocabulary
+remain small: this qualifies production attention/cache geometry, not 30B
+quantized GEMM or full-model serving performance. It includes 4096-token
+writes and restores evicted Ring history at the legal 8192-to-4096 rollback
+floor, then measures c1 through c64 with saturated Ring history. Its separate
+A100 CI job preserves these limits rather than reducing them to fit the
+mini test's A10G. Reproduce it with:
+
+```bash
+python examples/models/muse-glimmer/tests/check_private_kv_rows.py \
+  --probe /path/to/muse_glimmer_runtime_kv_probe \
+  --output-dir /path/to/new-qualification-directory --profile mg-ring
+```
+
+Omitting `--report-performance` enforces the same 2% performance gate.
 
 The probe also reports cumulative CPU wall-time counters for preparation,
 commit, archive transfer plus its device wait, and host-page append. The checker

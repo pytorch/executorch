@@ -4373,6 +4373,42 @@ TEST_F(CudaPrivateCacheTest, FailedPreparationOrCompactionFenceRequiresClear) {
   }
 }
 
+TEST_F(CudaPrivateCacheTest, CompactLiveReusedOwnerDropsLongCapacity) {
+  auto ptr = make_private();
+  auto* ctl = ptr->as<cache::BatchControl>();
+  auto* kv = ptr->as<cu::CudaKVCache>();
+  auto fake = private_container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  ASSERT_EQ(ctl->seq_new(), 0);
+  ASSERT_EQ(ctl->seq_new(), 1);
+  ASSERT_EQ(
+      write_step(*ptr, fake, handle, std::vector<int32_t>(128, 0)), Error::Ok);
+  ASSERT_EQ(
+      write_step(*ptr, fake, handle, std::vector<int32_t>(12, 1)), Error::Ok);
+  ASSERT_TRUE(ctl->seq_rm(0));
+  ASSERT_EQ(ctl->seq_new(), 0);
+  ASSERT_EQ(write_step(*ptr, fake, handle, {0}), Error::Ok);
+  const auto before = kv->metrics().allocated_bytes;
+  ASSERT_EQ(kv->compact_columns(0), Error::Ok);
+  EXPECT_LT(kv->metrics().allocated_bytes, before);
+  // Upload the new descriptors without moving the short owner's positions.
+  ASSERT_EQ(write_step(*ptr, fake, handle, {0}), Error::Ok);
+  const auto flat =
+      read_ints(fake.bound["flat_layout"].data, (kOwners + 1) * 2);
+  const auto ring =
+      read_ints(fake.bound["ring_layout"].data, (kOwners + 1) * 2);
+  EXPECT_EQ(flat[1], 2);
+  EXPECT_EQ(ring[1], 2);
+  EXPECT_EQ(ring[3], kPrivateWindow);
+  expect_history(fake, 0, 2);
+  expect_history(fake, 1, 12);
+  const auto stable = kv->metrics().allocated_bytes;
+  ASSERT_EQ(kv->compact_columns(0), Error::Ok);
+  EXPECT_EQ(kv->metrics().allocated_bytes, stable);
+  kv->forget_handle(&handle);
+}
+
 TEST_F(CudaPrivateCacheTest, IdleCompactionDropsClosedPrivateSpans) {
   auto ptr = make_private();
   auto* ctl = ptr->as<cache::BatchControl>();

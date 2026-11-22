@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import ast
 import re
 import subprocess
 import unittest
@@ -23,6 +24,98 @@ CORRECTNESS_PATHS = (
 
 
 class MuseGlimmerBatchingCITest(unittest.TestCase):
+    def test_private_buck_targets_include_the_imported_cuda_packages(self):
+        cuda = ROOT / "backends/cuda"
+        tree = ast.parse((cuda / "tests/targets.bzl").read_text())
+        targets = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                fields = {keyword.arg: keyword.value for keyword in node.keywords}
+                name = fields.get("name")
+                if isinstance(name, ast.Constant) and name.value in (
+                    "test_sdpa_varlen_private",
+                    "test_private_kv_manifest",
+                ):
+                    targets[name.value] = fields
+        self.assertEqual(len(targets), 2)
+        packages = {
+            "executorch.backends.cuda.passes.": "//executorch/backends/cuda:cuda_passes",
+            "executorch.backends.cuda.triton.kernels.": "//executorch/backends/cuda:triton_kernels",
+        }
+        for name, fields in targets.items():
+            dependencies = ast.literal_eval(fields["deps"])
+            for source in ast.literal_eval(fields["srcs"]):
+                imports = ast.parse((cuda / "tests" / source).read_text())
+                for node in ast.walk(imports):
+                    if isinstance(node, ast.ImportFrom) and node.module:
+                        for prefix, dependency in packages.items():
+                            if node.module.startswith(prefix):
+                                with self.subTest(target=name, module=node.module):
+                                    self.assertIn(dependency, dependencies)
+
+    def test_imported_kernels_are_in_buck_package(self):
+        cuda = ROOT / "backends/cuda"
+        tree = ast.parse((cuda / "BUCK").read_text())
+        targets = [
+            node.value
+            for node in tree.body
+            if isinstance(node, ast.Expr)
+            and isinstance(node.value, ast.Call)
+            and any(
+                keyword.arg == "name"
+                and isinstance(keyword.value, ast.Constant)
+                and keyword.value.value == "triton_kernels"
+                for keyword in node.value.keywords
+            )
+        ]
+        self.assertEqual(len(targets), 1)
+        sources = next(
+            ast.literal_eval(keyword.value)
+            for keyword in targets[0].keywords
+            if keyword.arg == "srcs"
+        )
+        imports = ast.parse((cuda / "passes/lower_offgraph_kv.py").read_text())
+        prefix = "executorch.backends.cuda."
+        for node in imports.body:
+            if isinstance(node, ast.ImportFrom) and node.module.startswith(
+                prefix + "triton.kernels."
+            ):
+                source = node.module.removeprefix(prefix).replace(".", "/") + ".py"
+                with self.subTest(imported_module=node.module):
+                    self.assertIn(source, sources)
+
+    def test_production_ring_geometry_is_qualified_separately(self):
+        workflow = (ROOT / ".github/workflows/cuda.yml").read_text()
+        job = workflow.split("  unittest-cuda-private-kv-mg-ring:", 1)[1].split(
+            "  unittest-cuda-runtime:", 1
+        )[0]
+        self.assertIn("runner: mt-l-x86iavx512-11-125-a100", job)
+        self.assertIn("--profile mg-ring", job)
+        self.assertIn("-DEXECUTORCH_ENABLE_LOGGING=OFF", job)
+        self.assertIn("--target muse_glimmer_runtime_kv_probe --parallel", job)
+        self.assertIn('exit "${PRIVATE_KV_STATUS}"', job)
+        self.assertIn('"qualification.json", "probe.jsonl", "probe.stderr.log"', job)
+        shell = "\n".join(
+            line[8:] for line in job.split("      script: |\n", 1)[1].splitlines()
+        )
+        shell = re.sub(r"\$\{\{[^}]+\}\}", "ci-value", shell)
+        result = subprocess.run(["bash", "-n"], input=shell, text=True)
+        self.assertEqual(result.returncode, 0)
+
+    def test_noisy_timing_enforcement_requires_explicit_opt_in(self):
+        workflow = (ROOT / ".github/workflows/cuda.yml").read_text()
+        self.assertIn("      enforce_private_kv_performance:\n", workflow)
+        for name, end in (
+            ("unittest-cuda-muse-glimmer-batching", "unittest-cuda-quantized-gemm"),
+            ("unittest-cuda-private-kv-mg-ring", "unittest-cuda-runtime"),
+        ):
+            job = workflow.split(f"  {name}:\n", 1)[1].split(f"  {end}:\n", 1)[0]
+            self.assertIn('PRIVATE_KV_TIMING_ARGS="--report-performance"', job)
+            self.assertIn('"${{ github.event_name }}" == "workflow_dispatch"', job)
+            self.assertIn(
+                '"${{ inputs.enforce_private_kv_performance }}" == "true"', job
+            )
+
     def test_runtime_columns_probe_runs_in_cuda_ci(self):
         workflow = (ROOT / ".github/workflows/cuda.yml").read_text()
         job = workflow.split("  unittest-cuda-muse-glimmer-batching:", 1)[1].split(

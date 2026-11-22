@@ -84,11 +84,35 @@ TEST(PrivateRowLayoutTest, ClosingAnOwnerReclaimsOnlyItsSpan) {
       {0, 16}, {16, 8192}, {8208, 8}, {8216, 1}};
   const auto result = plan(rows, previous, 4, 131072, true);
   ASSERT_TRUE(result.ok());
-  EXPECT_EQ(result.get().spans[0].capacity, 16);
+  EXPECT_EQ(result.get().spans[0].capacity, 8);
   EXPECT_EQ(result.get().spans[1].capacity, 0);
-  EXPECT_EQ(result.get().spans[2].capacity, 8);
-  EXPECT_EQ(result.get().spans[2].base, 16);
-  EXPECT_EQ(result.get().rows, 25);
+  EXPECT_EQ(result.get().spans[2].capacity, 4);
+  EXPECT_EQ(result.get().spans[2].base, 8);
+  EXPECT_EQ(result.get().rows, 13);
+}
+
+TEST(PrivateRowLayoutTest, CompactLiveReusedOwnerDropsInheritedCapacity) {
+  const std::vector<int64_t> rows{1, 2048, 7};
+  const std::vector<PrivateRowSpan> previous{
+      {0, 8192}, {8192, 2048}, {10240, 512}, {10752, 1}};
+  const auto result = plan(rows, previous, 512, 131072, true);
+  ASSERT_TRUE(result.ok());
+  EXPECT_EQ(result.get().spans[0].capacity, 512);
+  EXPECT_EQ(result.get().spans[1].capacity, 2048);
+  EXPECT_EQ(result.get().spans[2].capacity, 512);
+  EXPECT_EQ(result.get().rows, 3073);
+  EXPECT_TRUE(result.get().repacked);
+  EXPECT_EQ(previous[0].capacity, 8192);
+}
+
+TEST(PrivateRowLayoutTest, CompactWrappedRingKeepsItsModulus) {
+  const std::vector<int64_t> rows{2048, 1};
+  const std::vector<PrivateRowSpan> previous{{0, 2048}, {2048, 32}, {2080, 1}};
+  const auto result = plan(rows, previous, 2, 2048, true);
+  ASSERT_TRUE(result.ok());
+  EXPECT_EQ(result.get().spans[0].capacity, 2048);
+  EXPECT_EQ(result.get().spans[1].capacity, 2);
+  EXPECT_EQ(result.get().rows, 2051);
 }
 
 TEST(PrivateRowLayoutTest, ReopenedOwnerStartsAtInitialCapacity) {

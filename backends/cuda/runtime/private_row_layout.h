@@ -78,7 +78,7 @@ inline runtime::Result<PrivateRowLayout> make_private_row_layout(
     }
     int64_t capacity = 0;
     if (required > 0) {
-      capacity = old > 0 ? old : std::min(initial_rows, limit);
+      capacity = old > 0 && !compact ? old : std::min(initial_rows, limit);
       if (required > capacity) {
         capacity = std::min(limit, std::max(required, capacity * 2));
       }

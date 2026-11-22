@@ -231,8 +231,7 @@ Error CudaKVPool::prepare_private(
             retained <= capacity && required >= retained,
             InvalidArgument,
             "offgraph_kv: retained history exceeds its private span");
-        change |=
-            required > capacity || (compact && required == 0 && capacity > 0);
+        change |= required > capacity || (compact && required < capacity);
         occupied_rows += capacity;
       }
       change |= compact && occupied_rows < private_layouts_[index].rows;

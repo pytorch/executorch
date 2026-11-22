@@ -7,6 +7,8 @@
 """Native ABI-2/ABI-3 equality, allocation and same-work timing qualification.
 
 Tests MG- and Gemma-style head dimensions on the same tiny model weights.
+The mg-ring profile retains production MG attention/cache geometry, not its
+30B parameter count or quantized GEMM performance.
 Timing covers undo transfers, staggered growth and clone/rewind cycles;
 it excludes logits file writes.
 """
@@ -31,7 +33,107 @@ def step(owners, tag, *, save=True):
     }
 
 
-def commands():
+def qualification_config(profile, head_dim):
+    if profile == "mini":
+        return {
+            "max_step_tokens": 128,
+            "max_context": 4096,
+            "seed_length": 64,
+            "window": 16,
+            "ring_layers": 1,
+            "model": {
+                "dim": 2 * head_dim,
+                "head_dim": head_dim,
+                "n_layers": 2,
+                "n_heads": 2,
+                "n_kv_heads": 1,
+                "max_seq_len": 4096,
+                "global_attn_cfg": "[16,0]",
+            },
+        }
+    if profile != "mg-ring" or head_dim != 128:
+        raise ValueError("mg-ring requires head dimension 128")
+    # Production attention/cache geometry, with reduced embedding and MLP
+    # weights. This stresses the cache lifecycle without claiming 30B perf.
+    return {
+        "max_step_tokens": 4096,
+        "max_context": 131072,
+        "seed_length": 2048,
+        "window": 2048,
+        "ring_layers": 39,
+        "model": {
+            "dim": 256,
+            "head_dim": 128,
+            "n_layers": 52,
+            "n_heads": 32,
+            "n_kv_heads": 2,
+            "max_seq_len": 131072,
+            "global_attn_cfg": "[2048,2048,2048,0]",
+        },
+    }
+
+
+def seed_commands(concurrency, geometry, profile):
+    seed_length = geometry["seed_length"]
+    chunk_size = min(seed_length, 512)
+    owners_per_chunk = geometry["max_step_tokens"] // chunk_size
+    requests = []
+    for first in range(0, concurrency, owners_per_chunk):
+        for start in range(0, seed_length, chunk_size):
+            owners = [
+                owner
+                for owner in range(first, min(first + owners_per_chunk, concurrency))
+                for _ in range(chunk_size)
+            ]
+            tag = f"seed-c{concurrency}-{first}"
+            if profile != "mini":
+                tag += f"-{start}"
+            prefill = step(owners, tag, save=False)
+            prefill["select"] = list(range(chunk_size - 1, len(owners), chunk_size))
+            requests.append(prefill)
+    return requests
+
+
+def diversify_tokens(requests):
+    lengths, seeds = {}, {}
+    generation = 0
+    for request in requests:
+        op = request["op"]
+        if op == "clear":
+            lengths.clear()
+            seeds.clear()
+        elif op in ("new", "clone"):
+            owner = next(i for i in range(64) if i not in lengths)
+            generation += 1
+            seeds[owner] = generation
+            lengths[owner] = 0 if op == "new" else request["upto"]
+        elif op == "remove":
+            del lengths[request["seq_id"]]
+            del seeds[request["seq_id"]]
+        elif op == "rewind":
+            lengths[request["seq_id"]] = request["position"]
+        elif op == "step":
+            tokens = []
+            for owner in request["seq_ids"]:
+                position = lengths[owner]
+                tokens.append(
+                    1
+                    + (
+                        seeds[owner] * 67
+                        + owner * 29
+                        + position * 17
+                        + (position // 251) * 13
+                    )
+                    % 251
+                )
+                lengths[owner] += 1
+            request["tokens"] = tokens
+    return requests
+
+
+def commands(profile="mini"):
+    geometry = qualification_config(profile, 128)
+    seed_length = geometry["seed_length"]
     requests = [{"op": "new"} for _ in range(64)]
     requests += [step(list(range(64)), "decode64-first")]
     long = step([0] * 96, "long")
@@ -63,18 +165,27 @@ def commands():
         {"op": "rewind", "seq_id": 0, "position": 128},
         step([0, 1], "floor-replay"),
     ]
+    if profile == "mg-ring":
+        requests += [
+            {"op": "clear"},
+            {"op": "compact", "spare_columns": 0},
+            {"op": "new"},
+        ]
+        width = geometry["max_step_tokens"]
+        for chunk in range(2):
+            seed = step([0] * width, f"production-ring-seed-{chunk}", save=False)
+            seed["select"] = [width - 1]
+            seed["tokens"] = [13 + (chunk * width + i) % 23 for i in range(width)]
+            requests.append(seed)
+        requests += [
+            {"op": "clone", "seq_id": 0, "upto": width},
+            {"op": "rewind", "seq_id": 0, "position": width},
+            step([0, 1], "production-ring-floor-replay"),
+        ]
     for concurrency in (1, 2, 4, 8, 16, 32, 64):
         requests += [{"op": "clear"}, {"op": "compact", "spare_columns": 0}]
         requests += [{"op": "new"} for _ in range(concurrency)]
-        for first in range(0, concurrency, 2):
-            owners = [
-                owner
-                for owner in range(first, min(first + 2, concurrency))
-                for _ in range(64)
-            ]
-            prefill = step(owners, f"seed-c{concurrency}-{first}", save=False)
-            prefill["select"] = list(range(63, len(owners), 64))
-            requests.append(prefill)
+        requests += seed_commands(concurrency, geometry, profile)
         requests += [
             step(list(range(concurrency)), f"warm-c{concurrency}-{i}", save=False)
             for i in range(4)
@@ -83,18 +194,23 @@ def commands():
             step(list(range(concurrency)), f"bench-c{concurrency}-{i}", save=False)
             for i in range(20)
         ]
-        # Each owner has 88 tokens. Leave one free slot at c64 for a fork.
+        # Leave one free slot at c64 for a fork.
         destination = max(1, concurrency - 1)
         if concurrency > 1:
             requests.append({"op": "remove", "seq_id": destination})
         for i in range(8):
             tag = f"restore-c{concurrency}-{i}"
             requests += [
-                {"op": "clone", "seq_id": 0, "upto": 87, "tag": tag + "-clone"},
+                {
+                    "op": "clone",
+                    "seq_id": 0,
+                    "upto": seed_length + 23,
+                    "tag": tag + "-clone",
+                },
                 {
                     "op": "rewind",
                     "seq_id": destination,
-                    "position": 86,
+                    "position": seed_length + 22,
                     "tag": tag + "-rewind",
                 },
                 step([destination], tag + "-step", save=False),
@@ -125,13 +241,33 @@ def commands():
     requests += [{"op": "remove", "seq_id": owner} for owner in range(16)]
     requests.append({"op": "compact", "spare_columns": 0, "tag": "driver-compact"})
     requests.append(step(list(range(16, 64)), "driver-after"))
-    return requests
+    # Reuse a long owner's ID while a short owner stays live, then compact.
+    requests += [
+        {"op": "clear"},
+        {"op": "compact", "spare_columns": 0},
+        {"op": "new"},
+        {"op": "new"},
+    ]
+    long = step([0] * 128, "reuse-long", save=False)
+    long["select"] = [127]
+    requests += [
+        long,
+        step([1], "reuse-short", save=False),
+        {"op": "remove", "seq_id": 0},
+        {"op": "new"},
+        step([0, 1], "reuse-before"),
+        {"op": "compact", "spare_columns": 0, "tag": "reuse-compact"},
+        step([0, 1], "reuse-after"),
+    ]
+    return diversify_tokens(requests)
 
 
-def run(probe, root, head_dim, abi, repeat=0):
+def run(probe, root, head_dim, abi, repeat=0, profile="mini"):
     import numpy as np
 
-    artifact = root / f"d{head_dim}-abi{abi}"
+    geometry = qualification_config(profile, head_dim)
+    prefix = "" if profile == "mini" else profile + "-"
+    artifact = root / f"{prefix}d{head_dim}-abi{abi}"
     if repeat == 0:
         import torch
         from executorch.examples.models.muse_glimmer.export.export_solo import (
@@ -144,24 +280,15 @@ def run(probe, root, head_dim, abi, repeat=0):
 
         artifact.mkdir()
         torch.manual_seed(123)
-        config = replace(
-            TINY_CONFIG,
-            dim=2 * head_dim,
-            head_dim=head_dim,
-            n_layers=2,
-            n_heads=2,
-            n_kv_heads=1,
-            max_seq_len=4096,
-            global_attn_cfg="[16,0]",
-        )
+        config = replace(TINY_CONFIG, **geometry["model"])
         model = MuseGlimmerModel(config).to(torch.bfloat16).eval()
         model.activation_dtype = torch.bfloat16
         export_cuda_batching(
             model,
             config,
             str(artifact),
-            max_step_tokens=128,
-            max_cells=64 * 4096,
+            max_step_tokens=geometry["max_step_tokens"],
+            max_cells=64 * geometry["max_context"],
             forward_sizes=(1, 2, 4, 8, 16, 32, 64),
             kv_layout="sequence",
             max_kv_seqs=64,
@@ -172,7 +299,7 @@ def run(probe, root, head_dim, abi, repeat=0):
     run_dir.mkdir()
     logits_dir = run_dir / "logits"
     logits_dir.mkdir()
-    requests = commands()
+    requests = commands(profile)
     completed = subprocess.run(
         [
             str(probe),
@@ -180,7 +307,7 @@ def run(probe, root, head_dim, abi, repeat=0):
             f"--data_path={artifact / 'aoti_cuda_blob.ptd'}",
             f"--output_dir={logits_dir}",
             "--max_sessions=64",
-            "--max_context=4096",
+            f"--max_context={geometry['max_context']}",
             "--initial_kv_capacity=2",
         ],
         input="".join(json.dumps(r) + "\n" for r in requests),
@@ -223,6 +350,29 @@ def run(probe, root, head_dim, abi, repeat=0):
 
 def graph(snapshot, name):
     return next(x for x in snapshot["method_calls"] if x["method"] == name)
+
+
+def host_undo_budget(geometry):
+    # BF16 K/V, 64 tagged rows per page, including pinned archive staging.
+    undo_rows = min(
+        geometry["max_context"],
+        geometry["window"] + geometry["max_step_tokens"] - 1,
+    )
+    undo_pages = (undo_rows + 63) // 64
+    row_bytes = geometry["model"]["n_kv_heads"] * geometry["model"]["head_dim"] * 2
+    return geometry["ring_layers"] * (
+        64 * undo_pages * (2 * 64 * row_bytes + 64 * 4)
+        + 2 * geometry["max_step_tokens"] * row_bytes
+    )
+
+
+def require_exact_logits(candidate, baseline, tag):
+    import numpy as np
+
+    for name, logits in (("ABI 2", baseline), ("ABI 3", candidate)):
+        if not np.isfinite(logits).all():
+            raise RuntimeError(f"{tag}: {name} returned non-finite logits")
+    np.testing.assert_array_equal(candidate, baseline, err_msg=tag)
 
 
 def require_performance(evidence):
@@ -324,11 +474,15 @@ def paired_timings(repeats):
 
 
 def main():
-    import numpy as np
-
     parser = argparse.ArgumentParser()
     parser.add_argument("--probe", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
+    parser.add_argument(
+        "--profile",
+        choices=("mini", "mg-ring"),
+        default="mini",
+        help="mg-ring uses production MG attention/cache geometry with small weights",
+    )
     parser.add_argument(
         "--report-performance",
         action="store_true",
@@ -337,22 +491,27 @@ def main():
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
     evidence = {}
-    for dim in (128, 256):
+    for dim in (128, 256) if args.profile == "mini" else (128,):
+        geometry = qualification_config(args.profile, dim)
         baseline, old_steps, old_pairs = run(
-            args.probe.resolve(), args.output_dir, dim, 2
+            args.probe.resolve(), args.output_dir, dim, 2, profile=args.profile
         )
-        candidate, new_steps, pairs = run(args.probe.resolve(), args.output_dir, dim, 3)
+        candidate, new_steps, pairs = run(
+            args.probe.resolve(), args.output_dir, dim, 3, profile=args.profile
+        )
         assert baseline.keys() == candidate.keys()
         for tag in baseline:
-            np.testing.assert_array_equal(
-                candidate[tag], baseline[tag], err_msg=f"d{dim}/{tag}"
-            )
+            require_exact_logits(candidate[tag], baseline[tag], f"d{dim}/{tag}")
         memory = {}
-        # One Ring layer, one KV head, BF16 K/V, 64 tagged rows per page.
-        undo_rows = min(4096, 16 + 128 - 1)
-        undo_pages = (undo_rows + 63) // 64
-        undo_budget = 64 * undo_pages * (2 * 64 * dim * 2 + 64 * 4) + 2 * 128 * dim * 2
-        for tag in ("decode64-first", "decode64-mixed", "before-6", "after-4"):
+        undo_budget = host_undo_budget(geometry)
+        memory_tags = ("decode64-first", "decode64-mixed", "before-6", "after-4")
+        savings_tags = set(memory_tags[1:])
+        if args.profile == "mg-ring":
+            # The first heterogeneous phase is shorter than the 2K window.
+            # Also measure saturated Ring history, where headroom is removed.
+            memory_tags += ("bench-c64-19", "driver-before")
+            savings_tags = {"bench-c64-19", "driver-before"}
+        for tag in memory_tags:
             old = old_steps[tag]["snapshot"]
             new = new_steps[tag]["snapshot"]
             combined = new["live_KV_bytes"] + new["device_staging_bytes"]
@@ -365,10 +524,12 @@ def main():
             }
             # Before either ring reaches its window there is little duplicated
             # headroom to remove; shared staging can cost more at this point.
-            if tag != "decode64-first":
+            if tag in savings_tags:
                 assert combined < old["live_KV_bytes"], (tag, old, new)
             assert new["host_undo_bytes"] > 0
             assert new["host_undo_bytes"] <= undo_budget, (tag, new, undo_budget)
+        peak_host_undo = max(reply["snapshot"]["host_undo_bytes"] for _, reply in pairs)
+        assert peak_host_undo <= undo_budget, (peak_host_undo, undo_budget)
         compact = next(
             reply["snapshot"] for request, reply in pairs if request["op"] == "compact"
         )
@@ -391,24 +552,48 @@ def main():
         driver["before"] = driver_before
         driver["compact"] = driver_compact
         driver["after"] = new_steps["driver-after"]["snapshot"]
+        reuse_before = new_steps["reuse-before"]["snapshot"]
+        reuse_compact = next(
+            reply["snapshot"]
+            for request, reply in pairs
+            if request.get("tag") == "reuse-compact"
+        )
+        assert reuse_compact["flat_capacity"] <= 4, reuse_compact
+        assert reuse_compact["live_KV_bytes"] < reuse_before["live_KV_bytes"]
         repeats = [(old_steps, new_steps, old_pairs, pairs)]
         for repeat in (1, 2, 3):
             # Four rounds balance AB/BA order without re-exporting.
             order = (3, 2) if repeat % 2 else (2, 3)
             results = {
-                abi: run(args.probe.resolve(), args.output_dir, dim, abi, repeat)
+                abi: run(
+                    args.probe.resolve(),
+                    args.output_dir,
+                    dim,
+                    abi,
+                    repeat,
+                    profile=args.profile,
+                )
                 for abi in order
             }
             for tag in results[2][0]:
-                np.testing.assert_array_equal(
-                    results[3][0][tag], results[2][0][tag], err_msg=f"d{dim}/{tag}"
+                require_exact_logits(
+                    results[3][0][tag], results[2][0][tag], f"d{dim}/{tag}"
                 )
             repeats.append((results[2][1], results[3][1], results[2][2], results[3][2]))
         timings, lifecycle = paired_timings(repeats)
         evidence[dim] = {
+            "profile": args.profile,
+            "geometry": geometry,
             "exact_logits": True,
             "memory": memory,
+            "peak_host_undo_bytes": peak_host_undo,
+            "host_undo_budget_bytes": undo_budget,
             "driver_contraction": driver,
+            "reused_owner_compaction": {
+                "before": reuse_before,
+                "compact": reuse_compact,
+                "after": new_steps["reuse-after"]["snapshot"],
+            },
             "same_work_timings": timings,
             "lifecycle_timings": lifecycle,
         }

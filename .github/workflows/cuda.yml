@@ -63,6 +63,11 @@ on:
         required: false
         type: string
         default: "50"
+      enforce_private_kv_performance:
+        description: Fail private-KV qualification on more than 2% throughput regression
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
@@ -740,11 +745,12 @@ jobs:
           exit 1
         fi
 
-        # Noisy shared-runner timing must not block unrelated PRs or skip
-        # their correctness tests. Periodic/push runs enforce the 2% gate.
-        PRIVATE_KV_TIMING_ARGS=""
-        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-          PRIVATE_KV_TIMING_ARGS="--report-performance"
+        # Automatic jobs report noisy timings; an explicit dispatch can enforce
+        # the 2% gate. Numerical/memory/graph checks always remain blocking.
+        PRIVATE_KV_TIMING_ARGS="--report-performance"
+        if [[ "${{ github.event_name }}" == "workflow_dispatch" && \
+              "${{ inputs.enforce_private_kv_performance }}" == "true" ]]; then
+          PRIVATE_KV_TIMING_ARGS=""
         fi
         python examples/models/muse-glimmer/tests/check_private_kv_rows.py \
           --probe "${BATCHING_BIN_DIR}/muse_glimmer_runtime_kv_probe" \
@@ -792,6 +798,82 @@ jobs:
         export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
 
         python -m pytest ${{ matrix.tests }} -v -o "addopts=" --durations=20
+
+  unittest-cuda-private-kv-mg-ring:
+    name: unittest-cuda-private-kv-mg-ring
+    needs: [changed-files, run-decision]
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/cache') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/muse-glimmer') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      timeout: 180
+      # Production Ring geometry needs room for ABI 2's temporary replacement
+      # allocations as well as ABI 3's bounded host undo history.
+      runner: mt-l-x86iavx512-11-125-a100
+      gpu-arch-type: cuda
+      gpu-arch-version: "13.2"
+      submodules: recursive
+      upload-artifact: cuda-private-kv-mg-ring
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+        bash ./install_executorch.sh
+        conda install -y -c conda-forge 'libstdcxx-ng>=12'
+        export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
+        pip install gguf
+
+        python - <<'PY'
+        import torch
+
+        assert torch.cuda.get_device_capability() == (8, 0)
+        print(torch.cuda.get_device_properties(0))
+        PY
+
+        cmake --preset llm-release-cuda -DEXECUTORCH_ENABLE_LOGGING=OFF
+        cmake --build --preset llm-release-cuda-install
+        BATCHING_BIN_DIR="${PWD}/cmake-out/examples/models/muse-glimmer-batching"
+        cmake -S "${PWD}/examples/models/muse-glimmer" --preset muse-glimmer-cuda \
+          -B "${BATCHING_BIN_DIR}" -DMUSE_GLIMMER_BUILD_BATCHING=ON \
+          -DMUSE_GLIMMER_BUILD_RUNTIME_KV_PROBE=ON
+        cmake --build "${BATCHING_BIN_DIR}" \
+          --target muse_glimmer_runtime_kv_probe --parallel
+
+        PRIVATE_KV_TIMING_ARGS="--report-performance"
+        if [[ "${{ github.event_name }}" == "workflow_dispatch" && \
+              "${{ inputs.enforce_private_kv_performance }}" == "true" ]]; then
+          PRIVATE_KV_TIMING_ARGS=""
+        fi
+        export PRIVATE_KV_PRODUCTION_DIR="${RUNNER_TEMP:-/tmp}/muse_glimmer_private_kv_mg_ring"
+        PRIVATE_KV_STATUS=0
+        python examples/models/muse-glimmer/tests/check_private_kv_rows.py \
+          --profile mg-ring \
+          --probe "${BATCHING_BIN_DIR}/muse_glimmer_runtime_kv_probe" \
+          --output-dir "${PRIVATE_KV_PRODUCTION_DIR}" \
+          ${PRIVATE_KV_TIMING_ARGS} || PRIVATE_KV_STATUS=$?
+        # Keep diagnostics on failure without uploading generated model blobs.
+        python - <<'PY'
+        import os
+        import shutil
+        from pathlib import Path
+
+        source = Path(os.environ["PRIVATE_KV_PRODUCTION_DIR"])
+        destination = Path(os.environ["RUNNER_ARTIFACT_DIR"])
+        for path in source.rglob("*"):
+            if path.is_file() and path.name in (
+                "qualification.json", "probe.jsonl", "probe.stderr.log"
+            ):
+                target = destination / path.relative_to(source)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(path, target)
+        PY
+        exit "${PRIVATE_KV_STATUS}"
 
   unittest-cuda-runtime:
     name: unittest-cuda-runtime
