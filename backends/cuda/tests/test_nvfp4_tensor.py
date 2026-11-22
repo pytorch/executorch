@@ -182,6 +182,16 @@ def test_from_exportable_rejects_nan_scales(byte):
         CudaNVFP4Tensor.from_exportable(w)
 
 
+def test_all_zero_weight_packs_as_zeros():
+    # The quantizer gives an all-zero weight a unit global scale, not 0/0 = NaN
+    # block scales, so it packs and runs as zeros.
+    linear = torch.nn.Linear(64, 32, bias=False, dtype=torch.bfloat16)
+    linear.weight.data.zero_()
+    quantize_(linear, ExportableNVFP4Config())
+    packed = CudaNVFP4Tensor.from_exportable(linear.weight)
+    assert torch.equal(packed.dequantize(), torch.zeros_like(packed.dequantize()))
+
+
 def test_from_exportable_carries_activation_scale():
     portable = weight()
     fields = (portable.qdata, portable.scale, portable.per_tensor_scale, 16)
