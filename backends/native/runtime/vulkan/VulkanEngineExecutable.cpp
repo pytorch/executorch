@@ -654,6 +654,8 @@ class VulkanEngineExecutable final : public EngineExecutable {
       source_constants_;
   std::unordered_map<std::string, std::shared_ptr<OwnedBytes>>
       derived_constants_;
+  // Owners whose GGUF source bytes this executable has recorded.
+  std::unordered_set<std::string> gguf_source_owners_;
 
   // vref_ and layout_ are sized to the method graph's value list, so every
   // ValueId the graph hands out addresses them. An id that does not means the
@@ -1282,7 +1284,10 @@ class VulkanEngineExecutable final : public EngineExecutable {
   }
 
   // use_reference_gguf_kquant retyped this constant as the fp32 tensor that
-  // its stored GGUF K-quant blocks decode to.
+  // its stored GGUF K-quant blocks decode to. The package keeps one copy of
+  // byte-identical constants, and different codecs decode the same bytes
+  // differently, so a decoded copy is shared only by the same owner, codec and
+  // shape.
   executorch::runtime::FreeableBuffer gguf_kquant_buffer(
       const Package& package,
       const DataBinding& b,
@@ -1297,20 +1302,26 @@ class VulkanEngineExecutable final : public EngineExecutable {
     const int64_t cols = meta.sizes.empty() ? 0 : meta.sizes.back();
     const int64_t rows = cols == 0 ? 0 : meta.numel() / cols;
     const size_t decoded_nbytes = logical_nbytes(meta);
-    std::shared_ptr<OwnedBytes>& storage =
-        derived_constants_["gguf:" + info->owner];
+    size_t stored_nbytes = 0;
+    if (__builtin_mul_overflow(
+            static_cast<size_t>(rows),
+            reference::gguf_kquant_row_nbytes(codec, cols),
+            &stored_nbytes) ||
+        info->nbytes != stored_nbytes) {
+      throw std::runtime_error(
+          "vulkan: GGUF K-quant constant '" + b.key +
+          "' does not hold its declared shape");
+    }
+    std::shared_ptr<OwnedBytes>& storage = derived_constants_
+        [std::to_string(info->owner.size()) + ":" + info->owner + ":" + codec +
+         ":" + std::to_string(rows) + "x" + std::to_string(cols)];
     if (!storage) {
       std::optional<OwnedBytes> raw = load_constant(package, *info);
       if (!raw) {
         throw std::runtime_error(
             "vulkan: package could not load constant for key '" + b.key + "'");
       }
-      size_t stored_nbytes = 0;
-      if (__builtin_mul_overflow(
-              static_cast<size_t>(rows),
-              reference::gguf_kquant_row_nbytes(codec, cols),
-              &stored_nbytes) ||
-          raw->span().size() != stored_nbytes) {
+      if (raw->span().size() != stored_nbytes) {
         throw std::runtime_error(
             "vulkan: GGUF K-quant constant '" + b.key +
             "' does not hold its declared shape");
@@ -1326,7 +1337,9 @@ class VulkanEngineExecutable final : public EngineExecutable {
           reinterpret_cast<float*>(bytes.data()));
       storage = std::make_shared<OwnedBytes>(
           OwnedBytes::from_vector(std::move(bytes)));
-      materializations_.record(info->package_id, info->owner, info->nbytes);
+      if (gguf_source_owners_.insert(info->owner).second) {
+        materializations_.record(info->package_id, info->owner, info->nbytes);
+      }
     }
     if (storage->span().size() != decoded_nbytes) {
       throw std::runtime_error(
@@ -2439,6 +2452,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
     // references and releases each source after its final prepack consumer.
     source_constants_.clear();
     derived_constants_.clear();
+    gguf_source_owners_.clear();
     graph_->prepare();
     graph_->prepare_pipelines();
     graph_->prepack();
