@@ -33,11 +33,11 @@ CUDA = pytest.mark.skipif(
 
 @CUDA
 @pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16])
-@pytest.mark.parametrize("half2", [False, True])
 @pytest.mark.parametrize("row_pts", [False, True])
 @pytest.mark.parametrize("split", [1, 2, 4, 8, 16, 32])
-@pytest.mark.parametrize("native", [False, True])
-def test_unit_scale_gemv_bitwise_same_tile(native, dtype, half2, row_pts, split):
+# _gemv takes the HALF2 body only with NATIVE.
+@pytest.mark.parametrize("native,half2", [(False, False), (True, False), (True, True)])
+def test_unit_scale_gemv_bitwise_same_tile(native, half2, dtype, row_pts, split):
     if native and not _has_native_fp4():
         pytest.skip("native FP4 required")
     from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import _gemv

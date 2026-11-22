@@ -356,6 +356,9 @@ class TestNVFP4KVValidation(unittest.TestCase):
             lambda: sdpa(q[..., :64], *cache(), *cache()),
             # A negative eps is not "no K norm"; that is None.
             lambda: write(k, k, pos, *cache(), *cache(), None, False, -1.0),
+            # The kernel reads positions and frequencies with unit stride.
+            lambda: write(k, k, torch.arange(4)[::2], *cache(), *cache()),
+            lambda: write(k, k, pos, *cache(), *cache(), torch.ones(D)[::2]),
             # SDPA-style additive float masks would invert visibility.
             lambda: sdpa(q, *cache(), *cache(), torch.zeros(1, 1, 2, 16)),
             lambda: sdpa(q, *cache(), *cache(), torch.ones(1, HQ, 2, 16).bool()),
@@ -402,50 +405,62 @@ class TestLowerNVFP4KVWrite(unittest.TestCase):
                 ):
                     self.assertTrue(torch.equal(got, ref), tag)
 
-    def test_lowered_program_matches_eager(self):
-        """The CUDA backend lowers the cache write and attention (with the
-        pass), and the program carries the cache from prefill into decode."""
+    def _lower_and_run(self, ring, rope, steps, shapes):
+        """Lowers the layer with the CUDA backend (and the pass) and runs every
+        step through the program against eager, carrying the cache."""
         from executorch.backends.cuda.cuda_backend import CudaBackend
         from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
         from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
         from executorch.export.utils import is_fbcode
 
-        steps = [step_inputs(*s) for s in STEPS]
-        for ring in (False, True):
-            eager = layer(ring)
-            expected = [eager(*args) for args in steps]
-            ep = torch.export.export(
-                layer(ring), steps[0], dynamic_shapes=SEQ_SHAPES, strict=True
-            )
-            lowered = to_edge_transform_and_lower(
-                ep,
-                partitioner=[
-                    CudaPartitioner(
-                        [CudaBackend.generate_method_name_compile_spec("forward")]
-                    )
-                ],
-                compile_config=EdgeCompileConfig(_check_ir_validity=False),
-            ).to_executorch()
-            with tempfile.TemporaryDirectory() as folder:
-                path = Path(folder) / "kv.pte"
-                with path.open("wb") as f:
-                    lowered.write_to_file(f)
-                lowered.write_tensor_data_to_file(folder)
-                if is_fbcode():
-                    # The in-process runtime in fbcode has no CUDA backend.
-                    continue
-                from executorch.runtime import Runtime
-
-                data = next(Path(folder).glob("*.ptd"), None)
-                program = Runtime.get().load_program(
-                    str(path), data_path=None if data is None else str(data)
+        eager = layer(ring, rope)
+        expected = [eager(*args) for args in steps]
+        ep = torch.export.export(
+            layer(ring, rope), steps[0], dynamic_shapes=shapes, strict=True
+        )
+        lowered = to_edge_transform_and_lower(
+            ep,
+            partitioner=[
+                CudaPartitioner(
+                    [CudaBackend.generate_method_name_compile_spec("forward")]
                 )
-                method = program.load_method("forward")
-                for args, want in zip(steps, expected):
-                    out = method.execute([a.cpu() for a in args])[0].to(want.device)
-                    tag = f"ring={ring} pos={int(args[3][0])}"
-                    self.assertLess(rel(out, want), 1e-2, tag)
-                    self.assertLess(row_err(out, want), 2e-2, tag)
+            ],
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        ).to_executorch()
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "kv.pte"
+            with path.open("wb") as f:
+                lowered.write_to_file(f)
+            lowered.write_tensor_data_to_file(folder)
+            if is_fbcode():
+                # The in-process runtime in fbcode has no CUDA backend.
+                return
+            from executorch.runtime import Runtime
+
+            data = next(Path(folder).glob("*.ptd"), None)
+            program = Runtime.get().load_program(
+                str(path), data_path=None if data is None else str(data)
+            )
+            method = program.load_method("forward")
+            for args, want in zip(steps, expected):
+                out = method.execute([a.cpu() for a in args])[0].to(want.device)
+                tag = f"ring={ring} rope={rope} pos={int(args[3][0])}"
+                self.assertLess(rel(out, want), 1e-2, tag)
+                self.assertLess(row_err(out, want), 2e-2, tag)
+
+    def test_lowered_program_matches_eager(self):
+        """Dynamic T, as production prefill: the prefill attention kernel for
+        every chunk, flat NoPE and ring RoPE layers."""
+        steps = [step_inputs(*s) for s in STEPS]
+        for ring, rope in ((False, False), (True, True)):
+            self._lower_and_run(ring, rope, steps, SEQ_SHAPES)
+
+    def test_lowered_static_decode_matches_eager(self):
+        """Static T=1, as production decode: the split-K attention, stepped
+        from position 0 past the 48-slot ring."""
+        steps = [step_inputs(pos, 1) for pos in range(56)]
+        for ring, rope in ((False, False), (True, True)):
+            self._lower_and_run(ring, rope, steps, None)
 
     def test_pass_inlines_write_kernel(self):
         from executorch.backends.cuda.passes.lower_nvfp4_kv import LowerNVFP4KVWritePass

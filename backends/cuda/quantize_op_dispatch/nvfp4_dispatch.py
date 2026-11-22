@@ -10,9 +10,10 @@ is compiled into the program:
 * ``ET_CUDA_NVFP4_ACT``: ``auto`` (default) times W4A16 against native W4A4
   per layer when native FP4 is available, and decode (M statically <= 4, by
   default only M = 1, see ``ET_CUDA_NVFP4_SMALL_M``) W4A16 against the W4A8
-  dp4a GEMV (int8 activations per 16 elements) otherwise; ``w4a16`` forces BF16/FP16 activations, ``w4a8`` forces the W4A8
-  GEMV for decode (other M run BF16/FP16 activations, as ``w4a16``), and
-  ``w4a4`` forces FP4 activations (native FP4 required).
+  dp4a GEMV (int8 activations per 16 elements) otherwise; ``w4a16`` forces
+  BF16/FP16 activations, ``w4a8`` forces the W4A8 GEMV for decode (other M run
+  BF16/FP16 activations, as ``w4a16``), and ``w4a4`` forces FP4 activations
+  (native FP4 required).
 * ``ET_CUDA_NVFP4_PREFILL_OUTPUT``: ``input`` (default) keeps the activation
   dtype; ``fp32`` returns FP32 from prefill linears (M not statically <= 4).
 * ``ET_CUDA_NVFP4_PREFILL_IMPL``: for M not statically <= 64, ``auto``
@@ -20,13 +21,16 @@ is compiled into the program:
   dequant + matmul otherwise; ``kernel`` / ``dequant`` force one for any M
   not statically <= 4. ``w4a4`` and the FP32 prefill output policy always take
   the fused kernels. The choice is made per exported program from M's upper
-  bound, so keep small M in a separate static-M method.
+  bound. A dynamic-M method tunes the fused kernels at its example M (the
+  largest, in the Muse Glimmer exports), so dequant + matmul is also faster
+  for its short prompts.
 * ``ET_CUDA_NVFP4_SMALL_M``: ``1`` (default) routes ``auto``/``w4a16`` linears
-  whose M is in 2..16 (static, or dynamic with an upper bound <= 16) to the
-  small-M bucket ops, which time a rows GEMV, W4A16 and (``auto`` with native
-  FP4) W4A4; the FP32 prefill output policy and an explicit
-  ``ET_CUDA_NVFP4_PREFILL_IMPL=dequant`` keep M 5..16 off them. ``0`` keeps
-  the decode and prefill paths.
+  whose M is in 2..16 (static, or dynamic with an upper bound <= 16), and
+  ``w4a8`` ones with M in 5..16, to the small-M bucket ops, which time a rows
+  GEMV, W4A16 and (``auto`` with native FP4) W4A4; with native FP4, ``auto``
+  M <= 4 keeps ``nvfp4_auto_decode``, and the FP32 prefill output policy and
+  an explicit ``ET_CUDA_NVFP4_PREFILL_IMPL=dequant`` keep M 5..16 off them.
+  ``0`` keeps the decode and prefill paths.
 """
 
 import os
@@ -46,7 +50,7 @@ from executorch.backends.cuda.quantize_op_dispatch._gemm_family_dispatch import 
 )
 from executorch.backends.cuda.triton.kernels.nvfp4_output import (
     NVFP4_DECODE_MAX_ROWS,
-    NVFP4_DEQUANT_MIN_ROWS,
+    NVFP4_FUSED_PREFILL_MAX_ROWS,
     nvfp4_prefill_output_dtype,
 )
 from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
@@ -139,7 +143,7 @@ def _decode(x, wq, ws, pts, act_scale, unit_scale=False, *, mode_split):
             launch_w4a8_gemv,
         )
 
-        return launch_w4a8_gemv(x, wq, ws, pts, split_k=split)
+        return launch_w4a8_gemv(x, wq, ws, pts, _max_rows(x.shape[0]), split_k=split)
     return nvfp4_gemv(x, wq, ws, pts, split_k=split, unit_scale=unit_scale)
 
 
@@ -255,7 +259,7 @@ def _dequant_prefill(flat, mode, output_dtype, impl):
     """Whether an NVFP4 linear takes whole-weight dequant + F.linear.
 
     auto (default): only without native FP4 (SM120+) and for M not statically
-    <= ``NVFP4_DEQUANT_MIN_ROWS``, where the dense matmul beats in-register
+    <= ``NVFP4_FUSED_PREFILL_MAX_ROWS``, where the dense matmul beats in-register
     dequant; smaller M keep the fused kernels, which read the packed weight
     once. The choice is made once per exported program, at M's upper bound.
     """
@@ -268,7 +272,7 @@ def _dequant_prefill(flat, mode, output_dtype, impl):
         return False
     if impl == "auto":
         return not _has_native_fp4() and not statically_known_true(
-            rows <= NVFP4_DEQUANT_MIN_ROWS
+            rows <= NVFP4_FUSED_PREFILL_MAX_ROWS
         )
     return impl == "dequant"
 
@@ -368,6 +372,52 @@ def _weight_rows(w, rows):
     )
 
 
+def _small_m_enabled():
+    small_m = os.environ.get("ET_CUDA_NVFP4_SMALL_M", "1")
+    if small_m not in ("0", "1"):
+        raise ValueError("ET_CUDA_NVFP4_SMALL_M must be 0 or 1")
+    return small_m == "1"
+
+
+def _small_m_op(flat, w, mode, output_dtype, impl, enabled):
+    """The small-M bucket op and its arguments for this linear, or None.
+
+    ``auto``/``w4a16`` take the buckets for M in 2..16, and ``w4a8`` for M
+    above decode size (its W4A8 GEMV serves decode); only ``auto`` may time
+    FP4 activations, and only it passes the static activation scale. With
+    native FP4, ``auto`` decode-size M keeps ``nvfp4_auto_decode`` (equal or
+    faster than the buckets on an RTX 5090 at M = 2..4).
+    """
+    rows = flat.shape[0]
+    small = statically_known_true(rows <= NVFP4_DECODE_MAX_ROWS)
+    native_decode = small and mode == "auto" and _has_native_fp4()
+    if (
+        not enabled
+        or native_decode
+        or not (mode in ("auto", "w4a16") or (mode == "w4a8" and not small))
+        or output_dtype is not None
+        or statically_known_true(rows <= 1)
+        or _dequant_prefill(flat, mode, output_dtype, impl)
+    ):
+        return None
+    from executorch.backends.cuda.triton.kernels.nvfp4_small_m_gemm import (
+        NVFP4_SMALL_M_GEMM,
+    )
+
+    fp4 = mode == "auto" and _has_native_fp4()
+    op_args = (
+        flat,
+        w.qdata,
+        w.scale,
+        w.per_tensor_scale,
+        w.act_per_tensor_scale if fp4 else None,
+        w.unit_scale,
+        mode != "auto",
+    )
+    bucket = select_bucket(NVFP4_SMALL_M_GEMM, *op_args)
+    return None if bucket is None else (NVFP4_SMALL_M_GEMM.op(bucket), op_args)
+
+
 @CudaNVFP4Tensor.implements([torch.ops.aten.linear.default])
 @CudaNVFP4Tensor.implements_torch_function([F.linear])
 def _linear(func, types, args, kwargs):  # noqa: C901
@@ -377,6 +427,7 @@ def _linear(func, types, args, kwargs):  # noqa: C901
     if mode not in _ACT_MODES:
         raise ValueError(f"ET_CUDA_NVFP4_ACT must be one of {_ACT_MODES}")
     impl = _prefill_impl()
+    use_small_m = _small_m_enabled()
     if x.shape[-1] != w.shape[-1]:
         raise RuntimeError("NVFP4 linear input and weight K dimensions must match")
     flat = x.reshape(-1, x.shape[-1]).contiguous()
@@ -406,31 +457,7 @@ def _linear(func, types, args, kwargs):  # noqa: C901
         if mode == "w4a8" and torch.version.hip is not None:
             raise RuntimeError("NVFP4 W4A8 (dp4a PTX) requires an NVIDIA GPU")
         small = statically_known_true(flat.shape[0] <= NVFP4_DECODE_MAX_ROWS)
-        small_m = os.environ.get("ET_CUDA_NVFP4_SMALL_M", "1")
-        if small_m not in ("0", "1"):
-            raise ValueError("ET_CUDA_NVFP4_SMALL_M must be 0 or 1")
-        bucket = None
-        if (
-            small_m == "1"
-            and mode in ("auto", "w4a16")
-            and output_dtype is None
-            and not statically_known_true(flat.shape[0] <= 1)
-            and not _dequant_prefill(flat, mode, output_dtype, impl)
-        ):
-            from executorch.backends.cuda.triton.kernels.nvfp4_small_m_gemm import (
-                NVFP4_SMALL_M_GEMM,
-            )
-
-            bucket = select_bucket(
-                NVFP4_SMALL_M_GEMM,
-                flat,
-                w.qdata,
-                w.scale,
-                w.per_tensor_scale,
-                w.act_per_tensor_scale,
-                w.unit_scale,
-                mode == "w4a16",
-            )
+        small_m = _small_m_op(flat, w, mode, output_dtype, impl, use_small_m)
         if mode == "w4a4":
             out = nvfp4_w4a4(
                 flat,
@@ -440,16 +467,9 @@ def _linear(func, types, args, kwargs):  # noqa: C901
                 w.act_per_tensor_scale,
                 output_dtype=output_dtype,
             )
-        elif bucket is not None:
-            out = NVFP4_SMALL_M_GEMM.op(bucket)(
-                flat,
-                w.qdata,
-                w.scale,
-                w.per_tensor_scale,
-                w.act_per_tensor_scale,
-                w.unit_scale,
-                mode == "w4a16",
-            )
+        elif small_m is not None:
+            op, op_args = small_m
+            out = op(*op_args)
         elif small and mode == "auto":
             # Only W4A4 reads the static activation scale.
             out = nvfp4_auto_decode(

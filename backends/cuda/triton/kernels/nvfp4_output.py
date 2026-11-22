@@ -10,8 +10,10 @@ import torch
 from torch.fx.experimental.symbolic_shapes import statically_known_true
 
 NVFP4_DECODE_MAX_ROWS = 4
-# Without native FP4, M above this takes whole-weight dequant + matmul.
-NVFP4_DEQUANT_MIN_ROWS = 64
+# Without native FP4, a prefill M statically <= this (inclusive) keeps the fused
+# W4A16 kernel; any other M (including a dynamic M with a larger upper bound)
+# takes whole-weight dequant + matmul.
+NVFP4_FUSED_PREFILL_MAX_ROWS = 64
 
 
 @torch._dynamo.assume_constant_result

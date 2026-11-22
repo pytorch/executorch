@@ -49,6 +49,8 @@ def act_q8_reference(x):
     """Per-16 symmetric int8: q = rint(x * 127 / amax), scale = amax / 127."""
     m, k = x.shape
     blocks = x.float().reshape(m, k // 16, 16)
+    # NaN elements quantize to 0 and do not set the block scale.
+    blocks = torch.where(blocks.isnan(), 0.0, blocks)
     amax = blocks.abs().amax(-1)
     inv = torch.where(amax > 0, 127.0 / amax, 0.0)
     q = torch.round(blocks * inv[..., None]).clamp(-127, 127).to(torch.int8)
@@ -96,6 +98,7 @@ def test_activation_quantization_matches_reference():
     m, k = 3, 1040
     x = torch.randn(m, k, device="cuda", dtype=torch.bfloat16)
     x[1, 16:32] = 0
+    x[2, 40] = float("nan")
     xq = torch.empty((m, k), device="cuda", dtype=torch.int8)
     xs = torch.empty((m, k // 16), device="cuda", dtype=torch.float32)
     _act_q8[(m, triton.cdiv(k // 16, 64))](x, xq, xs, k, 64)
@@ -105,6 +108,7 @@ def test_activation_quantization_matches_reference():
     assert (xq.int() - rq.int()).abs().max() <= 1
     assert (xq != rq).float().mean() < 1e-3
     assert bool((xq[1, 16:32] == 0).all()) and bool((xs[1, 1] == 0).all())
+    assert int(xq[2, 40]) == 0 and bool(xs.isfinite().all())
 
 
 @triton.jit
@@ -147,7 +151,7 @@ def test_w4a8_gemv_matches_integer_reference(dtype, row_pts, split_k):
         # Scaled so FP16 outputs of the 448-scale rows stay finite.
         x = (torch.randn(m, k, device="cuda") * 0.0625).to(dtype)
         xq, xs = act_q8_reference(x)
-        y = w4a8.launch_w4a8_gemv(x, q, s, pts, split_k=split_k)
+        y = w4a8.launch_w4a8_gemv(x, q, s, pts, m, split_k=split_k)
         assert y.shape == (m, n) and y.dtype == x.dtype
         # Only FP32 accumulation order and the output rounding differ.
         exact = relative_error_per_row(
@@ -168,8 +172,6 @@ def test_every_w4a8_config_matches_integer_reference(split):
     xq, xs = act_q8_reference(x)
     expected = w4a8_reference(xq, xs, q, s, pts)
     for config in w4a8._w4a8_gemv.configs:
-        if config.num_stages != 1:
-            continue
         y = torch.zeros((split, 2, n), device="cuda", dtype=torch.float32)
         w4a8._w4a8_gemv.fn[(triton.cdiv(n, config.kwargs["BN"]), 2, split)](
             xq,
@@ -195,9 +197,36 @@ def test_w4a8_rejects_illegal_split():
     x = torch.randn(1, 256, device="cuda", dtype=torch.bfloat16)
     pts = torch.ones(1, device="cuda")
     with pytest.raises(InvalidLaunchParam):
-        w4a8.launch_w4a8_gemv(x, q, s, pts, split_k=3)
+        w4a8.launch_w4a8_gemv(x, q, s, pts, 1, split_k=3)
     with pytest.raises(InvalidLaunchParam):
-        w4a8.launch_w4a8_gemv(x, q, s, pts, split_k=2)
+        w4a8.launch_w4a8_gemv(x, q, s, pts, 1, split_k=2)
+
+
+def test_w4a8_gemv_block_scales_vary_along_k():
+    # Every K16 block of a row has its own scale, so a wrong scale column
+    # cannot hide behind XS indexing.
+    from executorch.backends.cuda.tests.nvfp4_test_utils import weight as nvfp4_weight
+
+    w = nvfp4_weight(160, 2880)
+    q, s, pts = w.qdata, w.scale, w.per_tensor_scale
+    x = torch.randn(2, 2880, device="cuda", dtype=torch.bfloat16)
+    xq, xs = act_q8_reference(x)
+    expected = w4a8_reference(xq, xs, q, s, pts)
+    for split_k in (1, 4):
+        y = w4a8.launch_w4a8_gemv(x, q, s, pts, 2, split_k=split_k)
+        assert bool((relative_error_per_row(y, expected, x, q, s, pts) < 2e-3).all())
+
+
+def test_w4a8_split_workspace_uses_the_row_bound():
+    # A split whose (split, M, N) FP32 workspace fits only the runtime M is
+    # rejected against the bound the op passes.
+    q, s = weight(4096, 4096)
+    x = torch.randn(1, 4096, device="cuda", dtype=torch.bfloat16)
+    pts = torch.ones(1, device="cuda")
+    max_rows = torch.cuda.get_device_properties(0).total_memory // (16 * 4096 * 4)
+    w4a8.launch_w4a8_gemv(x, q, s, pts, 1, split_k=16)
+    with pytest.raises(InvalidLaunchParam):
+        w4a8.launch_w4a8_gemv(x, q, s, pts, max_rows, split_k=16)
 
 
 def test_w4a8_op_validates_and_matches_reference():
@@ -210,6 +239,11 @@ def test_w4a8_op_validates_and_matches_reference():
     assert relative_error(y, w4a8_reference(xq, xs, q, s, pts)) < 8e-3
     with pytest.raises(ValueError):
         w4a8.nvfp4_w4a8_gemv(x[:, :-16], q, s, pts)
+    with pytest.raises(ValueError, match="65535 rows"):
+        w4a8.nvfp4_w4a8_gemv(x.new_zeros(65536, k), q, s, pts)
+    with mock.patch.object(torch.version, "hip", "6.2"):
+        with pytest.raises(RuntimeError, match="NVIDIA GPU"):
+            w4a8.nvfp4_w4a8_gemv(x, q, s, pts)
 
 
 @pytest.mark.parametrize("split", [1, 4])

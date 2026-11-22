@@ -17,9 +17,14 @@ from executorch.examples.models.muse_glimmer.loaders.checkpoint_loader import (
 )
 from executorch.extension.llm.export.nvfp4 import ExportableNVFP4Tensor
 
-gguf = pytest.importorskip("gguf")
-if not hasattr(gguf.GGMLQuantizationType, "NVFP4"):
-    pytest.skip("needs gguf >= 0.19", allow_module_level=True)
+try:
+    import gguf
+
+    HAS_GGUF_NVFP4 = hasattr(gguf.GGMLQuantizationType, "NVFP4")
+except ImportError:
+    HAS_GGUF_NVFP4 = False
+# Only the tests that write GGUF files need gguf >= 0.19.
+requires_gguf = pytest.mark.skipif(not HAS_GGUF_NVFP4, reason="needs gguf >= 0.19")
 
 
 def nvfp4_raw(n, k, seed):
@@ -67,6 +72,7 @@ TENSORS = [
 ]
 
 
+@requires_gguf
 def test_gguf_nvfp4_companions_pair_by_name():
     sd = load(TENSORS)
     assert set(sd) == {
@@ -86,6 +92,7 @@ def test_gguf_nvfp4_companions_pair_by_name():
     assert down.act_per_tensor_scale is None
 
 
+@requires_gguf
 def test_gguf_nvfp4_static_act_scale():
     tensors = [
         *TENSORS,
@@ -104,12 +111,14 @@ def test_gguf_nvfp4_static_act_scale():
         load(TENSORS, static_act_scale=True)
 
 
+@requires_gguf
 def test_gguf_nvfp4_rejects_non_scalar_companion():
     tensors = [*TENSORS[1:], ("blk.0.ffn_down.scale", np.ones(2, dtype=np.float32))]
     with pytest.raises(ValueError, match="scalar F32 companion"):
         load(tensors)
 
 
+@requires_gguf
 def test_gguf_nvfp4_rejects_unpaired_companion():
     tensors = [*TENSORS, ("blk.0.attn_v.scale", scalar(0.5))]
     with pytest.raises(ValueError, match="blk.0.attn_v.scale"):
@@ -185,16 +194,21 @@ def test_cuda_nvfp4_group_stays_separate_when_unfusable():
     assert fused["layers.0.mlp.up_proj.weight"] is sd["layers.0.mlp.up_proj.weight"]
 
 
-def test_load_gguf_model_swaps_every_nvfp4_mlp():
-    """An NVFP4 GGUF loads with fused gate/up weights the MLP swap accepts."""
+@requires_gguf
+def test_cuda_source_transformations_swap_every_nvfp4_mlp():
+    """A tiny NVFP4 GGUF (different gate and up scales) loads into fused
+    per-row-scale weights, and the CUDA transforms swap every MLP."""
     pytest.importorskip("triton")
     from dataclasses import replace
 
     from executorch.examples.models.muse_glimmer.loaders.checkpoint_loader import (
         load_gguf_model,
     )
+    from executorch.examples.models.muse_glimmer.source_transformations.cuda import (
+        cuda_source_transformations,
+    )
     from executorch.examples.models.muse_glimmer.source_transformations.nvfp4 import (
-        install_nvfp4_gate_up_epilogues,
+        CudaNVFP4MLP,
     )
     from executorch.examples.models.muse_glimmer.tests.test_pipeline import (
         build_muse_glimmer_gguf,
@@ -205,6 +219,18 @@ def test_load_gguf_model_swaps_every_nvfp4_mlp():
     with tempfile.TemporaryDirectory() as folder:
         path = os.path.join(folder, "model.gguf")
         build_muse_glimmer_gguf(path, config, nvfp4_ffn=True)
+        shards = _atomic_sd_from_gguf(path, torch.bfloat16, False)
         model, config = load_gguf_model(path, backend="cuda", config=config)
     assert config.fuse_gate_up
-    assert install_nvfp4_gate_up_epilogues(model) == config.n_layers
+    cuda_source_transformations(model)
+    for i, layer in enumerate(model.layers):
+        assert isinstance(layer.mlp, CudaNVFP4MLP)
+        fused = layer.mlp.gate_up_proj.weight
+        assert fused.per_tensor_scale.numel() == fused.shape[0]
+        expected = torch.cat(
+            [
+                shards[f"layers.{i}.mlp.{p}_proj.weight"].dequantize()
+                for p in ("gate", "up")
+            ]
+        )
+        assert torch.equal(fused.dequantize(), expected)
