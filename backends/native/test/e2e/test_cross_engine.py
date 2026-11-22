@@ -697,6 +697,10 @@ class CrossEngineTest(unittest.TestCase):
             with self.subTest(case=name):
                 self._check_dynamic(model, [(x,)], None)
 
+    def test_linear_of_a_rank_4_input(self):
+        torch.manual_seed(0)
+        self._check_dynamic(torch.nn.Linear(5, 8), [(torch.randn(5, 2, 5, 5),)], None)
+
     def test_clone_between_pool_and_linear(self):
         torch.manual_seed(0)
         self._check_dynamic(_PoolCloneLinear(), [(torch.randn(1, 4, 8, 8),)], None)

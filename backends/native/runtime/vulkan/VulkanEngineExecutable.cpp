@@ -41,6 +41,7 @@
 #include <executorch/backends/native/runtime/graph/utils/GraphUtils.h>
 #include <executorch/backends/native/runtime/utils/ReferenceGgufQuant.h>
 #include <executorch/backends/native/runtime/vulkan/VulkanConstantMaterializationTracker.h>
+#include <executorch/backends/native/runtime/vulkan/passes/FlattenLinearBatch.h>
 #include <executorch/backends/native/runtime/vulkan/passes/FuseQuantizedEmbedding.h>
 #include <executorch/backends/native/runtime/vulkan/passes/FuseQuantizedLinear.h>
 #include <executorch/backends/native/runtime/vulkan/passes/InsertPrepack.h>
@@ -722,6 +723,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
     warn_reference_fallback(vulkan::use_reference_gguf(method_));
     vulkan::lower_hf_attention(method_.graph);
     vulkan::lower_sdpa(method_.graph);
+    vulkan::flatten_linear_batches(method_.graph);
     vulkan::fuse_quantized_embeddings(method_);
     vulkan::fuse_quantized_linears(method_);
     vulkan::lower_rms_norms(method_.graph);

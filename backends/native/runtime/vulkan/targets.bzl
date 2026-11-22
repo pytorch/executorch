@@ -13,6 +13,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = "vulkan_passes",
         srcs = [
+            "passes/FlattenLinearBatch.cpp",
             "passes/FuseQuantizedEmbedding.cpp",
             "passes/FuseQuantizedLinear.cpp",
             "passes/InsertPrepack.cpp",
@@ -24,6 +25,7 @@ def define_common_targets():
             "passes/UseReferenceGgufQuant.cpp",
         ],
         exported_headers = [
+            "passes/FlattenLinearBatch.h",
             "passes/FuseQuantizedEmbedding.h",
             "passes/FuseQuantizedLinear.h",
             "passes/InsertPrepack.h",
