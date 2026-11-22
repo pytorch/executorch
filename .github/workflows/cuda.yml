@@ -26,6 +26,7 @@ on:
       - backends/cuda/**
       - backends/aoti/**
       - extension/cuda/**
+      - extension/llm/export/**
       - .ci/scripts/test-cuda-build.sh
       - .ci/scripts/export_model_artifact.sh
       - .ci/scripts/test_model_e2e.sh
@@ -506,6 +507,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
       contains(needs.changed-files.outputs.changed-files, 'extension/pybindings') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/export') ||
       contains(needs.changed-files.outputs.changed-files, 'runtime/__init__.py') ||
       contains(needs.changed-files.outputs.changed-files, 'exir/passes/convert_constant_dim_order_pass.py') ||
       contains(needs.changed-files.outputs.changed-files, 'exir/passes/insert_write_back_for_buffers_pass.py') ||
@@ -542,6 +544,7 @@ jobs:
           backends/cuda/tests/test_triton_sdpa_splitk.py
           backends/cuda/tests/test_triton_sdpa_nan.py
           backends/cuda/tests/test_tq4_sdpa.py
+          backends/cuda/tests/test_nvfp4_kv_bitexact.py
           backends/cuda/tests/test_int4_matmul.py
           backends/cuda/tests/test_int5_large_quantized_gemm.py
           backends/cuda/tests/test_quantized_gemm_family.py
@@ -566,6 +569,20 @@ jobs:
           backends/cuda/tests/test_int6_large_quantized_gemm.py
           backends/cuda/tests/test_int8_quantized_gemm.py
           backends/cuda/tests/test_cuda_graph_timing.py
+        )
+        # These run in unittest-cuda-nvfp4-exhaustive.
+        NVFP4_EXHAUSTIVE_TESTS=(
+          backends/cuda/tests/test_nvfp4_kv_cache.py
+          backends/cuda/tests/test_nvfp4_soft_decode.py
+          backends/cuda/tests/test_nvfp4_attn_act.py
+          backends/cuda/tests/test_nvfp4_small_m_gemm.py
+          backends/cuda/tests/test_nvfp4_split_k_export.py
+          backends/cuda/tests/test_nvfp4_export.py
+          backends/cuda/tests/test_nvfp4_w4a8_gemv.py
+          backends/cuda/tests/test_nvfp4_kernels.py
+          backends/cuda/tests/test_nvfp4_fusion.py
+          backends/cuda/tests/test_nvfp4_dequant.py
+          backends/cuda/tests/test_nvfp4_unit_scale.py
         )
 
         # Install executorch in editable mode so custom op libs land in-tree
@@ -641,7 +658,7 @@ jobs:
           python -m pytest "${KERNEL_TESTS[@]}" -v -o "addopts=" --durations=20
         else
           IGNORES=()
-          for t in "${KERNEL_TESTS[@]}" "${QUANTIZED_GEMM_TESTS[@]}" backends/cuda/tests/test_device_placement.py; do
+          for t in "${KERNEL_TESTS[@]}" "${QUANTIZED_GEMM_TESTS[@]}" "${NVFP4_EXHAUSTIVE_TESTS[@]}" backends/cuda/tests/test_device_placement.py; do
             IGNORES+=("--ignore=${t}")
           done
           python -m pytest backends/cuda/tests backends/cuda/passes/tests -v -o "addopts=" --durations=20 \
@@ -663,6 +680,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
       contains(needs.changed-files.outputs.changed-files, 'extension/llm/batching') ||
       contains(needs.changed-files.outputs.changed-files, 'extension/llm/serving') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/export') ||
       contains(needs.changed-files.outputs.changed-files, 'examples/llm_server/cpp') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/build_muse_glimmer_batching_smoke.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/muse_glimmer_batching_smoke.cpp') ||
@@ -708,13 +726,18 @@ jobs:
         test -x "${BATCHING_BIN_DIR}/muse_glimmer_batching_worker"
         test -x "${BATCHING_BIN_DIR}/muse_glimmer_batching_smoke"
 
-        # The batching export on a tiny model, and the CLI's backend dispatch.
+        # The batching export on a tiny model, the CLI's backend dispatch, the
+        # NVFP4 MLP, GGUF loader (extension/llm/export), and the tiny-model CUDA
+        # pipeline (inference, chunked prefill, export, NVFP4 KV cache).
         pip install gguf
         python -m pytest -v -o "addopts=" \
           examples/models/muse-glimmer/tests/test_cuda_batching_pipeline.py \
           examples/models/muse-glimmer/tests/test_cuda_dflash_packed.py \
           examples/models/muse-glimmer/tests/test_dflash_token_sampler.py \
-          examples/models/muse-glimmer/tests/test_checkpoint_context.py
+          examples/models/muse-glimmer/tests/test_checkpoint_context.py \
+          examples/models/muse-glimmer/tests/test_nvfp4_mlp.py \
+          examples/models/muse-glimmer/tests/test_nvfp4_gguf_loader.py \
+          examples/models/muse-glimmer/tests/test_cuda_pipeline.py
 
         # CUDA DFlash executor on a tiny exported target + draft. The native
         # tests skip without the artifact, so fail if any skipped.
@@ -736,6 +759,7 @@ jobs:
     if: |
       contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
       contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/export') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
       needs.run-decision.outputs.is-full-run == 'true'
     strategy:
@@ -771,6 +795,56 @@ jobs:
         export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
 
         python -m pytest ${{ matrix.tests }} -v -o "addopts=" --durations=20
+
+  # The NVFP4 tests with full parameter and autotune-config sweeps, which run
+  # here instead of in the unittest-cuda system shard.
+  unittest-cuda-nvfp4-exhaustive:
+    name: unittest-cuda-nvfp4-exhaustive (${{ matrix.shard }})
+    needs: [changed-files, run-decision]
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/export') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: kv-cache-decode-attn-act
+            tests: >-
+              backends/cuda/tests/test_nvfp4_kv_cache.py
+              backends/cuda/tests/test_nvfp4_soft_decode.py
+              backends/cuda/tests/test_nvfp4_attn_act.py
+          - shard: gemm-export
+            tests: >-
+              backends/cuda/tests/test_nvfp4_small_m_gemm.py
+              backends/cuda/tests/test_nvfp4_split_k_export.py
+              backends/cuda/tests/test_nvfp4_export.py
+              backends/cuda/tests/test_nvfp4_w4a8_gemv.py
+              backends/cuda/tests/test_nvfp4_kernels.py
+              backends/cuda/tests/test_nvfp4_fusion.py
+              backends/cuda/tests/test_nvfp4_dequant.py
+              backends/cuda/tests/test_nvfp4_unit_scale.py
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      timeout: 120
+      runner: mt-l-x86aavx2-11-41-a10g
+      gpu-arch-type: cuda
+      gpu-arch-version: "13.2"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+        bash ./install_executorch.sh
+        conda install -y -c conda-forge 'libstdcxx-ng>=12'
+        export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
+
+        EXECUTORCH_CUDA_EXHAUSTIVE_TESTS=1 python -m pytest ${{ matrix.tests }} \
+          -v -o "addopts=" --durations=20
 
   unittest-cuda-runtime:
     name: unittest-cuda-runtime
@@ -1282,6 +1356,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
       contains(needs.changed-files.outputs.changed-files, 'examples/models/muse-glimmer') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/export') ||
       needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
@@ -1294,6 +1369,8 @@ jobs:
           - variant: kquant-17gb
             mode: dflash-image-batching
           - variant: kquant-dynamic
+            mode: solo-text
+          - variant: nvfp4
             mode: solo-text
           - variant: kquant-dynamic
             mode: dflash-image
