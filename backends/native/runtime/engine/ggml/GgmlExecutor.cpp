@@ -834,13 +834,35 @@ class GgmlExecutable final : public EngineExecutable {
       }
       if (op == "aten.linear.default" &&
           !options_.allow_activation_quant_for_weight_only &&
-          !has_dequantized_input(node)) {
+          !dequantizes_to_f32(id) && !has_dequantized_input(node)) {
         throw std::runtime_error(
             "ggml: weight-only quantized linear '" + node.name +
-            "' needs allow_activation_quant_for_weight_only, since ggml "
-            "quantizes its activations");
+            "' shares its weight with a linear that quantizes its own "
+            "activations, so it needs allow_activation_quant_for_weight_only");
       }
     }
+  }
+
+  // Without activation quantization: a quantized weight that a linear reads,
+  // unless a linear reading it quantizes its own activations. Embeddings
+  // gather rows exactly from either form.
+  bool dequantizes_to_f32(ValueId id) const {
+    const TensorMeta& meta = method_.graph.value(id).tensor_meta();
+    if (options_.allow_activation_quant_for_weight_only ||
+        (packed_quant(meta) == nullptr && affine_quant(meta) == nullptr)) {
+      return false;
+    }
+    bool matmul = false;
+    for (const NodeId consumer : method_.graph.value(id).consumer_ids) {
+      const Node& node = method_.graph.node(consumer);
+      if (op_key(node.target) == "aten.linear.default") {
+        if (has_dequantized_input(node)) {
+          return false;
+        }
+        matmul = true;
+      }
+    }
+    return matmul;
   }
 
   bool has_dequantized_input(const Node& linear) const {
@@ -1195,7 +1217,9 @@ class GgmlExecutable final : public EngineExecutable {
       const bool f16_kv_cache = stores_f16_kv_cache(binding);
       ggml_tensor* tensor = new_tensor(
           persistent_context_.get(),
-          f16_kv_cache ? GGML_TYPE_F16 : compute_type(meta),
+          f16_kv_cache                               ? GGML_TYPE_F16
+              : dequantizes_to_f32(binding.value_id) ? GGML_TYPE_F32
+                                                     : compute_type(meta),
           meta.sizes);
       if (f16_kv_cache && f16_kv_cache_bytes != nullptr) {
         *f16_kv_cache_bytes += ggml_nbytes(tensor);
@@ -1246,12 +1270,14 @@ class GgmlExecutable final : public EngineExecutable {
             "ggml: stored byte count disagrees with PTG tensor '" +
             binding.key + "'");
       }
-      const bool is_q4 = affine_quant(meta) != nullptr;
+      const bool dequant = tensor->type == GGML_TYPE_F32 &&
+          (packed_quant(meta) != nullptr || affine_quant(meta) != nullptr);
+      const bool is_q4 = affine_quant(meta) != nullptr && !dequant;
       const bool narrow =
           tensor->type == GGML_TYPE_I32 && meta.dtype == ScalarType::Long;
       const auto scales = weight_scales_.find(binding.value_id);
       const bool scaled = scales != weight_scales_.end();
-      if (!is_q4 && !narrow && host_buffer) {
+      if (!is_q4 && !narrow && !dequant && host_buffer) {
         if (ggml_nbytes(tensor) != expected) {
           throw std::runtime_error(
               "ggml: stored byte count disagrees with ggml tensor '" +
@@ -1266,7 +1292,7 @@ class GgmlExecutable final : public EngineExecutable {
         loaded += expected;
         continue;
       }
-      const std::optional<OwnedBytes> bytes = is_q4 || narrow
+      const std::optional<OwnedBytes> bytes = is_q4 || narrow || dequant
           ? read_constant(binding.key)
           // Device uploads go through a heap copy: ROCm fails to pin a
           // file-backed mapping, and ggml_backend_tensor_set from one is
@@ -1293,6 +1319,22 @@ class GgmlExecutable final : public EngineExecutable {
         span = converted;
       } else if (narrow) {
         converted = narrow_to_int32(span);
+        span = converted;
+      } else if (dequant && affine_quant(meta) != nullptr) {
+        converted = affine_int4_to_f32(meta, span, load_q4_scales(meta));
+        span = converted;
+      } else if (dequant) {
+        const int64_t numel = ggml_nelements(tensor);
+        converted.resize(static_cast<size_t>(numel) * sizeof(float));
+        ggml_get_type_traits(compute_type(meta))
+            ->to_float(
+                // cppcheck-suppress invalidPointerCast ; the byte buffer is
+                // sized for floats and only accessed as float
+                span.data(),
+                // cppcheck-suppress invalidPointerCast ; the byte buffer is
+                // sized for floats and only accessed as float
+                reinterpret_cast<float*>(converted.data()),
+                numel);
         span = converted;
       } else if (scaled) {
         converted.assign(span.begin(), span.end());

@@ -451,9 +451,13 @@ install/bin/run_hf_llm_ggml --device cpu --cpu_threads 4 \
 The GGML runner accepts `--device cpu|gpu`, `--device_index`, `--cpu_threads`,
 and `--max_cached_graphs` (default 1, 0 rebuilds each call). For GPU execution,
 enable the desired `GGML_*` backend when configuring ExecuTorch, as above.
-GGML quantizes the activations of its quantized matmuls, so it rejects
-weight-only quantized linears, including GGUF weights, unless
-`--allow_activation_quant_for_weight_only` accepts that loss of precision.
+GGML quantizes the activations of its quantized matmuls, as llama.cpp does
+(`--allow_activation_quant_for_weight_only`, the default). For debugging,
+`--allow_activation_quant_for_weight_only=false` dequantizes weight-only
+quantized weights (int4 or GGUF) that linears read to F32
+at load and runs those matmuls without activation quantization, at about 4-12x
+their packed weight memory by type: a tail it removes comes from activation quantization. The test
+drivers (`ptn_runner_main`, `sample_test_main`) run that mode by default.
 
 `--kv_dtype=auto|fp32|fp16` sets the KV cache storage. `auto`, the default,
 takes the engine's, as llama.cpp stores it: F16 on a ggml GPU, F32 on the

@@ -740,23 +740,72 @@ void expect_compile_error(
   expect_compile_error(*make_context(*host, program), message);
 }
 
-TEST(GgmlEngineTest, RejectsWeightOnlyQuantizedLinearsByDefault) {
-  expect_compile_error(
-      make_linear_program(), "allow_activation_quant_for_weight_only");
-  const std::vector<uint8_t> program_bytes = make_linear_program(
+// Without activation quantization, a weight-only quantized linear runs on its
+// weights dequantized to F32: its result is the exact product, where ggml's
+// 8-bit activations put the GGUF one off by about 3e-2. Both GGUF and int4
+// weights.
+TEST(GgmlEngineTest, WeightOnlyQuantizedLinearsRunInF32WithoutActivationQuant) {
+  std::vector<float> input(256);
+  for (size_t i = 0; i < input.size(); ++i) {
+    input[i] = static_cast<float>(i % 7) / 7 - 0.3f;
+  }
+  // int4 weights: column c holds (c % 16) - 8, every group of 32 scaled by
+  // 1/8 (fp16 0x3000).
+  std::vector<uint8_t> int4(16 + 128);
+  for (size_t g = 0; g < 8; ++g) {
+    int4[2 * g + 1] = 0x30;
+  }
+  for (size_t c = 0; c < 256; c += 2) {
+    int4[16 + c / 2] = static_cast<uint8_t>((c % 16) | (((c + 1) % 16) << 4));
+  }
+  const std::vector<uint8_t> int4_program = make_linear_program(
       "torch.ops.aten.linear.default", /*with_cache=*/false, /*affine=*/true);
-  auto host = GgmlEngineHost::create();
-  auto context = host->create_ggml_context(
-      std::make_shared<const Program>(
-          Program::load(program_bytes.data(), program_bytes.size())),
-      std::make_shared<const Package>(
-          Package::load(OwnedBytes::from_vector(testing::make_zip({
-              {kProgramEntry, program_bytes},
-              {kSafeTensorsEntry,
-               testing::make_safetensors(
-                   kQ4_0SafeTensorsHeader, /*scales + weights=*/16 + 128)},
-          })))));
-  expect_compile_error(*context, "allow_activation_quant_for_weight_only");
+  const auto int4_context = [&](GgmlEngineHost& host) {
+    std::vector<uint8_t> safetensors =
+        testing::make_safetensors(kQ4_0SafeTensorsHeader, int4.size());
+    std::ranges::copy(int4, safetensors.end() - int4.size());
+    return host.create_ggml_context(
+        std::make_shared<const Program>(
+            Program::load(int4_program.data(), int4_program.size())),
+        std::make_shared<const Package>(
+            Package::load(OwnedBytes::from_vector(testing::make_zip({
+                {kProgramEntry, int4_program},
+                {kSafeTensorsEntry, std::move(safetensors)},
+            })))));
+  };
+  // make_linear_program's q4_k weights: of every 64, 32 ones then 32 twos.
+  double q4_k_exact = 0;
+  double int4_exact = 0;
+  for (size_t i = 0; i < input.size(); ++i) {
+    q4_k_exact += (i % 64 < 32 ? 1.0 : 2.0) * input[i];
+    int4_exact += (static_cast<double>(i % 16) - 8) / 8 * input[i];
+  }
+  for (const bool gguf : {true, false}) {
+    SCOPED_TRACE(gguf ? "gguf:q4_k" : "int4");
+    std::vector<float> outputs;
+    for (const bool allow : {true, false}) {
+      auto host = GgmlEngineHost::create(
+          GgmlEngineOptions{.allow_activation_quant_for_weight_only = allow});
+      auto context = gguf ? make_context(*host, make_linear_program())
+                          : int4_context(*host);
+      auto executable = context->compile("forward");
+      executable->set_input(0, input.data(), input.size(), ScalarType::Float);
+      executable->execute();
+      float output = 0.0f;
+      executable->get_output(0, &output, 1, ScalarType::Float);
+      outputs.push_back(output);
+      EXPECT_EQ(
+          context->materialized_constant_bytes(),
+          !allow     ? 256 * sizeof(float)
+              : gguf ? kQ4KBlockBytes
+                     : size_t{8 * (2 + 16)});
+    }
+    const double exact = gguf ? q4_k_exact : int4_exact;
+    if (gguf) {
+      EXPECT_GT(std::abs(outputs[0] - exact), 1e-2);
+    }
+    EXPECT_NEAR(outputs[1], exact, 1e-5);
+  }
 }
 
 TEST(GgmlEngineTest, SqrtPreservesNonFiniteValuesAndSignedZeroOnReplay) {
