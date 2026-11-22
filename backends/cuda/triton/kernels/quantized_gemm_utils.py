@@ -29,6 +29,7 @@ import triton.language as tl
 import triton.testing
 from executorch.backends.cuda.autotune.cuda_graph_timing import (
     graph_timing_active,
+    ParkedTensorsNotRestored,
     time_with_cuda_graph_us_counted,
 )
 from executorch.backends.cuda.autotune.launch_params import InvalidLaunchParam
@@ -375,7 +376,7 @@ def _warn_graph_timing_fallback(error: RuntimeError) -> None:
         )
 
 
-def autotune_do_bench(kernel_call, quantiles):
+def autotune_do_bench(kernel_call, quantiles, *, statistic="min", replays=1):
     """``do_bench`` for the quantized GEMM kernels' ``triton.autotune``.
 
     Inside ``cuda_graph_timing()`` on a capturable stream (the launch-parameter
@@ -384,11 +385,19 @@ def autotune_do_bench(kernel_call, quantiles):
     saturated CPU makes event-timed readings of these short kernels bimodal and
     their picks up to several times slower (see autotune/cuda_graph_timing.py).
     Otherwise, on the legacy default stream, or if the capture fails, it falls
-    back to Triton's timing.
+    back to Triton's timing. ``statistic`` / ``replays`` select the CUDA-graph
+    reading (see ``time_with_cuda_graph_us``).
     """
     if graph_timing_active() and torch.cuda.current_stream().cuda_stream != 0:
         try:
-            ms = time_with_cuda_graph_us_counted(kernel_call) / 1000.0
+            ms = (
+                time_with_cuda_graph_us_counted(
+                    kernel_call, statistic=statistic, replays=replays
+                )
+                / 1000.0
+            )
+        except ParkedTensorsNotRestored:
+            raise
         except RuntimeError as error:
             _warn_graph_timing_fallback(error)
         else:
@@ -455,7 +464,7 @@ def prune_by_main_loop_trips(trips_per_split, configs, named_args, **kwargs):
 
 
 def check_dtypes(
-    named: Sequence[tuple[str, torch.Tensor, Sequence[torch.dtype]]]
+    named: Sequence[tuple[str, torch.Tensor, Sequence[torch.dtype]]],
 ) -> Optional[str]:
     for name, tensor, dtypes in named:
         if tensor.dtype not in dtypes:

@@ -110,6 +110,21 @@ class FuseGGUFPassTest(unittest.TestCase):
         self.assertEqual(len(packed), 1)
         self.assertEqual(packed[0].meta.quant.scheme.codec, "gguf:q4_k")
 
+    def test_unsupported_gguf_type_raises_at_export(self):
+        # The engines decode only k-quants; reject other types at export rather
+        # than when the program loads on device.
+        class Linear(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("raw", torch.zeros(2, 36, dtype=torch.uint8))
+
+            def forward(self, x):
+                w = torch.ops.torchao.dequantize_gguf(self.raw, "nvfp4", x.dtype)
+                return nn.functional.linear(x, w)
+
+        with self.assertRaisesRegex(ValueError, "does not support GGUF quant type"):
+            _lower(Linear(), (torch.randn(2, 64),))
+
 
 class SignedInt4PackingTest(unittest.TestCase):
     def test_packs_even_value_into_low_nibble(self):

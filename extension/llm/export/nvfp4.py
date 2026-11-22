@@ -70,12 +70,28 @@ def _(qdata, scale, per_tensor_scale, block_size, output_dtype=torch.float32):
 
 
 class ExportableNVFP4Tensor(TorchAOBaseTensor):
-    """NVFP4 tensor subclass that dequantizes via a registered custom op."""
+    """NVFP4 tensor subclass that dequantizes via a registered custom op.
+
+    ``act_per_tensor_scale`` is an optional static activation global scale, a
+    Python float (ModelOpt / GGUF ``input_scale``, i.e. ``amax / (6 * 448)``);
+    None means activations are scaled dynamically per row. ``dequantize`` and
+    ``linear`` ignore it and ``torchao::dequantize_nvfp4`` has no argument for
+    it, so it never reaches an exported graph: backends that quantize
+    activations (W4A4) read it from the tensor when they pack the weight.
+    """
 
     tensor_data_names = ["qdata", "scale", "per_tensor_scale"]
-    tensor_attribute_names = ["block_size", "orig_dtype"]
+    tensor_attribute_names = ["block_size", "orig_dtype", "act_per_tensor_scale"]
 
-    def __new__(cls, qdata, scale, per_tensor_scale, block_size, orig_dtype):
+    def __new__(
+        cls,
+        qdata,
+        scale,
+        per_tensor_scale,
+        block_size,
+        orig_dtype,
+        act_per_tensor_scale=None,
+    ):
         K = qdata.shape[-1] * 8  # 8 FP4 values per uint32
         shape = (qdata.shape[0], K)
         self = torch.Tensor._make_wrapper_subclass(
@@ -86,6 +102,12 @@ class ExportableNVFP4Tensor(TorchAOBaseTensor):
         self.per_tensor_scale = per_tensor_scale
         self.block_size = block_size
         self.orig_dtype = orig_dtype
+        if act_per_tensor_scale is not None:
+            act = torch.as_tensor(act_per_tensor_scale, dtype=torch.float32)
+            if act.numel() != 1:
+                raise ValueError("NVFP4 act_per_tensor_scale must be a scalar")
+            act_per_tensor_scale = float(act)
+        self.act_per_tensor_scale = act_per_tensor_scale
         return self
 
     def dequantize(self, output_dtype=None):
@@ -118,6 +140,7 @@ class ExportableNVFP4Tensor(TorchAOBaseTensor):
             self.per_tensor_scale.to(device),
             self.block_size,
             dtype,
+            self.act_per_tensor_scale,
         )
 
     __torch_function__ = torch._C._disabled_torch_function_impl

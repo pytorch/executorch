@@ -23,12 +23,16 @@ Linear layouts:
   * Q6_K ``ExportableGGUFTensor`` -> ``CudaDp4aPlanarInt6Tensor`` (6-bit ql/qh
     split bit-planes).
   * genuine INT8 ``IntxUnpackedToInt8Tensor`` -> left unchanged (int8 dp4a path).
+  * ``ExportableNVFP4Tensor`` -> ``CudaNVFP4Tensor`` (an already packed
+    ``CudaNVFP4Tensor`` is assigned unchanged). A GGUF NVFP4
+    ``ExportableGGUFTensor`` raises: its per-tensor scale is a separate tensor.
 
 Embedding layouts:
   * GGUF ``ExportableGGUFTensor`` (e.g. the tied token embedding) -> gatherable
     int8 ``IntxUnpackedToInt8Tensor``.
   * genuine int8 ``IntxUnpackedToInt8Tensor`` -> unchanged.
   * int4 (``Exportable``/``Int4Tensor``) -> raises (no int4 embedding op).
+  * NVFP4, as for linears (``nvfp4_embedding`` gathers the packed rows).
 
 No CUDA is required for packing. ``load_checkpoint`` lives in
 ``extension/llm/export/load.py``; the model-free conversion helpers in
@@ -44,13 +48,34 @@ from executorch.extension.llm.export.quant.convert import _is_quantized
 # Per-module weight conversion
 
 
+def _pack_nvfp4(module: nn.Module, w: torch.Tensor) -> bool:
+    """Assign an NVFP4 weight as ``CudaNVFP4Tensor``; False for other types."""
+    from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
+    from executorch.extension.llm.export.gguf import ExportableGGUFTensor
+    from executorch.extension.llm.export.nvfp4 import ExportableNVFP4Tensor
+
+    if isinstance(w, ExportableGGUFTensor) and w.ggml_type == "nvfp4":
+        # GGUF keeps the per-tensor scale in a separate "<name>.scale" tensor,
+        # which only the checkpoint loader can pair by name.
+        raise ValueError(
+            "GGUF NVFP4 weights need their .scale tensor: convert them with "
+            "to_exportable_nvfp4_tensor(per_tensor_scale=...) before packing"
+        )
+    if isinstance(w, ExportableNVFP4Tensor):
+        w = CudaNVFP4Tensor.from_exportable(w)
+    elif not isinstance(w, CudaNVFP4Tensor):
+        return False
+    module.weight = nn.Parameter(w, requires_grad=False)
+    return True
+
+
 def pack_linear_for_cuda(module: nn.Module, weights: dict[str, torch.Tensor]) -> None:
     """Convert an ``nn.Linear``'s quantized weight to its CUDA layout, in place.
 
     Routes by weight type: ``ExportableInt4Tensor`` (or Q4_K
     ``ExportableGGUFTensor``) -> coalesced INT4, Q5_K ``ExportableGGUFTensor`` ->
     packed INT5, Q6_K ``ExportableGGUFTensor`` -> packed INT6, genuine
-    ``IntxUnpackedToInt8Tensor`` -> int8 passthrough.
+    ``IntxUnpackedToInt8Tensor`` -> int8 passthrough, NVFP4 -> ``CudaNVFP4Tensor``.
     """
     from executorch.backends.cuda.coalesced_int4_tensor import CudaCoalescedInt4Tensor
     from executorch.backends.cuda.dp4a_planar_int5_tensor import (
@@ -61,9 +86,12 @@ def pack_linear_for_cuda(module: nn.Module, weights: dict[str, torch.Tensor]) ->
     )
     from executorch.extension.llm.export.gguf import ExportableGGUFTensor
     from executorch.extension.llm.export.int4 import ExportableInt4Tensor
+
     from torchao.quantization import IntxUnpackedToInt8Tensor
 
     w = weights["weight"]
+    if _pack_nvfp4(module, w):
+        return
     if isinstance(w, ExportableInt4Tensor):
         # Canonical portable int4 (what load_checkpoint produces by default).
         # CudaCoalescedInt4Tensor reuses the nibble-packed qdata untouched and
@@ -90,6 +118,10 @@ def pack_linear_for_cuda(module: nn.Module, weights: dict[str, torch.Tensor]) ->
         # bit-planes, 0.75 B/elem) for the W6A8 dp4a decode kernel.
         # from_exportable_gguf reuses the shared Q6_K decode (gguf.py), once.
         w = CudaDp4aPlanarInt6Tensor.from_exportable_gguf(w)
+    elif isinstance(w, ExportableGGUFTensor) and w.ggml_type == "q8_0":
+        # GGUF Q8_0 (e.g. an NVFP4 checkpoint's lm_head): the same int8 values
+        # and 32-wide groups as the int8 dp4a path, with bf16 scales.
+        w = w.to_intx_unpacked_to_int8_tensor(scale_dtype=torch.bfloat16)
     elif isinstance(w, IntxUnpackedToInt8Tensor):
         # Genuine INT8 weight: left unchanged for the int8 dp4a path. The
         # mixed-precision HQQ-INT4 ("sensitive") checkpoint reaches this branch
@@ -107,20 +139,23 @@ def pack_linear_for_cuda(module: nn.Module, weights: dict[str, torch.Tensor]) ->
 def pack_embedding_for_cuda(
     module: nn.Module, weights: dict[str, torch.Tensor]
 ) -> None:
-    """Convert an ``nn.Embedding``'s quantized weight to gatherable int8, in place.
+    """Convert an ``nn.Embedding``'s quantized weight to a gatherable layout, in place.
 
     A GGUF ``ExportableGGUFTensor`` (Q4_K/Q6_K, e.g. the tied token embedding)
     is decoded to a gatherable int8 ``IntxUnpackedToInt8Tensor`` -- the packed
     int4/int6 matmul layouts can't gather, and the lossless int8 decode halves
     the footprint vs bf16. A genuine int8 ``IntxUnpackedToInt8Tensor`` (the
-    safetensors int8 embedding) is assigned unchanged. INT4 is unsupported (no
-    int4 embedding op).
+    safetensors int8 embedding) is assigned unchanged, and NVFP4 becomes a
+    ``CudaNVFP4Tensor``. INT4 is unsupported (no int4 embedding op).
     """
     from executorch.extension.llm.export.gguf import ExportableGGUFTensor
     from executorch.extension.llm.export.int4 import ExportableInt4Tensor
+
     from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
 
     w = weights["weight"]
+    if _pack_nvfp4(module, w):
+        return
     if isinstance(w, ExportableGGUFTensor):
         w = w.to_intx_unpacked_to_int8_tensor(scale_dtype=torch.bfloat16)
     elif isinstance(w, (Int4Tensor, ExportableInt4Tensor)):
