@@ -50,12 +50,15 @@ import contextlib
 import gc
 import logging
 import math
+import statistics
 import threading
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Iterator
 
 import torch
 from torch._inductor.runtime import benchmarking
+from torch._subclasses.fake_tensor import unset_fake_temporarily
+from torch.utils._python_dispatch import _disable_current_modes
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -91,14 +94,16 @@ _installed_previous: Callable[..., Any] | None = None
 _install_count = 0
 
 
-def time_with_cuda_graph_us_counted(fn: Callable[[], Any]) -> float:
+def time_with_cuda_graph_us_counted(
+    fn: Callable[[], Any], *, statistic: str = "min", replays: int = 1
+) -> float:
     """``time_with_cuda_graph_us`` with the out-of-memory retries and the captured
     and fallback counts of the active ``cuda_graph_timing()``."""
     stats = _STATE.stats
     if stats is None:
-        return time_with_cuda_graph_us(fn)
+        return time_with_cuda_graph_us(fn, statistic=statistic, replays=replays)
     try:
-        us = _time_capturing_robustly(fn, stats)
+        us = _time_capturing_robustly(fn, stats, statistic=statistic, replays=replays)
     except Exception:
         stats.fallbacks += 1
         raise
@@ -131,18 +136,35 @@ def _l2_flush_buffer() -> torch.Tensor:
     return _l2_flush_buffers[device]
 
 
-def time_with_cuda_graph_us(fn: Callable[[], Any]) -> float:
+def time_with_cuda_graph_us(
+    fn: Callable[[], Any], *, statistic: str = "min", replays: int = 1
+) -> float:
     """Device time of one ``fn()`` call with a cold L2, in microseconds.
 
     ``fn`` must launch its work on the current stream, which must not be the
     legacy default stream.
+
+    ``mean`` returns the median of per-replay cold-call means. Defaults retain
+    the existing single-replay minimum used by Inductor and INT4.
     """
-    return min(cuda_graph_call_times_us(fn))
+    if statistic not in ("min", "mean") or replays < 1:
+        raise ValueError("CUDA graph timing requires min/mean and positive replays")
+    samples = [
+        statistics.mean(times) if statistic == "mean" else min(times)
+        for times in _replay_call_times_us(fn, replays)
+    ]
+    return statistics.median(samples)
 
 
 def cuda_graph_call_times_us(fn: Callable[[], Any]) -> list[float]:
     """The device time of each of several ``fn()`` calls captured into one
     CUDA graph, each with a cold L2, in microseconds."""
+    return _replay_call_times_us(fn, 1)[0]
+
+
+def _replay_call_times_us(fn: Callable[[], Any], replays: int) -> list[list[float]]:
+    """Per-replay device times of the ``fn()`` calls captured into one CUDA
+    graph, each with a cold L2, in microseconds."""
     stream = torch.cuda.current_stream()
     if stream.cuda_stream == 0:
         raise RuntimeError("cannot capture on the legacy default CUDA stream")
@@ -172,9 +194,12 @@ def cuda_graph_call_times_us(fn: Callable[[], Any]) -> list[float]:
                 call_start.record()
                 fn()
                 call_end.record()
-        graph.replay()
-        events[-1][1].synchronize()
-        return [s.elapsed_time(e) * 1000.0 for s, e in events]
+        replays_times = []
+        for _ in range(replays):
+            graph.replay()
+            events[-1][1].synchronize()
+            replays_times.append([s.elapsed_time(e) * 1000.0 for s, e in events])
+        return replays_times
     finally:
         # A failed capture leaves nothing to release; that must not mask its error.
         with contextlib.suppress(RuntimeError):
@@ -209,26 +234,30 @@ def _parked_on_cpu(tensors: Iterable[torch.Tensor]) -> Iterator[int]:
     parked: list[tuple[torch.UntypedStorage, torch.UntypedStorage]] = []
     seen: set[int] = set()
     try:
-        for tensor in tensors:
-            if not isinstance(tensor, torch.Tensor) or not tensor.is_cuda:
-                continue
-            storage = tensor.untyped_storage()
-            if storage.nbytes() == 0 or storage.data_ptr() in seen:
-                continue
-            seen.add(storage.data_ptr())
-            host = storage.cpu()
-            storage.resize_(0)
-            parked.append((storage, host))
-        torch.cuda.empty_cache()
+        # AOT can enter here with fake and functional modes active. Storage
+        # copies must use real tensors; the body retains the caller's modes.
+        with unset_fake_temporarily(), _disable_current_modes():
+            for tensor in tensors:
+                if not isinstance(tensor, torch.Tensor) or not tensor.is_cuda:
+                    continue
+                storage = tensor.untyped_storage()
+                if storage.nbytes() == 0 or storage.data_ptr() in seen:
+                    continue
+                seen.add(storage.data_ptr())
+                host = storage.cpu()
+                storage.resize_(0)
+                parked.append((storage, host))
+            torch.cuda.empty_cache()
         yield sum(host.nbytes() for _, host in parked)
     finally:
         failed = 0
-        for storage, host in parked:
-            try:
-                _restore_storage(storage, host)
-            except Exception:  # noqa: BLE001 - try every storage, then raise
-                failed += 1
-        torch.cuda.synchronize()
+        with unset_fake_temporarily(), _disable_current_modes():
+            for storage, host in parked:
+                try:
+                    _restore_storage(storage, host)
+                except Exception:  # noqa: BLE001 - try every storage, then raise
+                    failed += 1
+            torch.cuda.synchronize()
         if failed:
             raise ParkedTensorsNotRestored(
                 f"{failed} of {len(parked)} model tensors parked on the CPU for "
@@ -243,15 +272,19 @@ def _cleanup_after_oom() -> None:
 
 
 def _time_capturing_robustly(
-    fn: Callable[[], Any], stats: CudaGraphTimingStats
+    fn: Callable[[], Any],
+    stats: CudaGraphTimingStats,
+    *,
+    statistic: str = "min",
+    replays: int = 1,
 ) -> float:
     try:
-        return time_with_cuda_graph_us(fn)
+        return time_with_cuda_graph_us(fn, statistic=statistic, replays=replays)
     except torch.OutOfMemoryError:
         stats.oom_retries += 1
         _cleanup_after_oom()
     try:
-        return time_with_cuda_graph_us(fn)
+        return time_with_cuda_graph_us(fn, statistic=statistic, replays=replays)
     except torch.OutOfMemoryError:
         stats.oom_retries += 1
         _cleanup_after_oom()
@@ -263,7 +296,7 @@ def _time_capturing_robustly(
             "CUDA-graph autotune timing: parked %.1f GiB of model tensors on the CPU to capture a candidate",
             parked_bytes / (1 << 30),
         )
-        return time_with_cuda_graph_us(fn)
+        return time_with_cuda_graph_us(fn, statistic=statistic, replays=replays)
 
 
 def _time_candidate_with_cuda_graph(
