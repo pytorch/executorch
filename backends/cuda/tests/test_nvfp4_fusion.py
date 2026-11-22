@@ -130,9 +130,10 @@ def test_linear_routing(mode, native, rows, fp32, impl, expected, monkeypatch):
         nvfp4_w4a8_gemv,
     )
 
-    def dequant(qdata, scale, per_tensor_scale, dtype):
+    def dequant(qdata, scale, per_tensor_scale, output_dtype):
         calls.append(("nvfp4_dequant", None))
-        return qdata.new_empty((qdata.shape[0], qdata.shape[1] * 2), dtype=dtype)
+        shape = (qdata.shape[0], qdata.shape[1] * 2)
+        return qdata.new_empty(shape, dtype=output_dtype)
 
     monkeypatch.setattr(nvfp4_dequant, "nvfp4_dequant", dequant)
     monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_IMPL", impl)
@@ -152,6 +153,8 @@ def test_linear_routing(mode, native, rows, fp32, impl, expected, monkeypatch):
     )
     record_calls(monkeypatch, nvfp4_w4a8_gemv, ("nvfp4_w4a8_gemv",), calls)
     monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: native)
+    # The routing is NVIDIA's; w4a8 raises on ROCm.
+    monkeypatch.setattr(torch.version, "hip", None)
     monkeypatch.setenv("ET_CUDA_NVFP4_ACT", mode)
     monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_OUTPUT", "fp32" if fp32 else "input")
     from torch.fx.experimental.symbolic_shapes import ShapeEnv

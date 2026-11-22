@@ -69,7 +69,7 @@ def cold_pick_cache(monkeypatch):
         ("auto", 16, True, False),
     ],
 )
-def test_packed_linear_pte(mode, m, dynamic, fp32, monkeypatch):
+def test_packed_linear_pte(mode, m, dynamic, fp32, monkeypatch):  # noqa: C901
     # Decode-size auto times W4A16 against W4A8 without native FP4.
     if mode == "w4a4" or (mode == "auto" and m > 4):
         if not _has_native_fp4():
@@ -184,26 +184,27 @@ def test_packed_linear_pte(mode, m, dynamic, fp32, monkeypatch):
     torch.testing.assert_close(actual.cpu(), reference(x), rtol=0.03, atol=0.03)
 
 
-@pytest.mark.parametrize("impl", ["auto", "dequant"])
-def test_dequant_prefill_pte(impl, monkeypatch):
+def test_dequant_prefill_pte(monkeypatch):
     """Dynamic M past the M <= 64 bucket: dequant + matmul prefill (the
-    non-native dispatch, on any GPU)."""
+    non-native dispatch, on any GPU), which auto and dequant both trace; the
+    program is lowered and run once."""
     from executorch.backends.cuda.quantize_op_dispatch import nvfp4_dispatch
 
     monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: False)
     monkeypatch.setenv("ET_CUDA_NVFP4_ACT", "w4a16")
     monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_OUTPUT", "input")
-    monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_IMPL", impl)
     module = PackedLinear().eval()
     x = torch.randn(100, 192, dtype=torch.bfloat16)
-    ep = torch.export.export(
-        module,
-        (x,),
-        dynamic_shapes=({0: torch.export.Dim("tokens", min=1, max=256)},),
-        strict=True,
-    )
-    targets = {str(node.target) for node in ep.graph.nodes}
-    assert "triton.nvfp4_dequant.default" in targets
+    for impl in ("auto", "dequant"):
+        monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_IMPL", impl)
+        ep = torch.export.export(
+            module,
+            (x,),
+            dynamic_shapes=({0: torch.export.Dim("tokens", min=1, max=256)},),
+            strict=True,
+        )
+        targets = {str(node.target) for node in ep.graph.nodes}
+        assert "triton.nvfp4_dequant.default" in targets, impl
     lowered = to_edge_transform_and_lower(
         ep,
         partitioner=[

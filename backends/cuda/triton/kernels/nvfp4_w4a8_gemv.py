@@ -239,7 +239,9 @@ def nvfp4_w4a8_gemv(
     split_k: int = -1,
 ) -> torch.Tensor:
     """NVFP4 W4A8 GEMV for small M (M is grid axis 1, so at most 65535); the
-    output keeps ``x.dtype``."""
+    output keeps ``x.dtype``. NVIDIA only. Scale bytes must be finite E4M3
+    (no 0x7F/0xFF), as ``CudaNVFP4Tensor.from_exportable`` checks; it is not
+    checked here."""
     if torch.version.hip is not None:
         raise RuntimeError("NVFP4 W4A8 (dp4a PTX) requires an NVIDIA GPU")
     _check_operands(x, qdata, scale, per_tensor_scale)
