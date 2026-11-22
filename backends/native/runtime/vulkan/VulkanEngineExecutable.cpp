@@ -295,6 +295,25 @@ size_t dynamic_dims(const TensorMeta& meta) {
   return count;
 }
 
+// Ops that read an input in a packing other than their output's: copies that
+// convert it, ops whose dispatch repacks their own inputs, and fused ops with
+// layouts of their own.
+bool reads_any_input_layout(std::string_view key) {
+  constexpr std::array<std::string_view, 9> kOps{
+      "aten.clone.default",
+      "aten.view_copy.default",
+      "aten.convolution.default",
+      "aten.embedding.default",
+      "aten.index.Tensor",
+      "aten.constant_pad_nd.default",
+      "llama.custom_sdpa.default",
+      "update_cache.default",
+      "et_vk.prepack.default",
+  };
+  return key.starts_with("et_vk.") ||
+      std::ranges::find(kOps, key) != kOps.end();
+}
+
 bool preserves_packed_layout(std::string_view key) {
   constexpr std::array<std::string_view, 7> kOps{
       "aten._to_copy.default",
@@ -1796,6 +1815,31 @@ class VulkanEngineExecutable final : public EngineExecutable {
     throw std::runtime_error("vulkan: unhandled argument kind");
   }
 
+  // `ref`, the value of `id`, repacked to `layout` unless it is prepacked or
+  // already in `layout`.
+  VkRef in_layout(ValueId id, VkRef ref, utils::GPUMemoryLayout layout) {
+    if (!valid(id) || graph_->val_is_tref(ref) || !g().value(id).is_tensor() ||
+        layout_at(id) == layout) {
+      return ref;
+    }
+    return repack(ref, g().value(id), storage_at(id), layout);
+  }
+
+  VkRef tensor_list_in_layout(
+      const TensorListArg& list,
+      utils::GPUMemoryLayout layout) {
+    std::vector<VkRef> refs;
+    refs.reserve(list.ids.size());
+    std::transform(
+        list.ids.begin(),
+        list.ids.end(),
+        std::back_inserter(refs),
+        [&](const ValueId id) {
+          return valid(id) ? in_layout(id, vref_at(id), layout) : none_ref_;
+        });
+    return graph_->add_value_list(std::move(refs));
+  }
+
   // Insert a same-shape clone into a fresh width-packed tensor when an
   // activation's current layout or storage cannot satisfy its consumer.
   VkRef repack_to_width(VkRef src, const Value& v, utils::StorageType storage) {
@@ -2137,6 +2181,13 @@ class VulkanEngineExecutable final : public EngineExecutable {
       }
     }
 
+    std::optional<utils::GPUMemoryLayout> output_layout;
+    for_each_output_value(n, [&](ValueId id) {
+      if (!output_layout && g().value(id).is_tensor()) {
+        output_layout = layout_at(id);
+      }
+    });
+
     std::vector<VkRef> args;
     args.reserve(n.inputs.size() + 1);
     for (const NamedArgument& na : n.inputs) {
@@ -2145,7 +2196,19 @@ class VulkanEngineExecutable final : public EngineExecutable {
         args.push_back(synth_zero_bias(n));
         continue;
       }
-      VkRef a = resolve_arg(na.arg);
+      // Layout assignment packs a width-packed op's neighbors along width,
+      // which leaves an op that reads and writes one packing, such as a
+      // reduction, expand or cat, with inputs in another packing. Ops that
+      // read `self` or bind inputs as their output are converted below.
+      const bool in_output_layout = !width && output_layout.has_value() &&
+          !reads_any_input_layout(key) && !reads_self_as_output(key) &&
+          !binds_output;
+      VkRef a = in_output_layout && na.arg.kind() == ArgKind::TensorList
+          ? tensor_list_in_layout(na.arg.as_tensor_list(), *output_layout)
+          : resolve_arg(na.arg);
+      if (in_output_layout && na.arg.kind() == ArgKind::Tensor) {
+        a = in_layout(na.arg.as_tensor().id, a, *output_layout);
+      }
       if (width && na.arg.kind() == ArgKind::Tensor) {
         const ValueId value_id = na.arg.as_tensor().id;
         if (valid(value_id)) {

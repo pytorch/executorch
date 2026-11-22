@@ -419,6 +419,43 @@ class _ProjectThenReduce(torch.nn.Module):
         return self.reduce(self.proj(x).view(1, x.shape[1], 4, 8))
 
 
+class _RmsNormCat(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.weight = torch.nn.Parameter(torch.rand(5) + 0.5)
+
+    def forward(self, x):
+        y = F.rms_norm(x, (5,), self.weight, eps=1e-6)
+        return torch.cat([y, y * 0.5], 1)
+
+
+class _ExpandBesideLinear(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear = torch.nn.Linear(1, 16)
+
+    def forward(self, x):
+        return x.expand(5, 2, 3) + self.linear(x)[..., :3]
+
+
+class _SumAfterLinear(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear = torch.nn.Linear(4, 4)
+
+    def forward(self, x):
+        return self.linear(x).sum(-1, keepdim=True)
+
+
+class _RepeatIntoRmsNorm(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.weight = torch.nn.Parameter(torch.rand(4) + 0.5)
+
+    def forward(self, x):
+        return F.rms_norm(x.repeat(1, 2), (4,), self.weight, eps=1e-6)
+
+
 class _PoolCloneLinear(torch.nn.Module):
     """A clone between a max pool, which ET-VK runs on channels-packed
     textures only, and a linear, which wants width-packed input: the clone
@@ -645,6 +682,20 @@ class CrossEngineTest(unittest.TestCase):
         for name, fn in ops.items():
             with self.subTest(op=name):
                 self._check_dynamic(_Lambda(fn), steps, None, atol_fraction=1e-5)
+
+    def test_ops_beside_width_packed_ops(self):
+        # Linear and rms_norm make their neighbors width-packed, while a cat,
+        # expand, reduction or repeat reads and writes one packing.
+        torch.manual_seed(0)
+        cases = {
+            "cat after rms_norm": (_RmsNormCat(), torch.randn(8, 4, 5)),
+            "expand beside linear": (_ExpandBesideLinear(), torch.randn(5, 2, 1)),
+            "sum after linear": (_SumAfterLinear(), torch.randn(1, 4)),
+            "repeat into rms_norm": (_RepeatIntoRmsNorm(), torch.randn(1, 2)),
+        }
+        for name, (model, x) in cases.items():
+            with self.subTest(case=name):
+                self._check_dynamic(model, [(x,)], None)
 
     def test_clone_between_pool_and_linear(self):
         torch.manual_seed(0)
