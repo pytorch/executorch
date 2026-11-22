@@ -132,6 +132,12 @@ class Torchao(Scheme):
 # TODO: Add a zero-d family once OutputCheck's bias standard error stops
 # assuming independent outputs.
 GGUF_SUPER_SCALES = {
+    "q4_0": [
+        {0: 2**-12},
+        {0: -(2**-12)},
+        {0: 3.1e-4},
+        {0: 3 * 2**-21},
+    ],
     "q8_0": [
         {0: 2**-12},
         {0: -(2**-12)},
@@ -285,6 +291,7 @@ def schemes() -> dict[str, Scheme]:
                 weight_dtype=torch.int4, weight_granularity=PerGroup(128)
             )
         ),
+        "gguf_q4_0": Gguf("q4_0"),
         "gguf_q8_0": Gguf("q8_0"),
         "gguf_q2_k": Gguf("q2_k"),
         "gguf_q3_k": Gguf("q3_k"),

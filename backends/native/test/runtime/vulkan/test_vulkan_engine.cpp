@@ -4560,6 +4560,33 @@ TEST(VulkanEngineTest, DecodesByteIdenticalGgufWeightsOfDifferentShapes) {
   EXPECT_EQ(q4_k, want_q4_k);
 }
 
+// A K-quant and a 32-weight codec whose blocks for a [2, 256] weight have the
+// same size. Each shared row is zero except for fp16 d = 1 at its start: the
+// K-quant reads zero sub-block scales, so every weight is 0, while the other
+// codec reads its first block's 32 zero codes as (0 - zero_point) * d.
+struct EqualSizeCodecs {
+  const char* k_quant;
+  const char* codec;
+  size_t row_bytes;
+  float zero_point;
+};
+
+TEST(VulkanEngineTest, DecodesByteIdenticalGgufWeightsOfEqualShape) {
+  for (const EqualSizeCodecs& c : std::vector<EqualSizeCodecs>{
+           {"gguf:q4_k", "gguf:q4_0", 144, 8.0f},
+       }) {
+    std::vector<uint8_t> bytes(kQ4KOut * c.row_bytes);
+    for (int64_t n = 0; n < kQ4KOut; ++n) {
+      bytes[n * c.row_bytes + 1] = 0x3C;
+    }
+    const auto [k_quant, codec] = run_byte_identical_gguf_weights(
+        {.codec = c.k_quant}, {.codec = c.codec}, bytes);
+    EXPECT_EQ(k_quant, std::vector<float>(kQ4KOut, 0.0f)) << c.k_quant;
+    EXPECT_EQ(codec, std::vector<float>(kQ4KOut, -32.0f * c.zero_point))
+        << c.codec;
+  }
+}
+
 TEST(VulkanEngineTest, ExecutesLinearOnDirectlyQuantizedWeight) {
   CompiledProgram compiled = compile_program(
       make_direct_q4_linear_program(), make_direct_q4_linear_tensors());
