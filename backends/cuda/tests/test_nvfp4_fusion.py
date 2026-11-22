@@ -172,42 +172,74 @@ def test_auto_bodies_forward_mode_split(fp4, monkeypatch):
 
     def recorder(name):
         def op(x, qdata, *args, **kwargs):
-            # Positional args after the weight scales: W4A4's act_scale.
+            # Positional args after the weight scales: W4A4's act_scale, M bound.
             calls.append((name, args[2:], kwargs))
             dtype = kwargs.get("output_dtype") or x.dtype
             return x.new_empty((x.shape[0], qdata.shape[0]), dtype=dtype)
 
         return op
 
-    for name in ("nvfp4_gemv", "nvfp4_w4a16", "nvfp4_w4a4"):
+    for name in ("nvfp4_gemv", "nvfp4_w4a16", "_launch_w4a4_impl"):
         monkeypatch.setattr(nvfp4_quantized_gemm, name, recorder(name))
     monkeypatch.setattr(nvfp4_quantized_gemm, "_split_workspace_limit", lambda: 2**40)
+    monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: True)
     w = shards(512)[0]
     weight = (w.qdata, w.scale, w.per_tensor_scale)
     split = 4
     mode_split = int(fp4) * nvfp4_dispatch._MODE_STRIDE + split
-    prefill_op = "nvfp4_w4a4" if fp4 else "nvfp4_w4a16"
-    decode_op = "nvfp4_w4a4" if fp4 else "nvfp4_gemv"
+    prefill_op = "_launch_w4a4_impl" if fp4 else "nvfp4_w4a16"
+    decode_op = "_launch_w4a4_impl" if fp4 else "nvfp4_gemv"
 
     x = torch.randn(37, 512, dtype=torch.bfloat16)
     act_scale = torch.full((1, 1), 0.5)
     out = nvfp4_dispatch._prefill(
         x, *weight, act_scale, 64, mode_split=mode_split, output_dtype=torch.float32
     )
-    act = (act_scale,) if fp4 else ()
     assert calls.pop() == (
         prefill_op,
-        act,
+        (act_scale, 64) if fp4 else (),
         {"split_k": split, "output_dtype": torch.float32},
     )
     assert out.dtype == torch.float32
     nvfp4_dispatch._decode(x[:2], *weight, act_scale, True, mode_split=mode_split)
     expected = {"split_k": split} if fp4 else {"split_k": split, "unit_scale": True}
-    assert calls.pop() == (decode_op, act, expected)
+    assert calls.pop() == (decode_op, (act_scale, 2) if fp4 else (), expected)
     # An unbounded M (None) rejects split-K before any kernel is called.
     with pytest.raises(InvalidLaunchParam, match="bounded M"):
         nvfp4_dispatch._prefill(x, *weight, act_scale, None, mode_split=mode_split)
     assert not calls
+    if fp4:
+        # Without native FP4, timing skips the W4A4 candidates.
+        monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: False)
+        with pytest.raises(InvalidLaunchParam, match="native FP4"):
+            nvfp4_dispatch._prefill(x, *weight, act_scale, 64, mode_split=mode_split)
+        with pytest.raises(InvalidLaunchParam, match="native FP4"):
+            nvfp4_dispatch._decode(x[:2], *weight, act_scale, mode_split=mode_split)
+        assert not calls
+
+
+@CUDA
+def test_auto_prefill_tunes_with_a_static_scale():
+    # Timing runs W4A4 candidates on random stand-ins, including the scale;
+    # without native FP4 it skips them.
+    from executorch.backends.cuda.autotune.launch_params import (
+        autotune_launch_params,
+        clear_launch_param_cache,
+    )
+    from executorch.backends.cuda.quantize_op_dispatch import nvfp4_dispatch
+
+    w = shards(512, device="cuda")[0]
+    x = torch.randn(37, 512, device="cuda", dtype=torch.bfloat16)
+    act = torch.full((1, 1), 0.002, device="cuda")
+    clear_launch_param_cache()
+    with autotune_launch_params() as stats:
+        out = nvfp4_dispatch.nvfp4_auto_prefill(
+            x, w.qdata, w.scale, w.per_tensor_scale, act
+        )
+    (pick,) = [p for p in stats.picks if p.param == "mode_split"]
+    fp4 = {c // nvfp4_dispatch._MODE_STRIDE for c in pick.times_us}
+    assert fp4 == ({0, 1} if _has_native_fp4() else {0})
+    assert out.shape == (37, w.shape[0]) and bool(out.isfinite().all())
 
 
 @pytest.mark.parametrize(
