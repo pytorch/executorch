@@ -700,11 +700,13 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
     new_gm_res = OpReplacePass()(new_gm)
     assert new_gm_res is not None
     new_gm = new_gm_res.graph_module
+    new_gm_res = NonzeroDimOrderPass(config._skip_dim_order)(new_gm)
+    assert new_gm_res is not None
+    new_gm = new_gm_res.graph_module
     if not config._skip_dim_order:
-        for dim_order_pass in (NonzeroDimOrderPass(), MemoryFormatOpsPass()):
-            new_gm_res = dim_order_pass(new_gm)
-            assert new_gm_res is not None
-            new_gm = new_gm_res.graph_module
+        new_gm_res = MemoryFormatOpsPass()(new_gm)
+        assert new_gm_res is not None
+        new_gm = new_gm_res.graph_module
 
     for p in post_op_replace_passes:
         new_gm_res = p(new_gm)
@@ -855,8 +857,8 @@ def _generate_edge_program(
     ):
         passes.append(ReplaceEmptyLikePass())
     passes.append(OpReplacePass())
+    passes.append(NonzeroDimOrderPass(config._skip_dim_order))
     if not config._skip_dim_order:
-        passes.append(NonzeroDimOrderPass())
         passes.append(MemoryFormatOpsPass())
 
     gm = program.graph_module

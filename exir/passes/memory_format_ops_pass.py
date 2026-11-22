@@ -83,10 +83,13 @@ class NonzeroDimOrderPass(ExportPass):
     runs before partitioning, so every op and every delegate is compiled for the
     layout it reads at run time. FoldNonzeroCopyPass removes the copy again
     where nonzero can write the default dim order itself.
+
+    Without dim order ops, the copy is a clone into the contiguous format.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, skip_dim_order: bool = False) -> None:
         super().__init__()
+        self._skip_dim_order = skip_dim_order
         # Maps each copy to the nonzero result it copies.
         self._results: Dict[ProxyValue, ProxyValue] = {}
         # Values computed from a copy that are laid out differently than in
@@ -148,12 +151,13 @@ class NonzeroDimOrderPass(ExportPass):
         # Only nonzero binds the size that depends on the data; the copy reads it.
         copy_meta = meta.copy()
         copy_meta.data.pop("unbacked_bindings", None)
-        copy = super().call_operator(
-            exir_ops.edge.dim_order_ops._clone_dim_order.default,
-            (result,),
-            {"dim_order": get_dim_order(torch.contiguous_format, 2)},
-            copy_meta,
-        )
+        if self._skip_dim_order:
+            copy_op = exir_ops.edge.aten.clone.default
+            copy_kwargs = {"memory_format": torch.contiguous_format}
+        else:
+            copy_op = exir_ops.edge.dim_order_ops._clone_dim_order.default
+            copy_kwargs = {"dim_order": get_dim_order(torch.contiguous_format, 2)}
+        copy = super().call_operator(copy_op, (result,), copy_kwargs, copy_meta)
         self._results[copy] = result
         return copy
 
@@ -229,7 +233,10 @@ class FoldNonzeroCopyPass(PassBase):
                 ):
                     continue
                 (copy,) = node.users
-                if copy.target != exir_ops.edge.dim_order_ops._clone_dim_order.default:
+                if copy.target not in (
+                    exir_ops.edge.dim_order_ops._clone_dim_order.default,
+                    exir_ops.edge.aten.clone.default,
+                ):
                     continue
                 # The copy node becomes the nonzero, since the graph signature
                 # can name it as an output.

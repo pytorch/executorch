@@ -523,6 +523,25 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
         self.assertTrue(output.is_contiguous())
         torch.testing.assert_close(output, torch.nonzero(x))
 
+    def test_nonzero_result_copied_without_dim_order_ops(self) -> None:
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                indices = torch.nonzero(x)
+                return indices, x[indices[:, 0], indices[:, 1]]
+
+        model = Model()
+        x = torch.tensor([[0.0, 1.0, 2.0], [3.0, 0.0, 0.0]])
+        edge = to_edge(
+            export(model, (x,), strict=True),
+            compile_config=EdgeCompileConfig(_skip_dim_order=True),
+        )
+        module = _load_for_executorch_from_buffer(edge.to_executorch().buffer)
+        outputs = module.run_method("forward", (x,))
+        # A caller that reads the data row by row gets the right indices.
+        self.assertTrue(outputs[0].is_contiguous())
+        for output, expected in zip(outputs, model(x), strict=True):
+            torch.testing.assert_close(output, expected)
+
     def test_nonzero_writes_default_dim_order_without_copy(self) -> None:
         class Model(torch.nn.Module):
             def forward(self, x):
