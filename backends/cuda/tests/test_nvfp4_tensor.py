@@ -97,6 +97,33 @@ def test_to_meta_keeps_layout():
     assert meta.shape == w.shape and meta.unit_scale
 
 
+def test_meta_and_fake_weights_check_a_number_scale_but_not_tensor_values():
+    w = shards(192)[0]
+    cpu = (w.qdata, w.scale, w.per_tensor_scale)
+    moved = CudaNVFP4Tensor(*cpu, act_per_tensor_scale=0.5).to("meta")
+    assert moved.act_per_tensor_scale.device.type == "meta"
+    meta = tuple(t.to("meta") for t in cpu)
+    # A meta tensor carries no value to read, so even zero is accepted.
+    CudaNVFP4Tensor(*meta, act_per_tensor_scale=torch.zeros(1, device="meta"))
+    # A Python number is checked on the host, for meta and fake weights too.
+    with pytest.raises(ValueError, match="finite and positive"):
+        CudaNVFP4Tensor(*meta, act_per_tensor_scale=0.0)
+    mode = FakeTensorMode()
+    fake = tuple(mode.from_tensor(t) for t in cpu)
+    with mode, pytest.raises(ValueError, match="finite and positive"):
+        CudaNVFP4Tensor(*fake, act_per_tensor_scale=-1.0)
+    portable = weight()
+    meta_portable = ExportableNVFP4Tensor(
+        *(t.to("meta") for t in (portable.qdata, portable.scale)),
+        portable.per_tensor_scale.to("meta"),
+        16,
+        torch.bfloat16,
+        act_per_tensor_scale=0.0,
+    )
+    with pytest.raises(ValueError, match="finite and positive"):
+        CudaNVFP4Tensor.from_exportable(meta_portable)
+
+
 def test_activation_scale_is_a_scalar_tensor():
     w = shards(192)[0]
     w = CudaNVFP4Tensor(
