@@ -14,7 +14,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import torch
-from executorch.extension.llm.export.gguf import ExportableGGUFTensor, iter_gguf, QK_K
+from executorch.extension.llm.export.gguf import ExportableGGUFTensor, iter_gguf
 from gguf import GGML_QUANT_SIZES, GGMLQuantizationType, GGUFWriter
 from torchao.core.config import AOBaseConfig
 from torchao.quantization import (
@@ -125,14 +125,43 @@ class Torchao(Scheme):
         return value
 
 
-# Families of fp16 super-block scales by byte offset in each block: powers of
-# two, where a dmin of 8 d (q4_k) or 16 d (q5_k) centers random weights near
-# zero, then negative, rounded and subnormal ones. A model's i-th quantized
-# module takes the i-th family, so one module per family isolates each in its
-# own output.
+# Families of fp16 block scales by byte offset in each block: powers of two,
+# where a type's dmin, if it has one, centers random weights near zero, then
+# negative, rounded and subnormal ones. A model's i-th quantized module takes
+# the i-th family, so one module per family isolates each in its own output.
 # TODO: Add a zero-d family once OutputCheck's bias standard error stops
 # assuming independent outputs.
 GGUF_SUPER_SCALES = {
+    "q4_0": [
+        {0: 2**-12},
+        {0: -(2**-12)},
+        {0: 3.1e-4},
+        {0: 3 * 2**-21},
+    ],
+    "q5_0": [
+        {0: 2**-12},
+        {0: -(2**-12)},
+        {0: 3.1e-4},
+        {0: 3 * 2**-21},
+    ],
+    "q8_0": [
+        {0: 2**-12},
+        {0: -(2**-12)},
+        {0: 3.1e-4},
+        {0: 3 * 2**-21},
+    ],
+    "q2_k": [
+        {80: 2**-12, 82: 3 * 2**-13},
+        {80: -(2**-12), 82: -3 * 2**-13},
+        {80: 3.1e-4, 82: 4.7e-4},
+        {80: 3 * 2**-21, 82: 9 * 2**-22},
+    ],
+    "q3_k": [
+        {108: 2**-12},
+        {108: -(2**-12)},
+        {108: 3.1e-4},
+        {108: 3 * 2**-21},
+    ],
     "q4_k": [
         {0: 2**-12, 2: 2**-9},
         {0: -(2**-12), 2: -(2**-9)},
@@ -154,6 +183,11 @@ GGUF_SUPER_SCALES = {
 }
 
 
+def _block(ggml_type: str) -> tuple[int, int]:
+    """Weights and bytes per block of a GGUF quant type."""
+    return GGML_QUANT_SIZES[GGMLQuantizationType[ggml_type.upper()]]
+
+
 def _random_blocks(
     ggml_type: str,
     rows: int,
@@ -162,9 +196,9 @@ def _random_blocks(
     rng: np.random.Generator,
 ) -> np.ndarray:
     """Valid `ggml_type` blocks for a [rows, cols] weight from random bytes and
-    the given super-block scales."""
-    _, block_bytes = GGML_QUANT_SIZES[GGMLQuantizationType[ggml_type.upper()]]
-    raw = rng.integers(0, 256, (rows, cols // QK_K, block_bytes), dtype=np.uint8)
+    the given block scales."""
+    block, block_bytes = _block(ggml_type)
+    raw = rng.integers(0, 256, (rows, cols // block, block_bytes), dtype=np.uint8)
     for offset, scale in scales.items():
         raw[..., offset : offset + 2] = np.array([scale], np.float16).view(np.uint8)
     return raw.reshape(rows, -1)
@@ -201,7 +235,7 @@ def _load_gguf(model: torch.nn.Module, ggml_type: str) -> None:
 
 @dataclass(frozen=True)
 class Gguf(Scheme):
-    """Weight-only GGUF k-quant blocks (`q4_k`, `q5_k` or `q6_k`) for every
+    """Weight-only GGUF blocks of `ggml_type` (`q4_k`, `q8_0`, ...) for every
     nn.Linear and nn.Embedding, loaded from a .gguf file."""
 
     ggml_type: str
@@ -213,7 +247,7 @@ class Gguf(Scheme):
     def fits(self, model: torch.nn.Module) -> bool:
         families = len(GGUF_SUPER_SCALES[self.ggml_type])
         return (
-            _fits(model, _WO_QSCHEME_MODULES, QK_K)
+            _fits(model, _WO_QSCHEME_MODULES, _block(self.ggml_type)[0])
             and len(_targets(model, _WO_QSCHEME_MODULES)) <= families
         )
 
@@ -263,6 +297,11 @@ def schemes() -> dict[str, Scheme]:
                 weight_dtype=torch.int4, weight_granularity=PerGroup(128)
             )
         ),
+        "gguf_q4_0": Gguf("q4_0"),
+        "gguf_q5_0": Gguf("q5_0"),
+        "gguf_q8_0": Gguf("q8_0"),
+        "gguf_q2_k": Gguf("q2_k"),
+        "gguf_q3_k": Gguf("q3_k"),
         "gguf_q4_k": Gguf("q4_k"),
         "gguf_q5_k": Gguf("q5_k"),
         "gguf_q6_k": Gguf("q6_k"),
