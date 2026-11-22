@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstring>
 #include <optional>
 #include <stdexcept>
@@ -556,6 +557,7 @@ constexpr auto kKernels = std::to_array<KernelSpec>({
      6,
      1,
      nullptr},
+    {"torch.ops.aten.softplus.default", "aten::softplus.out", 3, 1, nullptr},
     {"torch.ops.aten.split_copy.Tensor",
      "aten::split_copy.Tensor_out",
      3,
@@ -676,6 +678,66 @@ struct KernelRoute {
   OpFunction kernel;
 };
 
+double scalar_value(const EValue& value) {
+  return value.isDouble() ? value.toDouble()
+                          : static_cast<double>(value.toInt());
+}
+
+// out[i] = compute(in[i]) over contiguous float tensors, computed in float as
+// ATen's CPU kernels compute Half and BFloat16.
+template <typename Compute>
+void map_floats(
+    KernelRuntimeContext& context,
+    const EValue& in_value,
+    EValue& out_value,
+    Compute compute) {
+  const aten::Tensor& in = in_value.toTensor();
+  aten::Tensor& out = out_value.toTensor();
+  if (in.scalar_type() != out.scalar_type() || in.numel() != out.numel()) {
+    context.fail(Error::InvalidArgument);
+    return;
+  }
+  const auto apply = [&]<typename T>() {
+    const T* src = in.const_data_ptr<T>();
+    T* dst = out.mutable_data_ptr<T>();
+    for (ssize_t index = 0; index < in.numel(); ++index) {
+      dst[index] = static_cast<T>(compute(static_cast<float>(src[index])));
+    }
+  };
+  switch (in.scalar_type()) {
+    case aten::ScalarType::Float:
+      apply.template operator()<float>();
+      return;
+    case aten::ScalarType::Half:
+      apply.template operator()<aten::Half>();
+      return;
+    case aten::ScalarType::BFloat16:
+      apply.template operator()<aten::BFloat16>();
+      return;
+    default:
+      context.fail(Error::InvalidArgument);
+  }
+}
+
+// Stack: self, beta, threshold, out, return slot.
+void softplus_out(KernelRuntimeContext& context, Span<EValue*> stack) {
+  const auto beta = static_cast<float>(scalar_value(*stack[1]));
+  const auto threshold = static_cast<float>(scalar_value(*stack[2]));
+  map_floats(context, *stack[0], *stack[3], [beta, threshold](float x) {
+    return x * beta > threshold ? x : std::log1p(std::exp(x * beta)) / beta;
+  });
+}
+
+// Out variants the linked kernel libraries may lack, used only then.
+struct FallbackKernel {
+  std::string_view name;
+  OpFunction kernel;
+};
+
+constexpr auto kFallbackKernels = std::to_array<FallbackKernel>({
+    {"aten::softplus.out", softplus_out},
+});
+
 class KernelRoutes {
  public:
   KernelRoutes() {
@@ -683,6 +745,16 @@ class KernelRoutes {
       auto kernel = get_op_function_from_registry(spec.kernel);
       if (kernel.ok()) {
         routes_.push_back({&spec, kernel.get()});
+        continue;
+      }
+      const auto fallback = std::find_if(
+          kFallbackKernels.begin(),
+          kFallbackKernels.end(),
+          [&spec](const auto& candidate) {
+            return candidate.name == spec.kernel;
+          });
+      if (fallback != kFallbackKernels.end()) {
+        routes_.push_back({&spec, fallback->kernel});
       }
     }
     std::sort(routes_.begin(), routes_.end(), [](const auto& a, const auto& b) {

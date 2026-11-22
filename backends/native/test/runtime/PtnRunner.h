@@ -16,6 +16,7 @@ namespace ptn::testing {
 // having made the trade, so an engine that never makes it rejects the option.
 struct HostOptions {
   // Quantize the activations of linears whose weights alone are quantized.
+  // Off, ggml runs those matmuls in F32 on dequantized weights.
   bool allow_activation_quant_for_weight_only = false;
 };
 
