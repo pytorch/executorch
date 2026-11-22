@@ -13,11 +13,14 @@ llama.cpp's ``convert_hf_to_gguf.py`` writes with, or a table here for an
 architecture gguf-py does not know; ``convert`` undoes the
 weight changes that converter makes for the architecture. Those changes move whole
 rows or touch only unquantized norms, so quantized GGUF blocks stay byte-exact.
+Export covers the text decoder only: a GGUF's vision and audio encoder tensors,
+if it has any, are skipped with a warning.
 """
 
 from __future__ import annotations
 
 import re
+import warnings
 from collections.abc import Iterable, Iterator
 from typing import Callable
 
@@ -30,6 +33,19 @@ KeyMap = Callable[[str], str | None]
 
 # GGUF tensors that Hugging Face computes from the model config instead.
 _DERIVED = frozenset({"rope_freqs.weight"})
+
+
+def _encoder_prefixes() -> tuple[str, ...]:
+    """Name prefixes of gguf-py's vision and audio encoder tensors."""
+    return tuple(
+        sorted(
+            {
+                name.split(".", 1)[0] + "."
+                for tensor, name in gguf.TENSOR_NAMES.items()
+                if tensor.name.startswith(("V_", "A_"))
+            }
+        )
+    )
 
 
 def gguf_architecture(path: str) -> str:
@@ -207,7 +223,9 @@ def gguf_to_hf(
     """Return the ``key_map`` and ``convert`` that load a GGUF file of
     ``architecture`` into ``model``, a Hugging Face model.
 
-    The key map raises for a GGUF tensor that names no parameter of ``model``,
+    The key map skips vision and audio encoder tensors, warning once, and the
+    tensors Hugging Face derives from the config, e.g. ``rope_freqs.weight``. It
+    raises for any other GGUF tensor that names no parameter of ``model``,
     unless ``truncated``: a model built with fewer layers than the file holds
     then skips the blocks past its last layer.
     """
@@ -233,10 +251,23 @@ def gguf_to_hf(
             if name is not None:
                 names[name] = fqn
 
+    encoder = _encoder_prefixes()
+    warned = False
+
     def key_map(name: str) -> str | None:
+        nonlocal warned
         if name in names:
             return names[name]
         if name in _DERIVED:
+            return None
+        if name.startswith(encoder):
+            if not warned:
+                warnings.warn(
+                    "skipping the GGUF's vision and audio encoder tensors: export "
+                    "covers the text decoder only",
+                    stacklevel=2,
+                )
+                warned = True
             return None
         block = re.match(r"blk\.(\d+)\.", name)
         if truncated and block and int(block[1]) >= config.num_hidden_layers:

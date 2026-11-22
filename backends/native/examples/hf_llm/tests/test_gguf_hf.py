@@ -7,6 +7,7 @@
 import os
 import tempfile
 import unittest
+import warnings
 
 import gguf
 import numpy as np
@@ -17,6 +18,7 @@ from executorch.backends.native.examples.hf_llm.gguf_hf import (
     gguf_to_hf,
 )
 from executorch.extension.llm.export.gguf import ExportableGGUFTensor
+from executorch.extension.llm.export.load import iter_checkpoint
 from transformers import (
     AutoModelForCausalLM,
     Gemma2Config,
@@ -83,6 +85,85 @@ def _to_gguf_rows(weight: torch.Tensor, heads: int) -> torch.Tensor:
     )
 
 
+# The GGUF type of each quantized weight of a two-layer tiny Llama by llama.cpp
+# role, mixing types as "Q4_K_M" files do. A "blk.<i>.<role>" entry overrides
+# the role in one layer.
+_MIXED_TYPES = {
+    "token_embd": "q4_k",
+    "output": "q6_k",
+    "attn_q": "q4_k",
+    "attn_k": "q5_k",
+    "attn_v": "q6_k",
+    "attn_output": "q4_k",
+    "ffn_gate": "q5_k",
+    "ffn_up": "q4_k",
+    "ffn_down": "q6_k",
+    "blk.1.attn_v": "q8_0",
+    "blk.1.attn_q": "q3_k",
+    "blk.1.ffn_up": "q2_k",
+    "blk.1.attn_output": "q4_0",
+    "blk.1.ffn_gate": "q5_0",
+    "blk.1.attn_k": "q5_1",
+    "blk.1.ffn_down": "q4_1",
+}
+_LAYER_ROLES = (
+    "attn_q",
+    "attn_k",
+    "attn_v",
+    "attn_output",
+    "ffn_gate",
+    "ffn_up",
+    "ffn_down",
+)
+# The HF parameter each quantized tensor of that file loads into, written out
+# rather than taken from gguf_to_hf, so that a wrong mapping cannot pass on its
+# own terms.
+_HF_NAMES = {
+    "token_embd.weight": "model.embed_tokens.weight",
+    "output.weight": "lm_head.weight",
+    "blk.0.attn_q.weight": "model.layers.0.self_attn.q_proj.weight",
+    "blk.0.attn_k.weight": "model.layers.0.self_attn.k_proj.weight",
+    "blk.0.attn_v.weight": "model.layers.0.self_attn.v_proj.weight",
+    "blk.0.attn_output.weight": "model.layers.0.self_attn.o_proj.weight",
+    "blk.0.ffn_gate.weight": "model.layers.0.mlp.gate_proj.weight",
+    "blk.0.ffn_up.weight": "model.layers.0.mlp.up_proj.weight",
+    "blk.0.ffn_down.weight": "model.layers.0.mlp.down_proj.weight",
+    "blk.1.attn_q.weight": "model.layers.1.self_attn.q_proj.weight",
+    "blk.1.attn_k.weight": "model.layers.1.self_attn.k_proj.weight",
+    "blk.1.attn_v.weight": "model.layers.1.self_attn.v_proj.weight",
+    "blk.1.attn_output.weight": "model.layers.1.self_attn.o_proj.weight",
+    "blk.1.ffn_gate.weight": "model.layers.1.mlp.gate_proj.weight",
+    "blk.1.ffn_up.weight": "model.layers.1.mlp.up_proj.weight",
+    "blk.1.ffn_down.weight": "model.layers.1.mlp.down_proj.weight",
+}
+# The byte offsets of each type's fp16 block scales.
+_SCALE_OFFSETS = {
+    "q4_k": (0, 2),
+    "q5_k": (0, 2),
+    "q6_k": (208,),
+    "q8_0": (0,),
+    "q3_k": (108,),
+    "q2_k": (80, 82),
+    "q4_0": (0,),
+    "q5_0": (0,),
+    "q5_1": (0, 2),
+    "q4_1": (0, 2),
+}
+
+
+def _random_blocks(ggml_type: str, rows: int, cols: int, seed: int) -> np.ndarray:
+    """Random `ggml_type` blocks with finite fp16 scales."""
+    block, block_bytes = gguf.GGML_QUANT_SIZES[
+        gguf.GGMLQuantizationType[ggml_type.upper()]
+    ]
+    raw = np.random.default_rng(seed).integers(
+        0, 256, (rows, cols // block, block_bytes), dtype=np.uint8
+    )
+    for offset in _SCALE_OFFSETS[ggml_type]:
+        raw[..., offset : offset + 2] = np.array([2**-10], np.float16).view(np.uint8)
+    return raw.reshape(rows, -1)
+
+
 class GgufHfTest(unittest.TestCase):
     def test_maps_standard_gguf_names(self) -> None:
         cases = {
@@ -127,6 +208,24 @@ class GgufHfTest(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "maps to no llama parameter"):
             key_map("blk.0.attn_qkv.weight")
+
+    def test_skips_multimodal_encoder_tensors(self) -> None:
+        key_map, _ = gguf_to_hf(_tiny(LlamaConfig), "llama")
+        encoder = (
+            "v.blk.0.attn_q.weight",
+            "mm.input_projection.weight",
+            "a.conv1d.0.weight",
+        )
+
+        # Not assertWarns: it reads every module in sys.modules, and transformers
+        # 5's lazy modules import optional dependencies on attribute access.
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            self.assertEqual([key_map(n) for n in encoder], [None] * len(encoder))
+        self.assertEqual(sum("text decoder only" in str(w.message) for w in caught), 1)
+        self.assertEqual(key_map("output_norm.weight"), "model.norm.weight")
+        with self.assertRaisesRegex(ValueError, "maps to no llama parameter"):
+            key_map("vblk.0.attn_q.weight")
 
     def test_checks_the_architecture_against_the_model(self) -> None:
         gguf_to_hf(_tiny(MistralConfig), "llama")
@@ -302,3 +401,69 @@ class GgufHfTest(unittest.TestCase):
         weight = torch.randn(64, 64)
 
         self.assertIs(convert("model.layers.0.self_attn.q_proj.weight", weight), weight)
+
+    def test_loads_a_mixed_type_gguf(self) -> None:
+        model = AutoModelForCausalLM.from_config(
+            LlamaConfig(
+                vocab_size=32,
+                hidden_size=256,
+                intermediate_size=512,
+                num_hidden_layers=2,
+                num_attention_heads=4,
+                num_key_value_heads=2,
+                head_dim=64,
+            )
+        )
+        key_map, convert = gguf_to_hf(model, "llama")
+        params = model.state_dict()
+        names = ["token_embd", "output"]
+        names += [f"blk.{i}.{role}" for i in range(2) for role in _LAYER_ROLES]
+        types = {
+            f"{name}.weight": _MIXED_TYPES.get(name, _MIXED_TYPES[name.split(".")[-1]])
+            for name in names
+        }
+        self.assertEqual(set(types), set(_HF_NAMES))
+        # Distinct bytes for every tensor, so that a weight loaded under another
+        # tensor's name fails the byte comparison below.
+        hf_blocks = {
+            name: _random_blocks(ggml_type, *params[_HF_NAMES[name]].shape, seed)
+            for seed, (name, ggml_type) in enumerate(types.items())
+        }
+        heads = {f"blk.{i}.attn_q.weight": 4 for i in range(2)}
+        heads |= {f"blk.{i}.attn_k.weight": 2 for i in range(2)}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "model.gguf")
+            writer = gguf.GGUFWriter(path, "llama")
+            norms = ["output_norm"]
+            norms += [
+                f"blk.{i}.{n}" for i in range(2) for n in ("attn_norm", "ffn_norm")
+            ]
+            for norm in norms:
+                writer.add_tensor(f"{norm}.weight", np.ones(256, np.float32))
+            for name, ggml_type in types.items():
+                rows = torch.from_numpy(hf_blocks[name])
+                if name in heads:
+                    rows = _to_gguf_rows(rows, heads[name])
+                writer.add_tensor(
+                    name,
+                    rows.numpy(),
+                    raw_dtype=gguf.GGMLQuantizationType[ggml_type.upper()],
+                )
+            writer.write_header_to_file()
+            writer.write_kv_data_to_file()
+            writer.write_tensors_to_file()
+            writer.close()
+
+            loaded = dict(iter_checkpoint(path, key_map=key_map, convert=convert))
+
+        self.assertEqual(set(loaded), set(params))
+        for name, ggml_type in types.items():
+            with self.subTest(name):
+                self.assertEqual(key_map(name), _HF_NAMES[name])
+                value = loaded[_HF_NAMES[name]]
+                self.assertIsInstance(value, ExportableGGUFTensor)
+                self.assertEqual(value.ggml_type, ggml_type)
+                self.assertEqual(value.shape, params[_HF_NAMES[name]].shape)
+                self.assertTrue(
+                    torch.equal(value.raw, torch.from_numpy(hf_blocks[name]))
+                )
