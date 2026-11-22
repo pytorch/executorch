@@ -118,6 +118,25 @@ _TIMING_LOCK = threading.RLock()
 _IN_PREPASS: contextvars.ContextVar[bool] = contextvars.ContextVar(
     "autotune_in_prepass", default=False
 )
+# Set while candidates run on random stand-ins for the traced inputs.
+_ON_RANDOM_INPUTS: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "autotune_on_random_inputs", default=False
+)
+
+
+def timing_on_random_inputs() -> bool:
+    """Whether a launch is being timed on random stand-ins for its inputs, so
+    their values (e.g. a scale an op would validate) mean nothing."""
+    return _ON_RANDOM_INPUTS.get()
+
+
+@contextlib.contextmanager
+def _on_random_inputs() -> Iterator[None]:
+    token = _ON_RANDOM_INPUTS.set(True)
+    try:
+        yield
+    finally:
+        _ON_RANDOM_INPUTS.reset(token)
 
 
 @contextlib.contextmanager
@@ -234,6 +253,7 @@ def _time_candidates(
         unset_fake_temporarily(),
         _disable_current_modes(),
         set_wrap_triton_enabled(False),
+        _on_random_inputs(),
     ):
         device = _first_device((*args, *kwargs.values()))
         stream = torch.cuda.Stream(device)

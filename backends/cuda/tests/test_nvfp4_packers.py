@@ -7,7 +7,8 @@ import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
 import pytest
 import torch
 from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
-from executorch.backends.cuda.tests.nvfp4_test_utils import GemmaPacked, portable_weight
+from executorch.backends.cuda.tests.nvfp4_gemma_test_utils import GemmaPacked
+from executorch.backends.cuda.tests.nvfp4_test_utils import portable_weight
 from executorch.examples.models.gemma4_31b.cuda_packers import (
     pack_embedding_for_cuda,
     pack_linear_for_cuda,
@@ -85,6 +86,24 @@ def test_packed_modules_export_nvfp4_ops(native, monkeypatch):
         assert isinstance(prefill.args[4], torch.fx.Node)
     else:
         assert len([t for t in nodes if t.startswith("triton.nvfp4_")]) == 2
+
+
+@pytest.mark.parametrize("native", [False, True])
+def test_packed_linear_decode_receives_unit_scale(native, monkeypatch):
+    from executorch.backends.cuda.quantize_op_dispatch import nvfp4_dispatch
+
+    monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: native)
+    # Native FP4 decode times the GEMV against W4A4 in nvfp4_auto_decode;
+    # forced W4A16 keeps the plain GEMV.
+    monkeypatch.setenv("ET_CUDA_NVFP4_ACT", "auto" if native else "w4a16")
+    x = torch.randn(1, 192, dtype=torch.bfloat16)
+    ep = torch.export.export(GemmaPacked(), (torch.tensor([[1]]), x), strict=True)
+    nodes = {
+        str(node.target): node for node in ep.graph.nodes if node.op == "call_function"
+    }
+    node = nodes[f"triton.nvfp4_{'auto_decode' if native else 'gemv'}.default"]
+    names = [argument.name for argument in node.target._schema.arguments]
+    assert {**dict(zip(names, node.args)), **node.kwargs}["unit_scale"] is True
 
 
 @pytest.mark.parametrize("pack", [pack_linear_for_cuda, pack_embedding_for_cuda])
