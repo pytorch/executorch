@@ -331,6 +331,12 @@ class TestExportableGGUFTensor(unittest.TestCase):
             self.assertEqual(t.ggml_type, ggml_type)
             self.assertTrue(torch.equal(t.raw, raw), ggml_type)
 
+    def test_iter_gguf_keeps_stacked_quantized_matrices(self):
+        raw = torch.stack([_make_raw("q8_0", N=2, nb=1) for _ in range(3)])
+        t = self._iter_gguf_of({"q8_0": raw})["q8_0"]
+        self.assertEqual(t.shape, (3, 2, 32))
+        self.assertTrue(torch.equal(t.raw, raw))
+
     def test_iter_gguf_rejects_quant_types_not_yet_validated(self):
         # TQ1_0 is a block-quantized ggml type that no op sample validates.
         raws = {"tq1_0": torch.zeros(2, 54, dtype=torch.uint8)}
@@ -452,6 +458,29 @@ class TestExportableGGUFTensor(unittest.TestCase):
         ref = torch.nn.functional.embedding(idx, t.dequantize(torch.bfloat16))
         self.assertTrue(torch.equal(out, ref))
 
+    def test_stacked_raw_holds_one_matrix_per_expert(self):
+        raw = torch.stack([_make_q6k_raw(N=3, nb=1, seed=s) for s in range(4)])
+        t = ExportableGGUFTensor.from_raw(raw, "q6_k", torch.float32)
+        self.assertEqual(t.shape, (4, 3, 256))
+        want = torch.stack([_gguf_ref(r, GGMLQuantizationType.Q6_K) for r in raw])
+        self.assertTrue(torch.equal(t.dequantize(), want))
+
+    def test_subclass_index_gathers_dequantized_experts(self):
+        raw = torch.stack([_make_q6k_raw(N=3, nb=1, seed=s) for s in range(4)])
+        t = ExportableGGUFTensor.from_raw(raw, "q6_k", torch.float32)
+        ids = torch.tensor([2, 0, 2, 3])
+        self.assertTrue(torch.equal(t[ids], t.dequantize()[ids]))
+
+    def test_torchao_conversions_refuse_stacked_matrices(self):
+        q4k = torch.stack([_make_q4k_raw(N=3, nb=1, seed=s) for s in range(2)])
+        q6k = torch.stack([_make_q6k_raw(N=3, nb=1, seed=s) for s in range(2)])
+        t4 = ExportableGGUFTensor.from_raw(q4k, "q4_k")
+        t6 = ExportableGGUFTensor.from_raw(q6k, "q6_k")
+        with self.assertRaisesRegex(NotImplementedError, "2-D"):
+            t4.to_exportable_int4_tensor()
+        with self.assertRaisesRegex(NotImplementedError, "2-D"):
+            t6.to_intx_unpacked_to_int8_tensor()
+
     def test_unsupported_type_raises(self):
         raw = torch.zeros(1, _Q6_K_BLOCK_BYTES, dtype=torch.uint8)
         # Not block-quantized, not lowercase, and not a ggml type.
@@ -507,6 +536,26 @@ class TestExportableGGUFTensorExport(unittest.TestCase):
             {}
         )
         self.assertIn("torchao.dequantize_gguf.default", self._targets(ep))
+
+    def test_stacked_experts_export_with_dequantize_gguf(self):
+        raw = torch.stack([_make_q6k_raw(N=3, nb=1, seed=s) for s in range(4)])
+        t = ExportableGGUFTensor.from_raw(raw, "q6_k", torch.float32)
+
+        class M(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.w = torch.nn.Parameter(t, requires_grad=False)
+
+            def forward(self, x, ids):
+                return torch.bmm(self.w[ids], x.unsqueeze(-1)).squeeze(-1)
+
+        example = (torch.randn(5, 256), torch.tensor([0, 3, 1, 1, 2]))
+        ep = torch.export.export(M(), example).run_decompositions({})
+        self.assertIn("torchao.dequantize_gguf.default", self._targets(ep))
+        self.assertIn("aten.index.Tensor", self._targets(ep))
+        x, ids = example
+        want = torch.bmm(t.dequantize()[ids], x.unsqueeze(-1)).squeeze(-1)
+        self.assertTrue(torch.equal(ep.module()(*example), want))
 
 
 class TestMaxUniformGroupSize(unittest.TestCase):
