@@ -18,6 +18,7 @@ import unittest
 from importlib.resources import as_file, files
 from pathlib import Path
 
+import gguf
 import torch
 import torchvision
 from executorch.backends.native.examples.hf_llm.export_hf_llm import (
@@ -107,29 +108,98 @@ def _tiny_llama() -> LlamaForCausalLM:
     return model
 
 
+def _blocks(
+    ggml_type: str,
+    rows: int,
+    cols: int,
+    scales: dict[int, float],
+    generator: torch.Generator,
+) -> ExportableGGUFTensor:
+    """Random `ggml_type` blocks whose fp16 scales, by byte offset in a block,
+    give weights of HF-init magnitude, which keeps attention from saturating
+    on random weights. Each block scales them all by 1/2, 1 or 2, so a decoder
+    that reads another block's scales does not match."""
+    block, block_bytes = gguf.GGML_QUANT_SIZES[
+        gguf.GGMLQuantizationType[ggml_type.upper()]
+    ]
+    raw = torch.randint(
+        0, 256, (rows, cols // block, block_bytes), generator=generator
+    ).to(torch.uint8)
+    factors = 2.0 ** torch.randint(-1, 2, (rows, cols // block, 1), generator=generator)
+    for offset, scale in scales.items():
+        fp16 = (factors * scale).to(torch.float16)
+        raw[..., offset : offset + 2] = fp16.view(torch.uint8)
+    return ExportableGGUFTensor.from_raw(
+        raw.reshape(rows, -1), ggml_type, torch.float32
+    )
+
+
 def _q4_k(rows: int, cols: int, generator: torch.Generator) -> ExportableGGUFTensor:
     # 144-byte blocks: fp16 d and dmin, 12 bytes of 6-bit scales and mins, then
-    # 128 bytes of nibbles. d and dmin give weights of HF-init magnitude, which
-    # keeps attention from saturating on random weights.
-    raw = torch.randint(0, 256, (rows, cols // 256, 144), generator=generator)
-    raw = raw.to(torch.uint8)
-    raw[..., 0:2] = torch.tensor([0x00, 0x0C], dtype=torch.uint8)  # d = 2^-12
-    raw[..., 2:4] = torch.tensor([0x00, 0x18], dtype=torch.uint8)  # dmin = 2^-9
-    return ExportableGGUFTensor.from_raw(raw.reshape(rows, -1), "q4_k", torch.float32)
+    # 128 bytes of nibbles.
+    return _blocks("q4_k", rows, cols, {0: 2**-12, 2: 2**-9}, generator)
+
+
+def _q5_k(rows: int, cols: int, generator: torch.Generator) -> ExportableGGUFTensor:
+    # 176-byte blocks: Q4_K's plus 32 bytes of fifth bits, so half its d.
+    return _blocks("q5_k", rows, cols, {0: 2**-13, 2: 2**-9}, generator)
 
 
 def _q6_k(rows: int, cols: int, generator: torch.Generator) -> ExportableGGUFTensor:
     # 210-byte blocks: 128 low and 64 high bit bytes, 16 int8 scales, fp16 d.
-    raw = torch.randint(0, 256, (rows, cols // 256, 210), generator=generator)
-    raw = raw.to(torch.uint8)
+    weight = _blocks("q6_k", rows, cols, {208: 2**-12}, generator)
+    raw = weight.raw.reshape(rows, cols // 256, 210)
     scales = torch.randint(-8, 9, (rows, cols // 256, 16), generator=generator)
     raw[..., 192:208] = scales.to(torch.int8).view(torch.uint8)
-    raw[..., 208:210] = torch.tensor([0x00, 0x0C], dtype=torch.uint8)  # d = 2^-12
-    return ExportableGGUFTensor.from_raw(raw.reshape(rows, -1), "q6_k", torch.float32)
+    return weight
+
+
+def _q8_0(rows: int, cols: int, generator: torch.Generator) -> ExportableGGUFTensor:
+    # 34-byte blocks: fp16 d, then 32 int8 codes.
+    return _blocks("q8_0", rows, cols, {0: 2**-11}, generator)
+
+
+def _q3_k(rows: int, cols: int, generator: torch.Generator) -> ExportableGGUFTensor:
+    # 110-byte blocks: 32 bytes of high bits, 64 of low bits, 12 of 6-bit
+    # scales, then fp16 d.
+    return _blocks("q3_k", rows, cols, {108: 2**-10}, generator)
+
+
+def _q2_k(rows: int, cols: int, generator: torch.Generator) -> ExportableGGUFTensor:
+    # 84-byte blocks: 16 bytes of 4-bit scales and mins, 64 of 2-bit codes,
+    # then fp16 d and dmin; 1.5 d of dmin centers the weights.
+    return _blocks("q2_k", rows, cols, {80: 2**-9, 82: 3 * 2**-10}, generator)
+
+
+# Synthetic weights of each GGUF type the tests cover.
+_GGUF_WEIGHTS = {
+    "q4_k": _q4_k,
+    "q5_k": _q5_k,
+    "q6_k": _q6_k,
+    "q8_0": _q8_0,
+    "q3_k": _q3_k,
+    "q2_k": _q2_k,
+}
+
+# The GGUF type of each tiny-Llama weight by llama.cpp role, mixing types as
+# "Q4_K_M" files do. A "blk.<i>.<role>" entry overrides the role in one layer.
+_MIXED_TYPES = {
+    "token_embd": "q6_k",
+    "attn_q": "q4_k",
+    "attn_k": "q5_k",
+    "attn_v": "q6_k",
+    "attn_output": "q4_k",
+    "ffn_gate": "q5_k",
+    "ffn_up": "q4_k",
+    "ffn_down": "q6_k",
+    "blk.1.attn_v": "q8_0",
+    "blk.1.attn_q": "q3_k",
+    "blk.1.ffn_up": "q2_k",
+}
 
 
 def _gguf_weights(model: LlamaForCausalLM) -> list[tuple[str, torch.Tensor]]:
-    """Synthetic Q4_K_M-style GGUF tensors under llama.cpp names."""
+    """Synthetic GGUF tensors under llama.cpp names, typed by _MIXED_TYPES."""
     generator = torch.Generator().manual_seed(3)
     config = model.config
     hidden, inner = config.hidden_size, config.intermediate_size
@@ -138,23 +208,56 @@ def _gguf_weights(model: LlamaForCausalLM) -> list[tuple[str, torch.Tensor]]:
     def norm() -> torch.Tensor:
         return torch.rand(hidden, generator=generator) + 0.5
 
+    def weight(name: str, rows: int, cols: int) -> torch.Tensor:
+        ggml_type = _MIXED_TYPES.get(name, _MIXED_TYPES[name.split(".")[-1]])
+        return _GGUF_WEIGHTS[ggml_type](rows, cols, generator)
+
     pairs = [
-        ("token_embd.weight", _q6_k(config.vocab_size, hidden, generator)),
+        ("token_embd.weight", weight("token_embd", config.vocab_size, hidden)),
         ("output_norm.weight", norm()),
     ]
     for i in range(config.num_hidden_layers):
         pairs += [
             (f"blk.{i}.attn_norm.weight", norm()),
-            (f"blk.{i}.attn_q.weight", _q4_k(hidden, hidden, generator)),
-            (f"blk.{i}.attn_k.weight", _q4_k(kv, hidden, generator)),
-            (f"blk.{i}.attn_v.weight", _q6_k(kv, hidden, generator)),
-            (f"blk.{i}.attn_output.weight", _q4_k(hidden, hidden, generator)),
+            (f"blk.{i}.attn_q.weight", weight(f"blk.{i}.attn_q", hidden, hidden)),
+            (f"blk.{i}.attn_k.weight", weight(f"blk.{i}.attn_k", kv, hidden)),
+            (f"blk.{i}.attn_v.weight", weight(f"blk.{i}.attn_v", kv, hidden)),
+            (
+                f"blk.{i}.attn_output.weight",
+                weight(f"blk.{i}.attn_output", hidden, hidden),
+            ),
             (f"blk.{i}.ffn_norm.weight", norm()),
-            (f"blk.{i}.ffn_gate.weight", _q4_k(inner, hidden, generator)),
-            (f"blk.{i}.ffn_up.weight", _q4_k(inner, hidden, generator)),
-            (f"blk.{i}.ffn_down.weight", _q6_k(hidden, inner, generator)),
+            (f"blk.{i}.ffn_gate.weight", weight(f"blk.{i}.ffn_gate", inner, hidden)),
+            (f"blk.{i}.ffn_up.weight", weight(f"blk.{i}.ffn_up", inner, hidden)),
+            (f"blk.{i}.ffn_down.weight", weight(f"blk.{i}.ffn_down", hidden, inner)),
         ]
     return pairs
+
+
+class _Lambda(torch.nn.Module):
+    def __init__(self, fn):
+        super().__init__()
+        self.fn = fn
+
+    def forward(self, x):
+        return self.fn(x)
+
+
+def _write_gguf(path: Path, pairs: list[tuple[str, torch.Tensor]]) -> None:
+    writer = gguf.GGUFWriter(str(path), "llama")
+    for name, value in pairs:
+        if isinstance(value, ExportableGGUFTensor):
+            writer.add_tensor(
+                name,
+                value.raw.numpy(),
+                raw_dtype=gguf.GGMLQuantizationType[value.ggml_type.upper()],
+            )
+        else:
+            writer.add_tensor(name, value.numpy())
+    writer.write_header_to_file()
+    writer.write_kv_data_to_file()
+    writer.write_tensors_to_file()
+    writer.close()
 
 
 class _ViewRelu(torch.nn.Module):
@@ -236,6 +339,27 @@ class _TailOfBuffer(torch.nn.Module):
 
     def forward(self, x):
         return self.buffer[:, -x.shape[1] :] + x
+
+
+class _SumThenIndex(torch.nn.Module):
+    def __init__(self, dims=0):
+        super().__init__()
+        self.dims = dims
+
+    def forward(self, x, index):
+        return x.sum(self.dims)[index]
+
+
+class _ProjectThenReduce(torch.nn.Module):
+    """A linear, then a reduction that drops the dims it reduces."""
+
+    def __init__(self, reduce):
+        super().__init__()
+        self.proj = torch.nn.Linear(16, 32)
+        self.reduce = reduce
+
+    def forward(self, x):
+        return self.reduce(self.proj(x).view(1, x.shape[1], 4, 8))
 
 
 class _PoolCloneLinear(torch.nn.Module):
@@ -388,6 +512,55 @@ class CrossEngineTest(unittest.TestCase):
                     resize=True,
                 )
 
+    def test_reductions_without_keepdim(self):
+        torch.manual_seed(0)
+        steps = [(torch.randn(1, s, 16),) for s in (5, 3, 9)]
+        seq = Dim("seq", min=2, max=12)
+        reductions = {
+            "sum": lambda y: y.sum(-1),
+            "mean": lambda y: y.mean(-1),
+            "amax": lambda y: y.amax(-1),
+            "sum over the last two dims": lambda y: y.sum((-2, -1)),
+            "sum over heads": lambda y: y.sum(2),
+        }
+        for name, reduce in reductions.items():
+            with self.subTest(reduction=name):
+                self._check_dynamic(
+                    _ProjectThenReduce(reduce),
+                    steps,
+                    ({1: seq},),
+                    atol_fraction=1e-5,
+                    engines=("ggml_ptn_runner",),
+                )
+
+    def test_reduction_feeding_advanced_indexing(self):
+        torch.manual_seed(0)
+        steps = [(torch.randn(2, 3, 4), torch.tensor([0, 2]))]
+        self._check_dynamic(
+            _SumThenIndex(),
+            steps,
+            None,
+            atol_fraction=1e-5,
+            engines=("ggml_ptn_runner",),
+        )
+
+    def test_negative_dims(self):
+        torch.manual_seed(0)
+        steps = [(torch.randn(2, 3, 4, 8),)]
+        ops = {
+            "split": lambda x: torch.split(x, [1, 3], -2)[1] * 1.0,
+            "chunk": lambda x: torch.chunk(x, 2, -1)[0] * 1.0,
+        }
+        for name, fn in ops.items():
+            with self.subTest(op=name):
+                self._check_dynamic(
+                    _Lambda(fn),
+                    steps,
+                    None,
+                    atol_fraction=1e-5,
+                    engines=("ggml_ptn_runner",),
+                )
+
     def test_clone_between_pool_and_linear(self):
         torch.manual_seed(0)
         self._check_dynamic(_PoolCloneLinear(), [(torch.randn(1, 4, 8, 8),)], None)
@@ -507,7 +680,10 @@ class CrossEngineTest(unittest.TestCase):
         engines=_ENGINES,
         max_seq: int = _MAX_SEQ,
         flags: tuple[str, ...] = (),
+        engine_overrides: dict[str, tuple[float, tuple[str, ...]]] | None = None,
     ):
+        """Exports once and runs the one saved package on every engine, with
+        `engine_overrides[runner]` = (atol_fraction, flags) for that runner."""
         prompt = torch.randint(0, model.config.vocab_size, (1, 7))
         eager = LastTokenLM(copy.deepcopy(model), max_seq, kv_cache_dtype).eval()
         wrapper = LastTokenLM(model, max_seq, kv_cache_dtype).eval()
@@ -530,9 +706,14 @@ class CrossEngineTest(unittest.TestCase):
             outdir = Path(tmp)
             package = outdir / "tiny_llama.ptn"
             to_native(ep).save(str(package))
-            tokens = self._check_engines(
-                package, steps, expected, outdir, atol_fraction, engines, flags
-            )
+            tokens = {}
+            for runner in engines:
+                atol, runner_flags = (engine_overrides or {}).get(
+                    runner, (atol_fraction, flags)
+                )
+                tokens |= self._check_engines(
+                    package, steps, expected, outdir, atol, (runner,), runner_flags
+                )
         greedy = [e[0, -1].argmax().item() for e in expected]
         for runner, chosen in tokens.items():
             self.assertEqual(chosen, greedy, runner)
@@ -542,25 +723,109 @@ class CrossEngineTest(unittest.TestCase):
         self._check_llama(_tiny_llama(), torch.float32, atol_fraction=1e-3)
 
     def test_tiny_llama_gguf(self):
+        # A file of every type in _MIXED_TYPES, read back from disk.
         torch.manual_seed(0)
         model = _tiny_llama()
-        pairs = _gguf_weights(model)
-        load_gguf(model, "tiny.gguf", "llama", lambda _: iter(pairs))
-        # ggml requantizes activations to Q8_K for its K-quant matmuls, once
-        # allowed to, while native-vk decodes the K-quant weights exactly to
-        # fp32. Re-seeding gives both engines the same prompt.
-        for runner, atol_fraction, flags in (
-            ("ggml_ptn_runner", 5e-2, ("--allow_activation_quant_for_weight_only",)),
-            ("vulkan_ptn_runner", 1e-3, ()),
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "tiny.gguf"
+            _write_gguf(path, _gguf_weights(model))
+            load_gguf(model, str(path))
+        self.assertEqual(
+            {
+                p.ggml_type
+                for p in model.parameters()
+                if isinstance(p, ExportableGGUFTensor)
+            },
+            set(_MIXED_TYPES.values()),
+        )
+        # Both engines run one unchanged package. native-vk decodes the GGUF
+        # weights exactly to fp32. ggml, once allowed to, requantizes each
+        # block of activations to int8 for every GGUF matmul, and with these
+        # types that rounding reaches 6% of the largest logit. Its bound is set
+        # above that, so on ggml this test catches only gross faults, such as a
+        # wrong codec or role or a doubled scale; test_ggml_ops checks each
+        # type exactly.
+        torch.manual_seed(0)
+        self._check_llama(
+            model,
+            torch.float32,
+            atol_fraction=1e-3,
+            engines=("ggml_ptn_runner", "vulkan_ptn_runner"),
+            engine_overrides={
+                "ggml_ptn_runner": (
+                    1e-1,
+                    ("--allow_activation_quant_for_weight_only",),
+                )
+            },
+        )
+
+    def _check_gguf_dynamic_tokens(self, ggml_type: str):
+        """A linear and an embedding of synthetic `ggml_type` weights, each
+        exported once with a dynamic token count and run at 9, 1 and 33 tokens
+        from the one saved package on every engine."""
+        generator = torch.Generator().manual_seed(0)
+        linear = torch.nn.Linear(256, 8, bias=False)
+        linear.weight = torch.nn.Parameter(
+            _GGUF_WEIGHTS[ggml_type](8, 256, generator), requires_grad=False
+        )
+        embedding = torch.nn.Embedding(8, 256)
+        embedding.weight = torch.nn.Parameter(
+            _GGUF_WEIGHTS[ggml_type](8, 256, generator), requires_grad=False
+        )
+        # Activations of +-127/1024, alternating by token, survive ggml's int8
+        # requantization exactly, and native-vk decodes the weights exactly.
+        rows = torch.full((2, 256), 127 / 1024)
+        rows[1, ::2] *= -1
+        lengths = (9, 1, 33)
+        tokens = Dim("tokens", min=1, max=64)
+        flags = {"ggml_ptn_runner": ("--allow_activation_quant_for_weight_only",)}
+        for name, model, inputs in (
+            ("linear", linear, [rows[torch.arange(n) % 2] for n in lengths]),
+            ("embedding", embedding, [torch.arange(n) % 8 for n in lengths]),
         ):
-            torch.manual_seed(0)
-            self._check_llama(
-                copy.deepcopy(model),
-                torch.float32,
-                atol_fraction,
-                engines=(runner,),
-                flags=flags,
-            )
+            steps = [(x,) for x in inputs]
+            with torch.no_grad():
+                expected = [model(x) for x in inputs]
+                ep = torch.export.export(
+                    model, steps[0], dynamic_shapes={"input": {0: tokens}}
+                )
+            with tempfile.TemporaryDirectory() as tmp:
+                outdir = Path(tmp)
+                package = outdir / f"{name}.ptn"
+                to_native(ep).save(str(package))
+                for runner in _ENGINES:
+                    with self.subTest(case=name, engine=runner):
+                        outputs = _run(
+                            runner,
+                            package,
+                            steps,
+                            outdir,
+                            resize=True,
+                            flags=flags.get(runner, ()),
+                        )
+                        self.assertEqual(len(outputs), len(expected))
+                        for actual, reference in zip(outputs, expected):
+                            torch.testing.assert_close(
+                                actual, reference, atol=1e-5, rtol=1e-5
+                            )
+
+    def test_gguf_q4_k_dynamic_tokens(self):
+        self._check_gguf_dynamic_tokens("q4_k")
+
+    def test_gguf_q5_k_dynamic_tokens(self):
+        self._check_gguf_dynamic_tokens("q5_k")
+
+    def test_gguf_q6_k_dynamic_tokens(self):
+        self._check_gguf_dynamic_tokens("q6_k")
+
+    def test_gguf_q8_0_dynamic_tokens(self):
+        self._check_gguf_dynamic_tokens("q8_0")
+
+    def test_gguf_q3_k_dynamic_tokens(self):
+        self._check_gguf_dynamic_tokens("q3_k")
+
+    def test_gguf_q2_k_dynamic_tokens(self):
+        self._check_gguf_dynamic_tokens("q2_k")
 
     def test_tiny_llama_fp16_kv(self):
         torch.manual_seed(0)

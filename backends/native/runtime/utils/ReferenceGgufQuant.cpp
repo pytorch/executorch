@@ -4,7 +4,7 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
-#include <executorch/backends/native/runtime/utils/ReferenceGgufKQuant.h>
+#include <executorch/backends/native/runtime/utils/ReferenceGgufQuant.h>
 
 #include <algorithm>
 #include <bit>
@@ -17,12 +17,6 @@
 namespace ptn::reference {
 namespace {
 
-constexpr std::string_view kQ4K = "gguf:q4_k";
-constexpr std::string_view kQ5K = "gguf:q5_k";
-constexpr std::string_view kQ6K = "gguf:q6_k";
-constexpr size_t kQ4KBlockBytes = 144;
-constexpr size_t kQ5KBlockBytes = 176;
-constexpr size_t kQ6KBlockBytes = 210;
 // Below this many weights per thread, starting threads costs more than it
 // saves.
 constexpr int64_t kMinWeightsPerThread = int64_t{1} << 20;
@@ -125,31 +119,106 @@ void decode_q6_k_block(const uint8_t* block, float* y) {
   }
 }
 
+// block_q8_0: fp16 d, then 32 int8 codes.
+void decode_q8_0_block(const uint8_t* block, float* y) {
+  const float d = half_to_float(block);
+  const auto* q = reinterpret_cast<const int8_t*>(block + 2);
+  for (int j = 0; j < 32; ++j) {
+    y[j] = static_cast<float>(q[j]) * d;
+  }
+}
+
+// block_q3_K: 32 high-bit mask bytes, 64 bytes of 2-bit codes, 12 bytes
+// packing sixteen 6-bit scales, fp16 d. Each 128-weight half reads four 2-bit
+// planes of its 32 code bytes, 32 weights per plane, with one scale per 16;
+// plane p of half h subtracts 4 from weight l unless bit 4 h + p of mask byte l
+// is set.
+void decode_q3_k_block(const uint8_t* block, float* y) {
+  const uint8_t* hmask = block;
+  const uint8_t* packed = block + 96;
+  const float d = half_to_float(block + 108);
+  int scales[16];
+  for (int i = 0; i < 4; ++i) {
+    const int high = packed[8 + i];
+    scales[i] = (packed[i] & 0xF) | ((high & 3) << 4);
+    scales[i + 4] = (packed[i + 4] & 0xF) | (((high >> 2) & 3) << 4);
+    scales[i + 8] = (packed[i] >> 4) | (((high >> 4) & 3) << 4);
+    scales[i + 12] = (packed[i + 4] >> 4) | (((high >> 6) & 3) << 4);
+  }
+  const int* scale = scales;
+  int mask = 1;
+  for (int half = 0; half < 2; ++half) {
+    const uint8_t* q = block + 32 + 32 * half;
+    for (int shift = 0; shift < 8; shift += 2, mask <<= 1) {
+      for (int l0 = 0; l0 < 32; l0 += 16) {
+        const float dl = d * static_cast<float>(*scale++ - 32);
+        for (int l = l0; l < l0 + 16; ++l) {
+          const int code = ((q[l] >> shift) & 3) - ((hmask[l] & mask) ? 0 : 4);
+          *y++ = dl * static_cast<float>(code);
+        }
+      }
+    }
+  }
+}
+
+// block_q2_K: 16 bytes, each a 4-bit scale and a 4-bit min for 16 weights,
+// then 64 bytes of 2-bit codes, fp16 d and dmin. The codes are laid out as in
+// block_q3_K: four 2-bit planes of 32 code bytes per 128-weight half.
+void decode_q2_k_block(const uint8_t* block, float* y) {
+  const uint8_t* scales = block;
+  const float d = half_to_float(block + 80);
+  const float dmin = half_to_float(block + 82);
+  for (int half = 0; half < 2; ++half) {
+    const uint8_t* q = block + 16 + 32 * half;
+    for (int shift = 0; shift < 8; shift += 2) {
+      for (int l0 = 0; l0 < 32; l0 += 16) {
+        const float dl = d * static_cast<float>(*scales & 0xF);
+        const float ml = dmin * static_cast<float>(*scales++ >> 4);
+        for (int l = l0; l < l0 + 16; ++l) {
+          *y++ = dl * static_cast<float>((q[l] >> shift) & 3) - ml;
+        }
+      }
+    }
+  }
+}
+
 struct Codec {
+  std::string_view name;
+  int64_t block_elements;
   size_t block_bytes;
   BlockDecoder decode_block;
 };
 
-Codec codec_of(std::string_view codec) {
-  if (codec == kQ4K) {
-    return {kQ4KBlockBytes, decode_q4_k_block};
-  }
-  if (codec == kQ5K) {
-    return {kQ5KBlockBytes, decode_q5_k_block};
-  }
-  if (codec == kQ6K) {
-    return {kQ6KBlockBytes, decode_q6_k_block};
-  }
-  throw std::invalid_argument(
-      "unsupported GGUF K-quant codec '" + std::string(codec) + "'");
+constexpr Codec kCodecs[] = {
+    {"gguf:q8_0", 32, 34, decode_q8_0_block},
+    {"gguf:q2_k", 256, 84, decode_q2_k_block},
+    {"gguf:q3_k", 256, 110, decode_q3_k_block},
+    {"gguf:q4_k", 256, 144, decode_q4_k_block},
+    {"gguf:q5_k", 256, 176, decode_q5_k_block},
+    {"gguf:q6_k", 256, 210, decode_q6_k_block},
+};
+
+const Codec* find_codec(std::string_view codec) {
+  const auto* found = std::ranges::find(kCodecs, codec, &Codec::name);
+  return found == std::ranges::end(kCodecs) ? nullptr : found;
 }
 
-int64_t blocks_per_row(int64_t cols) {
-  if (cols <= 0 || cols % kGgufKQuantBlockElements != 0) {
+const Codec& codec_of(std::string_view codec) {
+  const Codec* found = find_codec(codec);
+  if (found == nullptr) {
     throw std::invalid_argument(
-        "GGUF K-quant rows must hold a positive multiple of 256 weights");
+        "no reference decoder for GGUF codec '" + std::string(codec) + "'");
   }
-  return cols / kGgufKQuantBlockElements;
+  return *found;
+}
+
+int64_t blocks_per_row(const Codec& codec, int64_t cols) {
+  if (cols <= 0 || cols % codec.block_elements != 0) {
+    throw std::invalid_argument(
+        std::string(codec.name) + " rows must hold a positive multiple of " +
+        std::to_string(codec.block_elements) + " weights");
+  }
+  return cols / codec.block_elements;
 }
 
 void decode_rows(
@@ -161,10 +230,10 @@ void decode_rows(
     float* out) {
   for (int64_t r = first; r < last; ++r) {
     const uint8_t* row = data + r * blocks * codec.block_bytes;
-    float* y = out + r * blocks * kGgufKQuantBlockElements;
+    float* y = out + r * blocks * codec.block_elements;
     for (int64_t b = 0; b < blocks; ++b) {
       codec.decode_block(
-          row + b * codec.block_bytes, y + b * kGgufKQuantBlockElements);
+          row + b * codec.block_bytes, y + b * codec.block_elements);
     }
   }
 }
@@ -172,18 +241,18 @@ void decode_rows(
 } // namespace
 
 // cppcheck-suppress unusedFunction
-bool is_gguf_kquant(std::string_view codec) {
-  return codec == kQ4K || codec == kQ5K || codec == kQ6K;
+bool can_decode_gguf(std::string_view codec) {
+  return find_codec(codec) != nullptr;
 }
 
 // cppcheck-suppress unusedFunction
-size_t gguf_kquant_row_nbytes(std::string_view codec, int64_t cols) {
-  return static_cast<size_t>(blocks_per_row(cols)) *
-      codec_of(codec).block_bytes;
+size_t gguf_row_nbytes(std::string_view codec, int64_t cols) {
+  const Codec& c = codec_of(codec);
+  return static_cast<size_t>(blocks_per_row(c, cols)) * c.block_bytes;
 }
 
 // cppcheck-suppress unusedFunction
-void decode_gguf_kquant(
+void decode_gguf(
     std::string_view codec,
     const uint8_t* data,
     size_t nbytes,
@@ -191,8 +260,8 @@ void decode_gguf_kquant(
     int64_t cols,
     float* out,
     unsigned max_threads) {
-  const Codec c = codec_of(codec);
-  const int64_t blocks = blocks_per_row(cols);
+  const Codec& c = codec_of(codec);
+  const int64_t blocks = blocks_per_row(c, cols);
   size_t expected = 0;
   if (rows < 0 ||
       __builtin_mul_overflow(
@@ -201,7 +270,7 @@ void decode_gguf_kquant(
           &expected) ||
       nbytes != expected) {
     throw std::invalid_argument(
-        "GGUF K-quant data does not hold " + std::to_string(rows) +
+        std::string(codec) + " data does not hold " + std::to_string(rows) +
         " rows of " + std::to_string(cols) + " weights");
   }
   const unsigned hardware = std::max(1u, std::thread::hardware_concurrency());

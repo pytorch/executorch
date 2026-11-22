@@ -21,6 +21,7 @@ import torch
 import torch.nn.functional as F
 from executorch.exir.native import to_native
 from executorch.extension.llm.export.gguf import ExportableGGUFTensor
+from gguf import GGML_QUANT_SIZES, GGMLQuantizationType
 from torch.export import Dim
 from torchao.quantization import (
     Int8DynamicActivationIntxWeightConfig,
@@ -269,6 +270,43 @@ class TinyLlama(torch.nn.Module):
         ).logits
 
 
+class WrittenCacheMask(torch.nn.Module):
+    """Writes keys into a cache at `cache_position`, or at `rows` if given,
+    then masks it as transformers 5 does, with query positions arange(T) + the
+    first position."""
+
+    def __init__(self, cache_len: int):
+        super().__init__()
+        self.register_buffer("keys", torch.zeros(1, 2, cache_len, 32), persistent=False)
+        self.register_buffer("values", torch.randn(1, 2, cache_len, 32))
+
+    def forward(self, q, k, cache_position, rows=None):
+        self.keys.index_copy_(2, cache_position if rows is None else rows, k)
+        positions = (torch.arange(q.shape[2]) + cache_position[:1]).view(-1, 1)
+        mask = torch.arange(self.keys.shape[2]) + 0 <= positions
+        return F.scaled_dot_product_attention(q, self.keys, self.values, attn_mask=mask)
+
+
+class LongCacheMask(torch.nn.Module):
+    """Attention over a static cache with the mask transformers 5 builds,
+    `arange(kv_length) + kv_offset <= positions`, optionally with a sliding
+    window: over 2^16 keys, more than the host computes exactly."""
+
+    def __init__(self, cache_len: int, window: int | None = None):
+        super().__init__()
+        self.window = window
+        self.register_buffer("keys", torch.randn(1, 2, cache_len, 32))
+        self.register_buffer("values", torch.randn(1, 2, cache_len, 32))
+
+    def forward(self, q, cache_position):
+        kv_arange = torch.arange(self.keys.shape[2]) + 0
+        positions = cache_position.view(-1, 1)
+        mask = kv_arange <= positions
+        if self.window is not None:
+            mask = mask * ((positions - self.window) < kv_arange)
+        return F.scaled_dot_product_attention(q, self.keys, self.values, attn_mask=mask)
+
+
 def _quantize_8da4w(
     model: torch.nn.Module,
     group_size: int,
@@ -306,6 +344,8 @@ def _run_ggml(
     graph_ops: collections.Counter | None = None,
     method: str = "forward",
     allow_activation_quant_for_weight_only: bool = False,
+    exact_topk_for_testing: bool = False,
+    exact_gelu_for_testing: bool = False,
 ):
     """Runs each step's inputs in order on one executable and returns each
     step's outputs as (bytes, shape) pairs. `graph_ops`, if given, collects
@@ -337,6 +377,10 @@ def _run_ggml(
         command.append("--print_graph_ops")
     if allow_activation_quant_for_weight_only:
         command.append("--allow_activation_quant_for_weight_only")
+    if exact_topk_for_testing:
+        command.append("--exact_topk_for_testing")
+    if exact_gelu_for_testing:
+        command.append("--exact_gelu_for_testing")
     with as_file(files(__package__) / "ggml_ptn_runner") as runner:
         result = subprocess.run(
             [str(runner), *command],
@@ -347,7 +391,9 @@ def _run_ggml(
     if result.returncode != 0:
         raise AssertionError(f"ggml_ptn_runner failed:\n{result.stderr}")
     for line in result.stderr.splitlines() if graph_ops is not None else []:
-        if line.startswith("ggml graph ops:"):
+        if line.startswith("ggml host integer checks per run:"):
+            graph_ops["host integer checks"] += int(line.split()[-1])
+        elif line.startswith("ggml graph ops:"):
             graph_ops.update(
                 {op: int(n) for op, n in (item.split("=") for item in line.split()[3:])}
             )
@@ -362,6 +408,26 @@ _MATMUL_TOL = (
     {"atol": 5e-3, "rtol": 1e-2}
     if os.environ.get("GGML_PTN_DEVICE", "cpu") == "gpu"
     else {"atol": 1e-4, "rtol": 1e-5}
+)
+
+# GGUF quant types the random-weight tests cover, with the fp16 super-block
+# scales of their random blocks by byte offset in a block. Each min scale
+# centers the weights near zero.
+_GGUF_SUPER_SCALES = {
+    "q4_k": {0: 2**-8, 2: 2**-5},
+    "q8_0": {0: 2**-8},
+    "q2_k": {80: 2**-6, 82: 3 * 2**-7},
+    "q3_k": {108: 2**-6},
+    "q5_k": {0: 2**-8, 2: 2**-4},
+    "q6_k": {208: 2**-14},
+}
+
+
+# ggml-cuda is built with -use_fast_math, whose tanhf is a few 1e-6 off.
+_GELU_TOL = (
+    {"atol": 1e-5, "rtol": 1e-5}
+    if os.environ.get("GGML_PTN_DEVICE", "cpu") == "gpu"
+    else {"atol": 1e-6, "rtol": 1e-5}
 )
 
 
@@ -436,6 +502,157 @@ class GgmlOpsTest(unittest.TestCase):
         model.weight = torch.nn.Parameter(self._q6_k_weights(8), requires_grad=False)
         self._check(model, (torch.tensor([[0, 3, 6], [7, 1, 4]]),))
 
+    @staticmethod
+    def _random_gguf_weights(ggml_type, rows, cols):
+        # Random blocks, with each fp16 super-block scale set at its byte
+        # offset so that the weights are finite and of moderate size.
+        qtype = GGMLQuantizationType[ggml_type.upper()]
+        block, block_bytes = GGML_QUANT_SIZES[qtype]
+        raw = torch.randint(
+            0, 256, (rows, cols // block, block_bytes), dtype=torch.uint8
+        )
+        for offset, scale in _GGUF_SUPER_SCALES[ggml_type].items():
+            raw[..., offset : offset + 2] = torch.tensor(
+                [scale], dtype=torch.float16
+            ).view(torch.uint8)
+        return ExportableGGUFTensor.from_raw(
+            raw.reshape(rows, -1), ggml_type, torch.float32
+        )
+
+    def _check_random_gguf_linear(self, ggml_type):
+        weight = self._random_gguf_weights(ggml_type, 8, 512)
+        model = torch.nn.Linear(512, 8, bias=False)
+        model.weight = torch.nn.Parameter(weight, requires_grad=False)
+        # Activations of +-127/1024 survive every int8 requantization ggml
+        # does exactly: each block's scale, max|x| / 127 = 2^-10, is exact even
+        # in fp16, and so are the block sums some kernels keep.
+        representable = torch.full((2, 512), 127 / 1024)
+        representable[1, ::2] *= -1
+        self._check(
+            model,
+            (representable,),
+            atol=5e-4,
+            rtol=1e-5,
+            allow_activation_quant_for_weight_only=True,
+        )
+        # ggml rounds each block of activations to int8 in steps of at most
+        # max|x| / 127. Modeling the rounding errors as independent and
+        # uniform, an output's error has a standard deviation of
+        # step / sqrt(12) times its weight row's norm; allow five. The model
+        # is rough on GPUs, whose kernels for some types take a block's min
+        # term from the sum of its unquantized activations.
+        x = torch.randn(2, 512) / 8
+        rounding = x.abs().max() / 127 / 12**0.5
+        row_norm = weight.dequantize(torch.float32).norm(dim=1).max()
+        self._check(
+            model,
+            (x,),
+            atol=float(5 * rounding * row_norm),
+            rtol=0,
+            allow_activation_quant_for_weight_only=True,
+        )
+
+    def _check_random_gguf_embedding(self, ggml_type):
+        model = torch.nn.Embedding(8, 512)
+        model.weight = torch.nn.Parameter(
+            self._random_gguf_weights(ggml_type, 8, 512), requires_grad=False
+        )
+        self._check(model, (torch.tensor([[0, 3, 6], [7, 1, 4]]),))
+
+    def _check_random_gguf_dynamic_tokens(self, ggml_type):
+        # A linear and an embedding, each exported once with a dynamic token
+        # count and run at 9, 1 and 33 tokens on one executable; GPUs switch
+        # matmul kernels above 8 rows. The linear gets the exact activations
+        # of _check_random_gguf_linear, alternating by token.
+        linear = torch.nn.Linear(512, 8, bias=False)
+        linear.weight = torch.nn.Parameter(
+            self._random_gguf_weights(ggml_type, 8, 512), requires_grad=False
+        )
+        embedding = torch.nn.Embedding(8, 512)
+        embedding.weight = torch.nn.Parameter(
+            self._random_gguf_weights(ggml_type, 8, 512), requires_grad=False
+        )
+        representable = torch.full((2, 512), 127 / 1024)
+        representable[1, ::2] *= -1
+        lengths = (9, 1, 33)
+        cases = {
+            "linear": (linear, [representable[torch.arange(n) % 2] for n in lengths]),
+            "embedding": (embedding, [torch.arange(n) % 8 for n in lengths]),
+        }
+        tokens = Dim("tokens", min=1, max=64)
+        for name, (model, inputs) in cases.items():
+            steps = [(x,) for x in inputs]
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                ep = torch.export.export(
+                    model, steps[0], dynamic_shapes={"input": {0: tokens}}
+                )
+                outdir = Path(tmp)
+                package = outdir / "model.ptn"
+                to_native(ep).save(str(package))
+                actual = _run_ggml(
+                    package,
+                    steps,
+                    outdir,
+                    1,
+                    resize=True,
+                    allow_activation_quant_for_weight_only=True,
+                )
+                self.assertEqual(len(actual), len(steps))
+                for x, [(raw, shape)] in zip(inputs, actual):
+                    with torch.no_grad():
+                        expected = model(x)
+                    self.assertEqual(shape, tuple(expected.shape))
+                    torch.testing.assert_close(
+                        torch.frombuffer(bytearray(raw), dtype=torch.float32).reshape(
+                            shape
+                        ),
+                        expected,
+                        atol=5e-4,
+                        rtol=1e-5,
+                    )
+
+    def test_gguf_q4_k_dynamic_tokens(self):
+        self._check_random_gguf_dynamic_tokens("q4_k")
+
+    def test_gguf_q5_k_dynamic_tokens(self):
+        self._check_random_gguf_dynamic_tokens("q5_k")
+
+    def test_gguf_q6_k_dynamic_tokens(self):
+        self._check_random_gguf_dynamic_tokens("q6_k")
+
+    def test_gguf_q8_0_linear(self):
+        self._check_random_gguf_linear("q8_0")
+
+    def test_gguf_q8_0_embedding(self):
+        self._check_random_gguf_embedding("q8_0")
+
+    def test_gguf_q8_0_dynamic_tokens(self):
+        self._check_random_gguf_dynamic_tokens("q8_0")
+
+    def test_gguf_q2_k_linear(self):
+        self._check_random_gguf_linear("q2_k")
+
+    def test_gguf_q2_k_embedding(self):
+        self._check_random_gguf_embedding("q2_k")
+
+    def test_gguf_q2_k_dynamic_tokens(self):
+        self._check_random_gguf_dynamic_tokens("q2_k")
+
+    def test_gguf_q3_k_linear(self):
+        self._check_random_gguf_linear("q3_k")
+
+    def test_gguf_q3_k_embedding(self):
+        self._check_random_gguf_embedding("q3_k")
+
+    def test_gguf_q3_k_dynamic_tokens(self):
+        self._check_random_gguf_dynamic_tokens("q3_k")
+
+    def test_gguf_q5_k_linear_within_rounding_bound(self):
+        self._check_random_gguf_linear("q5_k")
+
+    def test_gguf_q5_k_embedding(self):
+        self._check_random_gguf_embedding("q5_k")
+
     def _check(
         self,
         model,
@@ -444,6 +661,8 @@ class GgmlOpsTest(unittest.TestCase):
         rtol=1e-5,
         graph_ops=None,
         allow_activation_quant_for_weight_only=False,
+        exact_topk_for_testing=False,
+        exact_gelu_for_testing=False,
     ):
         model = model.eval()
         # Eager writes buffers in place; the package must keep them as constructed.
@@ -463,6 +682,8 @@ class GgmlOpsTest(unittest.TestCase):
                 allow_activation_quant_for_weight_only=(
                     allow_activation_quant_for_weight_only
                 ),
+                exact_topk_for_testing=exact_topk_for_testing,
+                exact_gelu_for_testing=exact_gelu_for_testing,
             )
         self.assertEqual(len(outputs), len(expected))
         for (raw, shape), reference in zip(outputs, expected):
@@ -543,6 +764,34 @@ class GgmlOpsTest(unittest.TestCase):
 
     def test_add_scalar_permuted(self):
         self._check(Lambda(lambda x: x.permute(1, 0) + 1.0), (torch.randn(2, 3),))
+
+    def test_rank5_with_a_leading_dim_above_one_is_refused(self):
+        with self.assertRaisesRegex(AssertionError, "extra leading dim to be 1"):
+            self._check(Lambda(lambda x: x * 2.0), (torch.randn(2, 1, 2, 3, 4),))
+
+    def test_rank5_permute_moving_its_leading_one_inward_is_refused(self):
+        with self.assertRaisesRegex(AssertionError, "leading 1s in front"):
+            self._check(
+                Lambda(lambda x: x.permute(1, 0, 2, 3, 4) * 2.0),
+                (torch.randn(1, 2, 3, 4, 5),),
+            )
+
+    def test_rank5_views_along_a_folded_leading_one(self):
+        cases = {
+            "slice": lambda x: x[0:1] * 2.0,
+            "select": lambda x: x[0] * 2.0,
+            "split": lambda x: torch.split(x, 1, dim=0)[0] * 2.0,
+        }
+        for name, fn in cases.items():
+            with self.subTest(case=name):
+                self._check(Lambda(fn), (torch.randn(1, 2, 3, 4, 5),))
+
+    def test_rank5_cat_along_a_folded_leading_one_is_refused(self):
+        with self.assertRaisesRegex(AssertionError, "folded away above rank 4"):
+            self._check(
+                Lambda(lambda x, y: torch.cat([x, y], 0)),
+                (torch.randn(1, 2, 3, 4, 5), torch.randn(1, 2, 3, 4, 5)),
+            )
 
     def test_mul_scalar(self):
         self._check(Lambda(lambda x: x * 0.5), (torch.randn(2, 3, 4),))
@@ -654,18 +903,34 @@ class GgmlOpsTest(unittest.TestCase):
         self.assertGreater(ops["GELU_ERF"], 0)
 
     def test_gelu_tanh(self):
-        # ggml-cpu's tanh GELU looks its result up in an FP16 table, which
-        # hides the difference from the erf form.
+        # ggml's GELU, as llama.cpp: ggml-cpu reads it from an F16 table, a few
+        # 1e-4 off in F32, which GPUs evaluate in F32.
+        gpu = os.environ.get("GGML_PTN_DEVICE", "cpu") == "gpu"
         ops = collections.Counter()
         self._check(
             Lambda(lambda x: F.gelu(x, approximate="tanh")),
-            (torch.randn(2, 3, 4) * 3.0,),
-            atol=1e-3,
-            rtol=2e-3,
+            (torch.linspace(-12.0, 12.0, 96).reshape(2, 3, 16),),
+            **(_GELU_TOL if gpu else {"atol": 1e-3, "rtol": 2e-3}),
             graph_ops=ops,
         )
         self.assertEqual(ops["GELU_ERF"], 0)
         self.assertGreater(ops["GELU"], 0)
+        self.assertEqual(ops["TANH"], 0)
+
+    def test_gelu_tanh_exact_for_testing(self):
+        # With exact_gelu_for_testing the CPU builds it from tanh and
+        # arithmetic; GPUs keep ggml's GELU, which is F32 already.
+        gpu = os.environ.get("GGML_PTN_DEVICE", "cpu") == "gpu"
+        ops = collections.Counter()
+        self._check(
+            Lambda(lambda x: F.gelu(x, approximate="tanh")),
+            (torch.linspace(-12.0, 12.0, 96).reshape(2, 3, 16),),
+            **_GELU_TOL,
+            graph_ops=ops,
+            exact_gelu_for_testing=True,
+        )
+        self.assertEqual(ops["GELU"] > 0, gpu)
+        self.assertEqual(ops["TANH"] > 0, not gpu)
 
     def test_log(self):
         self._check(Lambda(torch.log), (torch.rand(2, 3, 4) + 0.1,))
@@ -959,6 +1224,40 @@ class GgmlOpsTest(unittest.TestCase):
         )
         self._check(Lambda(lambda x: x - x.amax(dim=[0, 1])), (torch.randn(80, 300),))
 
+    def _check_over_any_dims(self, fn):
+        x = torch.randn(2, 3, 4, 5)
+        for dims, keepdim in (((0,), False), ((1, 3), True), ((-3,), False)):
+            with self.subTest(dims=dims, keepdim=keepdim):
+                self._check(
+                    Lambda(
+                        lambda x, dims=dims, keepdim=keepdim: fn(
+                            x, dims, keepdim=keepdim
+                        )
+                    ),
+                    (x,),
+                )
+
+    def test_sum_over_any_dims(self):
+        self._check_over_any_dims(torch.sum)
+
+    def test_mean_over_any_dims(self):
+        self._check_over_any_dims(torch.mean)
+
+    def test_amax_over_any_dims(self):
+        self._check_over_any_dims(torch.amax)
+
+    def test_softmax_over_any_dim(self):
+        x = torch.randn(2, 3, 5, 8) * 4.0
+        for dim in (-1, 0, 1, -2):
+            with self.subTest(dim=dim):
+                self._check(
+                    Lambda(lambda x, dim=dim: torch.softmax(x, dim)), (x,), atol=1e-6
+                )
+
+    def test_softmax_over_an_empty_dim_is_refused(self):
+        with self.assertRaisesRegex(AssertionError, "empty dimension"):
+            self._check(Lambda(lambda x: torch.softmax(x, -1)), (torch.randn(2, 0),))
+
     def test_softmax_last_dim(self):
         self._check(
             Lambda(lambda x: torch.softmax(x, dim=-1)),
@@ -1175,6 +1474,10 @@ class GgmlOpsTest(unittest.TestCase):
             ),
         )
 
+    def test_cat_of_a_thousand_repeated_inputs(self):
+        # One node and two values, but a concat per list entry.
+        self._check(Lambda(lambda x: torch.cat([x] * 1000)), (torch.randn(3),))
+
     def test_cat_last_dim(self):
         self._check(
             Lambda(lambda x, y: torch.cat([x, y], dim=-1)),
@@ -1336,6 +1639,209 @@ class GgmlOpsTest(unittest.TestCase):
             Lambda(lambda x: (x < 0.25).to(x.dtype)),
             (torch.tensor([[-1.0, 0.0, 0.25, 0.5]]),),
         )
+
+    def _check_traced_integer_compare(self, fn):
+        small = (torch.tensor([[7, 3, -5]]), torch.tensor([[6, 4, -5]]))
+        # 2^24 + 1 rounds to 2^24 in F32, which would then compare equal.
+        large = (torch.tensor([[16777217, 3]]), torch.tensor([[16777216, 4]]))
+        self._check(Lambda(lambda a, b: fn(a, b).float()), small)
+        with self.assertRaisesRegex(AssertionError, r"2\^24"):
+            self._check(Lambda(lambda a, b: fn(a, b).float()), large)
+        with self.assertRaisesRegex(AssertionError, r"2\^24"):
+            self._check(Lambda(lambda a: fn(a, 16777217).float()), (small[0],))
+
+    def _check_host_computed_integer_compare(self, fn):
+        # Integers the host computes from inputs, as attention positions are,
+        # pass when every step stays within 2^24.
+        self._check(
+            Lambda(lambda a, b: fn(a + a, b).float()),
+            (torch.tensor([[1, 2]]), torch.tensor([[2, 2]])),
+        )
+        # x + 1 rounds to x = 2^24 in F32, where (x + 1) <= x holds.
+        x = (torch.tensor([[16777216, 3]]),)
+        with self.assertRaisesRegex(AssertionError, r"2\^24"):
+            self._check(Lambda(lambda x: fn(x + 1, x).float()), x)
+        with self.assertRaisesRegex(AssertionError, r"2\^24"):
+            self._check(Lambda(lambda x: fn(x + 1 - 1, x - 1).float()), x)
+        with self.assertRaisesRegex(AssertionError, "must be an integer"):
+            self._check(
+                Lambda(lambda a, b: fn(a * a, b).float()),
+                (torch.tensor([[7, 3, -5]]), torch.tensor([[6, 4, -5]])),
+            )
+
+    def test_ne_of_integers_checks_that_f32_holds_them(self):
+        # 2^24 + 1 rounds to 2^24 in F32.
+        with self.assertRaisesRegex(AssertionError, r"2\^24"):
+            self._check(
+                Lambda(lambda a, b: torch.ne(a, b).float()),
+                (torch.tensor([[16777217, 3]]), torch.tensor([[16777216, 4]])),
+            )
+        with self.assertRaisesRegex(AssertionError, r"2\^24"):
+            self._check(
+                Lambda(lambda a: torch.ne(a, 16777217).float()),
+                (torch.tensor([[16777216, 4]]),),
+            )
+
+    def test_le_checks_traced_integers(self):
+        self._check_traced_integer_compare(torch.le)
+
+    def test_lt_checks_traced_integers(self):
+        self._check_traced_integer_compare(torch.lt)
+
+    def test_le_checks_host_computed_integers(self):
+        self._check_host_computed_integer_compare(torch.le)
+
+    def test_lt_checks_host_computed_integers(self):
+        self._check_host_computed_integer_compare(torch.lt)
+
+    def test_ne_checks_host_computed_integers(self):
+        self._check_host_computed_integer_compare(torch.ne)
+
+    def test_integer_compare_refuses_unbounded_operands_at_compile(self):
+        def compile_ggml(model, inputs):
+            # The runner refuses the surplus input of the one step only once
+            # the method is compiled.
+            with tempfile.TemporaryDirectory() as tmp:
+                outdir = Path(tmp)
+                package = outdir / "model.ptn"
+                to_native(torch.export.export(model, inputs)).save(str(package))
+                _run_ggml(package, [(*inputs, inputs[0])], outdir, 1)
+
+        class BufferCompare(torch.nn.Module):
+            def __init__(self, fn, values, mutate):
+                super().__init__()
+                self.fn = fn
+                self.mutate = mutate
+                self.register_buffer("buffer", torch.tensor(values))
+
+            def forward(self, x):
+                result = self.fn(self.buffer, x).float()
+                if self.mutate:
+                    self.buffer.add_(1)
+                return result
+
+        a, b = torch.tensor([[1, 2]]), torch.tensor([[2, 9]])
+        for name, fn in {"le": torch.le, "lt": torch.lt, "ne": torch.ne}.items():
+            cases = {
+                "x * 3": (Lambda(lambda a, b, fn=fn: fn(a * 3, b).float()), (a, b)),
+                "mutable buffer": (BufferCompare(fn, [[1, 2]], True), (b,)),
+            }
+            for case, (model, inputs) in cases.items():
+                with self.subTest(op=name, case=case):
+                    with self.assertRaisesRegex(AssertionError, "must be an integer"):
+                        compile_ggml(model, inputs)
+            with self.subTest(op=name, case="constant over 2^24"):
+                with self.assertRaisesRegex(AssertionError, r"2\^24"):
+                    compile_ggml(BufferCompare(fn, [[2**25, 2]], False), (b,))
+            with self.subTest(op=name, case="adds and subtracts"):
+                self._check(
+                    Lambda(lambda a, b, fn=fn: fn(a + b - 3, b).float()), (a, b)
+                )
+
+    def test_integer_compare_rechecks_its_inputs_on_every_run(self):
+        steps = [
+            (torch.tensor([[1, 2]]), torch.tensor([[2, 2]])),
+            (torch.tensor([[16777217, 2]]), torch.tensor([[16777216, 2]])),
+        ]
+        for model in (
+            Lambda(lambda a, b: (a <= b).float()),
+            Lambda(lambda a, b: (a + 1 <= b).float()),
+        ):
+            with tempfile.TemporaryDirectory() as tmp:
+                outdir = Path(tmp)
+                package = outdir / "model.ptn"
+                to_native(torch.export.export(model, steps[0])).save(str(package))
+                # The second run replays the first run's graph.
+                with self.assertRaisesRegex(AssertionError, r"2\^24"):
+                    _run_ggml(package, steps, outdir, 1)
+
+    def test_le_and_lt_round_to_half_types_as_eager(self):
+        x = torch.tensor([[0.5, 0.25, 0.75]])
+        cases = {
+            "le": lambda x: (x <= 0.49999).float(),
+            "lt": lambda x: (x < 0.50001).float(),
+        }
+        for dtype in (torch.float16, torch.bfloat16):
+            for name, fn in cases.items():
+                with self.subTest(op=name, dtype=dtype):
+                    self._check(Lambda(fn), (x.to(dtype),), atol=0, rtol=0)
+
+    def test_empty_tensors_are_refused(self):
+        # Eager splits an empty dim into one empty piece.
+        cases = {
+            "split": lambda x: torch.split(x, 2)[0] * 2.0,
+            "mul": lambda x: x * 2.0,
+        }
+        for name, fn in cases.items():
+            with self.subTest(case=name), self.assertRaisesRegex(
+                AssertionError, "without elements"
+            ):
+                self._check(Lambda(fn), (torch.randn(0, 2),))
+
+    def test_split(self):
+        x = torch.randn(4, 6, 5)
+        cases = {
+            "sizes last dim": lambda x: torch.split(x, [2, 1, 2], dim=-1),
+            "sizes middle dim": lambda x: torch.split(x, [2, 3, 1], dim=1),
+            "size outer dim": lambda x: torch.split(x, 3, dim=0),
+            "one piece used": lambda x: torch.split(x, [2, 4], dim=1)[1] * 2.0,
+        }
+        for name, fn in cases.items():
+            with self.subTest(case=name):
+                self._check(Lambda(fn), (x,))
+
+    def test_topk(self):
+        # Distinct values: ties may come out in another order.
+        x = torch.randperm(240).float().reshape(2, 3, 4, 10) / 7
+        for largest in (True, False):
+            with self.subTest(largest=largest):
+                ops = collections.Counter()
+                self._check(
+                    Lambda(
+                        lambda x, largest=largest: torch.topk(x, 4, largest=largest)
+                    ),
+                    (x,),
+                    graph_ops=ops,
+                )
+                # llama.cpp's ggml_argsort_top_k: one argsort and the values'
+                # gather per built graph, and no NaN key map.
+                self.assertEqual(ops["ARGSORT"], ops["GET_ROWS"])
+                self.assertEqual((ops["CONCAT"], ops["FILL"]), (0, 0))
+
+    def test_topk_rejects_an_inner_dim(self):
+        with self.assertRaisesRegex(AssertionError, "last dimension only"):
+            self._check(Lambda(lambda x: torch.topk(x, 2, dim=0)), (torch.randn(4, 3),))
+
+    def test_topk_ranks_nan_above_every_value_for_testing(self):
+        # Only with exact_topk_for_testing: by default topk sorts as
+        # llama.cpp, with no order for a row holding NaN.
+        nan, inf = float("nan"), float("inf")
+        x = torch.tensor(
+            [
+                [1.0, nan, -inf, 3.0, inf, 0.5],
+                [inf, -2.0, nan, -inf, 4.0, 2.0],
+                [nan, 0.0, -1.0, 5.0, -inf, inf],
+            ]
+        )
+        for largest in (True, False):
+            with self.subTest(largest=largest):
+                self._check(
+                    Lambda(
+                        lambda x, largest=largest: torch.topk(x, 4, largest=largest)
+                    ),
+                    (x,),
+                    atol=0,
+                    rtol=0,
+                    exact_topk_for_testing=True,
+                )
+
+    def test_topk_of_integers_checks_that_f32_holds_them(self):
+        def topk(x):
+            return torch.topk(x, 2).values
+
+        self._check(Lambda(topk), (torch.tensor([[4, 9, -1]]),))
+        with self.assertRaisesRegex(AssertionError, r"2\^24"):
+            self._check(Lambda(topk), (torch.tensor([[16777217, 2, 1]]),))
 
     def test_symbolic_neg_slices_from_the_end(self):
         class Tail(torch.nn.Module):
@@ -1566,6 +2072,99 @@ class GgmlOpsTest(unittest.TestCase):
                 # first step makes the second step's wider extent build a third.
                 prefix = name != "position <= key"
                 self.assertEqual(ops["FLASH_ATTN_EXT"], 3 if prefix else 2)
+
+    def test_sdpa_masks_over_caches_longer_than_the_host_computes(self):
+        # The host bounds the keys' positions by the arange's arguments once,
+        # and positions - window, which a graph input computes, on every run:
+        # in the graph compile builds and in the run's.
+        for window, checks in ((None, 0), (4, 2)):
+            with self.subTest(window=window):
+                ops = collections.Counter()
+                self._check(
+                    LongCacheMask(131072, window),
+                    (torch.randn(1, 2, 3, 32), torch.tensor([7, 8, 9])),
+                    graph_ops=ops,
+                )
+                self.assertEqual(ops["host integer checks"], checks)
+
+    def test_sdpa_mask_positions_written_to_a_cache_need_no_per_run_check(self):
+        # Every run checks the positions a cache is written at against its
+        # rows, which bounds the query positions computed from them too.
+        inputs = (
+            torch.randn(1, 2, 3, 32),
+            torch.randn(1, 2, 3, 32),
+            torch.tensor([5, 6, 7]),
+        )
+        # Compile builds a graph, and so does the run.
+        for rows, checks in ((None, 0), (torch.tensor([1, 2, 3]), 2)):
+            with self.subTest(rows=rows):
+                ops = collections.Counter()
+                written = inputs if rows is None else (*inputs, rows)
+                self._check(WrittenCacheMask(16), written, graph_ops=ops)
+                self.assertEqual(ops["host integer checks"], checks)
+
+    def test_cache_positions_past_the_cache_fail_before_any_compare(self):
+        # The positions bounding the mask are the cache write's row indices,
+        # rejected on the first run and on a replay, cached or not.
+        def step(positions):
+            return (torch.randn(1, 2, 3, 32), torch.randn(1, 2, 3, 32), positions)
+
+        good, bad = step(torch.tensor([5, 6, 7])), step(torch.tensor([14, 15, 16]))
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            package = outdir / "model.ptn"
+            exported = torch.export.export(WrittenCacheMask(16), good)
+            to_native(exported).save(str(package))
+            for cached in (1, 0):
+                for steps in ([bad], [good, bad]):
+                    with self.subTest(cached=cached, steps=len(steps)):
+                        with self.assertRaisesRegex(
+                            AssertionError, r"row index is outside \[0, 16\)"
+                        ):
+                            _run_ggml(
+                                package, steps, outdir, 1, max_cached_graphs=cached
+                            )
+
+    def test_compare_checks_shape_bounded_integers_once_per_graph(self):
+        n = Dim("n", min=1, max=8)
+        cases = {
+            # arange(n) + 3 is bounded by n's size in each graph.
+            "arange + 3 <= i": (lambda x, i: (torch.arange(x.shape[1]) + 3 <= i), 0),
+            # i + 3 is bounded only by i's values in each run.
+            "i + 3 <= arange": (lambda x, i: (i + 3 <= torch.arange(x.shape[1])), 1),
+        }
+        steps = [
+            (torch.randn(1, 5), torch.tensor([[6]])),
+            (torch.randn(1, 3), torch.tensor([[1]])),
+        ]
+
+        class Masked(torch.nn.Module):
+            def __init__(self, fn):
+                super().__init__()
+                self.fn = fn
+
+            def forward(self, x, i):
+                return x * self.fn(x, i).float()
+
+        for name, (fn, checks) in cases.items():
+            with self.subTest(case=name):
+                model = Masked(fn)
+                ops = collections.Counter()
+                with tempfile.TemporaryDirectory() as tmp:
+                    outdir = Path(tmp)
+                    package = outdir / "model.ptn"
+                    ep = torch.export.export(
+                        model, steps[0], dynamic_shapes={"x": {1: n}, "i": None}
+                    )
+                    to_native(ep).save(str(package))
+                    outputs = _run_ggml(
+                        package, steps, outdir, 1, resize=True, graph_ops=ops
+                    )
+                # Compile builds a graph, then each shape its own.
+                self.assertEqual(ops["host integer checks"], 3 * checks)
+                for ((raw, shape),), inputs in zip(outputs, steps):
+                    actual = torch.frombuffer(bytearray(raw), dtype=torch.float32)
+                    torch.testing.assert_close(actual.reshape(shape), model(*inputs))
 
     def test_sdpa_key_prefix_of_overflowing_positions(self):
         # The host folds positions + 1 for the key extent before the engine
