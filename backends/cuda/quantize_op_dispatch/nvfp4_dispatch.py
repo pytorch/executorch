@@ -217,9 +217,10 @@ def nvfp4_gated_linear(x: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
     ``weight`` rows are ``[gate; up]`` as produced by
     ``CudaNVFP4Tensor.fuse_along_output([gate, up])`` (per-row global scales
     in the same order), so N must be even. With native FP4 and BF16 (or FP32
-    under the FP32 prefill policy) activations, outside ``w4a16`` mode, it runs
-    the fused prefill kernels; otherwise it is ``F.linear`` (NVFP4 dispatch,
-    including decode kernels for small M) followed by SiLU-gating.
+    under the FP32 prefill policy) activations, outside ``w4a16`` mode and for
+    M not statically <= ``NVFP4_DECODE_MAX_ROWS``, it runs the fused prefill
+    kernels; otherwise it is ``F.linear`` (NVFP4 dispatch, including decode
+    kernels for small M) followed by SiLU-gating.
 
     The weight stays an op argument until subclass decomposition: accessing a
     parametrized NVFP4 weight's fields in a model forward makes Dynamo capture
@@ -248,6 +249,7 @@ def _gated_linear(func, types, args, kwargs):
     # policy at prefill size, like _linear.
     if (
         mode == "w4a16"
+        or statically_known_true(flat.shape[0] <= NVFP4_DECODE_MAX_ROWS)
         or (
             x.dtype != torch.bfloat16
             and not (x.dtype == torch.float32 and output_dtype == torch.float32)
