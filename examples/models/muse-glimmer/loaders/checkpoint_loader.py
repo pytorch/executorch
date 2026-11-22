@@ -351,9 +351,32 @@ def _fuse_state_dict(
                     group_sd[fused_fqn] = atomic_sd[fused_fqn]
                     group_consumed.add(fused_fqn)
                     continue
-                group_sd[fused_fqn] = fuse_along_output(
-                    [atomic_sd[f] for f in shard_fqns]
-                )
+                shards = [atomic_sd[f] for f in shard_fqns]
+                if backend == "cuda":
+                    from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
+                    from executorch.extension.llm.export.nvfp4 import (
+                        ExportableNVFP4Tensor,
+                    )
+
+                    nvfp4_types = (ExportableNVFP4Tensor, CudaNVFP4Tensor)
+                    if any(isinstance(w, nvfp4_types) for w in shards):
+                        if not all(isinstance(w, nvfp4_types) for w in shards):
+                            raise ValueError(
+                                "CUDA NVFP4 fusion requires every shard to be NVFP4"
+                            )
+                        shards = [
+                            (
+                                CudaNVFP4Tensor.from_exportable(w)
+                                if isinstance(w, ExportableNVFP4Tensor)
+                                else w
+                            )
+                            for w in shards
+                        ]
+                        group_sd[fused_fqn] = CudaNVFP4Tensor.fuse_along_output(shards)
+                    else:
+                        group_sd[fused_fqn] = fuse_along_output(shards)
+                else:
+                    group_sd[fused_fqn] = fuse_along_output(shards)
                 group_consumed.update(shard_fqns)
         except ValueError as exc:
             print(f"Keeping {fused_tmpl} projections separate: {exc}")
@@ -371,17 +394,44 @@ def _fuse_state_dict(
 
 
 def _atomic_sd_from_gguf(gguf_path: str, activation_dtype: torch.dtype) -> dict:
-    from executorch.extension.llm.export.load import iter_checkpoint
+    import numpy as np
+    from executorch.extension.llm.export.gguf import ExportableGGUFTensor, iter_gguf
     from executorch.extension.llm.export.quant import to_default
 
-    return dict(
-        iter_checkpoint(
-            gguf_path,
-            key_map=gguf_to_model_key,
-            convert=to_default,
-            dtype=activation_dtype,
-        )
-    )
+    # Companion tensors can occur before or after their weight in a GGUF.
+    # Keep only the tiny companions in this pass, then stream weights once.
+    from gguf import GGMLQuantizationType, GGUFReader
+
+    companions = {}
+    for tensor in GGUFReader(gguf_path).tensors:
+        if tensor.name.endswith((".scale", ".input_scale")):
+            if tensor.tensor_type != GGMLQuantizationType.F32 or tensor.data.size != 1:
+                raise ValueError(f"Expected scalar F32 companion: {tensor.name}")
+            companions[tensor.name] = float(np.asarray(tensor.data).reshape(-1)[0])
+    state = {}
+    for name, weight in iter_gguf(gguf_path):
+        if name.endswith((".scale", ".input_scale")):
+            continue
+        key = gguf_to_model_key(name)
+        if key is None:
+            continue
+        if isinstance(weight, ExportableGGUFTensor) and weight.ggml_type == "nvfp4":
+            # llama.cpp currently dynamically quantizes activations, regardless
+            # of input_scale metadata. Preserve static scale as an explicit opt-in.
+            use_static = os.environ.get("ET_CUDA_NVFP4_STATIC_ACT", "0") == "1"
+            weight = weight.to_exportable_nvfp4_tensor(
+                per_tensor_scale=torch.tensor(
+                    companions.get(name.replace(".weight", ".scale"), 1.0)
+                ),
+                output_dtype=activation_dtype,
+                act_per_tensor_scale=(
+                    companions.get(name.replace(".weight", ".input_scale"))
+                    if use_static
+                    else None
+                ),
+            )
+        state[key] = to_default(key, weight).to(dtype=activation_dtype)
+    return state
 
 
 def _atomic_sd_from_safetensors(

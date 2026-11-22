@@ -224,13 +224,16 @@ def _time_candidates(
     args: tuple,
     kwargs: dict,
     candidate_prepass: Callable[[], ContextManager[Any]] | None,
+    do_bench: Callable[[Callable[[], Any]], float] | None = None,
 ) -> tuple[dict[Any, float], dict[Any, str]]:
     # Leave export's fake / functional / proxy modes, and launch the Triton
     # kernels directly, as triton_op's eager path does: through wrap_triton's
     # higher-order op every call builds a new Triton autotuner, so each call
     # would re-tune (and fail inside a CUDA-graph capture).
-    with unset_fake_temporarily(), _disable_current_modes(), set_wrap_triton_enabled(
-        False
+    with (
+        unset_fake_temporarily(),
+        _disable_current_modes(),
+        set_wrap_triton_enabled(False),
     ):
         device = _first_device((*args, *kwargs.values()))
         stream = torch.cuda.Stream(device)
@@ -257,9 +260,10 @@ def _time_candidates(
                     continue
                 runs[value] = run
             samples: dict[Any, list[float]] = {value: [] for value in runs}
+            timer = do_bench or time_with_cuda_graph_us
             for _ in range(_ROUNDS):
                 for value, run in runs.items():
-                    samples[value].append(time_with_cuda_graph_us(run))
+                    samples[value].append(timer(run))
         stream.synchronize()
     return {value: statistics.median(ts) for value, ts in samples.items()}, rejected
 
@@ -279,25 +283,25 @@ def _time_candidates_within_memory(
     kwargs: dict,
     stats: LaunchParamStats,
     candidate_prepass: Callable[[], ContextManager[Any]] | None,
+    do_bench: Callable[[Callable[[], Any]], float] | None = None,
 ) -> tuple[dict[Any, float] | None, dict[Any, str]]:
     """``_time_candidates``, retried after freeing the device's cache and then
     with the offload tensors parked on the CPU. Returns no times when the device
     still runs out of memory."""
+    timing_args = (fn, param, candidates, args, kwargs, candidate_prepass)
     try:
-        return _time_candidates(fn, param, candidates, args, kwargs, candidate_prepass)
+        return _time_candidates(*timing_args, do_bench=do_bench)
     except torch.OutOfMemoryError:
         _free_device_memory()
     try:
-        return _time_candidates(fn, param, candidates, args, kwargs, candidate_prepass)
+        return _time_candidates(*timing_args, do_bench=do_bench)
     except torch.OutOfMemoryError:
         _free_device_memory()
     if _STATE.offload is not None:
         try:
             with _parked_on_cpu(_STATE.offload()):
                 stats.offloads += 1
-                return _time_candidates(
-                    fn, param, candidates, args, kwargs, candidate_prepass
-                )
+                return _time_candidates(*timing_args, do_bench=do_bench)
         except torch.OutOfMemoryError:
             _free_device_memory()
     logger.warning(
@@ -315,12 +319,16 @@ def autotune_launch_param(
     candidates: Sequence[Any],
     *,
     candidate_prepass: Callable[[], ContextManager[Any]] | None = None,
+    do_bench: Callable[[Callable[[], Any]], float] | None = None,
 ) -> Callable[[F], F]:
     """Fills keyword argument ``param`` of the decorated launch function with
     the fastest of ``candidates`` during AOTI compile (see the module doc).
 
     If provided, ``candidate_prepass`` scopes one untimed call of every
     candidate before normal launch and timing.
+
+    ``do_bench`` optionally supplies a device-time callback in microseconds.
+    Its default retains the existing CUDA-graph minimum timing.
     """
     candidates = tuple(candidates)
     if not candidates:
@@ -368,6 +376,7 @@ def autotune_launch_param(
                         kwargs,
                         stats,
                         candidate_prepass,
+                        do_bench=do_bench,
                     )
                     if times is None:
                         stats.out_of_memory += 1

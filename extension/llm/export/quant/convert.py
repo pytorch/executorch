@@ -26,8 +26,12 @@ These only convert a weight's *representation*; assigning it into a model
 
 :func:`fuse_along_output` is the multi-weight companion: it concatenates several
 weights (e.g. ``gate_proj|up_proj`` or ``q|k|v``) along the output-channel dim,
-subclass-aware, so fusion happens once on the portable form before backend
-packing. It handles the same tensor types as :func:`maybe_cast`.
+subclass-aware, on the portable form before backend packing. It handles the
+same tensor types as :func:`maybe_cast`. The exception is NVFP4: weights
+quantized with per-tensor scales usually have different global scales, which
+one ``ExportableNVFP4Tensor`` cannot hold, so they are rejected here and a CUDA
+loader fuses them after packing with ``CudaNVFP4Tensor.fuse_along_output``
+(one global scale per output row).
 """
 
 from collections.abc import Sequence
@@ -92,8 +96,9 @@ def fuse_along_output(tensors: Sequence[torch.Tensor]) -> torch.Tensor:
     """Concatenate weights along the output-channel (``N``) dim, subclass-aware.
 
     Fuses e.g. ``gate_proj|up_proj`` or ``q|k|v`` into one weight *before*
-    backend packing, so both the MLX and CUDA packers consume a single fused
-    weight (no backend-specific concat needed). ``N`` is dim 0 of the logical
+    backend packing, so the MLX and CUDA packers consume a single fused weight.
+    NVFP4 weights with different global scales raise ``ValueError`` (see the
+    module docstring for the CUDA alternative). ``N`` is dim 0 of the logical
     ``(N, K)`` weight. Handles the same types as :func:`maybe_cast`:
 
     * a plain (unquantized) tensor -> ``torch.cat(dim=0)``.
@@ -101,6 +106,9 @@ def fuse_along_output(tensors: Sequence[torch.Tensor]) -> torch.Tensor:
       dim 1 (they are stored transposed as ``(K // group_size, N)``).
     * ``IntxUnpackedToInt8Tensor`` / ``ExportableGGUFTensor`` -> every packed
       field on dim 0 (all are ``N``-major).
+    * ``ExportableNVFP4Tensor`` / ``ExportableMXTensor`` -> ``qdata``/``scale`` on
+      dim 0; NVFP4's scalar ``per_tensor_scale`` must match (see the module
+      docstring for CUDA's per-row alternative).
 
     Exact: ``scale``/``zero_point`` are per-(group, output-channel) and each
     packed row is an independent group / GGUF super-block, so concatenating
@@ -141,6 +149,12 @@ def fuse_along_output(tensors: Sequence[torch.Tensor]) -> torch.Tensor:
         ExportableNVFP4Tensor,
     )
     from torchao.quantization import IntxUnpackedToInt8Tensor
+
+    if isinstance(first, ExportableGGUFTensor) and first.ggml_type == "nvfp4":
+        raise TypeError(
+            "fuse_along_output cannot fuse GGUF NVFP4 blocks without their "
+            ".scale tensors; convert with to_exportable_nvfp4_tensor first"
+        )
 
     # Per-data-field concat axis (the output-channel dim) by subclass layout. An
     # axis of ``None`` means the field is not per-output-channel (e.g. NVFP4's

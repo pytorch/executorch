@@ -34,12 +34,14 @@ and improves tile utilization, especially during decode (seqlen_q=1).
 
 import functools
 import math
+import os
 from typing import Optional
 
 import torch
 import triton
 import triton.language as tl
 from executorch.backends.cuda.autotune.inputs import autotune_inputs
+from torch.fx.experimental.symbolic_shapes import statically_known_true
 from torch.library import triton_op, wrap_triton
 
 
@@ -71,6 +73,9 @@ def _is_power_of_2(n: int) -> bool:
 # kernel. The replacement pass still routes only L_q == 1 directly to
 # triton.sdpa_decode_splitk.
 _SPLITK_LKV_THRESHOLD = 256
+# Widest query block the small-query split-K kernel serves (verify blocks,
+# packed multi-sequence decode). Its rows are L_q * GQA groups per CTA.
+_SMALL_QUERY_MAX_LQ = int(os.environ.get("ET_CUDA_SDPA_SMALL_QUERY_MAX_LQ", "16"))
 
 
 _TMA_PREFILL_LKV_THRESHOLD = 16384
@@ -1393,7 +1398,9 @@ def sdpa(
                 HAS_KV_LEN,
             )
             return out
-        if 2 <= L_q <= 4:
+        if statically_known_true(L_q >= 2) and statically_known_true(
+            L_q <= _SMALL_QUERY_MAX_LQ
+        ):
             _launch_small_query_splitk(
                 query,
                 key,
@@ -1977,6 +1984,8 @@ def _sdpa_decode_splitk_abstract(
         triton.Config({"BLOCK_N": 128}, num_warps=8, num_stages=2),
         triton.Config({"BLOCK_N": 256}, num_warps=4, num_stages=2),
         triton.Config({"BLOCK_N": 256}, num_warps=8, num_stages=2),
+        triton.Config({"BLOCK_N": 64}, num_warps=8, num_stages=2),
+        triton.Config({"BLOCK_N": 32}, num_warps=8, num_stages=2),
     ],
     key=["Lk", "HEAD_DIM", "NUM_GROUPS", "LQ", "HAS_MASK", "MASK_IS_CAUSAL"],
 )
@@ -2076,24 +2085,7 @@ def _sdpa_small_query_splitk_kernel(
         offs_n = tile_start + offs_n_init
         n_valid = offs_n < end_n
 
-        k_ptrs = K_ptr + (
-            b * stride_kb
-            + h_kv * stride_kh
-            + offs_n[:, None] * stride_kn
-            + offs_d[None, :] * stride_kd
-        )
-        k = tl.load(k_ptrs, mask=n_valid[:, None], other=0.0).to(tl.bfloat16)
-
-        # QK: [BLOCK_M, BLOCK_N]
-        qk = (tl.dot(q, tl.trans(k)).to(tl.float32) * sm_scale).to(tl.float32)
-
-        # Mask out-of-bounds KV positions
-        qk = tl.where(
-            n_valid[None, :],
-            qk,
-            tl.full(qk.shape, -float("inf"), dtype=tl.float32),
-        )
-
+        visible = 1
         if HAS_MASK:
             mask_ptrs = Mask_ptr + (
                 b * stride_mb
@@ -2105,38 +2097,59 @@ def _sdpa_small_query_splitk_kernel(
                 mask=row_valid[:, None] & n_valid[None, :],
                 other=False,
             )
+            visible = tl.max(tl.max(mask_block.to(tl.int32), axis=1), axis=0)
+        if visible > 0:
+            k_ptrs = K_ptr + (
+                b * stride_kb
+                + h_kv * stride_kh
+                + offs_n[:, None] * stride_kn
+                + offs_d[None, :] * stride_kd
+            )
+            k = tl.load(k_ptrs, mask=n_valid[:, None], other=0.0).to(tl.bfloat16)
+
+            # QK: [BLOCK_M, BLOCK_N]
+            qk = (tl.dot(q, tl.trans(k)).to(tl.float32) * sm_scale).to(tl.float32)
+
+            # Mask out-of-bounds KV positions
             qk = tl.where(
-                mask_block, qk, tl.full(qk.shape, -float("inf"), dtype=tl.float32)
+                n_valid[None, :],
+                qk,
+                tl.full(qk.shape, -float("inf"), dtype=tl.float32),
             )
 
-        if MASK_IS_CAUSAL:
-            absolute_q = (kv_len - LQ) + query_rows
-            causal = offs_n[None, :] > absolute_q[:, None]
-            qk = tl.where(
-                causal, tl.full(qk.shape, -float("inf"), dtype=tl.float32), qk
+            if HAS_MASK:
+                qk = tl.where(
+                    mask_block, qk, tl.full(qk.shape, -float("inf"), dtype=tl.float32)
+                )
+
+            if MASK_IS_CAUSAL:
+                absolute_q = (kv_len - LQ) + query_rows
+                causal = offs_n[None, :] > absolute_q[:, None]
+                qk = tl.where(
+                    causal, tl.full(qk.shape, -float("inf"), dtype=tl.float32), qk
+                )
+
+            m_ij = tl.maximum(m_i, tl.max(qk, axis=1).to(tl.float32))
+            safe_diff = tl.where(
+                m_ij[:, None] > -float("inf"), qk - m_ij[:, None], -float("inf")
             )
+            p_f32 = tl.exp(safe_diff).to(tl.float32)
+            l_ij = tl.sum(p_f32, axis=1).to(tl.float32)
+            safe_alpha_diff = tl.where(m_ij > -float("inf"), m_i - m_ij, 0.0)
+            alpha = tl.exp(safe_alpha_diff).to(tl.float32)
 
-        m_ij = tl.maximum(m_i, tl.max(qk, axis=1).to(tl.float32))
-        safe_diff = tl.where(
-            m_ij[:, None] > -float("inf"), qk - m_ij[:, None], -float("inf")
-        )
-        p_f32 = tl.exp(safe_diff).to(tl.float32)
-        l_ij = tl.sum(p_f32, axis=1).to(tl.float32)
-        safe_alpha_diff = tl.where(m_ij > -float("inf"), m_i - m_ij, 0.0)
-        alpha = tl.exp(safe_alpha_diff).to(tl.float32)
+            v_ptrs = V_ptr + (
+                b * stride_vb
+                + h_kv * stride_vh
+                + offs_n[:, None] * stride_vn
+                + offs_d[None, :] * stride_vd
+            )
+            v = tl.load(v_ptrs, mask=n_valid[:, None], other=0.0).to(tl.bfloat16)
 
-        v_ptrs = V_ptr + (
-            b * stride_vb
-            + h_kv * stride_vh
-            + offs_n[:, None] * stride_vn
-            + offs_d[None, :] * stride_vd
-        )
-        v = tl.load(v_ptrs, mask=n_valid[:, None], other=0.0).to(tl.bfloat16)
-
-        p_bf16 = p_f32.to(tl.bfloat16)
-        acc = (acc * alpha[:, None] + tl.dot(p_bf16, v)).to(tl.float32)
-        l_i = (l_i * alpha + l_ij).to(tl.float32)
-        m_i = m_ij
+            p_bf16 = p_f32.to(tl.bfloat16)
+            acc = (acc * alpha[:, None] + tl.dot(p_bf16, v)).to(tl.float32)
+            l_i = (l_i * alpha + l_ij).to(tl.float32)
+            m_i = m_ij
 
     # Padded query/head rows can alias valid outputs, so all stores need row_valid.
     o_ptrs = O_partial_ptr + (
@@ -2394,7 +2407,8 @@ def sdpa_small_query_splitk(
     phi: float = 5.0,
     kv_len: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
-    """Split-K flash-decoding SDPA for small query blocks (2 <= L_q <= 4).
+    """Split-K flash-decoding SDPA for small query blocks (2 <= L_q <=
+    ``ET_CUDA_SDPA_SMALL_QUERY_MAX_LQ``, default 16).
 
     Tracks a stable online-softmax maximum per split, then rescales partial
     results by the global maximum during reduction.
@@ -2427,9 +2441,10 @@ def sdpa_small_query_splitk(
     # tracing where shapes are symbolic. torch.cond traces both branches with
     # the same symbolic L_q, so L_q is not necessarily concrete during tracing.
     if isinstance(L_q, int):
-        if not 2 <= L_q <= 4:
+        if not 2 <= L_q <= _SMALL_QUERY_MAX_LQ:
             raise RuntimeError(
-                f"sdpa_small_query_splitk requires 2 <= L_q <= 4; got L_q={L_q}"
+                "sdpa_small_query_splitk requires "
+                f"2 <= L_q <= {_SMALL_QUERY_MAX_LQ}; got L_q={L_q}"
             )
         if H_q % H_kv != 0:
             raise RuntimeError(
