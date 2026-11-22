@@ -32,17 +32,17 @@ class CudaNVFP4MLP(nn.Module):
 
 
 def install_nvfp4_gate_up_epilogues(model):
+    """Swap every fused BF16 NVFP4 gate/up MLP for ``CudaNVFP4MLP``; returns
+    the number swapped. Idempotent."""
     count = 0
     for layer in model.layers:
         mlp = layer.mlp
-        if not mlp.fuse_gate_up:
+        if isinstance(mlp, CudaNVFP4MLP) or not mlp.fuse_gate_up:
             continue
         weight = mlp.gate_up_proj.weight
         if (
             not isinstance(weight, CudaNVFP4Tensor)
             or weight.orig_dtype != torch.bfloat16
-            or weight.shape[0] != 2 * mlp.intermediate_size
-            or mlp.gate_up_proj.bias is not None
         ):
             continue
         layer.mlp = CudaNVFP4MLP(mlp)

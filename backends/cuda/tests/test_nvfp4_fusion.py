@@ -275,7 +275,7 @@ def test_auto_decode_w4a8_mode_only_on_nvidia_without_native_fp4(
 
     calls = []
 
-    def launch(x, qdata, scale, pts, *, split_k):
+    def launch(x, qdata, scale, pts, max_rows, *, split_k):
         calls.append(split_k)
         return x.new_empty((x.shape[0], qdata.shape[0]))
 
