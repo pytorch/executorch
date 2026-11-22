@@ -337,12 +337,14 @@ def add_kv_layout_arguments(parser) -> None:
 def add_nvfp4_act_argument(parser) -> None:
     parser.add_argument(
         "--nvfp4-act",
-        choices=("auto", "w4a4", "w4a16"),
+        choices=("auto", "w4a4", "w4a8", "w4a16"),
         default=None,
         help="CUDA NVFP4 activation mode, sets ET_CUDA_NVFP4_ACT (default: "
         "the environment's value, else auto). auto times W4A4 against W4A16 "
-        "per shape when native FP4 is available, w4a4 forces FP4 activations "
-        "(native FP4 required), w4a16 forces BF16 activations.",
+        "per shape when native FP4 is available, and decode W4A16 against the "
+        "INT8-activation W4A8 GEMV otherwise; w4a4 forces FP4 activations "
+        "(native FP4 required), w4a8 forces the W4A8 decode GEMV, w4a16 "
+        "forces BF16 activations.",
     )
 
 
@@ -469,6 +471,9 @@ def export_cuda_batching(  # noqa: C901
         enable_offgraph_kv_cache,
         offgraph_kv_cache_geometry,
     )
+    from executorch.examples.models.muse_glimmer.source_transformations.nvfp4 import (
+        install_nvfp4_gate_up_epilogues,
+    )
     from executorch.exir import (
         EdgeCompileConfig,
         ExecutorchBackendConfig,
@@ -537,6 +542,7 @@ def export_cuda_batching(  # noqa: C901
     if hasattr(inductor_config, "cpp_cache_precompile_headers"):
         inductor_config.cpp_cache_precompile_headers = False
 
+    install_nvfp4_gate_up_epilogues(model)
     single_manifest = enable_offgraph_kv_cache(model, max_step_tokens)
     manifest = (
         batched_sequence_manifest(single_manifest, max_kv_seqs)

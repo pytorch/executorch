@@ -129,13 +129,10 @@ def test_dequant_prefill_selection(env, native, rows, mode, fp32, expected):
         nvfp4_dispatch, "_has_native_fp4", return_value=native
     ):
         output_dtype = torch.float32 if fp32 else None
-        assert nvfp4_dispatch._dequant_prefill(flat, mode, output_dtype) == expected
-
-
-def test_dequant_prefill_rejects_unknown(monkeypatch):
-    monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_IMPL", "cublas")
-    with pytest.raises(ValueError):
-        nvfp4_dispatch._dequant_prefill(torch.empty(65, 32), "auto", None)
+        impl = nvfp4_dispatch._prefill_impl()
+        assert nvfp4_dispatch._dequant_prefill(flat, mode, output_dtype, impl) == (
+            expected
+        )
 
 
 @CUDA

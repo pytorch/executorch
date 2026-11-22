@@ -2,7 +2,7 @@
 # All rights reserved.
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-"""NVFP4 linears for small static M (2..16): one op per M bucket.
+"""NVFP4 linears for small M (2..16, static or bounded): one op per M bucket.
 
 Packed decode steps (several sessions, or a speculative verify block) run the
 same weights for a handful of rows. Reading the weights once per row, as the
@@ -31,18 +31,14 @@ from executorch.backends.cuda.autotune.launch_params import (
     InvalidLaunchParam,
 )
 from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
+    _check_operands,
     _check_split,
     _check_static_scale,
-    _check_weight,
-    _e4m3_f16,
-    _e4m3_to_f32,
-    _fp4_pair_f16,
+    _decode_pair,
     _has_native_fp4_conversion,
     _quantize_activation,
     _reduce_partials,
-    _scaled_pair,
     _SMALL_M_CONFIGS,
-    _SOFT_FP4_RESCALE,
     _w4a16,
     _w4a4,
     SPLIT_K_CANDIDATES,
@@ -133,13 +129,7 @@ def _gemv_rows(
         mask = (n[:, None] < N) & kmask[None, :]
         q = tl.load(Q + n[:, None] * (K // 2) + kk[None, :], mask, 0)
         b = tl.load(S + n[:, None] * (K // 16) + kk[None, :] // 8, mask, 0)
-        if NATIVE:
-            lo, hi = _scaled_pair(q, _e4m3_to_f32(b, NATIVE), False)
-        else:
-            lo, hi = _fp4_pair_f16(q)
-            sf = _e4m3_f16(b) * _SOFT_FP4_RESCALE
-            lo = lo * sf
-            hi = hi * sf
+        lo, hi = _decode_pair(q, b, NATIVE)
         if UNIT_SCALE:
             w0, w1 = lo, hi
         else:
@@ -312,11 +302,13 @@ def _prototype(
 
 def _family_launch(bucket, x, qdata, scale, pts, act_scale, unit_scale, weight_only):
     # Checked once here: timing runs the candidates on random stand-ins.
-    _check_weight(qdata, scale, pts)
-    _check_static_scale(act_scale, x)
+    x = x.contiguous()
+    _check_operands(x, qdata, scale, pts)
+    if not weight_only:
+        _check_static_scale(act_scale, x)
     return _launch(
         bucket,
-        x.contiguous(),
+        x,
         qdata,
         scale,
         pts,
@@ -339,8 +331,6 @@ def _unsupported_reason(
         return f"activation dtype {x.dtype} is not BF16/FP16"
     if x.shape[1] != qdata.shape[1] * 2 or x.shape[1] % 16:
         return "K must match the weight and be a multiple of 16"
-    if statically_known_true(x.shape[0] <= 1):
-        return "M = 1 takes the decode GEMV"
     if not statically_known_true(x.shape[0] <= bucket):
         return f"M is not statically <= {bucket}"
     return None
