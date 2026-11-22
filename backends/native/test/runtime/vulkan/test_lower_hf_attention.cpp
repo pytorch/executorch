@@ -13,6 +13,7 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -859,6 +860,263 @@ TEST(LowerHFAttentionTest, ChecksSourceOfViewedMaskQueryOperand) {
     graph.rebuild_def_use();
 
     EXPECT_EQ(lower_hf_attention(graph), from_cache_position ? 1 : 0);
+  }
+}
+
+// The parts of transformers 5's mask query positions, arange(T) +
+// cache_position[0:1], that a test varies.
+struct OffsetArange {
+  int64_t start = 0;
+  Argument end = IntArg{kTokens};
+  int64_t step = 1;
+  int64_t alpha = 1;
+  ValueId sliced = 3;
+  int64_t slice_start = 0;
+  int64_t slice_end = 1;
+  int64_t slice_step = 1;
+  ScalarType range_dtype = ScalarType::Long;
+  ScalarType offset_dtype = ScalarType::Long;
+  ScalarType result_dtype = ScalarType::Long;
+};
+
+// Makes nodes `consumers` read arange(start, end, step) + clone(slice(sliced,
+// 0, slice_start, slice_end, slice_step)) where they read cache_position.
+void use_offset_arange(
+    Graph& graph,
+    const std::vector<NodeId>& consumers,
+    const OffsetArange& q) {
+  const ValueId first = graph.append_value(Value("first", q.offset_dtype, {1}));
+  const ValueId cloned =
+      graph.append_value(Value("first_clone", q.offset_dtype, {1}));
+  const ValueId range =
+      graph.append_value(Value("query_arange", q.range_dtype, {kTokens}));
+  const ValueId positions =
+      graph.append_value(Value("query_positions", q.result_dtype, {kTokens}));
+  const NodeId before = consumers.front();
+  graph.insert_node_before(
+      before,
+      call(
+          "first",
+          "torch.ops.aten.slice.Tensor",
+          {{.name = "self", .arg = TensorArg{q.sliced}},
+           {.name = "dim", .arg = IntArg{0}},
+           {.name = "start", .arg = IntArg{q.slice_start}},
+           {.name = "end", .arg = IntArg{q.slice_end}},
+           {.name = "step", .arg = IntArg{q.slice_step}}},
+          first));
+  graph.insert_node_before(
+      before,
+      call(
+          "first_clone",
+          "torch.ops.aten.clone.default",
+          {{.name = "self", .arg = TensorArg{first}}},
+          cloned));
+  graph.insert_node_before(
+      before,
+      call(
+          "query_arange",
+          "torch.ops.aten.arange.start_step",
+          {{.name = "start", .arg = IntArg{q.start}},
+           {.name = "end", .arg = q.end},
+           {.name = "step", .arg = IntArg{q.step}}},
+          range));
+  graph.insert_node_before(
+      before,
+      call(
+          "query_positions",
+          "torch.ops.aten.add.Tensor",
+          {{.name = "self", .arg = TensorArg{range}},
+           {.name = "other", .arg = TensorArg{cloned}},
+           {.name = "alpha", .arg = IntArg{q.alpha}}},
+          positions));
+  for (const NodeId consumer : consumers) {
+    graph.node(consumer).inputs[0].arg = TensorArg{positions};
+  }
+  graph.rebuild_def_use();
+}
+
+// The nodes reading cache_position as positions: RoPE's position_ids
+// unsqueeze and the mask's query view in the RoPE graph, the mask's query
+// unsqueeze in the Whisper one.
+std::vector<NodeId> position_readers(bool rope) {
+  return rope ? std::vector<NodeId>{8, 18} : std::vector<NodeId>{20};
+}
+
+TEST(LowerHFAttentionTest, RewritesOffsetArangeQueryPositions) {
+  for (const bool rope : {true, false}) {
+    SCOPED_TRACE(rope);
+    Graph graph = rope ? make_graph() : make_whisper_graph();
+    use_offset_arange(graph, position_readers(rope), {});
+
+    EXPECT_EQ(lower_hf_attention(graph), 1);
+    EXPECT_EQ(
+        std::ranges::count(
+            scheduled_targets(graph), "torch.ops.aten.le.Tensor"),
+        0);
+    EXPECT_NO_THROW(validate_graph(graph));
+    // The engine still checks that cache_position holds the contiguous,
+    // written, in-bounds positions arange(T) + cache_position[0] stands for.
+    const auto position = graph.value(3).attrs.find(kCachePositionAttr);
+    ASSERT_NE(position, graph.value(3).attrs.end());
+    const auto& bound = std::any_cast<const CachePosition&>(position->second);
+    int64_t rows_written = 0;
+    EXPECT_THROW(
+        check_cache_positions(std::vector<int64_t>{1}, bound, rows_written),
+        std::runtime_error);
+    EXPECT_THROW(
+        check_cache_positions(std::vector<int64_t>{0, 2}, bound, rows_written),
+        std::runtime_error);
+    EXPECT_THROW(
+        check_cache_positions(
+            std::vector<int64_t>{kCache - 1, kCache}, bound, rows_written),
+        std::runtime_error);
+  }
+}
+
+Node sym_size(const char* name, ValueId self, int64_t dim, ValueId output) {
+  return Node{
+      .name = name,
+      .target = "torch.ops.aten.sym_size.int",
+      .inputs =
+          {{.name = "self", .arg = TensorArg{self}},
+           {.name = "dim", .arg = IntArg{dim}}},
+      .outputs = {{.kind = OutputValueKind::Int, .value_id = output}},
+  };
+}
+
+// In a dynamic-length export the arange's length is a SymInt, which must be
+// the one sizing the token axis of the view that produces q, k or v. The
+// length of another input with the same declared bounds can differ at run
+// time, so an arange sized by it is refused. Only the mask reads the offset
+// arange here; RoPE reads cache_position.
+TEST(LowerHFAttentionTest, ChecksSymbolicOffsetArangeLength) {
+  for (const bool token_count : {true, false}) {
+    SCOPED_TRACE(token_count);
+    Graph graph = make_graph();
+    // Graph inputs come first among the placeholders, in input order.
+    const ValueId other = graph.append_value(
+        Value("other_position", ScalarType::Long, {kTokens}));
+    graph.insert_node_before(4, placeholder("other_position", other));
+    graph.input_ids.push_back(other);
+    const ValueId tokens = graph.append_value(Value("tokens"));
+    const ValueId other_count = graph.append_value(Value("other_count"));
+    const ValueId v_view = graph.append_value(
+        Value("v_view", ScalarType::Float, {1, kTokens, kKvHeads, kDim}));
+    graph.insert_node_before(13, sym_size("tokens", 0, 1, tokens));
+    graph.insert_node_before(
+        13, sym_size("other_count", other, 0, other_count));
+    graph.insert_node_before(
+        13,
+        call(
+            "v_view",
+            "torch.ops.aten.view_copy.default",
+            {{.name = "self", .arg = TensorArg{2}},
+             {.name = "size",
+              .arg =
+                  IntListArg{
+                      {1, kTokens, kKvHeads, kDim},
+                      {kInvalid, tokens, kInvalid, kInvalid}}}},
+            v_view));
+    graph.node(13).inputs[0].arg = TensorArg{v_view};
+    graph.rebuild_def_use();
+    use_offset_arange(
+        graph,
+        {18},
+        {.end = IntArg{
+             .value = kTokens, .id = token_count ? tokens : other_count}});
+
+    EXPECT_EQ(lower_hf_attention(graph), token_count ? 1 : 0);
+  }
+}
+
+// Only arange(0, T, 1) + cache_position[0:1] with alpha 1 stands for the
+// cache positions; any other offset arange keeps the block unlowered.
+TEST(LowerHFAttentionTest, RejectsNonEquivalentOffsetArange) {
+  for (const auto& [name, edit] : std::vector<
+           std::pair<std::string, std::function<void(Graph&, OffsetArange&)>>>{
+           {"start 1", [](Graph&, OffsetArange& q) { q.start = 1; }},
+           {"step 2", [](Graph&, OffsetArange& q) { q.step = 2; }},
+           {"longer than cache_position",
+            [](Graph&, OffsetArange& q) { q.end = IntArg{kTokens + 1}; }},
+           {"alpha 2", [](Graph&, OffsetArange& q) { q.alpha = 2; }},
+           {"second position",
+            [](Graph&, OffsetArange& q) {
+              q.slice_start = 1;
+              q.slice_end = 2;
+            }},
+           {"two positions", [](Graph&, OffsetArange& q) { q.slice_end = 2; }},
+           {"strided slice", [](Graph&, OffsetArange& q) { q.slice_step = 2; }},
+           {"half arange",
+            [](Graph&, OffsetArange& q) {
+              q.range_dtype = ScalarType::Half;
+              q.result_dtype = ScalarType::Half;
+            }},
+           {"float arange",
+            [](Graph&, OffsetArange& q) {
+              q.range_dtype = ScalarType::Float;
+              q.result_dtype = ScalarType::Float;
+            }},
+           {"float add of integer operands",
+            [](Graph&, OffsetArange& q) {
+              q.result_dtype = ScalarType::Float;
+            }},
+           {"half offset",
+            [](Graph&, OffsetArange& q) { q.offset_dtype = ScalarType::Half; }},
+           {"offset from another input",
+            [](Graph& graph, OffsetArange& q) {
+              q.sliced = graph.append_value(
+                  Value("other_position", ScalarType::Long, {kTokens}));
+              graph.insert_node_before(
+                  4, placeholder("other_position", q.sliced));
+              graph.input_ids.push_back(q.sliced);
+            }},
+       }) {
+    for (const bool rope : {true, false}) {
+      SCOPED_TRACE(name + (rope ? " with RoPE" : " without RoPE"));
+      Graph graph = rope ? make_graph() : make_whisper_graph();
+      OffsetArange q;
+      edit(graph, q);
+      use_offset_arange(graph, position_readers(rope), q);
+
+      EXPECT_EQ(lower_hf_attention(graph), 0);
+    }
+  }
+}
+
+// int32 computes the positions exactly, as int64 does.
+TEST(LowerHFAttentionTest, AcceptsAnInt32OffsetArange) {
+  Graph graph = make_graph();
+  use_offset_arange(graph, {8, 18}, {.range_dtype = ScalarType::Int});
+
+  EXPECT_EQ(lower_hf_attention(graph), 1);
+}
+
+// A literal token count is compared with the lengths of cache_position and the
+// query only when their ranks have those dims.
+TEST(LowerHFAttentionTest, RejectsALiteralTokenCountOfLowRankOperands) {
+  for (const auto& [name, value, sizes] :
+       std::vector<std::tuple<std::string, ValueId, std::vector<int64_t>>>{
+           {"rank-0 cache_position", 3, {}},
+           {"rank-1 query", 0, {kTokens * kHeads * kDim}},
+       }) {
+    SCOPED_TRACE(name);
+    Graph graph = make_graph();
+    use_offset_arange(graph, {8, 18}, {});
+    graph.value(value).tensor_meta().sizes = sizes;
+
+    EXPECT_EQ(lower_hf_attention(graph), 0);
+  }
+}
+
+// RoPE position_ids are checked on their own: a non-equivalent offset arange
+// there keeps the block unlowered while the mask reads cache_position.
+TEST(LowerHFAttentionTest, ChecksOffsetArangeRopePositions) {
+  for (const int64_t start : {0, 1}) {
+    SCOPED_TRACE(start);
+    Graph graph = make_graph();
+    use_offset_arange(graph, {8}, {.start = start});
+
+    EXPECT_EQ(lower_hf_attention(graph), start == 0 ? 1 : 0);
   }
 }
 
