@@ -324,7 +324,7 @@ def _weight_rows(w, rows):
 
 @CudaNVFP4Tensor.implements([torch.ops.aten.linear.default])
 @CudaNVFP4Tensor.implements_torch_function([F.linear])
-def _linear(func, types, args, kwargs):
+def _linear(func, types, args, kwargs):  # noqa: C901
     x, w = args[:2]
     bias = args[2] if len(args) > 2 else kwargs.get("bias")
     mode = os.environ.get("ET_CUDA_NVFP4_ACT", "auto")
@@ -360,6 +360,13 @@ def _linear(func, types, args, kwargs):
                 )
             mode = "w4a16"
         small = statically_known_true(flat.shape[0] <= NVFP4_DECODE_MAX_ROWS)
+        bucket = None
+        if mode != "w4a4" and output_dtype is None:
+            from executorch.backends.cuda.triton.kernels.nvfp4_small_m_gemm import (
+                small_m_bucket,
+            )
+
+            bucket = small_m_bucket(flat, w.qdata)
         if mode == "w4a4":
             out = nvfp4_w4a4(
                 flat,
@@ -368,6 +375,19 @@ def _linear(func, types, args, kwargs):
                 w.per_tensor_scale,
                 w.act_per_tensor_scale,
                 output_dtype=output_dtype,
+            )
+        elif bucket is not None:
+            from executorch.backends.cuda.triton.kernels.nvfp4_small_m_gemm import (
+                NVFP4_SMALL_M_GEMM,
+            )
+
+            out = NVFP4_SMALL_M_GEMM.op(bucket)(
+                flat,
+                w.qdata,
+                w.scale,
+                w.per_tensor_scale,
+                w.act_per_tensor_scale,
+                w.unit_scale,
             )
         elif small and mode == "auto":
             out = nvfp4_auto_decode(

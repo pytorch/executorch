@@ -761,3 +761,27 @@ def define_common_targets(is_fbcode = False):
         ),
         test_rule = python_pytest,
     )
+
+    python_unittest_remote_gpu(
+        name = "test_nvfp4_small_m_gemm",
+        srcs = [
+            "test_nvfp4_small_m_gemm.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/cuda:autotune",
+            "//executorch/backends/cuda:nvfp4_tensor",
+            "//executorch/backends/cuda:quantize_op_dispatch",
+            "//executorch/backends/cuda:triton_kernels",
+            "fbsource//third-party/pypi/pytest:pytest",
+        ],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+            subplatform = "A100",
+        ),
+        test_rule = python_pytest,
+    )
