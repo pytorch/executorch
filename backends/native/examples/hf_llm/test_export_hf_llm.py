@@ -16,8 +16,10 @@ import gguf
 import torch
 from executorch.backends.native.examples.hf_llm import export_hf_llm
 from executorch.backends.native.examples.hf_llm.export_hf_llm import (
+    _check_attention_args,
     _DECODE_STEPS,
     _FLOAT_TOL,
+    _layer_mask,
     _load,
     _PROMPTS,
     _quantize_8da4w,
@@ -29,21 +31,36 @@ from executorch.backends.native.examples.hf_llm.export_hf_llm import (
     OffGraphLastTokenLM,
 )
 from executorch.exir.native import to_native
-from executorch.export.utils import is_fbcode
 from executorch.extension.llm.cache.hf_attention import register_offgraph_attention
 from executorch.extension.llm.cache.reference_cache import LayerPolicy
 from executorch.extension.llm.cache.update_and_attend import REGISTRY
 from transformers import (
     AutoModelForCausalLM,
+    DeepseekV32Config,
     Gemma2Config,
     Gemma3TextConfig,
     GemmaConfig,
+    GptOssConfig,
     GraniteConfig,
+    Llama4TextConfig,
     LlamaConfig,
     MistralConfig,
     PreTrainedModel,
     Qwen2Config,
     Qwen3Config,
+    ZayaConfig,
+)
+from transformers.masking_utils import (
+    and_masks,
+    bidirectional_mask_function,
+    blockwise_overlay,
+    causal_mask_function,
+    chunked_causal_mask_function,
+    or_masks,
+    packed_sequence_mask_function,
+    sdpa_mask,
+    sliding_window_bidirectional_mask_function,
+    sliding_window_causal_mask_function,
 )
 
 # Architectures gguf_hf maps; the GGUF test covers each.
@@ -78,6 +95,26 @@ def _tiny(
     model.generation_config.use_cache = True
     model.generation_config.cache_implementation = "static"
     return model
+
+
+_IDS = [[3, 4, 5, 6, 7, 8, 9, 10, 11, 12]]
+
+
+def _random_gemma(arch: str, **config) -> PreTrainedModel:
+    """A tiny Gemma with a sliding-window layer, then a full-attention one."""
+    torch.manual_seed(3)
+    model = _tiny(arch, layer_types=["sliding_attention", "full_attention"], **config)
+    for weight in model.parameters():
+        weight.uniform_(-0.5, 0.5)
+    return model
+
+
+def _eager_logits(model: PreTrainedModel, ids: torch.Tensor) -> torch.Tensor:
+    """Logits of one uncached pass through transformers' eager attention."""
+    eager = copy.deepcopy(model)
+    eager.config._attn_implementation = "eager"
+    with torch.no_grad():
+        return eager(ids, use_cache=False).logits
 
 
 def _as_gguf_tensors(
@@ -531,10 +568,12 @@ class ExportHfLlmTest(unittest.TestCase):
 
     def test_cache_writes_index_the_cache_position_input(self) -> None:
         seq = torch.export.Dim("seq", min=1, max=31)
-        for arch, kv_dtype in (("llama", torch.float32), ("gemma3", torch.float16)):
+        for arch, kv_dtype in (
+            ("llama", torch.float32),
+            ("gemma2", torch.float32),
+            ("gemma3", torch.float16),
+        ):
             with self.subTest(arch=arch, kv_dtype=kv_dtype):
-                if arch == "gemma3" and is_fbcode():
-                    self.skipTest("skipping for fbcode")
                 torch.manual_seed(7)
                 model = _tiny(arch)
                 fp32 = LastTokenLM(model, 32).eval()
@@ -651,3 +690,306 @@ class ExportHfLlmTest(unittest.TestCase):
         with wrapper.cache_scope():
             self.assertIn(wrapper._key, REGISTRY._caches)
         self.assertNotIn(wrapper._key, REGISTRY._caches)
+
+    def test_cache_layers_with_more_state_than_keys_and_values_are_refused(
+        self,
+    ) -> None:
+        # DeepSeek V3.2's sparse attention caches its indexer's keys too.
+        config = DeepseekV32Config(
+            vocab_size=128,
+            hidden_size=64,
+            intermediate_size=128,
+            num_hidden_layers=1,
+            num_attention_heads=4,
+            num_key_value_heads=4,
+            kv_lora_rank=16,
+            q_lora_rank=32,
+            qk_rope_head_dim=8,
+            qk_nope_head_dim=8,
+            v_head_dim=16,
+            index_topk=4,
+            index_head_dim=16,
+            index_n_heads=2,
+            max_position_embeddings=64,
+        )
+        model = AutoModelForCausalLM.from_config(config).eval().requires_grad_(False)
+        model.generation_config.cache_implementation = "static"
+
+        with self.assertRaisesRegex(NotImplementedError, "StaticIndexedLayer"):
+            LastTokenLM(model, 16)
+
+    def test_hybrid_cache_layers_are_refused_before_the_export_wrapper(self) -> None:
+        # The wrapper would turn a hybrid sliding-window layer into a plain
+        # StaticLayer, dropping its linear-attention state.
+        for layer_types, sliding_window, refused in (
+            (["hybrid"], None, "LinearAttentionAndStaticFullAttentionLayer"),
+            (
+                ["hybrid_sliding"],
+                4,
+                "LinearAttentionAndStaticSlidingWindowAttentionLayer",
+            ),
+        ):
+            with self.subTest(layer_types=layer_types):
+                config = ZayaConfig(
+                    vocab_size=128,
+                    hidden_size=64,
+                    num_hidden_layers=1,
+                    num_attention_heads=4,
+                    num_key_value_heads=2,
+                    head_dim=16,
+                    moe_intermediate_size=32,
+                    num_experts=2,
+                    router_hidden_size=16,
+                    max_position_embeddings=64,
+                    layer_types=layer_types,
+                    sliding_window=sliding_window,
+                )
+                model = AutoModelForCausalLM.from_config(config)
+                model = model.eval().requires_grad_(False)
+                model.generation_config.cache_implementation = "static"
+                with self.assertRaisesRegex(NotImplementedError, refused):
+                    LastTokenLM(model, 16)
+
+    def test_chunked_attention_layers_match_eager_past_a_chunk(self) -> None:
+        ids = torch.tensor(_IDS)
+        torch.manual_seed(3)
+        config = Llama4TextConfig(
+            vocab_size=128,
+            hidden_size=64,
+            intermediate_size=128,
+            intermediate_size_mlp=128,
+            num_hidden_layers=2,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            head_dim=16,
+            max_position_embeddings=64,
+            moe_layers=[],
+            no_rope_layers=[1, 0],
+            attention_chunk_size=3,
+        )
+        model = AutoModelForCausalLM.from_config(config).eval().requires_grad_(False)
+        model.config._attn_implementation = "sdpa"
+        model.generation_config.use_cache = True
+        model.generation_config.cache_implementation = "static"
+        self.assertEqual(
+            model.config.layer_types, ["chunked_attention", "full_attention"]
+        )
+        unchunked = copy.deepcopy(model)
+        unchunked.config.attention_chunk_size = 64
+        self.assertFalse(
+            torch.allclose(
+                _eager_logits(unchunked, ids), _eager_logits(model, ids), atol=1e-3
+            )
+        )
+        self._check_matches_eager(model)
+
+    def test_export_attention_ignores_the_configured_attention(self) -> None:
+        # transformers keeps registered attention process-wide, so a wrapper
+        # built later must not change what an earlier one exports.
+        ids = torch.tensor([[3, 4, 5, 6]])
+
+        def ops(wrapper: LastTokenLM) -> collections.Counter:
+            with torch.no_grad():
+                ep = torch.export.export(wrapper, (ids, torch.arange(4)), strict=True)
+            return _ops_except_casts(ep)
+
+        wrapper = LastTokenLM(_tiny(), 16).eval()
+        before = ops(wrapper)
+        eager = _tiny()
+        eager.config._attn_implementation = "eager"
+        self.assertEqual(ops(LastTokenLM(eager, 16).eval()), before)
+        self.assertEqual(ops(wrapper), before)
+
+    def test_masks_export_cannot_build_are_refused(self) -> None:
+        # Gemma 3's bidirectional attention overlays the causal mask.
+        wrapper = LastTokenLM(_tiny("gemma3", use_bidirectional_attention=True), 16)
+        with torch.no_grad():
+            with self.assertRaisesRegex(NotImplementedError, "attention mask"):
+                wrapper.eval()(torch.tensor([[3, 4, 5, 6]]), torch.arange(4))
+        config = _tiny().config
+        with self.assertRaisesRegex(NotImplementedError, "argument new_argument"):
+            _layer_mask(1, kv_length=4, q_length=4, config=config, new_argument=True)
+
+    def test_mask_functions_export_cannot_reproduce_are_refused(self) -> None:
+        config = _tiny().config
+        ids = torch.tensor([[0, 0, 1, 1]])
+        for name, mask_function, local_size in (
+            (
+                "packed sequences",
+                and_masks(causal_mask_function, packed_sequence_mask_function(ids)),
+                None,
+            ),
+            (
+                "bidirectional blocks",
+                or_masks(causal_mask_function, blockwise_overlay(ids)),
+                None,
+            ),
+            ("bidirectional", bidirectional_mask_function, None),
+            ("bidirectional window", sliding_window_bidirectional_mask_function(2), 2),
+            ("another window", sliding_window_causal_mask_function(3), 2),
+        ):
+            with self.subTest(name), self.assertRaises(NotImplementedError):
+                _layer_mask(
+                    1,
+                    kv_length=4,
+                    q_length=4,
+                    local_size=local_size,
+                    config=config,
+                    mask_function=mask_function,
+                )
+
+    def test_layer_masks_match_transformers_mask_functions(self) -> None:
+        # A Llama config has no sliding_window: the mask function alone says
+        # which local mask a layer takes.
+        config = _tiny().config
+        for name, mask_function, local_size in (
+            ("causal", causal_mask_function, None),
+            ("sliding", sliding_window_causal_mask_function(3), 3),
+            (
+                "chunked",
+                chunked_causal_mask_function(3, torch.zeros(1, dtype=torch.long)),
+                3,
+            ),
+        ):
+            with self.subTest(name):
+                want = sdpa_mask(
+                    1,
+                    q_length=3,
+                    kv_length=9,
+                    q_offset=5,
+                    mask_function=mask_function,
+                    local_size=local_size,
+                    allow_is_causal_skip=False,
+                )
+                got = _layer_mask(
+                    1,
+                    kv_length=9,
+                    q_length=3,
+                    q_offset=5,
+                    local_size=local_size,
+                    config=config,
+                    mask_function=mask_function,
+                )
+                self.assertTrue(torch.equal(got, want))
+
+    def _check_matches_eager(self, model: PreTrainedModel) -> None:
+        """The wrapper and its export match an uncached pass through the model's
+        transformers eager attention, over a prefill and single-token decodes."""
+        ids = torch.tensor(_IDS)
+        prefill = 6
+        calls = [(0, prefill)] + [(i, i + 1) for i in range(prefill, ids.shape[1])]
+        seq = torch.export.Dim("seq", min=1, max=15)
+        want = _eager_logits(model, ids)
+        wrapper = LastTokenLM(model, 16).eval()
+        with torch.no_grad():
+            exported = torch.export.export(
+                wrapper,
+                (ids[:, :prefill], torch.arange(prefill)),
+                dynamic_shapes={"input_ids": {1: seq}, "cache_position": {0: seq}},
+                strict=True,
+            ).module()
+            for module in (wrapper, exported):
+                for start, end in calls:
+                    got = module(ids[:, start:end], torch.arange(start, end))
+                    self.assertTrue(
+                        torch.allclose(
+                            got[:, -1], want[:, end - 1], atol=1e-5, rtol=1e-4
+                        )
+                    )
+
+    def test_sliding_window_layers_match_eager_past_the_window(self) -> None:
+        ids = torch.tensor(_IDS)
+        for arch in ("gemma2", "gemma3"):
+            with self.subTest(arch=arch):
+                model = _random_gemma(
+                    arch, sliding_window=3, attn_logit_softcapping=None
+                )
+                unwindowed = copy.deepcopy(model)
+                unwindowed.config.sliding_window = 64
+                self.assertFalse(
+                    torch.allclose(
+                        _eager_logits(unwindowed, ids),
+                        _eager_logits(model, ids),
+                        atol=1e-3,
+                    )
+                )
+                self._check_matches_eager(model)
+
+    def test_attention_logit_softcapping_matches_eager_when_configured_eager(
+        self,
+    ) -> None:
+        # Eager's own mask is additive; the export takes a boolean one.
+        model = _random_gemma("gemma2", sliding_window=3, attn_logit_softcapping=1.0)
+        model.config._attn_implementation = "eager"
+        self._check_matches_eager(model)
+
+    def test_attention_logit_softcapping_matches_eager(self) -> None:
+        ids = torch.tensor(_IDS)
+        model = _random_gemma("gemma2", sliding_window=3, attn_logit_softcapping=1.0)
+        uncapped = copy.deepcopy(model)
+        for layer in uncapped.model.layers:
+            layer.self_attn.attn_logit_softcapping = None
+        self.assertFalse(
+            torch.allclose(
+                _eager_logits(uncapped, ids), _eager_logits(model, ids), atol=1e-3
+            )
+        )
+        self._check_matches_eager(model)
+
+    def test_attention_rejects_arguments_export_would_drop(self) -> None:
+        config = GptOssConfig(
+            vocab_size=128,
+            hidden_size=64,
+            intermediate_size=64,
+            num_hidden_layers=2,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            head_dim=16,
+            num_local_experts=2,
+            num_experts_per_tok=1,
+        )
+        model = AutoModelForCausalLM.from_config(config).eval().requires_grad_(False)
+        model.config._attn_implementation = "sdpa"
+        model.generation_config.cache_implementation = "static"
+        wrapper = LastTokenLM(model, 16).eval()
+        ids = torch.tensor([[3, 4, 5, 6]])
+        # GPT-OSS passes its attention sinks, which SDPA would drop.
+        message = r"GptOssAttention \(layer 0\) passes s_aux=<tensor \(4,\)>"
+
+        with torch.no_grad():
+            with self.assertRaisesRegex(NotImplementedError, message):
+                wrapper(ids, torch.arange(4))
+            with self.assertRaisesRegex(Exception, message):
+                torch.export.export(wrapper, (ids, torch.arange(4)), strict=True)
+
+    def test_attention_checks_argument_values(self) -> None:
+        module = torch.nn.Linear(1, 1)
+        _check_attention_args(
+            module,
+            {
+                "scaling": 0.25,
+                "dropout": 0.0,
+                "sliding_window": 4096,
+                "use_cache": True,
+                "position_ids": torch.arange(4),
+                "cache_position": torch.arange(4),
+                "cu_seq_lens_q": None,
+            },
+        )
+        for name, value in (
+            ("dropout", 0.1),
+            ("cu_seq_lens_q", torch.tensor([0, 4])),
+            ("head_mask", torch.ones(4)),
+        ):
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(NotImplementedError, f"passes {name}="):
+                    _check_attention_args(module, {name: value})
+
+    def test_attention_accepts_every_mapped_architecture(self) -> None:
+        ids = torch.tensor([[3, 4, 5, 6]])
+        for arch in _CONFIGS:
+            with self.subTest(arch=arch):
+                wrapper = LastTokenLM(_tiny(arch), 16).eval()
+                with torch.no_grad():
+                    logits = wrapper(ids, torch.arange(4))
+                self.assertEqual(logits.shape, (1, 1, 128))
