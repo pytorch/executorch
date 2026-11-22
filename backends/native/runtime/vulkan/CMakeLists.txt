@@ -18,7 +18,7 @@ add_library(native_vulkan_passes ${_native_vulkan_passes_srcs})
 target_link_libraries(
   native_vulkan_passes
   PUBLIC native_graph
-  PRIVATE native_reference_gguf_kquant
+  PRIVATE native_reference_gguf_quant
 )
 
 add_library(
@@ -29,8 +29,7 @@ add_library(executorch::native_vulkan_engine ALIAS native_vulkan_engine)
 target_link_libraries(
   native_vulkan_engine
   PUBLIC native_engine
-  PRIVATE native_reference_gguf_kquant native_vulkan_passes
-          vulkan_graph_runtime
+  PRIVATE native_reference_gguf_quant native_vulkan_passes vulkan_graph_runtime
 )
 
 foreach(target native_vulkan_passes native_vulkan_engine)
