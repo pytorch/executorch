@@ -186,9 +186,11 @@ def test_packed_linear_pte(mode, m, dynamic, fp32, monkeypatch):
 
 @pytest.mark.parametrize("impl", ["auto", "dequant"])
 def test_dequant_prefill_pte(impl, monkeypatch):
-    """Dynamic M past the M <= 64 bucket: dequant + matmul prefill."""
-    if impl == "auto" and _has_native_fp4():
-        pytest.skip("auto dequantizes only without native FP4")
+    """Dynamic M past the M <= 64 bucket: dequant + matmul prefill (the
+    non-native dispatch, on any GPU)."""
+    from executorch.backends.cuda.quantize_op_dispatch import nvfp4_dispatch
+
+    monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: False)
     monkeypatch.setenv("ET_CUDA_NVFP4_ACT", "w4a16")
     monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_OUTPUT", "input")
     monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_IMPL", impl)
@@ -227,7 +229,7 @@ def test_dequant_prefill_pte(impl, monkeypatch):
             .load_program(str(path), data_path=str(data))
             .load_method("forward")
         )
-        for rows in [1, 5, 100, 256]:
+        for rows in [1, 5, 64, 65, 100, 256]:
             value = torch.randn(rows, 192, dtype=x.dtype)
             expected = F.linear(value, module.weight.dequantize(), module.bias)
             actual = method.execute([value])[0].cpu()

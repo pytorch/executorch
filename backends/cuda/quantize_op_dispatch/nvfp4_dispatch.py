@@ -20,7 +20,9 @@ is compiled into the program:
   dequant + matmul otherwise; ``kernel`` / ``dequant`` force one for any M
   not statically <= 4. ``w4a4`` and the FP32 prefill output policy always take
   the fused kernels. The choice is made per exported program from M's upper
-  bound, so keep small M in a separate static-M method.
+  bound. A dynamic-M method tunes the fused kernels at its example M (the
+  largest, in the Muse Glimmer exports), so dequant + matmul is also faster
+  for its short prompts.
 """
 
 import os
@@ -39,7 +41,7 @@ from executorch.backends.cuda.quantize_op_dispatch._gemm_family_dispatch import 
 )
 from executorch.backends.cuda.triton.kernels.nvfp4_output import (
     NVFP4_DECODE_MAX_ROWS,
-    NVFP4_DEQUANT_MIN_ROWS,
+    NVFP4_FUSED_PREFILL_MAX_ROWS,
     nvfp4_prefill_output_dtype,
 )
 from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
@@ -132,7 +134,7 @@ def _decode(x, wq, ws, pts, act_scale, unit_scale=False, *, mode_split):
             launch_w4a8_gemv,
         )
 
-        return launch_w4a8_gemv(x, wq, ws, pts, split_k=split)
+        return launch_w4a8_gemv(x, wq, ws, pts, _max_rows(x.shape[0]), split_k=split)
     return nvfp4_gemv(x, wq, ws, pts, split_k=split, unit_scale=unit_scale)
 
 
@@ -248,7 +250,7 @@ def _dequant_prefill(flat, mode, output_dtype, impl):
     """Whether an NVFP4 linear takes whole-weight dequant + F.linear.
 
     auto (default): only without native FP4 (SM120+) and for M not statically
-    <= ``NVFP4_DEQUANT_MIN_ROWS``, where the dense matmul beats in-register
+    <= ``NVFP4_FUSED_PREFILL_MAX_ROWS``, where the dense matmul beats in-register
     dequant; smaller M keep the fused kernels, which read the packed weight
     once. The choice is made once per exported program, at M's upper bound.
     """
@@ -261,7 +263,7 @@ def _dequant_prefill(flat, mode, output_dtype, impl):
         return False
     if impl == "auto":
         return not _has_native_fp4() and not statically_known_true(
-            rows <= NVFP4_DEQUANT_MIN_ROWS
+            rows <= NVFP4_FUSED_PREFILL_MAX_ROWS
         )
     return impl == "dequant"
 
