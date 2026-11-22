@@ -1175,6 +1175,10 @@ class GgmlOpsTest(unittest.TestCase):
             ),
         )
 
+    def test_cat_of_a_thousand_repeated_inputs(self):
+        # One node and two values, but a concat per list entry.
+        self._check(Lambda(lambda x: torch.cat([x] * 1000)), (torch.randn(3),))
+
     def test_cat_last_dim(self):
         self._check(
             Lambda(lambda x, y: torch.cat([x, y], dim=-1)),
