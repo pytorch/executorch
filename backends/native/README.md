@@ -55,6 +55,11 @@ reads the ones it knows with `Package::metadata_int` and `metadata_ints`, and
 constant-method names in `extension/llm/export/model_metadata.py`, such as
 `get_windows` for the per-layer sliding windows of an off-graph KV cache.
 
+A `.ptn` is little-endian throughout: FlatBuffers and safetensors require it,
+and packed constants store little-endian codec bytes. The runtime refuses to
+load a package on a big-endian host; supporting one would mean byte-swapping
+at load, per dtype and codec.
+
 ## Samples (optional)
 
 A `.ptn` may carry recorded method calls: inputs, and optionally the outputs and
