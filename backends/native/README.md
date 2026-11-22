@@ -190,6 +190,27 @@ averaging out.
 | Vulkan | `runtime/vulkan/` | Builds on the ET-VK `ComputeGraph` and shaders. |
 | ggml | `runtime/engine/ggml/` | CPU, CUDA, HIP, and Metal variants. |
 
+### Known ggml GPU numerics
+
+These differences from eager come from ggml's GPU kernels, which the ggml
+engine uses as they are. Each has a test in
+`test/runtime/ggml/test_ggml_ops.py`, skipped on its backend, that fails there.
+
+| Behavior | Backend | Scope |
+| --- | --- | --- |
+| F32 matrix multiplies take TF32 inputs (10-bit mantissa) | CUDA | F32 `linear`, `matmul` and convolution |
+| F32 matrix multiplies that ggml routes to its MMF kernel (4-16 activation rows, outputs wide enough for its tiles) take TF32 or XF32 inputs, whatever the environment | CUDA (TF32); HIP (XF32) | F32 `linear` and `matmul` |
+| F16 matrix multiplies accumulate in F16, as in llama.cpp; for testing, the engine option `cuda_f32_accumulation_for_testing` requests F32 accumulation on CUDA, at 2-3x prefill and 4x decode GEMM time | CUDA (cuBLAS); HIP on AMD GPUs other than CDNA and RDNA4 | F16 `linear` and `matmul`, a few 1e-2 in long sums |
+| Q4_1 and Q5_1 matrix multiplies that ggml routes to its MMVQ kernel (up to 8 activation rows) multiply each block's weight and activation scales, and its min and activation sum, in fp16, as in llama.cpp, which rounds small products and flushes tiny ones to zero | CUDA, HIP | Q4_1 and Q5_1 `linear`. The GPU sample tests allow this error per block where a linear's activations follow from the sample's inputs, directly or through other such linears. In `quantized_*` cases a linear feeds another op or, in Gated DeltaNet layers, reads the gated norm's output, which samples do not record; those cases keep the default judge, and the ones that fail are excluded on CUDA and HIP (`test/runtime/ggml/BUCK`) |
+| `tanh` and tanh GELU use fast-math `tanhf` | CUDA | errors of a few 1e-6 |
+| BF16 matrix multiplies round the product before the bias is added | HIP | BF16 `linear` with bias, one BF16 ulp |
+
+The engine keeps these ggml defaults, as llama.cpp does; an engine option
+named in this table exists only to test the stricter numerics.
+
+The tests that turn such an option on run on GPUs only by hand, with
+`NATIVE_GGML_OPTION_TESTS=1`; CI does not run them.
+
 ## Building with CMake
 
 Enable `EXECUTORCH_BUILD_NATIVE=ON` to build the shared native runtime. With it,
