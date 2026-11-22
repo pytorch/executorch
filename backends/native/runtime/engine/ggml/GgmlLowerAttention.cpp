@@ -77,6 +77,25 @@ GraphBuilder::causal_mask(int64_t tokens, int64_t keys, int64_t start) {
   return TensorRef{mask, sizes};
 }
 
+bool sdpa_shapes_compatible(
+    const std::vector<int64_t>& query,
+    const std::vector<int64_t>& key,
+    const std::vector<int64_t>& value) {
+  return query.size() == 4 && key.size() == 4 && value.size() == 4 &&
+      key[0] == query[0] && value[0] == query[0] && key[1] == value[1] &&
+      key[1] > 0 && query[1] % key[1] == 0 && key[2] == value[2] &&
+      key[3] == query[3];
+}
+
+bool custom_sdpa_shapes_compatible(
+    const std::vector<int64_t>& query,
+    const std::vector<int64_t>& key,
+    const std::vector<int64_t>& value) {
+  return query.size() == 4 && key.size() == 4 && value == key &&
+      key[0] == query[0] && key[3] == query[3] && key[2] > 0 &&
+      query[2] % key[2] == 0;
+}
+
 void GraphBuilder::lower_custom_sdpa(const Node& node) {
   const TensorRef query = tensor_arg(node, "query", 0);
   const TensorRef key_cache = tensor_arg(node, "key", 1);
@@ -84,10 +103,8 @@ void GraphBuilder::lower_custom_sdpa(const Node& node) {
   if (query.sizes.size() != 4) {
     throw std::runtime_error("ggml: custom_sdpa query must be [B,T,H,D]");
   }
-  if (key_cache.sizes.size() != 4 || value_cache.sizes != key_cache.sizes ||
-      key_cache.sizes[0] != query.sizes[0] ||
-      key_cache.sizes[3] != query.sizes[3] || key_cache.sizes[2] <= 0 ||
-      query.sizes[2] % key_cache.sizes[2] != 0) {
+  if (!custom_sdpa_shapes_compatible(
+          query.sizes, key_cache.sizes, value_cache.sizes)) {
     throw std::runtime_error("ggml: custom_sdpa q/k/v shapes are incompatible");
   }
   const int64_t start = int_arg(node, "start_pos", 3, 0);
@@ -208,6 +225,168 @@ void GraphBuilder::lower_rope(const Node& node) {
       /*beta_slow=*/0.0f);
   set_single_view(
       node, TensorRef{ggml_permute(ctx, rotated, 0, 2, 1, 3), input.sizes});
+}
+
+// native::gated_delta_rule's [B, T, H, D] query, key and value are ggml's
+// [D, H, T, B], the layout ggml_gated_delta_net takes, and its value-major
+// [B, H, V, K] state is that op's [S, S, H, B] state, so only g and beta
+// gain a unit dimension. The op scales by 1 / sqrt(K) and exponentiates g
+// itself, and its result holds the output, then the final state.
+void GraphBuilder::lower_gated_delta_rule(const Node& node) {
+  const TensorRef query = rows_arg(node, "query", 0);
+  const TensorRef key = rows_arg(node, "key", 1);
+  const TensorRef value = rows_arg(node, "value", 2);
+  const TensorRef g = tensor_arg(node, "g", 3);
+  const TensorRef beta = tensor_arg(node, "beta", 4);
+  const TensorRef state = tensor_arg(node, "state", 5);
+  if (query.sizes.size() != 4 || key.sizes != query.sizes ||
+      value.sizes.size() != 4 || node.outputs.size() != 2) {
+    throw std::runtime_error(
+        "ggml: gated_delta_rule expects query, key and value [B,T,H,D]");
+  }
+  const int64_t batch = query.sizes[0];
+  const int64_t tokens = query.sizes[1];
+  const int64_t heads = query.sizes[2];
+  const int64_t dim = query.sizes[3];
+  const int64_t snapshots = int_arg(node, "snapshots", 7, 1);
+  std::vector<int64_t> state_sizes{batch, heads, dim, dim};
+  if (snapshots > 1) {
+    state_sizes.insert(state_sizes.begin() + 1, snapshots);
+  }
+  if (value.sizes != query.sizes || state.sizes != state_sizes) {
+    throw std::runtime_error(
+        "ggml: gated_delta_rule needs equal key and value head dims");
+  }
+  if (snapshots > 1 && batch != 1) {
+    throw std::runtime_error(
+        "ggml: gated_delta_rule snapshots need a batch of 1");
+  }
+  ggml_context* ctx = instance_.context.get();
+  ggml_tensor* q = as_f32(query.tensor);
+  ggml_tensor* k = as_f32(key.tensor);
+  if (bool_arg(node, "qk_l2norm", 6, false)) {
+    // x * rsqrt(sum(x^2) + eps) is rms_norm with eps / D, over sqrt(D).
+    // ggml_l2_norm divides by max(norm, eps) instead, which differs for
+    // small norms.
+    const float inv_sqrt_dim = 1.0f / std::sqrt(static_cast<float>(dim));
+    const float eps = 1e-6f / static_cast<float>(dim);
+    q = ggml_scale(ctx, ggml_rms_norm(ctx, q, eps), inv_sqrt_dim);
+    k = ggml_scale(ctx, ggml_rms_norm(ctx, k, eps), inv_sqrt_dim);
+  } else if (!ggml_are_same_stride(q, k)) {
+    q = contiguous(q);
+    k = contiguous(k);
+  }
+  const auto per_head = [&](ggml_tensor* t) {
+    return ggml_reshape_4d(ctx, contiguous(as_f32(t)), 1, heads, tokens, batch);
+  };
+  ggml_tensor* v = as_f32(value.tensor);
+  ggml_tensor* gate = per_head(g.tensor);
+  ggml_tensor* rate = per_head(beta.tensor);
+  // ggml writes K snapshots, newest first, but only the last n_tokens of
+  // them when n_tokens < K, and only the newest when n_tokens > K: the
+  // tokens before the last S run first, and the input's newest states fill
+  // the slots the call leaves.
+  ggml_tensor* states = contiguous(as_f32(state.tensor));
+  ggml_tensor* initial = states;
+  const size_t row = ggml_row_size(GGML_TYPE_F32, dim);
+  const size_t state_bytes = row * dim * heads * batch;
+  if (snapshots > 1) {
+    initial = ggml_view_4d(
+        ctx, states, dim, dim, heads, 1, row, row * dim, state_bytes, 0);
+  }
+  const auto tokens_of = [&](ggml_tensor* t, int64_t start, int64_t count) {
+    return ggml_view_4d(
+        ctx,
+        t,
+        t->ne[0],
+        t->ne[1],
+        count,
+        t->ne[3],
+        t->nb[1],
+        t->nb[2],
+        t->nb[3],
+        static_cast<size_t>(start) * t->nb[2]);
+  };
+  // [out, newest states]; out covers `count` tokens from `start`.
+  const auto run =
+      [&](ggml_tensor* from, int64_t start, int64_t count, int64_t slots) {
+        const bool whole = start == 0 && count == tokens;
+        return ggml_gated_delta_net(
+            ctx,
+            whole ? q : contiguous(tokens_of(q, start, count)),
+            whole ? k : contiguous(tokens_of(k, start, count)),
+            whole ? v : contiguous(tokens_of(v, start, count)),
+            whole ? gate : contiguous(tokens_of(gate, start, count)),
+            whole ? rate : contiguous(tokens_of(rate, start, count)),
+            from,
+            slots);
+      };
+  const auto out_of = [&](ggml_tensor* result, int64_t count) {
+    return ggml_view_4d(
+        ctx,
+        result,
+        dim,
+        heads,
+        count,
+        batch,
+        row,
+        row * heads,
+        row * heads * count,
+        0);
+  };
+  const auto states_of =
+      [&](ggml_tensor* result, int64_t count, int64_t slots) {
+        return ggml_view_4d(
+            ctx,
+            result,
+            dim,
+            dim,
+            heads,
+            slots * batch,
+            row,
+            row * dim,
+            row * dim * heads,
+            row * heads * count * batch);
+      };
+  ggml_tensor* out = nullptr;
+  ggml_tensor* final_states = nullptr;
+  if (snapshots == 1) {
+    ggml_tensor* result = run(initial, 0, tokens, 1);
+    out = out_of(result, tokens);
+    final_states = states_of(result, tokens, 1);
+  } else if (tokens > snapshots) {
+    const int64_t head = tokens - snapshots;
+    ggml_tensor* first = run(initial, 0, head, 1);
+    ggml_tensor* last =
+        run(contiguous(states_of(first, head, 1)), head, snapshots, snapshots);
+    out = ggml_concat(
+        ctx, out_of(first, head), out_of(last, snapshots), /*dim=*/2);
+    final_states = states_of(last, snapshots, snapshots);
+  } else {
+    ggml_tensor* result = run(initial, 0, tokens, snapshots);
+    out = out_of(result, tokens);
+    final_states = states_of(result, tokens, tokens);
+    if (tokens < snapshots) {
+      ggml_tensor* kept = ggml_view_4d(
+          ctx,
+          states,
+          dim,
+          dim,
+          heads,
+          snapshots - tokens,
+          row,
+          row * dim,
+          state_bytes,
+          0);
+      final_states = ggml_concat(ctx, final_states, kept, /*dim=*/3);
+    }
+  }
+  if (const ValueId id = node.outputs[0].value_id; valid(id)) {
+    set_as_output_type(id, TensorRef{out, value.sizes});
+  }
+  if (const ValueId id = node.outputs[1].value_id; valid(id)) {
+    set_as_output_type(id, TensorRef{final_states, state.sizes});
+  }
 }
 
 // set_rows into an F16 destination and attention over F16 keys round F32
@@ -335,10 +514,7 @@ void GraphBuilder::lower_sdpa(const Node& node) {
     throw std::runtime_error(
         "ggml: scaled_dot_product_attention expects [B,H,T,D] without dropout");
   }
-  if (key.sizes[0] != query.sizes[0] || val.sizes[0] != query.sizes[0] ||
-      key.sizes[1] != val.sizes[1] || key.sizes[1] <= 0 ||
-      query.sizes[1] % key.sizes[1] != 0 || key.sizes[2] != val.sizes[2] ||
-      key.sizes[3] != query.sizes[3]) {
+  if (!sdpa_shapes_compatible(query.sizes, key.sizes, val.sizes)) {
     throw std::runtime_error(
         "ggml: scaled_dot_product_attention q/k/v shapes are incompatible");
   }
