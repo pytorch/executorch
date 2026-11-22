@@ -402,38 +402,54 @@ def _iter_gguf_nvfp4_paired(gguf_path: str, static_act_scale: bool):
     ``ExportableNVFP4Tensor`` using its ``.scale`` (and, with
     ``static_act_scale``, ``.input_scale``) companion."""
     import numpy as np
-    from executorch.extension.llm.export.gguf import ExportableGGUFTensor, iter_gguf
+    from executorch.extension.llm.export.gguf import GGML_NVFP4, iter_gguf
     from gguf import GGMLQuantizationType, GGUFReader
 
-    # Companions can occur before or after their weight: read the scalars
-    # first, then stream the weights once.
+    # Companions can occur before or after their weight: read the scalars and
+    # check the pairing first, then stream the weights once.
     companions = {}
+    nvfp4 = set()
     for tensor in GGUFReader(gguf_path).tensors:
         if tensor.name.endswith((".scale", ".input_scale")):
             if tensor.tensor_type != GGMLQuantizationType.F32 or tensor.data.size != 1:
                 raise ValueError(f"Expected scalar F32 companion: {tensor.name}")
             companions[tensor.name] = float(np.asarray(tensor.data).reshape(-1)[0])
-    consumed = set()
+        elif int(tensor.tensor_type) == GGML_NVFP4:
+            nvfp4.add(tensor.name)
+    paired = {
+        name.replace(".weight", suffix)
+        for name in nvfp4
+        for suffix in (".scale", ".input_scale")
+    }
+    unpaired = sorted(set(companions) - paired)
+    if unpaired:
+        raise ValueError(f"GGUF scale tensors without an NVFP4 weight: {unpaired}")
+    if static_act_scale:
+        missing = sorted(
+            name
+            for name in nvfp4
+            if name.replace(".weight", ".input_scale") not in companions
+        )
+        if missing:
+            raise ValueError(f"NVFP4 weights without .input_scale: {missing}")
     for name, weight in iter_gguf(gguf_path):
         if name in companions:
             continue
-        if isinstance(weight, ExportableGGUFTensor) and weight.ggml_type == "nvfp4":
-            scale_name = name.replace(".weight", ".scale")
-            input_scale_name = name.replace(".weight", ".input_scale")
-            consumed.update((scale_name, input_scale_name))
+        if name in nvfp4:
             # Like llama.cpp, a weight without a .scale companion has a unit
             # global scale, and activations are quantized dynamically unless
             # the static .input_scale is requested.
             weight = weight.to_exportable_nvfp4_tensor(
-                per_tensor_scale=torch.tensor(companions.get(scale_name, 1.0)),
+                per_tensor_scale=torch.tensor(
+                    companions.get(name.replace(".weight", ".scale"), 1.0)
+                ),
                 act_per_tensor_scale=(
-                    companions.get(input_scale_name) if static_act_scale else None
+                    companions[name.replace(".weight", ".input_scale")]
+                    if static_act_scale
+                    else None
                 ),
             )
         yield name, weight
-    unpaired = sorted(set(companions) - consumed)
-    if unpaired:
-        raise ValueError(f"GGUF scale tensors without an NVFP4 weight: {unpaired}")
 
 
 def _atomic_sd_from_gguf(
@@ -553,7 +569,8 @@ def _finalize(
     with torch.device("meta"):
         model = MuseGlimmerModel(config)
 
-    # Weights are already in portable form; assign directly (convert=identity).
+    # Weights are already in portable form, or CUDA NVFP4 tensors for fused
+    # groups; assign directly (convert=identity).
     assign_state_dict(model, fused_sd, convert=identity)
 
     if backend == "cuda":

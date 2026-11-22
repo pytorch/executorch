@@ -418,7 +418,7 @@ python -m executorch.examples.models.muse_glimmer.export.export_solo \
 `auto` times NVFP4 (W4A4) against BF16 (W4A16) activations per shape at export
 time where native FP4 is available (SM120), `w4a4` forces NVFP4 activations
 (SM120 required), and `w4a16` forces BF16 activations. The choice is compiled
-into each exported method. `--nvfp4-static-act` uses the checkpoint's
+into each exported method. `--nvfp4-static-act` (`export_solo` only) uses the checkpoint's
 `.input_scale` as a static activation scale; by default activations are scaled
 per row, as llama.cpp does.
 
