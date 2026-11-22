@@ -218,6 +218,38 @@ TEST(PrivateRowLayoutTest, FragmentationAtTheCeilingPacksIntoFreshStorage) {
   EXPECT_EQ(result.get().spans[1].base, 8);
 }
 
+TEST(PrivateRowLayoutTest, FragmentationKeepsProductionRingGrowthSlack) {
+  constexpr int owners = 64;
+  constexpr int window = 2048;
+  std::vector<PrivateRowSpan> previous;
+  std::vector<int64_t> required(owners, 1);
+  auto first = make_private_row_layout(
+      {required.data(), required.size()}, {}, 512, window);
+  ASSERT_TRUE(first.ok());
+  previous = first.get().spans;
+  int repacks = 0;
+  for (int length = 2; length <= window; ++length) {
+    std::fill(required.begin(), required.end(), length);
+    const auto result = make_private_row_layout(
+        {required.data(), required.size()},
+        {previous.data(), previous.size()},
+        512,
+        window);
+    ASSERT_TRUE(result.ok()) << length;
+    if (length > 1024) {
+      repacks += result.get().repacked;
+      for (int owner = 0; owner < owners; ++owner) {
+        ASSERT_EQ(result.get().spans[owner].capacity, window) << length;
+        if (length > 1025) {
+          EXPECT_EQ(result.get().spans[owner].base, previous[owner].base);
+        }
+      }
+    }
+    previous = result.get().spans;
+  }
+  EXPECT_EQ(repacks, 1);
+}
+
 TEST(PrivateRowLayoutTest, MixedGrowthAndReusePreserveDisjointPayloadRanges) {
   std::mt19937 rng(917);
   std::vector<int64_t> required(64, 0);

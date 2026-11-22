@@ -16,7 +16,11 @@ increase other owners' row capacities. Geometric arena slack amortizes owner
 admission; unrelated spans keep their positions. Growth uses free regions
 disjoint from old payloads, so it can relocate one owner without changing device
 addresses or recapturing graphs. Arena exhaustion or fragmentation at the
-addressing ceiling creates a packed replacement. Removed owners' spans can be
+addressing ceiling creates a packed replacement.
+Automatic packing preserves each owner's geometric growth capacity; it does
+not shrink those capacities to the current token count. This retains growth
+slack across subsequent decode steps without repacking at every token.
+Removed owners' spans can be
 retained for burst reuse. Reusing an ID can temporarily inherit that capacity;
 explicit compaction plans live spans from their current requirements and the
 initial capacity, releasing inherited excess as well as unused spans and arena
@@ -34,6 +38,14 @@ backing that shape can be smaller: only the private operators may access it,
 using the runtime descriptors. No generic tensor copy or linear indexing over
 the declared extent is valid. Constant metadata from a different cache layout
 is rejected at load time.
+
+During low-memory AOTI compilation, explicitly runtime-owned empty KV buffers
+remain storage-free CPU metadata views when Inductor clones or serializes
+constants. Ownership is identified from the final lowered program's FQNs and
+storage identities. Any graph-owned alias excludes its storage from this
+optimization. Shape, stride, offset and nonzero metadata are preserved;
+graph-owned cache clones keep their existing zero-initialization behavior.
+Autotuning continues to hydrate real inputs and measure the original shapes.
 
 `seq_cols[T]` supplies stable owner IDs in the original query order and
 `seq_info[2 * max_seqs, 4]` describes query runs. Each layer's
@@ -122,7 +134,12 @@ quantized GEMM or full-model serving performance. It includes 4096-token
 writes and restores evicted Ring history at the legal 8192-to-4096 rollback
 floor, then measures c1 through c64 with saturated Ring history. Its separate
 A100 CI job preserves these limits rather than reducing them to fit the
-mini test's A10G. Reproduce it with:
+mini test's A10G.
+
+The checker prints flushed CPU peak-RSS and available Linux cgroup memory
+snapshots before model construction, before export and after export. These
+diagnostics help distinguish export resource failures from GPU qualification;
+they do not change the model dimensions or benchmark timing. Reproduce it with:
 
 ```bash
 python examples/models/muse-glimmer/tests/check_private_kv_rows.py \

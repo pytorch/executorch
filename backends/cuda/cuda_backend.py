@@ -40,6 +40,7 @@ from executorch.backends.cuda.passes.lower_offgraph_kv import (
     CheckOffGraphKVStepWidthPass,
     LowerOffGraphKVPass,
     OFFGRAPH_KV_COMPILE_SPEC,
+    OFFGRAPH_KV_FQN_PREFIX,
     OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC,
     PACKED_LAYOUTS,
     parse_offgraph_kv_manifest,
@@ -57,6 +58,7 @@ from executorch.backends.cuda.passes.replace_int64_floordiv import (
 from executorch.backends.cuda.passes.replace_masked_copy_with_where import (
     ReplaceMaskedCopyWithWherePass,
 )
+from executorch.backends.cuda.runtime_owned_kv import RuntimeOwnedKVCompileBuffers
 from executorch.backends.cuda.target_smem import target_smem_context
 from executorch.backends.cuda.triton.kernels import triton_mutation_cache
 from executorch.backends.cuda.triton.measured_routing import (
@@ -624,6 +626,9 @@ def _compile_time_cpu_clones(target_device: torch.device):  # noqa: C901
             # content is all zeros, so re-synthesize zeros (on CPU, strides
             # preserved) instead of cloning the now-empty storage.
             if _is_emptied(x):
+                runtime_owned = getattr(_CPU_CLONE_GUARD, "runtime_owned_kv", None)
+                if runtime_owned is not None and runtime_owned.owns_empty(x):
+                    return runtime_owned.cpu_placeholder(x)
                 return _full_zeros_preserving_strides(x, "cpu")
             return orig_clone(x).cpu()
         return orig_clone(x)
@@ -650,6 +655,11 @@ def _compile_time_cpu_clones(target_device: torch.device):  # noqa: C901
         # holds a correctly-zeroed KV cache.
         value = orig_get_const(self, name)
         if _is_emptied(value):
+            runtime_owned = getattr(_CPU_CLONE_GUARD, "runtime_owned_kv", None)
+            if runtime_owned is not None and runtime_owned.owns_empty(value):
+                # The structured collector retains this FQN's view metadata,
+                # but the runtime supplies its bytes; no zero blob is needed.
+                return value
             return _full_zeros_preserving_strides(value, "cpu")
         return value
 
@@ -1680,6 +1690,22 @@ class CudaBackend(AotiBackend, BackendDetails):
                 shim_library_path is None
             ), "shim_library_path should not be set for Linux"
         return options
+
+    @classmethod
+    @contextlib.contextmanager
+    def get_aoti_program_compile_context_manager(cls, program, compile_specs):
+        # The lowering pass creates runtime-owned buffers after device move.
+        # Inspect the final program, including any decompositions, rather than
+        # the earlier list of moved parameters or a compile-spec-only flag.
+        previous = getattr(_CPU_CLONE_GUARD, "runtime_owned_kv", None)
+        _CPU_CLONE_GUARD.runtime_owned_kv = RuntimeOwnedKVCompileBuffers(
+            program, OFFGRAPH_KV_FQN_PREFIX
+        )
+        try:
+            with cls.get_extra_aoti_compile_context_manager(compile_specs):
+                yield
+        finally:
+            _CPU_CLONE_GUARD.runtime_owned_kv = previous
 
     @classmethod
     def get_extra_aoti_compile_context_manager(

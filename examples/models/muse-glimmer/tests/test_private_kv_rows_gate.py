@@ -6,8 +6,13 @@
 
 import ast
 import importlib.util
+import io
+import json
+import types
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
+from unittest import mock
 
 spec = importlib.util.spec_from_file_location(
     "private_kv_rows_checker", Path(__file__).with_name("check_private_kv_rows.py")
@@ -17,6 +22,36 @@ spec.loader.exec_module(checker)
 
 
 class PrivateKVRowsPerformanceGateTest(unittest.TestCase):
+    def test_export_resource_report_converts_platform_rss_units(self):
+        resource = types.SimpleNamespace(
+            RUSAGE_SELF=0,
+            getrusage=lambda _: types.SimpleNamespace(ru_maxrss=17),
+        )
+        for platform, expected in (("darwin", 17), ("linux", 17 * 1024)):
+            with (
+                self.subTest(platform=platform),
+                mock.patch.dict("sys.modules", {"resource": resource}),
+                mock.patch.object(checker.sys, "platform", platform),
+                mock.patch.object(Path, "read_text", return_value="max\n"),
+                redirect_stdout(io.StringIO()) as output,
+            ):
+                result = checker.report_export_resources("before-export")
+                self.assertEqual(result["cpu_peak_rss_bytes"], expected)
+                self.assertEqual(result["tag"], "before-export")
+                if platform == "linux":
+                    self.assertEqual(result["cgroup_memory.max"], "max")
+                self.assertEqual(json.loads(output.getvalue().split(" ", 1)[1]), result)
+
+    def test_export_resource_report_tolerates_unavailable_cgroup_files(self):
+        with (
+            mock.patch.object(checker.sys, "platform", "linux"),
+            mock.patch.object(Path, "read_text", side_effect=FileNotFoundError),
+            redirect_stdout(io.StringIO()),
+        ):
+            result = checker.report_export_resources("after-export")
+            self.assertEqual(result["tag"], "after-export")
+            self.assertFalse(any(key.startswith("cgroup_") for key in result))
+
     def test_native_tokens_distinguish_owners_positions_and_reuse(self):
         for profile in ("mini", "mg-ring"):
             requests = checker.commands(profile)

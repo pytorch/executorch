@@ -17,8 +17,32 @@ import argparse
 import json
 import statistics
 import subprocess
+import sys
 from dataclasses import replace
 from pathlib import Path
+
+
+def report_export_resources(tag):
+    snapshot = {"tag": tag}
+    try:
+        import resource
+
+        peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        snapshot["cpu_peak_rss_bytes"] = int(peak) * (
+            1 if sys.platform == "darwin" else 1024
+        )
+    except ImportError:
+        pass
+    if sys.platform.startswith("linux"):
+        for name in ("memory.current", "memory.max", "memory.events"):
+            try:
+                snapshot["cgroup_" + name] = (
+                    (Path("/sys/fs/cgroup") / name).read_text().strip()
+                )
+            except OSError:
+                pass
+    print("PRIVATE_KV_EXPORT_RESOURCE " + json.dumps(snapshot), flush=True)
+    return snapshot
 
 
 def step(owners, tag, *, save=True):
@@ -281,8 +305,10 @@ def run(probe, root, head_dim, abi, repeat=0, profile="mini"):
         artifact.mkdir()
         torch.manual_seed(123)
         config = replace(TINY_CONFIG, **geometry["model"])
+        report_export_resources(f"{profile}/d{head_dim}/abi{abi}/before-model")
         model = MuseGlimmerModel(config).to(torch.bfloat16).eval()
         model.activation_dtype = torch.bfloat16
+        report_export_resources(f"{profile}/d{head_dim}/abi{abi}/before-export")
         export_cuda_batching(
             model,
             config,
@@ -295,6 +321,7 @@ def run(probe, root, head_dim, abi, repeat=0, profile="mini"):
             runtime_kv_columns=abi == 2,
             private_kv_rows=abi == 3,
         )
+        report_export_resources(f"{profile}/d{head_dim}/abi{abi}/after-export")
     run_dir = artifact / f"run-{repeat}"
     run_dir.mkdir()
     logits_dir = run_dir / "logits"

@@ -99,7 +99,7 @@ inline runtime::Result<PrivateRowLayout> make_private_row_layout(
   }
   PrivateRowLayout layout;
   layout.spans.resize(required_rows.size() + 1);
-  if (compact || previous.empty()) {
+  const auto packed_layout = [&]() {
     int64_t base = 0;
     for (size_t owner = 0; owner < capacities.size(); ++owner) {
       layout.spans[owner] = {
@@ -115,6 +115,9 @@ inline runtime::Result<PrivateRowLayout> make_private_row_layout(
       }
     }
     return layout;
+  };
+  if (compact || previous.empty()) {
+    return packed_layout();
   }
   int64_t end = 0;
   for (size_t owner = 0; owner < capacities.size(); ++owner) {
@@ -146,9 +149,10 @@ inline runtime::Result<PrivateRowLayout> make_private_row_layout(
       }
       if (base + capacity >= arena_limit) {
         // All owners can fit by capacity; fragmentation is not admission
-        // failure. A packed replacement can overlap old sources safely.
-        return make_private_row_layout(
-            required_rows, previous, initial_rows, limit, true);
+        // failure. A packed replacement can overlap old sources safely. Keep
+        // the capacities already chosen for growth; only explicit compaction
+        // may shrink them to the current requirements.
+        return packed_layout();
       }
       occupied.push_back({base, base + capacity, owner});
     }

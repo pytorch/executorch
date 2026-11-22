@@ -126,6 +126,14 @@ fbcode_target(
 
 fbcode_target(
     _kind = runtime.python_library,
+    name = "runtime_owned_kv",
+    srcs = ["runtime_owned_kv.py"],
+    visibility = ["//executorch/backends/cuda/..."],
+    deps = ["//caffe2:torch"],
+)
+
+fbcode_target(
+    _kind = runtime.python_library,
     name = "cuda_backend",
     srcs = [
         "cuda_backend.py",
@@ -136,6 +144,7 @@ fbcode_target(
     deps = [
         ":autotune",
         ":cuda_passes",
+        ":runtime_owned_kv",
         ":triton_measured_routing",
         ":triton_replacement_pass",
         "//caffe2:torch",

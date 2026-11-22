@@ -141,6 +141,14 @@ class AotiBackend(ABC):
         return contextlib.nullcontext()
 
     @classmethod
+    def get_aoti_program_compile_context_manager(cls, program, compile_specs):
+        """Scope compilation to the final, lowered program's buffer identities.
+
+        Preserve existing subclasses' compile-spec-only context hook.
+        """
+        return cls.get_extra_aoti_compile_context_manager(compile_specs)
+
+    @classmethod
     def codesign_so(cls, so_path: str, compile_specs: List[CompileSpec]) -> None:
         """Sign the compiled .so before packing into .pte.
 
@@ -356,7 +364,9 @@ class AotiBackend(ABC):
         # Compile with fallback kernel collection
         with cls.collect_unsupported_fallback_kernels(
             missing_fallback_kernels
-        ), torch.no_grad(), cls.get_extra_aoti_compile_context_manager(compile_specs):
+        ), torch.no_grad(), cls.get_aoti_program_compile_context_manager(
+            device_edge_program, compile_specs
+        ):
             paths = torch._inductor.aot_compile(
                 edge_program_module, tuple(user_input_placeholders), options=options
             )

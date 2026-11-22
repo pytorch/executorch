@@ -4106,6 +4106,38 @@ TEST_F(CudaPrivateCacheTest, SixtyFourOwnersHaveIndependentRowsAndSharedStage) {
   kv->forget_handle(&handle);
 }
 
+TEST_F(CudaPrivateCacheTest, FragmentationRetainsSlackAcrossDecodeSteps) {
+  auto ptr = make_private();
+  ASSERT_NE(ptr, nullptr);
+  auto* ctl = ptr->as<cache::BatchControl>();
+  auto* kv = ptr->as<cu::CudaKVCache>();
+  auto fake = private_container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  std::vector<int32_t> owners;
+  for (int owner = 0; owner < kOwners; ++owner) {
+    ASSERT_EQ(ctl->seq_new(), owner);
+    owners.push_back(owner);
+  }
+  for (int length = 1; length <= 3; ++length) {
+    ASSERT_EQ(write_step(*ptr, fake, handle, owners), Error::Ok);
+  }
+  const auto before = kv->metrics();
+  const auto ring_before =
+      read_ints(fake.bound["ring_layout"].data, (kOwners + 1) * 2);
+  for (int owner = 0; owner < kOwners; ++owner) {
+    ASSERT_EQ(ring_before[owner * 2 + 1], 4);
+  }
+  ASSERT_EQ(write_step(*ptr, fake, handle, owners), Error::Ok);
+  EXPECT_EQ(kv->metrics().growth_count, before.growth_count);
+  EXPECT_EQ(
+      read_ints(fake.bound["ring_layout"].data, (kOwners + 1) * 2),
+      ring_before);
+  expect_history(fake, 0, 4);
+  expect_history(fake, kOwners - 1, 4);
+  kv->forget_handle(&handle);
+}
+
 TEST_F(CudaPrivateCacheTest, WrappedCloneAndRewindRestoreArchivedHistory) {
   auto ptr = make_private();
   auto* ctl = ptr->as<cache::BatchControl>();

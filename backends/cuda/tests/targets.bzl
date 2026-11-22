@@ -414,6 +414,16 @@ def define_common_targets(is_fbcode = False):
         ],
     )
 
+    python_unittest(
+        name = "test_runtime_owned_kv",
+        srcs = ["test_runtime_owned_kv.py"],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/cuda:cuda_backend",
+            "//executorch/backends/cuda:runtime_owned_kv",
+        ],
+    )
+
     python_unittest_remote_gpu(
         name = "test_int4_large_quantized_gemm",
         srcs = [

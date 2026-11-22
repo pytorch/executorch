@@ -828,6 +828,7 @@ jobs:
         conda install -y -c conda-forge 'libstdcxx-ng>=12'
         export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
         pip install gguf
+        export PYTHONUNBUFFERED=1
 
         python - <<'PY'
         import torch
@@ -906,6 +907,7 @@ jobs:
 
         python -m pytest \
           backends/cuda/tests/test_cuda_weight_metadata.py \
+          backends/cuda/tests/test_runtime_owned_kv.py \
           backends/cuda/tests/test_merge_ptes.py \
           -v -o "addopts="
 

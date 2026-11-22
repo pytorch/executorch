@@ -91,6 +91,7 @@ class MuseGlimmerBatchingCITest(unittest.TestCase):
         )[0]
         self.assertIn("runner: mt-l-x86iavx512-11-125-a100", job)
         self.assertIn("--profile mg-ring", job)
+        self.assertIn("export PYTHONUNBUFFERED=1", job)
         self.assertIn("-DEXECUTORCH_ENABLE_LOGGING=OFF", job)
         self.assertIn("--target muse_glimmer_runtime_kv_probe --parallel", job)
         self.assertIn('exit "${PRIVATE_KV_STATUS}"', job)
@@ -101,6 +102,35 @@ class MuseGlimmerBatchingCITest(unittest.TestCase):
         shell = re.sub(r"\$\{\{[^}]+\}\}", "ci-value", shell)
         result = subprocess.run(["bash", "-n"], input=shell, text=True)
         self.assertEqual(result.returncode, 0)
+
+    def test_runtime_owned_compile_buffer_tests_are_packaged_and_run(self):
+        cuda = ROOT / "backends/cuda"
+        targets = {}
+        for source in (cuda / "BUCK", cuda / "tests/targets.bzl"):
+            for node in ast.walk(ast.parse(source.read_text())):
+                if not isinstance(node, ast.Call):
+                    continue
+                fields = {keyword.arg: keyword.value for keyword in node.keywords}
+                name = fields.get("name")
+                if isinstance(name, ast.Constant):
+                    targets[name.value] = fields
+        self.assertIn(
+            "runtime_owned_kv.py",
+            ast.literal_eval(targets["runtime_owned_kv"]["srcs"]),
+        )
+        self.assertIn(
+            ":runtime_owned_kv",
+            ast.literal_eval(targets["cuda_backend"]["deps"]),
+        )
+        self.assertIn(
+            "//executorch/backends/cuda:runtime_owned_kv",
+            ast.literal_eval(targets["test_runtime_owned_kv"]["deps"]),
+        )
+        workflow = (ROOT / ".github/workflows/cuda.yml").read_text()
+        job = workflow.split("  unittest-cuda-runtime:", 1)[1].split(
+            "  unittest-cuda:", 1
+        )[0]
+        self.assertIn("backends/cuda/tests/test_runtime_owned_kv.py", job)
 
     def test_noisy_timing_enforcement_requires_explicit_opt_in(self):
         workflow = (ROOT / ".github/workflows/cuda.yml").read_text()
