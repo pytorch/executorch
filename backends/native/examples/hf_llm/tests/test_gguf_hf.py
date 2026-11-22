@@ -8,10 +8,12 @@ import os
 import tempfile
 import unittest
 import warnings
+from unittest import mock
 
 import gguf
 import numpy as np
 import torch
+from executorch.backends.native.examples.hf_llm import gguf_hf
 from executorch.backends.native.examples.hf_llm.gguf_hf import (
     check_config_tensors,
     gguf_architecture,
@@ -26,8 +28,10 @@ from transformers import (
     LlamaConfig,
     MistralConfig,
     Qwen2Config,
+    Qwen3_5TextConfig,
     Qwen3Config,
 )
+from transformers.core_model_loading import WeightConverter
 
 
 def _tiny(config_cls, heads: int = 4, kv_heads: int = 2, head_dim: int = 16, **kw):
@@ -164,6 +168,129 @@ def _random_blocks(ggml_type: str, rows: int, cols: int, seed: int) -> np.ndarra
     return raw.reshape(rows, -1)
 
 
+def _tiny_qwen35() -> torch.nn.Module:
+    """Three gated DeltaNet layers, then full attention; two value heads per
+    key head, so llama.cpp's tiled value heads differ from HF's grouped ones."""
+    return AutoModelForCausalLM.from_config(
+        Qwen3_5TextConfig(
+            vocab_size=32,
+            hidden_size=64,
+            intermediate_size=64,
+            num_hidden_layers=4,
+            layer_types=["linear_attention"] * 3 + ["full_attention"],
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            head_dim=16,
+            linear_num_key_heads=2,
+            linear_num_value_heads=4,
+            linear_key_head_dim=16,
+            linear_value_head_dim=16,
+            linear_conv_kernel_dim=4,
+            tie_word_embeddings=False,
+        )
+    )
+
+
+def _tiled(grouped: torch.Tensor, head_dim: int, dim: int = 0) -> torch.Tensor:
+    """llama.cpp's value-head order along `dim`: HF's head k * 2 + j, for key
+    head k of 2 and its j-th value head of 2, is stored as head j * 2 + k."""
+    shape = grouped.shape
+    grouped = grouped.movedim(dim, 0)
+    tiled = grouped.reshape(2, 2, head_dim, *grouped.shape[1:]).transpose(0, 1)
+    return tiled.reshape(grouped.shape).movedim(0, dim).reshape(shape)
+
+
+# llama.cpp's Qwen3.5 tensor -> (HF parameter, what its converter did to it).
+# Q and K rows (2 heads of 16 each) come first in attn_qkv and ssm_conv1d.
+_QWEN35_LINEAR = {
+    "attn_norm.weight": ("input_layernorm.weight", lambda w: w + 1),
+    "post_attention_norm.weight": ("post_attention_layernorm.weight", lambda w: w + 1),
+    "ssm_norm.weight": ("linear_attn.norm.weight", lambda w: w),
+    "attn_qkv.weight": (
+        "linear_attn.in_proj_qkv.weight",
+        lambda w: torch.cat([w[:64], _tiled(w[64:], 16)]),
+    ),
+    "attn_gate.weight": ("linear_attn.in_proj_z.weight", lambda w: _tiled(w, 16)),
+    "ssm_alpha.weight": ("linear_attn.in_proj_a.weight", lambda w: _tiled(w, 1)),
+    "ssm_beta.weight": ("linear_attn.in_proj_b.weight", lambda w: _tiled(w, 1)),
+    "ssm_conv1d.weight": (
+        "linear_attn.conv1d.weight",
+        lambda w: torch.cat([w[:64], _tiled(w[64:], 16)]).squeeze(1),
+    ),
+    "ssm_a": ("linear_attn.A_log", lambda w: _tiled(-w.exp(), 1)),
+    "ssm_dt.bias": ("linear_attn.dt_bias", lambda w: _tiled(w, 1)),
+    "ssm_out.weight": ("linear_attn.out_proj.weight", lambda w: _tiled(w, 16, 1)),
+}
+_QWEN35_FULL = {
+    "attn_norm.weight": ("input_layernorm.weight", lambda w: w + 1),
+    "post_attention_norm.weight": ("post_attention_layernorm.weight", lambda w: w + 1),
+    "attn_q_norm.weight": ("self_attn.q_norm.weight", lambda w: w + 1),
+    "attn_k_norm.weight": ("self_attn.k_norm.weight", lambda w: w + 1),
+    "attn_q.weight": ("self_attn.q_proj.weight", lambda w: w),
+    "attn_k.weight": ("self_attn.k_proj.weight", lambda w: w),
+    "attn_v.weight": ("self_attn.v_proj.weight", lambda w: w),
+    "attn_output.weight": ("self_attn.o_proj.weight", lambda w: w),
+}
+_QWEN35_MLP = {
+    f"ffn_{p}.weight": (f"mlp.{p}_proj.weight", lambda w: w)
+    for p in ("gate", "up", "down")
+}
+_QWEN35_GLOBAL = {
+    "token_embd.weight": ("model.embed_tokens.weight", lambda w: w),
+    "output.weight": ("lm_head.weight", lambda w: w),
+    "output_norm.weight": ("model.norm.weight", lambda w: w + 1),
+}
+
+
+def _write_qwen35_gguf(
+    model: torch.nn.Module, path: str
+) -> tuple[dict[str, str], dict[str, np.ndarray], dict[str, np.ndarray]]:
+    """Write `model` as llama.cpp lays a Qwen3.5 GGUF out, with Q8_0 blocks on
+    layer 0's `in_proj_qkv`, `in_proj_z`, `out_proj` and `ffn_up`, and a
+    multi-token prediction block. Returns the GGUF -> HF names, every stored
+    tensor, and the HF-order blocks of the quantized ones."""
+    params = model.state_dict()
+    names: dict[str, str] = {}
+    tables: dict[str, dict] = {}
+    for i in range(4):
+        table = (_QWEN35_LINEAR if i < 3 else _QWEN35_FULL) | _QWEN35_MLP
+        for role, (param, _) in table.items():
+            names[f"blk.{i}.{role}"] = f"model.layers.{i}.{param}"
+            tables[f"blk.{i}.{role}"] = table
+    for name, (param, _) in _QWEN35_GLOBAL.items():
+        names[name] = param
+        tables[name] = _QWEN35_GLOBAL
+    stored = {}
+    for name, param in names.items():
+        role = name.split(".", 2)[-1] if name.startswith("blk.") else name
+        stored[name] = tables[name][role][1](params[param]).float().numpy()
+    roles = ("attn_qkv.weight", "attn_gate.weight", "ssm_out.weight", "ffn_up.weight")
+    blocks = {
+        f"blk.0.{role}": _random_blocks(
+            "q8_0", *params[names[f"blk.0.{role}"]].shape, seed
+        )
+        for seed, role in enumerate(roles)
+    }
+    for name, hf_raw in blocks.items():
+        rows = torch.from_numpy(hf_raw)
+        if name == "blk.0.attn_qkv.weight":
+            rows = torch.cat([rows[:64], _tiled(rows[64:], 16)])
+        elif name == "blk.0.attn_gate.weight":
+            rows = _tiled(rows, 16)
+        stored[name] = rows.numpy()
+    stored["blk.4.nextn.eh_proj.weight"] = np.zeros((64, 128), np.float32)
+    stored["blk.4.attn_norm.weight"] = np.ones(64, np.float32)
+    writer = gguf.GGUFWriter(path, "qwen35")
+    for name, value in stored.items():
+        q8_0 = gguf.GGMLQuantizationType.Q8_0 if name in blocks else None
+        writer.add_tensor(name, value, raw_dtype=q8_0)
+    writer.write_header_to_file()
+    writer.write_kv_data_to_file()
+    writer.write_tensors_to_file()
+    writer.close()
+    return names, stored, blocks
+
+
 class GgufHfTest(unittest.TestCase):
     def test_maps_standard_gguf_names(self) -> None:
         cases = {
@@ -233,6 +360,8 @@ class GgufHfTest(unittest.TestCase):
             gguf_to_hf(_tiny(Qwen2Config), "llama")
         with self.assertRaisesRegex(ValueError, "unsupported GGUF architecture"):
             gguf_to_hf(_tiny(LlamaConfig), "phi3")
+        with self.assertRaisesRegex(ValueError, "cannot load a 'llama' model"):
+            gguf_to_hf(_tiny(LlamaConfig), "qwen35")
 
     def test_reads_the_architecture_of_a_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -401,6 +530,71 @@ class GgufHfTest(unittest.TestCase):
         weight = torch.randn(64, 64)
 
         self.assertIs(convert("model.layers.0.self_attn.q_proj.weight", weight), weight)
+
+    def test_loads_qwen35_through_transformers_tables(self) -> None:
+        torch.manual_seed(0)
+        model = _tiny_qwen35()
+        params = model.state_dict()
+        key_map, convert = gguf_to_hf(model, "qwen35")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "model.gguf")
+            names, stored, blocks = _write_qwen35_gguf(model, path)
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                loaded = dict(iter_checkpoint(path, key_map=key_map, convert=convert))
+
+        self.assertEqual(set(loaded), set(params))
+        self.assertEqual(sum("multi-token" in str(w.message) for w in caught), 1)
+        for name, param in names.items():
+            with self.subTest(name):
+                value = loaded[param]
+                if name in blocks and name != "blk.0.ssm_out.weight":
+                    self.assertIsInstance(value, ExportableGGUFTensor)
+                    self.assertTrue(
+                        torch.equal(value.raw, torch.from_numpy(blocks[name]))
+                    )
+                elif name == "blk.0.ssm_out.weight":
+                    tiled = gguf.quants.dequantize(
+                        stored[name], gguf.GGMLQuantizationType.Q8_0
+                    )
+                    want = (
+                        torch.from_numpy(tiled)
+                        .reshape(64, 2, 2, 16)
+                        .transpose(1, 2)
+                        .reshape(64, 64)
+                    )
+                    self.assertNotIsInstance(value, ExportableGGUFTensor)
+                    self.assertTrue(torch.equal(value, want))
+                else:
+                    torch.testing.assert_close(value, params[param].float())
+
+    def test_truncated_qwen35_skips_later_blocks(self) -> None:
+        model = _tiny_qwen35()
+        key_map, _ = gguf_to_hf(model, "qwen35", truncated=True)
+
+        # A 10-layer file's blocks past the model's 4 layers, its multi-token
+        # prediction block among them.
+        for name in ("blk.4.attn_norm.weight", "blk.5.ffn_up.weight"):
+            self.assertIsNone(key_map(name))
+        self.assertEqual(
+            key_map("blk.3.ffn_up.weight"), "model.layers.3.mlp.up_proj.weight"
+        )
+        key_map, _ = gguf_to_hf(model, "qwen35")
+        with self.assertRaisesRegex(ValueError, "maps to no qwen3_5_text parameter"):
+            key_map("blk.5.ffn_up.weight")
+
+    def test_refuses_a_transformers_mapping_with_unknown_ops(self) -> None:
+        class Scale:
+            supports_packed = True
+
+        mapping = [WeightConverter("ssm_out", "out_proj", operations=[Scale()])]
+        with mock.patch.object(
+            gguf_hf, "get_gguf_conversion_mapping", return_value=mapping
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError, "Scale, which export does not know"
+            ):
+                gguf_to_hf(_tiny_qwen35(), "qwen35")
 
     def test_loads_a_mixed_type_gguf(self) -> None:
         model = AutoModelForCausalLM.from_config(
