@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import hashlib
 import json
 import operator
 import os
@@ -868,6 +869,35 @@ class MetadataTest(unittest.TestCase):
                 to_native(program, metadata=metadata)
         with self.assertRaisesRegex(ValueError, "non-finite"):
             to_native(program, metadata={"nan": float("nan")})
+
+
+class PackageDeterminismTest(unittest.TestCase):
+    def test_identical_exports_write_identical_files(self):
+        class Model(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = nn.Linear(8, 8)
+                self.register_buffer("a", torch.ones(8))
+                self.register_buffer("b", torch.ones(8))
+
+            def forward(self, x):
+                return self.linear(x) + self.a + self.b
+
+        x = torch.randn(2, 8)
+        golden = SampleSet([Sample([Call("forward", [x])])])
+        digests = []
+        with tempfile.TemporaryDirectory() as td:
+            # Saved an hour apart: no writer clock may reach the bytes.
+            for i, now in enumerate((1.7e9, 1.7e9 + 3600)):
+                torch.manual_seed(0)
+                ep = torch.export.export(Model().eval(), (x,))
+                path = os.path.join(td, f"{i}.ptn")
+                with mock.patch("time.time", return_value=now):
+                    to_native(ep).save(path)
+                    write_samples(path, "golden", golden)
+                with open(path, "rb") as f:
+                    digests.append(hashlib.sha256(f.read()).hexdigest())
+        self.assertEqual(digests[0], digests[1])
 
 
 if __name__ == "__main__":
