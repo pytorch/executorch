@@ -140,6 +140,8 @@ def test_gated_linear_routing(mode, dtype, rows, fp32, native, expected, monkeyp
     monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: native)
     monkeypatch.setenv("ET_CUDA_NVFP4_ACT", mode)
     monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_OUTPUT", "fp32" if fp32 else "input")
+    # The unfused fallback's dequant prefill is routed in test_nvfp4_fusion.py.
+    monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_IMPL", "kernel")
     fake = FakeTensorMode()
     x = fake.from_tensor(torch.randn(rows, 192, dtype=dtype))
     weight = fake.from_tensor(gate_up_weight("cpu"))

@@ -86,25 +86,36 @@ def record_calls(monkeypatch, module, names, calls):
 
 
 @pytest.mark.parametrize(
-    "mode,native,rows,fp32,expected",
+    "mode,native,rows,fp32,impl,expected",
     [
-        ("w4a16", False, 37, False, "nvfp4_w4a16"),
-        ("w4a16", False, 1, False, "nvfp4_gemv"),
-        ("auto", False, 37, False, "nvfp4_w4a16"),
-        ("auto", True, 37, False, "nvfp4_auto_prefill"),
-        ("auto", True, 37, True, "nvfp4_auto_prefill"),
-        ("auto", True, 1, True, "nvfp4_auto_decode"),
-        ("w4a4", True, 37, False, "nvfp4_w4a4"),
-        ("w4a4", True, 1, True, "nvfp4_w4a4"),
+        ("w4a16", False, 37, False, "kernel", "nvfp4_w4a16"),
+        ("w4a16", False, 1, False, "kernel", "nvfp4_gemv"),
+        ("auto", False, 37, False, "kernel", "nvfp4_w4a16"),
+        ("auto", False, 37, False, "auto", "nvfp4_dequant"),
+        ("auto", True, 37, False, "auto", "nvfp4_auto_prefill"),
+        ("auto", True, 37, True, "auto", "nvfp4_auto_prefill"),
+        ("auto", True, 1, True, "auto", "nvfp4_auto_decode"),
+        ("w4a4", True, 37, False, "auto", "nvfp4_w4a4"),
+        ("w4a4", True, 1, True, "auto", "nvfp4_w4a4"),
         # A dynamic M (bounded by 64) is never statically small: prefill.
-        ("auto", True, None, True, "nvfp4_auto_prefill"),
-        ("w4a16", False, None, False, "nvfp4_w4a16"),
+        ("auto", True, None, True, "auto", "nvfp4_auto_prefill"),
+        ("w4a16", False, None, False, "kernel", "nvfp4_w4a16"),
     ],
 )
-def test_linear_routing(mode, native, rows, fp32, expected, monkeypatch):
+def test_linear_routing(mode, native, rows, fp32, impl, expected, monkeypatch):
     # Export traces with fake tensors; record which op each policy emits.
     from executorch.backends.cuda.quantize_op_dispatch import nvfp4_dispatch
-    from executorch.backends.cuda.triton.kernels import nvfp4_quantized_gemm
+    from executorch.backends.cuda.triton.kernels import (
+        nvfp4_dequant,
+        nvfp4_quantized_gemm,
+    )
+
+    def dequant(qdata, scale, per_tensor_scale, dtype):
+        calls.append(("nvfp4_dequant", None))
+        return qdata.new_empty((qdata.shape[0], qdata.shape[1] * 2), dtype=dtype)
+
+    monkeypatch.setattr(nvfp4_dequant, "nvfp4_dequant", dequant)
+    monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_IMPL", impl)
 
     calls = []
     record_calls(

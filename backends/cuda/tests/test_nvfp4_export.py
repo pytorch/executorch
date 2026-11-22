@@ -54,6 +54,9 @@ def test_packed_linear_pte(mode, m, dynamic, fp32, monkeypatch):
     if mode != "w4a16" and not _has_native_fp4():
         pytest.skip("native FP4 required")
     monkeypatch.setenv("ET_CUDA_NVFP4_ACT", mode)
+    # Without native FP4, prefill defaults to dequant + an Inductor matmul,
+    # which times no NVFP4 tiles.
+    monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_IMPL", "kernel")
     # The FP32 prefill policy is read at export and baked into the program.
     monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_OUTPUT", "fp32" if fp32 else "input")
     import executorch.backends.cuda.cuda_backend as cuda_backend

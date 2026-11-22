@@ -242,6 +242,7 @@ fbcode_target(
         "triton/kernels/int5_quantized_gemm.py",
         "triton/kernels/int6_quantized_gemm.py",
         "triton/kernels/int8_quantized_gemm.py",
+        "triton/kernels/nvfp4_dequant.py",
         "triton/kernels/nvfp4_gated_gemm.py",
         "triton/kernels/nvfp4_output.py",
         "triton/kernels/nvfp4_quantized_gemm.py",

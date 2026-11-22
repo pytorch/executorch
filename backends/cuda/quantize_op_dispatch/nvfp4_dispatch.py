@@ -14,6 +14,9 @@ is compiled into the program:
   dtype; ``fp32`` returns FP32 from prefill linears (M not statically <= 4).
 * ``ET_CUDA_NVFP4_SOFT_W4A8``: ``1`` (default) lets ``auto`` decode without
   native FP4 time the W4A8 dp4a GEMV against the W4A16 GEMV; ``0`` keeps W4A16.
+* ``ET_CUDA_NVFP4_PREFILL_IMPL``: ``auto`` (default) uses the fused kernels
+  with native FP4 and dequant + matmul otherwise; ``kernel`` / ``dequant``
+  force one.
 """
 
 import os
@@ -212,6 +215,37 @@ def nvfp4_auto_gate_up_prefill(
     )
 
 
+def _nvfp4_prefill_impl():
+    """Prefill (non-small M) NVFP4 linear implementation.
+
+    auto (default): fused W4A4/W4A16 kernels where FP4 tensor cores exist
+    (SM120+); elsewhere whole-weight dequant + F.linear, the integer GGUF
+    formats' M > 64 path, which beats in-register dequant there.
+    """
+    impl = os.environ.get("ET_CUDA_NVFP4_PREFILL_IMPL", "auto")
+    if impl not in ("auto", "kernel", "dequant"):
+        raise ValueError("ET_CUDA_NVFP4_PREFILL_IMPL must be auto, kernel or dequant")
+    if impl == "auto":
+        return "kernel" if _has_native_fp4() else "dequant"
+    return impl
+
+
+def _dequant_linear(flat, w):
+    """Whole-weight dequant + F.linear, chunked along N for huge weights."""
+    from executorch.backends.cuda.triton.kernels.nvfp4_dequant import nvfp4_dequant
+
+    pts = w.per_tensor_scale
+    row_pts = pts.numel() != 1
+
+    def rows(i, j):
+        dense = nvfp4_dequant(
+            w.qdata[i:j], w.scale[i:j], pts[i:j] if row_pts else pts, flat.dtype
+        )
+        return F.linear(flat, dense)
+
+    return chunked_dequant_linear(flat, w.shape[0], rows)
+
+
 @torch.library.custom_op("triton::nvfp4_gated_linear", mutates_args={})
 def nvfp4_gated_linear(x: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
     """Gated projection ``silu(x @ gate.T) * (x @ up.T)`` of a CudaNVFP4Tensor.
@@ -250,6 +284,7 @@ def _gated_linear(func, types, args, kwargs):
     # policy at prefill size, like _linear.
     if (
         mode == "w4a16"
+        or _nvfp4_prefill_impl() == "dequant"
         or (
             x.dtype != torch.bfloat16
             and not (x.dtype == torch.float32 and output_dtype == torch.float32)
@@ -360,6 +395,12 @@ def _linear(func, types, args, kwargs):
             out = nvfp4_gemv(
                 flat, w.qdata, w.scale, w.per_tensor_scale, unit_scale=w.unit_scale
             )
+        elif (
+            _nvfp4_prefill_impl() == "dequant"
+            and output_dtype is None
+            and x.dtype in (torch.bfloat16, torch.float16)
+        ):
+            out = _dequant_linear(flat, w)
         elif mode == "w4a16":
             out = nvfp4_w4a16(
                 flat, w.qdata, w.scale, w.per_tensor_scale, output_dtype=output_dtype
