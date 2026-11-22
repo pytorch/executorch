@@ -144,15 +144,31 @@ TEST(ReferenceGgufQuantTest, DecodesQ6KBlock) {
   EXPECT_EQ(decode_one_row("gguf:q6_k", block), expected);
 }
 
+TEST(ReferenceGgufQuantTest, DecodesQ8_0Block) {
+  std::vector<uint8_t> block = {0x00, 0xB8}; // d = -0.5
+  std::vector<float> expected;
+  for (int j = 0; j < 32; ++j) {
+    const int code = j == 31 ? 127 : 8 * j - 128;
+    block.push_back(static_cast<uint8_t>(static_cast<int8_t>(code)));
+    expected.push_back(-0.5f * code);
+  }
+  ASSERT_EQ(block.size(), 34);
+
+  EXPECT_EQ(decode_one_row("gguf:q8_0", block, 32), expected);
+}
+
 TEST(ReferenceGgufQuantTest, SizesWholeBlockRows) {
   EXPECT_TRUE(can_decode_gguf("gguf:q4_k"));
   EXPECT_TRUE(can_decode_gguf("gguf:q5_k"));
   EXPECT_TRUE(can_decode_gguf("gguf:q6_k"));
+  EXPECT_TRUE(can_decode_gguf("gguf:q8_0"));
   EXPECT_FALSE(can_decode_gguf("gguf:iq4_xs"));
   EXPECT_FALSE(can_decode_gguf("q4_k"));
   EXPECT_EQ(gguf_row_nbytes("gguf:q4_k", 512), 288);
   EXPECT_EQ(gguf_row_nbytes("gguf:q5_k", 256), 176);
   EXPECT_EQ(gguf_row_nbytes("gguf:q6_k", 256), 210);
+  EXPECT_EQ(gguf_row_nbytes("gguf:q8_0", 64), 68);
+  EXPECT_THROW(gguf_row_nbytes("gguf:q8_0", 48), std::invalid_argument);
   EXPECT_THROW(gguf_row_nbytes("gguf:q4_k", 255), std::invalid_argument);
   EXPECT_THROW(gguf_row_nbytes("gguf:q4_k", 0), std::invalid_argument);
   EXPECT_THROW(gguf_row_nbytes("gguf:q4_k", -256), std::invalid_argument);
@@ -188,7 +204,8 @@ TEST(ReferenceGgufQuantTest, MatchesGgmlDequantization) {
     std::memcpy(bytes, &h, sizeof(h));
   };
   for (const auto& [codec, type, scale_offsets] :
-       {std::tuple{"gguf:q4_k", GGML_TYPE_Q4_K, std::vector<size_t>{0, 2}},
+       {std::tuple{"gguf:q8_0", GGML_TYPE_Q8_0, std::vector<size_t>{0}},
+        std::tuple{"gguf:q4_k", GGML_TYPE_Q4_K, std::vector<size_t>{0, 2}},
         std::tuple{"gguf:q5_k", GGML_TYPE_Q5_K, std::vector<size_t>{0, 2}},
         std::tuple{"gguf:q6_k", GGML_TYPE_Q6_K, std::vector<size_t>{208}}}) {
     SCOPED_TRACE(codec);

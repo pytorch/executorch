@@ -37,6 +37,7 @@ bool is_lowercase_of(std::string_view lower, std::string_view name) {
 // GGUF weight types validated against eager, each added with its op samples.
 // Every other ggml type is rejected until it is.
 constexpr ggml_type kValidatedGgufTypes[] = {
+    GGML_TYPE_Q8_0,
     GGML_TYPE_Q4_K,
     GGML_TYPE_Q5_K,
     GGML_TYPE_Q6_K,
