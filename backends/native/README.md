@@ -325,6 +325,7 @@ numerics default to llama.cpp's behaviour; the testing ones end in
 | `exact_topk_for_testing` (`--exact_topk_for_testing`) | one argsort (`ggml_argsort_top_k`), which leaves a row holding NaN unordered | NaN ranks above every value, +inf included, at a NaN key map and a second argsort | `topk` | all |
 | `exact_gelu_for_testing` | one `ggml_gelu`, which ggml-cpu reads from an F16 table, a few 1e-4 off eager | the CPU builds tanh GELU from exact ops, at five more kernels | `gelu` (`approximate="tanh"`) | CPU |
 | `cuda_f32_accumulation_for_testing` | matrix multiplies with an F16 operand accumulate in F16 | they accumulate in F32, at 2-3x prefill and 4x decode GEMM time | F16 `linear`, `matmul`, `mm`, `bmm`, `convolution` | CUDA |
+| `f32_gpu_kv_cache_for_testing` (`ggml_ptn_runner`) | an in-graph F32 KV cache that only attention reads is stored in F16 | it stays F32; off-graph caches take the cache config's dtype | in-graph KV caches read by `scaled_dot_product_attention` and the custom SDPA | CUDA, HIP |
 
 The CMake installation includes the GGML libraries and package configuration.
 It also copies the submodule's upstream MIT license, including its copyright
