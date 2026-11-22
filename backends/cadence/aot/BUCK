@@ -184,6 +184,17 @@ fbcode_target(_kind = python_unittest,
     ],
 )
 
+fbcode_target(_kind = python_unittest,
+    name = "test_utils",
+    srcs = [
+        "tests/test_utils.py",
+    ],
+    deps = [
+        ":utils",
+        "//executorch/exir:lib",
+    ],
+)
+
 fbcode_target(_kind = runtime.python_library,
     name = "compiler_utils",
     srcs = [

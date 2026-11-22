@@ -2104,9 +2104,6 @@ class ExecutorchProgramManager:
         if path[-4:] != ".pte":
             logging.error(f"Path {path} does not end with .pte")
             raise ValueError(f"Path {path} does not end with .pte")
-        try:
-            with open(path, "wb") as file:
-                self.write_to_file(file)
-                logging.info(f"Saved exported program to {path}")
-        except Exception as e:
-            logging.error(f"Error while saving to {path}: {e}")
+        with open(path, "wb") as file:
+            self.write_to_file(file)
+        logging.info(f"Saved exported program to {path}")
