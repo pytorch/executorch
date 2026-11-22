@@ -108,6 +108,7 @@ fbcode_target(
     srcs = [
         "passes/__init__.py",
         "passes/move_cond_predicate_to_cpu.py",
+        "passes/lower_nvfp4_kv.py",
         "passes/lower_offgraph_kv.py",
         "passes/remove_assert_async.py",
         "passes/replace_fused_sdpa.py",
@@ -244,6 +245,7 @@ fbcode_target(
         "triton/kernels/int8_quantized_gemm.py",
         "triton/kernels/nvfp4_dequant.py",
         "triton/kernels/nvfp4_gated_gemm.py",
+        "triton/kernels/nvfp4_kv.py",
         "triton/kernels/nvfp4_output.py",
         "triton/kernels/nvfp4_quantized_gemm.py",
         "triton/kernels/nvfp4_small_m_gemm.py",

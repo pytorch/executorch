@@ -128,9 +128,19 @@ def export_and_lower(
     max_cells: int = 65536,
     kv_layout: str = "cell",
     max_kv_seqs: int = 4,
+    kv_cache_dtype: str = "bf16",
 ) -> None:
     if use_offgraph_kv_cache and use_turboquant:
         raise ValueError("off-graph KV cache and TurboQuant are mutually exclusive")
+    if kv_cache_dtype not in ("bf16", "nvfp4"):
+        raise ValueError(f"Unsupported kv_cache_dtype: {kv_cache_dtype!r}")
+    if kv_cache_dtype == "nvfp4" and (
+        backend != "cuda" or use_offgraph_kv_cache or use_turboquant
+    ):
+        raise ValueError(
+            "The NVFP4 KV cache requires the CUDA in-graph cache path (no "
+            "off-graph KV cache, no TurboQuant)"
+        )
     if backend == "mlx" and use_offgraph_kv_cache:
         if activation_dtype not in (torch.float16, torch.bfloat16):
             raise ValueError(
@@ -166,6 +176,7 @@ def export_and_lower(
             pos_embed_table=pos_embed_table,
             max_vision_patches=max_vision_patches,
             vision_fp32_mm=vision_fp32_mm,
+            kv_cache_dtype=kv_cache_dtype,
         )
     elif backend == "mlx":
         _export_mlx(
@@ -730,6 +741,7 @@ def _export_cuda(
     pos_embed_table: torch.Tensor | None = None,
     max_vision_patches: int = 16384,
     vision_fp32_mm: str = "none",
+    kv_cache_dtype: str = "bf16",
 ) -> None:
     import torch._inductor.config as inductor_config
 
@@ -774,6 +786,12 @@ def _export_cuda(
     max_prefill = min(config.max_seq_len - 1, model._sliding_window * 2)
     model.set_max_prefill_chunk(max_prefill)
     cuda_source_transformations(model, use_turboquant=use_turboquant)
+    if kv_cache_dtype == "nvfp4":
+        from executorch.examples.models.muse_glimmer.source_transformations.nvfp4_kv import (
+            install_nvfp4_kv_cache,
+        )
+
+        install_nvfp4_kv_cache(model)
 
     has_vision = vision_model is not None
     programs: dict[str, "torch.export.ExportedProgram"] = {}
@@ -1268,8 +1286,25 @@ def main() -> None:
         default="auto",
         help="NVFP4 CUDA activation mode: auto times W4A4/W4A16 and split-K per shape; w4a4 forces native FP4 activations.",
     )
+    parser.add_argument(
+        "--kv-cache-dtype",
+        choices=("bf16", "nvfp4"),
+        default="bf16",
+        help="CUDA in-graph KV cache dtype. nvfp4 stores K/V as E2M1 codes with "
+        "E4M3 block scales per 16 head_dim elements and a unit global scale "
+        "(72 bytes per token-head at head_dim 128), written by one fused "
+        "norm/RoPE/quantize kernel and read by attention kernels that decode "
+        "K/V exactly to FP16 in registers.",
+    )
     args = parser.parse_args()
     os.environ["ET_CUDA_NVFP4_ACT"] = args.nvfp4_act
+    if args.kv_cache_dtype == "nvfp4" and (
+        args.backend != "cuda" or args.turboquant or args.use_offgraph_kv_cache
+    ):
+        parser.error(
+            "--kv-cache-dtype nvfp4 requires the CUDA in-graph cache path without "
+            "--turboquant or --use-offgraph-kv-cache."
+        )
 
     _validate_offgraph_prefill(parser, args)
 
@@ -1368,6 +1403,7 @@ def main() -> None:
         max_cells=args.max_cells,
         kv_layout=args.kv_layout,
         max_kv_seqs=args.max_kv_seqs,
+        kv_cache_dtype=args.kv_cache_dtype,
     )
 
 
