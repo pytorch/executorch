@@ -129,6 +129,7 @@ def export_and_lower(
     kv_layout: str = "cell",
     max_kv_seqs: int = 4,
     kv_cache_dtype: str = "bf16",
+    nvfp4_attn_act: str = "fp4",
 ) -> None:
     if use_offgraph_kv_cache and use_turboquant:
         raise ValueError("off-graph KV cache and TurboQuant are mutually exclusive")
@@ -148,6 +149,14 @@ def export_and_lower(
             )
         if not 1 <= max_prefill_chunk <= config.max_seq_len:
             raise ValueError("max_prefill_chunk must be within [1, max_seq_len]")
+    if nvfp4_attn_act != "fp4":
+        if backend != "cuda":
+            raise ValueError("nvfp4_attn_act requires the CUDA backend")
+        from executorch.examples.models.muse_glimmer.source_transformations.nvfp4_attn_act import (
+            mark_attention_act,
+        )
+
+        mark_attention_act(model, nvfp4_attn_act)
     if backend == "cuda" and use_offgraph_kv_cache:
         if vision_fp32_mm != "none":
             raise ValueError("CUDA batching does not support vision_fp32_mm")
@@ -1296,6 +1305,15 @@ def main() -> None:
         "norm/RoPE/quantize kernel and read by attention kernels that decode "
         "K/V exactly to FP16 in registers.",
     )
+    parser.add_argument(
+        "--nvfp4-attn-act",
+        choices=("fp4", "mxfp8", "bf16"),
+        default="fp4",
+        help="Activation format of the NVFP4 attention projections (qko/qkv, v, "
+        "o): fp4 keeps the --nvfp4-act path; mxfp8 runs prefill as MXFP8 x "
+        "MXFP8 with the NVFP4 weights converted in registers and decode as "
+        "W4A16 (never W4A4); bf16 runs them weight-only (W4A16).",
+    )
     args = parser.parse_args()
     os.environ["ET_CUDA_NVFP4_ACT"] = args.nvfp4_act
     if args.kv_cache_dtype == "nvfp4" and (
@@ -1404,6 +1422,7 @@ def main() -> None:
         kv_layout=args.kv_layout,
         max_kv_seqs=args.max_kv_seqs,
         kv_cache_dtype=args.kv_cache_dtype,
+        nvfp4_attn_act=args.nvfp4_attn_act,
     )
 
 

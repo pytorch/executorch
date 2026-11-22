@@ -17,7 +17,10 @@ compile time and keeps the fastest:
 - ``w4a16``: BF16 tensor-core GEMM on a 16-row tile with the weights dequantized
   in registers.
 
-Weights are the same packed NVFP4 tensor for all three.
+Weights are the same packed NVFP4 tensor for all three. Linears whose
+weights must keep BF16 activations (``act_dtype`` other than ``fp4``) use
+``triton::nvfp4_small_m_gemm_bf16act_m{M}``, which times only ``rows`` and
+``w4a16``.
 """
 
 import os
@@ -316,6 +319,24 @@ def _family_launch(bucket, x, qdata, scale, pts, act_scale, unit_scale):
     return _launch(bucket, x.contiguous(), qdata, scale, pts, act_scale, unit_scale)
 
 
+_launch_bf16_act = autotune_launch_param(
+    "mode_split",
+    tuple(
+        _MODE_IDS[mode] * _MODE_STRIDE + split
+        for mode in ("rows", "w4a16")
+        for split in SMALL_M_SPLITS
+    ),
+    candidate_prepass=_compile_every_candidate_at_once,
+    do_bench=nvfp4_launch_bench,
+)(_launch_impl)
+
+
+def _family_launch_bf16_act(bucket, x, qdata, scale, pts, act_scale, unit_scale):
+    return _launch_bf16_act(
+        bucket, x.contiguous(), qdata, scale, pts, act_scale, unit_scale
+    )
+
+
 def _fake(bucket, x, qdata, scale, pts, act_scale, unit_scale):
     return x.new_empty((x.shape[0], qdata.shape[0]))
 
@@ -337,6 +358,15 @@ NVFP4_SMALL_M_GEMM = QuantizedGemmFamily(
     SMALL_M_BUCKETS,
     _prototype,
     _family_launch,
+    _fake,
+    _unsupported_reason,
+)
+
+NVFP4_SMALL_M_GEMM_BF16_ACT = QuantizedGemmFamily(
+    "nvfp4_small_m_gemm_bf16act",
+    SMALL_M_BUCKETS,
+    _prototype,
+    _family_launch_bf16_act,
     _fake,
     _unsupported_reason,
 )
