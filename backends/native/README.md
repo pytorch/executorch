@@ -454,5 +454,10 @@ GGML quantizes the activations of its quantized matmuls, so it rejects
 weight-only quantized linears, including GGUF weights, unless
 `--allow_activation_quant_for_weight_only` accepts that loss of precision.
 
+Both runners prefill a prompt in calls of at most the token input's upper
+bound, so a linear-attention model, which exports a one-token `forward`,
+takes one call per prompt token. The prompt must fit `--max_seq_length` and
+the model's KV cache, or the token bound for a method without a cache.
+
 With `EXECUTORCH_BUILD_TESTS=ON`, `native_llm_runner_utils_test` exercises the
 LLM generation utilities.
