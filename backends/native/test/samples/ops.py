@@ -35,4 +35,8 @@ def ops() -> dict[str, Op]:
         "max_pool2d": Op(pad_pool.max_pool2d_cases),
         "split": Op(core_ops.split_cases),
         "topk": Op(core_ops.topk_cases),
+        "sum": Op(core_ops.sum_cases, ("f32",)),
+        "mean": Op(core_ops.mean_cases, ("f32",)),
+        "amax": Op(core_ops.amax_cases, ("f32",)),
+        "softmax": Op(core_ops.softmax_cases, ("f32",)),
     }

@@ -303,11 +303,15 @@ class GraphBuilder {
   void lower_amax(const Node& node);
   void lower_softmax(const Node& node);
   ggml_tensor* nan_mask(ggml_tensor* x);
-  // The `self` of a mean, sum or amax over trailing dims as ggml rows of the
-  // reduced elements, and the result sizes.
-  std::pair<ggml_tensor*, std::vector<int64_t>> trailing_rows(
+  TensorRef permuted(const TensorRef& input, const std::vector<int64_t>& dims);
+  // The `self` of a reduction as ggml rows of the reduced elements, and the
+  // result sizes.
+  std::pair<ggml_tensor*, std::vector<int64_t>> reduced_rows(
       const Node& node,
       const std::string& op);
+  ggml_tensor* row_argmax(ggml_tensor* rows);
+  ggml_tensor* row_max(ggml_tensor* rows);
+  ggml_tensor* nan_where_rows_hold_nan(ggml_tensor* rows, ggml_tensor* values);
   void lower_split(const Node& node, const std::string& key);
   void lower_topk(const Node& node);
   void set_as_output_type(ValueId id, TensorRef result);
