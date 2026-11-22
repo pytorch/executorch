@@ -23,11 +23,13 @@ is compiled into the program:
   not statically <= 4. ``w4a4`` and the FP32 prefill output policy always take
   the fused kernels. The choice is made per exported program from M's upper
   bound, and ``auto`` assumes a dynamic-M method is exported with its largest
-  M as the example, as the in-tree exporters (Muse Glimmer, DFlash, Gemma 4)
-  do: the fused kernels are tuned at the example M, so its short prompts run a
-  large-M tile (dequant + matmul is faster there on A100 and about 13% slower
-  per linear on H100, against 1.5-2x faster for long prompts). A method
-  exported with a small example M should set ``kernel``.
+  M as the example, as the Muse Glimmer and Gemma 4 prefill methods are: the
+  fused kernels are tuned at the example M, so short prompts run a large-M
+  tile (dequant + matmul is faster there on A100 and about 13% slower per
+  layer on H100, against 1.5-2x faster for long prompts). The DFlash packed
+  draft is traced with 2 context rows, so its dynamic linears dequantize
+  without that measurement. The variable applies to every method traced in
+  the process; set ``kernel`` to keep the fused kernels for all of them.
 * ``ET_CUDA_NVFP4_SMALL_M``: ``1`` (default) routes ``auto``/``w4a16`` linears
   whose M is in 2..16 (static, or dynamic with an upper bound <= 16), and
   ``w4a8`` ones with M in 5..16, to the small-M bucket ops, which time a rows

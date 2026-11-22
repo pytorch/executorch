@@ -208,16 +208,14 @@ def fixed_gemv(x, q, s, pts, unit_scale, split_k, config, native):
 
 
 def gemv_configs(half2):
-    """Representative single-stage tiles, the widest BN and BK included."""
-    tiles = {(4, 256), (8, 512), (16, 1024), (32, 256)}
+    """Every single-stage tile (the stage count only changes pipelining)."""
     configs = [
         c
         for c in kernels._gemv.configs
-        if c.kwargs["HALF2"] == half2
-        and c.num_stages == 1
-        and (c.kwargs["BN"], c.kwargs["BK"]) in tiles
+        if c.kwargs["HALF2"] == half2 and c.num_stages == 1
     ]
-    assert {(c.kwargs["BN"], c.kwargs["BK"]) for c in configs} == tiles
+    tiles = {(c.kwargs["BN"], c.kwargs["BK"]) for c in configs}
+    assert {(16, 1024), (32, 256)} <= tiles
     return configs
 
 
