@@ -200,33 +200,38 @@ def test_w4a4_autotuned_split_k():
     torch.testing.assert_close(actual, expected, rtol=0.025, atol=0.02)
 
 
-def test_static_scales_share_one_tuning_and_kernel():
+def test_static_scales_share_one_tuning():
     # Per-layer calibrated scales must not make each layer its own launch
-    # tuning, Triton autotune key or compiled kernel.
+    # tuning or Triton autotune key (the Inductor test below counts kernels).
     if not _has_native_fp4_conversion():
         pytest.skip("native FP4 required")
     w = weight(97, 2176)
     x = torch.randn(23, 2176, device="cuda", dtype=torch.bfloat16)
     clear_launch_param_cache()
-    tuned = len(kernels._fused_activation.cache)
+    tuned = set(kernels._fused_activation.cache)
     with autotune_launch_params() as stats:
         for value in (0.002, 0.003):
             nvfp4_w4a4(x, w.qdata, w.scale, w.per_tensor_scale, act_scale(value))
     assert (stats.measured, stats.cache_hits) == (1, 1)
-    assert len(kernels._fused_activation.cache) == tuned + 1
+    # At most one new key: an earlier run in this process may have tuned it.
+    assert len(set(kernels._fused_activation.cache) - tuned) <= 1
 
 
 def test_static_scales_share_one_inductor_kernel():
     from torch._inductor.utils import run_and_get_code
 
     def quantize(x, a, b):
-        return nvfp4_quantize_activation(x, a)[0], nvfp4_quantize_activation(x, b)[0]
+        return (*nvfp4_quantize_activation(x, a), *nvfp4_quantize_activation(x, b))
 
     x = torch.randn(5, 192, device="cuda", dtype=torch.bfloat16)
     scales = act_scale(0.002), act_scale(0.003)
-    _, code = run_and_get_code(torch.compile(quantize, fullgraph=True), x, *scales)
+    compiled, code = run_and_get_code(
+        torch.compile(quantize, fullgraph=True), x, *scales
+    )
     name = "_fused_activation" if _has_native_fp4_conversion() else "_row_scale"
     assert len(re.findall(rf"\b{name}_\d+ = async_compile\.triton", code[0])) == 1
+    for actual, expected in zip(compiled, quantize(x, *scales)):
+        assert torch.equal(actual, expected)
 
 
 def test_w4a4_unbounded_dynamic_m_tunes_only_split_1():
