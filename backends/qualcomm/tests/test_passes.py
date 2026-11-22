@@ -674,11 +674,13 @@ class TestPasses(unittest.TestCase):
 
     def test_batch_norm_uses_its_eps(self):
         # A channel with ~0 running variance is bounded only by eps; a fixed
-        # 1e-9 inflated its scale by ~100x.
+        # 1e-9 inflated its scale by ~30x.
         bn = torch.nn.BatchNorm2d(2, eps=1e-5).eval()
         with torch.no_grad():
             bn.running_var.copy_(torch.tensor([1e-8, 1.0]))
+            bn.running_mean.copy_(torch.tensor([0.5, -1.0]))
             bn.weight.copy_(torch.tensor([2.0, 3.0]))
+            bn.bias.copy_(torch.tensor([0.25, -0.75]))
         edge_program = to_edge(
             torch.export.export(bn, (torch.randn(1, 2, 4, 4),), strict=True)
         ).exported_program()
@@ -698,10 +700,25 @@ class TestPasses(unittest.TestCase):
             "executorch.backends.qualcomm.builders.op_batch_norm.PyQnnManager"
         ):
             visitor.define_node(node, {})
+        filter_tensor = bn.weight.detach() / torch.sqrt(bn.running_var + bn.eps)
+        torch.testing.assert_close(tensors[node.args[1].name], filter_tensor)
         torch.testing.assert_close(
-            tensors[node.args[1].name],
-            bn.weight.detach() / torch.sqrt(bn.running_var + bn.eps),
+            tensors[node.args[2].name],
+            bn.bias.detach() - filter_tensor * bn.running_mean,
         )
+
+    def test_batch_norm_without_running_stats_falls_back(self):
+        bn = torch.nn.BatchNorm2d(2, track_running_stats=False).eval()
+        edge_program = to_edge(
+            torch.export.export(bn, (torch.randn(1, 2, 4, 4),), strict=True)
+        ).exported_program()
+        node = next(
+            n
+            for n in edge_program.graph_module.graph.nodes
+            if n.target == exir_ops.edge.aten._native_batch_norm_legit.no_stats
+        )
+        visitor = get_node_visitors(edge_program)[node.target.__name__]
+        self.assertIsNone(visitor.define_node(node, {}))
 
     def test_layout_transform_tuple_outputs(self):
         with self.subTest("multiple_getitems"):

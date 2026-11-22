@@ -3,6 +3,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import logging
 from typing import Dict
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
@@ -23,6 +24,8 @@ from .node_visitor_manager import register_node_visitor
 from .qnn_constants import OpBatchnorm, QNN_OP_PACKAGE_NAME_QTI_AISW
 from .utils import get_parameter
 
+logger = logging.getLogger(__name__)
+
 
 @register_node_visitor
 class BatchNorm(NodeVisitor):
@@ -35,24 +38,22 @@ class BatchNorm(NodeVisitor):
     def __init__(self, *args) -> None:
         super().__init__(*args)
 
-    def update_encoding(self, node: torch.fx.Node, tensor: torch.Tensor, eps):
+    def update_encoding(self, node: torch.fx.Node, tensor: torch.Tensor, min_scale_eps):
         if isinstance(tensor, torch._subclasses.FakeTensor):
             return
 
         if quant_attrs := node.meta.get(QCOM_QUANT_ATTRS):
             # scale value equals to zero will cause failure in HTP
-            diff = max(abs(tensor.max()), abs(tensor.min())) + eps
+            diff = max(abs(tensor.max()), abs(tensor.min())) + min_scale_eps
             quant_attrs[QCOM_SCALE] = (diff / quant_attrs[QCOM_QUANT_MAX]).item()
 
     @staticmethod
     def get_bn_eps(node: torch.fx.Node) -> float:
         """The op's own eps; channels with near-zero variance depend on it."""
-        for i, arg in enumerate(node.target._schema.arguments):
-            if arg.name == "eps":
-                if i < len(node.args):
-                    return node.args[i]
-                return node.kwargs.get("eps", arg.default_value)
-        raise RuntimeError(f"{node.target} has no eps argument")
+        schema_args = node.target._schema.arguments
+        if schema_args[-1].name != "eps" or len(node.args) != len(schema_args):
+            raise RuntimeError(f"{node.target} has no positional eps argument")
+        return node.args[-1]
 
     def try_dequantize(self, node: torch.fx.Node, tensor: torch.Tensor):
         if tensor.dtype == torch.float:
@@ -67,18 +68,21 @@ class BatchNorm(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
     ) -> PyQnnManager.PyQnnOpWrapper:
+        if "no_stats" in str(node.target):
+            # Batch statistics are not computed on the device yet.
+            logger.warning(
+                f"[QNN Delegate Op Builder]: {node.target} needs batch statistics, "
+                "which are not supported. Falling back to CPU."
+            )
+            return None
+
         input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
 
-        eps = 1e-9
-        if "no_stats" in str(node.target):
-            mean_tensor = torch.Tensor([node.args[4]])
-            var_tensor = torch.Tensor([node.args[5]])
-            bn_eps = eps
-        else:
-            bn_eps = self.get_bn_eps(node)
-            mean_tensor = get_parameter(node.args[3], self.edge_program)
-            var_tensor = get_parameter(node.args[4], self.edge_program)
+        min_scale_eps = 1e-9
+        bn_eps = self.get_bn_eps(node)
+        mean_tensor = get_parameter(node.args[3], self.edge_program)
+        var_tensor = get_parameter(node.args[4], self.edge_program)
 
         input_tensor_wrapper = self.define_tensor(
             input_node,
@@ -129,7 +133,7 @@ class BatchNorm(NodeVisitor):
                 filter_node.meta[QCOM_QUANT_ATTRS] = quant_attrs
 
         filter_tensor = filter_tensor / torch.sqrt(var_tensor + bn_eps)
-        self.update_encoding(filter_node, filter_tensor, eps)
+        self.update_encoding(filter_node, filter_tensor, min_scale_eps)
         filter_tensor_wrapper = self.define_tensor(
             filter_node,
             node,
@@ -147,7 +151,7 @@ class BatchNorm(NodeVisitor):
             )
             amount = filter_tensor * mean_tensor
             bias_tensor = bias_tensor - amount
-            self.update_encoding(bias_node, bias_tensor, eps)
+            self.update_encoding(bias_node, bias_tensor, min_scale_eps)
             bias_tensor_wrapper = self.define_tensor(
                 bias_node,
                 node,
