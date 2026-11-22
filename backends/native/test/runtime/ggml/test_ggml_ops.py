@@ -298,6 +298,26 @@ class LongCacheMask(torch.nn.Module):
         return F.scaled_dot_product_attention(q, self.keys, self.values, attn_mask=mask)
 
 
+class SlicedQueryPositions(torch.nn.Module):
+    """Attention over a static cache whose query positions are one sliced cache
+    position plus an arange, the form transformers 5 builds its causal mask
+    from: the first position, or with `last` the last one, whose slice starts
+    at a computed SymInt."""
+
+    def __init__(self, cache_len: int, last: bool = False):
+        super().__init__()
+        self.last = last
+        self.register_buffer("keys", torch.randn(1, 2, cache_len, 32))
+        self.register_buffer("values", torch.randn(1, 2, cache_len, 32))
+
+    def forward(self, q, cache_position):
+        count = q.shape[2]
+        offset = cache_position[count - 1 : count] if self.last else cache_position[:1]
+        positions = torch.arange(count) + offset
+        mask = torch.arange(self.keys.shape[2]) <= positions[:, None]
+        return F.scaled_dot_product_attention(q, self.keys, self.values, attn_mask=mask)
+
+
 def _quantize_8da4w(
     model: torch.nn.Module,
     group_size: int,
@@ -2743,6 +2763,51 @@ class GgmlLlamaTest(unittest.TestCase):
                         actual[0, -1].argmax().item(),
                         reference[0, -1].argmax().item(),
                     )
+
+
+class GgmlKeyExtentTest(unittest.TestCase):
+    """Attention masks whose query positions the host evaluates bound the
+    attended keys; any form it refuses attends the whole cache."""
+
+    def _attention_ops(self, model) -> int:
+        torch.manual_seed(0)
+        seq = Dim("seq", min=1, max=599)
+        with torch.no_grad():
+            ep = torch.export.export(
+                model,
+                (torch.randn(1, 2, 6, 32), torch.arange(6)),
+                dynamic_shapes={"q": {2: seq}, "cache_position": {0: seq}},
+                strict=True,
+            )
+        steps = [(torch.randn(1, 2, 255, 32), torch.arange(255))] + [
+            (torch.randn(1, 2, 1, 32), torch.tensor([p])) for p in (255, 256)
+        ]
+        with torch.no_grad():
+            expected = [model(*inputs) for inputs in steps]
+        ops = collections.Counter()
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            package = outdir / "attention.ptn"
+            to_native(ep).save(str(package))
+            outputs = _run_ggml(package, steps, outdir, 1, resize=True, graph_ops=ops)
+        for step, (((raw, shape),), reference) in enumerate(zip(outputs, expected)):
+            with self.subTest(step=step):
+                actual = torch.frombuffer(bytearray(raw), dtype=torch.float32)
+                torch.testing.assert_close(
+                    actual.reshape(shape), reference, atol=1e-2, rtol=1e-2
+                )
+        return ops["FLASH_ATTN_EXT"]
+
+    def test_sliced_first_position_bounds_the_attended_keys(self):
+        # Besides the compile-time graph and the prefill, each decode builds
+        # its own: the second one's prefix crosses into a second bucket.
+        self.assertEqual(self._attention_ops(SlicedQueryPositions(600)), 4)
+
+    def test_slice_from_computed_start_attends_the_whole_cache(self):
+        # The host evaluator reads a slice bound only as an int or an input
+        # size, so it refuses the computed start: every call attends all keys
+        # and the second decode replays the first one's graph.
+        self.assertEqual(self._attention_ops(SlicedQueryPositions(600, last=True)), 3)
 
 
 if __name__ == "__main__":
