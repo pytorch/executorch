@@ -542,7 +542,11 @@ def export_cuda_batching(  # noqa: C901
     if hasattr(inductor_config, "cpp_cache_precompile_headers"):
         inductor_config.cpp_cache_precompile_headers = False
 
-    install_nvfp4_gate_up_epilogues(model)
+    nvfp4_epilogues = install_nvfp4_gate_up_epilogues(model)
+    if nvfp4_epilogues:
+        print(
+            f"[muse_glimmer cuda batching] NVFP4 gate/up epilogues: {nvfp4_epilogues}"
+        )
     single_manifest = enable_offgraph_kv_cache(model, max_step_tokens)
     manifest = (
         batched_sequence_manifest(single_manifest, max_kv_seqs)
@@ -791,9 +795,10 @@ def _export_cuda(
         vision_cuda_source_transformations,
     )
 
-    # Always applied: bounds global-attention SDPA to the valid context via a
-    # runtime kv_len (O(context) decode). With use_turboquant=True it also swaps
-    # the global KV caches for TurboQuant TQ4.
+    # Always applied: swaps fused NVFP4 gate/up MLPs for the fused gated kernel
+    # and bounds global-attention SDPA to the valid context via a runtime
+    # kv_len (O(context) decode). With use_turboquant=True it also swaps the
+    # global KV caches for TurboQuant TQ4.
 
     max_prefill = min(config.max_seq_len - 1, model._sliding_window * 2)
     model.set_max_prefill_chunk(max_prefill)

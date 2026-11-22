@@ -422,7 +422,8 @@ required), `w4a8` forces the W4A8 decode GEMV, and `w4a16` forces BF16
 activations. The choice is compiled
 into each exported method. `--nvfp4-static-act` (`export_solo` only) uses the checkpoint's
 `.input_scale` as a static activation scale; by default activations are scaled
-per row, as llama.cpp does.
+per row, as llama.cpp does. A fused group whose shards carry different
+`.input_scale` values stays unfused in every layer.
 
 The converter follows llama.cpp's bit patterns, including positive zero for
 FP4 code 8. It rejects GGML scale byte `0xff`: llama.cpp decodes that byte as

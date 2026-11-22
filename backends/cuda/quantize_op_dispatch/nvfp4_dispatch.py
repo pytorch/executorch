@@ -125,7 +125,7 @@ def _decode(x, wq, ws, pts, act_scale, unit_scale=False, *, mode_split):
             launch_w4a8_gemv,
         )
 
-        return launch_w4a8_gemv(x, wq, ws, pts, split_k=split)
+        return launch_w4a8_gemv(x, wq, ws, pts, _max_rows(x.shape[0]), split_k=split)
     return nvfp4_gemv(x, wq, ws, pts, split_k=split, unit_scale=unit_scale)
 
 
