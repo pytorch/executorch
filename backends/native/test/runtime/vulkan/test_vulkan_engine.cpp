@@ -3579,6 +3579,24 @@ TEST(VulkanEngineTest, ExecutesTextureSelectAtAnyIndex) {
   }
 }
 
+TEST(VulkanEngineTest, SqueezesAScalarAsACopy) {
+  CompiledProgram compiled = compile_program(make_unary_program(
+      "torch.ops.aten.squeeze_copy.dims",
+      {},
+      {{"dim", {-1}, /*is_list=*/true}},
+      /*list_output=*/false,
+      /*input_shape=*/{}));
+  const std::vector<float> input = {3.5f};
+  compiled.executable->set_input(
+      0, input.data(), input.size(), ScalarType::Float);
+  compiled.executable->execute();
+
+  std::vector<float> output(1);
+  compiled.executable->get_output(
+      0, output.data(), output.size(), ScalarType::Float);
+  EXPECT_EQ(output, input);
+}
+
 TEST(VulkanEngineTest, PassesOneElementTensorListOutputAsList) {
   CompiledProgram compiled = compile_program(make_unary_program(
       "torch.ops.aten.split_with_sizes_copy.default",

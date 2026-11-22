@@ -20,6 +20,7 @@ def define_common_targets():
             "passes/LowerRMSNorm.cpp",
             "passes/LowerSDPA.cpp",
             "passes/MaterializeViewCopies.cpp",
+            "passes/NormalizeDims.cpp",
             "passes/UseReferenceGgufQuant.cpp",
         ],
         exported_headers = [
@@ -30,6 +31,7 @@ def define_common_targets():
             "passes/LowerRMSNorm.h",
             "passes/LowerSDPA.h",
             "passes/MaterializeViewCopies.h",
+            "passes/NormalizeDims.h",
             "passes/UseReferenceGgufQuant.h",
         ],
         exported_deps = [

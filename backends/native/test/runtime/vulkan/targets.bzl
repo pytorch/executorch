@@ -20,6 +20,7 @@ def define_common_targets():
             "test_lower_rms_norm.cpp",
             "test_lower_sdpa.cpp",
             "test_materialize_view_copies.cpp",
+            "test_normalize_dims.cpp",
         ],
         deps = [
             "//executorch/backends/native/runtime/vulkan:vulkan_passes",
