@@ -6,6 +6,8 @@
 
 import functools
 
+import torch
+
 from executorch.backends.cuda.autotune.cuda_graph_timing import time_with_cuda_graph_us
 from executorch.backends.cuda.autotune.launch_params import _size_hint
 from executorch.backends.cuda.triton.kernels import quantized_gemm_utils
@@ -47,9 +49,12 @@ def launch_nvfp4_kernel(kernel, grid, args, m_argument, **constexprs):
 def prune_nvfp4_stages(configs, named_args, **kwargs):
     values = {**named_args, **kwargs}
     split = values.get("SPLIT_K", values.get("SPLIT", 1))
-    # HALF2 GEMV runs everywhere: natively on SM100+, via exact FP16 bit
-    # placement elsewhere.
-    eligible = list(configs)
+    # The HALF2 GEMV emits NVIDIA PTX (mul.rn.f16x2) on every path.
+    eligible = [
+        config
+        for config in configs
+        if torch.version.hip is None or not config.kwargs.get("HALF2", False)
+    ]
     kept = [
         config
         for config in eligible

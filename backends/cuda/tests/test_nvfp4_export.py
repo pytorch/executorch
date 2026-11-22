@@ -46,17 +46,19 @@ def cold_pick_cache():
         ("w4a16", 37, True, False),
         ("w4a16", 45, True, True),
         ("w4a4", 16, False, False),
+        ("w4a8", 1, False, False),
         ("auto", 1, False, False),
         ("auto", 16, True, False),
     ],
 )
 def test_packed_linear_pte(mode, m, dynamic, fp32, monkeypatch):
-    if mode != "w4a16" and not _has_native_fp4():
-        pytest.skip("native FP4 required")
+    # Decode-size auto times W4A16 against W4A8 without native FP4.
+    if mode == "w4a4" or (mode == "auto" and m > 4):
+        if not _has_native_fp4():
+            pytest.skip("native FP4 required")
     monkeypatch.setenv("ET_CUDA_NVFP4_ACT", mode)
-    # Without native FP4, prefill defaults to dequant + an Inductor matmul,
-    # which times no NVFP4 tiles.
-    monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_IMPL", "kernel")
+    # M <= 64 keeps the fused kernels (no dequant + matmul) on every GPU.
+    monkeypatch.delenv("ET_CUDA_NVFP4_PREFILL_IMPL", raising=False)
     # The FP32 prefill policy is read at export and baked into the program.
     monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_OUTPUT", "fp32" if fp32 else "input")
     import executorch.backends.cuda.cuda_backend as cuda_backend
@@ -107,7 +109,7 @@ def test_packed_linear_pte(mode, m, dynamic, fp32, monkeypatch):
         assert (
             len(picks) == 1
         ), "auto mode must remain an op until AOTI measures activation mode and split-K"
-        selected_mode = "w4a4" if picks[0].choice // _MODE_STRIDE else "w4a16"
+        selected_mode = ("w4a16", "w4a4", "w4a8")[picks[0].choice // _MODE_STRIDE]
     else:
         selected_mode = mode
 
@@ -117,6 +119,16 @@ def test_packed_linear_pte(mode, m, dynamic, fp32, monkeypatch):
             return F.linear(value.float(), weight, module.bias.float())
         if selected_mode == "w4a16":
             return F.linear(value, module.weight.dequantize(), module.bias)
+        if selected_mode == "w4a8":
+            blocks = value.double().reshape(value.shape[0], -1, 16)
+            amax = blocks.abs().amax(-1, keepdim=True)
+            inv = torch.where(amax > 0, 127.0 / amax, 0.0)
+            quantized = (
+                (blocks * inv).round().clamp(-127, 127) * amax / 127.0
+            ).reshape(value.shape)
+            return (
+                quantized @ module.weight.dequantize().double().T
+            ).bfloat16() + module.bias
         q, s, pts = nvfp4_quantize_activation(value.cuda())
         quantized = (
             CudaNVFP4Tensor(
@@ -154,6 +166,56 @@ def test_packed_linear_pte(mode, m, dynamic, fp32, monkeypatch):
                     result, reference(value), rtol=0.03, atol=0.03
                 )
     torch.testing.assert_close(actual.cpu(), reference(x), rtol=0.03, atol=0.03)
+
+
+@pytest.mark.parametrize("impl", ["auto", "dequant"])
+def test_dequant_prefill_pte(impl, monkeypatch):
+    """Dynamic M past the M <= 64 bucket: dequant + matmul prefill."""
+    if impl == "auto" and _has_native_fp4():
+        pytest.skip("auto dequantizes only without native FP4")
+    monkeypatch.setenv("ET_CUDA_NVFP4_ACT", "w4a16")
+    monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_OUTPUT", "input")
+    monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_IMPL", impl)
+    module = PackedLinear().eval()
+    x = torch.randn(100, 192, dtype=torch.bfloat16)
+    ep = torch.export.export(
+        module,
+        (x,),
+        dynamic_shapes=({0: torch.export.Dim("tokens", min=1, max=256)},),
+        strict=True,
+    )
+    targets = {str(node.target) for node in ep.graph.nodes}
+    assert "triton.nvfp4_dequant.default" in targets
+    lowered = to_edge_transform_and_lower(
+        ep,
+        partitioner=[
+            CudaPartitioner([CudaBackend.generate_method_name_compile_spec("forward")])
+        ],
+        compile_config=EdgeCompileConfig(_check_ir_validity=False),
+    ).to_executorch()
+    from executorch.export.utils import is_fbcode
+
+    if is_fbcode():
+        # The in-process runtime in fbcode has no CUDA backend.
+        return
+    from executorch.runtime import Runtime
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "nvfp4.pte"
+        with path.open("wb") as f:
+            lowered.write_to_file(f)
+        lowered.write_tensor_data_to_file(tmp)
+        data = next(Path(tmp).glob("*.ptd"))
+        method = (
+            Runtime.get()
+            .load_program(str(path), data_path=str(data))
+            .load_method("forward")
+        )
+        for rows in [1, 5, 100, 256]:
+            value = torch.randn(rows, 192, dtype=x.dtype)
+            expected = F.linear(value, module.weight.dequantize(), module.bias)
+            actual = method.execute([value])[0].cpu()
+            torch.testing.assert_close(actual, expected, rtol=0.03, atol=0.03)
 
 
 @pytest.mark.parametrize("mode", ["w4a16", "w4a4"])

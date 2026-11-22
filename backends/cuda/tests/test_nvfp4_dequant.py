@@ -14,10 +14,22 @@ from executorch.backends.cuda.quantize_op_dispatch import nvfp4_dispatch
 from executorch.backends.cuda.triton.kernels import nvfp4_quantized_gemm as kernels
 from executorch.backends.cuda.triton.kernels.nvfp4_dequant import nvfp4_dequant
 
-pytestmark = pytest.mark.skipif(
+CUDA = pytest.mark.skipif(
     not torch.cuda.is_available() or torch.version.hip is not None,
     reason="NVIDIA CUDA required",
 )
+
+
+@pytest.fixture(autouse=True)
+def default_policy(monkeypatch):
+    for name in (
+        "ET_CUDA_NVFP4_ACT",
+        "ET_CUDA_NVFP4_PREFILL_OUTPUT",
+        "ET_CUDA_NVFP4_PREFILL_IMPL",
+        "ET_CUDA_NVFP4_SMALL_M",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
 
 E2M1 = [0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0]
 E2M1 = E2M1 + [-v for v in E2M1]
@@ -46,61 +58,87 @@ def relative_error(actual, expected):
     return float((actual.float() - expected).abs().max() / expected.abs().max())
 
 
+PTS = {
+    "unit": lambda n: torch.ones(1, device="cuda"),
+    "scalar": lambda n: torch.tensor([0.37], device="cuda"),
+    "row": lambda n: torch.rand(n, device="cuda") + 0.5,
+}
+
+
+@CUDA
 @pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16])
 @pytest.mark.parametrize("pts_kind", ["unit", "scalar", "row"])
 @pytest.mark.parametrize("n,k", [(1, 32), (37, 272), (520, 1024), (300, 6656)])
 def test_dequant_is_bit_exact(n, k, pts_kind, dtype):
+    # Products stay below 6 * 448 * 1.5 = 4032: every scale fits FP16 too.
     q, s = weight(n, k)
-    if dtype == torch.float16:
-        # Keep products inside the FP16 range.
-        s = s.clamp(max=0x60)
-    pts = {
-        "unit": torch.ones(1, device="cuda"),
-        "scalar": torch.tensor([0.37], device="cuda"),
-        "row": torch.rand(n, device="cuda") + 0.5,
-    }[pts_kind]
+    pts = PTS[pts_kind](n)
     actual = nvfp4_dequant(q, s, pts, dtype)
     expected = kernel_order_reference(q, s, pts, dtype)
     assert actual.shape == (n, k) and actual.dtype == dtype
     assert torch.equal(actual.view(torch.int16), expected.view(torch.int16))
 
 
-def test_dequant_matches_fused_w4a16_weights():
-    """Dense matmul of the dequantized weight == fused W4A16 up to summation order."""
-    m, n, k = 64, 384, 2048
-    q, s = weight(n, k, seed=1, scales=(0x30, 0x40))
-    pts = torch.tensor([0.37], device="cuda")
-    x = torch.randn(m, k, device="cuda", dtype=torch.bfloat16)
-    dense = x.float() @ nvfp4_dequant(q, s, pts).float().T
-    fused = kernels.nvfp4_w4a16(x, q, s, pts, split_k=1)
-    assert relative_error(fused, dense) < 1e-2
+@CUDA
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16])
+@pytest.mark.parametrize("pts_kind", ["unit", "scalar", "row"])
+def test_dequant_matches_fused_w4a16_weights_bitwise(pts_kind, dtype):
+    """The fused W4A16 kernel times the identity is its in-register weight
+    (one product per output, accumulated in FP32), bit for bit up to the sign
+    of zero: the GEMM sums -0 weights with +0 terms."""
+    n, k = 300, 1040
+    q, s = weight(n, k, seed=1)
+    pts = PTS[pts_kind](n)
+    eye = torch.eye(k, device="cuda", dtype=dtype)
+    fused = kernels.nvfp4_w4a16(eye, q, s, pts, split_k=1).T
+    dense = nvfp4_dequant(q, s, pts, dtype)
+    assert torch.equal(fused, dense)
+
+
+def test_dequant_rejects_malformed_operands():
+    q = torch.zeros(4, 16, dtype=torch.uint8)
+    s = torch.zeros(4, 2, dtype=torch.uint8)
+    pts = torch.ones(1)
+    with pytest.raises(ValueError, match="scale"):
+        nvfp4_dequant(q, s[:, :1], pts)
+    with pytest.raises(ValueError, match="per_tensor_scale"):
+        nvfp4_dequant(q, s, torch.ones(3))
+    with pytest.raises(ValueError, match="BF16/FP16"):
+        nvfp4_dequant(q, s, pts, torch.float32)
 
 
 @pytest.mark.parametrize(
-    "env,native,expected",
+    "env,native,rows,mode,fp32,expected",
     [
-        (None, False, "dequant"),
-        (None, True, "kernel"),
-        ("auto", False, "dequant"),
-        ("kernel", False, "kernel"),
-        ("dequant", True, "dequant"),
+        # auto: only without native FP4, and past the M <= 64 bucket.
+        (None, False, 65, "auto", False, True),
+        (None, False, 64, "auto", False, False),
+        (None, True, 65, "auto", False, False),
+        ("kernel", False, 65, "auto", False, False),
+        ("dequant", True, 5, "w4a16", False, True),
+        # Decode, w4a4 and the FP32 prefill policy keep the fused kernels.
+        ("dequant", True, 4, "auto", False, False),
+        ("dequant", True, 65, "w4a4", False, False),
+        ("dequant", False, 65, "auto", True, False),
     ],
 )
-def test_prefill_impl_selection(env, native, expected, monkeypatch):
-    if env is None:
-        monkeypatch.delenv("ET_CUDA_NVFP4_PREFILL_IMPL", raising=False)
-    else:
-        monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_IMPL", env)
-    with mock.patch.object(nvfp4_dispatch, "_has_native_fp4", return_value=native):
-        assert nvfp4_dispatch._nvfp4_prefill_impl() == expected
+def test_dequant_prefill_selection(env, native, rows, mode, fp32, expected):
+    env_values = {} if env is None else {"ET_CUDA_NVFP4_PREFILL_IMPL": env}
+    flat = torch.empty(rows, 32)
+    with mock.patch.dict("os.environ", env_values), mock.patch.object(
+        nvfp4_dispatch, "_has_native_fp4", return_value=native
+    ):
+        output_dtype = torch.float32 if fp32 else None
+        assert nvfp4_dispatch._dequant_prefill(flat, mode, output_dtype) == expected
 
 
-def test_prefill_impl_rejects_unknown(monkeypatch):
+def test_dequant_prefill_rejects_unknown(monkeypatch):
     monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_IMPL", "cublas")
     with pytest.raises(ValueError):
-        nvfp4_dispatch._nvfp4_prefill_impl()
+        nvfp4_dispatch._dequant_prefill(torch.empty(65, 32), "auto", None)
 
 
+@CUDA
 @pytest.mark.parametrize("impl", ["dequant", "kernel"])
 @pytest.mark.parametrize("row_pts", [False, True])
 def test_linear_prefill_dispatch(impl, row_pts, monkeypatch):
@@ -123,6 +161,7 @@ def test_linear_prefill_dispatch(impl, row_pts, monkeypatch):
     assert relative_error(y, expected) < 1e-2
 
 
+@CUDA
 def test_dequant_linear_chunks_huge_weights():
     """N above the chunk size dequantizes and multiplies slice by slice."""
     from executorch.backends.cuda.quantize_op_dispatch import _gemm_family_dispatch
