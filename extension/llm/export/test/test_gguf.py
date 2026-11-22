@@ -305,6 +305,39 @@ class TestExportableGGUFTensor(unittest.TestCase):
             ExportableGGUFTensor.from_raw(raw, "q2_k")
 
 
+class TestQ8_0(unittest.TestCase):
+    def _raw(self, n=3, blocks=2):
+        g = torch.Generator().manual_seed(0)
+        q = torch.randint(-128, 128, (n, blocks, 32), dtype=torch.int8, generator=g)
+        scale = torch.rand(n, blocks, 1, generator=g).to(torch.float16) / 64
+        raw = torch.cat((scale.view(torch.uint8), q.view(torch.uint8)), dim=-1)
+        expected = (q.float() * scale.float()).reshape(n, -1)
+        return raw.reshape(n, -1), q.reshape(n, -1), scale.reshape(n, -1), expected
+
+    def test_dequantize(self):
+        raw, _, _, expected = self._raw()
+        w = ExportableGGUFTensor.from_raw(raw, "q8_0")
+        self.assertEqual(w.shape, (3, 64))
+        self.assertTrue(torch.equal(w.dequantize(torch.float32), expected))
+
+    def test_int8_conversion_keeps_values_and_groups(self):
+        raw, q, scale, _ = self._raw()
+        t = ExportableGGUFTensor.from_raw(raw, "q8_0").to_intx_unpacked_to_int8_tensor(
+            scale_dtype=torch.bfloat16
+        )
+        self.assertTrue(torch.equal(t.qdata, q))
+        self.assertEqual(t.block_size, (1, 32))
+        self.assertTrue(torch.equal(t.scale, scale.to(torch.bfloat16)))
+        self.assertFalse(t.zero_point.any())
+
+    @unittest.skipUnless(_HAS_GGUF, "gguf package not installed")
+    def test_dequantize_matches_gguf(self):
+        raw, _, _, _ = self._raw()
+        w = ExportableGGUFTensor.from_raw(raw, "q8_0")
+        ref = _gguf_ref(raw, GGMLQuantizationType.Q8_0)
+        self.assertTrue(torch.equal(w.dequantize(torch.float32), ref))
+
+
 @unittest.skipUnless(_HAS_GGUF, "gguf package not installed")
 class TestExportableGGUFTensorExport(unittest.TestCase):
     """Exporting a module whose weight is an ``ExportableGGUFTensor`` should

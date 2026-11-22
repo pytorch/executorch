@@ -1087,7 +1087,25 @@ class AutotuneDoBenchTest(unittest.TestCase):
             triton.testing, "do_bench"
         ) as bench:
             self.assertEqual(autotune_do_bench(kernel_call, None), 1.5)
-        graph.assert_called_once_with(kernel_call)
+        graph.assert_called_once_with(kernel_call, statistic="min", replays=1)
+        bench.assert_not_called()
+
+    def test_unrestored_parked_tensors_are_not_a_timing_fallback(self) -> None:
+        from executorch.backends.cuda.autotune.cuda_graph_timing import (
+            ParkedTensorsNotRestored,
+        )
+
+        with self._on_stream(1), mock.patch.object(
+            quantized_gemm_utils, "graph_timing_active", return_value=True
+        ), mock.patch.object(
+            quantized_gemm_utils,
+            "time_with_cuda_graph_us_counted",
+            side_effect=ParkedTensorsNotRestored("lost"),
+        ), mock.patch.object(
+            triton.testing, "do_bench"
+        ) as bench:
+            with self.assertRaises(ParkedTensorsNotRestored):
+                autotune_do_bench(mock.Mock(), None)
         bench.assert_not_called()
 
     def test_out_of_memory_while_capturing_is_retried_and_counted(self) -> None:
