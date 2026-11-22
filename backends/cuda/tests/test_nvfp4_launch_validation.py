@@ -80,13 +80,24 @@ def test_activation_rejects_invalid_static_scale(static):
         kernels.nvfp4_w4a4(x, q, s, torch.ones(1), static)
 
 
-def test_static_scale_values_are_not_read_under_fake_tensors():
+def test_static_scale_values_are_not_read_without_data():
+    # Fake and meta tensors carry no values, so even a zero scale passes.
     from torch._subclasses.fake_tensor import FakeTensorMode
 
     mode = FakeTensorMode()
     x = mode.from_tensor(torch.empty((2, 64), dtype=torch.bfloat16))
-    static = mode.from_tensor(torch.tensor([[0.5]]))
+    static = mode.from_tensor(torch.zeros((1, 1)))
     with mode:
+        kernels._check_static_scale(static, x)
+    meta = torch.empty((2, 64), dtype=torch.bfloat16, device="meta")
+    kernels._check_static_scale(torch.zeros((1, 1), device="meta"), meta)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+def test_static_scale_values_are_not_read_during_graph_capture():
+    x = torch.empty((2, 64), dtype=torch.bfloat16, device="cuda")
+    static = torch.zeros((1, 1), device="cuda")
+    with torch.cuda.graph(torch.cuda.CUDAGraph()):
         kernels._check_static_scale(static, x)
 
 
