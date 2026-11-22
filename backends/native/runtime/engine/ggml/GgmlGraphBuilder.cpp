@@ -244,6 +244,7 @@ GraphBuilder::GraphBuilder(
     bool gpu,
     bool exact_topk,
     bool exact_gelu,
+    bool f32_accumulation,
     const OffGraphCacheBinding* offgraph_cache)
     : method_(method),
       inputs_(inputs),
@@ -257,6 +258,7 @@ GraphBuilder::GraphBuilder(
       gpu_(gpu),
       exact_topk_(exact_topk),
       exact_gelu_(exact_gelu),
+      f32_accumulation_(f32_accumulation),
       offgraph_cache_(offgraph_cache),
       values_(method.graph.values.size()) {
   for (const auto& [id, tensor] : persistent) {
