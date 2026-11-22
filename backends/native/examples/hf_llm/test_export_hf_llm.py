@@ -6,6 +6,7 @@
 
 import collections
 import copy
+import io
 import re
 import sys
 import tempfile
@@ -34,6 +35,8 @@ from executorch.exir.native import to_native
 from executorch.extension.llm.cache.hf_attention import register_offgraph_attention
 from executorch.extension.llm.cache.reference_cache import LayerPolicy
 from executorch.extension.llm.cache.update_and_attend import REGISTRY
+from executorch.extension.llm.export.gguf import ExportableGGUFTensor
+from torchao.utils import TorchAOBaseTensor
 from transformers import (
     AutoModelForCausalLM,
     DeepseekV32Config,
@@ -149,11 +152,48 @@ def _as_gguf_tensors(
     return pairs
 
 
+def _k_quant_pairs(
+    model: PreTrainedModel, generator: torch.Generator
+) -> list[tuple[str, torch.Tensor]]:
+    """The model's GGUF tensors with every matrix replaced by random Q4_K
+    blocks; d = 2^-12 and dmin = 2^-9 keep the weights at HF-init magnitude."""
+    pairs = []
+    for name, tensor in _as_gguf_tensors(model, "llama"):
+        if tensor.dim() == 2:
+            rows, blocks = tensor.shape[0], tensor.shape[1] // 256
+            raw = torch.randint(0, 256, (rows, blocks, 144), generator=generator)
+            raw = raw.to(torch.uint8)
+            raw[..., 0:2] = torch.tensor([0x00, 0x0C], dtype=torch.uint8)
+            raw[..., 2:4] = torch.tensor([0x00, 0x18], dtype=torch.uint8)
+            tensor = ExportableGGUFTensor.from_raw(
+                raw.reshape(rows, -1), "q4_k", torch.float32
+            )
+        pairs.append((name, tensor))
+    return pairs
+
+
 _CASTS = (
     "aten._assert_tensor_metadata.default",
     "aten._to_copy.default",
     "aten.to.dtype",
 )
+
+
+def _constant_consumers(
+    ep: torch.export.ExportedProgram,
+) -> dict[str, list[str]]:
+    """Each parameter, buffer or constant the graph reads -> the ops reading it."""
+    sig = ep.graph_signature
+    names = {
+        **sig.inputs_to_parameters,
+        **sig.inputs_to_buffers,
+        **sig.inputs_to_lifted_tensor_constants,
+    }
+    return {
+        names[n.name]: sorted(str(user.target) for user in n.users)
+        for n in ep.graph.nodes
+        if n.op == "placeholder" and n.name in names
+    }
 
 
 def _ops_except_casts(ep: torch.export.ExportedProgram) -> collections.Counter:
@@ -1016,3 +1056,107 @@ class ExportHfLlmTest(unittest.TestCase):
                 with torch.no_grad():
                     logits = wrapper(ids, torch.arange(4))
                 self.assertEqual(logits.shape, (1, 1, 128))
+
+    def test_gguf_dequantized_twin_is_the_quantized_model_in_float(self) -> None:
+        config = LlamaConfig(
+            vocab_size=256,
+            hidden_size=256,
+            intermediate_size=512,
+            num_hidden_layers=2,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            head_dim=64,
+            max_position_embeddings=64,
+            tie_word_embeddings=True,
+            pad_token_id=0,
+        )
+        base = AutoModelForCausalLM.from_config(config).eval().requires_grad_(False)
+        base.config._attn_implementation = "sdpa"
+        base.generation_config.cache_implementation = "static"
+        pairs = _k_quant_pairs(base, torch.Generator().manual_seed(5))
+        quantized, twin = copy.deepcopy(base), copy.deepcopy(base)
+        load_gguf(quantized, "model.gguf", "llama", lambda _: iter(pairs))
+
+        load_gguf(twin, "model.gguf", "llama", lambda _: iter(pairs), dequantize=True)
+
+        self.assertFalse(
+            any(isinstance(p, TorchAOBaseTensor) for p in twin.parameters())
+        )
+        self.assertEqual({p.dtype for p in twin.parameters()}, {torch.float32})
+        self.assertIs(twin.lm_head.weight, twin.model.embed_tokens.weight)
+        ids = torch.tensor([[3, 4, 5, 6, 7, 8]])
+        with torch.no_grad():
+            self.assertTrue(torch.equal(twin(ids).logits, quantized(ids).logits))
+        seq = torch.export.Dim("seq", min=1, max=15)
+        graphs, consumers, embeddings = [], [], []
+        for model in (quantized, twin):
+            with torch.no_grad():
+                ep = torch.export.export(
+                    LastTokenLM(model, 16).eval(),
+                    (ids, torch.arange(6)),
+                    dynamic_shapes={"input_ids": {1: seq}, "cache_position": {0: seq}},
+                    strict=True,
+                )
+            consumers.append(_constant_consumers(ep))
+            # Decomposing unwraps the GGUF weights into dequantize_gguf nodes, as
+            # lowering does.
+            graph = ep.run_decompositions({}).graph
+            graphs.append([n.target for n in graph.nodes if n.op == "call_function"])
+            embeddings.append(
+                [
+                    n.args[2:]
+                    for n in graph.nodes
+                    if n.target == torch.ops.aten.embedding.default
+                ]
+            )
+        # One constant feeds both the embedding and the tied lm_head, in both.
+        self.assertEqual(consumers[0], consumers[1])
+        self.assertEqual(
+            consumers[1]["cached.model.model.embed_tokens.weight"],
+            ["aten.embedding.default", "aten.linear.default"],
+        )
+        self.assertNotIn("cached.model.lm_head.weight", consumers[1])
+        dequantize_gguf = torch.ops.torchao.dequantize_gguf.default
+        # 14 decoder matrices, the embedding and its tied lm_head.
+        self.assertEqual(graphs[0].count(dequantize_gguf), 16)
+        self.assertNotIn(dequantize_gguf, graphs[1])
+        self.assertEqual([t for t in graphs[0] if t != dequantize_gguf], graphs[1])
+        # The same embedding literals, padding_idx included.
+        self.assertEqual(embeddings[0], embeddings[1])
+
+    def test_dequantize_gguf_flag_needs_gguf(self) -> None:
+        argv = ["export_hf_llm", "--model", "unused", "--dequantize_gguf"]
+        stderr = io.StringIO()
+        with (
+            mock.patch.object(sys, "argv", argv),
+            mock.patch.object(sys, "stderr", stderr),
+        ):
+            with mock.patch.object(export_hf_llm, "_load") as load:
+                with self.assertRaises(SystemExit):
+                    export_hf_llm.main()
+        load.assert_not_called()
+        self.assertIn("--dequantize_gguf needs --gguf", stderr.getvalue())
+
+    def test_gguf_flags_reach_load_gguf(self) -> None:
+        for dequantize in (False, True):
+            argv = ["export_hf_llm", "--model", "config", "--gguf", "model.gguf"]
+            argv += ["--dequantize_gguf"] if dequantize else []
+            with (
+                self.subTest(dequantize=dequantize),
+                mock.patch.object(sys, "argv", argv),
+                mock.patch.object(export_hf_llm, "_load") as load,
+                mock.patch.object(
+                    export_hf_llm, "load_gguf", side_effect=RuntimeError("loaded")
+                ) as load_gguf,
+            ):
+                with self.assertRaisesRegex(RuntimeError, "loaded"):
+                    export_hf_llm.main()
+                load.assert_called_once_with(
+                    "config", 0, False, empty_weights=True, offgraph_cache=False
+                )
+                load_gguf.assert_called_once_with(
+                    load.return_value,
+                    "model.gguf",
+                    truncated=False,
+                    dequantize=dequantize,
+                )

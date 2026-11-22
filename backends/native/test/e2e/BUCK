@@ -18,6 +18,7 @@ fbcode_target(
     deps = [
         "//caffe2:torch",
         "//executorch/backends/native/examples/hf_llm:export_hf_llm_lib",
+        "//executorch/exir/_serialize:ptn",
         "//executorch/exir/native:native",
         "//executorch/extension/llm/export:gguf",
         "//pytorch/vision:torchvision",
