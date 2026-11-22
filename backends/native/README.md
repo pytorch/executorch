@@ -55,6 +55,11 @@ reads the ones it knows with `Package::metadata_int` and `metadata_ints`, and
 constant-method names in `extension/llm/export/model_metadata.py`, such as
 `get_windows` for the per-layer sliding windows of an off-graph KV cache.
 
+A `.ptn` is little-endian throughout: FlatBuffers and safetensors require it,
+and packed constants store little-endian codec bytes. The runtime refuses to
+load a package on a big-endian host; supporting one would mean byte-swapping
+at load, per dtype and codec.
+
 ## Samples (optional)
 
 A `.ptn` may carry recorded method calls: inputs, and optionally the outputs and
@@ -276,6 +281,8 @@ numerics default to llama.cpp's behaviour; the testing ones end in
 | Option (flag) | Default, as in llama.cpp | Set | Ops | Backends |
 | --- | --- | --- | --- | --- |
 | `allow_activation_quant_for_weight_only` | quantizes the activations of matmuls with weight-only quantized weights in their block format | false (debugging): those weights load dequantized to F32, about 4-12x their packed size by type | `linear` | all |
+| `exact_topk_for_testing` (`--exact_topk_for_testing`) | one argsort (`ggml_argsort_top_k`), which leaves a row holding NaN unordered | NaN ranks above every value, +inf included, at a NaN key map and a second argsort | `topk` | all |
+| `exact_gelu_for_testing` | one `ggml_gelu`, which ggml-cpu reads from an F16 table, a few 1e-4 off eager | the CPU builds tanh GELU from exact ops, at five more kernels | `gelu` (`approximate="tanh"`) | CPU |
 
 The CMake installation includes the GGML libraries and package configuration.
 It also copies the submodule's upstream MIT license, including its copyright
