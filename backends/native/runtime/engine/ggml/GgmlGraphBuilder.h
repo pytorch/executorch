@@ -121,6 +121,14 @@ struct OffGraphUploads {
   std::vector<Group> groups;
 };
 
+// An integer a comparison leaves to the host, such as an attention position
+// that adds and subtracts compute from a graph input, which the host bounds
+// on every run.
+struct HostIntegerCheck {
+  ValueId id = kInvalid;
+  std::string what;
+};
+
 struct GraphInstance {
   ggml_context_ptr context;
   ggml_cgraph* graph = nullptr;
@@ -131,6 +139,7 @@ struct GraphInstance {
   std::optional<OffGraphUploads> offgraph;
   // Integer inputs some op computes on in F32, rechecked on every replay.
   std::vector<ValueId> exact_integer_checks;
+  std::vector<HostIntegerCheck> host_integer_checks;
 };
 
 // Inference batch norm is the per-channel map x * scale + shift of its
@@ -159,6 +168,7 @@ void check_index_bytes(const InputSlot& input, int64_t rows);
 inline constexpr int64_t kExactF32Integer = int64_t{1} << 24;
 
 bool is_integer(ScalarType dtype);
+bool keeps_integer_values(const std::string& key);
 void check_exact_integer_bytes(const InputSlot& input);
 
 ggml_tensor* reshape(
@@ -244,7 +254,7 @@ class GraphBuilder {
   void require_exact_integers(
       ValueId id,
       const std::string& what,
-      bool traced_only = false);
+      bool defer_to_host = false);
   void lower_rms_norm(const Node& node);
   void lower_layer_norm(const Node& node);
   void lower_gelu(const Node& node);
