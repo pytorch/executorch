@@ -53,6 +53,8 @@ from executorch.backends.cuda.triton.kernels.sdpa import (
     _next_power_of_2_unclamped,
     _sdpa_small_query_reduce_kernel,
     _SMALL_QUERY_MAX_LQ,
+    _SMALL_QUERY_MAX_ROWS,
+    _SMALL_QUERY_MAX_TILE,
     _visible_mask_scenarios,
 )
 from torch.fx.experimental.symbolic_shapes import statically_known_true
@@ -71,7 +73,8 @@ from triton.language.extra import libdevice
 # ---------------------------------------------------------------------------
 def cuda_arch() -> int:
     if torch.version.hip is not None:
-        return 0
+        # Even the software paths emit NVIDIA PTX (mul.rn.f16x2).
+        raise RuntimeError("The NVFP4 KV cache kernels require an NVIDIA GPU")
     major, minor = torch.cuda.get_device_capability()
     return major * 10 + minor
 
@@ -215,11 +218,15 @@ def _check_cache(k_q, k_s, v_q, v_s):
             "NVFP4 KV cache shapes must be K/V codes [B, H_kv, L, D/2] and "
             "scales [B, H_kv, L, D/16]"
         )
+    if half < 16 or half & (half - 1):
+        raise ValueError("NVFP4 KV cache head_dim must be a power of two >= 32")
     return B, H, half * 2
 
 
-def _check_write(k, v, input_pos, k_q, k_s, v_q, v_s, inv_freq):
+def _check_write(k, v, input_pos, k_q, k_s, v_q, v_s, inv_freq, k_norm_eps):
     B, H, D = _check_cache(k_q, k_s, v_q, v_s)
+    if k_norm_eps is not None and k_norm_eps < 0:
+        raise ValueError("nvfp4_kv_write: k_norm_eps must be >= 0 (None: no K norm)")
     if k.dim() != 4 or v.shape != k.shape or k.shape[0] != B or k.shape[2:] != (H, D):
         raise ValueError(
             f"nvfp4_kv_write: k and v must be [{B}, T, {H}, {D}] like the cache"
@@ -230,8 +237,15 @@ def _check_write(k, v, input_pos, k_q, k_s, v_q, v_s, inv_freq):
         raise ValueError(f"nvfp4_kv_write: inv_freq must have {D // 2} values")
 
 
-def _check_sdpa(query, k_q, k_s, v_q, v_s):
+def _check_sdpa(query, k_q, k_s, v_q, v_s, attn_mask, is_causal, kv_len, window):
     B, H_kv, D = _check_cache(k_q, k_s, v_q, v_s)
+    if attn_mask is not None and (
+        attn_mask.dtype != torch.bool
+        or attn_mask.shape != (B, 1, query.shape[2], k_q.shape[2])
+    ):
+        raise ValueError("nvfp4_sdpa: attn_mask must be bool [B, 1, L_q, L_kv]")
+    if kv_len is None and (is_causal or window > 0):
+        raise RuntimeError("nvfp4_sdpa: is_causal and a sliding window need kv_len")
     if query.dtype != torch.bfloat16 or query.dim() != 4:
         raise ValueError("nvfp4_sdpa: query must be a 4-D BF16 tensor")
     if query.shape[0] != B or query.shape[3] != D or query.shape[1] % H_kv:
@@ -404,7 +418,7 @@ def nvfp4_kv_write(
     input_pos: [T] absolute positions.  ring: store at ``pos % L``.  Tokens at
     negative positions, or at ``pos >= L`` without ``ring``, are not written.
     """
-    _check_write(k, v, input_pos, k_q, k_s, v_q, v_s, inv_freq)
+    _check_write(k, v, input_pos, k_q, k_s, v_q, v_s, inv_freq, k_norm_eps)
     _nvfp4_kv_write_impl(
         k, v, input_pos, k_q, k_s, v_q, v_s, inv_freq, ring, k_norm_eps
     )
@@ -423,7 +437,7 @@ def _nvfp4_kv_write_fake(
     ring=False,
     k_norm_eps=None,
 ) -> None:
-    _check_write(k, v, input_pos, k_q, k_s, v_q, v_s, inv_freq)
+    _check_write(k, v, input_pos, k_q, k_s, v_q, v_s, inv_freq, k_norm_eps)
 
 
 # ---------------------------------------------------------------------------
@@ -976,14 +990,12 @@ def nvfp4_sdpa(
     holds -- the same visibility as the model's dense sliding mask, computed
     in-kernel so only ~window keys are swept.
     """
-    _check_sdpa(query, k_q, k_s, v_q, v_s)
+    _check_sdpa(query, k_q, k_s, v_q, v_s, attn_mask, is_causal, kv_len, window)
     B, H_q, L_q, D = query.shape
     L_kv = k_q.shape[2]
     out = torch.empty((B, H_q, L_q, D), device=query.device, dtype=query.dtype)
     sm_scale = 1.0 / math.sqrt(D) if scale == 0.0 else scale
     if window > 0:
-        if kv_len is None:
-            raise RuntimeError("nvfp4_sdpa: a sliding window requires kv_len")
         kv_len_t = kv_len.reshape(1).to(torch.int32).contiguous()
     elif kv_len is not None:
         kv_len_t = torch.clamp(
@@ -992,11 +1004,14 @@ def nvfp4_sdpa(
     else:
         kv_len_t = None
     mask_is_causal = bool(is_causal) and kv_len_t is not None
-    if is_causal and kv_len_t is None:
-        raise RuntimeError("nvfp4_sdpa: is_causal requires kv_len")
+    # The split-K launcher bakes L_q as a constexpr: only a concrete L_q, and
+    # (beyond decode) within sdpa.py's small-query tile caps, takes it.
+    rows = L_q * _next_power_of_2_unclamped(H_q // k_q.shape[1])
     if statically_known_true(L_q == 1) or (
-        statically_known_true(L_q >= 2)
-        and statically_known_true(L_q <= _SMALL_QUERY_MAX_LQ)
+        isinstance(L_q, int)
+        and 2 <= L_q <= _SMALL_QUERY_MAX_LQ
+        and rows <= _SMALL_QUERY_MAX_ROWS
+        and rows * D <= _SMALL_QUERY_MAX_TILE
     ):
         _launch_nvfp4_splitk(
             query,
@@ -1042,7 +1057,7 @@ def _nvfp4_sdpa_fake(
     window=0,
 ):
     # Contiguous, like the op's output.
-    _check_sdpa(query, k_q, k_s, v_q, v_s)
+    _check_sdpa(query, k_q, k_s, v_q, v_s, attn_mask, is_causal, kv_len, window)
     return query.new_empty(query.shape)
 
 

@@ -316,7 +316,8 @@ class TestTritonSdpa(unittest.TestCase):
             kernel.configs, None, HEAD_DIM=D, NUM_GROUPS=H_q // H_kv
         )
         self.assertEqual({c.kwargs["PACK_GQA"] for c in configs}, {False, True})
-        for Lq in (5, 32, 64):
+        # 37 is above the small-query split-K range and not a tile multiple.
+        for Lq in (37, 32, 64):
             q = torch.randn(B, H_q, Lq, D, dtype=torch.bfloat16, device="cuda")
             # Query i sees an interleaved subset of the live cells, as a cell
             # step's mask does.
@@ -334,6 +335,10 @@ class TestTritonSdpa(unittest.TestCase):
                 single = triton.autotune(configs=[config], key=kernel.keys)(kernel.fn)
                 with self.subTest(Lq=Lq, config=str(config)), mock.patch.object(
                     sdpa_module, "_sdpa_fwd_kernel", single
+                ), mock.patch.object(
+                    sdpa_module,
+                    "_launch_small_query_splitk",
+                    side_effect=AssertionError("standard kernel expected"),
                 ):
                     out = self.sdpa(
                         q, k, v, attn_mask=mask, enable_gqa=True, kv_len=kv_len_t
@@ -703,7 +708,7 @@ class TestTritonSdpa(unittest.TestCase):
         """Verifier-sized query blocks retain bottom-right causal masking."""
         B, H_q, H_kv, D = 1, 8, 2, 128
         kv_len, Lk = 131, 256
-        for Lq in (2, 3, 4):
+        for Lq in (2, 3, 4, 5, 8, 16):
             with self.subTest(Lq=Lq):
                 torch.manual_seed(Lq)
                 q = torch.randn(B, H_q, Lq, D, dtype=torch.bfloat16, device="cuda")
