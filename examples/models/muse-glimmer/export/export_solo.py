@@ -469,6 +469,9 @@ def export_cuda_batching(  # noqa: C901
         enable_offgraph_kv_cache,
         offgraph_kv_cache_geometry,
     )
+    from executorch.examples.models.muse_glimmer.source_transformations.nvfp4 import (
+        install_nvfp4_gate_up_epilogues,
+    )
     from executorch.exir import (
         EdgeCompileConfig,
         ExecutorchBackendConfig,
@@ -537,6 +540,7 @@ def export_cuda_batching(  # noqa: C901
     if hasattr(inductor_config, "cpp_cache_precompile_headers"):
         inductor_config.cpp_cache_precompile_headers = False
 
+    install_nvfp4_gate_up_epilogues(model)
     single_manifest = enable_offgraph_kv_cache(model, max_step_tokens)
     manifest = (
         batched_sequence_manifest(single_manifest, max_kv_seqs)
