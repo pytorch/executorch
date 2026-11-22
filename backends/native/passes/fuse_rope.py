@@ -16,8 +16,10 @@ from executorch.backends.native.passes._utils import (
     _resolve_aten,
     _single_user,
 )
+from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass, PassResult
-from torch.fx import GraphModule, Node
+from torch.fx import Graph, GraphModule, Node
 from torch.fx.experimental.symbolic_shapes import statically_known_true
 
 _SLICE_OPS = {
@@ -290,10 +292,164 @@ def _scalar_constant(node: object) -> "float | None":
     )
 
 
+def _rows_equal(node: object) -> bool:
+    """Whether ``node`` repeats one row along dim 0: it broadcasts a size-1 or
+    absent leading dim there, through ops that keep every row equal."""
+    t = _fake_tensor(node)
+    if not isinstance(node, Node) or t is None or t.dim() == 0:
+        return False
+    if _is_op(node, torch.ops.aten.expand_copy.default, torch.ops.aten.expand.default):
+        st = _fake_tensor(node.args[0])
+        if st is None:
+            return False
+        if st.dim() < t.dim() or statically_known_true(st.shape[0] == 1):
+            return True
+        return _rows_equal(node.args[0])
+    if _is_op(node, *_SLICE_OPS, torch.ops.aten._to_copy.default):
+        return _rows_equal(node.args[0])
+    if _is_op(
+        node, torch.ops.aten.unsqueeze_copy.default, torch.ops.aten.unsqueeze.default
+    ):
+        return node.args[1] % t.dim() != 0 and _rows_equal(node.args[0])
+    if _is_op(node, torch.ops.aten.cos.default, torch.ops.aten.sin.default):
+        return _rows_equal(node.args[0])
+    if _is_op(node, torch.ops.aten.where.self, torch.ops.aten.select_scatter.default):
+        return _restored_row_base(node) is not None
+    if _is_op(node, torch.ops.aten.mul.Tensor):
+        operands = node.args[:2]
+
+        def broadcast(operand: object) -> bool:
+            ot = _fake_tensor(operand)
+            if not isinstance(operand, Node):
+                return True
+            return ot is not None and (
+                ot.dim() < t.dim() or statically_known_true(ot.shape[0] == 1)
+            )
+
+        return all(_rows_equal(o) or broadcast(o) for o in operands) and any(
+            _rows_equal(o) for o in operands
+        )
+    return False
+
+
+def _row_of(node: object, base: Node) -> "int | None":
+    """The index ``k`` if ``node`` is ``base.select(0, k)``."""
+    if not _is_op(node, torch.ops.aten.select_copy.int, torch.ops.aten.select.int):
+        return None
+    if node.args[0] is not base or node.args[1] % _ndim(base) != 0:
+        return None
+    index = node.args[2]
+    return index if isinstance(index, int) else None
+
+
+def _rewrites_row_with_its_values(row: object, base: Node, k: int) -> bool:
+    """Whether ``row`` is ``base[k]`` with a slice overwritten by the same slice
+    of another row of ``base``: no change when the rows are equal."""
+    if not _is_op(row, torch.ops.aten.slice_scatter.default):
+        return False
+    dst, src, *bounds = row.args
+    if _row_of(dst, base) != k:
+        return False
+    if _is_op(src, torch.ops.aten.copy.default):
+        st, vt = _fake_tensor(src), _fake_tensor(src.args[1])
+        if vt is None or st.dtype != vt.dtype or not _same_shape(src, src.args[1]):
+            return False
+        src = src.args[1]
+    if not _is_op(src, *_SLICE_OPS) or list(src.args[1:]) != bounds:
+        return False
+    return _row_of(src.args[0], base) is not None
+
+
+def _restored_row_base(node: object) -> "Node | None":
+    """``base`` if ``node`` writes ``base[k]``, rewritten with its own values,
+    back into ``base``: a select_scatter, or the where over an arange mask it
+    decomposes to."""
+    if _is_op(node, torch.ops.aten.select_scatter.default):
+        base, row, dim, k = node.args[:4]
+        if dim % _ndim(base) != 0:
+            return None
+    elif _is_op(node, torch.ops.aten.where.self):
+        mask, expanded, base = node.args[:3]
+        if not _is_op(
+            expanded, torch.ops.aten.expand_copy.default, torch.ops.aten.expand.default
+        ) or not _same_shape(expanded, base):
+            return None
+        row = _unsqueeze_source(expanded.args[0], 0)
+        k = _arange_row_mask(mask, base)
+    else:
+        return None
+    if not isinstance(base, Node) or k is None or not _rows_equal(base):
+        return None
+    return base if _rewrites_row_with_its_values(row, base, k) else None
+
+
+def _arange_row_mask(mask: object, base: Node) -> "int | None":
+    """``k`` if ``mask`` is ``arange(n).view(-1, 1, ...) == k`` for ``base``'s
+    leading dim n."""
+    if not _is_op(mask, torch.ops.aten.eq.Scalar):
+        return None
+    k = mask.args[1]
+    row_ids = mask.args[0]
+    if not isinstance(k, int) or not _is_op(
+        row_ids, torch.ops.aten.view_copy.default, torch.ops.aten.view.default
+    ):
+        return None
+    arange = row_ids.args[0]
+    bt, rt = _fake_tensor(base), _fake_tensor(row_ids)
+    if not _is_op(arange, torch.ops.aten.arange.start_step) or bt is None or rt is None:
+        return None
+    # The arange counts 0, 1, ..., n - 1 for base's leading dim n.
+    counts_leading_dim = (
+        arange.args[0] == 0
+        and statically_known_true(arange.args[1] == bt.shape[0])
+        and (len(arange.args) < 3 or arange.args[2] == 1)
+    )
+    # The view keeps those ids in the leading dim and size 1 in every other.
+    is_leading_column = rt.dim() == bt.dim() and all(
+        statically_known_true(size == 1) for size in rt.shape[1:]
+    )
+    return k if counts_leading_dim and is_leading_column else None
+
+
+def _repeated_row_source(table: Node) -> "Node | None":
+    """``W`` if ``table`` is ``cat([r, r], -1)`` of a row ``r`` of ``W``, after
+    any rewrites of that row with its own values, and ``W``'s rows are equal.
+
+    This is a multimodal rotary whose position rows (time, height, width) all
+    hold the token positions, as for text: transformers' interleaved M-RoPE
+    copies slices of the other rows' tables into the first.
+    """
+    if not _is_op(table, torch.ops.aten.cat.default):
+        return None
+    tensors = table.args[0]
+    if (
+        not isinstance(tensors, (list, tuple))
+        or len(tensors) != 2
+        or tensors[0] is not tensors[1]
+        or (table.args[1] if len(table.args) > 1 else 0) % _ndim(table)
+        != _ndim(table) - 1
+    ):
+        return None
+    row = tensors[0]
+    if not _is_op(row, torch.ops.aten.select_copy.int, torch.ops.aten.select.int):
+        return None
+    base = row.args[0]
+    if not isinstance(base, Node) or _row_of(row, base) is None:
+        return None
+    while (restored := _restored_row_base(base)) is not None:
+        base = restored
+    return base if _rows_equal(base) else None
+
+
 def _trig_source(
     table: Node, trig: torch._ops.OpOverload, x: Node
-) -> "tuple[Node, float] | None":
-    """Match FP32 trig -> optional scale -> model-dtype cast -> head broadcast."""
+) -> "tuple[Node, float, bool] | None":
+    """Match FP32 trig -> optional scale -> model-dtype cast -> head broadcast.
+
+    Returns the phase, the attention scale, and whether the phase holds equal rows of
+    positions in a leading dim (see _repeated_row_source); then the table
+    repeats one row's trig.
+    """
     t, xt = _fake_tensor(table), _fake_tensor(x)
     if (
         t is None
@@ -312,43 +468,56 @@ def _trig_source(
         if st is None or st.device != t.device:
             return None
         node = src
+    equal_rows_source = _repeated_row_source(node)
+    has_equal_rows = equal_rows_source is not None
+    if equal_rows_source is not None:
+        node = equal_rows_source
     nt = _fake_tensor(node)
     if nt is None or nt.dtype != torch.float32:
         return None
-    scale = 1.0
+    attention_scale = 1.0
     if _is_op(node, torch.ops.aten.mul.Tensor, torch.ops.aten.mul.Scalar):
         a, b = node.args[:2]
         if _is_op(b, trig):
             a, b = b, a
-        scale = _scalar_constant(b)
-        if scale is None:
+        attention_scale = _scalar_constant(b)
+        if attention_scale is None:
             return None
         node = a
     if not _is_op(node, trig):
         return None
     phase = node.args[0]
     pt = _fake_tensor(phase)
-    if pt is None or pt.dtype != torch.float32 or pt.dim() != 3:
+    if (
+        pt is None
+        or pt.dtype != torch.float32
+        or pt.dim() != (4 if has_equal_rows else 3)
+    ):
         return None
-    return phase, scale
+    return phase, attention_scale, has_equal_rows
 
 
-def _broadcast_frequency_product(product: Node) -> "tuple[Node, Node] | None":
+def _broadcast_frequency_product(
+    product: Node, has_equal_rows: bool = False
+) -> "tuple[Node, Node] | None":
     """Match ``position_ids[..., None].float() * inv_freq``, the outer product
-    some HF models (e.g. Muse Glimmer) build without a matmul."""
+    some HF models (e.g. Muse Glimmer) build without a matmul: positions
+    [B, T], or with ``has_equal_rows`` [R, B, T] whose rows are equal."""
+    rank = 3 if has_equal_rows else 2
     t = _fake_tensor(product)
-    if t is None or t.dtype != torch.float32 or t.dim() != 3:
+    if t is None or t.dtype != torch.float32 or t.dim() != rank + 1:
         return None
     a, b = product.args[:2]
     for pos, inv in ((a, b), (b, a)):
         if not isinstance(pos, Node) or not isinstance(inv, Node):
             continue
         pos = _float_source(pos)
-        position_ids = _unsqueeze_source(pos, 2) if pos is not None else None
+        position_ids = _unsqueeze_source(pos, rank) if pos is not None else None
         inv_freq = _float_source(inv)
         if (
             position_ids is not None
-            and _ndim(position_ids) == 2
+            and _ndim(position_ids) == rank
+            and (not has_equal_rows or _rows_equal(position_ids))
             and inv_freq is not None
             and _ndim(inv_freq) == 1
         ):
@@ -424,13 +593,20 @@ def _frequency_product(phase: Node) -> "tuple[Node, Node] | None":  # noqa: C901
 
 def _rope_frequencies(
     x: Node, cos: Node, sin: Node
-) -> "tuple[Node, Node, float] | None":
+) -> "tuple[Node, Node, float, bool] | None":
+    """Positions, inverse frequencies and attention scale of the tables, and whether the
+    positions are the first row of a [R, B, T] tensor of equal rows rather than
+    [B, T] themselves."""
     cosine = _trig_source(cos, torch.ops.aten.cos.default, x)
     sine = _trig_source(sin, torch.ops.aten.sin.default, x)
     if cosine is None or sine is None or cosine != sine:
         return None
-    phase, scale = cosine
-    operands = _frequency_product(phase)
+    phase, attention_scale, has_equal_rows = cosine
+    operands = (
+        _broadcast_frequency_product(phase, has_equal_rows=True)
+        if has_equal_rows
+        else _frequency_product(phase)
+    )
     if operands is None:
         return None
     positions, inv_freq = operands
@@ -443,6 +619,8 @@ def _rope_frequencies(
         or not _same_shape(cos, sin)
     ):
         return None
+    if has_equal_rows:
+        pt = pt[0]
     checks = (
         (pt.shape[0] == 1) | (pt.shape[0] == xt.shape[0]),
         pt.shape[1] == xt.shape[2],
@@ -453,7 +631,19 @@ def _rope_frequencies(
     )
     if not all(statically_known_true(check) for check in checks):
         return None
-    return positions, inv_freq, scale
+    return positions, inv_freq, attention_scale, has_equal_rows
+
+
+def _first_row(graph: Graph, node: Node, like: Node) -> Node:
+    """``node.select(0, 0)``, in the dialect of ``like``'s op."""
+    select = (
+        exir_ops.edge.aten.select_copy.int
+        if isinstance(like.target, EdgeOpOverload)
+        else torch.ops.aten.select_copy.int
+    )
+    row = graph.call_function(select, (node, 0, 0))
+    row.meta["val"] = node.meta["val"].select(0, 0)
+    return row
 
 
 class FuseRoPEPass(ExportPass):
@@ -463,6 +653,10 @@ class FuseRoPEPass(ExportPass):
     cos/sin cast to the input dtype, and the rotate_half apply. Emits
     ``native.rope(x, position_ids, inv_freq, False, attention_scale)``.
     Precomputed tables and unrecognized frequency constructions stay decomposed.
+
+    Multimodal rotary tables built from [R, B, T] position rows that are all
+    equal, as text positions are, rotate by the first row's positions, however
+    the table interleaves the rows' frequencies (transformers' M-RoPE).
 
     Partial rotary also folds the prefix slice and passthrough concatenation:
     the op rotates ``2 * inv_freq.numel()`` channels of the full input. Frequency
@@ -485,7 +679,7 @@ class FuseRoPEPass(ExportPass):
             frequencies = _rope_frequencies(x, cos, sin)
             if frequencies is None:
                 continue
-            position_ids, inv_freq, attention_scale = frequencies
+            position_ids, inv_freq, attention_scale, has_equal_rows = frequencies
 
             # Partial rotary: rewrite the slice/apply/cat to one native.rope on the
             # full tensor (rope passes the tail through), so no strided slice is
@@ -497,6 +691,8 @@ class FuseRoPEPass(ExportPass):
                 continue
 
             with graph.inserting_before(replaced):
+                if has_equal_rows:
+                    position_ids = _first_row(graph, position_ids, replaced)
                 fused = graph.call_function(
                     rope_op,
                     (rope_input, position_ids, inv_freq, False, attention_scale),
