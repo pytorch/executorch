@@ -153,9 +153,41 @@ def test_w4a8_gemv_matches_integer_reference(dtype, row_pts, split_k):
         exact = relative_error_per_row(
             y, w4a8_reference(xq, xs, q, s, pts), x, q, s, pts
         )
-        assert bool((exact < 8e-3).all())
+        assert bool((exact < 2e-3).all())
         dense = relative_error_per_row(y, dense_reference(x, q, s, pts), x, q, s, pts)
         assert bool((dense < 3e-2).all())
+
+
+@pytest.mark.parametrize("split", [1, 4])
+def test_every_w4a8_config_matches_integer_reference(split):
+    # The autotuned launcher runs one config per key; pin each one here.
+    n, k = 254, 2880
+    q, s = weight(n, k, seed=9)
+    pts = torch.tensor([0.37], device="cuda")
+    x = (torch.randn(2, k, device="cuda") * 0.0625).to(torch.bfloat16)
+    xq, xs = act_q8_reference(x)
+    expected = w4a8_reference(xq, xs, q, s, pts)
+    for config in w4a8._w4a8_gemv.configs:
+        if config.num_stages != 1:
+            continue
+        y = torch.zeros((split, 2, n), device="cuda", dtype=torch.float32)
+        w4a8._w4a8_gemv.fn[(triton.cdiv(n, config.kwargs["BN"]), 2, split)](
+            xq,
+            xs,
+            q,
+            s,
+            pts,
+            y,
+            2,
+            n,
+            k,
+            split,
+            num_warps=config.num_warps,
+            num_stages=config.num_stages,
+            **config.kwargs,
+        )
+        error = relative_error_per_row(y.sum(0), expected, x, q, s, pts)
+        assert bool((error < 1e-4).all()), config
 
 
 def test_w4a8_rejects_illegal_split():

@@ -10,6 +10,8 @@ import torch
 from torch.fx.experimental.symbolic_shapes import statically_known_true
 
 NVFP4_DECODE_MAX_ROWS = 4
+# Without native FP4, M above this takes whole-weight dequant + matmul.
+NVFP4_DEQUANT_MIN_ROWS = 64
 
 
 @torch._dynamo.assume_constant_result

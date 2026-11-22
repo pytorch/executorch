@@ -173,6 +173,15 @@ def test_invalid_activation_scale_rejected(act):
         CudaNVFP4Tensor(w.qdata, w.scale, w.per_tensor_scale, act_per_tensor_scale=act)
 
 
+@pytest.mark.parametrize("byte", [0x7F, 0xFF])
+def test_from_exportable_rejects_nan_scales(byte):
+    # Kernels assume finite E4M3 scales.
+    w = weight()
+    w.scale[3, 5] = byte
+    with pytest.raises(ValueError, match="finite"):
+        CudaNVFP4Tensor.from_exportable(w)
+
+
 def test_from_exportable_carries_activation_scale():
     portable = weight()
     fields = (portable.qdata, portable.scale, portable.per_tensor_scale, 16)
@@ -194,8 +203,8 @@ def test_from_exportable_carries_activation_scale():
         (1.0, 0, True),
         (1.0, 126, True),
         (0.5, 40, False),
-        (1.0, 127, False),
         (1.0, 128, False),
+        (1.0, 0xA0, False),
     ],
 )
 def test_unit_scale_inferred_only_for_exact_domain(pts, scale_byte, expected):
@@ -206,7 +215,7 @@ def test_unit_scale_inferred_only_for_exact_domain(pts, scale_byte, expected):
 def test_unit_scale_requires_every_scale_byte():
     w = weight()
     scale = w.scale.clone()
-    scale[3, 5] = 127
+    scale[3, 5] = 0xA0
     mixed = ExportableNVFP4Tensor(
         w.qdata, scale, w.per_tensor_scale, w.block_size, w.orig_dtype
     )
