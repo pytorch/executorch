@@ -18,7 +18,8 @@ compile time and keeps the fastest:
   in registers.
 
 Weights are the same packed NVFP4 tensor for all three. With ``weight_only``
-(``ET_CUDA_NVFP4_ACT=w4a16``) the ``w4a4`` candidates are rejected. Near-ties
+(any forced ``ET_CUDA_NVFP4_ACT`` other than ``auto``) the ``w4a4`` candidates
+are rejected. Near-ties
 go to the higher-precision candidate.
 """
 
@@ -200,7 +201,8 @@ def _reduce(partial, g, pts, out, m, n, split, fp4_act):
             split,
             fp4_act,
             256,
-            ROW_PTS=pts.numel() != 1,
+            # Only the FP4-activation reduce applies the global scale.
+            ROW_PTS=fp4_act and pts.numel() != 1,
         )
 
 

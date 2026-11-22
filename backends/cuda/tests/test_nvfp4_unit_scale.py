@@ -46,7 +46,10 @@ def test_unit_scale_gemv_bitwise_same_tile(native, half2, dtype, row_pts, split)
     m, n, k = 4, 70, 4224
     x = torch.randn(m, k, device="cuda", dtype=dtype) * 0.0625
     q = torch.randint(0, 256, (n, k // 2), device="cuda", dtype=torch.uint8)
-    s = torch.randint(0, 127, (n, k // 16), device="cuda", dtype=torch.uint8)
+    # Every finite scale byte, negative ones included (unit scale is exact
+    # whatever the sign).
+    s = torch.randint(0, 256, (n, k // 16), device="cuda", dtype=torch.uint8)
+    s[(s & 0x7F) == 0x7F] -= 1
     pts = torch.ones(n if row_pts else 1, device="cuda")
     old = torch.empty(
         (split, m, n), device="cuda", dtype=torch.float32 if split > 1 else dtype

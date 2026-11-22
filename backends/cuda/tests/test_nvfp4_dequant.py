@@ -73,7 +73,7 @@ def test_dequant_is_bit_exact(n, k, pts_kind, dtype):
     # Products stay below 6 * 448 * 1.5 = 4032: every scale fits FP16 too.
     q, s = weight(n, k)
     pts = PTS[pts_kind](n)
-    actual = nvfp4_dequant(q, s, pts, dtype)
+    actual = nvfp4_dequant(q, s, pts, output_dtype=dtype)
     expected = kernel_order_reference(q, s, pts, dtype)
     assert actual.shape == (n, k) and actual.dtype == dtype
     assert torch.equal(actual.view(torch.int16), expected.view(torch.int16))
@@ -91,7 +91,7 @@ def test_dequant_matches_fused_w4a16_weights_bitwise(pts_kind, dtype):
     pts = PTS[pts_kind](n)
     eye = torch.eye(k, device="cuda", dtype=dtype)
     fused = kernels.nvfp4_w4a16(eye, q, s, pts, split_k=1).T
-    dense = nvfp4_dequant(q, s, pts, dtype)
+    dense = nvfp4_dequant(q, s, pts, output_dtype=dtype)
     assert torch.equal(fused, dense)
 
 
@@ -100,11 +100,11 @@ def test_dequant_rejects_malformed_operands():
     s = torch.zeros(4, 2, dtype=torch.uint8)
     pts = torch.ones(1)
     with pytest.raises(ValueError, match="scale"):
-        nvfp4_dequant(q, s[:, :1], pts)
+        nvfp4_dequant(q, s[:, :1], pts, torch.bfloat16)
     with pytest.raises(ValueError, match="per_tensor_scale"):
-        nvfp4_dequant(q, s, torch.ones(3))
+        nvfp4_dequant(q, s, torch.ones(3), torch.bfloat16)
     with pytest.raises(ValueError, match="BF16/FP16"):
-        nvfp4_dequant(q, s, pts, torch.float32)
+        nvfp4_dequant(q, s, pts, output_dtype=torch.float32)
 
 
 @pytest.mark.parametrize(

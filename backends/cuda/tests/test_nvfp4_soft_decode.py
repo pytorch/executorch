@@ -217,7 +217,7 @@ def gemv_configs(half2):
         and c.num_stages == 1
         and (c.kwargs["BN"], c.kwargs["BK"]) in tiles
     ]
-    assert len(configs) == len(tiles)
+    assert {(c.kwargs["BN"], c.kwargs["BK"]) for c in configs} == tiles
     return configs
 
 
@@ -249,7 +249,9 @@ def test_gemv_soft_fp4_matches_reference(native, dtype, pts_kind, unit_scale):
         # Scaled so FP16 outputs of the 448-scale rows stay finite.
         x = (torch.randn(m, TAIL_K, device="cuda") * 0.125).to(dtype)
         expected = x.float() @ w.T
-        for config in gemv_configs(half2=False):
+        # The HALF2 body runs only with native FP4.
+        configs = gemv_configs(half2=False) + (gemv_configs(True) if native else [])
+        for config in configs:
             for split_k in (1, 2):
                 actual = fixed_gemv(x, q, s, pts, unit_scale, split_k, config, native)
                 error = relative_error_per_row(actual, expected, x, w)
