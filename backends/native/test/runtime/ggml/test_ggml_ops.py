@@ -410,11 +410,13 @@ _MATMUL_TOL = (
     else {"atol": 1e-4, "rtol": 1e-5}
 )
 
-# GGUF quant types the linear and embedding tests cover, with the fp16
-# super-block scales of their random blocks by byte offset in a block. Each
-# min scale centers the weights near zero.
+# GGUF quant types the random-weight tests cover, with the fp16 super-block
+# scales of their random blocks by byte offset in a block. Each min scale
+# centers the weights near zero.
 _GGUF_SUPER_SCALES = {
+    "q4_k": {0: 2**-8, 2: 2**-5},
     "q5_k": {0: 2**-8, 2: 2**-4},
+    "q6_k": {208: 2**-14},
 }
 
 
@@ -553,6 +555,67 @@ class GgmlOpsTest(unittest.TestCase):
             self._random_gguf_weights(ggml_type, 8, 512), requires_grad=False
         )
         self._check(model, (torch.tensor([[0, 3, 6], [7, 1, 4]]),))
+
+    def _check_random_gguf_dynamic_tokens(self, ggml_type):
+        # A linear and an embedding, each exported once with a dynamic token
+        # count and run at 9, 1 and 33 tokens on one executable; GPUs switch
+        # matmul kernels above 8 rows. The linear gets the exact activations
+        # of _check_random_gguf_linear, alternating by token.
+        linear = torch.nn.Linear(512, 8, bias=False)
+        linear.weight = torch.nn.Parameter(
+            self._random_gguf_weights(ggml_type, 8, 512), requires_grad=False
+        )
+        embedding = torch.nn.Embedding(8, 512)
+        embedding.weight = torch.nn.Parameter(
+            self._random_gguf_weights(ggml_type, 8, 512), requires_grad=False
+        )
+        representable = torch.full((2, 512), 127 / 1024)
+        representable[1, ::2] *= -1
+        lengths = (9, 1, 33)
+        cases = {
+            "linear": (linear, [representable[torch.arange(n) % 2] for n in lengths]),
+            "embedding": (embedding, [torch.arange(n) % 8 for n in lengths]),
+        }
+        tokens = Dim("tokens", min=1, max=64)
+        for name, (model, inputs) in cases.items():
+            steps = [(x,) for x in inputs]
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                ep = torch.export.export(
+                    model, steps[0], dynamic_shapes={"input": {0: tokens}}
+                )
+                outdir = Path(tmp)
+                package = outdir / "model.ptn"
+                to_native(ep).save(str(package))
+                actual = _run_ggml(
+                    package,
+                    steps,
+                    outdir,
+                    1,
+                    resize=True,
+                    allow_activation_quant_for_weight_only=True,
+                )
+                self.assertEqual(len(actual), len(steps))
+                for x, [(raw, shape)] in zip(inputs, actual):
+                    with torch.no_grad():
+                        expected = model(x)
+                    self.assertEqual(shape, tuple(expected.shape))
+                    torch.testing.assert_close(
+                        torch.frombuffer(bytearray(raw), dtype=torch.float32).reshape(
+                            shape
+                        ),
+                        expected,
+                        atol=5e-4,
+                        rtol=1e-5,
+                    )
+
+    def test_gguf_q4_k_dynamic_tokens(self):
+        self._check_random_gguf_dynamic_tokens("q4_k")
+
+    def test_gguf_q5_k_dynamic_tokens(self):
+        self._check_random_gguf_dynamic_tokens("q5_k")
+
+    def test_gguf_q6_k_dynamic_tokens(self):
+        self._check_random_gguf_dynamic_tokens("q6_k")
 
     def test_gguf_q5_k_linear_within_rounding_bound(self):
         self._check_random_gguf_linear("q5_k")

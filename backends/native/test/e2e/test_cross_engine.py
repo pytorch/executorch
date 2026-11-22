@@ -736,6 +736,65 @@ class CrossEngineTest(unittest.TestCase):
             },
         )
 
+    def _check_gguf_dynamic_tokens(self, ggml_type: str):
+        """A linear and an embedding of synthetic `ggml_type` weights, each
+        exported once with a dynamic token count and run at 9, 1 and 33 tokens
+        from the one saved package on every engine."""
+        generator = torch.Generator().manual_seed(0)
+        linear = torch.nn.Linear(256, 8, bias=False)
+        linear.weight = torch.nn.Parameter(
+            _GGUF_WEIGHTS[ggml_type](8, 256, generator), requires_grad=False
+        )
+        embedding = torch.nn.Embedding(8, 256)
+        embedding.weight = torch.nn.Parameter(
+            _GGUF_WEIGHTS[ggml_type](8, 256, generator), requires_grad=False
+        )
+        # Activations of +-127/1024, alternating by token, survive ggml's int8
+        # requantization exactly, and native-vk decodes the weights exactly.
+        rows = torch.full((2, 256), 127 / 1024)
+        rows[1, ::2] *= -1
+        lengths = (9, 1, 33)
+        tokens = Dim("tokens", min=1, max=64)
+        flags = {"ggml_ptn_runner": ("--allow_activation_quant_for_weight_only",)}
+        for name, model, inputs in (
+            ("linear", linear, [rows[torch.arange(n) % 2] for n in lengths]),
+            ("embedding", embedding, [torch.arange(n) % 8 for n in lengths]),
+        ):
+            steps = [(x,) for x in inputs]
+            with torch.no_grad():
+                expected = [model(x) for x in inputs]
+                ep = torch.export.export(
+                    model, steps[0], dynamic_shapes={"input": {0: tokens}}
+                )
+            with tempfile.TemporaryDirectory() as tmp:
+                outdir = Path(tmp)
+                package = outdir / f"{name}.ptn"
+                to_native(ep).save(str(package))
+                for runner in _ENGINES:
+                    with self.subTest(case=name, engine=runner):
+                        outputs = _run(
+                            runner,
+                            package,
+                            steps,
+                            outdir,
+                            resize=True,
+                            flags=flags.get(runner, ()),
+                        )
+                        self.assertEqual(len(outputs), len(expected))
+                        for actual, reference in zip(outputs, expected):
+                            torch.testing.assert_close(
+                                actual, reference, atol=1e-5, rtol=1e-5
+                            )
+
+    def test_gguf_q4_k_dynamic_tokens(self):
+        self._check_gguf_dynamic_tokens("q4_k")
+
+    def test_gguf_q5_k_dynamic_tokens(self):
+        self._check_gguf_dynamic_tokens("q5_k")
+
+    def test_gguf_q6_k_dynamic_tokens(self):
+        self._check_gguf_dynamic_tokens("q6_k")
+
     def test_tiny_llama_fp16_kv(self):
         torch.manual_seed(0)
         engines = tuple(e for e in _ENGINES if e not in _FP32_KV_ONLY)
