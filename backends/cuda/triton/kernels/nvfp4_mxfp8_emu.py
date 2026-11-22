@@ -3,9 +3,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 """MXFP8 x MXFP8 linears for NVFP4 weights on GPUs without native FP4
-conversion (``nvfp4_w4a8`` needs SM120).
+conversion (``nvfp4_mxfp8`` needs SM120).
 
-Emulates ``nvfp4_w4a8`` (``nvfp4_w4a8.py``) on the dequant + BF16 GEMM path:
+Emulates ``nvfp4_mxfp8`` (``nvfp4_mxfp8.py``) on the dequant + BF16 GEMM path:
 
 - activations are quantized to MXFP8 (E4M3 x UE8M0 per 32 along K, the same
   ``ceil(log2(amax / 448))`` exponent) and dequantized in one pass; MXFP8
@@ -29,11 +29,11 @@ from executorch.backends.cuda.triton.kernels.nvfp4_kv import (
     _e4m3_encode_nonneg,
     cuda_arch,
 )
+from executorch.backends.cuda.triton.kernels.nvfp4_mxfp8 import _ceil_log2, _pow2
 from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
     _e4m3_to_f32,
     _fp4,
 )
-from executorch.backends.cuda.triton.kernels.nvfp4_w4a8 import _ceil_log2, _pow2
 from torch.library import triton_op, wrap_triton
 
 

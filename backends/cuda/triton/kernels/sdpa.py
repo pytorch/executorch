@@ -1982,6 +1982,15 @@ def _sdpa_decode_splitk_abstract(
 # occupancy, then reduces per-query partial results in a second kernel.
 
 
+def _small_query_splitk_prune(configs, named_args, **kwargs):
+    # As _sdpa_prefill_prune: at most 128 FP32 accumulator values per thread
+    # (larger tiles spill); BLOCK_M and HEAD_DIM are launch arguments here.
+    values = {**named_args, **kwargs}
+    tile = values["BLOCK_M"] * values["HEAD_DIM"]
+    kept = [c for c in configs if tile <= 4096 * c.num_warps]
+    return kept or [max(configs, key=lambda c: c.num_warps)]
+
+
 @autotune_inputs(KV_LEN_ptr=_kv_len_scenarios, Mask_ptr=_visible_mask_scenarios)
 @triton.autotune(
     configs=[
@@ -2000,6 +2009,7 @@ def _sdpa_decode_splitk_abstract(
         triton.Config({"BLOCK_N": 32}, num_warps=8, num_stages=2),
     ],
     key=["Lk", "HEAD_DIM", "NUM_GROUPS", "LQ", "HAS_MASK", "MASK_IS_CAUSAL"],
+    prune_configs_by={"early_config_prune": _small_query_splitk_prune},
 )
 @triton.jit
 def _sdpa_small_query_splitk_kernel(
@@ -2425,8 +2435,9 @@ def sdpa_small_query_splitk(
     Tracks a stable online-softmax maximum per split, then rescales partial
     results by the global maximum during reduction.
 
-    Signature mirrors sdpa() for drop-in use with torch.cond dispatch.
-    enable_gqa is accepted but ignored — GQA is handled natively via
+    L_q must be concrete (the kernel bakes it in as a constexpr) and the
+    per-CTA tile must fit the caps ``sdpa()`` applies. enable_gqa is accepted
+    but ignored — GQA is handled natively via
     H_q // H_kv grouping; query rows and GQA groups share each KV tile.
 
     kv_len: optional GPU int scalar bounding the KV sweep to the valid
@@ -2449,23 +2460,23 @@ def sdpa_small_query_splitk(
             lambda: "sdpa_small_query_splitk requires an explicit mask when L_q > 1",
         )
 
-    # Validation — only check at runtime (concrete shapes), not during AOTI
-    # tracing where shapes are symbolic. torch.cond traces both branches with
-    # the same symbolic L_q, so L_q is not necessarily concrete during tracing.
-    if isinstance(L_q, int):
-        if not 2 <= L_q <= _SMALL_QUERY_MAX_LQ:
-            raise RuntimeError(
-                "sdpa_small_query_splitk requires "
-                f"2 <= L_q <= {_SMALL_QUERY_MAX_LQ}; got L_q={L_q}"
-            )
-        if H_q % H_kv != 0:
-            raise RuntimeError(
-                f"H_q must be divisible by H_kv; got H_q={H_q}, H_kv={H_kv}"
-            )
-        if not _is_power_of_2(D):
-            raise RuntimeError(
-                f"sdpa_small_query_splitk requires power-of-2 head dim; got D={D}"
-            )
+    if not isinstance(L_q, int) or not 2 <= L_q <= _SMALL_QUERY_MAX_LQ:
+        raise RuntimeError(
+            "sdpa_small_query_splitk requires a concrete "
+            f"2 <= L_q <= {_SMALL_QUERY_MAX_LQ}; got L_q={L_q}"
+        )
+    if H_q % H_kv != 0:
+        raise RuntimeError(f"H_q must be divisible by H_kv; got H_q={H_q}, H_kv={H_kv}")
+    if not _is_power_of_2(D):
+        raise RuntimeError(
+            f"sdpa_small_query_splitk requires power-of-2 head dim; got D={D}"
+        )
+    rows = L_q * _next_power_of_2_unclamped(H_q // H_kv)
+    if rows > _SMALL_QUERY_MAX_ROWS or rows * D > _SMALL_QUERY_MAX_TILE:
+        raise RuntimeError(
+            f"sdpa_small_query_splitk: a {rows}x{D} tile exceeds the "
+            f"{_SMALL_QUERY_MAX_ROWS}-row, {_SMALL_QUERY_MAX_TILE}-element cap"
+        )
 
     num_groups = H_q // H_kv
     sm_scale = 1.0 / math.sqrt(D) if scale == 0.0 else scale

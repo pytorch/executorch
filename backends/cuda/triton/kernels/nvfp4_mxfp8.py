@@ -31,7 +31,10 @@ import torch
 import triton
 import triton.language as tl
 
-from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import _check_operands
+from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
+    _check_operands,
+    _has_native_fp4_conversion,
+)
 from executorch.backends.cuda.triton.kernels.nvfp4_tuning import (
     autotune_do_bench,
     launch_nvfp4_kernel,
@@ -177,7 +180,7 @@ def _tile(
     do_bench=autotune_do_bench,
 )
 @triton.jit
-def _w4a8_mx(
+def _mxfp8_gemm(
     A,
     AS,
     B,
@@ -239,19 +242,21 @@ def quantize_activation_mxfp8(x):
     return q, s
 
 
-@triton_op("triton::nvfp4_w4a8", mutates_args={})
-def nvfp4_w4a8(
+@triton_op("triton::nvfp4_mxfp8", mutates_args={})
+def nvfp4_mxfp8(
     x: torch.Tensor,
     qdata: torch.Tensor,
     scale: torch.Tensor,
     per_tensor_scale: torch.Tensor,
 ) -> torch.Tensor:
     """y[M, N] = x[M, K] @ W^T: MXFP8 activations x NVFP4 weights converted to MXFP8."""
+    if not _has_native_fp4_conversion():
+        raise RuntimeError("NVFP4 MXFP8 GEMM requires an SM120 or newer CUDA target")
     _check_operands(x, qdata, scale, per_tensor_scale)
     m, k = x.shape
     n = qdata.shape[0]
     if k % 32:
-        raise ValueError("nvfp4_w4a8 requires K % 32 == 0")
+        raise ValueError("nvfp4_mxfp8 requires K % 32 == 0")
     q, s = quantize_activation_mxfp8(x)
     out = torch.empty((m, n), device=x.device, dtype=x.dtype)
 
@@ -259,7 +264,7 @@ def nvfp4_w4a8(
         return (triton.cdiv(m, meta["BM"]) * triton.cdiv(n, meta["BN"]),)
 
     launch_nvfp4_kernel(
-        _w4a8_mx,
+        _mxfp8_gemm,
         grid,
         (q, s, qdata, scale, per_tensor_scale, out, m, n, k),
         6,

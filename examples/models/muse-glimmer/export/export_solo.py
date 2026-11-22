@@ -361,8 +361,9 @@ def add_nvfp4_act_argument(parser) -> None:
         default=None,
         help="CUDA NVFP4 activation mode, sets ET_CUDA_NVFP4_ACT (default: "
         "the environment's value, else auto). auto times W4A4 against W4A16 "
-        "per shape when native FP4 is available, and decode W4A16 against the "
-        "INT8-activation W4A8 GEMV otherwise; w4a4 forces FP4 activations "
+        "per shape when native FP4 is available, and single-token decode W4A16 "
+        "against the INT8-activation W4A8 GEMV otherwise (2..16 rows take the "
+        "small-M kernels, see ET_CUDA_NVFP4_SMALL_M); w4a4 forces FP4 activations "
         "(native FP4 required), w4a8 forces the W4A8 decode GEMV, w4a16 "
         "forces BF16 activations.",
     )
@@ -562,7 +563,11 @@ def export_cuda_batching(  # noqa: C901
     if hasattr(inductor_config, "cpp_cache_precompile_headers"):
         inductor_config.cpp_cache_precompile_headers = False
 
-    install_nvfp4_gate_up_epilogues(model)
+    nvfp4_epilogues = install_nvfp4_gate_up_epilogues(model)
+    if nvfp4_epilogues:
+        print(
+            f"[muse_glimmer cuda batching] NVFP4 gate/up epilogues: {nvfp4_epilogues}"
+        )
     single_manifest = enable_offgraph_kv_cache(model, max_step_tokens)
     manifest = (
         batched_sequence_manifest(single_manifest, max_kv_seqs)
@@ -812,7 +817,8 @@ def _export_cuda(
         vision_cuda_source_transformations,
     )
 
-    # Bounds global-attention SDPA to the valid context via a runtime kv_len
+    # Swaps fused NVFP4 gate/up MLPs for the fused gated kernel and bounds
+    # global-attention SDPA to the valid context via a runtime kv_len
     # (O(context) decode). With use_turboquant=True it also swaps the global KV
     # caches for TurboQuant TQ4; with kv_cache_dtype="nvfp4" every layer gets an
     # NVFP4 KV cache instead.
@@ -1333,13 +1339,13 @@ def main() -> None:
         "--nvfp4-attn-act",
         choices=("fp4", "mxfp8", "bf16"),
         default="fp4",
-        help="Activation format of the NVFP4 attention projections (qko/qkv, v, "
-        "o): fp4 keeps the --nvfp4-act path; mxfp8 never uses FP4 activations: "
-        "with native FP4 (SM120) prefill runs MXFP8 x MXFP8 with the NVFP4 "
-        "weights converted in registers, elsewhere BF16 activations "
-        "(ET_CUDA_NVFP4_MXFP8_EMULATE=1 emulates MXFP8), and decode runs "
-        "W4A16 (or W4A8 without native FP4); bf16 runs them weight-only "
-        "(W4A16).",
+        help="Activation format of the NVFP4 attention projections (qko/qkv or "
+        "q/k/og, v, o): fp4 keeps the --nvfp4-act path; mxfp8 never uses FP4 "
+        "activations: with native FP4 (SM120) prefill runs MXFP8 x MXFP8 with "
+        "the NVFP4 weights converted in registers, elsewhere BF16 activations "
+        "(ET_CUDA_NVFP4_MXFP8_EMULATE=1 emulates MXFP8), and decode runs W4A16 "
+        "(without native FP4 timed against W4A8; always W4A16 with "
+        "ET_CUDA_NVFP4_MXFP8_EMULATE=1); bf16 runs them weight-only (W4A16).",
     )
     args = parser.parse_args()
     apply_nvfp4_act_argument(parser, args)

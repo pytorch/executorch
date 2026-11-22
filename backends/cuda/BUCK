@@ -251,7 +251,7 @@ fbcode_target(
         "triton/kernels/nvfp4_quantized_gemm.py",
         "triton/kernels/nvfp4_small_m_gemm.py",
         "triton/kernels/nvfp4_tuning.py",
-        "triton/kernels/nvfp4_w4a8.py",
+        "triton/kernels/nvfp4_mxfp8.py",
         "triton/kernels/nvfp4_w4a8_gemv.py",
         "triton/kernels/int4_matmul.py",
         "triton/kernels/quantized_gemm_family.py",

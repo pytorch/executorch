@@ -9,9 +9,9 @@
 - ``fp4`` (default): NVFP4 activations where FP4 tensor cores exist (W4A4),
   timed against W4A16 per shape.
 - ``mxfp8``: prefill quantizes activations to MXFP8 and converts the weight
-  tiles to MXFP8 in registers (``nvfp4_w4a8``, native FP4 conversion only;
-  BF16 activations elsewhere); decode stays W4A16 (or the INT8-activation W4A8
-  GEMV on GPUs without FP4 conversion). Never W4A4.
+  tiles to MXFP8 in registers (``nvfp4_mxfp8``, native FP4 conversion only;
+  BF16 activations elsewhere); decode runs the W4A16 GEMV, timed against the
+  INT8-activation W4A8 GEMV on GPUs without FP4 conversion. Never W4A4.
 - ``bf16``: weight-only, W4A16 on every path.
 """
 
@@ -64,16 +64,15 @@ class CudaNVFP4Tensor(TorchAOBaseTensor):
     ``input_scale`` ``amax / (6 * 448)`` (not its reciprocal); ``None`` means
     activations are scaled dynamically per row.
 
-    ``unit_scale`` asserts two facts kernels may rely on: ``per_tensor_scale``
-    is 1, so the global-scale multiply can be skipped, and every scale byte is
-    below 0x7F, a non-negative finite E4M3 value, so each E2M1 x E4M3 product
-    is finite with at most 6 significant bits and exact in BF16 without
-    rounding. ``from_exportable`` sets it from the values; the constructor
-    trusts the passed flag.
-
     Kernels assume every scale byte is a finite E4M3 value: ``from_exportable``
     rejects the NaN bytes 0x7F/0xFF (the GGUF converter already maps 0x7F to 0
-    and rejects 0xFF).
+    and rejects 0xFF); the constructor trusts the bytes it is given.
+
+    ``unit_scale`` asserts that ``per_tensor_scale`` is 1, so kernels may skip
+    the global-scale multiply: with finite scales each E2M1 x E4M3 product has
+    at most 6 significant bits and is exact in BF16 without rounding, whatever
+    its sign. ``from_exportable`` sets it from the values; the constructor
+    trusts the passed flag.
     """
 
     tensor_data_names = ["qdata", "scale", "per_tensor_scale"]
@@ -151,7 +150,6 @@ class CudaNVFP4Tensor(TorchAOBaseTensor):
             and not is_fake(w.per_tensor_scale)
             and w.scale.numel() > 0
             and bool(torch.all(w.per_tensor_scale == 1).item())
-            and bool(torch.all(w.scale < 127).item())
         )
         return cls(
             w.qdata.contiguous().view(torch.uint8),

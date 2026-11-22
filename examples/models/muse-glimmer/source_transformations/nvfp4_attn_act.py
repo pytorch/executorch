@@ -12,8 +12,9 @@ and ``o``) NVFP4 and sets their ``CudaNVFP4Tensor.act_dtype``:
 
 - ``fp4``: unchanged (W4A4 where FP4 tensor cores exist).
 - ``mxfp8``: MXFP8 x MXFP8 prefill with the weights converted in registers
-  (native FP4 conversion, SM120; BF16 activations elsewhere); decode W4A16
-  (or the INT8-activation W4A8 GEMV without FP4 conversion).
+  (native FP4 conversion, SM120; BF16 activations elsewhere); decode runs the
+  W4A16 GEMV, timed against the INT8-activation W4A8 GEMV without FP4
+  conversion.
 - ``bf16``: weight-only W4A16.
 
 FFN, embedding and lm_head keep their paths.
