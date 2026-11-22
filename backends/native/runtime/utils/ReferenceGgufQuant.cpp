@@ -119,6 +119,15 @@ void decode_q6_k_block(const uint8_t* block, float* y) {
   }
 }
 
+// block_q8_0: fp16 d, then 32 int8 codes.
+void decode_q8_0_block(const uint8_t* block, float* y) {
+  const float d = half_to_float(block);
+  const auto* q = reinterpret_cast<const int8_t*>(block + 2);
+  for (int j = 0; j < 32; ++j) {
+    y[j] = static_cast<float>(q[j]) * d;
+  }
+}
+
 struct Codec {
   std::string_view name;
   int64_t block_elements;
@@ -127,6 +136,7 @@ struct Codec {
 };
 
 constexpr Codec kCodecs[] = {
+    {"gguf:q8_0", 32, 34, decode_q8_0_block},
     {"gguf:q4_k", 256, 144, decode_q4_k_block},
     {"gguf:q5_k", 256, 176, decode_q5_k_block},
     {"gguf:q6_k", 256, 210, decode_q6_k_block},

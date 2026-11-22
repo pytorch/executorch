@@ -415,6 +415,7 @@ _MATMUL_TOL = (
 # centers the weights near zero.
 _GGUF_SUPER_SCALES = {
     "q4_k": {0: 2**-8, 2: 2**-5},
+    "q8_0": {0: 2**-8},
     "q5_k": {0: 2**-8, 2: 2**-4},
     "q6_k": {208: 2**-14},
 }
@@ -616,6 +617,15 @@ class GgmlOpsTest(unittest.TestCase):
 
     def test_gguf_q6_k_dynamic_tokens(self):
         self._check_random_gguf_dynamic_tokens("q6_k")
+
+    def test_gguf_q8_0_linear(self):
+        self._check_random_gguf_linear("q8_0")
+
+    def test_gguf_q8_0_embedding(self):
+        self._check_random_gguf_embedding("q8_0")
+
+    def test_gguf_q8_0_dynamic_tokens(self):
+        self._check_random_gguf_dynamic_tokens("q8_0")
 
     def test_gguf_q5_k_linear_within_rounding_bound(self):
         self._check_random_gguf_linear("q5_k")
