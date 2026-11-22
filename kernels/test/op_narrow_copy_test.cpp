@@ -229,4 +229,16 @@ TEST_F(OpNarrowCopyOutTest, ChannelsLastOutput) {
   op_narrow_copy_out(input, /*dim=*/0, /*start=*/1, /*length=*/1, out);
   EXPECT_TENSOR_EQ(out, tf.make_channels_last({1, 2, 1, 2}, {4, 6, 5, 7}));
 }
+
+TEST_F(OpNarrowCopyOutTest, ChannelsLastOutputOfInputWithoutStrides) {
+  using executorch::runtime::etensor::TensorImpl;
+  TensorFactory<ScalarType::Float> tf;
+  TensorImpl::SizesType sizes[4] = {2, 2, 1, 2};
+  float data[8] = {0, 1, 2, 3, 4, 5, 6, 7};
+  TensorImpl impl(ScalarType::Float, 4, sizes, data);
+  Tensor input(&impl);
+  Tensor out = tf.zeros_channels_last({1, 2, 1, 2});
+  op_narrow_copy_out(input, /*dim=*/0, /*start=*/1, /*length=*/1, out);
+  EXPECT_TENSOR_EQ(out, tf.make_channels_last({1, 2, 1, 2}, {4, 6, 5, 7}));
+}
 #endif

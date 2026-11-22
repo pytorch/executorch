@@ -21,6 +21,7 @@ namespace native {
 using Tensor = executorch::aten::Tensor;
 using ScalarType = executorch::aten::ScalarType;
 using SizesType = executorch::aten::SizesType;
+using executorch::ET_RUNTIME_NAMESPACE::tensor_data_is_in_default_dim_order;
 
 namespace {
 
@@ -67,8 +68,10 @@ void nonzero(KernelRuntimeContext& ctx, const Tensor& input, Tensor& output) {
 
   int64_t* out_data = output.mutable_data_ptr<int64_t>();
   // ATen returns nonzero column by column, and exported programs keep that.
-  const auto row_stride = output.strides()[0];
-  const auto col_stride = output.strides()[1];
+  // A tensor without strides holds its data in the default dim order.
+  const bool out_is_default = tensor_data_is_in_default_dim_order(output);
+  const size_t row_stride = out_is_default ? input.dim() : output.strides()[0];
+  const size_t col_stride = out_is_default ? 1 : output.strides()[1];
   // The input can be in another dim order too, like the result of nonzero.
   const auto in_strides = input.strides();
   const bool in_contiguous = is_contiguous_dim_order(
