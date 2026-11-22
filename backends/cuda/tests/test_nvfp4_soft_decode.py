@@ -14,7 +14,6 @@ from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
     _e4m3_f16,
     _e4m3_to_f32,
     _fp4_pair_f16,
-    _scaled_pair,
     nvfp4_embedding,
     nvfp4_gemv,
     nvfp4_w4a16,
@@ -146,12 +145,6 @@ def test_fp16_bit_placement_is_exact():
     finite = (b & 0x7F) != 0x7F
     e4m3 = b.view(torch.float8_e4m3fn).float()
     assert_bits_equal(sf[finite] * 2**8, e4m3[finite])
-    # The kernels' FP32 product of the two placements is the exact product.
-    rescale = kernels._SOFT_FP4_RESCALE.value
-    assert_bits_equal(
-        lo[:, None] * (sf[finite] * rescale)[None, :],
-        lut[(b & 15).long()][:, None] * e4m3[finite][None, :],
-    )
 
 
 @triton.jit
@@ -166,36 +159,12 @@ def _decode_pair_kernel(Q, S, LO, HI, NATIVE: tl.constexpr):
 def test_decode_pair_is_exact(native):
     """The decode the kernels call: every code byte times every finite scale
     byte, bit for bit."""
-    if native and not kernels._has_native_fp4_conversion():
-        pytest.skip("native FP4 required")
+    skip_without_native(native)
     b = torch.arange(256, device="cuda", dtype=torch.int32).to(torch.uint8)
     q = b[:, None].expand(256, 256).contiguous()
     s = b[None, :].expand(256, 256).contiguous()
     lo, hi = (torch.empty(256, 256, device="cuda") for _ in range(2))
     _decode_pair_kernel[(256,)](q, s, lo, hi, NATIVE=native)
-    lut = torch.tensor(E2M1, device="cuda")
-    finite = (b & 0x7F) != 0x7F
-    e4m3 = b.view(torch.float8_e4m3fn).float()[None, finite]
-    assert_bits_equal(lo[:, finite], lut[(b & 15).long()][:, None] * e4m3)
-    assert_bits_equal(hi[:, finite], lut[(b >> 4).long()][:, None] * e4m3)
-
-
-@triton.jit
-def _soft_half2_kernel(Q, S, LO, HI):
-    i = tl.program_id(0) * 256 + tl.arange(0, 256)
-    sf = (_e4m3_f16(tl.load(S + i)) * 256.0).to(tl.float16)
-    lo, hi = _scaled_pair(tl.load(Q + i), sf, False)
-    tl.store(LO + i, lo)
-    tl.store(HI + i, hi)
-
-
-def test_soft_half2_pair_is_exact():
-    """The software FP16x2 decode times every finite scale, bit for bit."""
-    b = torch.arange(256, device="cuda", dtype=torch.int32).to(torch.uint8)
-    q = b[:, None].expand(256, 256).contiguous()
-    s = b[None, :].expand(256, 256).contiguous()
-    lo, hi = (torch.empty(256, 256, device="cuda") for _ in range(2))
-    _soft_half2_kernel[(256,)](q, s, lo, hi)
     lut = torch.tensor(E2M1, device="cuda")
     finite = (b & 0x7F) != 0x7F
     e4m3 = b.view(torch.float8_e4m3fn).float()[None, finite]
@@ -240,14 +209,16 @@ def fixed_gemv(x, q, s, pts, unit_scale, split_k, config, native):
 
 def gemv_configs(half2):
     """Representative single-stage tiles, the widest BN and BK included."""
-    tiles = {(4, 256), (8, 512), (16, 1024), (32, 256), (32, 512)}
-    return [
+    tiles = {(4, 256), (8, 512), (16, 1024), (32, 256)}
+    configs = [
         c
         for c in kernels._gemv.configs
         if c.kwargs["HALF2"] == half2
         and c.num_stages == 1
         and (c.kwargs["BN"], c.kwargs["BK"]) in tiles
     ]
+    assert len(configs) == len(tiles)
+    return configs
 
 
 def skip_without_native(native):
@@ -265,12 +236,11 @@ TAIL_K = 1040
 
 
 @pytest.mark.parametrize("native", [False, True])
-@pytest.mark.parametrize("half2", [False, True])
 @pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16])
 @pytest.mark.parametrize(
     "pts_kind,unit_scale", [("unit", True), ("scalar", False), ("row", False)]
 )
-def test_gemv_soft_fp4_matches_reference(native, half2, dtype, pts_kind, unit_scale):
+def test_gemv_soft_fp4_matches_reference(native, dtype, pts_kind, unit_scale):
     skip_without_native(native)
     q, s = full_range_weight(TAIL_K, seed=2)
     pts = PTS[pts_kind](q.shape[0])
@@ -279,7 +249,7 @@ def test_gemv_soft_fp4_matches_reference(native, half2, dtype, pts_kind, unit_sc
         # Scaled so FP16 outputs of the 448-scale rows stay finite.
         x = (torch.randn(m, TAIL_K, device="cuda") * 0.125).to(dtype)
         expected = x.float() @ w.T
-        for config in gemv_configs(half2):
+        for config in gemv_configs(half2=False):
             for split_k in (1, 2):
                 actual = fixed_gemv(x, q, s, pts, unit_scale, split_k, config, native)
                 error = relative_error_per_row(actual, expected, x, w)

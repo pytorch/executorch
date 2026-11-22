@@ -331,20 +331,13 @@ def _fuse_cuda_nvfp4(shards: list):
     from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
     from executorch.extension.llm.export.nvfp4 import ExportableNVFP4Tensor
 
-    nvfp4 = [isinstance(w, (ExportableNVFP4Tensor, CudaNVFP4Tensor)) for w in shards]
+    nvfp4 = [isinstance(w, ExportableNVFP4Tensor) for w in shards]
     if not any(nvfp4):
         return None
     if not all(nvfp4):
         raise ValueError("CUDA NVFP4 fusion requires every shard to be NVFP4")
     return CudaNVFP4Tensor.fuse_along_output(
-        [
-            (
-                CudaNVFP4Tensor.from_exportable(w)
-                if isinstance(w, ExportableNVFP4Tensor)
-                else w
-            )
-            for w in shards
-        ]
+        [CudaNVFP4Tensor.from_exportable(w) for w in shards]
     )
 
 
@@ -425,10 +418,12 @@ def _iter_gguf_nvfp4_paired(gguf_path: str, static_act_scale: bool):
     if unpaired:
         raise ValueError(f"GGUF scale tensors without an NVFP4 weight: {unpaired}")
     if static_act_scale:
+        # An embedding lookup has no input activation to scale.
         missing = sorted(
             name
             for name in nvfp4
             if name.replace(".weight", ".input_scale") not in companions
+            and gguf_to_model_key(name) != "embed_tokens.weight"
         )
         if missing:
             raise ValueError(f"NVFP4 weights without .input_scale: {missing}")
@@ -440,11 +435,9 @@ def _iter_gguf_nvfp4_paired(gguf_path: str, static_act_scale: bool):
             # global scale, and activations are quantized dynamically unless
             # the static .input_scale is requested.
             weight = weight.to_exportable_nvfp4_tensor(
-                per_tensor_scale=torch.tensor(
-                    companions.get(name.replace(".weight", ".scale"), 1.0)
-                ),
+                per_tensor_scale=companions.get(name.replace(".weight", ".scale"), 1.0),
                 act_per_tensor_scale=(
-                    companions[name.replace(".weight", ".input_scale")]
+                    companions.get(name.replace(".weight", ".input_scale"))
                     if static_act_scale
                     else None
                 ),

@@ -53,6 +53,7 @@ def cold_pick_cache(monkeypatch):
         "ET_CUDA_NVFP4_ACT",
         "ET_CUDA_NVFP4_PREFILL_OUTPUT",
         "ET_CUDA_NVFP4_PREFILL_IMPL",
+        "ET_CUDA_NVFP4_SMALL_M",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -75,7 +76,8 @@ def cold_pick_cache(monkeypatch):
     ],
 )
 def test_packed_linear_pte(mode, m, dynamic, fp32, monkeypatch):
-    # Decode-size auto times W4A16 against W4A8 without native FP4.
+    # Decode-size auto needs no native FP4 (W4A16 against W4A8 at M=1, the
+    # small-M buckets at M 2..4 without native FP4).
     if mode == "w4a4" or (mode == "auto" and m > 4):
         if not _has_native_fp4():
             pytest.skip("native FP4 required")
@@ -125,6 +127,16 @@ def test_packed_linear_pte(mode, m, dynamic, fp32, monkeypatch):
         "NVFP4 tile candidates must use CUDA graph timing during AOTI, "
         "as activation mode and split-K candidates do"
     )
+    rows = dynamic or m
+    bucketed = mode in ("auto", "w4a16") and not fp32 and m > 1 and rows <= 16
+    # With native FP4, decode-size auto keeps nvfp4_auto_decode.
+    bucketed &= not (mode == "auto" and rows <= 4 and _has_native_fp4())
+    small_m_picks = [
+        pick
+        for pick in observed_picks
+        if pick.function.endswith("nvfp4_small_m_gemm._launch_impl")
+    ]
+    assert bool(small_m_picks) == bucketed, "small-M bucket op lowered iff M 2..16"
     if mode == "auto":
         picks = [pick for pick in observed_picks if pick.param == "mode_split"]
         assert (
@@ -198,9 +210,11 @@ def test_packed_linear_pte(mode, m, dynamic, fp32, monkeypatch):
 
 @pytest.mark.parametrize("impl", ["auto", "dequant"])
 def test_dequant_prefill_pte(impl, monkeypatch):
-    """Dynamic M past the M <= 64 bucket: dequant + matmul prefill."""
-    if impl == "auto" and _has_native_fp4():
-        pytest.skip("auto dequantizes only without native FP4")
+    """Dynamic M past the M <= 64 bucket: dequant + matmul prefill (the
+    non-native dispatch, on any GPU)."""
+    from executorch.backends.cuda.quantize_op_dispatch import nvfp4_dispatch
+
+    monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: False)
     monkeypatch.setenv("ET_CUDA_NVFP4_ACT", "w4a16")
     monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_OUTPUT", "input")
     monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_IMPL", impl)
@@ -239,7 +253,7 @@ def test_dequant_prefill_pte(impl, monkeypatch):
             .load_program(str(path), data_path=str(data))
             .load_method("forward")
         )
-        for rows in [1, 5, 100, 256]:
+        for rows in [1, 5, 64, 65, 100, 256]:
             value = torch.randn(rows, 192, dtype=x.dtype)
             expected = F.linear(value, module.weight.dequantize(), module.bias)
             actual = method.execute([value])[0].cpu()
