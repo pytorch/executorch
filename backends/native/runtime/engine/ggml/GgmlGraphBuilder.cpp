@@ -861,6 +861,8 @@ void GraphBuilder::lower(const Node& node) {
     lower_compare(node, Comparison::Le);
   } else if (key == "aten.lt.Tensor" || key == "aten.lt.Scalar") {
     lower_compare(node, Comparison::Lt);
+  } else if (key == "aten.ne.Tensor" || key == "aten.ne.Scalar") {
+    lower_compare(node, Comparison::Ne);
   } else if (key == "aten.arange.start_step") {
     lower_arange(node);
   } else if (key == "torchao.choose_qparams_affine.default") {
