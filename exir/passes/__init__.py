@@ -47,6 +47,7 @@ from executorch.exir.passes.legalize_portable_dim_order_pass import (
     LegalizePortableDimOrderPass,
 )
 from executorch.exir.passes.memory_format_ops_pass import (
+    FoldNonzeroCopyPass,
     MemoryFormatOpsPass,
     NonzeroDimOrderPass,
     ReplaceEmptyLikePass,
@@ -86,6 +87,7 @@ __all__ = [
     "OpReplacePass",
     "ToDevicePass",
     "EdgeToBackendOpsPass",
+    "FoldNonzeroCopyPass",
     "LegalizePortableDimOrderPass",
     "MemoryFormatOpsPass",
     "MemoryPlanningPass",

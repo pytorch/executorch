@@ -523,6 +523,32 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
         self.assertTrue(output.is_contiguous())
         torch.testing.assert_close(output, torch.nonzero(x))
 
+    def test_nonzero_writes_default_dim_order_without_copy(self) -> None:
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                indices = torch.nonzero(x)
+                return indices, indices + 1
+
+        model = Model()
+        x = torch.tensor([[0.0, 1.0, 2.0], [3.0, 0.0, 0.0]])
+        program = to_edge(export(model, (x,), strict=True)).to_executorch()
+        exported_program = program.exported_program()
+        nonzero, add = [
+            node
+            for node in exported_program.graph.nodes
+            if isinstance(node.target, torch._ops.OpOverload)
+        ]
+        self.assertEqual(nonzero.target, torch.ops.aten.nonzero.out)
+        self.assertEqual(add.target, torch.ops.aten.add.out)
+        self.assertEqual(list(nonzero.meta["spec"].dim_order), [0, 1])
+        names = {node.name for node in exported_program.graph.nodes}
+        for spec in exported_program.graph_signature.output_specs:
+            self.assertIn(spec.arg.name, names)
+        module = _load_for_executorch_from_buffer(program.buffer)
+        outputs = module.run_method("forward", (x,))
+        for output, expected in zip(outputs, model(x), strict=True):
+            torch.testing.assert_close(output, expected)
+
     def test_nonzero_dim_order_pass_skips_graph_without_nonzero(self) -> None:
         graph_module = (
             to_edge(export(torch.nn.ReLU(), (torch.randn(2, 3),), strict=True))

@@ -21,6 +21,7 @@ from executorch.exir.passes.dim_order_ops_registry import (
 )
 from executorch.exir.tensor import dim_order_from_stride
 from torch.fx.experimental.symbolic_shapes import guard_or_false
+from torch.fx.passes.infra.pass_base import PassBase
 
 logger = logging.getLogger(__file__)
 logger.setLevel(logging.INFO)
@@ -80,7 +81,8 @@ class NonzeroDimOrderPass(ExportPass):
     ATen returns that result column by column, in dim order (1, 0), which most
     portable kernels cannot read and the dim order ops cannot express. The pass
     runs before partitioning, so every op and every delegate is compiled for the
-    layout it reads at run time.
+    layout it reads at run time. FoldNonzeroCopyPass removes the copy again
+    where nonzero can write the default dim order itself.
     """
 
     def __init__(self) -> None:
@@ -200,6 +202,52 @@ class NonzeroDimOrderPass(ExportPass):
         ):
             return False
         return _layout(result.to_tensor()) != _layout(original)
+
+
+class FoldNonzeroCopyPass(PassBase):
+    """
+    Removes the copy that NonzeroDimOrderPass adds after nonzero when the copy
+    is the only reader of the result and both run outside any delegate. The
+    nonzero kernel then writes its result in the default dim order itself. So
+    the program needs one buffer for it, and runtimes whose nonzero kernel
+    always writes in that order return the right indices too.
+
+    It runs after SpecPropPass, because a retrace gives nonzero the layout of
+    ATen again, and it changes the graph in place.
+    """
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        modified = False
+        for module in graph_module.modules():
+            if not isinstance(module, torch.fx.GraphModule):
+                continue
+            folded = False
+            for node in list(module.graph.nodes):
+                if (
+                    node.target != exir_ops.edge.aten.nonzero.default
+                    or len(node.users) != 1
+                ):
+                    continue
+                (copy,) = node.users
+                if copy.target != exir_ops.edge.dim_order_ops._clone_dim_order.default:
+                    continue
+                # The copy node becomes the nonzero, since the graph signature
+                # can name it as an output.
+                layout = {
+                    key: copy.meta[key]
+                    for key in ("val", "tensor_meta", "spec")
+                    if key in copy.meta
+                }
+                copy.target = node.target
+                copy.args = node.args
+                copy.kwargs = node.kwargs
+                copy.meta = {**node.meta, **layout}
+                module.graph.erase_node(node)
+                folded = True
+            if folded:
+                module.recompile()
+                modified = True
+        return PassResult(graph_module, modified)
 
 
 def _layout(tensor: torch.Tensor) -> List[int]:
