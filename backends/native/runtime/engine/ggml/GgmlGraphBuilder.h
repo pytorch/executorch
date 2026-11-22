@@ -315,6 +315,7 @@ class GraphBuilder {
   void lower_sum(const Node& node);
   void lower_amax(const Node& node);
   void lower_softmax(const Node& node);
+  void lower_softplus(const Node& node);
   ggml_tensor* nan_mask(ggml_tensor* x);
   TensorRef permuted(const TensorRef& input, const std::vector<int64_t>& dims);
   // The `self` of a reduction as ggml rows of the reduced elements, and the

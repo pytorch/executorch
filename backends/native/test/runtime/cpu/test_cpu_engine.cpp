@@ -823,7 +823,9 @@ TEST(CPUEngineTest, RejectsUnsupportedSemanticsDuringCompilation) {
       {"mutation_input", "Native alias does not match its operand"},
       {"layout", "value 'x' is not a static contiguous tensor"},
       {"dynamic", "dynamic shapes are not supported"},
-      {"operator", "provider selection failed"}};
+      {"operator",
+       "provider selection failed (error 16): no linked CPU implementation "
+       "accepts test.unsupported"}};
   for (const auto& [scenario, reason] : scenarios) {
     SCOPED_TRACE(scenario);
     TestGraph graph;
