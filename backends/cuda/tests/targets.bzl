@@ -649,6 +649,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/examples/models/gemma4_31b:quant",
             "//executorch/extension/llm/export:gguf",
             "//executorch/extension/llm/export:nvfp4",
+            "//pytorch/ao:torchao",
             "fbsource//third-party/pypi/pytest:pytest",
             ":nvfp4_gemma_test_utils",
             ":nvfp4_test_utils",

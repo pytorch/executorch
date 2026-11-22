@@ -118,3 +118,19 @@ def test_gguf_nvfp4_without_its_scale_is_rejected(pack):
         module = torch.nn.Embedding(7, 64, device="meta")
     with pytest.raises(ValueError, match=r"\.scale"):
         pack(module, {"weight": weight})
+
+
+@pytest.mark.parametrize("pack", [pack_linear_for_cuda, pack_embedding_for_cuda])
+def test_gguf_q8_0_packs_to_int8(pack):
+    from executorch.extension.llm.export.gguf import ExportableGGUFTensor
+    from torchao.quantization import IntxUnpackedToInt8Tensor
+
+    q = torch.arange(-112, 112, dtype=torch.int8).reshape(7, 32)
+    scale = torch.full((7, 1), 0.125, dtype=torch.float16)
+    raw = torch.cat((scale.view(torch.uint8), q.view(torch.uint8)), dim=-1)
+    weight = ExportableGGUFTensor(raw, "q8_0", torch.bfloat16)
+    module = torch.nn.Linear(32, 7, bias=False, device="meta")
+    pack(module, {"weight": weight})
+    assert isinstance(module.weight, IntxUnpackedToInt8Tensor)
+    assert torch.equal(module.weight.qdata, q)
+    assert module.weight.block_size == (1, 32)

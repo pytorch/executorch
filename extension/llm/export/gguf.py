@@ -68,6 +68,9 @@ _NVFP4_BLOCK_BYTES = _NVFP4_GROUPS + QK_NVFP4 // 2  # 36
 # ``gguf.GGMLQuantizationType`` integer ids.
 GGML_F32 = 0
 GGML_F16 = 1
+GGML_Q8_0 = 8
+QK8_0 = 32
+_Q8_0_BLOCK_BYTES = 2 + QK8_0  # 34: fp16 scale + 32 int8
 GGML_Q4_K = 12
 GGML_Q5_K = 13
 GGML_Q6_K = 14
@@ -79,6 +82,7 @@ _GGML_ID_BY_TYPE = {
     "q4_k": GGML_Q4_K,
     "q5_k": GGML_Q5_K,
     "q6_k": GGML_Q6_K,
+    "q8_0": GGML_Q8_0,
     "nvfp4": GGML_NVFP4,
 }
 _TYPE_BY_GGML_ID = {v: k for k, v in _GGML_ID_BY_TYPE.items()}
@@ -86,6 +90,7 @@ _BLOCK_BYTES_BY_TYPE = {
     "q4_k": _Q4_K_BLOCK_BYTES,
     "q5_k": _Q5_K_BLOCK_BYTES,
     "q6_k": _Q6_K_BLOCK_BYTES,
+    "q8_0": _Q8_0_BLOCK_BYTES,
     "nvfp4": _NVFP4_BLOCK_BYTES,
 }
 
@@ -93,6 +98,7 @@ _BLOCK_ELEMENTS_BY_TYPE = {
     "q4_k": QK_K,
     "q5_k": QK_K,
     "q6_k": QK_K,
+    "q8_0": QK8_0,
     "nvfp4": QK_NVFP4,
 }
 
@@ -100,6 +106,16 @@ _NVFP4_UNPAIRED = (
     "GGUF NVFP4 blocks exclude the per-tensor scale stored in <name>.scale; "
     "convert with to_exportable_nvfp4_tensor(per_tensor_scale=...) first"
 )
+
+
+def _q8_0_fields(raw: Tensor) -> Tuple[Tensor, Tensor]:
+    """Q8_0 rows ``(N, row_bytes)`` -> int8 values ``(N, K)`` and fp16 scales
+    ``(N, K / 32)``."""
+    n, row_bytes = raw.shape
+    blocks = raw.reshape(n, row_bytes // _Q8_0_BLOCK_BYTES, _Q8_0_BLOCK_BYTES)
+    scale = blocks[..., :2].contiguous().view(torch.float16).reshape(n, -1)
+    q = blocks[..., 2:].contiguous().view(torch.int8).reshape(n, -1)
+    return q, scale
 
 
 def _read_f16(raw: Tensor, col_start: int, col_end: int) -> Tensor:
@@ -114,6 +130,12 @@ def _dequantize_gguf(raw: Tensor, ggml_type: str, output_dtype: torch.dtype) -> 
     ``raw`` is ``(N, row_bytes)`` uint8; the result is ``(N, K)`` in
     ``output_dtype``.
     """
+    if ggml_type == "q8_0":
+        q, scale = _q8_0_fields(raw)
+        n = q.shape[0]
+        values = q.float().reshape(n, -1, QK8_0) * scale.float()[..., None]
+        return values.reshape(n, -1).to(output_dtype)
+
     if ggml_type == "nvfp4":
         n = raw.shape[0]
         _, scale, codes = _nvfp4_fields(raw)
@@ -564,6 +586,17 @@ class ExportableGGUFTensor(TorchAOBaseTensor):
         sdt = scale_dtype if scale_dtype is not None else torch.float16
 
         N, K = int(self.shape[0]), int(self.shape[1])
+        if self.ggml_type == "q8_0":
+            q, scale = _q8_0_fields(self.raw)
+            return IntxUnpackedToInt8Tensor(
+                qdata=q,
+                scale=scale.to(sdt),
+                zero_point=torch.zeros_like(scale, dtype=torch.int8),
+                target_dtype=torch.int8,
+                block_size=(1, QK8_0),
+                dtype=sdt,
+                activation_quantization=None,
+            )
         if self.ggml_type == "q6_k":
             q, eff_scale = _q6_k_fields(self.raw, N, K)
             group_size = Q6_K_GROUP_SIZE
@@ -628,7 +661,7 @@ class ExportableGGUFTensor(TorchAOBaseTensor):
                 activation_quantization=None,
             )
         raise NotImplementedError(
-            f"to_intx_unpacked_to_int8_tensor supports q4_k/q5_k/q6_k; "
+            f"to_intx_unpacked_to_int8_tensor supports q4_k/q5_k/q6_k/q8_0; "
             f"got {self.ggml_type!r}"
         )
 
@@ -676,7 +709,7 @@ def iter_gguf(
 ) -> Iterator[Tuple[str, Union[ExportableGGUFTensor, Tensor]]]:
     """Stream ``(name, value)`` for every tensor in a GGUF file (low peak mem).
 
-    Quantized tensors (Q4_K, Q5_K, Q6_K, NVFP4) are wrapped as
+    Quantized tensors (Q4_K, Q5_K, Q6_K, Q8_0, NVFP4) are wrapped as
     ``ExportableGGUFTensor`` with the raw block bytes; F32/F16/BF16 are returned
     as plain float tensors in their native dtype. GGUF shapes are reversed to
     PyTorch ``(N, K)`` convention. The per-tensor scale of an NVFP4
