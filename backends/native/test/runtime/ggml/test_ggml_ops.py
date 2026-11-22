@@ -417,6 +417,7 @@ _GGUF_SUPER_SCALES = {
     "q4_k": {0: 2**-8, 2: 2**-5},
     "q4_0": {0: 2**-4},
     "q5_0": {0: 2**-5},
+    "q5_1": {0: 2**-5, 2: -15 * 2**-5},
     "q8_0": {0: 2**-8},
     "q2_k": {80: 2**-6, 82: 3 * 2**-7},
     "q3_k": {108: 2**-6},
@@ -527,7 +528,9 @@ class GgmlOpsTest(unittest.TestCase):
         model.weight = torch.nn.Parameter(weight, requires_grad=False)
         # Activations of +-127/1024 survive every int8 requantization ggml
         # does exactly: each block's scale, max|x| / 127 = 2^-10, is exact even
-        # in fp16, and so are the block sums some kernels keep.
+        # in fp16, and so are the block sums some kernels keep. The GPU Q4_1 and
+        # Q5_1 kernels multiply those by the weight scales in fp16, which the
+        # scales above keep exact too.
         representable = torch.full((2, 512), 127 / 1024)
         representable[1, ::2] *= -1
         self._check(
@@ -639,6 +642,15 @@ class GgmlOpsTest(unittest.TestCase):
 
     def test_gguf_q5_0_dynamic_tokens(self):
         self._check_random_gguf_dynamic_tokens("q5_0")
+
+    def test_gguf_q5_1_linear(self):
+        self._check_random_gguf_linear("q5_1")
+
+    def test_gguf_q5_1_embedding(self):
+        self._check_random_gguf_embedding("q5_1")
+
+    def test_gguf_q5_1_dynamic_tokens(self):
+        self._check_random_gguf_dynamic_tokens("q5_1")
 
     def test_gguf_q8_0_linear(self):
         self._check_random_gguf_linear("q8_0")

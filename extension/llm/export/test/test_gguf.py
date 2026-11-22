@@ -91,6 +91,7 @@ def _make_q6k_raw(N: int, nb: int, seed: int = 0) -> torch.Tensor:
 _FP16_SCALE_OFFSETS = {
     "q4_0": (0,),
     "q5_0": (0,),
+    "q5_1": (0, 2),
     "q8_0": (0,),
     "q2_k": (80, 82),
     "q3_k": (108,),
@@ -114,6 +115,7 @@ def _make_raw(ggml_type: str, N: int, nb: int, seed: int = 0) -> torch.Tensor:
 _GGML_BLOCK_LAYOUTS = {
     "q4_0": (32, 2 + 32 // 2),  # d, qs
     "q5_0": (32, 2 + 4 + 32 // 2),  # d, qh, qs
+    "q5_1": (32, 2 + 2 + 4 + 32 // 2),  # d, m, qh, qs
     "q8_0": (32, 2 + 32),  # d, qs
     "q2_k": (256, 256 // 16 + 256 // 4 + 2 + 2),  # scales, qs, d, dmin
     "q3_k": (256, 256 // 8 + 256 // 4 + 12 + 2),  # hmask, qs, scales, d
@@ -150,6 +152,7 @@ class TestExportableGGUFTensor(unittest.TestCase):
         for ggml_type, block_size in (
             ("q4_0", 32),
             ("q5_0", 32),
+            ("q5_1", 32),
             ("q8_0", 32),
             ("q2_k", 256),
             ("q3_k", 256),
@@ -307,6 +310,7 @@ class TestExportableGGUFTensor(unittest.TestCase):
         raws = {
             "q4_0": _make_raw("q4_0", N=2, nb=1),
             "q5_0": _make_raw("q5_0", N=2, nb=1),
+            "q5_1": _make_raw("q5_1", N=2, nb=1),
             "q8_0": _make_raw("q8_0", N=2, nb=1),
             "q2_k": _make_raw("q2_k", N=2, nb=1),
             "q3_k": _make_raw("q3_k", N=2, nb=1),

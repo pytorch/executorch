@@ -61,6 +61,7 @@ _VALIDATED_QUANT_TYPES = frozenset(
     {
         "q4_0",
         "q5_0",
+        "q5_1",
         "q8_0",
         "q2_k",
         "q3_k",
