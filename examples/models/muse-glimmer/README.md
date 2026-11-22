@@ -421,13 +421,20 @@ single-token decode W4A16 against INT8 activations (W4A8, dp4a); `w4a4` forces
 NVFP4 activations (SM120 required), `w4a8` forces the W4A8 decode GEMV (NVIDIA
 only), and `w4a16` forces BF16 activations. Linears with 5..16 rows (static,
 or dynamic bounded by 16) take the small-M bucket kernels, as do `auto`/`w4a16`
-linears with 2..4 rows without native FP4; `w4a4` and fused gate/up
-projections on SM120 keep their FP4 kernels (`ET_CUDA_NVFP4_SMALL_M=0` turns
-the buckets off). The choice is compiled
+linears with 2..4 rows without native FP4; `w4a4`, and fused gate/up
+projections on SM120 under `auto` with BF16 activations, keep their FP4 kernels
+(`ET_CUDA_NVFP4_SMALL_M=0` turns the buckets off). The choice is compiled
 into each exported method. `--nvfp4-static-act` (`export_solo` only) uses the checkpoint's
 `.input_scale` as a static activation scale; by default activations are scaled
 per row, as llama.cpp does. A fused group whose shards carry different
 `.input_scale` values stays unfused in every layer.
+
+Below SM120, NVFP4 prefill linears whose M is not statically at most 64 (every
+dynamic-M prefill method) compile to whole-weight dequant + matmul by default,
+which is faster for long prompts (and, on A100, short ones; about 13% slower
+per layer for prompts up to 64 tokens on H100). Setting
+`ET_CUDA_NVFP4_PREFILL_IMPL=kernel` at export keeps the fused NVFP4 kernels for
+every method; `dequant` forces dequant + matmul.
 
 The converter follows llama.cpp's bit patterns, including positive zero for
 FP4 code 8. It rejects GGML scale byte `0xff`: llama.cpp decodes that byte as

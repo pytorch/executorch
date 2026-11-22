@@ -25,6 +25,7 @@ import triton.language as tl
 from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
 from executorch.backends.cuda.quantize_op_dispatch import nvfp4_dispatch
 from executorch.backends.cuda.triton.kernels import (
+    nvfp4_gated_gemm as GATED,
     nvfp4_mxfp8 as MX,
     nvfp4_mxfp8_emu as EMU,
     nvfp4_quantized_gemm as GEMM,
@@ -253,7 +254,15 @@ class TestDispatchDecisions(CleanEnv):
             self.skipTest("CUDA required")
 
     def _calls(
-        self, act, m, native, dynamic=False, env=None, k=1024, dtype=torch.bfloat16
+        self,
+        act,
+        m,
+        native,
+        dynamic=False,
+        env=None,
+        k=1024,
+        dtype=torch.bfloat16,
+        gated=False,
     ):
         calls = []
 
@@ -285,6 +294,14 @@ class TestDispatchDecisions(CleanEnv):
             ),
             mock.patch.object(nvfp4_dispatch, "_dequant_linear", record("dequant")),
             mock.patch.object(
+                nvfp4_dispatch,
+                "nvfp4_auto_gate_up_prefill",
+                record("nvfp4_auto_gate_up_prefill"),
+            ),
+            mock.patch.object(
+                GATED, "nvfp4_w4a4_gate_up", record("nvfp4_w4a4_gate_up")
+            ),
+            mock.patch.object(
                 SMALL_M.NVFP4_SMALL_M_GEMM, "op", family("nvfp4_small_m_gemm")
             ),
             mock.patch.dict(os.environ, env or {}),
@@ -301,6 +318,8 @@ class TestDispatchDecisions(CleanEnv):
                     dynamic_shapes=({0: torch.export.Dim("m", min=2, max=4096)},),
                     strict=False,
                 )
+            elif gated:
+                torch.ops.triton.nvfp4_gated_linear(x, w)
             else:
                 F.linear(x, w)
         finally:
@@ -382,6 +401,14 @@ class TestDispatchDecisions(CleanEnv):
                 "nvfp4_w4a16",
             ),
             ("mxfp8", 64, True, {"ET_CUDA_NVFP4_PREFILL_IMPL": "dequant"}, "dequant"),
+            # kernel keeps MXFP8 where it applies; it only forbids dequant.
+            (
+                "mxfp8",
+                4096,
+                True,
+                {"ET_CUDA_NVFP4_PREFILL_IMPL": "kernel"},
+                "nvfp4_mxfp8",
+            ),
             ("mxfp8", 8, True, {"ET_CUDA_NVFP4_SMALL_M": "0"}, "nvfp4_mxfp8"),
             (
                 "mxfp8",
@@ -402,6 +429,19 @@ class TestDispatchDecisions(CleanEnv):
             self._calls("bf16", 64, False, env=fp32, dtype=torch.float32),
             ["nvfp4_w4a16"],
         )
+        self.assertEqual(
+            self._calls("mxfp8", 256, True, env=fp32, dtype=torch.float32),
+            ["nvfp4_mxfp8"],
+        )
+
+    def test_marked_gated_weight_never_w4a4(self):
+        # Marked fused gate/up weights take F.linear, never the FP4 gate/up ops.
+        for act in ("mxfp8", "bf16"):
+            for native in (True, False):
+                for m in (1, 8, 256):
+                    calls = self._calls(act, m, native, gated=True)
+                    self.assertEqual(len(calls), 1, (act, native, m, calls))
+                    self.assertFalse(is_w4a4_op(calls[0], native), (act, m, calls))
         with self.assertRaises(ValueError):
             self._calls("mxfp8", 64, False, env={"ET_CUDA_NVFP4_MXFP8_EMULATE": "on"})
         with mock.patch.object(torch.version, "hip", "6.0"):
@@ -675,9 +715,8 @@ class TestEmulationKernels(CleanEnv):
             self.assertEqual(
                 int((out != weight_mxfp8_mirror(w.qdata, w.scale)).sum()), 0, name
             )
-            if name != "all scale bytes":
-                host, _ = MX.nvfp4_to_mxfp8_weight_reference(w.qdata, w.scale)
-                self.assertEqual(int((out != host).sum()), 0, name)
+            host, _ = MX.nvfp4_to_mxfp8_weight_reference(w.qdata, w.scale)
+            self.assertEqual(int((out != host).sum()), 0, name)
 
 
 class TestEmulated(CleanEnv):
