@@ -12,17 +12,21 @@
 #include <executorch/devtools/bundled_program/schema/bundled_program_schema_generated.h>
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/data_loader/file_data_loader.h>
+#include <executorch/extension/data_loader/shared_ptr_data_loader.h>
 
 namespace executorch {
 namespace extension {
 
 namespace {
+const flatbuffers::Vector<uint8_t>* embedded_program(
+    const void* bundled_program_ptr) {
+  return bundled_program_flatbuffer::GetBundledProgram(bundled_program_ptr)
+      ->program();
+}
+
 std::unique_ptr<BufferDataLoader> program_data_loader(
     const void* bundled_program_ptr) {
-  auto bundled_program =
-      bundled_program_flatbuffer::GetBundledProgram(bundled_program_ptr);
-  // the program inside the bundled program
-  auto program = bundled_program->program();
+  auto program = embedded_program(bundled_program_ptr);
   return std::make_unique<BufferDataLoader>(program->data(), program->size());
 }
 } // namespace
@@ -35,8 +39,23 @@ BundledModule::BundledModule(
     std::unique_ptr<runtime::MemoryAllocator> temp_allocator,
     std::unique_ptr<runtime::EventTracer> event_tracer,
     std::unique_ptr<runtime::DataLoader> data_map_loader)
-    : Module(
+    : BundledModule(
+          bundled_program_ptr,
           program_data_loader(bundled_program_ptr),
+          std::move(memory_allocator),
+          std::move(temp_allocator),
+          std::move(event_tracer),
+          std::move(data_map_loader)) {}
+
+BundledModule::BundledModule(
+    const void* bundled_program_ptr,
+    std::unique_ptr<runtime::DataLoader> program_loader,
+    std::unique_ptr<runtime::MemoryAllocator> memory_allocator,
+    std::unique_ptr<runtime::MemoryAllocator> temp_allocator,
+    std::unique_ptr<runtime::EventTracer> event_tracer,
+    std::unique_ptr<runtime::DataLoader> data_map_loader)
+    : Module(
+          std::move(program_loader),
           std::move(memory_allocator),
           std::move(temp_allocator),
           std::move(event_tracer),
@@ -60,22 +79,27 @@ runtime::Result<std::unique_ptr<BundledModule>> BundledModule::from_file(
   }
 
   size_t file_size = file_size_result.get();
-  auto file_data = std::make_unique<uint8_t[]>(file_size);
+  std::shared_ptr<uint8_t[]> file_data(new uint8_t[file_size]);
   auto buffer_result =
       data_loader_result->load_into(0, file_size, {}, file_data.get());
   if (buffer_result != runtime::Error::Ok) {
     return buffer_result;
   }
 
-  // Pass ownership of the data to BundledModule
-  auto bm = std::make_unique<BundledModule>(
-      file_data.release(),
+  // The loader shares the file data, so a Program it loads can outlive this
+  // module.
+  auto program = embedded_program(file_data.get());
+  auto program_loader = std::make_unique<SharedPtrDataLoader>(
+      std::shared_ptr<void>(file_data, const_cast<uint8_t*>(program->data())),
+      program->size());
+  std::unique_ptr<BundledModule> bm(new BundledModule(
+      file_data.get(),
+      std::move(program_loader),
       std::move(memory_allocator),
       std::move(temp_allocator),
       std::move(event_tracer),
-      std::move(data_map_loader));
-
-  bm->is_loaded_from_file_ = true;
+      std::move(data_map_loader)));
+  bm->file_data_ = std::move(file_data);
 
   return bm;
 }

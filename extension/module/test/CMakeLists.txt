@@ -75,3 +75,24 @@ add_dependencies(extension_module_test generated_module_test_files)
 set_property(TEST extension_module_test PROPERTY ENVIRONMENT ${test_env})
 
 set_property(TEST extension_module_test PROPERTY ENVIRONMENT "${test_env}")
+
+if(TARGET bundled_program)
+  et_cxx_test(
+    extension_bundled_module_test
+    SOURCES
+    bundled_module_test.cpp
+    ${EXECUTORCH_ROOT}/extension/module/bundled_module.cpp
+    EXTRA_LIBS
+    bundled_program
+    extension_data_loader
+    extension_module_static
+    portable_kernels
+    portable_ops_lib
+  )
+  add_dependencies(extension_bundled_module_test generated_module_test_files)
+  set_property(
+    TEST extension_bundled_module_test
+    PROPERTY ENVIRONMENT "RESOURCES_PATH=${CMAKE_CURRENT_SOURCE_DIR}/resources"
+             "ET_MODULE_PTE_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleAdd.pte"
+  )
+endif()
