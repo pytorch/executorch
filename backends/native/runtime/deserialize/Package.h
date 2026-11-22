@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -28,6 +29,12 @@ constexpr const char* kProgramEntry = "program.ptg";
 constexpr const char* kSafeTensorsEntry = "program.safetensors";
 constexpr const char* kAliasesEntry = "aliases.json";
 constexpr const char* kMetadataEntry = "metadata.json";
+
+// A .ptn is little-endian throughout: the program FlatBuffer, the safetensors
+// header and payloads, and packed codec bytes. Throws unless `host`, the byte
+// order of the machine reading the package, is little-endian. Package::load
+// checks it before reading anything.
+void check_little_endian_host(std::endian host = std::endian::native);
 
 // Metadata for one constant resolved out of a package. `sizes` is borrowed from
 // the Package and must not outlive it.

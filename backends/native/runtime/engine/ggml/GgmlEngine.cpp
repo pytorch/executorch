@@ -138,7 +138,8 @@ struct GgmlEngineContext::Impl {
   GgmlKvCache kv_cache;
   size_t materialized_constant_bytes = 0;
   size_t heap_copied_constant_bytes = 0;
-  GgmlMutableKeyOwners mutable_key_owners;
+  size_t f16_kv_cache_bytes = 0;
+  GgmlContextState state;
 };
 
 GgmlEngineContext::GgmlEngineContext(
@@ -151,7 +152,19 @@ GgmlEngineContext::GgmlEngineContext(
       impl_(std::make_unique<Impl>(
           std::move(options),
           std::move(cache),
-          kv_cache)) {}
+          kv_cache)) {
+  // A method that only reads a key another method writes still binds the
+  // shared storage.
+  for (const std::string& name : this->program().method_names()) {
+    const Method& method = this->program().get_method(name);
+    impl_->state.methods.push_back(&method);
+    for (const DataBinding& binding : method.data_bindings) {
+      if (binding.mutated && !binding.key.empty()) {
+        impl_->state.keys.insert(binding.key);
+      }
+    }
+  }
+}
 
 GgmlEngineContext::~GgmlEngineContext() = default;
 
@@ -163,7 +176,8 @@ std::unique_ptr<EngineExecutable> GgmlEngineContext::compile_method(
       impl_->options,
       &impl_->materialized_constant_bytes,
       &impl_->heap_copied_constant_bytes,
-      impl_->mutable_key_owners,
+      &impl_->f16_kv_cache_bytes,
+      impl_->state,
       impl_->kv_cache);
 }
 
@@ -173,6 +187,10 @@ size_t GgmlEngineContext::materialized_constant_bytes() const {
 
 size_t GgmlEngineContext::heap_copied_constant_bytes() const {
   return impl_->heap_copied_constant_bytes;
+}
+
+size_t GgmlEngineContext::f16_kv_cache_bytes() const {
+  return impl_->f16_kv_cache_bytes;
 }
 
 } // namespace ptn
