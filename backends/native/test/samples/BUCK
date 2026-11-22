@@ -7,10 +7,15 @@ fbcode_target(
     _kind = runtime.python_library,
     name = "record",
     srcs = [
+        "attention.py",
         "cases.py",
+        "core_ops.py",
         "elu.py",
         "embedding.py",
+        "gdn.py",
+        "gelu.py",
         "linear.py",
+        "moe.py",
         "ops.py",
         "pad_pool.py",
         "record.py",
@@ -18,6 +23,8 @@ fbcode_target(
     ],
     deps = [
         "//caffe2:torch",
+        "//executorch/backends/native:lib",
+        "//executorch/backends/native/examples/hf_llm:export_hf_llm_lib",
         "//executorch/backends/test/suite/operators:test_operators",
         "//executorch/exir/native:native",
         "//executorch/extension/llm/export:gguf",
@@ -25,6 +32,7 @@ fbcode_target(
         "//pytorch/facto:facto",
         "fbsource//third-party/pypi/gguf:gguf",
         "fbsource//third-party/pypi/numpy:numpy",
+        "fbsource//third-party/pypi/transformers:transformers",
     ],
 )
 
