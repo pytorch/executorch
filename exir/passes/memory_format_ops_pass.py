@@ -6,9 +6,10 @@
 
 import copy
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 
 import torch
+import torch.utils._pytree as pytree
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.dim_order_utils import get_dim_order, get_memory_format
@@ -19,6 +20,7 @@ from executorch.exir.passes.dim_order_ops_registry import (
     MemoryFormatOpsMap,
 )
 from executorch.exir.tensor import dim_order_from_stride
+from torch.fx.experimental.symbolic_shapes import guard_or_false
 
 logger = logging.getLogger(__file__)
 logger.setLevel(logging.INFO)
@@ -85,6 +87,16 @@ class NonzeroDimOrderPass(ExportPass):
         super().__init__()
         # Maps each copy to the nonzero result it copies.
         self._results: Dict[ProxyValue, ProxyValue] = {}
+        # Values computed from a copy that are laid out differently than in
+        # ATen, and the non-tensor results, like the tuple of a multi-output
+        # op, of ops that read a copy.
+        self._relaid: Set[ProxyValue] = set()
+        # Views of a relaid value, and values computed from them. Their layout
+        # in ATen is unknown here, since the view became a new tensor.
+        self._from_view: Set[ProxyValue] = set()
+        # Results of views of a relaid value. call_getitem reads it to find
+        # the pieces of a view with more than one output, like split.
+        self._views: Set[ProxyValue] = set()
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         # Retracing the whole graph is the costly part, so skip it without nonzero.
@@ -95,15 +107,41 @@ class NonzeroDimOrderPass(ExportPass):
         return super().call(graph_module)
 
     def call_operator(self, op, args, kwargs, meta):
-        if (
-            op == exir_ops.edge.aten.as_strided_copy.default
-            and args[0] in self._results
-        ):
-            # as_strided reads its input through explicit strides, so it reads
-            # the result in the layout that ATen gave it.
-            args = (self._results[args[0]], *args[1:])
+        if op == exir_ops.edge.aten.as_strided_copy.default:
+            if args[0] in self._results:
+                # as_strided reads its input through explicit strides, so it
+                # reads the result in the layout that ATen gave it.
+                args = (self._results[args[0]], *args[1:])
+            elif args[0] in self._relaid:
+                raise RuntimeError(
+                    "as_strided reads a value computed from the result of "
+                    "nonzero, and that value has a different memory layout "
+                    "here than in PyTorch, so as_strided would read different "
+                    "elements. Call .contiguous() on the result of nonzero, "
+                    "or on the value that as_strided reads."
+                )
         result = super().call_operator(op, args, kwargs, meta)
         if op != exir_ops.edge.aten.nonzero.default:
+            # .contiguous() gives the same layout in eager and here.
+            contiguous = (
+                op == exir_ops.edge.aten.clone.default
+                and kwargs.get("memory_format") == torch.contiguous_format
+            )
+            if self._reads_copy(args, kwargs) and not contiguous:
+                # Eager reads a view through the storage of its input, while
+                # here it is a new contiguous tensor.
+                view = (
+                    isinstance(op, EdgeOpOverload)
+                    and torch.Tag.view_copy in op._op.tags
+                    and self._is_relaid(args[0])
+                )
+                from_view = view or any(
+                    isinstance(arg, ProxyValue) and arg in self._from_view
+                    for arg in pytree.tree_leaves((args, kwargs))
+                )
+                if view:
+                    self._views.add(result)
+                self._track(result, meta, from_view, relaid=view)
             return result
         # Only nonzero binds the size that depends on the data; the copy reads it.
         copy_meta = meta.copy()
@@ -116,6 +154,61 @@ class NonzeroDimOrderPass(ExportPass):
         )
         self._results[copy] = result
         return copy
+
+    def call_getitem(self, value, key, meta):
+        result = super().call_getitem(value, key, meta)
+        if value in self._relaid:
+            self._track(
+                result, meta, value in self._from_view, relaid=value in self._views
+            )
+        return result
+
+    def _track(self, result, meta, from_view: bool, relaid: bool) -> None:
+        if from_view:
+            self._from_view.add(result)
+        if (
+            relaid
+            or not (isinstance(result, ProxyValue) and result.is_tensor())
+            or self._layout_changed(result, meta)
+            # Only a value with one dim that moves elements has one layout.
+            or (from_view and len(_layout(result.to_tensor())) > 1)
+        ):
+            self._relaid.add(result)
+
+    def _is_relaid(self, value) -> bool:
+        if value in self._relaid:
+            return True
+        result = self._results.get(value)
+        return result is not None and _layout(value.to_tensor()) != _layout(
+            result.to_tensor()
+        )
+
+    def _reads_copy(self, args, kwargs) -> bool:
+        return any(
+            isinstance(arg, ProxyValue)
+            and (arg in self._results or arg in self._relaid or arg in self._from_view)
+            for arg in pytree.tree_leaves((args, kwargs))
+        )
+
+    @staticmethod
+    def _layout_changed(result, meta) -> bool:
+        original = meta.data.get("val")
+        if not (
+            isinstance(result, ProxyValue)
+            and result.is_tensor()
+            and isinstance(original, torch.Tensor)
+        ):
+            return False
+        return _layout(result.to_tensor()) != _layout(original)
+
+
+def _layout(tensor: torch.Tensor) -> List[int]:
+    # A dim of size 1 moves no element, whatever its place in the dim order.
+    return [
+        int(d)
+        for d in dim_order_from_stride(tensor.stride(), tuple(tensor.shape))
+        if not guard_or_false(tensor.shape[d] == 1)
+    ]
 
 
 class MemoryFormatOpsPass(ExportPass):

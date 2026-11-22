@@ -553,6 +553,106 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
         for output, expected in zip(outputs, Model()(x), strict=True):
             torch.testing.assert_close(output, expected)
 
+    def test_as_strided_of_value_computed_from_nonzero_result(self) -> None:
+        class Model(torch.nn.Module):
+            def __init__(self, compute) -> None:
+                super().__init__()
+                self.compute = compute
+
+            def forward(self, x):
+                indices = torch.nonzero(x)
+                torch._check(indices.shape[0] == 3)
+                return torch.as_strided(self.compute(indices), (2, 2), (1, 3))
+
+        x = torch.tensor([[0.0, 1.0, 2.0], [3.0, 0.0, 0.0]])
+        # Eager reads these values column by column, the program would not.
+        for name, compute in (
+            ("float", lambda i: i.float()),
+            ("chained", lambda i: i.float() * 2),
+            ("multi_output", lambda i: torch.sort(i.float(), dim=0).values),
+        ):
+            with self.subTest(name), self.assertRaisesRegex(
+                RuntimeError, "as_strided reads a value"
+            ):
+                to_edge(export(Model(compute), (x,), strict=True))
+        model = Model(lambda i: i.float().contiguous())
+        edge = to_edge(export(model, (x,), strict=True))
+        module = _load_for_executorch_from_buffer(edge.to_executorch().buffer)
+        (output,) = module.run_method("forward", (x,))
+        torch.testing.assert_close(output, model(x))
+
+    def test_as_strided_of_view_of_nonzero_result(self) -> None:
+        class Model(torch.nn.Module):
+            def __init__(self, compute) -> None:
+                super().__init__()
+                self.compute = compute
+
+            def forward(self, x):
+                indices = torch.nonzero(x)
+                torch._check(indices.shape[0] == 3)
+                return torch.as_strided(self.compute(indices), (2,), (1,))
+
+        x = torch.tensor([[0.0, 1.0, 2.0], [3.0, 0.0, 0.0]])
+        # Eager reads a view through the storage of the result, column by
+        # column, the program would read a new contiguous tensor.
+        for name, compute in (
+            ("rows", lambda i: i[1:]),
+            ("row", lambda i: i[0]),
+            ("computed_from_view", lambda i: i[1:] + 0),
+            ("split_piece", lambda i: i.split(1)[0]),
+        ):
+            with self.subTest(name), self.assertRaisesRegex(
+                RuntimeError, "as_strided reads a value"
+            ):
+                to_edge(export(Model(compute), (x,), strict=True))
+        # A value with one dim of more than one element has one layout, and
+        # .contiguous() gives the same layout in eager and in the program.
+        for name, compute in (
+            ("sum", lambda i: i[1:].sum(dim=1)),
+            ("contiguous", lambda i: i[1:].contiguous()),
+        ):
+            with self.subTest(name):
+                model = Model(compute)
+                edge = to_edge(export(model, (x,), strict=True))
+                module = _load_for_executorch_from_buffer(edge.to_executorch().buffer)
+                (output,) = module.run_method("forward", (x,))
+                torch.testing.assert_close(output, model(x))
+
+    def test_as_strided_of_value_computed_from_nonzero_result_of_1d_input(
+        self,
+    ) -> None:
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                indices = torch.nonzero(x)
+                torch._check(indices.shape[0] == 2)
+                return torch.as_strided(indices.float(), (2,), (1,))
+
+        # The result has shape (N, 1), so both layouts store the same bytes.
+        x = torch.tensor([0.0, 1.0, 2.0, 0.0])
+        model = Model()
+        edge = to_edge(export(model, (x,), strict=True))
+        module = _load_for_executorch_from_buffer(edge.to_executorch().buffer)
+        (output,) = module.run_method("forward", (x,))
+        torch.testing.assert_close(output, model(x))
+
+    def test_as_strided_of_reduction_of_nonzero_result(self) -> None:
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                indices = torch.nonzero(x)
+                torch._check(indices.shape[0] >= 2)
+                values = torch.max(indices.float(), dim=1).values
+                return torch.as_strided(values, (2,), (1,))
+
+        # max returns a tuple, and its 1-D values have the same layout as in
+        # eager, so as_strided of them exports. The size of the result is not
+        # known at export.
+        x = torch.tensor([[0.0, 1.0, 2.0], [3.0, 0.0, 0.0]])
+        model = Model()
+        edge = to_edge(export(model, (x,), strict=True))
+        module = _load_for_executorch_from_buffer(edge.to_executorch().buffer)
+        (output,) = module.run_method("forward", (x,))
+        torch.testing.assert_close(output, model(x))
+
     # Only test dim order replacement result in lean mode test.
     # This test is irrelevant with operator mode.
     def test_dim_order_replacement(self) -> None:
