@@ -68,7 +68,13 @@ its `codec` defines, while the metadata keeps the logical shape.
 
 | Codec | Stored bytes |
 | --- | --- |
-| `gguf:<type>` | A GGUF tensor's blocks exactly as the file stores them, in the vendored ggml's layout for that type (little-endian, fp16 scales), row by row for a logical `[rows, cols]` shape whose `cols` is a whole number of blocks. `<type>` is ggml's lowercase type name, such as `q4_0`, `q8_0` or `q4_k`, with no version in it. |
+| `gguf:<type>` | A GGUF tensor's blocks exactly as the file stores them, in the vendored ggml's layout for that type (little-endian, fp16 scales), row by row for a logical `[..., rows, cols]` shape whose `cols` is a whole number of blocks. Leading dims stack whole matrices in row-major order, as a GGUF file stores stacked experts `[experts, rows, cols]`. `<type>` is ggml's lowercase type name, such as `q4_0`, `q8_0` or `q4_k`, with no version in it. |
+
+Ops read a packed constant directly: `linear` and `embedding` read a
+`[rows, cols]` one, and `index.Tensor` on the leading dim gathers whole
+matrices of a stacked one, such as the experts a mixture-of-experts layer
+routes each token to. An engine refuses a reader it does not lower over
+packed blocks.
 
 The exporter refuses GGUF types not yet validated and big-endian GGUF files, an
 engine refuses a codec it cannot decode, and the loader refuses big-endian
