@@ -29,9 +29,10 @@ to_native({"forward": ep_forward, "prefill": ep_prefill}).save("model.ptn")
 The partitioner accepts core ATen ops plus `linear`, `matmul`, `addmm`,
 `scaled_dot_product_attention`, `rms_norm`, `native::rope`, and TorchAO affine
 quantize/dequantize ops. TorchAO int4 group-wise weights of `linear` and
-`embedding`, and GGUF k-quant weights from `executorch.extension.llm.export.gguf`, are
-stored packed with their scheme in tensor metadata. Each method must lower wholly
-to one delegate; `to_native` raises otherwise.
+`embedding`, and block-quantized GGUF weights from
+`executorch.extension.llm.export.gguf`, are stored packed with their scheme in
+tensor metadata. Each method must lower wholly to one delegate; `to_native`
+raises otherwise.
 
 Immutable constant keys are namespaced as `<method>/<key>`, even for a single
 method. A key mutated by any method becomes `state/<key>` in every method, so
@@ -54,6 +55,28 @@ reads the ones it knows with `Package::metadata_int` and `metadata_ints`, and
 `exir.native.read_metadata` reads them back in Python. LLM exports reuse the
 constant-method names in `extension/llm/export/model_metadata.py`, such as
 `get_windows` for the per-layer sliding windows of an off-graph KV cache.
+
+A `.ptn` is little-endian throughout: FlatBuffers and safetensors require it,
+and packed constants store little-endian codec bytes. The runtime refuses to
+load a package on a big-endian host; supporting one would mean byte-swapping
+at load, per dtype and codec.
+
+### Packed constants
+
+A constant whose tensor metadata carries a `PackedQuant` scheme stores the bytes
+its `codec` defines, while the metadata keeps the logical shape.
+
+| Codec | Stored bytes |
+| --- | --- |
+| `gguf:<type>` | A GGUF tensor's blocks exactly as the file stores them, in the vendored ggml's layout for that type (little-endian, fp16 scales), row by row for a logical `[rows, cols]` shape whose `cols` is a whole number of blocks. `<type>` is ggml's lowercase type name, such as `q4_0`, `q8_0` or `q4_k`, with no version in it. |
+
+The exporter refuses GGUF types not yet validated and big-endian GGUF files, an
+engine refuses a codec it cannot decode, and the loader refuses big-endian
+hosts. A type is added only with eager validation: the exporter and the ggml
+engine accept the types in their allowlists, `_VALIDATED_QUANT_TYPES` in
+`extension/llm/export/gguf.py` and `kValidatedGgufTypes` in
+`runtime/engine/ggml/GgmlTypes.cpp`. The Vulkan engine decodes the types its
+reference decoder implements to fp32 when it loads them, a slow fallback.
 
 ## Samples (optional)
 
@@ -276,6 +299,8 @@ numerics default to llama.cpp's behaviour; the testing ones end in
 | Option (flag) | Default, as in llama.cpp | Set | Ops | Backends |
 | --- | --- | --- | --- | --- |
 | `allow_activation_quant_for_weight_only` | quantizes the activations of matmuls with weight-only quantized weights in their block format | false (debugging): those weights load dequantized to F32, about 4-12x their packed size by type | `linear` | all |
+| `exact_topk_for_testing` (`--exact_topk_for_testing`) | one argsort (`ggml_argsort_top_k`), which leaves a row holding NaN unordered | NaN ranks above every value, +inf included, at a NaN key map and a second argsort | `topk` | all |
+| `exact_gelu_for_testing` | one `ggml_gelu`, which ggml-cpu reads from an F16 table, a few 1e-4 off eager | the CPU builds tanh GELU from exact ops, at five more kernels | `gelu` (`approximate="tanh"`) | CPU |
 
 The CMake installation includes the GGML libraries and package configuration.
 It also copies the submodule's upstream MIT license, including its copyright
@@ -396,7 +421,7 @@ The GGML runner accepts `--device cpu|gpu`, `--device_index`, `--cpu_threads`,
 and `--max_cached_graphs` (default 1, 0 rebuilds each call). For GPU execution,
 enable the desired `GGML_*` backend when configuring ExecuTorch, as above.
 GGML quantizes the activations of its quantized matmuls, so it rejects
-weight-only quantized linears, including GGUF k-quants, unless
+weight-only quantized linears, including GGUF weights, unless
 `--allow_activation_quant_for_weight_only` accepts that loss of precision.
 
 With `EXECUTORCH_BUILD_TESTS=ON`, `native_llm_runner_utils_test` exercises the
