@@ -306,6 +306,7 @@ class GraphBuilder {
   std::pair<ggml_tensor*, std::vector<int64_t>> trailing_rows(
       const Node& node,
       const std::string& op);
+  void lower_split(const Node& node, const std::string& key);
   void lower_slice(const Node& node, bool copy);
   void lower_select(const Node& node, bool copy);
   void lower_unsqueeze(const Node& node);
