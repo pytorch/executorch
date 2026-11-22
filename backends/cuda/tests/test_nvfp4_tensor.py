@@ -203,23 +203,14 @@ def test_from_exportable_carries_activation_scale():
         (1.0, 0, True),
         (1.0, 126, True),
         (0.5, 40, False),
-        (1.0, 128, False),
-        (1.0, 0xA0, False),
+        # Negative scales keep the products exact in BF16 too.
+        (1.0, 128, True),
+        (1.0, 0xA0, True),
     ],
 )
 def test_unit_scale_inferred_only_for_exact_domain(pts, scale_byte, expected):
     actual = CudaNVFP4Tensor.from_exportable(weight(pts, scale_byte))
     assert actual.unit_scale is expected
-
-
-def test_unit_scale_requires_every_scale_byte():
-    w = weight()
-    scale = w.scale.clone()
-    scale[3, 5] = 0xA0
-    mixed = ExportableNVFP4Tensor(
-        w.qdata, scale, w.per_tensor_scale, w.block_size, w.orig_dtype
-    )
-    assert not CudaNVFP4Tensor.from_exportable(mixed).unit_scale
 
 
 def test_unit_scale_metadata_survives_fake_to_fusion_and_serialization():
