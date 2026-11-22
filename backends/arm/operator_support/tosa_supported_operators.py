@@ -1524,7 +1524,8 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
             # ... Except for constant ops that are directly cast to something non-int64.
             # This could be an explicit cast, or something like a less than that outputs a different dtype than the input.
             users_output_non_int64 = all(
-                get_first_fake_tensor(output_node).dtype != torch.int64
+                isinstance(output_node.meta["val"], torch.SymInt)
+                or get_first_fake_tensor(output_node).dtype != torch.int64
                 for output_node in node.users
             )
             if (
