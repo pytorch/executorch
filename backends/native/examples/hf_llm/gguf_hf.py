@@ -42,6 +42,7 @@ from transformers.core_model_loading import (
     WeightTransform,
 )
 from transformers.integrations.gguf.gguf_conversion_mapping import (
+    ConcatenateRows,
     LogNegate,
     SubtractOne,
     TiledToGroupedInputs,
@@ -245,10 +246,12 @@ def check_config_tensors(
 # architectures whose names and conversions come from transformers' GGUF tables.
 _TRANSFORMERS_ARCHITECTURES: dict[str, frozenset[str]] = {
     "qwen35": frozenset({"qwen3_5_text"}),
+    "qwen35moe": frozenset({"qwen3_5_moe_text"}),
 }
 # The conversion ops those tables use. Any other fails loudly, so a transformers
 # update cannot change a mapping unnoticed.
 _TRANSFORMERS_OPS = (
+    ConcatenateRows,
     LogNegate,
     SubtractOne,
     TiledToGroupedInputs,
@@ -327,6 +330,46 @@ def _convert_with(
     return value
 
 
+def _join(
+    mapping: list[WeightTransform],
+    converter: WeightConverter,
+    fqn: str,
+    parts: dict[str, tuple[str, torch.Tensor]],
+) -> torch.Tensor:
+    """One weight from the GGUF tensors `parts` holds by source pattern, such
+    as an MoE layer's gate and up experts. Their blocks stay packed when they
+    share a ggml type and transformers marks the join safe on packed bytes."""
+    patterns = converter.source_patterns
+    values = [parts[p][1] for p in patterns]
+    quantized = [v for v in values if isinstance(v, ExportableGGUFTensor)]
+    if len(quantized) == len(values) and len({v.ggml_type for v in values}) == 1:
+        types = {
+            name: gguf.GGMLQuantizationType[value.ggml_type.upper()].value
+            for name, value in parts.values()
+        }
+        _, packable, permutations = get_gguf_plan(_GgmlTypes(types), mapping)
+        if fqn in packable and fqn not in permutations:
+            raws = dict(zip(patterns, (v.raw for v in quantized)))
+            for op in converter.operations:
+                (raw,) = op.convert(
+                    raws, source_patterns=patterns, target_patterns=[fqn]
+                ).values()
+                raws = {fqn: raw}
+            return ExportableGGUFTensor.from_raw(
+                raw, values[0].ggml_type, values[0].orig_dtype
+            )
+    tensors = {
+        p: v.dequantize(torch.float32) if isinstance(v, ExportableGGUFTensor) else v
+        for p, v in zip(patterns, values)
+    }
+    for op in converter.operations:
+        (value,) = op.convert(
+            tensors, source_patterns=patterns, target_patterns=[fqn]
+        ).values()
+        tensors = {fqn: value}
+    return value
+
+
 def _transformers_to_hf(  # noqa: C901
     model: torch.nn.Module,
     architecture: str,
@@ -335,7 +378,9 @@ def _transformers_to_hf(  # noqa: C901
 ) -> tuple[KeyMap, Convert]:
     """``gguf_to_hf`` through transformers' GGUF tables. A multi-token
     prediction block, which transformers names ``mtp.*``, is skipped with a
-    warning."""
+    warning. A weight transformers builds from several GGUF tensors comes out
+    of ``convert`` with the last of them; ``convert`` returns None for the
+    others."""
     config = model.config.get_text_config()
     mapping, _, converters = _transformers_mapping(architecture, model.config)
     # rename_source_key records matches on the transforms it tries (_was_used, a
@@ -344,7 +389,8 @@ def _transformers_to_hf(  # noqa: C901
     names = copy.deepcopy(mapping)
     name_renamings = [t for t in names if isinstance(t, WeightRenaming)]
     name_converters = [t for t in names if isinstance(t, WeightConverter)]
-    operations = {p: c.operations for c in converters for p in c.source_patterns}
+    converter_of = {p: c for c in converters for p in c.source_patterns}
+    pending: dict[str, dict[str, tuple[str, torch.Tensor]]] = {}
     params = set(model.state_dict())
     sources: dict[str, tuple[str, str | None]] = {}
     encoder = _encoder_prefixes()
@@ -379,11 +425,18 @@ def _transformers_to_hf(  # noqa: C901
         sources[fqn] = (name, pattern)
         return fqn
 
-    def convert(fqn: str, value: torch.Tensor) -> torch.Tensor:
+    def convert(fqn: str, value: torch.Tensor) -> torch.Tensor | None:
         name, pattern = sources[fqn]
-        ops = list(operations.get(pattern, ()))
-        if not ops:
+        converter = converter_of.get(pattern)
+        if converter is None:
             return value
+        if len(converter.source_patterns) > 1:
+            parts = pending.setdefault(fqn, {})
+            parts[pattern] = (name, value)
+            if len(parts) < len(converter.source_patterns):
+                return None
+            return _join(mapping, converter, fqn, pending.pop(fqn))
+        ops = list(converter.operations)
         if isinstance(value, ExportableGGUFTensor):
             if _keeps_blocks(mapping, name, fqn, value, input_permutations):
                 raw = _convert_with(ops, fqn, pattern, value.raw)

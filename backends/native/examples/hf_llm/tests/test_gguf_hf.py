@@ -32,6 +32,7 @@ from transformers import (
     LlamaConfig,
     MistralConfig,
     Qwen2Config,
+    Qwen3_5MoeTextConfig,
     Qwen3_5TextConfig,
     Qwen3Config,
 )
@@ -197,6 +198,33 @@ def _tiny_qwen35(value_heads: int = 6) -> torch.nn.Module:
     )
 
 
+def _tiny_qwen35moe() -> torch.nn.Module:
+    """`_tiny_qwen35`'s layers with a mixture of four experts, two per token,
+    and a gated shared expert in place of the dense MLP."""
+    return AutoModelForCausalLM.from_config(
+        Qwen3_5MoeTextConfig(
+            vocab_size=32,
+            hidden_size=64,
+            num_hidden_layers=4,
+            layer_types=["linear_attention"] * 3 + ["full_attention"],
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            head_dim=16,
+            linear_num_key_heads=2,
+            linear_num_value_heads=6,
+            linear_key_head_dim=16,
+            linear_value_head_dim=16,
+            linear_conv_kernel_dim=4,
+            num_experts=4,
+            num_experts_per_tok=2,
+            moe_intermediate_size=32,
+            shared_expert_intermediate_size=32,
+            tie_word_embeddings=False,
+        ),
+        experts_implementation="batched_mm",
+    )
+
+
 def _tiled(grouped: torch.Tensor, head_dim: int, dim: int = 0) -> torch.Tensor:
     """llama.cpp's value-head order along `dim`: HF's head k * n + j, for key
     head k of 2 and its j-th value head of n, is stored as head j * 2 + k."""
@@ -257,6 +285,17 @@ _QWEN35_MLP = {
     f"ffn_{p}.weight": (f"mlp.{p}_proj.weight", lambda w: w)
     for p in ("gate", "up", "down")
 }
+# llama.cpp stores the experts' gate and up projections apart; HF fuses them.
+_QWEN35MOE_MLP = {
+    "ffn_gate_inp.weight": ("mlp.gate.weight", lambda w: w),
+    "ffn_gate_exps.weight": ("mlp.experts.gate_up_proj", lambda w: w[:, :32]),
+    "ffn_up_exps.weight": ("mlp.experts.gate_up_proj", lambda w: w[:, 32:]),
+    "ffn_down_exps.weight": ("mlp.experts.down_proj", lambda w: w),
+    "ffn_gate_inp_shexp.weight": ("mlp.shared_expert_gate.weight", lambda w: w[0]),
+    "ffn_gate_shexp.weight": ("mlp.shared_expert.gate_proj.weight", lambda w: w),
+    "ffn_up_shexp.weight": ("mlp.shared_expert.up_proj.weight", lambda w: w),
+    "ffn_down_shexp.weight": ("mlp.shared_expert.down_proj.weight", lambda w: w),
+}
 _QWEN35_GLOBAL = {
     "token_embd.weight": ("model.embed_tokens.weight", lambda w: w),
     "output.weight": ("lm_head.weight", lambda w: w),
@@ -311,6 +350,38 @@ def _write_qwen35_gguf(
     writer.write_tensors_to_file()
     writer.close()
     return names, stored, blocks
+
+
+def _write_qwen35moe_gguf(
+    model: torch.nn.Module, path: str
+) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
+    """Write `model` as llama.cpp lays a Qwen3.5 MoE GGUF out, with layer 0's
+    experts as Q8_0 blocks. Returns every stored tensor and those blocks."""
+    params = model.state_dict()
+    stored = {}
+    for i in range(4):
+        table = (_QWEN35_LINEAR if i < 3 else _QWEN35_FULL) | _QWEN35MOE_MLP
+        for role, (param, gguf_form) in table.items():
+            weight = params[f"model.layers.{i}.{param}"]
+            stored[f"blk.{i}.{role}"] = gguf_form(weight).float().numpy()
+    for name, (param, gguf_form) in _QWEN35_GLOBAL.items():
+        stored[name] = gguf_form(params[param]).float().numpy()
+    blocks = {}
+    for seed, role in enumerate(("gate_exps", "up_exps", "down_exps")):
+        experts, rows, cols = stored[f"blk.0.ffn_{role}.weight"].shape
+        blocks[f"blk.0.ffn_{role}.weight"] = _random_blocks(
+            "q8_0", experts * rows, cols, seed
+        ).reshape(experts, rows, -1)
+    stored |= blocks
+    writer = gguf.GGUFWriter(path, "qwen35moe")
+    for name, value in stored.items():
+        q8_0 = gguf.GGMLQuantizationType.Q8_0 if name in blocks else None
+        writer.add_tensor(name, value, raw_dtype=q8_0)
+    writer.write_header_to_file()
+    writer.write_kv_data_to_file()
+    writer.write_tensors_to_file()
+    writer.close()
+    return stored, blocks
 
 
 class GgufHfTest(unittest.TestCase):
@@ -700,6 +771,64 @@ class GgufHfTest(unittest.TestCase):
         key_map, _ = gguf_to_hf(model, "qwen35")
         with self.assertRaisesRegex(ValueError, "maps to no qwen3_5_text parameter"):
             key_map("blk.5.ffn_up.weight")
+
+    def test_loads_qwen35moe_experts_as_packed_blocks(self) -> None:
+        torch.manual_seed(0)
+        model = _tiny_qwen35moe()
+        params = model.state_dict()
+        key_map, convert = gguf_to_hf(model, "qwen35moe")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "model.gguf")
+            _, blocks = _write_qwen35moe_gguf(model, path)
+            loaded = dict(iter_checkpoint(path, key_map=key_map, convert=convert))
+
+        self.assertEqual(set(loaded), set(params))
+        experts = "model.layers.0.mlp.experts."
+        gate_up = loaded[experts + "gate_up_proj"]
+        self.assertIsInstance(gate_up, ExportableGGUFTensor)
+        gate = blocks["blk.0.ffn_gate_exps.weight"]
+        up = blocks["blk.0.ffn_up_exps.weight"]
+        self.assertTrue(
+            torch.equal(gate_up.raw, torch.from_numpy(np.concatenate([gate, up], 1)))
+        )
+        down = torch.from_numpy(blocks["blk.0.ffn_down_exps.weight"])
+        self.assertTrue(torch.equal(loaded[experts + "down_proj"].raw, down))
+        for fqn, value in loaded.items():
+            if not fqn.startswith(experts):
+                with self.subTest(fqn):
+                    torch.testing.assert_close(value, params[fqn].float())
+
+    def test_packed_qwen35moe_matches_its_dequantized_twin(self) -> None:
+        torch.manual_seed(0)
+        packed, dense = _tiny_qwen35moe().eval(), _tiny_qwen35moe().eval()
+        ids = torch.tensor([[3, 4, 5, 6, 7]])
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "model.gguf")
+            _write_qwen35moe_gguf(packed, path)
+            load_gguf(packed, path)
+            load_gguf(dense, path, dequantize=True)
+
+        gate_up = "model.layers.0.mlp.experts.gate_up_proj"
+        self.assertIsInstance(packed.get_parameter(gate_up), ExportableGGUFTensor)
+        self.assertNotIsInstance(dense.get_parameter(gate_up), ExportableGGUFTensor)
+        with torch.no_grad():
+            torch.testing.assert_close(packed(ids).logits, dense(ids).logits)
+
+    def test_joins_experts_of_different_types_as_floats(self) -> None:
+        key_map, convert = gguf_to_hf(_tiny_qwen35moe(), "qwen35moe")
+        raw = _random_blocks("q8_0", 4 * 32, 64, 0).reshape(4, 32, -1)
+        gate = ExportableGGUFTensor.from_raw(
+            torch.from_numpy(raw), "q8_0", torch.float32
+        )
+        up = torch.randn(4, 32, 64)
+
+        fqn = key_map("blk.0.ffn_gate_exps.weight")
+        self.assertIsNone(convert(fqn, gate))
+        self.assertEqual(key_map("blk.0.ffn_up_exps.weight"), fqn)
+        joined = convert(fqn, up)
+        self.assertNotIsInstance(joined, ExportableGGUFTensor)
+        want = torch.cat([gate.dequantize(torch.float32), up], dim=1)
+        self.assertTrue(torch.equal(joined, want))
 
     def test_refuses_a_transformers_mapping_with_unknown_ops(self) -> None:
         class Scale:
