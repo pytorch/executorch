@@ -80,6 +80,18 @@ _SMALL_QUERY_MAX_LQ = 16
 # decode: L_q 16, 16:1 GQA, head_dim 128), and at most that many rows.
 _SMALL_QUERY_MAX_TILE = 256 * 128
 _SMALL_QUERY_MAX_ROWS = 256
+# Per-block shared memory of the smallest supported GPUs (SM86/89/120): the
+# BF16 query tile and double-buffered 32-key K and V tiles must fit (a 64x512
+# tile fits no config there).
+_SMALL_QUERY_MAX_SMEM = 99 * 1024
+
+
+def _small_query_tile_fits(rows, head_dim):
+    return (
+        rows <= _SMALL_QUERY_MAX_ROWS
+        and rows * head_dim <= _SMALL_QUERY_MAX_TILE
+        and (rows + 64) * head_dim * 2 <= _SMALL_QUERY_MAX_SMEM
+    )
 
 
 _TMA_PREFILL_LKV_THRESHOLD = 16384
@@ -1410,8 +1422,7 @@ def sdpa(
         if (
             isinstance(L_q, int)
             and 2 <= L_q <= _SMALL_QUERY_MAX_LQ
-            and L_q * block_g <= _SMALL_QUERY_MAX_ROWS
-            and L_q * block_g * D <= _SMALL_QUERY_MAX_TILE
+            and _small_query_tile_fits(L_q * block_g, D)
         ):
             _launch_small_query_splitk(
                 query,
@@ -2472,10 +2483,11 @@ def sdpa_small_query_splitk(
             f"sdpa_small_query_splitk requires power-of-2 head dim; got D={D}"
         )
     rows = L_q * _next_power_of_2_unclamped(H_q // H_kv)
-    if rows > _SMALL_QUERY_MAX_ROWS or rows * D > _SMALL_QUERY_MAX_TILE:
+    if not _small_query_tile_fits(rows, D):
         raise RuntimeError(
             f"sdpa_small_query_splitk: a {rows}x{D} tile exceeds the "
-            f"{_SMALL_QUERY_MAX_ROWS}-row, {_SMALL_QUERY_MAX_TILE}-element cap"
+            f"{_SMALL_QUERY_MAX_ROWS}-row, {_SMALL_QUERY_MAX_TILE}-element or "
+            "shared-memory cap"
         )
 
     num_groups = H_q // H_kv

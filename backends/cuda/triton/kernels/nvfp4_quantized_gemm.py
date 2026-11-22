@@ -235,8 +235,9 @@ def _fp4_pair_f16(q):
 @triton.jit
 def _e4m3_f16(b):
     """Finite E4M3 byte -> FP32 value times 2**-8, exact (FP16 holds every
-    finite E4M3 value). ``CudaNVFP4Tensor`` scales are finite (NaN bytes are
-    rejected at packing), so no NaN select runs in the hot loops."""
+    finite E4M3 value). Callers pass finite scales (``from_exportable``
+    rejects NaN bytes at packing), so no NaN select runs in the hot loops; a
+    NaN byte decodes to a finite +-480 here."""
     u = b.to(tl.uint32)
     bits = (((u & 0x80) << 8) | ((u & 0x7F) << 7)).to(tl.uint16)
     return bits.to(tl.float16, bitcast=True).to(tl.float32)
@@ -965,10 +966,11 @@ def nvfp4_gemv(
 ) -> torch.Tensor:
     """NVFP4 GEMV for small M; the output keeps ``x.dtype``.
 
-    Scale bytes must be finite E4M3 (no 0x7F/0xFF), as ``CudaNVFP4Tensor``
-    guarantees; it is not checked here. ``unit_scale=True`` skips the global
-    scale and requires the ``CudaNVFP4Tensor.unit_scale`` contract (global
-    scale 1). M is grid axis 1, so at most 65535.
+    Scale bytes must be finite E4M3 (no 0x7F/0xFF), as
+    ``CudaNVFP4Tensor.from_exportable`` checks; it is not checked here.
+    ``unit_scale=True`` skips the global scale and requires the
+    ``CudaNVFP4Tensor.unit_scale`` contract (global scale 1). M is grid axis 1,
+    so at most 65535.
     """
     _check_operands(x, qdata, scale, per_tensor_scale)
     max_rows = _max_rows(x.shape[0])
@@ -1121,8 +1123,8 @@ def nvfp4_w4a16(
 ) -> torch.Tensor:
     """NVFP4 weight-only GEMM; FP32 activations are rounded to BF16 (the GEMV
     keeps FP32 math), and the output is ``output_dtype`` or ``x.dtype``. Scale
-    bytes must be finite E4M3 (no 0x7F/0xFF), as ``CudaNVFP4Tensor``
-    guarantees; it is not checked here."""
+    bytes must be finite E4M3 (no 0x7F/0xFF), as
+    ``CudaNVFP4Tensor.from_exportable`` checks; it is not checked here."""
     _check_operands(x, qdata, scale, per_tensor_scale)
     launch = _launch_w4a16 if split_k < 0 else _launch_w4a16_impl
     kwargs = {} if split_k < 0 else {"split_k": split_k}
