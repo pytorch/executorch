@@ -8,10 +8,10 @@
 
 - ``fp4`` (default): NVFP4 activations where FP4 tensor cores exist (W4A4),
   timed against W4A16 per shape.
-- ``mxfp8``: prefill quantizes activations to MXFP8 and converts the weight
-  tiles to MXFP8 in registers (``nvfp4_mxfp8``, native FP4 conversion only;
-  BF16 activations elsewhere); decode runs the W4A16 GEMV, timed against the
-  INT8-activation W4A8 GEMV on GPUs without FP4 conversion. Never W4A4.
+- ``mxfp8``: large-M prefill quantizes activations to MXFP8 and converts the
+  weight tiles to MXFP8 in registers (``nvfp4_mxfp8``, native FP4 conversion
+  only; BF16 activations elsewhere); decode and small M keep W4A16 or W4A8.
+  Never W4A4. ``nvfp4_dispatch``'s docstring has the exact policy.
 - ``bf16``: weight-only, W4A16 on every path.
 """
 

@@ -114,8 +114,9 @@ def stress_weight(n, k, seed=0):
         0, 256, (n, k // 2), device="cuda", generator=g, dtype=torch.uint8
     )
     s = torch.randint(
-        0, 127, (n, k // 16), device="cuda", generator=g, dtype=torch.uint8
+        0, 256, (n, k // 16), device="cuda", generator=g, dtype=torch.uint8
     )
+    s[(s & 0x7F) == 0x7F] -= 1
     s[:, ::7] = 0
     return CudaNVFP4Tensor(q, s, torch.ones(1, device="cuda"))
 
@@ -158,7 +159,7 @@ def weight_mxfp8_mirror(qdata, scale):
     lut = torch.tensor(E2M1, device=qdata.device)
     code = lut[torch.stack((qdata & 15, qdata >> 4), -1).reshape(n, k).long()]
     s = scale.view(torch.float8_e4m3fn).float().reshape(n, k // 32, 2)
-    e = _ceil_log2(s.amax(-1) * torch.tensor(6.0 / 448.0, device=qdata.device))
+    e = _ceil_log2(s.abs().amax(-1) * torch.tensor(6.0 / 448.0, device=qdata.device))
     m16 = (s * _pow2(-e)[..., None]).half().float().reshape(n, k // 16)
     prod = (code.reshape(n, k // 16, 16) * m16[..., None]).half().float()
     return (_e4m3(prod).float().reshape(n, k // 32, 32) * _pow2(e)[..., None]).reshape(
@@ -251,7 +252,9 @@ class TestDispatchDecisions(CleanEnv):
         if not torch.cuda.is_available() or torch.version.hip is not None:
             self.skipTest("CUDA required")
 
-    def _calls(self, act, m, native, dynamic=False, env=None, k=1024):
+    def _calls(
+        self, act, m, native, dynamic=False, env=None, k=1024, dtype=torch.bfloat16
+    ):
         calls = []
 
         def record(name):
@@ -290,7 +293,7 @@ class TestDispatchDecisions(CleanEnv):
             p.start()
         try:
             w = make_weight(512, k, act_dtype=act)
-            x = torch.randn(m, k, device="cuda", dtype=torch.bfloat16)
+            x = torch.randn(m, k, device="cuda", dtype=dtype)
             if dynamic:
                 torch.export.export(
                     _LinearOf(w),
@@ -316,11 +319,14 @@ class TestDispatchDecisions(CleanEnv):
                 calls = self._calls("mxfp8", m, native)
                 self.assertEqual(len(calls), 1, (native, m, calls))
                 self.assertFalse(is_w4a4_op(calls[0], native), (native, m, calls))
-                if 2 <= m <= 16:
+                # With native FP4 the W4A16 GEMV keeps decode-size M.
+                if (5 if native else 2) <= m <= 16:
                     bucket = next(b for b in (2, 4, 8, 16) if m <= b)
                     self.assertEqual(
                         calls[0], f"nvfp4_small_m_gemm_m{bucket}:weight_only"
                     )
+                elif native and m <= 4:
+                    self.assertEqual(calls[0], "nvfp4_gemv", m)
                 elif m in expected[native]:
                     self.assertEqual(calls[0], expected[native][m], (native, m))
             calls = self._calls("mxfp8", 64, native, dynamic=True)
@@ -348,6 +354,22 @@ class TestDispatchDecisions(CleanEnv):
             # w4a8 forces the INT8-activation decode where 8 bits are allowed.
             ("mxfp8", 1, True, {"ET_CUDA_NVFP4_ACT": "w4a8"}, "nvfp4_w4a8_gemv"),
             ("bf16", 1, False, {"ET_CUDA_NVFP4_ACT": "w4a8"}, "nvfp4_gemv"),
+            # Above decode size w4a8 keeps the weight-only buckets.
+            (
+                "mxfp8",
+                8,
+                True,
+                {"ET_CUDA_NVFP4_ACT": "w4a8"},
+                "nvfp4_small_m_gemm_m8:weight_only",
+            ),
+            (
+                "bf16",
+                3,
+                False,
+                {"ET_CUDA_NVFP4_ACT": "w4a8"},
+                "nvfp4_small_m_gemm_m4:weight_only",
+            ),
+            ("mxfp8", 3, False, {"ET_CUDA_NVFP4_ACT": "w4a8"}, "nvfp4_w4a8_gemv"),
             # MXFP8 prefill is allowed under w4a8.
             ("mxfp8", 64, True, {"ET_CUDA_NVFP4_ACT": "w4a8"}, "nvfp4_mxfp8"),
             # w4a4 never applies to these weights.
@@ -355,7 +377,7 @@ class TestDispatchDecisions(CleanEnv):
             (
                 "bf16",
                 4096,
-                True,
+                False,
                 {"ET_CUDA_NVFP4_PREFILL_IMPL": "kernel"},
                 "nvfp4_w4a16",
             ),
@@ -373,6 +395,13 @@ class TestDispatchDecisions(CleanEnv):
         ]
         for act, m, native, env, kernel in cases:
             self.assertEqual(self._calls(act, m, native, env=env), [kernel], env)
+        # FP32 activations under the FP32 prefill policy run in BF16, not the
+        # dense FP32 fallback.
+        fp32 = {"ET_CUDA_NVFP4_PREFILL_OUTPUT": "fp32"}
+        self.assertEqual(
+            self._calls("bf16", 64, False, env=fp32, dtype=torch.float32),
+            ["nvfp4_w4a16"],
+        )
         with self.assertRaises(ValueError):
             self._calls("mxfp8", 64, False, env={"ET_CUDA_NVFP4_MXFP8_EMULATE": "on"})
         with mock.patch.object(torch.version, "hip", "6.0"):
@@ -596,7 +625,7 @@ class TestNative(CleanEnv):
         for m, dynamic, op in (
             (64, True, "nvfp4_mxfp8"),
             (1, False, "nvfp4_gemv"),
-            (4, False, "nvfp4_small_m_gemm_m4:weight_only"),
+            (8, False, "nvfp4_small_m_gemm_m8:weight_only"),
         ):
             ops = exported_ops("mxfp8", m, dynamic)
             self.assertIn(op, ops)

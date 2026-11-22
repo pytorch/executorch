@@ -729,6 +729,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/...",
         ],
         deps = [
+            ":nvfp4_test_utils",
             "//caffe2:torch",
             "//executorch/backends/cuda:autotune",
             "//executorch/backends/cuda:nvfp4_tensor",

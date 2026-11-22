@@ -13,14 +13,16 @@ the block maximum; this module rounds the exponent up instead.)
 Weights stay packed NVFP4 in memory. Inside the GEMM each weight tile is
 converted in registers: E2M1 codes decode exactly to FP16
 (``cvt.rn.f16x2.e2m1x2``), each K32 group gets a UE8M0 exponent
-``e = ceil(log2(6 * max(s16 pair) / 448))``, every element becomes
+``e = ceil(log2(6 * max|s16 pair| / 448))``, every element becomes
 ``code * (s16 * 2**-e)`` in FP16 (exact: at most 6 significant bits) and is
 rounded once, to nearest even, to E4M3. The product runs on the block-scaled
 tensor cores (``tl.dot_scaled`` e4m3 x e4m3 with ue8m0 scales) with FP32
 accumulation, and the per-tensor scale is applied in the epilogue.
 
-The conversion is exact for products with at most 4 significant bits. The
-others are common: any code of magnitude 1.5, 3 or 6 times a K16 scale whose
+The conversion is exact for products with at most 4 significant bits, unless
+the pair's scales differ by about 2**10 or more and the smaller block's
+products fall into the E4M3 subnormal range (step 2**-9). The others are
+common: any code of magnitude 1.5, 3 or 6 times a K16 scale whose
 mantissa is 1, 3, 5, 6 or 7 needs 5-6 bits and moves by at most half an E4M3
 ulp (e.g. 1.5 x 1.125 = 1.6875 becomes 1.75).
 
@@ -216,7 +218,7 @@ def _mxfp8_gemm(
         )
         # UE8M0 per 32 from the two K16 scales: |e2m1 * s16| <= 6 * max(s16 pair).
         pair = _load_block_scales(BS, n, block, N, K, BN, BK).reshape((BN, BK // 32, 2))
-        e = _ceil_log2(tl.max(pair, 2) * (6.0 / 448.0))
+        e = _ceil_log2(tl.max(tl.abs(pair), 2) * (6.0 / 448.0))
         mult = (pair * _pow2(-e)[:, :, None]).reshape((BN, BK // 16))
         w8 = _decode_fp8_tile(B, n, block, mult, N, K, BN, BK)
         acc = tl.dot_scaled(
@@ -287,7 +289,8 @@ def nvfp4_to_mxfp8_weight_reference(qdata, scale):
     sf = scale.view(torch.float8_e4m3fn).float().repeat_interleave(16, dim=1)
     exact = lut[codes] * sf
     g = exact.reshape(n, k // 32, 32)
-    smax = scale.view(torch.float8_e4m3fn).float().reshape(n, k // 32, 2).amax(-1)
+    s32 = scale.view(torch.float8_e4m3fn).float().reshape(n, k // 32, 2)
+    smax = s32.abs().amax(-1)
     r = smax * 6.0 / 448.0
     e = torch.where(r > 0, torch.ceil(torch.log2(r)), torch.full_like(r, -126.0)).clamp(
         -126, 127

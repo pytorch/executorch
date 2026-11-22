@@ -130,7 +130,7 @@ def _dequant_mxfp8_kernel(
     )
     # UE8M0 per 32 from the two K16 scales: |e2m1 * s16| <= 6 * max(s16 pair).
     pair = s.reshape((BN, BKH // 16, 2))
-    e = _ceil_log2(tl.max(pair, 2) * (6.0 / 448.0))
+    e = _ceil_log2(tl.max(tl.abs(pair), 2) * (6.0 / 448.0))
     m16 = (
         (pair * _pow2(-e)[:, :, None])
         .reshape((BN, BKH // 8))

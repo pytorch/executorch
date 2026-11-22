@@ -108,6 +108,20 @@ _SUPPORTED_BACKENDS = ("cuda", "mlx")
 # Export + lower
 
 
+def _check_kv_cache_dtype(
+    kv_cache_dtype: str, backend: str, use_offgraph_kv_cache: bool, use_turboquant: bool
+) -> None:
+    if kv_cache_dtype not in ("bf16", "nvfp4"):
+        raise ValueError(f"Unsupported kv_cache_dtype: {kv_cache_dtype!r}")
+    if kv_cache_dtype == "nvfp4" and (
+        backend != "cuda" or use_offgraph_kv_cache or use_turboquant
+    ):
+        raise ValueError(
+            "The NVFP4 KV cache requires the CUDA in-graph cache path (no "
+            "off-graph KV cache, no TurboQuant)"
+        )
+
+
 def export_and_lower(
     model: MuseGlimmerModel,
     config: MuseGlimmerConfig,
@@ -132,15 +146,9 @@ def export_and_lower(
 ) -> None:
     if use_offgraph_kv_cache and use_turboquant:
         raise ValueError("off-graph KV cache and TurboQuant are mutually exclusive")
-    if kv_cache_dtype not in ("bf16", "nvfp4"):
-        raise ValueError(f"Unsupported kv_cache_dtype: {kv_cache_dtype!r}")
-    if kv_cache_dtype == "nvfp4" and (
-        backend != "cuda" or use_offgraph_kv_cache or use_turboquant
-    ):
-        raise ValueError(
-            "The NVFP4 KV cache requires the CUDA in-graph cache path (no "
-            "off-graph KV cache, no TurboQuant)"
-        )
+    _check_kv_cache_dtype(
+        kv_cache_dtype, backend, use_offgraph_kv_cache, use_turboquant
+    )
     if backend == "mlx" and use_offgraph_kv_cache:
         if activation_dtype not in (torch.float16, torch.bfloat16):
             raise ValueError(
@@ -362,10 +370,10 @@ def add_nvfp4_act_argument(parser) -> None:
         help="CUDA NVFP4 activation mode, sets ET_CUDA_NVFP4_ACT (default: "
         "the environment's value, else auto). auto times W4A4 against W4A16 "
         "per shape when native FP4 is available, and single-token decode W4A16 "
-        "against the INT8-activation W4A8 GEMV otherwise (2..16 rows take the "
-        "small-M kernels, see ET_CUDA_NVFP4_SMALL_M); w4a4 forces FP4 activations "
-        "(native FP4 required), w4a8 forces the W4A8 decode GEMV, w4a16 "
-        "forces BF16 activations.",
+        "against the INT8-activation W4A8 GEMV on other NVIDIA GPUs (2..16 rows "
+        "take the small-M kernels, see ET_CUDA_NVFP4_SMALL_M); w4a4 forces FP4 "
+        "activations (native FP4 required), w4a8 forces the W4A8 decode GEMV "
+        "(NVIDIA only), w4a16 forces BF16 activations.",
     )
 
 
@@ -1165,6 +1173,22 @@ def _export_mlx(
     print("Done.")
 
 
+def _validate_nvfp4_args(
+    parser: argparse.ArgumentParser, args: argparse.Namespace
+) -> None:
+    if args.nvfp4_static_act and (args.backend != "cuda" or not args.gguf):
+        parser.error("--nvfp4-static-act requires --backend cuda and --gguf.")
+    if args.nvfp4_attn_act != "fp4" and args.backend != "cuda":
+        parser.error("--nvfp4-attn-act requires --backend cuda.")
+    if args.kv_cache_dtype == "nvfp4" and (
+        args.backend != "cuda" or args.turboquant or args.use_offgraph_kv_cache
+    ):
+        parser.error(
+            "--kv-cache-dtype nvfp4 requires the CUDA in-graph cache path without "
+            "--turboquant or --use-offgraph-kv-cache."
+        )
+
+
 def _validate_offgraph_prefill(
     parser: argparse.ArgumentParser,
     args: argparse.Namespace,
@@ -1341,26 +1365,16 @@ def main() -> None:
         default="fp4",
         help="Activation format of the NVFP4 attention projections (qko/qkv or "
         "q/k/og, v, o): fp4 keeps the --nvfp4-act path; mxfp8 never uses FP4 "
-        "activations: with native FP4 (SM120) prefill runs MXFP8 x MXFP8 with "
-        "the NVFP4 weights converted in registers, elsewhere BF16 activations "
-        "(ET_CUDA_NVFP4_MXFP8_EMULATE=1 emulates MXFP8), and decode runs W4A16 "
-        "(without native FP4 timed against W4A8; always W4A16 with "
-        "ET_CUDA_NVFP4_MXFP8_EMULATE=1); bf16 runs them weight-only (W4A16).",
+        "activations: large-M prefill runs MXFP8 x MXFP8 with the NVFP4 weights "
+        "converted in registers on native FP4 (SM120), BF16 activations "
+        "elsewhere (ET_CUDA_NVFP4_MXFP8_EMULATE=1 emulates MXFP8), and decode "
+        "and small M keep 8+-bit activations (W4A16, or W4A8 decode); bf16 "
+        "runs them weight-only (W4A16). The exact policy, including the "
+        "ET_CUDA_NVFP4_* overrides, is in the nvfp4_dispatch docstring.",
     )
     args = parser.parse_args()
     apply_nvfp4_act_argument(parser, args)
-    if args.nvfp4_static_act and (args.backend != "cuda" or not args.gguf):
-        parser.error("--nvfp4-static-act requires --backend cuda and --gguf.")
-    if args.nvfp4_attn_act != "fp4" and args.backend != "cuda":
-        parser.error("--nvfp4-attn-act requires --backend cuda.")
-    if args.kv_cache_dtype == "nvfp4" and (
-        args.backend != "cuda" or args.turboquant or args.use_offgraph_kv_cache
-    ):
-        parser.error(
-            "--kv-cache-dtype nvfp4 requires the CUDA in-graph cache path without "
-            "--turboquant or --use-offgraph-kv-cache."
-        )
-
+    _validate_nvfp4_args(parser, args)
     _validate_offgraph_prefill(parser, args)
 
     if args.backend == "cuda" and not torch.cuda.is_available():

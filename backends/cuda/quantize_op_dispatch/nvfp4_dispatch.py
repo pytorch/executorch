@@ -10,10 +10,11 @@ is compiled into the program:
 * ``ET_CUDA_NVFP4_ACT``: ``auto`` (default) times W4A16 against native W4A4
   per layer when native FP4 is available, and decode (M statically <= 4, by
   default only M = 1, see ``ET_CUDA_NVFP4_SMALL_M``) W4A16 against the W4A8
-  dp4a GEMV (int8 activations per 16 elements) otherwise; ``w4a16`` forces
-  BF16/FP16 activations, ``w4a8`` forces the W4A8 GEMV for decode (other M run
-  BF16/FP16 activations, as ``w4a16``), and ``w4a4`` forces FP4 activations
-  (native FP4 required).
+  dp4a GEMV (int8 activations per 16 elements) otherwise on NVIDIA (W4A16 only
+  on ROCm); ``w4a16`` forces BF16/FP16 activations, ``w4a8`` forces the W4A8
+  GEMV for decode (other M run BF16/FP16 activations, as ``w4a16``; NVIDIA
+  only, it raises on ROCm), and ``w4a4`` forces FP4 activations (native FP4
+  required).
 * ``ET_CUDA_NVFP4_PREFILL_OUTPUT``: ``input`` (default) keeps the activation
   dtype; ``fp32`` returns FP32 from prefill linears (M not statically <= 4).
 * ``ET_CUDA_NVFP4_PREFILL_IMPL``: for M not statically <= 64, ``auto``
@@ -21,32 +22,38 @@ is compiled into the program:
   dequant + matmul otherwise; ``kernel`` / ``dequant`` force one for any M
   not statically <= 4. ``w4a4`` and the FP32 prefill output policy always take
   the fused kernels. The choice is made per exported program from M's upper
-  bound. A dynamic-M method tunes the fused kernels at its example M (the
-  largest, in the Muse Glimmer exports), so dequant + matmul is also faster
-  for its short prompts.
+  bound, and ``auto`` assumes a dynamic-M method is exported with its largest
+  M as the example, as the in-tree exporters (Muse Glimmer, DFlash, Gemma 4)
+  do: the fused kernels are tuned at the example M, so its short prompts run a
+  large-M tile (dequant + matmul is faster there on A100 and about 13% slower
+  per linear on H100, against 1.5-2x faster for long prompts). A method
+  exported with a small example M should set ``kernel``.
 * ``ET_CUDA_NVFP4_SMALL_M``: ``1`` (default) routes ``auto``/``w4a16`` linears
   whose M is in 2..16 (static, or dynamic with an upper bound <= 16), and
   ``w4a8`` ones with M in 5..16, to the small-M bucket ops, which time a rows
   GEMV, W4A16 and (``auto`` with native FP4) W4A4; with native FP4, ``auto``
-  M <= 4 keeps ``nvfp4_auto_decode``, and the FP32 prefill output policy and
-  an explicit ``ET_CUDA_NVFP4_PREFILL_IMPL=dequant`` keep M 5..16 off them.
-  ``0`` keeps the decode and prefill paths.
+  and ``w4a16`` M <= 4 keep the decode GEMVs (``nvfp4_auto_decode`` /
+  ``nvfp4_gemv``), and the FP32 prefill output policy and an explicit
+  ``ET_CUDA_NVFP4_PREFILL_IMPL=dequant`` keep M 5..16 off them. ``0`` keeps
+  the decode and prefill paths.
 * ``ET_CUDA_NVFP4_MXFP8_EMULATE``: ``0`` (default) or ``1``; see below.
 
 Weights whose ``act_dtype`` is ``mxfp8`` or ``bf16`` never take FP4
 activations (``ET_CUDA_NVFP4_ACT=w4a4`` means ``auto`` for them) and ignore
-the FP32 prefill output policy (outputs keep the activation dtype). Decode
-runs the W4A16 GEMV; ``mxfp8`` weights run the W4A8 GEMV under ``w4a8``, and
-under ``auto`` without native FP4 time the two (W4A16 only with
-``ET_CUDA_NVFP4_MXFP8_EMULATE=1``). Under ``auto``/``w4a16``, M 2..16 take the
-small-M buckets weight-only. Other prefill of ``mxfp8`` weights with
-K % 32 == 0, unless ``ET_CUDA_NVFP4_ACT=w4a16`` or
-``ET_CUDA_NVFP4_PREFILL_IMPL=dequant``, runs MXFP8 x MXFP8 (``nvfp4_mxfp8``)
-with native FP4 conversion; without it, BF16 activations (higher precision
-and faster) unless ``ET_CUDA_NVFP4_MXFP8_EMULATE=1`` selects the MXFP8-grid
-emulation, which matches the native kernel up to accumulation order and
-output rounding. The rest follows ``ET_CUDA_NVFP4_PREFILL_IMPL`` with the
-W4A16 kernel, as for ``fp4`` weights under ``w4a16``.
+the FP32 prefill output policy (outputs keep the activation dtype; FP32
+activations under that policy run in BF16). Decode runs the W4A16 GEMV;
+``mxfp8`` weights run the W4A8 GEMV under ``w4a8``, and under ``auto`` without
+native FP4 time the two (W4A16 only with ``ET_CUDA_NVFP4_MXFP8_EMULATE=1``).
+M 2..16 take the small-M buckets weight-only, except decode-size M where the
+decode GEMVs serve it (with native FP4, and for ``mxfp8`` under ``w4a8``).
+Other prefill of ``mxfp8`` weights with K % 32 == 0, unless
+``ET_CUDA_NVFP4_ACT=w4a16`` or ``ET_CUDA_NVFP4_PREFILL_IMPL=dequant``, runs
+MXFP8 x MXFP8 (``nvfp4_mxfp8``) with native FP4 conversion; without it, BF16
+activations (higher precision and faster) unless
+``ET_CUDA_NVFP4_MXFP8_EMULATE=1`` selects the MXFP8-grid emulation, which
+matches the native kernel up to accumulation order and output rounding. The
+rest follows ``ET_CUDA_NVFP4_PREFILL_IMPL`` with the W4A16 kernel, as for
+``fp4`` weights under ``w4a16``.
 """
 
 import os
@@ -299,7 +306,9 @@ def _dequant_linear(flat, w):
 
     def rows(i, j):
         part = _weight_rows(w, slice(i, j))
-        dense = nvfp4_dequant(part.qdata, part.scale, part.per_tensor_scale, flat.dtype)
+        dense = nvfp4_dequant(
+            part.qdata, part.scale, part.per_tensor_scale, output_dtype=flat.dtype
+        )
         return F.linear(flat, dense)
 
     return chunked_dequant_linear(flat, w.shape[0], rows)
@@ -424,12 +433,13 @@ def _small_m_op(flat, w, mode, output_dtype, impl, enabled):
     ``auto``/``w4a16`` take the buckets for M in 2..16, and ``w4a8`` for M
     above decode size (its W4A8 GEMV serves decode); only ``auto`` may time
     FP4 activations, and only it passes the static activation scale. With
-    native FP4, ``auto`` decode-size M keeps ``nvfp4_auto_decode`` (equal or
-    faster than the buckets on an RTX 5090 at M = 2..4).
+    native FP4, decode-size ``auto``/``w4a16`` keep ``nvfp4_auto_decode`` /
+    ``nvfp4_gemv`` (equal or faster than the buckets on an RTX 5090 at
+    M = 2..4).
     """
     rows = flat.shape[0]
     small = statically_known_true(rows <= NVFP4_DECODE_MAX_ROWS)
-    native_decode = small and mode == "auto" and _has_native_fp4()
+    native_decode = small and mode in ("auto", "w4a16") and _has_native_fp4()
     if (
         not enabled
         or native_decode
@@ -457,7 +467,7 @@ def _small_m_op(flat, w, mode, output_dtype, impl, enabled):
     return None if bucket is None else (NVFP4_SMALL_M_GEMM.op(bucket), op_args)
 
 
-def _bf16_act_linear(flat, w, mode, impl):
+def _bf16_act_linear(flat, w, mode, impl, use_small_m):
     """Linears whose activations never go below 8 bits (``act_dtype`` mxfp8 or
     bf16); see the module docstring for the policy."""
     from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
@@ -473,9 +483,10 @@ def _bf16_act_linear(flat, w, mode, impl):
     emulate = os.environ.get("ET_CUDA_NVFP4_MXFP8_EMULATE", "0")
     if emulate not in ("0", "1"):
         raise ValueError("ET_CUDA_NVFP4_MXFP8_EMULATE must be 0 or 1")
-    # The buckets run these weights weight-only, as under w4a16.
-    enabled = mode in ("auto", "w4a16") and _small_m_enabled()
-    small_m = _small_m_op(flat, w, "w4a16", None, impl, enabled)
+    # The buckets run these weights weight-only: as under w4a16, or for
+    # mxfp8 under w4a8 above decode size (its W4A8 GEMV serves decode).
+    small_m_mode = "w4a8" if mxfp8 and mode == "w4a8" else "w4a16"
+    small_m = _small_m_op(flat, w, small_m_mode, None, impl, use_small_m)
     if small_m is not None:
         op, op_args = small_m
         return op(*op_args)
@@ -521,9 +532,10 @@ def _linear(func, types, args, kwargs):  # noqa: C901
         raise RuntimeError("NVFP4 linear input and weight K dimensions must match")
     flat = x.reshape(-1, x.shape[-1]).contiguous()
     bf16_act = w.act_dtype != "fp4"
-    output_dtype = None if bf16_act else nvfp4_prefill_output_dtype(flat)
+    prefill_dtype = nvfp4_prefill_output_dtype(flat)
+    output_dtype = None if bf16_act else prefill_dtype
     allowed_dtype = x.dtype in (torch.bfloat16, torch.float16) or (
-        x.dtype == torch.float32 and output_dtype == torch.float32
+        x.dtype == torch.float32 and prefill_dtype == torch.float32
     )
     if not can_launch_triton(flat) or not allowed_dtype:
         dtype = output_dtype or x.dtype
@@ -534,7 +546,9 @@ def _linear(func, types, args, kwargs):  # noqa: C901
             lambda i, j: F.linear(flat, _weight_rows(w, slice(i, j)).dequantize(dtype)),
         )
     elif bf16_act:
-        out = _bf16_act_linear(flat, w, mode, impl)
+        # FP32 activations (FP32 prefill policy) run in BF16 here.
+        act = flat.to(torch.bfloat16) if flat.dtype == torch.float32 else flat
+        out = _bf16_act_linear(act, w, mode, impl, use_small_m).to(flat.dtype)
     else:
         from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
             nvfp4_gemv,
