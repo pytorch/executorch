@@ -12,6 +12,8 @@ is compiled into the program:
   ``w4a4`` forces FP4 activations (native FP4 required).
 * ``ET_CUDA_NVFP4_PREFILL_OUTPUT``: ``input`` (default) keeps the activation
   dtype; ``fp32`` returns FP32 from prefill linears (M not statically <= 4).
+* ``ET_CUDA_NVFP4_SOFT_W4A8``: ``1`` (default) lets ``auto`` decode without
+  native FP4 time the W4A8 dp4a GEMV against the W4A16 GEMV; ``0`` keeps W4A16.
 """
 
 import os
@@ -315,6 +317,7 @@ def _linear(func, types, args, kwargs):
             nvfp4_w4a4,
         )
 
+        requested_mode = mode
         if not _has_native_fp4():
             if mode == "w4a4":
                 raise RuntimeError(
@@ -339,6 +342,19 @@ def _linear(func, types, args, kwargs):
                 w.per_tensor_scale,
                 w.act_per_tensor_scale,
                 w.unit_scale,
+            )
+        elif (
+            small
+            and requested_mode == "auto"
+            and not _has_native_fp4()
+            and os.environ.get("ET_CUDA_NVFP4_SOFT_W4A8", "1") == "1"
+        ):
+            from executorch.backends.cuda.triton.kernels.nvfp4_w4a8_gemv import (
+                nvfp4_auto_decode_soft,
+            )
+
+            out = nvfp4_auto_decode_soft(
+                flat, w.qdata, w.scale, w.per_tensor_scale, w.unit_scale
             )
         elif small:
             out = nvfp4_gemv(
