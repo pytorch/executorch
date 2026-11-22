@@ -315,6 +315,7 @@ Error CPUPlan::select() {
           "No linked CPU implementation accepts semantic operator %s (%s)",
           node.target.c_str(),
           node.name.c_str());
+      unsupported_operator_ = node.target;
       return Error::NotSupported;
     }
     if (tied && tied_provider) {
