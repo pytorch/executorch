@@ -391,8 +391,7 @@ def test_pinned_gemv_variants(native, half2, row_pts, unit_scale, split):
 @pytest.mark.parametrize("row_pts", [False, True])
 @pytest.mark.parametrize("native", [False, True])
 def test_pinned_w4a16_variants(native, row_pts, split):
-    if native and not _has_native_fp4_conversion():
-        pytest.skip("native FP4 required")
+    skip_unbuilt_variant(native)
     w = pinned_weight(row_pts, False)
     m, n, k = 37, w.shape[0], w.shape[1]
     x = torch.randn(m, k, device="cuda", dtype=torch.bfloat16)

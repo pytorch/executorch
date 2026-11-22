@@ -382,20 +382,15 @@ class TestTritonSdpaSplitK(unittest.TestCase):
         """Packed multi-sequence decode: each row sees only its own cells.
 
         Hidden gaps are wider than any KV tile, and V is NaN in every cell at
-        least 256 cells from a visible one, so a tile is NaN-free only if it
-        is skipped. Visible spans start and end inside tiles.
+        least one largest BLOCK_N away from a visible one, so the output stays
+        finite only if the hidden tiles far from every visible cell are
+        skipped. Visible spans start and end inside tiles.
         """
-        B, H_q, H_kv, D, gap = (
-            1,
-            8,
-            2,
-            128,
-            4
-            * max(
-                c.kwargs["BLOCK_N"]
-                for c in self.sdpa_module._sdpa_small_query_splitk_kernel.configs
-            ),
+        reach = max(
+            c.kwargs["BLOCK_N"]
+            for c in self.sdpa_module._sdpa_small_query_splitk_kernel.configs
         )
+        B, H_q, H_kv, D, gap = 1, 8, 2, 128, 4 * reach
         for Lq in [8, 16]:
             with self.subTest(Lq=Lq):
                 torch.manual_seed(Lq)
@@ -407,11 +402,6 @@ class TestTritonSdpaSplitK(unittest.TestCase):
                 for i in range(Lq):
                     mask[0, 0, i, i * gap + 5 : i * gap + 100] = True
                 visible = mask[0, 0].any(0).float()
-                # NaN cells are a whole tile away from every visible cell.
-                reach = max(
-                    c.kwargs["BLOCK_N"]
-                    for c in self.sdpa_module._sdpa_small_query_splitk_kernel.configs
-                )
                 near = torch.nn.functional.max_pool1d(
                     visible[None, None],
                     kernel_size=2 * reach - 1,
@@ -763,6 +753,14 @@ class TestTritonSdpaSplitK(unittest.TestCase):
         v = torch.randn(B, H_kv, 64, D, dtype=torch.bfloat16, device="cuda")
         with self.assertRaises(RuntimeError):
             self.legacy_splitk(q, k, v)
+
+    def test_small_query_op_rejects_tiles_over_the_cap(self):
+        """The standalone op applies sdpa()'s row and tile caps."""
+        k = torch.randn(1, 2, 64, 128, dtype=torch.bfloat16, device="cuda")
+        q = torch.randn(1, 64, 16, 128, dtype=torch.bfloat16, device="cuda")
+        mask = torch.ones(1, 1, 16, 64, dtype=torch.bool, device="cuda")
+        with self.assertRaises(RuntimeError):
+            self.small_query_splitk(q, k, k, attn_mask=mask)
 
     def test_small_query_lq_out_of_range_rejected(self):
         """The small-query op accepts only L_q values 2 through 16."""
