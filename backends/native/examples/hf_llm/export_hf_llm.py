@@ -235,12 +235,41 @@ def _describe(value: object) -> str:
     return repr(value)
 
 
+def _softcapped_attention(
+    query, key, value, attention_mask, softcap, scaling=None, **kwargs
+):
+    """Transformers' eager attention, which caps the attention logits; SDPA
+    cannot. Each KV head's group of query heads attends as one batch row, the
+    pairing ``repeat_kv`` makes, so every tensor stays 4-D."""
+    batch, heads, tokens, head_dim = query.shape
+    kv_heads, num_keys = key.shape[1], key.shape[2]
+    if scaling is None:
+        scaling = head_dim**-0.5
+    grouped = query.reshape(batch, kv_heads, heads // kv_heads * tokens, head_dim)
+    scores = torch.matmul(grouped, key.to(query.dtype).transpose(2, 3)) * scaling
+    scores = scores.reshape(batch, heads, tokens, num_keys)
+    scores = torch.tanh(scores / softcap) * softcap
+    if attention_mask is not None:
+        # The boolean mask as eager's additive one: 0 where attended, the
+        # dtype's minimum elsewhere.
+        low = torch.finfo(scores.dtype).min
+        scores = scores + (attention_mask.to(scores.dtype) * -low + low)
+    weights = nn.functional.softmax(scores, dim=-1, dtype=torch.float32)
+    weights = weights.to(query.dtype)
+    output = torch.matmul(
+        weights.reshape(batch, kv_heads, -1, num_keys), value.to(query.dtype)
+    )
+    return (
+        output.reshape(batch, heads, tokens, -1).transpose(1, 2).contiguous(),
+        weights,
+    )
+
+
 def _attention(module, query, key, value, attention_mask, softcap=None, **kwargs):
     _check_attention_args(module, kwargs)
     if softcap is not None:
-        raise ValueError(
-            "export does not support attention logit softcapping: SDPA cannot "
-            "cap the attention logits"
+        return _softcapped_attention(
+            query, key, value, attention_mask, softcap, **kwargs
         )
     if key.dtype == query.dtype:
         return sdpa_attention_forward(
