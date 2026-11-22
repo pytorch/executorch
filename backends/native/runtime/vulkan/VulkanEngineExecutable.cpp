@@ -1975,6 +1975,37 @@ class VulkanEngineExecutable final : public EngineExecutable {
     return tensor;
   }
 
+  // log_softmax over a dim of one element is exactly 0, or NaN where x is not
+  // finite, which x - x gives; ET-VK's log(sum(exp)) is an ulp or so off.
+  bool dispatch_unit_log_softmax(const Node& n, const std::string& key) {
+    const Argument* self = find_input(n, "self");
+    if (key != "aten._log_softmax.default" || self == nullptr ||
+        self->kind() != ArgKind::Tensor) {
+      return false;
+    }
+    const TensorMeta& meta = meta_of(self->as_tensor().id);
+    const auto rank = static_cast<int64_t>(meta.sizes.size());
+    int64_t dim = constant_int_input(n, "dim", -1);
+    dim = dim < 0 ? dim + rank : dim;
+    if (dim < 0 || dim >= rank || meta.sizes[dim] != 1 ||
+        (!meta.lower_bounds.empty() && meta.lower_bounds[dim] != 1)) {
+      return false;
+    }
+    // x is read in the output's storage and layout, as softmax reads it.
+    const ValueId in_id = self->as_tensor().id;
+    const ValueId out_id = n.outputs.at(0).value_id;
+    const VkRef out = vref_at(out_id);
+    VkRef x = resolve_arg(*self);
+    if (!graph_->val_is_tref(x) &&
+        (graph_->storage_type_of(x) != graph_->storage_type_of(out) ||
+         graph_->hashed_layout_of(x) != graph_->hashed_layout_of(out))) {
+      x = repack(x, g().value(in_id), storage_at(out_id), layout_at(out_id));
+    }
+    VK_GET_OP_FN("aten.sub.Tensor")
+    (*graph_, {x, x, graph_->add_scalar<double>(1.0), out});
+    return true;
+  }
+
   // ET-VK's texture reductions write the reduced dims as size 1 whatever
   // keepdim says (its own partitioner sends them only keepdim=True), so a
   // keepdim=False reduction writes a keepdim temporary and squeeze_copy then
@@ -2158,7 +2189,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
     if (dispatch_scalar_squeeze(n, key)) {
       return;
     }
-    if (dispatch_squeezed_reduce(n, key)) {
+    if (dispatch_squeezed_reduce(n, key) || dispatch_unit_log_softmax(n, key)) {
       return;
     }
     if (!VK_HAS_OP(key)) {
