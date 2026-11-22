@@ -245,6 +245,18 @@ class TestAssignStateDict(unittest.TestCase):
             assign_state_dict(model, {"a.weight": w4})
         self.assertIn("b.weight", str(ctx.exception))
 
+    def test_held_back_weight_is_not_assigned(self):
+        with torch.device("meta"):
+            model = nn.ModuleDict({"a": nn.Linear(4, 2)})
+        state_dict = {"a.weight": torch.randn(2, 4), "a.bias": torch.randn(2)}
+
+        def hold_back_bias(fqn, value):
+            return None if fqn == "a.bias" else value
+
+        with self.assertRaises(RuntimeError) as ctx:
+            assign_state_dict(model, state_dict, convert=hold_back_bias)
+        self.assertIn("a.bias", str(ctx.exception))
+
 
 class TestFuseAlongOutput(unittest.TestCase):
     """fuse_along_output concatenates weights along the output-channel dim."""
