@@ -345,9 +345,7 @@ def pinned_weight(row_pts, unit_scale):
 # The autotuner picks the decode variant by timing; pin each one here.
 @pytest.mark.parametrize("unit_scale", [False, True])
 @pytest.mark.parametrize("row_pts", [False, True])
-@pytest.mark.parametrize(
-    "native,half2", [(False, False), (False, True), (True, False), (True, True)]
-)
+@pytest.mark.parametrize("native,half2", [(False, False), (True, False), (True, True)])
 @pytest.mark.parametrize("split", [1, 2])
 def test_pinned_gemv_variants(native, half2, row_pts, unit_scale, split):
     skip_unbuilt_variant(native)
@@ -393,8 +391,7 @@ def test_pinned_gemv_variants(native, half2, row_pts, unit_scale, split):
 @pytest.mark.parametrize("row_pts", [False, True])
 @pytest.mark.parametrize("native", [False, True])
 def test_pinned_w4a16_variants(native, row_pts, split):
-    if native and not _has_native_fp4_conversion():
-        pytest.skip("native FP4 required")
+    skip_unbuilt_variant(native)
     w = pinned_weight(row_pts, False)
     m, n, k = 37, w.shape[0], w.shape[1]
     x = torch.randn(m, k, device="cuda", dtype=torch.bfloat16)

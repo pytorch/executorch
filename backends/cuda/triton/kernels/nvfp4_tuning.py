@@ -47,13 +47,10 @@ def launch_nvfp4_kernel(kernel, grid, args, m_argument, **constexprs):
 def prune_nvfp4_stages(configs, named_args, **kwargs):
     values = {**named_args, **kwargs}
     split = values.get("SPLIT_K", values.get("SPLIT", 1))
-    # The packed FP16x2 (HALF2) GEMV is timed only with native FP4. Its exact
-    # software decode stays launchable, but on A100 it was at most ~6% faster
-    # than the FP32 GEMV per kernel while raising GEMV autotune time ~1.6x.
     eligible = [
         config
         for config in configs
-        if values.get("NATIVE", False) or not config.kwargs.get("HALF2", False)
+        if not config.kwargs.get("HALF2", False) or values.get("NATIVE", False)
     ]
     kept = [
         config

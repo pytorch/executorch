@@ -666,7 +666,8 @@ def build_muse_glimmer_gguf(
 ) -> None:
     """Write a tiny Muse Glimmer GGUF with mixed Q4_K/Q6_K to exercise bit-width routing.
 
-    ``nvfp4_ffn`` writes ``ffn_gate/up`` as NVFP4 with ``.scale`` companions.
+    ``nvfp4_ffn`` writes ``ffn_gate/up`` as NVFP4 with different ``.scale``
+    companions.
 
     Layout mirrors a real Muse Glimmer GGUF: separate ``attn_q/k/v/output_gate`` and
     ``ffn_gate/up`` shards (fused only inside the model), plus ``ffn_down``,
@@ -737,7 +738,9 @@ def build_muse_glimmer_gguf(
                 )
                 raw[..., :4] = 0x38
                 blob, dt = raw.reshape(n, -1).numpy(), gguf.GGMLQuantizationType.NVFP4
-                writer.add_tensor(f"blk.{i}.{leaf}.scale", f32(1) * 0.5)
+                # Different gate/up scales: the fused weight has per-row ones.
+                scale = 0.5 if leaf == "ffn_gate" else 0.25
+                writer.add_tensor(f"blk.{i}.{leaf}.scale", f32(1) * scale)
             seed += 1
             writer.add_tensor(f"blk.{i}.{leaf}.weight", blob, raw_dtype=dt)
         # Standalone shards with per-layer bit-width.
