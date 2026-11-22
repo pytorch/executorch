@@ -363,6 +363,66 @@ std::vector<uint8_t> make_unary_program(
       builder, graph, {fbs::CreateOutputSpecDirect(builder, "output")});
 }
 
+// output = sum(input, dims, keepdim=False) of a [2, 3, 4] input, with `dims`
+// naming its last dim.
+std::vector<uint8_t> make_squeezed_sum_program(
+    const std::vector<int64_t>& dims) {
+  flatbuffers::FlatBufferBuilder builder;
+  const std::vector<flatbuffers::Offset<fbs::TensorValue>> tensor_values = {
+      fbs::CreateTensorValueDirect(
+          builder,
+          "input",
+          create_tensor_meta(builder, fbs::ScalarType::FLOAT, {2, 3, 4})),
+      fbs::CreateTensorValueDirect(
+          builder,
+          "output",
+          create_tensor_meta(builder, fbs::ScalarType::FLOAT, {2, 3})),
+  };
+  const std::vector<flatbuffers::Offset<fbs::Output>> input_outputs = {
+      fbs::CreateOutputDirect(builder, "input")};
+  const std::vector<flatbuffers::Offset<fbs::Output>> sum_outputs = {
+      fbs::CreateOutputDirect(builder, "output")};
+  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> sum_inputs = {
+      fbs::CreateNamedArgumentDirect(
+          builder, "self", create_tensor_arg(builder, "input")),
+      fbs::CreateNamedArgumentDirect(
+          builder, "dim", create_int_list_arg(builder, dims)),
+      fbs::CreateNamedArgumentDirect(
+          builder, "keepdim", create_bool_arg(builder, false)),
+      fbs::CreateNamedArgumentDirect(
+          builder, "dtype", create_none_arg(builder)),
+  };
+  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> output_inputs = {
+      fbs::CreateNamedArgumentDirect(
+          builder, "", create_tensor_arg(builder, "output"))};
+  const std::vector<flatbuffers::Offset<fbs::Node>> nodes = {
+      fbs::CreateNodeDirect(
+          builder,
+          "input",
+          fbs::OpKind::PLACEHOLDER,
+          "",
+          nullptr,
+          &input_outputs),
+      fbs::CreateNodeDirect(
+          builder,
+          "sum",
+          fbs::OpKind::CALL_FUNCTION,
+          "torch.ops.aten.sum.dim_IntList",
+          &sum_inputs,
+          &sum_outputs),
+      fbs::CreateNodeDirect(
+          builder, "output", fbs::OpKind::OUTPUT, "", &output_inputs),
+  };
+  const auto graph = fbs::CreateGraph(
+      builder,
+      builder.CreateVector(nodes),
+      create_strings(builder, {"input"}),
+      create_strings(builder, {"output"}),
+      builder.CreateVector(tensor_values));
+  return finish_program(
+      builder, graph, {fbs::CreateOutputSpecDirect(builder, "output")});
+}
+
 std::vector<uint8_t> make_select_program(int64_t index) {
   return make_unary_program(
       "torch.ops.aten.select.int",
@@ -3159,87 +3219,102 @@ constexpr int64_t kQ4KOut = 2;
 constexpr int64_t kQ4KIn = 256;
 constexpr size_t kQ4KBlockBytes = 144;
 
-// out = linear(input, weight), where the [2, 256] weight is stored `codec`
-// blocks read directly by aten.linear.
-std::vector<uint8_t> make_gguf_q4_k_linear_program(
-    const char* codec = "gguf:q4_k") {
+struct GgufWeight {
+  std::string codec;
+  int64_t rows = kQ4KOut;
+};
+
+// product<i> = linear(input, weight<i>) per weight, each [rows, 256] and stored
+// as blocks of its codec read directly by aten.linear (no suffix for the
+// first).
+std::vector<uint8_t> make_gguf_linear_program(
+    const std::vector<GgufWeight>& weights) {
   flatbuffers::FlatBufferBuilder builder;
   const auto input_meta =
       create_tensor_meta(builder, fbs::ScalarType::FLOAT, {1, kQ4KIn});
-  const auto output_meta =
-      create_tensor_meta(builder, fbs::ScalarType::FLOAT, {1, kQ4KOut});
-  const auto packed = fbs::CreatePackedQuantDirect(builder, codec);
-  const auto quant = fbs::CreateQuantSpec(
-      builder, fbs::QuantScheme::PackedQuant, packed.Union());
-  const std::vector<flatbuffers::Offset<fbs::Dim>> weight_sizes = {
-      fbs::CreateDim(builder, kQ4KOut, kQ4KOut),
-      fbs::CreateDim(builder, kQ4KIn, kQ4KIn)};
-  const auto weight_meta = fbs::CreateTensorMeta(
-      builder,
-      fbs::ScalarType::BYTE,
-      builder.CreateVector(weight_sizes),
-      /*dim_order=*/0,
-      quant);
-  const std::vector<flatbuffers::Offset<fbs::TensorValue>> tensor_values = {
-      fbs::CreateTensorValueDirect(builder, "input", input_meta),
-      fbs::CreateTensorValueDirect(builder, "product", output_meta),
-  };
+  std::vector<flatbuffers::Offset<fbs::TensorValue>> tensor_values = {
+      fbs::CreateTensorValueDirect(builder, "input", input_meta)};
   const std::vector<flatbuffers::Offset<fbs::Output>> input_outputs = {
       fbs::CreateOutputDirect(builder, "input")};
-  const std::vector<flatbuffers::Offset<fbs::Output>> weight_outputs = {
-      fbs::CreateOutputDirect(builder, "weight")};
-  const std::vector<flatbuffers::Offset<fbs::Output>> product_outputs = {
-      fbs::CreateOutputDirect(builder, "product")};
-  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> linear_inputs = {
-      fbs::CreateNamedArgumentDirect(
-          builder, "input", create_tensor_arg(builder, "input")),
-      fbs::CreateNamedArgumentDirect(
-          builder, "weight", create_tensor_arg(builder, "weight")),
-      fbs::CreateNamedArgumentDirect(builder, "bias", create_none_arg(builder)),
-  };
-  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> output_inputs = {
-      fbs::CreateNamedArgumentDirect(
-          builder, "", create_tensor_arg(builder, "product"))};
-  const std::vector<flatbuffers::Offset<fbs::Node>> nodes = {
-      fbs::CreateNodeDirect(
-          builder,
-          "input",
-          fbs::OpKind::PLACEHOLDER,
-          "",
-          nullptr,
-          &input_outputs),
-      fbs::CreateNodeDirect(
-          builder,
-          "weight",
-          fbs::OpKind::PLACEHOLDER,
-          "",
-          nullptr,
-          &weight_outputs),
-      fbs::CreateNodeDirect(
-          builder,
-          "linear",
-          fbs::OpKind::CALL_FUNCTION,
-          "torch.ops.aten.linear.default",
-          &linear_inputs,
-          &product_outputs),
-      fbs::CreateNodeDirect(
-          builder, "output", fbs::OpKind::OUTPUT, "", &output_inputs),
-  };
+  std::vector<flatbuffers::Offset<fbs::Node>> nodes = {fbs::CreateNodeDirect(
+      builder, "input", fbs::OpKind::PLACEHOLDER, "", nullptr, &input_outputs)};
+  std::vector<flatbuffers::Offset<fbs::NamedArgument>> output_inputs;
+  std::vector<flatbuffers::Offset<fbs::NamedTensorRef>> constants;
+  std::vector<flatbuffers::Offset<fbs::OutputSpec>> output_specs;
+  std::vector<std::string> products;
+  for (size_t i = 0; i < weights.size(); ++i) {
+    const std::string suffix = i == 0 ? "" : std::to_string(i);
+    const std::string weight = "weight" + suffix;
+    const std::string product = "product" + suffix;
+    const auto packed =
+        fbs::CreatePackedQuantDirect(builder, weights[i].codec.c_str());
+    const auto quant = fbs::CreateQuantSpec(
+        builder, fbs::QuantScheme::PackedQuant, packed.Union());
+    const std::vector<flatbuffers::Offset<fbs::Dim>> weight_sizes = {
+        fbs::CreateDim(builder, weights[i].rows, weights[i].rows),
+        fbs::CreateDim(builder, kQ4KIn, kQ4KIn)};
+    const auto weight_meta = fbs::CreateTensorMeta(
+        builder,
+        fbs::ScalarType::BYTE,
+        builder.CreateVector(weight_sizes),
+        /*dim_order=*/0,
+        quant);
+    const auto product_meta = create_tensor_meta(
+        builder, fbs::ScalarType::FLOAT, {1, weights[i].rows});
+    tensor_values.push_back(
+        fbs::CreateTensorValueDirect(builder, product.c_str(), product_meta));
+    const std::vector<flatbuffers::Offset<fbs::Output>> weight_outputs = {
+        fbs::CreateOutputDirect(builder, weight.c_str())};
+    const std::vector<flatbuffers::Offset<fbs::Output>> product_outputs = {
+        fbs::CreateOutputDirect(builder, product.c_str())};
+    const std::vector<flatbuffers::Offset<fbs::NamedArgument>> linear_inputs = {
+        fbs::CreateNamedArgumentDirect(
+            builder, "input", create_tensor_arg(builder, "input")),
+        fbs::CreateNamedArgumentDirect(
+            builder, "weight", create_tensor_arg(builder, weight.c_str())),
+        fbs::CreateNamedArgumentDirect(
+            builder, "bias", create_none_arg(builder)),
+    };
+    nodes.push_back(fbs::CreateNodeDirect(
+        builder,
+        weight.c_str(),
+        fbs::OpKind::PLACEHOLDER,
+        "",
+        nullptr,
+        &weight_outputs));
+    nodes.push_back(fbs::CreateNodeDirect(
+        builder,
+        ("linear" + suffix).c_str(),
+        fbs::OpKind::CALL_FUNCTION,
+        "torch.ops.aten.linear.default",
+        &linear_inputs,
+        &product_outputs));
+    output_inputs.push_back(fbs::CreateNamedArgumentDirect(
+        builder, "", create_tensor_arg(builder, product.c_str())));
+    constants.push_back(fbs::CreateNamedTensorRefDirect(
+        builder,
+        weight.c_str(),
+        weight.c_str(),
+        weight_meta,
+        fbs::InputKind::PARAMETER));
+    output_specs.push_back(
+        fbs::CreateOutputSpecDirect(builder, product.c_str()));
+    products.push_back(product);
+  }
+  nodes.push_back(fbs::CreateNodeDirect(
+      builder, "output", fbs::OpKind::OUTPUT, "", &output_inputs));
   const auto graph = fbs::CreateGraph(
       builder,
       builder.CreateVector(nodes),
       create_strings(builder, {"input"}),
-      create_strings(builder, {"product"}),
+      create_strings(builder, products),
       builder.CreateVector(tensor_values));
-  const std::vector<flatbuffers::Offset<fbs::NamedTensorRef>> constants = {
-      fbs::CreateNamedTensorRefDirect(
-          builder, "weight", "weight", weight_meta, fbs::InputKind::PARAMETER),
-  };
-  return finish_program(
-      builder,
-      graph,
-      {fbs::CreateOutputSpecDirect(builder, "product")},
-      constants);
+  return finish_program(builder, graph, output_specs, constants);
+}
+
+std::vector<uint8_t> make_gguf_q4_k_linear_program(
+    const char* codec = "gguf:q4_k") {
+  return make_gguf_linear_program({{.codec = codec}});
 }
 
 // Each 32-byte group of the test blocks shifts its low and high nibbles by
@@ -3289,10 +3364,15 @@ struct CompiledProgram {
 CompiledProgram compile_program(
     const std::vector<uint8_t>& program_bytes,
     std::vector<uint8_t> tensors = {},
-    const std::string& method_name = "forward") {
+    const std::string& method_name = "forward",
+    const std::string& aliases = {}) {
   std::vector<testing::StoredMember> members = {{kProgramEntry, program_bytes}};
   if (!tensors.empty()) {
     members.push_back({kSafeTensorsEntry, std::move(tensors)});
+  }
+  if (!aliases.empty()) {
+    members.push_back(
+        {kAliasesEntry, std::vector<uint8_t>(aliases.begin(), aliases.end())});
   }
   CompiledProgram result;
   result.host = VulkanEngineHost::create();
@@ -3360,6 +3440,21 @@ TEST(VulkanEngineTest, ExposesOnlyUserOutputsWhenMutationOutputsArePresent) {
       compiled.executable->get_output(
           1, output.data(), output.size(), ScalarType::Float),
       std::out_of_range);
+}
+
+TEST(VulkanEngineTest, RejectsRepeatedReducedDims) {
+  for (const std::vector<int64_t>& dims :
+       {std::vector<int64_t>{-1, 2}, std::vector<int64_t>{2, 2}}) {
+    try {
+      compile_program(make_squeezed_sum_program(dims));
+      FAIL() << "expected the repeated reduced dim to be rejected";
+    } catch (const std::runtime_error& e) {
+      EXPECT_NE(
+          std::string(e.what()).find("repeats a reduced dim"),
+          std::string::npos)
+          << e.what();
+    }
+  }
 }
 
 TEST(VulkanEngineTest, RejectsUserInputMutation) {
@@ -4466,15 +4561,105 @@ TEST(VulkanEngineTest, RejectsGgufQ4KWeightOfWrongSize) {
   }
 }
 
-TEST(VulkanEngineTest, KeepsNonKQuantPackedConstantsQuantized) {
+TEST(VulkanEngineTest, RejectsPackedConstantsItCannotDecode) {
   try {
     compile_program(
-        make_gguf_q4_k_linear_program("gguf:q8_0"),
+        make_gguf_q4_k_linear_program("gguf:iq4_xs"),
         make_gguf_q4_k_linear_tensors({{{2, 1}, {3, 1}}}));
-    FAIL() << "expected the gguf:q8_0 weight to stay quantized";
+    FAIL() << "expected the gguf:iq4_xs weight to be rejected";
   } catch (const std::runtime_error& e) {
-    EXPECT_NE(std::string(e.what()).find("does not lower"), std::string::npos)
+    EXPECT_NE(
+        std::string(e.what()).find(
+            "has PackedQuant codec 'gguf:iq4_xs', which the Vulkan engine "
+            "cannot decode"),
+        std::string::npos)
         << e.what();
+  }
+}
+
+// Runs linear(ones, weight) and linear(ones, weight1) for two weights stored as
+// the same `bytes`, which the package keeps once (weight1 aliases weight), and
+// returns both products.
+std::array<std::vector<float>, 2> run_byte_identical_gguf_weights(
+    const GgufWeight& first,
+    const GgufWeight& second,
+    const std::vector<uint8_t>& bytes) {
+  const std::string header = R"({"weight":{"dtype":"U8","shape":[)" +
+      std::to_string(bytes.size()) + R"(],"data_offsets":[0,)" +
+      std::to_string(bytes.size()) + "]}}";
+  std::vector<uint8_t> tensors =
+      testing::make_safetensors(header, bytes.size());
+  std::copy(
+      bytes.begin(),
+      bytes.end(),
+      tensors.begin() + sizeof(uint64_t) + header.size());
+  CompiledProgram compiled = compile_program(
+      make_gguf_linear_program({first, second}),
+      std::move(tensors),
+      "forward",
+      R"({"weight1":"weight"})");
+  EXPECT_EQ(compiled.context->unique_constant_bytes(), bytes.size());
+  EXPECT_EQ(compiled.context->materialized_constant_bytes(), bytes.size());
+  const std::vector<float> input(kQ4KIn, 1.0f);
+  compiled.executable->set_input(
+      0, input.data(), input.size(), ScalarType::Float);
+  compiled.executable->execute();
+  std::array<std::vector<float>, 2> products = {
+      std::vector<float>(first.rows), std::vector<float>(second.rows)};
+  for (size_t i = 0; i < products.size(); ++i) {
+    compiled.executable->get_output(
+        i, products[i].data(), products[i].size(), ScalarType::Float);
+  }
+  return products;
+}
+
+// Q5_K [9, 256] and Q4_K [11, 256] weights both take 1 584 bytes. The shared
+// bytes are zero except for fp16 d = 1 at offset 0, the first sub-block scale
+// (byte 4) = 1, and bytes 16-47 = 1. Q5_K reads bytes 16-47 as high bits, so
+// its row 0 starts with 32 weights of 16; Q4_K reads them as its first nibbles,
+// so its row 0 starts with 32 weights of 1. Every other weight is 0.
+TEST(VulkanEngineTest, DecodesByteIdenticalGgufWeightsOfDifferentShapes) {
+  std::vector<uint8_t> bytes(9 * 176);
+  bytes[1] = 0x3C;
+  bytes[4] = 1;
+  std::fill_n(bytes.begin() + 16, 32, 1);
+  const auto [q5_k, q4_k] = run_byte_identical_gguf_weights(
+      {.codec = "gguf:q5_k", .rows = 9},
+      {.codec = "gguf:q4_k", .rows = 11},
+      bytes);
+  std::vector<float> want_q5_k(9, 0.0f);
+  want_q5_k[0] = 16.0f * 32;
+  std::vector<float> want_q4_k(11, 0.0f);
+  want_q4_k[0] = 32.0f;
+  EXPECT_EQ(q5_k, want_q5_k);
+  EXPECT_EQ(q4_k, want_q4_k);
+}
+
+// A K-quant and a 32-weight codec whose blocks for a [2, 256] weight have the
+// same size. Each shared row is zero except for fp16 d = 1 at its start: the
+// K-quant reads zero sub-block scales, so every weight is 0, while the other
+// codec reads its first block's 32 zero codes as (0 - zero_point) * d.
+struct EqualSizeCodecs {
+  const char* k_quant;
+  const char* codec;
+  size_t row_bytes;
+  float zero_point;
+};
+
+TEST(VulkanEngineTest, DecodesByteIdenticalGgufWeightsOfEqualShape) {
+  for (const EqualSizeCodecs& c : std::vector<EqualSizeCodecs>{
+           {"gguf:q4_k", "gguf:q4_0", 144, 8.0f},
+           {"gguf:q5_k", "gguf:q5_0", 176, 16.0f},
+       }) {
+    std::vector<uint8_t> bytes(kQ4KOut * c.row_bytes);
+    for (int64_t n = 0; n < kQ4KOut; ++n) {
+      bytes[n * c.row_bytes + 1] = 0x3C;
+    }
+    const auto [k_quant, codec] = run_byte_identical_gguf_weights(
+        {.codec = c.k_quant}, {.codec = c.codec}, bytes);
+    EXPECT_EQ(k_quant, std::vector<float>(kQ4KOut, 0.0f)) << c.k_quant;
+    EXPECT_EQ(codec, std::vector<float>(kQ4KOut, -32.0f * c.zero_point))
+        << c.codec;
   }
 }
 
