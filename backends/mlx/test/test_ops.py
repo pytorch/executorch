@@ -7946,12 +7946,15 @@ class DequantizeTest(OpTestCase):
 
 
 class CumsumModel(nn.Module):
-    def __init__(self, dim: int):
+    def __init__(self, dim: int, out_dtype: Optional[torch.dtype] = None):
         super().__init__()
         self.dim = dim
+        self.out_dtype = out_dtype
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.cumsum(x, dim=self.dim)
+        if self.out_dtype is None:
+            return torch.cumsum(x, dim=self.dim)
+        return torch.cumsum(x, dim=self.dim, dtype=self.out_dtype)
 
 
 @register_test
@@ -7960,11 +7963,23 @@ class CumsumTest(OpTestCase):
     rtol = 1e-5
     atol = 1e-5
 
-    def __init__(self, shape: Tuple[int, ...] = (3, 4), dim: int = 0):
+    def __init__(
+        self,
+        shape: Tuple[int, ...] = (3, 4),
+        dim: int = 0,
+        dtype: torch.dtype = torch.float32,
+        out_dtype: Optional[torch.dtype] = None,
+    ):
         self.shape = shape
         self.dim = dim
+        self.dtype = dtype
+        self.out_dtype = out_dtype
         shape_str = "x".join(str(s) for s in shape)
         self.name = f"cumsum_dim{dim}_{shape_str}"
+        if dtype != torch.float32:
+            self.name += "_" + str(dtype).replace("torch.", "")
+        if out_dtype is not None:
+            self.name += "_to_" + str(out_dtype).replace("torch.", "")
 
     @classmethod
     def get_test_configs(cls) -> List["CumsumTest"]:
@@ -7973,13 +7988,21 @@ class CumsumTest(OpTestCase):
             cls(shape=(3, 4), dim=0),
             cls(shape=(3, 4), dim=1),
             cls(shape=(2, 3, 4), dim=-1),
+            # Integer inputs accumulate in int64, so uint8 sums must not wrap.
+            cls(shape=(8,), dim=0, dtype=torch.uint8),
+            # An explicit dtype sets the accumulation and output dtype.
+            cls(shape=(8,), dim=0, dtype=torch.uint8, out_dtype=torch.float32),
+            cls(shape=(3, 4), dim=1, dtype=torch.float32, out_dtype=torch.int32),
         ]
 
     def create_model(self) -> nn.Module:
-        return CumsumModel(self.dim)
+        return CumsumModel(self.dim, self.out_dtype)
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.randn(self.shape),)
+        if self.dtype == torch.uint8:
+            # 100 per element overflows uint8 after the second step.
+            return (torch.full(self.shape, 100, dtype=torch.uint8),)
+        return (torch.randn(self.shape, dtype=self.dtype),)
 
 
 class CummaxModel(nn.Module):
