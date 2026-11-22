@@ -19,6 +19,7 @@ from pathlib import Path
 
 import torch
 import torch.nn.functional as F
+from executorch.backends.native.examples.hf_llm.export_hf_llm import LastTokenLM
 from executorch.exir.native import to_native
 from executorch.extension.llm.export.gguf import ExportableGGUFTensor
 from gguf import GGML_QUANT_SIZES, GGMLQuantizationType
@@ -31,7 +32,6 @@ from torchao.quantization import (
 )
 from torchao.quantization.granularity import PerGroup
 from transformers import LlamaConfig, LlamaForCausalLM
-from transformers.integrations.executorch import TorchExportableModuleForDecoderOnlyLM
 from transformers.models.llama.modeling_llama import (
     apply_rotary_pos_emb,
     LlamaRotaryEmbedding,
@@ -227,8 +227,8 @@ class HalfCacheWrite(torch.nn.Module):
 
 
 class TinyLlama(torch.nn.Module):
-    """The transformers static-cache Llama. Calls the wrapped model directly so
-    that it returns only the last position's logits."""
+    """A tiny 8da4w Llama behind the HF exporter's static-cache wrapper, which
+    returns only the last position's logits."""
 
     def __init__(self, max_cache_len: int):
         super().__init__()
@@ -255,19 +255,10 @@ class TinyLlama(torch.nn.Module):
         model.generation_config.use_cache = True
         model.generation_config.cache_implementation = "static"
         _quantize_8da4w(model, group_size=64)
-        self.cached = TorchExportableModuleForDecoderOnlyLM(
-            model, batch_size=1, max_cache_len=max_cache_len
-        ).model
+        self.lm = LastTokenLM(model, max_cache_len)
 
     def forward(self, input_ids, cache_position):
-        return self.cached.model(
-            input_ids=input_ids,
-            cache_position=cache_position,
-            attention_mask=None,
-            past_key_values=self.cached.static_cache,
-            use_cache=True,
-            logits_to_keep=1,
-        ).logits
+        return self.lm(input_ids, cache_position)
 
 
 class WrittenCacheMask(torch.nn.Module):
