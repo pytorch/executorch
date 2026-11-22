@@ -146,7 +146,13 @@ def _load(
     if offgraph_cache:
         register_offgraph_attention(_OFFGRAPH_ATTENTION)
     attn = _OFFGRAPH_ATTENTION if offgraph_cache else "sdpa"
-    kwargs = {"dtype": torch.float32, "attn_implementation": attn}
+    # batched_mm experts gather each token's expert weights and multiply them
+    # in core ATen ops; the default grouped_mm does not export.
+    kwargs = {
+        "dtype": torch.float32,
+        "attn_implementation": attn,
+        "experts_implementation": "batched_mm",
+    }
     # Without the checkpoint's own weights, a multimodal config builds only its
     # text decoder, unless a text-only module takes the whole model.
     build_config = config if text_only else text_config
