@@ -22,9 +22,11 @@ import gguf
 import torch
 import torchvision
 from executorch.backends.native.examples.hf_llm.export_hf_llm import (
+    golden_samples,
     LastTokenLM,
     load_gguf,
 )
+from executorch.exir._serialize._ptn import read_ptn
 from executorch.exir.native import to_native
 from executorch.extension.llm.export.gguf import ExportableGGUFTensor
 from torch.export import Dim
@@ -84,7 +86,7 @@ def _run(
         torch.frombuffer(bytearray(Path(path).read_bytes()), dtype=torch.float32)
         .reshape(size)
         .clone()
-        for path, size in zip(output_steps, sizes)
+        for path, size in zip(output_steps, sizes, strict=True)
     ]
 
 
@@ -812,6 +814,43 @@ class CrossEngineTest(unittest.TestCase):
                 )
             },
         )
+
+    def test_tiny_llama_gguf_dequantized_twin_matches_its_golden_samples(self):
+        torch.manual_seed(0)
+        model = _tiny_llama()
+        pairs = _gguf_weights(model)
+        load_gguf(model, "tiny.gguf", "llama", lambda _: iter(pairs), dequantize=True)
+        wrapper = LastTokenLM(model, _MAX_SEQ).eval()
+        seq = Dim("seq", min=1, max=_MAX_SEQ - 1)
+        with torch.no_grad():
+            ep = torch.export.export(
+                wrapper,
+                (torch.tensor([[3, 4, 5, 6, 7, 8, 9]]), torch.arange(7)),
+                dynamic_shapes={"input_ids": {1: seq}, "cache_position": {0: seq}},
+                strict=True,
+            )
+        golden = golden_samples(wrapper, [[3, 4, 5, 6, 7, 8, 9], [200, 17]], 3)
+        self.assertEqual(golden.tol, (1e-3, 1e-3))
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            package = outdir / "twin.ptn"
+            to_native(ep).save(str(package))
+            _, constants = read_ptn(str(package))
+            self.assertNotIn(torch.uint8, {t.dtype for t in constants.values()})
+            atol, rtol = golden.tol
+            for i, sample in enumerate(golden.samples):
+                steps = [tuple(call.inputs) for call in sample.calls]
+                outputs = _run("ggml_ptn_runner", package, steps, outdir, resize=True)
+                for step, (got, call) in enumerate(
+                    zip(outputs, sample.calls, strict=True)
+                ):
+                    torch.testing.assert_close(
+                        got,
+                        call.outputs[0],
+                        atol=atol,
+                        rtol=rtol,
+                        msg=lambda m, i=i, step=step: f"sample {i} call {step}: {m}",
+                    )
 
     def _check_gguf_dynamic_tokens(self, ggml_type: str):
         """A linear and an embedding of synthetic `ggml_type` weights, each
