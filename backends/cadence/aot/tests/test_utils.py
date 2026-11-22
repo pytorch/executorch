@@ -18,8 +18,10 @@ from executorch.exir import ExecutorchProgramManager
 class TestSavePteProgram(unittest.TestCase):
     def test_saves_through_the_program_manager(self) -> None:
         prog = mock.create_autospec(ExecutorchProgramManager, instance=True)
-        save_pte_program(prog, "model", "out")
-        prog.save.assert_called_once_with(os.path.join("out", "model.pte"))
+        save_pte_program(prog, "model", "out", consume=True)
+        prog.save.assert_called_once_with(
+            os.path.join("out", "model.pte"), consume=True
+        )
 
     def test_raises_when_the_write_fails(self) -> None:
         prog = mock.create_autospec(ExecutorchProgramManager, instance=True)
@@ -36,3 +38,5 @@ class TestSavePteProgram(unittest.TestCase):
             save_pte_program(Legacy(), "model", directory)
             with open(os.path.join(directory, "model.pte"), "rb") as f:
                 self.assertEqual(b"program", f.read())
+            with self.assertRaisesRegex(TypeError, "consume needs"):
+                save_pte_program(Legacy(), "model", directory, consume=True)

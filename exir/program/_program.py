@@ -7,15 +7,17 @@
 
 # pyre-strict
 import copy
+import errno
 import io
 import logging
 import os
-from collections import defaultdict
+import sys
+from collections import Counter, defaultdict
 from typing import Any, Dict, List, Optional, Sequence, Set, TextIO, Type, Union
 
 import torch
 import torch._export
-from executorch.exir._serialize._cord import Cord
+from executorch.exir._serialize._cord import _sync, Cord, FileBackedData
 from executorch.exir._serialize._named_data_store import (
     NamedDataStore,
     NamedDataStoreOutput,
@@ -1908,6 +1910,42 @@ class EdgeProgramManager:
         return et_pm
 
 
+def _check_file_backed_data(cords: Sequence[Cord], paths: Sequence[str]) -> None:
+    # Before any output is opened, so a write can't empty the only copy of data that an
+    # earlier consuming save moved, or the data's own file.
+    sources = [data.stat() for cord in cords for data in cord.file_backed_buffers()]
+    for path in paths:
+        try:
+            output = os.stat(path)
+        except OSError:
+            continue
+        if any(os.path.samestat(output, source) for source in sources):
+            raise ValueError(f"{path} is the file that holds the data to write")
+
+
+# Errors that mean a file system can't sync a directory.
+_NO_DIRECTORY_SYNC = (errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP)
+
+
+def _sync_directory(path: str) -> None:
+    fd = os.open(os.path.dirname(path) or ".", os.O_RDONLY)
+    try:
+        _sync(fd)
+    except OSError as e:
+        if e.errno not in _NO_DIRECTORY_SYNC:
+            raise
+    finally:
+        os.close(fd)
+
+
+def _intact(data: FileBackedData) -> bool:
+    try:
+        data.stat()
+        return True
+    except (OSError, RuntimeError):
+        return False
+
+
 class ExecutorchProgramManager:
     """
     Package of one or more `ExportedPrograms` in Execution dialect. Designed to simplify
@@ -2055,6 +2093,8 @@ class ExecutorchProgramManager:
         Note that the call to `buffer` may allocate a very large amount of
         contiguous memory, depending on the model size. If writing to a file,
         use `write_to_file` which won't incur additional copies.
+
+        Raises RuntimeError if a consuming `save` moved the data and it isn't cached.
         """
         # TODO(T181494963): update pybinding to remove buffer cache, which can consume large
         # amounts of memory longer than necessary.
@@ -2082,28 +2122,108 @@ class ExecutorchProgramManager:
         Writes the serialized ExecuTorch binary to the file at `open_file`. Prefer to use this over
         `buffer`, as it writes to file without copying into a contiguous block of memory first,
         reducing the peak memory usage.
+
+        Raises RuntimeError if a consuming `save` moved the data. Opening that save's
+        output with "wb" to write into it empties the only copy of the data first.
         """
         self._pte_data.write_to_file(open_file)
 
-    def write_tensor_data_to_file(self, outdir) -> None:
+    def write_tensor_data_to_file(self, outdir, *, consume: bool = False) -> None:
         """
         Writes the serialized ExecuTorch data files to the directory at `outdir`.
+        `consume` works as in `save`.
         """
         assert self._tensor_data is not None
-        for filename, cord in self._tensor_data.items():
-            if not filename.endswith(".ptd"):
-                filename += ".ptd"
-            with open(os.path.join(outdir, f"{filename}"), "wb") as f:
-                logging.info(f"Writing data file to {filename}")
-                cord.write_to_file(f)
+        files = {
+            os.path.join(outdir, name if name.endswith(".ptd") else f"{name}.ptd"): cord
+            for name, cord in self._tensor_data.items()
+        }
+        _check_file_backed_data(list(files.values()), list(files))
+        for path, cord in files.items():
+            logging.info(f"Writing data file to {os.path.basename(path)}")
+            with open(path, "wb") as f:
+                if consume:
+                    self._write_moving(path, f, cord)
+                else:
+                    cord.write_to_file(f)
 
-    def save(self, path: str) -> None:
+    def save(self, path: str, *, consume: bool = False) -> None:
         """
         Saves the serialized ExecuTorch binary to the file at `path`.
+
+        Args:
+            path: The file to write. Must end with ".pte".
+            consume: Move data that the program keeps in files it owns, such as large
+                delegate payloads, into `path` instead of copying it. On file systems
+                with sparse files, the data is then on disk once, not twice. On others,
+                such as FAT32, it still moves but saves no space. Data that can't move,
+                for example because it is on another file system or on Windows, is
+                copied, with a warning. When data moves, the save syncs `path` to disk
+                at least once per 64 MiB moved, and writes the first bytes of `path`
+                last, so an output that was not finished does not load.
+
+                The moved data is gone from every program that shares it: this one,
+                the `EdgeProgramManager` it was lowered from, other programs made from
+                that, and their copies. None of them can read it again, so save any
+                ETRecord built from the lowered program first. If the save fails after
+                data moved, a note on the error says that `path` holds the only copy of
+                the data moved so far. Unless `path` loads, the program has to be
+                exported again.
+
+        Raises:
+            ValueError: `path` does not end with ".pte", or is a file that holds data
+                to write.
+            RuntimeError: Data to write was moved by an earlier consuming save.
+            OSError: The write failed.
         """
         if path[-4:] != ".pte":
             logging.error(f"Path {path} does not end with .pte")
             raise ValueError(f"Path {path} does not end with .pte")
+        _check_file_backed_data([self._pte_data], [path])
         with open(path, "wb") as file:
-            self.write_to_file(file)
+            if consume:
+                self._write_moving(path, file, self._pte_data)
+            else:
+                self.write_to_file(file)
         logging.info(f"Saved exported program to {path}")
+
+    def _write_moving(self, path: str, output: io.BufferedIOBase, cord: Cord) -> None:
+        """Write `cord` to `output`, the empty file at `path`, moving the data that can
+        move into it."""
+        buffers = set(cord.file_backed_buffers())
+        move: Set[FileBackedData] = set()
+        # NTFS fills the hole a move leaves in a file that is not sparse.
+        if sys.platform != "win32":
+            device = os.fstat(output.fileno()).st_dev
+            uses = Counter(
+                data.path
+                for written in [self._pte_data, *self._tensor_data.values()]
+                for data in written.file_backed_buffers()
+            )
+            # Across file systems, a move saves no space where the output goes.
+            move = {
+                data
+                for data in buffers
+                if uses[data.path] == 1
+                and data._can_move()
+                and data.stat().st_dev == device
+            }
+        if len(move) < len(buffers):
+            logging.warning(
+                f"Copying {len(buffers) - len(move)} of {len(buffers)} file-backed "
+                f"buffers into {path} instead of moving them. Data moves only out of a "
+                "writable file that the program owns, that has one name, that it uses "
+                "once and that is on the same file system as the output, and not on "
+                "Windows."
+            )
+        if not move:
+            cord.write_to_file(output)
+            return
+        try:
+            # Before any data moves, so the file that will hold it survives a crash.
+            _sync_directory(path)
+            cord._write_and_move(output, move)
+        except BaseException as e:
+            if not all(_intact(data) for data in move):
+                e.add_note(f"{path} holds the only copy of the data moved so far.")
+            raise

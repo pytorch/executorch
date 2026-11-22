@@ -283,15 +283,25 @@ def print_ops_info(
 
 
 def save_pte_program(
-    prog: ExecutorchProgramManager, model_name: str, output_dir: str = ""
+    prog: ExecutorchProgramManager,
+    model_name: str,
+    output_dir: str = "",
+    *,
+    consume: bool = False,
 ) -> None:
+    """Save `prog` as a `.pte` file. `consume` works as in
+    `ExecutorchProgramManager.save`."""
     if model_name.endswith(".pte"):
         filename = model_name
     else:
         filename = os.path.join(output_dir, f"{model_name}.pte")
 
     if isinstance(prog, ExecutorchProgramManager):
-        prog.save(filename)
+        prog.save(filename, consume=consume)
+    elif consume:
+        raise TypeError(
+            f"consume needs an ExecutorchProgramManager, not {type(prog).__name__}"
+        )
     else:  # The deprecated ExecutorchProgram has no save.
         with open(filename, "wb") as file:
             prog.write_to_file(file)

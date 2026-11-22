@@ -134,19 +134,30 @@ def export_to_exec_prog(
 
 
 def save_pte_program(
-    prog: ExecutorchProgramManager, model_name: str, output_dir: str = ""
+    prog: ExecutorchProgramManager,
+    model_name: str,
+    output_dir: str = "",
+    *,
+    consume: bool = False,
 ) -> str:
+    """Save `prog` as a `.pte` file, and its data files into `output_dir`. `consume`
+    works as in `ExecutorchProgramManager.save`."""
     if model_name.endswith(".pte"):
         filename = model_name
     else:
         filename = os.path.join(output_dir, f"{model_name}.pte")
 
     if isinstance(prog, ExecutorchProgramManager):
-        prog.save(filename)
+        prog.save(filename, consume=consume)
+        prog.write_tensor_data_to_file(outdir=output_dir, consume=consume)
+    elif consume:
+        raise TypeError(
+            f"consume needs an ExecutorchProgramManager, not {type(prog).__name__}"
+        )
     else:  # The deprecated ExecutorchProgram has no save.
         with open(filename, "wb") as file:
             prog.write_to_file(file)
         logging.info(f"Saved exported program to {filename}")
-    prog.write_tensor_data_to_file(outdir=output_dir)
+        prog.write_tensor_data_to_file(outdir=output_dir)
 
     return filename
