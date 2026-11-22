@@ -38,6 +38,7 @@ from transformers import (
     AutoModelForCausalLM,
     DeepseekV32Config,
     Gemma2Config,
+    Gemma3Config,
     Gemma3TextConfig,
     GemmaConfig,
     GptOssConfig,
@@ -289,6 +290,28 @@ class ExportHfLlmTest(unittest.TestCase):
         with torch.no_grad():
             got, want = loaded(ids).logits, reference(ids).logits
         self.assertTrue(torch.equal(got, want))
+
+    def test_gguf_loads_the_text_decoder_of_a_multimodal_config(self) -> None:
+        ids = torch.tensor([[3, 4, 5, 6, 7, 8]])
+        torch.manual_seed(1)
+        reference = _tiny("gemma3")
+        config = Gemma3Config(
+            text_config=reference.config.to_dict(),
+            vision_config={"hidden_size": 16, "num_hidden_layers": 1},
+        )
+        pairs = _as_gguf_tensors(reference, "gemma3")
+        with tempfile.TemporaryDirectory() as path:
+            config.save_pretrained(path)
+            loaded = _load(path, 0, False, empty_weights=True)
+            random = _load(path, 0, True, empty_weights=False)
+
+        for model in (loaded, random):
+            self.assertEqual(type(model), type(reference))
+        load_gguf(loaded, "model.gguf", "gemma3", lambda _: iter(pairs))
+
+        with torch.no_grad():
+            got, want = loaded(ids).logits, reference(ids).logits
+        self.assertTrue(torch.allclose(got, want, atol=1e-4, rtol=0))
 
     def test_gguf_derives_head_dim_when_config_has_none(self) -> None:
         torch.manual_seed(1)

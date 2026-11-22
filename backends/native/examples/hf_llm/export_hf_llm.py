@@ -133,11 +133,14 @@ def _load(
         register_offgraph_attention(_OFFGRAPH_ATTENTION)
     attn = _OFFGRAPH_ATTENTION if offgraph_cache else "sdpa"
     kwargs = {"dtype": torch.float32, "attn_implementation": attn}
+    # Without the checkpoint's own weights, a multimodal config builds only its
+    # text decoder, unless a text-only module takes the whole model.
+    build_config = config if text_only else text_config
     if empty_weights:
         with _parameters_on_meta():
-            model = auto_class.from_config(config, **kwargs)
+            model = auto_class.from_config(build_config, **kwargs)
     elif random_weights:
-        model = auto_class.from_config(config, **kwargs)
+        model = auto_class.from_config(build_config, **kwargs)
     else:
         model = auto_class.from_pretrained(path, config=config, **kwargs)
     if text_only:
