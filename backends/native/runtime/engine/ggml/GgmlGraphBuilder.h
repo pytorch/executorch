@@ -186,6 +186,7 @@ class GraphBuilder {
       std::unordered_map<ValueId, int64_t> key_extents,
       size_t graph_size,
       bool gpu,
+      bool exact_topk,
       const OffGraphCacheBinding* offgraph_cache = nullptr);
 
   GraphInstance build();
@@ -301,12 +302,16 @@ class GraphBuilder {
   void lower_sum(const Node& node);
   void lower_amax(const Node& node);
   void lower_softmax(const Node& node);
+  ggml_tensor* nan_mask(ggml_tensor* x);
   // The `self` of a mean, sum or amax over trailing dims as ggml rows of the
   // reduced elements, and the result sizes.
   std::pair<ggml_tensor*, std::vector<int64_t>> trailing_rows(
       const Node& node,
       const std::string& op);
   void lower_split(const Node& node, const std::string& key);
+  void lower_topk(const Node& node);
+  void set_as_output_type(ValueId id, TensorRef result);
+  ggml_tensor* last_dim_gather(ggml_tensor* table, ggml_tensor* indices);
   void lower_slice(const Node& node, bool copy);
   void lower_select(const Node& node, bool copy);
   void lower_unsqueeze(const Node& node);
@@ -353,6 +358,8 @@ class GraphBuilder {
   size_t graph_size_;
   // The primary backend is a GPU.
   bool gpu_;
+  // GgmlEngineOptions::exact_topk_for_testing.
+  bool exact_topk_;
   const OffGraphCacheBinding* offgraph_cache_;
   std::vector<RuntimeValue> values_;
   std::unordered_map<ValueId, ggml_tensor*> rope_factor_tensors_;

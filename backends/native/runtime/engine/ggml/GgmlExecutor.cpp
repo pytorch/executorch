@@ -1745,6 +1745,7 @@ GraphInstance GgmlExecutable::build_graph(
           std::move(truncated),
           options_.graph_size,
           options_.device == GgmlDevice::Gpu,
+          options_.exact_topk_for_testing,
           valid(offgraph_position_) ? &offgraph_cache : nullptr)
           .build();
   if (options_.print_graph_ops) {
