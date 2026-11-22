@@ -410,7 +410,7 @@ class RecordTest(unittest.TestCase):
 
     def test_core_op_cases_fit_quantized_schemes_only_through_a_linear(self) -> None:
         for op_name, op in ops().items():
-            if op_name in ("linear", "embedding"):
+            if op_name in ("linear", "embedding", "gdn"):
                 continue
             for case in op.cases():
                 quantized = case.name.startswith("quantized_")
@@ -419,6 +419,15 @@ class RecordTest(unittest.TestCase):
                         self.assertEqual(
                             scheme.fits(case.model), quantized or name == "float"
                         )
+
+    def test_wide_gdn_layer_fits_the_gguf_k_quants(self) -> None:
+        layers = {c.name: c.model for c in ops()["gdn"].cases()}
+        for name in ("gguf_q8_0", "gguf_q4_k", "gguf_q5_k"):
+            with self.subTest(scheme=name):
+                self.assertTrue(
+                    schemes()[name].fits(layers["quantized_layer_decode_wide"])
+                )
+                self.assertFalse(schemes()[name].fits(layers["recurrent_qwen35"]))
 
     def test_chain_visits_each_dims_bounds_starting_mid_range(self) -> None:
         a, b = Dim("a", min=1, max=8), Dim("b", min=2, max=4)

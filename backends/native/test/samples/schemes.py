@@ -127,7 +127,8 @@ class Torchao(Scheme):
 
 # Families of fp16 block scales by byte offset in each block: powers of two,
 # where a type's dmin, if it has one, centers random weights near zero, then
-# negative, rounded and subnormal ones. A model's i-th quantized module takes
+# negative, rounded and subnormal ones, and larger powers of two for a fifth
+# weight, as a Gated DeltaNet layer has. A model's i-th quantized module takes
 # the i-th family, so one module per family isolates each in its own output.
 # TODO: Add a zero-d family once OutputCheck's bias standard error stops
 # assuming independent outputs.
@@ -137,60 +138,70 @@ GGUF_SUPER_SCALES = {
         {0: -(2**-12)},
         {0: 3.1e-4},
         {0: 3 * 2**-21},
+        {0: 2**-10},
     ],
     "q4_1": [
         {0: 2**-12, 2: -15 * 2**-13},
         {0: -(2**-12), 2: 15 * 2**-13},
         {0: 3.1e-4, 2: -2.3e-3},
         {0: 3 * 2**-21, 2: -45 * 2**-22},
+        {0: 2**-10, 2: -15 * 2**-11},
     ],
     "q5_0": [
         {0: 2**-12},
         {0: -(2**-12)},
         {0: 3.1e-4},
         {0: 3 * 2**-21},
+        {0: 2**-10},
     ],
     "q5_1": [
         {0: 2**-12, 2: -31 * 2**-13},
         {0: -(2**-12), 2: 31 * 2**-13},
         {0: 3.1e-4, 2: -4.8e-3},
         {0: 3 * 2**-21, 2: -93 * 2**-22},
+        {0: 2**-10, 2: -31 * 2**-11},
     ],
     "q8_0": [
         {0: 2**-12},
         {0: -(2**-12)},
         {0: 3.1e-4},
         {0: 3 * 2**-21},
+        {0: 2**-10},
     ],
     "q2_k": [
         {80: 2**-12, 82: 3 * 2**-13},
         {80: -(2**-12), 82: -3 * 2**-13},
         {80: 3.1e-4, 82: 4.7e-4},
         {80: 3 * 2**-21, 82: 9 * 2**-22},
+        {80: 2**-10, 82: 3 * 2**-11},
     ],
     "q3_k": [
         {108: 2**-12},
         {108: -(2**-12)},
         {108: 3.1e-4},
         {108: 3 * 2**-21},
+        {108: 2**-10},
     ],
     "q4_k": [
         {0: 2**-12, 2: 2**-9},
         {0: -(2**-12), 2: -(2**-9)},
         {0: 3.1e-4, 2: 2.3e-3},
         {0: 3 * 2**-21, 2: 3 * 2**-18},
+        {0: 2**-10, 2: 2**-7},
     ],
     "q5_k": [
         {0: 2**-12, 2: 2**-8},
         {0: -(2**-12), 2: -(2**-8)},
         {0: 3.1e-4, 2: 4.8e-3},
         {0: 3 * 2**-21, 2: 3 * 2**-17},
+        {0: 2**-10, 2: 2**-6},
     ],
     "q6_k": [
         {208: 2**-12},
         {208: -(2**-12)},
         {208: 3.1e-4},
         {208: 3 * 2**-21},
+        {208: 2**-10},
     ],
 }
 

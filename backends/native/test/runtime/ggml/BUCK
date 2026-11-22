@@ -53,10 +53,14 @@ _FP16_SCALE_UNBOUNDED = [
     "sum_gguf_q5_1.quantized_last_f32",
 ]
 
+# The ggml engine does not run Gated DeltaNet on transformers' ATen rule
+# (`--gdn_op aten`); et-cpu runs these cases.
+_ATEN_GDN_RULE = ["gdn_*.recurrent_*", "gdn_*.quantized_layer_decode*"]
+
 # This filter replaces the act_quant target's own, so it keeps its exclusions.
 _GPU_ACT_QUANT_ARGS = [
     "--gpu_fp16_block_scales",
-    "--gtest_filter=-" + ":".join(["elu_float.elu_f32_alpha_*"] + _FP16_SCALE_UNBOUNDED + ["topk_*.nan_and_inf_*"]),
+    "--gtest_filter=-" + ":".join(["elu_float.elu_f32_alpha_*"] + _ATEN_GDN_RULE + _FP16_SCALE_UNBOUNDED + ["topk_*.nan_and_inf_*"]),
 ]
 
 # The op suite runs once per ggml backend set; only the engine variant, the
@@ -176,8 +180,8 @@ _EXACT_GELU_ONLY_ON_CPU = [
     for v in _VARIANTS
     for name, flags in [
         ("", []),
-        ("_act_quant", ["--allow_activation_quant_for_weight_only", "--gtest_filter=-" + ":".join(["elu_float.elu_f32_alpha_*"] + _EXACT_TOPK_ONLY + (_EXACT_GELU_ONLY_ON_CPU if v["device"] == "cpu" else []))]),
-        ("_no_linear", ["--gtest_filter=-" + ":".join(["linear_*", "*.quantized_*", "elu_float.elu_f32_alpha_*"] + _EXACT_TOPK_ONLY + (_EXACT_GELU_ONLY_ON_CPU if v["device"] == "cpu" else []))]),
+        ("_act_quant", ["--allow_activation_quant_for_weight_only", "--gtest_filter=-" + ":".join(["elu_float.elu_f32_alpha_*"] + _ATEN_GDN_RULE + _EXACT_TOPK_ONLY + (_EXACT_GELU_ONLY_ON_CPU if v["device"] == "cpu" else []))]),
+        ("_no_linear", ["--gtest_filter=-" + ":".join(["linear_*", "*.quantized_*", "elu_float.elu_f32_alpha_*"] + _ATEN_GDN_RULE + _EXACT_TOPK_ONLY + (_EXACT_GELU_ONLY_ON_CPU if v["device"] == "cpu" else []))]),
         # Every sample with the engine's testing options on.
         ("_testing_options", ["--exact_topk_for_testing", "--exact_gelu_for_testing"]),
     ]
