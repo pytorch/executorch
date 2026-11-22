@@ -421,6 +421,7 @@ def define_common_targets(is_fbcode = False):
             "//caffe2:torch",
             "//executorch/backends/cuda:cuda_backend",
             "//executorch/backends/cuda:runtime_owned_kv",
+            "//executorch/exir/backend:compile_spec_schema",
         ],
     )
 

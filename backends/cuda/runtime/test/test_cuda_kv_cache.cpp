@@ -4441,6 +4441,42 @@ TEST_F(CudaPrivateCacheTest, CompactLiveReusedOwnerDropsLongCapacity) {
   kv->forget_handle(&handle);
 }
 
+TEST_F(CudaPrivateCacheTest, CompactPreservesLiveDecodeSlackAndExactHistory) {
+  auto ptr = make_private();
+  auto* ctl = ptr->as<cache::BatchControl>();
+  auto* kv = ptr->as<cu::CudaKVCache>();
+  auto fake = private_container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  ASSERT_EQ(ctl->seq_new(), 0);
+  ASSERT_EQ(ctl->seq_new(), 1);
+  ASSERT_EQ(
+      write_step(*ptr, fake, handle, std::vector<int32_t>(128, 0)), Error::Ok);
+  for (int length = 1; length <= 9; ++length) {
+    ASSERT_EQ(write_step(*ptr, fake, handle, {1}), Error::Ok);
+  }
+  const auto before = kv->metrics().allocated_bytes;
+  ASSERT_TRUE(ctl->seq_rm(0));
+  ASSERT_EQ(kv->compact_columns(0), Error::Ok);
+  EXPECT_LT(kv->metrics().allocated_bytes, before);
+  const auto growths = kv->metrics().growth_count;
+  ASSERT_EQ(write_step(*ptr, fake, handle, {1}), Error::Ok);
+  EXPECT_EQ(kv->metrics().growth_count, growths);
+  const auto flat =
+      read_ints(fake.bound["flat_layout"].data, (kOwners + 1) * 2);
+  EXPECT_EQ(flat[3], 16);
+  void* flat_data = fake.bound["flat_k"].data;
+  void* ring_data = fake.bound["ring_k"].data;
+  for (int length = 11; length <= 16; ++length) {
+    ASSERT_EQ(write_step(*ptr, fake, handle, {1}), Error::Ok);
+    EXPECT_EQ(kv->metrics().growth_count, growths);
+    EXPECT_EQ(fake.bound["flat_k"].data, flat_data);
+    EXPECT_EQ(fake.bound["ring_k"].data, ring_data);
+    expect_history(fake, 1, length);
+  }
+  kv->forget_handle(&handle);
+}
+
 TEST_F(CudaPrivateCacheTest, IdleCompactionDropsClosedPrivateSpans) {
   auto ptr = make_private();
   auto* ctl = ptr->as<cache::BatchControl>();

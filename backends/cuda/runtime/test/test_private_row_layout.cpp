@@ -84,11 +84,38 @@ TEST(PrivateRowLayoutTest, ClosingAnOwnerReclaimsOnlyItsSpan) {
       {0, 16}, {16, 8192}, {8208, 8}, {8216, 1}};
   const auto result = plan(rows, previous, 4, 131072, true);
   ASSERT_TRUE(result.ok());
-  EXPECT_EQ(result.get().spans[0].capacity, 8);
+  EXPECT_EQ(result.get().spans[0].capacity, 16);
   EXPECT_EQ(result.get().spans[1].capacity, 0);
-  EXPECT_EQ(result.get().spans[2].capacity, 4);
-  EXPECT_EQ(result.get().spans[2].base, 8);
-  EXPECT_EQ(result.get().rows, 13);
+  EXPECT_EQ(result.get().spans[2].capacity, 8);
+  EXPECT_EQ(result.get().spans[2].base, 16);
+  EXPECT_EQ(result.get().rows, 25);
+}
+
+TEST(PrivateRowLayoutTest, CompactKeepsBoundedGrowthSlackForLiveOwners) {
+  const std::vector<int64_t> rows{9, 1, 64};
+  const std::vector<PrivateRowSpan> previous{
+      {0, 1024}, {1024, 1024}, {2048, 64}, {2112, 1}};
+  auto compact = plan(rows, previous, 2, 131072, true);
+  ASSERT_TRUE(compact.ok());
+  EXPECT_EQ(compact.get().spans[0].capacity, 16);
+  EXPECT_EQ(compact.get().spans[1].capacity, 2);
+  // Compaction alone never increases the last owner's filled span.
+  EXPECT_EQ(compact.get().spans[2].capacity, 64);
+  EXPECT_LT(compact.get().rows, 2113);
+  auto layout = std::move(compact.get());
+  const auto bases = layout.spans;
+  for (int length = 10; length <= 16; ++length) {
+    const std::vector<int64_t> next{length, 1, 64};
+    auto result = plan(next, layout.spans, 2, 131072);
+    ASSERT_TRUE(result.ok());
+    EXPECT_FALSE(result.get().repacked);
+    EXPECT_EQ(result.get().rows, layout.rows);
+    for (size_t owner = 0; owner < 3; ++owner) {
+      EXPECT_EQ(result.get().spans[owner].base, bases[owner].base);
+      EXPECT_EQ(result.get().spans[owner].capacity, bases[owner].capacity);
+    }
+    layout = std::move(result.get());
+  }
 }
 
 TEST(PrivateRowLayoutTest, CompactLiveReusedOwnerDropsInheritedCapacity) {

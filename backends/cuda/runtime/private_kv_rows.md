@@ -24,7 +24,9 @@ Removed owners' spans can be
 retained for burst reuse. Reusing an ID can temporarily inherit that capacity;
 explicit compaction plans live spans from their current requirements and the
 initial capacity, releasing inherited excess as well as unused spans and arena
-slack. A wrapped Ring retains its window and modulus during compaction.
+slack. It retains bounded geometric growth slack (at most the current span's
+capacity), so resumed decode does not immediately regrow partially filled
+spans. A wrapped Ring retains its window and modulus during compaction.
 
 The executor's automatic idle heuristic still uses owner counts. Closing a few
 long owners while many short owners remain may therefore retain their spans
@@ -46,6 +48,11 @@ storage identities. Any graph-owned alias excludes its storage from this
 optimization. Shape, stride, offset and nonzero metadata are preserved;
 graph-owned cache clones keep their existing zero-initialization behavior.
 Autotuning continues to hydrate real inputs and measure the original shapes.
+The generated AOTI constant metadata still declares each runtime buffer's
+logical byte extent, using Inductor's existing alignment rule. Only that size
+field is corrected for identified empty storage; no KV payload is initialized
+or serialized. An unexpected or missing size emission fails export rather than
+silently producing an incompatible library.
 
 `seq_cols[T]` supplies stable owner IDs in the original query order and
 `seq_info[2 * max_seqs, 4]` describes query runs. Each layer's

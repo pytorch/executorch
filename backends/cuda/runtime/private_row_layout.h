@@ -79,7 +79,17 @@ inline runtime::Result<PrivateRowLayout> make_private_row_layout(
     int64_t capacity = 0;
     if (required > 0) {
       capacity = old > 0 && !compact ? old : std::min(initial_rows, limit);
-      if (required > capacity) {
+      if (compact) {
+        // Preserve bounded geometric decode slack while shedding inherited
+        // oversized spans. Never grow a live span merely to compact it.
+        const int64_t target = std::min(limit, required + 1);
+        while (capacity < target) {
+          capacity = std::min(limit, capacity * 2);
+        }
+        if (old >= required) {
+          capacity = std::min(capacity, old);
+        }
+      } else if (required > capacity) {
         capacity = std::min(limit, std::max(required, capacity * 2));
       }
     }

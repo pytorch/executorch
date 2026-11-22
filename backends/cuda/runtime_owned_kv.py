@@ -6,6 +6,9 @@
 
 """Compile-only metadata placeholders for explicitly runtime-owned KV buffers."""
 
+import contextlib
+import re
+
 import torch
 from torch.multiprocessing.reductions import StorageWeakRef
 
@@ -55,3 +58,58 @@ class RuntimeOwnedKVCompileBuffers:
         self._storages.add(StorageWeakRef(value.untyped_storage()))
         self._clones.append(value)
         return value
+
+    @contextlib.contextmanager
+    def constant_info_sizes(self, wrapper, tensors, alignment: int):
+        """Keep AOTI's declared extent independent from empty payload storage.
+
+        Inductor emits constant data_size from storage.nbytes(), which is zero
+        for these views. The CUDA runtime checks the declared extent before
+        binding its own storage. Change only that field for identified empty
+        runtime buffers; leave shape, dtype, offset and blob packing untouched.
+        """
+        if alignment not in (1, 64):
+            raise ValueError("Unsupported AOTI constant alignment")
+        sizes = {}
+        for index, tensor in enumerate(tensors):
+            if self.owns_empty(tensor):
+                extent = tensor.storage_offset() + 1
+                for size, stride in zip(tensor.shape, tensor.stride()):
+                    extent += (size - 1) * stride
+                size_bytes = extent * tensor.element_size()
+                sizes[index] = (size_bytes + alignment - 1) // alignment * alignment
+        if not sizes:
+            yield
+            return
+        prefix = wrapper.prefix
+        seen = set()
+
+        class ConstantInfoWriter:
+            def __getattr__(self, name):
+                return getattr(prefix, name)
+
+            def writeline(self, line=""):
+                match = (
+                    re.fullmatch(
+                        r"constants_info_\[(\d+)\]\.data_size = (\d+);", line.strip()
+                    )
+                    if isinstance(line, str)
+                    else None
+                )
+                if match is not None and int(match[1]) in sizes:
+                    index = int(match[1])
+                    if int(match[2]) != 0 or index in seen:
+                        raise RuntimeError(
+                            "Unexpected runtime-owned AOTI constant size emission"
+                        )
+                    line = f"constants_info_[{index}].data_size = {sizes[index]};"
+                    seen.add(index)
+                prefix.writeline(line)
+
+        wrapper.prefix = ConstantInfoWriter()
+        try:
+            yield
+            if seen != sizes.keys():
+                raise RuntimeError("Missing runtime-owned AOTI constant size emission")
+        finally:
+            wrapper.prefix = prefix

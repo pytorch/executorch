@@ -587,6 +587,7 @@ def _compile_time_cpu_clones(target_device: torch.device):  # noqa: C901
 
     orig_clone = _cfx.clone_preserve_strides
     orig_codegen_device = _Cpp.codegen_device
+    orig_codegen_model_constructor = _Cpp.codegen_model_constructor
     orig_get_const = _GL.get_original_value_of_constant
     orig_is_same = _graph.is_same_tensor
     orig_tensor_properties = _codecache.TensorProperties
@@ -676,8 +677,37 @@ def _compile_time_cpu_clones(target_device: torch.device):  # noqa: C901
             device = target_device
         return orig_codegen_device(self, device)
 
+    def _codegen_model_constructor_with_owned_sizes(self):
+        runtime_owned = getattr(_CPU_CLONE_GUARD, "runtime_owned_kv", None)
+        if (
+            runtime_owned is None
+            or not _is_cpu_clone_active()
+            or getattr(_CPU_CLONE_GUARD, "constant_info_active", False)
+        ):
+            return orig_codegen_model_constructor(self)
+        from torch._inductor.virtualized import V
+
+        constants = [
+            (name, V.graph.get_original_value_of_constant(name))
+            for name in V.graph.constants
+        ]
+        all_cuda = all(
+            tensor.is_cuda
+            for name, tensor in constants
+            if name not in V.graph.folded_constants
+        )
+        _CPU_CLONE_GUARD.constant_info_active = True
+        try:
+            with runtime_owned.constant_info_sizes(
+                self, [tensor for _, tensor in constants], 1 if all_cuda else 64
+            ):
+                return orig_codegen_model_constructor(self)
+        finally:
+            _CPU_CLONE_GUARD.constant_info_active = False
+
     _cfx.clone_preserve_strides = _cpu_clone_preserve_strides
     _Cpp.codegen_device = _codegen_device_target_aware
+    _Cpp.codegen_model_constructor = _codegen_model_constructor_with_owned_sizes
     _GL.get_original_value_of_constant = _get_const_synthesize_zeros
     _graph.is_same_tensor = _is_same_skip_emptied
     _codecache.TensorProperties = functools.partial(
@@ -693,6 +723,7 @@ def _compile_time_cpu_clones(target_device: torch.device):  # noqa: C901
         _CPU_CLONE_GUARD.active = prev_active
         _cfx.clone_preserve_strides = orig_clone
         _Cpp.codegen_device = orig_codegen_device
+        _Cpp.codegen_model_constructor = orig_codegen_model_constructor
         _GL.get_original_value_of_constant = orig_get_const
         _graph.is_same_tensor = orig_is_same
         _codecache.TensorProperties = orig_tensor_properties

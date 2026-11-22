@@ -101,6 +101,142 @@ class RuntimeOwnedKVCompileBuffersTest(unittest.TestCase):
         self.assertFalse(second.owns_empty(clone))
 
 
+class ConstantInfoCodegenTest(unittest.TestCase):
+    @staticmethod
+    @contextlib.contextmanager
+    def lowered_constants(tensors):
+        from torch._inductor import config
+        from torch._inductor.graph import GraphLowering
+        from torch._inductor.virtualized import V
+
+        graph = torch.fx.Graph()
+        graph.output(())
+        module = torch.fx.GraphModule({}, graph)
+        with config.patch({"cpp_wrapper": True}):
+            lowering = GraphLowering(
+                module, (), cpp_wrapper=True, aot_mode=True, is_inference=True
+            )
+            with V.set_graph_handler(lowering):
+                lowering.run()
+                lowering.constants = {
+                    f"constant_{index}": value for index, value in enumerate(tensors)
+                }
+                lowering.allocated_constant_name = {
+                    name: PREFIX + name for name in lowering.constants
+                }
+                yield lowering
+
+    def test_real_inductor_constructor_preserves_extent_without_payload(self):
+        from torch._inductor.codegen.cpp_wrapper_cpu import CppWrapperCpu
+
+        owned = empty_view((1, 131072 * 65, 2, 128))
+        graph_owned = empty_view((2, 3))
+        payload = torch.tensor([4, 9], dtype=torch.int32)
+        buffers = RuntimeOwnedKVCompileBuffers(
+            program(**{PREFIX + "layer_0_k": owned, "graph": graph_owned}), PREFIX
+        )
+        for alignment in (1, 64):
+            with self.subTest(alignment=alignment), self.lowered_constants(
+                [owned, graph_owned, payload]
+            ):
+                original = CppWrapperCpu()
+                original.codegen_model_constructor()
+                self.assertIn(
+                    "constants_info_[0].data_size = 0;", original.prefix.getvalue()
+                )
+                wrapper = CppWrapperCpu()
+                prefix = wrapper.prefix
+                with mock.patch.object(
+                    torch, "zeros", side_effect=AssertionError("zeros")
+                ):
+                    with buffers.constant_info_sizes(
+                        wrapper, [owned, graph_owned, payload], alignment
+                    ):
+                        wrapper.codegen_model_constructor()
+                self.assertIs(wrapper.prefix, prefix)
+                expected = owned.numel() * owned.element_size()
+                generated = wrapper.prefix.getvalue()
+                self.assertIn(f"constants_info_[0].data_size = {expected};", generated)
+                self.assertIn("constants_info_[1].data_size = 0;", generated)
+                self.assertIn("constants_info_[2].data_size = 64;", generated)
+                self.assertIn(
+                    "constants_info_[0].shape = {1, 8519680, 2, 128};", generated
+                )
+                self.assertEqual(owned.untyped_storage().nbytes(), 0)
+                torch.testing.assert_close(
+                    payload, torch.tensor([4, 9], dtype=torch.int32)
+                )
+
+    def test_real_constructor_preserves_noncontiguous_extent_and_offset(self):
+        from torch._inductor.codegen.cpp_wrapper_cpu import CppWrapperCpu
+
+        value = empty_view((2, 3), (9, 2), 4)
+        buffers = RuntimeOwnedKVCompileBuffers(
+            program(**{PREFIX + "layer_0_k": value}), PREFIX
+        )
+        with self.lowered_constants([value]):
+            wrapper = CppWrapperCpu()
+            with buffers.constant_info_sizes(wrapper, [value], 64):
+                wrapper.codegen_model_constructor()
+            generated = wrapper.prefix.getvalue()
+            self.assertIn("constants_info_[0].data_size = 64;", generated)
+            self.assertIn("constants_info_[0].offset = 4;", generated)
+            self.assertIn("constants_info_[0].stride = {9, 2};", generated)
+            self.assertEqual(value.untyped_storage().nbytes(), 0)
+
+    def test_constant_writer_restores_prefix_and_rejects_changed_emission(self):
+        from torch._inductor.utils import IndentedBuffer
+
+        value = empty_view((2, 3))
+        buffers = RuntimeOwnedKVCompileBuffers(
+            program(**{PREFIX + "layer_0_k": value}), PREFIX
+        )
+        for emitted in (None, "constants_info_[0].data_size = 17;"):
+            wrapper = types.SimpleNamespace(prefix=IndentedBuffer())
+            original = wrapper.prefix
+            with self.subTest(emitted=emitted), self.assertRaises(RuntimeError):
+                with buffers.constant_info_sizes(wrapper, [value], 64):
+                    if emitted is not None:
+                        wrapper.prefix.writeline(emitted)
+            self.assertIs(wrapper.prefix, original)
+        wrapper = types.SimpleNamespace(prefix=IndentedBuffer())
+        original = wrapper.prefix
+        with self.assertRaisesRegex(RuntimeError, "original failure"):
+            with buffers.constant_info_sizes(wrapper, [value], 64):
+                raise RuntimeError("original failure")
+        self.assertIs(wrapper.prefix, original)
+
+    @unittest.skipUnless(torch.cuda.is_available(), "Actual CUDA compile context")
+    def test_actual_backend_context_installs_codegen_hook_and_restores_nested(self):
+        from executorch.backends.cuda.cuda_backend import _CPU_CLONE_GUARD, CudaBackend
+        from executorch.exir.backend.compile_spec_schema import CompileSpec
+        from torch._inductor.codegen.cpp_wrapper_cpu import CppWrapperCpu
+
+        value = empty_view((2, 3))
+        lowered = program(**{PREFIX + "layer_0_k": value})
+        original = CppWrapperCpu.codegen_model_constructor
+        previous = getattr(_CPU_CLONE_GUARD, "runtime_owned_kv", None)
+        specs = [CompileSpec("low_memory_mode", b"ON")]
+        with self.lowered_constants([value]):
+            with CudaBackend.get_aoti_program_compile_context_manager(lowered, specs):
+                with CudaBackend.get_aoti_program_compile_context_manager(
+                    lowered, specs
+                ):
+                    wrapper = CppWrapperCpu()
+                    wrapper.codegen_model_constructor()
+                    self.assertIn(
+                        "constants_info_[0].data_size = 64;", wrapper.prefix.getvalue()
+                    )
+                self.assertTrue(_CPU_CLONE_GUARD.runtime_owned_kv.owns_empty(value))
+            self.assertIs(CppWrapperCpu.codegen_model_constructor, original)
+            self.assertIs(_CPU_CLONE_GUARD.runtime_owned_kv, previous)
+            wrapper = CppWrapperCpu()
+            wrapper.codegen_model_constructor()
+            self.assertIn(
+                "constants_info_[0].data_size = 0;", wrapper.prefix.getvalue()
+            )
+
+
 class ProgramCompileContextTest(unittest.TestCase):
     @staticmethod
     def method(path, class_name, name, namespace):
