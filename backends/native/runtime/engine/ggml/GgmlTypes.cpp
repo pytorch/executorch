@@ -221,11 +221,22 @@ ggml_type compute_type(const TensorMeta& meta) {
   return meta.dtype == ScalarType::Long ? GGML_TYPE_I32 : to_ggml_type(meta);
 }
 
+// Leading size-1 dims add nothing to the layout, so a tensor above rank 4
+// whose extra leading dims are all 1 runs at rank 4.
+std::vector<int64_t> fold_leading_ones(const std::vector<int64_t>& sizes) {
+  size_t lead = 0;
+  while (sizes.size() - lead > GGML_MAX_DIMS && sizes[lead] == 1) {
+    ++lead;
+  }
+  return {sizes.begin() + static_cast<std::ptrdiff_t>(lead), sizes.end()};
+}
+
 std::array<int64_t, GGML_MAX_DIMS> reversed_extents(
-    const std::vector<int64_t>& sizes) {
+    const std::vector<int64_t>& full_sizes) {
+  const std::vector<int64_t> sizes = fold_leading_ones(full_sizes);
   if (sizes.size() > GGML_MAX_DIMS) {
     throw std::runtime_error(
-        "ggml: only rank 0 through 4 tensors are supported");
+        "ggml: a tensor above rank 4 needs every extra leading dim to be 1");
   }
   std::array<int64_t, GGML_MAX_DIMS> ne{1, 1, 1, 1};
   for (size_t i = 0; i < sizes.size(); ++i) {
@@ -241,7 +252,10 @@ ggml_tensor* new_tensor(
     const std::vector<int64_t>& sizes) {
   const auto ne = reversed_extents(sizes);
   return ggml_new_tensor(
-      ctx, type, std::max(1, static_cast<int>(sizes.size())), ne.data());
+      ctx,
+      type,
+      std::max(1, static_cast<int>(fold_leading_ones(sizes).size())),
+      ne.data());
 }
 
 // cppcheck-suppress unusedFunction
