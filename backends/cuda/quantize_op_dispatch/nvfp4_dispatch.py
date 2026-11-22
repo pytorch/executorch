@@ -10,10 +10,11 @@ is compiled into the program:
 * ``ET_CUDA_NVFP4_ACT``: ``auto`` (default) times W4A16 against native W4A4
   per layer when native FP4 is available, and decode (M statically <= 4, by
   default only M = 1, see ``ET_CUDA_NVFP4_SMALL_M``) W4A16 against the W4A8
-  dp4a GEMV (int8 activations per 16 elements) otherwise; ``w4a16`` forces
-  BF16/FP16 activations, ``w4a8`` forces the W4A8 GEMV for decode (other M run
-  BF16/FP16 activations, as ``w4a16``), and ``w4a4`` forces FP4 activations
-  (native FP4 required).
+  dp4a GEMV (int8 activations per 16 elements) otherwise on NVIDIA (W4A16 only
+  on ROCm); ``w4a16`` forces BF16/FP16 activations, ``w4a8`` forces the W4A8
+  GEMV for decode (other M run BF16/FP16 activations, as ``w4a16``; NVIDIA
+  only, it raises on ROCm), and ``w4a4`` forces FP4 activations (native FP4
+  required).
 * ``ET_CUDA_NVFP4_PREFILL_OUTPUT``: ``input`` (default) keeps the activation
   dtype; ``fp32`` returns FP32 from prefill linears (M not statically <= 4).
 * ``ET_CUDA_NVFP4_PREFILL_IMPL``: for M not statically <= 64, ``auto``
@@ -21,16 +22,20 @@ is compiled into the program:
   dequant + matmul otherwise; ``kernel`` / ``dequant`` force one for any M
   not statically <= 4. ``w4a4`` and the FP32 prefill output policy always take
   the fused kernels. The choice is made per exported program from M's upper
-  bound. A dynamic-M method tunes the fused kernels at its example M (the
-  largest, in the Muse Glimmer exports), so dequant + matmul is also faster
-  for its short prompts.
+  bound, and ``auto`` assumes a dynamic-M method is exported with its largest
+  M as the example, as the in-tree exporters (Muse Glimmer, DFlash, Gemma 4)
+  do: the fused kernels are tuned at the example M, so its short prompts run a
+  large-M tile (dequant + matmul is faster there on A100 and about 13% slower
+  per linear on H100, against 1.5-2x faster for long prompts). A method
+  exported with a small example M should set ``kernel``.
 * ``ET_CUDA_NVFP4_SMALL_M``: ``1`` (default) routes ``auto``/``w4a16`` linears
   whose M is in 2..16 (static, or dynamic with an upper bound <= 16), and
   ``w4a8`` ones with M in 5..16, to the small-M bucket ops, which time a rows
   GEMV, W4A16 and (``auto`` with native FP4) W4A4; with native FP4, ``auto``
-  M <= 4 keeps ``nvfp4_auto_decode``, and the FP32 prefill output policy and
-  an explicit ``ET_CUDA_NVFP4_PREFILL_IMPL=dequant`` keep M 5..16 off them.
-  ``0`` keeps the decode and prefill paths.
+  and ``w4a16`` M <= 4 keep the decode GEMVs (``nvfp4_auto_decode`` /
+  ``nvfp4_gemv``), and the FP32 prefill output policy and an explicit
+  ``ET_CUDA_NVFP4_PREFILL_IMPL=dequant`` keep M 5..16 off them. ``0`` keeps
+  the decode and prefill paths.
 """
 
 import os
@@ -283,7 +288,9 @@ def _dequant_linear(flat, w):
 
     def rows(i, j):
         part = _weight_rows(w, slice(i, j))
-        dense = nvfp4_dequant(part.qdata, part.scale, part.per_tensor_scale, flat.dtype)
+        dense = nvfp4_dequant(
+            part.qdata, part.scale, part.per_tensor_scale, output_dtype=flat.dtype
+        )
         return F.linear(flat, dense)
 
     return chunked_dequant_linear(flat, w.shape[0], rows)
@@ -385,12 +392,13 @@ def _small_m_op(flat, w, mode, output_dtype, impl, enabled):
     ``auto``/``w4a16`` take the buckets for M in 2..16, and ``w4a8`` for M
     above decode size (its W4A8 GEMV serves decode); only ``auto`` may time
     FP4 activations, and only it passes the static activation scale. With
-    native FP4, ``auto`` decode-size M keeps ``nvfp4_auto_decode`` (equal or
-    faster than the buckets on an RTX 5090 at M = 2..4).
+    native FP4, decode-size ``auto``/``w4a16`` keep ``nvfp4_auto_decode`` /
+    ``nvfp4_gemv`` (equal or faster than the buckets on an RTX 5090 at
+    M = 2..4).
     """
     rows = flat.shape[0]
     small = statically_known_true(rows <= NVFP4_DECODE_MAX_ROWS)
-    native_decode = small and mode == "auto" and _has_native_fp4()
+    native_decode = small and mode in ("auto", "w4a16") and _has_native_fp4()
     if (
         not enabled
         or native_decode
