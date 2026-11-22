@@ -20,6 +20,18 @@
 
 namespace ptn::ggml_detail {
 
+// cuBLAS multiplies F16 operands in F16 unless asked for F32, a few 1e-2 off
+// eager's F32 accumulation in long sums. The engine asks only on CUDA, and only
+// when the cuda_f32_accumulation_for_testing option is set.
+ggml_tensor* GraphBuilder::mul_mat(ggml_tensor* a, ggml_tensor* b) {
+  ggml_tensor* result = ggml_mul_mat(instance_.context.get(), a, b);
+  if (f32_accumulation_ &&
+      (a->type == GGML_TYPE_F16 || b->type == GGML_TYPE_F16)) {
+    ggml_prec_set_acc(result, GGML_PREC_F32);
+  }
+  return result;
+}
+
 void GraphBuilder::lower_linear(const Node& node) {
   const TensorRef input = tensor_arg(node, "input", 0);
   const TensorRef weight = tensor_arg(node, "weight", 1);
@@ -33,8 +45,7 @@ void GraphBuilder::lower_linear(const Node& node) {
           input.tensor->type == weight.tensor->type
       ? input.tensor
       : as_f32(input.tensor);
-  ggml_tensor* result =
-      ggml_mul_mat(instance_.context.get(), weight.tensor, activation);
+  ggml_tensor* result = mul_mat(weight.tensor, activation);
   if (const std::optional<TensorRef> bias = optional_tensor(node, "bias", 2)) {
     if (bias->sizes != std::vector<int64_t>{weight.sizes[0]}) {
       throw std::runtime_error(
@@ -139,7 +150,7 @@ void GraphBuilder::lower_matmul(const Node& node) {
   std::swap(right_t_sizes.back(), right_t_sizes[right_batch]);
   ggml_tensor* right_t =
       reshape(ctx, ggml_transpose(ctx, right.tensor), right_t_sizes);
-  ggml_tensor* result = ggml_mul_mat(ctx, right_t, left.tensor);
+  ggml_tensor* result = mul_mat(right_t, left.tensor);
   std::vector<int64_t> sizes = left.sizes;
   sizes.back() = right.sizes.back();
   set_single_output(node, TensorRef{result, std::move(sizes)});
