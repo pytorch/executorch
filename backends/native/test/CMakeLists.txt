@@ -102,6 +102,7 @@ endif()
 if(EXECUTORCH_BUILD_NATIVE_VULKAN)
   add_executable(
     native_vulkan_passes_test
+    runtime/vulkan/test_flatten_linear_batch.cpp
     runtime/vulkan/test_fuse_quantized_embedding.cpp
     runtime/vulkan/test_fuse_quantized_linear.cpp
     runtime/vulkan/test_insert_prepack.cpp

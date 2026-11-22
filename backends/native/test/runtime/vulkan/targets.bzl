@@ -13,6 +13,7 @@ def define_common_targets():
     runtime.cxx_test(
         name = "vulkan_passes_test",
         srcs = [
+            "test_flatten_linear_batch.cpp",
             "test_fuse_quantized_embedding.cpp",
             "test_fuse_quantized_linear.cpp",
             "test_insert_prepack.cpp",
