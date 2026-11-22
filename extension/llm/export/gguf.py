@@ -19,9 +19,14 @@ defers all unpacking, serving as the canonical GGUF loading representation:
   into ExecuTorch/torchao subclasses (``ExportableInt4Tensor`` /
   ``IntxUnpackedToInt8Tensor``) instead.
 
-The quant type is a string (``"q4_k"`` / ``"q5_k"`` / ``"q6_k"``); the ``gguf``
-package's integer ``GGMLQuantizationType`` ids are an internal lookup detail.
-Which tensors to convert is the caller's policy.
+The quant type is the lowercase name of a block-quantized ggml type (``"q4_k"``,
+``"q5_k"``, ``"q6_k"``, ...). Only types that op samples have validated
+(``_VALIDATED_QUANT_TYPES``) are accepted; other types raise
+``NotImplementedError``. An accepted type's block geometry comes from
+``gguf.GGML_QUANT_SIZES`` and its eager dequantization from ``gguf.dequantize``,
+and the package's integer ``GGMLQuantizationType`` ids are an internal lookup
+detail. Only Q4_K / Q5_K / Q6_K convert to the torchao subclasses below. Which
+tensors to convert is the caller's policy.
 
 Attribution: Q4_K / Q5_K / Q6_K block layouts follow llama.cpp / gguf-py
 (``ggml-common.h``), MIT-licensed (Copyright (c) 2023-2024 The ggml authors).
@@ -50,22 +55,43 @@ _Q4_K_BLOCK_BYTES = 2 + 2 + 12 + QK_K // 2  # 144
 _Q5_K_BLOCK_BYTES = 2 + 2 + 12 + QK_K // 8 + QK_K // 2  # 176
 _Q6_K_BLOCK_BYTES = 2 + QK_K // 2 + QK_K // 4 + QK_K // 16  # 210
 
-# ``gguf.GGMLQuantizationType`` integer ids.
-GGML_F32 = 0
-GGML_F16 = 1
-GGML_Q4_K = 12
-GGML_Q5_K = 13
-GGML_Q6_K = 14
+# GGUF quant types validated against eager, each added with its op samples.
+# Every other ggml type is rejected until it is.
+_VALIDATED_QUANT_TYPES = frozenset(
+    {
+        "q4_0",
+        "q4_1",
+        "q5_0",
+        "q5_1",
+        "q8_0",
+        "q2_k",
+        "q3_k",
+        "q4_k",
+        "q5_k",
+        "q6_k",
+    }
+)
 
-# String quant-type names are the user-facing identifier (op arg + subclass attr).
-# These dicts map names to the internal ids / block sizes.
-_GGML_ID_BY_TYPE = {"q4_k": GGML_Q4_K, "q5_k": GGML_Q5_K, "q6_k": GGML_Q6_K}
-_TYPE_BY_GGML_ID = {v: k for k, v in _GGML_ID_BY_TYPE.items()}
-_BLOCK_BYTES_BY_TYPE = {
-    "q4_k": _Q4_K_BLOCK_BYTES,
-    "q5_k": _Q5_K_BLOCK_BYTES,
-    "q6_k": _Q6_K_BLOCK_BYTES,
-}
+
+def _quant_type(ggml_type: str):
+    """The ``gguf.GGMLQuantizationType``, weights per block and bytes per block
+    of ``ggml_type``, the lowercase name of a block-quantized ggml type."""
+    from gguf import GGML_QUANT_SIZES, GGMLQuantizationType
+
+    qtype = GGMLQuantizationType.__members__.get(ggml_type.upper())
+    if (
+        qtype is None
+        or qtype.name.lower() != ggml_type
+        or GGML_QUANT_SIZES.get(qtype, (1, 0))[0] == 1
+    ):
+        raise NotImplementedError(
+            f"unsupported GGUF quant type {ggml_type!r}; expected the lowercase "
+            "name of a block-quantized ggml type, such as 'q4_k' or 'q8_0'"
+        )
+    if ggml_type not in _VALIDATED_QUANT_TYPES:
+        raise NotImplementedError(f"codec gguf:{ggml_type} not yet validated")
+    block_size, block_bytes = GGML_QUANT_SIZES[qtype]
+    return qtype, block_size, block_bytes
 
 
 def _read_f16(raw: Tensor, col_start: int, col_end: int) -> Tensor:
@@ -76,18 +102,18 @@ def _read_f16(raw: Tensor, col_start: int, col_end: int) -> Tensor:
 def _dequantize_gguf(raw: Tensor, ggml_type: str, output_dtype: torch.dtype) -> Tensor:
     """Dequantize a raw GGUF block blob to a float tensor via the ``gguf`` package.
 
-    ``raw`` is ``(N, row_bytes)`` uint8; the result is ``(N, K)`` in
-    ``output_dtype``.
+    ``raw`` is ``(..., N, row_bytes)`` uint8, with leading dims such as stacked
+    experts; the result is ``(..., N, K)`` in ``output_dtype``.
     """
     import gguf
 
-    if ggml_type not in _GGML_ID_BY_TYPE:
-        raise NotImplementedError(f"unsupported GGUF quant type {ggml_type!r}")
-    qtype = gguf.GGMLQuantizationType(_GGML_ID_BY_TYPE[ggml_type])
-    np_raw = raw.detach().cpu().contiguous().numpy()
-    deq = gguf.dequantize(np_raw, qtype)
-    return torch.from_numpy(np.ascontiguousarray(deq)).to(
-        device=raw.device, dtype=output_dtype
+    qtype, _, _ = _quant_type(ggml_type)
+    rows = raw.detach().cpu().contiguous().reshape(-1, raw.shape[-1])
+    deq = gguf.dequantize(rows.numpy(), qtype)
+    return (
+        torch.from_numpy(np.ascontiguousarray(deq))
+        .reshape(*raw.shape[:-1], -1)
+        .to(device=raw.device, dtype=output_dtype)
     )
 
 
@@ -100,14 +126,18 @@ def dequantize_gguf(
     ggml_type: str,
     output_dtype: torch.dtype = torch.bfloat16,
 ) -> Tensor:
-    """Dequantize a raw GGUF block blob (``(N, row_bytes)`` uint8) to ``(N, K)``."""
+    """Dequantize a raw GGUF block blob (``(..., N, row_bytes)`` uint8) to
+    ``(..., N, K)``."""
     return _dequantize_gguf(weight, ggml_type, output_dtype)
 
 
 @dequantize_gguf.register_fake
 def _(weight, ggml_type, output_dtype=torch.bfloat16):
-    K = (weight.shape[1] // _BLOCK_BYTES_BY_TYPE[ggml_type]) * QK_K
-    return torch.empty((weight.shape[0], K), dtype=output_dtype, device=weight.device)
+    _, block_size, block_bytes = _quant_type(ggml_type)
+    K = (weight.shape[-1] // block_bytes) * block_size
+    return torch.empty(
+        (*weight.shape[:-1], K), dtype=output_dtype, device=weight.device
+    )
 
 
 # Per-type field extraction (used by the to_*_tensor conversions)
@@ -305,8 +335,8 @@ def _max_uniform_group_size(
 class ExportableGGUFTensor(TorchAOBaseTensor):
     """Wraps the raw GGUF block bytes for one quantized weight.
 
-    Stores the exact GGUF ``block_q*_K`` byte layout (no repacking) plus the
-    quant type string (``"q4_k"`` / ``"q5_k"`` / ``"q6_k"``). ``aten.linear`` /
+    Stores the exact GGUF block byte layout (no repacking) plus the quant type
+    string (``"q4_k"``, ``"q8_0"``, ...). ``aten.linear`` /
     ``aten.embedding`` dequantize via the ``torchao::dequantize_gguf`` op (then a
     plain linear/embedding); :meth:`to_exportable_int4_tensor` /
     :meth:`to_intx_unpacked_to_int8_tensor` convert to ExecuTorch/torchao
@@ -322,19 +352,14 @@ class ExportableGGUFTensor(TorchAOBaseTensor):
                 f"ExportableGGUFTensor: raw must be 2-D uint8 (N, row_bytes); got "
                 f"shape {tuple(raw.shape)} dtype {raw.dtype}"
             )
-        if ggml_type not in _BLOCK_BYTES_BY_TYPE:
-            raise NotImplementedError(
-                f"ExportableGGUFTensor: unsupported quant type {ggml_type!r}; "
-                f"supported: {sorted(_BLOCK_BYTES_BY_TYPE)}"
-            )
+        _, block_size, block_bytes = _quant_type(ggml_type)
         n, row_bytes = int(raw.shape[0]), int(raw.shape[1])
-        block_bytes = _BLOCK_BYTES_BY_TYPE[ggml_type]
         if row_bytes % block_bytes != 0:
             raise ValueError(
                 f"ExportableGGUFTensor: row bytes {row_bytes} not a multiple of "
                 f"block bytes {block_bytes} for quant type {ggml_type!r}"
             )
-        K = (row_bytes // block_bytes) * QK_K
+        K = (row_bytes // block_bytes) * block_size
         self = torch.Tensor._make_wrapper_subclass(
             cls, (n, K), dtype=orig_dtype, device=raw.device, requires_grad=False
         )
@@ -548,30 +573,37 @@ def iter_gguf(
 ) -> Iterator[Tuple[str, Union[ExportableGGUFTensor, Tensor]]]:
     """Stream ``(name, value)`` for every tensor in a GGUF file (low peak mem).
 
-    Quantized tensors (Q4_K, Q5_K, Q6_K) are wrapped as ``ExportableGGUFTensor``
-    with the raw block bytes; F32/F16/BF16 are returned as plain float tensors in
-    their native dtype. GGUF shapes are reversed to PyTorch ``(N, K)`` convention.
+    Block-quantized tensors of a validated type (``_VALIDATED_QUANT_TYPES``) are
+    wrapped as ``ExportableGGUFTensor`` with the raw block bytes, and other block
+    types raise ``NotImplementedError``; F32/F16/BF16 are returned as plain float
+    tensors in their native dtype. GGUF shapes are reversed to
+    PyTorch ``(N, K)`` convention. A big-endian file raises ``ValueError``.
     """
-    from gguf import GGMLQuantizationType, GGUFReader
+    from gguf import GGML_QUANT_SIZES, GGMLQuantizationType, GGUFEndian, GGUFReader
 
     reader = GGUFReader(path)
+    if reader.endianess != GGUFEndian.LITTLE:
+        raise ValueError(
+            f"{path}: big-endian GGUF files are not supported; a .ptn stores "
+            "GGUF blocks as is, and they are little-endian"
+        )
     for tensor in reader.tensors:
         shape = list(reversed(tensor.shape.tolist()))
-        ttype = int(tensor.tensor_type)
+        ttype = tensor.tensor_type
         flat = torch.frombuffer(memoryview(tensor.data), dtype=torch.uint8)
-        if ttype in _TYPE_BY_GGML_ID:
+        if ttype == GGMLQuantizationType.F32:
+            yield tensor.name, flat.view(torch.float32).reshape(shape).clone()
+        elif ttype == GGMLQuantizationType.F16:
+            yield tensor.name, flat.view(torch.float16).reshape(shape).clone()
+        elif ttype == GGMLQuantizationType.BF16:
+            yield tensor.name, flat.view(torch.bfloat16).reshape(shape).clone()
+        elif GGML_QUANT_SIZES.get(ttype, (1, 0))[0] > 1:
             N = shape[0]
             row_bytes = flat.numel() // N
             raw = flat.reshape(N, row_bytes).clone()
             yield (
                 tensor.name,
-                ExportableGGUFTensor.from_raw(raw, _TYPE_BY_GGML_ID[ttype]),
+                ExportableGGUFTensor.from_raw(raw, ttype.name.lower()),
             )
-        elif tensor.tensor_type == GGMLQuantizationType.F32:
-            yield tensor.name, flat.view(torch.float32).reshape(shape).clone()
-        elif tensor.tensor_type == GGMLQuantizationType.F16:
-            yield tensor.name, flat.view(torch.float16).reshape(shape).clone()
-        elif tensor.tensor_type == GGMLQuantizationType.BF16:
-            yield tensor.name, flat.view(torch.bfloat16).reshape(shape).clone()
         else:
-            raise ValueError(f"Unsupported GGUF quant type: {tensor.tensor_type}")
+            raise ValueError(f"Unsupported GGUF tensor type: {ttype.name}")
