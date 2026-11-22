@@ -672,6 +672,48 @@ TEST_F(ModuleTest, TestLoadRetriesAfterAFailedProgramLoad) {
   EXPECT_EQ(module.load(), first_error);
 }
 
+namespace {
+void copy_file(const std::string& from, const std::string& to) {
+  std::ifstream source(from, std::ios::binary);
+  std::ofstream destination(to, std::ios::binary | std::ios::trunc);
+  destination << source.rdbuf();
+}
+} // namespace
+
+TEST_F(ModuleTest, TestLoadRetriesAfterAMissingDataFile) {
+  // Only the unique name is kept; the file appears after the first attempt.
+  const TempFile late_file("");
+  std::remove(late_file.path().c_str());
+  Module module(
+      add_mul_path_,
+      std::vector<std::string>{add_mul_data_path_, late_file.path()});
+  EXPECT_NE(module.load(), Error::Ok);
+
+  copy_file(linear_data_path_, late_file.path());
+  // The first file must not be added twice by the second attempt.
+  EXPECT_EQ(module.load(), Error::Ok);
+}
+
+TEST_F(ModuleTest, TestLoadRetriesAfterABadDataFileIsReplaced) {
+  const TempFile data_file(std::string(128, 'x'));
+  Module module(add_mul_path_, data_file.path());
+  EXPECT_EQ(module.load(), Error::InvalidExternalData);
+
+  copy_file(add_mul_data_path_, data_file.path());
+  EXPECT_EQ(module.load(), Error::Ok);
+}
+
+TEST_F(ModuleTest, TestLoadRetriesAfterTheSecondDataFileIsReplaced) {
+  const TempFile second_file(std::string(128, 'x'));
+  Module module(
+      add_mul_path_,
+      std::vector<std::string>{add_mul_data_path_, second_file.path()});
+  EXPECT_EQ(module.load(), Error::InvalidExternalData);
+
+  copy_file(linear_data_path_, second_file.path());
+  EXPECT_EQ(module.load(), Error::Ok);
+}
+
 TEST_F(ModuleTest, TestPTD_Multiple) {
   std::vector<std::string> data_files = {add_mul_data_path_, linear_data_path_};
 
