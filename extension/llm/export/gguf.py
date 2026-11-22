@@ -341,19 +341,24 @@ class ExportableGGUFTensor(TorchAOBaseTensor):
     plain linear/embedding); :meth:`to_exportable_int4_tensor` /
     :meth:`to_intx_unpacked_to_int8_tensor` convert to ExecuTorch/torchao
     subclasses instead.
+
+    A 3-D ``raw`` ``(E, N, row_bytes)`` holds stacked matrices, such as an MoE
+    layer's experts; ``aten.index.Tensor`` gathers whole matrices from it the
+    same way.
     """
 
     tensor_data_names = ["raw"]
     tensor_attribute_names = ["ggml_type", "orig_dtype"]
 
     def __new__(cls, raw: Tensor, ggml_type: str, orig_dtype: torch.dtype):
-        if raw.dim() != 2 or raw.dtype != torch.uint8:
+        if raw.dim() not in (2, 3) or raw.dtype != torch.uint8:
             raise ValueError(
-                f"ExportableGGUFTensor: raw must be 2-D uint8 (N, row_bytes); got "
-                f"shape {tuple(raw.shape)} dtype {raw.dtype}"
+                f"ExportableGGUFTensor: raw must be 2-D uint8 (N, row_bytes) or "
+                f"3-D (E, N, row_bytes); got shape {tuple(raw.shape)} dtype "
+                f"{raw.dtype}"
             )
         _, block_size, block_bytes = _quant_type(ggml_type)
-        n, row_bytes = int(raw.shape[0]), int(raw.shape[1])
+        *rows, row_bytes = (int(d) for d in raw.shape)
         if row_bytes % block_bytes != 0:
             raise ValueError(
                 f"ExportableGGUFTensor: row bytes {row_bytes} not a multiple of "
@@ -361,7 +366,7 @@ class ExportableGGUFTensor(TorchAOBaseTensor):
             )
         K = (row_bytes // block_bytes) * block_size
         self = torch.Tensor._make_wrapper_subclass(
-            cls, (n, K), dtype=orig_dtype, device=raw.device, requires_grad=False
+            cls, (*rows, K), dtype=orig_dtype, device=raw.device, requires_grad=False
         )
         self.raw = raw
         self.ggml_type = ggml_type
@@ -375,7 +380,8 @@ class ExportableGGUFTensor(TorchAOBaseTensor):
         ggml_type: str,
         orig_dtype: torch.dtype = torch.bfloat16,
     ) -> "ExportableGGUFTensor":
-        """Build from a ``(N, row_bytes)`` uint8 GGUF block blob."""
+        """Build from a ``(N, row_bytes)`` or ``(E, N, row_bytes)`` uint8 GGUF
+        block blob."""
         return cls(raw.contiguous(), ggml_type, orig_dtype)
 
     def to(self, *args, **kwargs) -> "ExportableGGUFTensor":
@@ -413,8 +419,13 @@ class ExportableGGUFTensor(TorchAOBaseTensor):
             raise NotImplementedError(
                 f"to_exportable_int4_tensor only supports q4_k; got {self.ggml_type!r}"
             )
+        if self.dim() != 2:
+            raise NotImplementedError(
+                "to_exportable_int4_tensor supports 2-D (N, K) tensors only; got "
+                f"shape {tuple(self.shape)}"
+            )
         dtype = output_dtype or self.orig_dtype
-        N, K = int(self.shape[0]), int(self.shape[1])
+        N, K = self.shape
         q, eff_scale, eff_min = _q4_k_fields(self.raw, N, K)
 
         zero = torch.where(
@@ -460,7 +471,12 @@ class ExportableGGUFTensor(TorchAOBaseTensor):
         # f32); the CUDA integrations pass bfloat16.
         sdt = scale_dtype if scale_dtype is not None else torch.float16
 
-        N, K = int(self.shape[0]), int(self.shape[1])
+        if self.dim() != 2:
+            raise NotImplementedError(
+                "to_intx_unpacked_to_int8_tensor supports 2-D (N, K) tensors "
+                f"only; got shape {tuple(self.shape)}"
+            )
+        N, K = self.shape
         if self.ggml_type == "q6_k":
             q, eff_scale = _q6_k_fields(self.raw, N, K)
             group_size = Q6_K_GROUP_SIZE
@@ -550,6 +566,12 @@ def _(func, types, args, kwargs):
     return torch.nn.functional.embedding(indices, weight.dequantize())
 
 
+@implements([aten.index.Tensor])
+def _(func, types, args, kwargs):
+    weight, indices = args[0], args[1]
+    return func(weight.dequantize(), indices)
+
+
 @implements([aten.t.default])
 def _(func, types, args, kwargs):
     return args[0].dequantize().t()
@@ -598,9 +620,8 @@ def iter_gguf(
         elif ttype == GGMLQuantizationType.BF16:
             yield tensor.name, flat.view(torch.bfloat16).reshape(shape).clone()
         elif GGML_QUANT_SIZES.get(ttype, (1, 0))[0] > 1:
-            N = shape[0]
-            row_bytes = flat.numel() // N
-            raw = flat.reshape(N, row_bytes).clone()
+            # Stacked matrices, e.g. experts [E, N, K], keep their leading dim.
+            raw = flat.reshape(*shape[:-1], -1).clone()
             yield (
                 tensor.name,
                 ExportableGGUFTensor.from_raw(raw, ttype.name.lower()),
