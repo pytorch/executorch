@@ -19,6 +19,10 @@ on:
       - extension/cuda/**
       - .ci/scripts/export_model_artifact.sh
       - .ci/scripts/test_model_e2e_windows.ps1
+      - .ci/scripts/wheel/install_cuda_redist.py
+      - install_requirements.py
+      - install_utils.py
+      - torch_pin.py
       # Only unittest-cuda-runtime-windows runs for these alone; the other jobs
       # filter on their own paths and stay skipped.
       - .ci/scripts/test_cuda_runtime_windows.ps1
@@ -49,7 +53,7 @@ jobs:
     uses: ./.github/workflows/_ci-run-decision.yml
 
   export-model-cuda-windows-artifact:
-    name: export-model-cuda-windows-artifact
+    name: export-model-cuda-windows-artifact-${{ matrix.cuda-version }} (${{ matrix.model_name }}, ${{ matrix.quant }})
     # Skip this job if the pull request is from a fork (HuggingFace secrets are not available).
     # Path-filtered on push: mirrors the workflow-level pull_request `paths:`
     # filter so push commits that don't touch CUDA-relevant paths skip
@@ -65,6 +69,10 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda-windows.yml') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e_windows.ps1') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/wheel/install_cuda_redist.py') ||
+        contains(needs.changed-files.outputs.changed-files, 'install_requirements.py') ||
+        contains(needs.changed-files.outputs.changed-files, 'install_utils.py') ||
+        contains(needs.changed-files.outputs.changed-files, 'torch_pin.py') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
@@ -79,15 +87,19 @@ jobs:
           - model_repo: "mistralai"
             model_name: "Voxtral-Mini-3B-2507"
             quant: "non-quantized"
+            cuda-version: "13.2"
           - model_repo: "mistralai"
             model_name: "Voxtral-Mini-3B-2507"
             quant: "quantized-int4-weight-only"
+            cuda-version: "13.2"
           - model_repo: "nvidia"
             model_name: "parakeet-tdt"
             quant: "non-quantized"
+            cuda-version: "13.2"
           - model_repo: "nvidia"
             model_name: "parakeet-tdt"
             quant: "quantized-int4-weight-only"
+            cuda-version: "13.2"
           # TODO: sortformer produces 0 segments on Windows after D97788666.
           # Temporarily disabled until root cause is debugged.
           # - model_repo: "nvidia"
@@ -97,18 +109,33 @@ jobs:
             model_name: "Voxtral-Mini-4B-Realtime-2602"
             quant: "quantized-int4-tile-packed"
             mode: "vr-offline"
+            cuda-version: "13.2"
           - model_repo: "facebook"
             model_name: "dinov2-small-imagenet1k-1-layer"
             quant: "non-quantized"
+            cuda-version: "13.2"
+          # Each train installs its own toolkit and, for the export, its own torch, so each
+          # needs rows of its own. Trains other than the image's (13.2) get only the
+          # smallest model and the tile-packed int4 model, the only quant here that lowers
+          # to _weight_int4pack_mm and so runs the int4mm shim that train's nvcc built.
+          - model_repo: "facebook"
+            model_name: "dinov2-small-imagenet1k-1-layer"
+            quant: "non-quantized"
+            cuda-version: "13.4"
+          - model_repo: "mistralai"
+            model_name: "Voxtral-Mini-4B-Realtime-2602"
+            quant: "quantized-int4-tile-packed"
+            mode: "vr-offline"
+            cuda-version: "13.4"
     with:
       timeout: 90
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: mt-l-x86aavx2-11-41-a10g
       gpu-arch-type: cuda
-      gpu-arch-version: "13.0"
+      gpu-arch-version: ${{ matrix.cuda-version }}
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-cuda-windows-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: recursive
-      upload-artifact: ${{ matrix.model_repo }}-${{ matrix.model_name }}-cuda-windows-${{ matrix.quant }}
+      upload-artifact: ${{ matrix.model_repo }}-${{ matrix.model_name }}-cuda-windows-${{ matrix.quant }}-cuda${{ matrix.cuda-version }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
@@ -129,7 +156,27 @@ jobs:
         ln -sf /usr/lib/x86_64-linux-gnu/libstdc++.so.6 /opt/conda/lib/libstdc++.so.6
         echo "::endgroup::"
 
-        echo "::group::Verify pre-installed dependencies"
+        # The image carries one train's toolkits; another train fetches its own Linux nvcc,
+        # which decides the torch install_executorch picks, and its own Windows runtime to
+        # link against.
+        # Under the job's temp directory: the image runs as ci-user, which cannot write to /opt.
+        if [ "$(nvcc --version | sed -n 's/.*release \([0-9.]*\),.*/\1/p')" != "${{ matrix.cuda-version }}" ]; then
+          echo "::group::Install the CUDA ${{ matrix.cuda-version }} toolkits"
+          TOOLKITS="${RUNNER_TEMP:-/tmp}/cuda-toolkits"
+          mkdir -p "${TOOLKITS}" 2>/dev/null || TOOLKITS=/tmp/cuda-toolkits
+          mkdir -p "${TOOLKITS}"
+          python .ci/scripts/wheel/install_cuda_redist.py --train "${{ matrix.cuda-version }}" \
+            --platform linux-x86_64 --dest "${TOOLKITS}/cuda-${{ matrix.cuda-version }}"
+          export CUDA_HOME="${TOOLKITS}/cuda-${{ matrix.cuda-version }}"
+          export PATH="${CUDA_HOME}/bin:${PATH}"
+          export CUDACXX="${CUDA_HOME}/bin/nvcc"
+          python .ci/scripts/wheel/install_cuda_redist.py --train "${{ matrix.cuda-version }}" \
+            --platform windows-x86_64 --dest "${TOOLKITS}/cuda-windows-${{ matrix.cuda-version }}" --components cuda_cudart
+          export WINDOWS_CUDA_HOME="${TOOLKITS}/cuda-windows-${{ matrix.cuda-version }}"
+          echo "::endgroup::"
+        fi
+
+        echo "::group::Verify the toolchain"
         x86_64-w64-mingw32-g++ --version
         nvcc --version
         echo "WINDOWS_CUDA_HOME=${WINDOWS_CUDA_HOME}"
@@ -140,6 +187,7 @@ jobs:
         # Disable MKL to avoid duplicate target error when conda has multiple MKL installations
         export USE_MKL=OFF
         PYTHON_EXECUTABLE=python ./install_executorch.sh
+        python -c "import torch; v = torch.version.cuda; assert v == '${{ matrix.cuda-version }}', v"
         echo "::endgroup::"
 
         # Setup Huggingface only for models that need it (not dinov2)
@@ -155,15 +203,16 @@ jobs:
         source .ci/scripts/export_model_artifact.sh cuda-windows "${{ matrix.model_repo }}/${{ matrix.model_name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}" "${{ matrix.mode }}"
 
   test-model-cuda-windows-e2e:
-    name: test-model-cuda-windows-e2e
-    # Same path filter as the export job above. Also explicitly gated
-    # on the export job succeeding — when needs: jobs are *skipped*
-    # (e.g. fork PR), GitHub still evaluates this if:, so without the
-    # explicit success-check this job would run and then fail trying
-    # to download an artifact that was never produced.
+    name: test-model-cuda-windows-e2e-${{ matrix.cuda-version }} (${{ matrix.model_name }}, ${{ matrix.quant }})
+    # Same path filter as the export job above. Not gated on the export succeeding: that
+    # result covers the whole matrix, so one row's failed export (say one model's) would
+    # skip every row here. Each row downloads its own artifact and fails on the download
+    # if its export failed. The `result != 'skipped'` condition keeps a fork pull request,
+    # where nothing was exported, from running this and failing on the download.
     needs: [changed-files, export-model-cuda-windows-artifact, run-decision]
     if: |
-      needs.export-model-cuda-windows-artifact.result == 'success' &&
+      !cancelled() &&
+      needs.export-model-cuda-windows-artifact.result != 'skipped' &&
       (
         contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
         contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
@@ -171,6 +220,10 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda-windows.yml') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e_windows.ps1') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/wheel/install_cuda_redist.py') ||
+        contains(needs.changed-files.outputs.changed-files, 'install_requirements.py') ||
+        contains(needs.changed-files.outputs.changed-files, 'install_utils.py') ||
+        contains(needs.changed-files.outputs.changed-files, 'torch_pin.py') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
     uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
@@ -181,15 +234,19 @@ jobs:
           - model_repo: "mistralai"
             model_name: "Voxtral-Mini-3B-2507"
             quant: "non-quantized"
+            cuda-version: "13.2"
           - model_repo: "mistralai"
             model_name: "Voxtral-Mini-3B-2507"
             quant: "quantized-int4-weight-only"
+            cuda-version: "13.2"
           - model_repo: "nvidia"
             model_name: "parakeet-tdt"
             quant: "non-quantized"
+            cuda-version: "13.2"
           - model_repo: "nvidia"
             model_name: "parakeet-tdt"
             quant: "quantized-int4-weight-only"
+            cuda-version: "13.2"
           # TODO: sortformer produces 0 segments on Windows after D97788666.
           # Temporarily disabled until root cause is debugged.
           # - model_repo: "nvidia"
@@ -199,18 +256,28 @@ jobs:
             model_name: "Voxtral-Mini-4B-Realtime-2602"
             quant: "quantized-int4-tile-packed"
             mode: "vr-offline"
+            cuda-version: "13.2"
           - model_repo: "facebook"
             model_name: "dinov2-small-imagenet1k-1-layer"
             quant: "non-quantized"
+            cuda-version: "13.2"
+          # Same rows as the export matrix; see there for why.
+          - model_repo: "facebook"
+            model_name: "dinov2-small-imagenet1k-1-layer"
+            quant: "non-quantized"
+            cuda-version: "13.4"
+          - model_repo: "mistralai"
+            model_name: "Voxtral-Mini-4B-Realtime-2602"
+            quant: "quantized-int4-tile-packed"
+            mode: "vr-offline"
+            cuda-version: "13.4"
     with:
       timeout: 240
       runner: windows.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda
-      # The Windows runner image carries only the toolkits the CUDA wheels are built for,
-      # 13.2 and 13.4, so this cannot match the export's 13.0. The exported program loads
-      # cudart64_13.dll, which every CUDA 13 toolkit provides.
-      gpu-arch-version: "13.2"
-      download-artifact: ${{ matrix.model_repo }}-${{ matrix.model_name }}-cuda-windows-${{ matrix.quant }}
+      # The same CUDA version the export used.
+      gpu-arch-version: ${{ matrix.cuda-version }}
+      download-artifact: ${{ matrix.model_repo }}-${{ matrix.model_name }}-cuda-windows-${{ matrix.quant }}-cuda${{ matrix.cuda-version }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         git config --global http.sslBackend openssl
@@ -221,9 +288,9 @@ jobs:
           \$ErrorActionPreference = 'Stop'
           \$PSNativeCommandUseErrorActionPreference = \$true
 
-          \$env:CUDA_HOME = 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2'
+          \$env:CUDA_HOME = 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v${{ matrix.cuda-version }}'
           \$env:CUDA_PATH = \$env:CUDA_HOME
-          \$env:PATH = \"\$env:CUDA_HOME\bin;\$env:PATH\"
+          \$env:PATH = \"\$env:CUDA_HOME\bin\x64;\$env:CUDA_HOME\bin;\$env:PATH\"
           nvcc --version
 
           .ci/scripts/setup-windows.ps1
@@ -232,14 +299,14 @@ jobs:
             throw 'RUNNER_ARTIFACT_DIR is empty. Ensure download-artifact is configured for windows_job.yml.'
           }
 
-          .ci/scripts/test_model_e2e_windows.ps1 -Device cuda-windows -HfModel '${{ matrix.model_repo }}/${{ matrix.model_name }}' -QuantName '${{ matrix.quant }}' -ModelDir \$artifactDir -ExpectedCudaVersion '13.2' -Mode '${{ matrix.mode }}'
+          .ci/scripts/test_model_e2e_windows.ps1 -Device cuda-windows -HfModel '${{ matrix.model_repo }}/${{ matrix.model_name }}' -QuantName '${{ matrix.quant }}' -ModelDir \$artifactDir -ExpectedCudaVersion '${{ matrix.cuda-version }}' -Mode '${{ matrix.mode }}'
         }"
 
   # The counterpart of cuda.yml's unittest-cuda-runtime on Windows. The Windows GPU runners
   # carry data-center GPUs in TCC mode, which have no memory pools, so this also covers the
   # allocator's synchronous fallback that the Linux job cannot reach.
   unittest-cuda-runtime-windows:
-    name: unittest-cuda-runtime-windows
+    name: unittest-cuda-runtime-windows-${{ matrix.cuda-version }}
     needs: [changed-files, run-decision]
     if: |
       contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
@@ -249,14 +316,20 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_cuda_runtime_windows.ps1') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/install_nvidia_driver_windows.ps1') ||
       contains(needs.changed-files.outputs.changed-files, 'tools/cmake/Test.cmake') ||
+      contains(needs.changed-files.outputs.changed-files, 'install_requirements.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'install_utils.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'torch_pin.py') ||
       needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
+    strategy:
+      fail-fast: false
+      matrix:
+        cuda-version: ["13.2", "13.4"]
     with:
       timeout: 120
       runner: windows.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda
-      # The same toolkit as test-model-cuda-windows-e2e, for the same reason.
-      gpu-arch-version: "13.2"
+      gpu-arch-version: ${{ matrix.cuda-version }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         git config --global http.sslBackend openssl
@@ -265,8 +338,9 @@ jobs:
         powershell -Command "& {
           Set-PSDebug -Trace 1
           \$ErrorActionPreference = 'Stop'
-          \$env:CUDA_HOME = 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2'
+          \$env:CUDA_HOME = 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v${{ matrix.cuda-version }}'
           \$env:CUDA_PATH = \$env:CUDA_HOME
+          \$env:PATH = \"\$env:CUDA_HOME\bin\x64;\$env:CUDA_HOME\bin;\$env:PATH\"
           .ci/scripts/setup-windows.ps1
           .ci/scripts/test_cuda_runtime_windows.ps1
         }"
@@ -274,7 +348,7 @@ jobs:
   delete-model-cuda-windows-artifacts:
     name: delete-model-cuda-windows-artifacts
     # The exports exist only to hand the models to the Windows job above, about
-    # 18 GB per run, and GitHub bills artifact storage by the hour, so delete
+    # 21 GB per run, and GitHub bills artifact storage by the hour, so delete
     # them as soon as the tests have consumed them instead of keeping them for
     # the repository retention window. They are kept when a test fails so that
     # "Re-run failed jobs" and debugging still have them; those expire with the

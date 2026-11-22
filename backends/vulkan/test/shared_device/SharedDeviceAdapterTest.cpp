@@ -7,6 +7,7 @@
 
 #include <executorch/backends/vulkan/runtime/ResolveSharedDevice.h>
 #include <executorch/backends/vulkan/runtime/api/Context.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/gemm/linear/qw/wmma/WmmaLinear.h>
 #include <executorch/backends/vulkan/runtime/vk_api/Runtime.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/platform/runtime.h>
@@ -21,6 +22,7 @@
 #include <limits>
 #include <memory>
 #include <stdexcept>
+#include <string>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -371,6 +373,46 @@ TEST_F(SharedDeviceAdapterTest, CreatedDeviceRetainsEnabledFeatures) {
       borrower.supports_cooperative_matrix(), features.cooperative_matrix);
 #endif
   EXPECT_NO_THROW(submit_empty(borrower));
+}
+
+// A shared device created by the backend enables what an owning Adapter
+// enables, so an Adapter that borrows it gets the same pipeline flags, Vulkan
+// memory model state and cooperative-matrix family (e.g. xe2 on an Arc B580).
+TEST_F(SharedDeviceAdapterTest, CreatedDeviceKeepsCoopmatFamily) {
+  vkapi::Adapter borrower(shared, "");
+  vkapi::Adapter* owner = vkapi::runtime()->get_adapter_p();
+  ASSERT_EQ(borrower.physical_handle(), owner->physical_handle());
+  EXPECT_EQ(
+      borrower.compute_pipeline_cache().full_subgroups(),
+      owner->compute_pipeline_cache().full_subgroups());
+  EXPECT_EQ(
+      borrower.supports_vulkan_memory_model(),
+      owner->supports_vulkan_memory_model());
+  const vkcompute::CoopmatFamily family =
+      vkcompute::coopmat_family(vkcompute::coopmat_device_key(&borrower));
+  EXPECT_EQ(
+      family, vkcompute::coopmat_family(vkcompute::coopmat_device_key(owner)));
+  RecordProperty("coopmat_family", vkcompute::coopmat_family_name(family));
+  if (const char* expected = std::getenv("ETVK_WMMA_EXPECTED_FAMILY")) {
+    if (std::string(expected) != "software") {
+      EXPECT_EQ(std::string(vkcompute::coopmat_family_name(family)), expected);
+    }
+  }
+  EXPECT_NO_THROW(submit_empty(borrower));
+}
+
+// Without declared features (an externally registered device) a borrowing
+// Adapter gets no full subgroups, no memory model and no family.
+TEST_F(SharedDeviceAdapterTest, ImportedDeviceHasNoCoopmatFamily) {
+  auto info = copy_info();
+  info.enabled_device_extensions = shared->enabled_device_extensions();
+  auto conservative = std::make_shared<SharedVulkanDevice>(std::move(info));
+  vkapi::Adapter adapter(conservative, "");
+  EXPECT_FALSE(adapter.compute_pipeline_cache().full_subgroups());
+  EXPECT_FALSE(adapter.supports_vulkan_memory_model());
+  EXPECT_EQ(
+      vkcompute::coopmat_family(vkcompute::coopmat_device_key(&adapter)),
+      vkcompute::CoopmatFamily::kNone);
 }
 
 TEST_F(SharedDeviceAdapterTest, ResolverReusesAdapterForSameRegisteredDevice) {

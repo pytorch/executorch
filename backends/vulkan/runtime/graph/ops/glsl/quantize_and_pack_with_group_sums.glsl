@@ -6,6 +6,11 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// OUTPUT_LAYOUT 4h4w writes utils::kPackedInt8_4H4W blocks (an ivec4 per
+// (k4, m4) block, one component per row); 4w writes utils::kPackedInt8_4W,
+// plain row-major int8 with a row stride of K4 ints, for the row-major
+// cooperative-matrix dq8ca kernels.
+
 #version 450 core
 
 ${define_required_extensions(INPUT_STORAGE, DTYPE)}
@@ -29,7 +34,7 @@ layout(std430) buffer;
 
 #include "common.glslh"
 
-${layout_declare_tensor(B, "w", "t_packed_int8_input", "int", OUTPUT_STORAGE, is_scalar_array=False)}
+${layout_declare_tensor(B, "w", "t_packed_int8_input", "int", OUTPUT_STORAGE, is_scalar_array=OUTPUT_LAYOUT == "4w")}
 ${layout_declare_tensor(B, "w", "t_int8_input_sums", "int", "buffer", is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_input", DTYPE, INPUT_STORAGE, is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_int8_input_scales", DTYPE, "texture3d")}
@@ -48,9 +53,27 @@ shared ivec4 shared_sums[NUM_GROUPS_PER_WG][NUM_WORKERS_PER_GROUP];
 
 #define TILE_M 4
 
+$if OUTPUT_LAYOUT == "4w":
+  #define SKIP_BLOCK_WRITE_HELPERS
 #include "gemm/tile_utils/linear_int8_input_block.glslh"
 #include "gemm/tile_utils/linear_int8_input_scales_zps_load.glslh"
 #include "gemm/tile_utils/linear_fp_input_tile_load.glslh"
+
+$if OUTPUT_LAYOUT == "4w":
+  // kPackedInt8_4W has no row padding, so rows of the last m4 block at or
+  // past M are dropped.
+  void write_block_rowmajor(
+      const Int8InputBlock block,
+      const int k4,
+      const int m,
+      const int K4,
+      const int M) {
+    for (int row = 0; row < 4; ++row) {
+      if (m + row < M) {
+        t_packed_int8_input[(m + row) * K4 + k4] = block.data[row];
+      }
+    }
+  }
 
 void main() {
   const int group_idx = int(gl_GlobalInvocationID.x);
@@ -97,7 +120,10 @@ void main() {
       local_sum[m] = dotPacked4x8AccSatEXT(
           packed_block.data[m], packed_ones, local_sum[m]);
     }
-    write_block(packed_block, k4, m4, K4);
+    $if OUTPUT_LAYOUT == "4w":
+      write_block_rowmajor(packed_block, k4, m, K4, M);
+    $else:
+      write_block(packed_block, k4, m4, K4);
   }
 
   shared_sums[group_offset][worker_id] = local_sum;
