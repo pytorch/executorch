@@ -13,6 +13,7 @@ def define_common_targets():
     runtime.cxx_test(
         name = "vulkan_passes_test",
         srcs = [
+            "test_flatten_linear_batch.cpp",
             "test_fuse_quantized_embedding.cpp",
             "test_fuse_quantized_linear.cpp",
             "test_insert_prepack.cpp",
@@ -20,6 +21,7 @@ def define_common_targets():
             "test_lower_rms_norm.cpp",
             "test_lower_sdpa.cpp",
             "test_materialize_view_copies.cpp",
+            "test_normalize_dims.cpp",
         ],
         deps = [
             "//executorch/backends/native/runtime/vulkan:vulkan_passes",
