@@ -393,14 +393,24 @@ class TestNVFP4KVCacheTest(unittest.TestCase):
         for model, nvfp4 in zip(models, (False, True)):
             _move_to_cuda(model)
             model.eval()
+            # As _export_cuda does: rings sized for the longest prefill chunk.
+            model.set_max_prefill_chunk(
+                min(TINY_CONFIG.max_seq_len - 1, model._sliding_window * 2)
+            )
             cuda_source_transformations(model, use_nvfp4_kv_cache=nvfp4)
         return models
 
     def test_prefill_and_decode_match_bf16_cache(self):
+        from executorch.examples.models.muse_glimmer.source_transformations.nvfp4_kv import (
+            NVFP4KVCache,
+        )
+
         bf16, nvfp4 = self._models()
+        assert all(isinstance(x.self_attn.kv_cache, NVFP4KVCache) for x in nvfp4.layers)
         torch.manual_seed(3)
-        prompt = torch.randint(0, TINY_CONFIG.vocab_size, (1, 24), device="cuda")
-        steps = [(0, 20), (20, 21), (21, 24)]
+        prompt = torch.randint(0, TINY_CONFIG.vocab_size, (1, 60), device="cuda")
+        # Prefill, decode, then chunks that wrap the sliding-window rings.
+        steps = [(0, 32), (32, 33), (33, 40), (40, 60)]
         with torch.no_grad():
             for start, end in steps:
                 pos = torch.arange(start, end, dtype=torch.long, device="cuda")

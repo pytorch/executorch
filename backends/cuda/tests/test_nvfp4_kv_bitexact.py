@@ -284,6 +284,8 @@ class TestNVFP4KVBitExact(unittest.TestCase):
 
     def test_cross_arch_write(self):
         """Every ARCH writes the same cache bytes (K norm, RoPE, ring wrap)."""
+        if len(arches()) < 2:
+            self.skipTest("needs an SM89+ GPU to compare against the software path")
         caches = {}
         for arch in arches():
             with mock.patch.object(K, "cuda_arch", lambda arch=arch: arch):

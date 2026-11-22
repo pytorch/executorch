@@ -12,6 +12,7 @@ import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
 import pytest
 import torch
 import torch.nn.functional as F
+import triton
 from executorch.backends.cuda.autotune.launch_params import clear_launch_param_cache
 from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
@@ -22,6 +23,11 @@ from executorch.backends.cuda.quantize_op_dispatch.nvfp4_dispatch import (
 )
 from executorch.backends.cuda.tests.nvfp4_gemma_test_utils import GemmaPacked
 from executorch.backends.cuda.tests.nvfp4_test_utils import PackedLinear
+from executorch.backends.cuda.triton.kernels import (
+    nvfp4_quantized_gemm,
+    nvfp4_small_m_gemm,
+    nvfp4_w4a8_gemv,
+)
 from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
     nvfp4_quantize_activation,
 )
@@ -34,21 +40,38 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.fixture(autouse=True)
-def cold_pick_cache():
+def cold_pick_cache(monkeypatch):
     clear_launch_param_cache()
+    # Tile picks live in each kernel's triton.autotune cache: without native
+    # FP4, decode-size auto would reuse the GEMV tiles earlier cases tuned and
+    # time none.
+    for module in (nvfp4_quantized_gemm, nvfp4_small_m_gemm, nvfp4_w4a8_gemv):
+        for value in vars(module).values():
+            if isinstance(value, triton.runtime.Autotuner):
+                value.cache.clear()
+    for name in (
+        "ET_CUDA_NVFP4_ACT",
+        "ET_CUDA_NVFP4_PREFILL_OUTPUT",
+        "ET_CUDA_NVFP4_PREFILL_IMPL",
+    ):
+        monkeypatch.delenv(name, raising=False)
 
 
 @pytest.mark.parametrize(
     "mode,m,dynamic,fp32",
     [
-        ("w4a16", 1, False, False),
+        ("w4a16", 1, None, False),
         # Hints no other case tunes, so their tiles are timed here.
-        ("w4a16", 37, True, False),
-        ("w4a16", 45, True, True),
-        ("w4a4", 16, False, False),
-        ("w4a8", 1, False, False),
-        ("auto", 1, False, False),
-        ("auto", 16, True, False),
+        ("w4a16", 37, 64, False),
+        ("w4a16", 45, 64, True),
+        ("w4a4", 16, None, False),
+        ("w4a8", 1, None, False),
+        ("auto", 1, None, False),
+        ("auto", 16, 64, False),
+        # Small-M bucket ops: static M 2..16 and a dynamic M bounded by 16.
+        ("w4a16", 8, None, False),
+        ("auto", 4, None, False),
+        ("w4a16", 12, 16, False),
     ],
 )
 def test_packed_linear_pte(mode, m, dynamic, fp32, monkeypatch):
@@ -57,8 +80,6 @@ def test_packed_linear_pte(mode, m, dynamic, fp32, monkeypatch):
         if not _has_native_fp4():
             pytest.skip("native FP4 required")
     monkeypatch.setenv("ET_CUDA_NVFP4_ACT", mode)
-    # M <= 64 keeps the fused kernels (no dequant + matmul) on every GPU.
-    monkeypatch.delenv("ET_CUDA_NVFP4_PREFILL_IMPL", raising=False)
     # The FP32 prefill policy is read at export and baked into the program.
     monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_OUTPUT", "fp32" if fp32 else "input")
     import executorch.backends.cuda.cuda_backend as cuda_backend
@@ -91,7 +112,7 @@ def test_packed_linear_pte(mode, m, dynamic, fp32, monkeypatch):
     monkeypatch.setattr(cuda_backend, "autotune_launch_params", capture_tuning)
     module = PackedLinear().eval()
     x = torch.randn(m, 192, dtype=torch.bfloat16)
-    shapes = ({0: torch.export.Dim("tokens", min=1, max=64)},) if dynamic else None
+    shapes = ({0: torch.export.Dim("tokens", min=1, max=dynamic)},) if dynamic else None
     ep = torch.export.export(module, (x,), dynamic_shapes=shapes, strict=True)
     lowered = to_edge_transform_and_lower(
         ep,
@@ -109,7 +130,14 @@ def test_packed_linear_pte(mode, m, dynamic, fp32, monkeypatch):
         assert (
             len(picks) == 1
         ), "auto mode must remain an op until AOTI measures activation mode and split-K"
-        selected_mode = ("w4a16", "w4a4", "w4a8")[picks[0].choice // _MODE_STRIDE]
+        mode_id = picks[0].choice // _MODE_STRIDE
+        if picks[0].function.endswith("nvfp4_small_m_gemm._launch_impl"):
+            # rows and W4A16 keep BF16 activations.
+            selected_mode = (
+                "w4a4" if mode_id == nvfp4_small_m_gemm._MODE_IDS["w4a4"] else "w4a16"
+            )
+        else:
+            selected_mode = ("w4a16", "w4a4", "w4a8")[mode_id]
     else:
         selected_mode = mode
 
@@ -159,7 +187,7 @@ def test_packed_linear_pte(mode, m, dynamic, fp32, monkeypatch):
         if dynamic:
             # Exercise grouped M tiling and the split-K workspace at sizes
             # different from the shape used by compilation/autotuning.
-            for rows in [1, 5, 37, 64]:
+            for rows in [r for r in (1, 5, 16, 37, 64) if r <= dynamic]:
                 value = torch.randn(rows, 192, dtype=x.dtype)
                 result = method.execute([value])[0].cpu()
                 torch.testing.assert_close(
@@ -195,17 +223,17 @@ def test_dequant_prefill_pte(impl, monkeypatch):
     ).to_executorch()
     from executorch.export.utils import is_fbcode
 
-    if is_fbcode():
-        # The in-process runtime in fbcode has no CUDA backend.
-        return
-    from executorch.runtime import Runtime
-
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "nvfp4.pte"
         with path.open("wb") as f:
             lowered.write_to_file(f)
         lowered.write_tensor_data_to_file(tmp)
         data = next(Path(tmp).glob("*.ptd"))
+        if is_fbcode():
+            # The in-process runtime in fbcode has no CUDA backend.
+            return
+        from executorch.runtime import Runtime
+
         method = (
             Runtime.get()
             .load_program(str(path), data_path=str(data))

@@ -30,7 +30,8 @@ from torch._subclasses.fake_tensor import is_fake
 # materializes several full-size temporaries (~10 GiB). Above this row count the
 # weight is dequantized and multiplied in N chunks instead; output rows are
 # independent, so the result is identical. Only weights above the threshold
-# take this path, and only when no kernel serves them.
+# take this path, when no kernel serves them or a format prefers dequant +
+# matmul (NVFP4 prefill without native FP4).
 _DEQUANT_N_THRESHOLD = 65536
 _DEQUANT_N_CHUNK = 32768
 
