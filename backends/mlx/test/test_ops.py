@@ -7211,13 +7211,25 @@ def vadd_fake(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
     return torch.empty_like(a)
 
 
+@torch.library.custom_op("mlx_test::vsub", mutates_args=())
+def vsub(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    """Element-wise vector subtract via a custom Metal kernel named like vadd's
+    (reference impl)."""
+    return a - b
+
+
+@torch.library.register_fake("mlx_test::vsub")
+def vsub_fake(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    return torch.empty_like(a)
+
+
 class MetalKernelVaddModel(nn.Module):
     def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
         return torch.ops.mlx_test.vadd(a, b)
 
 
 def _register_vadd_handler():
-    """Register an MLX op handler that emits MetalKernelNode for vadd."""
+    """Register MLX op handlers that emit MetalKernelNodes for vadd and vsub."""
     from executorch.backends.mlx.builder.op_helpers import torch_dtype_to_scalar_type
     from executorch.backends.mlx.builder.op_registry import REGISTRY
     from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
@@ -7234,8 +7246,7 @@ def _register_vadd_handler():
         }
     """
 
-    @REGISTRY.register(target=[torch.ops.mlx_test.vadd.default])
-    def _vadd_handler(P: MLXProgramBuilder, n: "torch.fx.node.Node") -> Slot:
+    def _emit_vadd(P: MLXProgramBuilder, n: "torch.fx.node.Node", source: str) -> Slot:
         args = P.args(n)
         a_slot, b_slot = args[0], args[1]
         out = P.make_or_get_slot(n)
@@ -7247,7 +7258,7 @@ def _register_vadd_handler():
         P.emit(
             MetalKernelNode(
                 name="vadd",
-                source=vadd_source,
+                source=source,
                 inputs=[P.slot_to_tid(a_slot), P.slot_to_tid(b_slot)],
                 outputs=[P.slot_to_tid(out)],
                 grid=[
@@ -7268,6 +7279,15 @@ def _register_vadd_handler():
             )
         )
         return out
+
+    @REGISTRY.register(target=[torch.ops.mlx_test.vadd.default])
+    def _vadd_handler(P: MLXProgramBuilder, n: "torch.fx.node.Node") -> Slot:
+        return _emit_vadd(P, n, vadd_source)
+
+    # Same kernel name as vadd, different source.
+    @REGISTRY.register(target=[torch.ops.mlx_test.vsub.default])
+    def _vsub_handler(P: MLXProgramBuilder, n: "torch.fx.node.Node") -> Slot:
+        return _emit_vadd(P, n, vadd_source.replace("+", "-"))
 
 
 _register_vadd_handler()
@@ -7295,6 +7315,33 @@ class MetalKernelTest(OpTestCase):
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         return (torch.randn(self.size), torch.randn(self.size))
+
+
+class MetalKernelReuseModel(nn.Module):
+    def forward(
+        self, a: torch.Tensor, b: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        x = torch.ops.mlx_test.vadd(a, b)
+        return torch.ops.mlx_test.vadd(x, b), torch.ops.mlx_test.vsub(a, b)
+
+
+@register_test
+class MetalKernelReuseTest(OpTestCase):
+    """Two nodes run vadd's kernel, and vsub's kernel has vadd's name but not
+    its source."""
+
+    name = "metal_kernel_reuse"
+    expected_node_counts = {"MetalKernelNode": 3}
+
+    @classmethod
+    def get_test_configs(cls) -> List["MetalKernelReuseTest"]:
+        return [cls()]
+
+    def create_model(self) -> nn.Module:
+        return MetalKernelReuseModel()
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (torch.randn(1024), torch.randn(1024))
 
 
 class SwitchLinearModel(nn.Module):

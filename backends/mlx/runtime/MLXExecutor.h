@@ -183,6 +183,17 @@ struct ExecutionState {
   static constexpr uint32_t kNoTempLastUse = 0xFFFFFFFFu;
   std::vector<std::vector<uint32_t>> temp_last_use;
 
+  // Kernel functions for MetalKernelNodes, one per distinct kernel, keyed by
+  // what mlx::core::fast::metal_kernel() reads from a node, and each node's
+  // entry. A function caches its kernel's generated source and the source's
+  // hash, which MLX needs on every call to find the compiled library.
+  std::unordered_map<std::string, ::mlx::core::fast::CustomKernelFunction>
+      metal_kernels;
+  std::unordered_map<
+      const MetalKernelNode*,
+      const ::mlx::core::fast::CustomKernelFunction*>
+      metal_kernel_of_node;
+
   void bind(
       const MLXProgram& prog,
       const ConstantData& const_data,
@@ -190,6 +201,8 @@ struct ExecutionState {
     program = &prog;
     constants = &const_data;
     mutable_buffers = &mut_bufs;
+    metal_kernels.clear();
+    metal_kernel_of_node.clear();
 
     // Allocate space for inputs, outputs, and temps only (not constants or
     // mutable buffers)
