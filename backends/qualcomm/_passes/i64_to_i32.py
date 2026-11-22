@@ -103,7 +103,7 @@ class I64toI32(ExportPass):
             if is_graph_output(n) and QCOM_ORIG_DTYPE in n.meta:
                 if isinstance(n.meta["val"], (tuple, list)):
                     for i, dtype in enumerate(n.meta[QCOM_ORIG_DTYPE]):
-                        # Multi-output results are cast back at their getitems
+                        # TODO: cast other multi-output results back at their getitems, as call_getitem does for topk/sort indices
                         if n.meta["val"][i] is None or dtype is None:
                             continue
                         if n.meta["val"][i].dtype != dtype:
