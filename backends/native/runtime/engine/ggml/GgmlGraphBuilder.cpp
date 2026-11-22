@@ -765,7 +765,10 @@ void GraphBuilder::lower(const Node& node) {
   if (key == "aten.linear.default") {
     lower_linear(node);
   } else if (key == "aten.embedding.default" || key == "aten.index.Tensor") {
-    lower_row_gather(node);
+    // An expert gather is lowered with the bmm that reads it.
+    if (expert_matmul(method_, node) == nullptr) {
+      lower_row_gather(node);
+    }
   } else if (key == "aten.rms_norm.default") {
     lower_rms_norm(node);
   } else if (
@@ -858,7 +861,12 @@ void GraphBuilder::lower(const Node& node) {
   } else if (
       key == "aten.matmul.default" || key == "aten.mm.default" ||
       key == "aten.bmm.default") {
-    lower_matmul(node);
+    const Node* gather = expert_gather(method_, node);
+    if (gather != nullptr) {
+      lower_expert_matmul(node, *gather);
+    } else {
+      lower_matmul(node);
+    }
   } else if (key == "llama.update_cache.default") {
     lower_update_cache(node);
   } else if (key == "llama.custom_sdpa.default") {
@@ -917,8 +925,8 @@ bool keeps_integer_values(const std::string& key) {
 }
 
 // Row indices are checked on the host, which needs them to come from a
-// graph input through integer casts, views or repeats, or an integer arange
-// whose bounds are resolved when building the graph.
+// graph input through integer casts, views or repeats, an integer arange
+// whose bounds are resolved when building the graph, or topk's indices.
 void GraphBuilder::check_row_indices(ValueId id, int64_t rows) {
   const auto is_index = [this](ValueId value) {
     const ScalarType dtype = method_.graph.value(value).tensor_meta().dtype;
@@ -937,6 +945,15 @@ void GraphBuilder::check_row_indices(ValueId id, int64_t rows) {
       break;
     }
     const Node& node = method_.graph.node(producer);
+    if (node.is_call() && op_key(node.target) == "aten.topk.default" &&
+        node.outputs.size() == 2 && node.outputs[1].value_id == id) {
+      const std::vector<int64_t> searched =
+          view(tensor_arg_id(node, "self", 0)).sizes;
+      if (searched.empty() || searched.back() > rows) {
+        throw std::out_of_range("ggml: topk row index is outside the table");
+      }
+      return;
+    }
     if (node.is_call() && op_key(node.target) == "aten.arange.start_step") {
       const int64_t start = int_arg(node, "start", 0, 0);
       const int64_t step = int_arg(node, "step", 2, 1, true);
@@ -959,7 +976,7 @@ void GraphBuilder::check_row_indices(ValueId id, int64_t rows) {
   }
   throw std::runtime_error(
       "ggml: row indices must come from a graph input, through integer "
-      "casts, views or repeats, or an integer arange");
+      "casts, views or repeats, an integer arange, or topk");
 }
 
 // Integers some ops compute on in F32 must be exact there: from a graph input,

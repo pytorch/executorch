@@ -32,7 +32,13 @@ from torchao.quantization import (
     quantize_,
 )
 from torchao.quantization.granularity import PerGroup
-from transformers import LlamaConfig, LlamaForCausalLM
+from transformers import (
+    AutoModelForCausalLM,
+    Gemma4TextConfig,
+    LlamaConfig,
+    LlamaForCausalLM,
+    Qwen3_5MoeTextConfig,
+)
 from transformers.models.llama.modeling_llama import (
     apply_rotary_pos_emb,
     LlamaRotaryEmbedding,
@@ -343,6 +349,58 @@ class SlicedQueryPositions(torch.nn.Module):
         positions = torch.arange(count) + offset
         mask = torch.arange(self.keys.shape[2]) <= positions[:, None]
         return F.scaled_dot_product_attention(q, self.keys, self.values, attn_mask=mask)
+
+
+class BatchedExperts(torch.nn.Module):
+    """A top-k mixture of experts in transformers' batched_mm form: each token
+    repeated once per chosen expert, the experts' weights gathered by id, and
+    one bmm per projection. `transposed` stores weights as [E, I, O], which
+    multiplies the activations by the gathered weights instead."""
+
+    def __init__(
+        self, experts=4, k=2, hidden=64, inter=32, transposed=False, shared=False
+    ):
+        super().__init__()
+        self.k, self.transposed, self.shared = k, transposed, shared
+        self.router = torch.nn.Linear(hidden, experts, bias=False)
+        gate_up, down = (experts, 2 * inter, hidden), (experts, hidden, inter)
+        if transposed:
+            gate_up, down = (experts, hidden, 2 * inter), (experts, inter, hidden)
+        self.gate_up = torch.nn.Parameter(torch.randn(gate_up) / hidden**0.5)
+        self.down = torch.nn.Parameter(torch.randn(down) / inter**0.5)
+
+    def _project(self, x, weight):
+        if self.transposed:
+            return torch.bmm(x.unsqueeze(1), weight).squeeze(1)
+        return torch.bmm(weight, x.unsqueeze(-1)).squeeze(-1)
+
+    def forward(self, x):
+        tokens, hidden = x.shape
+        probs = torch.softmax(self.router(x), dim=-1)
+        weights, ids = torch.topk(probs, self.k, dim=-1)
+        weights = (weights / weights.sum(dim=-1, keepdim=True)).reshape(-1)
+        ids = ids.reshape(-1)
+        selected = self.gate_up[ids]
+        gate, up = self._project(x.repeat_interleave(self.k, dim=0), selected).chunk(
+            2, dim=-1
+        )
+        out = self._project(F.silu(gate) * up, self.down[ids])
+        out = (out * weights.unsqueeze(-1)).view(tokens, self.k, hidden).sum(1)
+        # The gathered gate_up weights also read by another op.
+        return out + selected.sum() if self.shared else out
+
+
+class ExpertMatmul(torch.nn.Module):
+    """y[s] = experts[ids[s]] @ x[s], with the ids an input."""
+
+    def __init__(self, experts, out, inp, dtype):
+        super().__init__()
+        self.experts = torch.nn.Parameter(
+            (torch.randn(experts, out, inp) / inp**0.5).to(dtype)
+        )
+
+    def forward(self, x, ids):
+        return torch.bmm(self.experts[ids], x.unsqueeze(-1)).squeeze(-1)
 
 
 def _quantize_8da4w(
@@ -1413,6 +1471,74 @@ class GgmlOpsTest(unittest.TestCase):
             (torch.randn(2, 4, 8), torch.randn(2, 8, 5)),
             **_MATMUL_TOL,
         )
+
+    def test_batched_experts_lower_to_mul_mat_id(self):
+        model = BatchedExperts()
+        for tokens in (1, 5):
+            with self.subTest(tokens=tokens):
+                ops = collections.Counter()
+                self._check(
+                    model, (torch.randn(tokens, 64),), graph_ops=ops, **_MATMUL_TOL
+                )
+                # Per built graph: the router's softmax and mul_mat, and one
+                # mul_mat_id per expert projection.
+                graphs = ops["SOFT_MAX"]
+                self.assertGreater(graphs, 0)
+                self.assertEqual(ops["MUL_MAT_ID"], 2 * graphs)
+                self.assertEqual(ops["MUL_MAT"], graphs)
+
+    @unittest.skipIf(
+        _BACKEND in ("cuda", "hip"),
+        "ggml's MMF kernel takes TF32 (CUDA) or XF32 (HIP) inputs for F32 experts",
+    )
+    def test_f32_experts_of_many_rows_match_eager(self):
+        # 16 tokens with two experts each are 32 rows, past the 8 below which
+        # HIP keeps its exact kernel.
+        self._check(BatchedExperts(), (torch.randn(16, 64),))
+
+    def test_half_and_bfloat16_expert_matmuls(self):
+        ids = torch.tensor([3, 0, 1, 3, 2, 0])
+        for dtype in (torch.float16, torch.bfloat16):
+            with self.subTest(dtype=dtype):
+                ops = collections.Counter()
+                self._check(
+                    ExpertMatmul(4, 16, 32, dtype),
+                    (torch.randn(6, 32, dtype=dtype), ids),
+                    atol=1e-2,
+                    rtol=1e-2,
+                    graph_ops=ops,
+                )
+                self.assertGreater(ops["MUL_MAT_ID"], 0)
+
+    def test_other_expert_gathers_take_the_generic_path(self):
+        # Transposed experts are the bmm's right operand, and the shared
+        # gate_up experts are read by another op too, so those projections
+        # gather their weights and run as mul_mat; the shared model's down
+        # projection still runs as mul_mat_id.
+        for name, model, mul_mat_ids in (
+            ("transposed", BatchedExperts(transposed=True), 0),
+            ("shared", BatchedExperts(shared=True), 1),
+        ):
+            with self.subTest(experts=name):
+                ops = collections.Counter()
+                self._check(model, (torch.randn(3, 64),), graph_ops=ops, **_MATMUL_TOL)
+                graphs = ops["SOFT_MAX"]
+                self.assertGreater(graphs, 0)
+                self.assertEqual(ops["MUL_MAT_ID"], mul_mat_ids * graphs)
+                self.assertEqual(ops["MUL_MAT"], (3 - mul_mat_ids) * graphs)
+
+    def test_index_gathers_slices_of_any_rank(self):
+        class Gather(torch.nn.Module):
+            def __init__(self, shape):
+                super().__init__()
+                self.table = torch.nn.Parameter(torch.randn(shape))
+
+            def forward(self, ids):
+                return self.table[ids]
+
+        for shape in ((4,), (4, 5), (4, 3, 5)):
+            with self.subTest(shape=shape):
+                self._check(Gather(shape), (torch.tensor([[3, 0], [1, 3]]),))
 
     def test_matmul(self):
         self._check(
@@ -3038,6 +3164,82 @@ class GgmlLlamaTest(unittest.TestCase):
                         actual[0, -1].argmax().item(),
                         reference[0, -1].argmax().item(),
                     )
+
+
+class GgmlMoeTest(unittest.TestCase):
+    """Tiny transformers MoE text models with batched_mm experts, whose expert
+    projections run as ggml_mul_mat_id."""
+
+    def _check_model(self, config):
+        torch.manual_seed(3)
+        model = AutoModelForCausalLM.from_config(
+            config, experts_implementation="batched_mm"
+        ).eval()
+        model.config._attn_implementation = "sdpa"
+        model.generation_config.use_cache = True
+        model.generation_config.cache_implementation = "static"
+        wrapper = LastTokenLM(model, 16).eval()
+        inputs = (torch.randint(0, 64, (1, 3)), torch.arange(3))
+        with torch.no_grad():
+            ep = torch.export.export(wrapper, inputs, strict=True)
+            expected = copy.deepcopy(wrapper)(*inputs)
+        ops = collections.Counter()
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            package = outdir / "moe.ptn"
+            to_native(ep).save(str(package))
+            (((raw, shape),),) = _run_ggml(package, [inputs], outdir, 1, graph_ops=ops)
+        actual = torch.frombuffer(bytearray(raw), dtype=torch.float32)
+        torch.testing.assert_close(
+            actual.reshape(shape), expected, atol=1e-3, rtol=1e-3
+        )
+        self.assertGreater(ops["MUL_MAT_ID"], 0)
+
+    def test_qwen3_5_moe(self):
+        self._check_model(
+            Qwen3_5MoeTextConfig(
+                vocab_size=64,
+                hidden_size=64,
+                num_hidden_layers=1,
+                layer_types=["full_attention"],
+                num_attention_heads=4,
+                num_key_value_heads=2,
+                head_dim=16,
+                num_experts=4,
+                num_experts_per_tok=2,
+                moe_intermediate_size=32,
+                shared_expert_intermediate_size=32,
+                max_position_embeddings=64,
+                tie_word_embeddings=False,
+                rope_parameters={
+                    "rope_type": "default",
+                    "rope_theta": 1e7,
+                    "partial_rotary_factor": 0.25,
+                    "mrope_section": [2, 1, 1],
+                    "mrope_interleaved": True,
+                },
+            )
+        )
+
+    def test_gemma4_moe(self):
+        self._check_model(
+            Gemma4TextConfig(
+                vocab_size=64,
+                hidden_size=64,
+                intermediate_size=64,
+                num_hidden_layers=1,
+                layer_types=["full_attention"],
+                num_attention_heads=4,
+                num_key_value_heads=2,
+                head_dim=16,
+                global_head_dim=16,
+                enable_moe_block=True,
+                num_experts=4,
+                top_k_experts=2,
+                moe_intermediate_size=32,
+                max_position_embeddings=64,
+            )
+        )
 
 
 class GgmlKeyExtentTest(unittest.TestCase):
