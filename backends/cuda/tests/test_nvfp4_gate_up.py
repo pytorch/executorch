@@ -111,6 +111,9 @@ def recorder(name, calls, original=None):
         ("w4a4", torch.bfloat16, 37, False, True, ("nvfp4_w4a4_gate_up", None)),
         ("w4a16", torch.bfloat16, 37, False, True, ("nvfp4_w4a16", None)),
         ("auto", torch.float16, 37, False, True, ("nvfp4_auto_prefill", None)),
+        # Decode-size M takes the per-row decode kernels through F.linear.
+        ("auto", torch.bfloat16, 1, False, True, ("nvfp4_auto_decode", None)),
+        ("w4a4", torch.bfloat16, 4, False, True, ("nvfp4_w4a4", None)),
         (
             "auto",
             torch.float32,
