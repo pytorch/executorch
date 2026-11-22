@@ -6,10 +6,13 @@
 
 #include <executorch/backends/native/runtime/engine/ggml/GgmlEngine.h>
 
+#include <sys/resource.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -391,6 +394,41 @@ class TestProgram {
         builder_, name.c_str(), create_tensor_meta(builder_, dtype, shape)));
     const std::vector<flatbuffers::Offset<fbs::Output>> outputs = {
         fbs::CreateOutputDirect(builder_, name.c_str())};
+    nodes_.push_back(fbs::CreateNodeDirect(
+        builder_,
+        name.c_str(),
+        fbs::OpKind::CALL_FUNCTION,
+        target,
+        &named,
+        &outputs));
+  }
+
+  // A node producing one tensor list whose elements, named `names`, are F32
+  // tensors of `shape`.
+  void call_list(
+      const std::string& name,
+      const char* target,
+      const std::vector<std::pair<std::string, TestArg>>& args,
+      const std::vector<std::string>& names,
+      const std::vector<int64_t>& shape) {
+    std::vector<flatbuffers::Offset<fbs::NamedArgument>> named;
+    for (const auto& [arg_name, arg] : args) {
+      named.push_back(fbs::CreateNamedArgumentDirect(
+          builder_, arg_name.c_str(), create_arg(arg)));
+    }
+    for (const std::string& element : names) {
+      values_.push_back(fbs::CreateTensorValueDirect(
+          builder_,
+          element.c_str(),
+          create_tensor_meta(builder_, fbs::ScalarType::FLOAT, shape)));
+    }
+    const std::vector<flatbuffers::Offset<fbs::Output>> outputs = {
+        fbs::CreateOutput(
+            builder_,
+            builder_.CreateString(""),
+            0,
+            fbs::OutputValueKind::TENSOR_LIST,
+            create_strings(builder_, names))};
     nodes_.push_back(fbs::CreateNodeDirect(
         builder_,
         name.c_str(),
@@ -3368,6 +3406,173 @@ TEST(GgmlEngineTest, AmaxOverTrailingDims) {
         }
         EXPECT_EQ(y, expected);
       }
+    }
+  }
+}
+
+// A split of an [extent] F32 input into `pieces` declared [1] outputs, with
+// `args` after self and dim 0; returns the first piece.
+std::vector<uint8_t> make_split_program(
+    int64_t extent,
+    const char* target,
+    const std::pair<std::string, TestArg>& sizes,
+    size_t pieces) {
+  TestProgram program;
+  program.input("x", fbs::ScalarType::FLOAT, {extent});
+  std::vector<std::string> names;
+  for (size_t i = 0; i < pieces; ++i) {
+    names.push_back("piece" + std::to_string(i));
+  }
+  program.call_list(
+      "split",
+      target,
+      {{"self", std::string("x")}, sizes, {"dim", int64_t{0}}},
+      names,
+      {1});
+  return program.finish(names.front());
+}
+
+TEST(GgmlEngineTest, SplitRefusesSizesThatOverflowOrOutnumberItsOutputs) {
+  // The sizes wrap around to 4 in int64.
+  constexpr int64_t kQuarter = int64_t{1} << 62;
+  expect_compile_error(
+      make_split_program(
+          4,
+          "torch.ops.aten.split_with_sizes_copy.default",
+          {"split_sizes",
+           std::vector<int64_t>{kQuarter, kQuarter, kQuarter, kQuarter + 4}},
+          4),
+      "add up");
+  // 2^31 - 1 pieces of one element for two declared outputs, refused before
+  // the pieces are listed.
+  expect_compile_error(
+      make_split_program(
+          (int64_t{1} << 31) - 1,
+          "torch.ops.aten.split_copy.Tensor",
+          {"split_size", int64_t{1}},
+          2),
+      "one tensor per piece");
+  auto host = GgmlEngineHost::create();
+  auto context = make_context(
+      *host,
+      make_split_program(
+          4,
+          "torch.ops.aten.split_with_sizes_copy.default",
+          {"split_sizes", std::vector<int64_t>{1, 1, 1, 1}},
+          4));
+  auto executable = context->compile("forward");
+  const std::vector<float> x{1.0f, 2.0f, 3.0f, 4.0f};
+  executable->set_input(0, x.data(), x.size(), ScalarType::Float);
+  executable->execute();
+  float first = 0.0f;
+  executable->get_output(0, &first, 1, ScalarType::Float);
+  EXPECT_EQ(first, 1.0f);
+}
+
+// y = x + expand(z) + expand(z) + ..., `count` adds: each a REPEAT node, its
+// shape leaf and an ADD node.
+std::vector<uint8_t> make_expand_add_chain(int count) {
+  TestProgram program;
+  program.input("x", fbs::ScalarType::FLOAT, {1, 64});
+  program.input("z", fbs::ScalarType::FLOAT, {1, 1});
+  std::string last = "x";
+  for (int i = 0; i < count; ++i) {
+    const std::string expanded = "e" + std::to_string(i);
+    const std::string sum = "y" + std::to_string(i);
+    program.call(
+        expanded,
+        "torch.ops.aten.expand_copy.default",
+        {{"self", std::string("z")}, {"size", std::vector<int64_t>{1, 64}}},
+        fbs::ScalarType::FLOAT,
+        {1, 64});
+    program.call(
+        sum,
+        "torch.ops.aten.add.Tensor",
+        {{"self", last}, {"other", expanded}},
+        fbs::ScalarType::FLOAT,
+        {1, 64});
+    last = sum;
+  }
+  return program.finish(last);
+}
+
+// GCC defines __SANITIZE_*__ but has __has_feature only from version 14.
+#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
+#define PTN_TEST_SANITIZED
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer) || \
+    __has_feature(memory_sanitizer)
+#define PTN_TEST_SANITIZED
+#endif
+#endif
+
+bool limit_address_space_to_4gib() {
+  const rlimit limit{.rlim_cur = 4ULL << 30, .rlim_max = 4ULL << 30};
+  rlimit applied{};
+  return setrlimit(RLIMIT_AS, &limit) == 0 &&
+      getrlimit(RLIMIT_AS, &applied) == 0 && applied.rlim_cur == limit.rlim_cur;
+}
+
+// macOS refuses any finite RLIMIT_AS. The probe child only makes system calls,
+// so forking this threaded process is safe for it.
+bool can_limit_address_space() {
+  const pid_t pid = fork();
+  if (pid == 0) {
+    _exit(limit_address_space_to_4gib() ? 0 : 2);
+  }
+  int status = 0;
+  return pid > 0 && waitpid(pid, &status, 0) == pid && WIFEXITED(status) &&
+      WEXITSTATUS(status) == 0;
+}
+
+// Runs make_expand_add_chain(count) once under a 4 GiB address-space limit and
+// exits 0 if its result is right, 2 if the limit could not be set.
+[[noreturn]] void run_chain_under_limit(
+    const std::vector<uint8_t>& program,
+    int count,
+    size_t cached) {
+  if (!limit_address_space_to_4gib()) {
+    std::exit(2);
+  }
+  auto host = GgmlEngineHost::create(
+      GgmlEngineOptions{.cpu_threads = 2, .max_cached_graphs = cached});
+  auto context = make_context(*host, program);
+  auto executable = context->compile("forward");
+  const std::vector<float> x(64, 1.0f);
+  const float z = 0.5f;
+  executable->set_input(0, x.data(), x.size(), ScalarType::Float);
+  executable->set_input(1, &z, 1, ScalarType::Float);
+  executable->execute();
+  std::vector<float> y(64);
+  executable->get_output(0, y.data(), y.size(), ScalarType::Float);
+  std::exit(y[63] == 1.0f + 0.5f * static_cast<float>(count) ? 0 : 1);
+}
+
+// ggml mallocs a scheduler's split context in proportion to its size, about
+// 20 KB per unit, so a scheduler sized from a method's metadata budget, 80
+// tensors per node, takes gigabytes. An address-space limit refuses that even
+// though the pages are never touched; each chain runs in a child under 4 GiB.
+// Earlier tests leave the CPU backend's OpenMP threads running, and a forked
+// child of a threaded process can deadlock in them, so each child re-executes
+// the test binary and runs only this test ("threadsafe" death tests).
+TEST(GgmlEngineTest, SizesTheSchedulerFromTheBuiltGraph) {
+#ifdef PTN_TEST_SANITIZED
+  GTEST_SKIP() << "sanitizers reserve more address space than the limit";
+#endif
+  if (!can_limit_address_space()) {
+    GTEST_SKIP() << "this host refuses a 4 GiB address-space limit";
+  }
+  ::testing::GTEST_FLAG(death_test_style) = "threadsafe";
+  // 2,000 and 10,000 method nodes; the second builds about 10,000 graph nodes
+  // and 5,000 leafs.
+  for (const int count : {1000, 5000}) {
+    const std::vector<uint8_t> program = make_expand_add_chain(count);
+    for (const size_t cached : {size_t{0}, size_t{1}}) {
+      EXPECT_EXIT(
+          run_chain_under_limit(program, count, cached),
+          ::testing::ExitedWithCode(0),
+          "")
+          << count << " adds, " << cached << " cached graphs";
     }
   }
 }
