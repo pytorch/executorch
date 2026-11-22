@@ -4,8 +4,6 @@
 # LICENSE file in the root directory of this source tree.
 """CUDA NVFP4 weights: byte-packed E2M1 and N-major K16 E4M3 scales."""
 
-import math
-
 import torch
 from torch._subclasses.fake_tensor import is_fake
 from torchao.prototype.mx_formats.kernels import f4_unpacked_to_f32, unpack_uint4
@@ -70,18 +68,28 @@ class CudaNVFP4Tensor(TorchAOBaseTensor):
         if scale.device != qdata.device or per_tensor_scale.device != qdata.device:
             raise ValueError("CUDA NVFP4 fields must be on one device")
         if act_per_tensor_scale is not None:
-            if not isinstance(act_per_tensor_scale, torch.Tensor) and not (
-                math.isfinite(act_per_tensor_scale) and act_per_tensor_scale > 0
+            act = act_per_tensor_scale
+            if not isinstance(act, torch.Tensor):
+                act = torch.tensor(act, dtype=torch.float32, device=qdata.device)
+            if (
+                act.numel() != 1
+                or act.dtype != torch.float32
+                or act.device != qdata.device
+            ):
+                raise ValueError(
+                    "CUDA NVFP4 act_per_tensor_scale must be a scalar or a "
+                    "one-element float32 tensor on the weight's device"
+                )
+            # Fake and meta tensors carry no values to check.
+            if (
+                act.device.type != "meta"
+                and not is_fake(act)
+                and not bool((torch.isfinite(act) & (act > 0)).all())
             ):
                 raise ValueError(
                     "CUDA NVFP4 act_per_tensor_scale must be finite and positive"
                 )
-            act_per_tensor_scale = torch.as_tensor(
-                act_per_tensor_scale, dtype=torch.float32, device=qdata.device
-            )
-            if act_per_tensor_scale.numel() != 1:
-                raise ValueError("CUDA NVFP4 act_per_tensor_scale must be a scalar")
-            act_per_tensor_scale = act_per_tensor_scale.reshape(1, 1).contiguous()
+            act_per_tensor_scale = act.reshape(1, 1).contiguous()
         qdata, scale = qdata.contiguous(), scale.contiguous()
         per_tensor_scale = per_tensor_scale.reshape(
             (1, 1) if per_tensor_scale.numel() == 1 else (-1,)

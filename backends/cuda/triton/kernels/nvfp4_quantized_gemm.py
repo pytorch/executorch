@@ -16,6 +16,7 @@ from executorch.backends.cuda.autotune.launch_params import (
     _size_hint,
     autotune_launch_param,
     InvalidLaunchParam,
+    timing_on_random_inputs,
 )
 from executorch.backends.cuda.triton.kernels.nvfp4_tuning import (
     autotune_do_bench,
@@ -27,6 +28,7 @@ from executorch.backends.cuda.triton.kernels.quantized_gemm_family import (
     _compile_every_candidate_at_once,
     _QUEUING_ONLY,
 )
+from torch._subclasses.fake_tensor import is_fake
 from torch.library import triton_op, wrap_triton
 from torch.utils._sympy.numbers import int_oo
 
@@ -93,6 +95,31 @@ def _check_weight(qdata, scale, per_tensor_scale):
         raise ValueError("NVFP4 weight tensors must be contiguous")
     if scale.device != qdata.device or per_tensor_scale.device != qdata.device:
         raise ValueError("NVFP4 weight tensors must be on one device")
+
+
+def _check_static_scale(static_scale, x):
+    if static_scale is None:
+        return
+    if (
+        static_scale.numel() != 1
+        or static_scale.dtype != torch.float32
+        or static_scale.device != x.device
+    ):
+        raise ValueError(
+            "NVFP4 static activation scale must be a one-element float32 tensor "
+            "on the activation's device"
+        )
+    # Only eager calls on real data have values to check: fake tensors carry
+    # none, launch timing runs on random stand-ins, and a CUDA graph capture
+    # cannot synchronize.
+    if (
+        not is_fake(static_scale)
+        and static_scale.device.type != "meta"
+        and not timing_on_random_inputs()
+        and not (static_scale.is_cuda and torch.cuda.is_current_stream_capturing())
+        and not bool((torch.isfinite(static_scale) & (static_scale > 0)).all())
+    ):
+        raise ValueError("NVFP4 static activation scale must be finite and positive")
 
 
 def _check_operands(x, qdata, scale, per_tensor_scale):
@@ -244,15 +271,7 @@ def nvfp4_quantize_activation(
         raise ValueError("NVFP4 activation K must be divisible by 16")
     if not x.is_contiguous():
         raise ValueError("NVFP4 activation must be contiguous")
-    if static_scale is not None and (
-        static_scale.numel() != 1
-        or static_scale.dtype != torch.float32
-        or static_scale.device != x.device
-    ):
-        raise ValueError(
-            "NVFP4 static activation scale must be a one-element float32 tensor "
-            "on the activation's device"
-        )
+    _check_static_scale(static_scale, x)
     q = torch.empty((m, k // 2), device=x.device, dtype=torch.uint8)
     s = torch.empty((m, k // 16), device=x.device, dtype=torch.uint8)
     g = torch.empty((m,), device=x.device, dtype=torch.float32)
@@ -568,6 +587,7 @@ def nvfp4_w4a4(
     output_dtype: torch.dtype | None = None,
 ) -> torch.Tensor:
     _check_operands(x, qdata, scale, per_tensor_scale)
+    _check_static_scale(static_scale, x)
     if not _has_native_fp4_conversion():
         raise RuntimeError("Native NVFP4 W4A4 requires an SM120 or newer CUDA target")
     launch = _launch_w4a4 if split_k < 0 else _launch_w4a4_impl
