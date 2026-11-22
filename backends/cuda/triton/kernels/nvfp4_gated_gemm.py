@@ -12,6 +12,7 @@ from executorch.backends.cuda.autotune.launch_params import autotune_launch_para
 from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
     _check_operands,
     _check_split,
+    _check_static_scale,
     _has_native_fp4_conversion,
     _max_rows,
     _prune_w4a4,
@@ -229,6 +230,7 @@ def nvfp4_w4a4_gate_up(
     output_dtype: torch.dtype | None = None,
 ) -> torch.Tensor:
     _check_operands(x, qdata, scale, per_tensor_scale)
+    _check_static_scale(static_scale, x)
     if not _has_native_fp4_conversion():
         raise RuntimeError("Native NVFP4 W4A4 requires an SM120 or newer CUDA target")
     launch = _launch_w4a4_gate_up if split_k < 0 else _launch_w4a4_gate_up_impl

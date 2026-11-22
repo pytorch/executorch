@@ -51,6 +51,12 @@ CUDA = pytest.mark.skipif(
 NATIVE_FP4 = pytest.mark.skipif(not _has_native_fp4(), reason="native FP4 required")
 
 
+@pytest.fixture(autouse=True)
+def default_policy(monkeypatch):
+    for name in ("ET_CUDA_NVFP4_ACT", "ET_CUDA_NVFP4_PREFILL_OUTPUT"):
+        monkeypatch.delenv(name, raising=False)
+
+
 def gated_reference(x, weight):
     projected = x.float() @ weight.dequantize(torch.float32).T
     gate, up = projected.chunk(2, dim=-1)
@@ -209,6 +215,15 @@ def test_auto_gate_up_body_forwards_mode_split(fp4, monkeypatch):
     with pytest.raises(InvalidLaunchParam, match="bounded M"):
         nvfp4_dispatch._prefill_gate_up(x, *weight, None, mode_split=mode_split)
     assert not calls
+
+
+@pytest.mark.parametrize("value", [0.0, -1.0, float("inf"), float("nan")])
+def test_w4a4_gate_up_rejects_invalid_static_scale(value):
+    w = gate_up_weight("cpu")
+    x = torch.empty(3, 192, dtype=torch.bfloat16)
+    static = torch.full((1, 1), value)
+    with pytest.raises(ValueError, match="static activation scale"):
+        nvfp4_w4a4_gate_up(x, w.qdata, w.scale, w.per_tensor_scale, static)
 
 
 def test_plain_weights_are_rejected():

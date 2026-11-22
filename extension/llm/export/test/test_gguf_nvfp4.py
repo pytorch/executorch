@@ -179,6 +179,14 @@ class TestGGUFNVFP4(unittest.TestCase):
         self.assertIs(type(built.act_per_tensor_scale), float)
         with self.assertRaisesRegex(ValueError, "scalar"):
             ExportableNVFP4Tensor(*fields, torch.ones(2))
+        # A bfloat16 default dtype must not round the scale.
+        default = torch.get_default_dtype()
+        torch.set_default_dtype(torch.bfloat16)
+        try:
+            built = ExportableNVFP4Tensor(*fields, 0.001)
+        finally:
+            torch.set_default_dtype(default)
+        self.assertEqual(built.act_per_tensor_scale, torch.tensor(0.001).item())
 
     def test_act_per_tensor_scale_survives_to(self):
         w = ExportableGGUFTensor(
