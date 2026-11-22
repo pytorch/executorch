@@ -49,6 +49,24 @@ class TestMarkAttentionAct(unittest.TestCase):
             for name in ("gate_up_proj", "down_proj"):
                 self.assertEqual(getattr(layer.mlp, name).weight.act_dtype, "fp4")
 
+    def test_mark_attention_act_separate_projections(self):
+        attn = torch.nn.Module()
+        for name in ("q_proj", "k_proj", "og_proj", "v_proj", "o_proj"):
+            lin = torch.nn.Linear(256, 64, bias=False)
+            lin.weight = torch.nn.Parameter(make_weight(64, 256), requires_grad=False)
+            setattr(attn, name, lin)
+        attn.q_norm = torch.nn.LayerNorm(64)
+        model = types.SimpleNamespace(layers=[types.SimpleNamespace(self_attn=attn)])
+        self.assertEqual(mark_attention_act(model, "bf16"), 5)
+        self.assertEqual(attn.q_proj.weight.act_dtype, "bf16")
+
+    def test_mark_attention_act_requires_nvfp4_projections(self):
+        attn = torch.nn.Module()
+        attn.qko_proj = torch.nn.Linear(256, 64, bias=False)
+        model = types.SimpleNamespace(layers=[types.SimpleNamespace(self_attn=attn)])
+        with self.assertRaises(ValueError):
+            mark_attention_act(model, "mxfp8")
+
 
 if __name__ == "__main__":
     unittest.main()

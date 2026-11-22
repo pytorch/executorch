@@ -2,7 +2,8 @@
 # All rights reserved.
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-"""MXFP8 x MXFP8 linears for NVFP4 weights on GPUs without FP8 tensor cores.
+"""MXFP8 x MXFP8 linears for NVFP4 weights on GPUs without native FP4
+conversion (``nvfp4_w4a8`` needs SM120).
 
 Emulates ``nvfp4_w4a8`` (``nvfp4_w4a8.py``) on the dequant + BF16 GEMM path:
 
@@ -15,7 +16,9 @@ Emulates ``nvfp4_w4a8`` (``nvfp4_w4a8.py``) on the dequant + BF16 GEMM path:
   sit exactly on that kernel's grid;
 - the BF16 GEMM has exact products and FP32 accumulation.
 
-Only the accumulation order differs from the block-scaled MMA.
+The operands are on the native kernel's MXFP8 grid; the result differs from
+it by accumulation order and output rounding (the BF16 GEMM output is rounded
+before the per-tensor scale is applied, and FP16 models get BF16 GEMM outputs).
 """
 
 import torch

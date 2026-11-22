@@ -17,13 +17,11 @@ compile time and keeps the fastest:
 - ``w4a16``: BF16 tensor-core GEMM on a 16-row tile with the weights dequantized
   in registers.
 
-Weights are the same packed NVFP4 tensor for all three. Linears whose
-weights must keep BF16 activations (``act_dtype`` other than ``fp4``) use
-``triton::nvfp4_small_m_gemm_bf16act_m{M}``, which times only ``rows`` and
-``w4a16``.
+Weights are the same packed NVFP4 tensor for all three. With ``weight_only``
+(``ET_CUDA_NVFP4_ACT=w4a16``, or a weight whose ``act_dtype`` is not ``fp4``)
+the ``w4a4`` candidates are rejected. Near-ties go to the higher-precision
+candidate.
 """
-
-import os
 
 import torch
 import triton
@@ -36,6 +34,7 @@ from executorch.backends.cuda.autotune.launch_params import (
 from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
     _check_split,
     _check_static_scale,
+    _check_weight,
     _e4m3_f16,
     _e4m3_to_f32,
     _fp4_pair_f16,
@@ -65,7 +64,8 @@ from torch.library import wrap_triton
 
 SMALL_M_BUCKETS = (2, 4, 8, 16)
 _MODE_STRIDE = 64
-_MODE_IDS = {"rows": 0, "w4a4": 1, "w4a16": 2}
+# By activation precision: autotune near-ties pick the smallest candidate.
+_MODE_IDS = {"rows": 0, "w4a16": 1, "w4a4": 2}
 # Register budget of the rows kernel's [MB, BN, BK/2] product.
 _ROWS_MAX_ELEMENTS = 32768
 
@@ -116,7 +116,7 @@ def _gemv_rows(
     ROW_PTS: tl.constexpr = False,
     UNIT_SCALE: tl.constexpr = False,
 ):
-    n = tl.program_id(0) * BN + tl.arange(0, BN)
+    n = (tl.program_id(0) * BN + tl.arange(0, BN)).to(tl.int64)
     split = tl.program_id(1)
     rows = tl.arange(0, MB)
     chunk: tl.constexpr = tl.cdiv(K, BK * SPLIT) * BK
@@ -218,8 +218,7 @@ def _reduce(partial, g, pts, out, m, n, split, fp4_act):
 def launch_rows(bucket, x, qdata, scale, pts, unit_scale, split):
     m, k = x.shape
     n = qdata.shape[0]
-    if split not in SPLIT_K_CANDIDATES or split > triton.cdiv(k, 128):
-        raise InvalidLaunchParam(f"Illegal NVFP4 rows split-K={split} for K={k}")
+    _check_split(k, split, m=m, n=n)
     out, partial = _workspace(x, m, n, split, x.dtype)
     launch_nvfp4_kernel(
         _gemv_rows,
@@ -270,29 +269,27 @@ def launch_w4a4(x, qdata, scale, pts, act_scale, split):
     return out
 
 
-def _enabled_modes():
-    names = os.environ.get("ET_CUDA_NVFP4_SMALL_M_MODES", "rows,w4a4,w4a16").split(",")
-    unknown = [n for n in names if n not in _MODE_IDS]
-    if unknown or not names:
-        raise ValueError(f"ET_CUDA_NVFP4_SMALL_M_MODES: unknown modes {unknown}")
-    # "rows" first: the untimed default must be legal for every input.
-    return sorted({_MODE_IDS[n] for n in names})
-
-
 # Split-K 32 never wins at these shapes; dropping it keeps AOTI compile time sane.
 SMALL_M_SPLITS = tuple(s for s in SPLIT_K_CANDIDATES if s <= 16)
+# "rows" split 1 first: the untimed default, legal for every input.
 _CANDIDATES = tuple(
-    mode * _MODE_STRIDE + split for mode in _enabled_modes() for split in SMALL_M_SPLITS
+    mode * _MODE_STRIDE + split
+    for mode in sorted(_MODE_IDS.values())
+    for split in SMALL_M_SPLITS
 )
 
 
-def _launch_impl(bucket, x, qdata, scale, pts, act_scale, unit_scale, *, mode_split):
+def _launch_impl(
+    bucket, x, qdata, scale, pts, act_scale, unit_scale, weight_only, *, mode_split
+):
     mode, split = divmod(mode_split, _MODE_STRIDE)
     if mode == _MODE_IDS["rows"]:
         return launch_rows(bucket, x, qdata, scale, pts, unit_scale, split)
-    if mode == _MODE_IDS["w4a4"]:
-        return launch_w4a4(x, qdata, scale, pts, act_scale, split)
-    return launch_w4a16(x, qdata, scale, pts, split)
+    if mode == _MODE_IDS["w4a16"]:
+        return launch_w4a16(x, qdata, scale, pts, split)
+    if weight_only:
+        raise InvalidLaunchParam("weight-only NVFP4 keeps BF16/FP16 activations")
+    return launch_w4a4(x, qdata, scale, pts, act_scale, split)
 
 
 _launch = autotune_launch_param(
@@ -310,44 +307,41 @@ def _prototype(
     per_tensor_scale: torch.Tensor,
     act_scale: torch.Tensor | None,
     unit_scale: bool,
+    weight_only: bool,
 ) -> torch.Tensor: ...
 
 
-def _family_launch(bucket, x, qdata, scale, pts, act_scale, unit_scale):
-    # Checked once here: timing runs the W4A4 candidates on random stand-ins.
+def _family_launch(bucket, x, qdata, scale, pts, act_scale, unit_scale, weight_only):
+    # Checked once here: timing runs the candidates on random stand-ins.
+    _check_weight(qdata, scale, pts)
     _check_static_scale(act_scale, x)
-    return _launch(bucket, x.contiguous(), qdata, scale, pts, act_scale, unit_scale)
-
-
-_launch_bf16_act = autotune_launch_param(
-    "mode_split",
-    tuple(
-        _MODE_IDS[mode] * _MODE_STRIDE + split
-        for mode in ("rows", "w4a16")
-        for split in SMALL_M_SPLITS
-    ),
-    candidate_prepass=_compile_every_candidate_at_once,
-    do_bench=nvfp4_launch_bench,
-)(_launch_impl)
-
-
-def _family_launch_bf16_act(bucket, x, qdata, scale, pts, act_scale, unit_scale):
-    return _launch_bf16_act(
-        bucket, x.contiguous(), qdata, scale, pts, act_scale, unit_scale
+    return _launch(
+        bucket,
+        x.contiguous(),
+        qdata,
+        scale,
+        pts,
+        act_scale,
+        unit_scale,
+        weight_only,
     )
 
 
-def _fake(bucket, x, qdata, scale, pts, act_scale, unit_scale):
+def _fake(bucket, x, qdata, scale, pts, act_scale, unit_scale, weight_only):
     return x.new_empty((x.shape[0], qdata.shape[0]))
 
 
-def _unsupported_reason(bucket, x, qdata, scale, pts, act_scale, unit_scale):
+def _unsupported_reason(
+    bucket, x, qdata, scale, pts, act_scale, unit_scale, weight_only
+):
     if x.dim() != 2 or qdata.dim() != 2:
         return "expects a 2-D activation and packed weight"
     if x.dtype not in (torch.bfloat16, torch.float16):
         return f"activation dtype {x.dtype} is not BF16/FP16"
     if x.shape[1] != qdata.shape[1] * 2 or x.shape[1] % 16:
         return "K must match the weight and be a multiple of 16"
+    if statically_known_true(x.shape[0] <= 1):
+        return "M = 1 takes the decode GEMV"
     if not statically_known_true(x.shape[0] <= bucket):
         return f"M is not statically <= {bucket}"
     return None
@@ -361,30 +355,3 @@ NVFP4_SMALL_M_GEMM = QuantizedGemmFamily(
     _fake,
     _unsupported_reason,
 )
-
-NVFP4_SMALL_M_GEMM_BF16_ACT = QuantizedGemmFamily(
-    "nvfp4_small_m_gemm_bf16act",
-    SMALL_M_BUCKETS,
-    _prototype,
-    _family_launch_bf16_act,
-    _fake,
-    _unsupported_reason,
-)
-
-
-def small_m_bucket(x: torch.Tensor, qdata: torch.Tensor):
-    """The bucket for a statically 2..16-row activation, else None (M=1 keeps
-    the decode GEMV; wider or dynamic M keeps prefill)."""
-    if os.environ.get("ET_CUDA_NVFP4_SMALL_M", "1") != "1":
-        return None
-    if x.dim() != 2 or statically_known_true(x.shape[0] <= 1):
-        return None
-    return next(
-        (
-            b
-            for b in SMALL_M_BUCKETS
-            if statically_known_true(x.shape[0] <= b)
-            and _unsupported_reason(b, x, qdata, None, None, 0.0, False) is None
-        ),
-        None,
-    )

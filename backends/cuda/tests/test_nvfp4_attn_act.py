@@ -7,11 +7,12 @@
 """Per-weight activation format of NVFP4 linears (``CudaNVFP4Tensor.act_dtype``).
 
 mxfp8: MXFP8 x MXFP8 prefill on GPUs with FP4 conversion; elsewhere BF16
-activations by default or, with ET_CUDA_NVFP4_MXFP8_EMULATE=1, bit-identical
-MXFP8 emulation. W4A16 or INT8-activation W4A8 decode.
+activations by default or, with ET_CUDA_NVFP4_MXFP8_EMULATE=1, an MXFP8-grid
+emulation. W4A16 or INT8-activation W4A8 decode.
 bf16: weight-only W4A16. Neither may ever reach a W4A4 kernel.
 """
 
+import os
 import unittest
 from unittest import mock
 
@@ -26,7 +27,7 @@ from executorch.backends.cuda.triton.kernels import (
     nvfp4_quantized_gemm as GEMM,
     nvfp4_small_m_gemm as SMALL_M,
     nvfp4_w4a8 as W8,
-    nvfp4_w4a8_gemv as SOFT,
+    nvfp4_w4a8_gemv as W4A8_GEMV,
 )
 from torch.utils._python_dispatch import TorchDispatchMode
 
@@ -44,10 +45,33 @@ W4A4_OPS = (
 )
 
 
-def is_w4a4_op(name):
+def is_w4a4_op(name, native=True):
+    """Whether ``name`` (``op_name``) can time or run NVFP4 activations;
+    ``nvfp4_auto_decode`` times W4A4 only with native FP4."""
+    if name == "nvfp4_auto_decode":
+        return native
     return name in W4A4_OPS or (
-        name.startswith("nvfp4_small_m_gemm_m") and "bf16act" not in name
+        name.startswith("nvfp4_small_m_gemm_m") and not name.endswith(":weight_only")
     )
+
+
+def op_name(name, args):
+    """Small-M bucket ops carry their weight_only flag last."""
+    if name.startswith("nvfp4_small_m_gemm_m") and args[-1] is True:
+        return f"{name}:weight_only"
+    return name
+
+
+class CleanEnv(unittest.TestCase):
+    """Runs every test with the ET_CUDA_NVFP4_* policies at their defaults."""
+
+    def setUp(self):
+        env = {
+            k: v for k, v in os.environ.items() if not k.startswith("ET_CUDA_NVFP4_")
+        }
+        patcher = mock.patch.dict(os.environ, env, clear=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
 
 def native_fp4():
@@ -148,13 +172,13 @@ class OpLog(TorchDispatchMode):
     def __torch_dispatch__(self, func, types, args=(), kwargs=None):
         name = str(func.overloadpacket)
         if name.startswith("triton."):
-            self.ops.add(name.split(".")[-1])
+            self.ops.add(op_name(name.split(".")[-1], args))
         return func(*args, **(kwargs or {}))
 
 
-def linear_ops(act, m, n=512, k=1024):
+def linear_ops(act, m, n=512, k=1024, dtype=torch.bfloat16):
     w = make_weight(n, k, act_dtype=act)
-    x = torch.randn(m, k, device="cuda", dtype=torch.bfloat16)
+    x = torch.randn(m, k, device="cuda", dtype=dtype)
     with OpLog() as log:
         F.linear(x, w)
     return log.ops
@@ -178,14 +202,15 @@ def exported_ops(act, m, dynamic=False):
     ep = torch.export.export(_Linear(act), (x,), dynamic_shapes=shapes, strict=True)
     ep = ep.run_decompositions({})
     return {
-        str(node.target).split(".")[1]
+        op_name(str(node.target).split(".")[1], node.args)
         for node in ep.graph.nodes
         if node.op == "call_function" and str(node.target).startswith("triton.")
     }
 
 
-class TestAttribute(unittest.TestCase):
+class TestAttribute(CleanEnv):
     def setUp(self):
+        super().setUp()
         if not torch.cuda.is_available() or torch.version.hip is not None:
             self.skipTest("CUDA required")
 
@@ -208,21 +233,28 @@ class TestAttribute(unittest.TestCase):
         with self.assertRaises(ValueError):
             make_weight(64, 256, act_dtype="fp8")
 
+    def test_restored_without_new_defaults_to_fp4(self):
+        w = make_weight(64, 256)
+        restored = CudaNVFP4Tensor(w.qdata, w.scale, w.per_tensor_scale)
+        del restored.act_dtype
+        self.assertEqual(restored.act_dtype, "fp4")
 
-class TestDispatchDecisions(unittest.TestCase):
+
+class TestDispatchDecisions(CleanEnv):
     """Which kernel each M reaches, with every NVFP4 kernel entry replaced by a
     recorder, for GPUs with and without native FP4 conversion."""
 
     def setUp(self):
+        super().setUp()
         if not torch.cuda.is_available() or torch.version.hip is not None:
             self.skipTest("CUDA required")
 
-    def _calls(self, act, m, native, dynamic=False):
+    def _calls(self, act, m, native, dynamic=False, env=None, k=1024):
         calls = []
 
         def record(name):
             def fn(x, qdata, *args, **kwargs):
-                calls.append(name)
+                calls.append(op_name(name, args))
                 return x.new_zeros((x.shape[0], qdata.shape[0]))
 
             return fn
@@ -241,9 +273,7 @@ class TestDispatchDecisions(unittest.TestCase):
             mock.patch.object(
                 nvfp4_dispatch, "nvfp4_auto_decode", record("nvfp4_auto_decode")
             ),
-            mock.patch.object(
-                SOFT, "nvfp4_auto_decode_soft", record("nvfp4_auto_decode_soft")
-            ),
+            mock.patch.object(W4A8_GEMV, "nvfp4_w4a8_gemv", record("nvfp4_w4a8_gemv")),
             mock.patch.object(W8, "nvfp4_w4a8", record("nvfp4_w4a8")),
             mock.patch.object(
                 nvfp4_dispatch, "_mxfp8_emulated_linear", record("mxfp8_emulated")
@@ -252,17 +282,13 @@ class TestDispatchDecisions(unittest.TestCase):
             mock.patch.object(
                 SMALL_M.NVFP4_SMALL_M_GEMM, "op", family("nvfp4_small_m_gemm")
             ),
-            mock.patch.object(
-                SMALL_M.NVFP4_SMALL_M_GEMM_BF16_ACT,
-                "op",
-                family("nvfp4_small_m_gemm_bf16act"),
-            ),
+            mock.patch.dict(os.environ, env or {}),
         ]
         for p in patches:
             p.start()
         try:
-            w = make_weight(512, 1024, act_dtype=act)
-            x = torch.randn(m, 1024, device="cuda", dtype=torch.bfloat16)
+            w = make_weight(512, k, act_dtype=act)
+            x = torch.randn(m, k, device="cuda", dtype=torch.bfloat16)
             if dynamic:
                 torch.export.export(
                     _LinearOf(w),
@@ -280,20 +306,18 @@ class TestDispatchDecisions(unittest.TestCase):
     def test_mxfp8_never_w4a4(self):
         expected = {
             True: {1: "nvfp4_gemv", 64: "nvfp4_w4a8", 4096: "nvfp4_w4a8"},
-            False: {
-                1: "nvfp4_auto_decode_soft",
-                64: "dequant",
-                4096: "dequant",
-            },
+            False: {1: "nvfp4_auto_decode", 64: "dequant", 4096: "dequant"},
         }
         for native in (True, False):
             for m in (1, 2, 3, 4, 5, 8, 9, 16, 17, 64, 4096):
                 calls = self._calls("mxfp8", m, native)
                 self.assertEqual(len(calls), 1, (native, m, calls))
-                self.assertFalse(is_w4a4_op(calls[0]), (native, m, calls))
+                self.assertFalse(is_w4a4_op(calls[0], native), (native, m, calls))
                 if 2 <= m <= 16:
                     bucket = next(b for b in (2, 4, 8, 16) if m <= b)
-                    self.assertEqual(calls[0], f"nvfp4_small_m_gemm_bf16act_m{bucket}")
+                    self.assertEqual(
+                        calls[0], f"nvfp4_small_m_gemm_m{bucket}:weight_only"
+                    )
                 elif m in expected[native]:
                     self.assertEqual(calls[0], expected[native][m], (native, m))
             calls = self._calls("mxfp8", 64, native, dynamic=True)
@@ -303,10 +327,43 @@ class TestDispatchDecisions(unittest.TestCase):
         for native in (True, False):
             for m, kernel in (
                 (1, "nvfp4_gemv"),
-                (8, "nvfp4_small_m_gemm_bf16act_m8"),
+                (8, "nvfp4_small_m_gemm_m8:weight_only"),
                 (64, "dequant"),
             ):
                 self.assertEqual(self._calls("bf16", m, native), [kernel], (native, m))
+
+    def test_policies(self):
+        cases = [
+            # w4a16 keeps BF16 activations: no MXFP8 prefill, no W4A8 decode.
+            ("mxfp8", 64, True, {"ET_CUDA_NVFP4_ACT": "w4a16"}, "dequant"),
+            ("mxfp8", 1, False, {"ET_CUDA_NVFP4_ACT": "w4a16"}, "nvfp4_gemv"),
+            # w4a8 forces the INT8-activation decode where 8 bits are allowed.
+            ("mxfp8", 1, True, {"ET_CUDA_NVFP4_ACT": "w4a8"}, "nvfp4_w4a8_gemv"),
+            ("bf16", 1, False, {"ET_CUDA_NVFP4_ACT": "w4a8"}, "nvfp4_gemv"),
+            # w4a4 never applies to these weights.
+            ("mxfp8", 64, True, {"ET_CUDA_NVFP4_ACT": "w4a4"}, "nvfp4_w4a8"),
+            ("bf16", 64, True, {"ET_CUDA_NVFP4_PREFILL_IMPL": "kernel"}, "nvfp4_w4a16"),
+            ("mxfp8", 64, True, {"ET_CUDA_NVFP4_PREFILL_IMPL": "dequant"}, "dequant"),
+            ("mxfp8", 8, True, {"ET_CUDA_NVFP4_SMALL_M": "0"}, "nvfp4_w4a8"),
+            (
+                "mxfp8",
+                64,
+                False,
+                {"ET_CUDA_NVFP4_MXFP8_EMULATE": "1"},
+                "mxfp8_emulated",
+            ),
+        ]
+        for act, m, native, env, kernel in cases:
+            self.assertEqual(self._calls(act, m, native, env=env), [kernel], env)
+        with self.assertRaises(ValueError):
+            self._calls("mxfp8", 64, False, env={"ET_CUDA_NVFP4_MXFP8_EMULATE": "on"})
+
+    def test_mxfp8_partial_k32_group_dequantizes(self):
+        for native in (True, False):
+            env = {"ET_CUDA_NVFP4_MXFP8_EMULATE": "1"}
+            self.assertEqual(
+                self._calls("mxfp8", 64, native, env=env, k=1040), ["dequant"]
+            )
 
     def test_fp4_unchanged(self):
         self.assertEqual(self._calls("fp4", 64, True), ["nvfp4_auto_prefill"])
@@ -324,8 +381,41 @@ class _LinearOf(torch.nn.Module):
         return self.lin(x)
 
 
-class TestNative(unittest.TestCase):
+def fused_row_scale_weight(k=1024):
+    """Two shards with different global scales: per-row per_tensor_scale."""
+    return CudaNVFP4Tensor.fuse_along_output(
+        [make_weight(256, k, seed=5), make_weight(200, k, seed=6)]
+    )
+
+
+def exact_mxfp8(x, w):
+    """MXFP8 activations x the kernel's MXFP8 weights, in FP64."""
+    _, _, xq = act_mxfp8_reference(x)
+    weight = weight_mxfp8_mirror(w.qdata, w.scale).double()
+    return (xq.double() @ weight.t()) * w.per_tensor_scale.double().reshape(1, -1)
+
+
+def mxfp8_cases():
+    """Fused per-row scales, unit scale, FP16, and N/K that are not tile
+    multiples (K still a multiple of 32)."""
+    unit = make_weight(512, 1024, pts=1.0, seed=7)
+    return (
+        ("row scales", fused_row_scale_weight(), torch.bfloat16),
+        (
+            "unit scale",
+            CudaNVFP4Tensor(
+                unit.qdata, unit.scale, unit.per_tensor_scale, unit_scale=True
+            ),
+            torch.bfloat16,
+        ),
+        ("fp16", make_weight(512, 1024, seed=8), torch.float16),
+        ("tails", make_weight(500, 1056, seed=9), torch.bfloat16),
+    )
+
+
+class TestNative(CleanEnv):
     def setUp(self):
+        super().setUp()
         if not native_fp4():
             self.skipTest("native FP4 conversion (sm_120) required")
 
@@ -356,6 +446,24 @@ class TestNative(unittest.TestCase):
         out = W8.nvfp4_w4a8(x, w.qdata, w.scale, w.per_tensor_scale)
         self.assertLess(rel(out, exact), 5e-3)
 
+    def test_mxfp8_cases(self):
+        for name, w, dtype in mxfp8_cases():
+            x = torch.randn(96, w.shape[1], device="cuda").to(dtype)
+            out = F.linear(x, w.with_act_dtype("mxfp8"))
+            self.assertEqual(out.dtype, dtype, name)
+            self.assertLess(rel(out, exact_mxfp8(x, w)), 5e-3, name)
+
+    def test_activation_quantizer_matches_reference(self):
+        torch.manual_seed(1)
+        x = torch.randn(64, 1024, device="cuda") * torch.logspace(
+            -6, 3, 1024, device="cuda"
+        )
+        x = x.to(torch.bfloat16)
+        q, s = W8.quantize_activation_mxfp8(x)
+        rq, rs, _ = act_mxfp8_reference(x)
+        self.assertTrue(torch.equal(q, rq))
+        self.assertTrue(torch.equal(s, rs))
+
     def test_in_kernel_weight_conversion(self):
         # One-hot activations and pts = 1: the output is the converted weight.
         n, k = 256, 512
@@ -384,31 +492,27 @@ class TestNative(unittest.TestCase):
     def test_dispatch(self):
         self.assertEqual(linear_ops("mxfp8", 256), {"nvfp4_w4a8"})
         self.assertEqual(linear_ops("mxfp8", 1), {"nvfp4_gemv"})
-        self.assertEqual(linear_ops("mxfp8", 8), {"nvfp4_small_m_gemm_bf16act_m8"})
+        self.assertEqual(linear_ops("mxfp8", 8), {"nvfp4_small_m_gemm_m8:weight_only"})
         self.assertEqual(linear_ops("bf16", 256), {"nvfp4_dequant"})
 
     def test_export_graph(self):
         for m, dynamic, op in (
             (64, True, "nvfp4_w4a8"),
             (1, False, "nvfp4_gemv"),
-            (4, False, "nvfp4_small_m_gemm_bf16act_m4"),
+            (4, False, "nvfp4_small_m_gemm_m4:weight_only"),
         ):
             ops = exported_ops("mxfp8", m, dynamic)
             self.assertIn(op, ops)
             self.assertFalse(any(is_w4a4_op(o) for o in ops), ops)
 
 
-class TestEmulated(unittest.TestCase):
+class TestEmulationKernels(CleanEnv):
+    """The emulation kernels on every CUDA GPU (both E4M3 decode paths)."""
+
     def setUp(self):
-        if (
-            not torch.cuda.is_available()
-            or torch.version.hip is not None
-            or torch.cuda.get_device_capability() >= (8, 9)
-        ):
-            self.skipTest("MXFP8 emulation runs on sm < 89")
-        env = mock.patch.dict("os.environ", {"ET_CUDA_NVFP4_MXFP8_EMULATE": "1"})
-        env.start()
-        self.addCleanup(env.stop)
+        super().setUp()
+        if not torch.cuda.is_available() or torch.version.hip is not None:
+            self.skipTest("CUDA required")
 
     def test_activation_qdq_bit_identical(self):
         torch.manual_seed(0)
@@ -417,12 +521,14 @@ class TestEmulated(unittest.TestCase):
         )
         x[:, ::97] *= 64
         x[3, :64] = 0
-        # Block maxima at the UE8M0 boundaries 448 * 2**j and one ulp around them.
+        # Block maxima at the UE8M0 boundaries 448 * 2**j and one BF16 ulp
+        # around them (446 * 2**j and 450 * 2**j survive the BF16 cast).
         b = torch.tensor([448.0 * 2.0**j for j in range(-20, 10)], device="cuda")
-        edge = torch.stack(
-            [b, torch.nextafter(b, b * 2), torch.nextafter(b, b * 0)], 1
-        ).reshape(-1)
-        x[5, : edge.numel() * 32 : 32] = edge
+        bits = b.to(torch.bfloat16).view(torch.int16)
+        edge = (
+            torch.stack([bits, bits + 1, bits - 1], 1).reshape(-1).view(torch.bfloat16)
+        )
+        x[5, : edge.numel() * 32 : 32] = edge.float()
         x = x.to(torch.bfloat16)
         y, q, s = EMU.act_mxfp8_qdq_codes(x, store_codes=True)
         rq, rs, rdeq = act_mxfp8_reference(x)
@@ -444,6 +550,27 @@ class TestEmulated(unittest.TestCase):
                 host, _ = W8.nvfp4_to_mxfp8_weight_reference(w.qdata, w.scale)
                 self.assertEqual(int((out != host).sum()), 0, name)
 
+
+class TestEmulated(CleanEnv):
+    """``ET_CUDA_NVFP4_MXFP8_EMULATE=1`` dispatch on GPUs without native FP4."""
+
+    def setUp(self):
+        super().setUp()
+        if not torch.cuda.is_available() or torch.version.hip is not None:
+            self.skipTest("CUDA required")
+        if native_fp4():
+            self.skipTest("native FP4 runs MXFP8 natively")
+        env = mock.patch.dict(os.environ, {"ET_CUDA_NVFP4_MXFP8_EMULATE": "1"})
+        env.start()
+        self.addCleanup(env.stop)
+
+    def test_mxfp8_cases(self):
+        for name, w, dtype in mxfp8_cases():
+            x = torch.randn(96, w.shape[1], device="cuda").to(dtype)
+            out = F.linear(x, w.with_act_dtype("mxfp8"))
+            self.assertEqual(out.dtype, dtype, name)
+            self.assertLess(rel(out, exact_mxfp8(x, w)), 5e-3, name)
+
     def test_op_level_error(self):
         w = make_weight(512, 1024)
         x = torch.randn(256, 1024, device="cuda")
@@ -463,20 +590,20 @@ class TestEmulated(unittest.TestCase):
         self.assertEqual(
             linear_ops("mxfp8", 256), {"nvfp4_mxfp8_act_qdq", "nvfp4_dequant_mxfp8"}
         )
-        self.assertEqual(linear_ops("mxfp8", 1), {"nvfp4_auto_decode_soft"})
-        self.assertEqual(linear_ops("mxfp8", 4), {"nvfp4_small_m_gemm_bf16act_m4"})
+        self.assertEqual(linear_ops("mxfp8", 1), {"nvfp4_auto_decode"})
+        self.assertEqual(linear_ops("mxfp8", 4), {"nvfp4_small_m_gemm_m4:weight_only"})
         self.assertEqual(linear_ops("bf16", 256), {"nvfp4_dequant"})
         self.assertEqual(linear_ops("bf16", 1), {"nvfp4_gemv"})
 
     def test_export_graph(self):
         for m, dynamic, op in (
             (64, True, "nvfp4_dequant_mxfp8"),
-            (1, False, "nvfp4_auto_decode_soft"),
-            (16, False, "nvfp4_small_m_gemm_bf16act_m16"),
+            (1, False, "nvfp4_auto_decode"),
+            (16, False, "nvfp4_small_m_gemm_m16:weight_only"),
         ):
             ops = exported_ops("mxfp8", m, dynamic)
             self.assertIn(op, ops)
-            self.assertFalse(any(is_w4a4_op(o) for o in ops), ops)
+            self.assertFalse(any(is_w4a4_op(o, native=False) for o in ops), ops)
 
 
 if __name__ == "__main__":

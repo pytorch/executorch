@@ -63,9 +63,10 @@ from triton.language.extra import libdevice
 # ---------------------------------------------------------------------------
 # helpers
 #
-# E4M3 conversions are native on sm_89+ and E2M1 on sm_100+; older GPUs (A100)
-# take the bit-exact software paths.  Kernels receive the current device's
-# compute capability as the ARCH constexpr: tl.target_info queries the current
+# E4M3 conversions are native on sm_89+ and E2M1 on sm_120+ (the backend's
+# native-FP4 rule); older GPUs (A100) take the bit-exact software paths.
+# Kernels receive the current device's compute capability as the ARCH
+# constexpr, the device Triton compiles for: tl.target_info queries the current
 # CUDA device while compiling, which fails in Inductor's forked compile workers.
 # ---------------------------------------------------------------------------
 def cuda_arch() -> int:
@@ -94,7 +95,7 @@ def _e2m1_code(v):
 @triton.jit
 def _e2m1x2(lo, hi, ARCH: tl.constexpr):
     """Pack two fp32 tensors into E2M1 pairs (lo -> low nibble), RN, satfinite."""
-    if ARCH >= 100:
+    if ARCH >= 120:
         return tl.inline_asm_elementwise(
             "{ .reg .b8 tmp; cvt.rn.satfinite.e2m1x2.f32 tmp, $2, $1; mov.b32 $0, {tmp,0,0,0}; }",
             constraints="=r,f,f",
@@ -121,7 +122,7 @@ def _e4m3_encode_nonneg(x, ARCH: tl.constexpr):
 
 
 @triton.jit
-def _load_kv_tile_bf16(
+def _load_kv_tile_f16(
     Q_ptr,
     S_ptr,
     base_q,
@@ -156,7 +157,7 @@ def _load_kv_tile_bf16(
     if ARCH >= 89:
         sf16 = sf_raw.to(tl.float8e4nv, bitcast=True).to(tl.float16)
     else:
-        sf16 = _e4m3_to_f32(sf_raw, ARCH >= 89).to(tl.float16)
+        sf16 = _e4m3_to_f32(sf_raw, False).to(tl.float16)
     sf_bits = sf16.to(tl.uint16, bitcast=True).to(tl.uint32)
     sf_pair = sf_bits | (sf_bits << 16)
     if not SF_GATHER:
@@ -164,7 +165,7 @@ def _load_kv_tile_bf16(
         sf_pair = tl.broadcast_to(sf_pair[:, :, None], (BLOCK_N, D // 16, 8)).reshape(
             (BLOCK_N, D // 2)
         )
-    if ARCH >= 100:
+    if ARCH >= 120:
         prod = tl.inline_asm_elementwise(
             "{ .reg .b8 tmp,z1,z2,z3; .reg .b32 h; mov.b32 {tmp,z1,z2,z3}, $1; "
             "cvt.rn.f16x2.e2m1x2 h, tmp; mul.rn.f16x2 $0, h, $2; }",
@@ -192,6 +193,52 @@ def _load_kv_tile_bf16(
     lo = (prod & 65535).to(tl.uint16).to(tl.float16, bitcast=True)
     hi = (prod >> 16).to(tl.uint16).to(tl.float16, bitcast=True)
     return lo, hi
+
+
+# ---------------------------------------------------------------------------
+# operand checks (op and fake)
+# ---------------------------------------------------------------------------
+def _check_cache(k_q, k_s, v_q, v_s):
+    """The four cache tensors: contiguous uint8 [B, H_kv, L, D/2] codes and
+    [B, H_kv, L, D/16] scales, K and V alike. Returns (B, H_kv, D)."""
+    if any(t.dtype != torch.uint8 or t.dim() != 4 for t in (k_q, k_s, v_q, v_s)):
+        raise ValueError("NVFP4 KV cache tensors must be 4-D uint8")
+    if not all(t.is_contiguous() for t in (k_q, k_s, v_q, v_s)):
+        raise ValueError("NVFP4 KV cache tensors must be contiguous")
+    B, H, L, half = k_q.shape
+    if (
+        v_q.shape != k_q.shape
+        or k_s.shape != (B, H, L, half // 8)
+        or (v_s.shape != k_s.shape)
+    ):
+        raise ValueError(
+            "NVFP4 KV cache shapes must be K/V codes [B, H_kv, L, D/2] and "
+            "scales [B, H_kv, L, D/16]"
+        )
+    return B, H, half * 2
+
+
+def _check_write(k, v, input_pos, k_q, k_s, v_q, v_s, inv_freq):
+    B, H, D = _check_cache(k_q, k_s, v_q, v_s)
+    if k.dim() != 4 or v.shape != k.shape or k.shape[0] != B or k.shape[2:] != (H, D):
+        raise ValueError(
+            f"nvfp4_kv_write: k and v must be [{B}, T, {H}, {D}] like the cache"
+        )
+    if input_pos.dim() != 1 or input_pos.shape[0] != k.shape[1]:
+        raise ValueError("nvfp4_kv_write: input_pos must have one position per token")
+    if inv_freq is not None and inv_freq.shape != (D // 2,):
+        raise ValueError(f"nvfp4_kv_write: inv_freq must have {D // 2} values")
+
+
+def _check_sdpa(query, k_q, k_s, v_q, v_s):
+    B, H_kv, D = _check_cache(k_q, k_s, v_q, v_s)
+    if query.dtype != torch.bfloat16 or query.dim() != 4:
+        raise ValueError("nvfp4_sdpa: query must be a 4-D BF16 tensor")
+    if query.shape[0] != B or query.shape[3] != D or query.shape[1] % H_kv:
+        raise ValueError(
+            f"nvfp4_sdpa: query must be [{B}, H_q, L_q, {D}] with H_q a multiple "
+            f"of {H_kv}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -294,13 +341,13 @@ def _nvfp4_kv_write_impl(
     v_s: torch.Tensor,
     inv_freq: Optional[torch.Tensor] = None,
     ring: bool = False,
-    k_norm_eps: float = -1.0,
+    k_norm_eps: Optional[float] = None,
 ) -> None:
     """Launch body of ``triton::nvfp4_kv_write``.
 
-    Also registered as the op's decomposition in the CUDA backend: inside
-    AOTInductor the in-place op is retraced to the user Triton kernel that
-    mutates the cache buffers, so Inductor compiles it (no fallback kernel).
+    ``LowerNVFP4KVWritePass`` (``backends/cuda/passes/lower_nvfp4_kv.py``)
+    splices this body in place of the functionalized op, so AOTInductor
+    compiles the Triton kernel that writes the cache buffers (no fallback).
     """
     B, T, H, D = k.shape
     L = k_q.shape[2]
@@ -324,10 +371,10 @@ def _nvfp4_kv_write_impl(
         v.stride(3),
         H,
         L,
-        float(k_norm_eps),
+        0.0 if k_norm_eps is None else float(k_norm_eps),
         RING=ring,
         HAS_ROPE=has_rope,
-        NORM_K=k_norm_eps > 0,
+        NORM_K=k_norm_eps is not None,
         D=D,
         ARCH=cuda_arch(),
         num_warps=1,
@@ -348,15 +395,16 @@ def nvfp4_kv_write(
     v_s: torch.Tensor,
     inv_freq: Optional[torch.Tensor] = None,
     ring: bool = False,
-    k_norm_eps: float = -1.0,
+    k_norm_eps: Optional[float] = None,
 ) -> None:
     """Write new K/V tokens into an NVFP4 cache.
 
     k, v: [B, T, H_kv, D] (any strides; bf16/fp16/fp32), *pre* k-norm/RoPE when
-    ``k_norm_eps > 0`` / ``inv_freq`` are given (those are fused here).
+    ``k_norm_eps`` / ``inv_freq`` are given (those are fused here).
     input_pos: [T] absolute positions.  ring: store at ``pos % L``.  Tokens at
     negative positions, or at ``pos >= L`` without ``ring``, are not written.
     """
+    _check_write(k, v, input_pos, k_q, k_s, v_q, v_s, inv_freq)
     _nvfp4_kv_write_impl(
         k, v, input_pos, k_q, k_s, v_q, v_s, inv_freq, ring, k_norm_eps
     )
@@ -373,9 +421,9 @@ def _nvfp4_kv_write_fake(
     v_s,
     inv_freq=None,
     ring=False,
-    k_norm_eps=-1.0,
+    k_norm_eps=None,
 ) -> None:
-    return None
+    _check_write(k, v, input_pos, k_q, k_s, v_q, v_s, inv_freq)
 
 
 # ---------------------------------------------------------------------------
@@ -507,7 +555,7 @@ def _nvfp4_splitk_kernel(
             )
             visible = tl.max(tl.max(mask_block.to(tl.int32), axis=1), axis=0)
         if visible > 0:
-            k_lo, k_hi = _load_kv_tile_bf16(
+            k_lo, k_hi = _load_kv_tile_f16(
                 KQ, KS, base_q, base_s, slots, n_valid, BLOCK_N, D, ARCH
             )
             qk = tl.dot(q_even, tl.trans(k_lo))
@@ -530,7 +578,7 @@ def _nvfp4_splitk_kernel(
             p = tl.exp(qk - safe_m[:, None])
             alpha = tl.exp(m_i - safe_m)
             l_i = l_i * alpha + tl.sum(p, axis=1)
-            v_lo, v_hi = _load_kv_tile_bf16(
+            v_lo, v_hi = _load_kv_tile_f16(
                 VQ, VS, base_q, base_s, slots, n_valid, BLOCK_N, D, ARCH
             )
             pv = p.to(tl.float16)
@@ -795,7 +843,7 @@ def _nvfp4_prefill_kernel(
             )
             active = tl.max(tl.max(mask_block.to(tl.int32), axis=1), axis=0)
         if active > 0:
-            k_lo, k_hi = _load_kv_tile_bf16(
+            k_lo, k_hi = _load_kv_tile_f16(
                 KQ, KS, base_q, base_s, slots, n_valid, BLOCK_N, D, ARCH, True
             )
             qk = tl.dot(q_even, tl.trans(k_lo))
@@ -816,7 +864,7 @@ def _nvfp4_prefill_kernel(
             p = tl.exp(qk - safe_m[:, None])
             alpha = tl.exp(m_i - safe_m)
             l_i = l_i * alpha + tl.sum(p, axis=1)
-            v_lo, v_hi = _load_kv_tile_bf16(
+            v_lo, v_hi = _load_kv_tile_f16(
                 VQ, VS, base_q, base_s, slots, n_valid, BLOCK_N, D, ARCH, True
             )
             pv = p.to(tl.float16)
@@ -928,6 +976,7 @@ def nvfp4_sdpa(
     holds -- the same visibility as the model's dense sliding mask, computed
     in-kernel so only ~window keys are swept.
     """
+    _check_sdpa(query, k_q, k_s, v_q, v_s)
     B, H_q, L_q, D = query.shape
     L_kv = k_q.shape[2]
     out = torch.empty((B, H_q, L_q, D), device=query.device, dtype=query.dtype)
@@ -992,7 +1041,9 @@ def _nvfp4_sdpa_fake(
     kv_len=None,
     window=0,
 ):
-    return torch.empty_like(query)
+    # Contiguous, like the op's output.
+    _check_sdpa(query, k_q, k_s, v_q, v_s)
+    return query.new_empty(query.shape)
 
 
 # ---------------------------------------------------------------------------

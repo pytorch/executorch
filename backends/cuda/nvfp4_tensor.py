@@ -9,8 +9,9 @@
 - ``fp4`` (default): NVFP4 activations where FP4 tensor cores exist (W4A4),
   timed against W4A16 per shape.
 - ``mxfp8``: prefill quantizes activations to MXFP8 and converts the weight
-  tiles to MXFP8 in registers (``nvfp4_w4a8``); decode stays W4A16 (or the
-  INT8-activation W4A8 GEMV on GPUs without FP4 conversion). Never W4A4.
+  tiles to MXFP8 in registers (``nvfp4_w4a8``, native FP4 conversion only;
+  BF16 activations elsewhere); decode stays W4A16 (or the INT8-activation W4A8
+  GEMV on GPUs without FP4 conversion). Never W4A4.
 - ``bf16``: weight-only, W4A16 on every path.
 """
 
@@ -79,6 +80,8 @@ class CudaNVFP4Tensor(TorchAOBaseTensor):
         "act_dtype",
     ]
     optional_tensor_data_names = ["act_per_tensor_scale"]
+    # Tensors restored without __new__ predate act_dtype.
+    act_dtype = "fp4"
 
     def __new__(
         cls,

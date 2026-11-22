@@ -29,6 +29,7 @@ import torch
 import triton
 import triton.language as tl
 
+from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import _check_operands
 from executorch.backends.cuda.triton.kernels.nvfp4_tuning import (
     autotune_do_bench,
     launch_nvfp4_kernel,
@@ -243,6 +244,7 @@ def nvfp4_w4a8(
     per_tensor_scale: torch.Tensor,
 ) -> torch.Tensor:
     """y[M, N] = x[M, K] @ W^T: MXFP8 activations x NVFP4 weights converted to MXFP8."""
+    _check_operands(x, qdata, scale, per_tensor_scale)
     m, k = x.shape
     n = qdata.shape[0]
     if k % 32:
