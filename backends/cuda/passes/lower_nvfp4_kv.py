@@ -55,6 +55,26 @@ def _write_fn(ring: bool, eps: float | None, has_rope: bool):
     return fn
 
 
+def _mutated_bases(kw):
+    """Output index and base node of each mutated cache argument. v1 passes the
+    mutated tensors themselves and returns (op_out, *mutated args in schema
+    order); v2 passes them as `_all_bases` and returns (op_out, *bases)."""
+    if "_all_bases" not in kw:
+        return list(range(len(_MUTATED))), [kw[name] for name in _MUTATED]
+    # Each mutated arg must be its base: view kwargs would rebuild a view whose
+    # offsets the kernel does not apply.
+    views = [
+        key
+        for key in kw
+        for name in _MUTATED
+        if key.startswith(f"_{name}_") and key != f"_{name}_base_index"
+    ]
+    assert not views, f"nvfp4_kv_write on cache views: {views}"
+    bases = list(kw["_all_bases"])
+    out_index = [kw[f"_{name}_base_index"] for name in _MUTATED]
+    return out_index, [bases[i] for i in out_index]
+
+
 class LowerNVFP4KVWritePass:
     requires_exported_program = True
 
@@ -79,25 +99,7 @@ class LowerNVFP4KVWritePass:
                 if node.args[0] is not target_op:
                     continue
                 kw = node.kwargs
-                # v1 passes the mutated tensors themselves and returns
-                # (op_out, *mutated args in schema order); v2 passes them as
-                # `_all_bases` and returns (op_out, *bases).
-                if "_all_bases" in kw:
-                    # Each mutated arg must be its base: view kwargs would rebuild
-                    # a view whose offsets the kernel does not apply.
-                    views = [
-                        key
-                        for key in kw
-                        for name in _MUTATED
-                        if key.startswith(f"_{name}_") and key != f"_{name}_base_index"
-                    ]
-                    assert not views, f"nvfp4_kv_write on cache views: {views}"
-                    bases = list(kw["_all_bases"])
-                    out_index = [kw[f"_{name}_base_index"] for name in _MUTATED]
-                    base_of = [bases[i] for i in out_index]
-                else:
-                    out_index = list(range(len(_MUTATED)))
-                    base_of = [kw[name] for name in _MUTATED]
+                out_index, base_of = _mutated_bases(kw)
                 inv = kw.get("inv_freq")
                 has_rope = inv is not None
                 call_args = [kw["k"], kw["v"], kw["input_pos"], *base_of] + (
@@ -147,15 +149,17 @@ class LowerNVFP4KVWritePass:
                     graph.erase_node(user)
                 graph.erase_node(node)
         if renames:
-            sig = ep.graph_signature
-            specs = []
-            for spec in sig.output_specs:
-                if isinstance(spec.arg, TensorArgument) and spec.arg.name in renames:
-                    spec = dataclasses.replace(
-                        spec, arg=TensorArgument(name=renames[spec.arg.name])
-                    )
-                specs.append(spec)
-            sig.output_specs[:] = specs
+            _rename_outputs(ep, renames)
             graph.lint()
             gm.recompile()
         return ep
+
+
+def _rename_outputs(ep: ExportedProgram, renames: dict[str, str]) -> None:
+    """Point the buffer-mutation outputs at the spliced write's results."""
+    specs = ep.graph_signature.output_specs
+    for i, spec in enumerate(specs):
+        if isinstance(spec.arg, TensorArgument) and spec.arg.name in renames:
+            specs[i] = dataclasses.replace(
+                spec, arg=TensorArgument(name=renames[spec.arg.name])
+            )

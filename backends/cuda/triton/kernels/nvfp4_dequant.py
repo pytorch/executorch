@@ -62,15 +62,18 @@ def nvfp4_dequant(
     qdata: torch.Tensor,
     scale: torch.Tensor,
     per_tensor_scale: torch.Tensor,
-    dtype: torch.dtype = torch.bfloat16,
+    output_dtype: torch.dtype,
 ) -> torch.Tensor:
-    """Packed NVFP4 [N, K/2] + E4M3 [N, K/16] (+ global scale) -> dense [N, K]."""
+    """Packed NVFP4 [N, K/2] + E4M3 [N, K/16] (+ global scale) -> dense [N, K].
+
+    Scale bytes must be finite E4M3 (no 0x7F/0xFF), as
+    ``CudaNVFP4Tensor.from_exportable`` checks; it is not checked here."""
     _check_weight(qdata, scale, per_tensor_scale)
-    if dtype not in (torch.bfloat16, torch.float16):
-        raise ValueError(f"NVFP4 dequant supports BF16/FP16 output, got {dtype}")
+    if output_dtype not in (torch.bfloat16, torch.float16):
+        raise ValueError(f"NVFP4 dequant supports BF16/FP16 output, got {output_dtype}")
     n, half_k = qdata.shape
     k = half_k * 2
-    out = torch.empty((n, k), device=qdata.device, dtype=dtype)
+    out = torch.empty((n, k), device=qdata.device, dtype=output_dtype)
     bn, bkh = 32, 128
     wrap_triton(_nvfp4_dequant_kernel)[(triton.cdiv(n, bn), triton.cdiv(half_k, bkh))](
         qdata,

@@ -34,7 +34,10 @@ import executorch.backends.cuda.triton.kernels.nvfp4_kv  # noqa: F401  (register
 
 import torch
 import torch.nn as nn
-from executorch.examples.models.muse_glimmer.model.model import rotate_interleaved
+from executorch.examples.models.muse_glimmer.model.model import (
+    RMSNormNoWeight,
+    rotate_interleaved,
+)
 from executorch.examples.models.muse_glimmer.source_transformations.cuda import (
     _project_qkvo,
 )
@@ -152,6 +155,9 @@ def install_nvfp4_kv_cache(model: nn.Module) -> None:
     """Swap every layer to the NVFP4 KV cache (same lengths as the BF16 caches)."""
     for layer in model.layers:
         attn = layer.self_attn
+        # The unit global scale relies on the gainless K norm bounding K.
+        if not isinstance(attn.k_norm, RMSNormNoWeight):
+            raise ValueError("The NVFP4 KV cache requires the gainless QK norm")
         old = attn.kv_cache
         device = old.k_cache.device if old.k_cache.device.type != "meta" else "cpu"
         attn.kv_cache = NVFP4KVCache(
