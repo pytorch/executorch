@@ -38,6 +38,13 @@ from transformers.models.llama.modeling_llama import (
 )
 
 
+# Tests that turn an engine testing option on run only when asked for.
+requires_option_tests = unittest.skipUnless(
+    os.environ.get("NATIVE_GGML_OPTION_TESTS") == "1",
+    "engine testing option; set NATIVE_GGML_OPTION_TESTS=1 to run",
+)
+
+
 class Lambda(torch.nn.Module):
     def __init__(self, fn):
         super().__init__()
@@ -345,13 +352,14 @@ def _shape_text(inputs) -> str:
     return ",".join("x".join(str(d) for d in t.shape) for t in inputs)
 
 
-def _run_ggml(
+def _run_ggml(  # noqa: C901
     package: Path,
     steps,
     outdir: Path,
     num_outputs: int,
     resize: bool = False,
     max_cached_graphs: int = 1,
+    cuda_f32_accumulation_for_testing: bool = False,
     graph_ops: collections.Counter | None = None,
     method: str = "forward",
     allow_activation_quant_for_weight_only: bool = False,
@@ -384,6 +392,8 @@ def _run_ggml(
     ]
     if resize:
         command.append(f"--input_sizes={';'.join(map(_shape_text, steps))}")
+    if cuda_f32_accumulation_for_testing:
+        command.append("--cuda_f32_accumulation_for_testing")
     if graph_ops is not None:
         command.append("--print_graph_ops")
     if allow_activation_quant_for_weight_only:
@@ -2530,6 +2540,32 @@ class GgmlOpsTest(unittest.TestCase):
             atol=1e-4,
             rtol=1e-4,
         )
+
+    def _check_half_linear_sum(self, **options):
+        # Accumulated in F16, each 2^-8 term vanishes next to the running sum:
+        # 1024 instead of eager's 1032.
+        row = torch.cat([torch.ones(1024), torch.full((2048,), 2.0**-8)])
+        linear = torch.nn.Linear(3072, 4, bias=False).half()
+        with torch.no_grad():
+            linear.weight.fill_(1.0)
+        x = row.repeat(64, 1).half()
+        with torch.no_grad():
+            expected = linear(x)
+        with tempfile.TemporaryDirectory() as tmp:
+            package = Path(tmp) / "model.ptn"
+            to_native(torch.export.export(linear, (x,))).save(str(package))
+            (((raw, shape),),) = _run_ggml(package, [(x,)], Path(tmp), 1, **options)
+        actual = torch.frombuffer(bytearray(raw), dtype=torch.float16)
+        torch.testing.assert_close(actual.reshape(shape), expected, atol=0.0, rtol=0.0)
+
+    @requires_option_tests
+    def test_half_linear_accumulates_in_f32_when_requested(self):
+        self._check_half_linear_sum(cuda_f32_accumulation_for_testing=True)
+
+    def test_cuda_f32_accumulation_is_a_no_op_on_the_cpu(self):
+        if os.environ.get("GGML_PTN_DEVICE", "cpu") != "cpu":
+            self.skipTest("CPU behavior")
+        self._check_half_linear_sum(cuda_f32_accumulation_for_testing=True)
 
     def test_half_linear_result_is_rounded_before_the_next_op(self):
         # 256 * 256 * 2 = 131072 overflows F16, so eager reads inf and inf * 0

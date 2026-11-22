@@ -37,6 +37,13 @@ DEFINE_bool(
     "ggml-cpu reads from an F16 table. Set: the CPU builds it from exact ops "
     "as eager does, at five more kernels. Ops: gelu with approximate=tanh; "
     "CPU only.");
+DEFINE_bool(
+    cuda_f32_accumulation_for_testing,
+    false,
+    "Testing only. Default: matrix multiplies with an F16 operand accumulate "
+    "in F16 on CUDA, as in llama.cpp. Set: they accumulate in F32, at 2-3x "
+    "prefill and 4x decode GEMM time. Ops: F16 linear, matmul, mm, bmm and "
+    "convolution; CUDA only.");
 
 namespace ptn {
 
@@ -58,6 +65,8 @@ GgmlEngineOptions ggml_engine_options_from_flags() {
   options.print_graph_ops = FLAGS_print_graph_ops;
   options.exact_topk_for_testing = FLAGS_exact_topk_for_testing;
   options.exact_gelu_for_testing = FLAGS_exact_gelu_for_testing;
+  options.cuda_f32_accumulation_for_testing =
+      FLAGS_cuda_f32_accumulation_for_testing;
   return options;
 }
 
