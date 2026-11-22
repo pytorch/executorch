@@ -157,11 +157,52 @@ TEST(ReferenceGgufQuantTest, DecodesQ8_0Block) {
   EXPECT_EQ(decode_one_row("gguf:q8_0", block, 32), expected);
 }
 
+TEST(ReferenceGgufQuantTest, DecodesQ3KBlock) {
+  // Sixteen 6-bit scales s, each decoding as s - 32, packed as block_q3_K
+  // stores them: the low nibbles of scales 0-7 in the low nibbles of bytes
+  // 0-7 and those of scales 8-15 in their high nibbles, and the top two bits
+  // of scale 4 k + i in bits 2 k and 2 k + 1 of byte 8 + i.
+  std::array<int, 16> scales{};
+  std::array<uint8_t, 12> packed{};
+  for (int i = 0; i < 16; ++i) {
+    scales[i] = (37 * i + 5) % 64;
+    packed[i % 8] |= static_cast<uint8_t>((scales[i] & 0xF) << (4 * (i / 8)));
+    packed[8 + i % 4] |=
+        static_cast<uint8_t>((scales[i] >> 4) << (2 * (i / 4)));
+  }
+  // Weight e lies in half h = e / 128, plane p = e % 128 / 32 and position
+  // l = e % 32: its 2-bit code is in bits 2 p of byte 32 h + l of the codes,
+  // its high bit in bit 4 h + p of mask byte l, and it decodes to the code
+  // minus 4 unless the high bit is set.
+  std::vector<uint8_t> hmask(32);
+  std::vector<uint8_t> qs(64);
+  std::vector<float> expected(256);
+  for (int e = 0; e < 256; ++e) {
+    const int h = e / 128;
+    const int p = e % 128 / 32;
+    const int l = e % 32;
+    const int code = (7 * e + h) % 4;
+    const bool high = (5 * e + p) % 3 == 0;
+    qs[32 * h + l] |= static_cast<uint8_t>(code << (2 * p));
+    hmask[l] |= static_cast<uint8_t>(high << (4 * h + p));
+    expected[e] = 0.5f * (scales[e / 16] - 32) * (code - (high ? 0 : 4));
+  }
+  std::vector<uint8_t> block = hmask;
+  block.insert(block.end(), qs.begin(), qs.end());
+  block.insert(block.end(), packed.begin(), packed.end());
+  block.push_back(0x00); // d = 0.5
+  block.push_back(0x38);
+  ASSERT_EQ(block.size(), 110);
+
+  EXPECT_EQ(decode_one_row("gguf:q3_k", block), expected);
+}
+
 TEST(ReferenceGgufQuantTest, SizesWholeBlockRows) {
   EXPECT_TRUE(can_decode_gguf("gguf:q4_k"));
   EXPECT_TRUE(can_decode_gguf("gguf:q5_k"));
   EXPECT_TRUE(can_decode_gguf("gguf:q6_k"));
   EXPECT_TRUE(can_decode_gguf("gguf:q8_0"));
+  EXPECT_TRUE(can_decode_gguf("gguf:q3_k"));
   EXPECT_FALSE(can_decode_gguf("gguf:iq4_xs"));
   EXPECT_FALSE(can_decode_gguf("q4_k"));
   EXPECT_EQ(gguf_row_nbytes("gguf:q4_k", 512), 288);
@@ -169,6 +210,7 @@ TEST(ReferenceGgufQuantTest, SizesWholeBlockRows) {
   EXPECT_EQ(gguf_row_nbytes("gguf:q6_k", 256), 210);
   EXPECT_EQ(gguf_row_nbytes("gguf:q8_0", 64), 68);
   EXPECT_THROW(gguf_row_nbytes("gguf:q8_0", 48), std::invalid_argument);
+  EXPECT_EQ(gguf_row_nbytes("gguf:q3_k", 512), 220);
   EXPECT_THROW(gguf_row_nbytes("gguf:q4_k", 255), std::invalid_argument);
   EXPECT_THROW(gguf_row_nbytes("gguf:q4_k", 0), std::invalid_argument);
   EXPECT_THROW(gguf_row_nbytes("gguf:q4_k", -256), std::invalid_argument);
@@ -205,6 +247,7 @@ TEST(ReferenceGgufQuantTest, MatchesGgmlDequantization) {
   };
   for (const auto& [codec, type, scale_offsets] :
        {std::tuple{"gguf:q8_0", GGML_TYPE_Q8_0, std::vector<size_t>{0}},
+        std::tuple{"gguf:q3_k", GGML_TYPE_Q3_K, std::vector<size_t>{108}},
         std::tuple{"gguf:q4_k", GGML_TYPE_Q4_K, std::vector<size_t>{0, 2}},
         std::tuple{"gguf:q5_k", GGML_TYPE_Q5_K, std::vector<size_t>{0, 2}},
         std::tuple{"gguf:q6_k", GGML_TYPE_Q6_K, std::vector<size_t>{208}}}) {

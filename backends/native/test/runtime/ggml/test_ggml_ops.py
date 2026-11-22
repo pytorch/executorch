@@ -416,6 +416,7 @@ _MATMUL_TOL = (
 _GGUF_SUPER_SCALES = {
     "q4_k": {0: 2**-8, 2: 2**-5},
     "q8_0": {0: 2**-8},
+    "q3_k": {108: 2**-6},
     "q5_k": {0: 2**-8, 2: 2**-4},
     "q6_k": {208: 2**-14},
 }
@@ -626,6 +627,15 @@ class GgmlOpsTest(unittest.TestCase):
 
     def test_gguf_q8_0_dynamic_tokens(self):
         self._check_random_gguf_dynamic_tokens("q8_0")
+
+    def test_gguf_q3_k_linear(self):
+        self._check_random_gguf_linear("q3_k")
+
+    def test_gguf_q3_k_embedding(self):
+        self._check_random_gguf_embedding("q3_k")
+
+    def test_gguf_q3_k_dynamic_tokens(self):
+        self._check_random_gguf_dynamic_tokens("q3_k")
 
     def test_gguf_q5_k_linear_within_rounding_bound(self):
         self._check_random_gguf_linear("q5_k")
