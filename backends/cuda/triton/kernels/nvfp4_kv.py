@@ -43,10 +43,7 @@ import triton
 import triton.language as tl
 
 from executorch.backends.cuda.autotune.inputs import autotune_inputs
-from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
-    _e4m3_to_f32,
-    _SOFT_E2M1_HALF2,
-)
+from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import _e4m3_to_f32
 from executorch.backends.cuda.triton.kernels.sdpa import (
     _decode_splitk_config,
     _kv_len_scenarios,
@@ -61,7 +58,6 @@ from torch.fx.experimental.symbolic_shapes import statically_known_true
 from torch.library import triton_op, wrap_triton
 from triton.language.extra import libdevice
 
-
 # ---------------------------------------------------------------------------
 # helpers
 #
@@ -71,10 +67,14 @@ from triton.language.extra import libdevice
 # constexpr, the device Triton compiles for: tl.target_info queries the current
 # CUDA device while compiling, which fails in Inductor's forked compile workers.
 # ---------------------------------------------------------------------------
+# FP16x2 2**14: rescales FP16-placed E2M1 codes to their exact values.
+_SOFT_E2M1_HALF2 = tl.constexpr(0x74007400)
+
+
 def cuda_arch() -> int:
     if torch.version.hip is not None:
         # Even the software paths emit NVIDIA PTX (mul.rn.f16x2).
-        raise RuntimeError("The NVFP4 KV cache kernels require an NVIDIA GPU")
+        raise RuntimeError("NVFP4 Triton kernels require an NVIDIA GPU")
     major, minor = torch.cuda.get_device_capability()
     return major * 10 + minor
 
@@ -235,6 +235,11 @@ def _check_write(k, v, input_pos, k_q, k_s, v_q, v_s, inv_freq, k_norm_eps):
         raise ValueError("nvfp4_kv_write: input_pos must have one position per token")
     if inv_freq is not None and inv_freq.shape != (D // 2,):
         raise ValueError(f"nvfp4_kv_write: inv_freq must have {D // 2} values")
+    # The kernel reads both with unit stride.
+    if not input_pos.is_contiguous() or not (
+        inv_freq is None or inv_freq.is_contiguous()
+    ):
+        raise ValueError("nvfp4_kv_write: input_pos and inv_freq must be contiguous")
 
 
 def _check_sdpa(query, k_q, k_s, v_q, v_s, attn_mask, is_causal, kv_len, window):

@@ -193,7 +193,10 @@ def test_linear_routing(mode, native, rows, fp32, impl, expected, monkeypatch):
         # buckets; decode-size M keeps them.
         ("auto", True, 8, {"ET_CUDA_NVFP4_PREFILL_OUTPUT": "fp32"}, None),
         ("auto", True, 8, {"ET_CUDA_NVFP4_PREFILL_IMPL": "dequant"}, None),
-        ("auto", True, 4, {"ET_CUDA_NVFP4_PREFILL_IMPL": "dequant"}, (4, False)),
+        ("auto", False, 4, {"ET_CUDA_NVFP4_PREFILL_IMPL": "dequant"}, (4, False)),
+        # With native FP4, decode-size auto keeps nvfp4_auto_decode.
+        ("auto", True, 4, {}, None),
+        ("auto", True, 2, {}, None),
         # A dynamic M bounded by a bucket takes it; a wider bound does not.
         ("auto", True, ("dynamic", 16), {}, (16, False)),
         ("auto", True, ("dynamic", 64), {}, None),
@@ -332,7 +335,7 @@ def test_auto_decode_w4a8_mode_only_on_nvidia_without_native_fp4(
 
     calls = []
 
-    def launch(x, qdata, scale, pts, *, split_k):
+    def launch(x, qdata, scale, pts, max_rows, *, split_k):
         calls.append(split_k)
         return x.new_empty((x.shape[0], qdata.shape[0]))
 

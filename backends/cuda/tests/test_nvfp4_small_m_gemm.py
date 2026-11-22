@@ -103,15 +103,20 @@ def test_rows_without_native_fp4_matches_native_decode():
 
 
 @pytest.mark.skipif(not native_fp4(), reason="SM120 required")
+@pytest.mark.parametrize("static", [False, True])
+@pytest.mark.parametrize("pts_kind", ["scalar", "row"])
 @pytest.mark.parametrize("m", [2, 8, 16])
-def test_w4a4_matches_reference(m):
+def test_w4a4_matches_reference(m, pts_kind, static):
+    # Row scales take the ROW_PTS paths of the kernel and the reduction; a
+    # static activation scale replaces the per-row one.
     n, k = 200, 1024
     q, s = weight(n, k, scales=(0x30, 0x40))
-    pts = torch.tensor([0.37], device="cuda")
+    pts = make_pts(pts_kind, n)
     x = torch.randn(m, k, device="cuda", dtype=torch.bfloat16)
+    act = x.float().abs().amax().reshape(1, 1) / (6 * 448) if static else None
     expected = reference(x, q, s, pts)
     for split in (1, 2):
-        y = small_m.launch_w4a4(x, q, s, pts, None, split)
+        y = small_m.launch_w4a4(x, q, s, pts, act, split)
         # NVFP4 activations: quantization error dominates.
         assert relative_error(y, expected) < 0.2
 
@@ -194,9 +199,7 @@ def test_bucket_op_autotunes_mode_and_split(weight_only):
 
 @pytest.mark.parametrize("m", [1, 2, 8, 16, 17])
 def test_linear_dispatch_routes_small_m(m, monkeypatch):
-    from executorch.backends.cuda.quantize_op_dispatch import (  # noqa: F401
-        nvfp4_dispatch,
-    )
+    from executorch.backends.cuda.quantize_op_dispatch import nvfp4_dispatch
 
     n, k = 96, 512
     q, s = weight(n, k, seed=3, scales=(0x30, 0x40))
@@ -211,6 +214,9 @@ def test_linear_dispatch_routes_small_m(m, monkeypatch):
 
     with mock.patch.object(small_m.NVFP4_SMALL_M_GEMM, "op", op):
         y = F.linear(x, w)
-    assert calls == ([] if m in (1, 17) else [bucket_of(x, q, s, w.per_tensor_scale)])
+    # With native FP4, decode-size M keeps nvfp4_auto_decode.
+    decode = m == 1 or (m <= 4 and nvfp4_dispatch._has_native_fp4())
+    expected = [] if decode or m == 17 else [bucket_of(x, q, s, w.per_tensor_scale)]
+    assert calls == expected
     # Eager runs each op's first candidate, which keeps BF16 activations.
     assert relative_error(y, reference(x, q, s, w.per_tensor_scale)) < 3e-2

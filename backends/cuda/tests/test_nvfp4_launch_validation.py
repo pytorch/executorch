@@ -335,23 +335,12 @@ def test_partial_offsets_and_masks_are_int64(m, n, split, base, constant):
     torch.testing.assert_close(out[8:], (index < m * n).to(torch.int64), rtol=0, atol=0)
 
 
-@pytest.mark.parametrize("native", [False, True])
-def test_half2_gemv_configs_are_timed_only_with_native_fp4(native):
-    from executorch.backends.cuda.triton.kernels.nvfp4_tuning import prune_nvfp4_stages
-
-    args = {"K": 4096, "SPLIT": 1, "NATIVE": native}
-    kept = prune_nvfp4_stages(kernels._gemv.configs, args)
-    assert any(not config.kwargs["HALF2"] for config in kept)
-    assert any(config.kwargs["HALF2"] for config in kept) == native
-
-
 def test_small_m_weight_only_rejects_fp4_activations(monkeypatch):
-    # Runs on any machine: native FP4 is patched on, so only weight_only can
-    # reject the W4A4 candidates.
+    # launch_w4a4 is stubbed, so weight_only is the only thing that can reject
+    # the W4A4 candidate; this runs on any machine.
     from executorch.backends.cuda.triton.kernels import nvfp4_small_m_gemm as small_m
 
     calls = []
-    monkeypatch.setattr(small_m, "_has_native_fp4_conversion", lambda: True)
     monkeypatch.setattr(small_m, "launch_w4a4", lambda *args: calls.append(args))
     w4a4 = small_m._MODE_IDS["w4a4"] * small_m._MODE_STRIDE + 1
     args = (8, torch.zeros(8, 256), None, None, None, None, False)
