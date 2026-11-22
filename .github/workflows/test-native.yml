@@ -21,6 +21,7 @@ on:
       - backends/cadence/utils/FACTO
       - backends/test/suite/operators/test_elu.py
       - backends/test/suite/operators/test_embedding.py
+      - backends/test/suite/operators/test_gelu.py
       - backends/test/suite/operators/test_linear.py
       - backends/vulkan/CMakeLists.txt
       - backends/vulkan/cmake/**
@@ -122,9 +123,9 @@ jobs:
             ./install_requirements.sh --use-pt-pinned-commit
             # The LLM runner test and the op sample generator import executorch from
             # src/ without installing the wheel, so install their export-time
-            # dependencies directly.
-            pip install flatbuffers gguf ruamel.yaml tabulate \
-              "$(grep -E '^transformers\b' requirements-examples.txt)"
+            # dependencies directly, with Native's requirements, which pin a newer
+            # transformers than the examples' requirements.
+            pip install flatbuffers ruamel.yaml tabulate -r backends/native/requirements.txt
           fi
 
           CMAKE_BUILD_PARALLEL_LEVEL=8 bash .ci/scripts/test-native.sh "${NATIVE_COMPONENT}"
