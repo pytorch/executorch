@@ -66,11 +66,14 @@ struct GgmlEngineOptions {
   // transient F32 weight copy. Ops: F16 linear, matmul, mm, bmm and
   // convolution; CUDA only.
   bool cuda_f32_accumulation_for_testing = false;
-  // ggml backends quantize the activations of a quantized matmul themselves,
-  // so a linear with quantized weights, int4 or GGUF, whose input is not a
-  // dequantized activation is rejected unless the caller accepts that loss of
-  // precision.
-  bool allow_activation_quant_for_weight_only = false;
+  // ggml backends quantize the activations of a matmul with quantized weights
+  // in their own block format, as llama.cpp does. False is a debugging mode:
+  // weight-only quantized weights (int4 or GGUF) that a linear reads load
+  // dequantized to F32, about 4-12x their packed size by type (q8_0 ~3.8x, q4_k
+  // ~7x, q2_k ~12x), and those matmuls run without activation quantization.
+  // Weights of linears whose activations the model quantizes itself keep their
+  // blocks, as do weights only embeddings read.
+  bool allow_activation_quant_for_weight_only = true;
   // Testing only. Default (false): topk is llama.cpp's ggml_argsort_top_k, one
   // argsort that leaves a row holding NaN in an unspecified order.
   // Set: NaN ranks above every value, +inf included (below, for the smallest),
