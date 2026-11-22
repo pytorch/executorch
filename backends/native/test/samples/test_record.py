@@ -68,6 +68,23 @@ def _available_memory(files: dict[str, str]) -> int | None:
         return available_memory(Path(root))
 
 
+def ops() -> dict:
+    """Every op's samples; skips the test where FACTO, which the linear op's
+    cases import, is missing (OSS puts it on the path only to build the op
+    samples), or where transformers lacks what an op's cases import (OSS unit
+    tests run an older transformers than Native needs)."""
+    try:
+        module = importlib.import_module("executorch.backends.native.test.samples.ops")
+    except ImportError as e:
+        package = (e.name or "").partition(".")[0]
+        if package == "facto" and isinstance(e, ModuleNotFoundError):
+            raise unittest.SkipTest("op samples need FACTO") from e
+        if package == "transformers":
+            raise unittest.SkipTest(f"op samples need a newer transformers: {e}") from e
+        raise
+    return module.ops()
+
+
 class RecordTest(unittest.TestCase):
     def test_suite_cases_raises_on_a_model_eager_rejects(self) -> None:
         module = ModuleType("suite")
@@ -167,6 +184,29 @@ class RecordTest(unittest.TestCase):
             path = Path(tmp) / "embedding.ptn"
             record([case], schemes()["int4wo_g32"], path, dtypes=["f32"])
             self.assertEqual(set(read_samples(str(path))), {"golden", "precise"})
+
+    def test_tests_of_every_op_skip_only_without_facto_or_transformers(
+        self,
+    ) -> None:
+        # Another package named facto on the path leaves facto.inputgen missing.
+        # An older transformers lacks transformers.integrations.gguf, or a name
+        # in a module it has.
+        expected = {
+            ModuleNotFoundError("", name="facto"): unittest.SkipTest,
+            ModuleNotFoundError("", name="facto.inputgen"): unittest.SkipTest,
+            ModuleNotFoundError(
+                "", name="transformers.integrations.gguf"
+            ): unittest.SkipTest,
+            ImportError("", name="transformers.models.qwen3_5"): unittest.SkipTest,
+            ModuleNotFoundError("", name="gguf"): ModuleNotFoundError,
+            ImportError("", name="facto.inputgen"): ImportError,
+        }
+        for error, raised in expected.items():
+            with self.subTest(error=repr(error), name=error.name), patch(
+                "importlib.import_module", side_effect=error
+            ), self.assertRaises((unittest.SkipTest, ImportError)) as caught:
+                ops()
+            self.assertIs(type(caught.exception), raised)
 
     def test_generate_imports_without_the_op_cases(self) -> None:
         # OSS puts FACTO, which the linear op's cases import, on the path only
@@ -364,6 +404,18 @@ class RecordTest(unittest.TestCase):
                 ValueError, BUDGET_ENV
             ):
                 memory_budget(None, {BUDGET_ENV: text})
+
+    def test_core_op_cases_fit_quantized_schemes_only_through_a_linear(self) -> None:
+        for op_name, op in ops().items():
+            if op_name in ("linear", "embedding"):
+                continue
+            for case in op.cases():
+                quantized = case.name.startswith("quantized_")
+                for name, scheme in schemes().items():
+                    with self.subTest(op=op_name, case=case.name, scheme=name):
+                        self.assertEqual(
+                            scheme.fits(case.model), quantized or name == "float"
+                        )
 
     def test_chain_visits_each_dims_bounds_starting_mid_range(self) -> None:
         a, b = Dim("a", min=1, max=8), Dim("b", min=2, max=4)
