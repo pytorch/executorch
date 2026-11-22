@@ -10,6 +10,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -20,8 +21,10 @@
 #include <memory>
 #include <numeric>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <utility>
 #include <variant>
@@ -36,6 +39,7 @@
 #include <executorch/extension/llm/cache/cache_registry.h>
 #include <executorch/runtime/backend/options.h>
 #include <flatbuffers/flatbuffers.h>
+#include <ggml.h>
 #include <gtest/gtest.h>
 
 namespace ptn {
@@ -330,14 +334,16 @@ class TestProgram {
     mutations_.emplace_back(name, value);
   }
 
-  // make_context's packaged block_q4_K as a parameter, by default [1, 256].
+  // make_context's packaged block_q4_K as a parameter, by default [1, 256],
+  // labeled with `codec`.
   void q4_k_weight(
       const std::string& name,
-      const std::vector<int64_t>& shape = {1, 256}) {
+      const std::vector<int64_t>& shape = {1, 256},
+      const char* codec = "gguf:q4_k") {
     const auto quant = fbs::CreateQuantSpec(
         builder_,
         fbs::QuantScheme::PackedQuant,
-        fbs::CreatePackedQuantDirect(builder_, "gguf:q4_k").Union());
+        fbs::CreatePackedQuantDirect(builder_, codec).Union());
     const auto meta =
         create_tensor_meta(builder_, fbs::ScalarType::BYTE, shape, quant);
     placeholder(name, meta);
@@ -3131,6 +3137,110 @@ TEST(GgmlEngineTest, RejectsPackedWeightWithPartialBlocks) {
   auto host = GgmlEngineHost::create(kAllowActivationQuant);
   expect_compile_error(
       *make_context(*host, program.finish("y")), "divisible by 256");
+}
+
+// A linear of make_context's packaged block, labeled with `codec`.
+std::vector<uint8_t> make_packed_linear_program(const char* codec) {
+  TestProgram program;
+  program.q4_k_weight("weight", {1, 256}, codec);
+  program.input("x", fbs::ScalarType::FLOAT, {1, 256});
+  program.call(
+      "y",
+      "torch.ops.aten.linear.default",
+      {{"input", std::string("x")}, {"weight", std::string("weight")}},
+      fbs::ScalarType::FLOAT,
+      {1, 1});
+  return program.finish("y");
+}
+
+TEST(GgmlEngineTest, RejectsCodecsOfNoGgmlWeightType) {
+  // q8_K only quantizes activations, f16 stores no blocks, and the others
+  // are not "gguf:" and a lowercase ggml type name.
+  auto host = GgmlEngineHost::create(kAllowActivationQuant);
+  for (const char* codec :
+       {"gguf:q8_k", "gguf:f16", "gguf:q4_2", "gguf:Q4_K", "gguf:", "q4_k"}) {
+    SCOPED_TRACE(codec);
+    expect_compile_error(
+        *make_context(*host, make_packed_linear_program(codec)),
+        "unsupported PackedQuant codec");
+  }
+}
+
+TEST(GgmlEngineTest, RejectsGgufTypesNotYetValidated) {
+  // tq1_0 is a ggml weight type that no op sample validates.
+  auto host = GgmlEngineHost::create(kAllowActivationQuant);
+  expect_compile_error(
+      *make_context(*host, make_packed_linear_program("gguf:tq1_0")),
+      "codec gguf:tq1_0 not yet validated");
+}
+
+TEST(GgmlEngineTest, SizesGgufWeightsWithGgmlBlockGeometry) {
+  // make_context packages one 144-byte block_q4_K, while a [1, 256]
+  // gguf:q6_k weight is one 210-byte block_q6_K.
+  auto host = GgmlEngineHost::create(kAllowActivationQuant);
+  expect_compile_error(
+      *make_context(*host, make_packed_linear_program("gguf:q6_k")),
+      "stored byte count disagrees");
+}
+
+// Values and bytes per block of each gguf:<type> codec the engine accepts,
+// summed from the fields of its block struct in ggml-common.h (fp16 scales
+// take 2 bytes). The exporter's tests check gguf-py against the same table.
+struct GgufBlockLayout {
+  std::string_view type;
+  int64_t values;
+  size_t bytes;
+};
+
+constexpr GgufBlockLayout kGgufBlockLayouts[] = {
+    {"q4_k", 256, 2 + 2 + 12 + 256 / 2}, // d, dmin, scales, qs
+    {"q5_k", 256, 2 + 2 + 12 + 256 / 8 + 256 / 2}, // d, dmin, scales, qh, qs
+    {"q6_k", 256, 256 / 2 + 256 / 4 + 256 / 16 + 2}, // ql, qh, scales, d
+};
+
+// Whether compiling a linear of a `codec` weight gets past the codec check.
+bool accepts_codec(GgmlEngineHost& host, const std::string& codec) {
+  try {
+    make_context(host, make_packed_linear_program(codec.c_str()))
+        ->compile("forward");
+  } catch (const std::runtime_error& error) {
+    const std::string_view message = error.what();
+    return message.find("not yet validated") == std::string_view::npos &&
+        message.find("unsupported PackedQuant codec") == std::string_view::npos;
+  }
+  return true;
+}
+
+TEST(GgmlEngineTest, AcceptsTheGgufTypesOfKnownBlockLayoutOnly) {
+  auto host = GgmlEngineHost::create(kAllowActivationQuant);
+  std::set<std::string> accepted;
+  for (int i = 0; i < GGML_TYPE_COUNT; ++i) {
+    const auto type = static_cast<ggml_type>(i);
+    const char* type_name = ggml_type_name(type);
+    if (type_name == nullptr) {
+      continue;
+    }
+    std::string name = type_name;
+    std::ranges::transform(name, name.begin(), [](unsigned char c) {
+      return static_cast<char>(std::tolower(c));
+    });
+    if (!accepts_codec(*host, "gguf:" + name)) {
+      continue;
+    }
+    SCOPED_TRACE(name);
+    accepted.insert(name);
+    const auto* layout =
+        std::ranges::find(kGgufBlockLayouts, name, &GgufBlockLayout::type);
+    ASSERT_NE(layout, std::ranges::end(kGgufBlockLayouts))
+        << "no expected block layout";
+    EXPECT_EQ(ggml_blck_size(type), layout->values);
+    EXPECT_EQ(ggml_type_size(type), layout->bytes);
+  }
+  std::set<std::string> expected;
+  for (const GgufBlockLayout& layout : kGgufBlockLayouts) {
+    expected.emplace(layout.type);
+  }
+  EXPECT_EQ(accepted, expected);
 }
 
 TEST(GgmlEngineTest, RejectsUnsupportedOpOnUnquantizedInput) {
