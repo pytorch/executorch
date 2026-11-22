@@ -198,6 +198,7 @@ class GraphBuilder {
       bool gpu,
       bool exact_topk,
       bool exact_gelu,
+      bool f32_accumulation,
       const OffGraphCacheBinding* offgraph_cache = nullptr);
 
   GraphInstance build();
@@ -270,6 +271,7 @@ class GraphBuilder {
   ggml_tensor* as_i32(ggml_tensor* tensor);
   void invalidate_cached_transforms(const ggml_tensor* target);
   ggml_tensor* contiguous(ggml_tensor* tensor);
+  ggml_tensor* mul_mat(ggml_tensor* a, ggml_tensor* b);
   void index_written_values();
   bool touches_written_value(const Node& node) const;
   ggml_tensor* materialize(ggml_tensor* tensor);
@@ -377,6 +379,8 @@ class GraphBuilder {
   bool exact_topk_;
   // GgmlEngineOptions::exact_gelu_for_testing.
   bool exact_gelu_;
+  // Matrix multiplies with an F16 operand request F32 accumulation.
+  bool f32_accumulation_;
   const OffGraphCacheBinding* offgraph_cache_;
   std::vector<RuntimeValue> values_;
   std::unordered_map<ValueId, ggml_tensor*> rope_factor_tensors_;

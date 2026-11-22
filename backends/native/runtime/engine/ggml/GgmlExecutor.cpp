@@ -519,6 +519,9 @@ class GgmlExecutable final : public EngineExecutable {
             ggml_backend_dev_name(device));
       }
       primary_backend_ = gpu.get();
+      f32_accumulation_ = options_.cuda_f32_accumulation_for_testing &&
+          std::string_view(ggml_backend_reg_name(
+              ggml_backend_dev_backend_reg(device))) == "CUDA";
       backends_.push_back(std::move(gpu));
     }
     ggml_backend_ptr cpu(ggml_backend_cpu_init());
@@ -1754,6 +1757,7 @@ class GgmlExecutable final : public EngineExecutable {
   std::vector<OutputSlot> outputs_;
   std::vector<ggml_backend_ptr> backends_;
   ggml_backend_t primary_backend_ = nullptr;
+  bool f32_accumulation_ = false;
   ggml_backend_sched_ptr scheduler_;
   size_t scheduler_size_ = 0;
   std::vector<CachedGraph> cached_graphs_;
@@ -1804,6 +1808,7 @@ GraphInstance GgmlExecutable::build_graph(
           options_.device == GgmlDevice::Gpu,
           options_.exact_topk_for_testing,
           options_.exact_gelu_for_testing,
+          f32_accumulation_,
           valid(offgraph_position_) ? &offgraph_cache : nullptr)
           .build();
   // Boundability without a per-run check: shapes are part of a graph's key,
