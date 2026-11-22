@@ -21,6 +21,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -166,6 +167,7 @@ class GgmlExecutable final : public EngineExecutable {
       const GgmlEngineOptions& options,
       size_t* materialized_constant_bytes,
       size_t* heap_copied_constant_bytes,
+      size_t* f16_kv_cache_bytes,
       GgmlMutableKeyOwners& mutable_key_owners,
       GgmlKvCache kv_cache)
       : mutable_key_claim_(mutable_key_owners, method),
@@ -176,7 +178,8 @@ class GgmlExecutable final : public EngineExecutable {
     index_signature();
     initialize_backends();
     fold_batch_norms();
-    initialize_persistent_tensors(materialized_constant_bytes);
+    initialize_persistent_tensors(
+        materialized_constant_bytes, f16_kv_cache_bytes);
     index_rope_frequencies();
     index_mask_extents();
     index_offgraph_attention();
@@ -184,7 +187,7 @@ class GgmlExecutable final : public EngineExecutable {
       *heap_copied_constant_bytes += heap_copied_constant_bytes_;
     }
     // Rejects unsupported ops and shapes at compile time.
-    build_graph(full_key_extents());
+    check_host_integers_boundable(build_graph(full_key_extents()));
   }
 
   ~GgmlExecutable() override {
@@ -278,8 +281,17 @@ class GgmlExecutable final : public EngineExecutable {
         bind_offgraph(offgraph_step_->rows);
       }
       if (options_.max_cached_graphs == 0) {
-        ggml_backend_sched_reset(scheduler_.get());
         GraphInstance instance = build_graph(evaluate_key_extents());
+        check_host_integers(instance);
+        if (const size_t size = scheduler_size(instance);
+            size > scheduler_size_) {
+          if (scheduler_) {
+            ggml_backend_sched_synchronize(scheduler_.get());
+          }
+          scheduler_ = make_scheduler(size);
+          scheduler_size_ = size;
+        }
+        ggml_backend_sched_reset(scheduler_.get());
         step = prepare_offgraph(instance);
         allocate(scheduler_.get(), instance);
         try {
@@ -361,16 +373,20 @@ class GgmlExecutable final : public EngineExecutable {
     if (hit != cached_graphs_.end()) {
       std::rotate(hit, hit + 1, cached_graphs_.end());
       refresh_inputs(cached_graphs_.back().instance);
+      check_host_integers(cached_graphs_.back().instance);
       return cached_graphs_.back();
     }
     if (cached_graphs_.size() >= options_.max_cached_graphs) {
       ggml_backend_sched_synchronize(cached_graphs_.front().scheduler.get());
       cached_graphs_.erase(cached_graphs_.begin());
     }
+    GraphInstance instance = build_graph(key_extents);
+    check_host_integers(instance);
+    ggml_backend_sched_ptr scheduler = make_scheduler(scheduler_size(instance));
     CachedGraph cached{
         .key_extents = key_extents,
-        .instance = build_graph(key_extents),
-        .scheduler = make_scheduler()};
+        .instance = std::move(instance),
+        .scheduler = std::move(scheduler)};
     for (const InputSlot& input : inputs_) {
       cached.input_sizes.push_back(input.sizes);
     }
@@ -384,6 +400,10 @@ class GgmlExecutable final : public EngineExecutable {
       check_index_bytes(
           *std::ranges::find(inputs_, check.input_id, &InputSlot::id),
           check.rows);
+    }
+    for (const ValueId id : instance.exact_integer_checks) {
+      check_exact_integer_bytes(
+          *std::ranges::find(inputs_, id, &InputSlot::id));
     }
     for (Upload& upload : instance.uploads) {
       if (upload.input) {
@@ -501,6 +521,13 @@ class GgmlExecutable final : public EngineExecutable {
             ggml_backend_dev_name(device));
       }
       primary_backend_ = gpu.get();
+      const std::string_view backend =
+          ggml_backend_reg_name(ggml_backend_dev_backend_reg(device));
+      f32_accumulation_ =
+          options_.cuda_f32_accumulation_for_testing && backend == "CUDA";
+      f16_kv_caches_ = !options_.f32_gpu_kv_cache_for_testing &&
+          (backend == "CUDA" || backend == "ROCm");
+      gpu_device_ = device;
       backends_.push_back(std::move(gpu));
     }
     ggml_backend_ptr cpu(ggml_backend_cpu_init());
@@ -514,24 +541,43 @@ class GgmlExecutable final : public EngineExecutable {
       primary_backend_ = cpu.get();
     }
     backends_.push_back(std::move(cpu));
-
-    if (options_.max_cached_graphs == 0) {
-      scheduler_ = make_scheduler();
-    }
   }
 
-  ggml_backend_sched_ptr make_scheduler() const {
+  // The scheduler hashes a graph's nodes and leafs and splits it at most once
+  // per node, and ggml mallocs its split context in proportion to this size,
+  // so it is the built graph's count, not the graph's capacity; at least
+  // twice graph_size, the configured room. A leaf is a source without an op,
+  // or an output without one.
+  size_t scheduler_size(const GraphInstance& instance) const {
+    std::unordered_set<const ggml_tensor*> leafs;
+    const int nodes = ggml_graph_n_nodes(instance.graph);
+    for (int i = 0; i < nodes; ++i) {
+      for (const ggml_tensor* source :
+           ggml_graph_node(instance.graph, i)->src) {
+        if (source != nullptr && source->op == GGML_OP_NONE) {
+          leafs.insert(source);
+        }
+      }
+    }
+    for (const TensorRef& output : instance.outputs) {
+      if (output.tensor->op == GGML_OP_NONE) {
+        leafs.insert(output.tensor);
+      }
+    }
+    return std::max(
+        2 * options_.graph_size, static_cast<size_t>(nodes) + leafs.size());
+  }
+
+  ggml_backend_sched_ptr make_scheduler(size_t size) const {
     std::vector<ggml_backend_t> raw(backends_.size());
     std::ranges::transform(backends_, raw.begin(), [](const auto& backend) {
       return backend.get();
     });
-    // The scheduler hashes a graph's leafs as well as its nodes, and a graph
-    // holds up to graph_size of each.
     ggml_backend_sched_ptr scheduler(ggml_backend_sched_new(
         raw.data(),
         nullptr,
         static_cast<int>(raw.size()),
-        2 * options_.graph_size,
+        size,
         /*parallel=*/false,
         /*op_offload=*/true));
     if (!scheduler) {
@@ -551,6 +597,214 @@ class GgmlExecutable final : public EngineExecutable {
     return valid(binding.value_id) &&
         method_.graph.value(binding.value_id).is_tensor() &&
         is_used(binding.value_id);
+  }
+
+  // Whether the GPU runs this attention over F16 keys and values. The SDPA
+  // lowering's shape checks come first: ggml asserts on the shapes they
+  // refuse, which then load as F32 caches and fail in the lowering.
+  bool supports_f16_attention(const Node& node, bool custom) const {
+    const auto sizes = [&](std::string_view name, size_t position) {
+      return method_.graph
+          .value(require_arg(node, name, position).arg.as_tensor().id)
+          .tensor_meta()
+          .sizes;
+    };
+    const std::vector<int64_t> q = sizes("query", 0);
+    const std::vector<int64_t> k = sizes("key", 1);
+    const std::vector<int64_t> v = sizes("value", 2);
+    if (custom ? !custom_sdpa_shapes_compatible(q, k, v)
+               : !sdpa_shapes_compatible(q, k, v)) {
+      return false;
+    }
+    if (options_.gpu_runs_f16_attention_for_testing) {
+      return options_.gpu_runs_f16_attention_for_testing();
+    }
+    return gpu_runs_f16_attention(node, custom);
+  }
+
+  // A zero-initialized F32 buffer on a backend that keeps KV caches in F16,
+  // whose every use writes rows into it or reads it as attention keys or
+  // values; see GgmlEngineOptions::f32_gpu_kv_cache_for_testing.
+  bool stores_f16_kv_cache(const DataBinding& binding) const {
+    const bool f16_kv_caches = options_.gpu_runs_f16_attention_for_testing
+        ? !options_.f32_gpu_kv_cache_for_testing
+        : f16_kv_caches_;
+    if (!f16_kv_caches || binding.has_data) {
+      return false;
+    }
+    const TensorMeta& meta =
+        method_.graph.value(binding.value_id).tensor_meta();
+    return meta.dtype == ScalarType::Float && !meta.quant &&
+        only_f16_gpu_attention_reads(binding.value_id);
+  }
+
+  // Whether every use of `id`, followed through views and the results of row
+  // writes into it, writes rows into it or reads it as attention keys or
+  // values, at least one attention reads it, and the GPU runs each of those
+  // attentions over F16 keys and values. A node that uses `id` more times
+  // than it has those roles also reads it some other way.
+  bool only_f16_gpu_attention_reads(ValueId id) const {
+    static const std::unordered_set<std::string> kViews = {
+        "aten._unsafe_view.default",
+        "aten.alias.default",
+        "aten.permute.default",
+        "aten.permute_copy.default",
+        "aten.reshape.default",
+        "aten.select.int",
+        "aten.slice.Tensor",
+        "aten.squeeze.dims",
+        "aten.squeeze_copy.dims",
+        "aten.transpose_copy.int",
+        "aten.unsqueeze.default",
+        "aten.unsqueeze_copy.default",
+        "aten.view.default",
+        "aten.view_copy.default",
+    };
+    std::vector<ValueId> pending = {id};
+    std::unordered_set<ValueId> seen;
+    bool attended = false;
+    while (!pending.empty()) {
+      const ValueId value = pending.back();
+      pending.pop_back();
+      if (!seen.insert(value).second) {
+        continue;
+      }
+      const std::vector<ValueId>& outputs = method_.graph.output_ids;
+      for (size_t i = 0; i < outputs.size(); ++i) {
+        if (outputs[i] == value &&
+            method_.output_specs[i].kind != OutputKind::BufferMutation) {
+          return false;
+        }
+      }
+      for (const NodeId consumer : method_.graph.value(value).consumer_ids) {
+        const Node& node = method_.graph.node(consumer);
+        if (node.is_output()) {
+          continue;
+        }
+        const std::string op = node.is_call() ? op_key(node.target) : "";
+        const auto is_arg = [&](std::string_view name, size_t position) {
+          const NamedArgument* arg = find_arg(node, name, position);
+          return arg != nullptr && arg->arg.kind() == ArgKind::Tensor &&
+              arg->arg.as_tensor().id == value;
+        };
+        const bool attention =
+            op == "aten.scaled_dot_product_attention.default" ||
+            op == "llama.custom_sdpa.default";
+        size_t roles = 0;
+        if ((op == "aten.index_put_.default" && is_arg("self", 0)) ||
+            (op == "llama.update_cache.default" && is_arg("cache", 1)) ||
+            (kViews.contains(op) && is_arg("self", 0))) {
+          ++roles;
+          // cppcheck-suppress-begin useStlAlgorithm ; the explicit loop reads
+          // clearer here
+          for (const ValueId result : node.output_value_ids()) {
+            pending.push_back(result);
+          }
+          // cppcheck-suppress-end useStlAlgorithm
+        }
+        if (attention && (is_arg("key", 1) || is_arg("value", 2))) {
+          if (!supports_f16_attention(
+                  node, op == "llama.custom_sdpa.default")) {
+            return false;
+          }
+          roles += (is_arg("key", 1) ? 1 : 0) + (is_arg("value", 2) ? 1 : 0);
+          attended = true;
+        }
+        const auto uses = std::ranges::count(node.input_value_ids(), value);
+        if (roles == 0 || static_cast<size_t>(uses) != roles) {
+          return false;
+        }
+      }
+    }
+    return attended;
+  }
+
+  // Whether the GPU runs this attention's flash attention, for one query and
+  // for all of them, over F16 keys and values, with the mask the lowering
+  // passes: some kernels need one (ggml-cuda's head size 512, say), and some
+  // take only one mask plane (ggml-cuda's, again). ggml leaves an attention
+  // the GPU lacks a kernel for to the CPU, whose kernel reads F32 keys and
+  // values without rounding them; its caches stay F32.
+  bool gpu_runs_f16_attention(const Node& node, bool custom) const {
+    const auto meta = [&](std::string_view name, size_t position) {
+      return method_.graph
+          .value(require_arg(node, name, position).arg.as_tensor().id)
+          .tensor_meta()
+          .sizes;
+    };
+    const std::vector<int64_t> q = meta("query", 0);
+    const std::vector<int64_t> k = meta("key", 1);
+    const std::vector<int64_t> v = meta("value", 2);
+    if (q.size() != 4 || k.size() != 4 || v.size() != 4) {
+      return false;
+    }
+    const NamedArgument* mask = find_arg(node, "attn_mask", custom ? 4 : 3);
+    const bool explicit_mask = mask != nullptr &&
+        mask->arg.kind() == ArgKind::Tensor && valid(mask->arg.as_tensor().id);
+    // ggml's mask is [S, T, mask heads, mask batch]: the explicit mask's dims
+    // before its last two, which must divide the query's heads and batch.
+    int64_t mask_heads = 1;
+    int64_t mask_batch = 1;
+    if (explicit_mask) {
+      const std::vector<int64_t>& m =
+          method_.graph.value(mask->arg.as_tensor().id).tensor_meta().sizes;
+      if (m.size() < 2 || m.size() > 4) {
+        return false;
+      }
+      mask_heads = m.size() > 2 ? m[m.size() - 3] : 1;
+      mask_batch = m.size() > 3 ? m[0] : 1;
+    }
+    const NamedArgument* causal = find_arg(node, "is_causal", custom ? 6 : 5);
+    const bool is_causal = causal != nullptr &&
+        causal->arg.kind() == ArgKind::Bool && causal->arg.as_bool().value;
+    // [B, H, T, D] for aten SDPA; [B, T, H, D] for custom_sdpa, which always
+    // passes a mask, and without an explicit one attends start_pos + T keys,
+    // any count up to the cache's.
+    const size_t heads = custom ? 2 : 1;
+    const size_t tokens = custom ? 1 : 2;
+    const bool masked = custom || explicit_mask || is_causal;
+    if (mask_heads <= 0 || mask_batch <= 0 || q[heads] % mask_heads != 0 ||
+        q[0] % mask_batch != 0) {
+      return false;
+    }
+    std::vector<int64_t> key_counts = {k[tokens]};
+    if (custom && !explicit_mask) {
+      key_counts.push_back(1);
+    }
+    const ggml_init_params params{
+        .mem_size = 24 * ggml_tensor_overhead(),
+        .mem_buffer = nullptr,
+        .no_alloc = true,
+    };
+    const ggml_context_ptr ctx(ggml_init(params));
+    for (const int64_t rows : {int64_t{1}, q[tokens]}) {
+      for (const int64_t keys : key_counts) {
+        ggml_tensor* attention = ggml_flash_attn_ext(
+            ctx.get(),
+            ggml_new_tensor_4d(
+                ctx.get(), GGML_TYPE_F32, q[3], rows, q[heads], q[0]),
+            ggml_new_tensor_4d(
+                ctx.get(), GGML_TYPE_F16, k[3], keys, k[heads], k[0]),
+            ggml_new_tensor_4d(
+                ctx.get(), GGML_TYPE_F16, v[3], keys, v[heads], v[0]),
+            masked ? ggml_new_tensor_4d(
+                         ctx.get(),
+                         GGML_TYPE_F16,
+                         keys,
+                         rows,
+                         mask_heads,
+                         mask_batch)
+                   : nullptr,
+            1.0f,
+            0.0f,
+            0.0f);
+        ggml_prec_set_acc(attention, GGML_PREC_F32);
+        if (!ggml_backend_dev_supports_op(gpu_device_, attention)) {
+          return false;
+        }
+      }
+    }
+    return true;
   }
 
   static size_t stored_nbytes(const TensorMeta& meta) {
@@ -580,13 +834,35 @@ class GgmlExecutable final : public EngineExecutable {
       }
       if (op == "aten.linear.default" &&
           !options_.allow_activation_quant_for_weight_only &&
-          !has_dequantized_input(node)) {
+          !dequantizes_to_f32(id) && !has_dequantized_input(node)) {
         throw std::runtime_error(
             "ggml: weight-only quantized linear '" + node.name +
-            "' needs allow_activation_quant_for_weight_only, since ggml "
-            "quantizes its activations");
+            "' shares its weight with a linear that quantizes its own "
+            "activations, so it needs allow_activation_quant_for_weight_only");
       }
     }
+  }
+
+  // Without activation quantization: a quantized weight that a linear reads,
+  // unless a linear reading it quantizes its own activations. Embeddings
+  // gather rows exactly from either form.
+  bool dequantizes_to_f32(ValueId id) const {
+    const TensorMeta& meta = method_.graph.value(id).tensor_meta();
+    if (options_.allow_activation_quant_for_weight_only ||
+        (packed_quant(meta) == nullptr && affine_quant(meta) == nullptr)) {
+      return false;
+    }
+    bool matmul = false;
+    for (const NodeId consumer : method_.graph.value(id).consumer_ids) {
+      const Node& node = method_.graph.node(consumer);
+      if (op_key(node.target) == "aten.linear.default") {
+        if (has_dequantized_input(node)) {
+          return false;
+        }
+        matmul = true;
+      }
+    }
+    return matmul;
   }
 
   bool has_dequantized_input(const Node& linear) const {
@@ -897,7 +1173,9 @@ class GgmlExecutable final : public EngineExecutable {
         batch_norm_buffer_.get(), GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
   }
 
-  void initialize_persistent_tensors(size_t* materialized_constant_bytes) {
+  void initialize_persistent_tensors(
+      size_t* materialized_constant_bytes,
+      size_t* f16_kv_cache_bytes) {
     size_t count = 0;
     // The float scales of int4 weights that load as unit-scale blocks.
     std::unordered_map<ValueId, std::vector<float>> float_scales;
@@ -936,8 +1214,16 @@ class GgmlExecutable final : public EngineExecutable {
       }
       const TensorMeta& meta =
           method_.graph.value(binding.value_id).tensor_meta();
-      ggml_tensor* tensor =
-          new_tensor(persistent_context_.get(), compute_type(meta), meta.sizes);
+      const bool f16_kv_cache = stores_f16_kv_cache(binding);
+      ggml_tensor* tensor = new_tensor(
+          persistent_context_.get(),
+          f16_kv_cache                               ? GGML_TYPE_F16
+              : dequantizes_to_f32(binding.value_id) ? GGML_TYPE_F32
+                                                     : compute_type(meta),
+          meta.sizes);
+      if (f16_kv_cache && f16_kv_cache_bytes != nullptr) {
+        *f16_kv_cache_bytes += ggml_nbytes(tensor);
+      }
       ggml_set_name(tensor, binding.key.c_str());
       persistent_.emplace(binding.value_id, tensor);
       if (float_scales.contains(binding.value_id)) {
@@ -984,12 +1270,14 @@ class GgmlExecutable final : public EngineExecutable {
             "ggml: stored byte count disagrees with PTG tensor '" +
             binding.key + "'");
       }
-      const bool is_q4 = affine_quant(meta) != nullptr;
+      const bool dequant = tensor->type == GGML_TYPE_F32 &&
+          (packed_quant(meta) != nullptr || affine_quant(meta) != nullptr);
+      const bool is_q4 = affine_quant(meta) != nullptr && !dequant;
       const bool narrow =
           tensor->type == GGML_TYPE_I32 && meta.dtype == ScalarType::Long;
       const auto scales = weight_scales_.find(binding.value_id);
       const bool scaled = scales != weight_scales_.end();
-      if (!is_q4 && !narrow && host_buffer) {
+      if (!is_q4 && !narrow && !dequant && host_buffer) {
         if (ggml_nbytes(tensor) != expected) {
           throw std::runtime_error(
               "ggml: stored byte count disagrees with ggml tensor '" +
@@ -1004,7 +1292,7 @@ class GgmlExecutable final : public EngineExecutable {
         loaded += expected;
         continue;
       }
-      const std::optional<OwnedBytes> bytes = is_q4 || narrow
+      const std::optional<OwnedBytes> bytes = is_q4 || narrow || dequant
           ? read_constant(binding.key)
           // Device uploads go through a heap copy: ROCm fails to pin a
           // file-backed mapping, and ggml_backend_tensor_set from one is
@@ -1031,6 +1319,22 @@ class GgmlExecutable final : public EngineExecutable {
         span = converted;
       } else if (narrow) {
         converted = narrow_to_int32(span);
+        span = converted;
+      } else if (dequant && affine_quant(meta) != nullptr) {
+        converted = affine_int4_to_f32(meta, span, load_q4_scales(meta));
+        span = converted;
+      } else if (dequant) {
+        const int64_t numel = ggml_nelements(tensor);
+        converted.resize(static_cast<size_t>(numel) * sizeof(float));
+        ggml_get_type_traits(compute_type(meta))
+            ->to_float(
+                // cppcheck-suppress invalidPointerCast ; the byte buffer is
+                // sized for floats and only accessed as float
+                span.data(),
+                // cppcheck-suppress invalidPointerCast ; the byte buffer is
+                // sized for floats and only accessed as float
+                reinterpret_cast<float*>(converted.data()),
+                numel);
         span = converted;
       } else if (scaled) {
         converted.assign(span.begin(), span.end());
@@ -1580,6 +1884,60 @@ class GgmlExecutable final : public EngineExecutable {
     }
   }
 
+  // The slow path, for integers whose bound needs this run's input values,
+  // e.g. positions a graph input offsets; build_graph drops the others.
+  void check_host_integers(const GraphInstance& instance) {
+    if (instance.host_integer_checks.empty()) {
+      return;
+    }
+    HostIntEvaluator host(
+        method_,
+        inputs_,
+        [this](ValueId id) { return host_constant(id); },
+        host_static_values_);
+    for (const HostIntegerCheck& check : instance.host_integer_checks) {
+      const std::optional<int64_t> peak = host.peak_bound(check.id);
+      if (!peak) {
+        throw unbounded_host_integer(check);
+      }
+      if (*peak > kExactF32Integer) {
+        throw inexact_host_integer(check);
+      }
+    }
+  }
+
+  // Whether the host can bound an integer at all depends on the graph alone,
+  // so one that no run could bound is refused at compile; each run checks
+  // only that its inputs keep the bound within +-2^24.
+  void check_host_integers_boundable(const GraphInstance& instance) {
+    HostIntEvaluator host = host_evaluator();
+    for (const HostIntegerCheck& check : instance.host_integer_checks) {
+      const std::optional<int64_t> floor = host.static_peak_bound(check.id);
+      if (!floor) {
+        throw unbounded_host_integer(check);
+      }
+      if (*floor > kExactF32Integer) {
+        throw inexact_host_integer(check);
+      }
+    }
+  }
+
+  static std::runtime_error unbounded_host_integer(
+      const HostIntegerCheck& check) {
+    return std::runtime_error(
+        "ggml: " + check.what +
+        " must be an integer F32 holds exactly: a graph input, a small "
+        "constant or an arange, through integer casts, views or repeats, "
+        "adds or subtracts");
+  }
+
+  static std::out_of_range inexact_host_integer(const HostIntegerCheck& check) {
+    return std::out_of_range(
+        "ggml: " + check.what +
+        " is computed through integers that can leave +-2^24, which F32 "
+        "holds exactly");
+  }
+
   // Small integer constants, e.g. a key offset, read once from the package.
   std::optional<HostInts> host_constant(ValueId id) {
     if (const auto found = host_constants_.find(id);
@@ -1663,7 +2021,11 @@ class GgmlExecutable final : public EngineExecutable {
   std::vector<OutputSlot> outputs_;
   std::vector<ggml_backend_ptr> backends_;
   ggml_backend_t primary_backend_ = nullptr;
+  bool f32_accumulation_ = false;
+  bool f16_kv_caches_ = false;
+  ggml_backend_dev_t gpu_device_ = nullptr;
   ggml_backend_sched_ptr scheduler_;
+  size_t scheduler_size_ = 0;
   std::vector<CachedGraph> cached_graphs_;
   std::vector<MaskExtent> mask_extents_;
   std::unordered_map<ValueId, std::optional<HostInts>> host_constants_;
@@ -1709,8 +2071,38 @@ GraphInstance GgmlExecutable::build_graph(
           batch_norms_,
           std::move(truncated),
           options_.graph_size,
+          options_.device == GgmlDevice::Gpu,
+          options_.exact_topk_for_testing,
+          options_.exact_gelu_for_testing,
+          f32_accumulation_,
           valid(offgraph_position_) ? &offgraph_cache : nullptr)
           .build();
+  // Boundability without a per-run check: shapes are part of a graph's key,
+  // and every run rejects row indices outside [0, rows), such as the positions
+  // a KV cache is written at, as a hard error before computing (when building
+  // the graph, or in refresh_inputs on a replay). So an integer that
+  // constants, shapes and the row indices of tables of at most 2^24 rows bound
+  // within +-2^24 needs no check per run; check_host_integers bounds the rest.
+  if (!instance.host_integer_checks.empty()) {
+    std::unordered_map<ValueId, int64_t> row_peaks;
+    for (const RowIndexCheck& check : instance.row_index_checks) {
+      if (check.rows > kExactF32Integer) {
+        continue;
+      }
+      const int64_t peak = std::max<int64_t>(check.rows - 1, 0);
+      int64_t& known =
+          row_peaks.try_emplace(check.input_id, peak).first->second;
+      known = std::min(known, peak);
+    }
+    HostIntEvaluator host = host_evaluator();
+    std::erase_if(
+        instance.host_integer_checks,
+        [&host, &row_peaks](const HostIntegerCheck& check) {
+          const std::optional<int64_t> bound =
+              host.shape_bound(check.id, row_peaks);
+          return bound && *bound <= kExactF32Integer;
+        });
+  }
   if (options_.print_graph_ops) {
     std::map<std::string, int> counts;
     for (int i = 0; i < ggml_graph_n_nodes(instance.graph); ++i) {
@@ -1721,6 +2113,12 @@ GraphInstance GgmlExecutable::build_graph(
       line += " " + op + "=" + std::to_string(count);
     }
     std::fprintf(stderr, "%s\n", line.c_str());
+    if (!instance.host_integer_checks.empty()) {
+      std::fprintf(
+          stderr,
+          "ggml host integer checks per run: %zu\n",
+          instance.host_integer_checks.size());
+    }
   }
   return instance;
 }
@@ -1753,6 +2151,7 @@ std::unique_ptr<EngineExecutable> make_ggml_executable(
     const GgmlEngineOptions& options,
     size_t* materialized_constant_bytes,
     size_t* heap_copied_constant_bytes,
+    size_t* f16_kv_cache_bytes,
     GgmlMutableKeyOwners& mutable_key_owners,
     GgmlKvCache kv_cache) {
   return std::make_unique<GgmlExecutable>(
@@ -1761,6 +2160,7 @@ std::unique_ptr<EngineExecutable> make_ggml_executable(
       options,
       materialized_constant_bytes,
       heap_copied_constant_bytes,
+      f16_kv_cache_bytes,
       mutable_key_owners,
       kv_cache);
 }

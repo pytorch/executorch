@@ -6,19 +6,26 @@
 
 #include <executorch/backends/native/runtime/engine/ggml/GgmlEngine.h>
 
+#include <sys/resource.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <numeric>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <utility>
 #include <variant>
@@ -33,6 +40,7 @@
 #include <executorch/extension/llm/cache/cache_registry.h>
 #include <executorch/runtime/backend/options.h>
 #include <flatbuffers/flatbuffers.h>
+#include <ggml.h>
 #include <gtest/gtest.h>
 
 namespace ptn {
@@ -327,14 +335,16 @@ class TestProgram {
     mutations_.emplace_back(name, value);
   }
 
-  // make_context's packaged block_q4_K as a parameter, by default [1, 256].
+  // make_context's packaged block_q4_K as a parameter, by default [1, 256],
+  // labeled with `codec`.
   void q4_k_weight(
       const std::string& name,
-      const std::vector<int64_t>& shape = {1, 256}) {
+      const std::vector<int64_t>& shape = {1, 256},
+      const char* codec = "gguf:q4_k") {
     const auto quant = fbs::CreateQuantSpec(
         builder_,
         fbs::QuantScheme::PackedQuant,
-        fbs::CreatePackedQuantDirect(builder_, "gguf:q4_k").Union());
+        fbs::CreatePackedQuantDirect(builder_, codec).Union());
     const auto meta =
         create_tensor_meta(builder_, fbs::ScalarType::BYTE, shape, quant);
     placeholder(name, meta);
@@ -391,6 +401,41 @@ class TestProgram {
         builder_, name.c_str(), create_tensor_meta(builder_, dtype, shape)));
     const std::vector<flatbuffers::Offset<fbs::Output>> outputs = {
         fbs::CreateOutputDirect(builder_, name.c_str())};
+    nodes_.push_back(fbs::CreateNodeDirect(
+        builder_,
+        name.c_str(),
+        fbs::OpKind::CALL_FUNCTION,
+        target,
+        &named,
+        &outputs));
+  }
+
+  // A node producing one tensor list whose elements, named `names`, are F32
+  // tensors of `shape`.
+  void call_list(
+      const std::string& name,
+      const char* target,
+      const std::vector<std::pair<std::string, TestArg>>& args,
+      const std::vector<std::string>& names,
+      const std::vector<int64_t>& shape) {
+    std::vector<flatbuffers::Offset<fbs::NamedArgument>> named;
+    for (const auto& [arg_name, arg] : args) {
+      named.push_back(fbs::CreateNamedArgumentDirect(
+          builder_, arg_name.c_str(), create_arg(arg)));
+    }
+    for (const std::string& element : names) {
+      values_.push_back(fbs::CreateTensorValueDirect(
+          builder_,
+          element.c_str(),
+          create_tensor_meta(builder_, fbs::ScalarType::FLOAT, shape)));
+    }
+    const std::vector<flatbuffers::Offset<fbs::Output>> outputs = {
+        fbs::CreateOutput(
+            builder_,
+            builder_.CreateString(""),
+            0,
+            fbs::OutputValueKind::TENSOR_LIST,
+            create_strings(builder_, names))};
     nodes_.push_back(fbs::CreateNodeDirect(
         builder_,
         name.c_str(),
@@ -695,23 +740,72 @@ void expect_compile_error(
   expect_compile_error(*make_context(*host, program), message);
 }
 
-TEST(GgmlEngineTest, RejectsWeightOnlyQuantizedLinearsByDefault) {
-  expect_compile_error(
-      make_linear_program(), "allow_activation_quant_for_weight_only");
-  const std::vector<uint8_t> program_bytes = make_linear_program(
+// Without activation quantization, a weight-only quantized linear runs on its
+// weights dequantized to F32: its result is the exact product, where ggml's
+// 8-bit activations put the GGUF one off by about 3e-2. Both GGUF and int4
+// weights.
+TEST(GgmlEngineTest, WeightOnlyQuantizedLinearsRunInF32WithoutActivationQuant) {
+  std::vector<float> input(256);
+  for (size_t i = 0; i < input.size(); ++i) {
+    input[i] = static_cast<float>(i % 7) / 7 - 0.3f;
+  }
+  // int4 weights: column c holds (c % 16) - 8, every group of 32 scaled by
+  // 1/8 (fp16 0x3000).
+  std::vector<uint8_t> int4(16 + 128);
+  for (size_t g = 0; g < 8; ++g) {
+    int4[2 * g + 1] = 0x30;
+  }
+  for (size_t c = 0; c < 256; c += 2) {
+    int4[16 + c / 2] = static_cast<uint8_t>((c % 16) | (((c + 1) % 16) << 4));
+  }
+  const std::vector<uint8_t> int4_program = make_linear_program(
       "torch.ops.aten.linear.default", /*with_cache=*/false, /*affine=*/true);
-  auto host = GgmlEngineHost::create();
-  auto context = host->create_ggml_context(
-      std::make_shared<const Program>(
-          Program::load(program_bytes.data(), program_bytes.size())),
-      std::make_shared<const Package>(
-          Package::load(OwnedBytes::from_vector(testing::make_zip({
-              {kProgramEntry, program_bytes},
-              {kSafeTensorsEntry,
-               testing::make_safetensors(
-                   kQ4_0SafeTensorsHeader, /*scales + weights=*/16 + 128)},
-          })))));
-  expect_compile_error(*context, "allow_activation_quant_for_weight_only");
+  const auto int4_context = [&](GgmlEngineHost& host) {
+    std::vector<uint8_t> safetensors =
+        testing::make_safetensors(kQ4_0SafeTensorsHeader, int4.size());
+    std::ranges::copy(int4, safetensors.end() - int4.size());
+    return host.create_ggml_context(
+        std::make_shared<const Program>(
+            Program::load(int4_program.data(), int4_program.size())),
+        std::make_shared<const Package>(
+            Package::load(OwnedBytes::from_vector(testing::make_zip({
+                {kProgramEntry, int4_program},
+                {kSafeTensorsEntry, std::move(safetensors)},
+            })))));
+  };
+  // make_linear_program's q4_k weights: of every 64, 32 ones then 32 twos.
+  double q4_k_exact = 0;
+  double int4_exact = 0;
+  for (size_t i = 0; i < input.size(); ++i) {
+    q4_k_exact += (i % 64 < 32 ? 1.0 : 2.0) * input[i];
+    int4_exact += (static_cast<double>(i % 16) - 8) / 8 * input[i];
+  }
+  for (const bool gguf : {true, false}) {
+    SCOPED_TRACE(gguf ? "gguf:q4_k" : "int4");
+    std::vector<float> outputs;
+    for (const bool allow : {true, false}) {
+      auto host = GgmlEngineHost::create(
+          GgmlEngineOptions{.allow_activation_quant_for_weight_only = allow});
+      auto context = gguf ? make_context(*host, make_linear_program())
+                          : int4_context(*host);
+      auto executable = context->compile("forward");
+      executable->set_input(0, input.data(), input.size(), ScalarType::Float);
+      executable->execute();
+      float output = 0.0f;
+      executable->get_output(0, &output, 1, ScalarType::Float);
+      outputs.push_back(output);
+      EXPECT_EQ(
+          context->materialized_constant_bytes(),
+          !allow     ? 256 * sizeof(float)
+              : gguf ? kQ4KBlockBytes
+                     : size_t{8 * (2 + 16)});
+    }
+    const double exact = gguf ? q4_k_exact : int4_exact;
+    if (gguf) {
+      EXPECT_GT(std::abs(outputs[0] - exact), 1e-2);
+    }
+    EXPECT_NEAR(outputs[1], exact, 1e-5);
+  }
 }
 
 TEST(GgmlEngineTest, SqrtPreservesNonFiniteValuesAndSignedZeroOnReplay) {
@@ -3095,6 +3189,117 @@ TEST(GgmlEngineTest, RejectsPackedWeightWithPartialBlocks) {
       *make_context(*host, program.finish("y")), "divisible by 256");
 }
 
+// A linear of make_context's packaged block, labeled with `codec`.
+std::vector<uint8_t> make_packed_linear_program(const char* codec) {
+  TestProgram program;
+  program.q4_k_weight("weight", {1, 256}, codec);
+  program.input("x", fbs::ScalarType::FLOAT, {1, 256});
+  program.call(
+      "y",
+      "torch.ops.aten.linear.default",
+      {{"input", std::string("x")}, {"weight", std::string("weight")}},
+      fbs::ScalarType::FLOAT,
+      {1, 1});
+  return program.finish("y");
+}
+
+TEST(GgmlEngineTest, RejectsCodecsOfNoGgmlWeightType) {
+  // q8_K only quantizes activations, f16 stores no blocks, and the others
+  // are not "gguf:" and a lowercase ggml type name.
+  auto host = GgmlEngineHost::create(kAllowActivationQuant);
+  for (const char* codec :
+       {"gguf:q8_k", "gguf:f16", "gguf:q4_2", "gguf:Q4_K", "gguf:", "q4_k"}) {
+    SCOPED_TRACE(codec);
+    expect_compile_error(
+        *make_context(*host, make_packed_linear_program(codec)),
+        "unsupported PackedQuant codec");
+  }
+}
+
+TEST(GgmlEngineTest, RejectsGgufTypesNotYetValidated) {
+  // tq1_0 is a ggml weight type that no op sample validates.
+  auto host = GgmlEngineHost::create(kAllowActivationQuant);
+  expect_compile_error(
+      *make_context(*host, make_packed_linear_program("gguf:tq1_0")),
+      "codec gguf:tq1_0 not yet validated");
+}
+
+TEST(GgmlEngineTest, SizesGgufWeightsWithGgmlBlockGeometry) {
+  // make_context packages one 144-byte block_q4_K, while a [1, 256]
+  // gguf:q6_k weight is one 210-byte block_q6_K.
+  auto host = GgmlEngineHost::create(kAllowActivationQuant);
+  expect_compile_error(
+      *make_context(*host, make_packed_linear_program("gguf:q6_k")),
+      "stored byte count disagrees");
+}
+
+// Values and bytes per block of each gguf:<type> codec the engine accepts,
+// summed from the fields of its block struct in ggml-common.h (fp16 scales
+// take 2 bytes). The exporter's tests check gguf-py against the same table.
+struct GgufBlockLayout {
+  std::string_view type;
+  int64_t values;
+  size_t bytes;
+};
+
+constexpr GgufBlockLayout kGgufBlockLayouts[] = {
+    {"q4_0", 32, 2 + 32 / 2}, // d, qs
+    {"q4_1", 32, 2 + 2 + 32 / 2}, // d, m, qs
+    {"q5_0", 32, 2 + 4 + 32 / 2}, // d, qh, qs
+    {"q5_1", 32, 2 + 2 + 4 + 32 / 2}, // d, m, qh, qs
+    {"q8_0", 32, 2 + 32}, // d, qs
+    {"q2_k", 256, 256 / 16 + 256 / 4 + 2 + 2}, // scales, qs, d, dmin
+    {"q3_k", 256, 256 / 8 + 256 / 4 + 12 + 2}, // hmask, qs, scales, d
+    {"q4_k", 256, 2 + 2 + 12 + 256 / 2}, // d, dmin, scales, qs
+    {"q5_k", 256, 2 + 2 + 12 + 256 / 8 + 256 / 2}, // d, dmin, scales, qh, qs
+    {"q6_k", 256, 256 / 2 + 256 / 4 + 256 / 16 + 2}, // ql, qh, scales, d
+};
+
+// Whether compiling a linear of a `codec` weight gets past the codec check.
+bool accepts_codec(GgmlEngineHost& host, const std::string& codec) {
+  try {
+    make_context(host, make_packed_linear_program(codec.c_str()))
+        ->compile("forward");
+  } catch (const std::runtime_error& error) {
+    const std::string_view message = error.what();
+    return message.find("not yet validated") == std::string_view::npos &&
+        message.find("unsupported PackedQuant codec") == std::string_view::npos;
+  }
+  return true;
+}
+
+TEST(GgmlEngineTest, AcceptsTheGgufTypesOfKnownBlockLayoutOnly) {
+  auto host = GgmlEngineHost::create(kAllowActivationQuant);
+  std::set<std::string> accepted;
+  for (int i = 0; i < GGML_TYPE_COUNT; ++i) {
+    const auto type = static_cast<ggml_type>(i);
+    const char* type_name = ggml_type_name(type);
+    if (type_name == nullptr) {
+      continue;
+    }
+    std::string name = type_name;
+    std::ranges::transform(name, name.begin(), [](unsigned char c) {
+      return static_cast<char>(std::tolower(c));
+    });
+    if (!accepts_codec(*host, "gguf:" + name)) {
+      continue;
+    }
+    SCOPED_TRACE(name);
+    accepted.insert(name);
+    const auto* layout =
+        std::ranges::find(kGgufBlockLayouts, name, &GgufBlockLayout::type);
+    ASSERT_NE(layout, std::ranges::end(kGgufBlockLayouts))
+        << "no expected block layout";
+    EXPECT_EQ(ggml_blck_size(type), layout->values);
+    EXPECT_EQ(ggml_type_size(type), layout->bytes);
+  }
+  std::set<std::string> expected;
+  for (const GgufBlockLayout& layout : kGgufBlockLayouts) {
+    expected.emplace(layout.type);
+  }
+  EXPECT_EQ(accepted, expected);
+}
+
 TEST(GgmlEngineTest, RejectsUnsupportedOpOnUnquantizedInput) {
   TestProgram program;
   program.input("x", fbs::ScalarType::FLOAT, {1, 256});
@@ -3306,19 +3511,18 @@ TEST(GgmlEngineTest, SumOverTrailingDims) {
   }
 }
 
-TEST(GgmlEngineTest, RejectsSumOverANonTrailingDim) {
+TEST(GgmlEngineTest, RejectsSumOverARepeatedDim) {
   TestProgram program;
   program.input("x", fbs::ScalarType::FLOAT, {2, 3, 4});
   program.call(
       "y",
       "torch.ops.aten.sum.dim_IntList",
       {{"self", std::string("x")},
-       {"dim", std::vector<int64_t>{1}},
+       {"dim", std::vector<int64_t>{1, -2}},
        {"keepdim", BoolValue{false}}},
       fbs::ScalarType::FLOAT,
       {2, 4});
-  expect_compile_error(
-      program.finish("y"), "sum supports trailing dimensions only");
+  expect_compile_error(program.finish("y"), "sum repeats a dimension");
 }
 
 TEST(GgmlEngineTest, AmaxOverTrailingDims) {
@@ -3372,25 +3576,525 @@ TEST(GgmlEngineTest, AmaxOverTrailingDims) {
   }
 }
 
-TEST(GgmlEngineTest, RejectsAmaxOverANonTrailingDim) {
+// A split of an [extent] F32 input into `pieces` declared [1] outputs, with
+// `args` after self and dim 0; returns the first piece.
+std::vector<uint8_t> make_split_program(
+    int64_t extent,
+    const char* target,
+    const std::pair<std::string, TestArg>& sizes,
+    size_t pieces) {
   TestProgram program;
-  program.input("x", fbs::ScalarType::FLOAT, {2, 3, 4});
-  program.call(
-      "y",
-      "torch.ops.aten.amax.default",
-      {{"self", std::string("x")},
-       {"dim", std::vector<int64_t>{1}},
-       {"keepdim", BoolValue{false}}},
-      fbs::ScalarType::FLOAT,
-      {2, 4});
+  program.input("x", fbs::ScalarType::FLOAT, {extent});
+  std::vector<std::string> names;
+  for (size_t i = 0; i < pieces; ++i) {
+    names.push_back("piece" + std::to_string(i));
+  }
+  program.call_list(
+      "split",
+      target,
+      {{"self", std::string("x")}, sizes, {"dim", int64_t{0}}},
+      names,
+      {1});
+  return program.finish(names.front());
+}
+
+TEST(GgmlEngineTest, SplitRefusesSizesThatOverflowOrOutnumberItsOutputs) {
+  // The sizes wrap around to 4 in int64.
+  constexpr int64_t kQuarter = int64_t{1} << 62;
   expect_compile_error(
-      program.finish("y"), "amax supports trailing dimensions only");
+      make_split_program(
+          4,
+          "torch.ops.aten.split_with_sizes_copy.default",
+          {"split_sizes",
+           std::vector<int64_t>{kQuarter, kQuarter, kQuarter, kQuarter + 4}},
+          4),
+      "add up");
+  // 2^31 - 1 pieces of one element for two declared outputs, refused before
+  // the pieces are listed.
+  expect_compile_error(
+      make_split_program(
+          (int64_t{1} << 31) - 1,
+          "torch.ops.aten.split_copy.Tensor",
+          {"split_size", int64_t{1}},
+          2),
+      "one tensor per piece");
+  auto host = GgmlEngineHost::create();
+  auto context = make_context(
+      *host,
+      make_split_program(
+          4,
+          "torch.ops.aten.split_with_sizes_copy.default",
+          {"split_sizes", std::vector<int64_t>{1, 1, 1, 1}},
+          4));
+  auto executable = context->compile("forward");
+  const std::vector<float> x{1.0f, 2.0f, 3.0f, 4.0f};
+  executable->set_input(0, x.data(), x.size(), ScalarType::Float);
+  executable->execute();
+  float first = 0.0f;
+  executable->get_output(0, &first, 1, ScalarType::Float);
+  EXPECT_EQ(first, 1.0f);
+}
+
+// y = x + expand(z) + expand(z) + ..., `count` adds: each a REPEAT node, its
+// shape leaf and an ADD node.
+std::vector<uint8_t> make_expand_add_chain(int count) {
+  TestProgram program;
+  program.input("x", fbs::ScalarType::FLOAT, {1, 64});
+  program.input("z", fbs::ScalarType::FLOAT, {1, 1});
+  std::string last = "x";
+  for (int i = 0; i < count; ++i) {
+    const std::string expanded = "e" + std::to_string(i);
+    const std::string sum = "y" + std::to_string(i);
+    program.call(
+        expanded,
+        "torch.ops.aten.expand_copy.default",
+        {{"self", std::string("z")}, {"size", std::vector<int64_t>{1, 64}}},
+        fbs::ScalarType::FLOAT,
+        {1, 64});
+    program.call(
+        sum,
+        "torch.ops.aten.add.Tensor",
+        {{"self", last}, {"other", expanded}},
+        fbs::ScalarType::FLOAT,
+        {1, 64});
+    last = sum;
+  }
+  return program.finish(last);
+}
+
+// GCC defines __SANITIZE_*__ but has __has_feature only from version 14.
+#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
+#define PTN_TEST_SANITIZED
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer) || \
+    __has_feature(memory_sanitizer)
+#define PTN_TEST_SANITIZED
+#endif
+#endif
+
+bool limit_address_space_to_4gib() {
+  const rlimit limit{.rlim_cur = 4ULL << 30, .rlim_max = 4ULL << 30};
+  rlimit applied{};
+  return setrlimit(RLIMIT_AS, &limit) == 0 &&
+      getrlimit(RLIMIT_AS, &applied) == 0 && applied.rlim_cur == limit.rlim_cur;
+}
+
+// macOS refuses any finite RLIMIT_AS. The probe child only makes system calls,
+// so forking this threaded process is safe for it.
+bool can_limit_address_space() {
+  const pid_t pid = fork();
+  if (pid == 0) {
+    _exit(limit_address_space_to_4gib() ? 0 : 2);
+  }
+  int status = 0;
+  return pid > 0 && waitpid(pid, &status, 0) == pid && WIFEXITED(status) &&
+      WEXITSTATUS(status) == 0;
+}
+
+// Runs make_expand_add_chain(count) once under a 4 GiB address-space limit and
+// exits 0 if its result is right, 2 if the limit could not be set.
+[[noreturn]] void run_chain_under_limit(
+    const std::vector<uint8_t>& program,
+    int count,
+    size_t cached) {
+  if (!limit_address_space_to_4gib()) {
+    std::exit(2);
+  }
+  auto host = GgmlEngineHost::create(
+      GgmlEngineOptions{.cpu_threads = 2, .max_cached_graphs = cached});
+  auto context = make_context(*host, program);
+  auto executable = context->compile("forward");
+  const std::vector<float> x(64, 1.0f);
+  const float z = 0.5f;
+  executable->set_input(0, x.data(), x.size(), ScalarType::Float);
+  executable->set_input(1, &z, 1, ScalarType::Float);
+  executable->execute();
+  std::vector<float> y(64);
+  executable->get_output(0, y.data(), y.size(), ScalarType::Float);
+  std::exit(y[63] == 1.0f + 0.5f * static_cast<float>(count) ? 0 : 1);
+}
+
+// ggml mallocs a scheduler's split context in proportion to its size, about
+// 20 KB per unit, so a scheduler sized from a method's metadata budget, 80
+// tensors per node, takes gigabytes. An address-space limit refuses that even
+// though the pages are never touched; each chain runs in a child under 4 GiB.
+// Earlier tests leave the CPU backend's OpenMP threads running, and a forked
+// child of a threaded process can deadlock in them, so each child re-executes
+// the test binary and runs only this test ("threadsafe" death tests).
+TEST(GgmlEngineTest, SizesTheSchedulerFromTheBuiltGraph) {
+#ifdef PTN_TEST_SANITIZED
+  GTEST_SKIP() << "sanitizers reserve more address space than the limit";
+#endif
+  if (!can_limit_address_space()) {
+    GTEST_SKIP() << "this host refuses a 4 GiB address-space limit";
+  }
+  ::testing::GTEST_FLAG(death_test_style) = "threadsafe";
+  // 2,000 and 10,000 method nodes; the second builds about 10,000 graph nodes
+  // and 5,000 leafs.
+  for (const int count : {1000, 5000}) {
+    const std::vector<uint8_t> program = make_expand_add_chain(count);
+    for (const size_t cached : {size_t{0}, size_t{1}}) {
+      EXPECT_EXIT(
+          run_chain_under_limit(program, count, cached),
+          ::testing::ExitedWithCode(0),
+          "")
+          << count << " adds, " << cached << " cached graphs";
+    }
+  }
 }
 
 TEST(GgmlEngineTest, GpuUnavailableOnCpuVariant) {
   GgmlEngineOptions options;
   options.device = GgmlDevice::Gpu;
   EXPECT_THROW(GgmlEngineHost::create(options), std::runtime_error);
+}
+
+// One attention reading zero-initialized F32 key and value caches of `cache`
+// sizes, [B, H, S, D] for aten SDPA and [B, S, H, D] for custom_sdpa, which
+// nothing else uses.
+std::vector<uint8_t> make_cache_attention_program(
+    bool custom,
+    const std::vector<int64_t>& query,
+    const std::vector<int64_t>& cache,
+    const std::vector<int64_t>& mask = {}) {
+  TestProgram program;
+  program.input("q", fbs::ScalarType::FLOAT, query);
+  if (!mask.empty()) {
+    program.input("mask", fbs::ScalarType::FLOAT, mask);
+  }
+  program.buffer("k_cache", cache);
+  program.buffer("v_cache", cache);
+  std::vector<std::pair<std::string, TestArg>> args = {
+      {"query", std::string("q")},
+      {"key", std::string("k_cache")},
+      {"value", std::string("v_cache")}};
+  if (!mask.empty()) {
+    args.push_back({"attn_mask", std::string("mask")});
+  }
+  if (custom) {
+    args.push_back({"start_pos", int64_t{0}});
+  }
+  program.call(
+      "attended",
+      custom ? "torch.ops.llama.custom_sdpa.default"
+             : "torch.ops.aten.scaled_dot_product_attention.default",
+      args,
+      fbs::ScalarType::FLOAT,
+      query);
+  return program.finish("attended");
+}
+
+void run_with_zero_inputs(GgmlEngineContext& context) {
+  auto executable = context.compile("forward");
+  for (size_t i = 0; i < executable->num_inputs(); ++i) {
+    const std::vector<int64_t> sizes = executable->input_sizes(i);
+    const std::vector<float> input(std::accumulate(
+        sizes.begin(), sizes.end(), int64_t{1}, std::multiplies<>()));
+    executable->set_input(i, input.data(), input.size(), ScalarType::Float);
+  }
+  executable->execute();
+}
+
+// Calls of the GgmlEngineOptions::gpu_runs_f16_attention_for_testing answers
+// below.
+int gpu_attention_asked = 0;
+
+bool gpu_runs_attention() {
+  ++gpu_attention_asked;
+  return true;
+}
+
+bool gpu_lacks_attention() {
+  ++gpu_attention_asked;
+  return false;
+}
+
+// The bytes of `program`'s caches stored in F16 when the CPU answers for
+// the GPU whether it runs their attention, and how often it was asked.
+std::pair<size_t, int> f16_kv_cache_bytes_on_cpu(
+    const std::vector<uint8_t>& program,
+    bool (*answer)(),
+    bool f32_gpu_kv_cache_for_testing = false) {
+  gpu_attention_asked = 0;
+  auto host = GgmlEngineHost::create(GgmlEngineOptions{
+      .gpu_runs_f16_attention_for_testing = answer,
+      .f32_gpu_kv_cache_for_testing = f32_gpu_kv_cache_for_testing});
+  auto context = make_context(*host, program);
+  run_with_zero_inputs(*context);
+  return {context->f16_kv_cache_bytes(), gpu_attention_asked};
+}
+
+// Caches that only attention reads are F16 where the GPU runs that
+// attention over F16 keys and values, and F32 where it does not or where
+// f32_gpu_kv_cache_for_testing keeps them.
+TEST(GgmlEngineTest, AttentionOnlyKvCachesAreF16WhereTheGpuRunsAttention) {
+  constexpr size_t kCachesF16Bytes = 2 * 8 * 2 * 64 * 2;
+  const std::vector<uint8_t> custom =
+      make_cache_attention_program(true, {1, 1, 2, 64}, {1, 8, 2, 64});
+  const std::vector<uint8_t> aten =
+      make_cache_attention_program(false, {1, 2, 1, 64}, {1, 2, 8, 64});
+  using Result = std::pair<size_t, int>;
+  for (const auto& program : {custom, aten}) {
+    EXPECT_EQ(
+        f16_kv_cache_bytes_on_cpu(program, gpu_runs_attention),
+        Result(kCachesF16Bytes, 2));
+    EXPECT_EQ(
+        f16_kv_cache_bytes_on_cpu(program, gpu_lacks_attention), Result(0, 2));
+    EXPECT_EQ(
+        f16_kv_cache_bytes_on_cpu(program, gpu_runs_attention, true),
+        Result(0, 0));
+  }
+}
+
+// Attention over caches in shapes the SDPA lowerings refuse.
+std::vector<std::vector<uint8_t>> refused_cache_attention_programs() {
+  return {
+      // Query batch 2 over batch-1 caches, which eager broadcasts.
+      make_cache_attention_program(false, {2, 2, 1, 64}, {1, 2, 8, 64}),
+      make_cache_attention_program(true, {2, 1, 2, 64}, {1, 8, 2, 64}),
+      // 3 query heads over 2 key heads.
+      make_cache_attention_program(true, {1, 1, 3, 64}, {1, 8, 2, 64}),
+      // Head size 32 against 64.
+      make_cache_attention_program(false, {1, 2, 1, 32}, {1, 2, 8, 64}),
+      // No key heads.
+      make_cache_attention_program(true, {1, 1, 2, 64}, {1, 8, 0, 64}),
+  };
+}
+
+// Attention shapes the lowering refuses keep their caches F32 without asking
+// the GPU, whose flash attention would assert on them, and fail to load.
+TEST(GgmlEngineTest, KvCachesOfRefusedAttentionShapesKeepF32) {
+  for (const auto& program : refused_cache_attention_programs()) {
+    gpu_attention_asked = 0;
+    auto host = GgmlEngineHost::create(GgmlEngineOptions{
+        .gpu_runs_f16_attention_for_testing = gpu_runs_attention});
+    EXPECT_THROW(
+        make_context(*host, program)->compile("forward"), std::runtime_error);
+    EXPECT_EQ(gpu_attention_asked, 0);
+  }
+}
+
+#ifdef PTN_GGML_TEST_DEVICE_GPU
+// CUDA and HIP store caches that only attention reads in F16 by default.
+TEST(GgmlEngineGpuTest, AttentionOnlyKvCachesAreF16) {
+  auto host =
+      GgmlEngineHost::create(GgmlEngineOptions{.device = GgmlDevice::Gpu});
+  auto context = make_context(
+      *host, make_cache_attention_program(true, {1, 1, 2, 64}, {1, 8, 2, 64}));
+  run_with_zero_inputs(*context);
+  EXPECT_EQ(context->f16_kv_cache_bytes(), 2 * 8 * 2 * 64 * 2);
+}
+
+// Attention shapes the lowering refuses fail to load with its error, rather
+// than abort in the F16 KV cache probe.
+TEST(GgmlEngineGpuTest, RefusedAttentionShapesFailToLoad) {
+  auto host =
+      GgmlEngineHost::create(GgmlEngineOptions{.device = GgmlDevice::Gpu});
+  for (const auto& program : refused_cache_attention_programs()) {
+    EXPECT_THROW(
+        make_context(*host, program)->compile("forward"), std::runtime_error);
+  }
+}
+
+// ggml-cuda's flash attention takes one mask plane: the caches of an attention
+// with a per-head mask, which ggml runs on the CPU, keep F32, while a mask
+// shared by the heads leaves them F16.
+TEST(GgmlEngineGpuTest, KvCachesOfPerHeadMaskedAttentionKeepF32) {
+  for (const int64_t mask_heads : {1, 2}) {
+    auto host =
+        GgmlEngineHost::create(GgmlEngineOptions{.device = GgmlDevice::Gpu});
+    auto context = make_context(
+        *host,
+        make_cache_attention_program(
+            false, {1, 2, 1, 64}, {1, 2, 8, 64}, {1, mask_heads, 1, 8}));
+    run_with_zero_inputs(*context);
+    EXPECT_EQ(
+        context->f16_kv_cache_bytes(),
+        mask_heads == 1 ? 2 * 8 * 2 * 64 * 2 : 0);
+  }
+}
+#endif
+
+// Engine tests of testing options; the GPU targets run them on a GPU.
+#ifdef PTN_GGML_TEST_DEVICE_GPU
+constexpr GgmlDevice kOptionTestDevice = GgmlDevice::Gpu;
+#else
+constexpr GgmlDevice kOptionTestDevice = GgmlDevice::Cpu;
+#endif
+
+// One decode step of custom_sdpa over [1, cache_len, kv_heads, head] F32 key
+// and value caches that update_cache writes at position 2, for a query of
+// q_heads heads; with `masked`, an explicit [1, cache_len] mask input lets it
+// attend the first 3 keys. With `read_cache`, the output is the key cache
+// times 1 instead, a read outside attention.
+struct CachedAttention {
+  bool read_cache = false;
+  int64_t head = 64;
+  int64_t q_heads = 2;
+  int64_t kv_heads = 2;
+  int64_t cache_len = 8;
+  bool masked = false;
+};
+
+std::vector<uint8_t> make_cached_attention_program(const CachedAttention& a) {
+  TestProgram program;
+  program.input("q", fbs::ScalarType::FLOAT, {1, 1, a.q_heads, a.head});
+  program.input("k", fbs::ScalarType::FLOAT, {1, 1, a.kv_heads, a.head});
+  program.input("v", fbs::ScalarType::FLOAT, {1, 1, a.kv_heads, a.head});
+  if (a.masked) {
+    program.input("mask", fbs::ScalarType::FLOAT, {1, a.cache_len});
+  }
+  program.buffer("k_cache", {1, a.cache_len, a.kv_heads, a.head});
+  program.buffer("v_cache", {1, a.cache_len, a.kv_heads, a.head});
+  for (const char* name : {"k", "v"}) {
+    const std::string cache = std::string(name) + "_cache";
+    program.call(
+        std::string(name) + "_written",
+        "torch.ops.llama.update_cache.default",
+        {{"value", std::string(name)},
+         {"cache", cache},
+         {"start_pos", int64_t{2}}},
+        fbs::ScalarType::FLOAT,
+        {1, 1, a.kv_heads, a.head});
+  }
+  std::vector<std::pair<std::string, TestArg>> attention = {
+      {"query", std::string("q")},
+      {"key", std::string("k_cache")},
+      {"value", std::string("v_cache")},
+      {"start_pos", int64_t{2}}};
+  if (a.masked) {
+    attention.push_back({"attn_mask", std::string("mask")});
+  }
+  program.call(
+      "attended",
+      "torch.ops.llama.custom_sdpa.default",
+      attention,
+      fbs::ScalarType::FLOAT,
+      {1, 1, a.q_heads, a.head});
+  if (a.read_cache) {
+    program.call(
+        "read",
+        "torch.ops.aten.mul.Tensor",
+        {{"self", std::string("k_cache")}, {"other", 1.0}},
+        fbs::ScalarType::FLOAT,
+        {1, a.cache_len, a.kv_heads, a.head});
+    return program.finish("read");
+  }
+  return program.finish("attended");
+}
+
+std::vector<float> run_cached_attention(
+    GgmlEngineContext& context,
+    const CachedAttention& a) {
+  auto executable = context.compile("forward");
+  std::vector<float> q(a.q_heads * a.head), k(a.kv_heads * a.head),
+      v(a.kv_heads * a.head);
+  for (size_t i = 0; i < q.size(); ++i) {
+    q[i] = static_cast<float>(i % 5) / 3;
+  }
+  for (size_t i = 0; i < k.size(); ++i) {
+    k[i] = static_cast<float>(i % 7) / 9;
+    v[i] = static_cast<float>(i % 3) / 7 - 0.1f;
+  }
+  executable->set_input(0, q.data(), q.size(), ScalarType::Float);
+  executable->set_input(1, k.data(), k.size(), ScalarType::Float);
+  executable->set_input(2, v.data(), v.size(), ScalarType::Float);
+  if (a.masked) {
+    std::vector<float> mask(
+        a.cache_len, -std::numeric_limits<float>::infinity());
+    std::fill(mask.begin(), mask.begin() + 3, 0.0f);
+    executable->set_input(3, mask.data(), mask.size(), ScalarType::Float);
+  }
+  executable->execute();
+  const size_t output_size = a.read_cache
+      ? static_cast<size_t>(a.cache_len * a.kv_heads * a.head)
+      : static_cast<size_t>(a.q_heads * a.head);
+  std::vector<float> output(output_size);
+  executable->get_output(0, output.data(), output.size(), ScalarType::Float);
+  return output;
+}
+
+// On CUDA and HIP, F32 caches that only update_cache writes and only attention
+// reads are stored in F16, with results equal to F32 storage, which
+// f32_gpu_kv_cache_for_testing keeps. The CPU keeps F32.
+TEST(GgmlEngineOptionTest, AttentionOnlyKvCachesAreF16OnGpus) {
+  constexpr size_t kCacheF16Bytes = 8 * 2 * 64 * 2;
+  const size_t f16_bytes =
+      kOptionTestDevice == GgmlDevice::Gpu ? 2 * kCacheF16Bytes : 0;
+  std::vector<std::vector<float>> outputs;
+  for (const bool f32 : {false, true}) {
+    auto host = GgmlEngineHost::create(GgmlEngineOptions{
+        .device = kOptionTestDevice, .f32_gpu_kv_cache_for_testing = f32});
+    auto context = make_context(*host, make_cached_attention_program({}));
+    outputs.push_back(run_cached_attention(*context, {}));
+    EXPECT_EQ(context->f16_kv_cache_bytes(), f32 ? 0 : f16_bytes);
+  }
+  EXPECT_EQ(outputs[0], outputs[1]);
+}
+
+// Caches of a head size ggml-cuda's flash attention lacks, which ggml runs on
+// the CPU, keep F32.
+TEST(GgmlEngineOptionTest, KvCachesOfCpuAttentionKeepF32) {
+  auto host =
+      GgmlEngineHost::create(GgmlEngineOptions{.device = kOptionTestDevice});
+  const CachedAttention attention{.head = 8};
+  auto context = make_context(*host, make_cached_attention_program(attention));
+  run_cached_attention(*context, attention);
+  EXPECT_EQ(context->f16_kv_cache_bytes(), 0);
+}
+
+// A cache read outside attention keeps F32, whose values that read sees; the
+// value cache, which only attention reads, is still F16 on a GPU.
+TEST(GgmlEngineOptionTest, KvCacheReadOutsideAttentionKeepsF32) {
+  auto host =
+      GgmlEngineHost::create(GgmlEngineOptions{.device = kOptionTestDevice});
+  const CachedAttention attention{.read_cache = true};
+  auto context = make_context(*host, make_cached_attention_program(attention));
+  const std::vector<float> cache = run_cached_attention(*context, attention);
+  EXPECT_EQ(
+      context->f16_kv_cache_bytes(),
+      kOptionTestDevice == GgmlDevice::Gpu ? 8 * 2 * 64 * 2 : 0);
+  // Row 2 holds k, whose values i % 7 / 9 F16 would round.
+  EXPECT_EQ(cache[2 * 128 + 1], 1.0f / 9);
+}
+
+// ggml-cuda runs head size 512 only with a mask, a grouped query and a key
+// count divisible by 256; a cache that a masked attention of that kind reads
+// is F16 on a GPU, with results equal to F32 storage.
+TEST(GgmlEngineOptionTest, MaskedHead512GroupedKvCachesAreF16OnGpus) {
+  const CachedAttention attention{
+      .head = 512,
+      .q_heads = 2,
+      .kv_heads = 1,
+      .cache_len = 256,
+      .masked = true};
+  constexpr size_t kCacheF16Bytes = 256 * 1 * 512 * 2;
+  std::vector<std::vector<float>> outputs;
+  for (const bool f32 : {false, true}) {
+    auto host = GgmlEngineHost::create(GgmlEngineOptions{
+        .device = kOptionTestDevice, .f32_gpu_kv_cache_for_testing = f32});
+    auto context =
+        make_context(*host, make_cached_attention_program(attention));
+    outputs.push_back(run_cached_attention(*context, attention));
+    EXPECT_EQ(
+        context->f16_kv_cache_bytes(),
+        kOptionTestDevice == GgmlDevice::Gpu && !f32 ? 2 * kCacheF16Bytes : 0);
+  }
+  EXPECT_EQ(outputs[0], outputs[1]);
+  // Keys 0 and 1 are the caches' zeros and key 2 is k: each head's output is
+  // v weighted by key 2's softmax share.
+  for (int64_t h = 0; h < attention.q_heads; ++h) {
+    double score = 0;
+    for (int64_t d = 0; d < attention.head; ++d) {
+      score += static_cast<double>((h * attention.head + d) % 5) / 3 *
+          (static_cast<double>(d % 7) / 9);
+    }
+    const double share = 1 / (1 + 2 * std::exp(-score / std::sqrt(512.0)));
+    for (int64_t d = 0; d < attention.head; ++d) {
+      const double v = static_cast<double>(d % 3) / 7 - 0.1;
+      EXPECT_NEAR(outputs[0][h * attention.head + d], share * v, 1e-3);
+    }
+  }
 }
 
 } // namespace
