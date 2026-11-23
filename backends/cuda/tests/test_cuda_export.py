@@ -1424,7 +1424,7 @@ class TestCudaExport(unittest.TestCase):
         # The masked call keeps a float bias, which the Triton kernels do not take.
         output = "\n".join(logs.output)
         self.assertIn("Replaced 2 nodes with Triton kernels", output)
-        self.assertIn("Using split-K decode SDPA", output)
+        self.assertIn("(split-K decode SDPA (L_kv=", output)
         from executorch.export.utils import is_fbcode
 
         if is_fbcode():
