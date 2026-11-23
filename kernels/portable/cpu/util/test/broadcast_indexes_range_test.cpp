@@ -16,6 +16,7 @@ using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::runtime::testing::TensorFactory;
 using torch::executor::BroadcastIndexesRange;
+using torch::executor::BroadcastIndexesShapeRange;
 using torch::executor::delinearize_index;
 using torch::executor::linearize_access_indexes;
 
@@ -273,23 +274,175 @@ TEST(BroadcastIndexesRangeTest, OutputSizesMatchOutputTensor) {
   Tensor in_b = tf.zeros({2, 1, 4});
   Tensor in_c = tf.zeros({2, 3, 4});
   EXPECT_EQ(
-      range_to_vec(BroadcastIndexesRange<1>(out.sizes(), in_c)),
+      range_to_vec(BroadcastIndexesShapeRange<1>(out.sizes(), in_c)),
       range_to_vec(BroadcastIndexesRange<1>(out, in_c)));
   EXPECT_EQ(
-      range_to_vec(BroadcastIndexesRange<2>(out.sizes(), in_a, in_b)),
+      range_to_vec(BroadcastIndexesShapeRange<2>(out.sizes(), in_a, in_b)),
       range_to_vec(BroadcastIndexesRange<2>(out, in_a, in_b)));
   EXPECT_EQ(
-      range_to_vec(BroadcastIndexesRange<3>(out.sizes(), in_a, in_b, in_c)),
+      range_to_vec(
+          BroadcastIndexesShapeRange<3>(out.sizes(), in_a, in_b, in_c)),
       range_to_vec(BroadcastIndexesRange<3>(out, in_a, in_b, in_c)));
-  test_operator_plus(BroadcastIndexesRange<2>(out.sizes(), in_a, in_b));
+  test_operator_plus(BroadcastIndexesShapeRange<2>(out.sizes(), in_a, in_b));
 
   Tensor scalar = tf.zeros({});
   EXPECT_EQ(
-      range_to_vec(BroadcastIndexesRange<2>(scalar.sizes(), scalar, scalar)),
+      range_to_vec(
+          BroadcastIndexesShapeRange<2>(scalar.sizes(), scalar, scalar)),
       range_to_vec(BroadcastIndexesRange<2>(scalar, scalar, scalar)));
 
   Tensor empty = tf.zeros({2, 0});
   EXPECT_TRUE(
-      range_to_vec(BroadcastIndexesRange<2>(empty.sizes(), empty, empty))
+      range_to_vec(BroadcastIndexesShapeRange<2>(empty.sizes(), empty, empty))
           .empty());
+
+  // Inputs with the output's shape.
+  EXPECT_EQ(
+      range_to_vec(BroadcastIndexesShapeRange<2>(out.sizes(), in_c, in_c)),
+      range_to_vec(BroadcastIndexesRange<2>(out, in_c, in_c)));
+
+  // support_noncontiguous_input_tensors=true.
+  EXPECT_EQ(
+      range_to_vec(BroadcastIndexesShapeRange<1, true>(out.sizes(), in_b)),
+      range_to_vec(BroadcastIndexesRange<1, true>(out, in_b)));
+  EXPECT_EQ(
+      range_to_vec(
+          BroadcastIndexesShapeRange<2, true>(out.sizes(), in_a, in_b)),
+      range_to_vec(BroadcastIndexesRange<2, true>(out, in_a, in_b)));
+  EXPECT_EQ(
+      range_to_vec(
+          BroadcastIndexesShapeRange<2, true>(out.sizes(), in_c, in_c)),
+      range_to_vec(BroadcastIndexesRange<2, true>(out, in_c, in_c)));
+}
+
+TEST(BroadcastIndexesRangeTest, OutputSizesExpectedIndexes) {
+  TensorFactory<ScalarType::Int> tf;
+
+  // The output shape comes from a raw array rather than a tensor.
+  const Tensor::SizesType out_sizes[] = {2, 3};
+  Tensor in_a = tf.zeros({3});
+  Tensor in_b = tf.zeros({2, 1});
+
+  using Indexes2 = std::array<ssize_t, 3>;
+  const std::vector<Indexes2> expected = {
+      {0, 0, 0}, {1, 1, 0}, {2, 2, 0}, {3, 0, 1}, {4, 1, 1}, {5, 2, 1}};
+  EXPECT_EQ(
+      range_to_vec(BroadcastIndexesShapeRange<2>({out_sizes, 2}, in_a, in_b)),
+      expected);
+  EXPECT_EQ(
+      range_to_vec(
+          BroadcastIndexesShapeRange<2, true>({out_sizes, 2}, in_a, in_b)),
+      expected);
+
+  // One input is only broadcast with support_noncontiguous_input_tensors.
+  using Indexes1 = std::array<ssize_t, 2>;
+  const std::vector<Indexes1> expected_one = {
+      {0, 0}, {1, 0}, {2, 0}, {3, 1}, {4, 1}, {5, 1}};
+  EXPECT_EQ(
+      range_to_vec(BroadcastIndexesShapeRange<1, true>({out_sizes, 2}, in_b)),
+      expected_one);
+}
+
+// Checks that the range visits out in memory order and yields each input's
+// memory offset for the same logical element.
+template <size_t kNumInputs, bool support_noncontiguous_input_tensors = false>
+void test_strided_range(
+    const Tensor& out,
+    const std::array<Tensor, kNumInputs>& inputs) {
+  size_t out_indexes[executorch::runtime::kTensorDimensionLimit];
+  std::vector<ssize_t> logical_index(out.numel());
+  for (const auto ii : c10::irange(out.numel())) {
+    delinearize_index(
+        ii, out, out_indexes, executorch::runtime::kTensorDimensionLimit);
+    logical_index[linearize_access_indexes(out_indexes, out.dim(), out)] = ii;
+  }
+
+  const auto range = std::apply(
+      [&out](const auto&... in) {
+        return BroadcastIndexesRange<
+            kNumInputs,
+            support_noncontiguous_input_tensors>(out, in...);
+      },
+      inputs);
+  ssize_t idx = 0;
+  for (const auto& indexes : range) {
+    EXPECT_EQ(indexes[0], idx++);
+    delinearize_index(
+        logical_index[indexes[0]],
+        out,
+        out_indexes,
+        executorch::runtime::kTensorDimensionLimit);
+    for (const auto ii : c10::irange(kNumInputs)) {
+      EXPECT_EQ(
+          indexes[ii + 1],
+          linearize_access_indexes(out_indexes, out.dim(), inputs[ii]));
+    }
+  }
+  EXPECT_EQ(idx, out.numel());
+  test_operator_plus(range);
+}
+
+TEST(BroadcastIndexesRangeTest, ChannelsLastAndContiguousLayouts) {
+  TensorFactory<ScalarType::Int> tf;
+  Tensor out_channels_last = tf.zeros_channels_last({2, 3, 2, 4});
+  Tensor out_contiguous = tf.zeros({2, 3, 2, 4});
+  Tensor in_channels_last = tf.zeros_channels_last({2, 3, 2, 4});
+  Tensor in_contiguous = tf.zeros({2, 3, 2, 4});
+  Tensor in_broadcast = tf.zeros_channels_last({1, 3, 1, 1});
+  Tensor in_broadcast_w = tf.zeros({4});
+
+  test_strided_range<2>(out_channels_last, {in_channels_last, in_broadcast});
+  test_strided_range<2>(out_channels_last, {in_contiguous, in_broadcast_w});
+  test_strided_range<2>(out_channels_last, {in_channels_last, in_contiguous});
+  test_strided_range<2>(out_contiguous, {in_channels_last, in_contiguous});
+  test_strided_range<2>(
+      tf.zeros_channels_last({2, 1, 2, 4}),
+      {tf.zeros({2, 1, 2, 4}), tf.zeros({1, 1, 2, 1})});
+
+  test_strided_range<2, true>(
+      out_channels_last, {in_channels_last, in_broadcast});
+  test_strided_range<2, true>(
+      out_channels_last, {in_channels_last, in_channels_last});
+  test_strided_range<1, true>(out_channels_last, {in_contiguous});
+}
+
+TEST(BroadcastIndexesRangeTest, SharedChannelsLastLayoutIsIndexedLinearly) {
+  TensorFactory<ScalarType::Int> tf;
+  Tensor out = tf.zeros_channels_last({2, 3, 2, 4});
+  Tensor in = tf.zeros_channels_last({2, 3, 2, 4});
+
+  ssize_t idx = 0;
+  for (const auto [out_idx, in_a_idx, in_b_idx] :
+       BroadcastIndexesRange<2>(out, in, in)) {
+    EXPECT_EQ(out_idx, idx++);
+    EXPECT_EQ(in_a_idx, out_idx);
+    EXPECT_EQ(in_b_idx, out_idx);
+  }
+  EXPECT_EQ(idx, out.numel());
+}
+
+TEST(BroadcastIndexesRangeTest, LayoutsMatchIgnoresStridesOfSize1Dims) {
+  TensorFactory<ScalarType::Int> tf;
+  const auto layouts_match = [](const Tensor& a, const Tensor& b) {
+    return torch::executor::internal::layouts_match_ignoring_leading_1s(
+        a.sizes(), a.strides(), b.sizes(), b.strides());
+  };
+  EXPECT_TRUE(layouts_match(
+      tf.zeros_channels_last({2, 1, 2, 4}), tf.zeros({2, 1, 2, 4})));
+  EXPECT_FALSE(layouts_match(
+      tf.zeros_channels_last({2, 3, 2, 4}), tf.zeros({2, 3, 2, 4})));
+  EXPECT_TRUE(layouts_match(tf.zeros({1, 2, 4}), tf.zeros({2, 4})));
+}
+
+TEST(BroadcastIndexesRangeTest, OutputSizesAreTreatedAsContiguous) {
+  TensorFactory<ScalarType::Int> tf;
+  Tensor in = tf.zeros_channels_last({2, 3, 2, 4});
+  Tensor out = tf.zeros({2, 3, 2, 4});
+
+  EXPECT_EQ(
+      range_to_vec(BroadcastIndexesShapeRange<1, true>(in.sizes(), in)),
+      range_to_vec(BroadcastIndexesRange<1, true>(out, in)));
+  EXPECT_EQ(
+      range_to_vec(BroadcastIndexesShapeRange<2>(in.sizes(), in, in)),
+      range_to_vec(BroadcastIndexesRange<2>(out, in, in)));
 }

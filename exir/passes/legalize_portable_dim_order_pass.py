@@ -88,6 +88,7 @@ class LegalizePortableDimOrderPass(ExportPass):
     _target_ops = {
         exir_ops.edge.aten._adaptive_avg_pool2d.default,
         exir_ops.edge.aten.avg_pool2d.default,
+        exir_ops.edge.aten.avg_pool3d.default,
         exir_ops.edge.aten.expand_copy.default,
         exir_ops.edge.aten.mean.dim,
         exir_ops.edge.aten.sum.dim_IntList,

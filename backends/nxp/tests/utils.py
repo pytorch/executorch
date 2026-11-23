@@ -199,6 +199,61 @@ def process_input_sample(
     return current_input_samples
 
 
+def reorder_results_to_match_spec(
+    results_dir: str,
+    ref_output_spec: list,
+    target_output_spec: list,
+):
+    """Rewrite output binary files so their byte layout matches `target_output_spec`.
+
+    When the reference C++ program uses a different memory format than the target
+    program, the stored bytes are in a different order. This function
+    rewrites the binary files in-place so both sides have the same byte layout
+    before the comparator runs its reshape+compare step.
+
+    :param results_dir: Directory containing one sub-directory per sample, each
+        holding one binary file per output tensor.
+    :param ref_output_spec: Output tensor specs of the reference program.
+    :param target_output_spec: Output tensor specs of the target program.
+    """
+    sample_dirs = sorted(
+        [
+            os.path.join(results_dir, d)
+            for d in os.listdir(results_dir)
+            if os.path.isdir(os.path.join(results_dir, d))
+        ]
+    )
+
+    for sample_dir in sample_dirs:
+        for idx, output_file in enumerate(sorted(os.listdir(sample_dir))):
+            ref_spec = ref_output_spec[idx]
+            tgt_spec = target_output_spec[idx]
+
+            ref_dim_order = list(ref_spec.dim_order())
+            tgt_dim_order = list(tgt_spec.dim_order())
+            rank = len(ref_spec.shape)
+
+            if ref_dim_order == tgt_dim_order:
+                continue
+
+            ref_is_chl = is_channels_last_dim_order(ref_dim_order)
+            tgt_is_chl = is_channels_last_dim_order(tgt_dim_order)
+
+            file_path = os.path.join(sample_dir, output_file)
+            dtype = torch_type_to_numpy_type(ref_spec.dtype)
+
+            if ref_is_chl and not tgt_is_chl and rank == 4:
+                # Reference stored bytes in NHWC; target expects NCHW.
+                nhwc_shape = dims_to_channels_last(list(ref_spec.shape))
+                data = np.fromfile(file_path, dtype=dtype).reshape(nhwc_shape)
+                np.moveaxis(data, -1, 1).tofile(file_path)
+
+            elif not ref_is_chl and tgt_is_chl and rank == 4:
+                # Reference stored bytes in NCHW; target expects NHWC.
+                data = np.fromfile(file_path, dtype=dtype).reshape(ref_spec.shape)
+                np.moveaxis(data, 1, -1).tofile(file_path)
+
+
 def process_output_sample(
     output: tuple[torch.Tensor, ...] | torch.Tensor, output_spec: list[torch.Tensor]
 ) -> list[np.ndarray]:

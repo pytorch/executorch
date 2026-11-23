@@ -11,6 +11,9 @@ from dataclasses import dataclass
 
 import executorch.exir.dialects.fused_quant.ops  # noqa: F401
 import torch
+from executorch.backends.transforms.fused_quant.graph_utils import (
+    has_only_per_tensor_qparams,
+)
 from executorch.backends.transforms.permute_pass_utils import get_arg
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportedProgramPassBase, ExportedProgramPassResult
@@ -120,6 +123,11 @@ _UNARY_ELEMENTWISE_OPS: frozenset[torch._ops.OpOverload] = frozenset(
         exir_ops.edge.aten.sigmoid.default,
         exir_ops.edge.aten.hardswish.default,
         exir_ops.edge.aten.clamp.default,
+    }
+)
+
+_FUSED_UNARY_ELEMENTWISE_OPS: frozenset[torch._ops.OpOverload] = frozenset(
+    {
         exir_ops.edge.fused_quant.relu.default,
         exir_ops.edge.fused_quant.hardswish.default,
     }
@@ -138,6 +146,11 @@ def _track_dim_through_op(
 
     if target in _UNARY_ELEMENTWISE_OPS:
         return True
+
+    # Each branch gets a copy of the op with the same qparams, which must not
+    # vary along the cat axis.
+    if target in _FUSED_UNARY_ELEMENTWISE_OPS:
+        return has_only_per_tensor_qparams(node)
 
     if target == exir_ops.edge.aten.slice_copy.Tensor:
         slice_dim = get_arg(node, "dim", int)
@@ -182,7 +195,9 @@ class SinkPath:
     """A single user path that the cat can be sunk through."""
 
     chain: list[fx.Node]
+    # The cat dimension on each op's input and on its output.
     cat_dim_per_node: dict[fx.Node, int]
+    out_cat_dim_per_node: dict[fx.Node, int]
     new_cat_dim: int
 
 
@@ -202,6 +217,7 @@ def _find_sink_paths(
         cursor = user
         chain: list[fx.Node] = []
         cat_dim_per_node: dict[fx.Node, int] = {}
+        out_cat_dim_per_node: dict[fx.Node, int] = {}
 
         while True:
             if cursor.op != "call_function":
@@ -209,6 +225,7 @@ def _find_sink_paths(
             cat_dim_per_node[cursor] = tracker.dim
             if not _track_dim_through_op(cursor, tracker):
                 break
+            out_cat_dim_per_node[cursor] = tracker.dim
             chain.append(cursor)
 
             # While we support sinking cats if there are multiple users, we
@@ -223,6 +240,7 @@ def _find_sink_paths(
                 SinkPath(
                     chain=chain,
                     cat_dim_per_node=cat_dim_per_node,
+                    out_cat_dim_per_node=out_cat_dim_per_node,
                     new_cat_dim=tracker.dim,
                 )
             )
@@ -246,42 +264,39 @@ def _is_constant_node(node: fx.Node, exported_program: ExportedProgram) -> bool:
 
 def _adjust_view_shape(
     original_shape: list[int],
-    cat_dim: int,
+    in_cat_dim: int,
+    out_cat_dim: int,
     new_input: fx.Node,
 ) -> list[int]:
     """Compute the correct view shape for a replicated branch.
 
     The original view shape was computed for the full cat output. The
-    replicated branch has a different size on the cat dim, so we scale
-    the cat-dim component proportionally.
+    replicated branch has a different size on the cat dim, which a view that
+    changes rank moves from ``in_cat_dim`` to ``out_cat_dim``.
     """
-    original_input_shape = new_input.meta["val"].shape
-    new_cat_dim_size = original_input_shape[cat_dim]
-
     adjusted = list(original_shape)
-    adjusted[cat_dim] = new_cat_dim_size
+    adjusted[out_cat_dim] = new_input.meta["val"].shape[in_cat_dim]
     return adjusted
 
 
 def _replicate_chain(
-    chain: list[fx.Node],
+    path: SinkPath,
     node_map: dict[fx.Node, fx.Node],
-    cat_dim_per_node: dict[fx.Node, int],
     graph: fx.Graph,
     target_node: fx.Node,
 ) -> None:
     """Replicate a chain of ops, fixing view shapes for the new input size."""
-    for op_node in chain:
+    for op_node in path.chain:
         new_args = _replace_nodes_in_args(op_node.args, node_map)
 
         if op_node.target == exir_ops.edge.aten.view_copy.default:
-            cat_dim = cat_dim_per_node[op_node]
             input_in_map = op_node.args[0]
             assert isinstance(input_in_map, fx.Node)
-            new_input = node_map[input_in_map]
-            original_output_shape = list(op_node.meta["val"].shape)
             adjusted_shape = _adjust_view_shape(
-                original_output_shape, cat_dim, new_input
+                list(op_node.meta["val"].shape),
+                path.cat_dim_per_node[op_node],
+                path.out_cat_dim_per_node[op_node],
+                node_map[input_in_map],
             )
             new_args = (new_args[0], adjusted_shape)
 
@@ -363,16 +378,14 @@ def _sink_cat_along_paths(
                 )
 
         act_node_map: dict[fx.Node, fx.Node] = {cat_node: act_head}
-        _replicate_chain(chain, act_node_map, path.cat_dim_per_node, graph, target_node)
+        _replicate_chain(path, act_node_map, graph, target_node)
 
         sink_outputs: list[fx.Node] = [act_node_map[chain[-1]]]
 
         # Each constant input gets its own replicated chain.
         for const_inp in constant_inputs:
             const_node_map: dict[fx.Node, fx.Node] = {cat_node: const_inp}
-            _replicate_chain(
-                chain, const_node_map, path.cat_dim_per_node, graph, target_node
-            )
+            _replicate_chain(path, const_node_map, graph, target_node)
             sink_outputs.append(const_node_map[chain[-1]])
 
         with graph.inserting_before(target_node):

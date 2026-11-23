@@ -12,8 +12,8 @@
 //
 // Usage:
 //   <test> --packages=a.ptn,dir [--rmse_ratio --max_ratio --rtol --sigmas]
-//          [--allow_activation_quant_for_weight_only] [engine host flags]
-//          [gtest flags]
+//          [--allow_activation_quant_for_weight_only]
+//          [--gpu_fp16_block_scales] [engine host flags] [gtest flags]
 
 #include <algorithm>
 #include <cstdio>
@@ -21,11 +21,15 @@
 #include <filesystem>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
+#include <span>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <executorch/backends/native/runtime/Program.h>
@@ -63,6 +67,12 @@ DEFINE_bool(
     false,
     "Let the engine quantize the activations of weight-only quantized linears, "
     "judging it against golden-int8_act samples where a package has them.");
+DEFINE_bool(
+    gpu_fp16_block_scales,
+    false,
+    "Allow, in outputs that Q4_1 or Q5_1 linears compute from the inputs, "
+    "directly or chained, the error of ggml's GPU fp16 block scale products "
+    "(see block_scale_linear).");
 
 namespace ptn::testing {
 namespace {
@@ -90,6 +100,49 @@ EngineHost& host() {
 
 // Keyed by method and output index.
 using Checks = std::map<std::pair<std::string, size_t>, OutputCheck>;
+
+// A value that a method computes from its inputs through Q4_1 and Q5_1 linears
+// and views alone, with a bound on its error from the GPU's fp16 products.
+// Empty `sizes` when a view's are not known.
+struct Traced {
+  std::vector<double> values;
+  std::vector<double> bounds;
+  std::vector<int64_t> sizes;
+};
+
+// Whether ggml's GPU may take its fp16-scale kernels for `x`: up to 8 rows in
+// the second-to-last dim, or in all, where a view's sizes are not known.
+bool vector_kernel(const Traced& x, int64_t in) {
+  constexpr int64_t kMaxRows = 8;
+  const size_t dims = x.sizes.size();
+  return dims < 2 || x.sizes[dims - 2] <= kMaxRows ||
+      static_cast<int64_t>(x.values.size()) / in <= kMaxRows;
+}
+
+std::string_view op_name(std::string_view target) {
+  constexpr std::string_view kPrefix = "torch.ops.";
+  return target.starts_with(kPrefix) ? target.substr(kPrefix.size()) : target;
+}
+
+const Argument* argument(const Node& node, std::string_view name, size_t at) {
+  const auto named = std::find_if(
+      node.inputs.begin(), node.inputs.end(), [name](const NamedArgument& arg) {
+        return arg.name == name;
+      });
+  if (named != node.inputs.end()) {
+    return &named->arg;
+  }
+  return at < node.inputs.size() ? &node.inputs[at].arg : nullptr;
+}
+
+std::vector<double> to_double(const SampleTensor& t) {
+  const std::vector<float> values = to_float(t);
+  return {values.begin(), values.end()};
+}
+
+bool is_float(ScalarType dtype) {
+  return dtype == kFloat || dtype == kHalf || dtype == kBFloat16;
+}
 
 class SampleTest : public ::testing::Test {
  public:
@@ -170,6 +223,9 @@ class SampleTest : public ::testing::Test {
             in.dtype);
       }
       executable->execute();
+      const std::vector<std::vector<double>> allowances =
+          FLAGS_gpu_fp16_block_scales ? block_scale_allowances(call)
+                                      : std::vector<std::vector<double>>();
       for (size_t o = 0; o < want.size(); ++o) {
         ASSERT_EQ(executable->output_sizes(o), want[o].sizes) << "output " << o;
         ASSERT_EQ(ref[o].sizes, want[o].sizes) << "precise output " << o;
@@ -180,13 +236,141 @@ class SampleTest : public ::testing::Test {
         std::vector<float> got(
             want[o].bytes.size() / element_size(want[o].dtype));
         executable->get_output(o, got.data(), got.size(), kFloat);
-        checks[{call.method, o}].add(got, want[o], ref[o]);
+        const bool allowed =
+            o < allowances.size() && allowances[o].size() == got.size();
+        checks[{call.method, o}].add(
+            got,
+            want[o],
+            ref[o],
+            allowed ? std::span<const double>(allowances[o])
+                    : std::span<const double>());
       }
     }
   }
 
+  const std::vector<uint8_t>& constant(const Method& method, ValueId id) {
+    const auto binding = std::find_if(
+        method.data_bindings.begin(),
+        method.data_bindings.end(),
+        [id](const DataBinding& b) { return b.value_id == id && b.has_data; });
+    if (binding == method.data_bindings.end()) {
+      throw std::runtime_error("no data for constant " + std::to_string(id));
+    }
+    auto [it, added] = constants_.try_emplace(binding->key);
+    if (added) {
+      const OwnedBytes bytes =
+          bundle_->package->acquire_constant(binding->key).value();
+      const ByteSpan span = bytes.span();
+      it->second.assign(span.data(), span.data() + span.size());
+    }
+    return it->second;
+  }
+
+  // The linear's output if it reads a traced input with Q4_1 or Q5_1 weights.
+  std::optional<Traced> trace_linear(
+      const Method& method,
+      const Node& node,
+      const std::map<ValueId, Traced>& traced) {
+    const Argument* input = argument(node, "input", 0);
+    const Argument* weight = argument(node, "weight", 1);
+    const Argument* bias = argument(node, "bias", 2);
+    if (input == nullptr || input->kind() != ArgKind::Tensor ||
+        !traced.contains(input->as_tensor().id) || weight == nullptr ||
+        weight->kind() != ArgKind::Tensor) {
+      return std::nullopt;
+    }
+    const TensorMeta& meta =
+        method.graph.value(weight->as_tensor().id).tensor_meta();
+    const PackedQuant* packed =
+        meta.quant ? std::get_if<PackedQuant>(&*meta.quant) : nullptr;
+    if (packed == nullptr ||
+        (packed->codec != "gguf:q4_1" && packed->codec != "gguf:q5_1") ||
+        meta.sizes.size() != 2) {
+      return std::nullopt;
+    }
+    const Traced& x = traced.at(input->as_tensor().id);
+    const bool exact =
+        std::ranges::all_of(x.bounds, [](double b) { return b == 0.0; });
+    BlockScaleLinear linear = block_scale_linear(
+        packed->codec,
+        constant(method, weight->as_tensor().id),
+        meta.sizes[0],
+        meta.sizes[1],
+        x.values,
+        exact ? std::span<const double>() : std::span<const double>(x.bounds),
+        vector_kernel(x, meta.sizes[1]));
+    if (bias != nullptr && bias->kind() == ArgKind::Tensor) {
+      const ValueId id = bias->as_tensor().id;
+      const std::vector<double> b = to_double(SampleTensor{
+          .dtype = method.graph.value(id).tensor_meta().dtype,
+          .bytes = constant(method, id)});
+      for (size_t i = 0; i < linear.outputs.size(); ++i) {
+        linear.outputs[i] += b.at(i % b.size());
+      }
+    }
+    std::vector<int64_t> sizes = x.sizes;
+    if (!sizes.empty()) {
+      sizes.back() = meta.sizes[0];
+    }
+    return Traced{
+        std::move(linear.outputs), std::move(linear.bounds), std::move(sizes)};
+  }
+
+  // Per user output, the GPU fp16 block scale error to allow in it, empty for
+  // outputs that no traced chain computes.
+  std::vector<std::vector<double>> block_scale_allowances(
+      const SampleCall& call) {
+    const Method& method = bundle_->program->get_method(call.method);
+    const Graph& graph = method.graph;
+    std::map<ValueId, Traced> traced;
+    size_t next = 0;
+    for (const ValueId id : graph.input_ids) {
+      if (graph.value(id).role != ValueRole::UserInput) {
+        continue;
+      }
+      const SampleTensor& in = call.inputs.at(next++);
+      if (is_float(in.dtype)) {
+        std::vector<double> values = to_double(in);
+        std::vector<double> bounds(values.size());
+        traced[id] = {std::move(values), std::move(bounds), in.sizes};
+      }
+    }
+    for (const NodeId node_id : graph.schedule) {
+      const Node& node = graph.node(node_id);
+      if (!node.is_call() || node.outputs.size() != 1) {
+        continue;
+      }
+      const ValueId out = node.outputs.front().value_id;
+      const std::string_view op = op_name(node.target);
+      const Argument* self = argument(node, "self", 0);
+      if (op == "aten.linear.default") {
+        if (std::optional<Traced> y = trace_linear(method, node, traced)) {
+          traced[out] = std::move(*y);
+        }
+      } else if (
+          (op == "aten.view_copy.default" || op == "aten.view.default" ||
+           op == "aten.reshape.default" || op == "aten._unsafe_view.default") &&
+          self != nullptr && self->kind() == ArgKind::Tensor &&
+          traced.contains(self->as_tensor().id)) {
+        traced[out] = traced.at(self->as_tensor().id);
+        traced[out].sizes.clear();
+      }
+    }
+    std::vector<std::vector<double>> allowances;
+    for (size_t o = 0; o < graph.output_ids.size(); ++o) {
+      if (method.output_specs.at(o).kind != OutputKind::UserOutput) {
+        continue;
+      }
+      const auto it = traced.find(graph.output_ids[o]);
+      allowances.push_back(
+          it == traced.end() ? std::vector<double>() : it->second.bounds);
+    }
+    return allowances;
+  }
+
   std::shared_ptr<const Bundle> bundle_;
   std::string method_;
+  std::map<std::string, std::vector<uint8_t>> constants_;
 };
 
 std::vector<std::filesystem::path> package_paths() {

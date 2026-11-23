@@ -46,7 +46,7 @@ BACKEND_NAME = "VGF"
 # VgfPipelineFP8 is testing pipeline for MXFP dtypes
 BACKEND_PIPELINE_CLASS_NAMES = frozenset({"VgfPipeline", "VgfPipelineFP8"})
 BACKEND_PIPELINE_LABEL = "VgfPipeline"
-BACKEND_TOSA_SPEC = "TOSA-1.0+FP+INT+int4+int16"
+BACKEND_TOSA_SPEC = "TOSA-1.0+FP+INT+int4+int16+bf16"
 BACKEND_PROFILE_TOSA_SPECS = {
     "FP": "TOSA-1.0+FP",
     "INT": "TOSA-1.0+INT",
@@ -85,7 +85,7 @@ BACKENDS: dict[str, BackendConfig] = {
         name="VGF",
         pipeline_class_names=frozenset({"VgfPipeline", "VgfPipelineFP8"}),
         pipeline_label="VgfPipeline",
-        tosa_spec="TOSA-1.0+FP+INT+int4+int16",
+        tosa_spec="TOSA-1.0+FP+INT+int4+int16+bf16",
         default_output=Path("docs/source/backends/arm-vgf/VGF_op_support.md"),
         quantize_keyword="quantize",
         quantize_default=True,
@@ -1164,6 +1164,9 @@ def _normalize_pytorch_op_name(  # noqa: C901
         or text.startswith("aten::")
         or text.startswith("aten.")
         or ".aten." in text
+        or text.startswith("llama::")
+        or text.startswith("llama.")
+        or ".llama." in text
     )
     if not recognized:
         return None
@@ -1187,6 +1190,7 @@ def _normalize_pytorch_op_name(  # noqa: C901
         if text.startswith(prefix):
             text = text.removeprefix(prefix)
 
+    namespace = "aten"
     if text.startswith("aten::"):
         text = text.removeprefix("aten::")
         if "." not in text:
@@ -1195,9 +1199,20 @@ def _normalize_pytorch_op_name(  # noqa: C901
         text = text.removeprefix("aten.")
     elif ".aten." in text:
         text = text.split(".aten.", maxsplit=1)[1]
+    elif text.startswith("llama::"):
+        namespace = "llama"
+        text = text.removeprefix("llama::")
+        if "." not in text:
+            text = f"{text}.default"
+    elif text.startswith("llama."):
+        namespace = "llama"
+        text = text.removeprefix("llama.")
+    elif ".llama." in text:
+        namespace = "llama"
+        text = text.split(".llama.", maxsplit=1)[1]
 
     text = EDGE_OP_ALIASES.get(text, text)
-    canonical_without_overload = f"torch.ops.aten.{text}"
+    canonical_without_overload = f"torch.ops.{namespace}.{text}"
     if "." not in text:
         contextual = None
         if path is not None:
@@ -1215,7 +1230,7 @@ def _normalize_pytorch_op_name(  # noqa: C901
 
     if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z0-9_]+$", text):
         return None
-    return f"torch.ops.aten.{text}"
+    return f"torch.ops.{namespace}.{text}"
 
 
 def _canonical_pytorch_op_from_target(target: object) -> str | None:
@@ -1227,9 +1242,13 @@ def _canonical_pytorch_op_from_target(target: object) -> str | None:
         schema_name = str(getattr(schema, "name", ""))
         overload = str(getattr(schema, "overload_name", "")) or "default"
         namespace, _, op_name = schema_name.partition("::")
-        if namespace != "aten" or not op_name:
+        if not op_name:
             return None
-        return _normalize_pytorch_op_name(f"aten.{op_name}.{overload}")
+        if namespace == "aten":
+            return _normalize_pytorch_op_name(f"aten.{op_name}.{overload}")
+        if namespace == "llama":
+            return _normalize_pytorch_op_name(f"llama.{op_name}.{overload}")
+        return None
 
     return _normalize_pytorch_op_name(str(target))
 
@@ -3290,9 +3309,13 @@ def _collect_backend_custom_partition_ops(
         partitioner = VgfPartitioner(
             VgfCompileSpec(BACKEND_PROFILE_TOSA_SPECS[profile])
         )
-        custom_ops_by_profile[profile] = set(
-            getattr(partitioner, "_custom_partition_ops", ())
-        )
+        collector = getattr(partitioner, "_get_docgen_custom_partition_ops", None)
+        if callable(collector):
+            custom_ops_by_profile[profile] = set(collector())
+        else:
+            custom_ops_by_profile[profile] = set(
+                getattr(partitioner, "_custom_partition_ops", ())
+            )
 
     return custom_ops_by_profile
 
@@ -3395,7 +3418,10 @@ def _collect_backend_supported_ops(  # noqa: C901
 
     def add(target: object, profile: str, evidence: str) -> None:
         exported_op = _canonical_pytorch_op_from_target(target)
-        if exported_op is None:
+        if exported_op is None or not (
+            exported_op.startswith("torch.ops.aten.")
+            or exported_op.startswith("torch.ops.llama.")
+        ):
             return
         row = expected.setdefault(
             exported_op,
