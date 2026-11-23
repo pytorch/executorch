@@ -60,6 +60,7 @@ _Q6_K_BLOCK_BYTES = 2 + QK_K // 2 + QK_K // 4 + QK_K // 16  # 210
 _VALIDATED_QUANT_TYPES = frozenset(
     {
         "q4_0",
+        "q4_1",
         "q5_0",
         "q5_1",
         "q8_0",

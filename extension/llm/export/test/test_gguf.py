@@ -90,6 +90,7 @@ def _make_q6k_raw(N: int, nb: int, seed: int = 0) -> torch.Tensor:
 # Byte offsets of each block's fp16 scales, for the types without a helper above.
 _FP16_SCALE_OFFSETS = {
     "q4_0": (0,),
+    "q4_1": (0, 2),
     "q5_0": (0,),
     "q5_1": (0, 2),
     "q8_0": (0,),
@@ -114,6 +115,7 @@ def _make_raw(ggml_type: str, N: int, nb: int, seed: int = 0) -> torch.Tensor:
 # ggml engine's tests check ggml against the same table.
 _GGML_BLOCK_LAYOUTS = {
     "q4_0": (32, 2 + 32 // 2),  # d, qs
+    "q4_1": (32, 2 + 2 + 32 // 2),  # d, m, qs
     "q5_0": (32, 2 + 4 + 32 // 2),  # d, qh, qs
     "q5_1": (32, 2 + 2 + 4 + 32 // 2),  # d, m, qh, qs
     "q8_0": (32, 2 + 32),  # d, qs
@@ -151,6 +153,7 @@ class TestExportableGGUFTensor(unittest.TestCase):
         # gguf.dequantize.
         for ggml_type, block_size in (
             ("q4_0", 32),
+            ("q4_1", 32),
             ("q5_0", 32),
             ("q5_1", 32),
             ("q8_0", 32),
@@ -309,6 +312,7 @@ class TestExportableGGUFTensor(unittest.TestCase):
     def test_iter_gguf_wraps_every_validated_quant_type(self):
         raws = {
             "q4_0": _make_raw("q4_0", N=2, nb=1),
+            "q4_1": _make_raw("q4_1", N=2, nb=1),
             "q5_0": _make_raw("q5_0", N=2, nb=1),
             "q5_1": _make_raw("q5_1", N=2, nb=1),
             "q8_0": _make_raw("q8_0", N=2, nb=1),
