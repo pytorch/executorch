@@ -28,7 +28,7 @@ from executorch.backends.native.examples.hf_llm.export_hf_llm import (
 from executorch.exir.native import to_native
 from executorch.extension.llm.export.gguf import ExportableGGUFTensor
 from torch.export import Dim
-from transformers import LlamaConfig, LlamaForCausalLM
+from transformers import Gemma2Config, Gemma2ForCausalLM, LlamaConfig, LlamaForCausalLM
 
 
 _ENGINES = ("ggml_ptn_runner", "vulkan_ptn_runner")
@@ -102,6 +102,29 @@ def _tiny_llama() -> LlamaForCausalLM:
         tie_word_embeddings=True,
     )
     model = LlamaForCausalLM(config).eval().requires_grad_(False)
+    model.config._attn_implementation = "sdpa"
+    model.generation_config.use_cache = True
+    model.generation_config.cache_implementation = "static"
+    return model
+
+
+def _tiny_gemma2(**config) -> Gemma2ForCausalLM:
+    # A sliding-window layer, then a full-attention one; the window is shorter
+    # than the prompt.
+    config = Gemma2Config(
+        vocab_size=256,
+        hidden_size=256,
+        intermediate_size=512,
+        num_hidden_layers=2,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        head_dim=64,
+        max_position_embeddings=64,
+        layer_types=["sliding_attention", "full_attention"],
+        sliding_window=4,
+        **config,
+    )
+    model = Gemma2ForCausalLM(config).eval().requires_grad_(False)
     model.config._attn_implementation = "sdpa"
     model.generation_config.use_cache = True
     model.generation_config.cache_implementation = "static"
@@ -888,6 +911,26 @@ class CrossEngineTest(unittest.TestCase):
             atol_fraction=2e-2,
             engines=engines,
             max_seq=600,
+        )
+
+    def test_tiny_gemma2_sliding_window(self):
+        torch.manual_seed(0)
+        self._check_llama(
+            _tiny_gemma2(attn_logit_softcapping=None),
+            torch.float32,
+            atol_fraction=1e-3,
+            engines=("ggml_ptn_runner",),
+        )
+
+    # native-vk: Gemma2's aten.rms_norm.default is not lowered, so loading fails.
+    @unittest.expectedFailure
+    def test_tiny_gemma2_sliding_window_vulkan(self):
+        torch.manual_seed(0)
+        self._check_llama(
+            _tiny_gemma2(attn_logit_softcapping=None),
+            torch.float32,
+            atol_fraction=1e-3,
+            engines=("vulkan_ptn_runner",),
         )
 
     @unittest.skip(
