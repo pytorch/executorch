@@ -15,6 +15,11 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     get_first_fake_tensor,
     permute_fake_tensor_metadata,
 )
+from executorch.backends.arm._passes.tosa_lowering_utils import (
+    create_rescale_node,
+    rescale_tensor,
+    set_rescale_args,
+)
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -264,10 +269,8 @@ class RewriteUpsamplePass(ArmPass):
                 output_dtype = get_first_fake_tensor(node).dtype
                 output_scale = float(1 / (scale_y_n * scale_x_n))
                 with graph_module.graph.inserting_after(tosa_resize_node):
-                    rescale_node = create_node(
-                        graph_module.graph,
-                        exir_ops.backend.tosa.RESCALE.default,
-                        from_node=node,
+                    rescale_node = create_rescale_node(
+                        graph_module.graph, from_node=node
                     )
                     rescale_node.meta["val"] = node_replacement_fake
 
@@ -276,15 +279,12 @@ class RewriteUpsamplePass(ArmPass):
                             TosaSpecialDtype.INT48
                         )
 
-                    rescale_node.args = (
-                        tosa_resize_node,
-                        output_dtype,
-                        [output_scale],
-                        0,  # zero point
-                        0,  # zero point
+                    set_rescale_args(
+                        rescale_node,
+                        *(tosa_resize_node, output_dtype, [output_scale], 0, 0),
                     )
                     node_replacement = rescale_node
-                    node_replacement_fake = exir_ops.backend.tosa.RESCALE.default(
+                    node_replacement_fake = rescale_tensor(
                         tosa_resize_node.meta["val"], output_dtype, [output_scale], 0, 0
                     )
 
