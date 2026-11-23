@@ -261,6 +261,19 @@ def test_sdpa_decomposition_removes_sdpa_op() -> None:
     )
 
 
+@common.SkipIfNoModelConverter
+def test_sdpa_decode_vgf_no_quant() -> None:
+    case = build_decode_case(512, SdpaDecodeConfig())
+    pipeline = VgfPipeline[input_t](
+        case.module,
+        case.inputs,
+        "torch.ops.aten.scaled_dot_product_attention.default",
+        quantize=False,
+        run_on_vulkan_runtime=False,
+    )
+    pipeline.run()
+
+
 @common.parametrize("test_case", test_suite)
 @common.XfailIfNoCorstone320
 def test_sdpa_u85_INT(test_case: test_case_t):

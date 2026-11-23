@@ -12,6 +12,10 @@ from examples.arm.QAT_example.rife_vgf.passes import pad_rife_block0_concat as p
 from executorch.backends.arm._passes.arm_pass_manager import (
     _ExportedProgramGraphPassAdapter,
 )
+from executorch.backends.arm._passes.tosa_lowering_utils import (
+    compute_multiplier_and_shift,
+    create_rescale_node,
+)
 from executorch.backends.transforms.utils import create_constant_placeholder
 from torch.export.graph_signature import InputKind
 
@@ -64,8 +68,8 @@ def _program(factor=2):
         resize.meta["val"] = image.meta["val"].new_empty(
             (1, 4, 6, 3), dtype=torch.int32
         )
-        rescale = graph.call_function(
-            TOSA.RESCALE.default, (resize, torch.int8, [0.25], 0, 0)
+        rescale = create_rescale_node(
+            graph, (resize, torch.int8, [0.25], 0, 0), from_node=resize
         )
         rescale.meta["val"] = image.meta["val"].new_empty((1, 4, 6, 3))
         branches.append(rescale)
@@ -203,7 +207,7 @@ def test_unsupported_concat_is_unchanged(unsupported, factor):
         program.constants["timestep"][0, 0, 0, 0] = 39
     elif unsupported == "rescale":
         node = concat.args[0][0]
-        node.args = (node.args[0], torch.int8, [0.5], 0, 0)
+        node.args = (node.args[0], *compute_multiplier_and_shift([0.5]), 0, 0)
     elif unsupported == "resize":
         node = concat.args[0][0].args[0]
         node.kwargs = {"resize_mode": "nearest"}

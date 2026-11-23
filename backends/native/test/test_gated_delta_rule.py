@@ -55,16 +55,22 @@ class _Rule(torch.nn.Module):
 
 class GatedDeltaRuleTest(unittest.TestCase):
     def test_reference_is_transformers_recurrent_rule(self) -> None:
-        # transformers casts half inputs to FP32 before the l2norm.
+        # Query and key go in as FP32: transformers before 5.17 runs the
+        # l2norm in the input dtype, later releases in FP32 as the op does.
         for tokens, qk_l2norm, dtype in itertools.product(
             (1, 5), (False, True), (torch.float32, torch.float16, torch.bfloat16)
         ):
             with self.subTest(tokens=tokens, qk_l2norm=qk_l2norm, dtype=dtype):
-                inputs = _inputs(tokens, dtype=dtype)
-                got = gated_delta_rule_op(*inputs, qk_l2norm)
-                want = _transformers(
-                    torch_recurrent_gated_delta_rule, *inputs, qk_l2norm
+                q, k, *rest = _inputs(tokens, dtype=dtype)
+                got = gated_delta_rule_op(q, k, *rest, qk_l2norm)
+                out, final = _transformers(
+                    torch_recurrent_gated_delta_rule,
+                    q.float(),
+                    k.float(),
+                    *rest,
+                    qk_l2norm,
                 )
+                want = (out.to(dtype), final)
                 for a, b in zip(got, want, strict=True):
                     torch.testing.assert_close(a, b, rtol=0, atol=0)
 
