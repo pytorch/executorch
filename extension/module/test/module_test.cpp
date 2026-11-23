@@ -33,6 +33,12 @@ class ModuleTest : public ::testing::Test {
     linear_path_ = std::getenv("ET_MODULE_LINEAR_PROGRAM_PATH");
     linear_data_path_ = std::getenv("ET_MODULE_LINEAR_DATA_PATH");
     shared_state_path_ = std::getenv("ET_MODULE_SHARED_STATE");
+    shared_state_initialized_path_ =
+        std::getenv("ET_MODULE_SHARED_STATE_INITIALIZED");
+    shared_state_unmarked_path_ =
+        std::getenv("ET_MODULE_SHARED_STATE_UNMARKED");
+    shared_state_two_buffers_path_ =
+        std::getenv("ET_MODULE_SHARED_STATE_TWO_BUFFERS");
   }
 
   static inline std::string model_path_;
@@ -41,6 +47,9 @@ class ModuleTest : public ::testing::Test {
   static inline std::string linear_path_;
   static inline std::string linear_data_path_;
   static inline std::string shared_state_path_;
+  static inline std::string shared_state_initialized_path_;
+  static inline std::string shared_state_unmarked_path_;
+  static inline std::string shared_state_two_buffers_path_;
 };
 
 TEST_F(ModuleTest, TestLoad) {
@@ -886,22 +895,129 @@ TEST_F(ModuleTest, TestSharedStateBufferIsMarkedShared) {
   }
 }
 
+// The program stores the state's initial value, 1, and forward(x) adds 1 to
+// the state and returns state + x. The methods share the state with or without
+// share_memory_arenas, and loading a method late, reloading it, or unloading
+// every method never resets it.
+TEST_F(ModuleTest, TestMethodsShareMarkedState) {
+#ifdef USE_ATEN_LIB
+  GTEST_SKIP()
+      << "dim_order_ops::_to_dim_order_copy.out not available in ATen mode";
+#endif
+  for (bool share_memory_arenas : {false, true}) {
+    Module module(
+        shared_state_initialized_path_,
+        Module::LoadMode::File,
+        /*event_tracer=*/nullptr,
+        /*memory_allocator=*/nullptr,
+        /*temp_allocator=*/nullptr,
+        share_memory_arenas);
+    const auto expect = [&module](
+                            const char* method,
+                            const std::vector<EValue>& inputs,
+                            float value) {
+      auto result = module.execute(method, inputs);
+      ASSERT_EQ(result.error(), Error::Ok);
+      EXPECT_TENSOR_CLOSE(
+          result.get()[0].toTensor(), *make_tensor_ptr({1}, {value}).get());
+    };
+    auto x = make_tensor_ptr({1}, {2.f});
+    expect("forward", {x}, 4.f);
+    // First loaded after forward changed the state.
+    expect("get_state", {}, 2.f);
+    expect("forward", {x}, 5.f);
+    ASSERT_TRUE(module.unload_method("get_state"));
+    expect("get_state", {}, 3.f);
+    ASSERT_TRUE(module.unload_method("get_state"));
+    ASSERT_TRUE(module.unload_method("forward"));
+    // No method is loaded now.
+    expect("get_state", {}, 3.f);
+    ASSERT_EQ(
+        module.execute("set_state", make_tensor_ptr({1}, {5.f})).error(),
+        Error::Ok);
+    expect("forward", {x}, 8.f);
+  }
+}
+
+// forward and bump_second each store the initial value of the one buffer they
+// change, 1 and 10, and add 1 to it. both reads the 2 buffers and stores
+// neither value, so initializing from only one method that marks a buffer
+// fails whenever that method is both.
+TEST_F(ModuleTest, TestSharedBuffersGetEveryMethodsInitialData) {
+#ifdef USE_ATEN_LIB
+  GTEST_SKIP()
+      << "dim_order_ops::_to_dim_order_copy.out not available in ATen mode";
+#endif
+  Module module(shared_state_two_buffers_path_);
+  auto zero = make_tensor_ptr({1}, {0.f});
+
+  auto first = module.forward(zero);
+  ASSERT_EQ(first.error(), Error::Ok);
+  EXPECT_TENSOR_CLOSE(
+      first.get()[0].toTensor(), *make_tensor_ptr({1}, {2.f}).get());
+  auto second = module.execute("bump_second", zero);
+  ASSERT_EQ(second.error(), Error::Ok);
+  EXPECT_TENSOR_CLOSE(
+      second.get()[0].toTensor(), *make_tensor_ptr({1}, {11.f}).get());
+  // Only one allocation of each buffer holds both changes.
+  auto both = module.execute("both", zero);
+  ASSERT_EQ(both.error(), Error::Ok);
+  EXPECT_TENSOR_CLOSE(
+      both.get()[0].toTensor(), *make_tensor_ptr({1}, {13.f}).get());
+}
+
+// The state's initial value is in planned buffer 1, so initializing buffer 0
+// leaves buffer 1 alone.
+TEST_F(ModuleTest, TestInitializePlannedBufferWritesOnlyItsBuffer) {
+  Module module(shared_state_initialized_path_);
+  ASSERT_EQ(module.load(), Error::Ok);
+  auto meta = module.method_meta("forward");
+  ASSERT_EQ(meta.error(), Error::Ok);
+  ASSERT_EQ(meta->num_memory_planned_buffers(), 2);
+  std::vector<std::vector<uint8_t>> buffers;
+  std::vector<Span<uint8_t>> spans;
+  for (size_t i = 0; i < 2; ++i) {
+    buffers.emplace_back(meta->memory_planned_buffer_size(i).get(), 0x7f);
+  }
+  for (auto& buffer : buffers) {
+    spans.emplace_back(buffer.data(), buffer.size());
+  }
+  HierarchicalAllocator allocator({spans.data(), spans.size()});
+  const std::vector<uint8_t> untouched(buffers[1].size(), 0x7f);
+
+  ASSERT_EQ(
+      module.program()->initialize_planned_buffer("forward", 0, &allocator),
+      Error::Ok);
+  EXPECT_EQ(buffers[1], untouched);
+  ASSERT_EQ(
+      module.program()->initialize_planned_buffer("forward", 1, &allocator),
+      Error::Ok);
+  EXPECT_NE(buffers[1], untouched);
+}
+
+// A program from an exporter that does not mark shared buffers shares its
+// state only through share_memory_arenas.
 TEST_F(ModuleTest, TestSharedMemoryBuffer) {
 #ifdef USE_ATEN_LIB
   GTEST_SKIP()
       << "dim_order_ops::_to_dim_order_copy.out not available in ATen mode";
 #endif
   Module module(
-      shared_state_path_,
+      shared_state_unmarked_path_,
       Module::LoadMode::File,
       /*event_tracer=*/nullptr,
       /*memory_allocator=*/nullptr,
       /*temp_allocator=*/nullptr,
       /*share_memory_arenas=*/true);
 
-  ASSERT_EQ(module.load_method("forward"), Error::Ok);
-  ASSERT_EQ(module.load_method("get_state"), Error::Ok);
-  ASSERT_EQ(module.load_method("set_state"), Error::Ok);
+  for (const char* name : {"forward", "get_state", "set_state"}) {
+    auto meta = module.method_meta(name);
+    ASSERT_EQ(meta.error(), Error::Ok);
+    for (size_t i = 0; i < meta->num_memory_planned_buffers(); ++i) {
+      EXPECT_FALSE(meta->memory_planned_buffer_is_shared(i).get());
+    }
+    ASSERT_EQ(module.load_method(name), Error::Ok);
+  }
 
   auto get_state_initial = module.execute("get_state");
   ASSERT_EQ(get_state_initial.error(), Error::Ok);

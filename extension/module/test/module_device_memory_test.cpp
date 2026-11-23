@@ -139,7 +139,8 @@ TEST_F(ModuleDeviceMemoryTest, DeviceModelWithSharedArenasReturnsNotSupported) {
   const char* path = std::getenv("ET_MODULE_ADD_WITH_DEVICE_PATH");
   ASSERT_NE(path, nullptr) << "ET_MODULE_ADD_WITH_DEVICE_PATH not set";
 
-  // share_memory_arenas = true with a device-annotated model should fail.
+  // The program marks no buffer shared, so share_memory_arenas cannot tell
+  // which of its device buffers hold state.
   Module module(
       path,
       Module::LoadMode::File,
@@ -148,8 +149,7 @@ TEST_F(ModuleDeviceMemoryTest, DeviceModelWithSharedArenasReturnsNotSupported) {
       /*temp_allocator=*/nullptr,
       /*share_memory_arenas=*/true);
 
-  auto err = module.load_method("forward");
-  EXPECT_EQ(err, Error::NotSupported);
+  EXPECT_EQ(module.load_method("forward"), Error::NotSupported);
 }
 
 TEST_F(ModuleDeviceMemoryTest, DeviceAllocationFailureIsReportedNotFatal) {
@@ -185,7 +185,7 @@ TEST_F(
 
     // Regardless of whether load_method succeeds or fails (e.g. due to
     // backend init issues), the device-aware memory allocation path
-    // (make_planned_memory_with_devices) runs BEFORE backend init.
+    // (make_planned_memory) runs BEFORE backend init.
     EXPECT_EQ(g_mock_cuda.allocate_count_, 1)
         << "Expected 1 device allocation for the CUDA buffer"
         << " (actual: " << g_mock_cuda.allocate_count_ << ")"

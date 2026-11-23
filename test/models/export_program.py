@@ -13,10 +13,13 @@ import sys
 from typing import Any, Dict, List, Type
 
 import torch
+from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig, to_edge
+from executorch.exir.capture._capture import patch_forward
 from executorch.exir.passes import MemoryPlanningPass
+from executorch.exir.passes.init_mutable_pass import InitializedMutableBufferPass
 from executorch.exir.program._program import ExecutorchProgramManager
 from torch import nn
-from torch.export import Dim
+from torch.export import Dim, export
 
 from ..end2end.exported_module import ExportedModule
 
@@ -317,6 +320,70 @@ class ModuleSharedState(torch.nn.Module):
         return True
 
 
+class ModuleSharedStateInitialized(ModuleSharedState):
+    """ModuleSharedState whose program stores the state's initial value."""
+
+    def get_initialized_mutable_buffers(self) -> List[str]:
+        return ["state"]
+
+
+class _SharingPassWithoutMarker(MemoryPlanningPass):
+    """Shares mutable buffers like an exporter that does not mark them."""
+
+    def run_multimethod(self) -> None:
+        graph_modules = self.state.graph_modules
+        super().run_multimethod()
+        for graph_module in graph_modules:
+            graph_module.meta.pop("shared_non_const_buffers", None)
+
+
+class ModuleSharedStateUnmarked(ModuleSharedState):
+    """ModuleSharedState in a program that does not mark its shared state."""
+
+    def get_memory_planning_pass(self) -> MemoryPlanningPass:
+        return _SharingPassWithoutMarker(share_mutable_buffers=True)
+
+
+class ModuleSharedStateTwoBuffers(torch.nn.Module):
+    """2 shared buffers, each changed by only one method, which alone stores its
+    initial value, and read by a third method that stores neither."""
+
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("first", torch.ones(1))
+        self.register_buffer("second", torch.full((1,), 10.0))
+
+    def forward(self, x):
+        return self.first.add_(1) + x
+
+    def bump_second(self, x):
+        return self.second.add_(1) + x
+
+    def both(self, x):
+        return self.first + self.second + x
+
+    @staticmethod
+    def export_to_executorch() -> ExecutorchProgramManager:
+        model, methods = ModuleSharedStateTwoBuffers(), {}
+        for name in ("both", "forward", "bump_second"):
+            with patch_forward(model, getattr(model, name)):
+                methods[name] = export(model, (torch.zeros(1),))
+        return (
+            to_edge(methods, compile_config=EdgeCompileConfig(_check_ir_validity=False))
+            .transform(
+                {
+                    "forward": [InitializedMutableBufferPass(["first"])],
+                    "bump_second": [InitializedMutableBufferPass(["second"])],
+                }
+            )
+            .to_executorch(
+                ExecutorchBackendConfig(
+                    memory_planning_pass=MemoryPlanningPass(share_mutable_buffers=True)
+                )
+            )
+        )
+
+
 #
 # Main logic.
 #
@@ -328,6 +395,13 @@ def export_module_to_program(
 ) -> ExecutorchProgramManager:
     """Exports the module and returns the serialized program data."""
     torch.manual_seed(0)
+    if hasattr(module_class, "export_to_executorch"):
+        if external_constants:
+            raise ValueError(
+                f"{module_class.__name__} exports itself, without external constants"
+            )
+        # pyre-ignore[16]: pyre doesn't know about export_to_executorch.
+        return module_class.export_to_executorch()
     # Look for an optional @staticmethod that defines custom trace params.
     export_kwargs: Dict[str, Any] = {}
     if hasattr(module_class, "get_export_kwargs"):

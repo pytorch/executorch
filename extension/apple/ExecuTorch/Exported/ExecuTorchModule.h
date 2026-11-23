@@ -302,6 +302,9 @@ NS_SWIFT_NAME(Module)
 
 /**
  * Unloads a method and releases its native resources and planned buffers.
+ * A buffer the program marks as shared stays allocated, with its contents,
+ * until this module is destroyed. Create a new module to start from the
+ * initial state.
  *
  * @param methodName The method to unload.
  * @return YES if the method was unloaded; NO if it was not loaded at all.

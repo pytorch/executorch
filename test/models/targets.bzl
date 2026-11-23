@@ -74,6 +74,9 @@ def define_common_targets():
         "ModuleSimpleTrain",
         "ModuleStateful",
         "ModuleSharedState",
+        "ModuleSharedStateInitialized",
+        "ModuleSharedStateUnmarked",
+        "ModuleSharedStateTwoBuffers",
     ]
 
     # Generates Executorch .pte program files for various modules at build time.

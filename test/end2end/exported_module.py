@@ -17,12 +17,14 @@ import torch
 from executorch.exir import ExecutorchBackendConfig, ExecutorchProgramManager, to_edge
 from executorch.exir.capture._capture import patch_forward
 from executorch.exir.dynamic_shape import DynamicMemoryPlanningMode
+from executorch.exir.pass_manager import PassType
 from executorch.exir.passes import (
     DebugPass,
     MemoryPlanningPass,
     to_scratch_op_pass,
     ToOutVarPass,
 )
+from executorch.exir.passes.init_mutable_pass import InitializedMutableBufferPass
 from torch import nn
 from torch.export import export
 from torch.export._trace import _export
@@ -62,7 +64,7 @@ class ExportedModule:
         return self.__get_random_inputs_fn()
 
     @staticmethod
-    def export(
+    def export(  # noqa: C901
         module_class: Type[nn.Module],
         methods: Sequence[str] = ("forward",),
         ignore_to_out_var_failure: bool = False,
@@ -187,6 +189,21 @@ class ExportedModule:
                         ),
                     )
 
+        passes: list[PassType] = [
+            DebugPass(
+                show_src=True,
+                show_spec=False,
+                show_full_path=True,
+                show_all_frames=True,
+            ),
+            to_scratch_op_pass,
+        ]
+        if hasattr(eager_module, "get_initialized_mutable_buffers"):
+            passes.append(
+                InitializedMutableBufferPass(
+                    eager_module.get_initialized_mutable_buffers()  # type: ignore[operator]
+                )
+            )
         exec_prog = to_edge(
             exported_methods,
             compile_config=exir.EdgeCompileConfig(
@@ -194,15 +211,7 @@ class ExportedModule:
             ),
         ).to_executorch(
             ExecutorchBackendConfig(
-                passes=[
-                    DebugPass(
-                        show_src=True,
-                        show_spec=False,
-                        show_full_path=True,
-                        show_all_frames=True,
-                    ),
-                    to_scratch_op_pass,
-                ],
+                passes=passes,
                 dynamic_memory_planning_mode=dynamic_memory_planning_mode,
                 memory_planning_pass=memory_planning_pass,
                 to_out_var_pass=ToOutVarPass(ignore_to_out_var_failure),
