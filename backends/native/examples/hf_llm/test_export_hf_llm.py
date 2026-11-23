@@ -568,15 +568,14 @@ class ExportHfLlmTest(unittest.TestCase):
 
     def test_cache_writes_index_the_cache_position_input(self) -> None:
         seq = torch.export.Dim("seq", min=1, max=31)
-        for arch, kv_dtype, config in (
-            ("llama", torch.float32, {}),
-            # Export refuses attention logit softcapping.
-            ("gemma2", torch.float32, {"attn_logit_softcapping": None}),
-            ("gemma3", torch.float16, {}),
+        for arch, kv_dtype in (
+            ("llama", torch.float32),
+            ("gemma2", torch.float32),
+            ("gemma3", torch.float16),
         ):
             with self.subTest(arch=arch, kv_dtype=kv_dtype):
                 torch.manual_seed(7)
-                model = _tiny(arch, **config)
+                model = _tiny(arch)
                 fp32 = LastTokenLM(model, 32).eval()
                 wrapper = LastTokenLM(copy.deepcopy(model), 32, kv_dtype).eval()
                 ids = torch.tensor([[3, 4, 5, 6]])
@@ -898,11 +897,6 @@ class ExportHfLlmTest(unittest.TestCase):
                         )
                     )
 
-    def test_attention_logit_softcapping_is_refused(self) -> None:
-        model = _random_gemma("gemma2", sliding_window=3, attn_logit_softcapping=1.0)
-        with self.assertRaisesRegex(Exception, "softcapping"):
-            self._check_matches_eager(model)
-
     def test_sliding_window_layers_match_eager_past_the_window(self) -> None:
         ids = torch.tensor(_IDS)
         for arch in ("gemma2", "gemma3"):
@@ -920,6 +914,27 @@ class ExportHfLlmTest(unittest.TestCase):
                     )
                 )
                 self._check_matches_eager(model)
+
+    def test_attention_logit_softcapping_matches_eager_when_configured_eager(
+        self,
+    ) -> None:
+        # Eager's own mask is additive; the export takes a boolean one.
+        model = _random_gemma("gemma2", sliding_window=3, attn_logit_softcapping=1.0)
+        model.config._attn_implementation = "eager"
+        self._check_matches_eager(model)
+
+    def test_attention_logit_softcapping_matches_eager(self) -> None:
+        ids = torch.tensor(_IDS)
+        model = _random_gemma("gemma2", sliding_window=3, attn_logit_softcapping=1.0)
+        uncapped = copy.deepcopy(model)
+        for layer in uncapped.model.layers:
+            layer.self_attn.attn_logit_softcapping = None
+        self.assertFalse(
+            torch.allclose(
+                _eager_logits(uncapped, ids), _eager_logits(model, ids), atol=1e-3
+            )
+        )
+        self._check_matches_eager(model)
 
     def test_attention_rejects_arguments_export_would_drop(self) -> None:
         config = GptOssConfig(
@@ -974,10 +989,7 @@ class ExportHfLlmTest(unittest.TestCase):
         ids = torch.tensor([[3, 4, 5, 6]])
         for arch in _CONFIGS:
             with self.subTest(arch=arch):
-                # Softcapping exports from the next row on; until then it fails
-                # on its own refusal, not this check.
-                kwargs = {"attn_logit_softcapping": None} if arch == "gemma2" else {}
-                wrapper = LastTokenLM(_tiny(arch, **kwargs), 16).eval()
+                wrapper = LastTokenLM(_tiny(arch), 16).eval()
                 with torch.no_grad():
                     logits = wrapper(ids, torch.arange(4))
                 self.assertEqual(logits.shape, (1, 1, 128))
