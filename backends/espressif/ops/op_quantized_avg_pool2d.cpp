@@ -75,7 +75,6 @@ Tensor& quantized_avg_pool2d_int8_out(
   ET_KERNEL_CHECK(
       ctx,
       channels % 4 == 0 && batches >= 0 &&
-          (output_height == 1 || output_height == output_width) &&
           input_bytes <= std::numeric_limits<int32_t>::max() &&
           output_bytes <= std::numeric_limits<int32_t>::max() &&
           static_cast<size_t>(batches) <= input.nbytes() / input_bytes &&

@@ -253,10 +253,6 @@ def _lower_avg_pool2d(program, node) -> bool:
     args = _pool_kernel_args(program, node, node.meta["val"])
     if args is None:
         return False
-    output_height, output_width = node.meta["val"].shape[1:3]
-    # ESP-NN 1.4.1's S3 assembly uses output height for the output row stride.
-    if output_height != 1 and output_height != output_width:
-        return False
     inp, kernel, _, padding = args
     if get_arg(node, "count_include_pad") and any(padding):
         return False
