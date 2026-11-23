@@ -489,10 +489,12 @@ def _run_ggml(  # noqa: C901
     exact_gelu_for_testing: bool = False,
     f32_gpu_kv_cache_for_testing: bool = False,
     fold_constants: bool = True,
+    constant_bytes: list[int] | None = None,
 ):
     """Runs each step's inputs in order on one executable and returns each
     step's outputs as (bytes, shape) pairs. `graph_ops`, if given, collects
-    the built graphs' node counts per ggml op."""
+    the built graphs' node counts per ggml op; `constant_bytes`, the context's
+    constant bytes after each method's compile."""
     input_steps, output_steps = [], []
     for step, inputs in enumerate(steps):
         input_paths = []
@@ -530,6 +532,8 @@ def _run_ggml(  # noqa: C901
         command.append("--f32_gpu_kv_cache_for_testing")
     if not fold_constants:
         command.append("--nofold_constants")
+    if constant_bytes is not None:
+        command.append("--print_memory")
     with as_file(files(__package__) / "ggml_ptn_runner") as runner:
         result = subprocess.run(
             [str(runner), *command],
@@ -546,6 +550,9 @@ def _run_ggml(  # noqa: C901
             graph_ops.update(
                 {op: int(n) for op, n in (item.split("=") for item in line.split()[3:])}
             )
+    for line in result.stderr.splitlines() if constant_bytes is not None else []:
+        if match := re.match(r"ggml memory after compiling \S+: constants (\d+)", line):
+            constant_bytes.append(int(match.group(1)))
     shapes = [tuple(map(int, line.split())) for line in result.stdout.splitlines()]
     paths = [path for step in output_steps for path in step.split(",")]
     outputs = [(Path(path).read_bytes(), shape) for path, shape in zip(paths, shapes)]
@@ -3478,6 +3485,53 @@ class GgmlQwen35Test(unittest.TestCase):
                 torch.testing.assert_close(
                     actual.reshape(shape), reference, atol=tol, rtol=tol
                 )
+
+    def test_methods_load_one_weight_set(self):
+        # forward and prefill, on 64 and 8 tokens, read every weight; the
+        # context loads each once. Folding off keeps per-method results out.
+        model = self._model()
+        tokens = torch.randint(0, 128, (73,))
+        calls = [(0, 64), (0, 8), (8, 1)]
+        steps, methods, start = [], [], 0
+        for position, size in calls:
+            steps.append(
+                (
+                    tokens[start : start + size].view(1, size),
+                    torch.arange(position, position + size),
+                )
+            )
+            methods.append("forward" if size == 1 else "prefill")
+            start += size
+        with native_gdn_rules(model), torch.no_grad():
+            wrapper = LastTokenLM(model, 64).eval()
+            one = (
+                torch.zeros(1, 1, dtype=torch.long),
+                torch.zeros(1, dtype=torch.long),
+            )
+            programs = {
+                "forward": torch.export.export(wrapper, one, strict=True),
+                "prefill": export_prefill(wrapper, 64),
+            }
+        constant_bytes = []
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            package = outdir / "tiny_qwen35.ptn"
+            to_native(programs).save(str(package))
+            outputs = _run_ggml(
+                package,
+                steps,
+                outdir,
+                1,
+                resize=True,
+                method=";".join(methods),
+                fold_constants=False,
+                constant_bytes=constant_bytes,
+            )
+        self.assertEqual(len(outputs), len(steps))
+        weights = sum(p.numel() * p.element_size() for p in model.parameters())
+        self.assertEqual(len(constant_bytes), 2)
+        self.assertEqual(constant_bytes[1], constant_bytes[0])
+        self.assertLess(constant_bytes[0], 2 * weights)
 
     def _model(self):
         torch.manual_seed(5)
