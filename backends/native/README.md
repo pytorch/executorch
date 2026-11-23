@@ -200,6 +200,7 @@ engine uses as they are. Each has a test in
 | --- | --- | --- |
 | F32 matrix multiplies take TF32 inputs (10-bit mantissa) | CUDA | F32 `linear`, `matmul` and convolution |
 | F32 matrix multiplies that ggml routes to its MMF kernel (4-16 activation rows, outputs wide enough for its tiles) take TF32 or XF32 inputs, whatever the environment | CUDA (TF32); HIP (XF32) | F32 `linear` and `matmul` |
+| F32 expert matrix multiplies (`mul_mat_id`) take TF32 or XF32 inputs in ggml's MMF kernel, which takes every row count on CUDA and more than 8 rows on HIP | CUDA (TF32); HIP (XF32) | F32 experts gathered by `index` and multiplied by `bmm` |
 | F16 matrix multiplies accumulate in F16, as in llama.cpp; for testing, the engine option `cuda_f32_accumulation_for_testing` requests F32 accumulation on CUDA, at 2-3x prefill and 4x decode GEMM time | CUDA (cuBLAS); HIP on AMD GPUs other than CDNA and RDNA4 | F16 `linear` and `matmul`, a few 1e-2 in long sums |
 | Q4_1 and Q5_1 matrix multiplies that ggml routes to its MMVQ kernel (up to 8 activation rows) multiply each block's weight and activation scales, and its min and activation sum, in fp16, as in llama.cpp, which rounds small products and flushes tiny ones to zero | CUDA, HIP | Q4_1 and Q5_1 `linear`. The GPU sample tests allow this error per block where a linear's activations follow from the sample's inputs, directly or through other such linears. In `quantized_*` cases a linear feeds another op or, in Gated DeltaNet layers, reads the gated norm's output, which samples do not record; those cases keep the default judge, and the ones that fail are excluded on CUDA and HIP (`test/runtime/ggml/BUCK`) |
 | `tanh` and tanh GELU use fast-math `tanhf` | CUDA | errors of a few 1e-6 |
@@ -454,7 +455,7 @@ enable the desired `GGML_*` backend when configuring ExecuTorch, as above.
 GGML quantizes the activations of its quantized matmuls, as llama.cpp does
 (`--allow_activation_quant_for_weight_only`, the default). For debugging,
 `--allow_activation_quant_for_weight_only=false` dequantizes weight-only
-quantized weights (int4 or GGUF) that linears read to F32
+quantized weights (int4 or GGUF) that linears and expert gathers read to F32
 at load and runs those matmuls without activation quantization, at about 4-12x
 their packed weight memory by type: a tail it removes comes from activation quantization. The test
 drivers (`ptn_runner_main`, `sample_test_main`) run that mode by default.
