@@ -84,6 +84,16 @@ namespace {
   }                                                  \
   __ET_PRIM_OP_ERROR_IMPL(a, b, context)
 
+void floor_div_int(int64_t a, int64_t b, EValue& out) {
+  const int64_t quot = a / b;
+  if ((a < 0) == (b < 0)) {
+    out = EValue(quot);
+    return;
+  }
+  const int64_t rem = a % b;
+  out = EValue(rem ? quot - 1 : quot);
+}
+
 void floor_div_double(double a, double b, EValue& out) {
   if (b == 0) {
     out = EValue(std::signbit(a) ? -INFINITY : INFINITY);
@@ -305,14 +315,7 @@ static Kernel prim_ops[] = {
           EValue& b = *stack[1];
           EValue& out = *stack[2];
           if (a.isInt() && b.isInt()) {
-            const int64_t quot = a.toInt() / b.toInt();
-            if ((a.toInt() < 0) == (b.toInt() < 0)) {
-              out = EValue(quot);
-              return;
-            }
-            const int64_t rem = a.toInt() % b.toInt();
-            out = EValue(rem ? quot - 1 : quot);
-            return;
+            floor_div_int(a.toInt(), b.toInt(), out);
           } else if (a.isDouble() && b.isDouble()) {
             floor_div_double(a.toDouble(), b.toDouble(), out);
           } else if (a.isInt() && b.isDouble()) {
@@ -606,7 +609,7 @@ static Kernel prim_ops[] = {
           EValue& a = *stack[0];
           EValue& b = *stack[1];
           EValue& out = *stack[2];
-          out = EValue(a.toInt() / b.toInt());
+          floor_div_int(a.toInt(), b.toInt(), out);
         }),
 #endif
 

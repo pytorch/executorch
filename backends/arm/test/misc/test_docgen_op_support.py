@@ -623,7 +623,7 @@ def test_collect_backend_custom_partition_ops_discovers_fp_and_int_profiles() ->
     expected = {"torch.ops.aten.grid_sampler_2d.default"}
     assert expected.issubset(canonical_by_profile["FP"])
     assert expected.issubset(canonical_by_profile["INT"])
-    assert "torch.ops.llama.custom_sdpa.default" not in canonical_by_profile["FP"]
+    assert "torch.ops.llama.custom_sdpa.default" in canonical_by_profile["FP"]
     assert "torch.ops.llama.custom_sdpa.default" not in canonical_by_profile["INT"]
 
 
@@ -634,7 +634,9 @@ def test_collect_backend_supported_ops_includes_vgf_custom_partition_ops() -> No
     row = expected["torch.ops.aten.grid_sampler_2d.default"]
     assert row.support_profiles == {"FP", "INT"}
     assert "VgfPartitioner.register_custom_partition_op" in row.evidence
-    assert "torch.ops.llama.custom_sdpa.default" not in expected
+    sdpa_row = expected["torch.ops.llama.custom_sdpa.default"]
+    assert sdpa_row.support_profiles == {"FP"}
+    assert "VgfPartitioner.register_custom_partition_op" in sdpa_row.evidence
 
 
 def test_run_check_reports_missing_profile(

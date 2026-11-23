@@ -81,6 +81,10 @@ set(COMMON_INCLUDES
 # exceptions via /EHsc instead, so select the flag per compiler.
 set(VULKAN_CXX_FLAGS "$<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions>")
 list(APPEND VULKAN_CXX_FLAGS "$<$<CXX_COMPILER_ID:MSVC>:/EHsc>")
+# A switch that misses an enumerator fails the build, as it does in internal
+# clang -Werror builds.
+list(APPEND VULKAN_CXX_FLAGS "$<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wswitch>")
+list(APPEND VULKAN_CXX_FLAGS "$<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Werror=switch>")
 
 # vulkan API files
 

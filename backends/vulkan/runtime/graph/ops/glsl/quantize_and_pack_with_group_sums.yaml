@@ -4,7 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-quantize_and_pack_4h4w_with_group_sums:
+# Variants: quantize_and_pack_4h4w_with_group_sums_* (OUTPUT_LAYOUT 4h4w) and
+# quantize_and_pack_4w_with_group_sums_* (4w).
+quantize_and_pack_with_group_sums:
   parameter_names_with_default_values:
     DTYPE: float
     OUTPUT_STORAGE: buffer
@@ -12,6 +14,7 @@ quantize_and_pack_4h4w_with_group_sums:
     NUM_GROUPS_PER_WG: 2
     NUM_WORKERS_PER_GROUP: 32
     ZP_DTYPE_MODE: zpint8
+    OUTPUT_LAYOUT: 4h4w
   generate_variant_forall:
     DTYPE:
       - VALUE: half
@@ -32,3 +35,11 @@ quantize_and_pack_4h4w_with_group_sums:
       NUM_WORKERS_PER_GROUP: 16
       OUTPUT_STORAGE: buffer
       INPUT_STORAGE: buffer
+    # Row-major output (kPackedInt8_4W) for the ROWMAJOR_A linear_dq8ca_q4gsw_wmma
+    # variants.
+    - NAME: quantize_and_pack_4w_with_group_sums_o2w32_buffer_texture3d
+      OUTPUT_LAYOUT: 4w
+    - NAME: quantize_and_pack_4w_with_group_sums_o4w16_buffer_texture3d
+      NUM_GROUPS_PER_WG: 4
+      NUM_WORKERS_PER_GROUP: 16
+      OUTPUT_LAYOUT: 4w

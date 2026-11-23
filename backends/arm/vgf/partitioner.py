@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import final, Optional, Sequence
+from typing import Callable, final, List, Mapping, Optional, Sequence, Tuple
 
 import torch
 
@@ -13,6 +13,9 @@ from executorch.backends.arm.operator_support.tosa_supported_operators import (
 )
 from executorch.backends.arm.tosa.partitioner import CustomOpSupported, TOSAPartitioner
 from executorch.backends.arm.vgf import VgfBackend, VgfCompileSpec
+from executorch.backends.arm.vgf._passes.rewrite_custom_sdpa_to_tosa_custom import (
+    RewriteCustomSDPAToTosaCustomPass,
+)
 from executorch.backends.arm.vgf.backend import MUTABLE_BUFFER_OWNERSHIP_KEY
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import DelegationSpec, PartitionResult
@@ -21,6 +24,17 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from torch._ops import OpOverload
 from torch.export import ExportedProgram
 from torch.fx.passes.operator_support import OperatorSupportBase
+
+
+class SupportedCustomSDPA(OperatorSupportBase):
+    """Accept only fixed-position decode custom SDPA nodes handled by VGF."""
+
+    def is_node_supported(
+        self, submodules: Mapping[str, torch.nn.Module], node: torch.fx.Node
+    ) -> bool:
+        """Return True when the node matches the VGF shader-backed SDPA path."""
+        del submodules
+        return RewriteCustomSDPAToTosaCustomPass.supports_tosa_custom(node)
 
 
 @final
@@ -71,11 +85,11 @@ class VgfPartitioner(TOSAPartitioner):
         if self._requires_resolved_tensor_shapes:
             additional_checks.append(CheckResolvedTensorShapes(reporter))
 
-        positive_overrides = (
-            [CustomOpSupported(self._custom_partition_ops)]
-            if self._custom_partition_ops
-            else None
-        )
+        positive_overrides: list[OperatorSupportBase] = []
+        if self.tosa_spec.support_float():
+            positive_overrides.append(SupportedCustomSDPA())
+        if self._custom_partition_ops:
+            positive_overrides.append(CustomOpSupported(self._custom_partition_ops))
         return tosa_support_factory(
             self.tosa_spec,
             containing_program,
@@ -83,6 +97,29 @@ class VgfPartitioner(TOSAPartitioner):
             additional_checks=additional_checks,
             additional_positive_overrides=positive_overrides,
         )
+
+    def ops_to_not_decompose(
+        self,
+        ep: ExportedProgram,
+    ) -> Tuple[List[OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
+        """Preserve only the SDPA nodes that the VGF custom shader can lower."""
+        ops_to_not_decompose, filter_fn = super().ops_to_not_decompose(ep)
+
+        def vgf_filter(node: torch.fx.Node) -> bool:
+            if RewriteCustomSDPAToTosaCustomPass.supports_tosa_custom(node):
+                return True
+            if filter_fn is None:
+                return False
+            return filter_fn(node)
+
+        return ops_to_not_decompose, vgf_filter
+
+    def _get_docgen_custom_partition_ops(self) -> set[OpOverload | str]:
+        """Return custom partition ops that should appear in docgen."""
+        ops: set[OpOverload | str] = set(self._custom_partition_ops)
+        if self.tosa_spec.support_float():
+            ops.add("llama.custom_sdpa.default")
+        return ops
 
     def _validate_mutable_buffers(self, exported_program: ExportedProgram) -> None:
         signature = exported_program.graph_signature
