@@ -4,12 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import json
 import math
-import os
-import tempfile
 import unittest
-from collections import Counter
 from unittest import mock
 
 import executorch.backends.test.harness.stages as BaseStages
@@ -23,13 +19,8 @@ from executorch.backends.xnnpack._passes.fuse_activation_pass import FuseActivat
 from executorch.backends.xnnpack._passes.fuse_pad_into_conv_pass import (
     FusePadIntoConvPass,
 )
-from executorch.backends.xnnpack.serialization.xnnpack_graph_serialize import (
-    _get_schema_bytes,
-    XNNHeader,
-)
 from executorch.backends.xnnpack.test.tester import RunPasses, Tester
 from executorch.exir._serialize import _deserialize_pte_binary
-from executorch.exir._serialize._flatbuffer import _flatc_decompile
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.passes.external_constants_pass import (
     delegate_external_constants_pass_unlifted,
@@ -100,41 +91,6 @@ class TestDecomposeDepthwiseConvTransposePass(unittest.TestCase):
             .run_method_and_compare_outputs(atol=tol, rtol=tol)
         )
 
-    @staticmethod
-    def _xnnpack_node_types(tester) -> Counter:
-        """Node types in the serialized XNNPACK graph of the single delegate
-        produced by to_edge_transform_and_lower."""
-        graph_module = (
-            tester.get_artifact(StageType.TO_EDGE_TRANSFORM_AND_LOWER)
-            .exported_program()
-            .graph_module
-        )
-        (delegate,) = [
-            node
-            for node in graph_module.graph.nodes
-            if node.target == torch.ops.higher_order.executorch_call_delegate
-        ]
-        payload = getattr(graph_module, delegate.args[0].target).processed_bytes
-        header = XNNHeader.from_bytes(payload[: XNNHeader.EXPECTED_LENGTH])
-        flatbuffer = payload[
-            header.flatbuffer_offset : header.flatbuffer_offset + header.flatbuffer_size
-        ]
-        with tempfile.TemporaryDirectory() as d:
-            schema_path = os.path.join(d, "schema.fbs")
-            with open(schema_path, "wb") as f:
-                f.write(_get_schema_bytes())
-            bin_path = os.path.join(d, "graph.bin")
-            with open(bin_path, "wb") as f:
-                f.write(flatbuffer)
-            _flatc_decompile(d, schema_path, bin_path)
-            with open(os.path.join(d, "graph.json")) as f:
-                # flatc writes unbounded clamp limits as a bare inf
-                text = (
-                    f.read().replace("-inf", "-Infinity").replace(" inf", " Infinity")
-                )
-            graph = json.loads(text)
-        return Counter(node["xnode_union_type"] for node in graph["xnodes"])
-
     def _check_lowered(
         self, module, inputs, tol=1e-3, dynamic_shapes=None, num_deconvs=1
     ):
@@ -153,7 +109,7 @@ class TestDecomposeDepthwiseConvTransposePass(unittest.TestCase):
         tester.check_count(
             {"torch.ops.higher_order.executorch_call_delegate": 1}
         ).check_not([self.conv])
-        node_types = self._xnnpack_node_types(tester)
+        node_types = tester.xnnpack_node_types()
         self.assertEqual(node_types["XNNConvTranspose2d"], 0, node_types)
         self.assertEqual(node_types["XNNDepthToSpace2d"], num_deconvs, node_types)
         (

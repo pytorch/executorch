@@ -10,6 +10,7 @@ from typing import Set, Type
 import torch
 
 from executorch.backends.arm._passes import ArmOpTargetedPass
+from executorch.backends.arm._passes.arm_pass_utils import meta_without_qparams
 from executorch.backends.arm._passes.replace_scalar_with_tensor_pass import (
     ReplaceScalarWithTensorByProfilePass,
 )
@@ -247,6 +248,7 @@ class DecomposeUnfoldToGatherPass(ArmOpTargetedPass):
         )
 
         # ---- build idx1d of length U*C ----
+        index_meta = meta_without_qparams(meta)
         # idx_u: [U]
         idx_u = super().call_operator(
             arange_op,
@@ -255,7 +257,7 @@ class DecomposeUnfoldToGatherPass(ArmOpTargetedPass):
                 "dtype": torch.int32,
                 "device": x_val.device,
             },
-            meta,
+            index_meta,
             updated=True,
         )
         # idx_u_scaled: [U] = idx_u * S
@@ -263,7 +265,7 @@ class DecomposeUnfoldToGatherPass(ArmOpTargetedPass):
             mul_scalar_op,
             (idx_u, S),
             {},
-            meta,
+            index_meta,
             updated=True,
         )
         # idx_u2d: [U,1]
@@ -271,7 +273,7 @@ class DecomposeUnfoldToGatherPass(ArmOpTargetedPass):
             unsqueeze_op,
             (idx_u_scaled, 1),
             {},
-            meta,
+            index_meta,
             updated=True,
         )
 
@@ -283,7 +285,7 @@ class DecomposeUnfoldToGatherPass(ArmOpTargetedPass):
                 "dtype": torch.int32,
                 "device": x_val.device,
             },
-            meta,
+            index_meta,
             updated=True,
         )
         # idx_c2d: [1,C]
@@ -291,7 +293,7 @@ class DecomposeUnfoldToGatherPass(ArmOpTargetedPass):
             unsqueeze_op,
             (idx_c, 0),
             {},
-            meta,
+            index_meta,
             updated=True,
         )
 
@@ -300,7 +302,7 @@ class DecomposeUnfoldToGatherPass(ArmOpTargetedPass):
             add_tensor_op,
             (idx_u2d, idx_c2d),
             {},
-            meta,
+            index_meta,
             updated=True,
         )
 
@@ -309,7 +311,7 @@ class DecomposeUnfoldToGatherPass(ArmOpTargetedPass):
             view_op,
             (idx2d, [UC]),
             {},
-            meta,
+            index_meta,
             updated=True,
         )
 
@@ -318,14 +320,14 @@ class DecomposeUnfoldToGatherPass(ArmOpTargetedPass):
             unsqueeze_op,
             (idx1d, 0),
             {},
-            meta,
+            index_meta,
             updated=True,
         )
         indices_puc = super().call_operator(
             expand_op,
             (idx_1xUC, [P, UC]),
             {},
-            meta,
+            index_meta,
             updated=True,
         )
 

@@ -95,42 +95,50 @@ std::unique_ptr<GgmlEngineContext> GgmlEngineHost::create_ggml_context(
     std::shared_ptr<const Package> package,
     const EngineContextOptions& options) {
   namespace cache = executorch::extension::llm::cache;
-  std::shared_ptr<GgmlSequenceCache> kv_cache;
+  std::shared_ptr<cache::Cache> installed;
+  GgmlKvCache kv_cache;
   for (const auto& [name, value] : options) {
     if (name != cache::kCacheKeyOption) {
       throw std::invalid_argument(
           impl_->name + ": unsupported context option '" + name + "'");
     }
-    std::shared_ptr<cache::Cache> installed =
-        cache::CacheRegistry::global().get(value);
+    installed = cache::CacheRegistry::global().get(value);
     if (!installed) {
       throw std::invalid_argument(
           impl_->name + ": no KV cache is installed under key '" + value + "'");
     }
-    GgmlSequenceCache* ggml_cache = installed->as<GgmlSequenceCache>();
-    if (ggml_cache == nullptr) {
+    kv_cache = {
+        .sequence = installed->as<GgmlSequenceCache>(),
+        .cells = installed->as<GgmlCellCache>()};
+    if (!kv_cache) {
       throw std::invalid_argument(
           impl_->name + ": KV cache '" + value +
           "' was not built for this engine (CacheFactory backend '" +
-          kGgmlCacheBackendId + "', kind 'single')");
+          kGgmlCacheBackendId + "')");
     }
-    kv_cache = std::shared_ptr<GgmlSequenceCache>(installed, ggml_cache);
   }
   return std::unique_ptr<GgmlEngineContext>(new GgmlEngineContext(
       std::move(program),
       std::move(package),
       impl_->options,
-      std::move(kv_cache)));
+      std::move(installed),
+      kv_cache));
 }
 
 struct GgmlEngineContext::Impl {
-  Impl(GgmlEngineOptions value, std::shared_ptr<GgmlSequenceCache> cache)
-      : options(std::move(value)), kv_cache(std::move(cache)) {}
+  Impl(
+      GgmlEngineOptions value,
+      std::shared_ptr<executorch::extension::llm::cache::Cache> owner,
+      GgmlKvCache cache)
+      : options(std::move(value)), cache(std::move(owner)), kv_cache(cache) {}
 
   GgmlEngineOptions options;
-  std::shared_ptr<GgmlSequenceCache> kv_cache;
+  // Keeps the cache kv_cache points into alive.
+  std::shared_ptr<executorch::extension::llm::cache::Cache> cache;
+  GgmlKvCache kv_cache;
   size_t materialized_constant_bytes = 0;
   size_t heap_copied_constant_bytes = 0;
+  size_t f16_kv_cache_bytes = 0;
   GgmlMutableKeyOwners mutable_key_owners;
 };
 
@@ -138,9 +146,13 @@ GgmlEngineContext::GgmlEngineContext(
     std::shared_ptr<const Program> program,
     std::shared_ptr<const Package> package,
     GgmlEngineOptions options,
-    std::shared_ptr<GgmlSequenceCache> cache)
+    std::shared_ptr<executorch::extension::llm::cache::Cache> cache,
+    GgmlKvCache kv_cache)
     : EngineContext(std::move(program), std::move(package)),
-      impl_(std::make_unique<Impl>(std::move(options), std::move(cache))) {}
+      impl_(std::make_unique<Impl>(
+          std::move(options),
+          std::move(cache),
+          kv_cache)) {}
 
 GgmlEngineContext::~GgmlEngineContext() = default;
 
@@ -152,8 +164,9 @@ std::unique_ptr<EngineExecutable> GgmlEngineContext::compile_method(
       impl_->options,
       &impl_->materialized_constant_bytes,
       &impl_->heap_copied_constant_bytes,
+      &impl_->f16_kv_cache_bytes,
       impl_->mutable_key_owners,
-      impl_->kv_cache.get());
+      impl_->kv_cache);
 }
 
 size_t GgmlEngineContext::materialized_constant_bytes() const {
@@ -162,6 +175,10 @@ size_t GgmlEngineContext::materialized_constant_bytes() const {
 
 size_t GgmlEngineContext::heap_copied_constant_bytes() const {
   return impl_->heap_copied_constant_bytes;
+}
+
+size_t GgmlEngineContext::f16_kv_cache_bytes() const {
+  return impl_->f16_kv_cache_bytes;
 }
 
 } // namespace ptn
