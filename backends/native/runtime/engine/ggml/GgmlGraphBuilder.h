@@ -142,6 +142,13 @@ struct GraphInstance {
   std::vector<HostIntegerCheck> host_integer_checks;
 };
 
+// Results of nodes that read only constants, computed once: `instance` outputs
+// `values` in order.
+struct FoldGraph {
+  GraphInstance instance;
+  std::vector<ValueId> values;
+};
+
 // Inference batch norm is the per-channel map x * scale + shift of its
 // constants, computed once at load. A convolution read only by the batch norm
 // absorbs it: its weight is scaled at load and its bias replaced, leaving the
@@ -224,7 +231,16 @@ class GraphBuilder {
 
   GraphInstance build();
 
+  // A graph of `nodes` alone, which read only persistent tensors, whose
+  // outputs are those of `values` that compute something; a value that only
+  // views a persistent tensor costs nothing per call and is left out.
+  FoldGraph build_folds(
+      const std::vector<NodeId>& nodes,
+      const std::vector<ValueId>& values);
+
  private:
+  void begin();
+  bool folded(const Node& node) const;
   ggml_tensor* as_output(ggml_tensor* result, const TensorMeta& meta);
   void expand_write(ggml_tensor* write);
   ggml_tensor* write_back(ValueId value_id, ValueId target_id);
