@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import torch
 from executorch.backends.qualcomm._passes import (
     LpaiPartitionFallbackSupport,
     ResolveDebugHandle,
@@ -47,7 +48,10 @@ class PassManager:
         dep_table[_CustomPass] = [TagQuantIO]
 
         passes = pass_manager_cls().get_to_edge_transform_passes(
-            exported_program=None,
+            # ConstantFolding is built from the program.
+            exported_program=torch.export.export(
+                torch.nn.Linear(2, 2), (torch.rand(1, 2),), strict=True
+            ),
             passes_job=passes_job,
             dep_table=dep_table,
         )

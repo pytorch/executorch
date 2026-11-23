@@ -548,6 +548,8 @@ def capture_program(
     dep_table: Optional[Dict] = None,
     passes_job: OrderedDict = None,
     dynamic_shapes: Dict = None,
+    skip_node_id_set: Optional[set] = None,
+    skip_node_op_set: Optional[set] = None,
 ) -> exir.ExirExportedProgram:
     """
     TODO: Deprecated capture_program with to_edge_transform_and_lower_to_qnn
@@ -560,6 +562,12 @@ def capture_program(
         dep_table (Optional[Dict]): Dependency table for the transformation passes.
         passes_job (OrderedDict, optional): Ordered dictionary of transformation passes.
         dynamic_shapes (Dict, optional): Information about dynamic shapes.
+        skip_node_id_set (set, optional): Set of node IDs that QnnPartitioner will skip.
+            Passes that read it, such as RecomposeRmsNorm, then keep those nodes for CPU.
+            Other passes may still rewrite them.
+        skip_node_op_set (set, optional): Set of node operations that QnnPartitioner will skip.
+            Passes that read it, such as RecomposeRmsNorm, then keep those nodes for CPU.
+            Other passes may still rewrite them.
 
     Returns:
         exir.ExirExportedProgram: The transformed Exir exported program ready for lowering to QNN backend.
@@ -586,6 +594,8 @@ def capture_program(
         edge_ep.exported_program,
         passes_job=passes_job,
         dep_table=dep_table,
+        skip_node_id_set=skip_node_id_set,
+        skip_node_op_set=skip_node_op_set,
     )
     edge_ep.transform(*transform_passes)
     return edge_ep
