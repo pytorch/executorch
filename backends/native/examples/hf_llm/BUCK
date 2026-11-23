@@ -102,5 +102,6 @@ fbcode_target(
         "//executorch/extension/llm/export:gguf",
         "//executorch/extension/llm/export:quant",
         "fbsource//third-party/pypi/gguf:gguf",
+        "fbsource//third-party/pypi/transformers:transformers",
     ],
 )
