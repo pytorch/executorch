@@ -13,6 +13,7 @@ llama.cpp's ``convert_hf_to_gguf.py`` writes with, or a table here for an
 architecture gguf-py does not know; ``convert`` undoes the
 weight changes that converter makes for the architecture. Those changes move whole
 rows or touch only unquantized norms, so quantized GGUF blocks stay byte-exact.
+Gemma 4, which gguf-py does not know yet, has its own name table.
 Export covers the text decoder only: a GGUF's vision and audio encoder tensors,
 if it has any, are skipped with a warning.
 
@@ -240,6 +241,56 @@ def check_config_tensors(
                     f"{name} must hold {want[block[1]]}, as the config gives"
                 )
         yield name, value
+
+
+# GGUF names, per block and model-wide, of the architectures gguf-py does not
+# know yet, as llama.cpp's converter writes them; each maps to a Hugging
+# Face FQN under ``model.layers.{N}.`` or the model's root. Gemma 4 keeps its
+# norm weights as stored, without Gemma 1-3's offset of 1.
+_GEMMA4_BLOCK = {
+    "attn_norm.weight": "input_layernorm.weight",
+    "attn_q.weight": "self_attn.q_proj.weight",
+    "attn_k.weight": "self_attn.k_proj.weight",
+    "attn_v.weight": "self_attn.v_proj.weight",
+    "attn_output.weight": "self_attn.o_proj.weight",
+    "attn_q_norm.weight": "self_attn.q_norm.weight",
+    "attn_k_norm.weight": "self_attn.k_norm.weight",
+    "post_attention_norm.weight": "post_attention_layernorm.weight",
+    "ffn_norm.weight": "pre_feedforward_layernorm.weight",
+    "ffn_gate.weight": "mlp.gate_proj.weight",
+    "ffn_up.weight": "mlp.up_proj.weight",
+    "ffn_down.weight": "mlp.down_proj.weight",
+    "post_ffw_norm.weight": "post_feedforward_layernorm.weight",
+    "layer_output_scale.weight": "layer_scalar",
+}
+_GEMMA4_MODEL = {
+    "token_embd.weight": "model.embed_tokens.weight",
+    "output_norm.weight": "model.norm.weight",
+    "output.weight": "lm_head.weight",
+}
+_NamedTables = tuple[frozenset[str], dict[str, str], dict[str, str]]
+_NAMED_ARCHITECTURES: dict[str, _NamedTables] = {
+    "gemma4": (
+        frozenset({"gemma4_text", "gemma4_unified_text"}),
+        _GEMMA4_BLOCK,
+        _GEMMA4_MODEL,
+    ),
+}
+
+
+def _named_names(model: torch.nn.Module, architecture: str) -> dict[str, str]:
+    """GGUF name -> FQN of `model`'s parameters and buffers, from the
+    architecture's tables."""
+    _, block, root = _NAMED_ARCHITECTURES[architecture]
+    fqns = set(model.state_dict())
+    layers = model.config.get_text_config().num_hidden_layers
+    names = {
+        f"blk.{i}.{name}": f"model.layers.{i}.{fqn}"
+        for i in range(layers)
+        for name, fqn in block.items()
+    }
+    names.update(root)
+    return {name: fqn for name, fqn in names.items() if fqn in fqns}
 
 
 # GGUF architecture -> the Hugging Face model types it holds, for the
@@ -472,6 +523,7 @@ def gguf_to_hf(  # noqa: C901
     supported = {
         **_TRANSFORMERS_ARCHITECTURES,
         **{a: t for a, (t, _) in _ARCHITECTURES.items()},
+        **{a: t for a, (t, _, _) in _NAMED_ARCHITECTURES.items()},
     }
     if architecture not in supported:
         raise ValueError(
@@ -485,17 +537,23 @@ def gguf_to_hf(  # noqa: C901
         )
     if architecture in _TRANSFORMERS_ARCHITECTURES:
         return _transformers_to_hf(model, architecture, truncated, input_permutations)
-    _, make_convert = _ARCHITECTURES[architecture]
-    if architecture in _EXPLICIT_NAME_MAPS:
-        names = _EXPLICIT_NAME_MAPS[architecture](config.num_hidden_layers)
+    if architecture in _NAMED_ARCHITECTURES:
+        make_convert = None
+        names = _named_names(model, architecture)
     else:
-        arch = next(a for a, n in gguf.MODEL_ARCH_NAMES.items() if n == architecture)
-        tensor_map = gguf.get_tensor_name_map(arch, config.num_hidden_layers)
-        names = {}
-        for fqn in model.state_dict():
-            name = tensor_map.get_name(fqn, try_suffixes=(".weight", ".bias"))
-            if name is not None:
-                names[name] = fqn
+        _, make_convert = _ARCHITECTURES[architecture]
+        if architecture in _EXPLICIT_NAME_MAPS:
+            names = _EXPLICIT_NAME_MAPS[architecture](config.num_hidden_layers)
+        else:
+            arch = next(
+                a for a, n in gguf.MODEL_ARCH_NAMES.items() if n == architecture
+            )
+            tensor_map = gguf.get_tensor_name_map(arch, config.num_hidden_layers)
+            names = {}
+            for fqn in model.state_dict():
+                name = tensor_map.get_name(fqn, try_suffixes=(".weight", ".bias"))
+                if name is not None:
+                    names[name] = fqn
 
     encoder = _encoder_prefixes()
     warned = False
