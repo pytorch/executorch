@@ -442,19 +442,42 @@ def test_add_sub_float32_range_limits(
 
 
 @pytest.mark.parametrize("offsets", [(0, 0, 0), (128, -127, -128), (-127, 128, 127)])
-@pytest.mark.parametrize("input2_multiplier", [1 << 30, -(1 << 30)], ids=["add", "sub"])
-def test_add_sub_matches_existing_integer_reference(offsets, input2_multiplier):
+@pytest.mark.parametrize("scales", [(0.25, 0.125, 0.5), (0.17, 0.037, 0.2)])
+@pytest.mark.parametrize("subtract", [False, True], ids=["add", "sub"])
+def test_add_sub_matches_existing_integer_reference(offsets, scales, subtract):
     values = torch.arange(-128, 128, dtype=torch.int8)
     input1, input2 = torch.meshgrid(values, values, indexing="ij")
     input1_offset, input2_offset, output_offset = offsets
-    lhs = (input1.numpy().astype("int64") + input1_offset) << 20
-    rhs = (input2.numpy().astype("int64") + input2_offset) << 20
-    total = multiply_by_quantized_multiplier(lhs, 1 << 30, 0) + (
-        multiply_by_quantized_multiplier(rhs, input2_multiplier, -2)
+    params = _add_multipliers(
+        _QParams(scales[0], -input1_offset),
+        _QParams(scales[1], -input2_offset),
+        _QParams(scales[2], output_offset),
+        subtract=subtract,
     )
-    expected = multiply_by_quantized_multiplier(total, 1 << 30, -18) + output_offset
+    assert params is not None
+    (
+        input1_mult,
+        input1_shift,
+        input2_mult,
+        input2_shift,
+        left_shift,
+        out_mult,
+        out_shift,
+    ) = params
+    assert (input2_mult < 0) == subtract
+    lhs = (input1.numpy().astype("int64") + input1_offset) << left_shift
+    rhs = (input2.numpy().astype("int64") + input2_offset) << left_shift
+    total = multiply_by_quantized_multiplier(lhs, input1_mult, input1_shift) + (
+        multiply_by_quantized_multiplier(rhs, input2_mult, input2_shift)
+    )
+    expected = (
+        multiply_by_quantized_multiplier(total, out_mult, out_shift) + output_offset
+    )
     expected = torch.from_numpy(expected.clip(-128, 127)).to(torch.int8)
     actual = torch.ops.esp_nn.quantized_add_int8(
-        input1, input2, *offsets, 1 << 30, 0, input2_multiplier, -2, 20, 1 << 30, -18
+        input1,
+        input2,
+        *offsets,
+        *params,
     )
     torch.testing.assert_close(actual, expected, atol=0, rtol=0)

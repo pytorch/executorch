@@ -108,6 +108,12 @@ test_cases = {
     "unequal_scales": EspTestCase(
         EspSub(), (ramp_tensor(-0.01, 0.02, (17,)), ramp_tensor(30, -40, (17,)))
     ),
+    "smaller_rhs_scale_17": EspTestCase(
+        EspSub(), (ramp_tensor(-2, 5, (17,)), ramp_tensor(2, -1, (17,)))
+    ),
+    "smaller_rhs_scale_33": EspTestCase(
+        EspSub(), (ramp_tensor(-2, 5, (33,)), ramp_tensor(2, -1, (33,)))
+    ),
     "self": EspTestCase(EspSelfSub(), (ramp_tensor(-1, 2, (17,)),)),
     "cancellation": EspTestCase(
         EspSub(),
@@ -125,7 +131,8 @@ test_cases = {
         EspPortableSub(), (ramp_tensor(-1, 1, (2, 3)), ramp_tensor(-2, 2, (3,)))
     ),
     "rescale_fallback": EspTestCase(
-        EspPortableSub(), (ramp_tensor(-1e8, 1e8, (17,)), ramp_tensor(-1e8, 1e8, (17,)))
+        EspPortableSub(),
+        (ramp_tensor(-1e8, 1e8, (17,)), ramp_tensor(-1e8, 1e8, (17,)) * 1.0000001),
     ),
     "alpha": EspTestCase(
         EspAlphaSub(alpha=2),
@@ -161,6 +168,7 @@ def test_dialect_sub(case):
     )
     if isinstance(case.model, EspSubWithFloatUsers):
         actual = tester.get_artifact().exported_program().module()(*case.example_inputs)
+        assert torch.count_nonzero(actual[0]) > 0
         torch.testing.assert_close(
             actual[1], torch.sin(case.example_inputs[0]), atol=0, rtol=0
         )
