@@ -16,6 +16,7 @@ from unittest import mock
 import gguf
 import torch
 from executorch.backends.native import get_default_compile_config
+from executorch.backends.native.custom_ops import gated_delta_rule_op
 from executorch.backends.native.examples.hf_llm import export_hf_llm
 from executorch.backends.native.examples.hf_llm.export_hf_llm import (
     _check_attention_args,
@@ -30,6 +31,7 @@ from executorch.backends.native.examples.hf_llm.export_hf_llm import (
     golden_samples,
     LastTokenLM,
     load_gguf,
+    native_gdn_rules,
     OffGraphLastTokenLM,
 )
 from executorch.backends.native.passes import FuseRoPEPass
@@ -1050,6 +1052,54 @@ class ExportHfLlmTest(unittest.TestCase):
                     got = _one_token_logits(run, ids, want)
                     for a, b in zip(got, want, strict=True):
                         torch.testing.assert_close(a, b, atol=1e-5, rtol=1e-5)
+
+    def test_native_gdn_rule_is_one_op_per_layer_and_call(self) -> None:
+        # transformers' own rules and dynamic cache, the prompt in one call,
+        # against the wrapper's 8-token and one-token calls on native's op.
+        model = _tiny_qwen35()
+        ids = list(range(3, 22))
+        want = _hf_greedy_logits(model, ids, 2)
+        with native_gdn_rules(model), torch.no_grad():
+            wrapper = LastTokenLM(copy.deepcopy(model), 32).eval()
+            programs = {
+                size: torch.export.export(
+                    wrapper,
+                    (torch.zeros((1, size), dtype=torch.long), torch.arange(size)),
+                    strict=True,
+                )
+                for size in (1, 8)
+            }
+            start = 0
+            for size in (8, 8, 1, 1, 1):
+                chunk = torch.tensor([ids[start : start + size]])
+                logits = wrapper(chunk, torch.arange(start, start + size))
+                start += size
+        torch.testing.assert_close(logits, want[0], atol=1e-4, rtol=1e-4)
+        for name, program in programs.items():
+            with self.subTest(method=name):
+                targets = [
+                    n.target for n in program.graph.nodes if n.op == "call_function"
+                ]
+                # One per linear-attention layer; no ATen rule is left.
+                self.assertEqual(targets.count(gated_delta_rule_op), 3)
+                self.assertNotIn(torch.ops.aten.cumsum.default, targets)
+
+    def test_native_gdn_rules_restore_transformers_rules(self) -> None:
+        model = _tiny_qwen35()
+        module = sys.modules[type(model.model.layers[0].linear_attn).__module__]
+        rules = (
+            module.torch_chunk_gated_delta_rule,
+            module.torch_recurrent_gated_delta_rule,
+        )
+        with native_gdn_rules(model):
+            self.assertIsNot(module.torch_chunk_gated_delta_rule, rules[0])
+        self.assertEqual(
+            (
+                module.torch_chunk_gated_delta_rule,
+                module.torch_recurrent_gated_delta_rule,
+            ),
+            rules,
+        )
 
     def test_golden_samples_feed_linear_attention_prompts_one_token_per_call(
         self,
