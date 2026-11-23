@@ -714,6 +714,34 @@ class CrossEngineTest(unittest.TestCase):
             atol_fraction=1e-2,
         )
 
+    def test_log_softmax_over_one_element_is_zero(self):
+        torch.manual_seed(0)
+        self._check_dynamic(
+            _Lambda(lambda x: torch.log_softmax(x, -1)),
+            [(torch.randn(8, 1) * 100.0,)],
+            None,
+            atol_fraction=0.0,
+            engines=("vulkan_ptn_runner",),
+        )
+
+    def test_log_softmax_over_one_element_of_a_linear(self):
+        class LinearLogSoftmax(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(8, 1)
+
+            def forward(self, x):
+                return torch.log_softmax(self.linear(x), -1)
+
+        torch.manual_seed(0)
+        self._check_dynamic(
+            LinearLogSoftmax(),
+            [(torch.randn(4, 8),)],
+            None,
+            atol_fraction=0.0,
+            engines=("vulkan_ptn_runner",),
+        )
+
     def test_clone_between_pool_and_linear(self):
         torch.manual_seed(0)
         self._check_dynamic(_PoolCloneLinear(), [(torch.randn(1, 4, 8, 8),)], None)
