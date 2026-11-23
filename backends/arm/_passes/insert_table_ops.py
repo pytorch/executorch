@@ -14,6 +14,7 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     POW_LOG_POSITIVE_LOWER_BOUND_META,
 )
 from executorch.backends.arm._passes.quant_args import QuantArgs
+from executorch.backends.arm._passes.tosa_lowering_utils import create_rescale_node
 from executorch.backends.transforms.utils import create_constant_placeholder
 
 from executorch.exir import ExportedProgram
@@ -406,13 +407,15 @@ class InsertTableOpsPass(ArmPass):
                     op_target=exir_ops.backend.tosa.TABLE.default,
                     args=(node.args[0], const_table_node),
                 )
+                table_op_node.meta["val"] = exir_ops.backend.tosa.TABLE.default(
+                    node.args[0].meta["val"], const_table_node.meta["val"]
+                )
                 output_node = table_op_node
 
                 if lshift != 0:
                     scale = 2.0**lshift
-                    rescale_node = create_node(
+                    rescale_node = create_rescale_node(
                         graph=graph_module.graph,
-                        op_target=exir_ops.backend.tosa.RESCALE.default,
                         args=(table_op_node, output_qparams[0].dtype, [scale], 0, 0),
                     )
                     output_node = rescale_node

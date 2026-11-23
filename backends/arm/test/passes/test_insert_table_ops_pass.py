@@ -5,13 +5,19 @@
 
 from typing import ClassVar, Dict, Tuple
 
+import pytest
 import torch
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     FoldAndAnnotateQParamsPass,
 )
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.backends.arm._passes.quant_args import QuantArgs
+from executorch.backends.arm.quantizer import (
+    get_symmetric_a16w8_quantization_config,
+    TOSAQuantizer,
+)
 from executorch.backends.arm.test import common
+from executorch.backends.arm.test.tester.quantize import ArmQuantize
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 
 input_t = Tuple[torch.Tensor]  # Input x
@@ -27,7 +33,8 @@ class Sigmoid(torch.nn.Module):
 
 
 @common.parametrize("test_data", Sigmoid.test_data)
-def test_insert_table_ops_tosa_INT(test_data: input_t) -> None:
+@pytest.mark.parametrize("activation_dtype", (torch.int8, torch.int16))
+def test_insert_table_ops_tosa_INT(test_data: input_t, activation_dtype) -> None:
     module = Sigmoid()
     pipeline = PassPipeline[input_t](
         module,
@@ -42,7 +49,15 @@ def test_insert_table_ops_tosa_INT(test_data: input_t) -> None:
         ops_not_after_pass=["executorch_exir_dialects_edge__ops_aten_sigmoid_default"],
         pass_list=[FoldAndAnnotateQParamsPass],
         passes_with_exported_program=[InsertTableOpsPass],
+        tosa_extensions=["int16"] if activation_dtype == torch.int16 else [],
     )
+    if activation_dtype == torch.int16:
+        quantizer = TOSAQuantizer(pipeline.tosa_spec)
+        config = get_symmetric_a16w8_quantization_config()
+        quantizer.set_global(config)
+        pipeline.change_args(
+            "quantize", ArmQuantize(quantizer, quantization_config=config)
+        )
     pipeline.pop_stage(-1)  # Do not compare output
 
     pipeline.run()
