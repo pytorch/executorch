@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 """NVFP4 MLP adaptation keeps weights and the CPU/decode path intact."""
 
+import os
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -21,6 +22,9 @@ from executorch.examples.models.muse_glimmer.model.model import (  # noqa: E402
 from executorch.examples.models.muse_glimmer.source_transformations.nvfp4 import (  # noqa: E402
     CudaNVFP4MLP,
     install_nvfp4_gate_up_epilogues,
+)
+from executorch.examples.models.muse_glimmer.tests.test_nvfp4_gguf_loader import (  # noqa: E402
+    requires_gguf,
 )
 
 
@@ -146,3 +150,42 @@ def test_adapter_serialized_dynamic_m(monkeypatch):
             expected = reference(value.cuda()).cpu()
             actual = method.execute([value])[0].cpu()
             torch.testing.assert_close(actual, expected, rtol=0.03, atol=0.04)
+
+
+@requires_gguf
+def test_cuda_source_transformations_swap_every_nvfp4_mlp():
+    """A tiny NVFP4 GGUF (different gate and up scales) loads into fused
+    per-row-scale weights, and the CUDA transforms swap every MLP."""
+    from dataclasses import replace
+
+    from executorch.examples.models.muse_glimmer.loaders.checkpoint_loader import (
+        _atomic_sd_from_gguf,
+        load_gguf_model,
+    )
+    from executorch.examples.models.muse_glimmer.source_transformations.cuda import (
+        cuda_source_transformations,
+    )
+    from executorch.examples.models.muse_glimmer.tests.test_pipeline import (
+        build_muse_glimmer_gguf,
+        GGUF_CONFIG,
+    )
+
+    config = replace(GGUF_CONFIG)
+    with tempfile.TemporaryDirectory() as folder:
+        path = os.path.join(folder, "model.gguf")
+        build_muse_glimmer_gguf(path, config, nvfp4_ffn=True)
+        shards = _atomic_sd_from_gguf(path, torch.bfloat16, False)
+        model, config = load_gguf_model(path, backend="cuda", config=config)
+    assert config.fuse_gate_up
+    cuda_source_transformations(model)
+    for i, layer in enumerate(model.layers):
+        assert isinstance(layer.mlp, CudaNVFP4MLP)
+        fused = layer.mlp.gate_up_proj.weight
+        assert fused.per_tensor_scale.numel() == fused.shape[0]
+        expected = torch.cat(
+            [
+                shards[f"layers.{i}.mlp.{p}_proj.weight"].dequantize()
+                for p in ("gate", "up")
+            ]
+        )
+        assert torch.equal(fused.dequantize(), expected)
