@@ -2490,8 +2490,9 @@ def sdpa_small_query_splitk(
     if not _small_query_tile_fits(rows, D, attn_mask is not None):
         raise RuntimeError(
             f"sdpa_small_query_splitk: a {rows}x{D} tile exceeds the "
-            f"{_SMALL_QUERY_MAX_ROWS}-row, {_SMALL_QUERY_MAX_TILE}-element or "
-            "shared-memory cap"
+            f"{_SMALL_QUERY_MAX_ROWS}-row, {_SMALL_QUERY_MAX_TILE}-element, "
+            f"shared-memory or (without a mask) {_SMALL_QUERY_MAX_UNMASKED_TILE}"
+            "-element cap"
         )
 
     num_groups = H_q // H_kv
