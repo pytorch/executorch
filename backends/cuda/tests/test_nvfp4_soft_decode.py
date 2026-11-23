@@ -209,11 +209,18 @@ def fixed_gemv(x, q, s, pts, unit_scale, split_k, config, native):
 
 
 def gemv_configs(half2):
-    return [
+    """Single-stage tiles (the stage count only changes pipelining): one per
+    BK; every tile with the exhaustive sweep."""
+    configs = [
         c
         for c in kernels._gemv.configs
         if c.kwargs["HALF2"] == half2 and c.num_stages == 1
     ]
+    quick = {(4, 256), (8, 512), (8, 1024)}
+    assert quick <= {(c.kwargs["BN"], c.kwargs["BK"]) for c in configs}
+    return sweep(
+        configs, [c for c in configs if (c.kwargs["BN"], c.kwargs["BK"]) in quick]
+    )
 
 
 def skip_without_native(native):
@@ -240,15 +247,15 @@ def test_gemv_soft_fp4_matches_reference(native, dtype, pts_kind, unit_scale):
     q, s = full_range_weight(TAIL_K, seed=2)
     pts = PTS[pts_kind](q.shape[0])
     w = reference_weight(q, s, pts).to(dtype).float()
-    for m in (1, 3):
+    cases = [(m, split_k) for m in (1, 3) for split_k in (1, 2)]
+    for m, split_k in sweep(cases, [(1, 2), (3, 1)]):
         # Scaled so FP16 outputs of the 448-scale rows stay finite.
         x = (torch.randn(m, TAIL_K, device="cuda") * 0.125).to(dtype)
         expected = x.float() @ w.T
         for config in gemv_configs(half2=False):
-            for split_k in (1, 2):
-                actual = fixed_gemv(x, q, s, pts, unit_scale, split_k, config, native)
-                error = relative_error_per_row(actual, expected, x, w)
-                assert bool((error < 1e-2).all()), (m, config, split_k)
+            actual = fixed_gemv(x, q, s, pts, unit_scale, split_k, config, native)
+            error = relative_error_per_row(actual, expected, x, w)
+            assert bool((error < 1e-2).all()), (m, config, split_k)
 
 
 @pytest.mark.parametrize("native", [False, True])
