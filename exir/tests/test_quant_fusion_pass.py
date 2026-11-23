@@ -12,12 +12,14 @@ import unittest
 import torch
 from executorch import exir
 from executorch.exir import EdgeCompileConfig, to_edge
+from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.passes.constant_prop_pass import constant_prop_pass
 from executorch.exir.passes.quant_fusion_pass import (
     _get_node_value_dict,
     quant_fusion_and_const_prop_pass,
     QuantFusionPass,
 )
+from executorch.exir.schema import Tensor
 from executorch.exir.tests.common import register_additional_test_aten_ops
 from torch._subclasses.fake_tensor import FakeTensorMode
 from torch.ao.quantization import (  # @manual
@@ -575,3 +577,65 @@ class TestQuantFusionPass(unittest.TestCase):
 
         # Can lower to executorch
         exec_prog2 = m_copy.to_executorch()  # noqa
+
+    def test_embedding_torchao_keeps_a_shared_zero_point(self) -> None:
+        class Lookup(torch.nn.Module):
+            def __init__(self, zero_point: int) -> None:
+                super().__init__()
+                self.register_buffer(
+                    "int_data", torch.arange(32, dtype=torch.int8).reshape(4, 8)
+                )
+                self.register_buffer("scale", torch.ones(4, 1))
+                self.register_buffer(
+                    "zero_point", torch.full((4, 1), zero_point, dtype=torch.int8)
+                )
+
+            def forward(self, indices: torch.Tensor) -> torch.Tensor:
+                weight = torch.ops.torchao.dequantize_affine(
+                    self.int_data,
+                    [1, 8],
+                    self.scale,
+                    self.zero_point,
+                    torch.int8,
+                    -128,
+                    127,
+                )
+                return F.embedding(indices, weight)
+
+        class SetZeroPoint(Lookup):
+            def forward(self, indices: torch.Tensor) -> torch.Tensor:
+                self.zero_point.add_(1)
+                return indices + 1
+
+        indices = (torch.tensor([1, 2]),)
+        # Folded, a zero point of 0 would be dropped and any other one would
+        # leave a cast with no out variant, so the lookup never sees a new one.
+        for zero_point in (0, 1):
+            program = (
+                to_edge(
+                    {
+                        "forward": export(Lookup(zero_point), indices, strict=True),
+                        "set_zero_point": export(
+                            SetZeroPoint(zero_point), indices, strict=True
+                        ),
+                    },
+                    compile_config=EdgeCompileConfig(_check_ir_validity=False),
+                )
+                .to_executorch(
+                    exir.ExecutorchBackendConfig(
+                        memory_planning_pass=MemoryPlanningPass(
+                            share_mutable_buffers=True
+                        ),
+                        do_quant_fusion_and_const_prop=True,
+                    )
+                )
+                .executorch_program
+            )
+            (plan,) = [p for p in program.execution_plan if p.name == "forward"]
+            arenas = {
+                value.val.allocation_info.memory_id
+                for value in plan.values
+                if isinstance(value.val, Tensor)
+                and value.val.allocation_info is not None
+            }
+            self.assertIn(2, arenas)

@@ -11,7 +11,7 @@ import hashlib
 import logging
 import operator
 from collections import Counter, OrderedDict
-from typing import Any, cast, Mapping, Optional
+from typing import Any, cast, Collection, Mapping, Optional
 
 import torch
 from executorch.exir import memory
@@ -101,18 +101,26 @@ def get_data(
     return None
 
 
-def is_constant_buffer(program: "ExportedProgram", node: torch.fx.Node) -> bool:
+def is_constant_buffer(
+    program: "ExportedProgram",
+    node: torch.fx.Node,
+    mutable_buffers: Collection[str] = (),
+) -> bool:
     """Checks if the given node is a constant buffer."""
 
     if node.target not in program.graph_signature.inputs_to_buffers:
         return False
     fqn = program.graph_signature.inputs_to_buffers[node.target]
     # if the buffer is mutated then record that
-    return fqn not in program.graph_signature.buffers_to_mutate.values()
+    return (
+        fqn not in program.graph_signature.buffers_to_mutate.values()
+        and fqn not in mutable_buffers
+    )
 
 
 def get_constant_placeholder_dict(
     exported_program: ExportedProgram,
+    mutable_buffers: Collection[str] = (),
 ) -> OrderedDict[torch.fx.Node, torch.Tensor]:
     """
     Returns a dictionary of placeholder node -> constant tensor.
@@ -128,7 +136,7 @@ def get_constant_placeholder_dict(
             const_node_to_tensor[node] = cast(
                 torch.Tensor, get_param(exported_program, node)
             )
-        elif is_constant_buffer(exported_program, node):
+        elif is_constant_buffer(exported_program, node, mutable_buffers):
             const_node_to_tensor[node] = cast(
                 torch.Tensor, get_buffer(exported_program, node)
             )
@@ -243,12 +251,15 @@ def _nodes_written_in_place(
 def get_propagated_const_tensor_dict(
     exported_program: ExportedProgram,
     custom_skip_targets: Optional[set[EdgeOpOverload]],
+    mutable_buffers: Collection[str] = (),
 ) -> OrderedDict[torch.fx.Node, torch.Tensor]:
     """
     Propagates constants and returns a dictionary of node->constant tensors.
     """
     # Initialize dict with all constant placeholders.
-    const_node_to_tensor = get_constant_placeholder_dict(exported_program)
+    const_node_to_tensor = get_constant_placeholder_dict(
+        exported_program, mutable_buffers
+    )
 
     if custom_skip_targets is not None:
         all_skip_targets = custom_skip_targets
@@ -457,14 +468,18 @@ def create_constant_nodes_and_return_specs(
 # add _skip_dim_order to ensure the introduced correct clone node for different dim order schema
 # TODO(gasoonjia): only relying on _clone_dim_order once we remove _skip_dim_order option in the EdgeCompileConfig
 def _update_output_node_and_specs(
-    exported_program: ExportedProgram, _skip_dim_order: bool
+    exported_program: ExportedProgram,
+    _skip_dim_order: bool,
+    mutable_buffers: Collection[str] = (),
 ) -> None:
     """
     Update the output node and output specs in the exported program.
     In case a constant node is used as output, we replace it with a clone of the constant node.
     """
     # Dict [node.name -> InputSpec]
-    updated_constant_placeholders = get_constant_placeholder_dict(exported_program)
+    updated_constant_placeholders = get_constant_placeholder_dict(
+        exported_program, mutable_buffers
+    )
     output = exported_program.graph.find_nodes(op="output")[0]
     output_nodes = cast(list[torch.fx.Node], list(output.args[0]))
     output_specs = exported_program.graph_signature.output_specs
@@ -498,6 +513,7 @@ def constant_prop_pass(
     exported_program: ExportedProgram,
     custom_skip_targets: Optional[set[EdgeOpOverload]] = None,
     _skip_dim_order: bool = True,
+    mutable_buffers: Collection[str] = (),
 ) -> ExportedProgram:
     """
     This pass is for constant propagation for Exported Program with lifted parameters,
@@ -508,6 +524,11 @@ def constant_prop_pass(
     Args:
         exported_program: The ExportedProgram to perform constant propagation on.
         custom_skip_targets: Optional set of EdgeOpOverload targets to skip during constant propagation.
+        mutable_buffers: FQNs of buffers that are not constants even where this program
+            only reads them, such as buffers that another method of the program changes.
+            Pass the shared buffers here when running this before to_executorch with
+            share_mutable_buffers: export cannot see a buffer that was folded into a
+            constant.
 
     Returns:
         The modified ExportedProgram with constant propagation applied.
@@ -529,7 +550,7 @@ def constant_prop_pass(
         )
 
     const_node_to_tensor = get_propagated_const_tensor_dict(
-        exported_program, custom_skip_targets
+        exported_program, custom_skip_targets, mutable_buffers
     )
 
     # Get old input specs.
@@ -547,7 +568,11 @@ def constant_prop_pass(
         new_input_specs.append(name_to_spec_dict[node.name])
     exported_program.graph_signature.input_specs = new_input_specs
 
-    _update_output_node_and_specs(exported_program, _skip_dim_order=_skip_dim_order)
+    _update_output_node_and_specs(
+        exported_program,
+        _skip_dim_order=_skip_dim_order,
+        mutable_buffers=mutable_buffers,
+    )
 
     # Cleanup the graph. A higher order op that writes its operands has no
     # users, yet it has to stay. Graph.eliminate_dead_code also cleans

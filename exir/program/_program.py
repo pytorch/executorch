@@ -59,6 +59,7 @@ from executorch.exir.passes.external_constants_pass import (
 from executorch.exir.passes.insert_write_back_for_buffers_pass import (
     insert_write_back_for_buffers_pass,
 )
+from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.exir.passes.normalize_view_copy_base_pass import (
     NormalizeViewCopyBasePass,
 )
@@ -236,6 +237,20 @@ def _copy_module(new_prog, new_gm):
             t = getattr(new_gm, node.target, None)
             if isinstance(t, torch.Tensor):
                 setattr(new_prog, node.target, t)
+
+
+def _used_buffers(program: ExportedProgram) -> Set[str]:
+    """The buffers that program reads or changes.
+
+    Non-strict export, the default, keeps every buffer of the module as an
+    input of every method, also one that the method never touches.
+    """
+    used = set(program.graph_signature.buffers_to_mutate.values())
+    for node in program.graph.find_nodes(op="placeholder"):
+        fqn = program.graph_signature.inputs_to_buffers.get(node.target)
+        if fqn is not None and node.users:
+            used.add(fqn)
+    return used
 
 
 def _create_empty_etrecord():
@@ -1799,6 +1814,79 @@ class EdgeProgramManager:
             if program is not self._edge_programs[name]
         }
         execution_programs: Dict[str, ExportedProgram] = {}
+        if isinstance(config.memory_planning_pass, dict):
+            memory_planning_passes = list(config.memory_planning_pass.values())
+            sharing = {
+                name: p
+                for name, p in config.memory_planning_pass.items()
+                if isinstance(p, MemoryPlanningPass)
+                and p.share_mutable_buffers
+                and name in programs
+            }
+        else:
+            memory_planning_passes = [config.memory_planning_pass]
+            sharing = (
+                dict.fromkeys(programs, config.memory_planning_pass)
+                if isinstance(config.memory_planning_pass, MemoryPlanningPass)
+                and config.memory_planning_pass.share_mutable_buffers
+                else {}
+            )
+        shared = {
+            fqn
+            for name in sharing
+            for fqn in programs[name].graph_signature.buffers_to_mutate.values()
+        }
+        owned: Set[str] = set()
+        # A delegate that keeps its own copy of a buffer never sees the changes.
+        for name, program in programs.items():
+            for module in program.graph_module.modules():
+                if not is_lowered_module(module):
+                    continue
+                signature = module.original_module.graph_signature
+                if shared.intersection(signature.buffers):
+                    raise ValueError(
+                        f"Method {name} keeps its own copy of a mutable buffer "
+                        "that other methods share inside a delegate, so it would "
+                        "never see the changes"
+                    )
+                if name in sharing:
+                    owned.update(signature.buffers_to_mutate.values())
+        # Nor does host code see the changes a delegate makes to its own copy.
+        for name, program in programs.items():
+            if owned.intersection(_used_buffers(program)):
+                raise ValueError(
+                    f"Method {name} uses a mutable buffer that a delegate changes "
+                    "in its own copy, so it would never see the changes"
+                )
+        # Every method gets its shared state at the same place, so two
+        # passes laying it out would overlap.
+        if (
+            len(
+                {
+                    id(p)
+                    for name, p in sharing.items()
+                    if shared.intersection(_used_buffers(programs[name]))
+                }
+            )
+            > 1
+        ):
+            raise ValueError(
+                "Methods that share mutable buffers must be planned by one "
+                "MemoryPlanningPass instance"
+            )
+        # A method planned without sharing would read its own copy and never
+        # see the changes.
+        for name, program in programs.items():
+            if name not in sharing and shared.intersection(_used_buffers(program)):
+                raise ValueError(
+                    f"Method {name} uses a mutable buffer that other methods "
+                    "share, so it must be planned by the same "
+                    "MemoryPlanningPass instance"
+                )
+        # An earlier export can fail after some of its methods were planned.
+        for memory_planning_pass in memory_planning_passes:
+            if isinstance(memory_planning_pass, MemoryPlanningPass):
+                memory_planning_pass.reset()
         for name, program in programs.items():
             if config.do_quant_fusion_and_const_prop:
                 if program.graph_signature.backward_signature is not None:
@@ -1806,7 +1894,9 @@ class EdgeProgramManager:
                         "Cannot run do_quant_fusion_and_const_prop on a graph with a backward signature intended for on-device training."
                         " Please set do_quant_fusion_and_const_prop to False in the ExecutorchBackendConfig."
                     )
-                program = quant_fusion_and_const_prop_pass(program)
+                # A method that only reads a shared buffer must not fold its
+                # initial value: other methods change it.
+                program = quant_fusion_and_const_prop_pass(program, shared)
             if config.run_reinplace_pass or config.reinplace_extra_ops:
                 extra = config.reinplace_extra_ops or frozenset()
                 program = reinplace_pass(

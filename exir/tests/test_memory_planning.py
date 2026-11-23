@@ -9,7 +9,7 @@
 
 import itertools
 import unittest
-from typing import Any, Callable, cast, Dict, List, Optional, Tuple, Type
+from typing import Any, Callable, cast, Dict, List, Optional, Tuple, Type, Union
 
 import executorch.exir as exir
 
@@ -32,6 +32,9 @@ from executorch.exir import (
     memory,
     to_edge,
 )
+from executorch.exir.backend.partitioner import Partitioner, PartitionResult
+from executorch.exir.backend.test.op_partitioner_demo import AllNodesPartitionerDemo
+from executorch.exir.backend.utils import tag_mutated_buffer
 from executorch.exir.capture._capture import patch_forward
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.error import InternalError
@@ -60,7 +63,7 @@ from executorch.exir.passes import (  # noqa
 from executorch.exir.passes.reinplace import DEFAULT_INPLACEABLE_OPS, reinplace_pass
 from executorch.exir.passes.replace_view_copy_with_view_pass import _ViewSpec
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
-from executorch.exir.schema import DeviceType
+from executorch.exir.schema import DeviceType, Program, Tensor
 from executorch.exir.sym_util import EnumerationBudget, eval_upper_bound
 from executorch.exir.tensor import TensorSpec
 from executorch.extension.pybindings.portable_lib import (  # @manual=//executorch/extension/pybindings:portable_lib
@@ -85,7 +88,7 @@ from torch.ao.quantization.quantize_fx import (
     _convert_to_reference_decomposed_fx,
     prepare_fx,
 )
-from torch.export import export
+from torch.export import export, ExportedProgram
 from torch.export.experimental import _export_forward_backward
 from torch.export.exported_program import ExportGraphSignature
 from torch.fx import Graph, GraphModule, Node
@@ -1220,6 +1223,43 @@ class MultiMapModel(torch.nn.Module):
         return self.map_model.get_random_inputs()
 
 
+class SharedBuffers(torch.nn.Module):
+    """forward changes state and bump changes offset; the others only read."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.register_buffer("state", torch.zeros(2))
+        self.register_buffer("offset", torch.ones(2))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        self.state.add_(x)
+        return x * 2
+
+    def read(self, x: torch.Tensor) -> torch.Tensor:
+        return x + self.state
+
+    def helper(self, x: torch.Tensor) -> torch.Tensor:
+        return x + x
+
+    def read_offset(self, x: torch.Tensor) -> torch.Tensor:
+        return x + self.offset
+
+    def read_scaled(self, x: torch.Tensor) -> torch.Tensor:
+        return x + self.state * 2
+
+    def bump(self, x: torch.Tensor) -> torch.Tensor:
+        self.offset.add_(x)
+        return x * 2
+
+
+def export_methods(model: torch.nn.Module, *names: str) -> Dict[str, ExportedProgram]:
+    methods = {}
+    for name in names:
+        with patch_forward(model, getattr(model, name)):
+            methods[name] = export(model, (torch.ones(2),))
+    return methods
+
+
 class TestMap(unittest.TestCase):
 
     def test_map(self) -> None:
@@ -1480,6 +1520,137 @@ class TestMap(unittest.TestCase):
             self.assertEqual(v_cache[0].val.allocation_info.memory_id, 2)
             self.assertEqual(v_cache[0].val.allocation_info.memory_offset_low, 256)
             self.assertEqual(v_cache[0].val.allocation_info.memory_offset_high, 0)
+
+    def _plan_shared(
+        self,
+        planning_pass: Union[MemoryPlanningPass, Dict[str, MemoryPlanningPass]],
+        *methods: str,
+        partitioner: Union[None, Partitioner, Dict[str, Partitioner]] = None,
+        **config: Any,
+    ) -> Program:
+        edge = to_edge(
+            export_methods(SharedBuffers(), *methods),
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+        if partitioner is not None:
+            edge = edge.to_backend(partitioner)
+        return edge.to_executorch(
+            ExecutorchBackendConfig(memory_planning_pass=planning_pass, **config)
+        ).executorch_program
+
+    def test_sharing_pass_plans_after_a_failed_export(self) -> None:
+        calls = []
+
+        def fail_on_second_method(graph_module: GraphModule) -> PassResult:
+            calls.append(graph_module)
+            if len(calls) == 2:
+                raise RuntimeError("second method refused")
+            return PassResult(graph_module, False)
+
+        planning_pass = MemoryPlanningPass(share_mutable_buffers=True)
+        # The next program never uses offset, so a leftover would add to its arena.
+        with self.assertRaisesRegex(RuntimeError, "second method refused"):
+            self._plan_shared(
+                planning_pass, "bump", "read_offset", passes=[fail_on_second_method]
+            )
+        for plan in self._plan_shared(planning_pass, "forward", "read").execution_plan:
+            self.assertEqual(plan.non_const_buffer_sizes[2], 16)
+
+    def test_delegate_copy_of_a_shared_buffer_is_refused(self) -> None:
+        # The partitioner takes the buffer into the delegate as its own constant.
+        delegated = {"read": AllNodesPartitionerDemo()}
+        with self.assertRaisesRegex(
+            ValueError, "Method read keeps its own copy of a mutable buffer"
+        ):
+            self._plan_shared(
+                MemoryPlanningPass(share_mutable_buffers=True),
+                "forward",
+                "read",
+                partitioner=delegated,
+            )
+        self._plan_shared(
+            MemoryPlanningPass(), "forward", "read", partitioner=delegated
+        )
+
+    def test_host_use_of_a_buffer_a_delegate_owns_is_refused(self) -> None:
+        class OwningPartitioner(AllNodesPartitionerDemo):
+            def partition(self, program: ExportedProgram) -> PartitionResult:
+                result = super().partition(program)
+                tag_mutated_buffer(program)
+                return result
+
+        planning_pass = MemoryPlanningPass(share_mutable_buffers=True)
+        delegated = {"forward": OwningPartitioner()}
+        with self.assertRaisesRegex(
+            ValueError, "Method read uses a mutable buffer that a delegate changes"
+        ):
+            self._plan_shared(planning_pass, "forward", "read", partitioner=delegated)
+        # The delegate may own a buffer that no other method uses.
+        self._plan_shared(planning_pass, "forward", "helper", partitioner=delegated)
+        self._plan_shared(
+            MemoryPlanningPass(), "forward", "read", partitioner=delegated
+        )
+
+    def test_const_prop_keeps_a_shared_buffer_in_a_reader(self) -> None:
+        # Folded, state * 2 would be the initial value of the state forever.
+        program = self._plan_shared(
+            MemoryPlanningPass(share_mutable_buffers=True),
+            "forward",
+            "read_scaled",
+            do_quant_fusion_and_const_prop=True,
+        )
+        (plan,) = [p for p in program.execution_plan if p.name == "read_scaled"]
+        arenas = {
+            value.val.allocation_info.memory_id
+            for value in plan.values
+            if isinstance(value.val, Tensor) and value.val.allocation_info is not None
+        }
+        self.assertIn(2, arenas)
+
+    def test_methods_sharing_buffers_need_one_planning_pass(self) -> None:
+        shared = MemoryPlanningPass(share_mutable_buffers=True)
+        # A pass listed for several methods plans them once, and one listed for
+        # a method the program does not have plans nothing.
+        program = self._plan_shared(
+            {
+                "forward": shared,
+                "read": shared,
+                "decode": MemoryPlanningPass(share_mutable_buffers=True),
+            },
+            "forward",
+            "read",
+        )
+        for plan in program.execution_plan:
+            self.assertEqual(len(plan.non_const_buffer_sizes), 3)
+        for passes, error in (
+            (
+                {
+                    "forward": MemoryPlanningPass(share_mutable_buffers=True),
+                    "read": shared,
+                },
+                "one MemoryPlanningPass",
+            ),
+            # read would never see the shared state.
+            ({"forward": shared}, "Method read uses"),
+        ):
+            with self.assertRaisesRegex(ValueError, error):
+                self._plan_shared(passes, "forward", "read")
+
+        # Export keeps every buffer as an input of every method, but only the
+        # buffers a method uses count, and only changes made by a sharing method
+        # make a buffer shared.
+        self._plan_shared(
+            {
+                "forward": MemoryPlanningPass(share_mutable_buffers=True),
+                "helper": MemoryPlanningPass(share_mutable_buffers=True),
+                "read_offset": MemoryPlanningPass(share_mutable_buffers=True),
+                "bump": MemoryPlanningPass(),
+            },
+            "forward",
+            "helper",
+            "read_offset",
+            "bump",
+        )
 
 
 class TestDeviceAwareMemoryPlanning(unittest.TestCase):
