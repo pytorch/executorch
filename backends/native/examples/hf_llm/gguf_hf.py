@@ -19,7 +19,8 @@ if it has any, are skipped with a warning.
 For the architectures transformers' own GGUF loader converts, names and
 conversions come from its tables instead, applied to quantized tensors' packed
 rows where transformers marks every conversion safe on packed bytes; other
-quantized tensors are dequantized first.
+quantized tensors are dequantized first. A weight whose columns transformers
+reorders can keep its blocks instead, its module's input reordered.
 """
 
 from __future__ import annotations
@@ -284,10 +285,17 @@ def _transformers_mapping(
 
 
 def _keeps_blocks(
-    mapping: list[WeightTransform], name: str, fqn: str, value: ExportableGGUFTensor
+    mapping: list[WeightTransform],
+    name: str,
+    fqn: str,
+    value: ExportableGGUFTensor,
+    input_permutations: dict[str, torch.Tensor] | None,
 ) -> bool:
     """Whether transformers' plan keeps `value`'s blocks: every conversion on
-    its way to `fqn` is safe on packed bytes and none permutes its input."""
+    its way to `fqn` is safe on packed bytes, and a reordering of its module's
+    input that keeping them needs goes into `input_permutations`; without
+    that dict, such a weight is dequantized. An identity reordering, e.g. of
+    one value head per key head, needs none."""
     ggml_type = gguf.GGMLQuantizationType[value.ggml_type.upper()].value
     plan = get_gguf_plan(_GgmlTypes({name: ggml_type}), mapping)
     if not (
@@ -297,7 +305,16 @@ def _keeps_blocks(
     ):
         raise RuntimeError("transformers' get_gguf_plan changed what it returns")
     _, packable, permutations = plan
-    return fqn in packable and fqn not in permutations
+    permutation = permutations.get(fqn)
+    if permutation is not None and torch.equal(
+        permutation, torch.arange(permutation.numel())
+    ):
+        permutation = None
+    if fqn not in packable or (permutation is not None and input_permutations is None):
+        return False
+    if permutation is not None:
+        input_permutations[fqn] = permutation
+    return True
 
 
 def _convert_with(
@@ -311,7 +328,10 @@ def _convert_with(
 
 
 def _transformers_to_hf(  # noqa: C901
-    model: torch.nn.Module, architecture: str, truncated: bool
+    model: torch.nn.Module,
+    architecture: str,
+    truncated: bool,
+    input_permutations: dict[str, torch.Tensor] | None,
 ) -> tuple[KeyMap, Convert]:
     """``gguf_to_hf`` through transformers' GGUF tables. A multi-token
     prediction block, which transformers names ``mtp.*``, is skipped with a
@@ -365,7 +385,7 @@ def _transformers_to_hf(  # noqa: C901
         if not ops:
             return value
         if isinstance(value, ExportableGGUFTensor):
-            if _keeps_blocks(mapping, name, fqn, value):
+            if _keeps_blocks(mapping, name, fqn, value, input_permutations):
                 raw = _convert_with(ops, fqn, pattern, value.raw)
                 return ExportableGGUFTensor.from_raw(
                     raw, value.ggml_type, value.orig_dtype
@@ -377,7 +397,10 @@ def _transformers_to_hf(  # noqa: C901
 
 
 def gguf_to_hf(  # noqa: C901
-    model: torch.nn.Module, architecture: str, truncated: bool = False
+    model: torch.nn.Module,
+    architecture: str,
+    truncated: bool = False,
+    input_permutations: dict[str, torch.Tensor] | None = None,
 ) -> tuple[KeyMap, Convert]:
     """Return the ``key_map`` and ``convert`` that load a GGUF file of
     ``architecture`` into ``model``, a Hugging Face model.
@@ -387,6 +410,11 @@ def gguf_to_hf(  # noqa: C901
     raises for any other GGUF tensor that names no parameter of ``model``,
     unless ``truncated``: a model built with fewer layers than the file holds
     then skips the blocks past its last layer.
+
+    A quantized weight whose columns the conversion reorders is dequantized,
+    unless ``input_permutations`` is given: ``convert`` then keeps its blocks
+    as stored and maps its FQN to ``p``, the module computing ``x[..., p]``
+    with it as it would ``x`` with the reordered weight.
     """
     supported = {
         **_TRANSFORMERS_ARCHITECTURES,
@@ -403,7 +431,7 @@ def gguf_to_hf(  # noqa: C901
             f"a {architecture!r} GGUF cannot load a {config.model_type!r} model"
         )
     if architecture in _TRANSFORMERS_ARCHITECTURES:
-        return _transformers_to_hf(model, architecture, truncated)
+        return _transformers_to_hf(model, architecture, truncated, input_permutations)
     _, make_convert = _ARCHITECTURES[architecture]
     if architecture in _EXPLICIT_NAME_MAPS:
         names = _EXPLICIT_NAME_MAPS[architecture](config.num_hidden_layers)

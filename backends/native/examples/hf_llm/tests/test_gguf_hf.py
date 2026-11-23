@@ -14,13 +14,17 @@ import gguf
 import numpy as np
 import torch
 from executorch.backends.native.examples.hf_llm import gguf_hf
+from executorch.backends.native.examples.hf_llm.export_hf_llm import (
+    LastTokenLM,
+    load_gguf,
+)
 from executorch.backends.native.examples.hf_llm.gguf_hf import (
     check_config_tensors,
     gguf_architecture,
     gguf_to_hf,
 )
 from executorch.extension.llm.export.gguf import ExportableGGUFTensor
-from executorch.extension.llm.export.load import iter_checkpoint
+from executorch.extension.llm.export.load import assign_one, iter_checkpoint
 from transformers import (
     AutoModelForCausalLM,
     Gemma2Config,
@@ -168,9 +172,11 @@ def _random_blocks(ggml_type: str, rows: int, cols: int, seed: int) -> np.ndarra
     return raw.reshape(rows, -1)
 
 
-def _tiny_qwen35() -> torch.nn.Module:
-    """Three gated DeltaNet layers, then full attention; two value heads per
-    key head, so llama.cpp's tiled value heads differ from HF's grouped ones."""
+def _tiny_qwen35(value_heads: int = 6) -> torch.nn.Module:
+    """Three gated DeltaNet layers, then full attention, with two key heads;
+    by default three value heads per key head, so llama.cpp's tiled value
+    heads differ from HF's grouped ones and out_proj's input reordering is not
+    its own inverse."""
     return AutoModelForCausalLM.from_config(
         Qwen3_5TextConfig(
             vocab_size=32,
@@ -182,7 +188,7 @@ def _tiny_qwen35() -> torch.nn.Module:
             num_key_value_heads=2,
             head_dim=16,
             linear_num_key_heads=2,
-            linear_num_value_heads=4,
+            linear_num_value_heads=value_heads,
             linear_key_head_dim=16,
             linear_value_head_dim=16,
             linear_conv_kernel_dim=4,
@@ -192,12 +198,28 @@ def _tiny_qwen35() -> torch.nn.Module:
 
 
 def _tiled(grouped: torch.Tensor, head_dim: int, dim: int = 0) -> torch.Tensor:
-    """llama.cpp's value-head order along `dim`: HF's head k * 2 + j, for key
-    head k of 2 and its j-th value head of 2, is stored as head j * 2 + k."""
+    """llama.cpp's value-head order along `dim`: HF's head k * n + j, for key
+    head k of 2 and its j-th value head of n, is stored as head j * 2 + k."""
     shape = grouped.shape
     grouped = grouped.movedim(dim, 0)
-    tiled = grouped.reshape(2, 2, head_dim, *grouped.shape[1:]).transpose(0, 1)
+    tiled = grouped.reshape(2, -1, head_dim, *grouped.shape[1:]).transpose(0, 1)
     return tiled.reshape(grouped.shape).movedim(0, dim).reshape(shape)
+
+
+def _reorderings_into(ep: torch.export.ExportedProgram, weight: str) -> int:
+    """The transposes and permutes among the views between the linear that
+    multiplies by parameter `weight` and the op computing its input."""
+    aten = torch.ops.aten
+    views = {aten.flatten.using_ints, aten.reshape.default, aten.unflatten.int}
+    reorders = {aten.permute.default, aten.transpose.int}
+    params = ep.graph_signature.inputs_to_parameters
+    (placeholder,) = (n for n in ep.graph.nodes if params.get(n.name) == weight)
+    (linear,) = placeholder.users
+    x, count = linear.args[0], 0
+    while x.target in views | reorders:
+        count += x.target in reorders
+        x = x.args[0]
+    return count
 
 
 # llama.cpp's Qwen3.5 tensor -> (HF parameter, what its converter did to it).
@@ -559,14 +581,110 @@ class GgufHfTest(unittest.TestCase):
                     )
                     want = (
                         torch.from_numpy(tiled)
-                        .reshape(64, 2, 2, 16)
+                        .reshape(64, 3, 2, 16)
                         .transpose(1, 2)
-                        .reshape(64, 64)
+                        .reshape(64, 96)
                     )
                     self.assertNotIsInstance(value, ExportableGGUFTensor)
                     self.assertTrue(torch.equal(value, want))
                 else:
                     torch.testing.assert_close(value, params[param].float())
+
+    def test_keeps_qwen35_out_proj_blocks_for_a_permuted_input(self) -> None:
+        permutations: dict[str, torch.Tensor] = {}
+        key_map, convert = gguf_to_hf(
+            _tiny_qwen35(), "qwen35", input_permutations=permutations
+        )
+        fqn = key_map("blk.1.ssm_out.weight")
+        raw = torch.from_numpy(_random_blocks("q8_0", 64, 96, 0))
+
+        value = convert(fqn, ExportableGGUFTensor.from_raw(raw, "q8_0", torch.float32))
+
+        self.assertIsInstance(value, ExportableGGUFTensor)
+        self.assertTrue(torch.equal(value.raw, raw))
+        # Input element (j, k, d) of the stored, tiled columns is HF's input
+        # element (k, j, d), for key head k and its j-th value head.
+        tiled = torch.arange(96).view(2, 3, 16).transpose(0, 1).flatten()
+        self.assertEqual(list(permutations), [fqn])
+        self.assertTrue(torch.equal(permutations[fqn], tiled))
+
+    def test_packed_out_proj_with_a_permuted_input_matches_untiled_weights(
+        self,
+    ) -> None:
+        torch.manual_seed(0)
+        packed, untiled = _tiny_qwen35().eval(), _tiny_qwen35().eval()
+        ids = torch.tensor([[3, 4, 5, 6, 7]])
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "model.gguf")
+            _write_qwen35_gguf(packed, path)
+            load_gguf(packed, path)
+            key_map, convert = gguf_to_hf(untiled, "qwen35")
+            for fqn, value in iter_checkpoint(
+                path, key_map=key_map, convert=convert, dtype=torch.float32
+            ):
+                assign_one(untiled, fqn, value)
+
+        out_proj = "model.layers.0.linear_attn.out_proj.weight"
+        self.assertIsInstance(packed.get_parameter(out_proj), ExportableGGUFTensor)
+        self.assertNotIsInstance(untiled.get_parameter(out_proj), ExportableGGUFTensor)
+        with torch.no_grad():
+            torch.testing.assert_close(packed(ids).logits, untiled(ids).logits)
+        # Export traces the reordering, a view and a transpose, into the one
+        # packed out_proj only.
+        wrapper = LastTokenLM(packed, 16).eval()
+        example = (torch.tensor([[3]]), torch.tensor([0]))
+        with torch.no_grad():
+            ep = torch.export.export(wrapper, example, strict=True)
+            want = wrapper(*example)
+            wrapper.cache.reset()
+            got = ep.module()(*example)
+        torch.testing.assert_close(got, want)
+        for layer, reorderings in enumerate([1, 0, 0]):
+            weight = f"cached.model.model.layers.{layer}.linear_attn.out_proj.weight"
+            self.assertEqual(_reorderings_into(ep, weight), reorderings)
+
+    def test_packed_out_proj_with_one_value_head_per_key_head_exports(
+        self,
+    ) -> None:
+        torch.manual_seed(0)
+        packed, dense = _tiny_qwen35(2).eval(), _tiny_qwen35(2).eval()
+        ids = torch.tensor([[3, 4, 5, 6, 7]])
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "model.gguf")
+            _, _, blocks = _write_qwen35_gguf(packed, path)
+            load_gguf(packed, path)
+            load_gguf(dense, path, dequantize=True)
+
+        # Tiled and grouped value heads agree, so out_proj keeps the GGUF's
+        # blocks and its input stays as it is.
+        out_proj = "model.layers.0.linear_attn.out_proj.weight"
+        raw = torch.from_numpy(blocks["blk.0.ssm_out.weight"])
+        self.assertIsInstance(packed.get_parameter(out_proj), ExportableGGUFTensor)
+        self.assertTrue(torch.equal(packed.get_parameter(out_proj).raw, raw))
+        with torch.no_grad():
+            torch.testing.assert_close(packed(ids).logits, dense(ids).logits)
+        wrapper = LastTokenLM(packed, 16).eval()
+        example = (torch.tensor([[3]]), torch.tensor([0]))
+        with torch.no_grad():
+            ep = torch.export.export(wrapper, example, strict=True)
+            want = wrapper(*example)
+            wrapper.cache.reset()
+            got = ep.module()(*example)
+        torch.testing.assert_close(got, want)
+        self.assertEqual(_reorderings_into(ep, f"cached.model.{out_proj}"), 0)
+
+    def test_reloading_keeps_one_input_reordering(self) -> None:
+        torch.manual_seed(0)
+        reloaded, loaded = _tiny_qwen35().eval(), _tiny_qwen35().eval()
+        ids = torch.tensor([[3, 4, 5]])
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "model.gguf")
+            _write_qwen35_gguf(reloaded, path)
+            load_gguf(loaded, path)
+            load_gguf(reloaded, path)
+            load_gguf(reloaded, path)
+        with torch.no_grad():
+            torch.testing.assert_close(reloaded(ids).logits, loaded(ids).logits)
 
     def test_truncated_qwen35_skips_later_blocks(self) -> None:
         model = _tiny_qwen35()

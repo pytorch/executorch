@@ -9,6 +9,7 @@ fbcode_target(
     srcs = ["test_gguf_hf.py"],
     deps = [
         "//caffe2:torch",
+        "//executorch/backends/native/examples/hf_llm:export_hf_llm_lib",
         "//executorch/backends/native/examples/hf_llm:gguf_hf",
         "//executorch/extension/llm/export:gguf",
         "//executorch/extension/llm/export:load",
