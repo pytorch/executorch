@@ -94,6 +94,16 @@ def envelope_cases(graph):
     ]
 
 
+def short_rows_envelope_cases(graph):
+    """Calls of 5 to 64 rows across the weight sizes."""
+    return [
+        Case("short envelope", (m,), n, k, False, graph)
+        for m in (5, 8, 16, 32, 64)
+        for n in (64, 256, 1024, 4096, 16384)
+        for k in (64, 256, 1024, 4096, 16384)
+    ]
+
+
 def gemv_boundary_cases(graph):
     """Every corner of the class the router takes to the matrix-vector
     schedule without measurement, with and without bias and with an input
@@ -101,6 +111,19 @@ def gemv_boundary_cases(graph):
     return [
         Case("gemv boundary", (m,), n, k, bias, graph, layout)
         for m, n, k in routing.gemv_boundary_calls()
+        for bias, layout in (
+            (False, "contiguous"),
+            (True, "contiguous"),
+            (False, "sliced"),
+        )
+    ]
+
+
+def short_boundary_cases(graph):
+    """As ``gemv_boundary_cases``, for the short-rows class."""
+    return [
+        Case("short boundary", (m,), n, k, bias, graph, layout)
+        for m, n, k in routing.short_rows_boundary_calls()
         for bias, layout in (
             (False, "contiguous"),
             (True, "contiguous"),
@@ -248,7 +271,15 @@ def run_case(case, flush, threshold):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument(
-        "--suite", default="shapes", choices=["shapes", "envelope", "gemv_boundary"]
+        "--suite",
+        default="shapes",
+        choices=[
+            "shapes",
+            "envelope",
+            "gemv_boundary",
+            "short_envelope",
+            "short_boundary",
+        ],
     )
     parser.add_argument("--graph", default="linear", choices=["linear", "core"])
     parser.add_argument("--shard", default="0/1", help="run cases i::n of the suite")
@@ -272,6 +303,8 @@ def main():
         "shapes": shape_cases,
         "envelope": envelope_cases,
         "gemv_boundary": gemv_boundary_cases,
+        "short_envelope": short_rows_envelope_cases,
+        "short_boundary": short_boundary_cases,
     }[args.suite](args.graph)
     for case in cases[index::count]:
         r = run_case(case, flush, args.threshold)
