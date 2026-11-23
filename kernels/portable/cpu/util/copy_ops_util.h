@@ -86,12 +86,10 @@ void _to_dim_order_copy_impl(const Tensor& self, Tensor& out) {
   auto self_data = self.mutable_data_ptr<SELF_CTYPE>();
   auto out_data = out.mutable_data_ptr<OUT_CTYPE>();
 
-  // Here we make a slightly off-label use of
-  // BroadcastIndexesRange. It always assumes it doesn't have to care
-  // about different dim_order between input and output, but we can
-  // just force it to respect strides (and thus dim_order) for its
-  // inputs using support_noncontiguous_input_tensors=true, and then pretend
-  // the output is just another input.
+  // Here we make a slightly off-label use of BroadcastIndexesRange:
+  // support_noncontiguous_input_tensors=true makes it respect strides (and
+  // thus dim_order) for its inputs, and we pretend the output is just another
+  // input.
   for (const auto [unused_index, self_data_index, out_data_index] :
        BroadcastIndexesRange<2, /*support_noncontiguous_input_tensors=*/true>(
            /*dummy output*/ self, self, out)) {

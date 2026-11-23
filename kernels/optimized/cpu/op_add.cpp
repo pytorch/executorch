@@ -53,7 +53,35 @@ Tensor& opt_add_out(
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   ET_DEFINE_OPERATOR_NAME(op_name, "add.out");
 
-  if (b.numel() == 1) {
+  if (a.numel() == 1 || b.numel() == 1) {
+    // alpha scales the original b operand, so the two sides differ.
+    const bool scalar_left = b.numel() != 1;
+    const Tensor& scalar = scalar_left ? a : b;
+    const Tensor& tensor = scalar_left ? b : a;
+    const auto add_scalar = [&](auto alpha_val) {
+      using CTYPE = decltype(alpha_val);
+      using Vec = at::vec::Vectorized<CTYPE>;
+      const CTYPE scalar_val = *scalar.const_data_ptr<CTYPE>();
+      CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
+      const CTYPE* tensor_data = tensor.const_data_ptr<CTYPE>();
+      if (scalar_left) {
+        at::vec::map<CTYPE>(
+            [alpha_val, scalar_val](Vec x) {
+              return Vec(scalar_val) + Vec(alpha_val) * x;
+            },
+            out_data,
+            tensor_data,
+            out.numel());
+      } else {
+        const CTYPE alpha_times_scalar = alpha_val * scalar_val;
+        at::vec::map<CTYPE>(
+            [alpha_times_scalar](Vec x) { return x + Vec(alpha_times_scalar); },
+            out_data,
+            tensor_data,
+            out.numel());
+      }
+    };
+
     if (executorch::runtime::isComplexType(a_type) ||
         executorch::runtime::isComplexType(b_type) ||
         executorch::runtime::isComplexType(out_type)) {
@@ -63,42 +91,20 @@ Tensor& opt_add_out(
           ctx, a_type == b_type && a_type == out_type, InvalidArgument, out);
 
       ET_SWITCH_COMPLEXH_TYPES(out_type, ctx, op_name, CTYPE, [&]() {
-        CTYPE alpha_val = utils::scalar_to<CTYPE>(alpha);
-        CTYPE b_val = *b.const_data_ptr<CTYPE>();
-
-        using Vec = at::vec::Vectorized<CTYPE>;
-        at::vec::map<CTYPE>(
-            [alpha_val, b_val](Vec x) { return x + Vec(alpha_val * b_val); },
-            out.mutable_data_ptr<CTYPE>(),
-            a.const_data_ptr<CTYPE>(),
-            out.numel());
+        add_scalar(utils::scalar_to<CTYPE>(alpha));
       });
       return out;
     } else if (
         a_type == b_type && a_type == out_type && a_type != ScalarType::Half &&
         a_type != ScalarType::BFloat16) {
       ET_SWITCH_REALB_TYPES(a_type, ctx, op_name, CTYPE, [&]() {
-        ET_SWITCH_REALB_TYPES(b_type, ctx, op_name, CTYPE_B, [&]() {
-          CTYPE alpha_val;
-          ET_KERNEL_CHECK(
-              ctx, utils::extract_scalar(alpha, &alpha_val), InvalidArgument, );
-          CTYPE_B b_val = *b.const_data_ptr<CTYPE_B>();
-          CTYPE b_casted = static_cast<CTYPE>(b_val);
-
-          using Vec = at::vec::Vectorized<CTYPE>;
-          at::vec::map<CTYPE>(
-              [alpha_val, b_casted](Vec x) {
-                return x + Vec(alpha_val * b_casted);
-              },
-              out.mutable_data_ptr<CTYPE>(),
-              a.const_data_ptr<CTYPE>(),
-              out.numel());
-        });
+        CTYPE alpha_val;
+        ET_KERNEL_CHECK(
+            ctx, utils::extract_scalar(alpha, &alpha_val), InvalidArgument, );
+        add_scalar(alpha_val);
       });
       return out;
     }
-  } else if (a.numel() == 1) {
-    return opt_add_out(ctx, b, a, alpha, out);
   }
 
   return torch::executor::kernels::impl::opt_add_sub_out_impl<false, op_name>(

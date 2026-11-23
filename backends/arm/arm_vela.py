@@ -256,7 +256,7 @@ def vela_compile(
         args.append(f"--output-dir={output_dir}")
         args.append(tosa_path)
         if verbose:
-            args.append("--verbose-weights")
+            args.append("--verbose-all")
         stdout = io.StringIO()
         stderr = io.StringIO()
         try:

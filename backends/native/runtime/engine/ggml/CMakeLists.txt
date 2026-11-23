@@ -32,6 +32,7 @@ target_link_libraries(executorch_ggml INTERFACE ggml)
 
 add_library(
   native_ggml_engine
+  GgmlCache.cpp
   GgmlEngine.cpp
   GgmlExecutor.cpp
   GgmlGraphBuilder.cpp
@@ -47,7 +48,7 @@ add_library(executorch::native_ggml_engine ALIAS native_ggml_engine)
 target_link_libraries(
   native_ggml_engine
   PUBLIC native_engine
-  PRIVATE executorch_ggml
+  PRIVATE executorch_ggml extension_llm_cache
 )
 target_compile_options(
   native_ggml_engine PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/EHsc>

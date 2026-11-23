@@ -101,24 +101,24 @@ def define_common_targets():
         visibility = ["PUBLIC"],
     )
 
-    # Reference decoding of GGUF K-quant PackedQuant codecs, for correctness
+    # Reference decoding of GGUF PackedQuant codecs, for correctness
     # testing and as a temporary engine fallback; not a performance path.
     runtime.cxx_library(
-        name = "reference_gguf_kquant",
+        name = "reference_gguf_quant",
         srcs = [
-            "utils/ReferenceGgufKQuant.cpp",
+            "utils/ReferenceGgufQuant.cpp",
         ],
         exported_headers = [
-            "utils/ReferenceGgufKQuant.h",
+            "utils/ReferenceGgufQuant.h",
         ],
         visibility = ["//executorch/backends/native/..."],
     )
 
     runtime.cxx_test(
-        name = "reference_gguf_kquant_test",
-        srcs = ["test/ReferenceGgufKQuantTest.cpp"],
+        name = "reference_gguf_quant_test",
+        srcs = ["test/ReferenceGgufQuantTest.cpp"],
         deps = [
-            ":reference_gguf_kquant",
+            ":reference_gguf_quant",
             # ggml's own dequantization is the oracle.
             "fbsource//third-party/llama.cpp:ggml_base",
         ],
@@ -148,6 +148,22 @@ def define_common_targets():
             "//executorch/backends/native/runtime/graph:value",
         ],
         visibility = ["//executorch/backends/native/..."],
+    )
+
+    # Header-only: the off-graph KV cache a method's update_and_attend calls
+    # need, for the LLM runners and executors that build it.
+    runtime.cxx_library(
+        name = "offgraph_cache",
+        exported_headers = [
+            "OffGraphCache.h",
+        ],
+        exported_deps = [
+            ":method",
+            "//executorch/backends/native/runtime/deserialize:package",
+            "//executorch/extension/llm/cache:kv_cache",
+            "//executorch/extension/llm/runner:constants",
+        ],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
