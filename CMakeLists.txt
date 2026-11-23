@@ -1051,6 +1051,15 @@ if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
   list(APPEND _executorch_extensions extension_runner_util)
 endif()
 
+# The native ggml engine and LLM runners share an off-graph KV cache through the
+# cache registry.
+if((EXECUTORCH_BUILD_NATIVE_GGML OR EXECUTORCH_BUILD_NATIVE_LLM_RUNNER)
+   AND NOT TARGET extension_llm_cache
+)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/cache)
+  list(APPEND _executorch_extensions extension_llm_cache)
+endif()
+
 if(EXECUTORCH_BUILD_EXTENSION_TENSOR)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/tensor)
   list(APPEND _executorch_extensions extension_tensor)

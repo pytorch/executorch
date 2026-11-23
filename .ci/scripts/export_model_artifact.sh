@@ -716,9 +716,14 @@ if [ "$MODEL_NAME" = "muse_glimmer" ]; then
       # executor drives, plus the vision encoder and forward_from_embeddings.
       OFFGRAPH_FLAG=""
       if [ "$MODE" = "dflash-image-batching" ]; then
-        OFFGRAPH_FLAG="--use-offgraph-kv-cache"
+        # Every static forward_{N} and draft_forward_{N} is its own AOTI
+        # compile and autotune, which the 11-vCPU runner cannot fit in the job
+        # timeout at the default sizes. These still cover static and dynamic
+        # target steps and multi-owner drafting and verification.
+        OFFGRAPH_FLAG="--use-offgraph-kv-cache --forward-sizes 1,4 --max-draft-owners 2"
       fi
       EXPORT_START_SECONDS=$SECONDS
+      PYTHONUNBUFFERED=1 \
       TMPDIR="$INDUCTOR_TMPDIR" \
       TORCHINDUCTOR_CACHE_DIR="$INDUCTOR_CACHE" \
       python -m executorch.examples.models.muse_glimmer.export.export_dflash \

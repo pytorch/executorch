@@ -262,9 +262,10 @@ void CommandBuffer::blit(vkapi::VulkanImage& src, vkapi::VulkanImage& dst) {
 void CommandBuffer::write_timestamp(VkQueryPool querypool, const uint32_t idx)
     const {
   VK_CHECK_COND(
-      state_ == CommandBuffer::State::RECORDING,
+      state_ == CommandBuffer::State::RECORDING ||
+          state_ == CommandBuffer::State::BARRIERS_INSERTED,
       "Vulkan CommandBuffer: called write_timestamp() on a command buffer whose state "
-      "is not RECORDING.");
+      "is not RECORDING or BARRIERS_INSERTED.");
 
   vkCmdWriteTimestamp(
       handle_, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, querypool, idx);

@@ -50,10 +50,6 @@ void avg_pool2d_nchw(
   int p0 = padding[0];
   int p1 = padding[1];
 
-  bool is_fixed_divisor = divisor_override.has_value() || count_include_pad;
-  float fixed_inv_divisor =
-      1.f / (divisor_override.has_value() ? divisor_override.value() : kh * kw);
-
   for (int _n = 0; _n < leading_dims; ++_n) {
     for (int _ih = 0, _oh = 0; _oh < oh; ++_oh, _ih += s0) {
       int input_offset = _n * ih * iw;
@@ -65,8 +61,12 @@ void avg_pool2d_nchw(
         int kw_hi = std::min(iw, _iw + kw - p1);
         // Count the number of contributions sans padding
         int count = (kh_hi - kh_lo) * (kw_hi - kw_lo);
+        // Count the window within the padded input, which is smaller than the
+        // kernel where ceil_mode adds a window that runs past the padding.
+        int pool_size = (std::min(_ih + kh, ih + 2 * p0) - _ih) *
+            (std::min(_iw + kw, iw + 2 * p1) - _iw);
         // Set the accumulator
-        AT acc = count_include_pad ? in_zero_point * (kh * kw - count) : 0;
+        AT acc = count_include_pad ? in_zero_point * (pool_size - count) : 0;
         // Accumulate values
         for (int _kh = kh_lo; _kh < kh_hi; ++_kh) {
           for (int _kw = kw_lo; _kw < kw_hi; ++_kw) {
@@ -74,7 +74,9 @@ void avg_pool2d_nchw(
             acc += in_data[input_addr];
           }
         }
-        float inv_divisor = is_fixed_divisor ? fixed_inv_divisor : 1.f / count;
+        float inv_divisor = divisor_override.has_value()
+            ? 1.f / divisor_override.value()
+            : 1.f / (count_include_pad ? pool_size : count);
         float val = acc * inv_divisor;
         if (quantized) {
           int32_t min_val =
@@ -92,7 +94,7 @@ void avg_pool2d_nchw(
 }
 
 Tensor& avg_pool2d_out(
-    ET_UNUSED KernelRuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& input,
     IntArrayRef kernel_size,
     IntArrayRef stride,
@@ -103,7 +105,12 @@ Tensor& avg_pool2d_out(
     const optional<Tensor>& in_zero_point_t,
     bool channel_last,
     Tensor& out) {
-  ET_DCHECK_MSG(!channel_last, "NHWC layout for avg_pool2d not yet supported");
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      !channel_last,
+      InvalidArgument,
+      out,
+      "NHWC layout for avg_pool2d not yet supported");
   const int32_t in_zero_point = in_zero_point_t.has_value()
       ? in_zero_point_t.value().const_data_ptr<int32_t>()[0]
       : 0;
@@ -140,8 +147,11 @@ Tensor& avg_pool2d_out(
     typed_avg_pool2d(float, float, false, Float);
     typed_avg_pool2d(uint8_t, int32_t, true, Byte);
     default:
-      ET_DCHECK_MSG(
+      ET_KERNEL_CHECK_MSG(
+          ctx,
           false,
+          InvalidArgument,
+          out,
           "avg_pool2d not implemented for dtype %s",
           torch::executor::toString(dtype));
   }

@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -14,7 +15,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 
 
 _LEGACY_SPATIAL_OPS = {
-    exir_ops.edge.cortex_m.quantized_conv2d.default,
+    exir_ops.edge.cortex_m.quantized_conv2d_packed.default,
     exir_ops.edge.cortex_m.quantized_depthwise_conv2d.default,
     exir_ops.edge.cortex_m.quantized_transpose_conv2d.default,
     exir_ops.edge.cortex_m.quantized_avg_pool2d.default,
@@ -44,7 +45,9 @@ class Conv1d(torch.nn.Module):
 
 
 def _compile(module, inputs, *, explicit_layout: bool, quantize: bool = True):
-    from executorch.backends.arm.scripts.aot_arm_compiler import _to_edge_cortex_m
+    from executorch.backends.arm.scripts.aot_arm_compiler_backend import (
+        _to_edge_cortex_m,
+    )
 
     exported_program = torch.export.export(module, inputs, strict=True)
     return _to_edge_cortex_m(
@@ -70,13 +73,13 @@ def _count(exported_program, target) -> int:
     [
         (
             False,
-            exir_ops.edge.cortex_m.quantized_conv2d.default,
-            exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default,
+            exir_ops.edge.cortex_m.quantized_conv2d_packed.default,
+            exir_ops.edge.cortex_m.quantized_conv2d_packed_nhwc.default,
         ),
         (
             True,
-            exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default,
-            exir_ops.edge.cortex_m.quantized_conv2d.default,
+            exir_ops.edge.cortex_m.quantized_conv2d_packed_nhwc.default,
+            exir_ops.edge.cortex_m.quantized_conv2d_packed.default,
         ),
     ],
 )
@@ -171,7 +174,10 @@ def test_explicit_conv1d_runs_on_fvp():
         Conv1d().eval(), inputs, explicit_layout=True
     )
     program = edge.exported_program()
-    assert _count(program, exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default) == 1
+    assert (
+        _count(program, exir_ops.edge.cortex_m.quantized_conv2d_packed_nhwc.default)
+        == 1
+    )
 
     serialized = CortexMSerialize(CortexMTargetConfig(cpu=CortexM.M55))
     serialized.run(edge.to_executorch())

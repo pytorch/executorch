@@ -12,7 +12,7 @@ used by the TOSA partitioner to decide if FX nodes are eligible for delegation.
 import math
 import operator
 import typing
-from typing import Any, final, Optional, Sequence, Type
+from typing import final, Optional, Sequence, Type
 
 # Register Arm-specific torch.library ops and MXFP transforms at package
 # import time.
@@ -21,8 +21,13 @@ import executorch.backends.arm.ao_ext  # noqa: F401
 import torch
 import torch.fx as fx
 from executorch.backends.arm._passes.arm_pass_utils import (
+    get_compute_dtype,
     get_first_fake_tensor,
     is_submodule_node,
+)
+from executorch.backends.arm._passes.cast_zero_dim_int64_operands_pass import (
+    ZERO_DIM_INT32_OPS,
+    ZERO_DIM_NARROW_OPS,
 )
 from executorch.backends.arm._passes.decompose_topk_pass import (
     get_static_topk_config,
@@ -1240,8 +1245,10 @@ class CheckProperQuantization(OperatorSupportBase):
         return True
 
 
-def _int64_operands_agree(node: fx.Node) -> bool:
-    """Whether a node with an int64 operand computes in int64."""
+def _can_handle_int64_operands(node: fx.Node) -> bool:
+    """Return whether the backend lowers the int64 operands of a node, either in
+    int64 or by casting zero-dimensional int64 operands to a narrower dtype.
+    """
     dtypes = {
         arg.meta["val"].dtype
         for arg in node.all_input_nodes
@@ -1249,18 +1256,25 @@ def _int64_operands_agree(node: fx.Node) -> bool:
     }
     if torch.int64 not in dtypes:
         return True
-    if not dtypes <= {torch.int64, torch.int32, torch.bool}:
+    if not dtypes <= {torch.int64, torch.int32, torch.int16, torch.int8, torch.bool}:
         return False
     if node.target == exir_ops.edge.dim_order_ops._to_dim_order_copy.default:
         return True
-    output_dtype = node.meta["val"].dtype
-    if output_dtype == torch.bool:
-        operands: list[Any] = [
-            arg.meta["val"] if isinstance(arg, fx.Node) else arg
-            for arg in node.args[:2]
-        ]
-        return torch.result_type(*operands) == torch.int64
-    return output_dtype == torch.int64
+    compute_dtype = get_compute_dtype(node)
+    if compute_dtype == torch.int64:
+        return True
+    if node.target in ZERO_DIM_NARROW_OPS:
+        narrow_dtypes: tuple[torch.dtype, ...] = (torch.int8, torch.int16, torch.int32)
+    elif node.meta["val"].dtype == torch.bool or node.target in ZERO_DIM_INT32_OPS:
+        narrow_dtypes = (torch.int32,)
+    else:
+        return False
+    return compute_dtype in narrow_dtypes and all(
+        arg.meta["val"].dim() == 0
+        for arg in node.all_input_nodes
+        if isinstance(arg.meta.get("val"), torch.Tensor)
+        and arg.meta["val"].dtype == torch.int64
+    )
 
 
 class CheckInt64InputsAndOutputs(OperatorSupportBase):
@@ -1498,7 +1512,7 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
             self.tosa_spec.support_integer()
             and self.tosa_spec.support_extension("int64")
             and node.target in TOSA_PRO_INT_EXT_INT64_SupportList
-            and _int64_operands_agree(node)
+            and _can_handle_int64_operands(node)
         ):
             return True
         vals = node.meta["val"]

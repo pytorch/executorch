@@ -127,9 +127,9 @@ def test_tosa_unary_ops(
     with TosaLoweringContext(
         TosaSpecification.create_from_string(spec)
     ), FakeTensorMode() as mode:
-        operands: tuple[torch.Tensor, ...] = (mode.from_tensor(input_tensor),)
+        operands: tuple[torch.Tensor | int, ...] = (mode.from_tensor(input_tensor),)
         if op_name == "NEGATE":
-            zero_point = torch.zeros(1, dtype=input_tensor.dtype)
+            zero_point = 0
             operands += (zero_point, zero_point)
         output = getattr(exir_ops.backend.tosa, op_name).default(*operands)
 
@@ -348,9 +348,9 @@ def test_tosa_float_unary_ops_accept_bfloat16_with_bf16_extension(
     with TosaLoweringContext(
         TosaSpecification.create_from_string("TOSA-1.1+FP+bf16")
     ), FakeTensorMode() as mode:
-        operands: tuple[torch.Tensor, ...] = (mode.from_tensor(input_tensor),)
+        operands: tuple[torch.Tensor | int, ...] = (mode.from_tensor(input_tensor),)
         if op_name == "NEGATE":
-            zero_point = torch.zeros(1, dtype=input_tensor.dtype)
+            zero_point = 0
             operands += (zero_point, zero_point)
         output = getattr(exir_ops.backend.tosa, op_name).default(*operands)
 
@@ -364,7 +364,7 @@ def test_negate_rejects_bfloat16_without_bf16_extension() -> None:
     with TosaLoweringContext(
         TosaSpecification.create_from_string("TOSA-1.1+FP")
     ), FakeTensorMode() as mode:
-        zero_point = torch.zeros(1, dtype=sample_input.dtype)
+        zero_point = 0
         with pytest.raises(TosaValueError, match="doesn't support bfloat16"):
             exir_ops.backend.tosa.NEGATE.default(
                 mode.from_tensor(sample_input), zero_point, zero_point
@@ -413,9 +413,9 @@ def test_unary_ops_take_int64_only_with_the_extension(
     with TosaLoweringContext(
         TosaSpecification.create_from_string(spec)
     ), FakeTensorMode() as mode:
-        args: list[torch.Tensor] = [mode.from_tensor(input_tensor)]
+        args: list[torch.Tensor | int] = [mode.from_tensor(input_tensor)]
         if op_name == "NEGATE":
-            zero_point = torch.zeros(1, dtype=torch.int64)
+            zero_point = 0
             args.extend([zero_point, zero_point])
         if not accepted:
             with pytest.raises(TosaValueError):
