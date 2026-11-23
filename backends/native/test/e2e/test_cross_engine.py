@@ -701,6 +701,19 @@ class CrossEngineTest(unittest.TestCase):
         torch.manual_seed(0)
         self._check_dynamic(torch.nn.Linear(5, 8), [(torch.randn(5, 2, 5, 5),)], None)
 
+    def test_dynamic_half_casts(self):
+        # A float/half _to_copy runs as a blit, which must follow the
+        # dynamic size of each call.
+        torch.manual_seed(0)
+        steps = [(torch.randn(2, s, 2),) for s in (5, 2, 8)]
+        seq = Dim("seq", min=2, max=8)
+        self._check_dynamic(
+            _Lambda(lambda x: F.silu(x.to(torch.float16)).float()),
+            steps,
+            ({1: seq},),
+            atol_fraction=1e-2,
+        )
+
     def test_clone_between_pool_and_linear(self):
         torch.manual_seed(0)
         self._check_dynamic(_PoolCloneLinear(), [(torch.randn(1, 4, 8, 8),)], None)
