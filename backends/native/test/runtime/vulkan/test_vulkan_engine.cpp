@@ -363,6 +363,66 @@ std::vector<uint8_t> make_unary_program(
       builder, graph, {fbs::CreateOutputSpecDirect(builder, "output")});
 }
 
+// output = sum(input, dims, keepdim=False) of a [2, 3, 4] input, with `dims`
+// naming its last dim.
+std::vector<uint8_t> make_squeezed_sum_program(
+    const std::vector<int64_t>& dims) {
+  flatbuffers::FlatBufferBuilder builder;
+  const std::vector<flatbuffers::Offset<fbs::TensorValue>> tensor_values = {
+      fbs::CreateTensorValueDirect(
+          builder,
+          "input",
+          create_tensor_meta(builder, fbs::ScalarType::FLOAT, {2, 3, 4})),
+      fbs::CreateTensorValueDirect(
+          builder,
+          "output",
+          create_tensor_meta(builder, fbs::ScalarType::FLOAT, {2, 3})),
+  };
+  const std::vector<flatbuffers::Offset<fbs::Output>> input_outputs = {
+      fbs::CreateOutputDirect(builder, "input")};
+  const std::vector<flatbuffers::Offset<fbs::Output>> sum_outputs = {
+      fbs::CreateOutputDirect(builder, "output")};
+  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> sum_inputs = {
+      fbs::CreateNamedArgumentDirect(
+          builder, "self", create_tensor_arg(builder, "input")),
+      fbs::CreateNamedArgumentDirect(
+          builder, "dim", create_int_list_arg(builder, dims)),
+      fbs::CreateNamedArgumentDirect(
+          builder, "keepdim", create_bool_arg(builder, false)),
+      fbs::CreateNamedArgumentDirect(
+          builder, "dtype", create_none_arg(builder)),
+  };
+  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> output_inputs = {
+      fbs::CreateNamedArgumentDirect(
+          builder, "", create_tensor_arg(builder, "output"))};
+  const std::vector<flatbuffers::Offset<fbs::Node>> nodes = {
+      fbs::CreateNodeDirect(
+          builder,
+          "input",
+          fbs::OpKind::PLACEHOLDER,
+          "",
+          nullptr,
+          &input_outputs),
+      fbs::CreateNodeDirect(
+          builder,
+          "sum",
+          fbs::OpKind::CALL_FUNCTION,
+          "torch.ops.aten.sum.dim_IntList",
+          &sum_inputs,
+          &sum_outputs),
+      fbs::CreateNodeDirect(
+          builder, "output", fbs::OpKind::OUTPUT, "", &output_inputs),
+  };
+  const auto graph = fbs::CreateGraph(
+      builder,
+      builder.CreateVector(nodes),
+      create_strings(builder, {"input"}),
+      create_strings(builder, {"output"}),
+      builder.CreateVector(tensor_values));
+  return finish_program(
+      builder, graph, {fbs::CreateOutputSpecDirect(builder, "output")});
+}
+
 std::vector<uint8_t> make_select_program(int64_t index) {
   return make_unary_program(
       "torch.ops.aten.select.int",
@@ -3380,6 +3440,21 @@ TEST(VulkanEngineTest, ExposesOnlyUserOutputsWhenMutationOutputsArePresent) {
       compiled.executable->get_output(
           1, output.data(), output.size(), ScalarType::Float),
       std::out_of_range);
+}
+
+TEST(VulkanEngineTest, RejectsRepeatedReducedDims) {
+  for (const std::vector<int64_t>& dims :
+       {std::vector<int64_t>{-1, 2}, std::vector<int64_t>{2, 2}}) {
+    try {
+      compile_program(make_squeezed_sum_program(dims));
+      FAIL() << "expected the repeated reduced dim to be rejected";
+    } catch (const std::runtime_error& e) {
+      EXPECT_NE(
+          std::string(e.what()).find("repeats a reduced dim"),
+          std::string::npos)
+          << e.what();
+    }
+  }
 }
 
 TEST(VulkanEngineTest, RejectsUserInputMutation) {
