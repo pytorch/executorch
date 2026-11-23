@@ -55,6 +55,7 @@ from transformers import (
     MistralConfig,
     PreTrainedModel,
     Qwen2Config,
+    Qwen3_5MoeTextConfig,
     Qwen3_5TextConfig,
     Qwen3Config,
     ZayaConfig,
@@ -144,6 +145,35 @@ def _tiny_qwen35() -> PreTrainedModel:
     model.generation_config.use_cache = True
     model.generation_config.cache_implementation = "static"
     return model
+
+
+def _tiny_qwen35moe() -> PreTrainedModel:
+    """`_tiny_qwen35` with a mixture of four experts, two per token, and a
+    gated shared expert, loaded as export loads a model."""
+    torch.manual_seed(5)
+    config = Qwen3_5MoeTextConfig(
+        vocab_size=128,
+        hidden_size=64,
+        num_hidden_layers=4,
+        layer_types=["linear_attention"] * 3 + ["full_attention"],
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        head_dim=32,
+        linear_num_key_heads=2,
+        linear_num_value_heads=4,
+        linear_key_head_dim=16,
+        linear_value_head_dim=16,
+        linear_conv_kernel_dim=4,
+        num_experts=4,
+        num_experts_per_tok=2,
+        moe_intermediate_size=32,
+        shared_expert_intermediate_size=32,
+        max_position_embeddings=64,
+        tie_word_embeddings=False,
+    )
+    with tempfile.TemporaryDirectory() as path:
+        config.save_pretrained(path)
+        return _load(path, 0, True, empty_weights=False).requires_grad_(False)
 
 
 def _hf_greedy_logits(
@@ -989,6 +1019,32 @@ class ExportHfLlmTest(unittest.TestCase):
             )
         for run in (wrapper, ep.module()):
             for ids in ([3, 4, 5, 6, 7, 8, 9], [10, 11, 12]):
+                with self.subTest(run=type(run).__name__, ids=ids):
+                    want = _hf_greedy_logits(model, ids, 3)
+                    got = _one_token_logits(run, ids, want)
+                    for a, b in zip(got, want, strict=True):
+                        torch.testing.assert_close(a, b, atol=1e-5, rtol=1e-5)
+
+    def test_moe_experts_export_as_gathers_and_batched_matmuls(self) -> None:
+        model = _tiny_qwen35moe()
+        self.assertEqual(model.config._experts_implementation, "batched_mm")
+        wrapper = LastTokenLM(copy.deepcopy(model), 32).eval()
+        with torch.no_grad():
+            ep = torch.export.export(
+                wrapper,
+                (
+                    torch.zeros((1, 1), dtype=torch.long),
+                    torch.zeros(1, dtype=torch.long),
+                ),
+                strict=True,
+            ).run_decompositions({})
+        targets = [n.target for n in ep.graph.nodes if n.op == "call_function"]
+        aten = torch.ops.aten
+        # Each layer gathers its gate_up and down experts by routed id.
+        self.assertEqual(targets.count(aten.index.Tensor), 8)
+        self.assertEqual(targets.count(aten.bmm.default), 8)
+        for run in (wrapper, ep.module()):
+            for ids in ([3, 4, 5, 6, 7], [8, 9]):
                 with self.subTest(run=type(run).__name__, ids=ids):
                     want = _hf_greedy_logits(model, ids, 3)
                     got = _one_token_logits(run, ids, want)
