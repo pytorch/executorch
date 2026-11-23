@@ -30,6 +30,7 @@ from executorch.exir import (
     ExecutorchBackendConfig,
     ExecutorchProgramManager,
     memory,
+    schema,
     to_edge,
 )
 from executorch.exir.backend.partitioner import Partitioner, PartitionResult
@@ -60,6 +61,7 @@ from executorch.exir.passes import (  # noqa
     SpecPropPass,
     ToOutVarPass,
 )
+from executorch.exir.passes.init_mutable_pass import InitializedMutableBufferPass
 from executorch.exir.passes.reinplace import DEFAULT_INPLACEABLE_OPS, reinplace_pass
 from executorch.exir.passes.replace_view_copy_with_view_pass import _ViewSpec
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
@@ -1650,6 +1652,82 @@ class TestMap(unittest.TestCase):
             "helper",
             "read_offset",
             "bump",
+        )
+
+    def test_shared_mutable_buffers_must_match_between_methods(self) -> None:
+        class State(torch.nn.Module):
+            def __init__(
+                self,
+                value: float = 0.0,
+                shape: Tuple[int, ...] = (2,),
+            ) -> None:
+                super().__init__()
+                self.register_buffer("state", torch.full(shape, value))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                self.state.add_(1)
+                return x * 2
+
+            def helper(self, x: torch.Tensor) -> torch.Tensor:
+                return x * 3
+
+        def plan(
+            prefill: State,
+            decode: State,
+            method: str = "forward",
+            init: Tuple[str, ...] = ("prefill", "decode"),
+        ) -> Program:
+            methods = {"prefill": export(prefill, (torch.ones(1),))}
+            with patch_forward(decode, getattr(decode, method)):
+                methods["decode"] = export(decode, (torch.ones(1),))
+            return (
+                to_edge(methods)
+                .transform(
+                    {name: [InitializedMutableBufferPass(["state"])] for name in init}
+                )
+                .to_executorch(
+                    ExecutorchBackendConfig(
+                        memory_planning_pass=MemoryPlanningPass(
+                            share_mutable_buffers=True
+                        )
+                    )
+                )
+                .executorch_program
+            )
+
+        plan(State(float("nan")), State(float("nan")))
+        # Only methods that store initial data are compared.
+        plan(State(), State(2.0), init=("prefill",))
+        for prefill, decode, error in (
+            (
+                State(),
+                State(shape=(4,)),
+                r"state: methods give it different shapes, dtypes or dim orders: "
+                r"torch.float32 \[2\] dim order \[0\], torch.float32 \[4\]",
+            ),
+            (State(), State().half(), r"torch.float16 \[2\]"),
+            (
+                State(shape=(1, 2, 2, 2)),
+                State(shape=(1, 2, 2, 2)).to(memory_format=torch.channels_last),
+                r"dim order \[0, 1, 2, 3\], .* dim order \[0, 2, 3, 1\]",
+            ),
+            (State(), State(2.0), "methods prefill and decode store different initial"),
+            # Bytes, not values, are compared.
+            (State(), State(-0.0), "different initial data"),
+        ):
+            with self.assertRaisesRegex(ValueError, error):
+                plan(prefill, decode)
+
+        # A method that never touches the state stores no initial data for it.
+        program = plan(State(), State(2.0), "helper")
+        (helper,) = [p for p in program.execution_plan if p.name == "decode"]
+        self.assertNotIn(
+            [2],
+            [
+                v.val.sizes
+                for v in helper.values
+                if isinstance(v.val, schema.Tensor) and v.val.data_buffer_idx > 0
+            ],
         )
 
 

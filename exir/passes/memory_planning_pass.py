@@ -119,6 +119,21 @@ def _insert_mutable_buffer_specs(
             state.maybe_mutable_buffers[fqn].add(spec)
 
 
+def _check_shared_layouts(fqn: str, specs: List[TensorSpec]) -> None:
+    layouts = {(tuple(spec.shape), spec.dtype, tuple(spec.dim_order)) for spec in specs}
+    if len(layouts) > 1:
+        raise ValueError(
+            f"Cannot share mutable buffer {fqn}: methods give it different "
+            "shapes, dtypes or dim orders: "
+            + ", ".join(
+                sorted(
+                    f"{dtype} {list(shape)} dim order {list(dim_order)}"
+                    for shape, dtype, dim_order in layouts
+                )
+            )
+        )
+
+
 def _check_default_mem_ids(gm: torch.fx.GraphModule):
     for node in gm.graph.nodes:
         for spec in collect_specs_from_nodes(
@@ -367,13 +382,14 @@ class MemoryPlanningPass(PassBase):
                 # If the same buffer appears in mutable and maybe mutable then we know it is in fact mutable.
                 if fqn in self.state.maybe_mutable_buffers.keys():
                     specs.extend(self.state.maybe_mutable_buffers[fqn])
+                _check_shared_layouts(fqn, specs)
                 for spec in specs:
                     # Assume a default memory planning placed all activations on 1, place shared state on 2.
                     spec.mem_id = 2
                     spec.realign(self.alignment)
                     # State is persistent, so the memory never overlaps.
                     spec.mem_offset = arena
-                # They should all be the same size since they are the same tensor, so just bump off the first.
+                # They are the same tensor, so just bump off the first.
                 arena += specs[0].allocated_memory
 
             for graph_module in self.state.graph_modules:
