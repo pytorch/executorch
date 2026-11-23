@@ -167,7 +167,11 @@ GgmlEngineContext::GgmlEngineContext(
   }
 }
 
-GgmlEngineContext::~GgmlEngineContext() = default;
+GgmlEngineContext::~GgmlEngineContext() {
+  if (impl_->options.print_memory) {
+    print_memory("at exit");
+  }
+}
 
 std::unique_ptr<EngineExecutable> GgmlEngineContext::compile_method(
     const Method& method) {
@@ -181,22 +185,36 @@ std::unique_ptr<EngineExecutable> GgmlEngineContext::compile_method(
       impl_->state,
       impl_->kv_cache);
   if (impl_->options.print_memory) {
-    ggml_backend_dev_t device = impl_->options.device == GgmlDevice::Gpu
-        ? select_ggml_gpu_device(impl_->options)
-        : ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
-    size_t free = 0;
-    size_t total = 0;
-    ggml_backend_dev_memory(device, &free, &total);
-    std::fprintf(
-        stderr,
-        "ggml memory after compiling %s: constants %zu bytes, device %zu of "
-        "%zu bytes free\n",
-        method.name.c_str(),
-        impl_->materialized_constant_bytes,
-        free,
-        total);
+    print_memory("after compiling " + method.name);
   }
   return executable;
+}
+
+void GgmlEngineContext::print_memory(const std::string& when) const {
+  ggml_backend_dev_t device = impl_->options.device == GgmlDevice::Gpu
+      ? select_ggml_gpu_device(impl_->options)
+      : ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+  size_t free = 0;
+  size_t total = 0;
+  ggml_backend_dev_memory(device, &free, &total);
+  std::fprintf(
+      stderr,
+      "ggml memory %s: constants %zu bytes, compute %zu bytes in %zu "
+      "allocations, device %zu of %zu bytes free\n",
+      when.c_str(),
+      impl_->materialized_constant_bytes,
+      impl_->state.compute_buffer_bytes,
+      impl_->state.compute_buffer_allocations,
+      free,
+      total);
+}
+
+size_t GgmlEngineContext::compute_buffer_bytes() const {
+  return impl_->state.compute_buffer_bytes;
+}
+
+size_t GgmlEngineContext::compute_buffer_allocations() const {
+  return impl_->state.compute_buffer_allocations;
 }
 
 size_t GgmlEngineContext::materialized_constant_bytes() const {
