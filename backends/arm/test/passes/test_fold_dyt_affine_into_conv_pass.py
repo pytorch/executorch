@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -14,7 +15,6 @@ from typing import cast, ClassVar, Dict, Tuple
 
 import executorch.backends.arm.tosa.dialect  # noqa: F401
 import torch
-
 from executorch.backends.arm._passes import (
     FoldAndAnnotateQParamsPass,
     InsertRescaleInt32Pass,
@@ -28,6 +28,8 @@ from executorch.backends.arm._passes.fold_dyt_alpha_into_lut_pass import (
     FoldDyTAlphaIntoLUTPass,
 )
 from executorch.backends.arm._passes.quant_args import QuantArgs
+
+from executorch.backends.arm._passes.tosa_lowering_utils import create_rescale_node
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 from executorch.exir import ExportedProgram
@@ -283,9 +285,11 @@ def _build_post_rescale_fixture(
             exir_ops.backend.tosa.TABLE.default,
             (activation, buffers["table"]),
         )
-        activation_rescale = graph.call_function(
-            exir_ops.backend.tosa.RESCALE.default,
-            (table_node, torch.int32, [1.0], table_qargs.zp, 0),
+        table_node.meta["val"] = activation.meta["val"].new_empty(
+            (1, input_height, input_width, input_channels), dtype=torch.int8
+        )
+        activation_rescale = create_rescale_node(
+            graph, (table_node, torch.int32, [1.0], table_qargs.zp, 0)
         )
         gamma_activation = activation_rescale
         if activation_view_shape is not None:
@@ -293,9 +297,8 @@ def _build_post_rescale_fixture(
                 exir_ops.edge.aten.view_copy.default,
                 (activation_rescale, list(activation_view_shape)),
             )
-        gamma_rescale = graph.call_function(
-            exir_ops.backend.tosa.RESCALE.default,
-            (buffers["gamma"], torch.int32, [1.0], gamma_input_zp, 0),
+        gamma_rescale = create_rescale_node(
+            graph, (buffers["gamma"], torch.int32, [1.0], gamma_input_zp, 0)
         )
         gamma_view = graph.call_function(
             exir_ops.edge.aten.view_copy.default,
@@ -305,12 +308,17 @@ def _build_post_rescale_fixture(
             exir_ops.edge.aten.mul.Tensor,
             (gamma_activation, gamma_view),
         )
-        mul_output_rescale = graph.call_function(
-            exir_ops.backend.tosa.RESCALE.default,
-            (mul, torch.int8, [gamma_output_scale], 0, resolved_gamma_output_zp),
+        mul.meta["val"] = activation_rescale.meta["val"].new_empty(
+            torch.broadcast_shapes(
+                activation_view_shape or activation_rescale.meta["val"].shape,
+                view_shape,
+            )
         )
-        add_activation_rescale = graph.call_function(
-            exir_ops.backend.tosa.RESCALE.default,
+        mul_output_rescale = create_rescale_node(
+            graph, (mul, torch.int8, [gamma_output_scale], 0, resolved_gamma_output_zp)
+        )
+        add_activation_rescale = create_rescale_node(
+            graph,
             (
                 mul_output_rescale,
                 torch.int32,
@@ -319,9 +327,8 @@ def _build_post_rescale_fixture(
                 0,
             ),
         )
-        beta_rescale = graph.call_function(
-            exir_ops.backend.tosa.RESCALE.default,
-            (buffers["beta"], torch.int32, [add_beta_scale], beta_input_zp, 0),
+        beta_rescale = create_rescale_node(
+            graph, (buffers["beta"], torch.int32, [add_beta_scale], beta_input_zp, 0)
         )
         beta_view = graph.call_function(
             exir_ops.edge.aten.view_copy.default,
@@ -331,9 +338,11 @@ def _build_post_rescale_fixture(
             exir_ops.edge.aten.add.Tensor,
             (add_activation_rescale, beta_view),
         )
-        add_output_rescale = graph.call_function(
-            exir_ops.backend.tosa.RESCALE.default,
-            (add, torch.int8, [add_output_scale], 0, resolved_add_output_zp),
+        add.meta["val"] = add_activation_rescale.meta["val"].new_empty(
+            torch.broadcast_shapes(add_activation_rescale.meta["val"].shape, view_shape)
+        )
+        add_output_rescale = create_rescale_node(
+            graph, (add, torch.int8, [add_output_scale], 0, resolved_add_output_zp)
         )
         layout_output, conv_input = _fixture_conv_input(
             graph,
@@ -364,11 +373,6 @@ def _build_post_rescale_fixture(
             )
 
     table_node.meta["output_qparams"] = {0: table_qargs}
-    table_node.meta["val"] = torch.empty(
-        (1, input_height, input_width, input_channels),
-        dtype=torch.int8,
-        device="meta",
-    )
     add_output_rescale.meta["val"] = torch.empty(
         (1, input_height, input_width, _CHANNELS),
         dtype=torch.int8,
@@ -407,13 +411,11 @@ def _add_second_shared_weight_branch(
     table_qargs = cast(dict[int, QuantArgs], table.meta["output_qparams"])[0]
 
     with graph.inserting_before(output):
-        activation_rescale = graph.call_function(
-            exir_ops.backend.tosa.RESCALE.default,
-            (table, torch.int32, [1.0], table_qargs.zp, 0),
+        activation_rescale = create_rescale_node(
+            graph, (table, torch.int32, [1.0], table_qargs.zp, 0)
         )
-        gamma_rescale = graph.call_function(
-            exir_ops.backend.tosa.RESCALE.default,
-            (buffers["gamma"], torch.int32, [1.0], -1, 0),
+        gamma_rescale = create_rescale_node(
+            graph, (buffers["gamma"], torch.int32, [1.0], -1, 0)
         )
         gamma_view = graph.call_function(
             exir_ops.edge.aten.view_copy.default,
@@ -423,17 +425,15 @@ def _add_second_shared_weight_branch(
             exir_ops.edge.aten.mul.Tensor,
             (activation_rescale, gamma_view),
         )
-        gamma_output = graph.call_function(
-            exir_ops.backend.tosa.RESCALE.default,
-            (mul, torch.int8, [1.0], 0, table_qargs.zp),
+        mul.meta["val"] = activation_rescale.meta["val"]
+        gamma_output = create_rescale_node(
+            graph, (mul, torch.int8, [1.0], 0, table_qargs.zp)
         )
-        add_activation = graph.call_function(
-            exir_ops.backend.tosa.RESCALE.default,
-            (gamma_output, torch.int32, [1.0], table_qargs.zp, 0),
+        add_activation = create_rescale_node(
+            graph, (gamma_output, torch.int32, [1.0], table_qargs.zp, 0)
         )
-        beta_rescale = graph.call_function(
-            exir_ops.backend.tosa.RESCALE.default,
-            (buffers["beta"], torch.int32, [1.0], 1, 0),
+        beta_rescale = create_rescale_node(
+            graph, (buffers["beta"], torch.int32, [1.0], 1, 0)
         )
         beta_view = graph.call_function(
             exir_ops.edge.aten.view_copy.default,
@@ -443,9 +443,9 @@ def _add_second_shared_weight_branch(
             exir_ops.edge.aten.add.Tensor,
             (add_activation, beta_view),
         )
-        add_output = graph.call_function(
-            exir_ops.backend.tosa.RESCALE.default,
-            (add, torch.int8, [1.0], 0, table_qargs.zp),
+        add.meta["val"] = add_activation.meta["val"]
+        add_output = create_rescale_node(
+            graph, (add, torch.int8, [1.0], 0, table_qargs.zp)
         )
         nchw = graph.call_function(
             exir_ops.edge.aten.permute_copy.default,
