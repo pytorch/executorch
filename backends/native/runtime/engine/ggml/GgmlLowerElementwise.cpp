@@ -653,4 +653,42 @@ void GraphBuilder::lower_arange(const Node& node) {
   set_single_output(node, TensorRef{result, {result->ne[0]}});
 }
 
+// softplus(x) = x where beta * x > threshold, else log1p(exp(beta * x)) / beta.
+// ggml_softplus is the beta 1, threshold 20 case; its value past 20 is
+// log1p(exp(y)) rounded to F32, so other betas and thresholds scale its input
+// and output and pick x by row gather, as where does.
+void GraphBuilder::lower_softplus(const Node& node) {
+  const TensorRef input = tensor_arg(node, "self", 0);
+  const double beta = float_arg(node, "beta", 1, 1.0);
+  const double threshold = float_arg(node, "threshold", 2, 20.0);
+  if (beta == 0.0) {
+    throw std::runtime_error("ggml: softplus needs a nonzero beta");
+  }
+  ggml_context* ctx = instance_.context.get();
+  ggml_tensor* x = contiguous(as_f32(input.tensor));
+  if (beta == 1.0 && threshold == 20.0) {
+    set_as_output_type(
+        output_ids(node).at(0), TensorRef{ggml_softplus(ctx, x), input.sizes});
+    return;
+  }
+  ggml_tensor* y = ggml_scale(ctx, x, static_cast<float>(beta));
+  ggml_tensor* soft =
+      ggml_scale(ctx, ggml_softplus(ctx, y), static_cast<float>(1.0 / beta));
+  const int64_t count = ggml_nelements(x);
+  ggml_tensor* candidates = ggml_concat(
+      ctx,
+      ggml_reshape_3d(ctx, soft, 1, 1, count),
+      ggml_reshape_3d(ctx, x, 1, 1, count),
+      /*dim=*/1);
+  ggml_tensor* past = ggml_step(
+      ctx, ggml_scale_bias(ctx, y, 1.0f, -static_cast<float>(threshold)));
+  ggml_tensor* picks =
+      ggml_cast(ctx, ggml_reshape_2d(ctx, past, 1, count), GGML_TYPE_I32);
+  set_as_output_type(
+      output_ids(node).at(0),
+      TensorRef{
+          reshape(ctx, ggml_get_rows(ctx, candidates, picks), input.sizes),
+          input.sizes});
+}
+
 } // namespace ptn::ggml_detail

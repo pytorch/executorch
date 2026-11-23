@@ -10,6 +10,7 @@ point; comparisons and indices are cast to the method dtype."""
 from collections.abc import Callable
 
 import torch
+import torch.nn.functional as F
 from executorch.backends.native.test.samples.cases import Case, chain, draws, Inputs
 from torch.export import Dim
 
@@ -311,4 +312,34 @@ def repeat_interleave_cases() -> list[Case]:
             _Fn(lambda x: x.repeat_interleave(2, dim=2) * 2),
             (1, _tokens(), 2, 16),
         ),
+    ]
+
+
+def softplus_cases() -> list[Case]:
+    return [
+        Case("unit", _Fn(F.softplus), draws(4, (4, 256))),
+        # Past the threshold of 20, and where exp overflows.
+        Case("wide", _Fn(F.softplus), _scaled(draws(2, (8, 256)), 40.0)),
+        Case(
+            "beta",
+            _Fn(lambda x: F.softplus(x, beta=2.0, threshold=10.0)),
+            _scaled(draws(2, (4, 256)), 8.0),
+        ),
+        Case(
+            "beta_half_threshold_30",
+            _Fn(lambda x: F.softplus(x, beta=0.5, threshold=30.0)),
+            _scaled(draws(2, (4, 256)), 40.0),
+        ),
+        Case(
+            "threshold_10",
+            _Fn(lambda x: F.softplus(x, threshold=10.0)),
+            _scaled(draws(2, (4, 256)), 16.0),
+        ),
+        Case(
+            "negative_beta",
+            _Fn(lambda x: F.softplus(x, beta=-1.0)),
+            _scaled(draws(2, (4, 256)), 8.0),
+        ),
+        chain("dynamic_tokens", _Fn(F.softplus), (_tokens(), 64)),
+        _quantized("gate", F.softplus),
     ]
