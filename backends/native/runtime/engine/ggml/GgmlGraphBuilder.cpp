@@ -174,7 +174,7 @@ ggml_tensor* reshape(
     tensor = ggml_cont(ctx, tensor);
   }
   const auto ne = reversed_extents(sizes);
-  switch (sizes.size()) {
+  switch (fold_leading_ones(sizes).size()) {
     case 0:
     case 1:
       return ggml_reshape_1d(ctx, tensor, ne[0]);
@@ -185,7 +185,8 @@ ggml_tensor* reshape(
     case 4:
       return ggml_reshape_4d(ctx, tensor, ne[0], ne[1], ne[2], ne[3]);
     default:
-      throw std::runtime_error("ggml: reshape supports rank 0 through 4");
+      throw std::runtime_error(
+          "ggml: reshape needs rank 4 or below after folding leading 1s");
   }
 }
 
@@ -196,7 +197,7 @@ ggml_tensor* view_with_shape(
     const std::vector<int64_t>& sizes,
     size_t offset) {
   const auto ne = reversed_extents(sizes);
-  switch (sizes.size()) {
+  switch (fold_leading_ones(sizes).size()) {
     case 0:
     case 1:
       return ggml_view_1d(ctx, tensor, ne[0], offset);
@@ -225,7 +226,8 @@ ggml_tensor* view_with_shape(
           tensor->nb[3],
           offset);
     default:
-      throw std::runtime_error("ggml: view supports rank 0 through 4");
+      throw std::runtime_error(
+          "ggml: view needs rank 4 or below after folding leading 1s");
   }
 }
 

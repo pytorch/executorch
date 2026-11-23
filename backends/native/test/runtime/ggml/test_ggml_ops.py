@@ -601,6 +601,34 @@ class GgmlOpsTest(unittest.TestCase):
     def test_add_scalar_permuted(self):
         self._check(Lambda(lambda x: x.permute(1, 0) + 1.0), (torch.randn(2, 3),))
 
+    def test_rank5_with_a_leading_dim_above_one_is_refused(self):
+        with self.assertRaisesRegex(AssertionError, "extra leading dim to be 1"):
+            self._check(Lambda(lambda x: x * 2.0), (torch.randn(2, 1, 2, 3, 4),))
+
+    def test_rank5_permute_moving_its_leading_one_inward_is_refused(self):
+        with self.assertRaisesRegex(AssertionError, "leading 1s in front"):
+            self._check(
+                Lambda(lambda x: x.permute(1, 0, 2, 3, 4) * 2.0),
+                (torch.randn(1, 2, 3, 4, 5),),
+            )
+
+    def test_rank5_views_along_a_folded_leading_one(self):
+        cases = {
+            "slice": lambda x: x[0:1] * 2.0,
+            "select": lambda x: x[0] * 2.0,
+            "split": lambda x: torch.split(x, 1, dim=0)[0] * 2.0,
+        }
+        for name, fn in cases.items():
+            with self.subTest(case=name):
+                self._check(Lambda(fn), (torch.randn(1, 2, 3, 4, 5),))
+
+    def test_rank5_cat_along_a_folded_leading_one_is_refused(self):
+        with self.assertRaisesRegex(AssertionError, "folded away above rank 4"):
+            self._check(
+                Lambda(lambda x, y: torch.cat([x, y], 0)),
+                (torch.randn(1, 2, 3, 4, 5), torch.randn(1, 2, 3, 4, 5)),
+            )
+
     def test_mul_scalar(self):
         self._check(Lambda(lambda x: x * 0.5), (torch.randn(2, 3, 4),))
 
