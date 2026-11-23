@@ -7,6 +7,7 @@
 import os
 import tempfile
 import unittest
+import warnings
 
 import gguf
 import numpy as np
@@ -207,6 +208,24 @@ class GgufHfTest(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "maps to no llama parameter"):
             key_map("blk.0.attn_qkv.weight")
+
+    def test_skips_multimodal_encoder_tensors(self) -> None:
+        key_map, _ = gguf_to_hf(_tiny(LlamaConfig), "llama")
+        encoder = (
+            "v.blk.0.attn_q.weight",
+            "mm.input_projection.weight",
+            "a.conv1d.0.weight",
+        )
+
+        # Not assertWarns: it reads every module in sys.modules, and transformers
+        # 5's lazy modules import optional dependencies on attribute access.
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            self.assertEqual([key_map(n) for n in encoder], [None] * len(encoder))
+        self.assertEqual(sum("text decoder only" in str(w.message) for w in caught), 1)
+        self.assertEqual(key_map("output_norm.weight"), "model.norm.weight")
+        with self.assertRaisesRegex(ValueError, "maps to no llama parameter"):
+            key_map("vblk.0.attn_q.weight")
 
     def test_checks_the_architecture_against_the_model(self) -> None:
         gguf_to_hf(_tiny(MistralConfig), "llama")
