@@ -17,7 +17,10 @@ from executorch.backends.cuda.quantize_op_dispatch.nvfp4_dispatch import (
     _has_native_fp4,
     _MODE_STRIDE,
 )
-from executorch.backends.cuda.tests.nvfp4_test_utils import portable_weight as weight
+from executorch.backends.cuda.tests.nvfp4_test_utils import (
+    portable_weight as weight,
+    sweep,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -34,7 +37,7 @@ CUDA = pytest.mark.skipif(
 @CUDA
 @pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16])
 @pytest.mark.parametrize("row_pts", [False, True])
-@pytest.mark.parametrize("split", [1, 2, 4, 8, 16, 32])
+@pytest.mark.parametrize("split", sweep([1, 2, 4, 8, 16, 32], [1, 8]))
 # _gemv takes the HALF2 body only with NATIVE.
 @pytest.mark.parametrize("native,half2", [(False, False), (True, False), (True, True)])
 def test_unit_scale_gemv_bitwise_same_tile(native, half2, dtype, row_pts, split):
