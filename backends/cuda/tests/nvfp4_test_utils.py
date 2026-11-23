@@ -9,9 +9,7 @@ import torch.nn.functional as F
 from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
 from executorch.extension.llm.export.nvfp4 import ExportableNVFP4Tensor
 
-# Full parameter sweeps run only with ET_CUDA_NVFP4_EXHAUSTIVE_TESTS=1 (a
-# dedicated CI job); otherwise tests take representative cases.
-EXHAUSTIVE = os.environ.get("ET_CUDA_NVFP4_EXHAUSTIVE_TESTS") == "1"
+EXHAUSTIVE = os.environ.get("EXECUTORCH_CUDA_EXHAUSTIVE_TESTS") == "1"
 
 
 def sweep(full, quick):
