@@ -11,25 +11,31 @@ directory (or only its config, with random weights), wraps it with the cache
 adapter from ``transformers.integrations.executorch``, and exports the
 ``(input_ids [1, T], cache_position [T])`` signature. A model with
 linear-attention layers exports a static one-token ``forward`` instead, its
-recurrent states held as buffers, so its driver must feed a prompt one token
-per call; the runners in ``runtime`` prefill a prompt in one call. Reports which operators the native
-partitioner leaves behind. ``--gguf`` takes the weights from a GGUF
+recurrent states held as buffers, and a ``prefill`` for longer calls (below).
+Reports which operators the native partitioner leaves behind. ``--gguf`` takes the weights from a GGUF
 file of an architecture ``gguf_hf`` supports instead, keeping its quantized blocks
 packed in the PTN; with ``--dequantize_gguf`` they become the float32 weights
 eager computes from them instead. ``--offgraph_cache`` exports attention as
 ``kvcache::update_and_attend`` with no KV cache in the graph; the runner owns the
 cache. ``--samples`` appends a ``golden`` sample set:
 eager logits for a prefill and a few greedy decode steps per prompt.
+A linear-attention model's Gated DeltaNet rules export as
+``native::gated_delta_rule``, or with ``--gdn_op aten`` as transformers' ATen
+ops. With the native op it also exports ``prefill``, taking 2 to
+``--prefill_tokens`` prompt tokens per call and sharing ``forward``'s states.
 """
 
 import argparse
 import contextlib
+import functools
 import logging
+import sys
 import weakref
 from collections.abc import Iterator
 
 import torch
 import torch.nn as nn
+from executorch.backends.native.custom_ops import gated_delta_rule_op
 from executorch.backends.native.examples.hf_llm.gguf_hf import (
     check_config_tensors,
     gguf_architecture,
@@ -56,7 +62,7 @@ from executorch.extension.llm.export.model_metadata import (
     write_max_context_len,
 )
 from executorch.extension.llm.export.quant.convert import Convert
-from torch.export import Dim, export
+from torch.export import Dim, export, ExportedProgram
 from torch.utils.hooks import RemovableHandle
 from torchao.quantization import (
     Int8DynamicActivationIntxWeightConfig,
@@ -206,6 +212,12 @@ def load_gguf(
     read = raw_iter or iter_gguf
     shapes = {n: p.shape for n, p in model.named_parameters(remove_duplicate=False)}
     expected = set(shapes)
+    # A GGUF may also hold persistent buffers, e.g. Gemma 4's per-layer output
+    # scales; those it lacks keep their initial values.
+    state = model.state_dict()
+    for name, buffer in model.named_buffers():
+        if name in state:
+            shapes.setdefault(name, buffer.shape)
     loaded = set()
     # id(value) -> (value, its first FQN); holding value keeps the id unique.
     bound: dict[int, tuple[torch.Tensor, str]] = {}
@@ -217,7 +229,7 @@ def load_gguf(
         dtype=torch.float32,
         raw_iter=lambda p: check_config_tensors(model, architecture, read(p)),
     ):
-        if fqn not in expected:
+        if fqn not in shapes:
             raise ValueError(f"GGUF tensor maps to unknown parameter {fqn!r}")
         want = tuple(shapes[fqn])
         if fqn in ("model.embed_tokens.weight", "lm_head.weight"):
@@ -236,7 +248,7 @@ def load_gguf(
             assign_one(model, fqn, value)
             bound[id(value)] = (value, fqn)
         loaded.add(fqn)
-    if loaded != expected:
+    if not expected <= loaded:
         raise ValueError(f"GGUF is missing {sorted(expected - loaded)}")
     for name, module in model.named_modules():
         if isinstance(module, torch.nn.Embedding) and f"{name}.weight" in dequantized:
@@ -505,6 +517,67 @@ def _layer_mask(
     return mask[None, None, :, :].expand(batch_size, -1, -1, -1)
 
 
+# transformers' Gated DeltaNet layers call these module-level rules.
+_GDN_RULES = ("torch_chunk_gated_delta_rule", "torch_recurrent_gated_delta_rule")
+
+
+def _native_gdn_rule(
+    rule,
+    query,
+    key,
+    value,
+    g,
+    beta,
+    initial_state=None,
+    output_final_state=False,
+    use_qk_l2norm_in_kernel=False,
+    **kwargs,
+):
+    """`rule`, one of transformers' gated delta rules, as native::gated_delta_rule
+    when key and value heads are equally wide. Only the op reads the state it
+    returns, which is value-major."""
+    if key.shape[-1] != value.shape[-1] or kwargs.get("cu_seqlens") is not None:
+        return rule(
+            query,
+            key,
+            value,
+            g=g,
+            beta=beta,
+            initial_state=initial_state,
+            output_final_state=output_final_state,
+            use_qk_l2norm_in_kernel=use_qk_l2norm_in_kernel,
+            **kwargs,
+        )
+    if initial_state is None:
+        batch, _, heads, dim = key.shape
+        initial_state = key.new_zeros((batch, heads, dim, dim), dtype=torch.float32)
+    out, state = gated_delta_rule_op(
+        query, key, value, g, beta, initial_state, use_qk_l2norm_in_kernel
+    )
+    return out, state if output_final_state else None
+
+
+@contextlib.contextmanager
+def native_gdn_rules(model: nn.Module) -> Iterator[None]:
+    """Within it, `model`'s transformers Gated DeltaNet layers run their
+    chunked and recurrent rules as native::gated_delta_rule: one op per layer
+    and call, a decode step or a prompt chunk."""
+    modules = {sys.modules[type(m).__module__] for m in model.modules()}
+    rules = [
+        (module, name, getattr(module, name))
+        for module in modules
+        if all(hasattr(module, r) for r in _GDN_RULES)
+        for name in _GDN_RULES
+    ]
+    for module, name, rule in rules:
+        setattr(module, name, functools.partial(_native_gdn_rule, rule))
+    try:
+        yield
+    finally:
+        for module, name, rule in rules:
+            setattr(module, name, rule)
+
+
 class LastTokenLM(nn.Module):
     """Use the Transformers ExecuTorch cache wrapper and return last-position logits."""
 
@@ -705,6 +778,12 @@ class OffGraphLastTokenLM(nn.Module):
         self.selected = selected
         config = model.config.get_text_config()
         self._windows = _cache_windows(config)
+        if any(isinstance(shape, list) for shape in get_head_shapes(config)):
+            raise NotImplementedError(
+                f"--offgraph_cache: {config.model_type} sets head_dim or the "
+                "KV head count per layer, and off-graph caches take one for "
+                "every layer"
+            )
         self._head_dim = (
             getattr(config, "head_dim", None)
             or config.hidden_size // config.num_attention_heads
@@ -846,29 +925,68 @@ def _sample_prompts(
     return prompts
 
 
+def prefill_calls(length: int, max_tokens: int) -> list[int]:
+    """The call sizes that feed `length` prompt tokens: calls of `max_tokens`,
+    then the rest in one call; without a prefill method, one token per call."""
+    if max_tokens < 2:
+        return [1] * length
+    full, rest = divmod(length, max_tokens)
+    return [max_tokens] * full + ([rest] if rest else [])
+
+
+def call_method(tokens: int) -> str:
+    """The method of a linear-attention package that takes `tokens` tokens."""
+    return "forward" if tokens == 1 else "prefill"
+
+
+def export_prefill(
+    wrapper: LastTokenLM, max_tokens: int, strict: bool = True
+) -> ExportedProgram:
+    """A linear-attention wrapper's ``prefill``: 2 to `max_tokens` tokens per
+    call, reading and writing the states ``forward`` does. Needs the Gated
+    DeltaNet rules on native::gated_delta_rule, which takes any token count;
+    transformers' chunked rule loops over a count of chunks."""
+    tokens = Dim("prefill_tokens", min=2, max=max_tokens)
+    example = min(max_tokens, 8)
+    with torch.no_grad():
+        return export(
+            wrapper,
+            (torch.zeros((1, example), dtype=torch.long), torch.arange(example)),
+            dynamic_shapes={"input_ids": {1: tokens}, "cache_position": {0: tokens}},
+            strict=strict,
+        )
+
+
 def golden_samples(
     wrapper: LastTokenLM | OffGraphLastTokenLM,
     prompts: list[list[int]],
     decode_steps: int,
+    prefill_tokens: int = 0,
 ) -> SampleSet:
-    """Per tokenized prompt, from an empty cache: the prompt in one call, or
-    in calls of the wrapper's `tokens_per_call` tokens, then `decode_steps`
-    calls each fed the previous call's eager argmax."""
+    """Per tokenized prompt, from an empty cache: the prompt in one call, or,
+    for a linear-attention wrapper, in `prefill_calls` on their methods; then
+    `decode_steps` calls each fed the previous call's eager argmax."""
+    if not all(prompts):
+        raise ValueError("golden_samples: every prompt needs at least one token")
     quantized = any(isinstance(p, TorchAOBaseTensor) for p in wrapper.parameters())
     samples = []
     with torch.no_grad(), wrapper.cache_scope():
         for ids in prompts:
             wrapper.reset_cache()
-            chunk = wrapper.tokens_per_call or len(ids)
-            calls = []
-            for start in range(0, len(ids), chunk):
-                input_ids = torch.tensor([ids[start : start + chunk]], dtype=torch.long)
-                positions = torch.arange(
-                    start, start + input_ids.shape[1], dtype=torch.long
-                )
+            sizes = (
+                prefill_calls(len(ids), prefill_tokens)
+                if wrapper.tokens_per_call
+                else [len(ids)]
+            )
+            calls, start = [], 0
+            for size in sizes:
+                input_ids = torch.tensor([ids[start : start + size]], dtype=torch.long)
+                positions = torch.arange(start, start + size, dtype=torch.long)
                 inputs = wrapper.call_inputs(input_ids, positions)
                 logits = wrapper(*inputs)
-                calls.append(Call("forward", inputs, [logits]))
+                method = call_method(size) if wrapper.tokens_per_call else "forward"
+                calls.append(Call(method, inputs, [logits]))
+                start += size
             for _ in range(decode_steps):
                 input_ids = logits[:, -1].argmax(dim=-1, keepdim=True)
                 positions = positions[-1:] + 1
@@ -925,6 +1043,22 @@ def _parse_args() -> argparse.Namespace:
         "the graph; the runner owns the cache and sets its capacity and dtype.",
     )
     parser.add_argument(
+        "--gdn_op",
+        choices=["native", "aten"],
+        default="native",
+        help="How Gated DeltaNet rules export: as native::gated_delta_rule, "
+        "which the ggml engine runs, or as transformers' ATen ops, which the "
+        "ggml engine does not run.",
+    )
+    parser.add_argument(
+        "--prefill_tokens",
+        type=int,
+        default=None,
+        help="For a linear-attention model on the native Gated DeltaNet op, the "
+        "most prompt tokens a call of its prefill method takes (default 512, at "
+        "most max_seq_length - 1); 0 exports forward alone.",
+    )
+    parser.add_argument(
         "--logits_to_keep",
         choices=["last", "selected"],
         default="last",
@@ -965,6 +1099,22 @@ def _parse_args() -> argparse.Namespace:
     cache_len = args.max_context_length or args.max_seq_length
     if cache_len < args.max_seq_length - 1:
         parser.error("the context must hold a full prompt of max_seq_length - 1 tokens")
+    if args.prefill_tokens is None:
+        args.prefill_tokens = (
+            min(512, args.max_seq_length - 1) if args.gdn_op == "native" else 0
+        )
+    elif args.prefill_tokens and not 1 < args.prefill_tokens < args.max_seq_length:
+        parser.error("--prefill_tokens must be 0 or in [2, max_seq_length - 1]")
+    elif args.prefill_tokens and args.gdn_op != "native":
+        parser.error(
+            "--prefill_tokens needs --gdn_op native: transformers' chunked rule "
+            "exports for a fixed token count only"
+        )
+    elif args.prefill_tokens and args.offgraph_cache:
+        parser.error(
+            "--prefill_tokens exports linear attention's prefill method, which "
+            "--offgraph_cache does not export"
+        )
     return args
 
 
@@ -995,53 +1145,68 @@ def main() -> None:
         )
     if args.quantize == "8da4w":
         _quantize_8da4w(model, args.group_size, args.embedding_group_size)
-    if args.offgraph_cache:
-        wrapper = OffGraphLastTokenLM(
-            model, cache_len, selected=args.logits_to_keep == "selected"
-        ).eval()
-    else:
-        kv_cache_dtype = (
-            torch.float16 if args.kv_cache_dtype == "fp16" else torch.float32
-        )
-        wrapper = LastTokenLM(model, cache_len, kv_cache_dtype).eval()
+    rules = (
+        native_gdn_rules(model) if args.gdn_op == "native" else contextlib.nullcontext()
+    )
+    with rules:
+        if args.offgraph_cache:
+            wrapper = OffGraphLastTokenLM(
+                model, cache_len, selected=args.logits_to_keep == "selected"
+            ).eval()
+        else:
+            kv_cache_dtype = (
+                torch.float16 if args.kv_cache_dtype == "fp16" else torch.float32
+            )
+            wrapper = LastTokenLM(model, cache_len, kv_cache_dtype).eval()
 
-    if wrapper.tokens_per_call:
-        tokens = wrapper.tokens_per_call
-        print(f"linear-attention model: exporting a static {tokens}-token forward")
-        input_ids = torch.zeros((1, tokens), dtype=torch.long)
-        dynamic_shapes = None
-    else:
-        input_ids = torch.zeros((1, 6), dtype=torch.long)
-        seq = Dim("seq", min=1, max=args.max_seq_length - 1)
-        dynamic_shapes = {"input_ids": {1: seq}, "cache_position": {0: seq}}
-    cache_position = torch.arange(input_ids.shape[1], dtype=torch.long)
-    inputs = wrapper.call_inputs(input_ids, cache_position)
-    if len(inputs) == 3:
-        # Trace two rows: export specializes a size of 1.
-        inputs[2] = torch.tensor([0, input_ids.shape[1] - 1])
-        dynamic_shapes["logits_to_keep"] = {
-            0: Dim("rows", min=1, max=args.max_seq_length - 1)
-        }
-    with torch.no_grad():
-        ep = export(
-            wrapper,
-            tuple(inputs),
-            dynamic_shapes=dynamic_shapes,
-            strict=not args.non_strict,
-        )
-    # Before the report: its re-trace shares export's ShapeEnv, so a dim it made
-    # static would look static to to_native, which then would not report it.
-    metadata = wrapper.metadata() if args.offgraph_cache else None
-    package = to_native(ep, metadata=metadata) if args.output else None
-    report_lowering(ep, "forward")
+        if wrapper.tokens_per_call:
+            tokens = wrapper.tokens_per_call
+            print(f"linear-attention model: exporting a static {tokens}-token forward")
+            input_ids = torch.zeros((1, tokens), dtype=torch.long)
+            dynamic_shapes = None
+        else:
+            input_ids = torch.zeros((1, 6), dtype=torch.long)
+            seq = Dim("seq", min=1, max=args.max_seq_length - 1)
+            dynamic_shapes = {"input_ids": {1: seq}, "cache_position": {0: seq}}
+        cache_position = torch.arange(input_ids.shape[1], dtype=torch.long)
+        inputs = wrapper.call_inputs(input_ids, cache_position)
+        if len(inputs) == 3:
+            # Trace two rows: export specializes a size of 1.
+            inputs[2] = torch.tensor([0, input_ids.shape[1] - 1])
+            dynamic_shapes["logits_to_keep"] = {
+                0: Dim("rows", min=1, max=args.max_seq_length - 1)
+            }
+        with torch.no_grad():
+            ep = export(
+                wrapper,
+                tuple(inputs),
+                dynamic_shapes=dynamic_shapes,
+                strict=not args.non_strict,
+            )
+        programs = {"forward": ep}
+        prefill_tokens = args.prefill_tokens if wrapper.tokens_per_call else 0
+        if prefill_tokens:
+            print(f"exporting prefill for 2 to {prefill_tokens} tokens per call")
+            programs["prefill"] = export_prefill(
+                wrapper, prefill_tokens, not args.non_strict
+            )
+        # Before the report: its re-trace shares export's ShapeEnv, so a dim it made
+        # static would look static to to_native, which then would not report it.
+        metadata = wrapper.metadata() if args.offgraph_cache else None
+        if args.output:
+            package = to_native(programs if prefill_tokens else ep, metadata=metadata)
+        else:
+            package = None
+        for name, program in programs.items():
+            report_lowering(program, name)
 
-    if package is not None:
-        package.save(args.output)
-        print(f"saved {args.output}")
-    if prompts:
-        samples = golden_samples(wrapper, prompts, _DECODE_STEPS)
-        write_samples(args.output, "golden", samples)
-        print(f"wrote {len(prompts)} golden samples")
+        if package is not None:
+            package.save(args.output)
+            print(f"saved {args.output}")
+        if prompts:
+            samples = golden_samples(wrapper, prompts, _DECODE_STEPS, prefill_tokens)
+            write_samples(args.output, "golden", samples)
+            print(f"wrote {len(prompts)} golden samples")
 
 
 if __name__ == "__main__":
