@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <executorch/backends/native/runtime/deserialize/Samples.h>
@@ -18,6 +19,38 @@ namespace ptn::testing {
 // Values of a Float, Half, BFloat16 or Double sample tensor. Throws
 // std::invalid_argument for any other dtype.
 std::vector<float> to_float(const SampleTensor& t);
+
+// ggml's CUDA and HIP kernels for Q4_1 and Q5_1 linears of up to 8 activation
+// rows quantize each 32-value block of a row as Q8_1: d8 = amax / 127,
+// q8 = round(x / d8) and s = d8 * sum(q8), d8 and s stored in fp16. A block of
+// weights d * q + m then adds sum(q * q8) * fp16(d * d8) + fp16(m * s), each
+// fp16 product off its exact value by at most half an fp16 ulp: 2^-11 of it
+// when normal, 2^-25 below 2^-14, which also covers the products under 2^-25
+// that flush to zero. An output's error from these products is thus at most
+//   sum over its blocks of |sum(q * q8)| * ulp(d * d8) / 2 + ulp(m * s) / 2.
+// Error e in x, from an earlier linear, adds |w| * e and may move each q8 by
+// e / d8 + 1, which the bound takes at its largest; it always allows one step,
+// for division that rounds differently.
+struct BlockScaleLinear {
+  // [rows, out] outputs with exact scale products, without bias.
+  std::vector<double> outputs;
+  // [rows, out] bounds on the error of the GPU's fp16 products in them.
+  std::vector<double> bounds;
+};
+
+// `codec` is gguf:q4_1 or gguf:q5_1, `weight` the [out, in] blocks, `x` the
+// [rows, in] activations and `x_error` a bound on each one's error, or empty.
+// ggml takes these kernels for matmuls of up to 8 rows in their second-to-last
+// dim; others have exact products, so `vector_kernel` false allows only the
+// error of x. Throws std::invalid_argument on other codecs or sizes.
+BlockScaleLinear block_scale_linear(
+    std::string_view codec,
+    std::span<const uint8_t> weight,
+    int64_t out,
+    int64_t in,
+    std::span<const double> x,
+    std::span<const double> x_error,
+    bool vector_kernel);
 
 // Error d = x - precise, fitted by least squares as
 // d = abs_bias + rel_bias * precise; the _se fields are the fit's standard
@@ -48,11 +81,14 @@ struct Policy {
 // elsewhere the engine must equal golden, NaN matching NaN.
 class OutputCheck {
  public:
-  // Throws std::invalid_argument when the element counts differ.
+  // Throws std::invalid_argument when the element counts differ. A nonempty
+  // `allowance` moves each engine value toward golden by up to its entry
+  // before the statistics see it.
   void add(
       std::span<const float> got,
       const SampleTensor& golden,
-      const SampleTensor& precise);
+      const SampleTensor& precise,
+      std::span<const double> allowance = {});
 
   ErrorStats engine() const {
     return engine_.stats();

@@ -17,9 +17,6 @@ from examples.arm.QAT_example.rife_vgf.shaders.pack_warps import (
     OPERATOR_NAME as PACK_OPERATOR_NAME,
 )
 from executorch.backends.arm._passes import ArmPass
-from executorch.backends.arm.operators.op_tosa_rescale import (
-    _compute_multiplier_and_shift,
-)
 from executorch.backends.arm.tosa.dialect.ops.custom import register_fake_tosa
 from executorch.backends.arm.vgf.shaders.grid_sampler import (
     CUSTOM_SHADER_DOMAIN_NAME,
@@ -32,6 +29,7 @@ from torch.fx import GraphModule
 from .pack_rife_warps_and_concat import (
     _constant_tensor,
     _is_op,
+    _is_rescale,
     _payload,
     _phase_major_parameters,
     _reorder_pixel_shuffle_output,
@@ -137,15 +135,11 @@ def _validate_rescales(previous, delta, total):
         (delta, torch.int32),
         (total, torch.int8),
     ):
-        if (
-            not _is_op(node, TOSA.RESCALE.default, 5)
-            or node.args[1] != dtype
-            or len(node.args[2]) != 1
-            or any(node.kwargs.values())
-            or not all(-128 <= node.args[i] <= 127 for i in (3, 4))
+        if not _is_rescale(node, dtype) or not all(
+            -128 <= node.args[i] <= 127 for i in (3, 4)
         ):
             raise ValueError("Expected signed per-tensor flow rescales.")
-        multipliers, shifts = _compute_multiplier_and_shift(node.args[2])
+        multipliers, shifts = node.args[1:3]
         if dtype == torch.int32:
             if node.args[4] != 0:
                 raise ValueError("Expected zero INT32 output zero point.")

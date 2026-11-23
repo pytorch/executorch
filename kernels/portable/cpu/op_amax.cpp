@@ -44,13 +44,17 @@ Tensor& amax_out(
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
+  if (in.numel() == 0) {
+    return out;
+  }
+
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "amax.out";
 
   // Fast path: contiguous tensor, single innermost dim reduction.
   // Bypasses the generic ReduceOverDimListPlan (per-element stride/index
   // recomputation via get_init_index)
-  if (in.numel() > 0 && dim_list.size() == 1 &&
+  if (dim_list.size() == 1 &&
       !executorch::runtime::isComplexType(in.scalar_type()) &&
       tensor_is_default_dim_order(in)) {
     const int64_t d = dim_list[0] < 0 ? dim_list[0] + in.dim() : dim_list[0];

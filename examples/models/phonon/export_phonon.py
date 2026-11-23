@@ -90,7 +90,7 @@ def source_transforms_for(backend: str, webgpu_compat_ops: bool):
         return [st.use_webgpu_compat_ops]
     mimi_convs = [st.depthwise_conv_transpose_as_mul, st.conv_transpose1d_as_conv1d]
     return {
-        "xnnpack": mimi_convs,
+        "xnnpack": [st.depthwise_conv_transpose_as_mul],
         "cuda": mimi_convs,
         "mlx": [st.decompose_elu, *mimi_convs],
         "vulkan": [st.decompose_elu, *mimi_convs],

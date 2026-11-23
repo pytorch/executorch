@@ -7,7 +7,9 @@
 import unittest
 
 import torch
-from backends.cuda.passes.move_cond_predicate_to_cpu import MoveCondPredicateToCpuPass
+from executorch.backends.cuda.passes.move_cond_predicate_to_cpu import (
+    MoveCondPredicateToCpuPass,
+)
 from torch.export import export
 
 

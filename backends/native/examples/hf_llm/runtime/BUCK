@@ -30,12 +30,15 @@ runtime.cxx_library(
     deps = [
         ":llm_runner_utils",
         "//executorch/backends/native/examples/runner_utils:runner_utils",
+        "//executorch/backends/native/runtime:offgraph_cache",
         "//executorch/backends/native/runtime:runtime",
         "//executorch/backends/native/runtime/deserialize:package",
         "//executorch/backends/native/runtime/deserialize:samples",
         "//executorch/backends/native/runtime/deserialize:zip_reader",
         "//executorch/backends/native/runtime/graph:scalar_type",
         "//executorch/examples/models/llama/tokenizer:tiktoken",
+        "//executorch/extension/llm/cache:kv_cache",
+        "//executorch/extension/llm/runner:constants",
     ],
     exported_deps = ["//executorch/backends/native/runtime/engine:engine"],
     external_deps = ["gflags"],
@@ -60,7 +63,7 @@ fbcode_target(
     srcs = ["run_hf_llm_ggml.cpp"],
     deps = [
         ":llm_runner",
-        "//executorch/backends/native/runtime/engine:ggml_engine_cpu",
+        "//executorch/backends/native/runtime/engine:ggml_engine_flags_cpu",
     ],
     external_deps = ["gflags"],
     visibility = ["PUBLIC"],
@@ -77,7 +80,7 @@ fbcode_target(
         # library beside the binary. Buck does not stage the CUDA driver stub's
         # library; add its directory to LD_LIBRARY_PATH when running.
         "fbsource//third-party/llama.cpp:ggml_base[prefer-shared]",
-        "//executorch/backends/native/runtime/engine:ggml_engine_cuda",
+        "//executorch/backends/native/runtime/engine:ggml_engine_flags_cuda",
     ],
     external_deps = [
         "gflags",
@@ -95,7 +98,7 @@ fbcode_target(
     srcs = ["run_hf_llm_ggml.cpp"],
     deps = [
         ":llm_runner",
-        "//executorch/backends/native/runtime/engine:ggml_engine_hip",
+        "//executorch/backends/native/runtime/engine:ggml_engine_flags_hip",
     ],
     external_deps = ["gflags"],
     labels = ggml_ci_labels("hip"),
@@ -111,7 +114,7 @@ non_fbcode_target(
     srcs = ["run_hf_llm_ggml.cpp"],
     deps = [
         ":llm_runner",
-        "//executorch/backends/native/runtime/engine:ggml_engine_metal",
+        "//executorch/backends/native/runtime/engine:ggml_engine_flags_metal",
     ],
     external_deps = ["gflags"],
     labels = ggml_ci_labels("metal"),

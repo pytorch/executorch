@@ -104,7 +104,7 @@ class EthosUBackend(BackendDetails):
             PreprocessResult: Result containing the compiled Ethos-U binary.
 
         """
-        logger.info(f"{EthosUBackend.__name__} preprocess")
+        logger.debug(f"{EthosUBackend.__name__} preprocess")
 
         compile_spec = EthosUCompileSpec._from_list(compile_specs)
         # deduce TOSA compile_spec from Ethos-U compile spec. We get a new

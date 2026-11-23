@@ -17,6 +17,7 @@ from typing import Iterator, NamedTuple
 import torch
 import triton
 from executorch.backends.cuda.autotune import cuda_graph_timing as cgt
+from executorch.backends.cuda.utils.cpu_count import available_cpu_count
 from torch._inductor.runtime.triton_heuristics import CachingAutotuner
 from torch._inductor.select_algorithm import AlgorithmSelectorCache
 
@@ -58,13 +59,13 @@ def _spin(stop_at: float) -> None:
 
 
 class SaturatedCpu:
-    """One busy-loop process per core; can be paused to measure a reference."""
+    """One busy-loop process per usable CPU; can be paused to measure a reference."""
 
     def __init__(self) -> None:
         stop_at = time.time() + 3600
         self.workers = [
             multiprocessing.Process(target=_spin, args=(stop_at,), daemon=True)
-            for _ in range(os.cpu_count() or 1)
+            for _ in range(available_cpu_count())
         ]
 
     def __enter__(self) -> "SaturatedCpu":

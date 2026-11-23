@@ -42,6 +42,40 @@ from torch._export.pass_base import PassType
 from torchao.quantization.pt2e.quantizer import Quantizer
 
 
+def xnnpack_node_types(graph_module: torch.fx.GraphModule) -> Counter:
+    """Node types in the serialized graphs of every XNNPACK delegate of
+    graph_module."""
+    node_types = Counter()
+    for node in graph_module.graph.nodes:
+        if node.target != torch.ops.higher_order.executorch_call_delegate:
+            continue
+        lowered = getattr(graph_module, node.args[0].target)
+        if lowered.backend_id != "XnnpackBackend":
+            continue
+        payload = lowered.processed_bytes
+        header = XNNHeader.from_bytes(payload[: XNNHeader.EXPECTED_LENGTH])
+        flatbuffer = payload[
+            header.flatbuffer_offset : header.flatbuffer_offset + header.flatbuffer_size
+        ]
+        with tempfile.TemporaryDirectory() as d:
+            schema_path = os.path.join(d, "schema.fbs")
+            with open(schema_path, "wb") as f:
+                f.write(_get_schema_bytes())
+            bin_path = os.path.join(d, "graph.bin")
+            with open(bin_path, "wb") as f:
+                f.write(flatbuffer)
+            _flatc_decompile(d, schema_path, bin_path)
+            with open(os.path.join(d, "graph.json")) as f:
+                # flatc writes unbounded clamp limits as a bare inf
+                text = (
+                    f.read().replace("-inf", "-Infinity").replace(" inf", " Infinity")
+                )
+        node_types.update(
+            xnode["xnode_union_type"] for xnode in json.loads(text)["xnodes"]
+        )
+    return node_types
+
+
 class Export(BaseStages.Export):
     pass
 
@@ -173,27 +207,13 @@ class Tester(TesterBase):
             .exported_program()
             .graph_module
         )
-        (delegate,) = [
+        delegates = [
             node
             for node in graph_module.graph.nodes
             if node.target == torch.ops.higher_order.executorch_call_delegate
         ]
-        payload = getattr(graph_module, delegate.args[0].target).processed_bytes
-        header = XNNHeader.from_bytes(payload[: XNNHeader.EXPECTED_LENGTH])
-        flatbuffer = payload[
-            header.flatbuffer_offset : header.flatbuffer_offset + header.flatbuffer_size
-        ]
-        with tempfile.TemporaryDirectory() as d:
-            schema_path = os.path.join(d, "schema.fbs")
-            with open(schema_path, "wb") as f:
-                f.write(_get_schema_bytes())
-            bin_path = os.path.join(d, "graph.bin")
-            with open(bin_path, "wb") as f:
-                f.write(flatbuffer)
-            _flatc_decompile(d, schema_path, bin_path)
-            with open(os.path.join(d, "graph.json")) as f:
-                graph = json.load(f)
-        return Counter(node["xnode_union_type"] for node in graph["xnodes"])
+        assert len(delegates) == 1, f"Expected one delegate, got {len(delegates)}"
+        return xnnpack_node_types(graph_module)
 
     def check_xnnpack_node_count(self, expected: Dict[str, int]):
         node_type_names = {t.__name__ for t in get_args(XNodeUnion)}

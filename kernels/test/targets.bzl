@@ -222,6 +222,7 @@ def define_common_targets():
     _common_op_test("op_atanh_test", ["aten", "portable"])
     _common_op_test("op_avg_pool1d_test", ["aten", "portable"])
     _common_op_test("op_avg_pool2d_test", ["aten", "portable"])
+    _common_op_test("op_avg_pool3d_test", ["aten", "portable"])
     _common_op_test("op_bitwise_and_test", ["aten", "portable"])
     _common_op_test("op_bitwise_left_shift_test", ["portable"])
     _common_op_test("op_bitwise_not_test", ["aten", "portable"])
@@ -254,7 +255,12 @@ def define_common_targets():
     _common_op_test("op_diagonal_copy_test", ["aten", "portable"])
     _common_op_test("op_div_test", ["aten", "portable", "optimized"])
     _common_op_test("op_elu_test", ["aten", "portable", "optimized"])
-    _common_op_test("op_embedding_bag_test", ["aten", "portable"])
+    _common_op_test(
+        "op_embedding_bag_test",
+        ["aten", "portable", "optimized"],
+        # Lets the test widen the pool so bags split across parallel tasks.
+        deps = ["//executorch/extension/threadpool:threadpool"],
+    )
     _common_op_test("op_embedding_test", ["aten", "portable"])
     _common_op_test("op_empty_test", ["aten", "portable"])
     _common_op_test("op_eq_test", ["aten", "portable"])

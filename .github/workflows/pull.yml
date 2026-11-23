@@ -397,6 +397,7 @@ jobs:
         ./install_executorch.sh
         pip install safetensors tokenizers huggingface_hub
         python -m pytest examples/models/phonon/tests -q
+        python -m pytest examples/models/pocket_tts/tests -q
         python -m executorch.examples.models.phonon.export_phonon \
           --backend xnnpack --output-dir phonon_exports/xnnpack
         make phonon-cpu
@@ -957,6 +958,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'pyproject.toml') ||
       contains(needs.changed-files.outputs.changed-files, 'install_executorch') ||
       contains(needs.changed-files.outputs.changed-files, 'install_requirements') ||
+      contains(needs.changed-files.outputs.changed-files, 'torch_pin.py') ||
       contains(needs.changed-files.outputs.changed-files, 'install_utils.py') ||
       contains(needs.changed-files.outputs.changed-files, 'requirements-') ||
       contains(needs.changed-files.outputs.changed-files, 'src/executorch') ||
@@ -1048,6 +1050,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'install_executorch.py') ||
       contains(needs.changed-files.outputs.changed-files, 'install_requirements.sh') ||
       contains(needs.changed-files.outputs.changed-files, 'install_requirements.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'torch_pin.py') ||
       contains(needs.changed-files.outputs.changed-files, 'pyproject.toml') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/_get-changed-files.yml') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml')
@@ -2031,7 +2034,7 @@ jobs:
         -DEXECUTORCH_BUILD_KERNELS_PORTABLE=ON -DEXECUTORCH_BUILD_PYBIND=ON -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
         -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON" \
-        .ci/scripts/setup-linux.sh --build-tool "cmake"  --editable true
+        .ci/scripts/setup-linux.sh --build-tool "cmake" --editable true
 
         # Install test requirements
         pip install -r backends/nxp/requirements-tests-pypi.txt
@@ -2135,6 +2138,18 @@ jobs:
           ./cmake-out/backends/vulkan/test/ops/benchmark_v2/etvk_ops_bench --validation_only \
             --config=backends/vulkan/test/ops/benchmark_v2/operators/${op}/cases/correctness.json
         done
+        # Cooperative-matrix family kernels. SwiftShader matches no family and has no
+        # timestamp queries: every case must run and validate, but the dispatched
+        # kernels are not checked. The xe2 rows have no CI coverage (no runner has
+        # an Intel Xe2 GPU); the nvidia rows run in vulkan.yml.
+        ETVK_WMMA_EXPECTED_FAMILY=software \
+          ./cmake-out/backends/vulkan/test/ops/benchmark_v2/etvk_ops_bench --validation_only \
+          --config=backends/vulkan/test/ops/benchmark_v2/operators/gemm/linear/qw/wmma/cases/correctness.json
+
+        # Host-only test of the cooperative-matrix family key and kernel rows
+        cmake backends/vulkan/test/custom_ops -Bcmake-out/backends/vulkan/test/custom_ops
+        cmake --build cmake-out/backends/vulkan/test/custom_ops -j"$(nproc)"
+        ctest --test-dir cmake-out/backends/vulkan/test/custom_ops --output-on-failure
 
         # "Classic" Operator tests
         PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_op.sh --build
@@ -2159,6 +2174,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'install_executorch.py') ||
       contains(needs.changed-files.outputs.changed-files, 'install_executorch.sh') ||
       contains(needs.changed-files.outputs.changed-files, 'install_requirements.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'torch_pin.py') ||
       contains(needs.changed-files.outputs.changed-files, 'install_requirements.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
       needs.run-decision.outputs.is-full-run == 'true'

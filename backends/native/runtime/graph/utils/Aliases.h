@@ -17,11 +17,11 @@ ValueId alias_root(const Graph& graph, ValueId value_id);
 bool has_mutated_alias_use(const Graph& graph, ValueId value_id);
 
 // For engines that execute only functional, unaliased values. Rewrites
-// view/permute/transpose aliases and contiguous full-span as_strided reshapes
-// to copies, and relu_/gelu_/sigmoid_ of intermediates to their functional
-// forms. A mutation is functionalized only when every live alias of its operand
-// reads the result with identical logical indexing. Throws std::runtime_error
-// on any other alias or mutation.
+// view/permute/transpose/slice/squeeze/unsqueeze/alias aliases and contiguous
+// full-span as_strided reshapes to copies, and relu_/gelu_/sigmoid_ of
+// intermediates to their functional forms. A mutation is functionalized only
+// when every live alias of its operand reads the result with identical logical
+// indexing. Throws std::runtime_error on any other alias or mutation.
 void functionalize_aliases(Graph& graph);
 
 } // namespace ptn

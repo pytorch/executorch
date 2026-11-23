@@ -125,6 +125,16 @@ class TestGraph {
             fbs::CreateIntListArgDirect(builder, &items).Union()));
   }
 
+  Offset<fbs::NamedArgument> int_arg(const char* parameter, int64_t value) {
+    return fbs::CreateNamedArgumentDirect(
+        builder,
+        parameter,
+        fbs::CreateArgument(
+            builder,
+            fbs::ArgumentValue::IntArg,
+            fbs::CreateIntArg(builder, value).Union()));
+  }
+
   void add(
       const char* name,
       const char* a,
@@ -240,6 +250,20 @@ class TestGraph {
         "torch.ops.aten.view.default",
         &args,
         &out));
+  }
+
+  void view_op(
+      const char* name,
+      const char* input,
+      const char* target,
+      const std::vector<int64_t>& sizes,
+      std::vector<Offset<fbs::NamedArgument>> args) {
+    tensor(name, meta(fbs::ScalarType::FLOAT, sizes));
+    args.insert(args.begin(), tensor_arg("self", input));
+    const std::vector<Offset<fbs::Output>> out{
+        fbs::CreateOutputDirect(builder, name, input)};
+    nodes.push_back(fbs::CreateNodeDirect(
+        builder, name, fbs::OpKind::CALL_FUNCTION, target, &args, &out));
   }
 
   void to_copy(
@@ -794,12 +818,14 @@ TEST(CPUEngineTest, SupportsEmptyAndPassthroughGraphs) {
 
 TEST(CPUEngineTest, RejectsUnsupportedSemanticsDuringCompilation) {
   const std::vector<std::pair<std::string, std::string>> scenarios{
-      {"alias", "unsupported Native view torch.ops.aten.alias.default"},
+      {"expand", "unsupported Native view torch.ops.aten.expand.default"},
       {"mutation_output", "mutation outputs are not supported"},
       {"mutation_input", "Native alias does not match its operand"},
       {"layout", "value 'x' is not a static contiguous tensor"},
       {"dynamic", "dynamic shapes are not supported"},
-      {"operator", "provider selection failed"}};
+      {"operator",
+       "provider selection failed (error 16): no linked CPU implementation "
+       "accepts test.unsupported"}};
   for (const auto& [scenario, reason] : scenarios) {
     SCOPED_TRACE(scenario);
     TestGraph graph;
@@ -810,8 +836,13 @@ TEST(CPUEngineTest, RejectsUnsupportedSemanticsDuringCompilation) {
                              : std::vector<int32_t>{},
         scenario == "dynamic");
     graph.input("x", meta);
-    if (scenario == "alias") {
-      graph.unary("result", "x", "torch.ops.aten.alias.default", meta, "x");
+    if (scenario == "expand") {
+      graph.view_op(
+          "result",
+          "x",
+          "torch.ops.aten.expand.default",
+          {2, 2, 2},
+          {graph.int_list_arg("size", {2, 2, 2})});
     } else if (scenario == "operator") {
       graph.unary("result", "x", "test.unsupported", meta);
     } else {
@@ -994,20 +1025,64 @@ TEST(CPUEngineTest, MaterializesNativeViewAliases) {
   EXPECT_EQ(output(*compiled.executable), (std::vector<float>{2, 4, 6, 8}));
 }
 
-TEST(CPUEngineTest, RedirectsOutputAliasOfNativeMutation) {
+TEST(CPUEngineTest, MaterializesNativeSliceSqueezeUnsqueezeAndAliasAliases) {
   TestGraph graph;
-  const auto meta = graph.meta();
-  graph.input("x", meta);
-  graph.add("sum", "x", "x", meta);
-  graph.view("alias", "sum", {4});
-  graph.unary("relu", "sum", "torch.ops.aten.relu_.default", meta, "sum", true);
-  graph.output("alias");
+  graph.input("x", graph.meta(fbs::ScalarType::FLOAT, {2, 3}));
+  graph.view_op(
+      "tail",
+      "x",
+      "torch.ops.aten.slice.Tensor",
+      {2, 2},
+      {graph.int_arg("dim", 1),
+       graph.int_arg("start", 1),
+       graph.int_arg("end", std::numeric_limits<int64_t>::max()),
+       graph.int_arg("step", 1)});
+  graph.view_op(
+      "column",
+      "tail",
+      "torch.ops.aten.unsqueeze.default",
+      {2, 2, 1},
+      {graph.int_arg("dim", -1)});
+  graph.view_op(
+      "rows",
+      "column",
+      "torch.ops.aten.squeeze.dims",
+      {2, 2},
+      {graph.int_list_arg("dim", {-1})});
+  graph.view_op("same", "rows", "torch.ops.aten.alias.default", {2, 2}, {});
+  graph.add(
+      "result", "same", "same", graph.meta(fbs::ScalarType::FLOAT, {2, 2}));
+  graph.output("result");
   auto compiled = compile(graph.program());
-  const std::array<float, 4> input{-2, -1, 1, 2};
+  const std::array<float, 6> input{1, 2, 3, 4, 5, 6};
   compiled.executable->set_input(
       0, input.data(), input.size(), ScalarType::Float);
   compiled.executable->execute();
-  EXPECT_EQ(output(*compiled.executable), (std::vector<float>{0, 0, 2, 4}));
+  EXPECT_EQ(output(*compiled.executable), (std::vector<float>{4, 6, 10, 12}));
+}
+
+TEST(CPUEngineTest, RedirectsOutputAliasOfNativeMutation) {
+  for (const std::string scenario : {"view", "alias"}) {
+    SCOPED_TRACE(scenario);
+    TestGraph graph;
+    const auto meta = graph.meta();
+    graph.input("x", meta);
+    graph.add("sum", "x", "x", meta);
+    if (scenario == "view") {
+      graph.view("alias", "sum", {4});
+    } else {
+      graph.view_op("alias", "sum", "torch.ops.aten.alias.default", {4}, {});
+    }
+    graph.unary(
+        "relu", "sum", "torch.ops.aten.relu_.default", meta, "sum", true);
+    graph.output("alias");
+    auto compiled = compile(graph.program());
+    const std::array<float, 4> input{-2, -1, 1, 2};
+    compiled.executable->set_input(
+        0, input.data(), input.size(), ScalarType::Float);
+    compiled.executable->execute();
+    EXPECT_EQ(output(*compiled.executable), (std::vector<float>{0, 0, 2, 4}));
+  }
 }
 
 TEST(CPUEngineTest, RejectsChannelsLastCopyDuringCompilation) {

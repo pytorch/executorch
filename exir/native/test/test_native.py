@@ -4,14 +4,17 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import hashlib
 import json
 import operator
 import os
 import tempfile
 import unittest
+import warnings
 import zipfile
 from collections import Counter
 from dataclasses import asdict
+from unittest import mock
 
 import torch
 import torch.nn as nn
@@ -29,6 +32,7 @@ from executorch.backends.native.serialization.schema import (
 from executorch.exir import to_edge_transform_and_lower
 from executorch.exir._serialize._ptn import (
     ALIASES_ENTRY,
+    METADATA_ENTRY,
     PTG_ENTRY,
     read_ptn,
     SAFETENSORS_ENTRY,
@@ -39,6 +43,7 @@ from executorch.exir.lowered_backend_module import (
 )
 from executorch.exir.native import (
     Call,
+    read_metadata,
     read_samples,
     Sample,
     SampleSet,
@@ -47,8 +52,10 @@ from executorch.exir.native import (
 )
 from executorch.exir.native.native import (
     _check_delegate_contract,
+    _specialized_dims,
     _validate_merged_program,
 )
+from torch.export import Dim, ExportedProgram
 
 
 def _canonical_graph(graph) -> str:
@@ -60,6 +67,20 @@ def _safetensors_keys(blob: bytes) -> set[str]:
     header_len = int.from_bytes(blob[:8], "little")
     header = json.loads(blob[8 : 8 + header_len])
     return {k for k in header if k != "__metadata__"}
+
+
+def _to_native_retraced_as(program, retraced, **kwargs):
+    """to_native(program) with its functionalization re-trace replaced by that of
+    `retraced`. Whether re-tracing makes a dynamic dim static depends on the
+    torch build (some keep `(x + x).transpose(0, 1)` on a square example
+    dynamic), so tests of the check hand to_native a re-trace that did."""
+    run_decompositions = ExportedProgram.run_decompositions
+
+    def run(self, *args, **kwargs):
+        return run_decompositions(retraced, *args, **kwargs)
+
+    with mock.patch.object(ExportedProgram, "run_decompositions", run):
+        return to_native(program, **kwargs)
 
 
 class ToNativeEquivalenceTest(unittest.TestCase):
@@ -288,6 +309,72 @@ class ToNativeEquivalenceTest(unittest.TestCase):
 
 
 class ToNativeInputValidationTest(unittest.TestCase):
+    def test_a_dim_retracing_makes_static_is_refused(self):
+        class AddTranspose(torch.nn.Module):
+            def forward(self, x):
+                return (x + x).transpose(0, 1)
+
+        dim = Dim("d", min=2, max=8)
+        ep = torch.export.export(
+            AddTranspose(), (torch.randn(5, 5),), dynamic_shapes=({0: dim},)
+        )
+        static = torch.export.export(AddTranspose(), (torch.randn(5, 5),))
+        with self.assertRaisesRegex(
+            ValueError, "method 'forward' input 'x' dim 0 -> 5.*allow_specialized_dims"
+        ):
+            _to_native_retraced_as(ep, static)
+        with self.assertWarnsRegex(
+            UserWarning, "method 'forward' input 'x' dim 0 -> 5"
+        ):
+            _to_native_retraced_as(ep, static, allow_specialized_dims=True)
+
+        ep = torch.export.export(
+            AddTranspose(), (torch.randn(3, 5),), dynamic_shapes=({0: dim},)
+        )
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            to_native(ep)
+        self.assertFalse([w for w in caught if "re-tracing" in str(w.message)])
+
+    def test_a_static_dim_is_reported_on_its_own_input(self):
+        class ScaleAndAddTranspose(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.scale = torch.nn.Parameter(torch.randn(5))
+
+            def forward(self, x, y):
+                return x * self.scale, (y + y).transpose(0, 1)
+
+        a, b = Dim("a", min=2, max=8), Dim("b", min=2, max=8)
+        examples = (torch.randn(3, 5), torch.randn(5, 5))
+        ep = torch.export.export(
+            ScaleAndAddTranspose(), examples, dynamic_shapes=({0: a}, {0: b})
+        )
+        static_y = torch.export.export(
+            ScaleAndAddTranspose(), examples, dynamic_shapes=({0: a}, None)
+        )
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            _to_native_retraced_as(ep, static_y, allow_specialized_dims=True)
+        messages = [str(w.message) for w in caught if "re-tracing" in str(w.message)]
+        self.assertEqual(len(messages), 1)
+        self.assertIn("input 'y' dim 0 -> 5", messages[0])
+        self.assertNotIn("input 'x'", messages[0])
+        # Flags follow input names, not positions.
+        flags = {"y": (True, False), "x": (False, False)}
+        self.assertEqual(
+            _specialized_dims(flags, static_y.run_decompositions({})), [("y", 0, 5)]
+        )
+
+    def test_scalar_and_none_user_inputs_reach_the_native_checks(self):
+        class Scaled(torch.nn.Module):
+            def forward(self, x, scale, bias=None):
+                return x * scale
+
+        ep = torch.export.export(Scaled(), (torch.randn(2, 3), 2.0, None))
+        with self.assertRaisesRegex(ValueError, "does not pass its inputs straight"):
+            to_native(ep)
+
     def test_empty_method_mapping_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "at least one method"):
             to_native({})
@@ -742,6 +829,109 @@ class SamplesTest(unittest.TestCase):
                     torch.testing.assert_close(
                         got_call.outputs, want_call.outputs, rtol=0, atol=0
                     )
+
+
+class MetadataTest(unittest.TestCase):
+    def _save(self, td: str, metadata) -> str:
+        path = os.path.join(td, "m.ptn")
+        model = nn.Linear(8, 4)
+        program = torch.export.export(model, (torch.randn(2, 8),))
+        to_native(program, metadata=metadata).save(path)
+        return path
+
+    def test_metadata_round_trips(self):
+        metadata = {
+            "get_n_caches": 2,
+            "get_windows": [0, 4096],
+            "rope_theta": 5e5,
+            "tied": True,
+            "arch": "llama",
+        }
+        with tempfile.TemporaryDirectory() as td:
+            self.assertEqual(read_metadata(self._save(td, metadata)), metadata)
+
+    def test_no_metadata_writes_no_member(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = self._save(td, None)
+            with zipfile.ZipFile(path) as pkg:
+                self.assertNotIn(METADATA_ENTRY, pkg.namelist())
+            self.assertEqual(read_metadata(path), {})
+
+    def test_invalid_metadata_is_rejected(self):
+        program = torch.export.export(nn.Linear(8, 4), (torch.randn(2, 8),))
+        for metadata in (
+            {"": 1},
+            {"nested": [[1]]},
+            {"tensor": torch.tensor([1])},
+            {"none": None},
+        ):
+            with self.subTest(metadata=metadata), self.assertRaises(TypeError):
+                to_native(program, metadata=metadata)
+        with self.assertRaisesRegex(ValueError, "non-finite"):
+            to_native(program, metadata={"nan": float("nan")})
+
+
+class PackageDeterminismTest(unittest.TestCase):
+    def test_identical_exports_write_identical_files(self):
+        class Model(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = nn.Linear(8, 8)
+                self.register_buffer("a", torch.ones(8))
+                self.register_buffer("b", torch.ones(8))
+
+            def forward(self, x):
+                return self.linear(x) + self.a + self.b
+
+        x = torch.randn(2, 8)
+        golden = SampleSet([Sample([Call("forward", [x])])])
+        digests = []
+        with tempfile.TemporaryDirectory() as td:
+            # Saved an hour apart: no writer clock may reach the bytes.
+            for i, now in enumerate((1.7e9, 1.7e9 + 3600)):
+                torch.manual_seed(0)
+                ep = torch.export.export(Model().eval(), (x,))
+                path = os.path.join(td, f"{i}.ptn")
+                with mock.patch("time.time", return_value=now):
+                    to_native(ep).save(path)
+                    write_samples(path, "golden", golden)
+                with open(path, "rb") as f:
+                    digests.append(hashlib.sha256(f.read()).hexdigest())
+        self.assertEqual(digests[0], digests[1])
+
+    def test_buffer_access_order_does_not_reach_the_program(self):
+        # Gemma 4 computes one rotary table per layer type in the iteration
+        # order of a set of strings, which follows the process's hash seed;
+        # strict export lifts the buffers it reads in that order.
+        class PerTypeTables(nn.Module):
+            def __init__(self, order):
+                super().__init__()
+                self.order = order
+                self.register_buffer("full_inv_freq", torch.rand(4), persistent=False)
+                self.register_buffer(
+                    "sliding_inv_freq", torch.rand(4), persistent=False
+                )
+                self.linear = nn.Linear(4, 4)
+
+            def forward(self, x):
+                tables = {k: getattr(self, f"{k}_inv_freq") for k in self.order}
+                return self.linear(x * tables["sliding"]) + x * tables["full"]
+
+        x = torch.randn(2, 4)
+        for strict in (False, True):
+            programs = []
+            for order in (("full", "sliding"), ("sliding", "full")):
+                torch.manual_seed(0)
+                ep = torch.export.export(
+                    PerTypeTables(order).eval(), (x,), strict=strict
+                )
+                with tempfile.TemporaryDirectory() as td:
+                    path = os.path.join(td, "m.ptn")
+                    to_native(ep).save(path)
+                    with zipfile.ZipFile(path) as pkg:
+                        programs.append(pkg.read(PTG_ENTRY))
+            with self.subTest(strict=strict):
+                self.assertEqual(programs[0], programs[1])
 
 
 if __name__ == "__main__":

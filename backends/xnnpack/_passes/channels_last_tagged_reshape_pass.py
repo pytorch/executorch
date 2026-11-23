@@ -6,10 +6,10 @@
 
 # pyre-unsafe
 
+import importlib
 from enum import Enum
 from typing import List, Optional, Tuple
 
-import executorch.backends.xnnpack.custom_ops_lib  # noqa: F401  registers et_xnnpack ops
 import torch
 from executorch.backends.transforms.utils import set_param_tensor
 from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
@@ -31,6 +31,10 @@ from executorch.backends.xnnpack.utils.utils import (
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassResult
 from torch.fx.experimental.symbolic_shapes import has_free_symbols
+
+# Registers the et_xnnpack ops. A bare `import` would stay deferred under lazy
+# imports, leaving the ops unregistered when they are looked up below.
+importlib.import_module("executorch.backends.xnnpack.custom_ops_lib")
 
 
 class InputDimOrder(Enum):
@@ -84,6 +88,8 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
         exir_ops.edge.aten.squeeze_copy.dim,
         exir_ops.edge.aten.unsqueeze_copy.default,
         exir_ops.edge.aten.linear.default,
+        # XNNPACK softmax normalizes over the innermost dim, which is C in NHWC.
+        exir_ops.edge.aten._softmax.default,
     }
 
     # Broadcasting binary ops whose operands must share one memory format.
