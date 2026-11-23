@@ -1137,3 +1137,16 @@ TEST_F(OpAvgPool2DOutTest, BFloat16LargeKernelAccumulatesInFloat) {
       in, kernel_size, {}, padding, ceil_mode, count_include_pad, 257, out);
   EXPECT_TENSOR_EQ(out, tf.full({1, 1, 1, 1}, 1024.0 / 257));
 }
+
+TEST_F(OpAvgPool2DOutTest, SingleElementPaddingExceedsHalfKernelOnOtherAxis) {
+  torch::executor::testing::TensorFactory<ScalarType::Float> tf;
+  executorch::aten::Tensor in = tf.ones({1, 1, 3, 3});
+  executorch::aten::Tensor out = tf.zeros({1, 1, 3, 5});
+  int64_t kernel_size[] = {3, 1};
+  int64_t stride = 1;
+  int64_t padding = 1;
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_avg_pool2d_out(
+          in, kernel_size, stride, padding, false, false, {}, out));
+}

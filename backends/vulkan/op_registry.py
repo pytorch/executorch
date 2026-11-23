@@ -670,7 +670,12 @@ def register_q8ta_relu():
 # =============================================================================
 
 
-@update_features(exir_ops.edge.et_vk.q8ta_pixel_shuffle.default)
+@update_features(
+    [
+        exir_ops.edge.et_vk.q8ta_pixel_shuffle.default,
+        exir_ops.edge.et_vk.q8ta_pixel_shuffle.with_activation,
+    ]
+)
 def register_q8ta_pixel_shuffle():
     # The fused kernel is restricted to the channels-packed family
     # (PACKED_INT8_4W4C, PACKED_INT8_4C1W, PACKED_INT8_CONV2D), all of which

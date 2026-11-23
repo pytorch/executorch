@@ -17,6 +17,17 @@ namespace vkapi {
 // Utility Functions
 //
 
+PipelineBarrier full_pipeline_barrier() {
+  PipelineBarrier barrier{};
+  barrier.stage = {
+      VK_PIPELINE_STAGE_ALL_COMMANDS_BIT | VK_PIPELINE_STAGE_HOST_BIT,
+      VK_PIPELINE_STAGE_ALL_COMMANDS_BIT};
+  barrier.global_access = {
+      VK_ACCESS_MEMORY_WRITE_BIT | VK_ACCESS_HOST_WRITE_BIT,
+      VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT};
+  return barrier;
+}
+
 VkAccessFlags vk_access(
     const PipelineStageFlags stage,
     const MemoryAccessFlags access) {
@@ -265,6 +276,28 @@ void swap(PipelineLayout& lhs, PipelineLayout& rhs) noexcept {
   rhs.handle_ = tmp_handle;
 }
 
+namespace {
+
+// Cooperative-matrix shaders below SPIR-V 1.6 need full subgroups
+// (VUID-RuntimeSpirv-OpTypeCooperativeMatrixKHR-10770). The flag is only valid
+// when the local size in X, specialization constant 0, is a multiple of the
+// required subgroup size (VUID-VkPipelineShaderStageCreateInfo-pNext-02757).
+VkPipelineShaderStageCreateFlags full_subgroups_flag(
+    const ComputePipeline::Descriptor& descriptor,
+    const bool full_subgroups) {
+#ifdef VK_EXT_subgroup_size_control
+  const SpecVarList& spec_vars = descriptor.specialization_constants;
+  const uint32_t subgroup_size = descriptor.required_subgroup_size;
+  if (full_subgroups && subgroup_size > 0u && spec_vars.size() > 0u &&
+      spec_vars.at(0).value.as_uint32 % subgroup_size == 0u) {
+    return VK_PIPELINE_SHADER_STAGE_CREATE_REQUIRE_FULL_SUBGROUPS_BIT_EXT;
+  }
+#endif /* VK_EXT_subgroup_size_control */
+  return 0u;
+}
+
+} // namespace
+
 //
 // ComputePipeline
 //
@@ -275,7 +308,8 @@ ComputePipeline::ComputePipeline(VkDevice device, VkPipeline handle)
 ComputePipeline::ComputePipeline(
     VkDevice device,
     const ComputePipeline::Descriptor& descriptor,
-    VkPipelineCache pipeline_cache)
+    VkPipelineCache pipeline_cache,
+    const bool full_subgroups)
     : device_(device), handle_{VK_NULL_HANDLE} {
   map_entries_ = descriptor.specialization_constants.generate_map_entries();
 
@@ -301,7 +335,7 @@ ComputePipeline::ComputePipeline(
   const VkPipelineShaderStageCreateInfo shader_stage_create_info{
       VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, // sType
       shader_stage_pnext, // pNext
-      0u, // flags
+      full_subgroups_flag(descriptor, full_subgroups), // flags
       VK_SHADER_STAGE_COMPUTE_BIT, // stage
       descriptor.shader_module, // module
       "main", // pName
@@ -416,9 +450,11 @@ void PipelineLayoutCache::purge() {
 
 ComputePipelineCache::ComputePipelineCache(
     VkDevice device,
-    const std::string& cache_data_path)
+    const std::string& cache_data_path,
+    const bool full_subgroups)
     : cache_mutex_{},
       device_(device),
+      full_subgroups_(full_subgroups),
       pipeline_cache_{VK_NULL_HANDLE},
       cache_{},
       cache_data_path_(cache_data_path) {
@@ -442,6 +478,7 @@ ComputePipelineCache::ComputePipelineCache(
     ComputePipelineCache&& other) noexcept
     : cache_mutex_{},
       device_(other.device_),
+      full_subgroups_(other.full_subgroups_),
       pipeline_cache_(other.pipeline_cache_),
       cache_(std::move(other.cache_)) {
   std::lock_guard<std::mutex> lock(other.cache_mutex_);
@@ -536,7 +573,7 @@ void ComputePipelineCache::create_pipelines(
     shader_stage_create_infos.push_back(VkPipelineShaderStageCreateInfo{
         VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, // sType
         shader_stage_pnext, // pNext
-        0u, // flags
+        full_subgroups_flag(key, full_subgroups_), // flags
         VK_SHADER_STAGE_COMPUTE_BIT, // stage
         key.shader_module, // module
         "main", // pName
@@ -578,7 +615,8 @@ VkPipeline ComputePipelineCache::retrieve(
     it = cache_
              .insert(
                  {key,
-                  ComputePipelineCache::Value(device_, key, pipeline_cache_)})
+                  ComputePipelineCache::Value(
+                      device_, key, pipeline_cache_, full_subgroups_)})
              .first;
   }
   return it->second.handle();

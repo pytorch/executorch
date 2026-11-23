@@ -91,14 +91,14 @@ bool padding_is_valid(
 
   if (enforce_half_kernel) {
     // Padding must be at most half of kernel size.
-    for (const auto i : c10::irange(padding.size())) {
-      if (padding[i] > val_at(kernel_size, i) / 2) {
+    for (const auto i : c10::irange(kernel_ndim)) {
+      if (val_at(padding, i) > val_at(kernel_size, i) / 2) {
         ET_LOG(
             Error,
             "Padding should be at most half of kernel size, "
             "but got padding[%zu] = %" PRId64 " > kernel_size[%zu] = %" PRId64,
             i,
-            padding[i],
+            val_at(padding, i),
             i,
             val_at(kernel_size, i));
         return false;
@@ -426,6 +426,56 @@ void get_avg_pool2d_out_target_size(
 
   calculate_kernel_output_sizes(
       in, 2, kernel_size, stride, padding, {}, out_sizes, ceil_mode);
+}
+
+bool check_avg_pool3d_args(
+    const Tensor& in,
+    const IntArrayRef kernel_size,
+    const IntArrayRef stride,
+    const IntArrayRef padding,
+    const bool ceil_mode,
+    const bool count_include_pad,
+    const std::optional<int64_t>& divisor_override,
+    const Tensor& out) {
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
+  ET_CHECK_OR_RETURN_FALSE(
+      (in.dim() == 4 || in.dim() == 5) && out.dim() == in.dim(),
+      "Expected matching 4D or 5D input and output tensors");
+  ET_LOG_AND_RETURN_IF_FALSE(kernel_size_is_valid(kernel_size, 3));
+  ET_LOG_AND_RETURN_IF_FALSE(stride_is_valid(stride, 3, true));
+  ET_LOG_AND_RETURN_IF_FALSE(padding_is_valid(padding, kernel_size, 3, true));
+  ET_CHECK_OR_RETURN_FALSE(
+      in.size(in.dim() - 4) > 0, "Expected non-empty channels");
+  for (const auto i : c10::irange(3)) {
+    const int64_t kernel = val_at(kernel_size, i);
+    ET_CHECK_OR_RETURN_FALSE(
+        val_at(stride, i, kernel) <= std::numeric_limits<int32_t>::max(),
+        "Stride must fit in int32_t");
+    ET_CHECK_OR_RETURN_FALSE(
+        in.size(in.dim() - 3 + i) >= kernel,
+        "Input spatial size must be at least the kernel size");
+  }
+  if (divisor_override.has_value()) {
+    ET_CHECK_OR_RETURN_FALSE(
+        divisor_override.value() != 0, "divisor_override must be non-zero");
+  }
+  return true;
+}
+
+void get_avg_pool3d_out_target_size(
+    const Tensor& in,
+    const IntArrayRef kernel_size,
+    const IntArrayRef stride,
+    const IntArrayRef padding,
+    const bool ceil_mode,
+    executorch::aten::SizesType* const out_sizes,
+    size_t* const out_ndim) {
+  *out_ndim = in.dim();
+  for (const auto i : c10::irange(in.dim() - 3)) {
+    out_sizes[i] = in.size(i);
+  }
+  calculate_kernel_output_sizes(
+      in, 3, kernel_size, stride, padding, {}, out_sizes, ceil_mode);
 }
 
 bool check_convolution_args(
