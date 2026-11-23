@@ -139,7 +139,7 @@ struct GgmlEngineContext::Impl {
   size_t materialized_constant_bytes = 0;
   size_t heap_copied_constant_bytes = 0;
   size_t f16_kv_cache_bytes = 0;
-  GgmlMutableKeyOwners mutable_key_owners;
+  GgmlContextState state;
 };
 
 GgmlEngineContext::GgmlEngineContext(
@@ -152,7 +152,19 @@ GgmlEngineContext::GgmlEngineContext(
       impl_(std::make_unique<Impl>(
           std::move(options),
           std::move(cache),
-          kv_cache)) {}
+          kv_cache)) {
+  // A method that only reads a key another method writes still binds the
+  // shared storage.
+  for (const std::string& name : this->program().method_names()) {
+    const Method& method = this->program().get_method(name);
+    impl_->state.methods.push_back(&method);
+    for (const DataBinding& binding : method.data_bindings) {
+      if (binding.mutated && !binding.key.empty()) {
+        impl_->state.keys.insert(binding.key);
+      }
+    }
+  }
+}
 
 GgmlEngineContext::~GgmlEngineContext() = default;
 
@@ -165,7 +177,7 @@ std::unique_ptr<EngineExecutable> GgmlEngineContext::compile_method(
       &impl_->materialized_constant_bytes,
       &impl_->heap_copied_constant_bytes,
       &impl_->f16_kv_cache_bytes,
-      impl_->mutable_key_owners,
+      impl_->state,
       impl_->kv_cache);
 }
 
