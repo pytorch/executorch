@@ -128,6 +128,39 @@ void decode_q8_0_block(const uint8_t* block, float* y) {
   }
 }
 
+// block_q3_K: 32 high-bit mask bytes, 64 bytes of 2-bit codes, 12 bytes
+// packing sixteen 6-bit scales, fp16 d. Each 128-weight half reads four 2-bit
+// planes of its 32 code bytes, 32 weights per plane, with one scale per 16;
+// plane p of half h subtracts 4 from weight l unless bit 4 h + p of mask byte l
+// is set.
+void decode_q3_k_block(const uint8_t* block, float* y) {
+  const uint8_t* hmask = block;
+  const uint8_t* packed = block + 96;
+  const float d = half_to_float(block + 108);
+  int scales[16];
+  for (int i = 0; i < 4; ++i) {
+    const int high = packed[8 + i];
+    scales[i] = (packed[i] & 0xF) | ((high & 3) << 4);
+    scales[i + 4] = (packed[i + 4] & 0xF) | (((high >> 2) & 3) << 4);
+    scales[i + 8] = (packed[i] >> 4) | (((high >> 4) & 3) << 4);
+    scales[i + 12] = (packed[i + 4] >> 4) | (((high >> 6) & 3) << 4);
+  }
+  const int* scale = scales;
+  int mask = 1;
+  for (int half = 0; half < 2; ++half) {
+    const uint8_t* q = block + 32 + 32 * half;
+    for (int shift = 0; shift < 8; shift += 2, mask <<= 1) {
+      for (int l0 = 0; l0 < 32; l0 += 16) {
+        const float dl = d * static_cast<float>(*scale++ - 32);
+        for (int l = l0; l < l0 + 16; ++l) {
+          const int code = ((q[l] >> shift) & 3) - ((hmask[l] & mask) ? 0 : 4);
+          *y++ = dl * static_cast<float>(code);
+        }
+      }
+    }
+  }
+}
+
 struct Codec {
   std::string_view name;
   int64_t block_elements;
@@ -137,6 +170,7 @@ struct Codec {
 
 constexpr Codec kCodecs[] = {
     {"gguf:q8_0", 32, 34, decode_q8_0_block},
+    {"gguf:q3_k", 256, 110, decode_q3_k_block},
     {"gguf:q4_k", 256, 144, decode_q4_k_block},
     {"gguf:q5_k", 256, 176, decode_q5_k_block},
     {"gguf:q6_k", 256, 210, decode_q6_k_block},
