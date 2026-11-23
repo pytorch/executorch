@@ -5747,7 +5747,10 @@ def _argsort_handler(P: MLXProgramBuilder, n: Node) -> Slot:
 def _topk_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """Handle aten.topk - top-k elements along an axis.
 
-    Decomposes into partition/argpartition, slice, and sort/argsort operations.
+    Decomposes into: partition → slice → sort → reverse (for values)
+                     argpartition → slice → gather → argsort → reverse → reorder (for indices)
+
+    The reverse is skipped for largest=False, which returns ascending order.
     """
     args = P.args(n)
     require_args(args, 2, 5, "aten.topk")
@@ -5756,8 +5759,6 @@ def _topk_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     k = args[1]
     dim = args[2] if len(args) > 2 else -1
     largest = args[3] if len(args) > 3 else True
-    if not isinstance(largest, bool):
-        raise NotImplementedError("aten.topk largest must be a static boolean")
 
     output_slots = P.make_or_get_slots(n)
     values_slot, indices_slot = output_slots
@@ -5771,46 +5772,26 @@ def _topk_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     norm_axis = dim if dim >= 0 else dim + len(x_meta.shape)
     dim_size = x_meta.shape[norm_axis]
 
-    k_minus_one = emit_sub_int(P, P.to_int_or_vid(k), IntOrVid.from_literal(1))
+    k_val = P.to_int_or_vid(k)
+    k_minus_one = emit_sub_int(P, k_val, IntOrVid.from_literal(1))
     if largest:
-        if isinstance(k, int):
-            neg_k = P.to_int_or_vid(-k)
-            rev_stop = P.to_int_or_vid(-(k + 1))
-        else:
-            _, neg_k_slot = P.make_tmp_value_slot()
-            P.emit(
-                MultiplyIntNode(
-                    a=P.to_int_or_vid(k),
-                    b=IntOrVid.from_literal(-1),
-                    out=P.slot_to_vid(neg_k_slot),
-                )
-            )
-            neg_k = P.to_int_or_vid(neg_k_slot)
-            # rev_stop = -(k + 1) = neg_k - 1
-            _, rev_stop_slot = P.make_tmp_value_slot()
-            P.emit(
-                AddIntNode(
-                    a=neg_k,
-                    b=IntOrVid.from_literal(-1),
-                    out=P.slot_to_vid(rev_stop_slot),
-                )
-            )
-            rev_stop = P.to_int_or_vid(rev_stop_slot)
-        partition_kth = slice_start = neg_k
-        slice_stop = P.to_int_or_vid(dim_size)
+        # Partition at -k and keep the last k elements.
+        neg_k = emit_sub_int(P, IntOrVid.from_literal(0), k_val)
+        kth, start, stop = neg_k, neg_k, P.to_int_or_vid(dim_size)
+        # Reverse slice: start=k-1, stop=-(k+1) on the k-sized sliced tensor
+        rev_stop = emit_sub_int(P, neg_k, IntOrVid.from_literal(1))
     else:
-        partition_kth = k_minus_one
-        slice_start = P.to_int_or_vid(0)
-        slice_stop = P.to_int_or_vid(k)
+        # Partition at k-1 and keep the first k elements.
+        kth, start, stop = k_minus_one, IntOrVid.from_literal(0), k_val
 
     def emit_partition_and_slice(node_cls):
-        """Emit partition/argpartition followed by a k-element slice."""
+        """Emit partition/argpartition → slice the selected k elements."""
         _, part_tmp = P.make_tmp_slot()
         P.emit(
             node_cls(
                 x=P.slot_to_tid(x),
                 out=P.slot_to_tid(part_tmp),
-                kth=partition_kth,
+                kth=kth,
                 axis=dim,
             )
         )
@@ -5820,8 +5801,8 @@ def _topk_handler(P: MLXProgramBuilder, n: Node) -> Slot:
                 x=P.slot_to_tid(part_tmp),
                 out=P.slot_to_tid(slice_tmp),
                 axis=P.to_int_or_vid(dim),
-                start=slice_start,
-                stop=slice_stop,
+                start=start,
+                stop=stop,
                 step=1,
             )
         )
@@ -5841,24 +5822,21 @@ def _topk_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         )
 
     if 0 in used:
-        # Sort ascending, then reverse only when the largest values were requested.
+        # partition → slice k → sort ascending → reverse to descending
         slice_tmp = emit_partition_and_slice(PartitionNode)
-        if largest:
-            _, sorted_slot = P.make_tmp_slot()
-        else:
-            sorted_slot = values_slot
+        sort_tmp = P.make_tmp_slot()[1] if largest else values_slot
         P.emit(
             SortNode(
                 x=P.slot_to_tid(slice_tmp),
-                out=P.slot_to_tid(sorted_slot),
+                out=P.slot_to_tid(sort_tmp),
                 axis=dim,
             )
         )
         if largest:
-            emit_reverse(sorted_slot, values_slot)
+            emit_reverse(sort_tmp, values_slot)
 
     if 1 in used:
-        # Sort the selected indices by their corresponding values.
+        # argpartition → slice k → gather values → argsort → reverse → reorder
         idx_slice_tmp = emit_partition_and_slice(ArgPartitionNode)
         # Gather original values at the partitioned indices
         _, gathered_tmp = P.make_tmp_slot()
@@ -5870,7 +5848,7 @@ def _topk_handler(P: MLXProgramBuilder, n: Node) -> Slot:
                 axis=dim,
             )
         )
-        # Argsort gathered values ascending.
+        # Argsort gathered values ascending → reverse → descending order
         _, order_tmp = P.make_tmp_slot()
         P.emit(
             ArgsortNode(
@@ -5880,14 +5858,14 @@ def _topk_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             )
         )
         if largest:
-            _, sorted_order = P.make_tmp_slot()
-            emit_reverse(order_tmp, sorted_order)
-        else:
-            sorted_order = order_tmp
+            _, rev_order_tmp = P.make_tmp_slot()
+            emit_reverse(order_tmp, rev_order_tmp)
+            order_tmp = rev_order_tmp
+        # Apply the sorted order to indices
         P.emit(
             TakeAlongAxisNode(
                 x=P.slot_to_tid(idx_slice_tmp),
-                indices=P.slot_to_tid(sorted_order),
+                indices=P.slot_to_tid(order_tmp),
                 out=P.slot_to_tid(indices_slot),
                 axis=dim,
             )
