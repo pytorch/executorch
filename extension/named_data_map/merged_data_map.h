@@ -32,8 +32,12 @@ class MergedDataMap final
   /**
    * Creates a new NamedDataMap that takes in other data maps.
    *
-   * @param[in] data_maps vector of NamedDataMap pointers to merge.
+   * @param[in] data_maps vector of NamedDataMap pointers to merge. Null
+   * entries are skipped. A map with no keys is valid and adds nothing.
    * Note: the data maps must outlive the MergedDataMap instance.
+   *
+   * @return Error::InvalidArgument if no non-null map is given, or if two maps
+   * have the same key.
    */
   static executorch::runtime::Result<MergedDataMap>
   load(executorch::runtime::Span<
