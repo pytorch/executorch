@@ -32,6 +32,7 @@ Usage:
 import argparse
 import json
 import statistics
+import time
 from dataclasses import asdict, dataclass
 
 import torch
@@ -99,6 +100,16 @@ def short_rows_envelope_cases(graph):
     return [
         Case("short envelope", (m,), n, k, False, graph)
         for m in (5, 8, 16, 32, 64)
+        for n in (64, 256, 1024, 4096, 16384)
+        for k in (64, 256, 1024, 4096, 16384)
+    ]
+
+
+def many_rows_envelope_cases(graph):
+    """Calls of more than 64 rows across the weight sizes."""
+    return [
+        Case("many envelope", (m,), n, k, False, graph)
+        for m in (65, 256, 1024, 4096)
         for n in (64, 256, 1024, 4096, 16384)
         for k in (64, 256, 1024, 4096, 16384)
     ]
@@ -229,7 +240,17 @@ def _tensors(case):
 def run_case(case, flush, threshold):
     torch.backends.cuda.matmul.fp32_precision = "ieee"
     x, w, b = _tensors(case)
+    # The compile's cost of our op's choice: every candidate timed, with the
+    # outer launch-choice cache cleared (Triton's compile caches may be reused).
+    torch.cuda.synchronize()
+    torch.cuda.reset_peak_memory_stats()
+    base = torch.cuda.memory_allocated()
+    start = time.perf_counter()
     ours, schedule = triton_runner(x, w, b)
+    tuning = {
+        "seconds": time.perf_counter() - start,
+        "peak_extra_bytes": torch.cuda.max_memory_allocated() - base,
+    }
     inductor = inductor_runner(x, w, b, case)
     reference = F.linear(x.double(), w.double(), None if b is None else b.double())
     ours_abs = (ours().double() - reference).abs().max().item()
@@ -249,6 +270,7 @@ def run_case(case, flush, threshold):
     return {
         **asdict(case),
         "schedule": schedule,
+        "tuning": tuning,
         "error": {
             "ours_abs": ours_abs,
             "cublas_abs": cublas_abs,
@@ -279,6 +301,7 @@ def main():
             "gemv_boundary",
             "short_envelope",
             "short_boundary",
+            "many_envelope",
         ],
     )
     parser.add_argument("--graph", default="linear", choices=["linear", "core"])
@@ -305,6 +328,7 @@ def main():
         "gemv_boundary": gemv_boundary_cases,
         "short_envelope": short_rows_envelope_cases,
         "short_boundary": short_boundary_cases,
+        "many_envelope": many_rows_envelope_cases,
     }[args.suite](args.graph)
     for case in cases[index::count]:
         r = run_case(case, flush, args.threshold)
