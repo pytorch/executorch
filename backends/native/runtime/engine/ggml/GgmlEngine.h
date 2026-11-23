@@ -54,6 +54,12 @@ struct GgmlEngineOptions {
   // Prints each newly built graph's node count per ggml op to stderr, which
   // shows whether a lowering rewrite fired.
   bool print_graph_ops = false;
+  // Testing only. Default (false): matrix multiplies with an F16 operand
+  // accumulate in F16 on CUDA, as llama.cpp's cuBLAS GEMMs do. Set: they
+  // accumulate in F32, at 2-3x prefill and 4x decode GEMM time plus a
+  // transient F32 weight copy. Ops: F16 linear, matmul, mm, bmm and
+  // convolution; CUDA only.
+  bool cuda_f32_accumulation_for_testing = false;
   // ggml backends quantize the activations of a quantized matmul themselves,
   // so a linear with quantized weights, int4 or GGUF, whose input is not a
   // dequantized activation is rejected unless the caller accepts that loss of
