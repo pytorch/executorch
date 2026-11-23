@@ -169,6 +169,26 @@ TEST_F(TensorFactoryTest, MakeFloatTensor) {
   EXPECT_TENSOR_EQ(expected, actual);
 }
 
+TEST_F(TensorFactoryTest, ChannelsLastLikeBoolTensor) {
+  TensorFactory<ScalarType::Bool> tf;
+
+  Tensor actual = tf.channels_last_like(tf.make(
+      /*sizes=*/{1, 2, 2, 2},
+      /*data=*/{true, true, false, false, false, false, true, true}));
+
+  // Channels-last strides for sizes {1, 2, 2, 2}.
+  std::vector<int32_t> actual_strides(
+      actual.strides().begin(), actual.strides().end());
+  EXPECT_EQ(actual_strides, (std::vector<int32_t>{8, 1, 4, 2}));
+
+  // Logical data permuted into channels-last memory order (h, w, c).
+  const bool expected_data[] = {
+      true, false, true, false, false, true, false, true};
+  for (const auto i : c10::irange(actual.numel())) {
+    EXPECT_EQ(actual.const_data_ptr<bool>()[i], expected_data[i]);
+  }
+}
+
 // Also test Bool, which is a bit of a special case because the factory uses
 // `uint8_t` instead of `bool` as the underlying C type.
 TEST_F(TensorFactoryTest, MakeBoolTensor) {
