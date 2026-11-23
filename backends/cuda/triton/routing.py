@@ -110,6 +110,17 @@ def regular_only(kind: str, reason: str) -> ReplacementPlan:
     return ReplacementPlan(kind, (Candidate(REGULAR_LOWERING), Candidate(kind, reason)))
 
 
+def is_static(t: Optional[torch.Tensor]) -> bool:
+    """Whether ``t`` is None or a fake tensor with static sizes, strides and
+    storage offset, as a planner needs to classify a call."""
+    from torch._subclasses.fake_tensor import FakeTensor
+
+    return t is None or (
+        isinstance(t, FakeTensor)
+        and all(type(s) is int for s in (*t.shape, *t.stride(), t.storage_offset()))
+    )
+
+
 def device_supports(min_capability: int, device: torch.device) -> bool:
     """Whether a kernel that needs compute capability ``min_capability`` (e.g.
     80 for sm_80; 0 for every NVIDIA GPU) runs on ``device``, the GPU the model
@@ -132,9 +143,11 @@ def replace(
     Every user's arguments are saved before they are rewired, so a failure at
     any step restores them all and removes the new node; then, if the regular
     lowering can run the call, it logs and returns None, and otherwise
-    raises.
+    raises. A pure node that only ``node`` used (e.g. a transpose the
+    replacement reads around) is removed with it.
     """
     saved = {user: (user.args, user.kwargs) for user in node.users}
+    inputs = list(node.all_input_nodes)
     new_node: Optional[Node] = None
     try:
         with graph.inserting_before(node):
@@ -155,4 +168,7 @@ def replace(
             ) from e
         logger.warning("Kept %s: replacing it failed: %r", node.name, e)
         return None
+    for orphan in inputs:
+        if orphan.op == "call_function" and not orphan.users and not orphan.is_impure():
+            graph.erase_node(orphan)
     return new_node
