@@ -109,6 +109,7 @@ if(EXECUTORCH_BUILD_NATIVE_VULKAN)
     runtime/vulkan/test_lower_rms_norm.cpp
     runtime/vulkan/test_lower_sdpa.cpp
     runtime/vulkan/test_materialize_view_copies.cpp
+    runtime/vulkan/test_normalize_dims.cpp
     runtime/vulkan/test_vulkan_constant_materialization_tracker.cpp
     ../runtime/vulkan/VulkanConstantMaterializationTracker.cpp
   )
