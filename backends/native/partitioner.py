@@ -54,6 +54,7 @@ _SUPPORTED_NON_CORE_OPS = [
     torch.ops.aten.rms_norm.default,
     # Attention over a runtime-owned KV cache; engines bind the cache at load.
     torch.ops.kvcache.update_and_attend.default,
+    torch.ops.aten.softplus.default,
 ]
 
 # A SymInt, and any op arg that references one, is an execution-time value. An
@@ -63,6 +64,7 @@ _SUPPORTED_SYMBOLIC_OPS = {
     operator.add,
     operator.floordiv,
     operator.mul,
+    operator.neg,
     operator.sub,
 }
 

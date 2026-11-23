@@ -187,5 +187,47 @@
         {"tensor": {"name": "output", "sizes": [1, 64, 512, 512], "dtype": "int8x4", "storage": "buffer", "layout": "v_OUTPUT_LAYOUT", "data": {"fill": 0}}}
       ]
     ]
+  },
+  {
+    "name": "q8ta/pixel_shuffle_relu/performance",
+    "operator": "et_vk.q8ta_pixel_shuffle.with_activation",
+    "target_ms": 100,
+    "benchmark_runs": 1,
+    "warmup_runs": 1,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 1.0076922944664253, "rtol": 0},
+    "sweep_variables": {"v_INPUT_LAYOUT": ["4w4c", "4c", "4c1w"], "v_OUTPUT_LAYOUT": ["4w4c", "4c", "4c1w"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 256, 32, 32], "dtype": "int8x4", "storage": "buffer", "layout": "v_INPUT_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.00711200013756752},
+        {"int": 0},
+        {"float": 76.9230728149414},
+        {"int": 5},
+        {"int": 2},
+        {"string": "relu"},
+        {"tensor": {"name": "output", "sizes": [1, 64, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "v_OUTPUT_LAYOUT", "data": {"fill": 0}}}
+      ],
+      [
+        {"tensor": {"name": "input", "sizes": [1, 128, 64, 64], "dtype": "int8x4", "storage": "buffer", "layout": "v_INPUT_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.00711200013756752},
+        {"int": 0},
+        {"float": 76.9230728149414},
+        {"int": 5},
+        {"int": 2},
+        {"string": "relu"},
+        {"tensor": {"name": "output", "sizes": [1, 32, 128, 128], "dtype": "int8x4", "storage": "buffer", "layout": "v_OUTPUT_LAYOUT", "data": {"fill": 0}}}
+      ],
+      [
+        {"tensor": {"name": "input", "sizes": [1, 64, 128, 128], "dtype": "int8x4", "storage": "buffer", "layout": "v_INPUT_LAYOUT", "data": {"rand_uniform_int": [-128, 127]}}},
+        {"float": 0.00711200013756752},
+        {"int": 0},
+        {"float": 76.9230728149414},
+        {"int": 5},
+        {"int": 2},
+        {"string": "relu"},
+        {"tensor": {"name": "output", "sizes": [1, 16, 256, 256], "dtype": "int8x4", "storage": "buffer", "layout": "v_OUTPUT_LAYOUT", "data": {"fill": 0}}}
+      ]
+    ]
   }
 ]

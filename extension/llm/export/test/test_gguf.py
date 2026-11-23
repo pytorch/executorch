@@ -7,8 +7,8 @@
 
 """Tests for ``extension/llm/export/gguf.py``.
 
-The reference oracle is the ``gguf`` package's own ``gguf.dequantize`` (which can
-dequantize Q4_K / Q5_K / Q6_K). We validate that:
+The reference oracle is the ``gguf`` package's own ``gguf.dequantize``. We validate
+that:
 
 * ``ExportableGGUFTensor.dequantize`` (and the ``torchao::dequantize_gguf`` op,
   whose eager body uses ``gguf``) reproduces ``gguf.dequantize``;
@@ -40,6 +40,7 @@ from executorch.extension.llm.export.gguf import (
     _Q4_K_BLOCK_BYTES,
     _Q5_K_BLOCK_BYTES,
     _Q6_K_BLOCK_BYTES,
+    _VALIDATED_QUANT_TYPES,
     ExportableGGUFTensor,
     Q4_K_GROUP_SIZE,
     Q5_K_GROUP_SIZE,
@@ -86,6 +87,46 @@ def _make_q6k_raw(N: int, nb: int, seed: int = 0) -> torch.Tensor:
     return blk.reshape(N, nb * _Q6_K_BLOCK_BYTES)
 
 
+# Byte offsets of each block's fp16 scales, for the types without a helper above.
+_FP16_SCALE_OFFSETS = {
+    "q4_0": (0,),
+    "q4_1": (0, 2),
+    "q5_0": (0,),
+    "q5_1": (0, 2),
+    "q8_0": (0,),
+    "q2_k": (80, 82),
+    "q3_k": (108,),
+}
+
+
+def _make_raw(ggml_type: str, N: int, nb: int, seed: int = 0) -> torch.Tensor:
+    """A ``(N, nb * block bytes)`` uint8 blob of random ``ggml_type`` blocks with
+    finite fp16 scales."""
+    _, block_bytes = gguf.GGML_QUANT_SIZES[GGMLQuantizationType[ggml_type.upper()]]
+    g = torch.Generator().manual_seed(seed)
+    blk = torch.randint(0, 256, (N * nb, block_bytes), dtype=torch.uint8, generator=g)
+    for offset in _FP16_SCALE_OFFSETS[ggml_type]:
+        blk[:, offset : offset + 2] = _fp16_bytes(0.01)
+    return blk.reshape(N, nb * block_bytes)
+
+
+# Weights and bytes per block of each validated quant type, summed from the
+# fields of its block struct in ggml-common.h (fp16 scales take 2 bytes). The
+# ggml engine's tests check ggml against the same table.
+_GGML_BLOCK_LAYOUTS = {
+    "q4_0": (32, 2 + 32 // 2),  # d, qs
+    "q4_1": (32, 2 + 2 + 32 // 2),  # d, m, qs
+    "q5_0": (32, 2 + 4 + 32 // 2),  # d, qh, qs
+    "q5_1": (32, 2 + 2 + 4 + 32 // 2),  # d, m, qh, qs
+    "q8_0": (32, 2 + 32),  # d, qs
+    "q2_k": (256, 256 // 16 + 256 // 4 + 2 + 2),  # scales, qs, d, dmin
+    "q3_k": (256, 256 // 8 + 256 // 4 + 12 + 2),  # hmask, qs, scales, d
+    "q4_k": (256, 2 + 2 + 12 + 256 // 2),  # d, dmin, scales, qs
+    "q5_k": (256, 2 + 2 + 12 + 256 // 8 + 256 // 2),  # d, dmin, scales, qh, qs
+    "q6_k": (256, 256 // 2 + 256 // 4 + 256 // 16 + 2),  # ql, qh, scales, d
+}
+
+
 def _gguf_ref(raw: torch.Tensor, qtype) -> torch.Tensor:
     return torch.from_numpy(np.asarray(gguf.dequantize(raw.numpy(), qtype))).float()
 
@@ -105,6 +146,27 @@ class TestExportableGGUFTensor(unittest.TestCase):
             ref = _gguf_ref(raw, qtype)
             # .dequantize() routes through gguf, so it should match exactly.
             self.assertTrue(torch.equal(mine, ref), f"{qtype}")
+
+    def test_takes_block_geometry_from_gguf(self):
+        # Each validated type without a helper above: its logical row length
+        # comes from gguf-py's block geometry, and it dequantizes through
+        # gguf.dequantize.
+        for ggml_type, block_size in (
+            ("q4_0", 32),
+            ("q4_1", 32),
+            ("q5_0", 32),
+            ("q5_1", 32),
+            ("q8_0", 32),
+            ("q2_k", 256),
+            ("q3_k", 256),
+        ):
+            raw = _make_raw(ggml_type, N=3, nb=2)
+            t = ExportableGGUFTensor.from_raw(raw, ggml_type)
+            self.assertEqual(tuple(t.shape), (3, 2 * block_size), ggml_type)
+            ref = _gguf_ref(raw, GGMLQuantizationType[ggml_type.upper()])
+            self.assertTrue(torch.equal(t.dequantize(torch.float32), ref), ggml_type)
+            with self.assertRaises(NotImplementedError):
+                t.to_intx_unpacked_to_int8_tensor()
 
     def test_to_preserves_quantization(self):
         raw = _make_q4k_raw(N=3, nb=2)
@@ -223,6 +285,91 @@ class TestExportableGGUFTensor(unittest.TestCase):
                 else:
                     self.assertEqual(ix.zero_point.dtype, torch.int8, ggml_type)
 
+    @staticmethod
+    def _iter_gguf_of(raws):
+        """``iter_gguf`` over a GGUF file holding each ``raws`` blob as a
+        tensor of the ggml type it is keyed by."""
+        import os
+        import tempfile
+
+        from executorch.extension.llm.export.gguf import iter_gguf
+
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "mixed.gguf")
+            writer = gguf.GGUFWriter(path, "test")
+            for ggml_type, raw in raws.items():
+                writer.add_tensor(
+                    ggml_type,
+                    raw.numpy(),
+                    raw_dtype=GGMLQuantizationType[ggml_type.upper()],
+                )
+            writer.write_header_to_file()
+            writer.write_kv_data_to_file()
+            writer.write_tensors_to_file()
+            writer.close()
+            return dict(iter_gguf(path))
+
+    def test_iter_gguf_wraps_every_validated_quant_type(self):
+        raws = {
+            "q4_0": _make_raw("q4_0", N=2, nb=1),
+            "q4_1": _make_raw("q4_1", N=2, nb=1),
+            "q5_0": _make_raw("q5_0", N=2, nb=1),
+            "q5_1": _make_raw("q5_1", N=2, nb=1),
+            "q8_0": _make_raw("q8_0", N=2, nb=1),
+            "q2_k": _make_raw("q2_k", N=2, nb=1),
+            "q3_k": _make_raw("q3_k", N=2, nb=1),
+            "q4_k": _make_q4k_raw(N=2, nb=1),
+            "q5_k": _make_q5k_raw(N=2, nb=1),
+            "q6_k": _make_q6k_raw(N=2, nb=1),
+        }
+        self.assertEqual(set(raws), _VALIDATED_QUANT_TYPES)
+        got = self._iter_gguf_of(raws)
+        self.assertEqual(set(got), set(raws))
+        for ggml_type, raw in raws.items():
+            t = got[ggml_type]
+            self.assertIsInstance(t, ExportableGGUFTensor)
+            self.assertEqual(t.ggml_type, ggml_type)
+            self.assertTrue(torch.equal(t.raw, raw), ggml_type)
+
+    def test_iter_gguf_keeps_stacked_quantized_matrices(self):
+        raw = torch.stack([_make_raw("q8_0", N=2, nb=1) for _ in range(3)])
+        t = self._iter_gguf_of({"q8_0": raw})["q8_0"]
+        self.assertEqual(t.shape, (3, 2, 32))
+        self.assertTrue(torch.equal(t.raw, raw))
+
+    def test_iter_gguf_rejects_quant_types_not_yet_validated(self):
+        # TQ1_0 is a block-quantized ggml type that no op sample validates.
+        raws = {"tq1_0": torch.zeros(2, 54, dtype=torch.uint8)}
+        with self.assertRaisesRegex(
+            NotImplementedError, "codec gguf:tq1_0 not yet validated"
+        ):
+            self._iter_gguf_of(raws)
+
+    def test_gguf_py_block_geometry_matches_ggml_layouts(self):
+        self.assertEqual(set(_GGML_BLOCK_LAYOUTS), _VALIDATED_QUANT_TYPES)
+        for ggml_type, layout in _GGML_BLOCK_LAYOUTS.items():
+            qtype = GGMLQuantizationType[ggml_type.upper()]
+            self.assertEqual(gguf.GGML_QUANT_SIZES[qtype], layout, ggml_type)
+
+    def test_iter_gguf_rejects_big_endian_files(self):
+        # gguf-py byte-swaps a big-endian file's values as it writes them, so
+        # read as is they would be wrong.
+        import os
+        import tempfile
+
+        from executorch.extension.llm.export.gguf import iter_gguf
+
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "big_endian.gguf")
+            writer = gguf.GGUFWriter(path, "test", endianess=gguf.GGUFEndian.BIG)
+            writer.add_tensor("w", np.arange(4, dtype=np.float32))
+            writer.write_header_to_file()
+            writer.write_kv_data_to_file()
+            writer.write_tensors_to_file()
+            writer.close()
+            with self.assertRaisesRegex(ValueError, "big-endian GGUF"):
+                list(iter_gguf(path))
+
     def test_iter_gguf_preserves_native_float_dtype(self):
         # Unquantized F16 tensors must be returned in their native fp16 dtype,
         # not silently cast to bf16 (callers that need bf16 cast explicitly).
@@ -283,6 +430,18 @@ class TestExportableGGUFTensor(unittest.TestCase):
             out = torch.ops.torchao.dequantize_gguf(raw, ggml_type, torch.float32)
             self.assertTrue(torch.equal(out, t.dequantize(torch.float32)))
 
+    def test_dequantize_gguf_op_keeps_leading_dims(self):
+        # Stacked experts: every [N, row_bytes] slice dequantizes on its own.
+        raw = torch.stack([_make_q4k_raw(N=3, nb=2, seed=s) for s in range(4)])
+        out = torch.ops.torchao.dequantize_gguf(raw, "q4_k", torch.float32)
+        want = torch.stack([_gguf_ref(r, GGMLQuantizationType.Q4_K) for r in raw])
+        self.assertTrue(torch.equal(out, want))
+        with torch._subclasses.fake_tensor.FakeTensorMode():
+            fake = torch.ops.torchao.dequantize_gguf(
+                torch.empty(raw.shape, dtype=torch.uint8), "q4_k", torch.float32
+            )
+        self.assertEqual(fake.shape, out.shape)
+
     def test_subclass_linear_dispatches_to_dequant(self):
         raw = _make_q6k_raw(N=4, nb=1)
         t = ExportableGGUFTensor.from_raw(raw, "q6_k")
@@ -299,10 +458,41 @@ class TestExportableGGUFTensor(unittest.TestCase):
         ref = torch.nn.functional.embedding(idx, t.dequantize(torch.bfloat16))
         self.assertTrue(torch.equal(out, ref))
 
+    def test_stacked_raw_holds_one_matrix_per_expert(self):
+        raw = torch.stack([_make_q6k_raw(N=3, nb=1, seed=s) for s in range(4)])
+        t = ExportableGGUFTensor.from_raw(raw, "q6_k", torch.float32)
+        self.assertEqual(t.shape, (4, 3, 256))
+        want = torch.stack([_gguf_ref(r, GGMLQuantizationType.Q6_K) for r in raw])
+        self.assertTrue(torch.equal(t.dequantize(), want))
+
+    def test_subclass_index_gathers_dequantized_experts(self):
+        raw = torch.stack([_make_q6k_raw(N=3, nb=1, seed=s) for s in range(4)])
+        t = ExportableGGUFTensor.from_raw(raw, "q6_k", torch.float32)
+        ids = torch.tensor([2, 0, 2, 3])
+        self.assertTrue(torch.equal(t[ids], t.dequantize()[ids]))
+
+    def test_torchao_conversions_refuse_stacked_matrices(self):
+        q4k = torch.stack([_make_q4k_raw(N=3, nb=1, seed=s) for s in range(2)])
+        q6k = torch.stack([_make_q6k_raw(N=3, nb=1, seed=s) for s in range(2)])
+        t4 = ExportableGGUFTensor.from_raw(q4k, "q4_k")
+        t6 = ExportableGGUFTensor.from_raw(q6k, "q6_k")
+        with self.assertRaisesRegex(NotImplementedError, "2-D"):
+            t4.to_exportable_int4_tensor()
+        with self.assertRaisesRegex(NotImplementedError, "2-D"):
+            t6.to_intx_unpacked_to_int8_tensor()
+
     def test_unsupported_type_raises(self):
         raw = torch.zeros(1, _Q6_K_BLOCK_BYTES, dtype=torch.uint8)
-        with self.assertRaises(NotImplementedError):
-            ExportableGGUFTensor.from_raw(raw, "q2_k")
+        # Not block-quantized, not lowercase, and not a ggml type.
+        for ggml_type in ("f16", "Q6_K", "q6"):
+            with self.assertRaises(NotImplementedError, msg=ggml_type):
+                ExportableGGUFTensor.from_raw(raw, ggml_type)
+        with self.assertRaisesRegex(
+            NotImplementedError, "codec gguf:tq1_0 not yet validated"
+        ):
+            ExportableGGUFTensor.from_raw(
+                torch.zeros(1, 54, dtype=torch.uint8), "tq1_0"
+            )
 
 
 @unittest.skipUnless(_HAS_GGUF, "gguf package not installed")
@@ -346,6 +536,26 @@ class TestExportableGGUFTensorExport(unittest.TestCase):
             {}
         )
         self.assertIn("torchao.dequantize_gguf.default", self._targets(ep))
+
+    def test_stacked_experts_export_with_dequantize_gguf(self):
+        raw = torch.stack([_make_q6k_raw(N=3, nb=1, seed=s) for s in range(4)])
+        t = ExportableGGUFTensor.from_raw(raw, "q6_k", torch.float32)
+
+        class M(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.w = torch.nn.Parameter(t, requires_grad=False)
+
+            def forward(self, x, ids):
+                return torch.bmm(self.w[ids], x.unsqueeze(-1)).squeeze(-1)
+
+        example = (torch.randn(5, 256), torch.tensor([0, 3, 1, 1, 2]))
+        ep = torch.export.export(M(), example).run_decompositions({})
+        self.assertIn("torchao.dequantize_gguf.default", self._targets(ep))
+        self.assertIn("aten.index.Tensor", self._targets(ep))
+        x, ids = example
+        want = torch.bmm(t.dequantize()[ids], x.unsqueeze(-1)).squeeze(-1)
+        self.assertTrue(torch.equal(ep.module()(*example), want))
 
 
 class TestMaxUniformGroupSize(unittest.TestCase):

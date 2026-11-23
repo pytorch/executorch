@@ -10,7 +10,7 @@ import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node
 from executorch.backends.arm._passes.quant_args import QuantArgs
-from executorch.backends.arm._passes.tosa_lowering_utils import create_const
+from executorch.backends.arm._passes.tosa_lowering_utils import create_rescale_node
 from executorch.backends.arm.tosa.specification import get_context_spec
 from executorch.backends.transforms.utils import create_constant_placeholder
 from executorch.exir import ExportedProgram
@@ -44,7 +44,6 @@ class LowerInt16RsqrtPass(ArmPass):
     _MUL = exir_ops.backend.tosa.MUL.default
     _LOGICAL_LEFT_SHIFT = exir_ops.backend.tosa.LOGICAL_LEFT_SHIFT.default
     _TABLE = exir_ops.backend.tosa.TABLE.default
-    _RESCALE = exir_ops.backend.tosa.RESCALE.default
 
     def __init__(
         self,
@@ -240,9 +239,9 @@ class LowerInt16RsqrtPass(ArmPass):
                     args=(table, half_shift),
                     from_node=node,
                 )
-                output_node = create_node(
+                shifted.meta["val"] = node.meta["val"].to(dtype=torch.int32)
+                output_node = create_rescale_node(
                     graph,
-                    self._RESCALE,
                     args=(
                         shifted,
                         output_qargs.dtype,
@@ -264,7 +263,6 @@ class LowerInt16RsqrtPass(ArmPass):
                         from_node=node,
                     )
                 # qmax + nonzero * (output - qmax): saturate rsqrt(0) to qmax.
-                mul_shift = create_const(graph, 0, torch.int8, node)
                 output_minus_qmax = create_node(
                     graph,
                     self._SUB,
@@ -274,7 +272,7 @@ class LowerInt16RsqrtPass(ArmPass):
                 masked = create_node(
                     graph,
                     self._MUL,
-                    args=(output_minus_qmax, nonzero_mask, mul_shift),
+                    args=(output_minus_qmax, nonzero_mask, 0),
                     from_node=node,
                 )
                 output_node = create_node(
