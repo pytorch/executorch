@@ -19,10 +19,13 @@ from typing import Any
 logger = logging.getLogger(__name__)
 if logger.level == logging.NOTSET:
     logger.setLevel(min(logging.INFO, logging.root.getEffectiveLevel()))
-
-# Register Arm-specific torch.library ops and MXFP transforms at package
-# import time.
-import executorch.backends.arm.ao_ext  # noqa: F401
+    logger.info(
+        "Using default logging level %s for %s. Override with "
+        "logging.getLogger(%r).setLevel(logging.DEBUG).",
+        logging.getLevelName(logger.level),
+        __name__,
+        __name__,
+    )
 
 # Public for tooling (manifest generation and API validation).
 LAZY_IMPORTS = {
