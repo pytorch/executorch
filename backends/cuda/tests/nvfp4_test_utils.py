@@ -2,10 +2,20 @@
 # All rights reserved.
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import os
+
 import torch
 import torch.nn.functional as F
 from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
 from executorch.extension.llm.export.nvfp4 import ExportableNVFP4Tensor
+
+# Full parameter sweeps run only with ET_CUDA_NVFP4_EXHAUSTIVE_TESTS=1 (a
+# dedicated CI job); otherwise tests take representative cases.
+EXHAUSTIVE = os.environ.get("ET_CUDA_NVFP4_EXHAUSTIVE_TESTS") == "1"
+
+
+def sweep(full, quick):
+    return full if EXHAUSTIVE else quick
 
 
 def shards(k, device="cpu", dtype=torch.bfloat16):
