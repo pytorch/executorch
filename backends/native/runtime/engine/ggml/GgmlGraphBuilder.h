@@ -142,6 +142,13 @@ struct GraphInstance {
   std::vector<HostIntegerCheck> host_integer_checks;
 };
 
+// Results of nodes that read only constants, computed once: `instance` outputs
+// `values` in order.
+struct FoldGraph {
+  GraphInstance instance;
+  std::vector<ValueId> values;
+};
+
 // Inference batch norm is the per-channel map x * scale + shift of its
 // constants, computed once at load. A convolution read only by the batch norm
 // absorbs it: its weight is scaled at load and its bias replaced, leaving the
@@ -224,7 +231,16 @@ class GraphBuilder {
 
   GraphInstance build();
 
+  // A graph of `nodes` alone, which read only persistent tensors, whose
+  // outputs are those of `values` that compute something; a value that only
+  // views a persistent tensor costs nothing per call and is left out.
+  FoldGraph build_folds(
+      const std::vector<NodeId>& nodes,
+      const std::vector<ValueId>& values);
+
  private:
+  void begin();
+  bool folded(const Node& node) const;
   ggml_tensor* as_output(ggml_tensor* result, const TensorMeta& meta);
   void expand_write(ggml_tensor* write);
   ggml_tensor* write_back(ValueId value_id, ValueId target_id);
@@ -273,6 +289,8 @@ class GraphBuilder {
   void lower_linear(const Node& node);
   void lower_row_gather(const Node& node);
   void lower_expert_matmul(const Node& bmm, const Node& index);
+  std::optional<std::pair<ValueId, int64_t>> repeated_tokens(
+      ValueId mat2) const;
   void check_row_indices(ValueId id, int64_t rows);
   void require_exact_integers(
       ValueId id,
@@ -377,6 +395,7 @@ class GraphBuilder {
   void lower_dequantize_affine(const Node& node);
   ggml_tensor* rope_factor_tensor(ValueId inv_freq);
   void lower_rope(const Node& node);
+  void lower_gated_delta_rule(const Node& node);
   ggml_tensor* skip_f16_cast(ggml_tensor* rows) const;
   void lower_index_put(const Node& node);
   ggml_tensor* attention_mask(ValueId id, int64_t tokens, int64_t keys);
