@@ -424,6 +424,18 @@ class TestExportableGGUFTensor(unittest.TestCase):
             out = torch.ops.torchao.dequantize_gguf(raw, ggml_type, torch.float32)
             self.assertTrue(torch.equal(out, t.dequantize(torch.float32)))
 
+    def test_dequantize_gguf_op_keeps_leading_dims(self):
+        # Stacked experts: every [N, row_bytes] slice dequantizes on its own.
+        raw = torch.stack([_make_q4k_raw(N=3, nb=2, seed=s) for s in range(4)])
+        out = torch.ops.torchao.dequantize_gguf(raw, "q4_k", torch.float32)
+        want = torch.stack([_gguf_ref(r, GGMLQuantizationType.Q4_K) for r in raw])
+        self.assertTrue(torch.equal(out, want))
+        with torch._subclasses.fake_tensor.FakeTensorMode():
+            fake = torch.ops.torchao.dequantize_gguf(
+                torch.empty(raw.shape, dtype=torch.uint8), "q4_k", torch.float32
+            )
+        self.assertEqual(fake.shape, out.shape)
+
     def test_subclass_linear_dispatches_to_dequant(self):
         raw = _make_q6k_raw(N=4, nb=1)
         t = ExportableGGUFTensor.from_raw(raw, "q6_k")

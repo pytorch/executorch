@@ -102,16 +102,18 @@ def _read_f16(raw: Tensor, col_start: int, col_end: int) -> Tensor:
 def _dequantize_gguf(raw: Tensor, ggml_type: str, output_dtype: torch.dtype) -> Tensor:
     """Dequantize a raw GGUF block blob to a float tensor via the ``gguf`` package.
 
-    ``raw`` is ``(N, row_bytes)`` uint8; the result is ``(N, K)`` in
-    ``output_dtype``.
+    ``raw`` is ``(..., N, row_bytes)`` uint8, with leading dims such as stacked
+    experts; the result is ``(..., N, K)`` in ``output_dtype``.
     """
     import gguf
 
     qtype, _, _ = _quant_type(ggml_type)
-    np_raw = raw.detach().cpu().contiguous().numpy()
-    deq = gguf.dequantize(np_raw, qtype)
-    return torch.from_numpy(np.ascontiguousarray(deq)).to(
-        device=raw.device, dtype=output_dtype
+    rows = raw.detach().cpu().contiguous().reshape(-1, raw.shape[-1])
+    deq = gguf.dequantize(rows.numpy(), qtype)
+    return (
+        torch.from_numpy(np.ascontiguousarray(deq))
+        .reshape(*raw.shape[:-1], -1)
+        .to(device=raw.device, dtype=output_dtype)
     )
 
 
@@ -124,15 +126,18 @@ def dequantize_gguf(
     ggml_type: str,
     output_dtype: torch.dtype = torch.bfloat16,
 ) -> Tensor:
-    """Dequantize a raw GGUF block blob (``(N, row_bytes)`` uint8) to ``(N, K)``."""
+    """Dequantize a raw GGUF block blob (``(..., N, row_bytes)`` uint8) to
+    ``(..., N, K)``."""
     return _dequantize_gguf(weight, ggml_type, output_dtype)
 
 
 @dequantize_gguf.register_fake
 def _(weight, ggml_type, output_dtype=torch.bfloat16):
     _, block_size, block_bytes = _quant_type(ggml_type)
-    K = (weight.shape[1] // block_bytes) * block_size
-    return torch.empty((weight.shape[0], K), dtype=output_dtype, device=weight.device)
+    K = (weight.shape[-1] // block_bytes) * block_size
+    return torch.empty(
+        (*weight.shape[:-1], K), dtype=output_dtype, device=weight.device
+    )
 
 
 # Per-type field extraction (used by the to_*_tensor conversions)
