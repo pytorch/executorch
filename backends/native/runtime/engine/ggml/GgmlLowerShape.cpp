@@ -234,7 +234,8 @@ void GraphBuilder::lower_slice(const Node& node, bool copy) {
       sizes,
       gdim ? static_cast<size_t>(start) * input.tensor->nb[*gdim] : 0);
   if (copy) {
-    result = materialize(result);
+    set_single_view(node, TensorRef{result, std::move(sizes)});
+    return;
   }
   set_single_output(node, TensorRef{result, std::move(sizes)});
 }
@@ -371,7 +372,8 @@ void GraphBuilder::lower_cat(const Node& node) {
   if (ids.empty()) {
     throw std::runtime_error("ggml: cat tensor list is empty");
   }
-  TensorRef result = tensor(ids.front());
+  // ggml_concat reads its operands at any strides.
+  TensorRef result = ids.size() > 1 ? view(ids.front()) : tensor(ids.front());
   const int64_t dim =
       normalize_dim(int_arg(node, "dim", 1, 0, true), result.sizes.size());
   const std::optional<size_t> gdim =
@@ -394,7 +396,7 @@ void GraphBuilder::lower_cat(const Node& node) {
     return t->type == type ? t : ggml_cast(ctx, t, type);
   };
   for (size_t i = 1; i < ids.size(); ++i) {
-    TensorRef next = tensor(ids[i]);
+    TensorRef next = view(ids[i]);
     bool compatible = next.sizes.size() == result.sizes.size();
     for (size_t d = 0; compatible && d < next.sizes.size(); ++d) {
       compatible =

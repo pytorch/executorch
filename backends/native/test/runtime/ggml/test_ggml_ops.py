@@ -9,6 +9,7 @@ against eager PyTorch. GGML_PTN_DEVICE selects the runner's device (cpu or
 gpu)."""
 
 import collections
+import contextlib
 import copy
 import os
 import re
@@ -20,7 +21,12 @@ from pathlib import Path
 
 import torch
 import torch.nn.functional as F
-from executorch.backends.native.examples.hf_llm.export_hf_llm import LastTokenLM
+from executorch.backends.native.custom_ops import gated_delta_rule_op
+from executorch.backends.native.examples.hf_llm.export_hf_llm import (
+    export_prefill,
+    LastTokenLM,
+    native_gdn_rules,
+)
 from executorch.exir.native import to_native
 from executorch.extension.llm.export.gguf import ExportableGGUFTensor
 from gguf import GGML_QUANT_SIZES, GGMLQuantizationType
@@ -38,6 +44,7 @@ from transformers import (
     LlamaConfig,
     LlamaForCausalLM,
     Qwen3_5MoeTextConfig,
+    Qwen3_5TextConfig,
 )
 from transformers.models.llama.modeling_llama import (
     apply_rotary_pos_emb,
@@ -216,6 +223,43 @@ class CacheWrite(torch.nn.Module):
     def forward(self, values, positions):
         self.cache.index_copy_(2, positions, values)
         return self.cache * 1.0
+
+
+class SharedCacheWrite(torch.nn.Module):
+    """A method writing rows of a cache other methods share."""
+
+    def __init__(self, cache, persistent):
+        super().__init__()
+        self.register_buffer("cache", cache, persistent=persistent)
+
+    def forward(self, values, positions):
+        self.cache.index_copy_(2, positions, values)
+        return self.cache * 1.0
+
+
+class SharedCacheRead(torch.nn.Module):
+    """A method reading a cache other methods write."""
+
+    def __init__(self, cache, persistent):
+        super().__init__()
+        self.register_buffer("cache", cache, persistent=persistent)
+
+    def forward(self, x):
+        return self.cache + x
+
+
+class WindowWriteBack(torch.nn.Module):
+    """A causal conv's state update: the buffer becomes the last columns of
+    itself concatenated with new ones."""
+
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("state", torch.randn(1, 6, 4))
+
+    def forward(self, x):
+        window = torch.cat([self.state, x], dim=-1)
+        self.state.copy_(window[..., -4:])
+        return window * 2.0
 
 
 class TransposedCacheWrite(torch.nn.Module):
@@ -444,6 +488,7 @@ def _run_ggml(  # noqa: C901
     exact_topk_for_testing: bool = False,
     exact_gelu_for_testing: bool = False,
     f32_gpu_kv_cache_for_testing: bool = False,
+    fold_constants: bool = True,
 ):
     """Runs each step's inputs in order on one executable and returns each
     step's outputs as (bytes, shape) pairs. `graph_ops`, if given, collects
@@ -483,6 +528,8 @@ def _run_ggml(  # noqa: C901
         command.append("--exact_gelu_for_testing")
     if f32_gpu_kv_cache_for_testing:
         command.append("--f32_gpu_kv_cache_for_testing")
+    if not fold_constants:
+        command.append("--nofold_constants")
     with as_file(files(__package__) / "ggml_ptn_runner") as runner:
         result = subprocess.run(
             [str(runner), *command],
@@ -503,6 +550,26 @@ def _run_ggml(  # noqa: C901
     paths = [path for step in output_steps for path in step.split(",")]
     outputs = [(Path(path).read_bytes(), shape) for path, shape in zip(paths, shapes)]
     return [outputs[i : i + num_outputs] for i in range(0, len(outputs), num_outputs)]
+
+
+def _assert_same_as_unfolded(test, folded, unfolded):
+    """Float32 outputs computed with constants folded are bitwise those of an
+    unfolded run on the CPU. GPU backends fuse a graph's ops by its shape, and
+    a folded constant changes that shape, which can move a result by an ulp."""
+    if os.environ.get("GGML_PTN_DEVICE", "cpu") == "cpu":
+        test.assertEqual(folded, unfolded)
+        return
+    for step_folded, step_unfolded in zip(folded, unfolded, strict=True):
+        for (raw, shape), (raw_unfolded, shape_unfolded) in zip(
+            step_folded, step_unfolded, strict=True
+        ):
+            test.assertEqual(shape, shape_unfolded)
+            torch.testing.assert_close(
+                torch.frombuffer(bytearray(raw), dtype=torch.float32),
+                torch.frombuffer(bytearray(raw_unfolded), dtype=torch.float32),
+                rtol=1e-5,
+                atol=1e-6,
+            )
 
 
 def _hip_accumulates_half_gemms_in_f32() -> bool:
@@ -1496,6 +1563,29 @@ class GgmlOpsTest(unittest.TestCase):
         # HIP keeps its exact kernel.
         self._check(BatchedExperts(), (torch.randn(16, 64),))
 
+    def test_repeated_tokens_feed_mul_mat_id_once(self):
+        # Each token repeated k times in a row, as batched_mm does, is read
+        # once by mul_mat_id; tokens tiled instead are repeated as written.
+        weight = torch.randn(4, 16, 64) / 8
+        ids = torch.tensor([3, 0, 1, 3, 2, 0])
+
+        def interleaved(x, ids):
+            rows = x.repeat_interleave(2, dim=0).unsqueeze(-1)
+            return torch.bmm(weight[ids], rows).squeeze(-1)
+
+        def tiled(x, ids):
+            rows = x.repeat(2, 1).unsqueeze(-1)
+            return torch.bmm(weight[ids], rows).squeeze(-1)
+
+        for name, fn, repeats in (("interleaved", interleaved, 0), ("tiled", tiled, 1)):
+            with self.subTest(name):
+                ops = collections.Counter()
+                self._check(
+                    Lambda(fn), (torch.randn(3, 64), ids), graph_ops=ops, **_MATMUL_TOL
+                )
+                self.assertGreater(ops["MUL_MAT_ID"], 0)
+                self.assertEqual(ops["REPEAT"] > 0, repeats > 0)
+
     def test_half_and_bfloat16_expert_matmuls(self):
         ids = torch.tensor([3, 0, 1, 3, 2, 0])
         for dtype in (torch.float16, torch.bfloat16):
@@ -1539,6 +1629,48 @@ class GgmlOpsTest(unittest.TestCase):
         for shape in ((4,), (4, 5), (4, 3, 5)):
             with self.subTest(shape=shape):
                 self._check(Gather(shape), (torch.tensor([[3, 0], [1, 3]]),))
+
+    def test_constant_subgraphs_are_computed_once(self):
+        class ConstantMath(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.log_decay = torch.nn.Parameter(torch.randn(16))
+                self.weight = torch.nn.Parameter(torch.randn(16) * 0.1)
+
+            def forward(self, x):
+                decay = -torch.exp(self.log_decay.float())
+                norm = F.rms_norm(x, (16,), eps=1e-6) * (self.weight + 1.0)
+                return decay * x + norm
+
+        model = ConstantMath().eval()
+        x = torch.randn(3, 16)
+        with torch.no_grad():
+            expected = model(x)
+        ep = torch.export.export(model, (x,))
+        ops = {fold: collections.Counter() for fold in (True, False)}
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            package = outdir / "model.ptn"
+            to_native(ep).save(str(package))
+            folded, unfolded = (
+                _run_ggml(
+                    package,
+                    [(x,)],
+                    outdir,
+                    1,
+                    graph_ops=ops[fold],
+                    fold_constants=fold,
+                )
+                for fold in (True, False)
+            )
+        _assert_same_as_unfolded(self, folded, unfolded)
+        (((raw, shape),),) = folded
+        actual = torch.frombuffer(bytearray(raw), dtype=torch.float32)
+        torch.testing.assert_close(actual.reshape(shape), expected)
+        self.assertGreater(ops[False]["EXP"], 0)
+        for op in ("EXP", "NEG"):
+            self.assertEqual(ops[True][op], 0, op)
+        self.assertLess(ops[True].total(), ops[False].total())
 
     def test_matmul(self):
         self._check(
@@ -2006,6 +2138,27 @@ class GgmlOpsTest(unittest.TestCase):
             linear.bias.fill_(-(2.0**-9))
         row = torch.tensor([1.0, 2.0**-8, 2.0**-12])
         self._check(linear, (row.repeat(64, 1).bfloat16(),))
+
+    @unittest.skipIf(
+        _BACKEND in ("cuda", "hip"),
+        "ggml's GPU flash attention is a few 1e-5 off eager on inputs exact in F16",
+    )
+    def test_grouped_attention_of_half_values_matches_eager(self):
+        # Six query heads per KV head of 256 and one query at position 200 of
+        # 256 keys. The inputs are exact in F16, so only the kernel's arithmetic
+        # can differ from eager.
+        def attention(q, k, v, positions):
+            mask = torch.arange(256) <= positions.view(-1, 1)
+            return F.scaled_dot_product_attention(
+                q, k, v, attn_mask=mask[None, None], enable_gqa=True
+            )
+
+        generator = torch.Generator().manual_seed(0)
+        q, k, v = (
+            torch.randn(1, heads, rows, 256, generator=generator).half().float()
+            for heads, rows in ((24, 1), (4, 256), (4, 256))
+        )
+        self._check(Lambda(attention), (q, k, v, torch.tensor([200])))
 
     def _check_traced_integer_compare(self, fn):
         small = (torch.tensor([[7, 3, -5]]), torch.tensor([[6, 4, -5]]))
@@ -2565,8 +2718,85 @@ class GgmlOpsTest(unittest.TestCase):
             rtol=1e-2,
         )
 
+    def _check_methods_sharing_a_cache(self, persistent, names):
+        """Static prefill and decode methods write one cache that a third reads,
+        all in one context, as in eager where the modules share the tensor.
+        `names` names the method of each step; prefill and decode steps after
+        the first of each write the given positions."""
+        initial = torch.randn(1, 2, 8, 4) if persistent else torch.zeros(1, 2, 8, 4)
+
+        def methods(cache):
+            return {
+                "prefill": SharedCacheWrite(cache, persistent),
+                "decode": SharedCacheWrite(cache, persistent),
+                "read": SharedCacheRead(cache, persistent),
+            }
+
+        examples = {
+            "prefill": (torch.randn(1, 2, 3, 4), torch.tensor([5, 1, 6])),
+            "decode": (torch.randn(1, 2, 1, 4), torch.tensor([0])),
+            "read": (torch.randn(1, 2, 8, 4),),
+        }
+        later = {
+            "prefill": (torch.randn(1, 2, 3, 4), torch.tensor([2, 3, 4])),
+            "decode": (torch.randn(1, 2, 1, 4), torch.tensor([7])),
+            "read": (torch.randn(1, 2, 8, 4),),
+        }
+        steps = [
+            (name, later[name] if name in names[:i] else examples[name])
+            for i, name in enumerate(names)
+        ]
+        programs = {
+            name: torch.export.export(module, examples[name])
+            for name, module in methods(initial.clone()).items()
+            if name in names
+        }
+        eager = methods(initial.clone())
+        with torch.no_grad():
+            expected = [eager[name](*inputs) for name, inputs in steps]
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            package = outdir / "model.ptn"
+            to_native(programs).save(str(package))
+            outputs = _run_ggml(
+                package,
+                [inputs for _, inputs in steps],
+                outdir,
+                1,
+                method=";".join(name for name, _ in steps),
+            )
+        for ((raw, shape),), reference in zip(outputs, expected):
+            actual = torch.frombuffer(bytearray(raw), dtype=torch.float32)
+            torch.testing.assert_close(actual.reshape(shape), reference)
+
+    def test_methods_share_a_persistent_cache(self):
+        self._check_methods_sharing_a_cache(
+            True, ["read", "prefill", "read", "decode", "decode", "prefill", "read"]
+        )
+
+    # A method only reading a zero-initialized buffer exports it as a constant,
+    # unlike the methods writing it, so the package is refused.
+    def test_methods_share_a_zero_initialized_cache(self):
+        self._check_methods_sharing_a_cache(
+            False, ["decode", "prefill", "decode", "prefill"]
+        )
+
     def test_index_put_cache_write(self):
         self._check(CacheWrite(), (torch.randn(1, 2, 3, 4), torch.tensor([5, 1, 6])))
+
+    def test_write_back_reads_a_slice_without_copies(self):
+        ops = collections.Counter()
+        self._check(WindowWriteBack(), (torch.randn(1, 6, 3),), graph_ops=ops)
+        self.assertEqual(ops["CONT"], 0)
+
+    def test_elementwise_ops_read_slices_without_copies(self):
+        ops = collections.Counter()
+        self._check(
+            Lambda(lambda x: x[..., 1:] * x[..., :-1] + torch.sigmoid(x[..., 1:])),
+            (torch.randn(2, 3, 8),),
+            graph_ops=ops,
+        )
+        self.assertEqual(ops["CONT"], 0)
 
     def test_index_put_reads_transposed_values_without_copies(self):
         ops = collections.Counter()
@@ -2676,12 +2906,13 @@ class GgmlOpsTest(unittest.TestCase):
                 return self.cache * 1.0
 
         values, positions = torch.randn(1, 2, 3, 4), torch.tensor([5, 1, 6])
-        # Per graph build (two MULs each): the cast of the F16 output, plus the
-        # F32 -> F16 cast of the cache rows when it is kept.
+        # Per graph build (two MULs each): the F32 -> F16 cast of the cache
+        # rows when it is kept. Casts of constants, the buffer and the scalar
+        # factors export lifts to tensors, are computed once, at compile.
         cases = {
-            "fresh": (FreshSource(), (values, positions), 1),
-            "buffer": (BufferSource(), (values, positions), 2),
-            "written": (WrittenSource(), (values, positions, torch.tensor([0])), 2),
+            "fresh": (FreshSource(), (values, positions), 0),
+            "buffer": (BufferSource(), (values, positions), 0),
+            "written": (WrittenSource(), (values, positions, torch.tensor([0])), 1),
         }
         for source, (model, inputs, casts) in cases.items():
             with self.subTest(source=source):
@@ -3166,6 +3397,156 @@ class GgmlLlamaTest(unittest.TestCase):
                     )
 
 
+class GgmlQwen35Test(unittest.TestCase):
+    """A tiny Qwen3.5, gated DeltaNet layers and full attention, exported as
+    static one-token calls whose recurrent states are buffers."""
+
+    def test_native_gdn_rule_calls_match_eager_across_a_restart(self):
+        self._check(native=True)
+
+    def test_prefill_and_one_token_calls_share_state(self):
+        # A prompt as prefill calls of 8 and 5 tokens and one-token calls,
+        # then a second sequence from position 0, each call on its method of
+        # one package.
+        model = self._model()
+        tokens = torch.randint(0, 128, (19,))
+        calls = [(0, 8), (8, 5), (13, 1), (14, 1), (0, 3), (3, 1)]
+        steps, methods, start = [], [], 0
+        for position, size in calls:
+            steps.append(
+                (
+                    tokens[start : start + size].view(1, size),
+                    torch.arange(position, position + size),
+                )
+            )
+            methods.append("forward" if size == 1 else "prefill")
+            start += size
+        with native_gdn_rules(model), torch.no_grad():
+            wrapper = LastTokenLM(model, 32).eval()
+            one = (
+                torch.zeros(1, 1, dtype=torch.long),
+                torch.zeros(1, dtype=torch.long),
+            )
+            programs = {
+                "forward": torch.export.export(wrapper, one, strict=True),
+                "prefill": export_prefill(wrapper, 16),
+            }
+            eager = copy.deepcopy(wrapper)
+            expected = [eager(*inputs) for inputs in steps]
+        ops = {fold: collections.Counter() for fold in (True, False)}
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            package = outdir / "tiny_qwen35.ptn"
+            to_native(programs).save(str(package))
+            outputs, unfolded = (
+                _run_ggml(
+                    package,
+                    steps,
+                    outdir,
+                    1,
+                    resize=True,
+                    method=";".join(methods),
+                    graph_ops=ops[fold],
+                    fold_constants=fold,
+                )
+                for fold in (True, False)
+            )
+        # Every method computes its constants once, prefill as well as decode.
+        _assert_same_as_unfolded(self, outputs, unfolded)
+        self.assertLess(ops[True].total(), ops[False].total())
+        self.assertEqual(len(outputs), len(steps))
+        # GPUs multiply 8-row F32 linears in TF32 or XF32 (README: Known ggml
+        # GPU numerics).
+        tol = 1e-3 if _BACKEND in ("cuda", "hip") else 1e-4
+        for step, (step_outputs, reference) in enumerate(zip(outputs, expected)):
+            ((raw, shape),) = step_outputs
+            with self.subTest(step=step, method=methods[step]):
+                actual = torch.frombuffer(bytearray(raw), dtype=torch.float32)
+                torch.testing.assert_close(
+                    actual.reshape(shape), reference, atol=tol, rtol=tol
+                )
+
+    def _model(self):
+        torch.manual_seed(5)
+        config = Qwen3_5TextConfig(
+            vocab_size=128,
+            hidden_size=64,
+            intermediate_size=128,
+            num_hidden_layers=4,
+            layer_types=["linear_attention"] * 3 + ["full_attention"],
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            head_dim=32,
+            linear_num_key_heads=2,
+            linear_num_value_heads=4,
+            linear_key_head_dim=16,
+            linear_value_head_dim=16,
+            linear_conv_kernel_dim=4,
+            max_position_embeddings=64,
+            tie_word_embeddings=False,
+            rope_parameters={
+                "rope_type": "default",
+                "rope_theta": 1e7,
+                "partial_rotary_factor": 0.25,
+                "mrope_section": [2, 1, 1],
+                "mrope_interleaved": True,
+            },
+        )
+        model = AutoModelForCausalLM.from_config(config).eval()
+        model.config._attn_implementation = "sdpa"
+        model.generation_config.use_cache = True
+        model.generation_config.cache_implementation = "static"
+        return model
+
+    def _check(self, native: bool):
+        model = self._model()
+        example = (
+            torch.zeros(1, 1, dtype=torch.long),
+            torch.zeros(1, dtype=torch.long),
+        )
+        # Two sequences on one executable: the second restarts at position 0
+        # with no reset call, so the graph must zero the states itself.
+        tokens = torch.randint(0, 128, (12,))
+        steps = [
+            (tokens[i : i + 1].view(1, 1), torch.tensor([position]))
+            for i, position in enumerate([*range(7), *range(5)])
+        ]
+        rules = native_gdn_rules(model) if native else contextlib.nullcontext()
+        with rules, torch.no_grad():
+            wrapper = LastTokenLM(model, 32).eval()
+            ep = torch.export.export(wrapper, example, strict=True)
+            targets = [n.target for n in ep.graph.nodes if n.op == "call_function"]
+            self.assertEqual(targets.count(gated_delta_rule_op), 3 if native else 0)
+            eager = copy.deepcopy(wrapper)
+            expected = [eager(*inputs) for inputs in steps]
+        ops = {fold: collections.Counter() for fold in (True, False)}
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            package = outdir / "tiny_qwen35.ptn"
+            to_native(ep).save(str(package))
+            outputs, unfolded = (
+                _run_ggml(
+                    package,
+                    steps,
+                    outdir,
+                    1,
+                    graph_ops=ops[fold],
+                    fold_constants=fold,
+                )
+                for fold in (True, False)
+            )
+        _assert_same_as_unfolded(self, outputs, unfolded)
+        self.assertLess(ops[True].total(), ops[False].total())
+        self.assertEqual(len(outputs), len(steps))
+        for step, (step_outputs, reference) in enumerate(zip(outputs, expected)):
+            ((raw, shape),) = step_outputs
+            with self.subTest(step=step):
+                actual = torch.frombuffer(bytearray(raw), dtype=torch.float32)
+                torch.testing.assert_close(
+                    actual.reshape(shape), reference, atol=1e-4, rtol=1e-4
+                )
+
+
 class GgmlMoeTest(unittest.TestCase):
     """Tiny transformers MoE text models with batched_mm experts, whose expert
     projections run as ggml_mul_mat_id."""
@@ -3285,6 +3666,98 @@ class GgmlKeyExtentTest(unittest.TestCase):
         # size, so it refuses the computed start: every call attends all keys
         # and the second decode replays the first one's graph.
         self.assertEqual(self._attention_ops(SlicedQueryPositions(600, last=True)), 3)
+
+
+def _gated_delta_rule_inputs(tokens: int, heads: int = 4, dim: int = 16):
+    generator = torch.Generator().manual_seed(tokens)
+    qkv = [torch.randn(1, tokens, heads, dim, generator=generator) for _ in range(3)]
+    g = -torch.rand(1, tokens, heads, generator=generator)
+    beta = torch.rand(1, tokens, heads, generator=generator)
+    return (*qkv, g, beta)
+
+
+class _GatedDeltaRule(torch.nn.Module):
+    def __init__(self, qk_l2norm: bool, snapshots: int = 1) -> None:
+        super().__init__()
+        self.qk_l2norm = qk_l2norm
+        self.snapshots = snapshots
+
+    def forward(self, q, k, v, g, beta, state):
+        return gated_delta_rule_op(
+            q, k, v, g, beta, state, self.qk_l2norm, self.snapshots
+        )
+
+
+class _StatefulGatedDeltaRule(torch.nn.Module):
+    """The rule over a state buffer each call continues."""
+
+    def __init__(self, heads: int = 4, dim: int = 16) -> None:
+        super().__init__()
+        self.register_buffer("state", torch.zeros(1, heads, dim, dim), persistent=False)
+
+    def forward(self, q, k, v, g, beta):
+        out, state = gated_delta_rule_op(q, k, v, g, beta, self.state, True)
+        self.state.copy_(state)
+        return out
+
+
+class GgmlGatedDeltaRuleTest(unittest.TestCase):
+    """native::gated_delta_rule on ggml_gated_delta_net against its reference,
+    transformers' recurrent rule: one token, a partial 64-token chunk, and one
+    and a part, from a random state."""
+
+    def _check(self, model, steps, num_outputs, atol=1e-4):
+        with torch.no_grad():
+            ep = torch.export.export(copy.deepcopy(model), steps[0])
+            expected = [model(*inputs) for inputs in steps]
+        with tempfile.TemporaryDirectory() as tmp:
+            package = Path(tmp) / "gated_delta_rule.ptn"
+            to_native(ep).save(str(package))
+            outputs = _run_ggml(package, steps, Path(tmp), num_outputs)
+        for step, (got, want) in enumerate(zip(outputs, expected, strict=True)):
+            want = want if isinstance(want, tuple) else (want,)
+            for i, ((raw, shape), reference) in enumerate(zip(got, want, strict=True)):
+                with self.subTest(step=step, output=i):
+                    actual = torch.frombuffer(bytearray(raw), dtype=torch.float32)
+                    torch.testing.assert_close(
+                        actual.reshape(shape), reference, atol=atol, rtol=1e-4
+                    )
+
+    def test_matches_reference(self):
+        for tokens, qk_l2norm in ((1, True), (8, True), (100, True), (3, False)):
+            with self.subTest(tokens=tokens, qk_l2norm=qk_l2norm):
+                state = torch.randn(1, 4, 16, 16, generator=torch.Generator())
+                inputs = (*_gated_delta_rule_inputs(tokens), state * 0.1)
+                self._check(_GatedDeltaRule(qk_l2norm), [inputs], 2)
+
+    def test_snapshots_match_reference(self):
+        # Fewer tokens than slots keep older input slots; more run the tokens
+        # before the last S first.
+        for tokens, snapshots in ((1, 3), (3, 3), (2, 4), (9, 3)):
+            with self.subTest(tokens=tokens, snapshots=snapshots):
+                states = torch.randn(
+                    1, snapshots, 4, 16, 16, generator=torch.Generator()
+                )
+                inputs = (*_gated_delta_rule_inputs(tokens), states * 0.1)
+                self._check(_GatedDeltaRule(True, snapshots), [inputs], 2)
+
+    def test_l2_norm_adds_eps_to_the_sum_of_squares(self):
+        # Query and key norms near sqrt(eps), where rsqrt(sum + eps) and
+        # 1 / max(norm, eps) differ.
+        q, k, v, g, beta = _gated_delta_rule_inputs(3)
+        state = torch.zeros(1, 4, 16, 16)
+        inputs = (q * 1e-3, k * 1e-3, v, g, beta, state)
+        self._check(_GatedDeltaRule(True), [inputs], 2)
+
+    def test_prompt_chunk_matches_reference_closely(self):
+        # ggml-cuda multiplies prompt chunks in split BF16, high and low parts.
+        state = torch.randn(1, 4, 16, 16, generator=torch.Generator()) * 0.1
+        inputs = (*_gated_delta_rule_inputs(64), state)
+        self._check(_GatedDeltaRule(True), [inputs], 2, atol=2e-6)
+
+    def test_state_buffer_carries_across_calls(self):
+        steps = [_gated_delta_rule_inputs(tokens) for tokens in (1, 1, 1)]
+        self._check(_StatefulGatedDeltaRule(), steps, 1)
 
 
 if __name__ == "__main__":

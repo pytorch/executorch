@@ -334,6 +334,24 @@ class TestProgram {
         builder_, name.c_str(), name.c_str()));
   }
 
+  // A buffer whose initial value is the package's constant `name`, written by
+  // this method if `mutated`.
+  void persistent_buffer(
+      const std::string& name,
+      const std::vector<int64_t>& shape,
+      bool mutated) {
+    const auto meta =
+        create_tensor_meta(builder_, fbs::ScalarType::FLOAT, shape);
+    placeholder(name, meta);
+    bindings_.push_back(fbs::CreateNamedTensorRefDirect(
+        builder_,
+        name.c_str(),
+        name.c_str(),
+        meta,
+        fbs::InputKind::BUFFER,
+        mutated));
+  }
+
   // Each execution ends by writing value `value` to buffer `name`.
   void mutate(const std::string& name, const std::string& value) {
     mutations_.emplace_back(name, value);
@@ -357,12 +375,13 @@ class TestProgram {
   }
 
   // A parameter whose data is the package's constant `name`, packed with
-  // `packed_codec` if given.
+  // `packed_codec` if given; a buffer the graph writes if `mutated`.
   void constant(
       const std::string& name,
       fbs::ScalarType dtype,
       const std::vector<int64_t>& shape,
-      const char* packed_codec = nullptr) {
+      const char* packed_codec = nullptr,
+      bool mutated = false) {
     const auto quant = packed_codec == nullptr
         ? flatbuffers::Offset<fbs::QuantSpec>()
         : fbs::CreateQuantSpec(
@@ -372,7 +391,12 @@ class TestProgram {
     const auto meta = create_tensor_meta(builder_, dtype, shape, quant);
     placeholder(name, meta);
     bindings_.push_back(fbs::CreateNamedTensorRefDirect(
-        builder_, name.c_str(), name.c_str(), meta, fbs::InputKind::PARAMETER));
+        builder_,
+        name.c_str(),
+        name.c_str(),
+        meta,
+        mutated ? fbs::InputKind::BUFFER : fbs::InputKind::PARAMETER,
+        mutated));
   }
 
   // Symmetric int4 AffineGroup weights `weight` with float scales
@@ -472,6 +496,17 @@ class TestProgram {
       const std::string& output,
       fbs::OutputKind kind = fbs::OutputKind::USER_OUTPUT,
       const char* target = "") {
+    end_method("forward", output, kind, target);
+    return finish_program();
+  }
+
+  // Ends the method built so far as `name`; later calls build the program's
+  // next method.
+  void end_method(
+      const std::string& method_name,
+      const std::string& output,
+      fbs::OutputKind kind = fbs::OutputKind::USER_OUTPUT,
+      const char* target = "") {
     const std::vector<flatbuffers::Offset<fbs::NamedArgument>> output_inputs = {
         fbs::CreateNamedArgumentDirect(
             builder_, "", create_tensor_arg(builder_, output.c_str()))};
@@ -493,18 +528,26 @@ class TestProgram {
         builder_.CreateVector(values_));
     const auto output_spec =
         fbs::CreateOutputSpecDirect(builder_, output.c_str(), kind, target);
-    const auto method = fbs::CreateMethod(
+    methods_.push_back(fbs::CreateMethod(
         builder_,
-        builder_.CreateString("forward"),
+        builder_.CreateString(method_name),
         graph,
         builder_.CreateVector(bindings_),
         builder_.CreateVector(output_specs(output_spec)),
-        builder_.CreateVector(buffers_));
+        builder_.CreateVector(buffers_)));
+    inputs_.clear();
+    nodes_.clear();
+    values_.clear();
+    bindings_.clear();
+    buffers_.clear();
+    mutations_.clear();
+  }
+
+  std::vector<uint8_t> finish_program() {
     const auto program = fbs::CreateProgram(
         builder_,
         builder_.CreateString("1.0"),
-        builder_.CreateVector(
-            std::vector<flatbuffers::Offset<fbs::Method>>{method}));
+        builder_.CreateVector(methods_));
     fbs::FinishProgramBuffer(builder_, program);
     return {
         builder_.GetBufferPointer(),
@@ -596,6 +639,7 @@ class TestProgram {
   std::vector<flatbuffers::Offset<fbs::NamedTensorRef>> bindings_;
   std::vector<flatbuffers::Offset<fbs::MutableBufferSpec>> buffers_;
   std::vector<std::pair<std::string, std::string>> mutations_;
+  std::vector<flatbuffers::Offset<fbs::Method>> methods_;
 };
 
 // old = cache * 1.0 (or a same-shape view_copy of cache if `view`), then rows
@@ -734,14 +778,169 @@ TEST(GgmlEngineTest, RejectsUnsupportedOpAtCompile) {
   EXPECT_THROW(context->compile("forward"), std::runtime_error);
 }
 
-TEST(GgmlEngineTest, RejectsSecondExecutableBindingMutableBuffer) {
-  auto host = GgmlEngineHost::create(kAllowActivationQuant);
-  auto context = make_context(
-      *host,
-      make_linear_program(
-          "torch.ops.aten.linear.default", /*with_cache=*/true));
-  auto executable = context->compile("forward");
-  EXPECT_THROW(context->compile("forward"), std::runtime_error);
+// Method "add" adds x to buffer `state` and returns the sum; method "read"
+// returns state * 1. "read" binds `state` with `read_shape`.
+std::vector<uint8_t> make_counter_program(
+    const std::vector<int64_t>& read_shape = {4}) {
+  TestProgram program;
+  program.input("x", fbs::ScalarType::FLOAT, {4});
+  program.buffer("state", {4});
+  program.call(
+      "sum",
+      "torch.ops.aten.add.Tensor",
+      {{"self", std::string("state")}, {"other", std::string("x")}},
+      fbs::ScalarType::FLOAT,
+      {4});
+  program.mutate("state", "sum");
+  program.end_method("add", "sum");
+  program.buffer("state", read_shape);
+  program.call(
+      "value",
+      "torch.ops.aten.mul.Tensor",
+      {{"self", std::string("state")}, {"other", 1.0}},
+      fbs::ScalarType::FLOAT,
+      read_shape);
+  program.end_method("read", "value");
+  return program.finish_program();
+}
+
+std::vector<float> run_add(EngineExecutable& executable, float x) {
+  const std::vector<float> input(4, x);
+  executable.set_input(0, input.data(), input.size(), ScalarType::Float);
+  executable.execute();
+  std::vector<float> sum(4);
+  executable.get_output(0, sum.data(), sum.size(), ScalarType::Float);
+  return sum;
+}
+
+std::vector<float> run_read(EngineExecutable& executable) {
+  executable.execute();
+  std::vector<float> value(4);
+  executable.get_output(0, value.data(), value.size(), ScalarType::Float);
+  return value;
+}
+
+std::vector<float> filled(float value) {
+  return std::vector<float>(4, value);
+}
+
+// Every call after the first of each method replays a cached graph unless
+// max_cached_graphs is 0.
+TEST(GgmlEngineTest, MethodsShareMutableBuffersByKey) {
+  for (const size_t max_cached_graphs : {size_t{0}, size_t{1}, size_t{2}}) {
+    SCOPED_TRACE(max_cached_graphs);
+    auto host = GgmlEngineHost::create(
+        GgmlEngineOptions{.max_cached_graphs = max_cached_graphs});
+    auto context = make_context(*host, make_counter_program());
+    auto reader = context->compile("read");
+    auto adder = context->compile("add");
+    EXPECT_EQ(run_read(*reader), filled(0.0f));
+    EXPECT_EQ(run_add(*adder, 1.0f), filled(1.0f));
+    EXPECT_EQ(run_read(*reader), filled(1.0f));
+    EXPECT_EQ(run_add(*adder, 2.0f), filled(3.0f));
+    EXPECT_EQ(run_add(*adder, 3.0f), filled(6.0f));
+    EXPECT_EQ(run_read(*reader), filled(6.0f));
+  }
+}
+
+TEST(GgmlEngineTest, ExecutablesOfOneMethodShareItsBuffers) {
+  auto host = GgmlEngineHost::create();
+  auto context = make_context(*host, make_counter_program());
+  auto first = context->compile("add");
+  auto second = context->compile("add");
+  EXPECT_EQ(run_add(*first, 1.0f), filled(1.0f));
+  EXPECT_EQ(run_add(*second, 1.0f), filled(2.0f));
+}
+
+// Storage lives with the context, so releasing every executable that binds it
+// keeps its value.
+TEST(GgmlEngineTest, SharedBufferLivesWithItsContext) {
+  auto host = GgmlEngineHost::create();
+  auto context = make_context(*host, make_counter_program());
+  auto adder = context->compile("add");
+  auto reader = context->compile("read");
+  EXPECT_EQ(run_add(*adder, 5.0f), filled(5.0f));
+  adder.reset();
+  EXPECT_EQ(run_read(*reader), filled(5.0f));
+  adder = context->compile("add");
+  EXPECT_EQ(run_add(*adder, 1.0f), filled(6.0f));
+  adder.reset();
+  reader.reset();
+  reader = context->compile("read");
+  EXPECT_EQ(run_read(*reader), filled(6.0f));
+}
+
+TEST(GgmlEngineTest, ContextsDoNotShareMutableBuffers) {
+  auto host = GgmlEngineHost::create();
+  const std::vector<uint8_t> program = make_counter_program();
+  auto first = make_context(*host, program);
+  auto second = make_context(*host, program);
+  auto adder = first->compile("add");
+  auto reader = second->compile("read");
+  EXPECT_EQ(run_add(*adder, 1.0f), filled(1.0f));
+  EXPECT_EQ(run_read(*reader), filled(0.0f));
+}
+
+// "read" binds `state` as an unmutated constant, but "add" writes it, so
+// "read" must see the shared storage, which loads its initial value once.
+TEST(GgmlEngineTest, MethodReadingABufferAnotherWritesSharesIt) {
+  TestProgram program;
+  program.input("x", fbs::ScalarType::FLOAT, {4});
+  program.persistent_buffer("state", {4}, /*mutated=*/true);
+  program.call(
+      "sum",
+      "torch.ops.aten.add.Tensor",
+      {{"self", std::string("state")}, {"other", std::string("x")}},
+      fbs::ScalarType::FLOAT,
+      {4});
+  program.mutate("state", "sum");
+  program.end_method("add", "sum");
+  program.persistent_buffer("state", {4}, /*mutated=*/false);
+  program.call(
+      "value",
+      "torch.ops.aten.mul.Tensor",
+      {{"self", std::string("state")}, {"other", 1.0}},
+      fbs::ScalarType::FLOAT,
+      {4});
+  program.end_method("read", "value");
+  const std::vector<uint8_t> program_bytes = program.finish_program();
+  const std::string header =
+      R"({"state":{"dtype":"F32","shape":[4],"data_offsets":[0,16]}})";
+  std::vector<uint8_t> safetensors = testing::make_safetensors(header, 16);
+  const std::vector<float> initial = {1.0f, 2.0f, 3.0f, 4.0f};
+  std::memcpy(safetensors.data() + safetensors.size() - 16, initial.data(), 16);
+  auto host = GgmlEngineHost::create();
+  auto context = host->create_ggml_context(
+      std::make_shared<const Program>(
+          Program::load(program_bytes.data(), program_bytes.size())),
+      std::make_shared<const Package>(
+          Package::load(OwnedBytes::from_vector(testing::make_zip({
+              {kProgramEntry, program_bytes},
+              {kSafeTensorsEntry, std::move(safetensors)},
+          })))));
+  auto adder = context->compile("add");
+  const std::vector<float> once = {2.0f, 3.0f, 4.0f, 5.0f};
+  EXPECT_EQ(run_add(*adder, 1.0f), once);
+  auto reader = context->compile("read");
+  EXPECT_EQ(run_read(*reader), once);
+  const std::vector<float> twice = {3.0f, 4.0f, 5.0f, 6.0f};
+  EXPECT_EQ(run_add(*adder, 1.0f), twice);
+  EXPECT_EQ(run_read(*reader), twice);
+}
+
+// Engine-neutral program validation refuses this when the context loads.
+TEST(GgmlEngineTest, RejectsMethodsBindingABufferWithDifferentShapes) {
+  auto host = GgmlEngineHost::create();
+  try {
+    make_context(*host, make_counter_program({2, 2}));
+    FAIL() << "the context accepted the program";
+  } catch (const std::runtime_error& error) {
+    EXPECT_NE(
+        std::string(error.what())
+            .find("state 'state' has inconsistent definitions across methods"),
+        std::string::npos)
+        << error.what();
+  }
 }
 
 void expect_compile_error(
@@ -4228,6 +4427,67 @@ TEST(GgmlEngineTest, IndexRefusesInnerDimsAndSeveralIndexTensors) {
   }
 }
 
+// exp(bias) reads only a constant and is computed once; exp(state) reads a
+// buffer each call writes, so it sees each call's state.
+TEST(GgmlEngineTest, FoldsConstantsButNotWrittenBuffers) {
+  TestProgram program;
+  program.input("x", fbs::ScalarType::FLOAT, {4});
+  program.constant(
+      "state", fbs::ScalarType::FLOAT, {4}, nullptr, /*mutated=*/true);
+  program.constant("bias", fbs::ScalarType::FLOAT, {4});
+  const auto exp = [&](const char* name, const char* source) {
+    program.call(
+        name,
+        "torch.ops.aten.exp.default",
+        {{"self", std::string(source)}},
+        fbs::ScalarType::FLOAT,
+        {4});
+  };
+  const auto add = [&](const char* name, const char* left, const char* right) {
+    program.call(
+        name,
+        "torch.ops.aten.add.Tensor",
+        {{"self", std::string(left)}, {"other", std::string(right)}},
+        fbs::ScalarType::FLOAT,
+        {4});
+  };
+  exp("decay", "state");
+  exp("scale", "bias");
+  add("sum", "decay", "scale");
+  add("y", "sum", "x");
+  add("next", "state", "x");
+  program.mutate("state", "next");
+  const std::vector<uint8_t> bytes = program.finish("y");
+  const std::vector<PackagedConstant> constants = {
+      {.key = "state",
+       .bytes = std::vector<uint8_t>(4 * sizeof(float)),
+       .dtype = "F32",
+       .shape = {4}},
+      {.key = "bias",
+       .bytes = std::vector<uint8_t>(4 * sizeof(float)),
+       .dtype = "F32",
+       .shape = {4}}};
+  for (const bool fold : {true, false}) {
+    SCOPED_TRACE(fold);
+    auto host =
+        GgmlEngineHost::create(GgmlEngineOptions{.fold_constants = fold});
+    auto context = make_constants_context(*host, bytes, constants);
+    auto executable = context->compile("forward");
+    // exp(bias) is held beside the two constants when folded.
+    EXPECT_EQ(
+        context->materialized_constant_bytes(),
+        (fold ? 3 : 2) * 4 * sizeof(float));
+    const std::vector<float> x(4, 1.0f);
+    for (const float expected : {3.0f, (std::exp(1.0f) + 1.0f) + 1.0f}) {
+      executable->set_input(0, x.data(), x.size(), ScalarType::Float);
+      executable->execute();
+      std::vector<float> y(4);
+      executable->get_output(0, y.data(), y.size(), ScalarType::Float);
+      EXPECT_EQ(y, std::vector<float>(4, expected));
+    }
+  }
+}
+
 TEST(GgmlEngineTest, GpuUnavailableOnCpuVariant) {
   GgmlEngineOptions options;
   options.device = GgmlDevice::Gpu;
@@ -4329,6 +4589,58 @@ TEST(GgmlEngineTest, AttentionOnlyKvCachesAreF16WhereTheGpuRunsAttention) {
         f16_kv_cache_bytes_on_cpu(program, gpu_runs_attention, true),
         Result(0, 0));
   }
+}
+
+// "prefill" over 4 queries and "decode" over 1, each attending the same
+// zero-initialized [1, 8, 2, 64] key and value caches through custom_sdpa.
+std::vector<uint8_t> make_methods_sharing_kv_caches_program() {
+  TestProgram program;
+  for (const auto& [name, queries] :
+       {std::pair{"prefill", int64_t{4}}, std::pair{"decode", int64_t{1}}}) {
+    program.input("q", fbs::ScalarType::FLOAT, {1, queries, 2, 64});
+    program.buffer("k_cache", {1, 8, 2, 64});
+    program.buffer("v_cache", {1, 8, 2, 64});
+    program.call(
+        "attended",
+        "torch.ops.llama.custom_sdpa.default",
+        {{"query", std::string("q")},
+         {"key", std::string("k_cache")},
+         {"value", std::string("v_cache")},
+         {"start_pos", int64_t{0}}},
+        fbs::ScalarType::FLOAT,
+        {1, queries, 2, 64});
+    program.end_method(name, "attended");
+  }
+  return program.finish_program();
+}
+
+bool gpu_runs_only_the_first_attention_asked_about() {
+  return gpu_attention_asked++ == 0;
+}
+
+// Methods share their caches' storage, so where the GPU runs only one
+// method's attention over F16 keys and values, both store the caches in F32,
+// whichever compiles first.
+TEST(GgmlEngineTest, MethodsSharingKvCachesStoreThemInOneType) {
+  for (const auto& [first, second] :
+       {std::pair{"prefill", "decode"}, std::pair{"decode", "prefill"}}) {
+    SCOPED_TRACE(first);
+    gpu_attention_asked = 0;
+    auto host = GgmlEngineHost::create(GgmlEngineOptions{
+        .gpu_runs_f16_attention_for_testing =
+            gpu_runs_only_the_first_attention_asked_about});
+    auto context =
+        make_context(*host, make_methods_sharing_kv_caches_program());
+    auto compiled = context->compile(first);
+    EXPECT_NO_THROW(context->compile(second));
+    EXPECT_EQ(context->f16_kv_cache_bytes(), 0);
+  }
+  auto host = GgmlEngineHost::create(GgmlEngineOptions{
+      .gpu_runs_f16_attention_for_testing = gpu_runs_attention});
+  auto context = make_context(*host, make_methods_sharing_kv_caches_program());
+  auto prefill = context->compile("prefill");
+  auto decode = context->compile("decode");
+  EXPECT_EQ(context->f16_kv_cache_bytes(), 2 * 8 * 2 * 64 * 2);
 }
 
 // Attention over caches in shapes the SDPA lowerings refuse.
