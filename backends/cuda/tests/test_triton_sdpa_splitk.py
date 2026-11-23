@@ -341,7 +341,10 @@ class TestTritonSdpaSplitK(unittest.TestCase):
                     q, k, v, None, 0.0, False, 0.0, True, kv_len
                 )
 
-        B, H_q, H_kv, Lk, D = 1, 32, 2, 512, 128
+        # 4:1 GQA keeps every width in [2, 16] within the unmasked tile caps,
+        # so only the concrete-L_q check keeps the launcher away.
+        B, H_q, H_kv, Lk, D = 1, 8, 2, 512, 128
+        self.assertTrue(self.sdpa_module._small_query_tile_fits(16 * 4, D, False))
         k = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
         v = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
         kv_len = torch.tensor([300], dtype=torch.int64, device="cuda")
