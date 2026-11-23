@@ -273,6 +273,8 @@ class GraphBuilder {
   void lower_linear(const Node& node);
   void lower_row_gather(const Node& node);
   void lower_expert_matmul(const Node& bmm, const Node& index);
+  std::optional<std::pair<ValueId, int64_t>> repeated_tokens(
+      ValueId mat2) const;
   void check_row_indices(ValueId id, int64_t rows);
   void require_exact_integers(
       ValueId id,
@@ -377,6 +379,7 @@ class GraphBuilder {
   void lower_dequantize_affine(const Node& node);
   ggml_tensor* rope_factor_tensor(ValueId inv_freq);
   void lower_rope(const Node& node);
+  void lower_gated_delta_rule(const Node& node);
   ggml_tensor* skip_f16_cast(ggml_tensor* rows) const;
   void lower_index_put(const Node& node);
   ggml_tensor* attention_mask(ValueId id, int64_t tokens, int64_t keys);
