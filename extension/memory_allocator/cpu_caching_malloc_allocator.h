@@ -59,6 +59,8 @@ class CPUCachingAllocator : public executorch::runtime::MemoryAllocator {
   // New invariants must be written.
   FlatHashMap<size_t, SmallVector<void*, 16>> available_map_;
   FlatHashMap<void*, size_t> allocation_map_;
+  // Number of blocks malloced for each size, cached or in use.
+  FlatHashMap<size_t, size_t> block_counts_;
   // Since allocation_map_ and other member variables are mutated/read via
   // all public APIs, we need a mutex to protect concurrent access to these
   // instance members.
