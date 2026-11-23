@@ -251,6 +251,34 @@ class PlannedReplacementTest(unittest.TestCase):
                     self.run_pass(graph_module)
                 self.assertUnchanged(graph_module, before)
 
+    def test_inputs_only_the_replaced_call_used_are_removed(self):
+        """A replacement that reads around a pure input (as a GEMM reads
+        around the transpose of its weight) removes it unless another node
+        uses it; graph inputs stay."""
+        from executorch.backends.cuda.triton import routing
+
+        for shared in (False, True):
+            graph = torch.fx.Graph()
+            x = graph.placeholder("x")
+            negated = graph.call_function(torch.ops.aten.neg.default, (x,))
+            relu = graph.call_function(_RELU, (negated,))
+            graph.output((relu, negated) if shared else (relu,))
+            plan = routing.ReplacementPlan(
+                "fake",
+                (
+                    routing.Candidate(routing.REGULAR_LOWERING),
+                    routing.Candidate("fake", None, "", _SIGMOID, (x,)),
+                ),
+                "fake",
+                signature="relu(neg(x))",
+            )
+            with self.subTest(shared=shared):
+                routing.replace(graph, relu, plan, plan.candidate("fake"))
+                graph.lint()
+                targets = [n.target for n in graph.nodes if n.op == "call_function"]
+                self.assertEqual(torch.ops.aten.neg.default in targets, shared)
+                self.assertIn(x, list(graph.nodes))
+
 
 class TopkPlanTest(unittest.TestCase):
     def test_rows_the_kernel_loads_whole_are_replaced(self):
