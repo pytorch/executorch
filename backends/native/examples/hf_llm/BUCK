@@ -57,6 +57,8 @@ fbcode_target(
     deps = [
         ":export_hf_llm_lib",
         "//caffe2:torch",
+        "//executorch/backends/native:lib",
+        "//executorch/exir:lib",
         "//executorch/extension/llm/export:gguf",
         "//pytorch/ao:torchao",
         "fbsource//third-party/pypi/gguf:gguf",

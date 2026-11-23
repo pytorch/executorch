@@ -15,6 +15,7 @@ from unittest import mock
 
 import gguf
 import torch
+from executorch.backends.native import get_default_compile_config
 from executorch.backends.native.examples.hf_llm import export_hf_llm
 from executorch.backends.native.examples.hf_llm.export_hf_llm import (
     _check_attention_args,
@@ -31,6 +32,9 @@ from executorch.backends.native.examples.hf_llm.export_hf_llm import (
     load_gguf,
     OffGraphLastTokenLM,
 )
+from executorch.backends.native.passes import FuseRoPEPass
+from executorch.backends.native.passes._utils import _resolve_aten
+from executorch.exir import to_edge
 from executorch.exir.native import to_native
 from executorch.extension.llm.cache.hf_attention import register_offgraph_attention
 from executorch.extension.llm.cache.reference_cache import LayerPolicy
@@ -66,6 +70,8 @@ from transformers.masking_utils import (
     sliding_window_bidirectional_mask_function,
     sliding_window_causal_mask_function,
 )
+from transformers.models.qwen3_5 import modeling_qwen3_5 as qwen35
+from transformers.models.qwen3_5_moe import modeling_qwen3_5_moe as qwen35moe
 
 # Architectures gguf_hf maps; the GGUF test covers each.
 _CONFIGS = {
@@ -405,6 +411,67 @@ class ExportHfLlmTest(unittest.TestCase):
         self.assertTrue(caches)
         self.assertEqual({t.dtype for t in caches.values()}, {torch.float16})
         self.assertEqual(_ops_except_casts(ep), _ops_except_casts(ep32))
+
+    def test_qwen35_rotary_fuses_into_one_rope_per_projection(self) -> None:
+        # Text positions fill all of M-RoPE's rows, so transformers' rotary
+        # and apply rotate the queries and keys by one rope each.
+        rope = {
+            "rope_type": "default",
+            "rope_theta": 1e7,
+            "partial_rotary_factor": 0.25,
+            "mrope_section": [2, 1, 1],
+            "mrope_interleaved": True,
+        }
+        for modeling, rotary_cls, config_cls in (
+            (qwen35, qwen35.Qwen3_5TextRotaryEmbedding, qwen35.Qwen3_5TextConfig),
+            (
+                qwen35moe,
+                qwen35moe.Qwen3_5MoeTextRotaryEmbedding,
+                qwen35moe.Qwen3_5MoeTextConfig,
+            ),
+        ):
+            with self.subTest(rotary_cls.__name__):
+                rotary = rotary_cls(config_cls(head_dim=32, rope_parameters=rope))
+
+                class Rotate(torch.nn.Module):
+                    apply_rope = staticmethod(modeling.apply_rotary_pos_emb)
+
+                    def __init__(self, rotary=rotary):
+                        super().__init__()
+                        self.rotary = rotary
+
+                    def forward(self, q, k, position_ids):
+                        cos, sin = self.rotary(q, position_ids)
+                        return self.apply_rope(q, k, cos, sin)
+
+                model = Rotate().eval()
+                inputs = (
+                    torch.randn(1, 4, 5, 32),
+                    torch.randn(1, 2, 5, 32),
+                    torch.arange(5).reshape(1, 5) + 7,
+                )
+                fused = (
+                    to_edge(
+                        torch.export.export(model, inputs, strict=True),
+                        compile_config=get_default_compile_config(),
+                    )
+                    .transform([FuseRoPEPass()])
+                    .exported_program()
+                )
+                ops = collections.Counter(
+                    _resolve_aten(n.target)
+                    for n in fused.graph.nodes
+                    if n.op == "call_function"
+                )
+                self.assertEqual(ops[torch.ops.native.rope.default], 2)
+                for table_op in (
+                    torch.ops.aten.cos.default,
+                    torch.ops.aten.sin.default,
+                    torch.ops.aten.where.self,
+                    torch.ops.aten.slice_scatter.default,
+                ):
+                    self.assertEqual(ops[table_op], 0)
+                torch.testing.assert_close(fused.module()(*inputs), model(*inputs))
 
     def test_golden_samples_teacher_force_eager_argmax(self) -> None:
         torch.manual_seed(7)
