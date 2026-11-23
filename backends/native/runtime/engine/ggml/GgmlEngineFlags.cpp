@@ -44,6 +44,18 @@ DEFINE_bool(
     "in F16 on CUDA, as in llama.cpp. Set: they accumulate in F32, at 2-3x "
     "prefill and 4x decode GEMM time. Ops: F16 linear, matmul, mm, bmm and "
     "convolution; CUDA only.");
+DEFINE_bool(
+    fold_constants,
+    true,
+    "Default: nodes that read only unquantized constants are computed once, "
+    "at compile, and every call reads their results. False (testing only): "
+    "they are computed on every call.");
+DEFINE_bool(
+    print_memory,
+    false,
+    "Print, after each compile and when the context is destroyed, the "
+    "context's constant and compute buffer bytes and the device's free "
+    "memory to stderr.");
 namespace ptn {
 
 // cppcheck-suppress unusedFunction ; called by the ggml runners
@@ -66,6 +78,8 @@ GgmlEngineOptions ggml_engine_options_from_flags() {
   options.exact_gelu_for_testing = FLAGS_exact_gelu_for_testing;
   options.cuda_f32_accumulation_for_testing =
       FLAGS_cuda_f32_accumulation_for_testing;
+  options.fold_constants = FLAGS_fold_constants;
+  options.print_memory = FLAGS_print_memory;
   return options;
 }
 

@@ -60,6 +60,9 @@ struct GgmlEngineOptions {
   // Prints each newly built graph's node count per ggml op to stderr, which
   // shows whether a lowering rewrite fired.
   bool print_graph_ops = false;
+  // Prints, after each compile, the context's materialized constant bytes and
+  // the device's free memory to stderr.
+  bool print_memory = false;
   // Testing only. Default (false): matrix multiplies with an F16 operand
   // accumulate in F16 on CUDA, as llama.cpp's cuBLAS GEMMs do. Set: they
   // accumulate in F32, at 2-3x prefill and 4x decode GEMM time plus a
@@ -98,6 +101,10 @@ struct GgmlEngineOptions {
   // read by scaled_dot_product_attention and the custom SDPA; CUDA and HIP
   // only.
   bool f32_gpu_kv_cache_for_testing = false;
+  // Default (true): nodes that read only unquantized constants are computed
+  // once, when the executable is compiled, and every call reads their
+  // results. False (testing only): they are computed on every call.
+  bool fold_constants = true;
 };
 
 class GgmlEngineContext;
