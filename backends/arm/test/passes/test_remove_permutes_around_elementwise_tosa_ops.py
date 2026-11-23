@@ -10,6 +10,7 @@ import torch
 from executorch.backends.arm._passes.remove_permutes_around_elementwise_tosa_ops import (
     RemovePermutesAroundElementwiseTosaOps,
 )
+from executorch.backends.arm._passes.tosa_lowering_utils import create_rescale_node
 from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
     TosaSpecification,
@@ -81,25 +82,23 @@ def test_extra_permutable_ops_makes_op_permutable() -> None:
     def build() -> torch.fx.GraphModule:
         graph = torch.fx.Graph()
         x = graph.placeholder("x")
-        x.meta["val"] = torch.randn(1, 3, 4, 5)
+        x.meta["val"] = torch.zeros(1, 3, 4, 5, dtype=torch.int32)
         permute_in = graph.create_node(
             "call_function",
             PERMUTE_TARGET,
             args=(x, [0, 2, 3, 1]),
         )
-        permute_in.meta["val"] = torch.randn(1, 4, 5, 3)
-        rescale = graph.create_node(
-            "call_function",
-            RESCALE_TARGET,
+        permute_in.meta["val"] = torch.zeros(1, 4, 5, 3, dtype=torch.int32)
+        rescale = create_rescale_node(
+            graph,
             args=(permute_in, torch.int8, [1.0], 0, 0),
         )
-        rescale.meta["val"] = torch.randn(1, 4, 5, 3)
         permute_out = graph.create_node(
             "call_function",
             PERMUTE_TARGET,
             args=(rescale, [0, 3, 1, 2]),
         )
-        permute_out.meta["val"] = torch.randn(1, 3, 4, 5)
+        permute_out.meta["val"] = torch.zeros(1, 3, 4, 5, dtype=torch.int8)
         graph.output(permute_out)
         return torch.fx.GraphModule({}, graph)
 
@@ -121,16 +120,16 @@ def test_extra_permutable_ops_makes_op_permutable() -> None:
 def test_remove_permutes_around_rescale_tosa_INT() -> None:
     graph = torch.fx.Graph()
     x = graph.placeholder("x")
-    x.meta["val"] = torch.randn(1, 3, 4, 5)
+    x.meta["val"] = torch.zeros(1, 3, 4, 5, dtype=torch.int32)
 
     permute_in = graph.create_node(
         "call_function",
         PERMUTE_TARGET,
         args=(x, [0, 2, 3, 1]),
     )
-    rescale = graph.create_node(
-        "call_function",
-        RESCALE_TARGET,
+    permute_in.meta["val"] = torch.zeros(1, 4, 5, 3, dtype=torch.int32)
+    rescale = create_rescale_node(
+        graph,
         args=(permute_in, torch.int8, [1.0], 0, 0),
     )
     permute_out = graph.create_node(
@@ -155,24 +154,22 @@ def test_remove_permutes_around_rescale_tosa_INT() -> None:
 def test_terminal_sink_view_broadcast_is_optimized_tosa_INT() -> None:
     graph = torch.fx.Graph()
     x = graph.placeholder("x")
-    x.meta["val"] = torch.randn(1, 4, 1, 1)
+    x.meta["val"] = torch.zeros(1, 4, 1, 1, dtype=torch.int32)
     direct = graph.placeholder("direct")
-    direct.meta["val"] = torch.randn(1, 8, 4)
+    direct.meta["val"] = torch.zeros(1, 8, 4, dtype=torch.int8)
 
     permute = graph.create_node("call_function", PERMUTE_TARGET, args=(x, [0, 2, 3, 1]))
-    permute.meta["val"] = torch.randn(1, 1, 1, 4)
+    permute.meta["val"] = torch.zeros(1, 1, 1, 4, dtype=torch.int32)
     mul = graph.create_node("call_function", MUL_TARGET, args=(permute, permute))
-    mul.meta["val"] = torch.randn(1, 1, 1, 4)
+    mul.meta["val"] = torch.zeros(1, 1, 1, 4, dtype=torch.int32)
     sink = graph.create_node("call_function", VIEW_TARGET, args=(mul, [1, 1, 4]))
-    sink.meta["val"] = torch.randn(1, 1, 4)
-    rescale = graph.create_node(
-        "call_function",
-        RESCALE_TARGET,
+    sink.meta["val"] = torch.zeros(1, 1, 4, dtype=torch.int32)
+    rescale = create_rescale_node(
+        graph,
         args=(sink, torch.int8, [1.0], 0, 0),
     )
-    rescale.meta["val"] = torch.randn(1, 1, 4)
     sub = graph.create_node("call_function", SUB_TARGET, args=(direct, rescale))
-    sub.meta["val"] = torch.randn(1, 8, 4)
+    sub.meta["val"] = torch.zeros(1, 8, 4, dtype=torch.int8)
     graph.output(sub)
 
     graph_module = torch.fx.GraphModule({}, graph)
