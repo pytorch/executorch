@@ -443,12 +443,13 @@ def _repeated_row_source(table: Node) -> "Node | None":
 
 def _trig_source(
     table: Node, trig: torch._ops.OpOverload, x: Node
-) -> "tuple[Node, float, bool] | None":
+) -> "tuple[Node, float, int, bool] | None":
     """Match FP32 trig -> optional scale -> model-dtype cast -> head broadcast.
 
-    Returns the phase, the attention scale, and whether the phase holds equal rows of
-    positions in a leading dim (see _repeated_row_source); then the table
-    repeats one row's trig.
+    Returns the phase, the attention scale, the head axis the table broadcasts
+    over (1 for an input in [B, H, T, D], 2 for one in [B, T, H, D]), and
+    whether the phase holds equal rows of positions in a leading dim (see
+    _repeated_row_source); then the table repeats one row's trig.
     """
     t, xt = _fake_tensor(table), _fake_tensor(x)
     if (
@@ -459,9 +460,12 @@ def _trig_source(
         or not xt.is_floating_point()
     ):
         return None
-    node = _unsqueeze_source(table, 1)
-    if node is None:
+    head_axis = next(
+        (axis for axis in (1, 2) if _unsqueeze_source(table, axis) is not None), None
+    )
+    if head_axis is None:
         return None
+    node = _unsqueeze_source(table, head_axis)
     if _is_op(node, torch.ops.aten._to_copy.default):
         src = node.args[0]
         st = _fake_tensor(src)
@@ -494,7 +498,7 @@ def _trig_source(
         or pt.dim() != (4 if has_equal_rows else 3)
     ):
         return None
-    return phase, attention_scale, has_equal_rows
+    return phase, attention_scale, head_axis, has_equal_rows
 
 
 def _broadcast_frequency_product(
@@ -593,15 +597,16 @@ def _frequency_product(phase: Node) -> "tuple[Node, Node] | None":  # noqa: C901
 
 def _rope_frequencies(
     x: Node, cos: Node, sin: Node
-) -> "tuple[Node, Node, float, bool] | None":
-    """Positions, inverse frequencies and attention scale of the tables, and whether the
-    positions are the first row of a [R, B, T] tensor of equal rows rather than
-    [B, T] themselves."""
+) -> "tuple[Node, Node, float, int, bool] | None":
+    """Positions, inverse frequencies, attention scale and head axis of the
+    tables, and whether the positions are a [R, B, T] tensor of equal rows,
+    whose first row the caller takes, rather than [B, T]."""
     cosine = _trig_source(cos, torch.ops.aten.cos.default, x)
     sine = _trig_source(sin, torch.ops.aten.sin.default, x)
     if cosine is None or sine is None or cosine != sine:
         return None
-    phase, attention_scale, has_equal_rows = cosine
+    phase, attention_scale, head_axis, has_equal_rows = cosine
+    token_axis = 3 - head_axis
     operands = (
         _broadcast_frequency_product(phase, has_equal_rows=True)
         if has_equal_rows
@@ -623,15 +628,15 @@ def _rope_frequencies(
         pt = pt[0]
     checks = (
         (pt.shape[0] == 1) | (pt.shape[0] == xt.shape[0]),
-        pt.shape[1] == xt.shape[2],
+        pt.shape[1] == xt.shape[token_axis],
         2 * it.shape[0] == xt.shape[3],
         ct.shape[0] == pt.shape[0],
-        ct.shape[2] == pt.shape[1],
+        ct.shape[token_axis] == pt.shape[1],
         ct.shape[3] == xt.shape[3],
     )
     if not all(statically_known_true(check) for check in checks):
         return None
-    return positions, inv_freq, attention_scale, has_equal_rows
+    return positions, inv_freq, attention_scale, head_axis, has_equal_rows
 
 
 def _first_row(graph: Graph, node: Node, like: Node) -> Node:
@@ -646,6 +651,18 @@ def _first_row(graph: Graph, node: Node, like: Node) -> Node:
     return row
 
 
+def _swap_heads_and_tokens(graph: Graph, node: Node, like: Node) -> Node:
+    """``node.permute(0, 2, 1, 3)``, in the dialect of ``like``'s op."""
+    permute = (
+        exir_ops.edge.aten.permute_copy.default
+        if isinstance(like.target, EdgeOpOverload)
+        else torch.ops.aten.permute_copy.default
+    )
+    swapped = graph.call_function(permute, (node, [0, 2, 1, 3]))
+    swapped.meta["val"] = node.meta["val"].permute(0, 2, 1, 3)
+    return swapped
+
+
 class FuseRoPEPass(ExportPass):
     """Fuse HF frequency construction and split-half rotary embedding.
 
@@ -653,6 +670,9 @@ class FuseRoPEPass(ExportPass):
     cos/sin cast to the input dtype, and the rotate_half apply. Emits
     ``native.rope(x, position_ids, inv_freq, False, attention_scale)``.
     Precomputed tables and unrecognized frequency constructions stay decomposed.
+
+    An apply in [B, T, H, D], whose tables broadcast over dim 2, rotates a
+    [B, H, T, D] view: the op sits between two ``permute(0, 2, 1, 3)``.
 
     Multimodal rotary tables built from [R, B, T] position rows that are all
     equal, as text positions are, rotate by the first row's positions, however
@@ -679,7 +699,13 @@ class FuseRoPEPass(ExportPass):
             frequencies = _rope_frequencies(x, cos, sin)
             if frequencies is None:
                 continue
-            position_ids, inv_freq, attention_scale, has_equal_rows = frequencies
+            (
+                position_ids,
+                inv_freq,
+                attention_scale,
+                head_axis,
+                has_equal_rows,
+            ) = frequencies
 
             # Partial rotary: rewrite the slice/apply/cat to one native.rope on the
             # full tensor (rope passes the tail through), so no strided slice is
@@ -693,12 +719,18 @@ class FuseRoPEPass(ExportPass):
             with graph.inserting_before(replaced):
                 if has_equal_rows:
                     position_ids = _first_row(graph, position_ids, replaced)
+                if head_axis == 2:
+                    rope_input = _swap_heads_and_tokens(graph, rope_input, replaced)
                 fused = graph.call_function(
                     rope_op,
                     (rope_input, position_ids, inv_freq, False, attention_scale),
                 )
-            fused.meta.update(replaced.meta)
-            replaced.replace_all_uses_with(fused)
+                result = fused
+                if head_axis == 2:
+                    fused.meta.update(rope_input.meta)
+                    result = _swap_heads_and_tokens(graph, fused, replaced)
+            result.meta.update(replaced.meta)
+            replaced.replace_all_uses_with(result)
             graph.erase_node(replaced)
             modified = True
 

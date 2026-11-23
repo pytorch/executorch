@@ -41,7 +41,9 @@ def _rotate_half(t):
     return torch.cat((-t[..., half:], t[..., :half]), dim=-1)
 
 
-def _hf_rope_tables(x, position_ids, inv_freq, attention_scale=1.0, broadcast=False):
+def _hf_rope_tables(
+    x, position_ids, inv_freq, attention_scale=1.0, broadcast=False, head_axis=1
+):
     if broadcast:
         # The outer product as transformers forms it from 5.19.
         freqs = position_ids[..., None].float() * inv_freq.float()
@@ -52,8 +54,8 @@ def _hf_rope_tables(x, position_ids, inv_freq, attention_scale=1.0, broadcast=Fa
         position_ids_expanded = position_ids[:, None, :].float()
         freqs = (inv_freq_expanded @ position_ids_expanded).transpose(1, 2)
     emb = torch.cat((freqs, freqs), dim=-1)
-    cos = (emb.cos() * attention_scale).to(x.dtype).unsqueeze(1)
-    sin = (emb.sin() * attention_scale).to(x.dtype).unsqueeze(1)
+    cos = (emb.cos() * attention_scale).to(x.dtype).unsqueeze(head_axis)
+    sin = (emb.sin() * attention_scale).to(x.dtype).unsqueeze(head_axis)
     return cos, sin
 
 
@@ -655,8 +657,6 @@ class FuseRopePassTest(unittest.TestCase):
                     _, sin = tables(position_ids + 1, inv_freq)
                 elif self.mismatch == "frequency":
                     _, sin = tables(position_ids, inv_freq * 2)
-                elif self.mismatch == "broadcast":
-                    cos, sin = cos.squeeze(1).unsqueeze(2), sin.squeeze(1).unsqueeze(2)
                 elif self.mismatch == "interleaved_tables":
                     cos = cos[..., : x.shape[-1] // 2].repeat_interleave(2, dim=-1)
                     sin = sin[..., : x.shape[-1] // 2].repeat_interleave(2, dim=-1)
@@ -677,7 +677,6 @@ class FuseRopePassTest(unittest.TestCase):
                 "scale",
                 "phase",
                 "frequency",
-                "broadcast",
                 "interleaved_tables",
                 "rotation",
             ),
@@ -688,6 +687,50 @@ class FuseRopePassTest(unittest.TestCase):
                 ep = _transformed(model, inputs, [FuseRoPEPass()])
                 targets = [n.target for n in ep.graph.nodes if n.op == "call_function"]
                 self.assertNotIn(torch.ops.native.rope.default, targets)
+                torch.testing.assert_close(ep.module()(*inputs), model(*inputs))
+
+    def test_rope_before_the_head_transpose_fuses(self):
+        # Gemma 4 rotates [B, T, H, D] projections with tables unsqueezed at
+        # dim 2; its global layers rotate a quarter of the channels and give
+        # the rest zero frequencies.
+        class TokenMajorRoPE(nn.Module):
+            def __init__(self, broadcast):
+                super().__init__()
+                self.broadcast = broadcast
+
+            def forward(self, x, position_ids, inv_freq):
+                cos, sin = _hf_rope_tables(
+                    x, position_ids, inv_freq, broadcast=self.broadcast, head_axis=2
+                )
+                return _apply_rope_tables(x, cos, sin)
+
+        quarter = torch.cat((torch.tensor([1.0, 0.1]), torch.zeros(6)))
+        # Equal head and token sizes: the tables' axis alone says which is which.
+        for inv_freq, heads, broadcast in itertools.product(
+            (torch.linspace(0.01, 0.9, 8), quarter), (3, 4), (False, True)
+        ):
+            with self.subTest(
+                zeros=bool((inv_freq == 0).any()), heads=heads, broadcast=broadcast
+            ):
+                inputs = (
+                    torch.randn(2, 3, heads, 16),
+                    torch.arange(6).reshape(2, 3) + 7,
+                    inv_freq,
+                )
+                model = TokenMajorRoPE(broadcast).eval()
+                ep = _transformed(model, inputs, [FuseRoPEPass()])
+                nodes = [n for n in ep.graph.nodes if n.op == "call_function"]
+                self.assertEqual(
+                    [_resolve_aten(n.target) for n in nodes],
+                    [
+                        torch.ops.aten.permute_copy.default,
+                        torch.ops.native.rope.default,
+                        torch.ops.aten.permute_copy.default,
+                    ],
+                )
+                self.assertEqual(
+                    [n.args[1] for n in (nodes[0], nodes[2])], [[0, 2, 1, 3]] * 2
+                )
                 torch.testing.assert_close(ep.module()(*inputs), model(*inputs))
 
     def test_strided_partial_rotary_keeps_slices(self):
