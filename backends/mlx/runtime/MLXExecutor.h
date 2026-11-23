@@ -183,6 +183,13 @@ struct ExecutionState {
   static constexpr uint32_t kNoTempLastUse = 0xFFFFFFFFu;
   std::vector<std::vector<uint32_t>> temp_last_use;
 
+  // The loaded program is immutable. Keep each callable's generated-source
+  // cache across executions, and discard it when binding another program.
+  std::unordered_map<
+      const MetalKernelNode*,
+      ::mlx::core::fast::CustomKernelFunction>
+      metal_kernels;
+
   void bind(
       const MLXProgram& prog,
       const ConstantData& const_data,
@@ -190,6 +197,7 @@ struct ExecutionState {
     program = &prog;
     constants = &const_data;
     mutable_buffers = &mut_bufs;
+    metal_kernels.clear();
 
     // Allocate space for inputs, outputs, and temps only (not constants or
     // mutable buffers)

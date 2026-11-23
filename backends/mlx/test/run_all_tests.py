@@ -57,6 +57,15 @@ def discover_and_import_tests():
     This triggers registration of all tests.
     """
     importlib.import_module(".test_ops", package=__package__)
+    importlib.import_module(
+        "executorch.backends.mlx.custom_kernel_ops.test.test_pointwise_gates"
+    )
+    importlib.import_module(
+        "executorch.backends.mlx.custom_kernel_ops.test.test_rotary"
+    )
+    importlib.import_module(
+        "executorch.backends.mlx.custom_kernel_ops.test.test_decode_fusion"
+    )
 
 
 def _run_single_test(
