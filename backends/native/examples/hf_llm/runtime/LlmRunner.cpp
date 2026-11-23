@@ -14,7 +14,6 @@
 #include <functional>
 #include <iostream>
 #include <limits>
-#include <map>
 #include <memory>
 #include <numeric>
 #include <optional>
@@ -27,6 +26,7 @@
 #include <executorch/backends/native/examples/hf_llm/runtime/LlmRunner.h>
 #include <executorch/backends/native/examples/hf_llm/runtime/LlmRunnerUtils.h>
 #include <executorch/backends/native/examples/runner_utils/runner_utils.h>
+#include <executorch/backends/native/runtime/OffGraphCache.h>
 #include <executorch/backends/native/runtime/Program.h>
 #include <executorch/backends/native/runtime/deserialize/Package.h>
 #include <executorch/backends/native/runtime/deserialize/Samples.h>
@@ -75,7 +75,13 @@ DEFINE_int32(
     0,
     "Off-graph KV cache capacity in tokens; 0 uses --max_seq_length. Only "
     "for packages exported with --offgraph_cache.");
-DEFINE_string(kv_dtype, "fp32", "Off-graph KV cache storage: fp32 or fp16.");
+DEFINE_string(
+    kv_dtype,
+    "auto",
+    "KV cache storage: auto, fp32 or fp16. auto takes the engine's default, as "
+    "llama.cpp stores it: fp16 on a ggml GPU, fp32 on the ggml CPU and on "
+    "Vulkan. It sets an off-graph cache's storage and, through the engine, an "
+    "in-graph cache's; a type the engine cannot store is refused.");
 DEFINE_int32(
     kv_initial_capacity,
     -1,
@@ -90,6 +96,9 @@ DEFINE_bool(
 namespace {
 
 namespace cache = executorch::extension::llm::cache;
+
+// get_logits_to_keep_mode's value for selected logits.
+constexpr int64_t kSelectedLogits = 2;
 
 using Clock = std::chrono::steady_clock;
 
@@ -121,112 +130,6 @@ size_t kv_cache_length(const ptn::Method& method) {
   return length;
 }
 
-constexpr std::string_view kUpdateAndAttend =
-    "torch.ops.kvcache.update_and_attend.default";
-
-// The off-graph KV cache a method's update_and_attend calls need: one layer per
-// cache id, shaped like its K, with the sliding window (or none) the package's
-// metadata gives it. nullopt if the method has none.
-std::optional<cache::CacheGeometry> offgraph_cache_geometry(
-    const ptn::Method& method,
-    const ptn::Package& package) {
-  std::map<int64_t, cache::LayerGeometry> layers;
-  for (const ptn::Node& node : method.graph.nodes) {
-    if (node.target != kUpdateAndAttend) {
-      continue;
-    }
-    const auto arg = [&](std::string_view name,
-                         size_t positional) -> const ptn::Argument& {
-      const auto named = std::ranges::find_if(
-          node.inputs,
-          [&](const ptn::NamedArgument& input) { return input.name == name; });
-      if (named != node.inputs.end()) {
-        return named->arg;
-      }
-      if (positional >= node.inputs.size()) {
-        throw std::runtime_error(
-            "update_and_attend is missing argument " + std::string(name));
-      }
-      return node.inputs[positional].arg;
-    };
-    const ptn::Argument& layer_arg = arg("layer_id", 4);
-    const ptn::Argument& k_arg = arg("k", 1);
-    if (layer_arg.kind() != ptn::ArgKind::Int ||
-        ptn::valid(layer_arg.as_int().id) ||
-        k_arg.kind() != ptn::ArgKind::Tensor) {
-      throw std::runtime_error(
-          "update_and_attend needs a constant layer_id and a K tensor");
-    }
-    const std::vector<int64_t>& k_sizes =
-        method.graph.value(k_arg.as_tensor().id).tensor_meta().sizes;
-    if (k_sizes.size() != 4) {
-      throw std::runtime_error("update_and_attend K must be [B, H, T, D]");
-    }
-    const cache::LayerGeometry layer{
-        .n_kv_heads = static_cast<int>(k_sizes[1]),
-        .head_dim = static_cast<int>(k_sizes[3])};
-    const auto [it, inserted] =
-        layers.try_emplace(layer_arg.as_int().value, layer);
-    if (!inserted &&
-        (it->second.n_kv_heads != layer.n_kv_heads ||
-         it->second.head_dim != layer.head_dim)) {
-      throw std::runtime_error(
-          "update_and_attend calls disagree on cache layer " +
-          std::to_string(it->first) + "'s shape");
-    }
-  }
-  if (layers.empty()) {
-    return std::nullopt;
-  }
-  cache::CacheGeometry geometry;
-  for (const auto& [id, layer] : layers) {
-    if (id != static_cast<int64_t>(geometry.layers.size())) {
-      throw std::runtime_error("update_and_attend cache ids must be 0..n-1");
-    }
-    geometry.layers.push_back(layer);
-  }
-
-  namespace llm = executorch::extension::llm;
-  const auto per_layer = [&](const char* name) {
-    std::optional<std::vector<int64_t>> values = package.metadata_ints(name);
-    if (values && values->size() != geometry.layers.size()) {
-      throw std::runtime_error(
-          std::string("package metadata ") + name + " has " +
-          std::to_string(values->size()) + " entries for " +
-          std::to_string(geometry.layers.size()) + " cache layers");
-    }
-    return values;
-  };
-  const auto kv_heads = per_layer(llm::kKVHeads);
-  const auto head_dims = per_layer(llm::kHeadDims);
-  const auto windows = per_layer(llm::kWindows);
-  // Without them a sliding layer would silently attend its whole history.
-  if (!windows) {
-    throw std::runtime_error(
-        std::string("package metadata has no ") + llm::kWindows +
-        "; export the package with export_hf_llm.py --offgraph_cache");
-  }
-  for (size_t i = 0; i < geometry.layers.size(); ++i) {
-    cache::LayerGeometry& layer = geometry.layers[i];
-    if ((kv_heads && (*kv_heads)[i] != layer.n_kv_heads) ||
-        (head_dims && (*head_dims)[i] != layer.head_dim)) {
-      throw std::runtime_error(
-          "package metadata disagrees with the graph on cache layer " +
-          std::to_string(i) + "'s shape");
-    }
-    const int64_t window = (*windows)[i];
-    if (window < 0 || window > std::numeric_limits<int>::max()) {
-      throw std::runtime_error(
-          "package metadata gives cache layer " + std::to_string(i) +
-          " an invalid window");
-    }
-    if (window > 0) {
-      layer.policy = {cache::LayerPolicy::Kind::Ring, static_cast<int>(window)};
-    }
-  }
-  return geometry;
-}
-
 // A runner-owned off-graph KV cache, published for the engine to bind.
 struct OffGraphCache {
   std::shared_ptr<cache::Cache> cache;
@@ -239,21 +142,19 @@ struct OffGraphCache {
 OffGraphCache install_offgraph_cache(
     const char* backend_id,
     const cache::CacheGeometry& geometry,
-    int max_write) {
+    int max_write,
+    bool half_by_default) {
   if (backend_id == nullptr) {
     throw std::runtime_error(
         "the package keeps its KV cache off-graph, which this engine's "
         "runner does not support");
   }
-  if (FLAGS_kv_dtype != "fp16" && FLAGS_kv_dtype != "fp32") {
-    throw std::invalid_argument("--kv_dtype must be fp32 or fp16");
-  }
+  const bool half = ptn::kv_cache_in_half(FLAGS_kv_dtype, half_by_default);
   cache::CacheConfig cfg{
       .capacity = FLAGS_kv_max_capacity > 0 ? FLAGS_kv_max_capacity
                                             : FLAGS_max_seq_length,
       .kv_dtype = static_cast<int>(
-          FLAGS_kv_dtype == "fp16" ? ptn::ScalarType::Half
-                                   : ptn::ScalarType::Float),
+          half ? ptn::ScalarType::Half : ptn::ScalarType::Float),
       .max_write = max_write};
   if (FLAGS_kv_initial_capacity >= 0) {
     cfg.initial_capacity = FLAGS_kv_initial_capacity;
@@ -291,7 +192,7 @@ OffGraphCache install_offgraph_cache(
       sliding,
       cfg.capacity,
       std::min(std::max(cfg.initial_capacity, 1), cfg.capacity),
-      FLAGS_kv_dtype.c_str());
+      half ? "fp16" : "fp32");
   return out;
 }
 
@@ -348,14 +249,15 @@ struct Generation {
 
 // Prefills `prompt_tokens` from `start_position` in calls of at most
 // `max_chunk` tokens, then decodes one token per call until `limit` tokens or
-// an EOS, streaming the text to stdout. With --warmup_prefill it prefills the
-// prompt once beforehand, then clears `offgraph_cache` if there is one.
+// an EOS, streaming the text to stdout unless `tokenizer` is null. With
+// --warmup_prefill it prefills the prompt once beforehand, then clears
+// `offgraph_cache` if there is one.
 Generation generate(
     ptn::EngineExecutable& executable,
     size_t logits_output,
     bool per_token_positions,
     size_t max_chunk,
-    ::tokenizers::Tiktoken& tokenizer,
+    const ::tokenizers::Tiktoken* tokenizer,
     const std::vector<uint64_t>& prompt_tokens,
     int64_t start_position,
     size_t limit,
@@ -408,6 +310,13 @@ Generation generate(
   auto run_tokens = [&](const std::vector<uint64_t>& tokens, int64_t position) {
     set_tokens(tokens);
     set_positions(position, tokens.size());
+    // A selected-logits method takes the token indices to return; the runner
+    // wants only the last.
+    if (executable.num_inputs() == 3) {
+      const int64_t last = static_cast<int64_t>(tokens.size()) - 1;
+      executable.resize_input(2, {1});
+      executable.set_input(2, &last, 1, ptn::kLong);
+    }
     executable.execute();
     const std::vector<int64_t> output_shape =
         executable.output_sizes(logits_output);
@@ -487,19 +396,21 @@ Generation generate(
   size_t generated = 0;
   std::vector<uint64_t> generated_ids;
   uint64_t previous_token = prompt_tokens.back();
-  if (!FLAGS_interactive) {
+  if (tokenizer != nullptr && !FLAGS_interactive) {
     std::printf("text:      ");
   }
   std::fflush(stdout);
   while (generated < limit && !eos_ids.contains(next_token)) {
-    auto decoded = tokenizer.decode(previous_token, next_token);
-    if (!decoded.ok()) {
-      throw std::runtime_error(
-          "failed to decode token: tokenizer error " +
-          std::to_string(static_cast<uint32_t>(decoded.error())));
+    if (tokenizer != nullptr) {
+      auto decoded = tokenizer->decode(previous_token, next_token);
+      if (!decoded.ok()) {
+        throw std::runtime_error(
+            "failed to decode token: tokenizer error " +
+            std::to_string(static_cast<uint32_t>(decoded.error())));
+      }
+      std::printf("%s", decoded.get().c_str());
+      std::fflush(stdout);
     }
-    std::printf("%s", decoded.get().c_str());
-    std::fflush(stdout);
     previous_token = next_token;
     if (FLAGS_print_token_ids) {
       generated_ids.push_back(next_token);
@@ -516,7 +427,9 @@ Generation generate(
       ++generation.decode_steps;
     }
   }
-  std::printf("\n");
+  if (tokenizer != nullptr) {
+    std::printf("\n");
+  }
   generation.unfed_token = next_token;
   generation.ended_on_eos = eos_ids.contains(next_token);
   if (FLAGS_print_token_ids) {
@@ -539,7 +452,8 @@ namespace ptn {
 // cppcheck-suppress unusedFunction
 int run_llm(
     const std::function<std::unique_ptr<EngineHost>()>& make_host,
-    const char* cache_backend_id) {
+    const char* cache_backend_id,
+    bool half_kv_cache) {
   if (FLAGS_package.empty() || FLAGS_tokenizer.empty()) {
     std::fprintf(stderr, "error: --package and --tokenizer are required\n");
     return 1;
@@ -599,19 +513,21 @@ int run_llm(
     const std::unique_ptr<ptn::EngineHost> host = make_host();
     // Declared before the context, which may hold the cache, so it outlives it.
     std::optional<OffGraphCache> kv;
-    if (const auto geometry = offgraph_cache_geometry(method, *package)) {
-      // Serialized input sizes are upper bounds; the tokens are [1, T].
-      const std::vector<int64_t>& token_bound =
-          method.graph.value(method.graph.input_ids.at(0)).tensor_meta().sizes;
-      if (token_bound.empty() || token_bound.back() <= 0 ||
-          token_bound.back() > std::numeric_limits<int>::max()) {
-        throw std::runtime_error("token input must have shape [1, sequence]");
-      }
+    if (const auto geometry = ptn::offgraph_cache_geometry(method, *package)) {
       kv = install_offgraph_cache(
-          cache_backend_id, *geometry, static_cast<int>(token_bound.back()));
+          cache_backend_id,
+          *geometry,
+          ptn::max_step_tokens(method),
+          half_kv_cache);
     } else if (FLAGS_interactive) {
       throw std::invalid_argument(
           "--interactive needs a package exported with --offgraph_cache");
+    } else if (
+        ptn::kv_cache_in_half(FLAGS_kv_dtype, half_kv_cache) &&
+        !half_kv_cache) {
+      throw std::invalid_argument(
+          "--kv_dtype=fp16: this engine keeps in-graph KV caches in F32; "
+          "export with --offgraph_cache for an F16 cache");
     }
     const size_t cache_length = kv
         ? static_cast<size_t>(kv->control->capacity())
@@ -643,8 +559,18 @@ int run_llm(
         elapsed_ms(load_start, load_end));
     std::printf("constants: %zu package bytes\n", package->constant_bytes());
 
-    if (executable->num_inputs() != 2) {
-      throw std::runtime_error("runner requires token and position inputs");
+    // A selected-logits method's third input names the token indices whose
+    // logits to return.
+    const bool selected_logits =
+        package->metadata_int(executorch::extension::llm::kLogitsToKeepMode) ==
+        kSelectedLogits;
+    const size_t num_inputs = executable->num_inputs();
+    if (num_inputs != (selected_logits ? 3 : 2)) {
+      throw std::runtime_error(
+          selected_logits
+              ? "a selected-logits method must take tokens, positions and the "
+                "token indices whose logits to return"
+              : "runner requires token and position inputs");
     }
     if (logits_output >= executable->num_outputs()) {
       throw std::runtime_error("logits output is outside engine outputs");
@@ -663,11 +589,11 @@ int run_llm(
       throw std::runtime_error(
           "position input must have one element or one per token");
     }
-    for (size_t i = 0; i < 2; ++i) {
+    for (size_t i = 0; i < num_inputs; ++i) {
       const ptn::ScalarType dtype = executable->input_dtype(i);
       if (dtype != ptn::kInt && dtype != ptn::kLong) {
         throw std::runtime_error(
-            "token and position inputs must be Int or Long, got " +
+            "token, position and index inputs must be Int or Long, got " +
             std::string(ptn::scalar_type_name(dtype)));
       }
     }
@@ -708,7 +634,7 @@ int run_llm(
                 " runs method " + calls[j].method +
                 ", but the runner replays only " + method_name);
           }
-          if (calls[j].inputs.size() != 2 || !calls[j].outputs ||
+          if (calls[j].inputs.size() != num_inputs || !calls[j].outputs ||
               calls[j].outputs->size() <= logits_output ||
               (*calls[j].outputs)[logits_output].dtype != ptn::kFloat ||
               (*calls[j].outputs)[logits_output].sizes.empty() ||
@@ -734,8 +660,12 @@ int run_llm(
               static_cast<int64_t>(j == 0 ? 0 : prompt.size() + j - 1);
           std::vector<int64_t> positions(per_token_positions ? count : 1);
           std::iota(positions.begin(), positions.end(), start);
+          const std::vector<int64_t> last_index = {
+              static_cast<int64_t>(ids.size()) - 1};
           if (ids.empty() || (j > 0 && ids.size() != 1) ||
-              integer_values(calls[j].inputs[1]) != positions) {
+              integer_values(calls[j].inputs[1]) != positions ||
+              (num_inputs == 3 &&
+               integer_values(calls[j].inputs[2]) != last_index)) {
             throw std::runtime_error(
                 "sample " + std::to_string(i) + " call " + std::to_string(j) +
                 " is not a prefill or the next decode step");
@@ -804,7 +734,8 @@ int run_llm(
             logits_output,
             per_token_positions,
             static_cast<size_t>(token_shape[1]),
-            *tokenizer,
+            // The sample's tokens need not be in --tokenizer's vocabulary.
+            nullptr,
             prompt,
             0,
             calls.size(),
@@ -897,7 +828,7 @@ int run_llm(
             logits_output,
             per_token_positions,
             static_cast<size_t>(token_shape[1]),
-            *tokenizer,
+            tokenizer.get(),
             tokens,
             position,
             limit,
@@ -923,7 +854,7 @@ int run_llm(
         logits_output,
         per_token_positions,
         static_cast<size_t>(token_shape[1]),
-        *tokenizer,
+        tokenizer.get(),
         prompt_tokens,
         0,
         limit,

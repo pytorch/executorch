@@ -1110,6 +1110,36 @@ lib.define(
 lib.impl(name, q8ta_pixel_shuffle_impl, "CompositeExplicitAutograd")
 q8ta_pixel_shuffle_op = getattr(getattr(torch.ops, namespace), name)
 
+
+def q8ta_pixel_shuffle_with_activation_impl(
+    input: torch.Tensor,
+    input_scale: float,
+    input_zero_point: int,
+    output_inv_scale: float,
+    output_zero_point: int,
+    upscale_factor: int,
+    activation: str,
+):
+    output_scale = 1.0 / output_inv_scale
+    dequant = torch.ops.quantized_decomposed.dequantize_per_tensor(
+        input, input_scale, input_zero_point, -128, 127, input.dtype
+    )
+    out = torch.nn.functional.pixel_shuffle(dequant, upscale_factor)
+    if activation == "relu":
+        out = torch.nn.functional.relu(out)
+    else:
+        assert activation == "none", f"Unsupported activation: {activation}"
+    return torch.ops.quantized_decomposed.quantize_per_tensor(
+        out, output_scale, output_zero_point, -128, 127, torch.int8
+    )
+
+
+name = "q8ta_pixel_shuffle.with_activation"
+lib.define(
+    f"{name}(Tensor input, float input_scale, int input_zero_point, float output_inv_scale, int output_zero_point, int upscale_factor, str activation) -> Tensor"
+)
+lib.impl(name, q8ta_pixel_shuffle_with_activation_impl, "CompositeExplicitAutograd")
+
 ########################
 ## embedding_q4gsw ##
 ########################

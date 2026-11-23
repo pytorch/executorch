@@ -1,0 +1,21 @@
+# ESP-IDF sdkconfig defaults for ESP32-P4 target
+#
+# ESP32-P4 specific settings:
+# - Dual-core RISC-V at 400MHz with the PIE SIMD extension (rev v3.0 and later)
+# - Hex (16-line) PSRAM at 200MHz
+
+# ─── Chip revision ───
+# Build for rev v3.0 and later. ESP-NN's PIE kernels target these revisions.
+CONFIG_ESP32P4_SELECTS_REV_LESS_V3=n
+
+# ─── CPU ───
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_400=y
+
+# ─── PSRAM (Hex PSRAM for ESP32-P4) ───
+# 200MHz PSRAM is an experimental option in ESP-IDF.
+CONFIG_IDF_EXPERIMENTAL_FEATURES=y
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_HEX=y
+CONFIG_SPIRAM_SPEED_200M=y
+CONFIG_SPIRAM_USE_CAPS_ALLOC=y
+CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y

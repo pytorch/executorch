@@ -1,0 +1,80 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# Variants of the architecture-family q4gsw cooperative-matrix linear. Each
+# one is referenced by a row in impl/gemm/linear/qw/wmma/CoopmatFamily.cpp,
+# which also carries its tile geometry; the two must stay in sync.
+#
+# Name: an optional bx_ prefix (B_TEXEL), then
+# t<WG_TILE_M>x<WG_TILE_N>k<WG_TILE_K>g<SG_GRID_X><SG_GRID_Y>s<SUBGROUP_SIZE>
+# followed by m8 (MMA_M = 8), f (FRAG_LAYOUT), i (IMG_A), b (CSH_BAND),
+# bt (B_COLMAJOR), f32 (ACC_FP32) or c (CSH_IN_ASH), then the IO storage.
+# The weight storage and dtype suffixes come from generate_variant_forall.
+
+linear_q4gsw_wmma:
+  parameter_names_with_default_values:
+    IO_STORAGE: buffer
+    WEIGHT_STORAGE: texture2d
+    DTYPE: half
+    MMA_M: 16
+    MMA_N: 16
+    MMA_K: 16
+    WG_TILE_M: 128
+    WG_TILE_N: 128
+    WG_TILE_K: 16
+    SG_GRID_X: 2
+    SG_GRID_Y: 2
+    SUBGROUP_SIZE: 32
+    FRAG_LAYOUT: false
+    IMG_A: false
+    CSH_BAND: false
+    B_COLMAJOR: false
+    B_TEXEL: false
+    ACC_FP32: false
+    CSH_IN_ASH: false
+  # One IO storage per tile, so IO_STORAGE is set per variant (and named in
+  # NAME). The kernels are fp16 only and read a texture2d weight.
+  generate_variant_forall:
+    WEIGHT_STORAGE:
+      - VALUE: texture2d
+    DTYPE:
+      - VALUE: half
+  shader_variants:
+    # Intel Xe2: subgroup 16, MMA 8x16x16 (the only fp16 shape Xe2 exposes),
+    # fragment-contiguous shared memory; image loads for A with texture3d IO.
+    - NAME: linear_q4gsw_wmma_t128x128k16g82s16m8flib_texture3d
+      IO_STORAGE: texture3d
+      MMA_M: 8
+      SG_GRID_X: 8
+      SG_GRID_Y: 2
+      SUBGROUP_SIZE: 16
+      FRAG_LAYOUT: true
+      IMG_A: true
+      CSH_BAND: true
+    - NAME: linear_q4gsw_wmma_t128x128k16g44s16m8fl_buffer
+      MMA_M: 8
+      SG_GRID_X: 4
+      SG_GRID_Y: 4
+      SUBGROUP_SIZE: 16
+      FRAG_LAYOUT: true
+    # NVIDIA: subgroup 32, MMA 16x16x16 with fp16 accumulation (K <= 8192).
+    - NAME: linear_q4gsw_wmma_t256x128k16g42s32bt_texture3d
+      IO_STORAGE: texture3d
+      WG_TILE_M: 256
+      SG_GRID_X: 4
+      SG_GRID_Y: 2
+      B_COLMAJOR: true
+    - NAME: linear_q4gsw_wmma_t128x128k16g22s32_texture3d
+      IO_STORAGE: texture3d
+    # NVIDIA, K > 8192: fp32 accumulation keeps the long-K error in bounds.
+    - NAME: linear_q4gsw_wmma_bx_t128x128k32g42s32f32c_texture3d
+      IO_STORAGE: texture3d
+      WG_TILE_K: 32
+      SG_GRID_X: 4
+      SG_GRID_Y: 2
+      B_TEXEL: true
+      ACC_FP32: true
+      CSH_IN_ASH: true

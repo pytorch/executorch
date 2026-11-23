@@ -8,6 +8,7 @@ view_buffer:
   parameter_names_with_default_values:
     DTYPE: float
     STORAGE: buffer
+    VEC4: false
   generate_variant_forall:
     DTYPE:
       - VALUE: half
@@ -18,3 +19,13 @@ view_buffer:
       - VALUE: int32
   shader_variants:
     - NAME: view_buffer
+    # Double buffers hold 8-byte elements, which do not form vec4 texels.
+    - NAME: view_vec4_buffer
+      VEC4: true
+      generate_variant_forall:
+        DTYPE:
+          - VALUE: half
+          - VALUE: float
+          - VALUE: int8
+          - VALUE: uint8
+          - VALUE: int32

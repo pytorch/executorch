@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/kernels/portable/cpu/util/broadcast_indexes_range.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
@@ -49,18 +50,26 @@ Tensor& masked_scatter_out(
 
   ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, name, CTYPE, [&]() {
     const CTYPE* const src_data = src.const_data_ptr<CTYPE>();
-    apply_binary_elementwise_fn<CTYPE, bool, CTYPE>(
-        [src_data, &idx, &src_numel, &src_numel_check](
-            const CTYPE val_in, const bool val_mask) {
-          if (val_mask && idx >= src_numel) {
-            src_numel_check = false;
-            return val_in;
-          }
-          return val_mask ? src_data[idx++] : val_in;
-        },
-        in,
-        mask,
-        out);
+    const CTYPE* const in_data = in.const_data_ptr<CTYPE>();
+    const bool* const mask_data = mask.const_data_ptr<bool>();
+    CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
+
+    for (const auto [unused_index, in_index, mask_index, out_index] :
+         BroadcastIndexesShapeRange<
+             3,
+             /*support_noncontiguous_input_tensors=*/true>(
+             out.sizes(), in, mask, out)) {
+      if (mask_data[mask_index]) {
+        if (idx >= src_numel) {
+          src_numel_check = false;
+          out_data[out_index] = in_data[in_index];
+        } else {
+          out_data[out_index] = src_data[idx++];
+        }
+      } else {
+        out_data[out_index] = in_data[in_index];
+      }
+    }
   });
 
   ET_KERNEL_CHECK_MSG(

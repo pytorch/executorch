@@ -18,14 +18,17 @@ per backend:
   conv_transpose1d_as_conv1d
                           Runs the Mimi decoder's transposed convolutions
                           (kernel = 2 * stride) as a convolution and an
-                          interleave, which XNNPACK, Vulkan, MLX and CUDA run
-                          faster than their transposed convolution.
+                          interleave, which Vulkan, MLX and CUDA run faster
+                          than their transposed convolution; XNNPACK's
+                          lowering does the same.
   depthwise_conv_transpose_as_mul
                           Vulkan computes the Mimi upsampler (depthwise,
                           kernel = 2 * stride) incorrectly; this runs it as a
-                          multiply and an overlap-add. XNNPACK, MLX and CUDA
-                          use it for the upsampler too, which
-                          conv_transpose1d_as_conv1d skips.
+                          multiply and an overlap-add. MLX and CUDA use it for
+                          the upsampler too, which conv_transpose1d_as_conv1d
+                          skips. XNNPACK uses it too: its lowering leaves
+                          depthwise 1-D transposed convolutions on its
+                          slower deconvolution.
   use_webgpu_compat_ops   WebGPU runtimes built before these runtime fixes
                           (off by default; --webgpu-compat-ops):
                             * native_layer_norm resize hook (the flow LM's
@@ -174,8 +177,7 @@ class DepthwiseConvTranspose1dAsMul(nn.Module):
         y = x.unsqueeze(3) * self.weight  # [b, c, n, 2s]
         head = y[..., :s].reshape(b, c, n * s)
         tail = y[..., s:].reshape(b, c, n * s)
-        zeros = x.new_zeros(b, c, s)
-        return torch.cat([head, zeros], 2) + torch.cat([zeros, tail], 2)
+        return F.pad(head, (0, s)) + F.pad(tail, (s, 0))
 
 
 def _swap(root: nn.Module, cls: type, make) -> int:

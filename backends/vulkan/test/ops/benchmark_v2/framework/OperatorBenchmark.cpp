@@ -136,15 +136,19 @@ Report benchmark_operator(
         validate_outputs(spec, graph, tensors, outputs, host_data);
     return result;
   }
+  auto& context = *graph.context();
   auto encode_batch = [&](uint32_t count) {
     for (uint32_t i = 0; i < count; ++i) {
+      // Barriers derived from tensor accesses alone let some drivers overlap
+      // consecutive repetitions.
+      vkapi::PipelineBarrier barrier = vkapi::full_pipeline_barrier();
+      context.register_barrier(barrier);
       for (size_t j = first; j < end; ++j) {
         graph.execute_nodes()[j]->encode(&graph);
       }
     }
   };
   // Warm once to establish the layout state used at each replay boundary.
-  auto& context = *graph.context();
   context.set_cmd();
   encode_batch(1);
   vkapi::VulkanFence fence(context.device());
@@ -162,6 +166,13 @@ Report benchmark_operator(
 }
 
 Json validate_operator_dynamic_resize(const Json& spec, ComputeGraph& graph) {
+  return validate_operator_dynamic_resize(spec, graph, nullptr);
+}
+
+Json validate_operator_dynamic_resize(
+    const Json& spec,
+    ComputeGraph& graph,
+    const DynamicResizeStepCheck& step_check) {
   const Json& parameters = spec.at("parameters");
   const std::vector<Json> operator_cases =
       parse_configs(parameters.at("operator_case"));
@@ -201,8 +212,11 @@ Json validate_operator_dynamic_resize(const Json& spec, ComputeGraph& graph) {
         tensor_numel(operator_spec.at("tensors").at(name).at("sizes"));
   };
   Json validations = Json::array();
+  Json step_checks = Json::array();
   for (const Json& step : spec.at("validation_steps")) {
     Json resized = operator_spec;
+    if (step.contains("validation_method"))
+      resized["validation_method"] = step.at("validation_method");
     auto data = host_data;
     const Json& sizes = step.at("tensor_sizes");
     reference::require(
@@ -249,11 +263,16 @@ Json validate_operator_dynamic_resize(const Json& spec, ComputeGraph& graph) {
           "Dynamic resize validation failed: " + validation.dump());
       validations.push_back(validation);
     }
+    if (step_check)
+      step_checks.push_back(step_check(step, graph));
   }
-  return {
+  Json result = {
       {"status", "PASS"},
       {"validation_steps", spec.at("validation_steps").size()},
       {"validated_outputs", validations.size()}};
+  if (step_check)
+    result["step_checks"] = std::move(step_checks);
+  return result;
 }
 
 } // namespace vkcompute::shader_profiling

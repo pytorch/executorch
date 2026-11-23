@@ -31,9 +31,9 @@ namespace native {
 namespace utils {
 namespace internal {
 /**
- * Causes these utility functions to make sure to respect Tensor
- * strides; normally, this is not strictly necessary because ExecuTorch
- * Tensors are contiguous.
+ * Causes these utility functions to respect the strides of a single input
+ * whose layout may differ from the output's. Strides are respected either
+ * way when there are two or more inputs.
  */
 struct SupportNoncontiguousInputTensors {
   explicit SupportNoncontiguousInputTensors() = default;
@@ -94,11 +94,14 @@ inline void dtype_specialized_elementwise_fn_impl(
 
 #if defined(ET_USE_PYTORCH_HEADERS) && ET_USE_PYTORCH_HEADERS
   if constexpr (can_use_vectorized<CTYPE_COMPUTE, Op, Args...>()) {
-    const bool any_is_broadcasted =
-        !(torch::executor::internal::sizes_match_ignoring_leading_1s(
-              inputs.first->sizes(), out.sizes()) &&
-          ...);
-    if (!any_is_broadcasted) {
+    const bool all_match_out_layout =
+        (torch::executor::internal::layouts_match_ignoring_leading_1s(
+             inputs.first->sizes(),
+             inputs.first->strides(),
+             out.sizes(),
+             out.strides()) &&
+         ...);
+    if (all_match_out_layout) {
       using Vec = at::vec::Vectorized<CTYPE_COMPUTE>;
       ::executorch::extension::parallel_for(
           0,
