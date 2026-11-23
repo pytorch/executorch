@@ -16,6 +16,7 @@ from executorch.backends.cuda.tests.nvfp4_test_utils import (
     dynamic_rows,
     shards,
     static_scale as act_scale,
+    sweep,
     weight,
 )
 from executorch.backends.cuda.triton.kernels import nvfp4_quantized_gemm as kernels
@@ -252,7 +253,7 @@ def test_w4a4_unbounded_dynamic_m_tunes_only_split_1():
     assert pick.choice == 1 and set(pick.times_us) == {1}
 
 
-@pytest.mark.parametrize("split_k", [1, 2, 4, 8, 16, 32])
+@pytest.mark.parametrize("split_k", sweep([1, 2, 4, 8, 16, 32], [4, 32]))
 @pytest.mark.parametrize("mode", ["w4a4", "w4a16"])
 def test_gemm_split_k(mode, split_k):
     if mode == "w4a4" and not _has_native_fp4_conversion():
@@ -266,8 +267,8 @@ def test_gemm_split_k(mode, split_k):
     torch.testing.assert_close(actual, expected, rtol=0.025, atol=0.02)
 
 
-@pytest.mark.parametrize("m", [1, 2, 4])
-@pytest.mark.parametrize("split_k", [1, 2, 4, 8, 16, 32])
+@pytest.mark.parametrize("m", sweep([1, 2, 4], [1, 4]))
+@pytest.mark.parametrize("split_k", sweep([1, 2, 4, 8, 16, 32], [1, 8]))
 def test_gemv_split_k(m, split_k):
     w = weight(71, 2176)
     w = CudaNVFP4Tensor(w.qdata, w.scale, torch.tensor([0.37], device="cuda"))
