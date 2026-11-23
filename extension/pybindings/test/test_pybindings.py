@@ -31,9 +31,13 @@ from executorch.devtools.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
 
-from executorch.exir import ExecutorchBackendConfig, to_edge
+from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig, to_edge
 from executorch.exir.backend.test.device_util import DeviceAwarePartitioner
+from executorch.exir.capture._capture import patch_forward
+from executorch.exir.memory_planning import get_node_tensor_specs
+from executorch.exir.pass_base import ExportPass
 from executorch.exir.passes import MemoryPlanningPass
+from executorch.exir.passes.init_mutable_pass import InitializedMutableBufferPass
 from executorch.exir.schema import DeviceType
 from executorch.export.utils import is_fbcode
 from executorch.extension.pybindings.test.make_test import (
@@ -79,6 +83,51 @@ def write_llm_tokenizer(directory: str) -> str:
             file,
         )
     return path
+
+
+class SharedState(torch.nn.Module):
+    """Methods that share one state, stored with its initial value of 1."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.register_buffer("state", torch.ones(1))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.state.add_(1) + x
+
+    def get_state(self) -> torch.Tensor:
+        return self.state
+
+    def set_state(self, x: torch.Tensor) -> None:
+        self.state.copy_(x)
+
+
+class Triple(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x * 3
+
+
+def shared_state_program(extra_methods=None, memory_planning_pass=None, passes=()):
+    model = SharedState()
+    methods = {"forward": export(model, (torch.ones(1),), strict=True)}
+    with patch_forward(model, model.get_state):
+        methods["get_state"] = export(model, (), strict=True)
+    with patch_forward(model, model.set_state):
+        methods["set_state"] = export(model, (torch.ones(1),), strict=True)
+    methods.update(extra_methods or {})
+    return to_edge(
+        methods, compile_config=EdgeCompileConfig(_check_ir_validity=False)
+    ).to_executorch(
+        ExecutorchBackendConfig(
+            passes=[InitializedMutableBufferPass(["state"]), *passes],
+            memory_planning_pass=memory_planning_pass
+            or MemoryPlanningPass(share_mutable_buffers=True),
+        )
+    )
+
+
+def export_shared_state(extra_methods=None, memory_planning_pass=None) -> bytes:
+    return shared_state_program(extra_methods, memory_planning_pass).buffer
 
 
 class PybindingsTest(unittest.TestCase):
@@ -4299,6 +4348,218 @@ print("ran after its program was dropped")
         self.assertIn("Input 0 of method 'forward'", message)
         self.assertIn("is on device meta", message)
         self.assertIn("only CPU and CUDA tensors", message)
+
+    def test_late_method_loads_keep_shared_state(self):
+        program = self.load_prog_fn(export_shared_state())
+        forward = program.load_method("forward")
+        self.assertEqual(forward.call((torch.tensor([2.0]),))[0].item(), 4.0)
+        # Loading a method after the state changed, or loading it again, must
+        # not reset the state to its initial value.
+        self.assertEqual(program.load_method("get_state").call(())[0].item(), 2.0)
+        self.assertEqual(program.load_method("get_state").call(())[0].item(), 2.0)
+        self.assertEqual(forward.call((torch.tensor([2.0]),))[0].item(), 5.0)
+
+    def test_shared_buffers_get_every_methods_initial_data(self):
+        class First(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("first", torch.ones(1))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return self.first.add_(1) + x
+
+        class Second(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("second", torch.full((1,), 10.0))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return self.second.add_(1) + x
+
+        class Both(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("first", torch.ones(1))
+                self.register_buffer("second", torch.full((1,), 10.0))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return self.first + self.second + x
+
+        zero = torch.zeros(1)
+        # Each buffer is changed by one method, which alone stores its initial
+        # value. both, first in the program, stores neither.
+        program = self.load_prog_fn(
+            to_edge(
+                {
+                    "both": export(Both(), (zero,), strict=True),
+                    "first": export(First(), (zero,), strict=True),
+                    "second": export(Second(), (zero,), strict=True),
+                },
+                compile_config=EdgeCompileConfig(_check_ir_validity=False),
+            )
+            .transform(
+                {
+                    "first": [InitializedMutableBufferPass(["first"])],
+                    "second": [InitializedMutableBufferPass(["second"])],
+                }
+            )
+            .to_executorch(
+                ExecutorchBackendConfig(
+                    memory_planning_pass=MemoryPlanningPass(share_mutable_buffers=True)
+                )
+            )
+            .buffer
+        )
+        # Loaded before the methods that store the initial data, it still
+        # starts from that data.
+        both = program.load_method("both")
+        self.assertEqual(both.call((zero,))[0].item(), 11.0)
+        self.assertEqual(program.load_method("first").call((zero,))[0].item(), 2.0)
+        self.assertEqual(program.load_method("second").call((zero,))[0].item(), 11.0)
+        # Only one allocation of each buffer holds both changes.
+        self.assertEqual(both.call((zero,))[0].item(), 13.0)
+
+    def test_shared_buffer_is_sized_for_the_largest_method(self):
+        from executorch.exir._serialize._program import (
+            deserialize_pte_binary,
+            serialize_pte_binary,
+        )
+        from executorch.exir.schema import Tensor
+
+        class TwoStates(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("first", torch.ones(1))
+                self.register_buffer("second", torch.ones(1))
+
+            def bump_first(self, x: torch.Tensor) -> torch.Tensor:
+                return self.first.add_(1) + x
+
+            def bump_second(self, x: torch.Tensor) -> torch.Tensor:
+                return self.second.add_(1) + x
+
+        model, methods, zero = TwoStates(), {}, torch.zeros(1)
+        for name in ("bump_first", "bump_second"):
+            with patch_forward(model, getattr(model, name)):
+                methods[name] = export(model, (zero,), strict=True)
+        pte = deserialize_pte_binary(
+            to_edge(methods, compile_config=EdgeCompileConfig(_check_ir_validity=False))
+            .to_executorch(
+                ExecutorchBackendConfig(
+                    passes=[InitializedMutableBufferPass(["first", "second"])],
+                    memory_planning_pass=MemoryPlanningPass(share_mutable_buffers=True),
+                )
+            )
+            .buffer
+        )
+        # As a planner that sizes the shared buffer of each method for what it
+        # uses would plan it: only first, which is at its start. bump_first is
+        # first in the program and loads first.
+        plan = pte.program.execution_plan[0]
+        self.assertEqual(plan.name, "bump_first")
+        offsets = {
+            value.val.allocation_info.memory_offset_low
+            for value in plan.values
+            if isinstance(value.val, Tensor)
+            and value.val.allocation_info is not None
+            and value.val.allocation_info.memory_id == 2
+        }
+        self.assertEqual(offsets, {0})
+        plan.non_const_buffer_sizes[2] = 4
+        data = bytes(serialize_pte_binary(pte))
+
+        module = self.load_fn(data)
+        for name in ("bump_first", "bump_second"):
+            self.assertEqual(module.run_method(name, (zero,))[0].item(), 2.0)
+        program = self.load_prog_fn(data)
+        for name in ("bump_first", "bump_second"):
+            self.assertEqual(program.load_method(name).call((zero,))[0].item(), 2.0)
+
+    def test_late_method_loads_keep_shared_state_stored_in_ptd(self):
+        class StoreStateInPtd(ExportPass):
+            def placeholder(self, name, arg, meta):
+                if "state" in name:
+                    meta["constant_tag"] = "shared_state"
+                return super().placeholder(name, arg, meta)
+
+        exported = shared_state_program(passes=[StoreStateInPtd()])
+        with tempfile.TemporaryDirectory() as directory:
+            data_path = os.path.join(directory, "shared_state.ptd")
+            with open(data_path, "wb") as file:
+                file.write(bytes(exported._tensor_data["shared_state"]))
+            program = self.load_prog_fn(exported.buffer, data_path=data_path)
+            forward = program.load_method("forward")
+            self.assertEqual(forward.call((torch.tensor([2.0]),))[0].item(), 4.0)
+            self.assertEqual(program.load_method("get_state").call(())[0].item(), 2.0)
+            # Windows cannot delete a file that is still mapped.
+            del forward, program
+
+    def test_invalid_method_does_not_abort_loading_shared_state(self):
+        from executorch.exir._serialize._program import (
+            deserialize_pte_binary,
+            serialize_pte_binary,
+        )
+        from executorch.exir.schema import Tensor
+
+        pte = deserialize_pte_binary(export_shared_state())
+        (plan,) = [p for p in pte.program.execution_plan if p.name == "get_state"]
+        for value in plan.values:
+            if isinstance(value.val, Tensor) and value.val.data_buffer_idx > 0:
+                value.val.scalar_type = 77
+        program = self.load_prog_fn(bytes(serialize_pte_binary(pte)))
+        # forward shares its state with get_state, which initializes it too.
+        with self.assertRaisesRegex(RuntimeError, "Failed to initialize shared buffer"):
+            program.load_method("forward")
+
+    def test_shared_buffer_on_two_devices_is_refused(self):
+        from executorch.exir._serialize._program import (
+            deserialize_pte_binary,
+            serialize_pte_binary,
+        )
+        from executorch.exir.schema import NonConstBufferDevice
+
+        pte = deserialize_pte_binary(export_shared_state())
+        (plan,) = [p for p in pte.program.execution_plan if p.name == "get_state"]
+        plan.non_const_buffer_device = [
+            NonConstBufferDevice(
+                buffer_idx=2, device_type=DeviceType.CUDA, device_index=0
+            )
+        ]
+        data = bytes(serialize_pte_binary(pte))
+        with self.assertRaisesRegex(RuntimeError, "on different devices"):
+            self.load_prog_fn(data).load_method("forward")
+        with self.assertRaisesRegex(RuntimeError, "Failed to execute method forward"):
+            self.load_fn(data).run_method("forward", (torch.tensor([1.0]),))
+
+    def test_unmarked_arena_does_not_overwrite_shared_state(self):
+        # Plans every tensor of its method in arena 2, without sharing it.
+        class PrivateArenaTwo(MemoryPlanningPass):
+            def run(self, graph_module, graph_signature=None):
+                for node in graph_module.graph.nodes:
+                    for spec in get_node_tensor_specs(node):
+                        if not spec.const:
+                            spec.mem_id = 2
+                return super().run(graph_module, graph_signature)
+
+        shared = MemoryPlanningPass(share_mutable_buffers=True)
+        program = self.load_prog_fn(
+            export_shared_state(
+                {"triple": export(Triple(), (torch.ones(4),), strict=True)},
+                {
+                    "forward": shared,
+                    "get_state": shared,
+                    "set_state": shared,
+                    "triple": PrivateArenaTwo(),
+                },
+            )
+        )
+        # Every method loads first, so no load can change the state below.
+        set_state, triple, get_state = (
+            program.load_method(name) for name in ("set_state", "triple", "get_state")
+        )
+        set_state.call((torch.tensor([5.0]),))
+        triple.call((torch.full((4,), 2.0),))
+        self.assertEqual(get_state.call(())[0].item(), 5.0)
 
     def test_program_loads_when_one_method_is_device_planned(self):
         # Linking the CUDA backend registers a CUDA allocator at static init, and the
