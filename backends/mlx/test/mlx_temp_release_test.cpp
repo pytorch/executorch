@@ -7,13 +7,13 @@
  */
 
 // Tests for temp-slot release: the interpreter drops a temp as soon as the
-// chain running it has no further use for it, so a long chain does not finish
-// holding every intermediate it produced.
+// program has no further use for it, so a long chain does not finish holding
+// every intermediate it produced.
 //
-// The case that matters is a temp that is NOT dead at the end of the chain that
-// produced it: a branch or scan body runs through run_chain of its own, so a
-// temp it writes for its caller would otherwise die at its last use inside the
-// body.
+// The cases that matter are temps that cross a chain boundary: a branch or scan
+// body runs through run_chain of its own, so a temp it writes for its caller
+// would otherwise die at its last use inside the body, and a chain holding an
+// IF must count the IF as a use of every temp its branches name.
 //
 // Must run on Apple Silicon: MLX needs the Metal backend.
 
@@ -23,6 +23,8 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <variant>
 #include <vector>
 
 using namespace ::executorch::backends::mlx;
@@ -80,6 +82,41 @@ void bind_state(
 
 bool slot_is_live(const ExecutionState& st, uint32_t tid) {
   return st.tensors[st.tensor_index(Tid{tid})].has_value();
+}
+
+Instruction make_if(
+    std::variant<int64_t, Vid> cond,
+    uint32_t then_chain,
+    uint32_t else_chain) {
+  Instruction instr;
+  instr.op = OpCode::IF;
+  IfNode node;
+  node.cond = cond;
+  node.then_chain_idx = then_chain;
+  node.else_chain_idx = else_chain;
+  instr.node = node;
+  return instr;
+}
+
+// Whether `chain` drops `tid` once its instruction `instr` has run.
+bool dropped_after(
+    const ExecutionState& st,
+    uint32_t chain,
+    uint32_t instr,
+    uint32_t tid) {
+  const auto& table = st.temp_releases[chain];
+  if (table.empty()) {
+    return false;
+  }
+  const auto& slots = table[instr];
+  return std::find(slots.begin(), slots.end(), st.tensor_index(Tid{tid})) !=
+      slots.end();
+}
+
+float first_output(const ExecutionState& st) {
+  const array& out = st.tensors[st.tensor_index(Tid{kOut})].value();
+  ::mlx::core::eval(out);
+  return out.data<float>()[0];
 }
 
 } // namespace
@@ -179,20 +216,10 @@ TEST(MLXTempRelease, TempSharedWithAnotherChainIsKept) {
   }
 }
 
-// A branch chain must not drop a temp its caller reads afterwards. The caller
-// opts out of release because it holds an IF, but the branch is itself run
-// through run_chain and would otherwise see the temp die at its last use
-// inside the branch.
-TEST(MLXTempRelease, TempWrittenInABranchOutlivesIt) {
+// A branch chain must not drop a temp its caller reads afterwards; the caller
+// drops it after its own last read.
+TEST(MLXTempRelease, TempWrittenInABranchIsDroppedByItsCaller) {
   const uint32_t kShared = kTemp0;
-
-  Instruction if_instr;
-  if_instr.op = OpCode::IF;
-  IfNode node;
-  node.cond = static_cast<int64_t>(1); // always take then_chain
-  node.then_chain_idx = 1;
-  node.else_chain_idx = 2;
-  if_instr.node = node;
 
   MLXProgram program;
   program.num_input_tensors = 1;
@@ -200,7 +227,7 @@ TEST(MLXTempRelease, TempWrittenInABranchOutlivesIt) {
   program.num_temp_tensors = 1;
   // chain 0 (main): if (...) { shared = in + in }  then  out = shared + shared
   program.instruction_chains.push_back(
-      {if_instr, make_add(kShared, kShared, kOut)});
+      {make_if(int64_t{1}, 1, 2), make_add(kShared, kShared, kOut)});
   program.instruction_chains.push_back({make_add(kIn, kIn, kShared)}); // then
   program.instruction_chains.push_back({make_add(kIn, kIn, kShared)}); // else
   program.main_chain_idx = 0;
@@ -210,14 +237,237 @@ TEST(MLXTempRelease, TempWrittenInABranchOutlivesIt) {
   ExecutionState st;
   bind_state(st, program, constants, bufs, 4);
 
+  EXPECT_FALSE(dropped_after(st, 1, 0, kShared))
+      << "the branch claimed a temp its caller reads";
+  EXPECT_TRUE(dropped_after(st, 0, 1, kShared));
+
   Interpreter interp;
   interp.run(program, st);
 
-  ASSERT_TRUE(slot_is_live(st, kShared))
-      << "the branch dropped a temp its caller still reads";
-  const array& out = st.tensors[st.tensor_index(Tid{kOut})].value();
-  ::mlx::core::eval(out);
-  EXPECT_EQ(out.data<float>()[0], 4.0f);
+  EXPECT_EQ(first_output(st), 4.0f);
+  EXPECT_FALSE(slot_is_live(st, kShared));
+}
+
+// A chain holding an IF drops its own temps: one read inside the branches at
+// the IF, one written there at its caller's last read.
+TEST(MLXTempRelease, ChainHoldingAnIfDropsItsTemps) {
+  const uint32_t kT0 = kTemp0;
+  const uint32_t kT1 = kTemp0 + 1;
+  const uint32_t kT2 = kTemp0 + 2;
+
+  MLXProgram program;
+  program.num_input_tensors = 1;
+  program.num_output_tensors = 1;
+  program.num_temp_tensors = 3;
+  // chain 0 (main): t0 = in + in ; if (...) { t1 = ... } ; t2 = t1 + t1 ;
+  //                 out = t2 + t2
+  program.instruction_chains.push_back({
+      make_add(kIn, kIn, kT0),
+      make_if(int64_t{1}, 1, 2),
+      make_add(kT1, kT1, kT2),
+      make_add(kT2, kT2, kOut),
+  });
+  program.instruction_chains.push_back({make_add(kT0, kT0, kT1)}); // then
+  program.instruction_chains.push_back({make_add(kT0, kIn, kT1)}); // else
+  program.main_chain_idx = 0;
+
+  ConstantData constants;
+  MutableBufferData bufs;
+  ExecutionState st;
+  bind_state(st, program, constants, bufs, 4);
+
+  EXPECT_TRUE(dropped_after(st, 0, 1, kT0));
+  EXPECT_TRUE(dropped_after(st, 0, 2, kT1));
+  EXPECT_TRUE(dropped_after(st, 0, 3, kT2));
+
+  for (size_t threshold : {size_t{0}, size_t{1}}) {
+    Interpreter interp;
+    interp.set_eval_threshold_bytes(threshold);
+    bind_state(st, program, constants, bufs, 4);
+    interp.run(program, st);
+    EXPECT_EQ(first_output(st), 16.0f) << "threshold " << threshold;
+    for (uint32_t tid : {kT0, kT1, kT2}) {
+      EXPECT_FALSE(slot_is_live(st, tid))
+          << "temp " << tid << " threshold " << threshold;
+    }
+  }
+}
+
+// A temp only one branch names is dropped inside that branch.
+TEST(MLXTempRelease, BranchScratchIsDroppedInsideTheBranch) {
+  const uint32_t kScratch = kTemp0;
+  const uint32_t kResult = kTemp0 + 1;
+
+  MLXProgram program;
+  program.num_input_tensors = 1;
+  program.num_output_tensors = 1;
+  program.num_temp_tensors = 2;
+  program.instruction_chains.push_back(
+      {make_if(int64_t{1}, 1, 2), make_add(kResult, kResult, kOut)});
+  program.instruction_chains.push_back({
+      make_add(kIn, kIn, kScratch),
+      make_add(kScratch, kScratch, kResult),
+  }); // then
+  program.instruction_chains.push_back({make_add(kIn, kIn, kResult)}); // else
+  program.main_chain_idx = 0;
+
+  ConstantData constants;
+  MutableBufferData bufs;
+  ExecutionState st;
+  bind_state(st, program, constants, bufs, 4);
+
+  EXPECT_TRUE(dropped_after(st, 1, 1, kScratch));
+  EXPECT_TRUE(dropped_after(st, 0, 1, kResult));
+
+  Interpreter interp;
+  interp.run(program, st);
+  EXPECT_EQ(first_output(st), 8.0f);
+  EXPECT_FALSE(slot_is_live(st, kScratch));
+  EXPECT_FALSE(slot_is_live(st, kResult));
+}
+
+// A temp named in a nested IF's branches and its holder belongs to the holder,
+// not to the outer chain.
+TEST(MLXTempRelease, NestedBranchTempBelongsToTheCommonAncestor) {
+  const uint32_t kX = kTemp0;
+  const uint32_t kY = kTemp0 + 1;
+
+  MLXProgram program;
+  program.num_input_tensors = 1;
+  program.num_output_tensors = 1;
+  program.num_temp_tensors = 2;
+  program.instruction_chains.push_back(
+      {make_if(int64_t{1}, 1, 2), make_add(kY, kY, kOut)}); // 0: main
+  program.instruction_chains.push_back(
+      {make_if(int64_t{1}, 3, 4), make_add(kX, kX, kY)}); // 1
+  program.instruction_chains.push_back({make_add(kIn, kIn, kY)}); // 2
+  program.instruction_chains.push_back({make_add(kIn, kIn, kX)}); // 3
+  program.instruction_chains.push_back({make_add(kIn, kIn, kX)}); // 4
+  program.main_chain_idx = 0;
+
+  ConstantData constants;
+  MutableBufferData bufs;
+  ExecutionState st;
+  bind_state(st, program, constants, bufs, 4);
+
+  EXPECT_TRUE(dropped_after(st, 1, 1, kX));
+  EXPECT_TRUE(dropped_after(st, 0, 1, kY));
+
+  Interpreter interp;
+  interp.run(program, st);
+  EXPECT_EQ(first_output(st), 8.0f);
+  EXPECT_FALSE(slot_is_live(st, kX));
+  EXPECT_FALSE(slot_is_live(st, kY));
+}
+
+// A slot the caller uses before an IF and a branch reuses as scratch is only
+// dropped after the IF.
+TEST(MLXTempRelease, SlotReusedInsideABranchIsKeptUntilTheIf) {
+  const uint32_t kS = kTemp0;
+  const uint32_t kT = kTemp0 + 1;
+  const uint32_t kU = kTemp0 + 2;
+
+  MLXProgram program;
+  program.num_input_tensors = 1;
+  program.num_output_tensors = 1;
+  program.num_temp_tensors = 3;
+  // chain 0 (main): s = in + in ; t = s + s ; if (...) { u = ... } ;
+  //                 out = u + u
+  program.instruction_chains.push_back({
+      make_add(kIn, kIn, kS),
+      make_add(kS, kS, kT),
+      make_if(int64_t{1}, 1, 2),
+      make_add(kU, kU, kOut),
+  });
+  program.instruction_chains.push_back({
+      make_add(kIn, kIn, kS),
+      make_add(kS, kT, kU),
+  }); // then: s = 2, u = 6
+  program.instruction_chains.push_back({make_add(kT, kT, kU)}); // else
+  program.main_chain_idx = 0;
+
+  ConstantData constants;
+  MutableBufferData bufs;
+  ExecutionState st;
+  bind_state(st, program, constants, bufs, 4);
+
+  EXPECT_FALSE(dropped_after(st, 0, 1, kS));
+  EXPECT_TRUE(dropped_after(st, 0, 2, kS));
+  EXPECT_TRUE(dropped_after(st, 0, 2, kT));
+
+  Interpreter interp;
+  interp.run(program, st);
+  EXPECT_EQ(first_output(st), 12.0f);
+}
+
+// Taking a different branch on each execute leaves every result right.
+TEST(MLXTempRelease, AlternatingBranchesStayCorrect) {
+  const uint32_t kScratch = kTemp0;
+  const uint32_t kResult = kTemp0 + 1;
+
+  MLXProgram program;
+  program.num_input_tensors = 1;
+  program.num_output_tensors = 1;
+  program.num_temp_tensors = 2;
+  program.num_values = 1;
+  program.instruction_chains.push_back(
+      {make_if(Vid{0}, 1, 2), make_add(kResult, kResult, kOut)});
+  program.instruction_chains.push_back({make_add(kIn, kIn, kResult)}); // then
+  program.instruction_chains.push_back({
+      make_add(kIn, kIn, kScratch),
+      make_add(kScratch, kIn, kResult),
+  }); // else
+  program.main_chain_idx = 0;
+
+  ConstantData constants;
+  MutableBufferData bufs;
+  ExecutionState st;
+  bind_state(st, program, constants, bufs, 4);
+
+  Interpreter interp;
+  for (int32_t take_then : {1, 0, 1, 0}) {
+    st.reset();
+    st.set_tensor(Tid{kIn}, ::mlx::core::full({4}, 1.0f, ::mlx::core::float32));
+    st.set_value(Vid{0}, take_then);
+    interp.run(program, st);
+    EXPECT_EQ(first_output(st), take_then ? 4.0f : 6.0f);
+    EXPECT_FALSE(slot_is_live(st, kScratch));
+    EXPECT_FALSE(slot_is_live(st, kResult));
+  }
+}
+
+// A chain run by two IFs is a tree of its own: what it shares with its callers
+// is never dropped, and its callers still drop their own temps.
+TEST(MLXTempRelease, ChainRunByTwoIfsKeepsWhatItShares) {
+  const uint32_t kT = kTemp0;
+  const uint32_t kU = kTemp0 + 1;
+
+  MLXProgram program;
+  program.num_input_tensors = 1;
+  program.num_output_tensors = 1;
+  program.num_temp_tensors = 2;
+  program.instruction_chains.push_back({
+      make_if(int64_t{1}, 1, 2),
+      make_add(kT, kT, kU),
+      make_if(int64_t{1}, 1, 2),
+      make_add(kT, kU, kOut),
+  });
+  program.instruction_chains.push_back({make_add(kIn, kIn, kT)}); // then
+  program.instruction_chains.push_back({make_add(kIn, kIn, kT)}); // else
+  program.main_chain_idx = 0;
+
+  ConstantData constants;
+  MutableBufferData bufs;
+  ExecutionState st;
+  bind_state(st, program, constants, bufs, 4);
+
+  EXPECT_TRUE(dropped_after(st, 0, 3, kU));
+
+  Interpreter interp;
+  interp.run(program, st);
+  EXPECT_EQ(first_output(st), 6.0f);
+  EXPECT_TRUE(slot_is_live(st, kT));
+  EXPECT_FALSE(slot_is_live(st, kU));
 }
 
 // A scan body must not drop a carry it reads but never writes: the tid is named
@@ -254,13 +504,11 @@ TEST(MLXTempRelease, ScanBodyKeepsACarryItOnlyReads) {
   ExecutionState st;
   bind_state(st, program, constants, bufs, 4);
 
-  // The body names kCarry and the parent does too, so the body must not own it.
-  const auto& body_table = st.temp_last_use[1];
-  ASSERT_FALSE(body_table.empty()) << "the body chain should not opt out";
-  EXPECT_EQ(
-      body_table[st.tensor_index(Tid{kCarry})], ExecutionState::kNoTempLastUse)
+  // The body names kCarry and the parent does too, so neither drops it.
+  EXPECT_FALSE(dropped_after(st, 1, 0, kCarry))
       << "the body claimed a carry its caller also names";
+  EXPECT_TRUE(dropped_after(st, 1, 0, kBodyTmp));
 
-  // The parent holds a SCAN, so it opts out entirely.
-  EXPECT_TRUE(st.temp_last_use[0].empty());
+  // The parent holds a SCAN, so it drops nothing.
+  EXPECT_TRUE(st.temp_releases[0].empty());
 }

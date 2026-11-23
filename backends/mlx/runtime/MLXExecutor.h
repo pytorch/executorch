@@ -176,12 +176,11 @@ struct ExecutionState {
   uint32_t output_end{0};
   uint32_t mutable_buffer_end{0};
 
-  // Per chain, the index of the last instruction naming each temp slot, or
-  // kNoTempLastUse. An empty table opts that chain out of release. Computed
-  // once here rather than per run_chain, which would cost a walk of every
-  // chain on each execute() and each scan iteration.
-  static constexpr uint32_t kNoTempLastUse = 0xFFFFFFFFu;
-  std::vector<std::vector<uint32_t>> temp_last_use;
+  // Per chain, per instruction, the temp slots to drop once that instruction
+  // has run. An empty table drops nothing. Computed once here rather than per
+  // run_chain, which would cost a walk of every chain on each execute() and
+  // each scan iteration.
+  std::vector<std::vector<std::vector<uint32_t>>> temp_releases;
 
   void bind(
       const MLXProgram& prog,
@@ -223,64 +222,142 @@ struct ExecutionState {
     output_end = static_cast<uint32_t>(oe);
     mutable_buffer_end = static_cast<uint32_t>(me);
 
-    compute_temp_last_use(prog);
+    compute_temp_releases(prog);
   }
 
-  // A temp any OTHER chain names is never dropped: a branch or scan body is run
-  // through run_chain of its own, so a temp it writes for its caller, or a
-  // carry it only reads, would otherwise die at its last use inside the body.
-  // A chain holding a SCAN or IF opts out entirely, since for_each_tid does not
-  // walk nested chains.
-  void compute_temp_last_use(const MLXProgram& prog) {
-    const size_t num_chains = prog.instruction_chains.size();
-    temp_last_use.assign(num_chains, {});
+  // Each temp is dropped once, after the last instruction of its owning chain
+  // that uses it. A chain run by exactly one IF hangs under the chain holding
+  // that IF, so the chains form trees. A temp named in one tree belongs to the
+  // lowest chain whose run covers every chain naming it, and an IF uses every
+  // temp named in the subtrees of its branches. A temp named in two trees (the
+  // init and main chains, a scan body and its caller, a chain run from two
+  // places) is never dropped, nor is a temp owned by a chain holding a SCAN.
+  void compute_temp_releases(const MLXProgram& prog) {
+    constexpr uint32_t kNone = 0xFFFFFFFFu;
+    constexpr uint32_t kPinned = 0xFFFFFFFEu;
+    const auto& chains = prog.instruction_chains;
+    const auto num_chains = static_cast<uint32_t>(chains.size());
 
-    // The one chain naming each temp slot, or kNoOwner / kShared.
-    constexpr uint32_t kNoOwner = 0xFFFFFFFFu;
-    constexpr uint32_t kShared = 0xFFFFFFFEu;
-    std::vector<uint32_t> owner(tensors.size(), kNoOwner);
-    for (size_t c = 0; c < num_chains; ++c) {
-      for (const auto& instr : prog.instruction_chains[c]) {
+    std::vector<uint32_t> runs(num_chains, 0);
+    std::vector<uint32_t> parent(num_chains, kNone);
+    std::vector<uint32_t> parent_instr(num_chains, 0);
+    std::vector<bool> holds_scan(num_chains, false);
+    auto count_run = [&](int64_t c) {
+      if (c >= 0 && c < num_chains) {
+        ++runs[static_cast<size_t>(c)];
+      }
+    };
+    count_run(prog.main_chain_idx);
+    count_run(prog.init_chain_idx);
+    for (uint32_t c = 0; c < num_chains; ++c) {
+      for (uint32_t i = 0; i < chains[c].size(); ++i) {
+        const auto& instr = chains[c][i];
+        if (instr.op == OpCode::SCAN) {
+          holds_scan[c] = true;
+          count_run(std::get<ScanNode>(instr.node).body_chain_idx);
+        } else if (instr.op == OpCode::IF) {
+          const auto& n = std::get<IfNode>(instr.node);
+          for (uint32_t branch : {n.then_chain_idx, n.else_chain_idx}) {
+            if (branch < num_chains) {
+              ++runs[branch];
+              parent[branch] = c;
+              parent_instr[branch] = i;
+            }
+          }
+        }
+      }
+    }
+    for (uint32_t c = 0; c < num_chains; ++c) {
+      if (runs[c] != 1) {
+        parent[c] = kNone;
+      }
+    }
+
+    // A chain whose parents form a loop never runs and has no root.
+    std::vector<uint32_t> root(num_chains, kNone);
+    std::vector<uint32_t> depth(num_chains, 0);
+    for (uint32_t c = 0; c < num_chains; ++c) {
+      uint32_t r = c;
+      uint32_t d = 0;
+      while (parent[r] != kNone && d < num_chains) {
+        r = parent[r];
+        ++d;
+      }
+      if (parent[r] == kNone) {
+        root[c] = r;
+        depth[c] = d;
+      }
+    }
+    auto common_ancestor = [&](uint32_t a, uint32_t b) {
+      if (root[a] == kNone || root[a] != root[b]) {
+        return kPinned;
+      }
+      while (depth[a] > depth[b]) {
+        a = parent[a];
+      }
+      while (depth[b] > depth[a]) {
+        b = parent[b];
+      }
+      while (a != b) {
+        a = parent[a];
+        b = parent[b];
+      }
+      return a;
+    };
+
+    // Ids run Constant -> Input -> Output -> MutableBuffer -> Temp, so
+    // `>= mutable_buffer_end` is neither a method output nor a caller-visible
+    // buffer, and dropping one cannot be observed from outside the program.
+    std::vector<uint32_t> owner(tensors.size(), kNone);
+    for (uint32_t c = 0; c < num_chains; ++c) {
+      for (const auto& instr : chains[c]) {
         for_each_tid(instr, [&](Tid id) {
           if (id.idx >= mutable_buffer_end) {
             uint32_t& o = owner[tensor_index(id)];
-            if (o == kNoOwner) {
-              o = static_cast<uint32_t>(c);
-            } else if (o != c) {
-              o = kShared;
+            if (o == kNone) {
+              o = root[c] == kNone ? kPinned : c;
+            } else if (o != kPinned) {
+              o = common_ancestor(o, c);
             }
           }
         });
       }
     }
 
-    for (size_t c = 0; c < num_chains; ++c) {
-      const auto& chain = prog.instruction_chains[c];
-      bool nested = false;
-      for (const auto& instr : chain) {
-        if (instr.op == OpCode::SCAN || instr.op == OpCode::IF) {
-          nested = true;
-          break;
-        }
-      }
-      if (nested) {
-        continue;
-      }
-
-      std::vector<uint32_t> last_use(tensors.size(), kNoTempLastUse);
-      uint32_t idx = 0;
-      for (const auto& instr : chain) {
-        for_each_tid(instr, [&](Tid id) {
-          if (id.idx >= mutable_buffer_end) {
-            const uint32_t slot = tensor_index(id);
-            if (owner[slot] == c) {
-              last_use[slot] = idx;
-            }
+    // A use inside a branch is a use of the owner's IF that runs that branch.
+    std::vector<uint32_t> last_use(tensors.size(), kNone);
+    for (uint32_t c = 0; c < num_chains; ++c) {
+      for (uint32_t i = 0; i < chains[c].size(); ++i) {
+        for_each_tid(chains[c][i], [&](Tid id) {
+          if (id.idx < mutable_buffer_end) {
+            return;
+          }
+          const uint32_t slot = tensor_index(id);
+          const uint32_t o = owner[slot];
+          if (o == kPinned || holds_scan[o]) {
+            return;
+          }
+          uint32_t at = i;
+          for (uint32_t x = c; x != o; x = parent[x]) {
+            at = parent_instr[x];
+          }
+          if (last_use[slot] == kNone || at > last_use[slot]) {
+            last_use[slot] = at;
           }
         });
-        ++idx;
       }
-      temp_last_use[c] = std::move(last_use);
+    }
+
+    temp_releases.assign(num_chains, {});
+    for (uint32_t c = 0; c < num_chains; ++c) {
+      if (root[c] != kNone && !holds_scan[c]) {
+        temp_releases[c].resize(chains[c].size());
+      }
+    }
+    for (uint32_t slot = 0; slot < last_use.size(); ++slot) {
+      if (last_use[slot] != kNone) {
+        temp_releases[owner[slot]][last_use[slot]].push_back(slot);
+      }
     }
   }
 

@@ -2093,14 +2093,14 @@ class Interpreter {
     const auto& chain = prog.instruction_chains[chain_idx];
     const size_t threshold = eval_threshold_bytes_;
 
-    // Drop a temp as soon as this chain is done with it: ExecutionState holds
+    // Drop a temp as soon as the program is done with it: ExecutionState holds
     // every value a chain produces, and an AOT plan that assigns one slot per
-    // instruction leaves a long chain holding all of them. The table is built
-    // once at load; an empty one means this chain opts out.
-    const std::vector<uint32_t>* last_use = nullptr;
-    if (chain_idx < st.temp_last_use.size() &&
-        !st.temp_last_use[chain_idx].empty()) {
-      last_use = &st.temp_last_use[chain_idx];
+    // instruction leaves a long chain holding all of them. The plan is built
+    // once at load; an empty one means this chain drops nothing.
+    const std::vector<std::vector<uint32_t>>* releases = nullptr;
+    if (chain_idx < st.temp_releases.size() &&
+        !st.temp_releases[chain_idx].empty()) {
+      releases = &st.temp_releases[chain_idx];
     }
 
     size_t idx = 0;
@@ -2126,8 +2126,10 @@ class Interpreter {
       }
 
       // Release before evaluating, so the barrier skips dead temps.
-      if (last_use != nullptr) {
-        release_temp_slots(instr, st, *last_use, static_cast<uint32_t>(idx));
+      if (releases != nullptr) {
+        for (uint32_t slot : (*releases)[idx]) {
+          st.tensors[slot].reset();
+        }
       }
 
       ++idx;
@@ -2140,25 +2142,6 @@ class Interpreter {
   }
 
  private:
-  // Drop every temp whose last use in this chain is the instruction just run.
-  // Ids run Constant -> Input -> Output -> MutableBuffer -> Temp, so
-  // `>= mutable_buffer_end` is neither a method output nor a caller-visible
-  // buffer and dropping one cannot be observed from outside the chain.
-  static void release_temp_slots(
-      const Instruction& instr,
-      ExecutionState& st,
-      const std::vector<uint32_t>& last_use,
-      uint32_t idx) {
-    for_each_tid(instr, [&](Tid id) {
-      if (id.idx >= st.mutable_buffer_end) {
-        const uint32_t slot = st.tensor_index(id);
-        if (last_use[slot] == idx) {
-          st.tensors[slot].reset();
-        }
-      }
-    });
-  }
-
   // Charge `pending_bytes` for one instruction. The estimate is the largest
   // per-execution tensor the instruction touches, which tracks the size of what
   // it just produced without needing to know which tid is its output.
