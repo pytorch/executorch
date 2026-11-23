@@ -31,12 +31,12 @@ The engine is a work in progress. The goal is to consume the standard Native
 preprocessing output; this version accepts a subset of it: static, unquantized
 tensor graphs with contiguous constants and public I/O. At runtime compilation,
 the shared `functionalize_aliases` pass (`runtime/graph/utils/Aliases.h`)
-materializes view/permute/transpose aliases and contiguous full-span as_strided
-reshapes, and functionalizes relu_/gelu_/sigmoid_ activations. Other
-aliasing views (for example slice, unsqueeze and expand) and in-place
-index_put_/index_copy_ are rejected. Later reads of aliases that reach the
-mutated value through views alone, with the same shape, follow the updated
-value. Mutation through a live view
+materializes view/permute/transpose/slice/squeeze/unsqueeze/alias aliases and
+contiguous full-span as_strided reshapes, and functionalizes
+relu_/gelu_/sigmoid_ activations. Other aliasing views (for example expand) and
+in-place index_put_/index_copy_ are rejected. Later reads of aliases that reach
+the mutated value through view, squeeze, unsqueeze and alias reshapes alone,
+with the same shape, follow the updated value. Mutation through a live view
 with different logical indexing is rejected, as are mutation of user inputs or
 persistent buffers, control flow, dynamic shapes, and quantization metadata.
 After this pass, intermediates that are not graph outputs are stored

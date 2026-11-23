@@ -30,8 +30,8 @@ case "${component}" in
       -DEXECUTORCH_ENABLE_EVENT_TRACER=ON
       -DEXECUTORCH_CPU_XNNPACK_OPERATOR_SHAPES=ON
     )
-    targets+=(native_cpu_engine_test cpu_plan_test run_classification_cpu)
-    test_regex='^(native_cpu_engine|cpu_plan)_test$'
+    targets+=(native_cpu_engine_test cpu_plan_test run_classification_cpu native_cpu_sample_test)
+    test_regex='^(native_cpu_engine|cpu_plan)_test$|^native_cpu_sample_test_static_float$'
     ;;
   ggml)
     cmake_args+=(

@@ -14,9 +14,47 @@ from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassResult
+from torch._subclasses.fake_tensor import FakeTensorMode
 
 
 input_t = Tuple[torch.Tensor, torch.Tensor]  # Input x, y
+
+
+@pytest.mark.parametrize("dtype", (torch.int8, torch.int16))
+def test_fold_qdq_corrects_full_like_factory_dtype(dtype):
+    graph = torch.fx.Graph()
+    source = graph.placeholder("source")
+    full_like = graph.call_function(
+        exir_ops.edge.aten.full_like.default,
+        (source, 3.2),
+        {"dtype": torch.float32},
+    )
+    limits = torch.iinfo(dtype)
+    quantize = graph.call_function(
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        (full_like, 0.1, 0, limits.min, limits.max, dtype),
+    )
+    graph.output(quantize)
+    with FakeTensorMode():
+        source.meta["val"] = torch.empty(2, 3)
+        full_like.meta["val"] = torch.empty(2, 3)
+        quantize.meta["val"] = torch.empty(2, 3, dtype=dtype)
+
+    result = FoldAndAnnotateQParamsPass()(torch.fx.GraphModule({}, graph))
+
+    assert result is not None
+    result.graph_module.graph.lint()
+    factory = result.graph_module.graph.find_nodes(
+        op="call_function", target=exir_ops.edge.aten.full_like.default
+    )[0]
+    assert factory.kwargs["dtype"] == dtype
+    assert factory.meta["val"].dtype == dtype
+    assert factory.meta["output_qparams"][0].dtype == dtype
+    assert not result.graph_module.graph.find_nodes(
+        op="call_function",
+        target=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+    )
+
 
 _MIXED_PROFILE_PARTIAL_BINARY_TENSOR_TARGETS = (
     exir_ops.edge.aten.add.Tensor,

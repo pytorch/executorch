@@ -1,0 +1,40 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#pragma once
+
+#include <executorch/runtime/core/result.h>
+#include <filesystem>
+
+namespace executorch {
+namespace backends {
+namespace aoti {
+
+/**
+ * Writes a shared library to a new file in the system temporary directory.
+ *
+ * The file gets a name that is random and never repeats within the process,
+ * and it is created exclusively, so an existing file is never opened or
+ * overwritten. Outside Windows, only the current user can read or write it.
+ * The directory is std::filesystem::temp_directory_path(), which honors TMPDIR
+ * on POSIX. A caller that loads the file by path relies on only the user and
+ * root being able to rename the file or any directory on its path, as with
+ * /tmp. The caller removes the file when it is no longer needed.
+ *
+ * @param[in] data The library contents.
+ * @param[in] size The size of the library contents, in bytes.
+ * @returns The path of the new file, or Error::AccessFailed if it could not be
+ *     created or written.
+ */
+executorch::runtime::Result<std::filesystem::path> write_temp_library(
+    const void* data,
+    size_t size);
+
+} // namespace aoti
+} // namespace backends
+} // namespace executorch

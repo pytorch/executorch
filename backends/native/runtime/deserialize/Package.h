@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -27,6 +28,13 @@ namespace ptn {
 constexpr const char* kProgramEntry = "program.ptg";
 constexpr const char* kSafeTensorsEntry = "program.safetensors";
 constexpr const char* kAliasesEntry = "aliases.json";
+constexpr const char* kMetadataEntry = "metadata.json";
+
+// A .ptn is little-endian throughout: the program FlatBuffer, the safetensors
+// header and payloads, and packed codec bytes. Throws unless `host`, the byte
+// order of the machine reading the package, is little-endian. Package::load
+// checks it before reading anything.
+void check_little_endian_host(std::endian host = std::endian::native);
 
 // Metadata for one constant resolved out of a package. `sizes` is borrowed from
 // the Package and must not outlive it.
@@ -58,6 +66,8 @@ class Package {
   std::optional<SafeTensorsReader> tensors_;
   size_t tensor_data_offset_ = 0;
   std::unordered_map<std::string, std::string> aliases_;
+  // The metadata.json object, validated at load; empty when absent.
+  std::string metadata_;
 
   Package();
 
@@ -100,6 +110,12 @@ class Package {
 
   // Metadata for `key`, resolving an alias to its owner. nullopt when absent.
   std::optional<ConstantInfo> constant_info(const std::string& key) const;
+
+  // Producer-defined metadata (the metadata.json member) by name. nullopt when
+  // absent; throws std::runtime_error when the value has another type.
+  std::optional<int64_t> metadata_int(const std::string& name) const;
+  std::optional<std::vector<int64_t>> metadata_ints(
+      const std::string& name) const;
 
   // Load one constant into a new owning buffer. nullopt when absent.
   std::optional<OwnedBytes> acquire_constant(const std::string& key) const;

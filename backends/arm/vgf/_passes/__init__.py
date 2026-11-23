@@ -8,6 +8,9 @@ from .group_independent_custom_shaders import GroupIndependentCustomShadersPass 
 from .insert_grid_sampler_grid_dequant_pass import (  # noqa
     InsertGridSamplerGridDequantPass,
 )
+from .rewrite_custom_sdpa_to_tosa_custom import (  # noqa
+    RewriteCustomSDPAToTosaCustomPass,
+)
 from .rewrite_grid_sampler_to_tosa_custom import (  # noqa
     RewriteGridSamplerToTosaCustomPass,
 )

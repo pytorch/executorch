@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import ctypes
 import gc
 import importlib
 import importlib.util
@@ -340,6 +341,21 @@ else:
         self.assertIn(
             '"dltensor_versioned"', repr(result.__dlpack__(max_version=(1, 0)))
         )
+        # Versioned capsules say 1.1, the DLPack version that added the float8
+        # codes they can carry, also for a consumer that asks for at most 1.0.
+        get_pointer = ctypes.PYFUNCTYPE(
+            ctypes.c_void_p, ctypes.py_object, ctypes.c_char_p
+        )(("PyCapsule_GetPointer", ctypes.pythonapi))
+
+        def capsule_version(capsule):
+            return tuple(
+                (ctypes.c_uint32 * 2).from_address(
+                    get_pointer(capsule, b"dltensor_versioned")
+                )
+            )
+
+        self.assertEqual(capsule_version(result.__dlpack__(max_version=(1, 0))), (1, 1))
+        self.assertEqual(capsule_version(result.__dlpack__(max_version=(1, 1))), (1, 1))
         self.assertIn('"dltensor"', repr(result.__dlpack__()))
         with self.assertRaises(BufferError):
             result.__dlpack__(dl_device=(2, 0), copy=False)
@@ -367,7 +383,8 @@ else:
                     output = executor(capsules)[0]
                     np.testing.assert_array_equal(np.from_dlpack(output), [3.0])
 
-        # A producer that knows DLPack 1.0 is asked for a versioned capsule.
+        # A producer that takes max_version is asked for a versioned capsule, up
+        # to DLPack 1.1.
         class VersionedProducer:
             def __init__(self, array: np.ndarray) -> None:
                 self.array = array
@@ -384,7 +401,7 @@ else:
         np.testing.assert_array_equal(
             np.from_dlpack(method((first, producer))[0]), [3.0]
         )
-        self.assertEqual(producer.requests, [(1, 0)])
+        self.assertEqual(producer.requests, [(1, 1)])
         # A capsule gives its tensor away once.
         used = first.__dlpack__()
         method((used, second))

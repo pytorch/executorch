@@ -41,6 +41,23 @@ struct Int8RuntimeOptions {
   bool dual_core = false;
   /// Internal RAM left free when deciding whether the arena fits there.
   size_t internal_reserve_bytes = 48 * 1024;
+  /// Time every operation for op_time_us() and print_profile(). Otherwise
+  /// invoke() reads the timer only a few times per call.
+  bool profile_operations = false;
+  /// Plan each operation's ESP-NN scratch in the activation arena, live only
+  /// while the operation runs, instead of one buffer sized for the largest
+  /// operation. Saves memory, but the scratch then lives wherever the arena
+  /// does (PSRAM for a large model).
+  bool scratch_in_arena = false;
+  /// Bind graph outputs to caller-provided device-layout (NHWC) buffers,
+  /// outside this interpreter's arena, except the slots selected by
+  /// conversion_slots. Graph inputs and outputs that an operation reads
+  /// always have arena slots.
+  bool external_io = false;
+  /// With external_io, include these output slots in the arena for
+  /// conversion. Bits select slots in input-then-output order, determined at
+  /// export time.
+  uint32_t conversion_slots = 0;
 };
 
 /**
@@ -115,6 +132,17 @@ class Int8Interpreter {
   bool input_info(size_t index, Int8TensorInfo& info) const;
   /// Describes output @p index. @retval false @p index is out of range.
   bool output_info(size_t index, Int8TensorInfo& info) const;
+  /**
+   * With Int8RuntimeOptions::external_io, makes @p data, a device-layout
+   * buffer of output_info().bytes, the storage of output @p index until it is
+   * bound again. An output with an arena slot cannot be bound: output_data()
+   * returns the slot.
+   *
+   * @retval false external_io is off, @p index is out of range, or the output
+   *     has an arena slot (it is a graph input, an operation reads it, or
+   *     conversion_slots selects it).
+   */
+  bool bind_output(size_t index, int8_t* data);
   /// Device-layout (NHWC) int8 buffer of input @p index, or nullptr.
   int8_t* input_data(size_t index);
   /// Device-layout (NHWC) int8 buffer of output @p index, or nullptr.
@@ -157,11 +185,17 @@ class Int8Interpreter {
   const GraphView& graph() const {
     return graph_;
   }
+  /// With external_io, the I/O slots given arena slots: conversion_slots plus
+  /// every output that an operation reads, in the same bit order.
+  uint32_t conversion_slots() const {
+    return options_.conversion_slots;
+  }
   /// Duration of the last invoke() in microseconds.
   int64_t last_invoke_us() const {
     return last_invoke_us_;
   }
-  /// Duration of operation @p op during the last invoke(), or 0.
+  /// Duration of operation @p op during the last invoke(), or 0 without
+  /// Int8RuntimeOptions::profile_operations.
   int64_t op_time_us(uint32_t op) const;
   /// Size of the activation arena.
   size_t arena_bytes() const {
@@ -171,10 +205,24 @@ class Int8Interpreter {
   bool arena_in_internal_ram() const {
     return arena_internal_;
   }
-  /// Size of the shared ESP-NN scratch buffer.
+  /// Size of the separate ESP-NN scratch buffer (0 with scratch_in_arena).
   size_t scratch_bytes() const {
     return scratch_size_;
   }
+  /// Number of delegate-owned state tensors (mutable buffers).
+  size_t state_count() const {
+    return graph_.num_states;
+  }
+  /// Number of states whose new value is written in place over the old one
+  /// rather than copied after the last operation.
+  size_t states_updated_in_place() const;
+  /**
+   * Restores every state tensor to its initial value. load() does this too.
+   * Not thread-safe with respect to invoke() on the same interpreter.
+   */
+  void reset_states();
+  /// Size of the per-operation and per-tensor tables kept in RAM after load().
+  size_t table_bytes() const;
   /// Size of the precomputed requantization tables.
   size_t parameter_bytes() const {
     return params_size_;
@@ -196,6 +244,7 @@ class Int8Interpreter {
   void rebase_constants(const uint8_t* old_base, size_t size);
   bool tensor_info(uint32_t tensor_id, Int8TensorInfo& info) const;
   int8_t* activation(uint32_t tensor_id) const;
+  bool in_arena(const int8_t* data) const;
   const int8_t* operand(uint32_t tensor_id) const;
   void run_generic_conv(const OpState& s, const int8_t* input, int8_t* output)
       const;
@@ -216,10 +265,11 @@ class Int8Interpreter {
   GraphView graph_{};
   bool loaded_ = false;
   uint8_t* blob_copy_ = nullptr;
-  TensorRecord* tensors_ = nullptr;
-  OperationRecord* operations_ = nullptr;
+  const TensorRecord* tensors_ = nullptr;
+  /// The graph's tensor table and requantization arrays are used in place.
+  bool tables_in_place_ = false;
   OpState* op_states_ = nullptr;
-  size_t* tensor_offsets_ = nullptr;
+  int8_t** tensor_data_ = nullptr;
   uint8_t* arena_ = nullptr;
   size_t arena_size_ = 0;
   bool arena_internal_ = false;
@@ -229,6 +279,8 @@ class Int8Interpreter {
   size_t phase_bytes_ = 0;
   int32_t* params_ = nullptr;
   size_t params_size_ = 0;
+  int64_t* op_us_ = nullptr;
+  uint16_t updates_in_place_ = 0;
   uint32_t inputs_[MAX_GRAPH_IO]{};
   uint32_t outputs_[MAX_GRAPH_IO]{};
   size_t input_count_ = 0;

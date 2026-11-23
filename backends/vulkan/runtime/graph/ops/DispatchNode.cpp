@@ -90,7 +90,7 @@ void DispatchNode::encode(ComputeGraph* graph) {
   event_name += "]";
 #endif
 
-  context->report_shader_dispatch_start(
+  context->report_previous_work_finish(
 #ifdef ET_EVENT_TRACER_ENABLED
       event_name,
 #else
@@ -118,7 +118,7 @@ void DispatchNode::encode(ComputeGraph* graph) {
       push_constants_data_.data(),
       push_constants_offset_);
 
-  context->report_shader_dispatch_end();
+  context->report_shader_exec_finish();
 }
 
 void DispatchNode::write_push_constant_data() {

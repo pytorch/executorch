@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch, PropertyMock
 import torch
 from executorch.backends.qualcomm._passes import (
     AnnotateQuantAttrs,
+    ConstantFolding,
     ConvertBmmToMatmul,
     ConvertMhaToSha,
     DecomposeColIm,
@@ -36,7 +37,11 @@ from executorch.backends.qualcomm.builders.op_custom_op import (
     _resolve_qnn_data_type,
     CustomOp,
 )
-from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
+from executorch.backends.qualcomm.builders.qnn_constants import (
+    OpCast,
+    OpContextLoader,
+    OpQuantize,
+)
 from executorch.backends.qualcomm.builders.utils import is_parameter
 from executorch.backends.qualcomm.partition.qnn_partitioner import (
     QnnOperatorSupport,
@@ -65,6 +70,7 @@ from executorch.backends.qualcomm.tests.models import (
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_DTYPE,
     QCOM_ENCODING,
+    QCOM_PASS_ACTIVATE_KEY,
     QCOM_QUANT_ATTRS,
     QCOM_QUANT_MAX,
     QCOM_QUANT_MIN,
@@ -77,6 +83,7 @@ from executorch.backends.qualcomm.utils.utils import (
     generate_gpu_compiler_spec,
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
+    skip_annotation,
     to_edge_transform_and_lower_to_qnn,
 )
 from executorch.exir import EdgeCompileConfig, to_edge
@@ -344,6 +351,14 @@ def stubbed_compiler_specs(backend_options):
         )
 
 
+def passes_job_without_constant_folding():
+    # ConstantFolding precomputes constant-only ops, so the partitioner
+    # decisions on them can't be observed after lowering.
+    passes_job = get_qnn_pass_manager_cls().get_capture_program_passes()
+    passes_job[ConstantFolding][QCOM_PASS_ACTIVATE_KEY] = False
+    return passes_job
+
+
 def delegated_ops(edge):
     return [
         node.target
@@ -352,7 +367,88 @@ def delegated_ops(edge):
     ]
 
 
+class SkippedEmbeddings(torch.nn.Module):
+    def __init__(self, multiple_outputs=False):
+        super().__init__()
+        self.word = torch.nn.Embedding(16, 8)
+        self.position = torch.nn.Embedding(4, 8)
+        self.token_type = torch.nn.Embedding(2, 8)
+        self.register_buffer("bias", torch.linspace(-1, 1, 8))
+        self.multiple_outputs = multiple_outputs
+        with torch.no_grad():
+            self.word.weight.copy_(torch.arange(16).reshape(16, 1) - 8)
+            self.position.weight.zero_()
+            self.token_type.weight.zero_()
+
+    def forward(self, tokens, positions, token_types):
+        hidden = (
+            self.word(tokens) + self.position(positions) + self.token_type(token_types)
+        )
+        hidden = torch.searchsorted(self.bias.relu(), hidden)
+        hidden = hidden.to(torch.float32)
+        if self.multiple_outputs:
+            return {"hidden": hidden, "pooled": hidden.mean(dim=1)}
+        return hidden
+
+
 class TestPasses(unittest.TestCase):
+    def test_skip_annotation_with_folded_constant(self):
+        inputs = (
+            torch.tensor([[1, 6, 10, 14]], dtype=torch.int32),
+            torch.arange(4, dtype=torch.int32).reshape(1, 4),
+            torch.zeros(1, 4, dtype=torch.int32),
+        )
+        for multiple_outputs in (False, True):
+            with self.subTest(multiple_outputs=multiple_outputs):
+                model = SkippedEmbeddings(multiple_outputs).eval()
+                quantizer = QnnQuantizer(soc_model=QcomChipset.SM8650)
+                quantizer.set_default_quant_config(QuantDtype.use_8a8w)
+                quantizer.add_discard_ops([torch.ops.aten.relu.default])
+                compiler_specs = generate_qnn_executorch_compiler_spec(
+                    soc_model=QcomChipset.SM8650,
+                    backend_options=generate_htp_compiler_spec(use_fp16=False),
+                )
+                gm, managers = skip_annotation(
+                    model,
+                    quantizer,
+                    compiler_specs,
+                    inputs,
+                    calibration_cb=lambda gm: gm(*inputs),
+                    fp_node_op_set={torch.ops.aten.embedding.default},
+                )
+                self.assertEqual(len(managers), 1)
+                program = managers[0].exported_program()
+                self.assertTrue(
+                    any(
+                        "lifted_tensor_constant" in spec.target
+                        for spec in program.graph_signature.input_specs
+                        if spec.target is not None
+                    )
+                )
+                ep = torch.export.export(gm, inputs, strict=True)
+                self.assertEqual(len(ep.graph_signature.user_inputs), len(inputs))
+                group = next(n for n in gm.graph.nodes if n.op == "call_module")
+                flat_outputs = gm.get_submodule(group.target)(
+                    model.word(inputs[0]),
+                    model.position(inputs[1]),
+                    model.token_type(inputs[2]),
+                )
+                self.assertIsInstance(flat_outputs, tuple)
+                self.assertEqual(len(flat_outputs), 2 if multiple_outputs else 1)
+                actual = gm(*inputs)
+                expected = model(*inputs)
+                torch.testing.assert_close(actual, expected, atol=0, rtol=0)
+                embeddings = [
+                    n
+                    for n in ep.graph.nodes
+                    if n.target == torch.ops.aten.embedding.default
+                ]
+                self.assertEqual(len(embeddings), 3)
+                self.assertNotIn(
+                    exir_ops.edge.aten.embedding.default,
+                    delegated_ops(managers[0]),
+                )
+
     def _build_context_loader_edge_program(self, op_name, check_ir_validity=True):
         graph_name = "forward"
         custom_op = Library(OpContextLoader.namespace, "FRAGMENT")
@@ -1052,7 +1148,7 @@ class TestPasses(unittest.TestCase):
                 skip_without_qnn_sdk(self, e)
             raise
 
-    def test_uint8_to_float32_cast_goes_through_int32_only_on_htp(self):
+    def test_cast_to_float_adds_int32_step_and_quantize(self):
         quant_attrs = {
             QCOM_ENCODING: exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
             QCOM_SCALE: 1 / 255,
@@ -1061,36 +1157,47 @@ class TestPasses(unittest.TestCase):
             QCOM_QUANT_MAX: 255,
             QCOM_DTYPE: torch.uint8,
         }
+        htp = QnnExecuTorchBackendType.kHtpBackend
+        gpu = QnnExecuTorchBackendType.kGpuBackend
+        cast, quant = OpCast.op_name, OpQuantize.op_name
         cases = [
-            (torch.float32, QnnExecuTorchBackendType.kHtpBackend, None, 2),
-            (torch.float64, QnnExecuTorchBackendType.kHtpBackend, None, 2),
-            (torch.float32, QnnExecuTorchBackendType.kGpuBackend, None, 1),
-            (torch.float16, QnnExecuTorchBackendType.kHtpBackend, None, 1),
-            (torch.float32, QnnExecuTorchBackendType.kHtpBackend, quant_attrs, 1),
+            (torch.uint8, torch.float32, htp, None, [cast, cast]),
+            (torch.uint8, torch.float64, htp, None, [cast, cast]),
+            (torch.uint8, torch.float32, gpu, None, [cast]),
+            (torch.uint8, torch.float16, htp, None, [cast]),
+            # an integer cast into a quantized tensor is Cast to fp32 + Quantize
+            (torch.uint8, torch.float32, htp, quant_attrs, [cast, cast, quant]),
+            (torch.int32, torch.float32, htp, quant_attrs, [cast, quant]),
+            (torch.int64, torch.float32, htp, quant_attrs, [cast, cast, quant]),
         ]
-        for dtype, backend_type, cast_quant_attrs, expected in cases:
+        for in_dtype, dtype, backend_type, cast_quant_attrs, expected in cases:
             with self.subTest(
-                dtype=dtype, backend_type=backend_type, quantized=bool(cast_quant_attrs)
+                in_dtype=in_dtype,
+                dtype=dtype,
+                backend_type=backend_type,
+                quantized=bool(cast_quant_attrs),
             ):
                 edge_program = to_edge(
                     torch.export.export(
                         CastToFloat(dtype),
-                        (torch.arange(4, dtype=torch.uint8),),
+                        (torch.arange(4, dtype=in_dtype),),
                         strict=True,
                     )
                 ).exported_program()
                 visitors = get_node_visitors(edge_program, backend_type=backend_type)
-                cast = next(
+                cast_node = next(
                     node
                     for node in edge_program.graph.nodes
                     if node.op == "call_function" and node.args[0].op == "placeholder"
                 )
                 if cast_quant_attrs:
-                    cast.meta[QCOM_QUANT_ATTRS] = cast_quant_attrs
-                ops = visitors[cast.target.__name__].define_node(
-                    cast, defaultdict(dict)
+                    cast_node.meta[QCOM_QUANT_ATTRS] = cast_quant_attrs
+                ops = visitors[cast_node.target.__name__].define_node(
+                    cast_node, defaultdict(dict)
                 )
-                self.assertEqual(expected, len(ops))
+                self.assertEqual(
+                    expected, [op.GetOpWrapper().GetOpType() for op in ops]
+                )
 
     def test_mha_to_sha(self):
         from executorch.backends.qualcomm.utils.utils import convert_linear_to_conv2d
@@ -1547,6 +1654,7 @@ class TestPasses(unittest.TestCase):
                         model.eval(),
                         sample_input,
                         compiler_specs,
+                        passes_job=passes_job_without_constant_folding(),
                         skip_node_op_set={"aten.relu.default"},
                     )
                 except RuntimeError as e:
@@ -1565,7 +1673,10 @@ class TestPasses(unittest.TestCase):
         sample_input = (torch.randn(4, 16),)
         with stubbed_qnn_backend():
             edge = to_edge_transform_and_lower_to_qnn(
-                ConstantBranches().eval(), sample_input, compiler_specs
+                ConstantBranches().eval(),
+                sample_input,
+                compiler_specs,
+                passes_job=passes_job_without_constant_folding(),
             )
             for model in (
                 NoRuntimeInput(),
@@ -1604,7 +1715,10 @@ class TestPasses(unittest.TestCase):
         ):
             with self.subTest(model=type(model).__name__), stubbed_qnn_backend():
                 edge = to_edge_transform_and_lower_to_qnn(
-                    model.eval(), sample_input, compiler_specs
+                    model.eval(),
+                    sample_input,
+                    compiler_specs,
+                    passes_job=passes_job_without_constant_folding(),
                 )
                 self.assertIn(exir_ops.edge.aten.linear.default, delegated_ops(edge))
 
@@ -1623,6 +1737,7 @@ class TestPasses(unittest.TestCase):
                 convert_pt2e(quantized),
                 sample_input,
                 stubbed_compiler_specs(generate_htp_compiler_spec(use_fp16=False)),
+                passes_job=passes_job_without_constant_folding(),
             )
         self.assertIn(exir_ops.edge.aten.linear.default, delegated_ops(edge))
 
@@ -2689,6 +2804,86 @@ class TestActivationSpecSharing(unittest.TestCase):
         self._assert_qat_matches_ptq(
             self._requantize_counts(LinearReluLinear, (torch.randn(2, 16),))
         )
+
+
+class TestDeadChannelWeightScale(unittest.TestCase):
+    """Near-dead weight channels get a live per-channel scale and keep their bias."""
+
+    BIAS = 0.5
+    CONFIGS = (
+        (QuantDtype.use_8a8w, False),
+        (QuantDtype.use_8a8w, True),
+        (QuantDtype.use_16a8w, False),
+        (QuantDtype.use_16a8w, True),
+        (QuantDtype.use_16a16w, False),
+        (QuantDtype.use_16a4w, False),
+        (QuantDtype.use_16a4w, True),
+        (QuantDtype.use_fp16a8w, False),
+        (QuantDtype.use_fp16a8w, True),
+    )
+
+    def _quantize(self, quant_dtype, is_qat, weight_gains):
+        from executorch.backends.qualcomm.export_utils import make_quantizer
+        from executorch.backends.qualcomm.quantizer.observers.per_channel_param_observer import (
+            MovingAveragePerChannelLiveScaleObserver,
+            PerChannelParamObserver,
+        )
+        from torchao.quantization.pt2e.quantize_pt2e import (
+            convert_pt2e,
+            prepare_pt2e,
+            prepare_qat_pt2e,
+        )
+
+        torch.manual_seed(0)
+        conv = torch.nn.Conv2d(8, 4, 3)
+        with torch.no_grad():
+            conv.weight *= torch.tensor(weight_gains).view(-1, 1, 1, 1)
+            conv.bias[0] = self.BIAS
+        x = torch.randn(1, 8, 8, 8)
+        prepare = prepare_qat_pt2e if is_qat else prepare_pt2e
+        prepared = prepare(
+            torch.export.export(conv, (x,)).module(),
+            make_quantizer(
+                quant_dtype=quant_dtype, is_qat=is_qat, per_channel_conv=True
+            ),
+        )
+        prepared(x)
+        observer_types = (
+            PerChannelParamObserver,
+            MovingAveragePerChannelLiveScaleObserver,
+        )
+        (observer,) = [m for m in prepared.modules() if isinstance(m, observer_types)]
+        scale, _ = observer.calculate_qparams()
+        raw_scale, _ = super(type(observer), observer).calculate_qparams()
+        with torch.no_grad():
+            out = convert_pt2e(prepared)(x)
+        return scale, raw_scale, observer.eps, out
+
+    def test_near_dead_channels_get_a_live_scale(self):
+        # channel 0 is dead; channel 1's int8 scale sits between the 16-bit
+        # and 8-bit eps
+        gains = [1e-8, 1e-4, 1.0, 1.0]
+        for quant_dtype, is_qat in self.CONFIGS:
+            with self.subTest(quant_dtype=quant_dtype, is_qat=is_qat):
+                scale, raw_scale, eps, out = self._quantize(quant_dtype, is_qat, gains)
+                self.assertAlmostEqual(float(out[0, 0].mean()), self.BIAS, delta=0.01)
+                floored = raw_scale <= eps
+                self.assertTrue(floored[0])
+                if quant_dtype in (QuantDtype.use_8a8w, QuantDtype.use_16a8w):
+                    self.assertTrue(floored[1])
+                live = raw_scale[~floored]
+                self.assertTrue(
+                    torch.equal(
+                        scale[floored], live.median().expand(int(floored.sum()))
+                    )
+                )
+                self.assertTrue(torch.equal(scale[~floored], live))
+
+    def test_all_floored_channels_keep_the_floor(self):
+        for quant_dtype, is_qat in self.CONFIGS:
+            with self.subTest(quant_dtype=quant_dtype, is_qat=is_qat):
+                scale, _, eps, _ = self._quantize(quant_dtype, is_qat, [1e-8] * 4)
+                self.assertTrue(torch.equal(scale, eps.expand_as(scale)))
 
 
 class TestIoBindingCheck(unittest.TestCase):
