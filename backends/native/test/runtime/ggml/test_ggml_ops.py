@@ -224,6 +224,29 @@ class CacheWrite(torch.nn.Module):
         return self.cache * 1.0
 
 
+class SharedCacheWrite(torch.nn.Module):
+    """A method writing rows of a cache other methods share."""
+
+    def __init__(self, cache, persistent):
+        super().__init__()
+        self.register_buffer("cache", cache, persistent=persistent)
+
+    def forward(self, values, positions):
+        self.cache.index_copy_(2, positions, values)
+        return self.cache * 1.0
+
+
+class SharedCacheRead(torch.nn.Module):
+    """A method reading a cache other methods write."""
+
+    def __init__(self, cache, persistent):
+        super().__init__()
+        self.register_buffer("cache", cache, persistent=persistent)
+
+    def forward(self, x):
+        return self.cache + x
+
+
 class TransposedCacheWrite(torch.nn.Module):
     """Writes [B, T, H, D] values into a head-major cache through a transpose."""
 
@@ -2569,6 +2592,69 @@ class GgmlOpsTest(unittest.TestCase):
             ),
             atol=1e-2,
             rtol=1e-2,
+        )
+
+    def _check_methods_sharing_a_cache(self, persistent, names):
+        """Static prefill and decode methods write one cache that a third reads,
+        all in one context, as in eager where the modules share the tensor.
+        `names` names the method of each step; prefill and decode steps after
+        the first of each write the given positions."""
+        initial = torch.randn(1, 2, 8, 4) if persistent else torch.zeros(1, 2, 8, 4)
+
+        def methods(cache):
+            return {
+                "prefill": SharedCacheWrite(cache, persistent),
+                "decode": SharedCacheWrite(cache, persistent),
+                "read": SharedCacheRead(cache, persistent),
+            }
+
+        examples = {
+            "prefill": (torch.randn(1, 2, 3, 4), torch.tensor([5, 1, 6])),
+            "decode": (torch.randn(1, 2, 1, 4), torch.tensor([0])),
+            "read": (torch.randn(1, 2, 8, 4),),
+        }
+        later = {
+            "prefill": (torch.randn(1, 2, 3, 4), torch.tensor([2, 3, 4])),
+            "decode": (torch.randn(1, 2, 1, 4), torch.tensor([7])),
+            "read": (torch.randn(1, 2, 8, 4),),
+        }
+        steps = [
+            (name, later[name] if name in names[:i] else examples[name])
+            for i, name in enumerate(names)
+        ]
+        programs = {
+            name: torch.export.export(module, examples[name])
+            for name, module in methods(initial.clone()).items()
+            if name in names
+        }
+        eager = methods(initial.clone())
+        with torch.no_grad():
+            expected = [eager[name](*inputs) for name, inputs in steps]
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            package = outdir / "model.ptn"
+            to_native(programs).save(str(package))
+            outputs = _run_ggml(
+                package,
+                [inputs for _, inputs in steps],
+                outdir,
+                1,
+                method=";".join(name for name, _ in steps),
+            )
+        for ((raw, shape),), reference in zip(outputs, expected):
+            actual = torch.frombuffer(bytearray(raw), dtype=torch.float32)
+            torch.testing.assert_close(actual.reshape(shape), reference)
+
+    def test_methods_share_a_persistent_cache(self):
+        self._check_methods_sharing_a_cache(
+            True, ["read", "prefill", "read", "decode", "decode", "prefill", "read"]
+        )
+
+    # A method only reading a zero-initialized buffer exports it as a constant,
+    # unlike the methods writing it, so the package is refused.
+    def test_methods_share_a_zero_initialized_cache(self):
+        self._check_methods_sharing_a_cache(
+            False, ["decode", "prefill", "decode", "prefill"]
         )
 
     def test_index_put_cache_write(self):
