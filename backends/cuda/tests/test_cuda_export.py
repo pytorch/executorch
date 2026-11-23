@@ -1139,9 +1139,7 @@ class TestCudaExport(unittest.TestCase):
         """Without the compile spec, the passes that measure the calls several
         implementations can run follow the replacement pass, before the Helion
         lowering that always runs last; OFF leaves them out."""
-        from executorch.backends.cuda.passes.lower_helion_to_triton import (
-            LowerHelionToTritonPass,
-        )
+        from executorch.backends.cuda.passes.lower_helion import LowerHelionPass
         from executorch.backends.cuda.triton.measured_routing import (
             ApplyChoicesPass,
             MeasureChoicesPass,
@@ -1160,7 +1158,7 @@ class TestCudaExport(unittest.TestCase):
                 ReplaceEdgeOpWithTritonOpPass,
                 MeasureChoicesPass,
                 ApplyChoicesPass,
-                LowerHelionToTritonPass,
+                LowerHelionPass,
             ],
         )
         self.assertEqual(off, default[:-3] + default[-1:])
