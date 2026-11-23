@@ -212,6 +212,12 @@ def load_gguf(
     read = raw_iter or iter_gguf
     shapes = {n: p.shape for n, p in model.named_parameters(remove_duplicate=False)}
     expected = set(shapes)
+    # A GGUF may also hold persistent buffers, e.g. Gemma 4's per-layer output
+    # scales; those it lacks keep their initial values.
+    state = model.state_dict()
+    for name, buffer in model.named_buffers():
+        if name in state:
+            shapes.setdefault(name, buffer.shape)
     loaded = set()
     # id(value) -> (value, its first FQN); holding value keeps the id unique.
     bound: dict[int, tuple[torch.Tensor, str]] = {}
@@ -223,7 +229,7 @@ def load_gguf(
         dtype=torch.float32,
         raw_iter=lambda p: check_config_tensors(model, architecture, read(p)),
     ):
-        if fqn not in expected:
+        if fqn not in shapes:
             raise ValueError(f"GGUF tensor maps to unknown parameter {fqn!r}")
         want = tuple(shapes[fqn])
         if fqn in ("model.embed_tokens.weight", "lm_head.weight"):
@@ -242,7 +248,7 @@ def load_gguf(
             assign_one(model, fqn, value)
             bound[id(value)] = (value, fqn)
         loaded.add(fqn)
-    if loaded != expected:
+    if not expected <= loaded:
         raise ValueError(f"GGUF is missing {sorted(expected - loaded)}")
     for name, module in model.named_modules():
         if isinstance(module, torch.nn.Embedding) and f"{name}.weight" in dequantized:
@@ -772,6 +778,12 @@ class OffGraphLastTokenLM(nn.Module):
         self.selected = selected
         config = model.config.get_text_config()
         self._windows = _cache_windows(config)
+        if any(isinstance(shape, list) for shape in get_head_shapes(config)):
+            raise NotImplementedError(
+                f"--offgraph_cache: {config.model_type} sets head_dim or the "
+                "KV head count per layer, and off-graph caches take one for "
+                "every layer"
+            )
         self._head_dim = (
             getattr(config, "head_dim", None)
             or config.hidden_size // config.num_attention_heads
