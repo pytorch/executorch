@@ -36,13 +36,21 @@ def _quantize(model, inputs):
     return interpreter
 
 
-def test_sigmoid_output_qparams_are_calibrated():
+@pytest.mark.parametrize(
+    "activation, target",
+    [
+        (torch.nn.Sigmoid, torch.ops.fused_quant.sigmoid.default),
+        (torch.nn.SiLU, torch.ops.fused_quant.silu.default),
+        (torch.nn.Hardswish, torch.ops.fused_quant.hardswish.default),
+        (torch.nn.Hardsigmoid, torch.ops.fused_quant.hardsigmoid.default),
+    ],
+    ids=["sigmoid", "silu", "hardswish", "hardsigmoid"],
+)
+def test_lut_output_qparams_are_calibrated(activation, target):
     scales = []
     for low, high in [(-16, 16), (-3, -1)]:
-        interpreter = _quantize(torch.nn.Sigmoid(), (torch.linspace(low, high, 257),))
-        (node,) = interpreter.module.graph.find_nodes(
-            op="call_function", target=torch.ops.fused_quant.sigmoid.default
-        )
+        interpreter = _quantize(activation(), (torch.linspace(low, high, 257),))
+        (node,) = interpreter.module.graph.find_nodes(op="call_function", target=target)
         params = get_qparams_from_node(node, "out")
         assert params.dtype == torch.int8
         assert (params.quant_min, params.quant_max) == (-128, 127)

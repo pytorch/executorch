@@ -261,7 +261,7 @@ def test_lut_covers_all_input_codes(case):
     ["input_activation", "output_activation"],
     ids=["float_input", "float_output"],
 )
-def test_sigmoid_unsupported_qparams_stay_portable(float_edge):
+def test_partially_quantized_sigmoid_stays_portable(float_edge):
     config = replace(get_symmetric_quantization_config(), **{float_edge: None})
     quantizer = FusedQuantQuantizer(
         [
@@ -280,6 +280,45 @@ def test_sigmoid_unsupported_qparams_stay_portable(float_edge):
         .check_node_count({_FQ_SIGMOID: 1})
     )
     expected = tester.get_artifact().exported_program().module()(*case.example_inputs)
+    tester.run_passes().check_node_count({_FQ_SIGMOID: 0, _ESP_LUT: 0, _SIGMOID: 1})
+    torch.testing.assert_close(
+        tester.get_artifact().exported_program().module()(*case.example_inputs),
+        expected,
+        atol=0,
+        rtol=0,
+    )
+    tester.to_executorch().serialize()
+
+
+@pytest.mark.parametrize(
+    "input_min, output_min", [(-127, -128), (-128, -127)], ids=["input", "output"]
+)
+def test_sigmoid_narrow_int8_range_stays_portable(input_min, output_min):
+    config = get_symmetric_quantization_config()
+    config = replace(
+        config,
+        input_activation=replace(config.input_activation, quant_min=input_min),
+        output_activation=replace(config.output_activation, quant_min=output_min),
+    )
+    quantizer = FusedQuantQuantizer(
+        [
+            OpQuantizer(
+                torch.ops.aten.sigmoid.default,
+                torch.ops.fused_quant.sigmoid.default,
+                config,
+            )
+        ]
+    )
+    case = test_cases["float_users"]
+    tester = EspTester(case.model, case.example_inputs).export_fused_quant(quantizer)
+    tester.to_edge()
+    program = tester.get_artifact().exported_program()
+    (node,) = program.graph.find_nodes(op="call_function", target=_FQ_SIGMOID)
+    assert get_arg(node, "inp").meta["val"].dtype == torch.int8
+    assert node.meta["val"].dtype == torch.int8
+    assert get_qparams_from_node(node, "inp").quant_min == input_min
+    assert get_qparams_from_node(node, "out").quant_min == output_min
+    expected = program.module()(*case.example_inputs)
     tester.run_passes().check_node_count({_FQ_SIGMOID: 0, _ESP_LUT: 0, _SIGMOID: 1})
     torch.testing.assert_close(
         tester.get_artifact().exported_program().module()(*case.example_inputs),
