@@ -343,3 +343,19 @@ def softplus_cases() -> list[Case]:
         chain("dynamic_tokens", _Fn(F.softplus), (_tokens(), 64)),
         _quantized("gate", F.softplus),
     ]
+
+
+def rms_norm_cases() -> list[Case]:
+    # Qwen3.8 27B's hidden size, one token's row, with and without a weight.
+    weighted = torch.nn.RMSNorm(5120, eps=1e-6)
+    with torch.no_grad(), torch.random.fork_rng():
+        torch.manual_seed(0)
+        weighted.weight.normal_(1.0, 0.1)
+    return [
+        Case(
+            "hidden_5120",
+            _Fn(lambda x: F.rms_norm(x, (5120,), eps=1e-6)),
+            draws(2, (1, 5120)),
+        ),
+        Case("hidden_5120_weight", weighted, draws(2, (1, 5120))),
+    ]
