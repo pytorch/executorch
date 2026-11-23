@@ -54,4 +54,6 @@ def ops() -> dict[str, Op]:
         "ge": Op(attention.ge_cases),
         "index_put": Op(attention.index_put_cases, dtypes=("f32",)),
         "sdpa": Op(attention.sdpa_cases, dtypes=("f32",)),
+        "sdpa_grouped": Op(attention.sdpa_grouped_cases, dtypes=("f32", "f16")),
+        "rms_norm": Op(core_ops.rms_norm_cases, dtypes=("f32",)),
     }
