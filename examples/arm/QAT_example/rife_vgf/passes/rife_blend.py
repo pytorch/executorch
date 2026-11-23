@@ -3,18 +3,15 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import math
 from dataclasses import dataclass
 
 import torch
-from executorch.backends.arm.operators.op_tosa_rescale import (
-    _compute_multiplier_and_shift,
-)
 from torch.fx import Node
 
 from .pack_rife_warps_and_concat import (
     _constant_tensor,
     _is_op,
+    _is_rescale,
     _shape_values,
     _tensor_shape,
     TOSA,
@@ -34,14 +31,7 @@ class RifeBlend:
 def _rescale(node, dtype, nodes, *, output_unsigned=False):
     output_min, output_max = (0, 255) if output_unsigned else (-128, 127)
     if (
-        not _is_op(node, TOSA.RESCALE.default, 5)
-        or node.args[1] != dtype
-        or len(node.args[2]) != 1
-        or not math.isfinite(node.args[2][0])
-        or node.args[2][0] <= 0
-        or node.kwargs.get("output_unsigned", False) != output_unsigned
-        or node.kwargs.get("input_unsigned", False)
-        or not all(type(value) is int for value in node.args[3:5])
+        not _is_rescale(node, dtype, output_unsigned=output_unsigned)
         or not -128 <= node.args[3] <= 127
         or not output_min <= node.args[4] <= output_max
         or (output_unsigned and node.args[0].meta["val"].dtype != torch.int8)
@@ -56,7 +46,7 @@ def _rescale(node, dtype, nodes, *, output_unsigned=False):
 
 
 def _apply_rescale(values, node, *, clamp=True):
-    multipliers, shifts = _compute_multiplier_and_shift(node.args[2])
+    multipliers, shifts = node.args[1:3]
     scaled = (
         (values.to(torch.int64) - node.args[3]) * multipliers[0]
         + (1 << (shifts[0] - 1))
@@ -64,7 +54,9 @@ def _apply_rescale(values, node, *, clamp=True):
     if not clamp:
         return scaled + node.args[4]
     limits = torch.iinfo(
-        torch.uint8 if node.kwargs.get("output_unsigned", False) else node.args[1]
+        torch.uint8
+        if node.kwargs.get("output_unsigned", False)
+        else node.kwargs["dtype"]
     )
     return (scaled + node.args[4]).clamp(limits.min, limits.max)
 
@@ -73,15 +65,14 @@ def _weighted_image(branch, warp, shape, nodes):
     multiply_rescale = _rescale(branch, torch.int32, nodes)
     multiply = _rescale(multiply_rescale, torch.int8, nodes)
     if not _is_op(multiply, TOSA.MUL.default, 3):
-        raise ValueError("Expected an image-mask product with a tensor shift.")
-    shift = multiply.args[2]
-    if not _is_op(shift, TOSA.CONST.default, 3) or shift.args != ([0], [1], torch.int8):
+        raise ValueError("Expected an image-mask product with a scalar shift.")
+    if type(multiply.args[2]) is not int or multiply.args[2] != 0:
         raise ValueError("Expected an unshifted image-mask product.")
     nodes.add(multiply)
     image_rescale, mask_rescale = multiply.args[:2]
     crop = _rescale(image_rescale, torch.int32, nodes)
     mask = _rescale(mask_rescale, torch.int32, nodes)
-    if any(n.args[2] != [1.0] for n in (image_rescale, mask_rescale)):
+    if any(n.args[1] != [1 << n.args[2][0]] for n in (image_rescale, mask_rescale)):
         raise ValueError("Expected unit-scale image and mask centering.")
     if (
         not _is_op(crop, TOSA.SLICE.default, 3)
