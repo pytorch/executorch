@@ -102,6 +102,18 @@ class ConvolutionActivation(torch.nn.Module):
         return (activated, result, torch.sin(result)) if self.fork else activated
 
 
+class ConvolutionActivationChain(ConvolutionActivation):
+    def __init__(self):
+        super().__init__(EspDepthwiseConv2d(8, padding=1), "relu6")
+        self.first = ConvolutionActivation(EspConv2d(8, 8, padding=1), "relu6")
+        self.ops_before_transforms[_FQ_CONV] = 2
+        self.ops_before_transforms[self.fused_activation] = 2
+        self.ops_after_transforms[_ESP_CONV] = 1
+
+    def forward(self, x):
+        return super().forward(self.first(x))
+
+
 test_cases = {
     f"{kind}_{activation}{'_no_bias' if not bias else ''}": EspTestCase(
         ConvolutionActivation(producer(channels=8, bias=bias), activation),
@@ -144,6 +156,9 @@ test_cases.update(
 )
 test_cases.update(
     {
+        "relu6_chain": EspTestCase(
+            ConvolutionActivationChain(), (ramp_tensor(-30, 50, (1, 8, 7, 9)),)
+        ),
         "conv2d_pointwise": EspTestCase(
             ConvolutionActivation(EspConv2d(16, 32, 1), "hardtanh"),
             (ramp_tensor(-30, 50, (1, 16, 3, 5)),),
@@ -282,9 +297,27 @@ def test_separately_quantized_convolution_activation_keeps_rounding(kind, s3_que
     tester.run_passes().check_node_count({target: 1, _ESP_LUT: 1})
 
 
-def _convolution_clamp_tester(kind, activation):
-    model = ConvolutionActivation(_PRODUCERS[kind](channels=8), activation)
-    tester = EspTester(model, (ramp_tensor(-80, 80, (1, 8, 7, 9)),))
+_CLAMP_CASES = [
+    pytest.param(
+        producer(channels=8),
+        activation,
+        _ESP_CONV if kind == "conv2d" else _ESP_DW,
+        id=f"{kind}_{activation}",
+    )
+    for kind, producer in _PRODUCERS.items()
+    for activation in _ACTIVATIONS
+] + [
+    pytest.param(EspConv2d(16, 32, 1), "relu6", _ESP_CONV, id="conv2d_pointwise_relu6"),
+    pytest.param(
+        EspDepthwiseConv2d(4, 8), "relu6", _ESP_DW, id="depthwise_multiplier_8_relu6"
+    ),
+]
+
+
+def _convolution_clamp_tester(producer, activation):
+    model = ConvolutionActivation(producer, activation)
+    shape = (1, producer.conv.in_channels, 7, 9)
+    tester = EspTester(model, (ramp_tensor(-800, 800, shape),))
     tester.export_fused_quant().to_edge()
     program = tester.get_artifact().exported_program()
     (node,) = program.graph.find_nodes(
@@ -301,15 +334,18 @@ def _convolution_clamp_tester(kind, activation):
     return tester
 
 
-@pytest.mark.parametrize("kind", _PRODUCERS)
-@pytest.mark.parametrize("activation", _ACTIVATIONS)
-def test_convolution_uses_final_qparams_and_clamp(kind, activation, s3_queries):
-    tester = _convolution_clamp_tester(kind, activation)
+@pytest.mark.parametrize("producer, activation, target", _CLAMP_CASES)
+def test_convolution_uses_final_qparams_and_clamp(
+    producer, activation, target, s3_queries
+):
+    tester = _convolution_clamp_tester(producer, activation)
     program = tester.get_artifact().exported_program()
     expected = program.module()(*tester.example_inputs)
+    lower, upper = _ACTIVATIONS[activation][1]
+    assert expected.min().item() == (lower + 7) * 0.125
+    assert expected.max().item() == (upper + 7) * 0.125
     (source_conv,) = program.graph.find_nodes(op="call_function", target=_FQ_CONV)
     bias = get_constant(program, get_arg(source_conv, "bias")).clone()
-    target = _ESP_CONV if kind == "conv2d" else _ESP_DW
     tester.run_passes().check_node_count({target: 1, _ESP_LUT: 0})
     lowered = tester.get_artifact().exported_program()
     (node,) = lowered.graph.find_nodes(op="call_function", target=target)
@@ -327,12 +363,45 @@ def test_convolution_uses_final_qparams_and_clamp(kind, activation, s3_queries):
     )
 
 
-@pytest.mark.parametrize("kind", _PRODUCERS)
-@pytest.mark.parametrize("activation", _ACTIVATIONS)
-def test_implementation_convolution_clamp(kind, activation, pytestconfig, s3_queries):
-    tester = _convolution_clamp_tester(kind, activation)
-    tester.run_passes()
+@pytest.mark.parametrize("producer, activation, target", _CLAMP_CASES)
+def test_implementation_convolution_clamp(
+    producer, activation, target, pytestconfig, s3_queries
+):
+    tester = _convolution_clamp_tester(producer, activation)
+    tester.run_passes().check_node_count({target: 1, _ESP_LUT: 0})
     tester.test_implementation(pytestconfig.rootpath, num_inferences=2)
+
+
+def test_convolution_chain_bias_uses_preceding_activation_scale():
+    case = test_cases["relu6_chain"]
+    tester = EspTester(case.model, case.example_inputs).export_fused_quant().to_edge()
+    module = tester.get_artifact().exported_program().module()
+    interpreter = torch.fx.Interpreter(module, garbage_collect_values=False)
+    interpreter.run(*case.example_inputs)
+    values = interpreter.env
+    first, second = module.graph.find_nodes(op="call_function", target=_FQ_CONV)
+    activation = get_arg(second, "inp")
+    assert activation.target == exir_ops.edge.fused_quant.hard_tanh.default
+    assert get_arg(activation, "inp") is first
+    input_params = get_qparams_from_node(second, "inp")
+    activation_params = get_qparams_from_node(activation, "out")
+    for field in ("scale", "zero_point"):
+        torch.testing.assert_close(
+            values[get_arg(second, f"inp_{field}")],
+            values[get_arg(activation, f"out_{field}")],
+            atol=0,
+            rtol=0,
+        )
+    assert input_params.dtype == torch.float32
+    assert activation_params.dtype == torch.int8
+    bias_params = get_qparams_from_node(second, "bias")
+    weight_params = get_qparams_from_node(second, "weight")
+    torch.testing.assert_close(
+        values[bias_params.scale],
+        values[input_params.scale] * values[weight_params.scale].flatten(),
+        atol=0,
+        rtol=0,
+    )
 
 
 @pytest.mark.parametrize("kind", _PRODUCERS)
