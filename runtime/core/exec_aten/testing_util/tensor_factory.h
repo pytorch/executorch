@@ -394,7 +394,8 @@ class TensorFactory {
     int32_t W = sizes.back();
 
     std::vector<ctype> contiguous_data(
-        input.data_ptr<ctype>(), input.data_ptr<ctype>() + input.numel());
+        input.const_data_ptr<ctype>(),
+        input.const_data_ptr<ctype>() + input.numel());
     std::vector<ctype> channels_last_data(
         N * C * H * W); // Create a new blob with the same total size to contain
                         // channels_last data
@@ -908,7 +909,8 @@ class TensorFactory {
     int32_t W = sizes.back();
 
     std::vector<ctype> contiguous_data(
-        input.data_ptr<ctype>(), input.data_ptr<ctype>() + input.numel());
+        input.const_data_ptr<ctype>(),
+        input.const_data_ptr<ctype>() + input.numel());
     std::vector<ctype> channels_last_data(
         N * C * H * W); // Create a new blob with the same total size to contain
                         // channels_last data
