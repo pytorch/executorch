@@ -15,9 +15,11 @@ import torch
 from executorch.backends.espressif.utils.quantization import quantize_multiplier
 from executorch.backends.transforms.fused_quant.graph_utils import get_qparams_from_node
 from executorch.backends.transforms.permute_pass_utils import get_arg
-from executorch.backends.transforms.utils import get_constant
+from executorch.backends.transforms.utils import add_constant, get_constant
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportedProgramPassBase, ExportedProgramPassResult
+from executorch.exir.passes.constant_prop_pass import get_propagated_const_tensor_dict
+from torch.export.graph_signature import InputKind
 
 
 @dataclass(frozen=True)
@@ -272,15 +274,185 @@ def _lower_avg_pool2d(program, node) -> bool:
     return True
 
 
+def _linear_multipliers(input_params, output_params, weight, scales, bias):
+    rescales = [
+        quantize_multiplier(input_params.scale * scale / output_params.scale)
+        for scale in scales.flatten().tolist()
+    ]
+    if any(shift < -30 for _, shift in rescales):
+        raise ValueError("requantization shift is outside the ESP-NN range")
+    max_input = max(abs(-128 - input_params.zp), abs(127 - input_params.zp))
+    limits = max_input * weight.to(torch.int64).abs().sum(dim=1)
+    if bias is not None:
+        limits += bias.to(torch.int64).abs()
+    if any(
+        int(limit) << max(shift, 0)
+        > torch.iinfo(torch.int32).max - abs(output_params.zp)
+        for limit, (_, shift) in zip(limits, rescales)
+    ):
+        raise ValueError("accumulation or requantization may overflow int32")
+    max_float_input = c_float(max_input * c_float(input_params.scale).value).value
+    float_weights = weight.to(torch.float32) * scales
+    max_float_outputs = max_float_input * float_weights.abs().to(torch.float64).sum(
+        dim=1
+    )
+    if bias is not None:
+        bias_scales = input_params.scale * scales.flatten()
+        max_float_outputs += (
+            (bias.to(torch.float32) * bias_scales).abs().to(torch.float64)
+        )
+    # Bound float32 accumulation rounding, including the bias addition.
+    max_float_outputs /= 1 - (weight.shape[1] + 1) * torch.finfo(torch.float32).eps
+    if (
+        not math.isfinite(c_float(1.0 / output_params.scale).value)
+        or not torch.all(torch.isfinite(max_float_outputs))
+        or torch.any(max_float_outputs > torch.finfo(torch.float32).max)
+    ):
+        raise ValueError("the float32 reference may overflow")
+    multipliers, shifts = zip(*rescales)
+    return torch.tensor(multipliers, dtype=torch.int32), torch.tensor(
+        shifts, dtype=torch.int32
+    )
+
+
+def _linear_kernel_args(program, node, constants):
+    inp, weight_node, bias_node = (
+        get_arg(node, name) for name in ("inp", "weight", "bias")
+    )
+    input_value, output_value = inp.meta.get("val"), node.meta.get("val")
+    if not all(
+        isinstance(value, torch.Tensor)
+        and value.dtype == torch.int8
+        and value.dim() >= 1
+        and all(type(dim) is int for dim in value.shape)
+        and 0 < value.numel() <= torch.iinfo(torch.int32).max
+        and value.is_contiguous()
+        for value in (input_value, output_value)
+    ):
+        raise ValueError(
+            "input and output must be nonempty, static, contiguous int8 tensors"
+        )
+    input_params, output_params = (
+        _qparams(program, node, name) for name in ("inp", "out")
+    )
+    if input_params is None or output_params is None:
+        raise ValueError("input and output require constant per-tensor int8 qparams")
+    weight = constants.get(weight_node)
+    if (
+        weight is None
+        or weight.dtype != torch.int8
+        or weight.dim() != 2
+        or not weight.is_contiguous()
+        or weight.numel() > torch.iinfo(torch.int32).max
+        or any(not 0 < dim <= 65535 for dim in weight.shape)
+    ):
+        raise ValueError(
+            "weight must be a constant contiguous int8 matrix with dimensions in [1, 65535]"
+        )
+    if input_value.shape[-1] != weight.shape[1] or output_value.shape != (
+        *input_value.shape[:-1],
+        weight.shape[0],
+    ):
+        raise ValueError("input, weight and output shapes do not match linear")
+    weight_params = get_qparams_from_node(node, "weight")
+    if weight_params is None or weight_params.dtype != torch.float32:
+        raise ValueError(
+            "weight requires float32 dequantization with per-output-channel scales"
+        )
+    scales, zero_points = (
+        constants.get(arg) for arg in (weight_params.scale, weight_params.zero_point)
+    )
+    if (
+        scales is None
+        or scales.dtype != torch.float32
+        or scales.shape != (weight.shape[0], 1)
+        or not torch.all(torch.isfinite(scales) & (scales > 0))
+        or zero_points is None
+        or zero_points.shape != scales.shape
+        or torch.any(zero_points != 0)
+    ):
+        raise ValueError(
+            "weight requires constant per-output-channel scales and zero zero-points"
+        )
+    bias = None
+    if bias_node is not None:
+        bias = constants.get(bias_node)
+        bias_params = get_qparams_from_node(node, "bias")
+        if (
+            bias is None
+            or bias.dtype != torch.int32
+            or not bias.is_contiguous()
+            or bias.shape != (weight.shape[0],)
+            or bias_params is None
+            or bias_params.dtype != torch.float32
+        ):
+            raise ValueError(
+                "bias must be a constant int32 vector with derived qparams"
+            )
+        bias_scales, bias_zero_points = (
+            constants.get(arg) for arg in (bias_params.scale, bias_params.zero_point)
+        )
+        if (
+            bias_scales is None
+            or not torch.equal(bias_scales, input_params.scale * scales.flatten())
+            or bias_zero_points is None
+            or bias_zero_points.shape != bias.shape
+            or torch.any(bias_zero_points != 0)
+        ):
+            raise ValueError(
+                "bias scales must equal input scale times weight scales, with zero zero-points"
+            )
+    multipliers, shifts = _linear_multipliers(
+        input_params, output_params, weight, scales, bias
+    )
+    multiplier_node, shift_node = (
+        add_constant(
+            program, f"{node.name}_{name}", tensor, node, InputKind.CONSTANT_TENSOR
+        )
+        for name, tensor in (("multiplier", multipliers), ("shift", shifts))
+    )
+    return (
+        inp,
+        weight_node,
+        bias_node,
+        multiplier_node,
+        shift_node,
+        -input_params.zp,
+        output_params.zp,
+    )
+
+
 class LowerToEsp(ExportedProgramPassBase):
     """Lower supported fused-quant operators to ESP-NN."""
 
     def call(self, exported_program):
         module = exported_program.graph_module
         graph = module.graph
+        linear_nodes = graph.find_nodes(
+            op="call_function", target=exir_ops.edge.fused_quant.linear.default
+        )
+        constants = (
+            get_propagated_const_tensor_dict(exported_program, None)
+            if linear_nodes
+            else {}
+        )
 
         modified = False
         for node in list(graph.nodes):
+            if node.target == exir_ops.edge.fused_quant.linear.default:
+                try:
+                    args = _linear_kernel_args(exported_program, node, constants)
+                except ValueError:
+                    continue
+                with graph.inserting_before(node):
+                    replacement = graph.call_function(
+                        exir_ops.edge.esp_nn.quantized_linear_int8.default, args
+                    )
+                replacement.meta = node.meta.copy()
+                node.replace_all_uses_with(replacement)
+                graph.erase_node(node)
+                modified = True
+                continue
             if (
                 node.target
                 == exir_ops.edge.fused_quant.avg_pool2d_channels_last.default
