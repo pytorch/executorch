@@ -51,9 +51,9 @@ Tensor& opt_where_out(
       cond.scalar_type() == ScalarType::Bool) {
     auto out_numel = out.numel();
     bool row_condition = out.dim() > 0 && cond.dim() == out.dim() &&
-        cond.size(out.dim() - 1) == 1 && out.size(out.dim() - 1) > 0 &&
+        cond.size(out.dim() - 1) == 1 && out.size(out.dim() - 1) > 1 &&
         a.sizes().equals(out.sizes()) && b.sizes().equals(out.sizes()) &&
-        tensor_is_default_dim_order(out) && tensor_is_default_dim_order(cond);
+        is_contiguous_dim_order(out.dim_order().data(), out.dim());
     for (int64_t dim = 0; row_condition && dim < out.dim() - 1; ++dim) {
       row_condition = cond.size(dim) == out.size(dim);
     }

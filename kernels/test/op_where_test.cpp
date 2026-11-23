@@ -563,6 +563,35 @@ TEST_F(OpWhereOutTest, RowConditionEmptyLastDimension) {
   EXPECT_EQ(out.numel(), 0);
 }
 
+TEST_F(OpWhereOutTest, RowConditionBroadcastA) {
+  TensorFactory<ScalarType::Bool> tb;
+  TensorFactory<ScalarType::Int> tf;
+  Tensor out = tf.zeros({2, 3});
+
+  op_where_self_out(
+      tb.make({2, 1}, {false, true}),
+      tf.make({2, 1}, {10, 20}),
+      tf.make({2, 3}, {1, 2, 3, 4, 5, 6}),
+      out);
+
+  EXPECT_TENSOR_EQ(out, tf.make({2, 3}, {1, 2, 3, 20, 20, 20}));
+}
+
+TEST_F(OpWhereOutTest, RowConditionChannelsLast) {
+  TensorFactory<ScalarType::Bool> tb;
+  TensorFactory<ScalarType::Int> tf;
+  Tensor condition =
+      tb.channels_last_like(tb.make({1, 2, 1, 1}, {true, false}));
+  Tensor a = tf.channels_last_like(tf.make({1, 2, 1, 2}, {1, 2, 3, 4}));
+  Tensor b = tf.channels_last_like(tf.make({1, 2, 1, 2}, {5, 6, 7, 8}));
+  Tensor out = tf.zeros_channels_last({1, 2, 1, 2});
+
+  op_where_self_out(condition, a, b, out);
+
+  EXPECT_TENSOR_EQ(
+      out, tf.channels_last_like(tf.make({1, 2, 1, 2}, {1, 2, 7, 8})));
+}
+
 TEST_F(OpWhereOutTest, RowConditionAliasedOutput) {
   TensorFactory<ScalarType::Bool> tb;
   TensorFactory<ScalarType::Int> tf;

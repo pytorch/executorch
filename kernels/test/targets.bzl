@@ -1,3 +1,8 @@
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//xplat/executorch/kernels/test:util.bzl", "codegen_function_header_wrapper", "op_test")
 
@@ -385,5 +390,5 @@ def define_common_targets():
     _common_op_test("op_var_mean_test", ["aten", "portable"])
     _common_op_test("op_view_as_real_copy_test", ["aten", "portable"])
     _common_op_test("op_view_copy_test", ["aten", "portable"])
-    _common_op_test("op_where_test", ["aten", "portable"])
+    _common_op_test("op_where_test", ["aten", "portable", "optimized"])
     _common_op_test("op_zeros_test", ["aten", "portable"])
