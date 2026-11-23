@@ -11,6 +11,7 @@ import math
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import executorch.backends.cuda.triton.kernels.nvfp4_kv as K
 import torch
@@ -193,11 +194,12 @@ class TestNVFP4KVCache(unittest.TestCase):
             self._global(131072, n, 1)
 
     def test_global_small_query(self):
-        # L_q 2 and 16 bound the split-K dispatch; 17 takes the prefill kernel.
+        # Unmasked at 16:1 GQA, L_q 2..8 take split-K (up to a 128x128 tile)
+        # and 9 takes the prefill kernel.
         self._global(131072, 5000, 2)
         self._global(131072, 5000, 4)
-        self._global(131072, 33333, 16)
-        self._global(131072, 33333, 17)
+        self._global(131072, 33333, 8)
+        self._global(131072, 33333, 9)
 
     def test_prefill_kernel_small_query(self):
         """The prefill kernel serves every chunk of a dynamic-length export,
@@ -261,6 +263,15 @@ class TestNVFP4KVCache(unittest.TestCase):
     def test_sliding_small_query(self):
         self._sliding(9000, 8)
         self._sliding(3000, 4)
+
+    def test_masked_split_k_widest_tile(self):
+        # A masked L_q 16 step at 16:1 GQA (the packed-decode shape) runs
+        # split-K on its widest tile, BLOCK_M 256.
+        with mock.patch.object(
+            K, "_launch_nvfp4_splitk", wraps=K._launch_nvfp4_splitk
+        ) as launcher:
+            self._sliding(9000, 16)
+        self.assertGreaterEqual(launcher.call_count, 1)
 
     def test_sliding_prefill(self):
         for n_before, lq in (

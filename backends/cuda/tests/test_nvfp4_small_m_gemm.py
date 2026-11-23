@@ -77,11 +77,14 @@ def make_pts(kind, n):
 def test_rows_and_w4a16_match_reference(m, pts_kind, dtype):
     # K = 1040 is not a multiple of any BK: the tail masks run.
     n, k = 200, 1040
+    torch.manual_seed(m)
     q, s = weight(n, k)
     pts = make_pts(pts_kind, n)
     unit = pts_kind == "unit"
     bucket = next(b for b in small_m.SMALL_M_BUCKETS if m <= b)
-    x = torch.randn(m, k, device="cuda", dtype=dtype)
+    # Full-range scales reach ~3e4 per output at unit x; scaled so FP16
+    # outputs stay far from 65504 for any seed.
+    x = (torch.randn(m, k, device="cuda") * 0.0625).to(dtype)
     expected = reference(x, q, s, pts)
     for split in (1, 2, 8):
         rows = small_m.launch_rows(bucket, x, q, s, pts, unit, split)
