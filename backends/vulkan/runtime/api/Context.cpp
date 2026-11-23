@@ -20,7 +20,7 @@
 #endif
 
 #ifndef VULKAN_QUERY_POOL_SIZE
-#define VULKAN_QUERY_POOL_SIZE 65536u
+#define VULKAN_QUERY_POOL_SIZE 131072u
 #endif
 
 namespace vkcompute {
@@ -63,31 +63,69 @@ Context::~Context() {
 }
 
 void Context::initialize_querypool() {
+  const bool already_created = querypool_;
   querypool_.initialize(adapter_p_);
+  if (already_created || !querypool_) {
+    return;
+  }
+  // Results may only be read from queries that have been reset. Profiled
+  // dispatches reset the queries they record when they execute, so reset the
+  // whole pool once for captures that are read before executing.
+  vkapi::CommandBuffer cmd = command_pool_.get_new_cmd();
+  cmd.begin();
+  querypool_.reset_all(cmd);
+  cmd.end();
+  vkapi::VulkanFence fence(device_);
+  adapter_p_->submit_cmd(
+      queue_,
+      cmd.get_submit_handle(/*final_use = */ true),
+      fence.get_submit_handle());
+  fence.wait();
 }
 
 void Context::cmd_reset_querypool() {
   if (querypool_) {
     set_cmd();
-    querypool_.reset_querypool(cmd_);
+    querypool_.reset_querypool();
   }
 }
 
-void Context::report_shader_dispatch_start(
+void Context::report_previous_work_finish(
     const std::string& shader_name,
     const GlobalWorkGrid& gwg,
     const LocalWorkGroup& lwg,
     const uint32_t dispatch_id) {
   // Dispatch encoding and mode changes hold cmd_mutex_, keeping this flag
-  // unchanged until the paired dispatch end.
+  // unchanged until the paired shader execution finish.
   if (querypool_ && shader_profiling_enabled_) {
-    querypool_.shader_profile_begin(cmd_, dispatch_id, shader_name, gwg, lwg);
+    querypool_.record_previous_work_finish(
+        cmd_, dispatch_id, shader_name, gwg, lwg);
   }
 }
 
-void Context::report_shader_dispatch_end() {
+void Context::report_barrier_finish() {
   if (querypool_ && shader_profiling_enabled_) {
-    querypool_.shader_profile_end(cmd_);
+    querypool_.record_barrier_finish(cmd_);
+  }
+}
+
+void Context::report_shader_exec_finish() {
+  if (querypool_ && shader_profiling_enabled_) {
+    querypool_.record_shader_exec_finish(cmd_);
+  }
+}
+
+void Context::serialize_if_profiling(vkapi::PipelineBarrier& pipeline_barrier) {
+  // Profiled dispatches never overlap, so each one's timestamps bracket only
+  // its own barrier and execution. The barrier includes a global memory
+  // dependency because some drivers overlap consecutive dispatches across an
+  // execution-only dependency.
+  if (querypool_ && shader_profiling_enabled_) {
+    const vkapi::PipelineBarrier full = vkapi::full_pipeline_barrier();
+    pipeline_barrier.stage.src |= full.stage.src;
+    pipeline_barrier.stage.dst |= full.stage.dst;
+    pipeline_barrier.global_access.src |= full.global_access.src;
+    pipeline_barrier.global_access.dst |= full.global_access.dst;
   }
 }
 
@@ -205,7 +243,9 @@ void Context::register_shader_dispatch(
   const GlobalWorkGrid effective_gwg({gwg_w, gwg_h, gwg_d}, kExplicitWorkGrid);
 
   cmd_.bind_descriptors(descriptors.get_bind_handle());
+  serialize_if_profiling(pipeline_barrier);
   cmd_.insert_barrier(pipeline_barrier);
+  report_barrier_finish();
 
   if (push_constants_size > 0 && push_constants_data != nullptr) {
     const VkDescriptorSetLayout shader_layout =
@@ -236,7 +276,9 @@ void Context::register_blit(
       queue_.capabilities & VK_QUEUE_GRAPHICS_BIT,
       "The Vulkan queue selected for compute does not support blit operations "
       "(VK_QUEUE_GRAPHICS_BIT is not set).");
+  serialize_if_profiling(pipeline_barrier);
   cmd_.insert_barrier(pipeline_barrier);
+  report_barrier_finish();
   cmd_.blit(src, dst);
 }
 

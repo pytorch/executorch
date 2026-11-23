@@ -193,6 +193,9 @@ struct MLXProgram {
   // Tensor metadata
   std::vector<std::optional<TensorMeta>> tensor_meta;
 
+  // Positions in input_map of tensor inputs the program updates
+  std::vector<uint32_t> mutated_inputs;
+
   // Helper methods
   inline uint64_t num_tensors() const {
     return static_cast<uint64_t>(num_constant_tensors) +

@@ -128,7 +128,7 @@ class TestQuantizeRoundtrip(unittest.TestCase):
         """Test: quantize -> save -> load_prequantized_model -> forward
         produces same output as quantize -> forward.
         """
-        import executorch.backends.cuda.triton.kernels  # noqa: F401
+        import executorch.backends.cuda.triton.kernels.chunk_gated_delta_rule  # noqa: F401
 
         # Quantize and save bundle (before moving to CUDA, matching production flow)
         model_a = _make_quantized_model(qlinear, qembedding, group_size, hqq)

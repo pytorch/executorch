@@ -15,6 +15,7 @@ namespace impl {
 namespace generic {
 namespace native {
 
+using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::getLeadingDims;
 using ::executorch::runtime::KernelRuntimeContext;
@@ -54,11 +55,27 @@ void linear(
 }
 
 Tensor& fully_connected_out(
-    ET_UNUSED KernelRuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& input,
     const Tensor& weight,
     const optional<Tensor>& bias,
     Tensor& output) {
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      input.scalar_type() == ScalarType::Float &&
+          weight.scalar_type() == ScalarType::Float &&
+          output.scalar_type() == ScalarType::Float &&
+          (!bias.has_value() ||
+           bias.value().scalar_type() == ScalarType::Float),
+      InvalidArgument,
+      output,
+      "fully_connected supports only float input, weight, bias and output");
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      weight.dim() == 2 && input.size(input.dim() - 1) == weight.size(1),
+      InvalidArgument,
+      output,
+      "fully_connected input's last dim must match weight's dim 1");
   linear(input, weight, bias, output);
   return output;
 }

@@ -10,7 +10,8 @@ import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node
 from executorch.backends.arm._passes.quant_args import QuantArgs
-from executorch.backends.arm._passes.tosa_lowering_utils import create_const
+from executorch.backends.arm._passes.tosa_lowering_utils import create_rescale_node
+from executorch.backends.arm.tosa.specification import get_context_spec
 from executorch.backends.transforms.utils import create_constant_placeholder
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -36,12 +37,13 @@ class LowerInt16RsqrtPass(ArmPass):
     _RSQRT = exir_ops.edge.aten.rsqrt.default
     _CAST = exir_ops.backend.tosa.CAST.default
     _CLZ = exir_ops.backend.tosa.CLZ.default
-    _MAXIMUM = exir_ops.backend.tosa.MAXIMUM.default
+    _CLAMP = exir_ops.backend.tosa.CLAMP.default
+    _SUB = exir_ops.backend.tosa.SUB.default
+    _ARITHMETIC_RIGHT_SHIFT = exir_ops.backend.tosa.ARITHMETIC_RIGHT_SHIFT.default
     _ADD = exir_ops.backend.tosa.ADD.default
     _MUL = exir_ops.backend.tosa.MUL.default
     _LOGICAL_LEFT_SHIFT = exir_ops.backend.tosa.LOGICAL_LEFT_SHIFT.default
     _TABLE = exir_ops.backend.tosa.TABLE.default
-    _RESCALE = exir_ops.backend.tosa.RESCALE.default
 
     def __init__(
         self,
@@ -76,36 +78,6 @@ class LowerInt16RsqrtPass(ArmPass):
         normalized_values = codes.clamp_min(8192) / 2**14
         table_values = torch.round(torch.rsqrt(normalized_values) * 2**14)
         return table_values.to(dtype=torch.int16)
-
-    @staticmethod
-    def _generate_clz_half_shift_table() -> torch.Tensor:
-        """Map raw int8 CLZ codes to floor((clz - 17) / 2).
-
-        The valid CLZ range for positive int16 inputs is [17, 31]. We use an
-        INT8 TOSA TABLE here rather than ARITHMETIC_RIGHT_SHIFT because U55
-        serializes that shift with round=True, which would turn odd positive
-        values into ceil(x / 2) instead of the floor division needed for exact
-        range reduction.
-        """
-        half_shift_table = torch.zeros(256, dtype=torch.int8)
-        for clz in range(17, 32):
-            half_shift_table[clz + 128] = (clz - 17) // 2
-        return half_shift_table
-
-    @staticmethod
-    def _generate_clz_zero_mask_table() -> torch.Tensor:
-        """Map non-negative int32 CLZ codes to a unit zero mask."""
-        zero_mask_table = torch.zeros(256, dtype=torch.int8)
-        zero_mask_table[32 + 128] = 1
-        return zero_mask_table
-
-    @staticmethod
-    def _generate_clz_nonzero_mask_table() -> torch.Tensor:
-        """Map non-negative int32 CLZ codes to a unit non-zero mask."""
-        nonzero_mask_table = torch.zeros(256, dtype=torch.int8)
-        for clz in range(17, 32):
-            nonzero_mask_table[clz + 128] = 1
-        return nonzero_mask_table
 
     def _create_scalar_constant(
         self,
@@ -144,6 +116,18 @@ class LowerInt16RsqrtPass(ArmPass):
                 persistent_buffer=True,
             )
 
+    def _clamped_i32(
+        self, graph: torch.fx.Graph, node: Node, low: int, high: int
+    ) -> Node:
+        # Clamp in int16, before widening: int32 elementwise MAXIMUM /
+        # MINIMUM around CLZ deadlocks Ethos-U55 silicon.
+        clamped = create_node(
+            graph, self._CLAMP, args=(node.args[0], low, high), from_node=node
+        )
+        return create_node(
+            graph, self._CAST, args=(clamped, torch.int32), from_node=node
+        )
+
     def call(self, graph_module: GraphModule) -> PassResult:
         modified = False
         graph = graph_module.graph
@@ -172,8 +156,16 @@ class LowerInt16RsqrtPass(ArmPass):
             one_i32 = self._create_scalar_constant(
                 graph, insert_pos, node.name, "one_i32", 1, torch.int32
             )
-            zero_i32 = self._create_scalar_constant(
-                graph, insert_pos, node.name, "zero_i32", 0, torch.int32
+            # floor((clz - 17) / 2) as a 1-bit right shift. U55 only has the
+            # rounding shift, floor((v + 1) / 2), so it shifts clz - 18 instead.
+            round_shift = get_context_spec().is_U55_subset
+            clz_offset_i32 = self._create_scalar_constant(
+                graph,
+                insert_pos,
+                node.name,
+                "clz_offset_i32",
+                18 if round_shift else 17,
+                torch.int32,
             )
             qmax_output_i32 = self._create_scalar_constant(
                 graph,
@@ -190,47 +182,10 @@ class LowerInt16RsqrtPass(ArmPass):
                 "rsqrt_table_constant",
                 table_values,
             )
-            half_shift_table_const = self._create_tensor_constant(
-                graph,
-                insert_pos,
-                node.name,
-                "clz_half_shift_table_constant",
-                self._generate_clz_half_shift_table(),
-            )
-            zero_mask_table_const = self._create_tensor_constant(
-                graph,
-                insert_pos,
-                node.name,
-                "clz_zero_mask_table_constant",
-                self._generate_clz_zero_mask_table(),
-            )
-            nonzero_mask_table_const = self._create_tensor_constant(
-                graph,
-                insert_pos,
-                node.name,
-                "clz_nonzero_mask_table_constant",
-                self._generate_clz_nonzero_mask_table(),
-            )
 
             with graph.inserting_before(node):
-                x_i32 = create_node(
-                    graph,
-                    self._CAST,
-                    args=(node.args[0], torch.int32),
-                    from_node=node,
-                )
-                x_nonneg = create_node(
-                    graph,
-                    self._MAXIMUM,
-                    args=(x_i32, zero_i32),
-                    from_node=node,
-                )
-                x_pos = create_node(
-                    graph,
-                    self._MAXIMUM,
-                    args=(x_nonneg, one_i32),
-                    from_node=node,
-                )
+                x_nonneg = self._clamped_i32(graph, node, 0, input_qargs.qmax)
+                x_pos = self._clamped_i32(graph, node, 1, input_qargs.qmax)
                 # Normalize each positive input into the stable [8192, 32767]
                 # range before table lookup.
                 clz = create_node(
@@ -239,22 +194,17 @@ class LowerInt16RsqrtPass(ArmPass):
                     args=(x_nonneg,),
                     from_node=node,
                 )
-                clz_i8 = create_node(
+                clz_biased = create_node(
                     graph,
-                    self._CAST,
-                    args=(clz, torch.int8),
-                    from_node=node,
-                )
-                half_shift_i8 = create_node(
-                    graph,
-                    self._TABLE,
-                    args=(clz_i8, half_shift_table_const),
+                    self._SUB,
+                    args=(clz, clz_offset_i32),
                     from_node=node,
                 )
                 half_shift = create_node(
                     graph,
-                    self._CAST,
-                    args=(half_shift_i8, torch.int32),
+                    self._ARITHMETIC_RIGHT_SHIFT,
+                    args=(clz_biased, one_i32),
+                    kwargs={"round": round_shift},
                     from_node=node,
                 )
                 shift = create_node(
@@ -289,9 +239,9 @@ class LowerInt16RsqrtPass(ArmPass):
                     args=(table, half_shift),
                     from_node=node,
                 )
-                output_node = create_node(
+                shifted.meta["val"] = node.meta["val"].to(dtype=torch.int32)
+                output_node = create_rescale_node(
                     graph,
-                    self._RESCALE,
                     args=(
                         shifted,
                         output_qargs.dtype,
@@ -301,30 +251,9 @@ class LowerInt16RsqrtPass(ArmPass):
                     ),
                     from_node=node,
                 )
-                zero_mask_i8 = create_node(
-                    graph,
-                    self._TABLE,
-                    args=(clz_i8, zero_mask_table_const),
-                    from_node=node,
-                )
-                nonzero_mask_i8 = create_node(
-                    graph,
-                    self._TABLE,
-                    args=(clz_i8, nonzero_mask_table_const),
-                    from_node=node,
-                )
-                zero_mask = create_node(
-                    graph,
-                    self._CAST,
-                    args=(zero_mask_i8, torch.int32),
-                    from_node=node,
-                )
-                nonzero_mask = create_node(
-                    graph,
-                    self._CAST,
-                    args=(nonzero_mask_i8, torch.int32),
-                    from_node=node,
-                )
+                # Arithmetic, not int8 TABLEs: TABLE ops next to int32 elementwise
+                # ops deadlock Ethos-U55 silicon (the FVP does not model it).
+                nonzero_mask = self._clamped_i32(graph, node, 0, 1)
                 output_i32 = output_node
                 if output_qargs.dtype != torch.int32:
                     output_i32 = create_node(
@@ -333,23 +262,23 @@ class LowerInt16RsqrtPass(ArmPass):
                         args=(output_node, torch.int32),
                         from_node=node,
                     )
-                mul_shift = create_const(graph, 0, torch.int8, node)
-                saturated_zero = create_node(
+                # qmax + nonzero * (output - qmax): saturate rsqrt(0) to qmax.
+                output_minus_qmax = create_node(
                     graph,
-                    self._MUL,
-                    args=(qmax_output_i32, zero_mask, mul_shift),
+                    self._SUB,
+                    args=(output_i32, qmax_output_i32),
                     from_node=node,
                 )
-                masked_output = create_node(
+                masked = create_node(
                     graph,
                     self._MUL,
-                    args=(output_i32, nonzero_mask, mul_shift),
+                    args=(output_minus_qmax, nonzero_mask, 0),
                     from_node=node,
                 )
                 output_node = create_node(
                     graph,
                     self._ADD,
-                    args=(masked_output, saturated_zero),
+                    args=(masked, qmax_output_i32),
                     from_node=node,
                 )
                 if output_qargs.dtype != torch.int32:

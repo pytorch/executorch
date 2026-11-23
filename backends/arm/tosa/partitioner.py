@@ -781,7 +781,7 @@ class TOSAPartitioner(Partitioner):
                 surviving = {n for n in partition.nodes if is_partitioned(n, tag)}
                 if surviving and not _validate_partition(surviving):
                     components = _find_connected_components(surviving)
-                    logger.info(
+                    logger.debug(
                         f"Partition {tag} has dependency cycle after Q/DQ "
                         f"de-tagging. Splitting into {len(components)} "
                         f"sub-partition(s)."
@@ -893,7 +893,7 @@ class TOSAPartitioner(Partitioner):
             and a mapping of partition tags to delegation specs.
 
         """
-        logger.info("TOSAPartitioner::partition")
+        logger.debug("TOSAPartitioner::partition")
         logger.info(
             f"Partitioning for {self.delegation_spec.backend_id}: {self.tosa_spec}"
         )
@@ -910,6 +910,7 @@ class TOSAPartitioner(Partitioner):
         tag_constant_data(exported_program)
         if self.delegate_mutable_buffers:
             _tag_delegate_owned_buffers(exported_program)
+        file_handler = None
         if (
             self.intermediate_path is not None
             and logger.getEffectiveLevel() <= logging.INFO
@@ -920,9 +921,15 @@ class TOSAPartitioner(Partitioner):
                 intermediate_path / "partition_report.txt"
             )
             logger.addHandler(file_handler)
-        logger.info(f"The following nodes were rejected for {self.tosa_spec}:")
-        logger.info("\n" + reporter.get_table_report())
-        logger.info("(Placeholders and outputs are not included in this list)")
+        try:
+            logger.info(f"The following nodes were rejected for {self.tosa_spec}:")
+            logger.info("\n" + reporter.get_table_report())
+            logger.info("(Placeholders and outputs are not included in this list)")
+        finally:
+            if file_handler is not None:
+                logger.removeHandler(file_handler)
+                logger.info("Saved partition report to %s.", file_handler.baseFilename)
+                file_handler.close()
         return PartitionResult(
             tagged_exported_program=exported_program, partition_tags=partition_tags
         )

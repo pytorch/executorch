@@ -25,6 +25,10 @@ REGISTER_THROUGHPUT_FUNCTIONS {
       et_vk.q8ta_pixel_shuffle.default, throughput::tensor_traffic);
   REGISTER_OPERATOR_COMPUTE_FLOPS(
       et_vk.q8ta_pixel_shuffle.default, pixel_shuffle_flops);
+  REGISTER_OPERATOR_MEMORY_TRAFFIC(
+      et_vk.q8ta_pixel_shuffle.with_activation, throughput::tensor_traffic);
+  REGISTER_OPERATOR_COMPUTE_FLOPS(
+      et_vk.q8ta_pixel_shuffle.with_activation, pixel_shuffle_flops);
 }
 } // namespace
 } // namespace vkcompute::shader_profiling

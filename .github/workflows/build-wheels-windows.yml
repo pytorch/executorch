@@ -48,6 +48,20 @@ jobs:
       with-rocm: disabled
       python-versions: '["3.11", "3.12", "3.13", "3.14", "3.15"]'
 
+  save-build-matrix:
+    needs: generate-matrix
+    runs-on: ubuntu-latest
+    steps:
+      - name: Save the build matrix
+        env:
+          MATRIX: ${{ needs.generate-matrix.outputs.matrix }}
+        run: printf '%s' "${MATRIX}" > build-matrix.json
+      - name: Upload the build matrix
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: build-matrix
+          path: build-matrix.json
+
   build:
     needs: generate-matrix
     strategy:

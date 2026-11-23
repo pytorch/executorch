@@ -41,6 +41,7 @@ from executorch.backends.arm.vgf._passes import (
     FuseGridSamplerFlowOffsetPass,
     GroupIndependentCustomShadersPass,
     InsertGridSamplerGridDequantPass,
+    RewriteCustomSDPAToTosaCustomPass,
     RewriteGridSamplerToTosaCustomPass,
 )
 
@@ -51,6 +52,7 @@ from executorch.backends.arm.vgf.model_converter import (
 )
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 from torch.export import ExportedProgram
 from torch.export.graph_signature import InputKind, InputSpec, OutputKind, OutputSpec
@@ -63,6 +65,7 @@ STATUS_FAIL = "FAIL"
 VGF_BACKEND_NAME = "VgfBackend"
 MUTABLE_BUFFER_PAIRS_KEY = "mutable_buffer_pairs"
 MUTABLE_BUFFER_OWNERSHIP_KEY = "vgf_partitioned_mutable_buffer"
+_SUPPORTED_TOSA_CUSTOM_DOMAINS = frozenset({"com.arm.VulkanCustomShader"})
 
 
 @dataclass(frozen=True)
@@ -167,6 +170,7 @@ def _register_vgf_rewrite_passes() -> None:
         InsertRescaleInt32Pass,
         FuseGridSamplerFlowOffsetPass(),
     )
+    _register_pass_before(RewriteConvPass, RewriteCustomSDPAToTosaCustomPass())
     _register_pass_before(RewriteConvPass, RewriteGridSamplerToTosaCustomPass())
     _register_pass_before(
         EnsureUniqueOutputNodesPass, GroupIndependentCustomShadersPass()
@@ -188,6 +192,57 @@ def _restore_registered_pass_insertions(
 ) -> None:
     _registered_pass_insertions.clear()
     _registered_pass_insertions.update(snapshot)
+
+
+def _iter_export_graph_modules(
+    edge_program: ExportedProgram,
+) -> list[tuple[str, Any]]:
+    graph_module = edge_program.graph_module
+    if graph_module is None or not hasattr(graph_module, "named_modules"):
+        return []
+
+    result: list[tuple[str, Any]] = []
+    seen: set[int] = set()
+    for module_name, module in graph_module.named_modules():
+        if not hasattr(module, "graph"):
+            continue
+        module_id = id(module)
+        if module_id in seen:
+            continue
+        seen.add(module_id)
+        result.append((module_name or "<root>", module))
+    return result
+
+
+def _unsupported_tosa_custom_domains(edge_program: ExportedProgram) -> list[str]:
+    unsupported: list[str] = []
+    for module_name, graph_module in _iter_export_graph_modules(edge_program):
+        for node in graph_module.graph.nodes:
+            if node.op != "call_function":
+                continue
+            if node.target != exir_ops.backend.tosa.CUSTOM.default:
+                continue
+            domain_name = node.kwargs.get("domain_name")
+            if domain_name in _SUPPORTED_TOSA_CUSTOM_DOMAINS:
+                continue
+            operator_name = node.kwargs.get("operator_name", "<unknown>")
+            unsupported.append(
+                f"{operator_name} [{domain_name}] in graph module {module_name}"
+            )
+    return unsupported
+
+
+def _validate_vgf_custom_domains(edge_program: ExportedProgram) -> None:
+    unsupported = _unsupported_tosa_custom_domains(edge_program)
+    if not unsupported:
+        return
+    rendered = ", ".join(unsupported)
+    raise RuntimeError(
+        "VGF only supports tosa.CUSTOM with domain_name "
+        "'com.arm.VulkanCustomShader'. Unsupported custom op domains: "
+        f"{rendered}. The current model-converter rejects generic tosa.CUSTOM "
+        "domains before VGF codegen."
+    )
 
 
 @final
@@ -322,7 +377,7 @@ class VgfBackend(BackendDetails):
             PreprocessResult: Result containing the compiled VGF binary.
 
         """
-        logger.info(f"{VgfBackend.__name__} preprocess")
+        logger.debug(f"{VgfBackend.__name__} preprocess")
 
         insertions_snapshot = _snapshot_registered_pass_insertions()
         try:
@@ -373,6 +428,7 @@ class VgfBackend(BackendDetails):
             # preprocess returns the serialized TOSA flatbuffer in .processed_bytes,
             # which can be passed on to next compilation step.
             tosa_preprocess = TOSABackend._preprocess(edge_program, tosa_compile_spec)
+            _validate_vgf_custom_domains(edge_program)
 
             tag_name = arm_get_first_delegation_tag(edge_program.graph_module)
 
@@ -550,7 +606,7 @@ def vgf_compile(
             vgf_path,
         ]
         try:
-            subprocess.run(  # nosec B602, B603 - shell invocation constrained to trusted converter binary with trusted inputs
+            result = subprocess.run(  # nosec B602, B603 - shell invocation constrained to trusted converter binary with trusted inputs
                 conversion_command,
                 shell=False,
                 check=True,
@@ -590,6 +646,17 @@ def vgf_compile(
                 f"Stderr:\n{process_error.stderr.decode()}\n"
                 f"Stdout:\n{process_error.stdout.decode()}"
             )
+        else:
+            if len(result.stdout) > 0:
+                logger.debug(
+                    "model_converter stdout:\n%s",
+                    result.stdout.decode(errors="replace"),
+                )
+            if len(result.stderr) > 0:
+                logger.debug(
+                    "model_converter stderr:\n%s",
+                    result.stderr.decode(errors="replace"),
+                )
 
         if artifact_path:
             os.makedirs(artifact_path, exist_ok=True)

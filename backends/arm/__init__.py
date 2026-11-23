@@ -12,11 +12,20 @@ Public API is defined by explicit module exports (e.g., ``.vgf``, ``.ethosu``,
 from __future__ import annotations
 
 import importlib
+
+import logging
 from typing import Any
 
-# Register Arm-specific torch.library ops and MXFP transforms at package
-# import time.
-import executorch.backends.arm.ao_ext  # noqa: F401
+logger = logging.getLogger(__name__)
+if logger.level == logging.NOTSET:
+    logger.setLevel(min(logging.INFO, logging.root.getEffectiveLevel()))
+    logger.info(
+        "Using default logging level %s for %s. Override with "
+        "logging.getLogger(%r).setLevel(logging.DEBUG).",
+        logging.getLevelName(logger.level),
+        __name__,
+        __name__,
+    )
 
 # Public for tooling (manifest generation and API validation).
 LAZY_IMPORTS = {
