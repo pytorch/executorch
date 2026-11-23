@@ -250,8 +250,9 @@ void GraphBuilder::lower_elu(const Node& node) {
   lower_unary(node, ggml_elu);
 }
 
-// Reduces a run of trailing dimensions, which ggml sees as one row.
-std::pair<ggml_tensor*, std::vector<int64_t>> GraphBuilder::trailing_rows(
+// Reduces any dimensions: they are permuted to the end, where ggml sees them
+// as one row.
+std::pair<ggml_tensor*, std::vector<int64_t>> GraphBuilder::reduced_rows(
     const Node& node,
     const std::string& op) {
   TensorRef input = tensor_arg(node, "self", 0);
@@ -276,28 +277,31 @@ std::pair<ggml_tensor*, std::vector<int64_t>> GraphBuilder::trailing_rows(
     return normalize_dim(dim, rank);
   });
   std::ranges::sort(dims);
-  const size_t first = rank - dims.size();
-  for (size_t i = 0; i < dims.size(); ++i) {
-    if (dims[i] != static_cast<int64_t>(first + i)) {
-      throw std::runtime_error(
-          "ggml: " + op + " supports trailing dimensions only");
-    }
+  if (std::ranges::adjacent_find(dims) != dims.end()) {
+    throw std::runtime_error("ggml: " + op + " repeats a dimension");
   }
   const bool keepdim = bool_arg(node, "keepdim", 2, false);
-  int64_t row = 1;
+  std::vector<int64_t> order;
   std::vector<int64_t> sizes;
+  int64_t row = 1;
   for (size_t i = 0; i < rank; ++i) {
-    if (i < first) {
+    const auto dim = static_cast<int64_t>(i);
+    if (!std::ranges::binary_search(dims, dim)) {
+      order.push_back(dim);
       sizes.push_back(input.sizes[i]);
-    } else {
-      row *= input.sizes[i];
-      if (keepdim) {
-        sizes.push_back(1);
-      }
+    } else if (keepdim) {
+      sizes.push_back(1);
     }
+  }
+  for (const int64_t dim : dims) {
+    order.push_back(dim);
+    row *= input.sizes[static_cast<size_t>(dim)];
   }
   if (row == 0) {
     throw std::runtime_error("ggml: " + op + " over an empty dimension");
+  }
+  if (!std::ranges::is_sorted(order)) {
+    input = permuted(input, order);
   }
   ggml_tensor* rows = ggml_reshape_2d(
       instance_.context.get(),
@@ -308,49 +312,143 @@ std::pair<ggml_tensor*, std::vector<int64_t>> GraphBuilder::trailing_rows(
 }
 
 void GraphBuilder::lower_mean(const Node& node) {
-  auto [rows, sizes] = trailing_rows(node, "mean");
+  auto [rows, sizes] = reduced_rows(node, "mean");
   ggml_context* ctx = instance_.context.get();
   ggml_tensor* result = reshape(ctx, ggml_mean(ctx, rows), sizes);
   set_single_output(node, TensorRef{result, std::move(sizes)});
 }
 
 void GraphBuilder::lower_sum(const Node& node) {
-  auto [rows, sizes] = trailing_rows(node, "sum");
+  auto [rows, sizes] = reduced_rows(node, "sum");
   ggml_context* ctx = instance_.context.get();
   ggml_tensor* result = reshape(ctx, ggml_sum_rows(ctx, rows), sizes);
   set_single_output(node, TensorRef{result, std::move(sizes)});
 }
 
-// Gathers each row's argmax element. Unlike max pooling, which starts from
-// -FLT_MAX, this keeps an all -inf row at -inf. NaN does not propagate.
-void GraphBuilder::lower_amax(const Node& node) {
-  auto [rows, sizes] = trailing_rows(node, "amax");
+// ggml_argmax of each row as I32 indices for ggml_get_rows. GPU kernels give
+// -1 for a row with no value above -FLT_MAX (all -inf, -FLT_MAX or NaN), so
+// there the index is clamped to 0, an element of that row, in F32, which
+// holds it exactly for rows of up to 2^24 values; row_max corrects the value.
+ggml_tensor* GraphBuilder::row_argmax(ggml_tensor* rows) {
+  ggml_context* ctx = instance_.context.get();
+  ggml_tensor* index = ggml_argmax(ctx, rows);
+  if (!gpu_) {
+    return index;
+  }
+  if (rows->ne[0] > kExactF32Integer) {
+    throw std::runtime_error(
+        "ggml: GPUs reduce rows of up to 2^24 values with an argmax");
+  }
+  return ggml_cast(
+      ctx, ggml_relu(ctx, ggml_cast(ctx, index, GGML_TYPE_F32)), GGML_TYPE_I32);
+}
+
+// Each row's largest value, [1, 1, count], gathered at row_argmax. On GPUs a
+// row with no value above -FLT_MAX gathers its first element instead, so a row
+// select gives it -FLT_MAX if it holds one, else -inf; NaN is for the callers.
+ggml_tensor* GraphBuilder::row_max(ggml_tensor* rows) {
   ggml_context* ctx = instance_.context.get();
   const int64_t width = rows->ne[0];
   const int64_t count = rows->ne[1];
-  ggml_tensor* index = ggml_reshape_2d(ctx, ggml_argmax(ctx, rows), 1, count);
+  ggml_tensor* index = ggml_reshape_2d(ctx, row_argmax(rows), 1, count);
   ggml_tensor* values =
       ggml_get_rows(ctx, ggml_reshape_3d(ctx, rows, 1, width, count), index);
-  ggml_tensor* result = reshape(ctx, values, sizes);
+  if (!gpu_) {
+    return values;
+  }
+  constexpr float kMax = std::numeric_limits<float>::max();
+  const auto any_positive = [&](ggml_tensor* t) {
+    return ggml_step(ctx, ggml_sum_rows(ctx, ggml_step(ctx, t)));
+  };
+  // x + FLT_MAX > 0 exactly where x > -FLT_MAX; x / 2 + FLT_MAX > 0 for every
+  // x but -inf and NaN.
+  ggml_tensor* found = any_positive(ggml_scale_bias(ctx, rows, 1.0f, kMax));
+  ggml_tensor* holds_max = any_positive(ggml_scale_bias(ctx, rows, 0.5f, kMax));
+  // -FLT_MAX where the row holds it, else -FLT_MAX - FLT_MAX = -inf.
+  ggml_tensor* largest = ggml_scale_bias(
+      ctx, ggml_scale_bias(ctx, holds_max, kMax, -kMax), 1.0f, -kMax);
+  ggml_tensor* candidates = ggml_concat(
+      ctx,
+      ggml_reshape_3d(ctx, values, 1, 1, count),
+      ggml_reshape_3d(ctx, largest, 1, 1, count),
+      /*dim=*/1);
+  ggml_tensor* picks = ggml_cast(
+      ctx,
+      ggml_reshape_2d(ctx, ggml_scale_bias(ctx, found, -1.0f, 1.0f), 1, count),
+      GGML_TYPE_I32);
+  return ggml_get_rows(ctx, candidates, picks);
+}
+
+// `values`, one per row of `rows`, with NaN where the row holds one: a row
+// select picks the row's sum there, NaN too.
+ggml_tensor* GraphBuilder::nan_where_rows_hold_nan(
+    ggml_tensor* rows,
+    ggml_tensor* values) {
+  ggml_context* ctx = instance_.context.get();
+  const int64_t count = rows->ne[1];
+  ggml_tensor* candidates = ggml_concat(
+      ctx,
+      ggml_reshape_3d(ctx, values, 1, 1, count),
+      ggml_reshape_3d(ctx, ggml_sum_rows(ctx, rows), 1, 1, count),
+      /*dim=*/1);
+  ggml_tensor* has_nan = ggml_step(ctx, ggml_sum_rows(ctx, nan_mask(rows)));
+  ggml_tensor* picks =
+      ggml_cast(ctx, ggml_reshape_2d(ctx, has_nan, 1, count), GGML_TYPE_I32);
+  return ggml_get_rows(ctx, candidates, picks);
+}
+
+// Each row's largest element. Unlike max pooling, which starts from -FLT_MAX,
+// this keeps an all -inf row at -inf. argmax skips NaN, which eager returns
+// for a row holding one.
+void GraphBuilder::lower_amax(const Node& node) {
+  auto [rows, sizes] = reduced_rows(node, "amax");
+  ggml_context* ctx = instance_.context.get();
+  ggml_tensor* result =
+      reshape(ctx, nan_where_rows_hold_nan(rows, row_max(rows)), sizes);
   set_single_output(node, TensorRef{result, std::move(sizes)});
 }
 
-// ggml normalizes each row, so only the last dimension.
+// ggml normalizes rows, so another dim is permuted to the end and back.
 void GraphBuilder::lower_softmax(const Node& node) {
   TensorRef input = tensor_arg(node, "self", 0);
   // Computed in F32, as eager does for F16 and BF16; set() rounds back.
   input.tensor = half_as_f32(input.tensor);
   require_f32(node, input.tensor);
   const size_t rank = input.sizes.size();
-  if (rank == 0 ||
-      normalize_dim(int_arg(node, "dim", 1, -1), rank) !=
-          static_cast<int64_t>(rank) - 1) {
-    throw std::runtime_error("ggml: softmax supports the last dimension only");
+  if (rank == 0) {
+    throw std::runtime_error("ggml: softmax of a scalar is not supported");
   }
+  const int64_t dim = normalize_dim(int_arg(node, "dim", 1, -1), rank);
+  std::vector<int64_t> order;
+  for (int64_t d = 0; d < static_cast<int64_t>(rank); ++d) {
+    if (d != dim) {
+      order.push_back(d);
+    }
+  }
+  order.push_back(dim);
+  const bool moved = dim != static_cast<int64_t>(rank) - 1;
+  const TensorRef last = moved ? permuted(input, order) : input;
   ggml_context* ctx = instance_.context.get();
-  set_single_output(
-      node,
-      TensorRef{ggml_soft_max(ctx, contiguous(input.tensor)), input.sizes});
+  const int64_t width = last.sizes.back();
+  if (width == 0) {
+    throw std::runtime_error("ggml: softmax over an empty dimension");
+  }
+  ggml_tensor* rows = ggml_reshape_2d(
+      ctx,
+      contiguous(last.tensor),
+      width,
+      static_cast<int64_t>(checked_numel(last.sizes)) / width);
+  const ValueId id = output_ids(node).at(0);
+  ggml_tensor* result = reshape(ctx, ggml_soft_max(ctx, rows), last.sizes);
+  if (!moved) {
+    set(id, TensorRef{result, input.sizes});
+    return;
+  }
+  std::vector<int64_t> inverse(rank);
+  for (size_t i = 0; i < rank; ++i) {
+    inverse[static_cast<size_t>(order[i])] = static_cast<int64_t>(i);
+  }
+  set_view(id, permuted(TensorRef{result, last.sizes}, inverse));
 }
 
 namespace {
