@@ -4,13 +4,18 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Gated DeltaNet decode cases, from transformers' own implementation: the
-recurrent rule with the state as an explicit input and output, and the whole
-Qwen3.5 GDN layer over a linear-attention cache whose conv and recurrent states
-are mutable buffers carried across a chain's calls."""
+"""Gated DeltaNet cases, from transformers' own implementation: the recurrent
+rule with the state as an explicit input and output, and the whole Qwen3.5 GDN
+layer over a linear-attention cache whose conv and recurrent states are mutable
+buffers carried across a chain's calls. native::gated_delta_rule cases run the
+rule as that op, over one token or a prompt chunk, alone and in the layer."""
+
+import contextlib
 
 import torch
 import torch.nn.functional as F
+from executorch.backends.native.custom_ops import gated_delta_rule_op
+from executorch.backends.native.examples.hf_llm.export_hf_llm import native_gdn_rules
 from executorch.backends.native.test.samples.cases import Case, draws
 from transformers.cache_utils import Cache, LinearAttentionLayer
 from transformers.models.qwen3_5 import modeling_qwen3_5 as qwen3_5
@@ -42,6 +47,32 @@ class _Rule(torch.nn.Module):
         return state, out
 
 
+class _NativeRule(_Rule):
+    """The rule as native::gated_delta_rule, on any number of tokens; its
+    state is value-major."""
+
+    def __init__(self, heads: int, snapshots: int = 1) -> None:
+        super().__init__(heads)
+        self.snapshots = snapshots
+
+    def forward(self, q, k, v, a, b, state):
+        g = -self.A_log.float().exp() * F.softplus(a.float() + self.dt_bias)
+        return gated_delta_rule_op(q, k, v, g, b.sigmoid(), state, True, self.snapshots)
+
+
+def _native_rule_case(
+    name: str, heads: int, dim: int, tokens: int, snapshots: int = 1
+) -> Case:
+    qkv = (1, tokens, heads, dim)
+    gates = (1, tokens, heads)
+    state = (1, heads, dim, dim) if snapshots == 1 else (1, snapshots, heads, dim, dim)
+    return Case(
+        name,
+        _NativeRule(heads, snapshots),
+        draws(2, qkv, qkv, qkv, gates, gates, state),
+    )
+
+
 def _rule_case(name: str, heads: int, dim: int) -> Case:
     qkv = (1, 1, heads, dim)
     gates = (1, 1, heads)
@@ -68,8 +99,14 @@ class _Layer(torch.nn.Module):
     whose states are this module's buffers, continued by every call and zeroed
     in the graph by a call at position 0, as the LLM exporter does."""
 
-    def __init__(self, config: Qwen3_5TextConfig, persistent: bool = False) -> None:
+    def __init__(
+        self,
+        config: Qwen3_5TextConfig,
+        persistent: bool = False,
+        native: bool = False,
+    ) -> None:
         super().__init__()
+        self.native = native
         self.gdn = qwen3_5.Qwen3_5GatedDeltaNet(config, layer_idx=0)
         torch.nn.init.normal_(self.gdn.norm.weight, 1.0, 0.1)
         self.cache = Cache(layers=[LinearAttentionLayer()])
@@ -92,7 +129,9 @@ class _Layer(torch.nn.Module):
         layer.conv_states[0] = self.conv_state
         layer.recurrent_states[0] = self.recurrent_state
         layer.has_previous_state[0] = True
-        return self.gdn(x, cache_params=self.cache)
+        rules = native_gdn_rules(self.gdn) if self.native else contextlib.nullcontext()
+        with rules:
+            return self.gdn(x, cache_params=self.cache)
 
 
 def _layer_case(
@@ -101,15 +140,20 @@ def _layer_case(
     calls: int = 5,
     restart: bool = False,
     persistent: bool = False,
+    native: bool = False,
+    tokens: int = 1,
 ) -> Case:
-    """A chain of decode calls, one token each, carrying the state; with
-    `restart`, the last one starts a new sequence at position 0."""
-    xs = draws(calls, (1, 1, config.hidden_size))
-    starts = list(range(calls))
+    """A chain of calls of `tokens` tokens each, decode steps by default,
+    carrying the state; with `restart`, the last one starts a new sequence at
+    position 0. With `native`, the layer's rule is native::gated_delta_rule."""
+    xs = draws(calls, (1, tokens, config.hidden_size))
+    starts = [tokens * i for i in range(calls)]
     if restart:
         starts[-1] = 0
-    inputs = [(x, torch.tensor([s])) for (x,), s in zip(xs, starts)]
-    return Case(name, _Layer(config, persistent), inputs, dynamic_shapes=({}, {}))
+    inputs = [(x, torch.arange(s, s + tokens)) for (x,), s in zip(xs, starts)]
+    return Case(
+        name, _Layer(config, persistent, native), inputs, dynamic_shapes=({}, {})
+    )
 
 
 def cases() -> list[Case]:
@@ -128,4 +172,29 @@ def cases() -> list[Case]:
         _layer_case("quantized_layer_decode_saved_state", small, persistent=True),
         # Enough calls for the activation quantization's error biases to fit.
         _layer_case("quantized_layer_decode_wide", wide, calls=16),
+        _layer_case(
+            "quantized_layer_native_decode_restart", small, restart=True, native=True
+        ),
+        _layer_case(
+            "quantized_layer_native_prefill_8", small, calls=3, native=True, tokens=8
+        ),
+        _layer_case("quantized_layer_native_decode_wide", wide, calls=16, native=True),
+        # Last, so the cases above keep their random weights.
+        # A decode step, part of a 64-token chunk, and one and a part.
+        _native_rule_case("native_rule_small_1", heads=4, dim=16, tokens=1),
+        _native_rule_case("native_rule_small_8", heads=4, dim=16, tokens=8),
+        _native_rule_case("native_rule_small_100", heads=4, dim=16, tokens=100),
+        _native_rule_case("native_rule_qwen35_1", heads=32, dim=128, tokens=1),
+        _native_rule_case("native_rule_qwen35_64", heads=32, dim=128, tokens=64),
+        # Speculative decoding's snapshots: a verify call of fewer, as many
+        # and more tokens than its slots.
+        _native_rule_case(
+            "native_rule_snapshots_2_of_4", heads=4, dim=16, tokens=2, snapshots=4
+        ),
+        _native_rule_case(
+            "native_rule_snapshots_4_of_4", heads=4, dim=16, tokens=4, snapshots=4
+        ),
+        _native_rule_case(
+            "native_rule_snapshots_9_of_4", heads=4, dim=16, tokens=9, snapshots=4
+        ),
     ]
