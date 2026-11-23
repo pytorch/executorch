@@ -93,7 +93,9 @@ GEMV_MAX_K = 16384
 GEMV_MAX_WEIGHT = 2**29
 # Calls of ``MAX_ROWS + 1`` to ``SHORT_MAX_ROWS`` rows: the short-rows class,
 # which the tile schedules run. Past these limits Inductor's templates keep up
-# with them on some toolchains.
+# with them on some toolchains. As calls of more rows become compute bound,
+# Triton 3.8's tf32x3 tiles peak below Inductor's FP32 templates; no broad
+# static class above 64 rows holds, so only measurement routes them.
 SHORT_MAX_ROWS = 64
 SHORT_MIN_N = 64
 SHORT_MAX_N = 1024
