@@ -241,8 +241,9 @@ def gen_eval_wrapper(
         return ETPybindEvalWrapper(
             model=model,
             tokenizer=tokenizer,
-            # Exported model takes at most (max_seq_length - 1) tokens.
-            # Note that the eager model takes at most max_seq_length tokens.
+            # Non-KV exports take at most (max_seq_length - 1) tokens, and so do
+            # KV exports made before they took max_seq_length. The eager model
+            # takes at most max_seq_length tokens.
             max_seq_length=llm_config.export.max_seq_length - 1,
         )
 

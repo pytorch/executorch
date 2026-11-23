@@ -145,9 +145,11 @@ class LLMEdgeManager:
                 )
             else:
                 # Two input arguments: tokens and input_pos but input_pos is static shape.
-                # Here we use -1 due to export limitation (same as non-kv-cache case above).
+                # No -1 here, unlike the non-KV branch: the KV cache update accepts
+                # start_pos + seq_len == cache size, and the runner prefills up to
+                # get_max_seq_len (max_seq_len) tokens per call.
                 self.dynamic_shapes = (
-                    {1: torch.export.Dim("token_dim", max=self.max_seq_len - 1)},
+                    {1: torch.export.Dim("token_dim", max=self.max_seq_len)},
                     {"input_pos": {0: 1}},
                 )
 
@@ -205,6 +207,21 @@ class LLMEdgeManager:
         return edge_config
 
     def _export(self, module: Optional[torch.nn.Module] = None) -> ExportedProgram:
+        if self.use_kv_cache and self.enable_dynamic_shape:
+            # A sliding window KV cache holds 2 * window entries, so a call of more
+            # than window + 1 tokens would overwrite context it still attends to.
+            windows = [
+                m.window_size
+                for m in self.model.modules()
+                if getattr(m, "is_ring_buffer", False)
+            ]
+            if windows and self.max_seq_len > min(windows) + 1:
+                raise ValueError(
+                    f"max_seq_len ({self.max_seq_len}) must be at most the smallest "
+                    f"sliding window + 1 ({min(windows) + 1}). The runner sends up to "
+                    "max_seq_len tokens per call, and a sliding window KV cache can "
+                    "take at most window + 1 tokens per call."
+                )
         dynamic_shape = self._get_dynamic_shape()
         # 1. torch.nn.attention.sdpa_kernel([SDPBackend.MATH]) is for bypassing the dynamo error when tracing
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
