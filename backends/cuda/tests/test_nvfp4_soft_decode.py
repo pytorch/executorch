@@ -8,6 +8,7 @@ import pytest
 import torch
 import triton
 import triton.language as tl
+from executorch.backends.cuda.tests.nvfp4_test_utils import sweep
 from executorch.backends.cuda.triton.kernels import nvfp4_quantized_gemm as kernels
 from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
     _decode_pair,
@@ -98,17 +99,17 @@ def test_kernels_decode_every_scale(row_pts):
         else torch.tensor([0.37], device="cuda")
     )
     w = reference_weight(q, s, pts).to(torch.bfloat16).float()
-    for m in (1, 3, 37):
+    cases = [(m, split_k) for m in (1, 3, 37) for split_k in (1, 4)]
+    for m, split_k in sweep(cases, [(1, 4), (37, 1)]):
         x = torch.randn(m, k, device="cuda", dtype=torch.bfloat16)
         expected = x.float() @ w.T
-        for split_k in (1, 4):
-            actual = (
-                nvfp4_gemv(x, q, s, pts, split_k=split_k)
-                if m <= 4
-                else nvfp4_w4a16(x, q, s, pts, split_k=split_k)
-            )
-            error = relative_error_per_row(actual, expected, x, w)
-            assert bool((error < 1e-2).all()), (m, split_k)
+        actual = (
+            nvfp4_gemv(x, q, s, pts, split_k=split_k)
+            if m <= 4
+            else nvfp4_w4a16(x, q, s, pts, split_k=split_k)
+        )
+        error = relative_error_per_row(actual, expected, x, w)
+        assert bool((error < 1e-2).all()), (m, split_k)
 
 
 def test_embedding_decodes_every_scale_exactly():
@@ -208,15 +209,19 @@ def fixed_gemv(x, q, s, pts, unit_scale, split_k, config, native):
 
 
 def gemv_configs(half2):
-    """Every single-stage tile (the stage count only changes pipelining)."""
+    """Single-stage tiles (the stage count only changes pipelining): the
+    narrowest, the widest BN and BK, and the new ones; every tile with the
+    exhaustive sweep."""
     configs = [
         c
         for c in kernels._gemv.configs
         if c.kwargs["HALF2"] == half2 and c.num_stages == 1
     ]
-    tiles = {(c.kwargs["BN"], c.kwargs["BK"]) for c in configs}
-    assert {(16, 1024), (32, 256)} <= tiles
-    return configs
+    quick = {(4, 256), (8, 512), (16, 1024), (32, 256)}
+    assert quick <= {(c.kwargs["BN"], c.kwargs["BK"]) for c in configs}
+    return sweep(
+        configs, [c for c in configs if (c.kwargs["BN"], c.kwargs["BK"]) in quick]
+    )
 
 
 def skip_without_native(native):
@@ -268,9 +273,9 @@ def test_w4a16_soft_fp4_matches_reference(native, dtype, row_pts):
     x = torch.randn(m, TAIL_K, device="cuda", dtype=dtype)
     w = reference_weight(q, s, pts).to(dtype).float()
     expected = x.float() @ w.T
-    for config in kernels._w4a16.configs:
-        if config.num_stages != 2:
-            continue
+    configs = [c for c in kernels._w4a16.configs if c.num_stages == 2]
+    # The smallest and largest tiles; every tile with the exhaustive sweep.
+    for config in sweep(configs, [configs[0], configs[-1]]):
         meta = config.kwargs
         y = torch.empty((m, n), device="cuda", dtype=torch.float32)
         grid = (triton.cdiv(m, meta["BM"]) * triton.cdiv(n, meta["BN"]), 1)
