@@ -273,6 +273,8 @@ class GraphBuilder {
   void lower_linear(const Node& node);
   void lower_row_gather(const Node& node);
   void lower_expert_matmul(const Node& bmm, const Node& index);
+  std::optional<std::pair<ValueId, int64_t>> repeated_tokens(
+      ValueId mat2) const;
   void check_row_indices(ValueId id, int64_t rows);
   void require_exact_integers(
       ValueId id,
