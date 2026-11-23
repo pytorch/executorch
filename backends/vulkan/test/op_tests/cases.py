@@ -1145,7 +1145,22 @@ def get_permute_inputs():
         "at::kFloat",
     ]
     test_suite.check_zero_padding = True
-    return test_suite
+
+    # Pixel shuffle decomposed into view -> permute -> view, which leaves a
+    # packed dim of size 2.
+    highdim_test_suite = VkTestSuite(
+        [
+            ((1, 3, 2, 2, 5, 6), (0, 1, 4, 2, 5, 3)),
+            ((2, 3, 2, 2, 5, 6), (0, 1, 4, 2, 5, 3)),
+        ]
+    )
+    highdim_test_suite.layouts = test_suite.layouts
+    highdim_test_suite.storage_types = ["utils::kBuffer"]
+    highdim_test_suite.dtypes = ["at::kFloat", "at::kInt"]
+    highdim_test_suite.data_gen = "make_seq_tensor"
+    highdim_test_suite.check_zero_padding = True
+    highdim_test_suite.test_name_suffix = "highdim"
+    return [test_suite, highdim_test_suite]
 
 
 @register_test_suite("aten.view_copy.default")
@@ -1183,11 +1198,14 @@ def get_view_inputs():
             ((1, 1, 3, 3, 3), (9, 3)),
             ((2, 3, 4, 6, 5, 4), (6, 4, 6, 5, 4)),
             ((2, 3, 3, 7, 8), (2, 3, 3, 8 * 7)),
+            ((1, 3, 5, 2, 6, 2), (1, 3, 10, 12)),
         ]
     )
     highdim_test_suite.storage_types = [
         "utils::kBuffer",
     ]
+    highdim_test_suite.dtypes = ["at::kFloat", "at::kHalf", "at::kInt"]
+    highdim_test_suite.check_zero_padding = True
     highdim_test_suite.test_name_suffix = "highdim"
     highdim_test_suite.data_gen = "make_seq_tensor"
 
@@ -2299,6 +2317,26 @@ def get_gelu_inputs():
             (shape, approximate)
             for shape in ((M1,), (M1, M2), (S1, M1, M2), (S1, S2, S2, M2))
             for approximate in ("none", "tanh")
+        ]
+    )
+    test_suite.data_range = (-6, 6)
+    test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
+    test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kHeightPacked",
+        "utils::kChannelsPacked",
+    ]
+    test_suite.check_zero_padding = True
+    return test_suite
+
+
+@register_test_suite("aten.elu.default")
+def get_elu_inputs():
+    test_suite = VkTestSuite(
+        [
+            (shape, alpha, scale)
+            for shape in ((M1,), (M1, M2), (S1, M1, M2), (S1, S2, S2, M2))
+            for alpha, scale in ((1.0, 1.0), (0.5, 1.0), (1.6732632, 1.0507010))
         ]
     )
     test_suite.data_range = (-6, 6)

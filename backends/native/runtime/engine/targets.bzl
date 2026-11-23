@@ -6,7 +6,10 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "is_xplat", "runti
 # its constraint so builds for other platforms skip them. The CUDA and HIP sets
 # also link the x86_64 Linux CPU backend, so their settings require it too, and
 # stay compatible_with to match the ggml backend targets they link.
-CPU_COMPAT = {"target_compatible_with": ["ovr_config//cpu:x86_64", "ovr_config//os:linux"]}
+CPU_COMPAT = {"compatible_with": ["ovr_config//os:linux-x86_64", "ovr_config//os:macos-arm64"]}
+
+# For ggml CPU targets that also run torch, which builds only for Linux.
+TORCH_COMPAT = {"target_compatible_with": ["ovr_config//cpu:x86_64", "ovr_config//os:linux"]}
 CUDA_COMPAT = {"compatible_with": ["fbsource//xplat/executorch/backends/native/runtime/engine:ggml_cuda_platform"]}
 HIP_COMPAT = {"compatible_with": ["fbsource//xplat/executorch/backends/native/runtime/engine:ggml_hip_platform"]}
 METAL_COMPAT = {"target_compatible_with": ["ovr_config//cpu:arm64", "ovr_config//os:macos"]}
@@ -49,6 +52,7 @@ def define_common_targets():
         runtime.cxx_library(
             name = "ggml_engine_" + variant,
             srcs = [
+                "ggml/GgmlCache.cpp",
                 "ggml/GgmlEngine.cpp",
                 "ggml/GgmlExecutor.cpp",
                 "ggml/GgmlGraphBuilder.cpp",
@@ -61,6 +65,7 @@ def define_common_targets():
                 "ggml/GgmlTypes.cpp",
             ],
             headers = [
+                "ggml/GgmlCache.h",
                 "ggml/GgmlExecutor.h",
                 "ggml/GgmlGraphBuilder.h",
                 "ggml/GgmlHostInts.h",
@@ -81,10 +86,25 @@ def define_common_targets():
                 "//executorch/backends/native/runtime/graph:scalar_type",
                 "//executorch/backends/native/runtime/graph:tensor_meta",
                 "//executorch/backends/native/runtime/graph:value",
+                "//executorch/extension/llm/cache:kv_cache",
+                "//executorch/runtime/platform:platform",
                 ggml_dep,
             ],
             labels = ggml_ci_labels(variant),
             # The GPU sets have no mobile flavors.
+            platforms = None if variant == "cpu" else [CXX],
+            visibility = ["//executorch/backends/native/..."],
+            **compat
+        )
+
+        # The command-line flags the ggml runners share.
+        runtime.cxx_library(
+            name = "ggml_engine_flags_" + variant,
+            srcs = ["ggml/GgmlEngineFlags.cpp"],
+            exported_headers = ["ggml/GgmlEngineFlags.h"],
+            exported_deps = [":ggml_engine_" + variant],
+            external_deps = ["gflags"],
+            labels = ggml_ci_labels(variant),
             platforms = None if variant == "cpu" else [CXX],
             visibility = ["//executorch/backends/native/..."],
             **compat

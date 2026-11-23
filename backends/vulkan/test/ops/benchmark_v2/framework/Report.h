@@ -45,7 +45,9 @@ Report shader_breakdown_report(
     const std::vector<std::vector<double>>& samples,
     uint32_t repetitions = 1,
     const Json& throughput_flags = Json::object(),
-    const std::vector<WorkAmounts>& work = {});
+    const std::vector<WorkAmounts>& work = {},
+    const std::vector<std::vector<double>>& barrier_samples = {},
+    const std::vector<std::vector<double>>& gap_samples = {});
 Report shader_report(
     const Json& spec,
     const Json& gwg,

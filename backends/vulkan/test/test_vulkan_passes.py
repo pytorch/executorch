@@ -1847,6 +1847,59 @@ class TestVulkanPasses(unittest.TestCase):
         self.assertEqual(fused_node.args[4], 1)
         self.assertEqual(fused_node.args[5], 2)
 
+    def test_fuse_quantized_pixel_shuffle_relu(self):
+        """A relu between pixel_shuffle and quantize fuses into
+        et_vk.q8ta_pixel_shuffle.with_activation with activation "relu"."""
+
+        class PixelShuffleReluModule(torch.nn.Module):
+            def forward(self, x):
+                x_dq = torch.ops.quantized_decomposed.dequantize_per_tensor(
+                    x, 0.1, 3, -128, 127, torch.int8
+                )
+                y = torch.relu(torch.nn.functional.pixel_shuffle(x_dq, 2))
+                return torch.ops.quantized_decomposed.quantize_per_tensor(
+                    y, 0.05, -20, -128, 127, torch.int8
+                )
+
+        model = PixelShuffleReluModule()
+        x = torch.randint(-128, 127, (1, 96, 16, 9), dtype=torch.int8)
+        expected = model(x)
+        program = torch.export.export(model, (x,), strict=True)
+        edge_program = to_edge(
+            program,
+            compile_config=EdgeCompileConfig(
+                _check_ir_validity=False,
+                preserve_ops=[torch.ops.aten.pixel_shuffle.default],
+            ),
+        )
+
+        ep = edge_program._edge_programs["forward"]
+        fuse_pass = FusePatternsPass()
+        fuse_pass._exported_program = ep
+        result = fuse_pass.call(ep.graph_module)
+
+        self.assertTrue(result.modified)
+
+        gm = ep.graph_module
+        self.assertEqual(op_node_count(gm, "q8ta_pixel_shuffle.with_activation"), 1)
+        self.assertEqual(op_node_count(gm, "q8ta_pixel_shuffle.default"), 0)
+        self.assertEqual(op_node_count(gm, "pixel_shuffle.default"), 0)
+        self.assertEqual(op_node_count(gm, "relu.default"), 0)
+        self.assertEqual(op_node_count(gm, "dequantize_per_tensor.default"), 0)
+        self.assertEqual(op_node_count(gm, "quantize_per_tensor.default"), 0)
+
+        fused_node = next(
+            n
+            for n in gm.graph.nodes
+            if get_target_canonical_name(n) == "q8ta_pixel_shuffle.with_activation"
+        )
+        # args = (input, input_scale, input_zp, inv_output_scale, output_zp, r,
+        #         activation)
+        self.assertEqual(fused_node.args[3], 20.0)
+        self.assertEqual(fused_node.args[4], -20)
+        self.assertEqual(fused_node.args[6], "relu")
+        self.assertTrue(torch.equal(gm(x)[0], expected))
+
     def test_quantized_pixel_shuffle_pattern_rejects_non_match(self):
         """A `dq -> relu -> q` chain (no pixel_shuffle in between) must NOT be
         fused. The new matcher only triggers when a single

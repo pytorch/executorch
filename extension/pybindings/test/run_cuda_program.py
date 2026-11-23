@@ -7,7 +7,9 @@
 """Runs model.pte with its .ptd through cuda_lib, without LibTorch.
 
 Usage: run_cuda_program DIR. Reads DIR/model.pte, the one .ptd in DIR, and
-DIR/input.npy, and writes the first output to DIR/output.npy.
+DIR/input.npy, and writes the first output to DIR/output.npy. When
+DIR/input2.npy also exists, the same loaded module runs once more on it
+and writes DIR/output2.npy.
 """
 
 import sys
@@ -23,3 +25,7 @@ def main() -> None:
     module = cuda_lib._load_for_executorch(str(root / "model.pte"), data_path=str(ptd))
     (output,) = module.forward([np.load(root / "input.npy")])
     np.save(root / "output.npy", np.asarray(output))
+    second_input = root / "input2.npy"
+    if second_input.exists():
+        (second_output,) = module.forward([np.load(second_input)])
+        np.save(root / "output2.npy", np.asarray(second_output))

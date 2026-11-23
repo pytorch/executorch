@@ -31,6 +31,7 @@ namespace {
 using namespace executorch::runtime;
 using executorch::backends::xnnpack::delegate::profiling::XNNProfiler;
 using xnnpack::clamp_bound;
+using xnnpack::literal_scalar;
 
 Error check(xnn_status status, const char* operation) {
   if (status == xnn_status_success) {
@@ -213,6 +214,64 @@ std::optional<MaxPool2d> parse_max_pool2d(const Kernel& node) {
     return std::nullopt;
   }
   parsed.ceil_mode = ceil.as_bool().value;
+  return parsed;
+}
+
+struct AvgPool2d {
+  ptn::ValueId input;
+  ptn::ValueId output;
+  int64_t kh, kw, sh, sw, ph, pw;
+  bool ceil_mode;
+  bool count_include_pad;
+};
+
+std::optional<AvgPool2d> parse_avg_pool2d(const Kernel& node) {
+  if (node.inputs.size() != 7 || node.outputs.size() != 1 ||
+      node.outputs[0].kind != ptn::OutputValueKind::Tensor ||
+      std::any_of(node.inputs.begin(), node.inputs.end(), [](const auto& in) {
+        return in.mutated;
+      })) {
+    return std::nullopt;
+  }
+  const auto& input = arg(node, 0);
+  const auto* kernel = static_pool_list(arg(node, 1));
+  const auto* stride = static_pool_list(arg(node, 2));
+  const auto* padding = static_pool_list(arg(node, 3));
+  const auto& ceil = arg(node, 4);
+  const auto& include_pad = arg(node, 5);
+  if (input.kind() != ptn::ArgKind::Tensor || !kernel || !stride || !padding ||
+      ceil.kind() != ptn::ArgKind::Bool || ceil.as_bool().id != ptn::kInvalid ||
+      include_pad.kind() != ptn::ArgKind::Bool ||
+      include_pad.as_bool().id != ptn::kInvalid ||
+      arg(node, 6).kind() != ptn::ArgKind::None) {
+    return std::nullopt;
+  }
+  AvgPool2d parsed;
+  parsed.input = input.as_tensor().id;
+  parsed.output = node.outputs[0].value_id;
+  if (!pool_pair(*kernel, 0, parsed.kh, parsed.kw) || parsed.kh < 1 ||
+      parsed.kw < 1) {
+    return std::nullopt;
+  }
+  if (stride->empty()) {
+    parsed.sh = parsed.kh;
+    parsed.sw = parsed.kw;
+  } else if (
+      !pool_pair(*stride, 0, parsed.sh, parsed.sw) || parsed.sh < 1 ||
+      parsed.sw < 1) {
+    return std::nullopt;
+  }
+  if (padding->empty() || !pool_pair(*padding, 0, parsed.ph, parsed.pw) ||
+      parsed.ph < 0 || parsed.pw < 0 || parsed.ph > parsed.kh / 2 ||
+      parsed.pw > parsed.kw / 2) {
+    return std::nullopt;
+  }
+  constexpr auto limit = std::numeric_limits<uint32_t>::max();
+  if (parsed.kh > limit / parsed.kw || parsed.sh > limit || parsed.sw > limit) {
+    return std::nullopt;
+  }
+  parsed.ceil_mode = ceil.as_bool().value;
+  parsed.count_include_pad = include_pad.as_bool().value;
   return parsed;
 }
 
@@ -879,6 +938,119 @@ class XNNExecutable final : public Executable {
          (shape.size() == 1 && (shape[0] == 1 || shape[0] == filter[0])));
   }
 
+  static bool supports_avg_pool(const Kernel& node, const ptn::Graph& graph) {
+    const auto parsed = parse_avg_pool2d(node);
+    if (!parsed) {
+      return false;
+    }
+    const auto& input = graph.value(parsed->input).tensor_meta();
+    const auto& output = graph.value(parsed->output).tensor_meta();
+    if (input.dtype != ptn::ScalarType::Float ||
+        output.dtype != ptn::ScalarType::Float || input.quant || output.quant ||
+        input.sizes.size() != 4 || output.sizes.size() != 4 ||
+        input.sizes[0] != output.sizes[0] ||
+        input.sizes[1] != output.sizes[1]) {
+      return false;
+    }
+    for (const auto& [axis, kernel, stride, padding] :
+         {std::array<int64_t, 4>{2, parsed->kh, parsed->sh, parsed->ph},
+          std::array<int64_t, 4>{3, parsed->kw, parsed->sw, parsed->pw}}) {
+      const auto size = input.sizes[axis];
+      if (size > std::numeric_limits<uint32_t>::max() ||
+          size + 2 * padding < kernel ||
+          output.sizes[axis] !=
+              pooling_output_size(
+                  size, kernel, stride, padding, 1, parsed->ceil_mode) ||
+          (parsed->ceil_mode &&
+           padding + ceil_pad_amount(size, kernel, stride, padding, 1) >
+               std::numeric_limits<uint32_t>::max())) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  Error avg_pool(const Kernel& node) {
+    const auto parsed = parse_avg_pool2d(node);
+    ET_CHECK_OR_RETURN_ERROR(
+        parsed, InvalidProgram, "XNNPACK avg_pool2d schema mismatch");
+    const auto input = parsed->input;
+    const auto output = parsed->output;
+    const auto in = dimensions(input);
+    const auto out = dimensions(output);
+    if (parsed->ph == 0 && parsed->pw == 0 &&
+        static_cast<size_t>(parsed->kh) == in[2] &&
+        static_cast<size_t>(parsed->kw) == in[3]) {
+      const int64_t axes[] = {2, 3};
+      CPU_XNN_CHECK(xnn_define_static_reduce_v2(
+          subgraph_,
+          xnn_reduce_mean,
+          2,
+          axes,
+          input,
+          output,
+          XNN_FLAG_KEEP_DIMS));
+      return Error::Ok;
+    }
+    uint32_t nhwc_in, nhwc_out;
+    auto error = tensor({in[0], in[2], in[3], in[1]}, nhwc_in);
+    if (error != Error::Ok) {
+      return error;
+    }
+    error = tensor({out[0], out[2], out[3], out[1]}, nhwc_out);
+    if (error != Error::Ok) {
+      return error;
+    }
+    const size_t to_nhwc[] = {0, 2, 3, 1};
+    const size_t to_nchw[] = {0, 3, 1, 2};
+    CPU_XNN_CHECK(
+        xnn_define_static_transpose(subgraph_, 4, to_nhwc, input, nhwc_in, 0));
+    int64_t top = parsed->ph, left = parsed->pw;
+    int64_t bottom = top, right = left;
+    if (parsed->ceil_mode) {
+      bottom += ceil_pad_amount(in[2], parsed->kh, parsed->sh, top, 1);
+      right += ceil_pad_amount(in[3], parsed->kw, parsed->sw, left, 1);
+    }
+    if (parsed->count_include_pad && (top != 0 || left != 0)) {
+      // XNNPACK excludes implicit padding from the divisor. Materialize only
+      // declared padding; ceil-mode overhang must still be excluded.
+      const size_t pads[] = {
+          0, static_cast<size_t>(top), static_cast<size_t>(left), 0};
+      uint32_t padded_input;
+      error = tensor(
+          {in[0], in[2] + 2 * pads[1], in[3] + 2 * pads[2], in[1]},
+          padded_input);
+      if (error != Error::Ok) {
+        return error;
+      }
+      CPU_XNN_CHECK(xnn_define_static_constant_pad_v2(
+          subgraph_, 4, pads, pads, 0.0f, nhwc_in, padded_input, 0));
+      nhwc_in = padded_input;
+      bottom -= top;
+      right -= left;
+      top = left = 0;
+    }
+    const auto infinity = std::numeric_limits<float>::infinity();
+    CPU_XNN_CHECK(xnn_define_average_pooling_2d(
+        subgraph_,
+        static_cast<uint32_t>(top),
+        static_cast<uint32_t>(right),
+        static_cast<uint32_t>(bottom),
+        static_cast<uint32_t>(left),
+        static_cast<uint32_t>(parsed->kh),
+        static_cast<uint32_t>(parsed->kw),
+        static_cast<uint32_t>(parsed->sh),
+        static_cast<uint32_t>(parsed->sw),
+        -infinity,
+        infinity,
+        nhwc_in,
+        nhwc_out,
+        0));
+    CPU_XNN_CHECK(xnn_define_static_transpose(
+        subgraph_, 4, to_nchw, nhwc_out, output, 0));
+    return Error::Ok;
+  }
+
   static bool supports_max_pool(const Kernel& node, const ptn::Graph& graph) {
     const auto parsed = parse_max_pool2d(node);
     if (!parsed) {
@@ -1149,6 +1321,33 @@ class XNNExecutable final : public Executable {
     return Error::Ok;
   }
 
+  // ATen's elu is x > 0 ? scale * x : alpha * scale * expm1(input_scale * x),
+  // and XNNPACK's x > 0 ? x : alpha * expm1(x). XNNPACK's x86 kernels
+  // mishandle an infinite, zero or subnormal alpha.
+  static bool supports_elu(const Kernel& node, const ptn::Graph& graph) {
+    float alpha = 0;
+    float scale = 0;
+    float input_scale = 0;
+    return node.inputs.size() == 4 && elementwise_unary(node, graph) &&
+        literal_scalar(arg(node, 1), alpha) && std::isnormal(alpha) &&
+        alpha > 0 && literal_scalar(arg(node, 2), scale) &&
+        literal_scalar(arg(node, 3), input_scale) && scale == 1 &&
+        input_scale == 1;
+  }
+
+  Error elu(const Kernel& node) {
+    xnn_unary_params params{};
+    literal_scalar(arg(node, 1), params.elu.alpha);
+    CPU_XNN_CHECK(xnn_define_unary(
+        subgraph_,
+        xnn_unary_elu,
+        &params,
+        arg(node, 0).as_tensor().id,
+        node.outputs[0].value_id,
+        0));
+    return Error::Ok;
+  }
+
   static bool supports_gelu(const Kernel& node, const ptn::Graph& graph) {
     return fp32(node, graph) && node.inputs.size() == 2 &&
         node.outputs.size() == 1 && arg(node, 1).as_string().value == "none";
@@ -1274,7 +1473,7 @@ class XNNExecutable final : public Executable {
 
 const XNNOp* find_op(std::string_view target) {
   using E = XNNExecutable;
-  static constexpr std::array<XNNOp, 17> kOps{{
+  static constexpr XNNOp kOps[] = {
       {"torch.ops.aten.add.Tensor",
        &E::supports_binary,
        &E::binary<xnn_binary_add>},
@@ -1282,6 +1481,9 @@ const XNNOp* find_op(std::string_view target) {
        &E::supports_as_strided,
        &E::static_reshape},
       {"torch.ops.aten._softmax.default", &E::supports_softmax, &E::softmax},
+      {"torch.ops.aten.avg_pool2d.default",
+       &E::supports_avg_pool,
+       &E::avg_pool},
       {"torch.ops.aten.bmm.default", &E::supports_bmm, &E::bmm},
       {"torch.ops.aten.clamp.default", &E::supports_clamp, &E::clamp},
       {"torch.ops.aten.convolution.default",
@@ -1290,6 +1492,7 @@ const XNNOp* find_op(std::string_view target) {
       {"torch.ops.aten.div.Tensor",
        &E::supports_binary,
        &E::binary<xnn_binary_divide>},
+      {"torch.ops.aten.elu.default", &E::supports_elu, &E::elu},
       {"torch.ops.aten.gelu.default",
        &E::supports_gelu,
        &E::unary<xnn_unary_gelu>},
@@ -1314,12 +1517,12 @@ const XNNOp* find_op(std::string_view target) {
       {"torch.ops.aten.view_copy.default",
        &E::supports_shape_copy,
        &E::static_reshape},
-  }};
-  const auto found =
-      std::find_if(kOps.begin(), kOps.end(), [&](const auto& candidate) {
+  };
+  const auto found = std::find_if(
+      std::begin(kOps), std::end(kOps), [&](const auto& candidate) {
         return candidate.target == target;
       });
-  return found == kOps.end() ? nullptr : &*found;
+  return found == std::end(kOps) ? nullptr : found;
 }
 
 // XNNPACK packs constants in these positions while creating the runtime and

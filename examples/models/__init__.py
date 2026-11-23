@@ -46,6 +46,7 @@ class Model(str, Enum):
     ResNet8 = "resnet8"
     StreamingWakeWord = "streaming_wakeword"
     Sdpa = "sdpa"
+    DepthwiseConv = "depthwise_conv"
     Qwen3 = "qwen3"
     SmolVLM = "smolvlm"
     YOLO26 = "yolo26"
@@ -114,6 +115,7 @@ MODEL_NAME_TO_MODEL = {
         "StreamingWakeWordModel",
     ),
     str(Model.Sdpa): ("toy_model", "SdpaModule"),
+    str(Model.DepthwiseConv): ("toy_model", "DepthwiseConvModule"),
     str(Model.Qwen3): ("qwen3", "Qwen3Model"),
     str(Model.SmolVLM): ("smolvlm", "SmolVLMModel"),
     str(Model.YOLO26): ("yolo26", "YOLO26Model"),
