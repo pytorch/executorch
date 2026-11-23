@@ -11,6 +11,7 @@ import torch
 import torch.nn.functional as F
 from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
 from executorch.backends.cuda.quantize_op_dispatch import nvfp4_dispatch
+from executorch.backends.cuda.tests.nvfp4_test_utils import sweep
 from executorch.backends.cuda.triton.kernels import nvfp4_quantized_gemm as kernels
 from executorch.backends.cuda.triton.kernels.nvfp4_dequant import nvfp4_dequant
 
@@ -79,8 +80,17 @@ def test_dequant_is_bit_exact(n, k, pts_kind, dtype):
 
 
 @CUDA
-@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16])
-@pytest.mark.parametrize("pts_kind", ["unit", "scalar", "row"])
+@pytest.mark.parametrize(
+    "pts_kind,dtype",
+    sweep(
+        [
+            (p, d)
+            for p in ("unit", "scalar", "row")
+            for d in (torch.bfloat16, torch.float16)
+        ],
+        [("unit", torch.bfloat16), ("row", torch.float16)],
+    ),
+)
 def test_dequant_matches_fused_w4a16_weights_bitwise(pts_kind, dtype):
     """The fused W4A16 kernel times the identity is its in-register weight
     (one product per output, accumulated in FP32), bit for bit up to the sign
@@ -135,8 +145,13 @@ def test_dequant_prefill_selection(env, native, rows, mode, fp32, expected):
 
 
 @CUDA
-@pytest.mark.parametrize("impl", ["dequant", "kernel"])
-@pytest.mark.parametrize("row_pts", [False, True])
+@pytest.mark.parametrize(
+    "impl,row_pts",
+    sweep(
+        [(i, r) for i in ("dequant", "kernel") for r in (False, True)],
+        [("dequant", True), ("kernel", False)],
+    ),
+)
 def test_linear_prefill_dispatch(impl, row_pts, monkeypatch):
     monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_IMPL", impl)
     monkeypatch.setenv("ET_CUDA_NVFP4_ACT", "w4a16")

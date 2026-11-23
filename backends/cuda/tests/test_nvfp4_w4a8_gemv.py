@@ -13,6 +13,7 @@ import triton
 import triton.language as tl
 from executorch.backends.cuda.autotune.launch_params import InvalidLaunchParam
 from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
+from executorch.backends.cuda.tests.nvfp4_test_utils import sweep
 from executorch.backends.cuda.triton.kernels import nvfp4_w4a8_gemv as w4a8
 from executorch.backends.cuda.triton.kernels.nvfp4_w4a8_gemv import (
     _act_q8,
@@ -134,9 +135,14 @@ def test_e2m1_to_int8_permute_is_exact():
     assert torch.equal(actual.cpu(), lut2[nibbles])
 
 
-@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16])
-@pytest.mark.parametrize("row_pts", [False, True])
-@pytest.mark.parametrize("split_k", [1, 2, 4, 8])
+@pytest.mark.parametrize(
+    "dtype,row_pts",
+    sweep(
+        [(d, r) for d in (torch.bfloat16, torch.float16) for r in (False, True)],
+        [(torch.bfloat16, False), (torch.float16, True)],
+    ),
+)
+@pytest.mark.parametrize("split_k", sweep([1, 2, 4, 8], [1, 4]))
 def test_w4a8_gemv_matches_integer_reference(dtype, row_pts, split_k):
     # K = 2880 is not a multiple of any BK: the tail masks run.
     n, k = 254, 2880
@@ -146,7 +152,7 @@ def test_w4a8_gemv_matches_integer_reference(dtype, row_pts, split_k):
         if row_pts
         else torch.tensor([0.37], device="cuda")
     )
-    for m in (1, 2, 4):
+    for m in sweep((1, 2, 4), (1, 4)):
         torch.manual_seed(m)
         # Scaled so FP16 outputs of the 448-scale rows stay finite.
         x = (torch.randn(m, k, device="cuda") * 0.0625).to(dtype)
