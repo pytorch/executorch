@@ -27,8 +27,6 @@ from torch.library import wrap_triton
 if TYPE_CHECKING:
     from executorch.backends.cuda.triton.kernels.gemm.linear import LinearLayout
 
-_INT32_MAX = 2**31 - 1
-
 
 @triton.jit
 def _ieee_tile_kernel(
@@ -137,10 +135,6 @@ _KERNEL = triton.autotune(
 )(_ieee_tile_kernel)
 
 
-def _max_offset(size: tuple[int, int], strides: tuple[int, int]) -> int:
-    return sum((n - 1) * s for n, s in zip(size, strides) if n > 0)
-
-
 def run(
     x: torch.Tensor,
     weight: torch.Tensor,
@@ -151,14 +145,6 @@ def run(
 ) -> None:
     """Launches the schedule; ``config`` replaces its autotuned config."""
     m, n, k = layout.m, layout.n, layout.k
-    index_64 = (
-        max(
-            _max_offset((m, k), layout.x),
-            _max_offset((n, k), layout.weight),
-            _max_offset((m, n), layout.out),
-        )
-        > _INT32_MAX
-    )
     kernel, options = _KERNEL, {}
     if config is not None:
         kernel = _KERNEL.fn
@@ -182,6 +168,6 @@ def run(
         *layout.weight,
         *layout.out,
         HAS_BIAS=bias is not None,
-        INDEX_64=index_64,
+        INDEX_64=layout.index_64(),
         **options,
     )

@@ -30,6 +30,7 @@ from executorch.backends.cuda.tests.routing_test_utils import (
 from torch._subclasses.fake_tensor import FakeTensorMode
 
 _PASS_LOGGER = "executorch.backends.cuda.triton.replacement_pass"
+_LAUNCH_LOGGER = "executorch.backends.cuda.autotune.launch_params"
 _N, _K = 32, 64
 
 
@@ -204,7 +205,7 @@ class PlannerTest(_RoutingTest):
                         [c.name for c in plan.legal()], ["inductor", "linear"]
                     )
                     self.assertEqual(plan.static_choice, "inductor")
-                    self.assertFalse(plan.measure)
+                    self.assertTrue(plan.measure)
                     linear = plan.candidate("linear")
                     self.assertIs(linear.kernel, torch.ops.triton.linear.default)
                     x, weight, bias, strides = linear.args
@@ -323,25 +324,132 @@ class PlannerTest(_RoutingTest):
             plan = self.plan(node)
             self.assertEqual(plan.candidates[1].reason, "ROCm")
 
-    def test_without_measurement_the_regular_lowering_runs_every_call(self):
+    def test_without_measurement_the_static_class_decides(self):
+        """A call of a few rows with a weight in the matrix-vector class is
+        replaced; one with more rows keeps the regular lowering."""
+        from executorch.backends.cuda.triton.kernels.gemm import routing
+        from executorch.backends.cuda.triton.kernels.gemm.gemv import MAX_ROWS
         from executorch.backends.cuda.triton.replacement_pass import (
             ReplaceEdgeOpWithTritonOpPass,
         )
 
-        for api, graph_module in backend_graphs(
-            _Linear, lambda: torch.randn(5, _K)
-        ).items():
-            with self.subTest(api), self.assertLogs(_PASS_LOGGER, "INFO") as logs:
-                ReplaceEdgeOpWithTritonOpPass()(graph_module)
-                self.assertEqual(len(_gemm_nodes(graph_module)), 1)
-                self.assertIn(
-                    "Skipping gemm replacement of aten_",
-                    "\n".join(logs.output),
-                )
-                self.assertIn(
-                    "no shape class is routed without measurement",
-                    "\n".join(logs.output),
-                )
+        n, k = routing.GEMV_MIN_N, routing.GEMV_MIN_K
+
+        class Head(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = nn.Linear(k, n)
+
+            def forward(self, x):
+                return self.linear(x)
+
+        for rows, replaced in ((MAX_ROWS, True), (5, False)):
+            graphs = backend_graphs(Head, lambda rows=rows: torch.randn(rows, k))
+            for api, graph_module in graphs.items():
+                with self.subTest(rows=rows, api=api), self.assertLogs(
+                    _PASS_LOGGER, "INFO"
+                ) as logs:
+                    ReplaceEdgeOpWithTritonOpPass()(graph_module)
+                    graph_module.graph.lint()
+                output = "\n".join(logs.output)
+                self.assertEqual(len(_gemm_nodes(graph_module)), 0 if replaced else 1)
+                if replaced:
+                    self.assertIn("(strict FP32 linear)", output)
+                    self.assertNotIn("permute_copy", graph_module.code)
+                else:
+                    self.assertIn("5 rows: only calls of at most 4 rows", output)
+
+
+class StaticClassTest(_RoutingTest):
+    """The matrix-vector class the static choice routes: every corner the
+    benchmark measures is routed and one step past each limit is kept."""
+
+    def plan_for(self, m, n, k):
+        from executorch.exir.dialects._ops import ops as exir_ops
+
+        return self.plan(
+            _graph(exir_ops.edge.aten.linear.default, _fake(m, k), _fake(n, k))
+        )
+
+    def test_the_benchmarked_corners_are_routed(self):
+        from executorch.backends.cuda.triton.kernels.gemm import routing
+
+        for m, n, k in routing.gemv_boundary_calls():
+            with self.subTest(m=m, n=n, k=k):
+                self.assertEqual(self.plan_for(m, n, k).static_choice, "linear")
+
+    def test_one_step_past_each_limit_is_kept(self):
+        from executorch.backends.cuda.triton.kernels.gemm import routing as r
+        from executorch.backends.cuda.triton.kernels.gemm.gemv import MAX_ROWS
+
+        n, k = r.GEMV_MIN_N, r.GEMV_MIN_K
+        cases = {
+            "5 rows": (5, n, k),
+            "N below the floor": (1, n - 1, k),
+            "K below the floor": (1, n, k - r.GEMV_K_ALIGNMENT),
+            "K not aligned": (1, n, k + 1),
+            "N above the measured range": (1, r.GEMV_MAX_N + 1, k),
+            "K above the measured range": (1, n, r.GEMV_MAX_K + 1),
+            "a weight above the measured size": (
+                1,
+                r.GEMV_MAX_WEIGHT // r.GEMV_MAX_K + 1,
+                r.GEMV_MAX_K,
+            ),
+        }
+        for label, (m, n_, k_) in cases.items():
+            with self.subTest(label):
+                plan = self.plan_for(m, n_, k_)
+                self.assertEqual(plan.static_choice, "inductor")
+                self.assertTrue(plan.static_reason)
+        from executorch.exir.dialects._ops import ops as exir_ops
+
+        transposed = _graph(
+            exir_ops.edge.aten.linear.default,
+            _fake(MAX_ROWS, k, strides=(1, MAX_ROWS)),
+            _fake(n, k),
+        )
+        self.assertIn("rows are not contiguous", self.plan(transposed).static_reason)
+        sliced = _graph(
+            exir_ops.edge.aten.linear.default,
+            _fake(MAX_ROWS, k, strides=(k + 8, 1), offset=4),
+            _fake(n, k),
+        )
+        self.assertEqual(self.plan(sliced).static_choice, "linear")
+
+    def test_misaligned_rows_and_bases_are_kept(self):
+        """Vector loads need 16-byte aligned input rows and operand bases."""
+        from executorch.backends.cuda.triton.kernels.gemm import routing as r
+        from executorch.backends.cuda.triton.kernels.gemm.gemv import MAX_ROWS
+        from executorch.exir.dialects._ops import ops as exir_ops
+
+        n, k = r.GEMV_MIN_N, r.GEMV_MIN_K
+        padded = (k + 8, 1)
+        cases = {
+            f"input row stride {k + 1} is not a multiple of 4": (
+                _fake(MAX_ROWS, k, strides=(k + 1, 1)),
+                _fake(n, k),
+            ),
+        }
+        for offset in (1, 2, 3):
+            cases[f"input storage offset {offset} is not a multiple of 4"] = (
+                _fake(MAX_ROWS, k, strides=padded, offset=offset),
+                _fake(n, k),
+            )
+            cases[f"weight storage offset {offset} is not a multiple of 4"] = (
+                _fake(MAX_ROWS, k),
+                _fake(n, k, offset=offset),
+            )
+        for expected, (x, w) in cases.items():
+            with self.subTest(expected):
+                plan = self.plan(_graph(exir_ops.edge.aten.linear.default, x, w))
+                self.assertEqual(plan.static_choice, "inductor")
+                self.assertIn(expected, plan.static_reason)
+        # The row stride of a single row is never used.
+        one_row = _fake(1, k, strides=(k + 1, 1))
+        plan = self.plan(
+            _graph(exir_ops.edge.aten.linear.default, one_row, _fake(n, k))
+        )
+        self.assertEqual(plan.static_choice, "linear")
 
 
 def _cuda(test):
@@ -449,30 +557,146 @@ class MeasurementSpecTest(_RoutingTest):
             measured_routing._spec(node, plan)
 
 
+def _entry(ours, theirs):
+    return {
+        "schema_version": 1,
+        "candidates": {
+            "inductor": {"status": "available"},
+            "linear": {"status": "available"},
+        },
+        "timings": {
+            "fast": {"ours": [ours] * 5, "inductor": [theirs] * 5},
+            "interleaved": None,
+        },
+        "cacheable": True,
+    }
+
+
 @_cuda
-class MeasuredRoutingTest(_RoutingTest):
-    def test_default_measurement_keeps_the_static_choice(self):
-        """With measured routing on (the default), the GEMM family, which does
-        not opt in yet, takes its static choice: no call is measured."""
+class MeasuredChoiceTest(_RoutingTest):
+    """Both lowering APIs through the backend's passes, with given worker
+    results."""
+
+    def run_passes(self, graph_module, ours, theirs):
         from executorch.backends.cuda.cuda_backend import CudaBackend
         from executorch.backends.cuda.triton import measured_routing
         from executorch.exir.backend.compile_spec_schema import CompileSpec
 
-        for api, graph_module in backend_graphs(
-            lambda: _Matmul(bias=True, op="addmm"), lambda: torch.randn(5, _K)
-        ).items():
-            with self.subTest(
-                api
-            ), tempfile.TemporaryDirectory() as directory, mock.patch.object(
-                measured_routing, "_run_worker"
-            ) as worker:
-                specs = [
-                    CudaBackend.generate_method_name_compile_spec("forward"),
-                    CompileSpec("measured_routing_cache_dir", directory.encode()),
-                ]
-                for p in CudaBackend.get_custom_passes(specs):
-                    if not getattr(p, "requires_exported_program", False):
-                        p(graph_module)
-                worker.assert_not_called()
-                self.assertFalse((Path(directory) / "logs").exists())
-                self.assertEqual(len(_gemm_nodes(graph_module)), 1)
+        def worker(backend, compile_specs, config, device, signatures):
+            return None, {key: _entry(ours, theirs) for key in signatures}
+
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(
+            measured_routing, "_run_worker", side_effect=worker
+        ), mock.patch.object(measured_routing, "_capable_devices", set()):
+            specs = [
+                CudaBackend.generate_method_name_compile_spec("forward"),
+                CompileSpec("measured_routing_cache_dir", directory.encode()),
+            ]
+            for p in CudaBackend.get_custom_passes(specs):
+                if not getattr(p, "requires_exported_program", False):
+                    p(graph_module)
+            (log,) = (Path(directory) / "logs").iterdir()
+            return json.loads(log.read_text())
+
+    def test_the_measured_choice_is_applied(self):
+        for ours, theirs, chosen in ((10.0, 30.0, "linear"), (10.0, 9.0, "inductor")):
+            for api, graph_module in backend_graphs(
+                lambda: _Matmul(bias=True, op="addmm"), lambda: torch.randn(5, _K)
+            ).items():
+                with self.subTest(chosen, api=api):
+                    log = self.run_passes(graph_module, ours, theirs)
+                    self.assertEqual(log["choices"], {chosen: 1})
+                    targets = [n.target for n in graph_module.graph.nodes]
+                    self.assertEqual(
+                        torch.ops.triton.linear.default in targets, chosen == "linear"
+                    )
+                    self.assertEqual(
+                        len(_gemm_nodes(graph_module)), chosen == "inductor"
+                    )
+                    graph_module.graph.lint()
+
+
+@_cuda
+class RealMeasurementTest(unittest.TestCase):
+    """Real measurements in the worker process, and the exported program."""
+
+    def setUp(self):
+        from executorch.export.utils import is_fbcode
+
+        if is_fbcode():
+            self.skipTest(
+                "this build does not export torch's C shims, so the worker "
+                "cannot load modules compiled with Inductor's C++ wrapper"
+            )
+
+    def test_linears_are_measured_and_the_program_runs(self):
+        """A tile-sized linear and a one-row matmul are measured; the one-row
+        call, which the measurement routes, gets the schedule the worker
+        picked from the export's own timing too."""
+        from executorch.backends.cuda.cuda_backend import CudaBackend
+        from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+        from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
+        from executorch.exir.backend.compile_spec_schema import CompileSpec
+        from executorch.runtime import Runtime
+
+        class Block(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.up = nn.Linear(_K, 96)
+                self.head = nn.Parameter(torch.randn(1024, 1024) / 32)
+
+            def forward(self, x, v):
+                return torch.relu(self.up(x)), v @ self.head.t()
+
+        model = Block().cuda().eval()
+        inputs = (
+            torch.randn(3, 7, _K, device="cuda"),
+            torch.randn(1, 1024, device="cuda"),
+        )
+        with torch.no_grad():
+            program = torch.export.export(model, inputs, strict=True)
+            expected = model(*inputs)
+        with tempfile.TemporaryDirectory() as directory:
+            specs = [
+                CudaBackend.generate_method_name_compile_spec("forward"),
+                CompileSpec("measured_routing_cache_dir", directory.encode()),
+            ]
+            with self.assertLogs(_LAUNCH_LOGGER, "INFO") as launches:
+                edge = to_edge_transform_and_lower(
+                    program,
+                    partitioner=[CudaPartitioner(specs)],
+                    compile_config=EdgeCompileConfig(_check_ir_validity=False),
+                )
+            (log,) = (Path(directory) / "logs").iterdir()
+            nodes = {
+                n["spec"]["original"]: n for n in json.loads(log.read_text())["nodes"]
+            }
+            self.assertEqual(
+                sorted(nodes), ["aten::linear.default", "aten::matmul.default"]
+            )
+            for node in nodes.values():
+                statuses = {c["name"]: c for c in node["candidates"]}
+                for name in ("inductor", "linear"):
+                    self.assertEqual(statuses[name]["status"], "available", statuses)
+                    self.assertGreater(statuses[name]["fast_us"]["median_us"], 0)
+                self.assertIn(node["outcome"], ("faster", "slower", "inconclusive"))
+            vector = nodes["aten::matmul.default"]
+            self.assertEqual(vector["choice"], "linear")
+            (pick,) = {c["name"]: c for c in vector["candidates"]}["linear"]["picks"]
+            self.assertEqual(pick["param"], "schedule")
+            # Only the one-row call times the matrix-vector schedule.
+            (final,) = [
+                m
+                for m in launches.output
+                if "linear.launch: schedule=" in m and "gemv:" in m
+            ]
+            self.assertIn(f"schedule={pick['choice']} ", final)
+            et_program = edge.to_executorch()
+            path = Path(directory) / "model.pte"
+            path.write_bytes(et_program.buffer)
+            et_program.write_tensor_data_to_file(directory)
+            data = next(Path(directory).glob("*.ptd"))
+            method = Runtime.get().load_program(str(path), data_path=str(data))
+            outputs = method.load_method("forward").execute([t.cpu() for t in inputs])
+        for out, want in zip(outputs, expected, strict=True):
+            torch.testing.assert_close(out, want.cpu(), atol=1e-4, rtol=1e-4)

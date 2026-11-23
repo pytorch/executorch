@@ -15,6 +15,7 @@ absolute error must stay within ``max(1e-6 * scale, 3 * cuBLAS's)``.
 """
 
 import glob
+import itertools
 import os
 import tempfile
 import unittest
@@ -36,14 +37,20 @@ class _GemmTest(unittest.TestCase):
 
         torch.manual_seed(0)
 
-    def linear(self, x, w, b=None, strides=None, config=None):
+    def linear(self, x, w, b=None, strides=None, config=None, schedule="ieee_tile"):
+        from executorch.backends.cuda.triton.kernels.gemm import gemv, tile
         from executorch.backends.cuda.triton.kernels.gemm.linear import (
             force_linear_candidate,
-            tile,
         )
 
-        with force_linear_candidate("ieee_tile", config or tile.CONFIGS[0]):
+        configs = {"ieee_tile": tile.CONFIGS, "gemv": gemv.CONFIGS}[schedule]
+        with force_linear_candidate(schedule, config or configs[0]):
             return torch.ops.triton.linear(x, w, b, strides)
+
+    def schedules(self, x):
+        """The schedules that run ``x``'s rows."""
+        rows = x.numel() // x.shape[-1]
+        return ("ieee_tile", "gemv") if rows <= 4 else ("ieee_tile",)
 
     def check(self, out, x, w, b=None):
         """``out`` within the accuracy gate."""
@@ -74,10 +81,12 @@ class LayoutTest(_GemmTest):
             "transposed output": (torch.randn(6, 40, device="cuda"), [1, 6]),
             "permuted output": (torch.randn(2, 3, 40, device="cuda"), [3, 1, 6]),
         }
+        cases["a single row"] = (torch.randn(1, 40, device="cuda"), None)
+        cases["transposed rows"] = (torch.randn(40, 3, device="cuda").t(), [1, 3])
         for label, (x, strides) in cases.items():
-            for bias in (None, b):
-                with self.subTest(label, bias=bias is not None):
-                    out = self.linear(x, w, bias, strides)
+            for bias, schedule in itertools.product((None, b), self.schedules(x)):
+                with self.subTest(label, bias=bias is not None, schedule=schedule):
+                    out = self.linear(x, w, bias, strides, schedule=schedule)
                     self.assertEqual(tuple(out.shape), (*x.shape[:-1], 48))
                     if strides is not None:
                         self.assertEqual(list(out.stride()), strides)
@@ -91,6 +100,31 @@ class LayoutTest(_GemmTest):
         x = torch.randn(5, 40, device="cuda")
         w = torch.randn(40, 24, device="cuda").t()
         self.check(self.linear(x, w), x, w)
+
+    def test_gemv_loads_vectors_only_from_aligned_rows_and_bases(self):
+        from executorch.backends.cuda.triton.kernels.gemm import gemv
+        from executorch.backends.cuda.triton.kernels.gemm.linear import linear_layout
+
+        k, n = 256, 96
+        w = torch.randn(n, k, device="cuda")
+        b = torch.randn(n, device="cuda")
+        storage = torch.randn(4 * (k + 8) + 8, device="cuda")
+        weights = torch.randn(n * k + 3, device="cuda")
+
+        def rows(offset, stride):
+            return storage[offset : offset + 4 * stride].view(4, stride)[:, :k]
+
+        cases = {"aligned rows at offset 4": (rows(4, k + 8), w, 4)}
+        cases["an odd padded row stride"] = (rows(0, k + 1), w, 1)
+        for offset in (1, 2, 3):
+            cases[f"input offset {offset}"] = (rows(offset, k + 8), w, 1)
+            weight = weights[offset : offset + n * k].view(n, k)
+            cases[f"weight offset {offset}"] = (rows(0, k), weight, 1)
+        for label, (x, weight, vec) in cases.items():
+            with self.subTest(label):
+                layout = linear_layout(x, weight, (n, 1))
+                self.assertEqual(gemv.vector_width(x, weight, layout), vec)
+                self.check(self.linear(x, weight, b, schedule="gemv"), x, weight, b)
 
     def test_layouts_one_step_outside_are_refused(self):
         from executorch.backends.cuda.triton.kernels.gemm.linear import layout_reason
@@ -133,6 +167,43 @@ class AccuracyTest(_GemmTest):
                 with self.subTest(m=m, n=n, k=k, config=str(config)):
                     self.check(self.linear(x, w, b, config=config), x, w, b)
 
+    def test_every_gemv_config(self):
+        from executorch.backends.cuda.triton.kernels.gemm import gemv
+
+        for m, n, k in ((1, 256, 2048), (2, 300, 77), (3, 129, 1000), (4, 1024, 4096)):
+            x = torch.randn(m, k, device="cuda")
+            w = torch.randn(n, k, device="cuda") / k**0.5
+            b = torch.randn(n, device="cuda")
+            for config in gemv.CONFIGS:
+                with self.subTest(m=m, n=n, k=k, config=str(config)):
+                    out = self.linear(x, w, b, config=config, schedule="gemv")
+                    self.check(out, x, w, b)
+
+    def test_gemv_streams_at_most_four_rows(self):
+        x = torch.randn(5, 64, device="cuda")
+        w = torch.randn(32, 64, device="cuda")
+        with self.assertRaisesRegex(ValueError, "at most 4 rows, not 5"):
+            self.linear(x, w, schedule="gemv")
+
+    def test_timed_schedule_choice(self):
+        """The compile times both schedules for a few rows and only the tile
+        for more."""
+        from executorch.backends.cuda.autotune.launch_params import (
+            autotune_launch_params,
+            clear_launch_param_cache,
+        )
+
+        w = torch.randn(512, 1024, device="cuda")
+        for rows, legal in ((1, {"ieee_tile", "gemv"}), (5, {"ieee_tile"})):
+            clear_launch_param_cache()
+            x = torch.randn(rows, 1024, device="cuda")
+            with self.subTest(rows=rows), autotune_launch_params() as stats:
+                out = torch.ops.triton.linear(x, w, None)
+                (pick,) = stats.picks
+                self.assertEqual(set(pick.times_us), legal)
+                self.assertIn(pick.choice, legal)
+                self.check(out, x, w)
+
     def test_autotuned_long_reductions(self):
         for m, n, k in ((1, 512, 16384), (4, 256, 8192), (300, 128, 4096)):
             x = torch.randn(m, k, device="cuda")
@@ -162,16 +233,25 @@ class AccuracyTest(_GemmTest):
         w = torch.randn(32, 64, device="cuda")
         x[0, 3] = float("nan")
         x[1, 5] = float("inf")
-        out = self.linear(x, w)
         reference = F.linear(x, w)
-        self.assertTrue(torch.equal(out.isnan(), reference.isnan()))
-        self.assertTrue(torch.equal(out.isinf(), reference.isinf()))
+        for schedule in self.schedules(x):
+            with self.subTest(schedule):
+                out = self.linear(x, w, schedule=schedule)
+                self.assertTrue(torch.equal(out.isnan(), reference.isnan()))
+                self.assertTrue(torch.equal(out.isinf(), reference.isinf()))
 
     def test_repeated_launches_are_bitwise_identical(self):
-        x = torch.randn(33, 1000, device="cuda")
         w = torch.randn(70, 1000, device="cuda")
-        first = self.linear(x, w)
-        self.assertTrue(torch.equal(first, self.linear(x, w)))
+        for x in (
+            torch.randn(33, 1000, device="cuda"),
+            torch.randn(3, 1000, device="cuda"),
+        ):
+            for schedule in self.schedules(x):
+                with self.subTest(rows=x.shape[0], schedule=schedule):
+                    first = self.linear(x, w, schedule=schedule)
+                    self.assertTrue(
+                        torch.equal(first, self.linear(x, w, schedule=schedule))
+                    )
 
     def test_64_bit_indexing(self):
         k, n = 64, 32
@@ -181,8 +261,9 @@ class AccuracyTest(_GemmTest):
         # Two rows 2^31 elements apart: offsets past the int32 range.
         x = storage.as_strided((2, k), (2**31, 1))
         w = torch.randn(n, k, device="cuda")
-        out = self.linear(x, w)
-        self.check(out, x.contiguous(), w)
+        for schedule in self.schedules(x):
+            with self.subTest(schedule):
+                self.check(self.linear(x, w, schedule=schedule), x.contiguous(), w)
         del storage
 
 
@@ -199,7 +280,8 @@ class _Linears(nn.Module):
 class LoweringTest(_GemmTest):
     def test_aoti_export_runs_the_routed_linears(self):
         """With the static choice taking every call, both lowering APIs route
-        both linears, and the program matches eager (outside fbcode)."""
+        both linears, of many rows (the tile) and of one (the matrix-vector
+        schedule), and the program matches eager (outside fbcode)."""
         from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
         from executorch.backends.cuda.tests.routing_test_utils import (
             static_routing_compile_specs,
@@ -213,14 +295,16 @@ class LoweringTest(_GemmTest):
         from executorch.export.utils import is_fbcode
 
         model = _Linears().cuda().eval()
-        x = torch.randn(2, 5, 64, device="cuda")
-        with torch.no_grad():
-            program = torch.export.export(model, (x,), strict=True)
-            expected = model(x)
         config = EdgeCompileConfig(_check_ir_validity=False)
-        for api in ("to_edge_transform_and_lower", "to_edge_to_backend"):
+        for api, shape in itertools.product(
+            ("to_edge_transform_and_lower", "to_edge_to_backend"), ((2, 5, 64), (1, 64))
+        ):
+            x = torch.randn(*shape, device="cuda")
+            with torch.no_grad():
+                program = torch.export.export(model, (x,), strict=True)
+                expected = model(x)
             partitioner = CudaPartitioner(static_routing_compile_specs())
-            with self.subTest(api), mock.patch.object(
+            with self.subTest(api, shape=shape), mock.patch.object(
                 routing, "worth_routing", return_value=None
             ), self.assertLogs(_PASS_LOGGER, "INFO") as logs:
                 if api == "to_edge_to_backend":
