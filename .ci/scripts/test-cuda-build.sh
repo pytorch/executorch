@@ -7,7 +7,7 @@
 
 set -exu
 
-CUDA_VERSION=${1:-"13.0"}
+CUDA_VERSION=${1:-"13.2"}
 
 echo "=== Testing ExecuTorch CUDA ${CUDA_VERSION} Build ==="
 

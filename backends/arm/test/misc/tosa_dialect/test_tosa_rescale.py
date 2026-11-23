@@ -7,11 +7,11 @@ import executorch.backends.arm.tosa.dialect  # noqa: F401
 import pytest
 import torch
 
+from executorch.backends.arm._passes.tosa_lowering_utils import rescale_tensor
 from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
     TosaSpecification,
 )
-from executorch.exir.dialects._ops import ops as exir_ops
 from torch._subclasses.fake_tensor import FakeTensor, FakeTensorMode
 
 
@@ -31,7 +31,7 @@ def test_rescale_real_impl_with_and_without_kwargs(kwargs):
     with TosaLoweringContext(
         TosaSpecification.create_from_string("TOSA-1.0+INT")
     ), FakeTensorMode() as mode:
-        fake_output = exir_ops.backend.tosa.RESCALE.default(
+        fake_output = rescale_tensor(
             mode.from_tensor(input_tensor),
             torch.int32,
             [1.0],
@@ -45,7 +45,7 @@ def test_rescale_real_impl_with_and_without_kwargs(kwargs):
     assert tuple(fake_output.shape) == tuple(input_tensor.shape)
 
     with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+INT")):
-        output = exir_ops.backend.tosa.RESCALE.default(
+        output = rescale_tensor(
             input_tensor,
             torch.int32,
             [1.0],

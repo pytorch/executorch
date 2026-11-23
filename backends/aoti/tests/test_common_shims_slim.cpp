@@ -707,6 +707,25 @@ TEST_F(CommonShimsSlimTest, DTypeConstants) {
   EXPECT_EQ(aoti_torch_dtype_bool(), 11); // ScalarType::Bool
 }
 
+TEST_F(CommonShimsSlimTest, DTypeElementSize) {
+  EXPECT_EQ(aoti_torch_dtype_element_size(aoti_torch_dtype_float32()), 4);
+  EXPECT_EQ(aoti_torch_dtype_element_size(aoti_torch_dtype_float64()), 8);
+  EXPECT_EQ(aoti_torch_dtype_element_size(aoti_torch_dtype_bfloat16()), 2);
+  EXPECT_EQ(aoti_torch_dtype_element_size(aoti_torch_dtype_float16()), 2);
+  EXPECT_EQ(aoti_torch_dtype_element_size(aoti_torch_dtype_int64()), 8);
+  EXPECT_EQ(aoti_torch_dtype_element_size(aoti_torch_dtype_int32()), 4);
+  EXPECT_EQ(aoti_torch_dtype_element_size(aoti_torch_dtype_int16()), 2);
+  EXPECT_EQ(aoti_torch_dtype_element_size(aoti_torch_dtype_int8()), 1);
+  EXPECT_EQ(aoti_torch_dtype_element_size(aoti_torch_dtype_uint8()), 1);
+  EXPECT_EQ(aoti_torch_dtype_element_size(aoti_torch_dtype_bool()), 1);
+  EXPECT_EQ(aoti_torch_dtype_element_size(9), 0); // ComplexFloat
+  // Out of int8_t range: 262 and -250 would truncate to 6 (Float) without a
+  // range check.
+  EXPECT_EQ(aoti_torch_dtype_element_size(262), 0);
+  EXPECT_EQ(aoti_torch_dtype_element_size(-250), 0);
+  EXPECT_EQ(aoti_torch_dtype_element_size(-1), 0); // Undefined
+}
+
 // ============================================================================
 // Device Type Constants Tests
 // ============================================================================
