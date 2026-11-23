@@ -12,6 +12,7 @@ on:
       - examples/**/*
       - extension/cuda/**/*
       - install_requirements.py
+      - torch_pin.py
       - install_utils.py
       - pyproject.toml
       - setup.py
@@ -79,6 +80,20 @@ jobs:
             --matrix "${MATRIX_BLOB}" --limit-pr-builds "${LIMIT_PR}")"
           echo "${MATRIX_BLOB}"
           echo "matrix=${MATRIX_BLOB}" >> "${GITHUB_OUTPUT}"
+
+  save-build-matrix:
+    needs: filter-matrix
+    runs-on: ubuntu-latest
+    steps:
+      - name: Save the build matrix
+        env:
+          MATRIX: ${{ needs.filter-matrix.outputs.matrix }}
+        run: printf '%s' "${MATRIX}" > build-matrix.json
+      - name: Upload the build matrix
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: build-matrix
+          path: build-matrix.json
 
   build:
     needs: filter-matrix
