@@ -34,6 +34,7 @@ from typing import Optional, TYPE_CHECKING
 import torch
 import triton
 import triton.language as tl
+from executorch.backends.cuda.triton.kernels.gemm.gemv import vector_width
 from torch.library import wrap_triton
 
 if TYPE_CHECKING:
@@ -63,12 +64,20 @@ def _tile_kernel(
     PARTIAL: tl.constexpr,
     HAS_BIAS: tl.constexpr,
     INDEX_64: tl.constexpr,
+    VEC: tl.constexpr,
     BLOCK_M: tl.constexpr,
     BLOCK_N: tl.constexpr,
     BLOCK_K: tl.constexpr,
     GROUP_M: tl.constexpr,
     CHUNKS: tl.constexpr,
 ):
+    # The row strides come divided by VEC, as in the matrix-vector schedule, so
+    # that rows of any length that is a multiple of VEC load as vectors.
+    if INDEX_64:
+        SXM = SXM.to(tl.int64)
+        SWN = SWN.to(tl.int64)
+    SXM = SXM * VEC
+    SWN = SWN * VEC
     pid = tl.program_id(0)
     pid_k = tl.program_id(1)
     grid_m = tl.cdiv(M, BLOCK_M)
@@ -193,6 +202,7 @@ _KERNEL = triton.autotune(
         "SPLIT",
         "PRECISION",
         "HAS_BIAS",
+        "VEC",
     ],
     prune_configs_by={"early_config_prune": _prune},
 )(_tile_kernel)
@@ -222,6 +232,8 @@ def run(
             "num_stages": config.num_stages,
         }
     partial = split > 1
+    vec = vector_width(x, weight, layout)
+    (sxm, sxk), (swn, swk) = layout.x, layout.weight
     workspace = (
         torch.empty((split, m, n), dtype=torch.float32, device=x.device)
         if partial
@@ -240,14 +252,17 @@ def run(
         m,
         n,
         k,
-        *layout.x,
-        *layout.weight,
+        sxm // vec,
+        sxk,
+        swn // vec,
+        swk,
         *layout.out,
         split,
         PRECISION=precision,
         PARTIAL=partial,
         HAS_BIAS=bias is not None,
         INDEX_64=layout.index_64(),
+        VEC=vec,
         **options,
     )
     if partial:
