@@ -858,6 +858,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/backends/cuda:quantize_op_dispatch",
             "//executorch/backends/cuda:triton_kernels",
             "fbsource//third-party/pypi/pytest:pytest",
+            ":nvfp4_test_utils",
         ],
         keep_gpu_sections = True,
         remote_execution = re_test_utils.remote_execution(

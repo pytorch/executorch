@@ -24,6 +24,7 @@ import triton
 import triton.language as tl
 from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
 from executorch.backends.cuda.quantize_op_dispatch import nvfp4_dispatch
+from executorch.backends.cuda.tests.nvfp4_test_utils import EXHAUSTIVE, sweep
 from executorch.backends.cuda.triton.kernels import (
     nvfp4_gated_gemm as GATED,
     nvfp4_mxfp8 as MX,
@@ -579,7 +580,7 @@ class TestNativeCompiles(unittest.TestCase):
             "C": "*bf16",
             "M": "i32",
         }
-        for config in MX._CONFIGS:
+        for config in sweep(MX._CONFIGS, [MX._CONFIGS[0], MX._CONFIGS[-1]]):
             with self.subTest(config=str(config)):
                 compile_for_sm120(
                     MX._mxfp8_gemm,
@@ -726,11 +727,13 @@ class TestEmulationKernels(CleanEnv):
         self.assertTrue(bool(y[0].isfinite().all()))
 
     def test_weight_conversion_bit_identical(self):
-        for name, w in (
+        weights = [
             ("pts=1", make_weight(256, 512, pts=1.0, seed=3)),
-            ("attention-shaped", make_weight(6656, 4096, seed=1)),
-            ("all scale bytes", stress_weight(4096, 4096)),
-        ):
+            ("all scale bytes", stress_weight(*sweep((4096, 4096), (512, 1024)))),
+        ]
+        if EXHAUSTIVE:
+            weights.append(("attention-shaped", make_weight(6656, 4096, seed=1)))
+        for name, w in weights:
             out = EMU.nvfp4_dequant_mxfp8(w.qdata, w.scale).float()
             self.assertEqual(
                 int((out != weight_mxfp8_mirror(w.qdata, w.scale)).sum()), 0, name
