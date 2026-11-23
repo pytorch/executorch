@@ -28,7 +28,7 @@ CUDA = pytest.mark.skipif(
 )
 
 
-from executorch.backends.cuda.tests.nvfp4_test_utils import dynamic_rows, shards
+from executorch.backends.cuda.tests.nvfp4_test_utils import dynamic_rows, shards, sweep
 
 
 @pytest.fixture(autouse=True)
@@ -526,7 +526,7 @@ def test_embedding_bf16_scale_rounding_boundary(row_scales):
 
 
 @CUDA
-@pytest.mark.parametrize("split", [1, 2, 4, 8, 16, 32])
+@pytest.mark.parametrize("split", sweep([1, 2, 4, 8, 16, 32], [1, 8]))
 @pytest.mark.parametrize("m", [1, 4])
 def test_row_scale_gemv(m, split):
     w = CudaNVFP4Tensor.fuse_along_output(shards(2176, "cuda"))
@@ -537,7 +537,7 @@ def test_row_scale_gemv(m, split):
 
 
 @CUDA
-@pytest.mark.parametrize("split", [1, 2, 4, 8, 16, 32])
+@pytest.mark.parametrize("split", sweep([1, 2, 4, 8, 16, 32], [1, 8]))
 @pytest.mark.parametrize("mode", ["w4a4", "w4a16"])
 def test_row_scale_gemm(mode, split):
     if mode == "w4a4" and not _has_native_fp4():
