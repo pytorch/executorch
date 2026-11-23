@@ -842,6 +842,7 @@ TEST_F(MethodTest, ExecuteFailsWhenInProgress) {
 
   err = method->execute();
   EXPECT_EQ(err, Error::InvalidState);
+  EXPECT_TRUE(method->in_progress());
 }
 
 TEST_F(MethodTest, ExecuteSucceedsAfterReset) {

@@ -195,7 +195,8 @@ class MemoryAllocator {
   }
 
   // Resets the current pointer to the base address. It does nothing to
-  // the contents.
+  // the contents. Overrides must not throw, because Method calls this from a
+  // destructor after every instruction.
   virtual void reset() {
     cur_ = begin_;
   }
