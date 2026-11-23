@@ -10,6 +10,7 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
 )
 from executorch.frontends.fused_quant.quantizer.quantizer import (
+    ConvolutionQuantizer,
     FusedQuantQuantizer,
     get_core_aten_quantizers,
     OpQuantizer,
@@ -46,40 +47,53 @@ class _LinearQuantizer(OpQuantizer):
         if get_arg(node, "weight", torch.fx.Node).op != "get_attr":
             return
         super().annotate_node(node)
-        bias = get_arg(node, "bias")
+        _annotate_bias(node)
+
+
+class _ConvolutionQuantizer(ConvolutionQuantizer):
+    def annotate_node(self, node: torch.fx.Node) -> None:
+        super().annotate_node(node)
         if (
-            not isinstance(bias, torch.fx.Node)
-            or bias.op != "get_attr"
-            or bias.meta["val"].dim() != 1
+            not get_arg(node, "transposed")
+            and get_arg(node, "groups") == 1
+            and get_arg(node, "input", torch.fx.Node).meta["val"].dim() == 4
         ):
-            return
-        if len(bias.users) > 1:
-            # PT2E's implicit sharing ignores DerivedQuantizationSpec inputs.
-            with node.graph.inserting_before(node):
-                bias_copy = node.graph.call_function(
-                    torch.ops.aten.clone.default, (bias,)
-                )
-            bias_copy.meta = bias.meta.copy()
-            bias_copy.meta.pop(Q_ANNOTATION_KEY, None)
-            set_arg(node, "bias", bias_copy)
-            bias = bias_copy
-        annotate_input_qspec_map(
-            node,
-            bias,
-            DerivedQuantizationSpec(
-                derived_from=[
-                    (get_arg(node, "input"), node),
-                    (get_arg(node, "weight"), node),
-                ],
-                derive_qparams_fn=_derive_bias_qparams,
-                dtype=torch.int32,
-                quant_min=-(1 << 31),
-                # INT32_MAX rounds to 2**31 in PT2E's float32 clamp before the cast.
-                quant_max=(1 << 31) - 128,
-                qscheme=torch.per_channel_symmetric,
-                ch_axis=0,
-            ),
-        )
+            _annotate_bias(node)
+
+
+def _annotate_bias(node: torch.fx.Node) -> None:
+    bias = get_arg(node, "bias")
+    if (
+        not isinstance(bias, torch.fx.Node)
+        or bias.op != "get_attr"
+        or bias.meta["val"].dim() != 1
+    ):
+        return
+    if len(bias.users) > 1:
+        # PT2E's implicit sharing ignores DerivedQuantizationSpec inputs.
+        with node.graph.inserting_before(node):
+            bias_copy = node.graph.call_function(torch.ops.aten.clone.default, (bias,))
+        bias_copy.meta = bias.meta.copy()
+        bias_copy.meta.pop(Q_ANNOTATION_KEY, None)
+        set_arg(node, "bias", bias_copy)
+        bias = bias_copy
+    annotate_input_qspec_map(
+        node,
+        bias,
+        DerivedQuantizationSpec(
+            derived_from=[
+                (get_arg(node, "input"), node),
+                (get_arg(node, "weight"), node),
+            ],
+            derive_qparams_fn=_derive_bias_qparams,
+            dtype=torch.int32,
+            quant_min=-(1 << 31),
+            # INT32_MAX rounds to 2**31 in PT2E's float32 clamp before the cast.
+            quant_max=(1 << 31) - 128,
+            qscheme=torch.per_channel_symmetric,
+            ch_axis=0,
+        ),
+    )
 
 
 class _AvgPoolQuantizer(OpQuantizer):
@@ -101,6 +115,9 @@ class _EspFusedQuantizer(FusedQuantQuantizer):
         super().__init__(
             [
                 _LinearQuantizer(weighted_config),
+                _ConvolutionQuantizer(
+                    weighted_config=weighted_config, grouped_transposed_config=config
+                ),
                 _AvgPoolQuantizer(
                     torch.ops.aten.avg_pool2d.default,
                     torch.ops.fused_quant.avg_pool2d.default,
