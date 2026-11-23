@@ -21,3 +21,9 @@
   kernels:
     - arg_meta: null
       kernel_name: espressif::quantized_add_int8_out
+
+- func: esp_nn::quantized_max_pool2d_int8.out(Tensor input, int[2] kernel_size, int[2] stride, int[2] padding, *, Tensor(a!) out) -> Tensor(a!)
+  variants: function
+  kernels:
+    - arg_meta: null
+      kernel_name: espressif::quantized_max_pool2d_int8_out

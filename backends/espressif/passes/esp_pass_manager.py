@@ -6,9 +6,15 @@
 
 import copy
 
+from executorch.backends.transforms.fuse_cascaded_transpose_or_permute_ops import (
+    FuseCascadedTransposeOrPermuteOps,
+)
 from executorch.backends.transforms.fused_quant.decompose_fused_quant import (
     AssertNoFusedQuantOps,
     DecomposeFusedQuant,
+)
+from executorch.backends.transforms.fused_quant.optimization_passes.constant_fold import (
+    ConstantFold,
 )
 from executorch.backends.transforms.fused_quant.optimization_passes.to_channels_first import (
     ToChannelsFirst,
@@ -41,6 +47,8 @@ class EspPassManager(ExportedProgramPassManager):
                 ExportPass(),
                 LowerToEsp(),
                 ToChannelsFirst(),
+                FuseCascadedTransposeOrPermuteOps(),
+                ConstantFold(),
                 DecomposeFusedQuant(),
                 ScalarToTensorPass(),
                 OpReplacePass(),
