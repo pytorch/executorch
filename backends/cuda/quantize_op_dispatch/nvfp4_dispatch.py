@@ -19,10 +19,12 @@ is compiled into the program:
   dtype; ``fp32`` returns FP32 from prefill linears (M not statically <= 4).
 * ``ET_CUDA_NVFP4_PREFILL_IMPL``: for M not statically <= 64, ``auto``
   (default) uses the fused kernels with native FP4 (SM120+) and whole-weight
-  dequant + matmul otherwise; ``kernel`` / ``dequant`` force one for any M
-  not statically <= 4. ``w4a4`` and the FP32 prefill output policy always take
-  the fused kernels. The choice is made per exported program from M's upper
-  bound, and ``auto`` assumes a dynamic-M method is exported with its largest
+  dequant + matmul otherwise (including ROCm); ``kernel`` / ``dequant`` force
+  one for any M not statically <= 4. ``w4a4`` and the FP32 prefill output
+  policy always take the fused kernels. The choice is made per linear at
+  export, from that linear's M bound (so one method can mix both: a dynamic
+  method's LM head over at most 64 selected rows stays fused), and ``auto``
+  assumes a dynamic-M method is exported with its largest
   M as the example, as the Muse Glimmer and Gemma 4 prefill methods are: the
   fused kernels are tuned at the example M, so short prompts run a large-M
   tile (dequant + matmul is faster there on A100 and about 13% slower per
@@ -53,7 +55,8 @@ Other prefill of ``mxfp8`` weights with K % 32 == 0, unless
 MXFP8 x MXFP8 (``nvfp4_mxfp8``) with native FP4 conversion; without it, BF16
 activations (higher precision and faster) unless
 ``ET_CUDA_NVFP4_MXFP8_EMULATE=1`` selects the MXFP8-grid emulation, which
-matches the native kernel up to accumulation order and output rounding. The
+matches the native kernel up to accumulation order and output rounding (it
+dequantizes, so ``ET_CUDA_NVFP4_PREFILL_IMPL=kernel`` turns it off). The
 rest follows ``ET_CUDA_NVFP4_PREFILL_IMPL`` with the W4A16 kernel, as for
 ``fp4`` weights under ``w4a16``.
 """
@@ -285,8 +288,9 @@ def _dequant_prefill(flat, mode, output_dtype, impl):
 
     auto (default): only without native FP4 (SM120+) and for M not statically
     <= ``NVFP4_FUSED_PREFILL_MAX_ROWS``, where the dense matmul beats in-register
-    dequant; smaller M keep the fused kernels, which read the packed weight
-    once. The choice is made once per exported program, at M's upper bound.
+    dequant for dynamic M (measured; static M above it was not); smaller M
+    keep the fused kernels, which read the packed weight once. Decided per
+    linear at export, from its M's upper bound.
     """
     rows = flat.shape[0]
     if (
@@ -513,7 +517,8 @@ def _bf16_act_linear(flat, w, mode, impl, use_small_m):
             from executorch.backends.cuda.triton.kernels.nvfp4_mxfp8 import nvfp4_mxfp8
 
             return nvfp4_mxfp8(flat, w.qdata, w.scale, w.per_tensor_scale)
-        if emulate == "1":
+        # The emulation dequantizes, which kernel forbids.
+        if emulate == "1" and impl != "kernel":
             return _mxfp8_emulated_linear(flat, w)
     if _dequant_prefill(flat, mode, None, impl):
         return _dequant_linear(flat, w)

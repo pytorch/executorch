@@ -22,9 +22,10 @@ accumulation, and the per-tensor scale is applied in the epilogue.
 The conversion is exact for products with at most 4 significant bits, unless
 the pair's scales differ by about 2**10 or more and the smaller block's
 products fall into the E4M3 subnormal range (step 2**-9). The others are
-common: any code of magnitude 1.5, 3 or 6 times a K16 scale whose
-mantissa is 1, 3, 5, 6 or 7 needs 5-6 bits and moves by at most half an E4M3
-ulp (e.g. 1.5 x 1.125 = 1.6875 becomes 1.75).
+common: any code of magnitude 1.5, 3 or 6 times a normal K16 scale byte whose
+mantissa is 1, 3, 5, 6 or 7 (a subnormal byte: mantissa 7 only) needs 5-6
+bits and moves by at most half an E4M3 ulp (e.g. 1.5 x 1.125 = 1.6875 becomes
+1.75).
 
 Packed weights: low nibble first; scales N-major (N, K/16) E4M3.
 """

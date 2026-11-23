@@ -39,12 +39,14 @@ from torch.library import triton_op, wrap_triton
 
 @triton.jit
 def _e4m3_value(v, ARCH: tl.constexpr):
-    """RNE(v) on the E4M3 grid, satfinite (+-448), as FP32."""
+    """RNE(v) on the E4M3 grid, satfinite (+-448), as FP32; NaN stays NaN, as
+    in the native kernel's ``.to(tl.float8e4nv)``."""
     mag = _e4m3_to_f32(
         _e4m3_encode_nonneg(tl.minimum(tl.abs(v), 448.0), ARCH), ARCH >= 89
     )
     sign = v.to(tl.uint32, bitcast=True) & 0x80000000
-    return (mag.to(tl.uint32, bitcast=True) | sign).to(tl.float32, bitcast=True)
+    value = (mag.to(tl.uint32, bitcast=True) | sign).to(tl.float32, bitcast=True)
+    return tl.where(v == v, value, v)
 
 
 @triton.jit
@@ -68,6 +70,7 @@ def _act_mxfp8_qdq_kernel(
     if STORE_CODES:
         sign = ((q.to(tl.uint32, bitcast=True) >> 24) & 128).to(tl.uint8)
         code = _e4m3_encode_nonneg(tl.minimum(tl.abs(q), 448.0), ARCH) | sign
+        code = tl.where(q == q, code, sign | 0x7F)
         tl.store(Q + row * K + idx, code, idx < K)
         tl.store(S + row * (K // 32) + group, (e + 127).to(tl.uint8), group < K // 32)
 

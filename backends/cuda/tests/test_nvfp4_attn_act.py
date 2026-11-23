@@ -419,6 +419,17 @@ class TestDispatchDecisions(CleanEnv):
             ),
             # The emulation reproduces SM120 decode too: the W4A16 GEMV.
             ("mxfp8", 1, False, {"ET_CUDA_NVFP4_MXFP8_EMULATE": "1"}, "nvfp4_gemv"),
+            # The emulation dequantizes, so kernel turns it off.
+            (
+                "mxfp8",
+                4096,
+                False,
+                {
+                    "ET_CUDA_NVFP4_MXFP8_EMULATE": "1",
+                    "ET_CUDA_NVFP4_PREFILL_IMPL": "kernel",
+                },
+                "nvfp4_w4a16",
+            ),
         ]
         for act, m, native, env, kernel in cases:
             self.assertEqual(self._calls(act, m, native, env=env), [kernel], env)
@@ -704,6 +715,15 @@ class TestEmulationKernels(CleanEnv):
         self.assertEqual(int((q != rq).sum()), 0)
         self.assertEqual(int((s != rs).sum()), 0)
         self.assertEqual(int((y.float() != rdeq).sum()), 0)
+
+    def test_activation_qdq_keeps_nan(self):
+        # As the native .to(float8e4nv): a NaN element stays NaN (code 0x7F).
+        x = torch.randn(4, 1024, device="cuda").to(torch.bfloat16)
+        x[1, 40] = float("nan")
+        y, q, _ = EMU.act_mxfp8_qdq_codes(x, store_codes=True)
+        self.assertTrue(bool(y[1, 40].isnan()))
+        self.assertEqual(int(q[1, 40]) & 0x7F, 0x7F)
+        self.assertTrue(bool(y[0].isfinite().all()))
 
     def test_weight_conversion_bit_identical(self):
         for name, w in (
