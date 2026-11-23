@@ -13,6 +13,7 @@ from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
 from executorch.backends.cuda.quantize_op_dispatch.nvfp4_dispatch import _has_native_fp4
+from executorch.backends.cuda.tests.nvfp4_test_utils import sweep
 from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
     nvfp4_gemv,
     nvfp4_quantize_activation,
@@ -56,8 +57,11 @@ class SplitLinear(torch.nn.Module):
     [
         (mode, rows, split)
         for mode in ("gemv", "w4a16", "w4a4")
-        for rows in (False, True)
-        for split in (1, 2, 4, 8, 16, 32)
+        for rows, split in sweep(
+            [(r, s) for r in (False, True) for s in (1, 2, 4, 8, 16, 32)],
+            # Unsplit with a scalar global scale; split with per-row scales.
+            [(False, 1), (True, 8)],
+        )
     ],
 )
 def test_split_k_pte(mode, row_scales, split):
