@@ -187,6 +187,7 @@ class GraphBuilder {
       size_t graph_size,
       bool gpu,
       bool exact_topk,
+      bool exact_gelu,
       const OffGraphCacheBinding* offgraph_cache = nullptr);
 
   GraphInstance build();
@@ -364,6 +365,8 @@ class GraphBuilder {
   bool gpu_;
   // GgmlEngineOptions::exact_topk_for_testing.
   bool exact_topk_;
+  // GgmlEngineOptions::exact_gelu_for_testing.
+  bool exact_gelu_;
   const OffGraphCacheBinding* offgraph_cache_;
   std::vector<RuntimeValue> values_;
   std::unordered_map<ValueId, ggml_tensor*> rope_factor_tensors_;
