@@ -57,6 +57,14 @@ def define_common_targets():
         "topk_float.smallest_bf16",
         "topk_float.smallest_f16",
         "topk_float.smallest_f32",
+        # CPU engine: mutable buffers are not supported.
+        "gdn_float.quantized_layer_decode_f32",
+        "gdn_float.quantized_layer_decode_restart_f32",
+        "gdn_float.quantized_layer_decode_saved_state_f32",
+        "gdn_float.quantized_layer_decode_wide_f32",
+        # CPU engine: functionalize_aliases rejects the select.int view.
+        "gdn_float.recurrent_qwen35_f32",
+        "gdn_float.recurrent_small_f32",
     ]
     static_float = ":".join(["*_float.*:-*.dynamic_*"] + cpu_engine_gaps)
     for name, flags, labels in [
