@@ -43,6 +43,7 @@ def define_common_targets():
         srcs = ["export_program.py"],
         deps = [
             "//caffe2:torch",
+            "//executorch/exir/backend/test:device_util",
             "//executorch/test/end2end:exported_module",
         ],
         visibility = [],  # Private
@@ -77,6 +78,7 @@ def define_common_targets():
         "ModuleSharedStateInitialized",
         "ModuleSharedStateUnmarked",
         "ModuleSharedStateTwoBuffers",
+        "ModuleSharedStateWithDevice",
     ]
 
     # Generates Executorch .pte program files for various modules at build time.

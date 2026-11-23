@@ -30,9 +30,10 @@ add_custom_command(
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleSharedStateUnmarked.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleSharedStateTwoBuffers.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddWithDevice.pte"
+         "${CMAKE_CURRENT_BINARY_DIR}/ModuleSharedStateWithDevice.pte"
   COMMAND
     ${PYTHON_EXECUTABLE} -m test.models.export_program --modules
-    "ModuleAdd,ModuleSharedState,ModuleSharedStateInitialized,ModuleSharedStateUnmarked,ModuleSharedStateTwoBuffers"
+    "ModuleAdd,ModuleSharedState,ModuleSharedStateInitialized,ModuleSharedStateUnmarked,ModuleSharedStateTwoBuffers,ModuleSharedStateWithDevice"
     --outdir "${CMAKE_CURRENT_BINARY_DIR}"
   COMMAND
     ${PYTHON_EXECUTABLE} -m test.models.export_program --modules
@@ -55,6 +56,7 @@ add_custom_target(
           "${CMAKE_CURRENT_BINARY_DIR}/ModuleSharedStateUnmarked.pte"
           "${CMAKE_CURRENT_BINARY_DIR}/ModuleSharedStateTwoBuffers.pte"
           "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddWithDevice.pte"
+          "${CMAKE_CURRENT_BINARY_DIR}/ModuleSharedStateWithDevice.pte"
 )
 
 set(test_env
@@ -68,6 +70,7 @@ set(test_env
     "ET_MODULE_SHARED_STATE_UNMARKED=${CMAKE_CURRENT_BINARY_DIR}/ModuleSharedStateUnmarked.pte"
     "ET_MODULE_SHARED_STATE_TWO_BUFFERS=${CMAKE_CURRENT_BINARY_DIR}/ModuleSharedStateTwoBuffers.pte"
     "ET_MODULE_ADD_WITH_DEVICE_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleAddWithDevice.pte"
+    "ET_MODULE_SHARED_STATE_WITH_DEVICE_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleSharedStateWithDevice.pte"
 )
 
 et_cxx_test(

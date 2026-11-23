@@ -1956,7 +1956,8 @@ class EdgeProgramManager:
                 memory_planning_pass = config.memory_planning_pass
             # Non-strict export keeps every buffer as an input of every method.
             # A method that never uses one would store initial data for it,
-            # which can differ from the data of the methods that do.
+            # which can differ from the data of the methods that do, and get
+            # shared device memory it never touches.
             if (
                 isinstance(memory_planning_pass, MemoryPlanningPass)
                 and memory_planning_pass.share_mutable_buffers

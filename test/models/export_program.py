@@ -327,6 +327,19 @@ class ModuleSharedStateInitialized(ModuleSharedState):
         return ["state"]
 
 
+class ModuleSharedStateWithDevice(ModuleSharedStateInitialized):
+    """ModuleSharedStateInitialized with its state planned in cuda:0 memory. Its
+    ops run on the host and reach the state through copies across the device
+    boundary."""
+
+    def get_memory_planning_pass(self) -> MemoryPlanningPass:
+        # Imported here so exporting other modules works with an installed
+        # executorch that predates this pass.
+        from executorch.exir.backend.test.device_util import BuffersOnDevicePlanningPass
+
+        return BuffersOnDevicePlanningPass({"state"}, share_mutable_buffers=True)
+
+
 class _SharingPassWithoutMarker(MemoryPlanningPass):
     """Shares mutable buffers like an exporter that does not mark them."""
 

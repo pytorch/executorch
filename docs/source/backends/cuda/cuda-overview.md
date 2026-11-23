@@ -261,9 +261,9 @@ method that reads it on the host, the `.pte` holds it twice. A constant that a h
 second device also reads is still copied on every call. So is a constant that is changed on the
 host before the delegate reads it, such as by a view, a transpose or a clone, and
 `error_on_per_call_copies` does not catch that copy. Have the partitioner take that change into
-the delegate, so that the delegate reads the constant itself. `share_mutable_buffers` needs every
-planned tensor in host memory, so it does not work with this flag. This flag works on its own: it
-needs neither `skip_h2d_for_method_inputs` nor unplanned inputs.
+the delegate, so that the delegate reads the constant itself. With `share_mutable_buffers`, a
+registered buffer kept on the device this way is refused only if some method changes it. This flag
+works on its own: it needs neither `skip_h2d_for_method_inputs` nor unplanned inputs.
 
 **`skip_h2d_for_method_inputs` refuses changed inputs that a delegate reads.** `to_executorch` fails
 if the method changes an input that a delegate reads, even when the delegate makes the change. This
@@ -273,6 +273,31 @@ the buffer in, with `tag_mutated_buffer`, once those operators are there. It kee
 when the method also returns the buffer's new value, or when the new value is a method input, as in
 `self.state.copy_(x)`. For a buffer that stays out, this flag refuses the method only if a delegate
 reads it.
+
+**A buffer that methods share can live in device memory.** With `share_mutable_buffers`, a mutable
+buffer that several methods use, such as a KV cache shared by prefill and decode, gets one
+allocation for all of them. It is planned in device memory when every placeholder of that buffer,
+in every method, has its `spec.device` and `spec.device_index` set before memory planning, for
+example by a `MemoryPlanningPass` subclass that sets them and then calls `super().run()`. All
+shared buffers of a program get one allocation, so either all of them are on that device or none
+is: export refuses a program that moves only the KV cache and leaves another shared buffer on the
+host. Planning them in device memory inserts no copies, so export refuses the program unless only these use the buffer: a delegate whose
+`target_device` is that device, directly or through a view, an `et_copy._d2h_copy` that reads it
+into host memory, an `et_copy._h2d_copy` that writes it from host memory, an op that reads only its
+sizes, strides, storage offset or element count, and the write-back of its new value. A method cannot return it,
+and a control flow operator such as `torch.cond` cannot take it, even when every branch copies it
+first. The same pass has to remove the `et_copy._h2d_copy` that `PropagateDevicePass` adds for
+every call, where a delegate reads the buffer, and a copy that writes the buffer has to carry the
+buffer's own `TensorSpec`. A backend whose delegate updates the buffer in place and reads the
+buffer itself needs no copies; host code can still update it through the two copies. The CUDA
+partitioner does not do this: `tag_mutated_buffer` moves the buffer into the delegate, out of the
+shared allocation. The CUDA backend can instead share one copy between delegates that load a buffer
+of the same name. Export refuses a method that keeps its own copy of a shared buffer in a delegate,
+and a method that uses on the host a buffer that a delegate changes in its own copy, since that
+method would never see the changes. It does not check delegates that each keep their own copy,
+because whether they see each other's changes depends on the backend. Such a program gets version
+1, which needs a runtime that has this feature: runtimes 1.5.0 to 1.6 refuse it, and older ones load
+it without a check and give each method its own copy.
 
 **The choice is baked into the `.pte`.** A program exported with copies expects host tensors; one
 exported without them expects device tensors. Passing the wrong kind is a caller error, not

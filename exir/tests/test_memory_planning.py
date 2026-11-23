@@ -8,8 +8,9 @@
 # pyre-strict
 
 import itertools
+import operator
 import unittest
-from typing import Any, Callable, cast, Dict, List, Optional, Tuple, Type, Union
+from typing import Any, Callable, cast, Dict, List, Optional, Set, Tuple, Type, Union
 
 import executorch.exir as exir
 
@@ -34,10 +35,16 @@ from executorch.exir import (
     to_edge,
 )
 from executorch.exir.backend.partitioner import Partitioner, PartitionResult
-from executorch.exir.backend.test.device_util import DeviceAwarePartitioner
+from executorch.exir.backend.test.device_util import (
+    _copy_across_device_boundary,
+    BuffersOnDevicePlanningPass,
+    CpuOnlyPartitioner,
+    DeviceAwarePartitioner,
+)
 from executorch.exir.backend.test.op_partitioner_demo import AllNodesPartitionerDemo
 from executorch.exir.backend.utils import tag_mutated_buffer
 from executorch.exir.capture._capture import patch_forward
+from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.error import InternalError
 from executorch.exir.inplace_aliasing import is_inplace_node
@@ -63,10 +70,17 @@ from executorch.exir.passes import (  # noqa
     ToOutVarPass,
 )
 from executorch.exir.passes.init_mutable_pass import InitializedMutableBufferPass
+from executorch.exir.passes.propagate_device_config import PropagateDeviceConfig
 from executorch.exir.passes.reinplace import DEFAULT_INPLACEABLE_OPS, reinplace_pass
 from executorch.exir.passes.replace_view_copy_with_view_pass import _ViewSpec
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
-from executorch.exir.schema import DeviceType, NonConstBufferDevice, Program, Tensor
+from executorch.exir.schema import (
+    DeviceType,
+    ExecutionPlan,
+    NonConstBufferDevice,
+    Program,
+    Tensor,
+)
 from executorch.exir.sym_util import EnumerationBudget, eval_upper_bound
 from executorch.exir.tensor import TensorSpec
 from executorch.extension.pybindings.portable_lib import (  # @manual=//executorch/extension/pybindings:portable_lib
@@ -1227,7 +1241,8 @@ class MultiMapModel(torch.nn.Module):
 
 
 class SharedBuffers(torch.nn.Module):
-    """forward changes state and bump changes offset; the others only read."""
+    """forward, overwrite and update_* change state, bump changes offset, and
+    the others only read."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -1257,6 +1272,52 @@ class SharedBuffers(torch.nn.Module):
     def empty(self, x: torch.Tensor) -> torch.Tensor:
         return x[2:] + x[2:]
 
+    def overwrite(self, x: torch.Tensor) -> torch.Tensor:
+        self.state.copy_(x)
+        return x * 2
+
+    def read_view(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.add(x.view(1, 2), self.state.view(1, 2))
+
+    def read_twice(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.add(x.view(1, 2), self.state.view(1, 2)) * self.state
+
+    def read_and_double(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.add(self.state, x) * 2
+
+    def get_state(self, x: torch.Tensor) -> torch.Tensor:
+        return self.state
+
+    def get_view(self, x: torch.Tensor) -> torch.Tensor:
+        return self.state.view(2, 1)
+
+    def read_view_of_view(self, x: torch.Tensor) -> torch.Tensor:
+        return self.state.view(1, 2).view(2) * 2
+
+    def update_and_read(self, x: torch.Tensor) -> torch.Tensor:
+        self.state.add_(x)
+        return self.state * 2
+
+    def update_and_read_view(self, x: torch.Tensor) -> torch.Tensor:
+        self.state.add_(x)
+        return self.state.view(1, 2) * 2
+
+    def update_and_cat(self, x: torch.Tensor) -> torch.Tensor:
+        self.state.add_(x)
+        return torch.cat([self.state])
+
+    def update_and_add(self, x: torch.Tensor) -> torch.Tensor:
+        self.state.add_(x)
+        return x + x
+
+    def update_in_cond(self, x: torch.Tensor) -> torch.Tensor:
+        self.state.add_(x)
+        return torch.cond(x.sum() > 0, lambda v: v * v, lambda v: v + v, (x,))
+
+    def update_and_read_offset(self, x: torch.Tensor) -> torch.Tensor:
+        self.state.add_(x)
+        return torch.add(x, self.offset) * 2
+
 
 def export_methods(model: torch.nn.Module, *names: str) -> Dict[str, ExportedProgram]:
     methods = {}
@@ -1264,6 +1325,143 @@ def export_methods(model: torch.nn.Module, *names: str) -> Dict[str, ExportedPro
         with patch_forward(model, getattr(model, name)):
             methods[name] = export(model, (torch.ones(2),))
     return methods
+
+
+def skip_copy(graph: Graph, copy: Node, source: Node) -> None:
+    staging = copy.kwargs["out"]
+    copy.replace_all_uses_with(source)
+    graph.erase_node(copy)
+    graph.erase_node(staging)
+
+
+def unstage(graph_module: GraphModule) -> None:
+    """Hands a delegate the state, or a view of it, as Torch-TensorRT does,
+    instead of a staging copy."""
+    for node in list(
+        graph_module.graph.find_nodes(
+            op="call_function", target=torch.ops.et_copy._h2d_copy.out
+        )
+    ):
+        source = node.args[0]
+        while source.target == memory.view:
+            source = source.args[0]
+        if source.target == "b_state":
+            skip_copy(graph_module.graph, node, node.args[0])
+
+
+class EditedStateOnDevicePlanningPass(BuffersOnDevicePlanningPass):
+    """Plans state in cuda:0 memory after edits change the graph. Methods that
+    only read it can get no copies, or keep it on the host."""
+
+    def __init__(
+        self,
+        *edits: Callable[[GraphModule], None],
+        readers: str = "copies",
+        **kwargs: Any,
+    ) -> None:
+        super().__init__({"state"}, share_mutable_buffers=True, **kwargs)
+        self.edits = edits
+        self.readers = readers
+        self.copies: bool = self.insert_copies
+
+    def run(
+        self,
+        graph_module: torch.fx.GraphModule,
+        graph_signature: Optional[ExportGraphSignature] = None,
+    ) -> PassResult:
+        assert graph_signature is not None
+        writes = bool(graph_signature.buffers_to_mutate)
+        self.insert_copies = self.copies and (writes or self.readers == "copies")
+        self.buffer_fqns = {"state"} if writes or self.readers != "host" else set()
+        for edit in self.edits:
+            edit(graph_module)
+        return super().run(graph_module, graph_signature)
+
+
+class InPlaceDelegatePlanningPass(MemoryPlanningPass):
+    """Has the delegate read the state itself and return it updated in place,
+    without copies, as Torch-TensorRT does. Its result holds the state in a
+    list, alone, or, in a method that only reads it, as a view."""
+
+    def __init__(
+        self, result: str = "list", edit: Optional[Callable[[Graph], None]] = None
+    ) -> None:
+        super().__init__(share_mutable_buffers=True)
+        self.result = result
+        self.edit = edit
+
+    def run(
+        self,
+        graph_module: torch.fx.GraphModule,
+        graph_signature: Optional[ExportGraphSignature] = None,
+    ) -> PassResult:
+        assert graph_signature is not None
+        graph = graph_module.graph
+        if self.edit is not None:
+            self.edit(graph)
+        (state,) = graph.find_nodes(op="placeholder", target="b_state")
+        spec = state.meta["spec"]
+        spec.device = DeviceType.CUDA
+        # The delegate's other results stay results of their own.
+        (result,) = [
+            (
+                node.args[1].args[0]
+                if node.args[1].target == torch.ops.et_copy._d2h_copy.out
+                else node.args[1]
+            )
+            for node in graph.find_nodes(
+                op="call_function", target=torch.ops.aten.copy_.default
+            )
+            if node.args[0] is state
+        ] or graph.find_nodes(op="call_function", target=operator.getitem)
+        call = result.args[0]
+        if self.result == "single":
+            call.meta["spec"] = spec
+            call.meta["val"] = result.meta["val"]
+            result.replace_all_uses_with(call)
+            graph.erase_node(result)
+            result = call
+        else:
+            alias = (
+                _ViewSpec(spec, list(spec.shape))
+                if self.result == "view" and not graph_signature.buffers_to_mutate
+                else spec
+            )
+            specs = list(call.meta["spec"])
+            specs[result.args[1]] = alias
+            call.meta["spec"] = specs
+            result.meta["spec"] = alias
+        for node in list(graph.nodes):
+            if node.target in (
+                torch.ops.et_copy._h2d_copy.out,
+                torch.ops.et_copy._d2h_copy.out,
+            ) and node.args[0] in (state, result):
+                skip_copy(graph, node, node.args[0])
+            # Hands a changed input the state itself.
+            elif node.target == torch.ops.aten.copy.out:
+                skip_copy(graph, node, node.args[1])
+            elif node.target == torch.ops.aten.copy_.default:
+                node.replace_all_uses_with(node.args[1])
+                graph.erase_node(node)
+        return super().run(graph_module, graph_signature)
+
+
+def memory_ids(plan: ExecutionPlan) -> Set[int]:
+    return {
+        value.val.allocation_info.memory_id
+        for value in plan.values
+        if isinstance(value.val, schema.Tensor)
+        and value.val.allocation_info is not None
+    }
+
+
+def cuda(*buffers: int, device_index: int = 0) -> List[NonConstBufferDevice]:
+    return [
+        NonConstBufferDevice(
+            buffer_idx=buffer, device_type=DeviceType.CUDA, device_index=device_index
+        )
+        for buffer in buffers
+    ]
 
 
 class TestMap(unittest.TestCase):
@@ -1807,6 +2005,433 @@ class TestMap(unittest.TestCase):
                 partitioner=partitioner,
             )
             self.assertEqual(program.version, expected)
+
+    def _refused(
+        self, error: str, plan: Callable[..., Any], *args: Any, **kwargs: Any
+    ) -> None:
+        with self.assertRaisesRegex(ValueError, error):
+            plan(*args, **kwargs)
+
+    def test_shared_mutable_buffer_on_device(self) -> None:
+        program = self._plan_shared(
+            BuffersOnDevicePlanningPass(
+                {"state"}, device_index=1, share_mutable_buffers=True
+            ),
+            "forward",
+            "read",
+        )
+        # Runtimes that ignore the marker would give each method its own state.
+        self.assertEqual(program.version, 1)
+        for plan in program.execution_plan:
+            self.assertEqual(plan.shared_non_const_buffers, [2])
+            self.assertEqual(plan.non_const_buffer_sizes[2], 16)
+            self.assertEqual(plan.non_const_buffer_device, cuda(2, device_index=1))
+
+        # The delegated add plans its output in a cuda:0 arena of forward's own.
+        # The shared arena takes mem_id 2 in every method, so that one moves up.
+        program = self._plan_shared(
+            EditedStateOnDevicePlanningPass(unstage),
+            "forward",
+            "read",
+            partitioner={"forward": DeviceAwarePartitioner("cuda:0")},
+        )
+        plans = {plan.name: plan for plan in program.execution_plan}
+        self.assertEqual(plans["forward"].non_const_buffer_device, cuda(2, 3))
+        self.assertIn(3, memory_ids(plans["forward"]))
+        self.assertEqual(len(plans["read"].non_const_buffer_sizes), 3)
+
+        # A method that uses no shared buffer keeps its own device arenas and
+        # gets no shared one.
+        for partitioner, devices in (
+            (None, None),
+            ({"helper": DeviceAwarePartitioner("cuda:0")}, cuda(2)),
+        ):
+            program = self._plan_shared(
+                BuffersOnDevicePlanningPass({"state"}, share_mutable_buffers=True),
+                "forward",
+                "helper",
+                partitioner=partitioner,
+            )
+            plans = {plan.name: plan for plan in program.execution_plan}
+            self.assertIsNone(plans["helper"].shared_non_const_buffers)
+            self.assertEqual(plans["helper"].non_const_buffer_device, devices)
+
+    def test_host_use_of_a_shared_device_buffer_is_refused(self) -> None:
+        # A host op may read a view of the state through a copy.
+        self._plan_shared(
+            BuffersOnDevicePlanningPass({"state"}, share_mutable_buffers=True),
+            "overwrite",
+            "read_view",
+        )
+        memory = "buffer state in cuda:0 memory: "
+        self._refused(
+            f"{memory}.* uses it on the host",
+            self._plan_shared,
+            BuffersOnDevicePlanningPass(
+                {"state"}, insert_copies=False, share_mutable_buffers=True
+            ),
+            "forward",
+        )
+        # Returning the state would hand the caller device memory, and
+        # returning a view of it copies it on the host.
+        for reader, culprit in (
+            ("get_state", r"output \(output\) returns it"),
+            ("get_view", "aten_view"),
+            ("read_view_of_view", "aten_mul"),
+        ):
+            self._refused(
+                memory + culprit,
+                self._plan_shared,
+                EditedStateOnDevicePlanningPass(readers="no copies"),
+                "overwrite",
+                reader,
+            )
+
+    def test_copies_of_a_shared_device_buffer_are_checked(self) -> None:
+        def cross_device(graph_module: GraphModule) -> None:
+            (state,) = graph_module.graph.find_nodes(op="placeholder", target="b_state")
+            _copy_across_device_boundary(graph_module, state)
+
+        def keyword_copies(graph_module: GraphModule) -> None:
+            for node in graph_module.graph.nodes:
+                if node.target in (
+                    torch.ops.et_copy._h2d_copy.out,
+                    torch.ops.et_copy._d2h_copy.out,
+                ):
+                    node.kwargs = {**node.kwargs, "self": node.args[0]}
+                    node.args = ()
+
+        def write_back_from_device(graph_module: GraphModule) -> None:
+            graph = graph_module.graph
+            for node in graph.find_nodes(
+                op="call_function", target=torch.ops.aten.copy_.default
+            ):
+                with graph.inserting_before(node):
+                    write = graph.call_function(
+                        torch.ops.et_copy._d2h_copy.out,
+                        (node.args[1],),
+                        {"out": node.args[0]},
+                    )
+                write.meta = node.meta.copy()
+                node.replace_all_uses_with(write)
+                graph.erase_node(node)
+
+        # As PropagateDevicePass gives the copies it inserts.
+        def own_write_back_spec(graph_module: GraphModule) -> None:
+            for copy in graph_module.graph.find_nodes(
+                op="call_function", target=torch.ops.et_copy._h2d_copy.out
+            ):
+                copy.meta["spec"] = TensorSpec.from_tensor(copy.meta["val"])
+
+        def copy_to_itself(
+            copy: torch._ops.OpOverload,
+        ) -> Callable[[GraphModule], None]:
+            def edit(graph_module: GraphModule) -> None:
+                graph = graph_module.graph
+                (state,) = graph.find_nodes(op="placeholder", target="b_state")
+                with graph.inserting_before(graph.output_node()):
+                    node = graph.call_function(copy, (state,), {"out": state})
+                node.meta = state.meta.copy()
+
+            return edit
+
+        # A copy may name its source by keyword.
+        self._plan_shared(
+            EditedStateOnDevicePlanningPass(
+                cross_device, keyword_copies, insert_copies=False
+            ),
+            "overwrite",
+            "read_view",
+        )
+        for edits, error in (
+            ((write_back_from_device,), r"\(et_copy._d2h_copy.out\)"),
+            (
+                (cross_device, copy_to_itself(torch.ops.et_copy._d2h_copy.out)),
+                r"\(et_copy._d2h_copy.out\)",
+            ),
+            (
+                (cross_device, copy_to_itself(torch.ops.et_copy._h2d_copy.out)),
+                r"\(et_copy._h2d_copy.out\)",
+            ),
+            # Views made before planning would still point at the old spec.
+            (
+                (cross_device, own_write_back_spec),
+                "_h2d_copy_out writes it with a TensorSpec of its own",
+            ),
+        ):
+            self._refused(
+                error,
+                self._plan_shared,
+                EditedStateOnDevicePlanningPass(*edits, insert_copies=False),
+                "overwrite",
+            )
+
+    def test_a_delegate_reads_a_shared_device_buffer_on_its_device(self) -> None:
+        def delegated(
+            target: str,
+            methods: Tuple[str, ...],
+            *edits: Callable[[GraphModule], None],
+            **kwargs: Any,
+        ) -> Program:
+            return self._plan_shared(
+                EditedStateOnDevicePlanningPass(
+                    *edits, alloc_graph_input=False, **kwargs
+                ),
+                "forward",
+                *methods,
+                partitioner={name: DeviceAwarePartitioner(target) for name in methods},
+                propagate_device_config=PropagateDeviceConfig(
+                    skip_h2d_for_method_inputs=True,
+                    skip_d2h_for_method_outputs=True,
+                ),
+            )
+
+        memory = "buffer state in cuda:0 memory: "
+        # read hands the state to its delegate without a copy.
+        program = delegated("cuda:0", ("read", "read_view"), unstage)
+        plans = {plan.name: plan for plan in program.execution_plan}
+        self.assertEqual(plans["read"].shared_non_const_buffers, [2])
+        # It plans nothing on the host, so its own device arena is at mem_id 1.
+        self.assertEqual(plans["read"].non_const_buffer_device, cuda(1, 2))
+        self.assertFalse(any("_h2d_copy" in op.name for op in plans["read"].operators))
+        # A view only aliases the state, so read_view hands that view to its
+        # delegate. A staging copy of it would be refused like the one below.
+        self.assertIn(
+            "executorch_prim::et_view", [op.name for op in plans["read_view"].operators]
+        )
+        self.assertEqual(plans["read_view"].shared_non_const_buffers, [2])
+        self._refused(
+            f"{memory}.*executorch_call_delegate",
+            delegated,
+            "cuda:1",
+            ("read", "read_view"),
+            unstage,
+        )
+        # A staging copy would read the state as host memory.
+        self._refused(
+            rf"{memory}.*\(et_copy._h2d_copy.out\)",
+            delegated,
+            "cuda:0",
+            ("read", "read_view"),
+        )
+        # Every use counts, not only the view the delegate reads.
+        self._refused(
+            f"{memory}aten_mul",
+            delegated,
+            "cuda:0",
+            ("read_twice",),
+            unstage,
+            readers="no copies",
+        )
+
+    def test_delegate_updates_a_shared_device_buffer_in_place(self) -> None:
+        def in_place(
+            *methods: str,
+            result: str = "list",
+            edit: Optional[Callable[[Graph], None]] = None,
+            partitioner: Optional[Partitioner] = None,
+            outputs_on_device: bool = False,
+        ) -> None:
+            self._plan_shared(
+                InPlaceDelegatePlanningPass(result, edit),
+                *methods,
+                partitioner=partitioner or DeviceAwarePartitioner("cuda:0"),
+                propagate_device_config=PropagateDeviceConfig(
+                    skip_d2h_for_method_outputs=outputs_on_device
+                ),
+            )
+
+        def read_the_size(graph: Graph) -> None:
+            (state,) = graph.find_nodes(op="placeholder", target="b_state")
+            with graph.inserting_after(state):
+                size = graph.call_function(torch.ops.aten.sym_size.int, (state, 0))
+                numel = graph.call_function(torch.ops.aten.sym_numel.default, (state,))
+            size.meta["val"] = numel.meta["val"] = 2
+
+        def cat_takes_the_result(graph: Graph) -> None:
+            (call,) = graph.find_nodes(
+                op="call_function", target=executorch_call_delegate
+            )
+            (cat,) = graph.find_nodes(op="call_function", target=torch.ops.aten.cat.out)
+            cat.args = (call, *cat.args[1:])
+
+        memory = "buffer state in cuda:0 memory: "
+        # Its size is in host memory.
+        in_place("forward", edit=read_the_size)
+        in_place("forward", result="single")
+        for result in ("list", "single"):
+            # The delegate's result is the state, so the host must not read it.
+            self._refused(
+                f"{memory}aten_mul", in_place, "update_and_read", result=result
+            )
+            # The planning pass gives the result the spec of the state after
+            # export made the view, so the view would be planned elsewhere.
+            self._refused(
+                r"memory: aten_view_copy_default \(view\) is a view planned",
+                in_place,
+                "update_and_read_view",
+                result=result,
+            )
+        # The delegate also returns its sum, which the method returns in device
+        # memory. Only the result that is the state holds it.
+        in_place("update_and_add", outputs_on_device=True)
+        # Nor read the list that holds it.
+        self._refused(
+            r"memory: aten_cat_default \(aten.cat.out\) uses it on the host",
+            in_place,
+            "update_and_cat",
+            edit=cat_takes_the_result,
+        )
+        self._refused(
+            f"{memory}aten_mul", in_place, "forward", "read_and_double", result="view"
+        )
+        # The state stays in place, so its result does not show a delegate's
+        # own device.
+        for partitioner, reason in (
+            (CpuOnlyPartitioner(), "a delegate without a target_device"),
+            (DeviceAwarePartitioner("cuda:1"), "a delegate on cuda:1"),
+        ):
+            self._refused(
+                rf"{memory}executorch_call_delegate \(executorch_call_delegate\) is {reason}",
+                in_place,
+                "forward",
+                partitioner=partitioner,
+            )
+
+    def test_shared_mutable_buffer_on_two_devices_is_refused(self) -> None:
+        self._refused(
+            "on more than one device, found cpu:0, cuda:0",
+            self._plan_shared,
+            BuffersOnDevicePlanningPass({"state"}, share_mutable_buffers=True),
+            "forward",
+            "bump",
+        )
+        self._refused(
+            "buffer state: methods place it on cpu:0, cuda:0",
+            self._plan_shared,
+            EditedStateOnDevicePlanningPass(readers="host"),
+            "forward",
+            "read",
+        )
+        # Without device planning every buffer is planned in host memory.
+        program = self._plan_shared(
+            EditedStateOnDevicePlanningPass(readers="host"),
+            "forward",
+            "read",
+            enable_non_cpu_memory_planning=False,
+        )
+        for plan in program.execution_plan:
+            self.assertEqual(plan.shared_non_const_buffers, [2])
+            self.assertFalse(plan.non_const_buffer_device)
+
+    def test_shared_buffers_check_control_flow_pools(self) -> None:
+        class ChangeBranchMul(MemoryPlanningPass):
+            """Plans the mul of a branch in arena 2, or on cuda:0, where planning
+            control flow, which is not device aware, leaves it in arena 1."""
+
+            def __init__(self, on_device: bool) -> None:
+                super().__init__(share_mutable_buffers=True)
+                self.on_device = on_device
+
+            def run(
+                self,
+                graph_module: torch.fx.GraphModule,
+                graph_signature: Optional[ExportGraphSignature] = None,
+            ) -> PassResult:
+                for submodule in graph_module.modules():
+                    if submodule is graph_module or not isinstance(
+                        submodule, GraphModule
+                    ):
+                        continue
+                    for node in submodule.graph.find_nodes(
+                        op="call_function", target=torch.ops.aten.mul.out
+                    ):
+                        if self.on_device:
+                            node.meta["spec"].device = DeviceType.CUDA
+                        else:
+                            node.meta["spec"].mem_id = 2
+                return super().run(graph_module, graph_signature)
+
+        for on_device in (False, True):
+            self._refused(
+                "default mem_id of 1",
+                self._plan_shared,
+                ChangeBranchMul(on_device),
+                "update_in_cond",
+            )
+
+    def test_shared_buffers_move_view_written_through_out_once(self) -> None:
+        class OutIntoViewOnDevice(MemoryPlanningPass):
+            """Plans relu on cuda:0 and writes index_put into its view through out."""
+
+            def run(
+                self,
+                graph_module: torch.fx.GraphModule,
+                graph_signature: Optional[ExportGraphSignature] = None,
+            ) -> PassResult:
+                for node in graph_module.graph.nodes:
+                    if node.target == torch.ops.aten.relu.out:
+                        node.meta["spec"].device = DeviceType.CUDA
+                    elif node.target == exir_ops.edge.aten.index_put_.default:
+                        node.target = torch.ops.aten.index_put.out
+                        node.kwargs = {**node.kwargs, "out": node.args[0]}
+                return super().run(graph_module, graph_signature)
+
+        class StateAndIndexPut(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("state", torch.zeros(1))
+
+            def forward(
+                self, x: torch.Tensor, indices: torch.Tensor, values: torch.Tensor
+            ) -> torch.Tensor:
+                self.state.add_(1)
+                viewed = torch.relu(x).view(4, 3)
+                return torch.index_put(viewed, [indices], values).sum(dim=0)
+
+        inputs = (torch.arange(12.0), torch.tensor([0]), torch.ones(1, 3))
+        (plan,) = (
+            to_edge({"forward": export(StateAndIndexPut(), inputs)})
+            .to_executorch(
+                ExecutorchBackendConfig(
+                    memory_planning_pass=OutIntoViewOnDevice(
+                        share_mutable_buffers=True
+                    ),
+                    remove_view_copy=True,
+                    run_reinplace_pass=True,
+                )
+            )
+            .executorch_program.execution_plan
+        )
+        self.assertEqual(plan.non_const_buffer_device, cuda(3))
+        self.assertEqual(memory_ids(plan), {1, 2, 3})
+
+    def test_shared_buffers_with_a_constant_kept_on_device(self) -> None:
+        def plan(*methods: str) -> Program:
+            return self._plan_shared(
+                MemoryPlanningPass(share_mutable_buffers=True),
+                *methods,
+                partitioner=DeviceAwarePartitioner("cuda:0"),
+                propagate_device_config=PropagateDeviceConfig(
+                    skip_h2d_for_constants=True
+                ),
+            )
+
+        # offset never changes, so it stays in device memory of its own.
+        (update,) = plan("update_and_read_offset").execution_plan
+        self.assertEqual(update.shared_non_const_buffers, [2])
+        self.assertEqual(update.non_const_buffer_device, cuda(3))
+        # read keeps the state on the device, where update_and_read_offset
+        # cannot share it, whichever of them is planned first.
+        for methods in (
+            ("update_and_read_offset", "read"),
+            ("read", "update_and_read_offset"),
+        ):
+            self._refused(
+                "buffer state is already planned .* skip_h2d_for_constants",
+                plan,
+                *methods,
+            )
 
 
 class TestDeviceAwareMemoryPlanning(unittest.TestCase):

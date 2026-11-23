@@ -13,23 +13,32 @@
  *   non_const_buffer_sizes: [0, 48]  (1 buffer, index 0 reserved)
  *   non_const_buffer_device: [{buffer_idx=1, device_type=CUDA, device_index=0}]
  *
+ * and ModuleSharedStateWithDevice.pte, whose three methods share one state
+ * planned in CUDA memory, with its initial value stored.
+ *
  * Since we don't have a real CUDA backend, we test that:
  * 1. CPU-only models load through Module without invoking device allocator
  * 2. Device-annotated models trigger DeviceMemoryBuffer::create via a mock
+ * 3. Methods share one device allocation of a shared state, which loading a
+ *    method never resets
  */
 
 #include <executorch/extension/module/module.h>
 
 #include <gtest/gtest.h>
 
+#include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/core/device_allocator.h>
 #include <executorch/runtime/core/device_memory_buffer.h>
+#include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
 #include <executorch/runtime/core/test/mock_cuda_allocator.h>
 #include <executorch/runtime/platform/runtime.h>
 
+using executorch::extension::make_tensor_ptr;
 using executorch::extension::Module;
 using executorch::runtime::DeviceMemoryBuffer;
 using executorch::runtime::Error;
+using executorch::runtime::EValue;
 using executorch::runtime::get_device_allocator;
 using executorch::runtime::register_device_allocator;
 using executorch::runtime::etensor::DeviceType;
@@ -150,6 +159,65 @@ TEST_F(ModuleDeviceMemoryTest, DeviceModelWithSharedArenasReturnsNotSupported) {
       /*share_memory_arenas=*/true);
 
   EXPECT_EQ(module.load_method("forward"), Error::NotSupported);
+}
+
+// share_memory_arenas leaves the device buffers a program marks to the
+// program, so such a program loads with it too.
+TEST_F(ModuleDeviceMemoryTest, MethodsShareOneDeviceAllocationOfSharedState) {
+#ifdef USE_ATEN_LIB
+  GTEST_SKIP() << "the shared state program is built for portable kernels";
+#endif
+  const char* path = std::getenv("ET_MODULE_SHARED_STATE_WITH_DEVICE_PATH");
+  ASSERT_NE(path, nullptr) << "ET_MODULE_SHARED_STATE_WITH_DEVICE_PATH not set";
+
+  for (bool share_memory_arenas : {false, true}) {
+    SetUp();
+    {
+      Module module(
+          path,
+          Module::LoadMode::File,
+          /*event_tracer=*/nullptr,
+          /*memory_allocator=*/nullptr,
+          /*temp_allocator=*/nullptr,
+          share_memory_arenas);
+      const auto expect = [&module](
+                              const char* method,
+                              const std::vector<EValue>& inputs,
+                              float value) {
+        auto result = module.execute(method, inputs);
+        ASSERT_EQ(result.error(), Error::Ok);
+        EXPECT_TENSOR_EQ(
+            result.get()[0].toTensor(), *make_tensor_ptr({1}, {value}));
+      };
+      auto x = make_tensor_ptr({1}, {2.f});
+      int copies = g_mock_cuda.h2d_count_;
+      // The first method to load initializes the state for all three.
+      expect("get_state", {}, 1.f);
+      EXPECT_GT(g_mock_cuda.h2d_count_, copies);
+      expect("forward", {x}, 4.f);
+
+      // A reader reloads, then the writer reloads, and neither copies initial
+      // data. Running the methods copies state across the device boundary, so
+      // only the loads are counted.
+      copies = g_mock_cuda.h2d_count_;
+      ASSERT_TRUE(module.unload_method("get_state"));
+      ASSERT_EQ(module.load_method("get_state"), Error::Ok);
+      ASSERT_TRUE(module.unload_method("forward"));
+      ASSERT_EQ(module.load_method("forward"), Error::Ok);
+      EXPECT_EQ(g_mock_cuda.h2d_count_, copies);
+      expect("get_state", {}, 2.f);
+
+      ASSERT_EQ(
+          module.execute("set_state", make_tensor_ptr({1}, {5.f})).error(),
+          Error::Ok);
+      expect("forward", {x}, 8.f);
+      expect("get_state", {}, 6.f);
+      // One allocation of the state serves every method.
+      EXPECT_EQ(g_mock_cuda.allocate_count_, 1);
+      EXPECT_EQ(g_mock_cuda.last_allocate_size_, 16);
+    }
+    EXPECT_EQ(g_mock_cuda.deallocate_count_, 1);
+  }
 }
 
 TEST_F(ModuleDeviceMemoryTest, DeviceAllocationFailureIsReportedNotFatal) {

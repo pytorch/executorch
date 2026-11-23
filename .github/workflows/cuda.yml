@@ -591,6 +591,7 @@ jobs:
           python -m unittest -v \
             executorch.extension.pybindings.test.test_pybindings.PybindingsTest.test_device_planned_method_allocates_on_the_device \
             executorch.extension.pybindings.test.test_pybindings.PybindingsTest.test_unplanned_device_output_is_device_memory \
+            executorch.extension.pybindings.test.test_pybindings.PybindingsTest.test_methods_share_device_state \
             2>&1 | tee /tmp/pybindings_device_test.log
           pybindings_device_status=${PIPESTATUS[0]}
           set -e

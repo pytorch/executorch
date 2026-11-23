@@ -92,6 +92,8 @@ def _program_version(plans: List[ExecutionPlan]) -> int:
             entry.device_type != DeviceType.CPU
             for entry in plan.non_const_buffer_device or []
         ):
+            if marked:
+                return SHARED_NON_CONST_BUFFERS_VERSION
             continue
         allocations = [
             value.val.allocation_info

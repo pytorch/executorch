@@ -20,7 +20,12 @@ fbcode_target(_kind = runtime.python_library,
         "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
         "//executorch/exir/backend/test:backend_with_compiler_demo",
         "//executorch/exir/dialects:lib",
+        "//executorch/exir/passes:memory_planning_pass",
         "//executorch/exir/passes:propagate_device_pass",
+        "//executorch/exir:delegate",
+        "//executorch/exir:memory",
+        "//executorch/exir:schema",
+        "//executorch/exir:tensor",
     ],
 )
 

@@ -32,7 +32,10 @@ from executorch.devtools.bundled_program.serialize import (
 )
 
 from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig, to_edge
-from executorch.exir.backend.test.device_util import DeviceAwarePartitioner
+from executorch.exir.backend.test.device_util import (
+    BuffersOnDevicePlanningPass,
+    DeviceAwarePartitioner,
+)
 from executorch.exir.capture._capture import patch_forward
 from executorch.exir.memory_planning import get_node_tensor_specs
 from executorch.exir.pass_base import ExportPass
@@ -4560,6 +4563,52 @@ print("ran after its program was dropped")
         set_state.call((torch.tensor([5.0]),))
         triple.call((torch.full((4,), 2.0),))
         self.assertEqual(get_state.call(())[0].item(), 5.0)
+
+    def test_shared_device_state_needs_a_device_allocator(self):
+        if "CudaBackend" in self.runtime._get_registered_backend_names():
+            self.skipTest("a registered CUDA allocator satisfies the device load")
+
+        program = self.load_prog_fn(
+            export_shared_state(
+                {"triple": export(Triple(), (torch.ones(4),), strict=True)},
+                BuffersOnDevicePlanningPass({"state"}, share_mutable_buffers=True),
+            )
+        )
+        for _ in range(2):
+            with self.assertRaises(RuntimeError) as caught:
+                program.load_method("get_state")
+            self.assertIn("for shared buffer 1 on device", str(caught.exception))
+        # A method that uses no shared buffer needs no device memory.
+        triple = program.load_method("triple")
+        self.assertEqual(triple.call((torch.ones(4),))[0].tolist(), [3.0] * 4)
+
+    def test_methods_share_device_state(self):
+        # The test above covers a build without a device allocator. This one
+        # covers the shared allocation itself, so it needs a real one.
+        if "CudaBackend" not in self.runtime._get_registered_backend_names():
+            self.skipTest("needs a build with the CUDA backend linked in")
+        if not torch.cuda.is_available():
+            self.skipTest("needs a visible CUDA device")
+
+        manager = shared_state_program(
+            memory_planning_pass=BuffersOnDevicePlanningPass(
+                {"state"}, share_mutable_buffers=True
+            )
+        )
+        for plan in manager.executorch_program.execution_plan:
+            self.assertEqual(plan.shared_non_const_buffers, [2])
+            devices = [
+                (entry.buffer_idx, entry.device_type)
+                for entry in plan.non_const_buffer_device
+            ]
+            self.assertEqual(devices, [(2, DeviceType.CUDA)])
+        program = self.load_prog_fn(manager.buffer)
+        zero = (torch.zeros(1),)
+        self.assertEqual(program.load_method("forward").call(zero)[0].item(), 2.0)
+        self.assertEqual(program.load_method("get_state").call(())[0].item(), 2.0)
+        program.load_method("set_state").call((torch.full((1,), 5.0),))
+        # A method loaded again sees what the others wrote.
+        self.assertEqual(program.load_method("forward").call(zero)[0].item(), 6.0)
 
     def test_program_loads_when_one_method_is_device_planned(self):
         # Linking the CUDA backend registers a CUDA allocator at static init, and the
