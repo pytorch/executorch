@@ -4,95 +4,19 @@
 # LICENSE file in the root directory of this source tree.
 
 
-import math
-from typing import Any, cast, List, Tuple
-
-import torch
+from typing import Any, List
 
 import tosa_serializer as ts
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
+
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
 )
-
-from executorch.backends.arm.tosa.mapping import map_dtype, TosaArg
+from executorch.backends.arm.tosa.mapping import TosaArg
 from torch.fx import Node
-
-
-def _compute_multiplier_and_shift(
-    scales: list[float], scaleWidth: int = 32
-) -> Tuple[list[int], list[int]]:
-    """Derive integer multipliers and shifts from floating-point scales.
-
-    TOSA uses the RESCALE operation to scale between values with differing
-    precision. The RESCALE operator is defined using an integer multiply, add,
-    and shift. This utility function is for calculating the multiplier and shift
-    given a scale.
-    Ref: https://github.com/arm/tosa-specification/blob/main/chapters/introduction.adoc#precision-scaling
-
-    Args:
-        scales (list[float]): Scale factors to decompose into multiplier and
-            shift pairs.
-        scaleWidth (int): Bit-width of the multiplier representation; expects
-            ``16`` or ``32``.
-
-    Returns:
-        Tuple[list[int], list[int]]: Parallel lists containing the computed
-            multipliers and right shifts.
-
-    Raises:
-        ValueError: If ``scaleWidth`` is not supported.
-
-    """
-    if scaleWidth == 16:
-        offset = 15
-    elif scaleWidth == 32:
-        offset = 31
-    else:
-        raise ValueError(
-            f"Unsupported scale width: {scaleWidth}, only 16 and 32 are valid values."
-        )
-
-    multipliers = []
-    shifts = []
-    for scale in scales:
-        mantissa, exponent = math.frexp(scale)
-        shift = exponent
-
-        const_2_power_15_or_31 = 1 << offset
-        shifted_mantissa = round(mantissa * const_2_power_15_or_31)
-
-        assert (
-            shifted_mantissa <= const_2_power_15_or_31
-        ), f"Mantissa {shifted_mantissa} exceeds limit {const_2_power_15_or_31}"
-
-        if shifted_mantissa == const_2_power_15_or_31:
-            shifted_mantissa = shifted_mantissa // 2
-            shift += 1
-
-        # TOSA expects right shift to be positive, and embed (1 << offset) into right shift bits.
-        shift = offset - shift
-
-        # INT32_MAX, 2^31 - 1
-        assert shifted_mantissa <= (const_2_power_15_or_31 - 1), (
-            f"Mantissa {shifted_mantissa} exceeds signed max "
-            f"{const_2_power_15_or_31 - 1}"
-        )
-
-        multiplier = shifted_mantissa
-
-        if shift > 62:
-            multiplier = multiplier >> min(31, shift - 62)
-            shift = 62
-
-        assert multiplier >= 0, "Multiplier should be non-negative"
-        assert shift >= 2 and shift <= 62, "Shift should be in range [2, 62]"
-        multipliers.append(multiplier)
-        shifts.append(shift)
-    return multipliers, shifts
 
 
 def _create_const_ops_for_rescale(
@@ -150,106 +74,9 @@ def _create_const_ops_for_rescale(
     return [multipliers.name, shifts.name, input_zp.name, output_zp.name]
 
 
-def _unsigned_dtype_offset(dtype: ts.DType) -> int:
-    if dtype == ts.DType.INT8:
-        return 128
-    raise ValueError(
-        "Wide-to-unsigned RESCALE legalization only supports "
-        f"INT8 output, got {dtype}"
-    )
-
-
 @register_node_visitor
 class RescaleVisitor(NodeVisitor):
     target = "tosa.RESCALE.default"
-
-    def _build_rescale(
-        self,
-        node: Node,
-        tosa_graph: Any,
-        scale: list[float],
-        input_node: TosaArg,
-        output: TosaArg,
-        input_zp: list[int],
-        output_zp: list[int],
-        rounding_mode: ts.RoundingMode,
-        per_channel: bool = False,
-        input_unsigned: bool = False,
-        output_unsigned: bool = False,
-    ) -> None:
-        """Insert a TOSA RESCALE operator configured for the quantized path.
-
-        RESCALE is serialized through NodeVisitor._serialize_operator so that
-        debug-location metadata is attached consistently with other TOSA ops.
-        The scale width is derived from the input dtype: INT48 uses 16-bit
-        multipliers, otherwise 32-bit multipliers are used.
-
-        """
-        if output_unsigned and input_node.dtype not in (ts.DType.INT8, ts.DType.INT16):
-            unsigned_offset = _unsigned_dtype_offset(output.dtype)
-            signed_output = tosa_graph.addIntermediate(output.shape, output.dtype)
-            self._build_rescale(
-                node=node,
-                tosa_graph=tosa_graph,
-                scale=scale,
-                input_node=input_node,
-                output=signed_output,
-                input_zp=input_zp,
-                output_zp=[output_zp[0] - unsigned_offset],
-                rounding_mode=rounding_mode,
-                per_channel=per_channel,
-                input_unsigned=input_unsigned,
-                output_unsigned=False,
-            )
-            self._build_rescale(
-                node=node,
-                tosa_graph=tosa_graph,
-                scale=[1.0],
-                input_node=signed_output,
-                output=output,
-                input_zp=[-unsigned_offset],
-                output_zp=[0],
-                rounding_mode=rounding_mode,
-                input_unsigned=False,
-                output_unsigned=True,
-            )
-            return
-
-        scale_width = 16 if input_node.dtype == ts.DType.INT48 else 32
-        is_scale32 = input_node.dtype != ts.DType.INT48
-
-        multipliers, shifts = _compute_multiplier_and_shift(scale, scale_width)
-
-        rescale_inputs = _create_const_ops_for_rescale(
-            tosa_graph,
-            is_scale32,
-            input_node.dtype,
-            output.name,
-            multipliers,
-            shifts,
-            input_zp,
-            output_zp,
-            output.dtype,
-            ts,
-        )
-
-        attr_rescale = ts.TosaSerializerAttribute()
-        attr_rescale.RescaleAttribute(
-            scale32=is_scale32,
-            rounding_mode=rounding_mode,
-            per_channel=per_channel,
-            input_unsigned=input_unsigned,
-            output_unsigned=output_unsigned,
-        )
-
-        self._serialize_operator(
-            node,
-            tosa_graph,
-            ts.Op.RESCALE,
-            [input_node.name, *rescale_inputs],
-            [output.name],
-            attr_rescale,
-        )
 
     def define_node(
         self,
@@ -260,45 +87,37 @@ class RescaleVisitor(NodeVisitor):
     ) -> None:
         validate_num_inputs(self.target, inputs, 5)
 
-        input_dtype = inputs[0].dtype
-        output_dtype = cast(torch.dtype, node.args[1])
-        scales = cast(list[float], node.args[2])
-        input_zp = cast(int, node.args[3])
-        output_zp = cast(int, node.args[4])
-        if "input_unsigned" in node.kwargs:
-            input_unsigned = cast(bool, node.kwargs.get("input_unsigned", False))
-        else:
-            input_unsigned = cast(bool, node.args[5]) if len(node.args) > 5 else False
-        if "output_unsigned" in node.kwargs:
-            output_unsigned = cast(bool, node.kwargs.get("output_unsigned", False))
-        else:
-            output_unsigned = cast(bool, node.args[6]) if len(node.args) > 6 else False
+        multiplier, shift, input_zp, output_zp = node.args[1:]
+        scale32 = node.kwargs.get("scale32", True)
+        rescale_inputs = _create_const_ops_for_rescale(
+            tosa_graph,
+            scale32,
+            inputs[0].dtype,
+            output.name,
+            multiplier,
+            shift,
+            [input_zp],
+            [output_zp],
+            output.dtype,
+            ts,
+        )
 
-        if (
-            input_dtype
-            not in [
-                map_dtype(torch.int8),
-                map_dtype(torch.int16),
-            ]
-            and input_zp != 0
-        ):
-            raise ValueError(
-                f"If input dtype is not int8 or int16, input_zp must be 0. Got input_dtype {input_dtype=}, {input_zp=}"
-            )
-        if output_dtype not in [torch.int8, torch.int16] and output_zp != 0:
-            raise ValueError(
-                f"If output dtype is not int8 or int16, output_zp must be 0. Got {ts.DTypeNames[output_dtype]}, {output_zp=}"
-            )
-        self._build_rescale(
-            node=node,
-            tosa_graph=tosa_graph,
-            scale=scales,
-            input_node=inputs[0],
-            output=output,
-            input_zp=[input_zp],
-            output_zp=[output_zp],
-            rounding_mode=ts.RoundingMode.SINGLE_ROUND,
-            per_channel=len(scales) > 1,
-            input_unsigned=input_unsigned,
-            output_unsigned=output_unsigned,
+        attr_rescale = ts.TosaSerializerAttribute()
+        attr_rescale.RescaleAttribute(
+            scale32=scale32,
+            rounding_mode=ts.RoundingMode.__members__[
+                node.kwargs.get("rounding_mode", "SINGLE_ROUND")
+            ],
+            per_channel=node.kwargs.get("per_channel", False),
+            input_unsigned=node.kwargs.get("input_unsigned", False),
+            output_unsigned=node.kwargs.get("output_unsigned", False),
+        )
+
+        self._serialize_operator(
+            node,
+            tosa_graph,
+            ts.Op.RESCALE,
+            [inputs[0].name, *rescale_inputs],
+            [output.name],
+            attr_rescale,
         )
