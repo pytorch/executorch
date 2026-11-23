@@ -117,6 +117,9 @@ def test_linear_preservation_and_int32_bias(linear, shape, activation):
     assert torch.count_nonzero(interpreter.env[weight_qparams.zero_point]) == 0
     _check_bias(interpreter, node, linear.bias)
     assert interpreter.env[node].shape == (*shape[:-1], 3)
+    assert (get_qparams_from_node(node, "out") is None) == (
+        activation is not torch.nn.Identity
+    )
 
 
 def test_linear_without_bias():
