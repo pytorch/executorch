@@ -28,7 +28,7 @@ _TUNED_CONFIGS = {}
 def setUpModule():
     # These tests check numerics, not tuning: two configs per attention kernel
     # (the small BLOCK_N fits the widest split-K tile), all of them with
-    # ET_CUDA_NVFP4_EXHAUSTIVE_TESTS=1.
+    # EXECUTORCH_CUDA_EXHAUSTIVE_TESTS=1.
     if EXHAUSTIVE:
         return
     for kernel, keep in (
