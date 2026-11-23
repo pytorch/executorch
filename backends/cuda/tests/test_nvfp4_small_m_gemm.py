@@ -14,6 +14,7 @@ from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
 from executorch.backends.cuda.quantize_op_dispatch._gemm_family_dispatch import (
     select_bucket,
 )
+from executorch.backends.cuda.tests.nvfp4_test_utils import sweep
 from executorch.backends.cuda.triton.kernels import nvfp4_small_m_gemm as small_m
 
 pytestmark = pytest.mark.skipif(
@@ -71,9 +72,25 @@ def make_pts(kind, n):
     }[kind]
 
 
-@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16])
-@pytest.mark.parametrize("pts_kind", ["unit", "scalar", "row"])
-@pytest.mark.parametrize("m", [2, 3, 4, 5, 8, 13, 16])
+@pytest.mark.parametrize(
+    "m,pts_kind,dtype",
+    sweep(
+        [
+            (m, p, d)
+            for m in (2, 3, 4, 5, 8, 13, 16)
+            for p in ("unit", "scalar", "row")
+            for d in (torch.bfloat16, torch.float16)
+        ],
+        # Every global-scale kind and both dtypes on buckets 2, 4 and 8
+        # (test_bucket_op_matches_reference covers bucket 16).
+        [
+            (2, "unit", torch.bfloat16),
+            (3, "row", torch.float16),
+            (5, "row", torch.bfloat16),
+            (8, "scalar", torch.float16),
+        ],
+    ),
+)
 def test_rows_and_w4a16_match_reference(m, pts_kind, dtype):
     # K = 1040 is not a multiple of any BK: the tail masks run.
     n, k = 200, 1040
@@ -86,7 +103,7 @@ def test_rows_and_w4a16_match_reference(m, pts_kind, dtype):
     # outputs stay far from 65504 for any seed.
     x = (torch.randn(m, k, device="cuda") * 0.0625).to(dtype)
     expected = reference(x, q, s, pts)
-    for split in (1, 2, 8):
+    for split in sweep((1, 2, 8), (1, 8)):
         rows = small_m.launch_rows(bucket, x, q, s, pts, unit, split)
         w4a16 = small_m.launch_w4a16(x, q, s, pts, split)
         for name, y in (("rows", rows), ("w4a16", w4a16)):
@@ -200,7 +217,7 @@ def test_bucket_op_autotunes_mode_and_split(weight_only):
     assert relative_error(y, reference(x, q, s, pts)) < tolerance
 
 
-@pytest.mark.parametrize("m", [1, 2, 8, 16, 17])
+@pytest.mark.parametrize("m", sweep([1, 2, 8, 16, 17], [1, 8, 17]))
 def test_linear_dispatch_routes_small_m(m, monkeypatch):
     from executorch.backends.cuda.quantize_op_dispatch import nvfp4_dispatch
 
