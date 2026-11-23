@@ -15,7 +15,10 @@ import executorch.backends.espressif.ops.operators  # noqa: F401
 import torch
 from executorch.backends.espressif.scratch import get_scratch_queries
 from executorch.backends.espressif.target import EspKernelMode, EspTarget
-from executorch.backends.espressif.utils.quantization import quantize_multiplier
+from executorch.backends.espressif.utils.quantization import (
+    quantize_multiplier,
+    SOFTMAX_MAX_WIDTH,
+)
 from executorch.backends.transforms.fused_quant.graph_utils import get_qparams_from_node
 from executorch.backends.transforms.permute_pass_utils import get_arg
 from executorch.backends.transforms.utils import add_constant, get_constant
@@ -446,7 +449,7 @@ def _lower_softmax(program, node, target, kernel_mode) -> bool:
     width = value.shape[-1]
     # Each exp(0) adds 2**19. Keep the vendor's final division exponent,
     # 35 - clz(sum), below 31 for its signed int32 (1 << exponent) mask.
-    if width > 255:
+    if width > SOFTMAX_MAX_WIDTH:
         return False
     input_params, output_params = (
         _qparams(program, node, prefix) for prefix in ("inp", "out")

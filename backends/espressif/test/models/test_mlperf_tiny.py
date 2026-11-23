@@ -70,8 +70,8 @@ test_cases = {
             "aten::constant_pad_nd": 1,
         },
         quantization_ops={
-            "quantized_decomposed::quantize_per_tensor": 3,
-            "quantized_decomposed::dequantize_per_tensor": 3,
+            "quantized_decomposed::quantize_per_tensor": 2,
+            "quantized_decomposed::dequantize_per_tensor": 2,
         },
         layout_ops={"aten::view_copy": 2, "aten::permute_copy": 2},
     ),
@@ -96,8 +96,8 @@ test_cases = {
             "aten::constant_pad_nd": 2,
         },
         quantization_ops={
-            "quantized_decomposed::quantize_per_tensor": 4,
-            "quantized_decomposed::dequantize_per_tensor": 4,
+            "quantized_decomposed::quantize_per_tensor": 3,
+            "quantized_decomposed::dequantize_per_tensor": 3,
         },
         layout_ops={"aten::view_copy": 2, "aten::permute_copy": 4},
     ),
@@ -121,8 +121,8 @@ test_cases = {
             "aten::constant_pad_nd": 5,
         },
         quantization_ops={
-            "quantized_decomposed::quantize_per_tensor": 6,
-            "quantized_decomposed::dequantize_per_tensor": 6,
+            "quantized_decomposed::quantize_per_tensor": 5,
+            "quantized_decomposed::dequantize_per_tensor": 5,
         },
         layout_ops={"aten::view_copy": 2, "aten::permute_copy": 1},
     ),

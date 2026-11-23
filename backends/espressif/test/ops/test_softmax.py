@@ -81,12 +81,15 @@ test_cases = {
     "uniform": EspTestCase(EspSoftmax(), (torch.zeros(2, 8),)),
     "positive": EspTestCase(EspSoftmax(), (_input((2, 10)) + 10,)),
     "negative": EspTestCase(EspSoftmax(), (_input((2, 10)) - 10,)),
-    "peaky": EspTestCase(EspSoftmax(), (torch.linspace(-30, 30, 20).reshape(2, 10),)),
+    "peaky": EspTestCase(EspSoftmax(), (torch.linspace(-30, 30, 20).reshape(1, 20),)),
     "float_users": EspTestCase(EspSoftmaxWithFloatUsers(), (_input((3, 10)),)),
     "width_limit": EspTestCase(EspSoftmax(), (torch.zeros(1, 255),)),
     "width_fallback": EspTestCase(EspSoftmax(supported=False), (torch.zeros(1, 256),)),
     "wide_uniform_fallback": EspTestCase(
         EspSoftmax(supported=False), (torch.zeros(1, 4095),)
+    ),
+    "wide_first_axis_fallback": EspTestCase(
+        EspSoftmax(dim=0, supported=False), (torch.zeros(4095, 1),)
     ),
     "first_axis_fallback": EspTestCase(
         EspSoftmax(dim=0, supported=False), (_input((3, 10)),)
@@ -120,8 +123,9 @@ def test_dialect_softmax(softmax_case):
     reference = tester.get_artifact(StageType.TO_EDGE).exported_program()
     (node,) = reference.graph.find_nodes(op="call_function", target=_FQ_SOFTMAX)
     params = get_qparams_from_node(node, "out")
-    assert get_scale(reference, params) == _OUTPUT_SCALE
-    assert get_zero_point(reference, params) == -128
+    if case.model.ops_after_transforms[_ESP_SOFTMAX]:
+        assert get_scale(reference, params) == _OUTPUT_SCALE
+        assert get_zero_point(reference, params) == -128
     for node in (
         tester.get_artifact()
         .exported_program()
@@ -148,6 +152,80 @@ def test_implementation_softmax(softmax_case, pytestconfig):
         rtol=torch.finfo(torch.float32).eps,
         num_inferences=2,
     )
+
+
+@pytest.mark.parametrize(
+    "shape,expected_probability",
+    [((2, 8), 1 / 8), ((1, 255), _OUTPUT_SCALE)],
+)
+def test_softmax_uniform_output_is_exact(shape, expected_probability):
+    model = EspSoftmax()
+    inputs = (torch.zeros(shape),)
+    tester = EspTester(model, inputs)
+    if get_scratch_queries(tester.target, tester.kernel_mode) is None:
+        pytest.skip("Build with EXECUTORCH_BUILD_ESP_NN_PYBINDS=ON")
+    tester.test_dialect(
+        model.ops_before_transforms, model.ops_after_transforms, atol=0, rtol=0
+    )
+    actual = tester.get_artifact().exported_program().module()(*inputs)
+    torch.testing.assert_close(
+        actual, torch.full_like(actual, expected_probability), atol=0, rtol=0
+    )
+
+
+@pytest.mark.parametrize("shape", [(2, 8), (1, 255)])
+def test_implementation_softmax_uniform_is_exact(shape, pytestconfig):
+    model = EspSoftmax()
+    tester = EspTester(model, (torch.zeros(shape),))
+    if get_scratch_queries(tester.target, tester.kernel_mode) is None:
+        pytest.skip("Build with EXECUTORCH_BUILD_ESP_NN_PYBINDS=ON")
+    tester.test_dialect(
+        model.ops_before_transforms, model.ops_after_transforms, atol=0, rtol=0
+    )
+    tester.test_implementation(pytestconfig.rootpath, atol=0, rtol=0, num_inferences=2)
+
+
+@pytest.mark.parametrize(
+    "shape,dim",
+    [((1, 4095), -1), ((4095, 1), 0)],
+)
+def test_softmax_wide_fallback_preserves_probabilities(shape, dim):
+    model = EspSoftmax(dim=dim, supported=False)
+    inputs = (torch.zeros(shape),)
+    tester = EspTester(model, inputs).test_dialect(
+        model.ops_before_transforms, model.ops_after_transforms, atol=0, rtol=0
+    )
+    reference = tester.get_artifact(StageType.TO_EDGE).exported_program()
+    (node,) = reference.graph.find_nodes(op="call_function", target=_FQ_SOFTMAX)
+    assert get_scale(reference, get_qparams_from_node(node, "out")) < _OUTPUT_SCALE
+    actual = tester.get_artifact().exported_program().module()(*inputs)
+    row_sums = actual.sum(dim=dim)
+    torch.testing.assert_close(row_sums, torch.ones_like(row_sums), atol=1e-3, rtol=0)
+
+
+def test_softmax_peaky_input_reaches_diff_min():
+    model = EspSoftmax()
+    inputs = (torch.linspace(-30, 30, 20).reshape(1, 20),)
+    tester = EspTester(model, inputs)
+    if get_scratch_queries(tester.target, tester.kernel_mode) is None:
+        pytest.skip("Build with EXECUTORCH_BUILD_ESP_NN_PYBINDS=ON")
+    tester.test_dialect(
+        model.ops_before_transforms,
+        model.ops_after_transforms,
+        atol=_OUTPUT_SCALE,
+        rtol=0,
+    )
+    interpreter = torch.fx.Interpreter(
+        tester.get_artifact().exported_program().module(),
+        garbage_collect_values=False,
+    )
+    interpreter.run(*inputs)
+    (softmax,) = interpreter.module.graph.find_nodes(
+        op="call_function", target=_ESP_SOFTMAX
+    )
+    inputs = interpreter.env[get_arg(softmax, "input")].to(torch.int32)
+    differences = inputs - inputs.amax(-1, keepdim=True)
+    assert torch.any(differences < get_arg(softmax, "diff_min"))
 
 
 @pytest.mark.parametrize(
@@ -277,6 +355,7 @@ def test_softmax_unsupported_qparams_stay_portable(float_input, scale, zero_poin
         EspTester(case.model, case.example_inputs)
         .export_fused_quant(quantizer)
         .to_edge()
+        .check_node_count({_FQ_SOFTMAX: 1})
     )
     expected = tester.get_artifact().exported_program().module()(*case.example_inputs)
     tester.run_passes().check_node_count({_FQ_SOFTMAX: 0, _ESP_SOFTMAX: 0, _SOFTMAX: 1})

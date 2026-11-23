@@ -7,6 +7,7 @@
 from dataclasses import replace
 
 import torch
+from executorch.backends.espressif.utils.quantization import SOFTMAX_MAX_WIDTH
 from executorch.backends.transforms.permute_pass_utils import get_arg, set_arg
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
@@ -106,6 +107,20 @@ class _AvgPoolQuantizer(OpQuantizer):
         annotate_output_qspec(node, SharedQuantizationSpec((node.args[0], node)))
 
 
+def _use_fixed_softmax_qparams(node: torch.fx.Node) -> bool:
+    # Softmax preserves shape; output metadata survives the inserted Q/DQ nodes.
+    value = node.meta.get("val")
+    return (
+        isinstance(value, torch.Tensor)
+        and value.dim() > 0
+        and all(type(dim) is int and dim > 0 for dim in value.shape)
+        and value.numel() <= torch.iinfo(torch.int32).max
+        and value.shape[-1] <= SOFTMAX_MAX_WIDTH
+        and get_arg(node, "dim") in (-1, value.dim() - 1)
+        and not get_arg(node, "half_to_float")
+    )
+
+
 class _EspFusedQuantizer(FusedQuantQuantizer):
     """Fused Quant quantizer for the Espressif operator-library backend.
 
@@ -133,6 +148,7 @@ class _EspFusedQuantizer(FusedQuantQuantizer):
                     torch.ops.aten._softmax.default,
                     torch.ops.fused_quant._softmax.default,
                     softmax_config,
+                    node_filter=_use_fixed_softmax_qparams,
                 ),
                 OpQuantizer(
                     torch.ops.aten.hardswish.default,
