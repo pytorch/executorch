@@ -19,6 +19,9 @@ size_t greedy_argmax_last_row(
     size_t row_size);
 std::vector<size_t> top_logit_indices(const float* row, size_t n, size_t k);
 std::unordered_set<uint64_t> parse_token_ids(std::string_view text);
+// Whether an off-graph KV cache stores F16 for --kv_dtype: fp16 or fp32, or
+// the engine's `default_half` when the flag is empty.
+bool kv_cache_in_half(std::string_view kv_dtype, bool default_half);
 size_t resolve_logits_output(
     size_t output_count,
     const std::vector<bool>& user_outputs);

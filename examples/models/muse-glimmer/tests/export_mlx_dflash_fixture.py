@@ -377,7 +377,7 @@ def export_fixture(
         )
 
     directory.mkdir(parents=True, exist_ok=True)
-    if not controlled:
+    if not controlled and not legacy:
         write_draft_reference(directory, target, draft, config, draft_config)
 
     original_constants = export_dflash._dflash_constant_methods
@@ -413,6 +413,7 @@ if __name__ == "__main__":
     write_nonconstant_selector_fixture(args.output)
     export_fixture(args.output / "legacy", -1, legacy=True)
     export_fixture(args.output / "random", -1, controlled=False)
+    export_fixture(args.output / "random_legacy", -1, legacy=True, controlled=False)
     export_fixture(args.output / "owner_sensitive", -1, owner_sensitive=True)
     export_fixture(args.output / "single_proposal", -1, block_size=2)
     export_fixture(args.output / "routing", -1, routing_sensitive=True)
