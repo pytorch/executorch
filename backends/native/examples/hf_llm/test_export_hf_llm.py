@@ -16,6 +16,7 @@ from unittest import mock
 import gguf
 import torch
 from executorch.backends.native import get_default_compile_config
+from executorch.backends.native.custom_ops import gated_delta_rule_op
 from executorch.backends.native.examples.hf_llm import export_hf_llm
 from executorch.backends.native.examples.hf_llm.export_hf_llm import (
     _check_attention_args,
@@ -27,10 +28,13 @@ from executorch.backends.native.examples.hf_llm.export_hf_llm import (
     _quantize_8da4w,
     _QUANTIZED_TOL,
     _sample_prompts,
+    export_prefill,
     golden_samples,
     LastTokenLM,
     load_gguf,
+    native_gdn_rules,
     OffGraphLastTokenLM,
+    prefill_calls,
 )
 from executorch.backends.native.passes import FuseRoPEPass
 from executorch.backends.native.passes._utils import _resolve_aten
@@ -47,6 +51,8 @@ from transformers import (
     Gemma2Config,
     Gemma3Config,
     Gemma3TextConfig,
+    Gemma4TextConfig,
+    Gemma4UnifiedTextConfig,
     GemmaConfig,
     GptOssConfig,
     GraniteConfig,
@@ -219,6 +225,95 @@ def _random_gemma(arch: str, **config) -> PreTrainedModel:
     return model
 
 
+def _random_gemma4(
+    config_cls, randomize: bool = True, **moe: object
+) -> PreTrainedModel:
+    """A tiny Gemma 4 text decoder shaped as the 12B: a sliding-window layer,
+    then a global layer whose values are its keys, with a wider head, one KV
+    head and proportional RoPE, and capped final logits."""
+    torch.manual_seed(7)
+    extra = {"hidden_size_per_layer_input": 0} if config_cls is Gemma4TextConfig else {}
+    config = config_cls(
+        vocab_size=128,
+        hidden_size=64,
+        intermediate_size=128,
+        num_hidden_layers=2,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        head_dim=16,
+        global_head_dim=32,
+        num_global_key_value_heads=1,
+        attention_k_eq_v=True,
+        layer_types=["sliding_attention", "full_attention"],
+        sliding_window=3,
+        max_position_embeddings=64,
+        final_logit_softcapping=30.0,
+        **extra,
+        **moe,
+    )
+    model = AutoModelForCausalLM.from_config(
+        config, experts_implementation="batched_mm" if moe else None
+    )
+    model = model.eval().requires_grad_(False)
+    model.config._attn_implementation = "sdpa"
+    model.generation_config.use_cache = True
+    model.generation_config.cache_implementation = "static"
+    if randomize:
+        for weight in model.parameters():
+            weight.uniform_(-0.5, 0.5)
+        for i, layer in enumerate(model.model.layers):
+            layer.layer_scalar.fill_(0.5 + 0.25 * i)
+    return model
+
+
+# HF Gemma 4 FQN suffix -> llama.cpp's tensor name, from its converter.
+_GEMMA4_GGUF = {
+    "input_layernorm.weight": "attn_norm.weight",
+    "self_attn.q_proj.weight": "attn_q.weight",
+    "self_attn.k_proj.weight": "attn_k.weight",
+    "self_attn.v_proj.weight": "attn_v.weight",
+    "self_attn.o_proj.weight": "attn_output.weight",
+    "self_attn.q_norm.weight": "attn_q_norm.weight",
+    "self_attn.k_norm.weight": "attn_k_norm.weight",
+    "post_attention_layernorm.weight": "post_attention_norm.weight",
+    "pre_feedforward_layernorm.weight": "ffn_norm.weight",
+    "mlp.gate_proj.weight": "ffn_gate.weight",
+    "mlp.up_proj.weight": "ffn_up.weight",
+    "mlp.down_proj.weight": "ffn_down.weight",
+    "post_feedforward_layernorm.weight": "post_ffw_norm.weight",
+    "layer_scalar": "layer_output_scale.weight",
+    "router.proj.weight": "ffn_gate_inp.weight",
+    "router.scale": "ffn_gate_inp.scale",
+    "router.per_expert_scale": "ffn_down_exps.scale",
+    "experts.gate_up_proj": "ffn_gate_up_exps.weight",
+    "experts.down_proj": "ffn_down_exps.weight",
+    "pre_feedforward_layernorm_2.weight": "pre_ffw_norm_2.weight",
+    "post_feedforward_layernorm_1.weight": "post_ffw_norm_1.weight",
+    "post_feedforward_layernorm_2.weight": "post_ffw_norm_2.weight",
+}
+_GEMMA4_MOE = {
+    "enable_moe_block": True,
+    "num_experts": 4,
+    "top_k_experts": 2,
+    "moe_intermediate_size": 32,
+}
+
+
+def _gemma4_gguf_tensors(model: PreTrainedModel) -> list[tuple[str, torch.Tensor]]:
+    """The model's weights as llama.cpp's converter writes a Gemma 4 GGUF:
+    norms as stored, the output tied to the embedding, a derived rope_freqs."""
+    pairs = [
+        ("token_embd.weight", model.model.embed_tokens.weight.clone()),
+        ("output_norm.weight", model.model.norm.weight.clone()),
+        ("rope_freqs.weight", torch.ones(16)),
+    ]
+    for fqn, weight in model.state_dict().items():
+        layer, _, suffix = fqn.removeprefix("model.layers.").partition(".")
+        if fqn.startswith("model.layers.") and suffix in _GEMMA4_GGUF:
+            pairs.append((f"blk.{layer}.{_GEMMA4_GGUF[suffix]}", weight.clone()))
+    return pairs
+
+
 def _eager_logits(model: PreTrainedModel, ids: torch.Tensor) -> torch.Tensor:
     """Logits of one uncached pass through transformers' eager attention."""
     eager = copy.deepcopy(model)
@@ -371,6 +466,51 @@ class ExportHfLlmTest(unittest.TestCase):
                     self.assertTrue(torch.allclose(got, want, atol=1e-4, rtol=0))
                 else:
                     self.assertTrue(torch.equal(got, want))
+
+    def test_gemma4_gguf_weights_reproduce_the_model(self) -> None:
+        ids = torch.tensor([[3, 4, 5, 6, 7, 8]])
+        for config_cls in (Gemma4TextConfig, Gemma4UnifiedTextConfig):
+            with self.subTest(config_cls.__name__):
+                reference = _random_gemma4(config_cls)
+                loaded = _random_gemma4(config_cls, randomize=False)
+                pairs = _gemma4_gguf_tensors(reference)
+
+                load_gguf(loaded, "model.gguf", "gemma4", lambda _, p=pairs: iter(p))
+
+                self.assertEqual(
+                    [layer.layer_scalar.item() for layer in loaded.model.layers],
+                    [0.5, 0.75],
+                )
+                with torch.no_grad():
+                    got, want = loaded(ids).logits, reference(ids).logits
+                self.assertTrue(torch.equal(got, want))
+
+    def test_gemma4_moe_gguf_weights_reproduce_the_model(self) -> None:
+        ids = torch.tensor([[3, 4, 5, 6, 7, 8]])
+        reference = _random_gemma4(Gemma4TextConfig, **_GEMMA4_MOE)
+        loaded = _random_gemma4(Gemma4TextConfig, randomize=False, **_GEMMA4_MOE)
+        pairs = _gemma4_gguf_tensors(reference)
+        self.assertIn("blk.1.ffn_gate_up_exps.weight", dict(pairs))
+
+        load_gguf(loaded, "model.gguf", "gemma4", lambda _: iter(pairs))
+
+        with torch.no_grad():
+            got, want = loaded(ids).logits, reference(ids).logits
+        self.assertTrue(torch.equal(got, want))
+
+    def test_gguf_buffers_it_lacks_keep_their_initial_values(self) -> None:
+        pairs = [
+            pair
+            for pair in _gemma4_gguf_tensors(_random_gemma4(Gemma4TextConfig))
+            if pair[0] != "blk.1.layer_output_scale.weight"
+        ]
+        loaded = _random_gemma4(Gemma4TextConfig, randomize=False)
+
+        load_gguf(loaded, "model.gguf", "gemma4", lambda _: iter(pairs))
+
+        self.assertEqual(
+            [layer.layer_scalar.item() for layer in loaded.model.layers], [0.5, 1.0]
+        )
 
     def test_gguf_rejects_unknown_and_missing_weights(self) -> None:
         pairs = _as_gguf_tensors(_tiny(), "llama")
@@ -915,6 +1055,11 @@ class ExportHfLlmTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "chunked_attention"):
             OffGraphLastTokenLM(model, 32)
 
+    def test_offgraph_cache_refuses_per_layer_head_shapes(self) -> None:
+        model = _random_gemma4(Gemma4TextConfig)
+        with self.assertRaisesRegex(NotImplementedError, "per layer"):
+            OffGraphLastTokenLM(model, 32)
+
     def test_offgraph_cache_scope_uninstalls_its_reference_cache(self) -> None:
         wrapper = OffGraphLastTokenLM(_tiny(), 32)
         with wrapper.cache_scope():
@@ -1050,6 +1195,120 @@ class ExportHfLlmTest(unittest.TestCase):
                     got = _one_token_logits(run, ids, want)
                     for a, b in zip(got, want, strict=True):
                         torch.testing.assert_close(a, b, atol=1e-5, rtol=1e-5)
+
+    def test_native_gdn_rule_is_one_op_per_layer_and_call(self) -> None:
+        # transformers' own rules and dynamic cache, the prompt in one call,
+        # against the wrapper's 8-token and one-token calls on native's op.
+        model = _tiny_qwen35()
+        ids = list(range(3, 22))
+        want = _hf_greedy_logits(model, ids, 2)
+        with native_gdn_rules(model), torch.no_grad():
+            wrapper = LastTokenLM(copy.deepcopy(model), 32).eval()
+            programs = {
+                size: torch.export.export(
+                    wrapper,
+                    (torch.zeros((1, size), dtype=torch.long), torch.arange(size)),
+                    strict=True,
+                )
+                for size in (1, 8)
+            }
+            start = 0
+            for size in (8, 8, 1, 1, 1):
+                chunk = torch.tensor([ids[start : start + size]])
+                logits = wrapper(chunk, torch.arange(start, start + size))
+                start += size
+        torch.testing.assert_close(logits, want[0], atol=1e-4, rtol=1e-4)
+        for name, program in programs.items():
+            with self.subTest(method=name):
+                targets = [
+                    n.target for n in program.graph.nodes if n.op == "call_function"
+                ]
+                # One per linear-attention layer; no ATen rule is left.
+                self.assertEqual(targets.count(gated_delta_rule_op), 3)
+                self.assertNotIn(torch.ops.aten.cumsum.default, targets)
+
+    def test_native_gdn_rules_restore_transformers_rules(self) -> None:
+        model = _tiny_qwen35()
+        module = sys.modules[type(model.model.layers[0].linear_attn).__module__]
+        rules = (
+            module.torch_chunk_gated_delta_rule,
+            module.torch_recurrent_gated_delta_rule,
+        )
+        with native_gdn_rules(model):
+            self.assertIsNot(module.torch_chunk_gated_delta_rule, rules[0])
+        self.assertEqual(
+            (
+                module.torch_chunk_gated_delta_rule,
+                module.torch_recurrent_gated_delta_rule,
+            ),
+            rules,
+        )
+
+    def test_prefill_calls_take_full_calls_then_the_rest(self) -> None:
+        self.assertEqual(prefill_calls(1100, 512), [512, 512, 76])
+        self.assertEqual(prefill_calls(513, 512), [512, 1])
+        self.assertEqual(prefill_calls(3, 0), [1, 1, 1])
+
+    def test_prefill_takes_any_token_count_and_matches_transformers(self) -> None:
+        # transformers' own rules and dynamic cache, the prompt in one call,
+        # against prefill calls of 8, 8 and 3 tokens on native's op, then the
+        # exported prefill on calls of 2, 5 and 8 tokens against eager.
+        model = _tiny_qwen35()
+        ids = list(range(3, 22))
+        want = _hf_greedy_logits(model, ids, 2)
+        with native_gdn_rules(model), torch.no_grad():
+            wrapper = LastTokenLM(copy.deepcopy(model), 32).eval()
+            prefill = export_prefill(wrapper, 8)
+            forward = torch.export.export(
+                wrapper, (torch.zeros((1, 1), dtype=torch.long), torch.arange(1))
+            )
+            self.assertEqual(
+                set(prefill.graph_signature.buffers_to_mutate.values()),
+                set(forward.graph_signature.buffers_to_mutate.values()),
+            )
+            start = 0
+            for size in prefill_calls(len(ids), 8):
+                chunk = torch.tensor([ids[start : start + size]])
+                logits = wrapper(chunk, torch.arange(start, start + size))
+                start += size
+            torch.testing.assert_close(logits, want[0], atol=1e-4, rtol=1e-4)
+            for size in (2, 5, 8):
+                with self.subTest(tokens=size):
+                    first = (torch.tensor([ids[:size]]), torch.arange(size))
+                    fresh = LastTokenLM(copy.deepcopy(model), 32).eval()
+                    torch.testing.assert_close(prefill.module()(*first), fresh(*first))
+            targets = [n.target for n in prefill.graph.nodes if n.op == "call_function"]
+            self.assertEqual(targets.count(gated_delta_rule_op), 3)
+
+    def test_golden_samples_call_prefill_then_forward(self) -> None:
+        with native_gdn_rules(model := _tiny_qwen35()):
+            wrapper = LastTokenLM(model, 32).eval()
+            (sample,) = golden_samples(wrapper, [list(range(3, 14))], 2, 8).samples
+        methods = [call.method for call in sample.calls]
+        self.assertEqual(methods, ["prefill", "prefill", "forward", "forward"])
+        positions = torch.cat([call.inputs[1] for call in sample.calls])
+        self.assertTrue(torch.equal(positions, torch.arange(13)))
+
+    def test_golden_samples_refuse_an_empty_prompt(self) -> None:
+        with native_gdn_rules(model := _tiny_qwen35()):
+            wrappers = [LastTokenLM(_tiny(), 32), LastTokenLM(model, 32)]
+            for wrapper in wrappers:
+                with self.subTest(recurrent=bool(wrapper.tokens_per_call)):
+                    with self.assertRaisesRegex(ValueError, "at least one token"):
+                        golden_samples(wrapper.eval(), [[3, 4], []], 1, 8)
+
+    def test_prefill_tokens_needs_the_native_rule_and_a_fitting_count(self) -> None:
+        for flags in (
+            ["--gdn_op", "aten", "--prefill_tokens", "8"],
+            ["--prefill_tokens", "1"],
+            ["--prefill_tokens", "200"],
+        ):
+            argv = ["export_hf_llm", "--model", "unused", *flags]
+            with self.subTest(flags=flags), mock.patch.object(sys, "argv", argv):
+                with mock.patch.object(export_hf_llm, "_load") as load:
+                    with self.assertRaises(SystemExit):
+                        export_hf_llm.main()
+                load.assert_not_called()
 
     def test_golden_samples_feed_linear_attention_prompts_one_token_per_call(
         self,
@@ -1240,6 +1499,14 @@ class ExportHfLlmTest(unittest.TestCase):
                     )
                 )
                 self._check_matches_eager(model)
+
+    def test_gemma4_layers_match_eager_past_the_window(self) -> None:
+        for config_cls in (Gemma4TextConfig, Gemma4UnifiedTextConfig):
+            with self.subTest(config_cls.__name__):
+                self._check_matches_eager(_random_gemma4(config_cls))
+
+    def test_gemma4_moe_layers_match_eager(self) -> None:
+        self._check_matches_eager(_random_gemma4(Gemma4TextConfig, **_GEMMA4_MOE))
 
     def test_attention_logit_softcapping_matches_eager_when_configured_eager(
         self,
