@@ -68,7 +68,11 @@ test_cases = {
     "channels_3": EspTestCase(EspMean(), (_input((1, 3, 5, 7)),)),
     "channels_4": EspTestCase(EspMean(), (_input((1, 4, 5, 7)),)),
     "channels_17": EspTestCase(EspMean(), (_input((1, 17, 3, 5)),)),
+    "channels_64": EspTestCase(EspMean(), (_input((1, 64, 8, 8)),)),
+    "channels_256": EspTestCase(EspMean(), (_input((1, 256, 3, 3)),)),
     "batches": EspTestCase(EspMean(), (_input((3, 7, 5, 9)),)),
+    "aligned_batches": EspTestCase(EspMean(), (_input((2, 16, 5, 7)),)),
+    "large_plane": EspTestCase(EspMean(), (_input((1, 16, 32, 32)),)),
     "keepdim": EspTestCase(EspMean(keepdim=True), (_input((2, 5, 7, 3)),)),
     "negative_dims": EspTestCase(EspMean(dim=(-2, -1)), (_input((1, 4, 5, 7)),)),
     "reversed_dims": EspTestCase(EspMean(dim=(3, 2)), (_input((1, 4, 5, 7)),)),
@@ -154,23 +158,32 @@ def test_mean_uses_independent_qparams():
 
 
 @pytest.mark.parametrize(
-    "input_scale,output_scale,count,supported",
+    "case,input_scale,output_scale,count,supported",
     [
-        (0.125, 0.03125, 35, True),
-        (1, 1, torch.iinfo(torch.int32).max // 255 + 1, False),
-        (1, 1e-12, 35, False),
-        (1e-12, 1, 35, False),
-        (1e-38, 1e-39, 35, False),
-        (1e38, 1e38, 2, False),
+        ("supported", 0.125, 0.03125, 35, True),
+        (
+            "accumulator_count",
+            1,
+            1,
+            torch.iinfo(torch.int32).max // 255 + 1,
+            False,
+        ),
+        ("multiplier_too_large", 1, 1e-12, 35, False),
+        ("multiplier_too_small", 1e-12, 1, 35, False),
+        ("right_shift_limit", 1e-8, 1, 35, False),
+        ("left_shift_overflow", 1, 1e-8, 35, False),
+        ("float_rounding_limit", 1, 1, 2**23 + 1, False),
+        ("reciprocal_overflow", 1e-38, 1e-39, 35, False),
+        ("float_accumulation_overflow", 1e38, 1e38, 2, False),
     ],
 )
-def test_mean_arithmetic_bounds(input_scale, output_scale, count, supported):
+def test_mean_arithmetic_bounds(case, input_scale, output_scale, count, supported):
     assert (
         _mean_multiplier(
             _QParams(input_scale, -128), _QParams(output_scale, 127), count
         )
         is not None
-    ) == supported
+    ) == supported, case
 
 
 def test_mean_strict_recipe():
