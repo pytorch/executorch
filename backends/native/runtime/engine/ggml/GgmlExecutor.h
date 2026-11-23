@@ -28,17 +28,28 @@ class Package;
 // the linked ggml variant registers no such device.
 ggml_backend_dev_t select_ggml_gpu_device(const GgmlEngineOptions& options);
 
-// The mutable state of one context: the data keys that any method of its
-// program writes, and the storage of each, which every executable of the
-// context binding the key shares. The context owns the storage from the first
-// successful compile that binds the key, so releasing executables keeps its
-// value. Program validation has already required every binding of a key to
-// have the same metadata.
+// Storage the executables of one context share. `keys` are the data keys that
+// any method of its program writes; `storage` holds each one's buffer. Program
+// validation has already required every binding of a key to have the same
+// metadata. `constants` holds the device tensors of immutable constants, keyed
+// by their load plans: the package bytes they load, where, and every
+// transform that decides their device bytes. The context owns `storage` from
+// the first successful compile that binds each key, so releasing executables
+// keeps its value; a constant lives while an executable holds it.
+struct GgmlLoadPlan;
+
 struct GgmlContextState {
+  struct Constant {
+    std::weak_ptr<ggml_tensor> tensor;
+    // How the tensor was loaded, which every later binder must match.
+    std::shared_ptr<const GgmlLoadPlan> plan;
+  };
+
   std::unordered_set<std::string> keys;
   std::unordered_map<std::string, std::shared_ptr<ggml_tensor>> storage;
   // Every method of the program, which a key's storage type must suit.
   std::vector<const Method*> methods;
+  std::unordered_map<std::string, Constant> constants;
 };
 
 // `kv_cache`, which must outlive the executable, serves the method's

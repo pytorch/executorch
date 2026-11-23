@@ -7,6 +7,7 @@
 #include <executorch/backends/native/runtime/engine/ggml/GgmlExecutor.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -48,6 +49,42 @@
 #include <executorch/backends/native/runtime/graph/Value.h>
 
 namespace ptn {
+
+// How one persistent tensor's package bytes become its device bytes. Each
+// load-time transform is decided once, in plan_load(), which records it in
+// `transforms`; the loader applies only what the plan holds. A constant is
+// shared under its source bytes, buffer type, device type and shape and
+// that chain, so a transform that changes device bytes changes the key.
+struct GgmlLoadPlan {
+  std::string source;
+  std::string buffer_type;
+  ggml_type type = GGML_TYPE_F32;
+  std::vector<int64_t> sizes;
+  bool q4 = false;
+  std::optional<std::vector<float>> row_scales;
+  bool narrow = false;
+  // Weight-only quantized weights dequantized to F32, with activation
+  // quantization off (allow_activation_quant_for_weight_only).
+  bool dequant = false;
+  const std::vector<float>* scales = nullptr;
+  std::string transforms;
+
+  std::string key() const {
+    std::string out =
+        source + '|' + buffer_type + '|' + ggml_type_name(type) + '[';
+    for (const int64_t size : sizes) {
+      out += std::to_string(size) + ',';
+    }
+    return out + ']' + transforms;
+  }
+
+  bool operator==(const GgmlLoadPlan& other) const {
+    return source == other.source && buffer_type == other.buffer_type &&
+        type == other.type && sizes == other.sizes &&
+        transforms == other.transforms;
+  }
+};
+
 namespace {
 
 using namespace ggml_detail;
@@ -117,7 +154,8 @@ int64_t attended_key_extent(
       (needed + kKeyExtentBucket - 1) / kKeyExtentBucket * kKeyExtentBucket);
 }
 
-// Storage of the mutable buffer keys one compile introduced to its context.
+// Storage of the mutable buffers or constants one compile introduced to its
+// context.
 struct StateBlock {
   ggml_context_ptr context;
   ggml_backend_buffer_ptr buffer;
@@ -1207,47 +1245,175 @@ class GgmlExecutable final : public EngineExecutable {
         batch_norm_buffer_.get(), GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
   }
 
-  void allocate_constants(
-      size_t count,
-      const std::unordered_map<ValueId, std::vector<float>>& float_scales) {
-    ggml_init_params params{
-        .mem_size = ggml_tensor_overhead() * (count + float_scales.size() + 16),
-        .mem_buffer = nullptr,
-        .no_alloc = true,
+  using LoadPlan = GgmlLoadPlan;
+
+  // The package key that owns `key`'s bytes: methods of one package name the
+  // same bytes by different data keys.
+  std::string owner_key(const std::string& key) const {
+    const std::optional<ConstantInfo> info = package_.constant_info(key);
+    return info ? info->owner : key;
+  }
+
+  LoadPlan plan_load(
+      const DataBinding& binding,
+      std::optional<std::vector<float>> row_scales) const {
+    const TensorMeta& meta =
+        method_.graph.value(binding.value_id).tensor_meta();
+    LoadPlan plan{
+        .source = owner_key(binding.key),
+        .buffer_type = ggml_backend_buft_name(
+            ggml_backend_get_default_buffer_type(primary_backend_)),
+        .type = compute_type(meta),
+        .sizes = meta.sizes,
     };
-    persistent_context_.reset(ggml_init(params));
-    if (!persistent_context_) {
-      throw std::runtime_error(
-          "ggml: failed to create persistent tensor context");
+    const auto record = [&plan](const std::string& transform) {
+      plan.transforms += '|' + transform;
+    };
+    if (const PackedQuant* packed = packed_quant(meta)) {
+      record("packed:" + packed->codec);
     }
+    const AffineGroupQuant* quant = affine_quant(meta);
+    if (quant != nullptr) {
+      record(
+          "int4:" + owner_key(quant->scale_data_key) + ',' +
+          owner_key(quant->zero_point_data_key) + ',' +
+          std::to_string(quant->group_size));
+    }
+    if (dequantizes_to_f32(binding.value_id)) {
+      plan.type = GGML_TYPE_F32;
+      plan.dequant = true;
+      record("dequant_f32");
+    } else if (quant != nullptr) {
+      plan.q4 = true;
+      record("q4_0");
+      if (row_scales) {
+        plan.row_scales = std::move(row_scales);
+        record("row_scales");
+      }
+    }
+    if (plan.type == GGML_TYPE_I32 && meta.dtype == ScalarType::Long) {
+      plan.narrow = true;
+      record("i64_to_i32");
+    }
+    if (const auto scales = weight_scales_.find(binding.value_id);
+        scales != weight_scales_.end()) {
+      plan.scales = &scales->second;
+      std::string factors(scales->second.size() * sizeof(float), '\0');
+      std::memcpy(factors.data(), scales->second.data(), factors.size());
+      record("scaled:" + factors);
+    }
+    return plan;
+  }
+
+  // A tensor bound by key must be the one this plan would have created.
+  static void check_shared_constant(
+      const ggml_tensor* live,
+      const LoadPlan& recorded,
+      const LoadPlan& plan) {
+    const std::array<int64_t, GGML_MAX_DIMS> ne = reversed_extents(plan.sizes);
+    const size_t nbytes = ggml_row_size(plan.type, ne[0]) *
+        static_cast<size_t>(ne[1] * ne[2] * ne[3]);
+    if (!(recorded == plan) || live->type != plan.type ||
+        !std::equal(ne.begin(), ne.end(), live->ne) ||
+        !ggml_is_contiguous(live) || ggml_nbytes(live) != nbytes ||
+        plan.buffer_type !=
+            ggml_backend_buft_name(
+                ggml_backend_buffer_get_type(live->buffer))) {
+      throw std::logic_error(
+          "ggml: shared constant '" + plan.source +
+          "' does not match the tensor its key names");
+    }
+  }
+
+  // Binds each constant to the device tensor the context holds for its plan,
+  // allocating tensors, still to be loaded, for plans no live executable
+  // holds. Returns the values bound to loaded tensors.
+  std::unordered_set<ValueId> bind_constants(
+      const std::unordered_map<ValueId, LoadPlan>& plans) {
+    static constexpr std::string_view kRowScales = "|row_scales";
+    std::unordered_set<ValueId> loaded;
+    std::unordered_map<std::string, ggml_tensor*> fresh;
+    std::shared_ptr<StateBlock> block;
     for (const DataBinding& binding : method_.data_bindings) {
       if (!is_persistent(binding) || is_state(binding)) {
         continue;
       }
-      const TensorMeta& meta =
-          method_.graph.value(binding.value_id).tensor_meta();
-      ggml_tensor* tensor = new_tensor(
-          persistent_context_.get(),
-          dequantizes_to_f32(binding.value_id) ? GGML_TYPE_F32
-                                               : compute_type(meta),
-          meta.sizes);
+      const LoadPlan& plan = plans.at(binding.value_id);
+      const std::string key = plan.key();
+      const std::string scales_key = key + std::string(kRowScales);
+      GgmlContextState::Constant& shared = state_.constants[key];
+      if (std::shared_ptr<ggml_tensor> live = shared.tensor.lock()) {
+        check_shared_constant(live.get(), *shared.plan, plan);
+        persistent_.emplace(binding.value_id, live.get());
+        if (plan.row_scales) {
+          std::shared_ptr<ggml_tensor> scales =
+              state_.constants.at(scales_key).tensor.lock();
+          row_scales_.emplace(binding.value_id, scales.get());
+          state_storage_.push_back(std::move(scales));
+        }
+        loaded.insert(binding.value_id);
+        state_storage_.push_back(std::move(live));
+        continue;
+      }
+      if (const auto created = fresh.find(key); created != fresh.end()) {
+        persistent_.emplace(binding.value_id, created->second);
+        if (plan.row_scales) {
+          row_scales_.emplace(binding.value_id, fresh.at(scales_key));
+        }
+        loaded.insert(binding.value_id);
+        continue;
+      }
+      if (!block) {
+        block = std::make_shared<StateBlock>();
+        ggml_init_params params{
+            .mem_size =
+                ggml_tensor_overhead() * (2 * method_.data_bindings.size() + 1),
+            .mem_buffer = nullptr,
+            .no_alloc = true,
+        };
+        block->context.reset(ggml_init(params));
+        if (!block->context) {
+          throw std::runtime_error(
+              "ggml: failed to create persistent tensor context");
+        }
+      }
+      ggml_tensor* tensor =
+          new_tensor(block->context.get(), plan.type, plan.sizes);
       ggml_set_name(tensor, binding.key.c_str());
       persistent_.emplace(binding.value_id, tensor);
-      if (float_scales.contains(binding.value_id)) {
-        const AffineGroupQuant& quant = q4_affine(meta);
+      fresh.emplace(key, tensor);
+      auto recorded = std::make_shared<LoadPlan>(plan);
+      recorded->row_scales.reset();
+      recorded->scales = nullptr;
+      shared.plan = std::move(recorded);
+      if (plan.row_scales) {
+        const AffineGroupQuant& quant =
+            q4_affine(method_.graph.value(binding.value_id).tensor_meta());
         ggml_tensor* scales = new_tensor(
-            persistent_context_.get(),
+            block->context.get(),
             GGML_TYPE_F32,
-            {meta.sizes[0], meta.sizes[1] / quant.group_size});
+            {plan.sizes[0], plan.sizes[1] / quant.group_size});
         ggml_set_name(scales, quant.scale_data_key.c_str());
         row_scales_.emplace(binding.value_id, scales);
+        fresh.emplace(scales_key, scales);
       }
     }
-    persistent_buffer_.reset(ggml_backend_alloc_ctx_tensors(
-        persistent_context_.get(), primary_backend_));
-    if (!persistent_buffer_) {
+    if (!block) {
+      return loaded;
+    }
+    block->buffer.reset(
+        ggml_backend_alloc_ctx_tensors(block->context.get(), primary_backend_));
+    if (!block->buffer) {
       throw std::runtime_error("ggml: failed to allocate persistent tensors");
     }
+    ggml_backend_buffer_set_usage(
+        block->buffer.get(), GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+    for (const auto& [key, tensor] : fresh) {
+      std::shared_ptr<ggml_tensor> storage(block, tensor);
+      state_.constants[key].tensor = storage;
+      state_storage_.push_back(std::move(storage));
+    }
+    return loaded;
   }
 
   // Binds each mutable buffer key to the storage the context holds for it,
@@ -1322,29 +1488,22 @@ class GgmlExecutable final : public EngineExecutable {
   void initialize_persistent_tensors(
       size_t* materialized_constant_bytes,
       size_t* f16_kv_cache_bytes) {
-    size_t count = 0;
-    // The float scales of int4 weights that load as unit-scale blocks.
-    std::unordered_map<ValueId, std::vector<float>> float_scales;
+    std::unordered_map<ValueId, LoadPlan> plans;
     for (const DataBinding& binding : method_.data_bindings) {
       if (!is_persistent(binding)) {
         continue;
       }
-      count += is_state(binding) ? 0 : 1;
       const TensorMeta& meta =
           method_.graph.value(binding.value_id).tensor_meta();
       if (affine_quant(meta) != nullptr || packed_quant(meta) != nullptr) {
         check_q4_consumers(binding.value_id, binding.key);
       }
-      if (std::optional<std::vector<float>> scales =
-              exact_row_scales(binding.value_id)) {
-        float_scales.emplace(binding.value_id, std::move(*scales));
-      }
+      plans.emplace(
+          binding.value_id,
+          plan_load(binding, exact_row_scales(binding.value_id)));
     }
-    if (count > 0) {
-      allocate_constants(count, float_scales);
-    }
-    const std::unordered_set<ValueId> initialized =
-        bind_state(f16_kv_cache_bytes);
+    std::unordered_set<ValueId> initialized = bind_constants(plans);
+    initialized.merge(bind_state(f16_kv_cache_bytes));
 
     size_t loaded = 0;
     for (const DataBinding& binding : method_.data_bindings) {
@@ -1373,14 +1532,8 @@ class GgmlExecutable final : public EngineExecutable {
             "ggml: stored byte count disagrees with PTG tensor '" +
             binding.key + "'");
       }
-      const bool dequant = tensor->type == GGML_TYPE_F32 &&
-          (packed_quant(meta) != nullptr || affine_quant(meta) != nullptr);
-      const bool is_q4 = affine_quant(meta) != nullptr && !dequant;
-      const bool narrow =
-          tensor->type == GGML_TYPE_I32 && meta.dtype == ScalarType::Long;
-      const auto scales = weight_scales_.find(binding.value_id);
-      const bool scaled = scales != weight_scales_.end();
-      if (!is_q4 && !narrow && !dequant && host_buffer) {
+      const LoadPlan& plan = plans.at(binding.value_id);
+      if (!plan.q4 && !plan.narrow && !plan.dequant && host_buffer) {
         if (ggml_nbytes(tensor) != expected) {
           throw std::runtime_error(
               "ggml: stored byte count disagrees with ggml tensor '" +
@@ -1389,13 +1542,14 @@ class GgmlExecutable final : public EngineExecutable {
         package_.load_constant_into(
             binding.key,
             MutableByteSpan(static_cast<uint8_t*>(tensor->data), expected));
-        if (scaled) {
-          scale_slices(tensor->data, expected / sizeof(float), scales->second);
+        if (plan.scales != nullptr) {
+          scale_slices(tensor->data, expected / sizeof(float), *plan.scales);
         }
         loaded += expected;
         continue;
       }
-      const std::optional<OwnedBytes> bytes = is_q4 || narrow || dequant
+      const std::optional<OwnedBytes> bytes =
+          plan.q4 || plan.narrow || plan.dequant
           ? read_constant(binding.key)
           // Device uploads go through a heap copy: ROCm fails to pin a
           // file-backed mapping, and ggml_backend_tensor_set from one is
@@ -1407,26 +1561,25 @@ class GgmlExecutable final : public EngineExecutable {
       }
       ByteSpan span = bytes->span();
       std::vector<uint8_t> converted;
-      if (is_q4) {
-        const auto entry = float_scales.find(binding.value_id);
-        if (entry == float_scales.end()) {
+      if (plan.q4) {
+        if (!plan.row_scales) {
           converted = affine_int4_to_q4_0(meta, span, load_q4_scales(meta));
         } else {
           converted = affine_int4_to_q4_0(
-              meta, span, std::vector<float>(entry->second.size(), 1.0f));
+              meta, span, std::vector<float>(plan.row_scales->size(), 1.0f));
           ggml_tensor* row_scales = row_scales_.at(binding.value_id);
           ggml_backend_tensor_set(
-              row_scales, entry->second.data(), 0, ggml_nbytes(row_scales));
+              row_scales, plan.row_scales->data(), 0, ggml_nbytes(row_scales));
           loaded += ggml_nbytes(row_scales);
         }
         span = converted;
-      } else if (narrow) {
+      } else if (plan.narrow) {
         converted = narrow_to_int32(span);
         span = converted;
-      } else if (dequant && affine_quant(meta) != nullptr) {
+      } else if (plan.dequant && affine_quant(meta) != nullptr) {
         converted = affine_int4_to_f32(meta, span, load_q4_scales(meta));
         span = converted;
-      } else if (dequant) {
+      } else if (plan.dequant) {
         const int64_t numel = ggml_nelements(tensor);
         converted.resize(static_cast<size_t>(numel) * sizeof(float));
         ggml_get_type_traits(compute_type(meta))
@@ -1439,10 +1592,10 @@ class GgmlExecutable final : public EngineExecutable {
                 reinterpret_cast<float*>(converted.data()),
                 numel);
         span = converted;
-      } else if (scaled) {
+      } else if (plan.scales != nullptr) {
         converted.assign(span.begin(), span.end());
         scale_slices(
-            converted.data(), converted.size() / sizeof(float), scales->second);
+            converted.data(), converted.size() / sizeof(float), *plan.scales);
         span = converted;
       }
       if (ggml_nbytes(tensor) != span.size()) {
@@ -1452,10 +1605,6 @@ class GgmlExecutable final : public EngineExecutable {
       }
       ggml_backend_tensor_set(tensor, span.data(), 0, span.size());
       loaded += span.size();
-    }
-    if (persistent_buffer_) {
-      ggml_backend_buffer_set_usage(
-          persistent_buffer_.get(), GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
     }
     if (materialized_constant_bytes != nullptr) {
       *materialized_constant_bytes += loaded;
@@ -2331,8 +2480,6 @@ class GgmlExecutable final : public EngineExecutable {
   std::vector<MaskExtent> mask_extents_;
   std::unordered_map<ValueId, std::optional<HostInts>> host_constants_;
   HostIntEvaluator::StaticCache host_static_values_;
-  ggml_context_ptr persistent_context_;
-  ggml_backend_buffer_ptr persistent_buffer_;
   ggml_backend_buffer_ptr output_staging_;
   std::vector<uint8_t> output_host_;
   std::unordered_map<ValueId, ggml_tensor*> persistent_;
