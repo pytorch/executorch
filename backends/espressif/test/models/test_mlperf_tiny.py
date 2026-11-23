@@ -34,6 +34,8 @@ class ModelCase:
     ops_before_transforms: dict[EdgeOpOverload, int]
     ops_after_transforms: dict[EdgeOpOverload, int]
     portable_ops: dict[str, int]
+    quantization_ops: dict[str, int]
+    layout_ops: dict[str, int]
 
 
 test_cases = {
@@ -42,6 +44,11 @@ test_cases = {
         {_FQ.linear.default: 10, _FQ.relu.default: 9},
         {_ESP.quantized_linear_int8.default: 10},
         {},
+        quantization_ops={
+            "quantized_decomposed::quantize_per_tensor": 1,
+            "quantized_decomposed::dequantize_per_tensor": 1,
+        },
+        layout_ops={},
     ),
     "ds_cnn": ModelCase(
         DSCNNKWSModel,
@@ -61,6 +68,11 @@ test_cases = {
             "aten::constant_pad_nd": 1,
             "aten::_softmax": 1,
         },
+        quantization_ops={
+            "quantized_decomposed::quantize_per_tensor": 3,
+            "quantized_decomposed::dequantize_per_tensor": 3,
+        },
+        layout_ops={"aten::view_copy": 2, "aten::permute_copy": 2},
     ),
     "resnet8": ModelCase(
         ResNet8Model,
@@ -80,6 +92,11 @@ test_cases = {
             "aten::mean.dim": 1,
             "aten::_softmax": 1,
         },
+        quantization_ops={
+            "quantized_decomposed::quantize_per_tensor": 5,
+            "quantized_decomposed::dequantize_per_tensor": 5,
+        },
+        layout_ops={"aten::view_copy": 1, "aten::permute_copy": 3},
     ),
     "mobilenet_v1_025": ModelCase(
         MobileNetV1025Model,
@@ -98,6 +115,11 @@ test_cases = {
             "aten::mean.dim": 1,
             "aten::_softmax": 1,
         },
+        quantization_ops={
+            "quantized_decomposed::quantize_per_tensor": 7,
+            "quantized_decomposed::dequantize_per_tensor": 7,
+        },
+        layout_ops={"aten::view_copy": 1, "aten::permute_copy": 2},
     ),
 }
 
@@ -147,6 +169,8 @@ def test_dialect_mlperf_tiny(model_case):
         op.name(): count for op, count in case.ops_after_transforms.items()
     }
     assert counts["cpu_ops"] == case.portable_ops
+    assert counts["quantization_ops"] == case.quantization_ops
+    assert counts["layout_ops"] == case.layout_ops
     tester.to_executorch().serialize()
     program = deserialize_pte_binary(tester.get_artifact()).program
     plan = program.execution_plan[0]
