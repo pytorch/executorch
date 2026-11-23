@@ -22,6 +22,7 @@
 
 #if defined(__linux__) && !defined(__ANDROID__)
 #include <sched.h>
+#include <sys/resource.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -386,5 +387,59 @@ TEST(ThreadPoolTest, ForkedChildReleasesInheritedSharedPthreadpool) {
   ASSERT_EQ(waitpid(child, &status, 0), child);
   EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == EXIT_SUCCESS)
       << "wait status " << status;
+}
+
+// GCC defines __SANITIZE_*__; Clang reports sanitizers through __has_feature.
+#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
+#define THREADPOOL_TEST_SANITIZED 1
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer)
+#define THREADPOOL_TEST_SANITIZED 1
+#endif
+#endif
+
+TEST(ThreadPoolTest, FailedResetKeepsTheThreadpool) {
+#if defined(THREADPOOL_TEST_SANITIZED)
+  GTEST_SKIP() << "sanitizers reserve more address space than the limit";
+#endif
+  constexpr uint64_t kAddressSpace = 32ull << 30;
+  if (sizeof(void*) < 8) {
+    GTEST_SKIP() << "needs a 64-bit address space";
+  }
+  executorch::runtime::runtime_init();
+  auto* threadpool = ::executorch::extension::threadpool::get_threadpool();
+  const size_t count = threadpool->get_thread_count();
+  constexpr int kLimitNotSet = 2;
+  // In a child, so the address space limit that makes the new threadpool fail
+  // to allocate stays out of this process.
+  const pid_t child = fork();
+  ASSERT_NE(child, -1);
+  if (child == 0) {
+    rlimit limit{};
+    if (getrlimit(RLIMIT_AS, &limit) != 0) {
+      std::_Exit(kLimitNotSet);
+    }
+    // Lower only the soft limit, so an inherited lower hard limit still works.
+    limit.rlim_cur =
+        std::min(limit.rlim_cur, static_cast<rlim_t>(kAddressSpace));
+    if (setrlimit(RLIMIT_AS, &limit) != 0) {
+      std::_Exit(kLimitNotSet);
+    }
+    // @lint-ignore CLANGTIDY facebook-hte-Deprecated
+    const bool reset = threadpool->_unsafe_reset_threadpool(UINT32_MAX);
+    // Aborts if the threadpool is gone. A range of 1 runs on this thread, so
+    // the worker threads this child did not inherit are not needed.
+    threadpool->run([](size_t) {}, 1);
+    std::_Exit(
+        !reset && threadpool->get_thread_count() == count ? EXIT_SUCCESS
+                                                          : EXIT_FAILURE);
+  }
+  int status = 0;
+  ASSERT_EQ(waitpid(child, &status, 0), child);
+  ASSERT_TRUE(WIFEXITED(status)) << "wait status " << status;
+  if (WEXITSTATUS(status) == kLimitNotSet) {
+    GTEST_SKIP() << "could not limit the address space";
+  }
+  EXPECT_EQ(WEXITSTATUS(status), EXIT_SUCCESS);
 }
 #endif
