@@ -27,8 +27,14 @@ to_native({"forward": ep_forward, "prefill": ep_prefill}).save("model.ptn")
 ```
 
 The partitioner accepts core ATen ops plus `linear`, `matmul`, `addmm`,
-`scaled_dot_product_attention`, `rms_norm`, `native::rope`, and TorchAO affine
-quantize/dequantize ops. TorchAO int4 group-wise weights of `linear` and
+`scaled_dot_product_attention`, `rms_norm`, `native::rope`,
+`native::gated_delta_rule`, and TorchAO affine quantize/dequantize ops.
+`native::gated_delta_rule` is the Gated DeltaNet recurrence over a call's
+tokens; its state is stored value-major, `[B, H, V, K]`, and its reference in
+`custom_ops.py` defines it. With `snapshots` S > 1, its state is the S most
+recent states, newest first, `[B, S, H, V, K]`, for speculative decoding to
+roll back to. An engine that does not implement a `native::` op
+refuses the method at load. TorchAO int4 group-wise weights of `linear` and
 `embedding`, and block-quantized GGUF weights from
 `executorch.extension.llm.export.gguf`, are stored packed with their scheme in
 tensor metadata. Each method must lower wholly to one delegate; `to_native`
@@ -475,6 +481,12 @@ Both runners prefill a prompt in calls of at most the token input's upper
 bound, so a linear-attention model, which exports a one-token `forward`,
 takes one call per prompt token. The prompt must fit `--max_seq_length` and
 the model's KV cache, or the token bound for a method without a cache.
+
+With `--gdn_op native`, the default, a linear-attention export also writes a
+`prefill` method of 2 to `--prefill_tokens` tokens per call (default 512; 0
+exports `forward` alone), and its golden samples run each prompt on it. The
+runners call only `forward`, so `--verify_samples` stops at a sample's first
+`prefill` call.
 
 With `EXECUTORCH_BUILD_TESTS=ON`, `native_llm_runner_utils_test` exercises the
 LLM generation utilities.

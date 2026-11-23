@@ -117,46 +117,10 @@ int64_t attended_key_extent(
       (needed + kKeyExtentBucket - 1) / kKeyExtentBucket * kKeyExtentBucket);
 }
 
-// Holds a method's non-empty mutable buffer keys in `owners` for the lifetime
-// of its executable.
-class MutableKeyClaim {
- public:
-  MutableKeyClaim(GgmlMutableKeyOwners& owners, const Method& method)
-      : owners_(owners) {
-    for (const DataBinding& binding : method.data_bindings) {
-      if (!binding.mutated || binding.key.empty()) {
-        continue;
-      }
-      const auto owner = owners_.find(binding.key);
-      if (owner != owners_.end()) {
-        throw std::runtime_error(
-            "ggml: mutable buffer '" + binding.key + "' of method '" +
-            method.name +
-            "' is already bound by a live executable of method '" +
-            owner->second +
-            "'; sharing mutable buffers across executables is not implemented");
-      }
-    }
-    for (const DataBinding& binding : method.data_bindings) {
-      if (binding.mutated && !binding.key.empty() &&
-          owners_.try_emplace(binding.key, method.name).second) {
-        keys_.push_back(binding.key);
-      }
-    }
-  }
-
-  MutableKeyClaim(const MutableKeyClaim&) = delete;
-  MutableKeyClaim& operator=(const MutableKeyClaim&) = delete;
-
-  ~MutableKeyClaim() {
-    for (const std::string& key : keys_) {
-      owners_.erase(key);
-    }
-  }
-
- private:
-  GgmlMutableKeyOwners& owners_;
-  std::vector<std::string> keys_;
+// Storage of the mutable buffer keys one compile introduced to its context.
+struct StateBlock {
+  ggml_context_ptr context;
+  ggml_backend_buffer_ptr buffer;
 };
 
 class GgmlExecutable final : public EngineExecutable {
@@ -168,9 +132,9 @@ class GgmlExecutable final : public EngineExecutable {
       size_t* materialized_constant_bytes,
       size_t* heap_copied_constant_bytes,
       size_t* f16_kv_cache_bytes,
-      GgmlMutableKeyOwners& mutable_key_owners,
+      GgmlContextState& state,
       GgmlKvCache kv_cache)
-      : mutable_key_claim_(mutable_key_owners, method),
+      : state_(state),
         method_(method),
         package_(package),
         options_(options),
@@ -188,6 +152,11 @@ class GgmlExecutable final : public EngineExecutable {
     }
     // Rejects unsupported ops and shapes at compile time.
     check_host_integers_boundable(build_graph(full_key_extents()));
+    // Only a compiled executable has initialized its fresh storage.
+    for (auto& [key, storage] : fresh_state_) {
+      state_.storage.emplace(key, std::move(storage));
+    }
+    fresh_state_.clear();
   }
 
   ~GgmlExecutable() override {
@@ -588,8 +557,12 @@ class GgmlExecutable final : public EngineExecutable {
 
   // Quantization parameters are bound but only read through their weight.
   bool is_used(ValueId id) const {
-    const std::vector<ValueId>& outputs = method_.graph.output_ids;
-    return !method_.graph.value(id).consumer_ids.empty() ||
+    return is_used(method_, id);
+  }
+
+  static bool is_used(const Method& method, ValueId id) {
+    const std::vector<ValueId>& outputs = method.graph.output_ids;
+    return !method.graph.value(id).consumer_ids.empty() ||
         std::find(outputs.begin(), outputs.end(), id) != outputs.end();
   }
 
@@ -602,9 +575,12 @@ class GgmlExecutable final : public EngineExecutable {
   // Whether the GPU runs this attention over F16 keys and values. The SDPA
   // lowering's shape checks come first: ggml asserts on the shapes they
   // refuse, which then load as F32 caches and fail in the lowering.
-  bool supports_f16_attention(const Node& node, bool custom) const {
+  bool supports_f16_attention(
+      const Method& method,
+      const Node& node,
+      bool custom) const {
     const auto sizes = [&](std::string_view name, size_t position) {
-      return method_.graph
+      return method.graph
           .value(require_arg(node, name, position).arg.as_tensor().id)
           .tensor_meta()
           .sizes;
@@ -619,23 +595,47 @@ class GgmlExecutable final : public EngineExecutable {
     if (options_.gpu_runs_f16_attention_for_testing) {
       return options_.gpu_runs_f16_attention_for_testing();
     }
-    return gpu_runs_f16_attention(node, custom);
+    return gpu_runs_f16_attention(method, node, custom);
   }
 
   // A zero-initialized F32 buffer on a backend that keeps KV caches in F16,
   // whose every use writes rows into it or reads it as attention keys or
-  // values; see GgmlEngineOptions::f32_gpu_kv_cache_for_testing.
+  // values, in every method of the context that uses it, since they share
+  // its storage; see GgmlEngineOptions::f32_gpu_kv_cache_for_testing.
   bool stores_f16_kv_cache(const DataBinding& binding) const {
+    if (!stores_f16_kv_cache(method_, binding)) {
+      return false;
+    }
+    for (const Method* method : state_.methods) {
+      if (method == &method_) {
+        continue;
+      }
+      // cppcheck-suppress-begin useStlAlgorithm ; the explicit loop reads
+      // clearer here
+      for (const DataBinding& other : method->data_bindings) {
+        if (other.key == binding.key && valid(other.value_id) &&
+            method->graph.value(other.value_id).is_tensor() &&
+            is_used(*method, other.value_id) &&
+            !stores_f16_kv_cache(*method, other)) {
+          return false;
+        }
+      }
+      // cppcheck-suppress-end useStlAlgorithm
+    }
+    return true;
+  }
+
+  bool stores_f16_kv_cache(const Method& method, const DataBinding& binding)
+      const {
     const bool f16_kv_caches = options_.gpu_runs_f16_attention_for_testing
         ? !options_.f32_gpu_kv_cache_for_testing
         : f16_kv_caches_;
     if (!f16_kv_caches || binding.has_data) {
       return false;
     }
-    const TensorMeta& meta =
-        method_.graph.value(binding.value_id).tensor_meta();
+    const TensorMeta& meta = method.graph.value(binding.value_id).tensor_meta();
     return meta.dtype == ScalarType::Float && !meta.quant &&
-        only_f16_gpu_attention_reads(binding.value_id);
+        only_f16_gpu_attention_reads(method, binding.value_id);
   }
 
   // Whether every use of `id`, followed through views and the results of row
@@ -643,7 +643,7 @@ class GgmlExecutable final : public EngineExecutable {
   // values, at least one attention reads it, and the GPU runs each of those
   // attentions over F16 keys and values. A node that uses `id` more times
   // than it has those roles also reads it some other way.
-  bool only_f16_gpu_attention_reads(ValueId id) const {
+  bool only_f16_gpu_attention_reads(const Method& method, ValueId id) const {
     static const std::unordered_set<std::string> kViews = {
         "aten._unsafe_view.default",
         "aten.alias.default",
@@ -669,15 +669,15 @@ class GgmlExecutable final : public EngineExecutable {
       if (!seen.insert(value).second) {
         continue;
       }
-      const std::vector<ValueId>& outputs = method_.graph.output_ids;
+      const std::vector<ValueId>& outputs = method.graph.output_ids;
       for (size_t i = 0; i < outputs.size(); ++i) {
         if (outputs[i] == value &&
-            method_.output_specs[i].kind != OutputKind::BufferMutation) {
+            method.output_specs[i].kind != OutputKind::BufferMutation) {
           return false;
         }
       }
-      for (const NodeId consumer : method_.graph.value(value).consumer_ids) {
-        const Node& node = method_.graph.node(consumer);
+      for (const NodeId consumer : method.graph.value(value).consumer_ids) {
+        const Node& node = method.graph.node(consumer);
         if (node.is_output()) {
           continue;
         }
@@ -704,7 +704,7 @@ class GgmlExecutable final : public EngineExecutable {
         }
         if (attention && (is_arg("key", 1) || is_arg("value", 2))) {
           if (!supports_f16_attention(
-                  node, op == "llama.custom_sdpa.default")) {
+                  method, node, op == "llama.custom_sdpa.default")) {
             return false;
           }
           roles += (is_arg("key", 1) ? 1 : 0) + (is_arg("value", 2) ? 1 : 0);
@@ -725,9 +725,12 @@ class GgmlExecutable final : public EngineExecutable {
   // take only one mask plane (ggml-cuda's, again). ggml leaves an attention
   // the GPU lacks a kernel for to the CPU, whose kernel reads F32 keys and
   // values without rounding them; its caches stay F32.
-  bool gpu_runs_f16_attention(const Node& node, bool custom) const {
+  bool gpu_runs_f16_attention(
+      const Method& method,
+      const Node& node,
+      bool custom) const {
     const auto meta = [&](std::string_view name, size_t position) {
-      return method_.graph
+      return method.graph
           .value(require_arg(node, name, position).arg.as_tensor().id)
           .tensor_meta()
           .sizes;
@@ -747,7 +750,7 @@ class GgmlExecutable final : public EngineExecutable {
     int64_t mask_batch = 1;
     if (explicit_mask) {
       const std::vector<int64_t>& m =
-          method_.graph.value(mask->arg.as_tensor().id).tensor_meta().sizes;
+          method.graph.value(mask->arg.as_tensor().id).tensor_meta().sizes;
       if (m.size() < 2 || m.size() > 4) {
         return false;
       }
@@ -805,6 +808,11 @@ class GgmlExecutable final : public EngineExecutable {
       }
     }
     return true;
+  }
+
+  // Bound to storage the context shares, not to a private constant.
+  bool is_state(const DataBinding& binding) const {
+    return state_.keys.contains(binding.key);
   }
 
   static size_t stored_nbytes(const TensorMeta& meta) {
@@ -974,13 +982,13 @@ class GgmlExecutable final : public EngineExecutable {
     return to_float_vector(scales->span(), quant.scale_dtype);
   }
 
-  // The binding of a constant with data that no op writes.
+  // The binding of a constant with data that no method writes.
   const DataBinding* constant_binding(ValueId id) const {
     const auto binding = std::ranges::find_if(
         method_.data_bindings, [id](const DataBinding& candidate) {
           return candidate.value_id == id && candidate.has_data;
         });
-    if (binding == method_.data_bindings.end() ||
+    if (binding == method_.data_bindings.end() || is_state(*binding) ||
         std::ranges::any_of(method_.output_specs, [id](const OutputSpec& spec) {
           return spec.kind == OutputKind::BufferMutation &&
               spec.target_id == id;
@@ -1198,30 +1206,9 @@ class GgmlExecutable final : public EngineExecutable {
         batch_norm_buffer_.get(), GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
   }
 
-  void initialize_persistent_tensors(
-      size_t* materialized_constant_bytes,
-      size_t* f16_kv_cache_bytes) {
-    size_t count = 0;
-    // The float scales of int4 weights that load as unit-scale blocks.
-    std::unordered_map<ValueId, std::vector<float>> float_scales;
-    for (const DataBinding& binding : method_.data_bindings) {
-      if (!is_persistent(binding)) {
-        continue;
-      }
-      ++count;
-      const TensorMeta& meta =
-          method_.graph.value(binding.value_id).tensor_meta();
-      if (affine_quant(meta) != nullptr || packed_quant(meta) != nullptr) {
-        check_q4_consumers(binding.value_id, binding.key);
-      }
-      if (std::optional<std::vector<float>> scales =
-              exact_row_scales(binding.value_id)) {
-        float_scales.emplace(binding.value_id, std::move(*scales));
-      }
-    }
-    if (count == 0) {
-      return;
-    }
+  void allocate_constants(
+      size_t count,
+      const std::unordered_map<ValueId, std::vector<float>>& float_scales) {
     ggml_init_params params{
         .mem_size = ggml_tensor_overhead() * (count + float_scales.size() + 16),
         .mem_buffer = nullptr,
@@ -1232,23 +1219,17 @@ class GgmlExecutable final : public EngineExecutable {
       throw std::runtime_error(
           "ggml: failed to create persistent tensor context");
     }
-
     for (const DataBinding& binding : method_.data_bindings) {
-      if (!is_persistent(binding)) {
+      if (!is_persistent(binding) || is_state(binding)) {
         continue;
       }
       const TensorMeta& meta =
           method_.graph.value(binding.value_id).tensor_meta();
-      const bool f16_kv_cache = stores_f16_kv_cache(binding);
       ggml_tensor* tensor = new_tensor(
           persistent_context_.get(),
-          f16_kv_cache                               ? GGML_TYPE_F16
-              : dequantizes_to_f32(binding.value_id) ? GGML_TYPE_F32
-                                                     : compute_type(meta),
+          dequantizes_to_f32(binding.value_id) ? GGML_TYPE_F32
+                                               : compute_type(meta),
           meta.sizes);
-      if (f16_kv_cache && f16_kv_cache_bytes != nullptr) {
-        *f16_kv_cache_bytes += ggml_nbytes(tensor);
-      }
       ggml_set_name(tensor, binding.key.c_str());
       persistent_.emplace(binding.value_id, tensor);
       if (float_scales.contains(binding.value_id)) {
@@ -1261,22 +1242,118 @@ class GgmlExecutable final : public EngineExecutable {
         row_scales_.emplace(binding.value_id, scales);
       }
     }
-
     persistent_buffer_.reset(ggml_backend_alloc_ctx_tensors(
         persistent_context_.get(), primary_backend_));
     if (!persistent_buffer_) {
       throw std::runtime_error("ggml: failed to allocate persistent tensors");
     }
+  }
 
-    const bool host_buffer =
-        ggml_backend_buffer_is_host(persistent_buffer_.get());
+  // Binds each mutable buffer key to the storage the context holds for it,
+  // allocating storage, still to be initialized, for keys it does not hold
+  // yet. Returns the values bound to storage that is already initialized.
+  // Methods sharing a KV cache must agree on storing it in F16.
+  std::unordered_set<ValueId> bind_state(size_t* f16_kv_cache_bytes) {
+    std::unordered_set<ValueId> initialized;
+    std::unordered_map<std::string, ggml_tensor*> fresh;
+    std::shared_ptr<StateBlock> block;
+    for (const DataBinding& binding : method_.data_bindings) {
+      if (!is_persistent(binding) || !is_state(binding)) {
+        continue;
+      }
+      if (const auto held = state_.storage.find(binding.key);
+          held != state_.storage.end()) {
+        const std::shared_ptr<ggml_tensor>& live = held->second;
+        persistent_.emplace(binding.value_id, live.get());
+        initialized.insert(binding.value_id);
+        state_storage_.push_back(live);
+        continue;
+      }
+      if (const auto created = fresh.find(binding.key);
+          created != fresh.end()) {
+        persistent_.emplace(binding.value_id, created->second);
+        initialized.insert(binding.value_id);
+        continue;
+      }
+      const TensorMeta& meta =
+          method_.graph.value(binding.value_id).tensor_meta();
+      const bool f16_kv_cache = stores_f16_kv_cache(binding);
+      const ggml_type type = f16_kv_cache ? GGML_TYPE_F16 : compute_type(meta);
+      if (!block) {
+        block = std::make_shared<StateBlock>();
+        ggml_init_params params{
+            .mem_size =
+                ggml_tensor_overhead() * (method_.data_bindings.size() + 1),
+            .mem_buffer = nullptr,
+            .no_alloc = true,
+        };
+        block->context.reset(ggml_init(params));
+        if (!block->context) {
+          throw std::runtime_error("ggml: failed to create state context");
+        }
+      }
+      ggml_tensor* tensor = new_tensor(block->context.get(), type, meta.sizes);
+      if (f16_kv_cache && f16_kv_cache_bytes != nullptr) {
+        *f16_kv_cache_bytes += ggml_nbytes(tensor);
+      }
+      ggml_set_name(tensor, binding.key.c_str());
+      persistent_.emplace(binding.value_id, tensor);
+      fresh.emplace(binding.key, tensor);
+    }
+    if (!block) {
+      return initialized;
+    }
+    block->buffer.reset(
+        ggml_backend_alloc_ctx_tensors(block->context.get(), primary_backend_));
+    if (!block->buffer) {
+      throw std::runtime_error("ggml: failed to allocate mutable buffers");
+    }
+    ggml_backend_buffer_set_usage(
+        block->buffer.get(), GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+    for (const auto& [key, tensor] : fresh) {
+      std::shared_ptr<ggml_tensor> storage(block, tensor);
+      state_storage_.push_back(storage);
+      fresh_state_.emplace_back(key, std::move(storage));
+    }
+    return initialized;
+  }
+
+  void initialize_persistent_tensors(
+      size_t* materialized_constant_bytes,
+      size_t* f16_kv_cache_bytes) {
+    size_t count = 0;
+    // The float scales of int4 weights that load as unit-scale blocks.
+    std::unordered_map<ValueId, std::vector<float>> float_scales;
+    for (const DataBinding& binding : method_.data_bindings) {
+      if (!is_persistent(binding)) {
+        continue;
+      }
+      count += is_state(binding) ? 0 : 1;
+      const TensorMeta& meta =
+          method_.graph.value(binding.value_id).tensor_meta();
+      if (affine_quant(meta) != nullptr || packed_quant(meta) != nullptr) {
+        check_q4_consumers(binding.value_id, binding.key);
+      }
+      if (std::optional<std::vector<float>> scales =
+              exact_row_scales(binding.value_id)) {
+        float_scales.emplace(binding.value_id, std::move(*scales));
+      }
+    }
+    if (count > 0) {
+      allocate_constants(count, float_scales);
+    }
+    const std::unordered_set<ValueId> initialized =
+        bind_state(f16_kv_cache_bytes);
+
     size_t loaded = 0;
     for (const DataBinding& binding : method_.data_bindings) {
       const auto found = persistent_.find(binding.value_id);
-      if (found == persistent_.end()) {
+      if (found == persistent_.end() ||
+          initialized.contains(binding.value_id)) {
         continue;
       }
       ggml_tensor* tensor = found->second;
+      const bool host_buffer = ggml_backend_buffer_is_host(tensor->buffer);
       if (!binding.has_data) {
         ggml_backend_tensor_memset(tensor, 0, 0, ggml_nbytes(tensor));
         continue;
@@ -1375,8 +1452,10 @@ class GgmlExecutable final : public EngineExecutable {
       ggml_backend_tensor_set(tensor, span.data(), 0, span.size());
       loaded += span.size();
     }
-    ggml_backend_buffer_set_usage(
-        persistent_buffer_.get(), GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+    if (persistent_buffer_) {
+      ggml_backend_buffer_set_usage(
+          persistent_buffer_.get(), GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+    }
     if (materialized_constant_bytes != nullptr) {
       *materialized_constant_bytes += loaded;
     }
@@ -1397,8 +1476,10 @@ class GgmlExecutable final : public EngineExecutable {
         continue;
       }
       const auto binding = std::ranges::find_if(
-          method_.data_bindings, [inv_freq](const DataBinding& candidate) {
-            return candidate.value_id == inv_freq && candidate.has_data;
+          method_.data_bindings,
+          [this, inv_freq](const DataBinding& candidate) {
+            return candidate.value_id == inv_freq && candidate.has_data &&
+                !is_state(candidate);
           });
       const std::optional<OwnedBytes> bytes =
           binding == method_.data_bindings.end() ? std::nullopt
@@ -1971,9 +2052,9 @@ class GgmlExecutable final : public EngineExecutable {
     }
     std::optional<HostInts> out;
     const auto binding = std::ranges::find_if(
-        method_.data_bindings, [id](const DataBinding& candidate) {
+        method_.data_bindings, [this, id](const DataBinding& candidate) {
           return candidate.value_id == id && candidate.has_data &&
-              !candidate.mutated;
+              !candidate.mutated && !is_state(candidate);
         });
     const TensorMeta* meta = method_.graph.value(id).is_tensor()
         ? &method_.graph.value(id).tensor_meta()
@@ -2026,7 +2107,12 @@ class GgmlExecutable final : public EngineExecutable {
         ggml_backend_buffer_get_base(output_staging_.get()));
   }
 
-  MutableKeyClaim mutable_key_claim_;
+  GgmlContextState& state_;
+  // Declared before every graph and scheduler that reads it.
+  std::vector<std::shared_ptr<ggml_tensor>> state_storage_;
+  // Storage bind_state allocated, handed to the context once compiled.
+  std::vector<std::pair<std::string, std::shared_ptr<ggml_tensor>>>
+      fresh_state_;
   // Accumulated while compiling, reported to the context at the end.
   mutable size_t heap_copied_constant_bytes_ = 0;
   const Method& method_;
@@ -2177,7 +2263,7 @@ std::unique_ptr<EngineExecutable> make_ggml_executable(
     size_t* materialized_constant_bytes,
     size_t* heap_copied_constant_bytes,
     size_t* f16_kv_cache_bytes,
-    GgmlMutableKeyOwners& mutable_key_owners,
+    GgmlContextState& state,
     GgmlKvCache kv_cache) {
   return std::make_unique<GgmlExecutable>(
       method,
@@ -2186,7 +2272,7 @@ std::unique_ptr<EngineExecutable> make_ggml_executable(
       materialized_constant_bytes,
       heap_copied_constant_bytes,
       f16_kv_cache_bytes,
-      mutable_key_owners,
+      state,
       kv_cache);
 }
 

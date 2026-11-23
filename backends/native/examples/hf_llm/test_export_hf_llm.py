@@ -16,6 +16,7 @@ from unittest import mock
 import gguf
 import torch
 from executorch.backends.native import get_default_compile_config
+from executorch.backends.native.custom_ops import gated_delta_rule_op
 from executorch.backends.native.examples.hf_llm import export_hf_llm
 from executorch.backends.native.examples.hf_llm.export_hf_llm import (
     _check_attention_args,
@@ -27,10 +28,13 @@ from executorch.backends.native.examples.hf_llm.export_hf_llm import (
     _quantize_8da4w,
     _QUANTIZED_TOL,
     _sample_prompts,
+    export_prefill,
     golden_samples,
     LastTokenLM,
     load_gguf,
+    native_gdn_rules,
     OffGraphLastTokenLM,
+    prefill_calls,
 )
 from executorch.backends.native.passes import FuseRoPEPass
 from executorch.backends.native.passes._utils import _resolve_aten
@@ -1050,6 +1054,120 @@ class ExportHfLlmTest(unittest.TestCase):
                     got = _one_token_logits(run, ids, want)
                     for a, b in zip(got, want, strict=True):
                         torch.testing.assert_close(a, b, atol=1e-5, rtol=1e-5)
+
+    def test_native_gdn_rule_is_one_op_per_layer_and_call(self) -> None:
+        # transformers' own rules and dynamic cache, the prompt in one call,
+        # against the wrapper's 8-token and one-token calls on native's op.
+        model = _tiny_qwen35()
+        ids = list(range(3, 22))
+        want = _hf_greedy_logits(model, ids, 2)
+        with native_gdn_rules(model), torch.no_grad():
+            wrapper = LastTokenLM(copy.deepcopy(model), 32).eval()
+            programs = {
+                size: torch.export.export(
+                    wrapper,
+                    (torch.zeros((1, size), dtype=torch.long), torch.arange(size)),
+                    strict=True,
+                )
+                for size in (1, 8)
+            }
+            start = 0
+            for size in (8, 8, 1, 1, 1):
+                chunk = torch.tensor([ids[start : start + size]])
+                logits = wrapper(chunk, torch.arange(start, start + size))
+                start += size
+        torch.testing.assert_close(logits, want[0], atol=1e-4, rtol=1e-4)
+        for name, program in programs.items():
+            with self.subTest(method=name):
+                targets = [
+                    n.target for n in program.graph.nodes if n.op == "call_function"
+                ]
+                # One per linear-attention layer; no ATen rule is left.
+                self.assertEqual(targets.count(gated_delta_rule_op), 3)
+                self.assertNotIn(torch.ops.aten.cumsum.default, targets)
+
+    def test_native_gdn_rules_restore_transformers_rules(self) -> None:
+        model = _tiny_qwen35()
+        module = sys.modules[type(model.model.layers[0].linear_attn).__module__]
+        rules = (
+            module.torch_chunk_gated_delta_rule,
+            module.torch_recurrent_gated_delta_rule,
+        )
+        with native_gdn_rules(model):
+            self.assertIsNot(module.torch_chunk_gated_delta_rule, rules[0])
+        self.assertEqual(
+            (
+                module.torch_chunk_gated_delta_rule,
+                module.torch_recurrent_gated_delta_rule,
+            ),
+            rules,
+        )
+
+    def test_prefill_calls_take_full_calls_then_the_rest(self) -> None:
+        self.assertEqual(prefill_calls(1100, 512), [512, 512, 76])
+        self.assertEqual(prefill_calls(513, 512), [512, 1])
+        self.assertEqual(prefill_calls(3, 0), [1, 1, 1])
+
+    def test_prefill_takes_any_token_count_and_matches_transformers(self) -> None:
+        # transformers' own rules and dynamic cache, the prompt in one call,
+        # against prefill calls of 8, 8 and 3 tokens on native's op, then the
+        # exported prefill on calls of 2, 5 and 8 tokens against eager.
+        model = _tiny_qwen35()
+        ids = list(range(3, 22))
+        want = _hf_greedy_logits(model, ids, 2)
+        with native_gdn_rules(model), torch.no_grad():
+            wrapper = LastTokenLM(copy.deepcopy(model), 32).eval()
+            prefill = export_prefill(wrapper, 8)
+            forward = torch.export.export(
+                wrapper, (torch.zeros((1, 1), dtype=torch.long), torch.arange(1))
+            )
+            self.assertEqual(
+                set(prefill.graph_signature.buffers_to_mutate.values()),
+                set(forward.graph_signature.buffers_to_mutate.values()),
+            )
+            start = 0
+            for size in prefill_calls(len(ids), 8):
+                chunk = torch.tensor([ids[start : start + size]])
+                logits = wrapper(chunk, torch.arange(start, start + size))
+                start += size
+            torch.testing.assert_close(logits, want[0], atol=1e-4, rtol=1e-4)
+            for size in (2, 5, 8):
+                with self.subTest(tokens=size):
+                    first = (torch.tensor([ids[:size]]), torch.arange(size))
+                    fresh = LastTokenLM(copy.deepcopy(model), 32).eval()
+                    torch.testing.assert_close(prefill.module()(*first), fresh(*first))
+            targets = [n.target for n in prefill.graph.nodes if n.op == "call_function"]
+            self.assertEqual(targets.count(gated_delta_rule_op), 3)
+
+    def test_golden_samples_call_prefill_then_forward(self) -> None:
+        with native_gdn_rules(model := _tiny_qwen35()):
+            wrapper = LastTokenLM(model, 32).eval()
+            (sample,) = golden_samples(wrapper, [list(range(3, 14))], 2, 8).samples
+        methods = [call.method for call in sample.calls]
+        self.assertEqual(methods, ["prefill", "prefill", "forward", "forward"])
+        positions = torch.cat([call.inputs[1] for call in sample.calls])
+        self.assertTrue(torch.equal(positions, torch.arange(13)))
+
+    def test_golden_samples_refuse_an_empty_prompt(self) -> None:
+        with native_gdn_rules(model := _tiny_qwen35()):
+            wrappers = [LastTokenLM(_tiny(), 32), LastTokenLM(model, 32)]
+            for wrapper in wrappers:
+                with self.subTest(recurrent=bool(wrapper.tokens_per_call)):
+                    with self.assertRaisesRegex(ValueError, "at least one token"):
+                        golden_samples(wrapper.eval(), [[3, 4], []], 1, 8)
+
+    def test_prefill_tokens_needs_the_native_rule_and_a_fitting_count(self) -> None:
+        for flags in (
+            ["--gdn_op", "aten", "--prefill_tokens", "8"],
+            ["--prefill_tokens", "1"],
+            ["--prefill_tokens", "200"],
+        ):
+            argv = ["export_hf_llm", "--model", "unused", *flags]
+            with self.subTest(flags=flags), mock.patch.object(sys, "argv", argv):
+                with mock.patch.object(export_hf_llm, "_load") as load:
+                    with self.assertRaises(SystemExit):
+                        export_hf_llm.main()
+                load.assert_not_called()
 
     def test_golden_samples_feed_linear_attention_prompts_one_token_per_call(
         self,
