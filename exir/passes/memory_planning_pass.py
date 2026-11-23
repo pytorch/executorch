@@ -374,6 +374,7 @@ class MemoryPlanningPass(PassBase):
     def _share_mutable_buffers(self) -> None:
         if self.share_mutable_buffers:
             arena: int = 0
+            shared_specs: List[TensorSpec] = []
 
             # Every spec that shares an fqn is the same tensor! So we give it the same id and offset
             # anywhere it appears.
@@ -391,10 +392,24 @@ class MemoryPlanningPass(PassBase):
                     spec.mem_offset = arena
                 # They are the same tensor, so just bump off the first.
                 arena += specs[0].allocated_memory
+                shared_specs.extend(specs)
 
+            shared_spec_ids = {id(spec) for spec in shared_specs}
             for graph_module in self.state.graph_modules:
                 if len(graph_module.meta["non_const_buffer_sizes"]) != 2:
                     raise ValueError(
                         "Cannot share mutable state if not using default memory ids"
                     )
-                graph_module.meta["non_const_buffer_sizes"].append(arena)
+                uses_shared_buffers = any(
+                    id(node.meta.get("spec")) in shared_spec_ids
+                    for node in graph_module.graph.nodes
+                    if node.op == "placeholder"
+                )
+                # A runtime that gives every method one arena 2 sizes it for the
+                # largest method, so a method without shared state needs none.
+                graph_module.meta["non_const_buffer_sizes"].append(
+                    arena if uses_shared_buffers else 0
+                )
+                # Loading a method that marks the shared state initializes it.
+                if uses_shared_buffers:
+                    graph_module.meta["shared_non_const_buffers"] = [2]

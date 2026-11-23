@@ -225,6 +225,23 @@ TEST_F(MethodMetaTest, MemoryPlannedBufferDeviceDefaultsCpu) {
       Error::InvalidArgument);
 }
 
+TEST_F(MethodMetaTest, MemoryPlannedBufferIsSharedDefaultsFalse) {
+  Result<MethodMeta> method_meta = programs_["add"]->method_meta("forward");
+  ASSERT_EQ(method_meta.error(), Error::Ok);
+
+  // A single-method program shares nothing.
+  size_t num_buffers = method_meta->num_memory_planned_buffers();
+  ASSERT_GT(num_buffers, 0);
+  for (size_t i = 0; i < num_buffers; ++i) {
+    auto is_shared = method_meta->memory_planned_buffer_is_shared(i);
+    ASSERT_TRUE(is_shared.ok());
+    EXPECT_FALSE(is_shared.get());
+  }
+  EXPECT_EQ(
+      method_meta->memory_planned_buffer_is_shared(num_buffers).error(),
+      Error::InvalidArgument);
+}
+
 TEST_F(MethodMetaTest, TensorInfoSizeOverflow) {
   // Create sizes that will cause overflow when multiplied
   std::vector<int32_t> overflow_sizes = {

@@ -1927,6 +1927,7 @@ class EdgeProgramManager:
         for memory_planning_pass in memory_planning_passes:
             if isinstance(memory_planning_pass, MemoryPlanningPass):
                 memory_planning_pass.reset()
+        planned_graph_modules: Dict[str, torch.fx.GraphModule] = {}
         shared_buffers: Set[str] = set()
         initial_data: Dict[str, Dict[str, torch.Tensor]] = defaultdict(dict)
         for name, program in programs.items():
@@ -2028,6 +2029,7 @@ class EdgeProgramManager:
 
             _copy_module(program.graph_module, new_gm)
             execution_programs[name] = program
+            planned_graph_modules[name] = new_gm
         # A folded program was lowered on a copy. Hand it to this manager too,
         # as every other program is lowered in place.
         self._folded_methods.update(folded)
@@ -2043,6 +2045,10 @@ class EdgeProgramManager:
                 memory_planning_pass.run_multimethod()
         # After run_multimethod, which reports a shape or dtype mismatch first.
         _check_shared_initial_data(initial_data, shared_buffers)
+        # run_multimethod updates the planned graph modules after their metadata
+        # was copied above.
+        for name, program in execution_programs.items():
+            program.graph_module.meta.update(planned_graph_modules[name].meta)
 
         et_pm = ExecutorchProgramManager(
             execution_programs,

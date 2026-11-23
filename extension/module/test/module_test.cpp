@@ -871,6 +871,21 @@ TEST_F(ModuleTest, TestMultipleBackendsInOptionsMap) {
   EXPECT_EQ(result.error(), Error::Ok);
 }
 
+TEST_F(ModuleTest, TestSharedStateBufferIsMarkedShared) {
+  Module module(shared_state_path_);
+  for (const char* name : {"forward", "get_state", "set_state"}) {
+    auto meta = module.method_meta(name);
+    ASSERT_EQ(meta.error(), Error::Ok);
+    // Activations, then the state every method shares.
+    ASSERT_EQ(meta->num_memory_planned_buffers(), 2);
+    EXPECT_FALSE(meta->memory_planned_buffer_is_shared(0).get());
+    EXPECT_TRUE(meta->memory_planned_buffer_is_shared(1).get());
+    EXPECT_EQ(
+        meta->memory_planned_buffer_is_shared(2).error(),
+        Error::InvalidArgument);
+  }
+}
+
 TEST_F(ModuleTest, TestSharedMemoryBuffer) {
 #ifdef USE_ATEN_LIB
   GTEST_SKIP()

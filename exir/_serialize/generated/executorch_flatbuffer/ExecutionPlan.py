@@ -255,8 +255,35 @@ class ExecutionPlan(object):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(22))
         return o == 0
 
+    # ExecutionPlan
+    def SharedNonConstBuffers(self, j: int):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(24))
+        if o != 0:
+            a = self._tab.Vector(o)
+            return self._tab.Get(flatbuffers.number_types.Int32Flags, a + flatbuffers.number_types.UOffsetTFlags.py_type(j * 4))
+        return 0
+
+    # ExecutionPlan
+    def SharedNonConstBuffersAsNumpy(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(24))
+        if o != 0:
+            return self._tab.GetVectorAsNumpy(flatbuffers.number_types.Int32Flags, o)
+        return 0
+
+    # ExecutionPlan
+    def SharedNonConstBuffersLength(self) -> int:
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(24))
+        if o != 0:
+            return self._tab.VectorLen(o)
+        return 0
+
+    # ExecutionPlan
+    def SharedNonConstBuffersIsNone(self) -> bool:
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(24))
+        return o == 0
+
 def ExecutionPlanStart(builder: flatbuffers.Builder):
-    builder.StartObject(10)
+    builder.StartObject(11)
 
 def Start(builder: flatbuffers.Builder):
     ExecutionPlanStart(builder)
@@ -369,6 +396,18 @@ def ExecutionPlanStartNonConstBufferDeviceVector(builder, numElems: int) -> int:
 def StartNonConstBufferDeviceVector(builder, numElems: int) -> int:
     return ExecutionPlanStartNonConstBufferDeviceVector(builder, numElems)
 
+def ExecutionPlanAddSharedNonConstBuffers(builder: flatbuffers.Builder, sharedNonConstBuffers: int):
+    builder.PrependUOffsetTRelativeSlot(10, flatbuffers.number_types.UOffsetTFlags.py_type(sharedNonConstBuffers), 0)
+
+def AddSharedNonConstBuffers(builder: flatbuffers.Builder, sharedNonConstBuffers: int):
+    ExecutionPlanAddSharedNonConstBuffers(builder, sharedNonConstBuffers)
+
+def ExecutionPlanStartSharedNonConstBuffersVector(builder, numElems: int) -> int:
+    return builder.StartVector(4, numElems, 4)
+
+def StartSharedNonConstBuffersVector(builder, numElems: int) -> int:
+    return ExecutionPlanStartSharedNonConstBuffersVector(builder, numElems)
+
 def ExecutionPlanEnd(builder: flatbuffers.Builder) -> int:
     return builder.EndObject()
 
@@ -400,6 +439,7 @@ class ExecutionPlanT(object):
         self.delegates = None  # type: List[executorch_flatbuffer.BackendDelegate.BackendDelegateT]
         self.nonConstBufferSizes = None  # type: List[int]
         self.nonConstBufferDevice = None  # type: List[executorch_flatbuffer.NonConstBufferDevice.NonConstBufferDeviceT]
+        self.sharedNonConstBuffers = None  # type: List[int]
 
     @classmethod
     def InitFromBuf(cls, buf, pos):
@@ -429,7 +469,8 @@ class ExecutionPlanT(object):
             self.operators == other.operators and \
             self.delegates == other.delegates and \
             self.nonConstBufferSizes == other.nonConstBufferSizes and \
-            self.nonConstBufferDevice == other.nonConstBufferDevice
+            self.nonConstBufferDevice == other.nonConstBufferDevice and \
+            self.sharedNonConstBuffers == other.sharedNonConstBuffers
 
     # ExecutionPlanT
     def _UnPack(self, executionPlan):
@@ -499,6 +540,13 @@ class ExecutionPlanT(object):
                 else:
                     nonConstBufferDevice_ = executorch_flatbuffer.NonConstBufferDevice.NonConstBufferDeviceT.InitFromObj(executionPlan.NonConstBufferDevice(i))
                     self.nonConstBufferDevice.append(nonConstBufferDevice_)
+        if not executionPlan.SharedNonConstBuffersIsNone():
+            if np is None:
+                self.sharedNonConstBuffers = []
+                for i in range(executionPlan.SharedNonConstBuffersLength()):
+                    self.sharedNonConstBuffers.append(executionPlan.SharedNonConstBuffers(i))
+            else:
+                self.sharedNonConstBuffers = executionPlan.SharedNonConstBuffersAsNumpy()
 
     # ExecutionPlanT
     def Pack(self, builder):
@@ -570,6 +618,14 @@ class ExecutionPlanT(object):
             for i in reversed(range(len(self.nonConstBufferDevice))):
                 builder.PrependUOffsetTRelative(nonConstBufferDevicelist[i])
             nonConstBufferDevice = builder.EndVector()
+        if self.sharedNonConstBuffers is not None:
+            if np is not None and type(self.sharedNonConstBuffers) is np.ndarray:
+                sharedNonConstBuffers = builder.CreateNumpyVector(self.sharedNonConstBuffers)
+            else:
+                ExecutionPlanStartSharedNonConstBuffersVector(builder, len(self.sharedNonConstBuffers))
+                for i in reversed(range(len(self.sharedNonConstBuffers))):
+                    builder.PrependInt32(self.sharedNonConstBuffers[i])
+                sharedNonConstBuffers = builder.EndVector()
         ExecutionPlanStart(builder)
         if self.name is not None:
             ExecutionPlanAddName(builder, name)
@@ -591,5 +647,7 @@ class ExecutionPlanT(object):
             ExecutionPlanAddNonConstBufferSizes(builder, nonConstBufferSizes)
         if self.nonConstBufferDevice is not None:
             ExecutionPlanAddNonConstBufferDevice(builder, nonConstBufferDevice)
+        if self.sharedNonConstBuffers is not None:
+            ExecutionPlanAddSharedNonConstBuffers(builder, sharedNonConstBuffers)
         executionPlan = ExecutionPlanEnd(builder)
         return executionPlan

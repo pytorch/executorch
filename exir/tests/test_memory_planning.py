@@ -1420,6 +1420,7 @@ class TestMap(unittest.TestCase):
         et_prog = et.executorch_program
         count = 0
         for plan in et_prog.execution_plan:
+            self.assertEqual(plan.shared_non_const_buffers, [2])
             for value in plan.values:
                 if (
                     hasattr(value.val, "allocation_info")
@@ -1433,6 +1434,18 @@ class TestMap(unittest.TestCase):
                         value.val.extra_tensor_info.fully_qualified_name, "state"
                     )
         self.assertEqual(count, 3)
+
+    def test_method_without_shared_buffers_is_not_marked(self) -> None:
+        # Export keeps the state as an input of the helper, which never touches it.
+        program = self._plan_shared(
+            MemoryPlanningPass(share_mutable_buffers=True), "forward", "helper"
+        )
+        plans = {plan.name: plan for plan in program.execution_plan}
+        self.assertEqual(plans["forward"].shared_non_const_buffers, [2])
+        self.assertIsNone(plans["helper"].shared_non_const_buffers)
+        # The helper keeps the layout with arena 2, but needs no memory in it.
+        self.assertEqual(plans["helper"].non_const_buffer_sizes[2], 0)
+        self.assertGreater(plans["forward"].non_const_buffer_sizes[2], 0)
 
     def test_custom_kv_cache_shared_buffers(self) -> None:
         from executorch.examples.models.llama.source_transformation.custom_kv_cache import (

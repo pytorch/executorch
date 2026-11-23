@@ -271,6 +271,20 @@ class MethodMeta final {
   Result<etensor::Device> memory_planned_buffer_device(size_t index) const;
 
   /**
+   * Check whether the specified memory-planned buffer is shared with every
+   * other method of the program that also marks it shared, such as mutable
+   * state that several methods read and write. Sharing goes by index: buffer
+   * `index` of this method is buffer `index` of every other method that
+   * marks it. Every such method must be given the same allocation for it, at
+   * the largest size any of them needs.
+   *
+   * @param[in] index The index of the buffer to look up (0-based, same
+   *     indexing as memory_planned_buffer_size()).
+   * @returns Whether the buffer is shared on success, or an error on failure.
+   */
+  Result<bool> memory_planned_buffer_is_shared(size_t index) const;
+
+  /**
    * Check to see if a backend is used in this method.
    *
    * @param[in] backend_name The name of the backend to search for.

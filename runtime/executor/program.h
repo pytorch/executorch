@@ -147,6 +147,8 @@ class Program final {
    * @param[in] memory_manager The allocators to use during initialization and
    *     execution of the loaded method. If `memory_manager.temp_allocator()` is
    *     null, the runtime will allocate temp memory using `et_pal_allocate()`.
+   *     A buffer that `MethodMeta::memory_planned_buffer_is_shared()` reports
+   *     is shared only between methods given the same memory for it here.
    * @param[in] event_tracer The event tracer to use for this method run.
    * @param[in] named_data_map An optional map of {name, blob} used to resolve
    *     data that is external to the PTE, if any.

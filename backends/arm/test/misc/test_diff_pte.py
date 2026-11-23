@@ -216,7 +216,11 @@ def _make_tensor_pte(values: list[float], sizes: list[int] | None = None) -> byt
     )
 
 
-def _make_double_pte(value: float, op_name: str = "aten::add") -> bytes:
+def _make_double_pte(
+    value: float,
+    op_name: str = "aten::add",
+    shared_non_const_buffers: list[int] | None = None,
+) -> bytes:
     return bytes(
         serialize_pte_binary(
             PTEFile(
@@ -235,6 +239,7 @@ def _make_double_pte(value: float, op_name: str = "aten::add") -> bytes:
                             operators=[Operator(name=op_name, overload="out")],
                             delegates=[],
                             non_const_buffer_sizes=[],
+                            shared_non_const_buffers=shared_non_const_buffers,
                         )
                     ],
                     constant_buffer=[],
@@ -415,6 +420,19 @@ def test_diff_pte_fails_when_double_drift_exceeds_tolerance():
 def test_diff_pte_fails_on_structural_diff_even_with_tolerance():
     reference = _make_double_pte(0.1, op_name="aten::add")
     candidate = _make_double_pte(0.1000001, op_name="aten::mul")
+    tester = mock.Mock()
+    tester.get_artifact.return_value = mock.Mock(buffer=reference)
+    pipeline = _make_pipeline(tester)
+
+    pipeline.diff_pte(candidate, atol=1e-6)
+    with pytest.raises(AssertionError):
+        pipeline._stages[pipeline.find_pos("_compare_pte.diff_pte")]()
+
+
+def test_diff_pte_fails_on_shared_buffer_diff_even_with_tolerance():
+    reference = _make_double_pte(0.1, shared_non_const_buffers=[2])
+    # Same file size as the reference, so only the marker check can reject it.
+    candidate = _make_double_pte(0.1000001, shared_non_const_buffers=[3])
     tester = mock.Mock()
     tester.get_artifact.return_value = mock.Mock(buffer=reference)
     pipeline = _make_pipeline(tester)
