@@ -276,7 +276,8 @@ class MethodMeta final {
    * state that several methods read and write. Sharing goes by index: buffer
    * `index` of this method is buffer `index` of every other method that
    * marks it. Every such method must be given the same allocation for it, at
-   * the largest size any of them needs.
+   * the largest size any of them needs, initialized as
+   * Program::initialize_planned_buffer() describes.
    *
    * @param[in] index The index of the buffer to look up (0-based, same
    *     indexing as memory_planned_buffer_size()).

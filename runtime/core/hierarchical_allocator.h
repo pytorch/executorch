@@ -124,6 +124,36 @@ class HierarchicalAllocator final {
     return planned_buffer_devices_;
   }
 
+  /**
+   * Marks the buffers whose owner has already initialized them, so that
+   * loading a method does not copy the stored initial data of a tensor into
+   * them. The owner of a buffer that several methods share uses this so that
+   * loading one method does not rewind state another method has changed.
+   *
+   * @param[in] initialized_buffers One entry per buffer (same count as the
+   *     `buffers` passed to the constructor), true for a buffer to leave as
+   *     it is. Must outlive this allocator. Empty, the default, means every
+   *     buffer gets its tensors' initial data.
+   */
+  void set_initialized_buffers(Span<const bool> initialized_buffers) {
+    ET_CHECK_MSG(
+        initialized_buffers.empty() ||
+            initialized_buffers.size() == buffers_.size(),
+        "initialized_buffers size (%" ET_PRIsize_t
+        ") must match buffers size (%" ET_PRIsize_t ")",
+        initialized_buffers.size(),
+        buffers_.size());
+    initialized_buffers_ = initialized_buffers;
+  }
+
+  /**
+   * Returns the buffers marked by set_initialized_buffers(), or an empty span
+   * if none are.
+   */
+  Span<const bool> initialized_buffers() const {
+    return initialized_buffers_;
+  }
+
  private:
   // TODO(T162089316): Remove the span array and to_spans once all users move to
   // spans. This array is necessary to hold the pointers and sizes that were
@@ -153,6 +183,9 @@ class HierarchicalAllocator final {
   /// Per-buffer device metadata. Empty when no device info was provided
   /// (CPU-only program).
   Span<const etensor::Device> planned_buffer_devices_;
+
+  /// Buffers whose owner has already initialized them. Empty when none are.
+  Span<const bool> initialized_buffers_;
 };
 
 } // namespace runtime

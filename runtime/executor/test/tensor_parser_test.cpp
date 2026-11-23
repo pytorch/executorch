@@ -196,6 +196,84 @@ TEST_F(TensorParserTest, TestMutableState) {
   ASSERT_EQ(num_mutable_tensors, 2);
 }
 
+TEST_F(TensorParserTest, TestInitializedPlannedBufferKeepsMutableState) {
+  const char* path = std::getenv("ET_MODULE_SIMPLE_TRAIN_PATH");
+  Result<FileDataLoader> train_loader = FileDataLoader::from(path);
+  ASSERT_EQ(train_loader.error(), Error::Ok);
+  Result<Program> program =
+      Program::load(&train_loader.get(), Program::Verification::Minimal);
+  ASSERT_EQ(program.error(), Error::Ok);
+  Result<const char*> method_name = program->get_method_name(0);
+  ASSERT_EQ(method_name.error(), Error::Ok);
+
+  // Fill the planned memory with a pattern no initial data matches.
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  auto* planned_memory = mmm.get().planned_memory();
+  Result<void*> planned_data =
+      planned_memory->get_offset_address(0, 0, kDefaultNonConstMemBytes);
+  ASSERT_EQ(planned_data.error(), Error::Ok);
+  std::memset(planned_data.get(), 0x7f, kDefaultNonConstMemBytes);
+
+  EXPECT_EQ(
+      program->initialize_planned_buffer(method_name.get(), 1, planned_memory),
+      Error::InvalidArgument);
+  EXPECT_EQ(
+      program->initialize_planned_buffer(
+          method_name.get(), SIZE_MAX, planned_memory),
+      Error::InvalidArgument);
+  EXPECT_EQ(
+      program->initialize_planned_buffer(method_name.get(), 0, nullptr),
+      Error::InvalidArgument);
+  ASSERT_EQ(
+      program->initialize_planned_buffer(method_name.get(), 0, planned_memory),
+      Error::Ok);
+  bool initialized[] = {true};
+  planned_memory->set_initialized_buffers({initialized, 1});
+  EXPECT_EQ(
+      program->initialize_planned_buffer(method_name.get(), 0, planned_memory),
+      Error::InvalidState);
+
+  ManagedMemoryManager reference(
+      kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  auto flatbuffer_values = ProgramTestFriend::GetInternalProgram(&program.get())
+                               ->execution_plan()
+                               ->Get(0)
+                               ->values();
+  size_t num_mutable_tensors = 0;
+  for (size_t i = 0; i < flatbuffer_values->size(); ++i) {
+    auto serialization_value = flatbuffer_values->Get(i);
+    if (serialization_value->val_type() !=
+            executorch_flatbuffer::KernelTypes::Tensor ||
+        serialization_value->val_as_Tensor()->allocation_info() == nullptr ||
+        serialization_value->val_as_Tensor()->data_buffer_idx() == 0) {
+      continue;
+    }
+    num_mutable_tensors++;
+    Result<Tensor> tensor = parseTensor(
+        &program.get(), &mmm.get(), serialization_value->val_as_Tensor());
+    ASSERT_EQ(tensor.error(), Error::Ok);
+    Result<Tensor> expected = parseTensor(
+        &program.get(), &reference.get(), serialization_value->val_as_Tensor());
+    ASSERT_EQ(expected.error(), Error::Ok);
+    // initialize_planned_buffer() wrote the initial data.
+    EXPECT_EQ(
+        std::memcmp(
+            tensor->const_data_ptr(),
+            expected->const_data_ptr(),
+            expected->nbytes()),
+        0);
+
+    // A buffer marked initialized keeps what a method wrote when the tensor is
+    // parsed again, as when another method that shares it is loaded.
+    tensor->mutable_data_ptr<float>()[0] = 0.5;
+    Result<Tensor> reparsed = parseTensor(
+        &program.get(), &mmm.get(), serialization_value->val_as_Tensor());
+    ASSERT_EQ(reparsed.error(), Error::Ok);
+    EXPECT_EQ(reparsed->const_data_ptr<float>()[0], 0.5);
+  }
+  ASSERT_EQ(num_mutable_tensors, 2);
+}
+
 // Tests that validateTensorLayout rejects tensors where dim_order is shorter
 // than sizes, preventing out-of-bounds reads.
 TEST(ValidateTensorLayoutTest, DimOrderSizeMismatchIsRejected) {
