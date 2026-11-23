@@ -1525,6 +1525,29 @@ class GgmlOpsTest(unittest.TestCase):
         # HIP keeps its exact kernel.
         self._check(BatchedExperts(), (torch.randn(16, 64),))
 
+    def test_repeated_tokens_feed_mul_mat_id_once(self):
+        # Each token repeated k times in a row, as batched_mm does, is read
+        # once by mul_mat_id; tokens tiled instead are repeated as written.
+        weight = torch.randn(4, 16, 64) / 8
+        ids = torch.tensor([3, 0, 1, 3, 2, 0])
+
+        def interleaved(x, ids):
+            rows = x.repeat_interleave(2, dim=0).unsqueeze(-1)
+            return torch.bmm(weight[ids], rows).squeeze(-1)
+
+        def tiled(x, ids):
+            rows = x.repeat(2, 1).unsqueeze(-1)
+            return torch.bmm(weight[ids], rows).squeeze(-1)
+
+        for name, fn, repeats in (("interleaved", interleaved, 0), ("tiled", tiled, 1)):
+            with self.subTest(name):
+                ops = collections.Counter()
+                self._check(
+                    Lambda(fn), (torch.randn(3, 64), ids), graph_ops=ops, **_MATMUL_TOL
+                )
+                self.assertGreater(ops["MUL_MAT_ID"], 0)
+                self.assertEqual(ops["REPEAT"] > 0, repeats > 0)
+
     def test_half_and_bfloat16_expert_matmuls(self):
         ids = torch.tensor([3, 0, 1, 3, 2, 0])
         for dtype in (torch.float16, torch.bfloat16):
