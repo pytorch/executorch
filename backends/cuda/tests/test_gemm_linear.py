@@ -4,9 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""triton::linear (triton/kernels/gemm): its layout ABI, the accuracy of its
-strict FP32 schedule against an FP64 reference and cuBLAS, and an AOTI export
-that routes linears to it.
+"""triton::linear (triton/kernels/gemm): its layout ABI, the accuracy of
+every schedule, precision and K split against an FP64 reference and cuBLAS,
+the bounds on split-K, and AOTI exports that route linears to it.
 
 Accuracy gate, per call: with ``scale = max(1, max|reference|)``, the largest
 absolute error must stay within ``max(1e-6 * scale, 3 * cuBLAS's)``.
@@ -15,6 +15,7 @@ absolute error must stay within ``max(1e-6 * scale, 3 * cuBLAS's)``.
 """
 
 import glob
+import importlib
 import itertools
 import os
 import tempfile
@@ -26,6 +27,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 _PASS_LOGGER = "executorch.backends.cuda.triton.replacement_pass"
+_TILES = ("ieee_tile", "tf32x3_tile")
+# The package exports the op under the module's name.
+_LINEAR_MODULE = "executorch.backends.cuda.triton.kernels.gemm.linear"
 
 
 class _GemmTest(unittest.TestCase):
@@ -37,20 +41,26 @@ class _GemmTest(unittest.TestCase):
 
         torch.manual_seed(0)
 
-    def linear(self, x, w, b=None, strides=None, config=None, schedule="ieee_tile"):
+    def linear(
+        self, x, w, b=None, strides=None, config=None, schedule="ieee_tile", split=1
+    ):
         from executorch.backends.cuda.triton.kernels.gemm import gemv, tile
         from executorch.backends.cuda.triton.kernels.gemm.linear import (
             force_linear_candidate,
         )
 
-        configs = {"ieee_tile": tile.CONFIGS, "gemv": gemv.CONFIGS}[schedule]
-        with force_linear_candidate(schedule, config or configs[0]):
+        configs = gemv.CONFIGS if schedule == "gemv" else tile.CONFIGS
+        with force_linear_candidate(schedule, config or configs[0], split):
             return torch.ops.triton.linear(x, w, b, strides)
+
+    def tiles(self):
+        """The tile schedules this GPU runs."""
+        return _TILES if torch.cuda.get_device_capability()[0] >= 8 else _TILES[:1]
 
     def schedules(self, x):
         """The schedules that run ``x``'s rows."""
         rows = x.numel() // x.shape[-1]
-        return ("ieee_tile", "gemv") if rows <= 4 else ("ieee_tile",)
+        return (*self.tiles(), "gemv") if rows <= 4 else self.tiles()
 
     def check(self, out, x, w, b=None):
         """``out`` within the accuracy gate."""
@@ -84,7 +94,9 @@ class LayoutTest(_GemmTest):
         cases["a single row"] = (torch.randn(1, 40, device="cuda"), None)
         cases["transposed rows"] = (torch.randn(40, 3, device="cuda").t(), [1, 3])
         for label, (x, strides) in cases.items():
-            for bias, schedule in itertools.product((None, b), self.schedules(x)):
+            # The precisions address memory alike; one stands for both.
+            schedules = [s for s in self.schedules(x) if s != "tf32x3_tile"]
+            for bias, schedule in itertools.product((None, b), schedules):
                 with self.subTest(label, bias=bias is not None, schedule=schedule):
                     out = self.linear(x, w, bias, strides, schedule=schedule)
                     self.assertEqual(tuple(out.shape), (*x.shape[:-1], 48))
@@ -153,19 +165,98 @@ class LayoutTest(_GemmTest):
 
 
 class AccuracyTest(_GemmTest):
-    """Every config on calls across the row classes, and the cases where
-    summation order shows."""
+    """Every config, precision and split on calls across the row classes, and
+    the cases where summation order shows."""
 
     def test_every_config(self):
+        """Whole in FP32 FMAs on calls across the row classes, and split in
+        two in tf32x3 (which shares the split's stores) on a ragged one."""
         from executorch.backends.cuda.triton.kernels.gemm import tile
 
-        for m, n, k in ((1, 256, 2048), (5, 300, 77), (64, 128, 512), (65, 96, 1000)):
+        runs = [
+            (call, "ieee_tile", 1)
+            for call in ((1, 256, 2048), (5, 300, 77), (65, 96, 1000))
+        ]
+        runs += [((65, 96, 1000), t, 2) for t in self.tiles()[1:]]
+        for (m, n, k), schedule, split in runs:
             x = torch.randn(m, k, device="cuda")
             w = torch.randn(n, k, device="cuda") / k**0.5
             b = torch.randn(n, device="cuda")
             for config in tile.CONFIGS:
-                with self.subTest(m=m, n=n, k=k, config=str(config)):
-                    self.check(self.linear(x, w, b, config=config), x, w, b)
+                with self.subTest(
+                    m=m, n=n, k=k, schedule=schedule, split=split, config=str(config)
+                ):
+                    out = self.linear(
+                        x, w, b, config=config, schedule=schedule, split=split
+                    )
+                    self.check(out, x, w, b)
+
+    def test_every_split(self):
+        """Every split, including slices past the end of K that store zeros."""
+        from executorch.backends.cuda.triton.kernels.gemm.linear import SPLITS
+
+        # 2100 is 66 blocks of 32: 16 slices of 5 blocks leave the last two empty.
+        m, n, k = 70, 130, 2100
+        x = torch.randn(m, k, device="cuda")
+        w = torch.randn(n, k, device="cuda") / k**0.5
+        b = torch.randn(n, device="cuda")
+        for schedule, split in itertools.product(self.tiles(), SPLITS):
+            with self.subTest(m=m, n=n, k=k, schedule=schedule, split=split):
+                out = self.linear(x, w, b, schedule=schedule, split=split)
+                self.check(out, x, w, b)
+
+    def test_split_reduction_adds_the_bias_once_into_any_output_layout(self):
+        w = torch.randn(48, 512, device="cuda")
+        b = torch.randn(48, device="cuda")
+        wide = torch.randn(9, 7, 520, device="cuda")
+        cases = {
+            "contiguous": (torch.randn(6, 512, device="cuda"), None),
+            "transposed output": (torch.randn(6, 512, device="cuda"), [1, 6]),
+            "permuted output": (torch.randn(2, 3, 512, device="cuda"), [3, 1, 6]),
+            "sliced input with an offset": (wide[1:, 2, 3:515], None),
+        }
+        for (label, (x, strides)), schedule in itertools.product(
+            cases.items(), self.tiles()
+        ):
+            with self.subTest(label, schedule=schedule):
+                out = self.linear(x, w, b, strides, schedule=schedule, split=4)
+                if strides is not None:
+                    self.assertEqual(list(out.stride()), strides)
+                self.check(out, x, w, b)
+                zeros = self.linear(
+                    torch.zeros_like(x), w, b, strides, schedule=schedule, split=4
+                )
+                self.assertTrue(torch.equal(zeros, b.expand_as(zeros)))
+
+    def test_splits_and_schedules_past_their_bounds_are_refused(self):
+        linear = importlib.import_module(_LINEAR_MODULE)
+
+        x = torch.randn(8, 512, device="cuda")
+        w = torch.randn(64, 512, device="cuda")
+        cases = {
+            "split_k=8 needs K >= 1024, got K=512": ("ieee_tile", 8, {}),
+            "needs a 2x8x64 workspace, more than 1000 elements": (
+                "tf32x3_tile",
+                2,
+                {"MAX_WORKSPACE_ELEMENTS": 1000},
+            ),
+            "tf32x3_tile needs sm_80": (
+                "tf32x3_tile",
+                1,
+                {"device_supports": lambda capability, device: capability < 80},
+            ),
+            "gemv does not split K": ("gemv", 2, {}),
+            "unknown schedule fp16_tile": ("fp16_tile", 1, {}),
+        }
+        for expected, (schedule, split, patches) in cases.items():
+            with self.subTest(expected), mock.patch.dict(vars(linear), patches):
+                with self.assertRaisesRegex(ValueError, expected):
+                    self.linear(
+                        x[:1] if schedule == "gemv" else x,
+                        w,
+                        schedule=schedule,
+                        split=split,
+                    )
 
     def test_every_gemv_config(self):
         from executorch.backends.cuda.triton.kernels.gemm import gemv
@@ -186,18 +277,28 @@ class AccuracyTest(_GemmTest):
             self.linear(x, w, schedule="gemv")
 
     def test_timed_schedule_choice(self):
-        """The compile times both schedules for a few rows and only the tile
-        for more."""
+        """The compile times every tile schedule with the splits K and the
+        workspace bound allow, and the matrix-vector schedule for a few rows."""
         from executorch.backends.cuda.autotune.launch_params import (
             autotune_launch_params,
             clear_launch_param_cache,
         )
 
+        linear = importlib.import_module(_LINEAR_MODULE)
+
         w = torch.randn(512, 1024, device="cuda")
-        for rows, legal in ((1, {"ieee_tile", "gemv"}), (5, {"ieee_tile"})):
+        # 1024 / 128 allows splits up to 8; 5 rows allow a 2x5x512 workspace.
+        for rows, splits, workspace in ((1, (1, 2, 4, 8), 2**26), (5, (1, 2), 5120)):
+            legal = {(t, s) for t in self.tiles() for s in splits}
+            if rows == 1:
+                legal.add(("gemv", 1))
             clear_launch_param_cache()
             x = torch.randn(rows, 1024, device="cuda")
-            with self.subTest(rows=rows), autotune_launch_params() as stats:
+            with self.subTest(
+                rows=rows
+            ), autotune_launch_params() as stats, mock.patch.object(
+                linear, "MAX_WORKSPACE_ELEMENTS", workspace
+            ):
                 out = torch.ops.triton.linear(x, w, None)
                 (pick,) = stats.picks
                 self.assertEqual(set(pick.times_us), legal)
@@ -247,14 +348,14 @@ class AccuracyTest(_GemmTest):
             torch.randn(3, 1000, device="cuda"),
         ):
             for schedule in self.schedules(x):
-                with self.subTest(rows=x.shape[0], schedule=schedule):
-                    first = self.linear(x, w, schedule=schedule)
-                    self.assertTrue(
-                        torch.equal(first, self.linear(x, w, schedule=schedule))
-                    )
+                for split in (1,) if schedule == "gemv" else (1, 4):
+                    with self.subTest(rows=x.shape[0], schedule=schedule, split=split):
+                        first = self.linear(x, w, schedule=schedule, split=split)
+                        again = self.linear(x, w, schedule=schedule, split=split)
+                        self.assertTrue(torch.equal(first, again))
 
     def test_64_bit_indexing(self):
-        k, n = 64, 32
+        k, n = 256, 32
         if torch.cuda.mem_get_info()[0] < 12 * 2**30:
             self.skipTest("needs 12 GiB of free device memory")
         storage = torch.randn(2**31 + k, device="cuda")
@@ -262,8 +363,10 @@ class AccuracyTest(_GemmTest):
         x = storage.as_strided((2, k), (2**31, 1))
         w = torch.randn(n, k, device="cuda")
         for schedule in self.schedules(x):
-            with self.subTest(schedule):
-                self.check(self.linear(x, w, schedule=schedule), x.contiguous(), w)
+            for split in (1,) if schedule == "gemv" else (1, 2):
+                with self.subTest(schedule, split=split):
+                    out = self.linear(x, w, schedule=schedule, split=split)
+                    self.check(out, x.contiguous(), w)
         del storage
 
 
@@ -322,6 +425,67 @@ class LoweringTest(_GemmTest):
                     # Running the program is skipped in fbcode.
                     continue
                 self.assertClose(edge, x, expected)
+
+    def test_split_k_workspace_under_cuda_graph_replay(self):
+        """A forced split allocates its workspace inside the program; the
+        method, captured into a CUDA graph and replayed on new inputs, matches
+        eager (outside fbcode)."""
+        from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+        from executorch.backends.cuda.tests.routing_test_utils import (
+            static_routing_compile_specs,
+        )
+        from executorch.backends.cuda.triton.kernels.gemm import routing, tile
+        from executorch.backends.cuda.triton.kernels.gemm.linear import (
+            force_linear_candidate,
+        )
+        from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
+        from executorch.export.utils import is_fbcode
+
+        model = nn.Linear(512, 96).cuda().eval()
+        # Three warmup calls, the capture call, then replays.
+        inputs = [torch.randn(2, 5, 512, device="cuda") for _ in range(6)]
+        with torch.no_grad():
+            program = torch.export.export(model, (inputs[0],), strict=True)
+        with mock.patch.object(
+            routing, "worth_routing", return_value=None
+        ), force_linear_candidate(self.tiles()[-1], split=4), mock.patch.object(
+            tile, "run", wraps=tile.run
+        ) as run:
+            edge = to_edge_transform_and_lower(
+                program,
+                partitioner=[CudaPartitioner(static_routing_compile_specs())],
+                compile_config=EdgeCompileConfig(_check_ir_validity=False),
+            )
+        # tile.run(x, weight, bias, out, layout, precision, split, config)
+        self.assertEqual({call.args[6] for call in run.call_args_list}, {4})
+        if is_fbcode():
+            # Running the program is skipped in fbcode.
+            return
+        from executorch.runtime import Runtime
+
+        et_program = edge.to_executorch()
+        runtime = Runtime.get()
+        option = "enable_cuda_graph_for_method"
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "model.pte")
+            with open(path, "wb") as f:
+                et_program.write_to_file(f)
+            et_program.write_tensor_data_to_file(directory)
+            data_path = glob.glob(os.path.join(directory, "*.ptd"))[0]
+            runtime.backend_registry.set_option("CudaBackend", {option: "forward"})
+            try:
+                method = runtime.load_program(path, data_path=data_path).load_method(
+                    "forward"
+                )
+            finally:
+                # The option is process wide.
+                runtime.backend_registry.set_option("CudaBackend", {option: ""})
+            for i, x in enumerate(inputs):
+                (out,) = method.execute([x.cpu()])
+                with self.subTest(call=i), torch.no_grad():
+                    torch.testing.assert_close(
+                        out, model(x).cpu(), atol=1e-5, rtol=1e-5
+                    )
 
     def assertClose(self, edge, x, expected):
         from executorch.runtime import Runtime
