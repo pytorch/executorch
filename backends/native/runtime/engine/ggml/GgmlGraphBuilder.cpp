@@ -887,6 +887,8 @@ void GraphBuilder::lower(const Node& node) {
     lower_dequantize_affine(node);
   } else if (key == "native.rope.default") {
     lower_rope(node);
+  } else if (key == "native.gated_delta_rule.default") {
+    lower_gated_delta_rule(node);
   } else if (key == "aten.index_put_.default") {
     lower_index_put(node);
   } else if (key == "aten.scaled_dot_product_attention.default") {
