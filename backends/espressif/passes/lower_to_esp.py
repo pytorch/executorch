@@ -440,10 +440,10 @@ def _weighted_constants(program, node, constants, weight, input_params, output_p
     return multiplier_node, shift_node
 
 
-def _conv2d_kernel_args(program, node, constants, size_query):
+def _conv2d_kernel_args(program, node, constants, size_query, *, depthwise=False):
     if (
         get_arg(node, "transposed")
-        or get_arg(node, "groups") != 1
+        or (not depthwise and get_arg(node, "groups") != 1)
         or get_arg(node, "dilation") != [1, 1]
         or get_arg(node, "output_padding") != [0, 0]
     ):
@@ -470,7 +470,8 @@ def _conv2d_kernel_args(program, node, constants, size_query):
         or len(padding) != 2
         or any(type(v) is not int or not 0 < v <= 65535 for v in stride)
         or any(type(v) is not int or not 0 <= v <= 65535 for v in padding)
-        or weight_channels != channels
+        or weight_channels != (1 if depthwise else channels)
+        or (depthwise and (get_arg(node, "groups") != channels or outputs % channels))
         or output_value.shape
         != (
             batch,
@@ -493,6 +494,23 @@ def _conv2d_kernel_args(program, node, constants, size_query):
         + 16 * 1024
         + 256
     )
+    if depthwise:
+        # Vendor C paths store each window's spatial origin in int16.
+        if aligned_channels > 65535 or any(
+            pad > 32768 or (out - 1) * step - pad > 32767
+            for out, step, pad in zip(output_value.shape[1:3], stride, padding)
+        ):
+            return None
+        scratch_bound = (
+            2 * kernel_h * kernel_w * max(aligned_channels, outputs)
+            + 2
+            * (height + 2 * padding[0] + 2 * kernel_h + 2 * stride[0])
+            * (width + 2 * padding[1] + 2 * kernel_w + 2 * stride[1])
+            * aligned_channels
+            + output_value.shape[1] * output_value.shape[2] * aligned_channels
+            + 12 * aligned_channels
+            + 128
+        )
     if (
         max(scratch_bound, input_value.numel(), output_value.numel(), weight.numel())
         > torch.iinfo(torch.int32).max
@@ -506,10 +524,11 @@ def _conv2d_kernel_args(program, node, constants, size_query):
     try:
         scratch_bytes = size_query(
             input_dims=(width, height, channels),
-            filter_dims=(kernel_w, kernel_h, channels),
+            filter_dims=(kernel_w, kernel_h, outputs if depthwise else channels),
             output_dims=(output_value.shape[2], output_value.shape[1], outputs),
             stride=tuple(reversed(stride)),
             padding=tuple(reversed(padding)),
+            **({"channel_multiplier": outputs // channels} if depthwise else {}),
         )
         if not 0 <= scratch_bytes <= scratch_bound:
             raise RuntimeError("ESP-NN returned an invalid convolution scratch size")
@@ -518,6 +537,8 @@ def _conv2d_kernel_args(program, node, constants, size_query):
         )
     except ValueError:
         return None
+    # FQ uses OHWI; ESP-NN depthwise indexes weights as 1HWO.
+    weight = weight.permute(3, 1, 2, 0).contiguous() if depthwise else weight
     weight_node = add_constant(
         program, f"{node.name}_weight", weight, node, InputKind.CONSTANT_TENSOR
     )
@@ -533,6 +554,7 @@ def _conv2d_kernel_args(program, node, constants, size_query):
         bias_node,
         stride,
         padding,
+        *((outputs // channels,) if depthwise else ()),
         multiplier_node,
         shift_node,
         -input_params.zp,
@@ -560,16 +582,28 @@ def _lower_conv2d(program, node, constants, target, kernel_mode):
     queries = get_scratch_queries(target, kernel_mode)
     if queries is None:
         return False
+    depthwise = get_arg(node, "groups") != 1
     try:
-        size_query = queries.conv2d_scratch_size
+        size_query = (
+            queries.depthwise_conv2d_scratch_size
+            if depthwise
+            else queries.conv2d_scratch_size
+        )
     except AttributeError:
         return False
-    args = _conv2d_kernel_args(program, node, constants, size_query)
+    args = _conv2d_kernel_args(
+        program, node, constants, size_query, depthwise=depthwise
+    )
     if args is None:
         return False
     with node.graph.inserting_before(node):
         replacement = node.graph.call_function(
-            exir_ops.edge.esp_nn.quantized_conv2d_int8.default, args
+            (
+                exir_ops.edge.esp_nn.quantized_depthwise_conv2d_int8.default
+                if depthwise
+                else exir_ops.edge.esp_nn.quantized_conv2d_int8.default
+            ),
+            args,
         )
     replacement.meta = node.meta.copy()
     node.replace_all_uses_with(replacement)

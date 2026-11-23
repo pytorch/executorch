@@ -252,8 +252,9 @@ def test_bias_annotation_preserves_other_quantizers(linear):
     )
 
 
-def test_convolution_int32_bias():
-    model = torch.nn.Conv2d(2, 3, 1)
+@pytest.mark.parametrize("outputs,groups", [(3, 1), (2, 2), (6, 2)])
+def test_convolution_int32_bias(outputs, groups):
+    model = torch.nn.Conv2d(2, outputs, 1, groups=groups)
     interpreter = _quantize(model, (torch.ones(1, 2, 2, 2),))
     (node,) = interpreter.module.graph.find_nodes(
         op="call_function", target=torch.ops.fused_quant.convolution.default
