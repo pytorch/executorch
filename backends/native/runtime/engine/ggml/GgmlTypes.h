@@ -38,6 +38,12 @@ std::vector<uint8_t> affine_int4_to_q4_0(
     ByteSpan packed,
     const std::vector<float>& scales);
 
+// The F32 bytes of a symmetric int4 weight: q * scale of its group.
+std::vector<uint8_t> affine_int4_to_f32(
+    const TensorMeta& meta,
+    ByteSpan packed,
+    const std::vector<float>& scales);
+
 ggml_type compute_type(const TensorMeta& meta);
 
 std::vector<int64_t> fold_leading_ones(const std::vector<int64_t>& sizes);

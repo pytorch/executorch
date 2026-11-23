@@ -13,9 +13,10 @@ DECLARE_string(kv_dtype);
 
 DEFINE_bool(
     allow_activation_quant_for_weight_only,
-    false,
-    "Run weight-only quantized linears, such as GGUF k-quants, with ggml's "
-    "quantized activations.");
+    true,
+    "Run matmuls of weight-only quantized weights, such as GGUF k-quants, "
+    "with ggml's quantized activations, as llama.cpp does; false dequantizes "
+    "those weights to F32 and runs them without, for debugging.");
 
 int main(int argc, char** argv) {
   gflags::SetUsageMessage(
