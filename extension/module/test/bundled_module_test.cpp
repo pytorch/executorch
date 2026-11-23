@@ -55,11 +55,11 @@ TEST_F(BundledModuleTest, TestNonBPFile) {
 
   auto outputs = bundled_module->execute("forward", /*testset_idx=*/0);
   EXPECT_EQ(bundled_module->Module::is_loaded(), false);
-  EXPECT_EQ(outputs.error(), Error::InvalidArgument);
+  EXPECT_EQ(outputs.error(), Error::InvalidProgram);
 
   auto status =
       bundled_module->verify_method_outputs("forward", /*testset_idx=*/0);
-  EXPECT_EQ(status, Error::InvalidArgument);
+  EXPECT_EQ(status, Error::InvalidProgram);
 }
 
 TEST_F(BundledModuleTest, TestExecuteInvalidMethod) {

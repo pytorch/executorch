@@ -625,6 +625,104 @@ TEST_F(ProgramTest, ShortDataHeader) {
       Program::HeaderStatus::ShortData);
 }
 
+TEST_F(ProgramTest, LoadShortDataIsInvalidProgram) {
+  const uint8_t data[8] = {};
+  BufferDataLoader loader(data, sizeof(data));
+  EXPECT_EQ(Program::load(&loader).error(), Error::InvalidProgram);
+}
+
+namespace {
+std::vector<uint8_t> read_program(FileDataLoader& loader) {
+  const size_t size = loader.size().get();
+  Result<FreeableBuffer> bytes = loader.load(
+      0, size, DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
+  EXPECT_EQ(bytes.error(), Error::Ok);
+  const auto* begin = static_cast<const uint8_t*>(bytes->data());
+  return std::vector<uint8_t>(begin, begin + size);
+}
+
+// Reads the whole program and sets segment_data_size in its header to 0, as
+// in headers written before that field existed. A loader of unknown size can
+// still load such a program.
+std::vector<uint8_t> read_with_legacy_header(FileDataLoader& loader) {
+  std::vector<uint8_t> data = read_program(loader);
+  EXPECT_EQ(std::memcmp(data.data() + 8, "eh00", 4), 0);
+  const uint64_t no_segment_data_size = 0;
+  // segment_data_size follows program_size and segment_base_offset.
+  std::memcpy(data.data() + 32, &no_segment_data_size, sizeof(uint64_t));
+  return data;
+}
+
+// Inserts a header that states the program size and no segments. The
+// serializer writes no header for a program without segments, so only a
+// hand-made file has this shape.
+std::vector<uint8_t> with_header_without_segments(
+    const std::vector<uint8_t>& program) {
+  constexpr uint32_t kHeaderSize = 32;
+  std::vector<uint8_t> data(program.size() + kHeaderSize);
+  std::memcpy(data.data(), program.data(), 8);
+  std::memcpy(
+      data.data() + 8 + kHeaderSize, program.data() + 8, program.size() - 8);
+  // The root offset counts from the start, so it moves with the header.
+  uint32_t root_offset;
+  std::memcpy(&root_offset, data.data(), sizeof(root_offset));
+  root_offset += kHeaderSize;
+  std::memcpy(data.data(), &root_offset, sizeof(root_offset));
+  const uint64_t fields[3] = {data.size(), 0, 0};
+  std::memcpy(data.data() + 8, "eh00", 4);
+  std::memcpy(data.data() + 12, &kHeaderSize, sizeof(kHeaderSize));
+  std::memcpy(data.data() + 16, fields, sizeof(fields));
+  return data;
+}
+
+class UnknownSizeLoader final : public DataLoader {
+ public:
+  UnknownSizeLoader(const void* data, size_t size) : loader_(data, size) {}
+  Result<FreeableBuffer> load(
+      size_t offset,
+      size_t size,
+      const SegmentInfo& segment_info) const override {
+    return loader_.load(offset, size, segment_info);
+  }
+  Result<size_t> size() const override {
+    return Error::NotSupported;
+  }
+
+ private:
+  BufferDataLoader loader_;
+};
+} // namespace
+
+TEST_F(ProgramTest, LoadLegacyHeaderWithoutDataSize) {
+  std::vector<uint8_t> data = read_with_legacy_header(*multi_loader_);
+  UnknownSizeLoader loader(data.data(), data.size());
+  EXPECT_EQ(Program::load(&loader).error(), Error::Ok);
+}
+
+TEST_F(ProgramTest, LoadFromLoaderOfUnknownSizeReturnsItsError) {
+  // The header states segment_data_size, so checking it needs the data size.
+  std::vector<uint8_t> data = read_program(*multi_loader_);
+  UnknownSizeLoader loader(data.data(), data.size());
+  EXPECT_EQ(Program::load(&loader).error(), Error::NotSupported);
+}
+
+TEST_F(ProgramTest, LoadHeaderWithoutSegmentsFromLoaderOfUnknownSize) {
+  std::vector<uint8_t> data =
+      with_header_without_segments(read_program(*add_loader_));
+  BufferDataLoader known_size_loader(data.data(), data.size());
+  ASSERT_EQ(Program::load(&known_size_loader).error(), Error::Ok);
+  // The header states the program size and there are no segments to check.
+  UnknownSizeLoader loader(data.data(), data.size());
+  EXPECT_EQ(Program::load(&loader).error(), Error::Ok);
+}
+
+TEST_F(ProgramTest, LoadProgramShorterThanItsHeaderSaysIsInvalidProgram) {
+  std::vector<uint8_t> data = read_with_legacy_header(*multi_loader_);
+  // Keep the header, but less than the program size it states.
+  BufferDataLoader loader(data.data(), Program::kMinHeadBytes + 16);
+  EXPECT_EQ(Program::load(&loader).error(), Error::InvalidProgram);
+}
+
 TEST_F(ProgramTest, IncompatibleHeader) {
   // Make a local copy of the header.
   size_t data_len = Program::kMinHeadBytes;

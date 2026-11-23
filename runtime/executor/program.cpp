@@ -79,8 +79,17 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
   size_t program_size = 0;
   size_t segment_base_offset = 0;
   size_t segment_data_size = 0;
+  // Some loaders cannot report their size; programs whose header does not
+  // need it still load from them.
+  const Result<size_t> data_size = loader->size();
   {
     EXECUTORCH_SCOPE_PROF("Program::check_header");
+    ET_CHECK_OR_RETURN_ERROR(
+        !data_size.ok() || data_size.get() >= ExtendedHeader::kNumHeadBytes,
+        InvalidProgram,
+        "Program data is %zu bytes, shorter than its %zu-byte header",
+        data_size.get(),
+        ExtendedHeader::kNumHeadBytes);
     Result<FreeableBuffer> header = loader->load(
         /*offset=*/0,
         ExtendedHeader::kNumHeadBytes,
@@ -91,26 +100,34 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
     Result<ExtendedHeader> eh =
         ExtendedHeader::Parse(header->data(), header->size());
     if (eh.ok()) {
+      // Compared before program_size narrows it on 32-bit platforms.
+      ET_CHECK_OR_RETURN_ERROR(
+          !data_size.ok() || eh->program_size <= data_size.get(),
+          InvalidProgram,
+          "Program size %" PRIu64
+          " from the header is larger than the %zu bytes of data",
+          eh->program_size,
+          data_size.get());
       // The header has the program size.
       program_size = eh->program_size;
       segment_base_offset = eh->segment_base_offset;
       segment_data_size = eh->segment_data_size;
 
       // segment_data_size was added in ET 1.0 release. For BC, only check the
-      // expected file size when there are no segments or when segment_data_size
-      // is positive (0-value may indicate no segments)
-      if ((segment_data_size == 0 && segment_base_offset == 0) ||
-          segment_data_size > 0) {
+      // end of the segments when there are segments and segment_data_size is
+      // positive (0-value may indicate an older header).
+      if (segment_base_offset != 0 && segment_data_size > 0) {
         ET_CHECK_OR_RETURN_ERROR(
             segment_base_offset <= SIZE_MAX - segment_data_size,
             InvalidProgram,
             "segment_base_offset %zu + segment_data_size %zu overflows",
             segment_base_offset,
             segment_data_size);
-        size_t expected = segment_base_offset == 0
-            ? program_size
-            : segment_base_offset + segment_data_size;
-        size_t actual = loader->size().get();
+        size_t expected = segment_base_offset + segment_data_size;
+        if (!data_size.ok()) {
+          return data_size.error();
+        }
+        size_t actual = data_size.get();
         ET_CHECK_OR_RETURN_ERROR(
             expected <= actual,
             InvalidProgram,
@@ -121,11 +138,10 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
     } else if (eh.error() == Error::NotFound) {
       // No header; the program consumes the whole file, and there are no
       // segments.
-      auto result = loader->size();
-      if (!result.ok()) {
-        return result.error();
+      if (!data_size.ok()) {
+        return data_size.error();
       }
-      program_size = result.get();
+      program_size = data_size.get();
     } else {
       ET_LOG(Error, "Extended header may be corrupt");
       return eh.error();
