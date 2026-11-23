@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -49,6 +49,7 @@ def download_hf_snapshot(
     revision: str,
     expected_sha256: str | None = None,
     metadata_path: Path | None = None,
+    token_auth: bool = False,
 ) -> str:
     """Download a pinned Safetensors checkpoint and optionally verify its hash."""
     for attempt in range(_MAX_RATE_LIMIT_RETRIES + 1):
@@ -57,7 +58,7 @@ def download_hf_snapshot(
                 repo_id=repo_id,
                 revision=revision,
                 allow_patterns=["*.safetensors", "*.json"],
-                token=False,
+                token=token_auth,
             )
             break
         except HfHubHTTPError as error:

@@ -377,7 +377,7 @@ class VgfBackend(BackendDetails):
             PreprocessResult: Result containing the compiled VGF binary.
 
         """
-        logger.info(f"{VgfBackend.__name__} preprocess")
+        logger.debug(f"{VgfBackend.__name__} preprocess")
 
         insertions_snapshot = _snapshot_registered_pass_insertions()
         try:
@@ -606,7 +606,7 @@ def vgf_compile(
             vgf_path,
         ]
         try:
-            subprocess.run(  # nosec B602, B603 - shell invocation constrained to trusted converter binary with trusted inputs
+            result = subprocess.run(  # nosec B602, B603 - shell invocation constrained to trusted converter binary with trusted inputs
                 conversion_command,
                 shell=False,
                 check=True,
@@ -646,6 +646,17 @@ def vgf_compile(
                 f"Stderr:\n{process_error.stderr.decode()}\n"
                 f"Stdout:\n{process_error.stdout.decode()}"
             )
+        else:
+            if len(result.stdout) > 0:
+                logger.debug(
+                    "model_converter stdout:\n%s",
+                    result.stdout.decode(errors="replace"),
+                )
+            if len(result.stderr) > 0:
+                logger.debug(
+                    "model_converter stderr:\n%s",
+                    result.stderr.decode(errors="replace"),
+                )
 
         if artifact_path:
             os.makedirs(artifact_path, exist_ok=True)

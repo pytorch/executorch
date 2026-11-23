@@ -573,3 +573,17 @@ TEST_F(OpWhereOutTest, RowConditionAliasedOutput) {
 
   EXPECT_TENSOR_EQ(a, tf.make({2, 3}, {1, 2, 3, 10, 11, 12}));
 }
+
+TEST_F(OpWhereOutTest, ChannelsLastBroadcast) {
+  TensorFactory<ScalarType::Bool> tf_condition;
+  TensorFactory<ScalarType::Int> tf;
+  Tensor condition = tf_condition.channels_last_like(
+      tf_condition.make({1, 2, 1, 2}, {true, false, false, true}));
+  Tensor a = tf.channels_last_like(tf.make({1, 2, 1, 2}, {1, 2, 3, 4}));
+  Tensor b = tf.channels_last_like(tf.make({1, 2, 1, 1}, {10, 20}));
+  Tensor out = tf.zeros_channels_last({1, 2, 1, 2});
+
+  Tensor expected =
+      tf.channels_last_like(tf.make({1, 2, 1, 2}, {1, 10, 20, 4}));
+  EXPECT_TENSOR_EQ(op_where_self_out(condition, a, b, out), expected);
+}

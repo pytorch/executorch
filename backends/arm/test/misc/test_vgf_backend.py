@@ -13,6 +13,7 @@ from unittest import mock
 import executorch.backends.arm.tosa.dialect  # noqa: F401
 import pytest
 import torch
+import tosa_serializer as ts
 
 from executorch.backends.arm._passes import EnsureUniqueOutputNodesPass, RewriteConvPass
 from executorch.backends.arm._passes.arm_pass_manager import (
@@ -24,6 +25,7 @@ from executorch.backends.arm._passes.arm_pass_manager import (
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
     CheckResolvedTensorShapes,
 )
+from executorch.backends.arm.test.tester.test_pipeline import DType, VgfPipeline
 from executorch.backends.arm.vgf import backend, backend as vgf_backend, VgfCompileSpec
 from executorch.backends.arm.vgf._passes import GroupIndependentCustomShadersPass
 from executorch.backends.arm.vgf.backend import (
@@ -126,6 +128,108 @@ def _fake_exported_program_with_nested_tosa_custom(
     )
 
     return cast(ExportedProgram, SimpleNamespace(graph_module=graph_module))
+
+
+def _tosa_flatbuffer_with_tensor(dtype: int, name: str) -> bytes:
+    tosa_graph = ts.TosaSerializer(
+        "", targetMajor=1, targetMinor=0, targetPatch=0, targetDraft=False
+    )
+    tosa_graph.addInputTensor(ts.TosaSerializerTensor(name, [1], dtype, data=None))
+    return tosa_graph.serialize()
+
+
+@pytest.mark.parametrize("dtype", [DType.FP32, DType.FP16, DType.BF16, DType.INT32])
+def test_vgf_pipeline_rejects_forbidden_tosa_dtype(dtype):
+    pipeline = VgfPipeline(
+        torch.nn.Identity(),
+        (torch.rand(1),),
+        aten_op=[],
+        run_on_vulkan_runtime=False,
+        forbidden_tosa_dtypes=[dtype],
+    )
+    assert pipeline._tosa_dtype_artifact_path is not None
+    tosa_path = pipeline._tosa_dtype_artifact_path / "output_tag0.tosa"
+    tosa_path.write_bytes(_tosa_flatbuffer_with_tensor(dtype, "forbidden_tensor"))
+
+    with pytest.raises(AssertionError) as exc_info:
+        pipeline._assert_no_forbidden_tosa_dtypes()
+
+    assert f"output_tag0.tosa: forbidden_tensor ({ts.DTypeNames[dtype]})" in str(
+        exc_info.value
+    )
+
+
+def test_vgf_pipeline_checks_all_tosa_artifacts(tmp_path):
+    pipeline = VgfPipeline(
+        torch.nn.Identity(),
+        (torch.rand(1),),
+        aten_op=[],
+        run_on_vulkan_runtime=False,
+        custom_path=str(tmp_path),
+        forbidden_tosa_dtypes=[DType.FP32, DType.FP16],
+    )
+    assert pipeline._tosa_dtype_artifact_path is not None
+    for tag, dtype in enumerate([DType.INT8, DType.FP32, DType.FP16]):
+        tosa_path = pipeline._tosa_dtype_artifact_path / f"output_tag{tag}.tosa"
+        tosa_path.write_bytes(_tosa_flatbuffer_with_tensor(dtype, f"tensor{tag}"))
+
+    with pytest.raises(AssertionError) as exc_info:
+        pipeline._assert_no_forbidden_tosa_dtypes()
+
+    assert "output_tag1.tosa: tensor1 (FP32)" in str(exc_info.value)
+    assert "output_tag2.tosa: tensor2 (FP16)" in str(exc_info.value)
+    assert "tensor0" not in str(exc_info.value)
+
+
+def test_vgf_pipeline_tosa_dtype_check_disabled_by_default(tmp_path):
+    pipeline = VgfPipeline(
+        torch.nn.Identity(),
+        (torch.rand(1),),
+        aten_op=[],
+        run_on_vulkan_runtime=False,
+        custom_path=str(tmp_path),
+    )
+
+    assert not pipeline.has_stage("_assert_no_forbidden_tosa_dtypes")
+    assert pipeline._tosa_dtype_artifact_path is None
+    assert pipeline.tester.compile_spec._get_intermediate_path() == str(tmp_path)
+
+
+@pytest.mark.parametrize("dtype", [-1, len(ts.DTypeNames), "FP32"])
+def test_vgf_pipeline_rejects_invalid_tosa_dtype(dtype):
+    with pytest.raises(ValueError, match="Expected a TOSA DType value"):
+        VgfPipeline(
+            torch.nn.Identity(),
+            (torch.rand(1),),
+            aten_op=[],
+            run_on_vulkan_runtime=False,
+            forbidden_tosa_dtypes=[dtype],
+        )
+
+
+@pytest.mark.parametrize("use_to_edge_transform_and_lower", [False, True])
+@pytest.mark.parametrize("dtype", [DType.FP32, DType.INT8])
+def test_vgf_pipeline_checks_lowered_tosa_dtype(
+    monkeypatch, use_to_edge_transform_and_lower, dtype
+):
+    monkeypatch.setattr(vgf_backend, "vgf_compile", lambda *args: b"vgf")
+    pipeline = VgfPipeline(
+        torch.nn.ReLU(),
+        (torch.randn(2, 3),),
+        aten_op="torch.ops.aten.relu.default",
+        exir_op="executorch_exir_dialects_edge__ops_aten_relu_default",
+        run_on_vulkan_runtime=False,
+        quantize=False,
+        use_to_edge_transform_and_lower=use_to_edge_transform_and_lower,
+        forbidden_tosa_dtypes=[dtype],
+    )
+    pipeline.pop_stage("to_executorch")
+
+    if dtype == DType.FP32:
+        with pytest.raises(AssertionError, match="forbidden tensor datatypes"):
+            pipeline.run()
+    else:
+        pipeline.run()
 
 
 def test_vgf_preprocess_restores_pass_registry(monkeypatch) -> None:

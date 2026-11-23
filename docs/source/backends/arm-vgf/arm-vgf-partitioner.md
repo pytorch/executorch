@@ -19,19 +19,7 @@ Args:
 ```python
 def VgfPartitioner.ops_to_not_decompose(self, ep: torch.export.exported_program.ExportedProgram) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.node.Node], bool]]]:
 ```
-Return operators and a filter that should not be decomposed.
-
-Provide a base set of ops to preserve as-is and a predicate that keeps
-certain activations whole when surrounded by quantize/dequantize ops in
-a quantized graph. This helps downstream TOSA lowering and delegation.
-
-Args:
-- **ep (ExportedProgram)**: Program used to infer target-specific policy.
-
-Returns:
-- **Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]**:
-        A list of op overloads to keep intact, and an optional filter
-        function that returns True when an op should not be decomposed.
+Preserve only the SDPA nodes that the VGF custom shader can lower.
 
 ```python
 def VgfPartitioner.partition(self, exported_program: torch.export.exported_program.ExportedProgram) -> executorch.exir.backend.partitioner.PartitionResult:

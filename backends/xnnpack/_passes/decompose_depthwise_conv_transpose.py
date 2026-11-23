@@ -4,10 +4,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import importlib
 import math
 from typing import cast, List, Optional, Tuple
 
-import executorch.backends.xnnpack.custom_ops_lib  # noqa: F401  registers et_xnnpack ops
 import torch
 from executorch.backends.transforms.utils import (
     create_constant_placeholder,
@@ -18,6 +18,10 @@ from executorch.backends.transforms.utils import (
 from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassResult
+
+# Registers the et_xnnpack ops. A bare `import` would stay deferred under lazy
+# imports, leaving the ops unregistered when they are looked up below.
+importlib.import_module("executorch.backends.xnnpack.custom_ops_lib")
 
 
 class DecomposeDepthwiseConvTransposePass(XNNPACKPass):

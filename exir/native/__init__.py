@@ -6,6 +6,7 @@
 
 # pyre-strict
 
+from executorch.exir._serialize._ptn import read_metadata
 from executorch.exir._serialize._ptn_samples import (
     Call,
     read_samples,
@@ -20,6 +21,7 @@ __all__ = [
     "NativeProgramManager",
     "Sample",
     "SampleSet",
+    "read_metadata",
     "read_samples",
     "to_native",
     "write_samples",

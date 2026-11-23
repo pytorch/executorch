@@ -8,6 +8,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <sstream>
 #include <stdexcept>
 
@@ -45,6 +46,36 @@ TEST(BenchmarkReport, ShaderBreakdownKeepsDispatchOrderAndDuplicateShaders) {
       shader_breakdown_report(dispatches, {{1}}), std::invalid_argument);
   EXPECT_THROW(
       shader_breakdown_report(dispatches, {}, 0), std::invalid_argument);
+  EXPECT_FALSE(breakdown.at(0).contains("gpu_timestamp_barrier_us"));
+  EXPECT_FALSE(breakdown.at(0).contains("gpu_timestamp_gap_us"));
+}
+
+TEST(BenchmarkReport, ShaderBreakdownReportsBarrierAndGap) {
+  const Report dispatches =
+      Report::array({{{"shader_name", "first"}}, {{"shader_name", "second"}}});
+  const double nan = std::nan("");
+  // Two repetitions per run; the batch's first dispatch has no gap.
+  const Report breakdown = shader_breakdown_report(
+      dispatches,
+      {{10, 20, 10, 20}, {10, 20, 10, 20}},
+      2,
+      Json::object(),
+      {},
+      {{1, 2, 3, 4}, {1, 2, 3, 4}},
+      {{nan, 0.5, 0.25, 0.5}, {nan, 0.5, 0.75, 0.5}});
+  EXPECT_EQ(breakdown.at(0).at("gpu_timestamp_barrier_us").at("mean"), 2);
+  EXPECT_EQ(breakdown.at(1).at("gpu_timestamp_barrier_us").at("mean"), 3);
+  EXPECT_EQ(breakdown.at(0).at("gpu_timestamp_gap_us").at("mean"), 0.5);
+  EXPECT_EQ(breakdown.at(1).at("gpu_timestamp_gap_us").at("mean"), 0.5);
+  // With one repetition, the first dispatch has no gap sample at all.
+  const Report single = shader_breakdown_report(
+      dispatches, {{10, 20}}, 1, Json::object(), {}, {{1, 2}}, {{nan, 0.5}});
+  EXPECT_FALSE(single.at(0).contains("gpu_timestamp_gap_us"));
+  EXPECT_EQ(single.at(1).at("gpu_timestamp_gap_us").at("mean"), 0.5);
+  EXPECT_THROW(
+      shader_breakdown_report(
+          dispatches, {{10, 20}}, 1, Json::object(), {}, {{1, 2}, {1, 2}}),
+      std::invalid_argument);
 }
 
 TEST(BenchmarkReport, TableShowsShaderBreakdownUnderOperator) {

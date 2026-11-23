@@ -43,7 +43,7 @@ void GraphBuilder::lower_rms_norm(const Node& node) {
 }
 
 void GraphBuilder::lower_layer_norm(const Node& node) {
-  const TensorRef input = tensor_arg(node, "input", 0);
+  TensorRef input = tensor_arg(node, "input", 0);
   const std::vector<int64_t> normalized =
       int_list(require_arg(node, "normalized_shape", 1).arg);
   if (input.sizes.empty() || normalized.size() != 1 ||
@@ -51,7 +51,9 @@ void GraphBuilder::lower_layer_norm(const Node& node) {
     throw std::runtime_error("ggml: layer_norm only normalizes the last dim");
   }
   require_only_first_output_used(node);
-  // ggml's norm kernels only read F32.
+  // ggml's norm kernels only read F32. Computed in F32, as eager does for F16
+  // and BF16; set() rounds back.
+  input.tensor = half_as_f32(input.tensor);
   require_f32(node, input.tensor);
   const double eps = float_arg(node, "eps", 4, 1e-5, true);
   ggml_context* ctx = instance_.context.get();
@@ -59,10 +61,10 @@ void GraphBuilder::lower_layer_norm(const Node& node) {
       ggml_norm(ctx, contiguous(input.tensor), static_cast<float>(eps));
   if (const std::optional<TensorRef> weight =
           optional_tensor(node, "weight", 2)) {
-    result = ggml_mul(ctx, result, weight->tensor);
+    result = ggml_mul(ctx, result, half_as_f32(weight->tensor));
   }
   if (const std::optional<TensorRef> bias = optional_tensor(node, "bias", 3)) {
-    result = ggml_add(ctx, result, bias->tensor);
+    result = ggml_add(ctx, result, half_as_f32(bias->tensor));
   }
   set(output_ids(node).at(0), TensorRef{result, input.sizes});
 }
@@ -203,7 +205,12 @@ void GraphBuilder::lower_unary(const Node& node, Unary fn) {
 
 void GraphBuilder::lower_sqrt(const Node& node) {
   const TensorRef input = tensor_arg(node, "self", 0);
-  require_f32(node, input.tensor);
+  // ggml's sqrt reads F16 and BF16 as they are and computes in F32, as eager
+  // does.
+  if (input.tensor->type != GGML_TYPE_F16 &&
+      input.tensor->type != GGML_TYPE_BF16) {
+    require_f32(node, input.tensor);
+  }
   set_single_output(
       node,
       TensorRef{
@@ -212,8 +219,13 @@ void GraphBuilder::lower_sqrt(const Node& node) {
 }
 
 void GraphBuilder::lower_hardtanh(const Node& node) {
-  const TensorRef input = tensor_arg(node, "self", 0);
+  TensorRef input = tensor_arg(node, "self", 0);
   require_float(node, input.tensor);
+  // ggml-cpu clamps F32 and F16 only, so BF16 clamps in F32, exactly; set()
+  // rounds back.
+  if (input.tensor->type == GGML_TYPE_BF16) {
+    input.tensor = as_f32(input.tensor);
+  }
   const float min =
       static_cast<float>(float_arg(node, "min_val", 1, -1.0, true));
   const float max =
@@ -225,11 +237,26 @@ void GraphBuilder::lower_hardtanh(const Node& node) {
           input.sizes});
 }
 
+// ATen's elu is x > 0 ? scale * x : alpha * scale * expm1(input_scale * x), and
+// ggml's x > 0 ? x : expm1(x).
+void GraphBuilder::lower_elu(const Node& node) {
+  for (const auto& [name, index] :
+       {std::pair{"alpha", 1}, {"scale", 2}, {"input_scale", 3}}) {
+    if (float_arg(node, name, index, 1.0, true) != 1.0) {
+      throw std::runtime_error(
+          "ggml: elu supports only alpha, scale and input_scale 1");
+    }
+  }
+  lower_unary(node, ggml_elu);
+}
+
 // Reduces a run of trailing dimensions, which ggml sees as one row.
 std::pair<ggml_tensor*, std::vector<int64_t>> GraphBuilder::trailing_rows(
     const Node& node,
     const std::string& op) {
-  const TensorRef input = tensor_arg(node, "self", 0);
+  TensorRef input = tensor_arg(node, "self", 0);
+  // Computed in F32, as eager does for F16 and BF16; set() rounds back.
+  input.tensor = half_as_f32(input.tensor);
   require_f32(node, input.tensor);
   const NamedArgument* dtype = find_arg(node, "dtype", 3);
   if (dtype != nullptr && dtype->arg.kind() != ArgKind::None) {
@@ -306,6 +333,24 @@ void GraphBuilder::lower_amax(const Node& node) {
       ggml_get_rows(ctx, ggml_reshape_3d(ctx, rows, 1, width, count), index);
   ggml_tensor* result = reshape(ctx, values, sizes);
   set_single_output(node, TensorRef{result, std::move(sizes)});
+}
+
+// ggml normalizes each row, so only the last dimension.
+void GraphBuilder::lower_softmax(const Node& node) {
+  TensorRef input = tensor_arg(node, "self", 0);
+  // Computed in F32, as eager does for F16 and BF16; set() rounds back.
+  input.tensor = half_as_f32(input.tensor);
+  require_f32(node, input.tensor);
+  const size_t rank = input.sizes.size();
+  if (rank == 0 ||
+      normalize_dim(int_arg(node, "dim", 1, -1), rank) !=
+          static_cast<int64_t>(rank) - 1) {
+    throw std::runtime_error("ggml: softmax supports the last dimension only");
+  }
+  ggml_context* ctx = instance_.context.get();
+  set_single_output(
+      node,
+      TensorRef{ggml_soft_max(ctx, contiguous(input.tensor)), input.sizes});
 }
 
 // Comparisons produce 0/1 floats: a <= b is 1 - step(a - b) and a < b is

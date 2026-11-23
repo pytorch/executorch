@@ -64,7 +64,6 @@ jobs:
   # Running Android emulator directly on the runner and not using Docker
   run-emulator:
     needs: build-android
-    # NB: This job runs on the shared 8-core-ubuntu runner; KVM / bare-metal assumptions no longer apply
     runs-on: 8-core-ubuntu
     env:
       API_LEVEL: 34
@@ -98,7 +97,26 @@ jobs:
             ~/.android/adb*
           key: avd-${{ env.API_LEVEL }}
 
-      # NB: It takes about 10m to cold boot the emulator here
+      # /dev/kvm on GitHub-hosted Ubuntu runners is not accessible to the runner
+      # user by default, which makes android-emulator-runner pass -accel off.
+      # Emulator 37.3+ rejects -accel off unless ANDROID_I_WANT_MY_TCG is set.
+      - name: Enable KVM
+        run: |
+          set +e -ux
+          if [ -e /dev/kvm ]; then
+            echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+            sudo udevadm control --reload-rules
+            sudo udevadm trigger --name-match=kvm
+            sudo udevadm settle
+            ls -l /dev/kvm
+          fi
+          if [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
+            echo "KVM is available; the emulator will use hardware acceleration"
+          else
+            echo "::warning::KVM is unavailable on this runner; the Android emulator will run in slow software (TCG) mode"
+            echo "ANDROID_I_WANT_MY_TCG=yes" >> "$GITHUB_ENV"
+          fi
+
       - name: Run Android emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:

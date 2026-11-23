@@ -525,6 +525,41 @@ def get_model_num_sharding(model_name: str) -> Dict[str, int]:
     return num_sharding
 
 
+_GEMMA4_SELF_DECODER_PREFIX = "model.self_decoder.layers"
+_GEMMA4_CROSS_DECODER_PREFIX = "model.cross_decoder.layers"
+
+
+def get_model_layout(model_name: str) -> Any:
+    """Get the module paths and tagging rules that lowering needs for a model.
+
+    Args:
+        model_name: Model identifier.
+
+    Returns:
+        The model's ``ModelLayout``; the default layout for most models.
+    """
+    from executorch.backends.qualcomm.genai_pipeline.compilation.model_layout import (
+        ModelLayout,
+    )
+
+    if model_name.lower() == "gemma4-e2b":
+        # The tagging rules match variable names in the model's ``forward``.
+        return ModelLayout(
+            decoder_layer_prefixes=(
+                _GEMMA4_CROSS_DECODER_PREFIX,
+                _GEMMA4_SELF_DECODER_PREFIX,
+            ),
+            offset_layer_prefix=_GEMMA4_CROSS_DECODER_PREFIX,
+            per_layer_input_traces=(
+                "per_layer_inputs[n_self:]",
+                "per_layer_inputs[i]",
+            ),
+            donor_kv_prefixes=("full_k", "full_v"),
+        )
+
+    return ModelLayout()
+
+
 def get_quant_dtype(model_name: str) -> Any:
     """Get component-keyed quantization dtypes for the model.
 

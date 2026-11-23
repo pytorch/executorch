@@ -476,6 +476,18 @@ def get_context_spec() -> TosaSpecification:
         raise RuntimeError("Function must be executed within a TosaLoweringContext")
 
 
+def context_supports_int64() -> bool:
+    """Return True when the lowering context targets the integer profile with
+    the int64 extension, and False outside a lowering context.
+    """
+    tosa_spec = TosaLoweringContext.tosa_spec_var.get(None)
+    return (
+        tosa_spec is not None
+        and tosa_spec.support_integer()
+        and tosa_spec.support_extension("int64")
+    )
+
+
 def get_context_shape_env() -> ShapeEnv:
     """Get the current ShapeEnv from the lowering context, if any.
 

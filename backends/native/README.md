@@ -45,6 +45,15 @@ A `.ptn` is an uncompressed zip with fixed entry names:
 | `program.ptg` | Methods as graphs; FlatBuffer defined by `serialization/native_graph.fbs`. |
 | `program.safetensors` | Constants. Byte-identical immutable tensors are stored once. |
 | `aliases.json` | Deduplicated key to owner key; present only when needed. |
+| `metadata.json` | Producer-defined values by name; present only when given. |
+
+`to_native(ep, metadata={...})` writes `metadata.json`, the counterpart to a
+PTE's constant methods: a JSON object whose values are each a bool, number,
+string, or a flat list of those. Names mean nothing to the format; a runner
+reads the ones it knows with `Package::metadata_int` and `metadata_ints`, and
+`exir.native.read_metadata` reads them back in Python. LLM exports reuse the
+constant-method names in `extension/llm/export/model_metadata.py`, such as
+`get_windows` for the per-layer sliding windows of an off-graph KV cache.
 
 ## Samples (optional)
 
@@ -258,6 +267,15 @@ Applications link `native_api` and `native_ggml_engine`, then create a
 ExecuTorch with the desired GGML backend (for example, `GGML_CUDA=ON`,
 `GGML_HIP=ON`, or `GGML_METAL=ON`) and set `ptn::GgmlEngineOptions::device` to
 `ptn::GgmlDevice::Gpu`. CPU support is required even when selecting a GPU.
+
+The ggml runners (`run_hf_llm_ggml`, `ggml_ptn_runner`) share their engine
+flags (`runtime/engine/ggml/GgmlEngineFlags.h`). Engine options that change
+numerics default to llama.cpp's behaviour; the testing ones end in
+`_for_testing` and turn on eager's exact behaviour where ggml's differs.
+
+| Option (flag) | Default, as in llama.cpp | Set | Ops | Backends |
+| --- | --- | --- | --- | --- |
+| `allow_activation_quant_for_weight_only` | quantizes the activations of matmuls with weight-only quantized weights in their block format | false (debugging): those weights load dequantized to F32, about 4-12x their packed size by type | `linear` | all |
 
 The CMake installation includes the GGML libraries and package configuration.
 It also copies the submodule's upstream MIT license, including its copyright
