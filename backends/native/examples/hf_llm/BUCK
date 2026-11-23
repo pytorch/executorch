@@ -19,7 +19,10 @@ fbcode_target(
 fbcode_target(
     _kind = runtime.python_library,
     name = "export_hf_llm_lib",
-    srcs = ["export_hf_llm.py"],
+    srcs = [
+        "export_hf_llm.py",
+        "muse_glimmer.py",
+    ],
     deps = [
         ":gguf_hf",
         ":hf_utils",

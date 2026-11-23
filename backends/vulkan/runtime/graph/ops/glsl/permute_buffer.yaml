@@ -1,6 +1,7 @@
 permute_buffer:
   parameter_names_with_default_values:
     DTYPE: float
+    VEC4: false
   generate_variant_forall:
     DTYPE:
       - VALUE: half
@@ -9,3 +10,5 @@ permute_buffer:
       - VALUE: uint8
   shader_variants:
     - NAME: permute_buffer
+    - NAME: permute_vec4_buffer
+      VEC4: true

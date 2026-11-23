@@ -7,6 +7,8 @@
 #include <executorch/backends/vulkan/test/ops/benchmark_v2/framework/ReferenceRegistry.h>
 #include <executorch/backends/vulkan/test/ops/benchmark_v2/operators/quantize/q8ta/Q8taReferenceCommon.h>
 
+#include <algorithm>
+
 namespace vkcompute::shader_profiling::reference {
 static Tensor q8ta_pixel_shuffle_reference(
     const Json& spec,
@@ -18,6 +20,9 @@ static Tensor q8ta_pixel_shuffle_reference(
               inverse_out_scale = q8ta::scale(spec, 3);
   const int64_t iz = q8ta::integer(spec, 2), oz = q8ta::integer(spec, 4),
                 r = q8ta::integer(spec, 5);
+  // q8ta_pixel_shuffle.with_activation passes an activation before the output.
+  const bool relu = spec.at("args").size() == 8 &&
+      spec.at("args").at(6).at("string") == "relu";
   const float actual_out_scale = 1.0f / inverse_out_scale;
   const bool passthrough = std::abs(is - actual_out_scale) <=
           1e-7f * std::max(std::abs(is), 1e-7f) &&
@@ -34,10 +39,14 @@ static Tensor q8ta_pixel_shuffle_reference(
             input.sizes[3] +
         x / r;
     const int64_t value = int64_t(input.values[source]);
-    out.values[i] = passthrough
-        ? double(value)
-        : double(q8ta::requantize(
-              q8ta::dequantize(value, is, iz), inverse_out_scale, oz));
+    int64_t q = passthrough
+        ? value
+        : q8ta::requantize(
+              q8ta::dequantize(value, is, iz), inverse_out_scale, oz);
+    if (relu) {
+      q = std::max(q, oz);
+    }
+    out.values[i] = double(q);
   });
   return out;
 }
@@ -45,5 +54,7 @@ REGISTER_REFERENCE_FUNCTIONS {
   REGISTER_REFERENCE_FN(q8ta_pixel_shuffle, q8ta_pixel_shuffle_reference);
   REGISTER_OPERATOR_REFERENCE(
       et_vk.q8ta_pixel_shuffle.default, q8ta_pixel_shuffle);
+  REGISTER_OPERATOR_REFERENCE(
+      et_vk.q8ta_pixel_shuffle.with_activation, q8ta_pixel_shuffle);
 }
 } // namespace vkcompute::shader_profiling::reference

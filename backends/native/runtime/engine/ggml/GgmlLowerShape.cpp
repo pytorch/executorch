@@ -46,10 +46,12 @@ void GraphBuilder::lower_constant_pad(const Node& node) {
   if (float_arg(node, "value", 2, 0.0, true) != 0.0) {
     throw std::runtime_error("ggml: constant_pad_nd only pads with zeros");
   }
-  require_f32(node, input.tensor);
+  // Exact in F32; set() rounds an F16 or BF16 result back.
+  ggml_tensor* x = half_as_f32(input.tensor);
+  require_f32(node, x);
   ggml_tensor* result = ggml_pad_ext(
       instance_.context.get(),
-      contiguous(input.tensor),
+      contiguous(x),
       amounts[0],
       amounts[1],
       amounts[2],

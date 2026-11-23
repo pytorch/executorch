@@ -742,32 +742,63 @@ Report shader_breakdown_report(
     const std::vector<std::vector<double>>& samples,
     uint32_t repetitions,
     const Json& throughput_flags,
-    const std::vector<WorkAmounts>& work) {
+    const std::vector<WorkAmounts>& work,
+    const std::vector<std::vector<double>>& barrier_samples,
+    const std::vector<std::vector<double>>& gap_samples) {
   if (repetitions == 0) {
     throw std::invalid_argument("Repetitions must be positive");
   }
-  for (const auto& sample : samples) {
-    if (sample.size() != dispatches.size() * repetitions) {
+  for (const auto* runs : {&samples, &barrier_samples, &gap_samples}) {
+    if (runs != &samples && !runs->empty() && runs->size() != samples.size()) {
       throw std::invalid_argument(
-          "Shader timestamp count changed between runs");
+          "Barrier or gap run count does not match shader run count");
+    }
+    for (const auto& sample : *runs) {
+      if (sample.size() != dispatches.size() * repetitions) {
+        throw std::invalid_argument(
+            "Shader timestamp count changed between runs");
+      }
     }
   }
+  // Averages dispatch position i over each run's repetitions, skipping NaN
+  // samples. Returns no values if a run has no finite sample at i.
+  auto per_run_means = [&](const std::vector<std::vector<double>>& runs,
+                           size_t i) {
+    std::vector<double> means;
+    means.reserve(runs.size());
+    for (const auto& run : runs) {
+      double total = 0;
+      uint32_t finite = 0;
+      for (uint32_t r = 0; r < repetitions; ++r) {
+        const double value = run[r * dispatches.size() + i];
+        if (!std::isnan(value)) {
+          total += value;
+          ++finite;
+        }
+      }
+      if (finite == 0) {
+        return std::vector<double>{};
+      }
+      means.push_back(total / finite);
+    }
+    return means;
+  };
   Report result = dispatches;
   if (!work.empty() && work.size() != dispatches.size()) {
     throw std::invalid_argument(
         "Shader work count does not match dispatch count");
   }
   for (size_t i = 0; i < dispatches.size(); ++i) {
-    std::vector<double> durations;
-    durations.reserve(samples.size());
-    for (const auto& sample : samples) {
-      double total = 0;
-      for (uint32_t r = 0; r < repetitions; ++r) {
-        total += sample[r * dispatches.size() + i];
-      }
-      durations.push_back(total / repetitions);
-    }
+    const std::vector<double> durations = per_run_means(samples, i);
     result[i]["gpu_timestamp_shader_us"] = latency_statistics(durations);
+    for (const auto& [field, runs] :
+         {std::pair{"gpu_timestamp_barrier_us", &barrier_samples},
+          std::pair{"gpu_timestamp_gap_us", &gap_samples}}) {
+      const std::vector<double> means = per_run_means(*runs, i);
+      if (!means.empty()) {
+        result[i][field] = latency_statistics(means);
+      }
+    }
     Report throughput = throughput_report(
         throughput_flags,
         work.empty() ? WorkAmounts{} : work[i],
