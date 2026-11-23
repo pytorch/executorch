@@ -10,6 +10,7 @@ idf_component_register(
   "ops/op_quantized_mul_broadcast.cpp"
   "ops/op_quantized_add.cpp"
   "ops/op_quantized_max_pool2d.cpp"
+  "ops/op_quantized_avg_pool2d.cpp"
   PRIV_REQUIRES
   esp-nn
   WHOLE_ARCHIVE

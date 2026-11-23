@@ -49,10 +49,19 @@ lib.define(
     "quantized_max_pool2d_int8.out(Tensor input, int[2] kernel_size, int[2] stride, "
     "int[2] padding, *, Tensor(a!) out) -> Tensor(a!)"
 )
+lib.define(
+    "quantized_avg_pool2d_int8(Tensor input, int[2] kernel_size, int[2] stride, "
+    "int[2] padding) -> Tensor"
+)
+lib.define(
+    "quantized_avg_pool2d_int8.out(Tensor input, int[2] kernel_size, int[2] stride, "
+    "int[2] padding, *, Tensor(a!) out) -> Tensor(a!)"
+)
 
 
 @register_fake("esp_nn::quantized_max_pool2d_int8")
-def quantized_max_pool2d_int8_meta(input, kernel_size, stride, padding):
+@register_fake("esp_nn::quantized_avg_pool2d_int8")
+def quantized_pool2d_int8_meta(input, kernel_size, stride, padding):
     batch, height, width, channels = input.shape
     output_height = (height + 2 * padding[0] - kernel_size[0]) // stride[0] + 1
     output_width = (width + 2 * padding[1] - kernel_size[1]) // stride[1] + 1
@@ -65,6 +74,28 @@ def quantized_max_pool2d_int8(input, kernel_size, stride, padding):
         input.permute(0, 3, 1, 2).to(torch.float32), kernel_size, stride, padding
     )
     return result.permute(0, 2, 3, 1).to(torch.int8).contiguous()
+
+
+@impl(lib, "quantized_avg_pool2d_int8", "CompositeExplicitAutograd")
+def quantized_avg_pool2d_int8(input, kernel_size, stride, padding):
+    result = quantized_pool2d_int8_meta(input, kernel_size, stride, padding)
+    for y in range(result.shape[1]):
+        top = y * stride[0] - padding[0]
+        bottom = min(top + kernel_size[0], input.shape[1])
+        top = max(top, 0)
+        for x in range(result.shape[2]):
+            left = x * stride[1] - padding[1]
+            right = min(left + kernel_size[1], input.shape[2])
+            left = max(left, 0)
+            count = (bottom - top) * (right - left)
+            total = input[:, top:bottom, left:right, :].to(torch.int64).sum((1, 2))
+            nudge = torch.where(total > 0, count // 2, -(count // 2))
+            result[:, y, x, :] = (
+                torch.div(total + nudge, count, rounding_mode="trunc")
+                .clamp(-128, 127)
+                .to(torch.int8)
+            )
+    return result
 
 
 @register_fake("esp_nn::quantized_mul_int8")
