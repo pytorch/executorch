@@ -65,7 +65,8 @@ disabled. Histogram observers accumulate the combined distribution of tensors
 that share quantization parameters. Moving-average observers can instead
 narrow the shared range toward individual tensors and cause clipping. After
 calibration, observers are frozen and fake quantization is enabled for weight
-training, so the calibrated ranges remain fixed throughout QAT.
+training. Unless activation-scale learning is enabled below, the calibrated
+ranges remain fixed throughout QAT.
 
 ## Smoke Runs
 
@@ -205,3 +206,19 @@ When sharing accuracy or performance data, include:
 
 This keeps accuracy numbers comparable with board performance results and
 avoids mixing smoke-test numbers with real-data validation.
+
+## Accuracy recipe
+
+Use `--accuracy-recipe --io-quantization int8` for the trained, uncached
+`IFNetTwoBlock`: full-range image codes and FP32 final warps, blending and
+flow sums inside the existing shader. Use `--io-quantization uint8` for UINT8
+IO instead; inputs use scale `1/255` and zero point `0` for images in `[0, 1]`.
+Internal image tensors remain signed INT8. UINT8 IO adds boundary
+requantization; decode outputs using the exported output qparams.
+Unsupported fusion fails.
+QAT uses log-MSE, shuffled epochs and warmup/cosine decay. Adam learns
+activation scales; weight ranges and zero points stay fixed. Tested settings:
+`--qat-lr 1e-4 --qat-steps 8 --random-seed 2029 --max-triples 512
+--qat-samples 512 --calibration-samples 96`. Use the same flag for matched PTQ.
+Score exports on held-out data; the script reports on its supplied triples.
+Defaults retain the original precision and training recipe.

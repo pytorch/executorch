@@ -29,6 +29,8 @@ from .pack_rife_warps_and_concat import (
     TOSA,
 )
 
+from .rife_blend import _apply_rescale
+
 logger = logging.getLogger(__name__)
 
 
@@ -55,6 +57,22 @@ def _move_padding_before_resize(image, resize):
         ):
             resize.prepend(operand)
     resize.prepend(image)
+
+
+def _image_rescale(branch, concat, code):
+    """Invert an optional image requantization for the padding constant."""
+    requantize = branch if _is_rescale(branch.args[0], torch.int8) else None
+    if requantize is None:
+        return branch, None, code or 0
+    if not _is_rescale(requantize, torch.int8) or set(requantize.users) != {concat}:
+        raise ValueError("Expected a private image requantization.")
+    if code is not None:
+        candidates = torch.arange(-127, 128, dtype=torch.int64)
+        matches = candidates[_apply_rescale(candidates, requantize) == code]
+        if not matches.numel():
+            raise ValueError("Image quantization cannot represent the timestep.")
+        code = int(matches[matches.abs().argmin()])
+    return requantize.args[0], requantize, code or 0
 
 
 class PadRifeBlock0ConcatPass(ArmPass):
@@ -100,12 +118,16 @@ class PadRifeBlock0ConcatPass(ArmPass):
             timestep == timestep.flatten()[0]
         ):
             raise ValueError("Expected a uniform signed INT8 timestep constant.")
-        for rescale in concat.args[0][:2]:
+        branches = []
+        for branch, code in zip(concat.args[0][:2], (int(timestep.flatten()[0]), None)):
+            rescale, requantize, code = _image_rescale(branch, concat, code)
+            branches.append((rescale, requantize, code))
             if (
                 not _is_rescale(rescale, torch.int8)
                 or rescale.args[1:3] != compute_multiplier_and_shift([0.25])
                 or rescale.args[3:] != (0, 0)
-                or set(rescale.users) != {concat}
+                or set(rescale.users)
+                != {requantize if requantize is not None else concat}
             ):
                 raise ValueError("Expected a private signed 1/4 image rescale.")
             resize = rescale.args[0]
@@ -127,7 +149,7 @@ class PadRifeBlock0ConcatPass(ArmPass):
                 or resize.args[0].meta["val"].dtype != torch.int8
             ):
                 raise ValueError("Expected a private signed INT8 RGB resize.")
-        return conv, weight, int(timestep.flatten()[0])
+        return conv, weight, branches
 
     def call(self, graph_module: GraphModule) -> PassResult:
         exported_program = self.exported_program
@@ -139,7 +161,7 @@ class PadRifeBlock0ConcatPass(ArmPass):
             if not _is_op(concat, TOSA.CONCAT.default, 1):
                 continue
             try:
-                conv, weight, timestep = self._match(concat)
+                conv, weight, branches = self._match(concat)
             except ValueError as error:
                 logger.debug("Skipping block0 concat padding: %s", error)
                 continue
@@ -156,7 +178,7 @@ class PadRifeBlock0ConcatPass(ArmPass):
                 new_weight = create_constant_placeholder(
                     exported_program, graph, name, InputKind.CONSTANT_TENSOR, extended
                 )
-            for rescale, code in zip(concat.args[0][:2], (timestep, 0)):
+            for rescale, requantize, code in branches:
                 resize = rescale.args[0]
                 image = _reusable_padding(resize.args[0], code)
                 if image is None:
@@ -179,7 +201,8 @@ class PadRifeBlock0ConcatPass(ArmPass):
                     _move_padding_before_resize(image, resize)
                 resize.args = (image, *resize.args[1:])
                 # Constant bilinear input becomes 4 * code, then RESCALE divides by 4.
-                for node in (image, resize, rescale):
+                last = requantize if requantize is not None else rescale
+                for node in (image, resize, rescale, last):
                     value = node.meta["val"].new_empty((*_tensor_shape(node)[:-1], 4))
                     node.meta = {
                         **node.meta,

@@ -34,14 +34,18 @@ def build_packed_warp_payload(
     for key in (
         "flow_scale",
         "flow_zero_point",
-        "input_scale",
-        "input_zero_point",
         "output_scale",
         "output_zero_point",
     ):
         source = source.replace(
             "@" + key.upper() + "@", format(payloads[0][key], ".9g")
         )
+    for index, original in enumerate(payloads):
+        for suffix in ("scale", "zero_point"):
+            source = source.replace(
+                f"@INPUT{index}_{suffix.upper()}@",
+                format(original[f"input_{suffix}"], ".9g"),
+            )
     source = source.replace("@TIMESTEP@", str(timestep))
     source = source.replace("@FUSE_BLOCK0_TAIL@", str(int(fuse_block0_tail)))
     if resize_scale not in (2, 4, 8):
