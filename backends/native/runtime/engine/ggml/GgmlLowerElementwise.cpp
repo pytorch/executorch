@@ -505,10 +505,13 @@ ScalarType compare_dtype(
 // differ by NaN. Each operand is first rounded to its own dtype (a lowering
 // may have left an F16 result in F32), then to the dtype eager compares in
 // when that is F16 or BF16; a scalar takes a tensor's dtype within its
-// category. Two integers compare exactly, which F32 matches within +-2^24; ne
-// checks that, and le and lt check the integers they can trace: attention
-// masks compare positions the graph computes, which le and lt accepted before
-// any check.
+// category. Two integers compare exactly, which F32 matches within +-2^24, so
+// integer operands must be ones F32 holds exactly (see
+// require_exact_integers). Every comparison also defers integers computed
+// from those by adds and subtracts, such as the positions an attention mask
+// compares, to the host, which bounds each integer of that computation within
+// +-2^24 from constants and shapes, or else on every run. F32 then keeps the
+// sign of a - b and whether it is 0, which is all a comparison reads.
 void GraphBuilder::lower_compare(const Node& node, Comparison comparison) {
   const ValueId left_id = tensor_arg_id(node, "self", 0);
   TensorRef left = tensor_arg(node, "self", 0);
@@ -519,8 +522,7 @@ void GraphBuilder::lower_compare(const Node& node, Comparison comparison) {
                                                       : "ne";
   const ScalarType left_dtype =
       method_.graph.value(left_id).tensor_meta().dtype;
-  const bool traced_only =
-      comparison == Comparison::Le || comparison == Comparison::Lt;
+  constexpr bool defer_to_host = true;
   const auto round_to = [&](ggml_tensor* t, ScalarType dtype) {
     if (dtype != ScalarType::Half && dtype != ScalarType::BFloat16) {
       return t;
@@ -542,8 +544,8 @@ void GraphBuilder::lower_compare(const Node& node, Comparison comparison) {
     const ScalarType dtype = compare_dtype(
         left_dtype, !left.sizes.empty(), right_dtype, !right.sizes.empty());
     if (is_integer(dtype)) {
-      require_exact_integers(left_id, op + "'s self", traced_only);
-      require_exact_integers(right_id, op + "'s other", traced_only);
+      require_exact_integers(left_id, op + "'s self", defer_to_host);
+      require_exact_integers(right_id, op + "'s other", defer_to_host);
     }
     left.tensor = round_to(round_to(left.tensor, left_dtype), dtype);
     right.tensor = round_to(round_to(right.tensor, right_dtype), dtype);
@@ -563,7 +565,7 @@ void GraphBuilder::lower_compare(const Node& node, Comparison comparison) {
   } else {
     auto scalar = static_cast<float>(float_arg(node, "other", 1, 0));
     if (is_integer(left_dtype) && other.arg.kind() == ArgKind::Int) {
-      require_exact_integers(left_id, op + "'s self", traced_only);
+      require_exact_integers(left_id, op + "'s self", defer_to_host);
       const int64_t value = int_value(other.arg);
       if (value < -kExactF32Integer || value > kExactF32Integer) {
         throw std::out_of_range(
