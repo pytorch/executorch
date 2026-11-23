@@ -19,10 +19,12 @@ is compiled into the program:
   dtype; ``fp32`` returns FP32 from prefill linears (M not statically <= 4).
 * ``ET_CUDA_NVFP4_PREFILL_IMPL``: for M not statically <= 64, ``auto``
   (default) uses the fused kernels with native FP4 (SM120+) and whole-weight
-  dequant + matmul otherwise; ``kernel`` / ``dequant`` force one for any M
-  not statically <= 4. ``w4a4`` and the FP32 prefill output policy always take
-  the fused kernels. The choice is made per exported program from M's upper
-  bound, and ``auto`` assumes a dynamic-M method is exported with its largest
+  dequant + matmul otherwise (including ROCm); ``kernel`` / ``dequant`` force
+  one for any M not statically <= 4. ``w4a4`` and the FP32 prefill output
+  policy always take the fused kernels. The choice is made per linear at
+  export, from that linear's M bound (so one method can mix both: a dynamic
+  method's LM head over at most 64 selected rows stays fused), and ``auto``
+  assumes a dynamic-M method is exported with its largest
   M as the example, as the Muse Glimmer and Gemma 4 prefill methods are: the
   fused kernels are tuned at the example M, so short prompts run a large-M
   tile (dequant + matmul is faster there on A100 and about 13% slower per
@@ -267,8 +269,9 @@ def _dequant_prefill(flat, mode, output_dtype, impl):
 
     auto (default): only without native FP4 (SM120+) and for M not statically
     <= ``NVFP4_FUSED_PREFILL_MAX_ROWS``, where the dense matmul beats in-register
-    dequant; smaller M keep the fused kernels, which read the packed weight
-    once. The choice is made once per exported program, at M's upper bound.
+    dequant for dynamic M (measured; static M above it was not); smaller M
+    keep the fused kernels, which read the packed weight once. Decided per
+    linear at export, from its M's upper bound.
     """
     rows = flat.shape[0]
     if (
