@@ -7,6 +7,7 @@ fbcode_target(
     _kind = runtime.python_library,
     name = "record",
     srcs = [
+        "attention.py",
         "cases.py",
         "core_ops.py",
         "elu.py",
