@@ -720,9 +720,11 @@ class GgmlExecutable final : public EngineExecutable {
   }
 
   // Whether the GPU runs this attention's flash attention, for one query and
-  // for all of them, over F16 keys and values. ggml leaves an attention the
-  // GPU lacks a kernel for (a head size, say) to the CPU, whose kernel would
-  // accumulate F16 values in F16; its caches stay F32.
+  // for all of them, over F16 keys and values, with the mask the lowering
+  // passes: some kernels need one (ggml-cuda's head size 512, say), and some
+  // take only one mask plane (ggml-cuda's, again). ggml leaves an attention
+  // the GPU lacks a kernel for to the CPU, whose kernel reads F32 keys and
+  // values without rounding them; its caches stay F32.
   bool gpu_runs_f16_attention(const Node& node, bool custom) const {
     const auto meta = [&](std::string_view name, size_t position) {
       return method_.graph
@@ -736,31 +738,70 @@ class GgmlExecutable final : public EngineExecutable {
     if (q.size() != 4 || k.size() != 4 || v.size() != 4) {
       return false;
     }
-    // [B, H, T, D] for aten SDPA; [B, T, H, D] for custom_sdpa.
+    const NamedArgument* mask = find_arg(node, "attn_mask", custom ? 4 : 3);
+    const bool explicit_mask = mask != nullptr &&
+        mask->arg.kind() == ArgKind::Tensor && valid(mask->arg.as_tensor().id);
+    // ggml's mask is [S, T, mask heads, mask batch]: the explicit mask's dims
+    // before its last two, which must divide the query's heads and batch.
+    int64_t mask_heads = 1;
+    int64_t mask_batch = 1;
+    if (explicit_mask) {
+      const std::vector<int64_t>& m =
+          method_.graph.value(mask->arg.as_tensor().id).tensor_meta().sizes;
+      if (m.size() < 2 || m.size() > 4) {
+        return false;
+      }
+      mask_heads = m.size() > 2 ? m[m.size() - 3] : 1;
+      mask_batch = m.size() > 3 ? m[0] : 1;
+    }
+    const NamedArgument* causal = find_arg(node, "is_causal", custom ? 6 : 5);
+    const bool is_causal = causal != nullptr &&
+        causal->arg.kind() == ArgKind::Bool && causal->arg.as_bool().value;
+    // [B, H, T, D] for aten SDPA; [B, T, H, D] for custom_sdpa, which always
+    // passes a mask, and without an explicit one attends start_pos + T keys,
+    // any count up to the cache's.
     const size_t heads = custom ? 2 : 1;
     const size_t tokens = custom ? 1 : 2;
+    const bool masked = custom || explicit_mask || is_causal;
+    if (mask_heads <= 0 || mask_batch <= 0 || q[heads] % mask_heads != 0 ||
+        q[0] % mask_batch != 0) {
+      return false;
+    }
+    std::vector<int64_t> key_counts = {k[tokens]};
+    if (custom && !explicit_mask) {
+      key_counts.push_back(1);
+    }
     const ggml_init_params params{
-        .mem_size = 8 * ggml_tensor_overhead(),
+        .mem_size = 24 * ggml_tensor_overhead(),
         .mem_buffer = nullptr,
         .no_alloc = true,
     };
     const ggml_context_ptr ctx(ggml_init(params));
     for (const int64_t rows : {int64_t{1}, q[tokens]}) {
-      ggml_tensor* attention = ggml_flash_attn_ext(
-          ctx.get(),
-          ggml_new_tensor_4d(
-              ctx.get(), GGML_TYPE_F32, q[3], rows, q[heads], q[0]),
-          ggml_new_tensor_4d(
-              ctx.get(), GGML_TYPE_F16, k[3], k[tokens], k[heads], k[0]),
-          ggml_new_tensor_4d(
-              ctx.get(), GGML_TYPE_F16, v[3], v[tokens], v[heads], v[0]),
-          nullptr,
-          1.0f,
-          0.0f,
-          0.0f);
-      ggml_prec_set_acc(attention, GGML_PREC_F32);
-      if (!ggml_backend_dev_supports_op(gpu_device_, attention)) {
-        return false;
+      for (const int64_t keys : key_counts) {
+        ggml_tensor* attention = ggml_flash_attn_ext(
+            ctx.get(),
+            ggml_new_tensor_4d(
+                ctx.get(), GGML_TYPE_F32, q[3], rows, q[heads], q[0]),
+            ggml_new_tensor_4d(
+                ctx.get(), GGML_TYPE_F16, k[3], keys, k[heads], k[0]),
+            ggml_new_tensor_4d(
+                ctx.get(), GGML_TYPE_F16, v[3], keys, v[heads], v[0]),
+            masked ? ggml_new_tensor_4d(
+                         ctx.get(),
+                         GGML_TYPE_F16,
+                         keys,
+                         rows,
+                         mask_heads,
+                         mask_batch)
+                   : nullptr,
+            1.0f,
+            0.0f,
+            0.0f);
+        ggml_prec_set_acc(attention, GGML_PREC_F32);
+        if (!ggml_backend_dev_supports_op(gpu_device_, attention)) {
+          return false;
+        }
       }
     }
     return true;
