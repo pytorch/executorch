@@ -20,16 +20,22 @@ eager computes from them instead. ``--offgraph_cache`` exports attention as
 ``kvcache::update_and_attend`` with no KV cache in the graph; the runner owns the
 cache. ``--samples`` appends a ``golden`` sample set:
 eager logits for a prefill and a few greedy decode steps per prompt.
+A linear-attention model's Gated DeltaNet rules export as
+``native::gated_delta_rule``, or with ``--gdn_op aten`` as transformers' ATen
+ops.
 """
 
 import argparse
 import contextlib
+import functools
 import logging
+import sys
 import weakref
 from collections.abc import Iterator
 
 import torch
 import torch.nn as nn
+from executorch.backends.native.custom_ops import gated_delta_rule_op
 from executorch.backends.native.examples.hf_llm.gguf_hf import (
     check_config_tensors,
     gguf_architecture,
@@ -505,6 +511,67 @@ def _layer_mask(
     return mask[None, None, :, :].expand(batch_size, -1, -1, -1)
 
 
+# transformers' Gated DeltaNet layers call these module-level rules.
+_GDN_RULES = ("torch_chunk_gated_delta_rule", "torch_recurrent_gated_delta_rule")
+
+
+def _native_gdn_rule(
+    rule,
+    query,
+    key,
+    value,
+    g,
+    beta,
+    initial_state=None,
+    output_final_state=False,
+    use_qk_l2norm_in_kernel=False,
+    **kwargs,
+):
+    """`rule`, one of transformers' gated delta rules, as native::gated_delta_rule
+    when key and value heads are equally wide. Only the op reads the state it
+    returns, which is value-major."""
+    if key.shape[-1] != value.shape[-1] or kwargs.get("cu_seqlens") is not None:
+        return rule(
+            query,
+            key,
+            value,
+            g=g,
+            beta=beta,
+            initial_state=initial_state,
+            output_final_state=output_final_state,
+            use_qk_l2norm_in_kernel=use_qk_l2norm_in_kernel,
+            **kwargs,
+        )
+    if initial_state is None:
+        batch, _, heads, dim = key.shape
+        initial_state = key.new_zeros((batch, heads, dim, dim), dtype=torch.float32)
+    out, state = gated_delta_rule_op(
+        query, key, value, g, beta, initial_state, use_qk_l2norm_in_kernel
+    )
+    return out, state if output_final_state else None
+
+
+@contextlib.contextmanager
+def native_gdn_rules(model: nn.Module) -> Iterator[None]:
+    """Within it, `model`'s transformers Gated DeltaNet layers run their
+    chunked and recurrent rules as native::gated_delta_rule: one op per layer
+    and call, a decode step or a prompt chunk."""
+    modules = {sys.modules[type(m).__module__] for m in model.modules()}
+    rules = [
+        (module, name, getattr(module, name))
+        for module in modules
+        if all(hasattr(module, r) for r in _GDN_RULES)
+        for name in _GDN_RULES
+    ]
+    for module, name, rule in rules:
+        setattr(module, name, functools.partial(_native_gdn_rule, rule))
+    try:
+        yield
+    finally:
+        for module, name, rule in rules:
+            setattr(module, name, rule)
+
+
 class LastTokenLM(nn.Module):
     """Use the Transformers ExecuTorch cache wrapper and return last-position logits."""
 
@@ -925,6 +992,14 @@ def _parse_args() -> argparse.Namespace:
         "the graph; the runner owns the cache and sets its capacity and dtype.",
     )
     parser.add_argument(
+        "--gdn_op",
+        choices=["native", "aten"],
+        default="native",
+        help="How Gated DeltaNet rules export: as native::gated_delta_rule, "
+        "which the ggml engine runs, or as transformers' ATen ops, which the "
+        "ggml engine does not run.",
+    )
+    parser.add_argument(
         "--logits_to_keep",
         choices=["last", "selected"],
         default="last",
@@ -995,53 +1070,57 @@ def main() -> None:
         )
     if args.quantize == "8da4w":
         _quantize_8da4w(model, args.group_size, args.embedding_group_size)
-    if args.offgraph_cache:
-        wrapper = OffGraphLastTokenLM(
-            model, cache_len, selected=args.logits_to_keep == "selected"
-        ).eval()
-    else:
-        kv_cache_dtype = (
-            torch.float16 if args.kv_cache_dtype == "fp16" else torch.float32
-        )
-        wrapper = LastTokenLM(model, cache_len, kv_cache_dtype).eval()
+    rules = (
+        native_gdn_rules(model) if args.gdn_op == "native" else contextlib.nullcontext()
+    )
+    with rules:
+        if args.offgraph_cache:
+            wrapper = OffGraphLastTokenLM(
+                model, cache_len, selected=args.logits_to_keep == "selected"
+            ).eval()
+        else:
+            kv_cache_dtype = (
+                torch.float16 if args.kv_cache_dtype == "fp16" else torch.float32
+            )
+            wrapper = LastTokenLM(model, cache_len, kv_cache_dtype).eval()
 
-    if wrapper.tokens_per_call:
-        tokens = wrapper.tokens_per_call
-        print(f"linear-attention model: exporting a static {tokens}-token forward")
-        input_ids = torch.zeros((1, tokens), dtype=torch.long)
-        dynamic_shapes = None
-    else:
-        input_ids = torch.zeros((1, 6), dtype=torch.long)
-        seq = Dim("seq", min=1, max=args.max_seq_length - 1)
-        dynamic_shapes = {"input_ids": {1: seq}, "cache_position": {0: seq}}
-    cache_position = torch.arange(input_ids.shape[1], dtype=torch.long)
-    inputs = wrapper.call_inputs(input_ids, cache_position)
-    if len(inputs) == 3:
-        # Trace two rows: export specializes a size of 1.
-        inputs[2] = torch.tensor([0, input_ids.shape[1] - 1])
-        dynamic_shapes["logits_to_keep"] = {
-            0: Dim("rows", min=1, max=args.max_seq_length - 1)
-        }
-    with torch.no_grad():
-        ep = export(
-            wrapper,
-            tuple(inputs),
-            dynamic_shapes=dynamic_shapes,
-            strict=not args.non_strict,
-        )
-    # Before the report: its re-trace shares export's ShapeEnv, so a dim it made
-    # static would look static to to_native, which then would not report it.
-    metadata = wrapper.metadata() if args.offgraph_cache else None
-    package = to_native(ep, metadata=metadata) if args.output else None
-    report_lowering(ep, "forward")
+        if wrapper.tokens_per_call:
+            tokens = wrapper.tokens_per_call
+            print(f"linear-attention model: exporting a static {tokens}-token forward")
+            input_ids = torch.zeros((1, tokens), dtype=torch.long)
+            dynamic_shapes = None
+        else:
+            input_ids = torch.zeros((1, 6), dtype=torch.long)
+            seq = Dim("seq", min=1, max=args.max_seq_length - 1)
+            dynamic_shapes = {"input_ids": {1: seq}, "cache_position": {0: seq}}
+        cache_position = torch.arange(input_ids.shape[1], dtype=torch.long)
+        inputs = wrapper.call_inputs(input_ids, cache_position)
+        if len(inputs) == 3:
+            # Trace two rows: export specializes a size of 1.
+            inputs[2] = torch.tensor([0, input_ids.shape[1] - 1])
+            dynamic_shapes["logits_to_keep"] = {
+                0: Dim("rows", min=1, max=args.max_seq_length - 1)
+            }
+        with torch.no_grad():
+            ep = export(
+                wrapper,
+                tuple(inputs),
+                dynamic_shapes=dynamic_shapes,
+                strict=not args.non_strict,
+            )
+        # Before the report: its re-trace shares export's ShapeEnv, so a dim it made
+        # static would look static to to_native, which then would not report it.
+        metadata = wrapper.metadata() if args.offgraph_cache else None
+        package = to_native(ep, metadata=metadata) if args.output else None
+        report_lowering(ep, "forward")
 
-    if package is not None:
-        package.save(args.output)
-        print(f"saved {args.output}")
-    if prompts:
-        samples = golden_samples(wrapper, prompts, _DECODE_STEPS)
-        write_samples(args.output, "golden", samples)
-        print(f"wrote {len(prompts)} golden samples")
+        if package is not None:
+            package.save(args.output)
+            print(f"saved {args.output}")
+        if prompts:
+            samples = golden_samples(wrapper, prompts, _DECODE_STEPS)
+            write_samples(args.output, "golden", samples)
+            print(f"wrote {len(prompts)} golden samples")
 
 
 if __name__ == "__main__":
