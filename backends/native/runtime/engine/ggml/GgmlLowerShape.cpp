@@ -208,6 +208,47 @@ std::optional<size_t> ggml_axis(const std::vector<int64_t>& sizes, size_t dim) {
   return sizes.size() - 1 - dim;
 }
 
+// A contiguous tensor seen as [inner, mid, outer] around ggml dim `gdim`.
+struct Split {
+  int64_t inner = 1;
+  int64_t mid = 1;
+  int64_t outer = 1;
+};
+
+Split split_at(const ggml_tensor* tensor, size_t gdim) {
+  Split split;
+  for (size_t i = 0; i < gdim; ++i) {
+    split.inner *= tensor->ne[i];
+  }
+  split.mid = tensor->ne[gdim];
+  for (size_t i = gdim + 1; i < GGML_MAX_DIMS; ++i) {
+    split.outer *= tensor->ne[i];
+  }
+  return split;
+}
+
+// ggml_concat of `a` and `b` along ggml dim `gdim`. ggml-cuda concatenates
+// contiguous operands with one kernel per ne[3] slice, so contiguous operands
+// with several are concatenated as [inner, mid, outer] around `gdim` instead.
+ggml_tensor*
+concat(ggml_context* ctx, ggml_tensor* a, ggml_tensor* b, size_t gdim) {
+  if (gdim == 3 || a->ne[3] == 1 || !ggml_is_contiguous(a) ||
+      !ggml_is_contiguous(b)) {
+    return ggml_concat(ctx, a, b, static_cast<int>(gdim));
+  }
+  const Split left = split_at(a, gdim);
+  const Split right = split_at(b, gdim);
+  ggml_tensor* out = ggml_concat(
+      ctx,
+      ggml_reshape_3d(ctx, a, left.inner, left.mid, left.outer),
+      ggml_reshape_3d(ctx, b, right.inner, right.mid, right.outer),
+      1);
+  std::array<int64_t, GGML_MAX_DIMS> ne{};
+  std::copy(std::begin(a->ne), std::end(a->ne), ne.begin());
+  ne[gdim] += b->ne[gdim];
+  return ggml_reshape_4d(ctx, out, ne[0], ne[1], ne[2], ne[3]);
+}
+
 } // namespace
 
 void GraphBuilder::lower_slice(const Node& node, bool copy) {
@@ -410,11 +451,8 @@ void GraphBuilder::lower_cat(const Node& node) {
       result.tensor = to_output_type(result.tensor);
       next.tensor = to_output_type(next.tensor);
     }
-    result.tensor = ggml_concat(
-        instance_.context.get(),
-        result.tensor,
-        next.tensor,
-        static_cast<int>(*gdim));
+    result.tensor =
+        concat(instance_.context.get(), result.tensor, next.tensor, *gdim);
     result.sizes[static_cast<size_t>(dim)] +=
         next.sizes.at(static_cast<size_t>(dim));
   }
