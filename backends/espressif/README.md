@@ -29,7 +29,7 @@ Fused Quant frontend convention. The two flows have distinct quantizers:
 | `EspNNQuantizer` | Existing delegate: PT2E Q/DQ graphs partitioned by `EspNNPartitioner` into `EspNNBackend` delegates |
 | `get_esp_fused_quant_quantizer` | Operator library: shared Fused Quant annotation and fusion, followed by `EspPassManager` lowering to direct ESP-NN operators or portable fallback |
 
-Both flows use ESP-NN kernels. See the operator-library
+Both flows use ESP-NN 1.5.0 kernels. See the operator-library
 [lowering code](passes/lower_to_esp.py) and [operator tests](test/ops/)
 for supported configurations. Shared quantization rules also cover
 operators that retain portable execution. The delegate's supported
