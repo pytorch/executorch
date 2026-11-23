@@ -15,12 +15,37 @@ from unittest import mock
 
 import executorch.backends.cuda.triton.kernels.nvfp4_kv as K
 import torch
+from executorch.backends.cuda.tests.nvfp4_test_utils import EXHAUSTIVE, sweep
 
 from executorch.backends.cuda.triton.kernels.nvfp4_kv import (
     nvfp4_kv_dequantize_reference as deq,
 )
 
 D, HKV, HQ = 128, 2, 32
+_TUNED_CONFIGS = {}
+
+
+def setUpModule():
+    # These tests check numerics, not tuning: two configs per attention kernel
+    # (the small BLOCK_N fits the widest split-K tile), all of them with
+    # ET_CUDA_NVFP4_EXHAUSTIVE_TESTS=1.
+    if EXHAUSTIVE:
+        return
+    for kernel, keep in (
+        (K._nvfp4_splitk_kernel, (0, 1)),
+        (K._nvfp4_prefill_kernel, (0, 3)),
+    ):
+        _TUNED_CONFIGS[kernel] = kernel.configs
+        kernel.configs = [kernel.configs[i] for i in keep]
+        kernel.cache.clear()
+
+
+def tearDownModule():
+    for kernel, configs in _TUNED_CONFIGS.items():
+        kernel.configs = configs
+        kernel.cache.clear()
+
+
 SCALE = (43.7840518911 / math.sqrt(D)) / math.sqrt(D)
 
 
@@ -196,15 +221,17 @@ class TestNVFP4KVCache(unittest.TestCase):
     def test_global_small_query(self):
         # Unmasked at 16:1 GQA, L_q 2..8 take split-K (up to a 128x128 tile)
         # and 9 takes the prefill kernel.
-        self._global(131072, 5000, 2)
-        self._global(131072, 5000, 4)
-        self._global(131072, 33333, 8)
-        self._global(131072, 33333, 9)
+        for n, lq in sweep(
+            ((5000, 2), (5000, 4), (33333, 8), (33333, 9)),
+            ((5000, 2), (33333, 8), (33333, 9)),
+        ):
+            self._global(131072, n, lq)
 
     def test_prefill_kernel_small_query(self):
         """The prefill kernel serves every chunk of a dynamic-length export,
         including 1..16-token chunks and lengths that are not tile multiples."""
-        for n_total, lq in ((5000, 1), (5000, 5), (777, 16), (4100, 100)):
+        cases = ((5000, 1), (5000, 5), (777, 16), (4100, 100))
+        for n_total, lq in sweep(cases, ((5000, 1), (777, 16))):
             kc, vc, q, ref = self._global(8192, n_total, lq)
             out = torch.empty_like(q)
             kv_len = torch.tensor([n_total], device="cuda", dtype=torch.int32)
@@ -261,26 +288,28 @@ class TestNVFP4KVCache(unittest.TestCase):
         self._sliding(100, 1)
 
     def test_sliding_small_query(self):
-        self._sliding(9000, 8)
-        self._sliding(3000, 4)
+        for n_before, lq in sweep(((9000, 8), (3000, 4)), ((9000, 8),)):
+            self._sliding(n_before, lq)
 
     def test_masked_split_k_widest_tile(self):
         # A masked L_q 16 step at 16:1 GQA (the packed-decode shape) runs
-        # split-K on its widest tile, BLOCK_M 256.
+        # split-K on its widest tile, BLOCK_M 256 (a partial mask: the masked
+        # calls only, not the in-kernel window's prefill kernel).
         with mock.patch.object(
             K, "_launch_nvfp4_splitk", wraps=K._launch_nvfp4_splitk
         ) as launcher:
-            self._sliding(9000, 16)
+            self._sliding(9000, 16, keep=0.5)
         self.assertGreaterEqual(launcher.call_count, 1)
 
     def test_sliding_prefill(self):
-        for n_before, lq in (
+        cases = (
             (0, 4096),
             (4096 * 2 + 17, 4096),
             (2048, 512),
             (4096 * 7 + 5, 4096),
             (1500, 600),
-        ):
+        )
+        for n_before, lq in sweep(cases, ((4096 * 2 + 17, 4096), (1500, 600))):
             self._sliding(n_before, lq)
 
     def test_sliding_window_with_mask(self):

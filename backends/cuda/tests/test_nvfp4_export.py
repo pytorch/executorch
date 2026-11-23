@@ -22,7 +22,7 @@ from executorch.backends.cuda.quantize_op_dispatch.nvfp4_dispatch import (
     _MODE_STRIDE,
 )
 from executorch.backends.cuda.tests.nvfp4_gemma_test_utils import GemmaPacked
-from executorch.backends.cuda.tests.nvfp4_test_utils import PackedLinear
+from executorch.backends.cuda.tests.nvfp4_test_utils import PackedLinear, sweep
 from executorch.backends.cuda.triton.kernels import (
     nvfp4_quantized_gemm,
     nvfp4_small_m_gemm,
@@ -63,7 +63,7 @@ def cold_pick_cache(monkeypatch):
     [
         ("w4a16", 1, None, False),
         # Hints no other case tunes, so their tiles are timed here.
-        ("w4a16", 37, 64, False),
+        *sweep([("w4a16", 37, 64, False)], []),
         ("w4a16", 45, 64, True),
         ("w4a4", 16, None, False),
         ("w4a8", 1, None, False),
@@ -73,7 +73,7 @@ def cold_pick_cache(monkeypatch):
         ("w4a16", 8, None, False),
         ("auto", 4, None, False),
         ("auto", 8, None, False),
-        ("w4a8", 8, None, False),
+        *sweep([("w4a8", 8, None, False)], []),
         ("w4a16", 12, 16, False),
     ],
 )
