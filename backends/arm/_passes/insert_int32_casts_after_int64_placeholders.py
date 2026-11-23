@@ -26,8 +26,7 @@ logger = logging.getLogger(__name__)
 class InsertInt32CastsAfterInt64PlaceholdersPass(ArmPass):
     """Insert an int64->int32 cast after each int64 placeholder.
 
-    Under EXT-INT64 only index arguments and placeholders used in
-    floating-point computation are cast to int32.
+    Under EXT-INT64 only index arguments and placeholders used as floats are cast.
 
     Note: Overflow checks are not applied in this pass. It is the user's responsibility to ensure that values fit within
     the int32 range.

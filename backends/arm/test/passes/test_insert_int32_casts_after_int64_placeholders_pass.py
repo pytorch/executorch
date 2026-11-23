@@ -121,14 +121,10 @@ class Int64FloatModel(torch.nn.Module):
         return self.op(x, y)
 
 
-def reciprocal_add(x: torch.Tensor, y: torch.Tensor):
-    return torch.reciprocal(x) + y
-
-
 int64_float_test_cases = {
     "sub": (torch.sub, [torch.int32, torch.float32]),
     "gt": (torch.gt, [torch.int32]),
-    "reciprocal": (reciprocal_add, []),
+    "reciprocal": (lambda x, y: torch.reciprocal(x) + y, []),
     "index_add": (lambda x, y: y.index_add(0, x, y), [torch.int32]),
     "mul_gt": (lambda x, y: (x * 50000) > y, []),
 }
@@ -157,11 +153,7 @@ def test_insert_int32_casts_after_int64_placeholders_int64_float_operand(
     pipeline.pop_stage(-1)
     pipeline.run()
 
-    graph_module = (
-        pipeline.tester.get_artifact(StageType.RUN_PASSES)
-        .exported_program()
-        .graph_module
-    )
+    graph = pipeline.tester.get_artifact(StageType.RUN_PASSES).exported_program().graph
     cast_op = edge_ops.edge.dim_order_ops._to_dim_order_copy.default
-    casts = [node for node in graph_module.graph.nodes if node.target == cast_op]
+    casts = [node for node in graph.nodes if node.target == cast_op]
     assert [node.kwargs["dtype"] for node in casts] == cast_dtypes

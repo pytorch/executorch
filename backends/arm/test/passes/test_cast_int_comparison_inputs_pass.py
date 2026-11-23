@@ -174,18 +174,10 @@ def test_cast_int_comparison_inputs_wraps_zero_dim(scalar_dtype) -> None:
     )
     pipeline.run()
 
-    graph_module = (
-        pipeline.tester.get_artifact(StageType.RUN_PASSES)
-        .exported_program()
-        .graph_module
-    )
+    graph = pipeline.tester.get_artifact(StageType.RUN_PASSES).exported_program().graph
     cast_op = edge_ops.edge.dim_order_ops._to_dim_order_copy.default
-    wrapped = [
-        node
-        for node in graph_module.graph.nodes
-        if node.target == cast_op and node.args[0].name == "y"
-    ]
-    assert [node.kwargs["dtype"] for node in wrapped] == [torch.int8]
+    wrapped = [n for n in graph.nodes if n.target == cast_op and n.args[0].name == "y"]
+    assert [n.kwargs["dtype"] for n in wrapped] == [torch.int8]
 
 
 @pytest.mark.parametrize("name", comparison_ops)

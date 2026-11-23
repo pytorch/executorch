@@ -203,8 +203,9 @@ class CastInt64BuffersToInt32Pass(ArmPass):
         narrower integer dtype.
 
         Operators that CastZeroDimInt64OperandsPass casts qualify, and so do
-        comparisons. A cast qualifies when its users compute in an integer dtype
-        at least as wide as the cast. Quantized users do not qualify.
+        comparisons. A cast qualifies when its users compute in an
+        integer dtype at least as wide as the cast. Quantized users do not
+        qualify.
 
         """
         if node.meta["val"].dim() != 0:

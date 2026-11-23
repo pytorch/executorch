@@ -181,9 +181,5 @@ def supported_to_dim_order_casts(tosa_spec: TosaSpecification) -> SupportedCastM
         casts.update(INT64_EXTENSION_CASTS)
         if tosa_spec.support_integer():
             casts.update(INT64_WIDENING_CASTS)
-        casts -= {
-            (torch.int64, dtype)
-            for dtype in (torch.float16, torch.float32, torch.bfloat16)
-        }
 
     return _cast_map(casts)

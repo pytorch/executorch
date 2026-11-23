@@ -7,7 +7,6 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
-from executorch.backends.arm.tosa.cast_support import supported_to_dim_order_casts
 from executorch.backends.test.harness.stages import StageType
 
 
@@ -129,6 +128,7 @@ _NARROW = torch.tensor([1, 2, 3, 4], dtype=torch.int32)
 _BYTES = torch.tensor([1, 2, 3, 4], dtype=torch.int8)
 _COND = torch.tensor([True, False, True, False])
 _FLAGS = torch.tensor([False, True, True, False])
+_INDEX = torch.tensor([3, 0])
 
 
 class Int64Buffer(torch.nn.Module):
@@ -326,12 +326,8 @@ int64_extension_quantized_suite = {
         (torch.tensor([1, 2, 3, 4]),),
         1,
     ),
-    "index_select": (
-        lambda x, index: torch.index_select(x, 0, index),
-        (_NARROW, torch.tensor([3, 0])),
-        1,
-    ),
-    "index_wide_data": (lambda x, index: x[index], (_WIDE, torch.tensor([3, 0])), 1),
+    "index_select": (lambda x, i: torch.index_select(x, 0, i), (_NARROW, _INDEX), 1),
+    "index_wide_data": (lambda x, index: x[index], (_WIDE, _INDEX), 1),
     "or_byte": (torch.bitwise_or, (_WIDE, _BYTES), 1),
 }
 
@@ -348,12 +344,21 @@ def test_int64_extension_quantized_tosa_INT(test_data: Tuple):
         .to_edge_transform_and_lower()
         .check_count({"torch.ops.higher_order.executorch_call_delegate": delegates})
     )
-    if delegates:
-        tester.to_executorch().run_method_and_compare_outputs(
-            inputs, reference_stage_type=StageType.INITIAL_MODEL
-        )
+    tester.to_executorch().run_method_and_compare_outputs(
+        inputs, reference_stage_type=StageType.INITIAL_MODEL
+    )
 
 
-def test_int64_extension_float_cast_unsupported():
-    spec = common.get_tosa_compile_spec("TOSA-1.1+FP+INT+int64").tosa_spec
-    assert torch.float32 not in supported_to_dim_order_casts(spec)[torch.int64]
+int64_extension_float_cast_suite = {
+    "input": (lambda x: x.to(torch.float32) * 0.5, _WIDE, 1),
+    "constant": (lambda x: x * 3, _WIDE.float(), 0),
+}
+
+
+@common.parametrize("test_data", int64_extension_float_cast_suite)
+def test_int64_extension_float_cast_tosa_FP(test_data: Tuple):
+    op, x, cpu_casts = test_data
+    spec = common.get_tosa_compile_spec("TOSA-1.1+FP+INT+int64")
+    cast = "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default"
+    tester = ArmTester(Int64Op(op), (x,), spec).export().to_edge_transform_and_lower()
+    tester.check_count({cast: cpu_casts})
