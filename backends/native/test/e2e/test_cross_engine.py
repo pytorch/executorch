@@ -154,11 +154,17 @@ def _q6_k(rows: int, cols: int, generator: torch.Generator) -> ExportableGGUFTen
     return weight
 
 
+def _q8_0(rows: int, cols: int, generator: torch.Generator) -> ExportableGGUFTensor:
+    # 34-byte blocks: fp16 d, then 32 int8 codes.
+    return _blocks("q8_0", rows, cols, {0: 2**-11}, generator)
+
+
 # Synthetic weights of each GGUF type the tests cover.
 _GGUF_WEIGHTS = {
     "q4_k": _q4_k,
     "q5_k": _q5_k,
     "q6_k": _q6_k,
+    "q8_0": _q8_0,
 }
 
 # The GGUF type of each tiny-Llama weight by llama.cpp role, mixing types as
@@ -172,6 +178,7 @@ _MIXED_TYPES = {
     "ffn_gate": "q5_k",
     "ffn_up": "q4_k",
     "ffn_down": "q6_k",
+    "blk.1.attn_v": "q8_0",
 }
 
 
@@ -794,6 +801,9 @@ class CrossEngineTest(unittest.TestCase):
 
     def test_gguf_q6_k_dynamic_tokens(self):
         self._check_gguf_dynamic_tokens("q6_k")
+
+    def test_gguf_q8_0_dynamic_tokens(self):
+        self._check_gguf_dynamic_tokens("q8_0")
 
     def test_tiny_llama_fp16_kv(self):
         torch.manual_seed(0)

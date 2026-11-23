@@ -87,10 +87,26 @@ def _make_q6k_raw(N: int, nb: int, seed: int = 0) -> torch.Tensor:
     return blk.reshape(N, nb * _Q6_K_BLOCK_BYTES)
 
 
+# Byte offsets of each block's fp16 scales, for the types without a helper above.
+_FP16_SCALE_OFFSETS = {"q8_0": (0,)}
+
+
+def _make_raw(ggml_type: str, N: int, nb: int, seed: int = 0) -> torch.Tensor:
+    """A ``(N, nb * block bytes)`` uint8 blob of random ``ggml_type`` blocks with
+    finite fp16 scales."""
+    _, block_bytes = gguf.GGML_QUANT_SIZES[GGMLQuantizationType[ggml_type.upper()]]
+    g = torch.Generator().manual_seed(seed)
+    blk = torch.randint(0, 256, (N * nb, block_bytes), dtype=torch.uint8, generator=g)
+    for offset in _FP16_SCALE_OFFSETS[ggml_type]:
+        blk[:, offset : offset + 2] = _fp16_bytes(0.01)
+    return blk.reshape(N, nb * block_bytes)
+
+
 # Weights and bytes per block of each validated quant type, summed from the
 # fields of its block struct in ggml-common.h (fp16 scales take 2 bytes). The
 # ggml engine's tests check ggml against the same table.
 _GGML_BLOCK_LAYOUTS = {
+    "q8_0": (32, 2 + 32),  # d, qs
     "q4_k": (256, 2 + 2 + 12 + 256 // 2),  # d, dmin, scales, qs
     "q5_k": (256, 2 + 2 + 12 + 256 // 8 + 256 // 2),  # d, dmin, scales, qh, qs
     "q6_k": (256, 256 // 2 + 256 // 4 + 256 // 16 + 2),  # ql, qh, scales, d
@@ -116,6 +132,19 @@ class TestExportableGGUFTensor(unittest.TestCase):
             ref = _gguf_ref(raw, qtype)
             # .dequantize() routes through gguf, so it should match exactly.
             self.assertTrue(torch.equal(mine, ref), f"{qtype}")
+
+    def test_takes_block_geometry_from_gguf(self):
+        # Each validated type without a helper above: its logical row length
+        # comes from gguf-py's block geometry, and it dequantizes through
+        # gguf.dequantize.
+        for ggml_type, block_size in (("q8_0", 32),):
+            raw = _make_raw(ggml_type, N=3, nb=2)
+            t = ExportableGGUFTensor.from_raw(raw, ggml_type)
+            self.assertEqual(tuple(t.shape), (3, 2 * block_size), ggml_type)
+            ref = _gguf_ref(raw, GGMLQuantizationType[ggml_type.upper()])
+            self.assertTrue(torch.equal(t.dequantize(torch.float32), ref), ggml_type)
+            with self.assertRaises(NotImplementedError):
+                t.to_intx_unpacked_to_int8_tensor()
 
     def test_to_preserves_quantization(self):
         raw = _make_q4k_raw(N=3, nb=2)
@@ -260,6 +289,7 @@ class TestExportableGGUFTensor(unittest.TestCase):
 
     def test_iter_gguf_wraps_every_validated_quant_type(self):
         raws = {
+            "q8_0": _make_raw("q8_0", N=2, nb=1),
             "q4_k": _make_q4k_raw(N=2, nb=1),
             "q5_k": _make_q5k_raw(N=2, nb=1),
             "q6_k": _make_q6k_raw(N=2, nb=1),
