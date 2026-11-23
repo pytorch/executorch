@@ -13,10 +13,8 @@ import torch
 from executorch.backends.arm import arm_vela
 from executorch.backends.arm.ethosu import EthosUCompileSpec
 from executorch.backends.arm.ethosu.backend import EthosUBackend
-from executorch.backends.arm.scripts.aot_arm_compiler import (
-    _get_args,
-    _get_compile_spec,
-)
+from executorch.backends.arm.scripts.aot_arm_compiler import _get_args
+from executorch.backends.arm.scripts.aot_arm_compiler_backend import _get_compile_spec
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import EthosUPipelineINTBase
 from executorch.backends.arm.tosa.backend import TOSABackend
