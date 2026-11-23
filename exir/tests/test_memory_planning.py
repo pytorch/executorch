@@ -34,6 +34,7 @@ from executorch.exir import (
     to_edge,
 )
 from executorch.exir.backend.partitioner import Partitioner, PartitionResult
+from executorch.exir.backend.test.device_util import DeviceAwarePartitioner
 from executorch.exir.backend.test.op_partitioner_demo import AllNodesPartitionerDemo
 from executorch.exir.backend.utils import tag_mutated_buffer
 from executorch.exir.capture._capture import patch_forward
@@ -65,7 +66,7 @@ from executorch.exir.passes.init_mutable_pass import InitializedMutableBufferPas
 from executorch.exir.passes.reinplace import DEFAULT_INPLACEABLE_OPS, reinplace_pass
 from executorch.exir.passes.replace_view_copy_with_view_pass import _ViewSpec
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
-from executorch.exir.schema import DeviceType, Program, Tensor
+from executorch.exir.schema import DeviceType, NonConstBufferDevice, Program, Tensor
 from executorch.exir.sym_util import EnumerationBudget, eval_upper_bound
 from executorch.exir.tensor import TensorSpec
 from executorch.extension.pybindings.portable_lib import (  # @manual=//executorch/extension/pybindings:portable_lib
@@ -1253,6 +1254,9 @@ class SharedBuffers(torch.nn.Module):
         self.offset.add_(x)
         return x * 2
 
+    def empty(self, x: torch.Tensor) -> torch.Tensor:
+        return x[2:] + x[2:]
+
 
 def export_methods(model: torch.nn.Module, *names: str) -> Dict[str, ExportedProgram]:
     methods = {}
@@ -1742,6 +1746,67 @@ class TestMap(unittest.TestCase):
                 if isinstance(v.val, schema.Tensor) and v.val.data_buffer_idx > 0
             ],
         )
+
+    def test_program_version_of_shared_buffers(self) -> None:
+        class OwnArenaTwo(MemoryPlanningPass):
+            """Plans the results of a method that shares nothing in arena 2,
+            from offset start, and records that arena 1 is on the host."""
+
+            def __init__(self, start: int = 0) -> None:
+                super().__init__()
+                self.start = start
+
+            def run(
+                self,
+                graph_module: torch.fx.GraphModule,
+                graph_signature: Optional[ExportGraphSignature] = None,
+            ) -> PassResult:
+                specs = {
+                    id(spec): spec
+                    for node in graph_module.graph.nodes
+                    if node.op == "call_function"
+                    for spec in get_node_tensor_specs(node)
+                    if not spec.const
+                }.values()
+                for spec in specs:
+                    spec.mem_id = 2
+                result = super().run(graph_module, graph_signature)
+                for spec in specs:
+                    spec.mem_offset += self.start
+                graph_module.meta["non_const_buffer_sizes"][2] += self.start
+                graph_module.meta["non_const_buffer_device"] = [
+                    NonConstBufferDevice(
+                        buffer_idx=1, device_type=DeviceType.CPU, device_index=0
+                    )
+                ]
+                return result
+
+        # Runtimes that ignore the marker give every host-only method one
+        # arena 2, so helper data in the 16 bytes planned for the state would
+        # overwrite it, and a method with device memory arenas of its own.
+        for expected, method, helper_pass, partitioner in (
+            (1, "helper", OwnArenaTwo(), None),
+            (1, "helper", OwnArenaTwo(start=8), None),
+            (0, "helper", OwnArenaTwo(start=16), None),
+            (0, "empty", OwnArenaTwo(), None),
+            (0, "helper", MemoryPlanningPass(), None),
+            (
+                0,
+                "helper",
+                MemoryPlanningPass(),
+                {"helper": DeviceAwarePartitioner("cuda:0")},
+            ),
+        ):
+            program = self._plan_shared(
+                {
+                    "forward": MemoryPlanningPass(share_mutable_buffers=True),
+                    method: helper_pass,
+                },
+                "forward",
+                method,
+                partitioner=partitioner,
+            )
+            self.assertEqual(program.version, expected)
 
 
 class TestDeviceAwareMemoryPlanning(unittest.TestCase):

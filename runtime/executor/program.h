@@ -78,11 +78,16 @@ class Program final {
   /**
    * The highest program schema version that this runtime can read.
    *
-   * Keep in sync with EXECUTORCH_SCHEMA_VERSION in
-   * //executorch/exir/version.py, which is the version that the exporter stamps
-   * into every PTE file.
+   * Keep in sync with MAX_EXECUTORCH_SCHEMA_VERSION in
+   * //executorch/exir/version.py, which is the highest version that the
+   * exporter stamps into a PTE file.
+   *
+   * Version 1 files have buffers that methods share. Program and Method do not
+   * check that a runner shares them: a runner that passes its own planned
+   * memory to load_method() must follow what load_method() says about
+   * MethodMeta::memory_planned_buffer_is_shared() to run them correctly.
    */
-  static constexpr uint32_t kMaxSupportedSchemaVersion = 0;
+  static constexpr uint32_t kMaxSupportedSchemaVersion = 1;
 
   /**
    * Loads a Program from the provided loader. The Program will hold a pointer

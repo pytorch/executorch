@@ -92,7 +92,19 @@ class TestSchema(unittest.TestCase):
         # PTE (program) family.
         pte_writer = read_constant(
             "exir/version.py",
-            r"EXECUTORCH_SCHEMA_VERSION\s*=\s*(\d+)",
+            r"MAX_EXECUTORCH_SCHEMA_VERSION\s*=\s*(\d+)",
+        )
+        # The exporter stamps each file with the version of what it uses, one of
+        # the versions in exir/version.py.
+        with open(prefix + "exir/version.py") as f:
+            stamped = re.findall(
+                r"^\w+_VERSION\s*(?::\s*\w+\s*)?=\s*(\d+)", f.read(), re.MULTILINE
+            )
+        self.assertEqual(
+            pte_writer,
+            max(int(version) for version in stamped),
+            "MAX_EXECUTORCH_SCHEMA_VERSION must be the highest version in "
+            "exir/version.py.",
         )
         pte_reader = read_constant(
             "runtime/executor/program.h",
@@ -117,7 +129,7 @@ class TestSchema(unittest.TestCase):
         self.assertLessEqual(
             pte_writer,
             pte_reader,
-            "EXECUTORCH_SCHEMA_VERSION (exir/version.py) is higher than "
+            "MAX_EXECUTORCH_SCHEMA_VERSION (exir/version.py) is higher than "
             "Program::kMaxSupportedSchemaVersion (runtime/executor/program.h). "
             "The exporter would stamp PTE files this runtime refuses. Raise the "
             "runtime ceiling before (or with) the exporter version.",
