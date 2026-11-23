@@ -51,6 +51,12 @@ struct GgmlEngineOptions {
   // input bytes, skipping lowering and allocation; every entry holds its own
   // scheduler allocation. 0 rebuilds the graph on every call; at most 16.
   size_t max_cached_graphs = 1;
+  // For testing: answers in place of the GPU whether it runs an attention
+  // that reads a KV cache over F16 keys and values, so that a test on any
+  // device can exercise the choice of F16 KV caches (see
+  // f32_gpu_kv_cache_for_testing). It is asked only about attentions whose
+  // shapes the lowering accepts.
+  bool (*gpu_runs_f16_attention_for_testing)() = nullptr;
   // Prints each newly built graph's node count per ggml op to stderr, which
   // shows whether a lowering rewrite fired.
   bool print_graph_ops = false;
@@ -78,6 +84,17 @@ struct GgmlEngineOptions {
   // Ops: gelu with approximate="tanh"; CPU only (GPU backends evaluate
   // ggml_gelu in F32 either way).
   bool exact_gelu_for_testing = false;
+  // Testing only. Default (false): on CUDA and HIP, a mutable F32 buffer that
+  // starts zeroed, that only row writes update and that only attention reads
+  // is stored in F16, as llama.cpp stores KV caches. Those backends' flash
+  // attention rounds F32 keys and values to F16 on every call, exactly as the
+  // F16 rows written once round them, so results match while decoding moves
+  // half the cache bytes; a cache an attention without a GPU kernel reads
+  // stays F32. Set: KV caches stay F32. In-graph caches only: an off-graph
+  // cache takes its storage from CacheConfig::kv_dtype. Ops: KV-cache buffers
+  // read by scaled_dot_product_attention and the custom SDPA; CUDA and HIP
+  // only.
+  bool f32_gpu_kv_cache_for_testing = false;
 };
 
 class GgmlEngineContext;
@@ -124,6 +141,8 @@ class GgmlEngineContext final : public EngineContext {
   // Constant bytes copied onto the heap on their way into ggml buffers, rather
   // than read in place from the package.
   size_t heap_copied_constant_bytes() const;
+  // Bytes of F32 KV caches stored in F16 (see f32_gpu_kv_cache_for_testing).
+  size_t f16_kv_cache_bytes() const;
 
  private:
   friend class GgmlEngineHost;

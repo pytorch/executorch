@@ -44,7 +44,6 @@ DEFINE_bool(
     "in F16 on CUDA, as in llama.cpp. Set: they accumulate in F32, at 2-3x "
     "prefill and 4x decode GEMM time. Ops: F16 linear, matmul, mm, bmm and "
     "convolution; CUDA only.");
-
 namespace ptn {
 
 // cppcheck-suppress unusedFunction ; called by the ggml runners
