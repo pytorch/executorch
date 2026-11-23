@@ -8,6 +8,7 @@
 cases the scheme fits."""
 
 import contextlib
+import math
 import tempfile
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -72,6 +73,19 @@ def _targets(model: torch.nn.Module, types: tuple[type, ...]) -> list[torch.nn.M
     return [m for m in model.modules() if isinstance(m, types)]
 
 
+def _stacked(model: torch.nn.Module) -> list[tuple[torch.nn.Module, str]]:
+    """Every 3-D parameter but a convolution's, as (module, name): stacked
+    matrices, such as an MoE layer's experts, each grouped along its rows like
+    an nn.Linear's weight."""
+    return [
+        (m, name)
+        for m in model.modules()
+        if not isinstance(m, torch.nn.modules.conv._ConvNd)
+        for name, p in m.named_parameters(recurse=False)
+        if p.dim() == 3
+    ]
+
+
 def _fits(model: torch.nn.Module, types: tuple[type, ...], group: int | None) -> bool:
     """Whether `model` has a module of `types` and every one's weight rows split
     into groups of `group`, or form one group when it is None."""
@@ -128,8 +142,9 @@ class Torchao(Scheme):
 # Families of fp16 block scales by byte offset in each block: powers of two,
 # where a type's dmin, if it has one, centers random weights near zero, then
 # negative, rounded and subnormal ones, and larger powers of two for a fifth
-# weight, as a Gated DeltaNet layer has. A model's i-th quantized module takes
-# the i-th family, so one module per family isolates each in its own output.
+# weight, as a Gated DeltaNet layer has. A model's i-th quantized weight, its
+# stacked ones last, takes the i-th family, so one module per family isolates
+# each in its own output.
 # TODO: Add a zero-d family once OutputCheck's bias standard error stops
 # assuming independent outputs.
 GGUF_SUPER_SCALES = {
@@ -227,10 +242,18 @@ def _random_blocks(
     return raw.reshape(rows, -1)
 
 
+def _gguf_weights(model: torch.nn.Module) -> list[tuple[torch.nn.Module, str]]:
+    """(module, name) of every weight a GGUF scheme quantizes: each nn.Linear's
+    and nn.Embedding's, then every stacked one."""
+    return [(m, "weight") for m in _targets(model, _WO_QSCHEME_MODULES)] + _stacked(
+        model
+    )
+
+
 def _load_gguf(model: torch.nn.Module, ggml_type: str) -> None:
-    """Writes random `ggml_type` weights for every nn.Linear and nn.Embedding to
-    a .gguf file and loads them back as a GGUF checkpoint would be."""
-    targets = _targets(model, _WO_QSCHEME_MODULES)
+    """Writes random `ggml_type` blocks for every `_gguf_weights` weight to a
+    .gguf file and loads them back as a GGUF checkpoint would be."""
+    targets = _gguf_weights(model)
     rng = np.random.default_rng(0)
     with tempfile.TemporaryDirectory() as tmp:
         path = f"{tmp}/weights.gguf"
@@ -240,26 +263,27 @@ def _load_gguf(model: torch.nn.Module, ggml_type: str) -> None:
             raise ValueError(
                 f"{len(targets)} weights, {len(families)} {ggml_type} scale families"
             )
-        for i, (m, scales) in enumerate(zip(targets, families)):
+        for i, ((m, name), scales) in enumerate(zip(targets, families)):
+            *rows, cols = getattr(m, name).shape
+            blocks = _random_blocks(ggml_type, math.prod(rows), cols, scales, rng)
             writer.add_tensor(
                 f"weight.{i}",
-                _random_blocks(ggml_type, *m.weight.shape, scales, rng),
+                blocks.reshape(*rows, -1),
                 raw_dtype=GGMLQuantizationType[ggml_type.upper()],
             )
         writer.write_header_to_file()
         writer.write_kv_data_to_file()
         writer.write_tensors_to_file()
         writer.close()
-        for m, (_, weight) in zip(targets, iter_gguf(path), strict=True):
-            m.weight = torch.nn.Parameter(
-                weight.to(m.weight.dtype), requires_grad=False
-            )
+        for (m, name), (_, weight) in zip(targets, iter_gguf(path), strict=True):
+            dtype = getattr(m, name).dtype
+            setattr(m, name, torch.nn.Parameter(weight.to(dtype), requires_grad=False))
 
 
 @dataclass(frozen=True)
 class Gguf(Scheme):
     """Weight-only GGUF blocks of `ggml_type` (`q4_k`, `q8_0`, ...) for every
-    nn.Linear and nn.Embedding, loaded from a .gguf file."""
+    nn.Linear, nn.Embedding and stacked weight, loaded from a .gguf file."""
 
     ggml_type: str
 
@@ -267,11 +291,20 @@ class Gguf(Scheme):
     def weight_only(self) -> bool:
         return True
 
+    def adds_int8_act(self, model: torch.nn.Module) -> bool:
+        return super().adds_int8_act(model) or bool(_stacked(model))
+
     def fits(self, model: torch.nn.Module) -> bool:
-        families = len(GGUF_SUPER_SCALES[self.ggml_type])
+        block = _block(self.ggml_type)[0]
+        weights = _gguf_weights(model)
         return (
-            _fits(model, _WO_QSCHEME_MODULES, _block(self.ggml_type)[0])
-            and len(_targets(model, _WO_QSCHEME_MODULES)) <= families
+            bool(weights)
+            and len(weights) <= len(GGUF_SUPER_SCALES[self.ggml_type])
+            and (
+                not _targets(model, _WO_QSCHEME_MODULES)
+                or _fits(model, _WO_QSCHEME_MODULES, block)
+            )
+            and all(getattr(m, n).shape[-1] % block == 0 for m, n in _stacked(model))
         )
 
     def quantize(self, model: torch.nn.Module) -> None:
@@ -286,19 +319,33 @@ class Gguf(Scheme):
 @contextlib.contextmanager
 def int8_activations(model: torch.nn.Module) -> Iterator[None]:
     """Quantizes the inputs of every `_DQA_QSCHEME_MODULES` module as torchao's
-    int8 dynamic activation schemes do: int8, asymmetric, per token."""
+    int8 dynamic activation schemes do: int8, asymmetric, per token; and of a
+    module's quantized stacked weights, as transformers' experts use them: the
+    module's first input, and the gated activations its `_apply_gate` gives
+    the down projection."""
+    quantize = _apply_int8_act_asym_per_token_quant_dequant
     hooks = [
-        m.register_forward_pre_hook(
-            lambda _, args: (_apply_int8_act_asym_per_token_quant_dequant(args[0]),)
-        )
+        m.register_forward_pre_hook(lambda _, args: (quantize(args[0]),))
         for m in model.modules()
         if isinstance(m, _DQA_QSCHEME_MODULES)
     ]
+    gated = []
+    for m in {
+        s for s, n in _stacked(model) if isinstance(getattr(s, n), TorchAOBaseTensor)
+    }:
+        hooks.append(
+            m.register_forward_pre_hook(lambda _, args: (quantize(args[0]), *args[1:]))
+        )
+        if hasattr(m, "_apply_gate"):
+            m._apply_gate = lambda x, gate=m._apply_gate: quantize(gate(x))
+            gated.append(m)
     try:
         yield
     finally:
         for hook in hooks:
             hook.remove()
+        for m in gated:
+            del m._apply_gate
 
 
 def schemes() -> dict[str, Scheme]:
