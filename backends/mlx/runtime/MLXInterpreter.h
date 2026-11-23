@@ -1091,6 +1091,9 @@ exec_gather_qmm(const GatherQmmNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, std::move(Y));
 }
 
+// What metal_kernel() reads from a node, plus the ordered template argument
+// names: they appear in the generated source, but MLX keys a function's
+// generated source on the template argument values only.
 inline std::string metal_kernel_key(const MetalKernelNode& n) {
   std::string key;
   auto add = [&key](std::string_view s) {
@@ -1099,7 +1102,8 @@ inline std::string metal_kernel_key(const MetalKernelNode& n) {
     key += s;
   };
   add(n.name);
-  for (const auto* names : {&n.input_names, &n.output_names}) {
+  for (const auto* names :
+       {&n.input_names, &n.output_names, &n.template_arg_names}) {
     key += std::to_string(names->size());
     key += ';';
     for (const auto& name : *names) {
