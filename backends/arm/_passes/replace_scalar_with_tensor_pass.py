@@ -99,8 +99,12 @@ class ReplaceScalarWithTensorByProfilePass(ArmPass, ReplaceScalarWithTensorArgPa
         super().__init__(tfa_pass, _all_ops, *args, **kwargs)
 
     def should_run_pass(self, graph_module: torch.fx.GraphModule) -> bool:
+        table_ops = set(TableOps.included_ops())
         for node in graph_module.graph.nodes:
-            if node.op == "call_function" and node.target in _all_ops:
+            if node.op == "call_function" and (
+                node.target in _all_ops
+                or (node.target in table_ops and self._is_quantized_meta(node.meta))
+            ):
                 return True
 
         return any(

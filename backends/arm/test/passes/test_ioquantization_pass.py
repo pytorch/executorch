@@ -194,7 +194,7 @@ def test_insert_rescale_tosa_INT_folds_uint8_output():
     assert rescale_nodes
     assert rescale_nodes[0].kwargs.get("input_unsigned") is False
     assert rescale_nodes[0].kwargs.get("output_unsigned") is True
-    assert rescale_nodes[0].args[1] == torch.int8
+    assert rescale_nodes[0].kwargs["dtype"] == torch.int8
 
 
 def test_quantize_io_tosa_INT_uint8_simple_mlp():
@@ -407,7 +407,7 @@ def test_quantize_io_tosa_INT_uint8_io_add():
         node.kwargs.get("output_unsigned") for node in rescale_nodes
     ), "Expected output_unsigned on IO rescale."
     assert all(
-        node.args[1] == torch.int8
+        node.kwargs["dtype"] == torch.int8
         for node in rescale_nodes
         if node.kwargs.get("input_unsigned") or node.kwargs.get("output_unsigned")
     ), "Unsigned IO rescales must output int8 internally."
