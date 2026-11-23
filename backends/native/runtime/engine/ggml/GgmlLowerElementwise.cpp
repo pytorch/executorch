@@ -500,21 +500,27 @@ ScalarType compare_dtype(
 } // namespace
 
 // Comparisons produce 0/1 floats: a <= b is 1 - step(a - b) and a < b is
-// step(b - a), with a and b in F32. Each operand is first rounded to its own
-// dtype (a lowering may have left an F16 result in F32), then to the dtype
-// eager compares in when that is F16 or BF16; a scalar takes a tensor's dtype
-// within its category. Two integers compare exactly, which F32 matches within
-// +-2^24; le and lt check the integers they can trace: attention masks compare
-// positions the graph computes, which le and lt accepted before any check.
+// step(b - a), with a and b in F32. a != b is step(step(a - b) + step(b - a)
+// + n), where n is 1 where an operand is NaN, since equal infinities also
+// differ by NaN. Each operand is first rounded to its own dtype (a lowering
+// may have left an F16 result in F32), then to the dtype eager compares in
+// when that is F16 or BF16; a scalar takes a tensor's dtype within its
+// category. Two integers compare exactly, which F32 matches within +-2^24; ne
+// checks that, and le and lt check the integers they can trace: attention
+// masks compare positions the graph computes, which le and lt accepted before
+// any check.
 void GraphBuilder::lower_compare(const Node& node, Comparison comparison) {
   const ValueId left_id = tensor_arg_id(node, "self", 0);
   TensorRef left = tensor_arg(node, "self", 0);
   const NamedArgument& other = require_arg(node, "other", 1);
   ggml_context* ctx = instance_.context.get();
-  const std::string op = comparison == Comparison::Le ? "le" : "lt";
+  const std::string op = comparison == Comparison::Le ? "le"
+      : comparison == Comparison::Lt                  ? "lt"
+                                                      : "ne";
   const ScalarType left_dtype =
       method_.graph.value(left_id).tensor_meta().dtype;
-  constexpr bool traced_only = true;
+  const bool traced_only =
+      comparison == Comparison::Le || comparison == Comparison::Lt;
   const auto round_to = [&](ggml_tensor* t, ScalarType dtype) {
     if (dtype != ScalarType::Half && dtype != ScalarType::BFloat16) {
       return t;
@@ -524,6 +530,9 @@ void GraphBuilder::lower_compare(const Node& node, Comparison comparison) {
     return t->type == half ? t : ggml_cast(ctx, as_f32(t), half);
   };
   ggml_tensor* difference = nullptr;
+  const bool equality = comparison == Comparison::Ne;
+  // 1 where an operand is NaN, for ne.
+  ggml_tensor* nan_operand = nullptr;
   std::vector<int64_t> sizes = left.sizes;
   if (other.arg.kind() == ArgKind::Tensor) {
     const ValueId right_id = other.arg.as_tensor().id;
@@ -546,6 +555,10 @@ void GraphBuilder::lower_compare(const Node& node, Comparison comparison) {
     }
     BinaryOperands operands = tensor_operands(left, right, /*force_f32=*/true);
     difference = ggml_sub(ctx, operands.lhs, operands.rhs);
+    if (equality) {
+      nan_operand =
+          ggml_add(ctx, nan_mask(operands.lhs), nan_mask(operands.rhs));
+    }
     sizes = std::move(operands.sizes);
   } else {
     auto scalar = static_cast<float>(float_arg(node, "other", 1, 0));
@@ -563,11 +576,12 @@ void GraphBuilder::lower_compare(const Node& node, Comparison comparison) {
     } else if (left_dtype == ScalarType::BFloat16) {
       scalar = ggml_bf16_to_fp32(ggml_fp32_to_bf16(scalar));
     }
-    difference = ggml_scale_bias(
-        ctx,
-        contiguous(as_f32(round_to(left.tensor, left_dtype))),
-        1.0f,
-        -scalar);
+    ggml_tensor* self = contiguous(as_f32(round_to(left.tensor, left_dtype)));
+    difference = ggml_scale_bias(ctx, self, 1.0f, -scalar);
+    if (equality) {
+      // A NaN scalar makes every difference NaN.
+      nan_operand = nan_mask(std::isnan(scalar) ? difference : self);
+    }
   }
   ggml_tensor* result = nullptr;
   switch (comparison) {
@@ -576,6 +590,17 @@ void GraphBuilder::lower_compare(const Node& node, Comparison comparison) {
       break;
     case Comparison::Lt:
       result = ggml_step(ctx, ggml_neg(ctx, difference));
+      break;
+    case Comparison::Ne:
+      result = ggml_step(
+          ctx,
+          ggml_add(
+              ctx,
+              ggml_add(
+                  ctx,
+                  ggml_step(ctx, difference),
+                  ggml_step(ctx, ggml_neg(ctx, difference))),
+              nan_operand));
       break;
   }
   set_single_output(node, TensorRef{result, std::move(sizes)});
