@@ -458,8 +458,11 @@ ggml_tensor* GraphBuilder::write_back(ValueId value_id, ValueId target_id) {
   if (target == persistent_.end()) {
     throw std::runtime_error("ggml: mutated buffer is not a persistent tensor");
   }
-  ggml_tensor* value = tensor(value_id).tensor;
-  if (value == target->second || value->view_src == target->second) {
+  // ggml_cpy reads any strides, so a deferred view is copied once, here.
+  ggml_tensor* value = view(value_id).tensor;
+  if (value == target->second ||
+      (value->view_src == target->second && value->view_offs == 0 &&
+       ggml_is_contiguous(value))) {
     return nullptr;
   }
   value = snapshot(value);
