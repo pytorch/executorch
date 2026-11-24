@@ -25,6 +25,8 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include <utility>
+#include <vector>
 
 #include <gflags/gflags.h>
 
@@ -54,8 +56,25 @@ DEFINE_double(
     -1,
     "Flow noise variance; 0 removes the noise (default: the model's, 0.3)");
 DEFINE_uint64(seed, 0, "Noise seed");
+DEFINE_bool(
+    benchmark,
+    false,
+    "Synthesize the text 4 times and print the timing of the first (cold) "
+    "run and the median of the other runs (warm)");
 
 namespace {
+
+constexpr int kBenchmarkRuns = 4;
+
+struct Timing {
+  double rtf, first_audio_ms, audio_s, flow_lm_ms, mimi_decode_ms;
+};
+
+double median(std::vector<double> values) {
+  std::sort(values.begin(), values.end());
+  const size_t mid = values.size() / 2;
+  return values.size() % 2 ? values[mid] : (values[mid - 1] + values[mid]) / 2;
+}
 
 std::string sibling(const std::string& path, const std::string& name) {
   const auto slash = path.find_last_of("/\\");
@@ -161,19 +180,32 @@ int main(int argc, char** argv) {
       std::fwrite(bytes.data(), 1, bytes.size(), stdout);
       std::fflush(stdout);
     };
-    start = std::chrono::steady_clock::now();
-    const auto result = runner.synthesize(
-        FLAGS_text, voice, FLAGS_temperature, FLAGS_seed, on_audio);
-    const double synth_s = seconds_since(start);
-    if (result.pcm.empty()) {
-      throw std::runtime_error("No audio generated");
+    phonon::Synthesis result;
+    double synth_s = 0;
+    std::vector<Timing> timings;
+    for (int run = 0; run < (FLAGS_benchmark ? kBenchmarkRuns : 1); ++run) {
+      first_audio_s = 0;
+      start = std::chrono::steady_clock::now();
+      result = runner.synthesize(
+          FLAGS_text, voice, FLAGS_temperature, FLAGS_seed, on_audio);
+      synth_s = seconds_since(start);
+      if (result.pcm.empty()) {
+        throw std::runtime_error("No audio generated");
+      }
+      const double audio_s =
+          static_cast<double>(result.pcm.size()) / runner.sample_rate();
+      timings.push_back(
+          {synth_s / audio_s,
+           first_audio_s * 1000,
+           audio_s,
+           median(result.flow_lm_ms),
+           median(result.mimi_decode_ms)});
     }
     if (!FLAGS_stream) {
       write_wav(FLAGS_output, result.pcm, runner.sample_rate());
     }
 
-    const double audio_s =
-        static_cast<double>(result.pcm.size()) / runner.sample_rate();
+    const double audio_s = timings.back().audio_s;
     std::fprintf(
         FLAGS_stream ? stderr : stdout,
         "%s %s: %.2f s of audio, %lld frames, load %.2f s, first audio "
@@ -186,6 +218,35 @@ int main(int argc, char** argv) {
         first_audio_s,
         synth_s,
         synth_s / audio_s);
+    if (FLAGS_benchmark) {
+      const auto warm = [&](double Timing::*field) {
+        std::vector<double> values;
+        for (size_t run = 1; run < timings.size(); ++run) {
+          values.push_back(timings[run].*field);
+        }
+        return median(values);
+      };
+      const Timing warm_median{
+          warm(&Timing::rtf),
+          warm(&Timing::first_audio_ms),
+          warm(&Timing::audio_s),
+          warm(&Timing::flow_lm_ms),
+          warm(&Timing::mimi_decode_ms)};
+      for (const auto& [label, timing] :
+           {std::pair{"cold (run 1)", timings.front()},
+            std::pair{"warm (median of runs 2-4)", warm_median}}) {
+        std::fprintf(
+            FLAGS_stream ? stderr : stdout,
+            "%s: RTF %.3f, first audio %.1f ms, %.2f s of audio, flow_lm "
+            "%.2f ms/step, mimi_decode %.2f ms/call\n",
+            label,
+            timing.rtf,
+            timing.first_audio_ms,
+            timing.audio_s,
+            timing.flow_lm_ms,
+            timing.mimi_decode_ms);
+      }
+    }
   } catch (const std::exception& error) {
     std::cerr << "Phonon: " << error.what() << '\n';
     return 1;

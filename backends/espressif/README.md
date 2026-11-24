@@ -29,11 +29,87 @@ Fused Quant frontend convention. The two flows have distinct quantizers:
 | `EspNNQuantizer` | Existing delegate: PT2E Q/DQ graphs partitioned by `EspNNPartitioner` into `EspNNBackend` delegates |
 | `get_esp_fused_quant_quantizer` | Operator library: shared Fused Quant annotation and fusion, followed by `EspPassManager` lowering to direct ESP-NN operators or portable fallback |
 
-Both flows use ESP-NN kernels. See the operator-library
+Both flows use ESP-NN 1.5.0 kernels. See the operator-library
 [lowering code](passes/lower_to_esp.py) and [operator tests](test/ops/)
 for supported configurations. Shared quantization rules also cover
 operators that retain portable execution. The delegate's supported
 operators and export example are described below.
+
+Spatial operators use contiguous NHWC tensors; model inputs and outputs
+retain their original layout. Layout copies remain visible in the
+operator-library report.
+
+Set the recipe's `EspTarget` and `EspKernelMode` to match the device's ESP-NN
+configuration when planning scratch:
+
+```python
+recipe = get_esp_fused_quant_recipe(
+    target=EspTarget.ESP32P4, kernel_mode=EspKernelMode.OPTIMIZED
+)
+```
+
+The defaults are `EspTarget.ESP32S3` and `EspKernelMode.OPTIMIZED`.
+Accelerated Conv2d export requires the optional [scratch-size bindings](#scratch-size-queries).
+If the selected binding or query is unavailable, convolution retains portable
+execution; strict export rejects that fallback. Other operator exports do not
+require the bindings.
+
+Scratch storage uses the planned arena. Applications must serialize
+operator-library inference, delegate inference, and other ESP-NN calls.
+
+## Scratch-size queries
+
+Optional Python bindings expose ESP-NN 1.5.0's convolution, depthwise, softmax,
+mean, hard-swish, batched fully connected, and logistic scratch-size queries:
+
+```bash
+CMAKE_ARGS="-DEXECUTORCH_BUILD_ESP_NN_PYBINDS=ON" pip install -e . --no-build-isolation
+```
+
+The host libraries retain only sizing code. CMake fetches the pinned ESP-NN
+sources; `ESP_NN_LOCAL_PATH` can reuse an existing 1.5.0 checkout or ESP-IDF
+managed component. The host build uses GNU-style compiler section flags and
+linker garbage collection (`--gc-sections`, or `-dead_strip` on Apple platforms);
+MSVC-style toolchains fail at configuration. Downloaded sources are checked
+against the pinned SHA-256, and a local source tree must declare version 1.5.0.
+
+Select the device's `EspTarget` and `EspKernelMode` to match its ESP-NN build:
+
+```python
+from executorch.backends.espressif import EspKernelMode, EspTarget
+from executorch.backends.espressif.scratch import get_scratch_queries
+
+queries = get_scratch_queries(EspTarget.ESP32P4, EspKernelMode.OPTIMIZED)
+if queries is not None:
+    scratch_bytes = queries.conv2d_scratch_size(
+        input_dims=(8, 8, 16),
+        filter_dims=(3, 3, 16),
+        output_dims=(8, 8, 32),
+        stride=(1, 1),
+        padding=(1, 1),
+    )
+```
+
+Convolution queries use `(width, height, channels)` for dimensions,
+`(width, height)` for stride and padding, and unit dilation. Dimensions,
+strides, and depthwise channel multipliers must be in `[1, 65535]`; padding must be in
+`[0, 65535]`. Conservative bounds on padded tensors, aligned filters, staging,
+and coordinates reject shapes that could overflow the vendor's int32 arithmetic
+before calling the sizing query. These bounds also apply to the fully connected
+query's `row_len` and `out_ch`. Softmax and mean dimensions, and fully connected
+`batches`, must be positive int32 values; softmax width must also fit an int32
+byte count for four bytes per element. Invalid bounds raise `ValueError`.
+Sizes are in bytes, including zero for kernels that need no scratch. The vendor
+fully connected query also returns zero for batches above 65535.
+`get_scratch_queries` returns `None` only when the selected module is absent;
+errors loading an installed binding propagate to the caller.
+
+Optimized mode selects S3 queries for ESP32-S3, shared PIE queries for
+ESP32-P4/ESP32-S31, and generic queries for other `EspTarget` values. ANSI mode
+selects ANSI queries for every chip. Query results are checked on the host for
+all configurations; device execution tests currently cover ESP32-S3.
+CI sets `EXECUTORCH_REQUIRE_ESP_NN_SCRATCH=1` when running `test_scratch.py`, so
+all four profiles and all seven query families must be available and pass.
 
 ## Contents
 
@@ -312,6 +388,9 @@ ESP-IDF runtime and the operator implementation tests.
 When checking supported int8 operators, lowering rejects malformed per-tensor
 qparams, such as non-positive scales or out-of-range zero points. Valid
 unsupported configurations remain portable.
+ESP-NN pooling requires matching input and output qparams. A shared optimization
+that absorbs a following requantization can change the output qparams and leave
+that pool on the portable path.
 
 For this flow, build the existing runner with `-DET_ESPRESSIF_OPS=ON` and
 `-DET_ESPNN_BACKEND=OFF`, using `model_esp_ops.pte` as the model. The runtime

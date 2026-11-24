@@ -8,3 +8,10 @@ import logging
 logger = logging.getLogger(__name__)
 if logger.level == logging.NOTSET:
     logger.setLevel(min(logging.INFO, logging.root.getEffectiveLevel()))
+    logger.info(
+        "Using default logging level %s for %s. Override with "
+        "logging.getLogger(%r).setLevel(logging.DEBUG).",
+        logging.getLevelName(logger.level),
+        __name__,
+        __name__,
+    )

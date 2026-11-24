@@ -10,6 +10,7 @@ from collections.abc import Sequence
 from typing import Any
 
 import torch
+from executorch.backends.arm._passes.tosa_lowering_utils import rescale_parameters
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.backends.transforms.propagate_view_copy_permute_pass import (
     PropagateViewCopyPermuteDownPass as _DownPass,
@@ -117,7 +118,10 @@ class TosaPropagationOverrides(_BasePass):
         return super().is_swappable(next_node)
 
     def is_backend_elementwise(self, node: torch.fx.Node) -> bool:
-        return node.target == exir_ops.backend.tosa.TABLE.default
+        return node.target == exir_ops.backend.tosa.TABLE.default or (
+            node.target == exir_ops.backend.tosa.RESCALE.default
+            and self._is_per_tensor_rescale(node)
+        )
 
     def _layout_dependent_inputs(
         self, node: torch.fx.Node, rank: int
@@ -145,7 +149,7 @@ class TosaPropagationOverrides(_BasePass):
             special_dtype_key
         ):
             return False
-        scales = node.args[2]
+        scales = rescale_parameters(node)[0]
         return not isinstance(scales, Sequence) or len(scales) == 1
 
 
