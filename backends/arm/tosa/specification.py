@@ -16,7 +16,6 @@ from typing import Dict, Generic, List, Set, TypeVar
 # Import torch before any torch submodule so torch.SymInt is defined; importing
 # torch.fx first triggers a torch.distributed circular import during collection.
 import torch  # noqa: F401
-
 from packaging.version import Version
 from torch.fx.experimental.symbolic_shapes import ShapeEnv
 
@@ -386,9 +385,20 @@ class Tosa_1_00(TosaSpecification):
 
 
 class Tosa_1_1(Tosa_1_00):
+    """Represent TOSA 1.1 profiles and MX extensions."""
+
+    _MX_FORMAT_EXTENSIONS = frozenset(
+        {
+            "mx_fp4e2m1fn",
+            "mx_fp6e2m3fn",
+            "mx_fp6e3m2fn",
+            "mx_fp8e4m3fn",
+            "mx_fp8e5m2",
+        }
+    )
 
     valid_extensions = {
-        "INT": ["shape", "int64", "int16", "int4", "var", "cf", "u55"],
+        "INT": ["shape", "int64", "int16", "int4", "var", "cf", "u55", "matmul_t"],
         "FP": [
             "shape",
             "int64",
@@ -401,10 +411,17 @@ class Tosa_1_1(Tosa_1_00):
             "random",
             "mxfp",
             "blockscale_ue5m3",
+            "mx_common",
+            "matmul_t",
+            *sorted(_MX_FORMAT_EXTENSIONS),
         ],
     }
 
-    pass
+    def __init__(self, version: Version, extras: List[str]):
+        formats = self._MX_FORMAT_EXTENSIONS.intersection(extras)
+        if formats and "mx_common" not in extras:
+            raise ValueError("Composite MXFP formats require +mx_common")
+        super().__init__(version, extras)
 
 
 class TosaLoweringContext:

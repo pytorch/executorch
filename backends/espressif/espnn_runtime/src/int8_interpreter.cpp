@@ -209,15 +209,6 @@ int8_t quantize_value(float value, float inverse_scale, int32_t zero_point) {
       static_cast<int32_t>(std::nearbyintf(scaled)) + zero_point);
 }
 
-// esp-nn's ESP32-S3 pointwise convolution passes the number of output
-// positions as a uint16_t width and leaves the rest unwritten.
-bool pointwise_beyond_uint16(
-    const data_dims_t& filter,
-    const data_dims_t& output) {
-  return filter.width == 1 && filter.height == 1 &&
-      static_cast<int64_t>(output.width) * output.height > UINT16_MAX;
-}
-
 } // namespace
 
 // Fields that no operation uses together share storage: the input list
@@ -1226,7 +1217,7 @@ bool Int8Interpreter::run_operation(uint32_t index) {
         run_generic_conv(s, input, output);
         return true;
       }
-      if (reference || pointwise_beyond_uint16(s.filter_dims, s.output_dims)) {
+      if (reference) {
         esp_nn_conv_s8_ansi(
             &s.input_dims,
             input,
@@ -1380,9 +1371,7 @@ bool Int8Interpreter::run_operation(uint32_t index) {
                      sw = s.pool[3];
       const uint16_t ph = s.pool[4], pw = s.pool[5];
       if (s.opcode == OpCode::MAX_POOL2D) {
-        // The ESP32-S3 kernel takes a multiple of four channels and writes
-        // nothing otherwise.
-        if (reference || channels % 4 != 0) {
+        if (reference) {
           esp_nn_max_pool_s8_ansi(
               input,
               in_w,
@@ -1676,7 +1665,7 @@ void Int8Interpreter::run_dilated_by_phases(
       data_dims_t tile_dims{tile_w, tile_h, in_c, 1};
       data_dims_t result_dims{cols, rows, out_c, 1};
       if (s.opcode == OpCode::CONV2D) {
-        if (reference || pointwise_beyond_uint16(s.filter_dims, result_dims)) {
+        if (reference) {
           esp_nn_conv_s8_ansi(
               &tile_dims,
               tile,

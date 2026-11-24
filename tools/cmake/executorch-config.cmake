@@ -185,13 +185,15 @@ if(TARGET mlxdelegate)
       add_library(mlx STATIC IMPORTED)
       set_target_properties(mlx PROPERTIES IMPORTED_LOCATION "${_mlx_library}")
       # libmlx.a is a static archive with no transitive link deps, so re-add the
-      # frameworks MLX links PUBLIC (mirrors
-      # third-party/mlx/CMakeLists.txt:209). Must match the in-tree imported
-      # target in backends/mlx/CMakeLists.txt.
+      # frameworks MLX links PUBLIC (mirrors third-party/mlx/CMakeLists.txt).
+      # Must match the in-tree imported target in backends/mlx/CMakeLists.txt.
       if(APPLE)
         find_library(METAL_FRAMEWORK Metal)
         find_library(FOUNDATION_FRAMEWORK Foundation)
         find_library(QUARTZ_FRAMEWORK QuartzCore)
+        if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+          find_library(IOKIT_FRAMEWORK IOKit REQUIRED)
+        endif()
         if(METAL_FRAMEWORK
            AND FOUNDATION_FRAMEWORK
            AND QUARTZ_FRAMEWORK
@@ -200,7 +202,7 @@ if(TARGET mlxdelegate)
             mlx
             PROPERTIES
               INTERFACE_LINK_LIBRARIES
-              "${METAL_FRAMEWORK};${FOUNDATION_FRAMEWORK};${QUARTZ_FRAMEWORK}"
+              "${METAL_FRAMEWORK};${FOUNDATION_FRAMEWORK};${QUARTZ_FRAMEWORK};${IOKIT_FRAMEWORK}"
           )
         endif()
       endif()

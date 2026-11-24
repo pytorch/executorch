@@ -45,9 +45,11 @@ Results are cached on disk by both calls' metadata, the precision settings,
 the GPU, driver and versions, and the backend's sources. Only outcomes that
 are properties of the call are cached (timings, kernels the runtime lacks,
 Inductor finding no valid choice), not failures that may not recur. A call
-whose inputs cannot be described (symbolic sizes, a storage offset, an input
-passed twice), or that the worker does not report, takes its plan's static
-choice.
+whose inputs cannot be described (symbolic sizes, one storage viewed with two
+dtypes), or that the worker does not report, takes its plan's static choice.
+Inputs that start at a storage offset or share a storage (an input passed
+twice, slices of one tensor) are measured as views of one buffer per storage,
+with their recorded offsets and strides.
 
 Each call is compared on its own: fusion with neighbouring ops is not
 measured.
@@ -55,6 +57,7 @@ measured.
 
 from __future__ import annotations
 
+import collections
 import contextlib
 import ctypes
 import dataclasses
@@ -141,39 +144,100 @@ def record_plan(node: Node, plan: ReplacementPlan) -> None:
     node.meta[META_KEY] = {"plan": plan, "name": node.name}
 
 
-def _encode(value: Any, seen: set[Node]) -> Any:
-    """``value`` as JSON, each tensor as its dtype, size and strides."""
+def _tensors(value: Any) -> Iterator[torch.Tensor]:
     if isinstance(value, Node):
-        if value in seen:
-            raise Unmeasurable(f"{value.name} is passed more than once")
-        seen.add(value)
         value = value.meta.get("val")
     if isinstance(value, torch.Tensor):
+        yield value
+    elif isinstance(value, (list, tuple)):
+        for v in value:
+            yield from _tensors(v)
+    elif isinstance(value, dict):
+        for v in value.values():
+            yield from _tensors(v)
+
+
+class _Encoder:
+    """Encodes the inputs of one call as JSON: each tensor as its dtype, size
+    and strides and, if it starts at an offset or shares its storage with
+    another input, as a view of a numbered storage at that offset."""
+
+    def __init__(self, *values: Any) -> None:
+        self._uses = collections.Counter(
+            t.untyped_storage()._cdata for t in _tensors(values)
+        )
+        self._storages: dict[int, tuple[int, torch.dtype]] = {}
+
+    def __call__(self, value: Any) -> Any:
+        if isinstance(value, Node):
+            value = value.meta.get("val")
+        if isinstance(value, torch.Tensor):
+            return self._tensor(value)
+        if isinstance(value, (list, tuple)):
+            return [self(v) for v in value]
+        if isinstance(value, (bool, int, float, str)) or value is None:
+            return value
+        raise Unmeasurable(f"cannot describe {value!r}")
+
+    def _tensor(self, value: torch.Tensor) -> dict[str, Any]:
         dims = [*value.shape, *value.stride(), value.storage_offset()]
         if not all(type(d) is int for d in dims):
             raise Unmeasurable(f"symbolic size, stride or offset {dims}")
-        if value.storage_offset() != 0:
-            raise Unmeasurable(f"storage offset {value.storage_offset()}")
         dtype = str(value.dtype).removeprefix("torch.")
-        return {"tensor": [dtype, list(value.shape), list(value.stride())]}
-    if isinstance(value, (list, tuple)):
-        return [_encode(v, seen) for v in value]
-    if isinstance(value, (bool, int, float, str)) or value is None:
-        return value
-    raise Unmeasurable(f"cannot describe {value!r}")
+        encoded: dict[str, Any] = {
+            "tensor": [dtype, list(value.shape), list(value.stride())]
+        }
+        storage = value.untyped_storage()._cdata
+        if value.storage_offset() == 0 and self._uses[storage] == 1:
+            return encoded
+        index, first = self._storages.setdefault(
+            storage, (len(self._storages), value.dtype)
+        )
+        if first != value.dtype:
+            raise Unmeasurable(f"one storage viewed as {first} and {value.dtype}")
+        encoded["storage"] = [index, value.storage_offset()]
+        return encoded
 
 
-def _materialize(value: Any, device: torch.device) -> Any:
-    """``value`` with each encoded tensor made the way AOTI makes its
-    autotune inputs."""
+def _materialize(
+    args: list[Any], kwargs: dict[str, Any], device: torch.device
+) -> tuple[list[Any], dict[str, Any]]:
+    """A call's encoded arguments with each tensor made the way AOTI makes
+    its autotune inputs, and the views of a numbered storage made from one
+    buffer that holds them all."""
     from torch._dynamo.testing import rand_strided
 
-    if isinstance(value, dict):
+    extents: dict[int, tuple[str, int]] = {}
+
+    def extent(value: Any) -> None:
+        if isinstance(value, list):
+            for v in value:
+                extent(v)
+        elif isinstance(value, dict) and "storage" in value:
+            dtype, size, stride = value["tensor"]
+            index, offset = value["storage"]
+            end = offset
+            if all(n > 0 for n in size):
+                end += 1 + sum((n - 1) * s for n, s in zip(size, stride))
+            extents[index] = (dtype, max(end, extents.get(index, (dtype, 0))[1]))
+
+    def make(value: Any) -> Any:
+        if isinstance(value, list):
+            return [make(v) for v in value]
+        if not isinstance(value, dict):
+            return value
         dtype, size, stride = value["tensor"]
-        return rand_strided(size, stride, getattr(torch, dtype), device)
-    if isinstance(value, list):
-        return [_materialize(v, device) for v in value]
-    return value
+        if "storage" not in value:
+            return rand_strided(size, stride, getattr(torch, dtype), device)
+        index, offset = value["storage"]
+        return bases[index].as_strided(size, stride, offset)
+
+    extent([args, list(kwargs.values())])
+    bases = {
+        i: rand_strided((n,), (1,), getattr(torch, dtype), device)
+        for i, (dtype, n) in extents.items()
+    }
+    return make(args), {k: make(v) for k, v in kwargs.items()}
 
 
 def _op_name(op: Any) -> str:
@@ -189,19 +253,24 @@ def _op(name: str) -> Any:
 
 def _spec(node: Node, plan: ReplacementPlan) -> dict[str, Any]:
     """Both implementations of a recorded call, as JSON."""
-    seen: set[Node] = set()
-    args = _encode(node.args, seen)
-    kwargs = {k: _encode(v, seen) for k, v in node.kwargs.items()}
+    encode = _Encoder(node.args, node.kwargs)
+    args = encode(node.args)
+    kwargs = {k: encode(v) for k, v in node.kwargs.items()}
     (replacement,) = [c for c in plan.candidates if c.name != REGULAR_LOWERING]
+    # The replacement's own inputs, with their own storages.
+    encode = _Encoder(replacement.args, replacement.kwargs)
+    replacement_args = encode(replacement.args)
+    replacement_kwargs = {k: encode(v) for k, v in replacement.kwargs.items()}
     return {
         "original": _op_name(node.target),
         "args": args,
         "kwargs": kwargs,
-        "output": _encode(node.meta.get("val"), set()),
+        "output": _Encoder(node.meta.get("val"))(node.meta.get("val")),
         "replacement": {
             "name": replacement.name,
             "op": _op_name(replacement.kernel),
-            "args": _encode(replacement.args, set()),
+            "args": replacement_args,
+            **({"kwargs": replacement_kwargs} if replacement_kwargs else {}),
         },
     }
 
@@ -388,10 +457,12 @@ def _compile_replacement(
     """A replacement, run once so its compile-time autotune (active in the
     backend's AOTI context) picks its schedule and config."""
     op = _op(replacement["op"])
-    args = _materialize(replacement["args"], device)
-    op(*args)
+    args, kwargs = _materialize(
+        replacement["args"], replacement.get("kwargs", {}), device
+    )
+    op(*args, **kwargs)
     torch.cuda.synchronize(device)
-    return lambda: op(*args)
+    return lambda: op(*args, **kwargs)
 
 
 def _compile_inductor(
@@ -404,8 +475,7 @@ def _compile_inductor(
 
     op = _op(spec["original"])
     op = backend.get_decomposition_table().get(op, op)
-    args = _materialize(spec["args"], device)
-    kwargs = {k: _materialize(v, device) for k, v in spec["kwargs"].items()}
+    args, kwargs = _materialize(spec["args"], spec["kwargs"], device)
     positions = [i for i, a in enumerate(args) if isinstance(a, torch.Tensor)]
     names = [k for k, v in kwargs.items() if isinstance(v, torch.Tensor)]
     tensors = [args[i] for i in positions] + [kwargs[k] for k in names]
@@ -1057,9 +1127,14 @@ class ApplyChoicesPass(PassBase):
             if choice == REGULAR_LOWERING:
                 continue
             candidate = plan.candidate(choice)
-            args = map_arg(candidate.args, lambda n: replaced.get(n, n))
+            args, kwargs = map_arg(
+                (candidate.args, candidate.kwargs), lambda n: replaced.get(n, n)
+            )
             new_node = replace(
-                graph, node, plan, dataclasses.replace(candidate, args=args)
+                graph,
+                node,
+                plan,
+                dataclasses.replace(candidate, args=args, kwargs=kwargs),
             )
             info["result"]["replaced"] = new_node is not None
             if new_node is not None:

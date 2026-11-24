@@ -6,7 +6,7 @@
 import itertools
 import operator
 import os
-from typing import Any, cast
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -21,6 +21,11 @@ from executorch.backends.arm._passes import (
     QuantizeClampArgumentsPass,
 )
 from executorch.backends.arm._passes.rewrite_conv_pass import RewriteConvPass
+from executorch.backends.arm._passes.tosa_lowering_utils import (
+    compute_multiplier_and_shift,
+    create_rescale_node,
+    rescale_parameters,
+)
 from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_a16w8_quantization_config,
     get_symmetric_quantization_config,
@@ -256,20 +261,35 @@ def _get_expected_int32_scales(
             )
             activation_scale = activation_qparams.get_scale_per_tensor()
             output_scale = output_qparams.get_scale_per_tensor()
-            assert output_qparams.get_zp_per_tensor() == int32_user.args[3]
-            user_scales = cast(list[float], int32_user.args[2])
+            user_scales, input_zp, _, _ = rescale_parameters(int32_user)
+            assert output_qparams.get_zp_per_tensor() == input_zp
             assert len(user_scales) in (1, len(weight_scales))
             # Derive this independently from the rewrite helper:
             #
             #   accumulator -> declared output -> INT32 consumer
             #   (input * weight / output) * consumer
+            boundary_multipliers, boundary_shifts = compute_multiplier_and_shift(
+                [
+                    activation_scale * weight_scale / output_scale
+                    for weight_scale in weight_scales
+                ],
+                scale_width=16,
+            )
+            combined_scales = [
+                multiplier / (1 << shift) * user_scale
+                for multiplier, shift, user_scale in zip(
+                    boundary_multipliers,
+                    boundary_shifts,
+                    itertools.cycle(user_scales),
+                )
+            ]
+            multipliers, shifts = compute_multiplier_and_shift(
+                combined_scales, scale_width=16
+            )
             expected_int32_scales.append(
                 [
-                    activation_scale * weight_scale / output_scale * user_scale
-                    for weight_scale, user_scale in zip(
-                        weight_scales,
-                        itertools.cycle(user_scales),
-                    )
+                    multiplier / (1 << shift)
+                    for multiplier, shift in zip(multipliers, shifts, strict=True)
                 ]
             )
     return expected_int32_scales
@@ -308,18 +328,15 @@ def _get_call_function_node(gm: torch.fx.GraphModule, target):
 def _add_a16w8_rescale_head(
     graph: torch.fx.Graph,
     accumulator: torch.fx.Node,
-    positional_unsigned: tuple[bool, ...] = (),
+    unsigned_flags: tuple[bool, bool] = (False, False),
 ) -> tuple[torch.fx.Node, torch.fx.Node]:
-    rescale = graph.call_function(
-        exir_ops.backend.tosa.RESCALE.default,
-        args=(
-            accumulator,
-            torch.int16,
-            [1.0],
-            0,
-            0,
-            *positional_unsigned,
-        ),
+    rescale = create_rescale_node(
+        graph,
+        args=(accumulator, torch.int16, [1.0], 0, 0),
+        kwargs={
+            "input_unsigned": unsigned_flags[0],
+            "output_unsigned": unsigned_flags[1],
+        },
     )
     layout_permute = graph.call_function(
         exir_ops.edge.aten.permute_copy.default,
@@ -528,31 +545,52 @@ def test_rewrite_conv_a16w8_mixed_consumers_restore_int16(
         if node.target == tosa_target
         and len(node.users) == 2
         and {
-            user.args[1]
+            user.kwargs["dtype"]
             for user in node.users
             if user.target == exir_ops.backend.tosa.RESCALE.default
         }
         == {torch.int16, torch.int32}
     ]
     assert len(mixed_output_convs) == 1
+    for rescale in mixed_output_convs[0].users:
+        assert rescale.kwargs["scale32"] is False
+        assert all(0 <= value < 32768 for value in rescale.args[1])
+        assert (
+            rescale.args[0].meta[TosaSpecialDtype.meta_key()] == TosaSpecialDtype.INT48
+        )
     int32_rescale = next(
-        user for user in mixed_output_convs[0].users if user.args[1] == torch.int32
+        user
+        for user in mixed_output_convs[0].users
+        if user.kwargs["dtype"] == torch.int32
     )
     assert any(
-        int32_rescale.args[2] == pytest.approx(expected)
+        rescale_parameters(int32_rescale)[0] == pytest.approx(expected)
         for expected in expected_int32_scales
     )
 
 
-def test_rewrite_conv_rescale_signature_includes_positional_unsigned_flags() -> None:
+def test_rewrite_conv_rescale_signature_includes_unsigned_flags() -> None:
     graph = torch.fx.Graph()
     accumulator = graph.placeholder("accumulator")
-    signed_rescale, _ = _add_a16w8_rescale_head(graph, accumulator, (False, False))
-    unsigned_rescale, _ = _add_a16w8_rescale_head(graph, accumulator, (False, True))
+    accumulator.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int16)
+    signed_rescale, signed_permute = _add_a16w8_rescale_head(
+        graph, accumulator, (False, False)
+    )
+    unsigned_rescale, unsigned_permute = _add_a16w8_rescale_head(
+        graph, accumulator, (False, True)
+    )
 
     assert build_node_signature(
-        signed_rescale, positional_arg_start=1
-    ) != build_node_signature(unsigned_rescale, positional_arg_start=1)
+        signed_rescale, positional_arg_start=5
+    ) != build_node_signature(unsigned_rescale, positional_arg_start=5)
+    graph.output((signed_permute, unsigned_permute))
+    graph_module = torch.fx.GraphModule({}, graph)
+    node_order = {node: index for index, node in enumerate(graph.nodes)}
+    result = RewriteConvPass._deduplicate_a16w8_output_rescales(
+        graph_module, accumulator, node_order
+    )
+    assert result == [signed_rescale, unsigned_rescale]
+    graph.lint()
 
 
 def test_rewrite_conv_without_convolution_does_not_require_context() -> None:
@@ -568,6 +606,7 @@ def test_rewrite_conv_without_convolution_does_not_require_context() -> None:
 def test_rewrite_conv_a16w8_unknown_accumulator_user_is_unchanged() -> None:
     graph = torch.fx.Graph()
     accumulator = graph.placeholder("accumulator")
+    accumulator.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
     _, first_permute = _add_a16w8_rescale_head(graph, accumulator)
     _, second_permute = _add_a16w8_rescale_head(graph, accumulator)
     unexpected_user = graph.call_function(torch.neg, args=(accumulator,))
@@ -590,6 +629,7 @@ def test_rewrite_conv_a16w8_unknown_accumulator_user_is_unchanged() -> None:
 def test_rewrite_conv_a16w8_multi_consumer_rescale_is_not_deduplicated() -> None:
     graph = torch.fx.Graph()
     accumulator = graph.placeholder("accumulator")
+    accumulator.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
     first_rescale, first_permute = _add_a16w8_rescale_head(graph, accumulator)
     second_rescale, second_permute = _add_a16w8_rescale_head(graph, accumulator)
     output = graph.output((first_permute, second_permute, second_rescale))
@@ -608,7 +648,9 @@ def test_rewrite_conv_a16w8_multi_consumer_rescale_is_not_deduplicated() -> None
 def test_rewrite_conv_a16w8_deduplication_uses_graph_order() -> None:
     graph = torch.fx.Graph()
     accumulator = graph.placeholder("accumulator")
+    accumulator.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
     temporary_input = graph.placeholder("temporary_input")
+    temporary_input.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
     early_rescale, early_permute = _add_a16w8_rescale_head(graph, temporary_input)
     late_rescale, late_permute = _add_a16w8_rescale_head(graph, accumulator)
     early_rescale.replace_input_with(temporary_input, accumulator)
@@ -632,6 +674,7 @@ def test_rewrite_conv_a16w8_deduplication_uses_graph_order() -> None:
 def test_rewrite_conv_a16w8_unknown_order_user_is_unchanged() -> None:
     graph = torch.fx.Graph()
     accumulator = graph.placeholder("accumulator")
+    accumulator.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
     _, first_permute = _add_a16w8_rescale_head(graph, accumulator)
     node_order = {node: index for index, node in enumerate(graph.nodes)}
     _, second_permute = _add_a16w8_rescale_head(graph, accumulator)
@@ -712,7 +755,7 @@ def test_rewrite_conv_a16w8_preserves_int32_for_int32_consumers() -> None:
         for node in gm.graph.nodes
         if node.op == "call_function"
         and node.target == exir_ops.backend.tosa.RESCALE.default
-        and node.args[1] == torch.int32
+        and node.kwargs["dtype"] == torch.int32
         and node.all_input_nodes[0].target
         in {
             exir_ops.backend.tosa.CONV2D.default,
@@ -720,7 +763,9 @@ def test_rewrite_conv_a16w8_preserves_int32_for_int32_consumers() -> None:
         }
     ]
     assert len(direct_int32_rescales) == len(expected_int32_scales) == 1
-    assert direct_int32_rescales[0].args[2] == pytest.approx(expected_int32_scales[0])
+    assert rescale_parameters(direct_int32_rescales[0])[0] == pytest.approx(
+        expected_int32_scales[0]
+    )
 
 
 def test_rewrite_conv1d_a16w8_narrows_instead_of_forking_int32() -> None:
@@ -742,7 +787,7 @@ def test_rewrite_conv1d_a16w8_narrows_instead_of_forking_int32() -> None:
         for node in gm.graph.nodes
         if node.op == "call_function"
         and node.target == exir_ops.backend.tosa.RESCALE.default
-        and node.args[1] == torch.int32
+        and node.kwargs["dtype"] == torch.int32
         and node.all_input_nodes[0] is conv
     ]
     assert forked_int32_rescales == []
@@ -808,7 +853,7 @@ def test_rewrite_conv_a16w8_preserves_int32_after_permute() -> None:
     for node in gm.graph.nodes:
         if (
             node.target != exir_ops.backend.tosa.RESCALE.default
-            or node.args[1] != torch.int32
+            or node.kwargs["dtype"] != torch.int32
             or node.all_input_nodes[0].target != exir_ops.backend.tosa.CONV2D.default
         ):
             continue
@@ -822,7 +867,7 @@ def test_rewrite_conv_a16w8_preserves_int32_after_permute() -> None:
                     consumer
                     for consumer in source_permute.users
                     if consumer.target == exir_ops.backend.tosa.RESCALE.default
-                    and consumer.args[1] == torch.int32
+                    and consumer.kwargs["dtype"] == torch.int32
                 )
 
     assert len(widened_paths) == 1
