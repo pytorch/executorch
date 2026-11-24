@@ -31,6 +31,7 @@ linears take dequant + matmul, which ``forward_others`` runs unpadded.
 import argparse
 import gc
 import json
+import os
 import types
 import warnings
 
@@ -333,6 +334,26 @@ def add_kv_layout_arguments(parser) -> None:
     )
 
 
+def add_nvfp4_act_argument(parser) -> None:
+    parser.add_argument(
+        "--nvfp4-act",
+        choices=("auto", "w4a4", "w4a16"),
+        default=None,
+        help="CUDA NVFP4 activation mode, sets ET_CUDA_NVFP4_ACT (default: "
+        "the environment's value, else auto). auto times W4A4 against W4A16 "
+        "per shape when native FP4 is available, w4a4 forces FP4 activations "
+        "(native FP4 required), w4a16 forces BF16 activations.",
+    )
+
+
+def apply_nvfp4_act_argument(parser, args) -> None:
+    if args.nvfp4_act is None:
+        return
+    if args.backend != "cuda":
+        parser.error("--nvfp4-act is only supported with --backend cuda.")
+    os.environ["ET_CUDA_NVFP4_ACT"] = args.nvfp4_act
+
+
 def batched_sequence_manifest(
     sequence_manifest: str,
     max_seqs: int,
@@ -448,6 +469,9 @@ def export_cuda_batching(  # noqa: C901
         enable_offgraph_kv_cache,
         offgraph_kv_cache_geometry,
     )
+    from executorch.examples.models.muse_glimmer.source_transformations.nvfp4 import (
+        install_nvfp4_gate_up_epilogues,
+    )
     from executorch.exir import (
         EdgeCompileConfig,
         ExecutorchBackendConfig,
@@ -516,6 +540,11 @@ def export_cuda_batching(  # noqa: C901
     if hasattr(inductor_config, "cpp_cache_precompile_headers"):
         inductor_config.cpp_cache_precompile_headers = False
 
+    nvfp4_epilogues = install_nvfp4_gate_up_epilogues(model)
+    if nvfp4_epilogues:
+        print(
+            f"[muse_glimmer cuda batching] NVFP4 gate/up epilogues: {nvfp4_epilogues}"
+        )
     single_manifest = enable_offgraph_kv_cache(model, max_step_tokens)
     manifest = (
         batched_sequence_manifest(single_manifest, max_kv_seqs)
@@ -764,9 +793,10 @@ def _export_cuda(
         vision_cuda_source_transformations,
     )
 
-    # Always applied: bounds global-attention SDPA to the valid context via a
-    # runtime kv_len (O(context) decode). With use_turboquant=True it also swaps
-    # the global KV caches for TurboQuant TQ4.
+    # Always applied: swaps fused NVFP4 gate/up MLPs for the fused gated kernel
+    # and bounds global-attention SDPA to the valid context via a runtime
+    # kv_len (O(context) decode). With use_turboquant=True it also swaps the
+    # global KV caches for TurboQuant TQ4.
 
     max_prefill = min(config.max_seq_len - 1, model._sliding_window * 2)
     model.set_max_prefill_chunk(max_prefill)
@@ -1259,7 +1289,17 @@ def main() -> None:
         help="Optional FP32-output linear implementation for vision blocks "
         "0-34. The default preserves the original all-BF16 encoder.",
     )
+    add_nvfp4_act_argument(parser)
+    parser.add_argument(
+        "--nvfp4-static-act",
+        action="store_true",
+        help="CUDA with an NVFP4 GGUF: use each weight's .input_scale as a "
+        "static activation scale instead of dynamic per-row scales.",
+    )
     args = parser.parse_args()
+    apply_nvfp4_act_argument(parser, args)
+    if args.nvfp4_static_act and (args.backend != "cuda" or not args.gguf):
+        parser.error("--nvfp4-static-act requires --backend cuda and --gguf.")
 
     _validate_offgraph_prefill(parser, args)
 
@@ -1294,6 +1334,7 @@ def main() -> None:
             max_seq_len=max_seq_len,
             backend=args.backend,
             activation_dtype=activation_dtype,
+            nvfp4_static_act_scale=args.nvfp4_static_act,
             **loader_kwargs,
         )
     elif args.mlx:

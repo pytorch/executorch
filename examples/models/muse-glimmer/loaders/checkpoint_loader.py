@@ -8,7 +8,8 @@
 
 Input projections remain unfused until loading so mixed-precision GGUF,
 prequantized safetensors, MLX-affine, and consolidated BF16 inputs share the
-same backend-packing path.
+same backend-packing path; only fused CUDA NVFP4 groups are packed during
+fusion.
 """
 
 from __future__ import annotations
@@ -324,6 +325,22 @@ _FUSION_GROUPS: dict[str, dict[str, list[str]]] = {
 }
 
 
+def _fuse_cuda_nvfp4(shards: list):
+    """Fuse NVFP4 shards as a ``CudaNVFP4Tensor`` (per-row global scales where
+    the shards differ); None when no shard is NVFP4."""
+    from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
+    from executorch.extension.llm.export.nvfp4 import ExportableNVFP4Tensor
+
+    nvfp4 = [isinstance(w, ExportableNVFP4Tensor) for w in shards]
+    if not any(nvfp4):
+        return None
+    if not all(nvfp4):
+        raise ValueError("CUDA NVFP4 fusion requires every shard to be NVFP4")
+    return CudaNVFP4Tensor.fuse_along_output(
+        [CudaNVFP4Tensor.from_exportable(w) for w in shards]
+    )
+
+
 def _fuse_state_dict(
     atomic_sd: dict, backend: str, n_layers: int
 ) -> tuple[dict, set[str]]:
@@ -331,8 +348,9 @@ def _fuse_state_dict(
 
     Returns a state dict keyed by the fused model's FQNs, plus the group templates
     that fused successfully. Fused entries use ``fuse_along_output``
-    (subclass-aware output-channel concat). A group stays atomic across every
-    layer if any layer contains incompatible quantization types.
+    (subclass-aware output-channel concat), except CUDA NVFP4 shards, which
+    are packed here (``_fuse_cuda_nvfp4``). A group stays atomic across
+    every layer if any layer contains incompatible quantization types.
     """
     from executorch.extension.llm.export.quant import fuse_along_output
 
@@ -351,8 +369,10 @@ def _fuse_state_dict(
                     group_sd[fused_fqn] = atomic_sd[fused_fqn]
                     group_consumed.add(fused_fqn)
                     continue
-                group_sd[fused_fqn] = fuse_along_output(
-                    [atomic_sd[f] for f in shard_fqns]
+                shards = [atomic_sd[f] for f in shard_fqns]
+                fused = _fuse_cuda_nvfp4(shards) if backend == "cuda" else None
+                group_sd[fused_fqn] = (
+                    fuse_along_output(shards) if fused is None else fused
                 )
                 group_consumed.update(shard_fqns)
         except ValueError as exc:
@@ -370,7 +390,65 @@ def _fuse_state_dict(
 # Source heads: produce an atomic (unfused) quantized state dict.
 
 
-def _atomic_sd_from_gguf(gguf_path: str, activation_dtype: torch.dtype) -> dict:
+def _iter_gguf_nvfp4_paired(gguf_path: str, static_act_scale: bool):
+    """Raw GGUF ``(name, tensor)`` pairs with each NVFP4 weight converted to an
+    ``ExportableNVFP4Tensor`` using its ``.scale`` (and, with
+    ``static_act_scale``, ``.input_scale``) companion."""
+    import numpy as np
+    from executorch.extension.llm.export.gguf import iter_gguf
+    from gguf import GGMLQuantizationType, GGUFReader
+
+    # Companions can occur before or after their weight: read the scalars and
+    # check the pairing first, then stream the weights once.
+    companions = {}
+    nvfp4 = set()
+    for tensor in GGUFReader(gguf_path).tensors:
+        if tensor.name.endswith((".scale", ".input_scale")):
+            if tensor.tensor_type != GGMLQuantizationType.F32 or tensor.data.size != 1:
+                raise ValueError(f"Expected scalar F32 companion: {tensor.name}")
+            companions[tensor.name] = float(np.asarray(tensor.data).reshape(-1)[0])
+        # By name: gguf releases before 0.19 have no NVFP4 member.
+        elif tensor.tensor_type.name == "NVFP4":
+            nvfp4.add(tensor.name)
+    paired = {
+        name.replace(".weight", suffix)
+        for name in nvfp4
+        for suffix in (".scale", ".input_scale")
+    }
+    unpaired = sorted(set(companions) - paired)
+    if unpaired:
+        raise ValueError(f"GGUF scale tensors without an NVFP4 weight: {unpaired}")
+    if static_act_scale:
+        # An embedding lookup has no input activation to scale.
+        missing = sorted(
+            name
+            for name in nvfp4
+            if name.replace(".weight", ".input_scale") not in companions
+            and gguf_to_model_key(name) != "embed_tokens.weight"
+        )
+        if missing:
+            raise ValueError(f"NVFP4 weights without .input_scale: {missing}")
+    for name, weight in iter_gguf(gguf_path):
+        if name in companions:
+            continue
+        if name in nvfp4:
+            # Like llama.cpp, a weight without a .scale companion has a unit
+            # global scale, and activations are quantized dynamically unless
+            # the static .input_scale is requested.
+            weight = weight.to_exportable_nvfp4_tensor(
+                per_tensor_scale=companions.get(name.replace(".weight", ".scale"), 1.0),
+                act_per_tensor_scale=(
+                    companions.get(name.replace(".weight", ".input_scale"))
+                    if static_act_scale
+                    else None
+                ),
+            )
+        yield name, weight
+
+
+def _atomic_sd_from_gguf(
+    gguf_path: str, activation_dtype: torch.dtype, nvfp4_static_act_scale: bool
+) -> dict:
     from executorch.extension.llm.export.load import iter_checkpoint
     from executorch.extension.llm.export.quant import to_default
 
@@ -380,6 +458,7 @@ def _atomic_sd_from_gguf(gguf_path: str, activation_dtype: torch.dtype) -> dict:
             key_map=gguf_to_model_key,
             convert=to_default,
             dtype=activation_dtype,
+            raw_iter=lambda path: _iter_gguf_nvfp4_paired(path, nvfp4_static_act_scale),
         )
     )
 
@@ -484,7 +563,8 @@ def _finalize(
     with torch.device("meta"):
         model = MuseGlimmerModel(config)
 
-    # Weights are already in portable form; assign directly (convert=identity).
+    # Weights are already in portable form, or CUDA NVFP4 tensors for fused
+    # groups; assign directly (convert=identity).
     assign_state_dict(model, fused_sd, convert=identity)
 
     if backend == "cuda":
@@ -713,8 +793,13 @@ def load_gguf_model(
     activation_dtype: torch.dtype = torch.bfloat16,
     *,
     defer_runtime_buffers: bool = False,
+    nvfp4_static_act_scale: bool = False,
 ) -> tuple:
-    """Load a GGUF checkpoint into a Muse Glimmer model packed for ``backend``."""
+    """Load a GGUF checkpoint into a Muse Glimmer model packed for ``backend``.
+
+    ``nvfp4_static_act_scale`` keeps each NVFP4 weight's ``.input_scale`` as a
+    static activation scale; by default activations are scaled per row.
+    """
     _validate_backend(backend)
     from executorch.examples.models.muse_glimmer.model.model import MuseGlimmerConfig
 
@@ -725,7 +810,9 @@ def load_gguf_model(
             )
         )
     print(f"Loading GGUF from {gguf_path}...")
-    atomic_sd = _atomic_sd_from_gguf(gguf_path, activation_dtype)
+    atomic_sd = _atomic_sd_from_gguf(
+        gguf_path, activation_dtype, nvfp4_static_act_scale
+    )
     return (
         _finalize(
             atomic_sd,

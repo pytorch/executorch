@@ -768,7 +768,8 @@ def cuda_source_transformations(
 ) -> None:
     """Apply CUDA source transformations to a Muse Glimmer model in place.
 
-    Always bounds global-attention SDPA to the valid context via a runtime
+    First swaps fused NVFP4 gate/up MLPs for ``CudaNVFP4MLP`` (the fused
+    gated kernel; ``source_transformations/nvfp4.py``). Always bounds global-attention SDPA to the valid context via a runtime
     ``kv_len`` (O(context) decode). Optionally also swaps the global KV caches
     for TurboQuant TQ4. Sliding-window layers are untouched in both cases (they
     already use a bounded ring buffer).
@@ -781,6 +782,13 @@ def cuda_source_transformations(
             keep the bf16 ``FlatKVCache`` but route global attention through the
             length-aware ``torch.ops.triton.sdpa``.
     """
+    from executorch.examples.models.muse_glimmer.source_transformations.nvfp4 import (
+        install_nvfp4_gate_up_epilogues,
+    )
+
+    nvfp4_epilogues = install_nvfp4_gate_up_epilogues(model)
+    if nvfp4_epilogues:
+        print(f"[muse_glimmer cuda] NVFP4 gate/up epilogues: {nvfp4_epilogues}")
     if not use_turboquant:
         # Non-TurboQuant path: keep the bf16 FlatKVCache but bound global
         # attention to the valid context via a runtime kv_len scalar (routes
