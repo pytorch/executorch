@@ -1072,3 +1072,52 @@ TEST_F(OpMulOutTest, Broadcast2dBy1dRankMismatch) {
   EXPECT_TENSOR_CLOSE(op_mul_out(a, b, out), expected);
   EXPECT_TENSOR_CLOSE(op_mul_out(b, a, out), expected);
 }
+
+TEST_F(OpMulOutTest, ChannelsLastBroadcast) {
+  TensorFactory<ScalarType::Int> tf;
+  Tensor a = tf.channels_last_like(tf.make({1, 2, 1, 2}, {1, 2, 3, 4}));
+  Tensor b = tf.channels_last_like(tf.make({1, 2, 1, 1}, {10, 20}));
+  Tensor out = tf.zeros_channels_last({1, 2, 1, 2});
+
+  Tensor expected =
+      tf.channels_last_like(tf.make({1, 2, 1, 2}, {10, 20, 60, 80}));
+  EXPECT_TENSOR_EQ(op_mul_out(a, b, out), expected);
+}
+
+TEST_F(OpMulOutTest, ChannelsLastBroadcastMixedDtype) {
+  TensorFactory<ScalarType::Int> tf_int;
+  TensorFactory<ScalarType::Float> tf_float;
+  Tensor a = tf_int.channels_last_like(tf_int.make({1, 2, 1, 2}, {1, 2, 3, 4}));
+  Tensor b = tf_float.channels_last_like(tf_float.make({1, 2, 1, 1}, {10, 20}));
+  Tensor out = tf_float.zeros_channels_last({1, 2, 1, 2});
+
+  Tensor expected = tf_float.channels_last_like(
+      tf_float.make({1, 2, 1, 2}, {10, 20, 60, 80}));
+  EXPECT_TENSOR_CLOSE(op_mul_out(a, b, out), expected);
+}
+
+TEST_F(OpMulOutTest, ChannelsLastBroadcastLastDim) {
+  TensorFactory<ScalarType::Float> tf;
+  Tensor a =
+      tf.channels_last_like(tf.make({1, 2, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8}));
+  Tensor b = tf.channels_last_like(tf.make({1, 2, 2, 1}, {10, 20, 30, 40}));
+  Tensor out = tf.zeros_channels_last({1, 2, 2, 2});
+
+  Tensor expected = tf.channels_last_like(
+      tf.make({1, 2, 2, 2}, {10, 20, 60, 80, 150, 180, 280, 320}));
+  EXPECT_TENSOR_CLOSE(op_mul_out(a, b, out), expected);
+  EXPECT_TENSOR_CLOSE(op_mul_out(b, a, out), expected);
+}
+
+TEST_F(OpMulOutTest, ChannelsLastBroadcastMiddleDim) {
+  TensorFactory<ScalarType::Float> tf;
+  Tensor a =
+      tf.channels_last_like(tf.make({1, 2, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8}));
+  Tensor b = tf.channels_last_like(tf.make({1, 2, 1, 2}, {10, 20, 30, 40}));
+  Tensor out = tf.zeros_channels_last({1, 2, 2, 2});
+
+  Tensor expected = tf.channels_last_like(
+      tf.make({1, 2, 2, 2}, {10, 40, 30, 80, 150, 240, 210, 320}));
+  EXPECT_TENSOR_CLOSE(op_mul_out(a, b, out), expected);
+  EXPECT_TENSOR_CLOSE(op_mul_out(b, a, out), expected);
+}

@@ -93,6 +93,7 @@ The component depends on `espressif/esp-nn`, which the component manager
 fetches from the production registry, components.espressif.com, even
 for a project that names another registry. A project that builds
 without the component manager provides it as `components/esp-nn`.
+The local copy must be ESP-NN 1.5.0 or newer.
 
 ### Set up Python
 

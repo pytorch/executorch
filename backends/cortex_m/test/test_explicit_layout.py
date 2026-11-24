@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -44,7 +45,9 @@ class Conv1d(torch.nn.Module):
 
 
 def _compile(module, inputs, *, explicit_layout: bool, quantize: bool = True):
-    from executorch.backends.arm.scripts.aot_arm_compiler import _to_edge_cortex_m
+    from executorch.backends.arm.scripts.aot_arm_compiler_backend import (
+        _to_edge_cortex_m,
+    )
 
     exported_program = torch.export.export(module, inputs, strict=True)
     return _to_edge_cortex_m(
