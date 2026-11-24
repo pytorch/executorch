@@ -17,8 +17,6 @@
 // and optionally one dynamic `forward_others` for anything wider. Each forward
 // runs the method with the smallest width that holds it; a static method's
 // extra rows are padding.
-// All execution and session calls are confined to the engine
-// thread, matching Executor. execute_raw rejects re-entrant execution.
 
 #include <cstddef>
 #include <cstdint>
@@ -232,7 +230,8 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
   OffGraphKVMetrics kv_metrics() const;
   // Sequence-layout counters; read between executes, on the engine thread.
   CudaGraphMetrics graph_metrics(std::string_view method) const;
-  // Forward-call counters, read on the engine thread.
+  // Every method, narrowest first, with how many forwards it ran. Read it
+  // between executes, not while one runs.
   std::vector<ForwardMethodCalls> method_calls() const;
 
   // Whether tokens are sampled on the device rather than on the host.

@@ -213,6 +213,8 @@ def main() -> None:
     assert steps[2]["snapshot"]["declared_columns"] == 9
     assert responses[-1]["snapshot"]["physical_columns"] == 9
     assert responses[-1]["snapshot"]["live_sequences"] == 0
+    assert fixed_responses[-1]["snapshot"]["column_resize_count"] == 0
+    assert responses[-1]["snapshot"]["column_resize_count"] == 3
     for request, response in zip(commands(), responses, strict=True):
         if request["op"] == "remove":
             assert response["snapshot"]["physical_columns"] >= 5

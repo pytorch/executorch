@@ -695,11 +695,9 @@ jobs:
 
         # The normal serving binaries and the opt-in correctness tool share
         # CudaExecutor; MG preparation tests also run on Linux.
-        # Capture qualification uses native counters in the release build.
-        cmake --preset llm-release-cuda -DEXECUTORCH_ENABLE_LOGGING=OFF
-        cmake --build --preset llm-release-cuda-install
+        make muse-glimmer-batching-cuda
         BATCHING_BIN_DIR="${PWD}/cmake-out/examples/models/muse-glimmer-batching"
-        cmake -S "${PWD}/examples/models/muse-glimmer" --preset muse-glimmer-cuda \
+        cmake -S "${PWD}/examples/models/muse-glimmer" \
           -B "${BATCHING_BIN_DIR}" -DMUSE_GLIMMER_BUILD_BATCHING=ON \
           -DMUSE_GLIMMER_BUILD_BATCHING_TESTS=ON \
           -DMUSE_GLIMMER_BUILD_RUNTIME_KV_PROBE=ON
@@ -816,7 +814,7 @@ jobs:
           backends/cuda/tests/test_merge_ptes.py \
           -v -o "addopts="
 
-        cmake --preset llm-release-cuda -DEXECUTORCH_BUILD_TESTS=ON -DEXECUTORCH_ENABLE_LOGGING=OFF
+        cmake --preset llm-release-cuda -DEXECUTORCH_BUILD_TESTS=ON
         cmake --build cmake-out --target test_cuda_allocator test_cuda_allocator_exit test_cuda_mutable_state test_cuda_weight_cache test_cuda_output_copy test_cuda_backend_execute test_cuda_sort_rand test_cuda_current_stream test_cuda_kv_cache test_cuda_guard test_cuda_stream_guard test_step_plan test_cuda_executor -j$(nproc)
         ctest --test-dir cmake-out -R test_cuda_allocator --output-on-failure -V
         ctest --test-dir cmake-out -R test_cuda_mutable_state --output-on-failure -V
@@ -825,7 +823,12 @@ jobs:
         ctest --test-dir cmake-out -R test_cuda_backend_execute --output-on-failure -V
         ctest --test-dir cmake-out -R test_cuda_sort_rand --output-on-failure -V
         ctest --test-dir cmake-out -R test_cuda_current_stream --output-on-failure -V
-        ctest --test-dir cmake-out -R test_cuda_kv_cache --output-on-failure -V
+        ctest --test-dir cmake-out -R '^test_cuda_kv_cache$' --output-on-failure --no-tests=error -V > /tmp/test_cuda_kv_cache.log 2>&1 || { cat /tmp/test_cuda_kv_cache.log; exit 1; }
+        cat /tmp/test_cuda_kv_cache.log
+        if grep -q "SKIPPED" /tmp/test_cuda_kv_cache.log; then
+          echo "::error::test_cuda_kv_cache skipped"
+          exit 1
+        fi
         ctest --test-dir cmake-out -R test_step_plan --output-on-failure -V
         # CudaExecutor end to end on a toy decoder, against its eager greedy
         # output. The test skips without the model, so fail if it skipped.
