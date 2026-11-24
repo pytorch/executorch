@@ -2036,6 +2036,27 @@ class GgmlOpsTest(unittest.TestCase):
         row = torch.tensor([1.0, 2.0**-8, 2.0**-12])
         self._check(linear, (row.repeat(64, 1).bfloat16(),))
 
+    @unittest.skipIf(
+        _BACKEND in ("cuda", "hip"),
+        "ggml's GPU flash attention is a few 1e-5 off eager on inputs exact in F16",
+    )
+    def test_grouped_attention_of_half_values_matches_eager(self):
+        # Six query heads per KV head of 256 and one query at position 200 of
+        # 256 keys. The inputs are exact in F16, so only the kernel's arithmetic
+        # can differ from eager.
+        def attention(q, k, v, positions):
+            mask = torch.arange(256) <= positions.view(-1, 1)
+            return F.scaled_dot_product_attention(
+                q, k, v, attn_mask=mask[None, None], enable_gqa=True
+            )
+
+        generator = torch.Generator().manual_seed(0)
+        q, k, v = (
+            torch.randn(1, heads, rows, 256, generator=generator).half().float()
+            for heads, rows in ((24, 1), (4, 256), (4, 256))
+        )
+        self._check(Lambda(attention), (q, k, v, torch.tensor([200])))
+
     def _check_traced_integer_compare(self, fn):
         small = (torch.tensor([[7, 3, -5]]), torch.tensor([[6, 4, -5]]))
         # 2^24 + 1 rounds to 2^24 in F32, which would then compare equal.
