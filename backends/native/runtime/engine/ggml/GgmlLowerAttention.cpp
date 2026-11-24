@@ -469,12 +469,13 @@ GraphBuilder::attention_mask(ValueId id, int64_t tokens, int64_t keys) {
       mask.sizes.back() != keys) {
     throw std::runtime_error("ggml: attention mask must end in [T|1, S]");
   }
-  // Out-of-place repeat/scale results, and views of them, are stable until
-  // an explicit graph write to their storage (which invalidates this cache).
-  // Reuse their additive F16 mask across attention ops; never cache
+  // Out-of-place repeat/scale/mul results, and views of them, are stable
+  // until an explicit graph write to their storage (which invalidates this
+  // cache). Reuse their additive F16 mask across attention ops; never cache
   // writable inputs.
   const ggml_tensor* root = storage_root(mask.tensor);
-  const bool reusable = root->op == GGML_OP_REPEAT || root->op == GGML_OP_SCALE;
+  const bool reusable = root->op == GGML_OP_REPEAT ||
+      root->op == GGML_OP_SCALE || root->op == GGML_OP_MUL;
   const auto cache_key = std::make_pair(id, tokens);
   if (reusable) {
     const auto found = attention_masks_.find(cache_key);
