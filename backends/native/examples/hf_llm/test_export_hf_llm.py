@@ -51,6 +51,8 @@ from transformers import (
     Gemma2Config,
     Gemma3Config,
     Gemma3TextConfig,
+    Gemma4TextConfig,
+    Gemma4UnifiedTextConfig,
     GemmaConfig,
     GptOssConfig,
     GraniteConfig,
@@ -223,6 +225,75 @@ def _random_gemma(arch: str, **config) -> PreTrainedModel:
     return model
 
 
+def _random_gemma4(config_cls, randomize: bool = True) -> PreTrainedModel:
+    """A tiny Gemma 4 text decoder shaped as the 12B: a sliding-window layer,
+    then a global layer whose values are its keys, with a wider head, one KV
+    head and proportional RoPE, and capped final logits."""
+    torch.manual_seed(7)
+    extra = {"hidden_size_per_layer_input": 0} if config_cls is Gemma4TextConfig else {}
+    config = config_cls(
+        vocab_size=128,
+        hidden_size=64,
+        intermediate_size=128,
+        num_hidden_layers=2,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        head_dim=16,
+        global_head_dim=32,
+        num_global_key_value_heads=1,
+        attention_k_eq_v=True,
+        layer_types=["sliding_attention", "full_attention"],
+        sliding_window=3,
+        max_position_embeddings=64,
+        final_logit_softcapping=30.0,
+        **extra,
+    )
+    model = AutoModelForCausalLM.from_config(config).eval().requires_grad_(False)
+    model.config._attn_implementation = "sdpa"
+    model.generation_config.use_cache = True
+    model.generation_config.cache_implementation = "static"
+    if randomize:
+        for weight in model.parameters():
+            weight.uniform_(-0.5, 0.5)
+        for i, layer in enumerate(model.model.layers):
+            layer.layer_scalar.fill_(0.5 + 0.25 * i)
+    return model
+
+
+# HF Gemma 4 FQN suffix -> llama.cpp's tensor name, from its converter.
+_GEMMA4_GGUF = {
+    "input_layernorm.weight": "attn_norm.weight",
+    "self_attn.q_proj.weight": "attn_q.weight",
+    "self_attn.k_proj.weight": "attn_k.weight",
+    "self_attn.v_proj.weight": "attn_v.weight",
+    "self_attn.o_proj.weight": "attn_output.weight",
+    "self_attn.q_norm.weight": "attn_q_norm.weight",
+    "self_attn.k_norm.weight": "attn_k_norm.weight",
+    "post_attention_layernorm.weight": "post_attention_norm.weight",
+    "pre_feedforward_layernorm.weight": "ffn_norm.weight",
+    "mlp.gate_proj.weight": "ffn_gate.weight",
+    "mlp.up_proj.weight": "ffn_up.weight",
+    "mlp.down_proj.weight": "ffn_down.weight",
+    "post_feedforward_layernorm.weight": "post_ffw_norm.weight",
+    "layer_scalar": "layer_output_scale.weight",
+}
+
+
+def _gemma4_gguf_tensors(model: PreTrainedModel) -> list[tuple[str, torch.Tensor]]:
+    """The model's weights as llama.cpp's converter writes a Gemma 4 GGUF:
+    norms as stored, the output tied to the embedding, a derived rope_freqs."""
+    pairs = [
+        ("token_embd.weight", model.model.embed_tokens.weight.clone()),
+        ("output_norm.weight", model.model.norm.weight.clone()),
+        ("rope_freqs.weight", torch.ones(16)),
+    ]
+    for fqn, weight in model.state_dict().items():
+        layer, _, suffix = fqn.removeprefix("model.layers.").partition(".")
+        if fqn.startswith("model.layers.") and suffix in _GEMMA4_GGUF:
+            pairs.append((f"blk.{layer}.{_GEMMA4_GGUF[suffix]}", weight.clone()))
+    return pairs
+
+
 def _eager_logits(model: PreTrainedModel, ids: torch.Tensor) -> torch.Tensor:
     """Logits of one uncached pass through transformers' eager attention."""
     eager = copy.deepcopy(model)
@@ -375,6 +446,38 @@ class ExportHfLlmTest(unittest.TestCase):
                     self.assertTrue(torch.allclose(got, want, atol=1e-4, rtol=0))
                 else:
                     self.assertTrue(torch.equal(got, want))
+
+    def test_gemma4_gguf_weights_reproduce_the_model(self) -> None:
+        ids = torch.tensor([[3, 4, 5, 6, 7, 8]])
+        for config_cls in (Gemma4TextConfig, Gemma4UnifiedTextConfig):
+            with self.subTest(config_cls.__name__):
+                reference = _random_gemma4(config_cls)
+                loaded = _random_gemma4(config_cls, randomize=False)
+                pairs = _gemma4_gguf_tensors(reference)
+
+                load_gguf(loaded, "model.gguf", "gemma4", lambda _, p=pairs: iter(p))
+
+                self.assertEqual(
+                    [layer.layer_scalar.item() for layer in loaded.model.layers],
+                    [0.5, 0.75],
+                )
+                with torch.no_grad():
+                    got, want = loaded(ids).logits, reference(ids).logits
+                self.assertTrue(torch.equal(got, want))
+
+    def test_gguf_buffers_it_lacks_keep_their_initial_values(self) -> None:
+        pairs = [
+            pair
+            for pair in _gemma4_gguf_tensors(_random_gemma4(Gemma4TextConfig))
+            if pair[0] != "blk.1.layer_output_scale.weight"
+        ]
+        loaded = _random_gemma4(Gemma4TextConfig, randomize=False)
+
+        load_gguf(loaded, "model.gguf", "gemma4", lambda _: iter(pairs))
+
+        self.assertEqual(
+            [layer.layer_scalar.item() for layer in loaded.model.layers], [0.5, 1.0]
+        )
 
     def test_gguf_rejects_unknown_and_missing_weights(self) -> None:
         pairs = _as_gguf_tensors(_tiny(), "llama")
@@ -919,6 +1022,11 @@ class ExportHfLlmTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "chunked_attention"):
             OffGraphLastTokenLM(model, 32)
 
+    def test_offgraph_cache_refuses_per_layer_head_shapes(self) -> None:
+        model = _random_gemma4(Gemma4TextConfig)
+        with self.assertRaisesRegex(NotImplementedError, "per layer"):
+            OffGraphLastTokenLM(model, 32)
+
     def test_offgraph_cache_scope_uninstalls_its_reference_cache(self) -> None:
         wrapper = OffGraphLastTokenLM(_tiny(), 32)
         with wrapper.cache_scope():
@@ -1358,6 +1466,11 @@ class ExportHfLlmTest(unittest.TestCase):
                     )
                 )
                 self._check_matches_eager(model)
+
+    def test_gemma4_layers_match_eager_past_the_window(self) -> None:
+        for config_cls in (Gemma4TextConfig, Gemma4UnifiedTextConfig):
+            with self.subTest(config_cls.__name__):
+                self._check_matches_eager(_random_gemma4(config_cls))
 
     def test_attention_logit_softcapping_matches_eager_when_configured_eager(
         self,
