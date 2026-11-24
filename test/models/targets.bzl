@@ -71,6 +71,7 @@ def define_common_targets():
         "ModuleIndex",
         "ModuleIntBool",
         "ModuleDynamicCatUnallocatedIO",
+        "ModuleDynamicConstrainedIO",
         "ModuleSimpleTrain",
         "ModuleStateful",
         "ModuleSharedState",

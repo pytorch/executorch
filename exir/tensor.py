@@ -16,7 +16,12 @@ from typing import Dict, List, NamedTuple, Optional, Tuple, Union
 import executorch.exir.schema as schema
 import torch
 from executorch.exir.error import internal_assert
-from executorch.exir.schema import ExtraTensorInfo, ScalarType, TensorShapeDynamism
+from executorch.exir.schema import (
+    DimConstraint,
+    ExtraTensorInfo,
+    ScalarType,
+    TensorShapeDynamism,
+)
 from executorch.exir.sym_util import eval_shape
 
 
@@ -224,6 +229,9 @@ class TensorSpec:
         self.init_mem_planning_fields()
         self.shape_dynamism: TensorShapeDynamism = determine_tensor_dynanism(self.shape)
         self.extra_tensor_info = extra_tensor_info
+        # Constraints on the sizes of a dynamic input besides their upper
+        # bounds, set by ConstraintBasedSymShapeEvalPass. See program.fbs.
+        self.dim_constraints: Optional[List[DimConstraint]] = None
         # device type will be only updated during PropagateDevicePass.
         self.device: schema.DeviceType = schema.DeviceType.CPU
         self.device_index: int = 0
@@ -468,6 +476,14 @@ def make_tensor_value(
         else:
             extra_tensor_info.device_type = spec.device
             extra_tensor_info.device_index = spec.device_index
+
+    if spec.dim_constraints:
+        if extra_tensor_info is None:
+            extra_tensor_info = schema.ExtraTensorInfo(
+                dim_constraints=spec.dim_constraints
+            )
+        else:
+            extra_tensor_info.dim_constraints = spec.dim_constraints
 
     flatbuffer_tensor = schema.Tensor(
         scalar_type=scalar_type_enum(spec.scalar_type),

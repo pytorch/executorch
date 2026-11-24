@@ -150,6 +150,37 @@ class ModuleDynamicCatUnallocatedIO(nn.Module):
         return {}
 
 
+class ModuleDynamicConstrainedIO(nn.Module):
+    """
+    A DYNAMIC_BOUND input whose dimensions have lower bounds and, for dim 0,
+    a divisibility constraint: dim 0 is 4 * h with h in [3, 8], so a multiple
+    of 4 in [12, 32], and dim 1 is in [5, 10].
+    """
+
+    def __init__(self):
+        super(ModuleDynamicConstrainedIO, self).__init__()
+        self._inputs = (torch.randn(16, 6),)
+
+    def forward(self, x):
+        return x + 1
+
+    def get_random_inputs(self):
+        return self._inputs
+
+    def get_dynamic_shapes(self):
+        return ({0: 4 * Dim("h", min=3, max=8), 1: Dim("w", min=5, max=10)},)
+
+    def get_memory_planning_pass(self):
+        return MemoryPlanningPass(
+            alloc_graph_input=False,
+            alloc_graph_output=False,
+        )
+
+    @staticmethod
+    def get_export_kwargs():
+        return {}
+
+
 class ModuleAddMul(torch.nn.Module):
     def __init__(self):
         super().__init__()

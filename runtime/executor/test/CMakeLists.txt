@@ -24,7 +24,7 @@ if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows")
       powershell
       ${EXECUTORCH_ROOT}/kernels/test/export_test_model.ps1
       -Modules
-      "\"ModuleAdd,ModuleAddHalf,ModuleAddMul,ModuleChannelsLast,ModuleDynamicCatUnallocatedIO,ModuleIndex,ModuleMultipleEntry,ModuleSimpleTrain,ModuleStateful\""
+      "\"ModuleAdd,ModuleAddHalf,ModuleAddMul,ModuleChannelsLast,ModuleDynamicCatUnallocatedIO,ModuleDynamicConstrainedIO,ModuleIndex,ModuleMultipleEntry,ModuleSimpleTrain,ModuleStateful\""
       -outDir
       "${CMAKE_CURRENT_BINARY_DIR}"
       -CondaEnv
@@ -36,7 +36,7 @@ else()
       -m
       test.models.export_program
       --modules
-      "ModuleAdd,ModuleAddHalf,ModuleAddMul,ModuleChannelsLast,ModuleDynamicCatUnallocatedIO,ModuleIndex,ModuleMultipleEntry,ModuleSimpleTrain,ModuleStateful"
+      "ModuleAdd,ModuleAddHalf,ModuleAddMul,ModuleChannelsLast,ModuleDynamicCatUnallocatedIO,ModuleDynamicConstrainedIO,ModuleIndex,ModuleMultipleEntry,ModuleSimpleTrain,ModuleStateful"
       --outdir
       "${CMAKE_CURRENT_BINARY_DIR}"
   )
@@ -50,6 +50,7 @@ add_custom_command(
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.ptd"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleChannelsLast.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleDynamicCatUnallocatedIO.pte"
+         "${CMAKE_CURRENT_BINARY_DIR}/ModuleDynamicConstrainedIO.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleIndex.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleMultipleEntry.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleSimpleTrain.pte"
@@ -79,6 +80,7 @@ add_custom_target(
           "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.pte"
           "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.ptd"
           "${CMAKE_CURRENT_BINARY_DIR}/ModuleDynamicCatUnallocatedIO.pte"
+          "${CMAKE_CURRENT_BINARY_DIR}/ModuleDynamicConstrainedIO.pte"
           "${CMAKE_CURRENT_BINARY_DIR}/ModuleIndex.pte"
           "${CMAKE_CURRENT_BINARY_DIR}/ModuleMultipleEntry.pte"
           "${CMAKE_CURRENT_BINARY_DIR}/ModuleSimpleTrain.pte"
@@ -112,6 +114,7 @@ set(test_env
     "ET_MODULE_ADD_MUL_DATA_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.ptd"
     "ET_MODULE_CHANNELS_LAST_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleChannelsLast.pte"
     "ET_MODULE_DYNAMIC_CAT_UNALLOCATED_IO_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleDynamicCatUnallocatedIO.pte"
+    "ET_MODULE_DYNAMIC_CONSTRAINED_IO_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleDynamicConstrainedIO.pte"
     "ET_MODULE_INDEX_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleIndex.pte"
     "ET_MODULE_MULTI_ENTRY_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleMultipleEntry.pte"
     "ET_MODULE_SIMPLE_TRAIN_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleSimpleTrain.pte"
