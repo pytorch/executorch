@@ -16,9 +16,10 @@ from torch._subclasses.fake_tensor import FakeTensorMode
 try:
     import gguf
 
+    _HAS_GGUF = True
     _HAS_GGUF_NVFP4 = hasattr(gguf.GGMLQuantizationType, "NVFP4")
 except ImportError:
-    _HAS_GGUF_NVFP4 = False
+    _HAS_GGUF = _HAS_GGUF_NVFP4 = False
 
 ONE = torch.tensor(1.0)
 
@@ -204,6 +205,7 @@ class TestGGUFNVFP4(unittest.TestCase):
             .act_per_tensor_scale
         )
 
+    @unittest.skipUnless(_HAS_GGUF, "a q6_k tensor takes its geometry from gguf")
     def test_conversion_rejects_other_quant_types(self):
         w = ExportableGGUFTensor(
             torch.zeros(1, 210, dtype=torch.uint8), "q6_k", torch.float32
