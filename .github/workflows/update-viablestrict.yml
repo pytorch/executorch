@@ -30,11 +30,18 @@ jobs:
           clickhouse-username: ${{ secrets.CLICKHOUSE_VIABLESTRICT_USERNAME }}
           clickhouse-password: ${{ secrets.CLICKHOUSE_VIABLESTRICT_PASSWORD }}
 
+      # Reporting only: a failure here (e.g. a transient GitHub API
+      # error while collecting failed jobs) must never turn the whole
+      # workflow red. "No green commit" is an expected outcome on some
+      # ticks, and the workflow conclusion should reflect the update
+      # step above, not this summary.
       - name: Summarize CI failures
         if: steps.update.outputs.latest_viable_sha == 'None'
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set +e
           echo "## ❌ No green commit found" >> $GITHUB_STEP_SUMMARY
           echo "No green commit found"
           echo "" >> $GITHUB_STEP_SUMMARY
