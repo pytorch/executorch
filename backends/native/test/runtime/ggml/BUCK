@@ -35,10 +35,16 @@ _FP16_SCALE_UNBOUNDED = [
     "gdn_gguf_q4_1.quantized_layer_decode_restart_f32",
     "gdn_gguf_q4_1.quantized_layer_decode_saved_state_f32",
     "gdn_gguf_q4_1.quantized_layer_decode_wide_f32",
+    "gdn_gguf_q4_1.quantized_layer_native_decode_restart_f32",
+    "gdn_gguf_q4_1.quantized_layer_native_decode_wide_f32",
+    "gdn_gguf_q4_1.quantized_layer_native_prefill_8_f32",
     "gdn_gguf_q5_1.quantized_layer_decode_f32",
     "gdn_gguf_q5_1.quantized_layer_decode_restart_f32",
     "gdn_gguf_q5_1.quantized_layer_decode_saved_state_f32",
     "gdn_gguf_q5_1.quantized_layer_decode_wide_f32",
+    "gdn_gguf_q5_1.quantized_layer_native_decode_restart_f32",
+    "gdn_gguf_q5_1.quantized_layer_native_decode_wide_f32",
+    "gdn_gguf_q5_1.quantized_layer_native_prefill_8_f32",
     "mean_gguf_q4_1.quantized_last_bf16",
     "mean_gguf_q4_1.quantized_last_f16",
     "mean_gguf_q4_1.quantized_last_f32",
@@ -67,10 +73,11 @@ _INT8_ACT_UNMODELED = [
 
 # ggml's GPU F32 matmuls (MMF, which takes every expert mul_mat_id) read their
 # inputs as TF32 or XF32, dropping the low mantissa bits (README, Known ggml
-# GPU numerics); these F32 experts, routers and shared-expert gates fail on
-# CUDA and HIP, rel_bias about -2.2e-3, which eager with truncated TF32 matmul
-# inputs reproduces.
+# GPU numerics); these F32 experts, routers, shared-expert gates and Gated
+# DeltaNet projections fail on CUDA and HIP, rel_bias about -1.5e-3 to
+# -2.2e-3, which eager with truncated TF32 matmul inputs reproduces.
 _GPU_TF32_INPUTS = [
+    "gdn_float.quantized_layer_native_prefill_8_f32",
     "moe_8da4w_g128.quantized_qwen35_block_f32",
     "moe_8da4w_g32.quantized_qwen35_block_f32",
     "moe_float.quantized_experts_top1_f32",
