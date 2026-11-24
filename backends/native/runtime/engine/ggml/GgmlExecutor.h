@@ -14,6 +14,7 @@
 #include <vector>
 
 #include <ggml-backend.h>
+#include <ggml-cpp.h>
 
 #include <executorch/backends/native/runtime/engine/Engine.h>
 #include <executorch/backends/native/runtime/engine/ggml/GgmlCache.h>
@@ -28,6 +29,12 @@ class Package;
 // the linked ggml variant registers no such device.
 ggml_backend_dev_t select_ggml_gpu_device(const GgmlEngineOptions& options);
 
+struct GgmlLoadPlan;
+
+namespace ggml_detail {
+struct GraphInstance;
+} // namespace ggml_detail
+
 // Storage the executables of one context share. `keys` are the data keys that
 // any method of its program writes; `storage` holds each one's buffer. Program
 // validation has already required every binding of a key to have the same
@@ -36,8 +43,6 @@ ggml_backend_dev_t select_ggml_gpu_device(const GgmlEngineOptions& options);
 // transform that decides their device bytes. The context owns `storage` from
 // the first successful compile that binds each key, so releasing executables
 // keeps its value; a constant lives while an executable holds it.
-struct GgmlLoadPlan;
-
 struct GgmlContextState {
   struct Constant {
     std::weak_ptr<ggml_tensor> tensor;
@@ -50,6 +55,21 @@ struct GgmlContextState {
   // Every method of the program, which a key's storage type must suit.
   std::vector<const Method*> methods;
   std::unordered_map<std::string, Constant> constants;
+
+  // The backends every executable of the context runs on, and the one
+  // scheduler whose compute buffers all their graphs allocate from. Each
+  // compile reserves the buffers for its method's worst-case graph, which
+  // `reserved` keeps for the scheduler's next growth.
+  std::vector<ggml_backend_ptr> backends;
+  ggml_backend_t primary_backend = nullptr;
+  ggml_backend_sched_ptr scheduler;
+  size_t scheduler_size = 0;
+  std::vector<std::weak_ptr<const ggml_detail::GraphInstance>> reserved;
+  // The graph the scheduler holds an allocation for, or null.
+  const ggml_cgraph* allocated = nullptr;
+  // Bytes of the scheduler's compute buffers, and how often they grew.
+  size_t compute_buffer_bytes = 0;
+  size_t compute_buffer_allocations = 0;
 };
 
 // `kv_cache`, which must outlive the executable, serves the method's
