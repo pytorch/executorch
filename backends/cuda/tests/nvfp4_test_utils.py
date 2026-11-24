@@ -5,6 +5,7 @@
 import os
 
 import torch
+import torch.nn.functional as F
 from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
 from executorch.extension.llm.export.nvfp4 import ExportableNVFP4Tensor
 
@@ -78,3 +79,16 @@ def dynamic_rows(mode, tensor, upper):
         constraint_sizes=[constraint] + [None] * (tensor.ndim - 1),
     )
     return mode.from_tensor(tensor, symbolic_context=context)
+
+
+class PackedLinear(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        torch.manual_seed(42)
+        q = torch.randint(0, 256, (96, 96), dtype=torch.uint8)
+        s = torch.full((96, 12), 0.0625).to(torch.float8_e4m3fn).view(torch.uint8)
+        self.register_buffer("weight", CudaNVFP4Tensor(q, s, torch.tensor(0.25)))
+        self.register_buffer("bias", torch.randn(96, dtype=torch.bfloat16))
+
+    def forward(self, x):
+        return F.linear(x, self.weight, self.bias)
