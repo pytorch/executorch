@@ -40,6 +40,25 @@ is compiled into the program:
   ``nvfp4_gemv``), and the FP32 prefill output policy and an explicit
   ``ET_CUDA_NVFP4_PREFILL_IMPL=dequant`` keep M 5..16 off them. ``0`` keeps
   the decode and prefill paths.
+* ``ET_CUDA_NVFP4_MXFP8_EMULATE``: ``0`` (default) or ``1``; see below.
+
+Weights whose ``act_dtype`` is ``mxfp8`` or ``bf16`` never take FP4
+activations (``ET_CUDA_NVFP4_ACT=w4a4`` means ``auto`` for them) and ignore
+the FP32 prefill output policy (outputs keep the activation dtype; FP32
+activations under that policy run in BF16). Decode runs the W4A16 GEMV;
+``mxfp8`` weights run the W4A8 GEMV under ``w4a8``, and under ``auto`` without
+native FP4 time the two (W4A16 only with ``ET_CUDA_NVFP4_MXFP8_EMULATE=1``).
+M 2..16 take the small-M buckets weight-only, except decode-size M where the
+decode GEMVs serve it (with native FP4, and for ``mxfp8`` under ``w4a8``).
+Other prefill of ``mxfp8`` weights with K % 32 == 0, unless
+``ET_CUDA_NVFP4_ACT=w4a16`` or ``ET_CUDA_NVFP4_PREFILL_IMPL=dequant``, runs
+MXFP8 x MXFP8 (``nvfp4_mxfp8``) with native FP4 conversion; without it, BF16
+activations (higher precision and faster) unless
+``ET_CUDA_NVFP4_MXFP8_EMULATE=1`` selects the MXFP8-grid emulation, which
+matches the native kernel up to accumulation order and output rounding (it
+dequantizes, so ``ET_CUDA_NVFP4_PREFILL_IMPL=kernel`` turns it off). The
+rest follows ``ET_CUDA_NVFP4_PREFILL_IMPL`` with the W4A16 kernel, as for
+``fp4`` weights under ``w4a16``.
 """
 
 import os
@@ -307,8 +326,9 @@ def nvfp4_gated_linear(x: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
 
     ``weight`` rows are ``[gate; up]`` as produced by
     ``CudaNVFP4Tensor.fuse_along_output([gate, up])`` (per-row global scales
-    in the same order), so N must be even. With native FP4 and BF16 (or FP32
-    under the FP32 prefill policy) activations, outside ``w4a16``/``w4a8``, it
+    in the same order), so N must be even. For ``act_dtype="fp4"`` weights
+    with native FP4 and BF16 (or FP32 under the FP32 prefill policy)
+    activations, outside ``w4a16``/``w4a8``, it
     runs the fused kernels (in ``auto`` only for M not statically <=
     ``NVFP4_DECODE_MAX_ROWS``, whose decode kernels ``F.linear`` times) unless
     ``F.linear`` would take dequant + matmul; otherwise it is ``F.linear``
@@ -346,6 +366,7 @@ def _gated_linear(func, types, args, kwargs):
             mode != "w4a4"
             and statically_known_true(flat.shape[0] <= NVFP4_DECODE_MAX_ROWS)
         )
+        or weight.act_dtype != "fp4"
         or _dequant_prefill(flat, mode, output_dtype, impl)
         or (
             x.dtype != torch.bfloat16
@@ -382,6 +403,27 @@ def _weight_rows(w, rows):
         pts if pts.numel() == 1 else pts[rows],
         orig_dtype=w.orig_dtype,
     )
+
+
+def _mxfp8_emulated_linear(flat, w):
+    """MXFP8 x MXFP8 without native FP4 conversion (pre-SM120): activation QDQ,
+    weights dequantized onto the native kernel's MXFP8 grid, BF16 GEMM."""
+    from executorch.backends.cuda.triton.kernels.nvfp4_mxfp8_emu import (
+        mxfp8_act_qdq,
+        nvfp4_dequant_mxfp8,
+    )
+
+    pts = w.per_tensor_scale
+    row_pts = pts.numel() != 1
+    xq = mxfp8_act_qdq(flat)
+
+    def rows(i, j):
+        out = F.linear(xq, nvfp4_dequant_mxfp8(w.qdata[i:j], w.scale[i:j]))
+        if not row_pts and w.unit_scale:
+            return out.to(flat.dtype)
+        return (out.float() * (pts[i:j] if row_pts else pts)).to(flat.dtype)
+
+    return chunked_dequant_linear(flat, w.shape[0], rows)
 
 
 def _small_m_enabled():
@@ -431,6 +473,58 @@ def _small_m_op(flat, w, mode, output_dtype, impl, enabled):
     return None if bucket is None else (NVFP4_SMALL_M_GEMM.op(bucket), op_args)
 
 
+def _bf16_act_linear(flat, w, mode, impl, use_small_m):
+    """Linears whose activations never go below 8 bits (``act_dtype`` mxfp8 or
+    bf16); see the module docstring for the policy."""
+    from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
+        nvfp4_gemv,
+        nvfp4_w4a16,
+    )
+
+    # These weights never take FP4 activations: w4a4 means auto here.
+    mode = "auto" if mode == "w4a4" else mode
+    native = _has_native_fp4()
+    mxfp8 = w.act_dtype == "mxfp8"
+    small = statically_known_true(flat.shape[0] <= NVFP4_DECODE_MAX_ROWS)
+    emulate = os.environ.get("ET_CUDA_NVFP4_MXFP8_EMULATE", "0")
+    if emulate not in ("0", "1"):
+        raise ValueError("ET_CUDA_NVFP4_MXFP8_EMULATE must be 0 or 1")
+    # The buckets run these weights weight-only: as under w4a16, or for
+    # mxfp8 under w4a8 above decode size (its W4A8 GEMV serves decode).
+    small_m_mode = "w4a8" if mxfp8 and mode == "w4a8" else "w4a16"
+    small_m = _small_m_op(flat, w, small_m_mode, None, impl, use_small_m)
+    if small_m is not None:
+        op, op_args = small_m
+        return op(*op_args)
+    if small and mxfp8 and mode == "w4a8":
+        if torch.version.hip is not None:
+            raise RuntimeError("NVFP4 W4A8 (dp4a PTX) requires an NVIDIA GPU")
+        from executorch.backends.cuda.triton.kernels.nvfp4_w4a8_gemv import (
+            nvfp4_w4a8_gemv,
+        )
+
+        return nvfp4_w4a8_gemv(flat, w.qdata, w.scale, w.per_tensor_scale)
+    if small and mxfp8 and mode == "auto" and not native and emulate == "0":
+        return nvfp4_auto_decode(
+            flat, w.qdata, w.scale, w.per_tensor_scale, None, w.unit_scale
+        )
+    if small:
+        return nvfp4_gemv(
+            flat, w.qdata, w.scale, w.per_tensor_scale, unit_scale=w.unit_scale
+        )
+    if mxfp8 and mode != "w4a16" and impl != "dequant" and w.shape[1] % 32 == 0:
+        if native:
+            from executorch.backends.cuda.triton.kernels.nvfp4_mxfp8 import nvfp4_mxfp8
+
+            return nvfp4_mxfp8(flat, w.qdata, w.scale, w.per_tensor_scale)
+        # The emulation dequantizes, which kernel forbids.
+        if emulate == "1" and impl != "kernel":
+            return _mxfp8_emulated_linear(flat, w)
+    if _dequant_prefill(flat, mode, None, impl):
+        return _dequant_linear(flat, w)
+    return nvfp4_w4a16(flat, w.qdata, w.scale, w.per_tensor_scale)
+
+
 @CudaNVFP4Tensor.implements([torch.ops.aten.linear.default])
 @CudaNVFP4Tensor.implements_torch_function([F.linear])
 def _linear(func, types, args, kwargs):  # noqa: C901
@@ -444,9 +538,11 @@ def _linear(func, types, args, kwargs):  # noqa: C901
     if x.shape[-1] != w.shape[-1]:
         raise RuntimeError("NVFP4 linear input and weight K dimensions must match")
     flat = x.reshape(-1, x.shape[-1]).contiguous()
-    output_dtype = nvfp4_prefill_output_dtype(flat)
+    bf16_act = w.act_dtype != "fp4"
+    prefill_dtype = nvfp4_prefill_output_dtype(flat)
+    output_dtype = None if bf16_act else prefill_dtype
     allowed_dtype = x.dtype in (torch.bfloat16, torch.float16) or (
-        x.dtype == torch.float32 and output_dtype == torch.float32
+        x.dtype == torch.float32 and prefill_dtype == torch.float32
     )
     if not can_launch_triton(flat) or not allowed_dtype:
         dtype = output_dtype or x.dtype
@@ -456,6 +552,10 @@ def _linear(func, types, args, kwargs):  # noqa: C901
             w.shape[0],
             lambda i, j: F.linear(flat, _weight_rows(w, slice(i, j)).dequantize(dtype)),
         )
+    elif bf16_act:
+        # FP32 activations (FP32 prefill policy) run in BF16 here.
+        act = flat.to(torch.bfloat16) if flat.dtype == torch.float32 else flat
+        out = _bf16_act_linear(act, w, mode, impl, use_small_m).to(flat.dtype)
     else:
         from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
             nvfp4_gemv,
