@@ -48,6 +48,11 @@ class PipelineBehavior {
   virtual std::vector<std::vector<std::string>> text_encoder_input_names()
       const = 0;
 
+  /** Text given to the tokenizers. */
+  virtual std::string format_prompt(const std::string& prompt) const {
+    return prompt;
+  }
+
   /** Converts the outputs of every text encoder into denoiser conditioning. */
   virtual std::vector<HostTensor> assemble_conditioning(
       std::vector<std::vector<HostTensor>> encoder_outputs) const = 0;
