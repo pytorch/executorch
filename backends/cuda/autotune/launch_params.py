@@ -62,6 +62,7 @@ from typing import Any, Callable, ContextManager, Iterable, Iterator, Sequence, 
 
 import torch
 from executorch.backends.cuda.autotune.cuda_graph_timing import (
+    _parkable,
     _parked_on_cpu,
     time_with_cuda_graph_us,
 )
@@ -297,9 +298,10 @@ def _time_candidates_within_memory(
         return _time_candidates(*timing_args, do_bench=do_bench)
     except torch.OutOfMemoryError:
         _free_device_memory()
-    if _STATE.offload is not None:
+    offload = [] if _STATE.offload is None else list(_STATE.offload())
+    if any(map(_parkable, offload)):
         try:
-            with _parked_on_cpu(_STATE.offload()):
+            with _parked_on_cpu(offload):
                 stats.offloads += 1
                 return _time_candidates(*timing_args, do_bench=do_bench)
         except torch.OutOfMemoryError:

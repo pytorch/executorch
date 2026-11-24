@@ -9,6 +9,7 @@
 #include "runner.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <fstream>
@@ -40,6 +41,12 @@ std::vector<EValue> execute(
         method + " failed: " + executorch::runtime::to_string(result.error()));
   }
   return std::move(result.get());
+}
+
+double ms_since(std::chrono::steady_clock::time_point start) {
+  return std::chrono::duration<double, std::milli>(
+             std::chrono::steady_clock::now() - start)
+      .count();
 }
 
 const float* float_data(const EValue& value) {
@@ -473,7 +480,9 @@ Synthesis Runner::synthesize(
     int countdown = -1;
     for (int64_t k = 0; k < budget; ++k) {
       noise.fill(noise_.data(), noise_.size(), stddev);
+      auto start = std::chrono::steady_clock::now();
       auto step = flow(embeds, pos);
+      result.flow_lm_ms.push_back(ms_since(start));
       embeds = std::move(step.next_embeds);
       ++pos;
       ++chunk.frames;
@@ -489,10 +498,12 @@ Synthesis Runner::synthesize(
       for (size_t i = 0; i < state.size(); ++i) {
         tensors.push_back(from_blob(state[i].data(), mimi_state_sizes_[i]));
       }
+      start = std::chrono::steady_clock::now();
       auto out = execute(
           model_,
           "mimi_decode",
           std::vector<EValue>(tensors.begin(), tensors.end()));
+      result.mimi_decode_ms.push_back(ms_since(start));
       const float* pcm = float_data(out.at(0));
       const size_t pcm_size = out.at(0).toTensor().numel();
       result.pcm.insert(result.pcm.end(), pcm, pcm + pcm_size);

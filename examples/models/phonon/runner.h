@@ -61,6 +61,8 @@ struct Synthesis {
   std::vector<float> pcm;
   std::vector<Chunk> chunks;
   int64_t frames = 0;
+  // Milliseconds of each frame's flow_lm step and mimi_decode call.
+  std::vector<double> flow_lm_ms, mimi_decode_ms;
 };
 
 class Runner {
