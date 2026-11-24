@@ -176,9 +176,9 @@ if(EXECUTORCH_BUILD_NATIVE_GGML)
   # weight-only quantized linears, judged against golden-int8_act.
   # native_ggml_sample_test_no_linear judges the other ops without it, except
   # their quantized_* cases, which quantize through an nn.Linear. Both leave out
-  # the elu with alpha 0.5 that ggml rejects, Gated DeltaNet layers on
-  # transformers' ATen rule, which ggml does not run (--gdn_op aten), and the
-  # samples that match eager only with a testing option (runtime/ggml/BUCK).
+  # the elu with alpha 0.5 that ggml rejects, and the samples that match eager
+  # only with a testing option (runtime/ggml/BUCK). Gated DeltaNet layers on
+  # transformers' ATen rule, which ggml does not run (see runtime/ggml/BUCK).
   # golden-int8_act doesn't model ggml's Q4_1 activation sums, which Gemma 4's
   # GELU-tanh experts turn into a bias at Q4_1's tiny sample scales (see
   # runtime/ggml/BUCK).
@@ -192,18 +192,42 @@ if(EXECUTORCH_BUILD_NATIVE_GGML)
       moe_float.quantized_gemma4_block_f32
   )
   list(JOIN _native_exact_only ":" _native_exact_filter)
+  # Samples of ops the engine does not lower yet. test/runtime/ggml/BUCK keeps
+  # the same list.
+  set(_native_ggml_engine_gaps
+      # ggml engine: no lowering for aten.ge.
+      ge_float.arange_positions_bf16
+      ge_float.arange_positions_f16
+      ge_float.arange_positions_f32
+      ge_float.dynamic_tokens_bf16
+      ge_float.dynamic_tokens_f16
+      ge_float.dynamic_tokens_f32
+      ge_float.far_positions_bf16
+      ge_float.far_positions_f16
+      ge_float.far_positions_f32
+      ge_float.floats_bf16
+      ge_float.floats_f16
+      ge_float.floats_f32
+      ge_float.offset_arange_bf16
+      ge_float.offset_arange_f16
+      ge_float.offset_arange_f32
+      ge_float.window_bound_bf16
+      ge_float.window_bound_f16
+      ge_float.window_bound_f32
+  )
+  list(JOIN _native_ggml_engine_gaps ":" _native_ggml_gaps)
   add_test(
     NAME native_ggml_sample_test_act_quant
     COMMAND
       native_ggml_sample_test --packages=${_native_op_samples} --device=cpu
       --allow_activation_quant_for_weight_only
-      --gtest_filter=-elu_float.elu_f32_alpha_*:gdn_*.recurrent_*:gdn_*.quantized_layer_decode*:moe_gguf_q4_1.quantized_gemma4_block_f32:${_native_exact_filter}
+      --gtest_filter=-elu_float.elu_f32_alpha_*:moe_gguf_q4_1.quantized_gemma4_block_f32:gdn_*.recurrent_*:gdn_*.quantized_layer_decode*:${_native_ggml_gaps}:${_native_exact_filter}
   )
   add_test(
     NAME native_ggml_sample_test_no_linear
     COMMAND
       native_ggml_sample_test --packages=${_native_op_samples} --device=cpu
-      --gtest_filter=-linear_*:*.quantized_*:elu_float.elu_f32_alpha_*:gdn_*.recurrent_*:${_native_exact_filter}
+      --gtest_filter=-linear_*:*.quantized_*:elu_float.elu_f32_alpha_*:gdn_*.recurrent_*:${_native_ggml_gaps}:${_native_exact_filter}
   )
   target_compile_options(
     native_ggml_sample_test
@@ -321,6 +345,31 @@ if(EXECUTORCH_BUILD_NATIVE_CPU)
       gdn_float.quantized_layer_native_decode_restart_f32
       gdn_float.quantized_layer_native_decode_wide_f32
       gdn_float.quantized_layer_native_prefill_8_f32
+      # CPU engine: mutable buffers are not supported.
+      index_put_float.last_rows_f32
+      index_put_float.one_row_at_offset_f32
+      index_put_float.rows_at_offset_f32
+      # CPU engine: functionalize_aliases rejects the unsqueeze view.
+      sdpa_float.causal_decode_d128_f32
+      sdpa_float.causal_decode_d256_f32
+      sdpa_float.causal_decode_d512_f32
+      sdpa_float.causal_decode_d64_f32
+      sdpa_float.causal_decode_gqa8_f32
+      sdpa_float.causal_prefill_d128_f32
+      sdpa_float.causal_prefill_d256_f32
+      sdpa_float.causal_prefill_d512_f32
+      sdpa_float.causal_prefill_d64_f32
+      sdpa_float.causal_prefill_gqa1_f32
+      sdpa_float.causal_prefill_gqa4_f32
+      sdpa_float.causal_prefill_repeat_kv_f32
+      sdpa_float.gemma_global_decode_256_keys_f32
+      sdpa_float.gemma_global_decode_f32
+      sdpa_float.gemma_global_prefill_f32
+      sdpa_float.gemma_sliding_decode_f32
+      sdpa_float.shared_masks_decode_f32
+      sdpa_float.shared_masks_prefill_f32
+      sdpa_float.sliding_decode_f32
+      sdpa_float.sliding_prefill_f32
   )
   list(JOIN _native_cpu_engine_gaps ":" _native_cpu_gaps)
   add_test(NAME native_cpu_sample_test_static_float
