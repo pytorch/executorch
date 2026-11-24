@@ -8,6 +8,7 @@ from typing import Tuple
 import pytest
 import torch
 from executorch.backends.arm._passes import FuseConsecutiveRescalesPass
+from executorch.backends.arm._passes.tosa_lowering_utils import create_rescale_node
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
@@ -109,9 +110,8 @@ def _make_rescale(
     input_zp: int = 0,
     output_zp: int = 0,
 ) -> torch.fx.Node:
-    return graph.create_node(
-        "call_function",
-        RESCALE_TARGET,
+    return create_rescale_node(
+        graph,
         args=(input_node, output_dtype, [scale], input_zp, output_zp),
     )
 

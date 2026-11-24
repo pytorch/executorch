@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -28,6 +29,10 @@ from executorch.backends.arm._passes.fold_dyt_alpha_into_lut_pass import (
     FoldDyTAlphaIntoLUTPass,
 )
 from executorch.backends.arm._passes.quant_args import QuantArgs
+from executorch.backends.arm._passes.tosa_lowering_utils import (
+    create_rescale_node,
+    rescale_tensor,
+)
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 from executorch.backends.arm.tosa.specification import (
@@ -120,14 +125,10 @@ def _build_post_rescale_fixture(
     output = next(node for node in graph.nodes if node.op == "output")
 
     with graph.inserting_before(output):
-        activation_rescale = graph.call_function(
-            exir_ops.backend.tosa.RESCALE.default,
-            (activation, torch.int32, [1.0], 3, 0),
+        activation_rescale = create_rescale_node(
+            graph, (activation, torch.int32, [1.0], 3, 0)
         )
-        alpha_rescale = graph.call_function(
-            exir_ops.backend.tosa.RESCALE.default,
-            (alpha, torch.int32, [1.0], -128, 0),
-        )
+        alpha_rescale = create_rescale_node(graph, (alpha, torch.int32, [1.0], -128, 0))
         activation_mul_arg = activation_rescale
         if activation_rank_view:
             activation_mul_arg = graph.call_function(
@@ -138,15 +139,13 @@ def _build_post_rescale_fixture(
             exir_ops.edge.aten.mul.Tensor,
             (activation_mul_arg, alpha_rescale),
         )
-        mul_output_rescale = graph.call_function(
-            exir_ops.backend.tosa.RESCALE.default,
-            (
-                mul,
-                torch.int8,
-                [_MUL_OUTPUT_RESCALE.scale],
-                0,
-                2,
-            ),
+        mul.meta["val"] = activation_rescale.meta["val"].new_empty(
+            [1, 1, 1, 16, 16]
+            if activation_rank_view
+            else activation_rescale.meta["val"].shape
+        )
+        mul_output_rescale = create_rescale_node(
+            graph, (mul, torch.int8, [_MUL_OUTPUT_RESCALE.scale], 0, 2)
         )
         tanh = graph.call_function(
             exir_ops.edge.aten.tanh.default,
@@ -170,14 +169,14 @@ def _build_post_rescale_fixture(
 def _tosa_reference_outputs(domain: torch.Tensor) -> torch.Tensor:
     spec = TosaSpecification.create_from_string("TOSA-1.0+INT")
     with TosaLoweringContext(spec):
-        activation_i32 = exir_ops.backend.tosa.RESCALE.default(
+        activation_i32 = rescale_tensor(
             domain,
             torch.int32,
             [_ACTIVATION_RESCALE.scale],
             _ACTIVATION_RESCALE.input_zp,
             _ACTIVATION_RESCALE.output_zp,
         )
-        alpha_i32 = exir_ops.backend.tosa.RESCALE.default(
+        alpha_i32 = rescale_tensor(
             torch.tensor([127], dtype=torch.int8),
             torch.int32,
             [_ALPHA_RESCALE.scale],
@@ -185,7 +184,7 @@ def _tosa_reference_outputs(domain: torch.Tensor) -> torch.Tensor:
             _ALPHA_RESCALE.output_zp,
         )
         product = activation_i32 * alpha_i32
-        mul_codes = exir_ops.backend.tosa.RESCALE.default(
+        mul_codes = rescale_tensor(
             product,
             torch.int8,
             [_MUL_OUTPUT_RESCALE.scale],

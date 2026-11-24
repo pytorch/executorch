@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -17,8 +18,9 @@ from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node, get_param_tensor
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.backends.arm._passes.quant_args import QuantArgs
-from executorch.backends.arm.operators.op_tosa_rescale import (
-    _compute_multiplier_and_shift,
+from executorch.backends.arm._passes.tosa_lowering_utils import (
+    compute_multiplier_and_shift as _compute_multiplier_and_shift,
+    rescale_parameters,
 )
 from executorch.backends.transforms.utils import create_constant_placeholder
 from executorch.exir import ExportedProgram
@@ -39,7 +41,7 @@ class _RescaleParams:
     def from_node(cls, node: Node) -> Optional["_RescaleParams"]:
         if node.target != exir_ops.backend.tosa.RESCALE.default:
             return None
-        scales = cast(list[float], node.args[2])
+        scales = rescale_parameters(node)[0]
         if len(scales) != 1:
             return None
         if node.kwargs.get("input_unsigned", False) or node.kwargs.get(
@@ -48,9 +50,9 @@ class _RescaleParams:
             return None
         return cls(
             scale=float(scales[0]),
-            input_zp=cast(int, node.args[3]),
-            output_zp=cast(int, node.args[4]),
-            output_dtype=cast(torch.dtype, node.args[1]),
+            input_zp=rescale_parameters(node)[1],
+            output_zp=rescale_parameters(node)[2],
+            output_dtype=rescale_parameters(node)[3],
         )
 
 

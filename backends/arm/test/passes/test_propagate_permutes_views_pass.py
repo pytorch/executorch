@@ -16,6 +16,7 @@ from executorch.backends.arm._passes import (
 )
 
 from executorch.backends.arm._passes.arm_pass import ArmPass
+from executorch.backends.arm._passes.tosa_lowering_utils import create_rescale_node
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.backends.arm.tosa.specification import (
@@ -1997,7 +1998,7 @@ def test_propagate_moves_before_dtype_changing_rescale() -> None:
     graph = torch.fx.Graph()
     x = graph.placeholder("x")
     x.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
-    rescale = graph.call_function(RESCALE, args=(x, torch.int8, [1.0], 0, 0))
+    rescale = create_rescale_node(graph, args=(x, torch.int8, [1.0], 0, 0))
     rescale.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int8)
     permute = graph.call_function(PERMUTE, args=(rescale, [0, 2, 3, 1]))
     permute.meta["val"] = torch.empty((1, 3, 4, 2), dtype=torch.int8)
@@ -2254,8 +2255,8 @@ def test_propagate_stops_at_per_channel_rescale() -> None:
     graph = torch.fx.Graph()
     x = graph.placeholder("x")
     x.meta["val"] = torch.empty((2, 3, 4, 5), dtype=torch.int32)
-    rescale = graph.call_function(
-        RESCALE, args=(x, torch.int8, [1.0, 1.0, 1.0, 1.0, 1.0], 0, 0)
+    rescale = create_rescale_node(
+        graph, args=(x, torch.int8, [1.0, 1.0, 1.0, 1.0, 1.0], 0, 0)
     )
     rescale.meta["val"] = torch.empty((2, 3, 4, 5), dtype=torch.int8)
     permute = graph.call_function(PERMUTE, args=(rescale, [0, 3, 1, 2]))
@@ -2273,7 +2274,7 @@ def test_propagate_stops_at_rescale_changing_special_dtype() -> None:
     x = graph.placeholder("x")
     x.meta["val"] = torch.empty((1, 1, 1, 15), dtype=torch.int32)
     x.meta[TosaSpecialDtype.meta_key()] = TosaSpecialDtype.INT48
-    rescale = graph.call_function(RESCALE, args=(x, torch.int32, [1.0], 0, 0))
+    rescale = create_rescale_node(graph, args=(x, torch.int32, [1.0], 0, 0))
     rescale.meta["val"] = torch.empty((1, 1, 1, 15), dtype=torch.int32)
     view = graph.call_function(VIEW, args=(rescale, [15]))
     view.meta["val"] = torch.empty((15,), dtype=torch.int32)
@@ -2290,7 +2291,7 @@ def test_propagate_up_stops_at_shared_rescale_producer() -> None:
     x.meta["val"] = torch.empty((10, 80, 16), dtype=torch.int8)
     y = graph.placeholder("y")
     y.meta["val"] = torch.empty((10, 80, 16), dtype=torch.int32)
-    rescale = graph.call_function(RESCALE, args=(x, torch.int32, [1.0], 0, 0))
+    rescale = create_rescale_node(graph, args=(x, torch.int32, [1.0], 0, 0))
     rescale.meta["val"] = torch.empty((10, 80, 16), dtype=torch.int32)
     permute = graph.call_function(PERMUTE, args=(rescale, [1, 0, 2]))
     permute.meta["val"] = torch.empty((80, 10, 16), dtype=torch.int32)
@@ -2313,7 +2314,7 @@ def test_smaller_dtype_pass_restores_permute_after_narrowing_rescale_fed_by_bina
     y.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
     add = graph.call_function(ADD, args=(x, y))
     add.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
-    rescale = graph.call_function(RESCALE, args=(add, torch.int8, [1.0], 0, 0))
+    rescale = create_rescale_node(graph, args=(add, torch.int8, [1.0], 0, 0))
     rescale.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int8)
     permute = graph.call_function(PERMUTE, args=(rescale, [0, 2, 3, 1]))
     permute.meta["val"] = torch.empty((1, 3, 4, 2), dtype=torch.int8)
@@ -2339,7 +2340,7 @@ def test_propagate_up_crosses_same_width_rescale_fed_by_binary_op() -> None:
     y.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
     add = graph.call_function(ADD, args=(x, y))
     add.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
-    rescale = graph.call_function(RESCALE, args=(add, torch.int32, [1.0], 0, 0))
+    rescale = create_rescale_node(graph, args=(add, torch.int32, [1.0], 0, 0))
     rescale.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
     permute = graph.call_function(PERMUTE, args=(rescale, [0, 2, 3, 1]))
     permute.meta["val"] = torch.empty((1, 3, 4, 2), dtype=torch.int32)
@@ -2357,7 +2358,7 @@ def test_smaller_dtype_pass_restores_permute_after_narrowing_rescale_from_shared
     graph = torch.fx.Graph()
     x = graph.placeholder("x")
     x.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
-    rescale = graph.call_function(RESCALE, args=(x, torch.int8, [1.0], 0, 0))
+    rescale = create_rescale_node(graph, args=(x, torch.int8, [1.0], 0, 0))
     rescale.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int8)
     other = graph.call_function(NEG, args=(x,))
     other.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
@@ -2385,7 +2386,7 @@ def test_propagate_up_crosses_widening_rescale_fed_by_binary_op() -> None:
     y.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int8)
     add = graph.call_function(ADD, args=(x, y))
     add.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int8)
-    rescale = graph.call_function(RESCALE, args=(add, torch.int32, [1.0], 0, 0))
+    rescale = create_rescale_node(graph, args=(add, torch.int32, [1.0], 0, 0))
     rescale.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
     permute = graph.call_function(PERMUTE, args=(rescale, [0, 2, 3, 1]))
     permute.meta["val"] = torch.empty((1, 3, 4, 2), dtype=torch.int32)
@@ -2405,7 +2406,7 @@ def test_smaller_dtype_pass_restores_permute_after_narrowing_rescale_behind_unar
     x.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
     clone = graph.call_function(CLONE, args=(x,))
     clone.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
-    rescale = graph.call_function(RESCALE, args=(clone, torch.int8, [1.0], 0, 0))
+    rescale = create_rescale_node(graph, args=(clone, torch.int8, [1.0], 0, 0))
     rescale.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int8)
     permute = graph.call_function(PERMUTE, args=(rescale, [0, 2, 3, 1]))
     permute.meta["val"] = torch.empty((1, 3, 4, 2), dtype=torch.int8)
@@ -2446,7 +2447,7 @@ def test_permute_does_not_cross_int48_rescale_input() -> None:
     x = graph.placeholder("x")
     x.meta["val"] = torch.empty((2, 3, 5), dtype=torch.int32)
     x.meta[TosaSpecialDtype.meta_key()] = TosaSpecialDtype.INT48
-    rescale = graph.call_function(RESCALE, args=(x, torch.int8, [0.25], 0, 0))
+    rescale = create_rescale_node(graph, args=(x, torch.int8, [0.25], 0, 0))
     rescale.meta["val"] = torch.empty((2, 3, 5), dtype=torch.int8)
     permute = graph.call_function(PERMUTE, args=(rescale, [1, 0, 2]))
     permute.meta["val"] = torch.empty((3, 2, 5), dtype=torch.int8)

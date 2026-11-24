@@ -138,6 +138,7 @@ struct GgmlEngineContext::Impl {
   GgmlKvCache kv_cache;
   size_t materialized_constant_bytes = 0;
   size_t heap_copied_constant_bytes = 0;
+  size_t f16_kv_cache_bytes = 0;
   GgmlMutableKeyOwners mutable_key_owners;
 };
 
@@ -163,6 +164,7 @@ std::unique_ptr<EngineExecutable> GgmlEngineContext::compile_method(
       impl_->options,
       &impl_->materialized_constant_bytes,
       &impl_->heap_copied_constant_bytes,
+      &impl_->f16_kv_cache_bytes,
       impl_->mutable_key_owners,
       impl_->kv_cache);
 }
@@ -173,6 +175,10 @@ size_t GgmlEngineContext::materialized_constant_bytes() const {
 
 size_t GgmlEngineContext::heap_copied_constant_bytes() const {
   return impl_->heap_copied_constant_bytes;
+}
+
+size_t GgmlEngineContext::f16_kv_cache_bytes() const {
+  return impl_->f16_kv_cache_bytes;
 }
 
 } // namespace ptn
