@@ -78,6 +78,31 @@ def _is_power_of_2(n: int) -> bool:
 # kernel. The replacement pass still routes only L_q == 1 directly to
 # triton.sdpa_decode_splitk.
 _SPLITK_LKV_THRESHOLD = 256
+# Widest query block the small-query split-K kernel serves (verify blocks,
+# packed multi-sequence decode).
+_SMALL_QUERY_MAX_LQ = 16
+# One CTA holds all L_q * next_pow2(GQA groups) rows of a KV head in a
+# [rows, HEAD_DIM] FP32 accumulator. sdpa() routes to the kernel up to the
+# largest tile measured faster than the prefill kernel (Muse Glimmer packed
+# decode: L_q 16, 16:1 GQA, head_dim 128), and at most that many rows.
+_SMALL_QUERY_MAX_TILE = 256 * 128
+_SMALL_QUERY_MAX_ROWS = 256
+# Per-block shared memory of the smallest supported GPUs (SM86/89/120): the
+# BF16 query tile plus a 32-key K and V tile must fit, which drops 64x512.
+_SMALL_QUERY_MAX_SMEM = 99 * 1024
+# Without a mask the K/V loads are unconditional and get software-pipelined;
+# on an RTX 5090 a 128x256 tile then fits no config the accumulator prune
+# keeps, while 64x256 and 32x512 do.
+_SMALL_QUERY_MAX_UNMASKED_TILE = 64 * 256
+
+
+def _small_query_tile_fits(rows, head_dim, has_mask):
+    return (
+        rows <= _SMALL_QUERY_MAX_ROWS
+        and rows * head_dim <= _SMALL_QUERY_MAX_TILE
+        and (rows + 64) * head_dim * 2 <= _SMALL_QUERY_MAX_SMEM
+        and (has_mask or rows * head_dim <= _SMALL_QUERY_MAX_UNMASKED_TILE)
+    )
 
 
 _TMA_PREFILL_LKV_THRESHOLD = 16384
@@ -1332,8 +1357,9 @@ def sdpa(
             updates correctly under CUDA-graph replay (decode). For decode pass
             ``input_pos + 1``; for a prefill chunk pass ``chunk_end``. When None
             the loop runs over the full ``L_kv`` (original behavior). Supplying
-            it for an L_q==1 decode with a large buffer also routes through the
-            split-K flash-decoding kernel for occupancy.
+            it with a large buffer also routes an L_q==1 decode, and a concrete
+            2 <= L_q <= 16 whose per-CTA tile fits, through the split-K
+            flash-decoding kernels for occupancy.
     Returns:
         Output tensor [B, H_q, L_q, D], dtype torch.bfloat16
     """
@@ -1376,7 +1402,8 @@ def sdpa(
 
     # Split-K dispatch with a kv_len bound, power-of-2 head dimension, and a
     # large KV buffer. The legacy decode launcher remains isolated at L_q == 1;
-    # the generalized launcher handles only verifier-sized query blocks.
+    # the generalized launcher handles small query blocks (verify blocks,
+    # packed multi-sequence decode) whose per-CTA tile fits.
     if HAS_KV_LEN and _is_power_of_2(D) and L_kv >= _SPLITK_LKV_THRESHOLD:
         if L_q == 1:
             _launch_decode_splitk(
@@ -1400,7 +1427,14 @@ def sdpa(
                 HAS_KV_LEN,
             )
             return out
-        if 2 <= L_q <= 4:
+        # The launcher bakes L_q into the kernel as a constexpr: a symbolic
+        # L_q (even one bounded within [2, 16]) takes the prefill kernel.
+        block_g = _next_power_of_2_unclamped(num_groups)
+        if (
+            isinstance(L_q, int)
+            and 2 <= L_q <= _SMALL_QUERY_MAX_LQ
+            and _small_query_tile_fits(L_q * block_g, D, HAS_MASK)
+        ):
             _launch_small_query_splitk(
                 query,
                 key,
@@ -1970,6 +2004,15 @@ def _sdpa_decode_splitk_abstract(
 # occupancy, then reduces per-query partial results in a second kernel.
 
 
+def _small_query_splitk_prune(configs, named_args, **kwargs):
+    # As _sdpa_prefill_prune: at most 128 FP32 accumulator values per thread
+    # (larger tiles spill); BLOCK_M and HEAD_DIM are launch arguments here.
+    values = {**named_args, **kwargs}
+    tile = values["BLOCK_M"] * values["HEAD_DIM"]
+    kept = [c for c in configs if tile <= 4096 * c.num_warps]
+    return kept or [max(configs, key=lambda c: c.num_warps)]
+
+
 @autotune_inputs(KV_LEN_ptr=_kv_len_scenarios, Mask_ptr=_visible_mask_scenarios)
 @triton.autotune(
     configs=[
@@ -1984,8 +2027,11 @@ def _sdpa_decode_splitk_abstract(
         triton.Config({"BLOCK_N": 128}, num_warps=8, num_stages=2),
         triton.Config({"BLOCK_N": 256}, num_warps=4, num_stages=2),
         triton.Config({"BLOCK_N": 256}, num_warps=8, num_stages=2),
+        triton.Config({"BLOCK_N": 64}, num_warps=8, num_stages=2),
+        triton.Config({"BLOCK_N": 32}, num_warps=8, num_stages=2),
     ],
     key=["Lk", "HEAD_DIM", "NUM_GROUPS", "LQ", "HAS_MASK", "MASK_IS_CAUSAL"],
+    prune_configs_by={"early_config_prune": _small_query_splitk_prune},
 )
 @triton.jit
 def _sdpa_small_query_splitk_kernel(
@@ -2083,24 +2129,6 @@ def _sdpa_small_query_splitk_kernel(
         offs_n = tile_start + offs_n_init
         n_valid = offs_n < end_n
 
-        k_ptrs = K_ptr + (
-            b * stride_kb
-            + h_kv * stride_kh
-            + offs_n[:, None] * stride_kn
-            + offs_d[None, :] * stride_kd
-        )
-        k = tl.load(k_ptrs, mask=n_valid[:, None], other=0.0).to(tl.bfloat16)
-
-        # QK: [BLOCK_M, BLOCK_N]
-        qk = (tl.dot(q, tl.trans(k)).to(tl.float32) * sm_scale).to(tl.float32)
-
-        # Mask out-of-bounds KV positions
-        qk = tl.where(
-            n_valid[None, :],
-            qk,
-            tl.full(qk.shape, -float("inf"), dtype=tl.float32),
-        )
-
         if HAS_MASK:
             mask_ptrs = Mask_ptr + (
                 b * stride_mb
@@ -2112,38 +2140,61 @@ def _sdpa_small_query_splitk_kernel(
                 mask=row_valid[:, None] & n_valid[None, :],
                 other=False,
             )
+            block_active = tl.sum(mask_block.to(tl.int32)) > 0
+        else:
+            block_active = True
+        if block_active:
+            k_ptrs = K_ptr + (
+                b * stride_kb
+                + h_kv * stride_kh
+                + offs_n[:, None] * stride_kn
+                + offs_d[None, :] * stride_kd
+            )
+            k = tl.load(k_ptrs, mask=n_valid[:, None], other=0.0).to(tl.bfloat16)
+
+            # QK: [BLOCK_M, BLOCK_N]
+            qk = (tl.dot(q, tl.trans(k)).to(tl.float32) * sm_scale).to(tl.float32)
+
+            # Mask out-of-bounds KV positions
             qk = tl.where(
-                mask_block, qk, tl.full(qk.shape, -float("inf"), dtype=tl.float32)
+                n_valid[None, :],
+                qk,
+                tl.full(qk.shape, -float("inf"), dtype=tl.float32),
             )
 
-        if MASK_IS_CAUSAL:
-            absolute_q = (kv_len - LQ) + query_rows
-            causal = offs_n[None, :] > absolute_q[:, None]
-            qk = tl.where(
-                causal, tl.full(qk.shape, -float("inf"), dtype=tl.float32), qk
+            if HAS_MASK:
+                qk = tl.where(
+                    mask_block, qk, tl.full(qk.shape, -float("inf"), dtype=tl.float32)
+                )
+
+            if MASK_IS_CAUSAL:
+                absolute_q = (kv_len - LQ) + query_rows
+                causal = offs_n[None, :] > absolute_q[:, None]
+                qk = tl.where(
+                    causal, tl.full(qk.shape, -float("inf"), dtype=tl.float32), qk
+                )
+
+            m_ij = tl.maximum(m_i, tl.max(qk, axis=1).to(tl.float32))
+            safe_diff = tl.where(
+                m_ij[:, None] > -float("inf"), qk - m_ij[:, None], -float("inf")
             )
+            p_f32 = tl.exp(safe_diff).to(tl.float32)
+            l_ij = tl.sum(p_f32, axis=1).to(tl.float32)
+            safe_alpha_diff = tl.where(m_ij > -float("inf"), m_i - m_ij, 0.0)
+            alpha = tl.exp(safe_alpha_diff).to(tl.float32)
 
-        m_ij = tl.maximum(m_i, tl.max(qk, axis=1).to(tl.float32))
-        safe_diff = tl.where(
-            m_ij[:, None] > -float("inf"), qk - m_ij[:, None], -float("inf")
-        )
-        p_f32 = tl.exp(safe_diff).to(tl.float32)
-        l_ij = tl.sum(p_f32, axis=1).to(tl.float32)
-        safe_alpha_diff = tl.where(m_ij > -float("inf"), m_i - m_ij, 0.0)
-        alpha = tl.exp(safe_alpha_diff).to(tl.float32)
+            v_ptrs = V_ptr + (
+                b * stride_vb
+                + h_kv * stride_vh
+                + offs_n[:, None] * stride_vn
+                + offs_d[None, :] * stride_vd
+            )
+            v = tl.load(v_ptrs, mask=n_valid[:, None], other=0.0).to(tl.bfloat16)
 
-        v_ptrs = V_ptr + (
-            b * stride_vb
-            + h_kv * stride_vh
-            + offs_n[:, None] * stride_vn
-            + offs_d[None, :] * stride_vd
-        )
-        v = tl.load(v_ptrs, mask=n_valid[:, None], other=0.0).to(tl.bfloat16)
-
-        p_bf16 = p_f32.to(tl.bfloat16)
-        acc = (acc * alpha[:, None] + tl.dot(p_bf16, v)).to(tl.float32)
-        l_i = (l_i * alpha + l_ij).to(tl.float32)
-        m_i = m_ij
+            p_bf16 = p_f32.to(tl.bfloat16)
+            acc = (acc * alpha[:, None] + tl.dot(p_bf16, v)).to(tl.float32)
+            l_i = (l_i * alpha + l_ij).to(tl.float32)
+            m_i = m_ij
 
     # Padded query/head rows can alias valid outputs, so all stores need row_valid.
     o_ptrs = O_partial_ptr + (
@@ -2401,13 +2452,14 @@ def sdpa_small_query_splitk(
     phi: float = 5.0,
     kv_len: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
-    """Split-K flash-decoding SDPA for small query blocks (2 <= L_q <= 4).
+    """Split-K flash-decoding SDPA for small query blocks (2 <= L_q <= 16).
 
     Tracks a stable online-softmax maximum per split, then rescales partial
     results by the global maximum during reduction.
 
-    Signature mirrors sdpa() for drop-in use with torch.cond dispatch.
-    enable_gqa is accepted but ignored — GQA is handled natively via
+    L_q must be concrete (the kernel bakes it in as a constexpr) and the
+    per-CTA tile must fit the caps ``sdpa()`` applies. enable_gqa is accepted
+    but ignored — GQA is handled natively via
     H_q // H_kv grouping; query rows and GQA groups share each KV tile.
 
     kv_len: optional GPU int scalar bounding the KV sweep to the valid
@@ -2430,22 +2482,25 @@ def sdpa_small_query_splitk(
             lambda: "sdpa_small_query_splitk requires an explicit mask when L_q > 1",
         )
 
-    # Validation — only check at runtime (concrete shapes), not during AOTI
-    # tracing where shapes are symbolic. torch.cond traces both branches with
-    # the same symbolic L_q, so L_q is not necessarily concrete during tracing.
-    if isinstance(L_q, int):
-        if not 2 <= L_q <= 4:
-            raise RuntimeError(
-                f"sdpa_small_query_splitk requires 2 <= L_q <= 4; got L_q={L_q}"
-            )
-        if H_q % H_kv != 0:
-            raise RuntimeError(
-                f"H_q must be divisible by H_kv; got H_q={H_q}, H_kv={H_kv}"
-            )
-        if not _is_power_of_2(D):
-            raise RuntimeError(
-                f"sdpa_small_query_splitk requires power-of-2 head dim; got D={D}"
-            )
+    if not isinstance(L_q, int) or not 2 <= L_q <= _SMALL_QUERY_MAX_LQ:
+        raise RuntimeError(
+            "sdpa_small_query_splitk requires a concrete "
+            f"2 <= L_q <= {_SMALL_QUERY_MAX_LQ}; got L_q={L_q}"
+        )
+    if H_q % H_kv != 0:
+        raise RuntimeError(f"H_q must be divisible by H_kv; got H_q={H_q}, H_kv={H_kv}")
+    if not _is_power_of_2(D):
+        raise RuntimeError(
+            f"sdpa_small_query_splitk requires power-of-2 head dim; got D={D}"
+        )
+    rows = L_q * _next_power_of_2_unclamped(H_q // H_kv)
+    if not _small_query_tile_fits(rows, D, attn_mask is not None):
+        raise RuntimeError(
+            f"sdpa_small_query_splitk: a {rows}x{D} tile exceeds the "
+            f"{_SMALL_QUERY_MAX_ROWS}-row, {_SMALL_QUERY_MAX_TILE}-element, "
+            f"shared-memory or (without a mask) {_SMALL_QUERY_MAX_UNMASKED_TILE}"
+            "-element cap"
+        )
 
     num_groups = H_q // H_kv
     sm_scale = 1.0 / math.sqrt(D) if scale == 0.0 else scale
