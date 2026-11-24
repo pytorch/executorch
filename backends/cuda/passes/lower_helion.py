@@ -259,8 +259,12 @@ def _parse_helion_call(captured: _CapturedHelionCall) -> _HelionCall:
             "Helion lowering supports only the Triton and CuTe backends; this "
             f"kernel uses {kernel.settings.backend!r}"
         )
-    if not kernel.settings.static_shapes:
-        raise NotImplementedError("Helion lowering requires static_shapes=True")
+    if kernel.settings.backend == _CUTE_BACKEND and not kernel.settings.static_shapes:
+        raise NotImplementedError(
+            "Helion CuTe lowering requires a kernel defined with "
+            "static_shapes=True; the CuTe DSL compiles one kernel for "
+            "the exported sizes"
+        )
     if len(kernel.configs) != 1:
         raise ValueError(
             "Select one Helion config offline with @helion.kernel(config=...) before CUDA lowering"
@@ -284,22 +288,46 @@ def _parse_helion_call(captured: _CapturedHelionCall) -> _HelionCall:
         )
     nodes = tuple(captured.tensor_args[name] for name in names)
     call = _HelionCall(captured, names, nodes, tuple(n.meta["val"] for n in nodes))
-    _check_static_arguments(call)
+    _check_arguments(call)
     return call
 
 
-def _check_static_arguments(call: _HelionCall) -> None:
-    for name, value in zip(call.argument_names, call.fake_arguments):
+def _check_arguments(call: _HelionCall) -> None:
+    for value in call.fake_arguments:
         if not isinstance(value, torch.Tensor) or value.layout != torch.strided:
             raise NotImplementedError("Helion lowering requires strided tensor inputs")
-        if any(not isinstance(size, int) for size in (*value.shape, *value.stride())):
+    kernel = call.captured.kernel
+
+    def symbolic(value: torch.Tensor) -> bool:
+        return any(
+            not isinstance(size, int) for size in (*value.shape, *value.stride())
+        )
+
+    if any(symbolic(fake) for fake in call.fake_arguments):
+        if kernel.settings.backend == _CUTE_BACKEND:
             raise NotImplementedError(
-                "Helion lowering does not yet preserve dynamic specialization guards"
+                "Helion CuTe lowering does not support dynamic shapes; "
+                "the CuTe DSL compiles one kernel for the exported sizes"
             )
+        written = [
+            fake
+            for name, fake in zip(call.argument_names, call.fake_arguments)
+            if name in call.captured.tensors_to_clone
+        ]
+        if any(symbolic(fake) for fake in written):
+            raise NotImplementedError(
+                "Helion lowering does not support dynamic shapes for "
+                "written arguments"
+            )
+        if kernel.settings.static_shapes:
+            raise NotImplementedError(
+                "Helion lowering of dynamic shapes needs a kernel defined "
+                "with static_shapes=False, so its sizes stay runtime arguments"
+            )
+    for name, value in zip(call.argument_names, call.fake_arguments):
         # The kernel is specialized to the strides of the uncloned argument.
-        if (
-            name in call.captured.tensors_to_clone
-            and value.clone().stride() != value.stride()
+        if name in call.captured.tensors_to_clone and (
+            value.clone().stride() != value.stride()
         ):
             raise NotImplementedError(
                 "Helion lowering does not support mutation clones that change strides"
@@ -373,7 +401,29 @@ def _render_entrypoint(call: _HelionCall) -> tuple[Callable[..., Any], str]:
         raise NotImplementedError(
             "Helion lowering does not support host tensor descriptors"
         )
-    bound = kernel.bind(call.fake_arguments)
+    dynamic = any(
+        not isinstance(size, int) for fake in call.fake_arguments for size in fake.shape
+    )
+    try:
+        bound = kernel.bind(call.fake_arguments)
+    except Exception as error:
+        if not dynamic:
+            raise
+        # Helion cannot bind a kernel that specializes a symbolic size:
+        # the specialized value would be baked into the compiled kernel
+        # for the example size. Kernels that specialize only static
+        # sizes bind fine.
+        try:
+            host_source = inspect.getsource(kernel.fn)
+        except (OSError, TypeError):
+            host_source = ""
+        if "specialize(" not in host_source:
+            raise
+        raise NotImplementedError(
+            "Helion lowering could not bind this kernel with dynamic "
+            "shapes; specializing a dynamic size with hl.specialize is "
+            "one possible cause"
+        ) from error
     _check_capture_semantics(bound, call.captured)
     # The default output keeps Helion's runtime imports; with
     # allow_helion_deps=False Helion drops the import of its in-kernel helpers
@@ -550,6 +600,7 @@ def _trace_helion_call(
             "Helion CuTe lowering is Linux-only; it cannot export a "
             "kernel for Windows"
         )
+    shape_env, guards_before = _record_shape_guards(call.fake_arguments)
     entrypoint, source = _render_entrypoint(call)
     if call.captured.kernel.settings.backend == _CUTE_BACKEND:
         mutated = frozenset(
@@ -587,7 +638,85 @@ def _trace_helion_call(
         raise RuntimeError("Helion lowering lost the kernel launch during capture")
     _check_no_placeholder_mutation(traced, captured.kernel.name)
     _check_outputs_do_not_alias_inputs(traced)
+    _check_no_new_shape_guards(shape_env, guards_before, call.fake_arguments)
+    _check_index_range(call, traced)
     return traced, call.argument_nodes
+
+
+def _record_shape_guards(
+    fake_arguments: tuple[torch.Tensor, ...],
+) -> tuple[Any | None, set[str]]:
+    """The shape environment of the call's symbolic sizes and its guards."""
+    for fake in fake_arguments:
+        for size in (*fake.shape, *fake.stride()):
+            if isinstance(size, torch.SymInt):
+                shape_env = size.node.shape_env
+                return shape_env, {str(guard[0]) for guard in shape_env.guards}
+    return None, set()
+
+
+def _check_no_new_shape_guards(
+    shape_env: Any | None,
+    guards_before: set[str],
+    fake_arguments: tuple[torch.Tensor, ...],
+) -> None:
+    """Reject guards binding or tracing added on exported sizes.
+
+    A guard added here would specialize the compiled kernel for the
+    example sizes, and nothing enforces it when the program runs at
+    another size in the exported range.
+    """
+    if shape_env is None:
+        return
+    symbols = set()
+    for fake in fake_arguments:
+        for size in (*fake.shape, *fake.stride()):
+            if isinstance(size, torch.SymInt):
+                symbols |= {str(s) for s in size.node.expr.free_symbols}
+    for guard in shape_env.guards:
+        text = str(guard[0])
+        if text in guards_before:
+            continue
+        if symbols & {str(s) for s in guard[0].free_symbols}:
+            raise NotImplementedError(
+                "Helion lowering does not support dynamic shapes for "
+                f"this kernel: binding or tracing it assumes {text}"
+            )
+
+
+def _check_index_range(call: _HelionCall, traced: GraphModule) -> None:
+    """Reject dynamic ranges whose offsets can exceed 32-bit indexing.
+
+    Helion indexes with 32-bit offsets unless told otherwise, and the
+    compiled kernel is not rechecked against the exported range at run
+    time, so the largest element offset of every argument and traced
+    output must stay in range for the whole exported range.
+    """
+    kernel = call.captured.kernel
+    if (
+        kernel.settings.backend != _TRITON_BACKEND
+        or kernel.settings.index_dtype is torch.int64
+    ):
+        return
+    tensors = list(call.fake_arguments)
+    for output in pytree.tree_leaves(traced.graph.output_node().args[0]):
+        if isinstance(output, Node) and isinstance(
+            output.meta.get("val"), torch.Tensor
+        ):
+            tensors.append(output.meta["val"])
+    for fake in tensors:
+        offset: Any = 0
+        for size, stride in zip(fake.shape, fake.stride()):
+            offset = offset + (size - 1) * stride
+        if isinstance(offset, torch.SymInt):
+            upper = offset.node.shape_env.bound_sympy(offset.node.expr).upper
+            if upper > 2**31 - 1:
+                raise NotImplementedError(
+                    "Helion lowering does not support dynamic shapes "
+                    "whose largest element offset exceeds 2**31 - 1 "
+                    "without index_dtype=torch.int64; bound the dynamic "
+                    "dimensions with max= or set index_dtype=torch.int64"
+                )
 
 
 def _check_outputs_do_not_alias_inputs(traced: GraphModule) -> None:
@@ -922,8 +1051,11 @@ def _refresh_program_fakes(root: GraphModule, modules: list[GraphModule]) -> Non
 class LowerHelionPass:
     """Replace native Helion calls with launches of their selected config.
 
-    Supported: Triton and CuTe kernels with one explicit config, static strided
-    tensor arguments, multiple tensor outputs and functionalized input mutation.
+    Supported: Triton and CuTe kernels with one explicit config, strided
+    tensor arguments (dynamic shapes on the Triton backend for kernels
+    defined with static_shapes=False, except for written arguments and
+    kernels that specialize a dynamic size with hl.specialize; CuTe
+    kernels must be defined with static_shapes=True), multiple tensor outputs and functionalized input mutation.
     Any number of distinct launches may be lowered: each distinct CuTe
     launch is exported under its own prefix and linked from its own
     archive, and calls with the same config and argument layouts share
