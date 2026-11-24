@@ -387,7 +387,9 @@ def _render_entrypoint(call: _HelionCall) -> tuple[Callable[..., Any], str]:
 
 
 def _make_hop_replacement(
-    call: _HelionCall, entrypoint: Callable[..., Any], launcher: Callable[..., Any]
+    call: _HelionCall,
+    entrypoint: Callable[..., Any],
+    launcher: Callable[..., Any],
 ) -> Callable[..., Any]:
     """Call the entrypoint and return outputs shaped like the Helion HOP's."""
     captured = call.captured
@@ -812,8 +814,10 @@ class LowerHelionPass:
 
     Supported: Triton and CuTe kernels with one explicit config, static strided
     tensor arguments, multiple tensor outputs and functionalized input mutation.
-    One LowerHelionPass run may lower only one distinct CuTe launch; the
-    per-.pte form is enforced by CudaBackend.preprocess_multimethod.
+    Any number of distinct launches may be lowered: each distinct CuTe
+    launch is exported under its own prefix and linked from its own
+    archive, and calls with the same config and argument layouts share
+    one launch.
     Config selection stays offline; the pass neither tunes nor launches kernels
     (CuTe kernels are compiled for the export GPU), and inference needs neither
     Python nor Helion. CuTe kernels are rejected when ``target_platform`` is
