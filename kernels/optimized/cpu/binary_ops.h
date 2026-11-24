@@ -148,6 +148,13 @@ ElementwiseOptimizedPath inline select_optimized_path(
         internal::sizes_match_ignoring_leading_1s(a.sizes(), b.sizes())))) {
     return ElementwiseOptimizedPath::kTreatAs1d;
   }
+  // The broadcast paths index each tensor as if it were contiguous.
+  for (const Tensor* t : {&a, &b, &out}) {
+    if (!is_contiguous_dim_order(
+            t->dim_order().data(), t->dim_order().size())) {
+      return ElementwiseOptimizedPath::kNone;
+    }
+  }
   return internal::select_broadcast_optimized_path(a, b);
 }
 

@@ -23,6 +23,7 @@ regular lowering can run it, and raises ``ReplacementError`` otherwise.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from dataclasses import dataclass
 from typing import Any, Optional
@@ -42,7 +43,7 @@ class ReplacementError(RuntimeError):
 @dataclass(frozen=True)
 class Candidate:
     """One implementation of a call: the regular lowering, or a replacement
-    ``kernel(*args)``."""
+    ``kernel(*args, **kwargs)``."""
 
     name: str
     # Why it cannot run the call; None if it can.
@@ -51,6 +52,7 @@ class Candidate:
     label: str = ""
     kernel: Any = None
     args: tuple[Any, ...] = ()
+    kwargs: dict[str, Any] = dataclasses.field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -77,7 +79,7 @@ class ReplacementPlan:
             )
         replacement = self.candidates[1]
         if replacement.reason is None and not (
-            callable(replacement.kernel) and replacement.args
+            callable(replacement.kernel) and (replacement.args or replacement.kwargs)
         ):
             raise ReplacementError(
                 f"{self.signature}: the replacement {replacement.name!r} can run "
@@ -108,6 +110,17 @@ def regular_only(kind: str, reason: str) -> ReplacementPlan:
     return ReplacementPlan(kind, (Candidate(REGULAR_LOWERING), Candidate(kind, reason)))
 
 
+def is_static(t: Optional[torch.Tensor]) -> bool:
+    """Whether ``t`` is None or a fake tensor with static sizes, strides and
+    storage offset, as a planner needs to classify a call."""
+    from torch._subclasses.fake_tensor import FakeTensor
+
+    return t is None or (
+        isinstance(t, FakeTensor)
+        and all(type(s) is int for s in (*t.shape, *t.stride(), t.storage_offset()))
+    )
+
+
 def device_supports(min_capability: int, device: torch.device) -> bool:
     """Whether a kernel that needs compute capability ``min_capability`` (e.g.
     80 for sm_80; 0 for every NVIDIA GPU) runs on ``device``, the GPU the model
@@ -124,19 +137,21 @@ def device_supports(min_capability: int, device: torch.device) -> bool:
 def replace(
     graph: Graph, node: Node, plan: ReplacementPlan, choice: Candidate
 ) -> Optional[Node]:
-    """Replaces ``node`` with ``choice.kernel(*choice.args)`` as one
-    transaction, and returns the new node.
+    """Replaces ``node`` with ``choice.kernel(*choice.args, **choice.kwargs)``
+    as one transaction, and returns the new node.
 
     Every user's arguments are saved before they are rewired, so a failure at
     any step restores them all and removes the new node; then, if the regular
     lowering can run the call, it logs and returns None, and otherwise
-    raises.
+    raises. A pure node that only ``node`` used (e.g. a transpose the
+    replacement reads around) is removed with it.
     """
     saved = {user: (user.args, user.kwargs) for user in node.users}
+    inputs = list(node.all_input_nodes)
     new_node: Optional[Node] = None
     try:
         with graph.inserting_before(node):
-            new_node = graph.call_function(choice.kernel, choice.args)
+            new_node = graph.call_function(choice.kernel, choice.args, choice.kwargs)
         new_node.meta = node.meta.copy()
         for user in saved:
             user.replace_input_with(node, new_node)
@@ -153,4 +168,7 @@ def replace(
             ) from e
         logger.warning("Kept %s: replacing it failed: %r", node.name, e)
         return None
+    for orphan in inputs:
+        if orphan.op == "call_function" and not orphan.users and not orphan.is_impure():
+            graph.erase_node(orphan)
     return new_node

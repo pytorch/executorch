@@ -28,7 +28,7 @@ This backend is a prototype under active development. Its APIs, the delegate pay
 - **ESP32-S3.** This is the primary target, with ESP-NN's SIMD kernels. The backend has been verified on an ESP32-S3 with 16 MB flash and 8 MB octal PSRAM (ESP32-S3-DevKitC-1 N16R8). CI runs on an emulated ESP32-S3 with both ESP-NN's SIMD kernels and its portable C kernels.
 - **Other ESP32 chips.** These use ESP-NN's portable C kernels, which are roughly an order of magnitude slower than the S3's SIMD kernels.
 - **Memory.** PSRAM is recommended for image models, whose activations rarely fit in internal RAM. Without PSRAM, a model's activations must fit in about 280 KB of internal RAM on the original ESP32.
-- **Software.** ESP-IDF 6.0 or newer, and the `espressif/esp-nn` component, version 1.4.0 or newer. The component manager fetches ESP-NN from the Espressif component registry. The experimental operator library (`-DET_ESPRESSIF_OPS=ON`) pins `espressif/esp-nn` to exactly 1.4.1, so a project that requires another ESP-NN version gets a component manager conflict.
+- **Software.** ESP-IDF 6.0 or newer, and the `espressif/esp-nn` component. ESP-IDF resolves ESP-NN from the component registry using the dependency range in `idf_component.yml`. Projects can also provide their own ESP-NN checkout through ESP-IDF's component overrides.
 
 ## Development Requirements
 
