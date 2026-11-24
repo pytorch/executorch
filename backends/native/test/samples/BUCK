@@ -22,6 +22,8 @@ fbcode_target(
     ],
     deps = [
         "//caffe2:torch",
+        "//executorch/backends/native:lib",
+        "//executorch/backends/native/examples/hf_llm:export_hf_llm_lib",
         "//executorch/backends/test/suite/operators:test_operators",
         "//executorch/exir/native:native",
         "//executorch/extension/llm/export:gguf",

@@ -308,6 +308,19 @@ if(EXECUTORCH_BUILD_NATIVE_CPU)
       moe_float.quantized_gemma4_block_f32
       # CPU engine: execution fails (error 33).
       moe_float.quantized_qwen35_block_f32
+      # CPU engine: provider selection fails (error 16).
+      gdn_float.native_rule_qwen35_1_f32
+      gdn_float.native_rule_qwen35_64_f32
+      gdn_float.native_rule_small_1_f32
+      gdn_float.native_rule_small_8_f32
+      gdn_float.native_rule_small_100_f32
+      gdn_float.native_rule_snapshots_2_of_4_f32
+      gdn_float.native_rule_snapshots_4_of_4_f32
+      gdn_float.native_rule_snapshots_9_of_4_f32
+      # CPU engine: mutable buffers are not supported.
+      gdn_float.quantized_layer_native_decode_restart_f32
+      gdn_float.quantized_layer_native_decode_wide_f32
+      gdn_float.quantized_layer_native_prefill_8_f32
   )
   list(JOIN _native_cpu_engine_gaps ":" _native_cpu_gaps)
   add_test(NAME native_cpu_sample_test_static_float
