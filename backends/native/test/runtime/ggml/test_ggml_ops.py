@@ -248,6 +248,20 @@ class SharedCacheRead(torch.nn.Module):
         return self.cache + x
 
 
+class WindowWriteBack(torch.nn.Module):
+    """A causal conv's state update: the buffer becomes the last columns of
+    itself concatenated with new ones."""
+
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("state", torch.randn(1, 6, 4))
+
+    def forward(self, x):
+        window = torch.cat([self.state, x], dim=-1)
+        self.state.copy_(window[..., -4:])
+        return window * 2.0
+
+
 class TransposedCacheWrite(torch.nn.Module):
     """Writes [B, T, H, D] values into a head-major cache through a transpose."""
 
@@ -2769,6 +2783,20 @@ class GgmlOpsTest(unittest.TestCase):
 
     def test_index_put_cache_write(self):
         self._check(CacheWrite(), (torch.randn(1, 2, 3, 4), torch.tensor([5, 1, 6])))
+
+    def test_write_back_reads_a_slice_without_copies(self):
+        ops = collections.Counter()
+        self._check(WindowWriteBack(), (torch.randn(1, 6, 3),), graph_ops=ops)
+        self.assertEqual(ops["CONT"], 0)
+
+    def test_elementwise_ops_read_slices_without_copies(self):
+        ops = collections.Counter()
+        self._check(
+            Lambda(lambda x: x[..., 1:] * x[..., :-1] + torch.sigmoid(x[..., 1:])),
+            (torch.randn(2, 3, 8),),
+            graph_ops=ops,
+        )
+        self.assertEqual(ops["CONT"], 0)
 
     def test_index_put_reads_transposed_values_without_copies(self):
         ops = collections.Counter()
