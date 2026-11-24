@@ -185,8 +185,17 @@ void GraphBuilder::lower_rope(const Node& node) {
         "ggml: rope expects input [B,H,T,D] and position_ids [1,T]");
   }
   ggml_context* ctx = instance_.context.get();
-  ggml_tensor* pos = ggml_reshape_1d(
-      ctx, contiguous(as_i32(positions.tensor)), positions.sizes[1]);
+  // ggml-cuda fuses a norm into the rope that follows it only if no view
+  // nodes sit between them, so the rope reads positions that just reshape a
+  // vector from the vector, and an input view that reads its whole storage
+  // in order from the storage, e.g. a projection transposed and back.
+  ggml_tensor* pos = contiguous(as_i32(positions.tensor));
+  while (pos->op == GGML_OP_RESHAPE) {
+    pos = pos->src[0];
+  }
+  if (ggml_nrows(pos) != 1) {
+    pos = ggml_reshape_1d(ctx, pos, positions.sizes[1]);
+  }
   // ggml-cpu ropes F32 and F16 only; a BF16 input is rotated in F32 and its
   // result rounded back when it is set.
   ggml_tensor* source = input.tensor;
@@ -194,9 +203,22 @@ void GraphBuilder::lower_rope(const Node& node) {
     source = ggml_cast(ctx, source, GGML_TYPE_F32);
   }
   // ggml_rope_ext rotates [D, heads, tokens, B]; torch order is [B,H,T,D].
+  ggml_tensor* rows = ggml_permute(ctx, source, 0, 2, 1, 3);
+  ggml_tensor* storage = rows->view_src;
+  bool whole_storage = storage != nullptr && rows->view_offs == 0 &&
+      ggml_is_contiguous(rows) && ggml_is_contiguous(storage) &&
+      ggml_are_same_shape(rows, storage);
+  for (const ggml_tensor* t = rows; whole_storage && t != storage;
+       t = t->src[0]) {
+    whole_storage = t->op == GGML_OP_VIEW || t->op == GGML_OP_RESHAPE ||
+        t->op == GGML_OP_PERMUTE || t->op == GGML_OP_TRANSPOSE;
+  }
+  if (whole_storage) {
+    rows = storage;
+  }
   ggml_tensor* rotated = ggml_rope_ext(
       ctx,
-      ggml_permute(ctx, source, 0, 2, 1, 3),
+      rows,
       pos,
       factors,
       n_dims,
