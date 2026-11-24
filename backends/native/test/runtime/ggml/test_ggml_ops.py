@@ -9,6 +9,7 @@ against eager PyTorch. GGML_PTN_DEVICE selects the runner's device (cpu or
 gpu)."""
 
 import collections
+import contextlib
 import copy
 import os
 import re
@@ -21,7 +22,10 @@ from pathlib import Path
 import torch
 import torch.nn.functional as F
 from executorch.backends.native.custom_ops import gated_delta_rule_op
-from executorch.backends.native.examples.hf_llm.export_hf_llm import LastTokenLM
+from executorch.backends.native.examples.hf_llm.export_hf_llm import (
+    LastTokenLM,
+    native_gdn_rules,
+)
 from executorch.exir.native import to_native
 from executorch.extension.llm.export.gguf import ExportableGGUFTensor
 from gguf import GGML_QUANT_SIZES, GGMLQuantizationType
@@ -39,6 +43,7 @@ from transformers import (
     LlamaConfig,
     LlamaForCausalLM,
     Qwen3_5MoeTextConfig,
+    Qwen3_5TextConfig,
 )
 from transformers.models.llama.modeling_llama import (
     apply_rotary_pos_emb,
@@ -3165,6 +3170,77 @@ class GgmlLlamaTest(unittest.TestCase):
                         actual[0, -1].argmax().item(),
                         reference[0, -1].argmax().item(),
                     )
+
+
+class GgmlQwen35Test(unittest.TestCase):
+    """A tiny Qwen3.5, gated DeltaNet layers and full attention, exported as
+    static one-token calls whose recurrent states are buffers."""
+
+    def test_native_gdn_rule_calls_match_eager_across_a_restart(self):
+        self._check(native=True)
+
+    def _check(self, native: bool):
+        torch.manual_seed(5)
+        config = Qwen3_5TextConfig(
+            vocab_size=128,
+            hidden_size=64,
+            intermediate_size=128,
+            num_hidden_layers=4,
+            layer_types=["linear_attention"] * 3 + ["full_attention"],
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            head_dim=32,
+            linear_num_key_heads=2,
+            linear_num_value_heads=4,
+            linear_key_head_dim=16,
+            linear_value_head_dim=16,
+            linear_conv_kernel_dim=4,
+            max_position_embeddings=64,
+            tie_word_embeddings=False,
+            rope_parameters={
+                "rope_type": "default",
+                "rope_theta": 1e7,
+                "partial_rotary_factor": 0.25,
+                "mrope_section": [2, 1, 1],
+                "mrope_interleaved": True,
+            },
+        )
+        model = AutoModelForCausalLM.from_config(config).eval()
+        model.config._attn_implementation = "sdpa"
+        model.generation_config.use_cache = True
+        model.generation_config.cache_implementation = "static"
+        example = (
+            torch.zeros(1, 1, dtype=torch.long),
+            torch.zeros(1, dtype=torch.long),
+        )
+        # Two sequences on one executable: the second restarts at position 0
+        # with no reset call, so the graph must zero the states itself.
+        tokens = torch.randint(0, 128, (12,))
+        steps = [
+            (tokens[i : i + 1].view(1, 1), torch.tensor([position]))
+            for i, position in enumerate([*range(7), *range(5)])
+        ]
+        rules = native_gdn_rules(model) if native else contextlib.nullcontext()
+        with rules, torch.no_grad():
+            wrapper = LastTokenLM(model, 32).eval()
+            ep = torch.export.export(wrapper, example, strict=True)
+            targets = [n.target for n in ep.graph.nodes if n.op == "call_function"]
+            self.assertEqual(targets.count(gated_delta_rule_op), 3 if native else 0)
+            eager = copy.deepcopy(wrapper)
+            expected = [eager(*inputs) for inputs in steps]
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            package = outdir / "tiny_qwen35.ptn"
+            to_native(ep).save(str(package))
+            outputs = _run_ggml(package, steps, outdir, 1)
+        self.assertEqual(len(outputs), len(steps))
+        for step, (step_outputs, reference) in enumerate(zip(outputs, expected)):
+            ((raw, shape),) = step_outputs
+            with self.subTest(step=step):
+                actual = torch.frombuffer(bytearray(raw), dtype=torch.float32)
+                torch.testing.assert_close(
+                    actual.reshape(shape), reference, atol=1e-4, rtol=1e-4
+                )
 
 
 class GgmlMoeTest(unittest.TestCase):
