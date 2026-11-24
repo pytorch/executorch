@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -167,7 +168,9 @@ class ET_EXPERIMENTAL MultimodalRunner : public IRunner {
   }
 
   void stop() override {
-    text_token_generator_->stop();
+    if (running_.load(std::memory_order_relaxed)) {
+      text_token_generator_->stop();
+    }
   }
 
   void reset() override {
@@ -196,6 +199,9 @@ class ET_EXPERIMENTAL MultimodalRunner : public IRunner {
 
   // Internal state
   std::optional<uint64_t> prefill_next_token_;
+  // True while a prefill() or generate() call runs; stop() is a no-op
+  // otherwise.
+  std::atomic<bool> running_{false};
   int64_t pos_;
 };
 

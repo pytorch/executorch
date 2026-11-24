@@ -365,8 +365,8 @@ TEST_F(RunnerTest, StopDuringPrefillEndsGeneration) {
   EXPECT_EQ(counter.getCount(), 1);
 }
 
-// A stop() from before generate() must not carry into it.
-TEST_F(RunnerTest, StopBeforeGenerateDoesNotCarryOver) {
+// A stop() while nothing runs does nothing.
+TEST_F(RunnerTest, StopWhileIdleDoesNothing) {
   auto tokenizer = createMockTokenizer();
   auto text_decoder_runner = createMockTextDecoderRunner();
   auto text_prefiller = createMockTextPrefiller(text_decoder_runner.get());
@@ -400,6 +400,98 @@ TEST_F(RunnerTest, StopBeforeGenerateDoesNotCarryOver) {
 
   EXPECT_EQ(err, Error::Ok);
   EXPECT_EQ(counter.getCount(), config.max_new_tokens);
+}
+
+// A stop() that ended one generation does not carry into the next.
+TEST_F(RunnerTest, StopThatEndedAGenerationDoesNotCarryIntoTheNext) {
+  auto tokenizer = createMockTokenizer();
+  auto text_decoder_runner = createMockTextDecoderRunner();
+  auto text_prefiller = createMockTextPrefiller(text_decoder_runner.get());
+  auto stats = std::make_unique<executorch::llm::Stats>();
+  auto text_token_generator = createTextTokenGenerator(
+      tokenizer.get(), text_decoder_runner.get(), stats.get());
+  auto module = std::make_unique<MockModule>();
+  auto io_manager =
+      std::make_unique<executorch::extension::llm::IOManager>(*module);
+  TextLLMRunner runner(
+      createDefaultMetadata(),
+      std::unique_ptr<::tokenizers::Tokenizer>(tokenizer.release()),
+      std::move(module),
+      std::move(text_decoder_runner),
+      std::unique_ptr<::executorch::extension::llm::TextPrefiller>(
+          text_prefiller.release()),
+      std::move(io_manager),
+      std::move(text_token_generator),
+      std::move(stats));
+  runner.load();
+
+  GenerationConfig config;
+  config.max_new_tokens = 10;
+  config.echo = false;
+  EXPECT_EQ(
+      runner.generate(
+          "first", config, [&runner](const std::string&) { runner.stop(); }),
+      Error::Ok);
+
+  CallbackCounter counter;
+  Error err =
+      runner.generate("second", config, [&counter](const std::string& token) {
+        counter.callback(token);
+      });
+
+  EXPECT_EQ(err, Error::Ok);
+  EXPECT_EQ(counter.getCount(), config.max_new_tokens);
+}
+
+// A stop() during the lazy load() inside generate() ends that generation.
+TEST_F(RunnerTest, StopDuringLazyLoadEndsGeneration) {
+  auto tokenizer = createMockTokenizer();
+  auto text_decoder_runner = createMockTextDecoderRunner();
+  EXPECT_CALL(*text_decoder_runner, step(_, _)).Times(0);
+  bool loaded = false;
+  ON_CALL(*text_decoder_runner, is_method_loaded()).WillByDefault([&] {
+    return loaded;
+  });
+  TextLLMRunner* runner_ptr = nullptr;
+  // load() runs once per component; cancel during the first, while the
+  // runner still reports itself unloaded.
+  ON_CALL(*text_decoder_runner, load()).WillByDefault([&] {
+    if (!loaded) {
+      runner_ptr->stop(); // the user cancels while the model loads
+    }
+    loaded = true;
+    return Error::Ok;
+  });
+  auto text_prefiller = createMockTextPrefiller(text_decoder_runner.get());
+  auto stats = std::make_unique<executorch::llm::Stats>();
+  auto text_token_generator = createTextTokenGenerator(
+      tokenizer.get(), text_decoder_runner.get(), stats.get());
+  auto module = std::make_unique<MockModule>();
+  auto io_manager =
+      std::make_unique<executorch::extension::llm::IOManager>(*module);
+  TextLLMRunner runner(
+      createDefaultMetadata(),
+      std::unique_ptr<::tokenizers::Tokenizer>(tokenizer.release()),
+      std::move(module),
+      std::move(text_decoder_runner),
+      std::unique_ptr<::executorch::extension::llm::TextPrefiller>(
+          text_prefiller.release()),
+      std::move(io_manager),
+      std::move(text_token_generator),
+      std::move(stats));
+  runner_ptr = &runner;
+
+  GenerationConfig config;
+  config.max_new_tokens = 10;
+  config.echo = false;
+  CallbackCounter counter;
+  Error err = runner.generate(
+      "test prompt", config, [&counter](const std::string& token) {
+        counter.callback(token);
+      });
+
+  EXPECT_EQ(err, Error::Ok);
+  EXPECT_EQ(counter.getCount(), 1);
 }
 
 // A stop() during a prefill() call ends the generate() that continues it,
@@ -456,7 +548,8 @@ TEST_F(RunnerTest, StopDuringPrefillCallEndsTheGenerateThatFollows) {
   EXPECT_EQ(counter.getCount(), 1);
 }
 
-// A stop() from before a prefill() call is cleared when that prefill starts.
+// A stop() left over from an earlier generation is cleared when a prefill()
+// starts a new turn.
 TEST_F(RunnerTest, StopBeforePrefillCallDoesNotCarryOver) {
   auto tokenizer = createMockTokenizer();
   auto text_decoder_runner = createMockTextDecoderRunner();
@@ -478,9 +571,51 @@ TEST_F(RunnerTest, StopBeforePrefillCallDoesNotCarryOver) {
       std::move(text_token_generator),
       std::move(stats));
   runner.load();
-  runner.stop();
+
+  GenerationConfig config;
+  config.max_new_tokens = 10;
+  config.echo = false;
+  EXPECT_EQ(
+      runner.generate(
+          "first", config, [&runner](const std::string&) { runner.stop(); }),
+      Error::Ok);
 
   ASSERT_TRUE(runner.prefill("system prompt", 1, 0).ok());
+  CallbackCounter counter;
+  Error err = runner.generate("", config, [&counter](const std::string& token) {
+    counter.callback(token);
+  });
+
+  EXPECT_EQ(err, Error::Ok);
+  EXPECT_EQ(counter.getCount(), config.max_new_tokens);
+}
+
+// A stop() while nothing runs, between prefill() and generate(), does
+// nothing.
+TEST_F(RunnerTest, IdleStopAfterPrefillDoesNothing) {
+  auto tokenizer = createMockTokenizer();
+  auto text_decoder_runner = createMockTextDecoderRunner();
+  auto text_prefiller = createMockTextPrefiller(text_decoder_runner.get());
+  auto stats = std::make_unique<executorch::llm::Stats>();
+  auto text_token_generator = createTextTokenGenerator(
+      tokenizer.get(), text_decoder_runner.get(), stats.get());
+  auto module = std::make_unique<MockModule>();
+  auto io_manager =
+      std::make_unique<executorch::extension::llm::IOManager>(*module);
+  TextLLMRunner runner(
+      createDefaultMetadata(),
+      std::unique_ptr<::tokenizers::Tokenizer>(tokenizer.release()),
+      std::move(module),
+      std::move(text_decoder_runner),
+      std::unique_ptr<::executorch::extension::llm::TextPrefiller>(
+          text_prefiller.release()),
+      std::move(io_manager),
+      std::move(text_token_generator),
+      std::move(stats));
+  runner.load();
+
+  ASSERT_TRUE(runner.prefill("system prompt", 1, 0).ok());
+  runner.stop();
 
   GenerationConfig config;
   config.max_new_tokens = 10;
@@ -1086,15 +1221,49 @@ TEST_F(MultimodalRunnerTest, StopDuringPrefillCallEndsTheGenerateThatFollows) {
   EXPECT_EQ(generate("describe it"), 1);
 }
 
-// A stop() from before generate() is cleared when it starts.
-TEST_F(MultimodalRunnerTest, StopBeforeGenerateDoesNotCarryOver) {
+// A stop() while nothing runs, between prefill() and generate(), does
+// nothing.
+TEST_F(MultimodalRunnerTest, IdleStopAfterPrefillDoesNothing) {
+  std::vector<MultimodalInput> image;
+  image.emplace_back(MultimodalInput(std::string("image stand-in")));
+  ASSERT_TRUE(runner_->prefill(image).ok());
   runner_->stop();
+
   EXPECT_EQ(generate("describe it"), 10);
 }
 
-// A stop() from before prefill() is cleared when that prefill starts.
+// A stop() that ended one generation does not carry into the next.
+TEST_F(MultimodalRunnerTest, StopThatEndedAGenerationDoesNotCarryIntoTheNext) {
+  int prefill_calls = 0;
+  ON_CALL(*prefiller_, prefill(_, _, _, _))
+      .WillByDefault(
+          [&](const MultimodalInput&, int64_t& pos, int32_t, int32_t) {
+            if (++prefill_calls == 1) {
+              runner_->stop();
+            }
+            pos += 3;
+            return Result<uint64_t>(4);
+          });
+
+  EXPECT_EQ(generate("first"), 1);
+  EXPECT_EQ(generate("second"), 10);
+}
+
+// A stop() left over from an earlier generation is cleared when a prefill()
+// starts a new turn.
 TEST_F(MultimodalRunnerTest, StopBeforePrefillCallDoesNotCarryOver) {
-  runner_->stop();
+  int prefill_calls = 0;
+  ON_CALL(*prefiller_, prefill(_, _, _, _))
+      .WillByDefault(
+          [&](const MultimodalInput&, int64_t& pos, int32_t, int32_t) {
+            if (++prefill_calls == 1) {
+              runner_->stop();
+            }
+            pos += 3;
+            return Result<uint64_t>(4);
+          });
+  EXPECT_EQ(generate("first"), 1);
+
   std::vector<MultimodalInput> image;
   image.emplace_back(MultimodalInput(std::string("image stand-in")));
   ASSERT_TRUE(runner_->prefill(image).ok());
@@ -1102,15 +1271,24 @@ TEST_F(MultimodalRunnerTest, StopBeforePrefillCallDoesNotCarryOver) {
   EXPECT_EQ(generate("describe it"), 10);
 }
 
-// generate() consumes the pending prefill, so a stop() after it finishes
-// does not carry into the next generate().
+// generate() consumes the pending prefill, so a stop() that ended it does not
+// carry into the next generate().
 TEST_F(MultimodalRunnerTest, StopAfterGenerateDoesNotCarryIntoTheNext) {
+  int prefill_calls = 0;
+  ON_CALL(*prefiller_, prefill(_, _, _, _))
+      .WillByDefault(
+          [&](const MultimodalInput&, int64_t& pos, int32_t, int32_t) {
+            if (++prefill_calls == 1) {
+              runner_->stop();
+            }
+            pos += 3;
+            return Result<uint64_t>(4);
+          });
   std::vector<MultimodalInput> image;
   image.emplace_back(MultimodalInput(std::string("image stand-in")));
   ASSERT_TRUE(runner_->prefill(image).ok());
-  EXPECT_EQ(generate("describe it"), 10);
+  EXPECT_EQ(generate("describe it"), 1);
 
-  runner_->stop();
   EXPECT_EQ(generate("and again"), 10);
 }
 

@@ -198,8 +198,8 @@ class ET_EXPERIMENTAL TextTokenGenerator {
   }
 
   /**
-   * Clear an earlier stop(). Runners call this when a generation starts,
-   * before prefill, and then pass clear_pending_stop = false to generate().
+   * Clear an earlier stop(). Runners call this when a turn starts, before
+   * prefill, and then pass clear_pending_stop = false to generate().
    */
   inline void reset_stop() {
     should_stop_.store(false, std::memory_order_relaxed);

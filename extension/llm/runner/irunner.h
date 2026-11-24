@@ -166,9 +166,8 @@ class ET_EXPERIMENTAL IRunner {
    * Stop the generation process.
    *
    * In TextLLMRunner and MultimodalRunner, a stop() ends the generate() that
-   * is running, or, when it comes during or after a prefill() call, the
-   * generate() that continues that prefill. A stop() made before then is
-   * cleared when the next prefill() or generate() starts.
+   * is running, or, when it comes during a prefill() call, the generate() that
+   * continues that prefill. A stop() while neither is running does nothing.
    */
   virtual void stop() = 0;
 

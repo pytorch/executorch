@@ -25,6 +25,25 @@ using ::executorch::extension::Module;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::Result;
 
+namespace {
+// Marks a prefill() or generate() call as running for its whole duration, so
+// stop() knows whether there is anything to stop.
+class RunningScope {
+ public:
+  explicit RunningScope(std::atomic<bool>& running) : running_(running) {
+    running_.store(true, std::memory_order_relaxed);
+  }
+  ~RunningScope() {
+    running_.store(false, std::memory_order_relaxed);
+  }
+  RunningScope(const RunningScope&) = delete;
+  RunningScope& operator=(const RunningScope&) = delete;
+
+ private:
+  std::atomic<bool>& running_;
+};
+} // namespace
+
 MultimodalRunner::MultimodalRunner(
     std::unordered_map<std::string, int64_t> metadata,
     std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
@@ -89,6 +108,7 @@ Result<uint64_t> MultimodalRunner::prefill(
     const std::vector<MultimodalInput>& inputs,
     int32_t num_bos,
     int32_t num_eos) {
+  RunningScope running(running_);
   // A prefill() that starts a new turn clears an earlier stop(); one that
   // adds to a pending prefill keeps it, so the generate() that follows stops.
   if (!prefill_next_token_.has_value()) {
@@ -146,6 +166,7 @@ Error MultimodalRunner::generate(
     const GenerationConfig& config,
     std::function<void(const std::string&)> token_callback,
     std::function<void(const Stats&)> stats_callback) {
+  RunningScope running(running_);
   if (inputs.empty()) {
     ET_LOG(Error, "MultimodalInput vector cannot be empty");
     return Error::InvalidArgument;
