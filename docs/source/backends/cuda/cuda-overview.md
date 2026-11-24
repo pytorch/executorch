@@ -166,11 +166,10 @@ kernel's Helion backend:
   that is itself a view at an offset that is not 16-byte aligned is compiled for element
   alignment only), while every
   other operand (an activation, or a tensor passed into a `torch.cond` branch) is compiled for
-  element alignment only. Within one pass run (one CUDA partition), a kernel called more than once is compiled once,
-  at the weakest alignment among its calls, so such an operand in one call also makes the
-  matching operand of the other calls element-aligned even if it is a user input there; across
-  methods of one `.pte`, the same kernel used at different alignments counts as two distinct
-  launches. A config that needs more than element alignment on an element-aligned operand
+  element alignment only. Calls of one kernel with the same config and argument layouts share one launch (one
+  kernel, config and set of argument layouts), compiled at the weakest alignment among
+  them; calls with other layouts, or at a different alignment in another partition or
+  method, get their own launch. A config that needs more than element alignment on an element-aligned operand
   stages (copies) it, which this lowering rejects, so it cannot be exported at all. At run time
   each call checks its arguments against the
   compiled layout and alignment and fails the call, rather than launching, on a mismatch.
@@ -182,15 +181,11 @@ The pass supports:
 
 - Kernels on the Triton or CuTe backend with `static_shapes=True` and exactly one config.
 - Tensor arguments, several calls per model, several tensor outputs and calls inside `torch.cond`
-  branches (nested `torch.cond` included; Helion calls inside `while_loop`, `scan` or `map` bodies are rejected). A program may contain only one distinct CuTe launch (one kernel, config and set of
-  argument layouts); repeated calls to that launch are fine. Within one pass run the limit is
-  always enforced; across the methods of one `.pte` it is enforced only on the
-  `to_edge_transform_and_lower` and `EdgeProgramManager.to_backend` paths, so a program
-  lowered through the low-level `to_backend` overloads must keep to one launch across its
-  methods itself.
+  branches (nested `torch.cond` included; Helion calls inside `while_loop`, `scan` or `map` bodies are rejected). A program may contain any number of distinct launches; each is exported under its
+  own name and, for CuTe, linked from its own archive (Triton kernels are compiled by AOTInductor itself). The CUDA calls the exported CuTe kernels make go through a small runtime of one-line forwards to the public CUDA runtime and driver APIs, written by this backend and linked once per delegate `.so`, however many CuTe launches it contains.
 - Kernels that write their inputs, buffers and dense views of them (for example one row of a
-  larger tensor) in place. The copy made for the write keeps the written tensor's strides;
-  written tensors with gaps are rejected.
+  larger tensor) in place, on both backends. The copy made for the write keeps the written
+  tensor's strides; written tensors with gaps are rejected.
 
 It rejects, with an error during export, calls it cannot lower exactly: kernels on other Helion
 backends, kernels that leave the choice of config to Helion (no `config=`, so
@@ -198,8 +193,7 @@ Helion autotunes on the first call, or more than one config), scalar, container 
 from the ones recorded for the call, more than one launch site, host tensor descriptors, and
 launch options AOTInductor cannot reproduce, such as cooperative grids, clusters or PDL. For CuTe
 kernels it also rejects launches with scalar arguments, workspace tensors, dynamic layouts, empty
-grids, launches that stage (copy) under-aligned operands, and programs with more than one
-distinct CuTe launch. It needs Helion 1.5.2 or newer,
+grids, and launches that stage (copy) under-aligned operands. It needs Helion 1.5.2 or newer,
 which records each call's host-semantic fingerprint at
 export.
 
