@@ -2072,7 +2072,7 @@ document.write(`
 <p><strong>Memory Requirements</strong>:</p>
 <ul class="simple">
 <li><p><strong>RAM &amp; Storage</strong> Varies by model size and optimization level</p></li>
-<li><p><strong>64-bit Raspberry Pi OS</strong> (Bullseye or newer)</p></li>
+<li><p><strong>64-bit Raspberry Pi OS</strong> Bookworm (Debian 12) or Trixie (Debian 13). Bullseye is not supported.</p></li>
 </ul>
 </section>
 <section id="verification-commands">
@@ -2125,20 +2125,32 @@ pip<span class="w"> </span>install<span class="w"> </span>--upgrade<span class="
 </section>
 <section id="cross-compilation-toolchain-step">
 <h2>Cross-Compilation Toolchain Step<a class="headerlink" href="#cross-compilation-toolchain-step" title="Link to this heading">#</a></h2>
-<p>Run the following script on your Linux host machine:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Run the Raspberry Pi setup script for Pi 5</span>
-examples/raspberry_pi/setup.sh<span class="w"> </span>pi5
+<p>Check the Raspberry Pi OS release on your Pi:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ssh<span class="w"> </span>&lt;rpi-user&gt;@&lt;rpi-ip&gt;<span class="w"> </span>grep<span class="w"> </span>VERSION_CODENAME<span class="w"> </span>/etc/os-release
+<span class="c1"># VERSION_CODENAME=bookworm</span>
 </pre></div>
 </div>
+<p><code class="docutils literal notranslate"><span class="pre">--os</span></code> builds against that release’s glibc so the binaries run on the Pi as is. It needs <code class="docutils literal notranslate"><span class="pre">mmdebstrap</span></code> on the host:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>sudo<span class="w"> </span>apt-get<span class="w"> </span>install<span class="w"> </span>mmdebstrap<span class="w"> </span>debian-archive-keyring
+</pre></div>
+</div>
+<p>Run the following script on your Linux host machine with the codename from above (<code class="docutils literal notranslate"><span class="pre">bookworm</span></code> or <code class="docutils literal notranslate"><span class="pre">trixie</span></code>):</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Pi 5 running Raspberry Pi OS Bookworm</span>
+examples/raspberry_pi/setup.sh<span class="w"> </span>pi5<span class="w"> </span>--os<span class="w"> </span>bookworm
+</pre></div>
+</div>
+<p>Without <code class="docutils literal notranslate"><span class="pre">--os</span></code>, the binaries are built against the toolchain’s bundled glibc and fail on a Pi with an older glibc (e.g. Bookworm) with <code class="docutils literal notranslate"><span class="pre">version</span> <span class="pre">'GLIBC_2.38'</span> <span class="pre">not</span> <span class="pre">found</span></code>. Each run does a clean build.</p>
 <p>On successful completion, you should see the following output:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span><span class="w"> </span>Linking<span class="w"> </span>CXX<span class="w"> </span>executable<span class="w"> </span>llama_main
-<span class="o">[</span><span class="m">100</span>%<span class="o">]</span><span class="w"> </span>Built<span class="w"> </span>target<span class="w"> </span>llama_main
-<span class="o">[</span>SUCCESS<span class="o">]</span><span class="w"> </span>LLaMA<span class="w"> </span>runner<span class="w"> </span>built<span class="w"> </span><span class="nv">successfully</span>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="o">====</span><span class="w"> </span>Verifying<span class="w"> </span>Build<span class="w"> </span><span class="nv">Outputs</span><span class="w"> </span><span class="o">====</span>
+<span class="o">[</span>INFO<span class="o">]</span><span class="w"> </span>Checking<span class="w"> </span>required<span class="w"> </span>binaries...
+<span class="o">[</span>SUCCESS<span class="o">]</span><span class="w"> </span>✓<span class="w"> </span>llama_main<span class="w"> </span><span class="o">(</span><span class="m">6</span>.9M<span class="o">)</span>
+<span class="o">[</span>SUCCESS<span class="o">]</span><span class="w"> </span>✓<span class="w"> </span>libllama_runner.so<span class="w"> </span><span class="o">(</span>17M<span class="o">)</span>
+<span class="o">[</span>SUCCESS<span class="o">]</span><span class="w"> </span>✓<span class="w"> </span>libextension_module.a<span class="w"> </span><span class="o">(</span>159K<span class="o">)</span><span class="w"> </span>-<span class="w"> </span>statically<span class="w"> </span>linked
+<span class="o">[</span>SUCCESS<span class="o">]</span><span class="w"> </span>All<span class="w"> </span>required<span class="w"> </span>binaries<span class="w"> </span>built<span class="w"> </span>successfully!
+<span class="o">[</span>INFO<span class="o">]</span><span class="w"> </span>Binaries<span class="w"> </span>require<span class="w"> </span>glibc<span class="w"> </span>&gt;<span class="o">=</span><span class="w"> </span><span class="m">2</span>.36
+<span class="o">[</span>SUCCESS<span class="o">]</span><span class="w"> </span>Compatible<span class="w"> </span>with<span class="w"> </span>Debian<span class="w"> </span>bookworm<span class="w"> </span><span class="o">(</span>glibc<span class="w"> </span><span class="m">2</span>.36<span class="o">)</span>
 
-<span class="o">====</span><span class="w"> </span>Verifying<span class="w"> </span>Build<span class="w"> </span><span class="nv">Outputs</span><span class="w"> </span><span class="o">====</span>
-<span class="o">[</span>SUCCESS<span class="o">]</span><span class="w"> </span>✓<span class="w"> </span>llama_main<span class="w"> </span><span class="o">(</span><span class="m">6</span>.1M<span class="o">)</span>
-<span class="o">[</span>SUCCESS<span class="o">]</span><span class="w"> </span>✓<span class="w"> </span>libllama_runner.so<span class="w"> </span><span class="o">(</span><span class="m">4</span>.0M<span class="o">)</span>
-<span class="o">[</span>SUCCESS<span class="o">]</span><span class="w"> </span>✓<span class="w"> </span>libextension_module.a<span class="w"> </span><span class="o">(</span>89K<span class="o">)</span><span class="w"> </span>-<span class="w"> </span>static<span class="w"> </span>library
+<span class="o">====</span><span class="w"> </span>Setup<span class="w"> </span>Complete!<span class="w"> </span><span class="o">====</span>
 
 ✓<span class="w"> </span>ExecuTorch<span class="w"> </span>cross-compilation<span class="w"> </span>setup<span class="w"> </span>completed<span class="w"> </span>successfully!
 </pre></div>
@@ -2221,148 +2233,12 @@ chmod<span class="w"> </span>+x<span class="w"> </span>llama_main
 ./llama_main<span class="w"> </span>--help
 </pre></div>
 </div>
-<p>Make sure that the output does not have any GLIBC / other library mismatch errors in the output. If you see any, follow the troubleshooting steps below.</p>
+<p>Make sure that the output does not have any GLIBC / other library mismatch errors. If you see <code class="docutils literal notranslate"><span class="pre">GLIBC_x.y</span> <span class="pre">not</span> <span class="pre">found</span></code>, rerun the cross-compilation step with <code class="docutils literal notranslate"><span class="pre">--os</span></code> set to the Pi’s release. For other errors, see the troubleshooting steps below.</p>
 </section>
 <section id="troubleshooting">
 <h2>Troubleshooting<a class="headerlink" href="#troubleshooting" title="Link to this heading">#</a></h2>
-<section id="issue-1-glibc-version-mismatch">
-<h3>Issue 1: GLIBC Version Mismatch<a class="headerlink" href="#issue-1-glibc-version-mismatch" title="Link to this heading">#</a></h3>
-<p><strong>Problem:</strong> The binary was compiled with a newer GLIBC version (2.38) than what’s available on your Raspberry Pi (2.36).</p>
-<p><strong>Error Symptoms:</strong></p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./llama_main:<span class="w"> </span>/lib/aarch64-linux-gnu/libm.so.6:<span class="w"> </span>version<span class="w"> </span><span class="sb">`</span>GLIBC_2.38<span class="s1">' not found (required by ./llama_main)</span>
-<span class="s1">./llama_main: /lib/aarch64-linux-gnu/libc.so.6: version `GLIBC_2.38'</span><span class="w"> </span>not<span class="w"> </span>found<span class="w"> </span><span class="o">(</span>required<span class="w"> </span>by<span class="w"> </span>./llama_main<span class="o">)</span>
-./llama_main:<span class="w"> </span>/lib/aarch64-linux-gnu/libstdc++.so.6:<span class="w"> </span>version<span class="w"> </span><span class="sb">`</span>CXXABI_1.3.15<span class="s1">' not found (required by ./llama_main)</span>
-<span class="s1">./llama_main: /lib/aarch64-linux-gnu/libc.so.6: version `GLIBC_2.38'</span><span class="w"> </span>not<span class="w"> </span>found<span class="w"> </span><span class="o">(</span>required<span class="w"> </span>by<span class="w"> </span>/lib/libllama_runner.so<span class="o">)</span>
-</pre></div>
-</div>
-<p><strong>There are two potential solutions:</strong></p>
-<ul class="simple">
-<li><p><strong>Solution A</strong>: Modify the Pi to match the binary (run on Pi)</p></li>
-<li><p><strong>Solution B</strong>: Modify the binary to match the Pi (run on host)</p></li>
-</ul>
-<section id="solution-a-upgrade-glibc-on-raspberry-pi-recommended">
-<h4>Solution A: Upgrade GLIBC on Raspberry Pi (Recommended)<a class="headerlink" href="#solution-a-upgrade-glibc-on-raspberry-pi-recommended" title="Link to this heading">#</a></h4>
-<ol class="arabic simple">
-<li><p><strong>Check your current GLIBC version:</strong></p></li>
-</ol>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ldd<span class="w"> </span>--version
-<span class="c1"># Output: ldd (Debian GLIBC 2.36-9+rpt2+deb12u12) 2.36</span>
-</pre></div>
-</div>
-<ol class="arabic simple" start="2">
-<li><p><strong>⚠️ Compatibility Warning and Safety Check:</strong></p></li>
-</ol>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Just check and warn - don't do the upgrade</span>
-<span class="nv">current_glibc</span><span class="o">=</span><span class="k">$(</span>ldd<span class="w"> </span>--version<span class="w"> </span><span class="p">|</span><span class="w"> </span>head<span class="w"> </span>-n1<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-o<span class="w"> </span><span class="s1">'[0-9]\+\.[0-9]\+'</span><span class="k">)</span>
-<span class="nv">required_glibc</span><span class="o">=</span><span class="s2">"2.38"</span>
-
-<span class="nb">echo</span><span class="w"> </span><span class="s2">"Current GLIBC: </span><span class="nv">$current_glibc</span><span class="s2">"</span>
-<span class="nb">echo</span><span class="w"> </span><span class="s2">"Required GLIBC: </span><span class="nv">$required_glibc</span><span class="s2">"</span>
-
-<span class="k">if</span><span class="w"> </span><span class="o">[[</span><span class="w"> </span><span class="k">$(</span><span class="nb">echo</span><span class="w"> </span><span class="s2">"</span><span class="nv">$current_glibc</span><span class="s2"> &lt; </span><span class="nv">$required_glibc</span><span class="s2">"</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>bc<span class="w"> </span>-l<span class="k">)</span><span class="w"> </span>-eq<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="o">]]</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
-<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">""</span>
-<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">"⚠️  WARNING: Your GLIBC version is too old"</span>
-<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">"   You need to upgrade to continue with the next steps"</span>
-<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">"   Consider using Solution B (rebuild binary) for better safety"</span>
-<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">""</span>
-<span class="k">else</span>
-<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">"✅ Your GLIBC version is already compatible"</span>
-<span class="k">fi</span>
-</pre></div>
-</div>
-<p><strong>NOTE:</strong> If the output shows “⚠️  WARNING: Your GLIBC version is too old”, proceed with either Upgrade / Step #3 below (or) Solution B. Otherwise skip the next step as your device is <strong>already compatible</strong> and directly go to Step#4.</p>
-<ol class="arabic simple" start="3">
-<li><p><strong>Upgrade to newer GLIBC:</strong></p></li>
-</ol>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Add Debian unstable repository</span>
-<span class="nb">echo</span><span class="w"> </span><span class="s2">"deb http://deb.debian.org/debian sid main contrib non-free"</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>sudo<span class="w"> </span>tee<span class="w"> </span>-a<span class="w"> </span>/etc/apt/sources.list
-
-<span class="c1"># Update package lists</span>
-sudo<span class="w"> </span>apt<span class="w"> </span>update
-
-<span class="c1"># Install newer GLIBC packages</span>
-sudo<span class="w"> </span>apt-get<span class="w"> </span>-t<span class="w"> </span>sid<span class="w"> </span>install<span class="w"> </span>libc6<span class="w"> </span>libstdc++6
-
-<span class="c1"># Reboot system</span>
-sudo<span class="w"> </span>reboot
-</pre></div>
-</div>
-<ol class="arabic simple" start="4">
-<li><p><strong>Verify compatibility after reboot:</strong></p></li>
-</ol>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>~/executorch-deployment
-<span class="nb">source</span><span class="w"> </span>setup_env.sh
-
-<span class="c1"># Test that the binary works</span>
-<span class="k">if</span><span class="w"> </span>./llama_main<span class="w"> </span>--help<span class="w"> </span><span class="p">&amp;</span>&gt;/dev/null<span class="p">;</span><span class="w"> </span><span class="k">then</span>
-<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">"✅ GLIBC upgrade successful - binary is compatible"</span>
-<span class="k">else</span>
-<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">"❌ GLIBC upgrade failed - binary still incompatible"</span>
-<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">"Consider rolling back or refer to documentation for troubleshooting"</span>
-<span class="k">fi</span>
-</pre></div>
-</div>
-<ol class="arabic simple" start="5">
-<li><p><strong>Test the fix:</strong></p></li>
-</ol>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>~/executorch-deployment
-<span class="nb">source</span><span class="w"> </span>setup_env.sh
-./llama_main<span class="w"> </span>--model_path<span class="w"> </span>./llama3_2.pte<span class="w"> </span>--tokenizer_path<span class="w"> </span>./tokenizer.model<span class="w"> </span>--seq_len<span class="w"> </span><span class="m">128</span><span class="w"> </span>--prompt<span class="w"> </span><span class="s2">"Hello"</span>
-</pre></div>
-</div>
-<p><strong>Important Notes:</strong></p>
-<ul class="simple">
-<li><p>Select “Yes” when prompted to restart services</p></li>
-<li><p>Press Enter to keep current version for configuration files</p></li>
-<li><p>Backup important data before upgrading</p></li>
-</ul>
-</section>
-<section id="solution-b-rebuild-with-raspberry-pi-s-glibc-advanced">
-<h4>Solution B: Rebuild with Raspberry Pi’s GLIBC (Advanced)<a class="headerlink" href="#solution-b-rebuild-with-raspberry-pi-s-glibc-advanced" title="Link to this heading">#</a></h4>
-<p>If you prefer not to upgrade your Raspberry Pi system:</p>
-<ol class="arabic simple">
-<li><p><strong>Copy Pi’s filesystem to host machine:</strong></p></li>
-</ol>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># On Raspberry Pi - install rsync</span>
-ssh<span class="w"> </span>pi@&lt;your-rpi-ip&gt;
-sudo<span class="w"> </span>apt<span class="w"> </span>update<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>sudo<span class="w"> </span>apt<span class="w"> </span>install<span class="w"> </span>rsync
-<span class="nb">exit</span>
-
-<span class="c1"># On host machine - copy Pi's filesystem</span>
-mkdir<span class="w"> </span>-p<span class="w"> </span>~/rpi5-sysroot
-rsync<span class="w"> </span>-aAXv<span class="w"> </span>--exclude<span class="o">={</span><span class="s2">"/proc"</span>,<span class="s2">"/sys"</span>,<span class="s2">"/dev"</span>,<span class="s2">"/run"</span>,<span class="s2">"/tmp"</span>,<span class="s2">"/mnt"</span>,<span class="s2">"/media"</span>,<span class="s2">"/lost+found"</span><span class="o">}</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>pi@&lt;your-rpi-ip&gt;:/<span class="w"> </span>~/rpi5-sysroot
-</pre></div>
-</div>
-<ol class="arabic simple" start="2">
-<li><p><strong>Update CMake toolchain file:</strong></p></li>
-</ol>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Edit arm-toolchain-pi5.cmake</span>
-<span class="c1"># Replace this line:</span>
-<span class="c1"># set(CMAKE_SYSROOT "${TOOLCHAIN_PATH}/aarch64-none-linux-gnu/libc")</span>
-
-<span class="c1"># With this:</span>
-set<span class="o">(</span>CMAKE_SYSROOT<span class="w"> </span><span class="s2">"/home/yourusername/rpi5-sysroot"</span><span class="o">)</span>
-set<span class="o">(</span>CMAKE_FIND_ROOT_PATH<span class="w"> </span><span class="s2">"</span><span class="si">${</span><span class="nv">CMAKE_SYSROOT</span><span class="si">}</span><span class="s2">"</span><span class="o">)</span>
-</pre></div>
-</div>
-<ol class="arabic simple" start="3">
-<li><p><strong>Rebuild binaries:</strong></p></li>
-</ol>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Clean and rebuild</span>
-rm<span class="w"> </span>-rf<span class="w"> </span>cmake-out
-./examples/raspberry_pi/rpi_setup.sh<span class="w"> </span>pi5<span class="w"> </span>--force-rebuild
-
-<span class="c1"># Verify GLIBC version</span>
-strings<span class="w"> </span>./cmake-out/examples/models/llama/llama_main<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>GLIBC_
-<span class="c1"># Should show max GLIBC_2.36 (matching your Pi)</span>
-</pre></div>
-</div>
-</section>
-</section>
-<hr class="docutils" />
-<section id="issue-2-library-not-found">
-<h3>Issue 2: Library Not Found<a class="headerlink" href="#issue-2-library-not-found" title="Link to this heading">#</a></h3>
+<section id="issue-1-library-not-found">
+<h3>Issue 1: Library Not Found<a class="headerlink" href="#issue-1-library-not-found" title="Link to this heading">#</a></h3>
 <p><strong>Problem:</strong> Required libraries are not found at runtime.</p>
 <p><strong>Error Symptoms:</strong></p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./llama_main:<span class="w"> </span>error<span class="w"> </span><span class="k">while</span><span class="w"> </span>loading<span class="w"> </span>shared<span class="w"> </span>libraries:<span class="w"> </span>libllama_runner.so:<span class="w"> </span>cannot<span class="w"> </span>open<span class="w"> </span>shared<span class="w"> </span>object<span class="w"> </span>file
@@ -2378,8 +2254,8 @@ strings<span class="w"> </span>./cmake-out/examples/models/llama/llama_main<span
 <p><strong>Root Cause:</strong> Either <code class="docutils literal notranslate"><span class="pre">LD_LIBRARY_PATH</span></code> is not set or you’re not in the deployment directory.</p>
 </section>
 <hr class="docutils" />
-<section id="issue-3-tokenizer-json-parsing-warnings">
-<h3>Issue 3: Tokenizer JSON Parsing Warnings<a class="headerlink" href="#issue-3-tokenizer-json-parsing-warnings" title="Link to this heading">#</a></h3>
+<section id="issue-2-tokenizer-json-parsing-warnings">
+<h3>Issue 2: Tokenizer JSON Parsing Warnings<a class="headerlink" href="#issue-2-tokenizer-json-parsing-warnings" title="Link to this heading">#</a></h3>
 <p><strong>Problem:</strong> Warning messages about JSON parsing errors after running the llama_main binary.</p>
 <p><strong>Error Symptoms:</strong></p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>E<span class="w"> </span>tokenizers:hf_tokenizer.cpp:60<span class="o">]</span><span class="w"> </span>Error<span class="w"> </span>parsing<span class="w"> </span>json<span class="w"> </span>file:<span class="w"> </span><span class="o">[</span>json.exception.parse_error.101<span class="o">]</span>
@@ -2559,13 +2435,8 @@ strings<span class="w"> </span>./cmake-out/examples/models/llama/llama_main<span
 </li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#dry-run">Dry Run</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#troubleshooting">Troubleshooting</a><ul class="visible nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#issue-1-glibc-version-mismatch">Issue 1: GLIBC Version Mismatch</a><ul class="nav section-nav flex-column">
-<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#solution-a-upgrade-glibc-on-raspberry-pi-recommended">Solution A: Upgrade GLIBC on Raspberry Pi (Recommended)</a></li>
-<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#solution-b-rebuild-with-raspberry-pi-s-glibc-advanced">Solution B: Rebuild with Raspberry Pi’s GLIBC (Advanced)</a></li>
-</ul>
-</li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#issue-2-library-not-found">Issue 2: Library Not Found</a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#issue-3-tokenizer-json-parsing-warnings">Issue 3: Tokenizer JSON Parsing Warnings</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#issue-1-library-not-found">Issue 1: Library Not Found</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#issue-2-tokenizer-json-parsing-warnings">Issue 2: Tokenizer JSON Parsing Warnings</a></li>
 </ul>
 </li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#quick-test-command">Quick Test Command</a></li>
@@ -2796,7 +2667,7 @@ strings<span class="w"> </span>./cmake-out/examples/models/llama/llama_main<span
        "headline": "ExecuTorch on Raspberry Pi",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment.",
        "url": "/raspberry_pi_llama_tutorial.html",
-       "articleBody": "ExecuTorch on Raspberry Pi# TLDR# This tutorial demonstrates how to deploy Llama models on Raspberry Pi 4/5 devices using ExecuTorch: Prerequisites: Linux host machine, Python 3.11-3.15, conda environment, Raspberry Pi 4/5 Setup: Automated cross-compilation using setup.sh script for ARM toolchain installation Export: Convert Llama models to optimized .pte format with quantization options Deploy: Transfer binaries to Raspberry Pi and configure runtime libraries Optimize: Build optimization and performance tuning techniques Result: Efficient on-device Llama inference Prerequisites and Hardware Requirements# Host Machine Requirements# Operating System: Linux x86_64 (Ubuntu 20.04+ or CentOS Stream 9+) Software Dependencies: Python 3.11-3.15 (ExecuTorch requirement) conda or venv for environment management CMake 3.26+ Git for repository cloning Target Device Requirements# Supported Devices: Raspberry Pi 4 and Raspberry Pi 5 with 64-bit OS Memory Requirements: RAM \u0026 Storage Varies by model size and optimization level 64-bit Raspberry Pi OS (Bullseye or newer) Verification Commands# Verify your host machine compatibility: # Check OS and architecture uname -s # Should output: Linux uname -m # Should output: x86_64 # Check Python version python3 --version # Should be 3.11-3.15 # Check required tools hash cmake git md5sum 2\u003e/dev/null || echo \"Missing required tools\" cmake --version # Should be 3.26+ at minimum ## Development Environment Setup ### Clone ExecuTorch Repository First, clone the ExecuTorch repository with the Raspberry Pi support: ```bash # Create project directory mkdir ~/executorch-rpi \u0026\u0026 cd ~/executorch-rpi \u0026\u0026 git clone -b release/1.0 https://github.com/pytorch/executorch.git \u0026\u0026 cd executorch Create Conda Environment# # Create conda environment conda create -yn executorch python=3.11 conda activate executorch # Upgrade pip pip install --upgrade pip Alternative: Virtual Environment If you prefer Python\u2019s built-in virtual environment: python3 -m venv .venv source .venv/bin/activate pip install --upgrade pip Refer to \u2192 Getting Started with ExecuTorch for more details. Cross-Compilation Toolchain Step# Run the following script on your Linux host machine: # Run the Raspberry Pi setup script for Pi 5 examples/raspberry_pi/setup.sh pi5 On successful completion, you should see the following output: [100%] Linking CXX executable llama_main [100%] Built target llama_main [SUCCESS] LLaMA runner built successfully ==== Verifying Build Outputs ==== [SUCCESS] \u2713 llama_main (6.1M) [SUCCESS] \u2713 libllama_runner.so (4.0M) [SUCCESS] \u2713 libextension_module.a (89K) - static library \u2713 ExecuTorch cross-compilation setup completed successfully! Model Preparation and Export# Download Llama Models# Download the Llama model from Hugging Face or any other source, and make sure that following files exist. consolidated.00.pth (model weights) params.json (model config) tokenizer.model (tokenizer) Export Llama to ExecuTorch Format# After downloading the Llama model, export it to ExecuTorch format using the provided script: #### Set these paths to point to the exported files. Following is an example instruction to export a llama model LLAMA_QUANTIZED_CHECKPOINT=path/to/consolidated.00.pth LLAMA_PARAMS=path/to/params.json python -m extension.llm.export.export_llm \\ --config examples/models/llama/config/llama_xnnpack_spinquant.yaml \\ +base.model_class=\"llama3_2\" \\ +base.checkpoint=\"${LLAMA_QUANTIZED_CHECKPOINT:?}\" \\ +base.params=\"${LLAMA_PARAMS:?}\" The file llama3_2.pte will be generated at the place where you run the command For more details see Option A: Download and Export Llama3.2 1B/3B Model Also refer to \u2192 Exporting LLMs for more details. Raspberry Pi Deployment# Transfer Binaries to Raspberry Pi# After successful cross-compilation, transfer the required files: ##### Set Raspberry Pi details export RPI_UN=\"pi\" # Your Raspberry Pi username export RPI_IP=\"your-rpi-ip-address\" ##### Create deployment directory on Raspberry Pi ssh $RPI_UN@$RPI_IP \u0027mkdir -p ~/executorch-deployment\u0027 ##### Copy main executable scp cmake-out/examples/models/llama/llama_main $RPI_UN@$RPI_IP:~/executorch-deployment/ ##### Copy runtime library scp cmake-out/examples/models/llama/runner/libllama_runner.so $RPI_UN@$RPI_IP:~/executorch-deployment/ ##### Copy model file scp llama3_2.pte $RPI_UN@$RPI_IP:~/executorch-deployment/ scp ./tokenizer.model $RPI_UN@$RPI_IP:~/executorch-deployment/ Configure Runtime Libraries on Raspberry Pi# SSH into your Raspberry Pi and configure the runtime: Set up library environment# cd ~/executorch-deployment echo \u0027export LD_LIBRARY_PATH=$(pwd):$LD_LIBRARY_PATH\u0027 \u003e setup_env.sh chmod +x setup_env.sh #### Make executable chmod +x llama_main Dry Run# source setup_env.sh ./llama_main --help Make sure that the output does not have any GLIBC / other library mismatch errors in the output. If you see any, follow the troubleshooting steps below. Troubleshooting# Issue 1: GLIBC Version Mismatch# Problem: The binary was compiled with a newer GLIBC version (2.38) than what\u2019s available on your Raspberry Pi (2.36). Error Symptoms: ./llama_main: /lib/aarch64-linux-gnu/libm.so.6: version `GLIBC_2.38\u0027 not found (required by ./llama_main) ./llama_main: /lib/aarch64-linux-gnu/libc.so.6: version `GLIBC_2.38\u0027 not found (required by ./llama_main) ./llama_main: /lib/aarch64-linux-gnu/libstdc++.so.6: version `CXXABI_1.3.15\u0027 not found (required by ./llama_main) ./llama_main: /lib/aarch64-linux-gnu/libc.so.6: version `GLIBC_2.38\u0027 not found (required by /lib/libllama_runner.so) There are two potential solutions: Solution A: Modify the Pi to match the binary (run on Pi) Solution B: Modify the binary to match the Pi (run on host) Solution A: Upgrade GLIBC on Raspberry Pi (Recommended)# Check your current GLIBC version: ldd --version # Output: ldd (Debian GLIBC 2.36-9+rpt2+deb12u12) 2.36 \u26a0\ufe0f Compatibility Warning and Safety Check: # Just check and warn - don\u0027t do the upgrade current_glibc=$(ldd --version | head -n1 | grep -o \u0027[0-9]\\+\\.[0-9]\\+\u0027) required_glibc=\"2.38\" echo \"Current GLIBC: $current_glibc\" echo \"Required GLIBC: $required_glibc\" if [[ $(echo \"$current_glibc \u003c $required_glibc\" | bc -l) -eq 1 ]]; then echo \"\" echo \"\u26a0\ufe0f WARNING: Your GLIBC version is too old\" echo \" You need to upgrade to continue with the next steps\" echo \" Consider using Solution B (rebuild binary) for better safety\" echo \"\" else echo \"\u2705 Your GLIBC version is already compatible\" fi NOTE: If the output shows \u201c\u26a0\ufe0f WARNING: Your GLIBC version is too old\u201d, proceed with either Upgrade / Step #3 below (or) Solution B. Otherwise skip the next step as your device is already compatible and directly go to Step#4. Upgrade to newer GLIBC: # Add Debian unstable repository echo \"deb http://deb.debian.org/debian sid main contrib non-free\" | sudo tee -a /etc/apt/sources.list # Update package lists sudo apt update # Install newer GLIBC packages sudo apt-get -t sid install libc6 libstdc++6 # Reboot system sudo reboot Verify compatibility after reboot: cd ~/executorch-deployment source setup_env.sh # Test that the binary works if ./llama_main --help \u0026\u003e/dev/null; then echo \"\u2705 GLIBC upgrade successful - binary is compatible\" else echo \"\u274c GLIBC upgrade failed - binary still incompatible\" echo \"Consider rolling back or refer to documentation for troubleshooting\" fi Test the fix: cd ~/executorch-deployment source setup_env.sh ./llama_main --model_path ./llama3_2.pte --tokenizer_path ./tokenizer.model --seq_len 128 --prompt \"Hello\" Important Notes: Select \u201cYes\u201d when prompted to restart services Press Enter to keep current version for configuration files Backup important data before upgrading Solution B: Rebuild with Raspberry Pi\u2019s GLIBC (Advanced)# If you prefer not to upgrade your Raspberry Pi system: Copy Pi\u2019s filesystem to host machine: # On Raspberry Pi - install rsync ssh pi@\u003cyour-rpi-ip\u003e sudo apt update \u0026\u0026 sudo apt install rsync exit # On host machine - copy Pi\u0027s filesystem mkdir -p ~/rpi5-sysroot rsync -aAXv --exclude={\"/proc\",\"/sys\",\"/dev\",\"/run\",\"/tmp\",\"/mnt\",\"/media\",\"/lost+found\"} \\ pi@\u003cyour-rpi-ip\u003e:/ ~/rpi5-sysroot Update CMake toolchain file: # Edit arm-toolchain-pi5.cmake # Replace this line: # set(CMAKE_SYSROOT \"${TOOLCHAIN_PATH}/aarch64-none-linux-gnu/libc\") # With this: set(CMAKE_SYSROOT \"/home/yourusername/rpi5-sysroot\") set(CMAKE_FIND_ROOT_PATH \"${CMAKE_SYSROOT}\") Rebuild binaries: # Clean and rebuild rm -rf cmake-out ./examples/raspberry_pi/rpi_setup.sh pi5 --force-rebuild # Verify GLIBC version strings ./cmake-out/examples/models/llama/llama_main | grep GLIBC_ # Should show max GLIBC_2.36 (matching your Pi) Issue 2: Library Not Found# Problem: Required libraries are not found at runtime. Error Symptoms: ./llama_main: error while loading shared libraries: libllama_runner.so: cannot open shared object file Solution: # Ensure you\u0027re in the correct directory and environment is set cd ~/executorch-deployment source setup_env.sh ./llama_main --help Root Cause: Either LD_LIBRARY_PATH is not set or you\u2019re not in the deployment directory. Issue 3: Tokenizer JSON Parsing Warnings# Problem: Warning messages about JSON parsing errors after running the llama_main binary. Error Symptoms: E tokenizers:hf_tokenizer.cpp:60] Error parsing json file: [json.exception.parse_error.101] Solution: These warnings can be safely ignored. They don\u2019t affect model inference. Quick Test Command# After resolving issues, test with: cd ~/executorch-deployment source setup_env.sh ./llama_main --model_path ./llama3_2.pte --tokenizer_path ./tokenizer.model --seq_len 128 --prompt \"What is the meaning of life?\" Debugging Tools# Enable ExecuTorch logging: # Set log level for debugging export ET_LOG_LEVEL=Info ./llama_main --model_path ./model.pte --verbose Final Run command# cd ~/executorch-deployment source setup_env.sh ./llama_main --model_path ./llama3_2.pte --tokenizer_path ./tokenizer.model --seq_len 128 --prompt \"What is the meaning of life?\" Happy Inferencing!",
+       "articleBody": "ExecuTorch on Raspberry Pi# TLDR# This tutorial demonstrates how to deploy Llama models on Raspberry Pi 4/5 devices using ExecuTorch: Prerequisites: Linux host machine, Python 3.11-3.15, conda environment, Raspberry Pi 4/5 Setup: Automated cross-compilation using setup.sh script for ARM toolchain installation Export: Convert Llama models to optimized .pte format with quantization options Deploy: Transfer binaries to Raspberry Pi and configure runtime libraries Optimize: Build optimization and performance tuning techniques Result: Efficient on-device Llama inference Prerequisites and Hardware Requirements# Host Machine Requirements# Operating System: Linux x86_64 (Ubuntu 20.04+ or CentOS Stream 9+) Software Dependencies: Python 3.11-3.15 (ExecuTorch requirement) conda or venv for environment management CMake 3.26+ Git for repository cloning Target Device Requirements# Supported Devices: Raspberry Pi 4 and Raspberry Pi 5 with 64-bit OS Memory Requirements: RAM \u0026 Storage Varies by model size and optimization level 64-bit Raspberry Pi OS Bookworm (Debian 12) or Trixie (Debian 13). Bullseye is not supported. Verification Commands# Verify your host machine compatibility: # Check OS and architecture uname -s # Should output: Linux uname -m # Should output: x86_64 # Check Python version python3 --version # Should be 3.11-3.15 # Check required tools hash cmake git md5sum 2\u003e/dev/null || echo \"Missing required tools\" cmake --version # Should be 3.26+ at minimum ## Development Environment Setup ### Clone ExecuTorch Repository First, clone the ExecuTorch repository with the Raspberry Pi support: ```bash # Create project directory mkdir ~/executorch-rpi \u0026\u0026 cd ~/executorch-rpi \u0026\u0026 git clone -b release/1.0 https://github.com/pytorch/executorch.git \u0026\u0026 cd executorch Create Conda Environment# # Create conda environment conda create -yn executorch python=3.11 conda activate executorch # Upgrade pip pip install --upgrade pip Alternative: Virtual Environment If you prefer Python\u2019s built-in virtual environment: python3 -m venv .venv source .venv/bin/activate pip install --upgrade pip Refer to \u2192 Getting Started with ExecuTorch for more details. Cross-Compilation Toolchain Step# Check the Raspberry Pi OS release on your Pi: ssh \u003crpi-user\u003e@\u003crpi-ip\u003e grep VERSION_CODENAME /etc/os-release # VERSION_CODENAME=bookworm --os builds against that release\u2019s glibc so the binaries run on the Pi as is. It needs mmdebstrap on the host: sudo apt-get install mmdebstrap debian-archive-keyring Run the following script on your Linux host machine with the codename from above (bookworm or trixie): # Pi 5 running Raspberry Pi OS Bookworm examples/raspberry_pi/setup.sh pi5 --os bookworm Without --os, the binaries are built against the toolchain\u2019s bundled glibc and fail on a Pi with an older glibc (e.g. Bookworm) with version \u0027GLIBC_2.38\u0027 not found. Each run does a clean build. On successful completion, you should see the following output: ==== Verifying Build Outputs ==== [INFO] Checking required binaries... [SUCCESS] \u2713 llama_main (6.9M) [SUCCESS] \u2713 libllama_runner.so (17M) [SUCCESS] \u2713 libextension_module.a (159K) - statically linked [SUCCESS] All required binaries built successfully! [INFO] Binaries require glibc \u003e= 2.36 [SUCCESS] Compatible with Debian bookworm (glibc 2.36) ==== Setup Complete! ==== \u2713 ExecuTorch cross-compilation setup completed successfully! Model Preparation and Export# Download Llama Models# Download the Llama model from Hugging Face or any other source, and make sure that following files exist. consolidated.00.pth (model weights) params.json (model config) tokenizer.model (tokenizer) Export Llama to ExecuTorch Format# After downloading the Llama model, export it to ExecuTorch format using the provided script: #### Set these paths to point to the exported files. Following is an example instruction to export a llama model LLAMA_QUANTIZED_CHECKPOINT=path/to/consolidated.00.pth LLAMA_PARAMS=path/to/params.json python -m extension.llm.export.export_llm \\ --config examples/models/llama/config/llama_xnnpack_spinquant.yaml \\ +base.model_class=\"llama3_2\" \\ +base.checkpoint=\"${LLAMA_QUANTIZED_CHECKPOINT:?}\" \\ +base.params=\"${LLAMA_PARAMS:?}\" The file llama3_2.pte will be generated at the place where you run the command For more details see Option A: Download and Export Llama3.2 1B/3B Model Also refer to \u2192 Exporting LLMs for more details. Raspberry Pi Deployment# Transfer Binaries to Raspberry Pi# After successful cross-compilation, transfer the required files: ##### Set Raspberry Pi details export RPI_UN=\"pi\" # Your Raspberry Pi username export RPI_IP=\"your-rpi-ip-address\" ##### Create deployment directory on Raspberry Pi ssh $RPI_UN@$RPI_IP \u0027mkdir -p ~/executorch-deployment\u0027 ##### Copy main executable scp cmake-out/examples/models/llama/llama_main $RPI_UN@$RPI_IP:~/executorch-deployment/ ##### Copy runtime library scp cmake-out/examples/models/llama/runner/libllama_runner.so $RPI_UN@$RPI_IP:~/executorch-deployment/ ##### Copy model file scp llama3_2.pte $RPI_UN@$RPI_IP:~/executorch-deployment/ scp ./tokenizer.model $RPI_UN@$RPI_IP:~/executorch-deployment/ Configure Runtime Libraries on Raspberry Pi# SSH into your Raspberry Pi and configure the runtime: Set up library environment# cd ~/executorch-deployment echo \u0027export LD_LIBRARY_PATH=$(pwd):$LD_LIBRARY_PATH\u0027 \u003e setup_env.sh chmod +x setup_env.sh #### Make executable chmod +x llama_main Dry Run# source setup_env.sh ./llama_main --help Make sure that the output does not have any GLIBC / other library mismatch errors. If you see GLIBC_x.y not found, rerun the cross-compilation step with --os set to the Pi\u2019s release. For other errors, see the troubleshooting steps below. Troubleshooting# Issue 1: Library Not Found# Problem: Required libraries are not found at runtime. Error Symptoms: ./llama_main: error while loading shared libraries: libllama_runner.so: cannot open shared object file Solution: # Ensure you\u0027re in the correct directory and environment is set cd ~/executorch-deployment source setup_env.sh ./llama_main --help Root Cause: Either LD_LIBRARY_PATH is not set or you\u2019re not in the deployment directory. Issue 2: Tokenizer JSON Parsing Warnings# Problem: Warning messages about JSON parsing errors after running the llama_main binary. Error Symptoms: E tokenizers:hf_tokenizer.cpp:60] Error parsing json file: [json.exception.parse_error.101] Solution: These warnings can be safely ignored. They don\u2019t affect model inference. Quick Test Command# After resolving issues, test with: cd ~/executorch-deployment source setup_env.sh ./llama_main --model_path ./llama3_2.pte --tokenizer_path ./tokenizer.model --seq_len 128 --prompt \"What is the meaning of life?\" Debugging Tools# Enable ExecuTorch logging: # Set log level for debugging export ET_LOG_LEVEL=Info ./llama_main --model_path ./model.pte --verbose Final Run command# cd ~/executorch-deployment source setup_env.sh ./llama_main --model_path ./llama3_2.pte --tokenizer_path ./tokenizer.model --seq_len 128 --prompt \"What is the meaning of life?\" Happy Inferencing!",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",
