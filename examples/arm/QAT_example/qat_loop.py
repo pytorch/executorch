@@ -24,6 +24,7 @@ import copy
 import csv
 import importlib
 import json
+import logging
 import math
 import re
 import sys
@@ -1157,6 +1158,13 @@ def write_quantization_coverage(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--log-level",
+        type=str.upper,
+        choices=("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"),
+        default="WARNING",
+        help="Python logging level. Use DEBUG to inspect VGF shader fusion.",
+    )
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument(
         "--triples-root",
@@ -2013,6 +2021,8 @@ def print_summary(aggregate: dict[str, Any]) -> None:
 
 def main() -> int:
     args = parse_args()
+    logging.basicConfig(level=args.log_level, force=True)
+    logging.getLogger("executorch.backends.arm").setLevel(args.log_level)
     validate_args(args)
 
     triples = load_requested_triples(args)

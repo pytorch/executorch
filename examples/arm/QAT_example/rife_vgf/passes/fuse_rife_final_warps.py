@@ -307,4 +307,9 @@ class FuseRifeFinalWarpsPass(ArmPass):
         graph.lint()
         graph_module.recompile()
         self.applied = True
+        logger.debug(
+            "Fused RIFE final warps into shader %s: normalization_xy=%s retained",
+            OPERATOR_NAME if blend is None else BLEND_OPERATOR_NAME,
+            payloads[0]["flow_normalization"],
+        )
         return PassResult(graph_module, True)

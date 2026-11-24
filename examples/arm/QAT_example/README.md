@@ -83,6 +83,11 @@ add `--model-class IFNetTwoBlock` to the command above.
 
 ### Packed Intermediate Warps
 
+Add `--log-level DEBUG` when exporting with `--export-vgf` to see whether
+flow normalization is fused into the sampling shaders and retained in the
+packed and final warp shaders. Fusion diagnostics are emitted during export,
+not during device execution. The default logging level is `WARNING`.
+
 The RIFE VGF extension runs `PackRifeWarpsAndConcatPass` after TOSA lowering.
 For the supported integer pattern, one shader samples both images and both
 feature tensors and writes the second block's CONCAT input directly as C32.
