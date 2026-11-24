@@ -76,14 +76,18 @@ Error TextLLMRunner::generate(
     const GenerationConfig& config,
     std::function<void(const std::string&)> token_callback,
     std::function<void(const Stats&)> stats_callback) {
+  // A stop() from here on, including during prefill, ends this generation.
+  // When this generate() continues an earlier prefill() call, a stop() made
+  // since that prefill started still applies, so it is kept.
+  if (!prefill_next_token_.has_value()) {
+    text_token_generator_->reset_stop();
+  }
+
   if (!is_loaded()) {
     stats_->model_load_start_ms = time_in_ms();
     ET_CHECK_OK_OR_RETURN_ERROR(load());
     stats_->model_load_end_ms = time_in_ms();
   }
-
-  // A stop() from here on, including during prefill, ends this generation.
-  text_token_generator_->reset_stop();
 
   if (config.warming) {
     ET_LOG(Info, "Doing a warmup run...");
@@ -250,7 +254,7 @@ Error TextLLMRunner::generate(
       max_new_tokens - 1,
       resolved_temp,
       wrapped_callback,
-      /*reset_stop=*/false);
+      /*clear_pending_stop=*/false);
 
   if (!generate_result.ok()) {
     return generate_result.error();
@@ -293,6 +297,12 @@ Result<uint64_t> TextLLMRunner::prefill(
     const std::vector<MultimodalInput>& inputs,
     int32_t num_bos,
     int32_t num_eos) {
+  // A prefill() that starts a new turn clears an earlier stop(); one that
+  // adds to a pending prefill keeps it, so the generate() that follows stops.
+  if (!prefill_next_token_.has_value()) {
+    text_token_generator_->reset_stop();
+  }
+
   if (!is_loaded()) {
     ET_CHECK_OK_OR_RETURN_ERROR(load());
   }

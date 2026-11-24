@@ -89,6 +89,12 @@ Result<uint64_t> MultimodalRunner::prefill(
     const std::vector<MultimodalInput>& inputs,
     int32_t num_bos,
     int32_t num_eos) {
+  // A prefill() that starts a new turn clears an earlier stop(); one that
+  // adds to a pending prefill keeps it, so the generate() that follows stops.
+  if (!prefill_next_token_.has_value()) {
+    text_token_generator_->reset_stop();
+  }
+
   uint64_t last_token = 0;
   for (size_t i = 0; i < inputs.size(); ++i) {
     const auto& input = inputs[i];
@@ -123,96 +129,6 @@ Result<uint64_t> MultimodalRunner::prefill(
   return last_token;
 }
 
-Error MultimodalRunner::decode_from_token(
-    uint64_t cur_token,
-    const GenerationConfig& config,
-    const std::function<void(const std::string&)>& wrapped_callback,
-    const std::function<void(const Stats&)>& stats_callback) {
-  stats_->first_token_ms = time_in_ms();
-  stats_->prompt_eval_end_ms = time_in_ms();
-  stats_->num_prompt_tokens = pos_;
-
-  auto decode_result = tokenizer_->decode(cur_token, cur_token);
-  if (!decode_result.ok()) {
-    ET_LOG(
-        Error,
-        "Tokenizers error code %d",
-        static_cast<uint32_t>(decode_result.error()));
-    return Error::InvalidArgument;
-  }
-  wrapped_callback(std::move(*decode_result));
-
-  RUNNER_ET_LOG(
-      config.warming,
-      "RSS after multimodal input processing: %f MiB (0 if unsupported)",
-      get_rss_bytes() / 1024.0 / 1024.0);
-
-  // Resolve max_new_tokens based on config
-  int64_t max_context_len = metadata_.at(kMaxContextLen);
-  int32_t max_new_tokens = config.resolve_max_new_tokens(max_context_len, pos_);
-
-  ET_LOG(
-      Info,
-      "Max new tokens resolved: %d, pos_ %" PRId64 ", max_context_len %" PRId64,
-      max_new_tokens,
-      pos_,
-      max_context_len);
-
-  ET_CHECK_OR_RETURN_ERROR(
-      max_new_tokens > 0,
-      InvalidArgument,
-      "Max new tokens %d is less than or equal to 0",
-      max_new_tokens);
-
-  // Set ignore_eos based on config
-  text_token_generator_->set_ignore_eos(config.ignore_eos);
-
-  // Generate tokens using the text token generator
-  std::vector<uint64_t> prompt_tokens = {cur_token};
-  auto generate_result = text_token_generator_->generate(
-      /*tokens=*/prompt_tokens,
-      /*start_pos=*/pos_,
-      /*max_new_tokens=*/max_new_tokens -
-          1, // Subtract 1 because prefill already generated 1 token
-      /*temperature=*/config.temperature,
-      /*token_callback=*/wrapped_callback);
-  if (!generate_result.ok()) {
-    return generate_result.error();
-  }
-  int64_t num_generated_tokens = generate_result.get();
-
-  pos_ += num_generated_tokens;
-  // Update stats
-  stats_->num_generated_tokens = num_generated_tokens;
-  // Finalize stats and call callback
-  stats_->inference_end_ms = time_in_ms();
-
-#ifdef CUDA_AVAILABLE
-  cuda_memory_tracker_->log_sample("after_generate");
-  stats_->gpu_free_after_generate_bytes =
-      cuda_memory_tracker_->last_free_bytes();
-  // update peak in case it changed after generation
-  stats_->gpu_peak_usage_mb = cuda_memory_tracker_->peak_usage_mb();
-#endif
-
-  if (!config.warming) {
-    printf("\n");
-  }
-
-  if (config.warming) {
-    ET_LOG(Info, "Warmup run finished!");
-  } else {
-    // Do not print report during warmup
-    print_report(*stats_);
-  }
-
-  if (stats_callback) {
-    stats_callback(*stats_);
-  }
-
-  return Error::Ok;
-}
-
 Error MultimodalRunner::generate(
     const std::string& prompt,
     const GenerationConfig& config,
@@ -235,12 +151,18 @@ Error MultimodalRunner::generate(
     return Error::InvalidArgument;
   }
 
+  // A stop() from here on, including during prefill, ends this generation.
+  // When this generate() continues an earlier prefill() call, a stop() made
+  // since that prefill started still applies, so it is kept. Cleared before
+  // the lazy load(), so a stop() during the load is kept too.
+  if (!prefill_next_token_.has_value()) {
+    text_token_generator_->reset_stop();
+  }
+  prefill_next_token_.reset();
+
   if (!is_loaded()) {
     ET_CHECK_OK_OR_RETURN_ERROR(load());
   }
-
-  // A stop() from here on, including during prefill, ends this generation.
-  text_token_generator_->reset_stop();
 
   if (config.warming) {
     ET_LOG(Info, "Doing a warmup run...");
@@ -337,7 +259,7 @@ Error MultimodalRunner::generate(
           1, // Subtract 1 because prefill already generated 1 token
       /*temperature=*/config.temperature,
       /*token_callback=*/wrapped_callback,
-      /*reset_stop=*/false);
+      /*clear_pending_stop=*/false);
   if (!generate_result.ok()) {
     return generate_result.error();
   }

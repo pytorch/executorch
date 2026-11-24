@@ -78,9 +78,9 @@ class ET_EXPERIMENTAL TextTokenGenerator {
    * random predictions, while a lower temperature results in more deterministic
    * predictions.
    * @param token_callback what to do after a token is generated.
-   * @param reset_stop clear an earlier stop() before generating. Runners that
-   * call reset_stop() themselves before prefill pass false, so a stop() that
-   * arrives during prefill still ends the generation.
+   * @param clear_pending_stop clear an earlier stop() before generating.
+   * Runners that call reset_stop() themselves before prefill pass false, so a
+   * stop() that arrives during prefill still ends the generation.
    * @return how many tokens are generated.
    */
   inline ::executorch::runtime::Result<int64_t> generate(
@@ -89,7 +89,7 @@ class ET_EXPERIMENTAL TextTokenGenerator {
       int32_t max_new_tokens,
       float temperature = 0.0f,
       const std::function<void(const std::string&)>& token_callback = {},
-      bool reset_stop = true) {
+      bool clear_pending_stop = true) {
     ET_CHECK_MSG(
         !tokens.empty(), "Token generation loop shouldn't take empty tokens");
     ET_CHECK_OR_RETURN_ERROR(
@@ -132,7 +132,7 @@ class ET_EXPERIMENTAL TextTokenGenerator {
           resize_tensor_ptr(tokens_managed, token_shape));
     }
 
-    if (reset_stop) {
+    if (clear_pending_stop) {
       should_stop_.store(false, std::memory_order_relaxed);
     }
 
@@ -180,10 +180,6 @@ class ET_EXPERIMENTAL TextTokenGenerator {
       }
       token_callback(std::move(*decode_result));
 
-      if (should_stop_.load(std::memory_order_relaxed)) {
-        break;
-      }
-
       // data-dependent terminating condition: we have n_eos_ number of EOS
       if (!ignore_eos_ && eos_ids_->find(cur_token) != eos_ids_->end()) {
         printf("\n");
@@ -203,7 +199,7 @@ class ET_EXPERIMENTAL TextTokenGenerator {
 
   /**
    * Clear an earlier stop(). Runners call this when a generation starts,
-   * before prefill, and then pass reset_stop = false to generate().
+   * before prefill, and then pass clear_pending_stop = false to generate().
    */
   inline void reset_stop() {
     should_stop_.store(false, std::memory_order_relaxed);
