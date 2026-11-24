@@ -28,6 +28,7 @@ from executorch.examples.models.toy_model import SdpaModule
 from executorch.exir import EdgeCompileConfig, schema, to_edge_transform_and_lower
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.passes import replace_complex_with_real_pass
+from torch._inductor.codegen.cpp_wrapper_cpu import CppWrapperCpu
 from torch.export import export
 from torch.nn.attention.varlen import varlen_attn
 
@@ -37,6 +38,65 @@ _LOW_MEMORY_ON = CompileSpec(key="low_memory_mode", value=b"ON")
 
 
 class TestCudaBackendCompileOptions(unittest.TestCase):
+    def test_collector_scopes_overlap_per_thread(self) -> None:
+        original = CppWrapperCpu.generate_c_shim_extern_kernel_call
+
+        def stub_extern(self, kernel, *args, **kwargs):
+            return None
+
+        both_entered = threading.Barrier(2)
+        a_exited = threading.Event()
+        results = {}
+
+        def collect(name: str, exit_first: bool) -> None:
+            missing: set[str] = set()
+            with CudaBackend.collect_unsupported_fallback_kernels(missing):
+                both_entered.wait(timeout=60)
+                if exit_first:
+                    CppWrapperCpu.generate_c_shim_extern_kernel_call(object(), name)
+                else:
+                    # Record only after the other scope has exited: with
+                    # per-compile wrapping its exit removed the hooks.
+                    a_exited.wait(timeout=60)
+                    CppWrapperCpu.generate_c_shim_extern_kernel_call(object(), name)
+            if exit_first:
+                a_exited.set()
+            results[name] = missing
+
+        with mock.patch.object(
+            CppWrapperCpu, "generate_c_shim_extern_kernel_call", stub_extern
+        ):
+            threads = [
+                threading.Thread(target=collect, args=("kernel_from_a", True)),
+                threading.Thread(target=collect, args=("kernel_from_b", False)),
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=120)
+            self.assertIs(CppWrapperCpu.generate_c_shim_extern_kernel_call, stub_extern)
+        self.assertEqual(results["kernel_from_a"], {"kernel_from_a"})
+        self.assertEqual(results["kernel_from_b"], {"kernel_from_b"})
+        self.assertIs(CppWrapperCpu.generate_c_shim_extern_kernel_call, original)
+
+        # Nested scopes on one thread record into the innermost one.
+        outer: set[str] = set()
+        inner: set[str] = set()
+        with mock.patch.object(
+            CppWrapperCpu, "generate_c_shim_extern_kernel_call", stub_extern
+        ):
+            with CudaBackend.collect_unsupported_fallback_kernels(outer):
+                with CudaBackend.collect_unsupported_fallback_kernels(inner):
+                    CppWrapperCpu.generate_c_shim_extern_kernel_call(
+                        object(), "kernel_inner"
+                    )
+                CppWrapperCpu.generate_c_shim_extern_kernel_call(
+                    object(), "kernel_outer"
+                )
+        self.assertEqual(inner, {"kernel_inner"})
+        self.assertEqual(outer, {"kernel_outer"})
+        self.assertIs(CppWrapperCpu.generate_c_shim_extern_kernel_call, original)
+
     def test_low_memory_triton_reduction_loads_stay_loop_scoped(self):
         from executorch.backends.cuda.cuda_backend import (
             _keep_triton_reduction_loads_loop_scoped,
@@ -1137,8 +1197,9 @@ class TestCudaExport(unittest.TestCase):
 
     def test_measured_routing_is_on_by_default(self):
         """Without the compile spec, the passes that measure the calls several
-        implementations can run follow the replacement pass; OFF leaves them
-        out."""
+        implementations can run follow the replacement pass, before the Helion
+        lowering that always runs last; OFF leaves them out."""
+        from executorch.backends.cuda.passes.lower_helion import LowerHelionPass
         from executorch.backends.cuda.triton.measured_routing import (
             ApplyChoicesPass,
             MeasureChoicesPass,
@@ -1152,10 +1213,15 @@ class TestCudaExport(unittest.TestCase):
             )
         ]
         self.assertEqual(
-            default[-3:],
-            [ReplaceEdgeOpWithTritonOpPass, MeasureChoicesPass, ApplyChoicesPass],
+            default[-4:],
+            [
+                ReplaceEdgeOpWithTritonOpPass,
+                MeasureChoicesPass,
+                ApplyChoicesPass,
+                LowerHelionPass,
+            ],
         )
-        self.assertEqual(off, default[:-2])
+        self.assertEqual(off, default[:-3] + default[-1:])
 
     def test_missing_scatter_kernel_fails_at_export(self):
         """The scatter fallback writes its kernel call itself, and the check for
