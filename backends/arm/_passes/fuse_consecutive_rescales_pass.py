@@ -8,23 +8,12 @@ from typing import cast, Set, Type
 
 import torch
 from executorch.backends.arm._passes.arm_pass import ArmPass
+from executorch.backends.arm._passes.tosa_lowering_utils import rescale_parameters
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule, Node
 
 logger: logging.Logger = logging.getLogger(__name__)
-
-# TOSA RESCALE argument positions:
-#   args[0] = input tensor (Node)
-#   args[1] = output dtype (e.g., torch.int8, torch.int32)
-#   args[2] = scale list (List[float]; per-tensor when len == 1)
-#   args[3] = input zero point (int)
-#   args[4] = output zero point (int)
-_ARG_INPUT = 0
-_ARG_OUTPUT_DTYPE = 1
-_ARG_SCALE = 2
-_ARG_INPUT_ZP = 3
-_ARG_OUTPUT_ZP = 4
 
 
 class FuseConsecutiveRescalesPass(ArmPass):
@@ -71,9 +60,9 @@ class FuseConsecutiveRescalesPass(ArmPass):
             if not _is_fuseable_r1(node):
                 continue
 
-            r1_input = node.args[_ARG_INPUT]
-            r1_input_zp = node.args[_ARG_INPUT_ZP]
-            r1_scale = float(node.args[_ARG_SCALE][0])  # type: ignore[arg-type]
+            r1_input = node.args[0]
+            r1_input_zp = rescale_parameters(node)[1]
+            r1_scale = float(rescale_parameters(node)[0][0])  # type: ignore[arg-type]
 
             node_fused = False
             for user in list(node.users):
@@ -120,11 +109,11 @@ def _is_fuseable_r1(node: Node) -> bool:
     """
     if not _is_rescale(node):
         return False
-    if node.args[_ARG_OUTPUT_DTYPE] not in (torch.int8, torch.int16):
+    if rescale_parameters(node)[3] not in (torch.int8, torch.int16):
         return False
-    if len(node.args[_ARG_SCALE]) != 1:  # type: ignore[arg-type]
+    if len(rescale_parameters(node)[0]) != 1:  # type: ignore[arg-type]
         return False
-    r1_input = node.args[_ARG_INPUT]
+    r1_input = node.args[0]
     if not isinstance(r1_input, Node) or "val" not in r1_input.meta:
         return False
     if r1_input.meta["val"].dtype != torch.int32:
@@ -146,16 +135,16 @@ def _try_fuse_identity_pair(
     """
     if not _is_rescale(r2):
         return False
-    if r2.args[_ARG_OUTPUT_DTYPE] != torch.int32:
+    if rescale_parameters(r2)[3] != torch.int32:
         return False
-    if r1.args[_ARG_OUTPUT_ZP] != r2.args[_ARG_INPUT_ZP]:
+    if rescale_parameters(r1)[2] != rescale_parameters(r2)[1]:
         return False
-    if len(r2.args[_ARG_SCALE]) != 1:  # type: ignore[arg-type]
+    if len(rescale_parameters(r2)[0]) != 1:  # type: ignore[arg-type]
         return False
 
-    r2_scale = float(r2.args[_ARG_SCALE][0])  # type: ignore[arg-type, index]
+    r2_scale = float(rescale_parameters(r2)[0][0])  # type: ignore[arg-type, index]
     composed_scale = r1_scale * r2_scale
-    r2_output_zp = r2.args[_ARG_OUTPUT_ZP]
+    r2_output_zp = rescale_parameters(r2)[2]
 
     if abs(composed_scale - 1.0) < 1e-6 and r1_input_zp == r2_output_zp:
         # Identity case: remove both RESCALEs and directly wire
