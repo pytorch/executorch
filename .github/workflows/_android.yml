@@ -117,6 +117,34 @@ jobs:
             echo "ANDROID_I_WANT_MY_TCG=yes" >> "$GITHUB_ENV"
           fi
 
+      # The emulator runner action installs the emulator SDK package
+      # itself when missing, with no retry: a corrupt download there
+      # ("Error on ZipFile unknown archive", then adb connection
+      # refused) fails the job before any test runs. Pre-install the
+      # package with retries so the flaky download happens here, where
+      # it can be retried, instead of inside the action.
+      - name: Pre-install Android emulator package (with retries)
+        run: |
+          set -ux
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          SDKMANAGER="${SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$(command -v sdkmanager || true)"
+          fi
+          if [ -z "${SDKMANAGER:-}" ] || [ ! -x "$SDKMANAGER" ]; then
+            echo "::warning::sdkmanager not found; skipping emulator pre-install"
+            exit 0
+          fi
+          for attempt in 1 2 3; do
+            if yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" "emulator" >/dev/null; then
+              echo "Emulator package ready (attempt $attempt)"
+              exit 0
+            fi
+            echo "::warning::Emulator package install attempt $attempt failed; retrying"
+            sleep 15
+          done
+          echo "::warning::Could not pre-install the emulator package; the emulator runner step will try on its own"
+
       - name: Run Android emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
