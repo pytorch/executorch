@@ -33,14 +33,25 @@ void add_to_copy_node(ComputeGraph& graph, ValueRef in, ValueRef out) {
   const vkapi::ScalarType in_dtype = graph.dtype_of(in);
   const vkapi::ScalarType out_dtype = graph.dtype_of(out);
 
-  // Same-dtype or float<->half conversions can use BlitNode
-  if (in_dtype == out_dtype ||
-      (is_float_type(in_dtype) && is_float_type(out_dtype))) {
+  const bool same_dtype = in_dtype == out_dtype;
+  // BlitNode copies image to image, so it serves only texture-backed tensors.
+  const bool textures =
+      !graph.is_buffer_storage(in) && !graph.is_buffer_storage(out);
+
+  // Same-dtype or float<->half conversions between textures can use BlitNode
+  if (textures &&
+      (same_dtype || (is_float_type(in_dtype) && is_float_type(out_dtype)))) {
     graph.execute_nodes().emplace_back(new BlitNode(graph, in, out));
     return;
   }
 
-  // Other conversions (e.g. int<->float) use view_convert shaders
+  if (same_dtype) {
+    add_view_copy_node(graph, in, out, {}, resize_to_copy_op_node);
+    return;
+  }
+
+  // Other conversions (e.g. int<->float, or float<->half between buffers) use
+  // view_convert shaders
   add_view_copy_convert_node(graph, in, out, {}, resize_to_copy_op_node);
 }
 

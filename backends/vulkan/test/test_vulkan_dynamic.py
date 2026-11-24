@@ -93,6 +93,7 @@ class TestVulkanDynamic(unittest.TestCase):
         *,
         fully_delegated=True,
         downcast_64_bit=True,
+        skip_dim_order=False,
     ):
         options = {
             "require_dynamic_shapes": True,
@@ -104,7 +105,9 @@ class TestVulkanDynamic(unittest.TestCase):
         edge = to_edge_transform_and_lower(
             export(model.eval(), inputs, dynamic_shapes=dynamic_shapes, strict=False),
             partitioner=[VulkanPartitioner(options)],
-            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+            compile_config=EdgeCompileConfig(
+                _check_ir_validity=False, _skip_dim_order=skip_dim_order
+            ),
         )
         targets = [
             node.target
@@ -232,6 +235,37 @@ class TestVulkanDynamic(unittest.TestCase):
                     torch.ops.higher_order.executorch_call_delegate,
                     [node.target for node in edge.exported_program().graph.nodes],
                 )
+
+    def test_dynamic_to_copy_float_half(self):
+        # Without dim order ops, float<->half casts stay aten._to_copy. On
+        # buffer-backed tensors they must not use BlitNode, which copies images.
+        class Cast(torch.nn.Module):
+            def __init__(self, dtype):
+                super().__init__()
+                self.dtype = dtype
+
+            def forward(self, x):
+                return (x * 2).to(self.dtype) + 1
+
+        for src, dst in (
+            (torch.float16, torch.float32),
+            (torch.float32, torch.float16),
+        ):
+            for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
+                with self.subTest(src=src, dst=dst, storage=storage):
+                    model = Cast(dst)
+                    inputs = [
+                        (torch.linspace(-3, 3, s, dtype=src).repeat(3, 1),)
+                        for s in (16, 9, 4, 13)
+                    ]
+                    edge = self._lower(
+                        model,
+                        inputs[0],
+                        ({1: Dim("s", min=2, max=16)},),
+                        storage,
+                        skip_dim_order=True,
+                    )
+                    self._run(edge, model, inputs, atol=1e-3, rtol=1e-3)
 
     def test_dynamic_gelu(self):
         for approximate in ("none", "tanh"):
