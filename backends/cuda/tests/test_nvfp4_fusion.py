@@ -91,6 +91,11 @@ def record_calls(monkeypatch, module, names, calls):
         ("w4a16", False, 37, False, "nvfp4_w4a16"),
         ("w4a16", False, 1, False, "nvfp4_gemv"),
         ("auto", False, 37, False, "nvfp4_w4a16"),
+        # Without native FP4, auto decode times W4A16 against W4A8.
+        ("auto", False, 1, False, "nvfp4_auto_decode"),
+        ("w4a8", False, 1, False, "nvfp4_w4a8_gemv"),
+        ("w4a8", True, 1, False, "nvfp4_w4a8_gemv"),
+        ("w4a8", True, 37, True, "nvfp4_w4a16"),
         ("auto", True, 37, False, "nvfp4_auto_prefill"),
         ("auto", True, 37, True, "nvfp4_auto_prefill"),
         ("auto", True, 1, True, "nvfp4_auto_decode"),
@@ -104,7 +109,10 @@ def record_calls(monkeypatch, module, names, calls):
 def test_linear_routing(mode, native, rows, fp32, expected, monkeypatch):
     # Export traces with fake tensors; record which op each policy emits.
     from executorch.backends.cuda.quantize_op_dispatch import nvfp4_dispatch
-    from executorch.backends.cuda.triton.kernels import nvfp4_quantized_gemm
+    from executorch.backends.cuda.triton.kernels import (
+        nvfp4_quantized_gemm,
+        nvfp4_w4a8_gemv,
+    )
 
     calls = []
     record_calls(
@@ -119,7 +127,10 @@ def test_linear_routing(mode, native, rows, fp32, expected, monkeypatch):
         ("nvfp4_auto_decode", "nvfp4_auto_prefill"),
         calls,
     )
+    record_calls(monkeypatch, nvfp4_w4a8_gemv, ("nvfp4_w4a8_gemv",), calls)
     monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: native)
+    # The routing is NVIDIA's; w4a8 raises on ROCm.
+    monkeypatch.setattr(torch.version, "hip", None)
     monkeypatch.setenv("ET_CUDA_NVFP4_ACT", mode)
     monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_OUTPUT", "fp32" if fp32 else "input")
     from torch.fx.experimental.symbolic_shapes import ShapeEnv
@@ -145,11 +156,16 @@ def test_linear_routing(mode, native, rows, fp32, expected, monkeypatch):
         ("w4a4", "input", False, RuntimeError, "SM120"),
         ("w8a8", "input", True, ValueError, "ET_CUDA_NVFP4_ACT"),
         ("auto", "fp16", True, ValueError, "ET_CUDA_NVFP4_PREFILL_OUTPUT"),
+        # The W4A8 GEMV is NVIDIA PTX: forced w4a8 fails clearly on ROCm.
+        ("w4a8", "rocm", False, RuntimeError, "NVIDIA"),
     ],
 )
 def test_linear_policy_errors(act, output, native, error, match, monkeypatch):
     from executorch.backends.cuda.quantize_op_dispatch import nvfp4_dispatch
 
+    if output == "rocm":
+        monkeypatch.setattr(torch.version, "hip", "6.2")
+        output = "input"
     monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: native)
     monkeypatch.setenv("ET_CUDA_NVFP4_ACT", act)
     monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_OUTPUT", output)
@@ -213,6 +229,38 @@ def test_auto_bodies_forward_mode_split(fp4, monkeypatch):
             nvfp4_dispatch._prefill(x, *weight, act_scale, 64, mode_split=mode_split)
         with pytest.raises(InvalidLaunchParam, match="native FP4"):
             nvfp4_dispatch._decode(x[:2], *weight, act_scale, mode_split=mode_split)
+        assert not calls
+
+
+@pytest.mark.parametrize(
+    "native,hip,runs", [(False, None, True), (True, None, False), (False, "6.2", False)]
+)
+def test_auto_decode_w4a8_mode_only_on_nvidia_without_native_fp4(
+    native, hip, runs, monkeypatch
+):
+    # Mode 2 (W4A8, NVIDIA PTX) is timed only without native FP4 and off ROCm.
+    from executorch.backends.cuda.quantize_op_dispatch import nvfp4_dispatch
+    from executorch.backends.cuda.triton.kernels import nvfp4_w4a8_gemv
+
+    calls = []
+
+    def launch(x, qdata, scale, pts, max_rows, *, split_k):
+        calls.append(split_k)
+        return x.new_empty((x.shape[0], qdata.shape[0]))
+
+    monkeypatch.setattr(nvfp4_w4a8_gemv, "launch_w4a8_gemv", launch)
+    monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: native)
+    monkeypatch.setattr(torch.version, "hip", hip)
+    w = shards(512)[0]
+    x = torch.randn(2, 512, dtype=torch.bfloat16)
+    mode_split = 2 * nvfp4_dispatch._MODE_STRIDE + 4
+    args = (x, w.qdata, w.scale, w.per_tensor_scale, None)
+    if runs:
+        nvfp4_dispatch._decode(*args, mode_split=mode_split)
+        assert calls == [4]
+    else:
+        with pytest.raises(InvalidLaunchParam, match="W4A8"):
+            nvfp4_dispatch._decode(*args, mode_split=mode_split)
         assert not calls
 
 

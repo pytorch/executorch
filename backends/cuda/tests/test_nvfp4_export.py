@@ -12,6 +12,7 @@ import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
 import pytest
 import torch
 import torch.nn.functional as F
+import triton
 from executorch.backends.cuda.autotune.launch_params import clear_launch_param_cache
 from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
@@ -22,6 +23,10 @@ from executorch.backends.cuda.quantize_op_dispatch.nvfp4_dispatch import (
 )
 from executorch.backends.cuda.tests.nvfp4_gemma_test_utils import GemmaPacked
 from executorch.backends.cuda.tests.nvfp4_test_utils import PackedLinear
+from executorch.backends.cuda.triton.kernels import (
+    nvfp4_quantized_gemm,
+    nvfp4_w4a8_gemv,
+)
 from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
     nvfp4_quantize_activation,
 )
@@ -36,6 +41,13 @@ pytestmark = pytest.mark.skipif(
 @pytest.fixture(autouse=True)
 def cold_pick_cache():
     clear_launch_param_cache()
+    # Tile picks live in each kernel's triton.autotune cache: without native
+    # FP4, decode-size auto would reuse the GEMV tiles earlier cases tuned and
+    # time none.
+    for module in (nvfp4_quantized_gemm, nvfp4_w4a8_gemv):
+        for value in vars(module).values():
+            if isinstance(value, triton.runtime.Autotuner):
+                value.cache.clear()
 
 
 @pytest.mark.parametrize(
@@ -46,13 +58,16 @@ def cold_pick_cache():
         ("w4a16", 37, True, False),
         ("w4a16", 45, True, True),
         ("w4a4", 16, False, False),
+        ("w4a8", 1, False, False),
         ("auto", 1, False, False),
         ("auto", 16, True, False),
     ],
 )
-def test_packed_linear_pte(mode, m, dynamic, fp32, monkeypatch):
-    if mode != "w4a16" and not _has_native_fp4():
-        pytest.skip("native FP4 required")
+def test_packed_linear_pte(mode, m, dynamic, fp32, monkeypatch):  # noqa: C901
+    # Decode-size auto times W4A16 against W4A8 without native FP4.
+    if mode == "w4a4" or (mode == "auto" and m > 4):
+        if not _has_native_fp4():
+            pytest.skip("native FP4 required")
     monkeypatch.setenv("ET_CUDA_NVFP4_ACT", mode)
     # The FP32 prefill policy is read at export and baked into the program.
     monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_OUTPUT", "fp32" if fp32 else "input")
@@ -104,7 +119,7 @@ def test_packed_linear_pte(mode, m, dynamic, fp32, monkeypatch):
         assert (
             len(picks) == 1
         ), "auto mode must remain an op until AOTI measures activation mode and split-K"
-        selected_mode = "w4a4" if picks[0].choice // _MODE_STRIDE else "w4a16"
+        selected_mode = ("w4a16", "w4a4", "w4a8")[picks[0].choice // _MODE_STRIDE]
     else:
         selected_mode = mode
 
@@ -114,6 +129,16 @@ def test_packed_linear_pte(mode, m, dynamic, fp32, monkeypatch):
             return F.linear(value.float(), weight, module.bias.float())
         if selected_mode == "w4a16":
             return F.linear(value, module.weight.dequantize(), module.bias)
+        if selected_mode == "w4a8":
+            blocks = value.double().reshape(value.shape[0], -1, 16)
+            amax = blocks.abs().amax(-1, keepdim=True)
+            inv = torch.where(amax > 0, 127.0 / amax, 0.0)
+            quantized = (
+                (blocks * inv).round().clamp(-127, 127) * amax / 127.0
+            ).reshape(value.shape)
+            return (
+                quantized @ module.weight.dequantize().double().T
+            ).bfloat16() + module.bias
         q, s, pts = nvfp4_quantize_activation(value.cuda())
         quantized = (
             CudaNVFP4Tensor(

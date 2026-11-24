@@ -8,8 +8,12 @@ Environment variables, read when the model is traced, fix the policy that
 is compiled into the program:
 
 * ``ET_CUDA_NVFP4_ACT``: ``auto`` (default) times W4A16 against native W4A4
-  per layer when native FP4 is available, ``w4a16`` forces weight-only, and
-  ``w4a4`` forces FP4 activations (native FP4 required).
+  per layer when native FP4 is available, and decode (M statically <= 4)
+  W4A16 against the W4A8 dp4a GEMV (int8 activations per 16 elements)
+  otherwise on NVIDIA (W4A16 only on ROCm); ``w4a16`` forces BF16/FP16
+  activations, ``w4a8`` forces the W4A8 GEMV for decode (other M run W4A16;
+  NVIDIA only, it raises on ROCm), and ``w4a4`` forces FP4 activations (native
+  FP4 required).
 * ``ET_CUDA_NVFP4_PREFILL_OUTPUT``: ``input`` (default) keeps the activation
   dtype; ``fp32`` returns FP32 from prefill linears (M not statically <= 4).
 """
@@ -50,6 +54,10 @@ _MODE_STRIDE = 64
 _MODE_SPLITS = tuple(
     mode * _MODE_STRIDE + split for mode in (0, 1) for split in SPLIT_K_CANDIDATES
 )
+_DECODE_MODE_SPLITS = tuple(
+    mode * _MODE_STRIDE + split for mode in (0, 1, 2) for split in SPLIT_K_CANDIDATES
+)
+_ACT_MODES = ("auto", "w4a4", "w4a8", "w4a16")
 
 
 @autotune_launch_param(
@@ -89,24 +97,36 @@ def _prefill(x, wq, ws, pts, act_scale, max_rows, *, mode_split, output_dtype=No
 
 @autotune_launch_param(
     "mode_split",
-    _MODE_SPLITS,
+    _DECODE_MODE_SPLITS,
     candidate_prepass=_compile_every_candidate_at_once,
     do_bench=nvfp4_launch_bench,
 )
 def _decode(x, wq, ws, pts, act_scale, unit_scale=False, *, mode_split):
-    # Activation mode * 64 + split-K; explicit splits bypass nested tuners.
+    # Activation mode (0: W4A16, 1: native W4A4, 2: W4A8 without native FP4)
+    # * 64 + split-K; explicit splits bypass nested tuners.
     from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
         _launch_w4a4_impl,
         nvfp4_gemv,
     )
 
-    fp4, split = divmod(mode_split, _MODE_STRIDE)
-    if fp4:
+    mode, split = divmod(mode_split, _MODE_STRIDE)
+    if mode == 1:
         if not _has_native_fp4():
             raise InvalidLaunchParam("NVFP4 W4A4 needs native FP4 (SM120+)")
         return _launch_w4a4_impl(
             x, wq, ws, pts, act_scale, _max_rows(x.shape[0]), split_k=split
         )
+    if mode == 2:
+        # W4A8 serves NVIDIA GPUs without native FP4 (its asm is NVIDIA PTX).
+        if _has_native_fp4() or torch.version.hip is not None:
+            raise InvalidLaunchParam(
+                "NVFP4 auto decode times W4A8 only on NVIDIA without native FP4"
+            )
+        from executorch.backends.cuda.triton.kernels.nvfp4_w4a8_gemv import (
+            launch_w4a8_gemv,
+        )
+
+        return launch_w4a8_gemv(x, wq, ws, pts, _max_rows(x.shape[0]), split_k=split)
     return nvfp4_gemv(x, wq, ws, pts, split_k=split, unit_scale=unit_scale)
 
 
@@ -143,7 +163,8 @@ def nvfp4_auto_decode(
     act_scale: torch.Tensor | None = None,
     unit_scale: bool = False,
 ) -> torch.Tensor:
-    """Compare NVFP4 GEMV and native FP4 in the AOTI launch context."""
+    """Compare the NVFP4 GEMV with native W4A4, or without native FP4 with the
+    W4A8 GEMV, in the AOTI launch context."""
     _check_operands(x, qdata, scale, per_tensor_scale)
     _check_static_scale(act_scale, x)
     return _decode(x, qdata, scale, per_tensor_scale, act_scale, unit_scale)
@@ -217,8 +238,8 @@ def nvfp4_gated_linear(x: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
     ``weight`` rows are ``[gate; up]`` as produced by
     ``CudaNVFP4Tensor.fuse_along_output([gate, up])`` (per-row global scales
     in the same order), so N must be even. With native FP4 and BF16 (or FP32
-    under the FP32 prefill policy) activations, outside ``w4a16`` mode, it runs
-    the fused kernels (in ``auto`` only for M not statically <=
+    under the FP32 prefill policy) activations, outside ``w4a16``/``w4a8``, it
+    runs the fused kernels (in ``auto`` only for M not statically <=
     ``NVFP4_DECODE_MAX_ROWS``, whose decode kernels ``F.linear`` times);
     otherwise it is ``F.linear`` (NVFP4 dispatch) followed by SiLU-gating.
 
@@ -241,14 +262,14 @@ def _gated_linear(func, types, args, kwargs):
     if weight.shape[0] % 2 or x.shape[-1] != weight.shape[1]:
         raise ValueError("NVFP4 gated linear requires even N and matching K")
     mode = os.environ.get("ET_CUDA_NVFP4_ACT", "auto")
-    if mode not in ("auto", "w4a4", "w4a16"):
-        raise ValueError("ET_CUDA_NVFP4_ACT must be auto, w4a4, or w4a16")
+    if mode not in _ACT_MODES:
+        raise ValueError(f"ET_CUDA_NVFP4_ACT must be one of {_ACT_MODES}")
     flat = x.reshape(-1, x.shape[-1]).contiguous()
     output_dtype = nvfp4_prefill_output_dtype(flat)
     # FP32 activations take the fused kernels only under the FP32 prefill
     # policy at prefill size, like _linear.
     if (
-        mode == "w4a16"
+        mode in ("w4a16", "w4a8")
         or (
             mode != "w4a4"
             and statically_known_true(flat.shape[0] <= NVFP4_DECODE_MAX_ROWS)
@@ -296,8 +317,8 @@ def _linear(func, types, args, kwargs):
     x, w = args[:2]
     bias = args[2] if len(args) > 2 else kwargs.get("bias")
     mode = os.environ.get("ET_CUDA_NVFP4_ACT", "auto")
-    if mode not in ("auto", "w4a4", "w4a16"):
-        raise ValueError("ET_CUDA_NVFP4_ACT must be auto, w4a4, or w4a16")
+    if mode not in _ACT_MODES:
+        raise ValueError(f"ET_CUDA_NVFP4_ACT must be one of {_ACT_MODES}")
     if x.shape[-1] != w.shape[-1]:
         raise RuntimeError("NVFP4 linear input and weight K dimensions must match")
     flat = x.reshape(-1, x.shape[-1]).contiguous()
@@ -320,12 +341,12 @@ def _linear(func, types, args, kwargs):
             nvfp4_w4a4,
         )
 
-        if not _has_native_fp4():
-            if mode == "w4a4":
-                raise RuntimeError(
-                    "Native NVFP4 W4A4 requires an SM120 or newer CUDA target"
-                )
-            mode = "w4a16"
+        if mode == "w4a4" and not _has_native_fp4():
+            raise RuntimeError(
+                "Native NVFP4 W4A4 requires an SM120 or newer CUDA target"
+            )
+        if mode == "w4a8" and torch.version.hip is not None:
+            raise RuntimeError("NVFP4 W4A8 (dp4a PTX) requires an NVIDIA GPU")
         small = statically_known_true(flat.shape[0] <= NVFP4_DECODE_MAX_ROWS)
         if mode == "w4a4":
             out = nvfp4_w4a4(
@@ -337,19 +358,26 @@ def _linear(func, types, args, kwargs):
                 output_dtype=output_dtype,
             )
         elif small and mode == "auto":
+            # Only W4A4 reads the static activation scale.
             out = nvfp4_auto_decode(
                 flat,
                 w.qdata,
                 w.scale,
                 w.per_tensor_scale,
-                w.act_per_tensor_scale,
+                w.act_per_tensor_scale if _has_native_fp4() else None,
                 w.unit_scale,
             )
+        elif small and mode == "w4a8":
+            from executorch.backends.cuda.triton.kernels.nvfp4_w4a8_gemv import (
+                nvfp4_w4a8_gemv,
+            )
+
+            out = nvfp4_w4a8_gemv(flat, w.qdata, w.scale, w.per_tensor_scale)
         elif small:
             out = nvfp4_gemv(
                 flat, w.qdata, w.scale, w.per_tensor_scale, unit_scale=w.unit_scale
             )
-        elif mode == "w4a16":
+        elif mode != "auto" or not _has_native_fp4():
             out = nvfp4_w4a16(
                 flat, w.qdata, w.scale, w.per_tensor_scale, output_dtype=output_dtype
             )
