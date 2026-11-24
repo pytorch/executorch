@@ -7,11 +7,12 @@
 
 """Assemble part of a CUDA toolkit from NVIDIA's redistributable component archives.
 
-The Windows CUDA wheel end-to-end jobs cover several CUDA trains while the CI images carry
-one toolkit, and NVIDIA publishes no full Windows installer for every release. The redist
-archives exist for every release on both platforms, need no installer or admin rights, and
-are checksummed in a JSON index. Merging the components a job needs into one directory
-gives the layout nvcc, CMake's FindCUDAToolkit and torch's cross-compile step expect.
+The Windows CUDA wheel end-to-end jobs and cuda-windows.yml cover several CUDA trains
+while the CI images carry one toolkit, and NVIDIA publishes no full Windows installer for
+every release. The redist archives exist for every release on both platforms, need no
+installer or admin rights, and are checksummed in a JSON index. Merging the components a
+job needs into one directory gives the layout nvcc, CMake's FindCUDAToolkit and torch's
+cross-compile step expect.
 
     install_cuda_redist.py --train 13.4 --platform linux-x86_64 --dest /opt/cuda-13.4
     install_cuda_redist.py --train 13.4 --platform windows-x86_64 --dest DIR --components cuda_cudart
@@ -31,8 +32,9 @@ from pathlib import Path
 _REDIST = "https://developer.download.nvidia.com/compute/cuda/redist"
 
 # The patch release each train resolves to: one entry per train in filter_cuda_matrix.py's
-# SUPPORTED_CUDA_VERSIONS, which the end-to-end jobs take their matrix from. A train missing
-# here fails the job at argument parsing rather than testing a different release.
+# SUPPORTED_CUDA_VERSIONS, which the wheel end-to-end jobs take their matrix from, and in
+# cuda-windows.yml's matrices. A train missing here fails the job at argument parsing rather
+# than testing a different release.
 _RELEASES = {"13.2": "13.2.2", "13.4": "13.4.1"}
 
 # What a build of the CUDA backend needs. "a|b" names one component a release publishes

@@ -5,10 +5,6 @@
 
 from pathlib import Path
 
-from executorch.backends.arm.operators.op_tosa_rescale import (
-    _compute_multiplier_and_shift,
-)
-
 from . import _compile_shader_source
 
 OPERATOR_NAME = "rife.final_warps"
@@ -16,7 +12,7 @@ BLEND_OPERATOR_NAME = "rife.final_blend"
 
 
 def _rescale_source(name, node):
-    multipliers, shifts = _compute_multiplier_and_shift(node.args[2])
+    multipliers, shifts = node.args[1:3]
     shift = shifts[0]
     rounding = 1 << (shift - 1)
     result = (

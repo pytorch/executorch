@@ -8,10 +8,6 @@ from typing import Any, List
 import torch.fx
 import tosa_serializer as ts
 
-from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
-    get_input_qparams,
-    get_output_qparams,
-)
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -22,15 +18,6 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_valid_dtype,
 )
 from executorch.backends.arm.tosa.mapping import TosaArg
-
-
-def get_negate_zero_points(node: torch.fx.Node, is_int8: bool) -> tuple[int, int]:
-    if is_int8:
-        return (
-            get_input_qparams(node)[0].get_zp_per_tensor(),
-            get_output_qparams(node)[0].get_zp_per_tensor(),
-        )
-    return (0, 0)
 
 
 @register_node_visitor
@@ -56,12 +43,10 @@ class NegVisitor(NodeVisitor):
             supported_dtypes.append(ts.DType.INT64)
 
         validate_num_inputs(self.target, inputs, 3)
-        validate_same_dtype(self.target, [*inputs, output])
-        validate_valid_dtype(self.target, [*inputs, output], supported_dtypes)
+        validate_same_dtype(self.target, [inputs[0], output])
+        validate_valid_dtype(self.target, [inputs[0], output], supported_dtypes)
 
-        input_zp, output_zp = get_negate_zero_points(
-            node, inputs[0].dtype == ts.DType.INT8
-        )
+        input_zp, output_zp = node.args[1:]
         input_zp_tensor = tosa_graph.addConst(
             (1,), inputs[0].dtype, [input_zp], name=output.name + "_input_zp"
         )
