@@ -243,27 +243,23 @@ def _parked_on_cpu(tensors: Iterable[torch.Tensor]) -> Iterator[int]:
     """
     parked: list[tuple[torch.UntypedStorage, torch.UntypedStorage]] = []
     seen: set[int] = set()
-    # AOT can enter here with fake and functional modes active. Storage copies
-    # must use real tensors; the body retains the caller's modes.
-    real_tensors = contextlib.ExitStack()
-    real_tensors.enter_context(unset_fake_temporarily())
-    real_tensors.enter_context(_disable_current_modes())
     try:
-        for tensor in tensors:
-            if not _parkable(tensor):
-                continue
-            storage = tensor.untyped_storage()
-            if storage.data_ptr() in seen:
-                continue
-            seen.add(storage.data_ptr())
-            host = storage.cpu()
-            storage.resize_(0)
-            parked.append((storage, host))
-        torch.cuda.empty_cache()
-        real_tensors.close()
+        # AOT can enter here with fake and functional modes active. Storage
+        # copies must use real tensors; the body retains the caller's modes.
+        with unset_fake_temporarily(), _disable_current_modes():
+            for tensor in tensors:
+                if not _parkable(tensor):
+                    continue
+                storage = tensor.untyped_storage()
+                if storage.data_ptr() in seen:
+                    continue
+                seen.add(storage.data_ptr())
+                host = storage.cpu()
+                storage.resize_(0)
+                parked.append((storage, host))
+            torch.cuda.empty_cache()
         yield sum(host.nbytes() for _, host in parked)
     finally:
-        real_tensors.close()
         failed = 0
         with unset_fake_temporarily(), _disable_current_modes():
             for storage, host in parked:
@@ -292,19 +288,13 @@ def _time_capturing_robustly(
     statistic: str = "min",
     replays: int = 1,
 ) -> float:
-    # Only non-default options are forwarded, so a one-argument timer still works.
-    options = {}
-    if statistic != "min":
-        options["statistic"] = statistic
-    if replays != 1:
-        options["replays"] = replays
     try:
-        return time_with_cuda_graph_us(fn, **options)
+        return time_with_cuda_graph_us(fn, statistic=statistic, replays=replays)
     except torch.OutOfMemoryError:
         stats.oom_retries += 1
         _cleanup_after_oom()
     try:
-        return time_with_cuda_graph_us(fn, **options)
+        return time_with_cuda_graph_us(fn, statistic=statistic, replays=replays)
     except torch.OutOfMemoryError:
         stats.oom_retries += 1
         _cleanup_after_oom()
@@ -317,7 +307,7 @@ def _time_capturing_robustly(
             "CUDA-graph autotune timing: parked %.1f GiB of model tensors on the CPU to capture a candidate",
             parked_bytes / (1 << 30),
         )
-        return time_with_cuda_graph_us(fn, **options)
+        return time_with_cuda_graph_us(fn, statistic=statistic, replays=replays)
 
 
 def _time_candidate_with_cuda_graph(
