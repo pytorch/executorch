@@ -11,8 +11,11 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <iterator>
 #include <limits>
+#include <numeric>
 #include <stdexcept>
+#include <utility>
 
 namespace ptn::testing {
 namespace {
@@ -41,6 +44,145 @@ float half_to_float(const uint8_t* bytes) {
 bool same(double a, double b) {
   return a == b || (std::isnan(a) && std::isnan(b));
 }
+
+// Half the fp16 ulp at v, for |v| up to fp16's largest finite value.
+double half_fp16_ulp(double v) {
+  if (std::abs(v) < 0x1p-14) {
+    return 0x1p-25;
+  }
+  int exponent = 0;
+  std::frexp(v, &exponent);
+  return std::ldexp(1.0, exponent - 12);
+}
+
+double round_to_fp16(double v) {
+  return std::nearbyint(v / (2 * half_fp16_ulp(v))) * 2 * half_fp16_ulp(v);
+}
+
+constexpr int64_t kBlock = 32;
+
+// The 32 codes, d and m of one Q4_1 or Q5_1 block.
+struct WeightBlock {
+  double d = 0.0;
+  double m = 0.0;
+  int codes[kBlock] = {};
+};
+
+WeightBlock weight_block(const uint8_t* block, bool fifth_bit) {
+  WeightBlock out{.d = half_to_float(block), .m = half_to_float(block + 2)};
+  const uint8_t* nibbles = block + (fifth_bit ? 8 : 4);
+  uint32_t high = 0;
+  if (fifth_bit) {
+    std::memcpy(&high, block + 4, sizeof(high));
+  }
+  for (int j = 0; j < 16; ++j) {
+    out.codes[j] = (nibbles[j] & 0xF) | (((high >> j) & 1) << 4);
+    out.codes[j + 16] = (nibbles[j] >> 4) | (((high >> (j + 16)) & 1) << 4);
+  }
+  return out;
+}
+
+// One activation block as ggml's GPU Q8_1 quantizer stores it, with `step`
+// the most each code may differ by and the largest |d8| and |s| that allows.
+struct ActivationBlock {
+  double d8 = 0.0;
+  double s = 0.0;
+  int q8[kBlock] = {};
+  double step = 0.0;
+  double d8_max = 0.0;
+  double s_max = 0.0;
+};
+
+ActivationBlock activation_block(const double* x, double x_error) {
+  float amax = 0.0f;
+  for (int64_t i = 0; i < kBlock; ++i) {
+    amax = std::max(amax, std::abs(static_cast<float>(x[i])));
+  }
+  const float d8 = amax / 127.0f;
+  ActivationBlock out;
+  int sum = 0;
+  for (int64_t i = 0; i < kBlock; ++i) {
+    out.q8[i] = amax == 0.0f
+        ? 0
+        : static_cast<int>(std::round(static_cast<float>(x[i]) / d8));
+    sum += out.q8[i];
+  }
+  out.d8 = round_to_fp16(d8);
+  out.s = round_to_fp16(static_cast<double>(d8 * static_cast<float>(sum)));
+  out.d8_max = round_to_fp16((amax + x_error) / 127.0 * (1 + 0x1p-10));
+  out.step = d8 > 0.0f ? x_error / d8 + 1 : 1;
+  out.s_max = out.d8_max * (std::abs(sum) + kBlock * out.step);
+  return out;
+}
+
+} // namespace
+
+BlockScaleLinear block_scale_linear(
+    std::string_view codec,
+    std::span<const uint8_t> weight,
+    int64_t out,
+    int64_t in,
+    std::span<const double> x,
+    std::span<const double> x_error,
+    bool vector_kernel) {
+  if (codec != "gguf:q4_1" && codec != "gguf:q5_1") {
+    throw std::invalid_argument(
+        "block_scale_linear: unsupported codec " + std::string(codec));
+  }
+  const bool fifth_bit = codec == "gguf:q5_1";
+  const int64_t block_bytes = fifth_bit ? 24 : 20;
+  const int64_t blocks = in / kBlock;
+  if (out <= 0 || in <= 0 || in % kBlock != 0 ||
+      std::cmp_not_equal(weight.size(), out * blocks * block_bytes) ||
+      x.size() % in != 0 || (!x_error.empty() && x_error.size() != x.size())) {
+    throw std::invalid_argument("block_scale_linear: mismatched sizes");
+  }
+  const int64_t rows = static_cast<int64_t>(x.size()) / in;
+  std::vector<ActivationBlock> acts(rows * blocks);
+  for (int64_t r = 0; r < rows; ++r) {
+    for (int64_t b = 0; b < blocks; ++b) {
+      double error = 0.0;
+      for (int64_t i = 0; !x_error.empty() && i < kBlock; ++i) {
+        error = std::max(error, x_error[r * in + b * kBlock + i]);
+      }
+      acts[r * blocks + b] = activation_block(&x[r * in + b * kBlock], error);
+    }
+  }
+  BlockScaleLinear result{
+      .outputs = std::vector<double>(rows * out),
+      .bounds = std::vector<double>(rows * out)};
+  for (int64_t o = 0; o < out; ++o) {
+    for (int64_t b = 0; b < blocks; ++b) {
+      const WeightBlock w =
+          weight_block(&weight[(o * blocks + b) * block_bytes], fifth_bit);
+      const int code_sum =
+          std::accumulate(std::begin(w.codes), std::end(w.codes), 0);
+      for (int64_t r = 0; r < rows; ++r) {
+        const ActivationBlock& a = acts[r * blocks + b];
+        int dot = 0;
+        double propagated = 0.0;
+        for (int64_t i = 0; i < kBlock; ++i) {
+          dot += w.codes[i] * a.q8[i];
+          if (!x_error.empty()) {
+            propagated += std::abs(w.d * w.codes[i] + w.m) *
+                x_error[r * in + b * kBlock + i];
+          }
+        }
+        result.outputs[r * out + o] += dot * w.d * a.d8 + w.m * a.s;
+        double& bound = result.bounds[r * out + o];
+        bound += propagated;
+        if (vector_kernel) {
+          bound += (std::abs(dot) + code_sum * a.step) *
+                  half_fp16_ulp(std::abs(w.d) * a.d8_max) +
+              half_fp16_ulp(std::abs(w.m) * a.s_max);
+        }
+      }
+    }
+  }
+  return result;
+}
+
+namespace {
 
 std::string g3(double v) {
   char text[32];
@@ -126,18 +268,23 @@ ErrorStats OutputCheck::Fit::stats() const {
 void OutputCheck::add(
     std::span<const float> got,
     const SampleTensor& golden,
-    const SampleTensor& precise) {
+    const SampleTensor& precise,
+    std::span<const double> allowance) {
   const std::vector<float> want = to_float(golden);
   const std::vector<float> ref = to_float(precise);
-  if (got.size() != want.size() || got.size() != ref.size()) {
+  if (got.size() != want.size() || got.size() != ref.size() ||
+      (!allowance.empty() && allowance.size() != got.size())) {
     throw std::invalid_argument(
         "OutputCheck: " + std::to_string(got.size()) + " values against " +
-        std::to_string(want.size()) + " golden and " +
-        std::to_string(ref.size()) + " precise");
+        std::to_string(want.size()) + " golden, " + std::to_string(ref.size()) +
+        " precise and " + std::to_string(allowance.size()) + " allowances");
   }
   for (size_t i = 0; i < got.size(); ++i) {
-    const double e = got[i];
     const double g = want[i];
+    const double slack = allowance.empty() ? 0.0 : allowance[i];
+    const double e = std::isfinite(got[i]) && std::isfinite(g)
+        ? got[i] - std::clamp(got[i] - g, -slack, slack)
+        : got[i];
     const double p = ref[i];
     if (!std::isfinite(e) || !std::isfinite(g) || !std::isfinite(p)) {
       if (!same(e, g)) {

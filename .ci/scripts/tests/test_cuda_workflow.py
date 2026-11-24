@@ -25,6 +25,45 @@ def _supported_cuda_versions():
     return [f"{major}.{minor}" for major, minor in versions]
 
 
+def _matrix_cuda_versions(job):
+    """The versions a job's gpu-arch-version takes, read from the key it names."""
+    expression = re.fullmatch(
+        r"\$\{\{ matrix\.([\w-]+) \}\}", job["with"]["gpu-arch-version"]
+    )
+    assert expression, job["with"]["gpu-arch-version"]
+    key = expression.group(1)
+    matrix = job["strategy"]["matrix"]
+    axis = matrix.get(key, [])
+    assert isinstance(axis, list), axis
+    # GitHub drops a combination only when it matches every key of an exclude row, and
+    # applies include after exclude. An exclude that names other keys too could drop
+    # every row of a version without this seeing it, so it isn't allowed.
+    excludes = [row for row in matrix.get("exclude", []) if key in row]
+    assert all(row.keys() == {key} for row in excludes), excludes
+    excluded = {row[key] for row in excludes}
+    versions = [version for version in axis if version not in excluded]
+    return versions + [row[key] for row in matrix.get("include", []) if key in row]
+
+
+def _rendered_names(job):
+    """The check names GitHub gives a job's include rows, with each row's values filled in."""
+    names = []
+    for row in job["strategy"]["matrix"]["include"]:
+        name = job["name"]
+        for key, value in row.items():
+            name = name.replace(f"${{{{ matrix.{key} }}}}", str(value))
+        assert "${{" not in name, name
+        names.append(name)
+    return names
+
+
+WINDOWS_TRAIN_JOBS = (
+    "export-model-cuda-windows-artifact",
+    "test-model-cuda-windows-e2e",
+    "unittest-cuda-runtime-windows",
+)
+
+
 def _all_keys(value):
     if isinstance(value, dict):
         for key, child in value.items():
@@ -56,15 +95,81 @@ class CudaWorkflowTest(unittest.TestCase):
             )["jobs"]
             for name, job in jobs.items():
                 with_ = job.get("with", {})
-                version = with_.get("gpu-arch-version")
-                if with_.get("gpu-arch-type") != "cuda" or "${{" in str(version):
+                if with_.get("gpu-arch-type") != "cuda":
                     continue
-                checked += 1
-                with self.subTest(workflow=workflow, job=name):
-                    self.assertIn(version, supported)
+                if "${{" in str(with_["gpu-arch-version"]):
+                    versions = _matrix_cuda_versions(job)
+                else:
+                    versions = [with_["gpu-arch-version"]]
+                for version in versions:
+                    checked += 1
+                    with self.subTest(workflow=workflow, job=name, version=version):
+                        self.assertIn(version, supported)
         self.assertGreater(checked, 0)
 
-    def test_windows_export_image_matches_the_export_job(self):
+    def test_windows_jobs_cover_every_supported_train(self):
+        jobs = yaml.safe_load(
+            (ROOT / ".github" / "workflows" / "cuda-windows.yml").read_text()
+        )["jobs"]
+        for name in WINDOWS_TRAIN_JOBS:
+            with self.subTest(job=name):
+                job = jobs[name]
+                self.assertEqual(
+                    job["with"]["gpu-arch-version"], "${{ matrix.cuda-version }}"
+                )
+                # GitHub cuts job names at 100 characters, so the train goes first.
+                self.assertTrue(
+                    job["name"].startswith(f"{name}-${{{{ matrix.cuda-version }}}}"),
+                    job["name"],
+                )
+                # A name that uses a matrix expression stops GitHub appending the matrix
+                # values, so the name itself has to tell every row apart, within 100
+                # characters.
+                if "include" in job["strategy"]["matrix"]:
+                    rendered = _rendered_names(job)
+                    self.assertEqual(len(set(rendered)), len(rendered), rendered)
+                    for check in rendered:
+                        self.assertLessEqual(len(check), 100, check)
+                self.assertEqual(
+                    sorted(set(_matrix_cuda_versions(job))),
+                    sorted(_supported_cuda_versions()),
+                )
+        for name in ("test-model-cuda-windows-e2e", "unittest-cuda-runtime-windows"):
+            with self.subTest(job=name):
+                script = jobs[name]["with"]["script"]
+                self.assertIn("CUDA\\v${{ matrix.cuda-version }}'", script)
+                self.assertNotRegex(script, r"CUDA\\v\d")
+                # The 13.x Windows toolkits keep their DLLs in bin\x64, so bin\x64 goes
+                # ahead of bin on PATH. The toolkit has to lead PATH before setup, since
+                # setup.py builds the CUDA extension with the first nvcc on PATH.
+                path = script.index(
+                    r"PATH = \"\$env:CUDA_HOME\bin\x64;\$env:CUDA_HOME\bin;"
+                )
+                self.assertLess(path, script.index(".ci/scripts/setup-windows.ps1"))
+        export = jobs["export-model-cuda-windows-artifact"]["strategy"]["matrix"]
+        e2e = jobs["test-model-cuda-windows-e2e"]["strategy"]["matrix"]
+        self.assertEqual(export["include"], e2e["include"])
+        # Only the tile-packed quant lowers to _weight_int4pack_mm, so each train needs it.
+        for version in _supported_cuda_versions():
+            with self.subTest(train=version):
+                self.assertTrue(
+                    any(
+                        row["quant"] == "quantized-int4-tile-packed"
+                        and row["cuda-version"] == version
+                        for row in export["include"]
+                    )
+                )
+
+    def test_one_failed_export_row_does_not_skip_the_others(self):
+        jobs = yaml.safe_load(
+            (ROOT / ".github" / "workflows" / "cuda-windows.yml").read_text()
+        )["jobs"]
+        gate = jobs["test-model-cuda-windows-e2e"]["if"]
+        self.assertNotIn("export-model-cuda-windows-artifact.result == 'success'", gate)
+        self.assertIn("!cancelled()", gate)
+        self.assertIn("export-model-cuda-windows-artifact.result != 'skipped'", gate)
+
+    def test_windows_export_fetches_toolkits_the_image_lacks(self):
         build = (ROOT / ".ci" / "docker" / "build.sh").read_text()
         match = re.search(
             r"executorch-ubuntu-22\.04-cuda-windows\)(.*?);;", build, re.S
@@ -75,8 +180,40 @@ class CudaWorkflowTest(unittest.TestCase):
         jobs = yaml.safe_load(
             (ROOT / ".github" / "workflows" / "cuda-windows.yml").read_text()
         )["jobs"]
-        export = jobs["export-model-cuda-windows-artifact"]["with"]
-        self.assertEqual(export["gpu-arch-version"], image_version)
+        export = jobs["export-model-cuda-windows-artifact"]
+        rows = export["strategy"]["matrix"]["include"]
+        # Every model runs on the image's own train, so only the extra rows download.
+        models = {(row["model_repo"], row["model_name"], row["quant"]) for row in rows}
+        on_image = {
+            (row["model_repo"], row["model_name"], row["quant"])
+            for row in rows
+            if row["cuda-version"] == image_version
+        }
+        self.assertEqual(on_image, models)
+        script = export["with"]["script"]
+        self.assertIn('!= "${{ matrix.cuda-version }}" ]; then', script)
+        for platform, destination in (
+            ("linux-x86_64", "cuda-${{ matrix.cuda-version }}"),
+            ("windows-x86_64", "cuda-windows-${{ matrix.cuda-version }}"),
+        ):
+            with self.subTest(platform=platform):
+                self.assertIn(
+                    f'--platform {platform} --dest "${{TOOLKITS}}/{destination}"',
+                    script,
+                )
+        self.assertIn(
+            'export WINDOWS_CUDA_HOME="${TOOLKITS}/cuda-windows-${{ matrix.cuda-version }}"',
+            script,
+        )
+        # The fetched nvcc decides the torch train install_executorch picks, and the
+        # e2e runs CPU torch on Windows, so only this assert sees which torch exported.
+        for line in (
+            'export PATH="${CUDA_HOME}/bin:${PATH}"',
+            'export CUDACXX="${CUDA_HOME}/bin/nvcc"',
+            "assert v == '${{ matrix.cuda-version }}'",
+        ):
+            with self.subTest(line=line):
+                self.assertIn(line, script)
 
     def test_cuda_builds_take_the_node_driver_on_an_unpinned_v3(self):
         # This job used to pin linux_job_v2 to a test-infra SHA because that was

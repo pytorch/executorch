@@ -238,6 +238,10 @@ define_overridable_option(
   OFF
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_ESP_NN_PYBINDS "Build ESP-NN scratch-size Python bindings"
+  BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_CUDA "Build the CUDA backend" BOOL OFF
 )
 define_overridable_option(
