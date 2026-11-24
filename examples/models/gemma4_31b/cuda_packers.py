@@ -118,6 +118,10 @@ def pack_linear_for_cuda(module: nn.Module, weights: dict[str, torch.Tensor]) ->
         # bit-planes, 0.75 B/elem) for the W6A8 dp4a decode kernel.
         # from_exportable_gguf reuses the shared Q6_K decode (gguf.py), once.
         w = CudaDp4aPlanarInt6Tensor.from_exportable_gguf(w)
+    elif isinstance(w, ExportableGGUFTensor) and w.ggml_type == "q8_0":
+        # GGUF Q8_0 (e.g. an NVFP4 checkpoint's lm_head): the same int8 values
+        # and 32-wide groups as the int8 dp4a path, with bf16 scales.
+        w = w.to_intx_unpacked_to_int8_tensor(scale_dtype=torch.bfloat16)
     elif isinstance(w, IntxUnpackedToInt8Tensor):
         # Genuine INT8 weight: left unchanged for the int8 dp4a path. The
         # mixed-precision HQQ-INT4 ("sensitive") checkpoint reaches this branch
