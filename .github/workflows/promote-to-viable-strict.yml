@@ -24,6 +24,35 @@ name: Promote commit to viable/strict
 # `main-branch: main` line in update-viablestrict.yml looks like it
 # controls this, but the action does not declare that input and passes a
 # hardcoded value, so it has no effect either way.)
+#
+# Scheduled runs do not chase the tip of main. The tip advances by
+# 100+ commits a day while a full CI run takes hours, so tagging each
+# new tip every 4 hours kept replacing the candidate before its
+# required checks finished, and viable/strict froze (it sat on a
+# 2026-11-19 commit for ~4 days while main moved ~170 commits ahead).
+# Instead, a scheduled run:
+#   1. Keeps evaluating the oldest already-tagged candidate that is
+#      still ahead of viable/strict (candidate locking). The existing
+#      `ciflow/trunk/<sha>` tags are the persisted candidate set, so
+#      no extra storage is needed: while a candidate is in flight and
+#      younger than the lock timeout, the run exits without tagging
+#      anything new. Once the updater advances viable/strict past a
+#      green candidate it stops being "ahead" and the lock releases
+#      on its own.
+#   2. Otherwise tags the OLDEST commit ahead of viable/strict that
+#      is at least ``CANDIDATE_MIN_AGE_HOURS`` old, never the tip, so
+#      the commit has already had time to finish its slow push-side
+#      checks before full CI is spent on it.
+#   3. Gives up on a locked candidate older than
+#      ``CANDIDATE_LOCK_TIMEOUT_HOURS`` (measured from commit time):
+#      its tag is left in place as a tombstone so the commit is not
+#      re-selected, and the next-oldest aged commit is tagged instead,
+#      so one red or flaky commit cannot block advancement forever
+#      (no head-of-line blocking). The abandoned commit's CI rows are
+#      untouched, so the updater can still advance to it later if it
+#      turns green after all.
+# A hand dispatch with an explicit SHA bypasses all of this and tags
+# that commit immediately, as before.
 
 on:
   schedule:
@@ -33,12 +62,25 @@ on:
   workflow_dispatch:
     inputs:
       sha:
-        description: "Full 40-char SHA on main / release/* to promote. Defaults to the tip of main."
+        description: "Full 40-char SHA on main / release/* to promote. If omitted, the scheduled candidate selection runs (locked, oldest aged commit; never the tip of main)."
         required: false
         type: string
 
+env:
+  # Minimum age of a scheduled candidate. Must exceed the slowest
+  # required check so a fresh tip is never tagged before its push-side
+  # CI has had time to finish. Tune here, not in the selection logic.
+  CANDIDATE_MIN_AGE_HOURS: "6"
+  # How long a locked candidate may stay unpromoted before it is
+  # abandoned for the next-oldest aged commit. Must exceed
+  # CANDIDATE_MIN_AGE_HOURS plus a full CI run, so a healthy candidate
+  # is never dropped mid-flight.
+  CANDIDATE_LOCK_TIMEOUT_HOURS: "24"
+
 concurrency:
   # One in-flight promotion at a time; safer than racing tag pushes.
+  # cancel-in-progress must stay false: a newer scheduled run must
+  # never kill a promotion that is still tagging its candidate.
   group: promote-to-viable-strict
   cancel-in-progress: false
 
@@ -90,11 +132,76 @@ jobs:
         run: |
           set -euo pipefail
 
-          # A scheduled run has no inputs, so promote the tip of main.
           SHA="${INPUT_SHA:-}"
           if [ -z "$SHA" ]; then
-            SHA=$(git rev-parse origin/main)
-            echo "No SHA given; promoting the tip of main: $SHA"
+            # Scheduled run: select a candidate instead of chasing the
+            # tip of main. See the header comment for why. A hand
+            # dispatch with an explicit SHA skips this entirely.
+            git fetch --tags origin \
+              "refs/heads/main:refs/remotes/origin/main" \
+              "refs/heads/viable/strict:refs/remotes/origin/viable/strict"
+
+            NOW=$(date +%s)
+            MIN_AGE_SEC=$(( CANDIDATE_MIN_AGE_HOURS * 3600 ))
+            TIMEOUT_SEC=$(( CANDIDATE_LOCK_TIMEOUT_HOURS * 3600 ))
+
+            commit_age_sec() {
+              local commit_time
+              commit_time=$(git show -s --format=%ct "$1")
+              echo $(( NOW - commit_time ))
+            }
+
+            # The ciflow/trunk/* tags are the persisted candidate set.
+            # Remember every tagged SHA so selection below never
+            # re-tags one (in-flight, green, or timed-out tombstone).
+            TAGGED_SHAS=""
+            while IFS= read -r tag; do
+              TAGGED_SHAS="$TAGGED_SHAS ${tag#ciflow/trunk/}"
+            done < <(git tag -l 'ciflow/trunk/*')
+
+            # Candidate locking, oldest first: the oldest tagged
+            # candidate still ahead of viable/strict decides what
+            # this run does. A candidate the updater has already
+            # advanced past is no longer ahead, so its lock releases
+            # on its own.
+            while IFS= read -r tag; do
+              CANDIDATE_SHA="${tag#ciflow/trunk/}"
+              [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]] || continue
+              git cat-file -e "$CANDIDATE_SHA^{commit}" 2>/dev/null || continue
+              git merge-base --is-ancestor "$CANDIDATE_SHA" origin/main 2>/dev/null || continue
+              if git merge-base --is-ancestor "$CANDIDATE_SHA" origin/viable/strict 2>/dev/null; then
+                continue
+              fi
+              AGE=$(commit_age_sec "$CANDIDATE_SHA")
+              if [ "$AGE" -lt "$TIMEOUT_SEC" ]; then
+                echo "Candidate $CANDIDATE_SHA (tag $tag) is still in flight (age ${AGE}s < lock timeout ${TIMEOUT_SEC}s); keeping it locked and not tagging a new commit."
+                exit 0
+              fi
+              echo "::warning::Candidate $CANDIDATE_SHA (tag $tag) exceeded the lock timeout (age ${AGE}s >= ${TIMEOUT_SEC}s) without reaching viable/strict; leaving its tag as a tombstone and considering the next candidate."
+            done < <(git tag -l 'ciflow/trunk/*' --sort=creatordate)
+
+            # No live candidate: tag the oldest commit ahead of
+            # viable/strict that is old enough and not already
+            # tagged. rev-list --reverse walks oldest first, so the
+            # first match is the oldest aged candidate, never the tip.
+            SHA=""
+            while IFS= read -r COMMIT; do
+              [ -n "$COMMIT" ] || continue
+              case " $TAGGED_SHAS " in
+                *" $COMMIT "*) continue ;;
+              esac
+              AGE=$(commit_age_sec "$COMMIT")
+              if [ "$AGE" -ge "$MIN_AGE_SEC" ]; then
+                SHA="$COMMIT"
+                break
+              fi
+            done < <(git rev-list --reverse origin/viable/strict..origin/main)
+
+            if [ -z "$SHA" ]; then
+              echo "No untagged commit ahead of viable/strict is at least ${CANDIDATE_MIN_AGE_HOURS}h old yet; nothing to promote on this tick."
+              exit 0
+            fi
+            echo "Selected oldest aged candidate $SHA for promotion."
           fi
 
           # Reject anything that isn't a full 40-char lowercase hex SHA.
