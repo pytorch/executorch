@@ -6,6 +6,7 @@ The CUDA backend is the ExecuTorch solution for running models on NVIDIA GPUs. I
 
 - **Optimized GPU Execution**: Uses AOTInductor to generate highly optimized CUDA kernels for model operators
 - **Triton Kernel Support**: Leverages Triton for GEMM (General Matrix Multiply), convolution, and SDPA (Scaled Dot-Product Attention) kernels.
+- **Helion Kernel Support**: Models can call [Helion](https://github.com/pytorch/helion) kernels directly. Export lowers each call to the Triton kernel of its selected config, so the runtime needs neither Python nor Helion.
 - **Quantization Support**: INT4 weight quantization with tile-packed format for improved performance and reduced memory footprint
 - **Cross-Platform**: Runs on Linux, and on Windows from C++. Programs for Windows are exported on Linux.
 - **Multiple Model Support**: Works with various models including LLMs, vision-language models, and audio models
@@ -110,6 +111,64 @@ If an export runs out of GPU memory while AOTInductor compiles its kernels, `Com
 - PyTorch skips the move when the last kernel it generates runs on the CPU.
 
 For a complete working example, see the [CUDA export script](https://github.com/pytorch/executorch/blob/main/examples/cuda/scripts/export.py).
+
+### Models with Helion Kernels
+
+A model can call [Helion](https://github.com/pytorch/helion) kernels in its `forward`, and export
+it with the same `CudaPartitioner` flow as any other model. Export needs Helion 1.5.2 or newer
+installed (`pip install "helion==1.5.2"`; Helion 1.6.0 does not import on Python 3.11); the CUDA
+backend imports it only when a model calls Helion kernels. Give each
+kernel one config that you selected and validated offline for the target GPU:
+
+```python
+import helion
+import helion.language as hl
+import torch
+from executorch.backends.cuda.cuda_backend import CudaBackend
+from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+from executorch.exir import to_edge_transform_and_lower
+
+@helion.kernel(config=helion.Config(block_sizes=[256]), static_shapes=True)
+def add(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    result = torch.empty_like(x)
+    for tile in hl.tile(x.numel()):
+        result[tile] = x[tile] + y[tile]
+    return result
+
+class Model(torch.nn.Module):
+    def forward(self, x, y):
+        return add(x, y) * 2
+
+example_inputs = (torch.randn(1024, device="cuda"), torch.randn(1024, device="cuda"))
+exported_program = torch.export.export(Model(), example_inputs, strict=True)
+et_program = to_edge_transform_and_lower(
+    exported_program,
+    partitioner=[CudaPartitioner([CudaBackend.generate_method_name_compile_spec("forward")])],
+)
+exec_program = et_program.to_executorch()
+```
+
+Strict `torch.export` (`strict=True`, as in the example above, not torch's default) records each
+call as a Helion higher-order op. While lowering, the CUDA backend's
+`LowerHelionToTritonPass` renders the call with its config, captures the generated Triton launch and
+replaces the Helion op with it, so AOTInductor compiles it like any other Triton kernel. The pass
+runs after the backend's other passes and before AOTInductor. It neither tunes nor launches the
+kernel: picking the config, for example with Helion's autotuner, is a separate offline step.
+
+The pass supports:
+
+- Kernels on the Triton backend with `static_shapes=True` and exactly one config.
+- Tensor arguments, several calls per model, several tensor outputs and calls inside `torch.cond`
+  branches (nested `torch.cond` included; Helion calls inside `while_loop`, `scan` or `map` bodies are rejected).
+- Kernels that write their inputs or buffers in place, as long as the written tensor is
+  contiguous, so the copy made for the write keeps its strides.
+
+It rejects, with an error during export, calls it cannot lower exactly: kernels on other Helion
+backends such as CuTe, kernels that leave the choice of config to Helion (no `config=`, so
+Helion autotunes on the first call, or more than one config), scalar, container or defaulted arguments, dynamic shapes, outputs that alias inputs, outputs whose strides differ
+from the ones `torch.export` recorded, more than one launch site, host tensor descriptors, and
+launch options AOTInductor cannot reproduce, such as cooperative grids, clusters or PDL. It needs
+Helion 1.5.2 or newer, which records each call's host-semantic fingerprint at export.
 
 
 ----
