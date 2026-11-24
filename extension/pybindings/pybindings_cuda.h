@@ -21,12 +21,76 @@
 
 namespace executorch::extension::pybindings {
 
+#if defined(EXECUTORCH_PYBINDINGS_CUDA) && !defined(EXECUTORCH_USE_HIP)
+/// Frees memory from allocate_cuda_result once the device is idle. Memory is
+/// kept if its device cannot be selected or the wait fails.
+inline void release_cuda_result(void* data, int index) {
+  auto guard = executorch::extension::cuda::CUDAGuard::create(index);
+  if (!guard.ok()) {
+    (void)cudaGetLastError();
+    ET_LOG(
+        Error,
+        "Failed to select CUDA device %d; the memory of an ExecuTorchResult "
+        "is not freed",
+        index);
+    return;
+  }
+  // Another library may still use the memory on a stream the default stream
+  // does not wait for, such as a torch side stream, and the next result can
+  // reuse it from the pool at once. cudaFree waited for the whole device, and
+  // still does on a device without memory pools, so this waits too. As with
+  // the waits of a method call, CUDA refuses the wait while a stream on the
+  // device captures a graph, and the capture fails.
+  if (executorch::extension::cuda::CudaAllocator::memory_pools_supported(
+          index)) {
+    const auto status = cudaDeviceSynchronize();
+    if (status != cudaSuccess) {
+      ET_LOG(
+          Error,
+          "Waiting for CUDA device %d failed (%s); the memory of an "
+          "ExecuTorchResult is not freed",
+          index,
+          cudaGetErrorString(status));
+      (void)cudaGetLastError();
+      return;
+    }
+  }
+  executorch::extension::cuda::CudaAllocator::deallocate_async(
+      data, index, nullptr);
+}
+#endif
+
+// Memory for uploads, clones and DLPack copies. Callers make and drop these on
+// every call, and cudaMalloc and cudaFree can each wait in the driver behind
+// other processes, so on a device with memory pools they use the CUDA
+// allocator's pool, which keeps freed memory for later allocations. ROCm builds
+// keep cudaMalloc and cudaFree, since the ROCm allocator has no fallback for a
+// device without memory pools.
 inline std::shared_ptr<void> allocate_cuda_result(size_t nbytes, int index) {
-#ifdef EXECUTORCH_PYBINDINGS_CUDA
+#if defined(EXECUTORCH_PYBINDINGS_CUDA) && !defined(EXECUTORCH_USE_HIP)
+  // The allocator serves the pool of the current device, so this also keeps the
+  // memory on the requested device.
+  auto guard = executorch::extension::cuda::CUDAGuard::create(index);
+  if (!guard.ok()) {
+    (void)cudaGetLastError();
+    throw std::runtime_error(
+        "Failed to select CUDA device " + std::to_string(index));
+  }
+  // On the default stream, which the copies into and out of results use.
+  auto allocation = executorch::extension::cuda::CudaAllocator::allocate_async(
+      nbytes, index, nullptr);
+  if (!allocation.ok()) {
+    throw std::runtime_error(
+        "Failed to allocate CUDA memory for an ExecuTorchResult");
+  }
+  return std::shared_ptr<void>(allocation.get(), [index](void* data) {
+    release_cuda_result(data, index);
+  });
+#elif defined(EXECUTORCH_PYBINDINGS_CUDA) && defined(EXECUTORCH_USE_HIP)
   const auto type = executorch::runtime::etensor::DeviceType::CUDA;
   auto* allocator = executorch::runtime::get_device_allocator(type);
   if (allocator == nullptr) {
-    // Windows ships the allocator without registering the CUDA delegate.
+    // The CUDA delegate registers the allocator, and may not be linked.
     allocator = &executorch::extension::cuda::CudaAllocator::instance();
   }
   auto allocation = allocator->allocate(nbytes, index);
