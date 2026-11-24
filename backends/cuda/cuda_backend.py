@@ -36,6 +36,7 @@ from executorch.backends.cuda.cuda_weight_collector import (
     CudaWeightCollector,
     trim_host_memory,
 )
+from executorch.backends.cuda.passes.lower_nvfp4_kv import LowerNVFP4KVWritePass
 from executorch.backends.cuda.passes.lower_offgraph_kv import (
     CheckOffGraphKVStepWidthPass,
     LowerOffGraphKVPass,
@@ -1540,6 +1541,7 @@ class CudaBackend(AotiBackend, BackendDetails):
             ReplaceInt64FloorDivWithFloatPass(),
             ReplaceFusedSdpaWithSdpaPass(),
             ReplaceMaskedCopyWithWherePass(),
+            LowerNVFP4KVWritePass(),
         ]
         layout = next(
             (

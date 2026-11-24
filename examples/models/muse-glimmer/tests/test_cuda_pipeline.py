@@ -376,6 +376,73 @@ class TestCudaExportTest(unittest.TestCase):
             self.assertTrue(os.path.exists(os.path.join(out_dir, "model.pte")))
 
 
+class TestNVFP4KVCacheTest(unittest.TestCase):
+    """``kv_cache_dtype="nvfp4"``: the model path against the BF16 cache, and
+    its export through the CUDA backend with dynamic prefill length."""
+
+    def setUp(self):
+        _require_cuda(self)
+
+    def _models(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            save_checkpoint(tmpdir)
+            models = [
+                load_prequantized_model(tmpdir, max_seq_len=TINY_CONFIG.max_seq_len)[0]
+                for _ in range(2)
+            ]
+        for model, nvfp4 in zip(models, (False, True)):
+            _move_to_cuda(model)
+            model.eval()
+            # As _export_cuda does: rings sized for the longest prefill chunk.
+            model.set_max_prefill_chunk(
+                min(TINY_CONFIG.max_seq_len - 1, model._sliding_window * 2)
+            )
+            cuda_source_transformations(model, use_nvfp4_kv_cache=nvfp4)
+        return models
+
+    def test_prefill_and_decode_match_bf16_cache(self):
+        from executorch.examples.models.muse_glimmer.source_transformations.nvfp4_kv import (
+            NVFP4KVCache,
+        )
+
+        bf16, nvfp4 = self._models()
+        assert all(isinstance(x.self_attn.kv_cache, NVFP4KVCache) for x in nvfp4.layers)
+        torch.manual_seed(3)
+        prompt = torch.randint(0, TINY_CONFIG.vocab_size, (1, 60), device="cuda")
+        # Prefill, decode, then chunks that wrap the sliding-window rings.
+        steps = [(0, 32), (32, 33), (33, 40), (40, 60)]
+        with torch.no_grad():
+            for start, end in steps:
+                pos = torch.arange(start, end, dtype=torch.long, device="cuda")
+                ref = bf16(prompt[:, start:end], pos).float()
+                out = nvfp4(prompt[:, start:end], pos).float()
+                error = ((out - ref).norm() / ref.norm()).item()
+                # NVFP4 K/V quantization error only.
+                self.assertLess(error, 0.1, (start, end))
+
+    def test_export_lowers_nvfp4_kv_cache(self):
+        from executorch.examples.models.muse_glimmer.source_transformations.nvfp4_kv import (
+            NVFP4KVCache,
+        )
+        from executorch.runtime import Runtime, Verification
+
+        with (
+            tempfile.TemporaryDirectory() as ckpt_dir,
+            tempfile.TemporaryDirectory() as out_dir,
+        ):
+            save_checkpoint(ckpt_dir)
+            model, config = load_prequantized_model(
+                ckpt_dir, max_seq_len=TINY_CONFIG.max_seq_len
+            )
+            export_and_lower(model, config, out_dir, kv_cache_dtype="nvfp4")
+            # A BF16 export would leave the model's caches as they were.
+            for layer in model.layers:
+                self.assertIsInstance(layer.self_attn.kv_cache, NVFP4KVCache)
+            pte = os.path.join(out_dir, "model.pte")
+            program = Runtime.get().load_program(pte, verification=Verification.Minimal)
+            self.assertIn("forward_from_embeddings", program.method_names)
+
+
 class TestInt4InferenceTest(unittest.TestCase):
     """Test Int4Tensor passthrough with dispatch override."""
 
