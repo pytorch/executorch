@@ -114,7 +114,13 @@ class NativeSupportedOperatorsTest(unittest.TestCase):
         self.assertFalse(self.sup.is_node_supported({}, node))
 
     def test_accepts_symbolic_ops(self):
-        for op in (operator.add, operator.floordiv, operator.mul, operator.sub):
+        for op in (
+            operator.add,
+            operator.floordiv,
+            operator.mul,
+            operator.neg,
+            operator.sub,
+        ):
             with self.subTest(op=str(op)):
                 self.assertTrue(
                     self.sup.is_node_supported({}, _make_node("call_function", op))

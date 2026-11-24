@@ -166,6 +166,34 @@ fbcode_target(
 
 fbcode_target(
     _kind = runtime.python_library,
+    name = "scripts_atomic_output",
+    srcs = [
+        "scripts/__init__.py",
+        "scripts/_atomic_output.py",
+    ],
+    visibility = [
+        "//executorch/backends/cuda/...",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_library,
+    name = "remap_pte_devices",
+    srcs = [
+        "scripts/remap_pte_devices.py",
+    ],
+    visibility = ["PUBLIC"],
+    deps = [
+        ":scripts_atomic_output",
+        "//executorch/exir/_serialize:lib",
+        "//executorch/exir/backend:compile_spec_schema",
+        "//executorch/exir/passes:propagate_device_pass",
+        "//executorch/exir:schema",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_library,
     name = "cuda_partitioner",
     srcs = [
         "cuda_partitioner.py",
@@ -192,6 +220,11 @@ fbcode_target(
         "triton/kernels/conv/core/winograd.py",
         "triton/kernels/conv/routing.py",
         "triton/kernels/fused_moe.py",
+        "triton/kernels/gemm/__init__.py",
+        "triton/kernels/gemm/gemv.py",
+        "triton/kernels/gemm/linear.py",
+        "triton/kernels/gemm/routing.py",
+        "triton/kernels/gemm/tile.py",
         "triton/kernels/int4_quantized_gemm.py",
         "triton/kernels/int5_quantized_gemm.py",
         "triton/kernels/int6_quantized_gemm.py",

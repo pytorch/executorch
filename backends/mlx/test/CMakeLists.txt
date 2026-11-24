@@ -53,6 +53,37 @@ add_dependencies(op_test_runner strict_compile_test)
 # Multi-threaded inference test
 include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
+et_cxx_test(
+  mlx_speculative_ops_test
+  SOURCES
+  ${CMAKE_CURRENT_LIST_DIR}/mlx_speculative_ops_test.cpp
+  EXTRA_LIBS
+  mlxdelegate
+  mlx_schema
+  mlx
+)
+target_include_directories(
+  mlx_speculative_ops_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
+)
+set_tests_properties(
+  mlx_speculative_ops_test PROPERTIES ENVIRONMENT "MLX_ENABLE_TF32=1"
+)
+add_test(NAME mlx_speculative_ops_fp32_test COMMAND mlx_speculative_ops_test
+                                                    "--gtest_filter=*/Float32"
+)
+set_tests_properties(
+  mlx_speculative_ops_fp32_test PROPERTIES ENVIRONMENT "MLX_ENABLE_TF32=0"
+)
+if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
+  target_compile_options(
+    mlx_speculative_ops_test PRIVATE -fsanitize=address,undefined
+                                     -fno-omit-frame-pointer
+  )
+  target_link_options(
+    mlx_speculative_ops_test PRIVATE ${_mlx_sanitizer_link_options}
+  )
+endif()
+
 if(APPLE)
   et_cxx_test(
     mlx_metallib_path_test SOURCES
@@ -163,6 +194,35 @@ if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
   )
 endif()
 
+# MetalKernelNode kernel-function reuse across nodes and executions. Drives the
+# interpreter over hand-built programs; no model/tokenizer needed.
+et_cxx_test(
+  mlx_metal_kernel_reuse_test
+  SOURCES
+  ${CMAKE_CURRENT_LIST_DIR}/mlx_metal_kernel_reuse_test.cpp
+  EXTRA_LIBS
+  mlxdelegate
+  mlx_schema
+  mlx
+)
+target_include_directories(
+  mlx_metal_kernel_reuse_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
+)
+if(ET_MLX_ALLOW_CUSTOM_KERNEL_EXECUTION)
+  target_compile_definitions(
+    mlx_metal_kernel_reuse_test PRIVATE ET_MLX_ALLOW_CUSTOM_KERNEL_EXECUTION
+  )
+endif()
+if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
+  target_compile_options(
+    mlx_metal_kernel_reuse_test PRIVATE -fsanitize=address,undefined
+                                        -fno-omit-frame-pointer
+  )
+  target_link_options(
+    mlx_metal_kernel_reuse_test PRIVATE ${_mlx_sanitizer_link_options}
+  )
+endif()
+
 et_cxx_test(
   mlx_batch_control_test
   SOURCES
@@ -195,6 +255,11 @@ et_cxx_test(
   mlx_schema
   mlx
   extension_llm_cache
+)
+# Cache lifecycle tests use strict FP32 oracles; primitive tests cover TF32.
+set_tests_properties(
+  mlx_batch_control_test mlx_sequence_control_test
+  PROPERTIES ENVIRONMENT "MLX_ENABLE_TF32=0"
 )
 target_include_directories(
   mlx_sequence_control_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime

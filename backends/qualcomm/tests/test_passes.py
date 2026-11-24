@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch, PropertyMock
 import torch
 from executorch.backends.qualcomm._passes import (
     AnnotateQuantAttrs,
+    ConstantFolding,
     ConvertBmmToMatmul,
     ConvertMhaToSha,
     DecomposeColIm,
@@ -69,6 +70,7 @@ from executorch.backends.qualcomm.tests.models import (
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_DTYPE,
     QCOM_ENCODING,
+    QCOM_PASS_ACTIVATE_KEY,
     QCOM_QUANT_ATTRS,
     QCOM_QUANT_MAX,
     QCOM_QUANT_MIN,
@@ -81,6 +83,7 @@ from executorch.backends.qualcomm.utils.utils import (
     generate_gpu_compiler_spec,
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
+    skip_annotation,
     to_edge_transform_and_lower_to_qnn,
 )
 from executorch.exir import EdgeCompileConfig, to_edge
@@ -348,6 +351,14 @@ def stubbed_compiler_specs(backend_options):
         )
 
 
+def passes_job_without_constant_folding():
+    # ConstantFolding precomputes constant-only ops, so the partitioner
+    # decisions on them can't be observed after lowering.
+    passes_job = get_qnn_pass_manager_cls().get_capture_program_passes()
+    passes_job[ConstantFolding][QCOM_PASS_ACTIVATE_KEY] = False
+    return passes_job
+
+
 def delegated_ops(edge):
     return [
         node.target
@@ -356,7 +367,88 @@ def delegated_ops(edge):
     ]
 
 
+class SkippedEmbeddings(torch.nn.Module):
+    def __init__(self, multiple_outputs=False):
+        super().__init__()
+        self.word = torch.nn.Embedding(16, 8)
+        self.position = torch.nn.Embedding(4, 8)
+        self.token_type = torch.nn.Embedding(2, 8)
+        self.register_buffer("bias", torch.linspace(-1, 1, 8))
+        self.multiple_outputs = multiple_outputs
+        with torch.no_grad():
+            self.word.weight.copy_(torch.arange(16).reshape(16, 1) - 8)
+            self.position.weight.zero_()
+            self.token_type.weight.zero_()
+
+    def forward(self, tokens, positions, token_types):
+        hidden = (
+            self.word(tokens) + self.position(positions) + self.token_type(token_types)
+        )
+        hidden = torch.searchsorted(self.bias.relu(), hidden)
+        hidden = hidden.to(torch.float32)
+        if self.multiple_outputs:
+            return {"hidden": hidden, "pooled": hidden.mean(dim=1)}
+        return hidden
+
+
 class TestPasses(unittest.TestCase):
+    def test_skip_annotation_with_folded_constant(self):
+        inputs = (
+            torch.tensor([[1, 6, 10, 14]], dtype=torch.int32),
+            torch.arange(4, dtype=torch.int32).reshape(1, 4),
+            torch.zeros(1, 4, dtype=torch.int32),
+        )
+        for multiple_outputs in (False, True):
+            with self.subTest(multiple_outputs=multiple_outputs):
+                model = SkippedEmbeddings(multiple_outputs).eval()
+                quantizer = QnnQuantizer(soc_model=QcomChipset.SM8650)
+                quantizer.set_default_quant_config(QuantDtype.use_8a8w)
+                quantizer.add_discard_ops([torch.ops.aten.relu.default])
+                compiler_specs = generate_qnn_executorch_compiler_spec(
+                    soc_model=QcomChipset.SM8650,
+                    backend_options=generate_htp_compiler_spec(use_fp16=False),
+                )
+                gm, managers = skip_annotation(
+                    model,
+                    quantizer,
+                    compiler_specs,
+                    inputs,
+                    calibration_cb=lambda gm: gm(*inputs),
+                    fp_node_op_set={torch.ops.aten.embedding.default},
+                )
+                self.assertEqual(len(managers), 1)
+                program = managers[0].exported_program()
+                self.assertTrue(
+                    any(
+                        "lifted_tensor_constant" in spec.target
+                        for spec in program.graph_signature.input_specs
+                        if spec.target is not None
+                    )
+                )
+                ep = torch.export.export(gm, inputs, strict=True)
+                self.assertEqual(len(ep.graph_signature.user_inputs), len(inputs))
+                group = next(n for n in gm.graph.nodes if n.op == "call_module")
+                flat_outputs = gm.get_submodule(group.target)(
+                    model.word(inputs[0]),
+                    model.position(inputs[1]),
+                    model.token_type(inputs[2]),
+                )
+                self.assertIsInstance(flat_outputs, tuple)
+                self.assertEqual(len(flat_outputs), 2 if multiple_outputs else 1)
+                actual = gm(*inputs)
+                expected = model(*inputs)
+                torch.testing.assert_close(actual, expected, atol=0, rtol=0)
+                embeddings = [
+                    n
+                    for n in ep.graph.nodes
+                    if n.target == torch.ops.aten.embedding.default
+                ]
+                self.assertEqual(len(embeddings), 3)
+                self.assertNotIn(
+                    exir_ops.edge.aten.embedding.default,
+                    delegated_ops(managers[0]),
+                )
+
     def _build_context_loader_edge_program(self, op_name, check_ir_validity=True):
         graph_name = "forward"
         custom_op = Library(OpContextLoader.namespace, "FRAGMENT")
@@ -1578,6 +1670,7 @@ class TestPasses(unittest.TestCase):
                         model.eval(),
                         sample_input,
                         compiler_specs,
+                        passes_job=passes_job_without_constant_folding(),
                         skip_node_op_set={"aten.relu.default"},
                     )
                 except RuntimeError as e:
@@ -1596,7 +1689,10 @@ class TestPasses(unittest.TestCase):
         sample_input = (torch.randn(4, 16),)
         with stubbed_qnn_backend():
             edge = to_edge_transform_and_lower_to_qnn(
-                ConstantBranches().eval(), sample_input, compiler_specs
+                ConstantBranches().eval(),
+                sample_input,
+                compiler_specs,
+                passes_job=passes_job_without_constant_folding(),
             )
             for model in (
                 NoRuntimeInput(),
@@ -1635,7 +1731,10 @@ class TestPasses(unittest.TestCase):
         ):
             with self.subTest(model=type(model).__name__), stubbed_qnn_backend():
                 edge = to_edge_transform_and_lower_to_qnn(
-                    model.eval(), sample_input, compiler_specs
+                    model.eval(),
+                    sample_input,
+                    compiler_specs,
+                    passes_job=passes_job_without_constant_folding(),
                 )
                 self.assertIn(exir_ops.edge.aten.linear.default, delegated_ops(edge))
 
@@ -1654,6 +1753,7 @@ class TestPasses(unittest.TestCase):
                 convert_pt2e(quantized),
                 sample_input,
                 stubbed_compiler_specs(generate_htp_compiler_spec(use_fp16=False)),
+                passes_job=passes_job_without_constant_folding(),
             )
         self.assertIn(exir_ops.edge.aten.linear.default, delegated_ops(edge))
 

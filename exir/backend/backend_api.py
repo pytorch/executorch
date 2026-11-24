@@ -39,6 +39,8 @@ from executorch.exir.program._fake_program import (
 from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
 from torch.export.exported_program import ExportedProgram, InputSpec, OutputSpec
 
+logger = logging.getLogger(__name__)
+
 
 @singledispatch
 def to_backend(args):
@@ -281,10 +283,10 @@ def _partition_and_lower_one_graph_module(
         )
 
         if len(node_list) == 0:
-            logging.debug(f"Did not find any nodes for tag {tag}")
+            logger.debug(f"Did not find any nodes for tag {tag}")
             continue
 
-        logging.debug(f"For tag {tag}, found nodes {node_list}")
+        logger.debug(f"For tag {tag}, found nodes {node_list}")
         # Tag the nodes that are params as buffers, so we can order the submodule as (Parms + Buffers) (User Inputs)
 
         replace_ctx = (
@@ -304,7 +306,7 @@ def _partition_and_lower_one_graph_module(
         # Copy the output node meta from the original output node, because
         # create_submodule_from_nodes doesn't cover the meta field
         submodule_output_node.meta = tagged_graph_module_output_node.meta
-        logging.debug("Partitioned graph module: %s", tagged_graph_module.graph)
+        logger.debug("Partitioned graph module: %s", tagged_graph_module.graph)
 
         (
             submodule_program,
@@ -401,7 +403,7 @@ def _(
     try:
         fake_edge_program = get_fake_program(edge_program)
     except Exception as e:
-        logging.warning(
+        logger.warning(
             f"Error in get_fake_program for graph {edge_program.graph_module}, fallback to deepcopy: {e}"
         )
         fake_edge_program = copy.deepcopy(edge_program)
@@ -415,7 +417,7 @@ def _(
             edge_program.graph_module,
         ), f"The partitioner {partitioner_instance} should not modify the graph module"
     else:
-        logging.warning("Disabled validating the partitioner.")
+        logger.warning("Disabled validating the partitioner.")
 
     assert (
         partitioner_result.partition_tags is not None
@@ -466,10 +468,10 @@ def _create_partitions_in_graph_module(
         )
 
         if len(node_list) == 0:
-            logging.debug(f"Did not find any nodes for tag {tag}")
+            logger.debug(f"Did not find any nodes for tag {tag}")
             continue
 
-        logging.debug(f"For tag {tag}, found nodes {node_list}")
+        logger.debug(f"For tag {tag}, found nodes {node_list}")
         # Tag the nodes that are params as buffers, so we can order the submodule as (Parms + Buffers) (User Inputs)
 
         replace_ctx = (
@@ -487,7 +489,7 @@ def _create_partitions_in_graph_module(
         submodule_output_node = submodule.graph.output_node()
         # Copy the output node meta from the original output node, because
         # create_submodule_from_nodes doesn't cover the meta field
-        logging.debug("Partitioned graph module: %s", tagged_graph_module.graph)
+        logger.debug("Partitioned graph module: %s", tagged_graph_module.graph)
         (
             submodule_program,
             toplevel_input_specs_to_delete,
@@ -728,7 +730,7 @@ def _(
         try:
             fake_edge_program = get_fake_program(edge_program)
         except Exception as e:
-            logging.warning(
+            logger.warning(
                 f"Error in get_fake_program for graph {edge_program.graph_module}, fallback to deepcopy: {e}"
             )
             fake_edge_program = copy.deepcopy(edge_program)
@@ -743,7 +745,7 @@ def _(
                 edge_program.graph_module,
             ), f"The partitioner {partitioner_instance} should not modify the graph module"
         else:
-            logging.warning("Disabled validating the partitioner.")
+            logger.warning("Disabled validating the partitioner.")
 
         assert (
             partitioner_result.partition_tags is not None

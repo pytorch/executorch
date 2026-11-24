@@ -28,6 +28,7 @@ from executorch.examples.llm_server.python.session_runtime import (
 from executorch.examples.llm_server.python.worker_client import spawn_worker
 from executorch.examples.models.muse_glimmer.serving.chat_template import (
     MuseGlimmerChatTemplate as ChatTemplate,
+    order_repeated_tool_results,
     resolve_tool_result_names,
 )
 from executorch.examples.models.muse_glimmer.serving.framing import (
@@ -355,9 +356,10 @@ class MuseGlimmerServingChat(ServingChat):
 
         history_req = req
         req, image_segment = _normalize_image_request(req, self._max_image_bytes)
-        req = req.model_copy(
-            update={"messages": resolve_tool_result_names(req.messages)}
-        )
+        messages = resolve_tool_result_names(req.messages)
+        # Keep non-tool indices fixed and reorder before build_prompt_input's sentinel render.
+        order_repeated_tool_results(messages)
+        req = req.model_copy(update={"messages": messages})
         template_tools = None if req.tool_choice == "none" else req.tools
         template_kwargs = dict(req.chat_template_kwargs or {})
         template_kwargs.pop("return_reasoning", None)

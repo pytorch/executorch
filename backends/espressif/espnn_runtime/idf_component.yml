@@ -10,4 +10,4 @@ description: ExecuTorch ESP-NN backend runtime (XTS3 int8 interpreter and EspNNB
 dependencies:
   idf:
     version: ">=6.0"
-  espressif/esp-nn: "^1.4.0"
+  espressif/esp-nn: "^1.5.0"

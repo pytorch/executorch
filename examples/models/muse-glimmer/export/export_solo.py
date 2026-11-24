@@ -338,6 +338,7 @@ def batched_sequence_manifest(
     max_seqs: int,
     causal: bool = True,
     context_window: bool = False,
+    symmetric_window: bool = False,
 ) -> str:
     """The batched-sequence lowering manifest: one column per sequence."""
     from executorch.backends.cuda.passes.lower_offgraph_kv import (
@@ -351,6 +352,8 @@ def batched_sequence_manifest(
     manifest["causal"] = causal
     if context_window:
         manifest["context_window"] = True
+    if symmetric_window:
+        manifest["symmetric_window"] = True
     return json.dumps(manifest, sort_keys=True, separators=(",", ":"))
 
 

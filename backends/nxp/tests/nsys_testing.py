@@ -121,6 +121,7 @@ def _run_delegated_executorch_program(
     operators_not_to_delegate: list[str] = None,
     remove_quant_io_ops: bool = False,
     use_recipe_export: bool = False,
+    target: str = "imxrt700",
 ) -> tuple[ExportedProgram, str, list[InputQuantizationSpec] | None]:
     input_quant_spec = None
     try:
@@ -143,6 +144,7 @@ def _run_delegated_executorch_program(
         delegated_program = to_quantized_executorch_program(
             model,
             input_spec,
+            target=target,
             intermediates_dir=test_dir,
             dataset_dir=calibration_dataset_dir,
             delegate_to_npu=True,
@@ -412,6 +414,7 @@ def lower_run_compare(
     operators_not_to_delegate: list[str] = None,
     remove_quant_io_ops: bool = False,
     use_recipe_export: bool = _USE_RECIPE_EXPORT,
+    target: str = "imxrt700",
 ):
     """
     Run provided program twice with neutron-test and check if results correspond. At first,
@@ -438,6 +441,7 @@ def lower_run_compare(
     :param remove_quant_io_ops: If true, IO q-ops are removed and verification is done on quantized
         version of dataset (quantized INT8 input samples).
     :param use_recipe_export: If True, the applicable models will be exported and lowered using the Neutron recipes.
+    :param target: Neutron target platform used for the delegated program (e.g. "imxrt700", "imx95", "imx943").
 
     """
     assert_NSYS()
@@ -516,6 +520,7 @@ def lower_run_compare(
             operators_not_to_delegate=operators_not_to_delegate,
             remove_quant_io_ops=remove_quant_io_ops,
             use_recipe_export=use_recipe_export,
+            target=target,
         )
     )
 
@@ -731,6 +736,7 @@ def lower_run_compare_ptq_qat(
     mocker: MockerFixture = None,
     operators_not_to_delegate: list[str] = None,
     use_recipe_export: bool = _USE_RECIPE_EXPORT,
+    target: str = "imxrt700",
 ):
     """
     Run provided program twice and compare its results.
@@ -747,6 +753,7 @@ def lower_run_compare_ptq_qat(
     :param mocker: Mocker instance used by visualizer.
     :param operators_not_to_delegate: list of operators not to delegate.
     :param use_recipe_export: If True, the models will be exported and lowered using the Neutron recipes.
+    :param target: Neutron target platform used for the delegated programs (e.g. "imxrt700", "imx95", "imx943").
     """
     assert_NSYS()
 
@@ -789,6 +796,7 @@ def lower_run_compare_ptq_qat(
         use_qat=False,
         operators_not_to_delegate=operators_not_to_delegate,
         use_recipe_export=use_recipe_export,
+        target=target,
     )
 
     _ = _run_delegated_executorch_program(
@@ -805,6 +813,7 @@ def lower_run_compare_ptq_qat(
         train_fn=train_fn,
         operators_not_to_delegate=operators_not_to_delegate,
         use_recipe_export=use_recipe_export,
+        target=target,
     )
 
     output_tensor_spec = _get_program_output_spec(delegated_program_ptq)

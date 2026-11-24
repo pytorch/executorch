@@ -11,18 +11,19 @@
  */
 
 #include <cstdint>
-#include <cstring>
 #include <memory>
 
 #include <ethosu_driver.h>
 
 #include <executorch/backends/arm/runtime/EthosUBackend_Internal.h>
 #include <executorch/backends/arm/runtime/EthosUBackend_Pmu.h>
+#include <executorch/backends/arm/runtime/EthosUIOPlan.h>
 #include <executorch/runtime/core/error.h>
 
 using executorch::runtime::BackendExecutionContext;
 using executorch::runtime::Error;
-using executorch::runtime::Span;
+using executorch::runtime::MemoryAllocator;
+using executorch::runtime::Result;
 
 // Compatibility hooks for multi-device driver / non-multi-device driver code
 // When multi-device driver code is available, these declarations are overridden
@@ -42,17 +43,46 @@ extern "C" __attribute__((weak)) struct ethosu_driver* ethosu_reserve_driver_ex(
   return ethosu_reserve_driver();
 }
 
-// Overridable memcpy for copying outputs from scratch.
-// Default (weak) implementation in EthosUBackend_IoMemcpy.cpp does
-// std::memcpy. Firmware targets can supply a strong override (e.g. routing
-// through a DMA engine) to reduce CPU memcpy load on the host MCU.
-extern "C" void arm_ethos_io_memcpy(void* dst, const void* src, size_t size);
-
 namespace executorch {
 namespace backends {
 namespace arm {
+namespace {
 
-struct PlatformState {};
+#ifdef ETHOSU_PERSISTENT_REGION
+constexpr int ETHOSU_NUM_REGIONS = 6;
+#else
+constexpr int ETHOSU_NUM_REGIONS = 5;
+constexpr int ETHOSU_NUM_BASE_ADDRS = 3;
+#endif
+
+/** Resolves shared scratch or allocates a separate temporary I/O region. */
+Result<char*> prepare_copy_region(
+    MemoryAllocator* temp_allocator,
+    IOPlacement io_placement,
+    size_t region_size,
+    char* ethosu_scratch,
+    const char* region_kind) {
+  if (io_placement == IOPlacement::INSIDE_SCRATCH) {
+    return ethosu_scratch;
+  }
+  if (region_size == 0) {
+    return static_cast<char*>(nullptr);
+  }
+
+  char* region_base = static_cast<char*>(
+      temp_allocator->allocate(region_size, ETHOSU_SCRATCH_ALIGNMENT));
+  if (region_base != nullptr) {
+    return region_base;
+  }
+  ET_LOG(
+      Error,
+      "Failed to allocate %s region buffer of %zu bytes from temp_allocator",
+      region_kind,
+      region_size);
+  return Error::MemoryAllocationFailed;
+}
+
+} // namespace
 
 // cppcheck-suppress unusedFunction
 executorch::runtime::Error platform_init(
@@ -72,18 +102,60 @@ bool needs_scratch_allocation() {
 
 // cppcheck-suppress unusedFunction
 Error platform_execute(
-    // cppcheck-suppress constParameterReference
-    [[maybe_unused]] BackendExecutionContext& context,
+    BackendExecutionContext& context,
     [[maybe_unused]] const ExecutionHandle* execution_handle,
-    const VelaHandles& handles,
-    int input_count,
-    int output_count,
-    Span<executorch::runtime::EValue*> args,
-    char* ethosu_scratch) {
+    IOPlan& io_plan) {
+#if defined(ET_EVENT_TRACER_ENABLED)
+  auto* event_tracer = context.event_tracer();
+#endif
+  const VelaHandles& handles = *io_plan.handles;
+  MemoryAllocator* temp_allocator = context.get_temp_allocator();
+  char* ethosu_scratch = reinterpret_cast<char*>(io_plan.scratch.data());
   if (handles.scratch_data_size > 0 && ethosu_scratch == nullptr) {
     ET_LOG(Error, "Ethos-U scratch buffer is missing");
     return Error::InvalidState;
   }
+  if (io_plan.needs_input_copy) {
+    auto input_copy_region = prepare_copy_region(
+        temp_allocator,
+        io_plan.placement,
+        io_plan.input_region_size,
+        ethosu_scratch,
+        "input");
+    if (!input_copy_region.ok()) {
+      return input_copy_region.error();
+    }
+    io_plan.input_region_base = *input_copy_region;
+    EXECUTORCH_PROF_SCOPE(event_tracer, "EthosUBackend::input.copy()");
+    Error status = copy_inputs(io_plan);
+    if (status != Error::Ok) {
+      return status;
+    }
+  }
+
+  if (io_plan.needs_output_copy) {
+    auto output_copy_region = prepare_copy_region(
+        temp_allocator,
+        io_plan.placement,
+        io_plan.output_region_size,
+        ethosu_scratch,
+        "output");
+    if (!output_copy_region.ok()) {
+      return output_copy_region.error();
+    }
+    io_plan.contiguous_output_base = *output_copy_region;
+  }
+  ET_LOG(
+      Debug,
+      "Running program data:\n  cmd %p %zu\n  weight %p %zu\n  scratch %p %zu\n  fast scratch %p %zu\n",
+      handles.cmd_data,
+      handles.cmd_data_size,
+      handles.weight_data,
+      handles.weight_data_size,
+      ethosu_scratch,
+      handles.scratch_data_size,
+      ethosu_fast_scratch,
+      ethosu_fast_scratch_size);
 
   // Parse product config from command stream to reserve the correct driver
   uint32_t product, log2_macs;
@@ -105,89 +177,64 @@ Error platform_execute(
     return Error::InvalidState;
   }
 
-  // Ethos-U low level driver expected order for Ethos U-55, we have
-  // constant weight data, then scratch (which contains input and output)
-  // scratch is written above in this function.
-#ifdef ETHOSU_PERSISTENT_REGION
-  // Regions 3 (input) and 4 (output) are unused by this flow (network-wide
-  // addressing keeps I/O in scratch), so they are left null/zero. Region 5 is
-  // the dedicated persistent (delegate-owned streaming state) buffer,
-  // allocated and initialised once at init().
-  char* persistent_region =
-      execution_handle ? execution_handle->persistent_region : nullptr;
-  uint64_t bases[ETHOSU_NUM_BASE_ADDRS] = {
+  uint64_t region_bases[ETHOSU_NUM_REGIONS] = {
       static_cast<uint64_t>(reinterpret_cast<uintptr_t>((handles.weight_data))),
       static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ethosu_scratch)),
       static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ethosu_fast_scratch)),
-      0,
-      0,
-      static_cast<uint64_t>(reinterpret_cast<uintptr_t>(persistent_region))};
-  size_t bases_size[ETHOSU_NUM_BASE_ADDRS] = {
+      static_cast<uint64_t>(
+          reinterpret_cast<uintptr_t>(io_plan.input_region_base)),
+      static_cast<uint64_t>(
+          reinterpret_cast<uintptr_t>(io_plan.contiguous_output_base)),
+#ifdef ETHOSU_PERSISTENT_REGION
+      static_cast<uint64_t>(reinterpret_cast<uintptr_t>(
+          execution_handle ? execution_handle->persistent_region : nullptr)),
+#endif
+  };
+  size_t region_sizes[ETHOSU_NUM_REGIONS] = {
       handles.weight_data_size,
       handles.scratch_data_size,
       ethosu_fast_scratch_size,
-      0,
-      0,
-      handles.persistent_data_size};
-#else
-  uint64_t bases[ETHOSU_NUM_BASE_ADDRS] = {
-      static_cast<uint64_t>(reinterpret_cast<uintptr_t>((handles.weight_data))),
-      static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ethosu_scratch)),
-      static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ethosu_fast_scratch))};
-  size_t bases_size[ETHOSU_NUM_BASE_ADDRS] = {
-      handles.weight_data_size,
-      handles.scratch_data_size,
-      ethosu_fast_scratch_size};
+      io_plan.input_region_size,
+      io_plan.output_region_size,
+#ifdef ETHOSU_PERSISTENT_REGION
+      handles.persistent_data_size,
 #endif
-  executorch::backends::arm::EthosUInvocationContext invocation_context{};
+  };
+#ifdef ETHOSU_PERSISTENT_REGION
+  // Persistent state uses Vela region 5, after the optional I/O regions 3-4.
+  constexpr int num_regions = ETHOSU_NUM_REGIONS;
+#else
+  const int num_regions = io_plan.placement == IOPlacement::OUTSIDE_SCRATCH
+      ? ETHOSU_NUM_REGIONS
+      : ETHOSU_NUM_BASE_ADDRS;
+#endif
+  EthosUInvocationContext invocation_context{};
   invocation_context.delegate_handle =
       reinterpret_cast<uintptr_t>(execution_handle);
 #if defined(ET_EVENT_TRACER_ENABLED)
-  invocation_context.event_tracer = context.event_tracer();
+  invocation_context.event_tracer = event_tracer;
 #endif
-  int result = ethosu_invoke_v3(
-      driver.get(),
-      static_cast<const void*>(handles.cmd_data),
-      handles.cmd_data_size,
-      bases,
-      bases_size,
-      ETHOSU_NUM_BASE_ADDRS, /* fixed array of pointers to binary interface*/
-      &invocation_context);
+  int result;
+  {
+    EXECUTORCH_PROF_SCOPE(event_tracer, "EthosUBackend::driver.invoke()");
+    result = ethosu_invoke_v3(
+        driver.get(),
+        static_cast<const void*>(handles.cmd_data),
+        handles.cmd_data_size,
+        region_bases,
+        region_sizes,
+        num_regions, /* fixed array of pointers to binary interface*/
+        &invocation_context);
+  }
 
   if (result != 0) {
     ET_LOG(Error, "Ethos-U invocation failed error (%d)", result);
     return Error::InvalidProgram;
   }
 
-  // Write outputs from scratch into EValue pointers.
-  for (int i = 0; i < output_count; i++) {
-    // Reject offsets that would copy from outside the scratch buffer.
-    const int out_offset = handles.outputs->io[i].offset;
-    auto tensor_out = args[input_count + i]->toTensor();
-    const size_t tensor_bytes = tensor_out.nbytes();
-    if (out_offset < 0 ||
-        static_cast<size_t>(out_offset) + tensor_bytes >
-            handles.scratch_data_size) {
-      ET_LOG(
-          Error,
-          "Output %d scratch offset %d + size %zu out of range for scratch size %zu",
-          i,
-          out_offset,
-          tensor_bytes,
-          handles.scratch_data_size);
-      return Error::InvalidProgram;
-    }
-    const char* output_addr = ethosu_scratch + out_offset;
-    if (output_addr == tensor_out.mutable_data_ptr<char>()) {
-      continue;
-    }
-
-    // Routed through arm_ethos_io_memcpy so firmware can DMA-accelerate.
-#if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
-    EthosUBackend_output_memcpy(tensor_bytes);
-#endif
-    arm_ethos_io_memcpy(
-        tensor_out.mutable_data_ptr<char>(), output_addr, tensor_bytes);
+  if (io_plan.needs_output_copy) {
+    EXECUTORCH_PROF_SCOPE(event_tracer, "EthosUBackend::output.copy()");
+    return copy_outputs(io_plan);
   }
   return Error::Ok;
 }
