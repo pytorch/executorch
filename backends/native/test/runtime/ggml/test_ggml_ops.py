@@ -2697,16 +2697,17 @@ class GgmlOpsTest(unittest.TestCase):
         # When every query masks the keys past its position, attention covers
         # only the 256-key buckets of k and v up to the last position; k
         # arrives with its head dim strided. The last mask attends the keys
-        # from each position on, so no prefix may be taken.
+        # from each position on, so attention instead starts at the bucket
+        # holding the first position.
         masks = {
             "key <= position": lambda key, pos: key[None, :] <= pos[:, None],
             "key < position": lambda key, pos: key[None, :] < pos[:, None],
             "position <= key": lambda key, pos: pos[:, None] <= key[None, :],
         }
         tensors = (
-            torch.randn(1, 2, 2, 32),
-            torch.randn(1, 2, 32, 512),
-            torch.randn(1, 2, 512, 32),
+            torch.randn(1, 2, 2, 64),
+            torch.randn(1, 2, 64, 512),
+            torch.randn(1, 2, 512, 64),
         )
         steps = [(*tensors, torch.tensor(p)) for p in ([3, 4], [300, 301])]
         for name, mask in masks.items():
@@ -2720,28 +2721,11 @@ class GgmlOpsTest(unittest.TestCase):
                         attn_mask=mask(torch.arange(512), positions),
                     )
 
-                model = Lambda(forward).eval()
                 ops = collections.Counter()
-                with tempfile.TemporaryDirectory() as tmp:
-                    outdir = Path(tmp)
-                    package = outdir / "model.ptn"
-                    to_native(torch.export.export(model, steps[0])).save(str(package))
-                    actual = _run_ggml(package, steps, outdir, 1, graph_ops=ops)
-                for step, [(raw, shape)] in zip(steps, actual):
-                    with torch.no_grad():
-                        expected = model(*step)
-                    torch.testing.assert_close(
-                        torch.frombuffer(bytearray(raw), dtype=torch.float32).reshape(
-                            shape
-                        ),
-                        expected,
-                        atol=1e-2,
-                        rtol=1e-2,
-                    )
-                # The compile-time graph and the first step's; a prefix in the
-                # first step makes the second step's wider extent build a third.
-                prefix = name != "position <= key"
-                self.assertEqual(ops["FLASH_ATTN_EXT"], 3 if prefix else 2)
+                self._check_steps(Lambda(forward).eval(), steps, graph_ops=ops)
+                # The compile-time graph and the first step's; the second
+                # step's wider extent, or later start, builds a third.
+                self.assertEqual(ops["FLASH_ATTN_EXT"], 3)
 
     def test_sdpa_masks_over_caches_longer_than_the_host_computes(self):
         # The host bounds the keys' positions by the arange's arguments once,
@@ -2951,6 +2935,48 @@ class GgmlOpsTest(unittest.TestCase):
         # The compile-time graph and one per step: the second step's wider
         # extent builds a third.
         self.assertEqual(ops["FLASH_ATTN_EXT"], 3)
+
+    def test_sdpa_key_range_of_a_sliding_window(self):
+        # Past the window, every query also masks the keys before the window's
+        # start, so attention starts at the 256-key bucket holding the first
+        # attended key. The 300-key window is not a whole number of buckets:
+        # the second step's start moves while its extent stays put.
+        def window(positions):
+            keys = torch.arange(1024)
+            causal = keys[None, :] <= positions[:, None]
+            return causal * ((positions[:, None] - 300) < keys[None, :])
+
+        def attend(q, k, v, mask):
+            return F.scaled_dot_product_attention(q, k, v, attn_mask=mask)
+
+        for queries in (1, 2):
+            with self.subTest(queries=queries):
+                tensors = (
+                    torch.randn(1, 2, queries, 64),
+                    torch.randn(1, 2, 1024, 64),
+                    torch.randn(1, 2, 1024, 64),
+                )
+                positions = [torch.arange(p, p + queries) for p in (520, 600)]
+                ops = collections.Counter()
+                windowed = self._check_steps(
+                    Lambda(lambda q, k, v, p: attend(q, k, v, window(p))).eval(),
+                    [(*tensors, p) for p in positions],
+                    graph_ops=ops,
+                )
+                # The compile-time graph and one per step: both steps attend
+                # keys below 768, but only the second starts past key 255.
+                self.assertEqual(ops["FLASH_ATTN_EXT"], 3)
+                # The same mask as an input attends every key; skipping only
+                # masked keys leaves the result within rounding of it.
+                masks = [
+                    torch.zeros(queries, 1024).masked_fill(~window(p), float("-inf"))
+                    for p in positions
+                ]
+                full = self._check_steps(
+                    Lambda(attend).eval(), [(*tensors, m) for m in masks]
+                )
+                for actual, expected in zip(windowed, full):
+                    torch.testing.assert_close(actual, expected, atol=1e-5, rtol=1e-5)
 
     def test_sdpa_causal_fewer_queries(self):
         self._check(
