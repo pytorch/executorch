@@ -3,7 +3,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import base64
+import shutil
+
 import executorch.backends.arm.tosa.dialect  # noqa: F401
+import executorch.extension.llm.custom_ops.op_fallback  # noqa: F401
 import pytest
 import torch
 from executorch.backends.arm.tosa.specification import (
@@ -12,6 +16,7 @@ from executorch.backends.arm.tosa.specification import (
 )
 from executorch.backends.arm.vgf import VgfCompileSpec
 from executorch.backends.arm.vgf._passes import RewriteCustomSDPAToTosaCustomPass
+from executorch.backends.arm.vgf.backend import VgfBackend
 from executorch.backends.arm.vgf.partitioner import VgfPartitioner
 from executorch.backends.arm.vgf.tosa_custom_sdpa import (
     CUSTOM_SDPA_DOMAIN_NAME,
@@ -107,11 +112,12 @@ def _to_edge_custom_sdpa(
     *,
     is_causal: bool = True,
     scale: float | None = None,
+    dtype: torch.dtype = torch.float32,
 ):
     ensure_custom_sdpa_registered()
-    q = torch.rand(query_shape)
-    k = torch.rand(key_shape)
-    v = torch.rand(value_shape)
+    q = torch.rand(query_shape, dtype=dtype)
+    k = torch.rand(key_shape, dtype=dtype)
+    v = torch.rand(value_shape, dtype=dtype)
     module = _CustomSDPAModule(is_causal=is_causal, scale=scale)
     return to_edge(export(module, (q, k, v), strict=True))
 
@@ -123,11 +129,12 @@ def _to_edge_custom_sdpa_bshd_inputs(
     *,
     is_causal: bool = True,
     scale: float | None = None,
+    dtype: torch.dtype = torch.float32,
 ):
     ensure_custom_sdpa_registered()
-    q = torch.rand(query_shape)
-    k = torch.rand(key_shape)
-    v = torch.rand(value_shape)
+    q = torch.rand(query_shape, dtype=dtype)
+    k = torch.rand(key_shape, dtype=dtype)
+    v = torch.rand(value_shape, dtype=dtype)
     module = _CustomSDPABshdInputsBhdsOutputModule(is_causal=is_causal, scale=scale)
     return to_edge(export(module, (q, k, v), strict=True))
 
@@ -143,7 +150,13 @@ def _output_shape(edge_model) -> tuple[int, ...]:
     return tuple(result_node.meta["val"].shape)
 
 
+def _require_glslc() -> None:
+    if shutil.which("glslc") is None:
+        pytest.skip("glslc not found")
+
+
 def test_rewrite_custom_sdpa_to_tosa_custom_rewrites_decode_gqa_path():
+    _require_glslc()
     edge_model = _to_edge_custom_sdpa(
         (1, 32, 1, 128),
         (1, 8, 512, 128),
@@ -166,6 +179,9 @@ def test_rewrite_custom_sdpa_to_tosa_custom_rewrites_decode_gqa_path():
     assert custom_node.kwargs["domain_name"] == CUSTOM_SDPA_DOMAIN_NAME
 
     payload = decode_payload(custom_node.kwargs["implementation_attrs"])
+    assert payload["entry_point"] == "main"
+    assert payload["shader_language"] == "SPIR-V"
+    assert base64.b64decode(payload["shader_code"])[:4] == b"\x03\x02\x23\x07"
     assert payload["layout"] == "BHSD"
     assert payload["query_shape"] == [1, 32, 1, 128]
     assert payload["key_shape"] == [1, 8, 512, 128]
@@ -175,6 +191,14 @@ def test_rewrite_custom_sdpa_to_tosa_custom_rewrites_decode_gqa_path():
     assert payload["is_causal"] is True
     assert payload["scale"] == 0.125
     assert _output_shape(transformed) == (1, 32, 1, 128)
+    assert payload["input_0_vkdescriptortype"] == "VK_DESCRIPTOR_TYPE_STORAGE_BUFFER"
+    assert payload["input_1_vkdescriptortype"] == "VK_DESCRIPTOR_TYPE_STORAGE_BUFFER"
+    assert payload["input_2_vkdescriptortype"] == "VK_DESCRIPTOR_TYPE_STORAGE_BUFFER"
+    assert payload["output_0_vkdescriptortype"] == "VK_DESCRIPTOR_TYPE_STORAGE_BUFFER"
+    assert payload["input_0_binding"] == 0
+    assert payload["input_1_binding"] == 1
+    assert payload["input_2_binding"] == 2
+    assert payload["output_0_binding"] == 3
 
     custom_index = nodes.index(custom_node)
     adjacent_targets = {
@@ -192,6 +216,7 @@ def test_rewrite_custom_sdpa_to_tosa_custom_rewrites_decode_gqa_path():
 
 
 def test_rewrite_custom_sdpa_to_tosa_custom_keeps_bshd_output_when_no_restore():
+    _require_glslc()
     ensure_custom_sdpa_registered()
     q = torch.rand(1, 32, 1, 128)
     k = torch.rand(1, 8, 512, 128)
@@ -211,6 +236,7 @@ def test_rewrite_custom_sdpa_to_tosa_custom_keeps_bshd_output_when_no_restore():
 
 
 def test_rewrite_custom_sdpa_to_tosa_custom_keeps_restore_when_layout_is_bshd():
+    _require_glslc()
     edge_model = _to_edge_custom_sdpa_bshd_inputs(
         (1, 1, 32, 128),
         (1, 512, 8, 128),
@@ -254,6 +280,7 @@ def test_rewrite_custom_sdpa_to_tosa_custom_skips_non_sdpa_graphs_without_regist
 
 
 def test_rewrite_custom_sdpa_to_tosa_custom_skips_prefill_like_query_length():
+    _require_glslc()
     edge_model = _to_edge_custom_sdpa(
         (1, 32, 8, 128),
         (1, 8, 512, 128),
@@ -271,11 +298,31 @@ def test_rewrite_custom_sdpa_to_tosa_custom_skips_prefill_like_query_length():
 
 
 def test_rewrite_custom_sdpa_to_tosa_custom_skips_non_causal_path():
+    _require_glslc()
     edge_model = _to_edge_custom_sdpa(
         (1, 32, 1, 128),
         (1, 8, 512, 128),
         (1, 8, 512, 128),
         is_causal=False,
+    )
+
+    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+FP")):
+        transformed = edge_model.transform([RewriteCustomSDPAToTosaCustomPass()])
+
+    nodes = list(transformed.exported_program().graph.nodes)
+    assert any(node.target == exir_ops.edge.llama.custom_sdpa.default for node in nodes)
+    assert not any(
+        node.target == exir_ops.backend.tosa.CUSTOM.default for node in nodes
+    )
+
+
+def test_rewrite_custom_sdpa_to_tosa_custom_skips_non_float32_path():
+    _require_glslc()
+    edge_model = _to_edge_custom_sdpa(
+        (1, 32, 1, 128),
+        (1, 8, 512, 128),
+        (1, 8, 512, 128),
+        dtype=torch.float16,
     )
 
     with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+FP")):
@@ -305,7 +352,7 @@ def test_rewrite_custom_sdpa_to_tosa_custom_rejects_non_concrete_shapes():
     )
 
 
-def test_vgf_partitioner_does_not_delegate_custom_sdpa_decode_path_yet():
+def test_vgf_partitioner_delegates_supported_custom_sdpa_decode_path():
     edge_model = _to_edge_custom_sdpa(
         (1, 32, 1, 128),
         (1, 8, 512, 128),
@@ -321,7 +368,7 @@ def test_vgf_partitioner_does_not_delegate_custom_sdpa_decode_path_yet():
         if node.target == exir_ops.edge.llama.custom_sdpa.default
     )
 
-    assert "delegation_tag" not in sdpa_node.meta
+    assert sdpa_node.meta["delegation_tag"] in partition_result.partition_tags
 
 
 def test_vgf_partitioner_rejects_unsupported_custom_sdpa_prefill_path():
@@ -341,3 +388,63 @@ def test_vgf_partitioner_rejects_unsupported_custom_sdpa_prefill_path():
     )
 
     assert "delegation_tag" not in sdpa_node.meta
+
+
+def test_vgf_partitioner_rejects_custom_sdpa_for_int_only_profile():
+    edge_model = _to_edge_custom_sdpa(
+        (1, 32, 1, 128),
+        (1, 8, 512, 128),
+        (1, 8, 512, 128),
+    )
+
+    partition_result = VgfPartitioner(VgfCompileSpec("TOSA-1.0+INT")).partition(
+        edge_model.exported_program()
+    )
+    sdpa_node = next(
+        node
+        for node in partition_result.tagged_exported_program.graph_module.graph.nodes
+        if node.target == exir_ops.edge.llama.custom_sdpa.default
+    )
+
+    assert "delegation_tag" not in sdpa_node.meta
+
+
+def test_vgf_backend_preprocess_rewrites_delegated_custom_sdpa_decode_path(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    if shutil.which("glslc") is None:
+        pytest.skip("glslc not found")
+    edge_model = _to_edge_custom_sdpa(
+        (1, 32, 1, 128),
+        (1, 8, 512, 128),
+        (1, 8, 512, 128),
+    )
+
+    partition_result = VgfPartitioner(VgfCompileSpec("TOSA-1.0+FP")).partition(
+        edge_model.exported_program()
+    )
+
+    monkeypatch.setattr(
+        VgfBackend,
+        "_compile_tosa_flatbuffer",
+        staticmethod(lambda *args, **kwargs: b"vgf"),
+    )
+
+    result = VgfBackend.preprocess(
+        partition_result.tagged_exported_program,
+        VgfCompileSpec("TOSA-1.0+FP")._to_list(),
+    )
+
+    assert result.processed_bytes == b"vgf"
+
+    nodes = list(partition_result.tagged_exported_program.graph_module.graph.nodes)
+    assert not any(
+        node.target == exir_ops.edge.llama.custom_sdpa.default for node in nodes
+    )
+
+    custom_node = next(
+        node for node in nodes if node.target == exir_ops.backend.tosa.CUSTOM.default
+    )
+    payload = decode_payload(custom_node.kwargs["implementation_attrs"])
+    assert payload["layout"] == "BHSD"
+    assert custom_node.kwargs["domain_name"] == CUSTOM_SDPA_DOMAIN_NAME
