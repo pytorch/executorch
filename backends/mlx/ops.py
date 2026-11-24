@@ -5593,10 +5593,10 @@ def _cumsum_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     x = args[0]
     dim = args[1]
 
-    # PyTorch accumulates in the output dtype: the explicit ``dtype`` kwarg if
-    # given, otherwise int64 for bool/integer inputs. MLX's cumsum accumulates
-    # in the input dtype, so cast the input first to avoid overflow and to
-    # return the dtype the graph promises.
+    # PyTorch casts the input to the output dtype before scanning: the explicit
+    # ``dtype`` kwarg if given, otherwise int64 for bool/integer inputs. MLX's
+    # cumsum scans in the input dtype, so emit the same cast first. Without it,
+    # narrow integer inputs wrap and ``dtype`` is ignored.
     in_dtype = n.args[0].meta["val"].dtype
     out_dtype = n.meta["val"].dtype
     if out_dtype != in_dtype:

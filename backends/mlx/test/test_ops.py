@@ -8032,8 +8032,6 @@ class CumsumModel(nn.Module):
         self.out_dtype = out_dtype
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if self.out_dtype is None:
-            return torch.cumsum(x, dim=self.dim)
         return torch.cumsum(x, dim=self.dim, dtype=self.out_dtype)
 
 
@@ -8061,6 +8059,19 @@ class CumsumTest(OpTestCase):
         if out_dtype is not None:
             self.name += "_to_" + str(out_dtype).replace("torch.", "")
 
+        # The handler casts only when the scan dtype differs from the input:
+        # an explicit dtype, or int64 for bool/integer inputs.
+        if out_dtype is not None:
+            scan_dtype = out_dtype
+        elif dtype.is_floating_point:
+            scan_dtype = dtype
+        else:
+            scan_dtype = torch.int64
+        self.expected_node_counts = {
+            "CumsumNode": 1,
+            "AsTypeNode": int(scan_dtype != dtype),
+        }
+
     @classmethod
     def get_test_configs(cls) -> List["CumsumTest"]:
         return [
@@ -8070,8 +8081,12 @@ class CumsumTest(OpTestCase):
             cls(shape=(2, 3, 4), dim=-1),
             # Integer inputs accumulate in int64, so uint8 sums must not wrap.
             cls(shape=(8,), dim=0, dtype=torch.uint8),
+            # Bool inputs (mask cumsums) count in int64.
+            cls(shape=(8,), dim=0, dtype=torch.bool),
+            cls(shape=(3, 4), dim=1, dtype=torch.bool),
             # An explicit dtype sets the accumulation and output dtype.
             cls(shape=(8,), dim=0, dtype=torch.uint8, out_dtype=torch.float32),
+            cls(shape=(8,), dim=0, dtype=torch.bool, out_dtype=torch.float32),
             cls(shape=(3, 4), dim=1, dtype=torch.float32, out_dtype=torch.int32),
         ]
 
@@ -8079,10 +8094,13 @@ class CumsumTest(OpTestCase):
         return CumsumModel(self.dim, self.out_dtype)
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        if self.dtype == torch.uint8:
-            # 100 per element overflows uint8 after the second step.
-            return (torch.full(self.shape, 100, dtype=torch.uint8),)
-        return (torch.randn(self.shape, dtype=self.dtype),)
+        if self.dtype.is_floating_point:
+            return (torch.randn(self.shape, dtype=self.dtype),)
+        if self.dtype == torch.bool:
+            numel = torch.Size(self.shape).numel()
+            return ((torch.arange(numel) % 3 != 0).reshape(self.shape),)
+        # 100 per element overflows uint8 after the second step.
+        return (torch.full(self.shape, 100, dtype=self.dtype),)
 
 
 class CummaxModel(nn.Module):
