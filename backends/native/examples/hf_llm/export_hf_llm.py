@@ -11,9 +11,8 @@ directory (or only its config, with random weights), wraps it with the cache
 adapter from ``transformers.integrations.executorch``, and exports the
 ``(input_ids [1, T], cache_position [T])`` signature. A model with
 linear-attention layers exports a static one-token ``forward`` instead, its
-recurrent states held as buffers, so its driver must feed a prompt one token
-per call; the runners in ``runtime`` prefill a prompt in one call. Reports which operators the native
-partitioner leaves behind. ``--gguf`` takes the weights from a GGUF
+recurrent states held as buffers, and a ``prefill`` for longer calls (below).
+Reports which operators the native partitioner leaves behind. ``--gguf`` takes the weights from a GGUF
 file of an architecture ``gguf_hf`` supports instead, keeping its quantized blocks
 packed in the PTN; with ``--dequantize_gguf`` they become the float32 weights
 eager computes from them instead. ``--offgraph_cache`` exports attention as
@@ -22,7 +21,8 @@ cache. ``--samples`` appends a ``golden`` sample set:
 eager logits for a prefill and a few greedy decode steps per prompt.
 A linear-attention model's Gated DeltaNet rules export as
 ``native::gated_delta_rule``, or with ``--gdn_op aten`` as transformers' ATen
-ops.
+ops. With the native op it also exports ``prefill``, taking 2 to
+``--prefill_tokens`` prompt tokens per call and sharing ``forward``'s states.
 """
 
 import argparse
@@ -62,7 +62,7 @@ from executorch.extension.llm.export.model_metadata import (
     write_max_context_len,
 )
 from executorch.extension.llm.export.quant.convert import Convert
-from torch.export import Dim, export
+from torch.export import Dim, export, ExportedProgram
 from torch.utils.hooks import RemovableHandle
 from torchao.quantization import (
     Int8DynamicActivationIntxWeightConfig,
@@ -913,29 +913,68 @@ def _sample_prompts(
     return prompts
 
 
+def prefill_calls(length: int, max_tokens: int) -> list[int]:
+    """The call sizes that feed `length` prompt tokens: calls of `max_tokens`,
+    then the rest in one call; without a prefill method, one token per call."""
+    if max_tokens < 2:
+        return [1] * length
+    full, rest = divmod(length, max_tokens)
+    return [max_tokens] * full + ([rest] if rest else [])
+
+
+def call_method(tokens: int) -> str:
+    """The method of a linear-attention package that takes `tokens` tokens."""
+    return "forward" if tokens == 1 else "prefill"
+
+
+def export_prefill(
+    wrapper: LastTokenLM, max_tokens: int, strict: bool = True
+) -> ExportedProgram:
+    """A linear-attention wrapper's ``prefill``: 2 to `max_tokens` tokens per
+    call, reading and writing the states ``forward`` does. Needs the Gated
+    DeltaNet rules on native::gated_delta_rule, which takes any token count;
+    transformers' chunked rule loops over a count of chunks."""
+    tokens = Dim("prefill_tokens", min=2, max=max_tokens)
+    example = min(max_tokens, 8)
+    with torch.no_grad():
+        return export(
+            wrapper,
+            (torch.zeros((1, example), dtype=torch.long), torch.arange(example)),
+            dynamic_shapes={"input_ids": {1: tokens}, "cache_position": {0: tokens}},
+            strict=strict,
+        )
+
+
 def golden_samples(
     wrapper: LastTokenLM | OffGraphLastTokenLM,
     prompts: list[list[int]],
     decode_steps: int,
+    prefill_tokens: int = 0,
 ) -> SampleSet:
-    """Per tokenized prompt, from an empty cache: the prompt in one call, or
-    in calls of the wrapper's `tokens_per_call` tokens, then `decode_steps`
-    calls each fed the previous call's eager argmax."""
+    """Per tokenized prompt, from an empty cache: the prompt in one call, or,
+    for a linear-attention wrapper, in `prefill_calls` on their methods; then
+    `decode_steps` calls each fed the previous call's eager argmax."""
+    if not all(prompts):
+        raise ValueError("golden_samples: every prompt needs at least one token")
     quantized = any(isinstance(p, TorchAOBaseTensor) for p in wrapper.parameters())
     samples = []
     with torch.no_grad(), wrapper.cache_scope():
         for ids in prompts:
             wrapper.reset_cache()
-            chunk = wrapper.tokens_per_call or len(ids)
-            calls = []
-            for start in range(0, len(ids), chunk):
-                input_ids = torch.tensor([ids[start : start + chunk]], dtype=torch.long)
-                positions = torch.arange(
-                    start, start + input_ids.shape[1], dtype=torch.long
-                )
+            sizes = (
+                prefill_calls(len(ids), prefill_tokens)
+                if wrapper.tokens_per_call
+                else [len(ids)]
+            )
+            calls, start = [], 0
+            for size in sizes:
+                input_ids = torch.tensor([ids[start : start + size]], dtype=torch.long)
+                positions = torch.arange(start, start + size, dtype=torch.long)
                 inputs = wrapper.call_inputs(input_ids, positions)
                 logits = wrapper(*inputs)
-                calls.append(Call("forward", inputs, [logits]))
+                method = call_method(size) if wrapper.tokens_per_call else "forward"
+                calls.append(Call(method, inputs, [logits]))
+                start += size
             for _ in range(decode_steps):
                 input_ids = logits[:, -1].argmax(dim=-1, keepdim=True)
                 positions = positions[-1:] + 1
@@ -1000,6 +1039,14 @@ def _parse_args() -> argparse.Namespace:
         "ggml engine does not run.",
     )
     parser.add_argument(
+        "--prefill_tokens",
+        type=int,
+        default=None,
+        help="For a linear-attention model on the native Gated DeltaNet op, the "
+        "most prompt tokens a call of its prefill method takes (default 512, at "
+        "most max_seq_length - 1); 0 exports forward alone.",
+    )
+    parser.add_argument(
         "--logits_to_keep",
         choices=["last", "selected"],
         default="last",
@@ -1040,6 +1087,22 @@ def _parse_args() -> argparse.Namespace:
     cache_len = args.max_context_length or args.max_seq_length
     if cache_len < args.max_seq_length - 1:
         parser.error("the context must hold a full prompt of max_seq_length - 1 tokens")
+    if args.prefill_tokens is None:
+        args.prefill_tokens = (
+            min(512, args.max_seq_length - 1) if args.gdn_op == "native" else 0
+        )
+    elif args.prefill_tokens and not 1 < args.prefill_tokens < args.max_seq_length:
+        parser.error("--prefill_tokens must be 0 or in [2, max_seq_length - 1]")
+    elif args.prefill_tokens and args.gdn_op != "native":
+        parser.error(
+            "--prefill_tokens needs --gdn_op native: transformers' chunked rule "
+            "exports for a fixed token count only"
+        )
+    elif args.prefill_tokens and args.offgraph_cache:
+        parser.error(
+            "--prefill_tokens exports linear attention's prefill method, which "
+            "--offgraph_cache does not export"
+        )
     return args
 
 
@@ -1108,17 +1171,28 @@ def main() -> None:
                 dynamic_shapes=dynamic_shapes,
                 strict=not args.non_strict,
             )
+        programs = {"forward": ep}
+        prefill_tokens = args.prefill_tokens if wrapper.tokens_per_call else 0
+        if prefill_tokens:
+            print(f"exporting prefill for 2 to {prefill_tokens} tokens per call")
+            programs["prefill"] = export_prefill(
+                wrapper, prefill_tokens, not args.non_strict
+            )
         # Before the report: its re-trace shares export's ShapeEnv, so a dim it made
         # static would look static to to_native, which then would not report it.
         metadata = wrapper.metadata() if args.offgraph_cache else None
-        package = to_native(ep, metadata=metadata) if args.output else None
-        report_lowering(ep, "forward")
+        if args.output:
+            package = to_native(programs if prefill_tokens else ep, metadata=metadata)
+        else:
+            package = None
+        for name, program in programs.items():
+            report_lowering(program, name)
 
         if package is not None:
             package.save(args.output)
             print(f"saved {args.output}")
         if prompts:
-            samples = golden_samples(wrapper, prompts, _DECODE_STEPS)
+            samples = golden_samples(wrapper, prompts, _DECODE_STEPS, prefill_tokens)
             write_samples(args.output, "golden", samples)
             print(f"wrote {len(prompts)} golden samples")
 
