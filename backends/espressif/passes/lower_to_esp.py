@@ -467,11 +467,10 @@ def _lower_softmax(program, node, target, kernel_mode) -> bool:
     if queries is None:
         return False
     try:
-        scratch_bytes = queries.softmax_scratch_size(
-            width=width, height=value.numel() // width
-        )
-    except (AttributeError, ValueError):
+        size_query = queries.softmax_scratch_size
+    except AttributeError:
         return False
+    scratch_bytes = size_query(width=width, height=value.numel() // width)
     if not 0 <= scratch_bytes <= torch.iinfo(torch.int32).max:
         raise RuntimeError("ESP-NN returned an invalid softmax scratch size")
     with node.graph.inserting_before(node):

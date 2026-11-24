@@ -314,16 +314,29 @@ def test_softmax_arithmetic_bounds(input_scale, supported):
 
 
 @pytest.mark.parametrize(
-    "float_input,scale,zero_point",
+    "shape,dim,float_input,scale,zero_point",
     [
-        (True, _OUTPUT_SCALE, -128),
-        (False, None, None),
-        (False, 1 / 128, -128),
-        (False, _OUTPUT_SCALE, 0),
+        ((3, 10), -1, True, _OUTPUT_SCALE, -128),
+        ((3, 10), -1, False, None, None),
+        ((3, 10), -1, False, 1 / 128, -128),
+        ((3, 10), -1, False, _OUTPUT_SCALE, 0),
+        ((1, 256), -1, False, _OUTPUT_SCALE, -128),
+        ((1, 4095), -1, False, _OUTPUT_SCALE, -128),
+        ((3, 10), 0, False, _OUTPUT_SCALE, -128),
+        ((2, 3, 4), 1, False, _OUTPUT_SCALE, -128),
     ],
-    ids=["float_input", "float_output", "output_scale", "output_zero_point"],
+    ids=[
+        "float_input",
+        "float_output",
+        "output_scale",
+        "output_zero_point",
+        "width_256",
+        "width_4095",
+        "first_axis",
+        "middle_axis",
+    ],
 )
-def test_softmax_unsupported_qparams_stay_portable(float_input, scale, zero_point):
+def test_softmax_lowering_guards(shape, dim, float_input, scale, zero_point):
     config = get_symmetric_quantization_config()
     config = replace(
         config,
@@ -350,22 +363,24 @@ def test_softmax_unsupported_qparams_stay_portable(float_input, scale, zero_poin
             )
         ]
     )
-    case = test_cases["rows"]
+    inputs = (_input(shape),)
+    tester = EspTester(EspSoftmax(dim=dim), inputs)
+    if get_scratch_queries(tester.target, tester.kernel_mode) is None:
+        pytest.skip("Build with EXECUTORCH_BUILD_ESP_NN_PYBINDS=ON")
     tester = (
-        EspTester(case.model, case.example_inputs)
-        .export_fused_quant(quantizer)
+        tester.export_fused_quant(quantizer)
         .to_edge()
         .check_node_count({_FQ_SOFTMAX: 1})
     )
-    expected = tester.get_artifact().exported_program().module()(*case.example_inputs)
+    expected = tester.get_artifact().exported_program().module()(*inputs)
     tester.run_passes().check_node_count({_FQ_SOFTMAX: 0, _ESP_SOFTMAX: 0, _SOFTMAX: 1})
-    actual = tester.get_artifact().exported_program().module()(*case.example_inputs)
+    actual = tester.get_artifact().exported_program().module()(*inputs)
     torch.testing.assert_close(actual, expected, atol=0, rtol=0)
     tester.to_executorch().serialize()
 
 
 @pytest.mark.parametrize("missing", ["module", "getter"])
-def test_softmax_falls_back_without_sizing(monkeypatch, missing):
+def test_softmax_fallback_without_sizing_preserves_fixed_grid(monkeypatch, missing):
     if missing == "module":
         monkeypatch.setattr(
             "executorch.backends.espressif.passes.lower_to_esp.get_scratch_queries",
@@ -377,9 +392,37 @@ def test_softmax_falls_back_without_sizing(monkeypatch, missing):
             pytest.skip("Build with EXECUTORCH_BUILD_ESP_NN_PYBINDS=ON")
         monkeypatch.delattr(queries, "softmax_scratch_size")
     case = test_cases["rows"]
-    EspTester(case.model, case.example_inputs, target=EspTarget.ESP32S3).test_dialect(
-        {_FQ_SOFTMAX: 1}, {_ESP_SOFTMAX: 0, _SOFTMAX: 1}, atol=0, rtol=0
-    ).to_executorch().serialize()
+    tester = EspTester(
+        case.model, case.example_inputs, target=EspTarget.ESP32S3
+    ).test_dialect({_FQ_SOFTMAX: 1}, {_ESP_SOFTMAX: 0, _SOFTMAX: 1}, atol=0, rtol=0)
+    reference = tester.get_artifact(StageType.TO_EDGE).exported_program()
+    (node,) = reference.graph.find_nodes(op="call_function", target=_FQ_SOFTMAX)
+    params = get_qparams_from_node(node, "out")
+    assert get_scale(reference, params) == _OUTPUT_SCALE
+    assert get_zero_point(reference, params) == -128
+    tester.to_executorch().serialize()
+
+
+@pytest.mark.parametrize("error", [AttributeError, ValueError])
+def test_softmax_sizing_errors_propagate(monkeypatch, error):
+    queries = get_scratch_queries(EspTarget.ESP32S3, EspKernelMode.OPTIMIZED)
+    if queries is None:
+        pytest.skip("Build with EXECUTORCH_BUILD_ESP_NN_PYBINDS=ON")
+
+    def failing_size_query(**kwargs):
+        raise error("scratch sizing failed")
+
+    monkeypatch.setattr(queries, "softmax_scratch_size", failing_size_query)
+    case = test_cases["rows"]
+    tester = (
+        EspTester(case.model, case.example_inputs, target=EspTarget.ESP32S3)
+        .export_fused_quant()
+        .to_edge()
+    )
+    with pytest.raises(Exception, match="LowerToEsp") as exc_info:
+        tester.run_passes()
+    assert isinstance(exc_info.value.__cause__, error)
+    assert str(exc_info.value.__cause__) == "scratch sizing failed"
 
 
 def test_implementation_softmax_zero_scratch(pytestconfig):
@@ -429,4 +472,4 @@ def test_implementation_softmax_undersized_scratch(pytestconfig):
         / "emulator.log"
     ).read_text()
     assert "op_quantized_softmax.cpp" in log
-    assert "scratch.nbytes()" in log
+    assert "failed with status 0x12" in log
