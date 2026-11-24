@@ -39,6 +39,7 @@ std::unique_ptr<EngineExecutable> make_ggml_executable(
     const GgmlEngineOptions& options,
     size_t* materialized_constant_bytes,
     size_t* heap_copied_constant_bytes,
+    size_t* f16_kv_cache_bytes,
     GgmlMutableKeyOwners& mutable_key_owners,
     GgmlKvCache kv_cache = {});
 

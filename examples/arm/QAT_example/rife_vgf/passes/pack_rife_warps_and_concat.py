@@ -21,6 +21,9 @@ from executorch.backends.arm._passes.arm_pass_utils import (
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_input_qparams,
 )
+from executorch.backends.arm._passes.tosa_lowering_utils import (
+    compute_multiplier_and_shift,
+)
 from executorch.backends.arm.tosa.dialect.ops.custom import register_fake_tosa
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.backends.arm.vgf.shaders import grid_sampler
@@ -46,6 +49,24 @@ def _is_op(node, target, arity):
         and node.op == "call_function"
         and node.target == target
         and len(node.args) == arity
+    )
+
+
+def _is_rescale(node, dtype, *, per_channel=False, output_unsigned=False):
+    return (
+        _is_op(node, TOSA.RESCALE.default, 5)
+        and node.kwargs.get("dtype") == dtype
+        and node.kwargs.get("scale32", True)
+        and node.kwargs.get("rounding_mode", "SINGLE_ROUND") == "SINGLE_ROUND"
+        and node.kwargs.get("per_channel", False) == per_channel
+        and not node.kwargs.get("input_unsigned", False)
+        and node.kwargs.get("output_unsigned", False) == output_unsigned
+        and len(node.args[1]) == len(node.args[2])
+        and len(node.args[1]) >= 1
+        and (per_channel or len(node.args[1]) == 1)
+        and all(type(value) is int and 0 <= value < 1 << 31 for value in node.args[1])
+        and all(type(value) is int and 2 <= value <= 62 for value in node.args[2])
+        and all(type(value) is int for value in node.args[3:])
     )
 
 
@@ -268,12 +289,7 @@ def _match_previous_flow(concat, customs, nodes):
     if len(residuals) != 1 or not _is_op(residuals[0], TOSA.RESCALE.default, 5):
         raise ValueError("Expected one previous-flow rescale.")
     residual = residuals[0]
-    if (
-        residual.args[1] != torch.int32
-        or len(residual.args[2]) != 1
-        or residual.args[4] != 0
-        or any(residual.kwargs.values())
-    ):
+    if not _is_rescale(residual, torch.int32) or residual.args[4] != 0:
         raise ValueError("Expected a signed per-tensor INT32 previous-flow rescale.")
     nodes.add(flow_transpose)
     allowed = nodes | set(customs) | {concat, residual}
@@ -293,9 +309,9 @@ def _match_block0_tail(concat, customs):
     slices = []
     for rescale, channels in zip(concat.args[0][5:], (1, 8, 4)):
         if (
-            not _is_op(rescale, TOSA.RESCALE.default, 5)
-            or rescale.args[1:] != (torch.int8, [0.0625], 0, 0)
-            or any(rescale.kwargs.values())
+            not _is_rescale(rescale, torch.int8)
+            or rescale.args[1:3] != compute_multiplier_and_shift([0.0625])
+            or rescale.args[3:] != (0, 0)
         ):
             raise ValueError("Expected the original signed 1/16 state rescale.")
         resize = rescale.args[0]
@@ -354,8 +370,9 @@ def _match_direct_head_tail(concat, customs):
                 [1 - factor, 1 - factor],
                 [factor - 1, factor - 1],
             ]
-            or rescale.args[1:] != (torch.int8, [1.0 / denominator**2], 0, 0)
-            or any(rescale.kwargs.values())
+            or not _is_rescale(rescale, torch.int8)
+            or rescale.args[1:3] != compute_multiplier_and_shift([1.0 / denominator**2])
+            or rescale.args[3:] != (0, 0)
         ):
             raise ValueError("Expected the original signed integer head resize.")
         nodes.update((source, resize, rescale))
@@ -383,8 +400,8 @@ def _phase_major_parameters(program, phase):
         not _is_op(producer, TOSA.TRANSPOSE_CONV2D.default, 5)
         or set(producer.users) != {phase}
         or producer.meta["val"].dtype != torch.int32
-        or phase.args[1] != torch.int8
-        or len(phase.args[2]) not in (1, channels)
+        or not _is_rescale(phase, torch.int8, per_channel=len(phase.args[1]) > 1)
+        or len(phase.args[1]) not in (1, channels)
     ):
         raise ValueError("Expected a private PixelShuffle transpose convolution.")
     _symmetric_weight(producer)
@@ -400,16 +417,17 @@ def _phase_major_parameters(program, phase):
         raise ValueError("Expected native PixelShuffle convolution weights and bias.")
     # Make each PixelShuffle phase contiguous at the producer.
     order = torch.arange(channels).reshape(channels // 4, 4).t().reshape(-1)
-    scales = phase.args[2]
-    if len(scales) == channels:
-        scales = [scales[i] for i in order.tolist()]
-    return producer, weight[order], bias[order], scales
+    multipliers, shifts = phase.args[1:3]
+    if len(multipliers) == channels:
+        multipliers = [multipliers[i] for i in order.tolist()]
+        shifts = [shifts[i] for i in order.tolist()]
+    return producer, weight[order], bias[order], multipliers, shifts
 
 
 def _reorder_pixel_shuffle_output(program, phase, parameters):
     if parameters is None:
         return
-    producer, weight, bias, scales = parameters
+    producer, weight, bias, multipliers, shifts = parameters
     graph = phase.graph
     constants = []
     for suffix, value in (("weight", weight), ("bias", bias)):
@@ -423,7 +441,7 @@ def _reorder_pixel_shuffle_output(program, phase, parameters):
                 )
             )
     producer.args = (producer.args[0], *constants, *producer.args[3:])
-    phase.args = (*phase.args[:2], scales, *phase.args[3:])
+    phase.args = (phase.args[0], multipliers, shifts, *phase.args[3:])
 
 
 class PackRifeWarpsAndConcatPass(ArmPass):

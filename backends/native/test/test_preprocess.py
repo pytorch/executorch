@@ -182,6 +182,23 @@ class PreprocessSerializationTest(unittest.TestCase):
             f"expected in-place relu_, got {targets}",
         )
 
+    def test_softplus_reaches_the_graph_whole(self):
+        # Preserved rather than decomposed into exp, log1p and where, so
+        # engines see the activation they lower.
+        class Softplus(nn.Module):
+            def forward(self, x):
+                return torch.nn.functional.softplus(x)
+
+        blob = _get_delegate_blob(_lower(Softplus(), (torch.randn(2, 8),)))
+        targets = _call_function_targets(deserialize_graph(blob))
+        self.assertTrue(
+            any(t is not None and t.endswith("aten.softplus.default") for t in targets),
+            f"expected aten.softplus.default, got {targets}",
+        )
+        for op in ("aten.exp", "aten.log1p", "aten.where"):
+            with self.subTest(op=op):
+                self.assertFalse(any(t is not None and op in t for t in targets))
+
     def test_constants_shipped_via_named_data(self):
         edge = _lower(nn.Linear(4, 4), (torch.randn(1, 4),))
         blob = _get_delegate_blob(edge)
