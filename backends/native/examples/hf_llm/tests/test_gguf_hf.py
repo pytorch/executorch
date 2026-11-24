@@ -28,6 +28,8 @@ from executorch.extension.llm.export.load import assign_one, iter_checkpoint
 from transformers import (
     AutoModelForCausalLM,
     Gemma2Config,
+    Gemma4TextConfig,
+    Gemma4UnifiedTextConfig,
     GemmaConfig,
     LlamaConfig,
     MistralConfig,
@@ -171,6 +173,41 @@ def _random_blocks(ggml_type: str, rows: int, cols: int, seed: int) -> np.ndarra
     for offset in _SCALE_OFFSETS[ggml_type]:
         raw[..., offset : offset + 2] = np.array([2**-10], np.float16).view(np.uint8)
     return raw.reshape(rows, -1)
+
+
+def _tiny_gemma4(config_cls) -> torch.nn.Module:
+    """A sliding-window layer, then a global one whose values are its keys."""
+    extra = {"hidden_size_per_layer_input": 0} if config_cls is Gemma4TextConfig else {}
+    return _tiny(
+        config_cls,
+        layer_types=["sliding_attention", "full_attention"],
+        attention_k_eq_v=True,
+        global_head_dim=32,
+        num_global_key_value_heads=1,
+        **extra,
+    )
+
+
+# llama.cpp's Gemma 4 tensor names -> HF FQNs, written out from its converter.
+_GEMMA4_NAMES = {
+    "token_embd.weight": "model.embed_tokens.weight",
+    "output_norm.weight": "model.norm.weight",
+    "blk.0.attn_norm.weight": "model.layers.0.input_layernorm.weight",
+    "blk.0.attn_q.weight": "model.layers.0.self_attn.q_proj.weight",
+    "blk.0.attn_k.weight": "model.layers.0.self_attn.k_proj.weight",
+    "blk.0.attn_v.weight": "model.layers.0.self_attn.v_proj.weight",
+    "blk.0.attn_output.weight": "model.layers.0.self_attn.o_proj.weight",
+    "blk.1.attn_q_norm.weight": "model.layers.1.self_attn.q_norm.weight",
+    "blk.1.attn_k_norm.weight": "model.layers.1.self_attn.k_norm.weight",
+    "blk.1.attn_k.weight": "model.layers.1.self_attn.k_proj.weight",
+    "blk.1.post_attention_norm.weight": "model.layers.1.post_attention_layernorm.weight",
+    "blk.1.ffn_norm.weight": "model.layers.1.pre_feedforward_layernorm.weight",
+    "blk.1.ffn_gate.weight": "model.layers.1.mlp.gate_proj.weight",
+    "blk.1.ffn_up.weight": "model.layers.1.mlp.up_proj.weight",
+    "blk.1.ffn_down.weight": "model.layers.1.mlp.down_proj.weight",
+    "blk.1.post_ffw_norm.weight": "model.layers.1.post_feedforward_layernorm.weight",
+    "blk.1.layer_output_scale.weight": "model.layers.1.layer_scalar",
+}
 
 
 def _tiny_qwen35(value_heads: int = 6) -> torch.nn.Module:
@@ -411,6 +448,26 @@ class GgufHfTest(unittest.TestCase):
                 key_map, _ = gguf_to_hf(_tiny(config_cls), arch)
                 self.assertEqual({n: key_map(n) for n in names}, names)
 
+    def test_maps_gemma4_gguf_names(self) -> None:
+        for config_cls in (Gemma4TextConfig, Gemma4UnifiedTextConfig):
+            with self.subTest(config_cls.__name__):
+                model = _tiny_gemma4(config_cls)
+                model_type = model.config.model_type
+                key_map, convert = gguf_to_hf(model, "gemma4")
+
+                self.assertEqual({n: key_map(n) for n in _GEMMA4_NAMES}, _GEMMA4_NAMES)
+                self.assertIsNone(key_map("rope_freqs.weight"))
+                # The global layer's values are its keys: it has no attn_v.
+                with self.assertRaisesRegex(
+                    ValueError, f"maps to no {model_type} parameter"
+                ):
+                    key_map("blk.1.attn_v.weight")
+                # Gemma 4 norms are stored as HF keeps them, without an offset.
+                norm = torch.tensor([0.5, 1.5])
+                self.assertIs(
+                    convert("model.layers.0.input_layernorm.weight", norm), norm
+                )
+
     def test_skips_derived_and_rejects_unknown_tensors(self) -> None:
         key_map, _ = gguf_to_hf(_tiny(LlamaConfig), "llama")
 
@@ -455,6 +512,8 @@ class GgufHfTest(unittest.TestCase):
             gguf_to_hf(_tiny(LlamaConfig), "phi3")
         with self.assertRaisesRegex(ValueError, "cannot load a 'llama' model"):
             gguf_to_hf(_tiny(LlamaConfig), "qwen35")
+        with self.assertRaisesRegex(ValueError, "cannot load a 'llama' model"):
+            gguf_to_hf(_tiny(LlamaConfig), "gemma4")
 
     def test_reads_the_architecture_of_a_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
