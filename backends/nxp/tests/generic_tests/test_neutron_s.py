@@ -69,6 +69,8 @@ def test_non_subsystem_target_uses_neutron_c_target_info(mocker):
     ],
 )
 def test_neutron_s_target_info_is_defensive(method_name):
+    # This is a temporary test until Neutron-S target support implementation reaches the verification of the fusing
+    #  support.
     node = MagicMock()
     node.op = "call_function"
 

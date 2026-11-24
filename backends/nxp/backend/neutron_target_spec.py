@@ -25,7 +25,7 @@ class TargetInfo(ABC):
     """
     Abstract base class describing target specific capabilities of a Neutron NPU.
 
-    Once new backends are verified, they can create their own subclasses of `TargetInfo` to customize some
+    Once new targets are verified, they can create their own subclasses of `TargetInfo` to customize some
      functionality for the particular target.
     """
 
@@ -167,7 +167,7 @@ class NeutronTargetSpec:
                 f"Target `{target}` contains unsupported HW version. Only N3/N3+ targets are supported at the moment."
             )
 
-        # Once new backends are verified, they can create their own `TargetInfo` subclasses to customize some
+        # Once new targets are verified, they can create their own `TargetInfo` subclasses to customize some
         #  functionality.
         self.neutron_target_info: TargetInfo
         if self.is_subsystem():
