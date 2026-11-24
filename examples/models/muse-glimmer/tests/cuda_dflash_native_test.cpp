@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -52,7 +53,8 @@ struct CudaDFlashTestPeer {
         96,
         static_cast<int>(aten::ScalarType::BFloat16),
         /*initial_capacity=*/512,
-        std::move(options));
+        std::move(options),
+        /*column_compaction_delay=*/std::chrono::milliseconds{0});
     EXPECT_EQ(target.error(), rt::Error::Ok);
     if (!target.ok()) {
       return nullptr;
@@ -888,6 +890,11 @@ TEST_F(
     EXPECT_GT(result.static_draft_forwards, 0);
     EXPECT_EQ(executor_->stats().failed_batches, 0);
     result.logits = std::move(fixture_->observed_logits);
+    if (!compact) {
+      executor_->close_session(owners[3]);
+      EXPECT_TRUE(executor_->on_idle());
+      EXPECT_EQ(Peer::target_metrics(*executor_).physical_columns, 2);
+    }
     return result;
   };
   const auto reference = run(false);
