@@ -6,7 +6,7 @@ The CUDA backend is the ExecuTorch solution for running models on NVIDIA GPUs. I
 
 - **Optimized GPU Execution**: Uses AOTInductor to generate highly optimized CUDA kernels for model operators
 - **Triton Kernel Support**: Leverages Triton for GEMM (General Matrix Multiply), convolution, and SDPA (Scaled Dot-Product Attention) kernels.
-- **Helion Kernel Support**: Models can call [Helion](https://github.com/pytorch/helion) kernels directly. Export lowers each call to the Triton kernel of its selected config, so the runtime needs neither Python nor Helion.
+- **Helion Kernel Support**: Models can call [Helion](https://github.com/pytorch/helion) kernels on Helion's Triton or CuTe backend directly. Export compiles each call with its selected config into the program, so the runtime needs neither Python nor Helion.
 - **Quantization Support**: INT4 weight quantization with tile-packed format for improved performance and reduced memory footprint
 - **Cross-Platform**: Runs on Linux, and on Windows from C++. Programs for Windows are exported on Linux.
 - **Multiple Model Support**: Works with various models including LLMs, vision-language models, and audio models
@@ -150,25 +150,58 @@ exec_program = et_program.to_executorch()
 
 Strict `torch.export` (`strict=True`, as in the example above, not torch's default) records each
 call as a Helion higher-order op. While lowering, the CUDA backend's
-`LowerHelionToTritonPass` renders the call with its config, captures the generated Triton launch and
-replaces the Helion op with it, so AOTInductor compiles it like any other Triton kernel. The pass
-runs after the backend's other passes and before AOTInductor. It neither tunes nor launches the
-kernel: picking the config, for example with Helion's autotuner, is a separate offline step.
+`LowerHelionPass` renders the call with its config and replaces the Helion op, according to the
+kernel's Helion backend:
+
+- **Triton** (Helion's default): the pass captures the generated Triton launch, and AOTInductor
+  compiles it like any other Triton kernel.
+- **CuTe** (`@helion.kernel(backend="cute", ...)`): the pass compiles the launch with the CuTe DSL
+  for the export GPU, exports it as an object file with a C entry point, and replaces the Helion op
+  with a custom op whose C implementation AOTInductor links into its shared library. The kernel then
+  lives in the `.pte` like the Triton kernels. Export needs `nvidia-cutlass-dsl` 4.7 or newer and a
+  CUDA 12.5 or newer toolkit matching the CUDA major version PyTorch was built with; the program runs only on GPUs of the export GPU's architecture, and CuTe kernels
+  are Linux-only (they are rejected when exporting for Windows). A CuTe kernel is compiled for the
+  exported sizes, strides and pointer alignments: user inputs, parameters, buffers and outputs
+  allocated by the kernel's host code are compiled as starting at their allocation (any of them
+  that is itself a view at an offset that is not 16-byte aligned is compiled for element
+  alignment only), while every
+  other operand (an activation, or a tensor passed into a `torch.cond` branch) is compiled for
+  element alignment only. Within one pass run (one CUDA partition), a kernel called more than once is compiled once,
+  at the weakest alignment among its calls, so such an operand in one call also makes the
+  matching operand of the other calls element-aligned even if it is a user input there; across
+  methods of one `.pte`, the same kernel used at different alignments counts as two distinct
+  launches. A config that needs more than element alignment on an element-aligned operand
+  stages (copies) it, which this lowering rejects, so it cannot be exported at all. At run time
+  each call checks its arguments against the
+  compiled layout and alignment and fails the call, rather than launching, on a mismatch.
+
+The pass runs after the backend's other passes and before AOTInductor. It never tunes or launches
+the kernel: picking the config, for example with Helion's autotuner, is a separate offline step.
 
 The pass supports:
 
-- Kernels on the Triton backend with `static_shapes=True` and exactly one config.
+- Kernels on the Triton or CuTe backend with `static_shapes=True` and exactly one config.
 - Tensor arguments, several calls per model, several tensor outputs and calls inside `torch.cond`
-  branches (nested `torch.cond` included; Helion calls inside `while_loop`, `scan` or `map` bodies are rejected).
-- Kernels that write their inputs or buffers in place, as long as the written tensor is
-  contiguous, so the copy made for the write keeps its strides.
+  branches (nested `torch.cond` included; Helion calls inside `while_loop`, `scan` or `map` bodies are rejected). A program may contain only one distinct CuTe launch (one kernel, config and set of
+  argument layouts); repeated calls to that launch are fine. Within one pass run the limit is
+  always enforced; across the methods of one `.pte` it is enforced only on the
+  `to_edge_transform_and_lower` and `EdgeProgramManager.to_backend` paths, so a program
+  lowered through the low-level `to_backend` overloads must keep to one launch across its
+  methods itself.
+- Kernels that write their inputs, buffers and dense views of them (for example one row of a
+  larger tensor) in place. The copy made for the write keeps the written tensor's strides;
+  written tensors with gaps are rejected.
 
 It rejects, with an error during export, calls it cannot lower exactly: kernels on other Helion
-backends such as CuTe, kernels that leave the choice of config to Helion (no `config=`, so
+backends, kernels that leave the choice of config to Helion (no `config=`, so
 Helion autotunes on the first call, or more than one config), scalar, container or defaulted arguments, dynamic shapes, outputs that alias inputs, outputs whose strides differ
 from the ones recorded for the call, more than one launch site, host tensor descriptors, and
-launch options AOTInductor cannot reproduce, such as cooperative grids, clusters or PDL. It needs
-Helion 1.5.2 or newer, which records each call's host-semantic fingerprint at export.
+launch options AOTInductor cannot reproduce, such as cooperative grids, clusters or PDL. For CuTe
+kernels it also rejects launches with scalar arguments, workspace tensors, dynamic layouts, empty
+grids, launches that stage (copy) under-aligned operands, and programs with more than one
+distinct CuTe launch. It needs Helion 1.5.2 or newer,
+which records each call's host-semantic fingerprint at
+export.
 
 
 ----

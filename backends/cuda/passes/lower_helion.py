@@ -4,13 +4,19 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Lower native Helion kernel calls to ordinary Triton launches for AOTI.
+"""Lower native Helion kernel calls to launches AOTInductor can compile.
 
 AOTInductor cannot compile Helion's higher-order ops into a standalone C++
-wrapper, but it can compile Triton kernels wrapped by ``wrap_triton``. This pass
-renders each Helion call with its single, explicitly selected config, traces the
-generated host code with fake tensors and splices the resulting Triton launch
-into the exported program. Helion is imported only when a Helion call is found.
+wrapper. This pass renders each Helion call with its single, explicitly selected
+config, traces the generated host code with fake tensors and splices the result
+into the exported program:
+
+- Triton kernels become ordinary ``wrap_triton`` launches, which AOTInductor
+  compiles like any user Triton kernel.
+- CuTe kernels are compiled now and become calls to a custom op whose C
+  implementation AOTInductor links into its ``.so`` (see ``helion_cute.py``).
+
+Helion is imported only when a Helion call is found.
 """
 
 from __future__ import annotations
@@ -27,10 +33,12 @@ from types import ModuleType
 from typing import Any, cast, NamedTuple
 
 import torch
+
+from executorch.backends.cuda.passes import helion_cute
 from torch._inductor.codecache import PyCodeCache
 from torch._library.triton import set_wrap_triton_enabled
 from torch.export import ExportedProgram
-from torch.export.graph_signature import ExportGraphSignature
+from torch.export.graph_signature import ExportGraphSignature, InputKind
 from torch.fx import Graph, GraphModule, Node
 from torch.fx.experimental.proxy_tensor import make_fx
 from torch.fx.node import map_arg
@@ -47,14 +55,18 @@ _SUPPORTED_LAUNCH_OPTIONS = ("num_warps", "num_stages", "maxnreg", "enable_fp_fu
 # side table and their output spec belong to Helion's private torch.compile
 # integration, and so does the launcher parameter of a standalone entrypoint. The
 # pass reads that contract only through this section and otherwise uses Helion's
-# public API (Kernel.bind, BoundKernel.to_code). The one other private trait the
-# pass relies on is the functional HOP's (outputs, {name: clone}) return layout,
-# which _make_hop_replacement mirrors and _reroute_hop_outputs indexes into.
+# public API (Kernel.bind, BoundKernel.to_code). The CuTe path additionally reads
+# Helion's private CuTe launcher, checked in helion_cute._cute_launcher_modules.
+# The one other private trait the pass relies on is the functional HOP's
+# (outputs, {name: clone}) return layout, which _make_hop_replacement mirrors
+# and _reroute_hop_outputs indexes into.
 _HELION_HOP_NAMES = (
     "helion_kernel_wrapper_mutation",
     "helion_kernel_wrapper_functional",
 )
 _LAUNCHER_PARAMETER = "_launcher"
+_TRITON_BACKEND = "triton"
+_CUTE_BACKEND = "cute"
 _HELION_RUNTIME_PREFIX = "helion."
 _HELION_REQUIREMENT = "Helion 1.5.2 or newer"
 _MIN_HELION_VERSION = (1, 5, 2)
@@ -135,11 +147,14 @@ def _read_captured_call(node: Node) -> _CapturedHelionCall:
     # with the requirement error instead of surfacing a bare KeyError. The
     # two exceptions are direct_aliases and mutated_inputs: Helion omits them
     # from a capture its functionalization rebuilt when they are empty, so a
-    # missing entry means "none". The traced replacement is checked for
-    # writes to its inputs and for outputs aliasing them, with one exception:
-    # an output that aliases a mutated input aliases the clone the trace
-    # launches on, which neither post-trace check sees, so only
-    # direct_aliases rejects that case.
+    # missing entry means "none". For Triton launches the traced replacement
+    # cross-checks both (torch's mutation analysis plus the placeholder and
+    # aliasing checks below), with one exception: an output that aliases a
+    # mutated input aliases the clone the trace launches on, which neither
+    # post-trace check sees, so only direct_aliases rejects that case. CuTe
+    # launches rely on Helion's report entirely: their op schema's writes
+    # come from the same tensors_to_clone set, so an unreported CuTe kernel
+    # write cannot be caught after tracing.
     try:
         spec = kwargs["output_spec"]
         is_functional = node.target is hops.helion_kernel_wrapper_functional
@@ -239,10 +254,10 @@ def _launch_through_wrap_triton(kernel, grid, *args, **kwargs):
 
 def _parse_helion_call(captured: _CapturedHelionCall) -> _HelionCall:
     kernel = captured.kernel
-    if kernel.settings.backend != "triton":
+    if kernel.settings.backend not in (_TRITON_BACKEND, _CUTE_BACKEND):
         raise NotImplementedError(
-            "Helion lowering supports only the Triton backend; this kernel uses "
-            f"{kernel.settings.backend!r}"
+            "Helion lowering supports only the Triton and CuTe backends; this "
+            f"kernel uses {kernel.settings.backend!r}"
         )
     if not kernel.settings.static_shapes:
         raise NotImplementedError("Helion lowering requires static_shapes=True")
@@ -281,10 +296,13 @@ def _check_static_arguments(call: _HelionCall) -> None:
             raise NotImplementedError(
                 "Helion lowering does not yet preserve dynamic specialization guards"
             )
-        if name in call.captured.tensors_to_clone and not value.is_contiguous():
+        # The kernel is specialized to the strides of the uncloned argument.
+        if (
+            name in call.captured.tensors_to_clone
+            and value.clone().stride() != value.stride()
+        ):
             raise NotImplementedError(
-                "Helion Triton lowering does not support writes to "
-                "non-contiguous tensors"
+                "Helion lowering does not support mutation clones that change strides"
             )
 
 
@@ -348,7 +366,7 @@ def _bind_helion_jit_helpers(source: str) -> str:
     return ast.unparse(ast.fix_missing_locations(tree))
 
 
-def _render_triton_entrypoint(call: _HelionCall) -> Callable[..., Any]:
+def _render_entrypoint(call: _HelionCall) -> tuple[Callable[..., Any], str]:
     kernel = call.captured.kernel
     config = kernel.configs[0]
     if config.get("host_tensor_descriptors", False):
@@ -362,14 +380,16 @@ def _render_triton_entrypoint(call: _HelionCall) -> Callable[..., Any]:
     # without inlining them. AOTInductor compiles the kernels, so inference
     # still needs no Helion.
     source = bound.to_code(config)
-    _check_single_launch_site(source, kernel.name)
-    return getattr(PyCodeCache.load(_bind_helion_jit_helpers(source)), kernel.name)
+    if kernel.settings.backend == _TRITON_BACKEND:
+        _check_single_launch_site(source, kernel.name)
+        source = _bind_helion_jit_helpers(source)
+    return getattr(PyCodeCache.load(source), kernel.name), source
 
 
 def _make_hop_replacement(
-    call: _HelionCall, entrypoint: Callable[..., Any]
+    call: _HelionCall, entrypoint: Callable[..., Any], launcher: Callable[..., Any]
 ) -> Callable[..., Any]:
-    """Call the Triton entrypoint and return outputs shaped like the Helion HOP's."""
+    """Call the entrypoint and return outputs shaped like the Helion HOP's."""
     captured = call.captured
     # Placeholders at offset 0 start at their allocation, so a plain
     # clone is enough (and cheaper) for them; a view parameter keeps its
@@ -385,13 +405,23 @@ def _make_hop_replacement(
         # kernel, which can drop the view's storage offset when the
         # consumer is an extern kernel call. Gathering through
         # index_select materializes the same copy with the load indexing
-        # composed through the view.
-        if (
-            name not in placeholders or tensor.storage_offset() != 0
-        ) and tensor.is_contiguous():
-            flat = tensor.reshape(-1)
-            index = torch.arange(flat.numel(), device=flat.device)
-            return flat.index_select(0, index).reshape(tensor.shape)
+        # composed through the view. A dense tensor that is not
+        # contiguous is gathered over its whole storage span and viewed
+        # back with its own strides, so every dense layout is covered.
+        if name not in placeholders or tensor.storage_offset() != 0:
+            if tensor.is_contiguous():
+                flat = tensor.reshape(-1)
+                index = torch.arange(flat.numel(), device=flat.device)
+                return flat.index_select(0, index).reshape(tensor.shape)
+            if cast(Any, tensor).is_non_overlapping_and_dense():
+                span = 1 + sum(
+                    (size - 1) * stride
+                    for size, stride in zip(tensor.shape, tensor.stride())
+                )
+                storage = tensor.as_strided((span,), (1,))
+                index = torch.arange(span, device=tensor.device)
+                copied = storage.index_select(0, index)
+                return copied.as_strided(tensor.shape, tensor.stride())
         return tensor.clone()
 
     def run(*values):
@@ -403,9 +433,7 @@ def _make_hop_replacement(
         launch_args = (
             cloned.get(name, arguments[name]) for name in call.argument_names
         )
-        outputs = entrypoint(
-            *launch_args, **{_LAUNCHER_PARAMETER: _launch_through_wrap_triton}
-        )
+        outputs = entrypoint(*launch_args, **{_LAUNCHER_PARAMETER: launcher})
         flat = tuple(
             leaf
             for leaf in pytree.tree_leaves(outputs)
@@ -444,16 +472,117 @@ def _check_no_placeholder_mutation(traced: GraphModule, kernel_name: str) -> Non
                 )
 
 
-def _trace_helion_call_as_triton(node: Node) -> tuple[GraphModule, tuple[Node, ...]]:
+def _weakest_aligned_arguments(
+    calls: list[tuple[Node, frozenset[str]]],
+) -> dict[Node, frozenset[int]]:
+    """Weakest aligned argument indexes of each CuTe kernel across its calls.
+
+    One kernel called first on a user input and then on an activation
+    shares one launch exported at the intersection, instead of two
+    launches: one compile and archive, at the cost of the aligned call
+    losing its 16-byte alignment assumption. Calls that fail to parse are skipped here; tracing them
+    raises the real error.
+    """
+    weakest: dict[Any, set[int]] = {}
+    parsed: list[tuple[Node, Any, set[int]]] = []
+    for node, aligned_names in calls:
+        try:
+            captured = _read_captured_call(node)
+            if captured.kernel.settings.backend != _CUTE_BACKEND:
+                continue
+            call = _parse_helion_call(captured)
+        except Exception:
+            continue
+        aligned = {
+            i
+            for i, n in enumerate(call.argument_nodes)
+            if n.op == "placeholder" and n.name in aligned_names
+        }
+        # Only calls that can share a launch (same kernel and argument
+        # layouts) may narrow each other's alignment; calls with other
+        # shapes, strides or dtypes export distinct launches anyway.
+        # Size-1 strides never affect an address, matching the launch
+        # prefix key, and storage offsets are left out because the
+        # intersection gives every call in a group the same example
+        # offsets, which is what the prefix hashes.
+        # Two kernel objects built from the same function and config
+        # (for example one per model block) export the same launch, so
+        # group by name and configs, not by kernel object. Grouping two
+        # different kernels that share both only narrows alignment,
+        # which stays correct.
+        kernel = captured.kernel
+        key = (
+            (kernel.name, repr(kernel.configs)),
+            tuple(
+                (
+                    tuple(t.shape),
+                    tuple(
+                        1 if size == 1 else stride
+                        for stride, size in zip(t.stride(), t.shape)
+                    ),
+                    t.dtype,
+                )
+                for t in call.fake_arguments
+            ),
+        )
+        parsed.append((node, key, aligned))
+        if key in weakest:
+            weakest[key] &= aligned
+        else:
+            weakest[key] = set(aligned)
+    return {node: frozenset(weakest[key]) for node, key, _ in parsed}
+
+
+def _trace_helion_call(
+    node: Node,
+    target_platform: str | None = None,
+    aligned_arguments: frozenset[int] = frozenset(),
+) -> tuple[GraphModule, tuple[Node, ...]]:
     captured = _read_captured_call(node)
     call = _parse_helion_call(captured)
-    run = _make_hop_replacement(call, _render_triton_entrypoint(call))
-    with set_wrap_triton_enabled(True):
-        traced = make_fx(torch.func.functionalize(run), tracing_mode="fake")(
-            *call.fake_arguments
+    if (
+        captured.kernel.settings.backend == _CUTE_BACKEND
+        and target_platform == "windows"
+    ):
+        raise NotImplementedError(
+            "Helion CuTe lowering is Linux-only; it cannot export a "
+            "kernel for Windows"
         )
-    if not any("triton_kernel_wrapper" in str(n.target) for n in traced.graph.nodes):
-        raise RuntimeError("Helion lowering lost the Triton launch during capture")
+    entrypoint, source = _render_entrypoint(call)
+    if call.captured.kernel.settings.backend == _CUTE_BACKEND:
+        mutated = frozenset(
+            i
+            for i, name in enumerate(call.argument_names)
+            if name in call.captured.tensors_to_clone
+        )
+        launcher, launch_op = helion_cute.export_cute_launch(
+            entrypoint,
+            _LAUNCHER_PARAMETER,
+            source,
+            call.fake_arguments,
+            mutated,
+            aligned_arguments,
+        )
+
+        def is_launch(n: Node) -> bool:
+            return n.target is launch_op
+
+    else:
+        launcher = _launch_through_wrap_triton
+
+        def is_launch(n: Node) -> bool:
+            return "triton_kernel_wrapper" in str(n.target)
+
+    run = _make_hop_replacement(call, entrypoint, launcher)
+    if call.captured.kernel.settings.backend == _TRITON_BACKEND:
+        run = torch.func.functionalize(run)
+    # torch.func.functionalize rejects custom ops that write their arguments, so
+    # a CuTe launch stays a write. It only writes tensors the replacement
+    # allocates or clones, and AOTInductor functionalizes it when it compiles.
+    with set_wrap_triton_enabled(True):
+        traced = make_fx(run, tracing_mode="fake")(*call.fake_arguments)
+    if not any(is_launch(n) for n in traced.graph.nodes):
+        raise RuntimeError("Helion lowering lost the kernel launch during capture")
     _check_no_placeholder_mutation(traced, captured.kernel.name)
     _check_outputs_do_not_alias_inputs(traced)
     return traced, call.argument_nodes
@@ -745,55 +874,118 @@ def _refresh_cond_branch_fakes(
     return reached
 
 
-class LowerHelionToTritonPass:
-    """Replace native Helion calls with the Triton launches of their selected config.
+def _refresh_program_fakes(root: GraphModule, modules: list[GraphModule]) -> None:
+    """Refresh view fakes for the Helion calls in one program.
 
-    Supported: one explicit config per kernel, static strided tensor arguments,
-    multiple tensor outputs and functionalized input mutation. Config selection
-    stays offline; the pass neither tunes nor launches kernels, and inference
-    needs neither Python nor Helion.
+    Rejects Helion calls in control flow the cond walk does not reach
+    (for example a `while_loop` or `scan` body) instead of specializing
+    them on stale fakes.
+    """
+    helion_modules = [
+        module
+        for module in modules
+        if any(
+            node.op == "call_function" and str(node.target) in _HELION_HOP_NAMES
+            for node in module.graph.nodes
+        )
+    ]
+    if not helion_modules:
+        return
+    stale = _refresh_view_fakes(root)
+    reached = _refresh_cond_branch_fakes(root, stale=stale)
+    stale |= _refresh_view_fakes(root)
+    for module in helion_modules:
+        if id(module) not in reached:
+            raise NotImplementedError(
+                "Helion lowering does not support Helion calls in "
+                "nested control flow other than torch.cond branches"
+            )
+        for node in module.graph.nodes:
+            if (
+                node.op == "call_function"
+                and str(node.target) in _HELION_HOP_NAMES
+                and any(
+                    isinstance(leaf, Node) and leaf in stale
+                    for leaf in pytree.tree_leaves((node.args, node.kwargs))
+                )
+            ):
+                raise NotImplementedError(
+                    "Helion lowering cannot recompute the layout of "
+                    "an argument of the Helion call at "
+                    f"{node.name!r}, so it cannot specialize the "
+                    "kernel for its real strides"
+                )
+
+
+class LowerHelionPass:
+    """Replace native Helion calls with launches of their selected config.
+
+    Supported: Triton and CuTe kernels with one explicit config, static strided
+    tensor arguments, multiple tensor outputs and functionalized input mutation.
+    One LowerHelionPass run may lower only one distinct CuTe launch; the
+    per-.pte form is enforced by CudaBackend.preprocess_multimethod.
+    Config selection stays offline; the pass neither tunes nor launches kernels
+    (CuTe kernels are compiled for the export GPU), and inference needs neither
+    Python nor Helion. CuTe kernels are rejected when ``target_platform`` is
+    ``"windows"``: their shim and archive are Linux artifacts.
     """
 
     requires_exported_program = True
 
+    def __init__(self, target_platform: str | None = None) -> None:
+        self.target_platform = target_platform
+
     def __call__(self, exported_program: ExportedProgram) -> None:
+        helion_cute.begin_program()
         root = exported_program.graph_module
         modules = [m for m in root.modules() if isinstance(m, GraphModule)]
-        helion_modules = [
-            module
-            for module in modules
-            if any(
-                node.op == "call_function" and str(node.target) in _HELION_HOP_NAMES
-                for node in module.graph.nodes
+        _refresh_program_fakes(root, modules)
+        # A program an earlier pass run already lowered contains helion_cute
+        # ops but no Helion calls; their archives still have to link.
+        helion_cute.note_existing_launches(modules)
+        if self.target_platform == "windows" and (
+            helion_cute.current_program_launches()
+        ):
+            raise NotImplementedError(
+                "Helion CuTe lowering is Linux-only; it cannot export a "
+                "kernel for Windows"
             )
-        ]
-        if helion_modules:
-            stale = _refresh_view_fakes(root)
-            reached = _refresh_cond_branch_fakes(root, stale=stale)
-            stale |= _refresh_view_fakes(root)
-            for module in helion_modules:
-                if id(module) not in reached:
-                    raise NotImplementedError(
-                        "Helion lowering does not support Helion calls in "
-                        "nested control flow other than torch.cond branches"
-                    )
-                for node in module.graph.nodes:
-                    if (
-                        node.op == "call_function"
-                        and str(node.target) in _HELION_HOP_NAMES
-                        and any(
-                            isinstance(leaf, Node) and leaf in stale
-                            for leaf in pytree.tree_leaves((node.args, node.kwargs))
-                        )
-                    ):
-                        raise NotImplementedError(
-                            "Helion lowering cannot recompute the layout of "
-                            "an argument of the Helion call at "
-                            f"{node.name!r}, so it cannot specialize the "
-                            "kernel for its real strides"
-                        )
+        signature = exported_program.graph_signature
+        # The operands a CuTe kernel may assume start at their allocation:
+        # the root graph's user inputs, parameters and buffers. One that is
+        # itself a view at an offset that is not 16-byte aligned does not
+        # start at its allocation, so it is compiled for element alignment
+        # like every other operand; that also keeps two calls that differ
+        # only in such an offset on one shared launch.
+        placeholders = {
+            node.name: node for node in root.graph.nodes if node.op == "placeholder"
+        }
+
+        def starts_aligned(name: str) -> bool:
+            fake = placeholders[name].meta.get("val")
+            return (
+                not isinstance(fake, torch.Tensor)
+                or (fake.storage_offset() * fake.element_size()) % 16 == 0
+            )
+
+        aligned_names = frozenset(
+            spec.arg.name
+            for spec in signature.input_specs
+            if spec.kind
+            in (InputKind.USER_INPUT, InputKind.PARAMETER, InputKind.BUFFER)
+            and spec.arg.name in placeholders
+            and starts_aligned(spec.arg.name)
+        )
+        weakest = _weakest_aligned_arguments(
+            [
+                (node, aligned_names if module is root else frozenset())
+                for module in modules
+                for node in module.graph.nodes
+                if node.op == "call_function" and str(node.target) in _HELION_HOP_NAMES
+            ]
+        )
         for module in modules:
-            signature = exported_program.graph_signature if module is root else None
+            is_root = module is root
             modified = False
             for node in list(module.graph.nodes):
                 if (
@@ -802,11 +994,20 @@ class LowerHelionToTritonPass:
                 ):
                     continue
                 try:
-                    traced, inputs = _trace_helion_call_as_triton(node)
+                    traced, inputs = _trace_helion_call(
+                        node,
+                        self.target_platform,
+                        weakest.get(node, frozenset()),
+                    )
                     replacement = _splice_traced_graph(
                         module.graph, node, traced, inputs
                     )
-                    _reroute_hop_outputs(module.graph, node, replacement, signature)
+                    _reroute_hop_outputs(
+                        module.graph,
+                        node,
+                        replacement,
+                        signature if is_root else None,
+                    )
                 except Exception as error:
                     kernel_name = "unknown"
                     try:
