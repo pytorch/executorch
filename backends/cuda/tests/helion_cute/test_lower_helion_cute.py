@@ -155,6 +155,32 @@ class LowerHelionCuteTest(helion_tests.LowerHelionTest):
 
         self._export_and_run(Model(), x, x + storage[1:258])
 
+    def test_rejects_dynamic_shapes(self) -> None:
+        # CuTe kernels are compiled for one set of sizes.
+        from torch.export import Dim
+
+        kernel = self._kernel(
+            helion_tests._add,
+            helion_tests.helion.Config(block_sizes=[256]),
+            static_shapes=True,
+        )
+        x = torch.randn(64, device="cuda")
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return kernel(x, x)
+
+        program = torch.export.export(
+            Model(),
+            (x,),
+            dynamic_shapes={"x": {0: Dim("m", min=1, max=256)}},
+            strict=True,
+        )
+        with self.assertRaisesRegex(
+            NotImplementedError, "Helion CuTe lowering does not support dynamic shapes"
+        ):
+            LowerHelionPass()(program)
+
     def test_rejects_windows_target(self) -> None:
         kernel = self._kernel(
             helion_tests._add,
