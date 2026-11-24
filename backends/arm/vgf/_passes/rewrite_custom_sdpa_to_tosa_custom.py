@@ -31,7 +31,7 @@ def _set_fake_tensor_meta(node: torch.fx.Node, value) -> None:
 
 
 class RewriteCustomSDPAToTosaCustomPass(ArmPass):
-    """Rewrite supported decode-only SDPA nodes to ``tosa.CUSTOM``.
+    """Rewrite supported fixed-position decode SDPA nodes to ``tosa.CUSTOM``.
 
     This pass handles only the narrow VGF shader contract.
 
@@ -159,14 +159,26 @@ class RewriteCustomSDPAToTosaCustomPass(ArmPass):
             )
         return False
 
+    @staticmethod
+    def _supports_shader_dtypes(
+        query_val: torch.Tensor,
+        key_val: torch.Tensor,
+        value_val: torch.Tensor,
+    ) -> bool:
+        return (
+            query_val.dtype == torch.float32
+            and key_val.dtype == torch.float32
+            and value_val.dtype == torch.float32
+        )
+
     @classmethod
     def supports_tosa_custom(cls, node: torch.fx.Node) -> bool:
         """Return whether ``llama.custom_sdpa`` matches the VGF shader contract.
 
         The current VGF custom SDPA path is intentionally narrow. It accepts:
         decode-style causal attention only, no explicit attention mask, zero
-        dropout, 4D BSHD/BHSD tensors, matching K/V shapes, and grouped-query
-        compatible head ratios.
+        dropout, compile-time-constant ``start_pos``, 4D BSHD/BHSD tensors,
+        matching K/V shapes, and grouped-query compatible head ratios.
 
         """
         if not cls._is_custom_sdpa_target(node.target):
@@ -241,6 +253,8 @@ class RewriteCustomSDPAToTosaCustomPass(ArmPass):
             layout=layout,
         ):
             return None
+        if not cls._supports_shader_dtypes(query_val, key_val, value_val):
+            return None
 
         return (
             query,
@@ -279,6 +293,9 @@ class RewriteCustomSDPAToTosaCustomPass(ArmPass):
                 tuple(query.meta["val"].shape),
                 tuple(key.meta["val"].shape),
                 tuple(value.meta["val"].shape),
+                query.meta["val"].dtype,
+                key.meta["val"].dtype,
+                value.meta["val"].dtype,
                 start_pos,
                 dropout_p,
                 is_causal,
