@@ -3502,6 +3502,39 @@ class GgmlOpsTest(unittest.TestCase):
             rtol=1e-4,
         )
 
+    def test_rope_frequency_tables(self):
+        # Two ropes hold equal inv_freq constants, which share one table; a
+        # third holds its own.
+        class Tables(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                config = LlamaConfig(
+                    hidden_size=256, num_attention_heads=4, head_dim=64
+                )
+                self.a = Rope(config)
+                self.b = Rope(config)
+                config = LlamaConfig(
+                    hidden_size=256,
+                    num_attention_heads=4,
+                    head_dim=64,
+                    rope_theta=500000.0,
+                )
+                self.c = Rope(config)
+
+            def forward(self, x, positions):
+                return (
+                    self.a(x, positions)
+                    + 2 * self.b(x, positions)
+                    + 3 * self.c(x, positions)
+                )
+
+        self._check(
+            Tables(),
+            (torch.randn(1, 4, 5, 64), torch.tensor([[3, 40, 200, 6, 100]])),
+            atol=1e-3,
+            rtol=1e-3,
+        )
+
     def test_rope_zero_frequency_leaves_dims_unrotated(self):
         # Partial RoPE written as zero inverse frequencies, e.g. Gemma 4's
         # proportional RoPE: those dims keep their values.
