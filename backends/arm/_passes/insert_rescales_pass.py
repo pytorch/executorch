@@ -10,13 +10,14 @@ from typing import cast, Dict, Optional, Set, Tuple, Type
 
 import torch
 from executorch.backends.arm._passes.arm_pass import ArmPass
-from executorch.backends.arm._passes.arm_pass_utils import create_node, set_node_arg
+from executorch.backends.arm._passes.arm_pass_utils import set_node_arg
 from executorch.backends.arm._passes.decompose_sum_pass import DecomposeSumPass
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_output_qparams,
 )
 
 from executorch.backends.arm._passes.quant_args import QuantArgs
+from executorch.backends.arm._passes.tosa_lowering_utils import create_rescale_node
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.backends.arm.tosa.specification import get_context_spec
@@ -66,6 +67,8 @@ class InsertRescalePass(ArmPass):
                     continue
                 if node.target == exir_ops.backend.tosa.RESCALE.default:
                     continue
+                if node.target == exir_ops.backend.tosa.CONST.default:
+                    continue
                 if (
                     node.target
                     == exir_ops.edge.dim_order_ops._to_dim_order_copy.default
@@ -92,9 +95,8 @@ class InsertRescalePass(ArmPass):
         output_dtype = torch.int8 if output_unsigned else q_args.dtype
 
         with graph_module.graph.inserting_before(node):
-            rescale_node = create_node(
+            rescale_node = create_rescale_node(
                 graph_module.graph,
-                exir_ops.backend.tosa.RESCALE.default,
                 (
                     node.all_input_nodes[0],
                     output_dtype,
@@ -341,18 +343,17 @@ class InsertRescaleInt32Pass(ArmPass):
             seen_args.add(arg_node)
 
             with graph.inserting_after(arg_node):
-                rescale_node = create_node(
+                rescale_node = create_rescale_node(
                     graph,
-                    exir_ops.backend.tosa.RESCALE.default,
                     (
                         arg_node,
                         torch.int32,
                         [
                             qp.get_scale_per_tensor()
                             / rescale_qargs[i].get_scale_per_tensor()
-                        ],  # [Old scale / new scale]
-                        qp.get_zp_per_tensor(),  # Old zero point
-                        rescale_qargs[i].get_zp_per_tensor(),  # New zero point
+                        ],
+                        qp.get_zp_per_tensor(),
+                        rescale_qargs[i].get_zp_per_tensor(),
                     ),
                     from_node=node,
                 )
@@ -377,18 +378,17 @@ class InsertRescaleInt32Pass(ArmPass):
         users_copy = list(node.users)
 
         with graph.inserting_after(node):
-            rescale_node = create_node(
+            rescale_node = create_rescale_node(
                 graph,
-                exir_ops.backend.tosa.RESCALE.default,
                 (
                     node,
                     qarg.dtype,
                     [
                         rescale_qargs.get_scale_per_tensor()
                         / qarg.get_scale_per_tensor()
-                    ],  # [Old scale / new scale]
-                    rescale_qargs.get_zp_per_tensor(),  # Old zero point
-                    qarg.get_zp_per_tensor(),  # New zero point
+                    ],
+                    rescale_qargs.get_zp_per_tensor(),
+                    qarg.get_zp_per_tensor(),
                 ),
                 from_node=node,
             )
@@ -427,6 +427,10 @@ class InsertRescaleInt32Pass(ArmPass):
             )
             outputs_was_rescaled = False
             if inputs_was_rescaled:
+                if output_rescale_qargs is not None:
+                    node.meta["val"] = node.meta["val"].new_empty(
+                        node.meta["val"].shape, dtype=output_rescale_qargs.dtype
+                    )
                 outputs_was_rescaled = self._rescale_outputs(
                     graph, node, output_rescale_qargs
                 )
@@ -493,15 +497,14 @@ class InsertControlFlowRescalesPass(ArmPass):
             in_qparams.get_scale_per_tensor() / out_qparams.get_scale_per_tensor()
         ]
 
-        rescale_node = create_node(
+        rescale_node = create_rescale_node(
             graph_module.graph,
-            exir_ops.backend.tosa.RESCALE.default,
             (
                 None,
                 out_qparams.dtype,
                 new_scales,
-                in_qparams.get_zp_per_tensor(),  # Old zero point
-                out_qparams.get_zp_per_tensor(),  # New zero point
+                in_qparams.get_zp_per_tensor(),
+                out_qparams.get_zp_per_tensor(),
             ),
             from_node=from_node,
         )

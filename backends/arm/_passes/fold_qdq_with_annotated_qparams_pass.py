@@ -366,6 +366,7 @@ class FoldAndAnnotateQParamsPass(ArmPass):
     def _correct_output_dtype(node: torch.fx.Node):
         if node.target not in {
             exir_ops.edge.aten.sum.dim_IntList,
+            exir_ops.edge.aten.full_like.default,
             exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
             *ComputeConstantOpsAOTPass.targeted_ops,
         }:
