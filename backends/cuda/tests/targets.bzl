@@ -356,7 +356,12 @@ def define_common_targets(is_fbcode = False):
         ],
         deps = [
             "//caffe2:torch",
+            "//executorch/backends/cuda:cuda_backend",
+            "//executorch/backends/cuda:cuda_partitioner",
             "//executorch/backends/cuda:triton_kernels",
+            "//executorch/exir:lib",
+            "//executorch/export:export_utils",
+            "//executorch/runtime:runtime",
         ],
         keep_gpu_sections = True,
         remote_execution = re_test_utils.remote_execution(
