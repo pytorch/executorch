@@ -255,7 +255,7 @@ def _is_quantized_constant(node: torch.fx.Node) -> bool:
 def _floating_profile_negative_checks(
     tosa_spec: TosaSpecification, reporter: WhyNoPartitionReporter
 ) -> list[OperatorSupportBase]:
-    int64 = tosa_spec.support_extension("int64")
+    int64 = tosa_spec.support_integer() and tosa_spec.support_extension("int64")
     return [
         CheckMixedFloatingInputs(reporter),
         CheckFPComparisonInputs(reporter, tosa_spec.support_integer(), int64),
