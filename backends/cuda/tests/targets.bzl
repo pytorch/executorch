@@ -679,8 +679,8 @@ def define_common_targets(is_fbcode = False):
     )
 
     python_unittest_remote_gpu(
-        name = "test_nvfp4_w4a4",
-        srcs = ["test_nvfp4_w4a4.py"],
+        name = "test_nvfp4_kernels",
+        srcs = ["test_nvfp4_kernels.py"],
         deps = ["//caffe2:torch", "//executorch/backends/cuda:autotune", "//executorch/backends/cuda:nvfp4_tensor", "//executorch/extension/llm/export:nvfp4", "fbsource//third-party/pypi/pytest:pytest", "//executorch/backends/cuda:triton_kernels", ":nvfp4_test_utils"],
         keep_gpu_sections = True,
         remote_execution = re_test_utils.remote_execution(platform = "gpu-remote-execution", subplatform = "A100"),
