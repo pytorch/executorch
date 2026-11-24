@@ -41,6 +41,8 @@ Arguments:
                 - quantized-8da4w-fp16-embedding (Vulkan only)
                 - kquant-17gb (Muse Glimmer only)
                 - kquant-dynamic (Muse Glimmer only)
+                - nvfp4 (Muse Glimmer solo-text only; downloads its GGUF from
+                  gabrielcosi/Muse-Glimmer-30B-NVFP4-GGUF at a pinned revision)
 
   model_dir   Directory containing model artifacts (optional, default: current directory)
               Expected files: model.pte, aoti_cuda_blob.ptd (CUDA only)

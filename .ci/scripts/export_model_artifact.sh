@@ -42,6 +42,8 @@ Arguments:
                  - quantized-8da4w-fp16-embedding (Vulkan only)
                  - kquant-17gb (Muse Glimmer only)
                  - kquant-dynamic (Muse Glimmer only)
+                 - nvfp4 (Muse Glimmer solo-text only; downloads its GGUF from
+                   gabrielcosi/Muse-Glimmer-30B-NVFP4-GGUF at a pinned revision)
 
   output_dir   Output directory for artifacts (optional, default: current directory)
 
@@ -330,7 +332,7 @@ case "$QUANT_NAME" in
     esac
     EXTRA_ARGS=""
     ;;
-  kquant-17gb|kquant-dynamic)
+  kquant-17gb|kquant-dynamic|nvfp4)
     if [ "$HF_MODEL" != "meta-models/Muse-Glimmer-30B-GGUF" ]; then
       echo "Error: Quantization '$QUANT_NAME' can only be used with Muse Glimmer model"
       echo "Provided model: $HF_MODEL"
@@ -340,7 +342,7 @@ case "$QUANT_NAME" in
     ;;
   *)
     echo "Error: Unsupported quantization '$QUANT_NAME'"
-    echo "Supported quantizations: non-quantized, quantized-int4-tile-packed, quantized-int4-weight-only, quantized-int4-metal, quantized-8da4w, kquant-17gb, kquant-dynamic"
+    echo "Supported quantizations: non-quantized, quantized-int4-tile-packed, quantized-int4-weight-only, quantized-int4-metal, quantized-8da4w, kquant-17gb, kquant-dynamic, nvfp4"
     exit 1
     ;;
 esac
@@ -350,8 +352,12 @@ if [ "$MODEL_NAME" = "muse_glimmer" ]; then
     echo "Error: Muse Glimmer is only supported with the cuda device"
     exit 1
   fi
-  if [ "$QUANT_NAME" != "kquant-17gb" ] && [ "$QUANT_NAME" != "kquant-dynamic" ]; then
-    echo "Error: Muse Glimmer requires quantization 'kquant-17gb' or 'kquant-dynamic'"
+  if [ "$QUANT_NAME" != "kquant-17gb" ] && [ "$QUANT_NAME" != "kquant-dynamic" ] && [ "$QUANT_NAME" != "nvfp4" ]; then
+    echo "Error: Muse Glimmer requires quantization 'kquant-17gb', 'kquant-dynamic' or 'nvfp4'"
+    exit 1
+  fi
+  if [ "$QUANT_NAME" = "nvfp4" ] && [ "$MODE" != "solo-text" ]; then
+    echo "Error: The NVFP4 Muse Glimmer checkpoint is only exported in mode 'solo-text'"
     exit 1
   fi
   if [ "$MODE" != "solo-text" ] && [ "$MODE" != "dflash-image-batching" ] && [ "$MODE" != "dflash-image" ]; then
@@ -684,16 +690,29 @@ if [ "$MODEL_NAME" = "muse_glimmer" ]; then
   INDUCTOR_TMPDIR=$(mktemp -d "${RUNNER_TEMP:-/tmp}/tmpdir_XXXXXX")
   SCRATCH_DIRS+=("$INDUCTOR_CACHE" "$INDUCTOR_TMPDIR")
 
+  GGUF_REPO="$HF_MODEL"
+  GGUF_REVISION=""
+  NVFP4_ARGS=""
   case "$QUANT_NAME" in
     kquant-17gb)
       TARGET_GGUF_FILE="Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf"
+      ;;
+    nvfp4)
+      # NVFP4 weights with Q8_0 embedding/lm_head and an NVFP4 KV cache. The
+      # attention projections use MXFP8 activations only with native FP4
+      # (SM120); elsewhere prefill uses BF16 activations and decode the faster
+      # of the W4A16 and INT8-activation W4A8 GEMVs.
+      GGUF_REPO="gabrielcosi/Muse-Glimmer-30B-NVFP4-GGUF"
+      GGUF_REVISION="ba4a88a32e448e340651689ae49a7ebc233631b1"
+      TARGET_GGUF_FILE="Muse-Glimmer-30B-NVFP4-Q8_0.gguf"
+      NVFP4_ARGS="--kv-cache-dtype nvfp4 --nvfp4-attn-act mxfp8"
       ;;
     kquant-dynamic)
       TARGET_GGUF_FILE="Muse-Glimmer-30B-KQuant-Dynamic-Q4_K_XL.gguf"
       ;;
   esac
 
-  python -c "from huggingface_hub import hf_hub_download; hf_hub_download('${HF_MODEL}', '${TARGET_GGUF_FILE}', local_dir='${LOCAL_MODEL_DIR}')"
+  python -c "from huggingface_hub import hf_hub_download; hf_hub_download('${GGUF_REPO}', '${TARGET_GGUF_FILE}', revision='${GGUF_REVISION}' or None, local_dir='${LOCAL_MODEL_DIR}')"
   TARGET_GGUF_PATH="${LOCAL_MODEL_DIR}/${TARGET_GGUF_FILE}"
 
   echo "::group::Export"
@@ -705,6 +724,7 @@ if [ "$MODEL_NAME" = "muse_glimmer" ]; then
       python -m executorch.examples.models.muse_glimmer.export.export_solo \
           --gguf "$TARGET_GGUF_PATH" \
           --backend cuda \
+          $NVFP4_ARGS \
           --output-dir "${OUTPUT_DIR}"
       ;;
     dflash-image|dflash-image-batching)
