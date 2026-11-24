@@ -24,6 +24,11 @@ def shards(k, device="cpu", dtype=torch.bfloat16):
     return result
 
 
+def static_scale(value, device="cuda"):
+    """A static activation scale as the kernels take it (None: dynamic)."""
+    return None if value is None else torch.tensor([[value]], device=device)
+
+
 def portable_weight(pts=1.0, scale_byte=40):
     return ExportableNVFP4Tensor(
         torch.zeros((70, 24), dtype=torch.uint32),
@@ -32,3 +37,36 @@ def portable_weight(pts=1.0, scale_byte=40):
         16,
         torch.bfloat16,
     )
+
+
+def weight(n, k):
+    torch.manual_seed(42)
+    q = torch.randint(0, 256, (n, k // 2), device="cuda", dtype=torch.uint8)
+    s = (
+        (0.05 + torch.rand(n, k // 16, device="cuda") * 0.1)
+        .to(torch.float8_e4m3fn)
+        .view(torch.uint8)
+    )
+    return CudaNVFP4Tensor(q, s, torch.tensor(0.25, device="cuda"))
+
+
+def dynamic_rows(mode, tensor, upper):
+    """``tensor`` as a fake tensor whose dim 0 is dynamic, bounded by ``upper``
+    (None: unbounded)."""
+    from torch.fx.experimental.symbolic_shapes import (
+        DimDynamic,
+        StatelessSymbolicContext,
+        StrictMinMaxConstraint,
+    )
+    from torch.utils._sympy.value_ranges import ValueRanges
+
+    constraint = (
+        None
+        if upper is None
+        else StrictMinMaxConstraint(vr=ValueRanges(1, upper), warn_only=False)
+    )
+    context = StatelessSymbolicContext(
+        dynamic_sizes=[DimDynamic.DYNAMIC] + [DimDynamic.STATIC] * (tensor.ndim - 1),
+        constraint_sizes=[constraint] + [None] * (tensor.ndim - 1),
+    )
+    return mode.from_tensor(tensor, symbolic_context=context)
