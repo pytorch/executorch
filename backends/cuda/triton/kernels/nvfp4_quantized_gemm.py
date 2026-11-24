@@ -849,6 +849,8 @@ def _gemv_original(
             (16, 256, 4),
             (16, 512, 4),
             (16, 512, 8),
+            (16, 1024, 8),
+            (32, 256, 4),
         ]
         for half in (False, True)
         for st in (1, 2, 3)
