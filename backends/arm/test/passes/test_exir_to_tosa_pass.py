@@ -76,7 +76,7 @@ def test_lowering_preserves_remaining_dimension_order_copies(
 
 
 @pytest.mark.parametrize("dtype", (torch.float32, torch.int8, torch.int16, torch.int32))
-def test_pointwise_rewrites_materialize_explicit_operands(dtype):
+def test_pointwise_rewrites_keep_constant_operands_inline(dtype):
     inputs = (torch.ones(2, 3, dtype=dtype), torch.ones(2, 3, dtype=dtype))
     program = to_edge(
         torch.export.export(PointwiseOperands(), inputs)
@@ -102,9 +102,7 @@ def test_pointwise_rewrites_materialize_explicit_operands(dtype):
         if node.target == exir_ops.backend.tosa.MUL.default
     )
     assert len(multiply.args) == 3
-    shift = multiply.args[2]
-    assert shift.target == exir_ops.backend.tosa.CONST.default
-    assert shift.args == ([0], [1], torch.int8)
+    assert multiply.args[2] == 0
 
     negate = next(
         node
@@ -112,5 +110,8 @@ def test_pointwise_rewrites_materialize_explicit_operands(dtype):
         if node.target == exir_ops.backend.tosa.NEGATE.default
     )
     assert len(negate.args) == 3
-    assert negate.args[1].args == ([input_zp], [1], dtype)
-    assert negate.args[2].args == ([output_zp], [1], dtype)
+    assert negate.args[1] == input_zp
+    assert negate.args[2] == output_zp
+    assert not result.graph_module.graph.find_nodes(
+        op="call_function", target=exir_ops.backend.tosa.CONST.default
+    )

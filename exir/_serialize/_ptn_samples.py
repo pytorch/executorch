@@ -37,6 +37,7 @@ from executorch.exir._serialize._ptn import (
     _DTYPE_CODES,
     _LOCAL_HEADER_SIZE,
     _write_safetensors,
+    _zip_entry,
     PTG_ENTRY,
 )
 
@@ -232,7 +233,7 @@ def write_samples(path: str, name: str, samples: SampleSet) -> None:
         shutil.copymode(path, staging)
         with zipfile.ZipFile(staging, "a", zipfile.ZIP_STORED, allowZip64=True) as pkg:
             _write_safetensors(pkg, tensors, prefix + _DATA_ENTRY)
-            pkg.writestr(prefix + _INDEX_ENTRY, encoded)
+            pkg.writestr(_zip_entry(prefix + _INDEX_ENTRY), encoded)
         os.replace(staging, path)
     except BaseException:
         os.unlink(staging)
