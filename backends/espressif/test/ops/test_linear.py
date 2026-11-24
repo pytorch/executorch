@@ -60,7 +60,11 @@ class EspLinearWithFloatUsers(EspLinear):
 
 class EspLinearRelu(EspLinear):
     ops_before_transforms = {_FQ_LINEAR: 1, exir_ops.edge.fused_quant.relu.default: 1}
-    ops_after_transforms = {_ESP_LINEAR: 1, exir_ops.edge.aten.relu.default: 1}
+    ops_after_transforms = {
+        _ESP_LINEAR: 1,
+        exir_ops.edge.esp_nn.quantized_lut_int8.default: 1,
+        exir_ops.edge.aten.relu.default: 0,
+    }
 
     def forward(self, x):
         return torch.relu(self.linear(x))

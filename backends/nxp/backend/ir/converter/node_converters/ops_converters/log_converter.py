@@ -33,6 +33,9 @@ class LogConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
+        if neutron_target_spec.is_subsystem():
+            return False
+
         # Requirements specified by the new Neutron flow documentation.
         # Input and Output must be INT8/UINT8.
         if not NodeConverter.uses_quantization_type_for_io(

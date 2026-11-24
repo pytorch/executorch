@@ -156,6 +156,7 @@ const Node* expert_matmul(const Method& method, const Node& index) {
       : nullptr;
 }
 
+// cppcheck-suppress unusedFunction ; called by GgmlGraphBuilder.cpp
 const Node* expert_gather(const Method& method, const Node& matmul) {
   const NamedArgument* self = find_arg(matmul, "self", 0);
   if (self == nullptr || self->arg.kind() != ArgKind::Tensor ||
@@ -171,8 +172,92 @@ const Node* expert_gather(const Method& method, const Node& matmul) {
   return expert_matmul(method, index) == &matmul ? &index : nullptr;
 }
 
+namespace {
+
+// The producer of `id` when its op key is one of `keys`, else nullptr.
+const Node* producer_of(
+    const Method& method,
+    ValueId id,
+    std::initializer_list<std::string_view> keys) {
+  if (!valid(id)) {
+    return nullptr;
+  }
+  const NodeId producer = method.graph.value(id).producer_id;
+  if (!valid(producer)) {
+    return nullptr;
+  }
+  const Node& node = method.graph.node(producer);
+  const std::string key = op_key(node.target);
+  return std::ranges::find(keys, key) != keys.end() ? &node : nullptr;
+}
+
+ValueId self_of(const Node& node) {
+  const NamedArgument* arg = find_arg(node, "self", 0);
+  return arg != nullptr && arg->arg.kind() == ArgKind::Tensor
+      ? arg->arg.as_tensor().id
+      : kInvalid;
+}
+
+} // namespace
+
+// The tokens x [T, I] and their repeat k when `mat2` [S, I, 1] repeats each
+// token k times in a row, as repeat_interleave(x, k, 0)[..., None] exports:
+// unsqueeze(x, 1), expanded to [T, k, I], (cloned,) viewed as [S, I], then
+// unsqueezed at the end.
+std::optional<std::pair<ValueId, int64_t>> GraphBuilder::repeated_tokens(
+    ValueId mat2) const {
+  const Node* last = producer_of(
+      method_, mat2, {"aten.unsqueeze.default", "aten.unsqueeze_copy.default"});
+  const Node* flat = last == nullptr ? nullptr
+                                     : producer_of(
+                                           method_,
+                                           self_of(*last),
+                                           {"aten.view.default",
+                                            "aten.view_copy.default",
+                                            "aten.reshape.default",
+                                            "aten._unsafe_view.default"});
+  if (flat == nullptr) {
+    return std::nullopt;
+  }
+  ValueId expanded_id = self_of(*flat);
+  if (const Node* clone = producer_of(
+          method_,
+          expanded_id,
+          {"aten.clone.default", "aten.contiguous.default"})) {
+    expanded_id = self_of(*clone);
+  }
+  const Node* expand = producer_of(
+      method_,
+      expanded_id,
+      {"aten.expand.default", "aten.expand_copy.default"});
+  const Node* first = expand == nullptr
+      ? nullptr
+      : producer_of(
+            method_,
+            self_of(*expand),
+            {"aten.unsqueeze.default", "aten.unsqueeze_copy.default"});
+  if (first == nullptr) {
+    return std::nullopt;
+  }
+  const ValueId x = self_of(*first);
+  const auto sizes = [this](ValueId id) {
+    return method_.graph.value(id).tensor_meta().sizes;
+  };
+  const std::vector<int64_t> tokens = sizes(x);
+  const std::vector<int64_t> repeated = sizes(expanded_id);
+  if (tokens.size() != 2 || repeated.size() != 3 || repeated[0] != tokens[0] ||
+      repeated[2] != tokens[1] ||
+      sizes(self_of(*expand)) !=
+          std::vector<int64_t>{tokens[0], 1, tokens[1]}) {
+    return std::nullopt;
+  }
+  return std::pair{x, repeated[1]};
+}
+
 // y[s] = W[ids[s]] @ x[s] as ggml_mul_mat_id over W's [I, O, E] layout, so the
-// gathered [S, O, I] weights are never materialized.
+// gathered [S, O, I] weights are never materialized. When x repeats each of T
+// tokens k times, the tokens are read once, as ggml's [I, 1, T] activations
+// with ids [k, T], and are quantized once each, as llama.cpp's MoE does.
 void GraphBuilder::lower_expert_matmul(const Node& bmm, const Node& index) {
   const TensorRef weight = tensor_arg(index, "self", 0);
   const ValueId ids_id = row_index_id(index);
@@ -188,12 +273,20 @@ void GraphBuilder::lower_expert_matmul(const Node& bmm, const Node& index) {
   }
   check_row_indices(ids_id, experts);
   ggml_context* ctx = instance_.context.get();
+  ggml_tensor* activations = nullptr;
+  ggml_tensor* rows = nullptr;
+  const auto repeat = repeated_tokens(tensor_arg_id(bmm, "mat2", 1));
+  const TensorRef tokens_ref = repeat ? tensor(repeat->first) : TensorRef{};
+  if (repeat && tokens_ref.sizes.at(0) * repeat->second == count) {
+    const int64_t tokens = tokens_ref.sizes[0];
+    activations = reshape(ctx, as_f32(tokens_ref.tensor), {tokens, 1, in});
+    rows = reshape(ctx, as_i32(ids.tensor), {tokens, repeat->second});
+  } else {
+    activations = reshape(ctx, as_f32(input.tensor), {count, 1, in});
+    rows = reshape(ctx, as_i32(ids.tensor), {count, 1});
+  }
   // ggml-cpu's mul_mat_id reads F32 activations only.
-  ggml_tensor* result = ggml_mul_mat_id(
-      ctx,
-      weight.tensor,
-      reshape(ctx, as_f32(input.tensor), {count, 1, in}),
-      reshape(ctx, as_i32(ids.tensor), {count, 1}));
+  ggml_tensor* result = ggml_mul_mat_id(ctx, weight.tensor, activations, rows);
   std::vector<int64_t> sizes = {count, out, 1};
   set_single_output(bmm, TensorRef{reshape(ctx, result, sizes), sizes});
 }

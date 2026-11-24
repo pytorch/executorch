@@ -19,6 +19,7 @@ from executorch.backends.nxp.backend.ir.tflite_generator.tflite_model import (
     Scale,
     ZeroPoint,
 )
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from torch.fx import Node
 from torch.nn import Parameter
 
@@ -47,6 +48,19 @@ class NegConverter(NodeConverter):
         if not NodeConverter.uses_quantization_type_for_io(
             node, supported_types, [0], [0]
         ):
+            return False
+
+        return True
+
+    @classmethod
+    def _is_supported_on_target(
+        cls,
+        node: Node,
+        neutron_target_spec: NeutronTargetSpec,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
+    ) -> bool:
+        if neutron_target_spec.is_subsystem():
             return False
 
         return True

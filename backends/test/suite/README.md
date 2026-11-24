@@ -11,27 +11,27 @@ Each backend and test flow (recipe) registers a pytest [marker](https://docs.pyt
 
 To run all XNNPACK backend operator tests:
 ```
-pytest -c /dev/nul backends/test/suite/operators/ -m backend_xnnpack -n auto
+pytest -c /dev/null backends/test/suite/operators/ -m backend_xnnpack -n auto
 ```
 
 To run all model tests for the CoreML static int8 lowering flow:
 ```
-pytest -c /dev/nul backends/test/suite/models/ -m flow_coreml_static_int8 -n auto
+pytest -c /dev/null backends/test/suite/models/ -m flow_coreml_static_int8 -n auto
 ```
 
 To run a specific test:
 ```
-pytest -c /dev/nul backends/test/suite/ -k "test_prelu_f32_custom_init[xnnpack]"
+pytest -c /dev/null backends/test/suite/ -k "test_prelu_f32_custom_init[xnnpack]"
 ```
 
 To generate a JSON report:
 ```
-pytest -c /dev/nul backends/test/suite/operators/ -n auto --json-report --json-report-file="test_report.json"
+pytest -c /dev/null backends/test/suite/operators/ -n auto --json-report --json-report-file="test_report.json"
 ```
 
 Each test has a timeout of 120 seconds for operator tests and 1200 seconds for model tests. This can be overridden, for example on slower platforms, by setting the `EXECUTORCH_OPERATORS_TEST_TIMEOUT_S` and `EXECUTORCH_MODELS_TEST_TIMEOUT_S` environment variables to the desired number of seconds:
 ```
-EXECUTORCH_OPERATORS_TEST_TIMEOUT_S=240 pytest -c /dev/nul backends/test/suite/operators/ -m backend_nxp -n auto
+EXECUTORCH_OPERATORS_TEST_TIMEOUT_S=240 pytest -c /dev/null backends/test/suite/operators/ -m backend_nxp -n auto
 ```
 
 See [pytest-json-report](https://pypi.org/project/pytest-json-report/) for information on the report format. The test logic in this repository attaches additional metadata to each test entry under the `metadata`/`subtests` keys. One entry is created for each call to `test_runner.lower_and_run_model`.

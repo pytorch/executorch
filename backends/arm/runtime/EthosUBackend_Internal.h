@@ -15,10 +15,11 @@
 #pragma GCC diagnostic ignored "-Wdouble-promotion"
 #endif
 
+#include <executorch/backends/arm/runtime/EthosUIOPlan.h>
 #include <executorch/backends/arm/runtime/VelaBinStream.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
-#include <executorch/runtime/core/evalue.h>
+#include <executorch/runtime/core/span.h>
 #include <cstddef>
 #include <cstdint>
 
@@ -32,14 +33,19 @@
 using executorch::runtime::EventTracer;
 using executorch::runtime::EventTracerEntry;
 
+/** Ends an event-tracer profiling scope when the current C++ scope exits. */
 class EventTraceScope {
  public:
   EventTraceScope(EventTracer* event_tracer_, const char* name) {
     event_tracer = event_tracer_;
-    event_tracer_entry_scope = event_tracer->start_profiling(name);
+    if (event_tracer != nullptr) {
+      event_tracer_entry_scope = event_tracer->start_profiling(name);
+    }
   }
   ~EventTraceScope() {
-    event_tracer->end_profiling(event_tracer_entry_scope);
+    if (event_tracer != nullptr) {
+      event_tracer->end_profiling(event_tracer_entry_scope);
+    }
   }
 
  private:
@@ -56,17 +62,6 @@ class EventTraceScope {
 #define EXECUTORCH_PROF_SCOPE(EVENTTRACER, NAME)
 #define EXECUTORCH_PROF_START(EVENTTRACER, SCOPE, NAME)
 #define EXECUTORCH_PROF_END(EVENTTRACER, SCOPE)
-#endif
-
-// Base address registers handed to the Ethos-U driver. Index maps to Vela
-// region id: 0 weights, 1 scratch, 2 fast-scratch, 3 input (unused), 4 output
-// (unused), 5 persistent (delegate-owned streaming state). The U55/U65/U85
-// hardware and core-driver support up to NPU_REG_BASEP_ARRLEN (8) regions.
-// Without ETHOSU_PERSISTENT_REGION only regions 0-2 are passed.
-#ifdef ETHOSU_PERSISTENT_REGION
-#define ETHOSU_NUM_BASE_ADDRS 6
-#else
-#define ETHOSU_NUM_BASE_ADDRS 3
 #endif
 
 namespace executorch {
@@ -115,17 +110,7 @@ bool needs_scratch_allocation();
 executorch::runtime::Error platform_execute(
     executorch::runtime::BackendExecutionContext& context,
     const ExecutionHandle* execution_handle,
-    const VelaHandles& handles,
-    int input_count,
-    int output_count,
-    executorch::runtime::Span<executorch::runtime::EValue*> args,
-    char* ethosu_scratch);
-
-void calculate_dimensions(
-    const executorch::aten::Tensor tensor,
-    VelaIO* io,
-    int* tensor_count,
-    int* io_count);
+    IOPlan& io_plan);
 
 } // namespace arm
 } // namespace backends

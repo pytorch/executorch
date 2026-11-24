@@ -71,6 +71,9 @@ class UpsampleNearest2DConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
+        if neutron_target_spec.is_subsystem():
+            return False
+
         # The tensors are always 4D and use the channels first format (NCHW).
         _, in_c, in_h, in_w = node.all_input_nodes[0].meta["val"].shape
         _, _, out_h, out_w = node.meta["val"].shape

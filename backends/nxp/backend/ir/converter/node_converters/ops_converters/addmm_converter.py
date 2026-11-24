@@ -72,6 +72,9 @@ class AddMMConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
+        if neutron_target_spec.is_subsystem():
+            return False
+
         # Main input and output must be `int8` or `uint8`.
         if not NodeConverter.uses_quantization_type_for_io(
             node, [torch.int8, torch.uint8], [MAIN_INPUT_IDX], [0]
