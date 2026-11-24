@@ -1318,7 +1318,9 @@ class CudaBatchedSequenceCache final : public cache::Cache,
             cudaMemPoolAttrReservedMemCurrent,
             &reserved_before) == cudaSuccess;
 #endif
-    const Error resized = resize_columns(target, cudaStreamPerThread);
+    // Compaction keeps the requested spare columns or fails; it never falls
+    // back to a narrower width.
+    const Error resized = resize_columns(target, target, cudaStreamPerThread);
     last_activity_ = std::chrono::steady_clock::now();
     ET_CHECK_OK_OR_RETURN_ERROR(resized);
     if (columns_ < old_columns && pool_.allocated()) {
@@ -1401,19 +1403,28 @@ class CudaBatchedSequenceCache final : public cache::Cache,
 
   Error ensure_columns(cudaStream_t stream) {
     const int live = static_cast<int>(seqs_.size());
-    int target = live + 1 <= columns_
+    const int target = live + 1 <= columns_
         ? columns_
         : static_cast<int>(std::min<int64_t>(
               max_seqs_ + 1LL,
               std::max<int64_t>(live + 1LL, 2LL * (columns_ - 1) + 1)));
-    return resize_columns(target, stream);
+    // Under memory pressure, take the widest width that fits, down to the
+    // required one. A resize holds the old and new storage at once, so under
+    // steady pressure the width reached here is usually final. Spare columns
+    // avoid a failed attempt, a full KV copy and graph recapture on later
+    // admissions. Failed resizing leaves storage, mapping and bindings intact.
+    // Without growth nothing is copied, so every owner keeps its column.
+    return resize_columns(
+        target, target == columns_ ? target : live + 1, stream);
   }
 
-  Error resize_columns(int target, cudaStream_t stream) {
+  // Resizes to `target` columns, or under memory pressure to the widest width
+  // down to min_target that fits. Owners are mapped below min_target - 1.
+  Error resize_columns(int target, int min_target, cudaStream_t stream) {
     std::map<int32_t, int> next;
     std::unordered_set<int> used;
     for (const auto& [id, sequence] : seqs_) {
-      if (sequence.column >= 0 && sequence.column < target - 1) {
+      if (sequence.column >= 0 && sequence.column < min_target - 1) {
         ET_CHECK_OR_RETURN_ERROR(
             used.insert(sequence.column).second,
             InvalidState,
@@ -1430,7 +1441,7 @@ class CudaBatchedSequenceCache final : public cache::Cache,
         ++column;
       }
       ET_CHECK_OR_RETURN_ERROR(
-          column < target - 1,
+          column < min_target - 1,
           InvalidState,
           "offgraph_kv: missing physical column");
       next.emplace(id, column);
@@ -1445,17 +1456,8 @@ class CudaBatchedSequenceCache final : public cache::Cache,
         }
         live_rows = std::max(live_rows, sequence.plan.length());
       }
-      // Under memory pressure, take the widest width that fits, down to the
-      // required one. A resize holds the old and new storage at once, so
-      // under steady pressure the width reached here is usually final. Spare
-      // columns avoid a failed attempt, a full KV copy and graph recapture on
-      // later admissions. Failed resizing leaves storage and bindings intact.
       ET_CHECK_OK_OR_RETURN_ERROR(pool_.resize_columns(
-          target,
-          retained,
-          live_rows,
-          stream,
-          static_cast<int>(seqs_.size()) + 1));
+          target, retained, live_rows, stream, min_target));
       columns_ = pool_.columns();
     }
     for (auto& [id, sequence] : seqs_) {

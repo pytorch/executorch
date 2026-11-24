@@ -2901,6 +2901,79 @@ class CudaRuntimeColumnCacheTest : public CudaKVCacheTest {
 
 } // namespace
 
+TEST_F(CudaRuntimeColumnCacheTest, AdmissionWithoutGrowthKeepsSparseColumns) {
+  // Owners 2 and 3 survive in columns 2 and 3 of five. An admission that needs
+  // no growth copies nothing, so it must not move them onto a closed owner's
+  // column.
+  for (const bool clone : {false, true}) {
+    SCOPED_TRACE("clone=" + std::to_string(clone));
+    auto cache_ptr = make();
+    ASSERT_NE(cache_ptr, nullptr);
+    auto* control = cache_ptr->as<cache::BatchControl>();
+    auto* kv = cache_ptr->as<cu::CudaKVCache>();
+    auto fake = container();
+    auto handle = make_handle(fake);
+    ASSERT_TRUE(kv->note_handle(&handle).get());
+    std::vector<int32_t> ids;
+    for (int index = 0; index < 4; ++index) {
+      const auto id = control->seq_new();
+      ASSERT_TRUE(id.has_value());
+      ids.push_back(*id);
+    }
+    ASSERT_EQ(step(*cache_ptr, handle, ids), Error::Ok);
+    ASSERT_EQ(kv->metrics().physical_columns, 5);
+    seed(fake, 1, 5);
+    std::array<std::array<std::vector<uint16_t>, 4>, 5> retained;
+    for (const int column : {2, 3}) {
+      for (size_t layer = 0; layer < 4; ++layer) {
+        retained[column][layer] = read_column(
+            fake.bound[fake.internal_names[layer]].data, 1, 5, column);
+      }
+    }
+    ASSERT_TRUE(control->seq_rm(ids[0]));
+    ASSERT_TRUE(control->seq_rm(ids[1]));
+    const auto before = kv->metrics();
+    const auto admitted =
+        clone ? control->seq_clone(ids[2], 1) : control->seq_new();
+    ASSERT_TRUE(admitted.has_value());
+    EXPECT_EQ(*admitted, 0);
+    EXPECT_EQ(kv->metrics().physical_columns, 5);
+    EXPECT_EQ(kv->metrics().column_resize_count, before.column_resize_count);
+    ASSERT_EQ(step(*cache_ptr, handle, {ids[2], ids[3], *admitted}), Error::Ok);
+    std::array<int64_t, 3> cols{};
+    ASSERT_EQ(
+        cudaMemcpy(
+            cols.data(),
+            fake.bound["seq_cols"].data,
+            sizeof(cols),
+            cudaMemcpyDeviceToHost),
+        cudaSuccess);
+    EXPECT_EQ(cols[0], 2);
+    EXPECT_EQ(cols[1], 3);
+    // Each survivor still reads its own history, and a clone its source's.
+    for (const auto& [column, origin] : std::vector<std::pair<int64_t, int>>{
+             {cols[0], 2}, {cols[1], 3}, {cols[2], clone ? 2 : -1}}) {
+      if (origin < 0) {
+        continue;
+      }
+      for (size_t layer = 0; layer < 4; ++layer) {
+        EXPECT_EQ(
+            read_column(
+                fake.bound[fake.internal_names[layer]].data,
+                1,
+                5,
+                static_cast<int>(column)),
+            retained[origin][layer])
+            << "layer " << layer << " column " << column;
+      }
+    }
+    EXPECT_EQ(control->pos(ids[2]), 2);
+    EXPECT_EQ(control->pos(ids[3]), 2);
+    EXPECT_EQ(control->pos(*admitted), clone ? 2 : 1);
+    kv->forget_handle(&handle);
+  }
+}
+
 TEST_F(CudaRuntimeColumnCacheTest, ClearRecoversAbandonedGrowingStep) {
   auto ptr = make();
   ASSERT_NE(ptr, nullptr);
