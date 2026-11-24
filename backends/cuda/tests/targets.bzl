@@ -550,6 +550,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/exir:lib",
             "//executorch/exir/backend:compile_spec_schema",
             "//executorch/exir/dialects:lib",
+            "//executorch/examples/models/muse-glimmer/model:dflash_model",
             # The oracle is the neutral op itself, not a reference rebuilt here.
             "//executorch/extension/llm/cache:cache",
         ],
