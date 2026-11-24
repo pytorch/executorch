@@ -10,6 +10,11 @@ import torch
 from torch.fx.experimental.symbolic_shapes import statically_known_true
 
 NVFP4_DECODE_MAX_ROWS = 4
+# Under ET_CUDA_NVFP4_PREFILL_IMPL=auto (see nvfp4_dispatch._dequant_prefill),
+# without native FP4 and with input-dtype output, a prefill M statically <= this
+# (inclusive) keeps the fused W4A16 kernel; any other M (including a dynamic M
+# with a larger upper bound) takes whole-weight dequant + matmul.
+NVFP4_FUSED_PREFILL_MAX_ROWS = 64
 
 
 @torch._dynamo.assume_constant_result
