@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -170,7 +171,7 @@ GgmlEngineContext::~GgmlEngineContext() = default;
 
 std::unique_ptr<EngineExecutable> GgmlEngineContext::compile_method(
     const Method& method) {
-  return make_ggml_executable(
+  std::unique_ptr<EngineExecutable> executable = make_ggml_executable(
       method,
       package(),
       impl_->options,
@@ -179,6 +180,23 @@ std::unique_ptr<EngineExecutable> GgmlEngineContext::compile_method(
       &impl_->f16_kv_cache_bytes,
       impl_->state,
       impl_->kv_cache);
+  if (impl_->options.print_memory) {
+    ggml_backend_dev_t device = impl_->options.device == GgmlDevice::Gpu
+        ? select_ggml_gpu_device(impl_->options)
+        : ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+    size_t free = 0;
+    size_t total = 0;
+    ggml_backend_dev_memory(device, &free, &total);
+    std::fprintf(
+        stderr,
+        "ggml memory after compiling %s: constants %zu bytes, device %zu of "
+        "%zu bytes free\n",
+        method.name.c_str(),
+        impl_->materialized_constant_bytes,
+        free,
+        total);
+  }
+  return executable;
 }
 
 size_t GgmlEngineContext::materialized_constant_bytes() const {
