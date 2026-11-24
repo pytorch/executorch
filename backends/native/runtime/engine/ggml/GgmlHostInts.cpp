@@ -24,8 +24,6 @@
 namespace ptn::ggml_detail {
 namespace {
 
-constexpr size_t kHostEvalMaxElements = size_t{1} << 16;
-
 int64_t magnitude(int64_t value) {
   return value < -std::numeric_limits<int64_t>::max()
       ? std::numeric_limits<int64_t>::max()
