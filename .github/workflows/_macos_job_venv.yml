@@ -1,0 +1,131 @@
+name: Run a macOS job in a venv
+
+# Drop-in for the subset of pytorch/test-infra/.github/workflows/macos_job.yml
+# that the callers here use, but without miniconda: Python is a Homebrew venv
+# from test-infra's setup-python action, the same setup PyTorch's macOS jobs
+# use. CONDA_RUN, CONDA_INSTALL and CONDA_PREFIX are left unset, so scripts can
+# tell the two apart.
+
+on:
+  workflow_call:
+    inputs:
+      script:
+        description: 'Script to run'
+        required: true
+        type: string
+      timeout:
+        description: 'Timeout for the job (in minutes)'
+        default: 60
+        type: number
+      runner:
+        description: 'Runner type to use'
+        required: true
+        type: string
+      python-version:
+        description: 'Python version of the venv, as major.minor'
+        default: '3.11'
+        type: string
+      repository:
+        description: 'Repository to checkout, defaults to the caller repository'
+        default: ''
+        type: string
+      ref:
+        description: 'Reference to checkout, defaults to the commit that triggered the workflow'
+        default: ''
+        type: string
+      fetch-depth:
+        description: 'Number of commits to fetch'
+        default: 1
+        type: number
+      submodules:
+        description: 'Same as actions/checkout, set to `true` or `recursive` to checkout submodules'
+        default: ''
+        type: string
+      test-infra-repository:
+        description: 'Test infra repository to use'
+        default: 'pytorch/test-infra'
+        type: string
+      test-infra-ref:
+        description: 'Test infra reference to use'
+        default: 'main'
+        type: string
+      job-name:
+        description: 'Name for the job, keep the default to match macos_job.yml check names'
+        default: 'macos-job'
+        type: string
+
+jobs:
+  job:
+    name: ${{ inputs.job-name }}
+    env:
+      REPOSITORY: ${{ inputs.repository || github.repository }}
+      SCRIPT: ${{ inputs.script }}
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout }}
+    steps:
+      - name: Clean workspace
+        run: |
+          echo "::group::Cleanup debug output"
+          rm -rfv "${GITHUB_WORKSPACE}"
+          mkdir -p "${GITHUB_WORKSPACE}"
+          echo "::endgroup::"
+
+      - name: Checkout repository (${{ inputs.test-infra-repository }}@${{ inputs.test-infra-ref }})
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ inputs.test-infra-repository }}
+          ref: ${{ inputs.test-infra-ref }}
+          path: test-infra
+
+      - name: Setup Python ${{ inputs.python-version }} venv
+        uses: ./test-infra/.github/actions/setup-python
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Checkout repository (${{ inputs.repository || github.repository }}@${{ inputs.ref }})
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ inputs.repository || github.repository }}
+          ref: ${{ inputs.ref }}
+          path: ${{ inputs.repository || github.repository }}
+          fetch-depth: ${{ inputs.fetch-depth }}
+          submodules: ${{ inputs.submodules }}
+
+      - name: Setup useful environment variables
+        working-directory: ${{ inputs.repository || github.repository }}
+        run: |
+          RUNNER_ARTIFACT_DIR="${RUNNER_TEMP}/artifacts"
+          mkdir -p "${RUNNER_ARTIFACT_DIR}"
+          echo "RUNNER_ARTIFACT_DIR=${RUNNER_ARTIFACT_DIR}" >> "${GITHUB_ENV}"
+
+          RUNNER_TEST_RESULTS_DIR="${RUNNER_TEMP}/test-results"
+          mkdir -p "${RUNNER_TEST_RESULTS_DIR}"
+          echo "RUNNER_TEST_RESULTS_DIR=${RUNNER_TEST_RESULTS_DIR}" >> "${GITHUB_ENV}"
+
+      - name: Run script
+        shell: bash -l {0}
+        working-directory: ${{ inputs.repository || github.repository }}
+        run: |
+          {
+            echo "#!/usr/bin/env bash";
+            echo "set -eou pipefail";
+            # A login shell can pick up a conda install from the runner profile
+            # and macOS path_helper reorders PATH, so activate the venv here.
+            echo "unset CONDA_PREFIX CONDA_DEFAULT_ENV CONDA_SHLVL CONDA_EXE CONDA_PYTHON_EXE CONDA_RUN CONDA_INSTALL CONDA_ENV";
+            echo "source \"${VENV_PATH}/bin/activate\"";
+            echo "command -v python; python --version; command -v conda || echo 'conda: none'";
+            echo "${SCRIPT}";
+          } > "${RUNNER_TEMP}/exec_script"
+          bash "${RUNNER_TEMP}/exec_script"
+
+      - name: Surface failing tests
+        if: always()
+        uses: pmeier/pytest-results-action@a2c1430e2bddadbad9f49a6f9b879f062c6b19b1 # v0.3.0
+        with:
+          path: ${{ env.RUNNER_TEST_RESULTS_DIR }}
+          fail-on-empty: false
+
+      - name: Clean up disk space
+        if: always()
+        continue-on-error: true
+        uses: ./test-infra/.github/actions/check-disk-space

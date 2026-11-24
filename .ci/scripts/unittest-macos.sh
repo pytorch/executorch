@@ -12,7 +12,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 read -r BUILD_TOOL BUILD_MODE EDITABLE < <(parse_args "$@")
 
 bash .ci/scripts/setup-conda.sh
-eval "$(conda shell.bash hook)"
+if [[ -n "${CONDA_RUN:-}" ]]; then
+  eval "$(conda shell.bash hook)"
+fi
 
 # Create temp directory for sccache shims
 export TMP_DIR=$(mktemp -d)
@@ -28,14 +30,10 @@ fi
 # We need the runner to test the built library.
 PYTHON_EXECUTABLE=python \
 CMAKE_ARGS="-DEXECUTORCH_BUILD_EXTENSION_EVALUE_UTIL=ON -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=ON -DEXECUTORCH_BUILD_TESTS=ON" \
-${CONDA_RUN} --no-capture-output \
+${CONDA_RUN:+${CONDA_RUN} --no-capture-output} \
 .ci/scripts/setup-macos.sh "$@"
 
 if [[ "$BUILD_TOOL" == "cmake" ]]; then
-    # Install llama3_2_vision dependencies.
-    PYTHON_EXECUTABLE=python \
-    ${CONDA_RUN} --no-capture-output \
-
     .ci/scripts/unittest-macos-cmake.sh
 elif [[ "$BUILD_TOOL" == "buck2" ]]; then
     .ci/scripts/unittest-buck2.sh

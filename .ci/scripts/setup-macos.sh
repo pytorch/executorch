@@ -96,6 +96,10 @@ print_cmake_info() {
   echo "$CMAKE_EXEC"
 
   export CMAKE_EXEC
+  # The fix below is only for conda's cmake, don't patch a venv or Homebrew one
+  if [[ -z "${CONDA_PREFIX:-}" ]]; then
+    return
+  fi
   # Explicitly add conda env lib folder to cmake rpath to address the flaky issue
   # where cmake dependencies couldn't be found. This seems to point to how conda
   # links $CMAKE_EXEC to its package cache when cloning a new environment
