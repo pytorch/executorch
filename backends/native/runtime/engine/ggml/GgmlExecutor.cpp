@@ -2032,7 +2032,11 @@ class GgmlExecutable final : public EngineExecutable {
     }
   }
 
+  // Rope frequency factors are uploaded once, one tensor per distinct table:
+  // layers often hold equal inv_freq constants.
   void index_rope_frequencies() {
+    std::map<std::vector<uint8_t>, std::vector<ValueId>> tables;
+    std::unordered_set<ValueId> seen;
     for (const NodeId id : method_.graph.schedule) {
       const Node& node = method_.graph.node(id);
       if (!node.is_call() || op_key(node.target) != "native.rope.default") {
@@ -2043,7 +2047,7 @@ class GgmlExecutable final : public EngineExecutable {
         throw std::runtime_error("ggml: rope inv_freq must be a tensor");
       }
       const ValueId inv_freq = arg.as_tensor().id;
-      if (rope_freq_factors_.contains(inv_freq)) {
+      if (!seen.insert(inv_freq).second) {
         continue;
       }
       const auto binding = std::ranges::find_if(
@@ -2069,8 +2073,40 @@ class GgmlExecutable final : public EngineExecutable {
       });
       std::vector<uint8_t> raw(factors.size() * sizeof(float));
       std::memcpy(raw.data(), factors.data(), raw.size());
-      rope_freq_factors_.emplace(inv_freq, std::move(raw));
+      tables[std::move(raw)].push_back(inv_freq);
     }
+    if (tables.empty()) {
+      return;
+    }
+    ggml_init_params params{
+        .mem_size = ggml_tensor_overhead() * tables.size(),
+        .mem_buffer = nullptr,
+        .no_alloc = true,
+    };
+    rope_context_.reset(ggml_init(params));
+    if (!rope_context_) {
+      throw std::runtime_error("ggml: failed to create rope factor context");
+    }
+    for (const auto& [raw, users] : tables) {
+      ggml_tensor* tensor = ggml_new_tensor_1d(
+          rope_context_.get(),
+          GGML_TYPE_F32,
+          static_cast<int64_t>(raw.size() / sizeof(float)));
+      for (const ValueId inv_freq : users) {
+        rope_factors_.emplace(inv_freq, tensor);
+      }
+    }
+    rope_buffer_.reset(
+        ggml_backend_alloc_ctx_tensors(rope_context_.get(), primary_backend_));
+    if (!rope_buffer_) {
+      throw std::runtime_error("ggml: failed to allocate rope factors");
+    }
+    for (const auto& [raw, users] : tables) {
+      ggml_backend_tensor_set(
+          rope_factors_.at(users.front()), raw.data(), 0, raw.size());
+    }
+    ggml_backend_buffer_set_usage(
+        rope_buffer_.get(), GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
   }
 
   static void
@@ -2794,7 +2830,9 @@ class GgmlExecutable final : public EngineExecutable {
   // Float scales of the Q4_0 weights with unit block scales, by weight.
   std::unordered_map<ValueId, ggml_tensor*> row_scales_;
   bool executed_ = false;
-  std::unordered_map<ValueId, std::vector<uint8_t>> rope_freq_factors_;
+  std::unordered_map<ValueId, ggml_tensor*> rope_factors_;
+  ggml_context_ptr rope_context_;
+  ggml_backend_buffer_ptr rope_buffer_;
   // Per-output-channel factors applied to convolution weights at load.
   std::unordered_map<ValueId, std::vector<float>> weight_scales_;
   FoldedBatchNorms batch_norms_;
@@ -2811,7 +2849,7 @@ GraphBuilder GgmlExecutable::graph_builder(
       outputs_,
       persistent_,
       row_scales_,
-      rope_freq_factors_,
+      rope_factors_,
       batch_norms_,
       std::move(truncated),
       options_.graph_size,

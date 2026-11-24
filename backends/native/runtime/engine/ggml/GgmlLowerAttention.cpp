@@ -164,32 +164,17 @@ void GraphBuilder::lower_custom_sdpa(const Node& node) {
   set_single_output(node, TensorRef{result, query.sizes});
 }
 
-ggml_tensor* GraphBuilder::rope_factor_tensor(ValueId inv_freq) {
-  if (const auto cached = rope_factor_tensors_.find(inv_freq);
-      cached != rope_factor_tensors_.end()) {
-    return cached->second;
-  }
-  const auto found = rope_factor_bytes_.find(inv_freq);
-  if (found == rope_factor_bytes_.end()) {
-    throw std::runtime_error("ggml: rope inv_freq was not indexed at load");
-  }
-  ggml_tensor* factors = ggml_new_tensor_1d(
-      instance_.context.get(),
-      GGML_TYPE_F32,
-      static_cast<int64_t>(found->second.size() / sizeof(float)));
-  ggml_set_input(factors);
-  instance_.uploads.push_back(Upload{factors, found->second});
-  rope_factor_tensors_.emplace(inv_freq, factors);
-  return factors;
-}
-
 void GraphBuilder::lower_rope(const Node& node) {
   // ggml_rope_ext reads strided rows; rotating the [D, heads, tokens] view
   // of a transposed projection then needs no copy.
   const TensorRef input = rows_arg(node, "input", 0);
   const TensorRef positions = tensor_arg(node, "position_ids", 1);
-  ggml_tensor* factors =
-      rope_factor_tensor(require_arg(node, "inv_freq", 2).arg.as_tensor().id);
+  const auto found =
+      rope_factors_.find(require_arg(node, "inv_freq", 2).arg.as_tensor().id);
+  if (found == rope_factors_.end()) {
+    throw std::runtime_error("ggml: rope inv_freq was not indexed at load");
+  }
+  ggml_tensor* factors = found->second;
   const bool interleaved = bool_arg(node, "interleaved", 3, false);
   const double scale = float_arg(node, "attention_scale", 4, 1.0, true);
   const int n_dims = 2 * static_cast<int>(ggml_nelements(factors));
