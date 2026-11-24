@@ -185,4 +185,13 @@ TEST(LlmRunnerUtilsTest, CompareCloseRejectsNonFiniteMismatches) {
 // cppcheck-suppress-end syntaxError
 
 } // namespace
+TEST(LlmRunnerUtilsTest, KvCacheInHalfFollowsTheFlagOrTheEngineDefault) {
+  EXPECT_TRUE(kv_cache_in_half("auto", /*default_half=*/true));
+  EXPECT_FALSE(kv_cache_in_half("auto", /*default_half=*/false));
+  EXPECT_TRUE(kv_cache_in_half("fp16", /*default_half=*/false));
+  EXPECT_FALSE(kv_cache_in_half("fp32", /*default_half=*/true));
+  EXPECT_THROW(kv_cache_in_half("bf16", true), std::invalid_argument);
+  EXPECT_THROW(kv_cache_in_half("", true), std::invalid_argument);
+}
+
 } // namespace ptn
