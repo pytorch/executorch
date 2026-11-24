@@ -314,7 +314,8 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
     int max_session_tokens,
     int kv_dtype,
     int initial_capacity,
-    CudaExecutorOptions options) {
+    CudaExecutorOptions options,
+    std::optional<std::chrono::milliseconds> column_compaction_delay) {
   ET_CHECK_OR_RETURN_ERROR(
       max_session_tokens > 0,
       InvalidArgument,
@@ -325,6 +326,7 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
   config.kv_dtype = kv_dtype;
   config.initial_capacity = initial_capacity;
   config.options = std::move(options);
+  config.kv_column_compaction_delay = column_compaction_delay;
   return create(std::move(module), config);
 }
 
@@ -1104,7 +1106,7 @@ CudaGraphMetrics CudaExecutor::graph_metrics(std::string_view method) const {
 Error CudaExecutor::compact_kv_columns(int spare_columns) {
   ET_CHECK_OR_RETURN_ERROR(
       !raw_executing_, InvalidState, "CudaExecutor: compact between executes");
-  return kv_->compact_columns(spare_columns);
+  return kv_->compact_columns(spare_columns, std::chrono::milliseconds{0});
 }
 
 bool CudaExecutor::on_idle() {

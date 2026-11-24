@@ -110,7 +110,7 @@ class CudaKVCache {
   // owner operations. Zero explicitly bypasses the quiet interval.
   virtual runtime::Error compact_columns(
       int /*spare_columns*/,
-      std::chrono::milliseconds /*quiet_for*/ = std::chrono::milliseconds{0}) {
+      std::chrono::milliseconds /*quiet_for*/) {
     return runtime::Error::NotSupported;
   }
 };

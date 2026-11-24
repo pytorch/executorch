@@ -9,6 +9,8 @@
 
 #include <executorch/examples/models/muse-glimmer/runtime/prompt_preparation.h>
 #include <executorch/extension/llm/batching/executor.h>
+#include <chrono>
+#include <optional>
 
 namespace executorch::extension::llm {
 
@@ -24,6 +26,9 @@ struct MuseGlimmerBackendConfig {
   batching::Token bos_id = 200000;
   bool use_dflash = false;
   int dflash_n_draft = 0; // zero uses the exported maximum minus one
+  // CUDA target column compaction; nullopt disables it. Open sessions persist.
+  std::optional<std::chrono::milliseconds> kv_column_compaction_delay{
+      std::chrono::milliseconds{500}};
 };
 
 struct MuseGlimmerBackend {

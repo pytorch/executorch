@@ -3002,7 +3002,7 @@ TEST_F(CudaRuntimeColumnCacheTest, GrowthAndSparseIdCompactionPreserveAllKV) {
   }
   EXPECT_EQ(kv->metrics().physical_columns, before.physical_columns);
   EXPECT_EQ(kv->metrics().allocated_bytes, before.allocated_bytes);
-  ASSERT_EQ(kv->compact_columns(0), Error::Ok);
+  ASSERT_EQ(kv->compact_columns(0, std::chrono::milliseconds{0}), Error::Ok);
   const auto after = kv->metrics();
   EXPECT_EQ(after.physical_columns, 2);
   EXPECT_EQ(after.live_sequences, 1);
@@ -3090,7 +3090,7 @@ TEST_F(CudaRuntimeColumnCacheTest, CloneAndContractionCopyWrappedRingHistory) {
         read_column(fake.bound[fake.internal_names[layer]].data, rows, 3, 1));
   }
   ASSERT_TRUE(control->seq_rm(*source));
-  ASSERT_EQ(kv->compact_columns(0), Error::Ok);
+  ASSERT_EQ(kv->compact_columns(0, std::chrono::milliseconds{0}), Error::Ok);
   ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
   EXPECT_EQ(control->pos(*clone), 40);
   for (size_t layer = 0; layer < 4; ++layer) {
@@ -3297,7 +3297,7 @@ TEST_F(CudaRuntimeColumnCacheTest, SameWidthCompactionKeepsMappingAndBindings) {
   ASSERT_TRUE(second.has_value());
   ASSERT_EQ(step(*cache_ptr, handle, {*first, *second}), Error::Ok);
   ASSERT_TRUE(control->seq_rm(*first));
-  ASSERT_EQ(kv->compact_columns(0), Error::Ok);
+  ASSERT_EQ(kv->compact_columns(0, std::chrono::milliseconds{0}), Error::Ok);
   ASSERT_EQ(kv->metrics().physical_columns, 2);
   EXPECT_EQ(control->seq_new(), first);
   ASSERT_EQ(step(*cache_ptr, handle, {*first, *second}), Error::Ok);
@@ -3308,9 +3308,10 @@ TEST_F(CudaRuntimeColumnCacheTest, SameWidthCompactionKeepsMappingAndBindings) {
   const auto count = kv->metrics().column_resize_count;
   handle.cuda_graph_state.phase = cu::CudaGraphPhase::Warmup;
   handle.cuda_graph_state.warmup_remaining = 0;
-  ASSERT_EQ(kv->compact_columns(kMaxSeqs), Error::Ok);
+  ASSERT_EQ(
+      kv->compact_columns(kMaxSeqs, std::chrono::milliseconds{0}), Error::Ok);
   EXPECT_EQ(kv->metrics().physical_columns, 3);
-  ASSERT_EQ(kv->compact_columns(0), Error::Ok);
+  ASSERT_EQ(kv->compact_columns(0, std::chrono::milliseconds{0}), Error::Ok);
   EXPECT_EQ(kv->metrics().column_resize_count, count);
   EXPECT_EQ(fake.bound["flat_k"].data, pointer);
   EXPECT_EQ(handle.cuda_graph_state.phase, cu::CudaGraphPhase::Warmup);
@@ -3479,6 +3480,15 @@ TEST_F(
     GTEST_SKIP() << "CUDA allocator pools are unavailable";
   }
   ::executorch::extension::cuda::CudaAllocator::release_cached_memory(device);
+  // Seed unused reservation from another user of the shared pool. An
+  // unbounded trim would reclaim it and must fail the reservation floor below.
+  constexpr size_t kUnrelatedBytes = 32u << 20;
+  auto unrelated = ::executorch::extension::cuda::CudaAllocator::allocate_async(
+      kUnrelatedBytes, device, cudaStreamPerThread);
+  ASSERT_TRUE(unrelated.ok());
+  ::executorch::extension::cuda::CudaAllocator::deallocate_async(
+      unrelated.get(), device, cudaStreamPerThread);
+  ASSERT_EQ(cudaStreamSynchronize(cudaStreamPerThread), cudaSuccess);
   uint64_t before = 0, after = 0;
   ASSERT_EQ(
       cudaMemPoolGetAttribute(pool, cudaMemPoolAttrReservedMemCurrent, &before),
@@ -3487,7 +3497,7 @@ TEST_F(
   for (size_t i = 0; i + 1 < owners.size(); ++i) {
     ASSERT_TRUE(control->seq_rm(owners[i]));
   }
-  ASSERT_EQ(kv->compact_columns(0), Error::Ok);
+  ASSERT_EQ(kv->compact_columns(0, std::chrono::milliseconds{0}), Error::Ok);
   ASSERT_EQ(
       cudaMemPoolGetAttribute(pool, cudaMemPoolAttrReservedMemCurrent, &after),
       cudaSuccess);
@@ -3495,6 +3505,17 @@ TEST_F(
   EXPECT_GE(before - after, 8 * 1024 * 1024);
   EXPECT_LT(kv->metrics().allocated_bytes, live_before);
   EXPECT_GE(after, before - (live_before - kv->metrics().allocated_bytes));
+  EXPECT_GE(after, kUnrelatedBytes + kv->metrics().allocated_bytes);
+  ::executorch::extension::cuda::CudaAllocator::release_cached_memory(
+      device, 0, /*trim_graph_memory=*/false);
+  uint64_t unbounded = 0;
+  ASSERT_EQ(
+      cudaMemPoolGetAttribute(
+          pool, cudaMemPoolAttrReservedMemCurrent, &unbounded),
+      cudaSuccess);
+  EXPECT_LT(unbounded, after)
+      << "the bounded trim must retain more than a zero-floor trim";
+  EXPECT_LT(unbounded, kUnrelatedBytes + kv->metrics().allocated_bytes);
   EXPECT_EQ(kv->metrics().physical_columns, 2);
   EXPECT_EQ(control->pos(owners.back()), 1);
   ASSERT_EQ(step(*ptr, handle, {owners.back()}), Error::Ok);
@@ -3513,15 +3534,21 @@ TEST_F(CudaRuntimeColumnCacheTest, CompactionRejectsAnInflightForward) {
   ASSERT_TRUE(id.has_value());
   ASSERT_TRUE(control->declare_step({*id}));
   ASSERT_EQ(kv->prepare_step(1, cudaStreamPerThread), Error::Ok);
-  EXPECT_EQ(kv->compact_columns(0), Error::InvalidState);
+  EXPECT_EQ(
+      kv->compact_columns(0, std::chrono::milliseconds{0}),
+      Error::InvalidState);
   ASSERT_EQ(kv->commit_step(1), Error::Ok);
-  EXPECT_EQ(kv->compact_columns(0), Error::Ok);
+  EXPECT_EQ(kv->compact_columns(0, std::chrono::milliseconds{0}), Error::Ok);
   EXPECT_EQ(control->pos(*id), 1);
-  EXPECT_EQ(kv->compact_columns(-1), Error::InvalidArgument);
+  EXPECT_EQ(
+      kv->compact_columns(-1, std::chrono::milliseconds{0}),
+      Error::InvalidArgument);
   EXPECT_EQ(
       kv->compact_columns(0, std::chrono::milliseconds{-1}),
       Error::InvalidArgument);
-  EXPECT_EQ(kv->compact_columns(kMaxSeqs + 1), Error::InvalidArgument);
+  EXPECT_EQ(
+      kv->compact_columns(kMaxSeqs + 1, std::chrono::milliseconds{0}),
+      Error::InvalidArgument);
   kv->forget_handle(&handle);
 }
 
@@ -4158,7 +4185,9 @@ TEST_F(CudaRuntimeColumnCacheTest, FailedContractionPreservesSparseOwners) {
   const auto before = kv->metrics();
   const int updates = fake.updates;
   handle.cuda_graph_state.phase = cu::CudaGraphPhase::Replay;
-  EXPECT_EQ(kv->compact_columns(0), Error::MemoryAllocationFailed);
+  EXPECT_EQ(
+      kv->compact_columns(0, std::chrono::milliseconds{0}),
+      Error::MemoryAllocationFailed);
   EXPECT_EQ(kv->metrics().physical_columns, before.physical_columns);
   EXPECT_EQ(kv->metrics().column_resize_count, before.column_resize_count);
   EXPECT_EQ(kv->metrics().allocated_bytes, before.allocated_bytes);
@@ -4186,7 +4215,7 @@ TEST_F(CudaRuntimeColumnCacheTest, FailedContractionPreservesSparseOwners) {
     EXPECT_EQ(info, (std::array<int32_t, 5>{0, 1, index, 2, 9}));
   }
   held.reset();
-  ASSERT_EQ(kv->compact_columns(0), Error::Ok);
+  ASSERT_EQ(kv->compact_columns(0, std::chrono::milliseconds{0}), Error::Ok);
   EXPECT_EQ(kv->metrics().physical_columns, 3);
   ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
   auto* compacted = static_cast<uint16_t*>(fake.bound["flat_k"].data);

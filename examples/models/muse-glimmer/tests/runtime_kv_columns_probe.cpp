@@ -214,13 +214,18 @@ class RunnerObserver final : public batching::Executor {
     while (std::chrono::steady_clock::now() < deadline) {
       {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (columns_ == columns && owners_ == owners && idle_calls_ > 0) {
+        if ((columns < 0 || columns_ == columns) && owners_ == owners &&
+            idle_calls_ > 0) {
           return true;
         }
       }
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
     return false;
+  }
+  int64_t physical_columns() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return columns_;
   }
 
  private:
@@ -261,7 +266,7 @@ Json check_runner(cb::CudaExecutor& executor) {
     for (size_t i = 0; i < indices.size(); ++i) {
       handles.push_back(sessions[indices[i]].generate_async(
           std::vector<batching::Token>{
-              1, 2, 3, static_cast<batching::Token>(salt)},
+              1, 2, 3, static_cast<batching::Token>(salt + indices[i])},
           config,
           [tokens, i](const batching::GenerationUpdate& update) {
             (*tokens)[i].insert(
@@ -291,10 +296,15 @@ Json check_runner(cb::CudaExecutor& executor) {
   for (size_t i = 0; i < 7; ++i) {
     sessions[i] = batching::Session{};
   }
+  require(observer.wait_for(-1, 1), "Runner closed-owner processing");
+  // Check past the default quiet interval in both runs. An ignored nullopt
+  // must not pass merely because the first idle poll occurred before 500 ms.
+  std::this_thread::sleep_for(std::chrono::milliseconds(600));
   const int idle_columns = FLAGS_kv_compaction_delay_ms == -1 ? 9 : 3;
   require(
       observer.wait_for(idle_columns, 1),
       "Runner quiet compaction through CI wrapper");
+  const auto observed_idle_columns = observer.physical_columns();
   require(
       sessions[7].position() == survivor_position,
       "inactive open history retained");
@@ -305,7 +315,48 @@ Json check_runner(cb::CudaExecutor& executor) {
   generate({7, 8, 9, 10, 11, 12, 13, 14}, 6);
   require(observer.wait_for(9, 8), "Runner regrowth physical width");
   runner.shutdown();
-  return {{"outputs", output}, {"idle_columns", idle_columns}};
+  return {{"outputs", output}, {"idle_columns", observed_idle_columns}};
+}
+
+Json check_policy(cb::CudaExecutor& executor) {
+  require(executor.kv_metrics().live_sequences == 0, "fresh policy cache");
+  require(
+      FLAGS_kv_compaction_delay_ms == -1 || FLAGS_kv_compaction_delay_ms == 0 ||
+          FLAGS_kv_compaction_delay_ms == 500,
+      "bounded policy test delay");
+  auto& control = executor.cache_control();
+  std::vector<int32_t> ids;
+  for (int i = 0; i < 8; ++i) {
+    auto id = control.seq_new();
+    require(id.has_value(), "policy owner admission");
+    ids.push_back(*id);
+  }
+  run_step(
+      executor,
+      {{"tokens", {1, 2, 3, 4, 5, 6, 7, 8}},
+       {"seq_ids", ids},
+       {"select", {0, 1, 2, 3, 4, 5, 6, 7}}});
+  for (int i = 0; i < 6; ++i) {
+    require(control.seq_rm(ids[i]), "policy owner closure");
+  }
+  std::this_thread::sleep_for(std::chrono::milliseconds(600));
+  require(executor.on_idle(), "policy at threshold");
+  const auto threshold_columns = executor.kv_metrics().physical_columns;
+  require(threshold_columns == 9, "25 percent occupancy must not compact");
+  require(control.seq_rm(ids[6]), "policy below-threshold closure");
+  std::this_thread::sleep_for(std::chrono::milliseconds(600));
+  require(executor.on_idle(), "policy below threshold");
+  const auto below_columns = executor.kv_metrics().physical_columns;
+  require(
+      below_columns == (FLAGS_kv_compaction_delay_ms == -1 ? 9 : 3),
+      "policy disable and below-threshold width");
+  require(control.pos(ids[7]) == 1, "policy inactive owner history");
+  run_step(executor, {{"tokens", {9}}, {"seq_ids", {ids[7]}}, {"select", {0}}});
+  require(control.pos(ids[7]) == 2, "policy survivor continuation");
+  require(control.seq_rm(ids[7]), "policy final owner closure");
+  return {
+      {"threshold_columns", threshold_columns},
+      {"below_threshold_columns", below_columns}};
 }
 
 } // namespace
@@ -380,6 +431,8 @@ int main(int argc, char** argv) {
         require(result["maintained"].get<bool>(), "idle maintenance");
       } else if (op == "runner") {
         result = check_runner(*executor);
+      } else if (op == "policy") {
+        result = check_policy(*executor);
       } else if (op == "step") {
         result = run_step(*executor, request);
       } else if (op != "metrics") {

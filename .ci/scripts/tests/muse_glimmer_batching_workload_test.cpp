@@ -106,11 +106,14 @@ void successful_batch_owners() {
   inner.succeeds = false;
   require(!executor.on_idle());
   require(inner.idle_calls == 2);
+  // Virtual forwarding consumes this setting before it is reassigned.
+  // cppcheck-suppress redundantAssignment
   inner.succeeds = true;
   require(executor.execute({{input(1), input(1)}}, out));
   require(executor.execute({{input(2)}}, out));
   require(executor.evidence().max_sessions == 1);
   rejected([&] { ci::check_batching(executor.evidence()); });
+  // cppcheck-suppress redundantAssignment
   inner.succeeds = false;
   require(!executor.execute({{input(1), input(2)}}, out));
   require(executor.evidence().multi_session_steps == 0);

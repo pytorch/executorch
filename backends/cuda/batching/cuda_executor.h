@@ -165,13 +165,16 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
   // reserves `max_session_tokens` cells; together they must fit the program's
   // max_cells. `kv_dtype` is the ET ScalarType K/V is stored in; a negative
   // `initial_capacity` starts the pools at the cache's default.
+  // `column_compaction_delay` controls idle maintenance; nullopt disables it.
   static ::executorch::runtime::Result<std::unique_ptr<CudaExecutor>> create(
       std::unique_ptr<::executorch::extension::Module> module,
       int max_sessions,
       int max_session_tokens,
       int kv_dtype,
       int initial_capacity = -1,
-      CudaExecutorOptions options = {});
+      CudaExecutorOptions options = {},
+      std::optional<std::chrono::milliseconds> column_compaction_delay =
+          std::chrono::milliseconds{500});
 
   // The widest method's step. A wider batch runs as several forwards.
   std::size_t preferred_batch_tokens() const override {

@@ -309,6 +309,18 @@ def check_runner(probe: Path, artifact: Path) -> None:
     print("Runner-driven idle compaction, open history and regrowth passed")
 
 
+def check_policy(probe: Path, artifact: Path) -> None:
+    for delay, expected in ((-1, 9), (0, 3), (500, 3)):
+        _, trace = run(
+            probe, artifact, False, [{"op": "policy"}], delay, f"policy-{delay}"
+        )
+        measured = trace[0]
+        assert measured["threshold_columns"] == 9, measured
+        assert measured["below_threshold_columns"] == expected, measured
+        assert measured["snapshot"]["live_sequences"] == 0, measured
+    print("CudaExecutor disabled policy and 25 percent threshold passed")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--probe", required=True, type=Path)
@@ -383,6 +395,7 @@ def main() -> None:
 
     check_compaction(args.probe.resolve(), artifact)
     check_runner(args.probe.resolve(), artifact)
+    check_policy(args.probe.resolve(), artifact)
 
 
 if __name__ == "__main__":
