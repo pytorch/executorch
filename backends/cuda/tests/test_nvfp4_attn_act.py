@@ -729,10 +729,13 @@ class TestEmulationKernels(CleanEnv):
     def test_weight_conversion_bit_identical(self):
         weights = [
             ("pts=1", make_weight(256, 512, pts=1.0, seed=3)),
-            ("all scale bytes", stress_weight(*sweep((4096, 4096), (512, 1024)))),
+            ("all scale bytes", stress_weight(512, 1024)),
         ]
         if EXHAUSTIVE:
-            weights.append(("attention-shaped", make_weight(6656, 4096, seed=1)))
+            weights += [
+                ("all scale bytes, large", stress_weight(4096, 4096)),
+                ("attention-shaped", make_weight(6656, 4096, seed=1)),
+            ]
         for name, w in weights:
             out = EMU.nvfp4_dequant_mxfp8(w.qdata, w.scale).float()
             self.assertEqual(
