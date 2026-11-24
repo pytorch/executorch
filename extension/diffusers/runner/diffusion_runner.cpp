@@ -140,9 +140,10 @@ Result<std::vector<HostTensor>> DiffusionRunner::execute(
 Result<std::vector<HostTensor>> DiffusionRunner::encode_prompt(
     const std::string& prompt) {
   const auto input_names = behavior_->text_encoder_input_names();
+  const auto text = behavior_->format_prompt(prompt);
   std::vector<std::vector<HostTensor>> encoder_outputs;
   for (size_t i = 0; i < tokenizers_.size(); ++i) {
-    const auto encoded = ET_UNWRAP(tokenizers_[i]->encode(prompt));
+    const auto encoded = ET_UNWRAP(tokenizers_[i]->encode(text));
     const auto length = static_cast<SizesType>(encoded.input_ids.size());
     std::vector<TensorPtr> inputs;
     for (const auto& name : input_names[i]) {

@@ -57,6 +57,7 @@ FLUX_DEV = {
     "use_dynamic_shifting": True,
 }
 FLUX_SCHNELL = {**FLUX_DEV, "shift": 1.0, "use_dynamic_shifting": False}
+KLEIN_TOKENIZER = ("black-forest-labs/FLUX.2-klein-4B", "tokenizer")
 
 
 def flux_sigmas(steps):
@@ -189,9 +190,11 @@ def run_scheduler(class_name, config, run):
 
 def pipeline_goldens():
     from executorch.extension.diffusers.pipeline_behaviors import (
+        Flux2KleinPipelineBehavior,
         FluxPipelineBehavior,
         SDXLPipelineBehavior,
     )
+    from transformers import AutoTokenizer
 
     flux = FluxPipelineBehavior()
     flux_latents = flux.create_latents(
@@ -217,6 +220,46 @@ def pipeline_goldens():
         dtype=torch.bfloat16,
         guidance_scale=3.5,
     )
+
+    klein = Flux2KleinPipelineBehavior()
+    klein_latents = klein.create_latents(
+        (1, 64, 32),
+        height=64,
+        width=96,
+        vae_scale_factor=8,
+        generator=torch.Generator().manual_seed(9),
+        dtype=torch.bfloat16,
+        scheduler=None,
+    )
+    klein_scheduler = diffusers.FlowMatchEulerDiscreteScheduler.from_config(FLUX_DEV)
+    klein_timesteps = klein.prepare_schedule(
+        klein_scheduler, 4, height=1024, width=768, vae_scale_factor=8
+    )
+    klein_inputs = klein.prepare_denoiser_inputs(
+        klein_latents,
+        klein_timesteps[1].reshape(1).to(torch.float32),
+        (torch.zeros(1, 5, 8, dtype=torch.bfloat16),),
+        height=64,
+        width=96,
+        vae_scale_factor=8,
+        dtype=torch.bfloat16,
+        guidance_scale=None,
+    )
+    klein_decode = klein.prepare_decode_latents(
+        klein_latents, height=64, width=96, vae_scale_factor=8
+    )
+    klein_tokenizer = AutoTokenizer.from_pretrained(
+        KLEIN_TOKENIZER[0], subfolder=KLEIN_TOKENIZER[1]
+    )
+    klein_prompts = {
+        prompt: klein_tokenizer.apply_chat_template(
+            [{"role": "user", "content": prompt}],
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=False,
+        )
+        for prompt in ("a photo of a cat", "")
+    }
 
     sdxl = SDXLPipelineBehavior()
     euler = diffusers.EulerDiscreteScheduler.from_config(SDXL_EULER)
@@ -250,6 +293,28 @@ def pipeline_goldens():
             "image_ids": flux_inputs[5].tolist(),
             "guidance": flux_inputs[6].float().tolist(),
         },
+        "klein_latents": {
+            "seed": 9,
+            "sizes": list(klein_latents.shape),
+            "values": klein_latents.float().flatten().tolist(),
+            "decode_sizes": list(klein_decode.shape),
+            "decode_values": klein_decode.float().flatten().tolist(),
+        },
+        "klein_schedule": {
+            "config": FLUX_DEV,
+            "steps": 4,
+            "height": 1024,
+            "width": 768,
+            "timesteps": klein_timesteps.tolist(),
+        },
+        "klein_denoiser_inputs": {
+            "timestep": float(klein_timesteps[1]),
+            "count": len(klein_inputs),
+            "scaled_timestep": klein_inputs[1].float().tolist(),
+            "text_ids": klein_inputs[3].tolist(),
+            "image_ids": klein_inputs[4].tolist(),
+        },
+        "klein_prompts": klein_prompts,
         "sd_latents": {
             "seed": 3,
             "steps": 5,

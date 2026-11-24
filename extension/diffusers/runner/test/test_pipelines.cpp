@@ -169,6 +169,98 @@ TEST(PipelineTest, FluxDenoiserInputsMatchPython) {
       golden.at("guidance")[0].get<float>());
 }
 
+TEST(PipelineTest, KleinLatentsMatchPython) {
+  const auto golden = pipeline_goldens().at("klein_latents");
+  auto behavior = make_pipeline_behavior("flux2_klein");
+  ASSERT_TRUE(behavior.ok());
+  auto scheduler = make_scheduler("FlowMatchEulerDiscreteScheduler", "{}");
+  ASSERT_TRUE(scheduler.ok());
+  TorchGenerator generator(golden.at("seed").get<uint64_t>());
+  const ImageGeometry geometry{64, 96, 8};
+  auto latents = behavior.get()->create_latents(
+      {1, 64, 32}, geometry, generator, ScalarType::BFloat16, *scheduler.get());
+  EXPECT_EQ(latents.sizes, sizes_of(golden.at("sizes")));
+  expect_within_two_ulps(
+      latents.data, floats_of(golden.at("values")), ScalarType::BFloat16);
+  const auto decode =
+      behavior.get()->prepare_decode_latents(std::move(latents), geometry);
+  EXPECT_EQ(decode.sizes, sizes_of(golden.at("decode_sizes")));
+  expect_within_two_ulps(
+      decode.data, floats_of(golden.at("decode_values")), ScalarType::BFloat16);
+}
+
+TEST(PipelineTest, KleinScheduleMatchesPython) {
+  const auto golden = pipeline_goldens().at("klein_schedule");
+  auto behavior = make_pipeline_behavior("flux2_klein");
+  ASSERT_TRUE(behavior.ok());
+  auto scheduler = make_scheduler(
+      "FlowMatchEulerDiscreteScheduler", golden.at("config").dump());
+  ASSERT_TRUE(scheduler.ok());
+  ASSERT_EQ(
+      behavior.get()->prepare_schedule(
+          *scheduler.get(),
+          golden.at("config"),
+          golden.at("steps").get<int>(),
+          ImageGeometry{
+              golden.at("height").get<int64_t>(),
+              golden.at("width").get<int64_t>(),
+              8}),
+      Error::Ok);
+  const auto expected = floats_of(golden.at("timesteps"));
+  const auto& timesteps = scheduler.get()->timesteps();
+  ASSERT_EQ(timesteps.size(), expected.size());
+  for (size_t i = 0; i < expected.size(); ++i) {
+    EXPECT_NEAR(timesteps[i], expected[i], 1e-6 * expected[i]) << "at " << i;
+  }
+}
+
+TEST(PipelineTest, KleinDenoiserInputsMatchPython) {
+  const auto golden = pipeline_goldens().at("klein_denoiser_inputs");
+  auto behavior = make_pipeline_behavior("flux2_klein");
+  ASSERT_TRUE(behavior.ok());
+  HostTensor latents{{1, 24, 32}, std::vector<float>(24 * 32)};
+  const std::vector<executorch::extension::TensorPtr> conditioning = {
+      executorch::extension::diffusers::to_tensor(
+          HostTensor{{1, 5, 8}, std::vector<float>(40)}, ScalarType::BFloat16)};
+  const auto inputs = behavior.get()->prepare_denoiser_inputs(
+      latents,
+      golden.at("timestep").get<float>(),
+      conditioning,
+      ImageGeometry{64, 96, 8},
+      ScalarType::BFloat16,
+      std::nullopt);
+  ASSERT_EQ(inputs.size(), golden.at("count").get<size_t>());
+  EXPECT_EQ(
+      static_cast<float>(
+          inputs[1]->const_data_ptr<executorch::aten::BFloat16>()[0]),
+      golden.at("scaled_timestep")[0].get<float>());
+  for (const auto& [index, key] :
+       {std::pair<size_t, const char*>{3, "text_ids"}, {4, "image_ids"}}) {
+    const auto expected =
+        golden.at(key)[0].get<std::vector<std::vector<int64_t>>>();
+    const auto& ids = inputs[index];
+    ASSERT_EQ(ids->dim(), 3);
+    ASSERT_EQ(ids->size(1), expected.size());
+    ASSERT_EQ(ids->size(2), 4);
+    for (size_t i = 0; i < expected.size(); ++i) {
+      for (size_t j = 0; j < 4; ++j) {
+        EXPECT_EQ(ids->const_data_ptr<int64_t>()[i * 4 + j], expected[i][j])
+            << key << " at " << i;
+      }
+    }
+  }
+}
+
+TEST(PipelineTest, KleinFormatsPromptsWithTheChatTemplate) {
+  const auto golden = pipeline_goldens().at("klein_prompts");
+  auto behavior = make_pipeline_behavior("flux2_klein");
+  ASSERT_TRUE(behavior.ok());
+  for (const auto& [prompt, expected] : golden.items()) {
+    EXPECT_EQ(
+        behavior.get()->format_prompt(prompt), expected.get<std::string>());
+  }
+}
+
 TEST(PipelineTest, PackAndUnpackAreInverse) {
   HostTensor latents{{1, 3, 4, 6}, std::vector<float>(72)};
   for (size_t i = 0; i < latents.data.size(); ++i) {

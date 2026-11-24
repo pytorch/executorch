@@ -1,8 +1,8 @@
 # Diffusers C++ runner
 
 `diffusion_runner` generates images from diffusion programs exported with
-`export/huggingface/diffusers`. It supports the `sd15`, `sdxl` and `flux`
-pipelines and is the C++ counterpart of
+`export/huggingface/diffusers`. It supports the `sd15`, `sdxl`, `flux` and
+`flux2_klein` pipelines and is the C++ counterpart of
 `python -m executorch.extension.diffusers.runner`.
 
 ## Build
@@ -38,7 +38,8 @@ cmake-out/examples/models/diffusers/diffusion_runner \
 ```
 
 FLUX.1 uses T5 in `tokenizer_2`, which loads from `spiece.model` as is. SDXL
-has a second CLIP tokenizer in `tokenizer_2`, which needs the same conversion.
+has a second CLIP tokenizer in `tokenizer_2`, which needs the same conversion. FLUX.2
+Klein ships a `tokenizer.json` and needs no conversion.
 
 Unset options such as `--steps`, `--cfg_scale`, `--guidance_scale`,
 `--height` and `--width` use the defaults recorded in the program. A seed

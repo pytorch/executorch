@@ -34,6 +34,23 @@ TensorPtr scalar_tensor(float value, ScalarType dtype) {
   return to_tensor(HostTensor{{1}, {value}}, dtype);
 }
 
+// Flow matching sigmas from 1 to 1 / steps, unless the scheduler derives its
+// own.
+std::vector<double> flow_sigmas(const json& scheduler_config, int steps) {
+  const auto use_flow_sigmas = scheduler_config.find("use_flow_sigmas");
+  if (use_flow_sigmas != scheduler_config.end() &&
+      use_flow_sigmas->is_boolean() && use_flow_sigmas->get<bool>()) {
+    return {};
+  }
+  return torch_linspace<double>(1.0, 1.0 / steps, steps);
+}
+
+TensorPtr flux_timestep(float timestep, ScalarType dtype) {
+  std::vector<float> rounded = {timestep};
+  round_to(rounded, dtype);
+  return scalar_tensor(rounded[0] / 1000, dtype);
+}
+
 TensorPtr image_position_ids(int64_t rows, int64_t columns) {
   std::vector<int64_t> ids;
   ids.reserve(rows * columns * 3);
@@ -243,13 +260,8 @@ class FluxBehavior : public PipelineBehavior {
     const double mu = base_shift +
         (sequence_length - base_length) * (max_shift - base_shift) /
             (max_length - base_length);
-    const auto use_flow_sigmas = scheduler_config.find("use_flow_sigmas");
-    const bool flow_sigmas = use_flow_sigmas != scheduler_config.end() &&
-        use_flow_sigmas->is_boolean() && use_flow_sigmas->get<bool>();
-    const auto sigmas = flow_sigmas
-        ? std::vector<double>()
-        : torch_linspace<double>(1.0, 1.0 / steps, steps);
-    return scheduler.set_timesteps(steps, sigmas, mu);
+    return scheduler.set_timesteps(
+        steps, flow_sigmas(scheduler_config, steps), mu);
   }
 
   HostTensor create_latents(
@@ -298,13 +310,11 @@ class FluxBehavior : public PipelineBehavior {
       const ImageGeometry& geometry,
       ScalarType dtype,
       std::optional<double> guidance_scale) const override {
-    std::vector<float> scaled = {timestep};
-    round_to(scaled, dtype);
     const auto& prompt = conditioning[0];
     const auto text_length = static_cast<SizesType>(prompt->size(1));
     std::vector<TensorPtr> inputs = {
         to_tensor(latents, dtype),
-        scalar_tensor(scaled[0] / 1000, dtype),
+        flux_timestep(timestep, dtype),
         prompt,
         conditioning[1],
         make_tensor_ptr(
@@ -325,6 +335,159 @@ class FluxBehavior : public PipelineBehavior {
         latents,
         geometry.height / geometry.vae_scale_factor,
         geometry.width / geometry.vae_scale_factor);
+  }
+};
+
+// Matches the empirical shift coefficients of the Diffusers FLUX.2 schedule.
+double flux2_empirical_mu(double image_sequence_length, int steps) {
+  const double shift_200 = 0.00016927 * image_sequence_length + 0.45666666;
+  if (image_sequence_length > 4300) {
+    return shift_200;
+  }
+  const double shift_10 = 8.73809524e-05 * image_sequence_length + 1.89833333;
+  const double slope = (shift_200 - shift_10) / 190.0;
+  return shift_200 + slope * (steps - 200);
+}
+
+// Latents are (1, latent_height * latent_width, C) tokens of a
+// (1, C, latent_height, latent_width) grid, at half the VAE resolution.
+class Flux2Behavior : public PipelineBehavior {
+ public:
+  std::vector<std::string> tokenizer_slots() const override {
+    return {"tokenizer"};
+  }
+
+  std::vector<std::vector<std::string>> text_encoder_input_names()
+      const override {
+    return {{"input_ids", "attention_mask"}};
+  }
+
+  std::vector<HostTensor> assemble_conditioning(
+      std::vector<std::vector<HostTensor>> encoder_outputs) const override {
+    return {std::move(encoder_outputs[0][0])};
+  }
+
+  Error prepare_schedule(
+      Scheduler& scheduler,
+      const json& scheduler_config,
+      int steps,
+      const ImageGeometry& geometry) const override {
+    const double image_tokens =
+        static_cast<double>(geometry.height / geometry.vae_scale_factor / 2) *
+        static_cast<double>(geometry.width / geometry.vae_scale_factor / 2);
+    return scheduler.set_timesteps(
+        steps,
+        flow_sigmas(scheduler_config, steps),
+        flux2_empirical_mu(image_tokens, steps));
+  }
+
+  HostTensor create_latents(
+      const std::vector<int64_t>& exported_shape,
+      const ImageGeometry& geometry,
+      TorchGenerator& generator,
+      ScalarType dtype,
+      const Scheduler& scheduler) const override {
+    const int64_t channels = exported_shape.back();
+    const int64_t tokens = (geometry.height / geometry.vae_scale_factor / 2) *
+        (geometry.width / geometry.vae_scale_factor / 2);
+    const auto noise =
+        randn(generator, dtype, static_cast<size_t>(channels * tokens));
+    HostTensor latents{
+        {1, static_cast<SizesType>(tokens), static_cast<SizesType>(channels)},
+        std::vector<float>(noise.size())};
+    for (int64_t c = 0; c < channels; ++c) {
+      for (int64_t t = 0; t < tokens; ++t) {
+        latents.data[t * channels + c] = noise[c * tokens + t];
+      }
+    }
+    return latents;
+  }
+
+  Result<HostTensor> prepare_encoded_latents(
+      const HostTensor&,
+      const HostTensor&,
+      ScalarType,
+      TorchGenerator&) const override {
+    ET_LOG(Error, "FLUX.2 img2img is not supported");
+    return Error::NotSupported;
+  }
+
+  Result<size_t> prepare_img2img_latents(
+      Scheduler&,
+      HostTensor&,
+      int,
+      double,
+      TorchGenerator&,
+      ScalarType) const override {
+    ET_LOG(Error, "FLUX.2 img2img is not supported");
+    return Error::NotSupported;
+  }
+
+  std::vector<TensorPtr> prepare_denoiser_inputs(
+      const HostTensor& latents,
+      float timestep,
+      const std::vector<TensorPtr>& conditioning,
+      const ImageGeometry& geometry,
+      ScalarType dtype,
+      std::optional<double> guidance_scale) const override {
+    const auto& prompt = conditioning[0];
+    const int64_t text_length = prompt->size(1);
+    std::vector<int64_t> text_ids(text_length * 4, 0);
+    for (int64_t i = 0; i < text_length; ++i) {
+      text_ids[i * 4 + 3] = i;
+    }
+    const int64_t rows = geometry.height / geometry.vae_scale_factor / 2;
+    const int64_t columns = geometry.width / geometry.vae_scale_factor / 2;
+    std::vector<int64_t> image_ids;
+    image_ids.reserve(rows * columns * 4);
+    for (int64_t row = 0; row < rows; ++row) {
+      for (int64_t column = 0; column < columns; ++column) {
+        image_ids.insert(image_ids.end(), {0, row, column, 0});
+      }
+    }
+    std::vector<TensorPtr> inputs = {
+        to_tensor(latents, dtype),
+        flux_timestep(timestep, dtype),
+        prompt,
+        make_tensor_ptr(
+            {1, static_cast<SizesType>(text_length), 4}, std::move(text_ids)),
+        make_tensor_ptr(
+            {1, static_cast<SizesType>(rows * columns), 4},
+            std::move(image_ids))};
+    if (guidance_scale) {
+      inputs.push_back(scalar_tensor(*guidance_scale, dtype));
+    }
+    return inputs;
+  }
+
+  HostTensor prepare_decode_latents(
+      HostTensor latents,
+      const ImageGeometry& geometry) const override {
+    const int64_t tokens = latents.sizes[1];
+    const int64_t channels = latents.sizes[2];
+    HostTensor grid{
+        {1,
+         static_cast<SizesType>(channels),
+         static_cast<SizesType>(
+             geometry.height / geometry.vae_scale_factor / 2),
+         static_cast<SizesType>(
+             geometry.width / geometry.vae_scale_factor / 2)},
+        std::vector<float>(latents.data.size())};
+    for (int64_t t = 0; t < tokens; ++t) {
+      for (int64_t c = 0; c < channels; ++c) {
+        grid.data[c * tokens + t] = latents.data[t * channels + c];
+      }
+    }
+    return grid;
+  }
+};
+
+class Flux2KleinBehavior : public Flux2Behavior {
+ public:
+  // The Qwen3 chat template of a single user turn, with thinking disabled.
+  std::string format_prompt(const std::string& prompt) const override {
+    return "<|im_start|>user\n" + prompt +
+        "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n";
   }
 };
 
@@ -351,6 +514,9 @@ Result<std::unique_ptr<PipelineBehavior>> make_pipeline_behavior(
   }
   if (name == "flux") {
     return std::unique_ptr<PipelineBehavior>(new FluxBehavior());
+  }
+  if (name == "flux2_klein") {
+    return std::unique_ptr<PipelineBehavior>(new Flux2KleinBehavior());
   }
   ET_LOG(Error, "Unsupported diffusion pipeline %s", name.c_str());
   return Error::NotSupported;
