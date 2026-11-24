@@ -20,6 +20,7 @@ from pathlib import Path
 
 import torch
 import torch.nn.functional as F
+from executorch.backends.native.custom_ops import gated_delta_rule_op
 from executorch.backends.native.examples.hf_llm.export_hf_llm import LastTokenLM
 from executorch.exir.native import to_native
 from executorch.extension.llm.export.gguf import ExportableGGUFTensor
@@ -3285,6 +3286,98 @@ class GgmlKeyExtentTest(unittest.TestCase):
         # size, so it refuses the computed start: every call attends all keys
         # and the second decode replays the first one's graph.
         self.assertEqual(self._attention_ops(SlicedQueryPositions(600, last=True)), 3)
+
+
+def _gated_delta_rule_inputs(tokens: int, heads: int = 4, dim: int = 16):
+    generator = torch.Generator().manual_seed(tokens)
+    qkv = [torch.randn(1, tokens, heads, dim, generator=generator) for _ in range(3)]
+    g = -torch.rand(1, tokens, heads, generator=generator)
+    beta = torch.rand(1, tokens, heads, generator=generator)
+    return (*qkv, g, beta)
+
+
+class _GatedDeltaRule(torch.nn.Module):
+    def __init__(self, qk_l2norm: bool, snapshots: int = 1) -> None:
+        super().__init__()
+        self.qk_l2norm = qk_l2norm
+        self.snapshots = snapshots
+
+    def forward(self, q, k, v, g, beta, state):
+        return gated_delta_rule_op(
+            q, k, v, g, beta, state, self.qk_l2norm, self.snapshots
+        )
+
+
+class _StatefulGatedDeltaRule(torch.nn.Module):
+    """The rule over a state buffer each call continues."""
+
+    def __init__(self, heads: int = 4, dim: int = 16) -> None:
+        super().__init__()
+        self.register_buffer("state", torch.zeros(1, heads, dim, dim), persistent=False)
+
+    def forward(self, q, k, v, g, beta):
+        out, state = gated_delta_rule_op(q, k, v, g, beta, self.state, True)
+        self.state.copy_(state)
+        return out
+
+
+class GgmlGatedDeltaRuleTest(unittest.TestCase):
+    """native::gated_delta_rule on ggml_gated_delta_net against its reference,
+    transformers' recurrent rule: one token, a partial 64-token chunk, and one
+    and a part, from a random state."""
+
+    def _check(self, model, steps, num_outputs, atol=1e-4):
+        with torch.no_grad():
+            ep = torch.export.export(copy.deepcopy(model), steps[0])
+            expected = [model(*inputs) for inputs in steps]
+        with tempfile.TemporaryDirectory() as tmp:
+            package = Path(tmp) / "gated_delta_rule.ptn"
+            to_native(ep).save(str(package))
+            outputs = _run_ggml(package, steps, Path(tmp), num_outputs)
+        for step, (got, want) in enumerate(zip(outputs, expected, strict=True)):
+            want = want if isinstance(want, tuple) else (want,)
+            for i, ((raw, shape), reference) in enumerate(zip(got, want, strict=True)):
+                with self.subTest(step=step, output=i):
+                    actual = torch.frombuffer(bytearray(raw), dtype=torch.float32)
+                    torch.testing.assert_close(
+                        actual.reshape(shape), reference, atol=atol, rtol=1e-4
+                    )
+
+    def test_matches_reference(self):
+        for tokens, qk_l2norm in ((1, True), (8, True), (100, True), (3, False)):
+            with self.subTest(tokens=tokens, qk_l2norm=qk_l2norm):
+                state = torch.randn(1, 4, 16, 16, generator=torch.Generator())
+                inputs = (*_gated_delta_rule_inputs(tokens), state * 0.1)
+                self._check(_GatedDeltaRule(qk_l2norm), [inputs], 2)
+
+    def test_snapshots_match_reference(self):
+        # Fewer tokens than slots keep older input slots; more run the tokens
+        # before the last S first.
+        for tokens, snapshots in ((1, 3), (3, 3), (2, 4), (9, 3)):
+            with self.subTest(tokens=tokens, snapshots=snapshots):
+                states = torch.randn(
+                    1, snapshots, 4, 16, 16, generator=torch.Generator()
+                )
+                inputs = (*_gated_delta_rule_inputs(tokens), states * 0.1)
+                self._check(_GatedDeltaRule(True, snapshots), [inputs], 2)
+
+    def test_l2_norm_adds_eps_to_the_sum_of_squares(self):
+        # Query and key norms near sqrt(eps), where rsqrt(sum + eps) and
+        # 1 / max(norm, eps) differ.
+        q, k, v, g, beta = _gated_delta_rule_inputs(3)
+        state = torch.zeros(1, 4, 16, 16)
+        inputs = (q * 1e-3, k * 1e-3, v, g, beta, state)
+        self._check(_GatedDeltaRule(True), [inputs], 2)
+
+    def test_prompt_chunk_matches_reference_closely(self):
+        # ggml-cuda multiplies prompt chunks in split BF16, high and low parts.
+        state = torch.randn(1, 4, 16, 16, generator=torch.Generator()) * 0.1
+        inputs = (*_gated_delta_rule_inputs(64), state)
+        self._check(_GatedDeltaRule(True), [inputs], 2, atol=2e-6)
+
+    def test_state_buffer_carries_across_calls(self):
+        steps = [_gated_delta_rule_inputs(tokens) for tokens in (1, 1, 1)]
+        self._check(_StatefulGatedDeltaRule(), steps, 1)
 
 
 if __name__ == "__main__":
