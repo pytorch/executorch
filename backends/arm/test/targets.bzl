@@ -100,6 +100,7 @@ def define_arm_tests():
         # "misc/test_evaluate_model.py",
         "misc/test_pass_pipeline_config.py",
         "misc/test_tosa_constant_pool.py",
+        "misc/test_tosa_mx_tensor.py",
         "misc/test_tosa_operator_support.py",
         "misc/tosa_dialect/test_tosa_dialect_cast_to_block_scaled.py",
         "misc/tosa_dialect/test_tosa_dialect_mxfp_conv2d.py",
@@ -179,6 +180,8 @@ def define_arm_tests():
                 "//executorch/devtools/etdump:schema_flatcc",
                 "//executorch/devtools/etdump:serialize",
             ] if test_name == "etdump_to_chrome_trace" else []) + ([
+                "//executorch/backends/arm/tosa:tosa_mx_tensor",
+            ] if test_file == "misc/test_tosa_mx_tensor.py" else []) + ([
                 "//executorch/backends/arm/scripts:generate_ethosu_linux_pmu_events",
             ] if test_name == "generate_ethosu_linux_pmu_events" else []) + [
                 "//executorch/backends/arm/test:arm_tester" if runtime.is_oss else "//executorch/backends/arm/test/tester/fb:arm_tester_fb",
