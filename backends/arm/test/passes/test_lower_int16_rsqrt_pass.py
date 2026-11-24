@@ -101,8 +101,17 @@ def test_lower_int16_rsqrt_mul_uses_explicit_zero_shift(output_dtype):
         op="call_function", target=exir_ops.backend.tosa.TABLE.default
     )
     assert len(tables) == 1
-    shift = multiplications[0].args[2]
-    assert all(node.args[2] is shift for node in multiplications)
-    assert shift.target == exir_ops.backend.tosa.CONST.default
-    assert shift.args == ([0], [1], torch.int8)
-    assert shift.meta["val"].dtype == torch.int8
+    assert all(node.args[2] == 0 for node in multiplications)
+    assert not result.graph_module.graph.find_nodes(
+        op="call_function", target=exir_ops.backend.tosa.CONST.default
+    )
+
+    rescales = result.graph_module.graph.find_nodes(
+        op="call_function", target=exir_ops.backend.tosa.RESCALE.default
+    )
+    assert len(rescales) == 1
+    rescale = rescales[0]
+    assert rescale.kwargs["dtype"] == output_dtype
+    assert rescale.args[0].meta["val"].dtype == torch.int32
+    assert len(rescale.args[1]) == len(rescale.args[2]) == 1
+    assert rescale.args[3] == rescale.args[4] == 0

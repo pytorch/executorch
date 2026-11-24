@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import cast, List
+from typing import cast
 
 import torch
 
@@ -111,103 +111,107 @@ def CAST_TO_BLOCK_SCALED(
     return output_data, output_scale
 
 
+def validate_rescale_zero_points(
+    input_dtype: torch.dtype,
+    output_dtype: torch.dtype,
+    input_zp: int,
+    output_zp: int,
+    input_unsigned: bool,
+    output_unsigned: bool,
+) -> None:
+    if input_unsigned and output_unsigned:
+        raise TosaValueError(
+            "RESCALE cannot have both input_unsigned and output_unsigned"
+        )
+    for name, dtype, zero_point, unsigned in (
+        ("in", input_dtype, input_zp, input_unsigned),
+        ("out", output_dtype, output_zp, output_unsigned),
+    ):
+        if unsigned:
+            valid = (
+                0 <= zero_point <= 255
+                if dtype in (torch.int8, torch.uint8)
+                else dtype == torch.int16 and zero_point in (0, 32768)
+            )
+            if not valid:
+                raise TosaValueError(
+                    f"{name}_zp={zero_point} outside valid range for unsigned {dtype}"
+                )
+        elif dtype == torch.int8 and not -128 <= zero_point <= 127:
+            raise TosaValueError(
+                f"{name}_zp={zero_point} outside valid range for {dtype}"
+            )
+        elif dtype in (torch.int16, torch.int32) and zero_point != 0:
+            argument = "input" if name == "in" else "output"
+            raise TosaValueError(f"TOSA requires {argument}_zp to be zero for {dtype}")
+
+
+def _validate_rescale_unsigned(
+    input_dtype: torch.dtype,
+    output_dtype: torch.dtype,
+    input_unsigned: bool,
+    output_unsigned: bool,
+) -> None:
+    if input_unsigned and output_unsigned:
+        raise TosaValueError(
+            "RESCALE cannot have both unsigned flags set", op="RESCALE"
+        )
+    if input_unsigned and input_dtype not in (torch.int8, torch.uint8, torch.int16):
+        raise TosaValueError(
+            "Unsigned RESCALE input must be int8 or int16", op="RESCALE"
+        )
+    if output_unsigned and (
+        output_dtype not in (torch.int8, torch.int16)
+        or input_dtype not in (torch.int8, torch.uint8, torch.int16)
+    ):
+        raise TosaValueError(
+            "Unsigned RESCALE output requires narrow input and output", op="RESCALE"
+        )
+
+
 @register_tosa_op(
-    "RESCALE(Tensor input1, ScalarType dtype, float[] scale, int in_zp, int out_zp, *, bool input_unsigned=False, bool output_unsigned=False) -> Tensor",
+    "RESCALE(Tensor input1, int[] multiplier, int[] shift, int input_zp, int output_zp, *, ScalarType dtype, bool scale32=True, str rounding_mode='SINGLE_ROUND', bool per_channel=False, bool input_unsigned=False, bool output_unsigned=False) -> Tensor",
     INT_SPECS,
 )
-def RESCALE(  # noqa: C901
+def RESCALE(
     x: torch.Tensor,
-    dtype: torch.dtype,
-    scales: List[float],
-    in_zp: int,
-    out_zp: int,
+    multiplier: list[int],
+    shift: list[int],
+    input_zp: int,
+    output_zp: int,
     *,
+    dtype: torch.dtype,
+    scale32: bool = True,
+    rounding_mode: str = "SINGLE_ROUND",
+    per_channel: bool = False,
     input_unsigned: bool = False,
     output_unsigned: bool = False,
 ) -> torch.Tensor:
-    tosa_spec = get_context_spec()
-    if not tosa_spec.support_integer():
+    if not get_context_spec().support_integer():
+        raise TosaValueError("RESCALE requires integer support", op="RESCALE")
+    if dtype not in (torch.int8, torch.int16, torch.int32):
+        raise TosaValueError(f"Unsupported RESCALE output dtype {dtype}", op="RESCALE")
+    if len(shift) != len(multiplier) or not multiplier:
         raise TosaValueError(
-            f"TOSA spec {tosa_spec} doesn't support integers", op="RESCALE"
+            "RESCALE shifts must match the multiplier count", op="RESCALE"
         )
-
-    if dtype not in (torch.int32, torch.int8, torch.int16):
+    if not per_channel and len(multiplier) != 1:
+        raise TosaValueError("Per-tensor RESCALE requires one multiplier", op="RESCALE")
+    if per_channel and len(multiplier) != x.shape[-1]:
         raise TosaValueError(
-            f"tosa::rescale currently only supports int32, int16 and int8, not {dtype}",
-            op="RESCALE",
+            "Per-channel RESCALE must match the channel dimension", op="RESCALE"
         )
-    if input_unsigned and output_unsigned:
+    width = 32 if scale32 else 16
+    if any(not 0 <= value < 1 << (width - 1) for value in multiplier):
+        raise TosaValueError("RESCALE multiplier exceeds scale width", op="RESCALE")
+    if any(not 2 <= value <= 62 for value in shift):
+        raise TosaValueError("RESCALE shift must be in [2, 62]", op="RESCALE")
+    if rounding_mode not in ("SINGLE_ROUND", "DOUBLE_ROUND", "INEXACT_ROUND"):
         raise TosaValueError(
-            "TOSA requires input_unsigned and output_unsigned not both be true.",
-            op="RESCALE",
+            f"Invalid RESCALE rounding mode {rounding_mode}", op="RESCALE"
         )
-
-    if input_unsigned:
-        if x.dtype not in (torch.int8, torch.int16, torch.uint8):
-            raise TosaValueError(
-                f"input_unsigned requires int8/int16/uint8 input dtype, got {x.dtype}.",
-                op="RESCALE",
-            )
-        if x.dtype == torch.int32:
-            raise TosaValueError(
-                "TOSA forbids input_unsigned for int32 inputs.", op="RESCALE"
-            )
-        if x.dtype == torch.int16:
-            if in_zp not in (0, 32768):
-                raise TosaValueError(
-                    f"{in_zp=} outside valid range (0,32768) for uint16.",
-                    op="RESCALE",
-                )
-        else:
-            if not 0 <= in_zp <= 255:
-                raise TosaValueError(
-                    f"{in_zp=} outside valid range (0,255) for uint8.",
-                    op="RESCALE",
-                )
-    else:
-        if x.dtype in (torch.int32, torch.int16) and in_zp != 0:
-            raise TosaValueError(
-                f"TOSA requires input_zp to be zero when the input dtype is {x.dtype}.",
-                op="RESCALE",
-            )
-        if x.dtype == torch.int8 and not -128 <= in_zp <= 127:
-            raise TosaValueError(
-                f"{in_zp=} outside valid range (-128,127) for int8.",
-                op="RESCALE",
-            )
-
-    if output_unsigned:
-        if dtype not in (torch.int8, torch.int16):
-            raise TosaValueError(
-                f"output_unsigned requires int8/int16 output dtype, got {dtype}.",
-                op="RESCALE",
-            )
-        if dtype == torch.int32:
-            raise TosaValueError(
-                "TOSA forbids output_unsigned for int32 outputs.", op="RESCALE"
-            )
-        if dtype == torch.int16:
-            if out_zp not in (0, 32768):
-                raise TosaValueError(
-                    f"{out_zp=} outside valid range (0,32768) for uint16.",
-                    op="RESCALE",
-                )
-        else:
-            if not 0 <= out_zp <= 255:
-                raise TosaValueError(
-                    f"{out_zp=} outside valid range (0,255) for uint8.",
-                    op="RESCALE",
-                )
-    else:
-        if dtype in (torch.int32, torch.int16) and out_zp != 0:
-            raise TosaValueError(
-                f"TOSA requires output_zp to be zero when the output dtype is {dtype}.",
-                op="RESCALE",
-            )
-        if dtype == torch.int8 and not -128 <= out_zp <= 127:
-            raise TosaValueError(
-                f"{out_zp=} outside valid range (-128,127) for int8.",
-                op="RESCALE",
-            )
-
+    validate_rescale_zero_points(
+        x.dtype, dtype, input_zp, output_zp, input_unsigned, output_unsigned
+    )
+    _validate_rescale_unsigned(x.dtype, dtype, input_unsigned, output_unsigned)
     return torch.empty_like(x, dtype=dtype)

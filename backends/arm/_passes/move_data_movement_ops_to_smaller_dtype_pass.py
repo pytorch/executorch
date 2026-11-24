@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from typing import Any, cast, Set, Type
 
 import torch
+from executorch.backends.arm._passes.tosa_lowering_utils import rescale_parameters
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.backends.transforms.permute_view_meta import refresh_permute_view_meta
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -94,7 +95,7 @@ class MoveDataMovementOpsToSmallerDtypePass(ArmPass):
             special_dtype_key
         ):
             return False
-        scales = rescale.args[2]
+        scales = rescale_parameters(rescale)[0]
         return not isinstance(scales, Sequence) or len(scales) == 1
 
     def _move_before_rescale(

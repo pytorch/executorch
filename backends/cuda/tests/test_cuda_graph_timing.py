@@ -105,12 +105,12 @@ class CudaGraphTimingTest(unittest.TestCase):
         sizes_during_capture = []
         real = cgt.time_with_cuda_graph_us
 
-        def flaky(fn, **kwargs):
+        def flaky(fn):
             if len(sizes_during_capture) < 2:
                 sizes_during_capture.append(weights.untyped_storage().nbytes())
                 raise torch.OutOfMemoryError("simulated")
             sizes_during_capture.append(weights.untyped_storage().nbytes())
-            return real(fn, **kwargs)
+            return real(fn)
 
         y = torch.zeros(16, device="cuda")
         with mock.patch.object(cgt, "time_with_cuda_graph_us", side_effect=flaky):
@@ -123,6 +123,20 @@ class CudaGraphTimingTest(unittest.TestCase):
         self.assertTrue(weights.is_cuda)
         torch.testing.assert_close(weights, expected)
         self.assertEqual(alias.data_ptr(), weights.data_ptr())
+
+    def test_oom_with_nothing_to_park_falls_back_without_parking(self) -> None:
+        def oom(fn):
+            raise torch.OutOfMemoryError("simulated")
+
+        emptied = torch.empty(16, device="cuda")
+        emptied.untyped_storage().resize_(0)
+        y = torch.zeros(16, device="cuda")
+        with mock.patch.object(cgt, "time_with_cuda_graph_us", side_effect=oom):
+            with cgt.cuda_graph_timing(offload=lambda: [emptied]) as stats:
+                benchmarking.benchmarker.benchmark(lambda: y.add_(1), device="cuda")
+        self.assertEqual(
+            (stats.oom_retries, stats.offloads, stats.fallbacks), (2, 0, 1)
+        )
 
     def test_a_failed_restore_stops_the_compile(self) -> None:
         for error in (torch.OutOfMemoryError("simulated"), RuntimeError("simulated")):
@@ -137,7 +151,7 @@ class CudaGraphTimingTest(unittest.TestCase):
                         raise error
                     real(storage, host)
 
-                def oom(fn, **kwargs):
+                def oom(fn):
                     raise torch.OutOfMemoryError("simulated")
 
                 y = torch.zeros(16, device="cuda")
@@ -313,6 +327,7 @@ class TimingStatisticRetryTest(unittest.TestCase):
         def fn():
             return None
 
+        weight = torch.empty(16, device="cuda")
         with (
             mock.patch.object(
                 cgt,
@@ -327,7 +342,7 @@ class TimingStatisticRetryTest(unittest.TestCase):
             mock.patch.object(
                 cgt, "_parked_on_cpu", return_value=contextlib.nullcontext(1024)
             ),
-            cgt.cuda_graph_timing(offload=lambda: []) as stats,
+            cgt.cuda_graph_timing(offload=lambda: [weight]) as stats,
         ):
             actual = cgt.time_with_cuda_graph_us_counted(
                 fn, statistic="mean", replays=3

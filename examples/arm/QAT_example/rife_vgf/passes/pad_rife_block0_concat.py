@@ -7,7 +7,10 @@ import logging
 
 import torch
 from executorch.backends.arm._passes import ArmPass
-from executorch.backends.arm._passes.tosa_lowering_utils import create_const
+from executorch.backends.arm._passes.tosa_lowering_utils import (
+    compute_multiplier_and_shift,
+    create_const,
+)
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.backends.transforms.utils import create_constant_placeholder
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -19,6 +22,7 @@ from torch.fx.passes.shape_prop import _extract_tensor_metadata
 from .pack_rife_warps_and_concat import (
     _constant_tensor,
     _is_op,
+    _is_rescale,
     _shape_values,
     _symmetric_weight,
     _tensor_shape,
@@ -98,9 +102,9 @@ class PadRifeBlock0ConcatPass(ArmPass):
             raise ValueError("Expected a uniform signed INT8 timestep constant.")
         for rescale in concat.args[0][:2]:
             if (
-                not _is_op(rescale, TOSA.RESCALE.default, 5)
-                or rescale.args[1:] != (torch.int8, [0.25], 0, 0)
-                or any(rescale.kwargs.values())
+                not _is_rescale(rescale, torch.int8)
+                or rescale.args[1:3] != compute_multiplier_and_shift([0.25])
+                or rescale.args[3:] != (0, 0)
                 or set(rescale.users) != {concat}
             ):
                 raise ValueError("Expected a private signed 1/4 image rescale.")
