@@ -375,12 +375,13 @@ class TestProgram {
   }
 
   // A parameter whose data is the package's constant `name`, packed with
-  // `packed_codec` if given.
+  // `packed_codec` if given; a buffer the graph writes if `mutated`.
   void constant(
       const std::string& name,
       fbs::ScalarType dtype,
       const std::vector<int64_t>& shape,
-      const char* packed_codec = nullptr) {
+      const char* packed_codec = nullptr,
+      bool mutated = false) {
     const auto quant = packed_codec == nullptr
         ? flatbuffers::Offset<fbs::QuantSpec>()
         : fbs::CreateQuantSpec(
@@ -390,7 +391,12 @@ class TestProgram {
     const auto meta = create_tensor_meta(builder_, dtype, shape, quant);
     placeholder(name, meta);
     bindings_.push_back(fbs::CreateNamedTensorRefDirect(
-        builder_, name.c_str(), name.c_str(), meta, fbs::InputKind::PARAMETER));
+        builder_,
+        name.c_str(),
+        name.c_str(),
+        meta,
+        mutated ? fbs::InputKind::BUFFER : fbs::InputKind::PARAMETER,
+        mutated));
   }
 
   // Symmetric int4 AffineGroup weights `weight` with float scales
@@ -4418,6 +4424,67 @@ TEST(GgmlEngineTest, IndexRefusesInnerDimsAndSeveralIndexTensors) {
               .dtype = "F32",
               .shape = {4, 2, 32}}}),
         message);
+  }
+}
+
+// exp(bias) reads only a constant and is computed once; exp(state) reads a
+// buffer each call writes, so it sees each call's state.
+TEST(GgmlEngineTest, FoldsConstantsButNotWrittenBuffers) {
+  TestProgram program;
+  program.input("x", fbs::ScalarType::FLOAT, {4});
+  program.constant(
+      "state", fbs::ScalarType::FLOAT, {4}, nullptr, /*mutated=*/true);
+  program.constant("bias", fbs::ScalarType::FLOAT, {4});
+  const auto exp = [&](const char* name, const char* source) {
+    program.call(
+        name,
+        "torch.ops.aten.exp.default",
+        {{"self", std::string(source)}},
+        fbs::ScalarType::FLOAT,
+        {4});
+  };
+  const auto add = [&](const char* name, const char* left, const char* right) {
+    program.call(
+        name,
+        "torch.ops.aten.add.Tensor",
+        {{"self", std::string(left)}, {"other", std::string(right)}},
+        fbs::ScalarType::FLOAT,
+        {4});
+  };
+  exp("decay", "state");
+  exp("scale", "bias");
+  add("sum", "decay", "scale");
+  add("y", "sum", "x");
+  add("next", "state", "x");
+  program.mutate("state", "next");
+  const std::vector<uint8_t> bytes = program.finish("y");
+  const std::vector<PackagedConstant> constants = {
+      {.key = "state",
+       .bytes = std::vector<uint8_t>(4 * sizeof(float)),
+       .dtype = "F32",
+       .shape = {4}},
+      {.key = "bias",
+       .bytes = std::vector<uint8_t>(4 * sizeof(float)),
+       .dtype = "F32",
+       .shape = {4}}};
+  for (const bool fold : {true, false}) {
+    SCOPED_TRACE(fold);
+    auto host =
+        GgmlEngineHost::create(GgmlEngineOptions{.fold_constants = fold});
+    auto context = make_constants_context(*host, bytes, constants);
+    auto executable = context->compile("forward");
+    // exp(bias) is held beside the two constants when folded.
+    EXPECT_EQ(
+        context->materialized_constant_bytes(),
+        (fold ? 3 : 2) * 4 * sizeof(float));
+    const std::vector<float> x(4, 1.0f);
+    for (const float expected : {3.0f, (std::exp(1.0f) + 1.0f) + 1.0f}) {
+      executable->set_input(0, x.data(), x.size(), ScalarType::Float);
+      executable->execute();
+      std::vector<float> y(4);
+      executable->get_output(0, y.data(), y.size(), ScalarType::Float);
+      EXPECT_EQ(y, std::vector<float>(4, expected));
+    }
   }
 }
 

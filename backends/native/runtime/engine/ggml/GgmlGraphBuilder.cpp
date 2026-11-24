@@ -308,7 +308,7 @@ size_t graph_capacity(const Method& method, size_t graph_size) {
   return std::max(graph_size, metadata_budget(method));
 }
 
-GraphInstance GraphBuilder::build() {
+void GraphBuilder::begin() {
   const size_t capacity = graph_capacity(method_, graph_size_);
   ggml_init_params params{
       .mem_size = ggml_tensor_overhead() * metadata_budget(method_) +
@@ -325,12 +325,15 @@ GraphInstance GraphBuilder::build() {
   if (instance_.graph == nullptr) {
     throw std::runtime_error("ggml: failed to create cgraph");
   }
+}
 
+GraphInstance GraphBuilder::build() {
+  begin();
   seed_values();
   index_written_values();
   for (const NodeId id : method_.graph.schedule) {
     const Node& node = method_.graph.node(id);
-    if (node.is_call()) {
+    if (node.is_call() && !folded(node)) {
       copy_required_ = touches_written_value(node);
       lower(node);
     }
@@ -368,6 +371,46 @@ GraphInstance GraphBuilder::build() {
     }
   }
   return std::move(instance_);
+}
+
+// Whether the executable computed `node`'s results once from constants and
+// holds them as persistent tensors.
+bool GraphBuilder::folded(const Node& node) const {
+  const std::vector<ValueId> outputs = output_ids(node);
+  return !outputs.empty() &&
+      std::ranges::all_of(outputs, [this](ValueId output) {
+        return persistent_.contains(output);
+      });
+}
+
+FoldGraph GraphBuilder::build_folds(
+    const std::vector<NodeId>& nodes,
+    const std::vector<ValueId>& values) {
+  begin();
+  seed_values();
+  index_written_values();
+  for (const NodeId id : nodes) {
+    lower(method_.graph.node(id));
+  }
+  FoldGraph fold;
+  for (const ValueId id : values) {
+    TensorRef value = view(id);
+    const ggml_tensor* source = value.tensor;
+    while (source->op == GGML_OP_VIEW || source->op == GGML_OP_RESHAPE ||
+           source->op == GGML_OP_PERMUTE || source->op == GGML_OP_TRANSPOSE) {
+      source = source->src[0];
+    }
+    if (source->op == GGML_OP_NONE) {
+      continue;
+    }
+    value.tensor = contiguous(value.tensor);
+    ggml_set_output(value.tensor);
+    ggml_build_forward_expand(instance_.graph, value.tensor);
+    instance_.outputs.push_back(std::move(value));
+    fold.values.push_back(id);
+  }
+  fold.instance = std::move(instance_);
+  return fold;
 }
 
 // Outputs leave through a byte copy, so they must be contiguous and of the

@@ -474,6 +474,7 @@ def _run_ggml(  # noqa: C901
     exact_topk_for_testing: bool = False,
     exact_gelu_for_testing: bool = False,
     f32_gpu_kv_cache_for_testing: bool = False,
+    fold_constants: bool = True,
 ):
     """Runs each step's inputs in order on one executable and returns each
     step's outputs as (bytes, shape) pairs. `graph_ops`, if given, collects
@@ -513,6 +514,8 @@ def _run_ggml(  # noqa: C901
         command.append("--exact_gelu_for_testing")
     if f32_gpu_kv_cache_for_testing:
         command.append("--f32_gpu_kv_cache_for_testing")
+    if not fold_constants:
+        command.append("--nofold_constants")
     with as_file(files(__package__) / "ggml_ptn_runner") as runner:
         result = subprocess.run(
             [str(runner), *command],
@@ -533,6 +536,26 @@ def _run_ggml(  # noqa: C901
     paths = [path for step in output_steps for path in step.split(",")]
     outputs = [(Path(path).read_bytes(), shape) for path, shape in zip(paths, shapes)]
     return [outputs[i : i + num_outputs] for i in range(0, len(outputs), num_outputs)]
+
+
+def _assert_same_as_unfolded(test, folded, unfolded):
+    """Float32 outputs computed with constants folded are bitwise those of an
+    unfolded run on the CPU. GPU backends fuse a graph's ops by its shape, and
+    a folded constant changes that shape, which can move a result by an ulp."""
+    if os.environ.get("GGML_PTN_DEVICE", "cpu") == "cpu":
+        test.assertEqual(folded, unfolded)
+        return
+    for step_folded, step_unfolded in zip(folded, unfolded, strict=True):
+        for (raw, shape), (raw_unfolded, shape_unfolded) in zip(
+            step_folded, step_unfolded, strict=True
+        ):
+            test.assertEqual(shape, shape_unfolded)
+            torch.testing.assert_close(
+                torch.frombuffer(bytearray(raw), dtype=torch.float32),
+                torch.frombuffer(bytearray(raw_unfolded), dtype=torch.float32),
+                rtol=1e-5,
+                atol=1e-6,
+            )
 
 
 def _hip_accumulates_half_gemms_in_f32() -> bool:
@@ -1592,6 +1615,48 @@ class GgmlOpsTest(unittest.TestCase):
         for shape in ((4,), (4, 5), (4, 3, 5)):
             with self.subTest(shape=shape):
                 self._check(Gather(shape), (torch.tensor([[3, 0], [1, 3]]),))
+
+    def test_constant_subgraphs_are_computed_once(self):
+        class ConstantMath(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.log_decay = torch.nn.Parameter(torch.randn(16))
+                self.weight = torch.nn.Parameter(torch.randn(16) * 0.1)
+
+            def forward(self, x):
+                decay = -torch.exp(self.log_decay.float())
+                norm = F.rms_norm(x, (16,), eps=1e-6) * (self.weight + 1.0)
+                return decay * x + norm
+
+        model = ConstantMath().eval()
+        x = torch.randn(3, 16)
+        with torch.no_grad():
+            expected = model(x)
+        ep = torch.export.export(model, (x,))
+        ops = {fold: collections.Counter() for fold in (True, False)}
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            package = outdir / "model.ptn"
+            to_native(ep).save(str(package))
+            folded, unfolded = (
+                _run_ggml(
+                    package,
+                    [(x,)],
+                    outdir,
+                    1,
+                    graph_ops=ops[fold],
+                    fold_constants=fold,
+                )
+                for fold in (True, False)
+            )
+        _assert_same_as_unfolded(self, folded, unfolded)
+        (((raw, shape),),) = folded
+        actual = torch.frombuffer(bytearray(raw), dtype=torch.float32)
+        torch.testing.assert_close(actual.reshape(shape), expected)
+        self.assertGreater(ops[False]["EXP"], 0)
+        for op in ("EXP", "NEG"):
+            self.assertEqual(ops[True][op], 0, op)
+        self.assertLess(ops[True].total(), ops[False].total())
 
     def test_matmul(self):
         self._check(
@@ -2813,12 +2878,13 @@ class GgmlOpsTest(unittest.TestCase):
                 return self.cache * 1.0
 
         values, positions = torch.randn(1, 2, 3, 4), torch.tensor([5, 1, 6])
-        # Per graph build (two MULs each): the cast of the F16 output, plus the
-        # F32 -> F16 cast of the cache rows when it is kept.
+        # Per graph build (two MULs each): the F32 -> F16 cast of the cache
+        # rows when it is kept. Casts of constants, the buffer and the scalar
+        # factors export lifts to tensors, are computed once, at compile.
         cases = {
-            "fresh": (FreshSource(), (values, positions), 1),
-            "buffer": (BufferSource(), (values, positions), 2),
-            "written": (WrittenSource(), (values, positions, torch.tensor([0])), 2),
+            "fresh": (FreshSource(), (values, positions), 0),
+            "buffer": (BufferSource(), (values, positions), 0),
+            "written": (WrittenSource(), (values, positions, torch.tensor([0])), 1),
         }
         for source, (model, inputs, casts) in cases.items():
             with self.subTest(source=source):
@@ -3339,13 +3405,27 @@ class GgmlQwen35Test(unittest.TestCase):
             }
             eager = copy.deepcopy(wrapper)
             expected = [eager(*inputs) for inputs in steps]
+        ops = {fold: collections.Counter() for fold in (True, False)}
         with tempfile.TemporaryDirectory() as tmp:
             outdir = Path(tmp)
             package = outdir / "tiny_qwen35.ptn"
             to_native(programs).save(str(package))
-            outputs = _run_ggml(
-                package, steps, outdir, 1, resize=True, method=";".join(methods)
+            outputs, unfolded = (
+                _run_ggml(
+                    package,
+                    steps,
+                    outdir,
+                    1,
+                    resize=True,
+                    method=";".join(methods),
+                    graph_ops=ops[fold],
+                    fold_constants=fold,
+                )
+                for fold in (True, False)
             )
+        # Every method computes its constants once, prefill as well as decode.
+        _assert_same_as_unfolded(self, outputs, unfolded)
+        self.assertLess(ops[True].total(), ops[False].total())
         self.assertEqual(len(outputs), len(steps))
         # GPUs multiply 8-row F32 linears in TF32 or XF32 (README: Known ggml
         # GPU numerics).
@@ -3411,11 +3491,24 @@ class GgmlQwen35Test(unittest.TestCase):
             self.assertEqual(targets.count(gated_delta_rule_op), 3 if native else 0)
             eager = copy.deepcopy(wrapper)
             expected = [eager(*inputs) for inputs in steps]
+        ops = {fold: collections.Counter() for fold in (True, False)}
         with tempfile.TemporaryDirectory() as tmp:
             outdir = Path(tmp)
             package = outdir / "tiny_qwen35.ptn"
             to_native(ep).save(str(package))
-            outputs = _run_ggml(package, steps, outdir, 1)
+            outputs, unfolded = (
+                _run_ggml(
+                    package,
+                    steps,
+                    outdir,
+                    1,
+                    graph_ops=ops[fold],
+                    fold_constants=fold,
+                )
+                for fold in (True, False)
+            )
+        _assert_same_as_unfolded(self, outputs, unfolded)
+        self.assertLess(ops[True].total(), ops[False].total())
         self.assertEqual(len(outputs), len(steps))
         for step, (step_outputs, reference) in enumerate(zip(outputs, expected)):
             ((raw, shape),) = step_outputs
