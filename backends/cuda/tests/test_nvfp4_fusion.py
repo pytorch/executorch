@@ -23,10 +23,8 @@ from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
 from torch._subclasses.fake_tensor import FakeTensorMode
 
 CUDA = pytest.mark.skipif(
-    not torch.cuda.is_available()
-    or torch.version.hip is not None
-    or torch.cuda.get_device_capability() < (8, 9),
-    reason="NVIDIA CUDA with native E4M3 (SM89+) required",
+    not torch.cuda.is_available() or torch.version.hip is not None,
+    reason="NVIDIA CUDA required",
 )
 
 

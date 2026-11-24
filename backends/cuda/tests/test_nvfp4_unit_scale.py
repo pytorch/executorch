@@ -26,10 +26,8 @@ def cold_pick_cache():
 
 
 CUDA = pytest.mark.skipif(
-    not torch.cuda.is_available()
-    or torch.version.hip is not None
-    or torch.cuda.get_device_capability() < (8, 9),
-    reason="NVIDIA CUDA with native E4M3 (SM89+) required",
+    not torch.cuda.is_available() or torch.version.hip is not None,
+    reason="NVIDIA CUDA required",
 )
 
 
@@ -67,6 +65,7 @@ def test_unit_scale_gemv_bitwise_same_tile(dtype, half2, row_pts, split):
             BN=8,
             BK=256,
             NATIVE=True,
+            NATIVE_E4M3=True,
             HALF2=half2,
             ROW_PTS=row_pts,
             UNIT_SCALE=unit,
@@ -120,6 +119,8 @@ def test_unit_scale_linear_pte(mode, monkeypatch):
 
     def capture(kernel, *args, **kwargs):
         if kernel is kernels._gemv:
+            # The launcher builds the decode the device supports natively.
+            assert kwargs.get("NATIVE_E4M3") == kernels._has_native_e4m3()
             observed.append(kwargs["UNIT_SCALE"])
         return original(kernel, *args, **kwargs)
 
