@@ -62,18 +62,17 @@ def _targets(graph_module):
 
 
 class PlannedReplacementTest(unittest.TestCase):
-    """A planned op through the pass, with a planner that returns a fixed route."""
+    """A planned op through the pass, with a planner that returns fixed
+    candidates."""
 
     def setUp(self):
         if importlib.util.find_spec("triton") is None:
             self.skipTest("Triton required")
         from executorch.backends.cuda.triton import replacement_pass
 
-        self.route = None
-        for patch in (
-            mock.patch.dict(replacement_pass.EDGE_TO_TRITON_KERNELS, {_RELU: _SIGMOID}),
-            mock.patch.dict(replacement_pass.PLANNERS, {_RELU: self.plan}),
-        ):
+        self.legal = {"inductor", "fake"}
+        self.static_choice = "fake"
+        for patch in (mock.patch.dict(replacement_pass.PLANNERS, {_RELU: self.plan}),):
             patch.start()
             self.addCleanup(patch.stop)
 
@@ -81,12 +80,22 @@ class PlannedReplacementTest(unittest.TestCase):
         from executorch.backends.cuda.triton import routing
 
         return routing.ReplacementPlan(
-            self.route,
-            "only a kernel" if self.route is routing.Route.REQUIRED else "why",
             "fake",
-            "test kernel",
-            _SIGMOID,
-            node.args,
+            (
+                routing.Candidate(
+                    routing.REGULAR_LOWERING,
+                    None if "inductor" in self.legal else "only a kernel",
+                ),
+                routing.Candidate(
+                    "fake",
+                    None if "fake" in self.legal else "why",
+                    "test kernel",
+                    _SIGMOID,
+                    node.args,
+                ),
+            ),
+            self.static_choice,
+            "not worth it",
             "relu(x)",
         )
 
@@ -98,28 +107,89 @@ class PlannedReplacementTest(unittest.TestCase):
         ReplaceEdgeOpWithTritonOpPass()(graph_module)
         graph_module.graph.lint()
 
-    def test_routes(self):
-        from executorch.backends.cuda.triton import routing
-
-        for route in routing.Route:
-            self.route = route
+    def test_choices(self):
+        cases = (
+            (
+                {"fake"},
+                "fake",
+                "Replacing relu_default (test kernel, only implementation)",
+            ),
+            (
+                {"inductor"},
+                "inductor",
+                "Skipping fake replacement of relu_default: why",
+            ),
+            ({"inductor", "fake"}, "fake", "Replacing relu_default (test kernel)"),
+            (
+                {"inductor", "fake"},
+                "inductor",
+                "Skipping fake replacement of relu_default: not worth it",
+            ),
+        )
+        for legal, static_choice, message in cases:
+            self.legal, self.static_choice = legal, static_choice
             graph_module = _graph()
-            with self.subTest(route=route), self.assertLogs(
-                _PASS_LOGGER, "INFO"
-            ) as logs:
+            with self.subTest(
+                legal=legal, static_choice=static_choice
+            ), self.assertLogs(_PASS_LOGGER, "INFO") as logs:
                 self.run_pass(graph_module)
             output = "\n".join(logs.output)
-            if route is routing.Route.UNSUPPORTED:
-                self.assertEqual(_targets(graph_module).count(_RELU), 1)
-                self.assertIn("Skipping fake replacement of relu_default: why", output)
-                self.assertIn("Replaced 0 nodes", output)
-            else:
-                self.assertNotIn(_RELU, _targets(graph_module))
-                self.assertIn(_SIGMOID, _targets(graph_module))
-                self.assertIn(
-                    f"Replacing relu_default ({route.value}, test kernel)", output
+            self.assertIn(message, output)
+            replaced = message.startswith("Replacing")
+            self.assertEqual(_SIGMOID in _targets(graph_module), replaced)
+            self.assertEqual(_RELU in _targets(graph_module), not replaced)
+            self.assertIn(f"Replaced {int(replaced)} nodes", output)
+
+    def test_invalid_plans_fail_with_the_signature(self):
+        from executorch.backends.cuda.triton import routing
+
+        regular = routing.Candidate(routing.REGULAR_LOWERING)
+        with self.assertRaisesRegex(
+            routing.ReplacementError, r"relu\(x\): the static choice 'fake' cannot"
+        ):
+            routing.ReplacementPlan(
+                "fake",
+                (regular, routing.Candidate("fake", "why")),
+                "fake",
+                "",
+                "relu(x)",
+            )
+        for candidates in (
+            (regular, routing.Candidate("a"), routing.Candidate("b")),
+            (regular, regular),
+            (routing.Candidate("fake", None, "", _SIGMOID, (1,)), regular),
+        ):
+            with self.subTest(candidates=[c.name for c in candidates]):
+                with self.assertRaisesRegex(
+                    routing.ReplacementError, "one replacement"
+                ):
+                    routing.ReplacementPlan("fake", candidates, signature="relu(x)")
+        for kernel, args in ((None, (1,)), (_SIGMOID, ())):
+            with self.subTest(kernel=kernel, args=args), self.assertRaisesRegex(
+                routing.ReplacementError, "no kernel and arguments"
+            ):
+                routing.ReplacementPlan(
+                    "fake",
+                    (regular, routing.Candidate("fake", None, "", kernel, args)),
+                    signature="relu(x)",
                 )
-                self.assertIn("Replaced 1 nodes", output)
+        # Keyword arguments alone are enough.
+        plan = routing.ReplacementPlan(
+            "fake",
+            (regular, routing.Candidate("fake", None, "", _SIGMOID, (), {"self": 1})),
+            signature="relu(x)",
+        )
+        self.assertEqual(plan.candidate("fake").kwargs, {"self": 1})
+
+    def test_no_implementation_fails_the_export(self):
+        from executorch.backends.cuda.triton import routing
+
+        self.legal = set()
+        with self.assertRaisesRegex(
+            routing.ReplacementError,
+            r"relu\(x\): nothing can run it \(inductor: only a kernel; fake: why\)",
+        ):
+            self.run_pass(_graph())
 
     def faults(self):
         def fail(*args, **kwargs):
@@ -157,10 +227,7 @@ class PlannedReplacementTest(unittest.TestCase):
         self.assertEqual(_nodes(graph_module), before)
         self.assertNotIn(_SIGMOID, _targets(graph_module))
 
-    def test_optional_failures_keep_the_node(self):
-        from executorch.backends.cuda.triton import routing
-
-        self.route = routing.Route.OPTIONAL
+    def test_failures_keep_the_node_the_regular_lowering_runs(self):
         for step, fault in self.faults().items():
             graph_module = _graph()
             before = _nodes(graph_module)
@@ -169,16 +236,72 @@ class PlannedReplacementTest(unittest.TestCase):
                     self.run_pass(graph_module)
                 self.assertUnchanged(graph_module, before)
 
-    def test_required_failures_raise(self):
+    def test_failures_raise_when_only_the_replacement_runs_it(self):
         from executorch.backends.cuda.triton import routing
 
-        self.route = routing.Route.REQUIRED
+        self.legal = {"fake"}
         for step, fault in self.faults().items():
             graph_module = _graph()
             before = _nodes(graph_module)
             with self.subTest(step=step):
                 with fault, self.assertRaisesRegex(
-                    routing.ReplacementError, r"relu\(x\) \(only a kernel\)"
+                    routing.ReplacementError,
+                    r"relu\(x\) \(inductor: only a kernel; fake: legal\)",
                 ):
                     self.run_pass(graph_module)
                 self.assertUnchanged(graph_module, before)
+
+    def test_inputs_only_the_replaced_call_used_are_removed(self):
+        """A replacement that reads around a pure input (as a GEMM reads
+        around the transpose of its weight) removes it unless another node
+        uses it; graph inputs stay."""
+        from executorch.backends.cuda.triton import routing
+
+        for shared in (False, True):
+            graph = torch.fx.Graph()
+            x = graph.placeholder("x")
+            negated = graph.call_function(torch.ops.aten.neg.default, (x,))
+            relu = graph.call_function(_RELU, (negated,))
+            graph.output((relu, negated) if shared else (relu,))
+            plan = routing.ReplacementPlan(
+                "fake",
+                (
+                    routing.Candidate(routing.REGULAR_LOWERING),
+                    routing.Candidate("fake", None, "", _SIGMOID, (x,)),
+                ),
+                "fake",
+                signature="relu(neg(x))",
+            )
+            with self.subTest(shared=shared):
+                routing.replace(graph, relu, plan, plan.candidate("fake"))
+                graph.lint()
+                targets = [n.target for n in graph.nodes if n.op == "call_function"]
+                self.assertEqual(torch.ops.aten.neg.default in targets, shared)
+                self.assertIn(x, list(graph.nodes))
+
+
+class TopkPlanTest(unittest.TestCase):
+    def test_rows_the_kernel_loads_whole_are_replaced(self):
+        from executorch.backends.cuda.triton.kernels.topk import plan as plan_topk
+        from executorch.exir.dialects._ops import ops as exir_ops
+        from torch._subclasses.fake_tensor import FakeTensorMode
+
+        for n, replaced in ((4096, True), (4097, False)):
+            graph = torch.fx.Graph()
+            x = graph.placeholder("x")
+            with FakeTensorMode():
+                x.meta["val"] = torch.empty(2, n, device="cuda")
+            node = graph.call_function(
+                exir_ops.edge.aten.topk.default, (x, 8), {"largest": True}
+            )
+            with self.subTest(n=n):
+                plan = plan_topk(node)
+                self.assertEqual(len(plan.legal()), 2 if replaced else 1)
+                if replaced:
+                    candidate = plan.candidate(plan.static_choice)
+                    self.assertIs(candidate.kernel, torch.ops.triton.topk)
+                    self.assertEqual(
+                        (candidate.args, candidate.kwargs), (node.args, node.kwargs)
+                    )
+                else:
+                    self.assertIn("N=4097 > 4096", plan.candidates[1].reason)

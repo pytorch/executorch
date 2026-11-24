@@ -18,24 +18,40 @@ from executorch.backends.transforms.fused_quant.fuse_aten import (
 from executorch.backends.transforms.fused_quant.graph_utils import is_dequantize_node
 from executorch.backends.transforms.permute_pass_utils import get_arg
 from torch import fx
-from torch._export.utils import _detect_fake_mode_from_gm
 from torch._ops import OpOverload
-from torch.fx.passes.fake_tensor_prop import FakeTensorProp
+from torch.export import ExportedProgram
 from torch.fx.passes.tools_common import stable_topological_sort
 from torchao.quantization.pt2e.quantizer import (
     ComposableQuantizer,
     QuantizationConfig,
+    QuantizationSpecBase,
     Quantizer,
     SharedQuantizationSpec,
+    utils as ao_utils,
 )
 from torchao.quantization.pt2e.quantizer.quantizer import (
     Q_ANNOTATION_KEY,
     QuantizationAnnotation,
 )
-from torchao.quantization.pt2e.quantizer.utils import (
-    annotate_input_qspec_map,
-    annotate_output_qspec,
-)
+
+
+# Annotations hold node references and do not survive export, but meta["custom"]
+# does, so annotating a node with a live qspec also marks it there for fusion.
+QUANTIZED_KEY = "fq_quantized"
+
+
+def annotate_input_qspec_map(
+    node: fx.Node, input_node: fx.Node, qspec: Optional[QuantizationSpecBase]
+) -> None:
+    ao_utils.annotate_input_qspec_map(node, input_node, qspec)
+    if qspec is not None:
+        node.meta.setdefault("custom", {})[QUANTIZED_KEY] = True
+
+
+def annotate_output_qspec(node: fx.Node, qspec: Optional[QuantizationSpecBase]) -> None:
+    ao_utils.annotate_output_qspec(node, qspec)
+    if qspec is not None:
+        node.meta.setdefault("custom", {})[QUANTIZED_KEY] = True
 
 
 class QuantizerBase(Quantizer, ABC):
@@ -50,7 +66,7 @@ class QuantizerBase(Quantizer, ABC):
         ...
 
     @abstractmethod
-    def fuse(self, gm: fx.GraphModule) -> bool:
+    def fuse(self, exported_program: ExportedProgram) -> bool:
         """Fold each dequant -> op -> quant into a fused op; return whether the
         graph changed."""
         ...
@@ -166,35 +182,27 @@ class OpQuantizer(QuantizerBase):
                 if out is not None:
                     annotate_output_qspec(out, config.output_activation)
 
-    def fuse(self, gm: fx.GraphModule) -> bool:
-        """Fold each owned, annotated op node into fused_op.
+    def fuse(self, exported_program: ExportedProgram) -> bool:
+        """Fold each owned node annotated with a live qspec into fused_op.
 
-        A node is fused only when it matches, carries an annotation, and that annotation
-        has a live qspec, so a node claimed by a no-op annotation or one merely
-        sandwiched between its neighbors' dq/q is left alone.
+        A node claimed by a no-op annotation, or one merely sandwiched between its
+        neighbors' dq/q, carries no mark and is left alone.
         """
         modified = False
-        for node in list(gm.graph.find_nodes(op="call_function", target=self.op)):
-            if not self.matches(node):
-                continue
-            ann = node.meta.get(Q_ANNOTATION_KEY)
-            if ann is None:
-                continue
-            if (
-                not any(v is not None for v in ann.input_qspec_map.values())
-                and ann.output_qspec is None
-            ):
-                continue
-            self.fuse_node(gm, node)
-            modified = True
+        graph = exported_program.graph
+        for node in graph.find_nodes(op="call_function", target=self.op):
+            if node.meta.get("custom", {}).get(QUANTIZED_KEY) and self.matches(node):
+                self.fuse_node(exported_program, node)
+                modified = True
         return modified
 
-    def fuse_node(self, gm: fx.GraphModule, node: fx.Node) -> fx.Node:
+    def fuse_node(self, exported_program: ExportedProgram, node: fx.Node) -> fx.Node:
         """Fuse a generic aten op to a matching fused_quant op.
 
         Subclasses may override for custom fusion logic.
         """
         return fuse_aten(
+            exported_program,
             node,
             self.fused_op_for(node),
             self.activation_names_for(node),
@@ -240,7 +248,7 @@ class NoopQuantizer(OpQuantizer):
     def annotate_node(self, node: fx.Node) -> None:
         node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(input_qspec_map={})
 
-    def fuse(self, gm: fx.GraphModule) -> bool:
+    def fuse(self, exported_program: ExportedProgram) -> bool:
         return False
 
 
@@ -287,52 +295,25 @@ class FusedQuantQuantizer(ComposableQuantizer, QuantizerBase):
         admits (ComposableQuantizer types them as plain Quantizer)."""
         return cast(list[QuantizerBase], self.quantizers)
 
-    def fuse(self, gm: fx.GraphModule) -> bool:
+    def fuse(self, exported_program: ExportedProgram) -> bool:
         """Fuse via every child quantizer; return whether anything fused.
 
-        ``gm`` is the output of ``convert_pt2e``, which is first cleaned up so
-        the children can match on it; see :func:`_repair_convert_output`.
+        ``exported_program`` is the program exported from the output of
+        ``convert_pt2e``.
         """
-        _repair_convert_output(gm)
         modified = False
         for q in self.child_quantizers:
-            modified |= q.fuse(gm)
+            modified |= q.fuse(exported_program)
         if modified:
-            stable_topological_sort(gm)
-            gm.graph.eliminate_dead_code()
-            gm.recompile()
+            graph_module = exported_program.graph_module
+            stable_topological_sort(graph_module)
+            graph_module.graph.eliminate_dead_code()
+            graph_module.recompile()
         return modified
 
     def preserved_ops(self) -> list[OpOverload]:
         """The union of every child quantizer's preserved ops."""
         return [op for q in self.child_quantizers for op in q.preserved_ops()]
-
-
-def _repair_convert_output(gm: fx.GraphModule) -> None:
-    """Work around two ``convert_pt2e`` (torchao) gaps that fusion trips on.
-
-    ``AffineQuantizedObserverBase.convert`` inserts ``quantize_affine`` /
-    ``dequantize_affine`` as the ``OpOverloadPacket`` rather than ``.default``,
-    which fusion does not match. And ``convert_pt2e`` rewrites the graph without
-    refreshing ``meta["val"]``, which fusion reads for shapes and dtypes.
-    """
-    replacements = {
-        torch.ops.torchao.quantize_affine: torch.ops.torchao.quantize_affine.default,
-        torch.ops.torchao.dequantize_affine: torch.ops.torchao.dequantize_affine.default,
-    }
-    for node in gm.graph.nodes:
-        if node.op == "call_function" and node.target in replacements:
-            node.target = replacements[node.target]
-    gm.recompile()
-
-    # A hand-built graph may carry no fake values at all; there is nothing to refresh.
-    placeholders = gm.graph.find_nodes(op="placeholder")
-    fake_mode = _detect_fake_mode_from_gm(gm)
-    if fake_mode is None or any("val" not in node.meta for node in placeholders):
-        return
-    FakeTensorProp(gm, mode=fake_mode).propagate_dont_convert_inputs(
-        *(node.meta["val"] for node in placeholders)
-    )
 
 
 class BinaryQuantizer(OpQuantizer):
@@ -456,6 +437,21 @@ def get_core_aten_quantizers(
         BinaryQuantizer(
             aten.sub.Tensor, fused_quant.sub.default, fused_quant.sub.Scalar, config
         ),
+        BinaryQuantizer(
+            aten.div.Tensor, fused_quant.div.default, fused_quant.div.Scalar, config
+        ),
+        OpQuantizer(
+            aten.minimum.default,
+            fused_quant.minimum.default,
+            config,
+            activation_names=("input", "other"),
+        ),
+        OpQuantizer(
+            aten.maximum.default,
+            fused_quant.maximum.default,
+            config,
+            activation_names=("input", "other"),
+        ),
         OpQuantizer(
             aten.bmm.default,
             fused_quant.bmm.default,
@@ -472,6 +468,18 @@ def get_core_aten_quantizers(
         OpQuantizer(aten.tanh.default, fused_quant.tanh.default, config),
         OpQuantizer(aten.hardtanh.default, fused_quant.hard_tanh.default, config),
         OpQuantizer(aten.gelu.default, fused_quant.gelu.default, config),
+        OpQuantizer(aten.leaky_relu.default, fused_quant.leaky_relu.default, config),
+        OpQuantizer(aten.rsqrt.default, fused_quant.rsqrt.default, config),
+        OpQuantizer(aten.sqrt.default, fused_quant.sqrt.default, config),
+        OpQuantizer(aten.pow.Tensor_Scalar, fused_quant.pow.Tensor_Scalar, config),
+        OpQuantizer(aten.clamp.default, fused_quant.clamp.default, config),
+        OpQuantizer(aten.mean.dim, fused_quant.mean.dim, config),
+        OpQuantizer(aten.sum.dim_IntList, fused_quant.sum.dim_IntList, config),
+        OpQuantizer(aten.amax.default, fused_quant.amax.default, config),
+        OpQuantizer(aten._softmax.default, fused_quant._softmax.default, config),
+        OpQuantizer(
+            aten._log_softmax.default, fused_quant._log_softmax.default, config
+        ),
         OpQuantizer(
             aten.native_layer_norm.default,
             fused_quant.native_layer_norm.default,

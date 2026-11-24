@@ -12,6 +12,7 @@
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
 #include <algorithm>
+#include <limits>
 
 #include <gtest/gtest.h>
 
@@ -34,6 +35,21 @@ class OpDivScalarOutKernelTest : public OperatorTest {
       Tensor& out) {
     return torch::executor::aten::div_outf(context_, a, b, mode, out);
   }
+
+  template <ScalarType DTYPE>
+  void test_most_negative_by_minus_one() {
+    TensorFactory<DTYPE> tf;
+    using CTYPE = typename TensorFactory<DTYPE>::ctype;
+
+    const CTYPE min = std::numeric_limits<CTYPE>::min();
+    Tensor self = tf.make({3}, {min, 7, -7});
+    Tensor out = tf.zeros({3});
+    op_div_out_mode(self, tf.full({3}, -1), "trunc", out);
+    EXPECT_TENSOR_EQ(out, tf.make({3}, {min, -7, 7}));
+    out = tf.zeros({3});
+    op_div_out_mode(self, tf.full({3}, -1), "floor", out);
+    EXPECT_TENSOR_EQ(out, tf.make({3}, {min, -7, 7}));
+  }
 };
 
 class OpDivScalarModeOutKernelTest : public OperatorTest {
@@ -44,6 +60,21 @@ class OpDivScalarModeOutKernelTest : public OperatorTest {
       std::optional<std::string_view> mode,
       Tensor& out) {
     return torch::executor::aten::div_outf(context_, a, b, mode, out);
+  }
+
+  template <ScalarType DTYPE>
+  void test_most_negative_by_minus_one() {
+    TensorFactory<DTYPE> tf;
+    using CTYPE = typename TensorFactory<DTYPE>::ctype;
+
+    const CTYPE min = std::numeric_limits<CTYPE>::min();
+    Tensor self = tf.make({3}, {min, 7, -7});
+    Tensor out = tf.zeros({3});
+    op_div_scalar_mode_out(self, -1, "trunc", out);
+    EXPECT_TENSOR_EQ(out, tf.make({3}, {min, -7, 7}));
+    out = tf.zeros({3});
+    op_div_scalar_mode_out(self, -1, "floor", out);
+    EXPECT_TENSOR_EQ(out, tf.make({3}, {min, -7, 7}));
   }
 };
 
@@ -156,4 +187,25 @@ TEST_F(OpDivScalarModeOutKernelTest, ModeIntegerScalarIsCastToTensorDtype) {
   ET_EXPECT_KERNEL_FAILURE(
       context_,
       torch::executor::aten::div_outf(context_, a, Scalar(256), "floor", out));
+}
+
+TEST_F(OpDivScalarOutKernelTest, MostNegativeByMinusOneWraps) {
+  test_most_negative_by_minus_one<ScalarType::Int>();
+  test_most_negative_by_minus_one<ScalarType::Long>();
+}
+
+TEST_F(OpDivScalarModeOutKernelTest, MostNegativeByMinusOneWraps) {
+  test_most_negative_by_minus_one<ScalarType::Int>();
+  test_most_negative_by_minus_one<ScalarType::Long>();
+}
+
+TEST_F(OpDivScalarModeOutKernelTest, EmptyInputWithZeroScalarDivisor) {
+  TensorFactory<ScalarType::Char> tf;
+  Tensor self = tf.make({0}, {});
+  Tensor out = tf.make({0}, {});
+
+  op_div_scalar_mode_out(self, 0, "trunc", out);
+  EXPECT_TENSOR_EQ(out, tf.make({0}, {}));
+  op_div_scalar_mode_out(self, 0, "floor", out);
+  EXPECT_TENSOR_EQ(out, tf.make({0}, {}));
 }

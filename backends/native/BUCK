@@ -47,6 +47,7 @@ fbcode_target(
         "//executorch/exir/backend:utils",
         "//executorch/exir/passes:cse_pass",
         "//executorch/exir/passes:lib",
+        "//executorch/extension/llm/cache:cache",
         "//executorch/extension/llm/export:gguf",
     ],
 )

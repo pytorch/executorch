@@ -10,16 +10,44 @@ import executorch.backends.arm.tosa.dialect  # noqa: F401
 import pytest
 import torch
 
+from executorch.backends.arm._passes.tosa_lowering_utils import (
+    create_rescale_node,
+    rescale_tensor,
+)
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
 from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
     TosaSpecification,
 )
 
-from executorch.exir.dialects._ops import ops as exir_ops
 from torch._subclasses.fake_tensor import FakeTensorMode
 
 input_t = Tuple[torch.Tensor, torch.Tensor]  # Input x
+
+
+@pytest.mark.parametrize(
+    "input_dtype,output_dtype,input_zp,output_zp,flags",
+    [
+        (torch.int8, torch.int32, 128, 0, {}),
+        (torch.int32, torch.int8, 0, -129, {}),
+        (torch.int16, torch.int8, 1, 0, {}),
+        (torch.int8, torch.int32, 0, 1, {}),
+        (torch.uint8, torch.int8, 256, 0, {"input_unsigned": True}),
+        (torch.int8, torch.int8, 0, 256, {"output_unsigned": True}),
+        (torch.int16, torch.int8, 1, 0, {"input_unsigned": True}),
+        (torch.int8, torch.int16, 0, 1, {"output_unsigned": True}),
+    ],
+)
+def test_rescale_builder_rejects_invalid_zero_points(
+    input_dtype, output_dtype, input_zp, output_zp, flags
+):
+    graph = torch.fx.Graph()
+    source = graph.placeholder("source")
+    source.meta["val"] = torch.empty(2, 3, dtype=input_dtype)
+    with pytest.raises(TosaValueError):
+        create_rescale_node(
+            graph, (source, output_dtype, [1.0], input_zp, output_zp), flags
+        )
 
 
 def test_rescale_op_tosa_INT():
@@ -52,7 +80,7 @@ def test_rescale_op_tosa_INT():
         TosaSpecification.create_from_string("TOSA-1.0+INT")
     ), FakeTensorMode() as mode:
         for sample_input in sample_inputs:
-            exir_ops.backend.tosa.RESCALE.default(
+            rescale_tensor(
                 *tuple(
                     [
                         mode.from_tensor(i) if isinstance(i, torch.Tensor) else i
@@ -88,7 +116,7 @@ def test_nonzero_zp_for_int32_tosa_INT():
             with pytest.raises(
                 ValueError, match="TOSA requires (output|input)_zp to be zero"
             ):
-                exir_ops.backend.tosa.RESCALE.default(
+                rescale_tensor(
                     *tuple(
                         [
                             mode.from_tensor(i) if isinstance(i, torch.Tensor) else i
@@ -123,7 +151,7 @@ def test_zp_outside_range_tosa_INT():
             with pytest.raises(
                 Exception, match="(in_zp|out_zp)=-?[0-9]* outside valid range"
             ):
-                exir_ops.backend.tosa.RESCALE.default(
+                rescale_tensor(
                     *tuple(
                         [
                             mode.from_tensor(i) if isinstance(i, torch.Tensor) else i
@@ -164,7 +192,7 @@ def test_unsigned_zp_range_tosa_INT_valid():
         TosaSpecification.create_from_string("TOSA-1.0+INT")
     ), FakeTensorMode() as mode:
         for sample_input in sample_inputs:
-            exir_ops.backend.tosa.RESCALE.default(
+            rescale_tensor(
                 *tuple(
                     [
                         mode.from_tensor(i) if isinstance(i, torch.Tensor) else i
@@ -181,7 +209,7 @@ def test_unsigned_zp_range_tosa_INT_invalid():
         TosaSpecification.create_from_string("TOSA-1.0+INT")
     ), FakeTensorMode() as mode:
         with pytest.raises(TosaValueError, match="(in_zp|input_zp).*range"):
-            exir_ops.backend.tosa.RESCALE.default(
+            rescale_tensor(
                 mode.from_tensor(
                     torch.randint(low=0, high=255, size=(4, 4, 4), dtype=torch.uint8)
                 ),
@@ -193,7 +221,7 @@ def test_unsigned_zp_range_tosa_INT_invalid():
                 output_unsigned=False,
             )
         with pytest.raises(TosaValueError, match="(out_zp|output_zp).*range"):
-            exir_ops.backend.tosa.RESCALE.default(
+            rescale_tensor(
                 mode.from_tensor(
                     torch.randint(low=0, high=255, size=(4, 4, 4), dtype=torch.uint8)
                 ),

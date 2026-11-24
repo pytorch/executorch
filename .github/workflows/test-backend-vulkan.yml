@@ -33,6 +33,7 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
       run-linux: true
+      upload-test-run-reports: true
 
   # Real-GPU (NVIDIA) and Windows MSVC coverage live in vulkan.yml, which gates
   # those scarce/expensive runners behind path filtering.

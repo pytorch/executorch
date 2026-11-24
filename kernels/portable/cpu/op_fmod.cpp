@@ -122,7 +122,7 @@ Tensor& fmod_Scalar_out(
       // Like ATen, the scalar takes the compute dtype first, so a scalar such
       // as 256 for an int8 tensor becomes 0.
       const CTYPE_COMPUTE val_b = utils::scalar_to<CTYPE_COMPUTE>(b);
-      if (val_b == 0) {
+      if (val_b == 0 && a.numel() > 0) {
         div_by_zero_error = true;
         return;
       }

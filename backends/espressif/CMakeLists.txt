@@ -5,7 +5,19 @@
 # LICENSE file in the root directory of this source tree.
 
 idf_component_register(
-  SRCS "ops/op_quantized_mul.cpp" PRIV_REQUIRES esp-nn WHOLE_ARCHIVE
+  SRCS
+  "ops/op_quantized_lut.cpp"
+  "ops/op_quantized_mul.cpp"
+  "ops/op_quantized_mul_broadcast.cpp"
+  "ops/op_quantized_add.cpp"
+  "ops/op_quantized_max_pool2d.cpp"
+  "ops/op_quantized_avg_pool2d.cpp"
+  "ops/op_quantized_linear.cpp"
+  "ops/op_quantized_conv2d.cpp"
+  "ops/op_quantized_depthwise_conv2d.cpp"
+  PRIV_REQUIRES
+  esp-nn
+  WHOLE_ARCHIVE
 )
 
 get_filename_component(

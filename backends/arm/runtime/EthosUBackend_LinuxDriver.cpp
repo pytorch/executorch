@@ -33,7 +33,6 @@ using executorch::runtime::BackendExecutionContext;
 using executorch::runtime::CompileSpec;
 using executorch::runtime::Error;
 using executorch::runtime::MemoryAllocator;
-using executorch::runtime::Span;
 
 namespace executorch {
 namespace backends {
@@ -228,6 +227,8 @@ Error invoke_linux_driver(
             input_copy_sizes.size());
         return Error::InvalidState;
       }
+      EXECUTORCH_PROF_SCOPE(
+          invocation.event_tracer, "EthosUBackend::input.write()");
       for (int i = 0; i < handles.inputs->count; ++i) {
         const size_t copy_size = input_copy_sizes[i];
         if (copy_size == 0) {
@@ -269,32 +270,36 @@ Error invoke_linux_driver(
           output_copy_sizes.size());
       return Error::InvalidState;
     }
-    inference = std::make_unique<EthosU::Inference>(
-        state.network,
-        state.ifm_buffers.begin(),
-        state.ifm_buffers.end(),
-        state.ofm_buffers.begin(),
-        state.ofm_buffers.end(),
-        state.intermediate_buffer,
-        state.constant_buffer,
-        invocation.pmu_events,
-        invocation.pmu_enabled);
+    {
+      EXECUTORCH_PROF_SCOPE(
+          invocation.event_tracer, "EthosUBackend::driver.invoke()");
+      inference = std::make_unique<EthosU::Inference>(
+          state.network,
+          state.ifm_buffers.begin(),
+          state.ifm_buffers.end(),
+          state.ofm_buffers.begin(),
+          state.ofm_buffers.end(),
+          state.intermediate_buffer,
+          state.constant_buffer,
+          invocation.pmu_events,
+          invocation.pmu_enabled);
 
-    if (inference->wait(options.timeout_ns)) {
-      ET_LOG(
-          Error,
-          "Ethos-U inference timed out after %lld ns",
-          static_cast<long long>(options.timeout_ns));
-      return Error::InvalidState;
-    }
+      if (inference->wait(options.timeout_ns)) {
+        ET_LOG(
+            Error,
+            "Ethos-U inference timed out after %lld ns",
+            static_cast<long long>(options.timeout_ns));
+        return Error::InvalidState;
+      }
 
-    auto status = inference->status();
-    if (status != EthosU::InferenceStatus::OK) {
-      ET_LOG(
-          Error,
-          "Ethos-U inference failed with status %s",
-          inference_status_to_string(status));
-      return Error::InvalidState;
+      auto status = inference->status();
+      if (status != EthosU::InferenceStatus::OK) {
+        ET_LOG(
+            Error,
+            "Ethos-U inference failed with status %s",
+            inference_status_to_string(status));
+        return Error::InvalidState;
+      }
     }
 
     {
@@ -309,27 +314,31 @@ Error invoke_linux_driver(
     }
     stats.inference_success = true;
 
-    for (int i = 0; i < handles.outputs->count; ++i) {
-      const size_t copy_size = output_copy_sizes[i];
-      if (copy_size == 0) {
-        continue;
+    {
+      EXECUTORCH_PROF_SCOPE(
+          invocation.event_tracer, "EthosUBackend::output.read()");
+      for (int i = 0; i < handles.outputs->count; ++i) {
+        const size_t copy_size = output_copy_sizes[i];
+        if (copy_size == 0) {
+          continue;
+        }
+        char* dst = output_ptrs[i];
+        if (dst == nullptr) {
+          ET_LOG(Error, "Missing output buffer for index %d", i);
+          return Error::InvalidState;
+        }
+        const VelaIO& io = handles.outputs->io[i];
+        const auto& ofm = state.ofm_buffers.front();
+        if (io.offset < 0 || io.offset + copy_size > ofm->size()) {
+          ET_LOG(Error, "Output %d does not fit the Ethos-U output region", i);
+          return Error::InvalidState;
+        }
+        if (lseek(ofm->getFd(), io.offset, SEEK_SET) == -1) {
+          ET_LOG(Error, "Failed to seek to output %d", i);
+          return Error::InvalidState;
+        }
+        ofm->read(dst, copy_size);
       }
-      char* dst = output_ptrs[i];
-      if (dst == nullptr) {
-        ET_LOG(Error, "Missing output buffer for index %d", i);
-        return Error::InvalidState;
-      }
-      const VelaIO& io = handles.outputs->io[i];
-      const auto& ofm = state.ofm_buffers.front();
-      if (io.offset < 0 || io.offset + copy_size > ofm->size()) {
-        ET_LOG(Error, "Output %d does not fit the Ethos-U output region", i);
-        return Error::InvalidState;
-      }
-      if (lseek(ofm->getFd(), io.offset, SEEK_SET) == -1) {
-        ET_LOG(Error, "Failed to seek to output %d", i);
-        return Error::InvalidState;
-      }
-      ofm->read(dst, copy_size);
     }
   } catch (const std::exception& e) {
     ET_LOG(Error, "Ethos-U Linux driver invocation failed: %s", e.what());
@@ -339,21 +348,14 @@ Error invoke_linux_driver(
   return Error::Ok;
 }
 
-// Get the byte size of an IO tensor from its Vela descriptor.
-size_t vela_io_bytes(const VelaIO& io) {
-  size_t count = 1;
-  for (int i = 0; i < shapeDim; i++) {
-    count *= static_cast<size_t>(io.shape[i]);
-  }
-  return count * static_cast<size_t>(io.elem_size);
-}
-
 // Get the buffer size needed to hold every IO at its Vela offset.
 size_t vela_region_bytes(const VelaIOs& ios) {
   size_t size = 0;
   for (int i = 0; i < ios.count; ++i) {
     size = std::max(
-        size, static_cast<size_t>(ios.io[i].offset) + vela_io_bytes(ios.io[i]));
+        size,
+        static_cast<size_t>(ios.io[i].offset) +
+            calculate_vela_io_bytes(ios.io[i]));
   }
   return size;
 }
@@ -450,27 +452,37 @@ bool needs_scratch_allocation() {
 Error platform_execute(
     BackendExecutionContext& context,
     const ExecutionHandle* execution_handle,
-    const VelaHandles& handles,
-    int input_count,
-    int output_count,
-    Span<executorch::runtime::EValue*> args,
-    char* /*ethosu_scratch*/) {
+    IOPlan& io_plan) {
+  const VelaHandles& handles = *io_plan.handles;
+  const int input_count = static_cast<int>(io_plan.arguments.inputs.size());
+  const int output_count = static_cast<int>(io_plan.arguments.outputs.size());
   std::vector<size_t> input_copy_sizes(input_count, 0);
   std::vector<const char*> linux_input_ptrs(input_count, nullptr);
 
   std::vector<size_t> output_io_bytes(output_count, 0);
   std::vector<char*> linux_output_ptrs(output_count, nullptr);
+  std::vector<std::vector<char>> output_scratch_buffers;
 
   for (int i = 0; i < input_count; ++i) {
-    auto tensor_in = args[i]->toTensor();
+    auto tensor_in = io_plan.arguments.inputs[i]->toTensor();
     linux_input_ptrs[i] = tensor_in.const_data_ptr<char>();
     input_copy_sizes[i] = tensor_in.nbytes();
   }
 
-  for (int i = 0; i < output_count; ++i) {
-    auto tensor_out = args[input_count + i]->toTensor();
-    output_io_bytes[i] = tensor_out.nbytes();
-    linux_output_ptrs[i] = tensor_out.mutable_data_ptr<char>();
+  if (handles.outputs != nullptr) {
+    for (int i = 0; i < output_count; ++i) {
+      auto tensor_out = io_plan.arguments.outputs[i]->toTensor();
+      output_io_bytes[i] = calculate_vela_io_bytes(handles.outputs->io[i]);
+      if (output_io_bytes[i] != tensor_out.nbytes()) {
+        if (output_scratch_buffers.empty()) {
+          output_scratch_buffers.resize(output_count);
+        }
+        output_scratch_buffers[i].resize(output_io_bytes[i]);
+        linux_output_ptrs[i] = output_scratch_buffers[i].data();
+      } else {
+        linux_output_ptrs[i] = tensor_out.mutable_data_ptr<char>();
+      }
+    }
   }
 
   PlatformState* state = execution_handle->platform_state;
@@ -491,7 +503,7 @@ Error platform_execute(
 #if defined(ET_EVENT_TRACER_ENABLED)
   invocation.event_tracer = context.event_tracer();
 #endif
-  return invoke_linux_driver(
+  const Error status = invoke_linux_driver(
       handles,
       linux_input_ptrs,
       linux_output_ptrs,
@@ -499,6 +511,18 @@ Error platform_execute(
       output_io_bytes,
       *state,
       invocation);
+  if (status != Error::Ok) {
+    return status;
+  }
+
+  if (io_plan.needs_output_copy) {
+#if defined(ET_EVENT_TRACER_ENABLED)
+    auto* event_tracer = context.event_tracer();
+#endif
+    EXECUTORCH_PROF_SCOPE(event_tracer, "EthosUBackend::output.copy()");
+    return copy_outputs(io_plan, linux_output_ptrs.data());
+  }
+  return Error::Ok;
 }
 
 } // namespace arm

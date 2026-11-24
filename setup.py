@@ -173,6 +173,7 @@ def _minimal_cmake_flags() -> List[str]:
         "-DEXECUTORCH_BUILD_VULKAN=OFF",
         "-DEXECUTORCH_BUILD_XNNPACK=OFF",
         "-DEXECUTORCH_BUILD_CMSIS_NN_PYBINDS=OFF",
+        "-DEXECUTORCH_BUILD_ESP_NN_PYBINDS=OFF",
     ]
 
 
@@ -1134,8 +1135,6 @@ def _torchao_requirement() -> str:
 
     torch_url = install_utils.determine_torch_url(module.TORCH_URL_BASE)
     version = module.get_torchao_version(torch_url)
-    if torch_url.endswith("/cu134") and not module.torchao_from_source():
-        version = module.CU134_TORCHAO_NIGHTLY_VERSION
     major, minor = (int(part) for part in version.split(".")[:2])
     return f"torchao>={version},<{major}.{minor + 1}"
 
@@ -2915,6 +2914,9 @@ class CustomBuild(build):
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_CMSIS_NN_PYBINDS"):
                 cmake_build_args += ["--target", "cmsis_nn"]
 
+            if cmake_cache.is_enabled("EXECUTORCH_BUILD_ESP_NN_PYBINDS"):
+                cmake_build_args += ["--target", "_esp_nn_scratch"]
+
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_CUDA"):
                 # The stream helper is not named here: the delegate links it PUBLIC, so
                 # asking for the delegate builds it. It used to be named under an
@@ -3327,6 +3329,19 @@ setup(
                         "EXECUTORCH_BUILD_CMSIS_NN_PYBINDS",
                     ],
                 ),
+                *[
+                    BuiltExtension(
+                        src=(
+                            f"_esp_nn_scratch_{profile}.cp*"
+                            if _is_windows()
+                            else f"_esp_nn_scratch_{profile}.*"
+                        ),
+                        src_dir="backends/espressif/scratch/%BUILD_TYPE%/",
+                        modpath=f"executorch.backends.espressif._esp_nn_scratch_{profile}",
+                        dependent_cmake_flags=["EXECUTORCH_BUILD_ESP_NN_PYBINDS"],
+                    )
+                    for profile in ("esp32s3", "riscv_pie", "generic", "ansi")
+                ],
                 BuiltExtension(
                     src="extension/llm/runner/_llm_runner.*",  # @lint-ignore https://github.com/pytorch/executorch/blob/cb3eba0d7f630bc8cec0a9cc1df8ae2f17af3f7a/scripts/lint_xrefs.sh
                     modpath="executorch.extension.llm.runner._llm_runner",

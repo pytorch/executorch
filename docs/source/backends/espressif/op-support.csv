@@ -1,0 +1,24 @@
+Operator,Compute DType,Quantization,Constraints
+conv2d / convolution,int8,"static int8, per-channel weights","Batch 1; stride, padding and dilation at most 255; groups 1, grouped or depthwise"
+conv_transpose2d,int8,"static int8, per-channel weights",Batch 1; groups 1
+linear,int8,"static int8, per-channel weights",
+relu / relu6,int8,static int8,Fused into a preceding conv2d / linear / add when possible
+hardtanh,int8,static int8,"Fused as ReLU / ReLU6 when possible, otherwise a lookup table"
+"hardswish, hardsigmoid, sigmoid, silu, tanh, gelu, elu, leaky_relu",int8,static int8,256-entry lookup table
+add,int8,static int8,Broadcasting
+mul,int8,static int8,Broadcasting
+_softmax,int8,static int8,"Dim 1 of a batch-1 rank-2 or rank-4 tensor; output scale 1/256, zero point -128 (set by EspNNQuantizer)"
+max_pool2d,int8,static int8,"Batch-1 rank 4; no dilation; no ceil_mode; padding at most half the window"
+avg_pool2d,int8,static int8,"Batch-1 rank 4; no ceil_mode; padding at most half the window"
+adaptive_avg_pool2d,int8,static int8,Rank 4; pooling window at most 255
+mean.dim,int8,static int8,Spatial dims (H and W) with keepdim
+upsample_nearest2d,int8,static int8,"Batch-1 NCHW; output extent at most 65535; keeps input quantization"
+upsample_bilinear2d,int8,static int8,"Batch-1 NCHW; align_corners true or false; output extent at most 65535; keeps input quantization"
+constant_pad_nd / pad,int8,static int8,No negative padding
+cat,int8,static int8,2 to 6 inputs of equal rank
+stack,int8,static int8,2 to 6 inputs of equal rank
+"split, split_with_sizes, chunk, unbind",int8,static int8,Rewritten to slices by EspNNQuantizer
+"reshape, view, flatten, unflatten",int8,static int8,Delegated when the consumers are delegated
+"permute, transpose, squeeze, unsqueeze",int8,static int8,Delegated when the consumers are delegated
+"slice, select, expand",int8,static int8,Delegated when the consumers are delegated
+"dropout, clone, alias, detach",int8,static int8,"Identity; eval-mode dropout only"

@@ -197,6 +197,14 @@ def _get_input_qspecs_from_node(
     return found_qspecs
 
 
+def _is_tensor_node(arg) -> bool:
+    # Scalar args such as the SymFloat of a traced .item() are op parameters,
+    # not tensor inputs, so they have no dtype to validate.
+    return isinstance(arg, Node) and isinstance(
+        arg.meta.get("val"), (torch.Tensor, tuple, list)
+    )
+
+
 def _node_port_dtypes(node) -> Tuple[List[str], List[str]]:
     """
     Extract input/output dtypes from FX node meta.
@@ -212,11 +220,11 @@ def _node_port_dtypes(node) -> Tuple[List[str], List[str]]:
     output_qspec = _get_output_qspec_from_node(quantization_annotation)
 
     for arg in node.args:
-        if isinstance(arg, Node) and "val" in arg.meta:
+        if _is_tensor_node(arg):
             in_dtypes.append(_get_qnn_datatype(arg, input_qspecs.get(arg, None)))
         elif isinstance(arg, (tuple, list)):  # for concat op
             for item in arg:
-                if isinstance(item, Node) and "val" in item.meta:
+                if _is_tensor_node(item):
                     in_dtypes.append(
                         _get_qnn_datatype(item, input_qspecs.get(item, None))
                     )

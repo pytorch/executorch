@@ -148,19 +148,12 @@ Tensor& div_out_mode(
               return static_cast<CTYPE_COMPUTE>(0);
             }
           }
-          CTYPE_COMPUTE value = val_a / val_b;
           if (mode_is_trunc) {
-            // Integer division already truncates, and std::trunc would round
-            // int64 values through double.
-            if constexpr (!std::is_integral_v<CTYPE_COMPUTE>) {
-              value = std::trunc(value);
-            }
-          } else {
-            // We established above that the mode is either trunc or floor, so
-            // it must be floor.
-            value = utils::floor_divide(val_a, val_b);
+            return utils::trunc_divide(val_a, val_b);
           }
-          return value;
+          // We established above that the mode is either trunc or floor, so
+          // it must be floor.
+          return utils::floor_divide(val_a, val_b);
         },
         ctx,
         a,
@@ -272,22 +265,15 @@ Tensor& div_scalar_mode_out(
     // 256 for an int8 tensor becomes 0.
     const CTYPE_COMPUTE val_b = utils::scalar_to<CTYPE_COMPUTE>(b);
     if constexpr (std::is_integral_v<CTYPE_COMPUTE>) {
-      if (val_b == 0) {
+      if (val_b == 0 && a.numel() > 0) {
         div_by_zero_error = true;
         return;
       }
     }
     utils::apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
         [val_b, mode_is_trunc](const CTYPE_COMPUTE val_a) {
-          CTYPE_COMPUTE value = val_a / val_b;
-          if (mode_is_trunc) {
-            if constexpr (!std::is_integral_v<CTYPE_COMPUTE>) {
-              value = std::trunc(value);
-            }
-          } else {
-            value = utils::floor_divide(val_a, val_b);
-          }
-          return value;
+          return mode_is_trunc ? utils::trunc_divide(val_a, val_b)
+                               : utils::floor_divide(val_a, val_b);
         },
         ctx,
         a,

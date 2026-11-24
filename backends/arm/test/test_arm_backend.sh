@@ -723,7 +723,7 @@ test_smaller_stories_llama_vkml() {
 }
 
 test_runtime_ethos_u() {
-    echo "${TEST_SUITE_NAME}: Test ethos-u memory allocation"
+    echo "${TEST_SUITE_NAME}: Test Ethos-U runtime"
 
     local ctest_build_dir="${et_root_dir}/arm_test/ethosu_runtime_tests"
     cmake \
@@ -731,10 +731,11 @@ test_runtime_ethos_u() {
         -B "${ctest_build_dir}" \
         -DEXECUTORCH_ROOT="${et_root_dir}"
 
+    cmake --build "${ctest_build_dir}" --parallel
+
     ctest --test-dir "${ctest_build_dir}" \
         --output-on-failure \
-        --no-tests=error \
-        -L memory_allocation
+        --no-tests=error
     echo "${TEST_SUITE_NAME}: PASS"
 }
 

@@ -132,6 +132,15 @@ TEST_F(OpFmodTest, IntegerScalarIsCastToTensorDtype) {
           tf_int.make({2}, {5, 6}), Scalar(int64_t{1} << 32), out_int));
 }
 
+TEST_F(OpFmodTest, EmptyInputWithZeroScalarDivisor) {
+  TensorFactory<ScalarType::Char> tf;
+  Tensor self = tf.make({0}, {});
+  Tensor out = tf.make({0}, {});
+
+  op_fmod_scalar_out(self, 0, out);
+  EXPECT_TENSOR_EQ(out, tf.make({0}, {}));
+}
+
 TEST_F(OpFmodTest, ScalarSmokeTest) {
   TensorFactory<ScalarType::Float> tfFloat;
   std::vector<float> a(18);
