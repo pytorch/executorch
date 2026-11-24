@@ -6,6 +6,8 @@
 
 import os
 import tempfile
+from enum import IntEnum
+from unittest import mock
 
 import numpy as np
 import pytest
@@ -20,9 +22,10 @@ from executorch.extension.llm.export.nvfp4 import ExportableNVFP4Tensor
 try:
     import gguf
 
+    HAS_GGUF = True
     HAS_GGUF_NVFP4 = hasattr(gguf.GGMLQuantizationType, "NVFP4")
 except ImportError:
-    HAS_GGUF_NVFP4 = False
+    HAS_GGUF = HAS_GGUF_NVFP4 = False
 # Only the tests that write GGUF files need gguf >= 0.19.
 requires_gguf = pytest.mark.skipif(not HAS_GGUF_NVFP4, reason="needs gguf >= 0.19")
 
@@ -123,6 +126,19 @@ def test_gguf_nvfp4_rejects_unpaired_companion():
     tensors = [*TENSORS, ("blk.0.attn_v.scale", scalar(0.5))]
     with pytest.raises(ValueError, match="blk.0.attn_v.scale"):
         load(tensors)
+
+
+@pytest.mark.skipif(not HAS_GGUF, reason="needs gguf")
+def test_gguf_without_nvfp4_type_still_loads():
+    without_nvfp4 = IntEnum(
+        "GGMLQuantizationType",
+        {t.name: t.value for t in gguf.GGMLQuantizationType if t.name != "NVFP4"},
+    )
+    norm = np.ones(128, dtype=np.float32)
+    with mock.patch.object(gguf, "GGMLQuantizationType", without_nvfp4):
+        sd = load([("blk.0.ffn_norm.weight", norm)])
+    assert list(sd) == ["layers.0.mlp.norm.weight"]
+    assert torch.equal(sd["layers.0.mlp.norm.weight"].float(), torch.from_numpy(norm))
 
 
 def exportable(w):
