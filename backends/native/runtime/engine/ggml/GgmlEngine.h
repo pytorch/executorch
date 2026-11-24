@@ -60,6 +60,9 @@ struct GgmlEngineOptions {
   // Prints each newly built graph's node count per ggml op to stderr, which
   // shows whether a lowering rewrite fired.
   bool print_graph_ops = false;
+  // Prints, after each compile, the context's materialized constant bytes and
+  // the device's free memory to stderr.
+  bool print_memory = false;
   // Testing only. Default (false): matrix multiplies with an F16 operand
   // accumulate in F16 on CUDA, as llama.cpp's cuBLAS GEMMs do. Set: they
   // accumulate in F32, at 2-3x prefill and 4x decode GEMM time plus a
