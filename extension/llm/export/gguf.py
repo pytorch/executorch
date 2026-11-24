@@ -26,8 +26,8 @@ The quant type is the lowercase name of a block-quantized ggml type (``"q4_k"``,
 ``NotImplementedError``. An accepted type's block geometry comes from
 ``gguf.GGML_QUANT_SIZES`` and its eager dequantization from ``gguf.dequantize``,
 and the package's integer ``GGMLQuantizationType`` ids are an internal lookup
-detail. Only Q4_K / Q5_K / Q6_K convert to the torchao subclasses below. Which
-tensors to convert is the caller's policy.
+detail. Only Q4_K / Q5_K / Q6_K / Q8_0 convert to the torchao subclasses below.
+Which tensors to convert is the caller's policy.
 
 GGML NVFP4 (``"nvfp4"``) is accepted too. Its geometry and decode live here
 because not every gguf-py release knows the type. NVFP4 blocks are not
@@ -117,6 +117,17 @@ def _quant_type(ggml_type: str):
         raise NotImplementedError(f"codec gguf:{ggml_type} not yet validated")
     block_size, block_bytes = GGML_QUANT_SIZES[qtype]
     return qtype, block_size, block_bytes
+
+
+def _q8_0_fields(raw: Tensor) -> Tuple[Tensor, Tensor]:
+    """Q8_0 rows ``(N, row_bytes)`` -> int8 values ``(N, K)`` and fp16 scales
+    ``(N, K / 32)``; each block is an fp16 scale and 32 int8 values."""
+    _, _, block_bytes = _quant_type("q8_0")
+    n, row_bytes = raw.shape
+    blocks = raw.reshape(n, row_bytes // block_bytes, block_bytes)
+    scale = blocks[..., :2].contiguous().view(torch.float16).reshape(n, -1)
+    q = blocks[..., 2:].contiguous().view(torch.int8).reshape(n, -1)
+    return q, scale
 
 
 def _read_f16(raw: Tensor, col_start: int, col_end: int) -> Tensor:
@@ -598,6 +609,17 @@ class ExportableGGUFTensor(TorchAOBaseTensor):
                 f"only; got shape {tuple(self.shape)}"
             )
         N, K = self.shape
+        if self.ggml_type == "q8_0":
+            q, scale = _q8_0_fields(self.raw)
+            return IntxUnpackedToInt8Tensor(
+                qdata=q,
+                scale=scale.to(sdt),
+                zero_point=torch.zeros_like(scale, dtype=torch.int8),
+                target_dtype=torch.int8,
+                block_size=(1, K // scale.shape[1]),
+                dtype=sdt,
+                activation_quantization=None,
+            )
         if self.ggml_type == "q6_k":
             q, eff_scale = _q6_k_fields(self.raw, N, K)
             group_size = Q6_K_GROUP_SIZE
@@ -662,7 +684,7 @@ class ExportableGGUFTensor(TorchAOBaseTensor):
                 activation_quantization=None,
             )
         raise NotImplementedError(
-            f"to_intx_unpacked_to_int8_tensor supports q4_k/q5_k/q6_k; "
+            f"to_intx_unpacked_to_int8_tensor supports q4_k/q5_k/q6_k/q8_0; "
             f"got {self.ggml_type!r}"
         )
 
