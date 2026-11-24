@@ -6,6 +6,7 @@
 
 import contextlib
 import os
+import subprocess
 import tempfile
 import threading
 import unittest
@@ -13,6 +14,7 @@ from typing import Tuple
 from unittest import mock
 from unittest.mock import patch
 
+import numpy as np
 import torch
 from executorch.backends.aoti.aoti_backend import AotiBackend
 from executorch.backends.cuda.cuda_backend import CudaBackend
@@ -52,13 +54,25 @@ class _ScaleShift(torch.nn.Module):
 
 def _execute(program, method_name, inputs):
     """Run a method of a lowered program from its files, as an app would."""
-    from executorch.runtime import Runtime
-
     with tempfile.TemporaryDirectory() as directory:
         path = os.path.join(directory, "model.pte")
         with open(path, "wb") as f:
             program.write_to_file(f)
         program.write_tensor_data_to_file(directory)
+        runner = os.environ.get("RUN_CUDA_PROGRAM")
+        if runner:
+            # Buck runs CUDA's AOTI shims separately from LibTorch's symbols.
+            (input_tensor,) = inputs
+            np.save(
+                os.path.join(directory, "input.npy"),
+                input_tensor.detach().cpu().numpy(),
+            )
+            subprocess.run([runner, directory, method_name], check=True)
+            output = np.load(os.path.join(directory, "output.npy"))
+            return [torch.from_numpy(output)]
+
+        from executorch.runtime import Runtime
+
         (data,) = [
             os.path.join(directory, name)
             for name in os.listdir(directory)
@@ -1627,7 +1641,6 @@ class TestCudaExport(unittest.TestCase):
     def test_complex_product_with_cpu_tensor_without_dims(self):
         """A program on the GPU can keep tensors with no dims on the CPU, and
         complex products with them still lower."""
-        from executorch.runtime import Runtime
 
         class Scaled(torch.nn.Module):
             def __init__(self, factor):
@@ -1647,22 +1660,27 @@ class TestCudaExport(unittest.TestCase):
             with self.subTest(dtype=factor.dtype):
                 model = Scaled(factor).to("cuda")
                 program = self._export_to_cuda_with_lower(model, (x,)).to_executorch()
-                with tempfile.TemporaryDirectory() as directory:
-                    path = os.path.join(directory, "model.pte")
-                    with open(path, "wb") as f:
-                        program.write_to_file(f)
-                    program.write_tensor_data_to_file(directory)
-                    (data,) = [
-                        os.path.join(directory, name)
-                        for name in os.listdir(directory)
-                        if name.endswith(".ptd")
-                    ]
-                    method = (
-                        Runtime.get()
-                        .load_program(path, data_path=data)
-                        .load_method("forward")
-                    )
-                    (output,) = method.execute([x.cpu()])
+                if os.environ.get("RUN_CUDA_PROGRAM"):
+                    (output,) = _execute(program, "forward", [x.cpu()])
+                else:
+                    from executorch.runtime import Runtime
+
+                    with tempfile.TemporaryDirectory() as directory:
+                        path = os.path.join(directory, "model.pte")
+                        with open(path, "wb") as f:
+                            program.write_to_file(f)
+                        program.write_tensor_data_to_file(directory)
+                        (data,) = [
+                            os.path.join(directory, name)
+                            for name in os.listdir(directory)
+                            if name.endswith(".ptd")
+                        ]
+                        method = (
+                            Runtime.get()
+                            .load_program(path, data_path=data)
+                            .load_method("forward")
+                        )
+                        (output,) = method.execute([x.cpu()])
                 torch.testing.assert_close(output.cpu(), model(x).cpu())
 
     def test_device_info_propagated_to_cuda_delegate_outputs(self):
