@@ -79,7 +79,8 @@ python examples/espressif/export_espnn_test_programs.py \
 espnn_ops=$(tr -d '\n' < "${build_dir}/espnn-tests/operators.txt" \
     | tr ',' '\n' | grep -v '^quantized_decomposed::' | paste -sd, -)
 if [[ "${espnn_kernels}" == optimized ]]; then
-    espnn_ops="${espnn_ops},aten::sin.out,aten::relu.out,aten::mul.Scalar_out"
+    espnn_ops="${espnn_ops},aten::sin.out,aten::relu.out,aten::max_pool2d_with_indices.out,aten::avg_pool2d.out,aten::permute_copy.out,aten::convolution.out,aten::addmm.out,aten::mm.out,aten::mul.Scalar_out"
+    espnn_ops="${espnn_ops},aten::clone.out"
 fi
 
 toolchain_file="${IDF_PATH}/tools/cmake/toolchain-${target}.cmake"
@@ -181,13 +182,29 @@ for entry in json.load(open(sys.argv[1])):
 ' "${build_dir}/espnn-tests/manifest.json")
 
 if [[ "${espnn_kernels}" == optimized ]]; then
+    esp_python_dir=$(python -c 'import executorch.backends.espressif as esp; print(next(iter(esp.__path__)))')
+    logged "scratch-configure.log" cmake -S . \
+        -B "${build_dir}/scratch-sizing" -DCMAKE_BUILD_TYPE=Release \
+        -DEXECUTORCH_BUILD_ESP_NN_PYBINDS=ON -DEXECUTORCH_OPTIMIZE_SIZE=ON \
+        -DESPNN_LOCAL_PATH="${PWD}/examples/espressif/project/managed_components/espressif__esp-nn" \
+        -DCMAKE_LIBRARY_OUTPUT_DIRECTORY="${esp_python_dir}"
+    logged "scratch-build.log" cmake --build "${build_dir}/scratch-sizing" \
+        --target _esp_nn_scratch
+    logged "scratch-tests.log" env EXECUTORCH_REQUIRE_ESP_NN_SCRATCH=1 \
+        python -m pytest -q backends/espressif/test/test_scratch.py
+    logged "operator-library-host-tests.log" python -m pytest -q \
+        backends/espressif/test/ops -k 'not implementation'
     # Stop on failure so later cases cannot overwrite its firmware and logs.
     ESPRESSIF_BUILD_DIR="${build_dir}" python -m pytest \
         -x -v --tb=short backends/espressif/test/ops -k implementation \
         2>&1 | tee "${build_dir}/operator-library-tests.log"
     for sdkconfig in "${build_dir}"/operator-library-*/sdkconfig; do
-        if ! grep -qx 'CONFIG_NN_OPTIMIZED=y' "${sdkconfig}"; then
-            echo "Expected CONFIG_NN_OPTIMIZED=y in ${sdkconfig}" >&2
+        expected_config=CONFIG_NN_OPTIMIZED
+        if [[ "${sdkconfig}" == *-ansi/sdkconfig ]]; then
+            expected_config=CONFIG_NN_ANSI_C
+        fi
+        if ! grep -qx "${expected_config}=y" "${sdkconfig}"; then
+            echo "Expected ${expected_config}=y in ${sdkconfig}" >&2
             exit 1
         fi
     done

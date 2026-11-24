@@ -895,6 +895,10 @@ if(EXECUTORCH_BUILD_CORTEX_M OR EXECUTORCH_BUILD_CMSIS_NN_PYBINDS)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cortex_m)
 endif()
 
+if(EXECUTORCH_BUILD_ESP_NN_PYBINDS)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/espressif/scratch)
+endif()
+
 # Find Torch at root scope when any enabled component needs it so imported
 # targets (e.g. MKL::MKL) aren't created independently in child scopes.
 if(EXECUTORCH_BUILD_CUDA
