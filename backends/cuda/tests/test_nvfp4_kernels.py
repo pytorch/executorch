@@ -42,7 +42,11 @@ native_e4m3 = pytest.mark.skipif(
 
 @pytest.fixture(autouse=True)
 def default_policy(monkeypatch):
-    for name in ("ET_CUDA_NVFP4_ACT", "ET_CUDA_NVFP4_PREFILL_OUTPUT"):
+    for name in (
+        "ET_CUDA_NVFP4_ACT",
+        "ET_CUDA_NVFP4_PREFILL_OUTPUT",
+        "ET_CUDA_NVFP4_PREFILL_IMPL",
+    ):
         monkeypatch.delenv(name, raising=False)
 
 

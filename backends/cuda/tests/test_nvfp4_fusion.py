@@ -33,7 +33,11 @@ from executorch.backends.cuda.tests.nvfp4_test_utils import dynamic_rows, shards
 
 @pytest.fixture(autouse=True)
 def default_policy(monkeypatch):
-    for name in ("ET_CUDA_NVFP4_ACT", "ET_CUDA_NVFP4_PREFILL_OUTPUT"):
+    for name in (
+        "ET_CUDA_NVFP4_ACT",
+        "ET_CUDA_NVFP4_PREFILL_OUTPUT",
+        "ET_CUDA_NVFP4_PREFILL_IMPL",
+    ):
         monkeypatch.delenv(name, raising=False)
 
 
@@ -86,33 +90,53 @@ def record_calls(monkeypatch, module, names, calls):
 
 
 @pytest.mark.parametrize(
-    "mode,native,rows,fp32,expected",
+    "mode,native,rows,fp32,impl,expected",
     [
-        ("w4a16", False, 37, False, "nvfp4_w4a16"),
-        ("w4a16", False, 1, False, "nvfp4_gemv"),
-        ("auto", False, 37, False, "nvfp4_w4a16"),
+        ("w4a16", False, 37, False, "auto", "nvfp4_w4a16"),
+        ("w4a16", False, 1, False, "auto", "nvfp4_gemv"),
+        # Without native FP4, auto dequantizes only above the M <= 64 bucket.
+        ("auto", False, 37, False, "auto", "nvfp4_w4a16"),
+        ("auto", False, 65, False, "auto", "nvfp4_dequant"),
+        ("auto", False, 65, False, "kernel", "nvfp4_w4a16"),
+        ("w4a16", False, 37, False, "dequant", "nvfp4_dequant"),
+        # The FP32 prefill policy and w4a4 keep the fused kernels.
+        ("auto", False, 65, True, "auto", "nvfp4_w4a16"),
+        ("w4a4", True, 65, False, "dequant", "nvfp4_w4a4"),
         # Without native FP4, auto decode times W4A16 against W4A8.
-        ("auto", False, 1, False, "nvfp4_auto_decode"),
-        ("w4a8", False, 1, False, "nvfp4_w4a8_gemv"),
-        ("w4a8", True, 1, False, "nvfp4_w4a8_gemv"),
-        ("w4a8", True, 37, True, "nvfp4_w4a16"),
-        ("auto", True, 37, False, "nvfp4_auto_prefill"),
-        ("auto", True, 37, True, "nvfp4_auto_prefill"),
-        ("auto", True, 1, True, "nvfp4_auto_decode"),
-        ("w4a4", True, 37, False, "nvfp4_w4a4"),
-        ("w4a4", True, 1, True, "nvfp4_w4a4"),
-        # A dynamic M (bounded by 64) is never statically small: prefill.
-        ("auto", True, None, True, "nvfp4_auto_prefill"),
-        ("w4a16", False, None, False, "nvfp4_w4a16"),
+        ("auto", False, 1, False, "dequant", "nvfp4_auto_decode"),
+        ("w4a8", False, 1, False, "auto", "nvfp4_w4a8_gemv"),
+        ("w4a8", True, 1, False, "auto", "nvfp4_w4a8_gemv"),
+        ("w4a8", True, 37, True, "auto", "nvfp4_w4a16"),
+        ("w4a8", False, 65, False, "auto", "nvfp4_dequant"),
+        ("auto", True, 37, False, "auto", "nvfp4_auto_prefill"),
+        ("auto", True, 65, False, "auto", "nvfp4_auto_prefill"),
+        ("auto", True, 37, True, "auto", "nvfp4_auto_prefill"),
+        ("auto", True, 1, True, "auto", "nvfp4_auto_decode"),
+        ("w4a4", True, 37, False, "auto", "nvfp4_w4a4"),
+        ("w4a4", True, 1, True, "auto", "nvfp4_w4a4"),
+        # A dynamic M is never statically small: prefill. Bounded by 64 it
+        # keeps the fused kernels without native FP4.
+        ("auto", True, ("dynamic", 64), True, "auto", "nvfp4_auto_prefill"),
+        ("w4a16", False, ("dynamic", 64), False, "auto", "nvfp4_w4a16"),
+        ("auto", False, ("dynamic", 4096), False, "auto", "nvfp4_dequant"),
     ],
 )
-def test_linear_routing(mode, native, rows, fp32, expected, monkeypatch):
+def test_linear_routing(mode, native, rows, fp32, impl, expected, monkeypatch):
     # Export traces with fake tensors; record which op each policy emits.
     from executorch.backends.cuda.quantize_op_dispatch import nvfp4_dispatch
     from executorch.backends.cuda.triton.kernels import (
+        nvfp4_dequant,
         nvfp4_quantized_gemm,
         nvfp4_w4a8_gemv,
     )
+
+    def dequant(qdata, scale, per_tensor_scale, output_dtype):
+        calls.append(("nvfp4_dequant", None))
+        shape = (qdata.shape[0], qdata.shape[1] * 2)
+        return qdata.new_empty(shape, dtype=output_dtype)
+
+    monkeypatch.setattr(nvfp4_dequant, "nvfp4_dequant", dequant)
+    monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_IMPL", impl)
 
     calls = []
     record_calls(
@@ -137,14 +161,19 @@ def test_linear_routing(mode, native, rows, fp32, expected, monkeypatch):
 
     w = shards(192)[0]
     fake = FakeTensorMode(shape_env=ShapeEnv())
-    x = torch.randn(rows or 17, 192, dtype=torch.bfloat16)
-    x = fake.from_tensor(x) if rows else dynamic_rows(fake, x, 64)
+    static = isinstance(rows, int)
+    x = torch.randn(rows if static else 17, 192, dtype=torch.bfloat16)
+    x = (
+        fake.from_tensor(x, static_shapes=True)
+        if static
+        else dynamic_rows(fake, x, rows[1])
+    )
     weight = fake.from_tensor(w)
     with fake:
         out = F.linear(x, weight)
     # Prefill (M not statically <= 4) takes the FP32 output policy; decode
     # keeps the activation dtype.
-    output_dtype = torch.float32 if fp32 and (rows is None or rows > 4) else None
+    output_dtype = torch.float32 if fp32 and (not static or rows > 4) else None
     assert calls == [(expected, output_dtype)]
     assert out.shape == (x.shape[0], w.shape[0])
     assert out.dtype == (output_dtype or torch.bfloat16)
@@ -158,6 +187,8 @@ def test_linear_routing(mode, native, rows, fp32, expected, monkeypatch):
         ("auto", "fp16", True, ValueError, "ET_CUDA_NVFP4_PREFILL_OUTPUT"),
         # The W4A8 GEMV is NVIDIA PTX: forced w4a8 fails clearly on ROCm.
         ("w4a8", "rocm", False, RuntimeError, "NVIDIA"),
+        # An invalid PREFILL_IMPL raises even where it would not be read.
+        ("w4a4", "bad_impl", True, ValueError, "ET_CUDA_NVFP4_PREFILL_IMPL"),
     ],
 )
 def test_linear_policy_errors(act, output, native, error, match, monkeypatch):
@@ -165,6 +196,9 @@ def test_linear_policy_errors(act, output, native, error, match, monkeypatch):
 
     if output == "rocm":
         monkeypatch.setattr(torch.version, "hip", "6.2")
+        output = "input"
+    if output == "bad_impl":
+        monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_IMPL", "dequnat")
         output = "input"
     monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: native)
     monkeypatch.setenv("ET_CUDA_NVFP4_ACT", act)

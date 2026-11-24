@@ -432,6 +432,17 @@ into each exported method. `--nvfp4-static-act` (`export_solo` only) uses the ch
 per row, as llama.cpp does. A fused group whose shards carry different
 `.input_scale` values stays unfused in every layer.
 
+Without native FP4 (below SM120, and on ROCm), each NVFP4 prefill linear whose
+M is not statically at most 64 compiles to whole-weight dequant + matmul by
+default. That is decided per linear from its M bound at export: the decoder
+linears of a dynamic-M prefill method dequantize, while its LM head over at
+most 64 selected rows stays fused. Dequant + matmul is faster for long prompts
+(and, on A100, short ones; about 13% slower per layer for prompts up to 64
+tokens on H100). Setting `ET_CUDA_NVFP4_PREFILL_IMPL=kernel` at export keeps
+the fused NVFP4 kernels for every method; `dequant` forces dequant + matmul,
+except under `--nvfp4-act w4a4` or `ET_CUDA_NVFP4_PREFILL_OUTPUT=fp32`, which
+always keep the fused kernels.
+
 The converter follows llama.cpp's bit patterns, including positive zero for
 FP4 code 8. It rejects GGML scale byte `0xff`: llama.cpp decodes that byte as
 480, which cannot be represented losslessly by a finite E4M3 scale.

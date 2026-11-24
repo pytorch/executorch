@@ -11,11 +11,26 @@ is compiled into the program:
   per layer when native FP4 is available, and decode (M statically <= 4)
   W4A16 against the W4A8 dp4a GEMV (int8 activations per 16 elements)
   otherwise on NVIDIA (W4A16 only on ROCm); ``w4a16`` forces BF16/FP16
-  activations, ``w4a8`` forces the W4A8 GEMV for decode (other M run W4A16;
-  NVIDIA only, it raises on ROCm), and ``w4a4`` forces FP4 activations (native
-  FP4 required).
+  activations, ``w4a8`` forces the W4A8 GEMV for decode (other M run BF16/FP16
+  activations, as ``w4a16``; NVIDIA only, it raises on ROCm), and ``w4a4``
+  forces FP4 activations (native FP4 required).
 * ``ET_CUDA_NVFP4_PREFILL_OUTPUT``: ``input`` (default) keeps the activation
   dtype; ``fp32`` returns FP32 from prefill linears (M not statically <= 4).
+* ``ET_CUDA_NVFP4_PREFILL_IMPL``: for M not statically <= 64, ``auto``
+  (default) uses the fused kernels with native FP4 (SM120+) and whole-weight
+  dequant + matmul otherwise (including ROCm); ``kernel`` / ``dequant`` force
+  one for any M not statically <= 4. ``w4a4`` and the FP32 prefill output
+  policy always take the fused kernels. The choice is made per linear at
+  export, from that linear's M bound (so one method can mix both: a dynamic
+  method's LM head over at most 64 selected rows stays fused), and ``auto``
+  assumes a dynamic-M method is exported with its largest
+  M as the example, as the Muse Glimmer and Gemma 4 prefill methods are: the
+  fused kernels are tuned at the example M, so short prompts run a large-M
+  tile (dequant + matmul is faster there on A100 and about 13% slower per
+  layer on H100, against 1.5-2x faster for long prompts). The DFlash packed
+  draft is traced with 2 context rows, so its dynamic linears dequantize
+  without that measurement. The variable applies to every method traced in
+  the process; set ``kernel`` to keep the fused kernels for all of them.
 """
 
 import os
@@ -34,6 +49,7 @@ from executorch.backends.cuda.quantize_op_dispatch._gemm_family_dispatch import 
 )
 from executorch.backends.cuda.triton.kernels.nvfp4_output import (
     NVFP4_DECODE_MAX_ROWS,
+    NVFP4_FUSED_PREFILL_MAX_ROWS,
     nvfp4_prefill_output_dtype,
 )
 from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
@@ -231,6 +247,50 @@ def nvfp4_auto_gate_up_prefill(
     )
 
 
+def _prefill_impl():
+    impl = os.environ.get("ET_CUDA_NVFP4_PREFILL_IMPL", "auto")
+    if impl not in ("auto", "kernel", "dequant"):
+        raise ValueError("ET_CUDA_NVFP4_PREFILL_IMPL must be auto, kernel or dequant")
+    return impl
+
+
+def _dequant_prefill(flat, mode, output_dtype, impl):
+    """Whether an NVFP4 linear takes whole-weight dequant + F.linear.
+
+    auto (default): only without native FP4 (SM120+) and for M not statically
+    <= ``NVFP4_FUSED_PREFILL_MAX_ROWS``, where the dense matmul beats in-register
+    dequant for dynamic M (measured; static M above it was not); smaller M
+    keep the fused kernels, which read the packed weight once. Decided per
+    linear at export, from its M's upper bound.
+    """
+    rows = flat.shape[0]
+    if (
+        mode == "w4a4"
+        or output_dtype is not None
+        or statically_known_true(rows <= NVFP4_DECODE_MAX_ROWS)
+    ):
+        return False
+    if impl == "auto":
+        return not _has_native_fp4() and not statically_known_true(
+            rows <= NVFP4_FUSED_PREFILL_MAX_ROWS
+        )
+    return impl == "dequant"
+
+
+def _dequant_linear(flat, w):
+    """Whole-weight dequant + F.linear, chunked along N for huge weights."""
+    from executorch.backends.cuda.triton.kernels.nvfp4_dequant import nvfp4_dequant
+
+    def rows(i, j):
+        part = _weight_rows(w, slice(i, j))
+        dense = nvfp4_dequant(
+            part.qdata, part.scale, part.per_tensor_scale, output_dtype=flat.dtype
+        )
+        return F.linear(flat, dense)
+
+    return chunked_dequant_linear(flat, w.shape[0], rows)
+
+
 @torch.library.custom_op("triton::nvfp4_gated_linear", mutates_args={})
 def nvfp4_gated_linear(x: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
     """Gated projection ``silu(x @ gate.T) * (x @ up.T)`` of a CudaNVFP4Tensor.
@@ -240,8 +300,9 @@ def nvfp4_gated_linear(x: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
     in the same order), so N must be even. With native FP4 and BF16 (or FP32
     under the FP32 prefill policy) activations, outside ``w4a16``/``w4a8``, it
     runs the fused kernels (in ``auto`` only for M not statically <=
-    ``NVFP4_DECODE_MAX_ROWS``, whose decode kernels ``F.linear`` times);
-    otherwise it is ``F.linear`` (NVFP4 dispatch) followed by SiLU-gating.
+    ``NVFP4_DECODE_MAX_ROWS``, whose decode kernels ``F.linear`` times) unless
+    ``F.linear`` would take dequant + matmul; otherwise it is ``F.linear``
+    (NVFP4 dispatch) followed by SiLU-gating.
 
     The weight stays an op argument until subclass decomposition: accessing a
     parametrized NVFP4 weight's fields in a model forward makes Dynamo capture
@@ -264,6 +325,7 @@ def _gated_linear(func, types, args, kwargs):
     mode = os.environ.get("ET_CUDA_NVFP4_ACT", "auto")
     if mode not in _ACT_MODES:
         raise ValueError(f"ET_CUDA_NVFP4_ACT must be one of {_ACT_MODES}")
+    impl = _prefill_impl()
     flat = x.reshape(-1, x.shape[-1]).contiguous()
     output_dtype = nvfp4_prefill_output_dtype(flat)
     # FP32 activations take the fused kernels only under the FP32 prefill
@@ -274,6 +336,7 @@ def _gated_linear(func, types, args, kwargs):
             mode != "w4a4"
             and statically_known_true(flat.shape[0] <= NVFP4_DECODE_MAX_ROWS)
         )
+        or _dequant_prefill(flat, mode, output_dtype, impl)
         or (
             x.dtype != torch.bfloat16
             and not (x.dtype == torch.float32 and output_dtype == torch.float32)
@@ -319,6 +382,7 @@ def _linear(func, types, args, kwargs):
     mode = os.environ.get("ET_CUDA_NVFP4_ACT", "auto")
     if mode not in _ACT_MODES:
         raise ValueError(f"ET_CUDA_NVFP4_ACT must be one of {_ACT_MODES}")
+    impl = _prefill_impl()
     if x.shape[-1] != w.shape[-1]:
         raise RuntimeError("NVFP4 linear input and weight K dimensions must match")
     flat = x.reshape(-1, x.shape[-1]).contiguous()
@@ -377,6 +441,8 @@ def _linear(func, types, args, kwargs):
             out = nvfp4_gemv(
                 flat, w.qdata, w.scale, w.per_tensor_scale, unit_scale=w.unit_scale
             )
+        elif _dequant_prefill(flat, mode, output_dtype, impl):
+            out = _dequant_linear(flat, w)
         elif mode != "auto" or not _has_native_fp4():
             out = nvfp4_w4a16(
                 flat, w.qdata, w.scale, w.per_tensor_scale, output_dtype=output_dtype

@@ -39,7 +39,7 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.fixture(autouse=True)
-def cold_pick_cache():
+def cold_pick_cache(monkeypatch):
     clear_launch_param_cache()
     # Tile picks live in each kernel's triton.autotune cache: without native
     # FP4, decode-size auto would reuse the GEMV tiles earlier cases tuned and
@@ -48,6 +48,12 @@ def cold_pick_cache():
         for value in vars(module).values():
             if isinstance(value, triton.runtime.Autotuner):
                 value.cache.clear()
+    for name in (
+        "ET_CUDA_NVFP4_ACT",
+        "ET_CUDA_NVFP4_PREFILL_OUTPUT",
+        "ET_CUDA_NVFP4_PREFILL_IMPL",
+    ):
+        monkeypatch.delenv(name, raising=False)
 
 
 @pytest.mark.parametrize(
@@ -176,6 +182,59 @@ def test_packed_linear_pte(mode, m, dynamic, fp32, monkeypatch):  # noqa: C901
                     result, reference(value), rtol=0.03, atol=0.03
                 )
     torch.testing.assert_close(actual.cpu(), reference(x), rtol=0.03, atol=0.03)
+
+
+def test_dequant_prefill_pte(monkeypatch):
+    """Dynamic M past the M <= 64 bucket: dequant + matmul prefill (the
+    non-native dispatch, on any GPU), which auto and dequant both trace; the
+    program is lowered and run once."""
+    from executorch.backends.cuda.quantize_op_dispatch import nvfp4_dispatch
+
+    monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: False)
+    monkeypatch.setenv("ET_CUDA_NVFP4_ACT", "w4a16")
+    monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_OUTPUT", "input")
+    module = PackedLinear().eval()
+    x = torch.randn(100, 192, dtype=torch.bfloat16)
+    for impl in ("auto", "dequant"):
+        monkeypatch.setenv("ET_CUDA_NVFP4_PREFILL_IMPL", impl)
+        ep = torch.export.export(
+            module,
+            (x,),
+            dynamic_shapes=({0: torch.export.Dim("tokens", min=1, max=256)},),
+            strict=True,
+        )
+        targets = {str(node.target) for node in ep.graph.nodes}
+        assert "triton.nvfp4_dequant.default" in targets, impl
+    lowered = to_edge_transform_and_lower(
+        ep,
+        partitioner=[
+            CudaPartitioner([CudaBackend.generate_method_name_compile_spec("forward")])
+        ],
+        compile_config=EdgeCompileConfig(_check_ir_validity=False),
+    ).to_executorch()
+    from executorch.export.utils import is_fbcode
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "nvfp4.pte"
+        with path.open("wb") as f:
+            lowered.write_to_file(f)
+        lowered.write_tensor_data_to_file(tmp)
+        data = next(Path(tmp).glob("*.ptd"))
+        if is_fbcode():
+            # The in-process runtime in fbcode has no CUDA backend.
+            return
+        from executorch.runtime import Runtime
+
+        method = (
+            Runtime.get()
+            .load_program(str(path), data_path=str(data))
+            .load_method("forward")
+        )
+        for rows in [1, 5, 64, 65, 100, 256]:
+            value = torch.randn(rows, 192, dtype=x.dtype)
+            expected = F.linear(value, module.weight.dequantize(), module.bias)
+            actual = method.execute([value])[0].cpu()
+            torch.testing.assert_close(actual, expected, rtol=0.03, atol=0.03)
 
 
 @pytest.mark.parametrize("mode", ["w4a16", "w4a4"])
