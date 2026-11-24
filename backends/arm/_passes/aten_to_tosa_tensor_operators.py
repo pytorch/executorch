@@ -11,7 +11,6 @@ from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import
     get_input_qparams,
     get_output_qparams,
 )
-from executorch.backends.arm._passes.tosa_lowering_utils import create_const
 from executorch.backends.transforms.aten_to_dialect_pass import (
     AtenToDialectPass,
     DialectNodeSpec,
@@ -35,9 +34,7 @@ def rewrite_rfft2(node: Node, pass_: AtenToDialectPass) -> DialectNodeSpec | Non
 
 
 def rewrite_mul(node: Node, pass_: AtenToDialectPass) -> DialectNodeSpec:
-    with node.graph.inserting_before(node):
-        shift = create_const(node.graph, 0, torch.int8, node)
-    return DialectNodeSpec(exir_ops.backend.tosa.MUL.default, (*node.args, shift), {})
+    return DialectNodeSpec(exir_ops.backend.tosa.MUL.default, (*node.args, 0), {})
 
 
 def rewrite_negate(node: Node, pass_: AtenToDialectPass) -> DialectNodeSpec:
@@ -47,12 +44,9 @@ def rewrite_negate(node: Node, pass_: AtenToDialectPass) -> DialectNodeSpec:
     if dtype == torch.int8:
         input_zp = get_input_qparams(node)[0].get_zp_per_tensor()
         output_zp = get_output_qparams(node)[0].get_zp_per_tensor()
-    with node.graph.inserting_before(node):
-        input_zero_point = create_const(node.graph, input_zp, dtype, input_node)
-        output_zero_point = create_const(node.graph, output_zp, dtype, input_node)
     return DialectNodeSpec(
         exir_ops.backend.tosa.NEGATE.default,
-        (input_node, input_zero_point, output_zero_point),
+        (input_node, input_zp, output_zp),
         {},
     )
 
