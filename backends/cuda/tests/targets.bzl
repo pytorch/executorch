@@ -852,3 +852,52 @@ def define_common_targets(is_fbcode = False):
         ),
         test_rule = python_pytest,
     )
+
+    python_unittest_remote_gpu(
+        name = "test_nvfp4_kv_cache",
+        srcs = [
+            "test_nvfp4_kv_cache.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            ":nvfp4_test_utils",
+            "//caffe2:torch",
+            "//executorch/backends/cuda:cuda_backend",
+            "//executorch/backends/cuda:cuda_partitioner",
+            "//executorch/backends/cuda:cuda_passes",
+            "//executorch/backends/cuda:triton_kernels",
+            "//executorch/exir:lib",
+            "//executorch/export:export_utils",
+            "//executorch/runtime:runtime",
+            "fbsource//third-party/pypi/pytest:pytest",
+        ],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+            subplatform = "A100",
+        ),
+        test_rule = python_pytest,
+    )
+
+    python_unittest_remote_gpu(
+        name = "test_nvfp4_kv_bitexact",
+        srcs = [
+            "test_nvfp4_kv_bitexact.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/cuda:triton_kernels",
+            "fbsource//third-party/pypi/pytest:pytest",
+        ],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+            subplatform = "A100",
+        ),
+        test_rule = python_pytest,
+    )

@@ -765,14 +765,17 @@ def cuda_source_transformations(
     model: nn.Module,
     *,
     use_turboquant: bool = False,
+    use_nvfp4_kv_cache: bool = False,
 ) -> None:
     """Apply CUDA source transformations to a Muse Glimmer model in place.
 
     First swaps fused NVFP4 gate/up MLPs for ``CudaNVFP4MLP`` (the fused
-    gated kernel; ``source_transformations/nvfp4.py``). Always bounds global-attention SDPA to the valid context via a runtime
-    ``kv_len`` (O(context) decode). Optionally also swaps the global KV caches
-    for TurboQuant TQ4. Sliding-window layers are untouched in both cases (they
-    already use a bounded ring buffer).
+    gated kernel; ``source_transformations/nvfp4.py``). With
+    ``use_nvfp4_kv_cache`` every layer, sliding-window ones included, gets an
+    NVFP4 KV cache. Otherwise global-attention SDPA is bounded to the valid
+    context via a runtime ``kv_len`` (O(context) decode), and optionally the
+    global KV caches become TurboQuant TQ4; sliding-window layers are
+    untouched in both cases (they already use a bounded ring buffer).
 
     Args:
         model: ``MuseGlimmerModel`` instance to transform.
@@ -781,6 +784,9 @@ def cuda_source_transformations(
             their attention through ``torch.ops.triton.tq4_sdpa``. When False,
             keep the bf16 ``FlatKVCache`` but route global attention through the
             length-aware ``torch.ops.triton.sdpa``.
+        use_nvfp4_kv_cache: When True, every layer's KV cache becomes an
+            ``NVFP4KVCache`` read by ``torch.ops.triton.nvfp4_sdpa`` (see
+            ``source_transformations/nvfp4_kv.py``); excludes TurboQuant.
     """
     from executorch.examples.models.muse_glimmer.source_transformations.nvfp4 import (
         install_nvfp4_gate_up_epilogues,
@@ -789,6 +795,15 @@ def cuda_source_transformations(
     nvfp4_epilogues = install_nvfp4_gate_up_epilogues(model)
     if nvfp4_epilogues:
         print(f"[muse_glimmer cuda] NVFP4 gate/up epilogues: {nvfp4_epilogues}")
+    if use_nvfp4_kv_cache:
+        if use_turboquant:
+            raise ValueError("The NVFP4 KV cache and TurboQuant are exclusive")
+        from executorch.examples.models.muse_glimmer.source_transformations.nvfp4_kv import (
+            install_nvfp4_kv_cache,
+        )
+
+        install_nvfp4_kv_cache(model)
+        return
     if not use_turboquant:
         # Non-TurboQuant path: keep the bf16 FlatKVCache but bound global
         # attention to the valid context via a runtime kv_len scalar (routes
