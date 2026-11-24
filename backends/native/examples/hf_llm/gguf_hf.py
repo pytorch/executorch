@@ -262,6 +262,14 @@ _GEMMA4_BLOCK = {
     "ffn_down.weight": "mlp.down_proj.weight",
     "post_ffw_norm.weight": "post_feedforward_layernorm.weight",
     "layer_output_scale.weight": "layer_scalar",
+    "ffn_gate_inp.weight": "router.proj.weight",
+    "ffn_gate_inp.scale": "router.scale",
+    "ffn_down_exps.scale": "router.per_expert_scale",
+    "ffn_gate_up_exps.weight": "experts.gate_up_proj",
+    "ffn_down_exps.weight": "experts.down_proj",
+    "pre_ffw_norm_2.weight": "pre_feedforward_layernorm_2.weight",
+    "post_ffw_norm_1.weight": "post_feedforward_layernorm_1.weight",
+    "post_ffw_norm_2.weight": "post_feedforward_layernorm_2.weight",
 }
 _GEMMA4_MODEL = {
     "token_embd.weight": "model.embed_tokens.weight",
