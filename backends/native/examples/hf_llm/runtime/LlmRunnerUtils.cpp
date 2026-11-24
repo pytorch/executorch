@@ -201,4 +201,14 @@ Closeness compare_close(
   return result;
 }
 
+bool kv_cache_in_half(std::string_view kv_dtype, bool default_half) {
+  if (kv_dtype == "auto") {
+    return default_half;
+  }
+  if (kv_dtype != "fp16" && kv_dtype != "fp32") {
+    throw std::invalid_argument("--kv_dtype must be auto, fp32 or fp16");
+  }
+  return kv_dtype == "fp16";
+}
+
 } // namespace ptn

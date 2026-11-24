@@ -96,3 +96,16 @@ def define_common_targets():
             visibility = ["//executorch/backends/native/..."],
             **compat
         )
+
+        # The command-line flags the ggml runners share.
+        runtime.cxx_library(
+            name = "ggml_engine_flags_" + variant,
+            srcs = ["ggml/GgmlEngineFlags.cpp"],
+            exported_headers = ["ggml/GgmlEngineFlags.h"],
+            exported_deps = [":ggml_engine_" + variant],
+            external_deps = ["gflags"],
+            labels = ggml_ci_labels(variant),
+            platforms = None if variant == "cpu" else [CXX],
+            visibility = ["//executorch/backends/native/..."],
+            **compat
+        )

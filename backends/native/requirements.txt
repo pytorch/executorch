@@ -1,0 +1,7 @@
+# Python packages that Native's export tools, e.g. examples/hf_llm, need on top
+# of ExecuTorch. Native needs a newer transformers than requirements-examples.txt.
+gguf
+# ExecuTorch's install_requirements.py picks torchao's build (nightly, stable or
+# third-party/ao); listed for installs without it, unpinned so as not to fight it.
+torchao
+transformers == 5.20.0

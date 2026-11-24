@@ -183,7 +183,16 @@ class CPUEngineExecutable final : public EngineExecutable {
         buffers_,
         std::move(configuration),
         cpu::current_execution_context());
-    check_error(plan_->select(), "provider selection");
+    const auto selection = plan_->select();
+    if (selection != executorch::runtime::Error::Ok &&
+        !plan_->unsupported_operator().empty()) {
+      throw std::runtime_error(
+          "cpu: provider selection failed (error " +
+          std::to_string(static_cast<uint32_t>(selection)) +
+          "): no linked CPU implementation accepts " +
+          plan_->unsupported_operator());
+    }
+    check_error(selection, "provider selection");
     for (const auto& binding : method_.data_bindings) {
       buffers_.at(binding.value_id) = constants.acquire(
           package, binding.key, plan_->requirements().at(binding.value_id));
@@ -298,6 +307,7 @@ class CPUEngineExecutable final : public EngineExecutable {
 
 } // namespace
 
+// cppcheck-suppress unusedFunction ; called by CPUEngine.cpp
 std::unique_ptr<EngineExecutable> create_cpu_engine_executable(
     const Method& method,
     const Package& package,

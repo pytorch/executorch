@@ -9,6 +9,7 @@ from executorch.backends.arm._passes import (
     PropagateViewCopyPermuteDownPass,
     PropagateViewCopyPermuteUpPass,
 )
+from executorch.backends.arm._passes.tosa_lowering_utils import create_rescale_node
 from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
     TosaSpecification,
@@ -27,7 +28,12 @@ def _apply_pass(graph: torch.fx.Graph) -> torch.fx.GraphModule:
 
 
 def _call_nodes(graph_module: torch.fx.GraphModule) -> list[torch.fx.Node]:
-    return [node for node in graph_module.graph.nodes if node.op == "call_function"]
+    return [
+        node
+        for node in graph_module.graph.nodes
+        if node.op == "call_function"
+        and node.target != exir_ops.backend.tosa.CONST.default
+    ]
 
 
 def test_moves_permute_after_narrowing_rescale() -> None:
@@ -36,7 +42,7 @@ def test_moves_permute_after_narrowing_rescale() -> None:
     x.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
     permute = graph.call_function(PERMUTE, args=(x, [0, 2, 3, 1]))
     permute.meta["val"] = torch.empty((1, 3, 4, 2), dtype=torch.int32)
-    rescale = graph.call_function(RESCALE, args=(permute, torch.int8, [1.0], 0, 0))
+    rescale = create_rescale_node(graph, args=(permute, torch.int8, [1.0], 0, 0))
     rescale.meta["val"] = torch.empty((1, 3, 4, 2), dtype=torch.int8)
     graph.output(rescale)
 
@@ -53,7 +59,7 @@ def test_moves_permute_before_widening_rescale() -> None:
     graph = torch.fx.Graph()
     x = graph.placeholder("x")
     x.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int8)
-    rescale = graph.call_function(RESCALE, args=(x, torch.int32, [1.0], 0, 0))
+    rescale = create_rescale_node(graph, args=(x, torch.int32, [1.0], 0, 0))
     rescale.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
     permute = graph.call_function(PERMUTE, args=(rescale, [0, 2, 3, 1]))
     permute.meta["val"] = torch.empty((1, 3, 4, 2), dtype=torch.int32)
@@ -74,7 +80,7 @@ def test_keeps_per_channel_rescale_order() -> None:
     x.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
     permute = graph.call_function(PERMUTE, args=(x, [0, 2, 3, 1]))
     permute.meta["val"] = torch.empty((1, 3, 4, 2), dtype=torch.int32)
-    rescale = graph.call_function(RESCALE, args=(permute, torch.int8, [1.0, 2.0], 0, 0))
+    rescale = create_rescale_node(graph, args=(permute, torch.int8, [1.0, 2.0], 0, 0))
     rescale.meta["val"] = torch.empty((1, 3, 4, 2), dtype=torch.int8)
     graph.output(rescale)
 
@@ -89,9 +95,9 @@ def test_splits_merged_permute_at_distinct_narrowing_rescales() -> None:
     x.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
     permute = graph.call_function(PERMUTE, args=(x, [0, 2, 3, 1]))
     permute.meta["val"] = torch.empty((1, 3, 4, 2), dtype=torch.int32)
-    rescale_1 = graph.call_function(RESCALE, args=(permute, torch.int8, [1.0], 0, 0))
+    rescale_1 = create_rescale_node(graph, args=(permute, torch.int8, [1.0], 0, 0))
     rescale_1.meta["val"] = torch.empty((1, 3, 4, 2), dtype=torch.int8)
-    rescale_2 = graph.call_function(RESCALE, args=(permute, torch.int8, [2.0], 0, 0))
+    rescale_2 = create_rescale_node(graph, args=(permute, torch.int8, [2.0], 0, 0))
     rescale_2.meta["val"] = torch.empty((1, 3, 4, 2), dtype=torch.int8)
     graph.output((rescale_1, rescale_2))
     graph_module = torch.fx.GraphModule(torch.nn.Module(), graph)
