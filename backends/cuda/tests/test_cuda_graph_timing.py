@@ -105,12 +105,12 @@ class CudaGraphTimingTest(unittest.TestCase):
         sizes_during_capture = []
         real = cgt.time_with_cuda_graph_us
 
-        def flaky(fn):
+        def flaky(fn, **kwargs):
             if len(sizes_during_capture) < 2:
                 sizes_during_capture.append(weights.untyped_storage().nbytes())
                 raise torch.OutOfMemoryError("simulated")
             sizes_during_capture.append(weights.untyped_storage().nbytes())
-            return real(fn)
+            return real(fn, **kwargs)
 
         y = torch.zeros(16, device="cuda")
         with mock.patch.object(cgt, "time_with_cuda_graph_us", side_effect=flaky):
@@ -125,7 +125,7 @@ class CudaGraphTimingTest(unittest.TestCase):
         self.assertEqual(alias.data_ptr(), weights.data_ptr())
 
     def test_oom_with_nothing_to_park_falls_back_without_parking(self) -> None:
-        def oom(fn):
+        def oom(fn, **_):
             raise torch.OutOfMemoryError("simulated")
 
         emptied = torch.empty(16, device="cuda")
@@ -151,7 +151,7 @@ class CudaGraphTimingTest(unittest.TestCase):
                         raise error
                     real(storage, host)
 
-                def oom(fn):
+                def oom(fn, **_):
                     raise torch.OutOfMemoryError("simulated")
 
                 y = torch.zeros(16, device="cuda")
