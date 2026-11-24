@@ -571,18 +571,31 @@ void CudaKVPool::invalidate_bindings() {
 
 Error CudaKVPool::resize_columns(
     int columns,
+    const std::vector<std::pair<int, int>>& retained_columns,
     int64_t live_rows,
     cudaStream_t stream,
     int min_columns) {
   min_columns = min_columns > 0 ? min_columns : columns;
   ET_CHECK_OR_RETURN_ERROR(
-      declared_columns_ > 1 && columns >= columns_ &&
-          columns <= declared_columns_ && min_columns >= 2 &&
-          min_columns <= columns && live_rows >= 0,
+      declared_columns_ > 1 && columns >= 2 && columns <= declared_columns_ &&
+          min_columns >= 2 && min_columns <= columns && live_rows >= 0,
       InvalidArgument,
       "offgraph_kv: invalid physical columns %d/%d",
       columns,
       declared_columns_);
+  std::unordered_set<int> sources;
+  std::unordered_set<int> destinations;
+  bool relocate = false;
+  for (const auto& [from, to] : retained_columns) {
+    ET_CHECK_OR_RETURN_ERROR(
+        from >= 0 && from < columns_ - 1 && to >= 0 && to < min_columns - 1 &&
+            sources.insert(from).second && destinations.insert(to).second,
+        InvalidArgument,
+        "offgraph_kv: invalid retained column %d->%d",
+        from,
+        to);
+    relocate |= from != to;
+  }
   for (const Layer& layer : layers_) {
     ET_CHECK_OR_RETURN_ERROR(
         layer.growable && layer.declared_rows % declared_columns_ == 0,
@@ -595,7 +608,7 @@ Error CudaKVPool::resize_columns(
     columns_ = columns;
     return Error::Ok;
   }
-  if (columns == columns_) {
+  if (columns == columns_ && !relocate) {
     return Error::Ok;
   }
   const auto device = CUDAGuard::create(device_);
@@ -636,11 +649,11 @@ Error CudaKVPool::resize_columns(
     return Error::Ok;
   };
   // Only the replacement storage is probed: the copy and the commit below run
-  // once, at the widest width that fits. Growth never falls back to the
-  // current width.
+  // once, at the widest width that fits. Only growth falls back, and never to
+  // the current width.
   const auto width = allocate_widest(
       columns,
-      std::max(min_columns, old_columns + 1),
+      columns > old_columns ? std::max(min_columns, old_columns + 1) : columns,
       allocate,
       release_replacements);
   if (!width.ok()) {
@@ -657,29 +670,30 @@ Error CudaKVPool::resize_columns(
     if (logical_rows == 0) {
       continue;
     }
-    for (const auto& [dst, src] :
-         {std::pair{replacement.k, current.k},
-          std::pair{replacement.v, current.v}}) {
-      const cudaError_t error = cudaMemcpy2DAsync(
-          dst,
-          slot * columns,
-          src,
-          slot * old_columns,
-          slot * (old_columns - 1),
-          logical_rows,
-          cudaMemcpyDeviceToDevice,
-          stream);
-      if (error != cudaSuccess) {
-        ET_LOG(
-            Error,
-            "offgraph_kv: column copy failed: %s",
-            cudaGetErrorString(error));
-        roll_back();
-        return Error::Internal;
+    for (const auto& [from, to] : retained_columns) {
+      for (const auto& [dst, src] :
+           {std::pair{replacement.k, current.k},
+            std::pair{replacement.v, current.v}}) {
+        const cudaError_t error = cudaMemcpy2DAsync(
+            static_cast<uint8_t*>(dst) + slot * to,
+            slot * columns,
+            static_cast<const uint8_t*>(src) + slot * from,
+            slot * old_columns,
+            slot,
+            logical_rows,
+            cudaMemcpyDeviceToDevice,
+            stream);
+        if (error != cudaSuccess) {
+          ET_LOG(
+              Error,
+              "offgraph_kv: column copy failed: %s",
+              cudaGetErrorString(error));
+          roll_back();
+          return Error::Internal;
+        }
       }
     }
   }
-
   const cudaError_t synchronize_error = cudaStreamSynchronize(stream);
   if (synchronize_error != cudaSuccess) {
     ET_LOG(
@@ -701,10 +715,11 @@ Error CudaKVPool::resize_columns(
   column_resize_count_++;
   ET_LOG(
       Info,
-      "offgraph_kv: resized columns=%d->%d "
+      "offgraph_kv: resized columns=%d->%d live_columns=%zu "
       "allocated_bytes=%lld column_resize_count=%lld",
       old_columns,
       columns_,
+      retained_columns.size(),
       static_cast<long long>(allocated_bytes_),
       static_cast<long long>(column_resize_count_));
   return Error::Ok;

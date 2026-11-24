@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -101,6 +102,16 @@ class CudaKVCache {
   // Read between executes under the executor's engine-thread contract.
   virtual CudaGraphMetrics graph_metrics(std::string_view) const {
     return {};
+  }
+
+  // Reclaim only columns without live owners, between forwards. Live owners
+  // retain their histories even if they have not run recently.
+  // quiet_for is measured from mutations of the cache itself, including raw
+  // owner operations. Zero explicitly bypasses the quiet interval.
+  virtual runtime::Error compact_columns(
+      int /*spare_columns*/,
+      std::chrono::milliseconds /*quiet_for*/ = std::chrono::milliseconds{0}) {
+    return runtime::Error::NotSupported;
   }
 };
 

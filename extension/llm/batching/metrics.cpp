@@ -83,6 +83,10 @@ std::string format_report(const EngineMetrics& m) {
     os << "  init         " << detail::ms(m.init_us)
        << " ms executor setup, before the wall above\n";
   }
+  if (m.idle_maintenance_failures > 0) {
+    os << "  maintenance  " << m.idle_maintenance_failures
+       << " idle failures\n";
+  }
   os << "  generations  " << m.generations_completed << " of "
      << m.generations_started << ": " << m.finished_stop_token << " stop, "
      << m.finished_token_limit << " limit, " << m.finished_cancelled

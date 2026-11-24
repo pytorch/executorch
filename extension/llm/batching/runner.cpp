@@ -458,7 +458,7 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
       AcceptsCommand>;
 
   void run_();
-  void process_pending_commands_();
+  bool process_pending_commands_();
   void process_command_(OpenCommand command);
   void process_command_(CloseCommand command);
   void process_command_(CloneCommand command);
@@ -790,11 +790,30 @@ void RunnerImpl::run_() {
     lifecycle_.store(Lifecycle::Stopping, std::memory_order_release);
   }
 
+  bool idle_maintenance_enabled = true;
   while (is_running_()) {
-    process_pending_commands_();
+    if (process_pending_commands_()) {
+      idle_maintenance_enabled = true;
+    }
     reap_cancelled_();
     if (execute_one_batch_()) {
+      idle_maintenance_enabled = true;
       continue; // more work may be ready
+    }
+    if (idle_maintenance_enabled) {
+      bool maintained = false;
+#if ET_HAS_EXCEPTIONS
+      try {
+#endif
+        maintained = executor_.on_idle();
+#if ET_HAS_EXCEPTIONS
+      } catch (...) {
+      }
+#endif
+      if (!maintained) {
+        ++metrics_.idle_maintenance_failures;
+        idle_maintenance_enabled = false;
+      }
     }
     std::unique_lock<std::mutex> lock(control_mutex_);
     engine_cv_.wait_for(lock, std::chrono::milliseconds(20), [this] {
@@ -855,13 +874,15 @@ void RunnerImpl::reap_cancelled_() {
   }
 }
 
-void RunnerImpl::process_pending_commands_() {
+bool RunnerImpl::process_pending_commands_() {
   std::vector<Command> commands;
   {
     std::lock_guard<std::mutex> lock(control_mutex_);
     commands.swap(inbox_);
   }
+  bool closed_owner = false;
   for (auto& command : commands) {
+    closed_owner |= std::holds_alternative<CloseCommand>(command);
     std::visit(
         Overloaded{
             [this](OpenCommand& open) { process_command_(std::move(open)); },
@@ -873,6 +894,7 @@ void RunnerImpl::process_pending_commands_() {
             }},
         command);
   }
+  return closed_owner;
 }
 
 void RunnerImpl::process_command_(OpenCommand command) {

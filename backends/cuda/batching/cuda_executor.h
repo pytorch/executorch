@@ -18,6 +18,7 @@
 // runs the method with the smallest width that holds it; a static method's
 // extra rows are padding.
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -88,6 +89,9 @@ struct CudaExecutorConfig {
   int max_session_tokens = 0;
   int kv_dtype = static_cast<int>(::executorch::aten::ScalarType::BFloat16);
   int initial_capacity = -1;
+  // A quiet interval before reclaiming unused physical columns. This never
+  // expires an open session; zero allows maintenance at the next idle check.
+  std::chrono::milliseconds kv_column_compaction_delay{500};
   CudaExecutorOptions options;
 };
 
@@ -230,6 +234,9 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
   OffGraphKVMetrics kv_metrics() const;
   // Sequence-layout counters; read between executes, on the engine thread.
   CudaGraphMetrics graph_metrics(std::string_view method) const;
+  // Explicit compaction preserves every live owner, even inactive sessions.
+  ::executorch::runtime::Error compact_kv_columns(int spare_columns = 1);
+  bool on_idle() override;
   // Every method, narrowest first, with how many forwards it ran. Read it
   // between executes, not while one runs.
   std::vector<ForwardMethodCalls> method_calls() const;
@@ -254,7 +261,8 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
       std::vector<ForwardMethod> methods,
       int min_selected_rows,
       bool has_sampler,
-      bool has_argmax);
+      bool has_argmax,
+      std::chrono::milliseconds column_compaction_delay);
 
   // Draws one token per row of `logits`, rows [0, sessions.size()), on the
   // device; returns them in row order.
@@ -275,7 +283,7 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
   llm_cache::InstallGuard install_guard_;
   std::unique_ptr<::executorch::extension::Module> module_;
   llm_cache::BatchControl* const ctl_;
-  const CudaKVCache* const kv_;
+  CudaKVCache* const kv_;
   std::string backend_id_;
   std::int32_t vocab_size_;
   int max_session_tokens_;
@@ -303,6 +311,7 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
   std::optional<bool> device_logits_;
   bool initialized_ = false;
   bool raw_executing_ = false;
+  const std::chrono::milliseconds column_compaction_delay_;
 };
 
 } // namespace executorch::backends::cuda::batching

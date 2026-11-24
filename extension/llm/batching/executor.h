@@ -86,6 +86,13 @@ class ET_EXPERIMENTAL Executor {
     return 0;
   }
 
+  // Engine-thread maintenance between batches, outside the Runner's control
+  // mutex. A false result pauses retries until another batch or owner closure;
+  // it must preserve every still-open session.
+  virtual bool on_idle() {
+    return true;
+  }
+
   // A session to route tasks to. nullopt = at capacity. Every successful id
   // must be unique for the lifetime of the consuming Runner, even after close.
   virtual std::optional<SessionId> open_session() = 0;

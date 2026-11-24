@@ -379,6 +379,133 @@ TEST(GenerationHandleTest, DefaultHandleIsInvalid) {
   handle.wait();
 }
 
+TEST(RunnerMaintenanceTest, IdleHookRunsBetweenBatchesOnTheEngineThread) {
+  class IdleExecutor : public FakeExecutor {
+   public:
+    bool on_idle() override {
+      EXPECT_FALSE(in_execute());
+      EXPECT_NE(std::this_thread::get_id(), caller);
+      ++idle_calls;
+      return true;
+    }
+    const std::thread::id caller = std::this_thread::get_id();
+    std::atomic<int> idle_calls{0};
+  } executor;
+  Fixture fixture(executor);
+  Session session = open(fixture.runner);
+  executor.hold();
+  auto updates = std::make_shared<Updates>();
+  auto handle = generate(session, tokens(1), config(1), updates);
+  const auto deadline = std::chrono::steady_clock::now() + kTimeout;
+  while (!executor.in_execute() &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::yield();
+  }
+  EXPECT_TRUE(executor.in_execute());
+  const int idle_calls = executor.idle_calls.load();
+  std::this_thread::sleep_for(std::chrono::milliseconds(40));
+  EXPECT_EQ(executor.idle_calls.load(), idle_calls);
+  executor.release();
+  ASSERT_TRUE(updates->wait());
+  handle.wait();
+  while (executor.idle_calls.load() == idle_calls &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::yield();
+  }
+  EXPECT_GT(executor.idle_calls.load(), idle_calls);
+}
+
+TEST(RunnerMaintenanceTest, FailedIdleHookWaitsForAnotherBatchBeforeRetrying) {
+  executorch::runtime::runtime_init();
+  class IdleExecutor : public FakeExecutor {
+   public:
+    bool on_idle() override {
+      ++idle_calls;
+      return false;
+    }
+    std::atomic<int> idle_calls{0};
+  } executor;
+  Fixture fixture(executor);
+  const auto deadline = std::chrono::steady_clock::now() + kTimeout;
+  while (executor.idle_calls.load() == 0 &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::yield();
+  }
+  ASSERT_EQ(executor.idle_calls.load(), 1);
+  std::this_thread::sleep_for(std::chrono::milliseconds(60));
+  EXPECT_EQ(executor.idle_calls.load(), 1);
+
+  Session session = open(fixture.runner);
+  auto updates = std::make_shared<Updates>();
+  auto handle = generate(session, tokens(1), config(1), updates);
+  ASSERT_TRUE(updates->wait());
+  handle.wait();
+  EXPECT_EQ(handle.finish_reason(), FinishReason::NewTokenLimit);
+  while (executor.idle_calls.load() < 2 &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::yield();
+  }
+  EXPECT_EQ(executor.idle_calls.load(), 2);
+  std::this_thread::sleep_for(std::chrono::milliseconds(60));
+  EXPECT_EQ(executor.idle_calls.load(), 2);
+  fixture.runner.shutdown();
+  EXPECT_EQ(fixture.runner.metrics().idle_maintenance_failures, 2u);
+}
+
+TEST(
+    RunnerMaintenanceTest,
+    OwnerClosureRearmsFailedMaintenanceWithoutAForward) {
+  class IdleExecutor : public FakeExecutor {
+   public:
+    bool on_idle() override {
+      ++idle_calls;
+      return false;
+    }
+    std::atomic<int> idle_calls{0};
+  } executor;
+  Fixture fixture(executor);
+  Session session = open(fixture.runner);
+  const auto deadline = std::chrono::steady_clock::now() + kTimeout;
+  while (executor.idle_calls.load() == 0 &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::yield();
+  }
+  ASSERT_EQ(executor.idle_calls.load(), 1);
+  session = Session{};
+  while (executor.idle_calls.load() < 2 &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::yield();
+  }
+  EXPECT_EQ(executor.idle_calls.load(), 2);
+  fixture.runner.shutdown();
+  EXPECT_EQ(fixture.runner.metrics().idle_maintenance_failures, 2u);
+}
+
+#if ET_HAS_EXCEPTIONS
+TEST(RunnerMaintenanceTest, ThrowingIdleHookIsReportedAndSuspended) {
+  executorch::runtime::runtime_init();
+  class IdleExecutor : public FakeExecutor {
+   public:
+    bool on_idle() override {
+      ++idle_calls;
+      throw std::runtime_error("idle maintenance failed");
+    }
+    std::atomic<int> idle_calls{0};
+  } executor;
+  Fixture fixture(executor);
+  const auto deadline = std::chrono::steady_clock::now() + kTimeout;
+  while (executor.idle_calls.load() == 0 &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::yield();
+  }
+  ASSERT_EQ(executor.idle_calls.load(), 1);
+  std::this_thread::sleep_for(std::chrono::milliseconds(60));
+  EXPECT_EQ(executor.idle_calls.load(), 1);
+  fixture.runner.shutdown();
+  EXPECT_EQ(fixture.runner.metrics().idle_maintenance_failures, 1u);
+}
+#endif
+
 TEST(GenerationHandleTest, MoveTransfersValidity) {
   FakeExecutor executor;
   Fixture fixture(executor);

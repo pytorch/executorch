@@ -14,6 +14,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
@@ -41,6 +42,11 @@ DEFINE_int32(initial_kv_capacity, 4, "Initial logical rows per column");
 namespace cb = executorch::backends::cuda::batching;
 using executorch::runtime::Error;
 using Json = nlohmann::json;
+
+DEFINE_int64(
+    kv_compaction_delay_ms,
+    500,
+    "Quiet interval before column compaction");
 
 namespace {
 
@@ -180,6 +186,8 @@ int main(int argc, char** argv) {
     config.max_sessions = FLAGS_max_sessions;
     config.max_session_tokens = FLAGS_max_context;
     config.initial_capacity = FLAGS_initial_kv_capacity;
+    config.kv_column_compaction_delay =
+        std::chrono::milliseconds(FLAGS_kv_compaction_delay_ms);
     config.options.cuda_graph_for_static_methods = true;
     auto created = cb::CudaExecutor::create(config);
     require(created.ok(), "create actual CUDA executor");
@@ -211,6 +219,20 @@ int main(int argc, char** argv) {
             request.at("seq_id").get<int32_t>(), request.at("upto").get<int>());
         require(id.has_value(), "clone owner");
         result["seq_id"] = *id;
+      } else if (op == "compact") {
+        require(
+            executor->compact_kv_columns(request.value("spare_columns", 0)) ==
+                executorch::runtime::Error::Ok,
+            "compact physical columns");
+      } else if (op == "wait") {
+        const int milliseconds = request.at("milliseconds").get<int>();
+        require(
+            milliseconds >= 0 && milliseconds <= 1000,
+            "bounded diagnostic wait");
+        std::this_thread::sleep_for(std::chrono::milliseconds(milliseconds));
+      } else if (op == "idle") {
+        result["maintained"] = executor->on_idle();
+        require(result["maintained"].get<bool>(), "idle maintenance");
       } else if (op == "step") {
         result = run_step(*executor, request);
       } else if (op != "metrics") {

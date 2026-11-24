@@ -93,14 +93,16 @@ class CudaKVPool final {
       int min_columns = 0);
 
   // Flattened row counts remain multiples of the current physical width.
-  // Copies the old owner columns in place; the scratch column is not retained.
-  // live_rows is the logical prefix, capped by each ring. Growth commits only
-  // after all copies pass; smaller widths are rejected. If `columns` runs out
-  // of memory, growth uses the widest width down to min_columns (0 = columns)
-  // that fits; columns() reports the result. Before allocation only the width
+  // Each pair is a retained old column and its new column. Dummy data is not
+  // retained. live_rows is the retained logical prefix, capped by each ring.
+  // Growth or contraction commits only after all retained copies pass. If
+  // growth to `columns` runs out of memory, it uses the widest width down to
+  // min_columns (0 = columns) that fits; columns() reports the result, and
+  // retained columns must fit min_columns. Before allocation only the width
   // is recorded, at `columns`.
   runtime::Error resize_columns(
       int columns,
+      const std::vector<std::pair<int, int>>& retained_columns,
       int64_t live_rows,
       cudaStream_t stream,
       int min_columns = 0);

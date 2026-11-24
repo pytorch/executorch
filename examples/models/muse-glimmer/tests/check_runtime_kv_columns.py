@@ -118,14 +118,21 @@ def commands() -> list[dict]:
     return requests
 
 
-def run(probe: Path, artifact: Path, preallocate: bool) -> tuple[dict, list[dict]]:
-    mode = "preallocated" if preallocate else "growing"
+def run(
+    probe: Path,
+    artifact: Path,
+    preallocate: bool,
+    custom_requests=None,
+    compaction_delay_ms=500,
+    label=None,
+) -> tuple[dict, list[dict]]:
+    mode = label or ("preallocated" if preallocate else "growing")
     output = Path(tempfile.mkdtemp(prefix=mode + "-", dir=artifact))
     prefix = []
     if preallocate:
         prefix.extend({"op": "new"} for _ in range(8))
         prefix.extend({"op": "remove", "seq_id": owner} for owner in range(8))
-    requests = prefix + commands()
+    requests = prefix + (commands() if custom_requests is None else custom_requests)
     completed = subprocess.run(
         [
             str(probe),
@@ -135,6 +142,7 @@ def run(probe: Path, artifact: Path, preallocate: bool) -> tuple[dict, list[dict
             "--max_sessions=8",
             "--max_context=64",
             "--initial_kv_capacity=4",
+            f"--kv_compaction_delay_ms={compaction_delay_ms}",
         ],
         input="".join(json.dumps(r) + "\n" for r in requests),
         text=True,
@@ -162,10 +170,129 @@ def run(probe: Path, artifact: Path, preallocate: bool) -> tuple[dict, list[dict
     return logits, responses[1 + len(prefix) :]
 
 
+def check_compaction(probe: Path, artifact: Path) -> None:
+    # A clone holds a wrapped history while every other owner is explicitly
+    # closed. Exercise both manual compaction and automatic idle policy.
+    requests = [
+        {"op": "new"},
+        {
+            "op": "step",
+            "tokens": list(range(32)),
+            "seq_ids": [0] * 32,
+            "select": [31],
+            "tag": "compact-prefill",
+        },
+        {
+            "op": "step",
+            "tokens": list(range(32, 48)),
+            "seq_ids": [0] * 16,
+            "select": [15],
+            "tag": "compact-wrap",
+        },
+        {"op": "clone", "seq_id": 0, "upto": 48},
+    ]
+    requests.extend({"op": "new"} for _ in range(6))
+    requests.append(
+        {
+            "op": "step",
+            "tokens": [13] * 8,
+            "seq_ids": list(range(8)),
+            "select": list(range(8)),
+            "tag": "compact-burst",
+        }
+    )
+    requests.append({"op": "idle", "tag": "all-open"})
+    requests.extend({"op": "remove", "seq_id": i} for i in (0, 2, 3, 4, 5, 6, 7))
+    requests.append({"op": "compact", "spare_columns": 0, "tag": "manual"})
+    for repeat in range(5):
+        requests.append(
+            {
+                "op": "step",
+                "tokens": [20 + repeat],
+                "seq_ids": [1],
+                "select": [0],
+                "tag": f"compact-before-{repeat}",
+            }
+        )
+    requests.extend({"op": "new"} for _ in range(7))
+    requests.append(
+        {
+            "op": "step",
+            "tokens": [14] * 7,
+            "seq_ids": [0, 2, 3, 4, 5, 6, 7],
+            "select": list(range(7)),
+            "tag": "compact-regrow",
+        }
+    )
+    requests.extend({"op": "remove", "seq_id": i} for i in (0, 2, 3, 4, 5, 6, 7))
+    requests.append({"op": "idle", "tag": "idle-before"})
+    requests.append({"op": "wait", "milliseconds": 600})
+    requests.append({"op": "idle", "tag": "idle-shrink"})
+    for repeat in range(5):
+        requests.append(
+            {
+                "op": "step",
+                "tokens": [30 + repeat],
+                "seq_ids": [1],
+                "select": [0],
+                "tag": f"compact-after-{repeat}",
+            }
+        )
+    for request in requests:
+        if request["op"] == "step":
+            request["save_logits"] = True
+    reference_requests = [
+        {"op": "metrics"} if r["op"] in ("compact", "idle") else r for r in requests
+    ]
+    fixed, _ = run(probe, artifact, True, reference_requests, label="compact-fixed")
+    for delay, before, expected, label in (
+        (0, 3, 3, "compact-immediate"),
+        (500, 9, 3, "compact-expiring"),
+        (60000, 9, 9, "compact-delayed"),
+    ):
+        actual, trace = run(probe, artifact, False, requests, delay, label)
+        assert fixed.keys() == actual.keys()
+        for tag in fixed:
+            assert np.isfinite(fixed[tag]).all() and np.isfinite(actual[tag]).all(), tag
+            np.testing.assert_array_equal(actual[tag], fixed[tag], err_msg=tag)
+        snapshots = {
+            r.get("tag"): response["snapshot"]
+            for r, response in zip(requests, trace, strict=True)
+            if "tag" in r
+        }
+        assert snapshots["all-open"]["live_sequences"] == 8
+        assert snapshots["all-open"]["physical_columns"] == 9
+        assert snapshots["manual"]["live_sequences"] == 1
+        assert snapshots["manual"]["physical_columns"] == 2
+        assert snapshots["idle-before"]["physical_columns"] == before
+        assert snapshots["idle-shrink"]["live_sequences"] == 1
+        assert snapshots["idle-shrink"]["physical_columns"] == expected
+        assert (
+            snapshots["manual"]["live_KV_bytes"]
+            < snapshots["all-open"]["live_KV_bytes"]
+        )
+        if expected == 3:
+            assert (
+                snapshots["idle-shrink"]["live_KV_bytes"]
+                < snapshots["compact-regrow"]["live_KV_bytes"]
+            )
+        graph = next(
+            m
+            for m in trace[-1]["snapshot"]["method_calls"]
+            if m["method"] == "forward_1"
+        )
+        assert graph["captures"] >= 2 and graph["replays"] > graph["captures"], graph
+        assert graph["capture_failures"] == 0, graph
+    print(
+        "Native compaction, open-owner retention, idle delay, identical logits and graph recapture passed"
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--probe", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
+    parser.add_argument("--check-compaction", action="store_true")
     args = parser.parse_args()
     root = args.output_dir.resolve()
     root.mkdir(parents=True, exist_ok=True)
@@ -233,6 +360,9 @@ def main() -> None:
     print(
         "Native column growth, identical logits, ring cloning and graph recapture passed"
     )
+
+    if args.check_compaction:
+        check_compaction(args.probe.resolve(), artifact)
 
 
 if __name__ == "__main__":
