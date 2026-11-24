@@ -469,6 +469,28 @@ def _hint_matmul_contiguity_only_for_full_blocks() -> typing.ContextManager[None
     return _FULL_BLOCK_CONTIGUITY_HINTS.scope()
 
 
+def _pin_triton_libdevice(emulate_precision_casts: bool) -> None:
+    """Choose Triton's libdevice before any kernel compiles, as Inductor does.
+
+    With ``emulate_precision_casts`` Inductor points Triton at the CUDA
+    toolkit's libdevice the first time it compiles one of its own kernels,
+    process-wide. A kernel compiled before that uses Triton's bundled
+    libdevice, and since the libdevice is part of Triton's cache key, the
+    same kernel compiled before and after gets two cache entries and two
+    builds. Making the same choice up front, with Inductor's own setter, gives
+    every kernel of the process the libdevice Inductor would use. The setter
+    also exports ``TRITON_LIBDEVICE_PATH`` for the processes this one starts,
+    and does nothing once the path is set.
+    """
+    from torch._inductor.runtime import compile_tasks
+
+    set_path = getattr(compile_tasks, "_set_triton_libdevice_path", None)
+    if set_path is None:
+        return
+    with torch._inductor.config.patch(emulate_precision_casts=emulate_precision_casts):
+        set_path()
+
+
 def _full_zeros_preserving_strides(x: torch.Tensor, device) -> torch.Tensor:
     """Allocate a zero-filled tensor matching ``x``'s size/stride/dtype on ``device``.
 
@@ -1683,8 +1705,11 @@ class CudaBackend(AotiBackend, BackendDetails):
         # On ROCm a failed capture invalidates the stream the rest of the
         # compile runs on (hipErrorStreamCaptureInvalidated).
         cuda_graph_autotune_timing = torch.version.hip is None
+        emulate_precision_casts = True
         for spec in compile_specs or []:
-            if spec.key == "low_memory_mode":
+            if spec.key == "emulate_precision_casts":
+                emulate_precision_casts = _on_off_compile_spec_value(spec)
+            elif spec.key == "low_memory_mode":
                 mode = spec.value.decode("utf-8").upper()
                 if mode not in ["ON", "OFF"]:
                     raise ValueError(
@@ -1701,6 +1726,10 @@ class CudaBackend(AotiBackend, BackendDetails):
 
         @contextlib.contextmanager
         def _combined():
+            # Every compile of this backend (the export's, the measurement
+            # worker's and its warm-up processes') runs in this context; pin
+            # the libdevice before any of them compiles a kernel.
+            _pin_triton_libdevice(emulate_precision_casts)
             with contextlib.ExitStack() as stack:
                 # Force any remaining PyTorch SDPA ops to use the MATH
                 # backend during compilation so AOTI can lower / decompose

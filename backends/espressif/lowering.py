@@ -16,6 +16,7 @@ import executorch.kernels.quantized  # noqa: F401  registers quantize/dequantize
 from executorch.backends.espressif.partition.espnn_partitioner import EspNNPartitioner
 from executorch.backends.espressif.passes import EspPassManager
 from executorch.backends.espressif.quantizer import get_esp_fused_quant_quantizer
+from executorch.backends.espressif.target import EspKernelMode, EspTarget
 from executorch.exir import (
     EdgeCompileConfig,
     EdgeProgramManager,
@@ -64,7 +65,7 @@ def to_espnn_edge(
 
 
 def get_operator_library_report(edge: EdgeProgramManager) -> dict:
-    """Count direct ESP-NN operators and list portable compute across methods."""
+    """Report ESP-NN compute, portable compute and layout copies by method."""
     esp_nn_ops = 0
     cpu_ops = []
     layout_ops = []
@@ -78,15 +79,25 @@ def get_operator_library_report(edge: EdgeProgramManager) -> dict:
                 ops = layout_ops
                 target = "executorch.exir.memory.view"
             elif isinstance(target, (EdgeOpOverload, OpOverload)):
+                if target.namespace == "esp_nn":
+                    esp_nn_ops += 1
+                    continue
                 if target._schema.name in {
+                    "aten::alias_copy",
+                    "aten::clone",
+                    "aten::permute_copy",
+                    "aten::squeeze_copy",
+                    "aten::transpose_copy",
+                    "aten::unsqueeze_copy",
+                    "aten::view_copy",
+                }:
+                    ops = layout_ops
+                elif target._schema.name in {
                     "quantized_decomposed::quantize_per_tensor",
                     "quantized_decomposed::dequantize_per_tensor",
                     "quantized_decomposed::quantize_per_channel",
                     "quantized_decomposed::dequantize_per_channel",
                 }:
-                    continue
-                if target.namespace == "esp_nn":
-                    esp_nn_ops += 1
                     continue
                 target = target.name()
             ops.append({"method": method, "name": node.name, "target": str(target)})
@@ -94,13 +105,12 @@ def get_operator_library_report(edge: EdgeProgramManager) -> dict:
 
 
 def _require_no_portable_compute(edge: EdgeProgramManager) -> list:
-    report = get_operator_library_report(edge)
-    if report["cpu_ops"]:
+    portable_ops = get_operator_library_report(edge)["cpu_ops"]
+    if portable_ops:
         raise RuntimeError(
-            "The ESP-NN operator library left these operators on the CPU: "
+            "The ESP-NN operator library left these operators on portable kernels: "
             + ", ".join(
-                f"{op['method']}.{op['name']} ({op['target']})"
-                for op in report["cpu_ops"]
+                f"{op['method']}.{op['name']} ({op['target']})" for op in portable_ops
             )
         )
     return []
@@ -111,19 +121,24 @@ def get_esp_fused_quant_recipe(
     *,
     quantizer: FusedQuantQuantizer | None = None,
     allow_cpu_fallback: bool = True,
+    target: EspTarget = EspTarget.ESP32S3,
+    kernel_mode: EspKernelMode = EspKernelMode.OPTIMIZED,
 ) -> ExportRecipe:
     """Quantize and lower a float model for the Espressif operator library.
 
     Use with executorch.export.export(). Supported Fused Quant operators become
     direct ESP-NN calls; other operators decompose to portable kernels. Setting
-    allow_cpu_fallback=False rejects remaining compute, excluding Q/DQ.
+    allow_cpu_fallback=False rejects remaining portable compute. Q/DQ and
+    structural operations such as views and layout copies remain allowed.
+    Set target and kernel_mode to match the device's ESP-NN configuration
+    when planning scratch.
     Use EspNNQuantizer and to_espnn_edge for the EspNNBackend delegate.
     """
     quantizer = quantizer if quantizer is not None else get_esp_fused_quant_quantizer()
     quantization_recipe = get_fused_quant_quantization_recipe(quantizer)
     quantization_recipe.calibration_inputs_fn = calibration_inputs_fn
 
-    transforms = [lambda _: EspPassManager()]
+    transforms = [lambda _: EspPassManager(target=target, kernel_mode=kernel_mode)]
     if not allow_cpu_fallback:
         transforms.append(_require_no_portable_compute)
     return ExportRecipe(
