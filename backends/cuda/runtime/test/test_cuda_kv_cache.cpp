@@ -4145,14 +4145,22 @@ TEST_F(CudaRuntimeColumnCacheTest, FailedContractionPreservesSparseOwners) {
   }
   auto* old_k = static_cast<uint16_t*>(fake.bound["flat_k"].data);
   auto* old_v = static_cast<uint16_t*>(fake.bound["flat_v"].data);
-  const auto history = iota_rows(1);
+  std::array<std::vector<uint16_t>, 8> history_k, history_v;
   for (const int index : {5, 7}) {
-    for (auto* base : {old_k, old_v}) {
+    history_k[index] = iota_rows(1);
+    history_v[index] = iota_rows(1);
+    for (size_t element = 0; element < history_k[index].size(); ++element) {
+      history_k[index][element] += 100 * index;
+      history_v[index][element] += 1000 * index;
+    }
+    for (const auto& [base, history] :
+         {std::pair{old_k, &history_k[index]},
+          std::pair{old_v, &history_v[index]}}) {
       ASSERT_EQ(
           cudaMemcpy(
               base + index * size_t{kLargeDim},
-              history.data(),
-              history.size() * sizeof(uint16_t),
+              history->data(),
+              history->size() * sizeof(uint16_t),
               cudaMemcpyHostToDevice),
           cudaSuccess);
     }
@@ -4199,8 +4207,10 @@ TEST_F(CudaRuntimeColumnCacheTest, FailedContractionPreservesSparseOwners) {
   EXPECT_EQ(fake.bound["flat_v"].data, old_v);
   for (const int index : {5, 7}) {
     EXPECT_EQ(control->pos(owners[index]), 1);
-    EXPECT_EQ(read_rows(old_k + index * size_t{kLargeDim}, 1), history);
-    EXPECT_EQ(read_rows(old_v + index * size_t{kLargeDim}, 1), history);
+    EXPECT_EQ(
+        read_rows(old_k + index * size_t{kLargeDim}, 1), history_k[index]);
+    EXPECT_EQ(
+        read_rows(old_v + index * size_t{kLargeDim}, 1), history_v[index]);
   }
   for (const int index : {5, 7}) {
     ASSERT_EQ(step(*ptr, handle, {owners[index]}), Error::Ok);
@@ -4218,13 +4228,26 @@ TEST_F(CudaRuntimeColumnCacheTest, FailedContractionPreservesSparseOwners) {
   ASSERT_EQ(kv->compact_columns(0, std::chrono::milliseconds{0}), Error::Ok);
   EXPECT_EQ(kv->metrics().physical_columns, 3);
   ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
-  auto* compacted = static_cast<uint16_t*>(fake.bound["flat_k"].data);
-  EXPECT_EQ(read_rows(compacted, 1), history);
-  EXPECT_EQ(read_rows(compacted + kLargeDim, 1), history);
+  auto* compacted_k = static_cast<uint16_t*>(fake.bound["flat_k"].data);
+  auto* compacted_v = static_cast<uint16_t*>(fake.bound["flat_v"].data);
+  for (const int index : {5, 7}) {
+    const size_t column = index == 5 ? 0 : 1;
+    EXPECT_EQ(read_rows(compacted_k + column * kLargeDim, 1), history_k[index]);
+    EXPECT_EQ(read_rows(compacted_v + column * kLargeDim, 1), history_v[index]);
+  }
   ASSERT_TRUE(control->rewind(owners[5], 1));
   ASSERT_TRUE(control->rewind(owners[7], 1));
   for (const int index : {5, 7}) {
     ASSERT_EQ(step(*ptr, handle, {owners[index]}), Error::Ok);
+    std::array<int32_t, 5> info{};
+    ASSERT_EQ(
+        cudaMemcpy(
+            info.data(),
+            fake.bound["seq_info"].data,
+            sizeof(info),
+            cudaMemcpyDeviceToHost),
+        cudaSuccess);
+    EXPECT_EQ(info, (std::array<int32_t, 5>{0, 1, index == 5 ? 0 : 1, 2, 3}));
   }
   EXPECT_EQ(control->pos(owners[5]), 2);
   EXPECT_EQ(control->pos(owners[7]), 2);

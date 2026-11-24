@@ -89,7 +89,7 @@ struct CudaExecutorConfig {
   int max_session_tokens = 0;
   int kv_dtype = static_cast<int>(::executorch::aten::ScalarType::BFloat16);
   int initial_capacity = -1;
-  // Idle compaction starts below 25% physical-column occupancy and keeps
+  // Idle compaction starts below 25% occupancy of non-scratch columns and keeps
   // spare columns equal to the live-owner count. Open sessions never expire.
   // nullopt disables automatic compaction; zero permits the next idle check.
   // A later burst can regrow columns and recapture CUDA graphs.
