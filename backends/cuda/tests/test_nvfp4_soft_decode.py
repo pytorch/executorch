@@ -210,13 +210,13 @@ def fixed_gemv(x, q, s, pts, unit_scale, split_k, config, native):
 
 def gemv_configs(half2):
     """Single-stage tiles (the stage count only changes pipelining): one per
-    BK; every tile with the exhaustive sweep."""
+    BK and both new ones; every tile with the exhaustive sweep."""
     configs = [
         c
         for c in kernels._gemv.configs
         if c.kwargs["HALF2"] == half2 and c.num_stages == 1
     ]
-    quick = {(4, 256), (8, 512), (8, 1024)}
+    quick = {(4, 256), (8, 512), (16, 1024), (32, 256)}
     assert quick <= {(c.kwargs["BN"], c.kwargs["BK"]) for c in configs}
     return sweep(
         configs, [c for c in configs if (c.kwargs["BN"], c.kwargs["BK"]) in quick]
@@ -252,7 +252,9 @@ def test_gemv_soft_fp4_matches_reference(native, dtype, pts_kind, unit_scale):
         # Scaled so FP16 outputs of the 448-scale rows stay finite.
         x = (torch.randn(m, TAIL_K, device="cuda") * 0.125).to(dtype)
         expected = x.float() @ w.T
-        for config in gemv_configs(half2=False):
+        # The HALF2 body runs only with native FP4.
+        configs = gemv_configs(half2=False) + (gemv_configs(True) if native else [])
+        for config in configs:
             actual = fixed_gemv(x, q, s, pts, unit_scale, split_k, config, native)
             error = relative_error_per_row(actual, expected, x, w)
             assert bool((error < 1e-2).all()), (m, config, split_k)
