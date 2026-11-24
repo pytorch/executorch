@@ -177,7 +177,6 @@ class EspTester(Tester):
             build_dir
             / f"operator-library-{worker}-{self.target.value}-{self.kernel_mode.value}"
         )
-        (firmware_dir / "emulator.log").unlink(missing_ok=True)
 
         if self.cur is None:
             self.export_fused_quant().to_edge().run_passes()
@@ -196,51 +195,95 @@ class EspTester(Tester):
             ],
         )
 
-        firmware_dir.mkdir(parents=True, exist_ok=True)
-        defaults = firmware_dir / "kernel.defaults"
-        defaults.write_text(
-            f"CONFIG_NN_OPTIMIZED={'y' if self.kernel_mode == EspKernelMode.OPTIMIZED else 'n'}\n"
-            f"CONFIG_NN_ANSI_C={'y' if self.kernel_mode == EspKernelMode.ANSI else 'n'}\n"
+        run_bundled_program_on_emulator(
+            bundle,
+            repo=repo,
+            build_dir=build_dir,
+            firmware_dir=firmware_dir,
+            target=self.target,
+            kernel_mode=self.kernel_mode,
+            atol=atol,
+            rtol=rtol,
+            num_inferences=num_inferences,
         )
-        model_path = firmware_dir / "test.bpte"
-        model_path.write_bytes(serialize_from_bundled_program_to_flatbuffer(bundle))
-        commands = [
-            (
-                "build.log",
-                600,
-                [
-                    "idf.py",
-                    f"--project-dir={repo / 'examples/espressif/project'}",
-                    f"--build-dir={firmware_dir}",
-                    f"-DIDF_TARGET={self.target.value}",
-                    f"-DSDKCONFIG={firmware_dir / 'sdkconfig'}",
-                    f"-DSDKCONFIG_DEFAULTS=sdkconfig.defaults;{defaults}",
-                    "-DET_ESPRESSIF_OPS=ON",
-                    "-DET_ESPNN_BACKEND=OFF",
-                    f"-DET_BUILD_DIR_PATH={build_dir / 'runtime'}",
-                    f"-DET_PTE_FILE_PATH={model_path}",
-                    "-DET_BUNDLE_IO=ON",
-                    f"-DET_NUM_INFERENCES={num_inferences}",
-                    f"-DET_ATOL={atol}",
-                    f"-DET_RTOL={rtol}",
-                    "build",
-                    "merge-bin",
-                ],
-            ),
-            (
-                "emulator.log",
-                90,
-                [
-                    "esp-emu",
-                    f"--chip={self.target.value}",
-                    f"--firmware={firmware_dir / 'merged-binary.bin'}",
-                    f"--elf={firmware_dir / 'executorch_esp_runner.elf'}",
-                    "--net=user",
-                    "--psram-size=8M",
-                    "--timeout=60s",
-                    "--exit-on=Program complete.",
-                ],
-            ),
+        return self
+
+
+def run_bundled_program_on_emulator(
+    bundle: BundledProgram,
+    *,
+    repo: Path,
+    build_dir: Path,
+    firmware_dir: Path,
+    target: EspTarget,
+    kernel_mode: EspKernelMode,
+    atol=0,
+    rtol=0,
+    num_inferences=1,
+    check_outputs=True,
+    emulator_timeout=60,
+    extra_defaults="",
+    extra_cmake_args=(),
+) -> str:
+    """Build the runner firmware around bundle and run it on esp-emu.
+
+    build_dir holds the ExecuTorch runtime in build_dir/runtime. Each step
+    writes its log to firmware_dir. With check_outputs, the firmware must
+    also match the bundle's expected outputs within atol and rtol.
+    extra_defaults holds more sdkconfig lines, and extra_cmake_args more
+    -D options for the firmware build. Returns the emulator log.
+    """
+    firmware_dir.mkdir(parents=True, exist_ok=True)
+    (firmware_dir / "emulator.log").unlink(missing_ok=True)
+    defaults = firmware_dir / "kernel.defaults"
+    defaults.write_text(
+        f"CONFIG_NN_OPTIMIZED={'y' if kernel_mode == EspKernelMode.OPTIMIZED else 'n'}\n"
+        f"CONFIG_NN_ANSI_C={'y' if kernel_mode == EspKernelMode.ANSI else 'n'}\n"
+        + extra_defaults
+    )
+    model_path = firmware_dir / "test.bpte"
+    model_path.write_bytes(serialize_from_bundled_program_to_flatbuffer(bundle))
+    commands = [
+        (
+            "build.log",
+            600,
+            [
+                "idf.py",
+                f"--project-dir={repo / 'examples/espressif/project'}",
+                f"--build-dir={firmware_dir}",
+                f"-DIDF_TARGET={target.value}",
+                f"-DSDKCONFIG={firmware_dir / 'sdkconfig'}",
+                f"-DSDKCONFIG_DEFAULTS=sdkconfig.defaults;{defaults}",
+                "-DET_ESPRESSIF_OPS=ON",
+                "-DET_ESPNN_BACKEND=OFF",
+                f"-DET_BUILD_DIR_PATH={build_dir / 'runtime'}",
+                f"-DET_PTE_FILE_PATH={model_path}",
+                "-DET_BUNDLE_IO=ON",
+                f"-DET_NUM_INFERENCES={num_inferences}",
+                f"-DET_ATOL={atol}",
+                f"-DET_RTOL={rtol}",
+                *extra_cmake_args,
+                "build",
+                "merge-bin",
+            ],
+        ),
+        (
+            "emulator.log",
+            emulator_timeout + 30,
+            [
+                "esp-emu",
+                f"--chip={target.value}",
+                f"--firmware={firmware_dir / 'merged-binary.bin'}",
+                f"--elf={firmware_dir / 'executorch_esp_runner.elf'}",
+                "--net=user",
+                "--psram-size=8M",
+                f"--timeout={emulator_timeout}s",
+                "--exit-on=Program complete.",
+            ],
+        ),
+    ]
+    if check_outputs:
+        commands.append(
             (
                 "check.log",
                 60,
@@ -249,18 +292,18 @@ class EspTester(Tester):
                     str(repo / "examples/espressif/test_emulator.py"),
                     str(firmware_dir / "emulator.log"),
                 ],
-            ),
-        ]
-        for log_name, timeout, command in commands:
-            result = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
             )
-            (firmware_dir / log_name).write_text(result.stdout + result.stderr)
-            assert result.returncode == 0, result.stdout + result.stderr
-        return self
+        )
+    for log_name, timeout, command in commands:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        (firmware_dir / log_name).write_text(result.stdout + result.stderr)
+        assert result.returncode == 0, result.stdout + result.stderr
+    return (firmware_dir / "emulator.log").read_text(errors="replace")
 
 
 @dataclass
