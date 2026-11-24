@@ -1660,27 +1660,7 @@ class TestCudaExport(unittest.TestCase):
             with self.subTest(dtype=factor.dtype):
                 model = Scaled(factor).to("cuda")
                 program = self._export_to_cuda_with_lower(model, (x,)).to_executorch()
-                if os.environ.get("RUN_CUDA_PROGRAM"):
-                    (output,) = _execute(program, "forward", [x.cpu()])
-                else:
-                    from executorch.runtime import Runtime
-
-                    with tempfile.TemporaryDirectory() as directory:
-                        path = os.path.join(directory, "model.pte")
-                        with open(path, "wb") as f:
-                            program.write_to_file(f)
-                        program.write_tensor_data_to_file(directory)
-                        (data,) = [
-                            os.path.join(directory, name)
-                            for name in os.listdir(directory)
-                            if name.endswith(".ptd")
-                        ]
-                        method = (
-                            Runtime.get()
-                            .load_program(path, data_path=data)
-                            .load_method("forward")
-                        )
-                        (output,) = method.execute([x.cpu()])
+                (output,) = _execute(program, "forward", [x.cpu()])
                 torch.testing.assert_close(output.cpu(), model(x).cpu())
 
     def test_device_info_propagated_to_cuda_delegate_outputs(self):
