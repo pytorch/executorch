@@ -39,13 +39,14 @@ Requirements:
 import argparse
 import logging
 import os
-from typing import Optional
+from typing import Iterable, Optional
 
 import torch
 from executorch.extension.llm.export.model_metadata import (
     model_vocab_size,
     write_activation_dtype,
     write_cache_geometry,
+    write_eos_ids,
     write_logits_to_keep_mode,
     write_max_context_len,
     write_max_seq_len,
@@ -64,12 +65,14 @@ def model_constant_methods(
     activation_dtype: str,
     vocab_size: int,
     max_seq_len: Optional[int] = None,
-) -> dict[str, int]:
+    eos_ids: Iterable[int] = (),
+) -> dict[str, object]:
     """Build the full metadata set an MLX HF export publishes.
 
     ``max_seq_len`` is the largest single forward step this export traces
     (serialized as ``get_max_seq_len``); ``max_context_len`` is the KV-cache
-    capacity (``get_max_context_len``). Composes the shared per-constant writers.
+    capacity (``get_max_context_len``); ``eos_ids`` are the stop tokens
+    (``get_eos_ids``). Composes the shared per-constant writers.
     """
     return {
         **write_max_context_len(max_context_len),
@@ -77,7 +80,32 @@ def model_constant_methods(
         **write_activation_dtype(activation_dtype),
         **write_logits_to_keep_mode(logits_to_keep),
         **write_max_seq_len(max_seq_len),
+        **write_eos_ids(eos_ids),
     }
+
+
+def resolve_eos_ids(model_id: str, revision: Optional[str]) -> set[int]:
+    """Every token id that should stop generation, for get_eos_ids.
+
+    The tokenizer's EOS plus generation_config's eos_token_id list: e.g.
+    Gemma 4 also stops on <|tool_response>, and Qwen3 on <|endoftext|>. This is
+    the set run_llm_hf.py already stops on. Without it in the .pte, C++ runners
+    know only the tokenizer's single EOS and generate past the others.
+
+    The runner replaces the tokenizer's EOS with this list, so return nothing
+    (keeping the runner's tokenizer fallback) if the tokenizer can't be loaded.
+    """
+    from executorch.backends.mlx.examples.llm.runtime_meta import get_eos_token_ids
+    from transformers import AutoTokenizer
+
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(model_id, revision=revision)
+    except Exception as exc:
+        logger.warning(f"No tokenizer for {model_id}, not writing get_eos_ids: {exc}")
+        return set()
+    eos_ids = get_eos_token_ids(tokenizer, model_id=model_id, revision=revision)
+    logger.info(f"EOS token ids: {sorted(eos_ids)}")
+    return eos_ids
 
 
 def resolve_prefill_chunk_size(
@@ -177,6 +205,7 @@ def _export_with_optimum(
             activation_dtype=dtype,
             vocab_size=vocab_size,
             max_seq_len=max_ctx_len,
+            eos_ids=resolve_eos_ids(model_id, revision),
         )
     )
 
@@ -418,6 +447,7 @@ def _export_with_custom_components(
         activation_dtype=dtype,
         vocab_size=vocab_size,
         max_seq_len=prefill_chunk_size,
+        eos_ids=resolve_eos_ids(model_id, revision),
     )
 
     edge_program = exir.to_edge_transform_and_lower(
@@ -521,6 +551,7 @@ def _export_with_offgraph_cache(
         activation_dtype=dtype,
         vocab_size=vocab_size,
         max_seq_len=prefill_chunk_size,
+        eos_ids=resolve_eos_ids(model_id, revision),
     )
     kv_metadata.update(
         write_cache_geometry(cache_kv_heads, cache_head_dims, cache_windows)
