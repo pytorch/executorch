@@ -36,7 +36,12 @@ from __future__ import annotations
 from typing import Optional, Tuple
 
 import torch
-from executorch.backends.mlx.builder.op_helpers import get_aten_target
+from executorch.backends.mlx.builder.op_helpers import (
+    emit_if_else,
+    emit_product,
+    emit_shape,
+    get_aten_target,
+)
 from executorch.backends.mlx.builder.op_registry import PatternHandler, REGISTRY
 from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
 from executorch.backends.mlx.builder.slot_manager import Slot
@@ -44,8 +49,10 @@ from executorch.backends.mlx.custom_kernel_ops.gguf.q4k.common import Q4K_BLOCK_
 from executorch.backends.mlx.custom_kernel_ops.gguf.q5k.common import Q5K_BLOCK_BYTES
 from executorch.backends.mlx.custom_kernel_ops.gguf.q6k.common import Q6K_BLOCK_BYTES
 from executorch.backends.mlx.pattern_utils import has_single_user, match_target
+from executorch.backends.mlx.serialization.mlx_graph_schema import IntOrVid, ReshapeNode
 from torch.export.exported_program import ExportedProgram
 from torch.fx.node import Node
+from torch.utils._sympy.value_ranges import bound_sympy
 
 # Quant types each pattern can lower (MLX-native repack by default, or fused
 # custom Metal kernels via ``ET_MLX_EMIT_DIRECT_GGUF=1``).
@@ -111,11 +118,12 @@ class GGUFQuantizedLinearHandler(PatternHandler):
     :mod:`.q6k` / :mod:`.q5k` / :mod:`.q4k`.
     """
 
-    def __init__(self, head, body, weight, ggml_type, output_dtype):
+    def __init__(self, head, body, weight, ggml_type, output_dtype, can_be_empty):
         super().__init__(head, body)
         self.weight = weight
         self.ggml_type = ggml_type
         self.output_dtype = output_dtype
+        self.can_be_empty = can_be_empty
 
     @classmethod
     def maybe_create(cls, ep: ExportedProgram, head: Node):
@@ -132,7 +140,16 @@ class GGUFQuantizedLinearHandler(PatternHandler):
         weight, ggml_type, output_dtype = parsed
         if ggml_type not in _LINEAR_TYPES:
             return None
-        return cls(head, [dequant], weight, ggml_type, output_dtype)
+        # Export's public bounds include 0/1; the tracing ShapeEnv can exclude them.
+        can_be_empty = not all(
+            (
+                bound_sympy(dim.node.expr, ep.range_constraints).lower > 0
+                if isinstance(dim, torch.SymInt)
+                else dim > 0
+            )
+            for dim in head.args[0].meta["val"].shape[:-1]
+        )
+        return cls(head, [dequant], weight, ggml_type, output_dtype, can_be_empty)
 
     def supported(self, P: MLXProgramBuilder, n: Node) -> bool:
         return _blob_lowers(self.weight, self.ggml_type)
@@ -153,7 +170,25 @@ class GGUFQuantizedLinearHandler(PatternHandler):
             from executorch.backends.mlx.custom_kernel_ops.gguf.q4k.linear import (
                 emit_linear,
             )
-        return emit_linear(P, n, x_node, self.weight, bias_node)
+        if not self.can_be_empty:
+            return emit_linear(P, n, x_node, self.weight, bias_node)
+        x_slot = P.slot_map([x_node])[0]
+        out = P.make_or_get_slot(n)
+        leading = emit_shape(P, x_node, x_slot, end_dim=-1)
+        # An empty context has no values to compute; avoid launching GGUF kernels.
+        emit_if_else(
+            P,
+            emit_product(P, leading),
+            emit_then=lambda: emit_linear(P, n, x_node, self.weight, bias_node),
+            emit_else=lambda: P.emit(
+                ReshapeNode(
+                    x=P.slot_to_tid(x_slot),
+                    out=P.slot_to_tid(out),
+                    shape=leading + [IntOrVid.from_literal(n.meta["val"].shape[-1])],
+                )
+            ),
+        )
+        return out
 
 
 @REGISTRY.register_pattern(name="GGUF_QUANTIZED_EMBEDDING")

@@ -51,6 +51,9 @@ constexpr std::array<std::string_view, 2> kAliases{
     "torch.ops.aten.alias.default",
     "torch.ops.aten.alias_copy.default"};
 constexpr std::string_view kClone = "torch.ops.aten.clone.default";
+constexpr std::array<std::string_view, 2> kSlices{
+    "torch.ops.aten.slice.Tensor",
+    "torch.ops.aten.slice_copy.Tensor"};
 constexpr const char* kSelectAsSymInt =
     "torch.ops.et_vk.select_as_symint.default";
 constexpr const char* kPrepack = "torch.ops.et_vk.prepack.default";
@@ -201,17 +204,6 @@ std::optional<CacheWrite> match_cache_write(const Graph& graph, ValueId id) {
   return CacheWrite{graph.value(id).producer_id, *cache, ids[2], *values};
 }
 
-bool is_unsqueezed(
-    const Graph& graph,
-    ValueId id,
-    ValueId source,
-    int64_t dim) {
-  const Node* node = producer(graph, id);
-  return node != nullptr && is_any(node->target, kUnsqueezes) &&
-      tensor_id(find_arg(*node, "self", 0)) == source &&
-      is_int(find_arg(*node, "dim", 1), dim);
-}
-
 // Returns x for op(x, ...) when op is one of names.
 template <size_t N>
 std::optional<ValueId> operand_of(
@@ -267,16 +259,132 @@ ValueId source_through_wrappers(const Graph& graph, ValueId id) {
   }
 }
 
+// The attention's query, key and value before their head-major permutes.
+using Qkv = std::array<ValueId, 3>;
+
+// The number of query tokens: a literal equal to the static lengths of
+// cache_position and the query, or the SymInt that sizes the token axis of the
+// view producing the query, key or value. A dimension of another input with
+// the same declared extents can hold a different length at run time.
+bool is_token_count(
+    const Graph& graph,
+    const Argument* arg,
+    ValueId cache_position,
+    const Qkv& qkv) {
+  if (arg == nullptr || arg->kind() != ArgKind::Int) {
+    return false;
+  }
+  const IntArg& count = arg->as_int();
+  if (!valid(count.id)) {
+    const TensorMeta& positions = graph.value(cache_position).tensor_meta();
+    const TensorMeta& query = graph.value(qkv[0]).tensor_meta();
+    return positions.sizes.size() == 1 && query.sizes.size() > 1 &&
+        positions.lower_bounds.empty() && query.lower_bounds.empty() &&
+        count.value == positions.sizes[0] && count.value == query.sizes[1];
+  }
+  return std::ranges::any_of(qkv, [&](ValueId id) {
+    const Node* view = producer(graph, id);
+    if (view == nullptr || !is_any(view->target, kViews)) {
+      return false;
+    }
+    const Argument* size = find_arg(*view, "size", 1);
+    return size != nullptr && size->kind() == ArgKind::IntList &&
+        size->as_int_list().ids.size() > 1 &&
+        size->as_int_list().ids[1] == count.id;
+  });
+}
+
+// cache_position[0:1], through clones and aliases.
+bool is_first_position(const Graph& graph, ValueId id, ValueId cache_position) {
+  while (true) {
+    id = uncloned(graph, id);
+    const std::optional<ValueId> inner = operand_of(graph, id, kAliases);
+    if (!inner) {
+      break;
+    }
+    id = *inner;
+  }
+  const Node* node = producer(graph, id);
+  return node != nullptr && is_any(node->target, kSlices) &&
+      tensor_id(find_arg(*node, "self", 0)) == cache_position &&
+      is_int_or_absent(find_arg(*node, "dim", 1), 0) &&
+      is_int_or_absent(find_arg(*node, "start", 2), 0) &&
+      is_int(find_arg(*node, "end", 3), 1) &&
+      is_int_or_absent(find_arg(*node, "step", 4), 1);
+}
+
+// int32 and int64 positions are exact, as the lowered kernels use them;
+// floating ones would round (2049 in half precision is 2048).
+bool is_integer(const Graph& graph, ValueId id) {
+  const ScalarType dtype = graph.value(id).tensor_meta().dtype;
+  return dtype == ScalarType::Long || dtype == ScalarType::Int;
+}
+
+// arange(0, T) + cache_position[0:1] in integers, with T the number of query
+// tokens: the positions transformers 5 derives from the cache length. They
+// equal cache_position because the engine checks that it holds contiguous
+// positions.
+bool is_offset_arange(
+    const Graph& graph,
+    ValueId id,
+    ValueId cache_position,
+    const Qkv& qkv) {
+  const Node* add = producer(graph, id);
+  if (add == nullptr || add->target != kAdd || !is_integer(graph, id) ||
+      !is_int_or_absent(find_arg(*add, "alpha", 2), 1)) {
+    return false;
+  }
+  const std::optional<ValueId> lhs = tensor_id(find_arg(*add, "self", 0));
+  const std::optional<ValueId> rhs = tensor_id(find_arg(*add, "other", 1));
+  if (!lhs || !rhs) {
+    return false;
+  }
+  for (const auto& [range, offset] :
+       {std::pair{*lhs, *rhs}, std::pair{*rhs, *lhs}}) {
+    const Node* node = producer(graph, range);
+    if (node != nullptr && node->target == kArange &&
+        is_integer(graph, range) && is_integer(graph, offset) &&
+        is_int(find_arg(*node, "start", 0), 0) &&
+        is_token_count(graph, find_arg(*node, "end", 1), cache_position, qkv) &&
+        is_int_or_absent(find_arg(*node, "step", 2), 1) &&
+        sizes_of(graph, offset) == std::vector<int64_t>{1} &&
+        is_first_position(graph, offset, cache_position)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// RoPE position_ids: unsqueeze(positions, 0) of cache_position, or of the
+// positions transformers 5 builds.
+bool is_unsqueezed_positions(
+    const Graph& graph,
+    ValueId id,
+    ValueId cache_position,
+    const Qkv& qkv) {
+  const Node* node = producer(graph, id);
+  if (node == nullptr || !is_any(node->target, kUnsqueezes) ||
+      !is_int(find_arg(*node, "dim", 1), 0)) {
+    return false;
+  }
+  const std::optional<ValueId> self = tensor_id(find_arg(*node, "self", 0));
+  return self &&
+      (*self == cache_position ||
+       is_offset_arange(graph, *self, cache_position, qkv));
+}
+
 // HF's static-cache causal mask le(kv_index, view(cache_position, [-1, 1])),
 // broadcast to [1, 1, T, cache_len] through any interleaving of clones,
 // aliases, expands and unsqueezes. Every wrapper must preserve the query/key
-// axes, even when T == cache_len. Sliding-window and padding masks add terms
-// and do not match.
+// axes, even when T == cache_len. The query positions may also take the form
+// transformers 5 builds. Sliding-window and padding masks add terms and do not
+// match.
 bool is_causal_mask(
     const Graph& graph,
     ValueId mask,
     ValueId cache_position,
     int64_t cache_len,
+    const Qkv& qkv,
     std::optional<ValueId>& kv_offset) {
   const std::vector<int64_t>& position_sizes = sizes_of(graph, cache_position);
   if (position_sizes.size() != 1) {
@@ -335,7 +443,8 @@ bool is_causal_mask(
           operand_of(graph, query_source, kViews)) {
     query_source = *viewed;
   }
-  return query_source == cache_position &&
+  return (query_source == cache_position ||
+          is_offset_arange(graph, query_source, cache_position, qkv)) &&
       is_kv_index(graph, kv_source, cache_len, kv_offset);
 }
 
@@ -394,6 +503,7 @@ bool supported_sdpa_args(const Graph& graph, const Node& sdpa, Match& m) {
                      *mask,
                      m.k_write.cache_position,
                      sizes_of(graph, m.k_write.cache)[2],
+                     {m.q_input, m.k_input, m.v_input},
                      m.kv_offset);
   const std::optional<double> dropout =
       float_or_absent(find_arg(sdpa, "dropout_p", 4), 0.0);
@@ -454,8 +564,11 @@ std::optional<Match> match(const Graph& graph, NodeId sdpa_id) {
     if (k_rope->position_ids != q_rope->position_ids ||
         k_rope->inv_freq != q_rope->inv_freq ||
         k_rope->attention_scale != q_rope->attention_scale ||
-        !is_unsqueezed(
-            graph, q_rope->position_ids, k_write->cache_position, 0)) {
+        !is_unsqueezed_positions(
+            graph,
+            q_rope->position_ids,
+            k_write->cache_position,
+            {q_rope->input, k_rope->input, *v_input})) {
       return std::nullopt;
     }
     q_input = q_rope->input;
