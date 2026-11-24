@@ -225,7 +225,9 @@ def _random_gemma(arch: str, **config) -> PreTrainedModel:
     return model
 
 
-def _random_gemma4(config_cls, randomize: bool = True) -> PreTrainedModel:
+def _random_gemma4(
+    config_cls, randomize: bool = True, **moe: object
+) -> PreTrainedModel:
     """A tiny Gemma 4 text decoder shaped as the 12B: a sliding-window layer,
     then a global layer whose values are its keys, with a wider head, one KV
     head and proportional RoPE, and capped final logits."""
@@ -247,8 +249,12 @@ def _random_gemma4(config_cls, randomize: bool = True) -> PreTrainedModel:
         max_position_embeddings=64,
         final_logit_softcapping=30.0,
         **extra,
+        **moe,
     )
-    model = AutoModelForCausalLM.from_config(config).eval().requires_grad_(False)
+    model = AutoModelForCausalLM.from_config(
+        config, experts_implementation="batched_mm" if moe else None
+    )
+    model = model.eval().requires_grad_(False)
     model.config._attn_implementation = "sdpa"
     model.generation_config.use_cache = True
     model.generation_config.cache_implementation = "static"
@@ -276,6 +282,20 @@ _GEMMA4_GGUF = {
     "mlp.down_proj.weight": "ffn_down.weight",
     "post_feedforward_layernorm.weight": "post_ffw_norm.weight",
     "layer_scalar": "layer_output_scale.weight",
+    "router.proj.weight": "ffn_gate_inp.weight",
+    "router.scale": "ffn_gate_inp.scale",
+    "router.per_expert_scale": "ffn_down_exps.scale",
+    "experts.gate_up_proj": "ffn_gate_up_exps.weight",
+    "experts.down_proj": "ffn_down_exps.weight",
+    "pre_feedforward_layernorm_2.weight": "pre_ffw_norm_2.weight",
+    "post_feedforward_layernorm_1.weight": "post_ffw_norm_1.weight",
+    "post_feedforward_layernorm_2.weight": "post_ffw_norm_2.weight",
+}
+_GEMMA4_MOE = {
+    "enable_moe_block": True,
+    "num_experts": 4,
+    "top_k_experts": 2,
+    "moe_intermediate_size": 32,
 }
 
 
@@ -464,6 +484,19 @@ class ExportHfLlmTest(unittest.TestCase):
                 with torch.no_grad():
                     got, want = loaded(ids).logits, reference(ids).logits
                 self.assertTrue(torch.equal(got, want))
+
+    def test_gemma4_moe_gguf_weights_reproduce_the_model(self) -> None:
+        ids = torch.tensor([[3, 4, 5, 6, 7, 8]])
+        reference = _random_gemma4(Gemma4TextConfig, **_GEMMA4_MOE)
+        loaded = _random_gemma4(Gemma4TextConfig, randomize=False, **_GEMMA4_MOE)
+        pairs = _gemma4_gguf_tensors(reference)
+        self.assertIn("blk.1.ffn_gate_up_exps.weight", dict(pairs))
+
+        load_gguf(loaded, "model.gguf", "gemma4", lambda _: iter(pairs))
+
+        with torch.no_grad():
+            got, want = loaded(ids).logits, reference(ids).logits
+        self.assertTrue(torch.equal(got, want))
 
     def test_gguf_buffers_it_lacks_keep_their_initial_values(self) -> None:
         pairs = [
@@ -1471,6 +1504,9 @@ class ExportHfLlmTest(unittest.TestCase):
         for config_cls in (Gemma4TextConfig, Gemma4UnifiedTextConfig):
             with self.subTest(config_cls.__name__):
                 self._check_matches_eager(_random_gemma4(config_cls))
+
+    def test_gemma4_moe_layers_match_eager(self) -> None:
+        self._check_matches_eager(_random_gemma4(Gemma4TextConfig, **_GEMMA4_MOE))
 
     def test_attention_logit_softcapping_matches_eager_when_configured_eager(
         self,
