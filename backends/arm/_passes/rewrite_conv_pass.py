@@ -949,9 +949,9 @@ class RewriteConvPass(ArmPass):
             pre_permute_dims: tuple[int, ...]
             post_permute_dims: tuple[int, ...]
             if transposed:
-                if spatial_rank != 2:
+                if spatial_rank not in (1, 2):
                     raise RuntimeError(
-                        "Only 2D transpose convolutions are supported in the Arm backend."
+                        "Only 1D and 2D transpose convolutions are supported in the Arm backend."
                     )
                 if any(d != 1 for d in dilation_list):
                     raise RuntimeError(
@@ -960,15 +960,36 @@ class RewriteConvPass(ArmPass):
                 output_padding_list = expand_around_channel(
                     output_padding, spatial_rank
                 )
+                target_op = exir_ops.backend.tosa.TRANSPOSE_CONV2D.default
+                weight_permute_dims: tuple[int, ...]
+                weight_reshape_dims: tuple[int, ...] | None
+                if spatial_rank == 1:
+                    # NCL -> NLC -> N1LC, as for ordinary Conv1d.
+                    # PyTorch transpose weights are [IC, OC, K]; TOSA
+                    # requires [OC, KH, KW, IC].
+                    pre_permute_dims = post_permute_dims = (0, 2, 1)
+                    weight_permute_dims = (1, 2, 0)
+                    weight_reshape_dims = (
+                        weight_shape[1],
+                        1,
+                        weight_shape[2],
+                        weight_shape[0],
+                    )
+                    stride = (1, stride[0])
+                    pad_list = [0, *pad_list]
+                    output_padding_list = [0, *output_padding_list]
+                else:
+                    pre_permute_dims = NHWC_ORDER
+                    post_permute_dims = NHWC_INVERSE_ORDER
+                    weight_permute_dims = OHWI_ORDER
+                    weight_reshape_dims = None
+
                 out_pad = [
                     -pad_list[0],
                     -pad_list[0] + output_padding_list[0],
                     -pad_list[1],
                     -pad_list[1] + output_padding_list[1],
                 ]
-                target_op = exir_ops.backend.tosa.TRANSPOSE_CONV2D.default
-                pre_permute_dims = NHWC_ORDER
-                post_permute_dims = NHWC_INVERSE_ORDER
                 with graph_module.graph.inserting_before(node):
                     x = create_node(
                         graph=graph_module.graph,
@@ -976,16 +997,28 @@ class RewriteConvPass(ArmPass):
                         args=(x, list(pre_permute_dims)),
                         from_node=node,
                     )
-                input_tensor_for_tosa_fake = permute_fake_tensor_metadata(
-                    input_fake_tensor, pre_permute_dims
-                )
-                x.meta["val"] = input_tensor_for_tosa_fake
+                    input_tensor_for_tosa_fake = permute_fake_tensor_metadata(
+                        input_fake_tensor, pre_permute_dims
+                    )
+                    x.meta["val"] = input_tensor_for_tosa_fake
+                    if spatial_rank == 1:
+                        input_tensor_for_tosa_fake = (
+                            input_tensor_for_tosa_fake.unsqueeze(1)
+                        )
+                        x = create_node(
+                            graph=graph_module.graph,
+                            op_target=exir_ops.edge.aten.view_copy.default,
+                            args=(x, list(input_tensor_for_tosa_fake.shape)),
+                            from_node=node,
+                        )
+                        x.meta["val"] = input_tensor_for_tosa_fake
                 weight = self._rewrite_weight(
                     graph_module,
                     weight,
                     node,
-                    permute_dims=OHWI_ORDER,
+                    permute_dims=weight_permute_dims,
                     name_suffix="ohwi",
+                    reshape_dims=weight_reshape_dims,
                 )
                 weight_fake_tensor = get_first_fake_tensor(weight)
                 conv_args = (
