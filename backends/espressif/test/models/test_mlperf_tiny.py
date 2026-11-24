@@ -140,18 +140,19 @@ def model_case(request):
         model = wrapper.get_eager_model()
         inputs = wrapper.get_example_inputs()
         calibration = [wrapper.get_example_inputs() for _ in range(4)]
-    tester = EspTester(model, inputs, calibration).test_dialect(
+    return name, case, EspTester(model, inputs, calibration)
+
+
+@torch.no_grad()
+def test_dialect_mlperf_tiny(model_case):
+    name, case, tester = model_case
+    tester.test_dialect(
         case.ops_before_transforms,
         case.ops_after_transforms,
         qtol=1 if name == "deep_autoencoder" else 0,
         atol=0 if name == "deep_autoencoder" else 1e-3,
         rtol=torch.finfo(torch.float32).eps,
     )
-    return name, case, tester
-
-
-def test_dialect_mlperf_tiny(model_case):
-    name, case, tester = model_case
     edge = tester.get_artifact()
     report = get_operator_library_report(edge)
     counts = {
@@ -183,6 +184,9 @@ def test_dialect_mlperf_tiny(model_case):
     not os.environ.get("ESPRESSIF_BUILD_DIR"),
     reason="Set ESPRESSIF_BUILD_DIR to the ESP32-S3 build directory",
 )
+@torch.no_grad()
 def test_implementation_mlperf_tiny(model_case, pytestconfig):
     _, _, tester = model_case
-    tester.test_implementation(pytestconfig.rootpath, atol=1e-6, rtol=1e-5)
+    tester.test_implementation(
+        pytestconfig.rootpath, atol=1e-6, rtol=1e-5, num_inferences=2
+    )
