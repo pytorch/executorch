@@ -14,9 +14,10 @@ dequant logic instead of torchao's defaults. It registers:
   * INT5 (``CudaDp4aPlanarInt5Tensor``) → ``triton::int5_quantized_gemm_m{1,2,3,4}``
   * INT6 (``CudaDp4aPlanarInt6Tensor``) → ``triton::int6_quantized_gemm_m{1,2,3,4}``
   * INT8 (``IntxUnpackedToInt8Tensor``) → ``triton::int8_quantized_gemm_m{1,2,3,4}``
+  * NVFP4 (``CudaNVFP4Tensor``)         → ``triton::nvfp4_*`` (linear and embedding)
 
-See ``int4_dispatch``, ``int5_dispatch``, ``int6_dispatch`` and ``int8_dispatch``
-for the per-dtype details.
+See ``int4_dispatch``, ``int5_dispatch``, ``int6_dispatch``, ``int8_dispatch``
+and ``nvfp4_dispatch`` for the per-dtype details.
 
 Import this package before using nn.Linear with quantized weights::
 
@@ -28,4 +29,5 @@ from executorch.backends.cuda.quantize_op_dispatch import (  # noqa: F401
     int5_dispatch,
     int6_dispatch,
     int8_dispatch,
+    nvfp4_dispatch,
 )
