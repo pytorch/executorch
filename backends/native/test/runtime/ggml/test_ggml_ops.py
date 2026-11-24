@@ -1853,6 +1853,19 @@ class GgmlOpsTest(unittest.TestCase):
             (torch.randn(2, 3, 4), torch.randn(2, 5, 4)),
         )
 
+    def test_contiguous_cat_runs_as_three_dims(self):
+        # ggml-cuda launches one kernel per ne[3] slice of contiguous operands,
+        # which therefore concatenate as [inner, mid, outer] views.
+        for dim in range(4):
+            with self.subTest(dim=dim):
+                ops = collections.Counter()
+                self._check(
+                    Lambda(lambda x, y, dim=dim: torch.cat([x * 2, y * 3], dim)),
+                    (torch.randn(3, 4, 5, 6), torch.randn(3, 4, 5, 6)),
+                    graph_ops=ops,
+                )
+                self.assertEqual(ops["RESHAPE"] > 0, dim != 0)
+
     def test_cat_of_mixed_ggml_types(self):
         # The F16 embedding result is F32 in ggml; the F16 input stays F16.
         self._check(
