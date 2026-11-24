@@ -16,12 +16,15 @@ from .lowering import (
 )
 from .partition import EspNNPartitioner
 from .quantizer import EspNNQuantizer, get_esp_fused_quant_quantizer
+from .target import EspKernelMode, EspTarget
 
 __all__ = [
     "EspNNBackend",
     "EspNNPartitioner",
     "EspNNQuantizer",
     "get_esp_fused_quant_quantizer",
+    "EspTarget",
+    "EspKernelMode",
     "to_espnn_edge",
     "get_esp_fused_quant_recipe",
     "get_operator_library_report",

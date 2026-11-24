@@ -17,6 +17,13 @@ single thread block loads the entire row (N <= 4096).
 import torch
 import triton
 import triton.language as tl
+from executorch.backends.cuda.triton.routing import (
+    Candidate,
+    REGULAR_LOWERING,
+    regular_only,
+    ReplacementPlan,
+)
+from torch.fx import Node
 from torch.library import triton_op, wrap_triton
 
 
@@ -218,3 +225,35 @@ def _topk_abstract(
     values = self.new_empty(out_shape)
     indices = self.new_empty(out_shape, dtype=torch.int64)
     return values, indices
+
+
+# The kernel loads an entire row into a single thread block via
+# tl.arange(0, BLOCK). For large N (e.g., vocab-sized topk with N=248K), this
+# exceeds Triton's register/shared memory limits.
+_MAX_N = 4096
+
+
+def plan(node: Node) -> ReplacementPlan:
+    """The replacement pass's preflight for ``topk``: the Triton kernel for
+    rows of at most ``_MAX_N`` elements."""
+    input_shape = node.args[0].meta["val"].shape
+    dim = node.args[2] if len(node.args) > 2 else -1
+    N = input_shape[dim]
+    if N > _MAX_N:
+        return regular_only("topk", f"N={N} > {_MAX_N}")
+    return ReplacementPlan(
+        "topk",
+        (
+            Candidate(REGULAR_LOWERING),
+            Candidate(
+                "topk",
+                None,
+                "topk",
+                torch.ops.triton.topk,
+                node.args,
+                dict(node.kwargs),
+            ),
+        ),
+        "topk",
+        signature=f"topk({node.name})",
+    )

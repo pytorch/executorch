@@ -3418,7 +3418,10 @@ def _collect_backend_supported_ops(  # noqa: C901
 
     def add(target: object, profile: str, evidence: str) -> None:
         exported_op = _canonical_pytorch_op_from_target(target)
-        if exported_op is None or not exported_op.startswith("torch.ops.aten."):
+        if exported_op is None or not (
+            exported_op.startswith("torch.ops.aten.")
+            or exported_op.startswith("torch.ops.llama.")
+        ):
             return
         row = expected.setdefault(
             exported_op,

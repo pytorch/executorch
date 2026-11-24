@@ -16,6 +16,11 @@ from examples.arm.QAT_example.rife_vgf.shaders import pack_warps
 from executorch.backends.arm._passes.arm_pass_manager import (
     _ExportedProgramGraphPassAdapter,
 )
+from executorch.backends.arm._passes.tosa_lowering_utils import (
+    compute_multiplier_and_shift,
+    create_rescale_node,
+    rescale_tensor,
+)
 from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
     TosaSpecification,
@@ -270,10 +275,10 @@ def _tail_program():
             torch.int32,
         )
         producer.meta["input_qparams"] = {1: SimpleNamespace(zp=0)}
-        phase = node(
-            TOSA.RESCALE.default,
+        phase = create_rescale_node(
+            graph,
             (producer, torch.int8, [0.001 * (i + 1) for i in range(52)], 0, -14),
-            (1, 1, 2, 52),
+            from_node=producer,
         )
         reshape = node(
             TOSA.RESHAPE.default, (phase, [1, 1, 2, 13, 2, 2]), (1, 1, 2, 13, 2, 2)
@@ -303,20 +308,19 @@ def _tail_program():
                 resize_mode="bilinear",
             )
             states.append(
-                node(
-                    TOSA.RESCALE.default,
+                create_rescale_node(
+                    graph,
                     (resize, torch.int8, [0.0625], 0, 0),
-                    (1, 4, 8, channels),
+                    from_node=resize,
                 )
             )
     flow_transpose.args = (states[2], [0, 3, 1, 2])
     concat.args = ([*concat.args[0][:5], *states],)
     with graph.inserting_before(customs[0]):
-        residual = node(
-            TOSA.RESCALE.default,
+        residual = create_rescale_node(
+            graph,
             (flow_transpose, torch.int32, [91861.15014648438], -14, 0),
-            (1, 4, 4, 8),
-            torch.int32,
+            from_node=flow_transpose,
         )
     graph.output_node().args = ((conv, residual),)
     program.graph_signature.output_specs.append(
@@ -438,8 +442,13 @@ def test_phase_major_convolution_preserves_pixel_shuffle_values(per_channel):
         pack._constant_tensor(program, n) for n in producer.args[:3]
     )
     if not per_channel:
-        phase.args = (*phase.args[:2], [0.125], *phase.args[3:])
-    scales = phase.args[2]
+        phase.args = (
+            phase.args[0],
+            *compute_multiplier_and_shift([0.125]),
+            *phase.args[3:],
+        )
+        phase.kwargs = {**phase.kwargs, "per_channel": False}
+    original_parameters = phase.args[1:]
     before = (
         F.conv_transpose2d(
             source.permute(0, 3, 1, 2).double(),
@@ -464,8 +473,8 @@ def test_phase_major_convolution_preserves_pixel_shuffle_values(per_channel):
         .to(torch.int32)
     )
     with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+INT")):
-        original = TOSA.RESCALE.default(before, torch.int8, scales, 0, -14)
-        reordered = TOSA.RESCALE.default(after, *phase.args[1:])
+        original = TOSA.RESCALE.default(before, *original_parameters, **phase.kwargs)
+        reordered = TOSA.RESCALE.default(after, *phase.args[1:], **phase.kwargs)
     shuffled = F.pixel_shuffle(original.permute(0, 3, 1, 2), 2).permute(0, 2, 3, 1)
     actual = torch.empty_like(shuffled)
     for y in range(actual.shape[1]):
@@ -504,7 +513,11 @@ def test_unsupported_tail_keeps_original_state_preparation(unsupported):
         resize.kwargs = {"resize_mode": "nearest"}
     elif unsupported == "rounding":
         rescale = concat.args[0][5]
-        rescale.args = (*rescale.args[:2], [0.125], *rescale.args[3:])
+        rescale.args = (
+            rescale.args[0],
+            *compute_multiplier_and_shift([0.125]),
+            *rescale.args[3:],
+        )
     else:
         program.graph.output_node().args = ((residual, concat.args[0][5]),)
     with pytest.raises(ValueError):
@@ -528,7 +541,7 @@ def test_original_pixel_shuffle_and_integer_resize_arithmetic():
         align_corners=False,
     ).permute(0, 2, 3, 1)
     with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+INT")):
-        reference = TOSA.RESCALE.default(
+        reference = rescale_tensor(
             (interpolated * 16).to(torch.int32),
             torch.int8,
             [0.0625],
@@ -568,9 +581,10 @@ def test_direct_head_tail(factor, invalid):
     customs = [n for n in graph.nodes if n.target == TOSA.CUSTOM.default]
     flow = customs[0].args[0][1]
     with graph.inserting_before(customs[0]):
-        residual = graph.call_function(
-            TOSA.RESCALE.default,
+        residual = create_rescale_node(
+            graph,
             (flow, torch.int32, [91861.15014648438], -14, 0),
+            from_node=flow,
         )
     residual.meta["val"] = flow.meta["val"].new_empty((1, 4, 8, 16), dtype=torch.int32)
     graph.output_node().args = ((conv, residual),)
@@ -606,9 +620,10 @@ def test_direct_head_tail(factor, invalid):
             resize.meta["val"] = head.meta["val"].new_empty(
                 (1, 8, 16, channels), dtype=torch.int32
             )
-            state = graph.call_function(
-                TOSA.RESCALE.default,
+            state = create_rescale_node(
+                graph,
                 (resize, torch.int8, [1.0 / (2 * factor) ** 2], 0, 0),
+                from_node=resize,
             )
             state.meta["val"] = head.meta["val"].new_empty((1, 8, 16, channels))
             states.append(state)
@@ -617,7 +632,7 @@ def test_direct_head_tail(factor, invalid):
     flow.args = (states[2], [0, 3, 1, 2])
     graph.eliminate_dead_code()
     if invalid == "rounding":
-        states[0].args = (states[0].args[0], torch.int8, [0.5], 0, 0)
+        states[0].args = (states[0].args[0], *compute_multiplier_and_shift([0.5]), 0, 0)
     elif invalid == "resize":
         states[0].args[0].kwargs = {"resize_mode": "nearest"}
     elif invalid == "shared":
@@ -656,7 +671,7 @@ def test_direct_head_resize_arithmetic(factor):
     ).permute(0, 2, 3, 1)
     denominator = 2 * factor
     with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+INT")):
-        reference = TOSA.RESCALE.default(
+        reference = rescale_tensor(
             (interpolated * denominator**2).to(torch.int32),
             torch.int8,
             [1.0 / denominator**2],
