@@ -458,6 +458,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         str(args.program),
         verification=Verification.Minimal,
         data_path=args.data_path,
+        backend_options={"MLXBackend": {"clear_cache_interval": 1}},
     )
     runner = DiffusionRunner.from_huggingface(
         program,
