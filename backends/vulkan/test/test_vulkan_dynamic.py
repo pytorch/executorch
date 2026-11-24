@@ -267,6 +267,26 @@ class TestVulkanDynamic(unittest.TestCase):
                     )
                     self._run(edge, model, inputs, atol=1e-3, rtol=1e-3)
 
+    def test_dynamic_to_copy_resize(self):
+        # A float<->half cast between textures runs as a blit, which must still
+        # resize its output as the input's dynamic dim changes.
+        class CastBack(torch.nn.Module):
+            def forward(self, x):
+                return x * torch.cos(x.float() * 3).to(x.dtype)
+
+        model = CastBack()
+        inputs = [
+            (torch.linspace(-3, 3, s, dtype=torch.float16).repeat(3, 1),)
+            for s in (16, 9, 4, 13)
+        ]
+        edge = self._lower(
+            model,
+            inputs[0],
+            ({1: Dim("s", min=2, max=16)},),
+            skip_dim_order=True,
+        )
+        self._run(edge, model, inputs, atol=2e-3, rtol=2e-3)
+
     def test_dynamic_gelu(self):
         for approximate in ("none", "tanh"):
             for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):

@@ -25,6 +25,19 @@ void resize_to_copy_op_node(
   graph->virtual_resize(out, graph->sizes_of(self));
 }
 
+// BlitNode carries no tensor args, so its resize reads (out, in) from the
+// resize args.
+void resize_blit_to_copy_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& extra_args) {
+  (void)args;
+  const ValueRef out = extra_args.at(0);
+  const ValueRef in = extra_args.at(1);
+
+  graph->virtual_resize(out, graph->sizes_of(in));
+}
+
 bool is_float_type(vkapi::ScalarType dtype) {
   return dtype == vkapi::ScalarType::Float || dtype == vkapi::ScalarType::Half;
 }
@@ -41,7 +54,8 @@ void add_to_copy_node(ComputeGraph& graph, ValueRef in, ValueRef out) {
   // Same-dtype or float<->half conversions between textures can use BlitNode
   if (textures &&
       (same_dtype || (is_float_type(in_dtype) && is_float_type(out_dtype)))) {
-    graph.execute_nodes().emplace_back(new BlitNode(graph, in, out));
+    graph.execute_nodes().emplace_back(
+        new BlitNode(graph, in, out, resize_blit_to_copy_node, {out, in}));
     return;
   }
 
