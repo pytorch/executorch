@@ -1,0 +1,4 @@
+transformers>=5.3,<6
+torchaudio
+safetensors
+huggingface_hub
