@@ -3,10 +3,11 @@
 This backend is a **prototype under active development**.
 
 This backend runs int8-quantized PyTorch models on Espressif microcontrollers.
-It is tuned for the **ESP32-S3** and also runs on the original ESP32. It
-delegates quantized subgraphs to [ESP-NN](https://github.com/espressif/esp-nn),
-Espressif's kernel library. ESP-NN has SIMD kernels for the ESP32-S3 and
-portable C kernels for the other chips.
+It runs on the **ESP32-S3**, **ESP32-P4** and **ESP32-S31**, and on the
+original ESP32. It delegates quantized subgraphs to
+[ESP-NN](https://github.com/espressif/esp-nn), Espressif's kernel library.
+ESP-NN has SIMD kernels for the ESP32-S3, PIE SIMD kernels shared by the
+ESP32-P4 and ESP32-S31, and portable C kernels for the other chips.
 
 A lowered model is a normal `.pte` program. `EspNNBackend` runs the int8
 partitions with ESP-NN, and ExecuTorch's portable and quantized kernels run
@@ -14,6 +15,10 @@ everything else (float ops, unsupported layers, pre- and post-processing).
 Each delegate payload is a compact int8 graph (XTS3) that the delegate's
 interpreter executes. A host reference interpreter reproduces the device
 arithmetic, so fully delegated programs are checked bit-exactly.
+
+The full documentation, including the operator constraints, quantization,
+troubleshooting and a tutorial, is in
+[`docs/source/backends/espressif`](../../docs/source/backends/espressif/espressif-overview.md).
 
 The Fused Quant **operator-library flow is under development** alongside the
 delegate. Its experimental recipe is a standalone factory, following the shared
@@ -24,11 +29,87 @@ Fused Quant frontend convention. The two flows have distinct quantizers:
 | `EspNNQuantizer` | Existing delegate: PT2E Q/DQ graphs partitioned by `EspNNPartitioner` into `EspNNBackend` delegates |
 | `get_esp_fused_quant_quantizer` | Operator library: shared Fused Quant annotation and fusion, followed by `EspPassManager` lowering to direct ESP-NN operators or portable fallback |
 
-Both flows use ESP-NN kernels. See the operator-library
+Both flows use ESP-NN 1.5.0 kernels. See the operator-library
 [lowering code](passes/lower_to_esp.py) and [operator tests](test/ops/)
 for supported configurations. Shared quantization rules also cover
 operators that retain portable execution. The delegate's supported
 operators and export example are described below.
+
+Spatial operators use contiguous NHWC tensors; model inputs and outputs
+retain their original layout. Layout copies remain visible in the
+operator-library report.
+
+Set the recipe's `EspTarget` and `EspKernelMode` to match the device's ESP-NN
+configuration when planning scratch:
+
+```python
+recipe = get_esp_fused_quant_recipe(
+    target=EspTarget.ESP32P4, kernel_mode=EspKernelMode.OPTIMIZED
+)
+```
+
+The defaults are `EspTarget.ESP32S3` and `EspKernelMode.OPTIMIZED`.
+Accelerated Conv2d export requires the optional [scratch-size bindings](#scratch-size-queries).
+If the selected binding or query is unavailable, convolution retains portable
+execution; strict export rejects that fallback. Other operator exports do not
+require the bindings.
+
+Scratch storage uses the planned arena. Applications must serialize
+operator-library inference, delegate inference, and other ESP-NN calls.
+
+## Scratch-size queries
+
+Optional Python bindings expose ESP-NN 1.5.0's convolution, depthwise, softmax,
+mean, hard-swish, batched fully connected, and logistic scratch-size queries:
+
+```bash
+CMAKE_ARGS="-DEXECUTORCH_BUILD_ESP_NN_PYBINDS=ON" pip install -e . --no-build-isolation
+```
+
+The host libraries retain only sizing code. CMake fetches the pinned ESP-NN
+sources; `ESP_NN_LOCAL_PATH` can reuse an existing 1.5.0 checkout or ESP-IDF
+managed component. The host build uses GNU-style compiler section flags and
+linker garbage collection (`--gc-sections`, or `-dead_strip` on Apple platforms);
+MSVC-style toolchains fail at configuration. Downloaded sources are checked
+against the pinned SHA-256, and a local source tree must declare version 1.5.0.
+
+Select the device's `EspTarget` and `EspKernelMode` to match its ESP-NN build:
+
+```python
+from executorch.backends.espressif import EspKernelMode, EspTarget
+from executorch.backends.espressif.scratch import get_scratch_queries
+
+queries = get_scratch_queries(EspTarget.ESP32P4, EspKernelMode.OPTIMIZED)
+if queries is not None:
+    scratch_bytes = queries.conv2d_scratch_size(
+        input_dims=(8, 8, 16),
+        filter_dims=(3, 3, 16),
+        output_dims=(8, 8, 32),
+        stride=(1, 1),
+        padding=(1, 1),
+    )
+```
+
+Convolution queries use `(width, height, channels)` for dimensions,
+`(width, height)` for stride and padding, and unit dilation. Dimensions,
+strides, and depthwise channel multipliers must be in `[1, 65535]`; padding must be in
+`[0, 65535]`. Conservative bounds on padded tensors, aligned filters, staging,
+and coordinates reject shapes that could overflow the vendor's int32 arithmetic
+before calling the sizing query. These bounds also apply to the fully connected
+query's `row_len` and `out_ch`. Softmax and mean dimensions, and fully connected
+`batches`, must be positive int32 values; softmax width must also fit an int32
+byte count for four bytes per element. Invalid bounds raise `ValueError`.
+Sizes are in bytes, including zero for kernels that need no scratch. The vendor
+fully connected query also returns zero for batches above 65535.
+`get_scratch_queries` returns `None` only when the selected module is absent;
+errors loading an installed binding propagate to the caller.
+
+Optimized mode selects S3 queries for ESP32-S3, shared PIE queries for
+ESP32-P4/ESP32-S31, and generic queries for other `EspTarget` values. ANSI mode
+selects ANSI queries for every chip. Query results are checked on the host for
+all configurations; device execution tests currently cover ESP32-S3.
+CI sets `EXECUTORCH_REQUIRE_ESP_NN_SCRATCH=1` when running `test_scratch.py`, so
+all four profiles and all seven query families must be available and pass.
 
 ## Contents
 
@@ -60,9 +141,9 @@ symmetric weights, as annotated by `EspNNQuantizer`.
 
 | Group | Operators |
 |---|---|
-| Convolution | `conv2d` (any stride and padding, groups 1 or depthwise, dilation through phase decomposition), `conv_transpose2d`, `linear` |
+| Convolution | `conv2d` (stride, padding and dilation at most 255, groups 1, grouped or depthwise, dilation through phase decomposition), `conv_transpose2d` (groups 1), `linear` |
 | Activations | `relu`, `relu6`, `hardtanh`, plus table lookups for `hardswish`, `hardsigmoid`, `sigmoid`, `silu`, `tanh`, `gelu`, `elu`, `leaky_relu` |
-| Elementwise | `add`, `mul` (with broadcasting), `softmax` (last dim) |
+| Elementwise | `add`, `mul` (with broadcasting), `softmax` (dim 1 of batch-1 rank-2 or rank-4 tensors) |
 | Pooling | `max_pool2d`, `avg_pool2d`, `adaptive_avg_pool2d`, `mean` over H and W |
 | Resize | `upsample_nearest2d`, `upsample_bilinear2d` (`align_corners` either way) |
 | Data movement | `reshape`, `view`, `flatten`, `unflatten`, `permute`, `transpose`, `squeeze`, `unsqueeze`, `slice`, `select`, `expand`, `pad`, `cat`, `stack`, `split`, `chunk`, `unbind` |
@@ -307,6 +388,9 @@ ESP-IDF runtime and the operator implementation tests.
 When checking supported int8 operators, lowering rejects malformed per-tensor
 qparams, such as non-positive scales or out-of-range zero points. Valid
 unsupported configurations remain portable.
+ESP-NN pooling requires matching input and output qparams. A shared optimization
+that absorbs a following requantization can change the output qparams and leave
+that pool on the portable path.
 
 For this flow, build the existing runner with `-DET_ESPRESSIF_OPS=ON` and
 `-DET_ESPNN_BACKEND=OFF`, using `model_esp_ops.pte` as the model. The runtime
@@ -314,7 +398,7 @@ still needs the portable fallback operators and Q/DQ kernels described below.
 `to_espnn_edge()` is the separate delegate entry point; its former
 `use_operator_library` option is replaced by this recipe.
 
-## Running on the ESP32-S3
+## Running on the ESP32-S3, ESP32-P4 and ESP32-S31
 
 You need ESP-IDF and an activated ESP-IDF shell.
 [`examples/espressif/setup.sh`](../../examples/espressif/setup.sh) installs a
@@ -349,6 +433,10 @@ cmake --preset esp-baremetal -G Ninja -B cmake-out-esp \
 cmake --build cmake-out-esp --target install
 ```
 
+For the ESP32-P4 and ESP32-S31, use the toolchain file that ESP-IDF writes
+when a project configures for the target, as described in
+[Cross-Compiling ExecuTorch](../../examples/espressif/README.md#cross-compiling-executorch).
+
 - `quantized_ops_lib` registers kernels beyond the selected list, so
   `MAX_KERNEL_NUM` is set explicitly instead of being sized from the
   selection.
@@ -377,7 +465,8 @@ against the ExecuTorch targets that `executor_runner` imports, and registers
 `esp_pal.cpp` provides it.
 
 ESP-NN defaults to `CONFIG_NN_OPTIMIZED=y` and selects its implementation from
-ESP-IDF's `IDF_TARGET`. For `esp32s3`, this enables the S3 assembly kernels.
+ESP-IDF's `IDF_TARGET`. For `esp32s3`, this enables the S3 assembly kernels;
+for `esp32p4` and `esp32s31`, the PIE kernels.
 `CONFIG_NN_ANSI_C=y` selects reference C kernels for verification and debugging.
 
 For a BundleIO program (`.bpte`), add `-DET_BUNDLE_IO=ON` and the tolerances
@@ -412,15 +501,15 @@ the quantized PyTorch model. `test_xts3_parser_host.py` builds the device
 parser for the host and feeds it corrupted graphs.
 
 End to end, `.ci/scripts/test_espressif.sh` runs the same models through the
-ExecuTorch runtime on an emulated ESP32-S3.
+ExecuTorch runtime on an emulated ESP32-S3, ESP32-P4 or ESP32-S31.
 `examples/espressif/export_espnn_test_programs.py` exports each one as a
 BundleIO program with the host reference's outputs. CI builds the runner with
 `-DET_ESPNN_BACKEND=ON` for each program and runs it in `esp-emu`. Fully
 delegated programs must match to float precision, which means bit-exact int8
 results. Programs with CPU regions get a tolerance for the portable kernels'
-float rounding. Separate CI jobs run ESP-NN's optimized S3 kernels and its
-ANSI C reference kernels against the same bundled outputs. Both jobs target
-ESP32-S3. Logs include the kernel configuration in their filenames; artifacts
+float rounding. Separate CI jobs run ESP-NN's optimized kernels on each
+chip, and its ANSI C reference kernels on ESP32-S3, against the same bundled
+outputs. Logs include the kernel configuration in their filenames; artifacts
 retain the bundled fixtures, SDK configuration, and resolved component versions.
 
 ### On the host

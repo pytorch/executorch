@@ -38,6 +38,7 @@ from typing import (
     get_type_hints,
     Iterator,
     Optional,
+    TypeVar,
     Union,
 )
 
@@ -90,6 +91,8 @@ from torch.fx.experimental.symbolic_shapes import statically_known_true
 from torch.utils._sympy.value_ranges import bound_sympy
 
 SCHEMA_VERSION = "1.0"
+
+_T = TypeVar("_T")
 _SCHEMA_RESOURCE = "native_graph.fbs"
 # The exported program's range_constraints for the program being serialized. The
 # ShapeEnv raises a declared min of 0 or 1 on a backed symbol to 2, so _dim bounds
@@ -1017,10 +1020,26 @@ def _build_method_graph(
             graph_signature, state_dict, constants, mutated_fqns, packed_quant
         )
     )
+    # Lifted parameters, buffers and constants are serialized in FQN order:
+    # strict export lifts them in the order the model first reads them, which
+    # can follow a set's iteration order and so the process's hash seed.
+    fqn_of = {
+        ispec.arg.name: ispec.target
+        for ispec in getattr(graph_signature, "input_specs", []) or []
+        if ispec.kind in _INPUT_KIND_MAP
+        and isinstance(getattr(ispec, "arg", None), TensorArgument)
+        and isinstance(ispec.target, str)
+    }
+    nodes = _in_fqn_order(
+        nodes,
+        lambda n: fqn_of.get(n.name) if n.op_kind == OpKind.PLACEHOLDER else None,
+    )
+    constant_refs.sort(key=lambda c: c.data_key)
+    mutable_buffers.sort(key=lambda m: m.fqn)
     constant_names = {c.name for c in constant_refs}
     tensor_values = _tensor_values_from(
         val_by_name,
-        [n for n in val_by_name if n not in constant_names],
+        _in_fqn_order([n for n in val_by_name if n not in constant_names], fqn_of.get),
     )
     user_inputs = list(getattr(graph_signature, "user_inputs", []) or [])
     graph = Graph(
@@ -1151,6 +1170,14 @@ def _mark_torchao_q4_weights(
         for node, _ in weight_folds:
             node.meta["native_serialize_as"] = weight.name
             node.meta["native_skip_serialize"] = True
+
+
+def _in_fqn_order(items: list[_T], fqn: Callable[[_T], str | None]) -> list[_T]:
+    """``items`` with those that have an FQN sorted by it, each in a slot one of
+    them held, and the rest where they were."""
+    keyed = sorted((x for x in items if fqn(x) is not None), key=fqn)
+    slots = iter(keyed)
+    return [next(slots) if fqn(x) is not None else x for x in items]
 
 
 def _lifted_constant_names(graph_signature: object | None) -> set[str] | None:

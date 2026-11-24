@@ -16,6 +16,7 @@ from examples.arm.QAT_example.rife_vgf.shaders import final_warps, pack_warps
 from executorch.backends.arm._passes.arm_pass_manager import (
     _ExportedProgramGraphPassAdapter,
 )
+from executorch.backends.arm._passes.tosa_lowering_utils import create_rescale_node
 from executorch.backends.arm.vgf.shaders import grid_sampler
 from executorch.backends.transforms.utils import create_constant_placeholder
 from torch.export.graph_signature import (
@@ -76,11 +77,10 @@ def _program(height=4, width=6, normalization=(1.0, 1.0)):
     transpose = node(
         TOSA.TRANSPOSE.default, (crop, [0, 3, 1, 2]), (1, 4, height, width)
     )
-    previous = node(
-        TOSA.RESCALE.default,
+    previous = create_rescale_node(
+        graph,
         (transpose, torch.int32, [65536.0], -14, 0),
-        (1, 4, height, width),
-        torch.int32,
+        from_node=transpose,
     )
     weight = constant("weight", torch.arange(40, dtype=torch.int8).reshape(20, 1, 1, 2))
     bias = constant("bias", torch.arange(20, dtype=torch.int32))
@@ -91,10 +91,10 @@ def _program(height=4, width=6, normalization=(1.0, 1.0)):
         torch.int32,
     )
     producer.meta["input_qparams"] = {1: SimpleNamespace(zp=0)}
-    phase = node(
-        TOSA.RESCALE.default,
+    phase = create_rescale_node(
+        graph,
         (producer, torch.int8, [0.001 * (i + 1) for i in range(20)], 0, 7),
-        (1, height // 2, width // 2, 20),
+        from_node=producer,
     )
     reshape = node(
         TOSA.RESHAPE.default,
@@ -114,11 +114,10 @@ def _program(height=4, width=6, normalization=(1.0, 1.0)):
         (nchw, [0, 0, 0, 0], [1, 4, height, width]),
         (1, 4, height, width),
     )
-    delta = node(
-        TOSA.RESCALE.default,
+    delta = create_rescale_node(
+        graph,
         (delta_crop, torch.int32, [524288.0], 7, 0),
-        (1, 4, height, width),
-        torch.int32,
+        from_node=delta_crop,
     )
     mask = node(
         TOSA.SLICE.default,
@@ -126,8 +125,8 @@ def _program(height=4, width=6, normalization=(1.0, 1.0)):
         (1, 1, height, width),
     )
     add = node(TOSA.ADD.default, (previous, delta), (1, 4, height, width), torch.int32)
-    flow = node(
-        TOSA.RESCALE.default, (add, torch.int8, [0.00001], 0, -1), (1, 4, height, width)
+    flow = create_rescale_node(
+        graph, (add, torch.int8, [0.00001], 0, -1), from_node=add
     )
     outputs = []
     for image, offset in zip(inputs[:2], (0, 2)):
@@ -163,11 +162,10 @@ def _program(height=4, width=6, normalization=(1.0, 1.0)):
     lut = constant("sigmoid", torch.arange(-128, 128, dtype=torch.int8))
     table = node(TOSA.TABLE.default, (mask, lut), (1, 1, height, width))
     # This remaining consumer represents the final graph's mask preparation.
-    blend_input = node(
-        TOSA.RESCALE.default,
+    blend_input = create_rescale_node(
+        graph,
         (table, torch.int32, [1.0], -127, 0),
-        (1, 1, height, width),
-        torch.int32,
+        from_node=table,
     )
     graph.output((*outputs, blend_input))
     program.graph_signature.output_specs[:] = [
@@ -185,7 +183,7 @@ def test_fuses_tail_and_preserves_blend_inputs(adapted, shape):
     old_weight, old_bias = [
         fuse._constant_tensor(program, n).clone() for n in producer.args[1:3]
     ]
-    old_scales = list(phase.args[2])
+    old_multipliers, old_shifts = phase.args[1:3]
     with patch.object(fuse, "build_final_warps_payload", return_value={}) as build:
         result = (
             _ExportedProgramGraphPassAdapter(fuse.FuseRifeFinalWarpsPass()).call(
@@ -223,7 +221,8 @@ def test_fuses_tail_and_preserves_blend_inputs(adapted, shape):
     assert torch.equal(
         fuse._constant_tensor(program, producer.args[2]), old_bias[order]
     )
-    assert phase.args[2] == [old_scales[i] for i in order]
+    assert phase.args[1] == [old_multipliers[i] for i in order]
+    assert phase.args[2] == [old_shifts[i] for i in order]
     source = torch.arange(2 * 3 * 20).reshape(1, 2, 3, 20)
     expected = F.pixel_shuffle(source.permute(0, 3, 1, 2), 2).permute(0, 2, 3, 1)
     reordered = source[..., order]
@@ -258,7 +257,7 @@ def test_leaves_unsupported_graph_unchanged(unsupported):
     elif unsupported == "wrong_channels":
         previous.args[0].args[0].args = (packed, [0, 0, 0, 20], [1, 4, 6, 4])
     elif unsupported == "unsigned":
-        delta.kwargs = {"input_unsigned": True}
+        delta.kwargs = {**delta.kwargs, "input_unsigned": True}
     elif unsupported == "normalization":
         custom = next(
             n
@@ -274,6 +273,43 @@ def test_leaves_unsupported_graph_unchanged(unsupported):
         }
     else:
         phase.args[0].meta["input_qparams"][1].zp = 1
+    original = str(program.graph)
+    with patch.object(fuse, "build_final_warps_payload") as build:
+        assert not fuse.FuseRifeFinalWarpsPass(program)(program.graph_module).modified
+    build.assert_not_called()
+    assert str(program.graph) == original
+
+
+@pytest.mark.parametrize("shift", [4, 32, 62])
+def test_shader_uses_stored_rescale_coefficients(shift):
+    """Keep the stored integer operands unchanged in generated shaders."""
+    program, _, _, previous, _, _, _, _ = _program()
+    previous.args = (previous.args[0], [3], [shift], *previous.args[3:])
+    _, payloads, rescales, _, _, _, sigmoid, _, _ = fuse.FuseRifeFinalWarpsPass(
+        program
+    )._match(program.graph_module)
+    with patch.object(
+        final_warps, "_compile_shader_source", return_value="compiled"
+    ) as compile_shader:
+        final_warps.build_final_warps_payload(payloads, rescales, sigmoid)
+    source = compile_shader.call_args.args[0]
+    assert "imulExtended(value - (-14), 3, high, low);" in source
+    if shift < 32:
+        assert f"rounded >> {shift}u" in source
+    elif shift > 32:
+        assert f"high >> {shift - 32}" in source
+    else:
+        assert "return high + (0);" in source
+
+
+@pytest.mark.parametrize(
+    "parameter, value",
+    [("scale32", False), ("rounding_mode", "DOUBLE_ROUND"), ("per_channel", True)],
+)
+def test_keeps_unsupported_rescale_parameters(parameter, value):
+    """Leave rescale modes unsupported by the shader in the TOSA graph."""
+    program, _, _, previous, _, _, _, _ = _program()
+    previous.kwargs = {**previous.kwargs, parameter: value}
     original = str(program.graph)
     with patch.object(fuse, "build_final_warps_payload") as build:
         assert not fuse.FuseRifeFinalWarpsPass(program)(program.graph_module).modified

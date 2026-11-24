@@ -11,9 +11,19 @@ from executorch.backends.arm._passes import (
     FoldAndAnnotateQParamsPass,
     InsertRescaleInt32Pass,
 )
+from executorch.backends.arm._passes.quant_args import QuantArgs
+from executorch.backends.arm._passes.replace_scalar_with_tensor_pass import (
+    ReplaceScalarWithTensorByProfilePass,
+)
+from executorch.backends.arm._passes.tosa_lowering_utils import create_rescale_node
 from executorch.backends.arm.common.annotation_meta import ArmAnnotationInfo
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
+from executorch.backends.arm.tosa.specification import (
+    TosaLoweringContext,
+    TosaSpecification,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
+from torch._subclasses.fake_tensor import FakeTensorMode
 
 
 class MultipleOpsModel(torch.nn.Module):
@@ -93,6 +103,105 @@ def test_insert_rescale_int32_tosa_INT_multiple_ops():
     _test_model_with_f32_data(MultipleOpsModel())
 
 
+@pytest.mark.parametrize("dtype", (torch.int8, torch.int16))
+@pytest.mark.parametrize(
+    "unary_target",
+    (None, exir_ops.edge.aten.tanh.default, exir_ops.edge.aten.log.default),
+)
+@pytest.mark.parametrize(
+    "binary_target",
+    (exir_ops.edge.aten.add.Tensor, exir_ops.edge.aten.mul.Tensor),
+)
+def test_insert_rescale_int32_zero_points_match_quantized_operands(
+    dtype: torch.dtype,
+    unary_target: Callable[..., object] | None,
+    binary_target: Callable[..., object],
+) -> None:
+    graph = torch.fx.Graph()
+    left = graph.placeholder("left")
+    right = graph.placeholder("right")
+    unary = graph.call_function(unary_target, (left,)) if unary_target else left
+    binary = graph.call_function(binary_target, (unary, right))
+    graph.output(binary)
+    with FakeTensorMode():
+        for node in (left, right, unary, binary):
+            node.meta["val"] = torch.empty((2, 3), dtype=dtype)
+    limits = torch.iinfo(dtype)
+    qparams = QuantArgs(0.5, 0, limits.min, limits.max, dtype)
+    if unary_target:
+        unary.meta["input_qparams"] = {0: qparams}
+        unary.meta["output_qparams"] = {0: qparams}
+    binary.meta["input_qparams"] = {0: qparams, 1: qparams}
+    binary.meta["output_qparams"] = {0: qparams}
+    graph_module = torch.fx.GraphModule(torch.nn.Module(), graph)
+
+    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+INT")):
+        result = InsertRescaleInt32Pass()(graph_module)
+
+    assert result is not None
+    result.graph_module.graph.lint()
+    rescales = result.graph_module.graph.find_nodes(
+        op="call_function", target=exir_ops.backend.tosa.RESCALE.default
+    )
+    assert len(rescales) == 3
+    for rescale in rescales:
+        assert rescale.args[3] == rescale.args[4] == 0
+        assert isinstance(rescale.args[1], (tuple, list))
+        assert isinstance(rescale.args[2], (tuple, list))
+    output_rescale = rescales[-1]
+    assert output_rescale.args[0].meta["val"].dtype == torch.int32
+    assert output_rescale.meta["val"].dtype == dtype
+
+
+@pytest.mark.parametrize(
+    "binary_target",
+    (exir_ops.edge.aten.add.Tensor, exir_ops.edge.aten.mul.Tensor),
+)
+@pytest.mark.parametrize("dtype", (torch.int8, torch.int16))
+def test_insert_rescale_int32_uses_corrected_dtype_through_unannotated_view(
+    binary_target, dtype
+):
+    graph = torch.fx.Graph()
+    left = graph.placeholder("left")
+    right = graph.placeholder("right")
+    unary = graph.call_function(exir_ops.edge.aten.tanh.default, (left,))
+    view = graph.call_function(exir_ops.edge.aten.view_copy.default, (unary, [2, 3]))
+    binary = graph.call_function(binary_target, (view, right))
+    graph.output(binary)
+    with FakeTensorMode():
+        for node in (left, right, binary):
+            node.meta["val"] = torch.empty((2, 3), dtype=dtype)
+        for node in (unary, view):
+            node.meta["val"] = torch.empty((2, 3), dtype=torch.float32)
+    limits = torch.iinfo(dtype)
+    zero_point = 3 if dtype == torch.int8 else 0
+    qparams = QuantArgs(0.5, zero_point, limits.min, limits.max, dtype)
+    unary.meta.update(input_qparams={0: qparams}, output_qparams={0: qparams})
+    binary.meta.update(
+        input_qparams={0: qparams, 1: qparams}, output_qparams={0: qparams}
+    )
+
+    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+INT")):
+        scalar_result = ReplaceScalarWithTensorByProfilePass()(
+            torch.fx.GraphModule({}, graph)
+        )
+        assert scalar_result is not None
+        result = InsertRescaleInt32Pass()(scalar_result.graph_module)
+
+    assert result is not None
+    result.graph_module.graph.lint()
+    input_rescales = [
+        node
+        for node in result.graph_module.graph.nodes
+        if node.target == exir_ops.backend.tosa.RESCALE.default
+        and node.kwargs["dtype"] == torch.int32
+    ]
+    assert len(input_rescales) == 2
+    for rescale in input_rescales:
+        assert "input_dtype" not in rescale.kwargs
+        assert rescale.args[3] == zero_point
+
+
 @pytest.mark.parametrize(
     "binary_target",
     (exir_ops.edge.aten.add.Tensor, exir_ops.edge.aten.mul.Tensor),
@@ -140,6 +249,25 @@ def test_insert_rescale_int32_preserves_partial_qdq(
         target=exir_ops.backend.tosa.RESCALE.default,
         sort=False,
     )
+
+
+@pytest.mark.parametrize("dtype", (torch.int8, torch.int16))
+def test_rescale_builder_uses_input_metadata_dtype(dtype):
+    graph = torch.fx.Graph()
+    source = graph.placeholder("source")
+    with FakeTensorMode():
+        source.meta["val"] = torch.empty((2, 3), dtype=dtype)
+
+    output = create_rescale_node(graph, (source, torch.int32, [1.0], 0, 0))
+    graph.output(output)
+    graph.lint()
+
+    assert output.args[3] == 0
+    assert not graph.find_nodes(
+        op="call_function", target=exir_ops.backend.tosa.CONST.default
+    )
+    assert output.meta["val"].dtype == torch.int32
+    assert source.meta["val"].dtype == dtype
 
 
 def test_insert_rescale_int32_tosa_FP_dont_insert_rescales():

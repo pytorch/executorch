@@ -313,7 +313,10 @@ class OpenAITranscriptState:
         reasoning string match what we returned, and we kept faithful ids for it.
         Omitted or null reasoning permits reuse; a string edit invalidates the tail.
         ``history_messages`` preserves source content before model normalization,
-        such as image URLs replaced with placeholders for rendering.
+        such as image URLs replaced with placeholders for rendering, and the
+        client's tool-result order for fingerprinting. Normalization must keep
+        non-tool messages at their original indices and finish before this call;
+        sentinel rendering replaces spliced assistants without their tool calls.
         Falls back to text on a sentinel collision or a render that
         dropped/duplicated a sentinel."""
         stored = self._turns.get(session_id or "")
