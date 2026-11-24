@@ -19,9 +19,9 @@ compile time and keeps the fastest:
   in registers.
 
 Weights are the same packed NVFP4 tensor for all three. With ``weight_only``
-(``ET_CUDA_NVFP4_ACT=w4a16`` or ``w4a8``; a forced ``w4a4`` never reaches these
-ops) the ``w4a4`` candidates are rejected. Near-ties go to the
-higher-precision candidate.
+(``ET_CUDA_NVFP4_ACT=w4a16`` or ``w4a8``, or a weight whose ``act_dtype`` is
+not ``fp4``; a forced ``w4a4`` never reaches these ops) the ``w4a4`` candidates
+are rejected. Near-ties go to the higher-precision candidate.
 """
 
 import torch

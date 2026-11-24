@@ -142,6 +142,7 @@ def export_and_lower(
     kv_layout: str = "cell",
     max_kv_seqs: int = 4,
     kv_cache_dtype: str = "bf16",
+    nvfp4_attn_act: str = "fp4",
 ) -> None:
     if use_offgraph_kv_cache and use_turboquant:
         raise ValueError("off-graph KV cache and TurboQuant are mutually exclusive")
@@ -155,6 +156,14 @@ def export_and_lower(
             )
         if not 1 <= max_prefill_chunk <= config.max_seq_len:
             raise ValueError("max_prefill_chunk must be within [1, max_seq_len]")
+    if nvfp4_attn_act != "fp4":
+        if backend != "cuda":
+            raise ValueError("nvfp4_attn_act requires the CUDA backend")
+        from executorch.examples.models.muse_glimmer.source_transformations.nvfp4_attn_act import (
+            mark_attention_act,
+        )
+
+        mark_attention_act(model, nvfp4_attn_act)
     if backend == "cuda" and use_offgraph_kv_cache:
         if vision_fp32_mm != "none":
             raise ValueError("CUDA batching does not support vision_fp32_mm")
@@ -1169,6 +1178,8 @@ def _validate_nvfp4_args(
 ) -> None:
     if args.nvfp4_static_act and (args.backend != "cuda" or not args.gguf):
         parser.error("--nvfp4-static-act requires --backend cuda and --gguf.")
+    if args.nvfp4_attn_act != "fp4" and args.backend != "cuda":
+        parser.error("--nvfp4-attn-act requires --backend cuda.")
     if args.kv_cache_dtype == "nvfp4" and (
         args.backend != "cuda" or args.turboquant or args.use_offgraph_kv_cache
     ):
@@ -1348,6 +1359,19 @@ def main() -> None:
         "norm/RoPE/quantize kernel and read by attention kernels that decode "
         "K/V exactly to FP16 in registers.",
     )
+    parser.add_argument(
+        "--nvfp4-attn-act",
+        choices=("fp4", "mxfp8", "bf16"),
+        default="fp4",
+        help="Activation format of the NVFP4 attention projections (qko/qkv or "
+        "q/k/og, v, o): fp4 keeps the --nvfp4-act path; mxfp8 never uses FP4 "
+        "activations: large-M prefill runs MXFP8 x MXFP8 with the NVFP4 weights "
+        "converted in registers on native FP4 (SM120), BF16 activations "
+        "elsewhere (ET_CUDA_NVFP4_MXFP8_EMULATE=1 emulates MXFP8), and decode "
+        "and small M keep 8+-bit activations (W4A16, or W4A8 decode); bf16 "
+        "runs them weight-only (W4A16). The exact policy, including the "
+        "ET_CUDA_NVFP4_* overrides, is in the nvfp4_dispatch docstring.",
+    )
     args = parser.parse_args()
     apply_nvfp4_act_argument(parser, args)
     _validate_nvfp4_args(parser, args)
@@ -1450,6 +1474,7 @@ def main() -> None:
         kv_layout=args.kv_layout,
         max_kv_seqs=args.max_kv_seqs,
         kv_cache_dtype=args.kv_cache_dtype,
+        nvfp4_attn_act=args.nvfp4_attn_act,
     )
 
 
