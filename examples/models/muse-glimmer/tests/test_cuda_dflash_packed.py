@@ -9,6 +9,7 @@
 import copy
 import importlib.resources
 import json
+import tempfile
 import unittest
 import unittest.mock
 from dataclasses import replace
@@ -29,6 +30,7 @@ from executorch.examples.models.muse_glimmer.model.dflash_model import (
 from executorch.examples.models.muse_glimmer.model.model import MuseGlimmerModel
 from executorch.examples.models.muse_glimmer.source_transformations.cuda import (
     add_dflash_hidden_tapping,
+    dflash_cuda_source_transformations,
     enable_dflash_offgraph_kv_cache,
 )
 from executorch.examples.models.muse_glimmer.tests.test_pipeline import TINY_CONFIG
@@ -89,6 +91,35 @@ class PackedOracleCache:
 
 
 class PackedDraftMathTest(unittest.TestCase):
+    def test_gguf_context_capacity_survives_sequence_export(self):
+        from executorch.examples.models.muse_glimmer.loaders.dflash_loader import (
+            load_dflash_gguf,
+        )
+        from executorch.examples.models.muse_glimmer.tests.test_dflash2 import (
+            write_original_dflash_gguf,
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "draft.gguf"
+            write_original_dflash_gguf(path)
+            draft, config = load_dflash_gguf(str(path), backend="cuda", max_seq_len=32)
+        target, _ = models()
+        target.config.max_seq_len = 32
+        _, manifest, methods = prepare_cuda_packed_draft(
+            target,
+            target.config,
+            draft,
+            max_step_tokens=8,
+            max_cells=64,
+            max_owners=1,
+            kv_layout="sequence",
+            max_kv_seqs=2,
+        )
+        capacity = methods["get_draft_offgraph_kv_seq_capacity"]
+        self.assertEqual(capacity, 64)
+        self.assertEqual(json.loads(manifest)["maximum_capacity"], capacity)
+        self.assertGreaterEqual(capacity - config.block_size, target.config.max_seq_len)
+
     def test_uneven_context_nonidentity_order_and_zero_new_context(self):
         target, draft = models()
         refs = [copy.deepcopy(draft), copy.deepcopy(draft)]
@@ -187,6 +218,29 @@ class PackedDraftMathTest(unittest.TestCase):
                 prepare_cuda_packed_draft(target, target.config, draft, **options)
             self.assertFalse(hasattr(target, "_dflash_target_layer_ids"))
             self.assertTrue(hasattr(draft.layers[0].self_attn, "kv_cache"))
+
+    def test_dflash2_rejects_before_cuda_transform(self):
+        _, original = models(block=4)
+        config = replace(
+            original.config,
+            conv_kernel_size=2,
+            conv_group_size=8,
+            selector_rank=4,
+            selector_top_k=3,
+        )
+        for transform in (
+            dflash_cuda_source_transformations,
+            lambda model: enable_dflash_offgraph_kv_cache(model, 32),
+        ):
+            draft = DFlashDraftModel(config).eval()
+            layer_forward = draft.layers[0].forward.__func__
+            attention = draft.layers[0].self_attn
+            with self.subTest(transform=transform), self.assertRaisesRegex(
+                ValueError, "CUDA DFlash2 export is unsupported"
+            ):
+                transform(draft)
+            self.assertIs(draft.layers[0].forward.__func__, layer_forward)
+            self.assertIs(draft.layers[0].self_attn, attention)
 
     def test_single_owner_export_and_malformed_width(self):
         target, draft = models(block=16)

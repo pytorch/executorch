@@ -300,11 +300,13 @@ class GetCoreAtenQuantizersTest(unittest.TestCase):
             with self.subTest(name):
                 inputs = tuple(torch.randn(shape) for shape in shapes)
                 quantizer = _core_quantizer()
-                graph_module = _quantize(model, inputs, quantizer)
+                program = torch.export.export(
+                    _quantize(model, inputs, quantizer), inputs
+                )
 
-                quantizer.fuse(graph_module)
+                quantizer.fuse(program)
 
-                targets = {node.target for node in graph_module.graph.nodes}
+                targets = {node.target for node in program.graph.nodes}
                 self.assertIn(fused_op, targets)
                 self.assertNotIn(aten_op, targets)
 

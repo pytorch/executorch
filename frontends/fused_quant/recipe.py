@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 
 import executorch.kernels.quantized  # noqa: F401  registers the q/dq out variants
 import torch
@@ -67,24 +67,32 @@ def get_fused_quant_quantization_recipe(
     Decomposes the captured model to core ATen, keeping
     ``quantizer.preserved_ops()`` whole, and calibrates on the example inputs
     given to ``export``, restoring the model's own buffers (a KV cache, say)
-    afterwards. The quantizer fuses after ``convert_pt2e``.
+    afterwards. Fusion runs after export; see
+    :func:`get_fused_quant_aten_transform_passes`.
 
     Its output is already an exported graph, so the ``ExportRecipe`` that uses
     it sets ``strict=False`` to re-export it without Dynamo.
     """
     buffers = _BufferRestore()
-
-    def fuse(graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
-        quantizer.fuse(graph_module)
-        return graph_module
-
     return QuantizationRecipe(
         quantizers=[quantizer],
         preserve_ops=list(quantizer.preserved_ops()),
         post_prepare_passes=[buffers.save],
         pre_convert_passes=[buffers.restore],
-        post_convert_passes=[fuse],
     )
+
+
+def get_fused_quant_aten_transform_passes(
+    quantizer: FusedQuantQuantizer,
+) -> list[Callable[[str, ExportedProgram], ExportedProgram]]:
+    """The ``aten_transform_passes`` of a fused_quant ``ExportRecipe``: fuse
+    what ``quantizer`` quantized."""
+
+    def fuse(method_name: str, program: ExportedProgram) -> ExportedProgram:
+        quantizer.fuse(program)
+        return program
+
+    return [fuse]
 
 
 def get_fused_quant_edge_compile_config(
@@ -128,6 +136,7 @@ def get_fused_quant_portable_recipe(quantizer: FusedQuantQuantizer) -> ExportRec
         name="fused_quant_portable",
         strict=False,
         quantization_recipe=get_fused_quant_quantization_recipe(quantizer),
+        aten_transform_passes=get_fused_quant_aten_transform_passes(quantizer),
         lowering_recipe=LoweringRecipe(
             edge_transform_passes=[edge_passes],
             edge_compile_config=get_fused_quant_edge_compile_config(()),
