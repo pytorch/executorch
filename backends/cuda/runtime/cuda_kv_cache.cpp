@@ -1424,7 +1424,16 @@ class CudaBatchedSequenceCache final : public cache::Cache,
     std::map<int32_t, int> next;
     std::unordered_set<int> used;
     for (const auto& [id, sequence] : seqs_) {
-      if (sequence.column >= 0 && sequence.column < min_target - 1) {
+      if (sequence.column < 0) {
+        continue;
+      }
+      // Every valid state maps owners below the current scratch column, in
+      // the grow, shrink and same-width paths alike.
+      ET_CHECK_OR_RETURN_ERROR(
+          sequence.column < columns_ - 1,
+          InvalidState,
+          "offgraph_kv: invalid physical owner mapping");
+      if (sequence.column < min_target - 1) {
         ET_CHECK_OR_RETURN_ERROR(
             used.insert(sequence.column).second,
             InvalidState,

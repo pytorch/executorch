@@ -4255,6 +4255,30 @@ TEST_F(CudaRuntimeColumnCacheTest, FailedContractionPreservesSparseOwners) {
     GTEST_SKIP()
         << "Insufficient free memory for a controlled contraction failure";
   }
+  {
+    // With room for three columns (48 MiB of K+V), even after a failed
+    // attempt, but not five (80 MiB), a contraction keeping two spare columns
+    // fails instead of retrying below the requested spare columns.
+    constexpr size_t kColumnBytes = size_t{2} * 2 * kLargeDim * 2;
+    constexpr size_t kSpareMargin = 9 * kColumnBytes / 2;
+    void* spare_reservation = nullptr;
+    if (cudaMalloc(&spare_reservation, free_bytes - kSpareMargin) !=
+        cudaSuccess) {
+      (void)cudaGetLastError();
+      kv->forget_handle(&handle);
+      GTEST_SKIP() << "Cannot reserve free memory for a controlled failure";
+    }
+    const auto before = kv->metrics();
+    EXPECT_EQ(
+        kv->compact_columns(2, std::chrono::milliseconds{0}),
+        Error::MemoryAllocationFailed);
+    EXPECT_EQ(kv->metrics().physical_columns, 9);
+    EXPECT_EQ(kv->metrics().column_resize_count, before.column_resize_count);
+    EXPECT_EQ(kv->metrics().allocated_bytes, before.allocated_bytes);
+    ASSERT_EQ(cudaFree(spare_reservation), cudaSuccess);
+    ::executorch::extension::cuda::CudaAllocator::release_cached_memory(device);
+    ASSERT_EQ(cudaMemGetInfo(&free_bytes, &total_bytes), cudaSuccess);
+  }
   void* reservation = nullptr;
   if (cudaMalloc(&reservation, free_bytes - kMargin) != cudaSuccess) {
     (void)cudaGetLastError();
@@ -4325,6 +4349,62 @@ TEST_F(CudaRuntimeColumnCacheTest, FailedContractionPreservesSparseOwners) {
   EXPECT_EQ(control->pos(owners[5]), 2);
   EXPECT_EQ(control->pos(owners[7]), 2);
   kv->forget_handle(&handle);
+}
+
+TEST_F(CudaRuntimeColumnCacheTest, CacheMutationsRestartQuietInterval) {
+  constexpr std::chrono::milliseconds kQuiet{400};
+  constexpr std::chrono::milliseconds kPastQuiet{500};
+  enum class Mutation { New, Clone, Remove, Rewind, Step };
+  for (const Mutation mutation :
+       {Mutation::New,
+        Mutation::Clone,
+        Mutation::Remove,
+        Mutation::Rewind,
+        Mutation::Step}) {
+    SCOPED_TRACE("mutation=" + std::to_string(static_cast<int>(mutation)));
+    auto ptr = make();
+    auto* control = ptr->as<cache::BatchControl>();
+    auto* kv = ptr->as<cu::CudaKVCache>();
+    auto fake = container();
+    auto handle = make_handle(fake);
+    ASSERT_TRUE(kv->note_handle(&handle).get());
+    std::vector<int32_t> owners;
+    for (int index = 0; index < 4; ++index) {
+      const auto owner = control->seq_new();
+      ASSERT_TRUE(owner.has_value());
+      owners.push_back(*owner);
+    }
+    ASSERT_EQ(step(*ptr, handle, {owners[0], owners[1]}), Error::Ok);
+    ASSERT_TRUE(control->seq_rm(owners[2]));
+    ASSERT_TRUE(control->seq_rm(owners[3]));
+    ASSERT_EQ(kv->metrics().physical_columns, 5);
+    // Let the interval elapse, so only the mutation below can hold it back.
+    std::this_thread::sleep_for(kPastQuiet);
+    switch (mutation) {
+      case Mutation::New:
+        ASSERT_TRUE(control->seq_new().has_value());
+        break;
+      case Mutation::Clone:
+        ASSERT_TRUE(control->seq_clone(owners[0], 1).has_value());
+        break;
+      case Mutation::Remove:
+        ASSERT_TRUE(control->seq_rm(owners[1]));
+        break;
+      case Mutation::Rewind:
+        ASSERT_TRUE(control->rewind(owners[0], 0));
+        break;
+      case Mutation::Step:
+        ASSERT_EQ(step(*ptr, handle, {owners[0]}), Error::Ok);
+        break;
+    }
+    ASSERT_EQ(kv->compact_columns(0, kQuiet), Error::Ok);
+    EXPECT_EQ(kv->metrics().physical_columns, 5);
+    std::this_thread::sleep_for(kPastQuiet);
+    ASSERT_EQ(kv->compact_columns(0, kQuiet), Error::Ok);
+    EXPECT_LT(kv->metrics().physical_columns, 5);
+    EXPECT_EQ(kv->metrics().physical_columns, kv->metrics().live_sequences + 1);
+    kv->forget_handle(&handle);
+  }
 }
 
 TEST_F(CudaBatchedSequenceCacheTest, BuilderValidatesAndIsRegistered) {
