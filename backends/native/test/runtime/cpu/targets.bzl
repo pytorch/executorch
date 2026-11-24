@@ -84,6 +84,31 @@ def define_common_targets():
         "gdn_float.quantized_layer_native_decode_restart_f32",
         "gdn_float.quantized_layer_native_decode_wide_f32",
         "gdn_float.quantized_layer_native_prefill_8_f32",
+        # CPU engine: mutable buffers are not supported.
+        "index_put_float.last_rows_f32",
+        "index_put_float.one_row_at_offset_f32",
+        "index_put_float.rows_at_offset_f32",
+        # CPU engine: functionalize_aliases rejects the unsqueeze view.
+        "sdpa_float.causal_decode_d128_f32",
+        "sdpa_float.causal_decode_d256_f32",
+        "sdpa_float.causal_decode_d512_f32",
+        "sdpa_float.causal_decode_d64_f32",
+        "sdpa_float.causal_decode_gqa8_f32",
+        "sdpa_float.causal_prefill_d128_f32",
+        "sdpa_float.causal_prefill_d256_f32",
+        "sdpa_float.causal_prefill_d512_f32",
+        "sdpa_float.causal_prefill_d64_f32",
+        "sdpa_float.causal_prefill_gqa1_f32",
+        "sdpa_float.causal_prefill_gqa4_f32",
+        "sdpa_float.causal_prefill_repeat_kv_f32",
+        "sdpa_float.gemma_global_decode_256_keys_f32",
+        "sdpa_float.gemma_global_decode_f32",
+        "sdpa_float.gemma_global_prefill_f32",
+        "sdpa_float.gemma_sliding_decode_f32",
+        "sdpa_float.shared_masks_decode_f32",
+        "sdpa_float.shared_masks_prefill_f32",
+        "sdpa_float.sliding_decode_f32",
+        "sdpa_float.sliding_prefill_f32",
     ]
     static_float = ":".join(["*_float.*:-*.dynamic_*"] + cpu_engine_gaps)
     for name, flags, labels in [
