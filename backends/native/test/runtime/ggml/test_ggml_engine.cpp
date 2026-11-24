@@ -5000,6 +5000,75 @@ TEST(GgmlEngineTest, FoldsConstantsButNotWrittenBuffers) {
   }
 }
 
+// Methods a and b compute exp(bias) + x and c computes -bias + x, each over
+// the package's one `bias`.
+std::vector<uint8_t> make_folding_methods() {
+  TestProgram program;
+  for (const char* method : {"a", "b", "c"}) {
+    const bool negate = std::string_view(method) == "c";
+    program.input("x", fbs::ScalarType::FLOAT, {4});
+    program.constant("bias", fbs::ScalarType::FLOAT, {4});
+    program.call(
+        "folded",
+        negate ? "torch.ops.aten.neg.default" : "torch.ops.aten.exp.default",
+        {{"self", std::string("bias")}},
+        fbs::ScalarType::FLOAT,
+        {4});
+    program.call(
+        "y",
+        "torch.ops.aten.add.Tensor",
+        {{"self", std::string("folded")}, {"other", std::string("x")}},
+        fbs::ScalarType::FLOAT,
+        {4});
+    program.end_method(method, "y");
+  }
+  return program.finish_program();
+}
+
+std::vector<float> run_folding_method(EngineExecutable& executable) {
+  const std::vector<float> x = {1.0f, 2.0f, 3.0f, 4.0f};
+  executable.set_input(0, x.data(), x.size(), ScalarType::Float);
+  executable.execute();
+  std::vector<float> y(4);
+  executable.get_output(0, y.data(), y.size(), ScalarType::Float);
+  return y;
+}
+
+// A result computed once from constants is held once per context: a and b
+// share exp(bias), while c's -bias is a different op chain with its own.
+TEST(GgmlEngineTest, MethodsShareResultsComputedFromConstants) {
+  const std::vector<float> bias = {0.5f, -1.0f, 2.0f, 0.25f};
+  const std::vector<uint8_t> bias_bytes(
+      reinterpret_cast<const uint8_t*>(bias.data()),
+      reinterpret_cast<const uint8_t*>(bias.data() + bias.size()));
+  const std::vector<PackagedConstant> constants = {
+      {.key = "bias", .bytes = bias_bytes, .dtype = "F32", .shape = {4}}};
+  const std::vector<uint8_t> program = make_folding_methods();
+  constexpr size_t kTensorBytes = 4 * sizeof(float);
+  auto host = GgmlEngineHost::create();
+  auto context = make_constants_context(*host, program, constants);
+  std::vector<std::unique_ptr<EngineExecutable>> executables;
+  for (const auto& [method, bytes] :
+       std::vector<std::pair<std::string, size_t>>{
+           {"a", 2 * kTensorBytes},
+           {"b", 2 * kTensorBytes},
+           {"c", 3 * kTensorBytes}}) {
+    executables.push_back(context->compile(method));
+    EXPECT_EQ(context->materialized_constant_bytes(), bytes) << method;
+  }
+  auto unfolded_host =
+      GgmlEngineHost::create(GgmlEngineOptions{.fold_constants = false});
+  auto unfolded = make_constants_context(*unfolded_host, program, constants);
+  for (size_t i = 0; i < executables.size(); ++i) {
+    const std::string method(1, static_cast<char>('a' + i));
+    SCOPED_TRACE(method);
+    auto reference = unfolded->compile(method);
+    const std::vector<float> y = run_folding_method(*executables[i]);
+    EXPECT_EQ(y, run_folding_method(*reference));
+    EXPECT_EQ(y[1], (i == 2 ? 1.0f : std::exp(-1.0f)) + 2.0f);
+  }
+}
+
 TEST(GgmlEngineTest, GpuUnavailableOnCpuVariant) {
   GgmlEngineOptions options;
   options.device = GgmlDevice::Gpu;

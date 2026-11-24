@@ -1597,9 +1597,9 @@ class GgmlExecutable final : public EngineExecutable {
       if (affine_quant(meta) != nullptr || packed_quant(meta) != nullptr) {
         check_q4_consumers(binding.value_id, binding.key);
       }
-      plans.emplace(
-          binding.value_id,
-          plan_load(binding, exact_row_scales(binding.value_id)));
+      LoadPlan plan = plan_load(binding, exact_row_scales(binding.value_id));
+      constant_keys_.emplace(binding.value_id, plan.key());
+      plans.emplace(binding.value_id, std::move(plan));
     }
     std::unordered_set<ValueId> initialized = bind_constants(plans);
     initialized.merge(bind_state(f16_kv_cache_bytes));
@@ -1810,8 +1810,9 @@ class GgmlExecutable final : public EngineExecutable {
   // Computes once the nodes that read only immutable constants (directly or
   // through other such nodes), in their own lowering, so every call's graph
   // reads the same bits it would have computed. Results that other nodes read
-  // join the persistent tensors; graph outputs and attention-mask chains,
-  // whose lowering depends on the call, are left alone.
+  // join the persistent tensors, shared by the context's executables that
+  // compute the same result; graph outputs and attention-mask chains, whose
+  // lowering depends on the call, are left alone.
   void fold_constants(size_t* materialized_constant_bytes) {
     if (!options_.fold_constants) {
       return;
@@ -1844,10 +1845,132 @@ class GgmlExecutable final : public EngineExecutable {
     if (results.empty()) {
       return;
     }
-    FoldGraph fold = graph_builder({}).build_folds(nodes, results);
-    if (fold.values.empty()) {
+    const std::unordered_map<ValueId, std::string> keys = fold_keys(nodes);
+    std::vector<ValueId> missing;
+    std::unordered_map<std::string, ValueId> first;
+    for (const ValueId result : results) {
+      const std::string& key = keys.at(result);
+      if (std::shared_ptr<ggml_tensor> live =
+              state_.constants[key].tensor.lock()) {
+        check_shared_fold(live.get(), result);
+        persistent_.emplace(result, live.get());
+        state_storage_.push_back(std::move(live));
+      } else if (first.try_emplace(key, result).second) {
+        missing.push_back(result);
+      }
+    }
+    if (missing.empty()) {
       return;
     }
+    FoldGraph fold = graph_builder({}).build_folds(nodes, missing);
+    if (!fold.values.empty()) {
+      store_folds(fold, keys, materialized_constant_bytes);
+    }
+    // Results equal to another of this method's share its tensor.
+    for (const ValueId result : results) {
+      const auto computed = first.find(keys.at(result));
+      if (persistent_.contains(result) || computed == first.end()) {
+        continue;
+      }
+      if (const auto shared = persistent_.find(computed->second);
+          shared != persistent_.end()) {
+        persistent_.emplace(result, shared->second);
+      }
+    }
+  }
+
+  // The context-wide identity of each folded node's result: its op chain, as
+  // op names and static arguments down to the storage keys of the constants
+  // it reads, and its declared dtype and shape. Executables of one context
+  // lower ops alike, so equal keys compute equal bits.
+  std::unordered_map<ValueId, std::string> fold_keys(
+      const std::vector<NodeId>& nodes) const {
+    std::unordered_map<ValueId, std::string> keys;
+    const auto tensor_key = [&](ValueId id) {
+      if (const auto found = keys.find(id); found != keys.end()) {
+        return found->second;
+      }
+      return "c(" + constant_keys_.at(id) + ')';
+    };
+    for (const NodeId id : nodes) {
+      const Node& node = method_.graph.node(id);
+      std::string key = op_key(node.target) + '(';
+      for (const NamedArgument& input : node.inputs) {
+        key += input.name + '=' +
+            (input.arg.kind() == ArgKind::Tensor
+                 ? tensor_key(input.arg.as_tensor().id)
+                 : static_argument_key(input.arg)) +
+            ';';
+      }
+      const ValueId result = output_ids(node).front();
+      const TensorMeta& meta = method_.graph.value(result).tensor_meta();
+      key += ")->" + std::string(scalar_type_name(meta.dtype));
+      for (const int64_t size : meta.sizes) {
+        key += ',' + std::to_string(size);
+      }
+      keys.emplace(result, std::move(key));
+    }
+    return keys;
+  }
+
+  // A folded result bound by key must have the shape it computes.
+  void check_shared_fold(const ggml_tensor* live, ValueId result) const {
+    const std::array<int64_t, GGML_MAX_DIMS> ne =
+        reversed_extents(method_.graph.value(result).tensor_meta().sizes);
+    if (!std::equal(ne.begin(), ne.end(), live->ne)) {
+      throw std::logic_error(
+          "ggml: shared constant result '" + method_.graph.value(result).name +
+          "' does not match the tensor its key names");
+    }
+  }
+
+  // A non-tensor argument of a folded node, exactly: is_foldable admits only
+  // static ones.
+  static std::string static_argument_key(const Argument& arg) {
+    const auto exact = [](double value) {
+      char text[32];
+      const int size = std::snprintf(text, sizeof(text), "%a", value);
+      return std::string(text, static_cast<size_t>(size));
+    };
+    std::string key = std::to_string(static_cast<int>(arg.kind())) + ':';
+    switch (arg.kind()) {
+      case ArgKind::Int:
+        return key + std::to_string(arg.as_int().value);
+      case ArgKind::Float:
+        return key + exact(arg.as_float().value);
+      case ArgKind::Bool:
+        return key + (arg.as_bool().value ? "1" : "0");
+      case ArgKind::String:
+        return key + arg.as_string().value;
+      case ArgKind::ScalarType:
+        return key +
+            std::to_string(static_cast<int>(arg.as_scalar_type().value));
+      case ArgKind::IntList:
+        for (const int64_t value : arg.as_int_list().values) {
+          key += std::to_string(value) + ',';
+        }
+        return key;
+      case ArgKind::FloatList:
+        for (const double value : arg.as_float_list().values) {
+          key += exact(value) + ',';
+        }
+        return key;
+      case ArgKind::BoolList:
+        for (const bool value : arg.as_bool_list().values) {
+          key += value ? '1' : '0';
+        }
+        return key;
+      default:
+        return key;
+    }
+  }
+
+  // Copies the computed results into tensors the context holds under their
+  // keys, beside its constants.
+  void store_folds(
+      const FoldGraph& fold,
+      const std::unordered_map<ValueId, std::string>& keys,
+      size_t* materialized_constant_bytes) {
     ggml_backend_sched_ptr scheduler =
         make_scheduler(scheduler_size(fold.instance));
     if (!ggml_backend_sched_alloc_graph(scheduler.get(), fold.instance.graph) ||
@@ -1855,13 +1978,14 @@ class GgmlExecutable final : public EngineExecutable {
             scheduler.get(), fold.instance.graph) != GGML_STATUS_SUCCESS) {
       throw std::runtime_error("ggml: failed to compute constant results");
     }
+    auto block = std::make_shared<StateBlock>();
     ggml_init_params params{
         .mem_size = ggml_tensor_overhead() * fold.values.size(),
         .mem_buffer = nullptr,
         .no_alloc = true,
     };
-    fold_context_.reset(ggml_init(params));
-    if (!fold_context_) {
+    block->context.reset(ggml_init(params));
+    if (!block->context) {
       throw std::runtime_error(
           "ggml: failed to create constant result context");
     }
@@ -1869,13 +1993,13 @@ class GgmlExecutable final : public EngineExecutable {
     for (size_t i = 0; i < fold.values.size(); ++i) {
       const TensorRef& result = fold.instance.outputs[i];
       tensors.push_back(
-          new_tensor(fold_context_.get(), result.tensor->type, result.sizes));
+          new_tensor(block->context.get(), result.tensor->type, result.sizes));
       ggml_set_name(
           tensors.back(), method_.graph.value(fold.values[i]).name.c_str());
     }
-    fold_buffer_.reset(
-        ggml_backend_alloc_ctx_tensors(fold_context_.get(), primary_backend_));
-    if (!fold_buffer_) {
+    block->buffer.reset(
+        ggml_backend_alloc_ctx_tensors(block->context.get(), primary_backend_));
+    if (!block->buffer) {
       throw std::runtime_error("ggml: failed to allocate constant results");
     }
     size_t loaded = 0;
@@ -1886,11 +2010,14 @@ class GgmlExecutable final : public EngineExecutable {
           fold.instance.outputs[i].tensor, bytes.data(), 0, bytes.size());
       ggml_backend_tensor_set(tensors[i], bytes.data(), 0, bytes.size());
       persistent_.emplace(fold.values[i], tensors[i]);
+      std::shared_ptr<ggml_tensor> storage(block, tensors[i]);
+      state_.constants[keys.at(fold.values[i])].tensor = storage;
+      state_storage_.push_back(std::move(storage));
       loaded += bytes.size();
     }
     ggml_backend_sched_synchronize(scheduler.get());
     ggml_backend_buffer_set_usage(
-        fold_buffer_.get(), GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+        block->buffer.get(), GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
     if (materialized_constant_bytes != nullptr) {
       *materialized_constant_bytes += loaded;
     }
@@ -2589,6 +2716,8 @@ class GgmlExecutable final : public EngineExecutable {
   ggml_backend_buffer_ptr output_staging_;
   std::vector<uint8_t> output_host_;
   std::unordered_map<ValueId, ggml_tensor*> persistent_;
+  // Each persistent tensor's load-plan key, which folded results' keys name.
+  std::unordered_map<ValueId, std::string> constant_keys_;
   // Float scales of the Q4_0 weights with unit block scales, by weight.
   std::unordered_map<ValueId, ggml_tensor*> row_scales_;
   bool executed_ = false;
@@ -2598,9 +2727,6 @@ class GgmlExecutable final : public EngineExecutable {
   FoldedBatchNorms batch_norms_;
   ggml_context_ptr batch_norm_context_;
   ggml_backend_buffer_ptr batch_norm_buffer_;
-  // Results computed once from constants (fold_constants).
-  ggml_context_ptr fold_context_;
-  ggml_backend_buffer_ptr fold_buffer_;
 };
 
 GraphBuilder GgmlExecutable::graph_builder(
