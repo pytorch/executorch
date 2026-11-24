@@ -286,6 +286,28 @@ class TestFuseAlongOutput(unittest.TestCase):
         raw = torch.randint(0, 256, (rows, _Q4_K_BLOCK_BYTES), dtype=torch.uint8)
         return ExportableGGUFTensor(raw, "q4_k", torch.bfloat16)
 
+    def test_nvfp4_fuses_equal_scalar_scales_and_rejects_differing(self):
+        from executorch.extension.llm.export.nvfp4 import ExportableNVFP4Tensor
+
+        def nvfp4(rows, pts):
+            q = torch.randint(0, 256, (rows, 64), dtype=torch.uint8)
+            s = torch.randint(0x20, 0x40, (rows, 8), dtype=torch.uint8)
+            return ExportableNVFP4Tensor(
+                q.view(torch.uint32), s, torch.tensor(pts), 16, torch.bfloat16
+            )
+
+        a, b = nvfp4(8, 0.5), nvfp4(24, 0.5)
+        fused = fuse_along_output([a, b])
+        self.assertIsInstance(fused, ExportableNVFP4Tensor)
+        self.assertEqual(fused.per_tensor_scale.item(), 0.5)
+        self.assertTrue(
+            torch.equal(fused.dequantize(), torch.cat([a.dequantize(), b.dequantize()]))
+        )
+        # One scalar cannot hold different global scales; the CUDA path fuses
+        # those after packing instead.
+        with self.assertRaises(ValueError):
+            fuse_along_output([a, nvfp4(24, 0.25)])
+
     def test_plain_tensor(self):
         a = torch.randn(8, 16)
         b = torch.randn(24, 16)
