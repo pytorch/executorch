@@ -3546,10 +3546,16 @@ TEST_F(CudaRuntimeColumnCacheTest, FailedAdmissionKeepsLiveOwnersUsable) {
 TEST_F(CudaRuntimeColumnCacheTest, AdmissionRetriesAtRequiredWidth) {
   constexpr int kLargeDim = 1 << 23;
   constexpr int kMaxOwners = 8;
-  // Six columns fit in this margin; the geometric nine-column target does not.
-  constexpr size_t kRequiredBytes = size_t{6} * 2 * kLargeDim * 4;
-  constexpr size_t kMargin = kRequiredBytes + 64 * 1024 * 1024;
-  for (bool clone : {false, true}) {
+  // One physical column holds two BF16 rows of K and of V.
+  constexpr size_t kColumnBytes = size_t{2} * 2 * kLargeDim * 2;
+  // Growing from five columns targets nine. With room for seven columns the
+  // halved increment fits and leaves a spare column; with room for six only
+  // the required width fits.
+  for (const auto& [clone, fit] : std::vector<std::pair<bool, int>>{
+           {false, 7}, {true, 7}, {false, 6}, {true, 6}}) {
+    SCOPED_TRACE(
+        "clone=" + std::to_string(clone) + " fit=" + std::to_string(fit));
+    const size_t kMargin = fit * kColumnBytes + 32 * 1024 * 1024;
     auto cfg = config(/*capacity=*/2, /*initial=*/2, /*max_write=*/1);
     cfg.max_seqs = kMaxOwners;
     cache::CacheGeometry geometry;
@@ -3614,9 +3620,9 @@ TEST_F(CudaRuntimeColumnCacheTest, AdmissionRetriesAtRequiredWidth) {
     const auto before = kv->metrics();
     const auto admitted =
         clone ? control->seq_clone(*owner, 1) : control->seq_new();
-    ASSERT_TRUE(admitted.has_value()) << "clone=" << clone;
+    ASSERT_TRUE(admitted.has_value());
     EXPECT_EQ(*admitted, 4);
-    EXPECT_EQ(kv->metrics().physical_columns, 6);
+    EXPECT_EQ(kv->metrics().physical_columns, fit);
     EXPECT_EQ(
         kv->metrics().column_resize_count, before.column_resize_count + 1);
     EXPECT_EQ(kv->metrics().live_sequences, 5);
@@ -3631,6 +3637,29 @@ TEST_F(CudaRuntimeColumnCacheTest, AdmissionRetriesAtRequiredWidth) {
                   *admitted * kLargeDim,
               1),
           history);
+    }
+    if (fit == 7) {
+      // The spare column admits the next owner under the same reservation
+      // without another resize.
+      const auto next =
+          clone ? control->seq_clone(*owner, 1) : control->seq_new();
+      ASSERT_TRUE(next.has_value());
+      EXPECT_EQ(*next, 5);
+      EXPECT_EQ(kv->metrics().physical_columns, 7);
+      EXPECT_EQ(
+          kv->metrics().column_resize_count, before.column_resize_count + 1);
+      EXPECT_EQ(kv->metrics().live_sequences, 6);
+      EXPECT_EQ(control->pos(*next), clone ? 1 : 0);
+      ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
+      EXPECT_EQ(read_rows(fake.bound["flat_k"].data, 1), history);
+      if (clone) {
+        EXPECT_EQ(
+            read_rows(
+                static_cast<uint16_t*>(fake.bound["flat_k"].data) +
+                    *next * kLargeDim,
+                1),
+            history);
+      }
     }
     held.reset();
     kv->forget_handle(&handle);

@@ -1339,10 +1339,12 @@ class CudaBatchedSequenceCache final : public cache::Cache,
         live_rows = std::max(live_rows, sequence.plan.length());
       }
       auto resized = pool_.resize_columns(target, live_rows, stream);
-      if (resized == Error::MemoryAllocationFailed && target > live + 1) {
-        // Under memory pressure, admit at the required width if doubling
-        // cannot fit. Failed resizing leaves storage and bindings intact.
-        target = live + 1;
+      // Under memory pressure, halve the growth until it fits, stopping at the
+      // required width. Keeping spare columns avoids a failed attempt, a full
+      // KV copy and graph recapture on every later admission. Failed resizing
+      // leaves storage and bindings intact.
+      while (resized == Error::MemoryAllocationFailed && target > live + 1) {
+        target = std::max(live + 1, columns_ + (target - columns_) / 2);
         resized = pool_.resize_columns(target, live_rows, stream);
       }
       ET_CHECK_OK_OR_RETURN_ERROR(resized);
