@@ -18,6 +18,10 @@ from dataclasses import dataclass, field
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from executorch.examples.models.muse_glimmer.model.dflash2 import (
+    CandidateSelector,
+    DFlashGroupedConv,
+)
 from executorch.examples.models.muse_glimmer.model.model import (
     FlatKVCache,
     RingKVCache,
@@ -68,6 +72,46 @@ class DFlashConfig:
     max_seq_len: int = 131072
     sliding_window: int | None = None
     sliding_window_pattern: list[bool] | None = None
+    conv_kernel_size: int = 0
+    conv_group_size: int = 0
+    selector_rank: int = 0
+    selector_top_k: int = 0
+    input_embedding_scale: float = 1.0
+    output_multiplier: float = 1.0
+    final_logit_softcapping: float | None = None
+
+    def __post_init__(self):
+        if any(
+            (
+                self.conv_kernel_size,
+                self.conv_group_size,
+                self.selector_rank,
+                self.selector_top_k,
+            )
+        ):
+            if not (
+                self.conv_kernel_size > 0
+                and self.conv_group_size > 0
+                and self.dim % self.conv_group_size == 0
+                and self.selector_rank > 0
+                and 1 <= self.selector_top_k <= self.vocab_size
+                and self.block_size >= 2
+            ):
+                raise ValueError(
+                    "DFlash2 requires valid convolution and selector metadata"
+                )
+        if not all(
+            math.isfinite(scale) and scale > 0
+            for scale in (self.input_embedding_scale, self.output_multiplier)
+        ):
+            raise ValueError(
+                "DFlash embedding and logit scales must be finite and positive"
+            )
+        if self.final_logit_softcapping is not None:
+            if not math.isfinite(self.final_logit_softcapping):
+                raise ValueError("DFlash logit softcapping must be finite")
+            if self.final_logit_softcapping <= 0:
+                self.final_logit_softcapping = None
 
     @property
     def n_target_layers(self) -> int:
@@ -75,6 +119,15 @@ class DFlashConfig:
 
     @staticmethod
     def from_gguf_metadata(metadata: dict) -> DFlashConfig:
+        if (
+            metadata.get("dflash.selector_top_k", 0)
+            and "dflash.attention.causal" not in metadata
+        ):
+            raise ValueError(
+                "DFlash2 requires explicit dflash.attention.causal metadata"
+            )
+        if metadata.get("dflash.attention.causal", False):
+            raise ValueError("Causal DFlash attention is unsupported")
         return DFlashConfig(
             dim=metadata.get("dflash.embedding_length", 6656),
             n_layers=metadata.get("dflash.block_count", 5),
@@ -92,6 +145,13 @@ class DFlashConfig:
             sliding_window_pattern=metadata.get(
                 "dflash.attention.sliding_window_pattern", None
             ),
+            conv_kernel_size=metadata.get("dflash.conv_kernel_size", 0),
+            conv_group_size=metadata.get("dflash.conv_group_size", 0),
+            selector_rank=metadata.get("dflash.selector_rank", 0),
+            selector_top_k=metadata.get("dflash.selector_top_k", 0),
+            input_embedding_scale=metadata.get("dflash.embedding_scale", 1.0),
+            output_multiplier=metadata.get("dflash.logit_scale", 1.0),
+            final_logit_softcapping=metadata.get("dflash.final_logit_softcapping"),
         )
 
 
@@ -101,20 +161,15 @@ def build_dflash_swa_mask(
     buf_size: int,
     window_size: int,
 ) -> torch.Tensor:
-    """Build boolean validity mask for ring-buffer context + block K/V.
-
-    The SWA ring buffer evicts entries beyond ``window_size``. This mask
-    marks which ring slots are filled — uniform for all Q positions (the
-    draft model's cross-attention is non-causal).  Block entries are always
-    valid.
-
-    Returns [1, 1, 1, buf_size + block_len] boolean mask (True = attend).
-    """
+    """Per-query noncausal window over ring-buffer context and draft K/V."""
     slots = torch.arange(buf_size, dtype=torch.long)
     ring_pos = slots + ((total_ctx - 1 - slots) // buf_size) * buf_size
-    valid = (ring_pos >= 0) & (ring_pos >= total_ctx - window_size)
-    blk_valid = torch.ones(block_len, dtype=torch.bool)
-    return torch.cat([valid, blk_valid]).unsqueeze(0).unsqueeze(0).unsqueeze(0)
+    query_pos = total_ctx + torch.arange(block_len, dtype=torch.long)
+    key_pos = torch.cat([ring_pos, query_pos])
+    visible = (key_pos >= 0) & (
+        (query_pos[:, None] - key_pos[None, :]).abs() < window_size
+    )
+    return visible[None, None]
 
 
 class DFlashAttention(nn.Module):
@@ -292,6 +347,38 @@ class DFlashDecoderLayer(nn.Module):
         )
         self.post_attention_layernorm = RMSNorm(config.dim, config.norm_eps)
         self.mlp = DFlashMLP(config)
+        self.attention_conv = (
+            DFlashGroupedConv(
+                config.dim, config.conv_kernel_size, config.conv_group_size
+            )
+            if config.conv_kernel_size
+            else None
+        )
+        self.mlp_conv = (
+            DFlashGroupedConv(
+                config.dim, config.conv_kernel_size, config.conv_group_size
+            )
+            if config.conv_kernel_size
+            else None
+        )
+
+    def prepare_attention(self, x: torch.Tensor):
+        h = self.input_layernorm(x)
+        if self.attention_conv is None:
+            return h, None
+        return self.attention_conv.prepare(h)
+
+    def finish_attention(self, h: torch.Tensor, coefficients):
+        if self.attention_conv is not None:
+            h = self.attention_conv.finish(h, coefficients)
+        return h
+
+    def feed_forward(self, x: torch.Tensor) -> torch.Tensor:
+        h = self.post_attention_layernorm(x)
+        if self.mlp_conv is None:
+            return self.mlp(h)
+        h, coefficients = self.mlp_conv.prepare(h)
+        return self.mlp_conv.finish(self.mlp(h), coefficients)
 
     def forward(
         self,
@@ -302,10 +389,10 @@ class DFlashDecoderLayer(nn.Module):
         ctx_start: int,
         total_ctx: int,
     ) -> torch.Tensor:
-        x = x + self.self_attn(
-            self.input_layernorm(x), target_hidden, cos, sin, ctx_start, total_ctx
-        )
-        x = x + self.mlp(self.post_attention_layernorm(x))
+        h, coefficients = self.prepare_attention(x)
+        h = self.self_attn(h, target_hidden, cos, sin, ctx_start, total_ctx)
+        x = x + self.finish_attention(h, coefficients)
+        x = x + self.feed_forward(x)
         return x
 
 
@@ -350,6 +437,17 @@ class DFlashDraftModel(nn.Module):
         )
 
         self.norm = RMSNorm(config.dim, config.norm_eps)
+
+        self.candidate_selector = (
+            CandidateSelector(
+                config.dim,
+                config.vocab_size,
+                config.selector_rank,
+                config.selector_top_k,
+            )
+            if config.selector_top_k
+            else None
+        )
 
         self.rope_theta = config.rope_theta
         self.head_dim = config.head_dim
@@ -432,6 +530,8 @@ def _packed_draft_forward(
     torch._check(draft_tokens.shape[1] == draft.config.block_size)
     torch._check(target_hidden.shape[0] == 1)
     noise_embedding = embed_tokens(draft_tokens.reshape(1, -1)).to(activation_dtype)
+    if draft.config.input_embedding_scale != 1.0:
+        noise_embedding = noise_embedding * draft.config.input_embedding_scale
     return lm_head(draft(noise_embedding, target_hidden, positions, kv_order)).float()
 
 
@@ -486,19 +586,35 @@ class MuseGlimmerWithDFlash(nn.Module):
         target_hidden: torch.Tensor,
         input_pos: torch.Tensor,
         valid_ctx_len: torch.Tensor | None = None,
-    ) -> torch.Tensor:
+        proposal_rows: torch.Tensor | None = None,
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+        draft = self.draft
         noise_embedding = self.target.embed_tokens(draft_tokens).to(
             self.target.activation_dtype
         )
-
-        # The fourth input is CUDA's valid context length or the off-graph MLX
-        # permutation from projected rows to contiguous owner K/V groups.
-        if valid_ctx_len is None:
-            h = self.draft(noise_embedding, target_hidden, input_pos)
-        else:
-            h = self.draft(noise_embedding, target_hidden, input_pos, valid_ctx_len)
-
-        return self.target.lm_head(h).float()
+        if draft.config.input_embedding_scale != 1.0:
+            noise_embedding = noise_embedding * draft.config.input_embedding_scale
+        # Fourth input: CUDA valid context length or off-graph K/V permutation.
+        h = draft(
+            noise_embedding,
+            target_hidden,
+            input_pos,
+            *(() if valid_ctx_len is None else (valid_ctx_len,)),
+        )
+        if draft.candidate_selector is None:
+            return self.target.lm_head(h).float()
+        torch._check(draft_tokens.shape[1] == draft.config.block_size)
+        h = h.reshape(draft_tokens.shape[0], draft_tokens.shape[1], -1)
+        # Only the selector's length matters; proposals are always a prefix.
+        h = h[:, 1:] if proposal_rows is None else h[:, 1 : 1 + proposal_rows.shape[0]]
+        logits = self.target.lm_head(h).float() * draft.config.output_multiplier
+        softcap = draft.config.final_logit_softcapping
+        if softcap is not None:
+            logits = torch.tanh(logits / softcap) * softcap
+        unary, candidate_ids = torch.topk(logits, draft.config.selector_top_k, dim=-1)
+        return candidate_ids, draft.candidate_selector(
+            candidate_ids, unary, h, draft_tokens[:, 0]
+        )
 
     def draft_forward_packed(
         self,

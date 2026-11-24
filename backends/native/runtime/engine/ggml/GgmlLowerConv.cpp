@@ -93,8 +93,7 @@ void GraphBuilder::lower_convolution(const Node& node) {
           /*is_2D=*/true,
           GGML_TYPE_F32);
     }
-    result = ggml_mul_mat(
-        ctx,
+    result = mul_mat(
         ggml_reshape_2d(
             ctx,
             columns,

@@ -16,6 +16,9 @@ et_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 build_dir="${ESPRESSIF_HOST_BUILD_DIR:-${et_root}/cmake-out-espnn-host}"
 cd "${et_root}"
 
+python -m pytest -q \
+    backends/espressif/test/test_int8_ops.py::test_vendor_regressions_are_delegated
+
 for variant in plain sanitized; do
     sanitize=OFF
     if [[ "${variant}" == sanitized ]]; then

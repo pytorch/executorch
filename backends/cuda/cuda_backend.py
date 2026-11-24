@@ -78,6 +78,7 @@ from torch._decomp import decomposition_table
 from torch._inductor.decomposition import conv1d_to_conv2d
 from torch._prims_common import suggest_memory_format
 from torch.fx.experimental.symbolic_shapes import statically_known_true
+from torch.multiprocessing.reductions import StorageWeakRef
 from torch.nn.attention import SDPBackend
 
 logger = logging.getLogger(__name__)
@@ -468,6 +469,28 @@ def _hint_matmul_contiguity_only_for_full_blocks() -> typing.ContextManager[None
     return _FULL_BLOCK_CONTIGUITY_HINTS.scope()
 
 
+def _pin_triton_libdevice(emulate_precision_casts: bool) -> None:
+    """Choose Triton's libdevice before any kernel compiles, as Inductor does.
+
+    With ``emulate_precision_casts`` Inductor points Triton at the CUDA
+    toolkit's libdevice the first time it compiles one of its own kernels,
+    process-wide. A kernel compiled before that uses Triton's bundled
+    libdevice, and since the libdevice is part of Triton's cache key, the
+    same kernel compiled before and after gets two cache entries and two
+    builds. Making the same choice up front, with Inductor's own setter, gives
+    every kernel of the process the libdevice Inductor would use. The setter
+    also exports ``TRITON_LIBDEVICE_PATH`` for the processes this one starts,
+    and does nothing once the path is set.
+    """
+    from torch._inductor.runtime import compile_tasks
+
+    set_path = getattr(compile_tasks, "_set_triton_libdevice_path", None)
+    if set_path is None:
+        return
+    with torch._inductor.config.patch(emulate_precision_casts=emulate_precision_casts):
+        set_path()
+
+
 def _full_zeros_preserving_strides(x: torch.Tensor, device) -> torch.Tensor:
     """Allocate a zero-filled tensor matching ``x``'s size/stride/dtype on ``device``.
 
@@ -778,6 +801,7 @@ MEASURED_ROUTING_COMPILE_SPEC = "measured_routing"
 MEASURED_ROUTING_MARGIN_COMPILE_SPEC = "measured_routing_margin"
 MEASURED_ROUTING_CACHE_DIR_COMPILE_SPEC = "measured_routing_cache_dir"
 MEASURED_ROUTING_WORKERS_COMPILE_SPEC = "measured_routing_workers"
+SHARE_WEIGHTS_COMPILE_SPEC = "share_weights"
 
 
 def _measured_routing_config(
@@ -812,19 +836,38 @@ def _measured_routing_config(
     return config if enabled else None
 
 
-# The CUDA tensors `move_program_to_device` placed on the GPU for the compile on
-# this thread: they can be parked on the CPU when an autotune capture runs out
-# of memory, since AOTI autotunes on random inputs rather than on them. Held
-# weakly, so they live exactly as long as the program (or a decomposed copy
-# sharing them) does.
+# The CUDA tensors `move_program_to_device` created for the compile on this
+# thread, leaving out GPU tensors shared with the caller, which stay the
+# caller's. An export that shares its tensors frees only these at the end of
+# preprocess. They can also be parked on the CPU when an autotune timing runs
+# out of memory. That is safe while the timed kernels read random stand-ins
+# instead of them, which holds for Inductor's autotune only with
+# autotune_at_compile_time on.
+# Held weakly, so they live exactly as long as the program (or a decomposed
+# copy sharing them) does.
 _MOVED_TENSORS = threading.local()
 
 
-def _track_moved_tensors(program) -> None:
+def _program_cuda_tensors(program) -> List[torch.Tensor]:
     tensors = list(getattr(program, "state_dict", {}).values())
     tensors += list(getattr(program, "constants", {}).values())
+    return [t for t in tensors if isinstance(t, torch.Tensor) and t.is_cuda]
+
+
+def _tensor_storages(program) -> set:
+    tensors = (*program.state_dict.values(), *program.constants.values())
+    return {
+        StorageWeakRef(t.untyped_storage())
+        for t in tensors
+        if isinstance(t, torch.Tensor)
+    }
+
+
+def _track_moved_tensors(program, shared_storages) -> None:
     _MOVED_TENSORS.refs = [
-        weakref.ref(t) for t in tensors if isinstance(t, torch.Tensor) and t.is_cuda
+        weakref.ref(t)
+        for t in _program_cuda_tensors(program)
+        if StorageWeakRef(t.untyped_storage()) not in shared_storages
     ]
 
 
@@ -1391,14 +1434,21 @@ class CudaBackend(AotiBackend, BackendDetails):
     def copy_exported_program_for_preprocess(
         cls, edge_program, compile_specs: List[CompileSpec]
     ):
-        """Copy graph structure while sharing immutable tensor storage.
+        """Copy the program, sharing its tensors with the caller when asked.
 
-        CUDA preprocessing replaces state-dict entries when moving them to the
-        target device; it does not mutate the source tensors.  Memoizing those
-        tensors therefore avoids a model-sized host copy for every delegated
-        method while preserving an independent graph and state-dict mapping.
+        By default the copy is deep, so preprocess cannot change the caller's
+        tensors. With ``share_weights`` (or ``low_memory_mode``) the copy keeps
+        an independent graph and state-dict mapping but shares the tensors,
+        which avoids a model-sized copy for every delegated method, on the GPU
+        when the weights already live there. Preprocess then must only replace
+        state-dict entries, never write the tensors: it never frees or parks a
+        shared GPU tensor (see ``_MOVED_TENSORS``), and without compile-time
+        autotune a shared GPU tensor that the graph writes gets its own copy in
+        ``move_program_to_device``. Only low-memory mode lets Inductor move
+        shared GPU weights to disk while it autotunes; they come back with the
+        same values at new addresses (see ``get_aoti_compile_options``).
         """
-        if not cls._is_low_memory_mode(compile_specs):
+        if not cls._shares_weights(compile_specs):
             return copy.deepcopy(edge_program)
 
         tensor_memo = {
@@ -1566,7 +1616,6 @@ class CudaBackend(AotiBackend, BackendDetails):
         platform = "linux"
         emulate_precision_casts = True
         max_autotune = True
-        autotune_at_compile_time = None
         shim_library_path = None
         for spec in compile_specs:
             if spec.key == "platform":
@@ -1575,20 +1624,23 @@ class CudaBackend(AotiBackend, BackendDetails):
                 emulate_precision_casts = _on_off_compile_spec_value(spec)
             elif spec.key == "max_autotune":
                 max_autotune = _on_off_compile_spec_value(spec)
-            elif spec.key == "autotune_at_compile_time":
-                autotune_at_compile_time = _on_off_compile_spec_value(spec)
             elif spec.key == "shim_library_path":
                 shim_library_path = spec.value.decode("utf-8")
         options["emulate_precision_casts"] = emulate_precision_casts
         options["max_autotune"] = max_autotune
-        if autotune_at_compile_time is not None:
-            options["triton.autotune_at_compile_time"] = autotune_at_compile_time
+        # Set even without a spec, so the compile uses the same value that
+        # move_program_to_device used to decide what to copy.
+        options["triton.autotune_at_compile_time"] = cls._autotunes_at_compile_time(
+            compile_specs
+        )
         # The final autotuning pass picks each kernel's launch settings by
         # running it on random tensors shaped like its inputs, weights included,
         # so in low-memory mode the real weights wait in a file meanwhile instead
         # of taking GPU memory next to their random stand-ins. The threshold of
         # 0.0 moves them for every model, because low-memory mode is for models
         # that are short of GPU memory, and moving a small model costs little.
+        # Weights the caller already keeps on the GPU are moved too: they come
+        # back with the same values but at new addresses.
         # TODO: drop the hasattr once every torch the repo installs has the option.
         if cls._is_low_memory_mode(compile_specs) and hasattr(
             torch._inductor.config.aot_inductor,
@@ -1653,8 +1705,11 @@ class CudaBackend(AotiBackend, BackendDetails):
         # On ROCm a failed capture invalidates the stream the rest of the
         # compile runs on (hipErrorStreamCaptureInvalidated).
         cuda_graph_autotune_timing = torch.version.hip is None
+        emulate_precision_casts = True
         for spec in compile_specs or []:
-            if spec.key == "low_memory_mode":
+            if spec.key == "emulate_precision_casts":
+                emulate_precision_casts = _on_off_compile_spec_value(spec)
+            elif spec.key == "low_memory_mode":
                 mode = spec.value.decode("utf-8").upper()
                 if mode not in ["ON", "OFF"]:
                     raise ValueError(
@@ -1671,6 +1726,10 @@ class CudaBackend(AotiBackend, BackendDetails):
 
         @contextlib.contextmanager
         def _combined():
+            # Every compile of this backend (the export's, the measurement
+            # worker's and its warm-up processes') runs in this context; pin
+            # the libdevice before any of them compiles a kernel.
+            _pin_triton_libdevice(emulate_precision_casts)
             with contextlib.ExitStack() as stack:
                 # Force any remaining PyTorch SDPA ops to use the MATH
                 # backend during compilation so AOTI can lower / decompose
@@ -1748,6 +1807,33 @@ class CudaBackend(AotiBackend, BackendDetails):
         return False
 
     @classmethod
+    def _shares_weights(cls, compile_specs: List[CompileSpec]) -> bool:
+        """Return True if preprocess shares the program's tensors with the caller."""
+        share_weights = None
+        for spec in compile_specs:
+            if spec.key == SHARE_WEIGHTS_COMPILE_SPEC:
+                share_weights = _on_off_compile_spec_value(spec)
+        if cls._is_low_memory_mode(compile_specs):
+            if share_weights is False:
+                raise ValueError(
+                    "low_memory_mode always shares the weights, so it cannot be "
+                    "combined with share_weights=OFF."
+                )
+            return True
+        return bool(share_weights)
+
+    @staticmethod
+    def _autotunes_at_compile_time(compile_specs: List[CompileSpec]) -> bool:
+        autotune = None
+        for spec in compile_specs:
+            if spec.key == "autotune_at_compile_time":
+                autotune = _on_off_compile_spec_value(spec)
+        if autotune is not None:
+            return autotune
+        # Inductor's default (None) turns it on for AOT compiles.
+        return torch._inductor.config.triton.autotune_at_compile_time is not False
+
+    @classmethod
     def _weights_format(cls, compile_specs: List[CompileSpec]) -> str:
         # CUDA consumes the structured AOTI output directly and emits a
         # versioned per-FQN metadata payload. This is backend-wide rather than a
@@ -1769,7 +1855,11 @@ class CudaBackend(AotiBackend, BackendDetails):
         the autotune / cpp_wrapper compile while still satisfying the device-match
         check on the cache update. They are re-synthesized as zeros for the lifted
         graph and the serialized blob. This activates automatically with low-memory
-        mode. Other (non-low-memory) exports use the stock pass.
+        mode. Other (non-low-memory) exports use the stock pass. When the
+        program shares its tensors with the caller, only the CUDA tensors the
+        move creates are tracked for parking and release, and without
+        compile-time autotune a shared GPU tensor that the graph writes gets
+        its own copy.
 
         Low-memory methods share their CPU weights, so the CPU source of each
         moved tensor is recorded on the active weight capture. ``materialize``
@@ -1779,21 +1869,45 @@ class CudaBackend(AotiBackend, BackendDetails):
         """
         from torch.export.passes import move_to_device_pass
 
+        shared = (
+            _tensor_storages(edge_program)
+            if cls._shares_weights(compile_specs)
+            else set()
+        )
         if not cls._is_low_memory_mode(compile_specs):
             moved = move_to_device_pass(edge_program, device)
-            _track_moved_tensors(moved)
-            return moved
-        # Only parameters are recorded: low-memory compilation can hand AOTI CPU
-        # clones of buffers (_compile_time_cpu_clones).
-        sources = {
-            name: edge_program.state_dict[name]
-            for name in edge_program.graph_signature.parameters
-        }
-        moved = _move_to_device_resize_kv(edge_program, device)
-        _track_moved_tensors(moved)
-        CudaWeightCollector.current_capture().record_moved_sources(
-            sources, dict(moved.state_dict)
-        )
+        else:
+            # Only parameters are recorded: low-memory compilation can hand AOTI
+            # CPU clones of buffers (_compile_time_cpu_clones).
+            sources = {
+                name: edge_program.state_dict[name]
+                for name in edge_program.graph_signature.parameters
+            }
+            moved = _move_to_device_resize_kv(edge_program, device)
+            CudaWeightCollector.current_capture().record_moved_sources(
+                sources, dict(moved.state_dict)
+            )
+        if shared and not cls._autotunes_at_compile_time(compile_specs):
+            # Then Inductor runs the graph on the real tensors once, so a tensor
+            # the graph writes must not be the caller's.
+            signature = moved.graph_signature
+            written = {
+                *signature.buffers_to_mutate.values(),
+                *signature.parameters_to_mutate.values(),
+            }
+            for values in (moved._state_dict, moved._constants):
+                for name, tensor in values.items():
+                    if (
+                        name in written
+                        and isinstance(tensor, torch.Tensor)
+                        and StorageWeakRef(tensor.untyped_storage()) in shared
+                    ):
+                        values[name] = (
+                            torch.nn.Parameter(tensor.clone(), tensor.requires_grad)
+                            if isinstance(tensor, torch.nn.Parameter)
+                            else tensor.clone()
+                        )
+        _track_moved_tensors(moved, shared)
         return moved
 
     @classmethod
@@ -1805,6 +1919,9 @@ class CudaBackend(AotiBackend, BackendDetails):
         """
         Free GPU memory held by tensors that ``move_to_device_pass`` placed
         on CUDA (params, buffers, and constants of ``device_edge_program``).
+        When the program shares its tensors with the caller, only the tensors
+        ``move_program_to_device`` created are freed, so the caller's GPU
+        tensors are kept.
 
         Resizing the underlying storage to 0 returns those bytes to PyTorch's
         caching allocator, so the next ``preprocess`` call (e.g. for the
@@ -1814,20 +1931,15 @@ class CudaBackend(AotiBackend, BackendDetails):
         if not torch.cuda.is_available():
             return
 
-        pools = []
-        state_dict = getattr(device_edge_program, "state_dict", None)
-        if state_dict:
-            pools.append(state_dict.values())
-        constants = getattr(device_edge_program, "constants", None)
-        if constants:
-            pools.append(constants.values())
-
-        for pool in pools:
-            for tensor in pool:
-                if isinstance(tensor, torch.Tensor) and tensor.is_cuda:
-                    try:
-                        tensor.untyped_storage().resize_(0)
-                    except Exception:
-                        # Some storages may be shared / non-resizable; skip
-                        # them rather than failing the export.
-                        pass
+        tensors = (
+            _moved_program_tensors()
+            if cls._shares_weights(compile_specs)
+            else _program_cuda_tensors(device_edge_program)
+        )
+        for tensor in tensors:
+            try:
+                tensor.untyped_storage().resize_(0)
+            except Exception:
+                # Some storages may be shared / non-resizable; skip
+                # them rather than failing the export.
+                pass
