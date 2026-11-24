@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess  # nosec B404 - invoked only for trusted toolchain binaries
 import sys
+import sysconfig
 import tempfile
 from collections.abc import Iterable
 from pathlib import Path
@@ -78,6 +79,16 @@ def _get_qdq_memory_format_ops() -> tuple[object, ...]:
 
 
 _QDQ_MEMORY_FORMAT_OPS = _get_qdq_memory_format_ops()
+_QDQ_MEMORY_FORMAT_OP_NAMES = frozenset(
+    f"quantized_decomposed.{op_name}.{overload_name}"
+    for op_name, overload_names in _QDQ_TORCH_OVERLOADS
+    for overload_name in overload_names + dict(_QDQ_BACKWARD_COMPAT_OVERLOADS)[op_name]
+)
+
+
+def _is_qdq_memory_format_op(func: object) -> bool:
+    return func in _QDQ_MEMORY_FORMAT_OPS or str(func) in _QDQ_MEMORY_FORMAT_OP_NAMES
+
 
 # Copied from PyTorch.
 # From torch/testing/_internal/common_utils.py:torch_to_numpy_dtype_dict
@@ -133,6 +144,22 @@ KNOWN_VKML_VALIDATION_VUIDS = (
     "VUID-VkComputePipelineCreateInfo-layout-07988",
     "VUID-vkCmdDispatch-None-08114",
 )
+
+
+def _find_infer_shapes_binary() -> str:
+    if path := shutil.which(INFER_SHAPES_PATH):
+        return path
+
+    purelib_path = sysconfig.get_path("purelib")
+    if purelib_path is not None:
+        package_bin = Path(purelib_path) / "bin"
+        if package_binary := shutil.which(INFER_SHAPES_PATH, path=str(package_bin)):
+            return package_binary
+
+    raise FileNotFoundError(
+        "Could not find infer_shapes. Install tosa-tools and ensure its binary is "
+        "on PATH or in the active Python environment site-packages/bin."
+    )
 
 
 class QuantizationParams:
@@ -367,6 +394,9 @@ class TosaReferenceModelDispatch(TorchFunctionMode):
         self._generate_shape_inference_json(
             tosa_buffer, tosa_sym_int_model, test_case_file, input_names, inputs
         )
+        if infer_shapes_path == INFER_SHAPES_PATH:
+            infer_shapes_path = _find_infer_shapes_binary()
+
         subprocess.run(
             [
                 infer_shapes_path,
@@ -420,8 +450,7 @@ class TosaReferenceModelDispatch(TorchFunctionMode):
 
         # This is a hack since Q/DQ ops does not handle channels last input correctly: the simplest and most robust
         # workaround is to simply run them in channels first format and then convert back to channels last.
-        if func in _QDQ_MEMORY_FORMAT_OPS:
-
+        if _is_qdq_memory_format_op(func):
             input_dim_order = args[0].dim_order()
             if input_dim_order in (NHWC_ORDER, NNHWC_ORDER):
                 args = [args[0].to(memory_format=torch.contiguous_format), *args[1:]]
