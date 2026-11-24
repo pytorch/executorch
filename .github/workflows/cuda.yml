@@ -615,6 +615,34 @@ jobs:
             echo "::error::a device placement test skipped in the CUDA job, which means the CUDA backend or a visible GPU is missing"
             exit 1
           fi
+
+          # Helion kernels for backends/cuda/tests/test_lower_helion.py.
+          # Helion does not depend on torch, so this keeps the pinned torch
+          # nightly. 1.6.0 does not import on Python 3.11 (a dataclass with a
+          # mappingproxy default). The probe covers the private modules the
+          # pass reads outside the test's skip guard, so a renamed module is a
+          # collection error, not a skip.
+          pip install "helion==1.5.2"
+          python -c "import helion._compiler._dynamo.higher_order_ops, helion._compiler._dynamo.variables, helion.runtime.kernel"
+
+          # With Helion installed on this job's runner, the only skips left in
+          # the lowering tests are a missing GPU or CUDA toolkit (the SM80 padded case is
+          # skipped only under the internal Buck runner), and pytest exits 0
+          # on a skip. Run them here, before the long builds, and treat a
+          # skip as a failure like the device placement test above.
+          set +e
+          python -m pytest backends/cuda/tests/test_lower_helion.py -v -rs -o "addopts=" \
+            2>&1 | tee /tmp/lower_helion_test.log
+          lower_helion_status=${PIPESTATUS[0]}
+          set -e
+          if [ "${lower_helion_status}" -ne 0 ]; then
+            echo "::error::a Helion lowering test failed"
+            exit "${lower_helion_status}"
+          fi
+          if grep -qE "[0-9]+ skipped" /tmp/lower_helion_test.log; then
+            echo "::error::a Helion lowering test skipped in the CUDA job, which means the CUDA backend, a visible GPU or a CUDA toolkit is missing"
+            exit 1
+          fi
         fi
 
         # Build ExecuTorch with CUDA support
@@ -637,7 +665,7 @@ jobs:
           python -m pytest "${KERNEL_TESTS[@]}" -v -o "addopts=" --durations=20
         else
           IGNORES=()
-          for t in "${KERNEL_TESTS[@]}" "${QUANTIZED_GEMM_TESTS[@]}" backends/cuda/tests/test_device_placement.py; do
+          for t in "${KERNEL_TESTS[@]}" "${QUANTIZED_GEMM_TESTS[@]}" backends/cuda/tests/test_device_placement.py backends/cuda/tests/test_lower_helion.py; do
             IGNORES+=("--ignore=${t}")
           done
           python -m pytest backends/cuda/tests backends/cuda/passes/tests -v -o "addopts=" --durations=20 \

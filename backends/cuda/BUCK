@@ -136,6 +136,7 @@ fbcode_target(
     deps = [
         ":autotune",
         ":cuda_passes",
+        ":lower_helion",
         ":triton_measured_routing",
         ":triton_replacement_pass",
         "//caffe2:torch",
@@ -145,6 +146,22 @@ fbcode_target(
         "//executorch/exir/backend:compile_spec_schema",
         "//executorch/exir/passes:replace_complex_with_real_pass",
         "//executorch/backends/aoti:aoti_backend",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_library,
+    name = "lower_helion",
+    typing = True,
+    srcs = [
+        "passes/helion_cute.py",
+        "passes/lower_helion.py",
+    ],
+    visibility = [
+        "//executorch/backends/cuda/...",
+    ],
+    deps = [
+        "//caffe2:torch",
     ],
 )
 

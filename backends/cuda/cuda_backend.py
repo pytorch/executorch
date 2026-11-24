@@ -36,6 +36,8 @@ from executorch.backends.cuda.cuda_weight_collector import (
     CudaWeightCollector,
     trim_host_memory,
 )
+from executorch.backends.cuda.passes import helion_cute
+from executorch.backends.cuda.passes.lower_helion import LowerHelionPass
 from executorch.backends.cuda.passes.lower_offgraph_kv import (
     CheckOffGraphKVStepWidthPass,
     LowerOffGraphKVPass,
@@ -288,6 +290,58 @@ def _install_as_needed_links(active):
         cpp_builder.get_cpp_torch_device_options = original
 
     return remove
+
+
+def _install_helion_cute_links(active):
+    from torch._inductor import cpp_builder
+
+    original = cpp_builder.get_cpp_torch_device_options
+
+    def device_options(device_type, aot_mode=False, *args, **kwargs):
+        result = original(device_type, aot_mode, *args, **kwargs)
+        if not (
+            aot_mode
+            and active()
+            and sys.platform.startswith("linux")
+            and torch._inductor.config.aot_inductor.cross_target_platform is None
+        ):
+            return result
+        # Link the archives of the Helion CuTe launches this thread's program
+        # compiled. Reading them per calling thread keeps the link free of
+        # process-wide state (no LIBRARY_PATH or custom_op_libs mutation)
+        # while other threads lower.
+        directories, libraries = helion_cute.program_link_options()
+        if not libraries:
+            return result
+        definitions, include_dirs, cflags, ldflags, lib_dirs, libs, *rest = result
+        return (
+            definitions,
+            include_dirs,
+            cflags,
+            ldflags,
+            [*lib_dirs, *directories],
+            [*libs, *libraries],
+            *rest,
+        )
+
+    cpp_builder.get_cpp_torch_device_options = device_options
+
+    def remove() -> None:
+        cpp_builder.get_cpp_torch_device_options = original
+
+    return remove
+
+
+_HELION_CUTE_LINKS = _CompilePatch(_install_helion_cute_links)
+
+
+def _link_helion_cute_libraries() -> typing.ContextManager[None]:
+    """Link this thread's Helion CuTe launch archives into the AOTI `.so`.
+
+    Only threads inside this context get the libraries; see
+    `helion_cute.program_link_options`.
+    """
+    return _HELION_CUTE_LINKS.scope()
 
 
 _AS_NEEDED_LINKS = _CompilePatch(_install_as_needed_links)
@@ -764,6 +818,14 @@ def _move_to_device_resize_kv(ep, location):
     _move_graph_nodes_to_device(ep.graph_module, location)
     ep.validate()
     return ep
+
+
+def _target_platform(compile_specs: List[CompileSpec]) -> str:
+    platform = "linux"
+    for spec in compile_specs:
+        if spec.key == "platform":
+            platform = spec.value.decode("utf-8")
+    return platform
 
 
 def _on_off_compile_spec_value(spec: CompileSpec) -> bool:
@@ -1261,8 +1323,14 @@ class CudaBackend(AotiBackend, BackendDetails):
                 raise RuntimeError(f"Unsupported CUDA architecture: {compiled_arch}")
             target_sm = int(target_arch)
             # Architecture-accelerated PTX targets such as compute_90a and
-            # compute_120a are not forward-compatible fallback images.
-            if cls._should_include_ptx(compile_specs) and compiled_arch.isdigit():
+            # compute_120a are not forward-compatible fallback images. Helion
+            # CuTe kernels are compiled for the export GPU only, so a program
+            # containing them must not be picked as a PTX fallback either.
+            if (
+                cls._should_include_ptx(compile_specs)
+                and compiled_arch.isdigit()
+                and not helion_cute.last_program_had_launches()
+            ):
                 ptx_compute = int(compiled_arch)
         collector.add_preprocess_result(
             result,
@@ -1427,6 +1495,8 @@ class CudaBackend(AotiBackend, BackendDetails):
             "aoti_torch_cuda_scatter_src_out": None,
             "aoti_torch_cuda_masked_select": None,
             "aoti_torch_cuda_nonzero": None,
+            # The Helion CuTe launches LowerHelionPass compiled into C shims.
+            **helion_cute.exported_fallback_kernels(),
         }
 
     @classmethod
@@ -1456,15 +1526,21 @@ class CudaBackend(AotiBackend, BackendDetails):
         return table
 
     @classmethod
-    def get_custom_passes(cls, compile_specs: List[CompileSpec]) -> List[typing.Any]:
+    def get_custom_passes(  # noqa: C901
+        cls, compile_specs: List[CompileSpec]
+    ) -> List[typing.Any]:
         """
         Return CUDA-specific passes, ending with ReplaceEdgeOpWithTritonOpPass
         and, with measured routing on, the passes that measure the
-        implementations of the calls several can run and apply the choice.
+        implementations of the calls several can run and apply the choice,
+        followed by LowerHelionPass.
 
         The replacement pass uses Triton kernels for the calls they support and
         leaves other calls to the regular lowering. The triton_kernel_mode
         compile spec is deprecated: "OFF" is treated as "ON".
+
+        LowerHelionPass runs last: it emits ATen, Triton and custom op nodes for
+        AOTI rather than Edge IR.
         """
         for spec in compile_specs:
             if spec.key == "triton_kernel_mode":
@@ -1518,6 +1594,7 @@ class CudaBackend(AotiBackend, BackendDetails):
                 method_name = "method"
             passes.append(MeasureChoicesPass(cls, compile_specs, config))
             passes.append(ApplyChoicesPass(method_name, config))
+        passes.append(LowerHelionPass(target_platform=_target_platform(compile_specs)))
         return passes
 
     @classmethod
@@ -1563,15 +1640,13 @@ class CudaBackend(AotiBackend, BackendDetails):
 
         # Parse compile_specs to check for platform
 
-        platform = "linux"
+        platform = _target_platform(compile_specs)
         emulate_precision_casts = True
         max_autotune = True
         autotune_at_compile_time = None
         shim_library_path = None
         for spec in compile_specs:
-            if spec.key == "platform":
-                platform = spec.value.decode("utf-8")
-            elif spec.key == "emulate_precision_casts":
+            if spec.key == "emulate_precision_casts":
                 emulate_precision_casts = _on_off_compile_spec_value(spec)
             elif spec.key == "max_autotune":
                 max_autotune = _on_off_compile_spec_value(spec)
@@ -1685,6 +1760,11 @@ class CudaBackend(AotiBackend, BackendDetails):
                 stack.enter_context(_pass_float_scalars_to_triton_as_floats())
                 stack.enter_context(_offer_only_cpp_callable_conv_choices())
                 stack.enter_context(_hint_matmul_contiguity_only_for_full_blocks())
+                # Let AOTI call and link the Helion CuTe launches LowerHelionPass
+                # compiled: the first declares their C shims, the second links
+                # their archives for this thread only.
+                stack.enter_context(helion_cute.link_exported_launches())
+                stack.enter_context(_link_helion_cute_libraries())
                 # On ROCm, is_big_gpu gates on architecture, not SM count.
                 if torch.version.hip is None:
                     stack.enter_context(_allow_triton_templates_on_small_gpus())
