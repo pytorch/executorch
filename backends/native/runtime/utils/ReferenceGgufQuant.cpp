@@ -1,0 +1,372 @@
+// Copyright (c) Meta Platforms, Inc. and affiliates.
+// All rights reserved.
+//
+// This source code is licensed under the BSD-style license found in the
+// LICENSE file in the root directory of this source tree.
+
+#include <executorch/backends/native/runtime/utils/ReferenceGgufQuant.h>
+
+#include <algorithm>
+#include <bit>
+#include <cmath>
+#include <stdexcept>
+#include <string>
+#include <thread>
+#include <vector>
+
+namespace ptn::reference {
+namespace {
+
+// Below this many weights per thread, starting threads costs more than it
+// saves.
+constexpr int64_t kMinWeightsPerThread = int64_t{1} << 20;
+
+using BlockDecoder = void (*)(const uint8_t*, float*);
+
+float half_to_float(const uint8_t* bytes) {
+  const uint32_t h =
+      static_cast<uint32_t>(bytes[0]) | (static_cast<uint32_t>(bytes[1]) << 8);
+  const uint32_t sign = (h & 0x8000u) << 16;
+  const uint32_t exponent = (h >> 10) & 0x1Fu;
+  const uint32_t mantissa = h & 0x3FFu;
+  if (exponent == 0) {
+    const float magnitude = std::ldexp(static_cast<float>(mantissa), -24);
+    return sign != 0 ? -magnitude : magnitude;
+  }
+  if (exponent == 0x1Fu) {
+    return std::bit_cast<float>(sign | 0x7F800000u | (mantissa << 13));
+  }
+  return std::bit_cast<float>(
+      sign | ((exponent + 112) << 23) | (mantissa << 13));
+}
+
+// The 12 scale bytes hold eight 6-bit (scale, min) pairs.
+void q4_k_scale_min(const uint8_t* scales, int pair, float* scale, float* min) {
+  if (pair < 4) {
+    *scale = scales[pair] & 63;
+    *min = scales[pair + 4] & 63;
+  } else {
+    *scale = (scales[pair + 4] & 0xF) | ((scales[pair - 4] >> 6) << 4);
+    *min = (scales[pair + 4] >> 4) | ((scales[pair] >> 6) << 4);
+  }
+}
+
+// block_q4_K: fp16 d, fp16 dmin, 12 scale bytes, 128 nibble bytes. Each
+// 32-byte group yields 32 weights from its low nibbles, then 32 from its high.
+// block_q5_K inserts, before the nibbles, 32 bytes holding each weight's fifth
+// bit: bits 2 * group and 2 * group + 1 of byte l, for weights l and l + 32 of
+// the group.
+void decode_q4_k_or_q5_k_block(const uint8_t* block, float* y, bool is_q5k) {
+  const float d = half_to_float(block);
+  const float dmin = half_to_float(block + 2);
+  const uint8_t* scales = block + 4;
+  const uint8_t* qh = block + 16;
+  const uint8_t* q = is_q5k ? block + 48 : block + 16;
+  for (int group = 0; group < 4; ++group) {
+    float scale = 0;
+    float min = 0;
+    q4_k_scale_min(scales, 2 * group, &scale, &min);
+    const float d1 = d * scale;
+    const float m1 = dmin * min;
+    q4_k_scale_min(scales, 2 * group + 1, &scale, &min);
+    const float d2 = d * scale;
+    const float m2 = dmin * min;
+    const uint8_t* qg = q + 32 * group;
+    float* yg = y + 64 * group;
+    for (int l = 0; l < 32; ++l) {
+      int low = qg[l] & 0xF;
+      int high = qg[l] >> 4;
+      if (is_q5k) {
+        low |= ((qh[l] >> (2 * group)) & 1) << 4;
+        high |= ((qh[l] >> (2 * group + 1)) & 1) << 4;
+      }
+      yg[l] = d1 * static_cast<float>(low) - m1;
+      yg[l + 32] = d2 * static_cast<float>(high) - m2;
+    }
+  }
+}
+
+void decode_q4_k_block(const uint8_t* block, float* y) {
+  decode_q4_k_or_q5_k_block(block, y, /*is_q5k=*/false);
+}
+
+void decode_q5_k_block(const uint8_t* block, float* y) {
+  decode_q4_k_or_q5_k_block(block, y, /*is_q5k=*/true);
+}
+
+// block_q6_K: 128 low-nibble bytes, 64 high-bit bytes, 16 int8 scales, fp16 d.
+// Each 128-weight half reads 64 ql and 32 qh bytes, four weights 32 apart per
+// position, with one scale per 16 weights.
+void decode_q6_k_block(const uint8_t* block, float* y) {
+  const auto* scales = reinterpret_cast<const int8_t*>(block + 192);
+  const float d = half_to_float(block + 208);
+  for (int half = 0; half < 2; ++half) {
+    const uint8_t* ql = block + 64 * half;
+    const uint8_t* qh = block + 128 + 32 * half;
+    const int8_t* sc = scales + 8 * half;
+    float* yh = y + 128 * half;
+    for (int l = 0; l < 32; ++l) {
+      const int is = l / 16;
+      const int q1 = ((ql[l] & 0xF) | ((qh[l] & 3) << 4)) - 32;
+      const int q2 = ((ql[l + 32] & 0xF) | (((qh[l] >> 2) & 3) << 4)) - 32;
+      const int q3 = ((ql[l] >> 4) | (((qh[l] >> 4) & 3) << 4)) - 32;
+      const int q4 = ((ql[l + 32] >> 4) | (((qh[l] >> 6) & 3) << 4)) - 32;
+      yh[l] = d * sc[is] * q1;
+      yh[l + 32] = d * sc[is + 2] * q2;
+      yh[l + 64] = d * sc[is + 4] * q3;
+      yh[l + 96] = d * sc[is + 6] * q4;
+    }
+  }
+}
+
+// block_q8_0: fp16 d, then 32 int8 codes.
+void decode_q8_0_block(const uint8_t* block, float* y) {
+  const float d = half_to_float(block);
+  const auto* q = reinterpret_cast<const int8_t*>(block + 2);
+  for (int j = 0; j < 32; ++j) {
+    y[j] = static_cast<float>(q[j]) * d;
+  }
+}
+
+// block_q3_K: 32 high-bit mask bytes, 64 bytes of 2-bit codes, 12 bytes
+// packing sixteen 6-bit scales, fp16 d. Each 128-weight half reads four 2-bit
+// planes of its 32 code bytes, 32 weights per plane, with one scale per 16;
+// plane p of half h subtracts 4 from weight l unless bit 4 h + p of mask byte l
+// is set.
+void decode_q3_k_block(const uint8_t* block, float* y) {
+  const uint8_t* hmask = block;
+  const uint8_t* packed = block + 96;
+  const float d = half_to_float(block + 108);
+  int scales[16];
+  for (int i = 0; i < 4; ++i) {
+    const int high = packed[8 + i];
+    scales[i] = (packed[i] & 0xF) | ((high & 3) << 4);
+    scales[i + 4] = (packed[i + 4] & 0xF) | (((high >> 2) & 3) << 4);
+    scales[i + 8] = (packed[i] >> 4) | (((high >> 4) & 3) << 4);
+    scales[i + 12] = (packed[i + 4] >> 4) | (((high >> 6) & 3) << 4);
+  }
+  const int* scale = scales;
+  int mask = 1;
+  for (int half = 0; half < 2; ++half) {
+    const uint8_t* q = block + 32 + 32 * half;
+    for (int shift = 0; shift < 8; shift += 2, mask <<= 1) {
+      for (int l0 = 0; l0 < 32; l0 += 16) {
+        const float dl = d * static_cast<float>(*scale++ - 32);
+        for (int l = l0; l < l0 + 16; ++l) {
+          const int code = ((q[l] >> shift) & 3) - ((hmask[l] & mask) ? 0 : 4);
+          *y++ = dl * static_cast<float>(code);
+        }
+      }
+    }
+  }
+}
+
+// block_q2_K: 16 bytes, each a 4-bit scale and a 4-bit min for 16 weights,
+// then 64 bytes of 2-bit codes, fp16 d and dmin. The codes are laid out as in
+// block_q3_K: four 2-bit planes of 32 code bytes per 128-weight half.
+void decode_q2_k_block(const uint8_t* block, float* y) {
+  const uint8_t* scales = block;
+  const float d = half_to_float(block + 80);
+  const float dmin = half_to_float(block + 82);
+  for (int half = 0; half < 2; ++half) {
+    const uint8_t* q = block + 16 + 32 * half;
+    for (int shift = 0; shift < 8; shift += 2) {
+      for (int l0 = 0; l0 < 32; l0 += 16) {
+        const float dl = d * static_cast<float>(*scales & 0xF);
+        const float ml = dmin * static_cast<float>(*scales++ >> 4);
+        for (int l = l0; l < l0 + 16; ++l) {
+          *y++ = dl * static_cast<float>((q[l] >> shift) & 3) - ml;
+        }
+      }
+    }
+  }
+}
+
+// block_q4_0: fp16 d, then 16 bytes whose low nibbles hold weights 0-15 and
+// high nibbles weights 16-31, each as its code + 8.
+void decode_q4_0_block(const uint8_t* block, float* y) {
+  const float d = half_to_float(block);
+  const uint8_t* q = block + 2;
+  for (int j = 0; j < 16; ++j) {
+    y[j] = static_cast<float>((q[j] & 0xF) - 8) * d;
+    y[j + 16] = static_cast<float>((q[j] >> 4) - 8) * d;
+  }
+}
+
+// The fifth bits of a block_q5_0 or block_q5_1, bit j for weight j.
+uint32_t fifth_bits(const uint8_t* qh) {
+  return qh[0] | qh[1] << 8 | qh[2] << 16 | static_cast<uint32_t>(qh[3]) << 24;
+}
+
+// block_q5_0: fp16 d, the fifth bits, then low nibbles laid out as in
+// block_q4_0; each weight is (code - 16) * d.
+void decode_q5_0_block(const uint8_t* block, float* y) {
+  const float d = half_to_float(block);
+  const uint32_t qh = fifth_bits(block + 2);
+  const uint8_t* q = block + 6;
+  for (int j = 0; j < 16; ++j) {
+    const int x0 = ((q[j] & 0xF) | (((qh >> j) << 4) & 0x10)) - 16;
+    const int x1 = ((q[j] >> 4) | ((qh >> (j + 12)) & 0x10)) - 16;
+    y[j] = static_cast<float>(x0) * d;
+    y[j + 16] = static_cast<float>(x1) * d;
+  }
+}
+
+// block_q5_1: fp16 d and m, the fifth bits, then low nibbles laid out as in
+// block_q4_1; each weight is code * d + m.
+void decode_q5_1_block(const uint8_t* block, float* y) {
+  const float d = half_to_float(block);
+  const float m = half_to_float(block + 2);
+  const uint32_t qh = fifth_bits(block + 4);
+  const uint8_t* q = block + 8;
+  for (int j = 0; j < 16; ++j) {
+    const int x0 = (q[j] & 0xF) | (((qh >> j) << 4) & 0x10);
+    const int x1 = (q[j] >> 4) | ((qh >> (j + 12)) & 0x10);
+    y[j] = static_cast<float>(x0) * d + m;
+    y[j + 16] = static_cast<float>(x1) * d + m;
+  }
+}
+
+// block_q4_1: fp16 d and m, then 16 bytes whose low nibbles hold the codes of
+// weights 0-15 and high nibbles those of weights 16-31, each code * d + m.
+void decode_q4_1_block(const uint8_t* block, float* y) {
+  const float d = half_to_float(block);
+  const float m = half_to_float(block + 2);
+  const uint8_t* q = block + 4;
+  for (int j = 0; j < 16; ++j) {
+    y[j] = static_cast<float>(q[j] & 0xF) * d + m;
+    y[j + 16] = static_cast<float>(q[j] >> 4) * d + m;
+  }
+}
+
+struct Codec {
+  std::string_view name;
+  int64_t block_elements;
+  size_t block_bytes;
+  BlockDecoder decode_block;
+};
+
+constexpr Codec kCodecs[] = {
+    {"gguf:q4_0", 32, 18, decode_q4_0_block},
+    {"gguf:q4_1", 32, 20, decode_q4_1_block},
+    {"gguf:q5_0", 32, 22, decode_q5_0_block},
+    {"gguf:q5_1", 32, 24, decode_q5_1_block},
+    {"gguf:q8_0", 32, 34, decode_q8_0_block},
+    {"gguf:q2_k", 256, 84, decode_q2_k_block},
+    {"gguf:q3_k", 256, 110, decode_q3_k_block},
+    {"gguf:q4_k", 256, 144, decode_q4_k_block},
+    {"gguf:q5_k", 256, 176, decode_q5_k_block},
+    {"gguf:q6_k", 256, 210, decode_q6_k_block},
+};
+
+const Codec* find_codec(std::string_view codec) {
+  const auto* found = std::ranges::find(kCodecs, codec, &Codec::name);
+  return found == std::ranges::end(kCodecs) ? nullptr : found;
+}
+
+const Codec& codec_of(std::string_view codec) {
+  const Codec* found = find_codec(codec);
+  if (found == nullptr) {
+    throw std::invalid_argument(
+        "no reference decoder for GGUF codec '" + std::string(codec) + "'");
+  }
+  return *found;
+}
+
+int64_t blocks_per_row(const Codec& codec, int64_t cols) {
+  if (cols <= 0 || cols % codec.block_elements != 0) {
+    throw std::invalid_argument(
+        std::string(codec.name) + " rows must hold a positive multiple of " +
+        std::to_string(codec.block_elements) + " weights");
+  }
+  return cols / codec.block_elements;
+}
+
+void decode_rows(
+    const Codec& codec,
+    const uint8_t* data,
+    int64_t first,
+    int64_t last,
+    int64_t blocks,
+    float* out) {
+  for (int64_t r = first; r < last; ++r) {
+    const uint8_t* row = data + r * blocks * codec.block_bytes;
+    float* y = out + r * blocks * codec.block_elements;
+    for (int64_t b = 0; b < blocks; ++b) {
+      codec.decode_block(
+          row + b * codec.block_bytes, y + b * codec.block_elements);
+    }
+  }
+}
+
+} // namespace
+
+// cppcheck-suppress unusedFunction
+bool can_decode_gguf(std::string_view codec) {
+  return find_codec(codec) != nullptr;
+}
+
+// cppcheck-suppress unusedFunction
+size_t gguf_row_nbytes(std::string_view codec, int64_t cols) {
+  const Codec& c = codec_of(codec);
+  return static_cast<size_t>(blocks_per_row(c, cols)) * c.block_bytes;
+}
+
+// cppcheck-suppress unusedFunction
+void decode_gguf(
+    std::string_view codec,
+    const uint8_t* data,
+    size_t nbytes,
+    int64_t rows,
+    int64_t cols,
+    float* out,
+    unsigned max_threads) {
+  const Codec& c = codec_of(codec);
+  const int64_t blocks = blocks_per_row(c, cols);
+  size_t expected = 0;
+  if (rows < 0 ||
+      __builtin_mul_overflow(
+          static_cast<size_t>(rows),
+          static_cast<size_t>(blocks) * c.block_bytes,
+          &expected) ||
+      nbytes != expected) {
+    throw std::invalid_argument(
+        std::string(codec) + " data does not hold " + std::to_string(rows) +
+        " rows of " + std::to_string(cols) + " weights");
+  }
+  const unsigned hardware = std::max(1u, std::thread::hardware_concurrency());
+  const int64_t by_work =
+      std::max<int64_t>(1, rows * cols / kMinWeightsPerThread);
+  const int64_t threads = std::min<int64_t>(
+      {max_threads == 0 ? hardware : max_threads,
+       by_work,
+       std::max<int64_t>(rows, 1)});
+  if (threads <= 1) {
+    decode_rows(c, data, 0, rows, blocks, out);
+    return;
+  }
+  std::vector<std::thread> workers;
+  workers.reserve(threads);
+  try {
+    for (int64_t t = 0; t < threads; ++t) {
+      workers.emplace_back(
+          decode_rows,
+          c,
+          data,
+          rows * t / threads,
+          rows * (t + 1) / threads,
+          blocks,
+          out);
+    }
+  } catch (...) {
+    for (std::thread& worker : workers) {
+      worker.join();
+    }
+    throw;
+  }
+  for (std::thread& worker : workers) {
+    worker.join();
+  }
+}
+
+} // namespace ptn::reference

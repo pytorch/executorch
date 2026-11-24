@@ -77,6 +77,25 @@ GraphBuilder::causal_mask(int64_t tokens, int64_t keys, int64_t start) {
   return TensorRef{mask, sizes};
 }
 
+bool sdpa_shapes_compatible(
+    const std::vector<int64_t>& query,
+    const std::vector<int64_t>& key,
+    const std::vector<int64_t>& value) {
+  return query.size() == 4 && key.size() == 4 && value.size() == 4 &&
+      key[0] == query[0] && value[0] == query[0] && key[1] == value[1] &&
+      key[1] > 0 && query[1] % key[1] == 0 && key[2] == value[2] &&
+      key[3] == query[3];
+}
+
+bool custom_sdpa_shapes_compatible(
+    const std::vector<int64_t>& query,
+    const std::vector<int64_t>& key,
+    const std::vector<int64_t>& value) {
+  return query.size() == 4 && key.size() == 4 && value == key &&
+      key[0] == query[0] && key[3] == query[3] && key[2] > 0 &&
+      query[2] % key[2] == 0;
+}
+
 void GraphBuilder::lower_custom_sdpa(const Node& node) {
   const TensorRef query = tensor_arg(node, "query", 0);
   const TensorRef key_cache = tensor_arg(node, "key", 1);
@@ -84,10 +103,8 @@ void GraphBuilder::lower_custom_sdpa(const Node& node) {
   if (query.sizes.size() != 4) {
     throw std::runtime_error("ggml: custom_sdpa query must be [B,T,H,D]");
   }
-  if (key_cache.sizes.size() != 4 || value_cache.sizes != key_cache.sizes ||
-      key_cache.sizes[0] != query.sizes[0] ||
-      key_cache.sizes[3] != query.sizes[3] || key_cache.sizes[2] <= 0 ||
-      query.sizes[2] % key_cache.sizes[2] != 0) {
+  if (!custom_sdpa_shapes_compatible(
+          query.sizes, key_cache.sizes, value_cache.sizes)) {
     throw std::runtime_error("ggml: custom_sdpa q/k/v shapes are incompatible");
   }
   const int64_t start = int_arg(node, "start_pos", 3, 0);
@@ -335,10 +352,7 @@ void GraphBuilder::lower_sdpa(const Node& node) {
     throw std::runtime_error(
         "ggml: scaled_dot_product_attention expects [B,H,T,D] without dropout");
   }
-  if (key.sizes[0] != query.sizes[0] || val.sizes[0] != query.sizes[0] ||
-      key.sizes[1] != val.sizes[1] || key.sizes[1] <= 0 ||
-      query.sizes[1] % key.sizes[1] != 0 || key.sizes[2] != val.sizes[2] ||
-      key.sizes[3] != query.sizes[3]) {
+  if (!sdpa_shapes_compatible(query.sizes, key.sizes, val.sizes)) {
     throw std::runtime_error(
         "ggml: scaled_dot_product_attention q/k/v shapes are incompatible");
   }
