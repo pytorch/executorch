@@ -21,8 +21,7 @@ namespace backends {
 namespace mlx {
 
 // The K/V window to attend over + how to mask it. `kind` mirrors MLX's mask
-// forms: no mask, its fused "causal", or an explicit tensor for anything MLX
-// cannot express -- a sliding window, and later tree/speculative patterns.
+// forms: no mask, its fused "causal", or an explicit tensor for other patterns.
 //
 // One attention's worth. A layout holding a private window per sequence builds
 // one of these per sequence and attends each in turn.
@@ -62,7 +61,7 @@ attend(const AttendSpec& spec, const Tensor& q, float scale, StreamOrDevice s) {
       break;
   }
   return ::mlx::core::fast::scaled_dot_product_attention(
-      q, K, V, scale, mask_mode, spec.mask, std::nullopt, false, s);
+      q, K, V, scale, -1, mask_mode, spec.mask, std::nullopt, false, s);
 }
 
 // Tensor-typed op face of the off-graph KV cache, kept separate from the
