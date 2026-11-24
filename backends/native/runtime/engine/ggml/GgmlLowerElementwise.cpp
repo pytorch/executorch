@@ -153,28 +153,50 @@ void GraphBuilder::lower_binary(const Node& node, const std::string& key) {
     if (key == "aten.add.Tensor") {
       result = ggml_add(ctx, lhs, right);
     } else if (key == "aten.mul.Tensor") {
-      // Recognize the backend-independent arithmetic spellings of SiLU
-      // and SwiGLU. A single ggml GLU node also lets CUDA use its generic
-      // fused quantized matvec path when the operands qualify.
+      // Recognize the backend-independent arithmetic spellings of SiLU,
+      // SwiGLU and GeGLU. A single ggml GLU node also lets CUDA use its
+      // generic fused quantized matvec path when the operands qualify.
       const auto is_unary = [](const ggml_tensor* t, ggml_unary_op op) {
         return t->op == GGML_OP_UNARY && ggml_get_unary_op(t) == op;
       };
-      const auto matches_swiglu = [&](ggml_tensor* gate, ggml_tensor* up) {
+      // The rewrites move the read of x from the activation to the product,
+      // so an x in storage the graph has written in place keeps its
+      // activation.
+      const auto unwritten = [this](const ggml_tensor* x) {
+        return !written_storage_.contains(storage_root(x));
+      };
+      // The GLU node for activation(x) * up, if gate is SiLU or GELU of x.
+      const auto glu = [&](ggml_tensor* gate, ggml_tensor* up) -> ggml_tensor* {
         ggml_tensor* x = gate->src[0];
-        return is_unary(gate, GGML_UNARY_OP_SILU) && x != nullptr &&
-            gate->type == GGML_TYPE_F32 && up->type == GGML_TYPE_F32 &&
-            ggml_are_same_shape(gate, up) && ggml_is_contiguous_1(x) &&
-            ggml_is_contiguous_1(up);
+        if (gate->op != GGML_OP_UNARY || x == nullptr || !unwritten(x) ||
+            gate->type != GGML_TYPE_F32 || up->type != GGML_TYPE_F32 ||
+            !ggml_are_same_shape(gate, up) || !ggml_is_contiguous_1(x) ||
+            !ggml_is_contiguous_1(up)) {
+          return nullptr;
+        }
+        const ggml_unary_op op = ggml_get_unary_op(gate);
+        if (op == GGML_UNARY_OP_SILU) {
+          return ggml_swiglu_split(ctx, x, up);
+        }
+        if (op == GGML_UNARY_OP_GELU) {
+          return ggml_geglu_split(ctx, x, up);
+        }
+        if (op == GGML_UNARY_OP_GELU_ERF) {
+          return ggml_geglu_erf_split(ctx, x, up);
+        }
+        return nullptr;
       };
       const auto matches_silu = [&](ggml_tensor* sigmoid, ggml_tensor* x) {
         return is_unary(sigmoid, GGML_UNARY_OP_SIGMOID) &&
-            sigmoid->src[0] == x && x->type == GGML_TYPE_F32 &&
+            sigmoid->src[0] == x && unwritten(x) && x->type == GGML_TYPE_F32 &&
             ggml_are_same_shape(sigmoid, x);
       };
-      if (matches_swiglu(lhs, right)) {
-        result = ggml_swiglu_split(ctx, lhs->src[0], right);
-      } else if (matches_swiglu(right, lhs)) {
-        result = ggml_swiglu_split(ctx, right->src[0], lhs);
+      ggml_tensor* fused = glu(lhs, right);
+      if (fused == nullptr) {
+        fused = glu(right, lhs);
+      }
+      if (fused != nullptr) {
+        result = fused;
       } else if (matches_silu(lhs, right)) {
         result = ggml_silu(ctx, right);
       } else if (matches_silu(right, lhs)) {
