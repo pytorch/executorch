@@ -311,6 +311,7 @@ inline void exec_sdpa(const SdpaNode& n, ExecutionState& st, StreamOrDevice s) {
       K,
       V,
       static_cast<float>(n.scale),
+      -1,
       mask_mode,
       mask_arr,
       sinks,
@@ -1083,6 +1084,7 @@ exec_gather_qmm(const GatherQmmNode& n, ExecutionState& st, StreamOrDevice s) {
       n.group_size,
       n.bits,
       n.mode,
+      std::nullopt,
       sorted,
       s);
   st.set_tensor(n.out, std::move(Y));

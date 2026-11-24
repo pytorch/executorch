@@ -529,7 +529,8 @@ def test_fuse_constant_args_skips_tosa_rescale(caplog) -> None:
         )
         rescale = builder.call_operator(
             exir_ops.backend.tosa.RESCALE.default,
-            (input_tensor, torch.int8, [1.0], 0, 0),
+            (input_tensor, [1 << 30], [30], 0, 0),
+            {"dtype": torch.int8},
         )
         builder.output([rescale])
 
