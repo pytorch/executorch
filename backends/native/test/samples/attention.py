@@ -275,6 +275,20 @@ def sdpa_cases() -> list[Case]:
     return cases
 
 
+def sdpa_grouped_cases() -> list[Case]:
+    """Six query heads per KV head of 256, as Qwen3.8 27B's full-attention
+    layers have, decoding and prefilling at the end of a static cache of 256
+    keys."""
+    return [
+        _decode("gqa6_d256_decode", _Attention(), 24, 4, 256, keys=256, at=(200, 255)),
+        Case(
+            "gqa6_d256_prefill",
+            _Attention(),
+            _attention_inputs(24, 4, 256, [(248, 8)], 256),
+        ),
+    ]
+
+
 def _write_inputs(heads: int, dim: int, calls: list[tuple[int, int]]) -> list[Inputs]:
     generator = torch.Generator().manual_seed(0)
     return [
