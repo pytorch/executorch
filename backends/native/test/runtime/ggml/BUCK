@@ -137,6 +137,16 @@ _GPU_F16_ATTENTION = [
     "sdpa_float.shared_masks_prefill_f32",
     "sdpa_float.sliding_decode_f32",
     "sdpa_float.sliding_prefill_f32",
+    "sdpa_grouped_float.gqa6_d256_decode_f32",
+    "sdpa_grouped_float.gqa6_d256_prefill_f32",
+]
+
+# On F16 K and V too, ggml's GPU flash attention is off eager past the default
+# judge: CUDA by rel_bias alone, HIP by rmse too (README, Known ggml GPU
+# numerics).
+_GPU_FLASH_ATTENTION_BIAS = [
+    "sdpa_grouped_float.gqa6_d256_decode_f16",
+    "sdpa_grouped_float.gqa6_d256_prefill_f16",
 ]
 
 _GPU_ACT_QUANT_ARGS = ["--gpu_fp16_block_scales"]
@@ -170,7 +180,7 @@ _VARIANTS = [
         },
 
         "act_quant_args": _GPU_ACT_QUANT_ARGS,
-        "excluded": _GPU_F16_ATTENTION,
+        "excluded": _GPU_F16_ATTENTION + _GPU_FLASH_ATTENTION_BIAS,
     },
     {
         "suffix": "_hip",
@@ -183,7 +193,7 @@ _VARIANTS = [
             subplatform = "MI300",
         ),
         "act_quant_args": _GPU_ACT_QUANT_ARGS,
-        "excluded": _GPU_F16_ATTENTION,
+        "excluded": _GPU_F16_ATTENTION + _GPU_FLASH_ATTENTION_BIAS,
     },
 ]
 

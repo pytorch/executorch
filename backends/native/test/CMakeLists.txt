@@ -370,6 +370,13 @@ if(EXECUTORCH_BUILD_NATIVE_CPU)
       sdpa_float.shared_masks_prefill_f32
       sdpa_float.sliding_decode_f32
       sdpa_float.sliding_prefill_f32
+      sdpa_grouped_float.gqa6_d256_decode_f16
+      sdpa_grouped_float.gqa6_d256_decode_f32
+      sdpa_grouped_float.gqa6_d256_prefill_f16
+      sdpa_grouped_float.gqa6_d256_prefill_f32
+      # CPU engine: provider selection fails (error 16).
+      rms_norm_float.hidden_5120_f32
+      rms_norm_float.hidden_5120_weight_f32
   )
   list(JOIN _native_cpu_engine_gaps ":" _native_cpu_gaps)
   add_test(NAME native_cpu_sample_test_static_float
