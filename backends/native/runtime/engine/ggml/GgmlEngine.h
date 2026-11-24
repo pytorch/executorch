@@ -98,6 +98,10 @@ struct GgmlEngineOptions {
   // read by scaled_dot_product_attention and the custom SDPA; CUDA and HIP
   // only.
   bool f32_gpu_kv_cache_for_testing = false;
+  // Default (true): nodes that read only unquantized constants are computed
+  // once, when the executable is compiled, and every call reads their
+  // results. False (testing only): they are computed on every call.
+  bool fold_constants = true;
 };
 
 class GgmlEngineContext;
