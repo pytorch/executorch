@@ -1305,6 +1305,19 @@ class CudaBatchedSequenceCache final : public cache::Cache,
     const auto device = CUDAGuard::create(pool_.device());
     ET_CHECK_OK_OR_RETURN_ERROR(device.error());
     const int old_columns = columns_;
+#if !defined(EXECUTORCH_USE_HIP)
+    const int64_t old_bytes = pool_.allocated_bytes();
+    uint64_t reserved_before = 0;
+    const auto allocator_pool =
+        ::executorch::extension::cuda::CudaAllocator::pool_for_device(
+            pool_.device());
+    const bool can_trim = pool_.allocated() && target < old_columns &&
+        allocator_pool != nullptr &&
+        cudaMemPoolGetAttribute(
+            allocator_pool,
+            cudaMemPoolAttrReservedMemCurrent,
+            &reserved_before) == cudaSuccess;
+#endif
     const Error resized = resize_columns(target, cudaStreamPerThread);
     last_activity_ = std::chrono::steady_clock::now();
     ET_CHECK_OK_OR_RETURN_ERROR(resized);
@@ -1316,8 +1329,18 @@ class CudaBatchedSequenceCache final : public cache::Cache,
         poisoned_ = true;
         return fenced;
       }
-      ::executorch::extension::cuda::CudaAllocator::release_cached_memory(
-          pool_.device());
+#if !defined(EXECUTORCH_USE_HIP)
+      if (can_trim) {
+        // Bound this device-wide trim by the KV storage just retired. Preserve
+        // the pre-existing unused reservation of other users of the shared
+        // pool.
+        const uint64_t released = old_bytes - pool_.allocated_bytes();
+        const uint64_t keep =
+            reserved_before > released ? reserved_before - released : 0;
+        ::executorch::extension::cuda::CudaAllocator::release_cached_memory(
+            pool_.device(), keep, /*trim_graph_memory=*/false);
+      }
+#endif
     }
     return Error::Ok;
   }
@@ -1392,7 +1415,7 @@ class CudaBatchedSequenceCache final : public cache::Cache,
     for (const auto& [id, sequence] : seqs_) {
       if (sequence.column >= 0 && sequence.column < target - 1) {
         ET_CHECK_OR_RETURN_ERROR(
-            sequence.column < target - 1 && used.insert(sequence.column).second,
+            used.insert(sequence.column).second,
             InvalidState,
             "offgraph_kv: invalid physical owner mapping");
         next.emplace(id, sequence.column);

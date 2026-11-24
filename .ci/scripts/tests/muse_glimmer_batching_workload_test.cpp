@@ -35,6 +35,11 @@ void rejected(F action) {
 class FakeExecutor final : public batching::Executor {
  public:
   bool succeeds = true;
+  int idle_calls = 0;
+  bool on_idle() override {
+    ++idle_calls;
+    return succeeds;
+  }
   std::optional<batching::SessionId> open_session() override {
     return 1;
   }
@@ -96,6 +101,12 @@ void successful_batch_owners() {
   FakeExecutor inner;
   ci::EvidenceExecutor executor(inner);
   batching::BatchOutput out;
+  require(executor.on_idle());
+  require(inner.idle_calls == 1);
+  inner.succeeds = false;
+  require(!executor.on_idle());
+  require(inner.idle_calls == 2);
+  inner.succeeds = true;
   require(executor.execute({{input(1), input(1)}}, out));
   require(executor.execute({{input(2)}}, out));
   require(executor.evidence().max_sessions == 1);

@@ -95,9 +95,10 @@ class CudaKVPool final {
   // Flattened row counts remain multiples of the current physical width.
   // Each pair is a retained old column and its new column. Dummy data is not
   // retained. live_rows is the retained logical prefix, capped by each ring.
-  // Growth or contraction commits only after all retained copies pass. If
-  // growth to `columns` runs out of memory, it uses the widest width down to
-  // min_columns (0 = columns) that fits; columns() reports the result, and
+  // Growth or contraction commits only after all retained copies pass.
+  // Equal widths are a no-op; relocation is only needed during contraction.
+  // If growth to `columns` runs out of memory, it uses the widest width down
+  // to min_columns (0 = columns) that fits; columns() reports the result, and
   // retained columns must fit min_columns. Before allocation only the width
   // is recorded, at `columns`.
   runtime::Error resize_columns(

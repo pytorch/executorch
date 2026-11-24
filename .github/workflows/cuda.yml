@@ -716,7 +716,7 @@ jobs:
         pip install gguf
         python examples/models/muse-glimmer/tests/check_runtime_kv_columns.py \
           --probe "${BATCHING_BIN_DIR}/muse_glimmer_runtime_kv_probe" \
-          --output-dir "${RUNNER_TEMP:-/tmp}/muse_glimmer_runtime_kv_columns" --check-compaction
+          --output-dir "${RUNNER_TEMP:-/tmp}/muse_glimmer_runtime_kv_columns"
 
         python -m pytest -v -o "addopts=" \
           examples/models/muse-glimmer/tests/test_cuda_batching_pipeline.py \

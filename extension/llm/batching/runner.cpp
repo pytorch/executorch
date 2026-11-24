@@ -564,6 +564,7 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   std::unordered_map<SessionId, SessionRecord> sessions_;
   // Kept after records close to enforce executor IDs are lifetime-unique.
   std::unordered_set<SessionId> issued_session_ids_;
+  bool owner_closed_ = false;
   TaskId next_tid_ = 1;
   EngineMetrics metrics_;
 
@@ -800,7 +801,12 @@ void RunnerImpl::run_() {
       idle_maintenance_enabled = true;
       continue; // more work may be ready
     }
-    if (idle_maintenance_enabled) {
+    bool idle_now = false;
+    {
+      std::lock_guard<std::mutex> lock(control_mutex_);
+      idle_now = is_running_() && inbox_.empty();
+    }
+    if (idle_maintenance_enabled && idle_now) {
       bool maintained = false;
 #if ET_HAS_EXCEPTIONS
       try {
@@ -880,9 +886,8 @@ bool RunnerImpl::process_pending_commands_() {
     std::lock_guard<std::mutex> lock(control_mutex_);
     commands.swap(inbox_);
   }
-  bool closed_owner = false;
+  owner_closed_ = false;
   for (auto& command : commands) {
-    closed_owner |= std::holds_alternative<CloseCommand>(command);
     std::visit(
         Overloaded{
             [this](OpenCommand& open) { process_command_(std::move(open)); },
@@ -894,7 +899,7 @@ bool RunnerImpl::process_pending_commands_() {
             }},
         command);
   }
-  return closed_owner;
+  return owner_closed_;
 }
 
 void RunnerImpl::process_command_(OpenCommand command) {
@@ -928,6 +933,7 @@ void RunnerImpl::process_command_(OpenCommand command) {
   if (!published) {
     if (newly_issued) {
       executor_.close_session(*sid);
+      owner_closed_ = true;
     }
     command.ack->set_value(std::nullopt);
   }
@@ -945,6 +951,7 @@ void RunnerImpl::process_command_(CloseCommand command) {
         /*on_engine_thread=*/true);
   }
   executor_.close_session(command.session);
+  owner_closed_ = true;
 }
 
 void RunnerImpl::process_command_(CloneCommand command) {
@@ -996,6 +1003,7 @@ void RunnerImpl::process_command_(CloneCommand command) {
     }
     if (owned) {
       executor_.close_session(*sid);
+      owner_closed_ = true;
     }
     command.ack->set_value(std::nullopt);
   }

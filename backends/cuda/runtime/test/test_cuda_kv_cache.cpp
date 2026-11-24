@@ -3000,6 +3000,8 @@ TEST_F(CudaRuntimeColumnCacheTest, GrowthAndSparseIdCompactionPreserveAllKV) {
       ASSERT_TRUE(control->seq_rm(id));
     }
   }
+  EXPECT_EQ(kv->metrics().physical_columns, before.physical_columns);
+  EXPECT_EQ(kv->metrics().allocated_bytes, before.allocated_bytes);
   ASSERT_EQ(kv->compact_columns(0), Error::Ok);
   const auto after = kv->metrics();
   EXPECT_EQ(after.physical_columns, 2);
@@ -3476,6 +3478,7 @@ TEST_F(
     kv->forget_handle(&handle);
     GTEST_SKIP() << "CUDA allocator pools are unavailable";
   }
+  ::executorch::extension::cuda::CudaAllocator::release_cached_memory(device);
   uint64_t before = 0, after = 0;
   ASSERT_EQ(
       cudaMemPoolGetAttribute(pool, cudaMemPoolAttrReservedMemCurrent, &before),
@@ -3491,6 +3494,7 @@ TEST_F(
   EXPECT_LT(after, before);
   EXPECT_GE(before - after, 8 * 1024 * 1024);
   EXPECT_LT(kv->metrics().allocated_bytes, live_before);
+  EXPECT_GE(after, before - (live_before - kv->metrics().allocated_bytes));
   EXPECT_EQ(kv->metrics().physical_columns, 2);
   EXPECT_EQ(control->pos(owners.back()), 1);
   ASSERT_EQ(step(*ptr, handle, {owners.back()}), Error::Ok);
@@ -4070,6 +4074,131 @@ TEST_F(CudaRuntimeColumnCacheTest, FirstAllocationKeepsSparseOwnerColumns) {
   EXPECT_EQ(*admitted, 1);
   EXPECT_EQ(kv->metrics().physical_columns, 9);
   EXPECT_EQ(kv->metrics().column_resize_count, 0);
+  kv->forget_handle(&handle);
+}
+
+TEST_F(CudaRuntimeColumnCacheTest, FailedContractionPreservesSparseOwners) {
+  constexpr int kLargeDim = 1 << 21;
+  auto cfg = config(/*capacity=*/2, /*initial=*/2, /*max_write=*/1);
+  cfg.max_seqs = 8;
+  cache::CacheGeometry geometry;
+  geometry.layers = {{{cache::LayerPolicy::Kind::Flat, 0}, 1, kLargeDim}};
+  auto ptr = cu::make_cuda_batched_sequence_kv_cache(geometry, cfg);
+  ASSERT_NE(ptr, nullptr);
+  auto* control = ptr->as<cache::BatchControl>();
+  auto* kv = ptr->as<cu::CudaKVCache>();
+  FakeContainer fake;
+  fake.internal_names = {"flat_k", "flat_v", "seq_cols", "seq_info"};
+  fake.fqns = {
+      "__et_offgraph_kv_layer_0_k",
+      "__et_offgraph_kv_layer_0_v",
+      "__et_offgraph_kv_seq_cols",
+      "__et_offgraph_kv_seq_info"};
+  for (int index = 0; index < 2; ++index) {
+    declare(
+        fake,
+        fake.fqns[index],
+        slimc10::ScalarType::BFloat16,
+        {1, 18, 1, kLargeDim});
+  }
+  declare(fake, fake.fqns[2], slimc10::ScalarType::Long, {1});
+  declare(fake, fake.fqns[3], slimc10::ScalarType::Int, {16, 5});
+  auto handle = make_handle(fake);
+  auto noted = kv->note_handle(&handle);
+  ASSERT_TRUE(noted.ok()) << static_cast<int>(noted.error());
+  ASSERT_TRUE(noted.get());
+  std::vector<int32_t> owners;
+  for (int index = 0; index < 8; ++index) {
+    auto owner = control->seq_new();
+    ASSERT_TRUE(owner.has_value());
+    owners.push_back(*owner);
+  }
+  for (const auto owner : owners) {
+    ASSERT_EQ(step(*ptr, handle, {owner}), Error::Ok);
+  }
+  auto* old_k = static_cast<uint16_t*>(fake.bound["flat_k"].data);
+  auto* old_v = static_cast<uint16_t*>(fake.bound["flat_v"].data);
+  const auto history = iota_rows(1);
+  for (const int index : {5, 7}) {
+    for (auto* base : {old_k, old_v}) {
+      ASSERT_EQ(
+          cudaMemcpy(
+              base + index * size_t{kLargeDim},
+              history.data(),
+              history.size() * sizeof(uint16_t),
+              cudaMemcpyHostToDevice),
+          cudaSuccess);
+    }
+  }
+  for (int index = 0; index < 8; ++index) {
+    if (index != 5 && index != 7) {
+      ASSERT_TRUE(control->seq_rm(owners[index]));
+    }
+  }
+  int device = 0;
+  ASSERT_EQ(cudaGetDevice(&device), cudaSuccess);
+  ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+  ::executorch::extension::cuda::CudaAllocator::release_cached_memory(device);
+  size_t free_bytes = 0, total_bytes = 0;
+  ASSERT_EQ(cudaMemGetInfo(&free_bytes, &total_bytes), cudaSuccess);
+  constexpr size_t kMargin = 32 * 1024 * 1024;
+  if (free_bytes <= 8 * kMargin) {
+    kv->forget_handle(&handle);
+    GTEST_SKIP()
+        << "Insufficient free memory for a controlled contraction failure";
+  }
+  void* reservation = nullptr;
+  if (cudaMalloc(&reservation, free_bytes - kMargin) != cudaSuccess) {
+    (void)cudaGetLastError();
+    kv->forget_handle(&handle);
+    GTEST_SKIP() << "Cannot reserve free memory for a controlled failure";
+  }
+  auto release = [](void* data) { (void)cudaFree(data); };
+  std::unique_ptr<void, decltype(release)> held(reservation, release);
+  const auto before = kv->metrics();
+  const int updates = fake.updates;
+  handle.cuda_graph_state.phase = cu::CudaGraphPhase::Replay;
+  EXPECT_EQ(kv->compact_columns(0), Error::MemoryAllocationFailed);
+  EXPECT_EQ(kv->metrics().physical_columns, before.physical_columns);
+  EXPECT_EQ(kv->metrics().column_resize_count, before.column_resize_count);
+  EXPECT_EQ(kv->metrics().allocated_bytes, before.allocated_bytes);
+  EXPECT_EQ(kv->metrics().live_sequences, 2);
+  EXPECT_EQ(handle.cuda_graph_state.phase, cu::CudaGraphPhase::Replay);
+  ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
+  EXPECT_EQ(fake.updates, updates);
+  EXPECT_EQ(fake.bound["flat_k"].data, old_k);
+  EXPECT_EQ(fake.bound["flat_v"].data, old_v);
+  for (const int index : {5, 7}) {
+    EXPECT_EQ(control->pos(owners[index]), 1);
+    EXPECT_EQ(read_rows(old_k + index * size_t{kLargeDim}, 1), history);
+    EXPECT_EQ(read_rows(old_v + index * size_t{kLargeDim}, 1), history);
+  }
+  for (const int index : {5, 7}) {
+    ASSERT_EQ(step(*ptr, handle, {owners[index]}), Error::Ok);
+    std::array<int32_t, 5> info{};
+    ASSERT_EQ(
+        cudaMemcpy(
+            info.data(),
+            fake.bound["seq_info"].data,
+            sizeof(info),
+            cudaMemcpyDeviceToHost),
+        cudaSuccess);
+    EXPECT_EQ(info, (std::array<int32_t, 5>{0, 1, index, 2, 9}));
+  }
+  held.reset();
+  ASSERT_EQ(kv->compact_columns(0), Error::Ok);
+  EXPECT_EQ(kv->metrics().physical_columns, 3);
+  ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
+  auto* compacted = static_cast<uint16_t*>(fake.bound["flat_k"].data);
+  EXPECT_EQ(read_rows(compacted, 1), history);
+  EXPECT_EQ(read_rows(compacted + kLargeDim, 1), history);
+  ASSERT_TRUE(control->rewind(owners[5], 1));
+  ASSERT_TRUE(control->rewind(owners[7], 1));
+  for (const int index : {5, 7}) {
+    ASSERT_EQ(step(*ptr, handle, {owners[index]}), Error::Ok);
+  }
+  EXPECT_EQ(control->pos(owners[5]), 2);
+  EXPECT_EQ(control->pos(owners[7]), 2);
   kv->forget_handle(&handle);
 }
 

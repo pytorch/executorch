@@ -585,7 +585,6 @@ Error CudaKVPool::resize_columns(
       declared_columns_);
   std::unordered_set<int> sources;
   std::unordered_set<int> destinations;
-  bool relocate = false;
   for (const auto& [from, to] : retained_columns) {
     ET_CHECK_OR_RETURN_ERROR(
         from >= 0 && from < columns_ - 1 && to >= 0 && to < min_columns - 1 &&
@@ -594,7 +593,6 @@ Error CudaKVPool::resize_columns(
         "offgraph_kv: invalid retained column %d->%d",
         from,
         to);
-    relocate |= from != to;
   }
   for (const Layer& layer : layers_) {
     ET_CHECK_OR_RETURN_ERROR(
@@ -608,8 +606,26 @@ Error CudaKVPool::resize_columns(
     columns_ = columns;
     return Error::Ok;
   }
-  if (columns == columns_ && !relocate) {
+  if (columns == columns_) {
     return Error::Ok;
+  }
+  // Group adjacent source/destination owners so growth pays one 2D copy
+  // per layer instead of one per owner. Sorting also handles sparse IDs.
+  auto ordered = retained_columns;
+  std::sort(ordered.begin(), ordered.end());
+  struct Run {
+    int from;
+    int to;
+    int count;
+  };
+  std::vector<Run> runs;
+  for (const auto& [from, to] : ordered) {
+    if (!runs.empty() && runs.back().from + runs.back().count == from &&
+        runs.back().to + runs.back().count == to) {
+      ++runs.back().count;
+    } else {
+      runs.push_back({from, to, 1});
+    }
   }
   const auto device = CUDAGuard::create(device_);
   ET_CHECK_OK_OR_RETURN_ERROR(device.error());
@@ -670,16 +686,16 @@ Error CudaKVPool::resize_columns(
     if (logical_rows == 0) {
       continue;
     }
-    for (const auto& [from, to] : retained_columns) {
+    for (const auto& run : runs) {
       for (const auto& [dst, src] :
            {std::pair{replacement.k, current.k},
             std::pair{replacement.v, current.v}}) {
         const cudaError_t error = cudaMemcpy2DAsync(
-            static_cast<uint8_t*>(dst) + slot * to,
+            static_cast<uint8_t*>(dst) + slot * run.to,
             slot * columns,
-            static_cast<const uint8_t*>(src) + slot * from,
+            static_cast<const uint8_t*>(src) + slot * run.from,
             slot * old_columns,
-            slot,
+            slot * run.count,
             logical_rows,
             cudaMemcpyDeviceToDevice,
             stream);

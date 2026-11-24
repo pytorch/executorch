@@ -793,7 +793,7 @@ bool MuseGlimmerCudaDFlashExecutor::initialize() {
 
 bool MuseGlimmerCudaDFlashExecutor::on_idle() {
   // Draft columns remain fixed; only target owner storage is compacted.
-  return target_->on_idle();
+  return !failed_ && target_->on_idle();
 }
 
 std::optional<SessionId> MuseGlimmerCudaDFlashExecutor::open_session() {

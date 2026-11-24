@@ -107,6 +107,9 @@ class EvidenceExecutor final : public batching::Executor {
   bool initialize() override {
     return inner_.initialize();
   }
+  bool on_idle() override {
+    return inner_.on_idle();
+  }
   std::size_t preferred_batch_tokens() const override {
     return inner_.preferred_batch_tokens();
   }

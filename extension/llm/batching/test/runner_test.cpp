@@ -388,14 +388,26 @@ TEST(RunnerMaintenanceTest, IdleHookRunsBetweenBatchesOnTheEngineThread) {
       ++idle_calls;
       return true;
     }
+    bool execute(
+        const executorch::extension::llm::batching::BatchInput& batch,
+        executorch::extension::llm::batching::BatchOutput& output) override {
+      if (++execute_calls == 1) {
+        idle_before_first = idle_calls.load();
+      } else if (execute_calls == 2) {
+        EXPECT_EQ(idle_calls.load(), idle_before_first);
+      }
+      return FakeExecutor::execute(batch, output);
+    }
     const std::thread::id caller = std::this_thread::get_id();
     std::atomic<int> idle_calls{0};
+    int execute_calls = 0;
+    int idle_before_first = 0;
   } executor;
   Fixture fixture(executor);
   Session session = open(fixture.runner);
   executor.hold();
   auto updates = std::make_shared<Updates>();
-  auto handle = generate(session, tokens(1), config(1), updates);
+  auto handle = generate(session, tokens(1), config(2), updates);
   const auto deadline = std::chrono::steady_clock::now() + kTimeout;
   while (!executor.in_execute() &&
          std::chrono::steady_clock::now() < deadline) {
@@ -408,11 +420,65 @@ TEST(RunnerMaintenanceTest, IdleHookRunsBetweenBatchesOnTheEngineThread) {
   executor.release();
   ASSERT_TRUE(updates->wait());
   handle.wait();
+  EXPECT_EQ(executor.execute_calls, 2);
   while (executor.idle_calls.load() == idle_calls &&
          std::chrono::steady_clock::now() < deadline) {
     std::this_thread::yield();
   }
   EXPECT_GT(executor.idle_calls.load(), idle_calls);
+}
+
+TEST(RunnerMaintenanceTest, QueuedOpenRunsBeforeIdleMaintenance) {
+  class IdleExecutor : public FakeExecutor {
+   public:
+    bool on_idle() override {
+      if (expect_open.load() && open_count() < 3) {
+        ++before_open;
+      }
+      ++idle_calls;
+      return true;
+    }
+    std::atomic<bool> expect_open{false};
+    std::atomic<int> before_open{0};
+    std::atomic<int> idle_calls{0};
+  } executor;
+  std::promise<std::future<std::optional<Session>>> pending;
+  auto callback_future = pending.get_future();
+  Fixture fixture(executor);
+  Session first = open(fixture.runner);
+  Session cancelled = open(fixture.runner);
+  executor.hold();
+  auto updates = std::make_shared<Updates>();
+  auto running = generate(first, tokens(1), config(1), updates);
+  const auto deadline = std::chrono::steady_clock::now() + kTimeout;
+  while (!executor.in_execute() &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::yield();
+  }
+  if (!executor.in_execute()) {
+    executor.release();
+    FAIL() << "execute gate was not reached";
+  }
+  // Queue a generation while the engine is busy, then cancel it before its
+  // StartCommand is handled. Its terminal callback enqueues an open from the
+  // engine thread while process_pending_commands_ is draining its old inbox.
+  auto handle = cancelled.generate_async(
+      tokens(1), config(1), [&](const GenerationUpdate& update) {
+        if (update.finish_reason == FinishReason::Cancelled) {
+          executor.expect_open = true;
+          pending.set_value(fixture.runner.open_session_async());
+        }
+      });
+  handle.cancel();
+  executor.release();
+  ASSERT_EQ(callback_future.wait_for(kTimeout), std::future_status::ready);
+  auto future = callback_future.get();
+  ASSERT_EQ(future.wait_for(kTimeout), std::future_status::ready);
+  auto session = future.get();
+  ASSERT_TRUE(session.has_value());
+  running.wait();
+  handle.wait();
+  EXPECT_EQ(executor.before_open.load(), 0);
 }
 
 TEST(RunnerMaintenanceTest, FailedIdleHookWaitsForAnotherBatchBeforeRetrying) {

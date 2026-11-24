@@ -781,9 +781,14 @@ cudaMemPool_t CudaAllocator::pool_for_device(DeviceIndex index) {
 }
 #endif // !EXECUTORCH_USE_HIP
 
-void CudaAllocator::release_cached_memory(DeviceIndex index) {
+void CudaAllocator::release_cached_memory(
+    DeviceIndex index,
+    size_t min_bytes_to_keep,
+    bool trim_graph_memory) {
 #if defined(EXECUTORCH_USE_HIP)
   (void)index;
+  (void)min_bytes_to_keep;
+  (void)trim_graph_memory;
 #else
   std::vector<std::pair<int, cudaMemPool_t>> targets;
   {
@@ -812,7 +817,7 @@ void CudaAllocator::release_cached_memory(DeviceIndex index) {
       // its stream during teardown for that reason, before dropping it. This
       // cannot wait on anything itself: it holds no stream, and a caller
       // reaching it directly is responsible for having synchronized.
-      const cudaError_t err = cudaMemPoolTrimTo(pool, 0);
+      const cudaError_t err = cudaMemPoolTrimTo(pool, min_bytes_to_keep);
       if (err != cudaSuccess) {
         ET_LOG(
             Error,
@@ -833,14 +838,16 @@ void CudaAllocator::release_cached_memory(DeviceIndex index) {
     // unused graph memory cached by every user of the device, so another
     // library in this process pays to map its own graph allocations again.
     // Nothing breaks, since only unused blocks go.
-    const cudaError_t graph_err = cudaDeviceGraphMemTrim(device);
-    if (graph_err != cudaSuccess) {
-      ET_LOG(
-          Error,
-          "cudaDeviceGraphMemTrim failed for device %d: %s.",
-          device,
-          cudaGetErrorString(graph_err));
-      (void)cudaGetLastError();
+    if (trim_graph_memory) {
+      const cudaError_t graph_err = cudaDeviceGraphMemTrim(device);
+      if (graph_err != cudaSuccess) {
+        ET_LOG(
+            Error,
+            "cudaDeviceGraphMemTrim failed for device %d: %s.",
+            device,
+            cudaGetErrorString(graph_err));
+        (void)cudaGetLastError();
+      }
     }
   }
 #endif

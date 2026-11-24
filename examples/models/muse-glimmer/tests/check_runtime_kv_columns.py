@@ -288,11 +288,31 @@ def check_compaction(probe: Path, artifact: Path) -> None:
     )
 
 
+def check_runner(probe: Path, artifact: Path) -> None:
+    # Exercise actual Runner polling/close re-arm through the CI decorator,
+    # rather than only manually calling the cache maintenance hook.
+    runner_traces = []
+    for delay, label in ((-1, "runner-disabled"), (500, "runner-compact")):
+        _, trace = run(
+            probe,
+            artifact,
+            False,
+            [{"op": "runner"}],
+            delay,
+            label,
+        )
+        runner_traces.append(trace[0])
+    assert runner_traces[0]["idle_columns"] == 9
+    assert runner_traces[1]["idle_columns"] == 3
+    assert runner_traces[0]["outputs"] == runner_traces[1]["outputs"]
+    assert all(row["snapshot"]["live_sequences"] == 0 for row in runner_traces)
+    print("Runner-driven idle compaction, open history and regrowth passed")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--probe", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
-    parser.add_argument("--check-compaction", action="store_true")
     args = parser.parse_args()
     root = args.output_dir.resolve()
     root.mkdir(parents=True, exist_ok=True)
@@ -361,8 +381,8 @@ def main() -> None:
         "Native column growth, identical logits, ring cloning and graph recapture passed"
     )
 
-    if args.check_compaction:
-        check_compaction(args.probe.resolve(), artifact)
+    check_compaction(args.probe.resolve(), artifact)
+    check_runner(args.probe.resolve(), artifact)
 
 
 if __name__ == "__main__":

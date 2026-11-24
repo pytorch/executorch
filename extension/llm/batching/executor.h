@@ -86,9 +86,13 @@ class ET_EXPERIMENTAL Executor {
     return 0;
   }
 
-  // Engine-thread maintenance between batches, outside the Runner's control
-  // mutex. A false result pauses retries until another batch or owner closure;
-  // it must preserve every still-open session.
+  // Engine-thread maintenance when no batch or queued command is ready,
+  // outside the Runner's control mutex. While idle, Runner polls every 20 ms.
+  // true includes no work, unsupported maintenance, and work not yet due;
+  // a backend can defer until its own quiet interval without sleeping here.
+  // false reports failure and pauses retries until another completed batch or
+  // a command closes an owner (including admission rollback). Preserve every
+  // still-open session. Executor decorators must forward this hook.
   virtual bool on_idle() {
     return true;
   }

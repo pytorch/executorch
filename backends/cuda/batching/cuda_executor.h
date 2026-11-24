@@ -89,9 +89,12 @@ struct CudaExecutorConfig {
   int max_session_tokens = 0;
   int kv_dtype = static_cast<int>(::executorch::aten::ScalarType::BFloat16);
   int initial_capacity = -1;
-  // A quiet interval before reclaiming unused physical columns. This never
-  // expires an open session; zero allows maintenance at the next idle check.
-  std::chrono::milliseconds kv_column_compaction_delay{500};
+  // Idle compaction starts below 25% physical-column occupancy and keeps
+  // spare columns equal to the live-owner count. Open sessions never expire.
+  // nullopt disables automatic compaction; zero permits the next idle check.
+  // A later burst can regrow columns and recapture CUDA graphs.
+  std::optional<std::chrono::milliseconds> kv_column_compaction_delay{
+      std::chrono::milliseconds{500}};
   CudaExecutorOptions options;
 };
 
@@ -234,7 +237,8 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
   OffGraphKVMetrics kv_metrics() const;
   // Sequence-layout counters; read between executes, on the engine thread.
   CudaGraphMetrics graph_metrics(std::string_view method) const;
-  // Explicit compaction preserves every live owner, even inactive sessions.
+  // Call on the engine thread between executes, never concurrently with the
+  // Runner. Explicit compaction preserves inactive but still-open owners.
   ::executorch::runtime::Error compact_kv_columns(int spare_columns = 1);
   bool on_idle() override;
   // Every method, narrowest first, with how many forwards it ran. Read it
@@ -262,7 +266,7 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
       int min_selected_rows,
       bool has_sampler,
       bool has_argmax,
-      std::chrono::milliseconds column_compaction_delay);
+      std::optional<std::chrono::milliseconds> column_compaction_delay);
 
   // Draws one token per row of `logits`, rows [0, sessions.size()), on the
   // device; returns them in row order.
@@ -311,7 +315,7 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
   std::optional<bool> device_logits_;
   bool initialized_ = false;
   bool raw_executing_ = false;
-  const std::chrono::milliseconds column_compaction_delay_;
+  const std::optional<std::chrono::milliseconds> column_compaction_delay_;
 };
 
 } // namespace executorch::backends::cuda::batching

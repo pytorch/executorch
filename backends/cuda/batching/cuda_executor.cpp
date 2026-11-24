@@ -269,7 +269,7 @@ CudaExecutor::CudaExecutor(
     int min_selected_rows,
     bool has_sampler,
     bool has_argmax,
-    std::chrono::milliseconds column_compaction_delay)
+    std::optional<std::chrono::milliseconds> column_compaction_delay)
     : install_guard_(cache),
       module_(std::move(module)),
       ctl_(cache->as<llm_cache::BatchControl>()),
@@ -337,7 +337,8 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
   const int initial_capacity = config.initial_capacity;
   const auto& options = config.options;
   ET_CHECK_OR_RETURN_ERROR(
-      config.kv_column_compaction_delay.count() >= 0,
+      !config.kv_column_compaction_delay ||
+          config.kv_column_compaction_delay->count() >= 0,
       InvalidArgument,
       "CudaExecutor: negative compaction delay");
   ET_CHECK_OR_RETURN_ERROR(
@@ -1107,7 +1108,7 @@ Error CudaExecutor::compact_kv_columns(int spare_columns) {
 }
 
 bool CudaExecutor::on_idle() {
-  if (raw_executing_) {
+  if (!column_compaction_delay_ || raw_executing_) {
     return true;
   }
   const auto metrics = kv_->metrics();
@@ -1118,7 +1119,10 @@ bool CudaExecutor::on_idle() {
     return true;
   }
   const Error error = kv_->compact_columns(
-      static_cast<int>(metrics.live_sequences), column_compaction_delay_);
+      static_cast<int>(metrics.live_sequences), *column_compaction_delay_);
+  if (error == Error::NotSupported) {
+    return true; // Fixed physical columns need no idle maintenance.
+  }
   if (error != Error::Ok) {
     ET_LOG(
         Error,

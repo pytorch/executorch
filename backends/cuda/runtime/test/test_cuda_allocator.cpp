@@ -922,6 +922,15 @@ TEST_F(CudaAllocatorPoolTest, ReleaseCachedMemoryReturnsGraphMemory) {
   ASSERT_EQ(cudaGraphExecDestroy(graph_exec), cudaSuccess);
   ASSERT_EQ(cudaGraphDestroy(graph), cudaSuccess);
 
+  const size_t before = reserved;
+  CudaAllocator::release_cached_memory(0, 0, /*trim_graph_memory=*/false);
+  ASSERT_EQ(
+      cudaDeviceGetGraphMemAttribute(
+          0, cudaGraphMemAttrReservedMemCurrent, &reserved),
+      cudaSuccess);
+  EXPECT_EQ(reserved, before)
+      << "pool-only maintenance keeps graph reservation";
+
   CudaAllocator::release_cached_memory(0);
 
   ASSERT_EQ(

@@ -151,8 +151,11 @@ class EXECUTORCH_EXTENSION_CUDA_API CudaAllocator final
    *     on the device it ran on, so releasing only the current device would
    * leave that memory held.
    */
+  // min_bytes_to_keep bounds trimming of the shared pool's total reservation.
   static void release_cached_memory(
-      executorch::runtime::etensor::DeviceIndex index);
+      executorch::runtime::etensor::DeviceIndex index,
+      size_t min_bytes_to_keep = 0,
+      bool trim_graph_memory = true);
 
 #if !defined(EXECUTORCH_USE_HIP)
   /**
