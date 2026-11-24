@@ -428,10 +428,17 @@ TEST_F(RunnerTest, StopThatEndedAGenerationDoesNotCarryIntoTheNext) {
   GenerationConfig config;
   config.max_new_tokens = 10;
   config.echo = false;
+  int first_tokens = 0;
   EXPECT_EQ(
       runner.generate(
-          "first", config, [&runner](const std::string&) { runner.stop(); }),
+          "first",
+          config,
+          [&](const std::string&) {
+            ++first_tokens;
+            runner.stop();
+          }),
       Error::Ok);
+  EXPECT_EQ(first_tokens, 1); // the stop() ended the first generation
 
   CallbackCounter counter;
   Error err =
@@ -575,10 +582,17 @@ TEST_F(RunnerTest, StopBeforePrefillCallDoesNotCarryOver) {
   GenerationConfig config;
   config.max_new_tokens = 10;
   config.echo = false;
+  int first_tokens = 0;
   EXPECT_EQ(
       runner.generate(
-          "first", config, [&runner](const std::string&) { runner.stop(); }),
+          "first",
+          config,
+          [&](const std::string&) {
+            ++first_tokens;
+            runner.stop();
+          }),
       Error::Ok);
+  EXPECT_EQ(first_tokens, 1); // the stop() ended the first generation
 
   ASSERT_TRUE(runner.prefill("system prompt", 1, 0).ok());
   CallbackCounter counter;

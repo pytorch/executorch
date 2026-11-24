@@ -168,7 +168,7 @@ class ET_EXPERIMENTAL MultimodalRunner : public IRunner {
   }
 
   void stop() override {
-    if (running_.load(std::memory_order_relaxed)) {
+    if (running_.load(std::memory_order_acquire)) {
       text_token_generator_->stop();
     }
   }
