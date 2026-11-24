@@ -9,6 +9,14 @@
     python examples/models/muse-glimmer/tests/export_cuda_dflash_tiny.py --output-dir DIR
     ET_MUSE_DFLASH_TINY_DIR=DIR ctest -R muse_glimmer_cuda_dflash
 
+For the sequence-layout continuation case, also export a second fixture:
+
+    python examples/models/muse-glimmer/tests/export_cuda_dflash_tiny.py --output-dir SEQ_DIR --kv-layout sequence
+    ET_MUSE_DFLASH_TINY_DIR=DIR ET_MUSE_DFLASH_SEQUENCE_TINY_DIR=SEQ_DIR ctest -R muse_glimmer_cuda_dflash
+
+The native suite requires the cell fixture variable for setup, including when
+running only the sequence-layout case.
+
 The geometry is the native test's contract: vocabulary 256, two tapped target
 layers of width 64 (128 hidden columns), DFlash block 16, 32-token steps, and
 four draft owners.

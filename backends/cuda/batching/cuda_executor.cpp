@@ -1114,7 +1114,7 @@ bool CudaExecutor::on_idle() {
     return true;
   }
   const auto metrics = kv_->metrics();
-  // Below 25% occupancy, retain spare room equal to the live-owner count.
+  // Below 25% non-scratch occupancy, retain spare room equal to the live count.
   // Time controls when this runs, never which owners can be removed.
   if (metrics.physical_columns <= 2 ||
       4 * metrics.live_sequences + 1 >= metrics.physical_columns) {

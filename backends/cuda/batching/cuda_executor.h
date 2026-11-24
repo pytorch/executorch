@@ -90,7 +90,8 @@ struct CudaExecutorConfig {
   int kv_dtype = static_cast<int>(::executorch::aten::ScalarType::BFloat16);
   int initial_capacity = -1;
   // Idle compaction starts below 25% occupancy of non-scratch columns and keeps
-  // spare columns equal to the live-owner count. Open sessions never expire.
+  // spare columns equal to the live-owner count, retaining at least one
+  // non-scratch column when none are live. Open sessions never expire.
   // nullopt disables automatic compaction; zero permits the next idle check.
   // A later burst can regrow columns and recapture CUDA graphs.
   std::optional<std::chrono::milliseconds> kv_column_compaction_delay{
