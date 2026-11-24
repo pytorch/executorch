@@ -7220,13 +7220,38 @@ def vadd_fake(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
     return torch.empty_like(a)
 
 
+@torch.library.custom_op("mlx_test::vsub", mutates_args=())
+def vsub(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    """Element-wise vector subtract via a custom Metal kernel named like vadd's
+    (reference impl)."""
+    return a - b
+
+
+@torch.library.register_fake("mlx_test::vsub")
+def vsub_fake(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    return torch.empty_like(a)
+
+
+@torch.library.custom_op("mlx_test::vaxpy", mutates_args=())
+def vaxpy(a: torch.Tensor, b: torch.Tensor, swap: bool) -> torch.Tensor:
+    """X * a + Y * b via a custom Metal kernel named like vadd's, with template
+    arguments X = 1, Y = 2, or with swap Y = 1, X = 2 (reference impl)."""
+    return 2 * a + b if swap else a + 2 * b
+
+
+@torch.library.register_fake("mlx_test::vaxpy")
+def vaxpy_fake(a: torch.Tensor, b: torch.Tensor, swap: bool) -> torch.Tensor:
+    return torch.empty_like(a)
+
+
 class MetalKernelVaddModel(nn.Module):
     def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
         return torch.ops.mlx_test.vadd(a, b)
 
 
 def _register_vadd_handler():
-    """Register an MLX op handler that emits MetalKernelNode for vadd."""
+    """Register MLX op handlers that emit MetalKernelNodes for vadd, vsub and
+    vaxpy."""
     from executorch.backends.mlx.builder.op_helpers import torch_dtype_to_scalar_type
     from executorch.backends.mlx.builder.op_registry import REGISTRY
     from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
@@ -7243,8 +7268,12 @@ def _register_vadd_handler():
         }
     """
 
-    @REGISTRY.register(target=[torch.ops.mlx_test.vadd.default])
-    def _vadd_handler(P: MLXProgramBuilder, n: "torch.fx.node.Node") -> Slot:
+    def _emit_vadd(
+        P: MLXProgramBuilder,
+        n: "torch.fx.node.Node",
+        source: str,
+        template_args: Tuple[Tuple[str, int], ...] = (),
+    ) -> Slot:
         args = P.args(n)
         a_slot, b_slot = args[0], args[1]
         out = P.make_or_get_slot(n)
@@ -7256,7 +7285,7 @@ def _register_vadd_handler():
         P.emit(
             MetalKernelNode(
                 name="vadd",
-                source=vadd_source,
+                source=source,
                 inputs=[P.slot_to_tid(a_slot), P.slot_to_tid(b_slot)],
                 outputs=[P.slot_to_tid(out)],
                 grid=[
@@ -7274,9 +7303,29 @@ def _register_vadd_handler():
                 output_shapes_flat=[IntOrVid.from_literal(d) for d in a_meta.shape],
                 output_shape_lengths=[len(a_meta.shape)],
                 output_dtypes=[dtype_int],
+                template_arg_names=[name for name, _ in template_args],
+                template_arg_kinds=[0] * len(template_args),
+                template_arg_values=[value for _, value in template_args],
             )
         )
         return out
+
+    @REGISTRY.register(target=[torch.ops.mlx_test.vadd.default])
+    def _vadd_handler(P: MLXProgramBuilder, n: "torch.fx.node.Node") -> Slot:
+        return _emit_vadd(P, n, vadd_source)
+
+    # Same kernel name as vadd, different source.
+    @REGISTRY.register(target=[torch.ops.mlx_test.vsub.default])
+    def _vsub_handler(P: MLXProgramBuilder, n: "torch.fx.node.Node") -> Slot:
+        return _emit_vadd(P, n, vadd_source.replace("+", "-"))
+
+    # Both swaps emit one source with template argument values 1 and 2; only
+    # the order of the names differs.
+    @REGISTRY.register(target=[torch.ops.mlx_test.vaxpy.default])
+    def _vaxpy_handler(P: MLXProgramBuilder, n: "torch.fx.node.Node") -> Slot:
+        source = vadd_source.replace("a[idx] + b[idx]", "X * a[idx] + Y * b[idx]")
+        names = ("Y", "X") if n.args[2] else ("X", "Y")
+        return _emit_vadd(P, n, source, tuple(zip(names, (1, 2))))
 
 
 _register_vadd_handler()
@@ -7304,6 +7353,37 @@ class MetalKernelTest(OpTestCase):
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         return (torch.randn(self.size), torch.randn(self.size))
+
+
+class MetalKernelReuseModel(nn.Module):
+    def forward(self, a: torch.Tensor, b: torch.Tensor) -> Tuple[torch.Tensor, ...]:
+        x = torch.ops.mlx_test.vadd(a, b)
+        return (
+            torch.ops.mlx_test.vadd(x, b),
+            torch.ops.mlx_test.vsub(a, b),
+            torch.ops.mlx_test.vaxpy(a, b, False),
+            torch.ops.mlx_test.vaxpy(a, b, True),
+        )
+
+
+@register_test
+class MetalKernelReuseTest(OpTestCase):
+    """Two nodes run vadd's kernel, vsub's kernel has vadd's name but not its
+    source, and the two vaxpy kernels differ only in the order of their
+    template argument names."""
+
+    name = "metal_kernel_reuse"
+    expected_node_counts = {"MetalKernelNode": 5}
+
+    @classmethod
+    def get_test_configs(cls) -> List["MetalKernelReuseTest"]:
+        return [cls()]
+
+    def create_model(self) -> nn.Module:
+        return MetalKernelReuseModel()
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (torch.randn(1024), torch.randn(1024))
 
 
 class SwitchLinearModel(nn.Module):
@@ -8340,46 +8420,50 @@ class ArgsortTest(OpTestCase):
 
 
 class TopKValuesModel(nn.Module):
-    def __init__(self, k: int, dim: int):
+    def __init__(self, k: int, dim: int, largest: bool = True):
         super().__init__()
         self.k = k
         self.dim = dim
+        self.largest = largest
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.topk(x, self.k, dim=self.dim)[0]
+        return torch.topk(x, self.k, dim=self.dim, largest=self.largest)[0]
 
 
 class TopKIndicesModel(nn.Module):
-    def __init__(self, k: int, dim: int):
+    def __init__(self, k: int, dim: int, largest: bool = True):
         super().__init__()
         self.k = k
         self.dim = dim
+        self.largest = largest
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.topk(x, self.k, dim=self.dim)[1]
+        return torch.topk(x, self.k, dim=self.dim, largest=self.largest)[1]
 
 
 class TopKBothModel(nn.Module):
-    def __init__(self, k: int, dim: int):
+    def __init__(self, k: int, dim: int, largest: bool = True):
         super().__init__()
         self.k = k
         self.dim = dim
+        self.largest = largest
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        values, indices = torch.topk(x, self.k, dim=self.dim)
+        values, indices = torch.topk(x, self.k, dim=self.dim, largest=self.largest)
         return values, indices
 
 
 class TopKDynamicKModel(nn.Module):
     """TopK with k derived from a dynamic tensor shape (exercises dynamic k path)."""
 
-    def __init__(self, dim: int):
+    def __init__(self, dim: int, largest: bool = True):
         super().__init__()
         self.dim = dim
+        self.largest = largest
 
     def forward(self, x: torch.Tensor, k_source: torch.Tensor) -> torch.Tensor:
         k = k_source.shape[0]
-        return torch.topk(x, k, dim=self.dim)[0]
+        return torch.topk(x, k, dim=self.dim, largest=self.largest)[0]
 
 
 @register_test
@@ -8394,13 +8478,17 @@ class TopKTest(OpTestCase):
         k: int = 3,
         dim: int = -1,
         output: str = "values",
+        largest: bool = True,
     ):
         self.shape = shape
         self.k = k
         self.dim = dim
         self.output = output
+        self.largest = largest
         shape_str = "x".join(str(s) for s in shape)
         self.name = f"topk_k{k}_dim{dim}_{output}_{shape_str}"
+        if not largest:
+            self.name += "_smallest"
 
     @classmethod
     def get_test_configs(cls) -> List["TopKTest"]:
@@ -8413,19 +8501,24 @@ class TopKTest(OpTestCase):
             cls(shape=(4, 8), k=3, dim=-1, output="indices"),
             # Both values and indices
             cls(shape=(4, 8), k=3, dim=-1, output="both"),
+            # Smallest values and indices
+            cls(shape=(16,), k=5, dim=0, output="values", largest=False),
+            cls(shape=(4, 8), k=3, dim=-1, output="indices", largest=False),
+            cls(shape=(4, 8), k=3, dim=-1, output="both", largest=False),
             # Dynamic k
             cls(shape=(4, 8), k=3, dim=-1, output="dynamic_k"),
+            cls(shape=(4, 8), k=3, dim=-1, output="dynamic_k", largest=False),
         ]
 
     def create_model(self) -> nn.Module:
         if self.output == "values":
-            return TopKValuesModel(self.k, self.dim)
+            return TopKValuesModel(self.k, self.dim, self.largest)
         elif self.output == "indices":
-            return TopKIndicesModel(self.k, self.dim)
+            return TopKIndicesModel(self.k, self.dim, self.largest)
         elif self.output == "dynamic_k":
-            return TopKDynamicKModel(self.dim)
+            return TopKDynamicKModel(self.dim, self.largest)
         else:
-            return TopKBothModel(self.k, self.dim)
+            return TopKBothModel(self.k, self.dim, self.largest)
 
     def get_dynamic_shapes(self) -> Optional[Dict[str, any]]:
         if self.output == "dynamic_k":

@@ -1,11 +1,12 @@
 #!/bin/bash
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# Cache the developer.arm.com downloads of examples/arm/setup.sh, so CI jobs
+# Cache the GNU toolchain download of examples/arm/setup.sh, so CI jobs
 # copy them from ARM_SETUP_DOWNLOAD_CACHE instead of fetching them each run.
 # Jobs download whatever is missing, so a failed download only costs the cache.
 
@@ -17,7 +18,6 @@ ARM_SETUP_CURL_PROGRESS_ARGS=(--no-progress-meter)
 # Fill the cache rather than read from it
 cache_dir="${ARM_SETUP_DOWNLOAD_CACHE}"
 unset ARM_SETUP_DOWNLOAD_CACHE
-source ./arm-setup/fvp_utils.sh
 source ./arm-setup/toolchain_utils.sh
 
 cache_download() {
@@ -28,7 +28,5 @@ cache_download() {
 }
 
 mkdir -p "${cache_dir}"
-cache_download "${corstone300_url}" "${corstone300_md5_checksum}"
-cache_download "${corstone320_url}" "${corstone320_md5_checksum}"
 gcc_select_toolchain
 cache_download "${toolchain_url}" "${toolchain_md5_checksum}"
