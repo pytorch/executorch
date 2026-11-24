@@ -39,10 +39,11 @@ struct GraphInstance;
 // any method of its program writes; `storage` holds each one's buffer. Program
 // validation has already required every binding of a key to have the same
 // metadata. `constants` holds the device tensors of immutable constants, keyed
-// by their load plans: the package bytes they load, where, and every
-// transform that decides their device bytes. The context owns `storage` from
-// the first successful compile that binds each key, so releasing executables
-// keeps its value; a constant lives while an executable holds it.
+// by their load plans: the package bytes they load, where, and every transform
+// that decides their device bytes; and of results computed once from them,
+// keyed by their op chain. The context owns `storage` from the first successful
+// compile that binds each key, so releasing executables keeps its value; a
+// constant lives while an executable holds it.
 struct GgmlContextState {
   struct Constant {
     std::weak_ptr<ggml_tensor> tensor;

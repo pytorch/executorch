@@ -3540,7 +3540,8 @@ class GgmlQwen35Test(unittest.TestCase):
 
     def test_methods_load_one_weight_set(self):
         # forward and prefill, on 64 and 8 tokens, read every weight; the
-        # context loads each once. Folding off keeps per-method results out.
+        # context loads each once, and computes each result folded from them
+        # once.
         model = self._model()
         tokens = torch.randint(0, 128, (73,))
         calls = [(0, 64), (0, 8), (8, 1)]
@@ -3564,26 +3565,33 @@ class GgmlQwen35Test(unittest.TestCase):
                 "forward": torch.export.export(wrapper, one, strict=True),
                 "prefill": export_prefill(wrapper, 64),
             }
-        constant_bytes = []
+        constant_bytes = {fold: [] for fold in (True, False)}
         with tempfile.TemporaryDirectory() as tmp:
             outdir = Path(tmp)
             package = outdir / "tiny_qwen35.ptn"
             to_native(programs).save(str(package))
-            outputs = _run_ggml(
-                package,
-                steps,
-                outdir,
-                1,
-                resize=True,
-                method=";".join(methods),
-                fold_constants=False,
-                constant_bytes=constant_bytes,
+            folded, unfolded = (
+                _run_ggml(
+                    package,
+                    steps,
+                    outdir,
+                    1,
+                    resize=True,
+                    method=";".join(methods),
+                    fold_constants=fold,
+                    constant_bytes=constant_bytes[fold],
+                )
+                for fold in (True, False)
             )
-        self.assertEqual(len(outputs), len(steps))
+        _assert_same_as_unfolded(self, folded, unfolded)
+        self.assertEqual(len(folded), len(steps))
         weights = sum(p.numel() * p.element_size() for p in model.parameters())
-        self.assertEqual(len(constant_bytes), 2)
-        self.assertEqual(constant_bytes[1], constant_bytes[0])
-        self.assertLess(constant_bytes[0], 2 * weights)
+        for fold, after_compiles in constant_bytes.items():
+            with self.subTest(fold=fold):
+                self.assertEqual(len(after_compiles), 2)
+                self.assertEqual(after_compiles[1], after_compiles[0])
+                self.assertLess(after_compiles[0], 2 * weights)
+        self.assertGreater(constant_bytes[True][0], constant_bytes[False][0])
 
     def test_methods_share_one_compute_buffer(self):
         # forward and prefill reserve the context's compute buffers at
