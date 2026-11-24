@@ -24,6 +24,7 @@ pytest.importorskip("torchao")
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from executorch.backends.espressif.lowering import to_espnn_edge
 from executorch.backends.espressif.quantizer.espnn_quantizer import EspNNQuantizer
 
 from executorch.backends.espressif.reference import esp_nn_reference as reference
@@ -34,6 +35,7 @@ from executorch.backends.espressif.serialization.xts3 import (
     XTS3_VERSION,
     XTS3OpCode,
 )
+from executorch.exir.lowered_backend_module import LoweredBackendModule
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
@@ -239,6 +241,29 @@ class TransposeSelect(nn.Module):
 torch.manual_seed(20261014)
 
 
+class ConvAvgPool(nn.Module):
+    def __init__(self, channels):
+        super().__init__()
+        self.conv = nn.Conv2d(channels, channels, 1)
+
+    def forward(self, x):
+        return F.avg_pool2d(self.conv(x), 2)
+
+
+class PointwiseConv(nn.Module):
+    """Exercise pointwise convolution over 65,792 output positions."""
+
+    def __init__(self, channels):
+        super().__init__()
+        self.stem = nn.Conv2d(channels, channels, 1)
+        self.conv = nn.Conv2d(channels, 1, 1)
+
+    def forward(self, x):
+        # Build the large map inside the delegate to keep bundled inputs small.
+        y = F.interpolate(self.stem(x), size=(256, 257), mode="nearest")
+        return self.conv(y)
+
+
 class GroupedConvs(nn.Module):
     """Grouped (not depthwise) convolutions: plain, strided and dilated."""
 
@@ -275,6 +300,12 @@ CASES = [
     ("two-inputs-two-outputs", TwoInputTwoOutput(), [(1, 3, 12, 12), (1, 6)], 2),
     ("transpose-select-stack", TransposeSelect(), [(1, 3, 4, 5)], 2),
     ("max-pool-six-channels", OddChannelPool(), [(1, 3, 8, 8)], 2),
+    ("pointwise-65792-positions-c8", PointwiseConv(8), [(1, 8, 8, 257)], 2),
+    ("pointwise-65792-positions-c4", PointwiseConv(4), [(1, 4, 8, 257)], 2),
+    ("avgpool-wide-c4", ConvAvgPool(4), [(1, 4, 5, 7)], 2),
+    ("avgpool-tall-c4", ConvAvgPool(4), [(1, 4, 7, 5)], 2),
+    ("avgpool-wide-c8", ConvAvgPool(8), [(1, 8, 5, 7)], 2),
+    ("avgpool-tall-c8", ConvAvgPool(8), [(1, 8, 7, 5)], 2),
 ]
 
 
@@ -287,6 +318,32 @@ def test_v6_lowering_tracks_pytorch_int8(name, model, shapes, tolerance):
     assert len(graph.inputs) == len(shapes)
     error = max_int8_error(converted, graph, shapes)
     assert error <= tolerance, f"{name}: worst int8 difference {error}"
+
+
+@pytest.mark.parametrize(
+    "name, expected_opcode",
+    [
+        ("max-pool-six-channels", XTS3OpCode.MAX_POOL2D),
+        ("pointwise-65792-positions-c8", XTS3OpCode.CONV2D),
+        ("pointwise-65792-positions-c4", XTS3OpCode.CONV2D),
+        ("avgpool-wide-c4", XTS3OpCode.AVG_POOL2D),
+        ("avgpool-tall-c4", XTS3OpCode.AVG_POOL2D),
+        ("avgpool-wide-c8", XTS3OpCode.AVG_POOL2D),
+        ("avgpool-tall-c8", XTS3OpCode.AVG_POOL2D),
+    ],
+)
+def test_vendor_regressions_are_delegated(name, expected_opcode):
+    _, model, shapes, _ = next(case for case in CASES if case[0] == name)
+    _, program = quantize(model, shapes)
+    edge, report = to_espnn_edge(program)
+    assert not report["cpu_ops"], report
+    operations = [
+        op
+        for module in edge.exported_program().graph_module.children()
+        if isinstance(module, LoweredBackendModule)
+        for op in parse_graph(module.processed_bytes).operations
+    ]
+    assert any(op.opcode == expected_opcode for op in operations)
 
 
 def test_detection_head_uses_copy_and_no_rank5_tensors():

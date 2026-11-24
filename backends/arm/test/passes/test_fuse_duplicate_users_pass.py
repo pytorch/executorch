@@ -15,6 +15,7 @@ from executorch.backends.arm._passes import (
     RemoveNoopPass,
 )
 from executorch.backends.arm._passes.arm_pass_manager import ArmPassManager
+from executorch.backends.arm._passes.tosa_lowering_utils import create_rescale_node
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
@@ -94,11 +95,11 @@ def _graph_with_duplicate_rescale_users() -> GraphModule:
     x = _set_val(graph.placeholder("x"), torch.ones(1, dtype=torch.int8))
     rescale_args = (x, torch.int32, [1.0], 16, 0)
     first_rescale = _set_val(
-        graph.call_function(exir_ops.backend.tosa.RESCALE.default, rescale_args),
+        create_rescale_node(graph, rescale_args),
         torch.ones(1, dtype=torch.int32),
     )
     second_rescale = _set_val(
-        graph.call_function(exir_ops.backend.tosa.RESCALE.default, rescale_args),
+        create_rescale_node(graph, rescale_args),
         torch.ones(1, dtype=torch.int32),
     )
     output = graph.output((first_rescale, second_rescale))

@@ -28,6 +28,9 @@ class PReLUConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
+        if neutron_target_spec.is_subsystem():
+            return False
+
         if not NodeConverter.inputs_satisfy_broadcast_condition(node):
             return False
 

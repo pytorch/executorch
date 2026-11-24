@@ -648,11 +648,11 @@ def _canonicalize_graph_with_lowered_module(gm, subgm_tag, compiler_specs):
                     gm.get_submodule(node.name), tuple(subgm_input), compiler_specs
                 )
             )
-            # replace submodule with lowered module
-            gm.set_submodule(
-                node.name,
-                edge_prog_mgrs[-1].exported_program().graph_module,
-            )
+            lowered_module = edge_prog_mgrs[-1].exported_program().module()
+            # Fused submodules consume flat arguments and return flat outputs.
+            lowered_module.graph.set_codegen(torch.fx.graph.CodeGen())
+            lowered_module.recompile()
+            gm.set_submodule(node.name, lowered_module)
             # if node has multiple outputs, getitems will be default generated
             if all(n.target != operator.getitem for n in node.users):
                 with gm.graph.inserting_after(node):

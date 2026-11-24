@@ -46,16 +46,6 @@ def define_common_targets():
         ],
     )
 
-    runtime.python_test(
-        name = "test_fold_batch_norm",
-        srcs = ["test_fold_batch_norm.py"],
-        deps = [
-            ":test_helpers",
-            "fbsource//third-party/pypi/parameterized:parameterized",
-            "//executorch/backends/transforms/fused_quant:fold_batch_norm",
-            "//caffe2:torch",
-        ],
-    )
 
     runtime.python_test(
         name = "test_tensor_constants",

@@ -205,6 +205,116 @@ class WorkerWatchdogTest(unittest.TestCase):
         self.assertIsNone(self.wait(script))
 
 
+class SpecTest(unittest.TestCase):
+    """What a measurement describes of a recorded call."""
+
+    def plan(self, args, kwargs=None):
+        from executorch.backends.cuda.triton import routing
+
+        return routing.ReplacementPlan(
+            "toy",
+            (
+                routing.Candidate(routing.REGULAR_LOWERING),
+                routing.Candidate("toy", None, "toy", _TOY, args, kwargs or {}),
+            ),
+            "toy",
+            signature="add",
+            measure=True,
+        )
+
+    def call(self, *vals):
+        """A toy call of placeholders with the given fake values (under the
+        fake mode)."""
+        graph = torch.fx.Graph()
+        inputs = []
+        for i, val in enumerate(vals):
+            inputs.append(graph.placeholder(f"x{i}"))
+            inputs[-1].meta["val"] = val
+        node = graph.call_function(_TOY, tuple(inputs))
+        # Called under the fake mode: a fresh output.
+        node.meta["val"] = torch.empty(vals[0].shape)
+        return node, inputs
+
+    def test_an_input_taken_twice_is_one_storage(self):
+        from executorch.backends.cuda.triton import measured_routing
+        from torch._subclasses.fake_tensor import FakeTensorMode
+
+        with FakeTensorMode():
+            node, (x,) = self.call(torch.empty(4, 4))
+        for label, args, kwargs in (
+            ("an argument and a keyword", (x,), {"other": x}),
+            ("two keywords", (), {"self": x, "other": x}),
+        ):
+            with self.subTest(label):
+                spec = measured_routing._spec(node, self.plan(args, kwargs))
+                self.assertEqual(
+                    spec["args"][0], {"tensor": ["float32", [4, 4], [4, 1]]}
+                )
+                replacement = spec["replacement"]
+                tensors = [*replacement["args"], *replacement["kwargs"].values()]
+                self.assertEqual([t["storage"] for t in tensors], [[0, 0], [0, 0]])
+
+    def test_offsets_and_shared_storages_are_views_of_numbered_storages(self):
+        """Slices of one fused weight, as constant propagation leaves them, and
+        an unrelated tensor at an offset."""
+        from executorch.backends.cuda.triton import measured_routing
+        from torch._subclasses.fake_tensor import FakeTensorMode
+
+        with FakeTensorMode():
+            fused = torch.empty(12, 4)
+            other = torch.empty(10)
+            node, inputs = self.call(
+                fused[4:8], fused[8:], torch.empty(4, 4), other[2:6]
+            )
+        spec = measured_routing._spec(node, self.plan(tuple(inputs)))
+        self.assertEqual(
+            [a.get("storage") for a in spec["args"]], [[0, 16], [0, 32], None, [1, 2]]
+        )
+        self.assertEqual(spec["args"][1]["tensor"], ["float32", [4, 4], [4, 1]])
+        # The replacement's inputs are numbered on their own.
+        self.assertEqual(spec["replacement"]["args"], spec["args"])
+        self.assertNotIn("storage", spec["output"])
+
+    def test_one_storage_seen_as_two_dtypes_is_unmeasurable(self):
+        from executorch.backends.cuda.triton import measured_routing
+        from torch._subclasses.fake_tensor import FakeTensorMode
+
+        with FakeTensorMode():
+            x = torch.empty(4, 4)
+            node, inputs = self.call(x, x.view(torch.int32))
+        with self.assertRaisesRegex(measured_routing.Unmeasurable, "viewed as"):
+            measured_routing._spec(node, self.plan(tuple(inputs)))
+
+    @unittest.skipUnless(torch.cuda.is_available(), "CUDA required")
+    def test_views_are_made_from_one_buffer_per_storage(self):
+        from executorch.backends.cuda.triton import measured_routing
+
+        float32 = lambda size, stride: ["float32", size, stride]  # noqa: E731
+        args = [
+            {"tensor": float32([4, 4], [4, 1]), "storage": [0, 16]},
+            {"tensor": float32([4, 4], [1, 4]), "storage": [0, 32]},
+            {"tensor": float32([3], [1])},
+            2.0,
+        ]
+        kwargs = {"other": {"tensor": float32([4], [1]), "storage": [1, 2]}}
+        (a, b, c, scalar), made = measured_routing._materialize(
+            args, kwargs, torch.device("cuda")
+        )
+        d = made["other"]
+        self.assertEqual(
+            (a.storage_offset(), b.storage_offset(), d.storage_offset()), (16, 32, 2)
+        )
+        self.assertEqual((a.stride(), b.stride()), ((4, 1), (1, 4)))
+        self.assertEqual(a.untyped_storage().data_ptr(), b.untyped_storage().data_ptr())
+        # One buffer per storage, holding every view of it.
+        self.assertEqual(a.untyped_storage().nbytes(), 48 * 4)
+        self.assertNotEqual(
+            a.untyped_storage().data_ptr(), d.untyped_storage().data_ptr()
+        )
+        self.assertEqual(c.storage_offset(), 0)
+        self.assertEqual(scalar, 2.0)
+
+
 @unittest.skipUnless(torch.cuda.is_available(), "CUDA required")
 class MeasureTest(unittest.TestCase):
     """What the worker reports for one call, with the compiles given."""
@@ -372,7 +482,6 @@ class ChoiceTest(_PassTest):
         self.results = lambda spec: _entry()
         self.worker = mock.Mock(side_effect=self.run_worker)
         for patch in (
-            mock.patch.dict(replacement_pass.EDGE_TO_TRITON_KERNELS, {self.add: _TOY}),
             mock.patch.dict(replacement_pass.PLANNERS, {self.add: self.plan}),
             mock.patch.object(measured_routing, "_run_worker", self.worker),
             mock.patch.object(measured_routing, "_capable_devices", set()),
@@ -500,25 +609,18 @@ class ChoiceTest(_PassTest):
         ):
             self.run_passes()
 
-    def test_unreported_and_unmeasurable_calls_take_the_static_choice(self):
+    def test_unreported_calls_take_the_static_choice(self):
         from executorch.backends.cuda.triton import measured_routing
 
-        class Twice(_Add):
-            def forward(self, x, y):
-                return torch.relu(x + x)
-
         self.worker.side_effect = lambda *args: (None, {})
-        for model, message in ((_Add(), "did not report"), (Twice(), "more than once")):
-            for static_choice in ("toy", "inductor"):
-                with self.subTest(message=message, static_choice=static_choice):
-                    self.static_choice = static_choice
-                    with self.assertLogs(measured_routing.logger, "ERROR") as logs:
-                        graph_module = self.run_passes(model)
-                    self.assertIn(message, "\n".join(logs.output))
-                    self.assertEqual(
-                        self.chose_toy(graph_module), static_choice == "toy"
-                    )
-                    self.assertEqual(self.log()["nodes"][0]["outcome"], "unmeasurable")
+        for static_choice in ("toy", "inductor"):
+            with self.subTest(static_choice=static_choice):
+                self.static_choice = static_choice
+                with self.assertLogs(measured_routing.logger, "ERROR") as logs:
+                    graph_module = self.run_passes(_Add())
+                self.assertIn("did not report", "\n".join(logs.output))
+                self.assertEqual(self.chose_toy(graph_module), static_choice == "toy")
+                self.assertEqual(self.log()["nodes"][0]["outcome"], "unmeasurable")
         self.assertFalse((self.directory / "cache").exists())
 
     def test_a_process_that_cannot_load_cpp_wrapper_modules_measures_nothing(self):
@@ -651,6 +753,17 @@ class ChoiceTest(_PassTest):
         self.assertEqual(measured_routing.cache_key(dict(spec), {}, device), key)
         strided = {**spec, "args": [{"tensor": ["float32", [4], [2]]}]}
         self.assertNotEqual(measured_routing.cache_key(strided, {}, device), key)
+        tensor = {"tensor": ["float32", [4], [1]]}
+        views = [
+            [{**tensor, "storage": [0, 4]}],
+            [{**tensor, "storage": [0, 8]}],
+            [{**tensor, "storage": [0, 0]}, {**tensor, "storage": [0, 4]}],
+            [{**tensor, "storage": [0, 0]}, {**tensor, "storage": [1, 4]}],
+        ]
+        keys = {
+            measured_routing.cache_key({**spec, "args": a}, {}, device) for a in views
+        }
+        self.assertEqual(len(keys | {key}), len(views) + 1)
         self.assertNotEqual(
             measured_routing.cache_key({**spec, "alpha": 2}, {}, device), key
         )
@@ -933,10 +1046,6 @@ class ProbeTest(_PassTest):
         sort = exir_ops.edge.aten.sort.stable
         for patch in (
             mock.patch.object(conv_routing, "regular_lowering_gap", return_value=None),
-            mock.patch.dict(
-                replacement_pass.EDGE_TO_TRITON_KERNELS,
-                {sort: torch.ops.aten.sort.stable},
-            ),
             mock.patch.dict(replacement_pass.PLANNERS, {sort: sort_plan}),
         ):
             patch.start()

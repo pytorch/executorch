@@ -53,6 +53,9 @@ class PadConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
+        if neutron_target_spec.is_subsystem():
+            return False
+
         if not NodeConverter.uses_quantization_type_for_io(
             node,
             supported_types=[torch.int8, torch.uint8],
