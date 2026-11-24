@@ -53,16 +53,13 @@ def test_match_arg_ranks_handles_tosa_binary_ops() -> None:
     assert add.all_input_nodes[1] is view
 
 
-@pytest.mark.parametrize("share_shift_with_data", (False, True))
-def test_match_arg_ranks_preserves_mul_shift(share_shift_with_data):
+@pytest.mark.parametrize("dtype, shift", ((torch.int8, 0), (torch.int32, 1)))
+def test_match_arg_ranks_preserves_mul_shift(dtype, shift):
     graph = torch.fx.Graph()
     source = graph.placeholder("source")
     with FakeTensorMode():
-        source.meta["val"] = torch.empty(2, 3, dtype=torch.int8)
-    shift = create_const(graph, 0, torch.int8, source)
-    scalar = (
-        shift if share_shift_with_data else create_const(graph, 1, torch.int8, source)
-    )
+        source.meta["val"] = torch.empty(2, 3, dtype=dtype)
+    scalar = create_const(graph, 1, dtype, source)
     mul = graph.call_function(
         exir_ops.backend.tosa.MUL.default, (scalar, source, shift)
     )
@@ -81,10 +78,8 @@ def test_match_arg_ranks_preserves_mul_shift(share_shift_with_data):
     )[0]
     assert mul.args[0].meta["val"].shape == (1, 1)
     assert mul.args[1].meta["val"].shape == (2, 3)
-    shift = mul.args[2]
-    assert shift.target == exir_ops.backend.tosa.CONST.default
-    assert shift.args == ([0], [1], torch.int8)
-    assert shift.meta["val"].shape == (1,)
+    assert mul.args[2] == shift
+    assert type(mul.args[2]) is int
 
 
 @pytest.mark.parametrize("use_tosa", [False, True])
@@ -165,14 +160,7 @@ def test_match_arg_ranks_materializes_dynamic_view_shape() -> None:
         x.meta["val"] = torch.empty(size=(1, width * 16, 1, 1))
         y = graph.placeholder("y")
         y.meta["val"] = torch.empty(size=(width * 16,))
-        shift = graph.placeholder("shift")
-        shift.meta["val"] = torch.zeros(
-            size=[
-                1,
-            ],
-            dtype=torch.int8,
-        )
-        mul = graph.call_function(exir_ops.backend.tosa.MUL.default, args=(x, y, shift))
+        mul = graph.call_function(exir_ops.backend.tosa.MUL.default, args=(x, y, 0))
         mul.meta["val"] = torch.empty(size=(1, width * 16, 1, 1))
         graph.output(mul)
         graph_module = torch.fx.GraphModule(torch.nn.Module(), graph)

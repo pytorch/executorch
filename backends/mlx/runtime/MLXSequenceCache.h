@@ -532,6 +532,7 @@ class Full final : public KVAttentionPolicy {
         detail::cast_if_needed(kv.k, q.dtype(), s),
         detail::cast_if_needed(kv.v, q.dtype(), s),
         scale,
+        -1,
         "causal",
         std::nullopt,
         std::nullopt,
@@ -596,6 +597,7 @@ class SWA final : public KVAttentionPolicy {
         detail::cast_if_needed(kv.k, q.dtype(), s),
         detail::cast_if_needed(kv.v, q.dtype(), s),
         scale,
+        -1,
         T == 1 || windowed ? "" : "causal",
         mask,
         std::nullopt,
@@ -684,7 +686,16 @@ class DFlash final : public KVAttentionPolicy {
           ::mlx::core::concatenate(values, 2, s)};
     }();
     return ::mlx::core::fast::scaled_dot_product_attention(
-        q, kv.k, kv.v, scale, "", std::nullopt, std::nullopt, false, s);
+        q,
+        kv.k,
+        kv.v,
+        scale,
+        window_.value_or(-1),
+        "",
+        std::nullopt,
+        std::nullopt,
+        false,
+        s);
   }
 
   const int block_size_;

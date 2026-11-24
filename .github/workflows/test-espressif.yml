@@ -27,6 +27,11 @@ on:
       - install_requirements.py
       - torch_pin.py
       - install_utils.py
+      # Build and package the optional ESP-NN scratch bindings.
+      - setup.py
+      - CMakeLists.txt
+      - tools/cmake/preset/default.cmake
+      - third-party/pybind11
       # Exported by the consumer test.
       - examples/models/mlperf_tiny/**
       - devtools/bundled_program/**
@@ -72,7 +77,8 @@ jobs:
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 45
+      timeout: 90
+      hf-cache: false
       upload-artifact: test-report-${{ matrix.target }}-${{ matrix.kernels }}
       script: |
         set -euo pipefail
@@ -96,6 +102,7 @@ jobs:
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 45
+      hf-cache: false
       script: |
         set -euo pipefail
         CONDA_ENV=$(conda env list --json | jq -r '.envs | .[-1]')
@@ -117,6 +124,7 @@ jobs:
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 45
+      hf-cache: false
       upload-artifact: test-report-esp-idf-component
       script: |
         set -euo pipefail
@@ -143,6 +151,7 @@ jobs:
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 45
+      hf-cache: false
       upload-artifact: test-report-esp-idf-consumer-${{ matrix.idf-version }}
       script: |
         set -euo pipefail
