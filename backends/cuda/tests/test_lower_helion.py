@@ -119,6 +119,13 @@ def _increment_2d(x: torch.Tensor) -> None:
         x[tile_m, tile_n] = x[tile_m, tile_n] + 1
 
 
+def _add3(x: torch.Tensor, y: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
+    result = torch.empty_like(x)
+    for tile in hl.tile(x.numel()):
+        result[tile] = x[tile] + y[tile] + z[tile]
+    return result
+
+
 def _scale(x: torch.Tensor, scale: float) -> torch.Tensor:
     result = torch.empty_like(x)
     for tile in hl.tile(x.numel()):
@@ -519,28 +526,45 @@ class HelionCuteContractTest(unittest.TestCase):
         helion_cute.begin_program()
         self.assertFalse(helion_cute.last_program_had_launches())
 
-    def test_one_launch_limit_spans_methods_in_program(self) -> None:
-        def fake_launch(library: str) -> helion_cute._ExportedLaunch:
+    def test_multiple_launches_recorded_for_linking(self) -> None:
+        def fake_launch(library: str, directory: Path) -> helion_cute._ExportedLaunch:
+            (directory / f"lib{library}.a").touch()
             return helion_cute._ExportedLaunch(
                 op=torch.ops.aten.add.Tensor,
                 shim_declaration="",
                 library=library,
-                library_directory=Path("/tmp"),
+                library_directory=directory,
             )
 
         self.addCleanup(helion_cute.begin_program)
-        with helion_cute.one_launch_per_program():
-            helion_cute.record_program_launch(fake_launch("launch_a"))
-            # The next method starts a fresh per-method program set, but
-            # the per-.pte accumulation survives.
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            dir_a, dir_b = root / "a", root / "b"
+            dir_a.mkdir()
+            dir_b.mkdir()
+            helion_cute.record_program_launch(fake_launch("launch_a", dir_a))
             helion_cute.begin_program()
-            helion_cute.record_program_launch(fake_launch("launch_a"))
-            with self.assertRaisesRegex(
-                NotImplementedError, "only one distinct CuTe launch"
+            self.assertEqual(helion_cute.current_program_launches(), [])
+            helion_cute.record_program_launch(fake_launch("launch_a", dir_a))
+            helion_cute.record_program_launch(fake_launch("launch_b", dir_b))
+            self.assertEqual(
+                {e.library for e in helion_cute.current_program_launches()},
+                {"launch_a", "launch_b"},
+            )
+            with mock.patch.object(
+                helion_cute,
+                "_runtime_archive_directory",
+                return_value=root / "runtime",
             ):
-                helion_cute.record_program_launch(fake_launch("launch_b"))
-        helion_cute.begin_program()
-        helion_cute.record_program_launch(fake_launch("launch_b"))
+                directories, libraries = helion_cute.program_link_options()
+            self.assertEqual(
+                libraries,
+                ["launch_a", "launch_b", helion_cute._RUNTIME_LIBRARY],
+            )
+            self.assertEqual(libraries.count(helion_cute._RUNTIME_LIBRARY), 1)
+            self.assertEqual(
+                directories, [str(dir_a), str(dir_b), str(root / "runtime")]
+            )
 
     def test_fallback_kernels_cover_program_launches(self) -> None:
         fake = helion_cute._ExportedLaunch(
@@ -1060,6 +1084,18 @@ class LowerHelionTest(unittest.TestCase):
         y = x * 2
         self._export_and_run(model, x, (y * 2, y @ model.weight), rtol=1e-3, atol=1e-3)
 
+    def test_two_kernels_export_and_cpp_runtime(self) -> None:
+        add = self._kernel(_add, helion.Config(block_sizes=[256]), static_shapes=True)
+        add3 = self._kernel(_add3, helion.Config(block_sizes=[256]), static_shapes=True)
+        x = torch.randn(2, 257, device="cuda")
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                summed = add(x[0], x[1])
+                return add3(summed, x[0], x[1])
+
+        self._export_and_run(Model(), x, 2 * (x[0] + x[1]))
+
     def test_mutation_and_new_output_export_and_cpp_runtime(self) -> None:
         kernel = self._kernel(
             _increment_and_double, helion.Config(block_sizes=[256]), static_shapes=True
@@ -1077,7 +1113,7 @@ class LowerHelionTest(unittest.TestCase):
         self._export_and_run(Model(), x, (x + 1) * 21)
 
     def test_clone_of_view_mutation_export_and_cpp_runtime(self) -> None:
-        # One launch writing a clone of a view: the copy
+        # One launch writing a clone of a view, on both backends: the copy
         # made for the write must read the view's elements, not the start
         # of its storage.
         kernel = self._kernel(
@@ -1174,6 +1210,25 @@ class LowerHelionTest(unittest.TestCase):
                 return y + y
 
         self._export_and_run(Model(), x, (x.t() + 1) * 2)
+
+    def test_distinct_kernels_in_cond_branches_export_and_cpp_runtime(
+        self,
+    ) -> None:
+        add = self._kernel(_add, helion.Config(block_sizes=[256]), static_shapes=True)
+        add3 = self._kernel(_add3, helion.Config(block_sizes=[256]), static_shapes=True)
+        x = torch.rand(257, device="cuda") + 0.5
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return torch.cond(
+                    x.sum() > 0,
+                    lambda x: add(x, x),
+                    lambda x: add3(x, x, x),
+                    (x,),
+                )
+
+        self._export_and_run(Model(), x, x * 2)
+        self._export_and_run(Model(), -x, -3 * x)
 
     def test_functional_mutation_export_and_cpp_runtime(self) -> None:
         kernel = self._kernel(
