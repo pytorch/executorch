@@ -85,6 +85,7 @@ from executorch.backends.native.serialization.schema import (
 from executorch.exir._serialize._dataclass import _json_to_dataclass
 from executorch.exir._serialize._flatbuffer import _flatc_compile, _flatc_decompile
 from executorch.exir.tensor import dim_order_from_stride, stride_from_dim_order
+from executorch.extension.llm.export.gguf import _VALIDATED_QUANT_TYPES
 
 from torch.export.graph_signature import InputKind, TensorArgument
 from torch.fx.experimental.symbolic_shapes import statically_known_true
@@ -1063,6 +1064,11 @@ def _fold_gguf_dequant(graph_module: torch.fx.GraphModule) -> None:
         op = _resolve_op_overload(node.target) if node.op == "call_function" else None
         if op is None or op.name() != "torchao::dequantize_gguf" or len(node.args) < 2:
             continue
+        if node.args[1] not in _VALIDATED_QUANT_TYPES:
+            raise ValueError(
+                f"Native backend does not support GGUF quant type {node.args[1]!r}; "
+                f"supported: {sorted(_VALIDATED_QUANT_TYPES)}"
+            )
         weight = node.args[0]
         val = node.meta.get("val")
         if not isinstance(weight, torch.fx.Node) or not isinstance(val, torch.Tensor):
