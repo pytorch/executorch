@@ -407,7 +407,8 @@ def _iter_gguf_nvfp4_paired(gguf_path: str, static_act_scale: bool):
             if tensor.tensor_type != GGMLQuantizationType.F32 or tensor.data.size != 1:
                 raise ValueError(f"Expected scalar F32 companion: {tensor.name}")
             companions[tensor.name] = float(np.asarray(tensor.data).reshape(-1)[0])
-        elif tensor.tensor_type == GGMLQuantizationType.NVFP4:
+        # By name: gguf releases before 0.19 have no NVFP4 member.
+        elif tensor.tensor_type.name == "NVFP4":
             nvfp4.add(tensor.name)
     paired = {
         name.replace(".weight", suffix)
