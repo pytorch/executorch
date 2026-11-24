@@ -58,6 +58,7 @@ def default_policy(monkeypatch):
         "ET_CUDA_NVFP4_ACT",
         "ET_CUDA_NVFP4_PREFILL_OUTPUT",
         "ET_CUDA_NVFP4_PREFILL_IMPL",
+        "ET_CUDA_NVFP4_SMALL_M",
     ):
         monkeypatch.delenv(name, raising=False)
 

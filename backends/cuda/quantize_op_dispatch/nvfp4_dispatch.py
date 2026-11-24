@@ -8,12 +8,13 @@ Environment variables, read when the model is traced, fix the policy that
 is compiled into the program:
 
 * ``ET_CUDA_NVFP4_ACT``: ``auto`` (default) times W4A16 against native W4A4
-  per layer when native FP4 is available, and decode (M statically <= 4)
-  W4A16 against the W4A8 dp4a GEMV (int8 activations per 16 elements)
-  otherwise on NVIDIA (W4A16 only on ROCm); ``w4a16`` forces BF16/FP16
-  activations, ``w4a8`` forces the W4A8 GEMV for decode (other M run BF16/FP16
-  activations, as ``w4a16``; NVIDIA only, it raises on ROCm), and ``w4a4``
-  forces FP4 activations (native FP4 required).
+  per layer when native FP4 is available, and decode (M statically <= 4, by
+  default only M = 1, see ``ET_CUDA_NVFP4_SMALL_M``) W4A16 against the W4A8
+  dp4a GEMV (int8 activations per 16 elements) otherwise on NVIDIA (W4A16 only
+  on ROCm); ``w4a16`` forces BF16/FP16 activations, ``w4a8`` forces the W4A8
+  GEMV for decode (other M run BF16/FP16 activations, as ``w4a16``; NVIDIA
+  only, it raises on ROCm), and ``w4a4`` forces FP4 activations (native FP4
+  required).
 * ``ET_CUDA_NVFP4_PREFILL_OUTPUT``: ``input`` (default) keeps the activation
   dtype; ``fp32`` returns FP32 from prefill linears (M not statically <= 4).
 * ``ET_CUDA_NVFP4_PREFILL_IMPL``: for M not statically <= 64, ``auto``
@@ -31,6 +32,14 @@ is compiled into the program:
   draft is traced with 2 context rows, so its dynamic linears dequantize
   without that measurement. The variable applies to every method traced in
   the process; set ``kernel`` to keep the fused kernels for all of them.
+* ``ET_CUDA_NVFP4_SMALL_M``: ``1`` (default) routes ``auto``/``w4a16`` linears
+  whose M is in 2..16 (static, or dynamic with an upper bound <= 16), and
+  ``w4a8`` ones with M in 5..16, to the small-M bucket ops, which time a rows
+  GEMV, W4A16 and (``auto`` with native FP4) W4A4; with native FP4, ``auto``
+  and ``w4a16`` M <= 4 keep the decode GEMVs (``nvfp4_auto_decode`` /
+  ``nvfp4_gemv``), and the FP32 prefill output policy and an explicit
+  ``ET_CUDA_NVFP4_PREFILL_IMPL=dequant`` keep M 5..16 off them. ``0`` keeps
+  the decode and prefill paths.
 """
 
 import os
@@ -46,6 +55,7 @@ from executorch.backends.cuda.nvfp4_tensor import CudaNVFP4Tensor
 from executorch.backends.cuda.quantize_op_dispatch._gemm_family_dispatch import (
     can_launch_triton,
     chunked_dequant_linear,
+    select_bucket,
 )
 from executorch.backends.cuda.triton.kernels.nvfp4_output import (
     NVFP4_DECODE_MAX_ROWS,
@@ -374,15 +384,63 @@ def _weight_rows(w, rows):
     )
 
 
+def _small_m_enabled():
+    small_m = os.environ.get("ET_CUDA_NVFP4_SMALL_M", "1")
+    if small_m not in ("0", "1"):
+        raise ValueError("ET_CUDA_NVFP4_SMALL_M must be 0 or 1")
+    return small_m == "1"
+
+
+def _small_m_op(flat, w, mode, output_dtype, impl, enabled):
+    """The small-M bucket op and its arguments for this linear, or None.
+
+    ``auto``/``w4a16`` take the buckets for M in 2..16, and ``w4a8`` for M
+    above decode size (its W4A8 GEMV serves decode); only ``auto`` may time
+    FP4 activations, and only it passes the static activation scale. With
+    native FP4, decode-size ``auto``/``w4a16`` keep ``nvfp4_auto_decode`` /
+    ``nvfp4_gemv`` (equal or faster than the buckets on an RTX 5090 at
+    M = 2..4).
+    """
+    rows = flat.shape[0]
+    small = statically_known_true(rows <= NVFP4_DECODE_MAX_ROWS)
+    native_decode = small and mode in ("auto", "w4a16") and _has_native_fp4()
+    if (
+        not enabled
+        or native_decode
+        or not (mode in ("auto", "w4a16") or (mode == "w4a8" and not small))
+        or output_dtype is not None
+        or statically_known_true(rows <= 1)
+        or _dequant_prefill(flat, mode, output_dtype, impl)
+    ):
+        return None
+    from executorch.backends.cuda.triton.kernels.nvfp4_small_m_gemm import (
+        NVFP4_SMALL_M_GEMM,
+    )
+
+    fp4 = mode == "auto" and _has_native_fp4()
+    op_args = (
+        flat,
+        w.qdata,
+        w.scale,
+        w.per_tensor_scale,
+        w.act_per_tensor_scale if fp4 else None,
+        w.unit_scale,
+        mode != "auto",
+    )
+    bucket = select_bucket(NVFP4_SMALL_M_GEMM, *op_args)
+    return None if bucket is None else (NVFP4_SMALL_M_GEMM.op(bucket), op_args)
+
+
 @CudaNVFP4Tensor.implements([torch.ops.aten.linear.default])
 @CudaNVFP4Tensor.implements_torch_function([F.linear])
-def _linear(func, types, args, kwargs):
+def _linear(func, types, args, kwargs):  # noqa: C901
     x, w = args[:2]
     bias = args[2] if len(args) > 2 else kwargs.get("bias")
     mode = os.environ.get("ET_CUDA_NVFP4_ACT", "auto")
     if mode not in _ACT_MODES:
         raise ValueError(f"ET_CUDA_NVFP4_ACT must be one of {_ACT_MODES}")
     impl = _prefill_impl()
+    use_small_m = _small_m_enabled()
     if x.shape[-1] != w.shape[-1]:
         raise RuntimeError("NVFP4 linear input and weight K dimensions must match")
     flat = x.reshape(-1, x.shape[-1]).contiguous()
@@ -412,6 +470,7 @@ def _linear(func, types, args, kwargs):
         if mode == "w4a8" and torch.version.hip is not None:
             raise RuntimeError("NVFP4 W4A8 (dp4a PTX) requires an NVIDIA GPU")
         small = statically_known_true(flat.shape[0] <= NVFP4_DECODE_MAX_ROWS)
+        small_m = _small_m_op(flat, w, mode, output_dtype, impl, use_small_m)
         if mode == "w4a4":
             out = nvfp4_w4a4(
                 flat,
@@ -421,6 +480,9 @@ def _linear(func, types, args, kwargs):
                 w.act_per_tensor_scale,
                 output_dtype=output_dtype,
             )
+        elif small_m is not None:
+            op, op_args = small_m
+            out = op(*op_args)
         elif small and mode == "auto":
             # Only W4A4 reads the static activation scale.
             out = nvfp4_auto_decode(

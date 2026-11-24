@@ -22,9 +22,10 @@ from executorch.backends.cuda.quantize_op_dispatch.nvfp4_dispatch import (
     _MODE_STRIDE,
 )
 from executorch.backends.cuda.tests.nvfp4_gemma_test_utils import GemmaPacked
-from executorch.backends.cuda.tests.nvfp4_test_utils import PackedLinear
+from executorch.backends.cuda.tests.nvfp4_test_utils import PackedLinear, sweep
 from executorch.backends.cuda.triton.kernels import (
     nvfp4_quantized_gemm,
+    nvfp4_small_m_gemm,
     nvfp4_w4a8_gemv,
 )
 from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import (
@@ -44,7 +45,7 @@ def cold_pick_cache(monkeypatch):
     # Tile picks live in each kernel's triton.autotune cache: without native
     # FP4, decode-size auto would reuse the GEMV tiles earlier cases tuned and
     # time none.
-    for module in (nvfp4_quantized_gemm, nvfp4_w4a8_gemv):
+    for module in (nvfp4_quantized_gemm, nvfp4_small_m_gemm, nvfp4_w4a8_gemv):
         for value in vars(module).values():
             if isinstance(value, triton.runtime.Autotuner):
                 value.cache.clear()
@@ -52,6 +53,7 @@ def cold_pick_cache(monkeypatch):
         "ET_CUDA_NVFP4_ACT",
         "ET_CUDA_NVFP4_PREFILL_OUTPUT",
         "ET_CUDA_NVFP4_PREFILL_IMPL",
+        "ET_CUDA_NVFP4_SMALL_M",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -59,19 +61,26 @@ def cold_pick_cache(monkeypatch):
 @pytest.mark.parametrize(
     "mode,m,dynamic,fp32",
     [
-        ("w4a16", 1, False, False),
+        ("w4a16", 1, None, False),
         # Hints no other case tunes, so their tiles are timed here.
-        ("w4a16", 37, True, False),
-        ("w4a16", 45, True, True),
-        ("w4a4", 16, False, False),
-        ("w4a8", 1, False, False),
-        ("auto", 1, False, False),
-        ("auto", 16, True, False),
+        *sweep([("w4a16", 37, 64, False)], []),
+        ("w4a16", 45, 64, True),
+        ("w4a4", 16, None, False),
+        ("w4a8", 1, None, False),
+        ("auto", 1, None, False),
+        ("auto", 16, 64, False),
+        # Small-M bucket ops: static M 2..16 and a dynamic M bounded by 16.
+        ("w4a16", 8, None, False),
+        ("auto", 4, None, False),
+        ("auto", 8, None, False),
+        *sweep([("w4a8", 8, None, False)], []),
+        ("w4a16", 12, 16, False),
     ],
 )
 def test_packed_linear_pte(mode, m, dynamic, fp32, monkeypatch):  # noqa: C901
-    # Decode-size auto times W4A16 against W4A8 without native FP4.
-    if mode == "w4a4" or (mode == "auto" and m > 4):
+    # Auto up to 16 rows needs no native FP4 (W4A16 against W4A8 at M=1, the
+    # small-M buckets above); its prefill pick asserts W4A4 timing.
+    if mode == "w4a4" or (mode == "auto" and (dynamic or m) > 16):
         if not _has_native_fp4():
             pytest.skip("native FP4 required")
     monkeypatch.setenv("ET_CUDA_NVFP4_ACT", mode)
@@ -107,7 +116,7 @@ def test_packed_linear_pte(mode, m, dynamic, fp32, monkeypatch):  # noqa: C901
     monkeypatch.setattr(cuda_backend, "autotune_launch_params", capture_tuning)
     module = PackedLinear().eval()
     x = torch.randn(m, 192, dtype=torch.bfloat16)
-    shapes = ({0: torch.export.Dim("tokens", min=1, max=64)},) if dynamic else None
+    shapes = ({0: torch.export.Dim("tokens", min=1, max=dynamic)},) if dynamic else None
     ep = torch.export.export(module, (x,), dynamic_shapes=shapes, strict=True)
     lowered = to_edge_transform_and_lower(
         ep,
@@ -120,14 +129,33 @@ def test_packed_linear_pte(mode, m, dynamic, fp32, monkeypatch):  # noqa: C901
         "NVFP4 tile candidates must use CUDA graph timing during AOTI, "
         "as activation mode and split-K candidates do"
     )
+    rows = dynamic or m
+    bucketed = mode in ("auto", "w4a16") or (mode == "w4a8" and rows > 4)
+    bucketed &= not fp32 and m > 1 and rows <= 16
+    # With native FP4, decode-size auto keeps nvfp4_auto_decode.
+    bucketed &= not (rows <= 4 and _has_native_fp4())
+    small_m_picks = [
+        pick
+        for pick in observed_picks
+        if pick.function.endswith("nvfp4_small_m_gemm._launch_impl")
+    ]
+    assert bool(small_m_picks) == bucketed, "small-M bucket op lowered iff M 2..16"
     if mode == "auto":
         picks = [pick for pick in observed_picks if pick.param == "mode_split"]
         assert (
             len(picks) == 1
         ), "auto mode must remain an op until AOTI measures activation mode and split-K"
-        selected_mode = ("w4a16", "w4a4", "w4a8")[picks[0].choice // _MODE_STRIDE]
+        mode_id = picks[0].choice // _MODE_STRIDE
+        if picks[0].function.endswith("nvfp4_small_m_gemm._launch_impl"):
+            # rows and W4A16 keep BF16 activations.
+            selected_mode = (
+                "w4a4" if mode_id == nvfp4_small_m_gemm._MODE_IDS["w4a4"] else "w4a16"
+            )
+        else:
+            selected_mode = ("w4a16", "w4a4", "w4a8")[mode_id]
     else:
-        selected_mode = mode
+        # Forced modes run the buckets weight-only (BF16 activations).
+        selected_mode = "w4a16" if small_m_picks else mode
 
     def reference(value):
         if fp32:
@@ -175,7 +203,7 @@ def test_packed_linear_pte(mode, m, dynamic, fp32, monkeypatch):  # noqa: C901
         if dynamic:
             # Exercise grouped M tiling and the split-K workspace at sizes
             # different from the shape used by compilation/autotuning.
-            for rows in [1, 5, 37, 64]:
+            for rows in [r for r in (1, 5, 16, 37, 64) if r <= dynamic]:
                 value = torch.randn(rows, 192, dtype=x.dtype)
                 result = method.execute([value])[0].cpu()
                 torch.testing.assert_close(

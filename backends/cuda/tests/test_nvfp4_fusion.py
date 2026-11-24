@@ -37,6 +37,7 @@ def default_policy(monkeypatch):
         "ET_CUDA_NVFP4_ACT",
         "ET_CUDA_NVFP4_PREFILL_OUTPUT",
         "ET_CUDA_NVFP4_PREFILL_IMPL",
+        "ET_CUDA_NVFP4_SMALL_M",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -177,6 +178,91 @@ def test_linear_routing(mode, native, rows, fp32, impl, expected, monkeypatch):
     assert calls == [(expected, output_dtype)]
     assert out.shape == (x.shape[0], w.shape[0])
     assert out.dtype == (output_dtype or torch.bfloat16)
+
+
+# expected: (bucket, static activation scale passed, weight_only), or None.
+@pytest.mark.parametrize(
+    "mode,native,rows,env,expected",
+    [
+        ("auto", True, 8, {}, (8, True, False)),
+        ("auto", False, 2, {}, (2, False, False)),
+        # A forced weight-only mode never times FP4 activations.
+        ("w4a16", True, 8, {}, (8, False, True)),
+        ("w4a16", True, 16, {}, (16, False, True)),
+        ("w4a16", False, 4, {}, (4, False, True)),
+        # w4a8 keeps its GEMV for decode and takes the buckets above it.
+        ("w4a8", False, 2, {}, None),
+        ("w4a8", False, 8, {}, (8, False, True)),
+        ("w4a8", True, 8, {}, (8, False, True)),
+        ("auto", True, 1, {}, None),
+        ("auto", True, 17, {}, None),
+        ("auto", True, 8, {"ET_CUDA_NVFP4_SMALL_M": "0"}, None),
+        # The FP32 prefill policy and an explicit dequant keep M 5..16 off the
+        # buckets; decode-size M keeps them.
+        ("auto", True, 8, {"ET_CUDA_NVFP4_PREFILL_OUTPUT": "fp32"}, None),
+        ("auto", True, 8, {"ET_CUDA_NVFP4_PREFILL_IMPL": "dequant"}, None),
+        (
+            "auto",
+            False,
+            4,
+            {"ET_CUDA_NVFP4_PREFILL_IMPL": "dequant"},
+            (4, False, False),
+        ),
+        # With native FP4, decode-size auto and w4a16 keep their decode GEMVs.
+        ("auto", True, 4, {}, None),
+        ("auto", True, 2, {}, None),
+        ("w4a16", True, 4, {}, None),
+        ("w4a16", True, 2, {}, None),
+        # A dynamic M bounded by a bucket takes it; a wider bound does not.
+        ("auto", True, ("dynamic", 16), {}, (16, True, False)),
+        ("auto", True, ("dynamic", 64), {}, None),
+    ],
+)
+def test_small_m_routing(mode, native, rows, env, expected, monkeypatch):
+    from executorch.backends.cuda.quantize_op_dispatch import nvfp4_dispatch
+    from executorch.backends.cuda.triton.kernels import nvfp4_small_m_gemm
+
+    calls = []
+
+    def op(bucket):
+        def run(x, qdata, scale, pts, act_scale, unit_scale, weight_only):
+            calls.append((bucket, act_scale is not None, weight_only))
+            return x.new_empty((x.shape[0], qdata.shape[0]))
+
+        return run
+
+    monkeypatch.setattr(nvfp4_small_m_gemm.NVFP4_SMALL_M_GEMM, "op", op)
+    monkeypatch.setattr(nvfp4_dispatch, "_has_native_fp4", lambda: native)
+    # The routing is NVIDIA's; w4a8 raises on ROCm.
+    monkeypatch.setattr(torch.version, "hip", None)
+    monkeypatch.setenv("ET_CUDA_NVFP4_ACT", mode)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    from torch.fx.experimental.symbolic_shapes import ShapeEnv
+
+    fake = FakeTensorMode(shape_env=ShapeEnv())
+    static = isinstance(rows, int)
+    x = torch.randn(rows if static else 3, 192, dtype=torch.bfloat16)
+    x = (
+        fake.from_tensor(x, static_shapes=True)
+        if static
+        else dynamic_rows(fake, x, rows[1])
+    )
+    w = shards(192)[0]
+    w = CudaNVFP4Tensor(
+        w.qdata, w.scale, w.per_tensor_scale, act_per_tensor_scale=torch.tensor(0.5)
+    )
+    weight = fake.from_tensor(w, static_shapes=True)
+    with fake:
+        F.linear(x, weight)
+    assert calls == ([expected] if expected else [])
+
+
+def test_small_m_rejects_a_bad_switch(monkeypatch):
+    monkeypatch.setenv("ET_CUDA_NVFP4_SMALL_M", "true")
+    x = torch.randn(2, 192, dtype=torch.bfloat16)
+    with pytest.raises(ValueError, match="ET_CUDA_NVFP4_SMALL_M"):
+        F.linear(x, shards(192)[0])
 
 
 @pytest.mark.parametrize(

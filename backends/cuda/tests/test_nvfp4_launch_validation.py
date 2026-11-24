@@ -333,3 +333,19 @@ def test_partial_offsets_and_masks_are_int64(m, n, split, base, constant):
     index = torch.arange(base, base + 8, device="cuda", dtype=torch.int64)
     torch.testing.assert_close(out[:8], split * m * n + index, rtol=0, atol=0)
     torch.testing.assert_close(out[8:], (index < m * n).to(torch.int64), rtol=0, atol=0)
+
+
+def test_small_m_weight_only_rejects_fp4_activations(monkeypatch):
+    # launch_w4a4 is stubbed, so weight_only is the only thing that can reject
+    # the W4A4 candidate; this runs on any machine.
+    from executorch.backends.cuda.triton.kernels import nvfp4_small_m_gemm as small_m
+
+    calls = []
+    monkeypatch.setattr(small_m, "launch_w4a4", lambda *args: calls.append(args))
+    w4a4 = small_m._MODE_IDS["w4a4"] * small_m._MODE_STRIDE + 1
+    args = (8, torch.zeros(8, 256), None, None, None, None, False)
+    with pytest.raises(InvalidLaunchParam, match="weight-only"):
+        small_m._launch_impl(*args, True, mode_split=w4a4)
+    assert not calls
+    small_m._launch_impl(*args, False, mode_split=w4a4)
+    assert len(calls) == 1
