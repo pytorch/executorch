@@ -108,11 +108,12 @@ class ET_EXPERIMENTAL BatchControl : public CacheControl {
   // Whether the positions are well-formed is checked when the step is placed.
   virtual bool declare_step(const std::vector<int32_t>& seq_ids) = 0;
   // How many sequences may be live at once. nullopt = no fixed bound, so the
-  // capacity they share is the only limit. A caller sizing itself against the
-  // cache asks this before it hands out work seq_new would refuse.
+  // capacity they share is the only limit. This is the logical owner limit;
+  // seq_new() may still refuse below it if storage allocation fails.
   virtual std::optional<int> max_seqs() const = 0;
   // An id no live sequence is using, held until that sequence's last slot is
-  // freed. nullopt = every id is in use. Ids may also be chosen by the caller;
+  // freed. nullopt = no free id or insufficient resources to admit it.
+  // Ids may also be chosen by the caller;
   // this only guarantees the one it returns is not already taken.
   virtual std::optional<int32_t> seq_new() = 0;
   // An independently writable snapshot of src below `upto`, all of it when

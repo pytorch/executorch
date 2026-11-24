@@ -10,6 +10,7 @@
 #include <executorch/backends/cuda/runtime/backend_options.h>
 #include <executorch/backends/cuda/runtime/cuda_kv_cache.h>
 #include <executorch/backends/cuda/runtime/cuda_kv_pool.h>
+#include <executorch/extension/cuda/cuda_allocator.h>
 #include <executorch/extension/llm/cache/cache_registry.h>
 #include <executorch/extension/llm/cache/cell_cache.h>
 #include <executorch/runtime/core/evalue.h>
@@ -21,6 +22,7 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <numeric>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -1230,7 +1232,7 @@ TEST_F(CudaKVPoolTest, SideBuffersBindAtFixedAddressesAcrossGrowth) {
           cudaMemcpyDeviceToHost),
       cudaSuccess);
   EXPECT_EQ(cells_host, std::vector<int64_t>(16, 0));
-  ASSERT_EQ(pool->mark_step_done(), Error::Ok);
+  ASSERT_EQ(pool->mark_step_done(pool->stream()), Error::Ok);
 
   // Growth moves only the growable layer.
   ASSERT_EQ(pool->prepare(5, 3, cudaStreamPerThread), Error::Ok);
@@ -1259,7 +1261,7 @@ TEST_F(CudaKVPoolTest, GrowthCarriesLiveRowsAndCapsAtDeclaredRows) {
           history.size() * sizeof(uint16_t),
           cudaMemcpyHostToDevice),
       cudaSuccess);
-  ASSERT_EQ(pool->mark_step_done(), Error::Ok);
+  ASSERT_EQ(pool->mark_step_done(pool->stream()), Error::Ok);
 
   // Asking past twice the rows grows straight to what is asked; past the
   // declared rows it is capped there.
@@ -2197,8 +2199,16 @@ class CudaBatchedSequenceCacheTest : public CudaKVCacheTest {
       std::optional<int> block_size = std::nullopt) {
     auto geometry = flat_and_ring(kWindow);
     geometry.dflash_block_size = block_size;
-    return cu::make_cuda_batched_sequence_kv_cache(
+    auto result = cu::make_cuda_batched_sequence_kv_cache(
         geometry, sequence_config(initial));
+    if (result && !block_size) {
+      auto* control = result->as<cache::BatchControl>();
+      for (int index = 0; index < kMaxSeqs; ++index) {
+        EXPECT_TRUE(control->seq_new().has_value());
+      }
+      control->clear();
+    }
+    return result;
   }
 
   // What a program lowered in the batched-sequence layout declares for make().
@@ -2229,7 +2239,7 @@ class CudaBatchedSequenceCacheTest : public CudaKVCacheTest {
         container,
         "__et_offgraph_kv_seq_info",
         slimc10::ScalarType::Int,
-        {kSegments, 4});
+        {kSegments, 5});
     return container;
   }
 
@@ -2245,9 +2255,9 @@ class CudaBatchedSequenceCacheTest : public CudaKVCacheTest {
     return values;
   }
 
-  using Info = std::vector<std::array<int32_t, 4>>;
+  using Info = std::vector<std::array<int32_t, 5>>;
   static Info read_info(void* device, int rows) {
-    std::vector<int32_t> flat(kSegments * 4);
+    std::vector<int32_t> flat(kSegments * 5);
     EXPECT_EQ(
         cudaMemcpy(
             flat.data(),
@@ -2257,8 +2267,8 @@ class CudaBatchedSequenceCacheTest : public CudaKVCacheTest {
         cudaSuccess);
     Info out(rows);
     for (int i = 0; i < rows; ++i) {
-      for (int j = 0; j < 4; ++j) {
-        out[i][j] = flat[i * 4 + j];
+      for (int j = 0; j < 5; ++j) {
+        out[i][j] = flat[i * 5 + j];
       }
     }
     return out;
@@ -2306,7 +2316,10 @@ TEST_F(CudaBatchedSequenceCacheTest, EachSequenceWritesItsOwnColumn) {
       std::vector<int64_t>({0, 0, 0, 1, 1, kMaxSeqs, kMaxSeqs}));
   EXPECT_EQ(
       read_info(fake.bound["seq_info"].data, 3),
-      Info({{0, 3, 0, 3}, {3, 2, 1, 2}, {0, 0, 0, 0}}));
+      Info(
+          {{0, 3, 0, 3, kColumns},
+           {3, 2, 1, 2, kColumns},
+           {0, 0, 0, 0, kColumns}}));
   EXPECT_EQ(
       fake.bound["f_k"].sizes,
       std::vector<int64_t>({1, kCapacity * kColumns, kHeads, kDim}));
@@ -2319,7 +2332,7 @@ TEST_F(CudaBatchedSequenceCacheTest, EachSequenceWritesItsOwnColumn) {
       read_cols(fake.bound["seq_cols"].data, 2), std::vector<int64_t>({1, 0}));
   EXPECT_EQ(
       read_info(fake.bound["seq_info"].data, 2),
-      Info({{0, 1, 1, 3}, {1, 1, 0, 4}}));
+      Info({{0, 1, 1, 3, kColumns}, {1, 1, 0, 4, kColumns}}));
   EXPECT_EQ(control->pos(a), 4);
   EXPECT_EQ(control->pos(b), 3);
   EXPECT_EQ(kv->metrics().logical_length, 4);
@@ -2406,7 +2419,9 @@ TEST_F(CudaBatchedSequenceCacheTest, CloneCopiesThePrefixIntoAFreeColumn) {
   }
   // The clone continues at its own length.
   ASSERT_EQ(step(*cache_ptr, handle, {*c}), Error::Ok);
-  EXPECT_EQ(read_info(fake.bound["seq_info"].data, 1), Info({{0, 1, *c, 4}}));
+  EXPECT_EQ(
+      read_info(fake.bound["seq_info"].data, 1),
+      Info({{0, 1, *c, 4, kColumns}}));
   EXPECT_FALSE(control->seq_clone(99, std::nullopt).has_value());
   kv->forget_handle(&handle);
 }
@@ -2426,6 +2441,25 @@ TEST_F(CudaBatchedSequenceCacheTest, ClearRecoversAbandonedDFlashStep) {
   const auto b = *control->seq_new();
   ASSERT_TRUE(control->declare_step({b, b, b}));
   EXPECT_EQ(kv->prepare_step(3, cudaStreamPerThread), Error::Ok);
+  kv->forget_handle(&handle);
+}
+
+TEST_F(CudaBatchedSequenceCacheTest, PendingDFlashOwnerCanClose) {
+  auto cache_ptr = make(kCapacity, 2);
+  auto* control = cache_ptr->as<cache::BatchControl>();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  const auto id = control->seq_new();
+  ASSERT_TRUE(id.has_value());
+  ASSERT_TRUE(control->declare_step({*id, *id, *id}));
+  ASSERT_EQ(kv->prepare_step(3, cudaStreamPerThread), Error::Ok);
+  ASSERT_TRUE(control->seq_rm(*id));
+  EXPECT_EQ(kv->commit_step(3), Error::Ok);
+  EXPECT_EQ(control->seq_new(), id);
+  EXPECT_EQ(control->pos(*id), 0);
+  ASSERT_EQ(step(*cache_ptr, handle, {*id, *id, *id}), Error::Ok);
   kv->forget_handle(&handle);
 }
 
@@ -2716,13 +2750,768 @@ TEST_F(CudaBatchedSequenceCacheTest, DFlashQueriesOnlyEachOwnersBlock) {
   // Queries pack block by block; each sees its context and its block.
   EXPECT_EQ(
       read_info(fake.bound["seq_info"].data, 2),
-      Info({{0, kBlock, 0, 5}, {kBlock, kBlock, 1, 3}}));
+      Info({{0, kBlock, 0, 5, kColumns}, {kBlock, kBlock, 1, 3, kColumns}}));
   // The blocks are dropped after the forward.
   EXPECT_EQ(control->pos(a), 3);
   EXPECT_EQ(control->pos(b), 1);
   // An owner split into two runs, or one short of its block, is refused.
   EXPECT_FALSE(control->declare_step({a, a, b, b, a}));
   EXPECT_FALSE(control->declare_step({a, b, b}));
+  kv->forget_handle(&handle);
+}
+
+namespace {
+
+class CudaRuntimeColumnCacheTest : public CudaKVCacheTest {
+ protected:
+  static constexpr int kCapacity = 64;
+  static constexpr int kMaxWrite = 32;
+  static constexpr int kMaxSeqs = 21;
+  static constexpr int kDeclaredColumns = kMaxSeqs + 1;
+  static constexpr int kSegments = 2 * kMaxSeqs;
+
+  static std::shared_ptr<cache::Cache> make() {
+    auto cfg = config(kCapacity, 4, kMaxWrite);
+    cfg.max_seqs = kMaxSeqs;
+    return cu::make_cuda_batched_sequence_kv_cache(flat_and_ring(2), cfg);
+  }
+
+  static FakeContainer container(int info_width = 5) {
+    auto fake = flat_and_ring_container();
+    fake.internal_names.insert(
+        fake.internal_names.end(), {"seq_cols", "seq_info"});
+    fake.fqns.insert(
+        fake.fqns.end(),
+        {"__et_offgraph_kv_seq_cols", "__et_offgraph_kv_seq_info"});
+    for (size_t index = 0; index < 4; ++index) {
+      declare(
+          fake,
+          fake.fqns[index],
+          slimc10::ScalarType::BFloat16,
+          {1,
+           (index < 2 ? kCapacity : kMaxWrite + 1) * kDeclaredColumns,
+           kHeads,
+           kDim});
+    }
+    declare(fake, fake.fqns[4], slimc10::ScalarType::Long, {kMaxWrite});
+    declare(
+        fake, fake.fqns[5], slimc10::ScalarType::Int, {kSegments, info_width});
+    return fake;
+  }
+
+  static Error step(
+      cache::Cache& cache,
+      cu::CudaDelegateHandle& handle,
+      const std::vector<int32_t>& ids,
+      int width = 0) {
+    auto* control = cache.as<cache::BatchControl>();
+    auto* kv = cache.as<cu::CudaKVCache>();
+    if (!control->declare_step(ids)) {
+      return Error::InvalidArgument;
+    }
+    width = width == 0 ? static_cast<int>(ids.size()) : width;
+    ET_CHECK_OK_OR_RETURN_ERROR(kv->prepare_step(width, cudaStreamPerThread));
+    ET_CHECK_OK_OR_RETURN_ERROR(kv->rebind_for_execute(&handle));
+    return kv->commit_step(width);
+  }
+
+  static std::vector<uint16_t>
+  read_column(void* data, int rows, int columns, int column) {
+    std::vector<uint16_t> out(rows * kRow);
+    EXPECT_EQ(
+        cudaMemcpy2D(
+            out.data(),
+            kRow * sizeof(uint16_t),
+            static_cast<uint16_t*>(data) + column * kRow,
+            columns * kRow * sizeof(uint16_t),
+            kRow * sizeof(uint16_t),
+            rows,
+            cudaMemcpyDeviceToHost),
+        cudaSuccess);
+    return out;
+  }
+
+  static void seed(FakeContainer& fake, int rows, int columns) {
+    for (size_t layer = 0; layer < 4; ++layer) {
+      std::vector<uint16_t> values(rows * columns * kRow);
+      for (int row = 0; row < rows; ++row) {
+        for (int column = 0; column < columns; ++column) {
+          for (int element = 0; element < kRow; ++element) {
+            values[(row * columns + column) * kRow + element] =
+                static_cast<uint16_t>(
+                    1000 * layer + 100 * row + 20 * column + element);
+          }
+        }
+      }
+      EXPECT_EQ(
+          cudaMemcpy(
+              fake.bound[fake.internal_names[layer]].data,
+              values.data(),
+              values.size() * sizeof(uint16_t),
+              cudaMemcpyHostToDevice),
+          cudaSuccess);
+    }
+  }
+};
+
+} // namespace
+
+TEST_F(CudaRuntimeColumnCacheTest, GrowthAndSparseIdsPreserveAllKV) {
+  auto cache_ptr = make();
+  ASSERT_NE(cache_ptr, nullptr);
+  auto* control = cache_ptr->as<cache::BatchControl>();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  std::vector<int32_t> ids;
+  int old_columns = 0;
+  for (const int sessions : {1, 2, 4, 8, 16}) {
+    const int live_rows = ids.empty() ? 0 : control->pos(ids.front());
+    std::vector<std::array<std::vector<uint16_t>, 4>> retained(ids.size());
+    if (old_columns != 0) {
+      seed(fake, live_rows, old_columns);
+      for (size_t owner = 0; owner < retained.size(); ++owner) {
+        for (size_t layer = 0; layer < 4; ++layer) {
+          retained[owner][layer] = read_column(
+              fake.bound[fake.internal_names[layer]].data,
+              live_rows,
+              old_columns,
+              owner);
+        }
+      }
+    }
+    while (ids.size() < static_cast<size_t>(sessions)) {
+      const auto id = control->seq_new();
+      ASSERT_TRUE(id.has_value());
+      ids.push_back(*id);
+    }
+    ASSERT_EQ(step(*cache_ptr, handle, ids), Error::Ok);
+    const auto metrics = kv->metrics();
+    EXPECT_EQ(metrics.physical_columns, sessions + 1);
+    EXPECT_EQ(metrics.declared_columns, kDeclaredColumns);
+    EXPECT_EQ(metrics.live_sequences, sessions);
+    EXPECT_EQ(control->max_seqs(), kMaxSeqs);
+    EXPECT_EQ(
+        fake.bound["flat_k"].sizes,
+        std::vector<int64_t>({1, kCapacity * kDeclaredColumns, kHeads, kDim}));
+    if (old_columns != 0) {
+      for (size_t owner = 0; owner < retained.size(); ++owner) {
+        for (size_t layer = 0; layer < 4; ++layer) {
+          EXPECT_EQ(
+              read_column(
+                  fake.bound[fake.internal_names[layer]].data,
+                  live_rows,
+                  sessions + 1,
+                  owner),
+              retained[owner][layer]);
+        }
+      }
+    }
+    old_columns = sessions + 1;
+  }
+
+  // Closing other owners preserves the survivor and the allocated width.
+  const int32_t survivor = ids[5];
+  const int rows = control->pos(survivor);
+  seed(fake, rows, old_columns);
+  std::array<std::vector<uint16_t>, 4> retained;
+  for (size_t layer = 0; layer < 4; ++layer) {
+    retained[layer] = read_column(
+        fake.bound[fake.internal_names[layer]].data, rows, old_columns, 5);
+  }
+  const int position = control->pos(survivor);
+  const auto before = kv->metrics();
+  for (const int32_t id : ids) {
+    if (id != survivor) {
+      ASSERT_TRUE(control->seq_rm(id));
+    }
+  }
+  const auto after = kv->metrics();
+  EXPECT_EQ(after.physical_columns, old_columns);
+  EXPECT_EQ(after.live_sequences, 1);
+  EXPECT_EQ(after.flat_capacity, before.flat_capacity);
+  EXPECT_EQ(control->pos(survivor), position);
+  EXPECT_EQ(after.allocated_bytes, before.allocated_bytes);
+  ASSERT_EQ(step(*cache_ptr, handle, {survivor}, 4), Error::Ok);
+  for (size_t layer = 0; layer < 4; ++layer) {
+    EXPECT_EQ(
+        read_column(
+            fake.bound[fake.internal_names[layer]].data, rows, old_columns, 5),
+        retained[layer]);
+  }
+  std::array<int64_t, 4> cols{};
+  ASSERT_EQ(
+      cudaMemcpy(
+          cols.data(),
+          fake.bound["seq_cols"].data,
+          sizeof(cols),
+          cudaMemcpyDeviceToHost),
+      cudaSuccess);
+  EXPECT_EQ(cols, (std::array<int64_t, 4>{5, 16, 16, 16}));
+  std::vector<int32_t> info(kSegments * 5);
+  ASSERT_EQ(
+      cudaMemcpy(
+          info.data(),
+          fake.bound["seq_info"].data,
+          info.size() * sizeof(int32_t),
+          cudaMemcpyDeviceToHost),
+      cudaSuccess);
+  EXPECT_EQ(info[2], 5);
+  EXPECT_EQ(info[3], position + 1);
+  for (int row = 0; row < kSegments; ++row) {
+    EXPECT_EQ(info[row * 5 + 4], old_columns);
+  }
+  kv->forget_handle(&handle);
+}
+
+TEST_F(CudaRuntimeColumnCacheTest, CloneCopiesWrappedRingHistoryAfterGrowth) {
+  auto cache_ptr = make();
+  auto* control = cache_ptr->as<cache::BatchControl>();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  const auto source = control->seq_new();
+  ASSERT_TRUE(source.has_value());
+  ASSERT_EQ(
+      step(*cache_ptr, handle, std::vector<int32_t>(32, *source)), Error::Ok);
+  ASSERT_EQ(
+      step(*cache_ptr, handle, std::vector<int32_t>(8, *source)), Error::Ok);
+  std::array<std::vector<uint16_t>, 4> expected;
+  for (size_t layer = 0; layer < 4; ++layer) {
+    const int rows = layer < 2 ? 40 : 33;
+    std::vector<uint16_t> values(rows * 2 * kRow);
+    for (int row = 0; row < rows; ++row) {
+      for (int column = 0; column < 2; ++column) {
+        for (int element = 0; element < kRow; ++element) {
+          const uint16_t value =
+              1000 * layer + 100 * row + 20 * column + element;
+          values[(row * 2 + column) * kRow + element] = value;
+          if (column == 0) {
+            expected[layer].push_back(value);
+          }
+        }
+      }
+    }
+    ASSERT_EQ(
+        cudaMemcpy(
+            fake.bound[fake.internal_names[layer]].data,
+            values.data(),
+            values.size() * sizeof(uint16_t),
+            cudaMemcpyHostToDevice),
+        cudaSuccess);
+  }
+  const auto clone = control->seq_clone(*source, 40);
+  ASSERT_TRUE(clone.has_value());
+  EXPECT_EQ(kv->metrics().physical_columns, 3);
+  ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
+  for (size_t layer = 0; layer < 4; ++layer) {
+    const int rows = layer < 2 ? 40 : 33;
+    EXPECT_EQ(
+        read_column(fake.bound[fake.internal_names[layer]].data, rows, 3, 0),
+        read_column(fake.bound[fake.internal_names[layer]].data, rows, 3, 1));
+  }
+  ASSERT_TRUE(control->seq_rm(*source));
+  ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
+  EXPECT_EQ(control->pos(*clone), 40);
+  for (size_t layer = 0; layer < 4; ++layer) {
+    const int rows = layer < 2 ? 40 : 33;
+    EXPECT_EQ(
+        read_column(fake.bound[fake.internal_names[layer]].data, rows, 3, 1),
+        expected[layer]);
+  }
+  ASSERT_EQ(step(*cache_ptr, handle, {*clone}), Error::Ok);
+  EXPECT_EQ(control->pos(*clone), 41);
+  kv->forget_handle(&handle);
+}
+
+TEST_F(CudaRuntimeColumnCacheTest, DeclaredStepCanClose) {
+  auto cache_ptr = make();
+  auto* control = cache_ptr->as<cache::BatchControl>();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  const auto id = control->seq_new();
+  ASSERT_TRUE(id.has_value());
+  ASSERT_TRUE(control->declare_step({*id}));
+  ASSERT_EQ(kv->prepare_step(1, cudaStreamPerThread), Error::Ok);
+  ASSERT_EQ(kv->commit_step(1), Error::Ok);
+  ASSERT_TRUE(control->declare_step({*id}));
+  ASSERT_TRUE(control->seq_rm(*id));
+  EXPECT_EQ(kv->prepare_step(1, cudaStreamPerThread), Error::InvalidArgument);
+  EXPECT_EQ(kv->metrics().live_sequences, 0);
+  EXPECT_EQ(control->seq_new(), id);
+  ASSERT_EQ(step(*cache_ptr, handle, {*id}), Error::Ok);
+  kv->forget_handle(&handle);
+}
+
+TEST_F(CudaRuntimeColumnCacheTest, AbortFencesBeforeCloseAndReuse) {
+  auto cache_ptr = make();
+  auto* control = cache_ptr->as<cache::BatchControl>();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  const auto id = control->seq_new();
+  ASSERT_TRUE(id.has_value());
+  ASSERT_TRUE(control->declare_step({*id}));
+  ASSERT_EQ(kv->prepare_step(1, cudaStreamPerThread), Error::Ok);
+  EXPECT_FALSE(control->seq_clone(*id, std::nullopt).has_value());
+  EXPECT_FALSE(control->seq_new().has_value());
+  EXPECT_EQ(kv->metrics().live_sequences, 1);
+  std::atomic<bool> finished{false};
+  ASSERT_EQ(
+      cudaLaunchHostFunc(
+          cudaStreamPerThread,
+          [](void* state) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(30));
+            static_cast<std::atomic<bool>*>(state)->store(true);
+          },
+          &finished),
+      cudaSuccess);
+  ASSERT_EQ(kv->abort_step(), Error::Ok);
+  EXPECT_TRUE(finished.load());
+  ASSERT_TRUE(control->seq_rm(*id));
+  EXPECT_EQ(control->seq_new(), id);
+  ASSERT_EQ(step(*cache_ptr, handle, {*id}), Error::Ok);
+  EXPECT_TRUE(finished.load());
+  EXPECT_EQ(control->pos(*id), 1);
+  EXPECT_EQ(kv->metrics().live_sequences, 1);
+  kv->forget_handle(&handle);
+}
+
+TEST_F(CudaBatchedSequenceCacheTest, FailedDeclaredStepCanCloseAndReuseId) {
+  auto cache_ptr = make(/*initial=*/4);
+  auto* control = cache_ptr->as<cache::BatchControl>();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  const auto id = control->seq_new();
+  ASSERT_TRUE(id.has_value());
+  ASSERT_TRUE(control->declare_step({*id}));
+  EXPECT_EQ(kv->prepare_step(0, cudaStreamPerThread), Error::InvalidArgument);
+  ASSERT_TRUE(control->seq_rm(*id));
+  EXPECT_EQ(kv->prepare_step(1, cudaStreamPerThread), Error::InvalidArgument);
+  EXPECT_EQ(control->seq_new(), id);
+  ASSERT_EQ(step(*cache_ptr, handle, {*id}), Error::Ok);
+  kv->forget_handle(&handle);
+}
+
+TEST_F(
+    CudaRuntimeColumnCacheTest,
+    AdmissionsGrowGeometricallyAndStepsKeepWidth) {
+  auto cache_ptr = make();
+  auto* control = cache_ptr->as<cache::BatchControl>();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  std::vector<int32_t> ids;
+  int expected_columns = 2;
+  for (int count = 1; count <= kMaxSeqs; ++count) {
+    const auto id = control->seq_new();
+    ASSERT_TRUE(id.has_value());
+    ids.push_back(*id);
+    if (count >= expected_columns) {
+      expected_columns =
+          std::min(kDeclaredColumns, 2 * (expected_columns - 1) + 1);
+    }
+    EXPECT_EQ(kv->metrics().physical_columns, expected_columns) << count;
+    const int64_t resizes = kv->metrics().column_resize_count;
+    for (int repeat = 0; repeat < 2; ++repeat) {
+      ASSERT_EQ(step(*cache_ptr, handle, ids), Error::Ok);
+      EXPECT_EQ(kv->metrics().physical_columns, expected_columns);
+      EXPECT_EQ(kv->metrics().column_resize_count, resizes);
+    }
+  }
+  EXPECT_FALSE(control->seq_new().has_value());
+  kv->forget_handle(&handle);
+}
+
+TEST_F(CudaRuntimeColumnCacheTest, ActiveStepRejectsResizeUntilExplicitAbort) {
+  auto cache_ptr = make();
+  auto* control = cache_ptr->as<cache::BatchControl>();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  const auto id = control->seq_new();
+  ASSERT_TRUE(id.has_value());
+  // Simulate a failed forward: prepare runs, commit never does.
+  ASSERT_TRUE(control->declare_step({*id}));
+  ASSERT_EQ(kv->prepare_step(1, cudaStreamPerThread), Error::Ok);
+  const auto before = kv->metrics();
+  EXPECT_EQ(kv->prepare_step(1, cudaStreamPerThread), Error::InvalidState);
+  EXPECT_EQ(kv->metrics().column_resize_count, before.column_resize_count);
+  EXPECT_EQ(kv->metrics().physical_columns, before.physical_columns);
+  ASSERT_EQ(kv->abort_step(), Error::Ok);
+  EXPECT_EQ(kv->abort_step(), Error::Ok);
+  ASSERT_TRUE(control->declare_step({*id}));
+  ASSERT_EQ(kv->prepare_step(1, cudaStreamPerThread), Error::Ok);
+  ASSERT_EQ(kv->commit_step(1), Error::Ok);
+  EXPECT_EQ(control->pos(*id), 2);
+  ASSERT_TRUE(control->seq_rm(*id));
+  kv->forget_handle(&handle);
+}
+
+TEST_F(CudaRuntimeColumnCacheTest, FourFieldSequenceInfoIsRejected) {
+  auto cache_ptr = make();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  auto fake = container(4);
+  auto handle = make_handle(fake);
+  EXPECT_EQ(kv->note_handle(&handle).error(), Error::InvalidProgram);
+  kv->forget_handle(&handle);
+}
+
+TEST_F(CudaRuntimeColumnCacheTest, OwnerReuseKeepsMappingAndBindings) {
+  auto cache_ptr = make();
+  auto* control = cache_ptr->as<cache::BatchControl>();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  const auto first = control->seq_new();
+  const auto second = control->seq_new();
+  ASSERT_TRUE(first.has_value());
+  ASSERT_TRUE(second.has_value());
+  ASSERT_EQ(step(*cache_ptr, handle, {*first, *second}), Error::Ok);
+  seed(fake, 1, 3);
+  void* const pointer = fake.bound["flat_k"].data;
+  const auto before = read_column(pointer, 1, 3, 1);
+  const auto count = kv->metrics().column_resize_count;
+  handle.cuda_graph_state.phase = cu::CudaGraphPhase::Warmup;
+  handle.cuda_graph_state.warmup_remaining = 0;
+  ASSERT_TRUE(control->seq_rm(*first));
+  EXPECT_EQ(control->seq_new(), first);
+  EXPECT_EQ(kv->metrics().physical_columns, 3);
+  EXPECT_EQ(kv->metrics().column_resize_count, count);
+  EXPECT_EQ(fake.bound["flat_k"].data, pointer);
+  EXPECT_EQ(handle.cuda_graph_state.warmup_remaining, 0);
+  EXPECT_EQ(read_column(pointer, 1, 3, 1), before);
+  ASSERT_EQ(step(*cache_ptr, handle, {*first, *second}), Error::Ok);
+  std::vector<std::array<int32_t, 5>> info(2);
+  ASSERT_EQ(
+      cudaMemcpy(
+          info.data(),
+          fake.bound["seq_info"].data,
+          info.size() * sizeof(info[0]),
+          cudaMemcpyDeviceToHost),
+      cudaSuccess);
+  EXPECT_EQ(
+      info,
+      (std::vector<std::array<int32_t, 5>>{{0, 1, 0, 1, 3}, {1, 1, 1, 2, 3}}));
+  kv->forget_handle(&handle);
+}
+
+TEST_F(CudaRuntimeColumnCacheTest, RegistryGrowsColumnsByDefault) {
+  auto cfg = config(kCapacity, 4, kMaxWrite);
+  cfg.max_seqs = kMaxSeqs;
+  auto built = cache::CacheFactory::global().build(
+      cu::kCudaBackendId, cache::kind::kBatchedSequence, flat_and_ring(2), cfg);
+  ASSERT_TRUE(built.ok());
+  EXPECT_EQ(built.get()->as<cu::CudaKVCache>()->metrics().physical_columns, 2);
+  EXPECT_EQ(built.get()->as<cache::BatchControl>()->max_seqs(), kMaxSeqs);
+}
+
+TEST_F(CudaRuntimeColumnCacheTest, GrowthAndCloneSurviveDestroyedCallerStream) {
+  auto cache_ptr = make();
+  auto* control = cache_ptr->as<cache::BatchControl>();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  const auto run = [&](const std::vector<int32_t>& ids) {
+    cudaStream_t stream = nullptr;
+    ASSERT_EQ(
+        cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking), cudaSuccess);
+    ASSERT_TRUE(control->declare_step(ids));
+    ASSERT_EQ(kv->prepare_step(ids.size(), stream), Error::Ok);
+    ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
+    ASSERT_EQ(kv->commit_step(ids.size()), Error::Ok);
+    ASSERT_EQ(cudaStreamSynchronize(stream), cudaSuccess);
+    ASSERT_EQ(cudaStreamDestroy(stream), cudaSuccess);
+  };
+  const auto first = control->seq_new();
+  ASSERT_TRUE(first.has_value());
+  run({*first, *first, *first, *first});
+  ASSERT_FALSE(HasFatalFailure());
+  seed(fake, 4, 2);
+  const auto before = read_column(fake.bound["flat_k"].data, 4, 2, 0);
+  const auto clone = control->seq_clone(*first, 4);
+  ASSERT_TRUE(clone.has_value());
+  ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
+  EXPECT_EQ(read_column(fake.bound["flat_k"].data, 4, 3, 1), before);
+  run({*clone});
+  ASSERT_FALSE(HasFatalFailure());
+  const auto third = control->seq_new();
+  ASSERT_TRUE(third.has_value());
+  EXPECT_EQ(kv->metrics().physical_columns, 5);
+  run({*clone});
+  ASSERT_FALSE(HasFatalFailure());
+  ASSERT_TRUE(control->seq_rm(*first));
+  ASSERT_TRUE(control->seq_rm(*third));
+  ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
+  EXPECT_EQ(kv->metrics().physical_columns, 5);
+  EXPECT_EQ(read_column(fake.bound["flat_k"].data, 4, 5, 1), before);
+  kv->forget_handle(&handle);
+}
+
+TEST_F(CudaRuntimeColumnCacheTest, ColumnGrowthFollowsPendingHistoryWrites) {
+  auto cache_ptr = make();
+  auto* control = cache_ptr->as<cache::BatchControl>();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  const auto first = control->seq_new();
+  ASSERT_TRUE(first.has_value());
+  cudaStream_t stream = nullptr;
+  ASSERT_EQ(
+      cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking), cudaSuccess);
+  ASSERT_TRUE(control->declare_step({*first, *first, *first, *first}));
+  ASSERT_EQ(kv->prepare_step(4, stream), Error::Ok);
+  ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
+  constexpr size_t kBytes = 4 * 2 * kRow * sizeof(uint16_t);
+  uint16_t* pinned = nullptr;
+  ASSERT_EQ(cudaMallocHost(&pinned, kBytes), cudaSuccess);
+  std::iota(pinned, pinned + kBytes / sizeof(uint16_t), uint16_t{1});
+  ASSERT_EQ(
+      cudaLaunchHostFunc(
+          stream,
+          [](void*) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+          },
+          nullptr),
+      cudaSuccess);
+  ASSERT_EQ(
+      cudaMemcpyAsync(
+          fake.bound["flat_k"].data,
+          pinned,
+          kBytes,
+          cudaMemcpyHostToDevice,
+          stream),
+      cudaSuccess);
+  ASSERT_EQ(kv->commit_step(4), Error::Ok);
+  ASSERT_TRUE(control->seq_new().has_value());
+  ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
+  ASSERT_EQ(kv->metrics().physical_columns, 3);
+  const auto copied = read_column(fake.bound["flat_k"].data, 4, 3, 0);
+  for (int row = 0; row < 4; ++row) {
+    for (int lane = 0; lane < kRow; ++lane) {
+      EXPECT_EQ(copied[row * kRow + lane], pinned[row * 2 * kRow + lane]);
+    }
+  }
+  kv->forget_handle(&handle);
+  ASSERT_EQ(cudaFreeHost(pinned), cudaSuccess);
+  ASSERT_EQ(cudaStreamDestroy(stream), cudaSuccess);
+}
+
+TEST_F(CudaRuntimeColumnCacheTest, GrowthInvalidatesEveryGraphAndBinding) {
+  auto cache_ptr = make();
+  auto* control = cache_ptr->as<cache::BatchControl>();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  auto first = container();
+  auto second = container();
+  auto decode = make_handle(first);
+  auto prefill = make_handle(second);
+  ASSERT_TRUE(kv->note_handle(&decode).get());
+  ASSERT_TRUE(kv->note_handle(&prefill).get());
+  const auto a = control->seq_new();
+  ASSERT_TRUE(a.has_value());
+  ASSERT_EQ(step(*cache_ptr, decode, {*a}), Error::Ok);
+  ASSERT_EQ(kv->rebind_for_execute(&prefill), Error::Ok);
+  const int first_updates = first.updates;
+  const int second_updates = second.updates;
+  decode.cuda_graph_state.phase = cu::CudaGraphPhase::Replay;
+  prefill.cuda_graph_state.phase = cu::CudaGraphPhase::Warmup;
+  prefill.cuda_graph_state.warmup_remaining = 0;
+  const auto b = control->seq_new();
+  ASSERT_TRUE(b.has_value());
+  EXPECT_EQ(kv->metrics().physical_columns, 3);
+  EXPECT_EQ(decode.cuda_graph_state.phase, cu::CudaGraphPhase::Warmup);
+  EXPECT_EQ(decode.cuda_graph_state.warmup_remaining, 1);
+  EXPECT_EQ(prefill.cuda_graph_state.warmup_remaining, 1);
+  ASSERT_EQ(kv->rebind_for_execute(&decode), Error::Ok);
+  ASSERT_EQ(kv->rebind_for_execute(&prefill), Error::Ok);
+  EXPECT_EQ(first.updates, first_updates + 1);
+  EXPECT_EQ(second.updates, second_updates + 1);
+  EXPECT_EQ(first.bound["flat_k"].data, second.bound["flat_k"].data);
+  kv->forget_handle(&decode);
+  kv->forget_handle(&prefill);
+}
+
+TEST_F(CudaKVPoolTest, FailedColumnGrowthKeepsOldStorageAndBindingsUsable) {
+  constexpr int kDeclaredColumns = 1 << 20;
+  constexpr int kHugeDim = 1 << 20;
+  cu::CudaKVPool pool(
+      {{kHeads, kDim, kDeclaredColumns, true},
+       {1, kHugeDim, kDeclaredColumns, true}},
+      {},
+      slimc10::ScalarType::BFloat16,
+      kDeclaredColumns,
+      kDeclaredColumns,
+      2);
+  auto fake = flat_and_ring_container();
+  for (size_t index = 0; index < 4; ++index) {
+    declare(
+        fake,
+        fake.fqns[index],
+        slimc10::ScalarType::BFloat16,
+        {1,
+         kDeclaredColumns,
+         index < 2 ? kHeads : 1,
+         index < 2 ? kDim : kHugeDim});
+  }
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(pool.note_handle(&handle).get());
+  ASSERT_EQ(pool.prepare(2, 0, cudaStreamPerThread), Error::Ok);
+  ASSERT_EQ(pool.bind(&handle), Error::Ok);
+  const auto history = iota_rows(2);
+  ASSERT_EQ(
+      cudaMemcpy(
+          pool.layer_data(0, false),
+          history.data(),
+          history.size() * sizeof(uint16_t),
+          cudaMemcpyHostToDevice),
+      cudaSuccess);
+  void* old_k = pool.layer_data(0, false);
+  void* old_large_k = pool.layer_data(1, false);
+  const auto before_bytes = pool.allocated_bytes();
+  const int updates = fake.updates;
+  handle.cuda_graph_state.phase = cu::CudaGraphPhase::Replay;
+  for (int repeat = 0; repeat < 2; ++repeat) {
+    EXPECT_EQ(
+        pool.resize_columns(
+            kDeclaredColumns,
+            /*live_rows=*/1,
+            cudaStreamPerThread),
+        Error::MemoryAllocationFailed);
+    EXPECT_EQ(pool.columns(), 2);
+    EXPECT_EQ(pool.column_resize_count(), 0);
+    EXPECT_EQ(pool.allocated_bytes(), before_bytes);
+    EXPECT_EQ(pool.layer_data(0, false), old_k);
+    EXPECT_EQ(pool.layer_data(1, false), old_large_k);
+    EXPECT_EQ(handle.cuda_graph_state.phase, cu::CudaGraphPhase::Replay);
+    ASSERT_EQ(pool.bind(&handle), Error::Ok);
+    EXPECT_EQ(fake.updates, updates);
+    EXPECT_EQ(read_rows(old_k, 2), history);
+  }
+  ASSERT_EQ(pool.prepare(2, 1, cudaStreamPerThread), Error::Ok);
+  ASSERT_EQ(pool.mark_step_done(pool.stream()), Error::Ok);
+  pool.forget_handle(&handle);
+}
+
+// A temporary allocation consumes only currently free memory and is released
+// before recovery. No allocator policy or production fault hook is needed.
+TEST_F(CudaRuntimeColumnCacheTest, FailedAdmissionKeepsLiveOwnersUsable) {
+  constexpr int kLargeDim = 1 << 23;
+  auto cfg = config(/*capacity=*/2, /*initial=*/2, /*max_write=*/1);
+  cfg.max_seqs = 2;
+  cache::CacheGeometry geometry;
+  geometry.layers = {{{cache::LayerPolicy::Kind::Flat, 0}, 1, kLargeDim}};
+  auto ptr = cu::make_cuda_batched_sequence_kv_cache(geometry, cfg);
+  ASSERT_NE(ptr, nullptr);
+  auto* control = ptr->as<cache::BatchControl>();
+  auto* kv = ptr->as<cu::CudaKVCache>();
+  FakeContainer fake;
+  fake.internal_names = {"flat_k", "flat_v", "seq_cols", "seq_info"};
+  fake.fqns = {
+      "__et_offgraph_kv_layer_0_k",
+      "__et_offgraph_kv_layer_0_v",
+      "__et_offgraph_kv_seq_cols",
+      "__et_offgraph_kv_seq_info"};
+  for (int index = 0; index < 2; ++index) {
+    declare(
+        fake,
+        fake.fqns[index],
+        slimc10::ScalarType::BFloat16,
+        {1, 6, 1, kLargeDim});
+  }
+  declare(fake, fake.fqns[2], slimc10::ScalarType::Long, {1});
+  declare(fake, fake.fqns[3], slimc10::ScalarType::Int, {4, 5});
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  const auto owner = control->seq_new();
+  ASSERT_TRUE(owner.has_value());
+  ASSERT_EQ(step(*ptr, handle, {*owner}), Error::Ok);
+  const auto history = iota_rows(1);
+  void* old_k = fake.bound["flat_k"].data;
+  ASSERT_EQ(
+      cudaMemcpy(
+          old_k,
+          history.data(),
+          history.size() * sizeof(uint16_t),
+          cudaMemcpyHostToDevice),
+      cudaSuccess);
+  int device = 0;
+  ASSERT_EQ(cudaGetDevice(&device), cudaSuccess);
+  ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+  ::executorch::extension::cuda::CudaAllocator::release_cached_memory(device);
+  size_t free_bytes = 0, total_bytes = 0;
+  ASSERT_EQ(cudaMemGetInfo(&free_bytes, &total_bytes), cudaSuccess);
+  constexpr size_t kMargin = 32 * 1024 * 1024;
+  if (free_bytes <= 8 * kMargin) {
+    kv->forget_handle(&handle);
+    GTEST_SKIP()
+        << "Insufficient free memory for a controlled admission failure";
+  }
+  void* reservation = nullptr;
+  const auto result = cudaMalloc(&reservation, free_bytes - kMargin);
+  if (result != cudaSuccess) {
+    (void)cudaGetLastError();
+    kv->forget_handle(&handle);
+    GTEST_SKIP() << "Cannot reserve free memory for a controlled failure";
+  }
+  auto release = [](void* data) { (void)cudaFree(data); };
+  std::unique_ptr<void, decltype(release)> held(reservation, release);
+  const auto before = kv->metrics();
+  const int updates = fake.updates;
+  handle.cuda_graph_state.phase = cu::CudaGraphPhase::Replay;
+  // Both admission paths must erase their tentative ID after resize fails.
+  EXPECT_FALSE(control->seq_new().has_value());
+  EXPECT_FALSE(control->seq_clone(*owner, 1).has_value());
+  EXPECT_EQ(kv->metrics().physical_columns, before.physical_columns);
+  EXPECT_EQ(kv->metrics().column_resize_count, before.column_resize_count);
+  EXPECT_EQ(kv->metrics().allocated_bytes, before.allocated_bytes);
+  EXPECT_EQ(kv->metrics().live_sequences, 1);
+  EXPECT_EQ(control->pos(*owner), 1);
+  EXPECT_EQ(handle.cuda_graph_state.phase, cu::CudaGraphPhase::Replay);
+  ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
+  EXPECT_EQ(fake.updates, updates);
+  EXPECT_EQ(fake.bound["flat_k"].data, old_k);
+  EXPECT_EQ(read_rows(old_k, 1), history);
+  // Continuing the survivor does not grow rows or columns and writes the
+  // original physical width into the metadata sent to attention.
+  ASSERT_EQ(step(*ptr, handle, {*owner}), Error::Ok);
+  std::array<int32_t, 5> info;
+  ASSERT_EQ(
+      cudaMemcpy(
+          info.data(),
+          fake.bound["seq_info"].data,
+          sizeof(info),
+          cudaMemcpyDeviceToHost),
+      cudaSuccess);
+  const std::array<int32_t, 5> expected_info{0, 1, 0, 2, 2};
+  EXPECT_EQ(info, expected_info);
+  held.reset();
+  const auto admitted = control->seq_new();
+  ASSERT_TRUE(admitted.has_value());
+  EXPECT_EQ(*admitted, 1);
+  EXPECT_EQ(kv->metrics().physical_columns, 3);
+  ASSERT_TRUE(control->seq_rm(*admitted));
+  const auto clone = control->seq_clone(*owner, 1);
+  ASSERT_TRUE(clone.has_value());
+  EXPECT_EQ(*clone, 1);
+  EXPECT_EQ(control->pos(*clone), 1);
+  ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
+  EXPECT_EQ(read_rows(fake.bound["flat_k"].data, 1), history);
+  EXPECT_EQ(
+      read_rows(
+          static_cast<uint16_t*>(fake.bound["flat_k"].data) + kLargeDim, 1),
+      history);
   kv->forget_handle(&handle);
 }
 

@@ -16,6 +16,14 @@ from executorch.examples.models.muse_glimmer.model.dflash_model import (
 )
 
 
+def _info(segments, columns, device):
+    return torch.tensor(
+        [(*segment, columns) for segment in segments],
+        dtype=torch.int32,
+        device=device,
+    )
+
+
 def _reference(
     q, k_store, v_store, segments, scale, causal, window, ring, symmetric=False
 ):
@@ -111,7 +119,7 @@ def _dflash_inputs(
                 v[row, col] = contribution
         segments.append((col * block, block, col, context + block))
     padded = segments + [(0, 0, 0, 0)] * (4 - len(segments))
-    info = torch.tensor(padded, device="cuda", dtype=torch.int32)
+    info = _info(padded, k.shape[1], "cuda")
     return q, k, v, info, segments
 
 
@@ -161,7 +169,7 @@ class SdpaVarlenTest(unittest.TestCase):
         q = torch.randn(1, hq, t, d, device=dev, dtype=torch.bfloat16)
         k = torch.randn(rows, cols, hkv, d, device=dev, dtype=torch.bfloat16)
         v = torch.randn(rows, cols, hkv, d, device=dev, dtype=torch.bfloat16)
-        info = torch.tensor(segments, dtype=torch.int32, device=dev)
+        info = _info(segments, k.shape[1], dev)
         scale = d**-0.5
         got = sdpa_varlen(q, k, v, info, scale, causal, window, ring)
         want = _reference(q, k, v, segments, scale, causal, window, ring)
@@ -375,7 +383,7 @@ class SdpaVarlenTest(unittest.TestCase):
             )
         for length, end in ((1, 1), (2, 513), (8, 1030), (16, 900)):
             segments = [(0, length, 0, end)]
-            info.copy_(torch.tensor(segments + [(0, 0, 0, 0)] * 3, dtype=torch.int32))
+            info.copy_(_info(segments + [(0, 0, 0, 0)] * 3, k.shape[1], q.device))
             graph.replay()
             want = _reference(
                 q, k, v, segments, 0.125, False, window, ring, symmetric=True
@@ -398,7 +406,9 @@ class SdpaVarlenTest(unittest.TestCase):
         k = torch.randn(256, 3, 2, 64, device=dev, dtype=torch.bfloat16)
         v = torch.randn_like(k)
         info = torch.tensor(
-            [[0, 1, 0, 10], [1, 1, 1, 20], [2, 2, 2, 30]], dtype=torch.int32, device=dev
+            [[0, 1, 0, 10, 3], [1, 1, 1, 20, 3], [2, 2, 2, 30, 3]],
+            dtype=torch.int32,
+            device=dev,
         )
         sdpa_varlen(q, k, v, info, 0.125)
         graph = torch.cuda.CUDAGraph()
@@ -408,7 +418,7 @@ class SdpaVarlenTest(unittest.TestCase):
             [[0, 1, 0, 200], [1, 1, 1, 3], [2, 2, 2, 256]],
             [[0, 4, 1, 100], [0, 0, 0, 0], [0, 0, 0, 0]],
         ):
-            info.copy_(torch.tensor(segments, dtype=torch.int32))
+            info.copy_(_info(segments, k.shape[1], dev))
             graph.replay()
             want = _reference(q, k, v, segments, 0.125, True, 0, 0)
             torch.testing.assert_close(out.float(), want, atol=2e-2, rtol=2e-2)
@@ -463,7 +473,12 @@ class SdpaVarlenTest(unittest.TestCase):
         k = torch.randn(8192, 4, 2, 64, device=dev, dtype=torch.bfloat16)
         v = torch.randn_like(k)
         info = torch.tensor(
-            [[0, 1, 0, 100], [1, 1, 1, 600], [2, 1, 2, 900], [3, 1, 3, 1000]],
+            [
+                [0, 1, 0, 100, 4],
+                [1, 1, 1, 600, 4],
+                [2, 1, 2, 900, 4],
+                [3, 1, 3, 1000, 4],
+            ],
             dtype=torch.int32,
             device=dev,
         )
@@ -476,7 +491,7 @@ class SdpaVarlenTest(unittest.TestCase):
             [[0, 1, 3, 4096], [1, 1, 2, 17], [2, 1, 1, 8000], [3, 1, 0, 700]],
         )
         for segments in scenarios:
-            info.copy_(torch.tensor(segments, dtype=torch.int32))
+            info.copy_(_info(segments, k.shape[1], dev))
             graph.replay()
             want = _reference(q, k, v, segments, 0.125, True, 0, 0)
             torch.testing.assert_close(out.float(), want, atol=2e-2, rtol=2e-2)
@@ -488,7 +503,7 @@ class SdpaVarlenTest(unittest.TestCase):
         q = torch.randn(1, hq, 1, d, device=dev, dtype=torch.bfloat16)
         k = torch.randn(512, 3, hkv, d, device=dev, dtype=torch.bfloat16)
         v = torch.randn_like(k)
-        info = torch.tensor([[0, 1, 2, 300]], dtype=torch.int32, device=dev)
+        info = torch.tensor([[0, 1, 2, 300, 3]], dtype=torch.int32, device=dev)
         got = sdpa_varlen(q, k, v, info, d**-0.5, rows_available=available)
 
         keys = k[:available, 2].float().repeat_interleave(hq // hkv, dim=1)
@@ -508,7 +523,7 @@ class SdpaVarlenTest(unittest.TestCase):
         k = torch.randn(512, 2, 2, 64, device=dev, dtype=torch.bfloat16)
         v = torch.randn_like(k)
         segments = [(0, 1, 0, 300), (1, 3, 1, 500)]
-        info = torch.tensor(segments, dtype=torch.int32, device=dev)
+        info = _info(segments, k.shape[1], dev)
 
         def fn(q, k, v, info):
             return sdpa_varlen(q, k, v, info, 0.125, True, 256, 0)
@@ -524,7 +539,7 @@ class SdpaVarlenTest(unittest.TestCase):
         k = torch.randn(512, 2, 2, 64, device=dev, dtype=torch.bfloat16)
         v = torch.randn_like(k)
         segments = [(0, 16, 0, 500), (0, 0, 1, 0)]
-        info = torch.tensor(segments, dtype=torch.int32, device=dev)
+        info = _info(segments, k.shape[1], dev)
 
         def fn(q, k, v, info):
             return sdpa_varlen(q, k, v, info, 0.125, True, 256, 0)
@@ -552,7 +567,7 @@ class SdpaVarlenTest(unittest.TestCase):
             segments = [(16 * i, 16, i % 3, 40 + 16 * i) for i in range(owners)]
             # The segment table is fixed-size in a lowered step; pad it.
             padded = segments + [(0, 0, 0, 0)] * (4 - owners)
-            info = torch.tensor(padded, dtype=torch.int32, device=dev)
+            info = _info(padded, k.shape[1], dev)
             got = compiled(q, k, v, info)
             want = _reference(q, k, v, segments, 0.125, False, 0, 0)
             torch.testing.assert_close(got.float(), want, atol=2e-2, rtol=2e-2)
@@ -563,14 +578,25 @@ class SdpaVarlenTest(unittest.TestCase):
         q = torch.randn(1, 8, 1, 64, device=dev, dtype=torch.bfloat16)
         k = torch.randn(128, 2, 2, 64, device=dev, dtype=torch.bfloat16)
         v = torch.randn_like(k)
-        info = torch.zeros((1, 8), device=dev, dtype=torch.int32)[:, ::2]
+        info = torch.zeros((1, 10), device=dev, dtype=torch.int32)[:, ::2]
         with self.assertRaisesRegex(ValueError, "seq_info must be contiguous"):
             sdpa_varlen(q, k, v, info, 0.125)
+
+        for shape in ((1, 4), (0, 5)):
+            with self.subTest(shape=shape):
+                with self.assertRaisesRegex(ValueError, r"Int32\[S, 5\]"):
+                    sdpa_varlen(
+                        q,
+                        k,
+                        v,
+                        torch.zeros(shape, device=dev, dtype=torch.int32),
+                        0.125,
+                    )
 
         q = torch.randn(1, 8, 1, 96, device=dev, dtype=torch.bfloat16)
         k = torch.randn(128, 2, 2, 96, device=dev, dtype=torch.bfloat16)
         v = torch.randn_like(k)
-        info = torch.tensor([[0, 1, 0, 100]], dtype=torch.int32, device=dev)
+        info = torch.tensor([[0, 1, 0, 100, 2]], dtype=torch.int32, device=dev)
         with self.assertRaisesRegex(ValueError, "head dimension must be a power"):
             sdpa_varlen(q, k, v, info, 96**-0.5)
 

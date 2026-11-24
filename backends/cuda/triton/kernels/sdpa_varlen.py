@@ -15,7 +15,7 @@ sequence's query rows attend only that sequence's column, bounded by its own
 length, so a step costs the sum of the contexts rather than a sweep of every
 sequence's cells.
 
-The runtime describes the step in ``seq_info`` (``Int32[S, 4]``), one row per
+The runtime describes the step in ``seq_info`` (``Int32[S, 5]``), one row per
 segment of consecutive query rows of one sequence:
 
 * ``q_start``, ``q_len``: the segment's rows on the packed query axis
@@ -23,6 +23,9 @@ segment of consecutive query rows of one sequence:
 * ``col``: the sequence's storage column;
 * ``kv_end``: one past the logical position of the segment's last row, i.e. the
   sequence's length once this step's writes land.
+
+The last field is the physical column count, read from row 0. It sets the K/V
+row pitch even when the compiled tensor declares a larger maximum width.
 
 Rows are the segment's newest positions: row ``r`` sits at
 ``kv_end - q_len + r``. Active segments must be disjoint and in bounds;
@@ -83,10 +86,13 @@ def _sdpa_varlen_kernel(  # noqa: C901
     seg = pid0 // num_qb
     qb = pid0 % num_qb
 
-    q_start = tl.load(Info_ptr + seg * 4 + 0)
-    q_len = tl.load(Info_ptr + seg * 4 + 1)
-    col = tl.load(Info_ptr + seg * 4 + 2)
-    kv_end = tl.load(Info_ptr + seg * 4 + 3)
+    q_start = tl.load(Info_ptr + seg * 5 + 0)
+    q_len = tl.load(Info_ptr + seg * 5 + 1)
+    col = tl.load(Info_ptr + seg * 5 + 2)
+    kv_end = tl.load(Info_ptr + seg * 5 + 3)
+    columns = tl.load(Info_ptr + 4).to(tl.int64)
+    stride_kr = columns * stride_kc
+    stride_vr = columns * stride_vc
     if qb * BLOCK_M >= q_len * NUM_GROUPS:
         return
 
@@ -239,14 +245,17 @@ def _sdpa_varlen_decode_kernel(  # noqa: C901
     col = 0
     kv_end = 0
     for seg in range(NUM_SEGMENTS):
-        seg_q_start = tl.load(Info_ptr + seg * 4)
-        seg_q_len = tl.load(Info_ptr + seg * 4 + 1)
+        seg_q_start = tl.load(Info_ptr + seg * 5)
+        seg_q_len = tl.load(Info_ptr + seg * 5 + 1)
         take = (t >= seg_q_start) & (t < seg_q_start + seg_q_len)
         owned |= take
         q_start = tl.where(take, seg_q_start, q_start)
         q_len = tl.where(take, seg_q_len, q_len)
-        col = tl.where(take, tl.load(Info_ptr + seg * 4 + 2), col)
-        kv_end = tl.where(take, tl.load(Info_ptr + seg * 4 + 3), kv_end)
+        col = tl.where(take, tl.load(Info_ptr + seg * 5 + 2), col)
+        kv_end = tl.where(take, tl.load(Info_ptr + seg * 5 + 3), kv_end)
+    columns = tl.load(Info_ptr + 4).to(tl.int64)
+    stride_kr = columns * stride_kc
+    stride_vr = columns * stride_vc
 
     offs_g = tl.arange(0, BLOCK_G)
     offs_d = tl.arange(0, HEAD_DIM)
@@ -403,9 +412,11 @@ def sdpa_varlen(  # noqa: C901
     Args:
         query: ``[1, H_q, T, D]`` bfloat16, the step's queries in packed order.
         key, value: ``[rows, columns, H_kv, D]`` bfloat16 storage; one column per
-            sequence. Only the head dimension must be contiguous.
-        seq_info: ``Int32[S, 4]`` on the query's device, ``(q_start, q_len,
-            col, kv_end)`` per segment; see the module docstring.
+            sequence. Head and column lanes must be contiguous. The row pitch
+            is field 4 times the column stride, not key.stride(0).
+        seq_info: ``Int32[S, 5]`` on the query's device, ``(q_start, q_len,
+            col, kv_end, physical_columns)`` per segment; see the module
+            docstring.
         scale: softmax scale.
         is_causal: row ``r`` sees positions up to its own; otherwise every
             row sees all of ``[0, kv_end)``.
@@ -453,10 +464,22 @@ def sdpa_varlen(  # noqa: C901
         raise ValueError("head dimension must be a power of two in [16, 256]")
     if query.stride(-1) != 1 or key.stride(-1) != 1 or value.stride(-1) != 1:
         raise ValueError("sdpa_varlen needs a contiguous head dimension")
-    if seq_info.dtype != torch.int32 or seq_info.dim() != 2 or seq_info.shape[1] != 4:
-        raise ValueError("seq_info must be Int32[S, 4]")
+    if (
+        seq_info.dtype != torch.int32
+        or seq_info.dim() != 2
+        or seq_info.shape[0] < 1
+        or seq_info.shape[1] != 5
+    ):
+        raise ValueError("seq_info must be Int32[S, 5]")
     if seq_info.device != query.device or not seq_info.is_contiguous():
         raise ValueError("seq_info must be contiguous on the query device")
+    if (
+        key.stride(2) != D
+        or key.stride(1) != Hkv * D
+        or value.stride(2) != D
+        or value.stride(1) != Hkv * D
+    ):
+        raise ValueError("runtime-pitch KV needs contiguous column and head lanes")
     if context_window and is_causal:
         raise ValueError("context_window requires non-causal attention")
     if symmetric_window and (is_causal or context_window):

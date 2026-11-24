@@ -791,6 +791,16 @@ class ET_EXPERIMENTAL CudaBackend final
     // the step is driven from here rather than by the runner.
     int64_t kv_step_width = 0;
 #if defined(EXECUTORCH_BUILD_EXTENSION_LLM)
+    bool kv_prepared = false;
+    executorch::backends::aoti::ScopeGuard abort_kv_step([&]() noexcept {
+      if (kv_prepared) {
+        const Error error = handle->kv_cache->abort_step();
+        ET_CHECK_OR_LOG_ERROR(
+            error == Error::Ok,
+            "offgraph_kv: failed to abort prepared forward");
+        (void)error;
+      }
+    });
     if (handle->kv_cache != nullptr) {
       const auto step_width = read_offgraph_kv_step_width(
           handle->kv_step_width, Span<EValue*>(args.data(), n_inputs));
@@ -802,10 +812,20 @@ class ET_EXPERIMENTAL CudaBackend final
       ET_CHECK_OK_OR_RETURN_ERROR(step_stream.error());
       ET_CHECK_OK_OR_RETURN_ERROR(
           handle->kv_cache->prepare_step(kv_step_width, step_stream.get()));
+      kv_prepared = true;
       ET_CHECK_OK_OR_RETURN_ERROR(handle->kv_cache->rebind_for_execute(handle));
     }
 #endif
     ET_CHECK_OK_OR_RETURN_ERROR(mutable_state_rebind_for_execute(handle));
+    const auto commit_kv_step = [&]() {
+      const Error error = commit_offgraph_kv_step(handle, kv_step_width);
+#if defined(EXECUTORCH_BUILD_EXTENSION_LLM)
+      if (error == Error::Ok) {
+        kv_prepared = false;
+      }
+#endif
+      return error;
+    };
 
     // ---------------------------------------------------------------
     // CUDA graph REPLAY path — skip all tensor setup and just replay
@@ -854,6 +874,7 @@ class ET_EXPERIMENTAL CudaBackend final
           Internal,
           "cudaGraphLaunch failed: %s",
           cudaGetErrorString(gerr));
+      ++handle->cuda_graph_state.metrics.replays;
 
       // Copy outputs from static buffers into the planned GPU ET buffers (D2D)
       for (size_t i = 0; i < n_outputs; i++) {
@@ -867,7 +888,7 @@ class ET_EXPERIMENTAL CudaBackend final
       }
       ET_CUDA_CHECK_OR_RETURN_ERROR(cudaStreamSynchronize(cs));
 
-      return commit_offgraph_kv_step(handle, kv_step_width);
+      return commit_kv_step();
     }
 
     const bool is_capture_step =
@@ -877,6 +898,7 @@ class ET_EXPERIMENTAL CudaBackend final
     Error error = run_once(
         handle, args, n_inputs, n_outputs, is_capture_step, graph_launched);
     if (error != Error::Ok && is_capture_step && !graph_launched) {
+      ++handle->cuda_graph_state.metrics.capture_failures;
       // A capture records kernels without running them, so until the new graph
       // runs, the inputs and any state the program updates are untouched. A
       // program that keeps state in host memory, where host code does run
@@ -897,7 +919,7 @@ class ET_EXPERIMENTAL CudaBackend final
           graph_launched);
     }
     ET_CHECK_OK_OR_RETURN_ERROR(error);
-    return commit_offgraph_kv_step(handle, kv_step_width);
+    return commit_kv_step();
   }
 
   void destroy(DelegateHandle* handle_) const override {
@@ -1298,6 +1320,7 @@ class ET_EXPERIMENTAL CudaBackend final
       }
 
       handle->cuda_graph_state.phase = CudaGraphPhase::Replay;
+      ++handle->cuda_graph_state.metrics.captures;
       ET_LOG(
           Info,
           "CUDA graph: captured and instantiated for '%s'",
@@ -1310,6 +1333,7 @@ class ET_EXPERIMENTAL CudaBackend final
           Internal,
           "cudaGraphLaunch (first replay) failed: %s",
           cudaGetErrorString(gerr));
+      ++handle->cuda_graph_state.metrics.replays;
       graph_launched = true;
       handle->cuda_graph_state.note_graph_allocations();
 

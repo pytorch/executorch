@@ -30,10 +30,16 @@ struct OffGraphKVMetrics {
   int64_t logical_length{0};
   // Rows currently allocated for each flat layer.
   int64_t flat_capacity{0};
-  // Times flat storage has been reallocated. Every growth moves the storage,
-  // so this also identifies the addresses a compiled program was bound to.
+  // Times flat row storage has grown. Column resizes are counted separately.
   int64_t growth_count{0};
+  // Live K/V allocations, excluding step buffers and allocator retention.
   int64_t allocated_bytes{0};
+  // Physical/declared widths include the final scratch column.
+  int64_t physical_columns{0};
+  int64_t declared_columns{0};
+  // Logical owners, including cloned prefix owners.
+  int64_t live_sequences{0};
+  int64_t column_resize_count{0};
 };
 
 // Backend face of the off-graph KV cache: what the CUDA delegate needs from
@@ -82,7 +88,20 @@ class CudaKVCache {
       cudaStream_t stream) = 0;
   virtual runtime::Error commit_step(int64_t write_length) = 0;
 
+  // A prepared forward failed. Fence its queued work before permitting
+  // storage to move again. Claimed logical rows are not rolled back.
+  virtual runtime::Error abort_step() {
+    return runtime::Error::Ok;
+  }
+
   virtual OffGraphKVMetrics metrics() const = 0;
+
+  // Sequence-layout captures/launches and failed captures for a named method.
+  // Other layouts do not expose these counters.
+  // Read between executes under the executor's engine-thread contract.
+  virtual CudaGraphMetrics graph_metrics(std::string_view) const {
+    return {};
+  }
 };
 
 // Compile spec naming where a method's inputs carry the step width.
@@ -194,7 +213,7 @@ std::shared_ptr<cache::Cache> make_cuda_cell_kv_cache(
     const cache::CacheConfig& cfg);
 
 // Segments of a batched-sequence step: runs of one sequence's query rows. The
-// program declares its seq_info buffer [segments, 4] from the same rule.
+// program declares seq_info [segments, 5].
 inline int batched_sequence_max_segments(int max_seqs) {
   return 2 * max_seqs;
 }
@@ -208,7 +227,12 @@ inline int batched_sequence_max_segments(int max_seqs) {
 // fix shapes the program declared, so they must match the export exactly.
 // Every layer starts at cfg.initial_capacity rows and grows geometrically: a
 // flat layer to cfg.capacity, a ring layer to min(capacity, window +
-// max_write - 1).
+// max_write - 1). Physical owner columns start at one and grow on admission
+// up to cfg.max_seqs, with one additional scratch column. DFlash retains its
+// declared width; both paths use the same five-field sequence metadata.
+// A column resize temporarily holds both the old and replacement storage.
+// Admission can therefore fail below max_seqs if there is insufficient free
+// device memory; the existing owners and their KV remain usable.
 std::shared_ptr<cache::Cache> make_cuda_batched_sequence_kv_cache(
     const cache::CacheGeometry& geometry,
     const cache::CacheConfig& cfg);

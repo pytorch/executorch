@@ -49,7 +49,7 @@ def _step(case, window, device="cuda"):
     v_seq = torch.randn_like(k_seq)
     info, start = [], 0
     for col, (q_len, ctx) in enumerate(case):
-        info.append((start, q_len, col, ctx))
+        info.append((start, q_len, col, ctx, cols))
         start += q_len
     info = torch.tensor(info, dtype=torch.int32, device=device)
 

@@ -132,10 +132,18 @@ enum class CudaGraphPhase {
   Replay = 2,
 };
 
+struct CudaGraphMetrics {
+  uint64_t captures{0};
+  uint64_t replays{0};
+  uint64_t capture_failures{0};
+};
+
 // All CUDA graph related state grouped into a single struct.
 struct CudaGraphState {
   CudaGraphPhase phase = CudaGraphPhase::Disabled;
   int warmup_remaining = 0;
+  // Lifetime counts survive release/recapture; read between executions.
+  CudaGraphMetrics metrics;
 
   // Captured graph and executable instance
   cudaGraph_t graph = nullptr;
@@ -259,6 +267,7 @@ struct CudaGraphState {
   CudaGraphState(CudaGraphState&& other) noexcept
       : phase(other.phase),
         warmup_remaining(other.warmup_remaining),
+        metrics(other.metrics),
         graph(other.graph),
         graph_exec(other.graph_exec),
         static_input_ptrs(std::move(other.static_input_ptrs)),
@@ -269,6 +278,7 @@ struct CudaGraphState {
         graph_allocations(std::move(other.graph_allocations)) {
     other.graph = nullptr;
     other.graph_exec = nullptr;
+    other.metrics = {};
   }
 
   CudaGraphState& operator=(CudaGraphState&& other) noexcept {
@@ -277,6 +287,7 @@ struct CudaGraphState {
 
       phase = other.phase;
       warmup_remaining = other.warmup_remaining;
+      metrics = other.metrics;
       graph = other.graph;
       graph_exec = other.graph_exec;
       static_input_ptrs = std::move(other.static_input_ptrs);
@@ -288,6 +299,7 @@ struct CudaGraphState {
 
       other.graph = nullptr;
       other.graph_exec = nullptr;
+      other.metrics = {};
     }
     return *this;
   }

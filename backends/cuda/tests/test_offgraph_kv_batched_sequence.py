@@ -24,13 +24,14 @@ from executorch.backends.cuda.passes.lower_offgraph_kv import (
     batched_sequence_step,
     CheckOffGraphKVStepWidthPass,
     LowerOffGraphKVPass,
+    offgraph_kv_constant_methods,
     OFFGRAPH_KV_FQN_PREFIX,
     OFFGRAPH_KV_SEQ_COLS_FQN,
     OFFGRAPH_KV_SEQ_INFO_FQN,
     parse_offgraph_kv_manifest,
     ring_physical_capacity,
 )
-
+from executorch.backends.cuda.triton.kernels.sdpa_varlen import _num_splits, sdpa_varlen
 from executorch.examples.models.muse_glimmer.model.dflash_model import (
     build_dflash_swa_mask,
 )
@@ -69,7 +70,8 @@ def _batch(groups):
 
 def _plan(seq_ids, position, columns, width, max_segments, scratch):
     """What the runtime cache writes before a forward: each token's column,
-    and one (q_start, q_len, col, kv_end) row per run of one sequence."""
+    and one (q_start, q_len, col, kv_end, physical_columns) row per run of one sequence.
+    """
     seq_cols = [columns[s] for s in seq_ids] + [scratch] * (width - len(seq_ids))
     info, start = [], 0
     positions = position.tolist()
@@ -78,10 +80,16 @@ def _plan(seq_ids, position, columns, width, max_segments, scratch):
         while end < len(seq_ids) and seq_ids[end] == seq_ids[start]:
             end += 1
         info.append(
-            (start, end - start, columns[seq_ids[start]], positions[end - 1] + 1)
+            (
+                start,
+                end - start,
+                columns[seq_ids[start]],
+                positions[end - 1] + 1,
+                scratch + 1,
+            )
         )
         start = end
-    info += [(0, 0, 0, 0)] * (max_segments - len(info))
+    info += [(0, 0, 0, 0, scratch + 1)] * (max_segments - len(info))
     return (
         torch.tensor(seq_cols, dtype=torch.long, device="cuda"),
         torch.tensor(info, dtype=torch.int32, device="cuda"),
@@ -130,7 +138,7 @@ class _Oracle:
 
 
 def _max_abs_diff(actual, expected) -> float:
-    return (actual.float().cpu() - expected).abs().max().item()
+    return (actual.float().cpu() - expected.float().cpu()).abs().max().item()
 
 
 # Two sequences prefilling in one step, decoding together, then one decoding
@@ -298,6 +306,175 @@ def _draft_model_reference(q, storage, segments, window, rows):
 
 
 @unittest.skipUnless(torch.cuda.is_available(), "CUDA required")
+class RuntimeColumnPitchTest(unittest.TestCase):
+    """Check runtime write/read pitch with unchanged AOT tensor dimensions.
+
+    This test reserves the declared maximum tensor and poisons the unused
+    tail. Actual smaller CUDA allocations are tested by the C++ cache and
+    model probe; this numerical test does not establish memory savings.
+    """
+
+    def _run(self, window):
+        torch.manual_seed(125)
+        declared_columns, max_write = 22, 32
+        rows = min(64, window + max_write - 1) if window else 64
+        oracle = _Oracle(128, (window,))
+        self.addCleanup(oracle.close)
+        k_store = torch.full(
+            (1, rows * declared_columns, N_KV_HEADS, HEAD_DIM),
+            float("nan"),
+            dtype=torch.bfloat16,
+            device="cuda",
+        )
+        v_store = torch.full_like(k_store, float("nan"))
+        old_mapping, old_columns = {}, 0
+        positions = {}
+        for active in (1, 2, 4, 8, 16, 1):
+            owners = list(range(active)) if active != 1 or not old_mapping else [5]
+            mapping = {owner: column for column, owner in enumerate(owners)}
+            physical_columns = len(owners) + 1
+            for store in (k_store, v_store):
+                retained = {
+                    owner: store[0, : rows * old_columns]
+                    .view(rows, old_columns, N_KV_HEADS, HEAD_DIM)[:, column]
+                    .clone()
+                    for owner, column in old_mapping.items()
+                    if owner in mapping
+                }
+                store.fill_(float("nan"))
+                compact = store[0, : rows * physical_columns].view(
+                    rows, physical_columns, N_KV_HEADS, HEAD_DIM
+                )
+                compact.zero_()
+                for owner, values in retained.items():
+                    compact[:, mapping[owner]].copy_(values)
+            groups = []
+            for owner in owners:
+                start = positions.get(owner, 0)
+                # Different histories exercise segment boundaries and ring wrap.
+                length = 1 + owner % 2 if active < 16 else 1
+                if not old_mapping:
+                    length = max_write - 1
+                groups.append((owner, start, length))
+                positions[owner] = start + length
+            seq_ids, q, k, v, position = _batch(groups)
+            (expected,) = oracle.step(seq_ids, q, k, v, position)
+            seq_cols, seq_info = _plan(
+                seq_ids,
+                position,
+                mapping,
+                max_write,
+                42,
+                physical_columns - 1,
+            )
+            # Exercise an uncovered padded row in both split and generic paths.
+            padded_q = torch.cat([q, torch.zeros_like(q[:, :, :1])], dim=2)
+            padded_k = torch.cat([k, torch.zeros_like(k[:, :, :1])], dim=2)
+            padded_v = torch.cat([v, torch.zeros_like(v[:, :, :1])], dim=2)
+            out = batched_sequence_step(
+                padded_q,
+                padded_k,
+                padded_v,
+                torch.cat([position, position.new_zeros(1)]),
+                k_store,
+                v_store,
+                seq_cols,
+                seq_info,
+                SCALE,
+                rows,
+                declared_columns,
+                window,
+                window > 0,
+                True,
+            )
+            self.assertLess(_max_abs_diff(out[:, :, : len(seq_ids)], expected), 2e-2)
+            self.assertTrue((out[:, :, len(seq_ids) :] == 0).all())
+            for store in (k_store, v_store):
+                self.assertTrue(torch.isnan(store[0, rows * physical_columns :]).all())
+            old_mapping, old_columns = mapping, physical_columns
+
+    def test_flat_pitch_and_sparse_survivor(self):
+        self._run(window=0)
+
+    def test_ring_pitch_and_sparse_survivor(self):
+        self._run(window=2)
+
+    def test_runtime_pitch_rejects_noncontiguous_column_and_head_lanes(self):
+        query, _, _, _ = _inputs(0, 1)
+        key = torch.zeros(
+            (8, 3, N_KV_HEADS, HEAD_DIM), device="cuda", dtype=torch.bfloat16
+        )
+        info = torch.tensor([[0, 1, 0, 1, 3]], device="cuda", dtype=torch.int32)
+        layouts = [
+            key.transpose(1, 2).contiguous().transpose(1, 2),
+            key.repeat_interleave(2, dim=1)[:, ::2],
+        ]
+        for bad in layouts:
+            for bad_key in (False, True):
+                with self.subTest(stride=bad.stride(), bad_key=bad_key):
+                    with self.assertRaisesRegex(ValueError, "column and head lanes"):
+                        sdpa_varlen(
+                            query,
+                            bad if bad_key else key,
+                            key if bad_key else bad,
+                            info,
+                            SCALE,
+                        )
+
+    def test_runtime_pitch_with_multiple_decode_splits(self):
+        torch.manual_seed(126)
+        rows, declared_columns, physical_columns = 1024, 9, 4
+        query = torch.randn(
+            1, N_Q_HEADS, 3, HEAD_DIM, device="cuda", dtype=torch.bfloat16
+        )
+        key = torch.full(
+            (rows, declared_columns, N_KV_HEADS, HEAD_DIM),
+            float("nan"),
+            device="cuda",
+            dtype=torch.bfloat16,
+        )
+        value = torch.full_like(key, float("nan"))
+        live_key = key.reshape(-1, N_KV_HEADS, HEAD_DIM)[
+            : rows * physical_columns
+        ].view(rows, physical_columns, N_KV_HEADS, HEAD_DIM)
+        live_value = value.reshape(-1, N_KV_HEADS, HEAD_DIM)[
+            : rows * physical_columns
+        ].view_as(live_key)
+        live_key.normal_()
+        live_value.normal_()
+        info = torch.tensor(
+            [
+                [0, 1, 2, rows, physical_columns],
+                [1, 1, 0, 768, physical_columns],
+                [0, 0, 0, 0, physical_columns],
+            ],
+            dtype=torch.int32,
+            device="cuda",
+        )
+        self.assertGreater(_num_splits(query.shape[2], rows), 1)
+        actual = sdpa_varlen(query, key, value, info, SCALE, rows_available=rows)
+        expected = torch.zeros_like(query)
+        for token, column, length in ((0, 2, rows), (1, 0, 768)):
+            k = (
+                live_key[:length, column]
+                .transpose(0, 1)
+                .repeat_interleave(N_Q_HEADS // N_KV_HEADS, dim=0)
+                .float()
+            )
+            v = (
+                live_value[:length, column]
+                .transpose(0, 1)
+                .repeat_interleave(N_Q_HEADS // N_KV_HEADS, dim=0)
+                .float()
+            )
+            scores = (query[0, :, token, None].float() * k).sum(-1) * SCALE
+            expected[0, :, token] = (
+                (scores.softmax(-1)[..., None] * v).sum(1).to(expected.dtype)
+            )
+        self.assertLess(_max_abs_diff(actual, expected), 2e-2)
+
+
+@unittest.skipUnless(torch.cuda.is_available(), "CUDA required")
 class LowerBatchedSequencePassTest(unittest.TestCase):
     CAPACITY = 32
     MAX_WRITE = 8
@@ -362,6 +539,22 @@ class LowerBatchedSequencePassTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 parse_offgraph_kv_manifest(self.manifest(**bad))
 
+    def test_physical_pitch_is_the_default_interface(self) -> None:
+        manifest = self.manifest()
+        lowered = self._lowered(manifest)
+        buffers = {
+            n.name: tuple(n.meta["val"].shape)
+            for n in lowered.graph_module.graph.nodes
+            if n.op == "placeholder" and n.name.startswith(OFFGRAPH_KV_FQN_PREFIX)
+        }
+        self.assertEqual(buffers[OFFGRAPH_KV_SEQ_INFO_FQN], (self.MAX_SEGMENTS, 5))
+        self.assertEqual(
+            offgraph_kv_constant_methods(manifest),
+            {"get_offgraph_kv_max_seqs": self.MAX_SEQS},
+        )
+        with self.assertRaises(ValueError):
+            parse_offgraph_kv_manifest(self.manifest(version=2))
+
     def test_declares_column_storage_and_step_buffers(self) -> None:
         lowered = self._lowered()
         graph = lowered.graph_module.graph
@@ -384,7 +577,7 @@ class LowerBatchedSequencePassTest(unittest.TestCase):
                 f"{OFFGRAPH_KV_FQN_PREFIX}layer_1_k": windowed,
                 f"{OFFGRAPH_KV_FQN_PREFIX}layer_1_v": windowed,
                 OFFGRAPH_KV_SEQ_COLS_FQN: (self.MAX_WRITE,),
-                OFFGRAPH_KV_SEQ_INFO_FQN: (self.MAX_SEGMENTS, 4),
+                OFFGRAPH_KV_SEQ_INFO_FQN: (self.MAX_SEGMENTS, 5),
             },
         )
         calls = [
@@ -392,20 +585,35 @@ class LowerBatchedSequencePassTest(unittest.TestCase):
         ]
         self.assertEqual(len(calls), 2)
 
-    def test_lowered_program_matches_the_neutral_op(self) -> None:
+    def _check_lowered_program(self, smaller_physical_pitch: bool) -> None:
         torch.manual_seed(21)
-        lowered = self._lowered()
+        declared_seqs = self.MAX_SEQS + 2 if smaller_physical_pitch else self.MAX_SEQS
+        segments = 2 * declared_seqs
+        pitch = self.MAX_SEQS + 1
+        manifest = self.manifest(
+            max_seqs=declared_seqs,
+            max_segments=segments,
+        )
+        metadata = offgraph_kv_constant_methods(manifest)
+        self.assertEqual(metadata["get_offgraph_kv_max_seqs"], declared_seqs)
+        lowered = self._lowered(manifest)
         runtime = {}
         for name, value in list(lowered.constants.items()):
             if name.startswith(OFFGRAPH_KV_FQN_PREFIX):
                 runtime[name] = torch.zeros(
                     value.shape, device="cuda", dtype=value.dtype
                 )
+                if smaller_physical_pitch and name not in (
+                    OFFGRAPH_KV_SEQ_COLS_FQN,
+                    OFFGRAPH_KV_SEQ_INFO_FQN,
+                ):
+                    rows = value.shape[1] // (declared_seqs + 1)
+                    runtime[name][:, rows * pitch :].fill_(float("nan"))
                 lowered.constants[name] = runtime[name]
         module = lowered.module()
         oracle = _Oracle(4 * self.CAPACITY, (0, self.WINDOW))
         self.addCleanup(oracle.close)
-        columns = {seq: seq for seq in range(self.MAX_SEQS)}
+        columns = {seq: self.MAX_SEQS - 1 - seq for seq in range(self.MAX_SEQS)}
         for groups in _STEPS:
             seq_ids, q, k, v, position = _batch(groups)
             flat, ring = oracle.step(seq_ids, q, k, v, position)
@@ -414,13 +622,24 @@ class LowerBatchedSequencePassTest(unittest.TestCase):
                 position,
                 columns,
                 self.MAX_WRITE,
-                self.MAX_SEGMENTS,
-                self.MAX_SEQS,
+                segments,
+                pitch - 1,
             )
             runtime[OFFGRAPH_KV_SEQ_COLS_FQN].copy_(seq_cols)
             runtime[OFFGRAPH_KV_SEQ_INFO_FQN].copy_(seq_info)
             out = module(q, k, v, position.reshape(-1, 1))
             self.assertLess(_max_abs_diff(out, flat + ring), 3e-2)
+            if smaller_physical_pitch:
+                for name, value in runtime.items():
+                    if name not in (OFFGRAPH_KV_SEQ_COLS_FQN, OFFGRAPH_KV_SEQ_INFO_FQN):
+                        rows = value.shape[1] // (declared_seqs + 1)
+                        self.assertTrue(torch.isnan(value[:, rows * pitch :]).all())
+
+    def test_lowered_program_matches_the_neutral_op(self) -> None:
+        self._check_lowered_program(False)
+
+    def test_lowered_runtime_pitch_matches_the_neutral_op(self) -> None:
+        self._check_lowered_program(True)
 
     def test_non_causal_context_window_reaches_sdpa_varlen(self) -> None:
         lowered = self._lowered(
@@ -496,7 +715,9 @@ class LowerBatchedSequencePassTest(unittest.TestCase):
         runtime[OFFGRAPH_KV_SEQ_COLS_FQN][: len(columns)].copy_(torch.tensor(columns))
         runtime[OFFGRAPH_KV_SEQ_INFO_FQN].copy_(
             torch.tensor(
-                segments + [(0, 0, 0, 0)] * (self.MAX_SEGMENTS - 2), dtype=torch.int32
+                [(*segment, self.MAX_SEQS + 1) for segment in segments]
+                + [(0, 0, 0, 0, self.MAX_SEQS + 1)] * (self.MAX_SEGMENTS - 2),
+                dtype=torch.int32,
             )
         )
         return k, v, position, segments

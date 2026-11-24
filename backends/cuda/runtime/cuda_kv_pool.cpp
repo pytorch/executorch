@@ -56,14 +56,18 @@ CudaKVPool::CudaKVPool(
     std::vector<Layer> layers,
     std::vector<SideBuffer> side_buffers,
     slimc10::ScalarType storage_dtype,
-    int64_t initial_rows)
+    int64_t initial_rows,
+    int declared_columns,
+    int initial_columns)
     : layers_(std::move(layers)),
       side_specs_(std::move(side_buffers)),
       storage_dtype_(storage_dtype),
-      initial_rows_(initial_rows) {
+      initial_rows_(initial_rows / declared_columns * initial_columns),
+      declared_columns_(declared_columns),
+      columns_(initial_columns) {
   for (const Layer& layer : layers_) {
     if (layer.growable) {
-      max_rows_ = std::max(max_rows_, layer.declared_rows);
+      max_rows_ = std::max(max_rows_, physical_limit(layer));
     }
   }
 }
@@ -161,7 +165,7 @@ Error CudaKVPool::prepare(
   return Error::Ok;
 }
 
-Error CudaKVPool::mark_step_done() {
+Error CudaKVPool::mark_step_done(cudaStream_t stream) {
   const auto device = CUDAGuard::create(device_);
   ET_CHECK_OK_OR_RETURN_ERROR(device.error());
   if (last_step_done_ == nullptr) {
@@ -173,12 +177,13 @@ Error CudaKVPool::mark_step_done() {
         "offgraph_kv: cannot create the step event: %s",
         cudaGetErrorString(error));
   }
-  const cudaError_t error = cudaEventRecord(last_step_done_, stream_);
+  const cudaError_t error = cudaEventRecord(last_step_done_, stream);
   ET_CHECK_OR_RETURN_ERROR(
       error == cudaSuccess,
       Internal,
       "offgraph_kv: cannot record the step event: %s",
       cudaGetErrorString(error));
+  stream_ = stream;
   return Error::Ok;
 }
 
@@ -218,6 +223,10 @@ size_t CudaKVPool::row_bytes(const Layer& layer) const {
   return static_cast<size_t>(layer.n_kv_heads) *
       static_cast<size_t>(layer.head_dim) *
       slimc10::elementSize(storage_dtype_);
+}
+
+int64_t CudaKVPool::physical_limit(const Layer& layer) const {
+  return layer.declared_rows / declared_columns_ * columns_;
 }
 
 // BSHD at the declared rows: no stride depends on the rows, so the storage
@@ -295,7 +304,7 @@ Error CudaKVPool::allocate_initial(int64_t required_rows, cudaStream_t stream) {
   };
   for (const Layer& layer : layers_) {
     const int64_t rows = layer.growable
-        ? std::min(growable_rows, layer.declared_rows)
+        ? std::min(growable_rows, physical_limit(layer))
         : layer.declared_rows;
     Allocation allocation;
     const Error error = allocate_layer(layer, rows, stream, allocation);
@@ -377,7 +386,7 @@ Error CudaKVPool::grow(
   };
   for (size_t index = 0; index < layers_.size(); ++index) {
     const Layer& layer = layers_[index];
-    const int64_t rows = std::min(new_rows, layer.declared_rows);
+    const int64_t rows = std::min(new_rows, physical_limit(layer));
     if (!layer.growable || rows <= allocations_.at(index).rows) {
       continue;
     }
@@ -418,6 +427,32 @@ Error CudaKVPool::grow(
   }
   rows_ = new_rows;
   growth_count_++;
+  invalidate_bindings();
+  ET_LOG(
+      Info,
+      "offgraph_kv: grew flat_capacity=%lld->%lld allocated_bytes=%lld "
+      "growth_count=%lld",
+      static_cast<long long>(old_rows),
+      static_cast<long long>(new_rows),
+      static_cast<long long>(allocated_bytes_),
+      static_cast<long long>(growth_count_));
+  return Error::Ok;
+}
+
+CudaGraphMetrics CudaKVPool::graph_metrics(std::string_view method) const {
+  CudaGraphMetrics result;
+  for (const auto& [handle, descriptors] : descriptors_) {
+    if (handle->method_name == method) {
+      const auto& metrics = handle->cuda_graph_state.metrics;
+      result.captures += metrics.captures;
+      result.replays += metrics.replays;
+      result.capture_failures += metrics.capture_failures;
+    }
+  }
+  return result;
+}
+
+void CudaKVPool::invalidate_bindings() {
   // Every program sharing this pool now points at freed storage: drop the
   // bindings so each rebinds before its next run, and any captured CUDA graph
   // so it is captured again against the new storage. Prefill usually grows
@@ -437,14 +472,123 @@ Error CudaKVPool::grow(
       graph.warmup_remaining = std::max(graph.warmup_remaining, 1);
     }
   }
+}
+
+Error CudaKVPool::resize_columns(
+    int columns,
+    int64_t live_rows,
+    cudaStream_t stream) {
+  ET_CHECK_OR_RETURN_ERROR(
+      declared_columns_ > 1 && columns >= columns_ &&
+          columns <= declared_columns_ && live_rows >= 0,
+      InvalidArgument,
+      "offgraph_kv: invalid physical columns %d/%d",
+      columns,
+      declared_columns_);
+  for (const Layer& layer : layers_) {
+    ET_CHECK_OR_RETURN_ERROR(
+        layer.growable && layer.declared_rows % declared_columns_ == 0,
+        InvalidArgument,
+        "offgraph_kv: physical-column resizing needs growable whole-row layers");
+  }
+  if (!allocated_) {
+    initial_rows_ = initial_rows_ / columns_ * columns;
+    max_rows_ = max_rows_ / columns_ * columns;
+    columns_ = columns;
+    return Error::Ok;
+  }
+  if (columns == columns_) {
+    return Error::Ok;
+  }
+  const auto device = CUDAGuard::create(device_);
+  ET_CHECK_OK_OR_RETURN_ERROR(device.error());
+  // Fence the pool's previous work, including another thread's PTDS, without
+  // waiting for unrelated work on the device.
+  ET_CHECK_OK_OR_RETURN_ERROR(follow_previous_step(stream));
+  ET_CHECK_OR_RETURN_ERROR(
+      cudaStreamSynchronize(stream) == cudaSuccess,
+      Internal,
+      "offgraph_kv: cannot finish the previous column step");
+  stream_ = stream;
+  const int old_columns = columns_;
+  std::vector<Allocation> replacements;
+  replacements.reserve(layers_.size());
+  auto roll_back = [&]() {
+    for (size_t index = 0; index < replacements.size(); ++index) {
+      discard(layers_[index], replacements[index], stream);
+    }
+    (void)cudaStreamSynchronize(stream);
+  };
+  for (size_t index = 0; index < layers_.size(); ++index) {
+    const int64_t logical_rows = allocations_[index].rows / old_columns;
+    Allocation replacement;
+    const Error error = allocate_layer(
+        layers_[index], logical_rows * columns, stream, replacement);
+    if (error != Error::Ok) {
+      roll_back();
+      return error;
+    }
+    replacements.push_back(replacement);
+  }
+  for (size_t index = 0; index < layers_.size(); ++index) {
+    const Allocation& current = allocations_[index];
+    const Allocation& replacement = replacements[index];
+    const size_t slot = row_bytes(layers_[index]);
+    const size_t logical_rows =
+        static_cast<size_t>(std::min(live_rows, current.rows / old_columns));
+    if (logical_rows == 0) {
+      continue;
+    }
+    for (const auto& [dst, src] :
+         {std::pair{replacement.k, current.k},
+          std::pair{replacement.v, current.v}}) {
+      const cudaError_t error = cudaMemcpy2DAsync(
+          dst,
+          slot * columns,
+          src,
+          slot * old_columns,
+          slot * (old_columns - 1),
+          logical_rows,
+          cudaMemcpyDeviceToDevice,
+          stream);
+      if (error != cudaSuccess) {
+        ET_LOG(
+            Error,
+            "offgraph_kv: column copy failed: %s",
+            cudaGetErrorString(error));
+        roll_back();
+        return Error::Internal;
+      }
+    }
+  }
+
+  const cudaError_t synchronize_error = cudaStreamSynchronize(stream);
+  if (synchronize_error != cudaSuccess) {
+    ET_LOG(
+        Error,
+        "offgraph_kv: column copy fence failed: %s",
+        cudaGetErrorString(synchronize_error));
+    roll_back();
+    return Error::Internal;
+  }
+  invalidate_bindings();
+  for (size_t index = 0; index < layers_.size(); ++index) {
+    discard(layers_[index], allocations_[index], stream);
+  }
+  allocations_ = std::move(replacements);
+  rows_ = rows_ / old_columns * columns;
+  initial_rows_ = initial_rows_ / old_columns * columns;
+  max_rows_ = max_rows_ / old_columns * columns;
+  columns_ = columns;
+  column_resize_count_++;
   ET_LOG(
       Info,
-      "offgraph_kv: grew flat_capacity=%lld->%lld allocated_bytes=%lld "
-      "growth_count=%lld",
-      static_cast<long long>(old_rows),
-      static_cast<long long>(new_rows),
+      "offgraph_kv: resized columns=%d->%d "
+      "allocated_bytes=%lld column_resize_count=%lld",
+      old_columns,
+      columns_,
       static_cast<long long>(allocated_bytes_),
-      static_cast<long long>(growth_count_));
+      static_cast<long long>(column_resize_count_));
   return Error::Ok;
 }
 
@@ -573,7 +717,7 @@ Error CudaKVPool::check_compiled(
       InvalidProgram,
       "offgraph_kv: %s is compiled with shape %s but the cache declares %s; "
       "the cache's capacity, max_write, window or head geometry does not "
-      "match the program",
+      "match the program, or the program needs re-export for this runtime",
       name.c_str(),
       shape_string(compiled_sizes->second).data(),
       shape_string(sizes).data());

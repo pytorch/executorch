@@ -147,6 +147,16 @@ def parse_offgraph_kv_manifest(value: bytes) -> dict[str, Any]:  # noqa: C901
     return manifest
 
 
+def offgraph_kv_constant_methods(value: bytes) -> dict[str, int]:
+    """Runtime sequence metadata derived from the lowering manifest."""
+    manifest = parse_offgraph_kv_manifest(value)
+    if manifest["layout"] != "batched-sequence":
+        return {}
+    return {
+        "get_offgraph_kv_max_seqs": manifest["max_seqs"],
+    }
+
+
 def ring_attention_mask(
     position: torch.Tensor, buf_size: int, window: int
 ) -> torch.Tensor:
@@ -310,7 +320,8 @@ def batched_sequence_step(
     """Write this step's K/V into each sequence's column, then attend.
 
     The storage is declared ``[1, rows * columns, H, D]``: row ``r`` of
-    column ``c`` is slot ``r * columns + c``, so it is ``[rows, columns, H, D]``
+    column ``c`` is slot ``r * pitch + c``, where ``pitch`` comes from
+    ``seq_info[0, 4]``. It is ``[rows, pitch, H, D]``
     and grows by whole rows, as the sequence layout's does. Token ``i`` lands
     in column ``seq_cols[i]`` at row ``position % rows`` (a ring layer's rows
     wrap; a flat layer's never do). ``seq_info`` names each segment's query
@@ -321,9 +332,12 @@ def batched_sequence_step(
     ``context_window`` gives every draft block query the same retained context
     before the block; ``symmetric_window`` uses strict per-query distance as in
     DFlash. Ordinary attention uses each query's own past-window bound.
+    Five-field ``seq_info`` supplies the physical pitch for writes and attention;
+    ``columns`` remains the declared maximum.
     """
     position = position.reshape(-1)
-    slots = (position % rows) * columns + seq_cols[: k.shape[2]]
+    pitch = seq_info[0, 4].to(torch.int64)
+    slots = (position % rows) * pitch + seq_cols[: k.shape[2]]
     _write(k_storage, slots, k)
     _write(v_storage, slots, v)
     heads, dim = k_storage.shape[2], k_storage.shape[3]
@@ -750,7 +764,10 @@ class LowerOffGraphKVPass:
         seq_info = self._cell_buffer(
             exported_program,
             OFFGRAPH_KV_SEQ_INFO_FQN,
-            (self._manifest["max_segments"], 4),
+            (
+                self._manifest["max_segments"],
+                5,
+            ),
             torch.int32,
             device,
         )
