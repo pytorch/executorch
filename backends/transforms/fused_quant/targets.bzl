@@ -37,6 +37,7 @@ def define_common_targets():
             "//executorch/exir/dialects/fused_quant:ops",
             "//caffe2:torch",
             "//executorch/backends/transforms:permute_pass_utils",
+            "//executorch/backends/transforms:utils",
         ],
     )
 
@@ -127,16 +128,6 @@ def define_common_targets():
         ],
     )
 
-    runtime.python_library(
-        name = "fold_batch_norm",
-        srcs = ["pre_quantize_passes/fold_batch_norm.py"],
-        visibility = _VISIBILITY,
-        deps = [
-            ":tensor_constants",
-            "//caffe2:torch",
-            "//executorch/backends/transforms:permute_pass_utils",
-        ],
-    )
 
     runtime.python_library(
         name = "constant_fold",

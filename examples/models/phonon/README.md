@@ -56,6 +56,16 @@ cmake-out/examples/models/phonon/phonon_runner --model_path=... --text="..." --s
   aplay -q -f S16_LE -r 24000 -c 1     # macOS: play -q -t raw -r 24000 -e signed -b 16 -c 1 -
 ```
 
+`--benchmark` synthesizes the text 4 times and prints, for the first (cold)
+run and the median of the other three (warm), the real-time factor (synthesis
+time over audio duration), the time to first audio, the audio duration and the
+median time of a `flow_lm` step and a `mimi_decode` call:
+
+```bash
+cmake-out/examples/models/phonon/phonon_runner --model_path=phonon_exports/xnnpack/phonon.pte \
+  --text="The quick brown fox jumps over the lazy dog." --benchmark
+```
+
 XNNPACK delegates the linear and convolution ops; the flow LM's attention runs
 as the ExecuTorch custom op `llama::sdpa_with_kv_cache`.
 

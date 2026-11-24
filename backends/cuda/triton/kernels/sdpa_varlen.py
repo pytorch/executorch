@@ -68,6 +68,7 @@ def _sdpa_varlen_kernel(  # noqa: C901
     NUM_SPLITS: tl.constexpr,
     IS_CAUSAL: tl.constexpr,
     CONTEXT_WINDOW: tl.constexpr,
+    SYMMETRIC_WINDOW: tl.constexpr,
     WINDOW: tl.constexpr,
     RING: tl.constexpr,
     BLOCK_M: tl.constexpr,
@@ -113,6 +114,8 @@ def _sdpa_varlen_kernel(  # noqa: C901
         hi = kv_end
         if IS_CAUSAL:
             hi = kv_end - q_len + r_last + 1
+        elif SYMMETRIC_WINDOW and WINDOW > 0:
+            hi = tl.minimum(hi, kv_end - q_len + r_last + WINDOW)
         lo = 0
         if WINDOW > 0:
             if CONTEXT_WINDOW:
@@ -155,6 +158,8 @@ def _sdpa_varlen_kernel(  # noqa: C901
                 visible = visible & (kv_pos[None, :] >= kv_end - q_len - WINDOW)
             else:
                 visible = visible & (kv_pos[None, :] > pos[:, None] - WINDOW)
+            if SYMMETRIC_WINDOW:
+                visible = visible & (kv_pos[None, :] < pos[:, None] + WINDOW)
         qk = tl.where(visible, qk, -float("inf"))
 
         m_ij = tl.maximum(m_i, tl.max(qk, axis=1))
@@ -188,7 +193,7 @@ def _sdpa_varlen_kernel(  # noqa: C901
 
 
 @triton.jit
-def _sdpa_varlen_decode_kernel(
+def _sdpa_varlen_decode_kernel(  # noqa: C901
     Q_ptr,
     K_ptr,
     V_ptr,
@@ -215,6 +220,7 @@ def _sdpa_varlen_decode_kernel(
     NUM_SPLITS: tl.constexpr,
     IS_CAUSAL: tl.constexpr,
     CONTEXT_WINDOW: tl.constexpr,
+    SYMMETRIC_WINDOW: tl.constexpr,
     WINDOW: tl.constexpr,
     RING: tl.constexpr,
     BLOCK_N: tl.constexpr,
@@ -259,6 +265,8 @@ def _sdpa_varlen_decode_kernel(
         hi = tl.minimum(kv_end, RING)
     else:
         hi = pos + 1 if IS_CAUSAL else kv_end
+        if SYMMETRIC_WINDOW and WINDOW > 0:
+            hi = tl.minimum(hi, pos + WINDOW)
         lo = 0
         if WINDOW > 0:
             if CONTEXT_WINDOW:
@@ -299,6 +307,8 @@ def _sdpa_varlen_decode_kernel(
                 visible &= kv_pos[None, :] >= kv_end - q_len - WINDOW
             else:
                 visible &= kv_pos[None, :] > pos - WINDOW
+            if SYMMETRIC_WINDOW:
+                visible &= kv_pos[None, :] < pos + WINDOW
         qk = tl.where(visible, qk, -float("inf"))
 
         m_ij = tl.maximum(m_i, tl.max(qk, axis=1))
@@ -386,6 +396,7 @@ def sdpa_varlen(  # noqa: C901
     ring: int = 0,
     rows_available: int = -1,
     context_window: bool = False,
+    symmetric_window: bool = False,
 ) -> torch.Tensor:
     """Attend each segment of ``query`` to its own sequence's K/V.
 
@@ -407,6 +418,10 @@ def sdpa_varlen(  # noqa: C901
         context_window: non-causal draft queries share the last ``window``
             context positions before ``kv_end - q_len`` and see the entire
             query block. Ordinary attention keeps its per-query window.
+        symmetric_window: non-causal per-query visibility with
+            ``abs(query_position - key_position) < window``, as in DFlash.
+            Mutually exclusive with ``context_window``; zero window is full
+            attention in either mode.
     Returns:
         ``[1, H_q, T, D]``; rows no segment covers are zero.
     """
@@ -444,6 +459,8 @@ def sdpa_varlen(  # noqa: C901
         raise ValueError("seq_info must be contiguous on the query device")
     if context_window and is_causal:
         raise ValueError("context_window requires non-causal attention")
+    if symmetric_window and (is_causal or context_window):
+        raise ValueError("symmetric_window requires non-causal per-query attention")
     groups = Hq // Hkv
     available = rows if rows_available < 0 else min(rows_available, rows)
     # Branching on a symbolic T would guard (and AOTI then pin) the exported
@@ -493,6 +510,7 @@ def sdpa_varlen(  # noqa: C901
             NUM_SPLITS=splits,
             IS_CAUSAL=is_causal,
             CONTEXT_WINDOW=context_window,
+            SYMMETRIC_WINDOW=symmetric_window,
             WINDOW=window,
             RING=ring,
             BLOCK_N=128,
@@ -531,6 +549,7 @@ def sdpa_varlen(  # noqa: C901
             NUM_SPLITS=splits,
             IS_CAUSAL=is_causal,
             CONTEXT_WINDOW=context_window,
+            SYMMETRIC_WINDOW=symmetric_window,
             WINDOW=window,
             RING=ring,
             BLOCK_M=block_m,
@@ -569,5 +588,6 @@ def _sdpa_varlen_fake(
     ring=0,
     rows_available=-1,
     context_window=False,
+    symmetric_window=False,
 ):
     return torch.empty_like(query)

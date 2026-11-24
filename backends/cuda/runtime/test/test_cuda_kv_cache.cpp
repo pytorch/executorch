@@ -1930,10 +1930,10 @@ TEST_F(CudaCellCacheTest, DFlashUploadsKVWideCellsAndQueryWideOwnerMasks) {
   EXPECT_EQ(
       read_mask(fake.bound["mask2"].data, 4, 8),
       Mask(
-          {{0, 1, 1, 1, 1, 0, 0, 0},
-           {0, 1, 1, 1, 1, 0, 0, 0},
+          {{0, 0, 1, 1, 1, 0, 0, 0},
+           {0, 0, 0, 1, 1, 0, 0, 0},
            {0, 0, 0, 0, 0, 1, 1, 1},
-           {0, 0, 0, 0, 0, 1, 1, 1}}));
+           {0, 0, 0, 0, 0, 0, 1, 1}}));
   EXPECT_EQ(control->pos(b), 3);
   EXPECT_EQ(control->pos(a), 1);
   // Block removal leaves holes; the next owner order is reversed.
@@ -1950,6 +1950,13 @@ TEST_F(CudaCellCacheTest, DFlashUploadsKVWideCellsAndQueryWideOwnerMasks) {
            {0, 0, 0, 1, 1, 1, 0, 0},
            {1, 1, 1, 0, 0, 0, 1, 1},
            {1, 1, 1, 0, 0, 0, 1, 1}}));
+  EXPECT_EQ(
+      read_mask(fake.bound["mask2"].data, 4, 8),
+      Mask(
+          {{0, 0, 0, 1, 1, 1, 0, 0},
+           {0, 0, 0, 1, 1, 0, 0, 0},
+           {0, 0, 1, 0, 0, 0, 1, 1},
+           {0, 0, 0, 0, 0, 0, 1, 1}}));
   EXPECT_EQ(handle.cuda_graph_state.phase, cu::CudaGraphPhase::Replay);
   EXPECT_EQ(fake.bound["cells"].data, cells);
   EXPECT_EQ(control->pos(b), 3);

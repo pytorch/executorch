@@ -6,6 +6,7 @@
 
 import contextlib
 import os
+import subprocess
 import tempfile
 import threading
 import unittest
@@ -13,6 +14,7 @@ from typing import Tuple
 from unittest import mock
 from unittest.mock import patch
 
+import numpy as np
 import torch
 from executorch.backends.aoti.aoti_backend import AotiBackend
 from executorch.backends.cuda.cuda_backend import CudaBackend
@@ -34,6 +36,50 @@ from torch.nn.attention.varlen import varlen_attn
 _AUTOTUNE_OFFLOAD = "autotune_offload_constants_min_device_fraction"
 _TORCH_CAN_OFFLOAD = hasattr(torch._inductor.config.aot_inductor, _AUTOTUNE_OFFLOAD)
 _LOW_MEMORY_ON = CompileSpec(key="low_memory_mode", value=b"ON")
+_SHARE_WEIGHTS_ON = CompileSpec(key="share_weights", value=b"ON")
+
+
+class _ScaleShift(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.weights = torch.nn.ParameterList(
+            torch.nn.Parameter(torch.randn(1 << 24)) for _ in range(8)
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        for weight in self.weights:
+            x = x * weight + 1
+        return x
+
+
+def _execute(program, method_name, inputs):
+    """Run a method of a lowered program from its files, as an app would."""
+    with tempfile.TemporaryDirectory() as directory:
+        path = os.path.join(directory, "model.pte")
+        with open(path, "wb") as f:
+            program.write_to_file(f)
+        program.write_tensor_data_to_file(directory)
+        runner = os.environ.get("RUN_CUDA_PROGRAM")
+        if runner:
+            # Buck runs CUDA's AOTI shims separately from LibTorch's symbols.
+            (input_tensor,) = inputs
+            np.save(
+                os.path.join(directory, "input.npy"),
+                input_tensor.detach().cpu().numpy(),
+            )
+            subprocess.run([runner, directory, method_name], check=True)
+            output = np.load(os.path.join(directory, "output.npy"))
+            return [torch.from_numpy(output)]
+
+        from executorch.runtime import Runtime
+
+        (data,) = [
+            os.path.join(directory, name)
+            for name in os.listdir(directory)
+            if name.endswith(".ptd")
+        ]
+        runtime_program = Runtime.get().load_program(path, data_path=data)
+        return runtime_program.load_method(method_name).execute(inputs)
 
 
 class TestCudaBackendCompileOptions(unittest.TestCase):
@@ -129,11 +175,37 @@ class TestCudaBackendCompileOptions(unittest.TestCase):
 
         self.assertFalse(options["triton.autotune_at_compile_time"])
 
+    def test_move_and_compile_agree_on_autotune_at_compile_time(self):
+        on = CompileSpec(key="autotune_at_compile_time", value=b"ON")
+        off = CompileSpec(key="autotune_at_compile_time", value=b"OFF")
+        for specs in ([], [on], [off], [on, off], [off, on]):
+            with self.subTest(specs=specs):
+                options = CudaBackend.get_aoti_compile_options(specs)
+                self.assertEqual(
+                    options["triton.autotune_at_compile_time"],
+                    CudaBackend._autotunes_at_compile_time(specs),
+                )
+
     def test_invalid_autotune_at_compile_time_compile_spec(self):
-        with self.assertRaisesRegex(ValueError, "Invalid autotune_at_compile_time"):
-            CudaBackend.get_aoti_compile_options(
-                [CompileSpec(key="autotune_at_compile_time", value=b"MAYBE")]
-            )
+        maybe = CompileSpec(key="autotune_at_compile_time", value=b"MAYBE")
+        on = CompileSpec(key="autotune_at_compile_time", value=b"ON")
+        for specs in ([maybe], [maybe, on]):
+            with self.subTest(specs=specs):
+                with self.assertRaisesRegex(
+                    ValueError, "Invalid autotune_at_compile_time"
+                ):
+                    CudaBackend.get_aoti_compile_options(specs)
+
+    def test_low_memory_mode_rejects_share_weights_off_or_invalid(self):
+        self.assertTrue(
+            CudaBackend._shares_weights([_LOW_MEMORY_ON, _SHARE_WEIGHTS_ON])
+        )
+        off = CompileSpec(key="share_weights", value=b"OFF")
+        with self.assertRaisesRegex(ValueError, "share_weights=OFF"):
+            CudaBackend._shares_weights([_LOW_MEMORY_ON, off])
+        invalid = CompileSpec(key="share_weights", value=b"YES")
+        with self.assertRaisesRegex(ValueError, "Invalid share_weights"):
+            CudaBackend._shares_weights([_LOW_MEMORY_ON, invalid])
 
     def test_target_smem_context_is_applied(self):
         with patch(
@@ -267,6 +339,56 @@ class TestCudaBackendCompileOptions(unittest.TestCase):
                 other.join(timeout=10)
                 seen["inside"] = inductor_utils.is_big_gpu(0)
         self.assertEqual({"inside": True, "other": False}, seen)
+
+    def test_triton_libdevice_is_chosen_before_any_kernel_compiles(self):
+        """Inductor points Triton at the CUDA toolkit's libdevice on its first
+        compile when it emulates precision casts. The backend's compile context
+        makes that choice up front, so a kernel compiled before an Inductor
+        compile has the same Triton cache key as one compiled after it."""
+        import triton
+        import triton.language as tl
+        from torch._inductor.runtime import compile_tasks
+        from triton import knobs
+
+        saved = (knobs.nvidia.libdevice_path, os.environ.get("TRITON_LIBDEVICE_PATH"))
+
+        def reset(path, env):
+            knobs.nvidia.libdevice_path = path
+            if env is None:
+                os.environ.pop("TRITON_LIBDEVICE_PATH", None)
+            else:
+                os.environ["TRITON_LIBDEVICE_PATH"] = env
+
+        self.addCleanup(reset, *saved)
+        reset(None, None)
+        compile_tasks._set_triton_libdevice_path_impl()
+        toolkit = knobs.nvidia.libdevice_path
+        if toolkit is None:
+            self.skipTest("no CUDA toolkit libdevice for Inductor to choose")
+        reset(None, None)
+
+        def add_one(x_ptr, BLOCK: tl.constexpr):
+            offsets = tl.arange(0, BLOCK)
+            tl.store(x_ptr + offsets, tl.load(x_ptr + offsets) + 1)
+
+        x = torch.zeros(16, device="cuda")
+
+        def cache_key():
+            # A new JIT function each time: one already compiled answers from
+            # its in-memory cache, which does not see the libdevice.
+            return triton.jit(add_one).warmup(x, BLOCK=16, grid=(1,)).hash
+
+        with CudaBackend.get_extra_aoti_compile_context_manager([]):
+            self.assertEqual(knobs.nvidia.libdevice_path, toolkit)
+            before = cache_key()
+            torch._dynamo.reset()
+            with torch._inductor.config.patch(
+                emulate_precision_casts=True, force_disable_caches=True
+            ):
+                torch.compile(lambda t: t.sin() + 1, fullgraph=True)(x)
+            after = cache_key()
+        self.assertEqual(knobs.nvidia.libdevice_path, toolkit)
+        self.assertEqual(before, after)
 
     def test_small_gpu_override_survives_a_thread_that_leaves_first(self):
         from executorch.backends.cuda.cuda_backend import (
@@ -824,22 +946,7 @@ class TestCudaExport(unittest.TestCase):
         """Autotuning runs kernels on random stand-ins for the weights. In
         low-memory mode, the real weights leave the GPU meanwhile instead of
         doubling up."""
-
-        class ScaleShift(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.weights = torch.nn.ParameterList(
-                    torch.nn.Parameter(torch.randn(1 << 24)) for _ in range(8)
-                )
-
-            def forward(self, x: torch.Tensor) -> torch.Tensor:
-                for weight in self.weights:
-                    x = x * weight + 1
-                return x
-
-        from executorch.runtime import Runtime
-
-        module = ScaleShift().eval()
+        module = _ScaleShift().eval()
         x = torch.randn(1 << 24)
         weight_bytes = sum(weight.nbytes for weight in module.weights)
         before = torch.cuda.memory_allocated()
@@ -854,23 +961,138 @@ class TestCudaExport(unittest.TestCase):
         ).to_executorch()
         self.assertLess(torch.cuda.max_memory_allocated() - before, 2 * weight_bytes)
         # The weights come back from the file, so the program must still match.
-        with tempfile.TemporaryDirectory() as directory:
-            path = os.path.join(directory, "model.pte")
-            with open(path, "wb") as f:
-                program.write_to_file(f)
-            program.write_tensor_data_to_file(directory)
-            (data,) = [
-                os.path.join(directory, name)
-                for name in os.listdir(directory)
-                if name.endswith(".ptd")
-            ]
-            method = (
-                Runtime.get().load_program(path, data_path=data).load_method("forward")
-            )
-            (output,) = method.execute([x])
+        (output,) = _execute(program, "forward", [x])
         with torch.no_grad():
             expected = module(x)
         torch.testing.assert_close(output.cpu(), expected, atol=1e-4, rtol=1e-4)
+
+    @unittest.skipIf(
+        torch.version.hip is not None,
+        "loads through the Python runtime, which the ROCm build does not include",
+    )
+    def test_sharing_leaves_written_gpu_buffers_unchanged(self):
+        """With compile-time autotune, the compile shares a GPU buffer the
+        graph writes with the caller and does not write it."""
+
+        class Counter(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("count", torch.zeros(4, device="cuda"))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                self.count.add_(1)
+                return self.count * x
+
+        module = Counter()
+        x = torch.randn(4, device="cuda")
+        program = self._export_to_cuda_with_lower(
+            module,
+            (x,),
+            [
+                CudaBackend.generate_method_name_compile_spec("forward"),
+                _SHARE_WEIGHTS_ON,
+            ],
+        ).to_executorch()
+        self.assertTrue(torch.equal(module.count.cpu(), torch.zeros(4)))
+        (output,) = _execute(program, "forward", [x.cpu()])
+        torch.testing.assert_close(output.cpu(), x.cpu())
+
+    @unittest.skipUnless(
+        _TORCH_CAN_OFFLOAD,
+        "This PyTorch cannot move the weights off the GPU during autotuning",
+    )
+    @unittest.skipIf(
+        torch.version.hip is not None,
+        "loads through the Python runtime, which the ROCm build does not include",
+    )
+    def test_low_memory_gpu_weights_keep_their_values(self):
+        """Low-memory mode lets Inductor move the weights to disk while it
+        autotunes, so weights on the GPU may come back at new addresses, but
+        with the same values."""
+        module = _ScaleShift().to("cuda").eval()
+        x = torch.randn(1 << 24, device="cuda")
+        expected = [weight.detach().cpu() for weight in module.weights]
+        weight_bytes = sum(weight.nbytes for weight in module.weights)
+        before = torch.cuda.memory_allocated()
+        torch.cuda.reset_peak_memory_stats()
+        program = self._export_to_cuda_with_lower(
+            module,
+            (x,),
+            [CudaBackend.generate_method_name_compile_spec("forward"), _LOW_MEMORY_ON],
+        ).to_executorch()
+        self.assertLess(torch.cuda.max_memory_allocated() - before, 2 * weight_bytes)
+        for weight, value in zip(module.weights, expected):
+            self.assertTrue(torch.equal(weight.cpu(), value))
+        (output,) = _execute(program, "forward", [x.cpu()])
+        with torch.no_grad():
+            reference = module(x)
+        torch.testing.assert_close(output.cpu(), reference.cpu(), atol=1e-4, rtol=1e-4)
+
+    @unittest.skipIf(
+        torch.version.hip is not None,
+        "loads through the Python runtime, which the ROCm build does not include",
+    )
+    def test_methods_share_gpu_weights(self):
+        """With share_weights, each method is moved and released on its own,
+        and no release may free the weights both methods still share with the
+        module."""
+        module = _ScaleShift().to("cuda").eval()
+        x = torch.randn(1 << 24, device="cuda")
+        expected = [weight.detach().cpu() for weight in module.weights]
+        pointers = [weight.data_ptr() for weight in module.weights]
+        weight_bytes = sum(weight.nbytes for weight in module.weights)
+        methods = ("forward", "second")
+        before = torch.cuda.memory_allocated()
+        torch.cuda.reset_peak_memory_stats()
+        program = to_edge_transform_and_lower(
+            {name: export(module, (x,), strict=True) for name in methods},
+            partitioner={
+                name: [
+                    CudaPartitioner(
+                        [
+                            CudaBackend.generate_method_name_compile_spec(name),
+                            _SHARE_WEIGHTS_ON,
+                        ]
+                    )
+                ]
+                for name in methods
+            },
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        ).to_executorch()
+        # Every method's copy is made before the first compile, so copying the
+        # weights would hold two copies at once.
+        self.assertLess(torch.cuda.max_memory_allocated() - before, 2 * weight_bytes)
+        self.assertEqual(pointers, [weight.data_ptr() for weight in module.weights])
+        for weight, value in zip(module.weights, expected):
+            self.assertTrue(torch.equal(weight.cpu(), value))
+        with torch.no_grad():
+            reference = module(x).cpu()
+        for name in methods:
+            (output,) = _execute(program, name, [x.cpu()])
+            torch.testing.assert_close(output.cpu(), reference, atol=1e-4, rtol=1e-4)
+
+    def test_sharing_frees_weights_moved_from_the_host(self):
+        """Release frees the weights the move put on the GPU, also after
+        run_decompositions (which conv1d triggers) rebuilds the program."""
+        with patch.object(
+            CudaBackend,
+            "release_moved_tensors",
+            wraps=CudaBackend.release_moved_tensors,
+        ) as release:
+            self._export_to_cuda_with_lower(
+                torch.nn.Conv1d(4, 4, 3).eval(),
+                (torch.randn(1, 4, 8),),
+                [
+                    CudaBackend.generate_method_name_compile_spec("forward"),
+                    _SHARE_WEIGHTS_ON,
+                ],
+            )
+        ((moved, _),) = [call.args for call in release.call_args_list]
+        weights = list(moved.state_dict.values())
+        self.assertTrue(weights)
+        for weight in weights:
+            self.assertTrue(weight.is_cuda)
+            self.assertEqual(0, weight.untyped_storage().nbytes())
 
     def test_resnet_block(self):
         """Test CUDA export for a ResNet-style block."""
@@ -1266,7 +1488,7 @@ class TestCudaExport(unittest.TestCase):
         # The masked call keeps a float bias, which the Triton kernels do not take.
         output = "\n".join(logs.output)
         self.assertIn("Replaced 2 nodes with Triton kernels", output)
-        self.assertIn("Using split-K decode SDPA", output)
+        self.assertIn("(split-K decode SDPA (L_kv=", output)
         from executorch.export.utils import is_fbcode
 
         if is_fbcode():
@@ -1419,7 +1641,6 @@ class TestCudaExport(unittest.TestCase):
     def test_complex_product_with_cpu_tensor_without_dims(self):
         """A program on the GPU can keep tensors with no dims on the CPU, and
         complex products with them still lower."""
-        from executorch.runtime import Runtime
 
         class Scaled(torch.nn.Module):
             def __init__(self, factor):
@@ -1439,22 +1660,27 @@ class TestCudaExport(unittest.TestCase):
             with self.subTest(dtype=factor.dtype):
                 model = Scaled(factor).to("cuda")
                 program = self._export_to_cuda_with_lower(model, (x,)).to_executorch()
-                with tempfile.TemporaryDirectory() as directory:
-                    path = os.path.join(directory, "model.pte")
-                    with open(path, "wb") as f:
-                        program.write_to_file(f)
-                    program.write_tensor_data_to_file(directory)
-                    (data,) = [
-                        os.path.join(directory, name)
-                        for name in os.listdir(directory)
-                        if name.endswith(".ptd")
-                    ]
-                    method = (
-                        Runtime.get()
-                        .load_program(path, data_path=data)
-                        .load_method("forward")
-                    )
-                    (output,) = method.execute([x.cpu()])
+                if os.environ.get("RUN_CUDA_PROGRAM"):
+                    (output,) = _execute(program, "forward", [x.cpu()])
+                else:
+                    from executorch.runtime import Runtime
+
+                    with tempfile.TemporaryDirectory() as directory:
+                        path = os.path.join(directory, "model.pte")
+                        with open(path, "wb") as f:
+                            program.write_to_file(f)
+                        program.write_tensor_data_to_file(directory)
+                        (data,) = [
+                            os.path.join(directory, name)
+                            for name in os.listdir(directory)
+                            if name.endswith(".ptd")
+                        ]
+                        method = (
+                            Runtime.get()
+                            .load_program(path, data_path=data)
+                            .load_method("forward")
+                        )
+                        (output,) = method.execute([x.cpu()])
                 torch.testing.assert_close(output.cpu(), model(x).cpu())
 
     def test_device_info_propagated_to_cuda_delegate_outputs(self):

@@ -8,14 +8,24 @@
 set -euo pipefail
 
 et_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-build_dir="${ESPRESSIF_BUILD_DIR:-${et_root}/cmake-out-esp-emulator}"
 espnn_kernels="${ESPRESSIF_NN_KERNELS:-optimized}"
+target="${ESPRESSIF_TARGET:-esp32s3}"
+case "${target}" in
+    esp32s3|esp32p4) default_idf_version=v6.1 ;;
+    # ESP-IDF supports the ESP32-S31 from v6.2.
+    esp32s31) default_idf_version=release/v6.2 ;;
+    *) echo "ESPRESSIF_TARGET must be esp32s3, esp32p4 or esp32s31" >&2; exit 1 ;;
+esac
+idf_version="${ESPRESSIF_IDF_VERSION:-${default_idf_version}}"
+idf_version_dir="${idf_version//\//-}"
+build_dir="${ESPRESSIF_BUILD_DIR:-${et_root}/cmake-out-esp-emulator/${target}/${idf_version_dir}}"
+export ESPRESSIF_TARGET="${target}"
 case "${espnn_kernels}" in
     optimized) espnn_config=CONFIG_NN_OPTIMIZED ;;
     ansi) espnn_config=CONFIG_NN_ANSI_C ;;
     *) echo "ESPRESSIF_NN_KERNELS must be optimized or ansi" >&2; exit 1 ;;
 esac
-export ESPRESSIF_TOOLS_DIR="${ESPRESSIF_TOOLS_DIR:-${RUNNER_TEMP:-/tmp}/executorch-espressif}"
+export ESPRESSIF_TOOLS_DIR="${ESPRESSIF_TOOLS_DIR:-${RUNNER_TEMP:-/tmp}/executorch-espressif/${idf_version_dir}}"
 mkdir -p "${build_dir}"
 build_dir=$(cd "${build_dir}" && pwd)
 cd "${et_root}"
@@ -23,7 +33,7 @@ cd "${et_root}"
 collect_artifacts() {
     local file operator_dir artifact_dir
     if [[ -n "${RUNNER_ARTIFACT_DIR:-}" ]]; then
-        mkdir -p "${RUNNER_ARTIFACT_DIR}/esp32s3"
+        mkdir -p "${RUNNER_ARTIFACT_DIR}/${target}"
         for file in "${build_dir}"/*.log "${build_dir}"/*.bpte \
             "${build_dir}"/espnn-*-sdkconfig \
             "${build_dir}/espnn-tests"/*.bpte \
@@ -33,12 +43,12 @@ collect_artifacts() {
             "${build_dir}/firmware/merged-binary.bin" \
             "${build_dir}/firmware/executorch_esp_runner.elf"; do
             if [[ -f "${file}" ]]; then
-                cp "${file}" "${RUNNER_ARTIFACT_DIR}/esp32s3/"
+                cp "${file}" "${RUNNER_ARTIFACT_DIR}/${target}/"
             fi
         done
         for operator_dir in "${build_dir}"/operator-library-*; do
             [[ -d "${operator_dir}" ]] || continue
-            artifact_dir="${RUNNER_ARTIFACT_DIR}/esp32s3/${operator_dir##*/}"
+            artifact_dir="${RUNNER_ARTIFACT_DIR}/${target}/${operator_dir##*/}"
             mkdir -p "${artifact_dir}"
             for file in "${operator_dir}"/*.log "${operator_dir}"/*.bpte \
                 "${operator_dir}/sdkconfig" "${operator_dir}"/*.elf \
@@ -52,7 +62,8 @@ collect_artifacts() {
 }
 trap collect_artifacts EXIT
 
-bash examples/espressif/setup.sh --minimal 2>&1 | tee "${build_dir}/setup.log"
+bash examples/espressif/setup.sh --minimal --targets="${target}" \
+    --idf-version="${idf_version}" 2>&1 | tee "${build_dir}/setup.log"
 # shellcheck source=/dev/null
 source "${ESPRESSIF_TOOLS_DIR}/setup_path.sh"
 
@@ -68,11 +79,28 @@ python examples/espressif/export_espnn_test_programs.py \
 espnn_ops=$(tr -d '\n' < "${build_dir}/espnn-tests/operators.txt" \
     | tr ',' '\n' | grep -v '^quantized_decomposed::' | paste -sd, -)
 if [[ "${espnn_kernels}" == optimized ]]; then
-    espnn_ops="${espnn_ops},aten::sin.out,aten::relu.out,aten::mul.Scalar_out"
+    espnn_ops="${espnn_ops},aten::sin.out,aten::relu.out,aten::max_pool2d_with_indices.out,aten::avg_pool2d.out,aten::permute_copy.out,aten::convolution.out,aten::addmm.out,aten::mm.out,aten::mul.Scalar_out"
+    espnn_ops="${espnn_ops},aten::clone.out"
 fi
 
+toolchain_file="${IDF_PATH}/tools/cmake/toolchain-${target}.cmake"
+if [[ "${target}" != esp32s3 ]]; then
+    # ESP-IDF derives the RISC-V -march and -mabi from the chip's config and
+    # writes them next to a copy of the toolchain file when a project
+    # configures. The example project needs the runtime to configure, so
+    # configure hello_world with the same target defaults and build the runtime
+    # with its toolchain copy. Otherwise the runtime is soft-float and does not
+    # link with the firmware.
+    idf.py -C "${IDF_PATH}/examples/get-started/hello_world" \
+        -B "${build_dir}/toolchain-flags" \
+        -DIDF_TARGET="${target}" \
+        -DSDKCONFIG="${build_dir}/toolchain-flags/sdkconfig" \
+        -DSDKCONFIG_DEFAULTS="${et_root}/examples/espressif/project/sdkconfig.defaults.${target}" \
+        reconfigure 2>&1 | tee "${build_dir}/toolchain-flags.log"
+    toolchain_file="${build_dir}/toolchain-flags/toolchain/toolchain-${target}.cmake"
+fi
 cmake --preset esp-baremetal -G Ninja -B "${build_dir}/runtime" \
-    -DCMAKE_TOOLCHAIN_FILE="${IDF_PATH}/tools/cmake/toolchain-esp32s3.cmake" \
+    -DCMAKE_TOOLCHAIN_FILE="${toolchain_file}" \
     -DCMAKE_BUILD_TYPE=Release \
     -DEXECUTORCH_BUILD_DEVTOOLS=ON \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
@@ -86,7 +114,7 @@ cmake --install "${build_dir}/runtime" \
     2>&1 | tee "${build_dir}/runtime-install.log"
 
 idf.py -C examples/espressif/project -B "${build_dir}/firmware" \
-    -DIDF_TARGET=esp32s3 \
+    -DIDF_TARGET="${target}" \
     -DSDKCONFIG="${build_dir}/sdkconfig" \
     -DET_BUILD_DIR_PATH="${build_dir}/runtime" \
     -DET_PTE_FILE_PATH="${build_dir}/smoke.bpte" \
@@ -98,12 +126,12 @@ cmake --build "${build_dir}/firmware" \
 idf.py -C examples/espressif/project -B "${build_dir}/firmware" merge-bin \
     2>&1 | tee "${build_dir}/firmware-merge.log"
 
-timeout 130s esp-emu --chip esp32s3 \
+timeout 130s esp-emu --chip "${target}" \
     --firmware "${build_dir}/firmware/merged-binary.bin" \
     --elf "${build_dir}/firmware/executorch_esp_runner.elf" \
     --net user --psram-size 8M --timeout 120s --exit-on 'Program complete.' \
     2>&1 | tee "${build_dir}/emulator.log"
-python examples/espressif/test_emulator.py "${build_dir}/emulator.log"
+python examples/espressif/test_emulator.py --chip "${target}" "${build_dir}/emulator.log"
 
 # ESP-NN backend: run every exported program through the ExecuTorch runtime
 # and the ESP-NN delegate, and check it against the bundled host reference.
@@ -125,7 +153,7 @@ while read -r -u 3 name atol rtol; do
     espnn_log_prefix="espnn-${espnn_kernels}-${name}"
     logged "${espnn_log_prefix}-configure.log" \
         idf.py -C examples/espressif/project -B "${espnn_firmware_dir}" \
-        -DIDF_TARGET=esp32s3 \
+        -DIDF_TARGET="${target}" \
         -DSDKCONFIG="${espnn_sdkconfig}" \
         "-DSDKCONFIG_DEFAULTS=sdkconfig.defaults;${espnn_defaults}" \
         -DET_ESPNN_BACKEND=ON \
@@ -141,12 +169,12 @@ while read -r -u 3 name atol rtol; do
     logged "${espnn_log_prefix}-merge.log" \
         idf.py -C examples/espressif/project -B "${espnn_firmware_dir}" merge-bin
     logged "${espnn_log_prefix}-emulator.log" \
-        timeout 90s esp-emu --chip esp32s3 \
+        timeout 90s esp-emu --chip "${target}" \
         --firmware "${espnn_firmware_dir}/merged-binary.bin" \
         --elf "${espnn_firmware_dir}/executorch_esp_runner.elf" \
         --net user --psram-size 8M --timeout 60s --exit-on 'Program complete.'
     echo -n "${espnn_kernels}/${name}: "
-    python examples/espressif/test_emulator.py "${build_dir}/${espnn_log_prefix}-emulator.log"
+    python examples/espressif/test_emulator.py --chip "${target}" "${build_dir}/${espnn_log_prefix}-emulator.log"
 done 3< <(python -c '
 import json, sys
 for entry in json.load(open(sys.argv[1])):
@@ -154,13 +182,29 @@ for entry in json.load(open(sys.argv[1])):
 ' "${build_dir}/espnn-tests/manifest.json")
 
 if [[ "${espnn_kernels}" == optimized ]]; then
+    esp_python_dir=$(python -c 'import executorch.backends.espressif as esp; print(next(iter(esp.__path__)))')
+    logged "scratch-configure.log" cmake -S . \
+        -B "${build_dir}/scratch-sizing" -DCMAKE_BUILD_TYPE=Release \
+        -DEXECUTORCH_BUILD_ESP_NN_PYBINDS=ON -DEXECUTORCH_OPTIMIZE_SIZE=ON \
+        -DESPNN_LOCAL_PATH="${PWD}/examples/espressif/project/managed_components/espressif__esp-nn" \
+        -DCMAKE_LIBRARY_OUTPUT_DIRECTORY="${esp_python_dir}"
+    logged "scratch-build.log" cmake --build "${build_dir}/scratch-sizing" \
+        --target _esp_nn_scratch
+    logged "scratch-tests.log" env EXECUTORCH_REQUIRE_ESP_NN_SCRATCH=1 \
+        python -m pytest -q backends/espressif/test/test_scratch.py
+    logged "operator-library-host-tests.log" python -m pytest -q \
+        backends/espressif/test/ops -k 'not implementation'
     # Stop on failure so later cases cannot overwrite its firmware and logs.
     ESPRESSIF_BUILD_DIR="${build_dir}" python -m pytest \
         -x -v --tb=short backends/espressif/test/ops -k implementation \
         2>&1 | tee "${build_dir}/operator-library-tests.log"
     for sdkconfig in "${build_dir}"/operator-library-*/sdkconfig; do
-        if ! grep -qx 'CONFIG_NN_OPTIMIZED=y' "${sdkconfig}"; then
-            echo "Expected CONFIG_NN_OPTIMIZED=y in ${sdkconfig}" >&2
+        expected_config=CONFIG_NN_OPTIMIZED
+        if [[ "${sdkconfig}" == *-ansi/sdkconfig ]]; then
+            expected_config=CONFIG_NN_ANSI_C
+        fi
+        if ! grep -qx "${expected_config}=y" "${sdkconfig}"; then
+            echo "Expected ${expected_config}=y in ${sdkconfig}" >&2
             exit 1
         fi
     done

@@ -20,7 +20,6 @@
 #include <string>
 #else // Posix
 #include <dlfcn.h>
-#include <unistd.h>
 #include <cstdlib>
 #endif
 
@@ -164,14 +163,6 @@ executorch::runtime::Result<void*> get_function(
 
   return (void*)fn; // This I think is technically ub on windows. We should
                     // probably explicitly pack the bytes.
-}
-
-int32_t get_process_id() {
-#ifdef _WIN32
-  return GetCurrentProcessId();
-#else
-  return getpid();
-#endif
 }
 
 void* aligned_alloc(size_t alignment, size_t size) {
