@@ -173,6 +173,25 @@ def test_invalid_activation_scale_rejected(act):
         CudaNVFP4Tensor(w.qdata, w.scale, w.per_tensor_scale, act_per_tensor_scale=act)
 
 
+@pytest.mark.parametrize("byte", [0x7F, 0xFF])
+def test_from_exportable_rejects_nan_scales(byte):
+    # Kernels assume finite E4M3 scales.
+    w = weight()
+    w.scale[3, 5] = byte
+    with pytest.raises(ValueError, match="finite"):
+        CudaNVFP4Tensor.from_exportable(w)
+
+
+def test_all_zero_weight_packs_as_zeros():
+    # The quantizer gives an all-zero weight a unit global scale, not 0/0 = NaN
+    # block scales, so it packs and runs as zeros.
+    linear = torch.nn.Linear(64, 32, bias=False, dtype=torch.bfloat16)
+    linear.weight.data.zero_()
+    quantize_(linear, ExportableNVFP4Config())
+    packed = CudaNVFP4Tensor.from_exportable(linear.weight)
+    assert torch.equal(packed.dequantize(), torch.zeros_like(packed.dequantize()))
+
+
 def test_from_exportable_carries_activation_scale():
     portable = weight()
     fields = (portable.qdata, portable.scale, portable.per_tensor_scale, 16)
@@ -194,23 +213,14 @@ def test_from_exportable_carries_activation_scale():
         (1.0, 0, True),
         (1.0, 126, True),
         (0.5, 40, False),
-        (1.0, 127, False),
-        (1.0, 128, False),
+        # Negative scales keep the products exact in BF16 too.
+        (1.0, 128, True),
+        (1.0, 0xA0, True),
     ],
 )
 def test_unit_scale_inferred_only_for_exact_domain(pts, scale_byte, expected):
     actual = CudaNVFP4Tensor.from_exportable(weight(pts, scale_byte))
     assert actual.unit_scale is expected
-
-
-def test_unit_scale_requires_every_scale_byte():
-    w = weight()
-    scale = w.scale.clone()
-    scale[3, 5] = 127
-    mixed = ExportableNVFP4Tensor(
-        w.qdata, scale, w.per_tensor_scale, w.block_size, w.orig_dtype
-    )
-    assert not CudaNVFP4Tensor.from_exportable(mixed).unit_scale
 
 
 def test_unit_scale_metadata_survives_fake_to_fusion_and_serialization():

@@ -51,11 +51,14 @@ class CudaNVFP4Tensor(TorchAOBaseTensor):
     ``input_scale`` ``amax / (6 * 448)`` (not its reciprocal); ``None`` means
     activations are scaled dynamically per row.
 
-    ``unit_scale`` asserts two facts kernels may rely on: ``per_tensor_scale``
-    is 1, so the global-scale multiply can be skipped, and every scale byte is
-    below 0x7F, a non-negative finite E4M3 value, so each E2M1 x E4M3 product
-    is finite with at most 6 significant bits and exact in BF16 without
-    rounding. ``from_exportable`` sets it from the values; the constructor
+    Kernels assume every scale byte is a finite E4M3 value: ``from_exportable``
+    rejects the NaN bytes 0x7F/0xFF (the GGUF converter already maps 0x7F to 0
+    and rejects 0xFF); the constructor trusts the bytes it is given.
+
+    ``unit_scale`` asserts that ``per_tensor_scale`` is 1, so kernels may skip
+    the global-scale multiply: with finite scales each E2M1 x E4M3 product has
+    at most 6 significant bits and is exact in BF16 without rounding, whatever
+    its sign. ``from_exportable`` sets it from the values; the constructor
     trusts the passed flag.
     """
 
@@ -119,15 +122,13 @@ class CudaNVFP4Tensor(TorchAOBaseTensor):
         """Repack a portable ``ExportableNVFP4Tensor`` (uint32 ``qdata``)."""
         # Infer once on materialized weights. Fake reconstruction receives the
         # serialized metadata through __new__, without reading tensor values.
+        real = w.scale.device.type != "meta" and not is_fake(w.scale)
         unit_scale = (
-            w.scale.device.type != "meta"
-            and not is_fake(w.scale)
+            real
             and not is_fake(w.per_tensor_scale)
-            and w.scale.numel() > 0
             and bool(torch.all(w.per_tensor_scale == 1).item())
-            and bool(torch.all(w.scale < 127).item())
         )
-        return cls(
+        packed = cls(
             w.qdata.contiguous().view(torch.uint8),
             w.scale,
             w.per_tensor_scale,
@@ -136,6 +137,10 @@ class CudaNVFP4Tensor(TorchAOBaseTensor):
             unit_scale,
             w.act_per_tensor_scale,
         )
+        # After the constructor's dtype checks: the scale is uint8 here.
+        if real and bool(((packed.scale & 0x7F) == 0x7F).any().item()):
+            raise ValueError("NVFP4 E4M3 scales must be finite (no 0x7F/0xFF bytes)")
+        return packed
 
     @classmethod
     def fuse_along_output(cls, weights):
