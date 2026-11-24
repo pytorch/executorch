@@ -460,8 +460,11 @@ void GraphBuilder::lower_index_put(const Node& node) {
   set_single_output(node, TensorRef{result, self.sizes});
 }
 
-ggml_tensor*
-GraphBuilder::attention_mask(ValueId id, int64_t tokens, int64_t keys) {
+ggml_tensor* GraphBuilder::attention_mask(
+    ValueId id,
+    int64_t tokens,
+    int64_t start,
+    int64_t keys) {
   const TensorRef mask = tensor(id);
   const size_t rank = mask.sizes.size();
   if (rank < 2 || rank > 4 ||
@@ -503,6 +506,20 @@ GraphBuilder::attention_mask(ValueId id, int64_t tokens, int64_t keys) {
   ggml_tensor* result = additive->type == GGML_TYPE_F16
       ? contiguous(additive)
       : ggml_cast(ctx, additive, GGML_TYPE_F16);
+  if (start > 0) {
+    // The columns from the start; one query's row needs no copy.
+    result = contiguous(ggml_view_4d(
+        ctx,
+        result,
+        keys - start,
+        result->ne[1],
+        result->ne[2],
+        result->ne[3],
+        result->nb[1],
+        result->nb[2],
+        result->nb[3],
+        start * result->nb[0]));
+  }
   if (reusable) {
     attention_masks_.emplace(cache_key, result);
   }
@@ -538,27 +555,32 @@ void GraphBuilder::lower_sdpa(const Node& node) {
       throw std::runtime_error("ggml: sdpa cannot take a mask and is_causal");
     }
     const ValueId mask_id = mask_arg->arg.as_tensor().id;
-    if (const auto extent = key_extents_.find(mask_id);
-        extent != key_extents_.end()) {
-      // Every query masks the keys past the extent: attend the prefix.
-      keys = extent->second;
-      const auto prefix = [&](ggml_tensor* t) {
+    const auto extent = key_extents_.find(mask_id);
+    const auto found = key_starts_.find(mask_id);
+    const int64_t start = found == key_starts_.end() ? 0 : found->second;
+    if (extent != key_extents_.end() || start > 0) {
+      // Every query masks the keys past the extent and before the start:
+      // attend the keys between.
+      if (extent != key_extents_.end()) {
+        keys = extent->second;
+      }
+      const auto attended = [&](ggml_tensor* t) {
         return ggml_view_4d(
             instance_.context.get(),
             t,
             t->ne[0],
-            keys,
+            keys - start,
             t->ne[2],
             t->ne[3],
             t->nb[1],
             t->nb[2],
             t->nb[3],
-            0);
+            start * t->nb[1]);
       };
-      k = prefix(k);
-      v = prefix(v);
+      k = attended(k);
+      v = attended(v);
     }
-    mask = attention_mask(mask_id, tokens, keys);
+    mask = attention_mask(mask_id, tokens, start, keys);
   } else if (is_causal) {
     mask = causal_mask(tokens, keys, 0).tensor;
   }

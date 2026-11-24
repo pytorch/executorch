@@ -45,13 +45,13 @@ struct GgmlEngineOptions {
   // a method whose lowerings need more nodes gets the room they need.
   size_t graph_size = 4096;
   // Graphs each executable keeps, keyed by the shapes of all inputs and, for
-  // each attention mask that leaves only a key prefix open, that prefix
-  // rounded up to 256 keys: a decode step crossing a 256-key boundary builds
-  // a new graph. A call matching a cached key replays the graph with fresh
-  // input bytes, skipping lowering. Entries share the context's compute
-  // buffers, reserved at compile for each method's worst case, so a hit after
-  // another graph ran is laid out in them again. 0 rebuilds the graph on every
-  // call; at most 16.
+  // each host-evaluated attention mask, the range of keys some query attends,
+  // rounded out to 256 keys: a decode step whose range crosses a 256-key
+  // boundary builds a new graph. A call matching a cached key replays the
+  // graph with fresh input bytes, skipping lowering. Entries share the
+  // context's compute buffers, reserved at compile for each method's worst
+  // case, so a hit after another graph ran is laid out in them again. 0
+  // rebuilds the graph on every call; at most 16.
   size_t max_cached_graphs = 1;
   // For testing: answers in place of the GPU whether it runs an attention
   // that reads a KV cache over F16 keys and values, so that a test on any

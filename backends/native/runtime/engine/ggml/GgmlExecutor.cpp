@@ -107,10 +107,11 @@ void scale_slices(void* data, size_t count, const std::vector<float>& scales) {
 // An attention mask written as comparisons between a per-key index and
 // per-query positions, both small integer functions of the graph inputs, and
 // anded together as a product of bools (the causal or sliding-window mask of a
-// static KV cache, for instance), attends only keys below a host-computable
-// extent: past it every query is masked. Attention, and the mask, can then
-// cover just that key prefix exactly. Extents round up to a bucket so replays
-// keep reusing one graph while the prefix grows.
+// static KV cache, for instance), attends only a host-computable range of
+// keys: outside it every query is masked. The mask can then be computed over
+// just the key prefix that ends the range, and attention can cover just the
+// range. Ranges round out to a bucket so replays keep reusing one graph while
+// the range moves.
 constexpr int64_t kKeyExtentBucket = 256;
 
 struct KeyCompare {
@@ -124,21 +125,36 @@ struct KeyCompare {
 // largest that any of the masks attends.
 struct MaskExtent {
   int64_t keys = 0;
-  // Each SDPA mask as the comparisons it ands together.
-  std::vector<std::vector<KeyCompare>> masks;
+  // Each SDPA mask, and the comparisons it ands together.
+  std::vector<std::pair<ValueId, std::vector<KeyCompare>>> masks;
   // The masks and every value they are computed from over the key axis.
   std::vector<ValueId> chain;
 };
 
-// The bucketed prefix of keys that some query attends.
-int64_t attended_key_extent(
+// Per mask group, the key prefix its values are computed over, then the rows
+// an off-graph KV cache step reads if the method has one; per SDPA mask, the
+// bucketed start of the keys some query attends, where past the first bucket.
+struct KeyRanges {
+  std::vector<int64_t> extents;
+  std::unordered_map<ValueId, int64_t> starts;
+
+  bool operator==(const KeyRanges&) const = default;
+};
+
+struct KeyRange {
+  int64_t start = 0;
+  int64_t end = 0;
+};
+
+// The bucketed range of keys that some query attends.
+KeyRange attended_keys(
     const KeyCompare& mask,
     int64_t keys,
     const HostInts& key_index,
     const HostInts& query) {
   if (key_index.data.size() != static_cast<size_t>(keys) ||
       query.data.empty()) {
-    return keys;
+    return {0, keys};
   }
   // Key j is attended by some query iff compare(key[j], query) holds for
   // the extreme query value; compare(query, key) is the mirrored
@@ -157,10 +173,20 @@ int64_t attended_key_extent(
       last = j;
     }
   }
+  int64_t first = 0;
+  while (first < last &&
+         !attended(key_index.data[static_cast<size_t>(first)])) {
+    ++first;
+  }
   const int64_t needed = std::max<int64_t>(last + 1, 1);
-  return std::min(
-      keys,
-      (needed + kKeyExtentBucket - 1) / kKeyExtentBucket * kKeyExtentBucket);
+  // Starts round down from the key before the first attended one, so a
+  // sliding window of whole buckets moves its start on the step its end moves.
+  return {
+      std::max<int64_t>(first - 1, 0) / kKeyExtentBucket * kKeyExtentBucket,
+      std::min(
+          keys,
+          (needed + kKeyExtentBucket - 1) / kKeyExtentBucket *
+              kKeyExtentBucket)};
 }
 
 // Storage of the mutable buffers or constants one compile introduced to its
@@ -201,7 +227,7 @@ class GgmlExecutable final : public EngineExecutable {
     // Rejects unsupported ops and shapes at compile time, and sizes the
     // context's compute buffers for the largest inputs and key extents.
     worst_case_ =
-        std::make_shared<const GraphInstance>(build_graph(full_key_extents()));
+        std::make_shared<const GraphInstance>(build_graph(full_key_ranges()));
     state_.reserved.push_back(worst_case_);
     check_host_integers_boundable(*worst_case_);
     reserve(*worst_case_);
@@ -301,7 +327,7 @@ class GgmlExecutable final : public EngineExecutable {
         bind_offgraph(offgraph_step_->rows);
       }
       if (options_.max_cached_graphs == 0) {
-        GraphInstance instance = build_graph(evaluate_key_extents());
+        GraphInstance instance = build_graph(evaluate_key_ranges());
         check_host_integers(instance);
         grow_scheduler(scheduler_size(instance));
         step = prepare_offgraph(instance);
@@ -359,19 +385,19 @@ class GgmlExecutable final : public EngineExecutable {
  private:
   struct CachedGraph {
     std::vector<std::vector<int64_t>> input_sizes;
-    // Attention key extents follow input values (positions), so they are
+    // Attention key ranges follow input values (positions), so they are
     // part of the key along with the input shapes.
-    std::vector<int64_t> key_extents;
+    KeyRanges key_ranges;
     GraphInstance instance;
   };
 
-  // Lowering depends on input shapes, constants and the attention key extents
+  // Lowering depends on input shapes, constants and the attention key ranges
   // computed from input values, so a graph built for the same key replays
   // with fresh input bytes. The most recently used graph is last.
   CachedGraph& cached_graph() {
-    std::vector<int64_t> key_extents = evaluate_key_extents();
-    const auto same_key = [this, &key_extents](const CachedGraph& cached) {
-      if (cached.key_extents != key_extents) {
+    KeyRanges key_ranges = evaluate_key_ranges();
+    const auto same_key = [this, &key_ranges](const CachedGraph& cached) {
+      if (cached.key_ranges != key_ranges) {
         return false;
       }
       for (size_t i = 0; i < inputs_.size(); ++i) {
@@ -394,11 +420,11 @@ class GgmlExecutable final : public EngineExecutable {
       }
       cached_graphs_.erase(cached_graphs_.begin());
     }
-    GraphInstance instance = build_graph(key_extents);
+    GraphInstance instance = build_graph(key_ranges);
     check_host_integers(instance);
     grow_scheduler(scheduler_size(instance));
     CachedGraph cached{
-        .key_extents = key_extents, .instance = std::move(instance)};
+        .key_ranges = key_ranges, .instance = std::move(instance)};
     for (const InputSlot& input : inputs_) {
       cached.input_sizes.push_back(input.sizes);
     }
@@ -2153,8 +2179,9 @@ class GgmlExecutable final : public EngineExecutable {
 
   GraphBuilder graph_builder(
       std::unordered_map<ValueId, int64_t> truncated,
+      std::unordered_map<ValueId, int64_t> key_starts = {},
       const OffGraphCacheBinding* offgraph_cache = nullptr);
-  GraphInstance build_graph(const std::vector<int64_t>& key_extents);
+  GraphInstance build_graph(const KeyRanges& key_ranges);
 
   static std::optional<int64_t> static_dim(const TensorMeta& meta, size_t i) {
     if (i >= meta.sizes.size() ||
@@ -2334,7 +2361,7 @@ class GgmlExecutable final : public EngineExecutable {
       if (!match_mask_extent(mask_id, extent, compares)) {
         continue;
       }
-      extent.masks.push_back(std::move(compares));
+      extent.masks.emplace_back(mask_id, std::move(compares));
       // Every chain value ends in its group's keys, so groups that share a
       // value agree on them.
       for (std::optional<MaskExtent>& group : groups) {
@@ -2343,7 +2370,7 @@ class GgmlExecutable final : public EngineExecutable {
             })) {
           continue;
         }
-        for (std::vector<KeyCompare>& mask : group->masks) {
+        for (auto& mask : group->masks) {
           extent.masks.push_back(std::move(mask));
         }
         for (const ValueId id : group->chain) {
@@ -2362,11 +2389,13 @@ class GgmlExecutable final : public EngineExecutable {
     }
   }
 
-  std::vector<int64_t> full_key_extents() const {
-    std::vector<int64_t> out(mask_extents_.size());
-    std::ranges::transform(mask_extents_, out.begin(), &MaskExtent::keys);
+  KeyRanges full_key_ranges() const {
+    KeyRanges out;
+    out.extents.resize(mask_extents_.size());
+    std::ranges::transform(
+        mask_extents_, out.extents.begin(), &MaskExtent::keys);
     if (valid(offgraph_position_)) {
-      out.push_back(offgraph_storage_->rows);
+      out.extents.push_back(offgraph_storage_->rows);
     }
     return out;
   }
@@ -2379,34 +2408,38 @@ class GgmlExecutable final : public EngineExecutable {
         host_static_values_);
   }
 
-  std::vector<int64_t> evaluate_key_extents() {
+  KeyRanges evaluate_key_ranges() {
     if (mask_extents_.empty() && !valid(offgraph_position_)) {
-      return full_key_extents();
+      return full_key_ranges();
     }
     HostIntEvaluator host = host_evaluator();
-    std::vector<int64_t> out;
+    KeyRanges out;
     for (const MaskExtent& extent : mask_extents_) {
       // A mask attends the keys its every comparison attends.
       int64_t widest = 0;
-      for (const std::vector<KeyCompare>& mask : extent.masks) {
-        int64_t attended = extent.keys;
-        for (const KeyCompare& compare : mask) {
+      for (const auto& [mask_id, compares] : extent.masks) {
+        KeyRange attended{.start = 0, .end = extent.keys};
+        for (const KeyCompare& compare : compares) {
           const HostInts* key_index = host.tensor(compare.key_operand);
           const HostInts* query = host.tensor(compare.query_operand);
           if (key_index != nullptr && query != nullptr) {
-            attended = std::min(
-                attended,
-                attended_key_extent(compare, extent.keys, *key_index, *query));
+            const KeyRange range =
+                attended_keys(compare, extent.keys, *key_index, *query);
+            attended.start = std::max(attended.start, range.start);
+            attended.end = std::min(attended.end, range.end);
           }
         }
-        widest = std::max(widest, attended);
+        widest = std::max(widest, attended.end);
+        if (attended.start > 0 && attended.start < attended.end) {
+          out.starts.emplace(mask_id, attended.start);
+        }
       }
-      out.push_back(widest);
+      out.extents.push_back(widest);
     }
     if (valid(offgraph_position_)) {
       // The cache rows the step reads, bucketed like masks.
       const int64_t needed = offgraph_step_->rows;
-      out.push_back(std::min<int64_t>(
+      out.extents.push_back(std::min<int64_t>(
           offgraph_storage_->rows,
           (needed + kKeyExtentBucket - 1) / kKeyExtentBucket *
               kKeyExtentBucket));
@@ -2470,8 +2503,8 @@ class GgmlExecutable final : public EngineExecutable {
            .ring = layer.ring});
     }
     if (worst_case_) {
-      worst_case_ = std::make_shared<const GraphInstance>(
-          build_graph(full_key_extents()));
+      worst_case_ =
+          std::make_shared<const GraphInstance>(build_graph(full_key_ranges()));
       state_.reserved.push_back(worst_case_);
       reserve(*worst_case_);
     }
@@ -2842,6 +2875,7 @@ class GgmlExecutable final : public EngineExecutable {
 
 GraphBuilder GgmlExecutable::graph_builder(
     std::unordered_map<ValueId, int64_t> truncated,
+    std::unordered_map<ValueId, int64_t> key_starts,
     const OffGraphCacheBinding* offgraph_cache) {
   return GraphBuilder(
       method_,
@@ -2852,6 +2886,7 @@ GraphBuilder GgmlExecutable::graph_builder(
       rope_factors_,
       batch_norms_,
       std::move(truncated),
+      std::move(key_starts),
       options_.graph_size,
       options_.device == GgmlDevice::Gpu,
       options_.exact_topk_for_testing,
@@ -2860,23 +2895,23 @@ GraphBuilder GgmlExecutable::graph_builder(
       offgraph_cache);
 }
 
-GraphInstance GgmlExecutable::build_graph(
-    const std::vector<int64_t>& key_extents) {
+GraphInstance GgmlExecutable::build_graph(const KeyRanges& key_ranges) {
   std::unordered_map<ValueId, int64_t> truncated;
   for (size_t i = 0; i < mask_extents_.size(); ++i) {
-    if (key_extents.at(i) < mask_extents_[i].keys) {
+    if (key_ranges.extents.at(i) < mask_extents_[i].keys) {
       for (const ValueId id : mask_extents_[i].chain) {
-        truncated.emplace(id, key_extents[i]);
+        truncated.emplace(id, key_ranges.extents.at(i));
       }
     }
   }
   OffGraphCacheBinding offgraph_cache = offgraph_cache_;
   if (valid(offgraph_position_)) {
-    offgraph_cache.keys = key_extents.back();
+    offgraph_cache.keys = key_ranges.extents.back();
   }
   GraphInstance instance =
       graph_builder(
           std::move(truncated),
+          key_ranges.starts,
           valid(offgraph_position_) ? &offgraph_cache : nullptr)
           .build();
   // Boundability without a per-run check: shapes are part of a graph's key,
