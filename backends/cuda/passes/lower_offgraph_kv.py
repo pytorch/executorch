@@ -23,7 +23,6 @@ from torch.export import ExportedProgram
 from torch.export.graph_signature import InputKind
 from torch.fx.experimental.proxy_tensor import make_fx
 
-
 OFFGRAPH_KV_COMPILE_SPEC = "offgraph_kv_manifest"
 # Consumed by the runtime, not by this pass: "input_index:dim" naming
 # the input whose extent is the number of tokens a step writes.

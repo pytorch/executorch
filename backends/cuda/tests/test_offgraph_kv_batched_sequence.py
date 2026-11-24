@@ -19,7 +19,6 @@ import unittest
 
 import torch
 import torch.nn.functional as F
-
 from executorch.backends.cuda.passes.lower_offgraph_kv import (
     batched_sequence_step,
     CheckOffGraphKVStepWidthPass,

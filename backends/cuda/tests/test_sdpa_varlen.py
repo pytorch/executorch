@@ -9,7 +9,6 @@ import unittest
 
 import torch
 import torch.nn.functional as F
-
 from executorch.backends.cuda.triton.kernels.sdpa_varlen import sdpa_varlen
 from executorch.examples.models.muse_glimmer.model.dflash_model import (
     build_dflash_swa_mask,

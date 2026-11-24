@@ -6,6 +6,7 @@
 
 import re
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -34,6 +35,7 @@ class MuseGlimmerBatchingCITest(unittest.TestCase):
         self.assertIn("tests/check_runtime_kv_columns.py", job)
         self.assertIn("make muse-glimmer-batching-cuda", job)
 
+    @unittest.skipIf(sys.platform == "win32", "Linux workflow requires POSIX make")
     def test_documented_make_target_uses_the_cpu_count(self):
         result = subprocess.run(
             ["make", "-n", "muse-glimmer-batching-cuda"],
@@ -45,6 +47,7 @@ class MuseGlimmerBatchingCITest(unittest.TestCase):
         self.assertIn('--parallel "$(nproc)"', result.stdout)
         self.assertNotIn('--parallel ""', result.stdout)
 
+    @unittest.skipIf(sys.platform == "win32", "Linux workflow requires POSIX paths")
     def test_cache_ci_guard_rejects_skipped_cases(self):
         workflow = (ROOT / ".github/workflows/cuda.yml").read_text()
         marker = '        if grep -q "SKIPPED" /tmp/test_cuda_kv_cache.log; then'
