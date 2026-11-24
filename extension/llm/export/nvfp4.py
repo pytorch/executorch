@@ -209,7 +209,13 @@ def _exportable_nvfp4_transform(module: nn.Module, config: ExportableNVFP4Config
     per_tensor_scale = None
     if config.use_per_tensor_scale:
         tensor_amax = torch.max(torch.abs(weight))
-        per_tensor_scale = per_tensor_amax_to_scale(tensor_amax)
+        # A zero global scale (all-zero weight) would turn every block scale
+        # into 0/0 = NaN; a unit one packs the weight as exact zeros.
+        per_tensor_scale = torch.where(
+            tensor_amax > 0,
+            per_tensor_amax_to_scale(tensor_amax),
+            torch.ones_like(tensor_amax),
+        )
 
     scales_fp8, qdata_packed = nvfp4_quantize(
         weight, block_size=16, per_tensor_scale=per_tensor_scale

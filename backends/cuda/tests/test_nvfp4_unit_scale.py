@@ -17,7 +17,10 @@ from executorch.backends.cuda.quantize_op_dispatch.nvfp4_dispatch import (
     _has_native_fp4,
     _MODE_STRIDE,
 )
-from executorch.backends.cuda.tests.nvfp4_test_utils import portable_weight as weight
+from executorch.backends.cuda.tests.nvfp4_test_utils import (
+    portable_weight as weight,
+    sweep,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -33,11 +36,12 @@ CUDA = pytest.mark.skipif(
 
 @CUDA
 @pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16])
-@pytest.mark.parametrize("half2", [False, True])
 @pytest.mark.parametrize("row_pts", [False, True])
-@pytest.mark.parametrize("split", [1, 2, 4, 8, 16, 32])
-def test_unit_scale_gemv_bitwise_same_tile(dtype, half2, row_pts, split):
-    if not _has_native_fp4():
+@pytest.mark.parametrize("split", sweep([1, 2, 4, 8, 16, 32], [1, 8]))
+# _gemv takes the HALF2 body only with NATIVE.
+@pytest.mark.parametrize("native,half2", [(False, False), (True, False), (True, True)])
+def test_unit_scale_gemv_bitwise_same_tile(native, half2, dtype, row_pts, split):
+    if native and not _has_native_fp4():
         pytest.skip("native FP4 required")
     from executorch.backends.cuda.triton.kernels.nvfp4_quantized_gemm import _gemv
 
@@ -45,7 +49,10 @@ def test_unit_scale_gemv_bitwise_same_tile(dtype, half2, row_pts, split):
     m, n, k = 4, 70, 4224
     x = torch.randn(m, k, device="cuda", dtype=dtype) * 0.0625
     q = torch.randint(0, 256, (n, k // 2), device="cuda", dtype=torch.uint8)
-    s = torch.randint(0, 127, (n, k // 16), device="cuda", dtype=torch.uint8)
+    # Every finite scale byte, negative ones included (unit scale is exact
+    # whatever the sign).
+    s = torch.randint(0, 256, (n, k // 16), device="cuda", dtype=torch.uint8)
+    s[(s & 0x7F) == 0x7F] -= 1
     pts = torch.ones(n if row_pts else 1, device="cuda")
     old = torch.empty(
         (split, m, n), device="cuda", dtype=torch.float32 if split > 1 else dtype
@@ -64,8 +71,7 @@ def test_unit_scale_gemv_bitwise_same_tile(dtype, half2, row_pts, split):
             split,
             BN=8,
             BK=256,
-            NATIVE=True,
-            NATIVE_E4M3=True,
+            NATIVE=native,
             HALF2=half2,
             ROW_PTS=row_pts,
             UNIT_SCALE=unit,
@@ -119,8 +125,6 @@ def test_unit_scale_linear_pte(mode, monkeypatch):
 
     def capture(kernel, *args, **kwargs):
         if kernel is kernels._gemv:
-            # The launcher builds the decode the device supports natively.
-            assert kwargs.get("NATIVE_E4M3") == kernels._has_native_e4m3()
             observed.append(kwargs["UNIT_SCALE"])
         return original(kernel, *args, **kwargs)
 
