@@ -1201,13 +1201,17 @@ def main() -> None:
     parser.add_argument("--max-draft-owners", type=int, default=4)
     from executorch.examples.models.muse_glimmer.export.export_solo import (
         add_kv_layout_arguments,
+        add_nvfp4_act_argument,
+        apply_nvfp4_act_argument,
     )
 
     add_kv_layout_arguments(parser)
     parser.add_argument("--forward-sizes", default="1,2,4,8,16,32,64")
+    add_nvfp4_act_argument(parser)
     args = parser.parse_args()
     logging.basicConfig()
     logging.getLogger("executorch.backends.cuda.cuda_backend").setLevel(logging.INFO)
+    apply_nvfp4_act_argument(parser, args)
 
     try:
         validate_dflash_export_options(args.backend, args.use_offgraph_kv_cache)

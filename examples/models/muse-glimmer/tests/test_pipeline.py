@@ -661,8 +661,13 @@ _GGUF_Q6_LAYERS = {
 _GGUF_Q6_OUTPUT = True
 
 
-def build_muse_glimmer_gguf(path: str, config: MuseGlimmerConfig = GGUF_CONFIG) -> None:
+def build_muse_glimmer_gguf(
+    path: str, config: MuseGlimmerConfig = GGUF_CONFIG, nvfp4_ffn: bool = False
+) -> None:
     """Write a tiny Muse Glimmer GGUF with mixed Q4_K/Q6_K to exercise bit-width routing.
+
+    ``nvfp4_ffn`` writes ``ffn_gate/up`` as NVFP4 with different ``.scale``
+    companions.
 
     Layout mirrors a real Muse Glimmer GGUF: separate ``attn_q/k/v/output_gate`` and
     ``ffn_gate/up`` shards (fused only inside the model), plus ``ffn_down``,
@@ -726,6 +731,16 @@ def build_muse_glimmer_gguf(path: str, config: MuseGlimmerConfig = GGUF_CONFIG) 
             ("ffn_up", ffn),
         ):
             blob, dt = q4(n, seed)
+            if nvfp4_ffn and leaf.startswith("ffn_"):
+                g = torch.Generator().manual_seed(seed)
+                raw = torch.randint(
+                    0, 256, (n, dim // 64, 36), dtype=torch.uint8, generator=g
+                )
+                raw[..., :4] = 0x38
+                blob, dt = raw.reshape(n, -1).numpy(), gguf.GGMLQuantizationType.NVFP4
+                # Different gate/up scales: the fused weight has per-row ones.
+                scale = 0.5 if leaf == "ffn_gate" else 0.25
+                writer.add_tensor(f"blk.{i}.{leaf}.scale", f32(1) * scale)
             seed += 1
             writer.add_tensor(f"blk.{i}.{leaf}.weight", blob, raw_dtype=dt)
         # Standalone shards with per-layer bit-width.

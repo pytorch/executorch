@@ -407,3 +407,29 @@ export.
 For direct HTTP requests, the opt-out is
 `"chat_template_kwargs": { "return_reasoning": false }`. The flag must be a JSON
 boolean; strings, numbers, and `null` return a 400 error.
+
+## NVFP4 GGUF on CUDA
+
+NVFP4 (GGML type 40) GGUF weights are paired with their `.scale` (and
+`.input_scale`) companions by tensor name, losslessly repacked, and packed for
+the CUDA NVFP4 kernels at export time. Q/K/O-gate and gate/up projections are
+fused.
+
+```bash
+python -m executorch.examples.models.muse_glimmer.export.export_solo \
+  --backend cuda --gguf /path/to/model-nvfp4.gguf \
+  --output-dir /path/to/export --max-seq-len 131072 --nvfp4-act auto
+```
+
+`--nvfp4-act` (also accepted by `export_dflash`) sets `ET_CUDA_NVFP4_ACT`:
+`auto` times NVFP4 (W4A4) against BF16 (W4A16) activations per shape at export
+time where native FP4 is available (SM120), `w4a4` forces NVFP4 activations
+(SM120 required), and `w4a16` forces BF16 activations. The choice is compiled
+into each exported method. `--nvfp4-static-act` (`export_solo` only) uses the checkpoint's
+`.input_scale` as a static activation scale; by default activations are scaled
+per row, as llama.cpp does. A fused group whose shards carry different
+`.input_scale` values stays unfused in every layer.
+
+The converter follows llama.cpp's bit patterns, including positive zero for
+FP4 code 8. It rejects GGML scale byte `0xff`: llama.cpp decodes that byte as
+480, which cannot be represented losslessly by a finite E4M3 scale.
