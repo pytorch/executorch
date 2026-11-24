@@ -13,6 +13,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <unordered_set>
 #include <utility>
 
 #include <ggml.h>
@@ -130,8 +131,13 @@ void GraphBuilder::lower_cast(const Node& node) {
 }
 
 void GraphBuilder::lower_binary(const Node& node, const std::string& key) {
-  const TensorRef left = tensor_arg(node, "self", 0);
   const NamedArgument& rhs_arg = require_arg(node, "other", 1);
+  // ggml's binary kernels read the right operand at any strides and the left
+  // one at any outer strides; a scalar right operand needs ggml_scale's
+  // contiguous input.
+  const TensorRef left = rhs_arg.arg.kind() == ArgKind::Tensor
+      ? rows_arg(node, "self", 0)
+      : tensor_arg(node, "self", 0);
   if (float_arg(node, "alpha", 2, 1.0, true) != 1.0) {
     throw std::runtime_error("ggml: add/sub alpha must be one");
   }
@@ -140,7 +146,7 @@ void GraphBuilder::lower_binary(const Node& node, const std::string& key) {
   std::vector<int64_t> sizes = left.sizes;
   if (rhs_arg.arg.kind() == ArgKind::Tensor) {
     BinaryOperands operands = tensor_operands(
-        left, tensor(rhs_arg.arg.as_tensor().id), /*force_f32=*/false);
+        left, view(rhs_arg.arg.as_tensor().id), /*force_f32=*/false);
     ggml_tensor* lhs = operands.lhs;
     ggml_tensor* right = operands.rhs;
     sizes = std::move(operands.sizes);
@@ -215,7 +221,21 @@ void GraphBuilder::require_float(const Node& node, const ggml_tensor* tensor) {
 }
 
 void GraphBuilder::lower_unary(const Node& node, Unary fn) {
-  const TensorRef input = tensor_arg(node, "self", 0);
+  // ggml's GGML_OP_UNARY kernels read rows at any outer strides but the
+  // first; other ops get a contiguous input.
+  static const std::unordered_set<Unary> kStrided = {
+      ggml_abs,
+      ggml_exp,
+      ggml_neg,
+      ggml_relu,
+      ggml_sigmoid,
+      ggml_silu,
+      ggml_tanh};
+  const ValueId id = tensor_arg_id(node, "self", 0);
+  TensorRef input = view(id);
+  if (!kStrided.contains(fn) || !ggml_is_contiguous_1(input.tensor)) {
+    input = tensor(id);
+  }
   require_float(node, input.tensor);
   set_single_output(
       node, TensorRef{fn(instance_.context.get(), input.tensor), input.sizes});

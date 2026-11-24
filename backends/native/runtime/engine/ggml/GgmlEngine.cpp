@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -139,7 +140,7 @@ struct GgmlEngineContext::Impl {
   size_t materialized_constant_bytes = 0;
   size_t heap_copied_constant_bytes = 0;
   size_t f16_kv_cache_bytes = 0;
-  GgmlMutableKeyOwners mutable_key_owners;
+  GgmlContextState state;
 };
 
 GgmlEngineContext::GgmlEngineContext(
@@ -152,21 +153,68 @@ GgmlEngineContext::GgmlEngineContext(
       impl_(std::make_unique<Impl>(
           std::move(options),
           std::move(cache),
-          kv_cache)) {}
+          kv_cache)) {
+  // A method that only reads a key another method writes still binds the
+  // shared storage.
+  for (const std::string& name : this->program().method_names()) {
+    const Method& method = this->program().get_method(name);
+    impl_->state.methods.push_back(&method);
+    for (const DataBinding& binding : method.data_bindings) {
+      if (binding.mutated && !binding.key.empty()) {
+        impl_->state.keys.insert(binding.key);
+      }
+    }
+  }
+}
 
-GgmlEngineContext::~GgmlEngineContext() = default;
+GgmlEngineContext::~GgmlEngineContext() {
+  if (impl_->options.print_memory) {
+    print_memory("at exit");
+  }
+}
 
 std::unique_ptr<EngineExecutable> GgmlEngineContext::compile_method(
     const Method& method) {
-  return make_ggml_executable(
+  std::unique_ptr<EngineExecutable> executable = make_ggml_executable(
       method,
       package(),
       impl_->options,
       &impl_->materialized_constant_bytes,
       &impl_->heap_copied_constant_bytes,
       &impl_->f16_kv_cache_bytes,
-      impl_->mutable_key_owners,
+      impl_->state,
       impl_->kv_cache);
+  if (impl_->options.print_memory) {
+    print_memory("after compiling " + method.name);
+  }
+  return executable;
+}
+
+void GgmlEngineContext::print_memory(const std::string& when) const {
+  ggml_backend_dev_t device = impl_->options.device == GgmlDevice::Gpu
+      ? select_ggml_gpu_device(impl_->options)
+      : ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+  size_t free = 0;
+  size_t total = 0;
+  ggml_backend_dev_memory(device, &free, &total);
+  std::fprintf(
+      stderr,
+      "ggml memory %s: constants %zu bytes, compute %zu bytes in %zu "
+      "allocations, device %zu of %zu bytes free\n",
+      when.c_str(),
+      impl_->materialized_constant_bytes,
+      impl_->state.compute_buffer_bytes,
+      impl_->state.compute_buffer_allocations,
+      free,
+      total);
+}
+
+size_t GgmlEngineContext::compute_buffer_bytes() const {
+  return impl_->state.compute_buffer_bytes;
+}
+
+size_t GgmlEngineContext::compute_buffer_allocations() const {
+  return impl_->state.compute_buffer_allocations;
 }
 
 size_t GgmlEngineContext::materialized_constant_bytes() const {

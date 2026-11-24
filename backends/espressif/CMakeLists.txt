@@ -6,6 +6,7 @@
 
 idf_component_register(
   SRCS
+  "ops/op_quantized_lut.cpp"
   "ops/op_quantized_mul.cpp"
   "ops/op_quantized_mul_broadcast.cpp"
   "ops/op_quantized_add.cpp"

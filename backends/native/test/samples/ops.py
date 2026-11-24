@@ -10,6 +10,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from executorch.backends.native.test.samples import (
+    attention,
     core_ops,
     elu,
     embedding,
@@ -48,4 +49,11 @@ def ops() -> dict[str, Op]:
         "repeat_interleave": Op(core_ops.repeat_interleave_cases),
         "gdn": Op(gdn.cases, dtypes=("f32",)),
         "moe": Op(moe.cases, dtypes=("f32",)),
+        "le": Op(attention.le_cases),
+        "lt": Op(attention.lt_cases),
+        "ge": Op(attention.ge_cases),
+        "index_put": Op(attention.index_put_cases, dtypes=("f32",)),
+        "sdpa": Op(attention.sdpa_cases, dtypes=("f32",)),
+        "sdpa_grouped": Op(attention.sdpa_grouped_cases, dtypes=("f32", "f16")),
+        "rms_norm": Op(core_ops.rms_norm_cases, dtypes=("f32",)),
     }

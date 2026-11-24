@@ -112,6 +112,14 @@ def parse_offgraph_kv_manifest(value: bytes) -> dict[str, Any]:  # noqa: C901
             raise ValueError("off-graph context_window must be a bool")
         if manifest["context_window"] and manifest["causal"]:
             raise ValueError("off-graph context_window requires non-causal attention")
+        if not isinstance(manifest.setdefault("symmetric_window", False), bool):
+            raise ValueError("off-graph symmetric_window must be a bool")
+        if manifest["symmetric_window"] and (
+            manifest["causal"] or manifest["context_window"]
+        ):
+            raise ValueError(
+                "off-graph symmetric_window requires non-causal per-query attention"
+            )
     if layout == "cell":
         # A cell step packs tokens of several sequences into the shared pool,
         # so the pool bounds its width, not one sequence's capacity.
@@ -297,6 +305,7 @@ def batched_sequence_step(
     causal: bool,
     out_dtype: torch.dtype | None = None,
     context_window: bool = False,
+    symmetric_window: bool = False,
 ) -> torch.Tensor:
     """Write this step's K/V into each sequence's column, then attend.
 
@@ -310,7 +319,8 @@ def batched_sequence_step(
     ``seq_cols`` is declared at the widest step; writes use the first
     K/V-width entries. ``k``/``v`` are BHSD; the storage is BSHD.
     ``context_window`` gives every draft block query the same retained context
-    before the block; ordinary attention uses each query's own window.
+    before the block; ``symmetric_window`` uses strict per-query distance as in
+    DFlash. Ordinary attention uses each query's own past-window bound.
     """
     position = position.reshape(-1)
     slots = (position % rows) * columns + seq_cols[: k.shape[2]]
@@ -327,6 +337,7 @@ def batched_sequence_step(
         window,
         rows if ring else 0,
         context_window=context_window,
+        symmetric_window=symmetric_window,
     )
     if out_dtype is not None and out.dtype != out_dtype:
         out = out.to(out_dtype)
@@ -342,6 +353,7 @@ def _batched_sequence_step_fn(
     causal: bool,
     out_dtype,
     context_window: bool = False,
+    symmetric_window: bool = False,
 ):
     def fn(q, k, v, position, k_storage, v_storage, seq_cols, seq_info):
         return batched_sequence_step(
@@ -361,6 +373,7 @@ def _batched_sequence_step_fn(
             causal,
             out_dtype,
             context_window,
+            symmetric_window,
         )
 
     return fn
@@ -753,6 +766,7 @@ class LowerOffGraphKVPass:
             self._manifest["causal"],
             out_dtype,
             self._manifest.get("context_window", False),
+            self._manifest.get("symmetric_window", False),
         )
         return fn, call_args, example_args
 
