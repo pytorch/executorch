@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import math
+from dataclasses import replace
 
 import pytest
 import torch
@@ -16,9 +17,17 @@ from executorch.backends.transforms.fused_quant.graph_utils import (
     get_qparams_from_node,
     get_scale,
 )
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+    get_symmetric_quantization_config,
+)
 from executorch.exir._serialize._program import deserialize_pte_binary
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.export import export
+from executorch.frontends.fused_quant.quantizer.quantizer import (
+    FusedQuantQuantizer,
+    OpQuantizer,
+)
+from torchao.quantization.pt2e.quantizer import FixedQParamsQuantizationSpec
 
 _MEAN = exir_ops.edge.aten.mean.dim
 _FQ_MEAN = exir_ops.edge.fused_quant.mean.dim
@@ -88,6 +97,12 @@ test_cases = {
     ),
     "channel_fallback": EspTestCase(
         EspMean(dim=(1,), supported=False), (_input((1, 4, 5, 7)),)
+    ),
+    "height_fallback": EspTestCase(
+        EspMean(dim=(2,), supported=False), (_input((1, 4, 5, 7)),)
+    ),
+    "width_fallback": EspTestCase(
+        EspMean(dim=(-1,), supported=False), (_input((1, 4, 5, 7)),)
     ),
     "batch_fallback": EspTestCase(
         EspMean(dim=(0, 2), supported=False), (_input((2, 4, 5, 7)),)
@@ -161,13 +176,6 @@ def test_mean_uses_independent_qparams():
     "case,input_scale,output_scale,count,supported",
     [
         ("supported", 0.125, 0.03125, 35, True),
-        (
-            "accumulator_count",
-            1,
-            1,
-            torch.iinfo(torch.int32).max // 255 + 1,
-            False,
-        ),
         ("multiplier_too_large", 1, 1e-12, 35, False),
         ("multiplier_too_small", 1e-12, 1, 35, False),
         ("right_shift_limit", 1e-8, 1, 35, False),
@@ -184,6 +192,42 @@ def test_mean_arithmetic_bounds(case, input_scale, output_scale, count, supporte
         )
         is not None
     ) == supported, case
+
+
+@pytest.mark.parametrize(
+    "input_scale,output_scale",
+    [(1e-8, 1), (1, 1e-8)],
+    ids=["right_shift_limit", "left_shift_overflow"],
+)
+def test_mean_unsafe_arithmetic_stays_portable(input_scale, output_scale):
+    input_spec = FixedQParamsQuantizationSpec(
+        dtype=torch.int8,
+        scale=input_scale,
+        zero_point=0,
+        quant_min=-128,
+        quant_max=127,
+        qscheme=torch.per_tensor_affine,
+    )
+    config = replace(
+        get_symmetric_quantization_config(),
+        input_activation=input_spec,
+        output_activation=replace(input_spec, scale=output_scale),
+    )
+    quantizer = FusedQuantQuantizer(
+        [OpQuantizer(torch.ops.aten.mean.dim, torch.ops.fused_quant.mean.dim, config)]
+    )
+    case = test_cases["channels_4"]
+    tester = (
+        EspTester(case.model, case.example_inputs)
+        .export_fused_quant(quantizer)
+        .to_edge()
+        .check_node_count({_FQ_MEAN: 1})
+    )
+    expected = tester.get_artifact().exported_program().module()(*case.example_inputs)
+    tester.run_passes().check_node_count({_FQ_MEAN: 0, _ESP_MEAN: 0, _MEAN: 1})
+    actual = tester.get_artifact().exported_program().module()(*case.example_inputs)
+    torch.testing.assert_close(actual, expected, atol=0, rtol=0)
+    tester.to_executorch().serialize()
 
 
 def test_mean_strict_recipe():

@@ -50,6 +50,14 @@ Tensor& quantized_mean_int8_out(
           static_cast<size_t>(batches) <= out.nbytes() / channels,
       InvalidArgument,
       out);
+  ET_KERNEL_CHECK(
+      ctx,
+      esp_nn_get_mean_scratch_size(
+          static_cast<int32_t>(height),
+          static_cast<int32_t>(width),
+          static_cast<int32_t>(channels)) == 0,
+      InvalidArgument,
+      out);
   for (int64_t batch = 0; batch < batches; ++batch) {
     esp_nn_mean_nhwc_s8(
         input.const_data_ptr<int8_t>() + batch * input_bytes,

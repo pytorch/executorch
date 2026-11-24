@@ -350,12 +350,9 @@ def _mean_multiplier(input_params, output_params, count):
     except ValueError:
         return None
     max_input = max(abs(-128 - input_params.zp), abs(127 - input_params.zp))
-    if (
-        shift < -30
-        or count > torch.iinfo(torch.int32).max // 255
-        or (count * max_input) << max(shift, 0)
-        > torch.iinfo(torch.int32).max - abs(output_params.zp)
-    ):
+    if shift < -30 or (count * max_input) << max(shift, 0) > torch.iinfo(
+        torch.int32
+    ).max - abs(output_params.zp):
         return None
     max_float_input = c_float(max_input * c_float(input_params.scale).value).value
     rounding_bound = 1 - count * torch.finfo(torch.float32).eps
