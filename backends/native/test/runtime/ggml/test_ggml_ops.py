@@ -490,11 +490,13 @@ def _run_ggml(  # noqa: C901
     f32_gpu_kv_cache_for_testing: bool = False,
     fold_constants: bool = True,
     constant_bytes: list[int] | None = None,
+    memory: list[tuple[str, int, int]] | None = None,
 ):
     """Runs each step's inputs in order on one executable and returns each
     step's outputs as (bytes, shape) pairs. `graph_ops`, if given, collects
     the built graphs' node counts per ggml op; `constant_bytes`, the context's
-    constant bytes after each method's compile."""
+    constant bytes after each method's compile; `memory`, the context's compute
+    buffer bytes and allocations after each compile and at exit."""
     input_steps, output_steps = [], []
     for step, inputs in enumerate(steps):
         input_paths = []
@@ -532,7 +534,7 @@ def _run_ggml(  # noqa: C901
         command.append("--f32_gpu_kv_cache_for_testing")
     if not fold_constants:
         command.append("--nofold_constants")
-    if constant_bytes is not None:
+    if constant_bytes is not None or memory is not None:
         command.append("--print_memory")
     with as_file(files(__package__) / "ggml_ptn_runner") as runner:
         result = subprocess.run(
@@ -550,6 +552,12 @@ def _run_ggml(  # noqa: C901
             graph_ops.update(
                 {op: int(n) for op, n in (item.split("=") for item in line.split()[3:])}
             )
+    for line in result.stderr.splitlines() if memory is not None else []:
+        if match := re.match(
+            r"ggml memory (.+): constants \d+ bytes, compute (\d+) bytes in (\d+)",
+            line,
+        ):
+            memory.append((match.group(1), int(match.group(2)), int(match.group(3))))
     for line in result.stderr.splitlines() if constant_bytes is not None else []:
         if match := re.match(r"ggml memory after compiling \S+: constants (\d+)", line):
             constant_bytes.append(int(match.group(1)))
@@ -2818,6 +2826,50 @@ class GgmlOpsTest(unittest.TestCase):
         )
         self.assertEqual(ops["CONT"], 0)
 
+    def test_cached_graph_replays_after_another_methods_split(self):
+        # On a GPU, attention with head size 32 runs on the CPU backend, so
+        # ggml's scheduler splits each graph and points the attention at
+        # copies of its inputs that it owns. The context's one scheduler
+        # splits "short" between two calls of "long", whose cached graph must
+        # still compute what a fresh graph does.
+        model = Lambda(
+            lambda q, k, v: F.scaled_dot_product_attention(q * 2.0, k, v) + 1.0
+        )
+        kv = (torch.randn(1, 4, 16, 32), torch.randn(1, 4, 16, 32))
+        examples = {
+            "long": (torch.randn(1, 4, 8, 32), *kv),
+            "short": (torch.randn(1, 4, 1, 32), *kv),
+        }
+        names = ["long", "short", "long", "short", "long"]
+        steps = [examples[name] for name in names]
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            package = outdir / "attention.ptn"
+            to_native(
+                {
+                    name: torch.export.export(model, inputs)
+                    for name, inputs in examples.items()
+                }
+            ).save(str(package))
+            fresh, cached = (
+                _run_ggml(
+                    package,
+                    steps,
+                    outdir,
+                    1,
+                    method=";".join(names),
+                    max_cached_graphs=graphs,
+                )
+                for graphs in (0, 2)
+            )
+        self.assertEqual(cached, fresh)
+        with torch.no_grad():
+            for ((raw, shape),), inputs in zip(cached, steps):
+                actual = torch.frombuffer(bytearray(raw), dtype=torch.float32)
+                torch.testing.assert_close(
+                    actual.reshape(shape), model(*inputs), **_MATMUL_TOL
+                )
+
     def test_index_put_reads_transposed_values_without_copies(self):
         ops = collections.Counter()
         self._check(
@@ -3532,6 +3584,73 @@ class GgmlQwen35Test(unittest.TestCase):
         self.assertEqual(len(constant_bytes), 2)
         self.assertEqual(constant_bytes[1], constant_bytes[0])
         self.assertLess(constant_bytes[0], 2 * weights)
+
+    def test_methods_share_one_compute_buffer(self):
+        # forward and prefill reserve the context's compute buffers at
+        # compile; calls on either, at any size, allocate no more.
+        model = self._model()
+        tokens = torch.randint(0, 128, (140,))
+        calls = [(0, 64), (64, 1), (0, 8), (8, 1), (9, 2), (0, 64)]
+        steps, methods, start = [], [], 0
+        for position, size in calls:
+            steps.append(
+                (
+                    tokens[start : start + size].view(1, size),
+                    torch.arange(position, position + size),
+                )
+            )
+            methods.append("forward" if size == 1 else "prefill")
+            start += size
+        with native_gdn_rules(model), torch.no_grad():
+            wrapper = LastTokenLM(model, 128).eval()
+            one = (
+                torch.zeros(1, 1, dtype=torch.long),
+                torch.zeros(1, dtype=torch.long),
+            )
+            programs = {
+                "forward": torch.export.export(wrapper, one, strict=True),
+                "prefill": export_prefill(wrapper, 64),
+            }
+        memory = []
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            package = outdir / "tiny_qwen35.ptn"
+            to_native(programs).save(str(package))
+            outputs = _run_ggml(
+                package,
+                steps,
+                outdir,
+                1,
+                resize=True,
+                method=";".join(methods),
+                memory=memory,
+            )
+            # Cached graphs, laid out again in the shared buffers after the
+            # other method's, must compute what fresh graphs do.
+            fresh = _run_ggml(
+                package,
+                steps,
+                outdir,
+                1,
+                resize=True,
+                method=";".join(methods),
+                max_cached_graphs=0,
+            )
+            cached = _run_ggml(
+                package,
+                steps,
+                outdir,
+                1,
+                resize=True,
+                method=";".join(methods),
+                max_cached_graphs=4,
+            )
+        self.assertEqual(len(outputs), len(steps))
+        self.assertEqual(cached, fresh)
+        self.assertEqual([when for when, _, _ in memory][-1], "at exit")
+        compiled = memory[-2]
+        self.assertGreater(compiled[1], 0)
+        self.assertEqual(memory[-1][1:], compiled[1:])
 
     def _model(self):
         torch.manual_seed(5)

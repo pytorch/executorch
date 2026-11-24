@@ -189,8 +189,13 @@ class GgmlExecutable final : public EngineExecutable {
     if (heap_copied_constant_bytes != nullptr) {
       *heap_copied_constant_bytes += heap_copied_constant_bytes_;
     }
-    // Rejects unsupported ops and shapes at compile time.
-    check_host_integers_boundable(build_graph(full_key_extents()));
+    // Rejects unsupported ops and shapes at compile time, and sizes the
+    // context's compute buffers for the largest inputs and key extents.
+    worst_case_ =
+        std::make_shared<const GraphInstance>(build_graph(full_key_extents()));
+    state_.reserved.push_back(worst_case_);
+    check_host_integers_boundable(*worst_case_);
+    reserve(*worst_case_);
     // Only a compiled executable has initialized its fresh storage.
     for (auto& [key, storage] : fresh_state_) {
       state_.storage.emplace(key, std::move(storage));
@@ -199,12 +204,10 @@ class GgmlExecutable final : public EngineExecutable {
   }
 
   ~GgmlExecutable() override {
-    for (CachedGraph& cached : cached_graphs_) {
-      ggml_backend_sched_synchronize(cached.scheduler.get());
-    }
-    if (scheduler_) {
-      ggml_backend_sched_synchronize(scheduler_.get());
-      ggml_backend_sched_reset(scheduler_.get());
+    if (state_.scheduler) {
+      ggml_backend_sched_synchronize(state_.scheduler.get());
+      ggml_backend_sched_reset(state_.scheduler.get());
+      state_.allocated = nullptr;
     }
   }
 
@@ -291,31 +294,24 @@ class GgmlExecutable final : public EngineExecutable {
       if (options_.max_cached_graphs == 0) {
         GraphInstance instance = build_graph(evaluate_key_extents());
         check_host_integers(instance);
-        if (const size_t size = scheduler_size(instance);
-            size > scheduler_size_) {
-          if (scheduler_) {
-            ggml_backend_sched_synchronize(scheduler_.get());
-          }
-          scheduler_ = make_scheduler(size);
-          scheduler_size_ = size;
-        }
-        ggml_backend_sched_reset(scheduler_.get());
+        grow_scheduler(scheduler_size(instance));
         step = prepare_offgraph(instance);
-        allocate(scheduler_.get(), instance);
         try {
-          run(scheduler_.get(), instance);
+          activate(instance);
+          run(instance);
         } catch (...) {
-          ggml_backend_sched_reset(scheduler_.get());
+          release_allocation();
           throw;
         }
-        ggml_backend_sched_reset(scheduler_.get());
+        release_allocation();
       } else {
         CachedGraph& cached = cached_graph();
         step = prepare_offgraph(cached.instance);
         try {
-          run(cached.scheduler.get(), cached.instance);
+          activate(cached.instance);
+          run(cached.instance);
         } catch (...) {
-          ggml_backend_sched_synchronize(cached.scheduler.get());
+          release_allocation();
           cached_graphs_.pop_back();
           throw;
         }
@@ -358,7 +354,6 @@ class GgmlExecutable final : public EngineExecutable {
     // part of the key along with the input shapes.
     std::vector<int64_t> key_extents;
     GraphInstance instance;
-    ggml_backend_sched_ptr scheduler;
   };
 
   // Lowering depends on input shapes, constants and the attention key extents
@@ -385,20 +380,19 @@ class GgmlExecutable final : public EngineExecutable {
       return cached_graphs_.back();
     }
     if (cached_graphs_.size() >= options_.max_cached_graphs) {
-      ggml_backend_sched_synchronize(cached_graphs_.front().scheduler.get());
+      if (state_.allocated == cached_graphs_.front().instance.graph) {
+        release_allocation();
+      }
       cached_graphs_.erase(cached_graphs_.begin());
     }
     GraphInstance instance = build_graph(key_extents);
     check_host_integers(instance);
-    ggml_backend_sched_ptr scheduler = make_scheduler(scheduler_size(instance));
+    grow_scheduler(scheduler_size(instance));
     CachedGraph cached{
-        .key_extents = key_extents,
-        .instance = std::move(instance),
-        .scheduler = std::move(scheduler)};
+        .key_extents = key_extents, .instance = std::move(instance)};
     for (const InputSlot& input : inputs_) {
       cached.input_sizes.push_back(input.sizes);
     }
-    allocate(cached.scheduler.get(), cached.instance);
     cached_graphs_.push_back(std::move(cached));
     return cached_graphs_.back();
   }
@@ -423,20 +417,118 @@ class GgmlExecutable final : public EngineExecutable {
     }
   }
 
-  void allocate(ggml_backend_sched_t scheduler, const GraphInstance& instance) {
-    // The scheduler otherwise keeps graph inputs on the CPU backend and copies
-    // them into GPU splits once per consuming view.
+  // The scheduler otherwise keeps graph inputs on the CPU backend and copies
+  // them into GPU splits once per consuming view.
+  void place_uploads(const GraphInstance& instance) const {
     for (const Upload& upload : instance.uploads) {
       ggml_backend_sched_set_tensor_backend(
-          scheduler, upload.tensor, primary_backend_);
+          state_.scheduler.get(), upload.tensor, primary_backend_);
     }
+  }
+
+  // Allocates `instance` from the context's compute buffers unless it holds
+  // their allocation already. The buffers are reserved for every method's
+  // worst case, so this only lays the graph out in them, from a plan made for
+  // it: ggml's allocator reuses the last graph's plan for any graph with as
+  // many nodes and leafs that fit in it, whatever their views and lifetimes.
+  void activate(const GraphInstance& instance) {
+    ggml_backend_sched_t scheduler = state_.scheduler.get();
+    if (state_.allocated == instance.graph) {
+      return;
+    }
+    reserve_in_scheduler(instance);
+    restore_built_state(instance);
+    place_uploads(instance);
     if (!ggml_backend_sched_alloc_graph(scheduler, instance.graph)) {
       ggml_backend_sched_reset(scheduler);
       throw std::runtime_error("ggml: failed to allocate execution graph");
     }
+    state_.allocated = instance.graph;
+    track_compute_buffers();
   }
 
-  void run(ggml_backend_sched_t scheduler, const GraphInstance& instance) {
+  void release_allocation() {
+    ggml_backend_sched_synchronize(state_.scheduler.get());
+    ggml_backend_sched_reset(state_.scheduler.get());
+    state_.allocated = nullptr;
+  }
+
+  // Growing the scheduler reserves `instance` with the others.
+  void reserve(const GraphInstance& instance) {
+    if (!grow_scheduler(scheduler_size(instance))) {
+      reserve_in_scheduler(instance);
+    }
+  }
+
+  // Returns a graph to its state as built, for a scheduler that may have
+  // split and allocated others since: sources as built, and no tensor
+  // pointing into compute buffers that may since have been freed, whose
+  // earlier layout ggml's allocator would otherwise keep for it.
+  static void restore_built_state(const GraphInstance& instance) {
+    for (int i = 0; i < ggml_graph_n_nodes(instance.graph); ++i) {
+      std::ranges::copy(
+          instance.sources.at(static_cast<size_t>(i)),
+          ggml_graph_node(instance.graph, i)->src);
+    }
+    for (const auto& [tensor, data] : instance.unallocated) {
+      tensor->buffer = nullptr;
+      tensor->data = data;
+    }
+  }
+
+  void reserve_in_scheduler(const GraphInstance& instance) {
+    ggml_backend_sched_t scheduler = state_.scheduler.get();
+    ggml_backend_sched_reset(scheduler);
+    state_.allocated = nullptr;
+    restore_built_state(instance);
+    place_uploads(instance);
+    if (!ggml_backend_sched_reserve(scheduler, instance.graph)) {
+      throw std::runtime_error("ggml: failed to reserve compute buffers");
+    }
+    track_compute_buffers();
+  }
+
+  // A scheduler holds as many graph nodes and leafs as its size; a larger
+  // graph needs a new one, which reserves every live method's worst case
+  // again so that no later call grows its buffers. Returns whether it grew.
+  bool grow_scheduler(size_t size) {
+    if (size <= state_.scheduler_size) {
+      return false;
+    }
+    if (state_.scheduler) {
+      ggml_backend_sched_synchronize(state_.scheduler.get());
+    }
+    state_.allocated = nullptr;
+    state_.scheduler = make_scheduler(size);
+    state_.scheduler_size = size;
+    state_.compute_buffer_bytes = 0;
+    std::erase_if(
+        state_.reserved, [](const auto& graph) { return graph.expired(); });
+    for (const auto& reserved : state_.reserved) {
+      if (const std::shared_ptr<const GraphInstance> graph = reserved.lock()) {
+        reserve_in_scheduler(*graph);
+      }
+    }
+    return true;
+  }
+
+  void track_compute_buffers() {
+    size_t bytes = 0;
+    // cppcheck-suppress-begin useStlAlgorithm ; the explicit loop reads clearer
+    // here
+    for (const ggml_backend_ptr& backend : state_.backends) {
+      bytes += ggml_backend_sched_get_buffer_size(
+          state_.scheduler.get(), backend.get());
+    }
+    // cppcheck-suppress-end useStlAlgorithm
+    if (bytes > state_.compute_buffer_bytes) {
+      ++state_.compute_buffer_allocations;
+    }
+    state_.compute_buffer_bytes = bytes;
+  }
+
+  void run(const GraphInstance& instance) {
+    ggml_backend_sched_t scheduler = state_.scheduler.get();
     for (const Upload& upload : instance.uploads) {
       if (upload.tensor->buffer == nullptr) {
         continue;
@@ -519,36 +611,42 @@ class GgmlExecutable final : public EngineExecutable {
     return meta;
   }
 
+  // The context's executables share its backends, created by the first.
   void initialize_backends() {
-    if (options_.device == GgmlDevice::Gpu) {
-      ggml_backend_dev_t device = select_ggml_gpu_device(options_);
-      ggml_backend_ptr gpu(ggml_backend_dev_init(device, nullptr));
-      if (!gpu) {
-        throw std::runtime_error(
-            std::string("ggml: failed to initialize ") +
-            ggml_backend_dev_name(device));
+    const bool gpu = options_.device == GgmlDevice::Gpu;
+    ggml_backend_dev_t device =
+        gpu ? select_ggml_gpu_device(options_) : nullptr;
+    const std::string_view registry =
+        gpu ? ggml_backend_reg_name(ggml_backend_dev_backend_reg(device)) : "";
+    f32_accumulation_ =
+        options_.cuda_f32_accumulation_for_testing && registry == "CUDA";
+    f16_kv_caches_ = !options_.f32_gpu_kv_cache_for_testing &&
+        (registry == "CUDA" || registry == "ROCm");
+    gpu_device_ = device;
+    // A failed setup publishes nothing, so a later compile starts it over.
+    if (state_.backends.empty()) {
+      std::vector<ggml_backend_ptr> backends;
+      if (gpu) {
+        ggml_backend_ptr backend(ggml_backend_dev_init(device, nullptr));
+        if (!backend) {
+          throw std::runtime_error(
+              std::string("ggml: failed to initialize ") +
+              ggml_backend_dev_name(device));
+        }
+        backends.push_back(std::move(backend));
       }
-      primary_backend_ = gpu.get();
-      const std::string_view backend =
-          ggml_backend_reg_name(ggml_backend_dev_backend_reg(device));
-      f32_accumulation_ =
-          options_.cuda_f32_accumulation_for_testing && backend == "CUDA";
-      f16_kv_caches_ = !options_.f32_gpu_kv_cache_for_testing &&
-          (backend == "CUDA" || backend == "ROCm");
-      gpu_device_ = device;
-      backends_.push_back(std::move(gpu));
+      ggml_backend_ptr cpu(ggml_backend_cpu_init());
+      if (!cpu) {
+        throw std::runtime_error("ggml: failed to initialize CPU backend");
+      }
+      if (options_.cpu_threads > 0) {
+        ggml_backend_cpu_set_n_threads(cpu.get(), options_.cpu_threads);
+      }
+      backends.push_back(std::move(cpu));
+      state_.backends = std::move(backends);
+      state_.primary_backend = state_.backends.front().get();
     }
-    ggml_backend_ptr cpu(ggml_backend_cpu_init());
-    if (!cpu) {
-      throw std::runtime_error("ggml: failed to initialize CPU backend");
-    }
-    if (options_.cpu_threads > 0) {
-      ggml_backend_cpu_set_n_threads(cpu.get(), options_.cpu_threads);
-    }
-    if (primary_backend_ == nullptr) {
-      primary_backend_ = cpu.get();
-    }
-    backends_.push_back(std::move(cpu));
+    primary_backend_ = state_.primary_backend;
   }
 
   // The scheduler hashes a graph's nodes and leafs and splits it at most once
@@ -577,10 +675,11 @@ class GgmlExecutable final : public EngineExecutable {
   }
 
   ggml_backend_sched_ptr make_scheduler(size_t size) const {
-    std::vector<ggml_backend_t> raw(backends_.size());
-    std::ranges::transform(backends_, raw.begin(), [](const auto& backend) {
-      return backend.get();
-    });
+    std::vector<ggml_backend_t> raw(state_.backends.size());
+    std::ranges::transform(
+        state_.backends, raw.begin(), [](const auto& backend) {
+          return backend.get();
+        });
     ggml_backend_sched_ptr scheduler(ggml_backend_sched_new(
         raw.data(),
         nullptr,
@@ -2113,16 +2212,17 @@ class GgmlExecutable final : public EngineExecutable {
     bind_offgraph(1);
   }
 
-  // Grows the cache to `rows` and, if its storage moved, rebinds it and drops
+  // Grows the cache to `rows` and, if its storage moved, rebinds it, drops
   // the graphs built over the old storage, which this executable keeps alive
-  // until then.
+  // until then, and reserves the context's buffers for the worst case over
+  // the new storage.
   void bind_offgraph(int64_t rows) {
     kv_cache_.pool().reserve(primary_backend_, static_cast<int>(rows));
     if (kv_cache_.pool().storage() == offgraph_storage_) {
       return;
     }
-    for (CachedGraph& cached : cached_graphs_) {
-      ggml_backend_sched_synchronize(cached.scheduler.get());
+    if (state_.scheduler) {
+      release_allocation();
     }
     cached_graphs_.clear();
     offgraph_storage_ = kv_cache_.pool().storage();
@@ -2133,6 +2233,12 @@ class GgmlExecutable final : public EngineExecutable {
            .v = layer.v,
            .window = layer.window,
            .ring = layer.ring});
+    }
+    if (worst_case_) {
+      worst_case_ = std::make_shared<const GraphInstance>(
+          build_graph(full_key_extents()));
+      state_.reserved.push_back(worst_case_);
+      reserve(*worst_case_);
     }
   }
 
@@ -2469,14 +2575,14 @@ class GgmlExecutable final : public EngineExecutable {
   std::optional<OffGraphStep> offgraph_step_;
   std::vector<InputSlot> inputs_;
   std::vector<OutputSlot> outputs_;
-  std::vector<ggml_backend_ptr> backends_;
   ggml_backend_t primary_backend_ = nullptr;
   bool f32_accumulation_ = false;
   bool f16_kv_caches_ = false;
   ggml_backend_dev_t gpu_device_ = nullptr;
-  ggml_backend_sched_ptr scheduler_;
-  size_t scheduler_size_ = 0;
   std::vector<CachedGraph> cached_graphs_;
+  // The graph at the largest inputs and full key extents, reserved in the
+  // context's compute buffers.
+  std::shared_ptr<const GraphInstance> worst_case_;
   std::vector<MaskExtent> mask_extents_;
   std::unordered_map<ValueId, std::optional<HostInts>> host_constants_;
   HostIntEvaluator::StaticCache host_static_values_;
@@ -2561,6 +2667,18 @@ GraphInstance GgmlExecutable::build_graph(
               host.shape_bound(check.id, row_peaks);
           return bound && *bound <= kExactF32Integer;
         });
+  }
+  for (int i = 0; i < ggml_graph_n_nodes(instance.graph); ++i) {
+    std::array<ggml_tensor*, GGML_MAX_SRC> sources{};
+    std::ranges::copy(ggml_graph_node(instance.graph, i)->src, sources.begin());
+    instance.sources.push_back(sources);
+  }
+  ggml_context* ctx = instance.context.get();
+  for (ggml_tensor* t = ggml_get_first_tensor(ctx); t != nullptr;
+       t = ggml_get_next_tensor(ctx, t)) {
+    if (t->buffer == nullptr) {
+      instance.unallocated.emplace_back(t, t->data);
+    }
   }
   if (options_.print_graph_ops) {
     std::map<std::string, int> counts;

@@ -48,8 +48,10 @@ struct GgmlEngineOptions {
   // each attention mask that leaves only a key prefix open, that prefix
   // rounded up to 256 keys: a decode step crossing a 256-key boundary builds
   // a new graph. A call matching a cached key replays the graph with fresh
-  // input bytes, skipping lowering and allocation; every entry holds its own
-  // scheduler allocation. 0 rebuilds the graph on every call; at most 16.
+  // input bytes, skipping lowering. Entries share the context's compute
+  // buffers, reserved at compile for each method's worst case, so a hit after
+  // another graph ran is laid out in them again. 0 rebuilds the graph on every
+  // call; at most 16.
   size_t max_cached_graphs = 1;
   // For testing: answers in place of the GPU whether it runs an attention
   // that reads a KV cache over F16 keys and values, so that a test on any
@@ -60,8 +62,9 @@ struct GgmlEngineOptions {
   // Prints each newly built graph's node count per ggml op to stderr, which
   // shows whether a lowering rewrite fired.
   bool print_graph_ops = false;
-  // Prints, after each compile, the context's materialized constant bytes and
-  // the device's free memory to stderr.
+  // Prints, after each compile and when the context is destroyed, the
+  // context's constant and compute buffer bytes and the device's free memory
+  // to stderr.
   bool print_memory = false;
   // Testing only. Default (false): matrix multiplies with an F16 operand
   // accumulate in F16 on CUDA, as llama.cpp's cuBLAS GEMMs do. Set: they
@@ -153,6 +156,10 @@ class GgmlEngineContext final : public EngineContext {
   size_t heap_copied_constant_bytes() const;
   // Bytes of F32 KV caches stored in F16 (see f32_gpu_kv_cache_for_testing).
   size_t f16_kv_cache_bytes() const;
+  // Bytes of the compute buffers every executable of the context shares, and
+  // how often they grew: once per method whose worst case needs more room.
+  size_t compute_buffer_bytes() const;
+  size_t compute_buffer_allocations() const;
 
  private:
   friend class GgmlEngineHost;
@@ -168,6 +175,8 @@ class GgmlEngineContext final : public EngineContext {
 
   std::unique_ptr<EngineExecutable> compile_method(
       const Method& method) override;
+
+  void print_memory(const std::string& when) const;
 
   std::unique_ptr<Impl> impl_;
 };

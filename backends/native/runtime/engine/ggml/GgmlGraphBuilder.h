@@ -140,6 +140,14 @@ struct GraphInstance {
   // Integer inputs some op computes on in F32, rechecked on every replay.
   std::vector<ValueId> exact_integer_checks;
   std::vector<HostIntegerCheck> host_integer_checks;
+  // Each node's sources as built. A scheduler's split points sources that
+  // cross backends at copies it owns, so a graph allocated again, by a
+  // scheduler that may have split others since, starts from these.
+  std::vector<std::array<ggml_tensor*, GGML_MAX_SRC>> sources;
+  // The tensors a scheduler allocates, with their data as built (a view of
+  // a persistent tensor has data but no buffer). A graph allocated again
+  // starts from these, since the buffers it was laid out in may be gone.
+  std::vector<std::pair<ggml_tensor*, void*>> unallocated;
 };
 
 // Results of nodes that read only constants, computed once: `instance` outputs

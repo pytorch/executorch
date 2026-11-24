@@ -3455,6 +3455,146 @@ TEST(GgmlEngineTest, MethodsShareConstantStorage) {
   }
 }
 
+// The methods share one compute buffer, reserved at compile for the largest
+// worst case; running them in turn, cached or not, allocates nothing more.
+// Method "a" doubles x; method "b" adds x to itself `adds` times, so its
+// graph has more nodes.
+std::vector<uint8_t> make_short_and_long_methods(int adds) {
+  TestProgram program;
+  program.input("x", fbs::ScalarType::FLOAT, {4});
+  program.call(
+      "y",
+      "torch.ops.aten.mul.Tensor",
+      {{"self", std::string("x")}, {"other", 2.0}},
+      fbs::ScalarType::FLOAT,
+      {4});
+  program.end_method("a", "y");
+  program.input("x", fbs::ScalarType::FLOAT, {4});
+  std::string sum = "x";
+  for (int i = 0; i < adds; ++i) {
+    const std::string next = "s" + std::to_string(i);
+    program.call(
+        next,
+        "torch.ops.aten.add.Tensor",
+        {{"self", sum}, {"other", std::string("x")}},
+        fbs::ScalarType::FLOAT,
+        {4});
+    sum = next;
+  }
+  program.end_method("b", sum);
+  return program.finish_program();
+}
+
+std::vector<float> run_on(EngineExecutable& executable, float x) {
+  const std::vector<float> input(4, x);
+  executable.set_input(0, input.data(), input.size(), ScalarType::Float);
+  executable.execute();
+  std::vector<float> output(4);
+  executable.get_output(0, output.data(), output.size(), ScalarType::Float);
+  return output;
+}
+
+// Compiling "b" after "a" ran frees the compute buffers "a"'s cached graph
+// was laid out in: they grow for "b"'s larger worst case, or, with no minimum
+// graph size, a larger scheduler replaces them. "a" must replay from its
+// built state, not those buffers.
+TEST(GgmlEngineTest, CachedGraphReplaysAfterItsComputeBuffersAreFreed) {
+  for (const size_t graph_size : {size_t{1}, size_t{4096}}) {
+    SCOPED_TRACE(graph_size);
+    auto host = GgmlEngineHost::create(
+        GgmlEngineOptions{.graph_size = graph_size, .max_cached_graphs = 2});
+    auto context = make_context(*host, make_short_and_long_methods(64));
+    auto a = context->compile("a");
+    EXPECT_EQ(run_on(*a, 1.0f), std::vector<float>(4, 2.0f));
+    auto b = context->compile("b");
+    EXPECT_EQ(run_on(*a, 2.0f), std::vector<float>(4, 4.0f));
+    EXPECT_EQ(run_on(*b, 1.0f), std::vector<float>(4, 65.0f));
+    EXPECT_EQ(run_on(*a, 3.0f), std::vector<float>(4, 6.0f));
+  }
+}
+
+// Two methods whose graphs have as many nodes and leafs, of equal sizes, but
+// whose results live differently: "chain" consumes each result in the next
+// node, "fan" adds two results computed from x.
+std::vector<uint8_t> make_chain_and_fan_methods() {
+  TestProgram program;
+  const auto call = [&program](
+                        const std::string& name,
+                        const char* op,
+                        const std::string& self,
+                        const std::string& other) {
+    program.call(
+        name,
+        op,
+        {{"self", self}, {"other", other}},
+        fbs::ScalarType::FLOAT,
+        {4});
+  };
+  program.input("x", fbs::ScalarType::FLOAT, {4});
+  call("y1", "torch.ops.aten.add.Tensor", "x", "x");
+  call("y2", "torch.ops.aten.mul.Tensor", "y1", "x");
+  call("y3", "torch.ops.aten.add.Tensor", "y2", "x");
+  program.end_method("chain", "y3");
+  program.input("x", fbs::ScalarType::FLOAT, {4});
+  call("y1", "torch.ops.aten.add.Tensor", "x", "x");
+  call("y2", "torch.ops.aten.mul.Tensor", "x", "x");
+  call("y3", "torch.ops.aten.add.Tensor", "y1", "y2");
+  program.end_method("fan", "y3");
+  return program.finish_program();
+}
+
+// ggml's allocator lays a graph out from the plan it made last when the two
+// graphs' node and leaf counts match and every tensor fits. Laid out from
+// "chain"'s plan, "fan" would overwrite x + x with x * x before adding them.
+TEST(GgmlEngineTest, EachGraphIsLaidOutFromItsOwnPlan) {
+  for (const size_t max_cached_graphs : {size_t{0}, size_t{1}, size_t{2}}) {
+    SCOPED_TRACE(max_cached_graphs);
+    auto host = GgmlEngineHost::create(
+        GgmlEngineOptions{.max_cached_graphs = max_cached_graphs});
+    auto context = make_context(*host, make_chain_and_fan_methods());
+    auto fan = context->compile("fan");
+    auto chain = context->compile("chain");
+    EXPECT_EQ(run_on(*fan, 3.0f), std::vector<float>(4, 15.0f));
+    EXPECT_EQ(run_on(*chain, 3.0f), std::vector<float>(4, 21.0f));
+    EXPECT_EQ(run_on(*fan, 2.0f), std::vector<float>(4, 8.0f));
+  }
+}
+
+TEST(GgmlEngineTest, MethodsShareOneComputeBuffer) {
+  const std::vector<std::string> methods = {"a", "b", "c"};
+  const std::vector<uint8_t> program = make_q4k_linear_methods(
+      {{"a", "weight"}, {"b", "weight"}, {"c", "weight"}});
+  for (const size_t max_cached_graphs : {size_t{0}, size_t{1}, size_t{2}}) {
+    SCOPED_TRACE(max_cached_graphs);
+    auto host = GgmlEngineHost::create(GgmlEngineOptions{
+        .max_cached_graphs = max_cached_graphs,
+        .allow_activation_quant_for_weight_only = true});
+    size_t largest = 0;
+    std::vector<std::vector<float>> expected;
+    for (const std::string& method : methods) {
+      auto alone = make_context(*host, program);
+      auto executable = alone->compile(method);
+      largest = std::max(largest, alone->compute_buffer_bytes());
+      expected.push_back(run_linear(*executable));
+    }
+    auto shared = make_context(*host, program);
+    std::vector<std::unique_ptr<EngineExecutable>> executables;
+    executables.reserve(methods.size());
+    for (const std::string& method : methods) {
+      executables.push_back(shared->compile(method));
+    }
+    EXPECT_EQ(shared->compute_buffer_bytes(), largest);
+    const size_t allocations = shared->compute_buffer_allocations();
+    for (int round = 0; round < 3; ++round) {
+      for (size_t i = 0; i < methods.size(); ++i) {
+        EXPECT_EQ(run_linear(*executables[i]), expected[i]);
+      }
+    }
+    EXPECT_EQ(shared->compute_buffer_allocations(), allocations);
+    EXPECT_EQ(shared->compute_buffer_bytes(), largest);
+  }
+}
+
 // to_native names a method's constants by method, and the package dedupes
 // equal bytes to one owner.
 TEST(GgmlEngineTest, MethodsShareConstantsTheirKeysAlias) {
