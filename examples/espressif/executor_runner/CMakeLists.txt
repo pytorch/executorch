@@ -187,13 +187,9 @@ if(ESP_PLATFORM)
     target_compile_definitions(${COMPONENT_LIB} PUBLIC ET_BUNDLE_IO)
   endif()
 
-  if(ET_ATOL)
-    target_compile_definitions(${COMPONENT_LIB} PUBLIC ET_ATOL=${ET_ATOL})
-  endif()
-
-  if(ET_RTOL)
-    target_compile_definitions(${COMPONENT_LIB} PUBLIC ET_RTOL=${ET_RTOL})
-  endif()
+  target_compile_definitions(
+    ${COMPONENT_LIB} PUBLIC ET_ATOL=${ET_ATOL} ET_RTOL=${ET_RTOL}
+  )
 
   if(ET_DUMP_OUTPUTS)
     target_compile_definitions(${COMPONENT_LIB} PUBLIC ET_DUMP_OUTPUTS)

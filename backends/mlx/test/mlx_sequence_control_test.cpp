@@ -449,7 +449,7 @@ TEST_P(MLXSequenceControlTest, DFlashRejectsCellOrPersistsOnlyContext) {
                     std::vector<float> context,
                     float temporary,
                     float flat_mean,
-                    float swa_mean) {
+                    std::vector<float> swa_means) {
       if (block > 0) {
         context.insert(context.end(), {temporary, temporary + 100});
       }
@@ -457,22 +457,34 @@ TEST_P(MLXSequenceControlTest, DFlashRejectsCellOrPersistsOnlyContext) {
           position,
           context,
           {std::vector<float>(static_cast<size_t>(queries), flat_mean),
-           std::vector<float>(static_cast<size_t>(queries), swa_mean)},
+           std::move(swa_means)},
           queries);
     };
-    ASSERT_NO_FATAL_FAILURE(
-        step(0, {1, 3}, 100, block ? 76 : 2, block ? 76 : 2));
+    ASSERT_NO_FATAL_FAILURE(step(
+        0,
+        {1, 3},
+        100,
+        block ? 76 : 2,
+        block ? std::vector<float>{101, 150} : std::vector<float>{2}));
     EXPECT_EQ(length(), 2);
-    ASSERT_NO_FATAL_FAILURE(
-        step(2, {5, 7}, 300, block ? 716.0f / 6 : 4, block ? 178 : 6));
+    ASSERT_NO_FATAL_FAILURE(step(
+        2,
+        {5, 7},
+        300,
+        block ? 716.0f / 6 : 4,
+        block ? std::vector<float>{707.0f / 3, 350} : std::vector<float>{6}));
     EXPECT_EQ(length(), 4); // temporary tokens never consume capacity
     EXPECT_FALSE(control_->can_extend());
     EXPECT_FALSE(sequence_->can_admit(block + 1));
     control_->clear();
     EXPECT_EQ(length(), 0);
     EXPECT_TRUE(control_->can_extend(4));
-    ASSERT_NO_FATAL_FAILURE(
-        step(0, {9, 11}, 500, block ? 280 : 10, block ? 280 : 10));
+    ASSERT_NO_FATAL_FAILURE(step(
+        0,
+        {9, 11},
+        500,
+        block ? 280 : 10,
+        block ? std::vector<float>{1111.0f / 3, 550} : std::vector<float>{10}));
     EXPECT_EQ(length(), 2);
   }
 }

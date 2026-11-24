@@ -376,17 +376,18 @@ class TestStridedOutputWithCudaGraph(unittest.TestCase):
             raise unittest.SkipTest("CUDA graphs are not supported on ROCm")
 
     def _run_with_cuda_graph(self, module, example, inputs, dynamic_shapes=None):
-        from executorch.backends.cuda.cuda_backend import CudaBackend
         from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+        from executorch.backends.cuda.tests.routing_test_utils import (
+            static_routing_compile_specs,
+        )
         from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
         from executorch.runtime import Runtime
 
         with torch.no_grad():
             ep = torch.export.export(module, example, dynamic_shapes=dynamic_shapes)
-        spec = CudaBackend.generate_method_name_compile_spec("forward")
         program = to_edge_transform_and_lower(
             ep,
-            partitioner=[CudaPartitioner([spec])],
+            partitioner=[CudaPartitioner(static_routing_compile_specs())],
             compile_config=EdgeCompileConfig(_check_ir_validity=False),
         ).to_executorch()
         runtime = Runtime.get()

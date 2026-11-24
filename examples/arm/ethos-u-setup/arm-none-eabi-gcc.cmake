@@ -52,7 +52,9 @@ add_compile_options(
 )
 
 # Compile defines
-add_compile_definitions("$<$<NOT:$<CONFIG:DEBUG>>:NDEBUG>")
+add_compile_definitions(
+  "$<$<NOT:$<CONFIG:DEBUG>>:NDEBUG>" ET_USE_BUILTIN_FUNCTION_NAME=0
+)
 
 # Link options
 add_link_options(-mcpu=${GCC_CPU} -mthumb)
