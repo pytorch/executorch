@@ -2665,6 +2665,34 @@ class GgmlOpsTest(unittest.TestCase):
             rtol=1e-2,
         )
 
+    def test_sdpa_reuses_product_of_bool_masks(self):
+        def forward(q, k, v, a, b):
+            mask = a.le(0.7) * b.le(0.7)
+            first = F.scaled_dot_product_attention(q, k, v, attn_mask=mask)
+            second = F.scaled_dot_product_attention(q, k, v * 2.0, attn_mask=mask)
+            return first + second
+
+        a = torch.rand(1, 2, 3, 8)
+        a[..., 0] = 0.0
+        b = torch.rand(1, 2, 3, 8)
+        b[..., 0] = 0.0
+        ops = collections.Counter()
+        self._check(
+            Lambda(forward),
+            (
+                torch.randn(1, 2, 3, 32),
+                torch.randn(1, 2, 8, 32),
+                torch.randn(1, 2, 8, 32),
+                a,
+                b,
+            ),
+            atol=1e-2,
+            rtol=1e-2,
+            graph_ops=ops,
+        )
+        # One F16 conversion of the shared mask serves both attention ops.
+        self.assertEqual(ops["CPY"] * 2, ops["FLASH_ATTN_EXT"])
+
     def test_sdpa_key_prefix_of_a_transposed_key(self):
         # When every query masks the keys past its position, attention covers
         # only the 256-key buckets of k and v up to the last position; k
