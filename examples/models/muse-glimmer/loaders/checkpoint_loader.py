@@ -395,7 +395,7 @@ def _iter_gguf_nvfp4_paired(gguf_path: str, static_act_scale: bool):
     ``ExportableNVFP4Tensor`` using its ``.scale`` (and, with
     ``static_act_scale``, ``.input_scale``) companion."""
     import numpy as np
-    from executorch.extension.llm.export.gguf import GGML_NVFP4, iter_gguf
+    from executorch.extension.llm.export.gguf import iter_gguf
     from gguf import GGMLQuantizationType, GGUFReader
 
     # Companions can occur before or after their weight: read the scalars and
@@ -407,7 +407,7 @@ def _iter_gguf_nvfp4_paired(gguf_path: str, static_act_scale: bool):
             if tensor.tensor_type != GGMLQuantizationType.F32 or tensor.data.size != 1:
                 raise ValueError(f"Expected scalar F32 companion: {tensor.name}")
             companions[tensor.name] = float(np.asarray(tensor.data).reshape(-1)[0])
-        elif int(tensor.tensor_type) == GGML_NVFP4:
+        elif tensor.tensor_type == GGMLQuantizationType.NVFP4:
             nvfp4.add(tensor.name)
     paired = {
         name.replace(".weight", suffix)

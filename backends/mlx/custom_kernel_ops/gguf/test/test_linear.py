@@ -562,6 +562,78 @@ class GGUFLinearDynamicTest(OpTestCase):
         return _fp32_linear_reference(model, test_inputs[0])
 
 
+class GGUFLinearEmptyContextTest(GGUFLinearDynamicTest):
+    """An empty projection feeding a nonempty output, as in DFlash attention."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.name = self.name.replace("gguf_linear_dyn", "gguf_linear_empty_context")
+
+    @classmethod
+    def get_test_configs(cls):
+        return [
+            cls(
+                test_M=count,
+                N=128,
+                K=256,
+                dtype=dtype,
+                ggml_type=ggml_type,
+                emit_direct_gguf=direct,
+            )
+            for ggml_type in ("q4_k", "q5_k", "q6_k")
+            for direct in (True, False)
+            for dtype in (torch.float32, torch.float16, torch.bfloat16)
+            for count in ((0, 1, 8) if dtype == torch.float16 else (0,))
+        ]
+
+    def create_model(self):
+        class Model(GGUFLinearModel):
+            def forward(self, x):
+                output = self.linear(x)
+                return torch.cat((output, x.new_ones(1, self.linear.out_features)))
+
+        return Model(super().create_model().linear)
+
+    def get_dynamic_shapes(self):
+        return {"x": {0: torch.export.Dim("seq_len", min=0, max=64)}}
+
+    def compute_expected_outputs(self, model, test_inputs):
+        if not self.emit_direct_gguf and self.ggml_type in ("q4_k", "q5_k"):
+            (output,) = _fp32_linear_mlx_native_reference(model, test_inputs[0])
+        else:
+            (output,) = _fp32_linear_reference(model, test_inputs[0])
+        return [torch.cat((output, output.new_ones(1, self.N)))]
+
+
+class GGUFLinearNonemptyContextTest(GGUFLinearDynamicTest):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.name = self.name.replace("gguf_linear_dyn", "gguf_linear_nonempty")
+        fused = self.emit_direct_gguf or self.ggml_type == "q6_k"
+        self.expected_node_counts = {"IfNode": int(fused)}
+
+    @classmethod
+    def get_test_configs(cls):
+        return [
+            cls(
+                test_M=count,
+                N=128,
+                K=256,
+                dtype=torch.float16,
+                ggml_type=ggml_type,
+                emit_direct_gguf=direct,
+            )
+            for ggml_type in ("q4_k", "q5_k", "q6_k")
+            for direct in (True, False)
+            for count in (1, 8)
+        ]
+
+    def compute_expected_outputs(self, model, test_inputs):
+        if not self.emit_direct_gguf and self.ggml_type in ("q4_k", "q5_k"):
+            return _fp32_linear_mlx_native_reference(model, test_inputs[0])
+        return _fp32_linear_reference(model, test_inputs[0])
+
+
 def _eager_sanity() -> None:
     """Quick CPU check: the subclass linear exports to dequantize_gguf."""
     model = GGUFLinearModel(_make_gguf_linear_model(4, 512, torch.bfloat16, bias=True))
@@ -601,7 +673,10 @@ if __name__ == "__main__":  # noqa: C901
         sys.exit(1)
 
     configs = (
-        GGUFLinearTest.get_test_configs() + GGUFLinearDynamicTest.get_test_configs()
+        GGUFLinearTest.get_test_configs()
+        + GGUFLinearDynamicTest.get_test_configs()
+        + GGUFLinearEmptyContextTest.get_test_configs()
+        + GGUFLinearNonemptyContextTest.get_test_configs()
     )
 
     if args.action == "list":

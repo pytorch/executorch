@@ -40,6 +40,13 @@ import torch
 import triton
 import triton.language as tl
 from executorch.backends.cuda.autotune.inputs import autotune_inputs
+from executorch.backends.cuda.triton.routing import (
+    Candidate,
+    REGULAR_LOWERING,
+    regular_only,
+    ReplacementPlan,
+)
+from torch.fx import Node
 from torch.library import triton_op, wrap_triton
 
 
@@ -2549,3 +2556,91 @@ def _sdpa_small_query_splitk_abstract(
     assert query.dtype == key.dtype == value.dtype, "Q, K, V must have the same dtype"
     B, H_q, L_q, D = query.shape
     return torch.empty(B, H_q, L_q, D, dtype=query.dtype, device=query.device)
+
+
+def _pick_kernel(node: Node):
+    """Standard SDPA or split-K flash-decoding.
+
+    Split-K partitions the KV sequence across many CTAs for better GPU
+    utilization at decode time (L_q=1). It wins when L_kv is large
+    (full-attention KV caches) but loses to the standard kernel for
+    small L_kv (sliding-window ring buffers) due to the overhead of
+    allocating partial buffers and running the reduction kernel.
+
+    TODO(gasoonjia): Benchmarking to determine the optimal
+    implementation for each shape.
+    """
+    q_shape = node.args[0].meta["val"].shape
+    k_shape = node.args[1].meta["val"].shape
+    L_q, D = q_shape[2], q_shape[3]
+    L_kv = k_shape[2]
+
+    # TODO: Re-enable split-K after validating ROCm Voxtral decode numerics.
+    if (
+        torch.version.hip is None
+        and isinstance(L_q, int)
+        and L_q == 1
+        and isinstance(L_kv, int)
+        and L_kv >= _SPLITK_LKV_THRESHOLD
+        and D > 0
+        and (D & (D - 1)) == 0  # power of 2
+    ):
+        return torch.ops.triton.sdpa_decode_splitk
+
+    return torch.ops.triton.sdpa
+
+
+def _unsupported_reason(node: Node) -> Optional[str]:
+    """Why the kernel ``_pick_kernel`` picks rejects this call, or None.
+
+    Runs the kernels' own input checks on the fake tensors, so calls they
+    reject stay with the regular lowering instead of failing the export.
+    """
+    # The kernel picker reads query and key by position.
+    if len(node.args) < 3:
+        return "query, key and value are not positional"
+    names = ("attn_mask", "dropout_p", "is_causal", "scale", "enable_gqa")
+    defaults = (None, 0.0, False, None, False)
+    attn_mask, dropout_p, is_causal, _, enable_gqa = (
+        node.args[3 + i] if 3 + i < len(node.args) else node.kwargs.get(name, d)
+        for i, (name, d) in enumerate(zip(names, defaults))
+    )
+    query, key, value = (arg.meta["val"] for arg in node.args[:3])
+    try:
+        _validate_sdpa_inputs(query, key, value, dropout_p, enable_gqa)
+        splitk = _pick_kernel(node) is torch.ops.triton.sdpa_decode_splitk
+        # Split-K groups query heads over key/value heads on its own.
+        B, _, _, L_q, L_kv, _, _ = _validate_qkv_shapes(
+            query, key, value, enable_gqa or splitk
+        )
+        if is_causal and L_q != L_kv and not splitk:
+            raise RuntimeError(
+                f"Causal masking requires L_q == L_kv; got L_q={L_q}, L_kv={L_kv}."
+            )
+        mask = None if attn_mask is None else attn_mask.meta["val"]
+        _prepare_mask_params(mask, B, L_q, L_kv)
+    except RuntimeError as e:
+        return str(e)
+    return None
+
+
+def plan(node: Node) -> ReplacementPlan:
+    """The replacement pass's preflight for ``scaled_dot_product_attention``:
+    the Triton kernel ``_pick_kernel`` picks wherever it accepts the call."""
+    reason = _unsupported_reason(node)
+    if reason is not None:
+        return regular_only("sdpa", reason)
+    kernel = _pick_kernel(node)
+    label = "SDPA"
+    if kernel is torch.ops.triton.sdpa_decode_splitk:
+        L_kv, D = node.args[1].meta["val"].shape[2:]
+        label = f"split-K decode SDPA (L_kv={L_kv}, D={D})"
+    return ReplacementPlan(
+        "sdpa",
+        (
+            Candidate(REGULAR_LOWERING),
+            Candidate("sdpa", None, label, kernel, node.args, dict(node.kwargs)),
+        ),
+        "sdpa",
+        signature=f"scaled_dot_product_attention({node.name})",
+    )

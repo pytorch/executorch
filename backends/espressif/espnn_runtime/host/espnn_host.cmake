@@ -10,36 +10,12 @@
 # ESP-IDF. Needs the executorch_core target. esp-nn comes from ESPNN_LOCAL_PATH
 # or is fetched at ESPNN_GIT_TAG.
 
-include(FetchContent)
-
-set(ESPNN_GIT_TAG
-    "ace42ac7721119cd543fc40ffe719e601fa8f20f" # v1.5.0
-    CACHE STRING "esp-nn commit fetched when ESPNN_LOCAL_PATH is not set"
-)
-set(ESPNN_LOCAL_PATH
-    ""
-    CACHE PATH "Existing esp-nn checkout to build instead of fetching one"
-)
+include(${CMAKE_CURRENT_LIST_DIR}/../../esp_nn_sources.cmake)
 option(ESPNN_HOST_OPTIMIZED "Use esp-nn's generic optimized C kernels" OFF)
 option(ESPNN_DELEGATE_PROFILE "Time every delegate operator" OFF)
 option(ESPNN_DELEGATE_SCRATCH_IN_ARENA
        "Plan ESP-NN scratch in the activation arena" OFF
 )
-
-if(ESPNN_LOCAL_PATH)
-  set(espnn_source_dir "${ESPNN_LOCAL_PATH}")
-else()
-  # esp-nn's own CMakeLists.txt is an ESP-IDF component; SOURCE_SUBDIR keeps
-  # FetchContent from adding it.
-  FetchContent_Declare(
-    esp_nn
-    GIT_REPOSITORY https://github.com/espressif/esp-nn.git
-    GIT_TAG ${ESPNN_GIT_TAG}
-    SOURCE_SUBDIR none
-  )
-  FetchContent_MakeAvailable(esp_nn)
-  set(espnn_source_dir "${esp_nn_SOURCE_DIR}")
-endif()
 
 file(GLOB espnn_kernel_sources "${espnn_source_dir}/src/*/*_ansi.c")
 if(ESPNN_HOST_OPTIMIZED)

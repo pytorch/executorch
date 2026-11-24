@@ -40,7 +40,18 @@ class RemovePermutesAroundElementwiseTosaOps(RemovePermutesAroundElementwiseOps)
     def _is_constant(self, node: torch.fx.Node) -> bool:
         # get_attr nodes are handled by super()._is_constant; set membership
         # here is equivalent to is_param_node for placeholder inputs.
-        return super()._is_constant(node) or node.name in self._constant_input_names
+        return (
+            super()._is_constant(node)
+            or node.name in self._constant_input_names
+            or node.target == exir_ops.backend.tosa.CONST.default
+        )
+
+    def is_node_permutable(self, node: torch.fx.Node) -> bool:
+        if node.target == exir_ops.backend.tosa.RESCALE.default and node.kwargs.get(
+            "per_channel", False
+        ):
+            return False
+        return super().is_node_permutable(node)
 
     def permute_subgraph(self, subgraph) -> bool:
         # TABLE lookup inputs are already tied to the table layout.
