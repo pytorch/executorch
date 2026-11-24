@@ -347,10 +347,12 @@ def add_constant(
     ``name`` must be a logical (unprefixed) base -- add_constant owns the
     prefixing. The node name is the export-style ``<prefix><fqn>`` (``c_``
     constant, ``b_`` buffer, ``p_`` parameter) and the fqn is that node name with
-    the prefix stripped, so fx's node-name uniquification also uniquifies the fqn
-    within a kind. The assert guards a cross-kind fqn clash (the same fqn backing
-    both ep.constants and ep.state_dict), which would otherwise surface later as a
-    KeyError in constant_prop's get_lifted_tensor_constant.
+    the prefix stripped. The fqn is ``name``, suffixed if needed so that it backs
+    nothing yet and no placeholder already has its node name: export renames
+    placeholders without registering the names with fx, so fx's node-name
+    uniquification alone can hand out an existing one. The assert guards a clash
+    that would otherwise surface later as a KeyError in constant_prop's
+    get_lifted_tensor_constant.
 
     ``before_node`` supplies the fake mode for the new placeholder's meta['val'].
     """
@@ -380,6 +382,17 @@ def add_constant(
         prefix
     ), f"add_constant expects a logical (unprefixed) name for {kind}, got {name!r}"
 
+    taken = {
+        *ep.constants,
+        *ep.state_dict,
+        *(p.name[len(prefix) :] for p in placeholders if p.name.startswith(prefix)),
+    }
+    fqn = name
+    suffix = 0
+    while fqn in taken:
+        suffix += 1
+        fqn = f"{name}_{suffix}"
+
     if anchor is not None:
         position = graph.inserting_before(anchor)
     elif placeholders:
@@ -387,7 +400,7 @@ def add_constant(
     else:
         position = graph.inserting_before(next(iter(graph.nodes)))
     with position:
-        placeholder = graph.placeholder(prefix + name)
+        placeholder = graph.placeholder(prefix + fqn)
         placeholder.target = placeholder.name
         fake_mode = _fake_mode_from_node(before_node)
         placeholder.meta["val"] = fake_mode.from_tensor(tensor, static_shapes=True)
@@ -456,16 +469,10 @@ def delete_constant_placeholder(exp_program: ExportedProgram, node: torch.fx.Nod
             f"Cannot delete input node {node.name} since it is not a parameter, a buffer, nor a lifted tensor constant."
         )
 
-    # Remove input from graph signature
-    input_specs = [
-        spec
-        for spec in exp_program.graph_signature.input_specs
-        if spec.arg.name != node.name
-    ]
-    new_graph_signature = ExportGraphSignature(
-        input_specs, exp_program.graph_signature.output_specs
-    )
-    exp_program._graph_signature = new_graph_signature
+    # Edit the spec list in place: ExportedProgramPassManager runs passes on a
+    # shallow copy of the program, which would not see a replaced signature.
+    input_specs = exp_program.graph_signature.input_specs
+    input_specs[:] = [spec for spec in input_specs if spec.arg.name != node.name]
 
     # Copies made by duplicate_constant_node keep the original target, so keep
     # the tensor while another placeholder still refers to it.

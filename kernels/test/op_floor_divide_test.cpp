@@ -16,6 +16,8 @@
 
 #include <gtest/gtest.h>
 
+#include <limits>
+
 using namespace ::testing;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
@@ -46,6 +48,17 @@ class OpFloorDivideTest : public OperatorTest {
 
     // Check that it matches the expected output.
     EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{-2, 0, 1, 2, 4, -1}));
+  }
+
+  template <ScalarType DTYPE>
+  void test_most_negative_by_minus_one() {
+    TensorFactory<DTYPE> tf;
+    using CTYPE = typename TensorFactory<DTYPE>::ctype;
+
+    const CTYPE min = std::numeric_limits<CTYPE>::min();
+    Tensor out = tf.zeros({3});
+    op_floor_divide_out(tf.make({3}, {min, 7, -7}), tf.full({3}, -1), out);
+    EXPECT_TENSOR_EQ(out, tf.make({3}, {min, -7, 7}));
   }
 
   template <ScalarType DTYPE>
@@ -386,4 +399,9 @@ TEST_F(OpFloorDivideTest, FloatDivideByZero) {
       out);
   EXPECT_TENSOR_EQ(
       out, tf.make({5}, {NAN, INFINITY, -INFINITY, -INFINITY, INFINITY}));
+}
+
+TEST_F(OpFloorDivideTest, MostNegativeByMinusOneWraps) {
+  test_most_negative_by_minus_one<ScalarType::Int>();
+  test_most_negative_by_minus_one<ScalarType::Long>();
 }

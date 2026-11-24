@@ -108,8 +108,10 @@ transpose-convolution weights, bias and rescale parameters at export time so
 each PixelShuffle phase reads five contiguous channels from C20. Integer flow
 rescales preserve TOSA's single-round behavior, and each warp retains its own
 sampling quantization parameters. A compatible final image blend is fused into
-the same shader, which writes only the final NCHW INT8 RGB image. Intermediate
-warped images and masks stay in registers. The complement mask uses an exact
+the same shader, which writes only the final NCHW RGB image. With uint8 IO,
+the shader also fuses the unsigned output rescale and writes a UINT8 tensor,
+so scenario-runner saves a uint8 NumPy array. Int8 IO keeps an INT8 output.
+Intermediate warped images and masks stay in registers. The complement mask uses an exact
 lookup table. Blend rescales use TOSA's integer multipliers, shifts and
 single-round behavior. The original blend quantization boundaries are retained.
 When the blend does not match, the shader outputs both warped RGBA images and

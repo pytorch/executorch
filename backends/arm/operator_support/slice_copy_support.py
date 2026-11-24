@@ -87,5 +87,11 @@ class SliceCopySupported(SupportedTOSAOperatorCheck):
         # bool is supported in both INT and FP profiles
         if values_dtype == torch.bool:
             return True
+        if (
+            values_dtype == torch.int64
+            and tosa_spec.support_integer()
+            and tosa_spec.support_extension("int64")
+        ):
+            return True
 
         return is_indexing_dtype_supported(node, values_dtype, tosa_spec, self.reporter)

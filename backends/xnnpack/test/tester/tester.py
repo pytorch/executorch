@@ -5,6 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import gc
 import json
 import os
 import tempfile
@@ -36,8 +37,43 @@ from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_c
 from executorch.exir import EdgeCompileConfig
 from executorch.exir._serialize._flatbuffer import _flatc_decompile
 from executorch.exir.backend.partitioner import Partitioner
+from executorch.runtime import Runtime, Verification
 from torch._export.pass_base import PassType
 from torchao.quantization.pt2e.quantizer import Quantizer
+
+
+def xnnpack_node_types(graph_module: torch.fx.GraphModule) -> Counter:
+    """Node types in the serialized graphs of every XNNPACK delegate of
+    graph_module."""
+    node_types = Counter()
+    for node in graph_module.graph.nodes:
+        if node.target != torch.ops.higher_order.executorch_call_delegate:
+            continue
+        lowered = getattr(graph_module, node.args[0].target)
+        if lowered.backend_id != "XnnpackBackend":
+            continue
+        payload = lowered.processed_bytes
+        header = XNNHeader.from_bytes(payload[: XNNHeader.EXPECTED_LENGTH])
+        flatbuffer = payload[
+            header.flatbuffer_offset : header.flatbuffer_offset + header.flatbuffer_size
+        ]
+        with tempfile.TemporaryDirectory() as d:
+            schema_path = os.path.join(d, "schema.fbs")
+            with open(schema_path, "wb") as f:
+                f.write(_get_schema_bytes())
+            bin_path = os.path.join(d, "graph.bin")
+            with open(bin_path, "wb") as f:
+                f.write(flatbuffer)
+            _flatc_decompile(d, schema_path, bin_path)
+            with open(os.path.join(d, "graph.json")) as f:
+                # flatc writes unbounded clamp limits as a bare inf
+                text = (
+                    f.read().replace("-inf", "-Infinity").replace(" inf", " Infinity")
+                )
+        node_types.update(
+            xnode["xnode_union_type"] for xnode in json.loads(text)["xnodes"]
+        )
+    return node_types
 
 
 class Export(BaseStages.Export):
@@ -143,6 +179,26 @@ class Tester(TesterBase):
             **kwargs,
         )
 
+    @staticmethod
+    def execute_from_file(pte: bytes, inputs: Tuple[Any, ...]) -> List[Any]:
+        """Runs the forward method of the program `pte`, loaded from a file.
+        Unlike a program loaded from a buffer, this one lets the delegates free
+        the constant data they no longer need after init."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pte_path = os.path.join(temp_dir, "program.pte")
+            with open(pte_path, "wb") as f:
+                f.write(pte)
+            program = Runtime.get().load_program(
+                pte_path, verification=Verification.Minimal
+            )
+            method = program.load_method("forward")
+            outputs = [output.clone() for output in method.execute(inputs)]
+            # The program keeps the .pte mapped while it or any of its methods
+            # is alive, and Windows refuses to delete a mapped file.
+            del method, program
+            gc.collect()
+        return outputs
+
     def xnnpack_node_types(self) -> Counter:
         """Node types in the serialized XNNPACK graph of the single delegate
         produced by to_edge_transform_and_lower."""
@@ -151,27 +207,13 @@ class Tester(TesterBase):
             .exported_program()
             .graph_module
         )
-        (delegate,) = [
+        delegates = [
             node
             for node in graph_module.graph.nodes
             if node.target == torch.ops.higher_order.executorch_call_delegate
         ]
-        payload = getattr(graph_module, delegate.args[0].target).processed_bytes
-        header = XNNHeader.from_bytes(payload[: XNNHeader.EXPECTED_LENGTH])
-        flatbuffer = payload[
-            header.flatbuffer_offset : header.flatbuffer_offset + header.flatbuffer_size
-        ]
-        with tempfile.TemporaryDirectory() as d:
-            schema_path = os.path.join(d, "schema.fbs")
-            with open(schema_path, "wb") as f:
-                f.write(_get_schema_bytes())
-            bin_path = os.path.join(d, "graph.bin")
-            with open(bin_path, "wb") as f:
-                f.write(flatbuffer)
-            _flatc_decompile(d, schema_path, bin_path)
-            with open(os.path.join(d, "graph.json")) as f:
-                graph = json.load(f)
-        return Counter(node["xnode_union_type"] for node in graph["xnodes"])
+        assert len(delegates) == 1, f"Expected one delegate, got {len(delegates)}"
+        return xnnpack_node_types(graph_module)
 
     def check_xnnpack_node_count(self, expected: Dict[str, int]):
         node_type_names = {t.__name__ for t in get_args(XNodeUnion)}

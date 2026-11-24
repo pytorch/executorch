@@ -301,6 +301,85 @@ class TestNamedDataStore(unittest.TestCase):
         self.assertEqual(output.pte_data["key"], DataEntry(0, 1, None))
         self.assertEqual(len(output.external_data), 0)
 
+    def test_untyped_key_retains_first_layout(self) -> None:
+        store = NamedDataStore()
+        store.add_named_data("key", bytes(16), 16, "file1")
+        layout = TensorLayout(ScalarType.FLOAT, [2, 2], [0, 1])
+        store.add_named_data("key", bytes(16), 32, "file2", layout)
+        before = store.get_named_data_store_output()
+        self.assertEqual(before.external_data["file1"]["key"].tensor_layout, layout)
+        with self.assertRaisesRegex(ValueError, "different tensor layouts"):
+            store.add_named_data(
+                "key",
+                bytes(16),
+                64,
+                "file3",
+                TensorLayout(ScalarType.INT, [2, 2], [0, 1]),
+            )
+        self.assertEqual(store.get_named_data_store_output(), before)
+
+    def test_untyped_key_retains_first_layout_across_merges(self) -> None:
+        store = NamedDataStore()
+        store.add_named_data("key", bytes(16), 16, "file1")
+        typed = NamedDataStore()
+        layout = TensorLayout(ScalarType.FLOAT, [2, 2], [0, 1])
+        typed.add_named_data("key", bytes(16), 32, "file2", layout)
+        store.merge_named_data_store(typed.get_named_data_store_output())
+        before = store.get_named_data_store_output()
+        self.assertEqual(before.external_data["file1"]["key"].tensor_layout, layout)
+        conflicting = NamedDataStore()
+        conflicting.add_named_data(
+            "key", bytes(16), 64, "file3", TensorLayout(ScalarType.INT, [2, 2], [0, 1])
+        )
+        with self.assertRaisesRegex(ValueError, "different tensor layouts"):
+            store.merge_named_data_store(conflicting.get_named_data_store_output())
+        self.assertEqual(store.get_named_data_store_output(), before)
+
+    def test_add_duplicate_tensor_layout_fail(self) -> None:
+        original_layout = TensorLayout(ScalarType.FLOAT, [2, 2], [0, 1])
+        layouts = (
+            TensorLayout(ScalarType.INT, [2, 2], [0, 1]),
+            TensorLayout(ScalarType.FLOAT, [4], [0]),
+            TensorLayout(ScalarType.FLOAT, [2, 2], [1, 0]),
+        )
+        for layout in layouts:
+            with self.subTest(layout=layout):
+                store = NamedDataStore()
+                store.add_named_data("key", bytes(16), 16, "file1", original_layout)
+                before = store.get_named_data_store_output()
+                with self.assertRaisesRegex(ValueError, "different tensor layouts"):
+                    store.add_named_data("key", bytes(16), 32, "file2", layout)
+                self.assertEqual(store.get_named_data_store_output(), before)
+
+    def test_merge_duplicate_tensor_layout_fail(self) -> None:
+        store = NamedDataStore()
+        store.add_named_data(
+            "key",
+            bytes(16),
+            16,
+            "file1",
+            TensorLayout(ScalarType.FLOAT, [2, 2], [0, 1]),
+        )
+        other = NamedDataStore()
+        other.add_named_data(
+            "key", bytes(16), 32, "file2", TensorLayout(ScalarType.INT, [2, 2], [0, 1])
+        )
+        before = store.get_named_data_store_output()
+        with self.assertRaisesRegex(ValueError, "different tensor layouts"):
+            store.merge_named_data_store(other.get_named_data_store_output())
+        self.assertEqual(store.get_named_data_store_output(), before)
+
+    def test_duplicate_tensor_allows_untyped_data(self) -> None:
+        store = NamedDataStore()
+        layout = TensorLayout(ScalarType.FLOAT, [2, 2], [0, 1])
+        store.add_named_data("key", bytes(16), 16, "file1", layout)
+        store.add_named_data("key", bytes(16), 32, "file2")
+        output = store.get_named_data_store_output()
+        self.assertEqual(
+            output.external_data, {"file1": {"key": DataEntry(0, 32, layout)}}
+        )
+        self.assertEqual(len(output.buffers), 1)
+
     def test_add_same_data_with_different_tensor_layout(self) -> None:
         store = NamedDataStore()
         tensor_layout1 = TensorLayout(ScalarType.FLOAT, [1, 2], [0, 1])

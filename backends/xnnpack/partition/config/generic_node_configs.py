@@ -8,6 +8,7 @@
 # pyre-unsafe
 
 import logging
+import math
 from typing import cast, List, Optional
 
 import numpy as np
@@ -20,6 +21,7 @@ from executorch.backends.xnnpack.utils.quant_utils import is_dequant, is_quant
 from executorch.backends.xnnpack.utils.utils import (
     get_input_node,
     get_param_tensor,
+    is_dtype_cast,
     is_foldable_broadcast_operand,
     is_param_node,
     normalize_mean_dims,
@@ -532,6 +534,31 @@ class UpsampleBilinear2dConfig(GenericNodePartitionerConfig):
         if is_shape_dynamic(node):
             why(node, reason="dynamic output sizes are not supported")
             return False
+
+        # XNNPACK samples with input_size / output_size. Without align_corners,
+        # ATen samples with 1 / scale_factor when one is given, which differs
+        # unless input_size * scale_factor is an integer.
+        align_corners = cast(
+            bool,
+            node.args[2] if len(node.args) > 2 else node.kwargs["align_corners"],
+        )
+        scale_factors = (
+            node.args[3] if len(node.args) > 3 else node.kwargs.get("scale_factors")
+        )
+        if not align_corners and scale_factors is not None:
+            input_sizes = get_input_node(node, 0).meta["val"].shape[-2:]
+            output_sizes = node.meta["val"].shape[-2:]
+            if any(
+                not math.isclose(in_size * scale, out_size, abs_tol=1e-6)
+                for in_size, out_size, scale in zip(
+                    input_sizes, output_sizes, scale_factors
+                )
+            ):
+                why(
+                    node,
+                    reason=f"input size * scale_factors {scale_factors} is not an integer",
+                )
+                return False
         return True
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
@@ -705,8 +732,40 @@ class ToDimOrderCopyConfig(GenericNodePartitionerConfig):
 
         return True
 
+    def get_node_and_deps(
+        self, node: torch.fx.Node, ep: ExportedProgram
+    ) -> List[torch.fx.Node]:
+        # A cast is serialized as a convert without quantization parameters, so
+        # a dq before it and a q after it stay explicit nodes.
+        if is_dtype_cast(node):
+            return [node]
+        return super().get_node_and_deps(node, ep)
+
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
+
+
+class ToCopyConfig(ToDimOrderCopyConfig):
+    """
+    Programs exported with skip_dim_order keep aten._to_copy for every copy.
+    Only dtype casts are partitioned, under the same dtype rules as
+    ToDimOrderCopyConfig: inside the delegate, ChannelsLastTaggedReshapePass,
+    RemoveRedundantCopyPass and ToCopyVisitor read any other _to_copy as an
+    NCHW <-> NHWC layout copy.
+    """
+
+    target_name = "_to_copy.default"
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        if not is_dtype_cast(node):
+            why(node, reason="only dtype casts are supported")
+            return False
+        return super().check_constraints(node, ep)
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        # A cast never folds the q/dq around it (see get_node_and_deps), so
+        # static quantization adds nothing.
+        return [ConfigPrecisionType.FP32]
 
 
 class MeanDimConfig(GenericNodePartitionerConfig):

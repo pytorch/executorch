@@ -100,6 +100,7 @@ def _write_golden_output(
     atol: float,
     rtol: float,
     path: str,
+    equal_nan: bool = False,
 ) -> tuple[torch.Tensor, str]:
     if raw.dtype == torch.bool:
         # bool-output ops (comparisons): byte-exact 0/1 golden written as int8.
@@ -124,6 +125,7 @@ def _write_golden_output(
                 out_t,
                 atol=atol,
                 rtol=rtol,
+                equal_nan=equal_nan,
             )
 
     if out_dtype in ("bool", "int8"):
@@ -201,6 +203,7 @@ def generate_case(op: str, suite: WebGPUTestSuite, case, out_dir: str) -> list[d
             atol,
             rtol,
             os.path.join(out_dir, golden_rel),
+            case.equal_nan,
         )
         entries.append(
             {
@@ -216,6 +219,7 @@ def generate_case(op: str, suite: WebGPUTestSuite, case, out_dir: str) -> list[d
                 },
                 "atol": atol,
                 "rtol": rtol,
+                "equal_nan": case.equal_nan,
                 "required": case.required,
                 "heavy": case.heavy,
             }

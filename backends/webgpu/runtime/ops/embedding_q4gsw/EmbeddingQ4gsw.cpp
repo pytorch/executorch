@@ -113,18 +113,8 @@ void embedding_q4gsw_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
   // is_linear_weight selects the nibble packing (false: even dim = high nibble;
   // true: even dim = low nibble). The shader handles both via a uniform.
-  bool is_linear = false;
-  if (graph.get_value_type(is_linear_weight_id) ==
-      WebGPUGraph::ValueType::Bool) {
-    is_linear = graph.get_bool(is_linear_weight_id);
-  } else if (
-      graph.get_value_type(is_linear_weight_id) ==
-      WebGPUGraph::ValueType::Int) {
-    is_linear = graph.get_int(is_linear_weight_id) != 0;
-  } else {
-    throw std::runtime_error(
-        "WebGPU embedding_q4gsw: is_linear_weight must be Bool or Int");
-  }
+  const bool is_linear = utils::get_bool_or_int(
+      graph, is_linear_weight_id, "WebGPU embedding_q4gsw: is_linear_weight");
 
   if (weight.dims.size() < 2 || scales.dims.size() < 2 || out.dims.empty() ||
       indices.dims.empty()) {

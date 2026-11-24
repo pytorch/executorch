@@ -315,6 +315,7 @@ Error CPUPlan::select() {
           "No linked CPU implementation accepts semantic operator %s (%s)",
           node.target.c_str(),
           node.name.c_str());
+      unsupported_operator_ = node.target;
       return Error::NotSupported;
     }
     if (tied && tied_provider) {
@@ -580,7 +581,7 @@ std::string CPUPlan::describe(double preparation_ms) const {
     }
     report += "{\"provider\":" + json_string(step.provider->name()) +
         ",\"implementation\":" + json_string(step.implementation->name()) +
-        ",\"nodes\":[";
+        ",\"trace_name\":" + json_string(step.trace_name) + ",\"nodes\":[";
     for (size_t node = 0; node < step.region.nodes.size(); ++node) {
       if (node) {
         report += ',';

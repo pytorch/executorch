@@ -13,12 +13,15 @@ def define_common_targets():
     runtime.cxx_test(
         name = "vulkan_passes_test",
         srcs = [
+            "test_flatten_linear_batch.cpp",
             "test_fuse_quantized_embedding.cpp",
             "test_fuse_quantized_linear.cpp",
             "test_insert_prepack.cpp",
             "test_lower_hf_attention.cpp",
             "test_lower_rms_norm.cpp",
+            "test_lower_sdpa.cpp",
             "test_materialize_view_copies.cpp",
+            "test_normalize_dims.cpp",
         ],
         deps = [
             "//executorch/backends/native/runtime/vulkan:vulkan_passes",
@@ -92,6 +95,7 @@ def define_common_targets():
             "//executorch/backends/native/runtime/deserialize:package_test_data",
             "//executorch/backends/native/runtime/engine:engine",
             "//executorch/backends/native/runtime/vulkan:vulkan_engine",
+            "//executorch/backends/native/runtime/vulkan:xplat_vulkan_runtime",
             "fbsource//third-party/swiftshader/lib/linux-x64:libvk_swiftshader_fbcode",
         ],
     )

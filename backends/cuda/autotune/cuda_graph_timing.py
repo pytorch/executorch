@@ -31,13 +31,18 @@ and captures on that same stream (the legacy default stream cannot be
 captured).
 
 To keep captures succeeding:
-- each capture's graph and its memory pool are released right after timing,
-  and the allocator's cache is emptied once it holds a lot of unused memory;
+- each capture's graph is released and the allocator's cache emptied right
+  after timing. The cache is not checked first: the allocator stats keep an
+  entry for every private pool ever captured, so reading them costs more with
+  each capture, while emptying a cache that holds little more than the
+  released pool is cheap;
 - on CUDA OOM the cache is emptied and the capture retried; if that fails too,
-  the tensors given as ``offload`` (the model's weights moved to the GPU for
-  the compile) are parked on the CPU while the candidate is timed and restored
-  afterwards. This is safe because AOTI autotunes on random inputs, never on
-  the model's tensors;
+  the tensors given as ``offload`` (the model's weights the compile moved to
+  the GPU, never GPU tensors the caller passed in) are parked on the CPU while
+  the candidate is timed and restored afterwards. This is safe with
+  ``autotune_at_compile_time`` on, because AOTI then autotunes on random
+  inputs. With it off, Inductor first times candidates on the model's real
+  tensors, so a candidate can read a parked one;
 - a candidate that cannot be captured at all is timed with Inductor's default.
 """
 
@@ -59,7 +64,6 @@ logger: logging.Logger = logging.getLogger(__name__)
 _TARGET_GRAPH_US = 2000.0
 _MIN_CALLS = 4
 _MAX_CALLS = 32
-_EMPTY_CACHE_THRESHOLD_BYTES = 1 << 30
 
 
 @dataclass
@@ -116,14 +120,6 @@ def _default_cuda_bench(
     return bench.benchmark_gpu(fn, warmup=warmup, rep=rep, **kwargs)
 
 
-def _release_cached_memory_if_large() -> None:
-    if (
-        torch.cuda.memory_reserved() - torch.cuda.memory_allocated()
-        > _EMPTY_CACHE_THRESHOLD_BYTES
-    ):
-        torch.cuda.empty_cache()
-
-
 _l2_flush_buffers: dict[int, torch.Tensor] = {}
 
 
@@ -143,6 +139,12 @@ def time_with_cuda_graph_us(fn: Callable[[], Any]) -> float:
     ``fn`` must launch its work on the current stream, which must not be the
     legacy default stream.
     """
+    return min(cuda_graph_call_times_us(fn))
+
+
+def cuda_graph_call_times_us(fn: Callable[[], Any]) -> list[float]:
+    """The device time of each of several ``fn()`` calls captured into one
+    CUDA graph, each with a cold L2, in microseconds."""
     stream = torch.cuda.current_stream()
     if stream.cuda_stream == 0:
         raise RuntimeError("cannot capture on the legacy default CUDA stream")
@@ -174,13 +176,13 @@ def time_with_cuda_graph_us(fn: Callable[[], Any]) -> float:
                 call_end.record()
         graph.replay()
         events[-1][1].synchronize()
-        return min(s.elapsed_time(e) for s, e in events) * 1000.0
+        return [s.elapsed_time(e) * 1000.0 for s, e in events]
     finally:
         # A failed capture leaves nothing to release; that must not mask its error.
         with contextlib.suppress(RuntimeError):
             graph.reset()
         del graph
-        _release_cached_memory_if_large()
+        torch.cuda.empty_cache()
 
 
 class ParkedTensorsNotRestored(RuntimeError):
@@ -199,6 +201,14 @@ def _restore_storage(storage: torch.UntypedStorage, host: torch.UntypedStorage) 
     storage.copy_(host)
 
 
+def _parkable(tensor: Any) -> bool:
+    return (
+        isinstance(tensor, torch.Tensor)
+        and tensor.is_cuda
+        and tensor.untyped_storage().nbytes() > 0
+    )
+
+
 @contextlib.contextmanager
 def _parked_on_cpu(tensors: Iterable[torch.Tensor]) -> Iterator[int]:
     """Moves the CUDA storages behind ``tensors`` to host memory, then back.
@@ -210,10 +220,10 @@ def _parked_on_cpu(tensors: Iterable[torch.Tensor]) -> Iterator[int]:
     seen: set[int] = set()
     try:
         for tensor in tensors:
-            if not isinstance(tensor, torch.Tensor) or not tensor.is_cuda:
+            if not _parkable(tensor):
                 continue
             storage = tensor.untyped_storage()
-            if storage.nbytes() == 0 or storage.data_ptr() in seen:
+            if storage.data_ptr() in seen:
                 continue
             seen.add(storage.data_ptr())
             host = storage.cpu()
@@ -255,9 +265,10 @@ def _time_capturing_robustly(
     except torch.OutOfMemoryError:
         stats.oom_retries += 1
         _cleanup_after_oom()
-        if _STATE.offload is None:
+        offload = [] if _STATE.offload is None else list(_STATE.offload())
+        if not any(map(_parkable, offload)):
             raise
-    with _parked_on_cpu(_STATE.offload()) as parked_bytes:
+    with _parked_on_cpu(offload) as parked_bytes:
         stats.offloads += 1
         logger.info(
             "CUDA-graph autotune timing: parked %.1f GiB of model tensors on the CPU to capture a candidate",

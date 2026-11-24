@@ -77,6 +77,9 @@ class CatConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
+        if neutron_target_spec.is_subsystem():
+            return False
+
         # `cat` uses a list of inputs as its first argument, so the indices are tuples of (0, i).
         input_indices = [(0, i) for i in range(len(node.args[0]))]
         supported_types = [torch.int8, torch.uint8]

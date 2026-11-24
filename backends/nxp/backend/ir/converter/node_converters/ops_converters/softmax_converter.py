@@ -66,6 +66,9 @@ class SoftmaxConverter(NodeConverter):
         3. Total spatial size (N*H*W) <= 4096
         4. Total size (channels * spatial_size) <= 524288
         """
+        if neutron_target_spec.is_subsystem():
+            return False
+
         # Constraint 1: Input and Output must be INT8/UINT8.
         supported_types = [torch.int8, torch.uint8]
         if not NodeConverter.uses_quantization_type_for_io(

@@ -7,6 +7,7 @@
 import unittest
 
 import torch
+from executorch.backends.test.harness.stages import StageType
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
 )
@@ -292,3 +293,57 @@ class TestConv1d(unittest.TestCase):
             passes=RunPasses(pass_functions=[constant_prop_pass]),
             skip_to_executorch=True,
         )
+
+    class SharedConv1d(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv = torch.nn.Conv1d(2, 4, kernel_size=3)
+
+        def forward(self, x, z):
+            return self.conv(x) + self.conv(z)
+
+    def test_fp32_conv1d_shared_weight(self):
+        # Conv1dUnsqueezePass unsqueezes the shared weight once, for both convs.
+        inputs = (torch.randn(1, 2, 6), torch.randn(1, 2, 6))
+        self._test_conv1d(self.SharedConv1d(), inputs, 2)
+
+    class ConvTranspose1dBiasReused(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            # DecomposeConvTransposePass skips kernels that are not a multiple
+            # of the stride, so the deconvolution keeps packing this bias.
+            self.convtr = torch.nn.ConvTranspose1d(8, 4, kernel_size=3, stride=2)
+
+        def forward(self, x):
+            return self.convtr(x) - self.convtr.bias.view(1, -1, 1)
+
+    def test_fp32_conv_transpose1d_bias_reused_file_load(self):
+        """
+        XNNPACK packs a convolution's bias, so the delegate frees its data after
+        init. Here the subtraction reads the same bias by pointer at every
+        execution, so it must stay alive.
+        """
+        module = self.ConvTranspose1dBiasReused().eval()
+        x = torch.randn(1, 8, 6)
+        expected = module(x)
+
+        tester = (
+            Tester(module, (x,))
+            .export()
+            .to_edge_transform_and_lower()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .check_xnnpack_node_count({"XNNConvTranspose2d": 1})
+            .check_not(
+                [
+                    "executorch_exir_dialects_edge__ops_aten_convolution_default",
+                    "executorch_exir_dialects_edge__ops_aten_sub_Tensor",
+                    "executorch_exir_dialects_edge__ops_aten_view_copy_default",
+                ]
+            )
+            .to_executorch()
+            .serialize()
+        )
+        actual = Tester.execute_from_file(
+            tester.stages[StageType.SERIALIZE].artifact, (x,)
+        )[0]
+        self.assertTrue(torch.allclose(expected, actual, atol=1e-5))

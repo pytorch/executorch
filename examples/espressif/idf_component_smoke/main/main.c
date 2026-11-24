@@ -8,8 +8,9 @@
 
 /*
  * Runs each embedded model (see main/CMakeLists.txt) through et_model on the
- * forward test cases that split_bundled_program.py extracted, and compares the
- * outputs with the expected ones.
+ * forward test cases in its .io file (the inputs and expected outputs of a
+ * bundled program's test cases), and compares the outputs with the expected
+ * ones.
  */
 
 #include <math.h>
@@ -19,6 +20,8 @@
 #include <string.h>
 
 #include <et_model.h>
+
+#include "sdkconfig.h"
 
 typedef struct {
   const char* name;
@@ -107,6 +110,9 @@ static bool check_outputs(
 static bool run_model(const smoke_model_t* model) {
   et_model_config_t cfg = ET_MODEL_CONFIG_DEFAULT(
       model->pte, (size_t)(model->pte_end - model->pte));
+#if CONFIG_ET_PROGRAM_VERIFICATION
+  cfg.verify = true;
+#endif
   et_model_t* m = et_model_create(&cfg);
   bool api_ok = m != NULL && et_model_load_method(m, "forward");
   const uint8_t* cursor = model->io + 2 * sizeof(float);

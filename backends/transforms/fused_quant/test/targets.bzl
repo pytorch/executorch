@@ -32,6 +32,7 @@ def define_common_targets():
         name = "test_decompose_fused_quant",
         srcs = ["test_decompose_fused_quant.py"],
         deps = [
+            "//executorch/frontends/fused_quant:colorer",
             "//executorch/backends/transforms/fused_quant:decompose_fused_quant",
             "//executorch/exir/dialects/fused_quant:ops",
             ":test_helpers",
@@ -39,62 +40,20 @@ def define_common_targets():
             "//executorch/backends/test:program_builder",
             "//executorch/backends/transforms:permute_pass_utils",
             "//executorch/backends/transforms:utils",
+            "//executorch/exir:lib",
             "//executorch/exir/dialects:lib",
+            "//executorch/exir/verification:verifier",
         ],
     )
 
+
     runtime.python_test(
-        name = "test_fold_batch_norm",
-        srcs = ["test_fold_batch_norm.py"],
+        name = "test_tensor_constants",
+        srcs = ["test_tensor_constants.py"],
         deps = [
             ":test_helpers",
             "fbsource//third-party/pypi/parameterized:parameterized",
-            "//executorch/backends/transforms/fused_quant:fold_batch_norm",
-            "//executorch/backends/transforms/fused_quant:replace_batch_norm_with_conv",
-            "//caffe2:torch",
-        ],
-    )
-
-    runtime.python_test(
-        name = "test_fuse_add_softmax_into_masked_softmax",
-        srcs = ["test_fuse_add_softmax_into_masked_softmax.py"],
-        deps = [
-            ":test_helpers",
-            "fbsource//third-party/pypi/parameterized:parameterized",
-            "//executorch/backends/transforms/fused_quant:fuse_add_softmax_into_masked_softmax",
-            "//caffe2:torch",
-        ],
-    )
-
-    runtime.python_test(
-        name = "test_replace_batch_norm_with_conv",
-        srcs = ["test_replace_batch_norm_with_conv.py"],
-        deps = [
-            ":test_helpers",
-            "fbsource//third-party/pypi/parameterized:parameterized",
-            "//executorch/backends/transforms/fused_quant:replace_batch_norm_with_conv",
-            "//caffe2:torch",
-            "//executorch/backends/transforms:utils",
-        ],
-    )
-
-    runtime.python_test(
-        name = "test_fold_input_free_subgraphs",
-        srcs = ["test_fold_input_free_subgraphs.py"],
-        deps = [
-            ":test_helpers",
-            "//executorch/backends/transforms/fused_quant:fold_input_free_subgraphs",
-            "//caffe2:torch",
-        ],
-    )
-
-    runtime.python_test(
-        name = "test_replace_adaptive_avg_pool_with_avg_pool",
-        srcs = ["test_replace_adaptive_avg_pool_with_avg_pool.py"],
-        deps = [
-            ":test_helpers",
-            "fbsource//third-party/pypi/parameterized:parameterized",
-            "//executorch/backends/transforms/fused_quant:replace_adaptive_avg_pool_with_avg_pool",
+            "//executorch/backends/transforms/fused_quant:tensor_constants",
             "//caffe2:torch",
         ],
     )
@@ -133,6 +92,7 @@ def define_common_targets():
             "fbsource//third-party/pypi/parameterized:parameterized",
             "//executorch/exir/dialects/fused_quant:ops",
             ":test_helpers",
+            "//executorch/frontends/fused_quant:colorer",
             "//executorch/backends/transforms/fused_quant:to_channels_last",
             "//caffe2:torch",
             "//executorch/backends/test:program_builder",
@@ -147,6 +107,7 @@ def define_common_targets():
         deps = [
             "//executorch/exir/dialects/fused_quant:ops",
             ":test_helpers",
+            "//executorch/frontends/fused_quant:colorer",
             "//executorch/backends/transforms/fused_quant:to_channels_first",
             "//caffe2:torch",
             "//executorch/backends/test:program_builder",
@@ -281,6 +242,7 @@ def define_common_targets():
         name = "test_sink_constant_cat",
         srcs = ["test_sink_constant_cat.py"],
         deps = [
+            ":test_helpers",
             "//executorch/exir/dialects/fused_quant:ops",
             "//executorch/backends/transforms/fused_quant:sink_constant_cat",
             "//caffe2:torch",
@@ -299,6 +261,26 @@ def define_common_targets():
             "//caffe2:torch",
             "//executorch/backends/test:program_builder",
             "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_passes",
+        srcs = ["test_passes.py"],
+        deps = [
+            "fbsource//third-party/pypi/parameterized:parameterized",
+            ":test_helpers",
+            "//caffe2:torch",
+            "//executorch/backends/test:program_builder",
+            "//executorch/backends/transforms/fused_quant:fuse_add_into_linear",
+            "//executorch/backends/transforms/fused_quant:fuse_mul_into_linear",
+            "//executorch/backends/transforms/fused_quant:passes",
+            "//executorch/backends/transforms/fused_quant:prequantize_embedding",
+            "//executorch/backends/transforms/fused_quant:split_linear_at_slices",
+            "//executorch/backends/transforms/fused_quant:to_channels_last",
+            "//executorch/exir:lib",
+            "//executorch/exir/dialects:lib",
+            "//executorch/exir/dialects/fused_quant:ops",
         ],
     )
 

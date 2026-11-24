@@ -1,7 +1,7 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
-load("@fbsource//third-party/llama.cpp:ggml_ci.bzl", "ggml_ci_labels")
+load("@fbsource//third-party/llama.cpp:ggml_ci.bzl", "ggml_ci_labels", "ggml_ci_test_kwargs")
 load("@fbsource//tools/target_determinator/macros:ci.bzl", "ci")
-load("@fbsource//xplat/executorch/backends/native/runtime/engine:targets.bzl", "CPU_COMPAT", "CUDA_COMPAT", "HIP_COMPAT")
+load("@fbsource//xplat/executorch/backends/native/runtime/engine:targets.bzl", "CPU_COMPAT", "CUDA_COMPAT", "HIP_COMPAT", "TORCH_COMPAT")
 load("@fbcode_macros//build_defs/lib:re_test_utils.bzl", "re_test_utils")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
@@ -19,15 +19,143 @@ fbcode_target(
         "//executorch/backends/native/runtime/deserialize:package_test_data",
         "//executorch/backends/native/runtime/engine:engine",
         "//executorch/backends/native/runtime/engine:ggml_engine_cpu",
+        "//executorch/extension/llm/cache:kv_cache",
+        "fbsource//third-party/llama.cpp:ggml_cpu",
     ],
     **CPU_COMPAT
 )
+
+# ggml's GPU kernels multiply Q4_1 and Q5_1 block scales in fp16 (README: Known
+# ggml GPU numerics), which the GPU samples allow in linears. They cannot bound
+# it in these quantized_* cases, whose linear feeds another op or, in Gated
+# DeltaNet layers, reads an intermediate the samples do not record, and which
+# fail on CUDA and HIP.
+_FP16_SCALE_UNBOUNDED = [
+    "gdn_gguf_q4_1.quantized_layer_decode_f32",
+    "gdn_gguf_q4_1.quantized_layer_decode_restart_f32",
+    "gdn_gguf_q4_1.quantized_layer_decode_saved_state_f32",
+    "gdn_gguf_q4_1.quantized_layer_decode_wide_f32",
+    "gdn_gguf_q4_1.quantized_layer_native_decode_restart_f32",
+    "gdn_gguf_q4_1.quantized_layer_native_decode_wide_f32",
+    "gdn_gguf_q4_1.quantized_layer_native_prefill_8_f32",
+    "gdn_gguf_q5_1.quantized_layer_decode_f32",
+    "gdn_gguf_q5_1.quantized_layer_decode_restart_f32",
+    "gdn_gguf_q5_1.quantized_layer_decode_saved_state_f32",
+    "gdn_gguf_q5_1.quantized_layer_decode_wide_f32",
+    "gdn_gguf_q5_1.quantized_layer_native_decode_restart_f32",
+    "gdn_gguf_q5_1.quantized_layer_native_decode_wide_f32",
+    "gdn_gguf_q5_1.quantized_layer_native_prefill_8_f32",
+    "mean_gguf_q4_1.quantized_last_bf16",
+    "mean_gguf_q4_1.quantized_last_f16",
+    "mean_gguf_q4_1.quantized_last_f32",
+    "mean_gguf_q5_1.quantized_last_bf16",
+    "mean_gguf_q5_1.quantized_last_f16",
+    "mean_gguf_q5_1.quantized_last_f32",
+    "sum_gguf_q4_1.quantized_last_bf16",
+    "sum_gguf_q4_1.quantized_last_f16",
+    "sum_gguf_q4_1.quantized_last_f32",
+    "sum_gguf_q5_1.quantized_last_bf16",
+    "sum_gguf_q5_1.quantized_last_f16",
+    "sum_gguf_q5_1.quantized_last_f32",
+]
+
+# golden-int8_act's int8 emulation doesn't model ggml's Q4_1 activation sums,
+# whose rounding Gemma 4's GELU-tanh experts turn into a bias at Q4_1's tiny
+# sample scales. The experts-only and Qwen3.5 MoE Q4_1 cases pass, and GGUF MoE
+# models don't ship Q4_1.
+_INT8_ACT_UNMODELED = [
+    "moe_gguf_q4_1.quantized_gemma4_block_f32",
+]
+
+# ggml's GPU F32 matmuls (MMF, which takes every expert mul_mat_id) read their
+# inputs as TF32 or XF32, dropping the low mantissa bits (README, Known ggml
+# GPU numerics); these F32 experts, routers, shared-expert gates and Gated
+# DeltaNet projections fail on CUDA and HIP, rel_bias about -1.5e-3 to
+# -2.2e-3, which eager with truncated TF32 matmul inputs reproduces.
+_GPU_TF32_INPUTS = [
+    "gdn_float.quantized_layer_native_prefill_8_f32",
+    "moe_8da4w_g128.quantized_qwen35_block_f32",
+    "moe_8da4w_g32.quantized_qwen35_block_f32",
+    "moe_float.quantized_experts_top1_f32",
+    "moe_float.quantized_experts_top2_f32",
+    "moe_float.quantized_experts_top8_f32",
+    "moe_float.quantized_gemma4_block_f32",
+    "moe_float.quantized_qwen35_block_f32",
+    "moe_int4wo_g128.quantized_qwen35_block_f32",
+    "moe_int4wo_g32.quantized_qwen35_block_f32",
+]
+
+# Samples of ops the engine does not lower yet, refused on every backend.
+# test/CMakeLists.txt keeps the same list.
+# ggml engine: no lowering for aten.ge.
+_ENGINE_GAPS = [
+    "ge_float.arange_positions_bf16",
+    "ge_float.arange_positions_f16",
+    "ge_float.arange_positions_f32",
+    "ge_float.dynamic_tokens_bf16",
+    "ge_float.dynamic_tokens_f16",
+    "ge_float.dynamic_tokens_f32",
+    "ge_float.far_positions_bf16",
+    "ge_float.far_positions_f16",
+    "ge_float.far_positions_f32",
+    "ge_float.floats_bf16",
+    "ge_float.floats_f16",
+    "ge_float.floats_f32",
+    "ge_float.offset_arange_bf16",
+    "ge_float.offset_arange_f16",
+    "ge_float.offset_arange_f32",
+    "ge_float.window_bound_bf16",
+    "ge_float.window_bound_f16",
+    "ge_float.window_bound_f32",
+]
+
+# The ggml engine does not run Gated DeltaNet on transformers' ATen rule
+# (`--gdn_op aten`), and no other engine's sample tests run these cases yet:
+# they are parked until one does.
+_ATEN_GDN_RULE = ["gdn_*.recurrent_*", "gdn_*.quantized_layer_decode*"]
+
+# ggml's GPU flash attention reads K and V in F16, as llama.cpp does, a few
+# 1e-4 RMS from eager on F32 K and V; these SDPA samples fail on CUDA and HIP
+# at the default judge.
+_GPU_F16_ATTENTION = [
+    "sdpa_float.causal_decode_d128_f32",
+    "sdpa_float.causal_decode_d256_f32",
+    "sdpa_float.causal_decode_d64_f32",
+    "sdpa_float.causal_decode_gqa8_f32",
+    "sdpa_float.causal_prefill_d128_f32",
+    "sdpa_float.causal_prefill_d256_f32",
+    "sdpa_float.causal_prefill_d64_f32",
+    "sdpa_float.causal_prefill_gqa1_f32",
+    "sdpa_float.causal_prefill_gqa4_f32",
+    "sdpa_float.causal_prefill_repeat_kv_f32",
+    "sdpa_float.dynamic_kv_cache_causal_f32",
+    "sdpa_float.dynamic_kv_cache_sliding_f32",
+    "sdpa_float.dynamic_tokens_f32",
+    "sdpa_float.gemma_global_decode_256_keys_f32",
+    "sdpa_float.gemma_sliding_decode_f32",
+    "sdpa_float.shared_masks_decode_f32",
+    "sdpa_float.shared_masks_prefill_f32",
+    "sdpa_float.sliding_decode_f32",
+    "sdpa_float.sliding_prefill_f32",
+    "sdpa_grouped_float.gqa6_d256_decode_f32",
+    "sdpa_grouped_float.gqa6_d256_prefill_f32",
+]
+
+# On F16 K and V too, ggml's GPU flash attention is off eager past the default
+# judge: CUDA by rel_bias alone, HIP by rmse too (README, Known ggml GPU
+# numerics).
+_GPU_FLASH_ATTENTION_BIAS = [
+    "sdpa_grouped_float.gqa6_d256_decode_f16",
+    "sdpa_grouped_float.gqa6_d256_prefill_f16",
+]
+
+_GPU_ACT_QUANT_ARGS = ["--gpu_fp16_block_scales"]
 
 # The op suite runs once per ggml backend set; only the engine variant, the
 # runner's --device, link deps and test env, the test host, and the CI
 # configuration differ.
 _VARIANTS = [
-    {"suffix": "", "engine": "ggml_engine_cpu", "compat": CPU_COMPAT, "device": "cpu"},
+    {"suffix": "", "engine": "ggml_engine_cpu", "compat": CPU_COMPAT, "torch_compat": TORCH_COMPAT, "device": "cpu"},
     {
         "suffix": "_cuda",
         "engine": "ggml_engine_cuda",
@@ -50,6 +178,9 @@ _VARIANTS = [
             "GGML_CUDA_CUBLAS_COMPUTE_TYPE": "f32",
             "NVIDIA_TF32_OVERRIDE": "0",
         },
+
+        "act_quant_args": _GPU_ACT_QUANT_ARGS,
+        "excluded": _GPU_F16_ATTENTION + _GPU_FLASH_ATTENTION_BIAS,
     },
     {
         "suffix": "_hip",
@@ -61,6 +192,8 @@ _VARIANTS = [
             platform = "amd-gpu",
             subplatform = "MI300",
         ),
+        "act_quant_args": _GPU_ACT_QUANT_ARGS,
+        "excluded": _GPU_F16_ATTENTION + _GPU_FLASH_ATTENTION_BIAS,
     },
 ]
 
@@ -72,7 +205,10 @@ _VARIANTS = [
         link_whole = True,
         visibility = ["//executorch/backends/native/test/..."],
         exported_deps = ["//executorch/backends/native/test/runtime:engine_host"],
-        deps = ["//executorch/backends/native/runtime/engine:" + v["engine"]] +
+        deps = [
+            "//executorch/backends/native/runtime/engine:" +
+            v["engine"].replace("ggml_engine_", "ggml_engine_flags_"),
+        ] +
                v.get("deps", []),
         external_deps = ["gflags"] + v.get("external_deps", []),
         labels = v.get("labels", []),
@@ -96,8 +232,55 @@ _VARIANTS = [
     for v in _VARIANTS
 ]
 
+# llama.cpp's topk leaves a row holding NaN unordered; these samples match
+# eager only with the testing option exact_topk_for_testing.
+_EXACT_TOPK_ONLY = ["topk_*.nan_and_inf_*"]
+
+# ggml-cpu reads tanh GELU from an F16 table, as in llama.cpp; these samples
+# match eager on the CPU only with the testing option exact_gelu_for_testing.
+_EXACT_GELU_ONLY_ON_CPU = [
+    "gelu_float.dynamic_tokens_tanh_f32",
+    "gelu_float.gelu_f32_tanh_approximation_0_f32",
+    "gelu_float.gelu_f32_tanh_boundary_values_0_f32",
+    "gelu_float.tanh_f32",
+    "gelu_float.tanh_wide_f32",
+    "moe_float.quantized_gemma4_block_f32",
+]
+
+# The engine's tests on GPUs: GPU CI runs the tests of default behavior,
+# ggml_engine_gpu_test, while the tests of testing options,
+# ggml_engine_option_test, are run by hand: GPU CI runs no testing options.
+[
+    fbcode_target(
+        _kind = runtime.cxx_test,
+        name = "ggml_engine_" + kind + "_test" + v["suffix"],
+        srcs = ["test_ggml_engine.cpp"],
+        args = ["--gtest_filter=" + suite + ".*"],
+        env = v.get("env", {}),
+        preprocessor_flags = ["-DPTN_GGML_TEST_DEVICE_GPU"],
+        deps = [
+            "//executorch/backends/native/runtime:native_graph_schema",
+            "//executorch/backends/native/runtime:runtime",
+            "//executorch/backends/native/runtime/deserialize:owned_bytes",
+            "//executorch/backends/native/runtime/deserialize:package",
+            "//executorch/backends/native/runtime/deserialize:package_test_data",
+            "//executorch/backends/native/runtime/engine:engine",
+            "//executorch/backends/native/runtime/engine:" + v["engine"],
+            "//executorch/extension/llm/cache:kv_cache",
+            "fbsource//third-party/llama.cpp:ggml_" + v["suffix"].lstrip("_"),
+        ] + v.get("deps", []),
+        external_deps = v.get("external_deps", []),
+        **(v.get("compat", {}) | ggml_ci_test_kwargs(v, ci_run = kind == "gpu"))
+    )
+    for v in _VARIANTS[1:]
+    for kind, suite in [("gpu", "GgmlEngineGpuTest"), ("option", "GgmlEngineOptionTest")]
+]
+
 # ggml_sample_test_act_quant lets ggml quantize the activations of weight-only
-# quantized linears, judged against golden-int8_act.
+# quantized linears, judged against golden-int8_act. ggml_sample_test_no_linear
+# judges the other ops without it, except their quantized_* cases, which
+# quantize through an nn.Linear. Both leave out the elu with alpha 0.5 that
+# ggml rejects and the samples that match eager only with a testing option.
 [
     fbcode_target(
         _kind = runtime.cxx_test,
@@ -105,19 +288,26 @@ _VARIANTS = [
         args = [
             "--packages=$(location //executorch/backends/native/test/samples:op_samples)",
             "--device=" + v["device"],
-        ] + flags,
+            "--gtest_filter=-" + ":".join(
+                excluded + _ENGINE_GAPS + _ATEN_GDN_RULE + v.get("excluded", []) +
+                (_FP16_SCALE_UNBOUNDED + _GPU_TF32_INPUTS if name == "_act_quant" and v["device"] == "gpu" else []),
+            ),
+        ] + flags + (v.get("act_quant_args", []) if name == "_act_quant" else []),
         env = v.get("env", {}) | v.get("sample_env", {}),
         remote_execution = v.get("remote_execution"),
         # TODO: run the others in CI once they pass.
-        labels = [] if v["suffix"] + name == "_act_quant" else ci.labels(ci.map(ci.skip_test())),
+        labels = [] if v["suffix"] + name in ("_act_quant", "_no_linear") else ci.labels(ci.map(ci.skip_test())),
         test_main = "//executorch/backends/native/test/samples:sample_test_main",
         deps = [":ggml_engine_host" + v["suffix"]],
-        **v.get("compat", {})
+        **v.get("torch_compat", v.get("compat", {}))
     )
     for v in _VARIANTS
-    for name, flags in [
-        ("", []),
-        ("_act_quant", ["--allow_activation_quant_for_weight_only"]),
+    for name, flags, excluded in [
+        ("", [], []),
+        ("_act_quant", ["--allow_activation_quant_for_weight_only"], ["elu_float.elu_f32_alpha_*"] + _INT8_ACT_UNMODELED + _EXACT_TOPK_ONLY + (_EXACT_GELU_ONLY_ON_CPU if v["device"] == "cpu" else [])),
+        ("_no_linear", [], ["linear_*", "*.quantized_*", "elu_float.elu_f32_alpha_*"] + _EXACT_TOPK_ONLY + (_EXACT_GELU_ONLY_ON_CPU if v["device"] == "cpu" else [])),
+        # Every sample with the engine's testing options on.
+        ("_testing_options", ["--exact_topk_for_testing", "--exact_gelu_for_testing"], []),
     ]
 ]
 
@@ -126,18 +316,30 @@ _VARIANTS = [
         _kind = runtime.python_test,
         name = "test_ggml_ops" + v["suffix"],
         srcs = ["test_ggml_ops.py"],
-        env = {"GGML_PTN_DEVICE": v["device"]} | v.get("env", {}),
-        labels = v.get("labels", []),
+        env = {
+            "GGML_PTN_BACKEND": v["suffix"].lstrip("_") or "cpu",
+            "GGML_PTN_DEVICE": v["device"],
+        } | v.get("env", {}),
+        # Unbundled, every case starts its own test process: ~19 s of imports
+        # for ~3 s of test.
+        labels = (
+            ggml_ci_labels(v["suffix"].lstrip("_"), bundle = 40)
+            if v["device"] == "gpu"
+            else v.get("labels", [])
+        ),
         remote_execution = v.get("remote_execution"),
         resources = {":ggml_ptn_runner" + v["suffix"]: "ggml_ptn_runner"},
         deps = [
             "//caffe2:torch",
+            "//executorch/backends/native:lib",
+            "//executorch/backends/native/examples/hf_llm:export_hf_llm_lib",
             "//executorch/exir/native:native",
             "//executorch/extension/llm/export:gguf",
             "//pytorch/ao:torchao",
+            "fbsource//third-party/pypi/gguf:gguf",
             "fbsource//third-party/pypi/transformers:transformers",
         ],
-        **v.get("compat", {})
+        **v.get("torch_compat", v.get("compat", {}))
     )
     for v in _VARIANTS
 ]

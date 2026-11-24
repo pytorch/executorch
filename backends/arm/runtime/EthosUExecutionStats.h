@@ -10,8 +10,13 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
-#include <pmu_ethosu.h>
+#include <ethosu_pmu_types.h>
+
+#if defined(EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
+#include <string>
+#endif
 
 #include <executorch/runtime/core/array_ref.h>
 #include <executorch/runtime/core/error.h>
@@ -58,15 +63,19 @@ constexpr char kEthosUCycleEventName[] = "ethosu.pmu.counters";
 // EthosUPlatform [12:16], flags [16:20] (bit 0: cycle overflow,
 // bit 1: invocation succeeded), register base [20:28], NPU cycle count
 // [28:36], and counter count [36:40].
+// Linux uses zero for register base and appends a little-endian uint32_t
+// device-path byte length and UTF-8 path after the counters.
 // Each active counter then stores a symbolic event ID (4 bytes), count
 // (8 bytes), and overflow (4 bytes). NO_EVENT slots are omitted.
 constexpr size_t kEthosUCycleMetadataHeaderSize = 40;
 constexpr size_t kEthosUCycleCounterMetadataSize = 16;
+// Maximum fixed metadata size; Linux additionally appends its device path.
 constexpr size_t kEthosUCycleMetadataMaxSize = kEthosUCycleMetadataHeaderSize +
     kMaxPmuEventCounters * kEthosUCycleCounterMetadataSize;
 
 enum class EthosUPlatform : uint8_t {
   CoreDriver,
+  LinuxDriver,
 };
 
 struct EthosUPmuCounter {
@@ -76,14 +85,22 @@ struct EthosUPmuCounter {
 };
 
 struct EthosUExecutionStats {
+#if defined(EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
+  std::string device_identifier;
+#else
   // Register base address of the physical NPU that produced this record.
   uintptr_t device_identifier = 0;
+#endif
   // Ethos-U product identifier for the NPU that produced this record.
   uint32_t product = 0;
   // Number of MACs per cycle supported by the NPU.
   uint32_t macs_per_cycle = 0;
   // Platform that produced this record.
+#if defined(EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
+  EthosUPlatform platform = EthosUPlatform::LinuxDriver;
+#else
   EthosUPlatform platform = EthosUPlatform::CoreDriver;
+#endif
   // NPU PMU cycle count for this execution, when available.
   uint64_t cycle_count = 0;
   // Whether cycle_count was measured; zero can be a valid measurement.
@@ -122,12 +139,13 @@ struct EthosUStatsBuffer {
       bool overflow = false) noexcept
       : records(records), capacity(capacity), overflow(overflow) {}
 
-  void append(const EthosUExecutionRecord& record) noexcept {
+  void append(EthosUExecutionRecord record) noexcept {
     lock();
     if (size >= capacity) {
       overflow = true;
     } else {
-      records[size++] = record;
+      records[size] = std::move(record);
+      ++size;
     }
     unlock();
   }
