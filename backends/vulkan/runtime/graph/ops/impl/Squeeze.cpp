@@ -80,20 +80,30 @@ void resize_squeeze_node(
   const IntListPtr dims = graph->get_int_list(dims_ref);
 
   std::vector<int64_t> out_sizes = graph->sizes_of(in);
+  const int64_t in_dim = static_cast<int64_t>(out_sizes.size());
 
-  // Remove the dimensions specified in dims if their size is 1
+  // Normalize negative dims on a copy: the graph's dims list must stay as
+  // traced, since every resize reads it again.
+  std::vector<int64_t> squeeze_dims;
   for (int64_t dim : *dims) {
-    if (dim >= 0 && dim < static_cast<int64_t>(out_sizes.size()) &&
-        out_sizes[dim] == 1) {
-      out_sizes.erase(out_sizes.begin() + dim);
-      // After erasing, all subsequent dims shift left by one
-      // So we need to decrement all subsequent dims in dims
-      for (auto& d : *dims) {
-        if (d > dim) {
-          --d;
-        }
-      }
+    if (dim < 0) {
+      dim += in_dim;
     }
+    if (dim >= 0 && dim < in_dim && out_sizes[dim] == 1) {
+      squeeze_dims.push_back(dim);
+    }
+  }
+  // Erase from the back so earlier erasures do not shift later dims, and only
+  // as many dims as the output dropped when it was built.
+  std::sort(squeeze_dims.rbegin(), squeeze_dims.rend());
+  squeeze_dims.erase(
+      std::unique(squeeze_dims.begin(), squeeze_dims.end()),
+      squeeze_dims.end());
+  for (int64_t dim : squeeze_dims) {
+    if (static_cast<int64_t>(out_sizes.size()) <= graph->dim_of(out)) {
+      break;
+    }
+    out_sizes.erase(out_sizes.begin() + dim);
   }
 
   graph->virtual_resize(out, out_sizes);
