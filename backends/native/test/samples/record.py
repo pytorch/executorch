@@ -77,8 +77,18 @@ def record(
             model = copy.deepcopy(case.model).to(dtype).eval()
             scheme.quantize(model)
             method = _Method({name: model})
+            # A chain may carry state in buffers its calls mutate in place, so
+            # each reference runs on its own copy, and the exported program,
+            # which aliases the buffers, gets their initial values back.
+            reference, act_method = copy.deepcopy(method), copy.deepcopy(method)
+            initial = {k: v.clone() for k, v in method.named_buffers()}
+            # Non-persistent buffers too: a chain's state may be one. Floating
+            # tensors at reference precision, the others as copies.
             state = {
-                k: scheme.decode(v).double() for k, v in method.state_dict().items()
+                k: d.double() if d.is_floating_point() else d.clone()
+                for named in (method.named_parameters(), method.named_buffers())
+                for k, v in named
+                for d in (scheme.decode(v),)
             }
             inputs = [_cast(x, dtype) for x in case.inputs]
             chained = case.dynamic_shapes is not None
@@ -91,14 +101,18 @@ def record(
             with torch.no_grad():
                 for x in inputs:
                     golden_calls.append(Call(name, list(x), outputs(method(*x))))
-                    ref = functional_call(method, state, _cast(x, torch.float64))
+                    ref = functional_call(reference, state, _cast(x, torch.float64))
                     ref = [
                         t.float() if t.is_floating_point() else t for t in outputs(ref)
                     ]
                     precise_calls.append(Call(name, list(x), ref))
                     if act_quant:
-                        with int8_activations(method):
-                            act_calls.append(Call(name, list(x), outputs(method(*x))))
+                        with int8_activations(act_method):
+                            act_calls.append(
+                                Call(name, list(x), outputs(act_method(*x)))
+                            )
+                for k, v in method.named_buffers():
+                    v.copy_(initial[k])
             golden += _samples(golden_calls, chained)
             precise += _samples(precise_calls, chained)
             golden_act += _samples(act_calls, chained)
