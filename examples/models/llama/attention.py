@@ -530,6 +530,11 @@ class AttentionMHA(Attention):
         """Initialize KV cache (only for non-shared layers)."""
         if self.has_kv_weights:
             if self.is_sliding and args.sliding_window:
+                if args.max_seq_len > args.sliding_window:
+                    raise ValueError(
+                        f"max_seq_len ({args.max_seq_len}) must not exceed "
+                        f"sliding_window ({args.sliding_window}) for cached sliding attention"
+                    )
                 self.kv_cache = RingKVCache(
                     args.max_batch_size,
                     args.sliding_window,
