@@ -1302,7 +1302,7 @@ class CudaBatchedSequenceCache final : public cache::Cache,
 
   Error ensure_columns(cudaStream_t stream) {
     const int live = static_cast<int>(seqs_.size());
-    const int target = live + 1 <= columns_
+    int target = live + 1 <= columns_
         ? columns_
         : static_cast<int>(std::min<int64_t>(
               max_seqs_ + 1LL,
@@ -1338,8 +1338,14 @@ class CudaBatchedSequenceCache final : public cache::Cache,
       for (const auto& [id, sequence] : seqs_) {
         live_rows = std::max(live_rows, sequence.plan.length());
       }
-      ET_CHECK_OK_OR_RETURN_ERROR(
-          pool_.resize_columns(target, live_rows, stream));
+      auto resized = pool_.resize_columns(target, live_rows, stream);
+      if (resized == Error::MemoryAllocationFailed && target > live + 1) {
+        // Under memory pressure, admit at the required width if doubling
+        // cannot fit. Failed resizing leaves storage and bindings intact.
+        target = live + 1;
+        resized = pool_.resize_columns(target, live_rows, stream);
+      }
+      ET_CHECK_OK_OR_RETURN_ERROR(resized);
       columns_ = target;
     }
     for (auto& [id, sequence] : seqs_) {

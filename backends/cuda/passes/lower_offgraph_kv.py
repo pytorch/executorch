@@ -146,16 +146,6 @@ def parse_offgraph_kv_manifest(value: bytes) -> dict[str, Any]:  # noqa: C901
     return manifest
 
 
-def offgraph_kv_constant_methods(value: bytes) -> dict[str, int]:
-    """Runtime sequence metadata derived from the lowering manifest."""
-    manifest = parse_offgraph_kv_manifest(value)
-    if manifest["layout"] != "batched-sequence":
-        return {}
-    return {
-        "get_offgraph_kv_max_seqs": manifest["max_seqs"],
-    }
-
-
 def ring_attention_mask(
     position: torch.Tensor, buf_size: int, window: int
 ) -> torch.Tensor:

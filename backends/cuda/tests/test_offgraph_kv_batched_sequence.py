@@ -23,7 +23,6 @@ from executorch.backends.cuda.passes.lower_offgraph_kv import (
     batched_sequence_step,
     CheckOffGraphKVStepWidthPass,
     LowerOffGraphKVPass,
-    offgraph_kv_constant_methods,
     OFFGRAPH_KV_FQN_PREFIX,
     OFFGRAPH_KV_SEQ_COLS_FQN,
     OFFGRAPH_KV_SEQ_INFO_FQN,
@@ -547,10 +546,6 @@ class LowerBatchedSequencePassTest(unittest.TestCase):
             if n.op == "placeholder" and n.name.startswith(OFFGRAPH_KV_FQN_PREFIX)
         }
         self.assertEqual(buffers[OFFGRAPH_KV_SEQ_INFO_FQN], (self.MAX_SEGMENTS, 5))
-        self.assertEqual(
-            offgraph_kv_constant_methods(manifest),
-            {"get_offgraph_kv_max_seqs": self.MAX_SEQS},
-        )
         with self.assertRaises(ValueError):
             parse_offgraph_kv_manifest(self.manifest(version=2))
 
@@ -593,8 +588,6 @@ class LowerBatchedSequencePassTest(unittest.TestCase):
             max_seqs=declared_seqs,
             max_segments=segments,
         )
-        metadata = offgraph_kv_constant_methods(manifest)
-        self.assertEqual(metadata["get_offgraph_kv_max_seqs"], declared_seqs)
         lowered = self._lowered(manifest)
         runtime = {}
         for name, value in list(lowered.constants.items()):

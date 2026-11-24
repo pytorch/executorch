@@ -15,6 +15,7 @@ import argparse
 import json
 import subprocess
 import sys
+import tempfile
 from dataclasses import replace
 from pathlib import Path
 
@@ -118,8 +119,8 @@ def commands() -> list[dict]:
 
 
 def run(probe: Path, artifact: Path, preallocate: bool) -> tuple[dict, list[dict]]:
-    output = artifact / ("preallocated" if preallocate else "growing")
-    output.mkdir(exist_ok=True)
+    mode = "preallocated" if preallocate else "growing"
+    output = Path(tempfile.mkdtemp(prefix=mode + "-", dir=artifact))
     prefix = []
     if preallocate:
         prefix.extend({"op": "new"} for _ in range(8))
@@ -166,8 +167,10 @@ def main() -> None:
     parser.add_argument("--probe", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
     args = parser.parse_args()
-    artifact = args.output_dir.resolve()
-    artifact.mkdir(parents=True, exist_ok=True)
+    root = args.output_dir.resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    artifact = Path(tempfile.mkdtemp(prefix="run-", dir=root))
+    print(f"Runtime KV column validation artifacts: {artifact}", flush=True)
     torch.manual_seed(123)
     config = replace(
         TINY_CONFIG,
