@@ -324,6 +324,8 @@ TEST_F(
   handles.outputs = &outputs;
   ExecutionHandle handle{};
   handle.handles = handles;
+  IOPlan io_plan{};
+  io_plan.handles = &handles;
   ASSERT_EQ(platform_init({}, nullptr, &handle), Error::Ok);
   MemoryAllocator allocator(0, nullptr);
   BackendExecutionContext context(&tracer, &allocator, nullptr);
@@ -332,9 +334,7 @@ TEST_F(
     EthosU::Inference::throw_on_wait = failure == 1;
     EthosU::Inference::timeout = failure == 2;
     EthosU::Inference::result = EthosU::InferenceStatus::ERROR;
-    EXPECT_EQ(
-        platform_execute(context, &handle, handles, 0, 0, {}, nullptr),
-        Error::InvalidState);
+    EXPECT_EQ(platform_execute(context, &handle, io_plan), Error::InvalidState);
     EXPECT_EQ(tracer.starts, failure + 1);
     EXPECT_EQ(tracer.ends, failure + 1);
   }
@@ -343,9 +343,7 @@ TEST_F(
   EthosU::Inference::throw_on_wait = false;
   EthosU::Inference::timeout = false;
   EthosU::Inference::result = EthosU::InferenceStatus::OK;
-  EXPECT_EQ(
-      platform_execute(context, &handle, handles, 0, 0, {}, nullptr),
-      Error::Ok);
+  EXPECT_EQ(platform_execute(context, &handle, io_plan), Error::Ok);
   EXPECT_TRUE(EthosU::Inference::cycle_counter_enabled);
   EXPECT_EQ(buffer.size, 1);
   EXPECT_EQ(tracer.starts, 5);

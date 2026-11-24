@@ -143,6 +143,9 @@ class ClampConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
+        if neutron_target_spec.is_subsystem():
+            return False
+
         relu_compatible = cls._is_convertible_to_relu(node)
         bounds = cls._get_bounds(node)
 

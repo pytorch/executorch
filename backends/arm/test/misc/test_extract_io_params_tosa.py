@@ -113,15 +113,7 @@ def test_only_vgf_partitioner_registers_grid_sampler_no_target_custom_partition_
         exir_ops.edge.aten.grid_sampler_2d.default
         not in ethosu_partitioner._custom_partition_ops
     )
-    assert (
-        exir_ops.edge.llama.custom_sdpa.default
-        not in tosa_partitioner._custom_partition_ops
-    )
-    assert (
-        exir_ops.edge.llama.custom_sdpa.default
-        not in vgf_partitioner._custom_partition_ops
-    )
-    assert (
-        exir_ops.edge.llama.custom_sdpa.default
-        not in ethosu_partitioner._custom_partition_ops
-    )
+    for partitioner in (tosa_partitioner, vgf_partitioner, ethosu_partitioner):
+        assert "llama::custom_sdpa" not in {
+            op.name() for op in partitioner._custom_partition_ops
+        }
