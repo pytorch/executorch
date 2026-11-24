@@ -8,7 +8,9 @@
 
 set +ex
 
-if [[ "${DEVICE_ACQUIRED:-0}" != "1" ]]; then
+# A request that is still queued (e.g. the job was cancelled while waiting)
+# is cleared by -d as well as an assigned device.
+if [[ "${DEVICE_ACQUIRED:-0}" != "1" && "${DEVICE_QUEUED:-0}" != "1" ]]; then
   exit 0
 fi
 
@@ -18,6 +20,7 @@ if ! command -v devicefarm-cli >/dev/null 2>&1; then
 fi
 
 echo "[INFO] Disconnecting device (-d)..."
-devicefarm-cli -d || echo "::warning::Device disconnect failed (ignored)"
+timeout --kill-after=10 "${DEVICEFARM_CALL_TIMEOUT_SEC:-120}" devicefarm-cli -d \
+  || echo "::warning::Device disconnect failed (ignored)"
 
 set -ex
