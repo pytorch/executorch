@@ -147,6 +147,7 @@ class GgmlExecutable final : public EngineExecutable {
     index_rope_frequencies();
     index_mask_extents();
     index_offgraph_attention();
+    fold_constants(materialized_constant_bytes);
     if (heap_copied_constant_bytes != nullptr) {
       *heap_copied_constant_bytes += heap_copied_constant_bytes_;
     }
@@ -1461,6 +1462,192 @@ class GgmlExecutable final : public EngineExecutable {
     }
   }
 
+  // Ops that compute a pure function of their tensor arguments, which the
+  // executable may run once when all of those are constants.
+  static bool is_foldable_op(const std::string& key) {
+    static const std::unordered_set<std::string> kOps = {
+        "aten._to_copy.default",     "aten._unsafe_view.default",
+        "aten.abs.default",          "aten.add.Tensor",
+        "aten.alias.default",        "aten.clamp.default",
+        "aten.clone.default",        "aten.contiguous.default",
+        "aten.cos.default",          "aten.div.Tensor",
+        "aten.exp.default",          "aten.expand.default",
+        "aten.expand_copy.default",  "aten.hardtanh.default",
+        "aten.log.default",          "aten.mul.Tensor",
+        "aten.neg.default",          "aten.permute.default",
+        "aten.permute_copy.default", "aten.relu.default",
+        "aten.reshape.default",      "aten.select.int",
+        "aten.select_copy.int",      "aten.sigmoid.default",
+        "aten.silu.default",         "aten.sin.default",
+        "aten.slice.Tensor",         "aten.slice_copy.Tensor",
+        "aten.sqrt.default",         "aten.squeeze.dims",
+        "aten.squeeze_copy.dims",    "aten.sub.Tensor",
+        "aten.tanh.default",         "aten.transpose_copy.int",
+        "aten.unsqueeze.default",    "aten.unsqueeze_copy.default",
+        "aten.view.default",         "aten.view_copy.default",
+    };
+    return kOps.contains(key);
+  }
+
+  // Unquantized constants no method writes: packed and int4 weights stay as
+  // they are for mul_mat, and state may change between calls.
+  std::unordered_set<ValueId> immutable_constants() const {
+    std::unordered_set<ValueId> constants;
+    for (const DataBinding& binding : method_.data_bindings) {
+      if (persistent_.contains(binding.value_id) && !binding.mutated &&
+          constant_binding(binding.value_id) != nullptr &&
+          !method_.graph.value(binding.value_id).tensor_meta().quant) {
+        constants.insert(binding.value_id);
+      }
+    }
+    return constants;
+  }
+
+  // Whether `node` computes a float result no larger than its inputs (or
+  // small), from `constants` alone, with static arguments, writing nothing.
+  bool is_foldable(
+      const Node& node,
+      const std::unordered_set<ValueId>& constants,
+      const std::unordered_set<ValueId>& excluded) const {
+    constexpr size_t kSmallResultBytes = size_t{1} << 20;
+    const std::vector<ValueId> outputs = output_ids(node);
+    if (!node.is_call() || !is_foldable_op(op_key(node.target)) ||
+        outputs.size() != 1 || excluded.contains(outputs.front())) {
+      return false;
+    }
+    const TensorMeta& meta = method_.graph.value(outputs.front()).tensor_meta();
+    if ((meta.dtype != ScalarType::Float && meta.dtype != ScalarType::Half &&
+         meta.dtype != ScalarType::BFloat16) ||
+        !meta.lower_bounds.empty() || checked_numel(meta.sizes) == 0) {
+      return false;
+    }
+    size_t input_bytes = 0;
+    for (const NamedArgument& input : node.inputs) {
+      const Argument& arg = input.arg;
+      const bool symbolic =
+          (arg.kind() == ArgKind::Int && valid(arg.as_int().id)) ||
+          (arg.kind() == ArgKind::Float && valid(arg.as_float().id)) ||
+          (arg.kind() == ArgKind::Bool && valid(arg.as_bool().id)) ||
+          (arg.kind() == ArgKind::IntList &&
+           std::ranges::any_of(arg.as_int_list().ids, valid));
+      if (input.mutated || symbolic || arg.kind() == ArgKind::TensorList ||
+          arg.kind() == ArgKind::OptionalTensorList ||
+          arg.kind() == ArgKind::Graph) {
+        return false;
+      }
+      if (arg.kind() == ArgKind::Tensor) {
+        const ValueId id = arg.as_tensor().id;
+        if (!constants.contains(id)) {
+          return false;
+        }
+        const TensorMeta& source = method_.graph.value(id).tensor_meta();
+        input_bytes += checked_nbytes(source.sizes, source.dtype);
+      }
+    }
+    const size_t bytes = checked_nbytes(meta.sizes, meta.dtype);
+    const auto writes_result = [&](NodeId consumer) {
+      return std::ranges::any_of(
+          method_.graph.node(consumer).inputs, [&](const NamedArgument& in) {
+            return in.mutated && in.arg.kind() == ArgKind::Tensor &&
+                in.arg.as_tensor().id == outputs.front();
+          });
+    };
+    return input_bytes > 0 &&
+        (bytes <= input_bytes || bytes <= kSmallResultBytes) &&
+        std::ranges::none_of(
+               method_.graph.value(outputs.front()).consumer_ids,
+               writes_result);
+  }
+
+  // Computes once the nodes that read only immutable constants (directly or
+  // through other such nodes), in their own lowering, so every call's graph
+  // reads the same bits it would have computed. Results that other nodes read
+  // join the persistent tensors; graph outputs and attention-mask chains,
+  // whose lowering depends on the call, are left alone.
+  void fold_constants(size_t* materialized_constant_bytes) {
+    if (!options_.fold_constants) {
+      return;
+    }
+    std::unordered_set<ValueId> constants = immutable_constants();
+    std::unordered_set<ValueId> excluded(
+        method_.graph.output_ids.begin(), method_.graph.output_ids.end());
+    for (const MaskExtent& mask : mask_extents_) {
+      excluded.insert(mask.chain.begin(), mask.chain.end());
+    }
+    std::vector<NodeId> nodes;
+    std::unordered_set<NodeId> folded;
+    for (const NodeId id : method_.graph.schedule) {
+      const Node& node = method_.graph.node(id);
+      if (is_foldable(node, constants, excluded)) {
+        nodes.push_back(id);
+        folded.insert(id);
+        constants.insert(output_ids(node).front());
+      }
+    }
+    std::vector<ValueId> results;
+    for (const NodeId id : nodes) {
+      const ValueId result = output_ids(method_.graph.node(id)).front();
+      if (std::ranges::any_of(
+              method_.graph.value(result).consumer_ids,
+              [&](NodeId consumer) { return !folded.contains(consumer); })) {
+        results.push_back(result);
+      }
+    }
+    if (results.empty()) {
+      return;
+    }
+    FoldGraph fold = graph_builder({}).build_folds(nodes, results);
+    if (fold.values.empty()) {
+      return;
+    }
+    ggml_backend_sched_ptr scheduler =
+        make_scheduler(scheduler_size(fold.instance));
+    if (!ggml_backend_sched_alloc_graph(scheduler.get(), fold.instance.graph) ||
+        ggml_backend_sched_graph_compute(
+            scheduler.get(), fold.instance.graph) != GGML_STATUS_SUCCESS) {
+      throw std::runtime_error("ggml: failed to compute constant results");
+    }
+    ggml_init_params params{
+        .mem_size = ggml_tensor_overhead() * fold.values.size(),
+        .mem_buffer = nullptr,
+        .no_alloc = true,
+    };
+    fold_context_.reset(ggml_init(params));
+    if (!fold_context_) {
+      throw std::runtime_error(
+          "ggml: failed to create constant result context");
+    }
+    std::vector<ggml_tensor*> tensors;
+    for (size_t i = 0; i < fold.values.size(); ++i) {
+      const TensorRef& result = fold.instance.outputs[i];
+      tensors.push_back(
+          new_tensor(fold_context_.get(), result.tensor->type, result.sizes));
+      ggml_set_name(
+          tensors.back(), method_.graph.value(fold.values[i]).name.c_str());
+    }
+    fold_buffer_.reset(
+        ggml_backend_alloc_ctx_tensors(fold_context_.get(), primary_backend_));
+    if (!fold_buffer_) {
+      throw std::runtime_error("ggml: failed to allocate constant results");
+    }
+    size_t loaded = 0;
+    std::vector<uint8_t> bytes;
+    for (size_t i = 0; i < fold.values.size(); ++i) {
+      bytes.resize(ggml_nbytes(tensors[i]));
+      ggml_backend_tensor_get(
+          fold.instance.outputs[i].tensor, bytes.data(), 0, bytes.size());
+      ggml_backend_tensor_set(tensors[i], bytes.data(), 0, bytes.size());
+      persistent_.emplace(fold.values[i], tensors[i]);
+      loaded += bytes.size();
+    }
+    ggml_backend_sched_synchronize(scheduler.get());
+    ggml_backend_buffer_set_usage(
+        fold_buffer_.get(), GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+    if (materialized_constant_bytes != nullptr) {
+      *materialized_constant_bytes += loaded;
+    }
+  }
+
   void index_rope_frequencies() {
     for (const NodeId id : method_.graph.schedule) {
       const Node& node = method_.graph.node(id);
@@ -1544,6 +1731,9 @@ class GgmlExecutable final : public EngineExecutable {
         "ggml: unsupported output dtype conversion to Float");
   }
 
+  GraphBuilder graph_builder(
+      std::unordered_map<ValueId, int64_t> truncated,
+      const OffGraphCacheBinding* offgraph_cache = nullptr);
   GraphInstance build_graph(const std::vector<int64_t>& key_extents);
 
   static std::optional<int64_t> static_dim(const TensorMeta& meta, size_t i) {
@@ -2155,7 +2345,30 @@ class GgmlExecutable final : public EngineExecutable {
   FoldedBatchNorms batch_norms_;
   ggml_context_ptr batch_norm_context_;
   ggml_backend_buffer_ptr batch_norm_buffer_;
+  // Results computed once from constants (fold_constants).
+  ggml_context_ptr fold_context_;
+  ggml_backend_buffer_ptr fold_buffer_;
 };
+
+GraphBuilder GgmlExecutable::graph_builder(
+    std::unordered_map<ValueId, int64_t> truncated,
+    const OffGraphCacheBinding* offgraph_cache) {
+  return GraphBuilder(
+      method_,
+      inputs_,
+      outputs_,
+      persistent_,
+      row_scales_,
+      rope_freq_factors_,
+      batch_norms_,
+      std::move(truncated),
+      options_.graph_size,
+      options_.device == GgmlDevice::Gpu,
+      options_.exact_topk_for_testing,
+      options_.exact_gelu_for_testing,
+      f32_accumulation_,
+      offgraph_cache);
+}
 
 GraphInstance GgmlExecutable::build_graph(
     const std::vector<int64_t>& key_extents) {
@@ -2172,20 +2385,8 @@ GraphInstance GgmlExecutable::build_graph(
     offgraph_cache.keys = key_extents.back();
   }
   GraphInstance instance =
-      GraphBuilder(
-          method_,
-          inputs_,
-          outputs_,
-          persistent_,
-          row_scales_,
-          rope_freq_factors_,
-          batch_norms_,
+      graph_builder(
           std::move(truncated),
-          options_.graph_size,
-          options_.device == GgmlDevice::Gpu,
-          options_.exact_topk_for_testing,
-          options_.exact_gelu_for_testing,
-          f32_accumulation_,
           valid(offgraph_position_) ? &offgraph_cache : nullptr)
           .build();
   // Boundability without a per-run check: shapes are part of a graph's key,
