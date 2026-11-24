@@ -191,7 +191,6 @@ OPTIMIZED_ATEN_OPS = (
             "ovr_config//os:android": select({
                 "DEFAULT": [],
                 "ovr_config//toolchain/clang/constraints:17": ["-O3"],
-                "ovr_config//toolchain/clang/constraints:19": ["-O3"],
             }),
         }),
         deps = [
