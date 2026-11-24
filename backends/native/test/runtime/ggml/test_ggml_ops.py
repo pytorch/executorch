@@ -23,6 +23,7 @@ import torch
 import torch.nn.functional as F
 from executorch.backends.native.custom_ops import gated_delta_rule_op
 from executorch.backends.native.examples.hf_llm.export_hf_llm import (
+    export_prefill,
     LastTokenLM,
     native_gdn_rules,
 )
@@ -3309,7 +3310,55 @@ class GgmlQwen35Test(unittest.TestCase):
     def test_native_gdn_rule_calls_match_eager_across_a_restart(self):
         self._check(native=True)
 
-    def _check(self, native: bool):
+    def test_prefill_and_one_token_calls_share_state(self):
+        # A prompt as prefill calls of 8 and 5 tokens and one-token calls,
+        # then a second sequence from position 0, each call on its method of
+        # one package.
+        model = self._model()
+        tokens = torch.randint(0, 128, (19,))
+        calls = [(0, 8), (8, 5), (13, 1), (14, 1), (0, 3), (3, 1)]
+        steps, methods, start = [], [], 0
+        for position, size in calls:
+            steps.append(
+                (
+                    tokens[start : start + size].view(1, size),
+                    torch.arange(position, position + size),
+                )
+            )
+            methods.append("forward" if size == 1 else "prefill")
+            start += size
+        with native_gdn_rules(model), torch.no_grad():
+            wrapper = LastTokenLM(model, 32).eval()
+            one = (
+                torch.zeros(1, 1, dtype=torch.long),
+                torch.zeros(1, dtype=torch.long),
+            )
+            programs = {
+                "forward": torch.export.export(wrapper, one, strict=True),
+                "prefill": export_prefill(wrapper, 16),
+            }
+            eager = copy.deepcopy(wrapper)
+            expected = [eager(*inputs) for inputs in steps]
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            package = outdir / "tiny_qwen35.ptn"
+            to_native(programs).save(str(package))
+            outputs = _run_ggml(
+                package, steps, outdir, 1, resize=True, method=";".join(methods)
+            )
+        self.assertEqual(len(outputs), len(steps))
+        # GPUs multiply 8-row F32 linears in TF32 or XF32 (README: Known ggml
+        # GPU numerics).
+        tol = 1e-3 if _BACKEND in ("cuda", "hip") else 1e-4
+        for step, (step_outputs, reference) in enumerate(zip(outputs, expected)):
+            ((raw, shape),) = step_outputs
+            with self.subTest(step=step, method=methods[step]):
+                actual = torch.frombuffer(bytearray(raw), dtype=torch.float32)
+                torch.testing.assert_close(
+                    actual.reshape(shape), reference, atol=tol, rtol=tol
+                )
+
+    def _model(self):
         torch.manual_seed(5)
         config = Qwen3_5TextConfig(
             vocab_size=128,
@@ -3339,6 +3388,10 @@ class GgmlQwen35Test(unittest.TestCase):
         model.config._attn_implementation = "sdpa"
         model.generation_config.use_cache = True
         model.generation_config.cache_implementation = "static"
+        return model
+
+    def _check(self, native: bool):
+        model = self._model()
         example = (
             torch.zeros(1, 1, dtype=torch.long),
             torch.zeros(1, dtype=torch.long),
