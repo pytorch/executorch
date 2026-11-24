@@ -339,7 +339,8 @@ def prepare_cuda_packed_draft(
     """Trace the packed draft and publish its independent cache geometry.
 
     On the sequence layout the draft keeps one private history per resident
-    session, and each owner's block attends all of it and the whole block.
+    session. Sliding layers use a symmetric per-query window; flat layers see
+    all of the context and draft block.
     """
     validate_dflash_export_options("cuda", True, draft_model.config)
 
@@ -393,7 +394,7 @@ def prepare_cuda_packed_draft(
     single_manifest = enable_dflash_offgraph_kv_cache(draft_model, max_write)
     manifest = (
         batched_sequence_manifest(
-            single_manifest, max_kv_seqs, causal=False, context_window=True
+            single_manifest, max_kv_seqs, causal=False, symmetric_window=True
         )
         if sequence_layout
         else cell_manifest(single_manifest, max_cells)

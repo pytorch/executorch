@@ -33,12 +33,8 @@ bool needs_scratch_allocation() {
 Error platform_execute(
     executorch::runtime::BackendExecutionContext&,
     const ExecutionHandle*,
-    const VelaHandles&,
-    int,
-    int,
-    executorch::runtime::Span<executorch::runtime::EValue*>,
-    char* ethosu_scratch) {
-  executed_scratch = reinterpret_cast<uint8_t*>(ethosu_scratch);
+    IOPlan& plan) {
+  executed_scratch = plan.scratch.data();
   return Error::Ok;
 }
 

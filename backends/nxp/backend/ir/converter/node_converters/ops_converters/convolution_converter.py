@@ -222,6 +222,9 @@ class ConvolutionConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
+        if neutron_target_spec.is_subsystem():
+            return False
+
         conv_params = ConvolutionConverter._get_conv_params(node)
 
         if conv_params.transposed:

@@ -70,6 +70,9 @@ class AvgPool2dConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
+        if neutron_target_spec.is_subsystem():
+            return False
+
         kernel = node.args[1]
         stride = node.args[2]
 

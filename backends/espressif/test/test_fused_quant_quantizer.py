@@ -36,6 +36,29 @@ def _quantize(model, inputs):
     return interpreter
 
 
+@pytest.mark.parametrize(
+    "activation, target",
+    [
+        (torch.nn.Sigmoid, torch.ops.fused_quant.sigmoid.default),
+        (torch.nn.SiLU, torch.ops.fused_quant.silu.default),
+        (torch.nn.Hardswish, torch.ops.fused_quant.hardswish.default),
+        (torch.nn.Hardsigmoid, torch.ops.fused_quant.hardsigmoid.default),
+    ],
+    ids=["sigmoid", "silu", "hardswish", "hardsigmoid"],
+)
+def test_lut_output_qparams_are_calibrated(activation, target):
+    scales = []
+    for low, high in [(-16, 16), (-3, -1)]:
+        interpreter = _quantize(activation(), (torch.linspace(low, high, 257),))
+        (node,) = interpreter.module.graph.find_nodes(op="call_function", target=target)
+        params = get_qparams_from_node(node, "out")
+        assert params.dtype == torch.int8
+        assert (params.quant_min, params.quant_max) == (-128, 127)
+        scales.append(interpreter.env[params.scale].item())
+        assert interpreter.env[get_arg(node, "inp")].dtype == torch.int8
+    assert scales[0] > scales[1]
+
+
 def _check_bias(interpreter, node, original_bias):
     values = interpreter.env
     inp = get_qparams_from_node(node, "inp")

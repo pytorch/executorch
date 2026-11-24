@@ -27,8 +27,14 @@ to_native({"forward": ep_forward, "prefill": ep_prefill}).save("model.ptn")
 ```
 
 The partitioner accepts core ATen ops plus `linear`, `matmul`, `addmm`,
-`scaled_dot_product_attention`, `rms_norm`, `native::rope`, and TorchAO affine
-quantize/dequantize ops. TorchAO int4 group-wise weights of `linear` and
+`scaled_dot_product_attention`, `rms_norm`, `native::rope`,
+`native::gated_delta_rule`, and TorchAO affine quantize/dequantize ops.
+`native::gated_delta_rule` is the Gated DeltaNet recurrence over a call's
+tokens; its state is stored value-major, `[B, H, V, K]`, and its reference in
+`custom_ops.py` defines it. With `snapshots` S > 1, its state is the S most
+recent states, newest first, `[B, S, H, V, K]`, for speculative decoding to
+roll back to. An engine that does not implement a `native::` op
+refuses the method at load. TorchAO int4 group-wise weights of `linear` and
 `embedding`, and block-quantized GGUF weights from
 `executorch.extension.llm.export.gguf`, are stored packed with their scheme in
 tensor metadata. Each method must lower wholly to one delegate; `to_native`
@@ -211,6 +217,7 @@ engine uses as they are. Each has a test in
 | Q4_1 and Q5_1 matrix multiplies that ggml routes to its MMVQ kernel (up to 8 activation rows) multiply each block's weight and activation scales, and its min and activation sum, in fp16, as in llama.cpp, which rounds small products and flushes tiny ones to zero | CUDA, HIP | Q4_1 and Q5_1 `linear`. The GPU sample tests allow this error per block where a linear's activations follow from the sample's inputs, directly or through other such linears. In `quantized_*` cases a linear feeds another op or, in Gated DeltaNet layers, reads the gated norm's output, which samples do not record; those cases keep the default judge, and the ones that fail are excluded on CUDA and HIP (`test/runtime/ggml/BUCK`) |
 | `tanh` and tanh GELU use fast-math `tanhf` | CUDA | errors of a few 1e-6 |
 | BF16 matrix multiplies round the product before the bias is added | HIP | BF16 `linear` with bias, one BF16 ulp |
+| Flash attention shrinks its outputs on CUDA, by rel_bias alone on F16 K and V: `sdpa_grouped_float.gqa6_d256_decode_f16` and `_prefill_f16` measure -8.24e-5 and -6.61e-5 while rmse, max_abs and abs_bias pass; the `_f32` IDs measure -9.38e-5 and -7.08e-5 and also fail rmse and max_abs from the F16 K and V read. Declared range: rel_bias -1.0e-4 to -6.0e-5 against judge bounds of 2.3e-5 to 4.0e-5. HIP (MI300X) fails these IDs by rmse too: on the `_f16` IDs rmse 9.0e-5 to 1.03e-4 (bounds 8.6e-5 and 9.3e-5), max_abs up to 7.9e-4, rel_bias -3.8e-5 to -7.0e-5 | CUDA (MMA kernel); HIP | `scaled_dot_product_attention` that ggml runs on the GPU. The samples (`test/samples/attention.py`): q [1, 24, T, 256] over k, v [1, 4, 256, 256], query head h reading KV head h // 6, mask `arange(256) <= positions`, scale 1/16, q, k and v drawn by `randn` from one generator seeded 0; decode T = 1 at positions 200 and 255, prefill T = 8 at 248-255. Excluded on CUDA and HIP (`test/runtime/ggml/BUCK`) |
 
 The engine keeps these ggml defaults, as llama.cpp does; an engine option
 named in this table exists only to test the stricter numerics.
@@ -475,6 +482,12 @@ Both runners prefill a prompt in calls of at most the token input's upper
 bound, so a linear-attention model, which exports a one-token `forward`,
 takes one call per prompt token. The prompt must fit `--max_seq_length` and
 the model's KV cache, or the token bound for a method without a cache.
+
+With `--gdn_op native`, the default, a linear-attention export also writes a
+`prefill` method of 2 to `--prefill_tokens` tokens per call (default 512; 0
+exports `forward` alone), and its golden samples run each prompt on it. The
+runners call only `forward`, so `--verify_samples` stops at a sample's first
+`prefill` call.
 
 With `EXECUTORCH_BUILD_TESTS=ON`, `native_llm_runner_utils_test` exercises the
 LLM generation utilities.
