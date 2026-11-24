@@ -482,5 +482,11 @@ bound, so a linear-attention model, which exports a one-token `forward`,
 takes one call per prompt token. The prompt must fit `--max_seq_length` and
 the model's KV cache, or the token bound for a method without a cache.
 
+With `--gdn_op native`, the default, a linear-attention export also writes a
+`prefill` method of 2 to `--prefill_tokens` tokens per call (default 512; 0
+exports `forward` alone), and its golden samples run each prompt on it. The
+runners call only `forward`, so `--verify_samples` stops at a sample's first
+`prefill` call.
+
 With `EXECUTORCH_BUILD_TESTS=ON`, `native_llm_runner_utils_test` exercises the
 LLM generation utilities.
