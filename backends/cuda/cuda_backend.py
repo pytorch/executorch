@@ -1417,27 +1417,24 @@ class CudaBackend(AotiBackend, BackendDetails):
             )
         collector = CudaWeightCollector()
         results: Dict[str, List[PreprocessResult]] = {}
-        # One distinct Helion CuTe launch is a per-.pte limit, not a
-        # per-delegate one, until multi-launch programs are understood.
-        with helion_cute.one_launch_per_program():
-            for method_name, programs in edge_programs.items():
-                if method_name not in compile_specs:
-                    raise ValueError(f"Missing CUDA compile specs for {method_name!r}")
-                method_specs = compile_specs[method_name]
-                if len(programs) != len(method_specs):
-                    raise ValueError(
-                        f"Method {method_name!r} has {len(programs)} partitions but "
-                        f"{len(method_specs)} compile-spec lists"
-                    )
-                start = time.monotonic()
-                results[method_name] = [
-                    cls._preprocess_with_weight_collector(program, specs, collector)
-                    for program, specs in zip(programs, method_specs)
-                ]
-                logger.info(
-                    "CUDA compiled %s in %.1f s", method_name, time.monotonic() - start
+        for method_name, programs in edge_programs.items():
+            if method_name not in compile_specs:
+                raise ValueError(f"Missing CUDA compile specs for {method_name!r}")
+            method_specs = compile_specs[method_name]
+            if len(programs) != len(method_specs):
+                raise ValueError(
+                    f"Method {method_name!r} has {len(programs)} partitions but "
+                    f"{len(method_specs)} compile-spec lists"
                 )
-            collector.finish()
+            start = time.monotonic()
+            results[method_name] = [
+                cls._preprocess_with_weight_collector(program, specs, collector)
+                for program, specs in zip(programs, method_specs)
+            ]
+            logger.info(
+                "CUDA compiled %s in %.1f s", method_name, time.monotonic() - start
+            )
+        collector.finish()
         return results
 
     @classmethod
