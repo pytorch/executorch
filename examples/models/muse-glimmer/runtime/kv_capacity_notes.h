@@ -173,7 +173,8 @@ inline std::vector<std::string> draft_notes(
         " tokens";
     line += requested_tokens != 0 ? "; " + std::to_string(requested_tokens) +
             " were requested (--max_session_tokens/--max-context)"
-                                  : outcome;
+        : admission.fits ? ", which limits each session"
+                         : ", so it refused the sessions";
     lines.push_back(line);
     if (requested_tokens == 0) {
       lines.push_back(

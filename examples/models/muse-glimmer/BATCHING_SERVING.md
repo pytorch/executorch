@@ -520,9 +520,11 @@ max --max-context  = min(native context,
                                / resident sessions))
 ```
 
-The draft's K/V adds `--draft-max-cells` x its own bytes per cell. With 4 owners
-of 16-token blocks and 16 resident sessions, the default draft pool of 131072
-cells serves 8187 tokens per session, and `--draft-max-cells 32768` serves 2043.
+The draft's K/V adds `--draft-max-cells` x its own bytes per cell. With
+`--max-cells 131072`, 4 owners of 16-token blocks and 16 resident sessions, the
+draft pool at its default size (131072 cells) serves
+floor((131072 - 1 - 64) / 16) = 8187 tokens per session, and
+`--draft-max-cells 32768` serves 2043.
 The export prints these limits and both pools' K/V before lowering.
 
 For long contexts on sliding-window models such as Muse Glimmer, prefer

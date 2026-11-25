@@ -508,6 +508,20 @@ TEST(KvNotes, TargetBudgetAtMostTheBlock) {
   EXPECT_FALSE(any_contains(lines, "draft pool's"));
 }
 
+TEST(KvNotes, DraftLimitingAnAutomaticContextOnASequenceLayout) {
+  // 131072 draft rows and a 16-token block under a 131072-token target budget.
+  const auto lines = draft_notes_for(4, 0, 131072, {true, 131072, 4, 16});
+  ASSERT_EQ(lines.size(), 3u);
+  EXPECT_EQ(
+      lines[0],
+      "DFlash: the draft program holds 131072 rows per session; with a "
+      "16-token block, a session can hold at most 131056 tokens, which limits "
+      "each session");
+  EXPECT_EQ(
+      lines[1], "DFlash: the target pool holds 131072 tokens per session");
+  expect_loggable(lines);
+}
+
 TEST(KvNotes, DraftNotesOnASequenceLayout) {
   // A draft program of 2048 rows per session and a 16-token block: a session
   // holds at most 2032 tokens, whether the request is just past that or past
