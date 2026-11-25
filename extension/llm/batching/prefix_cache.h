@@ -12,6 +12,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <functional>
 #include <future>
 #include <iterator>
@@ -76,6 +77,19 @@ class ET_EXPERIMENTAL PrefixCache {
   struct FindResult {
     std::optional<PrefixMatch> match;
     bool stopped = false;
+  };
+  // One find_identity() request for find_identities(). The request and
+  // selector must outlive the call.
+  struct IdentityQuery {
+    const PrefixIdentity* request = nullptr;
+    std::size_t longer_than = 0;
+    std::size_t at_most = std::numeric_limits<std::size_t>::max();
+    std::function<MatchDecision(std::size_t)> select;
+  };
+  struct IdentityResult : FindResult {
+    // Set when this query's selector or clone request threw anything other
+    // than std::bad_alloc; the other queries are unaffected.
+    std::exception_ptr error;
   };
 
   // Best-effort capture; callbacks retain state independently of this handle.
@@ -408,54 +422,119 @@ class ET_EXPERIMENTAL PrefixCache {
 #if ET_HAS_EXCEPTIONS
     try {
 #endif
-      struct Candidate {
-        std::list<Entry>::iterator entry;
-        std::size_t matched;
-        std::size_t rank;
-      };
-      std::vector<Candidate> candidates;
-      candidates.reserve(entries_.size());
-      std::size_t rank = 0;
-      for (auto it = entries_.begin(); it != entries_.end(); ++it, ++rank) {
-        const auto matched =
-            std::min(common_prefix(it->tokens, request), request.size() - 1);
-        if (matched > longer_than && matched <= at_most) {
-          candidates.push_back(Candidate{it, matched, rank});
-        }
+      std::vector<IdentityQuery> query(1);
+      query.front() = {&request, longer_than, at_most, {}};
+      if (select) {
+        query.front().select = [&select](std::size_t matched) {
+          return select(matched);
+        };
       }
-      std::sort(
-          candidates.begin(),
-          candidates.end(),
-          [](const auto& a, const auto& b) {
-            return a.matched != b.matched ? a.matched > b.matched
-                                          : a.rank < b.rank;
-          });
-      for (const auto& candidate : candidates) {
-        if (select) {
-          const auto decision = select(candidate.matched);
-          if (decision == MatchDecision::Stop) {
-            return {std::nullopt, true};
-          }
-          if (decision == MatchDecision::Skip) {
-            continue;
-          }
-        }
-        auto session =
-            candidate.entry->snapshot
-                .clone_async(static_cast<Position>(candidate.matched))
-                .get();
-        if (!session) {
-          continue;
-        }
-        return {PrefixMatch{
-            std::move(*session), candidate.matched, candidate.entry->id}};
+      auto found = find_identities(query);
+#if ET_HAS_EXCEPTIONS
+      if (found.front().error) {
+        std::rethrow_exception(found.front().error);
       }
+#endif
+      return std::move(static_cast<FindResult&>(found.front()));
 #if ET_HAS_EXCEPTIONS
     } catch (const std::bad_alloc&) {
       return {};
     }
 #endif
-    return {};
+  }
+
+  // find_identity() for several requests at once, without refreshing recency.
+  // Each result is what find_identity() would return for that query against
+  // the cache as it was at the call, except that errors stay per query (see
+  // IdentityResult). The search runs in waves: every query still searching
+  // selects its next candidate and queues its clone before any clone of the
+  // wave is awaited, so a Runner can serve one wave in a single engine
+  // iteration. A query whose clone is refused continues in the next wave.
+  // Selectors of different queries may interleave; each sees its own
+  // candidates in find_identity() order. Every queued clone has settled when
+  // this returns, and unused sessions close on the calling thread.
+  std::vector<IdentityResult> find_identities(
+      const std::vector<IdentityQuery>& queries) {
+    struct Candidate {
+      std::list<Entry>::iterator entry;
+      std::size_t matched;
+      std::size_t rank;
+    };
+    struct Search {
+      std::vector<Candidate> candidates;
+      std::size_t next = 0;
+      bool searching = false;
+      std::future<std::optional<Session>> clone;
+    };
+    // Settles queued clones however this returns, so no Session outlives the
+    // call inside a shared state released by another thread.
+    struct Searches {
+      std::vector<Search> searches;
+      ~Searches() {
+        for (auto& search : searches) {
+          if (search.clone.valid()) {
+            search.clone.wait();
+          }
+        }
+      }
+    };
+    std::vector<IdentityResult> results(queries.size());
+    if (entries_.empty()) {
+      return results;
+    }
+#if ET_HAS_EXCEPTIONS
+    try {
+#endif
+      Searches state;
+      auto& searches = state.searches;
+      searches.resize(queries.size());
+      for (std::size_t i = 0; i < queries.size(); ++i) {
+        const auto& query = queries[i];
+        if (!query.request || query.request->size() < 2) {
+          continue;
+        }
+        const auto& request = *query.request;
+        auto& candidates = searches[i].candidates;
+        candidates.reserve(entries_.size());
+        std::size_t rank = 0;
+        for (auto it = entries_.begin(); it != entries_.end(); ++it, ++rank) {
+          const auto matched =
+              std::min(common_prefix(it->tokens, request), request.size() - 1);
+          if (matched > query.longer_than && matched <= query.at_most) {
+            candidates.push_back(Candidate{it, matched, rank});
+          }
+        }
+        std::sort(
+            candidates.begin(),
+            candidates.end(),
+            [](const auto& a, const auto& b) {
+              return a.matched != b.matched ? a.matched > b.matched
+                                            : a.rank < b.rank;
+            });
+        searches[i].searching = !candidates.empty();
+      }
+      for (bool searching = true; searching;) {
+        searching = false;
+        for (std::size_t i = 0; i < queries.size(); ++i) {
+          auto& search = searches[i];
+          if (search.searching) {
+            queue_next_clone(queries[i], search, results[i]);
+          }
+        }
+        for (std::size_t i = 0; i < queries.size(); ++i) {
+          auto& search = searches[i];
+          if (search.clone.valid()) {
+            settle_clone(search, results[i]);
+          }
+          searching = searching || search.searching;
+        }
+      }
+#if ET_HAS_EXCEPTIONS
+    } catch (const std::bad_alloc&) {
+      // Allocation failure ends every unfinished search as a miss.
+    }
+#endif
+    return results;
   }
 
   // Refresh only a match from this cache; eviction invalidates its entry ID.
@@ -500,6 +579,65 @@ class ET_EXPERIMENTAL PrefixCache {
     CheckpointMetadata metadata;
     std::uint64_t id;
   };
+
+  // Selects this query's next candidate and queues its clone, or ends the
+  // search on Stop, exhaustion or an exception.
+  template <class Search>
+  static void queue_next_clone(
+      const IdentityQuery& query,
+      Search& search,
+      IdentityResult& result) {
+#if ET_HAS_EXCEPTIONS
+    try {
+#endif
+      while (search.next < search.candidates.size()) {
+        const auto& candidate = search.candidates[search.next++];
+        if (query.select) {
+          const auto decision = query.select(candidate.matched);
+          if (decision == MatchDecision::Stop) {
+            result.stopped = true;
+            search.searching = false;
+            return;
+          }
+          if (decision == MatchDecision::Skip) {
+            continue;
+          }
+        }
+        search.clone = candidate.entry->snapshot.clone_async(
+            static_cast<Position>(candidate.matched));
+        return;
+      }
+#if ET_HAS_EXCEPTIONS
+    } catch (const std::bad_alloc&) {
+    } catch (...) {
+      result.error = std::current_exception();
+    }
+#endif
+    search.searching = false;
+  }
+
+  // Adopts a settled clone; a refused clone leaves the search running.
+  template <class Search>
+  static void settle_clone(Search& search, IdentityResult& result) {
+#if ET_HAS_EXCEPTIONS
+    try {
+#endif
+      auto session = search.clone.get();
+      if (!session) {
+        search.searching = search.next < search.candidates.size();
+        return;
+      }
+      const auto& candidate = search.candidates[search.next - 1];
+      result.match = PrefixMatch{
+          std::move(*session), candidate.matched, candidate.entry->id};
+#if ET_HAS_EXCEPTIONS
+    } catch (const std::bad_alloc&) {
+    } catch (...) {
+      result.error = std::current_exception();
+    }
+#endif
+    search.searching = false;
+  }
 
   const std::size_t max_entries_;
   RetentionPolicy retention_policy_;

@@ -1096,6 +1096,47 @@ struct ServingRuntime::Impl {
     return std::nullopt;
   }
 
+  // Selector for prefix_cache_ candidates: Use when the suffix after a
+  // candidate is accepted, Skip when it is unavailable, Stop otherwise.
+  std::function<batching::PrefixCache::MatchDecision(std::size_t)>
+  prefix_selector(const Request& request, CheckedSuffix& checked) {
+    const auto* prior = std::get_if<Selection>(&checked.result);
+    const auto rejected_length = prior && *prior == Selection::Unavailable
+        ? checked.start
+        : std::nullopt;
+    return [this, &request, &checked, rejected_length](std::size_t start) {
+      using Decision = batching::PrefixCache::MatchDecision;
+      if (rejected_length == start) {
+        return Decision::Skip;
+      }
+      auto selected = select_reuse_input(request, start, checked);
+      if (const auto* outcome = std::get_if<Selection>(&selected)) {
+        if (*outcome == Selection::Selected) {
+          return Decision::Use;
+        }
+        if (*outcome == Selection::Unavailable) {
+          return Decision::Skip;
+        }
+      }
+      return Decision::Stop;
+    };
+  }
+
+  static PrefixLookupResult prefix_outcome(
+      batching::PrefixCache::FindResult found,
+      CheckedSuffix& checked) {
+    if (found.stopped) {
+      if (auto* error = std::get_if<ServingError>(&checked.result)) {
+        return std::move(*error);
+      }
+      return PrefixLookupStatus::Cancelled;
+    }
+    if (found.match) {
+      return PrefixSelection{std::move(*found.match), std::move(checked.delta)};
+    }
+    return PrefixLookupStatus::Unavailable;
+  }
+
   PrefixLookupResult lookup_prefix(
       const Request& request,
       std::size_t longer_than = 0,
@@ -1110,46 +1151,130 @@ struct ServingRuntime::Impl {
     }
     CheckedSuffix local;
     auto& checked = previous ? *previous : local;
-    const auto* prior = std::get_if<Selection>(&checked.result);
-    const auto rejected_length = prior && *prior == Selection::Unavailable
-        ? checked.start
-        : std::nullopt;
 #if ET_HAS_EXCEPTIONS
     try {
 #endif
-      auto found = prefix_cache_.find_identity(
-          *request->text->prompt, longer_than, at_most, [&](std::size_t start) {
-            using Decision = batching::PrefixCache::MatchDecision;
-            if (rejected_length == start) {
-              return Decision::Skip;
-            }
-            auto selected = select_reuse_input(request, start, checked);
-            if (const auto* outcome = std::get_if<Selection>(&selected)) {
-              if (*outcome == Selection::Selected) {
-                return Decision::Use;
-              }
-              if (*outcome == Selection::Unavailable) {
-                return Decision::Skip;
-              }
-            }
-            return Decision::Stop;
-          });
-      if (found.stopped) {
-        if (auto* error = std::get_if<ServingError>(&checked.result)) {
-          return std::move(*error);
-        }
-        return PrefixLookupStatus::Cancelled;
-      }
-      if (found.match) {
-        return PrefixSelection{
-            std::move(*found.match), std::move(checked.delta)};
-      }
+      return prefix_outcome(
+          prefix_cache_.find_identity(
+              *request->text->prompt,
+              longer_than,
+              at_most,
+              prefix_selector(request, checked)),
+          checked);
 #if ET_HAS_EXCEPTIONS
     } catch (...) {
       // Cache lookup is optional; keep the previously accepted input.
     }
 #endif
     return PrefixLookupStatus::Unavailable;
+  }
+
+  // Longest cached prefix a lookup would try first, found without cloning:
+  // candidates arrive longest first and Stop ends the search before a clone.
+  // A later lookup may reuse less if that snapshot is skipped or refused.
+  std::size_t cached_prefix(const Request& request) {
+    std::size_t longest = 0;
+    if (!request->text->prompt || request->cancelled.load()) {
+      return 0;
+    }
+#if ET_HAS_EXCEPTIONS
+    try {
+#endif
+      prefix_cache_.find_identity(
+          *request->text->prompt,
+          0,
+          std::numeric_limits<std::size_t>::max(),
+          [&longest](std::size_t matched) {
+            longest = matched;
+            return batching::PrefixCache::MatchDecision::Stop;
+          });
+#if ET_HAS_EXCEPTIONS
+    } catch (...) {
+      // The estimate only sizes groups.
+    }
+#endif
+    return longest;
+  }
+
+  // lookup_prefix() for the prepared members [begin, end) of a group, with one
+  // clone wave for all of them instead of one blocking clone per request.
+  void lookup_prefixes(
+      const std::vector<Command>& group,
+      const std::vector<bool>& prepared,
+      std::size_t begin,
+      std::size_t end,
+      std::vector<std::optional<PrefixLookupResult>>& found) {
+    std::vector<CheckedSuffix> checked;
+    std::vector<std::size_t> members;
+    std::vector<batching::PrefixCache::IdentityQuery> queries;
+    std::vector<batching::PrefixCache::IdentityResult> results;
+#if ET_HAS_EXCEPTIONS
+    try {
+#endif
+      checked.resize(end - begin);
+      for (std::size_t i = begin; i < end; ++i) {
+        const auto& request = group[i].request;
+        if (!prepared[i]) {
+          continue;
+        }
+        if (request->cancelled.load()) {
+          found[i] = PrefixLookupStatus::Cancelled;
+        } else if (!request->text->prompt) {
+          found[i] = PrefixLookupStatus::Unavailable;
+        } else {
+          queries.push_back(
+              {&*request->text->prompt,
+               0,
+               std::numeric_limits<std::size_t>::max(),
+               prefix_selector(request, checked[i - begin])});
+          members.push_back(i);
+        }
+      }
+      if (!queries.empty()) {
+        results = prefix_cache_.find_identities(queries);
+      }
+#if ET_HAS_EXCEPTIONS
+    } catch (...) {
+      // Cache lookup is optional; members fall back to cold opens.
+      results.clear();
+    }
+#endif
+    for (std::size_t k = 0; k < members.size(); ++k) {
+      const auto i = members[k];
+      found[i] = k < results.size() && !results[k].error
+          ? prefix_outcome(std::move(results[k]), checked[i - begin])
+          : PrefixLookupResult{PrefixLookupStatus::Unavailable};
+    }
+  }
+
+  // With prefix caching, a group looks up all of its members together and
+  // then issues the cold opens of its misses together.
+  void acquire_sessions(
+      const std::vector<Command>& group,
+      const std::vector<bool>& prepared,
+      std::size_t begin,
+      std::size_t end,
+      std::vector<std::optional<PrefixLookupResult>>& found,
+      std::vector<std::future<std::optional<batching::Session>>>& opens) {
+    lookup_prefixes(group, prepared, begin, end, found);
+    for (std::size_t i = begin; i < end; ++i) {
+      const auto* status =
+          found[i] ? std::get_if<PrefixLookupStatus>(&*found[i]) : nullptr;
+      if (!prepared[i] || group[i].request->cancelled.load() ||
+          (found[i] && !status) ||
+          (status && *status == PrefixLookupStatus::Cancelled)) {
+        continue;
+      }
+#if ET_HAS_EXCEPTIONS
+      try {
+#endif
+        opens[i] = runner_->open_session_async();
+#if ET_HAS_EXCEPTIONS
+      } catch (...) {
+        // generate() opens this session itself.
+      }
+#endif
+    }
   }
 
   void collect_capture(const Request& request) {
@@ -1224,6 +1349,11 @@ struct ServingRuntime::Impl {
   // so run() collects captures and runs finalizers between groups as it does
   // between commands.
   //
+  // Without prefix caching every member issues its cold open once prepared.
+  // With it, the group shares one clone wave and then opens its misses
+  // together, and a member counts only the positions it still has to prefill
+  // after its longest cached prefix.
+  //
   // A group's prompts fill at most half of the scheduler's per-step prefill
   // budget. The other half leaves room for chunks of prompts already
   // prefilling, and prompts long enough to need much of a step keep
@@ -1238,6 +1368,7 @@ struct ServingRuntime::Impl {
   // acceptance round trip to the engine) ends the group and then runs alone;
   // PromptPreparation requires bounded work.
   void generate_group(std::vector<Command>& group, std::size_t position) {
+    const bool cached = config_.prefix_cache_capacity != 0;
     std::vector<std::future<std::optional<batching::Session>>> opens(
         group.size());
     std::vector<bool> prepared(group.size());
@@ -1254,7 +1385,10 @@ struct ServingRuntime::Impl {
         }
         continue;
       }
-      const auto size = request->text->terminal.stats.prompt_tokens;
+      auto size = request->text->terminal.stats.prompt_tokens;
+      if (cached) {
+        size -= std::min(size, cached_prefix(request));
+      }
       const auto& input = request->text->prepared;
       const bool alone =
           input && input->kind() != detail::TokenPreparedInput::type();
@@ -1264,7 +1398,7 @@ struct ServingRuntime::Impl {
       }
       waiting = true;
       tokens += size;
-      if (!request->cancelled.load()) {
+      if (!cached && !request->cancelled.load()) {
 #if ET_HAS_EXCEPTIONS
         try {
 #endif
@@ -1280,11 +1414,20 @@ struct ServingRuntime::Impl {
         break;
       }
     }
+    std::vector<std::optional<PrefixLookupResult>> found(end);
+    if (cached) {
+      acquire_sessions(group, prepared, 0, end, found, opens);
+    }
     // Members rejected in preparation never issued an open.
     for (std::size_t i = 0; i < end; ++i) {
       if (prepared[i]) {
-        generate(group[i].request, std::move(opens[i]));
+        generate(
+            group[i].request,
+            std::move(opens[i]),
+            found[i] ? &*found[i] : nullptr);
       }
+      // A lookup the member did not adopt releases its clone here, on control.
+      found[i].reset();
       schedule(group[i].request);
       std::lock_guard<std::mutex> lock(mutex_);
       --outstanding_;
@@ -1303,10 +1446,12 @@ struct ServingRuntime::Impl {
 
   // Requires a prepared prompt. A pending cold open, when supplied, replaces
   // this request's own open; control settles it on every exit, since control
-  // alone owns Session objects.
+  // alone owns Session objects. A group's lookup, when supplied, likewise
+  // replaces this request's own.
   void generate(
       const Request& request,
-      std::future<std::optional<batching::Session>> cold_open = {}) {
+      std::future<std::optional<batching::Session>> cold_open = {},
+      PrefixLookupResult* looked_up = nullptr) {
     struct SettleOpen {
       std::future<std::optional<batching::Session>>& open;
       ~SettleOpen() {
@@ -1365,7 +1510,7 @@ struct ServingRuntime::Impl {
 #if ET_HAS_EXCEPTIONS
       try {
 #endif
-        auto found = lookup_prefix(request);
+        auto found = looked_up ? std::move(*looked_up) : lookup_prefix(request);
         PrefixLookupStatus outcome = PrefixLookupStatus::Unavailable;
         if (auto* error = std::get_if<ServingError>(&found)) {
           preparation_error = std::move(*error);
@@ -1789,15 +1934,13 @@ struct ServingRuntime::Impl {
     return config.prefix_checkpoint_interval || config.prefix_checkpoint_policy;
   }
 
-  // Anonymous generations always open a new session. With prefix caching one
-  // may adopt a snapshot instead, so only cache-less runtimes group opens.
+  // Anonymous text generations always obtain a new session, by cold open or
+  // by adopting a prefix snapshot, so queued ones can obtain them together.
   // Image prompts are prepared on control at a cost unrelated to their
-  // positions, so they are not grouped either. Lifecycle commands carry no
-  // request.
-  bool opens_cold(const Command& command) const {
+  // positions, so they are not grouped. Lifecycle commands carry no request.
+  static bool groupable(const Command& command) {
     if (command.operation != Operation::Generate || !command.request ||
-        !command.request->text || command.request->request.key ||
-        config_.prefix_cache_capacity != 0) {
+        !command.request->text || command.request->request.key) {
       return false;
     }
     const auto& segments = command.request->text->input.segments;
@@ -1864,7 +2007,7 @@ struct ServingRuntime::Impl {
   void run() {
     for (;;) {
       Command command;
-      // Queued cold-open generations that directly follow command.
+      // Queued anonymous generations that directly follow command.
       std::vector<Command> group;
       std::size_t command_index = 0;
       Request finalizer;
@@ -1890,10 +2033,10 @@ struct ServingRuntime::Impl {
           command_index = it - inbox_.begin();
           command = std::move(*it);
           it = inbox_.erase(it);
-          if (opens_cold(command)) {
+          if (groupable(command)) {
             // Bounded by free slots, so no grouped request meets the limit.
             const auto free = config_.max_sessions - sessions_.size();
-            while (it != inbox_.end() && opens_cold(*it) &&
+            while (it != inbox_.end() && groupable(*it) &&
                    group.size() + 1 < free) {
               group.push_back(std::move(*it));
               it = inbox_.erase(it);
