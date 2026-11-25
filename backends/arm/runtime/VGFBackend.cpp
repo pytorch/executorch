@@ -577,8 +577,6 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
 
   bool is_available() const override {
     // Preserve the real VGF capability probe in combined builds too.
-    // The Vulkan runtime is created without a redundant default VkDevice
-    // when VGF probes it first.
     auto* self = const_cast<VGFBackend*>(this);
     const std::lock_guard<std::mutex> lock(mutex_);
     ET_LOG(Debug, "Checking VGFBackend is available");
@@ -685,14 +683,13 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
         /*delegate_debug_id=*/-1);
 #endif
 
-    const bool valid_vgf = repr->with_shared_queue([&]() {
 #ifdef ET_EVENT_TRACER_ENABLED
-      return repr->process_vgf(
-          vgf_data, processed->size(), compile_specs, event_tracer);
+    const bool valid_vgf = repr->process_vgf(
+        vgf_data, processed->size(), compile_specs, event_tracer);
 #else
-      return repr->process_vgf(vgf_data, processed->size(), compile_specs);
+    const bool valid_vgf =
+        repr->process_vgf(vgf_data, processed->size(), compile_specs);
 #endif
-    });
 
 #ifdef ET_EVENT_TRACER_ENABLED
     event_tracer_end_profiling_delegate(event_tracer, process_vgf_event);
@@ -734,17 +731,16 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
     if (handle == nullptr) {
       return Error::InvalidArgument;
     }
-    auto* repr = static_cast<VgfRepr*>(handle);
-    return repr->with_shared_queue(
-        [&]() { return execute_locked(context.event_tracer(), handle, args); });
+    return execute_locked(context.event_tracer(), handle, args);
   }
 
   Error execute_locked(
       executorch::runtime::EventTracer* event_tracer,
       DelegateHandle* handle,
       Span<EValue*> args) const {
-    // The queue and command pool are shared by all VGF delegates.
-    // Serialize their host access with initialization and teardown.
+    // mutex_ protects delegate state and legacy command-pool access.
+    // Lock order: mutex_ -> shared queue mutex, never the reverse.
+    // VgfRepr takes the queue mutex only for VkQueue operations.
     VgfRepr* repr = static_cast<VgfRepr*>(handle);
     if (!repr->is_execution_valid()) {
       ET_LOG(
@@ -1233,9 +1229,6 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
   }
 
  private:
-  // Call only with mutex_ held. Return the idle result so execute() can
-  // synchronously tear down its VgfRepr on terminal device loss.
-
   // Call only with mutex_ held, after destroying the last VgfRepr (or
   // when a probe/initialization failed without publishing a handle).
   // Any submitted work must have been drained before freeing the repr.
@@ -1348,15 +1341,9 @@ VkResult vkml_allocate_basics(
     return VK_ERROR_INITIALIZATION_FAILED;
   }
   try {
-    // If VGF is the first runtime user, request Vulkan 1.3 without
-    // constructing the Vulkan delegate's default VkDevice.
-    auto owner = vkcompute::vkapi::runtime_owner(
-        /*init_default_device=*/false, VK_API_VERSION_1_3);
+    auto owner = vkcompute::vkapi::runtime_owner();
     if (owner->instance_api_version() < VK_API_VERSION_1_3) {
-      ET_LOG(
-          Error,
-          "VGF requires Vulkan 1.3: initialize the VGF-capable "
-          "runtime before Vulkan creates its default runtime");
+      ET_LOG(Error, "VGF requires a loader supporting Vulkan 1.3");
       return VK_ERROR_INCOMPATIBLE_DRIVER;
     }
     *instance = owner->instance();
@@ -1617,6 +1604,13 @@ VkResult vkml_allocate_basics(
   features_13.synchronization2 = true;
   features_13.maintenance4 = true;
   features_13.pipelineCreationCacheControl = true;
+  if (shared_info != nullptr) {
+    // Optional ET-VK fast paths; do not change standalone VGF policy.
+    features_13.shaderIntegerDotProduct = available_13.shaderIntegerDotProduct;
+    features_13.subgroupSizeControl = available_13.subgroupSizeControl;
+    features_13.computeFullSubgroups =
+        available_13.subgroupSizeControl && available_13.computeFullSubgroups;
+  }
   features_13.pNext = nullptr;
   VkPhysicalDeviceVulkan12Features features_12{
       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, nullptr};
@@ -1656,6 +1650,9 @@ VkResult vkml_allocate_basics(
   VkPhysicalDeviceFeatures device_features = {};
   device_features.shaderInt16 = VK_TRUE;
   device_features.shaderInt64 = VK_TRUE;
+  if (shared_info != nullptr) {
+    device_features.shaderFloat64 = available_2.features.shaderFloat64;
+  }
 
   // Extension strings to enable
   auto dev_exts = {
@@ -1825,6 +1822,36 @@ VkResult vkml_allocate_basics(
         "different driver or shader recompilation");
   }
 
+#if defined(VK_KHR_cooperative_matrix)
+  VkPhysicalDeviceCooperativeMatrixFeaturesKHR features_cooperative_matrix{};
+  features_cooperative_matrix.sType =
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR;
+  const bool cooperative_matrix_extension_available = std::any_of(
+      available.begin(), available.end(), [](const auto& extension) {
+        return std::strcmp(
+                   extension.extensionName,
+                   VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME) == 0;
+      });
+  if (shared_info != nullptr && cooperative_matrix_extension_available) {
+    VkPhysicalDeviceCooperativeMatrixFeaturesKHR available_cooperative_matrix{};
+    available_cooperative_matrix.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR;
+    VkPhysicalDeviceFeatures2 available_cooperative_features{};
+    available_cooperative_features.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    available_cooperative_features.pNext = &available_cooperative_matrix;
+    vkGetPhysicalDeviceFeatures2(
+        *physical_device, &available_cooperative_features);
+    if (available_cooperative_matrix.cooperativeMatrix == VK_TRUE) {
+      features_cooperative_matrix.cooperativeMatrix = VK_TRUE;
+      // Preserve the independently enabled BF16/replicated-composites chain.
+      features_cooperative_matrix.pNext = features_13.pNext;
+      features_13.pNext = &features_cooperative_matrix;
+      requested_exts.push_back(VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME);
+    }
+  }
+#endif
+
   for (auto& ext : dev_exts) {
     bool found = false;
     for (auto const& ext_avail : available) {
@@ -1928,6 +1955,14 @@ VkResult vkml_allocate_basics(
     f.storage_push_constant_8 = features_12.storagePushConstant8 == VK_TRUE;
     f.shader_float16 = features_12.shaderFloat16 == VK_TRUE;
     f.shader_int8 = features_12.shaderInt8 == VK_TRUE;
+    f.shader_integer_dot_product =
+        features_13.shaderIntegerDotProduct == VK_TRUE;
+    f.subgroup_size_control = features_13.subgroupSizeControl == VK_TRUE;
+    f.compute_full_subgroups = features_13.computeFullSubgroups == VK_TRUE;
+#if defined(VK_KHR_cooperative_matrix)
+    f.cooperative_matrix =
+        features_cooperative_matrix.cooperativeMatrix == VK_TRUE;
+#endif
     f.arm_tensors = features_tensor.tensors == VK_TRUE;
     f.arm_shader_tensor_access = features_tensor.shaderTensorAccess == VK_TRUE;
     f.arm_data_graph = features_graph.dataGraph == VK_TRUE;

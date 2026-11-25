@@ -9,23 +9,6 @@
 
 #include <memory>
 
-// Cppcheck may not expand GoogleTest headers. In that analysis-only case,
-// supply plain C++ definitions so the test bodies remain parseable. A normal
-// compiler sees GoogleTest's TEST macro and does not use these definitions.
-#ifndef TEST
-#define TEST(suite, name)                                                     \
-  void cppcheck_##suite##_##name();                                           \
-  [[maybe_unused]] static void (*const                                        \
-                                    cppcheck_test_ref_##suite##_##name[])() = \
-      {&cppcheck_##suite##_##name};                                           \
-  void cppcheck_##suite##_##name()
-#define ASSERT_TRUE(expr) ((void)(expr))
-#define EXPECT_TRUE(expr) ((void)(expr))
-#define EXPECT_FALSE(expr) ((void)(expr))
-#define ASSERT_EQ(lhs, rhs) ((void)((lhs) == (rhs)))
-#define EXPECT_EQ(lhs, rhs) ((void)((lhs) == (rhs)))
-#endif
-
 namespace {
 using namespace executorch::backends::vgf;
 using namespace executorch::backends::vulkan_shared;
@@ -46,6 +29,7 @@ BackendInitContext context(BackendOptions<N>& options) {
       Span<const BackendOption>(view.data(), view.size()));
 }
 
+// cppcheck-suppress syntaxError
 TEST(VgfSharedDevice, NoOptionsPreserveLegacy) {
   BackendInitContext init(nullptr);
   auto config = parse_vgf_shared_device_config(init);

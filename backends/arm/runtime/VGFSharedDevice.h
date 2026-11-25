@@ -7,11 +7,11 @@
 #pragma once
 
 #include <executorch/backends/arm/runtime/VGFVulkanFeatures.h>
-#include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
 #include <executorch/backends/vulkan_shared/runtime/SharedVulkanDevice.h>
 #include <executorch/backends/vulkan_shared/runtime/SharedVulkanRuntimeConfig.h>
 #include <executorch/runtime/backend/backend_init_context.h>
 #include <executorch/runtime/core/result.h>
+#include <volk.h>
 
 #include <array>
 #include <memory>

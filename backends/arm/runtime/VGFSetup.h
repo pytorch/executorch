@@ -18,8 +18,7 @@ using namespace std;
 using executorch::runtime::ArrayRef;
 using executorch::runtime::CompileSpec;
 
-// We use the platform and runtime environment provided by the Vulkan delegate
-#include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
+#include <volk.h>
 
 #include <executorch/backends/arm/runtime/VGFBoundaryIO.h>
 #include <executorch/backends/arm/runtime/VGFNeuralStatistics.h>
@@ -278,37 +277,35 @@ class VgfRepr {
     return static_cast<bool>(shared_device_state_);
   }
 
-  // The callback covers all queue use, including constant uploads and cleanup.
-  // VkQueue is installed only while the registry's queue mutex is held.
-  template <typename Fn>
-  decltype(auto) with_shared_queue(Fn&& fn) {
-    if (!shared_device_state_) {
-      return std::forward<Fn>(fn)();
+  // Call with VGFBackend::mutex_ held. Lock order is backend -> queue.
+  // Do not retain a raw shared queue or hold its mutex across fence waits,
+  // CPU copies, pipeline creation, or destruction of private resources.
+  VkResult submit_to_queue(const VkSubmitInfo* submit_info, VkFence fence)
+      const {
+    if (shared_device_state_) {
+      return shared_device_state_->device->with_locked_queue(
+          [&](VkQueue queue) {
+            return vkQueueSubmit(queue, 1, submit_info, fence);
+          });
     }
-    return shared_device_state_->device->with_locked_queue(
-        [&](VkQueue queue) -> decltype(auto) {
-          ET_CHECK_MSG(
-              vk_queue == VK_NULL_HANDLE, "Nested VGF shared queue lease");
-          struct ResetQueue final {
-            VkQueue& slot;
-            ~ResetQueue() {
-              slot = VK_NULL_HANDLE;
-            }
-          };
-          vk_queue = queue;
-          ResetQueue reset{vk_queue};
-          return std::forward<Fn>(fn)();
-        });
+    return vkQueueSubmit(vk_queue, 1, submit_info, fence);
   }
 
-  // Called only inside with_shared_queue(), or under the legacy backend mutex.
+  VkResult wait_for_queue_idle() const {
+    if (shared_device_state_) {
+      return shared_device_state_->device->with_locked_queue(
+          [](VkQueue queue) { return vkQueueWaitIdle(queue); });
+    }
+    return vkQueueWaitIdle(vk_queue);
+  }
+
+  // Caller holds the backend mutex; the shared queue mutex is acquired here.
   VkResult wait_for_device_idle_locked() const {
     if (vk_device == VK_NULL_HANDLE) {
       return VK_SUCCESS;
     }
-    // Do NOT wait an entire externally owned device: unrelated application
-    // queues are outside the shared queue's host-synchronization domain.
-    const VkResult result = shared_device_state_ ? vkQueueWaitIdle(vk_queue)
+    // Unrelated queues on an externally owned device are not ours to drain.
+    const VkResult result = shared_device_state_ ? wait_for_queue_idle()
                                                  : vkDeviceWaitIdle(vk_device);
     ET_CHECK_MSG(
         result == VK_SUCCESS || result == VK_ERROR_DEVICE_LOST,
@@ -317,16 +314,13 @@ class VgfRepr {
   }
 
   ~VgfRepr() {
-    with_shared_queue([&]() {
-      wait_for_device_idle_locked();
-      free_vgf();
-      if (vk_pipeline_cache != VK_NULL_HANDLE) {
-        // The cache is private to this VgfRepr, so no other delegate instance
-        // can be accessing it while this object is being destroyed.
-        vkDestroyPipelineCache(vk_device, vk_pipeline_cache, nullptr);
-        vk_pipeline_cache = VK_NULL_HANDLE;
-      }
-    });
+    wait_for_device_idle_locked();
+    free_vgf();
+    if (vk_pipeline_cache != VK_NULL_HANDLE) {
+      // This cache is private to the representation.
+      vkDestroyPipelineCache(vk_device, vk_pipeline_cache, nullptr);
+      vk_pipeline_cache = VK_NULL_HANDLE;
+    }
   }
 
  private:

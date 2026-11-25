@@ -2,7 +2,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-"""Export and assert a deterministic VGF -> Vulkan -> VGF execution plan."""
+"""Export mixed VGF/Vulkan models and assert their delegate execution order."""
 
 import argparse
 import json
@@ -23,9 +23,17 @@ EXPECTED_SEQUENCE = ["VgfBackend", "VulkanBackend", "VgfBackend"]
 
 
 class MixedModel(torch.nn.Module):
+    def __init__(self, vulkan_first: bool = False) -> None:
+        super().__init__()
+        self.vulkan_first = vulkan_first
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = F.avg_pool2d(x, kernel_size=2, stride=2)  # VGF prefix
-        x = torch.sigmoid(x)  # Deliberately assigned to Vulkan, not a support claim.
+        if self.vulkan_first:
+            x = torch.sigmoid(x)  # Vulkan prefix for the initialization regression.
+            x = F.avg_pool2d(x, kernel_size=2, stride=2)
+        else:
+            x = F.avg_pool2d(x, kernel_size=2, stride=2)  # VGF prefix
+            x = torch.sigmoid(x)  # Deliberate placement, not a support claim.
         return x * x + 0.25  # VGF suffix
 
 
@@ -42,7 +50,7 @@ class KeepSigmoidForVulkan(OperatorSupportBase):
         }
 
 
-def assert_execution_plan(program) -> list[str]:
+def assert_execution_plan(program, expected_sequence=EXPECTED_SEQUENCE) -> list[str]:
     plans = [
         p for p in program.executorch_program.execution_plan if p.name == "forward"
     ]
@@ -60,10 +68,10 @@ def assert_execution_plan(program) -> list[str]:
         elif isinstance(args, KernelCall):
             operator = plan.operators[args.op_index]
             fallback.append(f"{operator.name}.{operator.overload}")
-    if sequence != EXPECTED_SEQUENCE or fallback:
+    if sequence != expected_sequence or fallback:
         raise RuntimeError(
             "Mixed placement changed; refusing to publish a misleading .pte. "
-            f"Expected {EXPECTED_SEQUENCE}, got {sequence}; CPU kernels={fallback}"
+            f"Expected {expected_sequence}, got {sequence}; CPU kernels={fallback}"
         )
     return sequence
 
@@ -74,9 +82,10 @@ def main() -> None:
         "--output-dir", type=Path, default=Path("vgf_vulkan_shared_out")
     )
     parser.add_argument("--compiler-flag", action="append", default=[])
+    parser.add_argument("--vulkan-first", action="store_true")
     args = parser.parse_args()
     torch.manual_seed(0)
-    model = MixedModel().eval()
+    model = MixedModel(vulkan_first=args.vulkan_first).eval()
     x = torch.linspace(-2.0, 2.0, 1 * 3 * 8 * 8, dtype=torch.float32).reshape(
         1, 3, 8, 8
     )
@@ -96,7 +105,10 @@ def main() -> None:
         ),
     )
     program = edge.to_executorch()
-    sequence = assert_execution_plan(program)
+    expected_sequence = (
+        ["VulkanBackend", "VgfBackend"] if args.vulkan_first else EXPECTED_SEQUENCE
+    )
+    sequence = assert_execution_plan(program, expected_sequence)
     args.output_dir.mkdir(parents=True, exist_ok=True)
     pte = args.output_dir / "vgf_vulkan_vgf.pte"
     with pte.open("wb") as stream:

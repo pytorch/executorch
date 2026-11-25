@@ -1115,6 +1115,9 @@ jobs:
       github.event_name != 'pull_request' ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
       contains(needs.changed-files.outputs.changed-files, 'backends/arm') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/vulkan/runtime/') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/vulkan_shared/') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/vulkan/CMakeLists.txt') ||
       contains(needs.changed-files.outputs.changed-files, 'examples/arm') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-arm-baremetal-tools.sh')
     name: test-arm-backend-vkml

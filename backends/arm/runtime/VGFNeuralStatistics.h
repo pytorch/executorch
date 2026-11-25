@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-#include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
+#include <volk.h>
 
 namespace executorch {
 namespace backends {

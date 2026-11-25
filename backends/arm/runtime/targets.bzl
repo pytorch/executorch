@@ -144,13 +144,13 @@ def define_common_targets():
         # VGFSharedDevice.h is a public header that includes the shared
         # runtime types; re-export the owner for Buck header checking.
         exported_deps = [
+            "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm",
             "//executorch/backends/vulkan_shared:runtime",
         ],
         deps = [
             "//executorch/runtime/backend:interface",
             "//executorch/runtime/core:core",
             "fbsource//third-party/pypi/ai-ml-sdk-vgf-library/0.11.0:vgf",
-            "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm",
             "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:vulkan-headers",
         ],
     )

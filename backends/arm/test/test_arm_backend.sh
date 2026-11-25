@@ -573,6 +573,26 @@ test_runtime_vgf() {
         --output-on-failure --no-tests=error \
         -R '^(vgf_shared_device_test|shared_vulkan_runtime_test)$'
 
+    # Run real delegates under the same emulation/validation setup as VGF CI.
+    # Each runner invocation is a fresh process: singleton initialization order
+    # must not be hidden by a previous test.
+    local shared_export_dir="${shared_build_dir}/exported"
+    local vulkan_first_export_dir="${shared_build_dir}/exported_vulkan_first"
+    "${python_executable}" -m examples.arm.vgf_vulkan_shared.export \
+        --output-dir "${shared_export_dir}"
+    "${python_executable}" -m examples.arm.vgf_vulkan_shared.export \
+        --output-dir "${vulkan_first_export_dir}" --vulkan-first
+    local shared_runner
+    shared_runner="$(find "${shared_build_dir}" -type f -name vgf_vulkan_shared_runner -print -quit)"
+    if [[ ! -x "${shared_runner}" ]]; then
+        echo "Missing mixed-backend runner: ${shared_runner}" >&2
+        return 1
+    fi
+    "${vulkan_validation_runner}" "${shared_runner}" "${shared_export_dir}"
+    "${vulkan_validation_runner}" "${shared_runner}" "${vulkan_first_export_dir}" --shared-vulkan-first
+    "${vulkan_validation_runner}" "${shared_runner}" "${shared_export_dir}" --legacy
+    "${vulkan_validation_runner}" "${shared_runner}" "${vulkan_first_export_dir}" --legacy-vulkan-first
+
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
