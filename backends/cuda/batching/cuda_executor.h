@@ -18,6 +18,7 @@
 // runs the method with the smallest width that holds it; a static method's
 // extra rows are padding.
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -88,6 +89,13 @@ struct CudaExecutorConfig {
   int max_session_tokens = 0;
   int kv_dtype = static_cast<int>(::executorch::aten::ScalarType::BFloat16);
   int initial_capacity = -1;
+  // Idle compaction starts below 25% occupancy of non-scratch columns and keeps
+  // spare columns equal to the live-owner count, retaining at least one
+  // non-scratch column when none are live. Open sessions never expire.
+  // nullopt disables automatic compaction; zero permits the next idle check.
+  // A later burst can regrow columns and recapture CUDA graphs.
+  std::optional<std::chrono::milliseconds> kv_column_compaction_delay{
+      std::chrono::milliseconds{500}};
   CudaExecutorOptions options;
 };
 
@@ -158,13 +166,16 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
   // reserves `max_session_tokens` cells; together they must fit the program's
   // max_cells. `kv_dtype` is the ET ScalarType K/V is stored in; a negative
   // `initial_capacity` starts the pools at the cache's default.
+  // `column_compaction_delay` controls idle maintenance; nullopt disables it.
   static ::executorch::runtime::Result<std::unique_ptr<CudaExecutor>> create(
       std::unique_ptr<::executorch::extension::Module> module,
       int max_sessions,
       int max_session_tokens,
       int kv_dtype,
       int initial_capacity = -1,
-      CudaExecutorOptions options = {});
+      CudaExecutorOptions options = {},
+      std::optional<std::chrono::milliseconds> column_compaction_delay =
+          std::chrono::milliseconds{500});
 
   // The widest method's step. A wider batch runs as several forwards.
   std::size_t preferred_batch_tokens() const override {
@@ -230,6 +241,10 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
   OffGraphKVMetrics kv_metrics() const;
   // Sequence-layout counters; read between executes, on the engine thread.
   CudaGraphMetrics graph_metrics(std::string_view method) const;
+  // Call on the engine thread between executes, never concurrently with the
+  // Runner. Explicit compaction preserves inactive but still-open owners.
+  ::executorch::runtime::Error compact_kv_columns(int spare_columns = 1);
+  bool on_idle() override;
   // Every method, narrowest first, with how many forwards it ran. Read it
   // between executes, not while one runs.
   std::vector<ForwardMethodCalls> method_calls() const;
@@ -254,7 +269,8 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
       std::vector<ForwardMethod> methods,
       int min_selected_rows,
       bool has_sampler,
-      bool has_argmax);
+      bool has_argmax,
+      std::optional<std::chrono::milliseconds> column_compaction_delay);
 
   // Draws one token per row of `logits`, rows [0, sessions.size()), on the
   // device; returns them in row order.
@@ -275,7 +291,7 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
   llm_cache::InstallGuard install_guard_;
   std::unique_ptr<::executorch::extension::Module> module_;
   llm_cache::BatchControl* const ctl_;
-  const CudaKVCache* const kv_;
+  CudaKVCache* const kv_;
   std::string backend_id_;
   std::int32_t vocab_size_;
   int max_session_tokens_;
@@ -303,6 +319,7 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
   std::optional<bool> device_logits_;
   bool initialized_ = false;
   bool raw_executing_ = false;
+  const std::optional<std::chrono::milliseconds> column_compaction_delay_;
 };
 
 } // namespace executorch::backends::cuda::batching

@@ -9,6 +9,14 @@
     python examples/models/muse-glimmer/tests/export_cuda_dflash_tiny.py --output-dir DIR
     ET_MUSE_DFLASH_TINY_DIR=DIR ctest -R muse_glimmer_cuda_dflash
 
+For the sequence-layout continuation case, also export a second fixture:
+
+    python examples/models/muse-glimmer/tests/export_cuda_dflash_tiny.py --output-dir SEQ_DIR --kv-layout sequence
+    ET_MUSE_DFLASH_TINY_DIR=DIR ET_MUSE_DFLASH_SEQUENCE_TINY_DIR=SEQ_DIR ctest -R muse_glimmer_cuda_dflash
+
+The native suite requires the cell fixture variable for setup, including when
+running only the sequence-layout case.
+
 The geometry is the native test's contract: vocabulary 256, two tapped target
 layers of width 64 (128 hidden columns), DFlash block 16, 32-token steps, and
 four draft owners.
@@ -30,7 +38,7 @@ from executorch.examples.models.muse_glimmer.model.model import MuseGlimmerModel
 from executorch.examples.models.muse_glimmer.tests.test_pipeline import TINY_CONFIG
 
 
-def export(output_dir: Path) -> None:
+def export(output_dir: Path, kv_layout: str = "cell") -> None:
     torch.manual_seed(123)
     config = replace(TINY_CONFIG, dim=64, n_layers=2, head_dim=16, max_seq_len=128)
     target = MuseGlimmerModel(config).to(torch.bfloat16).eval()
@@ -59,6 +67,8 @@ def export(output_dir: Path) -> None:
         forward_sizes=(1, 2, 4, 8, 16),
         dflash_draft=draft.to(torch.bfloat16).eval(),
         max_draft_owners=4,
+        kv_layout=kv_layout,
+        max_kv_seqs=4,
     )
     print(f"Wrote {output_dir}/model.pte and aoti_cuda_blob.ptd")
 
@@ -66,7 +76,9 @@ def export(output_dir: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-dir", required=True, type=Path)
-    export(parser.parse_args().output_dir)
+    parser.add_argument("--kv-layout", choices=("cell", "sequence"), default="cell")
+    args = parser.parse_args()
+    export(args.output_dir, args.kv_layout)
 
 
 if __name__ == "__main__":

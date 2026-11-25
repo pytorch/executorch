@@ -729,6 +729,9 @@ jobs:
         export ET_MUSE_DFLASH_TINY_DIR="${RUNNER_TEMP:-/tmp}/muse_glimmer_dflash_tiny"
         python examples/models/muse-glimmer/tests/export_cuda_dflash_tiny.py \
           --output-dir "${ET_MUSE_DFLASH_TINY_DIR}"
+        export ET_MUSE_DFLASH_SEQUENCE_TINY_DIR="${RUNNER_TEMP:-/tmp}/muse_glimmer_dflash_sequence_tiny"
+        python examples/models/muse-glimmer/tests/export_cuda_dflash_tiny.py \
+          --output-dir "${ET_MUSE_DFLASH_SEQUENCE_TINY_DIR}" --kv-layout sequence
         ctest --test-dir "${BATCHING_BIN_DIR}" -R '^muse_glimmer_cuda_dflash$' \
           --output-on-failure --no-tests=error -V > /tmp/muse_glimmer_cuda_dflash.log 2>&1 \
           || { cat /tmp/muse_glimmer_cuda_dflash.log; exit 1; }

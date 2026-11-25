@@ -46,6 +46,8 @@ runtime::Result<MuseGlimmerBackend> create_muse_glimmer_backend(
     }
     executor_config.max_sessions = config.max_sessions;
     executor_config.max_session_tokens = config.max_session_tokens;
+    executor_config.kv_column_compaction_delay =
+        config.kv_column_compaction_delay;
     ET_ASSIGN_OR_RETURN(executor, cb::CudaExecutor::create(executor_config));
     const auto vocab = executor->vocab_size();
     const auto session_tokens = executor->max_session_tokens();

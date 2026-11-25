@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -40,6 +41,11 @@ struct OffGraphKVMetrics {
   // Logical owners, including cloned prefix owners.
   int64_t live_sequences{0};
   int64_t column_resize_count{0};
+  // Device memory the KV storage pool holds, live K/V included, and the most it
+  // has held since the latest column resize began. 0 when storage comes from
+  // the shared allocator (no memory pools).
+  int64_t reserved_bytes{0};
+  int64_t peak_reserved_bytes{0};
 };
 
 // Backend face of the off-graph KV cache: what the CUDA delegate needs from
@@ -101,6 +107,21 @@ class CudaKVCache {
   // Read between executes under the executor's engine-thread contract.
   virtual CudaGraphMetrics graph_metrics(std::string_view) const {
     return {};
+  }
+
+  // Reclaim only columns without live owners, between forwards. Live owners
+  // retain their histories even if they have not run recently. A contraction
+  // returns all of the KV storage pool's unused memory to the driver. Other
+  // users of the shared allocator keep their cached memory unless a K/V
+  // allocation runs out of memory: then, during growth or contraction alike,
+  // the shared pool's unused memory goes back to the driver first and the
+  // allocation is retried once.
+  // quiet_for is measured from mutations of the cache itself, including raw
+  // owner operations. Zero explicitly bypasses the quiet interval.
+  virtual runtime::Error compact_columns(
+      int /*spare_columns*/,
+      std::chrono::milliseconds /*quiet_for*/) {
+    return runtime::Error::NotSupported;
   }
 };
 

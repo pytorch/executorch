@@ -93,14 +93,17 @@ class CudaKVPool final {
       int min_columns = 0);
 
   // Flattened row counts remain multiples of the current physical width.
-  // Copies the old owner columns in place; the scratch column is not retained.
-  // live_rows is the logical prefix, capped by each ring. Growth commits only
-  // after all copies pass; smaller widths are rejected. If `columns` runs out
-  // of memory, growth uses the widest width down to min_columns (0 = columns)
-  // that fits; columns() reports the result. Before allocation only the width
+  // Each pair is a retained old column and its new column. Dummy data is not
+  // retained. live_rows is the retained logical prefix, capped by each ring.
+  // Growth or contraction commits only after all retained copies pass.
+  // Equal widths are a no-op; relocation is only needed during contraction.
+  // If growth to `columns` runs out of memory, it uses the widest width down
+  // to min_columns (0 = columns) that fits; columns() reports the result, and
+  // retained columns must fit min_columns. Before allocation only the width
   // is recorded, at `columns`.
   runtime::Error resize_columns(
       int columns,
+      const std::vector<std::pair<int, int>>& retained_columns,
       int64_t live_rows,
       cudaStream_t stream,
       int min_columns = 0);
@@ -159,6 +162,24 @@ class CudaKVPool final {
     return column_resize_count_;
   }
 
+  // K/V storage comes from a memory pool this object owns, so trimming it
+  // returns only this cache's memory. Storage that growth, failed attempts and
+  // contraction free goes back to the driver at the next synchronization, or
+  // at trim_storage(), whichever is first. Some drivers hand another pool's
+  // idle memory to an allocation that runs out; regardless, a K/V allocation
+  // that runs out of memory trims the shared allocator pool to zero, dropping
+  // every user's unused cached memory there but nothing in use, and retries
+  // once. Without memory pools (ROCm, or a device lacking them) storage comes
+  // from the shared allocator, these report 0 and trim_storage() does nothing.
+  //
+  // Device memory the storage pool holds, live storage included, and the most
+  // it has held since the latest column resize began.
+  int64_t reserved_bytes() const;
+  int64_t peak_reserved_bytes() const;
+  // Returns the storage pool's unused memory to the driver. Only frees a
+  // fence has observed can be returned, so call after one.
+  void trim_storage();
+
  private:
   struct Allocation {
     void* k{nullptr};
@@ -190,6 +211,12 @@ class CudaKVPool final {
       cudaStream_t stream,
       Allocation& out);
   void release(void* ptr, cudaStream_t stream);
+  runtime::Result<void*> allocate_storage(size_t bytes, cudaStream_t stream);
+  void release_storage(void* ptr, cudaStream_t stream);
+#if !defined(EXECUTORCH_USE_HIP)
+  cudaMemPool_t storage_pool();
+  bool release_shared_cache(cudaStream_t stream);
+#endif
   void discard(const Layer& layer, Allocation& allocation, cudaStream_t stream);
   runtime::Error
   allocate_initial(int64_t required_rows, int min_columns, cudaStream_t stream);
@@ -230,6 +257,11 @@ class CudaKVPool final {
   std::unordered_map<CudaDelegateHandle*, std::vector<Descriptor>> descriptors_;
   std::unordered_map<CudaDelegateHandle*, Bound> bound_;
   std::unordered_set<std::string> discovered_fqns_;
+
+#if !defined(EXECUTORCH_USE_HIP)
+  cudaMemPool_t storage_pool_{nullptr};
+  bool storage_pool_checked_{false};
+#endif
 };
 
 // The FQN the lowering pass gives a layer's K or V storage constant.

@@ -26,6 +26,10 @@ DEFINE_string(backend, "cuda", "Executor backend");
 DEFINE_string(backend, "mlx", "Executor backend");
 #endif
 DEFINE_int32(max_sessions, 4, "Maximum logical sessions");
+DEFINE_int64(
+    kv_column_compaction_delay_ms,
+    500,
+    "CUDA column compaction quiet interval; -1 disables, 0 allows the next idle check");
 DEFINE_int32(
     max_session_tokens,
     0,
@@ -67,6 +71,10 @@ DEFINE_uint64(eos_id, 200001, "Additional EOS token ID (never eom)");
 namespace executorch::extension::llm {
 std::unique_ptr<MuseGlimmerBatchingRuntime>
 create_muse_glimmer_batching_runtime() {
+  if (FLAGS_kv_column_compaction_delay_ms < -1) {
+    throw std::invalid_argument(
+        "--kv_column_compaction_delay_ms must be -1 or nonnegative");
+  }
   const bool every_prompt_end = FLAGS_prefix_checkpoint_prompt_end == "every";
   if (!every_prompt_end && FLAGS_prefix_checkpoint_prompt_end != "initial") {
     throw std::invalid_argument(
@@ -133,6 +141,10 @@ create_muse_glimmer_batching_runtime() {
   backend.bos_id = FLAGS_bos_id;
   backend.use_dflash = FLAGS_dflash;
   backend.dflash_n_draft = FLAGS_dflash_n_draft;
+  backend.kv_column_compaction_delay = FLAGS_kv_column_compaction_delay_ms == -1
+      ? std::nullopt
+      : std::make_optional(
+            std::chrono::milliseconds{FLAGS_kv_column_compaction_delay_ms});
   auto created = create_muse_glimmer_backend(backend);
   if (!created.ok())
     throw std::runtime_error(

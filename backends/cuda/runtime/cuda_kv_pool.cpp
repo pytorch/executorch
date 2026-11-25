@@ -53,9 +53,10 @@ auto shape_string(const std::vector<int64_t>& sizes) {
 // Calls allocate(widest) and, while that runs out of memory, binary-searches
 // for the widest width in [narrowest, widest) whose allocation fits, in a
 // logarithmic number of attempts. allocate(width) is all or nothing, and
-// release() frees what a successful allocate() holds. A fit found below a
-// failed width is released before a wider probe, so no probe competes with it
-// for memory, and allocated again when nothing wider fits.
+// release() frees what a successful allocate() holds; both must have the
+// memory they freed back before returning, so the next probe can use it. A fit
+// found below a failed width is released before a wider probe, so the two
+// never compete, and allocated again when nothing wider fits.
 template <typename Allocate, typename Release>
 ::executorch::runtime::Result<int>
 allocate_widest(int widest, int narrowest, Allocate allocate, Release release) {
@@ -125,8 +126,8 @@ CudaKVPool::~CudaKVPool() {
   (void)device;
   (void)cudaDeviceSynchronize();
   for (auto& allocation : allocations_) {
-    release(allocation.k, cudaStreamPerThread);
-    release(allocation.v, cudaStreamPerThread);
+    release_storage(allocation.k, cudaStreamPerThread);
+    release_storage(allocation.v, cudaStreamPerThread);
   }
   for (void* buffer : side_buffers_) {
     release(buffer, cudaStreamPerThread);
@@ -135,6 +136,12 @@ CudaKVPool::~CudaKVPool() {
   if (last_step_done_ != nullptr) {
     (void)cudaEventDestroy(last_step_done_);
   }
+#if !defined(EXECUTORCH_USE_HIP)
+  // Every K/V buffer has been freed, and the frees observed, above.
+  if (storage_pool_ != nullptr) {
+    (void)cudaMemPoolDestroy(storage_pool_);
+  }
+#endif
 }
 
 runtime::Result<bool> CudaKVPool::note_handle(CudaDelegateHandle* handle) {
@@ -289,11 +296,11 @@ Error CudaKVPool::allocate_layer(
     cudaStream_t stream,
     Allocation& out) {
   const size_t bytes = row_bytes(layer) * static_cast<size_t>(rows);
-  auto k = CudaAllocator::allocate_async(bytes, device_, stream);
+  auto k = allocate_storage(bytes, stream);
   ET_CHECK_OK_OR_RETURN_ERROR(k.error());
-  auto v = CudaAllocator::allocate_async(bytes, device_, stream);
+  auto v = allocate_storage(bytes, stream);
   if (!v.ok()) {
-    CudaAllocator::deallocate_async(k.get(), device_, stream);
+    release_storage(k.get(), stream);
     return v.error();
   }
   out = Allocation{k.get(), v.get(), rows};
@@ -307,14 +314,174 @@ void CudaKVPool::release(void* ptr, cudaStream_t stream) {
   }
 }
 
+#if !defined(EXECUTORCH_USE_HIP)
+// Created on the first K/V allocation and kept for the pool's life, so every
+// K/V buffer comes from the same place and is freed the same way. nullptr =
+// the device has no memory pools or the pool could not be created; storage
+// then comes from the shared allocator as before.
+cudaMemPool_t CudaKVPool::storage_pool() {
+  if (storage_pool_checked_) {
+    return storage_pool_;
+  }
+  storage_pool_checked_ = true;
+  int supported = 0;
+  if (cudaDeviceGetAttribute(
+          &supported, cudaDevAttrMemoryPoolsSupported, device_) !=
+      cudaSuccess) {
+    (void)cudaGetLastError();
+    supported = 0;
+  }
+  if (!supported) {
+    return nullptr;
+  }
+  cudaMemPoolProps props{};
+  props.allocType = cudaMemAllocationTypePinned;
+  props.handleTypes = cudaMemHandleTypeNone;
+  props.location.type = cudaMemLocationTypeDevice;
+  props.location.id = device_;
+  if (cudaMemPoolCreate(&storage_pool_, &props) != cudaSuccess) {
+    ET_LOG(
+        Error,
+        "offgraph_kv: cannot create the KV memory pool on device %d; using "
+        "the shared allocator",
+        device_);
+    (void)cudaGetLastError();
+    storage_pool_ = nullptr;
+    return nullptr;
+  }
+  // The default release threshold of 0 hands freed storage back to the driver
+  // at the next synchronization, so what growth retires is not kept away from
+  // other allocations; trim_storage() returns it without waiting for one.
+  return storage_pool_;
+}
+#endif
+
+#if !defined(EXECUTORCH_USE_HIP)
+// The shared allocator pool keeps what AOTI intermediates and other users
+// free. The CUDA 13.2 driver hands another pool's unused memory to an
+// allocation that runs out, but does not document that, so when a K/V
+// allocation fails for lack of memory, give that cache back to the driver --
+// never memory in use -- and retry once. Only that pool is trimmed, not CUDA
+// graph memory. False = the shared pool held nothing unused.
+bool CudaKVPool::release_shared_cache(cudaStream_t stream) {
+  cudaMemPool_t shared = CudaAllocator::pool_for_device(device_);
+  if (shared == nullptr) {
+    return false;
+  }
+  // Every caller has ordered `stream` behind the previous step, so this
+  // observes the frees its intermediates made; only observed frees go back.
+  uint64_t reserved = 0;
+  uint64_t used = 0;
+  if (cudaStreamSynchronize(stream) != cudaSuccess ||
+      cudaMemPoolGetAttribute(
+          shared, cudaMemPoolAttrReservedMemCurrent, &reserved) !=
+          cudaSuccess ||
+      cudaMemPoolGetAttribute(shared, cudaMemPoolAttrUsedMemCurrent, &used) !=
+          cudaSuccess) {
+    (void)cudaGetLastError();
+    return false;
+  }
+  if (reserved <= used) {
+    return false;
+  }
+  if (cudaMemPoolTrimTo(shared, 0) != cudaSuccess) {
+    (void)cudaGetLastError();
+    return false;
+  }
+  return true;
+}
+#endif
+
+runtime::Result<void*> CudaKVPool::allocate_storage(
+    size_t bytes,
+    cudaStream_t stream) {
+#if !defined(EXECUTORCH_USE_HIP)
+  if (cudaMemPool_t pool = storage_pool()) {
+    void* ptr = nullptr;
+    cudaError_t error = cudaMallocFromPoolAsync(&ptr, bytes, pool, stream);
+    if (error == cudaErrorMemoryAllocation) {
+      (void)cudaGetLastError();
+      if (release_shared_cache(stream)) {
+        error = cudaMallocFromPoolAsync(&ptr, bytes, pool, stream);
+      }
+    }
+    if (error != cudaSuccess) {
+      ET_LOG(
+          Error,
+          "offgraph_kv: cannot allocate %zu bytes of KV storage: %s",
+          bytes,
+          cudaGetErrorString(error));
+      (void)cudaGetLastError();
+      return Error::MemoryAllocationFailed;
+    }
+    return ptr;
+  }
+#endif
+  return CudaAllocator::allocate_async(bytes, device_, stream);
+}
+
+void CudaKVPool::release_storage(void* ptr, cudaStream_t stream) {
+#if !defined(EXECUTORCH_USE_HIP)
+  if (storage_pool_ != nullptr && ptr != nullptr) {
+    const cudaError_t error = cudaFreeAsync(ptr, stream);
+    if (error != cudaSuccess) {
+      ET_LOG(
+          Error,
+          "offgraph_kv: cannot free KV storage: %s",
+          cudaGetErrorString(error));
+      (void)cudaGetLastError();
+    }
+    return;
+  }
+#endif
+  release(ptr, stream);
+}
+
+void CudaKVPool::trim_storage() {
+#if !defined(EXECUTORCH_USE_HIP)
+  if (storage_pool_ != nullptr &&
+      cudaMemPoolTrimTo(storage_pool_, 0) != cudaSuccess) {
+    (void)cudaGetLastError();
+  }
+#endif
+}
+
+int64_t CudaKVPool::reserved_bytes() const {
+  uint64_t bytes = 0;
+#if !defined(EXECUTORCH_USE_HIP)
+  if (storage_pool_ != nullptr &&
+      cudaMemPoolGetAttribute(
+          storage_pool_, cudaMemPoolAttrReservedMemCurrent, &bytes) !=
+          cudaSuccess) {
+    (void)cudaGetLastError();
+    bytes = 0;
+  }
+#endif
+  return static_cast<int64_t>(bytes);
+}
+
+int64_t CudaKVPool::peak_reserved_bytes() const {
+  uint64_t bytes = 0;
+#if !defined(EXECUTORCH_USE_HIP)
+  if (storage_pool_ != nullptr &&
+      cudaMemPoolGetAttribute(
+          storage_pool_, cudaMemPoolAttrReservedMemHigh, &bytes) !=
+          cudaSuccess) {
+    (void)cudaGetLastError();
+    bytes = 0;
+  }
+#endif
+  return static_cast<int64_t>(bytes);
+}
+
 void CudaKVPool::discard(
     const Layer& layer,
     Allocation& allocation,
     cudaStream_t stream) {
   allocated_bytes_ -=
       static_cast<int64_t>(2 * row_bytes(layer) * allocation.rows);
-  release(allocation.k, stream);
-  release(allocation.v, stream);
+  release_storage(allocation.k, stream);
+  release_storage(allocation.v, stream);
   allocation = Allocation{};
 }
 
@@ -371,11 +538,14 @@ Error CudaKVPool::allocate_initial(
   };
   std::vector<Allocation> allocated;
   allocated.reserve(layers_.size());
+  // Waits for the frees, so the storage pool hands that memory back before the
+  // next probe.
   auto roll_back = [&]() {
     for (size_t index = 0; index < allocated.size(); ++index) {
       discard(layers_[index], allocated[index], stream);
     }
     allocated.clear();
+    (void)cudaStreamSynchronize(stream);
   };
   auto allocate = [&](int width) -> Error {
     for (const Layer& layer : layers_) {
@@ -391,22 +561,18 @@ Error CudaKVPool::allocate_initial(
       }
       allocated.push_back(allocation);
     }
-    const Error side_error = allocate_side_buffers(stream);
-    if (side_error != Error::Ok) {
-      roll_back();
-    }
-    return side_error;
+    return Error::Ok;
   };
-  auto release_all = [&]() {
-    roll_back();
+  // The side buffers do not depend on the width, so the probes leave them be.
+  ET_CHECK_OK_OR_RETURN_ERROR(allocate_side_buffers(stream));
+  const auto width = allocate_widest(columns_, narrowest, allocate, roll_back);
+  if (!width.ok()) {
     for (void* buffer : side_buffers_) {
       release(buffer, stream);
     }
     side_buffers_.clear();
-  };
-  const auto width =
-      allocate_widest(columns_, narrowest, allocate, release_all);
-  ET_CHECK_OK_OR_RETURN_ERROR(width.error());
+    return width.error();
+  }
   allocations_ = std::move(allocated);
   rows_ = rows_at(width.get());
   if (width.get() != columns_) {
@@ -571,18 +737,29 @@ void CudaKVPool::invalidate_bindings() {
 
 Error CudaKVPool::resize_columns(
     int columns,
+    const std::vector<std::pair<int, int>>& retained_columns,
     int64_t live_rows,
     cudaStream_t stream,
     int min_columns) {
   min_columns = min_columns > 0 ? min_columns : columns;
   ET_CHECK_OR_RETURN_ERROR(
-      declared_columns_ > 1 && columns >= columns_ &&
-          columns <= declared_columns_ && min_columns >= 2 &&
-          min_columns <= columns && live_rows >= 0,
+      declared_columns_ > 1 && columns >= 2 && columns <= declared_columns_ &&
+          min_columns >= 2 && min_columns <= columns && live_rows >= 0,
       InvalidArgument,
       "offgraph_kv: invalid physical columns %d/%d",
       columns,
       declared_columns_);
+  std::unordered_set<int> sources;
+  std::unordered_set<int> destinations;
+  for (const auto& [from, to] : retained_columns) {
+    ET_CHECK_OR_RETURN_ERROR(
+        from >= 0 && from < columns_ - 1 && to >= 0 && to < min_columns - 1 &&
+            sources.insert(from).second && destinations.insert(to).second,
+        InvalidArgument,
+        "offgraph_kv: invalid retained column %d->%d",
+        from,
+        to);
+  }
   for (const Layer& layer : layers_) {
     ET_CHECK_OR_RETURN_ERROR(
         layer.growable && layer.declared_rows % declared_columns_ == 0,
@@ -598,6 +775,24 @@ Error CudaKVPool::resize_columns(
   if (columns == columns_) {
     return Error::Ok;
   }
+  // Group adjacent source/destination owners so growth pays one 2D copy
+  // per layer instead of one per owner. Sorting also handles sparse IDs.
+  auto ordered = retained_columns;
+  std::sort(ordered.begin(), ordered.end());
+  struct Run {
+    int from;
+    int to;
+    int count;
+  };
+  std::vector<Run> runs;
+  for (const auto& [from, to] : ordered) {
+    if (!runs.empty() && runs.back().from + runs.back().count == from &&
+        runs.back().to + runs.back().count == to) {
+      ++runs.back().count;
+    } else {
+      runs.push_back({from, to, 1});
+    }
+  }
   const auto device = CUDAGuard::create(device_);
   ET_CHECK_OK_OR_RETURN_ERROR(device.error());
   // Fence the pool's previous work, including another thread's PTDS, without
@@ -608,19 +803,30 @@ Error CudaKVPool::resize_columns(
       Internal,
       "offgraph_kv: cannot finish the previous column step");
   stream_ = stream;
+#if !defined(EXECUTORCH_USE_HIP)
+  if (storage_pool_ != nullptr) {
+    // peak_reserved_bytes() starts over with this resize.
+    uint64_t zero = 0;
+    if (cudaMemPoolSetAttribute(
+            storage_pool_, cudaMemPoolAttrReservedMemHigh, &zero) !=
+        cudaSuccess) {
+      (void)cudaGetLastError();
+    }
+  }
+#endif
   const int old_columns = columns_;
   std::vector<Allocation> replacements;
   replacements.reserve(layers_.size());
+  // Waits for the frees, so the storage pool hands that memory back before the
+  // next probe.
   auto release_replacements = [&]() {
     for (size_t index = 0; index < replacements.size(); ++index) {
       discard(layers_[index], replacements[index], stream);
     }
     replacements.clear();
-  };
-  auto roll_back = [&]() {
-    release_replacements();
     (void)cudaStreamSynchronize(stream);
   };
+  auto roll_back = [&]() { release_replacements(); };
   auto allocate = [&](int width) -> Error {
     for (size_t index = 0; index < layers_.size(); ++index) {
       const int64_t logical_rows = allocations_[index].rows / old_columns;
@@ -636,11 +842,11 @@ Error CudaKVPool::resize_columns(
     return Error::Ok;
   };
   // Only the replacement storage is probed: the copy and the commit below run
-  // once, at the widest width that fits. Growth never falls back to the
-  // current width.
+  // once, at the widest width that fits. Only growth falls back, and never to
+  // the current width.
   const auto width = allocate_widest(
       columns,
-      std::max(min_columns, old_columns + 1),
+      columns > old_columns ? std::max(min_columns, old_columns + 1) : columns,
       allocate,
       release_replacements);
   if (!width.ok()) {
@@ -657,29 +863,30 @@ Error CudaKVPool::resize_columns(
     if (logical_rows == 0) {
       continue;
     }
-    for (const auto& [dst, src] :
-         {std::pair{replacement.k, current.k},
-          std::pair{replacement.v, current.v}}) {
-      const cudaError_t error = cudaMemcpy2DAsync(
-          dst,
-          slot * columns,
-          src,
-          slot * old_columns,
-          slot * (old_columns - 1),
-          logical_rows,
-          cudaMemcpyDeviceToDevice,
-          stream);
-      if (error != cudaSuccess) {
-        ET_LOG(
-            Error,
-            "offgraph_kv: column copy failed: %s",
-            cudaGetErrorString(error));
-        roll_back();
-        return Error::Internal;
+    for (const auto& run : runs) {
+      for (const auto& [dst, src] :
+           {std::pair{replacement.k, current.k},
+            std::pair{replacement.v, current.v}}) {
+        const cudaError_t error = cudaMemcpy2DAsync(
+            static_cast<uint8_t*>(dst) + slot * run.to,
+            slot * columns,
+            static_cast<const uint8_t*>(src) + slot * run.from,
+            slot * old_columns,
+            slot * run.count,
+            logical_rows,
+            cudaMemcpyDeviceToDevice,
+            stream);
+        if (error != cudaSuccess) {
+          ET_LOG(
+              Error,
+              "offgraph_kv: column copy failed: %s",
+              cudaGetErrorString(error));
+          roll_back();
+          return Error::Internal;
+        }
       }
     }
   }
-
   const cudaError_t synchronize_error = cudaStreamSynchronize(stream);
   if (synchronize_error != cudaSuccess) {
     ET_LOG(
@@ -701,10 +908,11 @@ Error CudaKVPool::resize_columns(
   column_resize_count_++;
   ET_LOG(
       Info,
-      "offgraph_kv: resized columns=%d->%d "
+      "offgraph_kv: resized columns=%d->%d live_columns=%zu "
       "allocated_bytes=%lld column_resize_count=%lld",
       old_columns,
       columns_,
+      retained_columns.size(),
       static_cast<long long>(allocated_bytes_),
       static_cast<long long>(column_resize_count_));
   return Error::Ok;

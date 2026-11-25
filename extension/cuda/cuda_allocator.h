@@ -160,7 +160,9 @@ class EXECUTORCH_EXTENSION_CUDA_API CudaAllocator final
    * has not allocated there or the pool could not be created.
    *
    * Exposed so a test can observe what the pool is holding, which is not
-   * visible through the device default pool. No production caller.
+   * visible through the device default pool, and so the CUDA KV pool, which
+   * allocates from its own pool, can return the unused memory this pool
+   * caches when a K/V allocation runs out.
    *
    * Not declared on ROCm: the pool code is compiled out there, so there is
    * nothing to observe and the pool type needs no HIP alias.

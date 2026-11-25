@@ -13,7 +13,10 @@
 #include <executorch/runtime/platform/runtime.h>
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
+#include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <numeric>
@@ -33,6 +36,8 @@ using executorch::extension::TensorPtr;
 namespace executorch::extension::llm {
 // Tiny artifacts cannot pass Muse's special-token vocabulary check. Keep the
 // production factory unchanged and construct only the validated tiny geometry.
+// Explicitly clamp initial KV storage too: the production defaults do not yet
+// clamp the 512-token initial capacity for exports with smaller context limits.
 struct CudaDFlashTestPeer {
   static std::unique_ptr<DFlash>
   create(std::unique_ptr<Module> module, int proposals, bool draft_graphs) {
@@ -47,8 +52,9 @@ struct CudaDFlashTestPeer {
         4,
         96,
         static_cast<int>(aten::ScalarType::BFloat16),
-        /*initial_capacity=*/-1,
-        std::move(options));
+        /*initial_capacity=*/512,
+        std::move(options),
+        /*column_compaction_delay=*/std::chrono::milliseconds{0});
     EXPECT_EQ(target.error(), rt::Error::Ok);
     if (!target.ok()) {
       return nullptr;
@@ -80,9 +86,25 @@ struct CudaDFlashTestPeer {
     config.capacity = 512;
     config.max_write = 96;
     config.kv_dtype = static_cast<int>(aten::ScalarType::BFloat16);
+    auto sequence_count =
+        detail::read_int_method(program, cuda_dflash_detail::kMaxSeqs);
+    if (!sequence_count.ok()) {
+      return nullptr;
+    }
+    if (*sequence_count) {
+      auto capacity =
+          detail::read_int_method(program, cuda_dflash_detail::kSeqCapacity);
+      if (!capacity.ok() || !*capacity) {
+        return nullptr;
+      }
+      config.capacity = static_cast<int>(**capacity);
+      config.max_seqs = static_cast<int>(**sequence_count);
+      config.initial_capacity =
+          std::min(config.initial_capacity, config.capacity);
+    }
     auto draft = c::CacheFactory::global().build(
         executorch::backends::cuda::kCudaBackendId,
-        c::kind::kBatchedCell,
+        *sequence_count ? c::kind::kBatchedSequence : c::kind::kBatchedCell,
         geometry,
         config);
     EXPECT_EQ(draft.error(), rt::Error::Ok);
@@ -127,6 +149,12 @@ struct CudaDFlashTestPeer {
   }
   static bool rewind(DFlash& executor, b::SessionId sid, int position) {
     return executor.rewind(executor.sessions_.at(sid), position);
+  }
+  static auto target_metrics(DFlash& executor) {
+    return executor.target_->kv_metrics();
+  }
+  static rt::Error compact_target(DFlash& executor) {
+    return executor.target_->compact_kv_columns(0);
   }
   static bool poisoned(DFlash& executor, b::SessionId sid) {
     return executor.sessions_.at(sid).poisoned;
@@ -194,6 +222,8 @@ class FixtureModule final : public Module {
   }
   std::array<int, 4> rejected{15, 15, 15, 15};
   bool fail_target_sampler = false;
+  bool require_finite_logits = false;
+  std::vector<std::vector<float>> observed_logits;
   rt::Result<std::vector<rt::EValue>> execute(
       const std::string& name,
       const std::vector<rt::EValue>& inputs) override {
@@ -220,6 +250,28 @@ class FixtureModule final : public Module {
       return actual;
     }
     target_output_ = !draft;
+    if (require_finite_logits) {
+      const auto& logits = actual.get()[0].toTensor();
+      if (logits.scalar_type() != aten::ScalarType::Float) {
+        ADD_FAILURE() << "This tiny fixture requires Float logits";
+        return rt::Error::Internal;
+      }
+      std::vector<float> values(logits.numel());
+      if (cudaMemcpyAsync(
+              values.data(),
+              logits.const_data_ptr<float>(),
+              values.size() * sizeof(float),
+              cudaMemcpyDeviceToHost,
+              stream) != cudaSuccess ||
+          cudaStreamSynchronize(stream) != cudaSuccess ||
+          !std::all_of(values.begin(), values.end(), [](float value) {
+            return std::isfinite(value);
+          })) {
+        ADD_FAILURE() << "Nonfinite or unreadable native DFlash logits";
+        return rt::Error::Internal;
+      }
+      observed_logits.push_back(std::move(values));
+    }
     if (!deterministic_) {
       return actual;
     }
@@ -745,6 +797,123 @@ TEST_F(CudaDFlashNative, UnmodifiedOldArtifactRunsSoloAndFourOwnerDecode) {
   EXPECT_EQ(
       executor_->stats().target_preamble_calls, before.target_preamble_calls);
   EXPECT_EQ(executor_->stats().failed_batches, 0);
+}
+
+TEST_F(
+    CudaDFlashNative,
+    SequenceTargetCompactionPreservesSpeculativeContinuation) {
+  const char* sequence_dir = std::getenv("ET_MUSE_DFLASH_SEQUENCE_TINY_DIR");
+  if (!sequence_dir || !*sequence_dir) {
+    GTEST_SKIP()
+        << "Set ET_MUSE_DFLASH_SEQUENCE_TINY_DIR to a tiny export with "
+           "--kv-layout sequence";
+  }
+  dir_ = sequence_dir;
+  struct Continuation {
+    std::vector<Tokens> emitted;
+    std::vector<std::vector<float>> logits;
+    std::uint64_t static_draft_forwards = 0;
+  };
+  auto run = [&](bool compact) {
+    Continuation result;
+    executor_.reset();
+    create(/*deterministic=*/false);
+    if (!executor_) {
+      return result;
+    }
+    fixture_->require_finite_logits = true;
+    std::array<b::SessionId, 4> owners;
+    b::BatchInput batch;
+    for (int owner = 0; owner < 4; ++owner) {
+      owners[owner] = open();
+      Tokens prompt(owner + 3);
+      std::iota(prompt.begin(), prompt.end(), 1 + 17 * owner);
+      batch.inputs.push_back(input(owners[owner], 0, std::move(prompt)));
+    }
+    b::BatchOutput out;
+    // Exercise four-owner speculation, then prime the survivor's static path
+    // before its target KV column moves from column 3 to column 0.
+    for (int round = 0; round < 3; ++round) {
+      if (!executor_->execute(batch, out)) {
+        ADD_FAILURE() << "Native DFlash step failed before compaction";
+        return result;
+      }
+      batch.inputs.clear();
+      for (int owner = round < 1 ? 0 : 3; owner < 4; ++owner) {
+        const int output_index = round < 2 ? owner : 0;
+        if (!out.outputs[output_index] ||
+            out.outputs[output_index]->tokens.empty()) {
+          ADD_FAILURE() << "No DFlash output before compaction";
+          return result;
+        }
+        Peer::check(
+            *executor_,
+            owners[owner],
+            Peer::frontier(*executor_, owners[owner]));
+        batch.inputs.push_back(input(
+            owners[owner],
+            Peer::frontier(*executor_, owners[owner]),
+            {out.outputs[output_index]->tokens.back()}));
+      }
+      if (round == 1) {
+        for (int owner = 0; owner < 3; ++owner) {
+          executor_->close_session(owners[owner]);
+        }
+      }
+    }
+    const auto before = Peer::target_metrics(*executor_);
+    const auto stats_before = executor_->stats();
+    fixture_->observed_logits.clear();
+    EXPECT_EQ(before.physical_columns, 5);
+    if (compact) {
+      EXPECT_EQ(Peer::compact_target(*executor_), rt::Error::Ok);
+      const auto after = Peer::target_metrics(*executor_);
+      EXPECT_EQ(after.physical_columns, 2);
+      EXPECT_EQ(after.column_resize_count, before.column_resize_count + 1);
+    }
+    for (int round = 0; round < 2; ++round) {
+      const auto start = batch.inputs[0].position;
+      if (!executor_->execute(batch, out) || !out.outputs[0] ||
+          out.outputs[0]->tokens.empty()) {
+        ADD_FAILURE() << "Native DFlash continuation failed";
+        return result;
+      }
+      result.emitted.push_back(out.outputs[0]->tokens);
+      Peer::check(*executor_, owners[3], start + out.outputs[0]->tokens.size());
+      batch.inputs = {input(
+          owners[3],
+          Peer::frontier(*executor_, owners[3]),
+          {out.outputs[0]->tokens.back()})};
+    }
+    result.static_draft_forwards = executor_->stats().static_draft_forwards -
+        stats_before.static_draft_forwards;
+    EXPECT_GT(result.static_draft_forwards, 0);
+    EXPECT_EQ(executor_->stats().failed_batches, 0);
+    result.logits = std::move(fixture_->observed_logits);
+    if (!compact) {
+      executor_->close_session(owners[3]);
+      EXPECT_TRUE(executor_->on_idle());
+      EXPECT_EQ(Peer::target_metrics(*executor_).physical_columns, 2);
+    }
+    return result;
+  };
+  const auto reference = run(false);
+  const auto compacted = run(true);
+  ASSERT_EQ(reference.emitted.size(), 2);
+  EXPECT_EQ(compacted.emitted, reference.emitted);
+  EXPECT_EQ(compacted.static_draft_forwards, reference.static_draft_forwards);
+  ASSERT_FALSE(reference.logits.empty());
+  ASSERT_EQ(compacted.logits.size(), reference.logits.size());
+  for (std::size_t i = 0; i < reference.logits.size(); ++i) {
+    ASSERT_EQ(compacted.logits[i].size(), reference.logits[i].size());
+    EXPECT_EQ(
+        std::memcmp(
+            compacted.logits[i].data(),
+            reference.logits[i].data(),
+            reference.logits[i].size() * sizeof(float)),
+        0)
+        << "Continuation logits differ at forward " << i;
+  }
 }
 
 // The production adapter captures draft_forward_{N} in CUDA graphs; on real

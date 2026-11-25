@@ -86,6 +86,17 @@ class ET_EXPERIMENTAL Executor {
     return 0;
   }
 
+  // Engine-thread maintenance when no batch or queued command is ready,
+  // outside the Runner's control mutex. While idle, Runner polls every 20 ms.
+  // true includes no work, unsupported maintenance, and work not yet due;
+  // a backend can defer until its own quiet interval without sleeping here.
+  // false reports failure and pauses retries until another completed batch or
+  // a command closes an owner (including admission rollback). Preserve every
+  // still-open session. Executor decorators must forward this hook.
+  virtual bool on_idle() {
+    return true;
+  }
+
   // A session to route tasks to. nullopt = at capacity. Every successful id
   // must be unique for the lifetime of the consuming Runner, even after close.
   virtual std::optional<SessionId> open_session() = 0;

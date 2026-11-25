@@ -248,6 +248,7 @@ struct ET_EXPERIMENTAL EngineMetrics {
   // no two points to measure between. Outside wall_us(), which starts at the
   // first step -- folding it in would hide one-time setup inside the run.
   std::int64_t init_us = 0;
+  std::uint64_t idle_maintenance_failures = 0;
 
   double wall_us() const {
     return stamped(t_first_step) && stamped(t_last_step)

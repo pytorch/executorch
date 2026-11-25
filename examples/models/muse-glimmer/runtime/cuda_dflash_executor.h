@@ -195,6 +195,7 @@ class MuseGlimmerCudaDFlashExecutor final : public batching::Executor {
   ~MuseGlimmerCudaDFlashExecutor() override;
   std::size_t preferred_batch_tokens() const override;
   bool initialize() override;
+  bool on_idle() override;
   std::optional<batching::SessionId> open_session() override;
   void close_session(batching::SessionId session) override;
   std::optional<batching::SessionId> clone(

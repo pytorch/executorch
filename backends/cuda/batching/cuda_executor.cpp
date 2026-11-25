@@ -268,7 +268,8 @@ CudaExecutor::CudaExecutor(
     std::vector<ForwardMethod> methods,
     int min_selected_rows,
     bool has_sampler,
-    bool has_argmax)
+    bool has_argmax,
+    std::optional<std::chrono::milliseconds> column_compaction_delay)
     : install_guard_(cache),
       module_(std::move(module)),
       ctl_(cache->as<llm_cache::BatchControl>()),
@@ -281,7 +282,8 @@ CudaExecutor::CudaExecutor(
       min_selected_rows_(min_selected_rows),
       sessions_(*ctl_, max_sessions, max_session_tokens, vocab_size),
       has_sampler_(has_sampler),
-      has_argmax_(has_argmax) {}
+      has_argmax_(has_argmax),
+      column_compaction_delay_(column_compaction_delay) {}
 
 CudaExecutor::~CudaExecutor() {
   if (device_params_ != nullptr) {
@@ -312,7 +314,8 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
     int max_session_tokens,
     int kv_dtype,
     int initial_capacity,
-    CudaExecutorOptions options) {
+    CudaExecutorOptions options,
+    std::optional<std::chrono::milliseconds> column_compaction_delay) {
   ET_CHECK_OR_RETURN_ERROR(
       max_session_tokens > 0,
       InvalidArgument,
@@ -323,6 +326,7 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
   config.kv_dtype = kv_dtype;
   config.initial_capacity = initial_capacity;
   config.options = std::move(options);
+  config.kv_column_compaction_delay = column_compaction_delay;
   return create(std::move(module), config);
 }
 
@@ -334,6 +338,11 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
   const int kv_dtype = config.kv_dtype;
   const int initial_capacity = config.initial_capacity;
   const auto& options = config.options;
+  ET_CHECK_OR_RETURN_ERROR(
+      !config.kv_column_compaction_delay ||
+          config.kv_column_compaction_delay->count() >= 0,
+      InvalidArgument,
+      "CudaExecutor: negative compaction delay");
   ET_CHECK_OR_RETURN_ERROR(
       module != nullptr, InvalidArgument, "CudaExecutor: no program");
   ET_CHECK_OR_RETURN_ERROR(
@@ -588,7 +597,8 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
       std::move(methods),
       min_selected_rows,
       has_sampler,
-      has_argmax));
+      has_argmax,
+      config.kv_column_compaction_delay));
   executor->embeddings_method_ = embeddings_method;
   return executor;
 }
@@ -1091,6 +1101,37 @@ OffGraphKVMetrics CudaExecutor::kv_metrics() const {
 
 CudaGraphMetrics CudaExecutor::graph_metrics(std::string_view method) const {
   return kv_->graph_metrics(method);
+}
+
+Error CudaExecutor::compact_kv_columns(int spare_columns) {
+  ET_CHECK_OR_RETURN_ERROR(
+      !raw_executing_, InvalidState, "CudaExecutor: compact between executes");
+  return kv_->compact_columns(spare_columns, std::chrono::milliseconds{0});
+}
+
+bool CudaExecutor::on_idle() {
+  if (!column_compaction_delay_ || raw_executing_) {
+    return true;
+  }
+  const auto metrics = kv_->metrics();
+  // Below 25% non-scratch occupancy, retain spare room equal to the live count.
+  // Time controls when this runs, never which owners can be removed.
+  if (metrics.physical_columns <= 2 ||
+      4 * metrics.live_sequences + 1 >= metrics.physical_columns) {
+    return true;
+  }
+  const Error error = kv_->compact_columns(
+      static_cast<int>(metrics.live_sequences), *column_compaction_delay_);
+  if (error == Error::NotSupported) {
+    return true; // Fixed physical columns need no idle maintenance.
+  }
+  if (error != Error::Ok) {
+    ET_LOG(
+        Error,
+        "CudaExecutor: idle KV compaction failed (%d)",
+        static_cast<int>(error));
+  }
+  return error == Error::Ok;
 }
 
 std::vector<ForwardMethodCalls> CudaExecutor::method_calls() const {

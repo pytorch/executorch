@@ -551,6 +551,7 @@ Result<MuseGlimmerBackend> MuseGlimmerCudaDFlashExecutor::create(
   }
   target_config.max_sessions = config.max_sessions;
   target_config.max_session_tokens = config.max_session_tokens;
+  target_config.kv_column_compaction_delay = config.kv_column_compaction_delay;
   for (int n = 1; n <= df::kOwnerLimit; ++n) {
     target_config.options.additional_cuda_graph_methods.push_back(
         df::kStaticForwardPrefix + std::to_string(n));
@@ -789,6 +790,11 @@ bool MuseGlimmerCudaDFlashExecutor::initialize() {
   }
   initialized_ = true;
   return true;
+}
+
+bool MuseGlimmerCudaDFlashExecutor::on_idle() {
+  // Draft columns remain fixed; only target owner storage is compacted.
+  return failed_ || target_->on_idle();
 }
 
 std::optional<SessionId> MuseGlimmerCudaDFlashExecutor::open_session() {

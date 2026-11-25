@@ -458,10 +458,10 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
       AcceptsCommand>;
 
   void run_();
-  void process_pending_commands_();
-  void process_command_(OpenCommand command);
-  void process_command_(CloseCommand command);
-  void process_command_(CloneCommand command);
+  bool process_pending_commands_();
+  bool process_command_(OpenCommand command);
+  bool process_command_(CloseCommand command);
+  bool process_command_(CloneCommand command);
   void process_command_(StartCommand command);
   void process_command_(AcceptsCommand command);
   std::optional<RetiredSession> retire_session_(SessionId session);
@@ -790,11 +790,35 @@ void RunnerImpl::run_() {
     lifecycle_.store(Lifecycle::Stopping, std::memory_order_release);
   }
 
+  bool idle_maintenance_enabled = true;
   while (is_running_()) {
-    process_pending_commands_();
+    if (process_pending_commands_()) {
+      idle_maintenance_enabled = true;
+    }
     reap_cancelled_();
     if (execute_one_batch_()) {
+      idle_maintenance_enabled = true;
       continue; // more work may be ready
+    }
+    bool idle_now = false;
+    {
+      std::lock_guard<std::mutex> lock(control_mutex_);
+      idle_now = is_running_() && inbox_.empty();
+    }
+    if (idle_maintenance_enabled && idle_now) {
+      bool maintained = false;
+#if ET_HAS_EXCEPTIONS
+      try {
+#endif
+        maintained = executor_.on_idle();
+#if ET_HAS_EXCEPTIONS
+      } catch (...) {
+      }
+#endif
+      if (!maintained) {
+        ++metrics_.idle_maintenance_failures;
+        idle_maintenance_enabled = false;
+      }
     }
     std::unique_lock<std::mutex> lock(control_mutex_);
     engine_cv_.wait_for(lock, std::chrono::milliseconds(20), [this] {
@@ -855,27 +879,39 @@ void RunnerImpl::reap_cancelled_() {
   }
 }
 
-void RunnerImpl::process_pending_commands_() {
+bool RunnerImpl::process_pending_commands_() {
   std::vector<Command> commands;
   {
     std::lock_guard<std::mutex> lock(control_mutex_);
     commands.swap(inbox_);
   }
+  bool closed_owner = false;
   for (auto& command : commands) {
-    std::visit(
+    closed_owner |= std::visit(
         Overloaded{
-            [this](OpenCommand& open) { process_command_(std::move(open)); },
-            [this](CloseCommand& close) { process_command_(std::move(close)); },
-            [this](CloneCommand& clone) { process_command_(std::move(clone)); },
-            [this](StartCommand& start) { process_command_(std::move(start)); },
+            [this](OpenCommand& open) {
+              return process_command_(std::move(open));
+            },
+            [this](CloseCommand& close) {
+              return process_command_(std::move(close));
+            },
+            [this](CloneCommand& clone) {
+              return process_command_(std::move(clone));
+            },
+            [this](StartCommand& start) {
+              process_command_(std::move(start));
+              return false;
+            },
             [this](AcceptsCommand& accepts) {
               process_command_(std::move(accepts));
+              return false;
             }},
         command);
   }
+  return closed_owner;
 }
 
-void RunnerImpl::process_command_(OpenCommand command) {
+bool RunnerImpl::process_command_(OpenCommand command) {
   const bool running = is_running_();
   auto sid = running ? executor_.open_session() : std::nullopt;
   if (running && !sid) {
@@ -909,12 +945,13 @@ void RunnerImpl::process_command_(OpenCommand command) {
     }
     command.ack->set_value(std::nullopt);
   }
+  return newly_issued && !published;
 }
 
-void RunnerImpl::process_command_(CloseCommand command) {
+bool RunnerImpl::process_command_(CloseCommand command) {
   auto retired = retire_session_(command.session);
   if (!retired) {
-    return;
+    return false;
   }
   if (retired->active_generation) {
     complete_generation_(
@@ -923,16 +960,17 @@ void RunnerImpl::process_command_(CloseCommand command) {
         /*on_engine_thread=*/true);
   }
   executor_.close_session(command.session);
+  return true;
 }
 
-void RunnerImpl::process_command_(CloneCommand command) {
+bool RunnerImpl::process_command_(CloneCommand command) {
   const auto source = sessions_.find(command.source);
   // A later CloseCommand may already have cleared the public open flag. FIFO
   // admission still gives this clone access until that command retires source.
   if (!is_running_() || source == sessions_.end() || source->second.poisoned ||
       command.upto < 0 || command.upto > source->second.position()) {
     command.ack->set_value(std::nullopt);
-    return;
+    return false;
   }
 
   std::optional<SessionId> sid;
@@ -977,6 +1015,7 @@ void RunnerImpl::process_command_(CloneCommand command) {
     }
     command.ack->set_value(std::nullopt);
   }
+  return owned && !published;
 }
 
 void RunnerImpl::process_command_(StartCommand command) {

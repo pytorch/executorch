@@ -203,6 +203,8 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
     metrics.flat_capacity = std::min<int64_t>(pool_.rows(), capacity());
     metrics.growth_count = pool_.growth_count();
     metrics.allocated_bytes = pool_.allocated_bytes();
+    metrics.reserved_bytes = pool_.reserved_bytes();
+    metrics.peak_reserved_bytes = pool_.peak_reserved_bytes();
     return metrics;
   }
 
@@ -565,6 +567,8 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
     metrics.flat_capacity = pool_.rows();
     metrics.growth_count = pool_.growth_count();
     metrics.allocated_bytes = pool_.allocated_bytes();
+    metrics.reserved_bytes = pool_.reserved_bytes();
+    metrics.peak_reserved_bytes = pool_.peak_reserved_bytes();
     return metrics;
   }
 
@@ -897,6 +901,7 @@ class CudaBatchedSequenceCache final : public cache::Cache,
     pending_owners_.clear();
     poisoned_ = false;
     inflight_ = false;
+    last_activity_ = std::chrono::steady_clock::now();
   }
 
   bool declare_step(const std::vector<int32_t>& seq_ids) override {
@@ -954,6 +959,7 @@ class CudaBatchedSequenceCache final : public cache::Cache,
       return std::nullopt;
     }
     admitted = true;
+    last_activity_ = std::chrono::steady_clock::now();
     return *id;
   }
 
@@ -1006,6 +1012,7 @@ class CudaBatchedSequenceCache final : public cache::Cache,
       return std::nullopt;
     }
     admitted = true;
+    last_activity_ = std::chrono::steady_clock::now();
     return *id;
   }
 
@@ -1016,13 +1023,21 @@ class CudaBatchedSequenceCache final : public cache::Cache,
       step_seq_ids_.clear();
     }
     // Logical removal does not free storage; verbs run between forwards.
-    return seqs_.erase(seq_id) > 0;
+    const bool removed = seqs_.erase(seq_id) > 0;
+    if (removed) {
+      last_activity_ = std::chrono::steady_clock::now();
+    }
+    return removed;
   }
 
   bool rewind(int32_t seq_id, int position) override {
     std::lock_guard<std::mutex> guard(mutex_);
     const auto it = seqs_.find(seq_id);
-    return it != seqs_.end() && it->second.plan.rewind(position);
+    const bool rewound = it != seqs_.end() && it->second.plan.rewind(position);
+    if (rewound) {
+      last_activity_ = std::chrono::steady_clock::now();
+    }
+    return rewound;
   }
 
   int pos(int32_t seq_id) const override {
@@ -1192,6 +1207,7 @@ class CudaBatchedSequenceCache final : public cache::Cache,
     step_seq_ids_.clear();
     inflight_ = grow_columns();
     prepared = true;
+    last_activity_ = std::chrono::steady_clock::now();
     return Error::Ok;
   }
 
@@ -1221,6 +1237,7 @@ class CudaBatchedSequenceCache final : public cache::Cache,
       }
     }
     pending_owners_.clear();
+    last_activity_ = std::chrono::steady_clock::now();
     return Error::Ok;
   }
 
@@ -1250,6 +1267,8 @@ class CudaBatchedSequenceCache final : public cache::Cache,
         std::min<int64_t>(pool_.rows() / columns_, cfg_.capacity);
     metrics.growth_count = pool_.growth_count();
     metrics.allocated_bytes = pool_.allocated_bytes();
+    metrics.reserved_bytes = pool_.reserved_bytes();
+    metrics.peak_reserved_bytes = pool_.peak_reserved_bytes();
     metrics.physical_columns = columns_;
     metrics.declared_columns = max_seqs_ + 1;
     metrics.live_sequences = seqs_.size();
@@ -1260,6 +1279,61 @@ class CudaBatchedSequenceCache final : public cache::Cache,
   CudaGraphMetrics graph_metrics(std::string_view method) const override {
     std::lock_guard<std::mutex> guard(mutex_);
     return pool_.graph_metrics(method);
+  }
+
+  Error compact_columns(int spare_columns, std::chrono::milliseconds quiet_for)
+      override {
+    std::lock_guard<std::mutex> guard(mutex_);
+    ET_CHECK_OR_RETURN_ERROR(
+        grow_columns(), NotSupported, "offgraph_kv: fixed column policy");
+    ET_CHECK_OR_RETURN_ERROR(
+        !poisoned_ && !inflight_ && pending_owners_.empty(),
+        InvalidState,
+        "offgraph_kv: compact only between committed forwards");
+    ET_CHECK_OR_RETURN_ERROR(
+        spare_columns >= 0 && spare_columns <= max_seqs_,
+        InvalidArgument,
+        "offgraph_kv: invalid spare columns");
+    ET_CHECK_OR_RETURN_ERROR(
+        quiet_for.count() >= 0,
+        InvalidArgument,
+        "offgraph_kv: negative quiet interval");
+    if (std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - last_activity_) < quiet_for) {
+      return Error::Ok;
+    }
+    const int live = static_cast<int>(seqs_.size());
+    const int target = static_cast<int>(std::min<int64_t>(
+        columns_,
+        std::min<int64_t>(
+            max_seqs_, std::max<int64_t>(1, live + int64_t{spare_columns})) +
+            1));
+    const auto device = CUDAGuard::create(pool_.device());
+    ET_CHECK_OK_OR_RETURN_ERROR(device.error());
+    const int old_columns = columns_;
+    // Compaction keeps the requested spare columns or fails; it never falls
+    // back to a narrower width.
+    const Error resized = resize_columns(target, target, cudaStreamPerThread);
+    last_activity_ = std::chrono::steady_clock::now();
+    if (resized != Error::Ok) {
+      // A failed resize has freed and fenced any replacement storage it built.
+      pool_.trim_storage();
+      return resized;
+    }
+    if (columns_ < old_columns && pool_.allocated()) {
+      // The new mappings are committed. Fence old-buffer frees before giving
+      // unused storage back; never roll back into the retired addresses.
+      const Error fenced = pool_.synchronize(/*all_streams=*/false);
+      if (fenced != Error::Ok) {
+        poisoned_ = true;
+        return fenced;
+      }
+      // The storage pool holds only this cache's K/V, so everything unused
+      // goes back, including whatever earlier growth and failed attempts freed
+      // and no synchronization has returned yet.
+      pool_.trim_storage();
+    }
+    return Error::Ok;
   }
 
  protected:
@@ -1318,17 +1392,39 @@ class CudaBatchedSequenceCache final : public cache::Cache,
 
   Error ensure_columns(cudaStream_t stream) {
     const int live = static_cast<int>(seqs_.size());
-    int target = live + 1 <= columns_
+    const int target = live + 1 <= columns_
         ? columns_
         : static_cast<int>(std::min<int64_t>(
               max_seqs_ + 1LL,
               std::max<int64_t>(live + 1LL, 2LL * (columns_ - 1) + 1)));
+    // Under memory pressure, take the widest width that fits, down to the
+    // required one. A resize holds the old and new storage at once, so under
+    // steady pressure the width reached here is usually final. Spare columns
+    // avoid a failed attempt, a full KV copy and graph recapture on later
+    // admissions. Failed resizing leaves storage, mapping and bindings intact.
+    // Without growth nothing is copied, so every owner keeps its column.
+    return resize_columns(
+        target, target == columns_ ? target : live + 1, stream);
+  }
+
+  // Resizes to `target` columns, or under memory pressure to the widest width
+  // down to min_target that fits. Owners are mapped below min_target - 1.
+  Error resize_columns(int target, int min_target, cudaStream_t stream) {
     std::map<int32_t, int> next;
     std::unordered_set<int> used;
     for (const auto& [id, sequence] : seqs_) {
-      if (sequence.column >= 0) {
+      if (sequence.column < 0) {
+        continue;
+      }
+      // Every valid state maps owners below the current scratch column, in
+      // the grow, shrink and same-width paths alike.
+      ET_CHECK_OR_RETURN_ERROR(
+          sequence.column < columns_ - 1,
+          InvalidState,
+          "offgraph_kv: invalid physical owner mapping");
+      if (sequence.column < min_target - 1) {
         ET_CHECK_OR_RETURN_ERROR(
-            sequence.column < target - 1 && used.insert(sequence.column).second,
+            used.insert(sequence.column).second,
             InvalidState,
             "offgraph_kv: invalid physical owner mapping");
         next.emplace(id, sequence.column);
@@ -1343,24 +1439,23 @@ class CudaBatchedSequenceCache final : public cache::Cache,
         ++column;
       }
       ET_CHECK_OR_RETURN_ERROR(
-          column < target - 1,
+          column < min_target - 1,
           InvalidState,
           "offgraph_kv: missing physical column");
       next.emplace(id, column);
       used.insert(column);
     }
     if (target != columns_) {
+      std::vector<std::pair<int, int>> retained;
       int live_rows = 0;
       for (const auto& [id, sequence] : seqs_) {
+        if (sequence.column >= 0) {
+          retained.emplace_back(sequence.column, next.at(id));
+        }
         live_rows = std::max(live_rows, sequence.plan.length());
       }
-      // Under memory pressure, take the widest width that fits, down to the
-      // required one. A resize holds the old and new storage at once, so
-      // under steady pressure the width reached here is usually final. Spare
-      // columns avoid a failed attempt, a full KV copy and graph recapture on
-      // later admissions. Failed resizing leaves storage and bindings intact.
-      ET_CHECK_OK_OR_RETURN_ERROR(
-          pool_.resize_columns(target, live_rows, stream, live + 1));
+      ET_CHECK_OK_OR_RETURN_ERROR(pool_.resize_columns(
+          target, retained, live_rows, stream, min_target));
       columns_ = pool_.columns();
     }
     for (auto& [id, sequence] : seqs_) {
@@ -1504,6 +1599,8 @@ class CudaBatchedSequenceCache final : public cache::Cache,
   const std::optional<int> dflash_block_size_;
   int columns_;
   bool inflight_{false};
+  std::chrono::steady_clock::time_point last_activity_ =
+      std::chrono::steady_clock::now();
   std::vector<int64_t> layer_rows_;
   CudaKVPool pool_;
   std::map<int32_t, Sequence> seqs_;
