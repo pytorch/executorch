@@ -513,10 +513,14 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
               max_cells,
       InvalidArgument,
       "CudaExecutor: %d sessions of %d tokens exceed the program's %" PRId64
-      " cells, one of which is reserved",
+      " cells, one of which is reserved; this pool supports at most %" PRId64
+      " tokens per session, or export with at least %" PRId64
+      " cells for the requested context",
       max_sessions,
       max_session_tokens,
-      max_cells);
+      max_cells,
+      (max_cells - 1) / max_sessions,
+      static_cast<std::int64_t>(max_sessions) * max_session_tokens + 1);
 
   // The pool is the program's: its size and widest step fix the shapes the
   // program declared for the step buffers.
