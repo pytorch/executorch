@@ -1322,6 +1322,14 @@ class CudaBatchedSequenceCache final : public cache::Cache,
     // back to a narrower width.
     const Error resized = resize_columns(target, target, cudaStreamPerThread);
     last_activity_ = std::chrono::steady_clock::now();
+#if !defined(EXECUTORCH_USE_HIP)
+    if (resized != Error::Ok && can_trim) {
+      // A failed resize has freed and fenced any replacement storage it built.
+      // Give that back without trimming below the reservation found on entry.
+      ::executorch::extension::cuda::CudaAllocator::release_cached_memory(
+          pool_.device(), reserved_before, /*trim_graph_memory=*/false);
+    }
+#endif
     ET_CHECK_OK_OR_RETURN_ERROR(resized);
     if (columns_ < old_columns && pool_.allocated()) {
       // The new mappings are committed. Fence old-buffer frees before giving

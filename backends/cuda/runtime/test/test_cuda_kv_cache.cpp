@@ -4269,12 +4269,29 @@ TEST_F(CudaRuntimeColumnCacheTest, FailedContractionPreservesSparseOwners) {
       GTEST_SKIP() << "Cannot reserve free memory for a controlled failure";
     }
     const auto before = kv->metrics();
+    const auto pool =
+        ::executorch::extension::cuda::CudaAllocator::pool_for_device(device);
+    uint64_t reserved_before = 0, reserved_after = 0;
+    if (pool != nullptr) {
+      EXPECT_EQ(
+          cudaMemPoolGetAttribute(
+              pool, cudaMemPoolAttrReservedMemCurrent, &reserved_before),
+          cudaSuccess);
+    }
     EXPECT_EQ(
         kv->compact_columns(2, std::chrono::milliseconds{0}),
         Error::MemoryAllocationFailed);
     EXPECT_EQ(kv->metrics().physical_columns, 9);
     EXPECT_EQ(kv->metrics().column_resize_count, before.column_resize_count);
     EXPECT_EQ(kv->metrics().allocated_bytes, before.allocated_bytes);
+    if (pool != nullptr) {
+      // The failed attempt must not leave its replacement storage reserved.
+      EXPECT_EQ(
+          cudaMemPoolGetAttribute(
+              pool, cudaMemPoolAttrReservedMemCurrent, &reserved_after),
+          cudaSuccess);
+      EXPECT_LE(reserved_after, reserved_before);
+    }
     ASSERT_EQ(cudaFree(spare_reservation), cudaSuccess);
     ::executorch::extension::cuda::CudaAllocator::release_cached_memory(device);
     ASSERT_EQ(cudaMemGetInfo(&free_bytes, &total_bytes), cudaSuccess);
