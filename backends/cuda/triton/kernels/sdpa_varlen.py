@@ -235,6 +235,8 @@ def _sdpa_varlen_decode_kernel(  # noqa: C901
     h_kv = tl.program_id(1)
     split = tl.program_id(2)
 
+    # Issued ahead of the segment scan so its latency overlaps the scan's.
+    columns = tl.load(Info_ptr + 4)
     owned = False
     q_start = 0
     q_len = 0
@@ -249,7 +251,8 @@ def _sdpa_varlen_decode_kernel(  # noqa: C901
         q_len = tl.where(take, seg_q_len, q_len)
         col = tl.where(take, tl.load(Info_ptr + seg * 5 + 2), col)
         kv_end = tl.where(take, tl.load(Info_ptr + seg * 5 + 3), kv_end)
-    columns = tl.load(Info_ptr + 4).to(tl.int64)
+    # One row's pitch fits int32; whole-storage offsets may not, so the row
+    # pointers below advance in 64 bits and only in-tile offsets use int32.
     stride_kr = columns * stride_kc
     stride_vr = columns * stride_vc
 
@@ -287,13 +290,15 @@ def _sdpa_varlen_decode_kernel(  # noqa: C901
     m_i = tl.full([BLOCK_G], -float("inf"), dtype=tl.float32)
     l_i = tl.zeros([BLOCK_G], dtype=tl.float32)
     acc = tl.zeros([BLOCK_G, HEAD_DIM], dtype=tl.float32)
-    k_base = K_ptr + col * stride_kc + h_kv * stride_kh
-    v_base = V_ptr + col * stride_vc + h_kv * stride_vh
+    row0 = start.to(tl.int64)
+    k_row = K_ptr + col * stride_kc + h_kv * stride_kh + row0 * stride_kr
+    v_row = V_ptr + col * stride_vc + h_kv * stride_vh + row0 * stride_vr
+    offs_b = tl.arange(0, BLOCK_N)
     for n0 in tl.range(start, stop, BLOCK_N):
-        offs_n = n0 + tl.arange(0, BLOCK_N)
+        offs_n = n0 + offs_b
         n_valid = offs_n < stop
         k = tl.load(
-            k_base + offs_n[:, None] * stride_kr + offs_d[None, :],
+            k_row + offs_b[:, None] * stride_kr + offs_d[None, :],
             mask=n_valid[:, None] & owned,
             other=0.0,
         )
@@ -320,13 +325,15 @@ def _sdpa_varlen_decode_kernel(  # noqa: C901
         p = tl.where(m_ij[:, None] > -float("inf"), tl.exp(qk - m_ij[:, None]), 0.0)
         alpha = tl.where(m_ij > -float("inf"), tl.exp(m_i - m_ij), 0.0)
         v = tl.load(
-            v_base + offs_n[:, None] * stride_vr + offs_d[None, :],
+            v_row + offs_b[:, None] * stride_vr + offs_d[None, :],
             mask=n_valid[:, None] & owned,
             other=0.0,
         )
         acc = acc * alpha[:, None] + tl.dot(p.to(v.dtype), v)
         l_i = l_i * alpha + tl.sum(p, axis=1)
         m_i = m_ij
+        k_row += BLOCK_N * stride_kr
+        v_row += BLOCK_N * stride_vr
 
     if NUM_SPLITS == 1:
         out = acc * tl.where(l_i > 0, 1.0 / l_i, 0.0)[:, None]
