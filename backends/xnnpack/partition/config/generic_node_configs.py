@@ -641,22 +641,10 @@ class FloorConfig(GenericNodePartitionerConfig):
 
 class GeluConfig(GenericNodePartitionerConfig):
     target_name = "gelu.default"
+    supports_bf16 = False
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32]
-
-    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
-        if not self.check_common_constraints(node, ep):
-            return False
-
-        # XNNPACK does not support GELU for fp16
-        node_val = node.meta.get("val", None)
-        if node_val is not None and isinstance(node_val, torch.Tensor):
-            if node_val.dtype == torch.float16:
-                why(node, reason="GELU does not support fp16")
-                return False
-
-        return True
 
 
 class HardswishConfig(GenericNodePartitionerConfig):
