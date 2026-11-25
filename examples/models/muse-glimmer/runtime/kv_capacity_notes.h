@@ -138,7 +138,7 @@ inline std::vector<std::string> target_notes(
 // `sessions` sessions whose target budget is `target_tokens`
 // (`requested_tokens`, zero for automatic context mode): empty when the
 // target's whole budget is admitted; else why the draft limits or refused
-// them.
+// them. Every figure is the admission's or the program's.
 inline std::vector<std::string> draft_notes(
     int sessions,
     int requested_tokens,
@@ -147,12 +147,14 @@ inline std::vector<std::string> draft_notes(
     const DraftAdmission& admission,
     const cb::KvReservations& reservations = {}) {
   std::vector<std::string> lines;
-  if (admission.fits && admission.max_context == target_tokens) {
+  // What the admission gives each session: the target's budget, or less when
+  // the draft holds less.
+  const int held = admission.max_context;
+  if (admission.fits && held == target_tokens) {
     return lines;
   }
-  const std::int64_t budget = draft_session_budget(sessions, pool);
   const std::string block = std::to_string(pool.block);
-  if (budget >= target_tokens) {
+  if (held == target_tokens) {
     // The draft holds the target's budget, which is at most the block.
     lines.push_back(
         "DFlash: the target pool's " + std::to_string(target_tokens) +
@@ -161,50 +163,55 @@ inline std::vector<std::string> draft_notes(
     lines.push_back(kSizingPointer);
     return lines;
   }
-  std::string line = pool.sequence_layout
-      ? "DFlash: each draft sequence's " + std::to_string(pool.cells) +
-          " rows hold " + std::to_string(budget) + " tokens beside its " +
-          block + "-token block"
-      : "DFlash: the draft pool's " + std::to_string(pool.cells) +
-          " cells hold " + std::to_string(std::max<std::int64_t>(0, budget)) +
-          " tokens for each of " + std::to_string(sessions) +
-          " sessions after " + std::to_string(pool.max_owners) + " x " + block +
-          " temporary block cells and 1 padding cell";
-  line +=
+  const std::string outcome =
       admission.fits ? ", which limits them" : ", so it refused the sessions";
-  lines.push_back(line);
-  if (requested_tokens == 0) {
-    lines.push_back(
-        "DFlash: the target pool holds " + std::to_string(target_tokens) +
-        " tokens per session");
-  } else if (pool.sequence_layout) {
-    // Each sequence has its own rows: no session count changes this.
-    lines.push_back(
-        "DFlash: on the sequence layout a session holds at most the program's "
-        "context (the draft's rows) less the block, " +
-        std::to_string(pool.cells) + " - " + block + " = " +
-        std::to_string(budget) + " draft tokens, so a requested " +
-        std::to_string(requested_tokens) +
-        "-token --max_session_tokens/--max-context is refused");
+  if (pool.sequence_layout) {
+    // The per-session rows are the program's; no session count changes them.
+    std::string line = "DFlash: the draft program holds " +
+        std::to_string(pool.cells) + " rows per session; with a " + block +
+        "-token block, a session can hold at most " + std::to_string(held) +
+        " tokens";
+    line += requested_tokens != 0 ? "; " + std::to_string(requested_tokens) +
+            " were requested (--max_session_tokens/--max-context)"
+                                  : outcome;
+    lines.push_back(line);
+    if (requested_tokens == 0) {
+      lines.push_back(
+          "DFlash: the target pool holds " + std::to_string(target_tokens) +
+          " tokens per session");
+    }
   } else {
-    // The target admitted the requested limit without a report: say where
-    // the sessions sharing the draft pool come from.
     lines.push_back(
-        "DFlash: " + cb::describe_sessions(sessions, reservations) +
-        " share the draft pool");
-    lines.push_back(kResidentSessions);
-    lines.push_back(
-        "DFlash: " + std::to_string(requested_tokens) +
-        " tokens per session were requested; " + std::to_string(sessions) +
-        " x " + std::to_string(requested_tokens) + " + " +
-        std::to_string(temporary_cells(pool)) + " + 1 = " +
-        std::to_string(
-            cb::cell_budget(
-                sessions, requested_tokens, pool.cells, temporary_cells(pool))
-                .required_cells) +
-        " draft cells hold them");
+        "DFlash: the draft pool's " + std::to_string(pool.cells) +
+        " cells (--draft-max-cells, default --max-cells) hold " +
+        std::to_string(std::max(0, held)) + " tokens for each of " +
+        std::to_string(sessions) + " sessions after " +
+        std::to_string(pool.max_owners) + " x " + block +
+        " temporary block cells and 1 padding cell" + outcome);
+    if (requested_tokens == 0) {
+      lines.push_back(
+          "DFlash: the target pool holds " + std::to_string(target_tokens) +
+          " tokens per session");
+    } else {
+      // The target admitted the requested limit without a report: say where
+      // the sessions sharing the draft pool come from.
+      lines.push_back(
+          "DFlash: " + cb::describe_sessions(sessions, reservations) +
+          " share the draft pool");
+      lines.push_back(kResidentSessions);
+      lines.push_back(
+          "DFlash: " + std::to_string(requested_tokens) +
+          " tokens per session were requested; " + std::to_string(sessions) +
+          " x " + std::to_string(requested_tokens) + " + " +
+          std::to_string(temporary_cells(pool)) + " + 1 = " +
+          std::to_string(
+              cb::cell_budget(
+                  sessions, requested_tokens, pool.cells, temporary_cells(pool))
+                  .required_cells) +
+          " draft cells hold them");
+    }
   }
-  if (budget <= pool.block) {
+  if (held <= pool.block) {
     lines.push_back(
         "DFlash: a session's context must exceed the " + block +
         "-token draft block");

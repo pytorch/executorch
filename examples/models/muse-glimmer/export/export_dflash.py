@@ -1176,7 +1176,9 @@ def main() -> None:
         "--max-seq-len",
         type=int,
         default=131072,
-        help="KV cache size for target model.",
+        help="KV cache size for the target model. Ignored with "
+        "--use-offgraph-kv-cache, which uses the checkpoint's native context "
+        "(with a warning when this differs from the default).",
     )
     parser.add_argument(
         "--mmproj",
