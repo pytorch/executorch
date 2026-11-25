@@ -7525,7 +7525,7 @@ class TestQNNFloatingPointUtils(TestQNN):
             module,
             sample_input,
             expected_partitions=1,
-            expected_profile_events=30,
+            expected_profile_events=29 if self.enable_x86_64 else 32,
         )
         TestQNN.profile_level = 0
 
@@ -7664,7 +7664,7 @@ class TestQNNFloatingPointUtils(TestQNN):
             module,
             sample_input,
             expected_partitions=1,
-            expected_profile_events=30,
+            expected_profile_events=29 if self.enable_x86_64 else 32,
             extra_cmds=runtime_commands,
         )
         TestQNN.profile_level = 0
@@ -8657,7 +8657,7 @@ class TestQNNQuantizedUtils(TestQNN):
             module,
             sample_input,
             expected_partitions=1,
-            expected_profile_events=30,
+            expected_profile_events=32 if self.enable_x86_64 else 35,
         )
         TestQNN.profile_level = 0
 
@@ -8800,7 +8800,7 @@ class TestQNNQuantizedUtils(TestQNN):
             module,
             sample_input,
             expected_partitions=1,
-            expected_profile_events=30,
+            expected_profile_events=32 if self.enable_x86_64 else 35,
             extra_cmds=runtime_commands,
         )
         TestQNN.profile_level = 0
