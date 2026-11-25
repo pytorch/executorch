@@ -226,8 +226,7 @@ class GraphBuilder {
       const std::vector<OutputSlot>& outputs,
       const std::unordered_map<ValueId, ggml_tensor*>& persistent,
       const std::unordered_map<ValueId, ggml_tensor*>& row_scales,
-      const std::unordered_map<ValueId, std::vector<uint8_t>>&
-          rope_factor_bytes,
+      const std::unordered_map<ValueId, ggml_tensor*>& rope_factors,
       const FoldedBatchNorms& batch_norms,
       std::unordered_map<ValueId, int64_t> key_extents,
       size_t graph_size,
@@ -401,7 +400,6 @@ class GraphBuilder {
   void lower_choose_qparams(const Node& node);
   void lower_quantize_affine(const Node& node);
   void lower_dequantize_affine(const Node& node);
-  ggml_tensor* rope_factor_tensor(ValueId inv_freq);
   void lower_rope(const Node& node);
   void lower_gated_delta_rule(const Node& node);
   ggml_tensor* skip_f16_cast(ggml_tensor* rows) const;
@@ -418,7 +416,7 @@ class GraphBuilder {
   const std::vector<OutputSlot>& outputs_;
   const std::unordered_map<ValueId, ggml_tensor*>& persistent_;
   const std::unordered_map<ValueId, ggml_tensor*>& row_scales_;
-  const std::unordered_map<ValueId, std::vector<uint8_t>>& rope_factor_bytes_;
+  const std::unordered_map<ValueId, ggml_tensor*>& rope_factors_;
   const FoldedBatchNorms& batch_norms_;
   // Mask values (and their producers) computed over a key prefix only.
   std::unordered_map<ValueId, int64_t> key_extents_;
@@ -433,7 +431,6 @@ class GraphBuilder {
   bool f32_accumulation_;
   const OffGraphCacheBinding* offgraph_cache_;
   std::vector<RuntimeValue> values_;
-  std::unordered_map<ValueId, ggml_tensor*> rope_factor_tensors_;
   std::map<std::pair<ValueId, int64_t>, ggml_tensor*> attention_masks_;
   std::unordered_map<ggml_tensor*, ggml_tensor*> i32_casts_;
   std::unordered_set<const ggml_tensor*> persistent_storage_;
