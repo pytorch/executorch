@@ -1602,19 +1602,24 @@ TEST(GgmlEngineTest, RejectsMalformedConvolutionAndBatchNorm) {
   expect_compile_error(norm.finish("y"), "one value per channel");
 }
 
-// m = 2 * x is a reusable attention mask; an in-place write to head 1 of m
-// between two attention ops must reach the second one.
-TEST(GgmlEngineTest, WriteToCachedMaskReachesLaterAttention) {
+// m = 2 * x, or x times a tensor of twos, is a reusable attention mask; an
+// in-place write to head 1 of m between two attention ops must reach the
+// second one.
+void expect_write_to_cached_mask_reaches_later_attention(bool tensor_factor) {
   TestProgram program;
   program.input("q", fbs::ScalarType::FLOAT, {1, 2, 3, 8});
   program.input("k", fbs::ScalarType::FLOAT, {1, 2, 8, 8});
   program.input("v", fbs::ScalarType::FLOAT, {1, 2, 8, 8});
   program.input("x", fbs::ScalarType::FLOAT, {1, 2, 3, 8});
   program.input("row", fbs::ScalarType::FLOAT, {1, 1, 3, 8});
+  if (tensor_factor) {
+    program.input("twos", fbs::ScalarType::FLOAT, {1, 2, 3, 8});
+  }
   program.call(
       "m",
       "torch.ops.aten.mul.Tensor",
-      {{"self", std::string("x")}, {"other", 2.0}},
+      {{"self", std::string("x")},
+       {"other", tensor_factor ? TestArg(std::string("twos")) : TestArg(2.0)}},
       fbs::ScalarType::FLOAT,
       {1, 2, 3, 8});
   const std::vector<std::pair<std::string, TestArg>> attention = {
@@ -1666,6 +1671,10 @@ TEST(GgmlEngineTest, WriteToCachedMaskReachesLaterAttention) {
   executable->set_input(2, kv.data(), kv.size(), ScalarType::Float);
   executable->set_input(3, x.data(), x.size(), ScalarType::Float);
   executable->set_input(4, row.data(), row.size(), ScalarType::Float);
+  const std::vector<float> twos(48, 2.0f);
+  if (tensor_factor) {
+    executable->set_input(5, twos.data(), twos.size(), ScalarType::Float);
+  }
   executable->execute();
   std::vector<float> difference(48);
   executable->get_output(
@@ -1679,6 +1688,14 @@ TEST(GgmlEngineTest, WriteToCachedMaskReachesLaterAttention) {
   };
   EXPECT_EQ(max_abs(0), 0.0f);
   EXPECT_GT(max_abs(1), 1e-2f);
+}
+
+TEST(GgmlEngineTest, WriteToCachedMaskReachesLaterAttention) {
+  expect_write_to_cached_mask_reaches_later_attention(/*tensor_factor=*/false);
+}
+
+TEST(GgmlEngineTest, WriteToCachedProductMaskReachesLaterAttention) {
+  expect_write_to_cached_mask_reaches_later_attention(/*tensor_factor=*/true);
 }
 
 TEST(GgmlEngineTest, ReleasesMutableBufferWithItsExecutable) {
