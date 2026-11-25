@@ -44,8 +44,15 @@ from helion._compiler._dynamo.higher_order_ops import (
 from helion.runtime.kernel import BoundKernel
 
 
-def _run_twice(program, inputs: torch.Tensor) -> list[list[np.ndarray]]:
-    """Run forward twice; each run returns all of the method's outputs."""
+def _run_twice(
+    program, inputs: torch.Tensor, second_inputs: torch.Tensor | None = None
+) -> list[list[np.ndarray]]:
+    """Run forward twice; each run returns all of the method's outputs.
+
+    The second run uses `second_inputs` when given (for dynamic shapes),
+    otherwise it repeats `inputs`, which also catches state leaking
+    between runs for stateful models.
+    """
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         (root / "model.pte").write_bytes(program.buffer)
@@ -60,14 +67,16 @@ def _run_twice(program, inputs: torch.Tensor) -> list[list[np.ndarray]]:
                 .load_program(root / "model.pte", data_path=root / "aoti_cuda_blob.ptd")
                 .load_method("forward")
             )
+            runs = [inputs, second_inputs if second_inputs is not None else inputs]
             return [
-                [output.cpu().numpy() for output in method.execute([inputs.cpu()])]
-                for _ in range(2)
+                [output.cpu().numpy() for output in method.execute([run.cpu()])]
+                for run in runs
             ]
         # In Buck, LibTorch and the CUDA shims define the same aoti_torch_*
         # symbols, so the program runs in a LibTorch-free process.
+        second = second_inputs if second_inputs is not None else inputs
         np.save(root / "input.npy", inputs.cpu().numpy())
-        np.save(root / "input2.npy", inputs.cpu().numpy())
+        np.save(root / "input2.npy", second.cpu().numpy())
         subprocess.run([runner, directory], check=True, timeout=120)
 
         def load_outputs(prefix: str) -> list[np.ndarray]:
@@ -105,6 +114,19 @@ def _increment_and_return(x: torch.Tensor) -> torch.Tensor:
     for tile in hl.tile(x.numel()):
         x[tile] = x[tile] + 1
     return x
+
+
+def _fill_from(cache: torch.Tensor, x: torch.Tensor) -> None:
+    for tile_m, tile_n in hl.tile([x.size(0), x.size(1)]):
+        cache[tile_m, tile_n] = x[tile_m, tile_n] + 1
+
+
+def _add_specialized_m(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    result = torch.empty_like(x)
+    m = hl.specialize(x.size(0))
+    for tile in hl.tile(m):
+        result[tile] = x[tile] + y[tile]
+    return result
 
 
 def _add_2d(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
@@ -205,6 +227,82 @@ class HelionLaunchContractTest(unittest.TestCase):
                     lower_helion._check_single_launch_site(
                         f"def add(x):\n    _launcher(k, (1,), x, {option})\n", "add"
                     )
+
+    def test_index_range_bounds_offsets(self) -> None:
+        # The bound measures both the largest element offset and the
+        # element count of the tensors a launch indexes.
+        def kernel_with(index_dtype):
+            return SimpleNamespace(
+                settings=SimpleNamespace(backend="triton", index_dtype=index_dtype)
+            )
+
+        from torch.fx.experimental.symbolic_shapes import ShapeEnv
+
+        shape_env = ShapeEnv()
+        with FakeTensorMode(shape_env=shape_env):
+
+            def bounded_sym(compiler_max):
+                sym = shape_env.create_unbacked_symint()
+                shape_env.constrain_symbol_range(
+                    sym.node.expr, compiler_min=1, compiler_max=compiler_max
+                )
+                return sym
+
+            bounded = torch.empty(bounded_sym(256), 64, device="cuda")
+            unbounded = torch.empty(
+                shape_env.create_unbacked_symint(), 64, device="cuda"
+            )
+            strided = torch.empty_strided(
+                (bounded_sym(256), 2), (2**24, 1), device="cuda"
+            )
+            edge = torch.empty_strided((bounded_sym(128), 2), (2**24, 1), device="cuda")
+            past_edge = torch.empty_strided(
+                (bounded_sym(129), 2), (2**24, 1), device="cuda"
+            )
+            many = torch.empty(bounded_sym(2**25), 64, device="cuda")
+            for tensors in ([strided], [past_edge], [many]):
+                with self.subTest(tensors=[tuple(t.shape) for t in tensors]):
+                    with self.assertRaisesRegex(NotImplementedError, r"2\*\*31 - 1"):
+                        lower_helion._check_index_range(kernel_with(None), tensors)
+            for tensors in ([unbounded], [bounded, unbounded]):
+                with self.subTest(tensors=[tuple(t.shape) for t in tensors]):
+                    with self.assertRaisesRegex(NotImplementedError, "unbounded"):
+                        lower_helion._check_index_range(kernel_with(None), tensors)
+            lower_helion._check_index_range(kernel_with(None), [bounded, edge])
+            lower_helion._check_index_range(
+                kernel_with(torch.int64), [strided, past_edge, many]
+            )
+            with self.assertRaisesRegex(NotImplementedError, "unbounded"):
+                lower_helion._check_index_range(kernel_with(torch.int64), [unbounded])
+
+    def test_new_shape_guard_on_exported_size_is_rejected(self) -> None:
+        # int() on a backed size records an equality guard and replaces
+        # the symbol; the check must use the symbols recorded before.
+        from torch.export import Dim
+
+        class Model(torch.nn.Module):
+            def forward(self, x, y):
+                return x + 1, y + 1
+
+        program = torch.export.export(
+            Model(),
+            (torch.randn(64), torch.randn(32)),
+            dynamic_shapes={
+                "x": {0: Dim("m", min=1, max=256)},
+                "y": {0: Dim("n", min=1, max=256)},
+            },
+            strict=True,
+        )
+        placeholders = [
+            n for n in program.graph_module.graph.nodes if n.op == "placeholder"
+        ]
+        fake_x, fake_y = (n.meta["val"] for n in placeholders[:2])
+        shape_env, guards_before, symbols = lower_helion._record_shape_guards((fake_x,))
+        int(fake_y.shape[0])
+        lower_helion._check_no_new_shape_guards(shape_env, guards_before, symbols)
+        int(fake_x.shape[0])
+        with self.assertRaisesRegex(NotImplementedError, "assumes"):
+            lower_helion._check_no_new_shape_guards(shape_env, guards_before, symbols)
 
     def test_rejects_missing_or_multiple_launches(self) -> None:
         for body in ("return x", "_launcher(k, (1,), x)\n    _launcher(k, (1,), x)"):
@@ -762,6 +860,16 @@ class HelionCuteContractTest(unittest.TestCase):
             (
                 fake_modules(
                     SimpleNamespace(
+                        schema=(("tensor", 0, 0, 0),),
+                        owned_tensors=[],
+                        launch_args=valid.launch_args,
+                    )
+                ),
+                "static tensor arguments only",
+            ),
+            (
+                fake_modules(
+                    SimpleNamespace(
                         schema=valid.schema,
                         owned_tensors=[],
                         launch_args=(tensor,),
@@ -817,9 +925,12 @@ class LowerHelionTest(unittest.TestCase):
         # recorded CuTe launches into later fallback-kernel assertions.
         self.addCleanup(helion_cute.begin_program)
 
-    def _kernel(self, fn, config, static_shapes=True):
+    def _kernel(self, fn, config, static_shapes=True, index_dtype=None):
         return helion.kernel(
-            backend=self.BACKEND, config=config, static_shapes=static_shapes
+            backend=self.BACKEND,
+            config=config,
+            static_shapes=static_shapes,
+            index_dtype=index_dtype,
         )(fn)
 
     def _has_launch(self, graph) -> bool:
@@ -832,9 +943,19 @@ class LowerHelionTest(unittest.TestCase):
         )
 
     def _export_and_run(
-        self, model, inputs, expected, expected_second=None, rtol=1e-5, atol=1e-6
+        self,
+        model,
+        inputs,
+        expected,
+        expected_second=None,
+        rtol=1e-5,
+        atol=1e-6,
+        dynamic_shapes=None,
+        second_inputs=None,
     ):
-        exported = torch.export.export(model, (inputs,), strict=True)
+        exported = torch.export.export(
+            model, (inputs,), dynamic_shapes=dynamic_shapes, strict=True
+        )
         self.assertTrue(
             any(
                 "helion_kernel_wrapper" in str(n.target)
@@ -862,7 +983,7 @@ class LowerHelionTest(unittest.TestCase):
         self.assertIn(
             "executorch_call_delegate", edge.exported_program().graph_module.code
         )
-        first, second = _run_twice(edge.to_executorch(), inputs)
+        first, second = _run_twice(edge.to_executorch(), inputs, second_inputs)
         second_expected = expected if expected_second is None else expected_second
         for actual_outputs, values in ((first, expected), (second, second_expected)):
             expected_outputs = (
@@ -1516,6 +1637,7 @@ class LowerHelionTest(unittest.TestCase):
         self._export_and_run(Model(), x, expected)
 
     def test_transposed_view_mutation_export_and_cpp_runtime(self) -> None:
+
         # A dense but non-contiguous written view: the copy made for the
         # write must preserve its layout and read its elements.
         kernel = self._kernel(
@@ -1913,7 +2035,11 @@ class LowerHelionTest(unittest.TestCase):
         )
         torch.testing.assert_close(program.module()(x), x * 2)
 
-    def test_rejects_dynamic_kernel(self) -> None:
+    def test_dynamic_kernel_static_export(self) -> None:
+        # A kernel defined with static_shapes=False also lowers when the
+        # exported shapes happen to be static. CuTe kernels are compiled
+        # for one set of sizes, so the CuTe backend keeps requiring
+        # static_shapes=True.
         kernel = self._kernel(
             _add, helion.Config(block_sizes=[256]), static_shapes=False
         )
@@ -1924,7 +2050,335 @@ class LowerHelionTest(unittest.TestCase):
                 return kernel(x, x)
 
         program = torch.export.export(Model(), (x,), strict=True)
-        with self.assertRaisesRegex(NotImplementedError, "static_shapes=True"):
+        if self.BACKEND != "triton":
+            with self.assertRaisesRegex(NotImplementedError, "static_shapes=True"):
+                LowerHelionPass()(program)
+            return
+        LowerHelionPass()(program)
+        self.assertTrue(self._has_launch(program.graph))
+        self.assertFalse(
+            any("helion_kernel_wrapper" in str(n.target) for n in program.graph.nodes)
+        )
+        torch.testing.assert_close(program.module()(x), x * 2)
+
+    def test_dynamic_m_export_and_cpp_runtime(self) -> None:
+        # Prefill-style dynamic sequence length: one .pte, several
+        # values of M, checked against eager in the C++ runtime.
+        if self.BACKEND != "triton":
+            self.skipTest("dynamic shapes are supported on the Triton backend only")
+        from torch.export import Dim
+
+        kernel = self._kernel(
+            _add_2d, helion.Config(block_sizes=[16, 64]), static_shapes=False
+        )
+        x = torch.randn(64, 256, device="cuda")
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return kernel(x, x)
+
+        dynamic = {"x": {0: Dim("m", min=1, max=256)}}
+        largest = torch.randn(256, 256, device="cuda")
+        self._export_and_run(
+            Model(),
+            x,
+            x * 2,
+            expected_second=largest * 2,
+            dynamic_shapes=dynamic,
+            second_inputs=largest,
+        )
+        smallest = torch.randn(1, 256, device="cuda")
+        self._export_and_run(
+            Model(),
+            x,
+            x * 2,
+            expected_second=smallest * 2,
+            dynamic_shapes=dynamic,
+            second_inputs=smallest,
+        )
+
+    def test_attention_dynamic_m_export_and_cpp_runtime(self) -> None:
+        # _attention specializes only the static head_dim, so a dynamic
+        # sequence length lowers.
+        if self.BACKEND != "triton":
+            self.skipTest("dynamic shapes are supported on the Triton backend only")
+        from torch.export import Dim
+
+        kernel = self._kernel(
+            _attention,
+            helion.Config(block_sizes=[1, 64, 32], num_warps=4, num_stages=2),
+            static_shapes=False,
+        )
+        qkv = torch.randn(3, 2, 4, 256, 64, device="cuda", dtype=torch.float16)
+
+        class Model(torch.nn.Module):
+            def forward(self, qkv):
+                return kernel(qkv[0], qkv[1], qkv[2])
+
+        def expected(tensor):
+            return torch.nn.functional.scaled_dot_product_attention(
+                tensor[0].float(), tensor[1].float(), tensor[2].float()
+            )
+
+        larger = torch.randn(3, 2, 4, 300, 64, device="cuda", dtype=torch.float16)
+        self._export_and_run(
+            Model(),
+            qkv,
+            expected(qkv),
+            expected_second=expected(larger),
+            rtol=2e-2,
+            atol=2e-2,
+            dynamic_shapes={"qkv": {3: Dim("m", min=1, max=512)}},
+            second_inputs=larger,
+        )
+
+    def test_dynamic_inner_dim_export_and_cpp_runtime(self) -> None:
+        if self.BACKEND != "triton":
+            self.skipTest("dynamic shapes are supported on the Triton backend only")
+        from torch.export import Dim
+
+        kernel = self._kernel(
+            _add_2d, helion.Config(block_sizes=[16, 64]), static_shapes=False
+        )
+        x = torch.randn(64, 256, device="cuda")
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return kernel(x, x)
+
+        other = torch.randn(64, 499, device="cuda")
+        self._export_and_run(
+            Model(),
+            x,
+            x * 2,
+            expected_second=other * 2,
+            dynamic_shapes={"x": {1: Dim("n", min=1, max=512)}},
+            second_inputs=other,
+        )
+
+    def test_dynamic_read_static_write_export_and_cpp_runtime(self) -> None:
+        # Prefill writes a statically shaped KV cache from dynamic-M
+        # inputs: only written arguments must stay static.
+        if self.BACKEND != "triton":
+            self.skipTest("dynamic shapes are supported on the Triton backend only")
+        from torch.export import Dim
+
+        kernel = self._kernel(
+            _fill_from, helion.Config(block_sizes=[16, 64]), static_shapes=False
+        )
+        x = torch.randn(64, 64, device="cuda")
+
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("cache", torch.zeros(256, 64, device="cuda"))
+
+            def forward(self, x):
+                kernel(self.cache, x)
+                return self.cache
+
+        def filled(rows, total=256):
+            return torch.cat(
+                [rows, torch.zeros(total - rows.shape[0], 64, device="cuda")]
+            )
+
+        other = torch.randn(100, 64, device="cuda")
+        self._export_and_run(
+            Model(),
+            x,
+            filled(x + 1),
+            expected_second=filled(other + 1),
+            dynamic_shapes={"x": {0: Dim("m", min=1, max=256)}},
+            second_inputs=other,
+        )
+
+    def test_rejects_dynamic_written_argument(self) -> None:
+        if self.BACKEND != "triton":
+            self.skipTest("dynamic shapes are supported on the Triton backend only")
+        from torch.export import Dim
+
+        kernel = self._kernel(
+            _increment_2d, helion.Config(block_sizes=[16, 64]), static_shapes=False
+        )
+        x = torch.randn(64, 64, device="cuda")
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                y = x * 1
+                kernel(y)
+                return y
+
+        program = torch.export.export(
+            Model(),
+            (x,),
+            dynamic_shapes={"x": {0: Dim("m", min=1, max=256)}},
+            strict=True,
+        )
+        with self.assertRaisesRegex(
+            NotImplementedError, "dynamic shapes for written arguments"
+        ):
+            to_edge_transform_and_lower(
+                program,
+                partitioner=[
+                    CudaPartitioner(
+                        [CudaBackend.generate_method_name_compile_spec("forward")]
+                    )
+                ],
+            )
+
+    def test_guard_added_after_trace_is_rejected(self) -> None:
+        # A guard added on an exported size after tracing (here by
+        # calling int() on it) must be caught by the post-splice check.
+        if self.BACKEND != "triton":
+            self.skipTest("dynamic shapes are supported on the Triton backend only")
+        from torch.export import Dim
+
+        kernel = self._kernel(
+            _add, helion.Config(block_sizes=[256]), static_shapes=False
+        )
+        x = torch.randn(64, device="cuda")
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return kernel(x, x)
+
+        program = torch.export.export(
+            Model(),
+            (x,),
+            dynamic_shapes={"x": {0: Dim("m", min=1, max=256)}},
+            strict=True,
+        )
+        real_trace = lower_helion._trace_helion_call
+
+        def trace_then_guard(node, *args, **kwargs):
+            result = real_trace(node, *args, **kwargs)
+            captured = lower_helion._read_captured_call(node)
+            fake = next(iter(captured.tensor_args.values())).meta["val"]
+            int(fake.shape[0])
+            return result
+
+        with mock.patch.object(
+            lower_helion, "_trace_helion_call", side_effect=trace_then_guard
+        ):
+            with self.assertRaisesRegex(NotImplementedError, "assumes"):
+                LowerHelionPass()(program)
+
+    def test_index_range_check_receives_launch_operands(self) -> None:
+        if self.BACKEND != "triton":
+            self.skipTest("dynamic shapes are supported on the Triton backend only")
+        from torch.export import Dim
+
+        kernel = self._kernel(
+            _add_2d, helion.Config(block_sizes=[16, 64]), static_shapes=False
+        )
+        x = torch.randn(64, 256, device="cuda")
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return kernel(x, x)
+
+        program = torch.export.export(
+            Model(),
+            (x,),
+            dynamic_shapes={"x": {0: Dim("m", min=1, max=256)}},
+            strict=True,
+        )
+        with mock.patch.object(
+            lower_helion,
+            "_check_index_range",
+            wraps=lower_helion._check_index_range,
+        ) as check:
+            LowerHelionPass()(program)
+        self.assertTrue(check.called)
+        for call in check.call_args_list:
+            tensors = call.args[1]
+            self.assertTrue(tensors)
+            self.assertTrue(
+                any(
+                    not isinstance(size, int)
+                    for tensor in tensors
+                    for size in tensor.shape
+                )
+            )
+
+    def test_dynamic_int64_kernel_lowers_and_runs(self) -> None:
+        if self.BACKEND != "triton":
+            self.skipTest("dynamic shapes are supported on the Triton backend only")
+        from torch.export import Dim
+
+        kernel = self._kernel(
+            _add_2d,
+            helion.Config(block_sizes=[16, 64]),
+            static_shapes=False,
+            index_dtype=torch.int64,
+        )
+        x = torch.randn(64, 256, device="cuda")
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return kernel(x, x)
+
+        program = torch.export.export(
+            Model(),
+            (x,),
+            dynamic_shapes={"x": {0: Dim("m", min=1, max=256)}},
+            strict=True,
+        )
+        LowerHelionPass()(program)
+        torch.testing.assert_close(program.module()(x), x * 2)
+        larger = torch.randn(256, 256, device="cuda")
+        torch.testing.assert_close(program.module()(larger), larger * 2)
+
+    def test_rejects_specialized_dynamic_size(self) -> None:
+        if self.BACKEND != "triton":
+            self.skipTest("dynamic shapes are supported on the Triton backend only")
+        from torch.export import Dim
+
+        kernel = self._kernel(
+            _add_specialized_m, helion.Config(block_sizes=[256]), static_shapes=False
+        )
+        x = torch.randn(64, device="cuda")
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return kernel(x, x)
+
+        program = torch.export.export(
+            Model(),
+            (x,),
+            dynamic_shapes={"x": {0: Dim("m", min=1, max=256)}},
+            strict=True,
+        )
+        with self.assertRaises(TypeError) as caught:
+            LowerHelionPass()(program)
+        self.assertTrue(
+            any(
+                "hl.specialize" in note
+                for note in getattr(caught.exception, "__notes__", [])
+            )
+        )
+
+    def test_rejects_dynamic_shapes_for_static_kernel(self) -> None:
+        if self.BACKEND != "triton":
+            self.skipTest("dynamic shapes are supported on the Triton backend only")
+        from torch.export import Dim
+
+        kernel = self._kernel(
+            _add, helion.Config(block_sizes=[256]), static_shapes=True
+        )
+        x = torch.randn(64, device="cuda")
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return kernel(x, x)
+
+        program = torch.export.export(
+            Model(),
+            (x,),
+            dynamic_shapes={"x": {0: Dim("m", min=1, max=256)}},
+            strict=True,
+        )
+        with self.assertRaisesRegex(NotImplementedError, "static_shapes=False"):
             LowerHelionPass()(program)
 
     def test_rejects_mutation_clone_layout_change(self) -> None:

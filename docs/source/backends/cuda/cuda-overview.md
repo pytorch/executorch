@@ -181,7 +181,11 @@ the kernel: picking the config, for example with Helion's autotuner, is a separa
 
 The pass supports:
 
-- Kernels on the Triton or CuTe backend with `static_shapes=True` and exactly one config.
+- Kernels on the Triton or CuTe backend with exactly one config. Triton kernels may use
+  `static_shapes=False` and dynamic exported shapes (for example a dynamic sequence
+  length `M` for prefill): sizes stay runtime arguments, so one `.pte` runs every size
+  in the exported range (subject to the export-time rejections below). CuTe kernels are compiled by the CuTe DSL for one set of sizes,
+  so CuTe still needs static exported shapes and kernels defined with `static_shapes=True`.
 - Tensor arguments, several calls per model, several tensor outputs and calls inside `torch.cond`
   branches (nested `torch.cond` included; Helion calls inside `while_loop`, `scan` or `map` bodies are rejected). A program may contain any number of distinct launches; each is exported under its
   own name and, for CuTe, linked from its own archive (Triton kernels are compiled by AOTInductor itself). The CUDA calls the exported CuTe kernels make go through a small runtime of one-line forwards to the public CUDA runtime and driver APIs, written by this backend and linked once per delegate `.so`, however many CuTe launches it contains.
@@ -191,7 +195,8 @@ The pass supports:
 
 It rejects, with an error during export, calls it cannot lower exactly: kernels on other Helion
 backends, kernels that leave the choice of config to Helion (no `config=`, so
-Helion autotunes on the first call, or more than one config), scalar, container or defaulted arguments, dynamic shapes, a Helion call on a `torch.cond` output whose branches call Helion, a Helion call on a `while_loop` output that carries a restored view, outputs that alias inputs, outputs whose shape or dtype differs
+Helion autotunes on the first call, or more than one config), scalar, container or defaulted arguments, dynamic shapes on the CuTe backend or with a
+`static_shapes=True` kernel, dynamic shapes for written arguments, dynamic shapes for kernels that specialize a dynamic size with `hl.specialize`, Triton dynamic ranges whose largest element offset or element count can exceed 2**31 - 1 without `index_dtype=torch.int64` (every dynamic `Dim` needs a `max=`, because memory planning sizes an unbounded dimension at the example size; `index_dtype=torch.int64` covers bounded ranges that still exceed the limit), kernels whose binding or tracing adds a guard on an exported size in the export's shape environment, a Helion call on a `torch.cond` output whose branches call Helion, a Helion call on a `while_loop` output that carries a restored view, outputs that alias inputs, outputs whose shape or dtype differs
 from the one recorded for the call, more than one launch site, host tensor descriptors, and
 launch options AOTInductor cannot reproduce, such as cooperative grids, clusters or PDL. For CuTe
 kernels it also rejects launches with scalar arguments, workspace tensors, dynamic layouts, empty
