@@ -574,7 +574,7 @@ class TestQNN(unittest.TestCase):
                 )
 
                 if output_callback:
-                    output_callback(proc)
+                    output_callback(proc.stdout)
                 self.assertEqual(
                     proc.returncode,
                     0,
