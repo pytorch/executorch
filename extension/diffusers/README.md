@@ -97,3 +97,57 @@ python -m executorch.export.huggingface.diffusers.export \
 
 MLX linear quantization supports `4w`, `8w` and `nvfp4`; supported group sizes
 are 32, 64 and 128.
+
+### CUDA export
+
+Export on a Linux machine with a CUDA GPU. The weights are written to a
+`.ptd` file next to the PTE:
+
+```bash
+python -m executorch.export.huggingface.diffusers.export \
+  black-forest-labs/FLUX.1-schnell \
+  flux_schnell_cuda.pte \
+  --backend cuda \
+  --text-encoder-dtype bfloat16 \
+  --denoiser-dtype bfloat16 \
+  --qlinear 4w
+```
+
+`--qlinear` quantizes the denoiser as for MLX; `4w` uses the packed INT4
+kernels, which expect a `bfloat16` denoiser, and a group size of 32 unless
+`--qlinear-group-size` is given. Pass the `.ptd` file to the runner with
+`--data-path`.
+
+### CoreAI export
+
+The experimental CoreAI path lowers text encoders, denoisers and VAEs to
+CoreAI. Token IDs and attention masks retain their external INT64 interface;
+the lowering pass casts them to INT32 at CoreAI boundaries. It currently
+requires static shapes and FP16 or FP32 component precision, and does not
+accept `--qlinear`.
+
+Install the pinned SDK packages:
+
+```bash
+python -m pip install -r backends/apple/coreai/requirements.txt
+```
+
+Export SDXL:
+
+```bash
+python -m executorch.export.huggingface.diffusers.export \
+  stabilityai/stable-diffusion-xl-base-1.0 \
+  sdxl_coreai.pte \
+  --backend coreai \
+  --text-encoder-dtype float16 \
+  --denoiser-dtype float16 \
+  --vae-dtype float32
+```
+
+Running this PTE requires macOS 27 or newer and an ExecuTorch runtime built
+with `EXECUTORCH_BUILD_COREAI=ON`. Python execution
+also requires `EXECUTORCH_BUILD_PYBIND=ON`. Build against an Apple SDK 27 or
+newer. See
+[the CoreAI backend README](../../backends/apple/coreai/README.md) for runtime
+requirements. Initial loading may specialize the CoreAI models and requires
+additional disk space for model assets and caches.
