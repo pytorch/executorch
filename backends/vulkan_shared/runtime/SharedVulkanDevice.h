@@ -69,7 +69,6 @@ struct SharedVulkanDeviceFeatures final {
   bool cooperative_matrix2_tensor_addressing = false;
   bool subgroup_size_control = false;
   bool compute_full_subgroups = false;
-
   bool arm_tensors = false;
   bool arm_shader_tensor_access = false;
   bool arm_data_graph = false;
@@ -83,6 +82,8 @@ struct SharedVulkanDeviceFeatures final {
   bool vulkan_memory_model_device_scope = false;
   bool shader_replicated_composites = false;
   bool shader_bfloat16 = false;
+  bool vulkan_memory_model = false;
+  bool vulkan_memory_model_device_scope = false;
 };
 
 // The shared layer carries Vulkan handles but deliberately does not call Vulkan

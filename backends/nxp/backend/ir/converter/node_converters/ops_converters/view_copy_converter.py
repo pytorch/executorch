@@ -22,6 +22,7 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.shared.reshape
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import (
     reshape_options,
 )
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from torch.fx import Node
 from torch.nn import Parameter
 
@@ -41,6 +42,19 @@ class ViewCopyConverter(NodeConverter):
         flat_output_size = ViewCopyConverter._safe_compute_flat_size(list(y.size()))
 
         if tensor_rank(y) >= 8 or flat_input_size != flat_output_size:
+            return False
+
+        return True
+
+    @classmethod
+    def _is_supported_on_target(
+        cls,
+        node: Node,
+        neutron_target_spec: NeutronTargetSpec,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
+    ) -> bool:
+        if neutron_target_spec.is_subsystem():
             return False
 
         return True

@@ -168,8 +168,18 @@ def test_sub_tensor_tosa_FP_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
 )
 def test_sub_tensor_tosa_FP_alpha(test_data: Tuple[torch.Tensor, torch.Tensor]):
     """Test Two-Operand Subtraction with alpha (TOSA FP)"""
+    data = test_data()
+    # Eager bf16 add/sub with alpha may round once (fused multiply-add), while
+    # the lowered graph rounds after both the multiply and the add/sub.
+    tol = 1e-2 if data[0].dtype == torch.bfloat16 else 1e-3
     pipeline = TosaPipelineFP[input_t2](
-        SubAlpha(), test_data(), aten_op, exir_op, tosa_extensions=["bf16"]
+        SubAlpha(),
+        data,
+        aten_op,
+        exir_op,
+        atol=tol,
+        rtol=tol,
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 

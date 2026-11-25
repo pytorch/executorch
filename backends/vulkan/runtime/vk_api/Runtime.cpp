@@ -31,6 +31,7 @@ std::ostream& operator<<(std::ostream& out, const MemoryAccessType& tag) {
     PRINT_CASE(NONE)
     PRINT_CASE(READ)
     PRINT_CASE(WRITE)
+    PRINT_CASE(STORAGE_IMAGE)
   }
   return out;
 }

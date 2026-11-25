@@ -5,6 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import json
 import logging
 from collections import defaultdict
 from collections.abc import Callable, Sequence
@@ -19,6 +20,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     CastInt64BuffersToInt32Pass,
     CastIntComparisonInputsPass,
     CastToInt32Pass,
+    CastZeroDimInt64OperandsPass,
     ComputeConstantOpsAOTPass,
     ConstantFoldingPass,
     ControlFlowConstInlinePass,
@@ -180,6 +182,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     RewriteHighRankSingletonPermutePass,
     RewriteIndexPutPass,
     RewriteInplaceArithmeticPass,
+    RewriteInt64CastViaInt32Pass,
     RewriteLeLtToGeGtPass,
     RewriteMatmulPass,
     RewriteMaxPool2dPass,
@@ -322,7 +325,6 @@ class ArmPassManager(ExportedProgramPassManager):
         skip_set: set[type] = set()
 
         config = self.compile_spec._get_pass_pipeline_config()
-        logger.debug(f"Skip Config: {config}")
 
         match config.softmax:
             case SoftmaxDecompositionConfig.MASKED:
@@ -340,10 +342,23 @@ class ArmPassManager(ExportedProgramPassManager):
                 pass
 
         self._skip_pass_types = tuple(skip_set)
-        skip_names = [skipped_pass.__name__ for skipped_pass in self._skip_pass_types]
-        logger.debug(f"Passes in skip list: {skip_names}")
-
         return self._skip_pass_types
+
+    def _log_pipeline_config(self, pipeline: str) -> None:
+        if not logger.isEnabledFor(logging.DEBUG):
+            return
+        config = self.compile_spec._get_pass_pipeline_config()
+        skip_names = sorted(
+            skipped_pass.__name__ for skipped_pass in self._skip_pass_types
+        )
+        logger.debug(
+            "Arm %s pipeline (%s) configuration:\n%s\n"
+            "Passes excluded by this configuration, if present in this pipeline: %s",
+            pipeline,
+            self.tosa_spec,
+            json.dumps(config.to_dict(), indent=2),
+            ", ".join(skip_names) or "none",
+        )
 
     def validate_constraints_mandatory(self):
         """Validate that required passes run before backend transforms.
@@ -481,6 +496,7 @@ class ArmPassManager(ExportedProgramPassManager):
         self, exported_program: ExportedProgram
     ) -> ExportedProgram:
         """Apply Arm passes before default ATen decompositions."""
+        self._log_pipeline_config("pre-decomposition")
         config = self.compile_spec._get_pass_pipeline_config()
         passes: list[ExportPass] = []
 
@@ -661,6 +677,7 @@ class ArmPassManager(ExportedProgramPassManager):
             [
                 ReplaceScalarWithTensorByProfilePass(),
                 CastIntComparisonInputsPass(),
+                CastZeroDimInt64OperandsPass(),
                 RewriteLeLtToGeGtPass(),
                 DecomposeLeakyReLUPass(),  # Emits full_like so before ConvertFullLikeToFullPass
                 DecomposePReLUPass(),
@@ -765,6 +782,7 @@ class ArmPassManager(ExportedProgramPassManager):
         self.add_passes(
             [
                 CastInt64BuffersToInt32Pass(exported_program),
+                RewriteInt64CastViaInt32Pass(),
                 FuseEqualPlaceholdersPass(exported_program),
                 NormalizeTransformInputPlaceholdersPass(exported_program),
                 ExirToTosaPass(exported_program),
@@ -792,6 +810,7 @@ class ArmPassManager(ExportedProgramPassManager):
         self, exported_program: ExportedProgram, graph_module: GraphModule
     ):
         """Apply passes before transforming program to backend."""
+        self._log_pipeline_config("backend")
         if not tosa_spec_in_set(
             self.tosa_spec,
             set(TosaSpecification.all_versions_and_profiles()),
@@ -804,6 +823,7 @@ class ArmPassManager(ExportedProgramPassManager):
             return self._tosa_pipeline(exported_program, graph_module)
 
     def transform_for_annotation_pipeline(self, graph_module: GraphModule):
+        self._log_pipeline_config("quantization (before annotation)")
         with self._tosa_context(graph_module):
             # Preprocessing passes
             self.add_pass(RemoveGraphAssertsPass(tfa_pass=True))

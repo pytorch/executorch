@@ -13,7 +13,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[3]
-IMAGE = "executorch-ubuntu-22.04-clang12"
+PINS = ROOT / ".ci/docker/ci_commit_pins"
+IMAGES = ("executorch-ubuntu-22.04-clang12", "executorch-ubuntu-22.04-gcc11")
 PACKAGES = {
     "pytorch": "TORCH_VERSION",
     "torchvision": "TORCHVISION_VERSION",
@@ -22,7 +23,7 @@ PACKAGES = {
 
 
 class TorchciImageOverrideTest(unittest.TestCase):
-    def run_build(self, image=IMAGE, invalid=None):
+    def run_build(self, image=IMAGES[0], invalid=None):
         with tempfile.TemporaryDirectory() as tmp:
             fixture = Path(tmp)
             docker = fixture / ".ci/docker"
@@ -31,9 +32,7 @@ class TorchciImageOverrideTest(unittest.TestCase):
             (pins / "pytorch.txt").write_text("shared-pin\n")
             (pins / "buck2.txt").write_text("buck-pin\n")
             for package in PACKAGES:
-                source = (
-                    ROOT / ".ci/docker/ci_commit_pins" / f"{package}-linux-clang12.txt"
-                )
+                source = PINS / f"{package}-torchci.txt"
                 value = invalid if invalid is not None else source.read_text()
                 (pins / source.name).write_text(value)
             (fixture / "requirements-lintrunner.txt").write_text("")
@@ -59,36 +58,41 @@ class TorchciImageOverrideTest(unittest.TestCase):
                 capture_output=True,
             )
 
-    def test_clang_image_uses_all_published_pins(self):
-        result = self.run_build()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        for package, variable in PACKAGES.items():
-            pin = (
-                (ROOT / ".ci/docker/ci_commit_pins" / f"{package}-linux-clang12.txt")
-                .read_text()
-                .strip()
-            )
-            self.assertRegex(pin, r"^[0-9a-f]{40}$")
-            self.assertIn(f"{variable}={pin}", result.stdout.splitlines())
-        self.assertIn("TORCHCI_REPORTS=1", result.stdout.splitlines())
+    def test_torchci_images_use_all_published_pins(self):
+        for image in IMAGES:
+            with self.subTest(image=image):
+                result = self.run_build(image)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                for package, variable in PACKAGES.items():
+                    pin = (PINS / f"{package}-torchci.txt").read_text().strip()
+                    self.assertRegex(pin, r"^[0-9a-f]{40}$")
+                    self.assertIn(f"{variable}={pin}", result.stdout.splitlines())
+                self.assertIn("TORCHCI_REPORTS=1", result.stdout.splitlines())
 
     def test_other_images_keep_the_shared_pin(self):
-        result = self.run_build("executorch-ubuntu-22.04-gcc11", invalid="invalid")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        for value in (
-            "TORCH_VERSION=shared-pin",
-            "TORCHVISION_VERSION=",
-            "TORCHAUDIO_VERSION=",
-            "TORCHCI_REPORTS=",
+        for image in (
+            "executorch-ubuntu-22.04-qnn-sdk",
+            "executorch-ubuntu-22.04-gcc11-aarch64",
+            "executorch-ubuntu-22.04-clang12-android",
         ):
-            self.assertIn(value, result.stdout.splitlines())
+            with self.subTest(image=image):
+                result = self.run_build(image, invalid="invalid")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                for value in (
+                    "TORCH_VERSION=shared-pin",
+                    "TORCHVISION_VERSION=",
+                    "TORCHAUDIO_VERSION=",
+                    "TORCHCI_REPORTS=",
+                ):
+                    self.assertIn(value, result.stdout.splitlines())
 
     def test_missing_or_mutable_pin_stops_before_docker(self):
-        for pin in ("", "main", "a" * 39, "A" * 40):
-            with self.subTest(pin=pin):
-                result = self.run_build(invalid=pin)
-                self.assertNotEqual(result.returncode, 0)
-                self.assertNotIn("--no-cache", result.stdout.splitlines())
+        for image in IMAGES:
+            for pin in ("", "main", "a" * 39, "A" * 40):
+                with self.subTest(image=image, pin=pin):
+                    result = self.run_build(image, invalid=pin)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertNotIn("--no-cache", result.stdout.splitlines())
 
     def test_docker_forwards_the_domain_pins_and_checks_installed_torch(self):
         dockerfile = (ROOT / ".ci/docker/ubuntu/Dockerfile").read_text()

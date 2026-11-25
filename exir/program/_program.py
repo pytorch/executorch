@@ -50,6 +50,7 @@ from executorch.exir.passes import (
     remove_unused_parameters_pass,
     ReplaceEmptyLikePass,
 )
+from executorch.exir.passes.constant_prop_pass import fold_constant_transposes
 from executorch.exir.passes.delegate_scratch_pass import DelegateScratchSpecPass
 from executorch.exir.passes.external_constants_pass import (
     external_constants_pass,
@@ -1581,6 +1582,7 @@ class EdgeProgramManager:
 
         self._edge_programs: Dict[str, ExportedProgram] = edge_programs
         self._config_methods = constant_methods
+        self._folded_methods: Set[str] = set()
 
         self._named_data_store = NamedDataStore()
         for _, program in self._edge_programs.items():
@@ -1765,11 +1767,39 @@ class EdgeProgramManager:
 
         Returns:
             ExecutorchProgramManager: A manager representing the state of the EdgeProgramManager
-            after it has been transformed to the ExecuTorch backend.
+            after it has been transformed to the ExecuTorch backend. Afterwards,
+            exported_program() of this EdgeProgramManager also returns the
+            lowered programs. An ExportedProgram taken from this manager before
+            the call is lowered in place only for methods in which
+            fold_constant_transposes folds nothing.
+
+        Raises:
+            RuntimeError: If an earlier call on this manager folded a weight
+                transpose and this call leaves fold_constant_transposes off,
+                which is the default, or uses external_constants. Copy the
+                manager before the first call to lower it more than once with
+                different settings.
         """
         config = config if config else ExecutorchBackendConfig()
+        # External constants are matched by name, which a fold would change.
+        fold = config.fold_constant_transposes and not config.external_constants
+        if self._folded_methods and not fold:
+            raise RuntimeError(
+                "An earlier to_executorch() call folded weight transposes in "
+                f"methods {sorted(self._folded_methods)}, so this manager cannot be "
+                "lowered again without fold_constant_transposes=True or with "
+                "external_constants. Copy the manager before the first call."
+            )
+        programs = self._edge_programs
+        if fold:
+            programs = fold_constant_transposes(programs, self._config_methods)
+        folded = {
+            name
+            for name, program in programs.items()
+            if program is not self._edge_programs[name]
+        }
         execution_programs: Dict[str, ExportedProgram] = {}
-        for name, program in self._edge_programs.items():
+        for name, program in programs.items():
             if config.do_quant_fusion_and_const_prop:
                 if program.graph_signature.backward_signature is not None:
                     raise Exception(
@@ -1847,6 +1877,10 @@ class EdgeProgramManager:
 
             _copy_module(program.graph_module, new_gm)
             execution_programs[name] = program
+        # A folded program was lowered on a copy. Hand it to this manager too,
+        # as every other program is lowered in place.
+        self._folded_methods.update(folded)
+        self._edge_programs.update(execution_programs)
         # After running memory planning on all entry points we can run the cross entry point memory planning
         if isinstance(config.memory_planning_pass, dict):
             for memory_planning_pass in config.memory_planning_pass.values():
@@ -1920,11 +1954,17 @@ class ExecutorchProgramManager:
         backend_config = backend_config or ExecutorchBackendConfig()
 
         # Emit methods
+        reserved_external_names = set()
+        if named_data is not None:
+            reserved_external_names.update(named_data.pte_data)
+            for entries in named_data.external_data.values():
+                reserved_external_names.update(entries)
         self._emitter_output: EmitterOutput = emit_program(
             self._execution_programs,
             backend_config.emit_stacktrace,
             self._config_methods,
             backend_config.emit_mutable_buffer_names,
+            reserved_external_names=reserved_external_names,
         )
 
         # Serialize emitter output, ready to be written to a file.

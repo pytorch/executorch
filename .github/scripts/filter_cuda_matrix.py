@@ -53,14 +53,8 @@ DISABLED_PYTHON_VERSIONS: List[str] = ["3.13t", "3.14t", "3.15t"]
 # Skip wholly absent trains so an upstream removal cannot block the remaining releases.
 # Offered trains must still cover every supported Python version.
 #
-# cu130 is not published. PyTorch keeps it on its nightly builds only as a temporary hold for
-# other projects, and its release-candidate builds do not carry it, so a release would have
-# no cu130 train even while nightlies do.
-#
 # cu132 is included because omitting it would leave a published consumer row with no
-# ExecuTorch wheel to pair with. It is executable on a device one minor behind, since CUDA
-# minor versions are compatible, so a cu132 wheel has been run end to end on a CUDA 13.0
-# device. The packaging properties are checked on every row regardless.
+# ExecuTorch wheel to pair with. The packaging properties are checked on every row regardless.
 SUPPORTED_CUDA_VERSIONS: List[str] = ["cu132", "cu134"]
 
 # Python versions to publish, stated rather than derived for the same reason the CUDA

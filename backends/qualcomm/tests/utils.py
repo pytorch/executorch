@@ -574,7 +574,7 @@ class TestQNN(unittest.TestCase):
                 )
 
                 if output_callback:
-                    output_callback(proc)
+                    output_callback(proc.stdout)
                 self.assertEqual(
                     proc.returncode,
                     0,
@@ -798,7 +798,7 @@ class TestQNN(unittest.TestCase):
         self,
         module: torch.nn.Module,
         inputs: Tuple[torch.Tensor],
-        is_conv_per_channel: Optional[bool] = True,
+        is_conv_per_channel: Optional[bool] = None,
         is_linear_per_channel: Optional[bool] = False,
         is_embedding_per_channel: Optional[bool] = False,
         custom_quant_annotations: Tuple[Callable] = (),
@@ -847,7 +847,7 @@ class TestQNN(unittest.TestCase):
         self,
         module: torch.nn.Module,
         inputs: Tuple[torch.Tensor],
-        is_conv_per_channel: Optional[bool] = True,
+        is_conv_per_channel: Optional[bool] = None,
         is_linear_per_channel: Optional[bool] = False,
         custom_quant_annotations: Tuple[Callable] = (),
         quant_dtype: QuantDtype = QuantDtype.use_8a8w,

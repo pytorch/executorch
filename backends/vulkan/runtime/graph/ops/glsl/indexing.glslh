@@ -418,7 +418,7 @@ TensorIndex linear_idx_to_tensor_idx_channelslast_case(
     uint linear_idx) {
   TensorIndex tidx;
 
-  const uint dim_order[DIMLIMIT] = uint[DIMLIMIT](2, 0, 1, 3, 6, 5, 4, 7);
+  const uint dim_order[DIMLIMIT] = uint[DIMLIMIT](2, 0, 1, 3, 4, 5, 6, 7);
 
   [[unroll]] for (int d = DIMLIMIT - 1; d >= 0; --d) {
     uint dim = dim_order[d];

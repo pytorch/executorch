@@ -168,7 +168,7 @@ _BUNDLED_XNNPACK_SYMBOLS = ("xnn_create_runtime_v4",)
 # rather than depended on, so it gets its own row for the same reason XNNPACK's
 # does: a second copy means two MLX runtimes in one process.
 _MLX_SYMBOLS = ("executorch::backends::mlx::mutable_state_note_handle",)
-_BUNDLED_MLX_SYMBOLS = ("mlx::core::allocator::free",)
+_BUNDLED_MLX_SYMBOLS = ("mlx::core::allocator::allocator",)
 # A representative symbol from the Core ML delegate, exported from the shipped
 # library. get_registered_delegate() rather than the constructor, which demangles
 # to two entries (complete and base object), while this is a single definition.

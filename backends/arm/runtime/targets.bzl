@@ -30,7 +30,9 @@ def define_common_targets():
     )
     runtime.cxx_library(
         name = "ethosu_execution_stats",
-        srcs = ["EthosUExecutionStats.cpp"],
+        srcs = ["EthosUExecutionStats.cpp", "EthosUExecutionStats_CoreDriver.cpp"],
+        headers = ["EthosUExecutionStats_Internal.h"],
+        link_whole = True,
         compatible_with = ["ovr_config//cpu:arm32-embedded", "ovr_config//cpu:arm32-embedded-fpu"],
         exported_headers = ["EthosUExecutionStats.h"],
         exported_deps = [
@@ -59,8 +61,12 @@ def define_common_targets():
             "EthosUBackend.cpp",
             "EthosUBackend_CoreDriver.cpp",
             "EthosUBackend_IoMemcpy.cpp",
+            "EthosUIOPlan.cpp",
         ],
-        headers = ["EthosUBackend_Internal.h"],
+        headers = [
+            "EthosUBackend_Internal.h",
+            "EthosUIOPlan.h",
+        ],
         compatible_with = ["ovr_config//cpu:arm32-embedded", "ovr_config//cpu:arm32-embedded-fpu"],
         # arm_executor_runner.cpp needs to compile with executor as whole
         # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
@@ -83,9 +89,55 @@ def define_common_targets():
         srcs = [
             "EthosUBackend.cpp",
             "EthosUBackend_IoMemcpy.cpp",
+            "EthosUIOPlan.cpp",
             "tests/ethos-u/test_ethosu_planned_scratch.cpp",
         ],
-        headers = ["EthosUBackend_Internal.h"],
+        headers = [
+            "EthosUBackend_Internal.h",
+            "EthosUIOPlan.h",
+        ],
+        compiler_flags = ["-Wno-global-constructors"],
+        preprocessor_flags = _persistent_region_flags(),
+        deps = [
+            ":ethosu_invocation_context",
+            ":vela_bin_stream",
+            "//executorch/runtime/backend:interface",
+            "//executorch/runtime/core:core",
+            "//executorch/runtime/platform:platform",
+        ],
+    )
+    runtime.cxx_test(
+        name = "ethosu_io_plan_test",
+        srcs = [
+            "EthosUBackend_IoMemcpy.cpp",
+            "EthosUIOPlan.cpp",
+            "tests/ethos-u/test_ethosu_io.cpp",
+        ],
+        headers = [
+            "EthosUBackend_Internal.h",
+            "EthosUIOPlan.h",
+        ],
+        preprocessor_flags = _persistent_region_flags(),
+        deps = [
+            ":vela_bin_stream",
+            "//executorch/runtime/backend:interface",
+            "//executorch/runtime/core:core",
+            "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+            "//executorch/runtime/platform:platform",
+        ],
+    )
+    runtime.cxx_test(
+        name = "ethosu_scratch_io_test",
+        srcs = [
+            "EthosUBackend.cpp",
+            "EthosUBackend_IoMemcpy.cpp",
+            "EthosUIOPlan.cpp",
+            "tests/ethos-u/test_ethosu_scratch_io.cpp",
+        ],
+        headers = [
+            "EthosUBackend_Internal.h",
+            "EthosUIOPlan.h",
+        ],
         compiler_flags = ["-Wno-global-constructors"],
         preprocessor_flags = _persistent_region_flags(),
         deps = [

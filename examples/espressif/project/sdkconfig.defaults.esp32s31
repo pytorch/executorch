@@ -1,0 +1,17 @@
+# ESP-IDF sdkconfig defaults for ESP32-S31 target
+#
+# ESP32-S31 specific settings:
+# - RISC-V at 320MHz with the same PIE SIMD extension as the ESP32-P4
+# - Octal PSRAM at 200MHz
+#
+# ESP-IDF supports the ESP32-S31 from v6.2.
+
+# ─── CPU ───
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_320=y
+
+# ─── PSRAM (Octal PSRAM for ESP32-S31) ───
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_200M=y
+CONFIG_SPIRAM_USE_CAPS_ALLOC=y
+CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y

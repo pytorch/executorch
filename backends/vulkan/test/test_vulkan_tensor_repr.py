@@ -9,6 +9,7 @@ import unittest
 from unittest.mock import MagicMock
 
 import torch
+from executorch.backends.vulkan.op_registry import get_op_features
 from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
     VkMemoryLayout,
     VkStorageType,
@@ -1008,6 +1009,29 @@ class TestTensorReprList(unittest.TestCase):
         lst = TensorReprList(tr)
         s = str(lst)
         self.assertIn("TensorRepr", s)
+
+
+class TestGeneralSDPAStorage(unittest.TestCase):
+    def _repset(self, mask_dtype):
+        shape = (1, 2, 4, 8)
+        node = _make_op_node(
+            target="et_vk::sdpa",
+            args=(
+                _make_tensor_arg_node(shape),
+                _make_tensor_arg_node(shape),
+                _make_tensor_arg_node(shape),
+                _make_tensor_arg_node((1, 1, 4, 4), mask_dtype),
+            ),
+            output_val=_make_fake_tensor(shape),
+        )
+        node.kwargs = {}
+        return get_op_features("et_vk::sdpa").make_op_repsets(node).get_arg_repset(0)
+
+    def test_mask_of_query_dtype_allows_any_storage(self):
+        self.assertEqual(self._repset(torch.float32), CONTIGUOUS_ANY)
+
+    def test_mask_of_another_dtype_requires_texture(self):
+        self.assertEqual(self._repset(torch.float16), WIDTH_PACKED_TEXTURE)
 
 
 if __name__ == "__main__":

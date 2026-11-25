@@ -47,12 +47,19 @@ def build_diffusion_metadata(
             behavior.default_cfg_scale if model_info.supports_cfg else 1.0
         ),
         default_guidance_scale=(
-            behavior.default_guidance_scale
-            if model_info.accepts_guidance_input
-            else None
+            model_info.default_guidance_scale
+            if model_info.default_guidance_scale is not None
+            else (
+                behavior.default_guidance_scale
+                if model_info.accepts_guidance_input
+                else None
+            )
         ),
         guidance_input_dim=model_info.guidance_input_dim,
-        default_inference_steps=behavior.default_inference_steps,
+        # Model specific defaults (e.g. Schnell vs Dev) override the pipeline default.
+        default_inference_steps=(
+            model_info.default_inference_steps or behavior.default_inference_steps
+        ),
         text_encoder_dtype=str(config.model.text_encoder_dtype).removeprefix("torch."),
         denoiser_dtype=str(config.model.denoiser_dtype).removeprefix("torch."),
         vae_dtype=str(config.model.vae_dtype).removeprefix("torch."),
@@ -72,7 +79,7 @@ def _resolve_max_sequence_lengths(
     export_spec: DiffusionPipelineExportSpec,
     override: int | None,
 ) -> tuple[int, ...]:
-    lengths = list(export_spec.default_max_sequence_lengths)
+    lengths = list(export_spec.default_max_text_sequence_lengths)
     if override is None:
         return tuple(lengths)
     if override <= 0:
@@ -121,7 +128,9 @@ def export_programs(
     with torch.no_grad():
         return {
             name: torch.export.export(
-                modules[name], inputs[name], dynamic_shapes=dynamic_shapes[name]
+                modules[name],
+                inputs[name],
+                dynamic_shapes=dynamic_shapes[name],
             )
             for name in modules
         }
