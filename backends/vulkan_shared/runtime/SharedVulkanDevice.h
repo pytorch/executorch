@@ -78,8 +78,6 @@ struct SharedVulkanDeviceFeatures final {
   bool maintenance4 = false;
   bool pipeline_creation_cache_control = false;
   bool host_query_reset = false;
-  bool vulkan_memory_model = false;
-  bool vulkan_memory_model_device_scope = false;
   bool shader_replicated_composites = false;
   bool shader_bfloat16 = false;
   bool vulkan_memory_model = false;
