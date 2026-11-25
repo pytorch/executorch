@@ -65,6 +65,13 @@ class ET_EXPERIMENTAL Scheduler {
   // fit; a wider chunk is rejected, not split. Non-zero, so it is safe to
   // divide by.
   virtual std::size_t max_prefill_chunk_size() const = 0;
+
+  // Prefill positions one step can carry beside its decodes: how many prompt
+  // positions several prompts can share in one step. Defaults to
+  // max_prefill_chunk_size(), for schedulers that spend one chunk per step.
+  virtual std::size_t step_prefill_budget() const {
+    return max_prefill_chunk_size();
+  }
 };
 
 } // namespace batching

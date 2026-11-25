@@ -173,6 +173,10 @@ class ET_EXPERIMENTAL DecodeFirstScheduler : public Scheduler {
   std::size_t max_prefill_chunk_size() const override {
     return max_prefill_chunk_size_;
   }
+  // The budget left for prefill once every decode slot is filled.
+  std::size_t step_prefill_budget() const override {
+    return max_batch_tokens_ - max_decode_sequences_;
+  }
 
  private:
   DecodeFirstScheduler(
