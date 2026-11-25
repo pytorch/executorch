@@ -260,6 +260,7 @@ class ServingChat:
         ] = None,
         evict_idle_sessions: bool = False,
         streaming_preflight_timeout: Optional[float] = None,
+        stop_on_special_tokens: bool = True,
         api_dialect: str = "openai",
         tool_reasoning_parser_factory: Optional[
             Callable[[], StreamingResponseParser]
@@ -297,12 +298,17 @@ class ServingChat:
         #    special halts the worker (-> dirty, ids omitted, non-resumable) and
         #    never reaches the client, AND it backs _strip_specials for final
         #    cleanup of already-parsed visible content.
+        #  stop_on_special_tokens=False drops both uses: plain chat then stops
+        #  only on _stops and passes special tokens through, as the tool path
+        #  does for stops. A model that answers a tool-call history without
+        #  `tools` streams its <tool_call> instead of ending the reply there.
         self._stops = template.turn_stop_sequences()
         self._native_stops = getattr(runtime, "default_stop_strings", None)
         handled = content_filter_specials or set()
         self._content_specials = [
             t for t in template.special_tokens() if t not in handled
         ]
+        self._stop_on_special_tokens = stop_on_special_tokens
         # OpenAI/chat-template token-ID warm-resume state. Adapter-side,
         # not runtime; kept in lockstep with the worker's session state by
         # clearing both on reset/close.
@@ -341,6 +347,8 @@ class ServingChat:
     def _strip_specials(self, text: str) -> str:
         # Broad set: scrub ANY special token that leaked into already-parsed
         # visible content (not the narrow generation-stop set).
+        if not self._stop_on_special_tokens:
+            return text  # passed through, matching the streamed text
         cut = _earliest_stop(text, self._content_specials)
         return text[:cut] if cut is not None else text
 
@@ -384,7 +392,11 @@ class ServingChat:
         return (
             self._stops
             + ((self._native_stops or []) if req.ignore_eos else [])
-            + ([] if self._tools_active(req) else self._content_specials)
+            + (
+                self._content_specials
+                if self._stop_on_special_tokens and not self._tools_active(req)
+                else []
+            )
         )
 
     def _generation_stops(self, req: ChatCompletionRequest) -> list[str]:

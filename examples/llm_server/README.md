@@ -144,3 +144,10 @@ request stop strings remain active. Rebuild the multiplexed worker to include th
 support; no chat-template changes are needed. Generation continues after EOS, but
 the HTTP response only parses and displays the first assistant turn. Usage counts
 include all generated tokens.
+
+Requests without `tools` end at the first special token by default, so raw
+control tokens never reach the client. A model replaying a tool-call history
+without `tools` then ends its reply at the call's opening token (e.g. Gemma 4's
+`<|tool_call>`). `--no-special-token-stops` makes those requests stop only on
+end-of-turn tokens and pass other special tokens through, as llama.cpp, vLLM, and
+mlx-lm do.
