@@ -498,12 +498,89 @@ def _set_qparams(
     set_arg(node, f"{prefix}_quant_max", quant_max)
 
 
+def _count_uses(user: fx.Node, node: fx.Node) -> int:
+    """How many argument slots of ``user`` read ``node``."""
+    uses = 0
+
+    def count(arg: fx.Node) -> fx.Node:
+        nonlocal uses
+        uses += arg is node
+        return arg
+
+    fx.node.map_arg((user.args, user.kwargs), count)
+    return uses
+
+
+def _try_absorb_input_fan_out(
+    exported_program: ExportedProgram,
+    quantize: fx.Node,
+    graph: fx.Graph,
+    symmetric_quant_input_ops: frozenset[EdgeOpOverload],
+) -> bool:
+    """Absorb a dequantize→quantize read by several fused inputs into all of
+    them, or into none.
+
+    Each reader composes its own input qparams, as a single reader does. If any
+    reader is not a fused op, reads the quantize in a non-input slot, or cannot
+    represent its composition, the pair stays for all of them.
+    """
+    dequantize = get_arg(quantize, "input", Optional[fx.Node])
+    if dequantize is None or dequantize.target != _DEQUANT_PER_TENSOR:
+        return False
+    source = get_arg(dequantize, "input", Optional[fx.Node])
+    if source is None:
+        return False
+
+    absorptions: list[tuple[fx.Node, str, tuple[float, int]]] = []
+    for user in quantize.users:
+        if not _is_fused_quant_op(user):
+            return False
+        assert isinstance(user.target, EdgeOpOverload)
+        input_names, _ = split_fused_arg_names(user.target)
+        names = [
+            name
+            for name in input_names
+            if get_arg(user, name, Optional[fx.Node]) is quantize
+        ]
+        if len(names) != _count_uses(user, quantize):
+            return False
+        for name in names:
+            qparams = get_qparams_from_node(user, name)
+            if qparams is None or not qparams.is_per_tensor():
+                return False
+            replacement = _compose_input_qparams(
+                exported_program, dequantize, quantize, user, name
+            )
+            if replacement is None:
+                return False
+            if user.target in symmetric_quant_input_ops and replacement[1] != 0:
+                return False
+            absorptions.append((user, name, replacement))
+
+    for user, name, (scale, zero_point) in absorptions:
+        set_arg(user, name, source)
+        _set_qparams(
+            exported_program,
+            user,
+            name,
+            scale=scale,
+            zero_point=zero_point,
+            dtype=dequantize.meta["val"].dtype,
+            quant_min=get_arg(dequantize, "quant_min", int),
+            quant_max=get_arg(dequantize, "quant_max", int),
+        )
+    graph.erase_node(quantize)
+    if not dequantize.users:
+        graph.erase_node(dequantize)
+    return True
+
+
 def _try_absorb_input(
     exported_program: ExportedProgram,
     consumer: fx.Node,
     input_name: str,
     graph: fx.Graph,
-    keep_symmetric: bool,
+    symmetric_quant_input_ops: frozenset[EdgeOpOverload],
 ) -> bool:
     """Absorb an upstream dequantize→quantize into fused input qparams."""
     consumer_qparams = get_qparams_from_node(consumer, input_name)
@@ -514,8 +591,14 @@ def _try_absorb_input(
     if consumer_input is None:
         return False
     quantize, passthrough_chain = _find_quant_through_input_passthrough(consumer_input)
-    if quantize is None or len(quantize.users) != 1:
+    if quantize is None:
         return False
+    if len(quantize.users) != 1:
+        # A model input read by several ops, such as XLSR's parallel first
+        # convs. Through a passthrough, the chain itself would fork.
+        return not passthrough_chain and _try_absorb_input_fan_out(
+            exported_program, quantize, graph, symmetric_quant_input_ops
+        )
 
     dequantize = get_arg(quantize, "input", Optional[fx.Node])
     if dequantize is None or dequantize.target != _DEQUANT_PER_TENSOR:
@@ -527,7 +610,7 @@ def _try_absorb_input(
     if replacement_qparams is None:
         return False
     replacement_scale, replacement_zp = replacement_qparams
-    if keep_symmetric and replacement_zp != 0:
+    if consumer.target in symmetric_quant_input_ops and replacement_zp != 0:
         return False
 
     source = get_arg(dequantize, "input", Optional[fx.Node])
@@ -575,8 +658,9 @@ class QuantAbsorptionPass(ExportedProgramPassBase):
     On the input side, when a dequant→quant pair feeds any fused_quant input with
     per-tensor qparams, this pass composes the dequantize, quantize, and consumer
     input qparams, then bypasses the pair. This handles graph inputs, which have
-    no fused producer into which the quantization can be absorbed. It is opt-in:
-    see ``absorb_into_inputs`` below.
+    no fused producer into which the quantization can be absorbed. A pair read
+    by several fused inputs is absorbed into each of them, or kept for all if any
+    one cannot take it. It is opt-in: see ``absorb_into_inputs`` below.
 
     It also absorbs a *bare* downstream quantize into a fused op whose output is
     currently unquantized (null out qparams), turning that op into a directly
@@ -636,10 +720,13 @@ class QuantAbsorptionPass(ExportedProgramPassBase):
                 continue
             assert isinstance(node.target, EdgeOpOverload)
             input_names, _ = split_fused_arg_names(node.target)
-            keep_symmetric = node.target in self._symmetric_quant_input_ops
             for input_name in input_names:
                 modified |= _try_absorb_input(
-                    exported_program, node, input_name, graph, keep_symmetric
+                    exported_program,
+                    node,
+                    input_name,
+                    graph,
+                    self._symmetric_quant_input_ops,
                 )
 
         if modified:
