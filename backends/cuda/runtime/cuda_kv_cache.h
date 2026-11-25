@@ -111,8 +111,11 @@ class CudaKVCache {
 
   // Reclaim only columns without live owners, between forwards. Live owners
   // retain their histories even if they have not run recently. A contraction
-  // returns all of the KV storage pool's unused memory to the driver; other
-  // users of the shared allocator keep their cached memory.
+  // returns all of the KV storage pool's unused memory to the driver. Other
+  // users of the shared allocator keep their cached memory unless a K/V
+  // allocation runs out of memory: then, during growth or contraction alike,
+  // the shared pool's unused memory goes back to the driver first and the
+  // allocation is retried once.
   // quiet_for is measured from mutations of the cache itself, including raw
   // owner operations. Zero explicitly bypasses the quiet interval.
   virtual runtime::Error compact_columns(

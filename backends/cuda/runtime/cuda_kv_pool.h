@@ -165,12 +165,12 @@ class CudaKVPool final {
   // K/V storage comes from a memory pool this object owns, so trimming it
   // returns only this cache's memory. Storage that growth, failed attempts and
   // contraction free goes back to the driver at the next synchronization, or
-  // at trim_storage(), whichever is first. A K/V allocation that runs out of
-  // memory first returns the shared allocator pool's unused cached memory,
-  // which this pool cannot use, to the driver and retries once. Without
-  // memory pools
-  // (ROCm, or a device lacking them) storage comes from the shared allocator,
-  // these report 0 and trim_storage() does nothing.
+  // at trim_storage(), whichever is first. Some drivers hand another pool's
+  // idle memory to an allocation that runs out; regardless, a K/V allocation
+  // that runs out of memory trims the shared allocator pool to zero, dropping
+  // every user's unused cached memory there but nothing in use, and retries
+  // once. Without memory pools (ROCm, or a device lacking them) storage comes
+  // from the shared allocator, these report 0 and trim_storage() does nothing.
   //
   // Device memory the storage pool holds, live storage included, and the most
   // it has held since the latest column resize began.

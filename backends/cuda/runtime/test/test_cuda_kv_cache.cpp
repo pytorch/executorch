@@ -4430,7 +4430,12 @@ TEST_F(CudaRuntimeColumnCacheTest, FailedContractionPreservesSparseOwners) {
       ASSERT_TRUE(control->seq_rm(owners[index]));
     }
   }
+  int device = 0;
+  ASSERT_EQ(cudaGetDevice(&device), cudaSuccess);
   ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+  // Idle shared-pool memory, such as an earlier test leaves, would also be
+  // reachable by the K/V allocations meant to fail below.
+  ::executorch::extension::cuda::CudaAllocator::release_cached_memory(device);
   const size_t kv_slack = kv_pool_slack(*kv);
   size_t free_bytes = 0, total_bytes = 0;
   ASSERT_EQ(cudaMemGetInfo(&free_bytes, &total_bytes), cudaSuccess);
@@ -4470,6 +4475,8 @@ TEST_F(CudaRuntimeColumnCacheTest, FailedContractionPreservesSparseOwners) {
       EXPECT_LE(failed.reserved_bytes, before.reserved_bytes);
     }
     ASSERT_EQ(cudaFree(spare_reservation), cudaSuccess);
+    ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+    ::executorch::extension::cuda::CudaAllocator::release_cached_memory(device);
     const size_t kv_slack_after = kv_pool_slack(*kv);
     ASSERT_EQ(cudaMemGetInfo(&free_bytes, &total_bytes), cudaSuccess);
     free_bytes += kv_slack_after;
