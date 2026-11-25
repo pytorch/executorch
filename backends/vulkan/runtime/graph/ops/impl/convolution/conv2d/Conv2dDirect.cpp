@@ -181,7 +181,7 @@ struct Conv2dVariant {
   const char* name;
   std::array<uint32_t, 3> tile;
   bool tune_channels;
-  Conv2dTapRange tap_range = Conv2dTapRange::None;
+  Conv2dTapRange tap_range = Conv2dTapRange::Disabled;
 };
 
 constexpr std::array<Conv2dVariant, 12> kConv2dVariants{{

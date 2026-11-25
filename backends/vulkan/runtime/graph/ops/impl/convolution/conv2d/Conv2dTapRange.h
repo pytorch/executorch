@@ -37,7 +37,7 @@ struct Conv2dAxis {
 // each 2x2 output tile. The values are the shaders' skip_taps_mode
 // specialization constant.
 enum class Conv2dTapRange : int32_t {
-  None = 0,
+  Disabled = 0,
   Global = 1,
   Tile = 2,
 };
@@ -118,7 +118,7 @@ inline Conv2dTapRange pick_conv2d_tap_range(
   const uint64_t tile_kept = x.tile * y.tile;
   const uint64_t global_kept = tiles * x.global * y.global;
   if (tile_kept == tap_work) {
-    return Conv2dTapRange::None;
+    return Conv2dTapRange::Disabled;
   }
   const uint64_t invocations = tiles * uint64_t((output_channels + 7) / 8);
   if (invocations >= kMinTileTapRangeInvocations &&
@@ -126,7 +126,8 @@ inline Conv2dTapRange pick_conv2d_tap_range(
           kMinTileTapRangeGainPercent * tap_work) {
     return Conv2dTapRange::Tile;
   }
-  return global_kept < tap_work ? Conv2dTapRange::Global : Conv2dTapRange::None;
+  return global_kept < tap_work ? Conv2dTapRange::Global
+                                : Conv2dTapRange::Disabled;
 }
 
 } // namespace vkcompute
