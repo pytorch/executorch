@@ -19,7 +19,8 @@ set(EXECUTORCH_PATH ${CMAKE_CURRENT_LIST_DIR}/../../../)
 
 # Targets whose nsys needs a config file (--nsys_config is mandatory)
 set(NXP_RUNNER_NC_TARGETS imxrt700)
-# Targets whose nsys is selected by SoC name, built into the driver (no config file)
+# Targets whose nsys is selected by SoC name, built into the driver (no config
+# file)
 set(NXP_RUNNER_SOC_TARGETS imx95 imx943 s32k5)
 if($CACHE{EIQ_NEUTRON_TARGET} IN_LIST NXP_RUNNER_NC_TARGETS)
   list(APPEND NXP_RUNNER_DEFINES NXP_RUNNER_NSYS_NC)
