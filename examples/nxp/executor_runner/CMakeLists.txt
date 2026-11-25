@@ -11,12 +11,8 @@ option(EVENT_TRACER "Build with event tracing support" ON)
 set(NXP_RUNNER_DEFINES NEUTRON_CMODEL)
 set(NXP_RUNNER_LIBS)
 
-# Neutron target (driver, firmware and nsys start-up depend on it)
-if(NOT NEUTRON_TARGET)
-  set(NEUTRON_TARGET "imxrt700")
-endif()
 set(EIQ_NEUTRON_TARGET
-    "${NEUTRON_TARGET}"
+    "imxrt700"
     CACHE STRING "Neutron Target to build the executor_runner"
 )
 set(EXECUTORCH_PATH ${CMAKE_CURRENT_LIST_DIR}/../../../)
