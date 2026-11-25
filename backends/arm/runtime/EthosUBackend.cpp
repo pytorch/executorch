@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <cstring>
 #include <new>
+#include <utility>
 
 #include <executorch/backends/arm/runtime/EthosUBackend_Internal.h>
 #include <executorch/backends/arm/runtime/EthosUBackend_Pmu.h>
@@ -197,8 +198,8 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
     if (handle == nullptr) {
       return Error::MemoryAllocationFailed;
     }
-    new (handle) ExecutionHandle();
-    handle->handles = handles;
+    // Keep external payload owners alive in the execution handle.
+    new (handle) ExecutionHandle{nullptr, std::move(handles)};
     const Error platform_status =
         platform_init(compile_specs, allocator, handle);
     if (platform_status != Error::Ok) {
