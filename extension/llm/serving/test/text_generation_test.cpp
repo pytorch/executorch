@@ -2024,22 +2024,35 @@ TEST_F(ColdOpenGroupTest, RequeuedTailKeepsItsPlaceInTheQueue) {
   EXPECT_EQ(*order, "cx");
 }
 
-TEST_F(ColdOpenGroupTest, PrefixCachingDisablesGrouping) {
+TEST_F(ColdOpenGroupTest, PrefixCachingStillGroupsShortPrompts) {
   config.prefix_cache_capacity = 1;
   start_with_group_budget(8);
   auto parked = park_control();
   auto handles = queue_anonymous({"b"});
   last.hold();
-  handles.push_back(queue_deferred(&last, [] { return text("c"); }));
+  std::atomic<std::size_t> slices_before_c{0};
+  handles.push_back(queue_deferred(&last, [&] {
+    slices_before_c = executor.seen().size();
+    return text("c");
+  }));
   control.release();
-  // Without grouping the first request runs before the second is prepared.
+  // The two short prompts share a group, which submits its members only once
+  // every member is prepared. The first, with nothing cached, may already be
+  // opening, but it must not run while the second is being prepared.
   ASSERT_TRUE(last.wait());
-  ASSERT_TRUE(wait_until([&] { return ran(1); }));
+  EXPECT_TRUE(
+      holds_for([&] { return !ran(1); }, std::chrono::milliseconds(200)));
   last.release();
   parked.wait();
   for (auto& handle : handles) {
     handle.wait();
     EXPECT_FALSE(handle.error());
+  }
+  // Nothing of the first prompt ran before the second finished preparing.
+  const auto first = executor.opened().at(1);
+  const auto seen = executor.seen();
+  for (std::size_t k = 0; k < slices_before_c.load(); ++k) {
+    EXPECT_NE(seen[k].session, first);
   }
   // Each anonymous request tries one prompt-end capture clone, which this
   // executor refuses; the fixture teardown expects none to remain counted.
