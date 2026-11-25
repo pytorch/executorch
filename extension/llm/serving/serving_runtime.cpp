@@ -1225,40 +1225,46 @@ struct ServingRuntime::Impl {
   // between commands.
   //
   // A group's prompts fill at most half of the scheduler's per-step prefill
-  // budget, leaving room for decodes and for chunks of prompts already
-  // prefilling. Prompts long enough to need much of a step keep one-per-step
-  // admission: packing them delays their first tokens without saving steps,
-  // and measured slower on executors with a high per-step cost. The next
-  // request is prepared only while a prompt as long as the last would still
-  // fit, so earlier members wait for later members' tokenization, bounded by
-  // the budget, plus at most one more preparation, which ends the group.
-  // Source prompts with image segments never join a group. A deferred
-  // preparation whose result is not plain tokens (an image from the model
-  // preparer, including its acceptance round trip to the engine) also ends
-  // the group and then runs alone; PromptPreparation requires bounded work.
-  void generate_group(
-      const std::vector<Request>& queued,
-      std::size_t position) {
+  // budget. The other half leaves room for chunks of prompts already
+  // prefilling, and prompts long enough to need much of a step keep
+  // one-per-step admission: packing them delays their first tokens without
+  // saving steps, and measured slower on executors with a high per-step cost.
+  // The next request is prepared only while a prompt as long as the last would
+  // still fit, so earlier members wait for later members' tokenization,
+  // bounded by the budget, plus at most one more preparation, which ends the
+  // group whether it fits, fails, or is not plain tokens. Source prompts with
+  // image segments never join a group. A deferred preparation whose result is
+  // not plain tokens (an image from the model preparer, including its
+  // acceptance round trip to the engine) ends the group and then runs alone;
+  // PromptPreparation requires bounded work.
+  void generate_group(std::vector<Command>& group, std::size_t position) {
     std::vector<std::future<std::optional<batching::Session>>> opens(
-        queued.size());
-    std::vector<bool> prepared(queued.size());
+        group.size());
+    std::vector<bool> prepared(group.size());
+    bool waiting = false;
     std::size_t tokens = 0;
-    std::size_t end = queued.size();
-    for (std::size_t i = 0; i < queued.size(); ++i) {
-      prepared[i] = prepare(queued[i]);
+    std::size_t end = group.size();
+    for (std::size_t i = 0; i < group.size(); ++i) {
+      const auto& request = group[i].request;
+      prepared[i] = prepare(request);
       if (!prepared[i]) {
+        if (waiting) {
+          end = i + 1;
+          break;
+        }
         continue;
       }
-      const auto size = queued[i]->text->terminal.stats.prompt_tokens;
-      const auto& input = queued[i]->text->prepared;
+      const auto size = request->text->terminal.stats.prompt_tokens;
+      const auto& input = request->text->prepared;
       const bool alone =
           input && input->kind() != detail::TokenPreparedInput::type();
-      if (i > 0 && (alone || tokens + size > group_prompt_tokens_)) {
+      if (waiting && (alone || tokens + size > group_prompt_tokens_)) {
         end = i;
         break;
       }
+      waiting = true;
       tokens += size;
-      if (!queued[i]->cancelled.load()) {
+      if (!request->cancelled.load()) {
 #if ET_HAS_EXCEPTIONS
         try {
 #endif
@@ -1277,27 +1283,22 @@ struct ServingRuntime::Impl {
     // Members rejected in preparation never issued an open.
     for (std::size_t i = 0; i < end; ++i) {
       if (prepared[i]) {
-        generate(queued[i], std::move(opens[i]));
+        generate(group[i].request, std::move(opens[i]));
       }
-      schedule(queued[i]);
+      schedule(group[i].request);
       std::lock_guard<std::mutex> lock(mutex_);
       --outstanding_;
     }
-    if (end == queued.size()) {
+    if (end == group.size()) {
       return;
-    }
-    std::vector<Command> rest;
-    rest.reserve(queued.size() - end);
-    for (std::size_t i = end; i < queued.size(); ++i) {
-      rest.push_back(Command{Operation::Generate, "", {}, queued[i]});
     }
     std::lock_guard<std::mutex> lock(mutex_);
     // Only control removes commands; concurrent submissions append, so this
     // position still precedes every command submitted after the group.
     inbox_.insert(
         inbox_.begin() + position,
-        std::make_move_iterator(rest.begin()),
-        std::make_move_iterator(rest.end()));
+        std::make_move_iterator(group.begin() + end),
+        std::make_move_iterator(group.end()));
   }
 
   // Requires a prepared prompt. A pending cold open, when supplied, replaces
@@ -1864,7 +1865,7 @@ struct ServingRuntime::Impl {
     for (;;) {
       Command command;
       // Queued cold-open generations that directly follow command.
-      std::vector<Request> group;
+      std::vector<Command> group;
       std::size_t command_index = 0;
       Request finalizer;
       Request capture;
@@ -1894,7 +1895,7 @@ struct ServingRuntime::Impl {
             const auto free = config_.max_sessions - sessions_.size();
             while (it != inbox_.end() && opens_cold(*it) &&
                    group.size() + 1 < free) {
-              group.push_back(std::move(it->request));
+              group.push_back(std::move(*it));
               it = inbox_.erase(it);
             }
           }
@@ -1917,7 +1918,7 @@ struct ServingRuntime::Impl {
         continue;
       }
       if (!group.empty()) {
-        group.insert(group.begin(), std::move(command.request));
+        group.insert(group.begin(), std::move(command));
         generate_group(group, command_index);
         continue;
       }
