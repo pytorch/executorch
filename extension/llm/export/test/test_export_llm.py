@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
+from executorch.extension.llm.export.config.model_identity import ModelFamily
 from executorch.extension.llm.export.export_llm import (
     main,
     parse_config_arg,
@@ -61,7 +62,7 @@ class TestExportLlm(unittest.TestCase):
             f.write(
                 """
 base:
-  model_class: llama2
+  model_family: llama2
   tokenizer_path: /path/to/tokenizer.json
   preq_mode: preq_8da4w
 model:
@@ -92,7 +93,7 @@ backend:
             self.assertEqual(
                 called_config.base.tokenizer_path, "/path/to/tokenizer.json"
             )
-            self.assertEqual(called_config.base.model_class, "llama2")
+            self.assertIs(called_config.base.model_family, ModelFamily.llama2)
             self.assertEqual(called_config.base.preq_mode.value, "8da4w")
             self.assertEqual(called_config.model.dtype_override.value, "fp16")
             self.assertEqual(called_config.export.max_seq_length, 128)
