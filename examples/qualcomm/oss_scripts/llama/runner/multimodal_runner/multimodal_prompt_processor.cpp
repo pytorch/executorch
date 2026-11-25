@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/hidden_state.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/multimodal_prompt_processor.h>
 #include <numeric>
 
@@ -40,6 +41,7 @@ MultimodalPromptProcessor::MultimodalPromptProcessor(
   input_toks_.size = 0;
   input_embedding_.size =
       metadata_.ar_len * metadata_.embedding_dim * sizeof(float);
+  hidden_.size = metadata_.ar_len * metadata_.hidden_dim * sizeof(uint16_t);
 };
 
 void MultimodalPromptProcessor::init_io(
@@ -151,8 +153,14 @@ void MultimodalPromptProcessor::init_io(
   output_tensors_.emplace_back(logits_.tensor.get());
   buffer_manager->add_memory_info(logits_.data, logits_.size, logits.get());
 
+  // [O]: hidden state
+  if (metadata_.hidden_dim > 0) {
+    bind_hidden_output(
+        buffer_manager, method_meta.get(), hidden_, output_tensors_);
+  }
+
   // [O] kv_cache
-  size_t index = 1;
+  size_t index = metadata_.hidden_dim > 0 ? 2 : 1;
   for (int cache_group = 0; cache_group < 2; ++cache_group) {
     std::vector<std::unique_ptr<TensorImpl>>& cache =
         (cache_group == 0 ? k_cache_out_ : v_cache_out_);
@@ -175,6 +183,14 @@ void MultimodalPromptProcessor::init_io(
     }
   }
 
+  if (conv_state_manager_ != nullptr) {
+    conv_state_manager_->bind_io(
+        buffer_manager,
+        method_meta.get(),
+        conv_tensors_,
+        input_tensors_,
+        output_tensors_);
+  }
   // Prepare the vector of EValue to run inference
   inputs_.reserve(input_tensors_.size());
   for (auto& input_tensor : input_tensors_) {
@@ -271,9 +287,13 @@ Result<uint64_t> MultimodalPromptProcessor::prefill(
     // In the last run, offset to the meaningful logits.
     if (i == num_iters - 1) {
       n_update = 1 + ((num_prompt_tokens - 1) % metadata_.ar_len);
+      last_n_update_ = n_update;
     }
     // Update KV Cache with the output results
     kv_manager_->update_cache(metadata_.ar_len, pos, n_update, {});
+    if (conv_state_manager_ != nullptr) {
+      conv_state_manager_->update(n_update);
+    }
 
     // Update attention mask with current position
     kv_manager_->update_attention_mask(

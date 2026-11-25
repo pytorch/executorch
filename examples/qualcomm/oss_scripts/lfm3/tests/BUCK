@@ -1,0 +1,14 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+load(":targets.bzl", "define_common_targets")
+
+oncall("executorch")
+
+define_common_targets()
+
+fbcode_target(_kind = python_unittest,
+    name = "test_speech_policy",
+    srcs = ["test_speech_policy.py"],
+    base_module = "executorch.examples.qualcomm.oss_scripts.lfm3.tests",
+    deps = ["//executorch/examples/qualcomm/oss_scripts/lfm3:speech_policy"],
+)

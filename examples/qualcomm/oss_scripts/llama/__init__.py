@@ -31,6 +31,7 @@ from executorch.examples.models.granite_speech import (
 from executorch.examples.models.internvl3 import (
     convert_weights as convert_internvl3_weights,
 )
+from executorch.examples.models.lfm3 import convert_weights as convert_lfm3_weights
 from executorch.examples.models.phi_4_mini import (
     convert_weights as convert_phi_4_mini_weights,
 )
@@ -58,6 +59,9 @@ from executorch.examples.qualcomm.oss_scripts.llama.encoder.encoder_config impor
     AudioModalityConfig,
     GraniteSpeechEncoder,
     InternVL3Encoder,
+    Lfm3OmniAudioEncoder,
+    Lfm3OmniVisionEncoder,
+    Lfm3VLVisionEncoder,
     MultiModalityConfig,
     SmolVLMEncoder,
     VisionModalityConfig,
@@ -66,6 +70,7 @@ from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import (
     LlamaModel,
     LlamaModelWithoutEmbedding,
     MultiScopeAwareLlamaModel,
+    ShortConvHybridLlamaModel,
 )
 
 from executorch.examples.qualcomm.oss_scripts.llama.static_llm_quant_recipe import (
@@ -78,6 +83,8 @@ from executorch.examples.qualcomm.oss_scripts.llama.static_llm_quant_recipe impo
     Granite_3_3_2B_InstructQuantRecipe,
     GraniteSpeech_3_3_2B_InstructQuantRecipe,
     InternVL3_1B_QuantRecipe,
+    Lfm3QuantRecipe,
+    Lfm3SpeechQuantRecipe,
     Llama3_1BQuantRecipe,
     Llama3_3BQuantRecipe,
     LlamaStories110MQuantRecipe,
@@ -105,6 +112,11 @@ LLM_VARIANT_ARCHS: Dict[str, LlamaModel] = {
     "smolvlm_500m_instruct": LlamaModelWithoutEmbedding,
     "internvl3_1b": LlamaModelWithoutEmbedding,
     "gemma2-2b": MultiScopeAwareLlamaModel,
+    "lfm3-1_7b": ShortConvHybridLlamaModel,
+    "lfm3-1_7b_base": ShortConvHybridLlamaModel,
+    "lfm3-2b_vl": ShortConvHybridLlamaModel,
+    "lfm3-2b_omni": ShortConvHybridLlamaModel,
+    "lfm3-2b_omni_speech": ShortConvHybridLlamaModel,
 }
 
 
@@ -530,6 +542,90 @@ class Qwen3_1_7B(LLMModelConfig):
     r2 = False
     r3 = True
     quant_recipe = Qwen3_1_7BQuantRecipe
+
+
+@register_llm_model("lfm3-1_7b")
+@dataclass(init=False, frozen=True)
+class Lfm3_1_7B(LLMModelConfig):
+    repo_id: str = "LiquidAI/LFM3-1.7B"
+    params_path: str = os.path.join(
+        BASE_DIR, "../../../models/lfm3/config/1_7b_config.json"
+    )
+    convert_weights = convert_lfm3_weights
+    transform_weight = False
+    instruct_model = True
+    num_sharding = 1
+    masked_softmax = False
+    seq_mse_candidates = 0
+    r1 = False
+    r2 = False
+    r3 = False
+    quant_recipe = Lfm3QuantRecipe
+    image_token_id = None
+    audio_token_id = None
+    output_hidden = False
+
+
+@register_llm_model("lfm3-1_7b_base")
+@dataclass(init=False, frozen=True)
+class Lfm3_1_7B_Base(LLMModelConfig):
+    repo_id: str = "LiquidAI/LFM3-1.7B-Base"
+    params_path: str = os.path.join(
+        BASE_DIR, "../../../models/lfm3/config/1_7b_config.json"
+    )
+    convert_weights = convert_lfm3_weights
+    transform_weight = False
+    instruct_model = False
+    num_sharding = 1
+    masked_softmax = False
+    seq_mse_candidates = 0
+    r1 = False
+    r2 = False
+    r3 = False
+    quant_recipe = Lfm3QuantRecipe
+
+
+class _Lfm3MultimodalDecoder(LLMModelConfig):
+    params_path = Lfm3_1_7B.params_path
+    convert_weights = convert_lfm3_weights
+    transform_weight = False
+    instruct_model = True
+    num_sharding = 1
+    masked_softmax = False
+    seq_mse_candidates = 0
+    r1 = False
+    r2 = False
+    r3 = False
+    quant_recipe = Lfm3QuantRecipe
+    image_token_id = None
+    audio_token_id = None
+    output_hidden = False
+
+
+@register_llm_model("lfm3-2b_vl", modality_encoders=Lfm3VLVisionEncoder)
+@dataclass(init=False, frozen=True)
+class Lfm3_VL_2B(_Lfm3MultimodalDecoder):
+    repo_id: str = "LiquidAI/LFM3-VL-2B"
+    image_token_id = 125030
+
+
+@register_llm_model("lfm3-2b_omni", modality_encoders=Lfm3OmniVisionEncoder)
+@dataclass(init=False, frozen=True)
+class Lfm3_Omni_2B(_Lfm3MultimodalDecoder):
+    repo_id: str = "LiquidAI/LFM3-Omni-2B"
+    image_token_id = 125030
+
+
+@register_llm_model("lfm3-2b_omni_speech", modality_encoders=Lfm3OmniAudioEncoder)
+@dataclass(init=False, frozen=True)
+class Lfm3_Omni_Speech_2B(_Lfm3MultimodalDecoder):
+    """LFM3-Omni speech in, text and speech out: the decoder also returns its final
+    hidden state for the on-device depth decoder."""
+
+    repo_id: str = "LiquidAI/LFM3-Omni-2B"
+    audio_token_id = 125031
+    output_hidden = True
+    quant_recipe = Lfm3SpeechQuantRecipe
 
 
 @register_llm_model("smollm2_135m")

@@ -169,6 +169,7 @@ fbcode_target(_kind = runtime.python_library,
         "//executorch/exir/passes:init_mutable_pass",
         "//executorch/examples/models:model_base",
         "//executorch/examples/models:models",
+        "//executorch/examples/models/lfm3:lfm3",
         "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
         "//executorch/extension/llm/export:export_lib",
         # one definition has to be included in the user of the libarary

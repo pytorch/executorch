@@ -50,12 +50,12 @@ python -m extension.llm.export.export_llm \
   --config examples/models/spark_x2_5/config/spark_x2_5_xnnpack_q8da4w.yaml \
   +base.model_class="spark_x2_5_1_7b" \
   +base.params="examples/models/spark_x2_5/config/spark_x2_5_1_7b_config.json" \
-  +export.max_seq_length=1024 \
+  +export.max_seq_length=512 \
   +export.max_context_length=1024 \
   +export.output_name="spark_x2_5_1_7b_8da4w.pte"
 ```
 
-Note: the sliding-window attention layers use a ring buffer sized `2 * sliding_window` = 1024 slots, so prefill is bounded to 1024 tokens regardless of `max_seq_length`. The full-attention layers can attend to the full `max_context_length`.
+Note: `max_seq_length` must not exceed the sliding window (512). A larger prefill chunk can overwrite keys still needed by its first queries, even though the ring has `2 * sliding_window` slots. The full-attention layers retain the configured `max_context_length`; prompt plus generated tokens must fit that context.
 
 ### Example run
 

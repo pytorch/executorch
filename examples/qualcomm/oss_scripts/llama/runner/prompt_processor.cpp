@@ -198,6 +198,14 @@ void PromptProcessor::init_io(
           kv_cache.get());
     }
   }
+  if (conv_state_manager_ != nullptr) {
+    conv_state_manager_->bind_io(
+        buffer_manager,
+        method_meta.get(),
+        conv_tensors_,
+        input_tensors_,
+        output_tensors_);
+  }
   // Prepare the vector of EValue to run inference
   inputs_.reserve(input_tensors_.size());
   for (auto& input_tensor : input_tensors_) {
@@ -350,6 +358,9 @@ Result<uint64_t> PromptProcessor::prefill(
     }
     // Update KV Cache with the output results
     kv_manager_->update_cache(metadata_.ar_len, shifted_pos, n_update, {});
+    if (conv_state_manager_ != nullptr) {
+      conv_state_manager_->update(n_update);
+    }
 
     // Update attention mask with current position
     kv_manager_->update_attention_mask(

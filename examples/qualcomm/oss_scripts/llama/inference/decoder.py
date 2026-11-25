@@ -121,6 +121,13 @@ class DecoderInference:
                 tok_embedding,
                 self.audio_token_id or self.image_token_id,
             )
+        elif hidden_states:
+            raise ValueError(
+                "Modality embeddings were given but no audio/image token id is configured."
+            )
+        elif tok_embedding is not None:
+            # Embedding-input decoder calibrated on text only.
+            inputs_embeds = tok_embedding(input_ids)
         else:
             raw_input_ids = input_ids
         return DecoderInputs(
