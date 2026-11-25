@@ -53,14 +53,15 @@ if(EXECUTORCH_XNNPACK_ENABLE_KLEIDI)
       ON
       CACHE BOOL ""
   )
-  # XNNPACK downloads KleidiAI with ExternalProject, which never
-  # retries: a transient 502 from gitlab.arm.com fails the whole build
-  # (seen repeatedly in test-models-linux-aarch64). Download it here
-  # with retries and point XNNPACK at the local copy instead (XNNPACK
-  # skips its own download when KLEIDIAI_SOURCE_DIR is defined). The
-  # version and hash must match XNNPACK's cmake/DownloadKleidiAI.cmake.
-  if(NOT DEFINED KLEIDIAI_SOURCE_DIR
-     AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$")
+  # XNNPACK downloads KleidiAI with ExternalProject, which never retries: a
+  # transient 502 from gitlab.arm.com fails the whole build (seen repeatedly in
+  # test-models-linux-aarch64). Download it here with retries and point XNNPACK
+  # at the local copy instead (XNNPACK skips its own download when
+  # KLEIDIAI_SOURCE_DIR is defined). The version and hash must match XNNPACK's
+  # cmake/DownloadKleidiAI.cmake.
+  if(NOT DEFINED KLEIDIAI_SOURCE_DIR AND CMAKE_SYSTEM_PROCESSOR MATCHES
+                                         "^(aarch64|arm64|ARM64)$"
+  )
     set(KLEIDIAI_VERSION "b87ef9c94f45f11c81a6b1fdaed1b2b45ea58c0c")
     set(KLEIDIAI_URL
         "https://gitlab.arm.com/kleidi/kleidiai/-/archive/${KLEIDIAI_VERSION}/kleidiai-${KLEIDIAI_VERSION}.zip"
