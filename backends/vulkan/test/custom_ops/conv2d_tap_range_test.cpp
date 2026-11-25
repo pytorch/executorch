@@ -111,10 +111,10 @@ TEST(Conv2dTapRangeTest, PicksModeByShareAndSize) {
   // Too few tiles for per-tile bounds.
   EXPECT_EQ(
       pick_conv2d_tap_range(square_axes(33, 3, 12, 12), 64),
-      Conv2dTapRange::None);
+      Conv2dTapRange::Disabled);
   EXPECT_EQ(
       pick_conv2d_tap_range(square_axes(17, 3, 8, 8), 128),
-      Conv2dTapRange::None);
+      Conv2dTapRange::Disabled);
   EXPECT_EQ(
       pick_conv2d_tap_range(square_axes(17, 3, 8, 8), 512),
       Conv2dTapRange::Tile);
@@ -124,11 +124,11 @@ TEST(Conv2dTapRangeTest, PicksModeByShareAndSize) {
   // Tile pruning skips less than the gain threshold beyond global pruning.
   EXPECT_EQ(
       pick_conv2d_tap_range(square_axes(33, 3, 6, 6), 256),
-      Conv2dTapRange::None);
+      Conv2dTapRange::Disabled);
   // "Same" padding reads input at every tap of every tile.
   EXPECT_EQ(
       pick_conv2d_tap_range(square_axes(64, 3, 1, 1), 256),
-      Conv2dTapRange::None);
+      Conv2dTapRange::Disabled);
   // 5x5 kernel.
   EXPECT_EQ(
       pick_conv2d_tap_range(square_axes(65, 5, 32, 16), 128),
