@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -21,7 +22,10 @@ class _DataclassEncoder(json.JSONEncoder):
                 props[field.name] = getattr(o, field.name)
                 origin = get_origin(get_type_hints(type(o))[field.name])
                 if isinstance(field.type, str) and origin == Union:
-                    props[f"{field.name}_type"] = type(getattr(o, field.name)).__name__
+                    value = getattr(o, field.name)
+                    props[f"{field.name}_type"] = (
+                        "NONE" if value is None else type(value).__name__
+                    )
             return props
 
         if isinstance(o, bytes):
@@ -52,6 +56,8 @@ def _get_class_from_union(json_dict: Dict[str, Any], key: str, cls: Any) -> Any:
     the type we want to unpack is keyed by f"{field.name}_type").
     """
     _type = json_dict[key + "_type"]
+    if _type == "NONE" and type(None) in get_args(get_type_hints(cls)[key]):
+        return type(None)
     res = [x for x in get_args(get_type_hints(cls)[key]) if x.__name__ == _type]
     return res[0]
 
@@ -106,7 +112,9 @@ def _json_to_dataclass(json_dict: Dict[str, Any], cls: Any = None) -> Any:
             # are trying to initialize by calling `_get_class_from_union`, and
             # then make a recursive call construct this new class
             _cls = _get_class_from_union(json_dict, key, cls)
-            data[key] = _json_to_dataclass(json_dict[key], _cls)
+            data[key] = (
+                None if _cls is type(None) else _json_to_dataclass(json_dict[key], _cls)
+            )
             continue
         else:
             try:

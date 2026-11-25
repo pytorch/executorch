@@ -304,6 +304,9 @@ ET_NODISCARD Error load_bundled_input(
 
     // Set e_input with bundled_input based on different types.
     switch (bundled_input->val_type()) {
+      case bundled_program_flatbuffer::ValueUnion::NONE:
+        status = method.set_input(EValue(), input_idx);
+        break;
       case bundled_program_flatbuffer::ValueUnion::Tensor: {
         auto bundled_input_tensor =
             static_cast<bundled_program_flatbuffer::Tensor*>(

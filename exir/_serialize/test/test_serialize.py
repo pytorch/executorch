@@ -1,6 +1,7 @@
 #!/usr/bin/env fbpython
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,9 +9,13 @@
 # pyre-unsafe
 
 import copy
+import json
 import unittest
+from dataclasses import dataclass
+from typing import Union
 
 from executorch.exir._serialize._cord import Cord
+from executorch.exir._serialize._dataclass import _DataclassEncoder, _json_to_dataclass
 from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
 from executorch.exir._serialize._serialize import serialize_for_executorch
 from executorch.exir._serialize.data_serializer import (
@@ -29,6 +34,19 @@ from executorch.exir.schema import (
     TensorShapeDynamism,
 )
 from executorch.exir.tests.common import get_test_program
+
+
+class TestDataclassSerialization(unittest.TestCase):
+    def test_union_none_round_trip(self):
+        @dataclass
+        class Value:
+            val: "Union[int, str, None]"
+
+        for value, tag in ((None, "NONE"), (7, "int"), ("text", "str")):
+            original = Value(value)
+            encoded = json.loads(json.dumps(original, cls=_DataclassEncoder))
+            self.assertEqual(encoded, {"val": value, "val_type": tag})
+            self.assertEqual(_json_to_dataclass(encoded, Value), original)
 
 
 class MockDataSerializer(DataSerializer):

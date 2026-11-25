@@ -28,6 +28,7 @@ supported_program_type_table: Dict[Type[core_schema.KernelTypes], ConfigValue] =
     core_schema.Int: int,
     core_schema.Double: float,
     core_schema.Bool: bool,
+    core_schema.Null: type(None),
 }
 
 
@@ -191,6 +192,8 @@ class BundledProgram:
             bundled_values.append(bp_schema.Value(val=bp_schema.Bool(bool_val=val)))
         elif type(val) is float:
             bundled_values.append(bp_schema.Value(val=bp_schema.Double(double_val=val)))
+        elif val is None:
+            bundled_values.append(bp_schema.Value(val=None))
         else:
             assert 0, "Unsupported primitive type received."
 
@@ -241,6 +244,7 @@ class BundledProgram:
             core_schema.Int: int,
             core_schema.Bool: bool,
             core_schema.Double: float,
+            core_schema.Null: type(None),
         }
         # pyre-fixme[6]: Incompatible parameter type [6]: In call `dict.__getitem__`, for 1st positional only parameter
         # expected `Type[Union[core_schema.Bool, core_schema.Double, core_schema.Int]]` but got `Type[Union[core_schema.Bool, core_schema.Double, core_schema.Int, core_schema.Tensor, BoolList, DoubleList,
