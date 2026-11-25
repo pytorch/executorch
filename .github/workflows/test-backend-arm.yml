@@ -34,6 +34,7 @@ jobs:
                || github.sha }}
       timeout: 120
       run-linux: true
+      upload-test-run-reports: true
       docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
 
   test-arm-vgf:
@@ -52,4 +53,5 @@ jobs:
                || github.sha }}
       timeout: 120
       run-linux: true
+      upload-test-run-reports: true
       docker-image: ci-image:executorch-ubuntu-24.04-arm-sdk
