@@ -2032,10 +2032,18 @@ TEST_F(ColdOpenGroupTest, PrefixCachingStillGroupsShortPrompts) {
   last.hold();
   handles.push_back(queue_deferred(&last, [] { return text("c"); }));
   control.release();
-  // The two short prompts share a group, which looks up and opens sessions
-  // only once every member is prepared: only the parked session is open.
+  // The two short prompts share a group, which submits its members only once
+  // every member is prepared. The first, with nothing cached, may already be
+  // opening, but it must not run while the second is being prepared.
   ASSERT_TRUE(last.wait());
-  EXPECT_EQ(executor.opened().size(), 1u);
+  bool ran_early = false;
+  for (const auto deadline =
+           std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
+       !ran_early && std::chrono::steady_clock::now() < deadline;) {
+    ran_early = ran(1);
+    std::this_thread::yield();
+  }
+  EXPECT_FALSE(ran_early);
   last.release();
   parked.wait();
   for (auto& handle : handles) {

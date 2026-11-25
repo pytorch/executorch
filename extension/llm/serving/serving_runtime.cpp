@@ -1169,41 +1169,70 @@ struct ServingRuntime::Impl {
     return PrefixLookupStatus::Unavailable;
   }
 
-  // Longest cached prefix a lookup would try first, found without cloning:
-  // candidates arrive longest first and Stop ends the search before a clone.
-  // A later lookup may reuse less if that snapshot is skipped or refused.
-  std::size_t cached_prefix(const Request& request) {
-    std::size_t longest = 0;
+  // Longest cached prefix a lookup would try first, found without cloning. A
+  // lookup may reuse less if that snapshot is skipped or its clone refused.
+  std::size_t cached_prefix(const Request& request) const {
     if (!request->text->prompt || request->cancelled.load()) {
       return 0;
+    }
+    return prefix_cache_.longest_match(*request->text->prompt);
+  }
+
+  // Positions a looked-up group member will prefill: its prompt after the
+  // prefix it adopted, all of it on a miss, none if it will not run.
+  static std::size_t prefill_cost(
+      const Request& request,
+      const std::optional<PrefixLookupResult>& found) {
+    const auto prompt = request->text->terminal.stats.prompt_tokens;
+    if (request->cancelled.load() || !found) {
+      return request->cancelled.load() ? 0 : prompt;
+    }
+    if (const auto* hit = std::get_if<PrefixSelection>(&*found)) {
+      return prompt - std::min(prompt, hit->match.matched_tokens);
+    }
+    const auto* status = std::get_if<PrefixLookupStatus>(&*found);
+    return status && *status == PrefixLookupStatus::Unavailable ? prompt : 0;
+  }
+
+  // Queues a cold open; if that fails, generate() opens the session itself.
+  std::future<std::optional<batching::Session>> issue_open() {
+#if ET_HAS_EXCEPTIONS
+    try {
+#endif
+      return runner_->open_session_async();
+#if ET_HAS_EXCEPTIONS
+    } catch (...) {
+      return {};
+    }
+#endif
+  }
+
+  // Waits for a pending open and drops its session here, on control, which
+  // alone owns Session objects.
+  static void settle_open(std::future<std::optional<batching::Session>>& open) {
+    if (!open.valid()) {
+      return;
     }
 #if ET_HAS_EXCEPTIONS
     try {
 #endif
-      prefix_cache_.find_identity(
-          *request->text->prompt,
-          0,
-          std::numeric_limits<std::size_t>::max(),
-          [&longest](std::size_t matched) {
-            longest = matched;
-            return batching::PrefixCache::MatchDecision::Stop;
-          });
+      open.get();
 #if ET_HAS_EXCEPTIONS
     } catch (...) {
-      // The estimate only sizes groups.
+      // A broken open has no session to close.
     }
 #endif
-    return longest;
   }
 
-  // lookup_prefix() for the prepared members [begin, end) of a group, with one
-  // clone wave for all of them instead of one blocking clone per request.
+  // lookup_prefix() for the prepared members before `end`, with clone waves
+  // shared by all of them instead of one blocking clone per request. A member
+  // whose open is already pending has nothing cached to clone.
   void lookup_prefixes(
       const std::vector<Command>& group,
       const std::vector<bool>& prepared,
-      std::size_t begin,
       std::size_t end,
-      std::vector<std::optional<PrefixLookupResult>>& found) {
+      std::vector<std::optional<PrefixLookupResult>>& found,
+      const std::vector<std::future<std::optional<batching::Session>>>& opens) {
     std::vector<CheckedSuffix> checked;
     std::vector<std::size_t> members;
     std::vector<batching::PrefixCache::IdentityQuery> queries;
@@ -1211,22 +1240,22 @@ struct ServingRuntime::Impl {
 #if ET_HAS_EXCEPTIONS
     try {
 #endif
-      checked.resize(end - begin);
-      for (std::size_t i = begin; i < end; ++i) {
+      checked.resize(end);
+      for (std::size_t i = 0; i < end; ++i) {
         const auto& request = group[i].request;
         if (!prepared[i]) {
           continue;
         }
         if (request->cancelled.load()) {
           found[i] = PrefixLookupStatus::Cancelled;
-        } else if (!request->text->prompt) {
+        } else if (!request->text->prompt || opens[i].valid()) {
           found[i] = PrefixLookupStatus::Unavailable;
         } else {
           queries.push_back(
               {&*request->text->prompt,
                0,
                std::numeric_limits<std::size_t>::max(),
-               prefix_selector(request, checked[i - begin])});
+               prefix_selector(request, checked[i])});
           members.push_back(i);
         }
       }
@@ -1242,39 +1271,65 @@ struct ServingRuntime::Impl {
     for (std::size_t k = 0; k < members.size(); ++k) {
       const auto i = members[k];
       found[i] = k < results.size() && !results[k].error
-          ? prefix_outcome(std::move(results[k]), checked[i - begin])
+          ? prefix_outcome(std::move(results[k]), checked[i])
           : PrefixLookupResult{PrefixLookupStatus::Unavailable};
     }
   }
 
-  // With prefix caching, a group looks up all of its members together and
-  // then issues the cold opens of its misses together.
-  void acquire_sessions(
+  // With prefix caching, a group looks up its members together, then keeps
+  // the members that still fit its budget given what each actually reused:
+  // a refused or skipped clone can leave a member with far more to prefill
+  // than estimated. Cut members release their clones and pending opens here,
+  // on control, and return to inbox_ as their original commands. The kept
+  // misses then issue their cold opens together. Returns the new end of the
+  // group.
+  std::size_t acquire_sessions(
       const std::vector<Command>& group,
       const std::vector<bool>& prepared,
-      std::size_t begin,
       std::size_t end,
       std::vector<std::optional<PrefixLookupResult>>& found,
       std::vector<std::future<std::optional<batching::Session>>>& opens) {
-    lookup_prefixes(group, prepared, begin, end, found);
-    for (std::size_t i = begin; i < end; ++i) {
-      const auto* status =
-          found[i] ? std::get_if<PrefixLookupStatus>(&*found[i]) : nullptr;
-      if (!prepared[i] || group[i].request->cancelled.load() ||
-          (found[i] && !status) ||
-          (status && *status == PrefixLookupStatus::Cancelled)) {
+    lookup_prefixes(group, prepared, end, found, opens);
+    const auto cut = [&](std::size_t from) {
+      for (std::size_t j = from; j < end; ++j) {
+        found[j].reset();
+        settle_open(opens[j]);
+      }
+      end = from;
+    };
+    std::size_t tokens = 0;
+    bool kept = false;
+    for (std::size_t i = 0; i < end; ++i) {
+      if (!prepared[i]) {
         continue;
       }
-#if ET_HAS_EXCEPTIONS
-      try {
-#endif
-        opens[i] = runner_->open_session_async();
-#if ET_HAS_EXCEPTIONS
-      } catch (...) {
-        // generate() opens this session itself.
+      // A failed lookup ends the group as a failed preparation does: it is
+      // launched, so its rejection is delivered, and later members wait.
+      if (found[i] && std::holds_alternative<ServingError>(*found[i])) {
+        if (kept) {
+          cut(i + 1);
+          break;
+        }
+        continue;
       }
-#endif
+      const auto cost = prefill_cost(group[i].request, found[i]);
+      if (kept && tokens + cost > group_prompt_tokens_) {
+        cut(i);
+        break;
+      }
+      tokens += cost;
+      kept = true;
     }
+    for (std::size_t i = 0; i < end; ++i) {
+      const auto* status =
+          found[i] ? std::get_if<PrefixLookupStatus>(&*found[i]) : nullptr;
+      if (prepared[i] && !opens[i].valid() &&
+          !group[i].request->cancelled.load() && status &&
+          *status == PrefixLookupStatus::Unavailable) {
+        opens[i] = issue_open();
+      }
+    }
+    return end;
   }
 
   void collect_capture(const Request& request) {
@@ -1350,9 +1405,12 @@ struct ServingRuntime::Impl {
   // between commands.
   //
   // Without prefix caching every member issues its cold open once prepared.
-  // With it, the group shares one clone wave and then opens its misses
-  // together, and a member counts only the positions it still has to prefill
-  // after its longest cached prefix.
+  // With it, a member counts only the positions it still has to prefill after
+  // its longest cached prefix; the group looks up its members in shared clone
+  // waves, keeps the members that fit its budget given what each actually
+  // reused, and opens the kept misses together. A member with nothing cached
+  // opens as soon as it is prepared. A refused clone retries in the next wave,
+  // and members are submitted only after the group's last wave.
   //
   // A group's prompts fill at most half of the scheduler's per-step prefill
   // budget. The other half leaves room for chunks of prompts already
@@ -1386,9 +1444,8 @@ struct ServingRuntime::Impl {
         continue;
       }
       auto size = request->text->terminal.stats.prompt_tokens;
-      if (cached) {
-        size -= std::min(size, cached_prefix(request));
-      }
+      const auto reuse = cached ? cached_prefix(request) : 0;
+      size -= std::min(size, reuse);
       const auto& input = request->text->prepared;
       const bool alone =
           input && input->kind() != detail::TokenPreparedInput::type();
@@ -1398,16 +1455,11 @@ struct ServingRuntime::Impl {
       }
       waiting = true;
       tokens += size;
-      if (!cached && !request->cancelled.load()) {
-#if ET_HAS_EXCEPTIONS
-        try {
-#endif
-          opens[i] = runner_->open_session_async();
-#if ET_HAS_EXCEPTIONS
-        } catch (...) {
-          // generate() opens this session itself.
-        }
-#endif
+      // A member with nothing cached, or any member without caching, needs a
+      // cold open; issuing it now lets it share the engine pass that serves
+      // the group's first clone wave.
+      if (!request->cancelled.load() && reuse == 0) {
+        opens[i] = issue_open();
       }
       if (alone || tokens + size > group_prompt_tokens_) {
         end = i + 1;
@@ -1416,18 +1468,13 @@ struct ServingRuntime::Impl {
     }
     std::vector<std::optional<PrefixLookupResult>> found(end);
     if (cached) {
-      acquire_sessions(group, prepared, 0, end, found, opens);
+      end = acquire_sessions(group, prepared, end, found, opens);
     }
     // Members rejected in preparation never issued an open.
     for (std::size_t i = 0; i < end; ++i) {
       if (prepared[i]) {
-        generate(
-            group[i].request,
-            std::move(opens[i]),
-            found[i] ? &*found[i] : nullptr);
+        generate(group[i].request, std::move(opens[i]), std::move(found[i]));
       }
-      // A lookup the member did not adopt releases its clone here, on control.
-      found[i].reset();
       schedule(group[i].request);
       std::lock_guard<std::mutex> lock(mutex_);
       --outstanding_;
@@ -1444,29 +1491,18 @@ struct ServingRuntime::Impl {
         std::make_move_iterator(group.end()));
   }
 
-  // Requires a prepared prompt. A pending cold open, when supplied, replaces
-  // this request's own open; control settles it on every exit, since control
-  // alone owns Session objects. A group's lookup, when supplied, likewise
-  // replaces this request's own.
+  // Requires a prepared prompt. A pending cold open or a group's lookup, when
+  // supplied, replaces this request's own; control settles and releases
+  // whatever this request does not adopt on every exit, since control alone
+  // owns Session objects.
   void generate(
       const Request& request,
       std::future<std::optional<batching::Session>> cold_open = {},
-      PrefixLookupResult* looked_up = nullptr) {
+      std::optional<PrefixLookupResult> looked_up = std::nullopt) {
     struct SettleOpen {
       std::future<std::optional<batching::Session>>& open;
       ~SettleOpen() {
-        if (!open.valid()) {
-          return;
-        }
-#if ET_HAS_EXCEPTIONS
-        try {
-#endif
-          open.get();
-#if ET_HAS_EXCEPTIONS
-        } catch (...) {
-          // A broken open has no session to close.
-        }
-#endif
+        Impl::settle_open(open);
       }
     } settle{cold_open};
     const SessionKey key = request->request.key

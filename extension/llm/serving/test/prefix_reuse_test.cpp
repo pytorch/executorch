@@ -3603,6 +3603,55 @@ TEST_F(PrefixGroupTest, GroupBudgetCountsOnlyPositionsLeftToPrefill) {
   }
 }
 
+TEST_F(PrefixGroupTest, FailedPreparationEndsACacheOnGroup) {
+  start();
+  const auto cached = seed({1, 2, 3, 4});
+  auto parked = park_control();
+  auto handles = queue({{1, 2, 3, 4, 5}});
+  GenerationOptions options;
+  options.max_new_tokens = 1;
+  const auto deferred = [&](PromptPreparation prepare) {
+    burst.push_back(output());
+    auto result = runtime->generate(
+        std::nullopt,
+        std::move(prepare),
+        options,
+        [event = burst.back()](GenerationEvent update) {
+          event->accept(std::move(update));
+        });
+    EXPECT_TRUE(std::holds_alternative<RequestHandle>(result));
+    handles.push_back(std::get<RequestHandle>(std::move(result)));
+  };
+  deferred([](const PromptPreparationContext&) -> PromptPreparationResult {
+    return ServingError{ErrorCode::InvalidArgument, "unpreparable"};
+  });
+  last.hold();
+  deferred([this](const PromptPreparationContext&) -> PromptPreparationResult {
+    last.enter();
+    return PromptInput{{make_token_input({1, 2, 3, 4, 6})}};
+  });
+  control.release();
+  // The failed preparation ended the first group, so its hit ran while the
+  // next member is still being prepared.
+  ASSERT_TRUE(last.wait());
+  ASSERT_TRUE(wait_until([&] {
+    const auto feeds = executor.feeds();
+    return std::any_of(feeds.begin(), feeds.end(), [](const auto& feed) {
+      return feed.tokens == std::vector<Token>{5};
+    });
+  }));
+  EXPECT_EQ(executor.clone_attempts(cached), 1);
+  last.release();
+  finish(parked, handles);
+  ASSERT_TRUE(handles[1].error());
+  EXPECT_EQ(handles[1].error()->code, ErrorCode::InvalidArgument);
+  for (std::size_t i : {0u, 2u}) {
+    EXPECT_FALSE(handles[i].error());
+    ASSERT_TRUE(burst[i]->terminal);
+    EXPECT_EQ(burst[i]->terminal->stats.reused_prompt_tokens, 4u);
+  }
+}
+
 TEST_F(PrefixGroupTest, MixedGroupKeepsEachMembersOutcome) {
   config.prefix_cache_capacity = 1;
   freeze_full_cache();
@@ -3612,7 +3661,14 @@ TEST_F(PrefixGroupTest, MixedGroupKeepsEachMembersOutcome) {
   auto handles =
       queue({{1, 2, 3, 4, 5}, {9, 9, 9}, {1, 2, 3, 4, 6}, {1, 2, 3, 4, 7}});
   handles[2].cancel();
+  executor.executing.hold();
   control.release();
+  // The first member's prefill is held, yet both hits have cloned and the
+  // miss has opened: the group obtained every session before submitting.
+  ASSERT_TRUE(executor.executing.wait());
+  EXPECT_EQ(executor.clone_attempts(cached), 2);
+  EXPECT_EQ(executor.open_count(), 4); // Snapshot, two clones and the miss.
+  executor.executing.release();
   finish(parked, handles);
   ASSERT_TRUE(burst[0]->terminal && burst[1]->terminal && burst[3]->terminal);
   EXPECT_EQ(burst[0]->terminal->stats.reused_prompt_tokens, 4u);
@@ -3640,7 +3696,16 @@ TEST_F(PrefixGroupTest, RefusedCloneFallsBackOnlyForItsMember) {
   executor.rejected_clone_source = longer;
   auto parked = park_control();
   auto handles = queue({{1, 2, 3, 4, 9}, {7, 8, 9, 1}, {1, 2, 3, 4, 5, 6}});
+  executor.executing.hold();
   control.release();
+  // Before the first member prefills, the refused longest prefix was tried
+  // once by each member that wanted it, and each retried the shorter snapshot
+  // in a later wave. Seeding the longer prompt also cloned the shorter one.
+  ASSERT_TRUE(executor.executing.wait());
+  EXPECT_EQ(executor.clone_attempts(longer), 2);
+  EXPECT_EQ(executor.clone_attempts(shorter), 3);
+  EXPECT_EQ(executor.clone_attempts(other), 1);
+  executor.executing.release();
   finish(parked, handles);
   for (std::size_t i = 0; i < handles.size(); ++i) {
     SCOPED_TRACE(i);
@@ -3649,25 +3714,56 @@ TEST_F(PrefixGroupTest, RefusedCloneFallsBackOnlyForItsMember) {
     EXPECT_EQ(burst[i]->terminal->finish_reason, FinishReason::Length);
     EXPECT_EQ(burst[i]->terminal->stats.reused_prompt_tokens, 3u);
   }
-  // The refused longest prefix was tried once by each member that wanted it;
-  // each retried the shorter snapshot in a later wave. Seeding the longer
-  // prompt also cloned the shorter one.
-  EXPECT_EQ(executor.clone_attempts(longer), 2);
-  EXPECT_EQ(executor.clone_attempts(shorter), 3);
-  EXPECT_EQ(executor.clone_attempts(other), 1);
 }
 
-TEST_F(PrefixGroupTest, ShutdownDuringTheCloneWaveSettlesEveryMember) {
+TEST_F(PrefixGroupTest, RefusedCreditedClonesKeepTheGroupWithinItsCap) {
+  // An 8-token step prefill budget groups 4 positions. Each member is credited
+  // with the 8-token snapshot and sized at one position, but that clone is
+  // refused and each falls back to the 3-token one, leaving 6 positions to
+  // prefill: only the first still fits, and the others are requeued.
+  config.prefix_cache_capacity = 2;
+  freeze_full_cache();
+  start(true, batching::DecodeFirstScheduler::create(12, 4, 8));
+  const auto shorter = seed({1, 2, 3});
+  const auto longer = seed({1, 2, 3, 4, 5, 6, 7, 8});
+  ASSERT_TRUE(wait_until([&] { return executor.open_count() == 2; }));
+  executor.rejected_clone_source = longer;
+  auto parked = park_control();
+  auto handles = queue(
+      {{1, 2, 3, 4, 5, 6, 7, 8, 9},
+       {1, 2, 3, 4, 5, 6, 7, 8, 10},
+       {1, 2, 3, 4, 5, 6, 7, 8, 11}});
+  executor.executing.hold();
+  control.release();
+  // While the first member's prefill is held, only its clone is resident: the
+  // others' fallback clones were released before it was submitted.
+  ASSERT_TRUE(executor.executing.wait());
+  EXPECT_EQ(executor.open_count(), 3);
+  executor.executing.release();
+  finish(parked, handles);
+  for (std::size_t i = 0; i < handles.size(); ++i) {
+    SCOPED_TRACE(i);
+    EXPECT_FALSE(handles[i].error());
+    ASSERT_TRUE(burst[i]->terminal);
+    EXPECT_EQ(burst[i]->terminal->finish_reason, FinishReason::Length);
+    EXPECT_EQ(burst[i]->terminal->stats.reused_prompt_tokens, 3u);
+  }
+  EXPECT_GE(executor.clone_attempts(shorter), 4);
+}
+
+TEST_F(PrefixGroupTest, ShutdownWithALaunchedGroupSettlesEveryMember) {
   start();
-  seed({1, 2, 3, 4});
+  const auto cached = seed({1, 2, 3, 4});
   auto parked = park_control();
   auto handles = queue({{1, 2, 3, 4, 5}, {1, 2, 3, 4, 6}, {1, 2, 3, 4, 7}});
-  executor.cloning.hold();
+  executor.executing.hold();
   control.release();
-  ASSERT_TRUE(executor.cloning.wait());
+  // Every member cloned in the group before the first prefill, which is held.
+  ASSERT_TRUE(executor.executing.wait());
+  EXPECT_EQ(executor.clone_attempts(cached), 3);
   std::thread stopper([&] { runtime->shutdown(); });
   ASSERT_TRUE(wait_until([&] { return !runtime->info().ready; }));
-  executor.cloning.release();
+  executor.executing.release();
   stopper.join();
   parked.wait();
   for (std::size_t i = 0; i < handles.size(); ++i) {
@@ -3675,7 +3771,9 @@ TEST_F(PrefixGroupTest, ShutdownDuringTheCloneWaveSettlesEveryMember) {
     ASSERT_TRUE(handles[i].done());
     ASSERT_TRUE(burst[i]->terminal);
     EXPECT_EQ(burst[i]->terminals, 1u);
-    EXPECT_EQ(burst[i]->terminal->finish_reason, FinishReason::Cancelled);
+    // The held step may still complete a one-token generation.
+    EXPECT_NE(burst[i]->terminal->finish_reason, FinishReason::Failed);
+    EXPECT_FALSE(burst[i]->terminal->error);
   }
   EXPECT_EQ(executor.open_count(), 0);
 }
