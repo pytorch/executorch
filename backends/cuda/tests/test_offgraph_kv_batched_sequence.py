@@ -20,21 +20,31 @@ import unittest
 import torch
 import torch.nn.functional as F
 
+from executorch.backends.cuda.cuda_backend import CudaBackend
+from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 from executorch.backends.cuda.passes.lower_offgraph_kv import (
+    batched_sequence_max_segments,
     batched_sequence_step,
     CheckOffGraphKVStepWidthPass,
     LowerOffGraphKVPass,
+    OFFGRAPH_KV_COMPILE_SPEC,
     OFFGRAPH_KV_FQN_PREFIX,
     OFFGRAPH_KV_SEQ_COLS_FQN,
     OFFGRAPH_KV_SEQ_INFO_FQN,
+    OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC,
     parse_offgraph_kv_manifest,
     ring_physical_capacity,
+)
+from executorch.backends.cuda.tests.host_memory_test_utils import (
+    IS_LINUX,
+    PeakResidentBytes,
 )
 
 from executorch.examples.models.muse_glimmer.model.dflash_model import (
     build_dflash_swa_mask,
 )
-from executorch.exir import EdgeCompileConfig, to_edge
+from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.extension.llm.cache.reference_cache import (
     BatchedSequenceReferenceCache,
@@ -529,6 +539,96 @@ class LowerBatchedSequencePassTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             CheckOffGraphKVStepWidthPass(b"0:0", layout="paged")
         CheckOffGraphKVStepWidthPass(b"0:0", layout="batched-sequence")
+
+
+class _FlatLayer(torch.nn.Module):
+    def forward(self, q, k, v, position):
+        return torch.ops.kvcache.update_and_attend(
+            q, k, v, position, 0, SCALE, torch.bfloat16
+        )
+
+
+@unittest.skipUnless(torch.cuda.is_available(), "CUDA required")
+@unittest.skipUnless(IS_LINUX, "reads /proc/self/statm")
+class BatchedSequenceCompileHostMemoryTest(unittest.TestCase):
+    """Compiling a method must not hold its declared KV storage on the host.
+
+    The storage is declared at the maximum capacity of every column, which
+    for production geometry is far beyond what any step touches, and the
+    runtime supplies it. AOTI keeps an initial value of every lifted buffer
+    for the whole compile; dense zeros there cost the whole declared pool.
+    """
+
+    CAPACITY = 1 << 16
+    MAX_SEQS = 63
+    MAX_WRITE = 8
+
+    def test_declared_storage_stays_off_the_host(self) -> None:
+        manifest = json.dumps(
+            {
+                "version": 1,
+                "layout": "batched-sequence",
+                "maximum_capacity": self.CAPACITY,
+                "max_write": self.MAX_WRITE,
+                "max_seqs": self.MAX_SEQS,
+                "max_segments": batched_sequence_max_segments(self.MAX_SEQS),
+                "layers": [{"layer_id": 0, "policy": "flat"}],
+            }
+        ).encode()
+        q, k, v, position = _inputs(0, self.MAX_WRITE)
+        t = torch.export.Dim("t", min=2, max=self.MAX_WRITE)
+        program = torch.export.export(
+            _FlatLayer(),
+            (q, k, v, position.reshape(-1, 1)),
+            dynamic_shapes=({2: t}, {2: t}, {2: t}, {0: t}),
+            strict=False,
+        )
+        # K and V of one layer: 1 GiB each. Dense zeros would grow the host by
+        # the whole 2 GiB; the limit leaves the compile itself half of that.
+        declared = 2 * self.CAPACITY * (self.MAX_SEQS + 1) * k[0, :, 0].numel() * 2
+        limit = declared // 2
+        # Autotuning a kernel that writes the storage protects it with a GPU
+        # clone, or with a pinned host copy when the clone would raise the
+        # GPU high-water mark. A model's weights raise that mark first; so
+        # does this, which keeps the measurement to the compile's own copies.
+        # Releasing the block keeps the mark but not the reservation.
+        torch.empty(4 * declared, dtype=torch.uint8, device="cuda")
+        torch.cuda.empty_cache()
+        import torch._inductor.config as inductor_config
+
+        with inductor_config.patch(
+            {"aot_inductor.precompile_headers": False}
+        ), PeakResidentBytes() as resident:
+            lowered = to_edge_transform_and_lower(
+                {"forward": program},
+                partitioner={
+                    "forward": [
+                        CudaPartitioner(
+                            [
+                                CudaBackend.generate_method_name_compile_spec(
+                                    "forward"
+                                ),
+                                CompileSpec(OFFGRAPH_KV_COMPILE_SPEC, manifest),
+                                CompileSpec(
+                                    OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC, b"3:0"
+                                ),
+                                CompileSpec("low_memory_mode", b"ON"),
+                            ]
+                        )
+                    ]
+                },
+                compile_config=EdgeCompileConfig(_check_ir_validity=False),
+            )
+        graph = lowered.exported_program("forward").graph
+        self.assertTrue(
+            any("executorch_call_delegate" in str(n.target) for n in graph.nodes)
+        )
+        self.assertLess(
+            resident.growth,
+            limit,
+            f"compiling grew the host by {resident.growth >> 20} MiB, limit "
+            f"{limit >> 20} MiB, for {declared >> 20} MiB of declared KV storage",
+        )
 
 
 if __name__ == "__main__":

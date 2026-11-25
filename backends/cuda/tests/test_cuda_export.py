@@ -20,6 +20,10 @@ from executorch.backends.aoti.aoti_backend import AotiBackend
 from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 from executorch.backends.cuda.passes.remove_assert_async import RemoveAssertAsyncPass
+from executorch.backends.cuda.tests.host_memory_test_utils import (
+    IS_LINUX,
+    resident_bytes,
+)
 from executorch.backends.cuda.tests.routing_test_utils import (
     static_routing_compile_specs,
 )
@@ -126,6 +130,31 @@ class TestCudaBackendCompileOptions(unittest.TestCase):
 
         self.assertEqual(result, "run-result")
         self.assertEqual(base.untyped_storage().nbytes(), 0)
+
+    @unittest.skipUnless(IS_LINUX, "reads /proc/self/statm")
+    def test_low_memory_kv_zeros_take_host_memory_only_once_written(self):
+        """Re-synthesized KV zeros keep their full logical storage size, but
+        an unwritten page takes no host memory."""
+        from executorch.backends.cuda.cuda_backend import _full_zeros_preserving_strides
+
+        # A sequence-major off-graph KV pool: [1, rows * columns, heads, dim].
+        declared = torch.empty_strided(
+            (1, 1 << 20, 4, 128), (1 << 29, 512, 128, 1), dtype=torch.bfloat16
+        )
+        declared.untyped_storage().resize_(0)
+        nbytes = (1 << 29) * declared.element_size()
+        before = resident_bytes()
+        zeros = _full_zeros_preserving_strides(declared, "cpu")
+        self.assertLess(resident_bytes() - before, nbytes // 8)
+        self.assertEqual(zeros.shape, declared.shape)
+        self.assertEqual(zeros.stride(), declared.stride())
+        self.assertEqual(zeros.dtype, torch.bfloat16)
+        self.assertEqual(zeros.device.type, "cpu")
+        self.assertEqual(zeros.untyped_storage().nbytes(), nbytes)
+        self.assertEqual(torch.count_nonzero(zeros[0, :1024]), 0)
+        self.assertEqual(torch.count_nonzero(zeros[0, -1024:]), 0)
+        zeros[0, :2].fill_(1)
+        self.assertEqual(torch.count_nonzero(zeros), 2 * 4 * 128)
 
     def test_emulate_precision_casts_compile_spec(self):
         options = CudaBackend.get_aoti_compile_options(

@@ -26,6 +26,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/...",
         ],
         deps = [
+            ":host_memory_test_utils",
             ":routing_test_utils",
             "//caffe2:torch",
             "//executorch/backends/cuda:cuda_backend",
@@ -262,6 +263,16 @@ def define_common_targets(is_fbcode = False):
             "//executorch/exir:lib",
             "//executorch/exir/backend:backend_details",
             "//executorch/exir/backend:compile_spec_schema",
+        ],
+    )
+
+    runtime.python_library(
+        name = "host_memory_test_utils",
+        srcs = [
+            "host_memory_test_utils.py",
+        ],
+        visibility = [
+            "//executorch/...",
         ],
     )
 
@@ -548,6 +559,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/...",
         ],
         deps = [
+            ":host_memory_test_utils",
             "//caffe2:torch",
             "//executorch/backends/cuda:cuda_backend",
             "//executorch/backends/cuda:cuda_partitioner",

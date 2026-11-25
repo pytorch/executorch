@@ -11,6 +11,7 @@ import dataclasses
 import functools
 import logging
 import math
+import mmap
 import os
 import shutil
 import sys
@@ -491,17 +492,49 @@ def _pin_triton_libdevice(emulate_precision_casts: bool) -> None:
         set_path()
 
 
+def _lazy_cpu_zeros(numel: int, dtype: torch.dtype) -> torch.Tensor:
+    """A 1-D CPU tensor of zeros whose pages take host memory only once written.
+
+    An anonymous private mapping reads as zeros, and the kernel backs a page
+    only on its first write. ``torch.zeros`` instead writes every byte up front.
+    """
+    if not hasattr(mmap, "MAP_PRIVATE"):
+        # The lazy mapping is POSIX-only for now: the Windows mapping path is
+        # untested, so Windows keeps dense zeros.
+        return torch.zeros(numel, dtype=dtype)
+    # Private, so a read maps the shared zero page rather than allocating one.
+    # MAP_NORESERVE (exposed by newer Pythons) skips the swap reservation;
+    # under vm.overcommit_memory=2 the kernel ignores it and still accounts the
+    # whole mapping, as it did the dense zeros before.
+    flags = mmap.MAP_PRIVATE | mmap.MAP_ANONYMOUS | getattr(mmap, "MAP_NORESERVE", 0)
+    mapping = mmap.mmap(-1, numel * dtype.itemsize, flags=flags)
+    # The tensor keeps the mapping alive and unmaps it when freed.
+    return torch.frombuffer(mapping, dtype=dtype)
+
+
 def _full_zeros_preserving_strides(x: torch.Tensor, device) -> torch.Tensor:
     """Allocate a zero-filled tensor matching ``x``'s size/stride/dtype on ``device``.
 
     Used to re-synthesize KV-cache buffers whose storage was freed (``resize_(0)``)
     during the low-memory device move. KV content is all zeros, so this exactly
     reproduces the buffer for both the lifted graph value and serialization.
+
+    On the host the zeros are lazily committed. AOTI keeps one such initial
+    value per lifted buffer for the whole compile but only reads its metadata,
+    and the weight collector never writes runtime-owned off-graph KV storage.
+    Those are declared at their maximum capacity, so dense zeros cost a
+    method's whole maximal KV cache in host memory: for the batched-sequence
+    layout, K and V of every layer at ``capacity * (max_seqs + 1)`` rows of
+    ``n_kv_heads * head_dim`` elements, where a flat layer's capacity is the
+    full context.
     """
     needed = 1
     for size, stride in zip(x.size(), x.stride()):
         needed += (size - 1) * stride
-    buf = torch.zeros(int(needed), dtype=x.dtype, device=device)
+    if torch.device(device).type == "cpu":
+        buf = _lazy_cpu_zeros(int(needed), x.dtype)
+    else:
+        buf = torch.zeros(int(needed), dtype=x.dtype, device=device)
     return torch.as_strided(buf, x.size(), x.stride())
 
 
