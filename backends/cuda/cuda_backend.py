@@ -36,6 +36,9 @@ from executorch.backends.cuda.cuda_weight_collector import (
     CudaWeightCollector,
     trim_host_memory,
 )
+from executorch.backends.cuda.passes.lower_helion_to_triton import (
+    LowerHelionToTritonPass,
+)
 from executorch.backends.cuda.passes.lower_offgraph_kv import (
     CheckOffGraphKVStepWidthPass,
     LowerOffGraphKVPass,
@@ -1510,11 +1513,15 @@ class CudaBackend(AotiBackend, BackendDetails):
         """
         Return CUDA-specific passes, ending with ReplaceEdgeOpWithTritonOpPass
         and, with measured routing on, the passes that measure the
-        implementations of the calls several can run and apply the choice.
+        implementations of the calls several can run and apply the choice,
+        followed by LowerHelionToTritonPass.
 
         The replacement pass uses Triton kernels for the calls they support and
         leaves other calls to the regular lowering. The triton_kernel_mode
         compile spec is deprecated: "OFF" is treated as "ON".
+
+        LowerHelionToTritonPass runs last: it emits ATen and Triton nodes for
+        AOTI rather than Edge IR.
         """
         for spec in compile_specs:
             if spec.key == "triton_kernel_mode":
@@ -1568,6 +1575,7 @@ class CudaBackend(AotiBackend, BackendDetails):
                 method_name = "method"
             passes.append(MeasureChoicesPass(cls, compile_specs, config))
             passes.append(ApplyChoicesPass(method_name, config))
+        passes.append(LowerHelionToTritonPass())
         return passes
 
     @classmethod
