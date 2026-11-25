@@ -41,6 +41,8 @@ from torch.library import triton_op, wrap_triton
 _SPLITK_MAX_QUERY = 4
 _SPLITK_ROWS_PER_SPLIT = 256
 _SPLITK_MAX_SPLITS = 16
+# Rows per K/V tile of the decode kernel; its in-tile offsets are int32.
+_DECODE_BLOCK_N = 128
 
 
 @triton.jit
@@ -251,8 +253,10 @@ def _sdpa_varlen_decode_kernel(  # noqa: C901
         q_len = tl.where(take, seg_q_len, q_len)
         col = tl.where(take, tl.load(Info_ptr + seg * 5 + 2), col)
         kv_end = tl.where(take, tl.load(Info_ptr + seg * 5 + 3), kv_end)
-    # One row's pitch fits int32; whole-storage offsets may not, so the row
-    # pointers below advance in 64 bits and only in-tile offsets use int32.
+    # Offsets within a BLOCK_N-row tile, and a tile's advance, use int32: they
+    # stay below BLOCK_N * columns * H_kv * D, which sdpa_varlen bounds by
+    # 2**31 at the declared width. Row pointers advance in 64 bits, so offsets
+    # across the whole storage may exceed int32.
     stride_kr = columns * stride_kc
     stride_vr = columns * stride_vc
 
@@ -493,6 +497,14 @@ def sdpa_varlen(  # noqa: C901
     # range, so a dynamic step takes the generic path, valid for any T.
     static = isinstance(T, int)
     use_decode = static and T <= _SPLITK_MAX_QUERY
+    # The runtime pitch never exceeds the declared columns, so bounding a
+    # decode tile at the declared width checks it once, when traced or lowered.
+    if use_decode and _DECODE_BLOCK_N * key.shape[1] * key.stride(1) >= 2**31:
+        raise ValueError(
+            f"sdpa_varlen decode needs {_DECODE_BLOCK_N} * columns * H_kv * D "
+            f"< 2**31 for its int32 tile offsets; got columns={key.shape[1]}, "
+            f"H_kv={Hkv}, D={D}"
+        )
     block_m = 16 if static and T * groups <= 16 else 64
     num_qb = (T * groups + block_m - 1) // block_m
     generic_num_stages = 3 if static and T <= 64 else 2
@@ -537,7 +549,7 @@ def sdpa_varlen(  # noqa: C901
             SYMMETRIC_WINDOW=symmetric_window,
             WINDOW=window,
             RING=ring,
-            BLOCK_N=128,
+            BLOCK_N=_DECODE_BLOCK_N,
             HEAD_DIM=D,
             NUM_GROUPS=groups,
             BLOCK_G=triton.next_power_of_2(groups),

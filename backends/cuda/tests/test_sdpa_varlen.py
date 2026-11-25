@@ -572,6 +572,40 @@ class SdpaVarlenTest(unittest.TestCase):
             torch.testing.assert_close(got.float(), want, atol=2e-2, rtol=2e-2)
         self.assertEqual(frames["unique_graphs"] - before, 1)
 
+    def test_offsets_past_int32(self):
+        # A window over the last rows of a storage with more than 2**31
+        # elements: every K/V offset read exceeds int32. K and V share the
+        # storage, and only the rows the window reads are initialized.
+        hq, hkv, d, cols, window = 8, 1, 128, 2, 48
+        rows = 2**31 // (cols * hkv * d) + 1024
+        need = rows * cols * hkv * d * 2
+        free, _ = torch.cuda.mem_get_info()
+        if free < need + 2**30:
+            self.skipTest(
+                f"needs {need / 2**30:.1f} GiB of free device memory for a "
+                f"storage past 2**31 elements; {free / 2**30:.1f} GiB free"
+            )
+        store = torch.empty(rows, cols, hkv, d, device="cuda", dtype=torch.bfloat16)
+        try:
+            torch.manual_seed(0)
+            tail = window + 16
+            store[-tail:].normal_()
+            # t=1 takes the decode kernel, t=8 the generic one.
+            for t in (1, 8):
+                with self.subTest(t=t):
+                    q = torch.randn(1, hq, t, d, device="cuda", dtype=torch.bfloat16)
+                    info = _info([(0, t, 1, rows)], cols, "cuda")
+                    got = sdpa_varlen(q, store, store, info, d**-0.5, True, window)
+                    # The same window over the tail alone, at shifted positions.
+                    small = store[-tail:]
+                    want = _reference(
+                        q, small, small, [(0, t, 1, tail)], d**-0.5, True, window, 0
+                    )
+                    torch.testing.assert_close(got.float(), want, atol=2e-2, rtol=2e-2)
+        finally:
+            del store
+            torch.cuda.empty_cache()
+
     def test_rejects_unsupported_layouts(self):
         dev = "cuda"
         q = torch.randn(1, 8, 1, 64, device=dev, dtype=torch.bfloat16)
@@ -599,9 +633,20 @@ class SdpaVarlenTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "head dimension must be a power"):
             sdpa_varlen(q, k, v, info, 96**-0.5)
 
+        # A decode tile of 128 rows at the declared width must fit int32
+        # offsets; only the column and head strides matter, so one row will do.
+        q = torch.randn(1, 2, 1, 128, device=dev, dtype=torch.bfloat16)
+        columns = 2**31 // (128 * 2 * 128)
+        wide = torch.zeros(1, columns, 2, 128, device=dev, dtype=torch.bfloat16)
+        info = torch.tensor([[0, 1, 0, 1, 2]], dtype=torch.int32, device=dev)
+        with self.assertRaisesRegex(ValueError, r"< 2\*\*31 for its int32 tile"):
+            sdpa_varlen(q, wide, wide, info, 0.125)
+        del wide
+
         q = torch.randn(1, 8, 1, 64, device=dev, dtype=torch.bfloat16)
         k = torch.randn(128, 2, 2, 64, device=dev, dtype=torch.bfloat16)
         v = torch.randn_like(k)
+        info = torch.tensor([[0, 1, 0, 100, 2]], dtype=torch.int32, device=dev)
         with self.assertRaisesRegex(ValueError, "context_window requires non-causal"):
             sdpa_varlen(q, k, v, info, 0.125, context_window=True)
         with self.assertRaisesRegex(ValueError, "symmetric_window requires"):
