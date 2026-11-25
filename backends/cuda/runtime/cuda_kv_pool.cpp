@@ -53,10 +53,10 @@ auto shape_string(const std::vector<int64_t>& sizes) {
 // Calls allocate(widest) and, while that runs out of memory, binary-searches
 // for the widest width in [narrowest, widest) whose allocation fits, in a
 // logarithmic number of attempts. allocate(width) is all or nothing, and
-// release() frees what a successful allocate() holds. A fit found below a
-// failed width is freed before a wider probe and allocated again when nothing
-// wider fits, so a wider probe is not tried alongside it; the freed blocks may
-// stay cached in the memory pool meanwhile.
+// release() frees what a successful allocate() holds; both must have the
+// memory they freed back before returning, so the next probe can use it. A fit
+// found below a failed width is released before a wider probe, so the two
+// never compete, and allocated again when nothing wider fits.
 template <typename Allocate, typename Release>
 ::executorch::runtime::Result<int>
 allocate_widest(int widest, int narrowest, Allocate allocate, Release release) {
@@ -538,11 +538,14 @@ Error CudaKVPool::allocate_initial(
   };
   std::vector<Allocation> allocated;
   allocated.reserve(layers_.size());
+  // Waits for the frees, so the storage pool hands that memory back before the
+  // next probe.
   auto roll_back = [&]() {
     for (size_t index = 0; index < allocated.size(); ++index) {
       discard(layers_[index], allocated[index], stream);
     }
     allocated.clear();
+    (void)cudaStreamSynchronize(stream);
   };
   auto allocate = [&](int width) -> Error {
     for (const Layer& layer : layers_) {
@@ -558,22 +561,18 @@ Error CudaKVPool::allocate_initial(
       }
       allocated.push_back(allocation);
     }
-    const Error side_error = allocate_side_buffers(stream);
-    if (side_error != Error::Ok) {
-      roll_back();
-    }
-    return side_error;
+    return Error::Ok;
   };
-  auto release_all = [&]() {
-    roll_back();
+  // The side buffers do not depend on the width, so the probes leave them be.
+  ET_CHECK_OK_OR_RETURN_ERROR(allocate_side_buffers(stream));
+  const auto width = allocate_widest(columns_, narrowest, allocate, roll_back);
+  if (!width.ok()) {
     for (void* buffer : side_buffers_) {
       release(buffer, stream);
     }
     side_buffers_.clear();
-  };
-  const auto width =
-      allocate_widest(columns_, narrowest, allocate, release_all);
-  ET_CHECK_OK_OR_RETURN_ERROR(width.error());
+    return width.error();
+  }
   allocations_ = std::move(allocated);
   rows_ = rows_at(width.get());
   if (width.get() != columns_) {
@@ -818,16 +817,16 @@ Error CudaKVPool::resize_columns(
   const int old_columns = columns_;
   std::vector<Allocation> replacements;
   replacements.reserve(layers_.size());
+  // Waits for the frees, so the storage pool hands that memory back before the
+  // next probe.
   auto release_replacements = [&]() {
     for (size_t index = 0; index < replacements.size(); ++index) {
       discard(layers_[index], replacements[index], stream);
     }
     replacements.clear();
-  };
-  auto roll_back = [&]() {
-    release_replacements();
     (void)cudaStreamSynchronize(stream);
   };
+  auto roll_back = [&]() { release_replacements(); };
   auto allocate = [&](int width) -> Error {
     for (size_t index = 0; index < layers_.size(); ++index) {
       const int64_t logical_rows = allocations_[index].rows / old_columns;

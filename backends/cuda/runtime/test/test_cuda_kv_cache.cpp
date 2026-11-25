@@ -1400,7 +1400,7 @@ TEST_F(CudaKVPoolTest, ProgramMissingSideBuffersIsRejected) {
 
 TEST_F(CudaKVPoolTest, FailedSideBufferAllocationLeavesThePoolRetryable) {
   // A side buffer too large for any device fails the first allocation, which
-  // must release the layers it already allocated.
+  // must leave nothing allocated.
   cu::CudaKVPool pool(
       {{kHeads, kDim, kDeclaredRows, /*growable=*/true}},
       {{"__et_offgraph_kv_huge",
