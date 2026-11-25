@@ -162,6 +162,21 @@ class CudaKVPool final {
     return column_resize_count_;
   }
 
+  // K/V storage comes from a memory pool this object owns, so trimming it
+  // returns only this cache's memory. Storage that growth, failed attempts and
+  // contraction free goes back to the driver at the next synchronization, or
+  // at trim_storage(), whichever is first. Without memory pools
+  // (ROCm, or a device lacking them) storage comes from the shared allocator,
+  // these report 0 and trim_storage() does nothing.
+  //
+  // Device memory the storage pool holds, live storage included, and the most
+  // it has held since the latest column resize began.
+  int64_t reserved_bytes() const;
+  int64_t peak_reserved_bytes() const;
+  // Returns the storage pool's unused memory to the driver. Only frees a
+  // fence has observed can be returned, so call after one.
+  void trim_storage();
+
  private:
   struct Allocation {
     void* k{nullptr};
@@ -193,6 +208,11 @@ class CudaKVPool final {
       cudaStream_t stream,
       Allocation& out);
   void release(void* ptr, cudaStream_t stream);
+  runtime::Result<void*> allocate_storage(size_t bytes, cudaStream_t stream);
+  void release_storage(void* ptr, cudaStream_t stream);
+#if !defined(EXECUTORCH_USE_HIP)
+  cudaMemPool_t storage_pool();
+#endif
   void discard(const Layer& layer, Allocation& allocation, cudaStream_t stream);
   runtime::Error
   allocate_initial(int64_t required_rows, int min_columns, cudaStream_t stream);
@@ -233,6 +253,11 @@ class CudaKVPool final {
   std::unordered_map<CudaDelegateHandle*, std::vector<Descriptor>> descriptors_;
   std::unordered_map<CudaDelegateHandle*, Bound> bound_;
   std::unordered_set<std::string> discovered_fqns_;
+
+#if !defined(EXECUTORCH_USE_HIP)
+  cudaMemPool_t storage_pool_{nullptr};
+  bool storage_pool_checked_{false};
+#endif
 };
 
 // The FQN the lowering pass gives a layer's K or V storage constant.

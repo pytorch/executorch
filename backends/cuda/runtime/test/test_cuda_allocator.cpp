@@ -819,13 +819,6 @@ TEST_F(CudaAllocatorPoolTest, ReleaseCachedMemoryReturnsPoolMemory) {
   ASSERT_GT(reserved_bytes(owned), 0u)
       << "the pool should hold the freed block for reuse";
 
-  const auto before_trim = reserved_bytes(owned);
-  constexpr size_t kKeepBytes = 4u << 20;
-  CudaAllocator::release_cached_memory(
-      0, kKeepBytes, /*trim_graph_memory=*/false);
-  EXPECT_GE(reserved_bytes(owned), kKeepBytes);
-  EXPECT_LE(reserved_bytes(owned), before_trim);
-
   CudaAllocator::release_cached_memory(0);
 
   EXPECT_EQ(reserved_bytes(owned), 0u)
@@ -928,15 +921,6 @@ TEST_F(CudaAllocatorPoolTest, ReleaseCachedMemoryReturnsGraphMemory) {
 
   ASSERT_EQ(cudaGraphExecDestroy(graph_exec), cudaSuccess);
   ASSERT_EQ(cudaGraphDestroy(graph), cudaSuccess);
-
-  const size_t before = reserved;
-  CudaAllocator::release_cached_memory(0, 0, /*trim_graph_memory=*/false);
-  ASSERT_EQ(
-      cudaDeviceGetGraphMemAttribute(
-          0, cudaGraphMemAttrReservedMemCurrent, &reserved),
-      cudaSuccess);
-  EXPECT_EQ(reserved, before)
-      << "pool-only maintenance keeps graph reservation";
 
   CudaAllocator::release_cached_memory(0);
 

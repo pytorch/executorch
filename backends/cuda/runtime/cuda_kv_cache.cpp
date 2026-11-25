@@ -203,6 +203,8 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
     metrics.flat_capacity = std::min<int64_t>(pool_.rows(), capacity());
     metrics.growth_count = pool_.growth_count();
     metrics.allocated_bytes = pool_.allocated_bytes();
+    metrics.reserved_bytes = pool_.reserved_bytes();
+    metrics.peak_reserved_bytes = pool_.peak_reserved_bytes();
     return metrics;
   }
 
@@ -565,6 +567,8 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
     metrics.flat_capacity = pool_.rows();
     metrics.growth_count = pool_.growth_count();
     metrics.allocated_bytes = pool_.allocated_bytes();
+    metrics.reserved_bytes = pool_.reserved_bytes();
+    metrics.peak_reserved_bytes = pool_.peak_reserved_bytes();
     return metrics;
   }
 
@@ -1263,6 +1267,8 @@ class CudaBatchedSequenceCache final : public cache::Cache,
         std::min<int64_t>(pool_.rows() / columns_, cfg_.capacity);
     metrics.growth_count = pool_.growth_count();
     metrics.allocated_bytes = pool_.allocated_bytes();
+    metrics.reserved_bytes = pool_.reserved_bytes();
+    metrics.peak_reserved_bytes = pool_.peak_reserved_bytes();
     metrics.physical_columns = columns_;
     metrics.declared_columns = max_seqs_ + 1;
     metrics.live_sequences = seqs_.size();
@@ -1305,52 +1311,27 @@ class CudaBatchedSequenceCache final : public cache::Cache,
     const auto device = CUDAGuard::create(pool_.device());
     ET_CHECK_OK_OR_RETURN_ERROR(device.error());
     const int old_columns = columns_;
-#if !defined(EXECUTORCH_USE_HIP)
-    const int64_t old_bytes = pool_.allocated_bytes();
-    uint64_t reserved_before = 0;
-    const auto allocator_pool =
-        ::executorch::extension::cuda::CudaAllocator::pool_for_device(
-            pool_.device());
-    const bool can_trim = pool_.allocated() && target < old_columns &&
-        allocator_pool != nullptr &&
-        cudaMemPoolGetAttribute(
-            allocator_pool,
-            cudaMemPoolAttrReservedMemCurrent,
-            &reserved_before) == cudaSuccess;
-#endif
     // Compaction keeps the requested spare columns or fails; it never falls
     // back to a narrower width.
     const Error resized = resize_columns(target, target, cudaStreamPerThread);
     last_activity_ = std::chrono::steady_clock::now();
-#if !defined(EXECUTORCH_USE_HIP)
-    if (resized != Error::Ok && can_trim) {
+    if (resized != Error::Ok) {
       // A failed resize has freed and fenced any replacement storage it built.
-      // Give that back without trimming below the reservation found on entry.
-      ::executorch::extension::cuda::CudaAllocator::release_cached_memory(
-          pool_.device(), reserved_before, /*trim_graph_memory=*/false);
+      pool_.trim_storage();
+      return resized;
     }
-#endif
-    ET_CHECK_OK_OR_RETURN_ERROR(resized);
     if (columns_ < old_columns && pool_.allocated()) {
       // The new mappings are committed. Fence old-buffer frees before giving
-      // unused reservation back; never roll back into the retired addresses.
+      // unused storage back; never roll back into the retired addresses.
       const Error fenced = pool_.synchronize(/*all_streams=*/false);
       if (fenced != Error::Ok) {
         poisoned_ = true;
         return fenced;
       }
-#if !defined(EXECUTORCH_USE_HIP)
-      if (can_trim) {
-        // Bound this device-wide trim by the KV storage just retired. Preserve
-        // the pre-existing unused reservation of other users of the shared
-        // pool.
-        const uint64_t released = old_bytes - pool_.allocated_bytes();
-        const uint64_t keep =
-            reserved_before > released ? reserved_before - released : 0;
-        ::executorch::extension::cuda::CudaAllocator::release_cached_memory(
-            pool_.device(), keep, /*trim_graph_memory=*/false);
-      }
-#endif
+      // The storage pool holds only this cache's K/V, so everything unused
+      // goes back, including whatever earlier growth and failed attempts freed
+      // and no synchronization has returned yet.
+      pool_.trim_storage();
     }
     return Error::Ok;
   }

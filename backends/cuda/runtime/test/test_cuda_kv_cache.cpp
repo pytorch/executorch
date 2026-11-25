@@ -2764,6 +2764,16 @@ namespace {
 
 class CudaRuntimeColumnCacheTest : public CudaKVCacheTest {
  protected:
+  // What the KV storage pool reserves for its live storage but does not use,
+  // once a synchronization has returned what it freed. Later KV allocations
+  // draw on that before the driver's free memory.
+  static size_t kv_pool_slack(const cu::CudaKVCache& kv) {
+    const auto metrics = kv.metrics();
+    return metrics.reserved_bytes > metrics.allocated_bytes
+        ? static_cast<size_t>(metrics.reserved_bytes - metrics.allocated_bytes)
+        : 0;
+  }
+
   static constexpr int kCapacity = 64;
   static constexpr int kMaxWrite = 32;
   static constexpr int kMaxSeqs = 21;
@@ -3524,37 +3534,45 @@ TEST_F(
   auto ptr = cu::make_cuda_batched_sequence_kv_cache(geometry, cfg);
   auto* control = ptr->as<cache::BatchControl>();
   auto* kv = ptr->as<cu::CudaKVCache>();
-  auto fake = container();
-  for (size_t index = 0; index < 4; ++index) {
-    declare(
-        fake,
-        fake.fqns[index],
-        slimc10::ScalarType::BFloat16,
-        {1, (index < 2 ? kRows : 47) * 17, 4, 64});
-  }
-  declare(fake, fake.fqns[4], slimc10::ScalarType::Long, {16});
-  declare(fake, fake.fqns[5], slimc10::ScalarType::Int, {32, 5});
+  auto layout = [&]() {
+    auto fake = container();
+    for (size_t index = 0; index < 4; ++index) {
+      declare(
+          fake,
+          fake.fqns[index],
+          slimc10::ScalarType::BFloat16,
+          {1, (index < 2 ? kRows : 47) * 17, 4, 64});
+    }
+    declare(fake, fake.fqns[4], slimc10::ScalarType::Long, {16});
+    declare(fake, fake.fqns[5], slimc10::ScalarType::Int, {32, 5});
+    return fake;
+  };
+  // A cache allocated directly at `count` + 1 columns: the KV pool's
+  // reservation for that layout alone, with nothing retired.
+  auto direct = [&](int count) {
+    auto fresh = cu::make_cuda_batched_sequence_kv_cache(geometry, cfg);
+    auto* fresh_control = fresh->as<cache::BatchControl>();
+    auto* fresh_kv = fresh->as<cu::CudaKVCache>();
+    auto fresh_fake = layout();
+    auto fresh_handle = make_handle(fresh_fake);
+    EXPECT_TRUE(fresh_kv->note_handle(&fresh_handle).get());
+    std::vector<int32_t> ids;
+    for (int i = 0; i < count; ++i) {
+      ids.push_back(fresh_control->seq_new().value_or(-1));
+    }
+    EXPECT_EQ(step(*fresh, fresh_handle, ids), Error::Ok);
+    EXPECT_EQ(cudaStreamSynchronize(cudaStreamPerThread), cudaSuccess);
+    const auto metrics = fresh_kv->metrics();
+    fresh_kv->forget_handle(&fresh_handle);
+    return metrics;
+  };
+  auto fake = layout();
   auto handle = make_handle(fake);
   ASSERT_TRUE(kv->note_handle(&handle).get());
-  std::vector<int32_t> owners;
-  for (int i = 0; i < 16; ++i) {
-    const auto owner = control->seq_new();
-    ASSERT_TRUE(owner.has_value());
-    owners.push_back(*owner);
-  }
-  ASSERT_EQ(step(*ptr, handle, owners), Error::Ok);
-  ASSERT_EQ(cudaStreamSynchronize(cudaStreamPerThread), cudaSuccess);
   int device = 0;
   ASSERT_EQ(cudaGetDevice(&device), cudaSuccess);
-  const auto pool =
-      ::executorch::extension::cuda::CudaAllocator::pool_for_device(device);
-  if (pool == nullptr) {
-    kv->forget_handle(&handle);
-    GTEST_SKIP() << "CUDA allocator pools are unavailable";
-  }
-  ::executorch::extension::cuda::CudaAllocator::release_cached_memory(device);
-  // Seed unused reservation from another user of the shared pool. An
-  // unbounded trim would reclaim it and must fail the reservation floor below.
+  // Unused reservation another user leaves in the shared allocator pool.
+  // Compaction must keep it.
   constexpr size_t kUnrelatedBytes = 32u << 20;
   auto unrelated = ::executorch::extension::cuda::CudaAllocator::allocate_async(
       kUnrelatedBytes, device, cudaStreamPerThread);
@@ -3562,34 +3580,61 @@ TEST_F(
   ::executorch::extension::cuda::CudaAllocator::deallocate_async(
       unrelated.get(), device, cudaStreamPerThread);
   ASSERT_EQ(cudaStreamSynchronize(cudaStreamPerThread), cudaSuccess);
-  uint64_t before = 0, after = 0;
-  ASSERT_EQ(
-      cudaMemPoolGetAttribute(pool, cudaMemPoolAttrReservedMemCurrent, &before),
-      cudaSuccess);
-  const auto live_before = kv->metrics().allocated_bytes;
+  const auto shared_pool =
+      ::executorch::extension::cuda::CudaAllocator::pool_for_device(device);
+  // Admissions after the first forward grow the columns 2->3->5->9->17; each
+  // growth frees the storage it replaces, which a synchronization returns.
+  std::vector<int32_t> owners;
+  for (int i = 0; i < 16; ++i) {
+    const auto owner = control->seq_new();
+    ASSERT_TRUE(owner.has_value());
+    owners.push_back(*owner);
+    if (i == 0) {
+      ASSERT_EQ(step(*ptr, handle, owners), Error::Ok);
+    }
+  }
+  ASSERT_EQ(kv->metrics().physical_columns, 17);
+  ASSERT_EQ(kv->metrics().column_resize_count, 4);
+  ASSERT_EQ(step(*ptr, handle, owners), Error::Ok);
+  ASSERT_EQ(cudaStreamSynchronize(cudaStreamPerThread), cudaSuccess);
+  const auto grown = kv->metrics();
+  if (grown.reserved_bytes == 0) {
+    kv->forget_handle(&handle);
+    GTEST_SKIP() << "CUDA memory pools are unavailable";
+  }
+  const auto widest = direct(16);
+  const auto narrowest = direct(1);
+  uint64_t shared_before = 0, shared_after = 0;
+  if (shared_pool != nullptr) {
+    ASSERT_EQ(
+        cudaMemPoolGetAttribute(
+            shared_pool, cudaMemPoolAttrReservedMemCurrent, &shared_before),
+        cudaSuccess);
+  }
+  // Beyond what the 17-column layout itself reserves, the KV pool may keep a
+  // block that live storage still partly uses, but not the layouts growth
+  // retired: the last of them alone held nine columns.
+  EXPECT_EQ(grown.allocated_bytes, widest.allocated_bytes);
+  const int64_t retired_bytes = 9 * (grown.allocated_bytes / 17);
+  EXPECT_LT(grown.reserved_bytes, widest.reserved_bytes + retired_bytes);
   for (size_t i = 0; i + 1 < owners.size(); ++i) {
     ASSERT_TRUE(control->seq_rm(owners[i]));
   }
   ASSERT_EQ(kv->compact_columns(0, std::chrono::milliseconds{0}), Error::Ok);
-  ASSERT_EQ(
-      cudaMemPoolGetAttribute(pool, cudaMemPoolAttrReservedMemCurrent, &after),
-      cudaSuccess);
-  EXPECT_LT(after, before);
-  EXPECT_GE(before - after, 8 * 1024 * 1024);
-  EXPECT_LT(kv->metrics().allocated_bytes, live_before);
-  EXPECT_GE(after, before - (live_before - kv->metrics().allocated_bytes));
-  EXPECT_GE(after, kUnrelatedBytes + kv->metrics().allocated_bytes);
-  ::executorch::extension::cuda::CudaAllocator::release_cached_memory(
-      device, 0, /*trim_graph_memory=*/false);
-  uint64_t unbounded = 0;
-  ASSERT_EQ(
-      cudaMemPoolGetAttribute(
-          pool, cudaMemPoolAttrReservedMemCurrent, &unbounded),
-      cudaSuccess);
-  EXPECT_LT(unbounded, after)
-      << "the bounded trim must retain more than a zero-floor trim";
-  EXPECT_LT(unbounded, kUnrelatedBytes + kv->metrics().allocated_bytes);
-  EXPECT_EQ(kv->metrics().physical_columns, 2);
+  const auto compacted = kv->metrics();
+  EXPECT_EQ(compacted.physical_columns, 2);
+  EXPECT_EQ(compacted.allocated_bytes, narrowest.allocated_bytes);
+  // Everything but the compacted layout went back to the driver.
+  EXPECT_GE(compacted.reserved_bytes, compacted.allocated_bytes);
+  EXPECT_LE(compacted.reserved_bytes, narrowest.reserved_bytes);
+  if (shared_pool != nullptr) {
+    ASSERT_EQ(
+        cudaMemPoolGetAttribute(
+            shared_pool, cudaMemPoolAttrReservedMemCurrent, &shared_after),
+        cudaSuccess);
+    EXPECT_EQ(shared_after, shared_before);
+    EXPECT_GE(shared_after, kUnrelatedBytes);
+  }
   EXPECT_EQ(control->pos(owners.back()), 1);
   ASSERT_EQ(step(*ptr, handle, {owners.back()}), Error::Ok);
   EXPECT_EQ(control->pos(owners.back()), 2);
@@ -3767,8 +3812,11 @@ TEST_F(CudaRuntimeColumnCacheTest, FailedAdmissionKeepsLiveOwnersUsable) {
   ASSERT_EQ(cudaGetDevice(&device), cudaSuccess);
   ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
   ::executorch::extension::cuda::CudaAllocator::release_cached_memory(device);
+  const size_t kv_slack = kv_pool_slack(*kv);
   size_t free_bytes = 0, total_bytes = 0;
   ASSERT_EQ(cudaMemGetInfo(&free_bytes, &total_bytes), cudaSuccess);
+  // KV allocations also draw on the KV pool's unused reservation.
+  free_bytes += kv_slack;
   constexpr size_t kMargin = 32 * 1024 * 1024;
   if (free_bytes <= 8 * kMargin) {
     kv->forget_handle(&handle);
@@ -3908,8 +3956,11 @@ TEST_F(CudaRuntimeColumnCacheTest, AdmissionRetriesAtRequiredWidth) {
     ASSERT_EQ(cudaGetDevice(&device), cudaSuccess);
     ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
     ::executorch::extension::cuda::CudaAllocator::release_cached_memory(device);
+    const size_t kv_slack = kv_pool_slack(*kv);
     size_t free_bytes = 0, total_bytes = 0;
     ASSERT_EQ(cudaMemGetInfo(&free_bytes, &total_bytes), cudaSuccess);
+    // KV allocations also draw on the KV pool's unused reservation.
+    free_bytes += kv_slack;
     if (free_bytes <= kMargin + 128 * 1024 * 1024) {
       kv->forget_handle(&handle);
       GTEST_SKIP() << "Insufficient free memory for controlled growth fallback";
@@ -4009,8 +4060,11 @@ TEST_F(CudaRuntimeColumnCacheTest, FirstAllocationFallsBackToTheWidestFit) {
     ASSERT_EQ(cudaGetDevice(&device), cudaSuccess);
     ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
     ::executorch::extension::cuda::CudaAllocator::release_cached_memory(device);
+    const size_t kv_slack = kv_pool_slack(*kv);
     size_t free_bytes = 0, total_bytes = 0;
     ASSERT_EQ(cudaMemGetInfo(&free_bytes, &total_bytes), cudaSuccess);
+    // KV allocations also draw on the KV pool's unused reservation.
+    free_bytes += kv_slack;
     if (free_bytes <= kMargin + 128 * 1024 * 1024) {
       kv->forget_handle(&handle);
       GTEST_SKIP() << "Insufficient free memory for controlled first fallback";
@@ -4243,12 +4297,12 @@ TEST_F(CudaRuntimeColumnCacheTest, FailedContractionPreservesSparseOwners) {
       ASSERT_TRUE(control->seq_rm(owners[index]));
     }
   }
-  int device = 0;
-  ASSERT_EQ(cudaGetDevice(&device), cudaSuccess);
   ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
-  ::executorch::extension::cuda::CudaAllocator::release_cached_memory(device);
+  const size_t kv_slack = kv_pool_slack(*kv);
   size_t free_bytes = 0, total_bytes = 0;
   ASSERT_EQ(cudaMemGetInfo(&free_bytes, &total_bytes), cudaSuccess);
+  // KV allocations also draw on the KV pool's unused reservation.
+  free_bytes += kv_slack;
   constexpr size_t kMargin = 32 * 1024 * 1024;
   if (free_bytes <= 8 * kMargin) {
     kv->forget_handle(&handle);
@@ -4269,32 +4323,23 @@ TEST_F(CudaRuntimeColumnCacheTest, FailedContractionPreservesSparseOwners) {
       GTEST_SKIP() << "Cannot reserve free memory for a controlled failure";
     }
     const auto before = kv->metrics();
-    const auto pool =
-        ::executorch::extension::cuda::CudaAllocator::pool_for_device(device);
-    uint64_t reserved_before = 0, reserved_after = 0;
-    if (pool != nullptr) {
-      EXPECT_EQ(
-          cudaMemPoolGetAttribute(
-              pool, cudaMemPoolAttrReservedMemCurrent, &reserved_before),
-          cudaSuccess);
-    }
     EXPECT_EQ(
         kv->compact_columns(2, std::chrono::milliseconds{0}),
         Error::MemoryAllocationFailed);
-    EXPECT_EQ(kv->metrics().physical_columns, 9);
-    EXPECT_EQ(kv->metrics().column_resize_count, before.column_resize_count);
-    EXPECT_EQ(kv->metrics().allocated_bytes, before.allocated_bytes);
-    if (pool != nullptr) {
-      // The failed attempt must not leave its replacement storage reserved.
-      EXPECT_EQ(
-          cudaMemPoolGetAttribute(
-              pool, cudaMemPoolAttrReservedMemCurrent, &reserved_after),
-          cudaSuccess);
-      EXPECT_LE(reserved_after, reserved_before);
+    const auto failed = kv->metrics();
+    EXPECT_EQ(failed.physical_columns, 9);
+    EXPECT_EQ(failed.column_resize_count, before.column_resize_count);
+    EXPECT_EQ(failed.allocated_bytes, before.allocated_bytes);
+    if (before.reserved_bytes != 0) {
+      // The attempt reserved replacement K before V failed, and the failure
+      // gave it back rather than leaving it in the KV pool.
+      EXPECT_GT(failed.peak_reserved_bytes, before.reserved_bytes);
+      EXPECT_LE(failed.reserved_bytes, before.reserved_bytes);
     }
     ASSERT_EQ(cudaFree(spare_reservation), cudaSuccess);
-    ::executorch::extension::cuda::CudaAllocator::release_cached_memory(device);
+    const size_t kv_slack_after = kv_pool_slack(*kv);
     ASSERT_EQ(cudaMemGetInfo(&free_bytes, &total_bytes), cudaSuccess);
+    free_bytes += kv_slack_after;
   }
   void* reservation = nullptr;
   if (cudaMalloc(&reservation, free_bytes - kMargin) != cudaSuccess) {

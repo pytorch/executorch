@@ -41,6 +41,11 @@ struct OffGraphKVMetrics {
   // Logical owners, including cloned prefix owners.
   int64_t live_sequences{0};
   int64_t column_resize_count{0};
+  // Device memory the KV storage pool holds, live K/V included, and the most it
+  // has held since the latest column resize began. 0 when storage comes from
+  // the shared allocator (no memory pools).
+  int64_t reserved_bytes{0};
+  int64_t peak_reserved_bytes{0};
 };
 
 // Backend face of the off-graph KV cache: what the CUDA delegate needs from
@@ -105,7 +110,9 @@ class CudaKVCache {
   }
 
   // Reclaim only columns without live owners, between forwards. Live owners
-  // retain their histories even if they have not run recently.
+  // retain their histories even if they have not run recently. A contraction
+  // returns all of the KV storage pool's unused memory to the driver; other
+  // users of the shared allocator keep their cached memory.
   // quiet_for is measured from mutations of the cache itself, including raw
   // owner operations. Zero explicitly bypasses the quiet interval.
   virtual runtime::Error compact_columns(

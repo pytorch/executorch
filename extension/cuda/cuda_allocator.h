@@ -133,8 +133,8 @@ class EXECUTORCH_EXTENSION_CUDA_API CudaAllocator final
    * All delegates using this allocator share its pools and retention threshold.
    * Trimming may release any delegate's cached blocks, making its next
    * allocation slower. Live allocations and the device default pool are
-   * unaffected. When trim_graph_memory is true, unused graph memory is trimmed
-   * device-wide only on devices this allocator has a pool entry for.
+   * unaffected. Unused graph memory is trimmed device-wide only on devices
+   * this allocator has a pool entry for.
    *
    * Call after device work has finished. This function does not synchronize;
    * only frees already observed by the driver can be released. The CUDA
@@ -150,16 +150,9 @@ class EXECUTORCH_EXTENSION_CUDA_API CudaAllocator final
    *     class: a delegate is often torn down from a thread that is not current
    *     on the device it ran on, so releasing only the current device would
    * leave that memory held.
-   * @param min_bytes_to_keep Minimum total reservation to retain in each
-   *     selected shared pool. A negative index applies this floor separately
-   *     to every selected device. Live allocations can exceed the floor.
-   * @param trim_graph_memory Whether to also trim device-wide unused CUDA
-   *     graph memory. Use false for routine pool-only maintenance.
    */
   static void release_cached_memory(
-      executorch::runtime::etensor::DeviceIndex index,
-      size_t min_bytes_to_keep = 0,
-      bool trim_graph_memory = true);
+      executorch::runtime::etensor::DeviceIndex index);
 
 #if !defined(EXECUTORCH_USE_HIP)
   /**
