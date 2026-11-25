@@ -495,9 +495,27 @@ serves at most floor(131071 / 16) = 8191 tokens per session. Giving each
 131072 tokens needs 16 x 131072 + 1 = 2097153 cells, about 104 GiB of K/V: more
 than an 80 GB GPU holds before weights. The pool grows on demand up to
 `--max-cells`, and also keeps one `--max-step-tokens` x `--max-cells` byte mask
-per distinct attention window. When a configuration does not fit, the worker's
-startup error shows this breakdown, the largest context that fits and the
+per distinct attention window. The cell layout also tracks at most 64 resident
+sessions, whatever its cells. Without an explicit context (the native worker's
+default `--max_session_tokens 0`), the worker logs the per-session context it
+resolved and this breakdown at startup. When a configuration does not fit, its
+startup error shows the breakdown, the largest context that fits and the
 `--max-cells` that would be needed.
+
+A DFlash export (`export_dflash`) adds a draft pool of `--draft-max-cells`
+(default `--max-cells`) cells, which also keeps every draft owner's block while
+drafting. It caps the context again, and the context must exceed the block:
+
+```text
+max --max-context = min(target limit above,
+                        floor((--draft-max-cells - 1 - --max-draft-owners x block)
+                              / resident sessions))
+```
+
+The draft's K/V adds `--draft-max-cells` x its own bytes per cell. With 4 owners
+of 16-token blocks and 16 resident sessions, the default draft pool of 131072
+cells serves 8187 tokens per session, and `--draft-max-cells 32768` serves 2043.
+The export prints these limits and both pools' K/V before lowering.
 
 For long contexts, prefer `--kv-layout sequence --max-kv-seqs N`, with N at
 least the resident session count. Each session gets a private column of up to

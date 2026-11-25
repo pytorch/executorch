@@ -22,6 +22,10 @@ def define_common_targets(is_fbcode = False):
             "kv_capacity.h",
         ],
         visibility = ["PUBLIC"],
+        exported_deps = [
+            "//executorch/extension/llm/cache:kv_cache",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+        ],
     )
 
     runtime.cxx_library(

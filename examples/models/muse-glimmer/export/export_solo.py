@@ -33,6 +33,7 @@ import gc
 import json
 import types
 import warnings
+from dataclasses import dataclass
 
 import torch
 import torch.nn as nn
@@ -373,6 +374,56 @@ def format_memory(num_bytes: int) -> str:
     return f"{mib / 1024:.1f} GiB"
 
 
+@dataclass(frozen=True)
+class DraftKVCapacity:
+    """A DFlash draft cache as ``prepare_cuda_packed_draft`` publishes it."""
+
+    kv_heads: list[int]
+    head_dims: list[int]
+    windows: list[int]
+    # The shared pool's cells, or each sequence's rows on the sequence layout.
+    cells: int
+    max_owners: int
+    block: int
+    max_write: int
+
+    @classmethod
+    def from_metadata(cls, metadata: dict, sequence_layout: bool):
+        def draft(key):
+            return metadata[key.replace("get_", "get_draft_", 1)]
+
+        from executorch.extension.llm.export.model_metadata import (
+            HEAD_DIMS_METHOD,
+            KV_HEADS_METHOD,
+            WINDOWS_METHOD,
+        )
+
+        return cls(
+            kv_heads=draft(KV_HEADS_METHOD).tolist(),
+            head_dims=draft(HEAD_DIMS_METHOD).tolist(),
+            windows=draft(WINDOWS_METHOD).tolist(),
+            cells=metadata[
+                (
+                    "get_draft_offgraph_kv_seq_capacity"
+                    if sequence_layout
+                    else "get_draft_offgraph_kv_max_cells"
+                )
+            ],
+            max_owners=metadata["get_draft_max_owners"],
+            block=metadata["get_block_size"],
+            max_write=metadata["get_draft_max_step_tokens"],
+        )
+
+
+def _sequence_column_elements(kv_heads, head_dims, windows, rows, max_write) -> int:
+    """K/V elements of one sequence column: a ring layer keeps only its window
+    plus one write, a flat layer every row (CudaBatchedSequenceCache)."""
+    return sum(
+        2 * heads * dim * (rows if window == 0 else min(rows, window + max_write - 1))
+        for heads, dim, window in zip(kv_heads, head_dims, windows)
+    )
+
+
 def kv_capacity_summary(
     kv_heads,
     head_dims,
@@ -385,6 +436,7 @@ def kv_capacity_summary(
     max_step_tokens: int,
     kv_element_bytes: int = 2,
     resident_counts=(1, 4, 16),
+    draft: DraftKVCapacity | None = None,
 ) -> list[str]:
     """What the export's KV cache serves per session, and its full-size K/V.
 
@@ -392,37 +444,80 @@ def kv_capacity_summary(
     capture slots each as one resident session. The cell layout shares
     ``max_cells`` among them, less one padding cell; the sequence layout gives
     each of ``max_kv_seqs`` sessions (plus one scratch column) a private column,
-    in which sliding-window layers keep only a ring.
+    in which sliding-window layers keep only a ring. A DFlash ``draft`` also
+    limits each session: its cell pool keeps every owner's block besides the
+    padding cell, and each draft sequence keeps its block beside the context.
+    The arithmetic follows CudaExecutor and MuseGlimmerCudaDFlashExecutor.
     """
+    lines = []
     if kv_layout == "sequence":
-        column_elements = sum(
-            2
-            * heads
-            * dim
-            * (
-                max_seq_len
-                if window == 0
-                else min(max_seq_len, window + max_step_tokens - 1)
+        total = (
+            _sequence_column_elements(
+                kv_heads, head_dims, windows, max_seq_len, max_step_tokens
             )
-            for heads, dim, window in zip(kv_heads, head_dims, windows)
+            * (max_kv_seqs + 1)
+            * kv_element_bytes
         )
-        total = column_elements * (max_kv_seqs + 1) * kv_element_bytes
-        return [
+        lines += [
             f"KV capacity: {max_kv_seqs} sequence columns of up to {max_seq_len} "
             "tokens; live sessions, prefix entries and capture slots each take one",
             f"KV capacity: {format_memory(total)} of K/V with every column full",
         ]
-    per_cell = kv_element_bytes * sum(2 * h * d for h, d in zip(kv_heads, head_dims))
-    contexts = ", ".join(
-        f"{n} -> {min(max_seq_len, (max_cells - 1) // n)}" for n in resident_counts
-    )
-    return [
+        if draft is not None:
+            context = min(max_seq_len, draft.cells - draft.block)
+            draft_total = (
+                _sequence_column_elements(
+                    draft.kv_heads,
+                    draft.head_dims,
+                    draft.windows,
+                    draft.cells,
+                    draft.max_write,
+                )
+                * (max_kv_seqs + 1)
+                * kv_element_bytes
+            )
+            lines += [
+                f"KV capacity: DFlash draft columns of {draft.cells} rows keep a "
+                f"{draft.block}-token block, so each session may hold {context} "
+                "tokens",
+                f"KV capacity: draft {format_memory(draft_total)} of K/V, "
+                f"{format_memory(total + draft_total)} with the target",
+            ]
+        return lines
+
+    def bytes_per_cell(heads, dims):
+        return kv_element_bytes * sum(2 * h * d for h, d in zip(heads, dims))
+
+    def context(n):
+        tokens = min(max_seq_len, (max_cells - 1) // n)
+        if draft is None:
+            return str(tokens)
+        temporary = draft.max_owners * draft.block
+        tokens = min(tokens, (draft.cells - 1 - temporary) // n)
+        return str(tokens) if tokens > draft.block else "none"
+
+    per_cell = bytes_per_cell(kv_heads, head_dims)
+    total = max_cells * per_cell
+    contexts = ", ".join(f"{n} -> {context(n)}" for n in resident_counts)
+    lines += [
         f"KV capacity: --max-cells {max_cells} is shared by every resident session "
         "(live + prefix entries + capture slots) plus 1 padding cell",
         f"KV capacity: tokens per session by resident sessions: {contexts}",
         f"KV capacity: {per_cell} bytes per cell, "
-        f"{format_memory(max_cells * per_cell)} of K/V with every cell full",
+        f"{format_memory(total)} of K/V with every cell full",
     ]
+    if draft is not None:
+        draft_per_cell = bytes_per_cell(draft.kv_heads, draft.head_dims)
+        draft_total = draft.cells * draft_per_cell
+        lines += [
+            f"KV capacity: the DFlash draft pool's {draft.cells} cells also keep "
+            f"{draft.max_owners} x {draft.block} block cells and 1 padding cell; "
+            "a session needs more than the block",
+            f"KV capacity: draft {draft_per_cell} bytes per cell, "
+            f"{format_memory(draft_total)} of K/V, "
+            f"{format_memory(total + draft_total)} with the target",
+        ]
+    return lines
 
 
 def sampler_programs(vocab_size: int, max_rows: int = MAX_SAMPLE_ROWS):
@@ -601,6 +696,11 @@ def export_cuda_batching(  # noqa: C901
         max_kv_seqs=max_kv_seqs,
         max_seq_len=config.max_seq_len,
         max_step_tokens=max_step_tokens,
+        draft=(
+            DraftKVCapacity.from_metadata(draft_metadata, sequence_layout)
+            if dflash_draft is not None
+            else None
+        ),
     ):
         print(line)
 

@@ -12,6 +12,7 @@
 #if defined(EXECUTORCH_BUILD_CUDA)
 #include <executorch/backends/cuda/batching/cuda_executor.h>
 #include <executorch/examples/models/muse-glimmer/runtime/cuda_dflash_executor.h>
+#include <executorch/examples/models/muse-glimmer/runtime/kv_capacity_advice.h>
 #endif
 
 #include <memory>
@@ -46,6 +47,9 @@ runtime::Result<MuseGlimmerBackend> create_muse_glimmer_backend(
     }
     executor_config.reservations = {
         config.live_sessions, config.prefix_entries, config.capture_slots};
+    executor_config.capacity_report = [](const cb::KvCapacityReport& report) {
+      kv_advice::log_serving_advice(report);
+    };
     executor_config.max_sessions = config.max_sessions;
     executor_config.max_session_tokens = config.max_session_tokens;
     ET_ASSIGN_OR_RETURN(executor, cb::CudaExecutor::create(executor_config));

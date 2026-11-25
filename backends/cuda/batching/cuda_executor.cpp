@@ -23,6 +23,7 @@
 #include <executorch/backends/cuda/runtime/backend_options.h>
 #include <executorch/extension/cuda/caller_stream.h>
 #include <executorch/extension/llm/batching/executor_utils.h>
+#include <executorch/extension/llm/cache/cell_cache.h>
 #include <executorch/extension/llm/runner/model_metadata.h>
 #include <executorch/extension/llm/sampler/sampler.h>
 #include <executorch/extension/tensor/tensor_ptr.h>
@@ -51,33 +52,21 @@ namespace metadata = ::executorch::extension::llm;
 
 namespace {
 
-// What the capacity diagnostics report about the program's cell pool: every
-// layer's K and V for one token (zero for a dtype this cannot size), and
-// whether any layer attends a sliding window.
-CellPoolFacts cell_pool_facts(
-    const llm_cache::CacheGeometry& geometry,
-    int kv_dtype) {
-  using ScalarType = ::executorch::aten::ScalarType;
-  std::int64_t element = 0;
-  switch (static_cast<ScalarType>(kv_dtype)) {
-    case ScalarType::Half:
-    case ScalarType::BFloat16:
-      element = 2;
-      break;
-    case ScalarType::Float:
-      element = 4;
-      break;
-    default:
-      break;
+// Logs the KV admission report and hands it to the caller, which may explain
+// its own export or serving options.
+void report_capacity(
+    const CudaExecutorConfig& config,
+    const KvCapacityReport& report) {
+  for (const std::string& line : describe_capacity(report)) {
+    if (report.outcome == KvAdmission::kAutomatic) {
+      ET_LOG(Info, "%s", line.c_str());
+    } else {
+      ET_LOG(Error, "%s", line.c_str());
+    }
   }
-  CellPoolFacts facts;
-  for (const llm_cache::LayerGeometry& layer : geometry.layers) {
-    facts.bytes_per_cell += 2 * element * layer.n_kv_heads * layer.head_dim;
-    facts.has_windowed_layers = facts.has_windowed_layers ||
-        (layer.policy.kind == llm_cache::LayerPolicy::Kind::Ring &&
-         layer.policy.window > 0);
+  if (config.capacity_report) {
+    config.capacity_report(report);
   }
-  return facts;
 }
 
 bool is_supported_logits_type(::executorch::aten::ScalarType type) {
@@ -372,6 +361,18 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
                std::numeric_limits<int>::max() / max_session_tokens),
       InvalidArgument,
       "CudaExecutor: invalid session limits");
+  const KvReservations& reservations = config.reservations;
+  ET_CHECK_OR_RETURN_ERROR(
+      reservations.live_sessions >= 0 && reservations.prefix_entries >= 0 &&
+          reservations.capture_slots >= 0 &&
+          (reservations.total() == 0 || reservations.total() == max_sessions),
+      InvalidArgument,
+      "CudaExecutor: %d live + %d prefix entries + %d capture slots do not "
+      "total the %d resident sessions",
+      reservations.live_sessions,
+      reservations.prefix_entries,
+      reservations.capture_slots,
+      max_sessions);
   ET_CHECK_OK_OR_RETURN_ERROR(module->load());
 
   ET_ASSIGN_OR_RETURN(
@@ -392,13 +393,28 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
       NotSupported,
       "CudaExecutor: the program must select its logits rows");
   ET_ASSIGN_OR_RETURN(geometry, metadata::read_cache_geometry(*module));
+  // Reports the KV admission with the limits known when it is decided.
+  std::int64_t max_cells = 0;
+  const auto report_admission =
+      [&](KvAdmission outcome, bool sequence_layout, int session_limit) {
+        KvCapacityReport report;
+        report.outcome = outcome;
+        report.sequence_layout = sequence_layout;
+        report.sessions = max_sessions;
+        report.reservations = reservations;
+        report.session_tokens = max_session_tokens;
+        report.context_length = max_context_length;
+        report.cells = max_cells;
+        report.session_limit = session_limit;
+        report.facts = cell_pool_facts(geometry, kv_dtype);
+        report_capacity(config, report);
+      };
   // The program fixes its cache layout: a private history per sequence when it
   // publishes its sequence count, else one shared pool of cells.
   ET_ASSIGN_OR_RETURN(
       declared_seqs,
       metadata::detail::read_int_method(*module, kMaxSeqsMethod));
   const bool sequence_layout = declared_seqs.has_value();
-  std::int64_t max_cells = 0;
   if (sequence_layout) {
     ET_CHECK_OR_RETURN_ERROR(
         *declared_seqs > 0 &&
@@ -408,6 +424,10 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
         "CudaExecutor: invalid sequence count or context length");
     if (max_session_tokens == 0) {
       max_session_tokens = static_cast<int>(max_context_length);
+      report_admission(
+          KvAdmission::kAutomatic,
+          /*sequence_layout=*/true,
+          static_cast<int>(*declared_seqs));
     }
     ET_CHECK_OR_RETURN_ERROR(
         max_session_tokens <= max_context_length,
@@ -427,6 +447,14 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
     if (max_session_tokens == 0) {
       max_session_tokens = static_cast<int>(
           std::min(max_context_length, (max_cells - 1) / max_sessions));
+      // The layout's session limit is reported first: no cell count fixes it.
+      report_admission(
+          max_session_tokens > 0 ? KvAdmission::kAutomatic
+              : max_sessions > llm_cache::CellCache::kMaxSeqs
+              ? KvAdmission::kSessionLimit
+              : KvAdmission::kNoBudget,
+          /*sequence_layout=*/false,
+          llm_cache::CellCache::kMaxSeqs);
       ET_CHECK_OR_RETURN_ERROR(
           max_session_tokens > 0,
           InvalidArgument,
@@ -538,17 +566,14 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
   // program's cells is the padding scratch row, never handed out.
   if (!sequence_layout &&
       !cell_budget(max_sessions, max_session_tokens, max_cells).fits()) {
-    for (const std::string& line : cell_shortfall_lines(
-             max_sessions,
-             max_session_tokens,
-             max_cells,
-             config.reservations,
-             cell_pool_facts(geometry, kv_dtype))) {
-      ET_LOG(Error, "%s", line.c_str());
-    }
-    if (!config.capacity_note.empty()) {
-      ET_LOG(Error, "%s", config.capacity_note.c_str());
-    }
+    // The layout's session limit is reported first: no token limit or cell
+    // count fixes it.
+    report_admission(
+        max_sessions > llm_cache::CellCache::kMaxSeqs
+            ? KvAdmission::kSessionLimit
+            : KvAdmission::kCells,
+        /*sequence_layout=*/false,
+        llm_cache::CellCache::kMaxSeqs);
     return Error::InvalidArgument;
   }
 
@@ -586,10 +611,7 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
       "CudaExecutor: the cache is not a batched CUDA cache");
   const std::optional<int> seq_limit = ctl->max_seqs();
   if (seq_limit && max_sessions > *seq_limit) {
-    for (const std::string& line : sequence_shortfall_lines(
-             max_sessions, *seq_limit, config.reservations, sequence_layout)) {
-      ET_LOG(Error, "%s", line.c_str());
-    }
+    report_admission(KvAdmission::kSessionLimit, sequence_layout, *seq_limit);
     return Error::InvalidArgument;
   }
 

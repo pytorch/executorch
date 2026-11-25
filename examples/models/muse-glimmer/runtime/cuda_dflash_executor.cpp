@@ -7,6 +7,7 @@
  */
 #include <executorch/examples/models/muse-glimmer/runtime/cuda_dflash_executor.h>
 
+#include <executorch/examples/models/muse-glimmer/runtime/kv_capacity_advice.h>
 #include <executorch/examples/models/muse-glimmer/runtime/model_embeddings.h>
 
 #include <cuda_runtime.h>
@@ -17,11 +18,13 @@
 #include <executorch/extension/tensor/tensor_ptr.h>
 
 #include <algorithm>
+#include <cinttypes>
 #include <cmath>
 #include <cstring>
 #include <exception>
 #include <limits>
 #include <numeric>
+#include <optional>
 #include <random>
 #include <unordered_set>
 
@@ -384,6 +387,26 @@ Result<int> positive_int(Module& module, const char* name) {
   return static_cast<int>(value);
 }
 
+// The draft pool a DFlash program publishes, read from its file for advice
+// after the target refused the sessions; the target's module is gone by then.
+std::optional<kv_advice::DraftPool> published_draft_pool(
+    const std::string& path) {
+  Module module(path, Module::LoadMode::Mmap);
+  auto block = positive_int(module, df::kBlock);
+  auto owners = positive_int(module, df::kMaxOwners);
+  auto seqs = detail::read_int_method(module, df::kMaxSeqs);
+  if (!block.ok() || !owners.ok() || !seqs.ok()) {
+    return std::nullopt;
+  }
+  const bool sequence_layout = seqs->has_value();
+  auto cells =
+      positive_int(module, sequence_layout ? df::kSeqCapacity : df::kMaxCells);
+  if (!cells.ok()) {
+    return std::nullopt;
+  }
+  return kv_advice::DraftPool{sequence_layout, *cells, *owners, *block};
+}
+
 Result<cache::CacheGeometry> draft_geometry(Module& module, int block) {
   ET_ASSIGN_OR_RETURN(layers, positive_int(module, "get_draft_n_caches"));
   ET_ASSIGN_OR_RETURN(
@@ -551,17 +574,36 @@ Result<MuseGlimmerBackend> MuseGlimmerCudaDFlashExecutor::create(
   }
   target_config.reservations = {
       config.live_sessions, config.prefix_entries, config.capture_slots};
-  // Logged only if the target's cells reject the sessions.
-  target_config.capacity_note =
-      "DFlash: the limits above are the target pool's; the draft pool "
-      "(--draft-max-cells) also reserves cells for temporary draft blocks";
+  // The target's admission, for advice that also accounts for the draft pool.
+  std::optional<cb::KvCapacityReport> target_report;
+  target_config.capacity_report =
+      [&target_report](const cb::KvCapacityReport& report) {
+        target_report = report;
+      };
   target_config.max_sessions = config.max_sessions;
   target_config.max_session_tokens = config.max_session_tokens;
   for (int n = 1; n <= df::kOwnerLimit; ++n) {
     target_config.options.additional_cuda_graph_methods.push_back(
         df::kStaticForwardPrefix + std::to_string(n));
   }
-  ET_ASSIGN_OR_RETURN(target, Target::create(target_config));
+  auto created_target = Target::create(target_config);
+  if (!created_target.ok()) {
+    if (target_report &&
+        target_report->outcome != cb::KvAdmission::kAutomatic) {
+      std::optional<std::int64_t> draft_cap;
+      if (const auto pool = published_draft_pool(config.model_path)) {
+        draft_cap = kv_advice::draft_session_budget(config.max_sessions, *pool);
+        ET_LOG(
+            Error,
+            "DFlash: the draft pool also limits each session to %" PRId64
+            " tokens",
+            *draft_cap);
+      }
+      kv_advice::log_serving_advice(*target_report, draft_cap);
+    }
+    return created_target.error();
+  }
+  auto target = std::move(created_target.get());
   auto& module = target->module();
   ET_ASSIGN_OR_RETURN(names, module.method_names());
   ET_CHECK_OR_RETURN_ERROR(
@@ -670,33 +712,38 @@ Result<MuseGlimmerBackend> MuseGlimmerCudaDFlashExecutor::create(
   ET_ASSIGN_OR_RETURN(geometry, draft_geometry(module, block));
   const int temporary = max_owners * block;
   // A history column holds its context and, while drafting, its own block.
-  const int draft_budget = sequence_layout
-      ? max_cells - block
-      : (max_cells - 1 - temporary) / config.max_sessions;
-  const int max_context = std::min(target->max_session_tokens(), draft_budget);
-  const bool context_fits = max_context > block &&
-      (!config.max_session_tokens || max_context == config.max_session_tokens);
-  // Report a draft cell pool too small for the histories with its breakdown.
-  const int requested_context = config.max_session_tokens
-      ? config.max_session_tokens
-      : target->max_session_tokens();
-  if (!context_fits && !sequence_layout &&
-      !cb::cell_budget(
-           config.max_sessions, requested_context, max_cells, temporary)
-           .fits()) {
-    for (const std::string& line : cb::draft_shortfall_lines(
+  const kv_advice::DraftPool pool{
+      sequence_layout, max_cells, max_owners, block};
+  const kv_advice::DraftAdmission admission = kv_advice::draft_admission(
+      config.max_sessions,
+      config.max_session_tokens,
+      target->max_session_tokens(),
+      pool);
+  const int max_context = admission.max_context;
+  if (!admission.fits) {
+    for (const std::string& line : kv_advice::draft_shortfall_lines(
              config.max_sessions,
-             requested_context,
-             max_cells,
-             temporary,
-             {config.live_sessions,
-              config.prefix_entries,
-              config.capture_slots})) {
+             config.max_session_tokens,
+             target->max_session_tokens(),
+             pool,
+             target_config.reservations)) {
       ET_LOG(Error, "%s", line.c_str());
     }
+  } else if (
+      target_report && target_report->outcome == cb::KvAdmission::kAutomatic) {
+    const int draft_budget =
+        kv_advice::draft_session_budget(config.max_sessions, pool);
+    ET_LOG(
+        Info,
+        "DFlash: each session may hold %d tokens (target pool %d, draft pool "
+        "%d)",
+        max_context,
+        target->max_session_tokens(),
+        draft_budget);
+    kv_advice::log_serving_advice(*target_report, draft_budget);
   }
   ET_CHECK_OR_RETURN_ERROR(
-      context_fits && draft_tokens.sizes()[0] == max_owners &&
+      admission.fits && draft_tokens.sizes()[0] == max_owners &&
           draft_hidden.sizes()[1] >= max_write - temporary &&
           draft_positions.sizes()[0] >= max_write,
       InvalidArgument,

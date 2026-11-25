@@ -9,29 +9,32 @@
 #pragma once
 
 // The KV admission arithmetic CudaExecutor checks at startup, and the
-// diagnostics it logs when a configuration does not fit. Pure, so it is
-// testable without a GPU or a program.
+// layout-level diagnostics it logs. Pure and GPU-free, so it is testable
+// without a program. Wording is neutral: how a program is exported or a server
+// configured is the caller's to explain, from the KvCapacityReport.
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <string>
 #include <vector>
 
+#include <executorch/extension/llm/cache/cache.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+
 namespace executorch::backends::cuda::batching {
 
 // What the resident sessions an executor provisions are for. A serving runtime
 // hosts its live sessions, its retained prefix entries and its in-flight prefix
 // captures each on its own executor session, and any of them may fill its
-// whole token budget. All zero when the caller does not say.
+// whole token budget. All zero when the caller does not say; otherwise the
+// executor requires them to total its resident sessions.
 struct KvReservations {
   int live_sessions = 0;
   int prefix_entries = 0;
   int capture_slots = 0;
 
-  bool known() const {
-    return live_sessions > 0 || prefix_entries > 0 || capture_slots > 0;
-  }
   std::int64_t total() const {
     return static_cast<std::int64_t>(live_sessions) + prefix_entries +
         capture_slots;
@@ -39,13 +42,12 @@ struct KvReservations {
 };
 
 // The cell layout's admission: every resident session may hold its token
-// budget at once, `reserved_cells` more are held for other uses (e.g. a
-// DFlash draft's temporary owner blocks), and one more cell is the padding
-// scratch row.
+// budget at once, `reserved_cells` more are held for other uses, and one more
+// cell is the padding scratch row.
 struct CellBudget {
   // sessions * session_tokens + reserved_cells + 1.
   std::int64_t required_cells;
-  // The program's cells.
+  // The pool's cells.
   std::int64_t available_cells;
   // The largest per-session budget that fits:
   // (cells - 1 - reserved_cells) / sessions.
@@ -71,24 +73,18 @@ inline CellBudget cell_budget(
   return budget;
 }
 
-// "16 resident sessions (4 live + 8 prefix entries + 4 capture slots)". A
-// breakdown that does not cover every session names the rest "other"; one that
-// claims more sessions than there are is dropped.
+// "16 resident sessions (4 live + 8 prefix entries + 4 capture slots)", or
+// only the count when no breakdown totals `sessions`.
 inline std::string describe_sessions(
     int sessions,
     const KvReservations& reservations) {
   std::string text = std::to_string(sessions) + " resident sessions";
-  const std::int64_t listed = reservations.total();
-  if (!reservations.known() || listed > sessions) {
+  if (sessions <= 0 || reservations.total() != sessions) {
     return text;
   }
-  text += " (" + std::to_string(reservations.live_sessions) + " live + " +
+  return text + " (" + std::to_string(reservations.live_sessions) + " live + " +
       std::to_string(reservations.prefix_entries) + " prefix entries + " +
-      std::to_string(reservations.capture_slots) + " capture slots";
-  if (listed < sessions) {
-    text += " + " + std::to_string(sessions - listed) + " other";
-  }
-  return text + ")";
+      std::to_string(reservations.capture_slots) + " capture slots)";
 }
 
 // Bytes with one decimal: MiB while that rounds below 1024.0 MiB, else GiB
@@ -105,128 +101,195 @@ inline std::string format_memory(std::int64_t bytes) {
   return text;
 }
 
-// What a cell-layout diagnostic knows about the program, beyond its cells.
+// What the diagnostics report about a program's cache, beyond its size.
 struct CellPoolFacts {
-  // Every layer's K and V for one token; zero leaves the memory estimate out.
+  // Every layer's K and V for one token; zero when the dtype is not a valid
+  // ScalarType, which leaves the memory estimate out.
   std::int64_t bytes_per_cell = 0;
-  // Whether any layer attends a sliding window, which the sequence layout
-  // keeps in a ring buffer.
+  // Whether any layer attends a sliding window (a ring layer), which a
+  // sequence-layout program keeps in a ring buffer.
   bool has_windowed_layers = false;
 };
 
-// Why `sessions` sessions of `session_tokens` tokens do not fit `max_cells`
-// cells, and what would. One entry per log line, each well under the 256-byte
-// ET_LOG limit.
-inline std::vector<std::string> cell_shortfall_lines(
-    int sessions,
-    int session_tokens,
-    std::int64_t max_cells,
-    const KvReservations& reservations,
-    const CellPoolFacts& facts = {}) {
-  const CellBudget budget = cell_budget(sessions, session_tokens, max_cells);
-  const std::string required = std::to_string(budget.required_cells);
+inline CellPoolFacts cell_pool_facts(
+    const ::executorch::extension::llm::cache::CacheGeometry& geometry,
+    int kv_dtype) {
+  using ::executorch::extension::llm::cache::LayerPolicy;
+  const auto dtype = static_cast<::executorch::aten::ScalarType>(kv_dtype);
+  const std::int64_t element = ::executorch::runtime::isValid(dtype)
+      ? static_cast<std::int64_t>(::executorch::runtime::elementSize(dtype))
+      : 0;
+  CellPoolFacts facts;
+  for (const auto& layer : geometry.layers) {
+    facts.bytes_per_cell += 2 * element * layer.n_kv_heads * layer.head_dim;
+    facts.has_windowed_layers = facts.has_windowed_layers ||
+        (layer.policy.kind == LayerPolicy::Kind::Ring &&
+         layer.policy.window > 0);
+  }
+  return facts;
+}
+
+// What the executor decided about its KV admission, for logging and for the
+// caller's own advice (CudaExecutorConfig::capacity_report).
+enum class KvAdmission {
+  // Automatic context mode resolved a per-session token budget.
+  kAutomatic,
+  // Automatic context mode: not one token per session fits the cells.
+  kNoBudget,
+  // An explicit token limit: the cell pool cannot hold every session's budget.
+  kCells,
+  // More resident sessions than the layout tracks. Reported in preference to
+  // the cases above, which no token limit or cell count could fix.
+  kSessionLimit,
+};
+
+struct KvCapacityReport {
+  KvAdmission outcome = KvAdmission::kAutomatic;
+  bool sequence_layout = false;
+  int sessions = 0;
+  KvReservations reservations;
+  // The requested per-session budget; for kAutomatic the resolved one.
+  int session_tokens = 0;
+  std::int64_t context_length = 0;
+  // The cell layout's pool; zero for the sequence layout.
+  std::int64_t cells = 0;
+  // The most resident sessions the layout tracks; zero when unknown.
+  int session_limit = 0;
+  CellPoolFacts facts;
+};
+
+// Cells holding every session's budget: sessions * session_tokens + 1.
+inline std::int64_t required_cells(const KvCapacityReport& report) {
+  return cell_budget(report.sessions, report.session_tokens, report.cells)
+      .required_cells;
+}
+
+// The largest per-session budget the cells hold for the report's sessions,
+// capped by the context.
+inline std::int64_t fitting_session_tokens(const KvCapacityReport& report) {
+  return std::min(
+      report.context_length,
+      cell_budget(report.sessions, report.session_tokens, report.cells)
+          .max_session_tokens);
+}
+
+// The most sessions of the report's budget the cells hold, capped by the
+// layout's session limit.
+inline std::int64_t fitting_sessions(const KvCapacityReport& report) {
+  if (report.session_tokens <= 0) {
+    return 0;
+  }
+  std::int64_t sessions =
+      std::max<std::int64_t>(0, report.cells - 1) / report.session_tokens;
+  if (report.session_limit > 0) {
+    sessions = std::min<std::int64_t>(sessions, report.session_limit);
+  }
+  return sessions;
+}
+
+// The report as log lines, each well under the 256-byte ET_LOG limit. They
+// describe the layout's limits and what would fit, without naming any export
+// or serving option.
+inline std::vector<std::string> describe_capacity(
+    const KvCapacityReport& report) {
+  const std::string who =
+      describe_sessions(report.sessions, report.reservations);
+  const std::string sessions = std::to_string(report.sessions);
+  const std::string tokens = std::to_string(report.session_tokens);
+  const std::string cells = std::to_string(report.cells);
+  const std::string limit = std::to_string(report.session_limit);
   std::vector<std::string> lines;
-  lines.push_back(
-      "CudaExecutor: " + std::to_string(sessions) + " sessions of " +
-      std::to_string(session_tokens) + " tokens exceed the program's " +
-      std::to_string(max_cells) + " cells, one of which is reserved");
-  lines.push_back(
-      "CudaExecutor: " + describe_sessions(sessions, reservations) +
-      " share one cell pool; " + std::to_string(sessions) + " x " +
-      std::to_string(session_tokens) + " + 1 padding = " + required +
-      " cells needed, " + std::to_string(max_cells) + " available");
-  if (budget.max_session_tokens > 0) {
-    lines.push_back(
-        "CudaExecutor: at most " + std::to_string(budget.max_session_tokens) +
-        " tokens per session fit; lower the session token limit or reserve "
-        "fewer live sessions, prefix entries or capture slots");
-  } else {
-    lines.push_back(
-        "CudaExecutor: not even one token per session fits; reserve at most " +
-        std::to_string(max_cells > 1 ? max_cells - 1 : 0) + " sessions");
-  }
-  std::string reexport =
-      "CudaExecutor: or re-export with --max-cells >= " + required;
-  if (facts.bytes_per_cell > 0) {
-    reexport += " (" +
-        format_memory(budget.required_cells * facts.bytes_per_cell) +
-        " of K/V at " + std::to_string(facts.bytes_per_cell) +
-        " bytes per cell)";
-  }
-  lines.push_back(reexport);
-  if (facts.has_windowed_layers) {
-    lines.push_back(
-        "CudaExecutor: this model has sliding-window layers; --kv-layout "
-        "sequence keeps them in ring buffers and may need far less memory");
-  }
-  return lines;
-}
-
-// Why `sessions` sessions exceed the layout's `max_seqs` resident sequences,
-// and what would fit. The sequence layout gives each a column the export sized
-// with --max-kv-seqs; the cell layout tracks at most a fixed number of
-// sequences (one owner bit each). One entry per log line.
-inline std::vector<std::string> sequence_shortfall_lines(
-    int sessions,
-    int max_seqs,
-    const KvReservations& reservations,
-    bool sequence_layout) {
-  const std::string count = std::to_string(sessions);
-  if (sequence_layout) {
-    return {
-        "CudaExecutor: " + count +
-            " resident sessions requested, but the layout holds " +
-            std::to_string(max_seqs),
-        "CudaExecutor: " + describe_sessions(sessions, reservations) +
-            " each need a sequence column",
-        "CudaExecutor: re-export with --max-kv-seqs >= " + count +
-            ", or reserve fewer live sessions, prefix entries or capture "
-            "slots",
-    };
-  }
-  return {
-      "CudaExecutor: " + count +
-          " resident sessions requested, but the cell layout tracks at most " +
-          std::to_string(max_seqs),
-      "CudaExecutor: " + describe_sessions(sessions, reservations) +
-          " each take one of its sequence slots",
-      "CudaExecutor: reserve fewer live sessions, prefix entries or capture "
-      "slots, or re-export with --kv-layout sequence --max-kv-seqs >= " +
-          count,
-  };
-}
-
-// Why a DFlash draft pool of `max_cells` cells cannot hold `sessions`
-// histories of `session_tokens` tokens plus `temporary_cells` cells for the
-// owners' draft blocks and one padding cell. One entry per log line.
-inline std::vector<std::string> draft_shortfall_lines(
-    int sessions,
-    int session_tokens,
-    std::int64_t max_cells,
-    std::int64_t temporary_cells,
-    const KvReservations& reservations) {
-  const CellBudget budget =
-      cell_budget(sessions, session_tokens, max_cells, temporary_cells);
-  std::vector<std::string> lines{
-      "DFlash: " + describe_sessions(sessions, reservations) + " x " +
-          std::to_string(session_tokens) + " + " +
-          std::to_string(temporary_cells) +
-          " temporary draft-block cells + 1 padding = " +
-          std::to_string(budget.required_cells) + " draft cells needed, " +
-          std::to_string(max_cells) + " available",
-  };
-  if (budget.max_session_tokens > 0) {
-    lines.push_back(
-        "DFlash: at most " + std::to_string(budget.max_session_tokens) +
-        " tokens per session fit the draft pool; lower the session token "
-        "limit, reserve fewer sessions, or re-export with --draft-max-cells "
-        ">= " +
-        std::to_string(budget.required_cells));
-  } else {
-    lines.push_back(
-        "DFlash: the draft pool cannot hold its temporary blocks; re-export "
-        "with --draft-max-cells >= " +
-        std::to_string(budget.required_cells));
+  switch (report.outcome) {
+    case KvAdmission::kAutomatic:
+      if (report.sequence_layout) {
+        lines.push_back(
+            "CudaExecutor: automatic context: " + who + " each get " + tokens +
+            " tokens of a private sequence column");
+      } else {
+        lines.push_back(
+            "CudaExecutor: automatic context: " + who + " share " + cells +
+            " cells; each may hold " + tokens + " tokens (model context " +
+            std::to_string(report.context_length) + ")");
+      }
+      break;
+    case KvAdmission::kNoBudget:
+      lines.push_back(
+          "CudaExecutor: no cell budget remains: " + who + " need at least " +
+          std::to_string(report.sessions + 1LL) +
+          " cells with the padding cell, the program has " + cells);
+      lines.push_back(
+          "CudaExecutor: at most " +
+          std::to_string(std::max<std::int64_t>(0, report.cells - 1)) +
+          " one-token sessions fit");
+      break;
+    case KvAdmission::kCells: {
+      lines.push_back(
+          "CudaExecutor: " + sessions + " sessions of " + tokens +
+          " tokens exceed the program's " + cells +
+          " cells, one of which is reserved");
+      const std::string required = std::to_string(required_cells(report));
+      lines.push_back(
+          "CudaExecutor: " + who + " share one cell pool; " + sessions + " x " +
+          tokens + " + 1 padding = " + required + " cells needed, " + cells +
+          " available");
+      const std::int64_t fit_tokens = fitting_session_tokens(report);
+      const std::int64_t fit_sessions = fitting_sessions(report);
+      if (fit_tokens > 0) {
+        std::string fit = "CudaExecutor: at most " +
+            std::to_string(fit_tokens) + " tokens per session fit " + sessions +
+            " sessions";
+        if (fit_sessions > 0) {
+          fit += ", or " + std::to_string(fit_sessions) + " sessions of " +
+              tokens + " tokens";
+        }
+        lines.push_back(fit);
+      } else if (fit_sessions > 0) {
+        lines.push_back(
+            "CudaExecutor: not even one token per session fits " + sessions +
+            " sessions; at most " + std::to_string(fit_sessions) +
+            " sessions of " + tokens + " tokens fit");
+      } else {
+        lines.push_back(
+            "CudaExecutor: one session of " + tokens + " tokens alone needs " +
+            std::to_string(report.session_tokens + 1LL) + " cells");
+      }
+      std::string larger = "CudaExecutor: a program with at least " + required +
+          " cells would hold them";
+      if (report.facts.bytes_per_cell > 0) {
+        larger += " (" +
+            format_memory(
+                      required_cells(report) * report.facts.bytes_per_cell) +
+            " of K/V at " + std::to_string(report.facts.bytes_per_cell) +
+            " bytes per cell)";
+      }
+      lines.push_back(larger);
+      if (report.facts.has_windowed_layers) {
+        lines.push_back(
+            "CudaExecutor: the model has sliding-window layers, which a "
+            "sequence-layout program keeps in ring buffers; that may need far "
+            "less memory than a larger cell pool");
+      }
+      break;
+    }
+    case KvAdmission::kSessionLimit:
+      if (report.sequence_layout) {
+        lines.push_back(
+            "CudaExecutor: " + who + " exceed the program's " + limit +
+            " sequence columns, one per resident session");
+        lines.push_back(
+            "CudaExecutor: reserve at most " + limit +
+            " sessions, or serve a program with at least " + sessions +
+            " sequence columns");
+      } else {
+        lines.push_back(
+            "CudaExecutor: " + who + " exceed the cell layout's limit of " +
+            limit + " resident sequences, whatever its cells");
+        lines.push_back(
+            "CudaExecutor: reserve at most " + limit +
+            " sessions, or serve a sequence-layout program with at least " +
+            sessions + " sequence columns");
+      }
+      break;
   }
   return lines;
 }

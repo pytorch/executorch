@@ -7,6 +7,7 @@
  */
 #include <cuda_runtime.h>
 #include <executorch/examples/models/muse-glimmer/runtime/cuda_dflash_executor.h>
+#include <executorch/examples/models/muse-glimmer/runtime/kv_capacity_advice.h>
 #include <executorch/extension/cuda/caller_stream.h>
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
 #include <gtest/gtest.h>
@@ -285,4 +286,218 @@ TEST(CudaDFlash, PackingRejectsDuplicateOwnersAndOversizedContext) {
       {{4, 0, 70, &hidden, 1}, {4, 0, 80, &hidden, 1}}, 4, 99, 2, 64, 2));
   EXPECT_FALSE(df::pack_draft({{4, 0, 70, &hidden, 2}}, 4, 99, 2, 64, 2));
   EXPECT_FALSE(df::pack_draft({{4, 0, 70, &hidden, 1}}, 4, 99, 0, 64, 2));
+}
+
+namespace kv_advice = executorch::extension::llm::kv_advice;
+namespace cb = executorch::backends::cuda::batching;
+
+namespace {
+
+bool any_contains(
+    const std::vector<std::string>& lines,
+    const std::string& part) {
+  return std::any_of(lines.begin(), lines.end(), [&](const std::string& line) {
+    return line.find(part) != std::string::npos;
+  });
+}
+
+// 4 owners x 16-token blocks over a shared draft pool of `cells` cells.
+kv_advice::DraftPool cell_pool(int cells) {
+  return {/*sequence_layout=*/false, cells, /*max_owners=*/4, /*block=*/16};
+}
+
+cb::KvCapacityReport target_report(
+    cb::KvAdmission outcome,
+    int sessions,
+    int tokens,
+    std::int64_t cells) {
+  cb::KvCapacityReport report;
+  report.outcome = outcome;
+  report.sessions = sessions;
+  report.reservations = {4, 8, sessions - 12};
+  report.session_tokens = tokens;
+  report.context_length = 131072;
+  report.cells = cells;
+  report.session_limit = 64;
+  report.facts = {53248, /*has_windowed_layers=*/true};
+  return report;
+}
+
+} // namespace
+
+TEST(KvAdvice, DraftBudgetFollowsTheExecutorsRule) {
+  // (cells - 1 - owners x block) / sessions for a shared pool.
+  EXPECT_EQ(kv_advice::draft_session_budget(16, cell_pool(131072)), 8187);
+  EXPECT_EQ(kv_advice::draft_session_budget(16, cell_pool(32768)), 2043);
+  // Each sequence's rows less the block for a private history.
+  EXPECT_EQ(kv_advice::draft_session_budget(16, {true, 131072, 4, 16}), 131056);
+}
+
+TEST(KvAdvice, DraftAdmissionMatchesTheExecutorsCondition) {
+  // Automatic: the smaller pool's budget, which must exceed the block.
+  auto admitted = kv_advice::draft_admission(16, 0, 8191, cell_pool(131072));
+  EXPECT_EQ(admitted.max_context, 8187);
+  EXPECT_TRUE(admitted.fits);
+  admitted = kv_advice::draft_admission(16, 0, 8191, cell_pool(32768));
+  EXPECT_EQ(admitted.max_context, 2043);
+  EXPECT_TRUE(admitted.fits);
+  // A requested limit must fit the draft exactly.
+  EXPECT_TRUE(
+      kv_advice::draft_admission(16, 2043, 2043, cell_pool(32768)).fits);
+  EXPECT_FALSE(
+      kv_advice::draft_admission(16, 2044, 2044, cell_pool(32768)).fits);
+  // Neither pool may leave the block or less.
+  EXPECT_FALSE(kv_advice::draft_admission(16, 0, 16, cell_pool(131072)).fits);
+  // (336 - 65) / 16 = 16 tokens, the block; (337 - 65) / 16 = 17.
+  EXPECT_FALSE(kv_advice::draft_admission(16, 0, 8191, cell_pool(336)).fits);
+  EXPECT_TRUE(kv_advice::draft_admission(16, 0, 8191, cell_pool(337)).fits);
+}
+
+TEST(KvAdvice, DraftShortfallForARequestedLimit) {
+  const auto lines = kv_advice::draft_shortfall_lines(
+      16, 8191, 8191, cell_pool(131072), {4, 8, 4});
+  ASSERT_EQ(lines.size(), 2u);
+  EXPECT_EQ(
+      lines[0],
+      "DFlash: 16 resident sessions (4 live + 8 prefix entries + 4 capture "
+      "slots) x 8191 + 64 temporary draft-block cells + 1 padding = 131121 "
+      "draft cells needed, 131072 available");
+  EXPECT_EQ(
+      lines[1],
+      "Muse Glimmer: set --max_session_tokens (serve_batching: --max-context) "
+      "to at most 8187, or re-export with --draft-max-cells >= 131121");
+}
+
+TEST(KvAdvice, DraftShortfallWhenTheDraftLeavesTheBlockOrLess) {
+  // 300 cells leave (300 - 1 - 64) / 16 = 14 tokens, below the 16-token block.
+  const auto lines =
+      kv_advice::draft_shortfall_lines(16, 0, 8191, cell_pool(300), {});
+  ASSERT_EQ(lines.size(), 2u);
+  EXPECT_EQ(
+      lines[0],
+      "DFlash: 300 draft cells, less 64 temporary block cells and 1 padding, "
+      "leave 14 tokens for each of 16 resident sessions, which must exceed "
+      "the 16-token block");
+  // floor(235 / 17) = 13 sessions of 17 tokens; 16 x 17 + 64 + 1 = 337.
+  EXPECT_EQ(
+      lines[1],
+      "Muse Glimmer: reserve at most 13 sessions, or re-export with "
+      "--draft-max-cells >= 337");
+  EXPECT_FALSE(any_contains(lines, "--max_session_tokens"));
+}
+
+TEST(KvAdvice, DraftShortfallWhenTheTargetBudgetIsTooSmall) {
+  auto lines =
+      kv_advice::draft_shortfall_lines(4, 16, 16, cell_pool(131072), {});
+  EXPECT_EQ(
+      lines[0],
+      "DFlash: a 16-token session budget must exceed the 16-token draft "
+      "block");
+  EXPECT_TRUE(any_contains(lines, "raise --max_session_tokens"));
+  lines = kv_advice::draft_shortfall_lines(4, 0, 12, cell_pool(131072), {});
+  EXPECT_TRUE(any_contains(lines, "larger --max-cells"));
+}
+
+TEST(KvAdvice, DraftShortfallOnASequenceLayout) {
+  const auto lines =
+      kv_advice::draft_shortfall_lines(4, 4096, 4096, {true, 2048, 4, 16}, {});
+  ASSERT_EQ(lines.size(), 2u);
+  EXPECT_EQ(
+      lines[0],
+      "DFlash: 4096 tokens per session exceed each draft sequence's 2048 rows "
+      "less the 16-token block");
+  EXPECT_EQ(
+      lines[1],
+      "Muse Glimmer: set --max_session_tokens (serve_batching: --max-context) "
+      "to at most 2032");
+}
+
+TEST(KvAdvice, CellShortfallAdviceNamesTheFlags) {
+  const auto lines = kv_advice::serving_advice(
+      target_report(cb::KvAdmission::kCells, 16, 131072, 131072));
+  ASSERT_EQ(lines.size(), 3u);
+  EXPECT_EQ(
+      lines[0],
+      "Muse Glimmer: set --max_session_tokens (serve_batching: --max-context) "
+      "to at most 8191, or lower --max_sessions, --prefix_cache_entries or "
+      "--prefix_capture_slots");
+  EXPECT_EQ(
+      lines[1],
+      "Muse Glimmer: or re-export with --max-cells >= 2097153 (104.0 GiB of "
+      "K/V)");
+  EXPECT_EQ(
+      lines[2],
+      "Muse Glimmer: for long contexts, re-export with --kv-layout sequence "
+      "--max-kv-seqs >= 16");
+}
+
+TEST(KvAdvice, TargetAdviceIsCappedByTheDraftPool) {
+  // The default draft pool (--max-cells) serves 8187, not the target's 8191.
+  const auto report =
+      target_report(cb::KvAdmission::kCells, 16, 131072, 131072);
+  const auto lines = kv_advice::serving_advice(
+      report, kv_advice::draft_session_budget(16, cell_pool(131072)));
+  EXPECT_TRUE(any_contains(lines, "to at most 8187,")) << lines[0];
+  EXPECT_FALSE(any_contains(lines, "8191"));
+}
+
+TEST(KvAdvice, SessionLimitAdviceNeverSuggestsATokenLimit) {
+  auto report = target_report(cb::KvAdmission::kSessionLimit, 80, 8192, 131072);
+  report.reservations = {16, 48, 16};
+  const auto lines = kv_advice::serving_advice(report);
+  ASSERT_EQ(lines.size(), 1u);
+  EXPECT_EQ(
+      lines[0],
+      "Muse Glimmer: lower --max_sessions, --prefix_cache_entries or "
+      "--prefix_capture_slots to total at most 64, or re-export with "
+      "--kv-layout sequence --max-kv-seqs >= 80");
+  report.sequence_layout = true;
+  report.session_limit = 4;
+  EXPECT_TRUE(any_contains(
+      kv_advice::serving_advice(report), "re-export with --max-kv-seqs >= 80"));
+}
+
+TEST(KvAdvice, ZeroTokenBudgetAdviceFitsTheSessions) {
+  cb::KvCapacityReport report =
+      target_report(cb::KvAdmission::kCells, 16, 4, 8);
+  report.sessions = 8;
+  report.reservations = {8, 0, 0};
+  EXPECT_EQ(
+      kv_advice::serving_advice(report)[0],
+      "Muse Glimmer: lower --max_sessions, --prefix_cache_entries or "
+      "--prefix_capture_slots to total at most 1");
+}
+
+TEST(KvAdvice, AutomaticContextExplainsTheFullContext) {
+  const auto report =
+      target_report(cb::KvAdmission::kAutomatic, 16, 8191, 131072);
+  const auto lines = kv_advice::serving_advice(report);
+  ASSERT_EQ(lines.size(), 3u);
+  EXPECT_EQ(
+      lines[0],
+      "Muse Glimmer: each session may use 8191 of the model's 131072 context "
+      "tokens; fewer --max_sessions, --prefix_cache_entries or "
+      "--prefix_capture_slots leave more");
+  EXPECT_EQ(
+      lines[1],
+      "Muse Glimmer: the full context needs an export with --max-cells >= "
+      "2097153 (104.0 GiB of K/V)");
+  EXPECT_TRUE(any_contains(lines, "--kv-layout sequence --max-kv-seqs >= 16"));
+  // With the draft pool the session gets less.
+  EXPECT_TRUE(any_contains(
+      kv_advice::serving_advice(report, 2043), "each session may use 2043 "));
+  // A budget that already covers the context needs no advice.
+  EXPECT_TRUE(
+      kv_advice::serving_advice(
+          target_report(cb::KvAdmission::kAutomatic, 16, 131072, 131072 * 17))
+          .empty());
+}
+
+TEST(KvAdvice, NoBudgetAdvice) {
+  EXPECT_EQ(
+      kv_advice::serving_advice(
+          target_report(cb::KvAdmission::kNoBudget, 16, 0, 8))[0],
+      "Muse Glimmer: lower --max_sessions, --prefix_cache_entries or "
+      "--prefix_capture_slots to total at most 7, or re-export with a larger "
+      "--max-cells");
 }
