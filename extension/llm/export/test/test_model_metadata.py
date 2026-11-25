@@ -9,10 +9,7 @@ import unittest
 import torch
 
 from executorch.exir import to_edge
-from executorch.extension.llm.export.model_metadata import (
-    EOS_IDS_METHOD,
-    write_eos_ids,
-)
+from executorch.extension.llm.export.model_metadata import EOS_IDS_METHOD, write_eos_ids
 
 
 class _Identity(torch.nn.Module):
