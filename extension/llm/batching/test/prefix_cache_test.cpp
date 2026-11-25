@@ -1258,6 +1258,31 @@ TEST_F(FindIdentitiesTest, LongestMatchIsTheFirstCandidateWithoutCloning) {
   EXPECT_EQ(first, cache.longest_match(request, 0, 3));
 }
 
+TEST_F(FindIdentitiesTest, PromptCaptureIsReadyOnceItsCloneSettles) {
+  PrefixCache cache(2);
+  auto source = open();
+  const Tokens prompt{1, 2, 3};
+  generate(source, prompt);
+  auto capture = cache.capture_prompt(source, prompt);
+  // Nothing queued: collect() would not block.
+  EXPECT_TRUE(capture.ready());
+  hold_clones();
+  Release release{gate};
+  ASSERT_TRUE(capture.capture_at(3));
+  ASSERT_TRUE(gate.wait_entered());
+  EXPECT_FALSE(capture.ready());
+  gate.release();
+  const auto deadline = std::chrono::steady_clock::now() + kTimeout;
+  while (!capture.ready() && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::yield();
+  }
+  ASSERT_TRUE(capture.ready());
+  EXPECT_TRUE(capture.collect());
+  EXPECT_EQ(cache.size(), 1u);
+  EXPECT_FALSE(PrefixCache::PromptCapture{}.capture_at(1));
+  EXPECT_TRUE(PrefixCache::PromptCapture{}.ready());
+}
+
 TEST_F(FindIdentitiesTest, SkipAndStopApplyOnlyToTheirOwnQuery) {
   PrefixCache cache(3);
   ASSERT_TRUE(cache.insert({1, 2}, snapshot({1, 2})));

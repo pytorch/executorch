@@ -149,6 +149,15 @@ class ET_EXPERIMENTAL PrefixCache {
       return state_ && queue_capture(*state_, position, std::move(metadata));
     }
 
+    // Whether collect() would return without blocking: no clone is pending, or
+    // the pending one has settled. May run in a Runner callback; serialize with
+    // capture_at() and collect().
+    bool ready() const {
+      return !state_ || !state_->snapshot.valid() ||
+          state_->snapshot.wait_for(std::chrono::seconds(0)) ==
+          std::future_status::ready;
+    }
+
     // Metadata points must increase. After successful try_acquire, on_capture
     // reports whether the caller should collect (true) or release admission
     // (false). All callbacks must be nonblocking.

@@ -268,6 +268,7 @@ class Executor : public batching::testing::FakeExecutor {
     }
     if (decode) {
       decoding.enter();
+      take_decode_step();
     }
     auto translated = batch;
     for (auto& input : translated.inputs) {
@@ -317,6 +318,28 @@ class Executor : public batching::testing::FakeExecutor {
     std::lock_guard<std::mutex> lock(data_mutex_);
     return clones_;
   }
+  // Counted decode steps: once held, each decode step waits for one grant.
+  void hold_decode_steps() {
+    std::lock_guard<std::mutex> lock(step_mutex_);
+    decode_permits_ = 0;
+  }
+  void grant_decode_step() {
+    std::lock_guard<std::mutex> lock(step_mutex_);
+    ++decode_permits_;
+    step_cv_.notify_all();
+  }
+  void release_decode_steps() {
+    std::lock_guard<std::mutex> lock(step_mutex_);
+    decode_permits_ = -1;
+    step_cv_.notify_all();
+  }
+  // Waits until a decode step is blocked for a grant, or `done` holds.
+  bool wait_decode_blocked(const std::function<bool()>& done) {
+    std::unique_lock<std::mutex> lock(step_mutex_);
+    return step_cv_.wait_for(lock, 5s, [&] {
+      return (decode_blocked_ > 0 && decode_permits_ == 0) || done();
+    });
+  }
   void clear_feeds() {
     std::lock_guard<std::mutex> lock(data_mutex_);
     feeds_.clear();
@@ -339,6 +362,24 @@ class Executor : public batching::testing::FakeExecutor {
   std::map<SessionId, bool> advanced_;
   std::vector<Clone> clones_;
   std::vector<Feed> feeds_;
+  std::mutex step_mutex_;
+  std::condition_variable step_cv_;
+  int decode_permits_ = -1;
+  int decode_blocked_ = 0;
+
+  void take_decode_step() {
+    std::unique_lock<std::mutex> lock(step_mutex_);
+    if (decode_permits_ < 0) {
+      return;
+    }
+    ++decode_blocked_;
+    step_cv_.notify_all();
+    step_cv_.wait(lock, [&] { return decode_permits_ != 0; });
+    --decode_blocked_;
+    if (decode_permits_ > 0) {
+      --decode_permits_;
+    }
+  }
 };
 
 struct Events {
@@ -448,6 +489,7 @@ class PrefixReuseTest : public ::testing::Test {
     executor.executing.release();
     executor.cloning.release();
     executor.decoding.release();
+    executor.release_decode_steps();
     executor.release();
     for (auto& event : events) {
       event->blocked.release();
@@ -564,7 +606,8 @@ TEST_P(
   }
   // This fake verifies routing/configuration, not sampled model parity.
   EXPECT_FALSE(executor.executed_without_sampling_state());
-  // Seed capture and two lookups; the retained prompt end is not cloned again.
+  // Seed capture and two lookups; the retained prompt end is not cloned
+  // again.
   EXPECT_EQ(executor.clone_calls.load(), 3);
 }
 
@@ -2587,7 +2630,8 @@ TEST_P(CaptureCheckpointLimitTest, CancellationReleasesCaptureLane) {
   watch_callbacks();
   config.prefix_checkpoint_interval = 8;
   start();
-  // Repeated cancellation must return every acquired lane, including at C > 1.
+  // Repeated cancellation must return every acquired lane, including at C
+  // > 1.
   for (std::size_t i = 0; i <= GetParam(); ++i) {
     executor.cloning.hold();
     auto cancelled = output();
@@ -2963,7 +3007,8 @@ TEST_F(PrefixReuseTest, WarmLookupsProceedWhileCapturingRequestIsBlocked) {
   slow->blocked.release();
   ASSERT_TRUE(delivery_checkpoint.wait());
   // The short lookup has posted its finalizer before the owner's fourth
-  // delivery turn. Control finalizes it and queues its terminal before turn 5.
+  // delivery turn. Control finalizes it and queues its terminal before
+  // turn 5.
   barrier = runtime->open_session_async("owner");
   ASSERT_EQ(barrier.wait_for(5s), std::future_status::ready);
   ASSERT_FALSE(barrier.get());
@@ -3573,6 +3618,58 @@ TEST_F(PrefixGroupTest, QueuedMissesOpenTogetherAndShareOneCaptureLane) {
   EXPECT_EQ(config.resolved_prefix_captures(), 1u);
 }
 
+TEST_F(PrefixGroupTest, MembersWithoutALaneCaptureTheirPromptsLater) {
+  // One capture lane. The group submits its three members together, so only
+  // the first holds the lane at submission; the others capture their prompt
+  // ends once it frees, while they are still decoding.
+  config.prefix_cache_capacity = 4;
+  // Room to buffer every output: once gating ends, the fast executor may
+  // outrun delivery.
+  config.max_events_per_request = 64;
+  start();
+  auto parked = park_control();
+  const std::vector<std::vector<Token>> prompts{
+      {1, 2, 3}, {4, 5, 6}, {7, 8, 9}};
+  std::vector<RequestHandle> handles;
+  for (const auto& prompt : prompts) {
+    burst.push_back(output());
+    handles.push_back(submit(burst.back(), prompt, std::nullopt, 40));
+  }
+  const auto captured = [&](const std::vector<Token>& prompt) {
+    const auto clones = executor.clones();
+    return std::any_of(clones.begin(), clones.end(), [&](const auto& clone) {
+      return clone.prefix == prompt;
+    });
+  };
+  const auto all_captured = [&] {
+    return std::all_of(prompts.begin(), prompts.end(), captured);
+  };
+  const auto done = [&] {
+    return std::all_of(
+        handles.begin(), handles.end(), [](const auto& h) { return h.done(); });
+  };
+  // One decode step at a time, so control can collect each queued capture and
+  // free the lane before the members run out of outputs.
+  executor.hold_decode_steps();
+  control.release();
+  while (!all_captured() && executor.wait_decode_blocked(done) && !done()) {
+    for (const auto until = std::chrono::steady_clock::now() + 5ms;
+         !all_captured() && std::chrono::steady_clock::now() < until;) {
+      std::this_thread::yield();
+    }
+    executor.grant_decode_step();
+  }
+  executor.release_decode_steps();
+  EXPECT_TRUE(all_captured());
+  finish(parked, handles);
+  for (std::size_t i = 0; i < handles.size(); ++i) {
+    SCOPED_TRACE(i);
+    EXPECT_FALSE(handles[i].error());
+    ASSERT_TRUE(burst[i]->terminal);
+    EXPECT_EQ(burst[i]->terminal->finish_reason, FinishReason::Length);
+  }
+}
+
 TEST_F(PrefixGroupTest, GroupBudgetCountsOnlyPositionsLeftToPrefill) {
   // An 8-token step prefill budget groups 4 positions. Two hits leave one
   // position each and share a group; the cold four-token prompt is too long
@@ -3587,9 +3684,9 @@ TEST_F(PrefixGroupTest, GroupBudgetCountsOnlyPositionsLeftToPrefill) {
        {1, 2, 3, 4, 5, 6, 7, 8, 11}});
   executor.executing.hold();
   control.release();
-  // The first hit's prefill is held. Its group's clone wave settled before any
-  // member was submitted, and the last hit can look up only after the cold
-  // prompt's submission, so exactly the two grouped hits have cloned.
+  // The first hit's prefill is held. Its group's clone wave settled before
+  // any member was submitted, and the last hit can look up only after the
+  // cold prompt's submission, so exactly the two grouped hits have cloned.
   ASSERT_TRUE(executor.executing.wait());
   EXPECT_EQ(executor.clone_attempts(cached), 2);
   executor.executing.release();
@@ -3770,10 +3867,11 @@ TEST_F(PrefixGroupTest, RefusedCloneFallsBackOnlyForItsMember) {
 }
 
 TEST_F(PrefixGroupTest, RefusedCreditedClonesKeepTheGroupWithinItsCap) {
-  // An 8-token step prefill budget groups 4 positions. Each member is credited
-  // with the 8-token snapshot and sized at one position, but that clone is
-  // refused and each falls back to the 3-token one, leaving 6 positions to
-  // prefill: only the first still fits, and the others are requeued.
+  // An 8-token step prefill budget groups 4 positions. Each member is
+  // credited with the 8-token snapshot and sized at one position, but that
+  // clone is refused and each falls back to the 3-token one, leaving 6
+  // positions to prefill: only the first still fits, and the others are
+  // requeued.
   config.prefix_cache_capacity = 2;
   freeze_full_cache();
   start(true, batching::DecodeFirstScheduler::create(12, 4, 8));
@@ -3788,10 +3886,10 @@ TEST_F(PrefixGroupTest, RefusedCreditedClonesKeepTheGroupWithinItsCap) {
        {1, 2, 3, 4, 5, 6, 7, 8, 11}});
   executor.executing.hold();
   control.release();
-  // While the first member's prefill is held, the others' fallback clones were
-  // released before it was submitted: two snapshots, its clone, and at most
-  // the next group's clone, which may be served before the held step. Without
-  // the cut all three clones would be resident.
+  // While the first member's prefill is held, the others' fallback clones
+  // were released before it was submitted: two snapshots, its clone, and at
+  // most the next group's clone, which may be served before the held step.
+  // Without the cut all three clones would be resident.
   ASSERT_TRUE(executor.executing.wait());
   EXPECT_LE(executor.open_count(), 4);
   executor.executing.release();

@@ -1387,6 +1387,72 @@ struct ServingRuntime::Impl {
     capture_lanes_used_.fetch_sub(1);
   }
 
+  // A group submits its members back to back, so the capture lanes that
+  // one-at-a-time admission recycles between members are still busy for all
+  // but the first few. Skipping their prompt ends would leave the cache with
+  // older entries whose cells no running request shares, widening every
+  // step's cell read window. Instead, a member that found no lane retries at
+  // each later output, while its prompt is still committed, and queues the
+  // same prompt-end capture once one frees. Like a first-output capture, it
+  // goes to control only once its clone has settled, so collecting it never
+  // blocks control; finalization collects one that is still pending. The
+  // state lives on the engine thread, which alone calls the callback.
+  void defer_prompt_capture(
+      const Request& request,
+      const batching::Session& session,
+      batching::GenerationCallback& callback) {
+#if ET_HAS_EXCEPTIONS
+    try {
+#endif
+      request->text->prefix_capture =
+          prefix_cache_.capture_identity(session, *request->text->prompt);
+      struct Deferred {
+        bool attempted = false;
+        bool pending = false;
+      };
+      const auto end =
+          static_cast<batching::Position>(request->text->prompt->size());
+      callback = [this,
+                  request,
+                  end,
+                  state = std::make_shared<Deferred>(),
+                  inner = std::move(callback)](
+                     const batching::GenerationUpdate& update) {
+        // Control owns the capture once it is queued there.
+        if (!state->attempted && !update.tokens.empty() &&
+            !update.finish_reason && !request->cancelled.load() &&
+            try_acquire_capture_lane()) {
+          state->attempted = true;
+          bool queued = false;
+#if ET_HAS_EXCEPTIONS
+          try {
+#endif
+            queued = request->text->prefix_capture->capture_at(end);
+#if ET_HAS_EXCEPTIONS
+          } catch (...) {
+            // Optional capture failure leaves the generation usable.
+          }
+#endif
+          if (queued) {
+            request->text->capture_lane = true;
+            state->pending = true;
+          } else {
+            capture_lanes_used_.fetch_sub(1);
+          }
+        }
+        if (state->pending && request->text->prefix_capture->ready()) {
+          state->pending = false;
+          enqueue_capture(request);
+        }
+        inner(update);
+      };
+#if ET_HAS_EXCEPTIONS
+    } catch (...) {
+      // Keep the original callback when optional capture setup fails.
+    }
+#endif
+  }
+
   // Rejects the request and returns false if its prompt cannot be prepared.
   // A prompt prepared earlier, before its request was requeued, is kept.
   bool prepare(const Request& request) {
@@ -1495,13 +1561,17 @@ struct ServingRuntime::Impl {
     // rejection was delivered, so it must not be prepared again.
     const auto kept =
         cached ? acquire_sessions(group, prepared, end, found, opens) : end;
+    // Members submitted back to back find the capture lanes still busy.
+    const bool shared = cached &&
+        std::count(prepared.begin(), prepared.begin() + kept, true) > 1;
     // Members rejected in preparation never issued an open.
     for (std::size_t i = 0; i < end; ++i) {
       if (i >= kept && prepared[i]) {
         continue;
       }
       if (prepared[i]) {
-        generate(group[i].request, std::move(opens[i]), std::move(found[i]));
+        generate(
+            group[i].request, std::move(opens[i]), std::move(found[i]), shared);
       }
       schedule(group[i].request);
       std::lock_guard<std::mutex> lock(mutex_);
@@ -1532,7 +1602,8 @@ struct ServingRuntime::Impl {
   void generate(
       const Request& request,
       std::future<std::optional<batching::Session>> cold_open = {},
-      std::optional<PrefixLookupResult> looked_up = std::nullopt) {
+      std::optional<PrefixLookupResult> looked_up = std::nullopt,
+      bool defer_capture = false) {
     struct SettleOpen {
       std::future<std::optional<batching::Session>>& open;
       ~SettleOpen() {
@@ -1721,22 +1792,26 @@ struct ServingRuntime::Impl {
            config_.prefix_checkpoint_prompt_end == PromptEndCapture::Every) &&
           request->text && request->text->prompt &&
           config_.prefix_cache_capacity != 0 &&
-          !prefix_cache_.touch_identity(*request->text->prompt) &&
-          try_acquire_capture_lane()) {
-        // Only a capture needs an extra row beyond the working-session slots.
-        request->text->capture_lane = true;
+          !prefix_cache_.touch_identity(*request->text->prompt)) {
+        if (try_acquire_capture_lane()) {
+          // Only a capture needs an extra row beyond the working-session
+          // slots.
+          request->text->capture_lane = true;
 #if ET_HAS_EXCEPTIONS
-        try {
+          try {
 #endif
-          request->text->prefix_capture =
-              prefix_cache_.capture_identity(session, *request->text->prompt);
-          callback = request->text->prefix_capture->wrap(
-              callback, [this, request] { enqueue_capture(request); });
+            request->text->prefix_capture =
+                prefix_cache_.capture_identity(session, *request->text->prompt);
+            callback = request->text->prefix_capture->wrap(
+                callback, [this, request] { enqueue_capture(request); });
 #if ET_HAS_EXCEPTIONS
-        } catch (...) {
-          // Keep the original callback when optional capture setup fails.
+          } catch (...) {
+            // Keep the original callback when optional capture setup fails.
+          }
+#endif
+        } else if (defer_capture) {
+          defer_prompt_capture(request, session, callback);
         }
-#endif
       }
       auto handle = session.generate_async(
           std::move(request->request.delta),
