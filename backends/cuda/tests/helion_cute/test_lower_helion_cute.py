@@ -51,10 +51,6 @@ class LowerHelionCuteTest(helion_tests.LowerHelionTest):
     def test_attention_export_and_cpp_runtime(self) -> None:
         pass
 
-    @unittest.skip("needs two distinct CuTe launches, which land in the next diff")
-    def test_chained_calls_on_transposed_read_after_pass(self) -> None:
-        pass
-
     def test_mixed_triton_and_cute_export_and_cpp_runtime(self) -> None:
         helion = helion_tests.helion
         triton_kernel = helion.kernel(
@@ -99,7 +95,7 @@ class LowerHelionCuteTest(helion_tests.LowerHelionTest):
         self.assertEqual(len(helion_cute._STATE.program_launches()), 1)
         self._export_and_run(Model(), x, x + w * 2)
 
-    def test_rejects_two_distinct_cute_launches(self) -> None:
+    def test_two_distinct_cute_launches_export_and_cpp_runtime(self) -> None:
         add = self._kernel(
             helion_tests._add,
             helion_tests.helion.Config(block_sizes=[256]),
@@ -117,18 +113,26 @@ class LowerHelionCuteTest(helion_tests.LowerHelionTest):
                 working = x[1].clone()
                 return add(x[0], scale(working))
 
+        self._export_and_run(Model(), x, x[0] + (x[1] + 1) * 2)
+
+    def test_one_kernel_two_layouts_export_and_cpp_runtime(self) -> None:
+        # One kernel called with two argument layouts exports two
+        # launches of that kernel into one program.
+        add = self._kernel(
+            helion_tests._add,
+            helion_tests.helion.Config(block_sizes=[256]),
+            static_shapes=True,
+        )
+        x = torch.randn(2, 512, device="cuda")
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return add(x[0, :257], x[1, :257]), add(x[0], x[1])
+
         program = torch.export.export(Model(), (x,), strict=True)
-        with self.assertRaisesRegex(
-            NotImplementedError, "only one distinct CuTe launch"
-        ):
-            to_edge_transform_and_lower(
-                program,
-                partitioner=[
-                    CudaPartitioner(
-                        [CudaBackend.generate_method_name_compile_spec("forward")]
-                    )
-                ],
-            )
+        LowerHelionPass()(program)
+        self.assertEqual(len(helion_cute._STATE.program_launches()), 2)
+        self._export_and_run(Model(), x, (x[0, :257] + x[1, :257], x[0] + x[1]))
 
     def test_view_buffer_export_and_cpp_runtime(self) -> None:
         # A buffer that is a view at an offset that is not 16-byte aligned
