@@ -226,6 +226,13 @@ target_link_libraries(
   PRIVATE vulkan_schema executorch_vulkan_shared_runtime
 )
 target_compile_options(vulkan_backend PRIVATE ${VULKAN_CXX_FLAGS})
+# extension_llm_cache carries the off-graph KV-cache registry init() binds to.
+if(EXECUTORCH_BUILD_EXTENSION_LLM)
+  target_link_libraries(vulkan_backend PRIVATE extension_llm_cache)
+  target_compile_definitions(
+    vulkan_backend PRIVATE EXECUTORCH_BUILD_EXTENSION_LLM
+  )
+endif()
 # Link this library with --whole-archive due to dynamic backend registration
 executorch_target_link_options_shared_lib(vulkan_backend)
 

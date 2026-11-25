@@ -77,6 +77,7 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/backends/vulkan:vulkan_preprocess",
                 "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
                 "//executorch/exir:lib",
+                "//executorch/extension/llm/cache:cache",
                 "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
                 "//executorch/extension/pybindings:portable_lib",  # @manual
                 "//executorch/kernels/portable:custom_ops_generated_lib",

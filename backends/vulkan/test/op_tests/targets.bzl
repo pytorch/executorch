@@ -187,6 +187,7 @@ def define_common_targets(is_fbcode = False):
         "sdpa_test",
         extra_deps = [
             ":test_utils",
+            "//executorch/extension/llm/cache:kv_cache",
             "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
             "//executorch/extension/tensor:tensor",
         ]

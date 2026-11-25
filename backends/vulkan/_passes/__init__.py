@@ -27,6 +27,9 @@ from executorch.backends.vulkan._passes.remove_redundant_ops import (
 from executorch.backends.vulkan._passes.replace_instance_norm import (
     ReplaceInstanceNormPass,
 )
+from executorch.backends.vulkan._passes.resolve_kv_cache_position import (
+    ResolveKVCachePositionPass,
+)
 from executorch.backends.vulkan._passes.squeeze_unsqueeze_inputs import (
     SqueezeUnsqueezeInputs,
 )
@@ -44,6 +47,7 @@ __all__ = [
     "FoldForceFp16CastsPass",
     "RemoveRedundantOpsTransform",
     "ReplaceInstanceNormPass",
+    "ResolveKVCachePositionPass",
     "SqueezeUnsqueezeInputs",
     "TagMemoryMetaPass",
 ]
