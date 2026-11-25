@@ -87,9 +87,10 @@ struct CudaExecutorConfig {
   // What max_sessions is made of, for the capacity diagnostics. Optional; when
   // given it must total max_sessions.
   KvReservations reservations;
-  // Called on the creating thread with the KV admission report: when automatic
-  // context mode resolves a budget, and on every capacity rejection. The
-  // executor logs the report itself; a caller may add advice in its own terms.
+  // Called on the creating thread with the KV admission report: once the
+  // sessions are admitted (an explicit limit, or automatic context mode's
+  // resolved budget), and on every capacity rejection. The executor logs the
+  // report itself; a caller may add advice in its own terms.
   std::function<void(const KvCapacityReport&)> capacity_report;
   // Zero divides the available cell pool across sessions, capped by context.
   int max_session_tokens = 0;

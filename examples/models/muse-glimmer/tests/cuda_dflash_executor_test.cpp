@@ -10,9 +10,17 @@
 #include <executorch/examples/models/muse-glimmer/runtime/kv_capacity_advice.h>
 #include <executorch/extension/cuda/caller_stream.h>
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
+#include <executorch/runtime/platform/runtime.h>
 #include <gtest/gtest.h>
 #include <algorithm>
 #include <array>
+#include <cstdlib>
+#include <iostream>
+#include <limits>
+#include <optional>
+#include <regex>
+#include <string>
+#include <vector>
 
 using executorch::extension::from_blob;
 namespace aten = executorch::aten;
@@ -301,26 +309,64 @@ bool any_contains(
   });
 }
 
-// 4 owners x 16-token blocks over a shared draft pool of `cells` cells.
-kv_advice::DraftPool cell_pool(int cells) {
-  return {/*sequence_layout=*/false, cells, /*max_owners=*/4, /*block=*/16};
+constexpr std::int64_t kContext = 131072;
+constexpr std::int64_t kTargetBytesPerCell = 53248;
+constexpr std::int64_t kDraftBytesPerCell = 2048;
+
+// `owners` x `block` draft blocks over a shared draft pool of `cells` cells.
+kv_advice::DraftPool cell_pool(int cells, int owners = 4, int block = 16) {
+  return {false, cells, owners, block, kDraftBytesPerCell};
 }
 
-cb::KvCapacityReport target_report(
-    cb::KvAdmission outcome,
+// The report CudaExecutor makes for `config`, from the same admission check.
+cb::KvCapacityReport report_for(
+    const kv_advice::StartupConfig& config,
+    cb::KvReservations reservations = {}) {
+  const cb::KvAdmissionCheck check = cb::check_admission(
+      config.sequence_layout,
+      config.sessions,
+      config.requested_tokens,
+      config.context_length,
+      config.cells,
+      config.session_limit);
+  cb::KvCapacityReport report;
+  report.outcome = check.outcome;
+  report.sequence_layout = config.sequence_layout;
+  report.sessions = config.sessions;
+  report.reservations = reservations;
+  report.automatic = config.requested_tokens == 0;
+  report.session_tokens = static_cast<int>(check.session_tokens);
+  report.context_length = config.context_length;
+  report.cells = config.cells;
+  report.session_limit = config.session_limit;
+  report.facts = {kTargetBytesPerCell, /*has_windowed_layers=*/true};
+  return report;
+}
+
+kv_advice::StartupConfig cell_config(
     int sessions,
     int tokens,
-    std::int64_t cells) {
-  cb::KvCapacityReport report;
-  report.outcome = outcome;
-  report.sessions = sessions;
-  report.reservations = {4, 8, sessions - 12};
-  report.session_tokens = tokens;
-  report.context_length = 131072;
-  report.cells = cells;
-  report.session_limit = 64;
-  report.facts = {53248, /*has_windowed_layers=*/true};
-  return report;
+    std::int64_t cells,
+    std::optional<kv_advice::DraftPool> draft = std::nullopt) {
+  kv_advice::StartupConfig config;
+  config.sessions = sessions;
+  config.requested_tokens = tokens;
+  config.context_length = kContext;
+  config.cells = cells;
+  config.session_limit = 64;
+  config.draft = draft;
+  return config;
+}
+
+std::optional<kv_advice::Fix> find_fix(
+    const kv_advice::Advice& advice,
+    kv_advice::FixKind kind) {
+  for (const auto& fix : advice.fixes) {
+    if (fix.kind == kind) {
+      return fix;
+    }
+  }
+  return std::nullopt;
 }
 
 } // namespace
@@ -330,174 +376,526 @@ TEST(KvAdvice, DraftBudgetFollowsTheExecutorsRule) {
   EXPECT_EQ(kv_advice::draft_session_budget(16, cell_pool(131072)), 8187);
   EXPECT_EQ(kv_advice::draft_session_budget(16, cell_pool(32768)), 2043);
   // Each sequence's rows less the block for a private history.
-  EXPECT_EQ(kv_advice::draft_session_budget(16, {true, 131072, 4, 16}), 131056);
+  EXPECT_EQ(
+      kv_advice::draft_session_budget(16, {true, 131072, 4, 16, 0}), 131056);
 }
 
 TEST(KvAdvice, DraftAdmissionMatchesTheExecutorsCondition) {
-  // Automatic: the smaller pool's budget, which must exceed the block.
   auto admitted = kv_advice::draft_admission(16, 0, 8191, cell_pool(131072));
   EXPECT_EQ(admitted.max_context, 8187);
   EXPECT_TRUE(admitted.fits);
-  admitted = kv_advice::draft_admission(16, 0, 8191, cell_pool(32768));
-  EXPECT_EQ(admitted.max_context, 2043);
-  EXPECT_TRUE(admitted.fits);
-  // A requested limit must fit the draft exactly.
   EXPECT_TRUE(
       kv_advice::draft_admission(16, 2043, 2043, cell_pool(32768)).fits);
   EXPECT_FALSE(
       kv_advice::draft_admission(16, 2044, 2044, cell_pool(32768)).fits);
-  // Neither pool may leave the block or less.
-  EXPECT_FALSE(kv_advice::draft_admission(16, 0, 16, cell_pool(131072)).fits);
   // (336 - 65) / 16 = 16 tokens, the block; (337 - 65) / 16 = 17.
   EXPECT_FALSE(kv_advice::draft_admission(16, 0, 8191, cell_pool(336)).fits);
   EXPECT_TRUE(kv_advice::draft_admission(16, 0, 8191, cell_pool(337)).fits);
+  EXPECT_FALSE(kv_advice::draft_admission(16, 0, 16, cell_pool(131072)).fits);
 }
 
-TEST(KvAdvice, DraftShortfallForARequestedLimit) {
-  const auto lines = kv_advice::draft_shortfall_lines(
-      16, 8191, 8191, cell_pool(131072), {4, 8, 4});
-  ASSERT_EQ(lines.size(), 2u);
-  EXPECT_EQ(
-      lines[0],
-      "DFlash: 16 resident sessions (4 live + 8 prefix entries + 4 capture "
-      "slots) x 8191 + 64 temporary draft-block cells + 1 padding = 131121 "
-      "draft cells needed, 131072 available");
-  EXPECT_EQ(
-      lines[1],
-      "Muse Glimmer: set --max_session_tokens (serve_batching: --max-context) "
-      "to at most 8187, or re-export with --draft-max-cells >= 131121");
+TEST(KvAdvice, StartupChecksFollowTheFactoriesAndExecutors) {
+  EXPECT_TRUE(kv_advice::check_startup(cell_config(4, 1024, 4097)).admitted);
+  EXPECT_FALSE(kv_advice::check_startup(cell_config(4, 1024, 4096)).admitted);
+  // One-token sessions are refused, requested or resolved.
+  EXPECT_FALSE(kv_advice::check_startup(cell_config(4, 1, 4097)).admitted);
+  EXPECT_FALSE(kv_advice::check_startup(cell_config(8, 0, 16)).admitted);
+  EXPECT_FALSE(kv_advice::check_startup(cell_config(65, 0, 1 << 20)).admitted);
+  const auto dflash =
+      kv_advice::check_startup(cell_config(16, 0, 131072, cell_pool(131072)));
+  EXPECT_TRUE(dflash.admitted);
+  EXPECT_EQ(dflash.session_tokens, 8187);
 }
 
-TEST(KvAdvice, DraftShortfallWhenTheDraftLeavesTheBlockOrLess) {
-  // 300 cells leave (300 - 1 - 64) / 16 = 14 tokens, below the 16-token block.
-  const auto lines =
-      kv_advice::draft_shortfall_lines(16, 0, 8191, cell_pool(300), {});
-  ASSERT_EQ(lines.size(), 2u);
-  EXPECT_EQ(
-      lines[0],
-      "DFlash: 300 draft cells, less 64 temporary block cells and 1 padding, "
-      "leave 14 tokens for each of 16 resident sessions, which must exceed "
-      "the 16-token block");
-  // floor(235 / 17) = 13 sessions of 17 tokens; 16 x 17 + 64 + 1 = 337.
-  EXPECT_EQ(
-      lines[1],
-      "Muse Glimmer: reserve at most 13 sessions, or re-export with "
-      "--draft-max-cells >= 337");
-  EXPECT_FALSE(any_contains(lines, "--max_session_tokens"));
-}
-
-TEST(KvAdvice, DraftShortfallWhenTheTargetBudgetIsTooSmall) {
-  auto lines =
-      kv_advice::draft_shortfall_lines(4, 16, 16, cell_pool(131072), {});
-  EXPECT_EQ(
-      lines[0],
-      "DFlash: a 16-token session budget must exceed the 16-token draft "
-      "block");
-  EXPECT_TRUE(any_contains(lines, "raise --max_session_tokens"));
-  lines = kv_advice::draft_shortfall_lines(4, 0, 12, cell_pool(131072), {});
-  EXPECT_TRUE(any_contains(lines, "larger --max-cells"));
-}
-
-TEST(KvAdvice, DraftShortfallOnASequenceLayout) {
-  const auto lines =
-      kv_advice::draft_shortfall_lines(4, 4096, 4096, {true, 2048, 4, 16}, {});
-  ASSERT_EQ(lines.size(), 2u);
-  EXPECT_EQ(
-      lines[0],
-      "DFlash: 4096 tokens per session exceed each draft sequence's 2048 rows "
-      "less the 16-token block");
-  EXPECT_EQ(
-      lines[1],
-      "Muse Glimmer: set --max_session_tokens (serve_batching: --max-context) "
-      "to at most 2032");
-}
-
-TEST(KvAdvice, CellShortfallAdviceNamesTheFlags) {
-  const auto lines = kv_advice::serving_advice(
-      target_report(cb::KvAdmission::kCells, 16, 131072, 131072));
-  ASSERT_EQ(lines.size(), 3u);
-  EXPECT_EQ(
-      lines[0],
-      "Muse Glimmer: set --max_session_tokens (serve_batching: --max-context) "
-      "to at most 8191, or lower --max_sessions, --prefix_cache_entries or "
-      "--prefix_capture_slots");
-  EXPECT_EQ(
-      lines[1],
-      "Muse Glimmer: or re-export with --max-cells >= 2097153 (104.0 GiB of "
-      "K/V)");
-  EXPECT_EQ(
-      lines[2],
-      "Muse Glimmer: for long contexts, re-export with --kv-layout sequence "
-      "--max-kv-seqs >= 16");
-}
-
-TEST(KvAdvice, TargetAdviceIsCappedByTheDraftPool) {
-  // The default draft pool (--max-cells) serves 8187, not the target's 8191.
-  const auto report =
-      target_report(cb::KvAdmission::kCells, 16, 131072, 131072);
-  const auto lines = kv_advice::serving_advice(
-      report, kv_advice::draft_session_budget(16, cell_pool(131072)));
-  EXPECT_TRUE(any_contains(lines, "to at most 8187,")) << lines[0];
-  EXPECT_FALSE(any_contains(lines, "8191"));
-}
-
-TEST(KvAdvice, SessionLimitAdviceNeverSuggestsATokenLimit) {
-  auto report = target_report(cb::KvAdmission::kSessionLimit, 80, 8192, 131072);
-  report.reservations = {16, 48, 16};
-  const auto lines = kv_advice::serving_advice(report);
-  ASSERT_EQ(lines.size(), 1u);
-  EXPECT_EQ(
-      lines[0],
-      "Muse Glimmer: lower --max_sessions, --prefix_cache_entries or "
-      "--prefix_capture_slots to total at most 64, or re-export with "
-      "--kv-layout sequence --max-kv-seqs >= 80");
-  report.sequence_layout = true;
-  report.session_limit = 4;
+TEST(KvAdvice, DFlashCellShortfallSizesBothPools) {
+  // 16 sessions of 131072 tokens on a 131072-cell DFlash export whose draft
+  // pool is the default --max-cells.
+  const auto config = cell_config(16, 131072, 131072, cell_pool(131072));
+  const auto advice =
+      kv_advice::advise(report_for(config, {4, 8, 4}), config.draft);
+  EXPECT_FALSE(advice.admitted);
+  const auto cells = find_fix(advice, kv_advice::FixKind::kCells);
+  ASSERT_TRUE(cells);
+  EXPECT_EQ(cells->value, 2097153);
+  EXPECT_EQ(cells->draft_cells, 2097153 + 64);
   EXPECT_TRUE(any_contains(
-      kv_advice::serving_advice(report), "re-export with --max-kv-seqs >= 80"));
-}
-
-TEST(KvAdvice, ZeroTokenBudgetAdviceFitsTheSessions) {
-  cb::KvCapacityReport report =
-      target_report(cb::KvAdmission::kCells, 16, 4, 8);
-  report.sessions = 8;
-  report.reservations = {8, 0, 0};
-  EXPECT_EQ(
-      kv_advice::serving_advice(report)[0],
-      "Muse Glimmer: lower --max_sessions, --prefix_cache_entries or "
-      "--prefix_capture_slots to total at most 1");
-}
-
-TEST(KvAdvice, AutomaticContextExplainsTheFullContext) {
-  const auto report =
-      target_report(cb::KvAdmission::kAutomatic, 16, 8191, 131072);
-  const auto lines = kv_advice::serving_advice(report);
-  ASSERT_EQ(lines.size(), 3u);
-  EXPECT_EQ(
-      lines[0],
-      "Muse Glimmer: each session may use 8191 of the model's 131072 context "
-      "tokens; fewer --max_sessions, --prefix_cache_entries or "
-      "--prefix_capture_slots leave more");
-  EXPECT_EQ(
-      lines[1],
-      "Muse Glimmer: the full context needs an export with --max-cells >= "
-      "2097153 (104.0 GiB of K/V)");
-  EXPECT_TRUE(any_contains(lines, "--kv-layout sequence --max-kv-seqs >= 16"));
-  // With the draft pool the session gets less.
+      advice.lines, "--max-cells >= 2097153 and --draft-max-cells >= 2097217"));
   EXPECT_TRUE(any_contains(
-      kv_advice::serving_advice(report, 2043), "each session may use 2043 "));
-  // A budget that already covers the context needs no advice.
+      advice.lines, "without --draft-max-cells, --max-cells >= 2097217"));
+  // Both pools' K/V.
+  EXPECT_TRUE(any_contains(
+      advice.lines,
+      cb::format_memory(
+          2097153 * kTargetBytesPerCell + 2097217 * kDraftBytesPerCell)));
+  // The token limit fits the draft too and exceeds the block.
+  const auto limit = find_fix(advice, kv_advice::FixKind::kTokenLimit);
+  ASSERT_TRUE(limit);
+  EXPECT_EQ(limit->low, 17);
+  EXPECT_EQ(limit->value, 8187);
+  EXPECT_TRUE(any_contains(
+      advice.lines,
+      "set --max_session_tokens/--max-context between 17 and 8187"));
+  // No sessions count fits 131072 tokens in 131072 cells.
+  EXPECT_FALSE(find_fix(advice, kv_advice::FixKind::kSessions));
+  EXPECT_FALSE(find_fix(advice, kv_advice::FixKind::kSequenceLayout));
+}
+
+TEST(KvAdvice, AutomaticDraftLimitAsksOnlyForDraftCells) {
+  // The target already holds the full context; only the draft limits it.
+  const auto config = cell_config(16, 0, 2097153, cell_pool(32768));
+  const auto advice = kv_advice::advise(report_for(config), config.draft);
+  EXPECT_TRUE(advice.admitted);
+  EXPECT_TRUE(any_contains(advice.lines, "each session may use 2043 of"));
+  const auto cells = find_fix(advice, kv_advice::FixKind::kCells);
+  ASSERT_TRUE(cells);
+  EXPECT_EQ(cells->value, 2097153);
+  EXPECT_EQ(cells->draft_cells, 2097217);
+  EXPECT_TRUE(any_contains(
+      advice.lines,
+      "full context, re-export with --draft-max-cells >= 2097217"));
+  EXPECT_FALSE(any_contains(advice.lines, "--max-cells >= 2097153"));
+}
+
+TEST(KvAdvice, SessionLimitWithShortCellsAdvisesSessionsThatFit) {
+  const auto config = cell_config(80, 8192, 131072);
+  const auto advice = kv_advice::advise(report_for(config, {16, 48, 16}));
+  const auto fewer = find_fix(advice, kv_advice::FixKind::kSessions);
+  ASSERT_TRUE(fewer);
+  EXPECT_EQ(fewer->value, 15);
+  EXPECT_TRUE(any_contains(advice.lines, "to total at most 15 resident"));
   EXPECT_TRUE(
-      kv_advice::serving_advice(
-          target_report(cb::KvAdmission::kAutomatic, 16, 131072, 131072 * 17))
-          .empty());
+      any_contains(advice.lines, "--kv-layout sequence --max-kv-seqs >= 80"));
+  EXPECT_FALSE(find_fix(advice, kv_advice::FixKind::kCells));
+  EXPECT_FALSE(find_fix(advice, kv_advice::FixKind::kTokenLimit));
 }
 
-TEST(KvAdvice, NoBudgetAdvice) {
+TEST(KvAdvice, AutomaticSessionLimitNamesBothFlagSpellings) {
+  // 32 live + 32 prefix + 4 capture on the worker's automatic context.
+  const auto config = cell_config(68, 0, 131072);
+  const auto advice = kv_advice::advise(report_for(config, {32, 32, 4}));
+  const auto fewer = find_fix(advice, kv_advice::FixKind::kSessions);
+  ASSERT_TRUE(fewer);
+  EXPECT_EQ(fewer->value, 64);
+  for (const char* flag :
+       {"--max_sessions/--max-sessions",
+        "--prefix_cache_entries/--prefix-cache-entries",
+        "--prefix_capture_slots/--prefix-capture-slots"}) {
+    EXPECT_TRUE(any_contains(advice.lines, flag)) << flag;
+  }
+  // Capture slots size themselves unless set explicitly.
+  EXPECT_TRUE(any_contains(advice.lines, "default to automatic sizing"));
+  EXPECT_FALSE(find_fix(advice, kv_advice::FixKind::kCells));
+}
+
+TEST(KvAdvice, DraftShortfallWithARequestedLimitSizesForTheLimit) {
+  // The draft leaves (300 - 65) / 16 = 14 tokens; 4096 were requested.
+  const auto config = cell_config(16, 4096, 131072, cell_pool(300));
+  const auto advice = kv_advice::advise(report_for(config), config.draft);
+  EXPECT_FALSE(advice.admitted);
+  EXPECT_TRUE(any_contains(advice.lines, "leave 14 tokens for each of 16"));
+  // Re-export the draft for 4096 tokens each: 16 x 4096 + 64 + 1.
+  const auto cells = find_fix(advice, kv_advice::FixKind::kCells);
+  ASSERT_TRUE(cells);
+  EXPECT_EQ(cells->value, 131072);
+  EXPECT_EQ(cells->draft_cells, 65601);
+  // No session count or token limit above the block fits 300 draft cells
+  // with a 4096-token limit.
+  EXPECT_FALSE(find_fix(advice, kv_advice::FixKind::kSessions));
+  EXPECT_FALSE(find_fix(advice, kv_advice::FixKind::kTokenLimit));
+}
+
+TEST(KvAdvice, DFlashZeroBudgetNeverAdvisesOneTokenSessions) {
+  // Automatic: 15 / 16 = 0 tokens per session.
+  const auto config = cell_config(16, 0, 16, cell_pool(131072));
+  const auto advice = kv_advice::advise(report_for(config), config.draft);
+  const auto cells = find_fix(advice, kv_advice::FixKind::kCells);
+  ASSERT_TRUE(cells);
+  // Sized for the block plus one token: 16 x 17 + 1.
+  EXPECT_EQ(cells->value, 16 * 17 + 1);
   EXPECT_EQ(
-      kv_advice::serving_advice(
-          target_report(cb::KvAdmission::kNoBudget, 16, 0, 8))[0],
-      "Muse Glimmer: lower --max_sessions, --prefix_cache_entries or "
-      "--prefix_capture_slots to total at most 7, or re-export with a larger "
-      "--max-cells");
+      kv_advice::check_startup(kv_advice::apply_fix(config, *cells))
+          .session_tokens,
+      17);
+}
+
+namespace {
+
+// A configuration the advice text lets a user choose; `serving` when only
+// serving options change, so the same program applies.
+struct TextChoice {
+  kv_advice::StartupConfig config;
+  bool serving;
+};
+
+// Reads the fixes back from the advice text, independently of the structured
+// fixes: every figure a line names becomes the configuration it asks for, at
+// each end of a range. `primary` counts the lines that state a fix.
+std::vector<TextChoice> choices_from_text(
+    const kv_advice::StartupConfig& config,
+    const std::vector<std::string>& lines,
+    int* primary) {
+  std::vector<TextChoice> choices;
+  *primary = 0;
+  std::smatch m;
+  const auto number = [&](int i) { return std::stoll(m[i].str()); };
+  for (const std::string& line : lines) {
+    auto choice = config;
+    if (std::regex_search(
+            line,
+            m,
+            std::regex(R"(to total at most (\d+) resident sessions)"))) {
+      ++*primary;
+      choice.sessions = static_cast<int>(number(1));
+      choices.push_back({choice, true});
+      choice.sessions = 1;
+      choices.push_back({choice, true});
+    } else if (
+        std::regex_search(
+            line,
+            m,
+            std::regex(
+                R"(--max-context (?:to (\d+)|between (\d+) and (\d+)))"))) {
+      ++*primary;
+      for (const int i : {1, 2, 3}) {
+        if (m[i].matched) {
+          choice.requested_tokens = static_cast<int>(number(i));
+          choices.push_back({choice, true});
+        }
+      }
+    } else if (
+        std::regex_search(
+            line,
+            m,
+            std::regex(
+                R"(without --draft-max-cells, --max-cells >= (\d+) sizes both)"))) {
+      choice.cells = number(1);
+      choice.draft->cells = number(1);
+      choices.push_back({choice, false});
+    } else if (
+        std::regex_search(
+            line,
+            m,
+            std::regex(
+                R"(re-export with --max-cells >= (\d+) and --draft-max-cells >= (\d+))"))) {
+      ++*primary;
+      choice.cells = number(1);
+      choice.draft->cells = number(2);
+      choices.push_back({choice, false});
+    } else if (std::regex_search(
+                   line,
+                   m,
+                   std::regex(
+                       R"(re-export with --draft-max-cells >= (\d+))"))) {
+      ++*primary;
+      choice.draft->cells = number(1);
+      choices.push_back({choice, false});
+    } else if (std::regex_search(
+                   line,
+                   m,
+                   std::regex(R"(re-export with --max-cells >= (\d+))"))) {
+      ++*primary;
+      choice.cells = number(1);
+      choices.push_back({choice, false});
+    } else if (std::regex_search(
+                   line,
+                   m,
+                   std::regex(
+                       R"(--kv-layout sequence --max-kv-seqs >= (\d+))"))) {
+      ++*primary;
+      choice.sequence_layout = true;
+      choice.session_limit = static_cast<int>(number(1));
+      choices.push_back({choice, false});
+    } else if (std::regex_search(
+                   line,
+                   m,
+                   std::regex(R"(re-export with --max-kv-seqs >= (\d+))"))) {
+      ++*primary;
+      choice.session_limit = static_cast<int>(number(1));
+      choices.push_back({choice, false});
+    } else if (std::regex_search(
+                   line,
+                   m,
+                   std::regex(R"(sequence columns of at least (\d+) rows)"))) {
+      ++*primary;
+      choice.draft->cells = number(1);
+      choices.push_back({choice, false});
+    }
+  }
+  return choices;
+}
+
+} // namespace
+
+TEST(KvAdvice, SharedTokenRules) {
+  EXPECT_TRUE(kv_advice::valid_requested_tokens(0));
+  EXPECT_FALSE(kv_advice::valid_requested_tokens(1));
+  EXPECT_TRUE(kv_advice::valid_requested_tokens(2));
+  EXPECT_FALSE(kv_advice::holds_prompt_and_prediction(1));
+  EXPECT_TRUE(kv_advice::holds_prompt_and_prediction(2));
+  EXPECT_EQ(kv_advice::least_session_tokens(std::nullopt), 2);
+  EXPECT_EQ(kv_advice::least_session_tokens(cell_pool(1000)), 17);
+}
+
+TEST(KvAdvice, StartupChecksModelTheIntLimits) {
+  constexpr int kMax = std::numeric_limits<int>::max();
+  // sessions x tokens must fit an int, as CudaExecutor's entry check asks.
+  auto config = cell_config(64, 1 << 25, kMax);
+  config.context_length = std::int64_t{1} << 26;
+  EXPECT_FALSE(kv_advice::check_startup(config).admitted);
+  // A cell count past an int is not a program CudaExecutor accepts.
+  EXPECT_FALSE(
+      kv_advice::check_startup(cell_config(4, 1024, std::int64_t{kMax} + 1))
+          .admitted);
+  // Nor is a draft pool past an int, and the fix that would need one is not
+  // offered.
+  auto big = cell_config(64, 131072, 131072, cell_pool(131072));
+  big.draft->cells = std::int64_t{kMax} + 1;
+  EXPECT_FALSE(kv_advice::check_startup(big).admitted);
+  const auto huge = cell_config(64, 131072, 131072, cell_pool(131072));
+  const auto advice = kv_advice::advise(report_for(huge), huge.draft);
+  // 64 x 131072 + 1 cells still fit an int, so that fix closes.
+  EXPECT_TRUE(find_fix(advice, kv_advice::FixKind::kCells));
+  auto wide = cell_config(64, 65536, 65536);
+  wide.context_length = 1 << 26;
+  wide.requested_tokens = 1 << 25;
+  const auto none = kv_advice::advise(report_for(wide));
+  // 64 x 2^25 + 1 cells would not fit an int: no cell re-export is named.
+  EXPECT_FALSE(find_fix(none, kv_advice::FixKind::kCells));
+}
+
+TEST(KvAdviceClosure, EveryFixPassesEveryStartupCheck) {
+  struct Split {
+    int live, prefix;
+  };
+  int configs = 0;
+  int refused = 0;
+  int fixed = 0;
+  int unfixable = 0;
+  for (const bool sequence : {false, true}) {
+    for (const bool dflash : {false, true}) {
+      for (const int block :
+           dflash ? std::vector<int>{2, 16} : std::vector<int>{0}) {
+        const std::vector<int> draft_cells = !dflash ? std::vector<int>{0}
+            : sequence ? std::vector<int>{2048, 131088}
+                       : std::vector<int>{300, 32768, 131072, 2097217};
+        const std::vector<std::int64_t> cells_options = sequence
+            ? std::vector<std::int64_t>{0}
+            : std::vector<std::int64_t>{16, 4096, 131072, 2097153};
+        const std::vector<int> limits =
+            sequence ? std::vector<int>{4, 16, 64, 128} : std::vector<int>{64};
+        for (const int sessions : {1, 7, 16, 63, 64, 65, 80}) {
+          for (const int tokens : {0, 17, 4096, 131072}) {
+            for (const std::int64_t cells : cells_options) {
+              for (const int limit : limits) {
+                for (const int draft : draft_cells) {
+                  for (const Split split :
+                       {Split{sessions, 0},
+                        Split{sessions / 2, sessions / 4}}) {
+                    kv_advice::StartupConfig config;
+                    config.sequence_layout = sequence;
+                    config.sessions = sessions;
+                    config.requested_tokens = tokens;
+                    config.context_length = kContext;
+                    config.cells = cells;
+                    config.session_limit = limit;
+                    if (dflash) {
+                      config.draft = kv_advice::DraftPool{
+                          sequence, draft, 4, block, kDraftBytesPerCell};
+                    }
+                    const cb::KvReservations reservations{
+                        split.live,
+                        split.prefix,
+                        sessions - split.live - split.prefix};
+                    SCOPED_TRACE(
+                        "sequence=" + std::to_string(sequence) +
+                        " dflash=" + std::to_string(dflash) +
+                        " block=" + std::to_string(block) +
+                        " sessions=" + std::to_string(sessions) +
+                        " tokens=" + std::to_string(tokens) +
+                        " cells=" + std::to_string(cells) +
+                        " limit=" + std::to_string(limit) +
+                        " draft=" + std::to_string(draft));
+                    ++configs;
+                    const auto base = kv_advice::check_startup(config);
+                    const auto advice = kv_advice::advise(
+                        report_for(config, reservations), config.draft);
+                    ASSERT_EQ(advice.admitted, base.admitted);
+                    const bool full_context = base.admitted && tokens == 0 &&
+                        base.session_tokens < kContext;
+                    refused += !base.admitted;
+                    if (!base.admitted && advice.fixes.empty()) {
+                      ++unfixable;
+                      EXPECT_TRUE(any_contains(advice.lines, "no single"));
+                    }
+                    fixed += !base.admitted && !advice.fixes.empty();
+                    for (const auto& fix : advice.fixes) {
+                      SCOPED_TRACE(static_cast<int>(fix.kind));
+                      // Applied alone, at its least favorable value, the fix
+                      // passes every startup check.
+                      const auto after = kv_advice::check_startup(
+                          kv_advice::apply_fix(config, fix));
+                      EXPECT_TRUE(after.admitted);
+                      if (full_context) {
+                        EXPECT_EQ(after.session_tokens, kContext);
+                      }
+                      // The advice names the fix's figure: the draft cells
+                      // when the target's cells already suffice.
+                      const std::int64_t shown =
+                          fix.kind == kv_advice::FixKind::kCells && dflash &&
+                              fix.value == config.cells
+                          ? fix.draft_cells
+                          : fix.value;
+                      EXPECT_TRUE(
+                          any_contains(advice.lines, std::to_string(shown)));
+                      switch (fix.kind) {
+                        case kv_advice::FixKind::kSessions: {
+                          auto one = config;
+                          one.sessions = 1;
+                          EXPECT_TRUE(kv_advice::check_startup(one).admitted);
+                          break;
+                        }
+                        case kv_advice::FixKind::kTokenLimit: {
+                          EXPECT_GT(fix.low, dflash ? block : 1);
+                          auto low = config;
+                          low.requested_tokens = static_cast<int>(fix.low);
+                          EXPECT_TRUE(kv_advice::check_startup(low).admitted);
+                          break;
+                        }
+                        case kv_advice::FixKind::kCells:
+                          if (dflash) {
+                            // The default draft pool: --max-cells alone.
+                            auto both = config;
+                            both.cells = std::max(fix.value, fix.draft_cells);
+                            both.draft->cells = both.cells;
+                            EXPECT_TRUE(
+                                kv_advice::check_startup(both).admitted);
+                          }
+                          break;
+                        case kv_advice::FixKind::kSequenceLayout:
+                          EXPECT_FALSE(dflash);
+                          break;
+                        default:
+                          break;
+                      }
+                    }
+                    for (const auto& line : advice.lines) {
+                      EXPECT_LT(line.size(), 256u) << line;
+                    }
+                    // Every offered fix is a candidate, and every candidate
+                    // left out fails some choice it would allow.
+                    const auto candidates = kv_advice::candidate_fixes(
+                        report_for(config, reservations), config.draft);
+                    for (const auto& candidate : candidates.fixes) {
+                      const bool offered = std::any_of(
+                          advice.fixes.begin(),
+                          advice.fixes.end(),
+                          [&](const kv_advice::Fix& fix) {
+                            return fix.kind == candidate.kind &&
+                                fix.value == candidate.value;
+                          });
+                      if (offered) {
+                        continue;
+                      }
+                      bool fails =
+                          candidate.kind == kv_advice::FixKind::kTokenLimit &&
+                          candidate.value < candidate.low;
+                      for (const auto& choice :
+                           kv_advice::fix_choices(config, candidate)) {
+                        const auto after = kv_advice::check_startup(choice);
+                        fails = fails || !after.admitted ||
+                            (full_context && after.session_tokens != kContext);
+                      }
+                      EXPECT_TRUE(fails) << static_cast<int>(candidate.kind);
+                    }
+                    // What the text asks for, read back from the text alone,
+                    // passes every capacity check.
+                    int primary = 0;
+                    for (const auto& choice :
+                         choices_from_text(config, advice.lines, &primary)) {
+                      const auto after =
+                          kv_advice::check_startup(choice.config);
+                      EXPECT_TRUE(after.admitted);
+                      if (full_context) {
+                        EXPECT_EQ(after.session_tokens, kContext);
+                      }
+                    }
+                    EXPECT_EQ(primary, static_cast<int>(advice.fixes.size()));
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  // The grid reaches refusals of every kind, and most have a closed fix.
+  EXPECT_GT(refused, 500);
+  EXPECT_GT(fixed, refused / 2);
+  std::cout << "advice closure: " << configs << " configs, " << refused
+            << " refused, " << fixed << " with closed fixes, " << unfixable
+            << " described only\n";
+}
+
+// The real CudaExecutor admits what the advice tells a user to change, on the
+// backend's toy program (test/export_toy_decoder.py: 256 cells, a 64-token
+// context). Only serving options apply to the same program.
+TEST(KvAdviceToy, AdvisedServingFixesAdmitTheToyProgram) {
+  const char* dir = std::getenv("ET_CUDA_BATCHING_TOY_DIR");
+  if (!dir || !*dir) {
+    GTEST_SKIP() << "Set ET_CUDA_BATCHING_TOY_DIR to the output of "
+                    "backends/cuda/batching/test/export_toy_decoder.py";
+  }
+  int devices = 0;
+  if (cudaGetDeviceCount(&devices) != cudaSuccess || devices == 0) {
+    GTEST_SKIP() << "CUDA device required";
+  }
+  executorch::runtime::runtime_init();
+  const std::string toy = std::string(dir) + "/dense";
+  const auto create = [&](int sessions,
+                          int tokens,
+                          std::optional<cb::KvCapacityReport>* report) {
+    cb::CudaExecutorConfig config;
+    config.model_path = toy + "/model.pte";
+    config.data_files = {toy + "/aoti_cuda_blob.ptd"};
+    config.load_mode = executorch::extension::Module::LoadMode::File;
+    config.max_sessions = sessions;
+    config.max_session_tokens = tokens;
+    config.initial_capacity = 16;
+    config.options.cuda_graph_for_static_methods = false;
+    config.capacity_report = [report](const cb::KvCapacityReport& r) {
+      *report = r;
+    };
+    return cb::CudaExecutor::create(config).error();
+  };
+  struct Case {
+    int sessions, tokens;
+  };
+  // 8 x 64 tokens on 256 cells; 65 sessions of 3 tokens; 65 and 256
+  // automatic sessions, past the cell layout's 64.
+  for (const Case c : {Case{8, 64}, Case{65, 3}, Case{65, 0}, Case{256, 0}}) {
+    SCOPED_TRACE(std::to_string(c.sessions) + " x " + std::to_string(c.tokens));
+    std::optional<cb::KvCapacityReport> report;
+    ASSERT_EQ(
+        create(c.sessions, c.tokens, &report),
+        executorch::runtime::Error::InvalidArgument);
+    ASSERT_TRUE(report);
+    const auto advice = kv_advice::advise(*report);
+    int primary = 0;
+    int applied = 0;
+    for (const auto& choice : choices_from_text(
+             kv_advice::startup_config(*report), advice.lines, &primary)) {
+      if (!choice.serving) {
+        continue;
+      }
+      std::optional<cb::KvCapacityReport> after;
+      EXPECT_EQ(
+          create(
+              choice.config.sessions, choice.config.requested_tokens, &after),
+          executorch::runtime::Error::Ok)
+          << choice.config.sessions << " x " << choice.config.requested_tokens;
+      ++applied;
+    }
+    EXPECT_GT(applied, 0);
+  }
 }

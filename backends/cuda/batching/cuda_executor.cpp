@@ -355,10 +355,7 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
   ET_CHECK_OR_RETURN_ERROR(
       module != nullptr, InvalidArgument, "CudaExecutor: no program");
   ET_CHECK_OR_RETURN_ERROR(
-      max_sessions > 0 && max_session_tokens >= 0 &&
-          (max_session_tokens == 0 ||
-           max_sessions <=
-               std::numeric_limits<int>::max() / max_session_tokens),
+      valid_session_limits(max_sessions, max_session_tokens),
       InvalidArgument,
       "CudaExecutor: invalid session limits");
   const KvReservations& reservations = config.reservations;
@@ -378,7 +375,7 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
   ET_ASSIGN_OR_RETURN(
       max_context_length, metadata::read_max_context_length(*module));
   ET_CHECK_OR_RETURN_ERROR(
-      max_session_tokens <= max_context_length,
+      within_context(max_session_tokens, max_context_length),
       InvalidArgument,
       "CudaExecutor: max session tokens %d exceeds model context length %" PRId64,
       max_session_tokens,
@@ -393,15 +390,20 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
       NotSupported,
       "CudaExecutor: the program must select its logits rows");
   ET_ASSIGN_OR_RETURN(geometry, metadata::read_cache_geometry(*module));
-  // Reports the KV admission with the limits known when it is decided.
+  // Reports the KV admission with the limits known when it is decided. A
+  // session-limit report is made once, at the first check that finds it.
   std::int64_t max_cells = 0;
+  bool reported_session_limit = false;
   const auto report_admission =
       [&](KvAdmission outcome, bool sequence_layout, int session_limit) {
+        reported_session_limit =
+            reported_session_limit || outcome == KvAdmission::kSessionLimit;
         KvCapacityReport report;
         report.outcome = outcome;
         report.sequence_layout = sequence_layout;
         report.sessions = max_sessions;
         report.reservations = reservations;
+        report.automatic = config.max_session_tokens == 0;
         report.session_tokens = max_session_tokens;
         report.context_length = max_context_length;
         report.cells = max_cells;
@@ -424,13 +426,22 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
         "CudaExecutor: invalid sequence count or context length");
     if (max_session_tokens == 0) {
       max_session_tokens = static_cast<int>(max_context_length);
+      // The declared sequence columns are checked first: a budget they cannot
+      // host is not reported.
       report_admission(
-          KvAdmission::kAutomatic,
+          check_admission(
+              /*sequence_layout=*/true,
+              max_sessions,
+              /*requested_tokens=*/0,
+              max_context_length,
+              /*cells=*/0,
+              static_cast<int>(*declared_seqs))
+              .outcome,
           /*sequence_layout=*/true,
           static_cast<int>(*declared_seqs));
     }
     ET_CHECK_OR_RETURN_ERROR(
-        max_session_tokens <= max_context_length,
+        within_context(max_session_tokens, max_context_length),
         InvalidArgument,
         "CudaExecutor: %d session tokens exceed the sequence capacity %" PRId64,
         max_session_tokens,
@@ -441,18 +452,21 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
         metadata::detail::read_required_positive_int(*module, kMaxCellsMethod));
     max_cells = cells;
     ET_CHECK_OR_RETURN_ERROR(
-        max_cells > 1 && max_cells <= std::numeric_limits<int>::max(),
+        valid_cell_count(max_cells),
         InvalidProgram,
         "CudaExecutor: cell count must fit an int and leave a padding row");
     if (max_session_tokens == 0) {
-      max_session_tokens = static_cast<int>(
-          std::min(max_context_length, (max_cells - 1) / max_sessions));
-      // The layout's session limit is reported first: no cell count fixes it.
+      // The layout's session limit is checked first: no cell count fixes it.
+      const KvAdmissionCheck check = check_admission(
+          /*sequence_layout=*/false,
+          max_sessions,
+          /*requested_tokens=*/0,
+          max_context_length,
+          max_cells,
+          llm_cache::CellCache::kMaxSeqs);
+      max_session_tokens = static_cast<int>(check.session_tokens);
       report_admission(
-          max_session_tokens > 0 ? KvAdmission::kAutomatic
-              : max_sessions > llm_cache::CellCache::kMaxSeqs
-              ? KvAdmission::kSessionLimit
-              : KvAdmission::kNoBudget,
+          check.outcome,
           /*sequence_layout=*/false,
           llm_cache::CellCache::kMaxSeqs);
       ET_CHECK_OR_RETURN_ERROR(
@@ -569,9 +583,14 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
     // The layout's session limit is reported first: no token limit or cell
     // count fixes it.
     report_admission(
-        max_sessions > llm_cache::CellCache::kMaxSeqs
-            ? KvAdmission::kSessionLimit
-            : KvAdmission::kCells,
+        check_admission(
+            /*sequence_layout=*/false,
+            max_sessions,
+            max_session_tokens,
+            max_context_length,
+            max_cells,
+            llm_cache::CellCache::kMaxSeqs)
+            .outcome,
         /*sequence_layout=*/false,
         llm_cache::CellCache::kMaxSeqs);
     return Error::InvalidArgument;
@@ -611,8 +630,14 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
       "CudaExecutor: the cache is not a batched CUDA cache");
   const std::optional<int> seq_limit = ctl->max_seqs();
   if (seq_limit && max_sessions > *seq_limit) {
-    report_admission(KvAdmission::kSessionLimit, sequence_layout, *seq_limit);
+    if (!reported_session_limit) {
+      report_admission(KvAdmission::kSessionLimit, sequence_layout, *seq_limit);
+    }
     return Error::InvalidArgument;
+  }
+  if (config.max_session_tokens != 0) {
+    report_admission(
+        KvAdmission::kAdmitted, sequence_layout, seq_limit.value_or(0));
   }
 
   std::optional<EmbeddingsMethod> embeddings_method;

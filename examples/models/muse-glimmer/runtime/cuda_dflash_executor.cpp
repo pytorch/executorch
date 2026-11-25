@@ -18,7 +18,6 @@
 #include <executorch/extension/tensor/tensor_ptr.h>
 
 #include <algorithm>
-#include <cinttypes>
 #include <cmath>
 #include <cstring>
 #include <exception>
@@ -387,26 +386,6 @@ Result<int> positive_int(Module& module, const char* name) {
   return static_cast<int>(value);
 }
 
-// The draft pool a DFlash program publishes, read from its file for advice
-// after the target refused the sessions; the target's module is gone by then.
-std::optional<kv_advice::DraftPool> published_draft_pool(
-    const std::string& path) {
-  Module module(path, Module::LoadMode::Mmap);
-  auto block = positive_int(module, df::kBlock);
-  auto owners = positive_int(module, df::kMaxOwners);
-  auto seqs = detail::read_int_method(module, df::kMaxSeqs);
-  if (!block.ok() || !owners.ok() || !seqs.ok()) {
-    return std::nullopt;
-  }
-  const bool sequence_layout = seqs->has_value();
-  auto cells =
-      positive_int(module, sequence_layout ? df::kSeqCapacity : df::kMaxCells);
-  if (!cells.ok()) {
-    return std::nullopt;
-  }
-  return kv_advice::DraftPool{sequence_layout, *cells, *owners, *block};
-}
-
 Result<cache::CacheGeometry> draft_geometry(Module& module, int block) {
   ET_ASSIGN_OR_RETURN(layers, positive_int(module, "get_draft_n_caches"));
   ET_ASSIGN_OR_RETURN(
@@ -433,6 +412,37 @@ Result<cache::CacheGeometry> draft_geometry(Module& module, int block) {
   ET_CHECK_OR_RETURN_ERROR(
       cache::valid(geometry), InvalidProgram, "Invalid DFlash draft geometry");
   return geometry;
+}
+
+// The draft's K and V for one token in every layer, as its cache stores them.
+std::int64_t draft_bytes_per_cell(const cache::CacheGeometry& geometry) {
+  return cb::cell_pool_facts(
+             geometry, static_cast<int>(aten::ScalarType::BFloat16))
+      .bytes_per_cell;
+}
+
+// The draft pool a DFlash program publishes, read from its file for advice
+// after the target refused the sessions; the target's module is gone by then.
+std::optional<kv_advice::DraftPool> published_draft_pool(
+    const std::string& path) {
+  Module module(path, Module::LoadMode::Mmap);
+  auto block = positive_int(module, df::kBlock);
+  auto owners = positive_int(module, df::kMaxOwners);
+  auto seqs = detail::read_int_method(module, df::kMaxSeqs);
+  if (!block.ok() || !owners.ok() || !seqs.ok()) {
+    return std::nullopt;
+  }
+  const bool sequence_layout = seqs->has_value();
+  auto cells =
+      positive_int(module, sequence_layout ? df::kSeqCapacity : df::kMaxCells);
+  if (!cells.ok()) {
+    return std::nullopt;
+  }
+  kv_advice::DraftPool pool{sequence_layout, *cells, *owners, *block};
+  if (auto geometry = draft_geometry(module, *block); geometry.ok()) {
+    pool.bytes_per_cell = draft_bytes_per_cell(*geometry);
+  }
+  return pool;
 }
 
 Result<std::string> cache_key_metadata(Module& module, const char* name) {
@@ -563,7 +573,8 @@ Result<MuseGlimmerBackend> MuseGlimmerCudaDFlashExecutor::create(
   ET_CHECK_OR_RETURN_ERROR(
       config.backend == "cuda" && config.use_dflash &&
           !config.model_path.empty() && config.max_sessions > 0 &&
-          config.max_session_tokens >= 0 && config.max_session_tokens != 1 &&
+          config.max_session_tokens >= 0 &&
+          kv_advice::valid_requested_tokens(config.max_session_tokens) &&
           config.dflash_n_draft >= 0,
       InvalidArgument,
       "Invalid CUDA DFlash configuration");
@@ -588,18 +599,13 @@ Result<MuseGlimmerBackend> MuseGlimmerCudaDFlashExecutor::create(
   }
   auto created_target = Target::create(target_config);
   if (!created_target.ok()) {
-    if (target_report &&
+    // Advice for the refused target that also sizes the draft pool; without
+    // the pool, the target's own report stands alone.
+    if (target_report && target_report->outcome != cb::KvAdmission::kAdmitted &&
         target_report->outcome != cb::KvAdmission::kAutomatic) {
-      std::optional<std::int64_t> draft_cap;
       if (const auto pool = published_draft_pool(config.model_path)) {
-        draft_cap = kv_advice::draft_session_budget(config.max_sessions, *pool);
-        ET_LOG(
-            Error,
-            "DFlash: the draft pool also limits each session to %" PRId64
-            " tokens",
-            *draft_cap);
+        kv_advice::log_advice(kv_advice::advise(*target_report, pool));
       }
-      kv_advice::log_serving_advice(*target_report, draft_cap);
     }
     return created_target.error();
   }
@@ -713,34 +719,21 @@ Result<MuseGlimmerBackend> MuseGlimmerCudaDFlashExecutor::create(
   const int temporary = max_owners * block;
   // A history column holds its context and, while drafting, its own block.
   const kv_advice::DraftPool pool{
-      sequence_layout, max_cells, max_owners, block};
+      sequence_layout,
+      max_cells,
+      max_owners,
+      block,
+      draft_bytes_per_cell(geometry)};
   const kv_advice::DraftAdmission admission = kv_advice::draft_admission(
       config.max_sessions,
       config.max_session_tokens,
       target->max_session_tokens(),
       pool);
   const int max_context = admission.max_context;
-  if (!admission.fits) {
-    for (const std::string& line : kv_advice::draft_shortfall_lines(
-             config.max_sessions,
-             config.max_session_tokens,
-             target->max_session_tokens(),
-             pool,
-             target_config.reservations)) {
-      ET_LOG(Error, "%s", line.c_str());
-    }
-  } else if (
-      target_report && target_report->outcome == cb::KvAdmission::kAutomatic) {
-    const int draft_budget =
-        kv_advice::draft_session_budget(config.max_sessions, pool);
-    ET_LOG(
-        Info,
-        "DFlash: each session may hold %d tokens (target pool %d, draft pool "
-        "%d)",
-        max_context,
-        target->max_session_tokens(),
-        draft_budget);
-    kv_advice::log_serving_advice(*target_report, draft_budget);
+  // The target reported its admission: explain a draft refusal, or an
+  // automatic budget below the context, for both pools.
+  if (target_report) {
+    kv_advice::log_advice(kv_advice::advise(*target_report, pool));
   }
   ET_CHECK_OR_RETURN_ERROR(
       admission.fits && draft_tokens.sizes()[0] == max_owners &&

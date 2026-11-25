@@ -499,8 +499,10 @@ per distinct attention window. The cell layout also tracks at most 64 resident
 sessions, whatever its cells. Without an explicit context (the native worker's
 default `--max_session_tokens 0`), the worker logs the per-session context it
 resolved and this breakdown at startup. When a configuration does not fit, its
-startup error shows the breakdown, the largest context that fits and the
-`--max-cells` that would be needed.
+startup error shows the breakdown and the option changes that would admit it:
+fewer resident sessions, a token limit, or a re-export with more cells. Each
+suggested change, applied alone, passes every capacity check; under DFlash it
+also sizes `--draft-max-cells`.
 
 A DFlash export (`export_dflash`) adds a draft pool of `--draft-max-cells`
 (default `--max-cells`) cells, which also keeps every draft owner's block while

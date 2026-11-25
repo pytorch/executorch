@@ -545,6 +545,7 @@ TEST_P(CudaExecutorTest, ConfigAutoBudgetRespectsContextAndPaddingCell) {
     // Automatic context mode reports the budget it resolved.
     ASSERT_EQ(reports.size(), 1u);
     EXPECT_EQ(reports[0].outcome, cb::KvAdmission::kAutomatic);
+    EXPECT_TRUE(reports[0].automatic);
     EXPECT_FALSE(reports[0].sequence_layout);
     EXPECT_EQ(reports[0].sessions, sessions);
     EXPECT_EQ(reports[0].reservations.live_sessions, sessions);
@@ -657,6 +658,43 @@ TEST_P(CudaExecutorTest, ConfigRefusesOvercommitAndLegacyZeroBudget) {
   EXPECT_EQ(
       cb::CudaExecutor::create(module(), 4, 0, kBFloat16, 16, {}).error(),
       Error::InvalidArgument);
+}
+
+TEST_P(CudaExecutorTest, ReportsEachAdmissionOnce) {
+  cb::CudaExecutorConfig config;
+  config.model_path = dir_ + "/model.pte";
+  config.data_files = {dir_ + "/aoti_cuda_blob.ptd"};
+  config.load_mode = Module::LoadMode::File;
+  config.initial_capacity = 16;
+  config.options.cuda_graph_for_static_methods = false;
+  std::vector<cb::KvCapacityReport> reports;
+  config.capacity_report = [&](const cb::KvCapacityReport& report) {
+    reports.push_back(report);
+  };
+
+  // An explicit limit that fits is reported as admitted.
+  config.max_sessions = 4;
+  config.max_session_tokens = 32;
+  ASSERT_EQ(cb::CudaExecutor::create(config).error(), Error::Ok);
+  ASSERT_EQ(reports.size(), 1u);
+  EXPECT_EQ(reports[0].outcome, cb::KvAdmission::kAdmitted);
+  EXPECT_FALSE(reports[0].automatic);
+  EXPECT_EQ(reports[0].session_tokens, 32);
+  EXPECT_EQ(reports[0].cells, kMaxCells);
+  EXPECT_EQ(reports[0].session_limit, 64);
+
+  // 65 automatic sessions get (256 - 1) / 65 = 3 tokens each, but the cell
+  // layout tracks at most 64: one session-limit report, and no budget report.
+  reports.clear();
+  config.max_sessions = 65;
+  config.max_session_tokens = 0;
+  config.reservations = {1, 48, 16};
+  EXPECT_EQ(cb::CudaExecutor::create(config).error(), Error::InvalidArgument);
+  ASSERT_EQ(reports.size(), 1u);
+  EXPECT_EQ(reports[0].outcome, cb::KvAdmission::kSessionLimit);
+  EXPECT_TRUE(reports[0].automatic);
+  EXPECT_EQ(reports[0].session_tokens, 3);
+  EXPECT_EQ(reports[0].session_limit, 64);
 }
 
 INSTANTIATE_TEST_SUITE_P(
