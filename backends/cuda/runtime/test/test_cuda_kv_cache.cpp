@@ -2852,6 +2852,51 @@ class CudaRuntimeColumnCacheTest : public CudaKVCacheTest {
           cudaSuccess);
     }
   }
+
+  // Distinct history for logical row `row` of the owner in `column`.
+  static std::vector<uint16_t> owner_history(int column, int row) {
+    std::vector<uint16_t> values = iota_rows(1);
+    for (uint16_t& value : values) {
+      value = static_cast<uint16_t>(value + 100 * (2 * column + row + 1));
+    }
+    return values;
+  }
+
+  // Logical row `row` of `column` in a flat layer `width` columns wide whose
+  // rows hold `dim` elements per column.
+  static uint16_t*
+  logical_row(void* data, int64_t dim, int width, int column, int row) {
+    return static_cast<uint16_t*>(data) +
+        (static_cast<int64_t>(row) * width + column) * dim;
+  }
+
+  // Writes rows 0 and 1 of the first `owners` columns.
+  static void write_history(void* data, int64_t dim, int width, int owners) {
+    for (int column = 0; column < owners; ++column) {
+      for (int row = 0; row < 2; ++row) {
+        const auto values = owner_history(column, row);
+        EXPECT_EQ(
+            cudaMemcpy(
+                logical_row(data, dim, width, column, row),
+                values.data(),
+                values.size() * sizeof(uint16_t),
+                cudaMemcpyHostToDevice),
+            cudaSuccess);
+      }
+    }
+  }
+
+  // Rows 0 and 1 of `column` hold the history written for `source`. Row 1
+  // sits one pitch past row 0, so this checks the physical width.
+  static void
+  expect_history(void* data, int64_t dim, int width, int column, int source) {
+    for (int row = 0; row < 2; ++row) {
+      EXPECT_EQ(
+          read_rows(logical_row(data, dim, width, column, row), 1),
+          owner_history(source, row))
+          << "column " << column << " row " << row;
+    }
+  }
 };
 
 } // namespace
@@ -3594,16 +3639,27 @@ TEST_F(CudaRuntimeColumnCacheTest, AdmissionRetriesAtRequiredWidth) {
     for (int count = 1; count < 4; ++count) {
       ASSERT_TRUE(control->seq_new().has_value());
     }
+    // Every owner holds two rows, so the resize below copies row 1 at the
+    // destination pitch. Owner i sits in column i.
+    for (int32_t id = 0; id < 4; ++id) {
+      while (control->pos(id) < 2) {
+        ASSERT_EQ(step(*ptr, handle, {id}), Error::Ok);
+      }
+    }
     ASSERT_EQ(kv->metrics().physical_columns, 5);
     ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
-    const auto history = iota_rows(1);
-    ASSERT_EQ(
-        cudaMemcpy(
+    write_history(fake.bound["flat_k"].data, kLargeDim, 5, 4);
+    // A clone of owner 0 holds its history.
+    auto expect_owners = [&](int live) {
+      for (int column = 0; column < live; ++column) {
+        expect_history(
             fake.bound["flat_k"].data,
-            history.data(),
-            history.size() * sizeof(uint16_t),
-            cudaMemcpyHostToDevice),
-        cudaSuccess);
+            kLargeDim,
+            fit,
+            column,
+            column < 4 ? column : 0);
+      }
+    };
     int device = 0;
     ASSERT_EQ(cudaGetDevice(&device), cudaSuccess);
     ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
@@ -3625,47 +3681,31 @@ TEST_F(CudaRuntimeColumnCacheTest, AdmissionRetriesAtRequiredWidth) {
     std::unique_ptr<void, decltype(release)> held(reservation, release);
     const auto before = kv->metrics();
     const auto admitted =
-        clone ? control->seq_clone(*owner, 1) : control->seq_new();
+        clone ? control->seq_clone(*owner, 2) : control->seq_new();
     ASSERT_TRUE(admitted.has_value());
     EXPECT_EQ(*admitted, 4);
     EXPECT_EQ(kv->metrics().physical_columns, fit);
     EXPECT_EQ(
         kv->metrics().column_resize_count, before.column_resize_count + 1);
     EXPECT_EQ(kv->metrics().live_sequences, 5);
-    EXPECT_EQ(control->pos(*owner), 1);
-    EXPECT_EQ(control->pos(*admitted), clone ? 1 : 0);
+    EXPECT_EQ(control->pos(*owner), 2);
+    EXPECT_EQ(control->pos(*admitted), clone ? 2 : 0);
     ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
-    EXPECT_EQ(read_rows(fake.bound["flat_k"].data, 1), history);
-    if (clone) {
-      EXPECT_EQ(
-          read_rows(
-              static_cast<uint16_t*>(fake.bound["flat_k"].data) +
-                  *admitted * kLargeDim,
-              1),
-          history);
-    }
+    expect_owners(clone ? 5 : 4);
     if (fit > 6) {
       // A spare column admits the next owner under the same reservation
       // without another resize.
       const auto next =
-          clone ? control->seq_clone(*owner, 1) : control->seq_new();
+          clone ? control->seq_clone(*owner, 2) : control->seq_new();
       ASSERT_TRUE(next.has_value());
       EXPECT_EQ(*next, 5);
       EXPECT_EQ(kv->metrics().physical_columns, fit);
       EXPECT_EQ(
           kv->metrics().column_resize_count, before.column_resize_count + 1);
       EXPECT_EQ(kv->metrics().live_sequences, 6);
-      EXPECT_EQ(control->pos(*next), clone ? 1 : 0);
+      EXPECT_EQ(control->pos(*next), clone ? 2 : 0);
       ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
-      EXPECT_EQ(read_rows(fake.bound["flat_k"].data, 1), history);
-      if (clone) {
-        EXPECT_EQ(
-            read_rows(
-                static_cast<uint16_t*>(fake.bound["flat_k"].data) +
-                    *next * kLargeDim,
-                1),
-            history);
-      }
+      expect_owners(clone ? 6 : 4);
     }
     held.reset();
     kv->forget_handle(&handle);
@@ -3752,12 +3792,15 @@ TEST_F(CudaRuntimeColumnCacheTest, FirstAllocationFallsBackToTheWidestFit) {
       return info;
     };
     // Every owner runs at the narrower width it was allocated at, and the
-    // metadata sent to attention carries that width.
-    for (const int32_t owner : owners) {
-      ASSERT_EQ(step(*ptr, handle, {owner}), Error::Ok);
-      EXPECT_EQ(kv->metrics().physical_columns, fit);
-      const std::array<int32_t, 5> expected{0, 1, owner, 1, fit};
-      EXPECT_EQ(read_info(), expected);
+    // metadata sent to attention carries that width. Each owner holds two
+    // rows, so the growth copy below reads row 1 at the fallback pitch.
+    for (int round = 1; round <= 2; ++round) {
+      for (const int32_t owner : owners) {
+        ASSERT_EQ(step(*ptr, handle, {owner}), Error::Ok);
+        EXPECT_EQ(kv->metrics().physical_columns, fit);
+        const std::array<int32_t, 5> expected{0, 1, owner, round, fit};
+        EXPECT_EQ(read_info(), expected);
+      }
     }
     EXPECT_EQ(kv->metrics().column_resize_count, 0);
     EXPECT_EQ(
@@ -3765,19 +3808,10 @@ TEST_F(CudaRuntimeColumnCacheTest, FirstAllocationFallsBackToTheWidestFit) {
         static_cast<int64_t>(fit * kColumnBytes));
     EXPECT_EQ(kv->metrics().live_sequences, kOwners);
     for (const int32_t owner : owners) {
-      EXPECT_EQ(control->pos(owner), 1);
+      EXPECT_EQ(control->pos(owner), 2);
     }
-    const auto history = iota_rows(1);
-    for (const int32_t owner : {owners.front(), owners.back()}) {
-      ASSERT_EQ(
-          cudaMemcpy(
-              static_cast<uint16_t*>(fake.bound["flat_k"].data) +
-                  owner * kLargeDim,
-              history.data(),
-              history.size() * sizeof(uint16_t),
-              cudaMemcpyHostToDevice),
-          cudaSuccess);
-    }
+    // Owner i sits in column i.
+    write_history(fake.bound["flat_k"].data, kLargeDim, fit, kOwners);
     held.reset();
     // Growth past the fallback width carries every owner's history.
     while (kv->metrics().physical_columns == fit) {
@@ -3786,22 +3820,117 @@ TEST_F(CudaRuntimeColumnCacheTest, FirstAllocationFallsBackToTheWidestFit) {
     EXPECT_EQ(kv->metrics().physical_columns, 9);
     EXPECT_EQ(kv->metrics().column_resize_count, 1);
     ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
-    for (const int32_t owner : {owners.front(), owners.back()}) {
-      EXPECT_EQ(
-          read_rows(
-              static_cast<uint16_t*>(fake.bound["flat_k"].data) +
-                  owner * kLargeDim,
-              1),
-          history);
+    for (const int32_t owner : owners) {
+      expect_history(fake.bound["flat_k"].data, kLargeDim, 9, owner, owner);
     }
+    // The last owner continues at the new width.
+    ASSERT_TRUE(control->rewind(owners.back(), 1));
     ASSERT_EQ(step(*ptr, handle, {owners.back()}), Error::Ok);
     const std::array<int32_t, 5> expected{0, 1, owners.back(), 2, 9};
     EXPECT_EQ(read_info(), expected);
     for (const int32_t owner : owners) {
-      EXPECT_EQ(control->pos(owner), owner == owners.back() ? 2 : 1);
+      EXPECT_EQ(control->pos(owner), 2);
     }
     kv->forget_handle(&handle);
   }
+}
+
+TEST_F(CudaRuntimeColumnCacheTest, FirstAllocationKeepsSparseOwnerColumns) {
+  constexpr int kLargeDim = 1 << 23;
+  constexpr int kMaxOwners = 8;
+  // One physical column holds two BF16 rows of K and of V.
+  constexpr size_t kColumnBytes = size_t{2} * 2 * kLargeDim * 2;
+  // Owners 0 and 4 remain of five admitted before the first forward. Two
+  // owners alone need three columns, but owner 4's column and the scratch
+  // column need six. With room for four, the first allocation must fail
+  // rather than leave owner 4 outside the allocated width. The margin matches
+  // FirstAllocationFallsBackToTheWidestFit.
+  const size_t kMargin = 4 * kColumnBytes + 64 * 1024 * 1024;
+  auto cfg = config(/*capacity=*/2, /*initial=*/2, /*max_write=*/1);
+  cfg.max_seqs = kMaxOwners;
+  cache::CacheGeometry geometry;
+  geometry.layers = {{{cache::LayerPolicy::Kind::Flat, 0}, 1, kLargeDim}};
+  auto ptr = cu::make_cuda_batched_sequence_kv_cache(geometry, cfg);
+  ASSERT_NE(ptr, nullptr);
+  auto* control = ptr->as<cache::BatchControl>();
+  auto* kv = ptr->as<cu::CudaKVCache>();
+  FakeContainer fake;
+  fake.internal_names = {"flat_k", "flat_v", "seq_cols", "seq_info"};
+  fake.fqns = {
+      "__et_offgraph_kv_layer_0_k",
+      "__et_offgraph_kv_layer_0_v",
+      "__et_offgraph_kv_seq_cols",
+      "__et_offgraph_kv_seq_info"};
+  for (int index = 0; index < 2; ++index) {
+    declare(
+        fake,
+        fake.fqns[index],
+        slimc10::ScalarType::BFloat16,
+        {1, 2 * (kMaxOwners + 1), 1, kLargeDim});
+  }
+  declare(fake, fake.fqns[2], slimc10::ScalarType::Long, {1});
+  declare(fake, fake.fqns[3], slimc10::ScalarType::Int, {2 * kMaxOwners, 5});
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  for (int count = 0; count < 5; ++count) {
+    const auto owner = control->seq_new();
+    ASSERT_TRUE(owner.has_value());
+    EXPECT_EQ(*owner, count);
+  }
+  for (int32_t owner = 1; owner < 4; ++owner) {
+    ASSERT_TRUE(control->seq_rm(owner));
+  }
+  ASSERT_EQ(kv->metrics().physical_columns, 9);
+  ASSERT_EQ(kv->metrics().allocated_bytes, 0);
+  ASSERT_EQ(kv->metrics().live_sequences, 2);
+  int device = 0;
+  ASSERT_EQ(cudaGetDevice(&device), cudaSuccess);
+  ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+  ::executorch::extension::cuda::CudaAllocator::release_cached_memory(device);
+  size_t free_bytes = 0, total_bytes = 0;
+  ASSERT_EQ(cudaMemGetInfo(&free_bytes, &total_bytes), cudaSuccess);
+  if (free_bytes <= kMargin + 128 * 1024 * 1024) {
+    kv->forget_handle(&handle);
+    GTEST_SKIP() << "Insufficient free memory for controlled first fallback";
+  }
+  void* reservation = nullptr;
+  if (cudaMalloc(&reservation, free_bytes - kMargin) != cudaSuccess) {
+    (void)cudaGetLastError();
+    kv->forget_handle(&handle);
+    GTEST_SKIP() << "Cannot reserve free memory for controlled first fallback";
+  }
+  auto release = [](void* data) { (void)cudaFree(data); };
+  std::unique_ptr<void, decltype(release)> held(reservation, release);
+  EXPECT_EQ(step(*ptr, handle, {0}), Error::MemoryAllocationFailed);
+  EXPECT_EQ(kv->metrics().physical_columns, 9);
+  EXPECT_EQ(kv->metrics().allocated_bytes, 0);
+  EXPECT_EQ(kv->metrics().live_sequences, 2);
+  EXPECT_EQ(control->pos(0), 0);
+  EXPECT_EQ(control->pos(4), 0);
+  held.reset();
+  // Once memory is available, both owners run in their own columns.
+  for (const int32_t owner : {0, 4}) {
+    ASSERT_EQ(step(*ptr, handle, {owner}), Error::Ok);
+    std::array<int32_t, 5> info;
+    ASSERT_EQ(
+        cudaMemcpy(
+            info.data(),
+            fake.bound["seq_info"].data,
+            sizeof(info),
+            cudaMemcpyDeviceToHost),
+        cudaSuccess);
+    const std::array<int32_t, 5> expected{0, 1, owner, 1, 9};
+    EXPECT_EQ(info, expected);
+    EXPECT_EQ(control->pos(owner), 1);
+  }
+  EXPECT_EQ(kv->metrics().physical_columns, 9);
+  EXPECT_EQ(kv->metrics().column_resize_count, 0);
+  const auto admitted = control->seq_new();
+  ASSERT_TRUE(admitted.has_value());
+  EXPECT_EQ(*admitted, 1);
+  EXPECT_EQ(kv->metrics().physical_columns, 9);
+  EXPECT_EQ(kv->metrics().column_resize_count, 0);
+  kv->forget_handle(&handle);
 }
 
 TEST_F(CudaBatchedSequenceCacheTest, BuilderValidatesAndIsRegistered) {
