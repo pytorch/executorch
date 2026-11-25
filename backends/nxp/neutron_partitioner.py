@@ -24,7 +24,6 @@ from executorch.backends.nxp.backend.edge_helper import (
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
-from executorch.backends.nxp.backend.ir import logger
 from executorch.backends.nxp.backend.ir.converter.node_converter import is_not_qdq_node
 from torch.export.exported_program import ExportedProgram
 from torch.fx import Graph
@@ -43,6 +42,8 @@ from executorch.exir.backend.partitioner import (
 )
 from executorch.exir.backend.utils import tag_constant_data
 from executorch.exir.dialects._ops import ops as exir_ops
+
+logger = logging.getLogger(__name__)
 
 NXP_DO_NOT_DELEGATE = "NXP_DO_NOT_DELEGATE"
 NXP_DELEGATION_TAG = "delegation_tag"
@@ -129,7 +130,7 @@ class QDQClusterRecognizer:
             else:
                 return []
 
-        logging.debug(f"Dequant Cluster for {node} is: {qdq_cluster}")
+        logger.debug(f"Dequant Cluster for {node} is: {qdq_cluster}")
         return qdq_cluster
 
     def get_qdq_cluster_output_part(self, node: torch.fx.Node) -> list[torch.fx.Node]:
@@ -150,7 +151,7 @@ class QDQClusterRecognizer:
             consumers = [
                 ngn for ngn in list(node.graph.nodes) if n in ngn.all_input_nodes
             ]
-            logging.debug(f"\t Users for node {n} are: {consumers}")
+            logger.debug(f"\t Users for node {n} are: {consumers}")
             output_nodes_to_quant_or_helper = [
                 (self.is_quant_node(i) or self.is_auxiliary_node(i)) for i in consumers
             ]
@@ -159,14 +160,14 @@ class QDQClusterRecognizer:
             else:
                 return []
 
-        logging.debug(f"Quant Cluster for {node} is {qdq_cluster}")
+        logger.debug(f"Quant Cluster for {node} is {qdq_cluster}")
         return qdq_cluster
 
     def get_qdq_cluster(self, node: torch.fx.Node) -> list[torch.fx.Node]:
         """
         Returns the QDQ cluster of the operator, if quantized. If operator is not quantized, returns empty list.
         """
-        logging.debug(node)
+        logger.debug(node)
         input_qdq_cluster = self.get_qdq_cluster_input_part(node)
         output_qdq_cluster = self.get_qdq_cluster_output_part(node)
         if input_qdq_cluster and output_qdq_cluster:
@@ -179,7 +180,7 @@ class QDQClusterRecognizer:
         Tags a node and its related dequant and quant nodes with a specified cluster name
         """
         for node in nodes:
-            logging.info(f"Tagging node {node} as {cluster_name}")
+            logger.debug(f"Tagging node {node} as {cluster_name}")
             node.meta["cluster"] = cluster_name
 
     def tag_qdq_clusters(self, nodes: list[torch.fx.Node]):
@@ -442,7 +443,6 @@ class NeutronPartitioner(Partitioner):
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         # Run the CapabilityBasedPartitioner to return the largest possible
         # subgraphs containing the nodes with the tags
-        logging.info("NeutronPartitioner::partition")
         partition_tags = {}
         partition_list = []
 
@@ -455,7 +455,7 @@ class NeutronPartitioner(Partitioner):
         graph_module.recompile()
 
         operators_not_to_delegate = self.delegation_spec[1][4].value.decode().split(",")
-        logging.info(f"Operators not to delegate: {operators_not_to_delegate}")
+        logger.info(f"Operators not to delegate: {operators_not_to_delegate}")
 
         parameters_mapping = EdgeProgramToIRConverter.map_inputs_to_parameters(
             exported_program, self.post_quantization_state_dict
@@ -524,7 +524,7 @@ class NeutronPartitioner(Partitioner):
         # When it does not have a converter, it usually means it is natively decomposed into simpler ops that have a converter.
         node_converter = self.edge_op_to_converter.get(node.target)
         if node_converter is None:
-            logger.w(
+            logger.warning(
                 f"Node of target {str(node.target)} might be decomposed to other edge operators "
                 + "because no appropriate NodeConverter exists."
             )

@@ -179,7 +179,7 @@ def _run_delegated_executorch_program(
         os.makedirs(os.path.dirname(etrecord_path), exist_ok=True)
         # Save ETRecord
         delegated_program.get_etrecord().save(etrecord_path)
-        logging.info(f"The ETRecord for the model was saved to {etrecord_path}.")
+        logger.info(f"The ETRecord for the model was saved to {etrecord_path}.")
 
     # Preparation of quantized dataset, requires quantization parameters from converted delegated model
     if remove_quant_io_ops:
