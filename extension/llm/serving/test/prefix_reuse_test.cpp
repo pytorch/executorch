@@ -3652,6 +3652,59 @@ TEST_F(PrefixGroupTest, FailedPreparationEndsACacheOnGroup) {
   }
 }
 
+TEST_F(PrefixGroupTest, CutNeverRequeuesAMemberRejectedInPreparation) {
+  // An 8-token step prefill budget groups 4 positions. The second hit is cut
+  // once its credited clone is refused, after the third member's preparation
+  // failed and ended the group. That member's rejection is delivered with the
+  // launched group; it is not requeued and prepared again.
+  config.prefix_cache_capacity = 2;
+  freeze_full_cache();
+  const auto preparations = std::make_shared<std::atomic<int>>(0);
+  model_preparer =
+      [preparations](const auto&, PromptInput input) -> ModelPreparationResult {
+    ++*preparations;
+    auto rows = input.segments.empty() ? std::vector<Token>{}
+                                       : input.segments[0].get_tokens();
+    if (rows.empty()) {
+      // Only a second preparation of the failed request, whose input the
+      // first one consumed, gets here; succeeding would run that request.
+      rows = {60, 61, 62};
+    } else if (rows.front() == 60) {
+      return ServingError{ErrorCode::InvalidArgument, "unpreparable"};
+    }
+    return batching::PreparedInputPtr{
+        std::make_shared<detail::TokenPreparedInput>(
+            std::make_shared<const std::vector<Token>>(std::move(rows)))};
+  };
+  start(true, batching::DecodeFirstScheduler::create(12, 4, 8));
+  seed({1, 2, 3});
+  const auto longer = seed({1, 2, 3, 4, 5, 6, 7, 8});
+  executor.rejected_clone_source = longer;
+  auto parked = park_control();
+  auto handles = queue(
+      {{1, 2, 3, 4, 5, 6, 7, 8, 9},
+       {1, 2, 3, 4, 5, 6, 7, 8, 10},
+       {60, 61, 62}});
+  control.release();
+  finish(parked, handles);
+  // Two seeds, two hits (the requeued one keeps its preparation) and one
+  // failed preparation.
+  EXPECT_EQ(preparations->load(), 5);
+  ASSERT_TRUE(handles[2].error());
+  EXPECT_EQ(handles[2].error()->code, ErrorCode::InvalidArgument);
+  ASSERT_TRUE(burst[2]->terminal);
+  EXPECT_EQ(burst[2]->terminals, 1u);
+  EXPECT_EQ(burst[2]->terminal->finish_reason, FinishReason::Failed);
+  for (const auto& feed : executor.feeds()) {
+    EXPECT_TRUE(feed.tokens.empty() || feed.tokens.front() != 60);
+  }
+  for (std::size_t i : {0u, 1u}) {
+    EXPECT_FALSE(handles[i].error());
+    ASSERT_TRUE(burst[i]->terminal);
+    EXPECT_EQ(burst[i]->terminal->stats.reused_prompt_tokens, 3u);
+  }
+}
+
 TEST_F(PrefixGroupTest, MixedGroupKeepsEachMembersOutcome) {
   config.prefix_cache_capacity = 1;
   freeze_full_cache();

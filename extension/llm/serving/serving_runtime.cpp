@@ -1467,11 +1467,16 @@ struct ServingRuntime::Impl {
       }
     }
     std::vector<std::optional<PrefixLookupResult>> found(end);
-    if (cached) {
-      end = acquire_sessions(group, prepared, end, found, opens);
-    }
+    // Prepared members from `kept` on were cut by the clone-wave budget check
+    // and return to inbox_. A member rejected in preparation is never cut: its
+    // rejection was delivered, so it must not be prepared again.
+    const auto kept =
+        cached ? acquire_sessions(group, prepared, end, found, opens) : end;
     // Members rejected in preparation never issued an open.
     for (std::size_t i = 0; i < end; ++i) {
+      if (i >= kept && prepared[i]) {
+        continue;
+      }
       if (prepared[i]) {
         generate(group[i].request, std::move(opens[i]), std::move(found[i]));
       }
@@ -1479,7 +1484,13 @@ struct ServingRuntime::Impl {
       std::lock_guard<std::mutex> lock(mutex_);
       --outstanding_;
     }
-    if (end == group.size()) {
+    std::vector<Command> rest;
+    for (std::size_t i = kept; i < group.size(); ++i) {
+      if (i >= end || prepared[i]) {
+        rest.push_back(std::move(group[i]));
+      }
+    }
+    if (rest.empty()) {
       return;
     }
     std::lock_guard<std::mutex> lock(mutex_);
@@ -1487,8 +1498,8 @@ struct ServingRuntime::Impl {
     // position still precedes every command submitted after the group.
     inbox_.insert(
         inbox_.begin() + position,
-        std::make_move_iterator(group.begin() + end),
-        std::make_move_iterator(group.end()));
+        std::make_move_iterator(rest.begin()),
+        std::make_move_iterator(rest.end()));
   }
 
   // Requires a prepared prompt. A pending cold open or a group's lookup, when
