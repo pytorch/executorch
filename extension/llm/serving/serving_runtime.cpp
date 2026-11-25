@@ -1387,16 +1387,27 @@ struct ServingRuntime::Impl {
     capture_lanes_used_.fetch_sub(1);
   }
 
-  // A group submits its members back to back, so the capture lanes that
-  // one-at-a-time admission recycles between members are still busy for all
-  // but the first few. Skipping their prompt ends would leave the cache with
-  // older entries whose cells no running request shares, widening every
-  // step's cell read window. Instead, a member that found no lane retries at
-  // each later output, while its prompt is still committed, and queues the
-  // same prompt-end capture once one frees. Like a first-output capture, it
-  // goes to control only once its clone has settled, so collecting it never
-  // blocks control; finalization collects one that is still pending. The
-  // state lives on the engine thread, which alone calls the callback.
+  // For a group member that found no capture lane at submission. With the
+  // default lane count every member finds one; a lane cap below the group's
+  // size (max_prefix_captures, or a checkpoint interval or policy) leaves all
+  // but the first few without one, since the group submits its members back
+  // to back and one-at-a-time admission would have recycled lanes between
+  // them. Skipping their prompt ends would leave the cache with older entries
+  // whose cells no running request shares, widening every step's cell read
+  // window. Instead, such a member retries at each later output, while its
+  // prompt is still committed, and queues the same prompt-end capture once a
+  // lane frees. Like a first-output capture, it goes to control only once its
+  // clone has settled, so collecting it never blocks control; finalization
+  // collects one that is still pending.
+  //
+  // Handoff: the callback writes capture_lane and drives prefix_capture
+  // (capture_at(), ready()) only until it queues the capture with
+  // enqueue_capture(), and control reads them only after taking it from
+  // pending_captures_ under mutex_, or after the request settles, so the two
+  // never overlap. The retry state is touched only by the callback, which
+  // runs on the engine thread, except for a request rejected before
+  // admission, whose terminal update runs inline on control and never takes
+  // a lane.
   void defer_prompt_capture(
       const Request& request,
       const batching::Session& session,
@@ -1416,9 +1427,8 @@ struct ServingRuntime::Impl {
                   request,
                   end,
                   state = std::make_shared<Deferred>(),
-                  inner = std::move(callback)](
-                     const batching::GenerationUpdate& update) {
-        // Control owns the capture once it is queued there.
+                  inner = callback](const batching::GenerationUpdate& update) {
+        // Once queued with enqueue_capture(), the capture is control's.
         if (!state->attempted && !update.tokens.empty() &&
             !update.finish_reason && !request->cancelled.load() &&
             try_acquire_capture_lane()) {
@@ -1448,7 +1458,7 @@ struct ServingRuntime::Impl {
       };
 #if ET_HAS_EXCEPTIONS
     } catch (...) {
-      // Keep the original callback when optional capture setup fails.
+      // The closure copies the callback, so a failed setup keeps it intact.
     }
 #endif
   }
