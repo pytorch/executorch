@@ -8401,6 +8401,16 @@ class SortTest(OpTestCase):
         else:
             return SortBothModel(self.dim, self.descending)
 
+    def get_edge_compile_config(self) -> Optional[exir.EdgeCompileConfig]:
+        if not self.stable:
+            return None
+        # aten.sort.stable is not in the core ATen opset. The MLX partitioner
+        # keeps it through ops_to_not_decompose, but exir still runs the
+        # core-ATen verifier, so the op has to be excused explicitly.
+        return exir.EdgeCompileConfig(
+            _core_aten_ops_exception_list=[torch.ops.aten.sort.stable]
+        )
+
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         x = torch.randn(self.shape)
         if self.duplicates:
@@ -8439,6 +8449,13 @@ class SortNaNTest(OpTestCase):
 
     def create_model(self) -> nn.Module:
         return SortNaNDescendingModel(self.dim)
+
+    def get_edge_compile_config(self) -> Optional[exir.EdgeCompileConfig]:
+        # Same reason as SortTest's stable cases: stable sort is outside the
+        # core ATen opset even though the MLX partitioner keeps it.
+        return exir.EdgeCompileConfig(
+            _core_aten_ops_exception_list=[torch.ops.aten.sort.stable]
+        )
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         return (
