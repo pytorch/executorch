@@ -326,6 +326,22 @@ cb::KvCapacityReport target_report(
   return report;
 }
 
+// The notes for the DFlash executor's own admission of the same inputs.
+std::vector<std::string> draft_notes_for(
+    int sessions,
+    int requested,
+    int target,
+    const kv_notes::DraftPool& pool,
+    const cb::KvReservations& reservations = {}) {
+  return kv_notes::draft_notes(
+      sessions,
+      requested,
+      target,
+      pool,
+      kv_notes::draft_admission(sessions, requested, target, pool),
+      reservations);
+}
+
 void expect_loggable(const std::vector<std::string>& lines) {
   for (const auto& line : lines) {
     EXPECT_LT(line.size(), 256u) << line;
@@ -427,15 +443,15 @@ TEST(KvNotes, AutomaticBudgetBelowTheContextIsNoted) {
 TEST(KvNotes, DraftNotesOnlyWhenTheDraftLimits) {
   // 4 sessions on 16384 target cells hold (16383) / 4 = 4095 tokens; a 65536
   // cell draft holds (65536 - 65) / 4 = 16367: the target is the limit.
-  EXPECT_TRUE(kv_notes::draft_notes(4, 0, 4095, cell_pool(65536)).empty());
+  EXPECT_TRUE(draft_notes_for(4, 0, 4095, cell_pool(65536)).empty());
   // 16 sessions requesting 8187 tokens on the default 131072-cell draft pool:
   // the draft holds exactly 8187, so it neither limits nor refuses them.
-  EXPECT_TRUE(kv_notes::draft_notes(16, 8187, 8187, cell_pool(131072)).empty());
+  EXPECT_TRUE(draft_notes_for(16, 8187, 8187, cell_pool(131072)).empty());
 }
 
 TEST(KvNotes, DraftLimitingAnAutomaticContextQuotesBothPools) {
   // 16 automatic sessions: the target holds 131072 each, the draft 2043.
-  const auto lines = kv_notes::draft_notes(16, 0, 131072, cell_pool(32768));
+  const auto lines = draft_notes_for(16, 0, 131072, cell_pool(32768));
   ASSERT_EQ(lines.size(), 3u);
   EXPECT_EQ(
       lines[0],
@@ -451,8 +467,7 @@ TEST(KvNotes, DraftLimitingAnAutomaticContextQuotesBothPools) {
 TEST(KvNotes, DraftRefusingARequestedLimit) {
   // 4 live + 8 prefix + 4 capture with --max-context 8191: the target holds
   // 16 x 8191 + 1 cells and reports nothing; the default draft pool holds 8187.
-  auto lines =
-      kv_notes::draft_notes(16, 8191, 8191, cell_pool(131072), {4, 8, 4});
+  auto lines = draft_notes_for(16, 8191, 8191, cell_pool(131072), {4, 8, 4});
   EXPECT_TRUE(any_contains(
       lines, "131072 cells hold 8187 tokens for each of 16 sessions"));
   EXPECT_TRUE(any_contains(lines, ", so it refused the sessions"));
@@ -474,7 +489,7 @@ TEST(KvNotes, DraftRefusingARequestedLimit) {
   // Above the block, so no block note.
   EXPECT_FALSE(any_contains(lines, "must exceed"));
   // 300 cells leave 14 tokens, below the 16-token block.
-  lines = kv_notes::draft_notes(16, 4096, 4096, cell_pool(300));
+  lines = draft_notes_for(16, 4096, 4096, cell_pool(300));
   EXPECT_TRUE(any_contains(lines, "300 cells hold 14 tokens"));
   EXPECT_TRUE(any_contains(lines, "16 x 4096 + 64 + 1 = 65601 draft cells"));
   EXPECT_TRUE(any_contains(lines, "must exceed the 16-token draft block"));
@@ -482,7 +497,7 @@ TEST(KvNotes, DraftRefusingARequestedLimit) {
 }
 
 TEST(KvNotes, TargetBudgetAtMostTheBlock) {
-  const auto lines = kv_notes::draft_notes(4, 0, 12, cell_pool(131072));
+  const auto lines = draft_notes_for(4, 0, 12, cell_pool(131072));
   EXPECT_EQ(
       lines[0],
       "DFlash: the target pool's 12-token session budget does not exceed the "
@@ -491,18 +506,23 @@ TEST(KvNotes, TargetBudgetAtMostTheBlock) {
 }
 
 TEST(KvNotes, DraftNotesOnASequenceLayout) {
-  const auto lines = kv_notes::draft_notes(4, 4096, 4096, {true, 2048, 4, 16});
+  // A request within the last block of a 2048-token program: the draft's rows
+  // are the program's context, which CudaExecutor already bounds the request
+  // by.
+  const auto lines = draft_notes_for(4, 2040, 2040, {true, 2048, 4, 16});
+  ASSERT_EQ(lines.size(), 3u);
   EXPECT_EQ(
       lines[0],
       "DFlash: each draft sequence's 2048 rows hold 2032 tokens beside its "
       "16-token block, so it refused the sessions");
-  // The cause is --max-seq-len less the block, which no session flag changes.
+  // The cause is the program's context less the block, which no session flag
+  // changes.
   EXPECT_EQ(
       lines[1],
-      "DFlash: on the sequence layout a session holds at most --max-seq-len "
-      "less the block, 2048 - 16 = 2032 draft tokens, so a requested "
-      "4096-token --max-context is refused");
+      "DFlash: on the sequence layout a session holds at most the program's "
+      "context (the draft's rows) less the block, 2048 - 16 = 2032 draft "
+      "tokens, so a requested 2040-token --max_session_tokens/--max-context is "
+      "refused");
   EXPECT_FALSE(any_contains(lines, "share the draft pool"));
-  EXPECT_FALSE(any_contains(lines, "--max_sessions"));
   expect_loggable(lines);
 }

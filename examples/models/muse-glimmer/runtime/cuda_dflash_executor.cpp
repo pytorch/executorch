@@ -672,6 +672,13 @@ Result<MuseGlimmerBackend> MuseGlimmerCudaDFlashExecutor::create(
       "DFlash draft packed tensor ABI mismatch");
   ET_ASSIGN_OR_RETURN(geometry, draft_geometry(module, block));
   const int temporary = max_owners * block;
+  ET_CHECK_OR_RETURN_ERROR(
+      draft_tokens.sizes()[0] == max_owners &&
+          draft_hidden.sizes()[1] >= max_write - temporary &&
+          draft_positions.sizes()[0] >= max_write,
+      InvalidProgram,
+      "DFlash draft packed tensors do not match the published owners and step "
+      "width");
   // The draft pool as the program publishes it; draft_admission() gives each
   // session its rows less the block, or the shared cells less every owner's
   // block and the padding cell.
@@ -689,12 +696,11 @@ Result<MuseGlimmerBackend> MuseGlimmerCudaDFlashExecutor::create(
           config.max_session_tokens,
           target->max_session_tokens(),
           pool,
+          admission,
           target_config.reservations),
       admission.fits);
   ET_CHECK_OR_RETURN_ERROR(
-      admission.fits && draft_tokens.sizes()[0] == max_owners &&
-          draft_hidden.sizes()[1] >= max_write - temporary &&
-          draft_positions.sizes()[0] >= max_write,
+      admission.fits,
       InvalidArgument,
       "DFlash draft pool cannot hold resident contexts plus temporary owner blocks");
   cache::CacheConfig cache_config{};

@@ -261,6 +261,17 @@ TEST(KvCapacityTest, CellLayoutSessionLimitLeadsWithTheLimit) {
   expect_short_lines(lines);
 }
 
+TEST(KvCapacityTest, SessionLimitWhenNotOneSessionFits) {
+  // 80 sessions of 131072 tokens over 65536 cells: not even one fits.
+  const std::vector<std::string> lines = cb::describe_capacity(
+      cell_report(cb::KvAdmission::kSessionLimit, 80, 131072, 65536));
+  ASSERT_EQ(lines.size(), 2u);
+  EXPECT_EQ(
+      lines[1],
+      "CudaExecutor: one session of 131072 tokens alone needs 131073 cells; a "
+      "sequence-layout program would need at least 80 sequence columns");
+}
+
 TEST(KvCapacityTest, AutomaticSessionLimitNamesTheLimit) {
   cb::KvCapacityReport report = cell_report(
       cb::KvAdmission::kSessionLimit, 68, 1927, 131072, {32, 32, 4});

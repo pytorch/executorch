@@ -700,7 +700,7 @@ TEST_P(CudaExecutorTest, ReportsOnlyAutomaticBudgetsAndRefusals) {
 }
 
 // The toy's batched-sequence artifact: 4 sequence columns of 64 rows.
-TEST(CudaExecutorSequenceTest, ReportsTheCachesSessionLimit) {
+TEST(CudaExecutorSequenceTest, ReportsTheColumnsAsTheSessionLimit) {
   int devices = 0;
   if (cudaGetDeviceCount(&devices) != cudaSuccess || devices == 0) {
     GTEST_SKIP() << "CUDA device required";
@@ -734,7 +734,7 @@ TEST(CudaExecutorSequenceTest, ReportsTheCachesSessionLimit) {
   EXPECT_EQ(reports[0].session_limit, kColumns);
 
   // One session past the columns in automatic context mode: no budget report,
-  // one session-limit report against the cache's own count.
+  // one session-limit report naming the columns.
   reports.clear();
   config.max_sessions = kColumns + 1;
   config.reservations = {1, 3, 1};
@@ -756,6 +756,29 @@ TEST(CudaExecutorSequenceTest, ReportsTheCachesSessionLimit) {
   EXPECT_EQ(reports[0].session_tokens, 32);
   EXPECT_EQ(reports[0].session_limit, kColumns);
 }
+
+// Generation on the toy's batched-sequence artifact, within its 4 columns.
+class CudaExecutorSequenceGenerationTest : public CudaExecutorTest {};
+
+TEST_P(CudaExecutorSequenceGenerationTest, GenerationsMatchEagerGreedy) {
+  auto exec = executor();
+  ASSERT_NE(exec, nullptr);
+  batching::Runner runner(*exec, scheduler());
+  const auto generations = generate(runner, prompts());
+  runner.shutdown();
+  ASSERT_EQ(generations.size(), cases_.size());
+  for (size_t i = 0; i < cases_.size(); ++i) {
+    EXPECT_EQ(generations[i].reason, batching::FinishReason::NewTokenLimit)
+        << i;
+    EXPECT_EQ(generations[i].tokens, cases_[i].expected) << "prompt " << i;
+  }
+  EXPECT_EQ(runner.metrics().steps_failed, 0u);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Sequence,
+    CudaExecutorSequenceGenerationTest,
+    ::testing::Values("sequence"));
 
 INSTANTIATE_TEST_SUITE_P(
     Toy,

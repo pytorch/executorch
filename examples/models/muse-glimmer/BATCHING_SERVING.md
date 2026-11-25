@@ -506,12 +506,16 @@ fit it; a zero automatic budget shows the cells the sessions need at minimum.
 
 A DFlash export (`export_dflash`) adds a draft pool of `--draft-max-cells`
 (default `--max-cells`) cells, which also keeps every draft owner's block while
-drafting. It caps the context again, and the context must exceed the block:
+drafting. Its off-graph export (MLX or CUDA batching) uses the checkpoint's
+native context limit and ignores `--max-seq-len`, warning when the flag is set,
+so its program context is the native one. The draft caps the context again,
+and the context must exceed the block:
 
 ```text
 draft cells needed = resident sessions x --max-context
                      + --max-draft-owners x block + 1
-max --max-context  = min(target limit above,
+max --max-context  = min(native context,
+                         floor((--max-cells - 1) / resident sessions),
                          floor((--draft-max-cells - 1 - --max-draft-owners x block)
                                / resident sessions))
 ```
@@ -525,9 +529,10 @@ For long contexts on sliding-window models such as Muse Glimmer, prefer
 `--kv-layout sequence --max-kv-seqs N`, with N at least the resident session
 count. Each session gets a private column of up to `--max-seq-len` tokens (plus
 one scratch column). `export_dflash` accepts it too, giving the draft a private
-column per sequence that holds the context beside its block, so with DFlash a
-session holds at most `--max-seq-len` - block tokens and a larger
-`--max-context` is refused. Global layers keep `--max-seq-len` rows per column,
+column per sequence of the program's (native) context, which holds the context
+beside its block: with DFlash a session holds at most that context less the
+block, and a larger `--max_session_tokens`/`--max-context` is refused. Global
+layers keep `--max-seq-len` rows per column,
 but sliding-window layers keep only a ring of `window + --max-step-tokens - 1`
 rows:
 

@@ -400,10 +400,10 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
       declared_seqs,
       metadata::detail::read_int_method(*module, kMaxSeqsMethod));
   const bool sequence_layout = declared_seqs.has_value();
-  // The most resident sessions the layout tracks, for the reports: the
-  // program's sequence columns, or the cell table's owner bits, until the
-  // cache is built; then the cache's own count, which admission enforces.
-  int session_limit = sequence_layout
+  // The most resident sessions the layout tracks: the program's sequence
+  // columns, or the cell table's owner bits. The built cache tracks the same
+  // count, which admission enforces below.
+  const int session_limit = sequence_layout
       ? static_cast<int>(std::min<std::int64_t>(
             *declared_seqs, std::numeric_limits<int>::max()))
       : llm_cache::CellCache::kMaxSeqs;
@@ -614,9 +614,6 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
       InvalidType,
       "CudaExecutor: the cache is not a batched CUDA cache");
   const std::optional<int> seq_limit = ctl->max_seqs();
-  if (seq_limit) {
-    session_limit = *seq_limit;
-  }
   if (seq_limit && max_sessions > *seq_limit) {
     report_admission(KvAdmission::kSessionLimit);
     return Error::InvalidArgument;

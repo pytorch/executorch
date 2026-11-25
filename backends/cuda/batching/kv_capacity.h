@@ -181,9 +181,8 @@ struct KvCapacityReport {
   std::int64_t context_length = 0;
   // The cell layout's pool; zero for the sequence layout.
   std::int64_t cells = 0;
-  // The most resident sessions the layout tracks: the cache's own count once
-  // it is built, else the program's sequence columns or the cell table's
-  // limit.
+  // The most resident sessions the layout tracks: the program's sequence
+  // columns, or the cell table's limit.
   int session_limit = 0;
   CellPoolFacts facts;
 };
@@ -314,11 +313,17 @@ inline std::vector<std::string> describe_capacity(
         lines.push_back(
             "CudaExecutor: " + who + " exceed the cell layout's limit of " +
             limit + " resident sequences, whatever its cells");
-        // With a known budget the cells may hold fewer sessions than the limit.
-        const std::string fit = !report.automatic && report.session_tokens > 0
-            ? std::to_string(fitting_sessions(report)) + " sessions of " +
-                tokens + " tokens fit its cells and limit"
-            : "at most " + limit + " sessions fit its limit";
+        // With a known budget the cells may hold fewer sessions than the limit,
+        // or not even one.
+        std::string fit = "at most " + limit + " sessions fit its limit";
+        if (!report.automatic && report.session_tokens > 0) {
+          const std::int64_t fitting = fitting_sessions(report);
+          fit = fitting > 0
+              ? std::to_string(fitting) + " sessions of " + tokens +
+                  " tokens fit its cells and limit"
+              : "one session of " + tokens + " tokens alone needs " +
+                  std::to_string(report.session_tokens + 1LL) + " cells";
+        }
         lines.push_back(
             "CudaExecutor: " + fit +
             "; a sequence-layout program would need at least " + sessions +
