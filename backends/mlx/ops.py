@@ -370,13 +370,12 @@ def normalize_reduction_dim(
     """
     if len(args) > start_idx and isinstance(args[start_idx], (list, tuple)):
         dim = list(args[start_idx])
-        keepdim = args[start_idx + 1] if len(args) > start_idx + 1 else False
     elif len(args) > start_idx and isinstance(args[start_idx], int):
         dim = [args[start_idx]]
-        keepdim = args[start_idx + 1] if len(args) > start_idx + 1 else False
     else:
+        # No dim, or dim=None: reduce every axis. keepdim still applies.
         dim = []
-        keepdim = False
+    keepdim = args[start_idx + 1] if len(args) > start_idx + 1 else False
 
     return dim, keepdim
 
