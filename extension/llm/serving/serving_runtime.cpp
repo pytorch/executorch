@@ -62,6 +62,12 @@ struct TextRequest {
   bool started = false;
   bool capture_lane = false;
   std::optional<batching::PrefixCache::PromptCapture> prefix_capture;
+  // Longest cached prefix this request may still try: set when a cache-on
+  // group cut it after its lookup, to what it adopted then (0 after a miss),
+  // so its next lookup neither credits nor retries a refused snapshot. The
+  // trade-off: the request also ignores longer entries cached after the cut,
+  // and one cut after a miss reuses nothing.
+  std::optional<std::size_t> reuse_bound;
 
   void emit(GenerationEvent event) {
     if (!sink) {
@@ -1175,7 +1181,14 @@ struct ServingRuntime::Impl {
     if (!request->text->prompt || request->cancelled.load()) {
       return 0;
     }
-    return prefix_cache_.longest_match(*request->text->prompt);
+    return prefix_cache_.longest_match(
+        *request->text->prompt, 0, reuse_bound(request));
+  }
+
+  static std::size_t reuse_bound(const Request& request) {
+    return request->text && request->text->reuse_bound
+        ? *request->text->reuse_bound
+        : std::numeric_limits<std::size_t>::max();
   }
 
   // Positions a looked-up group member will prefill: its prompt after the
@@ -1254,7 +1267,7 @@ struct ServingRuntime::Impl {
           queries.push_back(
               {&*request->text->prompt,
                0,
-               std::numeric_limits<std::size_t>::max(),
+               reuse_bound(request),
                prefix_selector(request, checked[i])});
           members.push_back(i);
         }
@@ -1280,9 +1293,9 @@ struct ServingRuntime::Impl {
   // the members that still fit its budget given what each actually reused:
   // a refused or skipped clone can leave a member with far more to prefill
   // than estimated. Cut members release their clones and pending opens here,
-  // on control, and return to inbox_ as their original commands. The kept
-  // misses then issue their cold opens together. Returns the new end of the
-  // group.
+  // on control, and return to inbox_ as their original commands, bounded to
+  // the prefix they adopted. The kept misses then issue their cold opens
+  // together. Returns the new end of the group.
   std::size_t acquire_sessions(
       const std::vector<Command>& group,
       const std::vector<bool>& prepared,
@@ -1292,6 +1305,11 @@ struct ServingRuntime::Impl {
     lookup_prefixes(group, prepared, end, found, opens);
     const auto cut = [&](std::size_t from) {
       for (std::size_t j = from; j < end; ++j) {
+        if (prepared[j] && found[j]) {
+          const auto* hit = std::get_if<PrefixSelection>(&*found[j]);
+          group[j].request->text->reuse_bound =
+              hit ? hit->match.matched_tokens : 0;
+        }
         found[j].reset();
         settle_open(opens[j]);
       }
@@ -1300,16 +1318,8 @@ struct ServingRuntime::Impl {
     std::size_t tokens = 0;
     bool kept = false;
     for (std::size_t i = 0; i < end; ++i) {
-      if (!prepared[i]) {
-        continue;
-      }
-      // A failed lookup ends the group as a failed preparation does: it is
-      // launched, so its rejection is delivered, and later members wait.
-      if (found[i] && std::holds_alternative<ServingError>(*found[i])) {
-        if (kept) {
-          cut(i + 1);
-          break;
-        }
+      // A cancelled member prefills nothing and does not anchor the group.
+      if (!prepared[i] || group[i].request->cancelled.load()) {
         continue;
       }
       const auto cost = prefill_cost(group[i].request, found[i]);
@@ -1410,7 +1420,11 @@ struct ServingRuntime::Impl {
   // waves, keeps the members that fit its budget given what each actually
   // reused, and opens the kept misses together. A member with nothing cached
   // opens as soon as it is prepared. A refused clone retries in the next wave,
-  // and members are submitted only after the group's last wave.
+  // and members are submitted only after the group's last wave. Because only
+  // uncached positions count, the tokenization a cache-on group does before
+  // its first submission is bounded by its free session slots rather than by
+  // the budget: a burst of long, mostly cached prompts is prepared in full
+  // first, trading that delay for one shared admission.
   //
   // A group's prompts fill at most half of the scheduler's per-step prefill
   // budget. The other half leaves room for chunks of prompts already
@@ -1419,7 +1433,8 @@ struct ServingRuntime::Impl {
   // saving steps, and measured slower on executors with a high per-step cost.
   // The next request is prepared only while a prompt as long as the last would
   // still fit, so earlier members wait for later members' tokenization,
-  // bounded by the budget, plus at most one more preparation, which ends the
+  // bounded by the budget without the cache, plus at most one more
+  // preparation, which ends the
   // group whether it fits, fails, or is not plain tokens. Source prompts with
   // image segments never join a group. A deferred preparation whose result is
   // not plain tokens (an image from the model preparer, including its
@@ -1441,6 +1456,10 @@ struct ServingRuntime::Impl {
           end = i + 1;
           break;
         }
+        continue;
+      }
+      if (cached && request->cancelled.load()) {
+        // A cancelled member prefills nothing and does not open the group.
         continue;
       }
       auto size = request->text->terminal.stats.prompt_tokens;
@@ -1557,7 +1576,9 @@ struct ServingRuntime::Impl {
 #if ET_HAS_EXCEPTIONS
       try {
 #endif
-        auto found = looked_up ? std::move(*looked_up) : lookup_prefix(request);
+        auto found = looked_up
+            ? std::move(*looked_up)
+            : lookup_prefix(request, 0, reuse_bound(request));
         PrefixLookupStatus outcome = PrefixLookupStatus::Unavailable;
         if (auto* error = std::get_if<ServingError>(&found)) {
           preparation_error = std::move(*error);

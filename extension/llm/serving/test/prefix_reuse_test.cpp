@@ -3549,8 +3549,8 @@ TEST_F(PrefixGroupTest, QueuedHitsCloneTogetherBeforeAnyMemberPrefills) {
 }
 
 TEST_F(PrefixGroupTest, QueuedMissesOpenTogetherAndShareOneCaptureLane) {
-  // A 32-token chunk groups 16 uncached positions: all three prompts.
-  start(true, batching::DecodeFirstScheduler::create(64, 4, 32));
+  // The default step budget groups 14 positions: all three 3-token prompts.
+  start();
   auto parked = park_control();
   auto handles = queue({{1, 2, 3}, {4, 5, 6}, {7, 8, 9}});
   executor.executing.hold();
@@ -3788,10 +3788,12 @@ TEST_F(PrefixGroupTest, RefusedCreditedClonesKeepTheGroupWithinItsCap) {
        {1, 2, 3, 4, 5, 6, 7, 8, 11}});
   executor.executing.hold();
   control.release();
-  // While the first member's prefill is held, only its clone is resident: the
-  // others' fallback clones were released before it was submitted.
+  // While the first member's prefill is held, the others' fallback clones were
+  // released before it was submitted: two snapshots, its clone, and at most
+  // the next group's clone, which may be served before the held step. Without
+  // the cut all three clones would be resident.
   ASSERT_TRUE(executor.executing.wait());
-  EXPECT_EQ(executor.open_count(), 3);
+  EXPECT_LE(executor.open_count(), 4);
   executor.executing.release();
   finish(parked, handles);
   for (std::size_t i = 0; i < handles.size(); ++i) {
@@ -3801,7 +3803,98 @@ TEST_F(PrefixGroupTest, RefusedCreditedClonesKeepTheGroupWithinItsCap) {
     EXPECT_EQ(burst[i]->terminal->finish_reason, FinishReason::Length);
     EXPECT_EQ(burst[i]->terminal->stats.reused_prompt_tokens, 3u);
   }
-  EXPECT_GE(executor.clone_attempts(shorter), 4);
+  // Each member tried the refused snapshot once. The cut members came back
+  // bounded to the 3-token prefix they adopted, so each cloned it again once:
+  // the seed's lookup, three in the first group, then one per later group.
+  EXPECT_EQ(executor.clone_attempts(longer), 3);
+  EXPECT_EQ(executor.clone_attempts(shorter), 6);
+}
+
+TEST_F(PrefixGroupTest, CancelledHeadDoesNotAnchorTheGroup) {
+  // An 8-token step prefill budget groups 4 positions. The cancelled head
+  // prefills nothing, so the hit after it, left with 6 positions once its
+  // credited clone is refused, is still the group's first live member.
+  config.prefix_cache_capacity = 2;
+  freeze_full_cache();
+  start(true, batching::DecodeFirstScheduler::create(12, 4, 8));
+  const auto shorter = seed({1, 2, 3});
+  const auto longer = seed({1, 2, 3, 4, 5, 6, 7, 8});
+  executor.rejected_clone_source = longer;
+  auto parked = park_control();
+  auto handles = queue({{70, 71}, {1, 2, 3, 4, 5, 6, 7, 8, 9}});
+  handles[0].cancel();
+  control.release();
+  finish(parked, handles);
+  ASSERT_TRUE(burst[0]->terminal);
+  EXPECT_EQ(burst[0]->terminal->finish_reason, FinishReason::Cancelled);
+  EXPECT_FALSE(handles[1].error());
+  ASSERT_TRUE(burst[1]->terminal);
+  EXPECT_EQ(burst[1]->terminal->stats.reused_prompt_tokens, 3u);
+  // Kept on the first lookup: the seed's lookup and one clone, not a second
+  // after a cut.
+  EXPECT_EQ(executor.clone_attempts(shorter), 2);
+  EXPECT_EQ(executor.clone_attempts(longer), 1);
+}
+
+TEST_F(PrefixGroupTest, CutMissReleasesItsPendingOpen) {
+  // An 8-token step prefill budget groups 4 positions. The hit, credited one
+  // position, is left with 6 once its clone is refused, so the 3-token miss
+  // behind it is cut after its cold open was issued during sizing.
+  config.prefix_cache_capacity = 2;
+  freeze_full_cache();
+  start(true, batching::DecodeFirstScheduler::create(12, 4, 8));
+  seed({1, 2, 3});
+  const auto longer = seed({1, 2, 3, 4, 5, 6, 7, 8});
+  ASSERT_TRUE(wait_until([&] { return executor.open_count() == 2; }));
+  executor.rejected_clone_source = longer;
+  auto parked = park_control();
+  auto handles = queue({{1, 2, 3, 4, 5, 6, 7, 8, 9}, {80, 81, 82}});
+  executor.executing.hold();
+  control.release();
+  // While the hit's prefill is held: two snapshots, the hit's clone, and one
+  // session of the miss, either its first, if its release is not yet served,
+  // or its requeued open.
+  ASSERT_TRUE(executor.executing.wait());
+  EXPECT_GE(executor.open_count(), 3);
+  EXPECT_LE(executor.open_count(), 4);
+  executor.executing.release();
+  finish(parked, handles);
+  for (std::size_t i = 0; i < handles.size(); ++i) {
+    SCOPED_TRACE(i);
+    EXPECT_FALSE(handles[i].error());
+    ASSERT_TRUE(burst[i]->terminal);
+    EXPECT_EQ(burst[i]->terminal->finish_reason, FinishReason::Length);
+    EXPECT_EQ(burst[i]->terminal->stats.reused_prompt_tokens, i ? 0u : 3u);
+  }
+}
+
+TEST_F(PrefixGroupTest, CreditedMembersThatMissOpenTogether) {
+  // Both members are credited with the 8-token snapshot, whose clones are
+  // refused with nothing shorter cached. A 60-token step budget still fits
+  // both full prompts, so their cold opens are issued together after the
+  // wave, before either is submitted.
+  config.prefix_cache_capacity = 1;
+  freeze_full_cache();
+  start(true, batching::DecodeFirstScheduler::create(64, 4, 32));
+  const auto longer = seed({1, 2, 3, 4, 5, 6, 7, 8});
+  ASSERT_TRUE(wait_until([&] { return executor.open_count() == 1; }));
+  executor.rejected_clone_source = longer;
+  auto parked = park_control();
+  auto handles =
+      queue({{1, 2, 3, 4, 5, 6, 7, 8, 9}, {1, 2, 3, 4, 5, 6, 7, 8, 10}});
+  executor.executing.hold();
+  control.release();
+  ASSERT_TRUE(executor.executing.wait());
+  EXPECT_EQ(executor.clone_attempts(longer), 2);
+  EXPECT_EQ(executor.open_count(), 3);
+  executor.executing.release();
+  finish(parked, handles);
+  for (std::size_t i = 0; i < handles.size(); ++i) {
+    SCOPED_TRACE(i);
+    EXPECT_FALSE(handles[i].error());
+    ASSERT_TRUE(burst[i]->terminal);
+    EXPECT_EQ(burst[i]->terminal->stats.reused_prompt_tokens, 0u);
+  }
 }
 
 TEST_F(PrefixGroupTest, ShutdownWithALaunchedGroupSettlesEveryMember) {
