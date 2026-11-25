@@ -16,7 +16,12 @@ REUSABLE = "./.github/workflows/_unittest.yml"
 BACKEND = "./.github/workflows/_test_backend.yml"
 CLANG12 = "ci-image:executorch-ubuntu-22.04-clang12"
 # Images whose torch carries the reporter (TORCHCI_REPORTS in .ci/docker/build.sh).
-TORCHCI_IMAGES = {CLANG12, "ci-image:executorch-ubuntu-22.04-gcc11"}
+TORCHCI_IMAGES = {
+    CLANG12,
+    "ci-image:executorch-ubuntu-22.04-gcc11",
+    "ci-image:executorch-ubuntu-22.04-arm-sdk",
+    "ci-image:executorch-ubuntu-24.04-arm-sdk",
+}
 
 
 def load_workflow(name):
@@ -58,6 +63,9 @@ class TorchciWorkflowTest(unittest.TestCase):
     def test_only_backend_suites_on_torchci_images_opt_in(self):
         opted = {
             ("test-backend-cpu.yml", "test-cpu"),
+            ("test-backend-arm.yml", "test-arm"),
+            ("test-backend-arm.yml", "test-arm-vgf"),
+            ("test-backend-cortex-m.yml", "test-cortex-m"),
             ("test-backend-xnnpack.yml", "test-xnnpack"),
             ("test-backend-vulkan.yml", "test-vulkan"),
             ("test-backend-webgpu.yml", "test-webgpu"),
