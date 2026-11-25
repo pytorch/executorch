@@ -273,28 +273,20 @@ TEST(KvCapacityTest, AutomaticSessionLimitNamesTheLimit) {
       "program would need at least 68 sequence columns");
 }
 
-TEST(KvCapacityTest, AutomaticSessionTokens) {
-  EXPECT_EQ(cb::automatic_session_tokens(16, 131072, 131072), 8191);
-  EXPECT_EQ(cb::automatic_session_tokens(1, 64, 256), 64);
-  EXPECT_EQ(cb::automatic_session_tokens(256, 64, 256), 0);
-}
-
-TEST(KvCapacityTest, CheckAdmissionPutsTheSessionLimitFirst) {
+TEST(KvCapacityTest, AutomaticAdmissionPutsTheSessionLimitFirst) {
   using cb::KvAdmission;
-  const auto outcome = [](int sessions,
-                          int tokens,
-                          std::int64_t cells,
-                          int limit) {
-    return cb::check_admission(sessions, tokens, 131072, cells, limit).outcome;
+  const auto check = [](int sessions, std::int64_t cells, int limit) {
+    return cb::automatic_admission(sessions, 131072, cells, limit);
   };
-  EXPECT_EQ(outcome(4, 1024, 4096, 64), KvAdmission::kCells);
-  EXPECT_EQ(outcome(16, 0, 131072, 64), KvAdmission::kAutomatic);
-  EXPECT_EQ(outcome(16, 0, 16, 64), KvAdmission::kNoBudget);
-  // Past the limit, whatever the cells or the budget.
-  EXPECT_EQ(outcome(65, 0, 1 << 20, 64), KvAdmission::kSessionLimit);
-  EXPECT_EQ(outcome(65, 1024, 64, 64), KvAdmission::kSessionLimit);
-  // The resolved budget comes with the outcome.
-  EXPECT_EQ(cb::check_admission(65, 0, 131072, 256, 64).session_tokens, 3);
+  EXPECT_EQ(check(16, 131072, 64).outcome, KvAdmission::kAutomatic);
+  EXPECT_EQ(check(16, 131072, 64).session_tokens, 8191);
+  // Capped by the context.
+  EXPECT_EQ(check(1, 1 << 20, 64).session_tokens, 131072);
+  EXPECT_EQ(check(16, 16, 64).outcome, KvAdmission::kNoBudget);
+  EXPECT_EQ(check(16, 16, 64).session_tokens, 0);
+  // Past the limit, whatever the cells; the resolved budget comes along.
+  EXPECT_EQ(check(65, 1 << 20, 64).outcome, KvAdmission::kSessionLimit);
+  EXPECT_EQ(check(65, 256, 64).session_tokens, 3);
 }
 
 TEST(KvCapacityTest, SequenceLayoutSessionLimit) {

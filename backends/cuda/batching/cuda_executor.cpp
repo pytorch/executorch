@@ -453,12 +453,8 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
         InvalidProgram,
         "CudaExecutor: cell count must fit an int and leave a padding row");
     if (max_session_tokens == 0) {
-      const KvAdmissionCheck check = check_admission(
-          max_sessions,
-          /*requested_tokens=*/0,
-          max_context_length,
-          max_cells,
-          session_limit);
+      const KvAdmissionCheck check = automatic_admission(
+          max_sessions, max_context_length, max_cells, session_limit);
       max_session_tokens = static_cast<int>(check.session_tokens);
       // A budget is reported only for sessions the layout tracks; sessions
       // past it are reported here only if no budget remains, else once the
@@ -579,13 +575,9 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
       !cell_budget(max_sessions, max_session_tokens, max_cells).fits()) {
     // The layout's session limit is reported first: no token limit or cell
     // count fixes it.
-    report_admission(check_admission(
-                         max_sessions,
-                         max_session_tokens,
-                         max_context_length,
-                         max_cells,
-                         session_limit)
-                         .outcome);
+    report_admission(
+        max_sessions > session_limit ? KvAdmission::kSessionLimit
+                                     : KvAdmission::kCells);
     return Error::InvalidArgument;
   }
 

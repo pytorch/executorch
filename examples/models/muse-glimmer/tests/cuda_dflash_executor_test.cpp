@@ -496,6 +496,13 @@ TEST(KvNotes, DraftNotesOnASequenceLayout) {
       lines[0],
       "DFlash: each draft sequence's 2048 rows hold 2032 tokens beside its "
       "16-token block, so it refused the sessions");
-  EXPECT_EQ(lines[1], "DFlash: 4 resident sessions share the draft pool");
-  EXPECT_EQ(lines[3], "DFlash: 4096 tokens per session were requested");
+  // The cause is --max-seq-len less the block, which no session flag changes.
+  EXPECT_EQ(
+      lines[1],
+      "DFlash: on the sequence layout a session holds at most --max-seq-len "
+      "less the block, 2048 - 16 = 2032 draft tokens, so a requested "
+      "4096-token --max-context is refused");
+  EXPECT_FALSE(any_contains(lines, "share the draft pool"));
+  EXPECT_FALSE(any_contains(lines, "--max_sessions"));
+  expect_loggable(lines);
 }

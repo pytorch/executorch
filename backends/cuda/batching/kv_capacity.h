@@ -143,44 +143,29 @@ enum class KvAdmission {
   kSessionLimit,
 };
 
-// Automatic context mode's per-session budget on the cell layout:
-// min(context, (cells - 1) / sessions).
-inline std::int64_t automatic_session_tokens(
-    int sessions,
-    std::int64_t context_length,
-    std::int64_t cells) {
-  return sessions > 0 ? std::min(context_length, (cells - 1) / sessions) : 0;
-}
-
 struct KvAdmissionCheck {
   KvAdmission outcome;
-  // The requested budget, or automatic context mode's resolved one.
+  // Automatic context mode's resolved per-session budget:
+  // min(context, (cells - 1) / sessions).
   std::int64_t session_tokens;
 };
 
-// What the cell layout reports for `sessions` resident sessions asking for
-// `requested_tokens` each (zero for automatic context mode), over `cells`
-// cells and at most `session_limit` resident sessions: kSessionLimit past the
-// limit; in automatic context mode kAutomatic with the resolved budget, or
-// kNoBudget; else kCells. CudaExecutor calls it in automatic context mode, and
-// for a requested limit only once cell_budget() has refused it.
-inline KvAdmissionCheck check_admission(
+// Automatic context mode's admission on the cell layout, for `sessions`
+// resident sessions over `cells` cells and at most `session_limit` sessions:
+// kSessionLimit past the limit, else kAutomatic with the resolved budget, or
+// kNoBudget when not one token per session fits.
+inline KvAdmissionCheck automatic_admission(
     int sessions,
-    int requested_tokens,
     std::int64_t context_length,
     std::int64_t cells,
     int session_limit) {
-  const std::int64_t tokens = requested_tokens != 0
-      ? requested_tokens
-      : automatic_session_tokens(sessions, context_length, cells);
+  const std::int64_t tokens =
+      sessions > 0 ? std::min(context_length, (cells - 1) / sessions) : 0;
   if (sessions > session_limit) {
     return {KvAdmission::kSessionLimit, tokens};
   }
-  if (requested_tokens == 0) {
-    return {
-        tokens > 0 ? KvAdmission::kAutomatic : KvAdmission::kNoBudget, tokens};
-  }
-  return {KvAdmission::kCells, tokens};
+  return {
+      tokens > 0 ? KvAdmission::kAutomatic : KvAdmission::kNoBudget, tokens};
 }
 
 struct KvCapacityReport {

@@ -523,11 +523,13 @@ The export prints these limits and both pools' K/V before lowering.
 
 For long contexts on sliding-window models such as Muse Glimmer, prefer
 `--kv-layout sequence --max-kv-seqs N`, with N at least the resident session
-count; `export_dflash` accepts it too, giving the draft a private column per
-sequence that holds the context beside its block. Each session gets a private
-column of up to `--max-seq-len` tokens (plus one scratch column). Global layers keep
-`--max-seq-len` rows per column, but sliding-window layers keep only a ring of
-`window + --max-step-tokens - 1` rows:
+count. Each session gets a private column of up to `--max-seq-len` tokens (plus
+one scratch column). `export_dflash` accepts it too, giving the draft a private
+column per sequence that holds the context beside its block, so with DFlash a
+session holds at most `--max-seq-len` - block tokens and a larger
+`--max-context` is refused. Global layers keep `--max-seq-len` rows per column,
+but sliding-window layers keep only a ring of `window + --max-step-tokens - 1`
+rows:
 
 ```text
 bytes = (N + 1) x 2 (K and V) x KV heads x head dim x KV element bytes

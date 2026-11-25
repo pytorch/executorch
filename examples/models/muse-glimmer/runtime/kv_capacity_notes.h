@@ -172,29 +172,33 @@ inline std::vector<std::string> draft_notes(
           " temporary block cells and 1 padding cell";
   line += refused ? ", so it refused the sessions" : ", which limits them";
   lines.push_back(line);
-  if (requested_tokens != 0 && refused) {
-    // The target admitted the requested limit without a report: say where
-    // the sessions come from.
+  if (requested_tokens != 0 && refused && pool.sequence_layout) {
+    // Each sequence has its own rows: no session count changes this.
     lines.push_back(
-        "DFlash: " + cb::describe_sessions(sessions, reservations) +
-        " share the draft pool");
-    lines.push_back(kResidentSessions);
-  }
-  if (requested_tokens != 0) {
-    std::string requested = "DFlash: " + std::to_string(requested_tokens) +
-        " tokens per session were requested";
-    if (!pool.sequence_layout) {
-      requested +=
-          "; " + std::to_string(sessions) + " x " +
-          std::to_string(requested_tokens) + " + " +
-          std::to_string(temporary_cells(pool)) + " + 1 = " +
-          std::to_string(
-              cb::cell_budget(
-                  sessions, requested_tokens, pool.cells, temporary_cells(pool))
-                  .required_cells) +
-          " draft cells hold them";
+        "DFlash: on the sequence layout a session holds at most --max-seq-len "
+        "less the block, " +
+        std::to_string(pool.cells) + " - " + block + " = " +
+        std::to_string(budget) + " draft tokens, so a requested " +
+        std::to_string(requested_tokens) + "-token --max-context is refused");
+  } else if (requested_tokens != 0) {
+    if (refused) {
+      // The target admitted the requested limit without a report: say where
+      // the sessions sharing the draft pool come from.
+      lines.push_back(
+          "DFlash: " + cb::describe_sessions(sessions, reservations) +
+          " share the draft pool");
+      lines.push_back(kResidentSessions);
     }
-    lines.push_back(requested);
+    lines.push_back(
+        "DFlash: " + std::to_string(requested_tokens) +
+        " tokens per session were requested; " + std::to_string(sessions) +
+        " x " + std::to_string(requested_tokens) + " + " +
+        std::to_string(temporary_cells(pool)) + " + 1 = " +
+        std::to_string(
+            cb::cell_budget(
+                sessions, requested_tokens, pool.cells, temporary_cells(pool))
+                .required_cells) +
+        " draft cells hold them");
   } else {
     lines.push_back(
         "DFlash: the target pool holds " + std::to_string(target_tokens) +

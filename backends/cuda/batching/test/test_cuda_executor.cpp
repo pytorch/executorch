@@ -699,6 +699,64 @@ TEST_P(CudaExecutorTest, ReportsOnlyAutomaticBudgetsAndRefusals) {
   EXPECT_TRUE(reports.empty());
 }
 
+// The toy's batched-sequence artifact: 4 sequence columns of 64 rows.
+TEST(CudaExecutorSequenceTest, ReportsTheCachesSessionLimit) {
+  int devices = 0;
+  if (cudaGetDeviceCount(&devices) != cudaSuccess || devices == 0) {
+    GTEST_SKIP() << "CUDA device required";
+  }
+  const char* dir = std::getenv("ET_CUDA_BATCHING_TOY_DIR");
+  if (dir == nullptr || *dir == '\0') {
+    GTEST_SKIP() << "ET_CUDA_BATCHING_TOY_DIR is not set; run "
+                    "export_toy_decoder.py first";
+  }
+  constexpr int kColumns = 4;
+  const std::string toy = std::string(dir) + "/sequence";
+  cb::CudaExecutorConfig config;
+  config.model_path = toy + "/model.pte";
+  config.data_files = {toy + "/aoti_cuda_blob.ptd"};
+  config.load_mode = Module::LoadMode::File;
+  config.initial_capacity = 16;
+  config.options.cuda_graph_for_static_methods = false;
+  std::vector<cb::KvCapacityReport> reports;
+  config.capacity_report = [&](const cb::KvCapacityReport& report) {
+    reports.push_back(report);
+  };
+
+  // Automatic context within the columns: each session gets the context.
+  config.max_sessions = kColumns;
+  config.max_session_tokens = 0;
+  ASSERT_EQ(cb::CudaExecutor::create(config).error(), Error::Ok);
+  ASSERT_EQ(reports.size(), 1u);
+  EXPECT_EQ(reports[0].outcome, cb::KvAdmission::kAutomatic);
+  EXPECT_TRUE(reports[0].sequence_layout);
+  EXPECT_EQ(reports[0].session_tokens, kMaxContext);
+  EXPECT_EQ(reports[0].session_limit, kColumns);
+
+  // One session past the columns in automatic context mode: no budget report,
+  // one session-limit report against the cache's own count.
+  reports.clear();
+  config.max_sessions = kColumns + 1;
+  config.reservations = {1, 3, 1};
+  EXPECT_EQ(cb::CudaExecutor::create(config).error(), Error::InvalidArgument);
+  ASSERT_EQ(reports.size(), 1u);
+  EXPECT_EQ(reports[0].outcome, cb::KvAdmission::kSessionLimit);
+  EXPECT_TRUE(reports[0].sequence_layout);
+  EXPECT_TRUE(reports[0].automatic);
+  EXPECT_EQ(reports[0].session_limit, kColumns);
+  EXPECT_EQ(reports[0].reservations.prefix_entries, 3);
+
+  // The same with an explicit limit.
+  reports.clear();
+  config.max_session_tokens = 32;
+  EXPECT_EQ(cb::CudaExecutor::create(config).error(), Error::InvalidArgument);
+  ASSERT_EQ(reports.size(), 1u);
+  EXPECT_EQ(reports[0].outcome, cb::KvAdmission::kSessionLimit);
+  EXPECT_FALSE(reports[0].automatic);
+  EXPECT_EQ(reports[0].session_tokens, 32);
+  EXPECT_EQ(reports[0].session_limit, kColumns);
+}
+
 INSTANTIATE_TEST_SUITE_P(
     Toy,
     CudaExecutorTest,
