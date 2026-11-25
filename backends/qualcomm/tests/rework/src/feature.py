@@ -247,6 +247,32 @@ class Logging:
                 )
 
 
+class RuntimePriority:
+    @staticmethod
+    @unpack_fixtures
+    def test(qnn_config, compile_specs, priority):
+        model = Logging.Model()
+        inputs = model.example_inputs()
+        soc_model = getattr(QcomChipset, qnn_config.soc_model)
+        with calibrate(model, [inputs], get_quantizer(qnn_config)) as model:
+            executorch_prog = to_edge_transform_and_lower_to_qnn(
+                module=model,
+                inputs=inputs,
+                compiler_specs=compile_specs((("soc_model", soc_model),)),
+            ).to_executorch()
+
+        def callback(device):
+            device.extra_cmds += f" --lpai_priority {priority}"
+            device.execute()
+
+        invoke_remote(
+            qnn_config=qnn_config,
+            executorch_prog=executorch_prog,
+            inputs=inputs,
+            callback=callback,
+        )
+
+
 class MultiGraph:
     class Model(torch.nn.Module):
         def __init__(self):

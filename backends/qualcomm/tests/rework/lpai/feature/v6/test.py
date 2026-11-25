@@ -85,3 +85,14 @@ def test_tensor_dump(request, kwargs):
 )
 def test_multi_graph_weight_sharing(request, kwargs):
     MultiGraph.test_weight_sharing(request, kwargs)  # noqa: F405
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        pytest.param({"priority": 100}, id="normal"),
+        pytest.param({"priority": 200}, id="high"),
+    ],
+)
+def test_runtime_priority(request, kwargs):
+    RuntimePriority.test(request, kwargs)  # noqa: F405

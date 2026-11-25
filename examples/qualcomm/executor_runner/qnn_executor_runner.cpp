@@ -137,6 +137,13 @@ DEFINE_int32(
     "This is a runtime option and will override the core selection set during AOT. "
     "Refer to QnnExecuTorchLpaiBackendOptions under qc_compiler_spec.fbs for more info.");
 DEFINE_int32(
+    lpai_priority,
+    100,
+    "QNN graph priority of this process, as a Qnn_Priority_t value: "
+    "0 lowest, 50 normal low, 100 normal (default), 150 normal high, 200 high, "
+    "300 high plus, 400 critical, 500 critical plus. "
+    "This is a runtime option and only takes effect when passed explicitly.");
+DEFINE_int32(
     profile_level,
     0,
     "Profile level between 0-2. "
@@ -222,7 +229,7 @@ int main(int argc, char** argv) {
   }
 
   // Set runtime options
-  executorch::runtime::BackendOptions<9> backend_options;
+  executorch::runtime::BackendOptions<10> backend_options;
   if (!gflags::GetCommandLineFlagInfoOrDie("log_level").is_default) {
     ET_LOG(Info, "Setting runtime log level: %d", FLAGS_log_level);
     ET_CHECK_MSG(
@@ -299,6 +306,14 @@ int main(int argc, char** argv) {
             Error::Ok,
         "Failed to set backend options: %s",
         QNN_RUNTIME_LPAI_CORE_SELECTION);
+  }
+  if (!gflags::GetCommandLineFlagInfoOrDie("lpai_priority").is_default) {
+    ET_LOG(Info, "Setting runtime LPAI priority: %d", FLAGS_lpai_priority);
+    ET_CHECK_MSG(
+        backend_options.set_option(
+            QNN_RUNTIME_LPAI_PRIORITY, FLAGS_lpai_priority) == Error::Ok,
+        "Failed to set backend options: %s",
+        QNN_RUNTIME_LPAI_PRIORITY);
   }
   if (!gflags::GetCommandLineFlagInfoOrDie("heap_profiling_path").is_default) {
     ET_LOG(
