@@ -23,7 +23,12 @@ To generate the Compile Spec for Neutron backend, you can use the `generate_neut
 Following fields can be set:
 
 * `config` - NXP platform defining the Neutron NPU configuration, e.g. "imxrt700".
-* `intermediates_dir` - Directory to store intermediate artifact files.
+* `intermediates_dir` - Directory to store intermediate artifact files. Apart from the LiteRT models of the delegated
+  partitions, the partitioned program is saved there as `neutron_partitioned.json`, which can be opened in the
+  Model Explorer GUI. For programs with multiple methods, the dumps of the following methods get a numeric suffix,
+  for example `neutron_partitioned_1.json`. The `model_explorer` package is required for the dump, otherwise it is
+  skipped with a warning.
+
 * `extra_flags` - Extra flags for the Neutron compiler.
 * `operators_not_to_delegate` - List of operators that will not be delegated.
 * `use_neutron_for_format_conversion` - If True, let the eIQ Neutron NPU to handle conversion between channel-first (NCHW) and channel-last (NHWC) data formats. That is the Neutron backend will insert `Transpose` ops to ensure that the IO matches the executorch partition, which will be delegated to Neutron.

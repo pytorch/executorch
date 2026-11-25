@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import importlib.util
+
 import pytest
 import torch
 import torch.nn
@@ -200,6 +202,23 @@ class TestNeutronRecipeConfigFlags:
         assert any(
             tmp_path.iterdir()
         ), "No intermediate files written to intermediates_dir."
+
+        if importlib.util.find_spec("model_explorer") is None:
+            pytest.skip("The `model_explorer` package is required to dump the graph.")
+
+        assert (
+            tmp_path / "neutron_partitioned.json"
+        ).is_file(), "The partitioned graph was not written to intermediates_dir."
+
+    def test_no_intermediates_dir(self, tmp_path, monkeypatch):
+        """Without intermediates_dir, the partitioned graph is not written anywhere."""
+        monkeypatch.chdir(tmp_path)
+        model = SimpleCNN()
+        rc = NeutronRecipeConfig(INPUT_SHAPE)
+        _run_export(model, rc)
+        assert not list(
+            tmp_path.rglob("neutron_partitioned*.json")
+        ), "The partitioned graph was dumped even though intermediates_dir is not set."
 
     def test_fetch_constants_to_sram_flag(self, mocker):
         """fetch_constants_to_sram=True reaches the NeutronPartitioner used during export."""
