@@ -23,6 +23,7 @@
 #include <optional>
 #include <set>
 #include <stdexcept>
+#include <string>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -52,6 +53,7 @@ class HistoryExecutor final : public Executor {
 
   std::optional<SessionId> open_session() override {
     std::lock_guard<std::mutex> lock(mutex_);
+    order_.push_back('o');
     if (states_.size() >= max_sessions.load()) {
       return std::nullopt;
     }
@@ -72,6 +74,7 @@ class HistoryExecutor final : public Executor {
       before_clone();
     }
     std::lock_guard<std::mutex> lock(mutex_);
+    order_.push_back('c');
     clones_.push_back(Clone{source, upto, std::nullopt});
 #if ET_HAS_EXCEPTIONS
     if (throw_next_clone.exchange(false)) {
@@ -147,6 +150,11 @@ class HistoryExecutor final : public Executor {
     std::lock_guard<std::mutex> lock(mutex_);
     return clones_;
   }
+  // Opens ('o') and clones ('c') in the order the engine served them.
+  std::string order() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return order_;
+  }
   std::vector<SessionId> closed() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return closed_;
@@ -178,6 +186,7 @@ class HistoryExecutor final : public Executor {
   std::vector<Seen> seen_;
   std::vector<Clone> clones_;
   std::vector<SessionId> closed_;
+  std::string order_;
 };
 
 class PrefixCacheTest : public ::testing::Test {
@@ -1175,43 +1184,78 @@ TEST_F(FindIdentitiesTest, BatchedResultsMatchSequentialFinds) {
 }
 
 TEST_F(FindIdentitiesTest, EveryQueryQueuesItsCloneBeforeAnyIsAwaited) {
-  PrefixCache cache(2);
+  PrefixCache cache(3);
   ASSERT_TRUE(cache.insert({1, 2, 3}, snapshot({1, 2, 3})));
   ASSERT_TRUE(cache.insert({7, 8, 9}, snapshot({7, 8, 9})));
+  ASSERT_TRUE(cache.insert({4, 5, 6}, snapshot({4, 5, 6})));
   const auto first = identity({1, 2, 3, 4});
   const auto second = identity({7, 8, 9, 4});
   const auto third = identity({1, 2, 5});
-  std::atomic<int> selected{0};
-  const auto select = [&](std::size_t) {
-    ++selected;
-    return Decision::Use;
-  };
+  const auto last = identity({4, 5, 6, 1});
+  const auto served = executor.order().size();
+  std::atomic<bool> last_selected{false};
+  const auto use = [](std::size_t) { return Decision::Use; };
   hold_clones();
   auto pending = std::async(std::launch::async, [&] {
     return cache.find_identities(
-        {{&first, 0, std::numeric_limits<std::size_t>::max(), select},
-         {&second, 0, std::numeric_limits<std::size_t>::max(), select},
-         {&third, 0, std::numeric_limits<std::size_t>::max(), select}});
+        {{&first, 0, std::numeric_limits<std::size_t>::max(), use},
+         {&second, 0, std::numeric_limits<std::size_t>::max(), use},
+         {&third, 0, std::numeric_limits<std::size_t>::max(), use},
+         {&last, 0, std::numeric_limits<std::size_t>::max(), [&](std::size_t) {
+            last_selected = true;
+            return Decision::Skip;
+          }}});
   });
   Release release{gate};
   ASSERT_TRUE(gate.wait_entered());
-  // The engine is still inside the first clone; a find that awaited it before
-  // selecting the next candidate would still be at one selection.
+  // The engine is inside the first clone. The last query selects only after
+  // the first three queued their clones, so an open queued now must follow
+  // all three: the clones are pending together, not queued one per await.
   const auto deadline = std::chrono::steady_clock::now() + kTimeout;
-  while (selected.load() < 3 && std::chrono::steady_clock::now() < deadline) {
+  while (!last_selected.load() && std::chrono::steady_clock::now() < deadline) {
     std::this_thread::yield();
   }
-  EXPECT_EQ(selected.load(), 3);
+  ASSERT_TRUE(last_selected.load());
+  auto marker = runner->open_session_async();
   gate.release();
   ASSERT_EQ(pending.wait_for(kTimeout), std::future_status::ready);
+  ASSERT_EQ(marker.wait_for(kTimeout), std::future_status::ready);
+  EXPECT_TRUE(marker.get());
+  EXPECT_EQ(executor.order().substr(served), "ccco");
   auto results = pending.get();
   ASSERT_TRUE(results[0].match && results[1].match && results[2].match);
+  EXPECT_FALSE(results[3].match || results[3].stopped);
   EXPECT_EQ(results[0].match->matched_tokens, 3u);
   EXPECT_EQ(results[1].match->matched_tokens, 3u);
   EXPECT_EQ(results[2].match->matched_tokens, 2u);
   expect_cold_match(*results[0].match, {1, 2, 3, 4});
   expect_cold_match(*results[1].match, {7, 8, 9, 4});
   expect_cold_match(*results[2].match, {1, 2, 5});
+}
+
+TEST_F(FindIdentitiesTest, LongestMatchIsTheFirstCandidateWithoutCloning) {
+  PrefixCache cache(3);
+  const auto request = identity({1, 2, 3, 4, 9});
+  EXPECT_EQ(cache.longest_match(request), 0u);
+  ASSERT_TRUE(cache.insert({1, 2}, snapshot({1, 2})));
+  ASSERT_TRUE(cache.insert({1, 2, 3, 4, 5}, snapshot({1, 2, 3, 4, 5})));
+  ASSERT_TRUE(cache.insert({1, 2, 3}, snapshot({1, 2, 3})));
+  const auto attempts = executor.clones().size();
+  EXPECT_EQ(cache.longest_match(request), 4u);
+  EXPECT_EQ(cache.longest_match(request, 0, 3), 3u);
+  EXPECT_EQ(cache.longest_match(request, 3, 3), 0u);
+  EXPECT_EQ(cache.longest_match(request, 2, 2), 0u);
+  // Capped below the full prompt, as find_identity() caps it.
+  EXPECT_EQ(cache.longest_match(identity({1, 2, 3})), 2u);
+  EXPECT_EQ(cache.longest_match(identity({1})), 0u);
+  EXPECT_EQ(cache.longest_match(identity({8, 9})), 0u);
+  EXPECT_EQ(executor.clones().size(), attempts);
+  std::size_t first = 0;
+  cache.find_identity(request, 0, 3, [&](std::size_t matched) {
+    first = matched;
+    return Decision::Stop;
+  });
+  EXPECT_EQ(first, cache.longest_match(request, 0, 3));
 }
 
 TEST_F(FindIdentitiesTest, SkipAndStopApplyOnlyToTheirOwnQuery) {
@@ -1374,6 +1418,30 @@ TEST_F(FindIdentitiesTest, OneQuerysFailureLeavesTheOthersAndTheirClones) {
   EXPECT_THROW(
       cache.find_identity(request, 0, 4, throwing), std::runtime_error);
   EXPECT_TRUE(executor.wait_for_live(2));
+}
+TEST_F(FindIdentitiesTest, OneQuerysAllocationFailureIsOnlyItsMiss) {
+  PrefixCache cache(2);
+  ASSERT_TRUE(cache.insert({1, 2, 3}, snapshot({1, 2, 3})));
+  ASSERT_TRUE(cache.insert({7, 8, 9}, snapshot({7, 8, 9})));
+  const auto first = identity({1, 2, 3, 4});
+  const auto second = identity({7, 8, 9, 4});
+  const auto attempts = executor.clones().size();
+  auto results = cache.find_identities(
+      {{&first},
+       {&second,
+        0,
+        std::numeric_limits<std::size_t>::max(),
+        [](std::size_t) -> Decision { throw std::bad_alloc(); }},
+       {&first}});
+  ASSERT_EQ(results.size(), 3u);
+  EXPECT_FALSE(results[1].match);
+  EXPECT_FALSE(results[1].stopped);
+  EXPECT_FALSE(results[1].error);
+  ASSERT_TRUE(results[0].match && results[2].match);
+  EXPECT_FALSE(results[0].error || results[2].error);
+  EXPECT_EQ(executor.clones().size(), attempts + 2);
+  expect_cold_match(*results[0].match, {1, 2, 3, 4});
+  expect_cold_match(*results[2].match, {1, 2, 3, 4});
 }
 #endif
 
