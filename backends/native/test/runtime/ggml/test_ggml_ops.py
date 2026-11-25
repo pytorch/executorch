@@ -1180,6 +1180,82 @@ class GgmlOpsTest(unittest.TestCase):
         )
         self.assertEqual(ops["SWIGLU"], 0)
 
+    def test_geglu_operand_orders(self):
+        cases = {
+            "gelu(x) * up": (
+                lambda x, up: F.gelu(x, approximate="tanh") * up,
+                "GEGLU",
+                "GELU",
+            ),
+            "up * gelu(x)": (
+                lambda x, up: up * F.gelu(x, approximate="tanh"),
+                "GEGLU",
+                "GELU",
+            ),
+            "up * erf gelu(x)": (lambda x, up: up * F.gelu(x), "GEGLU_ERF", "GELU_ERF"),
+        }
+        for name, (fn, fused, absent) in cases.items():
+            with self.subTest(name):
+                ops = collections.Counter()
+                # ggml-cpu's tanh GELU reads an FP16 table, as in test_gelu_tanh.
+                self._check(
+                    Lambda(fn),
+                    (torch.randn(2, 3, 4) * 3.0, torch.randn(2, 3, 4)),
+                    atol=1e-3,
+                    rtol=2e-3,
+                    graph_ops=ops,
+                )
+                self.assertGreater(ops[fused], 0)
+                self.assertEqual(ops[absent], 0)
+
+    def test_geglu_with_shared_gelu(self):
+        def forward(x, up):
+            gelu = F.gelu(x, approximate="tanh")
+            return gelu, gelu * up
+
+        ops = collections.Counter()
+        self._check(
+            Lambda(forward),
+            (torch.randn(2, 3, 4) * 3.0, torch.randn(2, 3, 4)),
+            atol=1e-3,
+            rtol=2e-3,
+            graph_ops=ops,
+        )
+        self.assertGreater(ops["GELU"], 0)
+        self.assertGreater(ops["GEGLU"], 0)
+
+    def test_glu_of_a_buffer_written_after_the_activation(self):
+        # The activation reads a buffer that is then written in place, so the
+        # product must use the activation from before the write.
+        class ActivationThenWrite(torch.nn.Module):
+            def __init__(self, activation):
+                super().__init__()
+                self.activation = activation
+                self.register_buffer("state", torch.randn(1, 2, 4, 8))
+
+            def forward(self, rows, positions, up):
+                gate = self.activation(self.state)
+                self.state.index_copy_(2, positions, rows)
+                return gate * up
+
+        activations = {
+            "gelu": lambda x: F.gelu(x, approximate="tanh"),
+            "erf gelu": F.gelu,
+            "silu": F.silu,
+        }
+        for name, activation in activations.items():
+            with self.subTest(name):
+                self._check(
+                    ActivationThenWrite(activation),
+                    (
+                        torch.randn(1, 2, 1, 8) * 5.0,
+                        torch.tensor([1]),
+                        torch.randn(1, 2, 4, 8),
+                    ),
+                    atol=2e-3,
+                    rtol=2e-3,
+                )
+
     def test_sigmoid(self):
         self._check(Lambda(torch.sigmoid), (torch.randn(2, 3, 4),))
 
