@@ -44,6 +44,8 @@ runtime::Result<MuseGlimmerBackend> create_muse_glimmer_backend(
     if (!config.data_path.empty()) {
       executor_config.data_files.push_back(config.data_path);
     }
+    executor_config.reservations = {
+        config.live_sessions, config.prefix_entries, config.capture_slots};
     executor_config.max_sessions = config.max_sessions;
     executor_config.max_session_tokens = config.max_session_tokens;
     ET_ASSIGN_OR_RETURN(executor, cb::CudaExecutor::create(executor_config));

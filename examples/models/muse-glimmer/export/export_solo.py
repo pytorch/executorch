@@ -365,6 +365,66 @@ def cell_manifest(sequence_manifest: str, max_cells: int) -> str:
     return json.dumps(manifest, sort_keys=True, separators=(",", ":"))
 
 
+def format_memory(num_bytes: int) -> str:
+    """Bytes with one decimal: MiB while that rounds below 1024.0, else GiB."""
+    mib = num_bytes / 2**20
+    if round(mib * 10) < 10240:
+        return f"{mib:.1f} MiB"
+    return f"{mib / 1024:.1f} GiB"
+
+
+def kv_capacity_summary(
+    kv_heads,
+    head_dims,
+    windows,
+    *,
+    kv_layout: str,
+    max_cells: int,
+    max_kv_seqs: int,
+    max_seq_len: int,
+    max_step_tokens: int,
+    kv_element_bytes: int = 2,
+    resident_counts=(1, 4, 16),
+) -> list[str]:
+    """What the export's KV cache serves per session, and its full-size K/V.
+
+    A serving runtime holds live sessions, retained prefix entries and prefix
+    capture slots each as one resident session. The cell layout shares
+    ``max_cells`` among them, less one padding cell; the sequence layout gives
+    each of ``max_kv_seqs`` sessions (plus one scratch column) a private column,
+    in which sliding-window layers keep only a ring.
+    """
+    if kv_layout == "sequence":
+        column_elements = sum(
+            2
+            * heads
+            * dim
+            * (
+                max_seq_len
+                if window == 0
+                else min(max_seq_len, window + max_step_tokens - 1)
+            )
+            for heads, dim, window in zip(kv_heads, head_dims, windows)
+        )
+        total = column_elements * (max_kv_seqs + 1) * kv_element_bytes
+        return [
+            f"KV capacity: {max_kv_seqs} sequence columns of up to {max_seq_len} "
+            "tokens; live sessions, prefix entries and capture slots each take one",
+            f"KV capacity: {format_memory(total)} of K/V with every column full",
+        ]
+    per_cell = kv_element_bytes * sum(2 * h * d for h, d in zip(kv_heads, head_dims))
+    contexts = ", ".join(
+        f"{n} -> {min(max_seq_len, (max_cells - 1) // n)}" for n in resident_counts
+    )
+    return [
+        f"KV capacity: --max-cells {max_cells} is shared by every resident session "
+        "(live + prefix entries + capture slots) plus 1 padding cell",
+        f"KV capacity: tokens per session by resident sessions: {contexts}",
+        f"KV capacity: {per_cell} bytes per cell, "
+        f"{format_memory(max_cells * per_cell)} of K/V with every cell full",
+    ]
+
+
 def sampler_programs(vocab_size: int, max_rows: int = MAX_SAMPLE_ROWS):
     """The device samplers, over up to ``max_rows`` float32 logits rows."""
     from executorch.extension.llm.batching.sampler import (
@@ -459,6 +519,9 @@ def export_cuda_batching(  # noqa: C901
     from executorch.exir.backend.compile_spec_schema import CompileSpec
     from executorch.exir.passes import MemoryPlanningPass
     from executorch.extension.llm.export.model_metadata import (
+        HEAD_DIMS_METHOD,
+        KV_HEADS_METHOD,
+        WINDOWS_METHOD,
         write_logits_to_keep_mode,
         write_max_context_len,
     )
@@ -529,6 +592,17 @@ def export_cuda_batching(  # noqa: C901
         # Deferred checkpoints still need scalar/RoPE buffers, after KV removal.
         materialize_runtime_buffers(model, dtype=torch.bfloat16)
     geometry = offgraph_kv_cache_geometry(model)
+    for line in kv_capacity_summary(
+        geometry[KV_HEADS_METHOD].tolist(),
+        geometry[HEAD_DIMS_METHOD].tolist(),
+        geometry[WINDOWS_METHOD].tolist(),
+        kv_layout=kv_layout,
+        max_cells=max_cells,
+        max_kv_seqs=max_kv_seqs,
+        max_seq_len=config.max_seq_len,
+        max_step_tokens=max_step_tokens,
+    ):
+        print(line)
 
     # The selected logits feed the device samplers, which take at most
     # MAX_SAMPLE_ROWS rows, so a step never selects more. Bounding the selector

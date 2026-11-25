@@ -17,6 +17,14 @@ def define_common_targets(is_fbcode = False):
     )
 
     runtime.cxx_library(
+        name = "kv_capacity",
+        exported_headers = [
+            "kv_capacity.h",
+        ],
+        visibility = ["PUBLIC"],
+    )
+
+    runtime.cxx_library(
         name = "cuda_executor",
         srcs = [
             "cuda_executor.cpp",
@@ -29,6 +37,7 @@ def define_common_targets(is_fbcode = False):
         ],
         visibility = ["PUBLIC"],
         exported_deps = [
+            ":kv_capacity",
             ":step_plan",
             "//executorch/backends/cuda/runtime:cuda_backend",
             "//executorch/extension/llm/batching:batching",
@@ -58,6 +67,16 @@ def define_common_targets(is_fbcode = False):
         deps = [
             ":step_plan",
             "//executorch/test/utils:utils",
+        ],
+    )
+
+    cpp_unittest(
+        name = "test_kv_capacity",
+        srcs = [
+            "test/test_kv_capacity.cpp",
+        ],
+        deps = [
+            ":kv_capacity",
         ],
     )
 

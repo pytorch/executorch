@@ -583,6 +583,16 @@ TEST_P(CudaExecutorTest, ConfigRefusesOvercommitAndLegacyZeroBudget) {
   config.initial_capacity = 16;
   config.options.cuda_graph_for_static_methods = false;
   EXPECT_EQ(cb::CudaExecutor::create(config).error(), Error::InvalidArgument);
+  // A breakdown of the sessions changes only the diagnostics.
+  config.reservations = {4, 2, 2};
+  EXPECT_EQ(cb::CudaExecutor::create(config).error(), Error::InvalidArgument);
+  // The cells hold 65 one-token sessions, but the cell layout tracks at most
+  // 64 sequences.
+  config.max_sessions = 65;
+  config.max_session_tokens = 1;
+  config.reservations = {1, 48, 16};
+  EXPECT_EQ(cb::CudaExecutor::create(config).error(), Error::InvalidArgument);
+  config.reservations = {};
 
   // Reserving the padding row leaves no token per session at 256 sessions.
   config.max_sessions = kMaxCells;

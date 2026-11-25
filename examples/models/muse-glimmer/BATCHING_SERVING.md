@@ -407,7 +407,8 @@ explicit limit. Their total reservation must leave one
 cell for padded writes within the exported `--max-cells`. More capture slots
 reduce the context available per session in the native worker's automatic
 context mode. This Python launcher requires an explicit `--max-context`;
-reduce the context or slot counts if they do not fit.
+reduce the context or slot counts if they do not fit. See
+[KV capacity and long contexts](#kv-capacity-and-long-contexts) to size an export.
 The cell pool tracks at most 64 resident sessions. Unlike on MLX, prefix snapshots
 clone a session's cells by reference, sharing the prompt's KV rather than copying it.
 
@@ -473,3 +474,46 @@ ATEM opening tag are emitted as ordinary text.
 With `ignore_eos`, reasoning-token details are omitted
 because the generated IDs can contain hidden post-EOS text; total completion
 usage still includes all generated tokens.
+
+### KV capacity and long contexts
+
+`--max-seq-len` bounds token positions; it is not the context each session can
+use. With the default cell layout, `--max-cells` is one pool shared by every
+resident session, each of which may fill its whole `--max-context` budget:
+
+```text
+resident sessions = --max-sessions + --prefix-cache-entries + capture slots
+cells needed      = resident sessions x --max-context + 1 padding cell
+max --max-context = min(--max-seq-len, floor((--max-cells - 1) / resident sessions))
+bytes per cell    = layers x 2 (K and V) x KV heads x head dim x KV element bytes
+```
+
+For example, Muse Glimmer 30B has 52 layers, 2 KV heads and head dim 128, so
+BF16 K/V takes 52 x 2 x 2 x 128 x 2 = 53248 bytes per cell. With 4 sessions, 8
+prefix entries and 4 capture slots (16 resident sessions), `--max-cells 131072`
+serves at most floor(131071 / 16) = 8191 tokens per session. Giving each
+131072 tokens needs 16 x 131072 + 1 = 2097153 cells, about 104 GiB of K/V: more
+than an 80 GB GPU holds before weights. The pool grows on demand up to
+`--max-cells`, and also keeps one `--max-step-tokens` x `--max-cells` byte mask
+per distinct attention window. When a configuration does not fit, the worker's
+startup error shows this breakdown, the largest context that fits and the
+`--max-cells` that would be needed.
+
+For long contexts, prefer `--kv-layout sequence --max-kv-seqs N`, with N at
+least the resident session count. Each session gets a private column of up to
+`--max-seq-len` tokens (plus one scratch column). Global layers keep
+`--max-seq-len` rows per column, but sliding-window layers keep only a ring of
+`window + --max-step-tokens - 1` rows:
+
+```text
+bytes = (N + 1) x 2 (K and V) x KV heads x head dim x KV element bytes
+        x (sum over global layers of --max-seq-len
+           + sum over sliding layers of min(--max-seq-len, window + --max-step-tokens - 1))
+```
+
+With N = 16, `--max-seq-len 131072` and `--max-step-tokens 512`, Muse Glimmer's
+13 global layers and 39 sliding layers (window 2048) need
+17 x 1024 x (13 x 131072 + 39 x 2559) bytes, about 29.2 GiB at full length.
+Rows grow on demand to the longest resident session, in every column. The cell
+layout still suits many short sessions: its prefix snapshots share cells by
+reference, whereas the sequence layout copies a prefix into its own column.

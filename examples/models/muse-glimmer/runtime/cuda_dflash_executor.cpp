@@ -549,6 +549,12 @@ Result<MuseGlimmerBackend> MuseGlimmerCudaDFlashExecutor::create(
   if (!config.data_path.empty()) {
     target_config.data_files.push_back(config.data_path);
   }
+  target_config.reservations = {
+      config.live_sessions, config.prefix_entries, config.capture_slots};
+  // Logged only if the target's cells reject the sessions.
+  target_config.capacity_note =
+      "DFlash: the limits above are the target pool's; the draft pool "
+      "(--draft-max-cells) also reserves cells for temporary draft blocks";
   target_config.max_sessions = config.max_sessions;
   target_config.max_session_tokens = config.max_session_tokens;
   for (int n = 1; n <= df::kOwnerLimit; ++n) {
@@ -668,12 +674,31 @@ Result<MuseGlimmerBackend> MuseGlimmerCudaDFlashExecutor::create(
       ? max_cells - block
       : (max_cells - 1 - temporary) / config.max_sessions;
   const int max_context = std::min(target->max_session_tokens(), draft_budget);
+  const bool context_fits = max_context > block &&
+      (!config.max_session_tokens || max_context == config.max_session_tokens);
+  // Report a draft cell pool too small for the histories with its breakdown.
+  const int requested_context = config.max_session_tokens
+      ? config.max_session_tokens
+      : target->max_session_tokens();
+  if (!context_fits && !sequence_layout &&
+      !cb::cell_budget(
+           config.max_sessions, requested_context, max_cells, temporary)
+           .fits()) {
+    for (const std::string& line : cb::draft_shortfall_lines(
+             config.max_sessions,
+             requested_context,
+             max_cells,
+             temporary,
+             {config.live_sessions,
+              config.prefix_entries,
+              config.capture_slots})) {
+      ET_LOG(Error, "%s", line.c_str());
+    }
+  }
   ET_CHECK_OR_RETURN_ERROR(
-      max_context > block && draft_tokens.sizes()[0] == max_owners &&
+      context_fits && draft_tokens.sizes()[0] == max_owners &&
           draft_hidden.sizes()[1] >= max_write - temporary &&
-          draft_positions.sizes()[0] >= max_write &&
-          (!config.max_session_tokens ||
-           max_context == config.max_session_tokens),
+          draft_positions.sizes()[0] >= max_write,
       InvalidArgument,
       "DFlash draft pool cannot hold resident contexts plus temporary owner blocks");
   cache::CacheConfig cache_config{};

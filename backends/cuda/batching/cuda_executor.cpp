@@ -51,6 +51,35 @@ namespace metadata = ::executorch::extension::llm;
 
 namespace {
 
+// What the capacity diagnostics report about the program's cell pool: every
+// layer's K and V for one token (zero for a dtype this cannot size), and
+// whether any layer attends a sliding window.
+CellPoolFacts cell_pool_facts(
+    const llm_cache::CacheGeometry& geometry,
+    int kv_dtype) {
+  using ScalarType = ::executorch::aten::ScalarType;
+  std::int64_t element = 0;
+  switch (static_cast<ScalarType>(kv_dtype)) {
+    case ScalarType::Half:
+    case ScalarType::BFloat16:
+      element = 2;
+      break;
+    case ScalarType::Float:
+      element = 4;
+      break;
+    default:
+      break;
+  }
+  CellPoolFacts facts;
+  for (const llm_cache::LayerGeometry& layer : geometry.layers) {
+    facts.bytes_per_cell += 2 * element * layer.n_kv_heads * layer.head_dim;
+    facts.has_windowed_layers = facts.has_windowed_layers ||
+        (layer.policy.kind == llm_cache::LayerPolicy::Kind::Ring &&
+         layer.policy.window > 0);
+  }
+  return facts;
+}
+
 bool is_supported_logits_type(::executorch::aten::ScalarType type) {
   using ScalarType = ::executorch::aten::ScalarType;
   return type == ScalarType::Float || type == ScalarType::Half ||
@@ -507,16 +536,21 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
   // Every resident session may fill its budget at once; the pool must hold
   // them all, or a step could find no free cell mid-generation. One of the
   // program's cells is the padding scratch row, never handed out.
-  ET_CHECK_OR_RETURN_ERROR(
-      sequence_layout ||
-          static_cast<std::int64_t>(max_sessions) * max_session_tokens <
-              max_cells,
-      InvalidArgument,
-      "CudaExecutor: %d sessions of %d tokens exceed the program's %" PRId64
-      " cells, one of which is reserved",
-      max_sessions,
-      max_session_tokens,
-      max_cells);
+  if (!sequence_layout &&
+      !cell_budget(max_sessions, max_session_tokens, max_cells).fits()) {
+    for (const std::string& line : cell_shortfall_lines(
+             max_sessions,
+             max_session_tokens,
+             max_cells,
+             config.reservations,
+             cell_pool_facts(geometry, kv_dtype))) {
+      ET_LOG(Error, "%s", line.c_str());
+    }
+    if (!config.capacity_note.empty()) {
+      ET_LOG(Error, "%s", config.capacity_note.c_str());
+    }
+    return Error::InvalidArgument;
+  }
 
   // The pool is the program's: its size and widest step fix the shapes the
   // program declared for the step buffers.
@@ -551,12 +585,13 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
       InvalidType,
       "CudaExecutor: the cache is not a batched CUDA cache");
   const std::optional<int> seq_limit = ctl->max_seqs();
-  ET_CHECK_OR_RETURN_ERROR(
-      !seq_limit || max_sessions <= *seq_limit,
-      InvalidArgument,
-      "CudaExecutor: %d resident sessions requested, but the layout holds %d",
-      max_sessions,
-      seq_limit.value_or(0));
+  if (seq_limit && max_sessions > *seq_limit) {
+    for (const std::string& line : sequence_shortfall_lines(
+             max_sessions, *seq_limit, config.reservations, sequence_layout)) {
+      ET_LOG(Error, "%s", line.c_str());
+    }
+    return Error::InvalidArgument;
+  }
 
   std::optional<EmbeddingsMethod> embeddings_method;
   if (names.count(kEmbeddingsMethod) != 0) {

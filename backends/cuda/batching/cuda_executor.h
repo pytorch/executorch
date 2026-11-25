@@ -26,6 +26,7 @@
 #include <string>
 #include <vector>
 
+#include <executorch/backends/cuda/batching/kv_capacity.h>
 #include <executorch/backends/cuda/batching/step_plan.h>
 #include <executorch/backends/cuda/runtime/cuda_kv_cache.h>
 #include <executorch/extension/llm/batching/executor.h>
@@ -83,6 +84,11 @@ struct CudaExecutorConfig {
   ::executorch::extension::Module::LoadMode load_mode =
       ::executorch::extension::Module::LoadMode::MmapUseMlockIgnoreErrors;
   int max_sessions = 1;
+  // What max_sessions is made of, for the capacity diagnostics; optional.
+  KvReservations reservations;
+  // Logged after the cell-capacity diagnostics, e.g. to name another pool the
+  // caller also sizes; empty logs nothing.
+  std::string capacity_note;
   // Zero divides the available cell pool across sessions, capped by context.
   int max_session_tokens = 0;
   int kv_dtype = static_cast<int>(::executorch::aten::ScalarType::BFloat16);

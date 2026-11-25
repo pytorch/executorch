@@ -31,7 +31,7 @@ install(
   DESTINATION ${_common_include_directories}
 )
 install(
-  FILES cuda_executor.h step_plan.h
+  FILES cuda_executor.h kv_capacity.h step_plan.h
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/backends/cuda/batching
 )
 
@@ -39,6 +39,7 @@ if(BUILD_TESTING)
   include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
   et_cxx_test(test_step_plan SOURCES test/test_step_plan.cpp)
+  et_cxx_test(test_kv_capacity SOURCES test/test_kv_capacity.cpp)
 
   # Skips unless ET_CUDA_BATCHING_TOY_DIR names the output of
   # test/export_toy_decoder.py. The program's host/device copies are portable

@@ -126,6 +126,9 @@ create_muse_glimmer_batching_runtime() {
   backend.data_path = FLAGS_data_path;
   backend.pos_embed_path = FLAGS_pos_embed_path;
   backend.max_sessions = static_cast<int>(physical);
+  backend.live_sessions = FLAGS_max_sessions;
+  backend.prefix_entries = FLAGS_prefix_cache_entries;
+  backend.capture_slots = static_cast<int>(serving.resolved_prefix_captures());
   backend.max_session_tokens = FLAGS_max_session_tokens;
   backend.max_vision_patches = FLAGS_max_vision_patches;
   backend.image_limits.max_encoded_bytes = FLAGS_max_image_bytes;
