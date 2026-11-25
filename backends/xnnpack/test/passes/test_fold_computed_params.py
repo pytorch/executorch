@@ -499,7 +499,7 @@ class TestFoldComputedParams(unittest.TestCase):
         with mock.patch.object(
             GEMMConfig,
             "check_constraints",
-            lambda config, node, ep: config._check_gemm(node, ep),
+            lambda config, node, ep: config._check_gemm(node, ep) is not None,
         ):
             with self.assertRaisesRegex(Exception, "FoldComputedParamsPass") as caught:
                 tester.to_edge_transform_and_lower()
