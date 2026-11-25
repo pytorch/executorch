@@ -3868,6 +3868,68 @@ TEST_F(PrefixGroupTest, CutMissReleasesItsPendingOpen) {
   }
 }
 
+TEST_F(PrefixGroupTest, CutMemberNeverLookedUpKeepsFutureReuse) {
+  // A 14-token step budget groups 7 positions. The hit, credited one
+  // position, is left with 6 once its clone is refused, so the members behind
+  // it are cut. The 3-token one had nothing cached when it was sized, so it
+  // opened without a lookup. An entry cached before its next pass is reused.
+  config.max_sessions = 8;
+  config.prefix_cache_capacity = 3;
+  freeze_full_cache();
+  start(true, batching::DecodeFirstScheduler::create(18, 4, 8));
+  seed({1, 2, 3});
+  const auto longer = seed({1, 2, 3, 4, 5, 6, 7, 8});
+  executor.rejected_clone_source = longer;
+  // A running request has cloned its prompt end, but hands it to control
+  // only at its next output, which waits for its decode.
+  executor.decoding.hold();
+  auto warm = output();
+  auto warming = submit(warm, {50, 51, 52, 53}, std::nullopt, 2);
+  ASSERT_TRUE(executor.decoding.wait());
+  auto parked = park_control();
+  auto handles = queue({{1, 2, 3, 4, 5, 6, 7, 8, 9}, {50, 51, 52}});
+  last.hold();
+  burst.push_back(output());
+  GenerationOptions options;
+  options.max_new_tokens = 1;
+  auto result = runtime->generate(
+      std::nullopt,
+      [this](const PromptPreparationContext&) -> PromptPreparationResult {
+        last.enter();
+        return PromptInput{{make_token_input({90, 91})}};
+      },
+      options,
+      [event = burst.back()](GenerationEvent update) {
+        event->accept(std::move(update));
+      });
+  ASSERT_TRUE(std::holds_alternative<RequestHandle>(result));
+  handles.push_back(std::get<RequestHandle>(std::move(result)));
+  control.release();
+  // The 3-token member was sized, and its open issued, before the running
+  // request's capture is handed over while the group is still preparing.
+  ASSERT_TRUE(last.wait());
+  executor.decoding.release();
+  ASSERT_TRUE(wait_until([&] {
+    const auto feeds = executor.feeds();
+    return std::any_of(feeds.begin(), feeds.end(), [](const auto& feed) {
+      return feed.position == 4;
+    });
+  }));
+  last.release();
+  finish(parked, handles);
+  warming.wait();
+  for (std::size_t i = 0; i < handles.size(); ++i) {
+    SCOPED_TRACE(i);
+    EXPECT_FALSE(handles[i].error());
+    ASSERT_TRUE(burst[i]->terminal);
+    EXPECT_EQ(burst[i]->terminal->finish_reason, FinishReason::Length);
+  }
+  EXPECT_EQ(burst[0]->terminal->stats.reused_prompt_tokens, 3u);
+  // Its next pass reused the capture collected after the cut.
+  EXPECT_EQ(burst[1]->terminal->stats.reused_prompt_tokens, 2u);
+  EXPECT_EQ(burst[2]->terminal->stats.reused_prompt_tokens, 0u);
+}
+
 TEST_F(PrefixGroupTest, CreditedMembersThatMissOpenTogether) {
   // Both members are credited with the 8-token snapshot, whose clones are
   // refused with nothing shorter cached. A 60-token step budget still fits

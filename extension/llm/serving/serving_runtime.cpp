@@ -64,9 +64,11 @@ struct TextRequest {
   std::optional<batching::PrefixCache::PromptCapture> prefix_capture;
   // Longest cached prefix this request may still try: set when a cache-on
   // group cut it after its lookup, to what it adopted then (0 after a miss),
-  // so its next lookup neither credits nor retries a refused snapshot. The
-  // trade-off: the request also ignores longer entries cached after the cut,
-  // and one cut after a miss reuses nothing.
+  // so its next lookup neither credits nor retries a longer snapshot that was
+  // refused; an equal-length one may be retried once. The trade-off: the
+  // request also ignores longer entries cached after the cut, and one cut
+  // after a looked-up miss reuses nothing. A member cut before any lookup,
+  // whose cold open was issued while the group was sized, stays unbounded.
   std::optional<std::size_t> reuse_bound;
 
   void emit(GenerationEvent event) {
@@ -1305,7 +1307,9 @@ struct ServingRuntime::Impl {
     lookup_prefixes(group, prepared, end, found, opens);
     const auto cut = [&](std::size_t from) {
       for (std::size_t j = from; j < end; ++j) {
-        if (prepared[j] && found[j]) {
+        // Only sizing has issued opens yet, so a pending open marks a member
+        // that was never looked up and has no refusal to remember.
+        if (prepared[j] && found[j] && !opens[j].valid()) {
           const auto* hit = std::get_if<PrefixSelection>(&*found[j]);
           group[j].request->text->reuse_bound =
               hit ? hit->match.matched_tokens : 0;
