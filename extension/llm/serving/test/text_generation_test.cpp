@@ -15,6 +15,7 @@
 #include <gtest/gtest.h>
 #include <pytorch/tokenizers/tokenizer.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -118,6 +119,8 @@ class Executor : public batching::testing::FakeExecutor {
   Gate executing;
   Gate second_step;
   std::atomic<bool> refuse_open{false};
+  // Runs on the engine thread before each open; set only while idle.
+  std::function<void()> before_open;
   std::atomic<int> clones{0};
   std::atomic<int> steps{0};
   std::size_t burst = 1;
@@ -143,6 +146,9 @@ class Executor : public batching::testing::FakeExecutor {
     return accept_opaque && input.kind() == &TestPreparedInput::tag;
   }
   std::optional<batching::SessionId> open_session() override {
+    if (before_open) {
+      before_open();
+    }
     opening.enter();
     if (refuse_open.load()) {
       return std::nullopt;
@@ -1563,6 +1569,405 @@ TEST_F(TextGenerationTest, QueuedCancellationSkipsPreparationAndSessionOpen) {
   ASSERT_TRUE(event->terminal);
   EXPECT_EQ(event->terminal->finish_reason, FinishReason::Cancelled);
   EXPECT_EQ(event->terminal->stats.prefilled_prompt_tokens, 0u);
+}
+
+class ColdOpenGroupTest : public TextGenerationTest {
+ protected:
+  void SetUp() override {
+    TextGenerationTest::SetUp();
+    tokenizer.encodings["b"] = {20, 21};
+    tokenizer.encodings["c"] = {30, 31};
+    tokenizer.encodings["d"] = {40, 41};
+    tokenizer.encodings["long"] = {50, 51, 52};
+  }
+
+  // Parks control in a keyed request's deferred preparation, so generations
+  // submitted meanwhile are already queued when control next takes one. The
+  // keyed session is opened first, so the parked request needs no open.
+  RequestHandle park_control() {
+    EXPECT_FALSE(runtime->open_session_async("k").get());
+    control.hold();
+    GenerationOptions options;
+    options.max_new_tokens = 1;
+    auto result = runtime->generate(
+        "k",
+        [this](const PromptPreparationContext&) -> PromptPreparationResult {
+          control.enter();
+          return ids({10, 11});
+        },
+        options,
+        [](GenerationEvent) {});
+    EXPECT_TRUE(std::holds_alternative<RequestHandle>(result));
+    EXPECT_TRUE(control.wait());
+    return std::get<RequestHandle>(std::move(result));
+  }
+
+  std::vector<RequestHandle> queue_anonymous(
+      std::initializer_list<const char*> texts) {
+    std::vector<RequestHandle> handles;
+    for (const auto* text : texts) {
+      burst.push_back(output());
+      handles.push_back(submit(
+          burst.back(),
+          PromptInput{{make_text_input(text)}},
+          {},
+          std::nullopt));
+    }
+    return handles;
+  }
+
+  // Queues an anonymous deferred preparation that waits at `gate`, if any,
+  // before supplying `make()`.
+  RequestHandle queue_deferred(Gate* gate, std::function<PromptInput()> make) {
+    burst.push_back(output());
+    GenerationOptions options;
+    options.max_new_tokens = 1;
+    auto result = runtime->generate(
+        std::nullopt,
+        [gate, make = std::move(make)](
+            const PromptPreparationContext&) -> PromptPreparationResult {
+          if (gate) {
+            gate->enter();
+          }
+          return make();
+        },
+        options,
+        [event = burst.back()](GenerationEvent update) {
+          event->accept(std::move(update));
+        });
+    EXPECT_TRUE(std::holds_alternative<RequestHandle>(result));
+    return std::get<RequestHandle>(std::move(result));
+  }
+
+  static PromptInput text(const char* value) {
+    return PromptInput{{make_text_input(value)}};
+  }
+
+  // Whether the i-th opened session has executed any input.
+  bool ran(std::size_t i) {
+    const auto opened = executor.opened();
+    const auto seen = executor.seen();
+    return opened.size() > i &&
+        std::any_of(seen.begin(), seen.end(), [&](const auto& slice) {
+             return slice.session == opened[i];
+           });
+  }
+
+  // The first prompt slice the executor received for the i-th opened session.
+  std::vector<Token> first_fed(std::size_t i) {
+    const auto session = executor.opened().at(i);
+    const auto seen = executor.seen();
+    for (std::size_t j = 0; j < seen.size(); ++j) {
+      if (seen[j].session == session) {
+        return executor.fed.at(j);
+      }
+    }
+    return {};
+  }
+
+  // Releases control and returns once the engine waits in the first grouped
+  // open, after control has prepared `prepared` grouped prompts.
+  void release_into_pending_group(int prepared) {
+    executor.opening.hold();
+    control.release();
+    ASSERT_TRUE(executor.opening.wait());
+    ASSERT_TRUE(
+        wait_until([&] { return tokenizer.encode_calls.load() == prepared; }));
+  }
+
+  void TearDown() override {
+    control.release();
+    middle.release();
+    last.release();
+    TextGenerationTest::TearDown();
+  }
+
+  Gate control;
+  Gate middle;
+  Gate last;
+  std::vector<std::shared_ptr<Events>> burst;
+};
+
+TEST_F(ColdOpenGroupTest, QueuedAnonymousRequestsIssueOpensBeforeWaiting) {
+  start(16);
+  auto parked = park_control();
+  auto handles = queue_anonymous({"b", "c", "d"});
+  // While the first grouped open is pending, control still prepares the
+  // later grouped prompts and issues their opens.
+  release_into_pending_group(3);
+  executor.opening.release();
+  parked.wait();
+  for (std::size_t i = 0; i < handles.size(); ++i) {
+    handles[i].wait();
+    EXPECT_FALSE(handles[i].error());
+    ASSERT_TRUE(burst[i]->terminal);
+    EXPECT_EQ(burst[i]->terminal->finish_reason, FinishReason::Length);
+    EXPECT_EQ(burst[i]->text, "A");
+  }
+  // Sessions are bound to requests in queue order.
+  EXPECT_EQ(first_fed(1), (std::vector<Token>{20, 21}));
+  EXPECT_EQ(first_fed(2), (std::vector<Token>{30, 31}));
+  EXPECT_EQ(first_fed(3), (std::vector<Token>{40, 41}));
+  ASSERT_TRUE(wait_until([&] { return executor.open_count() == 1; }));
+}
+
+TEST_F(ColdOpenGroupTest, PromptsTooLongToShareHalfAPrefillChunkStartAlone) {
+  // A four-token chunk groups two positions: each two-token prompt is alone.
+  start(4);
+  auto parked = park_control();
+  auto handles = queue_anonymous({"b", "c"});
+  last.hold();
+  handles.push_back(queue_deferred(&last, [] { return text("d"); }));
+  control.release();
+  // Earlier prompts run without waiting for later preparation.
+  ASSERT_TRUE(last.wait());
+  ASSERT_TRUE(wait_until([&] { return ran(1) && ran(2); }));
+  last.release();
+  parked.wait();
+  for (auto& handle : handles) {
+    handle.wait();
+    EXPECT_FALSE(handle.error());
+  }
+  EXPECT_EQ(first_fed(1), (std::vector<Token>{20, 21}));
+  EXPECT_EQ(first_fed(2), (std::vector<Token>{30, 31}));
+  EXPECT_EQ(first_fed(3), (std::vector<Token>{40, 41}));
+}
+
+TEST_F(ColdOpenGroupTest, PromptsExactlyFillingTheBudgetShareAGroup) {
+  // An eight-token chunk groups four positions.
+  start(8);
+  auto parked = park_control();
+  auto handles = queue_anonymous({"b"});
+  middle.hold();
+  last.hold();
+  handles.push_back(queue_deferred(&middle, [] { return text("c"); }));
+  handles.push_back(queue_deferred(&last, [] { return text("d"); }));
+  // While the first request's open is pending, control already prepares the
+  // second, whose two positions fill the budget exactly.
+  executor.opening.hold();
+  control.release();
+  ASSERT_TRUE(executor.opening.wait());
+  ASSERT_TRUE(middle.wait());
+  EXPECT_FALSE(ran(1));
+  middle.release();
+  executor.opening.release();
+  // The full group starts before the third is prepared, which starts the
+  // next group.
+  ASSERT_TRUE(last.wait());
+  ASSERT_TRUE(wait_until([&] { return ran(1) && ran(2); }));
+  last.release();
+  parked.wait();
+  for (auto& handle : handles) {
+    handle.wait();
+    EXPECT_FALSE(handle.error());
+  }
+  EXPECT_EQ(first_fed(1), (std::vector<Token>{20, 21}));
+  EXPECT_EQ(first_fed(2), (std::vector<Token>{30, 31}));
+  EXPECT_EQ(first_fed(3), (std::vector<Token>{40, 41}));
+}
+
+TEST_F(ColdOpenGroupTest, LongerPromptThatDoesNotFitStartsTheNextGroup) {
+  start(8);
+  auto parked = park_control();
+  auto handles = queue_anonymous({"b"});
+  middle.hold();
+  // Two positions leave room for another two, not for the next three.
+  handles.push_back(queue_deferred(&middle, [] { return text("long"); }));
+  std::atomic<bool> first_started{false};
+  executor.before_open = [&] {
+    const auto opened = executor.opened();
+    if (opened.size() == 2) {
+      first_started = executor.has_sampling_state(opened[1]);
+    }
+  };
+  control.release();
+  // The first request waits for the next preparation to learn its length.
+  ASSERT_TRUE(middle.wait());
+  EXPECT_FALSE(ran(1));
+  middle.release();
+  parked.wait();
+  for (auto& handle : handles) {
+    handle.wait();
+    EXPECT_FALSE(handle.error());
+  }
+  executor.before_open = {};
+  // The first request started before the longer prompt's open was issued.
+  EXPECT_TRUE(first_started);
+  EXPECT_EQ(first_fed(1), (std::vector<Token>{20, 21}));
+  EXPECT_EQ(first_fed(2), (std::vector<Token>{50, 51, 52}));
+}
+
+TEST_F(ColdOpenGroupTest, ImagePromptsAreNotGrouped) {
+  executor.accept_opaque = true;
+  config.max_sessions = 8;
+  config.max_requests = 8;
+  start(16);
+  auto parked = park_control();
+  auto handles = queue_anonymous({"b"});
+  // A source image and a deferred preparation that yields one.
+  burst.push_back(output());
+  handles.push_back(submit(burst.back(), opaque(2), {}, std::nullopt));
+  handles.push_back(queue_deferred(nullptr, [this] { return opaque(2); }));
+  last.hold();
+  handles.push_back(queue_deferred(&last, [] { return text("c"); }));
+  control.release();
+  // Each runs before the next request is prepared.
+  ASSERT_TRUE(last.wait());
+  ASSERT_TRUE(wait_until([&] { return ran(1) && ran(2) && ran(3); }));
+  last.release();
+  parked.wait();
+  for (auto& handle : handles) {
+    handle.wait();
+    EXPECT_FALSE(handle.error());
+  }
+  EXPECT_EQ(first_fed(1), (std::vector<Token>{20, 21}));
+  EXPECT_EQ(first_fed(4), (std::vector<Token>{30, 31}));
+}
+
+TEST_F(ColdOpenGroupTest, PrefixCachingDisablesGrouping) {
+  config.prefix_cache_capacity = 1;
+  start(16);
+  auto parked = park_control();
+  auto handles = queue_anonymous({"b"});
+  last.hold();
+  handles.push_back(queue_deferred(&last, [] { return text("c"); }));
+  control.release();
+  // Without grouping the first request runs before the second is prepared.
+  ASSERT_TRUE(last.wait());
+  ASSERT_TRUE(wait_until([&] { return ran(1); }));
+  last.release();
+  parked.wait();
+  for (auto& handle : handles) {
+    handle.wait();
+    EXPECT_FALSE(handle.error());
+  }
+  // Each anonymous request tries one prompt-end capture clone, which this
+  // executor refuses; the fixture teardown expects none to remain counted.
+  EXPECT_EQ(executor.clones.exchange(0), 2);
+}
+
+TEST_F(ColdOpenGroupTest, FailedOpenOrPreparationRejectsOnlyThatRequest) {
+  // Room for the parked session plus one grouped open.
+  executor.capacity = 2;
+  start(16);
+  auto parked = park_control();
+  auto handles = queue_anonymous({"b", "unknown", "d"});
+  control.release();
+  parked.wait();
+  for (auto& handle : handles) {
+    handle.wait();
+  }
+  EXPECT_FALSE(handles[0].error());
+  EXPECT_EQ(burst[0]->text, "A");
+  // Preparation fails before an open is issued.
+  ASSERT_TRUE(handles[1].error());
+  EXPECT_EQ(handles[1].error()->code, ErrorCode::InvalidArgument);
+  ASSERT_TRUE(burst[1]->terminal);
+  EXPECT_EQ(burst[1]->terminal->finish_reason, FinishReason::Failed);
+  // The third open was refused while the first grouped session was open.
+  ASSERT_TRUE(handles[2].error());
+  EXPECT_EQ(handles[2].error()->code, ErrorCode::CapacityExceeded);
+  EXPECT_EQ(handles[2].error()->message, "session open failed");
+  ASSERT_TRUE(burst[2]->terminal);
+  EXPECT_EQ(burst[2]->terminal->finish_reason, FinishReason::Failed);
+  EXPECT_EQ(executor.opened().size(), 2u);
+  ASSERT_TRUE(wait_until([&] { return executor.open_count() == 1; }));
+  EXPECT_EQ(runtime->info().active_sessions, 1u);
+}
+
+TEST_F(ColdOpenGroupTest, CancellingAPendingGroupedRequestClosesItsSession) {
+  start(16);
+  auto parked = park_control();
+  auto handles = queue_anonymous({"b", "c", "d"});
+  release_into_pending_group(3);
+  handles[1].cancel();
+  executor.opening.release();
+  for (auto& handle : handles) {
+    handle.wait();
+  }
+  ASSERT_TRUE(burst[1]->terminal);
+  EXPECT_EQ(burst[1]->terminal->finish_reason, FinishReason::Cancelled);
+  EXPECT_EQ(burst[1]->terminal->stats.prefilled_prompt_tokens, 0u);
+  for (std::size_t i : {0u, 2u}) {
+    EXPECT_FALSE(handles[i].error());
+    EXPECT_EQ(burst[i]->text, "A");
+  }
+  parked.wait();
+  ASSERT_TRUE(wait_until([&] { return executor.open_count() == 1; }));
+}
+
+TEST_F(ColdOpenGroupTest, ShutdownWhileGroupIsPendingSettlesEveryRequest) {
+  start(16);
+  auto parked = park_control();
+  auto handles = queue_anonymous({"b", "c", "d"});
+  release_into_pending_group(3);
+  std::thread stopper([&] { runtime->shutdown(); });
+  ASSERT_TRUE(wait_until([&] { return !runtime->info().ready; }));
+  executor.opening.release();
+  stopper.join();
+  parked.wait();
+  for (std::size_t i = 0; i < handles.size(); ++i) {
+    ASSERT_TRUE(handles[i].done());
+    ASSERT_TRUE(burst[i]->terminal);
+    EXPECT_EQ(burst[i]->terminals, 1u);
+    EXPECT_EQ(burst[i]->terminal->finish_reason, FinishReason::Cancelled);
+  }
+  EXPECT_EQ(executor.open_count(), 0);
+}
+
+TEST_F(ColdOpenGroupTest, SingleAndKeyedRequestsOpenAfterPreparation) {
+  start(16);
+  tokenizer.encoding.hold();
+  auto single = queue_anonymous({"b"});
+  ASSERT_TRUE(tokenizer.encoding.wait());
+  EXPECT_TRUE(executor.opened().empty());
+  tokenizer.encoding.release();
+  single[0].wait();
+  EXPECT_FALSE(single[0].error());
+  ASSERT_EQ(executor.opened().size(), 1u);
+
+  auto parked = park_control();
+  auto x = output();
+  auto y = output();
+  auto first = submit(x, PromptInput{{make_text_input("c")}}, {}, "x");
+  auto second = submit(y, PromptInput{{make_text_input("d")}}, {}, "y");
+  tokenizer.encoding.hold();
+  control.release();
+  ASSERT_TRUE(tokenizer.encoding.wait());
+  // Keyed requests are not grouped: neither has opened during the first's
+  // preparation.
+  EXPECT_EQ(executor.opened().size(), 2u);
+  tokenizer.encoding.release();
+  parked.wait();
+  first.wait();
+  second.wait();
+  EXPECT_FALSE(first.error());
+  EXPECT_FALSE(second.error());
+  EXPECT_EQ(executor.opened().size(), 4u);
+}
+
+TEST_F(ColdOpenGroupTest, GroupIsBoundedByFreeSessionSlots) {
+  config.max_sessions = 3;
+  start(16);
+  auto parked = park_control();
+  auto handles = queue_anonymous({"b", "c", "d"});
+  // The first grouped output stalls delivery, so neither grouped request can
+  // finalize and release its session while the third is processed.
+  burst[0]->block_first = true;
+  burst[0]->blocked.hold();
+  release_into_pending_group(2);
+  executor.opening.release();
+  ASSERT_TRUE(wait_until([&] { return handles[2].error().has_value(); }));
+  EXPECT_EQ(handles[2].error()->code, ErrorCode::SessionCapacityExceeded);
+  EXPECT_EQ(executor.opened().size(), 3u);
+  burst[0]->blocked.release();
+  for (std::size_t i : {0u, 1u}) {
+    handles[i].wait();
+    EXPECT_FALSE(handles[i].error());
+    EXPECT_EQ(burst[i]->text, "A");
+  }
+  handles[2].wait();
+  parked.wait();
 }
 
 TEST_F(TextGenerationTest, CancelledPartialPrefillIsNotFullPromptResidency) {

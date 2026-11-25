@@ -272,6 +272,8 @@ struct ServingRuntime::Impl {
              config.prefix_cache_capacity)),
         tokenizer_(tokenizer),
         model_preparer_(std::move(model_preparer)),
+        group_prompt_tokens_(
+            scheduler ? scheduler->max_prefill_chunk_size() / 2 : 0),
         prefix_cache_(
             config.prefix_cache_capacity,
             config.prefix_cache_retention) {
@@ -1190,23 +1192,100 @@ struct ServingRuntime::Impl {
     capture_lanes_used_.fetch_sub(1);
   }
 
-  void generate(const Request& request) {
-    if (request->text) {
-      LifecycleResult error;
+  // Rejects the request and returns false if its prompt cannot be prepared.
+  bool prepare(const Request& request) {
+    if (!request->text) {
+      return true;
+    }
+    LifecycleResult error;
 #if ET_HAS_EXCEPTIONS
-      try {
+    try {
 #endif
-        error = prepare_text(request);
+      error = prepare_text(request);
 #if ET_HAS_EXCEPTIONS
-      } catch (...) {
-        error = ServingError{ErrorCode::Internal, "prompt preparation failed"};
+    } catch (...) {
+      error = ServingError{ErrorCode::Internal, "prompt preparation failed"};
+    }
+#endif
+    if (error) {
+      request->reject(std::move(error));
+      return false;
+    }
+    return true;
+  }
+
+  // Already queued anonymous text generations are prepared in queue order, and
+  // the cold opens of a group are all issued before any is awaited, so Runner
+  // admits the group in one engine iteration instead of one per executed
+  // batch. A group's prompts fill at most half of one prefill chunk, and the
+  // next request is prepared only while a prompt as long as the last would
+  // still fit: short prompts that would each take a step share one, while
+  // prompts long enough to dominate a step keep one-per-step admission.
+  // Earlier members are submitted only after the next member's preparation:
+  // for text prompts, at most the budget's worth of tokenization plus the one
+  // prompt that ends the group. Source prompts with image segments never join
+  // a group. A deferred request whose prepared input is not plain tokens (an
+  // image) ends the group and runs alone, so earlier members also wait for its
+  // preparation, which the PromptPreparation contract requires to be bounded.
+  void generate_group(const std::vector<Request>& queued) {
+    std::vector<std::future<std::optional<batching::Session>>> opens(
+        queued.size());
+    std::vector<bool> prepared(queued.size());
+    std::size_t begin = 0;
+    std::size_t tokens = 0;
+    const auto launch = [&](std::size_t end) {
+      for (; begin < end; ++begin) {
+        if (prepared[begin]) {
+          generate(
+              queued[begin], opens[begin].valid() ? &opens[begin] : nullptr);
+        }
+        if (opens[begin].valid()) {
+          // An unused session closes here: control alone owns Sessions.
+          opens[begin].wait();
+          opens[begin] = {};
+        }
+        schedule(queued[begin]);
+        std::lock_guard<std::mutex> lock(mutex_);
+        --outstanding_;
       }
+      tokens = 0;
+    };
+    for (std::size_t i = 0; i < queued.size(); ++i) {
+      prepared[i] = prepare(queued[i]);
+      if (!prepared[i]) {
+        continue;
+      }
+      const auto size = queued[i]->text->terminal.stats.prompt_tokens;
+      const auto& input = queued[i]->text->prepared;
+      const bool alone =
+          input && input->kind() != detail::TokenPreparedInput::type();
+      if (i > begin && (alone || tokens + size > group_prompt_tokens_)) {
+        launch(i);
+      }
+      tokens += size;
+      if (!queued[i]->cancelled.load()) {
+#if ET_HAS_EXCEPTIONS
+        try {
 #endif
-      if (error) {
-        request->reject(std::move(error));
-        return;
+          opens[i] = runner_->open_session_async();
+#if ET_HAS_EXCEPTIONS
+        } catch (...) {
+          // generate() opens this session itself.
+        }
+#endif
+      }
+      if (alone || tokens + size > group_prompt_tokens_) {
+        launch(i + 1);
       }
     }
+    launch(queued.size());
+  }
+
+  // Requires a prepared prompt. A pending cold open, when supplied, replaces
+  // this request's own open.
+  void generate(
+      const Request& request,
+      std::future<std::optional<batching::Session>>* cold_open = nullptr) {
     const SessionKey key = request->request.key
         ? SessionKey(*request->request.key)
         : SessionKey(request->id);
@@ -1261,7 +1340,8 @@ struct ServingRuntime::Impl {
         if (!opened && !preparation_error &&
             outcome != PrefixLookupStatus::Cancelled &&
             !request->cancelled.load()) {
-          opened = runner_->open_session_async().get();
+          opened = cold_open ? cold_open->get()
+                             : runner_->open_session_async().get();
         }
 #if ET_HAS_EXCEPTIONS
       } catch (...) {
@@ -1671,6 +1751,20 @@ struct ServingRuntime::Impl {
     return config.prefix_checkpoint_interval || config.prefix_checkpoint_policy;
   }
 
+  // Anonymous generations always open a new session. With prefix caching one
+  // may adopt a snapshot instead, so only cache-less runtimes group opens.
+  // Image prompts are prepared on control at a cost unrelated to their
+  // positions, so they are not grouped either.
+  bool opens_cold(const Command& command) const {
+    const auto& text = command.request->text;
+    return command.operation == Operation::Generate && text &&
+        !command.request->request.key && config_.prefix_cache_capacity == 0 &&
+        std::none_of(
+               text->input.segments.begin(),
+               text->input.segments.end(),
+               [](const auto& segment) { return segment.is_image(); });
+  }
+
   static bool is_fence(const Command& command) {
     return command.operation == Operation::Close ||
         command.operation == Operation::Reset;
@@ -1729,6 +1823,8 @@ struct ServingRuntime::Impl {
   void run() {
     for (;;) {
       Command command;
+      // Queued cold-open generations that directly follow command.
+      std::vector<Request> group;
       std::size_t command_index = 0;
       Request finalizer;
       Request capture;
@@ -1752,7 +1848,16 @@ struct ServingRuntime::Impl {
         } else if (auto it = runnable_command(); it != inbox_.end()) {
           command_index = it - inbox_.begin();
           command = std::move(*it);
-          inbox_.erase(it);
+          it = inbox_.erase(it);
+          if (opens_cold(command)) {
+            // Bounded by free slots, so no grouped request meets the limit.
+            const auto free = config_.max_sessions - sessions_.size();
+            while (it != inbox_.end() && opens_cold(*it) &&
+                   group.size() + 1 < free) {
+              group.push_back(std::move(it->request));
+              it = inbox_.erase(it);
+            }
+          }
         } else {
           break;
         }
@@ -1771,9 +1876,16 @@ struct ServingRuntime::Impl {
         finalize(finalizer);
         continue;
       }
+      if (!group.empty()) {
+        group.insert(group.begin(), std::move(command.request));
+        generate_group(group);
+        continue;
+      }
       if (!command.processed) {
         if (command.operation == Operation::Generate) {
-          generate(command.request);
+          if (prepare(command.request)) {
+            generate(command.request);
+          }
           schedule(command.request);
         } else {
           if (is_fence(command)) {
@@ -1890,6 +2002,8 @@ struct ServingRuntime::Impl {
   const bool valid_config_;
   const tokenizers::Tokenizer* const tokenizer_;
   const ModelPreparer model_preparer_;
+  // Summed prompt positions of one cold-open group.
+  const std::size_t group_prompt_tokens_;
   std::unique_ptr<batching::Runner> runner_;
   batching::PrefixCache prefix_cache_;
   // A capture holds its transient row until collection, including failures.
