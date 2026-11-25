@@ -1920,7 +1920,10 @@ TEST_F(ColdOpenGroupTest, FinalizersRunBetweenLaunchedGroups) {
   executor.executing.release();
   ASSERT_TRUE(executor.opening.wait());
   ASSERT_TRUE(wait_until([&] { return produced.load(); }));
-  // Let its delivery queue the finalizer before the first group launches.
+  // Let its delivery queue the finalizer before the first group launches. A
+  // text request's on_prepare_complete belongs to the runtime, and the
+  // dispatcher queues the finalizer only after it returns, so no callback marks
+  // that point; the wait only needs to exceed one dispatcher turn.
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
   executor.opening.release();
   earlier.wait();

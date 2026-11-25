@@ -95,6 +95,9 @@ class PausableScheduler : public batching::Scheduler {
   std::size_t max_prefill_chunk_size() const override {
     return inner->max_prefill_chunk_size();
   }
+  std::size_t step_prefill_budget() const override {
+    return inner->step_prefill_budget();
+  }
 };
 
 class GatedSuffixInput : public TestPreparedInput {
