@@ -66,7 +66,7 @@ From the ExecuTorch root, with submodules initialized:
 ```bash
 cmake -S examples/systemone/kev -B cmake-out/kev-cpu \
   -DCMAKE_BUILD_TYPE=Release -DPYTHON_EXECUTABLE="$(command -v python)"
-cmake --build cmake-out/kev-cpu --target kev_runner --parallel 8
+cmake --build cmake-out/kev-cpu --target kev_runner
 
 cmake-out/kev-cpu/kev_runner kev-cpu/model.pte kev-cpu/tokenizer.json
 ```
@@ -77,10 +77,12 @@ For MLX, use macOS 14+ with Xcode's Metal compiler installed:
 cmake -S examples/systemone/kev -B cmake-out/kev-mlx \
   -DCMAKE_BUILD_TYPE=Release -DPYTHON_EXECUTABLE="$(command -v python)" \
   -DEXECUTORCH_BUILD_MLX=ON
-cmake --build cmake-out/kev-mlx --target kev_runner --parallel 8
+cmake --build cmake-out/kev-mlx --target kev_runner
 
 cmake-out/kev-mlx/kev_runner kev-mlx/model.pte kev-mlx/tokenizer.json
 ```
+
+Add `--parallel N` to any build command to set the job count for your machine.
 
 Fresh MLX builds default to a 26.2 deployment target on macOS 26.2+ and 14.0
 on older systems. With macOS SDK 26.2+ and Metal 4, the 26.2 target includes
@@ -104,10 +106,10 @@ Build and run `kev_benchmark` to measure the same three questions split across
 two evaluation calls sharing one prefix:
 
 ```bash
-cmake --build cmake-out/kev-cpu --target kev_benchmark --parallel 8
+cmake --build cmake-out/kev-cpu --target kev_benchmark
 cmake-out/kev-cpu/kev_benchmark kev-cpu/model.pte kev-cpu/tokenizer.json
 
-cmake --build cmake-out/kev-mlx --target kev_benchmark --parallel 8
+cmake --build cmake-out/kev-mlx --target kev_benchmark
 cmake-out/kev-mlx/kev_benchmark kev-mlx/model.pte kev-mlx/tokenizer.json
 ```
 
