@@ -18,6 +18,7 @@ import json
 import unittest
 
 import torch
+import torch.nn.functional as F
 
 from executorch.backends.cuda.passes.lower_offgraph_kv import (
     batched_sequence_step,
@@ -28,6 +29,10 @@ from executorch.backends.cuda.passes.lower_offgraph_kv import (
     OFFGRAPH_KV_SEQ_INFO_FQN,
     parse_offgraph_kv_manifest,
     ring_physical_capacity,
+)
+
+from executorch.examples.models.muse_glimmer.model.dflash_model import (
+    build_dflash_swa_mask,
 )
 from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -261,6 +266,37 @@ class _FlatAndRing(torch.nn.Module):
         return flat + ring
 
 
+class _DraftRing(torch.nn.Module):
+    def forward(self, q, k, v, position):
+        return torch.ops.kvcache.update_and_attend(
+            q, k, v, position, 0, SCALE, torch.bfloat16
+        )
+
+
+def _draft_model_reference(q, storage, segments, window, rows):
+    out = torch.zeros_like(q, dtype=torch.float32)
+    for start, block, col, end in segments:
+        context = end - block
+        slots = torch.arange(window, device=q.device)
+        context_positions = slots + ((context - 1 - slots) // window) * window
+        positions = torch.cat(
+            (context_positions, torch.arange(context, end, device=q.device))
+        )
+        values = (
+            storage[positions.clamp_min(0) % rows, col].transpose(0, 1)[None].float()
+        )
+        mask = build_dflash_swa_mask(context, block, window, window).to(q.device)
+        out[:, :, start : start + block] = F.scaled_dot_product_attention(
+            q[:, :, start : start + block].float(),
+            torch.zeros_like(values),
+            values,
+            attn_mask=mask,
+            scale=SCALE,
+            enable_gqa=True,
+        )
+    return out
+
+
 @unittest.skipUnless(torch.cuda.is_available(), "CUDA required")
 class LowerBatchedSequencePassTest(unittest.TestCase):
     CAPACITY = 32
@@ -307,6 +343,7 @@ class LowerBatchedSequencePassTest(unittest.TestCase):
         self.assertEqual(parsed["layout"], "batched-sequence")
         self.assertTrue(parsed["causal"])
         self.assertFalse(parsed["context_window"])
+        self.assertFalse(parsed["symmetric_window"])
         self.assertFalse(
             parse_offgraph_kv_manifest(self.manifest(causal=False))["causal"]
         )
@@ -317,6 +354,9 @@ class LowerBatchedSequencePassTest(unittest.TestCase):
             {"causal": 1},
             {"context_window": 1},
             {"context_window": True},
+            {"symmetric_window": 1},
+            {"symmetric_window": True},
+            {"causal": False, "context_window": True, "symmetric_window": True},
             {"max_write": self.CAPACITY + 1},
         ):
             with self.assertRaises(ValueError):
@@ -399,6 +439,91 @@ class LowerBatchedSequencePassTest(unittest.TestCase):
                 call.args[9] if len(call.args) > 9 else None,
             )
             self.assertTrue(flag)
+
+    def _lowered_draft_ring(self, block, window):
+        writes = 3 + 2 * block
+        q, k, v, position = _inputs(0, writes)
+        q = q[:, :, : 2 * block].contiguous()
+        program = torch.export.export(
+            _DraftRing(), (q, k, v, position.reshape(-1, 1)), strict=False
+        )
+        edge = to_edge(
+            program, compile_config=EdgeCompileConfig(_check_ir_validity=False)
+        ).exported_program()
+        manifest = self.manifest(
+            causal=False,
+            symmetric_window=True,
+            max_write=64,
+            maximum_capacity=128,
+            layers=[{"layer_id": 0, "policy": "ring", "window": window}],
+        )
+        lowered = LowerOffGraphKVPass(parse_offgraph_kv_manifest(manifest))(edge)
+        runtime = {}
+        for name, value in list(lowered.constants.items()):
+            if name.startswith(OFFGRAPH_KV_FQN_PREFIX):
+                runtime[name] = torch.zeros_like(value, device="cuda")
+                lowered.constants[name] = runtime[name]
+        calls = [
+            n
+            for n in lowered.graph_module.graph.nodes
+            if n.target == torch.ops.triton.sdpa_varlen.default
+        ]
+        self.assertEqual(len(calls), 1)
+        call = calls[0]
+        self.assertTrue(
+            call.kwargs.get(
+                "symmetric_window", call.args[10] if len(call.args) > 10 else False
+            )
+        )
+        return lowered.module(), runtime, q
+
+    def _draft_runtime_inputs(self, q, runtime, values, starts, block):
+        rows = values.shape[0]
+        slots = torch.arange(rows, device="cuda")
+        positions, segments, columns = [], [], []
+        for col, (start, fresh) in enumerate(zip(starts, (2, 1))):
+            context = start + fresh
+            retained = slots + rows * ((start - 1 - slots) // rows)
+            values[:, col] = retained[:, None, None] / 16
+            positions.extend(range(start, context + block))
+            columns.extend([col] * (fresh + block))
+            segments.append((col * block, block, col, context + block))
+        position = torch.tensor(positions, device="cuda")
+        k = torch.zeros(
+            1, N_KV_HEADS, len(positions), HEAD_DIM, device="cuda", dtype=q.dtype
+        )
+        v = (position[None, None, :, None] / 16).expand_as(k).to(q.dtype).contiguous()
+        runtime[OFFGRAPH_KV_SEQ_COLS_FQN][: len(columns)].copy_(torch.tensor(columns))
+        runtime[OFFGRAPH_KV_SEQ_INFO_FQN].copy_(
+            torch.tensor(
+                segments + [(0, 0, 0, 0)] * (self.MAX_SEGMENTS - 2), dtype=torch.int32
+            )
+        )
+        return k, v, position, segments
+
+    def test_lowered_dflash_ring_matches_model_across_wrap(self):
+        window = 3
+        for block in (2, 8):
+            module, runtime, q = self._lowered_draft_ring(block, window)
+            rows = ring_physical_capacity(window, 64)
+            values = runtime[f"{OFFGRAPH_KV_FQN_PREFIX}layer_0_v"].view(
+                rows, self.MAX_SEQS + 1, N_KV_HEADS, HEAD_DIM
+            )
+            for starts in ((0, 0), (20, 13), (70, 90)):
+                k, v, position, segments = self._draft_runtime_inputs(
+                    q, runtime, values, starts, block
+                )
+                got = module(q, k, v, position.reshape(-1, 1))
+                want = _draft_model_reference(q, values, segments, window, rows)
+                torch.testing.assert_close(got.float(), want, atol=2e-2, rtol=2e-2)
+                for col, (start, fresh) in enumerate(zip(starts, (2, 1))):
+                    write_positions = torch.arange(
+                        start, start + fresh + block, device="cuda"
+                    )
+                    torch.testing.assert_close(
+                        values[write_positions % rows, col, 0, 0],
+                        (write_positions / 16).to(q.dtype),
+                    )
 
     def test_step_width_pass_accepts_the_packed_layout(self) -> None:
         with self.assertRaises(ValueError):

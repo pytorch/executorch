@@ -76,6 +76,9 @@ class MaxPool2DWithIndicesConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
+        if neutron_target_spec.is_subsystem():
+            return False
+
         kernel_size, stride, padding, dilation, ceil_mode = (
             MaxPool2DWithIndicesConverter._get_node_args(node)
         )

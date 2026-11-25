@@ -359,6 +359,9 @@ class PermuteCopyConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
+        if neutron_target_spec.is_subsystem():
+            return False
+
         if node_is_effectively_static_tensor(node.args[0], parameters_mapping):
             return (
                 True  # The operator computes on static data. It will be removed later.

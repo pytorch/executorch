@@ -19,7 +19,8 @@ loads the `.pte`, `.ptd`, and a HuggingFace tokenizer, then generates text.
 - ExecuTorch installed from source (see [building from source](../../../docs/source/using-executorch-building-from-source.md))
 - [safetensors](https://pypi.org/project/safetensors/) (`pip install safetensors`)
 - NVIDIA GPU with CUDA toolkit (tested on A100 80GB)
-- Python dependencies: `pip install -r requirements.txt` (installs FLA / Flash Linear Attention)
+- Python dependencies: `pip install -r requirements.txt` (installs FLA's kernels, `fla-core`)
+- [transformers](https://pypi.org/project/transformers/) for `run.py`'s tokenizer; `install_executorch.sh` installs it unless run with `--minimal`
 - Model weights downloaded from HuggingFace. The directory should contain
   `config.json`, `model.safetensors.index.json`, safetensors shards, and
   `tokenizer.json`.

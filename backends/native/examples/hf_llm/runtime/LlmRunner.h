@@ -20,10 +20,13 @@ namespace ptn {
 // runner's command line flags, which the caller has parsed, and creates the
 // host of the one engine the binary links. A package exported with an
 // off-graph KV cache needs `cache_backend_id`, the CacheFactory backend id
-// whose kind::kSingle cache the engine binds through kCacheKeyOption. Returns
-// the process exit status.
+// whose kind::kSingle cache the engine binds through kCacheKeyOption, and
+// stores F16 when `half_kv_cache`, the engine's default, and --kv_dtype is
+// auto; an in-graph cache refuses --kv_dtype=fp16 unless `half_kv_cache`.
+// Returns the process exit status.
 int run_llm(
     const std::function<std::unique_ptr<EngineHost>()>& make_host,
-    const char* cache_backend_id = nullptr);
+    const char* cache_backend_id = nullptr,
+    bool half_kv_cache = false);
 
 } // namespace ptn

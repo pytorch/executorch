@@ -35,7 +35,13 @@ def define_common_targets(is_fbcode = False):
             "//executorch/exir/backend:backend_api",
             "//executorch/exir/backend:compile_spec_schema",
             "//executorch/examples/models/toy_model:toy_model",
+            "//executorch/export:export_utils",
+            "//executorch/runtime:runtime",
+            "fbsource//third-party/pypi/numpy:numpy",
         ],
+        env = {
+            "RUN_CUDA_PROGRAM": "$(location //executorch/extension/pybindings/test:run_cuda_program)",
+        },
         keep_gpu_sections = True,
         remote_execution = re_test_utils.remote_execution(
             platform = "gpu-remote-execution",
@@ -119,6 +125,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/...",
         ],
         deps = [
+            ":routing_test_utils",
             "//caffe2:torch",
             "//executorch/backends/cuda:cuda_backend",
             "//executorch/backends/cuda:cuda_partitioner",
@@ -128,6 +135,59 @@ def define_common_targets(is_fbcode = False):
             "//executorch/exir:lib",
             "//executorch/exir/backend:backend_details",
             "//executorch/exir/backend:compile_spec_schema",
+        ],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+            subplatform = "A100",
+        ),
+    )
+
+    python_unittest_remote_gpu(
+        name = "test_gemm_routing",
+        srcs = [
+            "test_gemm_routing.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            ":routing_test_utils",
+            "//caffe2:torch",
+            "//executorch/backends/cuda:cuda_backend",
+            "//executorch/backends/cuda:cuda_partitioner",
+            "//executorch/backends/cuda:triton_kernels",
+            "//executorch/backends/cuda:triton_measured_routing",
+            "//executorch/backends/cuda:triton_replacement_pass",
+            "//executorch/backends/cuda:triton_routing",
+            "//executorch/exir:lib",
+            "//executorch/exir/backend:compile_spec_schema",
+            "//executorch/exir/dialects:lib",
+            "//executorch/export:export_utils",
+        ],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+            subplatform = "A100",
+        ),
+    )
+
+    python_unittest_remote_gpu(
+        name = "test_gemm_linear",
+        srcs = [
+            "test_gemm_linear.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            ":routing_test_utils",
+            "//caffe2:torch",
+            "//executorch/backends/cuda:cuda_backend",
+            "//executorch/backends/cuda:cuda_partitioner",
+            "//executorch/backends/cuda:triton_kernels",
+            "//executorch/exir:lib",
+            "//executorch/export:export_utils",
         ],
         keep_gpu_sections = True,
         remote_execution = re_test_utils.remote_execution(
@@ -196,7 +256,11 @@ def define_common_targets(is_fbcode = False):
             "//executorch/...",
         ],
         deps = [
+            "//caffe2:torch",
             "//executorch/backends/cuda:cuda_backend",
+            "//executorch/backends/cuda:cuda_partitioner",
+            "//executorch/exir:lib",
+            "//executorch/exir/backend:backend_details",
             "//executorch/exir/backend:compile_spec_schema",
         ],
     )
@@ -491,6 +555,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/exir:lib",
             "//executorch/exir/backend:compile_spec_schema",
             "//executorch/exir/dialects:lib",
+            "//executorch/examples/models/muse-glimmer/model:dflash_model",
             # The oracle is the neutral op itself, not a reference rebuilt here.
             "//executorch/extension/llm/cache:cache",
         ],
@@ -578,5 +643,26 @@ def define_common_targets(is_fbcode = False):
             "//executorch/backends/cuda:cuda_backend",
             "//executorch/exir:lib",
             "//executorch/exir/backend:compile_spec_schema",
+        ],
+    )
+
+    python_unittest(
+        name = "test_remap_pte_devices",
+        srcs = [
+            "test_remap_pte_devices.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/cuda:remap_pte_devices",
+            "//executorch/backends/cuda:scripts_atomic_output",
+            "//executorch/exir:lib",
+            "//executorch/exir:scalar_type",
+            "//executorch/exir/_serialize:lib",
+            "//executorch/exir:schema",
+            "//executorch/exir/backend:compile_spec_schema",
+            "//executorch/exir/backend/test:device_util",
         ],
     )

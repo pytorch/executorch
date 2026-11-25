@@ -217,7 +217,7 @@ def generate_markdown(json_path: str, exit_code: int = 0):  # noqa (C901)
         "To reproduce, run the following command from the root of the ExecuTorch repository:"
     )
     print("```")
-    print('pytest -c /dev/nul backends/test/suite/ -k "<test_id>"')
+    print('pytest -c /dev/null backends/test/suite/ -k "<test_id>"')
     print("```")
     if results.failed_tests:
         print_table(results.failed_tests)

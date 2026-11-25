@@ -57,8 +57,6 @@ $else:
   #define KERNEL_SIZE kernel_size
 
 #define OUT_N4 ${OUT_N4}
-$if CLAMP_TAPS:
-  #define CLAMP_TAPS
 $if ZERO_BORDER:
   #define ZERO_BORDER
 $if WEIGHT_BUFFER:
@@ -75,6 +73,15 @@ ${layout_declare_spec_const(10, "int", "activation_op", "0")}
 ${layout_declare_spec_const(11, "bool", "has_residual", "false")}
 ${layout_declare_spec_const(12, "bool", "has_scale", "false")}
 ${layout_declare_spec_const(13, "int", "residual_op", "0")}
+// Taps to skip: 0 keeps every tap, 1 skips taps that read only padding for
+// every output pixel, 2 for every pixel of the tile. Single-pixel tiles always
+// use 2, since their unchecked input reads rely on it.
+${layout_declare_spec_const(14, "int", "skip_taps_mode", "0")}
+#if TILE_PIXELS == 1
+#define SKIP_TAPS_MODE 2
+#else
+#define SKIP_TAPS_MODE skip_taps_mode
+#endif
 
 #include "conv2d_epilogue.glslh"
 
@@ -95,19 +102,41 @@ VEC4_T sums[TILE_PIXELS][OUT_N4];
 VEC4_T weights[OUT_N4][4];
 VEC4_T inputs[TILE_PIXELS];
 
-void kernel_range(ivec2 origin, out ivec2 kstart, out ivec2 kend) {
+ivec2 ceil_div_signed(ivec2 n, ivec2 d) {
+  const ivec2 q = n / d;
+  return q + ivec2(greaterThan(n - q * d, ivec2(0)));
+}
+
+ivec2 floor_div_signed(ivec2 n, ivec2 d) {
+  const ivec2 q = n / d;
+  return q - ivec2(lessThan(n - q * d, ivec2(0)));
+}
+
+// last_px is the offset of the tile's last in-bounds output pixel.
+void kernel_range(
+    ivec2 origin, ivec2 last_px, out ivec2 kstart, out ivec2 kend) {
   kstart = ivec2(0);
   kend = KERNEL_SIZE;
-#ifdef CLAMP_TAPS
-#if TILE_X != 1 || TILE_Y != 1
-#error CLAMP_TAPS requires a single output pixel
-#endif
-  if (any(lessThan(origin, ivec2(0))) ||
-      any(greaterThan(origin + overlay_region, in_sizes.xy))) {
-    kstart = max(ivec2(0), (dilation - ivec2(1) - origin) / dilation);
-    kend = min(KERNEL_SIZE, (in_sizes.xy + dilation - ivec2(1) - origin) / dilation);
+  if (SKIP_TAPS_MODE == 0) {
+    return;
+  }
+#if TILE_PIXELS == 1
+  // Pixels whose kernel footprint lies inside the input keep every tap; this
+  // skips the range math for them.
+  if (all(greaterThanEqual(origin, ivec2(0))) &&
+      all(lessThanEqual(origin + overlay_region, in_sizes.xy))) {
+    return;
   }
 #endif
+  const bool tile = SKIP_TAPS_MODE == 2;
+  const ivec2 first = tile ? origin : -padding;
+  const ivec2 last = tile ? last_px : out_limits.xy - ivec2(1);
+  kstart = clamp(
+      ceil_div_signed(-(first + last * stride), dilation),
+      ivec2(0), KERNEL_SIZE);
+  kend = clamp(
+      floor_div_signed(in_sizes.xy - ivec2(1) - first, dilation) + ivec2(1),
+      ivec2(0), KERNEL_SIZE);
 }
 
 highp vec3 input_scale() {
@@ -173,7 +202,8 @@ void load_inputs(
   [[unroll]] for (int i = 0; i < TILE_PIXELS; ++i) {
     const ivec2 offset = ivec2(i % TILE_X, i / TILE_X);
     const ivec2 p = tap + offset * stride;
-#ifdef CLAMP_TAPS
+#if TILE_PIXELS == 1
+    // A single-pixel tile only keeps taps inside the input.
     const vec4 fetched = texelFetch(t_in, ivec3(p, z4 + group_offset), 0);
     inputs[i] = VEC4_T(fetched);
 #elif defined(ZERO_BORDER)
@@ -262,22 +292,6 @@ void gather_accumulate(ivec3 pos, ivec2 tap, int z4) {
 }
 #endif
 
-int kernel_end_x(ivec2 kend) {
-#ifdef CLAMP_TAPS
-  return kend.x;
-#else
-  return KERNEL_SIZE.x;
-#endif
-}
-
-int kernel_end_y(ivec2 kend) {
-#ifdef CLAMP_TAPS
-  return kend.y;
-#else
-  return KERNEL_SIZE.y;
-#endif
-}
-
 /*
  * Direct 2D convolution with activation-dtype accumulation. Each invocation
  * computes a spatial output tile for OUT_N4 consecutive texel slices (4 output
@@ -311,9 +325,11 @@ void main() {
 
   const ivec2 origin = pos.xy * stride - padding;
   ivec2 kstart, kend;
-  kernel_range(origin, kstart, kend);
-  for (int ky = kstart.y; ky < kernel_end_y(kend); ++ky) {
-    for (int kx = kstart.x; kx < kernel_end_x(kend); ++kx) {
+  const ivec2 last_px = min(
+      ivec2(TILE_X - 1, TILE_Y - 1), out_limits.xy - pos.xy - ivec2(1));
+  kernel_range(origin, last_px, kstart, kend);
+  for (int ky = kstart.y; ky < kend.y; ++ky) {
+    for (int kx = kstart.x; kx < kend.x; ++kx) {
       highp float input_z = input_start(group_offset, input_rcp);
       int z4 = 0;
       do {

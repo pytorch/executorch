@@ -95,11 +95,13 @@ RUN if [ -n "${ANDROID_NDK_VERSION}" ]; then bash ./install_android.sh; fi
 RUN rm install_android.sh
 
 ARG ARM_SDK
+ARG ZEPHYR_SDK
 COPY ./common/install_arm.sh install_arm.sh
-RUN if [ -n "${ARM_SDK}" ]; then bash ./install_arm.sh; fi
+COPY ./common/arm_fvp_cache.sh /opt/executorch/common/arm_fvp_cache.sh
+COPY ./ci_commit_pins/arm-fvp.sh /opt/executorch/ci_commit_pins/arm-fvp.sh
+RUN if [ -n "${ARM_SDK}${ZEPHYR_SDK}" ]; then bash ./install_arm.sh; fi
 RUN rm install_arm.sh
 
-ARG ZEPHYR_SDK
 COPY ./common/install_zephyr.sh install_zephyr.sh
 COPY ./common/zephyr_sdk_release_proxy.py zephyr_sdk_release_proxy.py
 COPY ./common/utils.sh utils.sh

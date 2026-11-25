@@ -41,6 +41,9 @@ class ReLUConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
+        if neutron_target_spec.is_subsystem():
+            return False
+
         return activation_supported_on_target(node)
 
     @classmethod

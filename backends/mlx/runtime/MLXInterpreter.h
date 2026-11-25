@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <string_view>
 #include <vector>
 
 #include <mlx/array.h>
@@ -311,6 +312,7 @@ inline void exec_sdpa(const SdpaNode& n, ExecutionState& st, StreamOrDevice s) {
       K,
       V,
       static_cast<float>(n.scale),
+      -1,
       mask_mode,
       mask_arr,
       sinks,
@@ -1083,9 +1085,35 @@ exec_gather_qmm(const GatherQmmNode& n, ExecutionState& st, StreamOrDevice s) {
       n.group_size,
       n.bits,
       n.mode,
+      std::nullopt,
       sorted,
       s);
   st.set_tensor(n.out, std::move(Y));
+}
+
+// What metal_kernel() reads from a node, plus the ordered template argument
+// names.
+inline std::string metal_kernel_key(const MetalKernelNode& n) {
+  std::string key;
+  auto add = [&key](std::string_view s) {
+    key += std::to_string(s.size());
+    key += ':';
+    key += s;
+  };
+  add(n.name);
+  for (const auto* names :
+       {&n.input_names, &n.output_names, &n.template_arg_names}) {
+    key += std::to_string(names->size());
+    key += ';';
+    for (const auto& name : *names) {
+      add(name);
+    }
+  }
+  add(n.source ? std::string_view(*n.source) : std::string_view());
+  add(n.header ? std::string_view(*n.header) : std::string_view());
+  key += n.ensure_row_contiguous ? '1' : '0';
+  key += n.atomic_outputs ? '1' : '0';
+  return key;
 }
 
 inline void exec_metal_kernel(
@@ -1162,15 +1190,27 @@ inline void exec_metal_kernel(
         std::to_string(n.template_arg_values.size()) + ")");
   }
 
-  // Build the kernel function (cached internally by MLX based on name+source)
-  auto kernel_fn = ::mlx::core::fast::metal_kernel(
-      n.name,
-      n.input_names,
-      n.output_names,
-      n.source ? *n.source : std::string{},
-      n.header ? *n.header : std::string{},
-      n.ensure_row_contiguous,
-      n.atomic_outputs);
+  auto node_it = st.metal_kernel_of_node.find(&n);
+  if (node_it == st.metal_kernel_of_node.end()) {
+    auto key = metal_kernel_key(n);
+    auto it = st.metal_kernels.find(key);
+    if (it == st.metal_kernels.end()) {
+      it = st.metal_kernels
+               .emplace(
+                   std::move(key),
+                   ::mlx::core::fast::metal_kernel(
+                       n.name,
+                       n.input_names,
+                       n.output_names,
+                       n.source ? *n.source : std::string{},
+                       n.header ? *n.header : std::string{},
+                       n.ensure_row_contiguous,
+                       n.atomic_outputs))
+               .first;
+    }
+    node_it = st.metal_kernel_of_node.emplace(&n, &it->second).first;
+  }
+  const auto& kernel_fn = *node_it->second;
 
   // Resolve inputs
   std::vector<array> inputs;
