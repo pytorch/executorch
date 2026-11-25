@@ -24,7 +24,8 @@ It also uses the same directory structure as PyTorch.
 CLANG_VERSION=11 ./build.sh executorch-ubuntu-22.04-clang11 -t myimage:latest
 ```
 
-Images that set `TORCHCI_REPORTS=1` in `build.sh` (clang12 and gcc11) build
+Images that set `TORCHCI_REPORTS=1` in `build.sh` (clang12, gcc11 and the Arm
+SDK images) build
 the published November 2 torch, torchvision and torchaudio source commits in
 `ci_commit_pins/*-torchci.txt`, whose `torch.testing._internal.torchci`
 reporter CI uses to upload test results to HUD. The shared macOS pin and other

@@ -14,7 +14,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 PINS = ROOT / ".ci/docker/ci_commit_pins"
-IMAGES = ("executorch-ubuntu-22.04-clang12", "executorch-ubuntu-22.04-gcc11")
+IMAGES = (
+    "executorch-ubuntu-22.04-clang12",
+    "executorch-ubuntu-22.04-gcc11",
+    "executorch-ubuntu-22.04-arm-sdk",
+    "executorch-ubuntu-24.04-arm-sdk",
+)
 PACKAGES = {
     "pytorch": "TORCH_VERSION",
     "torchvision": "TORCHVISION_VERSION",
@@ -73,6 +78,7 @@ class TorchciImageOverrideTest(unittest.TestCase):
         for image in (
             "executorch-ubuntu-22.04-qnn-sdk",
             "executorch-ubuntu-22.04-gcc11-aarch64",
+            "executorch-ubuntu-22.04-gcc11-aarch64-arm-sdk",
             "executorch-ubuntu-22.04-clang12-android",
         ):
             with self.subTest(image=image):
