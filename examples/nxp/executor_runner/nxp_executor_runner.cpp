@@ -60,7 +60,10 @@ DEFINE_string(output, "", "Path to folder where output tensors are saved.");
 #ifdef NEUTRON_CMODEL
 DEFINE_string(firmware, "", "Relative path to firmware *.elf file.");
 DEFINE_string(nsys, "", "Relative path to nsys.");
-DEFINE_string(nsys_config, "", "Relative path to nsys config *.ini file");
+DEFINE_string(
+    nsys_config,
+    "",
+    "Path to the nsys config *.ini file. Required for i.MXRT700, not used for i.MX95.");
 #endif
 
 #define DEFAULT_OUTPUT_DIR "results"
@@ -353,6 +356,8 @@ int main(int argc, char* argv[]) {
   }
 
 #ifdef NEUTRON_CMODEL
+#if defined(NXP_RUNNER_NSYS_NC)
+  // This target needs an nsys config file.
   if (!FLAGS_nsys_config.empty()) {
     storeNsysConfigPath(FLAGS_nsys_config.c_str());
   } else if (getenv("NSYS_CONFIG_PATH")) {
@@ -361,6 +366,9 @@ int main(int argc, char* argv[]) {
     fprintf(stderr, "ERROR: missing --nsys_config argument.\n");
     exit(-1);
   }
+#elif defined(NXP_RUNNER_NSYS_SOC)
+  // The driver selects the SoC itself, no config file is needed.
+#endif
 
   if (!FLAGS_firmware.empty()) {
     storeFirmwarePath(FLAGS_firmware.c_str());

@@ -62,6 +62,7 @@ case "${IMAGE_NAME}" in
   executorch-ubuntu-22.04-arm-sdk)
     ARM_SDK=yes
     CLANG_VERSION=12
+    TORCHCI_REPORTS=1
     ;;
   executorch-ubuntu-24.04-arm-sdk)
     OS_VERSION=24.04
@@ -69,6 +70,7 @@ case "${IMAGE_NAME}" in
     CLANG_VERSION=18
     PYTHON_VERSION=3.12
     MINICONDA_VERSION=24.1.2-0
+    TORCHCI_REPORTS=1
     ;;
   executorch-ubuntu-22.04-zephyr-sdk)
     ZEPHYR_SDK=yes

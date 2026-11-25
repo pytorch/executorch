@@ -126,7 +126,8 @@ inline Conv2dTapRange pick_conv2d_tap_range(
           kMinTileTapRangeGainPercent * tap_work) {
     return Conv2dTapRange::Tile;
   }
-  return global_kept < tap_work ? Conv2dTapRange::Global : Conv2dTapRange::Disabled;
+  return global_kept < tap_work ? Conv2dTapRange::Global
+                                : Conv2dTapRange::Disabled;
 }
 
 } // namespace vkcompute
