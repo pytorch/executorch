@@ -229,6 +229,7 @@ class GraphBuilder {
       const std::unordered_map<ValueId, ggml_tensor*>& rope_factors,
       const FoldedBatchNorms& batch_norms,
       std::unordered_map<ValueId, int64_t> key_extents,
+      std::unordered_map<ValueId, int64_t> key_starts,
       size_t graph_size,
       bool gpu,
       bool exact_topk,
@@ -404,7 +405,8 @@ class GraphBuilder {
   void lower_gated_delta_rule(const Node& node);
   ggml_tensor* skip_f16_cast(ggml_tensor* rows) const;
   void lower_index_put(const Node& node);
-  ggml_tensor* attention_mask(ValueId id, int64_t tokens, int64_t keys);
+  ggml_tensor*
+  attention_mask(ValueId id, int64_t tokens, int64_t start, int64_t keys);
   void lower_sdpa(const Node& node);
   void lower_update_and_attend(const Node& node);
   void lower_sym_size(const Node& node);
@@ -420,6 +422,8 @@ class GraphBuilder {
   const FoldedBatchNorms& batch_norms_;
   // Mask values (and their producers) computed over a key prefix only.
   std::unordered_map<ValueId, int64_t> key_extents_;
+  // SDPA masks under which every query masks the keys before a start.
+  std::unordered_map<ValueId, int64_t> key_starts_;
   size_t graph_size_;
   // The primary backend is a GPU.
   bool gpu_;
