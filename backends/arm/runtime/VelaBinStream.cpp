@@ -17,7 +17,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <optional>
 #include <string_view>
+#include <utility>
 
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/named_data_map.h>
@@ -29,6 +31,7 @@ namespace arm {
 namespace {
 
 using ::executorch::runtime::Error;
+using ::executorch::runtime::FreeableBuffer;
 using ::executorch::runtime::NamedDataMap;
 
 constexpr size_t kVelaExternalBlockKeySize = 64;
@@ -40,6 +43,15 @@ constexpr uintptr_t next_mul_16(uintptr_t value) {
 struct VelaBlockPayload {
   const char* data;
   size_t size;
+  std::optional<FreeableBuffer> owner;
+
+  void transfer_owner_to(std::optional<FreeableBuffer>& target) {
+    if (owner) {
+      target.emplace(std::move(*owner));
+    } else {
+      target.reset();
+    }
+  }
 };
 
 // Reads the key from block.data and its referenced payload from named_data_map.
@@ -52,8 +64,9 @@ Error resolve_external_block(
   if (!result.ok()) {
     return result.error();
   }
-  payload.data = static_cast<const char*>(result->data());
-  payload.size = result->size();
+  payload.owner.emplace(std::move(result.get()));
+  payload.data = static_cast<const char*>(payload.owner->data());
+  payload.size = payload.owner->size();
   if (payload.data == nullptr ||
       reinterpret_cast<uintptr_t>(payload.data) !=
           next_mul_16(reinterpret_cast<uintptr_t>(payload.data))) {
@@ -164,7 +177,7 @@ Error vela_bin_read(
     ptr += block_size;
     remaining -= block_size;
 
-    VelaBlockPayload payload{b->data, b->size};
+    VelaBlockPayload payload{b->data, b->size, std::nullopt};
     if (b->external == kVelaExternalBlockReference) {
       if (b->size != kVelaExternalBlockKeySize || named_data_map == nullptr) {
         return Error::InvalidProgram;
@@ -190,9 +203,11 @@ Error vela_bin_read(
       }
       handles->cmd_data = payload.data;
       handles->cmd_data_size = payload.size;
+      payload.transfer_owner_to(handles->cmd_data_owner);
     } else if (!strncmp(b->name, "weight_data", strlen("weight_data"))) {
       handles->weight_data = payload.data;
       handles->weight_data_size = payload.size;
+      payload.transfer_owner_to(handles->weight_data_owner);
     } else if (!strncmp(b->name, "scratch_size", strlen("scratch_size"))) {
       if (payload.size < sizeof(uint32_t)) {
         ET_LOG(Error, "Malformed scratch_size block");
@@ -214,17 +229,20 @@ Error vela_bin_read(
                    b->name, "persistent_init", strlen("persistent_init"))) {
       handles->persistent_init_data = payload.data;
       handles->persistent_init_size = payload.size;
+      payload.transfer_owner_to(handles->persistent_init_data_owner);
 #endif
     } else if (!strncmp(b->name, "inputs", strlen("inputs"))) {
       const Error status = bind_io_block(payload, &handles->inputs);
       if (status != Error::Ok) {
         return status;
       }
+      payload.transfer_owner_to(handles->inputs_owner);
     } else if (!strncmp(b->name, "outputs", strlen("outputs"))) {
       const Error status = bind_io_block(payload, &handles->outputs);
       if (status != Error::Ok) {
         return status;
       }
+      payload.transfer_owner_to(handles->outputs_owner);
     } else if (!strncmp(
                    b->name, "vela_end_stream", strlen("vela_end_stream"))) {
       // expect vela_end_stream last

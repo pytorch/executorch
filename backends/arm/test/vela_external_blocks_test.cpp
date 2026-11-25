@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -69,16 +70,23 @@ void append_block(
   output.resize((output.size() + 15) & ~size_t{15}, 0);
 }
 
+void append_external_block(
+    std::vector<uint8_t>& output,
+    std::string_view name,
+    std::string_view key = kExternalKey) {
+  append_block(
+      output,
+      name,
+      std::vector<uint8_t>(key.begin(), key.end()),
+      kVelaExternalBlockReference);
+}
+
 std::vector<uint8_t> stream_with_external_key(
     std::string_view block_name,
     std::string_view key = kExternalKey) {
   std::vector<uint8_t> output;
   append_block(output, "vela_bin_stream");
-  append_block(
-      output,
-      block_name,
-      std::vector<uint8_t>(key.begin(), key.end()),
-      kVelaExternalBlockReference);
+  append_external_block(output, block_name, key);
   append_block(output, "vela_end_stream");
   return output;
 }
@@ -91,11 +99,21 @@ class FakeNamedDataMap final : public NamedDataMap {
     size_t size;
   };
 
-  FakeNamedDataMap(std::string_view key, const void* data, size_t size)
-      : entries_{{key, data, size}} {}
+  FakeNamedDataMap(
+      std::string_view key,
+      const void* data,
+      size_t size,
+      FreeableBuffer::FreeFn free_fn = nullptr,
+      void* free_fn_context = nullptr)
+      : FakeNamedDataMap({{key, data, size}}, free_fn, free_fn_context) {}
 
-  explicit FakeNamedDataMap(std::initializer_list<Entry> entries)
-      : entries_(entries) {}
+  explicit FakeNamedDataMap(
+      std::initializer_list<Entry> entries,
+      FreeableBuffer::FreeFn free_fn = nullptr,
+      void* free_fn_context = nullptr)
+      : entries_(entries),
+        free_fn_(free_fn),
+        free_fn_context_(free_fn_context) {}
 
   Result<const TensorLayout> get_tensor_layout(
       std::string_view) const override {
@@ -110,7 +128,7 @@ class FakeNamedDataMap final : public NamedDataMap {
     if (entry == entries_.end()) {
       return Error::NotFound;
     }
-    return FreeableBuffer(entry->data, entry->size, nullptr);
+    return FreeableBuffer(entry->data, entry->size, free_fn_, free_fn_context_);
   }
 
   Error load_data_into(std::string_view, void*, size_t) const override {
@@ -129,7 +147,14 @@ class FakeNamedDataMap final : public NamedDataMap {
 
  private:
   std::vector<Entry> entries_;
+  FreeableBuffer::FreeFn free_fn_;
+  void* free_fn_context_;
 };
+
+void poison_and_count_release(void* context, void* data, size_t size) {
+  ++*static_cast<int*>(context);
+  std::memset(data, 0, size);
+}
 
 class VelaExternalBlocksTest : public ::testing::Test {
  protected:
@@ -170,6 +195,192 @@ TEST_F(VelaExternalBlocksTest, ReadsInlineAndExternalBlocksInOnePass) {
   EXPECT_EQ(
       std::memcmp(handles.weight_data, weights.data(), weights.size()), 0);
 }
+
+TEST_F(VelaExternalBlocksTest, ReadsOwningExternalCommand) {
+  alignas(16) std::array<uint8_t, 16> command{
+      'C', 'O', 'P', '1', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+  const auto stream = stream_with_external_key("cmd_data");
+  FakeNamedDataMap data_map(
+      kExternalKey,
+      command.data(),
+      command.size(),
+      [](void*, void* data, size_t size) { std::memset(data, 0, size); });
+  VelaHandles handles{};
+
+  ASSERT_EQ(
+      vela_bin_read(
+          reinterpret_cast<const char*>(stream.data()),
+          stream.size(),
+          &data_map,
+          &handles),
+      Error::Ok);
+  ASSERT_NE(handles.cmd_data, nullptr);
+  EXPECT_EQ(std::memcmp(handles.cmd_data, "COP1", 4), 0);
+}
+
+TEST_F(
+    VelaExternalBlocksTest,
+    KeepsOwningExternalPayloadsUntilHandleDestruction) {
+  alignas(16) std::array<uint8_t, 4> command{'C', 'O', 'P', '1'};
+  alignas(16) std::array<uint8_t, 4> weights{1, 2, 3, 4};
+  std::vector<uint8_t> stream;
+  append_block(stream, "vela_bin_stream");
+  append_external_block(stream, "cmd_data");
+  append_external_block(stream, "weight_data", kSecondExternalKey);
+  append_block(stream, "vela_end_stream");
+  int releases = 0;
+  FakeNamedDataMap data_map(
+      {{kExternalKey, command.data(), command.size()},
+       {kSecondExternalKey, weights.data(), weights.size()}},
+      poison_and_count_release,
+      &releases);
+
+  {
+    VelaHandles handles{};
+    ASSERT_EQ(
+        vela_bin_read(
+            reinterpret_cast<const char*>(stream.data()),
+            stream.size(),
+            &data_map,
+            &handles),
+        Error::Ok);
+    EXPECT_EQ(releases, 0);
+    ASSERT_EQ(handles.cmd_data, reinterpret_cast<const char*>(command.data()));
+    EXPECT_EQ(std::memcmp(handles.cmd_data, "COP1", command.size()), 0);
+    ASSERT_EQ(
+        handles.weight_data, reinterpret_cast<const char*>(weights.data()));
+    EXPECT_EQ(
+        std::memcmp(handles.weight_data, "\x01\x02\x03\x04", weights.size()),
+        0);
+  }
+  EXPECT_EQ(releases, 2);
+}
+
+TEST_F(VelaExternalBlocksTest, ReleasesOwningExternalPayloadAfterParseFailure) {
+  alignas(16) std::array<uint8_t, 4> command{'C', 'O', 'P', '1'};
+  std::vector<uint8_t> stream;
+  append_block(stream, "vela_bin_stream");
+  append_external_block(stream, "cmd_data");
+  append_block(stream, "cmd_data", {'B', 'A', 'D', '1'});
+  append_block(stream, "vela_end_stream");
+  int releases = 0;
+  FakeNamedDataMap data_map(
+      kExternalKey,
+      command.data(),
+      command.size(),
+      poison_and_count_release,
+      &releases);
+
+  {
+    VelaHandles handles{};
+    EXPECT_EQ(
+        vela_bin_read(
+            reinterpret_cast<const char*>(stream.data()),
+            stream.size(),
+            &data_map,
+            &handles),
+        Error::InvalidProgram);
+    EXPECT_EQ(releases, 0);
+    EXPECT_EQ(handles.cmd_data, reinterpret_cast<const char*>(command.data()));
+  }
+  EXPECT_EQ(releases, 1);
+}
+
+TEST_F(VelaExternalBlocksTest, ReleasesReplacedExternalPayload) {
+  alignas(16) std::array<uint8_t, 4> command{'C', 'O', 'P', '1'};
+  std::vector<uint8_t> stream;
+  append_block(stream, "vela_bin_stream");
+  append_external_block(stream, "cmd_data");
+  append_block(stream, "cmd_data", {'C', 'O', 'P', '2'});
+  append_block(stream, "vela_end_stream");
+  int releases = 0;
+  FakeNamedDataMap data_map(
+      kExternalKey,
+      command.data(),
+      command.size(),
+      poison_and_count_release,
+      &releases);
+
+  {
+    VelaHandles handles{};
+    ASSERT_EQ(
+        vela_bin_read(
+            reinterpret_cast<const char*>(stream.data()),
+            stream.size(),
+            &data_map,
+            &handles),
+        Error::Ok);
+    EXPECT_EQ(releases, 1);
+    ASSERT_NE(handles.cmd_data, nullptr);
+    EXPECT_EQ(std::memcmp(handles.cmd_data, "COP2", command.size()), 0);
+  }
+  EXPECT_EQ(releases, 1);
+}
+
+TEST_F(VelaExternalBlocksTest, ReadsOwningExternalScratchSizeBeforeRelease) {
+  alignas(16) uint32_t scratch_size = 32;
+  const auto stream = stream_with_external_key("scratch_size");
+  int releases = 0;
+  FakeNamedDataMap data_map(
+      kExternalKey,
+      &scratch_size,
+      sizeof(scratch_size),
+      poison_and_count_release,
+      &releases);
+  VelaHandles handles{};
+
+  ASSERT_EQ(
+      vela_bin_read(
+          reinterpret_cast<const char*>(stream.data()),
+          stream.size(),
+          &data_map,
+          &handles),
+      Error::Ok);
+  EXPECT_EQ(handles.scratch_data_size, 32);
+  EXPECT_EQ(releases, 1);
+}
+
+#ifdef ETHOSU_PERSISTENT_REGION
+TEST_F(VelaExternalBlocksTest, ReadsOwningExternalPersistentRegionBlocks) {
+  alignas(16) uint32_t persistent_size = 4;
+  alignas(16) std::array<uint8_t, 4> initializer{1, 2, 3, 4};
+  std::vector<uint8_t> stream;
+  append_block(stream, "vela_bin_stream");
+  append_external_block(stream, "persistent_size");
+  append_external_block(stream, "persistent_init", kSecondExternalKey);
+  append_block(stream, "vela_end_stream");
+  int releases = 0;
+  FakeNamedDataMap data_map(
+      {{kExternalKey, &persistent_size, sizeof(persistent_size)},
+       {kSecondExternalKey, initializer.data(), initializer.size()}},
+      poison_and_count_release,
+      &releases);
+
+  {
+    VelaHandles handles{};
+    ASSERT_EQ(
+        vela_bin_read(
+            reinterpret_cast<const char*>(stream.data()),
+            stream.size(),
+            &data_map,
+            &handles),
+        Error::Ok);
+    EXPECT_EQ(handles.persistent_data_size, 4);
+    EXPECT_EQ(handles.persistent_init_size, initializer.size());
+    EXPECT_EQ(releases, 1);
+    ASSERT_EQ(
+        handles.persistent_init_data,
+        reinterpret_cast<const char*>(initializer.data()));
+    EXPECT_EQ(
+        std::memcmp(
+            handles.persistent_init_data,
+            "\x01\x02\x03\x04",
+            initializer.size()),
+        0);
+  }
+  EXPECT_EQ(releases, 2);
+}
+#endif
 
 TEST_F(VelaExternalBlocksTest, RejectsInvalidExternalCommandStream) {
   alignas(16) const std::array<uint8_t, 4> opaque_command{'B', 'A', 'D', '1'};
