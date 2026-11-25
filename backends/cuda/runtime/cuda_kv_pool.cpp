@@ -356,14 +356,55 @@ cudaMemPool_t CudaKVPool::storage_pool() {
 }
 #endif
 
+#if !defined(EXECUTORCH_USE_HIP)
+// The shared allocator pool keeps what AOTI intermediates and other users
+// free. The CUDA 13.2 driver hands another pool's unused memory to an
+// allocation that runs out, but does not document that, so when a K/V
+// allocation fails for lack of memory, give that cache back to the driver --
+// never memory in use -- and retry once. Only that pool is trimmed, not CUDA
+// graph memory. False = the shared pool held nothing unused.
+bool CudaKVPool::release_shared_cache(cudaStream_t stream) {
+  cudaMemPool_t shared = CudaAllocator::pool_for_device(device_);
+  if (shared == nullptr) {
+    return false;
+  }
+  // Every caller has ordered `stream` behind the previous step, so this
+  // observes the frees its intermediates made; only observed frees go back.
+  uint64_t reserved = 0;
+  uint64_t used = 0;
+  if (cudaStreamSynchronize(stream) != cudaSuccess ||
+      cudaMemPoolGetAttribute(
+          shared, cudaMemPoolAttrReservedMemCurrent, &reserved) !=
+          cudaSuccess ||
+      cudaMemPoolGetAttribute(shared, cudaMemPoolAttrUsedMemCurrent, &used) !=
+          cudaSuccess) {
+    (void)cudaGetLastError();
+    return false;
+  }
+  if (reserved <= used) {
+    return false;
+  }
+  if (cudaMemPoolTrimTo(shared, 0) != cudaSuccess) {
+    (void)cudaGetLastError();
+    return false;
+  }
+  return true;
+}
+#endif
+
 runtime::Result<void*> CudaKVPool::allocate_storage(
     size_t bytes,
     cudaStream_t stream) {
 #if !defined(EXECUTORCH_USE_HIP)
   if (cudaMemPool_t pool = storage_pool()) {
     void* ptr = nullptr;
-    const cudaError_t error =
-        cudaMallocFromPoolAsync(&ptr, bytes, pool, stream);
+    cudaError_t error = cudaMallocFromPoolAsync(&ptr, bytes, pool, stream);
+    if (error == cudaErrorMemoryAllocation) {
+      (void)cudaGetLastError();
+      if (release_shared_cache(stream)) {
+        error = cudaMallocFromPoolAsync(&ptr, bytes, pool, stream);
+      }
+    }
     if (error != cudaSuccess) {
       ET_LOG(
           Error,

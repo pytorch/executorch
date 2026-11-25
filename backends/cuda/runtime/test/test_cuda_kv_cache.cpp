@@ -4231,6 +4231,139 @@ TEST_F(CudaRuntimeColumnCacheTest, FirstAllocationKeepsSparseOwnerColumns) {
   kv->forget_handle(&handle);
 }
 
+TEST_F(CudaRuntimeColumnCacheTest, KVAllocationReclaimsSharedAllocatorCache) {
+  // Behavior test: KV growth and compaction must reach memory the shared
+  // allocator pool holds idle, as AOTI intermediates leave it. It does not
+  // tell the two mechanisms apart: the CUDA 13.2 driver releases that memory
+  // on its own, and the KV pool's retry does so on drivers that do not.
+  constexpr int kLargeDim = 1 << 23;
+  constexpr int kMaxOwners = 8;
+  // One physical column holds two BF16 rows of K and of V.
+  constexpr size_t kColumnBytes = size_t{2} * 2 * kLargeDim * 2;
+  constexpr size_t kMargin = 32 * 1024 * 1024;
+  auto cfg = config(/*capacity=*/2, /*initial=*/2, /*max_write=*/1);
+  cfg.max_seqs = kMaxOwners;
+  cache::CacheGeometry geometry;
+  geometry.layers = {{{cache::LayerPolicy::Kind::Flat, 0}, 1, kLargeDim}};
+  auto ptr = cu::make_cuda_batched_sequence_kv_cache(geometry, cfg);
+  ASSERT_NE(ptr, nullptr);
+  auto* control = ptr->as<cache::BatchControl>();
+  auto* kv = ptr->as<cu::CudaKVCache>();
+  FakeContainer fake;
+  fake.internal_names = {"flat_k", "flat_v", "seq_cols", "seq_info"};
+  fake.fqns = {
+      "__et_offgraph_kv_layer_0_k",
+      "__et_offgraph_kv_layer_0_v",
+      "__et_offgraph_kv_seq_cols",
+      "__et_offgraph_kv_seq_info"};
+  for (int index = 0; index < 2; ++index) {
+    declare(
+        fake,
+        fake.fqns[index],
+        slimc10::ScalarType::BFloat16,
+        {1, 2 * (kMaxOwners + 1), 1, kLargeDim});
+  }
+  declare(fake, fake.fqns[2], slimc10::ScalarType::Long, {1});
+  declare(fake, fake.fqns[3], slimc10::ScalarType::Int, {2 * kMaxOwners, 5});
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  std::vector<int32_t> owners;
+  for (int count = 0; count < 4; ++count) {
+    const auto owner = control->seq_new();
+    ASSERT_TRUE(owner.has_value());
+    owners.push_back(*owner);
+    ASSERT_EQ(step(*ptr, handle, {*owner}), Error::Ok);
+  }
+  ASSERT_EQ(kv->metrics().physical_columns, 5);
+  if (kv->metrics().reserved_bytes == 0) {
+    kv->forget_handle(&handle);
+    GTEST_SKIP() << "CUDA memory pools are unavailable";
+  }
+  const auto history = iota_rows(1);
+  ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
+  ASSERT_EQ(
+      cudaMemcpy(
+          fake.bound["flat_k"].data,
+          history.data(),
+          history.size() * sizeof(uint16_t),
+          cudaMemcpyHostToDevice),
+      cudaSuccess);
+  int device = 0;
+  ASSERT_EQ(cudaGetDevice(&device), cudaSuccess);
+  // Leaves `idle` bytes cached in the shared allocator pool, as AOTI
+  // intermediates do between steps, then takes all but kMargin of what the
+  // driver still has free.
+  auto squeeze = [&](size_t idle) -> void* {
+    EXPECT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+    ::executorch::extension::cuda::CudaAllocator::release_cached_memory(device);
+    auto cached = ::executorch::extension::cuda::CudaAllocator::allocate_async(
+        idle, device, cudaStreamPerThread);
+    if (!cached.ok()) {
+      return nullptr;
+    }
+    ::executorch::extension::cuda::CudaAllocator::deallocate_async(
+        cached.get(), device, cudaStreamPerThread);
+    EXPECT_EQ(cudaStreamSynchronize(cudaStreamPerThread), cudaSuccess);
+    const auto shared =
+        ::executorch::extension::cuda::CudaAllocator::pool_for_device(device);
+    uint64_t reserved = 0;
+    EXPECT_NE(shared, nullptr);
+    EXPECT_EQ(
+        cudaMemPoolGetAttribute(
+            shared, cudaMemPoolAttrReservedMemCurrent, &reserved),
+        cudaSuccess);
+    EXPECT_GE(reserved, idle);
+    size_t free_bytes = 0, total_bytes = 0;
+    EXPECT_EQ(cudaMemGetInfo(&free_bytes, &total_bytes), cudaSuccess);
+    void* reservation = nullptr;
+    if (free_bytes <= kMargin + 128 * 1024 * 1024 ||
+        cudaMalloc(&reservation, free_bytes - kMargin) != cudaSuccess) {
+      (void)cudaGetLastError();
+      return nullptr;
+    }
+    return reservation;
+  };
+  auto release = [](void* data) { (void)cudaFree(data); };
+  {
+    // Growing five columns to nine needs 576 MiB at once; only the shared
+    // pool's idle 640 MiB can provide it.
+    std::unique_ptr<void, decltype(release)> held(
+        squeeze(10 * kColumnBytes), release);
+    if (held == nullptr) {
+      kv->forget_handle(&handle);
+      GTEST_SKIP() << "Cannot set up shared-pool memory pressure";
+    }
+    const auto admitted = control->seq_new();
+    ASSERT_TRUE(admitted.has_value());
+    owners.push_back(*admitted);
+    EXPECT_EQ(kv->metrics().physical_columns, 9);
+    ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
+    EXPECT_EQ(read_rows(fake.bound["flat_k"].data, 1), history);
+  }
+  for (size_t index = 1; index + 1 < owners.size(); ++index) {
+    ASSERT_TRUE(control->seq_rm(owners[index]));
+  }
+  {
+    // Compacting to three columns needs 192 MiB of replacement storage, more
+    // than the driver has free outside the shared pool's idle 384 MiB.
+    std::unique_ptr<void, decltype(release)> held(
+        squeeze(6 * kColumnBytes), release);
+    if (held == nullptr) {
+      kv->forget_handle(&handle);
+      GTEST_SKIP() << "Cannot set up shared-pool memory pressure";
+    }
+    ASSERT_EQ(kv->compact_columns(0, std::chrono::milliseconds{0}), Error::Ok);
+    EXPECT_EQ(kv->metrics().physical_columns, 3);
+    ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
+    EXPECT_EQ(read_rows(fake.bound["flat_k"].data, 1), history);
+  }
+  EXPECT_EQ(control->pos(owners.front()), 1);
+  EXPECT_EQ(control->pos(owners.back()), 0);
+  ASSERT_EQ(step(*ptr, handle, {owners.back()}), Error::Ok);
+  EXPECT_EQ(control->pos(owners.back()), 1);
+  kv->forget_handle(&handle);
+}
+
 TEST_F(CudaRuntimeColumnCacheTest, FailedContractionPreservesSparseOwners) {
   constexpr int kLargeDim = 1 << 21;
   auto cfg = config(/*capacity=*/2, /*initial=*/2, /*max_write=*/1);
