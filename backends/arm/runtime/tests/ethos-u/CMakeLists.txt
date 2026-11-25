@@ -121,6 +121,22 @@ set_tests_properties(
   vela_external_blocks PROPERTIES LABELS "arm;ethos-u;runtime"
 )
 
+add_executable(
+  ethosu_backend_init_test
+  test_ethosu_backend_init.cpp
+  "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend.cpp"
+  "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUIOPlan.cpp"
+  "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend_IoMemcpy.cpp"
+  "${EXECUTORCH_ROOT}/backends/arm/runtime/VelaBinStream.cpp"
+)
+target_link_libraries(
+  ethosu_backend_init_test PRIVATE executorch_core GTest::gtest_main
+)
+add_test(NAME ethosu_backend_init_test COMMAND ethosu_backend_init_test)
+set_tests_properties(
+  ethosu_backend_init_test PROPERTIES LABELS "arm;ethos-u;runtime"
+)
+
 find_package(Threads REQUIRED)
 add_library(
   ethosu_execution_stats_test_library STATIC
