@@ -154,7 +154,8 @@ inline CellPoolFacts cell_pool_facts(
 // What the executor decided about its KV admission, for logging and for the
 // caller's own advice (CudaExecutorConfig::capacity_report).
 enum class KvAdmission {
-  // An explicit per-session token limit fits. Nothing is logged.
+  // An explicit per-session token limit fits: check_admission()'s result for
+  // an admitted limit; never reported.
   kAdmitted,
   // Automatic context mode resolved a per-session token budget.
   kAutomatic,

@@ -660,7 +660,7 @@ TEST_P(CudaExecutorTest, ConfigRefusesOvercommitAndLegacyZeroBudget) {
       Error::InvalidArgument);
 }
 
-TEST_P(CudaExecutorTest, ReportsEachAdmissionOnce) {
+TEST_P(CudaExecutorTest, ReportsOnlyAutomaticBudgetsAndRefusals) {
   cb::CudaExecutorConfig config;
   config.model_path = dir_ + "/model.pte";
   config.data_files = {dir_ + "/aoti_cuda_blob.ptd"};
@@ -672,20 +672,14 @@ TEST_P(CudaExecutorTest, ReportsEachAdmissionOnce) {
     reports.push_back(report);
   };
 
-  // An explicit limit that fits is reported as admitted.
+  // An explicit limit that fits is not reported.
   config.max_sessions = 4;
   config.max_session_tokens = 32;
   ASSERT_EQ(cb::CudaExecutor::create(config).error(), Error::Ok);
-  ASSERT_EQ(reports.size(), 1u);
-  EXPECT_EQ(reports[0].outcome, cb::KvAdmission::kAdmitted);
-  EXPECT_FALSE(reports[0].automatic);
-  EXPECT_EQ(reports[0].session_tokens, 32);
-  EXPECT_EQ(reports[0].cells, kMaxCells);
-  EXPECT_EQ(reports[0].session_limit, 64);
+  EXPECT_TRUE(reports.empty());
 
-  // 65 automatic sessions get (256 - 1) / 65 = 3 tokens each, but the cell
-  // layout tracks at most 64: one session-limit report, and no budget report.
-  reports.clear();
+  // 65 automatic sessions would get (256 - 1) / 65 = 3 tokens each, but the
+  // cell layout tracks at most 64: one session-limit report, no budget report.
   config.max_sessions = 65;
   config.max_session_tokens = 0;
   config.reservations = {1, 48, 16};
@@ -695,6 +689,14 @@ TEST_P(CudaExecutorTest, ReportsEachAdmissionOnce) {
   EXPECT_TRUE(reports[0].automatic);
   EXPECT_EQ(reports[0].session_tokens, 3);
   EXPECT_EQ(reports[0].session_limit, 64);
+
+  // Limits refused before the cache is known are not reported.
+  reports.clear();
+  config.max_sessions = 4;
+  config.max_session_tokens = kMaxContext + 1;
+  config.reservations = {};
+  EXPECT_EQ(cb::CudaExecutor::create(config).error(), Error::InvalidArgument);
+  EXPECT_TRUE(reports.empty());
 }
 
 INSTANTIATE_TEST_SUITE_P(

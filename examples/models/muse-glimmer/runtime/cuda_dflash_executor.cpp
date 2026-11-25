@@ -23,7 +23,6 @@
 #include <exception>
 #include <limits>
 #include <numeric>
-#include <optional>
 #include <random>
 #include <unordered_set>
 
@@ -414,37 +413,6 @@ Result<cache::CacheGeometry> draft_geometry(Module& module, int block) {
   return geometry;
 }
 
-// The draft's K and V for one token in every layer, as its cache stores them.
-std::int64_t draft_bytes_per_cell(const cache::CacheGeometry& geometry) {
-  return cb::cell_pool_facts(
-             geometry, static_cast<int>(aten::ScalarType::BFloat16))
-      .bytes_per_cell;
-}
-
-// The draft pool a DFlash program publishes, read from its file for advice
-// after the target refused the sessions; the target's module is gone by then.
-std::optional<kv_advice::DraftPool> published_draft_pool(
-    const std::string& path) {
-  Module module(path, Module::LoadMode::Mmap);
-  auto block = positive_int(module, df::kBlock);
-  auto owners = positive_int(module, df::kMaxOwners);
-  auto seqs = detail::read_int_method(module, df::kMaxSeqs);
-  if (!block.ok() || !owners.ok() || !seqs.ok()) {
-    return std::nullopt;
-  }
-  const bool sequence_layout = seqs->has_value();
-  auto cells =
-      positive_int(module, sequence_layout ? df::kSeqCapacity : df::kMaxCells);
-  if (!cells.ok()) {
-    return std::nullopt;
-  }
-  kv_advice::DraftPool pool{sequence_layout, *cells, *owners, *block};
-  if (auto geometry = draft_geometry(module, *block); geometry.ok()) {
-    pool.bytes_per_cell = draft_bytes_per_cell(*geometry);
-  }
-  return pool;
-}
-
 Result<std::string> cache_key_metadata(Module& module, const char* name) {
   ET_ASSIGN_OR_RETURN(outputs, module.execute(name));
   ET_CHECK_OR_RETURN_ERROR(
@@ -585,31 +553,19 @@ Result<MuseGlimmerBackend> MuseGlimmerCudaDFlashExecutor::create(
   }
   target_config.reservations = {
       config.live_sessions, config.prefix_entries, config.capture_slots};
-  // The target's admission, for advice that also accounts for the draft pool.
-  std::optional<cb::KvCapacityReport> target_report;
-  target_config.capacity_report =
-      [&target_report](const cb::KvCapacityReport& report) {
-        target_report = report;
-      };
+  // Notes on the target pool, which a DFlash export pairs with a draft pool.
+  target_config.capacity_report = [](const cb::KvCapacityReport& report) {
+    kv_advice::log_notes(
+        kv_advice::target_notes(report, /*dflash=*/true),
+        report.outcome == cb::KvAdmission::kAutomatic);
+  };
   target_config.max_sessions = config.max_sessions;
   target_config.max_session_tokens = config.max_session_tokens;
   for (int n = 1; n <= df::kOwnerLimit; ++n) {
     target_config.options.additional_cuda_graph_methods.push_back(
         df::kStaticForwardPrefix + std::to_string(n));
   }
-  auto created_target = Target::create(target_config);
-  if (!created_target.ok()) {
-    // Advice for the refused target that also sizes the draft pool; without
-    // the pool, the target's own report stands alone.
-    if (target_report && target_report->outcome != cb::KvAdmission::kAdmitted &&
-        target_report->outcome != cb::KvAdmission::kAutomatic) {
-      if (const auto pool = published_draft_pool(config.model_path)) {
-        kv_advice::log_advice(kv_advice::advise(*target_report, pool));
-      }
-    }
-    return created_target.error();
-  }
-  auto target = std::move(created_target.get());
+  ET_ASSIGN_OR_RETURN(target, Target::create(target_config));
   auto& module = target->module();
   ET_ASSIGN_OR_RETURN(names, module.method_names());
   ET_CHECK_OR_RETURN_ERROR(
@@ -719,22 +675,21 @@ Result<MuseGlimmerBackend> MuseGlimmerCudaDFlashExecutor::create(
   const int temporary = max_owners * block;
   // A history column holds its context and, while drafting, its own block.
   const kv_advice::DraftPool pool{
-      sequence_layout,
-      max_cells,
-      max_owners,
-      block,
-      draft_bytes_per_cell(geometry)};
+      sequence_layout, max_cells, max_owners, block};
   const kv_advice::DraftAdmission admission = kv_advice::draft_admission(
       config.max_sessions,
       config.max_session_tokens,
       target->max_session_tokens(),
       pool);
   const int max_context = admission.max_context;
-  // The target reported its admission: explain a draft refusal, or an
-  // automatic budget below the context, for both pools.
-  if (target_report) {
-    kv_advice::log_advice(kv_advice::advise(*target_report, pool));
-  }
+  // Notes on the draft pool when it limits or refuses the sessions.
+  kv_advice::log_notes(
+      kv_advice::draft_notes(
+          config.max_sessions,
+          config.max_session_tokens,
+          target->max_session_tokens(),
+          pool),
+      admission.fits);
   ET_CHECK_OR_RETURN_ERROR(
       admission.fits && draft_tokens.sizes()[0] == max_owners &&
           draft_hidden.sizes()[1] >= max_write - temporary &&

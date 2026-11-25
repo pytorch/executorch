@@ -48,7 +48,9 @@ runtime::Result<MuseGlimmerBackend> create_muse_glimmer_backend(
     executor_config.reservations = {
         config.live_sessions, config.prefix_entries, config.capture_slots};
     executor_config.capacity_report = [](const cb::KvCapacityReport& report) {
-      kv_advice::log_advice(kv_advice::advise(report));
+      kv_advice::log_notes(
+          kv_advice::target_notes(report),
+          report.outcome == cb::KvAdmission::kAutomatic);
     };
     executor_config.max_sessions = config.max_sessions;
     executor_config.max_session_tokens = config.max_session_tokens;

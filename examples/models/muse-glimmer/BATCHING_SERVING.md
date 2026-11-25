@@ -498,20 +498,22 @@ than an 80 GB GPU holds before weights. The pool grows on demand up to
 per distinct attention window. The cell layout also tracks at most 64 resident
 sessions, whatever its cells. Without an explicit context (the native worker's
 default `--max_session_tokens 0`), the worker logs the per-session context it
-resolved and this breakdown at startup. When a configuration does not fit, its
-startup error shows the breakdown and the option changes that would admit it:
-fewer resident sessions, a token limit, or a re-export with more cells. Each
-suggested change, applied alone, passes every capacity check; under DFlash it
-also sizes `--draft-max-cells`.
+resolved and this breakdown at startup. When a configuration does not fit, the
+startup error shows the breakdown and which pool refused. A cell shortfall also
+shows the cells needed and available and how many tokens per session the pool
+holds; a session-limit error shows the layout's limit and how many sessions
+fit it; a zero automatic budget shows the cells the sessions need at minimum.
 
 A DFlash export (`export_dflash`) adds a draft pool of `--draft-max-cells`
 (default `--max-cells`) cells, which also keeps every draft owner's block while
 drafting. It caps the context again, and the context must exceed the block:
 
 ```text
-max --max-context = min(target limit above,
-                        floor((--draft-max-cells - 1 - --max-draft-owners x block)
-                              / resident sessions))
+draft cells needed = resident sessions x --max-context
+                     + --max-draft-owners x block + 1
+max --max-context  = min(target limit above,
+                         floor((--draft-max-cells - 1 - --max-draft-owners x block)
+                               / resident sessions))
 ```
 
 The draft's K/V adds `--draft-max-cells` x its own bytes per cell. With 4 owners
@@ -519,9 +521,11 @@ of 16-token blocks and 16 resident sessions, the default draft pool of 131072
 cells serves 8187 tokens per session, and `--draft-max-cells 32768` serves 2043.
 The export prints these limits and both pools' K/V before lowering.
 
-For long contexts, prefer `--kv-layout sequence --max-kv-seqs N`, with N at
-least the resident session count. Each session gets a private column of up to
-`--max-seq-len` tokens (plus one scratch column). Global layers keep
+For long contexts on sliding-window models such as Muse Glimmer, prefer
+`--kv-layout sequence --max-kv-seqs N`, with N at least the resident session
+count; `export_dflash` accepts it too, giving the draft a private column per
+sequence that holds the context beside its block. Each session gets a private
+column of up to `--max-seq-len` tokens (plus one scratch column). Global layers keep
 `--max-seq-len` rows per column, but sliding-window layers keep only a ring of
 `window + --max-step-tokens - 1` rows:
 
