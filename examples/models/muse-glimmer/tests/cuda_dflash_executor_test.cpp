@@ -7,7 +7,7 @@
  */
 #include <cuda_runtime.h>
 #include <executorch/examples/models/muse-glimmer/runtime/cuda_dflash_executor.h>
-#include <executorch/examples/models/muse-glimmer/runtime/kv_capacity_advice.h>
+#include <executorch/examples/models/muse-glimmer/runtime/kv_capacity_notes.h>
 #include <executorch/extension/cuda/caller_stream.h>
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
 #include <gtest/gtest.h>
@@ -290,7 +290,7 @@ TEST(CudaDFlash, PackingRejectsDuplicateOwnersAndOversizedContext) {
   EXPECT_FALSE(df::pack_draft({{4, 0, 70, &hidden, 1}}, 4, 99, 0, 64, 2));
 }
 
-namespace kv_advice = executorch::extension::llm::kv_advice;
+namespace kv_notes = executorch::extension::llm::kv_notes;
 namespace cb = executorch::backends::cuda::batching;
 
 namespace {
@@ -304,7 +304,7 @@ bool any_contains(
 }
 
 // 4 owners x `block` draft blocks over a shared draft pool of `cells` cells.
-kv_advice::DraftPool cell_pool(std::int64_t cells, int block = 16) {
+kv_notes::DraftPool cell_pool(std::int64_t cells, int block = 16) {
   return {/*sequence_layout=*/false, cells, /*max_owners=*/4, block};
 }
 
@@ -334,41 +334,32 @@ void expect_loggable(const std::vector<std::string>& lines) {
 
 } // namespace
 
-TEST(KvAdvice, SharedTokenRules) {
-  EXPECT_TRUE(kv_advice::valid_requested_tokens(0));
-  EXPECT_FALSE(kv_advice::valid_requested_tokens(1));
-  EXPECT_TRUE(kv_advice::valid_requested_tokens(2));
-  EXPECT_FALSE(kv_advice::holds_prompt_and_prediction(1));
-  EXPECT_TRUE(kv_advice::holds_prompt_and_prediction(2));
-}
-
-TEST(KvAdvice, DraftBudgetFollowsTheExecutorsRule) {
+TEST(KvNotes, DraftBudgetFollowsTheExecutorsRule) {
   // (cells - 1 - owners x block) / sessions for a shared pool.
-  EXPECT_EQ(kv_advice::draft_session_budget(16, cell_pool(131072)), 8187);
-  EXPECT_EQ(kv_advice::draft_session_budget(16, cell_pool(32768)), 2043);
+  EXPECT_EQ(kv_notes::draft_session_budget(16, cell_pool(131072)), 8187);
+  EXPECT_EQ(kv_notes::draft_session_budget(16, cell_pool(32768)), 2043);
   // Each sequence's rows less the block for a private history.
-  EXPECT_EQ(kv_advice::draft_session_budget(16, {true, 131072, 4, 16}), 131056);
+  EXPECT_EQ(kv_notes::draft_session_budget(16, {true, 131072, 4, 16}), 131056);
 }
 
-TEST(KvAdvice, DraftAdmissionMatchesTheExecutorsCondition) {
-  auto admitted = kv_advice::draft_admission(16, 0, 8191, cell_pool(131072));
+TEST(KvNotes, DraftAdmissionMatchesTheExecutorsCondition) {
+  auto admitted = kv_notes::draft_admission(16, 0, 8191, cell_pool(131072));
   EXPECT_EQ(admitted.max_context, 8187);
   EXPECT_TRUE(admitted.fits);
-  EXPECT_TRUE(
-      kv_advice::draft_admission(16, 2043, 2043, cell_pool(32768)).fits);
+  EXPECT_TRUE(kv_notes::draft_admission(16, 2043, 2043, cell_pool(32768)).fits);
   EXPECT_FALSE(
-      kv_advice::draft_admission(16, 2044, 2044, cell_pool(32768)).fits);
+      kv_notes::draft_admission(16, 2044, 2044, cell_pool(32768)).fits);
   // (336 - 65) / 16 = 16 tokens, the block; (337 - 65) / 16 = 17.
-  EXPECT_FALSE(kv_advice::draft_admission(16, 0, 8191, cell_pool(336)).fits);
-  EXPECT_TRUE(kv_advice::draft_admission(16, 0, 8191, cell_pool(337)).fits);
-  EXPECT_FALSE(kv_advice::draft_admission(16, 0, 16, cell_pool(131072)).fits);
+  EXPECT_FALSE(kv_notes::draft_admission(16, 0, 8191, cell_pool(336)).fits);
+  EXPECT_TRUE(kv_notes::draft_admission(16, 0, 8191, cell_pool(337)).fits);
+  EXPECT_FALSE(kv_notes::draft_admission(16, 0, 16, cell_pool(131072)).fits);
 }
 
-TEST(KvAdvice, HeadlineTargetRefusalNamesThePoolAndTheSizingDocs) {
+TEST(KvNotes, HeadlineTargetRefusalNamesThePoolAndTheSizingDocs) {
   // 16 sessions of 131072 tokens on 131072 cells: the target refuses.
-  const auto lines = kv_advice::target_notes(
+  const auto lines = kv_notes::target_notes(
       target_report(cb::KvAdmission::kCells, 16, 131072, 131072));
-  ASSERT_EQ(lines.size(), 4u);
+  ASSERT_EQ(lines.size(), 3u);
   EXPECT_EQ(lines[0], "Muse Glimmer: the target pool refused the sessions");
   for (const char* flag :
        {"--max_sessions/--max-sessions",
@@ -378,18 +369,13 @@ TEST(KvAdvice, HeadlineTargetRefusalNamesThePoolAndTheSizingDocs) {
   }
   EXPECT_TRUE(any_contains(lines, "0 sizes them automatically"));
   EXPECT_TRUE(any_contains(lines, "BATCHING_SERVING.md"));
-  EXPECT_TRUE(any_contains(
-      lines,
-      "--kv-layout sequence export (export_solo or "
-      "export_dflash)"));
-  // Facts, not prescribed values: no cell count or token limit to set.
-  EXPECT_FALSE(any_contains(lines, ">="));
-  EXPECT_FALSE(any_contains(lines, "2097153"));
+  // The backend's cell-shortfall lines already name the sequence layout.
+  EXPECT_FALSE(any_contains(lines, "--kv-layout sequence"));
   expect_loggable(lines);
 }
 
-TEST(KvAdvice, DFlashTargetRefusalMentionsTheDraftPool) {
-  const auto lines = kv_advice::target_notes(
+TEST(KvNotes, DFlashTargetRefusalMentionsTheDraftPool) {
+  const auto lines = kv_notes::target_notes(
       target_report(cb::KvAdmission::kCells, 16, 131072, 131072), true);
   EXPECT_TRUE(any_contains(
       lines, "refused the sessions; a DFlash export also sizes a draft pool"));
@@ -397,42 +383,59 @@ TEST(KvAdvice, DFlashTargetRefusalMentionsTheDraftPool) {
   expect_loggable(lines);
 }
 
-TEST(KvAdvice, TargetNotesWithoutWindowsHaveNoLayoutHint) {
-  const auto lines = kv_advice::target_notes(target_report(
-      cb::KvAdmission::kSessionLimit, 80, 8192, 131072, /*windowed=*/false));
+TEST(KvNotes, SessionLimitNotesNameNeitherACellPoolNorTheDraft) {
+  const auto lines = kv_notes::target_notes(
+      target_report(cb::KvAdmission::kSessionLimit, 80, 8192, 131072),
+      /*dflash=*/true);
   ASSERT_EQ(lines.size(), 3u);
+  EXPECT_EQ(lines[0], "Muse Glimmer: the target pool refused the sessions");
+  EXPECT_FALSE(any_contains(lines, "--draft-max-cells"));
   EXPECT_FALSE(any_contains(lines, "--kv-layout sequence"));
 }
 
-TEST(KvAdvice, AutomaticBudgetBelowTheContextIsNoted) {
-  auto lines = kv_advice::target_notes(
+TEST(KvNotes, LayoutHintOnlyWhereALargerCellPoolIsTheAlternative) {
+  // No automatic budget on a sliding-window model: the hint applies.
+  auto lines = kv_notes::target_notes(
+      target_report(cb::KvAdmission::kNoBudget, 16, 0, 8));
+  ASSERT_EQ(lines.size(), 4u);
+  EXPECT_TRUE(any_contains(
+      lines, "--kv-layout sequence export (export_solo or export_dflash)"));
+  // Not without sliding-window layers.
+  lines = kv_notes::target_notes(
+      target_report(cb::KvAdmission::kNoBudget, 16, 0, 8, /*windowed=*/false));
+  EXPECT_EQ(lines.size(), 3u);
+}
+
+TEST(KvNotes, AutomaticBudgetBelowTheContextIsNoted) {
+  auto lines = kv_notes::target_notes(
       target_report(cb::KvAdmission::kAutomatic, 16, 8191, 131072));
   EXPECT_EQ(
       lines[0],
       "Muse Glimmer: the target pool gives each session 8191 of the model's "
       "131072 context tokens");
-  // The full context, or an admitted explicit limit, needs no note.
-  EXPECT_TRUE(kv_advice::target_notes(
+  EXPECT_TRUE(any_contains(lines, "--kv-layout sequence"));
+  // The full context needs no note, nor a shortfall of only the padding cell:
+  // one session on cells equal to the context gets 131071 of 131072 tokens.
+  EXPECT_TRUE(kv_notes::target_notes(
                   target_report(cb::KvAdmission::kAutomatic, 1, 131072, 131073))
                   .empty());
-  EXPECT_TRUE(kv_advice::target_notes(
-                  target_report(cb::KvAdmission::kAdmitted, 4, 1024, 4097))
+  EXPECT_TRUE(kv_notes::target_notes(
+                  target_report(cb::KvAdmission::kAutomatic, 1, 131071, 131072))
                   .empty());
 }
 
-TEST(KvAdvice, DraftNotesOnlyWhenTheDraftLimits) {
+TEST(KvNotes, DraftNotesOnlyWhenTheDraftLimits) {
   // 4 sessions on 16384 target cells hold (16383) / 4 = 4095 tokens; a 65536
   // cell draft holds (65536 - 65) / 4 = 16367: the target is the limit.
-  EXPECT_TRUE(kv_advice::draft_notes(4, 0, 4095, cell_pool(65536)).empty());
+  EXPECT_TRUE(kv_notes::draft_notes(4, 0, 4095, cell_pool(65536)).empty());
   // 16 sessions requesting 8187 tokens on the default 131072-cell draft pool:
   // the draft holds exactly 8187, so it neither limits nor refuses them.
-  EXPECT_TRUE(
-      kv_advice::draft_notes(16, 8187, 8187, cell_pool(131072)).empty());
+  EXPECT_TRUE(kv_notes::draft_notes(16, 8187, 8187, cell_pool(131072)).empty());
 }
 
-TEST(KvAdvice, DraftLimitingAnAutomaticContextQuotesBothPools) {
+TEST(KvNotes, DraftLimitingAnAutomaticContextQuotesBothPools) {
   // 16 automatic sessions: the target holds 131072 each, the draft 2043.
-  const auto lines = kv_advice::draft_notes(16, 0, 131072, cell_pool(32768));
+  const auto lines = kv_notes::draft_notes(16, 0, 131072, cell_pool(32768));
   ASSERT_EQ(lines.size(), 3u);
   EXPECT_EQ(
       lines[0],
@@ -442,16 +445,28 @@ TEST(KvAdvice, DraftLimitingAnAutomaticContextQuotesBothPools) {
   EXPECT_EQ(
       lines[1], "DFlash: the target pool holds 131072 tokens per session");
   EXPECT_TRUE(any_contains(lines, "BATCHING_SERVING.md"));
-  EXPECT_FALSE(any_contains(lines, "block, which they must"));
   expect_loggable(lines);
 }
 
-TEST(KvAdvice, DraftRefusingARequestedLimit) {
-  // 16 x 8191 requested; the default draft pool holds 8187.
-  auto lines = kv_advice::draft_notes(16, 8191, 8191, cell_pool(131072));
+TEST(KvNotes, DraftRefusingARequestedLimit) {
+  // 4 live + 8 prefix + 4 capture with --max-context 8191: the target holds
+  // 16 x 8191 + 1 cells and reports nothing; the default draft pool holds 8187.
+  auto lines =
+      kv_notes::draft_notes(16, 8191, 8191, cell_pool(131072), {4, 8, 4});
   EXPECT_TRUE(any_contains(
       lines, "131072 cells hold 8187 tokens for each of 16 sessions"));
   EXPECT_TRUE(any_contains(lines, ", so it refused the sessions"));
+  // Where the 16 sessions come from, as the target logged nothing.
+  EXPECT_TRUE(any_contains(
+      lines,
+      "DFlash: 16 resident sessions (4 live + 8 prefix entries + 4 capture "
+      "slots) share the draft pool"));
+  for (const char* flag :
+       {"--max_sessions/--max-sessions",
+        "--prefix_cache_entries/--prefix-cache-entries",
+        "--prefix_capture_slots/--prefix-capture-slots"}) {
+    EXPECT_TRUE(any_contains(lines, flag)) << flag;
+  }
   EXPECT_TRUE(any_contains(
       lines,
       "8191 tokens per session were requested; 16 x 8191 + 64 + 1 = 131121 "
@@ -459,15 +474,15 @@ TEST(KvAdvice, DraftRefusingARequestedLimit) {
   // Above the block, so no block note.
   EXPECT_FALSE(any_contains(lines, "must exceed"));
   // 300 cells leave 14 tokens, below the 16-token block.
-  lines = kv_advice::draft_notes(16, 4096, 4096, cell_pool(300));
+  lines = kv_notes::draft_notes(16, 4096, 4096, cell_pool(300));
   EXPECT_TRUE(any_contains(lines, "300 cells hold 14 tokens"));
   EXPECT_TRUE(any_contains(lines, "16 x 4096 + 64 + 1 = 65601 draft cells"));
   EXPECT_TRUE(any_contains(lines, "must exceed the 16-token draft block"));
   expect_loggable(lines);
 }
 
-TEST(KvAdvice, TargetBudgetAtMostTheBlock) {
-  const auto lines = kv_advice::draft_notes(4, 0, 12, cell_pool(131072));
+TEST(KvNotes, TargetBudgetAtMostTheBlock) {
+  const auto lines = kv_notes::draft_notes(4, 0, 12, cell_pool(131072));
   EXPECT_EQ(
       lines[0],
       "DFlash: the target pool's 12-token session budget does not exceed the "
@@ -475,11 +490,12 @@ TEST(KvAdvice, TargetBudgetAtMostTheBlock) {
   EXPECT_FALSE(any_contains(lines, "draft pool's"));
 }
 
-TEST(KvAdvice, DraftNotesOnASequenceLayout) {
-  const auto lines = kv_advice::draft_notes(4, 4096, 4096, {true, 2048, 4, 16});
+TEST(KvNotes, DraftNotesOnASequenceLayout) {
+  const auto lines = kv_notes::draft_notes(4, 4096, 4096, {true, 2048, 4, 16});
   EXPECT_EQ(
       lines[0],
       "DFlash: each draft sequence's 2048 rows hold 2032 tokens beside its "
       "16-token block, so it refused the sessions");
-  EXPECT_EQ(lines[1], "DFlash: 4096 tokens per session were requested");
+  EXPECT_EQ(lines[1], "DFlash: 4 resident sessions share the draft pool");
+  EXPECT_EQ(lines[3], "DFlash: 4096 tokens per session were requested");
 }

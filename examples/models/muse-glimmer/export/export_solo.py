@@ -476,10 +476,11 @@ def kv_capacity_summary(
                 * (max_kv_seqs + 1)
                 * kv_element_bytes
             )
+            # A session's context must exceed the draft block.
+            held = f"{context} tokens" if context > draft.block else "none"
             lines += [
                 f"KV capacity: DFlash draft columns of {draft.cells} rows keep a "
-                f"{draft.block}-token block, so each session may hold {context} "
-                "tokens",
+                f"{draft.block}-token block, so each session may hold {held}",
                 f"KV capacity: draft {format_memory(draft_total)} of K/V, "
                 f"{format_memory(total + draft_total)} with the target",
             ]

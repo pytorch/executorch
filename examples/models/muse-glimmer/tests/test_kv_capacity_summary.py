@@ -116,6 +116,17 @@ class KVCapacitySummaryTest(unittest.TestCase):
         self.assertIn("each session may hold 2032 tokens", lines[2])
         self.assertIn("with the target", lines[3])
 
+    def test_dflash_sequence_context_must_exceed_the_block(self):
+        # 32 rows less the 16-token block leave 16, the block: unusable.
+        self.assertIn(
+            "each session may hold none",
+            summary(kv_layout="sequence", draft=draft(32))[2],
+        )
+        self.assertIn(
+            "each session may hold 17 tokens",
+            summary(kv_layout="sequence", draft=draft(33))[2],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

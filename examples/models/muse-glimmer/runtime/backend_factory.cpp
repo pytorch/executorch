@@ -12,7 +12,7 @@
 #if defined(EXECUTORCH_BUILD_CUDA)
 #include <executorch/backends/cuda/batching/cuda_executor.h>
 #include <executorch/examples/models/muse-glimmer/runtime/cuda_dflash_executor.h>
-#include <executorch/examples/models/muse-glimmer/runtime/kv_capacity_advice.h>
+#include <executorch/examples/models/muse-glimmer/runtime/kv_capacity_notes.h>
 #endif
 
 #include <memory>
@@ -30,7 +30,7 @@ runtime::Result<MuseGlimmerBackend> create_muse_glimmer_backend(
   if (config.backend == "cuda") {
     namespace cb = ::executorch::backends::cuda::batching;
     ET_CHECK_OR_RETURN_ERROR(
-        kv_advice::valid_requested_tokens(config.max_session_tokens),
+        config.max_session_tokens != 1,
         InvalidArgument,
         "Muse Glimmer CUDA: a session needs room for a prompt and prediction");
     ET_CHECK_OR_RETURN_ERROR(
@@ -48,8 +48,8 @@ runtime::Result<MuseGlimmerBackend> create_muse_glimmer_backend(
     executor_config.reservations = {
         config.live_sessions, config.prefix_entries, config.capture_slots};
     executor_config.capacity_report = [](const cb::KvCapacityReport& report) {
-      kv_advice::log_notes(
-          kv_advice::target_notes(report),
+      kv_notes::log_notes(
+          kv_notes::target_notes(report),
           report.outcome == cb::KvAdmission::kAutomatic);
     };
     executor_config.max_sessions = config.max_sessions;
@@ -63,7 +63,7 @@ runtime::Result<MuseGlimmerBackend> create_muse_glimmer_backend(
         "Muse Glimmer CUDA: vocabulary %d cannot hold its special tokens",
         vocab);
     ET_CHECK_OR_RETURN_ERROR(
-        kv_advice::holds_prompt_and_prediction(session_tokens),
+        session_tokens > 1,
         InvalidArgument,
         "Muse Glimmer CUDA: sessions need room for a prompt and prediction");
     ET_ASSIGN_OR_RETURN(

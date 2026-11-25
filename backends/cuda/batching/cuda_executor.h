@@ -88,15 +88,20 @@ struct CudaExecutorConfig {
   // given it must total max_sessions.
   KvReservations reservations;
   // Called on the creating thread, after the executor logs it, with a KV
-  // capacity report: when create() refuses the sessions because the cell pool
-  // cannot hold every session's budget (kCells), automatic context mode leaves
-  // no budget (kNoBudget), or the layout tracks fewer sessions (kSessionLimit);
-  // and in automatic context mode with the resolved budget (kAutomatic), as
-  // soon as it is resolved. create() may still fail after a kAutomatic report,
-  // on a later check. Refusals before the program's cache is known are not
-  // reported: invalid session limits (valid_session_limits()), a reservation
-  // breakdown that does not total max_sessions, and a token limit past the
-  // model's context (within_context()).
+  // capacity report:
+  //  - kCells: a requested limit the cell pool cannot hold, for sessions within
+  //    the cell layout's limit;
+  //  - kNoBudget: automatic context mode leaves no token per session;
+  //  - kSessionLimit: more sessions than the layout tracks; reported at the
+  //    cell check when the cells also fall short or no automatic budget
+  //    remains, else once the cache is built, against its own session count;
+  //  - kAutomatic: automatic context mode resolved a budget for sessions
+  //    within the layout's limit; it is withheld for sessions past it.
+  // create() may fail after a kAutomatic report, or before any report, on a
+  // check that is not about KV capacity. Not reported: refusals before the
+  // program's cache layout is known (invalid session limits, a reservation
+  // breakdown that does not total max_sessions, a token limit past the
+  // model's context).
   std::function<void(const KvCapacityReport&)> capacity_report;
   // Zero divides the available cell pool across sessions, capped by context.
   int max_session_tokens = 0;

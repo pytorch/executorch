@@ -17,7 +17,6 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
-#include <limits>
 #include <string>
 #include <vector>
 
@@ -41,27 +40,6 @@ struct KvReservations {
         capture_slots;
   }
 };
-
-// CudaExecutor's entry check on its session limits: at least one session, a
-// nonnegative per-session token limit (zero for automatic context mode), and
-// sessions x tokens within an int.
-inline bool valid_session_limits(int sessions, int session_tokens) {
-  return sessions > 0 && session_tokens >= 0 &&
-      (session_tokens == 0 ||
-       sessions <= std::numeric_limits<int>::max() / session_tokens);
-}
-
-// Whether a per-session token limit is within the model's context.
-inline bool within_context(
-    std::int64_t session_tokens,
-    std::int64_t context_length) {
-  return session_tokens <= context_length;
-}
-
-// Whether a program's cell count fits an int and leaves a padding row.
-inline bool valid_cell_count(std::int64_t cells) {
-  return cells > 1 && cells <= std::numeric_limits<int>::max();
-}
 
 // The cell layout's admission: every resident session may hold its token
 // budget at once, `reserved_cells` more are held for other uses, and one more
@@ -151,12 +129,9 @@ inline CellPoolFacts cell_pool_facts(
   return facts;
 }
 
-// What the executor decided about its KV admission, for logging and for the
-// caller's own advice (CudaExecutorConfig::capacity_report).
+// What CudaExecutor reports about its KV admission
+// (CudaExecutorConfig::capacity_report).
 enum class KvAdmission {
-  // An explicit per-session token limit fits: check_admission()'s result for
-  // an admitted limit; never reported.
-  kAdmitted,
   // Automatic context mode resolved a per-session token budget.
   kAutomatic,
   // Automatic context mode: not one token per session fits the cells.
@@ -168,16 +143,12 @@ enum class KvAdmission {
   kSessionLimit,
 };
 
-// Automatic context mode's per-session budget: the whole context on the
-// sequence layout, else min(context, (cells - 1) / sessions).
+// Automatic context mode's per-session budget on the cell layout:
+// min(context, (cells - 1) / sessions).
 inline std::int64_t automatic_session_tokens(
-    bool sequence_layout,
     int sessions,
     std::int64_t context_length,
     std::int64_t cells) {
-  if (sequence_layout) {
-    return context_length;
-  }
   return sessions > 0 ? std::min(context_length, (cells - 1) / sessions) : 0;
 }
 
@@ -187,12 +158,13 @@ struct KvAdmissionCheck {
   std::int64_t session_tokens;
 };
 
-// CudaExecutor's KV admission of `sessions` resident sessions asking for
-// `requested_tokens` each (zero for automatic context mode, else at most
-// `context_length`), on a layout tracking at most `session_limit` sessions
-// (zero for no limit) and, for the cell layout, `cells` cells.
+// What the cell layout reports for `sessions` resident sessions asking for
+// `requested_tokens` each (zero for automatic context mode), over `cells`
+// cells and at most `session_limit` resident sessions: kSessionLimit past the
+// limit; in automatic context mode kAutomatic with the resolved budget, or
+// kNoBudget; else kCells. CudaExecutor calls it in automatic context mode, and
+// for a requested limit only once cell_budget() has refused it.
 inline KvAdmissionCheck check_admission(
-    bool sequence_layout,
     int sessions,
     int requested_tokens,
     std::int64_t context_length,
@@ -200,20 +172,15 @@ inline KvAdmissionCheck check_admission(
     int session_limit) {
   const std::int64_t tokens = requested_tokens != 0
       ? requested_tokens
-      : automatic_session_tokens(
-            sequence_layout, sessions, context_length, cells);
-  if (session_limit > 0 && sessions > session_limit) {
+      : automatic_session_tokens(sessions, context_length, cells);
+  if (sessions > session_limit) {
     return {KvAdmission::kSessionLimit, tokens};
   }
   if (requested_tokens == 0) {
     return {
         tokens > 0 ? KvAdmission::kAutomatic : KvAdmission::kNoBudget, tokens};
   }
-  if (!sequence_layout &&
-      !cell_budget(sessions, requested_tokens, cells).fits()) {
-    return {KvAdmission::kCells, tokens};
-  }
-  return {KvAdmission::kAdmitted, tokens};
+  return {KvAdmission::kCells, tokens};
 }
 
 struct KvCapacityReport {
@@ -229,7 +196,9 @@ struct KvCapacityReport {
   std::int64_t context_length = 0;
   // The cell layout's pool; zero for the sequence layout.
   std::int64_t cells = 0;
-  // The most resident sessions the layout tracks; zero when unknown.
+  // The most resident sessions the layout tracks: the cache's own count once
+  // it is built, else the program's sequence columns or the cell table's
+  // limit.
   int session_limit = 0;
   CellPoolFacts facts;
 };
@@ -276,8 +245,6 @@ inline std::vector<std::string> describe_capacity(
   const std::string limit = std::to_string(report.session_limit);
   std::vector<std::string> lines;
   switch (report.outcome) {
-    case KvAdmission::kAdmitted:
-      break;
     case KvAdmission::kAutomatic:
       if (report.sequence_layout) {
         lines.push_back(

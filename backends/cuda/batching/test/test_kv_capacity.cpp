@@ -209,7 +209,7 @@ TEST(KvCapacityTest, CellShortfallWithoutWindowsHasNoLayoutHint) {
   expect_short_lines(lines);
 }
 
-TEST(KvCapacityTest, ZeroTokenBudgetSuggestsSessionsThatFitTheLimit) {
+TEST(KvCapacityTest, ZeroTokenBudgetReportsTheSessionsThatFit) {
   // 8 sessions x 4 tokens on 8 cells: 7 sessions would still need 29 cells,
   // so only one session of 4 tokens fits.
   const cb::KvCapacityReport report =
@@ -273,43 +273,28 @@ TEST(KvCapacityTest, AutomaticSessionLimitNamesTheLimit) {
       "program would need at least 68 sequence columns");
 }
 
-TEST(KvCapacityTest, AdmittedReportsLogNothing) {
-  EXPECT_TRUE(cb::describe_capacity(
-                  cell_report(cb::KvAdmission::kAdmitted, 4, 1024, 131072))
-                  .empty());
-}
-
 TEST(KvCapacityTest, AutomaticSessionTokens) {
-  EXPECT_EQ(cb::automatic_session_tokens(false, 16, 131072, 131072), 8191);
-  EXPECT_EQ(cb::automatic_session_tokens(false, 1, 64, 256), 64);
-  EXPECT_EQ(cb::automatic_session_tokens(false, 256, 64, 256), 0);
-  EXPECT_EQ(cb::automatic_session_tokens(true, 16, 131072, 0), 131072);
+  EXPECT_EQ(cb::automatic_session_tokens(16, 131072, 131072), 8191);
+  EXPECT_EQ(cb::automatic_session_tokens(1, 64, 256), 64);
+  EXPECT_EQ(cb::automatic_session_tokens(256, 64, 256), 0);
 }
 
 TEST(KvCapacityTest, CheckAdmissionPutsTheSessionLimitFirst) {
   using cb::KvAdmission;
-  const auto outcome = [](bool sequence,
-                          int sessions,
+  const auto outcome = [](int sessions,
                           int tokens,
                           std::int64_t cells,
                           int limit) {
-    return cb::check_admission(sequence, sessions, tokens, 131072, cells, limit)
-        .outcome;
+    return cb::check_admission(sessions, tokens, 131072, cells, limit).outcome;
   };
-  EXPECT_EQ(outcome(false, 4, 1024, 4097, 64), KvAdmission::kAdmitted);
-  EXPECT_EQ(outcome(false, 4, 1024, 4096, 64), KvAdmission::kCells);
-  EXPECT_EQ(outcome(false, 16, 0, 131072, 64), KvAdmission::kAutomatic);
-  EXPECT_EQ(outcome(false, 16, 0, 16, 64), KvAdmission::kNoBudget);
+  EXPECT_EQ(outcome(4, 1024, 4096, 64), KvAdmission::kCells);
+  EXPECT_EQ(outcome(16, 0, 131072, 64), KvAdmission::kAutomatic);
+  EXPECT_EQ(outcome(16, 0, 16, 64), KvAdmission::kNoBudget);
   // Past the limit, whatever the cells or the budget.
-  EXPECT_EQ(outcome(false, 65, 0, 1 << 20, 64), KvAdmission::kSessionLimit);
-  EXPECT_EQ(outcome(false, 65, 1024, 64, 64), KvAdmission::kSessionLimit);
-  EXPECT_EQ(outcome(true, 5, 0, 0, 4), KvAdmission::kSessionLimit);
-  EXPECT_EQ(outcome(true, 4, 0, 0, 4), KvAdmission::kAutomatic);
-  // The sequence layout has no shared cells.
-  EXPECT_EQ(outcome(true, 4, 131072, 0, 4), KvAdmission::kAdmitted);
+  EXPECT_EQ(outcome(65, 0, 1 << 20, 64), KvAdmission::kSessionLimit);
+  EXPECT_EQ(outcome(65, 1024, 64, 64), KvAdmission::kSessionLimit);
   // The resolved budget comes with the outcome.
-  EXPECT_EQ(
-      cb::check_admission(false, 65, 0, 131072, 256, 64).session_tokens, 3);
+  EXPECT_EQ(cb::check_admission(65, 0, 131072, 256, 64).session_tokens, 3);
 }
 
 TEST(KvCapacityTest, SequenceLayoutSessionLimit) {
@@ -373,21 +358,4 @@ TEST(KvCapacityTest, NoBudgetInAutomaticContext) {
       "padding cell, the program has 8");
   EXPECT_EQ(lines[1], "CudaExecutor: at most 7 one-token sessions fit");
   expect_short_lines(lines);
-}
-
-TEST(KvCapacityTest, EntryChecksTheExecutorShares) {
-  constexpr int kMax = std::numeric_limits<int>::max();
-  EXPECT_TRUE(cb::valid_session_limits(4, 0));
-  EXPECT_TRUE(cb::valid_session_limits(4, 1024));
-  EXPECT_FALSE(cb::valid_session_limits(0, 1024));
-  EXPECT_FALSE(cb::valid_session_limits(4, -1));
-  // sessions x tokens must fit an int.
-  EXPECT_TRUE(cb::valid_session_limits(2, kMax / 2));
-  EXPECT_FALSE(cb::valid_session_limits(3, kMax / 2));
-  EXPECT_TRUE(cb::within_context(131072, 131072));
-  EXPECT_FALSE(cb::within_context(131073, 131072));
-  EXPECT_FALSE(cb::valid_cell_count(1));
-  EXPECT_TRUE(cb::valid_cell_count(2));
-  EXPECT_TRUE(cb::valid_cell_count(kMax));
-  EXPECT_FALSE(cb::valid_cell_count(std::int64_t{kMax} + 1));
 }

@@ -7,7 +7,7 @@
  */
 #include <executorch/examples/models/muse-glimmer/runtime/cuda_dflash_executor.h>
 
-#include <executorch/examples/models/muse-glimmer/runtime/kv_capacity_advice.h>
+#include <executorch/examples/models/muse-glimmer/runtime/kv_capacity_notes.h>
 #include <executorch/examples/models/muse-glimmer/runtime/model_embeddings.h>
 
 #include <cuda_runtime.h>
@@ -541,8 +541,7 @@ Result<MuseGlimmerBackend> MuseGlimmerCudaDFlashExecutor::create(
   ET_CHECK_OR_RETURN_ERROR(
       config.backend == "cuda" && config.use_dflash &&
           !config.model_path.empty() && config.max_sessions > 0 &&
-          config.max_session_tokens >= 0 &&
-          kv_advice::valid_requested_tokens(config.max_session_tokens) &&
+          config.max_session_tokens >= 0 && config.max_session_tokens != 1 &&
           config.dflash_n_draft >= 0,
       InvalidArgument,
       "Invalid CUDA DFlash configuration");
@@ -555,8 +554,8 @@ Result<MuseGlimmerBackend> MuseGlimmerCudaDFlashExecutor::create(
       config.live_sessions, config.prefix_entries, config.capture_slots};
   // Notes on the target pool, which a DFlash export pairs with a draft pool.
   target_config.capacity_report = [](const cb::KvCapacityReport& report) {
-    kv_advice::log_notes(
-        kv_advice::target_notes(report, /*dflash=*/true),
+    kv_notes::log_notes(
+        kv_notes::target_notes(report, /*dflash=*/true),
         report.outcome == cb::KvAdmission::kAutomatic);
   };
   target_config.max_sessions = config.max_sessions;
@@ -673,22 +672,24 @@ Result<MuseGlimmerBackend> MuseGlimmerCudaDFlashExecutor::create(
       "DFlash draft packed tensor ABI mismatch");
   ET_ASSIGN_OR_RETURN(geometry, draft_geometry(module, block));
   const int temporary = max_owners * block;
-  // A history column holds its context and, while drafting, its own block.
-  const kv_advice::DraftPool pool{
-      sequence_layout, max_cells, max_owners, block};
-  const kv_advice::DraftAdmission admission = kv_advice::draft_admission(
+  // The draft pool as the program publishes it; draft_admission() gives each
+  // session its rows less the block, or the shared cells less every owner's
+  // block and the padding cell.
+  const kv_notes::DraftPool pool{sequence_layout, max_cells, max_owners, block};
+  const kv_notes::DraftAdmission admission = kv_notes::draft_admission(
       config.max_sessions,
       config.max_session_tokens,
       target->max_session_tokens(),
       pool);
   const int max_context = admission.max_context;
   // Notes on the draft pool when it limits or refuses the sessions.
-  kv_advice::log_notes(
-      kv_advice::draft_notes(
+  kv_notes::log_notes(
+      kv_notes::draft_notes(
           config.max_sessions,
           config.max_session_tokens,
           target->max_session_tokens(),
-          pool),
+          pool,
+          target_config.reservations),
       admission.fits);
   ET_CHECK_OR_RETURN_ERROR(
       admission.fits && draft_tokens.sizes()[0] == max_owners &&

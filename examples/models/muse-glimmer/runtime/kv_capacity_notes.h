@@ -9,10 +9,9 @@
 
 // Muse Glimmer's notes on a CUDA KV admission: which pool refused (the
 // target's or the DFlash draft's), what it holds, and where the sizing rules
-// are documented. The notes state facts and point at BATCHING_SERVING.md; they
-// do not prescribe option values. Also the factories' token rules and the
-// DFlash draft pool's admission rule, which the runtime calls. Pure apart from
-// logging, so it is testable without a GPU.
+// are documented, as facts with a pointer to BATCHING_SERVING.md. Also the
+// DFlash draft pool's admission rule, which the DFlash executor calls. Pure
+// apart from logging, so it is testable without a GPU.
 
 #include <executorch/backends/cuda/batching/kv_capacity.h>
 #include <executorch/runtime/platform/log.h>
@@ -22,21 +21,9 @@
 #include <string>
 #include <vector>
 
-namespace executorch::extension::llm::kv_advice {
+namespace executorch::extension::llm::kv_notes {
 
 namespace cb = ::executorch::backends::cuda::batching;
-
-// The Muse Glimmer factories' rule for a configured per-session limit: zero
-// (automatic) or room for a prompt and a prediction, so never one token.
-inline bool valid_requested_tokens(int session_tokens) {
-  return session_tokens != 1;
-}
-
-// The factories' rule for the context a session gets: a prompt and a
-// prediction.
-inline bool holds_prompt_and_prediction(std::int64_t session_tokens) {
-  return session_tokens > 1;
-}
 
 // A DFlash draft cache as its program publishes it.
 struct DraftPool {
@@ -100,19 +87,23 @@ inline constexpr char kSequenceLayoutHint[] =
     "ring buffers and is recommended over a larger cell pool";
 
 // Notes on CudaExecutor's report for the target pool. `dflash` notes that a
-// draft pool is sized as well.
+// cell shortfall may also concern the draft pool.
 inline std::vector<std::string> target_notes(
     const cb::KvCapacityReport& report,
     bool dflash = false) {
   std::vector<std::string> lines;
-  const bool long_context_hint =
+  // The sliding-window hint where a larger cell pool is the alternative; the
+  // backend's own cell-shortfall and session-limit lines already cover the
+  // sequence layout.
+  bool layout_hint =
       !report.sequence_layout && report.facts.has_windowed_layers;
   switch (report.outcome) {
-    case cb::KvAdmission::kAdmitted:
-      return lines;
     case cb::KvAdmission::kAutomatic:
+      // Nothing to note when the pool holds the full context, but for at most
+      // the padding cell.
       if (report.sequence_layout ||
-          report.session_tokens >= report.context_length) {
+          report.session_tokens >= report.context_length ||
+          report.cells >= report.sessions * report.context_length) {
         return lines;
       }
       lines.push_back(
@@ -122,18 +113,22 @@ inline std::vector<std::string> target_notes(
       break;
     case cb::KvAdmission::kNoBudget:
     case cb::KvAdmission::kCells:
-    case cb::KvAdmission::kSessionLimit:
       lines.push_back(
           "Muse Glimmer: the target pool refused the sessions" +
           std::string(
               dflash ? "; a DFlash export also sizes a draft pool "
                        "(--draft-max-cells, default --max-cells)"
                      : ""));
+      layout_hint = layout_hint && report.outcome == cb::KvAdmission::kNoBudget;
+      break;
+    case cb::KvAdmission::kSessionLimit:
+      lines.push_back("Muse Glimmer: the target pool refused the sessions");
+      layout_hint = false;
       break;
   }
   lines.push_back(kResidentSessions);
   lines.push_back(kSizingPointer);
-  if (long_context_hint) {
+  if (layout_hint) {
     lines.push_back(kSequenceLayoutHint);
   }
   return lines;
@@ -147,7 +142,8 @@ inline std::vector<std::string> draft_notes(
     int sessions,
     int requested_tokens,
     int target_tokens,
-    const DraftPool& pool) {
+    const DraftPool& pool,
+    const cb::KvReservations& reservations = {}) {
   std::vector<std::string> lines;
   const std::int64_t budget = draft_session_budget(sessions, pool);
   const std::string block = std::to_string(pool.block);
@@ -176,6 +172,14 @@ inline std::vector<std::string> draft_notes(
           " temporary block cells and 1 padding cell";
   line += refused ? ", so it refused the sessions" : ", which limits them";
   lines.push_back(line);
+  if (requested_tokens != 0 && refused) {
+    // The target admitted the requested limit without a report: say where
+    // the sessions come from.
+    lines.push_back(
+        "DFlash: " + cb::describe_sessions(sessions, reservations) +
+        " share the draft pool");
+    lines.push_back(kResidentSessions);
+  }
   if (requested_tokens != 0) {
     std::string requested = "DFlash: " + std::to_string(requested_tokens) +
         " tokens per session were requested";
@@ -216,4 +220,4 @@ inline void log_notes(const std::vector<std::string>& lines, bool admitted) {
   }
 }
 
-} // namespace executorch::extension::llm::kv_advice
+} // namespace executorch::extension::llm::kv_notes
