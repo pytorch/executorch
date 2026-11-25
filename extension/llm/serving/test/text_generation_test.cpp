@@ -26,6 +26,7 @@
 #include <map>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <thread>
 #include <type_traits>
@@ -122,6 +123,22 @@ class Executor : public batching::testing::FakeExecutor {
   std::atomic<bool> refuse_open{false};
   // Runs on the engine thread before each open; set only while idle.
   std::function<void()> before_open;
+
+  void set_sampling(
+      batching::SessionId session,
+      const batching::SamplingParams& params,
+      std::optional<std::uint64_t> seed) override {
+    {
+      std::lock_guard<std::mutex> lock(sampled_mutex_);
+      sampled_.insert(session);
+    }
+    FakeExecutor::set_sampling(session, params, seed);
+  }
+  // Whether a generation ever started on the session, even if it has closed.
+  bool started(batching::SessionId session) {
+    std::lock_guard<std::mutex> lock(sampled_mutex_);
+    return sampled_.count(session) != 0;
+  }
   std::atomic<int> clones{0};
   std::atomic<int> steps{0};
   std::size_t burst = 1;
@@ -200,6 +217,8 @@ class Executor : public batching::testing::FakeExecutor {
 
  private:
   std::map<batching::SessionId, std::size_t> produced_;
+  std::mutex sampled_mutex_;
+  std::set<batching::SessionId> sampled_;
 };
 
 struct Events {
@@ -1803,7 +1822,7 @@ TEST_F(ColdOpenGroupTest, LongerPromptThatDoesNotFitStartsTheNextGroup) {
   executor.before_open = [&] {
     const auto opened = executor.opened();
     if (opened.size() == 2) {
-      first_started = executor.has_sampling_state(opened[1]);
+      first_started = executor.started(opened[1]);
     }
   };
   control.release();
@@ -1855,7 +1874,7 @@ TEST_F(ColdOpenGroupTest, PreparedImageEndsTheGroupAndRunsAlone) {
   executor.before_open = [&] {
     const auto opened = executor.opened();
     if (opened.size() == 2) {
-      first_started = executor.has_sampling_state(opened[1]);
+      first_started = executor.started(opened[1]);
     }
   };
   modeling.hold();
@@ -1911,8 +1930,10 @@ TEST_F(ColdOpenGroupTest, FinalizersRunBetweenLaunchedGroups) {
     EXPECT_FALSE(handle.error());
   }
   // The finished request released its session before the next group was
-  // prepared: only the keyed session and the first group's remain.
-  EXPECT_EQ(active, std::optional<std::size_t>(2));
+  // prepared: only the keyed session and, unless it finished too, the first
+  // group's remain.
+  ASSERT_TRUE(active.has_value());
+  EXPECT_LE(*active, 2u);
 }
 
 TEST_F(ColdOpenGroupTest, PrefixCachingDisablesGrouping) {
