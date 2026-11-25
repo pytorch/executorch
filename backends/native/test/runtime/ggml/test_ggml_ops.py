@@ -3401,6 +3401,44 @@ class GgmlOpsTest(unittest.TestCase):
             rtol=1e-4,
         )
 
+    def test_rope_of_a_per_head_rms_norm(self):
+        # A per-head RMS norm transposed to [B, H, T, D] for RoPE and back, at
+        # positions that reshape a vector: the rope reads the norm and the
+        # vector themselves, which ggml-cuda can fuse.
+        class NormRope(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                config = LlamaConfig(
+                    hidden_size=256, num_attention_heads=4, head_dim=64
+                )
+                self.rope = Rope(config)
+                self.weight = torch.nn.Parameter(torch.rand(64) + 0.5)
+
+            def forward(self, x, positions):
+                h = F.rms_norm(x.unflatten(-1, (4, 64)), (64,), self.weight, eps=1e-6)
+                rotated = self.rope(h.transpose(1, 2), positions.unsqueeze(0))
+                return rotated.transpose(1, 2)
+
+        for tokens in (1, 3):
+            with self.subTest(tokens=tokens):
+                self._check(
+                    NormRope(),
+                    (torch.randn(1, tokens, 256), torch.arange(3, 3 + tokens)),
+                    atol=1e-4,
+                    rtol=1e-4,
+                )
+
+    def test_rope_of_as_many_heads_as_tokens(self):
+        # The rope's [D, H, T] permute of the input then has the input's shape
+        # but not its order, so the rope must read the permute.
+        config = LlamaConfig(hidden_size=256, num_attention_heads=4, head_dim=64)
+        self._check(
+            Rope(config),
+            (torch.randn(1, 4, 4, 64), torch.tensor([[3, 9, 27, 81]])),
+            atol=1e-4,
+            rtol=1e-4,
+        )
+
     def _check_half_linear_sum(self, **options):
         # Accumulated in F16, each 2^-8 term vanishes next to the running sum:
         # 1024 instead of eager's 1032.
