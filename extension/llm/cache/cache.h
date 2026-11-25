@@ -112,15 +112,17 @@ class ET_EXPERIMENTAL BatchControl : public CacheControl {
   // seq_new() may still refuse below it if storage allocation fails.
   virtual std::optional<int> max_seqs() const = 0;
   // An id no live sequence is using, held until that sequence's last slot is
-  // freed. nullopt = no free id or insufficient resources to admit it.
-  // Ids may also be chosen by the caller;
-  // this only guarantees the one it returns is not already taken.
+  // freed. nullopt = no free id, insufficient resources to admit it, or a
+  // cache poisoned by a failed device fence, until a successful clear(). Ids
+  // may also be chosen by the caller; this only guarantees the one it returns
+  // is not already taken.
   virtual std::optional<int32_t> seq_new() = 0;
   // An independently writable snapshot of src below `upto`, all of it when
   // unset. The source is unchanged, and later writes to either sequence must
   // not affect the other. A layout may share slots or copy them; cloning can
   // therefore require capacity as well as a free id. nullopt = an unknown or
-  // empty source, unavailable retained history, or insufficient resources.
+  // empty source, unavailable retained history, insufficient resources, or a
+  // cache poisoned by a failed device fence, until a successful clear().
   // The caller owns the returned id until seq_rm. On failure, including an
   // allocation exception, the implementation retains no new caller-owned id.
   virtual std::optional<int32_t> seq_clone(

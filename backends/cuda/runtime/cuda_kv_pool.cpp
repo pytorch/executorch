@@ -50,6 +50,46 @@ auto shape_string(const std::vector<int64_t>& sizes) {
       ::executorch::runtime::Span<const int64_t>(sizes.data(), sizes.size()));
 }
 
+// Calls allocate(widest) and, while that runs out of memory, binary-searches
+// for the widest width in [narrowest, widest) whose allocation fits, in a
+// logarithmic number of attempts. allocate(width) is all or nothing, and
+// release() frees what a successful allocate() holds. A fit found below a
+// failed width is released before a wider probe, so no probe competes with it
+// for memory, and allocated again when nothing wider fits.
+template <typename Allocate, typename Release>
+::executorch::runtime::Result<int>
+allocate_widest(int widest, int narrowest, Allocate allocate, Release release) {
+  // The widest width known to fit, and the narrowest known not to.
+  int fits = narrowest - 1;
+  int fails = widest + 1;
+  int probe = widest;
+  while (true) {
+    const Error error = allocate(probe);
+    if (error == Error::Ok) {
+      if (probe + 1 == fails) {
+        return probe;
+      }
+      release();
+      fits = probe;
+    } else if (error != Error::MemoryAllocationFailed) {
+      return error;
+    } else {
+      fails = probe;
+      if (fits >= fails) {
+        // A width that fitted a moment ago no longer does.
+        fits = narrowest - 1;
+      }
+    }
+    if (fits + 1 < fails) {
+      probe = fits + 1 + (fails - fits - 1) / 2;
+    } else if (fits >= narrowest) {
+      probe = fits;
+    } else {
+      return Error::MemoryAllocationFailed;
+    }
+  }
+}
+
 } // namespace
 
 CudaKVPool::CudaKVPool(
@@ -149,13 +189,21 @@ Error CudaKVPool::validate() const {
 Error CudaKVPool::prepare(
     int64_t required_rows,
     int64_t live_rows,
-    cudaStream_t stream) {
+    cudaStream_t stream,
+    int min_columns) {
   const auto device = CUDAGuard::create(device_);
   ET_CHECK_OK_OR_RETURN_ERROR(device.error());
   ET_CHECK_OK_OR_RETURN_ERROR(follow_previous_step(stream));
   stream_ = stream;
   if (!allocated_) {
-    ET_CHECK_OK_OR_RETURN_ERROR(allocate_initial(required_rows, stream));
+    const int committed = columns_;
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        allocate_initial(required_rows, min_columns, stream));
+    if (columns_ != committed) {
+      // Row counts are flattened over the physical columns.
+      required_rows = required_rows / committed * columns_;
+      live_rows = live_rows / committed * columns_;
+    }
   }
   if (required_rows > rows_ && rows_ < max_rows_) {
     const int64_t next = std::min<int64_t>(
@@ -292,40 +340,87 @@ Error CudaKVPool::follow_previous_step(cudaStream_t stream) {
 
 // A first step wider than the initial rows is allocated at its own width
 // rather than allocated and immediately grown. All or nothing: a failure frees
-// what was allocated so far, and the next step may try again.
-Error CudaKVPool::allocate_initial(int64_t required_rows, cudaStream_t stream) {
+// what was allocated so far, and the next step may try again. When the
+// recorded physical width does not fit, the widest width down to min_columns
+// that does is allocated instead.
+Error CudaKVPool::allocate_initial(
+    int64_t required_rows,
+    int min_columns,
+    cudaStream_t stream) {
   const int64_t growable_rows = std::max<int64_t>(initial_rows_, required_rows);
+  int narrowest = columns_;
+  if (min_columns > 0 && min_columns < columns_) {
+    ET_CHECK_OR_RETURN_ERROR(
+        min_columns >= 2 && declared_columns_ > 1 &&
+            std::all_of(
+                layers_.begin(),
+                layers_.end(),
+                [&](const Layer& layer) {
+                  return layer.growable &&
+                      layer.declared_rows % declared_columns_ == 0;
+                }),
+        InvalidArgument,
+        "offgraph_kv: invalid fallback physical columns %d/%d",
+        min_columns,
+        columns_);
+    narrowest = min_columns;
+  }
+  // Growable rows at `width` physical columns; both counts are flattened.
+  auto rows_at = [&](int width) {
+    return width == columns_ ? growable_rows : growable_rows / columns_ * width;
+  };
   std::vector<Allocation> allocated;
   allocated.reserve(layers_.size());
   auto roll_back = [&]() {
     for (size_t index = 0; index < allocated.size(); ++index) {
       discard(layers_[index], allocated[index], stream);
     }
+    allocated.clear();
   };
-  for (const Layer& layer : layers_) {
-    const int64_t rows = layer.growable
-        ? std::min(growable_rows, physical_limit(layer))
-        : layer.declared_rows;
-    Allocation allocation;
-    const Error error = allocate_layer(layer, rows, stream, allocation);
-    if (error != Error::Ok) {
-      roll_back();
-      return error;
+  auto allocate = [&](int width) -> Error {
+    for (const Layer& layer : layers_) {
+      const int64_t rows = layer.growable
+          ? std::min(
+                rows_at(width), layer.declared_rows / declared_columns_ * width)
+          : layer.declared_rows;
+      Allocation allocation;
+      const Error error = allocate_layer(layer, rows, stream, allocation);
+      if (error != Error::Ok) {
+        roll_back();
+        return error;
+      }
+      allocated.push_back(allocation);
     }
-    allocated.push_back(allocation);
-  }
-  const Error side_error = allocate_side_buffers(stream);
-  if (side_error != Error::Ok) {
-    roll_back();
+    const Error side_error = allocate_side_buffers(stream);
+    if (side_error != Error::Ok) {
+      roll_back();
+    }
     return side_error;
-  }
+  };
+  auto release_all = [&]() {
+    roll_back();
+    for (void* buffer : side_buffers_) {
+      release(buffer, stream);
+    }
+    side_buffers_.clear();
+  };
+  const auto width =
+      allocate_widest(columns_, narrowest, allocate, release_all);
+  ET_CHECK_OK_OR_RETURN_ERROR(width.error());
   allocations_ = std::move(allocated);
-  rows_ = growable_rows;
+  rows_ = rows_at(width.get());
+  if (width.get() != columns_) {
+    initial_rows_ = initial_rows_ / columns_ * width.get();
+    max_rows_ = max_rows_ / columns_ * width.get();
+    columns_ = width.get();
+  }
   allocated_ = true;
   ET_LOG(
       Info,
-      "offgraph_kv: initialized flat_capacity=%lld allocated_bytes=%lld",
+      "offgraph_kv: initialized flat_capacity=%lld columns=%d "
+      "allocated_bytes=%lld",
       static_cast<long long>(rows_),
+      columns_,
       static_cast<long long>(allocated_bytes_));
   return Error::Ok;
 }
@@ -477,10 +572,13 @@ void CudaKVPool::invalidate_bindings() {
 Error CudaKVPool::resize_columns(
     int columns,
     int64_t live_rows,
-    cudaStream_t stream) {
+    cudaStream_t stream,
+    int min_columns) {
+  min_columns = min_columns > 0 ? min_columns : columns;
   ET_CHECK_OR_RETURN_ERROR(
       declared_columns_ > 1 && columns >= columns_ &&
-          columns <= declared_columns_ && live_rows >= 0,
+          columns <= declared_columns_ && min_columns >= 2 &&
+          min_columns <= columns && live_rows >= 0,
       InvalidArgument,
       "offgraph_kv: invalid physical columns %d/%d",
       columns,
@@ -513,23 +611,43 @@ Error CudaKVPool::resize_columns(
   const int old_columns = columns_;
   std::vector<Allocation> replacements;
   replacements.reserve(layers_.size());
-  auto roll_back = [&]() {
+  auto release_replacements = [&]() {
     for (size_t index = 0; index < replacements.size(); ++index) {
       discard(layers_[index], replacements[index], stream);
     }
+    replacements.clear();
+  };
+  auto roll_back = [&]() {
+    release_replacements();
     (void)cudaStreamSynchronize(stream);
   };
-  for (size_t index = 0; index < layers_.size(); ++index) {
-    const int64_t logical_rows = allocations_[index].rows / old_columns;
-    Allocation replacement;
-    const Error error = allocate_layer(
-        layers_[index], logical_rows * columns, stream, replacement);
-    if (error != Error::Ok) {
-      roll_back();
-      return error;
+  auto allocate = [&](int width) -> Error {
+    for (size_t index = 0; index < layers_.size(); ++index) {
+      const int64_t logical_rows = allocations_[index].rows / old_columns;
+      Allocation replacement;
+      const Error error = allocate_layer(
+          layers_[index], logical_rows * width, stream, replacement);
+      if (error != Error::Ok) {
+        release_replacements();
+        return error;
+      }
+      replacements.push_back(replacement);
     }
-    replacements.push_back(replacement);
+    return Error::Ok;
+  };
+  // Only the replacement storage is probed: the copy and the commit below run
+  // once, at the widest width that fits. Growth never falls back to the
+  // current width.
+  const auto width = allocate_widest(
+      columns,
+      std::max(min_columns, old_columns + 1),
+      allocate,
+      release_replacements);
+  if (!width.ok()) {
+    roll_back();
+    return width.error();
   }
+  columns = width.get();
   for (size_t index = 0; index < layers_.size(); ++index) {
     const Allocation& current = allocations_[index];
     const Allocation& replacement = replacements[index];

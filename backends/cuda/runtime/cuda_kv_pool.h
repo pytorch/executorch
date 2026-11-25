@@ -82,16 +82,28 @@ class CudaKVPool final {
 
   // Orders `stream` after the previous step, then makes the growable layers
   // hold at least `required_rows`, carrying their first `live_rows` rows
-  // across a growth. The first call also allocates the fixed storage.
-  runtime::Error
-  prepare(int64_t required_rows, int64_t live_rows, cudaStream_t stream);
+  // across a growth. The first call also allocates the fixed storage. If
+  // 0 < min_columns < columns() and that allocation runs out of memory, it
+  // uses the widest physical width down to min_columns that fits; row counts
+  // are flattened at the width before the call.
+  runtime::Error prepare(
+      int64_t required_rows,
+      int64_t live_rows,
+      cudaStream_t stream,
+      int min_columns = 0);
 
   // Flattened row counts remain multiples of the current physical width.
   // Copies the old owner columns in place; the scratch column is not retained.
   // live_rows is the logical prefix, capped by each ring. Growth commits only
-  // after all copies pass; smaller widths are rejected.
-  runtime::Error
-  resize_columns(int columns, int64_t live_rows, cudaStream_t stream);
+  // after all copies pass; smaller widths are rejected. If `columns` runs out
+  // of memory, growth uses the widest width down to min_columns (0 = columns)
+  // that fits; columns() reports the result. Before allocation only the width
+  // is recorded, at `columns`.
+  runtime::Error resize_columns(
+      int columns,
+      int64_t live_rows,
+      cudaStream_t stream,
+      int min_columns = 0);
 
   // Records where the step's work ends on its stream, for the next step to
   // follow if it runs on another.
@@ -179,7 +191,8 @@ class CudaKVPool final {
       Allocation& out);
   void release(void* ptr, cudaStream_t stream);
   void discard(const Layer& layer, Allocation& allocation, cudaStream_t stream);
-  runtime::Error allocate_initial(int64_t required_rows, cudaStream_t stream);
+  runtime::Error
+  allocate_initial(int64_t required_rows, int min_columns, cudaStream_t stream);
   runtime::Error allocate_side_buffers(cudaStream_t stream);
   runtime::Error grow(int64_t new_rows, int64_t live_rows, cudaStream_t stream);
   runtime::Error build_descriptors(CudaDelegateHandle* handle);

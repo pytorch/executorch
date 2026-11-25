@@ -231,8 +231,13 @@ inline int batched_sequence_max_segments(int max_seqs) {
 // up to cfg.max_seqs, with one additional scratch column. DFlash retains its
 // declared width; both paths use the same five-field sequence metadata.
 // A column resize temporarily holds both the old and replacement storage.
-// Admission can therefore fail below max_seqs if there is insufficient free
-// device memory; the existing owners and their KV remain usable.
+// Under memory pressure, growth takes the widest width that fits, down to the
+// live owners plus scratch. Admission can therefore fail below max_seqs if
+// there is insufficient free device memory; the existing owners and their KV
+// remain usable. Admission before the first forward only records the width;
+// the first forward's allocation falls back the same way, down to the highest
+// owner column plus scratch, and fails, to be retried, if even that does not
+// fit.
 std::shared_ptr<cache::Cache> make_cuda_batched_sequence_kv_cache(
     const cache::CacheGeometry& geometry,
     const cache::CacheConfig& cfg);

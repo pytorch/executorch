@@ -1130,10 +1130,22 @@ class CudaBatchedSequenceCache final : public cache::Cache,
         poisoned_ = true;
       }
     });
-    ET_CHECK_OK_OR_RETURN_ERROR(pool_.prepare(
+    // Admission before the first forward only records the width, so the
+    // first allocation may fall back to fewer columns, as long as every
+    // owner's column and the scratch column remain.
+    int min_columns = 0;
+    if (grow_columns_) {
+      for (const auto& [seq_id, sequence] : seqs_) {
+        min_columns = std::max(min_columns, sequence.column + 2);
+      }
+    }
+    const Error pooled = pool_.prepare(
         std::min<int64_t>(required, cfg_.capacity) * columns_,
         live * columns_,
-        stream));
+        stream,
+        min_columns);
+    columns_ = pool_.columns();
+    ET_CHECK_OK_OR_RETURN_ERROR(pooled);
 
     ET_CHECK_OK_OR_RETURN_ERROR(reserve_staging(
         static_cast<size_t>(max_write_) * sizeof(int64_t) +
@@ -1338,17 +1350,14 @@ class CudaBatchedSequenceCache final : public cache::Cache,
       for (const auto& [id, sequence] : seqs_) {
         live_rows = std::max(live_rows, sequence.plan.length());
       }
-      auto resized = pool_.resize_columns(target, live_rows, stream);
-      // Under memory pressure, halve the growth until it fits, stopping at the
-      // required width. Keeping spare columns avoids a failed attempt, a full
-      // KV copy and graph recapture on every later admission. Failed resizing
-      // leaves storage and bindings intact.
-      while (resized == Error::MemoryAllocationFailed && target > live + 1) {
-        target = std::max(live + 1, columns_ + (target - columns_) / 2);
-        resized = pool_.resize_columns(target, live_rows, stream);
-      }
-      ET_CHECK_OK_OR_RETURN_ERROR(resized);
-      columns_ = target;
+      // Under memory pressure, take the widest width that fits, down to the
+      // required one. A resize holds the old and new storage at once, so
+      // under steady pressure the width reached here is usually final. Spare
+      // columns avoid a failed attempt, a full KV copy and graph recapture on
+      // later admissions. Failed resizing leaves storage and bindings intact.
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          pool_.resize_columns(target, live_rows, stream, live + 1));
+      columns_ = pool_.columns();
     }
     for (auto& [id, sequence] : seqs_) {
       sequence.column = next.at(id);
