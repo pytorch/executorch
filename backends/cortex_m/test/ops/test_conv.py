@@ -16,6 +16,7 @@ from executorch.backends.cortex_m.test.tester import (
 )
 from executorch.backends.test.harness.stages import StageType
 from executorch.exir.dialects._ops import ops as exir_ops
+from torch._subclasses.fake_tensor import FakeTensorMode
 
 
 class CortexMConv1D(torch.nn.Module):
@@ -156,6 +157,63 @@ class CortexMDepthwiseConv2DBias(torch.nn.Module):
         self.conv = torch.nn.Conv2d(*args, **kwargs, bias=True)
 
     def forward(self, x):
+        return self.conv(x)
+
+
+class CortexMChannelsFirstConv2D(torch.nn.Module):
+    # x.contiguous() brings its own clone and quant/dequant pair, so only the
+    # conv itself is pinned here.
+    ops_before_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_convolution_default": 1,
+    }
+
+    ops_after_transforms = {
+        "executorch_exir_dialects_edge__ops_cortex_m_quantized_conv2d_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_convolution_default": 0,
+    }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(*args, **kwargs, bias=False).to(
+            memory_format=torch.channels_last
+        )
+
+    def forward(self, x):
+        return self.conv(x.contiguous())
+
+
+class ChannelsFirstDepthwiseConv(torch.nn.Module):
+    # x.contiguous() brings its own clone and quant/dequant pair, so only the
+    # conv itself is pinned here.
+    ops_before_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_convolution_default": 1,
+    }
+
+    ops_after_transforms = {
+        "executorch_exir_dialects_edge__ops_cortex_m_quantized_depthwise_conv2d_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_convolution_default": 0,
+    }
+
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(2, 2, 3, padding=1, groups=2, bias=False).to(
+            memory_format=torch.channels_last
+        )
+
+    def forward(self, x):
+        return self.conv(x.contiguous())
+
+
+class MeanPoolDepthwiseConv(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(2, 2, 3, padding=1, groups=2, bias=False).to(
+            memory_format=torch.channels_last
+        )
+
+    def forward(self, x):
+        # Average pooling over height naturally creates channels-first storage.
+        x = x.mean(dim=2, keepdim=True)
         return self.conv(x)
 
 
@@ -323,6 +381,18 @@ test_cases = {
             ramp_tensor(0, 10, (1, 1, 8, 8)).to(memory_format=torch.channels_last),
         ),
     ),
+    "channels_first_conv2d": McuTestCase(
+        model=CortexMChannelsFirstConv2D(2, 4, 3, padding=1),
+        example_inputs=(
+            ramp_tensor(-10, 10, (1, 2, 5, 5)).to(memory_format=torch.channels_last),
+        ),
+    ),
+    "channels_first_depthwise_conv2d": McuTestCase(
+        model=ChannelsFirstDepthwiseConv(),
+        example_inputs=(
+            ramp_tensor(-10, 10, (1, 2, 3, 3)).to(memory_format=torch.channels_last),
+        ),
+    ),
 }
 
 
@@ -429,3 +499,129 @@ def test_implementation_single_channel_dispatch(out_channels, cortex_m_target):
     CortexMTester(model, inputs, target_config=cortex_m_target).test_implementation(
         qtol=1
     )
+
+
+def _assert_conv_input_converted_to_channels_last(tester: CortexMTester) -> None:
+    graph = tester.get_artifact(StageType.RUN_PASSES).exported_program().graph
+    conv_ops = (
+        exir_ops.edge.cortex_m.quantized_conv2d.default,
+        exir_ops.edge.cortex_m.quantized_conv2d_packed.default,
+        exir_ops.edge.cortex_m.quantized_depthwise_conv2d.default,
+    )
+    [conv_node] = [
+        n for n in graph.nodes if n.op == "call_function" and n.target in conv_ops
+    ]
+    input_node = conv_node.args[0]
+    assert input_node.target == exir_ops.edge.dim_order_ops._clone_dim_order.default
+    assert input_node.kwargs.get("dim_order") == [0, 2, 3, 1]
+
+
+@parametrize(
+    "test_case",
+    {
+        name: test_cases[name]
+        for name in ("channels_first_conv2d", "channels_first_depthwise_conv2d")
+    },
+)
+def test_dialect_channels_first_conv_clone_dim_order(test_case, cortex_m_target):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
+    tester.quantize().export().to_edge().run_passes()
+    tester.run_method_and_compare_outputs(inputs=test_case.example_inputs, qtol=1)
+    _assert_conv_input_converted_to_channels_last(tester)
+
+
+def test_dialect_depthwise_conv_mean_pool_input_layout(cortex_m_target):
+    model = MeanPoolDepthwiseConv().eval()
+    x = ramp_tensor(-10, 10, (1, 2, 3, 3)).to(memory_format=torch.channels_last)
+    tester = CortexMTester(model, (x,), target_config=cortex_m_target)
+    tester.test_dialect(
+        {"executorch_exir_dialects_edge__ops_aten_convolution_default": 1},
+        {
+            "executorch_exir_dialects_edge__ops_cortex_m_quantized_depthwise_conv2d_default": 1,
+            "executorch_exir_dialects_edge__ops_aten_convolution_default": 0,
+        },
+        qtol=1,
+    )
+    _assert_conv_input_converted_to_channels_last(tester)
+
+
+def test_quantized_conv2d_meta_rejects_channels_first_input():
+    x_nchw = torch.zeros((1, 2, 4, 4), dtype=torch.int8)
+    x_nhwc = x_nchw.to(memory_format=torch.channels_last)
+    weight = torch.zeros((4, 3, 3, 2), dtype=torch.int8)
+    dw_weight = torch.zeros((1, 3, 3, 2), dtype=torch.int8)
+    multipliers = torch.ones((4,), dtype=torch.int32)
+    shifts = torch.zeros((4,), dtype=torch.int32)
+    dw_multipliers = torch.ones((2,), dtype=torch.int32)
+    dw_shifts = torch.zeros((2,), dtype=torch.int32)
+    packed_weight, effective_bias = cmsis_nn.convolve_s8_prepare_weights(
+        weight, 0, None, 1
+    )
+    scratch = torch.empty((0,), dtype=torch.uint8)
+
+    conv_args = (
+        weight,
+        None,
+        [1, 1],
+        [0, 0],
+        [1, 1],
+        0,
+        0,
+        multipliers,
+        shifts,
+        -128,
+        127,
+        scratch,
+    )
+    packed_args = (
+        packed_weight,
+        effective_bias,
+        [1, 1],
+        [0, 0],
+        [1, 1],
+        0,
+        0,
+        multipliers,
+        shifts,
+        -128,
+        127,
+        scratch,
+    )
+    dw_args = (
+        dw_weight,
+        None,
+        [1, 1],
+        [0, 0],
+        [1, 1],
+        1,
+        0,
+        0,
+        dw_multipliers,
+        dw_shifts,
+        -128,
+        127,
+        scratch,
+    )
+    cases = [
+        (torch.ops.cortex_m.quantized_conv2d.default, conv_args, {}, (1, 4, 2, 2)),
+        (
+            torch.ops.cortex_m.quantized_conv2d_packed.default,
+            packed_args,
+            {"filter_shape": [4, 3, 3, 2]},
+            (1, 4, 2, 2),
+        ),
+        (
+            torch.ops.cortex_m.quantized_depthwise_conv2d.default,
+            dw_args,
+            {},
+            (1, 2, 2, 2),
+        ),
+    ]
+
+    with FakeTensorMode(allow_non_fake_inputs=True):
+        for op, args, kwargs, expected_shape in cases:
+            with pytest.raises(ValueError, match="channels-last"):
+                op(x_nchw, *args, **kwargs)
+            assert op(x_nhwc, *args, **kwargs).shape == expected_shape

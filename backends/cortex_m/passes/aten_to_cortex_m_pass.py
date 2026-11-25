@@ -10,6 +10,7 @@ import operator
 from typing import cast, Optional
 
 import executorch.backends.cortex_m.ops.operators  # noqa
+import executorch.backends.cortex_m.utils as cortex_m_utils
 import executorch.backends.transforms.channels_last_ops  # noqa: F401
 import torch
 import torch.fx
@@ -90,6 +91,27 @@ def _create_uninitialized_alloc_node(
                 mode.from_tensor(torch.empty(0)),
                 None,
             )
+
+
+def _ensure_channels_last_input(node: Node, x: Node, explicit_nhwc: bool) -> Node:
+    """Convert non-channels-last 4-D conv input to channels-last dim order."""
+    if explicit_nhwc:
+        return x
+    input_tensor = get_first_fake_tensor(x)
+    if input_tensor is None or input_tensor.ndim != 4:
+        raise RuntimeError(
+            f"Expected 4-D tensor input for convolution node {node.name}, "
+            f"got {None if input_tensor is None else tuple(input_tensor.shape)}."
+        )
+    if cortex_m_utils.is_channels_last(input_tensor):
+        return x
+    with node.graph.inserting_before(node):
+        return node.graph.create_node(
+            "call_function",
+            target=exir_ops.edge.dim_order_ops._clone_dim_order.default,
+            args=(x,),
+            kwargs={"dim_order": [0, 2, 3, 1]},
+        )
 
 
 def _first_meta_value(value):
@@ -513,7 +535,7 @@ def _get_convolution_replacement(
         _,
         groups,
     ) = (
-        conv_args[0],
+        cast(Node, conv_args[0]),
         cast(Node, conv_args[1]),
         conv_args[2],
         conv_args[3],
@@ -526,6 +548,8 @@ def _get_convolution_replacement(
 
     if transposed:
         return _get_transpose_conv2d_replacement(node, dialect_pass)
+
+    x = _ensure_channels_last_input(node, x, explicit_nhwc)
 
     input_scale = node.meta["input_qparams"][0].scale
     input_zero_point = node.meta["input_qparams"][0].zp
@@ -739,7 +763,7 @@ def _get_transpose_conv2d_replacement(
         output_padding,
         _,
     ) = (
-        conv_t_args[0],
+        cast(Node, conv_t_args[0]),
         cast(Node, conv_t_args[1]),
         conv_t_args[2],
         conv_t_args[3],
@@ -752,6 +776,8 @@ def _get_transpose_conv2d_replacement(
 
     if not transposed:
         return None
+
+    x = _ensure_channels_last_input(node, x, explicit_nhwc)
 
     input_scale = node.meta["input_qparams"][0].scale
     input_zero_point = node.meta["input_qparams"][0].zp
