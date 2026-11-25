@@ -151,8 +151,9 @@ class TestCudaBackendCompileOptions(unittest.TestCase):
         self.assertEqual(zeros.dtype, torch.bfloat16)
         self.assertEqual(zeros.device.type, "cpu")
         self.assertEqual(zeros.untyped_storage().nbytes(), nbytes)
-        self.assertEqual(torch.count_nonzero(zeros[0, :1024]), 0)
-        self.assertEqual(torch.count_nonzero(zeros[0, -1024:]), 0)
+        # Reading every page must not back it either; a shared mapping would.
+        self.assertEqual(torch.count_nonzero(zeros), 0)
+        self.assertLess(resident_bytes() - before, nbytes // 8)
         zeros[0, :2].fill_(1)
         self.assertEqual(torch.count_nonzero(zeros), 2 * 4 * 128)
 

@@ -551,12 +551,8 @@ class _FlatLayer(torch.nn.Module):
 @unittest.skipUnless(torch.cuda.is_available(), "CUDA required")
 @unittest.skipUnless(IS_LINUX, "reads /proc/self/statm")
 class BatchedSequenceCompileHostMemoryTest(unittest.TestCase):
-    """Compiling a method must not hold its declared KV storage on the host.
-
-    The storage is declared at the maximum capacity of every column, which
-    for production geometry is far beyond what any step touches, and the
-    runtime supplies it. AOTI keeps an initial value of every lifted buffer
-    for the whole compile; dense zeros there cost the whole declared pool.
+    """Lowering one batched-sequence layer grows host memory by well under
+    the size of its declared KV storage, which the runtime supplies.
     """
 
     CAPACITY = 1 << 16
@@ -564,6 +560,18 @@ class BatchedSequenceCompileHostMemoryTest(unittest.TestCase):
     MAX_WRITE = 8
 
     def test_declared_storage_stays_off_the_host(self) -> None:
+        # K and V of one layer: 1 GiB each. Dense zeros would grow the host by
+        # the whole 2 GiB; the limit leaves the compile itself half of that.
+        declared = 2 * self.CAPACITY * (self.MAX_SEQS + 1) * N_KV_HEADS * HEAD_DIM * 2
+        limit = declared // 2
+        # 8 GiB: fits the 24 GB A10G that runs unittest-cuda, and A100/H100.
+        priming_bytes = 4 * declared
+        free, _ = torch.cuda.mem_get_info()
+        if free < priming_bytes:
+            self.skipTest(
+                f"needs {priming_bytes >> 30} GiB of free GPU memory to prime the "
+                f"allocator's peak, has {free >> 30} GiB"
+            )
         manifest = json.dumps(
             {
                 "version": 1,
@@ -583,16 +591,17 @@ class BatchedSequenceCompileHostMemoryTest(unittest.TestCase):
             dynamic_shapes=({2: t}, {2: t}, {2: t}, {0: t}),
             strict=False,
         )
-        # K and V of one layer: 1 GiB each. Dense zeros would grow the host by
-        # the whole 2 GiB; the limit leaves the compile itself half of that.
-        declared = 2 * self.CAPACITY * (self.MAX_SEQS + 1) * k[0, :, 0].numel() * 2
-        limit = declared // 2
-        # Autotuning a kernel that writes the storage protects it with a GPU
-        # clone, or with a pinned host copy when the clone would raise the
-        # GPU high-water mark. A model's weights raise that mark first; so
-        # does this, which keeps the measurement to the compile's own copies.
-        # Releasing the block keeps the mark but not the reservation.
-        torch.empty(4 * declared, dtype=torch.uint8, device="cuda")
+        # Inductor's autotuner protects a kernel's written arguments from its
+        # benchmark launches: it clones each on the GPU, or copies it to pinned
+        # host memory when the clone would push GPU allocation past its
+        # recorded peak. The storage is written, so in a fresh process the
+        # copy would land in host memory and be measured here. Raising the
+        # peak first keeps the clones on the GPU, as a model's weights would.
+        # Freeing the block keeps the recorded peak but not the reservation,
+        # and the cleanup resets the peak for later tests in this process.
+        self.addCleanup(torch.cuda.reset_peak_memory_stats)
+        priming = torch.empty(priming_bytes, dtype=torch.uint8, device="cuda")
+        del priming
         torch.cuda.empty_cache()
         import torch._inductor.config as inductor_config
 
