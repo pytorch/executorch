@@ -4,6 +4,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+- func: esp_nn::quantized_lut_int8.out(Tensor input, Tensor table, *, Tensor(a!) out) -> Tensor(a!)
+  variants: function
+  kernels:
+    - arg_meta: null
+      kernel_name: espressif::quantized_lut_int8_out
+
 - func: esp_nn::quantized_mul_int8.out(Tensor input1, Tensor input2, int input1_offset, int input2_offset, int output_offset, int output_multiplier, int output_shift, *, Tensor(a!) out) -> Tensor(a!)
   variants: function
   kernels:
@@ -21,3 +27,33 @@
   kernels:
     - arg_meta: null
       kernel_name: espressif::quantized_add_int8_out
+
+- func: esp_nn::quantized_max_pool2d_int8.out(Tensor input, int[2] kernel_size, int[2] stride, int[2] padding, *, Tensor(a!) out) -> Tensor(a!)
+  variants: function
+  kernels:
+    - arg_meta: null
+      kernel_name: espressif::quantized_max_pool2d_int8_out
+
+- func: esp_nn::quantized_avg_pool2d_int8.out(Tensor input, int[2] kernel_size, int[2] stride, int[2] padding, *, Tensor(a!) out) -> Tensor(a!)
+  variants: function
+  kernels:
+    - arg_meta: null
+      kernel_name: espressif::quantized_avg_pool2d_int8_out
+
+- func: esp_nn::quantized_linear_int8.out(Tensor input, Tensor weight, Tensor? bias, Tensor output_multiplier, Tensor output_shift, int input_offset, int output_offset, *, Tensor(a!) out) -> Tensor(a!)
+  variants: function
+  kernels:
+    - arg_meta: null
+      kernel_name: espressif::quantized_linear_int8_out
+
+- func: esp_nn::quantized_conv2d_int8.out(Tensor input, Tensor weight, Tensor? bias, int[2] stride, int[2] padding, Tensor output_multiplier, Tensor output_shift, int input_offset, int output_offset, Tensor scratch, *, Tensor(a!) out) -> Tensor(a!)
+  variants: function
+  kernels:
+    - arg_meta: null
+      kernel_name: espressif::quantized_conv2d_int8_out
+
+- func: esp_nn::quantized_depthwise_conv2d_int8.out(Tensor input, Tensor weight, Tensor? bias, int[2] stride, int[2] padding, int channel_multiplier, Tensor output_multiplier, Tensor output_shift, int input_offset, int output_offset, Tensor scratch, *, Tensor(a!) out) -> Tensor(a!)
+  variants: function
+  kernels:
+    - arg_meta: null
+      kernel_name: espressif::quantized_depthwise_conv2d_int8_out

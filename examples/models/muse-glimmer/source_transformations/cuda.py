@@ -845,8 +845,9 @@ def _forward_from_embeddings_sampling(
 
     Runs the decoder stack over pre-computed ``inputs_embeds`` (built by the
     runner from ``embed_text`` plus any image splice) and returns a single
-    Gumbel-max token id ``(B, 1)`` from the last position. Only the last
-    position's logits are computed, so ``lm_head`` runs on ``(B, 1, H)``.
+    token id ``(B, 1)`` from the last position: a Gumbel-max sample, or the
+    argmax at temperature 0. Only the last position's logits are computed, so
+    ``lm_head`` runs on ``(B, 1, H)``.
     """
     x = self._run_blocks(inputs_embeds, input_pos)
     x = self.output_norm(x)

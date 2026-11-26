@@ -126,20 +126,55 @@ TEST(StopSafePrefixLenTest, EarliestStopWinsEvenWhenLongerStopSetsHoldBack) {
 
 TEST(StopSafePrefixLenTest, HoldsBackPossiblePartialStopTail) {
   bool hit = false;
-  // No full stop yet, but the trailing "ST" could become "STOP": hold back
-  // len("STOP")-1 == 3 bytes, so of "hi ST" (5 bytes) only "hi" (2) is safe.
-  EXPECT_EQ(stop_safe_prefix_len("hi ST", {"STOP"}, hit), 2u);
+  // Only the trailing "ST" can complete "STOP".
+  EXPECT_EQ(stop_safe_prefix_len("hi ST", {"STOP"}, hit), 3u);
   EXPECT_FALSE(hit);
 }
 
-TEST(StopSafePrefixLenTest, HoldBackSnapsToUtf8Boundary) {
+TEST(StopSafePrefixLenTest, OrdinaryUtf8IsEmittedImmediately) {
   bool hit = false;
-  // "ab" + "€"(3 bytes). Stop "XX" => hold back 1 byte, which would land inside
-  // the euro sign; snap down so the multi-byte char isn't split.
+  // An unrelated stop must not retain a complete UTF-8 character.
   const std::string text = "ab\xe2\x82\xac";
   const size_t safe = stop_safe_prefix_len(text, {"XX"}, hit);
   EXPECT_FALSE(hit);
-  EXPECT_EQ(safe, 2u); // only "ab"; the € is held whole
+  EXPECT_EQ(safe, text.size());
+}
+
+TEST(StopSafePrefixLenTest, OrdinaryTextDoesNotWaitForLongStops) {
+  bool hit = false;
+  EXPECT_EQ(stop_safe_prefix_len("Hello", {"<|im_end|>"}, hit), 5u);
+  EXPECT_FALSE(hit);
+  EXPECT_EQ(stop_safe_prefix_len("Hi STX", {"STOP"}, hit), 6u);
+  EXPECT_FALSE(hit);
+  EXPECT_EQ(
+      stop_safe_prefix_len(
+          std::string(4000, 'a'),
+          {std::string(4000, 'c'), std::string(4000, 'a') + "b"},
+          hit),
+      0u);
+  EXPECT_FALSE(hit);
+}
+
+TEST(StopSafePrefixLenTest, RetainsLongestOverlappingPrefix) {
+  bool hit = false;
+  EXPECT_EQ(stop_safe_prefix_len("Hi ababa", {"ababc", "ababab"}, hit), 3u);
+  EXPECT_FALSE(hit);
+  EXPECT_EQ(stop_safe_prefix_len("Hi ababaX", {"ababc", "ababab"}, hit), 9u);
+  EXPECT_FALSE(hit);
+}
+
+TEST(StopSafePrefixLenTest, RetainsUtf8StopPrefixUntilResolved) {
+  bool hit = false;
+  const std::string prefix = "ab\xe2\x82\xac";
+  const std::string stop =
+      "\xe2\x82\xac"
+      "END";
+  EXPECT_EQ(stop_safe_prefix_len(prefix, {stop}, hit), 2u);
+  EXPECT_FALSE(hit);
+  EXPECT_EQ(stop_safe_prefix_len(prefix + "X", {stop}, hit), prefix.size() + 1);
+  EXPECT_FALSE(hit);
+  EXPECT_EQ(stop_safe_prefix_len(prefix + "ENDtail", {stop}, hit), 2u);
+  EXPECT_TRUE(hit);
 }
 
 TEST(StopSafePrefixLenTest, HoldBackWithIncompleteUtf8TailSnapsToBoundary) {

@@ -304,6 +304,7 @@ def to_quantized_edge_program(
 def to_quantized_executorch_program(
     model: torch.nn.Module,
     input_spec: Iterable[ModelInputSpec] | tuple[int, ...] | list[tuple[int, ...]],
+    target: str = "imxrt700",
     intermediates_dir: str | None = None,
     use_qat: bool = False,
     train_fn: Callable[[torch.fx.GraphModule], None] | None = None,
@@ -351,6 +352,7 @@ def to_quantized_executorch_program(
         edge_program_manager = to_quantized_edge_program(
             model,
             input_spec,
+            target=target,
             intermediates_dir=intermediates_dir,
             use_qat=use_qat,
             train_fn=train_fn,

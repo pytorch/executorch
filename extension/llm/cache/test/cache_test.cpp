@@ -874,7 +874,7 @@ TEST_F(CacheTest, KvSharedLayerReservesIdempotently) {
   EXPECT_EQ(c.place(0, {7, 8, 9}), nullptr); // different tokens, never declared
 }
 
-TEST_F(CacheTest, DFlashCellRowsUseOwnerOrderAndContextAnchoredWindow) {
+TEST_F(CacheTest, DFlashCellRowsUseOwnerOrderAndPerQueryWindow) {
   CacheGeometry geometry{{flat_layer(), ring_layer(2), ring_layer(2)}};
   geometry.dflash_block_size = 2;
   CellCache cache(geometry, config(32));
@@ -892,13 +892,51 @@ TEST_F(CacheTest, DFlashCellRowsUseOwnerOrderAndContextAnchoredWindow) {
   EXPECT_EQ(row(*flat, 3), "11111...");
   EXPECT_EQ(row(*flat, 4), "11111...");
   EXPECT_EQ(row(*flat, 6), ".....111");
-  // b's context ends at 3: retain positions 1,2 and the full block 3,4.
-  EXPECT_EQ(row(*windowed, 3), ".1111...");
-  EXPECT_EQ(row(*windowed, 4), ".1111...");
+  // Strict distance < 2: the oldest context key is outside every query window.
+  EXPECT_EQ(row(*windowed, 3), "..111...");
+  EXPECT_EQ(row(*windowed, 4), "...11...");
   EXPECT_EQ(row(*windowed, 6), ".....111");
+  EXPECT_EQ(row(*windowed, 7), "......11");
   EXPECT_EQ(cache.place_step(2, args.positions.data(), 8), windowed);
   EXPECT_EQ(cache.free_cells(), 24);
 }
+
+// This test exercises the experimental cell-cache API by design.
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+TEST_F(CacheTest, DFlashCellStrictWindowMatchesAbsolutePositions) {
+  for (const int window : {1, 3, 8}) {
+    for (const int block : {1, 4, 16}) {
+      CacheGeometry geometry{{ring_layer(window)}};
+      geometry.dflash_block_size = block;
+      CellCache cache(geometry, config(128));
+      const int32_t a = *cache.seq_new(), b = *cache.seq_new();
+      const auto args =
+          flatten_step({{b, 0, 3 * window + block}, {a, 0, block}});
+      ASSERT_TRUE(cache.declare_step(args.seq_ids));
+      const auto* step = cache.place_step(
+          0, args.positions.data(), static_cast<int>(args.positions.size()));
+      ASSERT_NE(step, nullptr);
+      for (const int query : step->query_rows) {
+        std::string expected(step->read_len, '.');
+        for (size_t key = 0; key < args.positions.size(); ++key) {
+          const int delta = args.positions[query] - args.positions[key];
+          if (args.seq_ids[query] == args.seq_ids[key] && delta > -window &&
+              delta < window) {
+            expected[step->cells[key]] = '1';
+          }
+        }
+        EXPECT_EQ(row(*step, query), expected)
+            << "window=" << window << " block=" << block << " query=" << query;
+      }
+    }
+  }
+}
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 TEST_F(CacheTest, DFlashCellRejectsMalformedGroupingWithoutPlacement) {
   CacheGeometry geometry{{flat_layer()}};

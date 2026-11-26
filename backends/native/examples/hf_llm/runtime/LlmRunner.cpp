@@ -11,6 +11,8 @@
 #include <cstdio>
 #include <cstring>
 #include <exception>
+#include <filesystem>
+#include <fstream>
 #include <functional>
 #include <iostream>
 #include <limits>
@@ -38,16 +40,26 @@
 #include <executorch/extension/llm/runner/constants.h>
 #include <executorch/runtime/backend/options.h>
 #include <gflags/gflags.h>
+#include <nlohmann/json.hpp>
 #include <pytorch/tokenizers/error.h>
+#include <pytorch/tokenizers/hf_tokenizer.h>
 
 DEFINE_string(package, "", "Path to the *.ptn model. Required.");
-DEFINE_string(tokenizer, "", "Path to the Llama TikToken model. Required.");
+DEFINE_string(
+    tokenizer,
+    "",
+    "Path to a Llama 3 TikToken model, or a Hugging Face tokenizer.json or "
+    "its directory. Required.");
 DEFINE_string(prompt, "The capital of France is", "Prompt text.");
 DEFINE_string(method, "", "Method to run. Defaults to the first one.");
 DEFINE_string(eos_ids, "128001,128009", "Comma-separated EOS token IDs.");
 DEFINE_int32(max_new_tokens, 32, "Maximum generated token count.");
 DEFINE_int32(max_seq_length, 2048, "Maximum prompt plus generated tokens.");
-DEFINE_int32(num_bos, 1, "Number of BOS tokens prepended to the prompt.");
+DEFINE_int32(
+    num_bos,
+    -1,
+    "Number of BOS tokens prepended to the prompt. -1 prepends one, or none "
+    "for a Hugging Face tokenizer whose tokenizer_config.json turns BOS off.");
 DEFINE_bool(
     print_token_ids,
     false,
@@ -75,7 +87,13 @@ DEFINE_int32(
     0,
     "Off-graph KV cache capacity in tokens; 0 uses --max_seq_length. Only "
     "for packages exported with --offgraph_cache.");
-DEFINE_string(kv_dtype, "fp32", "Off-graph KV cache storage: fp32 or fp16.");
+DEFINE_string(
+    kv_dtype,
+    "auto",
+    "KV cache storage: auto, fp32 or fp16. auto takes the engine's default, as "
+    "llama.cpp stores it: fp16 on a ggml GPU, fp32 on the ggml CPU and on "
+    "Vulkan. It sets an off-graph cache's storage and, through the engine, an "
+    "in-graph cache's; a type the engine cannot store is refused.");
 DEFINE_int32(
     kv_initial_capacity,
     -1,
@@ -136,21 +154,19 @@ struct OffGraphCache {
 OffGraphCache install_offgraph_cache(
     const char* backend_id,
     const cache::CacheGeometry& geometry,
-    int max_write) {
+    int max_write,
+    bool half_by_default) {
   if (backend_id == nullptr) {
     throw std::runtime_error(
         "the package keeps its KV cache off-graph, which this engine's "
         "runner does not support");
   }
-  if (FLAGS_kv_dtype != "fp16" && FLAGS_kv_dtype != "fp32") {
-    throw std::invalid_argument("--kv_dtype must be fp32 or fp16");
-  }
+  const bool half = ptn::kv_cache_in_half(FLAGS_kv_dtype, half_by_default);
   cache::CacheConfig cfg{
       .capacity = FLAGS_kv_max_capacity > 0 ? FLAGS_kv_max_capacity
                                             : FLAGS_max_seq_length,
       .kv_dtype = static_cast<int>(
-          FLAGS_kv_dtype == "fp16" ? ptn::ScalarType::Half
-                                   : ptn::ScalarType::Float),
+          half ? ptn::ScalarType::Half : ptn::ScalarType::Float),
       .max_write = max_write};
   if (FLAGS_kv_initial_capacity >= 0) {
     cfg.initial_capacity = FLAGS_kv_initial_capacity;
@@ -188,7 +204,7 @@ OffGraphCache install_offgraph_cache(
       sliding,
       cfg.capacity,
       std::min(std::max(cfg.initial_capacity, 1), cfg.capacity),
-      FLAGS_kv_dtype.c_str());
+      half ? "fp16" : "fp32");
   return out;
 }
 
@@ -253,7 +269,7 @@ Generation generate(
     size_t logits_output,
     bool per_token_positions,
     size_t max_chunk,
-    const ::tokenizers::Tiktoken* tokenizer,
+    const ::tokenizers::Tokenizer* tokenizer,
     const std::vector<uint64_t>& prompt_tokens,
     int64_t start_position,
     size_t limit,
@@ -441,6 +457,50 @@ Generation generate(
   return generation;
 }
 
+// One BOS token, unless a Hugging Face tokenizer_config.json turns BOS off.
+int config_num_bos(const std::filesystem::path& config_path) {
+  std::ifstream file(config_path);
+  if (!file) {
+    return 1;
+  }
+  const nlohmann::json config =
+      nlohmann::json::parse(file, nullptr, /*allow_exceptions=*/false);
+  if (!config.is_object()) {
+    return 1;
+  }
+  const auto add_bos = config.find("add_bos_token");
+  if (add_bos != config.end() && add_bos->is_boolean()) {
+    return add_bos->get<bool>() ? 1 : 0;
+  }
+  const auto bos = config.find("bos_token");
+  return bos != config.end() && bos->is_null() ? 0 : 1;
+}
+
+// Loads --tokenizer, with the number of BOS tokens its prompts take by default.
+std::pair<std::unique_ptr<::tokenizers::Tokenizer>, int> load_tokenizer(
+    const std::filesystem::path& path) {
+  std::unique_ptr<::tokenizers::Tokenizer> tokenizer;
+  std::filesystem::path load_path = path;
+  int num_bos = 1;
+  if (path.extension() == ".json" || std::filesystem::is_directory(path)) {
+    tokenizer = std::make_unique<::tokenizers::HFTokenizer>();
+    // HFTokenizer reads the BOS and EOS tokens that tokenizer_config.json
+    // names only when it loads their directory.
+    if (path.filename() == "tokenizer.json") {
+      load_path = std::filesystem::absolute(path).parent_path();
+    }
+    if (std::filesystem::is_directory(load_path)) {
+      num_bos = config_num_bos(load_path / "tokenizer_config.json");
+    }
+  } else {
+    tokenizer = example::get_tiktoken_for_llama();
+  }
+  if (tokenizer->load(load_path.string()) != ::tokenizers::Error::Ok) {
+    throw std::runtime_error("failed to load --tokenizer " + path.string());
+  }
+  return {std::move(tokenizer), num_bos};
+}
+
 } // namespace
 
 namespace ptn {
@@ -448,14 +508,14 @@ namespace ptn {
 // cppcheck-suppress unusedFunction
 int run_llm(
     const std::function<std::unique_ptr<EngineHost>()>& make_host,
-    const char* cache_backend_id) {
+    const char* cache_backend_id,
+    bool half_kv_cache) {
   if (FLAGS_package.empty() || FLAGS_tokenizer.empty()) {
     std::fprintf(stderr, "error: --package and --tokenizer are required\n");
     return 1;
   }
-  // The tokenizer takes num_bos as an int8_t.
   if (FLAGS_max_new_tokens <= 0 || FLAGS_max_seq_length <= 0 ||
-      FLAGS_num_bos < 0 || FLAGS_num_bos > 127) {
+      FLAGS_num_bos < -1) {
     std::fprintf(stderr, "error: invalid generation limits\n");
     return 1;
   }
@@ -463,20 +523,20 @@ int run_llm(
   try {
     const auto eos_ids = ptn::parse_token_ids(FLAGS_eos_ids);
 
-    std::unique_ptr<::tokenizers::Tiktoken> tokenizer =
-        example::get_tiktoken_for_llama();
-    if (tokenizer->load(FLAGS_tokenizer) != ::tokenizers::Error::Ok) {
-      throw std::runtime_error(
-          "failed to load --tokenizer as a Llama 3 TikToken model");
-    }
-    auto encoded =
-        tokenizer->encode(FLAGS_prompt, static_cast<int8_t>(FLAGS_num_bos), 0);
+    const auto [tokenizer, default_num_bos] = load_tokenizer(FLAGS_tokenizer);
+    const int num_bos = FLAGS_num_bos < 0 ? default_num_bos : FLAGS_num_bos;
+    // A tokenizer.json adds BOS only if its post-processor does, so prepend
+    // it here for every tokenizer.
+    auto encoded = tokenizer->encode(FLAGS_prompt, 0, 0);
     if (!encoded.ok()) {
       throw std::runtime_error(
           "failed to encode prompt: tokenizer error " +
           std::to_string(static_cast<uint32_t>(encoded.error())));
     }
-    std::vector<uint64_t> prompt_tokens = std::move(encoded.get());
+    std::vector<uint64_t> prompt_tokens(
+        static_cast<size_t>(num_bos), tokenizer->bos_tok());
+    prompt_tokens.insert(
+        prompt_tokens.end(), encoded.get().begin(), encoded.get().end());
     if (prompt_tokens.empty()) {
       throw std::runtime_error("prompt encoded to no tokens");
     }
@@ -510,10 +570,19 @@ int run_llm(
     std::optional<OffGraphCache> kv;
     if (const auto geometry = ptn::offgraph_cache_geometry(method, *package)) {
       kv = install_offgraph_cache(
-          cache_backend_id, *geometry, ptn::max_step_tokens(method));
+          cache_backend_id,
+          *geometry,
+          ptn::max_step_tokens(method),
+          half_kv_cache);
     } else if (FLAGS_interactive) {
       throw std::invalid_argument(
           "--interactive needs a package exported with --offgraph_cache");
+    } else if (
+        ptn::kv_cache_in_half(FLAGS_kv_dtype, half_kv_cache) &&
+        !half_kv_cache) {
+      throw std::invalid_argument(
+          "--kv_dtype=fp16: this engine keeps in-graph KV caches in F32; "
+          "export with --offgraph_cache for an F16 cache");
     }
     const size_t cache_length = kv
         ? static_cast<size_t>(kv->control->capacity())
@@ -778,14 +847,16 @@ int run_llm(
               std::string(after_reply ? "<|eot_id|>" : "") +
               "<|start_header_id|>user<|end_header_id|>\n\n" + line +
               "<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n";
-          auto turn = tokenizer->encode(
-              text, static_cast<int8_t>(position == 0 ? FLAGS_num_bos : 0), 0);
+          auto turn = tokenizer->encode(text, 0, 0);
           if (!turn.ok()) {
             throw std::runtime_error(
                 "failed to encode message: tokenizer error " +
                 std::to_string(static_cast<uint32_t>(turn.error())));
           }
-          std::vector<uint64_t> tokens = std::move(turn.get());
+          std::vector<uint64_t> tokens(
+              static_cast<size_t>(position == 0 ? num_bos : 0),
+              tokenizer->bos_tok());
+          tokens.insert(tokens.end(), turn.get().begin(), turn.get().end());
           if (unfed) {
             tokens.insert(tokens.begin(), *unfed);
           }

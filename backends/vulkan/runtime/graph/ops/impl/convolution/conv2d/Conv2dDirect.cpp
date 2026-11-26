@@ -11,6 +11,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/Convolution.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/Conv2d.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/Conv2dTapRange.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
 
@@ -180,6 +181,7 @@ struct Conv2dVariant {
   const char* name;
   std::array<uint32_t, 3> tile;
   bool tune_channels;
+  Conv2dTapRange tap_range = Conv2dTapRange::None;
 };
 
 constexpr std::array<Conv2dVariant, 12> kConv2dVariants{{
@@ -196,6 +198,23 @@ constexpr std::array<Conv2dVariant, 12> kConv2dVariants{{
     {"conv2d_2x2x4_grouped_gather", {2, 2, 1}, false},
     {"conv_transpose2d", {1, 1, 1}, false},
 }};
+
+// Width and height axes of the convolution at the current sizes.
+std::array<Conv2dAxis, 2> conv2d_axes(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  const auto in = graph->sizes_of(args.at(1).refs.at(0));
+  const auto out = graph->sizes_of(args.at(0).refs.at(0));
+  const auto weight = graph->sizes_of(resize_args.at(0));
+  const auto& stride = *graph->get_int_list(resize_args.at(1));
+  const auto& padding = *graph->get_int_list(resize_args.at(2));
+  const auto& dilation = *graph->get_int_list(resize_args.at(3));
+  return {{
+      {in[3], out[3], weight[3], stride[1], padding[1], dilation[1]},
+      {in[2], out[2], weight[2], stride[0], padding[0], dilation[0]},
+  }};
+}
 
 /*
  * Picks the shader variant of a direct convolution, which also determines its
@@ -230,6 +249,15 @@ constexpr std::array<Conv2dVariant, 12> kConv2dVariants{{
  *      in the second slice), for Float on Mali (two slices spill registers in
  *      the Mali offline compiler; not timed), or for grouped Half on Adreno and
  *      irregular shapes on AMD (two slices measured slower).
+ *
+ * Tiled convolutions skip kernel taps that read only padding, either for the
+ * whole output or per output tile. Taps that read padding for only some pixels
+ * still read it as zero, through the sampler border or a bounds check. On 3x3
+ * convolutions with dilation and padding 12 to 36 this cut latency by up to
+ * about 9x on Mali-G715 and Adreno 750. The pruning mode is a specialization
+ * constant, picked when the node is created; resized nodes keep it. 1x1 tiles
+ * ignore it and always skip the taps that read only padding for their pixel,
+ * since every tap they keep then reads the input.
  *
  * Tiled shaders dispatch one invocation per output tile, so no invocation
  * starts beyond the output tensor.
@@ -320,6 +348,9 @@ Conv2dVariant pick_conv2d_variant(
   variant.tune_channels = variant.tune_channels &&
       (shader != Conv2dShader::TextureBorder8 || even_slices) && fast_tiled &&
       (mali_tile || invocations >= kMinTunedInvocations);
+  variant.tap_range = pick_conv2d_tap_range(
+      conv2d_axes(graph, args, resize_args),
+      graph->size_at<int64_t>(0, weight_data));
   return variant;
 }
 
@@ -509,6 +540,10 @@ void add_conv2d_direct_node(
       groups,
       graph.add_scalar<bool>(fast_tiled),
       epilogue.residual};
+  if (!graph.get_bool(transposed)) {
+    spec_vars.append(vkapi::SpecVar(static_cast<int32_t>(
+        pick_conv2d_variant(&graph, args, resize_args).tap_range)));
+  }
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       pick_conv2d_tiled_shader,

@@ -71,6 +71,9 @@ class AdaptiveAvgPool2dConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
+        if neutron_target_spec.is_subsystem():
+            return False
+
         kernel_size, stride = (
             AdaptiveAvgPool2dConverter._get_equivalent_avg_pool_parameters(node)
         )

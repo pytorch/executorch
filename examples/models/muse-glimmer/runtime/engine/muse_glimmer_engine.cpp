@@ -1016,7 +1016,7 @@ class MuseGlimmerSession : public LLMSession,
     if (!valid_temperature(temperature)) {
       return Error::InvalidArgument;
     }
-    temp_val_ = (temperature <= 0.0f) ? 1e-6f : temperature;
+    temp_val_ = temperature > 0.0f ? temperature : 0.0f;
     if (cudaMemcpy(
             temp_tensor_dev_->mutable_data_ptr(),
             &temp_val_,
@@ -1219,7 +1219,7 @@ class MuseGlimmerSession : public LLMSession,
 #endif
   int session_token_ = kMuseGlimmerNoMutableSession;
 #ifdef EXECUTORCH_BUILD_CUDA
-  float temp_val_ = 1e-6f;
+  float temp_val_ = 0.0f;
   executorch::aten::Device cuda_device_ =
       executorch::aten::Device(executorch::aten::DeviceType::CUDA, 0);
   TensorPtr decode_tokens_dev_;

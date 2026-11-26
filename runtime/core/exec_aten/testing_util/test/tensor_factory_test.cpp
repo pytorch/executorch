@@ -199,6 +199,57 @@ TEST_F(TensorFactoryTest, MakeBoolTensor) {
   EXPECT_TENSOR_EQ(expected, actual);
 }
 
+TEST_F(TensorFactoryTest, ChannelsLastLikeBool4D) {
+  TensorFactory<ScalarType::Bool> tf;
+  const Tensor input =
+      tf.make({2, 2, 1, 3}, {1, 0, 2, 0, 255, 0, 0, 0, 3, 1, 4, 0});
+
+  const Tensor actual = tf.channels_last_like(input);
+  const Tensor expected = tf.make_with_dimorder(
+      {2, 2, 1, 3}, {1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0}, {0, 2, 3, 1});
+
+  EXPECT_TENSOR_EQ(expected, actual);
+  EXPECT_TENSOR_EQ(
+      input, tf.make({2, 2, 1, 3}, {1, 0, 1, 0, 1, 0, 0, 0, 1, 1, 1, 0}));
+}
+
+TEST_F(TensorFactoryTest, ChannelsLastLikeBool5D) {
+  TensorFactory<ScalarType::Bool> tf;
+  const Tensor input = tf.make(
+      {1, 2, 2, 2, 2}, {1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0});
+
+  const Tensor actual = tf.channels_last_like(input);
+  const Tensor expected = tf.make_with_dimorder(
+      {1, 2, 2, 2, 2},
+      {1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 1, 1, 0, 0},
+      {0, 2, 3, 4, 1});
+
+  EXPECT_TENSOR_EQ(expected, actual);
+}
+
+TEST_F(TensorFactoryTest, ChannelsLastLikeBytePreservesValues) {
+  TensorFactory<ScalarType::Byte> tf;
+  const Tensor input = tf.make({1, 2, 1, 2}, {0, 2, 128, 255});
+
+  const Tensor actual = tf.channels_last_like(input);
+  const Tensor expected =
+      tf.make_with_dimorder({1, 2, 1, 2}, {0, 128, 2, 255}, {0, 2, 3, 1});
+
+  EXPECT_TENSOR_EQ(expected, actual);
+}
+
+#ifdef USE_ATEN_LIB
+TEST_F(TensorFactoryTest, ChannelsLastLikeRejectsWrongDtype) {
+  TensorFactory<ScalarType::Bool> tf_bool;
+  TensorFactory<ScalarType::Byte> tf_byte;
+  const Tensor bool_input = tf_bool.make({1, 2, 1, 2}, {0, 1, 1, 0});
+  const Tensor byte_input = tf_byte.make({1, 2, 1, 2}, {0, 2, 128, 255});
+
+  EXPECT_THROW(tf_bool.channels_last_like(byte_input), c10::Error);
+  EXPECT_THROW(tf_byte.channels_last_like(bool_input), c10::Error);
+}
+#endif // USE_ATEN_LIB
+
 TEST_F(TensorFactoryTest, DataIsCopied) {
   TensorFactory<ScalarType::Int> tf;
 

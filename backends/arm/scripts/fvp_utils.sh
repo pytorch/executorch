@@ -25,37 +25,7 @@ fi
 
 script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 source "${script_dir}/utils.sh"
-
-if [[ "${ARCH}" == "x86_64" ]]; then
-    # FVPs
-    corstone300_url="https://developer.arm.com/-/cdn-downloads/permalink/FVPs-Corstone-IoT/Corstone-300/FVP_Corstone_SSE-300_11.27_42_Linux64.tgz"
-    corstone300_model_dir="Linux64_GCC-9.3"
-    corstone300_md5_checksum="0dc9538041296b8d479249e6fa5aab74"
-
-    corstone320_url="https://developer.arm.com/-/cdn-downloads/permalink/FVPs-Corstone-IoT/Corstone-320/FVP_Corstone_SSE-320_11.27_25_Linux64.tgz"
-    corstone320_model_dir="Linux64_GCC-9.3"
-    corstone320_md5_checksum="3deb3c68f9b2d145833f15374203514d"
-
-    corstone1000_url="https://developer.arm.com/-/cdn-downloads/permalink/FVPs-Corstone-IoT/Corstone-1000-with-Cortex-A320/FVP_Corstone_1000-A320_11.30_27_Linux64.tgz"
-    corstone1000_model_dir="Linux64_GCC-9.3"
-    corstone1000_md5_checksum="80251ab4c7b9ca9d1b04ee7ff9f01ba0"
-elif [[ "${ARCH}" == "aarch64" ]] || [[ "${ARCH}" == "arm64" ]]; then
-    # FVPs
-    corstone300_url="https://developer.arm.com/-/cdn-downloads/permalink/FVPs-Corstone-IoT/Corstone-300/FVP_Corstone_SSE-300_11.27_42_Linux64_armv8l.tgz"
-    corstone300_model_dir="Linux64_armv8l_GCC-9.3"
-    corstone300_md5_checksum="74e7952817b338c8479bcf66874b23e0"
-
-    corstone320_url="https://developer.arm.com/-/cdn-downloads/permalink/FVPs-Corstone-IoT/Corstone-320/FVP_Corstone_SSE-320_11.27_25_Linux64_armv8l.tgz"
-    corstone320_model_dir="Linux64_armv8l_GCC-9.3"
-    corstone320_md5_checksum="3889f1d80a6d9861ea4aa6f1c88dd0ae"
-
-    corstone1000_url="https://developer.arm.com/-/cdn-downloads/permalink/FVPs-Corstone-IoT/Corstone-1000-with-Cortex-A320/FVP_Corstone_1000-A320_11.30_27_Linux64_armv8l.tgz"
-    corstone1000_model_dir="Linux64_armv8l_GCC-9.3"
-    corstone1000_md5_checksum="19585fa8b63a8f5084ef392a96c88e96"
-else
-    log_step "fvp" "Error: only x86-64 & aarch64/arm64 architecture is supported for now!"
-    exit 1
-fi
+source "${script_dir}/../../../.ci/docker/common/arm_fvp_cache.sh"
 
 function install_fvp() {
     if [[ "${OS}" == "Darwin" ]]; then
@@ -64,22 +34,16 @@ function install_fvp() {
     fi
 
     # Download and install the Corstone FVP simulator platforms selected in setup.sh.
+    local fvp
     for fvp in "${fvps[@]}"; do
         cd "${root_dir}"
-        if [[ ! -e "FVP_${fvp}.tgz" ]]; then
-            log_step "fvp" "Downloading FVP ${fvp}"
-            url_variable=${fvp}_url
-            fvp_url=${!url_variable}
-            md5_variable=${fvp}_md5_checksum
-            fvp_md5_checksum=${!md5_variable}
-            download_with_retry "fvp" "${fvp_url}" "FVP_${fvp}.tgz" "${fvp_md5_checksum}" || exit 1
-        fi
+        arm_fvp_cache_archive "${ARCH}" "${fvp}" "${root_dir}/FVP_${fvp}.tgz" || exit 1
 
         log_step "fvp" "Installing FVP ${fvp}"
         rm -rf FVP-${fvp}
         mkdir -p FVP-${fvp}
         cd FVP-${fvp}
-        tar xf ../FVP_${fvp}.tgz
+        tar xf "${ARM_FVP_ARCHIVE}"
 
         # Install the FVP
         case ${fvp} in
@@ -138,11 +102,12 @@ function setup_path_fvp() {
         return 0
     fi
 
+    local fvp
+    local fvp_bin_path
     for fvp in "${fvps[@]}"; do
-        model_dir_variable=${fvp}_model_dir
-        fvp_model_dir=${!model_dir_variable}
-        fvp_bin_path="${root_dir}/FVP-${fvp}/models/${fvp_model_dir}"
-        append_env_in_setup_path PATH ${fvp_bin_path}
+        arm_fvp_select_platform "${ARCH}" "${fvp}" || exit 1
+        fvp_bin_path="${root_dir}/FVP-${fvp}/models/${ARM_FVP_MODEL_DIR}"
+        append_env_in_setup_path PATH "${fvp_bin_path}"
         # The models link against the libpython shipped with each FVP
         append_env_in_setup_path LD_LIBRARY_PATH "${root_dir}/FVP-${fvp}/python/lib/"
     done

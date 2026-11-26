@@ -194,6 +194,35 @@ if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
   )
 endif()
 
+# MetalKernelNode kernel-function reuse across nodes and executions. Drives the
+# interpreter over hand-built programs; no model/tokenizer needed.
+et_cxx_test(
+  mlx_metal_kernel_reuse_test
+  SOURCES
+  ${CMAKE_CURRENT_LIST_DIR}/mlx_metal_kernel_reuse_test.cpp
+  EXTRA_LIBS
+  mlxdelegate
+  mlx_schema
+  mlx
+)
+target_include_directories(
+  mlx_metal_kernel_reuse_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
+)
+if(ET_MLX_ALLOW_CUSTOM_KERNEL_EXECUTION)
+  target_compile_definitions(
+    mlx_metal_kernel_reuse_test PRIVATE ET_MLX_ALLOW_CUSTOM_KERNEL_EXECUTION
+  )
+endif()
+if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
+  target_compile_options(
+    mlx_metal_kernel_reuse_test PRIVATE -fsanitize=address,undefined
+                                        -fno-omit-frame-pointer
+  )
+  target_link_options(
+    mlx_metal_kernel_reuse_test PRIVATE ${_mlx_sanitizer_link_options}
+  )
+endif()
+
 et_cxx_test(
   mlx_batch_control_test
   SOURCES

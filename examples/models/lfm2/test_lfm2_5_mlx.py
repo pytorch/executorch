@@ -1,14 +1,14 @@
-import ast
 import json
 from pathlib import Path
+
+from executorch.examples.models.llama.export_llama_lib import EXECUTORCH_DEFINED_MODELS
+from executorch.extension.llm.export.config.model_identity import MODEL_SPECS, ModelType
 
 from omegaconf import OmegaConf
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CONFIG_DIR = REPO_ROOT / "examples" / "models" / "lfm2" / "config"
-EXPORT_LLAMA_LIB = REPO_ROOT / "examples" / "models" / "llama" / "export_llama_lib.py"
-LLM_CONFIG = REPO_ROOT / "extension" / "llm" / "export" / "config" / "llm_config.py"
 
 
 def _load_json_config(name: str) -> dict:
@@ -16,48 +16,13 @@ def _load_json_config(name: str) -> dict:
         return json.load(f)
 
 
-def _module_ast(path: Path) -> ast.Module:
-    return ast.parse(path.read_text())
-
-
-def _literal_assignment(module: ast.Module, name: str):
-    for node in module.body:
-        if isinstance(node, ast.Assign):
-            for target in node.targets:
-                if isinstance(target, ast.Name) and target.id == name:
-                    return ast.literal_eval(node.value)
-    raise AssertionError(f"{name} not found")
-
-
-def _class_string_assignments(module: ast.Module, class_name: str) -> dict[str, str]:
-    for node in module.body:
-        if isinstance(node, ast.ClassDef) and node.name == class_name:
-            values = {}
-            for stmt in node.body:
-                if (
-                    isinstance(stmt, ast.Assign)
-                    and len(stmt.targets) == 1
-                    and isinstance(stmt.targets[0], ast.Name)
-                ):
-                    values[stmt.targets[0].id] = ast.literal_eval(stmt.value)
-            return values
-    raise AssertionError(f"{class_name} not found")
-
-
 def test_lfm2_5_models_are_registered() -> None:
-    export_module = _module_ast(EXPORT_LLAMA_LIB)
-    model_types = _class_string_assignments(_module_ast(LLM_CONFIG), "ModelType")
-    executor_defined_models = _literal_assignment(
-        export_module, "EXECUTORCH_DEFINED_MODELS"
-    )
-    hf_repo_ids = _literal_assignment(export_module, "HUGGING_FACE_REPO_IDS")
-
-    assert "lfm2_5_350m" in executor_defined_models
-    assert "lfm2_5_1_2b" in executor_defined_models
-    assert model_types["lfm2_5_350m"] == "lfm2_5_350m"
-    assert model_types["lfm2_5_1_2b"] == "lfm2_5_1_2b"
-    assert hf_repo_ids["lfm2_5_350m"] == "LiquidAI/LFM2.5-350M"
-    assert hf_repo_ids["lfm2_5_1_2b"] == "LiquidAI/LFM2.5-1.2B-Instruct"
+    assert "lfm2_5_350m" in EXECUTORCH_DEFINED_MODELS
+    assert "lfm2_5_1_2b" in EXECUTORCH_DEFINED_MODELS
+    assert ModelType.lfm2_5_350m.value == "lfm2_5_350m"
+    assert ModelType.lfm2_5_1_2b.value == "lfm2_5_1_2b"
+    assert MODEL_SPECS["lfm2_5_350m"].hf_repo_id == "LiquidAI/LFM2.5-350M"
+    assert MODEL_SPECS["lfm2_5_1_2b"].hf_repo_id == "LiquidAI/LFM2.5-1.2B-Instruct"
 
 
 def test_lfm2_5_architecture_configs_match_expected_shapes() -> None:
