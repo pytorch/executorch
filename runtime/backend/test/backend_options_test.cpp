@@ -8,7 +8,8 @@
 
 #include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/platform/runtime.h>
-#include <executorch/test/utils/DeathTest.h>
+#include <cstring>
+#include <string>
 
 #include <gtest/gtest.h>
 
@@ -72,9 +73,68 @@ TEST_F(BackendOptionsTest, HandlesErrors) {
   const char* dummy_str = nullptr;
   EXPECT_EQ(options.get_option("threshold", dummy_str), Error::InvalidArgument);
 
-  // Null value handling, should expect failure
-  ET_EXPECT_DEATH(
-      options.set_option("nullable", static_cast<const char*>(nullptr)), "");
+  // A null string value is rejected and nothing is stored.
+  EXPECT_EQ(
+      options.set_option("nullable", static_cast<const char*>(nullptr)),
+      Error::InvalidArgument);
+  EXPECT_EQ(options.get_option("nullable", dummy_str), Error::NotFound);
+}
+
+TEST_F(BackendOptionsTest, StoresLongestStringValueThatFits) {
+  const std::string value(executorch::runtime::kMaxOptionValueLength - 1, 'a');
+  EXPECT_EQ(options.set_option("path", value.c_str()), Error::Ok);
+
+  const char* result = nullptr;
+  EXPECT_EQ(options.get_option("path", result), Error::Ok);
+  EXPECT_EQ(std::string(result), value);
+}
+
+TEST_F(BackendOptionsTest, RejectsStringValueThatDoesNotFit) {
+  const std::string value(executorch::runtime::kMaxOptionValueLength, 'a');
+  EXPECT_EQ(options.set_option("path", value.c_str()), Error::InvalidArgument);
+
+  const char* result = nullptr;
+  EXPECT_EQ(options.get_option("path", result), Error::NotFound);
+  EXPECT_EQ(options.view().size(), 0);
+}
+
+TEST_F(BackendOptionsTest, RejectedStringValueKeepsEarlierValue) {
+  EXPECT_EQ(options.set_option("path", "/data/model.pte.cache"), Error::Ok);
+  EXPECT_EQ(options.set_option("threads", 4), Error::Ok);
+
+  const std::string too_long(executorch::runtime::kMaxOptionValueLength, 'b');
+  EXPECT_EQ(
+      options.set_option("path", too_long.c_str()), Error::InvalidArgument);
+
+  const char* path = nullptr;
+  EXPECT_EQ(options.get_option("path", path), Error::Ok);
+  EXPECT_STREQ(path, "/data/model.pte.cache");
+  int threads = 0;
+  EXPECT_EQ(options.get_option("threads", threads), Error::Ok);
+  EXPECT_EQ(threads, 4);
+  EXPECT_EQ(options.view().size(), 2);
+}
+
+TEST_F(BackendOptionsTest, RejectsKeyWithoutTerminator) {
+  char key[4] = {'p', 'a', 't', 'h'};
+  EXPECT_EQ(options.set_option(key, true), Error::InvalidArgument);
+  EXPECT_EQ(options.set_option(key, 1), Error::InvalidArgument);
+  EXPECT_EQ(options.set_option(key, "value"), Error::InvalidArgument);
+  EXPECT_EQ(options.view().size(), 0);
+}
+
+TEST_F(BackendOptionsTest, StoresLongestKeyThatFits) {
+  char key[executorch::runtime::kMaxOptionKeyLength];
+  std::memset(key, 'k', sizeof(key) - 1);
+  key[sizeof(key) - 1] = '\0';
+  EXPECT_EQ(options.set_option(key, 7), Error::Ok);
+
+  int value = 0;
+  EXPECT_EQ(options.get_option(key, value), Error::Ok);
+  EXPECT_EQ(value, 7);
+  EXPECT_EQ(
+      std::strlen(options.view()[0].key),
+      executorch::runtime::kMaxOptionKeyLength - 1);
 }
 
 // Test type-specific keys
