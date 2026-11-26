@@ -1505,3 +1505,145 @@ def test_topk_target_preparation_requires_preserved_casts():
         ConvertInt64OutputOpsToInt32Pass(
             tosa_spec=TosaSpecification.create_from_string("TOSA-1.0+FP+INT")
         )
+
+
+class ArgmaxScalarRemainder(torch.nn.Module):
+    def __init__(self, divisor: int = 7, dtype: torch.dtype = torch.float32):
+        super().__init__()
+        self.divisor = divisor
+        self.dtype = dtype
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return (x.argmax(-1) % self.divisor).to(self.dtype)
+
+
+@pytest.mark.parametrize("use_edge_ops", [False, True], ids=["aten", "edge"])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.int64])
+def test_argmax_scalar_remainder_int32_path(use_edge_ops, dtype):
+    model = ArgmaxScalarRemainder(dtype=dtype)
+    scores = torch.eye(16).repeat(4, 1)
+    ep = torch.export.export(model, (scores,))
+    if use_edge_ops:
+        ep = to_edge(
+            ep, compile_config=EdgeCompileConfig(_check_ir_validity=False)
+        ).exported_program()
+
+    result = ConvertInt64OutputOpsToInt32Pass(
+        convert_cast_ops=False,
+        tosa_spec=TosaSpecification.create_from_string("TOSA-1.0+FP+INT"),
+    ).call(ep.graph_module)
+
+    remainder = next(
+        node
+        for node in result.graph_module.graph.nodes
+        if node.target
+        in (
+            torch.ops.aten.remainder.Scalar,
+            exir_ops.edge.aten.remainder.Scalar,
+        )
+    )
+    assert result.modified
+    assert remainder.args[0].meta["val"].dtype == torch.int32
+    assert remainder.meta["val"].dtype == torch.int32
+    actual = result.graph_module(scores)[0]
+    expected = model(scores)
+    assert actual.dtype == expected.dtype
+    torch.testing.assert_close(actual, expected, atol=0, rtol=0)
+
+
+@pytest.mark.parametrize(
+    "divisor,tosa_spec",
+    [
+        (0, "TOSA-1.0+FP+INT"),
+        (-7, "TOSA-1.0+FP+INT"),
+        (2**31, "TOSA-1.0+FP+INT"),
+        (7, "TOSA-1.0+FP"),
+    ],
+    ids=["zero", "negative", "oversized", "fp_only"],
+)
+def test_argmax_scalar_remainder_keeps_int64(divisor, tosa_spec):
+    model = ArgmaxScalarRemainder(divisor)
+    scores = torch.eye(16)
+    ep = torch.export.export(model, (scores,))
+    result = ConvertInt64OutputOpsToInt32Pass(
+        convert_cast_ops=False,
+        tosa_spec=TosaSpecification.create_from_string(tosa_spec),
+    ).call(ep.graph_module)
+    remainder = next(
+        node
+        for node in result.graph_module.graph.nodes
+        if node.target == torch.ops.aten.remainder.Scalar
+    )
+    assert not result.modified
+    assert remainder.args[0].meta["val"].dtype == torch.int64
+    assert remainder.meta["val"].dtype == torch.int64
+    if divisor != 0:
+        torch.testing.assert_close(
+            result.graph_module(scores)[0], model(scores), atol=0, rtol=0
+        )
+
+
+def test_unbounded_scalar_remainder_keeps_int64():
+    class ScalarRemainder(torch.nn.Module):
+        def forward(self, x):
+            return (x % 7).to(torch.float32)
+
+    scores = torch.tensor([-(2**40), 2**40], dtype=torch.int64)
+    model = ScalarRemainder()
+    ep = torch.export.export(model, (scores,))
+    result = ConvertInt64OutputOpsToInt32Pass(
+        convert_cast_ops=False,
+        tosa_spec=TosaSpecification.create_from_string("TOSA-1.0+FP+INT"),
+    ).call(ep.graph_module)
+    assert not result.modified
+    torch.testing.assert_close(
+        result.graph_module(scores)[0], model(scores), atol=0, rtol=0
+    )
+
+
+def test_argmax_scalar_remainder_tosa():
+    from executorch.backends.arm.test.tester.test_pipeline import TOSAPipeline
+
+    scores = torch.eye(16).repeat(4, 1)
+    pipeline = TOSAPipeline[input_t1](
+        ArgmaxScalarRemainder(),
+        (scores,),
+        ["torch.ops.aten.argmax.default", "torch.ops.aten.remainder.Scalar"],
+        common.get_tosa_compile_spec("TOSA-1.0+FP+INT"),
+        [
+            "executorch_exir_dialects_edge__ops_aten_argmax_default",
+            "executorch_exir_dialects_edge__ops_aten_remainder_Scalar",
+            "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default",
+        ],
+    )
+    pipeline.count_tosa_ops({"ARGMAX": 1, "INTDIV": 1})
+    pipeline.add_stage(
+        pipeline.tester.run_method_and_compare_outputs,
+        atol=0,
+        rtol=0,
+        qtol=0,
+        inputs=(scores,),
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_argmax_scalar_remainder_vgf():
+    from executorch.backends.arm.vgf import VgfPartitioner
+
+    scores = torch.randn(64, 16)
+    ep = torch.export.export(ArgmaxScalarRemainder(), (scores,))
+    edge = to_edge_transform_and_lower(
+        ep,
+        partitioner=[VgfPartitioner(VgfCompileSpec())],
+        compile_config=EdgeCompileConfig(_check_ir_validity=False),
+    )
+    targets = [
+        node.target
+        for node in edge.exported_program().graph.nodes
+        if node.op == "call_function"
+    ]
+    delegate = torch.ops.higher_order.executorch_call_delegate
+    assert targets.count(delegate) == 1
+    assert all(target in (delegate, operator.getitem) for target in targets)
+    edge.to_executorch()
