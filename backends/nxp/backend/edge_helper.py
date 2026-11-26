@@ -29,6 +29,8 @@ from torch.fx import GraphModule, Node
 from torch.fx.node import Argument
 from torch.nn import Parameter
 
+logger = logging.getLogger(__name__)
+
 QUANTIZE_OPERATORS = [
     QuantizePerChannel,
     QuantizePerTensor,
@@ -386,7 +388,7 @@ def is_no_op_on_neutron(node: Node, parameters_mapping: dict[str, Parameter]) ->
             if node.target in no_op_candidates:
                 return True
             else:
-                logging.info(
+                logger.warning(
                     f"Found the operator `{node.target}`, which appears to be a no-op, but is not in the "
                     "known no-op list. Please report this issue."
                 )

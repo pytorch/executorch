@@ -1,6 +1,8 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
 load("@fbcode_macros//build_defs:cpp_unittest.bzl", "cpp_unittest")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+load("@fbcode_macros//build_defs:python_unittest_remote_gpu.bzl", "python_unittest_remote_gpu")
+load("@fbcode_macros//build_defs/lib:re_test_utils.bzl", "re_test_utils")
 
 oncall("executorch")
 
@@ -29,5 +31,26 @@ fbcode_target(
     deps = [
         "//caffe2:torch",
         "//executorch/examples/models/muse-glimmer/model:dflash_token_sampler",
+    ],
+)
+
+fbcode_target(
+    _kind = python_unittest_remote_gpu,
+    name = "sampler_test",
+    srcs = ["test_sampler.py"],
+    keep_gpu_sections = True,
+    # Inductor reads its kernel templates from files, which a zip PAR lacks.
+    package_style = "inplace",
+    remote_execution = re_test_utils.remote_execution(
+        platform = "gpu-remote-execution",
+        subplatform = "A100",
+    ),
+    deps = [
+        # The AOTInductor runtime, to load the exported sampler.
+        # @oss-disable[end= ]: "//caffe2:libtorch",
+        # @oss-disable[end= ]: "//caffe2:libtorch_cuda",
+        "//caffe2:torch",
+        "//executorch/backends/cuda:cuda_backend",
+        "//executorch/examples/models/muse-glimmer/source_transformations:sampler",
     ],
 )

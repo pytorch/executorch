@@ -171,7 +171,7 @@ LLAMA_PARAMS=path/to/params.json
 
 python -m extension.llm.export.export_llm \
   --config examples/models/llama/config/llama_bf16.yaml \
-  +base.model_class="llama3_2" \
+  +base.model_family="llama3_2" \
   +base.checkpoint="${LLAMA_CHECKPOINT:?}" \
   +base.params="${LLAMA_PARAMS:?}" \
 ```
@@ -189,7 +189,7 @@ LLAMA_PARAMS=path/to/spinquant/params.json
 
 python -m extension.llm.export.export_llm \
   --config examples/models/llama/config/llama_xnnpack_spinquant.yaml \
-  +base.model_class="llama3_2" \
+  +base.model_family="llama3_2" \
   +base.checkpoint="${LLAMA_QUANTIZED_CHECKPOINT:?}" \
   +base.params="${LLAMA_PARAMS:?}"
 ```
@@ -206,7 +206,7 @@ LLAMA_PARAMS=path/to/qlora/params.json
 
 python -m extension.llm.export.export_llm \
     --config examples/models/llama/config/llama_xnnpack_qat.yaml \
-    +base.model_class="llama3_2" \
+    +base.model_family="llama3_2" \
     +base.checkpoint="${LLAMA_QUANTIZED_CHECKPOINT:?}" \
     +base.params="${LLAMA_PARAMS:?}" \
 ```
@@ -222,7 +222,7 @@ You can export and run the original Llama 3 8B instruct model.
 ```
 python -m extension.llm.export.export_llm \
     --config examples/models/llama/config/llama_q8da4w.yaml \
-    +base.model_class="llama3" \
+    +base.model_family="llama3" \
     +base.checkpoint=<consolidated.00.pth.pth> \
     +base.params=<params.json>
 ```
@@ -362,7 +362,7 @@ QEMBEDDING_BITWIDTH=4 # Can be 1-8
 QEMBEDDING_GROUP_SIZE=32 # Must be multiple of 16
 
 python -m extension.llm.export.export_llm \
-  base.model_class="llama3_2" \
+  base.model_family="llama3_2" \
   base.checkpoint="${LLAMA_CHECKPOINT:?}" \
   base.params="${LLAMA_PARAMS:?}" \
   model.use_kv_cache=True \

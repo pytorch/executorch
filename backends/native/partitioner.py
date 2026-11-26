@@ -21,7 +21,7 @@ from typing import Callable, final, List, Mapping, Optional, Tuple
 import executorch.extension.llm.cache.update_and_attend  # noqa: F401
 import executorch.extension.llm.export.gguf  # noqa: F401
 import torch
-from executorch.backends.native.custom_ops import rope_op
+from executorch.backends.native.custom_ops import gated_delta_rule_op, rope_op
 from executorch.backends.native.passes import backend_inplace_aten_variants
 
 from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -51,9 +51,11 @@ _SUPPORTED_NON_CORE_OPS = [
     torch.ops.torchao.quantize_affine.default,
     torch.ops.torchao.dequantize_affine.default,
     rope_op,
+    gated_delta_rule_op,
     torch.ops.aten.rms_norm.default,
     # Attention over a runtime-owned KV cache; engines bind the cache at load.
     torch.ops.kvcache.update_and_attend.default,
+    torch.ops.aten.softplus.default,
 ]
 
 # A SymInt, and any op arg that references one, is an execution-time value. An
@@ -63,6 +65,7 @@ _SUPPORTED_SYMBOLIC_OPS = {
     operator.add,
     operator.floordiv,
     operator.mul,
+    operator.neg,
     operator.sub,
 }
 

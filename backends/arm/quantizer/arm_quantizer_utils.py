@@ -449,6 +449,7 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
         torch.ops.aten.permute.default,
         torch.ops.aten.permute_copy.default,
         torch.ops.aten.transpose.int,
+        torch.ops.aten.swapaxes.default,
         torch.ops.aten.transpose_copy.int,
         torch.ops.aten.t_copy.default,
         torch.ops.aten.t.default,

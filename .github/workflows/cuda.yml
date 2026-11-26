@@ -1,14 +1,12 @@
 # Test ExecuTorch CUDA Build Compatibility
 # This workflow tests whether ExecuTorch can be successfully built with CUDA support
-# across different CUDA versions (13.0, 13.4) using the command:
+# across different CUDA versions (13.2, 13.4) using the command:
 #   ./install_executorch.sh
 #
 # It also runs model accuracy (e2e EXPECTED_OUTPUT checks) and, for the perf
 # allowlisted (model, quant) pairs, a CUDA benchmark reusing the same exported
 # .pte/.ptd artifacts. Benchmark results are uploaded to S3 + the HUD dashboard.
 # The retired cuda-perf.yml was merged into this workflow.
-#
-# Intentionally skipped CUDA version 13.2 check due to ci image unsupported.
 #
 # Note: ExecuTorch automatically detects the system CUDA version using nvcc and
 # installs the appropriate PyTorch wheel. No manual CUDA/PyTorch installation needed.
@@ -143,7 +141,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        cuda-version: ["13.0", "13.4"]
+        cuda-version: ["13.2", "13.4"]
 
     name: test-executorch-cuda-build-${{ matrix.cuda-version }}
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
@@ -215,10 +213,12 @@ jobs:
       id-token: write
       contents: read
     with:
-      timeout: 90
+      # Measured conv routing times every convolution of resnet18, mv2 and mv3 at
+      # export on a cold cache, which takes the job to about 100 minutes.
+      timeout: 120
       runner: mt-l-x86aavx2-11-41-a10g
       gpu-arch-type: cuda
-      gpu-arch-version: "13.0"
+      gpu-arch-version: "13.2"
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
@@ -259,7 +259,7 @@ jobs:
       timeout: 90
       runner: mt-l-x86iavx512-11-125-a100
       gpu-arch-type: cuda
-      gpu-arch-version: "13.0"
+      gpu-arch-version: "13.2"
       submodules: recursive
       upload-artifact: cuda-multi-arch-a100
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -323,7 +323,7 @@ jobs:
       timeout: 90
       runner: mt-l-x86aavx2-11-41-a10g
       gpu-arch-type: cuda
-      gpu-arch-version: "13.0"
+      gpu-arch-version: "13.2"
       submodules: recursive
       download-artifact: cuda-multi-arch-a100
       upload-artifact: cuda-multi-arch-merged
@@ -432,7 +432,7 @@ jobs:
       timeout: 90
       runner: mt-l-x86iavx512-11-125-a100
       gpu-arch-type: cuda
-      gpu-arch-version: "13.0"
+      gpu-arch-version: "13.2"
       submodules: recursive
       download-artifact: cuda-multi-arch-merged
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -528,7 +528,7 @@ jobs:
       timeout: 120
       runner: mt-l-x86aavx2-11-41-a10g
       gpu-arch-type: cuda
-      gpu-arch-version: "13.0"
+      gpu-arch-version: "13.2"
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
@@ -629,8 +629,10 @@ jobs:
           popd
         fi
 
-        # Install flash-linear-attention for chunk_gated_delta_rule triton kernel tests
-        pip install "flash-linear-attention==0.4.2"
+        # Install FLA's kernels for the chunk_gated_delta_rule triton kernel tests and the
+        # Qwen3.5 tests below, which import that kernel. Releases before 0.6.0 fail to
+        # import under the triton 3.9 that torch 2.15 requires.
+        pip install -r examples/models/qwen3_5_moe/requirements.txt
 
         # Build executor_runner (needed by CUDA backend e2e tests in both shards)
         cmake --build cmake-out --target executor_runner
@@ -679,7 +681,7 @@ jobs:
       timeout: 120
       runner: mt-l-x86aavx2-11-41-a10g
       gpu-arch-type: cuda
-      gpu-arch-version: "13.0"
+      gpu-arch-version: "13.2"
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
@@ -713,6 +715,11 @@ jobs:
           examples/models/muse-glimmer/tests/test_cuda_dflash_packed.py \
           examples/models/muse-glimmer/tests/test_dflash_token_sampler.py \
           examples/models/muse-glimmer/tests/test_checkpoint_context.py
+
+        # The on-device sampler: eager, under torch.compile, and exported and
+        # compiled with AOTInductor under the CUDA backend's compile options.
+        python -m pytest -v -o "addopts=" \
+          examples/models/muse-glimmer/tests/test_sampler.py
 
         # CUDA DFlash executor on a tiny exported target + draft. The native
         # tests skip without the artifact, so fail if any skipped.
@@ -759,7 +766,7 @@ jobs:
       timeout: 90
       runner: mt-l-x86aavx2-11-41-a10g
       gpu-arch-type: cuda
-      gpu-arch-version: "13.0"
+      gpu-arch-version: "13.2"
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
@@ -790,7 +797,7 @@ jobs:
       timeout: 90
       runner: mt-l-x86aavx2-11-41-a10g
       gpu-arch-type: cuda
-      gpu-arch-version: "13.0"
+      gpu-arch-version: "13.2"
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
@@ -845,7 +852,7 @@ jobs:
       timeout: 90
       runner: mt-l-x86aavx2-11-41-a10g
       gpu-arch-type: cuda
-      gpu-arch-version: "13.0"
+      gpu-arch-version: "13.2"
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
@@ -1042,7 +1049,7 @@ jobs:
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: ${{ (matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' || matrix.model.name == 'gemma-4-31B-it-GGUF') && 'mt-l-x86iavx512-11-125-a100' || 'mt-l-x86aavx2-11-41-a10g' }}
       gpu-arch-type: cuda
-      gpu-arch-version: "13.0"
+      gpu-arch-version: "13.2"
       submodules: recursive
       upload-artifact: cuda-bench-${{ matrix.model.repo }}_${{ matrix.model.name }}-${{ matrix.quant }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -1299,7 +1306,7 @@ jobs:
       timeout: 240
       runner: mt-l-x86iavx512-11-125-a100
       gpu-arch-type: cuda
-      gpu-arch-version: "13.0"
+      gpu-arch-version: "13.2"
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |

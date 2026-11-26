@@ -1364,7 +1364,7 @@ def _export_dynamic_k16_sdpa_cases(out_dir: str) -> None:
         K16_HQ,
         K16_HKV,
         (),
-        cache_hkv=K16_HKV - 1,
+        cache_hkv=K16_HKV // 2,
         expect_runtime_reject=True,
     )
 

@@ -55,6 +55,7 @@ if(EXECUTORCH_BUILD_ARM_BAREMETAL OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
   set(_arm_backend_sources
       backends/arm/runtime/EthosUBackend.cpp
       backends/arm/runtime/EthosUBackend_IoMemcpy.cpp
+      backends/arm/runtime/EthosUIOPlan.cpp
       backends/arm/runtime/VelaBinStream.cpp
   )
   list(TRANSFORM _arm_backend_sources PREPEND "${EXECUTORCH_ROOT}/")

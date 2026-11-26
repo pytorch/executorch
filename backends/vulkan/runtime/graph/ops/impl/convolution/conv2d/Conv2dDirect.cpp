@@ -11,6 +11,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/Convolution.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/Conv2d.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/Conv2dTapRange.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
 
@@ -179,24 +180,41 @@ enum class Conv2dShader {
 struct Conv2dVariant {
   const char* name;
   std::array<uint32_t, 3> tile;
-  bool full_grid;
   bool tune_channels;
+  Conv2dTapRange tap_range = Conv2dTapRange::None;
 };
 
 constexpr std::array<Conv2dVariant, 12> kConv2dVariants{{
-    {"conv2d_2x2x8_border", {2, 2, 2}, false, true},
-    {"conv2d_2x2x4_buffer", {2, 2, 1}, false, false},
-    {"conv2d_2x2x8_border_buffer_offset", {2, 2, 2}, false, true},
-    {"conv2d_2x2x4", {2, 2, 1}, false, false},
-    {"conv2d_2x2x4_border", {2, 2, 1}, false, false},
-    {"conv2d_1x1x4", {1, 1, 1}, false, false},
-    {"conv2d_2x1x4", {2, 1, 1}, false, false},
-    {"conv2d_2x1x4_border", {2, 1, 1}, false, false},
-    {"conv2d_2x2x8_border_buffer", {2, 2, 2}, false, false},
-    {"conv2d_1x1x4_buffer", {1, 1, 1}, false, false},
-    {"conv2d_2x2x4_grouped_gather", {2, 2, 1}, false, false},
-    {"conv_transpose2d", {1, 1, 1}, true, false},
+    {"conv2d_2x2x8_border", {2, 2, 2}, true},
+    {"conv2d_2x2x4_buffer", {2, 2, 1}, false},
+    {"conv2d_2x2x8_border_buffer_offset", {2, 2, 2}, true},
+    {"conv2d_2x2x4", {2, 2, 1}, false},
+    {"conv2d_2x2x4_border", {2, 2, 1}, false},
+    {"conv2d_1x1x4", {1, 1, 1}, false},
+    {"conv2d_2x1x4", {2, 1, 1}, false},
+    {"conv2d_2x1x4_border", {2, 1, 1}, false},
+    {"conv2d_2x2x8_border_buffer", {2, 2, 2}, false},
+    {"conv2d_1x1x4_buffer", {1, 1, 1}, false},
+    {"conv2d_2x2x4_grouped_gather", {2, 2, 1}, false},
+    {"conv_transpose2d", {1, 1, 1}, false},
 }};
+
+// Width and height axes of the convolution at the current sizes.
+std::array<Conv2dAxis, 2> conv2d_axes(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  const auto in = graph->sizes_of(args.at(1).refs.at(0));
+  const auto out = graph->sizes_of(args.at(0).refs.at(0));
+  const auto weight = graph->sizes_of(resize_args.at(0));
+  const auto& stride = *graph->get_int_list(resize_args.at(1));
+  const auto& padding = *graph->get_int_list(resize_args.at(2));
+  const auto& dilation = *graph->get_int_list(resize_args.at(3));
+  return {{
+      {in[3], out[3], weight[3], stride[1], padding[1], dilation[1]},
+      {in[2], out[2], weight[2], stride[0], padding[0], dilation[0]},
+  }};
+}
 
 /*
  * Picks the shader variant of a direct convolution, which also determines its
@@ -232,11 +250,17 @@ constexpr std::array<Conv2dVariant, 12> kConv2dVariants{{
  *      the Mali offline compiler; not timed), or for grouped Half on Adreno and
  *      irregular shapes on AMD (two slices measured slower).
  *
- * Mali Half 2x2 tiles dispatch one invocation per output texel, with the
- * excess exiting immediately. That is the dispatch the Mali Half variants were
- * tuned with, and it measured up to 5x faster than a direct shader computing
- * one output texel per invocation. The tiled grid, which measured faster on the
- * other GPUs, was not timed on Mali Half.
+ * Tiled convolutions skip kernel taps that read only padding, either for the
+ * whole output or per output tile. Taps that read padding for only some pixels
+ * still read it as zero, through the sampler border or a bounds check. On 3x3
+ * convolutions with dilation and padding 12 to 36 this cut latency by up to
+ * about 9x on Mali-G715 and Adreno 750. The pruning mode is a specialization
+ * constant, picked when the node is created; resized nodes keep it. 1x1 tiles
+ * ignore it and always skip the taps that read only padding for their pixel,
+ * since every tap they keep then reads the input.
+ *
+ * Tiled shaders dispatch one invocation per output tile, so no invocation
+ * starts beyond the output tensor.
  *
  * Fast tiled convolutions computing two output slices per invocation use tuned
  * local sizes on Mali Half, and on other GPUs when the tiled grid has at least
@@ -319,12 +343,14 @@ Conv2dVariant pick_conv2d_variant(
   }
 
   Conv2dVariant variant = kConv2dVariants[static_cast<size_t>(shader)];
-  const bool mali_grid =
+  const bool mali_tile =
       half && mali && variant.tile[0] == 2 && variant.tile[1] == 2;
-  variant.full_grid = mali_grid;
   variant.tune_channels = variant.tune_channels &&
       (shader != Conv2dShader::TextureBorder8 || even_slices) && fast_tiled &&
-      (mali_grid || invocations >= kMinTunedInvocations);
+      (mali_tile || invocations >= kMinTunedInvocations);
+  variant.tap_range = pick_conv2d_tap_range(
+      conv2d_axes(graph, args, resize_args),
+      graph->size_at<int64_t>(0, weight_data));
   return variant;
 }
 
@@ -345,9 +371,6 @@ GlobalWorkGrid conv2d_gwg(
   (void)shader;
   const Conv2dVariant variant = pick_conv2d_variant(graph, args, resize_args);
   const GlobalWorkGrid grid = graph->create_gwg(args.at(0).refs.at(0));
-  if (variant.full_grid) {
-    return grid;
-  }
   return GlobalWorkGrid(
       {utils::div_up(grid[0], variant.tile[0]),
        utils::div_up(grid[1], variant.tile[1]),
@@ -356,10 +379,13 @@ GlobalWorkGrid conv2d_gwg(
 }
 
 /*
- * Tuned dispatches size the workgroup by GPU family and grid depth (output
- * slices): Adreno uses 16x1x16 from a depth of 32 and 8x1x16 from 16, other
- * GPUs use 8x1x8 from 16, and shallower grids use 8x2x4. All other dispatches
- * use the default local size for their grid.
+ * Tuned dispatches size the workgroup by GPU family and depth: Adreno uses
+ * 16x1x16 from a depth of 32 and 8x1x16 from 16, other GPUs use 8x1x8 from 16,
+ * and shallower grids use 8x2x4. All other dispatches use the default local
+ * size for their grid. The depth is the grid depth, except on Mali, where it is
+ * the output's slice count: Mali Half sizes were tuned with one invocation per
+ * output texel, and keeping that depth keeps the workgroups that cover each
+ * output tile.
  *
  * The sizes come from sweeping 12 local sizes over large Half 3x3 / 5x5
  * convolutions (32 to 128 output channels, one invocation per output texel) on
@@ -377,7 +403,8 @@ LocalWorkGroup conv2d_lwg(
   (void)shader;
   const Conv2dVariant variant = pick_conv2d_variant(graph, args, resize_args);
   if (variant.tune_channels) {
-    const uint32_t slices = gwg[2];
+    const uint32_t slices =
+        graph->device_is_mali() ? gwg[2] * variant.tile[2] : gwg[2];
     const bool adreno = graph->device_is_adreno();
     if (slices >= 32u && adreno) {
       return LocalWorkGroup(16u, 1u, 16u, 256u);
@@ -513,6 +540,10 @@ void add_conv2d_direct_node(
       groups,
       graph.add_scalar<bool>(fast_tiled),
       epilogue.residual};
+  if (!graph.get_bool(transposed)) {
+    spec_vars.append(vkapi::SpecVar(static_cast<int32_t>(
+        pick_conv2d_variant(&graph, args, resize_args).tap_range)));
+  }
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       pick_conv2d_tiled_shader,

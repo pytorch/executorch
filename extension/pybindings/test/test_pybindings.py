@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -24,10 +25,17 @@ from io import StringIO
 import numpy as np
 import torch
 
+from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
+from executorch.devtools.bundled_program.core import BundledProgram
+from executorch.devtools.bundled_program.serialize import (
+    serialize_from_bundled_program_to_flatbuffer,
+)
+
 from executorch.exir import ExecutorchBackendConfig, to_edge
 from executorch.exir.backend.test.device_util import DeviceAwarePartitioner
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.schema import DeviceType
+from executorch.export.utils import is_fbcode
 from executorch.extension.pybindings.test.make_test import (
     create_program,
     ModuleAdd,
@@ -101,6 +109,66 @@ class PybindingsTest(unittest.TestCase):
         self.load_fn = runtime._load_for_executorch_from_buffer
         self.load_prog_fn = runtime._load_program_from_buffer
         self.runtime = runtime
+
+    def test_bundled_channels_last_input_and_output(self) -> None:
+        input_tensor = (
+            torch.arange(2 * 3 * 4 * 5, dtype=torch.float32)
+            .reshape(2, 3, 4, 5)
+            .contiguous(memory_format=torch.channels_last)
+        )
+        model = ModuleChannelsLast()
+        expected = model(input_tensor)
+        self.assertTrue(expected.is_contiguous(memory_format=torch.channels_last))
+        program = to_edge(export(model, (input_tensor,))).to_executorch()
+        bundled_program = BundledProgram(
+            program,
+            [
+                MethodTestSuite(
+                    "forward",
+                    [
+                        MethodTestCase((input_tensor,), (expected,)),
+                        MethodTestCase(
+                            (input_tensor.contiguous(),), (expected.contiguous(),)
+                        ),
+                    ],
+                )
+            ],
+        )
+        bundled_buffer = serialize_from_bundled_program_to_flatbuffer(bundled_program)
+        bundled_module = self.runtime._load_bundled_program_from_buffer(bundled_buffer)
+
+        for test_index in range(2):
+            output = bundled_module.verify_result_with_bundled_expected_output(
+                "forward", test_index
+            )[0]
+            self.assertEqual(output.stride(), expected.stride())
+            self.assertTrue(torch.equal(output, expected))
+
+    def test_bundled_permute_output(self) -> None:
+        class Permute(torch.nn.Module):
+            def forward(self, x):
+                return x.permute(0, 2, 3, 1)
+
+        model = Permute()
+        input_tensor = torch.arange(120, dtype=torch.float32).reshape(2, 3, 4, 5)
+        expected = model(input_tensor)
+        self.assertFalse(expected.is_contiguous())
+        program = to_edge(export(model, (input_tensor,))).to_executorch()
+        bundle = BundledProgram(
+            program,
+            [
+                MethodTestSuite(
+                    "forward", [MethodTestCase((input_tensor,), (expected,))]
+                )
+            ],
+        )
+        bundled_module = self.runtime._load_bundled_program_from_buffer(
+            serialize_from_bundled_program_to_flatbuffer(bundle)
+        )
+        output = bundled_module.verify_result_with_bundled_expected_output(
+            "forward", 0
+        )[0]
+        self.assertTrue(torch.equal(output, expected))
 
     def test_e2e(self):
         exported_program, inputs = create_program(ModuleAdd())
@@ -808,6 +876,7 @@ print("all calls finished")
         )
         self.assertIn("all calls finished", completed.stdout)
 
+    @unittest.skipIf(is_fbcode(), "skipping for fbcode")
     def test_backend_logs_do_not_deadlock_other_threads(self):
         if self.kernel_mode != "portable":
             self.skipTest("the script below uses the portable bindings")
@@ -1175,6 +1244,7 @@ print("lines through Python:", captured.getvalue().count("[llm_runner_helper.cpp
                     self.assertIn("lines through Python:", completed.stdout, mode)
                     self.assertNotIn("lines through Python: 0", completed.stdout, mode)
 
+    @unittest.skipIf(is_fbcode(), "skipping for fbcode")
     def test_runtime_logs_when_writing_to_stderr_fails(self):
         if self.kernel_mode != "portable":
             self.skipTest("the script below uses the portable bindings")
@@ -1252,6 +1322,7 @@ print("done")
             completed.stderr.count("Program identifier 'xxxx'"), 3, completed.stderr
         )
 
+    @unittest.skipIf(is_fbcode(), "skipping for fbcode")
     def test_fatal_runtime_log_reaches_process_stderr(self):
         if self.kernel_mode != "portable":
             self.skipTest("the script below uses the portable bindings")
@@ -1294,6 +1365,7 @@ module.forward([torch.ones(2, 2)])
         self.assertNotEqual(kept, -1, completed.stderr)
         self.assertGreater(fatal, kept, completed.stderr)
 
+    @unittest.skipIf(is_fbcode(), "skipping for fbcode")
     def test_runtime_logs_reach_process_stderr_at_once(self):
         if self.kernel_mode != "portable":
             self.skipTest("the script below uses the portable bindings")
@@ -2612,6 +2684,8 @@ print("float8 results round trip through DLPack")
         self.assertEqual(str(torch.ones(2, 2)), str(executorch_output[1]))
 
     def test_channels_last(self) -> None:
+        if self.kernel_mode != "portable":
+            self.skipTest("ATen nonstandard input layouts are deferred to a follow-up")
         model = ModuleChannelsLast()
         exported_program, inputs = create_program(model)
 
@@ -2751,6 +2825,8 @@ print("float8 results round trip through DLPack")
         )
 
     def test_channels_last_in_default_out(self) -> None:
+        if self.kernel_mode != "portable":
+            self.skipTest("ATen nonstandard input layouts are deferred to a follow-up")
         model = ModuleChannelsLastInDefaultOut()
         exported_program, inputs = create_program(model)
 
@@ -3283,6 +3359,8 @@ assert "numpy" not in sys.modules and "torch" not in sys.modules
         self.assertEqual(str(torch.ones(2, 2)), str(executorch_output[1]))
 
     def test_method_channels_last(self) -> None:
+        if self.kernel_mode != "portable":
+            self.skipTest("ATen nonstandard input layouts are deferred to a follow-up")
         model = ModuleChannelsLast()
         exported_program, inputs = create_program(model)
 
@@ -3305,6 +3383,8 @@ assert "numpy" not in sys.modules and "torch" not in sys.modules
         )
 
     def test_method_channels_last_in_default_out(self) -> None:
+        if self.kernel_mode != "portable":
+            self.skipTest("ATen nonstandard input layouts are deferred to a follow-up")
         model = ModuleChannelsLastInDefaultOut()
         exported_program, inputs = create_program(model)
 

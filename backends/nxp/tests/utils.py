@@ -25,6 +25,8 @@ from executorch.devtools.visualization.visualization_utils import (
 from executorch.exir import ExecutorchProgramManager
 from torch._subclasses import FakeTensor
 
+logger = logging.getLogger(__name__)
+
 
 def save_pte_program(
     prog: ExecutorchProgramManager, model_name: str, output_dir: str = ""
@@ -38,9 +40,9 @@ def save_pte_program(
     try:
         with open(filename, "wb") as file:
             prog.write_to_file(file)
-            logging.info(f"Saved exported program to {filename}")
+            logger.info(f"Saved exported program to {filename}")
     except Exception as e:
-        logging.error(f"Error while saving to {filename}: {e}")
+        logger.error(f"Error while saving to {filename}: {e}")
 
     visualize_with_clusters(prog.exported_program(), visualize_file_name, False)
     return filename

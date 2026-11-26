@@ -62,6 +62,8 @@ from torch import nn
 from torch.export import export
 from torchao.quantization.pt2e.quantizer import Quantizer
 
+logger = logging.getLogger(__name__)
+
 _USE_RECIPE_EXPORT = os.environ.get("NXP_USE_RECIPE_EXPORT", "0") == "1"
 
 neutron_target_spec = NeutronTargetSpec(target="imxrt700")
@@ -198,7 +200,7 @@ def to_quantized_edge_program(
     example_input = get_example_input(input_spec)
 
     if use_recipe_export:
-        logging.info("NXP: using recipe-based export path (NXP_USE_RECIPE_EXPORT=1).")
+        logger.info("NXP: using recipe-based export path (NXP_USE_RECIPE_EXPORT=1).")
         rc = NeutronRecipeConfig(
             input_spec,
             target,
@@ -304,6 +306,7 @@ def to_quantized_edge_program(
 def to_quantized_executorch_program(
     model: torch.nn.Module,
     input_spec: Iterable[ModelInputSpec] | tuple[int, ...] | list[tuple[int, ...]],
+    target: str = "imxrt700",
     intermediates_dir: str | None = None,
     use_qat: bool = False,
     train_fn: Callable[[torch.fx.GraphModule], None] | None = None,
@@ -324,7 +327,7 @@ def to_quantized_executorch_program(
         get_calibration_inputs_fn = None  # Use default (example inputs).
 
     if use_recipe_export:
-        logging.info("NXP: using recipe-based export path (NXP_USE_RECIPE_EXPORT=1).")
+        logger.info("NXP: using recipe-based export path (NXP_USE_RECIPE_EXPORT=1).")
         rc = NeutronRecipeConfig(
             input_spec,
             operators_not_to_delegate=operators_not_to_delegate,
@@ -351,6 +354,7 @@ def to_quantized_executorch_program(
         edge_program_manager = to_quantized_edge_program(
             model,
             input_spec,
+            target=target,
             intermediates_dir=intermediates_dir,
             use_qat=use_qat,
             train_fn=train_fn,

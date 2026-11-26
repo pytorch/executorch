@@ -5,10 +5,6 @@
 
 from pathlib import Path
 
-from executorch.backends.arm.operators.op_tosa_rescale import (
-    _compute_multiplier_and_shift,
-)
-
 from . import _compile_shader_source
 
 OPERATOR_NAME = "rife.final_warps"
@@ -16,7 +12,7 @@ BLEND_OPERATOR_NAME = "rife.final_blend"
 
 
 def _rescale_source(name, node):
-    multipliers, shifts = _compute_multiplier_and_shift(node.args[2])
+    multipliers, shifts = node.args[1:3]
     shift = shifts[0]
     rounding = 1 << (shift - 1)
     result = (
@@ -135,7 +131,11 @@ def build_final_warps_payload(payloads, rescales, sigmoid_table, *, blend=None):
                 f"{prefix}_binding": binding,
                 f"{prefix}_descriptorset": 0,
                 f"{prefix}_type": kind,
-                f"{prefix}_vkformat": "VK_FORMAT_R8_SINT",
+                f"{prefix}_vkformat": (
+                    "VK_FORMAT_R8_UINT"
+                    if prefix == "output_0" and output_unsigned
+                    else "VK_FORMAT_R8_SINT"
+                ),
                 f"{prefix}_vkdescriptortype": (
                     "VK_DESCRIPTOR_TYPE_TENSOR_ARM"
                     if kind == "Tensor"

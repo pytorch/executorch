@@ -7,6 +7,8 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 
+logger = logging.getLogger(__name__)
+
 # example:  Type: CONV_2D
 #               Inputs:
 #                 [0]: quantized_decomposed_quantize_per_tensor_default_4
@@ -799,7 +801,7 @@ class NeutronMap:
 
             tflite_locs = self._find_matching_tflite_chain(chain_inputs, chain_outputs)
             if not tflite_locs:
-                logging.debug(
+                logger.debug(
                     f"No TFLite match for Neutron chain {[sg.num for sg in chain]} "
                     f"(inputs={chain_inputs}, outputs={chain_outputs})"
                 )
@@ -818,7 +820,7 @@ class NeutronMap:
             required = self._coverable_slot_count or self.neutron_kernels_num
             mapped = {idx for v in self.tflite_to_neutron_map.values() for idx in v}
             if len(mapped) < required:
-                logging.info(
+                logger.info(
                     f"NeutronMap: {len(mapped)}/{required} coverable slots mapped "
                     f"(neutron_kernels_num={self.neutron_kernels_num}). Returning empty map."
                 )
@@ -873,5 +875,5 @@ class NeutronMap:
         result = {
             i: tuple(inverse.get(i, ())) for i in range(self.neutron_kernels_num + 1)
         }
-        logging.info(f"Neutron to Edge map was created: {result}")
+        logger.info(f"Neutron to Edge map was created: {result}")
         return result

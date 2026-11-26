@@ -11,9 +11,14 @@ import torch
 import torch.nn.functional as F
 
 from executorch.backends.cuda.triton.kernels.sdpa_varlen import sdpa_varlen
+from executorch.examples.models.muse_glimmer.model.dflash_model import (
+    build_dflash_swa_mask,
+)
 
 
-def _reference(q, k_store, v_store, segments, scale, causal, window, ring):
+def _reference(
+    q, k_store, v_store, segments, scale, causal, window, ring, symmetric=False
+):
     """Per-segment attention over logical positions, in float32."""
     _, hq, t_total, d = q.shape
     hkv = k_store.shape[2]
@@ -36,17 +41,15 @@ def _reference(q, k_store, v_store, segments, scale, causal, window, ring):
             visible &= positions[None, :] <= query_pos[:, None]
         if window:
             visible &= positions[None, :] > query_pos[:, None] - window
+            if symmetric:
+                visible &= positions[None, :] < query_pos[:, None] + window
         scores = scores.masked_fill(~visible, float("-inf"))
         out[0, :, q_start : q_start + q_len] = torch.softmax(scores, -1) @ v
     return out
 
 
 def _dflash_reference(q, k_store, v_store, segments, scale, window, ring):
-    """Use the original drafter's context-ring + whole-block mask."""
-    from executorch.examples.models.muse_glimmer.model.dflash_model import (
-        build_dflash_swa_mask,
-    )
-
+    """Use the drafter's per-query mask over retained context and draft K/V."""
     out = torch.zeros_like(q, dtype=torch.float32)
     groups = q.shape[1] // k_store.shape[2]
     for start, block, col, end in segments:
@@ -72,7 +75,9 @@ def _dflash_reference(q, k_store, v_store, segments, scale, window, ring):
     return out
 
 
-def _dflash_inputs(contexts, block, window, ring, *, hq=8, hkv=2, d=64):
+def _dflash_inputs(
+    contexts, block, window, ring, *, hq=8, hkv=2, d=64, visible_values=False
+):
     rows = ring or max(contexts) + block
     q = torch.zeros(
         1, hq, len(contexts) * block, d, device="cuda", dtype=torch.bfloat16
@@ -88,6 +93,22 @@ def _dflash_inputs(contexts, block, window, ring, *, hq=8, hkv=2, d=64):
         # per-query windows omit this key from every draft block query.
         k[row, col, :, 0] = 100
         v[row, col] = 1
+        if visible_values:
+            values = (
+                2 * (col + 1)
+                + context / window
+                + torch.arange(hkv, device=q.device)[:, None]
+                + torch.arange(d, device=q.device)[None, :] / d
+            )
+            # The first key is visible only to query zero; the draft key stays
+            # visible to every query. Keep the excluded boundary sentinel above.
+            for position, contribution in (
+                (context - window + 1, values + 8),
+                (context + block - 1, values),
+            ):
+                row = position % ring if ring else position
+                k[row, col, :, 0] = 96
+                v[row, col] = contribution
         segments.append((col * block, block, col, context + block))
     padded = segments + [(0, 0, 0, 0)] * (4 - len(segments))
     info = torch.tensor(padded, device="cuda", dtype=torch.int32)
@@ -96,6 +117,29 @@ def _dflash_inputs(contexts, block, window, ring, *, hq=8, hkv=2, d=64):
 
 @unittest.skipUnless(torch.cuda.is_available(), "CUDA required")
 class SdpaVarlenTest(unittest.TestCase):
+    def _nonzero_dflash_reference(self, q, k, v, segments, scale, window, ring):
+        want = _dflash_reference(q, k, v, segments, scale, window, ring)
+        positions = _reference(
+            q, k, v, segments, scale, False, window, ring, symmetric=True
+        )
+        torch.testing.assert_close(want, positions, atol=1e-5, rtol=1e-5)
+        self.assertTrue(torch.isfinite(want).all())
+        self.assertGreater(want.abs().min().item(), 0.5)
+        groups = q.shape[1] // k.shape[2]
+        for start, block, _, _ in segments:
+            self.assertGreater(
+                (want[:, :, start] - want[:, :, start + 1]).abs().min().item(), 1
+            )
+            first_group = want[:, 0, start : start + block]
+            next_group = want[:, groups, start : start + block]
+            self.assertGreater((first_group - next_group).abs().min().item(), 0.5)
+        for previous, current in zip(segments, segments[1:]):
+            self.assertGreater(
+                (want[:, :, previous[0]] - want[:, :, current[0]]).abs().min().item(),
+                0.5,
+            )
+        return want
+
     def _run(
         self,
         segments,
@@ -160,59 +204,89 @@ class SdpaVarlenTest(unittest.TestCase):
 
     def test_dflash_context_window_matches_original_mask(self):
         window = 2048
-        for block, ring in itertools.product((2, 16), (0, 2175)):
-            q, k, v, info, segments = _dflash_inputs((3000, 7100), block, window, ring)
-            got = sdpa_varlen(
-                q, k, v, info, 0.125, False, window, ring, context_window=True
+        for block, ring, visible_values in itertools.product(
+            (2, 16), (0, 2175), (False, True)
+        ):
+            q, k, v, info, segments = _dflash_inputs(
+                (3000, 7100), block, window, ring, visible_values=visible_values
             )
-            want = _dflash_reference(q, k, v, segments, 0.125, window, ring)
+            got = sdpa_varlen(
+                q, k, v, info, 0.125, False, window, ring, symmetric_window=True
+            )
+            if visible_values:
+                want = self._nonzero_dflash_reference(
+                    q, k, v, segments, 0.125, window, ring
+                )
+            else:
+                want = _dflash_reference(q, k, v, segments, 0.125, window, ring)
+                self.assertTrue((want == 0).all())
             torch.testing.assert_close(got.float(), want, atol=2e-2, rtol=2e-2)
             ordinary = sdpa_varlen(q, k, v, info, 0.125, False, window, ring)
             ordinary_want = _reference(q, k, v, segments, 0.125, False, window, ring)
             torch.testing.assert_close(
                 ordinary.float(), ordinary_want, atol=2e-2, rtol=2e-2
             )
-            self.assertGreater((got.float() - ordinary.float()).abs().max().item(), 0.9)
+            shared = sdpa_varlen(
+                q, k, v, info, 0.125, False, window, ring, context_window=True
+            )
+            self.assertGreater((shared.float() - got.float()).abs().max().item(), 0.9)
 
     def test_dflash_context_window_muse_head_geometry(self):
         window = 2048
         for block in (2, 16):
             ring = window + block
             q, k, v, info, segments = _dflash_inputs(
-                (3000, 7100), block, window, ring, hq=32, hkv=8, d=128
+                (3000, 7100),
+                block,
+                window,
+                ring,
+                hq=32,
+                hkv=8,
+                d=128,
+                visible_values=True,
             )
             scale = 128**-0.5
             got = sdpa_varlen(
-                q, k, v, info, scale, False, window, ring, context_window=True
+                q, k, v, info, scale, False, window, ring, symmetric_window=True
             )
-            want = _dflash_reference(q, k, v, segments, scale, window, ring)
+            want = self._nonzero_dflash_reference(
+                q, k, v, segments, scale, window, ring
+            )
             torch.testing.assert_close(got.float(), want, atol=2e-2, rtol=2e-2)
 
     def test_dflash_context_window_graph_replay(self):
         window, ring, block = 2048, 2175, 16
-        q, k, v, info, _ = _dflash_inputs((4096, 6000), block, window, ring)
-        sdpa_varlen(q, k, v, info, 0.125, False, window, ring, context_window=True)
+        q, k, v, info, _ = _dflash_inputs(
+            (4096, 6000), block, window, ring, visible_values=True
+        )
+        sdpa_varlen(q, k, v, info, 0.125, False, window, ring, symmetric_window=True)
         graph = torch.cuda.CUDAGraph()
         with torch.cuda.graph(graph):
             out = sdpa_varlen(
-                q, k, v, info, 0.125, False, window, ring, context_window=True
+                q, k, v, info, 0.125, False, window, ring, symmetric_window=True
             )
+        previous_want = None
         for contexts in ((4096, 6000), (8192, 2500)):
             _, new_k, new_v, new_info, segments = _dflash_inputs(
-                contexts, block, window, ring
+                contexts, block, window, ring, visible_values=True
             )
             k.copy_(new_k)
             v.copy_(new_v)
             info.copy_(new_info)
             graph.replay()
-            want = _dflash_reference(q, k, v, segments, 0.125, window, ring)
+            want = self._nonzero_dflash_reference(
+                q, k, v, segments, 0.125, window, ring
+            )
+            if previous_want is not None:
+                self.assertGreater((want - previous_want).abs().min().item(), 0.5)
             torch.testing.assert_close(out.float(), want, atol=2e-2, rtol=2e-2)
+            previous_want = want.clone()
 
     def test_dynamic_dflash_context_window(self):
         window, ring, block = 2048, 2175, 16
         compiled = torch.compile(
             lambda q, k, v, info: sdpa_varlen(
-                q, k, v, info, 0.125, False, window, ring, context_window=True
+                q, k, v, info, 0.125, False, window, ring, symmetric_window=True
             ),
             fullgraph=True,
             dynamic=True,
@@ -222,12 +296,94 @@ class SdpaVarlenTest(unittest.TestCase):
         before = frames["unique_graphs"]
         for owners in (2, 3, 4):
             q, k, v, info, segments = _dflash_inputs(
-                (3000, 5000, 7000, 9000)[:owners], block, window, ring
+                (3000, 5000, 7000, 9000)[:owners],
+                block,
+                window,
+                ring,
+                visible_values=True,
             )
             got = compiled(q, k, v, info)
-            want = _dflash_reference(q, k, v, segments, 0.125, window, ring)
+            want = self._nonzero_dflash_reference(
+                q, k, v, segments, 0.125, window, ring
+            )
             torch.testing.assert_close(got.float(), want, atol=2e-2, rtol=2e-2)
         self.assertEqual(frames["unique_graphs"] - before, 1)
+
+    def test_dflash_symmetric_windows_match_position_and_model_oracles(self):
+        for window, block in itertools.product((1, 3, 8), (1, 2, 4, 16)):
+            for ring in (0, window + block - 1, 512):
+                with self.subTest(window=window, block=block, ring=ring):
+                    q, k, v, info, segments = _dflash_inputs(
+                        (0, window - 1, window + 1, 3 * window), block, window, ring
+                    )
+                    k.zero_()
+                    slots = torch.arange(k.shape[0], device=q.device)
+                    for _, _, col, end in segments:
+                        positions = (
+                            slots + ring * ((end - 1 - slots) // ring)
+                            if ring
+                            else slots
+                        )
+                        v[:, col] = positions[:, None, None] / 16
+                    got = sdpa_varlen(
+                        q, k, v, info, 0.125, False, window, ring, symmetric_window=True
+                    )
+                    want = _reference(
+                        q, k, v, segments, 0.125, False, window, ring, symmetric=True
+                    )
+                    model = _dflash_reference(q, k, v, segments, 0.125, window, ring)
+                    torch.testing.assert_close(model, want, atol=1e-6, rtol=1e-6)
+                    torch.testing.assert_close(got.float(), want, atol=2e-2, rtol=2e-2)
+
+    def test_dflash_strict_right_boundary(self):
+        window, block, context = 3, 8, 20
+        for ring in (0, window + block - 1):
+            q, k, v, info, segments = _dflash_inputs((context,), block, window, ring)
+            k.zero_()
+            v.zero_()
+            row = (context + window) % ring if ring else context + window
+            k[row, 0, :, 0] = 100
+            v[row, 0] = 1
+            got = sdpa_varlen(
+                q, k, v, info, 0.125, False, window, ring, symmetric_window=True
+            )
+            want = _dflash_reference(q, k, v, segments, 0.125, window, ring)
+            torch.testing.assert_close(got.float(), want, atol=2e-2, rtol=2e-2)
+            self.assertTrue((got[:, :, 0] == 0).all())
+            self.assertTrue((got[:, :, 1:6] > 0.9).all())
+            self.assertTrue((got[:, :, 6:] == 0).all())
+            ordinary = sdpa_varlen(q, k, v, info, 0.125, False, window, ring)
+            self.assertTrue((ordinary[:, :, 0] > 0.9).all())
+
+    def test_dflash_zero_window_remains_full_attention(self):
+        self._run([(0, 2, 0, 80)], causal=False)
+        q, k, v, info, segments = _dflash_inputs((20,), 2, 8, 0)
+        got = sdpa_varlen(q, k, v, info, 0.125, False, symmetric_window=True)
+        want = _reference(q, k, v, segments, 0.125, False, 0, 0)
+        torch.testing.assert_close(got.float(), want, atol=2e-2, rtol=2e-2)
+
+    def test_dflash_graph_replay_reads_new_query_lengths(self):
+        window, ring = 3, 512
+        q, k, v, info, _ = _dflash_inputs((20,), 16, window, ring)
+        k.zero_()
+        v[:, 0] = torch.arange(ring, device=q.device)[:, None, None] / 32
+        sdpa_varlen(q, k, v, info, 0.125, False, window, ring, symmetric_window=True)
+        graph = torch.cuda.CUDAGraph()
+        with torch.cuda.graph(graph):
+            out = sdpa_varlen(
+                q, k, v, info, 0.125, False, window, ring, symmetric_window=True
+            )
+        for length, end in ((1, 1), (2, 513), (8, 1030), (16, 900)):
+            segments = [(0, length, 0, end)]
+            info.copy_(torch.tensor(segments + [(0, 0, 0, 0)] * 3, dtype=torch.int32))
+            graph.replay()
+            want = _reference(
+                q, k, v, segments, 0.125, False, window, ring, symmetric=True
+            )
+            model = _dflash_reference(q, k, v, segments, 0.125, window, ring)
+            torch.testing.assert_close(model, want, atol=1e-6, rtol=1e-6)
+            torch.testing.assert_close(out.float(), want, atol=2e-2, rtol=2e-2)
+            self.assertTrue((out[:, :, length:] == 0).all())
 
     def test_head_layouts(self):
         for hq, hkv, d in itertools.product((4, 16), (1, 4), (64, 128)):
@@ -423,6 +579,19 @@ class SdpaVarlenTest(unittest.TestCase):
         v = torch.randn_like(k)
         with self.assertRaisesRegex(ValueError, "context_window requires non-causal"):
             sdpa_varlen(q, k, v, info, 0.125, context_window=True)
+        with self.assertRaisesRegex(ValueError, "symmetric_window requires"):
+            sdpa_varlen(q, k, v, info, 0.125, symmetric_window=True)
+        with self.assertRaisesRegex(ValueError, "symmetric_window requires"):
+            sdpa_varlen(
+                q,
+                k,
+                v,
+                info,
+                0.125,
+                False,
+                context_window=True,
+                symmetric_window=True,
+            )
 
 
 if __name__ == "__main__":

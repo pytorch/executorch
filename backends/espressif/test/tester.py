@@ -9,18 +9,25 @@ import os
 import subprocess
 import sys
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 
 import pytest
 import torch
+from executorch.backends.espressif.lowering import get_esp_fused_quant_recipe
 from executorch.backends.espressif.passes import EspPassManager
-from executorch.backends.espressif.quantizer import EspNNQuantizer
+from executorch.backends.espressif.target import EspKernelMode, EspTarget
 from executorch.backends.test.harness import Tester
 from executorch.backends.test.harness.stages import (
-    Quantize,
+    Export,
     RunPasses,
     StageType,
+    ToEdge,
     ToEdgeTransformAndLower,
+)
+from executorch.backends.transforms.fused_quant.graph_utils import (
+    get_qparams_from_node,
+    get_scale,
 )
 from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
 from executorch.devtools.bundled_program.core import BundledProgram
@@ -32,39 +39,106 @@ from executorch.exir import (
     EdgeProgramManager,
     to_edge_transform_and_lower,
 )
+from executorch.exir.dialects.edge._ops import EdgeOpOverload
+from executorch.export import export, StageType as ExportStageType
 from torch.utils._pytree import tree_flatten
 
 
 class EspRunPasses(RunPasses):
-    def __init__(self):
+    def __init__(
+        self,
+        *,
+        target: EspTarget = EspTarget.ESP32S3,
+        kernel_mode: EspKernelMode = EspKernelMode.OPTIMIZED,
+    ):
         super().__init__(EspPassManager)
+        self.pass_manager = EspPassManager(target=target, kernel_mode=kernel_mode)
 
     def run(self, artifact: EdgeProgramManager, inputs=None) -> None:
-        self.edge_or_aten_program = artifact.transform(EspPassManager())
+        self.edge_or_aten_program = artifact.transform(self.pass_manager)
 
 
 class EspToEdgeTransformAndLower(ToEdgeTransformAndLower):
-    def __init__(self):
-        super().__init__(edge_compile_config=EdgeCompileConfig())
+    def __init__(
+        self,
+        *,
+        edge_compile_config: EdgeCompileConfig | None = None,
+        target: EspTarget = EspTarget.ESP32S3,
+        kernel_mode: EspKernelMode = EspKernelMode.OPTIMIZED,
+    ):
+        super().__init__(edge_compile_config=edge_compile_config or EdgeCompileConfig())
+        self.pass_manager = EspPassManager(target=target, kernel_mode=kernel_mode)
 
     def run(self, artifact, inputs=None, generate_etrecord: bool = False) -> None:
         self.edge_dialect_program = to_edge_transform_and_lower(
             artifact,
             compile_config=self.edge_compile_conf,
-            transform_passes=EspPassManager(),
+            transform_passes=self.pass_manager,
             generate_etrecord=generate_etrecord,
         )
 
 
-class EspTester(Tester):
-    def __init__(self, module, example_inputs, calibration_samples=None):
-        stages = self.default_stage_classes()
-        stages[StageType.QUANTIZE] = lambda: Quantize(
-            EspNNQuantizer(), calibration_samples=calibration_samples
+class EspExportFusedQuant(Export):
+    def __init__(self, quantizer, calibration_samples):
+        super().__init__()
+        self.quantizer = quantizer
+        self.calibration_samples = calibration_samples
+        self.edge_compile_config = None
+
+    def run(self, artifact, inputs=None):
+        recipe = get_esp_fused_quant_recipe(
+            calibration_inputs_fn=lambda: self.calibration_samples or [inputs],
+            quantizer=self.quantizer,
         )
-        stages[StageType.RUN_PASSES] = EspRunPasses
-        stages[StageType.TO_EDGE_TRANSFORM_AND_LOWER] = EspToEdgeTransformAndLower
+        self.edge_compile_config = recipe.lowering_recipe.edge_compile_config
+        recipe.pipeline_stages = [
+            ExportStageType.QUANTIZE,
+            ExportStageType.TORCH_EXPORT,
+        ]
+        session = export(artifact, example_inputs=[inputs], export_recipe=recipe)
+        self.exported_program = session.get_exported_program()
+
+
+class EspTester(Tester):
+    def __init__(
+        self,
+        module,
+        example_inputs,
+        calibration_samples=None,
+        *,
+        target: EspTarget | None = None,
+        kernel_mode: EspKernelMode = EspKernelMode.OPTIMIZED,
+    ):
+        target = EspTarget(
+            target
+            if target is not None
+            else os.environ.get("ESPRESSIF_TARGET", "esp32s3")
+        )
+        stages = self.default_stage_classes()
+        stages[StageType.RUN_PASSES] = partial(
+            EspRunPasses, target=target, kernel_mode=kernel_mode
+        )
+        stages[StageType.TO_EDGE_TRANSFORM_AND_LOWER] = partial(
+            EspToEdgeTransformAndLower, target=target, kernel_mode=kernel_mode
+        )
         super().__init__(module, example_inputs, stages)
+        self.calibration_samples = calibration_samples
+        self.target = target
+        self.kernel_mode = EspKernelMode(kernel_mode)
+
+    def export_fused_quant(self, quantizer=None):
+        stage = EspExportFusedQuant(quantizer, self.calibration_samples)
+        self._run_stage(stage, self.example_inputs)
+        self.stage_classes[StageType.TO_EDGE] = partial(
+            ToEdge, edge_compile_config=stage.edge_compile_config
+        )
+        self.stage_classes[StageType.TO_EDGE_TRANSFORM_AND_LOWER] = partial(
+            EspToEdgeTransformAndLower,
+            edge_compile_config=stage.edge_compile_config,
+            target=self.target,
+            kernel_mode=self.kernel_mode,
+        )
+        return self
 
     def test_dialect(
         self,
@@ -75,27 +149,43 @@ class EspTester(Tester):
         atol=1e-3,
         rtol=1e-3,
     ):
-        return (
-            self.quantize()
-            .export()
-            .to_edge()
-            .check_node_count(ops_before_transforms)
-            .run_passes()
-            .check_node_count(ops_after_transforms)
-            .run_method_and_compare_outputs(
-                inputs=self.example_inputs, qtol=qtol, atol=atol, rtol=rtol
-            )
-        )
+        self.export_fused_quant().to_edge().check_node_count(ops_before_transforms)
+        reference = self.get_artifact().exported_program()
+        expected = reference.module()(*self.example_inputs)
+        if qtol:
+            scales = [
+                get_scale(reference, params)
+                for node in reference.graph.nodes
+                if isinstance(node.target, EdgeOpOverload)
+                and node.target.namespace == "fused_quant"
+                if (params := get_qparams_from_node(node, "out")) is not None
+            ]
+            atol += qtol * max(scales, default=0)
+        self.run_passes().check_node_count(ops_after_transforms)
+        actual = self.get_artifact().exported_program().module()(*self.example_inputs)
+        torch.testing.assert_close(actual, expected, atol=atol, rtol=rtol)
+        return self
 
-    def test_implementation(self, repo: Path, *, atol=0, rtol=0):
+    def test_implementation(self, repo: Path, *, atol=0, rtol=0, num_inferences=1):
         build_path = os.environ.get("ESPRESSIF_BUILD_DIR")
         if not build_path:
-            pytest.skip("Set ESPRESSIF_BUILD_DIR to the ESP32-S3 build directory")
+            pytest.skip("Set ESPRESSIF_BUILD_DIR to the ESP32 build directory")
 
-        self.quantize().export().to_edge().run_passes()
+        build_dir = Path(build_path).resolve()
+        worker = os.environ.get("PYTEST_XDIST_WORKER", "main")
+        firmware_dir = (
+            build_dir
+            / f"operator-library-{worker}-{self.target.value}-{self.kernel_mode.value}"
+        )
+        (firmware_dir / "emulator.log").unlink(missing_ok=True)
+
+        if self.cur is None:
+            self.export_fused_quant().to_edge().run_passes()
+        assert self.cur == StageType.RUN_PASSES
         expected, _ = tree_flatten(
             self.get_artifact().exported_program().module()(*self.example_inputs)
         )
+        expected = [output.detach() for output in expected]
         self.to_executorch().serialize()
         bundle = BundledProgram(
             self.get_artifact(StageType.TO_EXECUTORCH),
@@ -106,10 +196,12 @@ class EspTester(Tester):
             ],
         )
 
-        build_dir = Path(build_path).resolve()
-        worker = os.environ.get("PYTEST_XDIST_WORKER", "main")
-        firmware_dir = build_dir / f"operator-library-{worker}"
         firmware_dir.mkdir(parents=True, exist_ok=True)
+        defaults = firmware_dir / "kernel.defaults"
+        defaults.write_text(
+            f"CONFIG_NN_OPTIMIZED={'y' if self.kernel_mode == EspKernelMode.OPTIMIZED else 'n'}\n"
+            f"CONFIG_NN_ANSI_C={'y' if self.kernel_mode == EspKernelMode.ANSI else 'n'}\n"
+        )
         model_path = firmware_dir / "test.bpte"
         model_path.write_bytes(serialize_from_bundled_program_to_flatbuffer(bundle))
         commands = [
@@ -120,14 +212,15 @@ class EspTester(Tester):
                     "idf.py",
                     f"--project-dir={repo / 'examples/espressif/project'}",
                     f"--build-dir={firmware_dir}",
-                    "-DIDF_TARGET=esp32s3",
+                    f"-DIDF_TARGET={self.target.value}",
                     f"-DSDKCONFIG={firmware_dir / 'sdkconfig'}",
+                    f"-DSDKCONFIG_DEFAULTS=sdkconfig.defaults;{defaults}",
                     "-DET_ESPRESSIF_OPS=ON",
                     "-DET_ESPNN_BACKEND=OFF",
                     f"-DET_BUILD_DIR_PATH={build_dir / 'runtime'}",
                     f"-DET_PTE_FILE_PATH={model_path}",
                     "-DET_BUNDLE_IO=ON",
-                    "-DET_NUM_INFERENCES=1",
+                    f"-DET_NUM_INFERENCES={num_inferences}",
                     f"-DET_ATOL={atol}",
                     f"-DET_RTOL={rtol}",
                     "build",
@@ -139,7 +232,7 @@ class EspTester(Tester):
                 90,
                 [
                     "esp-emu",
-                    "--chip=esp32s3",
+                    f"--chip={self.target.value}",
                     f"--firmware={firmware_dir / 'merged-binary.bin'}",
                     f"--elf={firmware_dir / 'executorch_esp_runner.elf'}",
                     "--net=user",

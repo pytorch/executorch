@@ -124,10 +124,10 @@ class NodeFormatInference:
             if self._get_node_op_type(node) is None:
                 continue
             if not hasattr(node, "meta"):
-                logging.warning(f"Node `{node}` does not have the `meta` attribute.")
+                logger.warning(f"Node `{node}` does not have the `meta` attribute.")
                 node.meta = {}
             if NXP_NODE_FORMAT not in node.meta:
-                logging.warning(f"Node `{node}` does not have inferred format.")
+                logger.warning(f"Node `{node}` does not have inferred format.")
                 node.meta[NXP_NODE_FORMAT] = DataFormat.NONE
 
     def _infer_format_of_nodes(self, node: Node):

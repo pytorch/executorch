@@ -232,13 +232,15 @@ def iter_checkpoint(
     For each weight, ``key_map`` remaps the stream name to a model FQN first
     (identity when ``None``; return ``None`` to skip), then ``convert`` maps the
     value (default ``to_default``: ``Int4Tensor -> ExportableInt4Tensor``, others
-    unchanged), then ``dtype`` casts the *converted* weight (plain tensors
-    normally; quantized subclasses keep their payload and only re-stamp their
-    dequantized output dtype). Casting runs after ``convert`` so a raw torchao
-    ``Int4Tensor`` -- whose own ``.to`` ignores dtype -- is first wrapped as an
-    ``ExportableInt4Tensor`` (which ``maybe_cast`` *can* re-stamp, e.g. to fp16
-    for MLX). ``convert`` therefore sees the *remapped* FQN and the *uncast*
-    tensor. Only one logical weight is materialized at a time.
+    unchanged; returning ``None`` holds it back, e.g. one part of a weight that
+    ``convert`` builds from several and returns with the last), then ``dtype``
+    casts the *converted* weight (plain tensors normally; quantized subclasses
+    keep their payload and only re-stamp their dequantized output dtype).
+    Casting runs after ``convert`` so a raw torchao ``Int4Tensor`` -- whose own
+    ``.to`` ignores dtype -- is first wrapped as an ``ExportableInt4Tensor``
+    (which ``maybe_cast`` *can* re-stamp, e.g. to fp16 for MLX). ``convert``
+    therefore sees the *remapped* FQN and the *uncast* tensor. Only one logical
+    weight is materialized at a time.
 
     ``tie_map`` fans a source weight out to a second FQN (e.g. a tied lm_head,
     keyed by the *remapped* source FQN). The tied copy is emitted after the stream
@@ -262,7 +264,10 @@ def iter_checkpoint(
         fqn = key_map(name) if key_map is not None else name
         if fqn is None:
             continue
-        out = maybe_cast(convert(fqn, value), dtype)
+        out = convert(fqn, value)
+        if out is None:
+            continue
+        out = maybe_cast(out, dtype)
         seen.add(fqn)
         yield fqn, out
         if tie_map is not None and fqn in tie_map:
@@ -318,12 +323,15 @@ def assign_state_dict(
     The in-memory dual of :func:`load_checkpoint`: applies ``convert`` (default
     ``to_default``) to each weight and assigns it via :func:`assign_one`. Use
     this when weights are already materialized in memory (e.g. the output of
-    ``quantize_model``) rather than streamed from disk. Backend layout conversion
+    ``quantize_model``) rather than streamed from disk. A weight ``convert``
+    returns ``None`` for is held back, as in :func:`iter_checkpoint`. Backend layout conversion
     (if any) is a separate terminal pass over the assigned model. Asserts every
     parameter is materialized afterward.
     """
     for fqn, value in state_dict.items():
-        assign_one(model, fqn, convert(fqn, value))
+        out = convert(fqn, value)
+        if out is not None:
+            assign_one(model, fqn, out)
     assert_all_materialized(model)
     for p in model.parameters():
         p.requires_grad_(False)
