@@ -106,8 +106,8 @@ class GraniteSpeechEncoderQuantRecipe(EncoderQuantRecipe):
             )
             .add_regex(
                 {
-                    r"encoder\..*\.layers\..*\.conv\.up_conv",
-                    r"encoder\..*\.layers\..*\.conv\.down_conv",
+                    r"model\.encoder\..*\.layers\..*\.conv\.up_conv",
+                    r"model\.encoder\..*\.layers\..*\.conv\.down_conv",
                 },
                 QuantDtype.use_16a4w_block,
                 False,

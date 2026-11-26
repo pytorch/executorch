@@ -125,11 +125,12 @@ class CustomBlip2QFormerSelfOutput(Blip2QFormerSelfOutput):
 class GraniteSpeechCTCEncoderWrapper(nn.Module):
     def __init__(self, config: GraniteSpeechConfig, n_bins: int):
         super().__init__()
-        self.encoder = GraniteSpeechCTCEncoder(config.encoder_config)
-        self.projector = GraniteSpeechEncoderProjector(config)
+        self.model = nn.Module()
+        self.model.encoder = GraniteSpeechCTCEncoder(config.encoder_config)
+        self.model.projector = GraniteSpeechEncoderProjector(config)
 
         replace_module_with_custom_class(
-            self.encoder,
+            self.model.encoder,
             target_class=GraniteSpeechConformerAttention,
             custom_class=CustomGraniteSpeechConformerAttention,
             strict=True,
@@ -137,7 +138,7 @@ class GraniteSpeechCTCEncoderWrapper(nn.Module):
         )
 
         replace_module_with_custom_class(
-            self.projector,
+            self.model.projector,
             target_class=Blip2QFormerSelfOutput,
             custom_class=CustomBlip2QFormerSelfOutput,
             strict=False,  # Set to False because the custom class adds an 'identity' matrix not present in the original QFormer.
@@ -158,6 +159,6 @@ class GraniteSpeechCTCEncoderWrapper(nn.Module):
         }
 
     def forward(self, hidden_states: torch.Tensor):
-        encoder_embeds = self.encoder(hidden_states)
-        projected_embeds = self.projector(encoder_embeds)
+        encoder_embeds = self.model.encoder(hidden_states).last_hidden_state
+        projected_embeds = self.model.projector(encoder_embeds)
         return projected_embeds
