@@ -43,6 +43,14 @@ class FullRangeImageQuantizer(VgfQuantizer):
             quant_max=127,
             qscheme=torch.per_tensor_affine,
         )
+        uint8_spec = replace(
+            image_spec,
+            dtype=torch.uint8,
+            scale=1 / 255,
+            zero_point=0,
+            quant_min=0,
+            quant_max=255,
+        )
         images = {n for n in model.graph.nodes if n.op == "placeholder"}
         for node in model.graph.nodes:
             if (
@@ -61,24 +69,17 @@ class FullRangeImageQuantizer(VgfQuantizer):
             annotation = node.meta.get(Q_ANNOTATION_KEY)
             if annotation is None:
                 continue
+            if node.op == "output":
+                for source, spec in annotation.input_qspec_map.items():
+                    if isinstance(spec, QuantizationSpec) and spec.dtype == torch.uint8:
+                        annotation.input_qspec_map[source] = uint8_spec
             uint8_input = (
                 node.op == "placeholder"
                 and isinstance(annotation.output_qspec, QuantizationSpec)
                 and annotation.output_qspec.dtype == torch.uint8
             )
             if node in images:
-                annotation.output_qspec = (
-                    replace(
-                        image_spec,
-                        dtype=torch.uint8,
-                        scale=1 / 255,
-                        zero_point=0,
-                        quant_min=0,
-                        quant_max=255,
-                    )
-                    if uint8_input
-                    else image_spec
-                )
+                annotation.output_qspec = uint8_spec if uint8_input else image_spec
             if (
                 node.target == torch.ops.aten.cat.default
                 and node not in images

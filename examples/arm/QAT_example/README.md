@@ -212,10 +212,10 @@ avoids mixing smoke-test numbers with real-data validation.
 Use `--accuracy-recipe --io-quantization int8` for the trained, uncached
 `IFNetTwoBlock`: full-range image codes and FP32 final warps, blending and
 flow sums inside the existing shader. Use `--io-quantization uint8` for UINT8
-IO instead; inputs use scale `1/255` and zero point `0` for images in `[0, 1]`.
-Internal image tensors remain signed INT8. UINT8 IO adds boundary
-requantization; decode outputs using the exported output qparams.
-Unsupported fusion fails.
+IO instead; inputs and output use scale `1/255` and zero point `0` for images
+in `[0, 1]`. The UINT8 output contains standard 8-bit pixel values, so an
+application does not need to rescale it for display. Internal image tensors
+remain signed INT8. Unsupported fusion fails.
 QAT uses log-MSE, shuffled epochs and warmup/cosine decay. Adam learns
 activation scales; weight ranges and zero points stay fixed. Tested settings:
 `--qat-lr 1e-4 --qat-steps 8 --random-seed 2029 --max-triples 512

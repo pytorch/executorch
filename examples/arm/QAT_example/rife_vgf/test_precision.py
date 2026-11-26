@@ -28,7 +28,7 @@ class _ImageEncoder(torch.nn.Module):
 
 
 @pytest.mark.parametrize("qat", [False, True])
-def test_uint8_image_inputs_keep_fixed_qparams_and_signed_internal_boundary(qat):
+def test_uint8_image_io_keep_fixed_qparams_and_signed_internal_boundary(qat):
     inputs = (
         torch.full((1, 3, 4, 4), 0.2),
         torch.full((1, 3, 4, 4), 0.8),
@@ -61,3 +61,7 @@ def test_uint8_image_inputs_keep_fixed_qparams_and_signed_internal_boundary(qat)
         assert internal.args[1] == pytest.approx(1 / 254)
         assert internal.args[2:] == (-127, -127, 127, torch.int8)
     assert torch.isfinite(converted(*inputs)).all()
+    (output,) = converted.graph.output_node().args[0]
+    assert output.target == dequantize
+    assert output.args[1] == pytest.approx(1 / 255)
+    assert output.args[2:] == (0, 0, 255, torch.uint8)
