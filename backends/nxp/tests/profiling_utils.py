@@ -9,6 +9,8 @@ import subprocess
 
 from executorch.devtools.etdump.serialize import deserialize_from_etdump_flatcc
 
+logger = logging.getLogger(__name__)
+
 
 def get_neutron_driver_version(etdump_path: str) -> str:
     """
@@ -32,7 +34,7 @@ def get_neutron_driver_version(etdump_path: str) -> str:
             data = f.read()
         etdump = deserialize_from_etdump_flatcc(data)
     except Exception as e:
-        logging.exception("Failed to load ETDump: %s", e)
+        logger.exception("Failed to load ETDump: %s", e)
         return ""
 
     events = []
@@ -46,13 +48,13 @@ def get_neutron_driver_version(etdump_path: str) -> str:
                 ):
                     events.append(event)
     except Exception as e:
-        logging.exception("Failed while processing events: %s", e)
+        logger.exception("Failed while processing events: %s", e)
         return ""
 
     try:
         metadata = events[-1].profile_event.delegate_debug_metadata
         if not metadata or len(metadata) < 2:
-            logging.error("Invalid delegate_debug_metadata")
+            logger.error("Invalid delegate_debug_metadata")
             return ""
 
         major, minor, patch = [
@@ -61,7 +63,7 @@ def get_neutron_driver_version(etdump_path: str) -> str:
         return f"{major}.{minor}.{patch}"
 
     except Exception as e:
-        logging.exception("Failed to extract version from metadata: %s", e)
+        logger.exception("Failed to extract version from metadata: %s", e)
         return ""
 
 
@@ -87,7 +89,7 @@ def get_neutron_compiler_version() -> str:
         )
         stdout, stderr = proc.communicate(timeout=10)
         if proc.returncode != 0:
-            logging.error(
+            logger.error(
                 "Failed to get compiler version: %s",
                 stderr.strip(),
             )
@@ -96,10 +98,10 @@ def get_neutron_compiler_version() -> str:
         if version_match:
             return version_match.group(1)
         else:
-            logging.exception("Unexpected error while getting neutron compiler version")
+            logger.exception("Unexpected error while getting neutron compiler version")
             return ""
     except Exception:
-        logging.exception("Error while getting neutron compiler version")
+        logger.exception("Error while getting neutron compiler version")
         return ""
 
 
@@ -128,7 +130,7 @@ def get_neutron_kernel_kinds(target: str = "imxrt700") -> dict[int, str]:
     )
     stdout, stderr = proc.communicate(timeout=10)
     if proc.returncode != 0:
-        logging.error(
+        logger.error(
             "Failed to get kernrl kinds from neutron_compiler: %s",
             stderr.strip(),
         )

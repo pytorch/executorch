@@ -66,6 +66,8 @@ from executorch.export import (
 )
 from torchao.quantization.pt2e.quantizer import Quantizer
 
+logger = logging.getLogger(__name__)
+
 
 class NeutronEdgePassManagerWrapper:
     def __init__(self, passes: list[NeutronEdgePass] | None = None):
@@ -153,7 +155,7 @@ class NXPRecipeProvider(BackendRecipeProvider):
         self, recipe_type: RecipeType, **kwargs: Any
     ) -> Optional[ExportRecipe]:
         if recipe_type not in self.get_supported_recipes():
-            logging.warning(f"NXP backend: Recipe `{recipe_type}` is not valid.")
+            logger.warning(f"NXP backend: Recipe `{recipe_type}` is not valid.")
             return None
 
         original_rc = kwargs.get(NEUTRON_RECIPE_CONFIG_KEY)

@@ -39,6 +39,8 @@ from executorch.exir.backend.backend_details import BackendDetails, PreprocessRe
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.export.exported_program import ExportedProgram
 
+logger = logging.getLogger(__name__)
+
 # Aten dialect operators that are allowed to be in the edge dialect model. These operators are usually created by a
 #  transform pass or by a prevented operator decomposition during lowering to edge.
 core_aten_ops_exception_list = [
@@ -219,9 +221,7 @@ class NeutronBackend(BackendDetails):
         edge_program: ExportedProgram,
         compile_spec: list[CompileSpec],
     ) -> PreprocessResult:
-        logging.info("NeutronBackend::preprocess")
-
-        logging.debug(f"NeutronBackend preprocessing graph:\n{edge_program.graph}")
+        logger.debug(f"NeutronBackend preprocessing graph:\n{edge_program.graph}")
 
         output_format = ""
         compile_flags = []
@@ -260,7 +260,7 @@ class NeutronBackend(BackendDetails):
 
         for node in edge_program.graph.nodes:
             if node.op == "call_function":
-                logging.debug(f"Operator to be processed: {node.target}")
+                logger.debug(f"Operator to be processed: {node.target}")
 
         # Serialize and return the program.
         if output_format == "tflite":
@@ -307,7 +307,7 @@ class NeutronBackend(BackendDetails):
 
             # Dump the tflite file if intermediates_dir is set
             if intermediates_dir != "None":
-                logging.debug(
+                logger.debug(
                     f"Serializing converted graph with tag {delegation_tag} to {intermediates_dir}"
                 )
                 with open(

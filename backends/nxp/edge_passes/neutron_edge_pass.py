@@ -11,6 +11,8 @@ import torch
 from executorch.exir.pass_base import ExportPass
 from torch.fx.passes.infra.pass_base import PassResult
 
+logger = logging.getLogger(__name__)
+
 
 class NeutronEdgePass(ExportPass):
     """Abstract parent class for pre-processing passes on the edge dialect level."""
@@ -36,7 +38,7 @@ class NeutronEdgePass(ExportPass):
                 return PassResult(graph_module, modified)
 
         # Iteration limit was reached.
-        logging.warning(
+        logger.warning(
             f"The NeutronEdgePass `{self.__class__.__name__}` reached the iteration limit."
         )
         graph_module = self.recompile_module(graph_module)

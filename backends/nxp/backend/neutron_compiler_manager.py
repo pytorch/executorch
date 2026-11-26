@@ -31,6 +31,8 @@ except ImportError:
             "eIQ Neutron SDK not found. To install it, run 'examples/nxp/setup.sh'."
         )
 
+logger = logging.getLogger(__name__)
+
 
 def _build_compilation_context(compilation_opts):
     """Build a CompilationContext from a plain dict of options."""
@@ -101,7 +103,7 @@ class NeutronCompilerManager:
             base_name = "_kernel_selection.c"
             os.rename(base_name, f"_kernel_selection_{delegation_tag}.c")
         except OSError:
-            logging.error("Failed to rename partition kernel selection file.")
+            logger.error("Failed to rename partition kernel selection file.")
 
     def get_compiler(self):
         return neutron_compiler
@@ -198,7 +200,7 @@ class NeutronCompilerManager:
         except (OSError, TypeError) as e:
             # Multiprocessing not available (e.g. restricted sandbox environment);
             # fall back to running the compiler directly in the current process.
-            logging.warning(
+            logger.warning(
                 f"Multiprocessing not available ({e}), running neutron compiler directly"
             )
             cctx = _build_compilation_context(compilation_opts)
