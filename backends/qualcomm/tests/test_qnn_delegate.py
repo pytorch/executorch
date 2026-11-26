@@ -7222,7 +7222,7 @@ class TestQNNFloatingPointUtils(TestQNN):
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
 
         def output_callback(log_msg):
-            msg = log_msg.stdout
+            msg = log_msg
             # Refer to HtpDevice.cpp for the following values
             min_voltage = "coreVoltageCornerMin 80"
             self.assertTrue(min_voltage in msg, f"Expecting '{min_voltage} ' in log")
@@ -7580,7 +7580,7 @@ class TestQNNFloatingPointUtils(TestQNN):
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
 
         def output_callback(log_msg, is_burst):
-            msg = log_msg.stdout
+            msg = log_msg
             # Refer to HtpDevice.cpp for the following values
             min_voltage = (
                 "coreVoltageCornerMin 160" if is_burst else "coreVoltageCornerMin 80"
@@ -7628,7 +7628,7 @@ class TestQNNFloatingPointUtils(TestQNN):
         runtime_commands = " --log_level 4"  # kLogLevelVerbose
 
         def output_callback(log_msg):
-            msg = log_msg.stdout
+            msg = log_msg
             # Check log prefix, different QNN version will have slightly different message format.
             self.assertTrue(
                 any(
@@ -7683,7 +7683,7 @@ class TestQNNFloatingPointUtils(TestQNN):
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
 
         def output_callback(log_msg):
-            self.assertIn("Shared buffer initialized via libcdsprpc", log_msg.stdout)
+            self.assertIn("Shared buffer initialized via libcdsprpc", log_msg)
 
         self.lower_module_and_test_output(
             module,
@@ -8019,7 +8019,7 @@ class TestQNNQuantizedUtils(TestQNN):
         module = self.get_qdq_module(module, sample_input)
 
         def output_callback(log_msg):
-            msg = log_msg.stdout
+            msg = log_msg
             # Refer to HtpDevice.cpp for the following values
             min_voltage = "coreVoltageCornerMin 80"
             self.assertTrue(min_voltage in msg, f"Expecting '{min_voltage} ' in log")
@@ -8714,7 +8714,7 @@ class TestQNNQuantizedUtils(TestQNN):
         module = self.get_qdq_module(module, sample_input)
 
         def output_callback(log_msg, is_burst):
-            msg = log_msg.stdout
+            msg = log_msg
             # Refer to HtpDevice.cpp for the following values
             min_voltage = (
                 "coreVoltageCornerMin 160" if is_burst else "coreVoltageCornerMin 80"
@@ -8763,7 +8763,7 @@ class TestQNNQuantizedUtils(TestQNN):
         runtime_commands = " --log_level 4"  # kLogLevelVerbose
 
         def output_callback(log_msg):
-            msg = log_msg.stdout
+            msg = log_msg
             # Check log prefix, different QNN version will have slightly different message format.
             self.assertTrue(
                 any(
@@ -8820,7 +8820,7 @@ class TestQNNQuantizedUtils(TestQNN):
         module = self.get_qdq_module(module, sample_input)
 
         def output_callback(log_msg):
-            self.assertIn("Shared buffer initialized via libcdsprpc", log_msg.stdout)
+            self.assertIn("Shared buffer initialized via libcdsprpc", log_msg)
 
         self.lower_module_and_test_output(
             module,

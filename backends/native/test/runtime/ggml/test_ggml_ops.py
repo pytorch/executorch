@@ -942,6 +942,24 @@ class GgmlOpsTest(unittest.TestCase):
             for raw, shape in outputs
         ]
 
+    def _check_steps(self, model, steps, graph_ops=None):
+        """Exports `model` at the first step, runs every step on one
+        executable and checks each float output against eager; returns them."""
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            package = outdir / "model.ptn"
+            to_native(torch.export.export(model, steps[0])).save(str(package))
+            actual = _run_ggml(package, steps, outdir, 1, graph_ops=graph_ops)
+        outputs = [
+            torch.frombuffer(bytearray(raw), dtype=torch.float32).reshape(shape)
+            for [(raw, shape)] in actual
+        ]
+        for step, output in zip(steps, outputs):
+            with torch.no_grad():
+                expected = model(*step)
+            torch.testing.assert_close(output, expected, atol=1e-2, rtol=1e-2)
+        return outputs
+
     def _binary(self, fn):
         self._check(Lambda(fn), (torch.randn(2, 3, 4), torch.randn(2, 3, 4)))
 
@@ -1161,6 +1179,82 @@ class GgmlOpsTest(unittest.TestCase):
             graph_ops=ops,
         )
         self.assertEqual(ops["SWIGLU"], 0)
+
+    def test_geglu_operand_orders(self):
+        cases = {
+            "gelu(x) * up": (
+                lambda x, up: F.gelu(x, approximate="tanh") * up,
+                "GEGLU",
+                "GELU",
+            ),
+            "up * gelu(x)": (
+                lambda x, up: up * F.gelu(x, approximate="tanh"),
+                "GEGLU",
+                "GELU",
+            ),
+            "up * erf gelu(x)": (lambda x, up: up * F.gelu(x), "GEGLU_ERF", "GELU_ERF"),
+        }
+        for name, (fn, fused, absent) in cases.items():
+            with self.subTest(name):
+                ops = collections.Counter()
+                # ggml-cpu's tanh GELU reads an FP16 table, as in test_gelu_tanh.
+                self._check(
+                    Lambda(fn),
+                    (torch.randn(2, 3, 4) * 3.0, torch.randn(2, 3, 4)),
+                    atol=1e-3,
+                    rtol=2e-3,
+                    graph_ops=ops,
+                )
+                self.assertGreater(ops[fused], 0)
+                self.assertEqual(ops[absent], 0)
+
+    def test_geglu_with_shared_gelu(self):
+        def forward(x, up):
+            gelu = F.gelu(x, approximate="tanh")
+            return gelu, gelu * up
+
+        ops = collections.Counter()
+        self._check(
+            Lambda(forward),
+            (torch.randn(2, 3, 4) * 3.0, torch.randn(2, 3, 4)),
+            atol=1e-3,
+            rtol=2e-3,
+            graph_ops=ops,
+        )
+        self.assertGreater(ops["GELU"], 0)
+        self.assertGreater(ops["GEGLU"], 0)
+
+    def test_glu_of_a_buffer_written_after_the_activation(self):
+        # The activation reads a buffer that is then written in place, so the
+        # product must use the activation from before the write.
+        class ActivationThenWrite(torch.nn.Module):
+            def __init__(self, activation):
+                super().__init__()
+                self.activation = activation
+                self.register_buffer("state", torch.randn(1, 2, 4, 8))
+
+            def forward(self, rows, positions, up):
+                gate = self.activation(self.state)
+                self.state.index_copy_(2, positions, rows)
+                return gate * up
+
+        activations = {
+            "gelu": lambda x: F.gelu(x, approximate="tanh"),
+            "erf gelu": F.gelu,
+            "silu": F.silu,
+        }
+        for name, activation in activations.items():
+            with self.subTest(name):
+                self._check(
+                    ActivationThenWrite(activation),
+                    (
+                        torch.randn(1, 2, 1, 8) * 5.0,
+                        torch.tensor([1]),
+                        torch.randn(1, 2, 4, 8),
+                    ),
+                    atol=2e-3,
+                    rtol=2e-3,
+                )
 
     def test_sigmoid(self):
         self._check(Lambda(torch.sigmoid), (torch.randn(2, 3, 4),))
@@ -2571,20 +2665,49 @@ class GgmlOpsTest(unittest.TestCase):
             rtol=1e-2,
         )
 
+    def test_sdpa_reuses_product_of_bool_masks(self):
+        def forward(q, k, v, a, b):
+            mask = a.le(0.7) * b.le(0.7)
+            first = F.scaled_dot_product_attention(q, k, v, attn_mask=mask)
+            second = F.scaled_dot_product_attention(q, k, v * 2.0, attn_mask=mask)
+            return first + second
+
+        a = torch.rand(1, 2, 3, 8)
+        a[..., 0] = 0.0
+        b = torch.rand(1, 2, 3, 8)
+        b[..., 0] = 0.0
+        ops = collections.Counter()
+        self._check(
+            Lambda(forward),
+            (
+                torch.randn(1, 2, 3, 32),
+                torch.randn(1, 2, 8, 32),
+                torch.randn(1, 2, 8, 32),
+                a,
+                b,
+            ),
+            atol=1e-2,
+            rtol=1e-2,
+            graph_ops=ops,
+        )
+        # One F16 conversion of the shared mask serves both attention ops.
+        self.assertEqual(ops["CPY"] * 2, ops["FLASH_ATTN_EXT"])
+
     def test_sdpa_key_prefix_of_a_transposed_key(self):
         # When every query masks the keys past its position, attention covers
         # only the 256-key buckets of k and v up to the last position; k
         # arrives with its head dim strided. The last mask attends the keys
-        # from each position on, so no prefix may be taken.
+        # from each position on, so attention instead starts at the bucket
+        # holding the first position.
         masks = {
             "key <= position": lambda key, pos: key[None, :] <= pos[:, None],
             "key < position": lambda key, pos: key[None, :] < pos[:, None],
             "position <= key": lambda key, pos: pos[:, None] <= key[None, :],
         }
         tensors = (
-            torch.randn(1, 2, 2, 32),
-            torch.randn(1, 2, 32, 512),
-            torch.randn(1, 2, 512, 32),
+            torch.randn(1, 2, 2, 64),
+            torch.randn(1, 2, 64, 512),
+            torch.randn(1, 2, 512, 64),
         )
         steps = [(*tensors, torch.tensor(p)) for p in ([3, 4], [300, 301])]
         for name, mask in masks.items():
@@ -2598,28 +2721,11 @@ class GgmlOpsTest(unittest.TestCase):
                         attn_mask=mask(torch.arange(512), positions),
                     )
 
-                model = Lambda(forward).eval()
                 ops = collections.Counter()
-                with tempfile.TemporaryDirectory() as tmp:
-                    outdir = Path(tmp)
-                    package = outdir / "model.ptn"
-                    to_native(torch.export.export(model, steps[0])).save(str(package))
-                    actual = _run_ggml(package, steps, outdir, 1, graph_ops=ops)
-                for step, [(raw, shape)] in zip(steps, actual):
-                    with torch.no_grad():
-                        expected = model(*step)
-                    torch.testing.assert_close(
-                        torch.frombuffer(bytearray(raw), dtype=torch.float32).reshape(
-                            shape
-                        ),
-                        expected,
-                        atol=1e-2,
-                        rtol=1e-2,
-                    )
-                # The compile-time graph and the first step's; a prefix in the
-                # first step makes the second step's wider extent build a third.
-                prefix = name != "position <= key"
-                self.assertEqual(ops["FLASH_ATTN_EXT"], 3 if prefix else 2)
+                self._check_steps(Lambda(forward).eval(), steps, graph_ops=ops)
+                # The compile-time graph and the first step's; the second
+                # step's wider extent, or later start, builds a third.
+                self.assertEqual(ops["FLASH_ATTN_EXT"], 3)
 
     def test_sdpa_masks_over_caches_longer_than_the_host_computes(self):
         # The host bounds the keys' positions by the arange's arguments once,
@@ -2731,6 +2837,146 @@ class GgmlOpsTest(unittest.TestCase):
             self._run_exported(
                 Lambda(forward), example, (*example[:3], torch.tensor([3, 2**63 - 1]))
             )
+
+    def test_sdpa_key_prefix_of_masks_that_share_values(self):
+        # A sliding-window mask, the causal mask and'ed with a window bound as a
+        # product of bools, shares its causal comparison with a global layer's
+        # mask. Both attend only keys up to the last position, so attention
+        # covers the 256-key buckets up to it.
+        def forward(q, k, v, positions):
+            keys = torch.arange(512)
+            causal = keys[None, :] <= positions[:, None]
+            sliding = causal * ((positions[:, None] - 128) < keys[None, :])
+            first = F.scaled_dot_product_attention(q, k, v, attn_mask=causal)
+            second = F.scaled_dot_product_attention(q, k, v * 2.0, attn_mask=sliding)
+            return first + second
+
+        tensors = (
+            torch.randn(1, 2, 2, 64),
+            torch.randn(1, 2, 512, 64),
+            torch.randn(1, 2, 512, 64),
+        )
+        ops = collections.Counter()
+        self._check_steps(
+            Lambda(forward).eval(),
+            [(*tensors, torch.tensor(p)) for p in ([3, 4], [300, 301])],
+            graph_ops=ops,
+        )
+        # The compile-time graph and one per step: the first step attends one
+        # bucket, so the second step's wider extent builds a third graph.
+        self.assertEqual(ops["FLASH_ATTN_EXT"], 3 * 2)
+
+    def test_sdpa_key_prefix_of_a_mask_group_is_its_widest(self):
+        # Masks that share the causal comparison end in different buckets, so
+        # their group is computed over the causal mask's wider prefix.
+        def forward(q, k, v, positions):
+            keys = torch.arange(1024)
+            causal = keys[None, :] <= positions[:, None]
+            early = causal * (keys[None, :] <= positions[:, None] - 300)
+            first = F.scaled_dot_product_attention(q, k, v, attn_mask=causal)
+            second = F.scaled_dot_product_attention(q, k, v * 2.0, attn_mask=early)
+            return first + second
+
+        tensors = (
+            torch.randn(1, 2, 2, 64),
+            torch.randn(1, 2, 1024, 64),
+            torch.randn(1, 2, 1024, 64),
+        )
+        self._check_steps(
+            Lambda(forward).eval(),
+            [(*tensors, torch.tensor(p)) for p in ([400, 401], [700, 701])],
+        )
+
+    def test_sdpa_key_prefix_of_a_mask_read_by_other_ops(self):
+        # The causal comparison also feeds a sum over every key, so attention
+        # covers all keys.
+        def forward(q, k, v, positions):
+            causal = torch.arange(512)[None, :] <= positions[:, None]
+            attended = F.scaled_dot_product_attention(q, k, v, attn_mask=causal)
+            return attended + (causal * 1.0).sum(-1, keepdim=True)
+
+        tensors = (
+            torch.randn(1, 2, 2, 64),
+            torch.randn(1, 2, 512, 64),
+            torch.randn(1, 2, 512, 64),
+        )
+        ops = collections.Counter()
+        self._check_steps(
+            Lambda(forward).eval(),
+            [(*tensors, torch.tensor(p)) for p in ([3, 4], [300, 301])],
+            graph_ops=ops,
+        )
+        # The compile-time graph and one that both steps share.
+        self.assertEqual(ops["FLASH_ATTN_EXT"], 2)
+
+    def test_sdpa_key_prefix_of_constant_key_positions(self):
+        # A static KV cache's key positions, held by a constant, evaluate on
+        # the host.
+        class ConstantKeys(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("key_positions", torch.arange(512))
+
+            def forward(self, q, k, v, positions):
+                mask = self.key_positions[None, :] <= positions[:, None]
+                return F.scaled_dot_product_attention(q, k, v, attn_mask=mask)
+
+        tensors = (
+            torch.randn(1, 2, 2, 64),
+            torch.randn(1, 2, 512, 64),
+            torch.randn(1, 2, 512, 64),
+        )
+        ops = collections.Counter()
+        self._check_steps(
+            ConstantKeys().eval(),
+            [(*tensors, torch.tensor(p)) for p in ([3, 4], [300, 301])],
+            graph_ops=ops,
+        )
+        # The compile-time graph and one per step: the second step's wider
+        # extent builds a third.
+        self.assertEqual(ops["FLASH_ATTN_EXT"], 3)
+
+    def test_sdpa_key_range_of_a_sliding_window(self):
+        # Past the window, every query also masks the keys before the window's
+        # start, so attention starts at the 256-key bucket holding the first
+        # attended key. The 300-key window is not a whole number of buckets:
+        # the second step's start moves while its extent stays put.
+        def window(positions):
+            keys = torch.arange(1024)
+            causal = keys[None, :] <= positions[:, None]
+            return causal * ((positions[:, None] - 300) < keys[None, :])
+
+        def attend(q, k, v, mask):
+            return F.scaled_dot_product_attention(q, k, v, attn_mask=mask)
+
+        for queries in (1, 2):
+            with self.subTest(queries=queries):
+                tensors = (
+                    torch.randn(1, 2, queries, 64),
+                    torch.randn(1, 2, 1024, 64),
+                    torch.randn(1, 2, 1024, 64),
+                )
+                positions = [torch.arange(p, p + queries) for p in (520, 600)]
+                ops = collections.Counter()
+                windowed = self._check_steps(
+                    Lambda(lambda q, k, v, p: attend(q, k, v, window(p))).eval(),
+                    [(*tensors, p) for p in positions],
+                    graph_ops=ops,
+                )
+                # The compile-time graph and one per step: both steps attend
+                # keys below 768, but only the second starts past key 255.
+                self.assertEqual(ops["FLASH_ATTN_EXT"], 3)
+                # The same mask as an input attends every key; skipping only
+                # masked keys leaves the result within rounding of it.
+                masks = [
+                    torch.zeros(queries, 1024).masked_fill(~window(p), float("-inf"))
+                    for p in positions
+                ]
+                full = self._check_steps(
+                    Lambda(attend).eval(), [(*tensors, m) for m in masks]
+                )
+                for actual, expected in zip(windowed, full):
+                    torch.testing.assert_close(actual, expected, atol=1e-5, rtol=1e-5)
 
     def test_sdpa_causal_fewer_queries(self):
         self._check(
@@ -3209,6 +3455,44 @@ class GgmlOpsTest(unittest.TestCase):
             rtol=1e-4,
         )
 
+    def test_rope_of_a_per_head_rms_norm(self):
+        # A per-head RMS norm transposed to [B, H, T, D] for RoPE and back, at
+        # positions that reshape a vector: the rope reads the norm and the
+        # vector themselves, which ggml-cuda can fuse.
+        class NormRope(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                config = LlamaConfig(
+                    hidden_size=256, num_attention_heads=4, head_dim=64
+                )
+                self.rope = Rope(config)
+                self.weight = torch.nn.Parameter(torch.rand(64) + 0.5)
+
+            def forward(self, x, positions):
+                h = F.rms_norm(x.unflatten(-1, (4, 64)), (64,), self.weight, eps=1e-6)
+                rotated = self.rope(h.transpose(1, 2), positions.unsqueeze(0))
+                return rotated.transpose(1, 2)
+
+        for tokens in (1, 3):
+            with self.subTest(tokens=tokens):
+                self._check(
+                    NormRope(),
+                    (torch.randn(1, tokens, 256), torch.arange(3, 3 + tokens)),
+                    atol=1e-4,
+                    rtol=1e-4,
+                )
+
+    def test_rope_of_as_many_heads_as_tokens(self):
+        # The rope's [D, H, T] permute of the input then has the input's shape
+        # but not its order, so the rope must read the permute.
+        config = LlamaConfig(hidden_size=256, num_attention_heads=4, head_dim=64)
+        self._check(
+            Rope(config),
+            (torch.randn(1, 4, 4, 64), torch.tensor([[3, 9, 27, 81]])),
+            atol=1e-4,
+            rtol=1e-4,
+        )
+
     def _check_half_linear_sum(self, **options):
         # Accumulated in F16, each 2^-8 term vanishes next to the running sum:
         # 1024 instead of eager's 1032.
@@ -3384,6 +3668,39 @@ class GgmlOpsTest(unittest.TestCase):
             (torch.randn(1, 4, 5, 64), torch.tensor([[3, 4, 5, 6, 7]])),
             atol=1e-4,
             rtol=1e-4,
+        )
+
+    def test_rope_frequency_tables(self):
+        # Two ropes hold equal inv_freq constants, which share one table; a
+        # third holds its own.
+        class Tables(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                config = LlamaConfig(
+                    hidden_size=256, num_attention_heads=4, head_dim=64
+                )
+                self.a = Rope(config)
+                self.b = Rope(config)
+                config = LlamaConfig(
+                    hidden_size=256,
+                    num_attention_heads=4,
+                    head_dim=64,
+                    rope_theta=500000.0,
+                )
+                self.c = Rope(config)
+
+            def forward(self, x, positions):
+                return (
+                    self.a(x, positions)
+                    + 2 * self.b(x, positions)
+                    + 3 * self.c(x, positions)
+                )
+
+        self._check(
+            Tables(),
+            (torch.randn(1, 4, 5, 64), torch.tensor([[3, 40, 200, 6, 100]])),
+            atol=1e-3,
+            rtol=1e-3,
         )
 
     def test_rope_zero_frequency_leaves_dims_unrotated(self):

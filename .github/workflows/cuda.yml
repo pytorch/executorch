@@ -716,6 +716,11 @@ jobs:
           examples/models/muse-glimmer/tests/test_dflash_token_sampler.py \
           examples/models/muse-glimmer/tests/test_checkpoint_context.py
 
+        # The on-device sampler: eager, under torch.compile, and exported and
+        # compiled with AOTInductor under the CUDA backend's compile options.
+        python -m pytest -v -o "addopts=" \
+          examples/models/muse-glimmer/tests/test_sampler.py
+
         # CUDA DFlash executor on a tiny exported target + draft. The native
         # tests skip without the artifact, so fail if any skipped.
         export ET_MUSE_DFLASH_TINY_DIR="${RUNNER_TEMP:-/tmp}/muse_glimmer_dflash_tiny"

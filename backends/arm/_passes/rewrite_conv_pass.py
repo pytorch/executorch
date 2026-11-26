@@ -679,11 +679,14 @@ class RewriteConvPass(ArmPass):
     ) -> None:
         """Route A16W8 convolution users through the required output types.
 
-        Keep INT32 consumers on a widened path from the INT48 accumulator, even
-        though the convolution's declared output is INT16. This preserves
-        numerical range by avoiding unnecessary INT16 rounding and clamping.
+        A declared narrow output is a quantization boundary, including its
+        rounding and saturation. INT32 consumers must read that output rather
+        than bypassing it through the convolution accumulator.
 
         """
+        if default_rescale.kwargs["dtype"] in (torch.int8, torch.int16):
+            return
+
         direct_int32_users = self._get_direct_int32_rescale_users(node)
         permute_int32_users = self._get_permute_int32_rescale_users(node)
         if not direct_int32_users and not permute_int32_users:
@@ -1281,9 +1284,8 @@ class RewriteConvPass(ArmPass):
                 and input_fake_tensor.dtype == torch.int16
             )
             if is_a16w8_conv and spatial_rank != 1:
-                # Keep values in INT32 whenever a consumer supports it, even
-                # though the declared output is INT16, by branching from the
-                # accumulator before narrowing.
+                # Preserve declared narrow quantization boundaries even when a
+                # consumer subsequently rescales the result to INT32.
                 #
                 # Rank-three convolutions are excluded. The legacy Conv1d
                 # expansion placed a rank-changing view between the convolution

@@ -164,32 +164,17 @@ void GraphBuilder::lower_custom_sdpa(const Node& node) {
   set_single_output(node, TensorRef{result, query.sizes});
 }
 
-ggml_tensor* GraphBuilder::rope_factor_tensor(ValueId inv_freq) {
-  if (const auto cached = rope_factor_tensors_.find(inv_freq);
-      cached != rope_factor_tensors_.end()) {
-    return cached->second;
-  }
-  const auto found = rope_factor_bytes_.find(inv_freq);
-  if (found == rope_factor_bytes_.end()) {
-    throw std::runtime_error("ggml: rope inv_freq was not indexed at load");
-  }
-  ggml_tensor* factors = ggml_new_tensor_1d(
-      instance_.context.get(),
-      GGML_TYPE_F32,
-      static_cast<int64_t>(found->second.size() / sizeof(float)));
-  ggml_set_input(factors);
-  instance_.uploads.push_back(Upload{factors, found->second});
-  rope_factor_tensors_.emplace(inv_freq, factors);
-  return factors;
-}
-
 void GraphBuilder::lower_rope(const Node& node) {
   // ggml_rope_ext reads strided rows; rotating the [D, heads, tokens] view
   // of a transposed projection then needs no copy.
   const TensorRef input = rows_arg(node, "input", 0);
   const TensorRef positions = tensor_arg(node, "position_ids", 1);
-  ggml_tensor* factors =
-      rope_factor_tensor(require_arg(node, "inv_freq", 2).arg.as_tensor().id);
+  const auto found =
+      rope_factors_.find(require_arg(node, "inv_freq", 2).arg.as_tensor().id);
+  if (found == rope_factors_.end()) {
+    throw std::runtime_error("ggml: rope inv_freq was not indexed at load");
+  }
+  ggml_tensor* factors = found->second;
   const bool interleaved = bool_arg(node, "interleaved", 3, false);
   const double scale = float_arg(node, "attention_scale", 4, 1.0, true);
   const int n_dims = 2 * static_cast<int>(ggml_nelements(factors));
@@ -200,8 +185,17 @@ void GraphBuilder::lower_rope(const Node& node) {
         "ggml: rope expects input [B,H,T,D] and position_ids [1,T]");
   }
   ggml_context* ctx = instance_.context.get();
-  ggml_tensor* pos = ggml_reshape_1d(
-      ctx, contiguous(as_i32(positions.tensor)), positions.sizes[1]);
+  // ggml-cuda fuses a norm into the rope that follows it only if no view
+  // nodes sit between them, so the rope reads positions that just reshape a
+  // vector from the vector, and an input view that reads its whole storage
+  // in order from the storage, e.g. a projection transposed and back.
+  ggml_tensor* pos = contiguous(as_i32(positions.tensor));
+  while (pos->op == GGML_OP_RESHAPE) {
+    pos = pos->src[0];
+  }
+  if (ggml_nrows(pos) != 1) {
+    pos = ggml_reshape_1d(ctx, pos, positions.sizes[1]);
+  }
   // ggml-cpu ropes F32 and F16 only; a BF16 input is rotated in F32 and its
   // result rounded back when it is set.
   ggml_tensor* source = input.tensor;
@@ -209,9 +203,22 @@ void GraphBuilder::lower_rope(const Node& node) {
     source = ggml_cast(ctx, source, GGML_TYPE_F32);
   }
   // ggml_rope_ext rotates [D, heads, tokens, B]; torch order is [B,H,T,D].
+  ggml_tensor* rows = ggml_permute(ctx, source, 0, 2, 1, 3);
+  ggml_tensor* storage = rows->view_src;
+  bool whole_storage = storage != nullptr && rows->view_offs == 0 &&
+      ggml_is_contiguous(rows) && ggml_is_contiguous(storage) &&
+      ggml_are_same_shape(rows, storage);
+  for (const ggml_tensor* t = rows; whole_storage && t != storage;
+       t = t->src[0]) {
+    whole_storage = t->op == GGML_OP_VIEW || t->op == GGML_OP_RESHAPE ||
+        t->op == GGML_OP_PERMUTE || t->op == GGML_OP_TRANSPOSE;
+  }
+  if (whole_storage) {
+    rows = storage;
+  }
   ggml_tensor* rotated = ggml_rope_ext(
       ctx,
-      ggml_permute(ctx, source, 0, 2, 1, 3),
+      rows,
       pos,
       factors,
       n_dims,
@@ -453,8 +460,11 @@ void GraphBuilder::lower_index_put(const Node& node) {
   set_single_output(node, TensorRef{result, self.sizes});
 }
 
-ggml_tensor*
-GraphBuilder::attention_mask(ValueId id, int64_t tokens, int64_t keys) {
+ggml_tensor* GraphBuilder::attention_mask(
+    ValueId id,
+    int64_t tokens,
+    int64_t start,
+    int64_t keys) {
   const TensorRef mask = tensor(id);
   const size_t rank = mask.sizes.size();
   if (rank < 2 || rank > 4 ||
@@ -462,12 +472,13 @@ GraphBuilder::attention_mask(ValueId id, int64_t tokens, int64_t keys) {
       mask.sizes.back() != keys) {
     throw std::runtime_error("ggml: attention mask must end in [T|1, S]");
   }
-  // Out-of-place repeat/scale results, and views of them, are stable until
-  // an explicit graph write to their storage (which invalidates this cache).
-  // Reuse their additive F16 mask across attention ops; never cache
+  // Out-of-place repeat/scale/mul results, and views of them, are stable
+  // until an explicit graph write to their storage (which invalidates this
+  // cache). Reuse their additive F16 mask across attention ops; never cache
   // writable inputs.
   const ggml_tensor* root = storage_root(mask.tensor);
-  const bool reusable = root->op == GGML_OP_REPEAT || root->op == GGML_OP_SCALE;
+  const bool reusable = root->op == GGML_OP_REPEAT ||
+      root->op == GGML_OP_SCALE || root->op == GGML_OP_MUL;
   const auto cache_key = std::make_pair(id, tokens);
   if (reusable) {
     const auto found = attention_masks_.find(cache_key);
@@ -495,6 +506,20 @@ GraphBuilder::attention_mask(ValueId id, int64_t tokens, int64_t keys) {
   ggml_tensor* result = additive->type == GGML_TYPE_F16
       ? contiguous(additive)
       : ggml_cast(ctx, additive, GGML_TYPE_F16);
+  if (start > 0) {
+    // The columns from the start; one query's row needs no copy.
+    result = contiguous(ggml_view_4d(
+        ctx,
+        result,
+        keys - start,
+        result->ne[1],
+        result->ne[2],
+        result->ne[3],
+        result->nb[1],
+        result->nb[2],
+        result->nb[3],
+        start * result->nb[0]));
+  }
   if (reusable) {
     attention_masks_.emplace(cache_key, result);
   }
@@ -530,27 +555,32 @@ void GraphBuilder::lower_sdpa(const Node& node) {
       throw std::runtime_error("ggml: sdpa cannot take a mask and is_causal");
     }
     const ValueId mask_id = mask_arg->arg.as_tensor().id;
-    if (const auto extent = key_extents_.find(mask_id);
-        extent != key_extents_.end()) {
-      // Every query masks the keys past the extent: attend the prefix.
-      keys = extent->second;
-      const auto prefix = [&](ggml_tensor* t) {
+    const auto extent = key_extents_.find(mask_id);
+    const auto found = key_starts_.find(mask_id);
+    const int64_t start = found == key_starts_.end() ? 0 : found->second;
+    if (extent != key_extents_.end() || start > 0) {
+      // Every query masks the keys past the extent and before the start:
+      // attend the keys between.
+      if (extent != key_extents_.end()) {
+        keys = extent->second;
+      }
+      const auto attended = [&](ggml_tensor* t) {
         return ggml_view_4d(
             instance_.context.get(),
             t,
             t->ne[0],
-            keys,
+            keys - start,
             t->ne[2],
             t->ne[3],
             t->nb[1],
             t->nb[2],
             t->nb[3],
-            0);
+            start * t->nb[1]);
       };
-      k = prefix(k);
-      v = prefix(v);
+      k = attended(k);
+      v = attended(v);
     }
-    mask = attention_mask(mask_id, tokens, keys);
+    mask = attention_mask(mask_id, tokens, start, keys);
   } else if (is_causal) {
     mask = causal_mask(tokens, keys, 0).tensor;
   }

@@ -24,13 +24,16 @@ It also uses the same directory structure as PyTorch.
 CLANG_VERSION=11 ./build.sh executorch-ubuntu-22.04-clang11 -t myimage:latest
 ```
 
-The clang12 Linux image uses the published November 2 torch, torchvision and
-torchaudio source commits in `ci_commit_pins/*-linux-clang12.txt`. The shared
-macOS pin and other images' sources are unchanged. The build checks the installed
-torch identity and schema-1.0 reporter after installing the domain libraries.
+Images that set `TORCHCI_REPORTS=1` in `build.sh` (clang12, gcc11 and the Arm
+SDK images) build
+the published November 2 torch, torchvision and torchaudio source commits in
+`ci_commit_pins/*-torchci.txt`, whose `torch.testing._internal.torchci`
+reporter CI uses to upload test results to HUD. The shared macOS pin and other
+images' sources are unchanged. The build checks the installed torch identity
+and schema-1.0 reporter after installing the domain libraries.
 
 These pins participate in the existing global Linux image hash. A pin change
-can require other Linux images to rebuild, even though only clang12 reads it.
+can require other Linux images to rebuild, even if their pins are unchanged.
 Validate the rebuilt image before enabling test-report uploads.
 
 ## Arm FVP cache
