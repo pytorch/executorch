@@ -217,16 +217,14 @@ class QnnOperatorSupport(OperatorSupportBase):
             )
 
         if node.target in constant_operator:
-            # Built as a static tensor, so every value it depends on must be known AoT
-            # (full_like's first argument only supplies the shape).
-            shape_only = (
-                node.args[0]
-                if node.target == exir_ops.edge.aten.full_like.default
-                else None
-            )
-            if any(arg is not shape_only for arg in node.all_input_nodes):
+            # Built as a static tensor, so its value cannot come from a graph node.
+            value_inputs = set(node.all_input_nodes)
+            if node.target == exir_ops.edge.aten.full_like.default:
+                # full_like's first argument only supplies the shape
+                value_inputs.discard(node.args[0])
+            if value_inputs:
                 logger.info(
-                    f"[{self.phase}] {node.target.__name__} | Skipped, value is only known at runtime"
+                    f"[{self.phase}] {node.target.__name__} | Skipped, value comes from a graph node rather than a literal"
                 )
                 return False
 
