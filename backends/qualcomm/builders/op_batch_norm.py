@@ -50,10 +50,17 @@ class BatchNorm(NodeVisitor):
     @staticmethod
     def get_bn_eps(node: torch.fx.Node) -> float:
         """The op's own eps; channels with near-zero variance depend on it."""
-        schema_args = node.target._schema.arguments
-        if schema_args[-1].name != "eps" or len(node.args) != len(schema_args):
-            raise RuntimeError(f"{node.target} has no positional eps argument")
-        return node.args[-1]
+        # Look eps up by name: it is required in every target schema, but a
+        # node may pass it positionally or as a keyword.
+        names = [arg.name for arg in node.target._schema.arguments]
+        if "eps" not in names:
+            raise RuntimeError(f"{node.target} has no eps argument")
+        index = names.index("eps")
+        if index < len(node.args):
+            return node.args[index]
+        if "eps" in node.kwargs:
+            return node.kwargs["eps"]
+        raise RuntimeError(f"{node.target} node {node.name} does not set eps")
 
     def try_dequantize(self, node: torch.fx.Node, tensor: torch.Tensor):
         if tensor.dtype == torch.float:
