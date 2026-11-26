@@ -21,7 +21,7 @@ class MobileBertModelExample(EagerModelBase):
         logging.info("loading mobilebert model")
         # pyre-ignore
         model = MobileBertModel.from_pretrained(
-            "google/mobilebert-uncased", return_dict=False
+            "google/mobilebert-uncased", return_dict=False, use_safetensors=True
         )
         logging.info("loaded mobilebert model")
         return model

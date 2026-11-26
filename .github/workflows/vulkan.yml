@@ -27,6 +27,7 @@ on:
       - runtime/**
       - schema/**
       - install_requirements.py
+      - torch_pin.py
       - requirements-examples.txt
       - setup.py
       - CMakeLists.txt
@@ -79,7 +80,7 @@ jobs:
       timeout: 120
       runner: mt-l-x86aavx2-11-41-a10g
       gpu-arch-type: cuda
-      gpu-arch-version: "12.6"
+      gpu-arch-version: "13.2"
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
@@ -123,10 +124,17 @@ jobs:
         # selected above.
         PYTHON_EXECUTABLE=python bash backends/vulkan/test/ops/benchmark_v2/build.sh
         for op in binary/add gemm/linear/qw/q8csw convolution/qw/q8csw gemm/linear/qw/q4gsw \
-                  quantization/choose_qparams_per_row quantize/q8ta clone/q8ta binary/q8ta; do
+                  quantization/choose_qparams_per_row quantize/q8ta clone/q8ta binary/q8ta \
+                  warp; do
           ./cmake-out/backends/vulkan/test/ops/benchmark_v2/etvk_ops_bench --validation_only \
             --config=backends/vulkan/test/ops/benchmark_v2/operators/${op}/cases/correctness.json
         done
+        # Cooperative-matrix family kernels. The runner's GPU must match the nvidia
+        # family, every case must run, and each step's dispatched kernel is checked.
+        # No GitHub runner has an Intel Xe2 GPU: the xe2 rows are not covered in CI.
+        ETVK_WMMA_EXPECTED_FAMILY=nvidia \
+          ./cmake-out/backends/vulkan/test/ops/benchmark_v2/etvk_ops_bench --validation_only \
+          --config=backends/vulkan/test/ops/benchmark_v2/operators/gemm/linear/qw/wmma/cases/correctness.json
 
         PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_op.sh --build vulkan_sdpa_av_test
 
@@ -149,6 +157,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'runtime/') ||
       contains(needs.changed-files.outputs.changed-files, 'schema/') ||
       contains(needs.changed-files.outputs.changed-files, 'install_requirements.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'torch_pin.py') ||
       contains(needs.changed-files.outputs.changed-files, 'requirements-examples.txt') ||
       contains(needs.changed-files.outputs.changed-files, 'setup.py') ||
       contains(needs.changed-files.outputs.changed-files, 'CMakeLists.txt') ||
@@ -170,7 +179,7 @@ jobs:
       timeout: 180
       runner: mt-l-x86aavx2-11-41-a10g
       gpu-arch-type: cuda
-      gpu-arch-version: "12.6"
+      gpu-arch-version: "13.2"
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       upload-artifact: vulkan-llm-e2e

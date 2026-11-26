@@ -130,6 +130,7 @@ def define_common_targets(is_fbcode = False):
             "operators/gemm/GemmReference.cpp",
             "operators/gemm/linear/LinearReference.cpp",
             "operators/gemm/linear/qw/q4gsw/Q4gswLinearReference.cpp",
+            "operators/warp/WarpReference.cpp",
         ],
         exported_headers = [
             "framework/Reference.h",
@@ -307,7 +308,10 @@ def define_common_targets(is_fbcode = False):
 
     runtime.cxx_library(
         name = "case_checks",
-        srcs = ["operators/convolution/q8ta/Q8taValidationChecks.cpp"],
+        srcs = [
+            "operators/convolution/q8ta/Q8taValidationChecks.cpp",
+            "operators/gemm/linear/qw/wmma/WmmaFamilyChecks.cpp",
+        ],
         exported_headers = ["operators/convolution/q8ta/Q8taValidationChecks.h"],
         platforms = get_platforms(),
         exported_deps = [":framework"],

@@ -50,6 +50,18 @@ fbcode_target(
 )
 
 fbcode_target(
+    _kind = runtime.python_test,
+    name = "test_gated_delta_rule",
+    srcs = ["test_gated_delta_rule.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/native:lib",
+        "//executorch/backends/native/test:utils",
+        "fbsource//third-party/pypi/transformers:transformers",
+    ],
+)
+
+fbcode_target(
     _kind = runtime.python_library,
     name = "utils",
     srcs = ["utils.py"],
@@ -92,6 +104,9 @@ fbcode_target(
     _kind = runtime.python_test,
     name = "test_hf_whisper",
     srcs = ["test_hf_whisper.py"],
+    resources = {
+        "//executorch/backends/native/examples/audio:run_whisper_ggml_cpu": "run_whisper_ggml_cpu",
+    },
     deps = [
         "//caffe2:torch",
         "//executorch/backends/native:lib",

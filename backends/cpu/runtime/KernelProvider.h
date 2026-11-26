@@ -65,6 +65,10 @@ runtime::Result<Buffer> allocate_buffer(
 struct ExecutionContext {
   size_t threads = 1;
   pthreadpool* threadpool = nullptr;
+  /// When set during execution, the plan records one delegate event per step
+  /// at every profiling level, and providers log their own events to it.
+  /// Providers that configure profiling at compile time, such as XNNPACK, read
+  /// the tracer and its profiling level during preparation instead.
   runtime::EventTracer* event_tracer = nullptr;
 };
 
@@ -122,6 +126,10 @@ class Executable {
   virtual runtime::Error reshape() = 0;
   virtual runtime::Error bind(const Buffer& scratch = {}) = 0;
   virtual runtime::Error run(const ExecutionContext& context) = 0;
+  /// Callers of run must call this afterwards, even when run fails. The plan
+  /// calls it after closing the step's trace event, so internal events are
+  /// logged without inflating it.
+  virtual void submit_trace() {}
 };
 
 class KernelImplementation {

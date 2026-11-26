@@ -126,10 +126,16 @@ PRs are always welcome to help improve the codebase in a comprehensive manner. B
 
 - **Code Reviews**:<br/>
     Please ping authors in Qualcomm AI Engine Direct related PRs for reviewing, possible candidates are listed below:
-    - [shewu-quic](https://github.com/shewu-quic)
     - [chenweng-quic](https://github.com/chenweng-quic)
-    - [winskuo-quic](https://github.com/winskuo-quic)
     - [DannyYuyang-quic](https://github.com/DannyYuyang-quic)
     - [haowhsu-quic](https://github.com/haowhsu-quic)
+    - [harshs-qti](https://github.com/harshs-qti)
+    - [jethroqti](https://github.com/jethroqti)
+    - [qti-horodnic](https://github.com/qti-horodnic)
+    - [qti-mmadhava](https://github.com/qti-mmadhava)
+    - [quic-boyuc](https://github.com/quic-boyuc)
+    - [shewu-quic](https://github.com/shewu-quic)
+    - [winskuo-quic](https://github.com/winskuo-quic)
+    - [zhaoxul-qti](https://github.com/zhaoxul-qti)
 
 Thanks again for your contribution!

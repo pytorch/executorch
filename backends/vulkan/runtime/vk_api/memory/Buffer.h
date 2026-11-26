@@ -18,6 +18,10 @@
 
 #include <executorch/backends/vulkan/runtime/vk_api/memory/Allocation.h>
 
+#ifdef VK_ANDROID_external_memory_android_hardware_buffer
+#include <android/hardware_buffer.h>
+#endif /* VK_ANDROID_external_memory_android_hardware_buffer */
+
 namespace vkcompute {
 
 // Forward declare vTensor classes such that they can be set as friend classes
@@ -33,14 +37,33 @@ enum MemoryAccessType : MemoryAccessFlags {
   NONE = 0u << 0u,
   READ = 1u << 0u,
   WRITE = 1u << 1u,
+  // With READ: an image read through a storage image descriptor, which needs
+  // VK_IMAGE_LAYOUT_GENERAL (vk_layout gives it to every compute access other
+  // than a plain READ) but is not a write.
+  STORAGE_IMAGE = 1u << 2u,
 };
 
 static constexpr MemoryAccessFlags kReadWrite =
     MemoryAccessType::WRITE | MemoryAccessType::READ;
 
+#ifdef VK_ANDROID_external_memory_android_hardware_buffer
+// Looked up at runtime because they need API 26 at compile time; every device
+// with AHardwareBuffer has them. Null if the lookup fails.
+struct AHardwareBufferFns {
+  void (*acquire)(AHardwareBuffer*);
+  void (*release)(AHardwareBuffer*);
+  void (*describe)(const AHardwareBuffer*, AHardwareBuffer_Desc*);
+};
+
+const AHardwareBufferFns& ahardwarebuffer_fns();
+#endif /* VK_ANDROID_external_memory_android_hardware_buffer */
+
 static constexpr MemoryAccessFlags kRead = MemoryAccessType::READ;
 
 static constexpr MemoryAccessFlags kWrite = MemoryAccessType::WRITE;
+
+static constexpr MemoryAccessFlags kReadStorageImage =
+    MemoryAccessType::READ | MemoryAccessType::STORAGE_IMAGE;
 
 class VulkanBuffer final {
  public:
@@ -58,6 +81,27 @@ class VulkanBuffer final {
       const VmaAllocationCreateInfo&,
       const VkBufferUsageFlags,
       const bool allocate_memory = true);
+
+  /*
+   * A non-owning VulkanBuffer over a VkBuffer that something else created on
+   * the same VkDevice, bound to memory, and destroys, e.g. an application
+   * sharing the device. Like an image wrapped from handles, it has no VMA
+   * allocator.
+   */
+  static VulkanBuffer alias(VkBuffer, const VkDeviceSize nbytes);
+
+#ifdef VK_ANDROID_external_memory_android_hardware_buffer
+  /*
+   * A buffer over the memory of a BLOB AHardwareBuffer, which other APIs (e.g.
+   * GLES through GL_EXT_external_buffer) can import as well. The memory is
+   * imported, not mapped, so the buffer has no host pointer. Its size is the
+   * AHardwareBuffer's width.
+   */
+  static VulkanBuffer import_android_hardware_buffer(
+      const VmaAllocator,
+      AHardwareBuffer* ahb,
+      const VkBufferUsageFlags);
+#endif /* VK_ANDROID_external_memory_android_hardware_buffer */
 
  protected:
   /*
@@ -108,6 +152,9 @@ class VulkanBuffer final {
   // thus it does not have ownership of the underlying VKBuffer
   bool is_copy_;
   VkBuffer handle_;
+  // Memory imported from outside VMA (an AHardwareBuffer). Freed directly by
+  // the instance that imported it, not by its copies.
+  VkDeviceMemory external_memory_;
 
  public:
   inline VkDevice device() const {
@@ -147,7 +194,8 @@ class VulkanBuffer final {
   }
 
   inline bool has_memory() const {
-    return (memory_.allocation != VK_NULL_HANDLE);
+    return memory_.allocation != VK_NULL_HANDLE ||
+        external_memory_ != VK_NULL_HANDLE;
   }
 
   inline bool owns_memory() const {

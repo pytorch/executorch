@@ -2,6 +2,8 @@
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
  *
+ * Copyright 2026  Arm Limited and/or its affiliates.
+ *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
@@ -11,6 +13,10 @@
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
 #include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
+
+// vk_api.h must precede SharedVulkanDevice.h: Volk requires VK_NO_PROTOTYPES
+// before the first inclusion of Vulkan headers.
+#include <executorch/backends/vulkan_shared/runtime/SharedVulkanDevice.h>
 
 #include <executorch/backends/vulkan/runtime/vk_api/Device.h>
 #include <executorch/backends/vulkan/runtime/vk_api/Pipeline.h>
@@ -65,6 +71,11 @@ class Adapter final {
       const uint32_t num_queues,
       const std::string& cache_data_path);
 
+  // Borrow only the queue registered in shared_device.
+  explicit Adapter(
+      executorch::backends::vulkan_shared::SharedVulkanDevicePtr shared_device,
+      const std::string& cache_data_path);
+
   Adapter(const Adapter&) = delete;
   Adapter& operator=(const Adapter&) = delete;
 
@@ -83,6 +94,14 @@ class Adapter final {
   friend class ScopedAdapterCapabilityOverride;
 
  private:
+  // First member => released last, after caches, VMA, and borrowed
+  // DeviceHandle.
+  executorch::backends::vulkan_shared::SharedVulkanDevicePtr shared_device_;
+  // Filled before device creation; these are enabled, not available,
+  // extensions.
+  std::vector<std::string> enabled_device_extensions_;
+  executorch::backends::vulkan_shared::SharedVulkanDeviceFeatures
+      enabled_device_features_;
   // Use a mutex to manage queue usage info since
   // it can be accessed from multiple threads
   std::mutex queue_usage_mutex_;
@@ -106,12 +125,34 @@ class Adapter final {
   // Miscellaneous
   bool linear_tiling_3d_enabled_;
   bool owns_device_;
+  // VK_KHR_vulkan_memory_model and vulkanMemoryModel are enabled on the
+  // logical device: known for a device this Adapter created or borrows through
+  // a shared device, false for an external VkDevice.
+  bool vulkan_memory_model_enabled_ = false;
   // Test-only capability overrides; empty unless a ScopedCapabilityOverride
   // is live.
   AdapterCapabilityOverrides capability_overrides_;
 
  public:
   // Physical Device metadata
+
+  inline VkInstance instance_handle() const {
+    return instance_;
+  }
+
+  inline const std::vector<std::string>& enabled_device_extensions() const {
+    return enabled_device_extensions_;
+  }
+
+  inline const executorch::backends::vulkan_shared::SharedVulkanDeviceFeatures&
+  enabled_device_features() const {
+    return enabled_device_features_;
+  }
+
+  inline const executorch::backends::vulkan_shared::SharedVulkanDevicePtr&
+  shared_device() const {
+    return shared_device_;
+  }
 
   inline VkPhysicalDevice physical_handle() const {
     return physical_device_.handle;
@@ -146,6 +187,16 @@ class Adapter final {
     return physical_device_.device_type;
   }
 
+  // VkPhysicalDeviceProperties::vendorID.
+  inline uint32_t vendor_id() const {
+    return physical_device_.properties.vendorID;
+  }
+
+  // VkDriverId of the driver, or 0 when the device does not report it.
+  inline uint32_t driver_id() const {
+    return physical_device_.driver_id;
+  }
+
   // Driver-reported physical device type. Use device_type() above for
   // vendor-specific quirks; this for capability-tier decisions.
   inline bool is_integrated_gpu() const {
@@ -157,6 +208,8 @@ class Adapter final {
 
   Queue request_queue();
   void return_queue(Queue&);
+  // All queue host operations, including waits, use the shared queue mutex.
+  void wait_idle(const Queue&);
 
   // Caches
 
@@ -328,6 +381,20 @@ class Adapter final {
 #endif /* VK_KHR_cooperative_matrix */
   }
 
+#ifdef VK_KHR_cooperative_matrix
+  // Every cooperative-matrix configuration the device enumerates (empty when
+  // cooperative matrices are unsupported).
+  inline const std::vector<VkCooperativeMatrixPropertiesKHR>&
+  cooperative_matrix_properties() const {
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+    static const std::vector<VkCooperativeMatrixPropertiesKHR> kNone;
+    return kNone;
+#else
+    return physical_device_.cooperative_matrix_properties;
+#endif
+  }
+#endif /* VK_KHR_cooperative_matrix */
+
   inline bool supports_int16_shader_types() {
 #ifdef ETVK_FORCE_NO_EXTENSIONS
     return false;
@@ -491,6 +558,16 @@ class Adapter final {
 
   inline uint32_t max_compute_workgroup_invocations() const {
     return physical_device_.properties.limits.maxComputeWorkGroupInvocations;
+  }
+
+  // vulkanMemoryModel is enabled on the logical device (false for an external
+  // VkDevice).
+  inline bool supports_vulkan_memory_model() const {
+    return vulkan_memory_model_enabled_;
+  }
+
+  inline uint32_t max_compute_shared_memory_size() const {
+    return physical_device_.properties.limits.maxComputeSharedMemorySize;
   }
 
   inline uint32_t recommended_lwg_nthreads() const {

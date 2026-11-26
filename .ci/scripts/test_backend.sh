@@ -121,6 +121,9 @@ if [[ "$FLOW" == *nxp* ]]; then
     EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON"
     EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON"
     EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON"
+
+    # Some operator tests (e.g. LSTM) exceed the default 120 s limit on CI runners.
+    export EXECUTORCH_OPERATORS_TEST_TIMEOUT_S="${EXECUTORCH_OPERATORS_TEST_TIMEOUT_S:-240}"
 fi
 
 if [[ "$FLOW" == *openvino* ]]; then
@@ -164,6 +167,11 @@ if [[ ${#PYTEST_RETRY_ARGS[@]} -gt 0 ]]; then
     PYTEST_ARGS+=("${PYTEST_RETRY_ARGS[@]}")
 fi
 PYTEST_ARGS+=("backends/test/suite/$SUITE/" -m "flow_$FLOW" --json-report --json-report-file="$REPORT_FILE")
+if [[ -n "${RUNNER_TEST_RUN_REPORTS_DIR:-}" ]]; then
+    # The root conftest.py adds the test-run reporter. With -c /dev/null pytest
+    # roots node IDs at /dev; keep the reported test files repo-relative.
+    PYTEST_ARGS+=(--rootdir=.)
+fi
 ${CONDA_RUN_CMD} pytest "${PYTEST_ARGS[@]}" || EXIT_CODE=$?
 # Generate markdown summary.
 ${CONDA_RUN_CMD} python -m executorch.backends.test.suite.generate_markdown_summary_json "$REPORT_FILE" > ${GITHUB_STEP_SUMMARY:-"step_summary.md"} --exit-code $EXIT_CODE

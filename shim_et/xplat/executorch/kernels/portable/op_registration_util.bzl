@@ -358,6 +358,12 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_avg_pool3d",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
+        ],
+    ),
+    op_target(
         name = "op_bitwise_and",
         deps = [
             ":scalar_utils",
@@ -553,6 +559,14 @@ ATEN_OPS = (
         name = "op_embedding",
         deps = [
             "//executorch/kernels/portable/cpu/util:kernel_ops_util",
+        ],
+    ),
+    op_target(
+        name = "op_embedding_bag",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:embedding_bag_util",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
     ),
     op_target(

@@ -60,10 +60,18 @@ def get_dqlinear_input(node: torch.fx.Node):
 
 def replace_linear_view_copy_input_output(graph: torch.fx.Graph) -> torch.fx.Graph:
     """
-    Replaces pattern: x -> view_copy -> view_copy -> linear -> view_copy -> y
-    with
-    x -> linear -> y
+    Removes the view_copy after a linear when the linear already produces its
+    shape, so x -> linear -> view_copy -> y becomes x -> linear -> y. A linear
+    with other readers besides the view is left as is.
+
+    When the linear reads a dequantize_per_tensor.tensor node through view_copy
+    nodes and has no bias of more than one dim, it reads that node instead if
+    that makes its output match the view, so
+    dq -> view_copy -> linear -> view_copy -> y becomes dq -> linear -> y.
     Linear nodes can handle input tensor with > 2 dimensions.
+
+    A view goes only when the shapes are known to be equal. With dynamic shapes,
+    the linear's input and the view need symbolic shapes in meta["val"].
     """
     ops = exir_ops.edge
     for node in graph.nodes:
@@ -80,6 +88,12 @@ def replace_linear_view_copy_input_output(graph: torch.fx.Graph) -> torch.fx.Gra
         output_channels = weight_node.meta["val"].shape[0]
         input_node = node.args[0]
         dqlinear_input = get_dqlinear_input(input_node)
+        bias_node = node.args[2] if len(node.args) > 2 else None
+        if bias_node is not None and len(bias_node.meta["val"].shape) > 1:
+            # A linear kept from export can have a bias of more than one dim
+            # that follows the rows of the flattened input, and then it would
+            # not broadcast to the dequantized shape.
+            dqlinear_input = None
         # Reading the dequantized input before its views changes the shape of the
         # linear output, so it is done only when the view after the linear goes.
         for new_input in (dqlinear_input, input_node):
@@ -92,12 +106,37 @@ def replace_linear_view_copy_input_output(graph: torch.fx.Graph) -> torch.fx.Gra
             if statically_known_true(
                 sym_eq(output_shape, list(view_copy.meta["val"].shape))
             ):
-                node.replace_input_with(input_node, new_input)
+                node.update_arg(0, new_input)
                 node.meta["val"] = view_copy.meta["val"]
                 view_copy.replace_all_uses_with(node)
                 break
     graph.eliminate_dead_code()
     return graph
+
+
+def is_transpose(node: torch.fx.Node) -> bool:
+    """
+    Returns whether node transposes a 2-D tensor, so that a linear can take the
+    tensor before it as its weight.
+    """
+    ops = exir_ops.edge
+    if node.target == ops.aten.permute_copy.default:
+        return [d % 2 for d in node.args[1]] == [1, 0]
+    return node.target == ops.aten.t_copy.default
+
+
+def addmm_can_be_linear(node: torch.fx.Node) -> bool:
+    """
+    Returns whether linear(x, w, b) can replace addmm(b, x, w.t()). The weight
+    must be transposed, linear cannot scale its bias or its product, and
+    ExecuTorch's linear kernel takes only a 1-D bias.
+    """
+    return (
+        is_transpose(node.args[2])
+        and node.kwargs.get("beta", 1) == 1
+        and node.kwargs.get("alpha", 1) == 1
+        and len(node.args[0].meta["val"].shape) == 1
+    )
 
 
 def replace_addmm_mm_with_linear(graph: torch.fx.Graph) -> torch.fx.Graph:
@@ -118,14 +157,9 @@ def replace_addmm_mm_with_linear(graph: torch.fx.Graph) -> torch.fx.Graph:
         ):
             with graph.inserting_after(node):
                 if node.target == ops.aten.addmm.default:
-                    weight_t_node = node.args[2]
-                    if weight_t_node.target not in [
-                        ops.aten.t_copy.default,
-                        ops.aten.permute_copy.default,
-                    ]:
-                        # Skip this node as it appears to be a standalone `addmm`
+                    if not addmm_can_be_linear(node):
                         continue
-                    weight_node = weight_t_node.args[0]
+                    weight_node = node.args[2].args[0]
                     args = (node.args[1], weight_node, node.args[0])
                     linear_node = graph.create_node(
                         "call_function", ops.aten.linear.default, args
@@ -135,14 +169,9 @@ def replace_addmm_mm_with_linear(graph: torch.fx.Graph) -> torch.fx.Graph:
                         args[0].meta["val"], args[1].meta["val"], args[2].meta["val"]
                     )
                 else:
-                    weight_t_node = node.args[1]
-                    if weight_t_node.target not in [
-                        ops.aten.t_copy.default,
-                        ops.aten.permute_copy.default,
-                    ]:
-                        # Skip this node as it appears to be a standalone `mm`
+                    if not is_transpose(node.args[1]):
                         continue
-                    weight_node = weight_t_node.args[0]
+                    weight_node = node.args[1].args[0]
                     args = (node.args[0], weight_node)
                     linear_node = graph.create_node(
                         "call_function", ops.aten.linear.default, args

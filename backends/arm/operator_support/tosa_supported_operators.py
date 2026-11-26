@@ -21,8 +21,13 @@ import executorch.backends.arm.ao_ext  # noqa: F401
 import torch
 import torch.fx as fx
 from executorch.backends.arm._passes.arm_pass_utils import (
+    get_compute_dtype,
     get_first_fake_tensor,
     is_submodule_node,
+)
+from executorch.backends.arm._passes.cast_zero_dim_int64_operands_pass import (
+    ZERO_DIM_INT32_OPS,
+    ZERO_DIM_NARROW_OPS,
 )
 from executorch.backends.arm._passes.decompose_topk_pass import (
     get_static_topk_config,
@@ -911,11 +916,13 @@ class SymbolicShapeSupportCheck(OperatorSupportBase):
             return True
 
         if node.target == exir_ops.edge.aten.convolution.default:
-            return (
-                bool(node.args[6])
-                or bool(get_slices_convolution(node))
-                or has_dynamic_conv_padding(node)
-            )
+            if node.args[6]:
+                groups = node.args[8]
+                return bool(groups != 1)
+            return bool(get_slices_convolution(node)) or has_dynamic_conv_padding(node)
+        if node.target == torch.ops.aten.conv_transpose2d.input:
+            groups = node.args[6]
+            return bool(groups != 1)
         if node.target in (
             exir_ops.edge.aten.avg_pool2d.default,
             exir_ops.edge.aten.max_pool2d.default,
@@ -1019,21 +1026,53 @@ class SymbolicShapeSupportCheck(OperatorSupportBase):
 class CheckResolvedTensorShapes(OperatorSupportBase):
     """Reject nodes with unresolved tensor input or output shapes."""
 
-    def __init__(self, reporter: WhyNoPartitionReporter):
+    def __init__(
+        self,
+        reporter: WhyNoPartitionReporter,
+        *,
+        targets: Optional[Sequence[object]] = None,
+        reject_symbolic_scalars: bool = False,
+    ):
         """Initialize the check with a reporter.
 
         Args:
             reporter (WhyNoPartitionReporter): Reporter for rejection reasons.
+            targets (Optional[Sequence[object]]): Operators requiring resolved
+                tensor shapes. None checks all operators.
+            reject_symbolic_scalars (bool): Reject symbolic scalar inputs and
+                outputs on all call_function nodes, regardless of targets.
 
         """
         self.reporter = reporter
+        self.targets = targets
+        self.reject_symbolic_scalars = reject_symbolic_scalars
 
     def is_node_supported(
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
     ) -> bool:
-        """Return False when the node depends on unresolved tensor shapes."""
+        """Return False for unresolved shapes or disallowed symbolic scalars."""
         del submodules
         if node.op in ("placeholder", "output"):
+            return True
+
+        if (
+            self.reject_symbolic_scalars
+            and node.op == "call_function"
+            and any(
+                isinstance(
+                    value.meta.get("val"), (torch.SymInt, torch.SymFloat, torch.SymBool)
+                )
+                for value in (node, *node.all_input_nodes)
+            )
+        ):
+            self.reporter.report_reject(
+                node, "Target does not support scalar symbolic inputs or outputs."
+            )
+            return False
+
+        # Require resolved tensor shapes only for the selected operators.
+        # Symbolic scalar restrictions above apply to all operators.
+        if self.targets is not None and node.target not in self.targets:
             return True
         if node.op == "call_function" and node.target in (*Q_OPS, *DQ_OPS):
             return True
@@ -1206,14 +1245,36 @@ class CheckProperQuantization(OperatorSupportBase):
         return True
 
 
-def _int64_operands_agree(node: fx.Node) -> bool:
-    """Whether every operand beside an int64 operand casts to int64."""
+def _can_handle_int64_operands(node: fx.Node) -> bool:
+    """Return whether the backend lowers the int64 operands of a node, either in
+    int64 or by casting zero-dimensional int64 operands to a narrower dtype.
+    """
     dtypes = {
         arg.meta["val"].dtype
         for arg in node.all_input_nodes
         if isinstance(arg.meta.get("val"), torch.Tensor)
     }
-    return torch.int64 not in dtypes or dtypes <= {torch.int64, torch.int32, torch.bool}
+    if torch.int64 not in dtypes:
+        return True
+    if not dtypes <= {torch.int64, torch.int32, torch.int16, torch.int8, torch.bool}:
+        return False
+    if node.target == exir_ops.edge.dim_order_ops._to_dim_order_copy.default:
+        return True
+    compute_dtype = get_compute_dtype(node)
+    if compute_dtype == torch.int64:
+        return True
+    if node.target in ZERO_DIM_NARROW_OPS:
+        narrow_dtypes: tuple[torch.dtype, ...] = (torch.int8, torch.int16, torch.int32)
+    elif node.meta["val"].dtype == torch.bool or node.target in ZERO_DIM_INT32_OPS:
+        narrow_dtypes = (torch.int32,)
+    else:
+        return False
+    return compute_dtype in narrow_dtypes and all(
+        arg.meta["val"].dim() == 0
+        for arg in node.all_input_nodes
+        if isinstance(arg.meta.get("val"), torch.Tensor)
+        and arg.meta["val"].dtype == torch.int64
+    )
 
 
 class CheckInt64InputsAndOutputs(OperatorSupportBase):
@@ -1355,7 +1416,13 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
 
         input_node = typing.cast(torch.fx.Node, node.args[0])
         input_tensor = get_first_fake_tensor(input_node)
-        if not self._is_tosa_argmax_dtype_supported(node, input_tensor.dtype):
+        input_dtype = input_tensor.dtype
+        if input_node.target in DQ_OPS:
+            # The quantizer annotated argmax's input: the dequantize is folded
+            # before lowering and TOSA ARGMAX sees the quantized dtype.
+            dq_input = typing.cast(torch.fx.Node, input_node.args[0])
+            input_dtype = get_first_fake_tensor(dq_input).dtype
+        if not self._is_tosa_argmax_dtype_supported(node, input_dtype):
             return False
 
         input_rank = len(input_tensor.shape)
@@ -1445,7 +1512,7 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
             self.tosa_spec.support_integer()
             and self.tosa_spec.support_extension("int64")
             and node.target in TOSA_PRO_INT_EXT_INT64_SupportList
-            and _int64_operands_agree(node)
+            and _can_handle_int64_operands(node)
         ):
             return True
         vals = node.meta["val"]

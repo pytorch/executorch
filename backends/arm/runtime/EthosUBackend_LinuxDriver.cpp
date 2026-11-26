@@ -12,7 +12,6 @@
 
 #include <unistd.h>
 #include <algorithm>
-#include <array>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -24,9 +23,9 @@
 #include <vector>
 
 #include <ethosu.hpp>
-#include <uapi/ethosu.h>
 
 #include <executorch/backends/arm/runtime/EthosUBackend_Internal.h>
+#include <executorch/backends/arm/runtime/EthosUBackend_Pmu_LinuxDriver.h>
 #include <executorch/runtime/core/error.h>
 
 using executorch::runtime::ArrayRef;
@@ -34,19 +33,28 @@ using executorch::runtime::BackendExecutionContext;
 using executorch::runtime::CompileSpec;
 using executorch::runtime::Error;
 using executorch::runtime::MemoryAllocator;
-using executorch::runtime::Span;
 
 namespace executorch {
 namespace backends {
 namespace arm {
+
+executorch::runtime::Error __attribute__((weak)) ethosu_linux_inference_begin(
+    EthosUInvocationContext& invocation) {
+  invocation.pmu_events = {};
+  invocation.pmu_enabled = false;
+  return Error::Ok;
+}
+
+void __attribute__((weak)) ethosu_linux_inference_end(
+    const EthosU::Inference*,
+    const EthosUInvocationContext&,
+    bool) noexcept {}
 
 constexpr int64_t kDefaultEthosUTimeoutNs = 60000000000LL;
 
 struct LinuxDriverOptions {
   std::string device_path = "/dev/ethosu0";
   int64_t timeout_ns = kDefaultEthosUTimeoutNs;
-  bool enable_cycle_counter = true;
-  std::array<uint32_t, ETHOSU_PMU_EVENT_MAX> pmu_events{};
 };
 
 struct PlatformState {
@@ -87,8 +95,6 @@ LinuxDriverOptions parse_linux_options(ArrayRef<CompileSpec> specs) {
   LinuxDriverOptions options;
   constexpr char kDeviceKey[] = "ethosu.device";
   constexpr char kTimeoutKey[] = "ethosu.timeout_ns";
-  constexpr char kCycleCounterKey[] = "ethosu.enable_cycle_counter";
-  constexpr char kPmuPrefix[] = "ethosu.pmu_event";
 
   for (const CompileSpec& spec : specs) {
     if (spec.key == nullptr) {
@@ -109,27 +115,6 @@ LinuxDriverOptions parse_linux_options(ArrayRef<CompileSpec> specs) {
         options.timeout_ns = timeout;
       }
       continue;
-    }
-
-    if (strcmp(spec.key, kCycleCounterKey) == 0) {
-      uint8_t enabled = 0;
-      if (read_scalar_value(spec, &enabled)) {
-        options.enable_cycle_counter = enabled != 0;
-      }
-      continue;
-    }
-
-    if (strncmp(spec.key, kPmuPrefix, strlen(kPmuPrefix)) == 0) {
-      const char* index_str = spec.key + strlen(kPmuPrefix);
-      char* endptr = nullptr;
-      long idx = std::strtol(index_str, &endptr, 10);
-      if (endptr != index_str && idx >= 0 &&
-          idx < static_cast<long>(ETHOSU_PMU_EVENT_MAX)) {
-        uint32_t event = 0;
-        if (read_scalar_value(spec, &event)) {
-          options.pmu_events[static_cast<size_t>(idx)] = event;
-        }
-      }
     }
   }
 
@@ -183,15 +168,47 @@ EthosULinuxDeviceCache& get_linux_device_cache() {
   return "UNKNOWN";
 }
 
+// End stats on every return and exception path from invoke_linux_driver.
+struct ScopedEthosULinuxInferenceStats {
+  const std::unique_ptr<EthosU::Inference>& inference;
+  const EthosUInvocationContext& invocation;
+  bool inference_success = false;
+  const Error status;
+
+  ScopedEthosULinuxInferenceStats(
+      const std::unique_ptr<EthosU::Inference>& inference,
+      EthosUInvocationContext& invocation)
+      : inference(inference),
+        invocation(invocation),
+        status(ethosu_linux_inference_begin(invocation)) {}
+  ScopedEthosULinuxInferenceStats(const ScopedEthosULinuxInferenceStats&) =
+      delete;
+  ScopedEthosULinuxInferenceStats& operator=(
+      const ScopedEthosULinuxInferenceStats&) = delete;
+
+  ~ScopedEthosULinuxInferenceStats() {
+    if (status == Error::Ok) {
+      ethosu_linux_inference_end(
+          inference.get(), invocation, inference_success);
+    }
+  }
+};
+
 Error invoke_linux_driver(
     const VelaHandles& handles,
     const std::vector<const char*>& input_ptrs,
     const std::vector<char*>& output_ptrs,
     const std::vector<size_t>& input_copy_sizes,
     const std::vector<size_t>& output_copy_sizes,
-    const PlatformState& state) {
+    const PlatformState& state,
+    EthosUInvocationContext& invocation) {
   const LinuxDriverOptions& options = state.options;
+  std::unique_ptr<EthosU::Inference> inference;
   try {
+    ScopedEthosULinuxInferenceStats stats{inference, invocation};
+    if (stats.status != Error::Ok) {
+      return stats.status;
+    }
     if (handles.inputs != nullptr && handles.inputs->count > 0) {
       if (input_copy_sizes.size() !=
           static_cast<size_t>(handles.inputs->count)) {
@@ -210,6 +227,8 @@ Error invoke_linux_driver(
             input_copy_sizes.size());
         return Error::InvalidState;
       }
+      EXECUTORCH_PROF_SCOPE(
+          invocation.event_tracer, "EthosUBackend::input.write()");
       for (int i = 0; i < handles.inputs->count; ++i) {
         const size_t copy_size = input_copy_sizes[i];
         if (copy_size == 0) {
@@ -251,35 +270,39 @@ Error invoke_linux_driver(
           output_copy_sizes.size());
       return Error::InvalidState;
     }
-    auto inference = std::make_unique<EthosU::Inference>(
-        state.network,
-        state.ifm_buffers.begin(),
-        state.ifm_buffers.end(),
-        state.ofm_buffers.begin(),
-        state.ofm_buffers.end(),
-        state.intermediate_buffer,
-        state.constant_buffer,
-        options.pmu_events,
-        options.enable_cycle_counter);
+    {
+      EXECUTORCH_PROF_SCOPE(
+          invocation.event_tracer, "EthosUBackend::driver.invoke()");
+      inference = std::make_unique<EthosU::Inference>(
+          state.network,
+          state.ifm_buffers.begin(),
+          state.ifm_buffers.end(),
+          state.ofm_buffers.begin(),
+          state.ofm_buffers.end(),
+          state.intermediate_buffer,
+          state.constant_buffer,
+          invocation.pmu_events,
+          invocation.pmu_enabled);
 
-    if (inference->wait(options.timeout_ns)) {
-      ET_LOG(
-          Error,
-          "Ethos-U inference timed out after %lld ns",
-          static_cast<long long>(options.timeout_ns));
-      return Error::InvalidState;
+      if (inference->wait(options.timeout_ns)) {
+        ET_LOG(
+            Error,
+            "Ethos-U inference timed out after %lld ns",
+            static_cast<long long>(options.timeout_ns));
+        return Error::InvalidState;
+      }
+
+      auto status = inference->status();
+      if (status != EthosU::InferenceStatus::OK) {
+        ET_LOG(
+            Error,
+            "Ethos-U inference failed with status %s",
+            inference_status_to_string(status));
+        return Error::InvalidState;
+      }
     }
 
-    auto status = inference->status();
-    if (status != EthosU::InferenceStatus::OK) {
-      ET_LOG(
-          Error,
-          "Ethos-U inference failed with status %s",
-          inference_status_to_string(status));
-      return Error::InvalidState;
-    }
-
-    if (options.enable_cycle_counter) {
+    {
       try {
         ET_LOG(
             Info,
@@ -289,28 +312,33 @@ Error invoke_linux_driver(
         ET_LOG(Debug, "Failed to read Ethos-U cycle counter: %s", e.what());
       }
     }
+    stats.inference_success = true;
 
-    for (int i = 0; i < handles.outputs->count; ++i) {
-      const size_t copy_size = output_copy_sizes[i];
-      if (copy_size == 0) {
-        continue;
+    {
+      EXECUTORCH_PROF_SCOPE(
+          invocation.event_tracer, "EthosUBackend::output.read()");
+      for (int i = 0; i < handles.outputs->count; ++i) {
+        const size_t copy_size = output_copy_sizes[i];
+        if (copy_size == 0) {
+          continue;
+        }
+        char* dst = output_ptrs[i];
+        if (dst == nullptr) {
+          ET_LOG(Error, "Missing output buffer for index %d", i);
+          return Error::InvalidState;
+        }
+        const VelaIO& io = handles.outputs->io[i];
+        const auto& ofm = state.ofm_buffers.front();
+        if (io.offset < 0 || io.offset + copy_size > ofm->size()) {
+          ET_LOG(Error, "Output %d does not fit the Ethos-U output region", i);
+          return Error::InvalidState;
+        }
+        if (lseek(ofm->getFd(), io.offset, SEEK_SET) == -1) {
+          ET_LOG(Error, "Failed to seek to output %d", i);
+          return Error::InvalidState;
+        }
+        ofm->read(dst, copy_size);
       }
-      char* dst = output_ptrs[i];
-      if (dst == nullptr) {
-        ET_LOG(Error, "Missing output buffer for index %d", i);
-        return Error::InvalidState;
-      }
-      const VelaIO& io = handles.outputs->io[i];
-      const auto& ofm = state.ofm_buffers.front();
-      if (io.offset < 0 || io.offset + copy_size > ofm->size()) {
-        ET_LOG(Error, "Output %d does not fit the Ethos-U output region", i);
-        return Error::InvalidState;
-      }
-      if (lseek(ofm->getFd(), io.offset, SEEK_SET) == -1) {
-        ET_LOG(Error, "Failed to seek to output %d", i);
-        return Error::InvalidState;
-      }
-      ofm->read(dst, copy_size);
     }
   } catch (const std::exception& e) {
     ET_LOG(Error, "Ethos-U Linux driver invocation failed: %s", e.what());
@@ -320,21 +348,14 @@ Error invoke_linux_driver(
   return Error::Ok;
 }
 
-// Get the byte size of an IO tensor from its Vela descriptor.
-size_t vela_io_bytes(const VelaIO& io) {
-  size_t count = 1;
-  for (int i = 0; i < shapeDim; i++) {
-    count *= static_cast<size_t>(io.shape[i]);
-  }
-  return count * static_cast<size_t>(io.elem_size);
-}
-
 // Get the buffer size needed to hold every IO at its Vela offset.
 size_t vela_region_bytes(const VelaIOs& ios) {
   size_t size = 0;
   for (int i = 0; i < ios.count; ++i) {
     size = std::max(
-        size, static_cast<size_t>(ios.io[i].offset) + vela_io_bytes(ios.io[i]));
+        size,
+        static_cast<size_t>(ios.io[i].offset) +
+            calculate_vela_io_bytes(ios.io[i]));
   }
   return size;
 }
@@ -431,27 +452,37 @@ bool needs_scratch_allocation() {
 Error platform_execute(
     BackendExecutionContext& context,
     const ExecutionHandle* execution_handle,
-    const VelaHandles& handles,
-    int input_count,
-    int output_count,
-    Span<executorch::runtime::EValue*> args,
-    char* /*ethosu_scratch*/) {
+    IOPlan& io_plan) {
+  const VelaHandles& handles = *io_plan.handles;
+  const int input_count = static_cast<int>(io_plan.arguments.inputs.size());
+  const int output_count = static_cast<int>(io_plan.arguments.outputs.size());
   std::vector<size_t> input_copy_sizes(input_count, 0);
   std::vector<const char*> linux_input_ptrs(input_count, nullptr);
 
   std::vector<size_t> output_io_bytes(output_count, 0);
   std::vector<char*> linux_output_ptrs(output_count, nullptr);
+  std::vector<std::vector<char>> output_scratch_buffers;
 
   for (int i = 0; i < input_count; ++i) {
-    auto tensor_in = args[i]->toTensor();
+    auto tensor_in = io_plan.arguments.inputs[i]->toTensor();
     linux_input_ptrs[i] = tensor_in.const_data_ptr<char>();
     input_copy_sizes[i] = tensor_in.nbytes();
   }
 
-  for (int i = 0; i < output_count; ++i) {
-    auto tensor_out = args[input_count + i]->toTensor();
-    output_io_bytes[i] = tensor_out.nbytes();
-    linux_output_ptrs[i] = tensor_out.mutable_data_ptr<char>();
+  if (handles.outputs != nullptr) {
+    for (int i = 0; i < output_count; ++i) {
+      auto tensor_out = io_plan.arguments.outputs[i]->toTensor();
+      output_io_bytes[i] = calculate_vela_io_bytes(handles.outputs->io[i]);
+      if (output_io_bytes[i] != tensor_out.nbytes()) {
+        if (output_scratch_buffers.empty()) {
+          output_scratch_buffers.resize(output_count);
+        }
+        output_scratch_buffers[i].resize(output_io_bytes[i]);
+        linux_output_ptrs[i] = output_scratch_buffers[i].data();
+      } else {
+        linux_output_ptrs[i] = tensor_out.mutable_data_ptr<char>();
+      }
+    }
   }
 
   PlatformState* state = execution_handle->platform_state;
@@ -466,13 +497,32 @@ Error platform_execute(
         "WARNING: Planned Ethos-U scratch is unused on Linux Direct Drive; using driver-managed scratch instead");
     state->warned_ignored_planned_scratch = true;
   }
-  return invoke_linux_driver(
+  EthosUInvocationContext invocation{};
+  invocation.delegate_handle = reinterpret_cast<uintptr_t>(execution_handle);
+  invocation.device_path = state->options.device_path.c_str();
+#if defined(ET_EVENT_TRACER_ENABLED)
+  invocation.event_tracer = context.event_tracer();
+#endif
+  const Error status = invoke_linux_driver(
       handles,
       linux_input_ptrs,
       linux_output_ptrs,
       input_copy_sizes,
       output_io_bytes,
-      *state);
+      *state,
+      invocation);
+  if (status != Error::Ok) {
+    return status;
+  }
+
+  if (io_plan.needs_output_copy) {
+#if defined(ET_EVENT_TRACER_ENABLED)
+    auto* event_tracer = context.event_tracer();
+#endif
+    EXECUTORCH_PROF_SCOPE(event_tracer, "EthosUBackend::output.copy()");
+    return copy_outputs(io_plan, linux_output_ptrs.data());
+  }
+  return Error::Ok;
 }
 
 } // namespace arm

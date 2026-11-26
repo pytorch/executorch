@@ -76,8 +76,13 @@ void add_view_copy_node(
     ValueRef out,
     const std::vector<ValueRef>& resize_args,
     const ExecuteNode::ResizeFunction& resize_fn) {
-  std::string kernel_name =
-      graph.is_buffer_storage(out) ? "view_buffer" : "view_texture";
+  // Buffer outputs whose packed dim has stride 1 are written one vec4 texel
+  // per thread.
+  const bool use_vec4 = is_packed_dim_vec4_contiguous(graph, out);
+
+  std::string kernel_name = use_vec4 ? "view_vec4_buffer"
+      : graph.is_buffer_storage(out) ? "view_buffer"
+                                     : "view_texture";
   kernel_name.reserve(kShaderNameReserve);
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
@@ -93,8 +98,8 @@ void add_view_copy_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      default_pick_gwg,
-      default_pick_lwg,
+      use_vec4 ? default_pick_vec4_gwg : default_pick_gwg,
+      pick_balanced_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {in, vkapi::kRead}},
       // Parameter Buffers
@@ -136,7 +141,7 @@ void add_view_copy_convert_node(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       default_pick_gwg,
-      default_pick_lwg,
+      pick_balanced_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {in, vkapi::kRead}},
       // Parameter Buffers

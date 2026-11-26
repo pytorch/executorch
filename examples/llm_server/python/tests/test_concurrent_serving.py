@@ -828,6 +828,7 @@ def test_failed_multiplexed_reset_invalidates_old_transcript():
         runtime = SessionRuntime(worker)
         serving = _chat(runtime)
         serving._transcript.record_assistant_turn(
+            request_messages=[],
             session_id="s",
             content="reply",
             tool_calls=None,
@@ -872,6 +873,7 @@ def test_http_reset_missing_session_is_idempotent_but_preserves_real_errors(
         runtime = SessionRuntime(worker)
         serving = _chat(runtime)
         serving._transcript.record_assistant_turn(
+            request_messages=[],
             session_id="s",
             content="reply",
             tool_calls=None,
@@ -919,7 +921,7 @@ def test_completed_response_racing_disconnect_only_closes_stream(stream):
             async def aclose(self):
                 closed.append(True)
 
-        async def create(_):
+        async def create(_, *, observer=None):
             completed.set()
             return Stream() if stream else object()
 
@@ -1056,7 +1058,9 @@ def test_chat_close_joins_active_read_before_releasing_transaction():
         try:
             stream = await serving.create(_request("s", stream=True))
             first = await _call(worker)
-            await anext(stream)  # Role chunk; stop filtering retains the short reply.
+            await anext(stream)  # Role chunk.
+            reply = json.loads((await anext(stream)).removeprefix("data: "))
+            assert reply["choices"][0]["delta"]["content"] == "reply"
             reader = asyncio.create_task(anext(stream))
             await asyncio.sleep(0)
             assert stream._reader is reader
@@ -1263,6 +1267,7 @@ def test_native_prefetch_preserves_tokens_and_final_metadata(
             ]
             assert await generation.result() is stats
             assert stats == GenStats(
+                matched_stop=None,
                 prompt_tokens=3,
                 completion_tokens=3,
                 finish_reason="length",
@@ -1276,6 +1281,7 @@ def test_native_prefetch_preserves_tokens_and_final_metadata(
                 decode_tok_s=400.0,
                 vision_encoder_ms=123.5,
                 generated_token_ids=generated_ids,
+                terminal_received=True,
             )
             assert not worker._requests and runtime._admitted == 0
         finally:

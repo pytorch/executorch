@@ -18,6 +18,9 @@ struct PlanStep {
   KernelRegion region;
   std::unique_ptr<Executable> executable;
   StorageRequirements storage;
+  /// ETDump delegate event name: provider/implementation:first_node[+N].
+  /// Empty unless ET_EVENT_TRACER_ENABLED is defined.
+  std::string trace_name;
 };
 
 /// One static prepared plan. Graph, bindings and allocator outlive the plan.
@@ -63,6 +66,11 @@ class CPUPlan {
   size_t released_private_constant_bytes() const {
     return released_private_constant_bytes_;
   }
+  /// After a failed select, the target of the operator no linked
+  /// implementation accepts, if that is why; otherwise empty.
+  const std::string& unsupported_operator() const {
+    return unsupported_operator_;
+  }
 
  private:
   runtime::Error allocate_activations(runtime::MemoryAllocator& allocator);
@@ -75,6 +83,7 @@ class CPUPlan {
   std::vector<PlanStep> steps_;
   std::vector<BufferRequirements> requirements_;
   std::string decisions_;
+  std::string unsupported_operator_;
   Buffer scratch_;
   size_t arena_bytes_ = 0;
   size_t private_constant_bytes_ = 0;

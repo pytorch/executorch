@@ -19,8 +19,28 @@ def define_common_targets(is_fbcode = False):
     )
 
     runtime.cxx_test(
+        name = "conv2d_tap_range_test",
+        srcs = ["conv2d_tap_range_test.cpp"],
+        platforms = get_platforms(),
+        deps = [
+            "//third-party/googletest:gtest_main",
+            "//executorch/backends/vulkan:vulkan_graph_runtime",
+        ],
+    )
+
+    runtime.cxx_test(
         name = "q8ta_conv2d_route_test",
         srcs = ["q8ta_conv2d_route_test.cpp"],
+        platforms = get_platforms(),
+        deps = [
+            "//third-party/googletest:gtest_main",
+            "//executorch/backends/vulkan:vulkan_graph_runtime",
+        ],
+    )
+
+    runtime.cxx_test(
+        name = "coopmat_family_test",
+        srcs = ["coopmat_family_test.cpp"],
         platforms = get_platforms(),
         deps = [
             "//third-party/googletest:gtest_main",

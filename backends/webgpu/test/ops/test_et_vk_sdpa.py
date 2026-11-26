@@ -43,16 +43,19 @@ class SdpaConfig:
     d: int
     masked: bool = False
     causal: bool = False
+    fully_masked_row: bool = False
 
 
 # Shapes from real SAM2/SigLIP/DaViT encoders + a cheap correctness case + an
-# asymmetric (S_q != S_kv) pooled-query case + the BART causal-mask path.
+# asymmetric (S_q != S_kv) pooled-query case + the BART causal-mask path + a
+# query whose keys are all masked with -inf.
 CONFIGS = [
     SdpaConfig("selfattn_small", 1, 4, 8, 8, 16),
     SdpaConfig("selfattn_siglip", 1, 12, 576, 576, 64),
     SdpaConfig("asym_qpool", 1, 8, 4, 16, 16),
     SdpaConfig("masked", 1, 4, 8, 8, 16, masked=True),
     SdpaConfig("causal", 1, 4, 8, 8, 16, causal=True),
+    SdpaConfig("fully_masked_row", 1, 4, 8, 8, 16, masked=True, fully_masked_row=True),
 ]
 
 
@@ -78,7 +81,10 @@ def _mask(cfg: SdpaConfig) -> Optional[torch.Tensor]:
     if not cfg.masked:
         return None
     g = torch.Generator().manual_seed(1)
-    return torch.randn(cfg.b, cfg.h, cfg.s_q, cfg.s_kv, generator=g).clamp(-1.0, 0.0)
+    mask = torch.randn(cfg.b, cfg.h, cfg.s_q, cfg.s_kv, generator=g).clamp(-1.0, 0.0)
+    if cfg.fully_masked_row:
+        mask[..., 0, :] = float("-inf")
+    return mask
 
 
 class SdpaModule(torch.nn.Module):

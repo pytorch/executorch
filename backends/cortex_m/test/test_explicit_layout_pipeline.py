@@ -13,6 +13,9 @@ from executorch.backends.cortex_m.passes.cortex_m_pass_manager import (
     CortexMPassManager,
     LiftConstantTensorsPass,
 )
+from executorch.backends.cortex_m.passes.explicit_layout_pass import (
+    _is_nchw_to_ncw_squeeze,
+)
 from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
 from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
 from executorch.backends.cortex_m.test.tester import (
@@ -86,6 +89,28 @@ class TanhConvReshapeConv(torch.nn.Module):
 
     def forward(self, x):
         return self.conv2(self.conv1(torch.tanh(x)).view(1, 4, 32))
+
+
+class Conv1dChain(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.conv1 = torch.nn.Conv1d(8, 8, 3, padding=1)
+        self.conv2 = torch.nn.Conv1d(8, 8, 3, padding=1)
+        self.conv3 = torch.nn.Conv1d(8, 8, 1)
+
+    def forward(self, x):
+        y = torch.tanh(self.conv1(x))
+        return self.conv3(torch.relu(self.conv2(y) + y))
+
+
+class TransposedConv1dChain(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.conv1 = torch.nn.Conv1d(8, 8, 3, padding=1)
+        self.conv2 = torch.nn.Conv1d(8, 8, 3, padding=1)
+
+    def forward(self, x):
+        return self.conv2(torch.relu(self.conv1(x).transpose(1, 2)).transpose(1, 2))
 
 
 class Apply(torch.nn.Module):
@@ -173,9 +198,9 @@ def test_pipeline_uses_configured_stages(monkeypatch, test_method, use_explicit_
         _count(
             tester.get_artifact(StageType.RUN_PASSES).exported_program(),
             (
-                exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default
+                exir_ops.edge.cortex_m.quantized_conv2d_packed_nhwc.default
                 if use_explicit_layout
-                else exir_ops.edge.cortex_m.quantized_conv2d.default
+                else exir_ops.edge.cortex_m.quantized_conv2d_packed.default
             ),
         )
         == 1
@@ -201,21 +226,25 @@ def test_layout_pipelines_select_distinct_spatial_operators():
             node.users for node in program.graph.nodes if node.op == "placeholder"
         )
 
-    assert _count(legacy_program, exir_ops.edge.cortex_m.quantized_conv2d.default) == 1
+    assert (
+        _count(legacy_program, exir_ops.edge.cortex_m.quantized_conv2d_packed.default)
+        == 1
+    )
     assert (
         _count(
             legacy_program,
-            exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default,
+            exir_ops.edge.cortex_m.quantized_conv2d_packed_nhwc.default,
         )
         == 0
     )
     assert (
-        _count(explicit_program, exir_ops.edge.cortex_m.quantized_conv2d.default) == 0
+        _count(explicit_program, exir_ops.edge.cortex_m.quantized_conv2d_packed.default)
+        == 0
     )
     assert (
         _count(
             explicit_program,
-            exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default,
+            exir_ops.edge.cortex_m.quantized_conv2d_packed_nhwc.default,
         )
         == 1
     )
@@ -340,7 +369,10 @@ def test_conv1d_is_quantized_before_layout_conversion():
     _run_explicit_layout_pass_manager(tester)
     program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
 
-    assert _count(program, exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default) == 1
+    assert (
+        _count(program, exir_ops.edge.cortex_m.quantized_conv2d_packed_nhwc.default)
+        == 1
+    )
     assert _count(program, exir_ops.edge.aten.convolution.default) == 0
 
 
@@ -362,7 +394,10 @@ def _lower_nhwc_padded_conv(channels, shared_pad):
         )
     )
     program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
-    assert _count(program, exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default) == 1
+    assert (
+        _count(program, exir_ops.edge.cortex_m.quantized_conv2d_packed_nhwc.default)
+        == 1
+    )
     assert _count(program, exir_ops.edge.cortex_m.pad.default) == int(shared_pad)
     if not shared_pad:
         assert _count(program, exir_ops.edge.cortex_m.transpose.default) == 0
@@ -441,7 +476,10 @@ def test_conv_behind_lut_activation_lowers_to_cmsis_nn(fn, shape):
     program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
 
     assert _count(program, exir_ops.edge.cortex_m.quantized_activation.default) == 1
-    assert _count(program, exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default) == 1
+    assert (
+        _count(program, exir_ops.edge.cortex_m.quantized_conv2d_packed_nhwc.default)
+        == 1
+    )
     assert _count(program, exir_ops.edge.cortex_m.transpose.default) == 2
     assert _count(program, exir_ops.edge.aten.permute_copy.default) == 0
     for node in program.graph.nodes:
@@ -471,7 +509,10 @@ def test_conv_behind_each_lut_activation_lowers_to_cmsis_nn(fn):
     program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
 
     assert _count(program, exir_ops.edge.cortex_m.quantized_activation.default) == 1
-    assert _count(program, exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default) == 1
+    assert (
+        _count(program, exir_ops.edge.cortex_m.quantized_conv2d_packed_nhwc.default)
+        == 1
+    )
     tester.run_method_and_compare_outputs(inputs=inputs, qtol=1)
 
 
@@ -541,7 +582,10 @@ def test_convs_around_a_reshape_behind_lut_activation_lower_to_cmsis_nn():
     )
     program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
 
-    assert _count(program, exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default) == 2
+    assert (
+        _count(program, exir_ops.edge.cortex_m.quantized_conv2d_packed_nhwc.default)
+        == 2
+    )
     assert _count(program, exir_ops.edge.aten.convolution.default) == 0
     tester.run_method_and_compare_outputs(inputs=inputs, qtol=1)
 
@@ -554,7 +598,10 @@ def test_explicit_layout_lowers_conv_on_a_quantized_constant():
 
     assert _count(program, exir_ops.edge.aten.full_like.default) == 0
     assert _count(program, exir_ops.edge.aten.full.default) == 1
-    assert _count(program, exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default) == 1
+    assert (
+        _count(program, exir_ops.edge.cortex_m.quantized_conv2d_packed_nhwc.default)
+        == 1
+    )
     tester.run_method_and_compare_outputs(inputs=inputs, qtol=1)
 
 
@@ -669,3 +716,70 @@ def test_unquantized_constant_is_not_precomputed(use_explicit_layout):
 
     assert _count(program, exir_ops.edge.aten.full.default) == 1
     tester.run_method_and_compare_outputs(inputs=inputs)
+
+
+def test_conv1d_chain_keeps_only_the_boundary_layout_copies():
+    torch.manual_seed(0)
+    inputs = (torch.randn(1, 8, 16),)
+    tester = _run_explicit_layout_passes(CortexMTester(Conv1dChain().eval(), inputs))
+    program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
+
+    assert (
+        _count(program, exir_ops.edge.cortex_m.quantized_conv2d_packed_nhwc.default)
+        == 3
+    )
+    assert [
+        node.args[1]
+        for node in program.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.cortex_m.transpose.default
+        )
+    ] == [[0, 2, 1], [0, 2, 1]]
+    assert _count(program, exir_ops.edge.aten.permute_copy.default) == 0
+    tester.run_method_and_compare_outputs(inputs=inputs, qtol=1)
+
+
+def test_user_transposed_conv1d_chain_keeps_only_the_boundary_layout_copies():
+    torch.manual_seed(0)
+    inputs = (torch.randn(1, 8, 16),)
+    tester = _run_explicit_layout_passes(
+        CortexMTester(TransposedConv1dChain().eval(), inputs)
+    )
+    program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
+
+    assert _count(program, exir_ops.edge.cortex_m.transpose.default) == 2
+    assert _count(program, exir_ops.edge.aten.permute_copy.default) == 0
+    tester.run_method_and_compare_outputs(inputs=inputs, qtol=1)
+
+
+def test_conv1d_output_is_squeezed_before_its_layout_copy():
+    torch.manual_seed(0)
+    inputs = (torch.randn(1, 8, 16),)
+    tester = _run_explicit_layout_passes(
+        CortexMTester(torch.nn.Conv1d(8, 4, 3).eval(), inputs)
+    )
+    program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
+
+    (conv,) = program.graph.find_nodes(
+        op="call_function",
+        target=exir_ops.edge.cortex_m.quantized_conv2d_packed_nhwc.default,
+    )
+    (squeeze,) = conv.users
+    (layout_copy,) = squeeze.users
+    assert squeeze.target == exir_ops.edge.aten.view_copy.default
+    assert squeeze.meta["val"].shape == (1, 14, 4)
+    assert layout_copy.target == exir_ops.edge.cortex_m.transpose.default
+    assert layout_copy.args[1] == [0, 2, 1]
+    tester.run_method_and_compare_outputs(inputs=inputs, qtol=1)
+
+
+@pytest.mark.parametrize(
+    "dim,expected", [(2, True), (-2, True), (1, False), (-1, False)]
+)
+def test_only_a_height_squeeze_is_moved_above_the_layout_copy(dim, expected):
+    graph = torch.fx.Graph()
+    squeeze = graph.call_function(
+        exir_ops.edge.aten.squeeze_copy.dim, (graph.placeholder("x"), dim)
+    )
+    squeeze.meta["val"] = torch.empty(1, 8, 16)
+
+    assert _is_nchw_to_ncw_squeeze(squeeze) is expected

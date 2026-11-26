@@ -268,10 +268,12 @@ def test_phi3_vgf_quant_layers(name, module_factory, input_factory, dtype):
     module = module_factory(config).to(dtype)
     inputs = input_factory(config, dtype)
 
-    pipeline = VgfPipeline[input_t1 if len(inputs) == 1 else input_t2](
-        module,
-        inputs,
-        aten_op=[],
-        quantize=True,
-    )
-    pipeline.run()
+    # Phi3RotaryEmbedding is no_grad, so a grad-mode export trips prepare_pt2e.
+    with torch.no_grad():
+        pipeline = VgfPipeline[input_t1 if len(inputs) == 1 else input_t2](
+            module,
+            inputs,
+            aten_op=[],
+            quantize=True,
+        )
+        pipeline.run()

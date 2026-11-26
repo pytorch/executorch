@@ -6,15 +6,18 @@
 
 // Runs one method of a .ptn on the engine the binary links (see
 // PtnRunner.h). Inputs and outputs are raw little-endian bytes in the method's
-// own dtypes. Semicolons separate steps, which run in order on one executable,
-// so mutable buffers such as KV caches carry over. Prints one line of
-// space-separated sizes per output per step.
+// own dtypes. Semicolons separate steps, which run in order on one executable
+// per method of one context, so mutable buffers such as KV caches carry over,
+// also between methods. Prints one line of space-separated sizes per output
+// per step.
 //
 // Usage:
 //   <runner> --package M.ptn --inputs a.bin,b.bin --outputs out0.bin
 //            [--input_sizes 1x6,6] [--warmup 3 --iterations 20]
 //   <runner> --package M.ptn --inputs 'a0.bin,b0.bin;a1.bin,b1.bin'
 //            --outputs 'out0.bin;out1.bin' --input_sizes '1x6,6;1x1,1'
+//   <runner> --package M.ptn --method 'prefill;decode' --inputs ... --outputs
+//   ...
 //
 // Exit: 0 success, 1 flag parsing error, missing --package or bad
 // --warmup/--iterations, 2 any other error.
@@ -27,6 +30,7 @@
 #include <exception>
 #include <fstream>
 #include <iterator>
+#include <map>
 #include <memory>
 #include <numeric>
 #include <sstream>
@@ -43,7 +47,10 @@
 #include <gflags/gflags.h>
 
 DEFINE_string(package, "", "Path to the *.ptn to run. Required.");
-DEFINE_string(method, "forward", "Method to run.");
+DEFINE_string(
+    method,
+    "forward",
+    "Method to run, or semicolon-separated methods, one per step.");
 DEFINE_string(
     inputs,
     "",
@@ -65,6 +72,10 @@ DEFINE_int32(
     iterations,
     1,
     "Timed executions; above one, prints median and min latency.");
+DEFINE_bool(
+    allow_activation_quant_for_weight_only,
+    false,
+    "Let the engine quantize the activations of weight-only quantized linears.");
 
 namespace {
 
@@ -201,9 +212,10 @@ void run() {
   const ptn::ByteSpan program_bytes = package->program_bytes();
   const auto program = std::make_shared<const ptn::Program>(
       ptn::Program::load(program_bytes.data(), program_bytes.size()));
-  const auto host = ptn::testing::make_engine_host();
+  const auto host = ptn::testing::make_engine_host(
+      {.allow_activation_quant_for_weight_only =
+           FLAGS_allow_activation_quant_for_weight_only});
   const auto context = host->create_context(program, package);
-  const auto executable = context->compile(FLAGS_method);
 
   const std::vector<std::string> input_steps = split(FLAGS_inputs, ';');
   const std::vector<std::string> output_steps = split(FLAGS_outputs, ';');
@@ -211,12 +223,24 @@ void run() {
   if (input_steps.empty()) {
     throw std::invalid_argument("--inputs and --outputs must give a step");
   }
+  std::vector<std::string> method_steps = split(FLAGS_method, ';');
+  if (method_steps.size() == 1) {
+    method_steps.resize(input_steps.size(), method_steps.front());
+  }
   if (output_steps.size() != input_steps.size() ||
+      method_steps.size() != input_steps.size() ||
       (!size_steps.empty() && size_steps.size() != input_steps.size())) {
     throw std::runtime_error(
         "got " + std::to_string(input_steps.size()) + " input steps, " +
-        std::to_string(output_steps.size()) + " output steps and " +
+        std::to_string(output_steps.size()) + " output steps, " +
+        std::to_string(method_steps.size()) + " method steps and " +
         std::to_string(size_steps.size()) + " size steps");
+  }
+  std::map<std::string, std::unique_ptr<ptn::EngineExecutable>> executables;
+  for (const std::string& method : method_steps) {
+    if (!executables.contains(method)) {
+      executables.emplace(method, context->compile(method));
+    }
   }
   // Repeated executions advance mutable buffers such as KV caches.
   if (input_steps.size() > 1 && (FLAGS_warmup > 0 || FLAGS_iterations > 1)) {
@@ -224,7 +248,7 @@ void run() {
   }
   for (size_t step = 0; step < input_steps.size(); ++step) {
     run_step(
-        *executable,
+        *executables.at(method_steps[step]),
         split(input_steps[step], ','),
         split(output_steps[step], ','),
         size_steps.empty() ? std::vector<std::string>{}

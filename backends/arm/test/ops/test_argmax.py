@@ -210,3 +210,31 @@ def test_argmax_vgf_quant(test_data: Tuple[input_t, int]):
         quantize=True,
     )
     pipeline.run()
+
+
+@common.parametrize("test_data", Argmax.test_data)
+def test_argmax_tosa_INT_quantized(test_data: Tuple[input_t, int]):
+    """Float input: the quantizer annotates argmax's input, ARGMAX lowers."""
+    data, dim = test_data()
+    pipeline = TosaPipelineINT[input_t](
+        Argmax(dim),
+        data,
+        aten_op,
+        [exir_op, to_copy_exir_op],
+    )
+    pipeline.count_tosa_ops({"ARGMAX": 1})
+    pipeline.run()
+
+
+@common.parametrize("test_data", Argmax.test_data)
+def test_argmax_u85_INT_quantized(test_data: Tuple[input_t, int]):
+    """The same through the Ethos-U85 flow up to the Vela compile."""
+    data, dim = test_data()
+    pipeline = EthosU85PipelineINT[input_t](
+        Argmax(dim),
+        data,
+        aten_op,
+        [exir_op, to_copy_exir_op],
+        run_on_fvp=False,
+    )
+    pipeline.run()

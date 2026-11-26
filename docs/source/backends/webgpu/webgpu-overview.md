@@ -42,12 +42,12 @@ Vulkan FlatBuffer delegate payload (VH00/VK00) inside a .pte file
     └── Browser: Emscripten + emdawnwebgpu → browser WebGPU implementation
 ```
 
-`WebGPUPartitioner` is a thin wrapper over `VulkanPartitioner`. It forwards
-partitioning unchanged and preserves Vulkan serialization and the
-`VulkanBackend` delegate identifier. It does not independently validate the
-narrower WebGPU runtime capability set. The runtime ignores Vulkan
-texture-storage annotations and executes the graph with WebGPU buffers and
-WGSL compute pipelines.
+`WebGPUPartitioner` is a thin wrapper over `VulkanPartitioner`. It preserves
+Vulkan serialization and the `VulkanBackend` delegate identifier, and skips the
+Vulkan fusion patterns whose fused operators the WebGPU runtime does not
+implement. It does not independently validate the narrower WebGPU runtime
+capability set. The runtime ignores Vulkan texture-storage annotations and
+executes the graph with WebGPU buffers and WGSL compute pipelines.
 
 ::::{important}
 The WebGPU runtime currently registers with ExecuTorch as `VulkanBackend` so it
@@ -112,7 +112,7 @@ with open("add_webgpu.pte", "wb") as file:
     file.write(et_program.buffer)
 ```
 
-Because `WebGPUPartitioner` delegates unchanged to `VulkanPartitioner`, it can
+Because `WebGPUPartitioner` otherwise partitions like `VulkanPartitioner`, it can
 select operators that do not yet have a WebGPU implementation. Validate the
 delegated graph against the WebGPU registry and operator tests. A
 Vulkan-supported but WebGPU-unsupported operator can fail when the WebGPU

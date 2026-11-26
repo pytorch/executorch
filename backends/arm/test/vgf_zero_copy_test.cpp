@@ -7,6 +7,7 @@
 
 #include <gtest/gtest.h>
 
+#include <executorch/backends/arm/runtime/VGFBoundaryIO.h>
 #include <executorch/backends/arm/runtime/VGFZeroCopy.h>
 
 #include <array>
@@ -20,6 +21,24 @@ namespace executorch {
 namespace backends {
 namespace vgf {
 namespace {
+
+TEST(VgfOwnedMappedBoundaryBufferTest, RequiresExactPointerAndLogicalSize) {
+  std::array<std::byte, 128> storage{};
+  const VgfMappedBoundaryBuffer buffer{
+      .data = storage.data(),
+      .logical_nbytes = 64,
+      .capacity_nbytes = storage.size(),
+      .host_coherent = false,
+      .generation = 7,
+  };
+
+  EXPECT_TRUE(vgf_owned_mapped_buffer_matches(buffer, storage.data(), 64));
+  EXPECT_FALSE(vgf_owned_mapped_buffer_matches(buffer, storage.data(), 63));
+  EXPECT_FALSE(vgf_owned_mapped_buffer_matches(buffer, storage.data() + 1, 64));
+
+  VgfMappedBoundaryBuffer empty{};
+  EXPECT_FALSE(vgf_owned_mapped_buffer_matches(empty, nullptr, 0));
+}
 
 #if defined(VK_EXT_external_memory_host)
 

@@ -29,11 +29,14 @@ $if INPUT_STORAGE == "buffer":
 layout(std430) buffer;
 
 #include "convolution/conv2d/conv2d_common.glslh"
+#include "indexing.glslh"
 
 ${layout_declare_tensor(B, "w", "t_packed_int8_input", "int", OUTPUT_STORAGE, is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_fp_input", DTYPE, INPUT_STORAGE)}
 
 ${layout_declare_ubo(B, "ivec4", "input_sizes")}
+$if INPUT_STORAGE == "buffer":
+  ${layout_declare_ubo(B, "BufferMetadata", "inp")}
 
 layout(push_constant) uniform restrict Block {
   float inv_scale;

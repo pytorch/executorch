@@ -9,16 +9,16 @@ import unittest
 import torch
 import torch.utils._pytree as pytree
 from executorch.backends.cuda.cuda_backend import CudaBackend
-from executorch.backends.cuda.passes.replace_complex_with_real import (
-    _VIEWS,
-    ReplaceComplexWithRealPass,
-)
 from executorch.backends.cuda.passes.tests.test_replace_fused_sdpa import (
     _Fn,
     _program_for_cuda_passes,
 )
 from executorch.exir.backend.canonical_partitioners.duplicate_constant_node_pass import (
     duplicate_constant_node,
+)
+from executorch.exir.passes.replace_complex_with_real_pass import (
+    _VIEWS,
+    ReplaceComplexWithRealPass,
 )
 
 

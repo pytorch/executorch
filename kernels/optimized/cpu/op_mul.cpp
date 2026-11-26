@@ -48,7 +48,8 @@ Tensor& opt_mul_out(
 
   if (b.numel() == 1) {
     if (a_type == b_type && a_type == out_type && a_type != ScalarType::Half &&
-        a_type != ScalarType::BFloat16) {
+        a_type != ScalarType::BFloat16 &&
+        !executorch::runtime::isComplexType(a_type)) {
       ET_SWITCH_REALB_TYPES(a_type, ctx, op_name, CTYPE, [&]() {
         ET_SWITCH_REALB_TYPES(b_type, ctx, op_name, CTYPE_B, [&]() {
           CTYPE_B b_val = *b.const_data_ptr<CTYPE_B>();
@@ -64,7 +65,7 @@ Tensor& opt_mul_out(
       });
       return out;
     }
-  } else if (a.numel() == 1) {
+  } else if (a.numel() == 1 && !executorch::runtime::isComplexType(out_type)) {
     return opt_mul_out(ctx, b, a, out);
   }
 
@@ -101,14 +102,16 @@ Tensor& opt_mul_out(
 
       ET_SWITCH_COMPLEXH_TYPES(out_type, ctx, op_name, CTYPE, [&]() {
         auto mul_lambda = [](auto x, auto y) { return x * y; };
-        torch::executor::handle_broadcast_elementwise<CTYPE>(
-            ctx, mul_lambda, a, b, out, selected_optimized_path);
+        torch::executor::
+            handle_broadcast_elementwise<CTYPE, /*kCommutative=*/true>(
+                ctx, mul_lambda, a, b, out, selected_optimized_path);
       });
     } else {
       ET_SWITCH_REALB_TYPES(out_type, ctx, op_name, CTYPE, [&]() {
         auto mul_lambda = [](auto x, auto y) { return x * y; };
-        torch::executor::handle_broadcast_elementwise<CTYPE>(
-            ctx, mul_lambda, a, b, out, selected_optimized_path);
+        torch::executor::
+            handle_broadcast_elementwise<CTYPE, /*kCommutative=*/true>(
+                ctx, mul_lambda, a, b, out, selected_optimized_path);
       });
     }
   } else {

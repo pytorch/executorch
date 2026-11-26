@@ -10,7 +10,7 @@
 
 ${define_required_extensions(OUT_STORAGE, DTYPE)}
 
-$if WEIGHT_STORAGE == "buffer":
+$if WEIGHT_STORAGE == "buffer" and QUANT_NBITS == 8:
   ${define_required_extensions("buffer", "int8")}
 
 #define PRECISION ${PRECISION}
@@ -30,7 +30,9 @@ layout(std430) buffer;
 
 ${layout_declare_tensor(B, "w", "t_out", DTYPE, OUT_STORAGE, is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_in", DTYPE, IN_STORAGE, is_scalar_array=False)}
-$if QUANT_NBITS == 4:
+$if QUANT_NBITS == 4 and WEIGHT_STORAGE == "buffer":
+  ${layout_declare_tensor(B, "r", "t_weight", "uint", WEIGHT_STORAGE, is_scalar_array=True)}
+$elif QUANT_NBITS == 4:
   ${layout_declare_tensor(B, "r", "t_weight", "uint8", WEIGHT_STORAGE, is_scalar_array=False)}
 $else:
   ${layout_declare_tensor(B, "r", "t_weight", "int8", WEIGHT_STORAGE, is_scalar_array=False)}
@@ -101,15 +103,15 @@ void main() {
     // Preload weight tensor
     [[unroll]] for (int r = 0; r < 4; r++) {
       $if QUANT_NBITS == 4:
-        $if WEIGHT_STORAGE == "buffer":
-          u8vec4 packed_weight_tex;
-        $else:
-          uvec4 packed_weight_tex;
+        uvec4 packed_weight_tex;
 
         $for c in range(0, TILE_TXCOLS, 2):
           $if WEIGHT_STORAGE == "buffer":
+            // Each uint holds the four bytes of one weight texel.
             qmat2_bufi = (pos + r) * weight_row_txstride + weight_txcol;
-            packed_weight_tex = t_weight[qmat2_bufi + ${c}]
+            packed_weight_tex =
+                (uvec4(t_weight[qmat2_bufi + ${c}]) >> uvec4(0, 8, 16, 24)) &
+                0xFFu;
           $else:
             packed_weight_tex = texelFetch(
               t_weight, ivec2(weight_txcol + ${c}, pos + r), 0);

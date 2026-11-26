@@ -50,8 +50,18 @@ void check_cache_positions(
 //   sdpa(rope(q), index_put_(k_cache, [None, None, cache_position], rope(k)),
 //        index_put_(v_cache, [None, None, cache_position], v), causal_mask)
 // into apply_rotary_emb_hf, llama.update_cache and causal llama.custom_sdpa,
-// re-laying the zero-initialized caches out as [1, S, H_kv, D]. cache_position
-// must be a graph input, and causal_mask HF's static-cache causal mask over it.
+// re-laying the zero-initialized caches out as [1, S, H_kv, D]. The rope()
+// applications are optional as a pair: learned-position models (Whisper)
+// match with neither present and feed q/k to the kernels unrotated, with an
+// aten.clone (.contiguous()) allowed in front of each permuted operand. A
+// positive literal SDPA scale is passed through to llama.custom_sdpa (Whisper
+// pre-scales q and passes scale=1). cache_position must be a graph input, and
+// causal_mask HF's static-cache causal mask over it, broadcast through any
+// clones, aliases, expands and unsqueezes. The mask's query positions and the
+// RoPE position_ids are cache_position itself or, as transformers 5 builds
+// them, arange(T) + cache_position[0:1] with T the query's token count: the
+// SymInt that sizes the token axis of the view producing q, k or v, or a
+// literal equal to static lengths.
 // The kernels read positions from cache_position[0] on, so it must hold
 // contiguous positions; the pass marks it with kCachePositionAttr for the
 // engine to check on the host. Since that check also keeps the kernels from

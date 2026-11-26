@@ -218,6 +218,7 @@ class AttentionModel(Gemma3NModule):
         attn_output, _ = self.attn(
             hidden_states=hidden_states,
             position_embeddings=(cos, sin),
+            attention_mask=None,
         )
         return attn_output
 

@@ -25,6 +25,7 @@ Backends are the bridge between your exported model and the hardware it runs on.
 | [TensorRT](backends/tensorrt/tensorrt-overview.md)           | Linux/Windows | GPU           | NVIDIA GPU acceleration via TensorRT |
 | [Core ML](backends/coreml/coreml-overview.md)                | iOS, macOS    | NPU/GPU/CPU   | Apple devices, high performance |
 | [MLX](/backends/mlx/mlx-overview.md)                         | iOS (experimental), macOS | GPU | Apple Silicon GPU (MLX)         |
+| [Core AI](backends/coreai/coreai-overview.md)                | iOS, macOS    | NPU/GPU/CPU   | Apple devices on OS 27 (Core AI, experimental) |
 | [Vulkan](backends/vulkan/vulkan-overview.md)                 | Android, Linux, Windows | GPU  | Android devices (mature); Desktops (experimental) |
 | [WebGPU](backends/webgpu/webgpu-overview.md)                 | Browser, Linux, macOS | GPU | Cross-platform and browser GPU execution (experimental) |
 | [Qualcomm](backends-qualcomm)                                | Android     | NPU           | Qualcomm SoCs                   |
@@ -35,6 +36,7 @@ Backends are the bridge between your exported model and the hardware it runs on.
 | [OpenVINO](build-run-openvino)                               | Embedded    | CPU/GPU/NPU   | Intel SoCs                      |
 | [NXP](backends/nxp/nxp-overview.md)                          | Embedded    | NPU           | NXP SoCs                        |
 | [Cadence](backends-cadence)                                  | Embedded    | DSP           | DSP-optimized workloads         |
+| [Espressif](backends/espressif/espressif-overview.md)        | Embedded    | CPU           | ESP32 MCUs (prototype)          |
 | [Samsung Exynos](backends/samsung/samsung-overview.md)       | Android     | CPU/GPU/NPU   | Samsung Devices, Samsung SoCs; High Performance |
 
 **Tip:** For best performance, export a `.pte` file for each backend you plan to support.
@@ -59,6 +61,7 @@ backends/cuda/cuda-overview
 backends/tensorrt/tensorrt-overview
 backends/coreml/coreml-overview
 backends/mlx/mlx-overview
+backends/coreai/coreai-overview
 backends/vulkan/vulkan-overview
 backends/webgpu/webgpu-overview
 backends-qualcomm
@@ -69,5 +72,6 @@ backends/arm-vgf/arm-vgf-overview
 build-run-openvino
 backends/nxp/nxp-overview
 backends-cadence
+backends/espressif/espressif-overview
 Samsung Exynos Backend <backends/samsung/samsung-overview>
 ```

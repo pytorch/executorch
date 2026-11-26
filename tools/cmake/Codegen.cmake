@@ -58,7 +58,38 @@ function(gen_selected_ops)
   if(GEN_INCLUDE_ALL_OPS)
     list(APPEND _gen_oplist_command --include_all_operators)
   endif()
-  if(GEN_OPS_FROM_MODEL)
+  list(LENGTH GEN_OPS_FROM_MODEL _model_count)
+  set(_model_oplists "")
+  set(_model_list "")
+  if(_model_count GREATER 1)
+    foreach(_model IN LISTS GEN_OPS_FROM_MODEL)
+      list(LENGTH _model_oplists _model_index)
+      gen_selected_ops(
+        LIB_NAME
+        "${GEN_LIB_NAME}/model_${_model_index}"
+        OPS_FROM_MODEL
+        "${_model}"
+        OPS_SCHEMA_YAML
+        "${GEN_OPS_SCHEMA_YAML}"
+        ROOT_OPS
+        "${GEN_ROOT_OPS}"
+        INCLUDE_ALL_OPS
+        "${GEN_INCLUDE_ALL_OPS}"
+      )
+      list(APPEND _model_oplists "${gen_selected_ops_output_yaml}")
+    endforeach()
+    set(_model_list "${_out_dir}/model_oplists.txt")
+    list(JOIN _model_oplists "\n" _model_paths)
+    file(
+      GENERATE
+      OUTPUT "${_model_list}"
+      CONTENT "${_model_paths}\n"
+    )
+    set(_gen_oplist_command
+        "${PYTHON_EXECUTABLE}" -m codegen.tools.gen_all_oplist
+        --output_dir=${_out_dir} --model_file_list_path=@${_model_list}
+    )
+  elseif(GEN_OPS_FROM_MODEL)
     list(APPEND _gen_oplist_command --model_file_path="${GEN_OPS_FROM_MODEL}")
   endif()
 
@@ -67,7 +98,8 @@ function(gen_selected_ops)
     COMMENT "Generating selected_operators.yaml for ${GEN_LIB_NAME}"
     OUTPUT ${_oplist_yaml}
     COMMAND ${_gen_oplist_command}
-    DEPENDS ${GEN_OPS_SCHEMA_YAML} ${_codegen_tools_srcs}
+    DEPENDS ${GEN_OPS_SCHEMA_YAML} ${GEN_OPS_FROM_MODEL} ${_model_oplists}
+            ${_model_list} ${_codegen_tools_srcs}
     WORKING_DIRECTORY ${EXECUTORCH_ROOT}
   )
 
@@ -590,6 +622,7 @@ function(executorch_load_build_variables)
       SIZE_TEST_SRCS
       XNN_EXECUTOR_RUNNER_SRCS
       XNNPACK_BACKEND_SRCS
+      XNNPACK_PROFILER_SRCS
       XNNPACK_SCHEMA_SRCS
       CPU_BACKEND_SRCS
       VULKAN_SCHEMA_SRCS
@@ -622,6 +655,7 @@ function(executorch_load_build_variables)
       _size_test__srcs
       _xnn_executor_runner__srcs
       _xnnpack_backend__srcs
+      _xnnpack_profiler__srcs
       _xnnpack_schema__srcs
       _cpu_backend__srcs
       _vulkan_schema__srcs

@@ -11,7 +11,6 @@
 from __future__ import annotations
 
 import math
-import typing
 from typing import Dict, List, NamedTuple, Optional, Tuple, Union
 
 import executorch.exir.schema as schema
@@ -50,8 +49,8 @@ def contiguous_stride_from_shape(shape: torch.Size) -> Tuple[int]:
 
 
 def dim_order_from_stride(
-    stride: Tuple[int], sizes: Optional[Tuple[int]] = None
-) -> Tuple[bytes]:
+    stride: Tuple[int, ...], sizes: Optional[Tuple[int, ...]] = None
+) -> Tuple[int, ...]:
     """
     Dimension order represents how dimensions are laid out in memory,
     starting from the outer-most to the inner-most dimension.
@@ -115,7 +114,7 @@ def dim_order_from_stride(
         expected = make_channels_last_strides_for(sizes)
         if all(statically_known_true(s == e) for s, e in zip(stride, expected)):
             sorted_dims = [0, *range(2, ndim), 1]
-    return tuple(typing.cast(Tuple[bytes], sorted_dims))
+    return tuple(sorted_dims)
 
 
 def without_zero_strides(tensor: torch.Tensor) -> torch.Tensor:
@@ -135,6 +134,22 @@ def without_zero_strides(tensor: torch.Tensor) -> torch.Tensor:
     ):
         return tensor.clone(memory_format=torch.channels_last)
     return tensor.clone(memory_format=torch.contiguous_format)
+
+
+def placeholder_constant(tensor: torch.Tensor) -> torch.Tensor:
+    """
+    Returns the tensor, or a copy of it, in the form the emitter stores for a
+    constant placeholder: contiguous or channels-last, and not a view into a
+    larger storage.
+    """
+    if not (
+        tensor.is_contiguous()
+        or tensor.is_contiguous(memory_format=torch.channels_last)
+    ):
+        tensor = tensor.contiguous()
+    if tensor.nbytes != tensor.untyped_storage().nbytes():
+        tensor = tensor.clone()
+    return tensor
 
 
 def stride_from_dim_order(sizes: List[int], dim_order: List[int]) -> List[int]:
@@ -202,7 +217,7 @@ class TensorSpec:
         # convert to list making it easier to handle type checking
         self.shape: List[int] = list(shape)
         self.stride: Tuple[int] = contiguous_stride_from_shape(shape)
-        self.dim_order: Tuple[bytes] = dim_order_from_stride(self.stride)
+        self.dim_order: Tuple[int, ...] = dim_order_from_stride(self.stride)
         self.requires_grad = requires_grad
         self.layout = layout
         self.is_sparse = is_sparse
@@ -215,7 +230,10 @@ class TensorSpec:
 
     @property
     def allocated_memory(self) -> int:
-        nbytes = num_bytes_from_shape_and_dtype(self.shape, self.dtype)
+        nbytes = max(
+            num_bytes_from_shape_and_dtype(self.shape, self.dtype),
+            self.min_allocated_memory,
+        )
         return calculate_aligned_num_bytes(nbytes, self.alignment)
 
     def realign(self, new_alignment: int) -> int:
@@ -259,6 +277,8 @@ class TensorSpec:
         self.storage_base: Optional["TensorSpec"] = None
         # Byte offset into storage_base when this spec is storage-backed.
         self.storage_base_offset: int = 0
+        # Bytes to plan at least, so that a memory.view of this tensor fits too.
+        self.min_allocated_memory: int = 0
 
     @property
     def inplace_base(self) -> Optional["TensorSpec"]:

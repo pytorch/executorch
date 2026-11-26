@@ -8,6 +8,7 @@
 # pyre-unsafe
 
 import logging
+import math
 from typing import cast, List, Optional
 
 import numpy as np
@@ -20,6 +21,8 @@ from executorch.backends.xnnpack.utils.quant_utils import is_dequant, is_quant
 from executorch.backends.xnnpack.utils.utils import (
     get_input_node,
     get_param_tensor,
+    is_dtype_cast,
+    is_foldable_broadcast_operand,
     is_param_node,
     normalize_mean_dims,
     normalize_pool2d_args,
@@ -166,6 +169,25 @@ class GenericNodePartitionerConfig(XNNPartitionerConfig):
         return deps + quantized_deps
 
 
+class BroadcastBinaryConfig(GenericNodePartitionerConfig):
+    """
+    A binary op whose rank < 4 constant operands are delegated with it, so
+    they are serialized as constant data and laid out as NHWC ahead of time
+    instead of being reshaped and transposed at every inference. Any other
+    constant operand stays a delegate input, as for every other op.
+    """
+
+    def get_node_and_deps(
+        self, node: torch.fx.Node, ep: ExportedProgram
+    ) -> List[torch.fx.Node]:
+        deps = super().get_node_and_deps(node, ep)
+        return deps + [
+            input_node
+            for input_node in node.all_input_nodes
+            if is_foldable_broadcast_operand(ep, input_node)
+        ]
+
+
 class QuantizedPerTensorConfig(GenericNodePartitionerConfig):
     target_name = "quantize_per_tensor.default"
 
@@ -197,7 +219,7 @@ class HardtanhConfig(GenericNodePartitionerConfig):
         return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
 
 
-class AddConfig(GenericNodePartitionerConfig):
+class AddConfig(BroadcastBinaryConfig):
     target_name = "add.Tensor"
 
     def __init__(self, **kwargs):
@@ -287,17 +309,19 @@ class CatConfig(GenericNodePartitionerConfig):
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
-        Only support concatenation of 2 - 5 tensors
+        Only support concatenation of 2 or more tensors. Concatenations of more
+        than 5 tensors are split by DecomposeConcatenate during preprocessing.
         """
         if not self.check_common_constraints(node, ep):
             return False
 
-        num_tensors = len(node.all_input_nodes)
+        # all_input_nodes deduplicates, so cat([x, x]) has one input node.
+        num_tensors = len(node.args[0])
 
-        if not (num_tensors >= 2):
+        if num_tensors < 2:
             why(
                 node,
-                reason=f"only support concatenation of > 2 tensors, got {num_tensors} tensors",
+                reason=f"only support concatenation of at least 2 tensors, got {num_tensors}",
             )
             return False
 
@@ -342,7 +366,7 @@ class ClampConfig(GenericNodePartitionerConfig):
         return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
 
 
-class DivConfig(GenericNodePartitionerConfig):
+class DivConfig(BroadcastBinaryConfig):
     target_name = "div.Tensor"
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
@@ -386,7 +410,6 @@ class EluConfig(GenericNodePartitionerConfig):
 
 class SoftmaxConfig(GenericNodePartitionerConfig):
     target_name = "_softmax.default"
-    supports_bf16 = False
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
@@ -448,14 +471,14 @@ class SiluConfig(GenericNodePartitionerConfig):
         )
 
 
-class MulConfig(GenericNodePartitionerConfig):
+class MulConfig(BroadcastBinaryConfig):
     target_name = "mul.Tensor"
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
 
 
-class MaximumConfig(GenericNodePartitionerConfig):
+class MaximumConfig(BroadcastBinaryConfig):
     target_name = "maximum.default"
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
@@ -511,6 +534,31 @@ class UpsampleBilinear2dConfig(GenericNodePartitionerConfig):
         if is_shape_dynamic(node):
             why(node, reason="dynamic output sizes are not supported")
             return False
+
+        # XNNPACK samples with input_size / output_size. Without align_corners,
+        # ATen samples with 1 / scale_factor when one is given, which differs
+        # unless input_size * scale_factor is an integer.
+        align_corners = cast(
+            bool,
+            node.args[2] if len(node.args) > 2 else node.kwargs["align_corners"],
+        )
+        scale_factors = (
+            node.args[3] if len(node.args) > 3 else node.kwargs.get("scale_factors")
+        )
+        if not align_corners and scale_factors is not None:
+            input_sizes = get_input_node(node, 0).meta["val"].shape[-2:]
+            output_sizes = node.meta["val"].shape[-2:]
+            if any(
+                not math.isclose(in_size * scale, out_size, abs_tol=1e-6)
+                for in_size, out_size, scale in zip(
+                    input_sizes, output_sizes, scale_factors
+                )
+            ):
+                why(
+                    node,
+                    reason=f"input size * scale_factors {scale_factors} is not an integer",
+                )
+                return False
         return True
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
@@ -647,7 +695,8 @@ class ToDimOrderCopyConfig(GenericNodePartitionerConfig):
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
-        Only support dim order conversion partitioning, not DType conversions
+        Partitions dim order conversions, and fp32 <-> fp16 and fp32 <-> bf16
+        dtype casts that keep the dim order.
         """
         if not self.check_common_constraints(node, ep):
             return False
@@ -658,70 +707,89 @@ class ToDimOrderCopyConfig(GenericNodePartitionerConfig):
         output_dtype = node.meta["val"].dtype
 
         if input_dtype != output_dtype:
-            # A dtype cast is lowered to an XNNPACK convert node, as long as
-            # the op does not change the dim order at the same time.
-            supported_cast = {input_dtype, output_dtype} <= {
-                torch.float32,
-                torch.float16,
-            }
-            same_dim_order = list(input_node.meta["val"].dim_order()) == list(
-                node.meta["val"].dim_order()
+            # A dtype cast is lowered to an XNNPACK convert node. XNNPACK has
+            # no fp16 <-> bf16 convert, and bf16 also needs enable_bf16, which
+            # check_common_constraints enforces.
+            supported_cast = {input_dtype, output_dtype} in (
+                {torch.float32, torch.float16},
+                {torch.float32, torch.bfloat16},
             )
-            if not (supported_cast and same_dim_order):
+            if not supported_cast:
                 why(
                     node,
                     reason=f"dtype conversion from {input_dtype} to {output_dtype} is not supported",
                 )
                 return False
+            same_dim_order = list(input_node.meta["val"].dim_order()) == list(
+                node.meta["val"].dim_order()
+            )
+            if not same_dim_order:
+                why(
+                    node,
+                    reason=f"dtype conversion from {input_dtype} to {output_dtype} cannot also change the dim order",
+                )
+                return False
 
         return True
 
+    def get_node_and_deps(
+        self, node: torch.fx.Node, ep: ExportedProgram
+    ) -> List[torch.fx.Node]:
+        # A cast is serialized as a convert without quantization parameters, so
+        # a dq before it and a q after it stay explicit nodes.
+        if is_dtype_cast(node):
+            return [node]
+        return super().get_node_and_deps(node, ep)
+
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
+
+
+class ToCopyConfig(ToDimOrderCopyConfig):
+    """
+    Programs exported with skip_dim_order keep aten._to_copy for every copy.
+    Only dtype casts are partitioned, under the same dtype rules as
+    ToDimOrderCopyConfig: inside the delegate, ChannelsLastTaggedReshapePass,
+    RemoveRedundantCopyPass and ToCopyVisitor read any other _to_copy as an
+    NCHW <-> NHWC layout copy.
+    """
+
+    target_name = "_to_copy.default"
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        if not is_dtype_cast(node):
+            why(node, reason="only dtype casts are supported")
+            return False
+        return super().check_constraints(node, ep)
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        # A cast never folds the q/dq around it (see get_node_and_deps), so
+        # static quantization adds nothing.
+        return [ConfigPrecisionType.FP32]
 
 
 class MeanDimConfig(GenericNodePartitionerConfig):
     target_name = "mean.dim"
-    supports_bf16 = False
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
-        Mean Dim currently only supports averaging 4D tensors across the innermost
-        dimensions
+        Mean Dim lowers to Global Average Pooling when it averages a 4D tensor
+        that is not bf16 across the innermost dimensions with keepdim=True, and
+        to a static mean reduction otherwise, computed in fp32 for bf16.
         """
         if not self.check_common_constraints(node, ep):
             return False
 
-        input_rank = get_input_node(node, 0).meta["val"].dim()
-        if input_rank != 4:
-            why(
-                node,
-                reason=f"mean.dim only supports averaging 4D tensors, got tensor of rank {input_rank}",
-            )
-            return False
-
-        # This path lowers mean.dim to XNNPACK Global Average Pooling, which
-        # cannot encode an explicit dtype override.
+        # Neither lowering can encode an explicit dtype override.
         if node.kwargs.get("dtype") is not None:
             why(node, reason="mean.dim does not support dtype")
             return False
 
-        keepdim = len(node.args) >= 3 and bool(node.args[2])
+        input_node = get_input_node(node, 0)
         try:
-            dims = normalize_mean_dims(node.args[1], input_rank)
+            normalize_mean_dims(node.args[1], input_node.meta["val"].dim())
         except ValueError as error:
             why(node, reason=f"mean.dim has invalid dims: {error}")
-            return False
-
-        if sorted(dims) != [2, 3]:
-            why(
-                node,
-                reason="mean.dim only supports averaging 4D tensors across the innermost dimensions",
-            )
-            return False
-
-        if not keepdim:
-            why(node, reason="mean.dim only supports keepdim=True")
             return False
 
         return True
@@ -730,7 +798,7 @@ class MeanDimConfig(GenericNodePartitionerConfig):
         return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
 
 
-class MinimumConfig(GenericNodePartitionerConfig):
+class MinimumConfig(BroadcastBinaryConfig):
     target_name = "minimum.default"
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
@@ -864,7 +932,7 @@ class ConstantPadConfig(GenericNodePartitionerConfig):
         return [ConfigPrecisionType.FP32]
 
 
-class SubConfig(GenericNodePartitionerConfig):
+class SubConfig(BroadcastBinaryConfig):
     target_name = "sub.Tensor"
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:

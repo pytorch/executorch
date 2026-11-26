@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import pytest
 import torch
 from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.backends.arm.operator_support.convolution_support import (
@@ -216,3 +217,69 @@ def test_accepts_aten_conv_transpose2d_without_unsupported_options() -> None:
     )
 
     assert _checker().is_node_supported({}, node)
+
+
+@pytest.mark.parametrize(
+    "padding,output_padding,dilation,expected",
+    [
+        (1, 0, 1, True),  # Exact issue #24697 repro.
+        (1, 1, 1, True),  # Non-zero output padding along the real axis.
+        (3, 1, 1, True),  # Largest legal crop for a width-four kernel.
+        (4, 1, 1, False),  # Leading crop equals kernel width: invalid TOSA.
+        (1, 0, 2, False),  # Dilation is still unsupported.
+    ],
+    ids=[
+        "issue_24697",
+        "output_padding",
+        "max_crop",
+        "excessive_crop",
+        "dilation",
+    ],
+)
+def test_edge_transpose_convolution_1d_support(
+    padding: int, output_padding: int, dilation: int, expected: bool
+) -> None:
+    # Exercise the actual edge convolution support predicate, before any
+    # delegate is created or RewriteConvPass runs.
+    node = _make_conv_node(
+        exir_ops.edge.aten.convolution.default,
+        (
+            "input",
+            "weight",
+            "bias",
+            [2],
+            [padding],
+            [dilation],
+            True,
+            [output_padding],
+            1,
+        ),
+        input_shape=(1, 16, 32),
+        weight_shape=(16, 8, 4),
+    )
+    output_length = (32 - 1) * 2 - 2 * padding + dilation * (4 - 1) + output_padding + 1
+    node.meta["val"] = _fake_tensor((1, 8, output_length))
+
+    assert _checker().is_node_supported({}, node) is expected
+
+
+def test_rejects_edge_transpose_convolution_3d() -> None:
+    node = _make_conv_node(
+        exir_ops.edge.aten.convolution.default,
+        (
+            "input",
+            "weight",
+            "bias",
+            [1, 1, 1],
+            [1, 1, 1],
+            [1, 1, 1],
+            True,
+            [0, 0, 0],
+            1,
+        ),
+        input_shape=(1, 16, 8, 8, 8),
+        weight_shape=(16, 8, 3, 3, 3),
+    )
+    node.meta["val"] = _fake_tensor((1, 8, 8, 8, 8))
+
+    assert not _checker().is_node_supported({}, node)

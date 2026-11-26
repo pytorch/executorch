@@ -50,6 +50,7 @@ LocalWorkGroup pick_lwg(
   static const std::map<std::string, decltype(&default_pick_lwg)> pickers = {
       {"default_pick_lwg", default_pick_lwg},
       {"pick_required_lwg", pick_required_lwg},
+      {"pick_balanced_lwg", pick_balanced_lwg},
       {"pick_xy_square_lwg", pick_xy_square_lwg},
       {"pick_xz_square_lwg", pick_xz_square_lwg},
       {"pick_120shape_lwg", pick_120shape_lwg}};

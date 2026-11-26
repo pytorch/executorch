@@ -178,6 +178,7 @@ set(all_test_sources
     "op_atanh_test.cpp"
     "op_avg_pool1d_test.cpp"
     "op_avg_pool2d_test.cpp"
+    "op_avg_pool3d_test.cpp"
     "op_bitwise_and_test.cpp"
     "op_bitwise_left_shift_test.cpp"
     "op_bitwise_not_test.cpp"
@@ -203,6 +204,7 @@ set(all_test_sources
     "op_diagonal_copy_test.cpp"
     "op_div_test.cpp"
     "op_elu_test.cpp"
+    "op_embedding_bag_test.cpp"
     "op_embedding_test.cpp"
     "op_empty_test.cpp"
     "op_eq_test.cpp"
@@ -245,6 +247,7 @@ set(all_test_sources
     "op_logit_test.cpp"
     "op_lt_test.cpp"
     "op_masked_fill_test.cpp"
+    "op_masked_select_test.cpp"
     "op_max_test.cpp"
     "op_max_pool2d_with_indices_test.cpp"
     "op_maximum_test.cpp"
@@ -354,6 +357,7 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
       "op_bmm_test.cpp"
       "op_div_test.cpp"
       "op_elu_test.cpp"
+      "op_embedding_bag_test.cpp"
       "op_exp_test.cpp"
       "op_fft_c2r_test.cpp"
       "op_fft_r2c_test.cpp"
@@ -370,6 +374,7 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
       "op_sum_test.cpp"
       "op_where_test.cpp"
       "UnaryUfuncRealHBBF16ToFloatHBF16Test.cpp"
+      "${EXECUTORCH_ROOT}/kernels/optimized/test/complex_binary_broadcast_test.cpp"
       ${CMAKE_CURRENT_BINARY_DIR}/include/optimized/executorch/kernels/test/supported_features.cpp
   )
 

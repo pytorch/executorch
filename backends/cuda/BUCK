@@ -5,6 +5,18 @@ oncall("executorch")
 
 fbcode_target(
     _kind = runtime.python_library,
+    name = "cpu_count",
+    srcs = [
+        "utils/__init__.py",
+        "utils/cpu_count.py",
+    ],
+    visibility = [
+        "//executorch/backends/cuda/...",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_library,
     name = "coalesced_int4_tensor",
     srcs = [
         "coalesced_int4_tensor.py",
@@ -80,7 +92,6 @@ fbcode_target(
         "passes/move_cond_predicate_to_cpu.py",
         "passes/lower_offgraph_kv.py",
         "passes/remove_assert_async.py",
-        "passes/replace_complex_with_real.py",
         "passes/replace_fused_sdpa.py",
         "passes/replace_int64_floordiv.py",
         "passes/replace_masked_copy_with_where.py",
@@ -125,12 +136,14 @@ fbcode_target(
     deps = [
         ":autotune",
         ":cuda_passes",
+        ":triton_measured_routing",
         ":triton_replacement_pass",
         "//caffe2:torch",
         "//executorch/backends/aoti/passes:passes",
         "//executorch/exir/_serialize:lib",
         "//executorch/exir/backend:backend_details",
         "//executorch/exir/backend:compile_spec_schema",
+        "//executorch/exir/passes:replace_complex_with_real_pass",
         "//executorch/backends/aoti:aoti_backend",
     ],
 )
@@ -153,6 +166,34 @@ fbcode_target(
 
 fbcode_target(
     _kind = runtime.python_library,
+    name = "scripts_atomic_output",
+    srcs = [
+        "scripts/__init__.py",
+        "scripts/_atomic_output.py",
+    ],
+    visibility = [
+        "//executorch/backends/cuda/...",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_library,
+    name = "remap_pte_devices",
+    srcs = [
+        "scripts/remap_pte_devices.py",
+    ],
+    visibility = ["PUBLIC"],
+    deps = [
+        ":scripts_atomic_output",
+        "//executorch/exir/_serialize:lib",
+        "//executorch/exir/backend:compile_spec_schema",
+        "//executorch/exir/passes:propagate_device_pass",
+        "//executorch/exir:schema",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_library,
     name = "cuda_partitioner",
     srcs = [
         "cuda_partitioner.py",
@@ -169,7 +210,21 @@ fbcode_target(
     name = "triton_kernels",
     srcs = [
         "triton/kernels/__init__.py",
+        "triton/kernels/conv/__init__.py",
+        "triton/kernels/conv/conv.py",
+        "triton/kernels/conv/core/__init__.py",
+        "triton/kernels/conv/core/common.py",
+        "triton/kernels/conv/core/direct.py",
+        "triton/kernels/conv/core/implicit_gemm.py",
+        "triton/kernels/conv/core/weight_stream.py",
+        "triton/kernels/conv/core/winograd.py",
+        "triton/kernels/conv/routing.py",
         "triton/kernels/fused_moe.py",
+        "triton/kernels/gemm/__init__.py",
+        "triton/kernels/gemm/gemv.py",
+        "triton/kernels/gemm/linear.py",
+        "triton/kernels/gemm/routing.py",
+        "triton/kernels/gemm/tile.py",
         "triton/kernels/int4_quantized_gemm.py",
         "triton/kernels/int5_quantized_gemm.py",
         "triton/kernels/int6_quantized_gemm.py",
@@ -178,6 +233,7 @@ fbcode_target(
         "triton/kernels/quantized_gemm_family.py",
         "triton/kernels/quantized_gemm_utils.py",
         "triton/kernels/sdpa.py",
+        "triton/kernels/sdpa_varlen.py",
         "triton/kernels/topk.py",
         "triton/kernels/tq4_sdpa.py",
         "triton/kernels/triton_mutation_cache.py",
@@ -187,6 +243,39 @@ fbcode_target(
     ],
     deps = [
         ":autotune",
+        ":cpu_count",
+        ":triton_routing",
+        "//caffe2:torch",
+        "//executorch/exir/dialects:lib",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_library,
+    name = "triton_routing",
+    srcs = [
+        "triton/routing.py",
+    ],
+    visibility = [
+        "//executorch/backends/cuda/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_library,
+    name = "triton_measured_routing",
+    srcs = [
+        "triton/measured_routing.py",
+    ],
+    visibility = [
+        "//executorch/backends/cuda/...",
+    ],
+    deps = [
+        ":autotune",
+        ":triton_routing",
         "//caffe2:torch",
     ],
 )
@@ -203,6 +292,8 @@ fbcode_target(
     ],
     deps = [
         ":triton_kernels",
+        ":triton_measured_routing",
+        ":triton_routing",
         "//caffe2:torch",
         "//executorch/exir/dialects:lib",
     ],

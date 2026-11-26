@@ -7,6 +7,8 @@
 #include <executorch/backends/cpu/runtime/CPUPlan.h>
 #include <executorch/backends/cpu/runtime/providers/reference/ReferenceProvider.h>
 #include <executorch/backends/cpu/runtime/providers/xnnpack/XNNPACKProvider.h>
+#include <executorch/devtools/etdump/etdump_flatcc.h>
+#include <executorch/devtools/etdump/etdump_schema_flatcc_reader.h>
 
 #include <gtest/gtest.h>
 
@@ -24,6 +26,48 @@
 namespace executorch::backends::cpu {
 namespace {
 using namespace executorch::runtime;
+
+struct TraceRun {
+  std::vector<std::string> delegates;
+  std::vector<std::string> metadata;
+  std::vector<std::string> kernels;
+};
+
+std::vector<TraceRun> read_trace(etdump::ETDumpGen& tracer) {
+  const auto result = tracer.get_etdump_data();
+  std::unique_ptr<void, decltype(&free)> data(result.buf, &free);
+  std::vector<TraceRun> runs;
+  if (!data) {
+    return runs;
+  }
+  size_t size = 0;
+  const auto run_data =
+      etdump_ETDump_run_data(etdump_ETDump_as_root_with_identifier(
+          flatbuffers_read_size_prefix(result.buf, &size),
+          etdump_ETDump_file_identifier));
+  for (size_t run = 0; run < etdump_RunData_vec_len(run_data); ++run) {
+    auto& trace = runs.emplace_back();
+    const auto events =
+        etdump_RunData_events(etdump_RunData_vec_at(run_data, run));
+    for (size_t index = 0; index < etdump_Event_vec_len(events); ++index) {
+      const auto event =
+          etdump_Event_profile_event(etdump_Event_vec_at(events, index));
+      EXPECT_LE(
+          etdump_ProfileEvent_start_time(event),
+          etdump_ProfileEvent_end_time(event));
+      if (const auto name = etdump_ProfileEvent_delegate_debug_id_str(event)) {
+        trace.delegates.emplace_back(name);
+        const auto bytes = etdump_ProfileEvent_delegate_debug_metadata(event);
+        trace.metadata.emplace_back(
+            reinterpret_cast<const char*>(bytes),
+            flatbuffers_uint8_vec_len(bytes));
+      } else {
+        trace.kernels.emplace_back(etdump_ProfileEvent_name(event));
+      }
+    }
+  }
+  return runs;
+}
 
 class CPUPlanTest : public ::testing::Test {
  protected:
@@ -55,6 +99,17 @@ class CPUPlanTest : public ::testing::Test {
         {"self", ptn::TensorArg{in}}, {"approximate", ptn::StringArg{"tanh"}}};
     node.outputs = {{ptn::OutputValueKind::Tensor, out, {}}};
     graph.nodes.push_back(std::move(node));
+  }
+  void sum_gelu_out() {
+    value("x", true);
+    value("y", true);
+    value("sum");
+    value("gelu");
+    value("out");
+    add("sum", 0, 1, 2);
+    gelu("gelu", 2, 3);
+    add("out", 2, 3, 4);
+    finish({4});
   }
   void finish(std::vector<ptn::ValueId> outputs) {
     graph.output_ids = std::move(outputs);
@@ -477,6 +532,142 @@ TEST_F(XNNLayoutTest, DepthwiseRetainsSharedBiasAndConstantOutputs) {
   }
 }
 
+TEST_F(XNNLayoutTest, BmmReleasesOnlyAConstantRightHandSide) {
+  const std::vector<int64_t> shape{2, 3, 3};
+  for (const std::string use : {"rhs", "lhs", "both"}) {
+    SCOPED_TRACE(use);
+    graph = {};
+    buffers.clear();
+    const auto input = tensor(shape, ptn::ValueRole::UserInput);
+    const auto constant = tensor(shape, ptn::ValueRole::Parameter);
+    const auto lhs = use == "rhs" ? input : constant;
+    const auto rhs = use == "lhs" ? input : constant;
+    auto output = operation(
+        "torch.ops.aten.bmm.default",
+        {ptn::TensorArg{lhs}, ptn::TensorArg{rhs}},
+        shape);
+    if (use == "both") {
+      output = binary("torch.ops.aten.add.Tensor", output, input, shape);
+    }
+    preparation_only_constants.clear();
+    runtime_constants.clear();
+    if (use == "rhs") {
+      preparation_only_constants.push_back(constant);
+    } else {
+      runtime_constants.push_back(constant);
+    }
+    check({output});
+  }
+}
+
+TEST_F(XNNLayoutTest, DecomposedHardswishStaysInOneRegion) {
+  const std::vector<int64_t> shape{2, 3, 4};
+  const auto input = tensor(shape, ptn::ValueRole::UserInput);
+  const auto three =
+      tensor(std::vector<int64_t>{}, ptn::ValueRole::ConstantTensor);
+  const auto six =
+      tensor(std::vector<int64_t>{}, ptn::ValueRole::ConstantTensor);
+  const auto shifted = binary("torch.ops.aten.add.Tensor", input, three, shape);
+  const auto lower = operation(
+      "torch.ops.aten.clamp.default",
+      {ptn::TensorArg{shifted}, ptn::IntArg{0}, ptn::NoneArg{}},
+      shape);
+  const auto upper = operation(
+      "torch.ops.aten.clamp.default",
+      {ptn::TensorArg{lower}, ptn::NoneArg{}, ptn::IntArg{6}},
+      shape);
+  const auto product = binary("torch.ops.aten.mul.Tensor", input, upper, shape);
+  check({binary("torch.ops.aten.div.Tensor", product, six, shape)});
+}
+
+TEST_F(XNNLayoutTest, GlobalAveragePoolMatchesReferenceAndRebinds) {
+  const auto input = tensor({2, 3, 5, 7}, ptn::ValueRole::UserInput);
+  const auto output = operation(
+      "torch.ops.aten.avg_pool2d.default",
+      {ptn::TensorArg{input},
+       ptn::IntListArg{{5, 7}, {}},
+       ptn::IntListArg{{}, {}},
+       ptn::IntListArg{{0, 0}, {}},
+       ptn::BoolArg{false},
+       ptn::BoolArg{true},
+       ptn::NoneArg{}},
+      {2, 3, 1, 1});
+  check({output});
+}
+
+TEST_F(XNNLayoutTest, AveragePoolPaddingAndCeilModeMatchReference) {
+  struct Case {
+    std::vector<int64_t> input, kernel, stride, padding, output;
+    bool ceil_mode;
+  };
+  const Case cases[] = {
+      {{2, 3, 5, 7}, {2, 3}, {2, 2}, {0, 0}, {2, 3, 2, 3}, false},
+      {{1, 2, 6, 6}, {3}, {2}, {1}, {1, 2, 3, 3}, false},
+      {{1, 3, 4, 4}, {3, 3}, {2, 2}, {1, 1}, {1, 3, 3, 3}, true},
+      {{1, 2, 3, 3}, {2, 2}, {2, 2}, {1, 1}, {1, 2, 2, 2}, true},
+      {{1, 2, 5, 7}, {2, 3}, {2, 3}, {0, 0}, {1, 2, 3, 3}, true},
+      {{1, 3, 8, 8}, {2}, {3}, {0}, {1, 3, 3, 3}, false},
+      {{1, 2, 7, 5}, {1, 1}, {1, 1}, {0}, {1, 2, 7, 5}, false},
+      {{1, 2, 1, 1}, {3, 3}, {1, 1}, {1, 1}, {1, 2, 1, 1}, false},
+      {{2, 2, 6, 8}, {2, 2}, {}, {0}, {2, 2, 3, 4}, false},
+      {{1, 3, 5, 5}, {3, 3}, {2, 2}, {1, 1}, {1, 3, 3, 3}, true},
+      {{1, 2, 4, 5}, {3, 2}, {2, 2}, {1, 0}, {1, 2, 3, 3}, true},
+  };
+  for (const auto& test : cases) {
+    SCOPED_TRACE(&test - cases);
+    for (const bool count_include_pad : {false, true}) {
+      SCOPED_TRACE(count_include_pad);
+      graph = {};
+      buffers.clear();
+      const auto input = tensor(test.input, ptn::ValueRole::UserInput);
+      const auto output = operation(
+          "torch.ops.aten.avg_pool2d.default",
+          {ptn::TensorArg{input},
+           ptn::IntListArg{test.kernel, {}},
+           ptn::IntListArg{test.stride, {}},
+           ptn::IntListArg{test.padding, {}},
+           ptn::BoolArg{test.ceil_mode},
+           ptn::BoolArg{count_include_pad},
+           ptn::NoneArg{}},
+          test.output);
+      check({output});
+    }
+  }
+}
+
+TEST_F(XNNLayoutTest, AveragePoolKeepsConvolutionAndFanoutInOneRegion) {
+  const auto input = tensor({1, 3, 5, 7}, ptn::ValueRole::UserInput);
+  const auto weight = tensor({4, 3, 3, 3}, ptn::ValueRole::Parameter);
+  const auto bias = tensor({4}, ptn::ValueRole::Parameter);
+  const auto conv = convolution(input, weight, bias);
+  const auto pooled = operation(
+      "torch.ops.aten.avg_pool2d.default",
+      {ptn::TensorArg{conv},
+       ptn::IntListArg{{5, 7}, {}},
+       ptn::IntListArg{{}, {}},
+       ptn::IntListArg{{0, 0}, {}},
+       ptn::BoolArg{false},
+       ptn::BoolArg{true},
+       ptn::NoneArg{}},
+      {1, 4, 1, 1});
+  check({conv, pooled, activation("torch.ops.aten.relu.default", pooled)});
+}
+
+TEST_F(XNNLayoutTest, AveragePoolDivisorOverrideUsesReference) {
+  const auto input = tensor({1, 2, 4, 4}, ptn::ValueRole::UserInput);
+  const auto output = operation(
+      "torch.ops.aten.avg_pool2d.default",
+      {ptn::TensorArg{input},
+       ptn::IntListArg{{2, 2}, {}},
+       ptn::IntListArg{{2, 2}, {}},
+       ptn::IntListArg{{0, 0}, {}},
+       ptn::BoolArg{false},
+       ptn::BoolArg{true},
+       ptn::IntArg{3}},
+      {1, 2, 2, 2});
+  check({output}, {"Reference"});
+}
+
 TEST_F(CPUPlanTest, MaxPool2dPreservesReferenceFallbackAndSkipsUnusedIndices) {
   graph.values.emplace_back(
       "input", ptn::ScalarType::Float, std::vector<int64_t>{1, 1, 4, 4});
@@ -712,6 +903,82 @@ TEST_F(CPUPlanTest, LastDimensionSoftmaxUsesXNNPACKForDynamicInput) {
   }
 }
 
+TEST_F(CPUPlanTest, MixedRegionsRetainSharedPackedWeightsAfterCompilation) {
+  for (const auto* name :
+       {"input", "weight", "bias", "linear", "gelu", "out"}) {
+    graph.values.emplace_back(
+        name, ptn::ScalarType::Float, std::vector<int64_t>{1, 3});
+  }
+  graph.values[0].role = ptn::ValueRole::UserInput;
+  graph.values[1] = ptn::Value("weight", ptn::ScalarType::Float, {3, 3});
+  graph.values[1].role = ptn::ValueRole::Parameter;
+  graph.values[2] = ptn::Value("bias", ptn::ScalarType::Float, {3});
+  graph.values[2].role = ptn::ValueRole::ConstantTensor;
+  graph.input_ids = {0};
+  ptn::Node linear;
+  linear.name = "first";
+  linear.target = "torch.ops.aten.linear.default";
+  linear.inputs = {
+      {"input", ptn::TensorArg{0}},
+      {"weight", ptn::TensorArg{1}},
+      {"bias", ptn::TensorArg{2}}};
+  linear.outputs = {{ptn::OutputValueKind::Tensor, 3, {}}};
+  graph.nodes.push_back(linear);
+  gelu("gelu", 3, 4);
+  linear.name = "second";
+  linear.inputs[0].arg = ptn::TensorArg{4};
+  linear.outputs[0].value_id = 5;
+  graph.nodes.push_back(std::move(linear));
+  finish({5});
+  const std::array<float, 9> weight{1, 0, 0, 0, 2, 0, 0, 0, 3};
+  const std::array<float, 3> bias{0.25f, -0.5f, 1};
+  for (auto id : {1, 2}) {
+    auto buffer =
+        allocate_buffer(allocator, tensor_bytes(graph.value(id)).get());
+    ASSERT_TRUE(buffer.ok());
+    buffers[id] = buffer.get();
+    std::memcpy(
+        buffer->data,
+        id == 1 ? weight.data() : bias.data(),
+        id == 1 ? sizeof(weight) : sizeof(bias));
+    buffers[id].writable_bytes = 0;
+  }
+  CPUPlan plan(graph, buffers, configuration, execution);
+  ASSERT_EQ(plan.select(), Error::Ok);
+  ASSERT_EQ(plan.steps().size(), 3);
+  EXPECT_EQ(plan.steps()[0].provider->name(), "XNNPACK");
+  EXPECT_EQ(plan.steps()[1].provider->name(), "Reference");
+  EXPECT_EQ(plan.steps()[2].provider->name(), "XNNPACK");
+  ASSERT_EQ(plan.prepare(allocator), Error::Ok);
+  for (auto id : {1, 2}) {
+    ASSERT_TRUE(plan.can_release_constant(id));
+    std::memset(buffers[id].data, 0, buffers[id].readable_bytes);
+    buffers[id] = {};
+  }
+  const auto original_input = buffers[0];
+  const auto original_output = buffers[5];
+  auto replacement_input = allocate_buffer(allocator, 3 * sizeof(float));
+  auto replacement_output = allocate_buffer(allocator, 3 * sizeof(float));
+  ASSERT_TRUE(replacement_input.ok());
+  ASSERT_TRUE(replacement_output.ok());
+  for (int run = 0; run < 3; ++run) {
+    buffers[0] = run == 1 ? replacement_input.get() : original_input;
+    buffers[5] = run == 1 ? replacement_output.get() : original_output;
+    const std::array<float, 3> input{
+        float(run), float(run) - 1, float(run) - 2};
+    std::copy(input.begin(), input.end(), static_cast<float*>(buffers[0].data));
+    ASSERT_EQ(plan.execute(execution), Error::Ok);
+    const auto* output = static_cast<const float*>(buffers[5].data);
+    for (size_t index = 0; index < 3; ++index) {
+      const float scale = weight[index * 3 + index];
+      EXPECT_NEAR(
+          output[index],
+          scale * gelu(scale * input[index] + bias[index]) + bias[index],
+          1e-5);
+    }
+  }
+}
+
 TEST_F(CPUPlanTest, RetainsConstantsWithRuntimeConsumersOrGraphOutputs) {
   for (const std::string use : {"add", "gelu", "output"}) {
     SCOPED_TRACE(use);
@@ -784,6 +1051,171 @@ TEST_F(CPUPlanTest, RetainsConstantsWithRuntimeConsumersOrGraphOutputs) {
       EXPECT_EQ(plan.execute(execution), Error::InvalidArgument);
     }
   }
+}
+
+TEST_F(CPUPlanTest, TracesEveryStepAndXNNPACKOperatorOnEachExecution) {
+#ifndef ET_EVENT_TRACER_ENABLED
+  GTEST_SKIP() << "Requires -c executorch.event_tracer_enabled=true";
+#endif
+  sum_gelu_out();
+  etdump::ETDumpGen tracer;
+  execution.event_tracer = &tracer;
+  CPUPlan plan(graph, buffers, configuration, execution);
+  ASSERT_EQ(plan.select(), Error::Ok);
+  ASSERT_EQ(plan.prepare(allocator), Error::Ok);
+  for (int run = 0; run < 2; ++run) {
+    tracer.create_event_block("forward");
+    ASSERT_EQ(plan.execute(execution), Error::Ok);
+  }
+
+  const auto runs = read_trace(tracer);
+  ASSERT_EQ(runs.size(), 2);
+  const auto& names = runs[0].delegates;
+  EXPECT_EQ(
+      runs[0].kernels, (std::vector<std::string>{"native_call_gelu.out"}));
+  ASSERT_EQ(names.size(), 5);
+  EXPECT_EQ(names[0], "XNNPACK/subgraph:sum");
+  EXPECT_EQ(names[2], "Reference/registry:gelu");
+  EXPECT_EQ(names[3], "XNNPACK/subgraph:out");
+  const auto suffix = names[1].rfind(" #1");
+  ASSERT_EQ(suffix, names[1].size() - 3) << names[1];
+  EXPECT_EQ(names[4], names[1].substr(0, suffix) + " #2");
+#ifdef ENABLE_CPU_XNNPACK_OPERATOR_SHAPES
+  const std::string add_shapes = R"({"inputs":[[11],[11]],"outputs":[[11]]})";
+#else
+  const std::string add_shapes;
+#endif
+  EXPECT_EQ(runs[0].metadata[1], add_shapes);
+  EXPECT_EQ(runs[0].metadata[4], add_shapes);
+  EXPECT_EQ(runs[1].delegates, names);
+  EXPECT_EQ(runs[1].metadata, runs[0].metadata);
+}
+
+TEST_F(CPUPlanTest, MethodOnlyProfilingTracesStepsWithoutXNNPACKOperators) {
+#ifndef ET_EVENT_TRACER_ENABLED
+  GTEST_SKIP() << "Requires -c executorch.event_tracer_enabled=true";
+#endif
+  sum_gelu_out();
+  etdump::ETDumpGen tracer;
+  tracer.set_event_tracer_profiling_level(
+      EventTracerProfilingLevel::kProfileMethodOnly);
+  execution.event_tracer = &tracer;
+  CPUPlan plan(graph, buffers, configuration, execution);
+  ASSERT_EQ(plan.select(), Error::Ok);
+  ASSERT_EQ(plan.prepare(allocator), Error::Ok);
+  tracer.create_event_block("forward");
+  ASSERT_EQ(plan.execute(execution), Error::Ok);
+
+  const auto runs = read_trace(tracer);
+  ASSERT_EQ(runs.size(), 1);
+  EXPECT_EQ(
+      runs[0].delegates,
+      (std::vector<std::string>{
+          "XNNPACK/subgraph:sum",
+          "Reference/registry:gelu",
+          "XNNPACK/subgraph:out"}));
+  EXPECT_TRUE(runs[0].kernels.empty());
+}
+
+TEST_F(CPUPlanTest, XNNPACKRunSubmitsTraceLeftOpenByPreviousRun) {
+#ifndef ET_EVENT_TRACER_ENABLED
+  GTEST_SKIP() << "Requires -c executorch.event_tracer_enabled=true";
+#endif
+  value("x", true);
+  value("y", true);
+  value("sum");
+  add("sum", 0, 1, 2);
+  finish({2});
+  etdump::ETDumpGen tracer;
+  execution.event_tracer = &tracer;
+  CPUPlan plan(graph, buffers, configuration, execution);
+  ASSERT_EQ(plan.select(), Error::Ok);
+  ASSERT_EQ(plan.prepare(allocator), Error::Ok);
+  tracer.create_event_block("forward");
+  ASSERT_EQ(plan.execute(execution), Error::Ok);
+  auto& executable = *plan.steps()[0].executable;
+  ASSERT_EQ(executable.run(execution), Error::Ok);
+  ASSERT_EQ(executable.run(execution), Error::Ok);
+  executable.submit_trace();
+
+  const auto runs = read_trace(tracer);
+  ASSERT_EQ(runs.size(), 1);
+  const auto& names = runs[0].delegates;
+  ASSERT_EQ(names.size(), 4);
+  EXPECT_EQ(names[0], "XNNPACK/subgraph:sum");
+  EXPECT_EQ(names[2], names[1]);
+  EXPECT_EQ(names[3], names[1]);
+}
+
+TEST_F(CPUPlanTest, StepTraceNameCountsTheRegionsRemainingNodes) {
+#ifndef ET_EVENT_TRACER_ENABLED
+  GTEST_SKIP() << "Requires -c executorch.event_tracer_enabled=true";
+#endif
+  value("x", true);
+  value("y", true);
+  value("sum");
+  value("out");
+  add("sum", 0, 1, 2);
+  add("out", 2, 1, 3);
+  finish({3});
+  CPUPlan plan(graph, buffers, configuration, execution);
+  ASSERT_EQ(plan.select(), Error::Ok);
+  ASSERT_EQ(plan.steps().size(), 1);
+  EXPECT_EQ(plan.steps()[0].trace_name, "XNNPACK/subgraph:sum+1");
+  EXPECT_NE(
+      plan.describe(0).find("\"trace_name\":\"XNNPACK/subgraph:sum+1\""),
+      std::string::npos);
+}
+
+TEST_F(XNNLayoutTest, TracesEachXNNPACKOperatorWithItsOwnShapes) {
+#ifndef ET_EVENT_TRACER_ENABLED
+  GTEST_SKIP() << "Requires -c executorch.event_tracer_enabled=true";
+#endif
+  const auto x = tensor({2, 3}, ptn::ValueRole::UserInput);
+  const auto y = tensor({1, 3}, ptn::ValueRole::UserInput);
+  const auto sum = binary("torch.ops.aten.add.Tensor", x, y, {2, 3});
+  // XNNPACK merges the reshapes into one operator, so events follow XNNPACK's
+  // operators rather than the region's nodes.
+  const auto flat = operation(
+      "torch.ops.aten.view_copy.default",
+      {ptn::TensorArg{sum}, ptn::IntListArg{{6}, {}}},
+      {6});
+  const auto tall = operation(
+      "torch.ops.aten.view_copy.default",
+      {ptn::TensorArg{flat}, ptn::IntListArg{{3, 2}, {}}},
+      {3, 2});
+  const auto out = operation(
+      "torch.ops.aten.permute_copy.default",
+      {ptn::TensorArg{tall}, ptn::IntListArg{{1, 0}, {}}},
+      {2, 3});
+  finish({out});
+  etdump::ETDumpGen tracer;
+  execution.event_tracer = &tracer;
+  CPUPlan plan(graph, buffers, configuration, execution);
+  ASSERT_EQ(plan.select(), Error::Ok);
+  ASSERT_EQ(plan.steps().size(), 1);
+  ASSERT_EQ(plan.prepare(allocator), Error::Ok);
+  tracer.create_event_block("forward");
+  ASSERT_EQ(plan.execute(execution), Error::Ok);
+
+  const auto runs = read_trace(tracer);
+  ASSERT_EQ(runs.size(), 1);
+  const auto& names = runs[0].delegates;
+  ASSERT_EQ(names.size(), 4);
+  EXPECT_EQ(names[0], "XNNPACK/subgraph:layout_0+3");
+  EXPECT_EQ(names[1].rfind("Add", 0), 0) << names[1];
+  EXPECT_EQ(names[2].rfind("Static Reshape", 0), 0) << names[2];
+  EXPECT_EQ(names[3].rfind("Transpose", 0), 0) << names[3];
+#ifdef ENABLE_CPU_XNNPACK_OPERATOR_SHAPES
+  const std::vector<std::string> metadata{
+      "",
+      R"({"inputs":[[2,3],[1,3]],"outputs":[[2,3]]})",
+      R"({"inputs":[[2,3]],"outputs":[[3,2]]})",
+      R"({"inputs":[[3,2]],"outputs":[[2,3]]})"};
+#else
+  const std::vector<std::string> metadata(4);
+#endif
+  EXPECT_EQ(runs[0].metadata, metadata);
 }
 
 TEST_F(

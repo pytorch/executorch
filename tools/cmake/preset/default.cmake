@@ -206,6 +206,11 @@ cmake_dependent_option(
   OFF
 )
 cmake_dependent_option(
+  EXECUTORCH_BUILD_NATIVE_AUDIO_RUNNER
+  "Build the native GGML CPU Whisper speech recognition runner" OFF
+  "EXECUTORCH_BUILD_NATIVE_GGML" OFF
+)
+cmake_dependent_option(
   EXECUTORCH_BUILD_NATIVE_LLM_RUNNER "Build the native LLM runners" OFF
   "EXECUTORCH_BUILD_NATIVE_VULKAN OR EXECUTORCH_BUILD_NATIVE_GGML" OFF
 )
@@ -213,6 +218,7 @@ announce_configured_options(EXECUTORCH_BUILD_NATIVE_CPU)
 announce_configured_options(EXECUTORCH_BUILD_NATIVE_VULKAN)
 announce_configured_options(EXECUTORCH_BUILD_NATIVE_GGML)
 announce_configured_options(EXECUTORCH_BUILD_NATIVE_VISION_RUNNER)
+announce_configured_options(EXECUTORCH_BUILD_NATIVE_AUDIO_RUNNER)
 announce_configured_options(EXECUTORCH_BUILD_NATIVE_LLM_RUNNER)
 define_overridable_option(
   EXECUTORCH_BUILD_WEBGPU "Build the WebGPU backend" BOOL OFF
@@ -230,6 +236,10 @@ define_overridable_option(
 define_overridable_option(
   EXECUTORCH_BUILD_CMSIS_NN_PYBINDS "Build the CMSIS-NN Python bindings" BOOL
   OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_ESP_NN_PYBINDS "Build ESP-NN scratch-size Python bindings"
+  BOOL OFF
 )
 define_overridable_option(
   EXECUTORCH_BUILD_CUDA "Build the CUDA backend" BOOL OFF
@@ -359,6 +369,11 @@ define_overridable_option(
   EXECUTORCH_XNNPACK_ENABLE_WEIGHT_CACHE
   "Enable weights cache to cache and manage all packed weights" BOOL OFF
 )
+# Reads XNNPACK's internal runtime, so it is only meant for profiling builds.
+define_overridable_option(
+  EXECUTORCH_CPU_XNNPACK_OPERATOR_SHAPES
+  "Attach XNNPACK operator shapes to CPU backend ETDump events" BOOL OFF
+)
 define_overridable_option(
   EXECUTORCH_USE_CPP_CODE_COVERAGE "Build with code coverage enabled" BOOL OFF
 )
@@ -376,7 +391,7 @@ define_overridable_option(
 )
 define_overridable_option(
   EXECUTORCH_SELECT_OPS_MODEL
-  "Build the executorch_kernels target with only operators from the given model .pte file."
+  "Build the executorch_kernels target with only operators from the given semicolon-separated .pte files."
   STRING
   ""
 )
@@ -422,6 +437,11 @@ check_required_options_on(
 
 check_required_options_on(
   IF_ON EXECUTORCH_ENABLE_BUNDLE_IO REQUIRES EXECUTORCH_BUILD_DEVTOOLS
+)
+
+check_required_options_on(
+  IF_ON EXECUTORCH_CPU_XNNPACK_OPERATOR_SHAPES REQUIRES
+  EXECUTORCH_ENABLE_EVENT_TRACER
 )
 
 check_required_options_on(

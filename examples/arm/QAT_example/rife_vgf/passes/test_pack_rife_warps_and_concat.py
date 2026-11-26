@@ -16,6 +16,11 @@ from examples.arm.QAT_example.rife_vgf.shaders import pack_warps
 from executorch.backends.arm._passes.arm_pass_manager import (
     _ExportedProgramGraphPassAdapter,
 )
+from executorch.backends.arm._passes.tosa_lowering_utils import (
+    compute_multiplier_and_shift,
+    create_rescale_node,
+    rescale_tensor,
+)
 from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
     TosaSpecification,
@@ -37,9 +42,10 @@ class _Inputs(torch.nn.Module):
         return inputs[0]
 
 
-def _program(code=45, width=6, normalization=(1.0, 1.0)):
+def _program(code=45, width=6, normalization=(1.0, 1.0), height=4):
     tensors = [
-        torch.zeros(1, 4, width, c, dtype=torch.int8) for c in (4, 4, 4, 4, 1, 8, 4)
+        torch.zeros(1, height, width, c, dtype=torch.int8)
+        for c in (4, 4, 4, 4, 1, 8, 4)
     ]
     program = torch.export.export(_Inputs(), tuple(tensors))
     graph = program.graph
@@ -57,7 +63,9 @@ def _program(code=45, width=6, normalization=(1.0, 1.0)):
                 program, graph, name, InputKind.CONSTANT_TENSOR, tensor
             )
 
-    flow = node(TOSA.TRANSPOSE.default, (inputs[-1], [0, 3, 1, 2]), (1, 4, 4, width))
+    flow = node(
+        TOSA.TRANSPOSE.default, (inputs[-1], [0, 3, 1, 2]), (1, 4, height, width)
+    )
     outputs = []
     for image, offset in zip(inputs[:4], (0, 2, 0, 2)):
         with patch.object(
@@ -66,9 +74,9 @@ def _program(code=45, width=6, normalization=(1.0, 1.0)):
             return_value="unused",
         ):
             payload = grid_sampler.build_flow_offset_grid_sampler_payload(
-                input_shape=(1, 4, 4, width),
-                output_shape=(1, 4, 4, width),
-                flow_shape=(1, 4, 4, width),
+                input_shape=(1, 4, height, width),
+                output_shape=(1, 4, height, width),
+                flow_shape=(1, 4, height, width),
                 flow_scale=0.01,
                 flow_zero_point=-14,
                 input_scale=0.003,
@@ -88,21 +96,21 @@ def _program(code=45, width=6, normalization=(1.0, 1.0)):
             },
         )
         custom.meta["val"] = [image.meta["val"]]
-        output = node(operator.getitem, (custom, 0), (1, 4, width, 4))
+        output = node(operator.getitem, (custom, 0), (1, height, width, 4))
         if len(outputs) < 2:
             output = node(
                 TOSA.SLICE.default,
-                (output, [0, 0, 0, 0], [1, 4, width, 3]),
-                (1, 4, width, 3),
+                (output, [0, 0, 0, 0], [1, height, width, 3]),
+                (1, height, width, 3),
             )
         outputs.append(output)
     timestep = constant(
-        "timestep", torch.full((1, 4, width, 1), code, dtype=torch.int8)
+        "timestep", torch.full((1, height, width, 1), code, dtype=torch.int8)
     )
     concat = node(
         TOSA.CONCAT.default,
         ([*outputs, timestep, *inputs[4:]],),
-        (1, 4, width, 28),
+        (1, height, width, 28),
         axis=3,
     )
     weight = constant(
@@ -113,7 +121,7 @@ def _program(code=45, width=6, normalization=(1.0, 1.0)):
     conv = node(
         TOSA.CONV2D.default,
         (concat, weight, bias, [1, 1], [0, 0, 0, 0], [1, 1]),
-        (1, 4, width, 3),
+        (1, height, width, 3),
     )
     conv.meta["input_qparams"] = {0: SimpleNamespace(zp=-11), 1: SimpleNamespace(zp=0)}
     graph.output((conv,))
@@ -267,10 +275,10 @@ def _tail_program():
             torch.int32,
         )
         producer.meta["input_qparams"] = {1: SimpleNamespace(zp=0)}
-        phase = node(
-            TOSA.RESCALE.default,
+        phase = create_rescale_node(
+            graph,
             (producer, torch.int8, [0.001 * (i + 1) for i in range(52)], 0, -14),
-            (1, 1, 2, 52),
+            from_node=producer,
         )
         reshape = node(
             TOSA.RESHAPE.default, (phase, [1, 1, 2, 13, 2, 2]), (1, 1, 2, 13, 2, 2)
@@ -300,20 +308,19 @@ def _tail_program():
                 resize_mode="bilinear",
             )
             states.append(
-                node(
-                    TOSA.RESCALE.default,
+                create_rescale_node(
+                    graph,
                     (resize, torch.int8, [0.0625], 0, 0),
-                    (1, 4, 8, channels),
+                    from_node=resize,
                 )
             )
     flow_transpose.args = (states[2], [0, 3, 1, 2])
     concat.args = ([*concat.args[0][:5], *states],)
     with graph.inserting_before(customs[0]):
-        residual = node(
-            TOSA.RESCALE.default,
+        residual = create_rescale_node(
+            graph,
             (flow_transpose, torch.int32, [91861.15014648438], -14, 0),
-            (1, 4, 4, 8),
-            torch.int32,
+            from_node=flow_transpose,
         )
     graph.output_node().args = ((conv, residual),)
     program.graph_signature.output_specs.append(
@@ -339,7 +346,11 @@ def test_fuses_block0_tail_with_phase_major_input(adapted):
             else pack.PackRifeWarpsAndConcatPass(program)(program.graph_module)
         )
         assert result.modified
-    assert build.call_args.kwargs == {"fuse_block0_tail": True}
+    assert build.call_args.kwargs == {
+        "fuse_block0_tail": True,
+        "pixel_shuffle": True,
+        "resize_scale": 2,
+    }
     custom = concat.args[0]
     assert len(custom.args[0]) == 5
     assert custom.args[0][-1] is phase
@@ -431,8 +442,13 @@ def test_phase_major_convolution_preserves_pixel_shuffle_values(per_channel):
         pack._constant_tensor(program, n) for n in producer.args[:3]
     )
     if not per_channel:
-        phase.args = (*phase.args[:2], [0.125], *phase.args[3:])
-    scales = phase.args[2]
+        phase.args = (
+            phase.args[0],
+            *compute_multiplier_and_shift([0.125]),
+            *phase.args[3:],
+        )
+        phase.kwargs = {**phase.kwargs, "per_channel": False}
+    original_parameters = phase.args[1:]
     before = (
         F.conv_transpose2d(
             source.permute(0, 3, 1, 2).double(),
@@ -457,8 +473,8 @@ def test_phase_major_convolution_preserves_pixel_shuffle_values(per_channel):
         .to(torch.int32)
     )
     with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+INT")):
-        original = TOSA.RESCALE.default(before, torch.int8, scales, 0, -14)
-        reordered = TOSA.RESCALE.default(after, *phase.args[1:])
+        original = TOSA.RESCALE.default(before, *original_parameters, **phase.kwargs)
+        reordered = TOSA.RESCALE.default(after, *phase.args[1:], **phase.kwargs)
     shuffled = F.pixel_shuffle(original.permute(0, 3, 1, 2), 2).permute(0, 2, 3, 1)
     actual = torch.empty_like(shuffled)
     for y in range(actual.shape[1]):
@@ -497,7 +513,11 @@ def test_unsupported_tail_keeps_original_state_preparation(unsupported):
         resize.kwargs = {"resize_mode": "nearest"}
     elif unsupported == "rounding":
         rescale = concat.args[0][5]
-        rescale.args = (*rescale.args[:2], [0.125], *rescale.args[3:])
+        rescale.args = (
+            rescale.args[0],
+            *compute_multiplier_and_shift([0.125]),
+            *rescale.args[3:],
+        )
     else:
         program.graph.output_node().args = ((residual, concat.args[0][5]),)
     with pytest.raises(ValueError):
@@ -521,7 +541,7 @@ def test_original_pixel_shuffle_and_integer_resize_arithmetic():
         align_corners=False,
     ).permute(0, 2, 3, 1)
     with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+INT")):
-        reference = TOSA.RESCALE.default(
+        reference = rescale_tensor(
             (interpolated * 16).to(torch.int32),
             torch.int8,
             [0.0625],
@@ -550,4 +570,132 @@ def test_original_pixel_shuffle_and_integer_resize_arithmetic():
                     * weight
                 )
             actual[0, y, x] = ((acc + 8) >> 4).clamp(-128, 127).to(torch.int8)
+    assert torch.equal(actual, reference)
+
+
+@pytest.mark.parametrize("factor", [2, 4, 8])
+@pytest.mark.parametrize("invalid", [None, "rounding", "resize", "shared"])
+def test_direct_head_tail(factor, invalid):
+    program, _, concat, conv, _ = _program(height=8, width=16)
+    graph = program.graph
+    customs = [n for n in graph.nodes if n.target == TOSA.CUSTOM.default]
+    flow = customs[0].args[0][1]
+    with graph.inserting_before(customs[0]):
+        residual = create_rescale_node(
+            graph,
+            (flow, torch.int32, [91861.15014648438], -14, 0),
+            from_node=flow,
+        )
+    residual.meta["val"] = flow.meta["val"].new_empty((1, 4, 8, 16), dtype=torch.int32)
+    graph.output_node().args = ((conv, residual),)
+    program.graph_signature.output_specs.append(
+        OutputSpec(OutputKind.USER_OUTPUT, TensorArgument(name=residual.name), None)
+    )
+    h, w = 8 // factor, 16 // factor
+    with graph.inserting_before(next(iter(graph.nodes))):
+        head = create_constant_placeholder(
+            program,
+            graph,
+            "direct_head",
+            InputKind.CONSTANT_TENSOR,
+            torch.zeros(1, h, w, 13, dtype=torch.int8),
+        )
+    states = []
+    with graph.inserting_before(customs[0].args[0][1]):
+        for offset, channels in ((4, 1), (5, 8), (0, 4)):
+            source = graph.call_function(
+                TOSA.SLICE.default, (head, [0, 0, 0, offset], [1, h, w, channels])
+            )
+            source.meta["val"] = head.meta["val"].new_empty((1, h, w, channels))
+            resize = graph.call_function(
+                TOSA.RESIZE.default,
+                (
+                    source,
+                    [2 * factor, 2, 2 * factor, 2],
+                    [1 - factor] * 2,
+                    [factor - 1] * 2,
+                ),
+                {"resize_mode": "bilinear"},
+            )
+            resize.meta["val"] = head.meta["val"].new_empty(
+                (1, 8, 16, channels), dtype=torch.int32
+            )
+            state = create_rescale_node(
+                graph,
+                (resize, torch.int8, [1.0 / (2 * factor) ** 2], 0, 0),
+                from_node=resize,
+            )
+            state.meta["val"] = head.meta["val"].new_empty((1, 8, 16, channels))
+            states.append(state)
+    concat.args = ([*concat.args[0][:5], *states],)
+    flow = customs[0].args[0][1]
+    flow.args = (states[2], [0, 3, 1, 2])
+    graph.eliminate_dead_code()
+    if invalid == "rounding":
+        states[0].args = (states[0].args[0], *compute_multiplier_and_shift([0.5]), 0, 0)
+    elif invalid == "resize":
+        states[0].args[0].kwargs = {"resize_mode": "nearest"}
+    elif invalid == "shared":
+        graph.output_node().args = ((residual, states[0]),)
+    if invalid:
+        with pytest.raises(ValueError):
+            pack._match_direct_head_tail(concat, customs)
+        return
+    assert pack._match_direct_head_tail(concat, customs) == ((head, residual), factor)
+    with patch.object(pack, "build_packed_warp_payload", return_value={}) as build:
+        result = pack.PackRifeWarpsAndConcatPass(program)(program.graph_module)
+    assert result.modified
+    assert build.call_args.kwargs == {
+        "fuse_block0_tail": True,
+        "pixel_shuffle": False,
+        "resize_scale": factor,
+    }
+    assert concat.args[0].args[0][-1] is head
+    assert not any(n.target == TOSA.RESIZE.default for n in graph.nodes)
+
+
+@pytest.mark.parametrize("factor", [2, 4, 8])
+def test_direct_head_resize_arithmetic(factor):
+    head = (
+        torch.arange(1 * 3 * 4 * 13)
+        .remainder(256)
+        .sub(128)
+        .to(torch.int8)
+        .reshape(1, 3, 4, 13)
+    )
+    interpolated = F.interpolate(
+        head.permute(0, 3, 1, 2).float(),
+        scale_factor=factor,
+        mode="bilinear",
+        align_corners=False,
+    ).permute(0, 2, 3, 1)
+    denominator = 2 * factor
+    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+INT")):
+        reference = rescale_tensor(
+            (interpolated * denominator**2).to(torch.int32),
+            torch.int8,
+            [1.0 / denominator**2],
+            0,
+            0,
+        )
+    actual = torch.empty_like(reference)
+    for y in range(actual.shape[1]):
+        for x in range(actual.shape[2]):
+            ly, dy = divmod(2 * y - (factor - 1), denominator)
+            lx, dx = divmod(2 * x - (factor - 1), denominator)
+            acc = torch.zeros(13, dtype=torch.int32)
+            for cy, cx, weight in (
+                (ly, lx, (denominator - dy) * (denominator - dx)),
+                (ly, lx + 1, (denominator - dy) * dx),
+                (ly + 1, lx, dy * (denominator - dx)),
+                (ly + 1, lx + 1, dy * dx),
+            ):
+                cy = min(max(cy, 0), head.shape[1] - 1)
+                cx = min(max(cx, 0), head.shape[2] - 1)
+                acc += head[0, cy, cx].to(torch.int32) * weight
+            actual[0, y, x] = (
+                ((acc + denominator**2 // 2) >> (2 * (denominator.bit_length() - 1)))
+                .clamp(-128, 127)
+                .to(torch.int8)
+            )
     assert torch.equal(actual, reference)

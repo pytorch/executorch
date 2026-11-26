@@ -18,6 +18,7 @@ from executorch.examples.llm_server.python.chat_template import ChatTemplate
 from executorch.examples.llm_server.python.multiplexed_worker_client import (
     spawn_multiplexed_worker,
 )
+from executorch.examples.llm_server.python.protocol import ChatCompletionRequest
 from executorch.examples.llm_server.python.server import build_app
 from executorch.examples.llm_server.python.serving_chat import ServingChat
 from executorch.examples.llm_server.python.session_runtime import (
@@ -45,6 +46,7 @@ async def native_worker(tmp_path, monkeypatch):
     async def create(
         *,
         gate=False,
+        gate_after_first=False,
         stop_immediately=False,
         prefix_cache=False,
         mailbox_capacity=64,
@@ -55,6 +57,8 @@ async def native_worker(tmp_path, monkeypatch):
         command = [binary, "--trace", str(trace)]
         if gate:
             command.append("--gate-two")
+        if gate_after_first:
+            command.extend(["--gate-after-first", str(trace.with_suffix(".release"))])
         if stop_immediately:
             command.append("--stop-immediately")
         if prefix_cache:
@@ -342,10 +346,10 @@ async def test_runtime_prefix_cache_replacement_and_explicit_reset(native_worker
     worker, _ = await native_worker(prefix_cache=True)
     runtime = SessionRuntime(worker)
 
-    async def generate(key):
+    async def generate(key, prompt="hello"):
         async with runtime.generate_stream(
             key,
-            PromptInput(text="hello"),
+            PromptInput(text=prompt),
             GenerationOptions(max_new_tokens=1, temperature=0.0, seed=123),
         ) as generation:
             pieces = [piece async for piece in generation]
@@ -365,10 +369,19 @@ async def test_runtime_prefix_cache_replacement_and_explicit_reset(native_worker
         assert replacement.prefilled_prompt_tokens == 1
         await asyncio.wait_for(worker.reset_session("first"), 5)
         reset = await asyncio.wait_for(generate("first"), 10)
-        assert reset.reused_prompt_tokens == 0
+        assert reset.reused_prompt_tokens == 4
+        assert reset.prefilled_prompt_tokens == 1
+        assert reset.session_reset_reason == "prefix_clone"
         await asyncio.wait_for(worker.open_session("explicit"), 5)
         explicit = await asyncio.wait_for(generate("explicit"), 10)
-        assert explicit.reused_prompt_tokens == 0
+        assert explicit.reused_prompt_tokens == 4
+        assert explicit.prefilled_prompt_tokens == 1
+        assert explicit.session_reset_reason == "prefix_clone"
+        await asyncio.wait_for(worker.reset_session("first"), 5)
+        fresh = await asyncio.wait_for(generate("first", "world"), 10)
+        assert fresh.prompt_tokens == 5
+        assert fresh.reused_prompt_tokens == 0
+        assert fresh.prefilled_prompt_tokens == 5
     finally:
         await asyncio.wait_for(runtime.aclose_worker(), 15)
 
@@ -643,3 +656,64 @@ async def test_http_ignore_eos_reaches_native_worker_and_is_request_scoped(
             assert 2 in [int(line) for line in trace.read_text().splitlines()]
     finally:
         await runtime.aclose_worker()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("ignore_eos", [False, True])
+@pytest.mark.parametrize("stop", [None, "~" * 64])
+async def test_safe_text_reaches_python_before_native_decode_continues(
+    native_worker, ignore_eos, stop
+):
+    worker, trace = await native_worker(gate_after_first=True)
+    release = trace.with_suffix(".release")
+    runtime = SessionRuntime(worker)
+    serving = ServingChat(
+        runtime, ChatTemplate(hf_tokenizer_path=None, allow_fallback=True), "test-model"
+    )
+    stream = None
+    pending = None
+    creating = None
+    try:
+        creating = asyncio.create_task(
+            serving.create(
+                ChatCompletionRequest(
+                    model="test-model",
+                    messages=[{"role": "user", "content": "hello"}],
+                    max_tokens=8,
+                    stream=True,
+                    ignore_eos=ignore_eos,
+                    stop=stop,
+                )
+            )
+        )
+        done, _ = await asyncio.wait({creating}, timeout=5)
+        assert done, "Native holdback blocked streaming preflight"
+        stream = creating.result()
+        content = ""
+        while not content:
+            pending = asyncio.create_task(anext(stream))
+            done, _ = await asyncio.wait({pending}, timeout=5)
+            assert done, "Safe text was held while the next native decode was gated"
+            chunk = pending.result()
+            pending = None
+            payload = json.loads(chunk.removeprefix("data: "))
+            content += payload["choices"][0]["delta"].get("content") or ""
+        assert len(content) == 1
+        assert not release.exists()
+        assert len(trace.read_text().splitlines()) == 1
+        release.touch()
+        async for chunk in stream:
+            if chunk.strip() != "data: [DONE]":
+                payload = json.loads(chunk.removeprefix("data: "))
+                for choice in payload.get("choices", []):
+                    content += choice["delta"].get("content") or ""
+        assert len(content) == 8
+    finally:
+        release.touch()
+        if creating is not None and stream is None:
+            stream = await asyncio.wait_for(creating, 5)
+        if pending is not None and not pending.done():
+            await asyncio.wait_for(pending, 5)
+        if stream is not None:
+            await stream.aclose()
+        await asyncio.wait_for(runtime.aclose_worker(), 15)

@@ -157,4 +157,31 @@ exactly one; otherwise they replace the list. The Boolean `force` option is
 independent and retains its build default when omitted.
 
 The test runner accepts up to eight `provider[/implementation]` arguments after
-the model and golden paths, in preference order.
+the model and golden paths, in preference order. In a build with the event
+tracer, it writes an ETDump to the path in the `ET_CPU_ETDUMP` environment
+variable.
+
+## Profiling
+
+With the event tracer enabled (`-DEXECUTORCH_ENABLE_EVENT_TRACER=ON`, or
+`-c executorch.event_tracer_enabled=true` in Buck), each execution records one
+ETDump delegate event per plan step, at every profiling level. A step event is
+named `provider/implementation:first_node`, with `+N` appended when the step's
+region holds `N` more nodes, for example `XNNPACK/subgraph:conv+3`.
+
+Events inside a step come from the provider. Reference's ET kernels log their
+usual `native_call_<op>` events, which follow the tracer's profiling level at
+execution. XNNPACK logs one event per XNNPACK operator, named
+`<operator> #<n>`, for example `Transpose (ND, X32) #3`, where `<n>` counts
+operators of that name across the XNNPACK regions of one CPU delegate, so
+each delegate in a method numbers its operators from 1. XNNPACK
+enables its profiling when it compiles a region, so these events require a
+tracer with a profiling level above `kProfileMethodOnly` when the method is
+loaded.
+
+`-DEXECUTORCH_CPU_XNNPACK_OPERATOR_SHAPES=ON` (or
+`-c executorch.cpu_xnnpack_operator_shapes=true`) also attaches each XNNPACK
+operator's shapes to its event as JSON delegate metadata,
+`{"inputs":[[dims],...],"outputs":[[dims],...]}`, with `null` for an absent
+operand. The shapes come from XNNPACK's internal runtime, so the option is off
+by default; the `profiling` CMake preset turns it on.
