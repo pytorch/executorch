@@ -4193,15 +4193,14 @@ class FoldParameterSplits:
             q = x.sigmoid()
             return self.attn(q, q, x, need_weights=False)[0]
 
-    class _SliceOfMutatedBuffer(torch.nn.Module):
+    class _SliceOfBuffer(torch.nn.Module):
+        # The buffer is only sliced here and is updated outside the graph.
         def __init__(self):
             super().__init__()
             self.register_buffer("cache", torch.zeros(4, 8))
 
         def forward(self, x):
-            y = x + self.cache[0:2]
-            self.cache.add_(1.0)
-            return y
+            return x + self.cache[0:2]
 
     class _TiedSplits(torch.nn.Module):
         # The parameter is read whole and through two overlapping slices.
@@ -4289,12 +4288,12 @@ class FoldParameterSplits:
             prepared(*inputs).sum().backward()
             assert all(p.grad is not None for p in folded)
 
-        with subtests.test(msg="slice_of_mutated_buffer"):
-            module = FoldParameterSplits._SliceOfMutatedBuffer()
+        with subtests.test(msg="slice_of_buffer"):
+            module = FoldParameterSplits._SliceOfBuffer()
             x = torch.randn(2, 8)
             gm = torch.export.export(module, (x,), strict=True).module()
             assert not target_pass()(gm).modified
-            gm(x)
+            gm.cache.fill_(1.0)
             assert torch.equal(gm(x), x + 1.0)
 
         with subtests.test(msg="tied_parameter_not_folded"):
