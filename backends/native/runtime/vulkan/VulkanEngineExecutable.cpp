@@ -124,7 +124,7 @@ ScalarType device_dtype(ScalarType dtype) {
 
 size_t logical_numel(const TensorMeta& meta) {
   const int64_t numel = meta.numel();
-  if (static_cast<uint64_t>(numel) > std::numeric_limits<size_t>::max()) {
+  if (!std::in_range<size_t>(numel)) {
     throw std::runtime_error("vulkan: tensor element count overflows");
   }
   return static_cast<size_t>(numel);

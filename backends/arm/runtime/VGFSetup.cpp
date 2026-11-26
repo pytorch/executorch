@@ -921,7 +921,7 @@ executorch::runtime::Error VgfRepr::get_owned_mapped_boundary_buffer(
       io.memory == VK_NULL_HANDLE || !io.memory_properties_known) {
     return executorch::runtime::Error::NotSupported;
   }
-  if (io.memory_allocation_size > std::numeric_limits<size_t>::max()) {
+  if (io.memory_allocation_size > SIZE_MAX) {
     return executorch::runtime::Error::NotSupported;
   }
 

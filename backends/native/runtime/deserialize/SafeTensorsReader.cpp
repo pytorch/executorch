@@ -8,9 +8,9 @@
 
 #include <algorithm>
 #include <array>
-#include <limits>
 #include <stdexcept>
 #include <string_view>
+#include <utility>
 
 #include <executorch/backends/native/runtime/deserialize/CheckedMath.h>
 #include <executorch/backends/native/runtime/deserialize/DeserializeError.h>
@@ -127,7 +127,7 @@ size_t SafeTensorsReader::header_size(ByteSpan prefix) {
   for (size_t i = 0; i < kLengthPrefixSize; ++i) {
     size |= static_cast<uint64_t>(prefix[i]) << (8 * i);
   }
-  if (size > std::numeric_limits<size_t>::max()) {
+  if (!std::in_range<size_t>(size)) {
     throw std::runtime_error("safetensors: header is too large");
   }
   return static_cast<size_t>(size);
@@ -210,8 +210,7 @@ SafeTensorsReader SafeTensorsReader::open_header(
     }
     const uint64_t begin = range[0].get<uint64_t>();
     const uint64_t end = range[1].get<uint64_t>();
-    if (begin > end || end > data_size ||
-        end > std::numeric_limits<size_t>::max()) {
+    if (begin > end || end > data_size || !std::in_range<size_t>(end)) {
       throw std::runtime_error(
           "safetensors: entry '" + name +
           "' byte range is outside the data section");
@@ -247,7 +246,7 @@ SafeTensorsReader SafeTensorsReader::open_header(
             out.total_bytes_, entry_info.nbytes, out.total_bytes_)) {
       throw ResourceLimitError("safetensors: total payload size overflows");
     }
-    if (out.total_bytes_ > detail::kMaxConstantBytes) {
+    if (std::cmp_greater(out.total_bytes_, detail::kMaxConstantBytes)) {
       throw ResourceLimitError("safetensors: total payload exceeds size limit");
     }
     out.names_.push_back(name);

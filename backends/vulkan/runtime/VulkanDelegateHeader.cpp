@@ -77,9 +77,6 @@ bool VulkanDelegateHeader::is_valid() const {
   if (bytes_offset < flatbuffer_offset + flatbuffer_size) {
     return false;
   }
-  if (bytes_size < 0) {
-    return false;
-  }
 
   return true;
 }

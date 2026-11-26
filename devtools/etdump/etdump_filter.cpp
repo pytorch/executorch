@@ -32,9 +32,6 @@ Result<bool> ETDumpFilter::set_debug_handle_range(size_t start, size_t end) {
   if (start >= end) {
     return Error::InvalidArgument; // Start is greater than end
   }
-  if (start < 0 || end < 0) {
-    return Error::InvalidArgument; // Start or end is negative
-  }
   range_start_ = start;
   range_end_ = end;
   return true;
