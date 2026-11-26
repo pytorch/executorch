@@ -4186,6 +4186,81 @@ def _leaky_relu_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     return out
 
 
+@REGISTRY.register(target=[torch.ops.aten.elu.default])
+def _elu_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.elu(x, alpha=1, scale=1, input_scale=1).
+
+    elu(x) = scale * x                               if x > 0
+           = alpha * scale * expm1(input_scale * x)  otherwise
+
+    which is how ATen computes it. selu reaches this op as elu with its own
+    alpha and scale, so all three coefficients are honored.
+
+    Implemented as where(x <= 0, negative, positive). expm1 overflows to inf for
+    a large positive x, but where() only selects that branch for x <= 0.
+    """
+    args = P.args(n)
+    require_args(args, 1, 4, "aten.elu")
+    require_kwargs(P.kwargs(n), set(), "aten.elu")
+
+    x = args[0]
+    alpha, scale, input_scale = (
+        float(args[i]) if len(args) > i and args[i] is not None else 1.0
+        for i in (1, 2, 3)
+    )
+
+    x_meta = n.args[0].meta.get("val")
+    if x_meta is None:
+        raise ValueError("Input tensor metadata not found for elu")
+    dtype = x_meta.dtype
+
+    def scaled(slot: Slot, factor: float) -> Slot:
+        """Emit factor * slot, or nothing for a factor of 1."""
+        if factor == 1.0:
+            return slot
+        factor_slot = emit_lifted_constant(P, factor, dtype)
+        _, product_slot = P.make_tmp_slot()
+        P.emit(
+            MultiplyNode(
+                a=P.slot_to_tid(factor_slot),
+                b=P.slot_to_tid(slot),
+                out=P.slot_to_tid(product_slot),
+            )
+        )
+        return product_slot
+
+    zero_slot = emit_lifted_constant(P, 0.0, dtype)
+    _, cond_slot = P.make_tmp_slot()
+    P.emit(
+        LessEqualNode(
+            a=P.slot_to_tid(x),
+            b=P.slot_to_tid(zero_slot),
+            out=P.slot_to_tid(cond_slot),
+        )
+    )
+
+    _, expm1_slot = P.make_tmp_slot()
+    P.emit(
+        Expm1Node(
+            x=P.slot_to_tid(scaled(x, input_scale)),
+            out=P.slot_to_tid(expm1_slot),
+        )
+    )
+    negative_slot = scaled(expm1_slot, alpha * scale)
+    positive_slot = scaled(x, scale)
+
+    out = P.make_or_get_slot(n)
+    P.emit(
+        WhereNode(
+            condition=P.slot_to_tid(cond_slot),
+            x=P.slot_to_tid(negative_slot),
+            y=P.slot_to_tid(positive_slot),
+            out=P.slot_to_tid(out),
+        )
+    )
+    return out
+
+
 @REGISTRY.register(target=[torch.ops.aten._log_softmax.default])
 def _log_softmax_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """Handle aten._log_softmax.default - log of softmax.
@@ -5602,6 +5677,67 @@ def _cumsum_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         )
     )
     return out
+
+
+_MIN_MAX_DIM_OPS: List[Tuple[Any, Any, Any, str]] = [
+    (torch.ops.aten.max.dim, MaxNode, ArgmaxNode, "aten.max.dim"),
+    (torch.ops.aten.min.dim, MinNode, ArgminNode, "aten.min.dim"),
+]
+
+
+def _make_min_max_dim_handler(value_node_cls: Any, index_node_cls: Any, op_name: str):
+    """Create a handler for max.dim / min.dim: (x, dim, keepdim) -> (values, indices)."""
+
+    def handler(P: MLXProgramBuilder, n: Node) -> Slot:
+        args = P.args(n)
+        require_args(args, 2, 3, op_name)
+        require_kwargs(P.kwargs(n), set(), op_name)
+        x = args[0]
+        dim = args[1]
+        keepdim = args[2] if len(args) > 2 else False
+        require_static_int(dim, "dim", op_name)
+
+        x_meta = n.args[0].meta.get("val")
+        if x_meta is None:
+            raise ValueError(f"Input tensor metadata not found for {op_name}")
+        if len(x_meta.shape) == 0:
+            # MLX rejects any axis on a 0-D array.
+            raise ValueError(f"{op_name}: 0-D input is not supported")
+
+        # values is the reduction and indices is the matching arg-reduction, so
+        # each is emitted only when the graph reads it.
+        output_slots = P.make_or_get_slots(n)
+        values_slot, indices_slot = output_slots
+        used = used_getitem_indices(n)
+        if 0 in used:
+            P.emit(
+                value_node_cls(
+                    x=P.slot_to_tid(x),
+                    out=P.slot_to_tid(values_slot),
+                    axes=[dim],
+                    keepdims=keepdim,
+                )
+            )
+        if 1 in used:
+            P.emit(
+                index_node_cls(
+                    x=P.slot_to_tid(x),
+                    out=P.slot_to_tid(indices_slot),
+                    axis=dim,
+                    keepdims=keepdim,
+                )
+            )
+        return output_slots
+
+    handler.__name__ = f"_{op_name.replace('.', '_')}_handler"
+    handler.__doc__ = f"Handle {op_name} (values and indices along one dim)."
+    return handler
+
+
+for _target, _value_node_cls, _index_node_cls, _op_name in _MIN_MAX_DIM_OPS:
+    REGISTRY.register(target=[_target])(
+        _make_min_max_dim_handler(_value_node_cls, _index_node_cls, _op_name)
+    )
 
 
 @REGISTRY.register(target=[torch.ops.aten.cummax.default])
