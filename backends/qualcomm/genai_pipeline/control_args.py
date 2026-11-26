@@ -64,6 +64,8 @@ logger = logging.getLogger(__name__)
 PROMPT_EVAL = "prompt_eval"
 TASKS_EVAL = "tasks_eval"
 SQNR_EVAL = "sqnr_eval"
+# Runs a compiled method through the generic executor runner; not a CLI choice.
+DEFAULT_RUN = "default"
 
 # Defaults, mirroring llama.py's argparse configuration. Named rather than
 # inlined so callers can reference them instead of repeating literals.

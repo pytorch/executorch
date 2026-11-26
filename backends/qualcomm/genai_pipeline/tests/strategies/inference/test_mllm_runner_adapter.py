@@ -8,7 +8,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import create_autospec, patch
 
 import torch
 
@@ -19,6 +19,10 @@ from executorch.backends.qualcomm.genai_pipeline.artifact_keys import (
 )
 from executorch.backends.qualcomm.genai_pipeline.configs.inference_input_config import (
     InferenceInputConfig,
+)
+from executorch.backends.qualcomm.genai_pipeline.control_args import ControlArgs
+from executorch.backends.qualcomm.genai_pipeline.inference.platforms import (
+    RunnerPlatform,
 )
 from executorch.backends.qualcomm.genai_pipeline.inference.runner_io import (
     ForwardRequest,
@@ -32,7 +36,6 @@ from executorch.backends.qualcomm.genai_pipeline.strategies.inference.mllm_runne
     MLLMRunnerAdapter,
 )
 from executorch.backends.qualcomm.genai_pipeline.tests.test_utils import (
-    make_test_context,
     TEST_SOC_CHIPSET,
 )
 
@@ -48,7 +51,7 @@ _PREPROCESS = (
 
 def _make_platform(runner_dir):
     """Create a mock RunnerPlatform whose runner outputs live in ``runner_dir``."""
-    platform = MagicMock()
+    platform = create_autospec(RunnerPlatform, instance=True)
     platform.target_flags = ()
     platform.limits_generation = False
     platform.output_dir.return_value = "/out"
@@ -79,8 +82,11 @@ class TestMLLMRunnerAdapter(unittest.TestCase):
         self.tokenizer_path.write_text("{}")
         self.platform = _make_platform(self.runner_dir)
         self.adapter = MLLMRunnerAdapter(self.platform)
-        self.context = make_test_context(
-            model_name=_MODEL, extra_options={"model_mode": "kv", "max_seq_len": 512}
+        self.control_args = ControlArgs(
+            decoder_model=_MODEL,
+            model_mode="kv",
+            max_seq_len=512,
+            image_path=["/host/cat.png"],
         )
 
         validate_patcher = patch(_VALIDATE)
@@ -105,14 +111,13 @@ class TestMLLMRunnerAdapter(unittest.TestCase):
             "artifact_dir": self.artifact_dir,
             "pte_paths": self.pte_paths,
             "runtime_tokenizer_path": self.tokenizer_path,
-            "inference_options": {"image_path": ["/host/cat.png"]},
         }
         defaults.update(overrides)
         return InferenceInputConfig(**defaults)
 
     def _push_artifacts(self, **overrides):
         """Deploy the adapter with the default input configuration."""
-        self.adapter.push_artifacts(self.context, self._input_config(**overrides))
+        self.adapter.push_artifacts(self.control_args, self._input_config(**overrides))
 
     def test_push_artifacts_validates_and_preprocesses_media(self):
         """The image paths are validated and preprocessed for the vision encoder."""
@@ -127,7 +132,7 @@ class TestMLLMRunnerAdapter(unittest.TestCase):
         self._push_artifacts()
         runner, files, host_dir = self.platform.setup.call_args.args
         input_list = self.artifact_dir / f"{ARTIFACT_VISION_ENCODER}_input_list.txt"
-        self.assertEqual(runner, MLLMRunnerAdapter._RUNNER)
+        self.assertEqual(runner, MLLMRunnerAdapter.RUNNER)
         self.assertEqual(host_dir, self.artifact_dir / "outputs")
         self.assertEqual(files[:3], list(self.pte_paths.values()))
         self.assertEqual(files[3:5], [self.tokenizer_path, input_list])

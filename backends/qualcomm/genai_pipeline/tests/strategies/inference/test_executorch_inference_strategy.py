@@ -7,8 +7,11 @@
 import json
 import tempfile
 import unittest
+import weakref
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+import torch
 
 from executorch.backends.qualcomm.genai_pipeline.artifact_keys import (
     ALL_ARTIFACT_KEYS,
@@ -23,6 +26,7 @@ from executorch.backends.qualcomm.genai_pipeline.configs.inference_input_config 
 from executorch.backends.qualcomm.genai_pipeline.configs.inference_output_config import (
     InferenceOutputConfig,
 )
+from executorch.backends.qualcomm.genai_pipeline.control_args import ControlArgs
 from executorch.backends.qualcomm.genai_pipeline.evaluation.evaluator import (
     EvaluationScore,
 )
@@ -30,6 +34,7 @@ from executorch.backends.qualcomm.genai_pipeline.exceptions import StageError
 from executorch.backends.qualcomm.genai_pipeline.inference.runner_io import (
     ExecuteOutput,
     ForwardOutput,
+    ForwardRequest,
     GenerateOutput,
     GenerateRequest,
 )
@@ -47,8 +52,8 @@ from executorch.backends.qualcomm.genai_pipeline.tests.test_utils import (
 )
 
 _CONTROL_ARGS_PATCH = (
-    "executorch.backends.qualcomm.genai_pipeline.strategies.inference."
-    "executorch_inference_strategy.get_inference_control_args"
+    "executorch.backends.qualcomm.genai_pipeline.control_args."
+    "ControlArgs.from_pipeline_context"
 )
 
 
@@ -163,13 +168,17 @@ class TestExecuTorchInferenceStrategyInvoke(_TempDirTestCase):
         adapter.push_artifacts.assert_called_once()
 
     def test_invoke_passes_shared_control_args_and_metadata(self, control_args):
-        """Every evaluator gets the same control args, input config, and metadata."""
+        """The adapter and every evaluator share one ControlArgs, built once."""
         adapter = _make_mock_adapter()
         evaluators = [_RecordingEvaluator("a"), _RecordingEvaluator("b")]
 
         self._invoke(adapter, evaluators)
 
         control_args.assert_called_once()
+        self.assertIs(
+            adapter.push_artifacts.call_args.kwargs["control_args"],
+            control_args.return_value,
+        )
         for evaluator in evaluators:
             args, input_config, metadata = evaluator.calls[0]
             self.assertIs(args, control_args.return_value)
@@ -237,6 +246,31 @@ class TestExecuTorchInferenceStrategyInvoke(_TempDirTestCase):
             result.results["m"].performance_metrics,
             {"num_requests": 2, "mean_tokens_per_sec": 20.0},
         )
+
+    def test_invoke_frees_each_prediction_the_evaluator_drops(self, _):
+        """Only throughput and files are kept, so lm_eval can free each logits tensor."""
+        logits_refs = []
+
+        def pull_results(*_):
+            logits = torch.zeros(1, 2, 4)
+            logits_refs.append(weakref.ref(logits))
+            return ForwardOutput(logits=logits, tokens_per_sec=5.0)
+
+        adapter = _make_mock_adapter()
+        adapter.pull_results.side_effect = pull_results
+
+        class _DroppingEvaluator:
+            method = "tasks_eval"
+
+            def evaluate(self, model, *_):
+                model(ForwardRequest(token_ids=[1]))
+                self.freed = logits_refs[0]() is None
+                return EvaluationScore()
+
+        evaluator = _DroppingEvaluator()
+        self._invoke(adapter, [evaluator])
+
+        self.assertTrue(evaluator.freed)
 
     def test_invoke_reports_zero_throughput_without_timed_predictions(self, _):
         """Predictions without tokens_per_sec yield a zero mean throughput."""
@@ -347,20 +381,20 @@ class TestResolvePtePaths(_TempDirTestCase):
     def _resolve(self, pre_gen_pte, **config_overrides):
         """Resolve pte_paths with compilation skipped."""
         config_overrides.setdefault("pte_paths", None)
-        context = make_test_context(
-            extra_options={"pre_gen_pte": pre_gen_pte} if pre_gen_pte else {}
-        )
         return ExecuTorchInferenceStrategy()._resolve_pte_paths(
-            context, _make_valid_input_config(self.tmp_dir, **config_overrides)
+            make_test_context(),
+            ControlArgs(pre_gen_pte=pre_gen_pte),
+            _make_valid_input_config(self.tmp_dir, **config_overrides),
         )
 
     def test_keeps_input_config_with_compiled_pte_paths(self):
         """Compiled pte_paths are used as is, even with --pre-gen-pte."""
-        context = make_test_context(extra_options={"pre_gen_pte": str(self.tmp_dir)})
         input_config = _make_valid_input_config(self.tmp_dir)
 
         resolved = ExecuTorchInferenceStrategy()._resolve_pte_paths(
-            context, input_config
+            make_test_context(),
+            ControlArgs(pre_gen_pte=str(self.tmp_dir)),
+            input_config,
         )
 
         self.assertIs(resolved, input_config)
@@ -441,11 +475,10 @@ class TestResolvePtePaths(_TempDirTestCase):
             device_runner_adapter=adapter, evaluators=[_RecordingEvaluator("m")]
         )
 
-        with patch(_CONTROL_ARGS_PATCH):
-            strategy.invoke(
-                make_test_context(extra_options={"pre_gen_pte": str(self.tmp_dir)}),
-                _make_valid_input_config(self.tmp_dir, pte_paths=None),
-            )
+        strategy.invoke(
+            make_test_context(extra_options={"pre_gen_pte": str(self.tmp_dir)}),
+            _make_valid_input_config(self.tmp_dir, pte_paths=None),
+        )
 
         pushed = adapter.push_artifacts.call_args.kwargs["input_config"]
         self.assertEqual(
@@ -484,17 +517,6 @@ class TestResolveRuntimeTokenizerPath(_TempDirTestCase):
         )
 
         self.assertIs(resolved, input_config)
-
-    def test_ignores_override_nested_in_inference_options(self):
-        """Only the top-level extra_options key overrides the tokenizer."""
-        resolved = self._resolve(
-            {"inference_options": {"runtime_tokenizer_path": "/tmp/nested.bin"}},
-            Path("/tmp/prep/tokenizer.json"),
-        )
-
-        self.assertEqual(
-            resolved.runtime_tokenizer_path, Path("/tmp/prep/tokenizer.json")
-        )
 
     def test_does_not_validate_the_path(self):
         """Neither a missing tokenizer nor a nonexistent file is an error here."""

@@ -425,7 +425,6 @@ class TestGenAIPipelineInvoke(unittest.TestCase):
         input_config = self._invoke_inference(
             extra_options={
                 "runtime_tokenizer_path": "/tmp/override.bin",
-                "inference_options": {"runtime_tokenizer_path": "/tmp/nested.bin"},
             },
             model_prep_output=ModelPreparationOutputConfig(
                 runtime_tokenizer_path=prep_tokenizer
@@ -433,25 +432,6 @@ class TestGenAIPipelineInvoke(unittest.TestCase):
         )
 
         self.assertEqual(input_config.runtime_tokenizer_path, prep_tokenizer)
-
-    def test_inference_receives_inference_options(self):
-        """extra_options['inference_options'] is forwarded to the inference input."""
-        inference_options = {"temperature": 0.5, "system_prompt": "be brief"}
-        input_config = self._invoke_inference(
-            extra_options={"inference_options": inference_options},
-            model_prep_output=ModelPreparationOutputConfig(),
-        )
-
-        self.assertEqual(input_config.inference_options, inference_options)
-
-    def test_inference_options_default_to_empty(self):
-        """Without inference_options the inference input carries an empty dict."""
-        input_config = self._invoke_inference(
-            extra_options={},
-            model_prep_output=ModelPreparationOutputConfig(),
-        )
-
-        self.assertEqual(input_config.inference_options, {})
 
 
 if __name__ == "__main__":

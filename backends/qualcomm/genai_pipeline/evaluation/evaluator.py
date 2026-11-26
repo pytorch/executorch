@@ -43,41 +43,12 @@ class EvaluationScore:
 
 @runtime_checkable
 class Evaluator(Protocol):
-    """One evaluation method: feeds inputs to the deployed model and scores its
-    predictions.
+    """One evaluation method: builds the inputs fed to the deployed model and
+    scores its predictions.
 
-    An evaluator owns two things, and only these:
-
-    - **What to feed the model.** It builds each input -- a ``GenerateRequest``
-      over the prompts, a ``ForwardRequest`` over chat-templated tokens, the
-      model calls lm_eval makes -- possibly from earlier predictions.
-    - **How to score the predictions.** It turns what comes back into an
-      ``EvaluationScore``: the generated text, or quality metrics such as SQNR
-      or lm_eval's per-task results.
-
-    It is the part of the inference stage that varies by evaluation method. The
-    stage splits the rest by concern, and the evaluator reaches none of it
-    directly::
-
-        ExecuTorchInferenceStrategy   when: deploys the artifacts once, runs every
-                                      evaluator, measures throughput, writes
-                                      results.json / performance.json
-        Evaluator                     what to feed and how to score (this class)
-        runner adapter                how to run: runner flags, input staging,
-                                      output decoding, the deployed model's
-                                      metadata
-        RunnerPlatform                where to run: device or x86 host
-
-    The strategy wraps the adapter as ``model``, a ``DeployedModel`` that runs
-    one input on the deployed runner and returns its prediction; that is the
-    evaluator's only way to the runner. What the evaluator needs of the deployed
-    model arrives as ``RunnerMetadata``, so it never reads the PTE. Every call to
-    ``model`` is recorded by the strategy, which therefore owns the throughput
-    and the result files; the evaluator neither measures one nor writes the
-    other.
-
-    Not to be confused with ``datasets.evaluation``, which supplies data for the
-    quantization stage's post-quantization evaluation.
+    ``model`` is the strategy's wrapper around the runner adapter and the
+    evaluator's only way to the runner; the strategy records every call, so it
+    owns the throughput and the result files.
     """
 
     method: str

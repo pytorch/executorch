@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shlex
 import shutil
 import subprocess
 from pathlib import Path
@@ -61,6 +62,7 @@ class X86Platform:
 
         Raises:
             RuntimeError: If ``QNN_SDK_ROOT`` is not set.
+            FileNotFoundError: If the runner is not built in the build folder.
         """
         qnn_sdk_root = os.environ.get("QNN_SDK_ROOT")
         if not qnn_sdk_root:
@@ -71,6 +73,10 @@ class X86Platform:
         self._qnn_x86_lib = Path(qnn_sdk_root) / "lib" / "x86_64-linux-clang"
         self._build_folder = Path(self._qnn_config.build_folder).resolve()
         self._runner = self._build_folder / runner
+        if not self._runner.is_file():
+            raise FileNotFoundError(
+                f"x86 runner not found: {self._runner}; build it into --build-folder"
+            )
         self._host_dir = host_dir
 
     def add_file(self, path: Path) -> None:
@@ -113,8 +119,9 @@ class X86Platform:
         self._require_host_dir()
         command = " ".join(
             [
-                f"export LD_LIBRARY_PATH={self._qnn_x86_lib}/:{self._build_folder}/lib &&",
-                str(self._runner),
+                "export LD_LIBRARY_PATH="
+                f"{shlex.quote(f'{self._qnn_x86_lib}/:{self._build_folder}/lib')} &&",
+                shlex.quote(str(self._runner)),
                 *args,
             ]
         )
@@ -132,6 +139,7 @@ class X86Platform:
                 f"x86 {self._runner.name} failed with exit code "
                 f"{process.returncode}:\n{process.stdout}"
             )
+        logger.debug("x86 %s output:\n%s", self._runner.name, process.stdout)
 
     def pull(self, filename: str, host_path: Path) -> None:
         """Move ``filename`` from ``host_dir`` to ``host_path``."""

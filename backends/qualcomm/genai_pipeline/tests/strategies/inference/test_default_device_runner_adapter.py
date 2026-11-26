@@ -16,6 +16,8 @@ from executorch.backends.qualcomm.genai_pipeline.artifact_keys import (
 from executorch.backends.qualcomm.genai_pipeline.configs.inference_input_config import (
     InferenceInputConfig,
 )
+
+from executorch.backends.qualcomm.genai_pipeline.control_args import ControlArgs
 from executorch.backends.qualcomm.genai_pipeline.inference.runner_io import (
     ExecuteOutput,
     ExecuteRequest,
@@ -24,7 +26,6 @@ from executorch.backends.qualcomm.genai_pipeline.strategies.inference.default_de
     DefaultDeviceRunnerAdapter,
 )
 from executorch.backends.qualcomm.genai_pipeline.tests.test_utils import (
-    make_test_context,
     TEST_PTE_PATH,
     TEST_SOC_CHIPSET,
 )
@@ -53,12 +54,12 @@ class TestDefaultDeviceRunnerAdapter(unittest.TestCase):
 
     def _push_artifacts(self, **kwargs):
         """Deploy the adapter with the default input configuration."""
-        self.adapter.push_artifacts(make_test_context(), _make_input_config(), **kwargs)
+        self.adapter.push_artifacts(ControlArgs(), _make_input_config(), **kwargs)
 
     def test_default_workspace_is_per_user(self):
         """The default workspace is a per-user folder."""
         DefaultDeviceRunnerAdapter(self.qnn_config).push_artifacts(
-            make_test_context(), _make_input_config()
+            ControlArgs(), _make_input_config()
         )
         self.assertEqual(
             self.mock_device_cls.call_args.kwargs["workspace"],

@@ -4,11 +4,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import os
 import shutil
+import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from types import SimpleNamespace
+from unittest.mock import create_autospec, patch
 
 import numpy as np
 import torch
@@ -18,6 +21,11 @@ from executorch.backends.qualcomm.genai_pipeline.artifact_keys import (
 )
 from executorch.backends.qualcomm.genai_pipeline.configs.inference_input_config import (
     InferenceInputConfig,
+)
+from executorch.backends.qualcomm.genai_pipeline.control_args import ControlArgs
+from executorch.backends.qualcomm.genai_pipeline.inference.platforms import (
+    RunnerPlatform,
+    X86Platform,
 )
 from executorch.backends.qualcomm.genai_pipeline.inference.runner_io import (
     ExecuteRequest,
@@ -37,7 +45,6 @@ from executorch.backends.qualcomm.genai_pipeline.strategies.inference.llm_runner
     LLMRunnerAdapter,
 )
 from executorch.backends.qualcomm.genai_pipeline.tests.test_utils import (
-    make_test_context,
     TEST_SOC_CHIPSET,
 )
 
@@ -57,7 +64,7 @@ _METADATA = RunnerMetadata(
 
 def _make_platform(runner_dir):
     """Create a mock RunnerPlatform whose runner outputs live in ``runner_dir``."""
-    platform = MagicMock()
+    platform = create_autospec(RunnerPlatform, instance=True)
     platform.target_flags = ()
     platform.limits_generation = False
     platform.output_dir.return_value = "/out"
@@ -81,9 +88,8 @@ class TestLLMRunnerAdapter(unittest.TestCase):
         self.tokenizer_path.write_bytes(b"tok")
         self.platform = _make_platform(self.runner_dir)
         self.adapter = LLMRunnerAdapter(self.platform)
-        self.context = make_test_context(
-            model_name="stories110m",
-            extra_options={"model_mode": "kv", "max_seq_len": 64},
+        self.control_args = ControlArgs(
+            decoder_model="stories110m", model_mode="kv", max_seq_len=64
         )
         patcher = patch(_READ_METADATA, return_value=_METADATA)
         self.mock_read_metadata = patcher.start()
@@ -105,7 +111,7 @@ class TestLLMRunnerAdapter(unittest.TestCase):
 
     def _push_artifacts(self, **overrides):
         """Deploy the adapter with the default input configuration."""
-        self.adapter.push_artifacts(self.context, self._input_config(**overrides))
+        self.adapter.push_artifacts(self.control_args, self._input_config(**overrides))
 
     def _executed_args(self):
         """Return the flags of the last platform.execute call."""
@@ -114,10 +120,10 @@ class TestLLMRunnerAdapter(unittest.TestCase):
     def test_push_artifacts_sets_up_decoder_and_tokenizer(self):
         """The decoder PTE, extra files, and tokenizer are handed to the platform."""
         self.adapter.push_artifacts(
-            self.context, self._input_config(), extra_files=["/host/extra.bin"]
+            self.control_args, self._input_config(), extra_files=["/host/extra.bin"]
         )
         self.platform.setup.assert_called_once_with(
-            LLMRunnerAdapter._RUNNER,
+            LLMRunnerAdapter.RUNNER,
             [self.pte_path, Path("/host/extra.bin"), self.tokenizer_path],
             self.artifact_dir / "outputs",
         )
@@ -207,8 +213,8 @@ class TestLLMRunnerAdapter(unittest.TestCase):
 
     def test_execute_forward_runs_in_kv_mode(self):
         """A forward request always runs in KV mode and dumps the logits."""
-        self.context = make_test_context(
-            model_name="stories110m", extra_options={"model_mode": "hybrid"}
+        self.control_args = ControlArgs(
+            decoder_model="stories110m", model_mode="hybrid"
         )
         self._push_artifacts()
         self.adapter.execute(ForwardRequest(token_ids=[3, 1, 4]))
@@ -266,6 +272,90 @@ class TestLLMRunnerAdapter(unittest.TestCase):
             set(result.files),
             {output_dir / RUNNER_LOGITS, output_dir / RUNNER_INFERENCE_SPEED},
         )
+
+
+# Stands in for qnn_llama_runner: parses its flags as the real one does and
+# writes the files the adapter reads back, so flag names, shell quoting, and
+# output files are exercised without the QNN SDK.
+_STUB_RUNNER = f"""#!{sys.executable}
+import argparse
+import numpy as np
+
+parser = argparse.ArgumentParser()
+for flag in (
+    "--decoder_model_version", "--tokenizer_path", "--output_path",
+    "--performance_output_path", "--model_path", "--eval_mode", "--temperature",
+    "--system_prompt", "--seq_len", "--dump_logits_path", "--tokenized_prompt",
+):
+    parser.add_argument(flag)
+parser.add_argument("--prompt", action="append")
+args = parser.parse_args()
+for path in (args.tokenizer_path, args.model_path):
+    open(path).close()
+open(args.performance_output_path, "w").write("12.5")
+if args.prompt:
+    open(args.output_path, "w").write(" ".join(args.prompt))
+else:
+    tokens = np.fromfile(args.tokenized_prompt, dtype=np.uint64)
+    assert int(args.seq_len) == len(tokens) + 1
+    logits = np.arange(int(args.seq_len) * 4, dtype=np.uint16)
+    logits.tofile(args.dump_logits_path)
+"""
+
+
+class TestLLMRunnerAdapterOnX86Stub(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        root = Path(self._tmp.name) / "my artifacts"
+        build_folder = root / "build"
+        runner = build_folder / LLMRunnerAdapter.RUNNER
+        runner.parent.mkdir(parents=True)
+        runner.write_text(_STUB_RUNNER)
+        runner.chmod(0o755)
+        pte_path = root / "stories110m_text_decoder.pte"
+        pte_path.write_bytes(b"pte")
+        tokenizer_path = root / "tokenizer.bin"
+        tokenizer_path.write_bytes(b"tok")
+        self.output_dir = root / "results"
+
+        for patcher in (
+            patch(_READ_METADATA, return_value=_METADATA),
+            patch.dict(os.environ, {"QNN_SDK_ROOT": str(root / "qnn")}),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+        self.adapter = LLMRunnerAdapter(
+            X86Platform(SimpleNamespace(build_folder=str(build_folder)))
+        )
+        self.adapter.push_artifacts(
+            ControlArgs(decoder_model="stories110m", model_mode="kv"),
+            InferenceInputConfig(
+                soc_model=TEST_SOC_CHIPSET,
+                artifact_dir=root / "artifacts",
+                pte_paths={ARTIFACT_TEXT_DECODER: pte_path},
+                runtime_tokenizer_path=tokenizer_path,
+            ),
+        )
+
+    def _run(self, request):
+        self.adapter.push_inputs(request)
+        self.adapter.execute(request)
+        return self.adapter.pull_results(request, self.output_dir)
+
+    def test_generate_round_trips_through_the_runner(self):
+        """The prompt reaches the runner intact and its text comes back."""
+        output = self._run(GenerateRequest(prompts=["Once upon"]))
+        self.assertEqual(output.texts, ["Once upon"])
+        self.assertEqual(output.tokens_per_sec, 12.5)
+
+    def test_forward_round_trips_through_the_runner(self):
+        """The token file reaches the runner and its logits come back dequantized."""
+        output = self._run(ForwardRequest(token_ids=[1, 2, 3]))
+        expected = (torch.arange(12, dtype=torch.float32).reshape(1, 3, 4) - 2) * 0.5
+        torch.testing.assert_close(output.logits, expected)
+        self.assertEqual(output.tokens_per_sec, 12.5)
 
 
 if __name__ == "__main__":

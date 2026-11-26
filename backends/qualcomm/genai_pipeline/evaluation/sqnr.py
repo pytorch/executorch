@@ -108,14 +108,14 @@ def build_prompt_token_ids(
         Token IDs with BOS prepended and no EOS.
 
     Raises:
-        ValueError: If ``tokenizer`` is not a ``TokenizerWrapper``.
+        TypeError: If ``tokenizer`` is not a ``TokenizerWrapper``.
     """
     from executorch.examples.qualcomm.oss_scripts.llama.tokenizer import (
         TokenizerWrapper,
     )
 
     if not isinstance(tokenizer, TokenizerWrapper):
-        raise ValueError(
+        raise TypeError(
             "sqnr_eval requires a TokenizerWrapper with chat-template support; "
             f"got {type(tokenizer).__name__}"
         )
@@ -204,7 +204,7 @@ def score_sqnr(
         logger.warning(
             "Skipping SQNR between CPU QDQ and QNN: no QDQ graph at %s. The "
             "quantization stage saves it, so it is missing when quantization was "
-            "skipped (e.g. --use_fp16) or when --pre-gen-pte points to a directory "
+            "skipped (e.g. --use-fp16) or when --pre-gen-pte points to a directory "
             "from a run that did not save it.",
             reference.qdq_path,
         )

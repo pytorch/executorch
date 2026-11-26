@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import shlex
 from pathlib import Path
 from typing import Any, List, Optional
 
@@ -36,7 +37,6 @@ from executorch.backends.qualcomm.genai_pipeline.inference.runner_io import (
 from executorch.backends.qualcomm.genai_pipeline.inference.utils import (
     build_generate_args,
     build_runner_args,
-    get_inference_control_args,
     get_pte_paths,
     get_runtime_tokenizer_path,
     post_process_logits,
@@ -47,7 +47,6 @@ from executorch.backends.qualcomm.genai_pipeline.inference.utils import (
     RUNNER_LOGITS,
     RUNNER_OUTPUTS,
 )
-from executorch.backends.qualcomm.genai_pipeline.pipeline_context import PipelineContext
 
 
 class LLMRunnerAdapter:
@@ -62,7 +61,7 @@ class LLMRunnerAdapter:
         platform: Where the runner runs.
     """
 
-    _RUNNER = "examples/qualcomm/oss_scripts/llama/qnn_llama_runner"
+    RUNNER = "examples/qualcomm/oss_scripts/llama/qnn_llama_runner"
     # Generation cap on a platform that limits generation, as the legacy flow
     # uses for text models on the x86 emulator.
     _LIMITED_GENERATE_SEQ_LEN = 32
@@ -77,7 +76,7 @@ class LLMRunnerAdapter:
 
     def push_artifacts(
         self,
-        context: PipelineContext,
+        control_args: ControlArgs,
         input_config: InferenceInputConfig,
         input_data: Optional[List[Any]] = None,
         extra_files: Optional[List[str]] = None,
@@ -85,7 +84,7 @@ class LLMRunnerAdapter:
         """Provide the text-decoder artifact and runtime tokenizer to the runner.
 
         Args:
-            context: Pipeline context that supplies the control args.
+            control_args: Control args supplying the runner settings.
             input_config: Inference configuration that supplies the PTE paths,
                 artifact directory, and tokenizer paths.
             input_data: Unused; requests carry their own inputs.
@@ -93,14 +92,14 @@ class LLMRunnerAdapter:
         """
         self._pte_path = get_pte_paths(input_config.pte_paths)[ARTIFACT_TEXT_DECODER]
         self._runtime_tokenizer_path = get_runtime_tokenizer_path(input_config)
-        self._control_args = get_inference_control_args(context, input_config)
+        self._control_args = control_args
         self._metadata = retrieve_info_from_pte(self._pte_path)
         self._artifact_dir = input_config.artifact_dir
         # Where a host-side runner writes its outputs, as in the legacy flow.
         runner_output_dir = input_config.artifact_dir / "outputs"
         runner_output_dir.mkdir(parents=True, exist_ok=True)
         self._platform.setup(
-            self._RUNNER,
+            self.RUNNER,
             [
                 self._pte_path,
                 *(Path(file) for file in extra_files or []),
@@ -172,7 +171,7 @@ class LLMRunnerAdapter:
         platform = self._platform
         args = [
             *build_runner_args(control_args, platform, self._runtime_tokenizer_path),
-            f"--model_path {platform.runner_path(self._pte_path)}",
+            f"--model_path {shlex.quote(platform.runner_path(self._pte_path))}",
         ]
         if isinstance(request, GenerateRequest):
             args.extend(
@@ -189,8 +188,8 @@ class LLMRunnerAdapter:
                     f"--eval_mode {EVAL_MODE['kv']}",
                     "--temperature 0",
                     f"--seq_len {request.seq_len or len(request.token_ids) + 1}",
-                    f"--dump_logits_path {platform.output_dir()}/{RUNNER_LOGITS}",
-                    f"--tokenized_prompt {platform.runner_path(self._token_path())}",
+                    f"--dump_logits_path {shlex.quote(f'{platform.output_dir()}/{RUNNER_LOGITS}')}",
+                    f"--tokenized_prompt {shlex.quote(platform.runner_path(self._token_path()))}",
                 )
             )
         else:

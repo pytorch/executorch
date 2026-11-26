@@ -99,18 +99,15 @@ class LmEvalEvaluator:
                 super().__init__(None, tokenizer, max_context_len - 1)
                 # Not ``_model``, which EagerEvalWrapper already sets.
                 self._deployed_model = deployed_model
-                self._max_context_len = max_context_len
 
             def _model_call(self, inps: torch.Tensor) -> torch.Tensor:
                 if inps.ndim != 2 or inps.shape[0] != 1:
                     raise ValueError(
                         "tasks_eval requires token IDs shaped [1, sequence_length]"
                     )
-                # Decode to the full context, as tasks_eval always has.
-                model_input = ForwardRequest(
-                    token_ids=inps[0].tolist(), seq_len=self._max_context_len
-                )
-                return self._deployed_model(model_input).logits
+                return self._deployed_model(
+                    ForwardRequest(token_ids=inps[0].tolist())
+                ).logits
 
         with torch.no_grad():
             results = simple_evaluate(

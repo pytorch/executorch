@@ -18,7 +18,6 @@ from executorch.backends.qualcomm.genai_pipeline.inference.runner_io import (
 from executorch.backends.qualcomm.genai_pipeline.inference.utils import (
     build_generate_args,
     build_runner_args,
-    get_inference_control_args,
     get_pte_paths,
     get_runtime_tokenizer_path,
     post_process_logits,
@@ -40,7 +39,6 @@ __all__ = [
     "ForwardRequest",
     "GenerateOutput",
     "GenerateRequest",
-    "get_inference_control_args",
     "get_pte_paths",
     "get_runtime_tokenizer_path",
     "post_process_logits",

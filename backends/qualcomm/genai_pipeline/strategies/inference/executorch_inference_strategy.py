@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import List, Optional, Sequence, TYPE_CHECKING
 
@@ -24,15 +24,13 @@ from executorch.backends.qualcomm.genai_pipeline.configs.inference_output_config
     InferenceOutputConfig,
     InferenceResult,
 )
+from executorch.backends.qualcomm.genai_pipeline.control_args import ControlArgs
 from executorch.backends.qualcomm.genai_pipeline.exceptions import StageError
 from executorch.backends.qualcomm.genai_pipeline.inference.runner_io import (
     ForwardOutput,
     GenerateOutput,
     RunnerOutput,
     RunnerRequest,
-)
-from executorch.backends.qualcomm.genai_pipeline.inference.utils import (
-    get_inference_control_args,
 )
 from executorch.backends.qualcomm.genai_pipeline.pipeline_context import PipelineContext
 from executorch.backends.qualcomm.genai_pipeline.strategies.inference.device_runner_adapter import (
@@ -54,8 +52,16 @@ logger = logging.getLogger(__name__)
 _STAGE_NAME = "inference"
 
 
+@dataclass(frozen=True)
+class _PredictionRecord:
+    """What a method's result keeps of one prediction, so its logits can be freed."""
+
+    tokens_per_sec: Optional[float]
+    files: List[Path]
+
+
 class ExecuTorchInferenceStrategy(InferenceStrategy):
-    """ExecuTorch-based inference using QNN runtime on device.
+    """ExecuTorch-based inference using the QNN runtime on a runner platform.
 
     Delegates to a ``DeviceRunnerAdapter`` for all external API calls and to
     ``Evaluator``s for which inputs to feed and how to score the predictions,
@@ -66,7 +72,7 @@ class ExecuTorchInferenceStrategy(InferenceStrategy):
     1. Resolve the PTE paths, from ``--pre-gen-pte`` when compilation was
        skipped, settle the runtime tokenizer, and validate the input
        configuration
-    2. Push artifacts to device, once for every evaluation method
+    2. Deploy the artifacts once for every evaluation method
     3. For each evaluator, wrap the adapter as a ``DeployedModel`` and let the
        evaluator feed it inputs and score the predictions
     4. Build each method's result from the evaluator's score and the recorded
@@ -77,9 +83,9 @@ class ExecuTorchInferenceStrategy(InferenceStrategy):
     result (see ``Evaluator`` and ``runner_io``).
 
     Args:
-        device_runner_adapter: Injectable adapter for device inference operations.
+        device_runner_adapter: Injectable adapter owning the runner lifecycle.
             Optional so the stage registry can build the strategy without
-            arguments, but required by ``invoke``: device configuration has no
+            arguments, but required by ``invoke``: the runner platform has no
             default.
         evaluators: Evaluators for the requested evaluation methods. Optional
             for the same reason; ``invoke`` requires at least one.
@@ -128,7 +134,9 @@ class ExecuTorchInferenceStrategy(InferenceStrategy):
         Raises:
             StageError: If artifacts are missing or inference fails.
         """
-        input_config = self._resolve_pte_paths(context, input_config)
+        # Built once and shared by the adapter and every evaluator.
+        control_args = ControlArgs.from_pipeline_context(context)
+        input_config = self._resolve_pte_paths(context, control_args, input_config)
         input_config = self._resolve_runtime_tokenizer_path(context, input_config)
         self._validate_input(input_config)
 
@@ -139,20 +147,18 @@ class ExecuTorchInferenceStrategy(InferenceStrategy):
         )
 
         try:
-            # Step 1: Push artifacts to device once for every evaluation method.
-            logger.debug("Pushing artifacts to device")
-            self._adapter.push_artifacts(context=context, input_config=input_config)
+            logger.debug("Deploying artifacts")
+            self._adapter.push_artifacts(
+                control_args=control_args, input_config=input_config
+            )
             metadata = self._adapter.get_metadata()
-            # Built once and shared by every evaluator.
-            control_args = get_inference_control_args(context, input_config)
 
             results = {}
             output_dir = input_config.artifact_dir / "inference_output"
             for evaluator in self._evaluators:
                 method_output_dir = output_dir / evaluator.method
-                predictions: List[RunnerOutput] = []
-                # Steps 2-3: the evaluator runs its inputs on device.
-                logger.debug("Running %s on device", evaluator.method)
+                predictions: List[_PredictionRecord] = []
+                logger.debug("Running %s", evaluator.method)
                 score = evaluator.evaluate(
                     self._deployed_model(method_output_dir, predictions),
                     control_args,
@@ -178,6 +184,7 @@ class ExecuTorchInferenceStrategy(InferenceStrategy):
     def _resolve_pte_paths(
         self,
         context: PipelineContext,
+        control_args: ControlArgs,
         input_config: InferenceInputConfig,
     ) -> InferenceInputConfig:
         """Resolve ``pte_paths`` from ``--pre-gen-pte`` when compilation was skipped.
@@ -190,8 +197,8 @@ class ExecuTorchInferenceStrategy(InferenceStrategy):
         requires.
 
         Args:
-            context: Pipeline context supplying the model name and
-                ``pre_gen_pte``.
+            context: Pipeline context supplying the model name.
+            control_args: Control args supplying ``pre_gen_pte``.
             input_config: The inference input configuration.
 
         Returns:
@@ -205,7 +212,7 @@ class ExecuTorchInferenceStrategy(InferenceStrategy):
         if input_config.pte_paths is not None:
             return input_config
 
-        pre_gen_pte = context.extra_options.get("pre_gen_pte")
+        pre_gen_pte = control_args.pre_gen_pte
         if not pre_gen_pte:
             raise StageError(
                 stage_name=_STAGE_NAME,
@@ -265,18 +272,19 @@ class ExecuTorchInferenceStrategy(InferenceStrategy):
     def _deployed_model(
         self,
         output_dir: Path,
-        predictions: List[RunnerOutput],
+        predictions: List[_PredictionRecord],
     ) -> "DeployedModel":
         """Wrap the adapter as the model an evaluator feeds inputs to.
 
         Each call pushes one input, executes it on the deployed runner, pulls
-        its prediction into ``output_dir``, and records it in ``predictions``
-        for the throughput. Calls are synchronous, so the prediction is decoded
-        before the next input overwrites the runner's output files.
+        its prediction into ``output_dir``, and records its throughput and
+        files in ``predictions``; the prediction itself, which may hold a large
+        logits tensor, is not kept. Calls are synchronous, so the prediction is
+        decoded before the next input overwrites the runner's output files.
 
         Args:
             output_dir: The method's output directory for the runner files.
-            predictions: Where every prediction is recorded, in order.
+            predictions: Where every prediction's record is kept, in order.
 
         Returns:
             The deployed model.
@@ -286,7 +294,16 @@ class ExecuTorchInferenceStrategy(InferenceStrategy):
             self._adapter.push_inputs(model_input)
             self._adapter.execute(model_input)
             prediction = self._adapter.pull_results(model_input, output_dir)
-            predictions.append(prediction)
+            predictions.append(
+                _PredictionRecord(
+                    tokens_per_sec=(
+                        prediction.tokens_per_sec
+                        if isinstance(prediction, (GenerateOutput, ForwardOutput))
+                        else None
+                    ),
+                    files=list(prediction.files),
+                )
+            )
             return prediction
 
         return model
@@ -294,7 +311,7 @@ class ExecuTorchInferenceStrategy(InferenceStrategy):
     @staticmethod
     def _build_result(
         score: "EvaluationScore",
-        predictions: Sequence[RunnerOutput],
+        predictions: Sequence[_PredictionRecord],
         output_dir: Path,
     ) -> InferenceResult:
         """Combine a method's score with the runner's throughput and write both.
@@ -305,7 +322,8 @@ class ExecuTorchInferenceStrategy(InferenceStrategy):
 
         Args:
             score: The evaluator's verdict.
-            predictions: Every prediction the method received, in order.
+            predictions: The record of every prediction the method received, in
+                order.
             output_dir: The method's output directory.
 
         Returns:
@@ -315,7 +333,7 @@ class ExecuTorchInferenceStrategy(InferenceStrategy):
         speeds = [
             prediction.tokens_per_sec
             for prediction in predictions
-            if isinstance(prediction, (GenerateOutput, ForwardOutput))
+            if prediction.tokens_per_sec is not None
         ]
         performance_metrics = {
             "num_requests": len(predictions),

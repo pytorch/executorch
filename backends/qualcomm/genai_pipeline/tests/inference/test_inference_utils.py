@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import call, MagicMock, patch
+from unittest.mock import call, create_autospec, patch
 
 import numpy as np
 import torch
@@ -23,13 +23,15 @@ from executorch.backends.qualcomm.genai_pipeline.configs.inference_input_config 
     InferenceInputConfig,
 )
 from executorch.backends.qualcomm.genai_pipeline.control_args import ControlArgs
+from executorch.backends.qualcomm.genai_pipeline.inference.platforms import (
+    RunnerPlatform,
+)
 from executorch.backends.qualcomm.genai_pipeline.inference.runner_io import (
     RunnerMetadata,
 )
 from executorch.backends.qualcomm.genai_pipeline.inference.utils import (
     build_generate_args,
     build_runner_args,
-    get_inference_control_args,
     get_pte_paths,
     get_runtime_tokenizer_path,
     post_process_logits,
@@ -40,10 +42,10 @@ from executorch.backends.qualcomm.genai_pipeline.inference.utils import (
     RUNNER_OUTPUTS,
 )
 from executorch.backends.qualcomm.genai_pipeline.tests.test_utils import (
-    make_test_context,
     TEST_SOC_CHIPSET,
 )
 from executorch.exir import to_edge
+from executorch.exir._serialize._program import _get_extended_header
 
 
 def _make_input_config(artifact_dir, **overrides):
@@ -69,7 +71,7 @@ def _make_metadata(**overrides):
 
 def _make_platform(**overrides):
     """Create a mock RunnerPlatform naming files by their bare name."""
-    platform = MagicMock()
+    platform = create_autospec(RunnerPlatform, instance=True)
     platform.output_dir.return_value = "/out"
     platform.runner_path.side_effect = lambda path: Path(path).name
     platform.target_flags = ("--shared_buffer",)
@@ -147,39 +149,19 @@ class TestGetRuntimeTokenizerPath(unittest.TestCase):
         self.assertEqual(get_runtime_tokenizer_path(config), tokenizer)
 
 
-class TestGetInferenceControlArgs(unittest.TestCase):
-    def test_applies_inference_options_that_name_fields(self):
-        """Inference options naming ControlArgs fields override the context."""
-        config = _make_input_config(
-            "/tmp", inference_options={"temperature": 0.25, "system_prompt": "be"}
-        )
-        control_args = get_inference_control_args(make_test_context(), config)
-        self.assertEqual(control_args.temperature, 0.25)
-        self.assertEqual(control_args.system_prompt, "be")
-
-    def test_skips_keys_that_name_no_field(self):
-        """Keys that name no ControlArgs field are dropped rather than raising."""
-        config = _make_input_config("/tmp", inference_options={"not_a_field": 1})
-        control_args = get_inference_control_args(make_test_context(), config)
-        self.assertIsInstance(control_args, ControlArgs)
-        self.assertFalse(hasattr(control_args, "not_a_field"))
-
-    def test_reads_top_level_extra_options(self):
-        """Top-level extra_options reach the ControlArgs as well."""
-        context = make_test_context(extra_options={"model_mode": "hybrid"})
-        control_args = get_inference_control_args(context, _make_input_config("/tmp"))
-        self.assertEqual(control_args.model_mode, "hybrid")
-
-
-def _write_pte(path, constants):
+def _write_pte(path, constants, weight_numel=2):
     """Write a PTE whose constant methods return ``constants``."""
 
-    class AddOne(torch.nn.Module):
+    class AddWeight(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.weight = torch.nn.Parameter(torch.ones(weight_numel))
+
         def forward(self, x):
-            return x + 1
+            return x + self.weight
 
     program = to_edge(
-        torch.export.export(AddOne(), (torch.ones(2),)),
+        torch.export.export(AddWeight(), (torch.ones(weight_numel),)),
         constant_methods=constants,
     ).to_executorch()
     path.write_bytes(program.buffer)
@@ -237,8 +219,20 @@ class TestRetrieveInfoFromPte(unittest.TestCase):
     def test_missing_vocab_size_raises(self):
         """A PTE without the decoder's vocab size is rejected."""
         _write_pte(self.pte_path, {"get_max_seq_len": 8})
-        with self.assertRaisesRegex(AssertionError, "vocab size"):
+        with self.assertRaisesRegex(RuntimeError, "vocab size"):
             retrieve_info_from_pte(self.pte_path)
+
+    def test_reads_only_the_program_of_a_pte_with_segments(self):
+        """The metadata is read from the flatbuffer, ahead of the data segments."""
+        _write_pte(
+            self.pte_path,
+            {"get_vocab_size": 4, "get_max_seq_len": 8},
+            weight_numel=1 << 16,
+        )
+        header = _get_extended_header(self.pte_path.read_bytes())
+        self.assertLess(header.program_size, self.pte_path.stat().st_size)
+        self.assertGreater(header.segment_base_offset, 0)
+        self.assertEqual(retrieve_info_from_pte(self.pte_path).vocab_size, 4)
 
     def test_quantized_pte_without_logits_scale_raises(self):
         """A quantized PTE must carry the scale its logits are dequantized with."""
@@ -376,6 +370,19 @@ class TestBuildRunnerArgs(unittest.TestCase):
                 "--shared_buffer",
             ],
         )
+
+    def test_quotes_paths_with_spaces(self):
+        """Host paths survive the shell the platform runs the command through."""
+        platform = _make_platform()
+        platform.output_dir.return_value = "/data/my runs"
+        platform.runner_path.side_effect = str
+        args = build_runner_args(
+            ControlArgs(decoder_model="stories110m"),
+            platform,
+            Path("/my dir/tokenizer.bin"),
+        )
+        self.assertIn("--tokenizer_path '/my dir/tokenizer.bin'", args)
+        self.assertIn(f"--output_path '/data/my runs/{RUNNER_OUTPUTS}'", args)
 
 
 class TestBuildGenerateArgs(unittest.TestCase):

@@ -35,6 +35,7 @@ import json
 import logging
 import sys
 from dataclasses import replace
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from executorch.backends.qualcomm.genai_pipeline.configs.inference_output_config import (
@@ -215,10 +216,10 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         nargs="+",
         default=[DEFAULT_EVAL_METHOD],
-        help=f"Choose eval methods(default: {DEFAULT_EVAL_METHOD}). Users can provide more than 1 eval methods. For example: --eval-methods tasks_eval sqnr_eval."
-        "Following eval methods are supported:"
-        "1) prompt_eval: Model will generate the output response based on the provided prompt through the flag --prompt."
-        "2) tasks_eval: This will eval the tasks provided through the flag --eval-tasks."
+        help=f"Choose eval methods(default: {DEFAULT_EVAL_METHOD}). Users can provide more than 1 eval methods. For example: --eval-methods tasks_eval sqnr_eval. "
+        "Following eval methods are supported: "
+        "1) prompt_eval: Model will generate the output response based on the provided prompt through the flag --prompt. "
+        "2) tasks_eval: This will eval the tasks provided through the flag --eval-tasks. "
         "3) sqnr_eval: This will eval the sqnr between QNN's output logit V.S. Static Llama nn.Module's output logit. Eval is based on the provided prompt through the --prompt flag. Please note that sqnr will only eval the prompt's logit but not the new generated token's logit.",
     )
     parser.add_argument(
@@ -387,7 +388,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--target",
         type=str,
         default=DEFAULT_TARGET,
-        help="Target platform for deployment",
+        help="Target platform for deployment, one of export_utils.SUPPORTED_TARGETS",
     )
     parser.add_argument(
         "--host",
@@ -403,8 +404,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--enable-x86-64",
-        "--enable_x86_64",
-        dest="enable_x86_64",
         action="store_true",
         help="Run with the x86 QNN runner.",
     )
@@ -448,8 +447,17 @@ def _validate_args(args: argparse.Namespace) -> None:
     Raises:
         ValueError: If arguments violate constraints.
     """
+    # Imported here rather than as --target choices: export_utils loads the QNN
+    # Python bindings, which building the parser should not need.
+    from executorch.backends.qualcomm.export_utils import SUPPORTED_TARGETS
+
     if not args.soc:
         raise ValueError("--soc is required to run the GenAI Pipeline.")
+
+    if args.target not in SUPPORTED_TARGETS:
+        raise ValueError(
+            f"--target {args.target} is not supported; choose from {SUPPORTED_TARGETS}"
+        )
 
     # TODO: The legacy path already supports the QAT feature,
     # but it is not yet introduced in GenAI Pipeline.
@@ -501,7 +509,8 @@ def _validate_eval_args(args: argparse.Namespace) -> None:
 
     Raises:
         ValueError: If a requested method lacks an argument it needs, or
-            tasks_eval is requested for a mode other than kv or hybrid.
+            tasks_eval or sqnr_eval is requested for a mode other than kv or
+            hybrid.
     """
     # Each method runs once, as in the legacy flow: a repeat would overwrite its
     # result and share its output directory.
@@ -510,31 +519,36 @@ def _validate_eval_args(args: argparse.Namespace) -> None:
         logger.warning("Ignoring repeated --eval-methods: %s", args.eval_methods)
         args.eval_methods = eval_methods
 
-    # The runner evaluates logits in KV mode only, as in the legacy flow.
-    if TASKS_EVAL in args.eval_methods:
+    # The runner evaluates logits in KV mode only, as the legacy flow intends:
+    # a lookahead PTE's kv_forward does not decode one token at a time.
+    for method in (TASKS_EVAL, SQNR_EVAL):
+        if method not in args.eval_methods:
+            continue
         if args.model_mode not in {"kv", "hybrid"}:
             raise ValueError(
-                "tasks_eval is only supported for KV mode. Hybrid mode will only "
-                "use KV mode when evaluating tasks."
+                f"{method} is only supported for KV mode. Hybrid mode will only "
+                "use KV mode when evaluating tasks/sqnr."
             )
         if args.model_mode != "kv":
             logger.warning(
-                "tasks_eval runs its forwards in kv mode; other methods keep %s",
+                "%s runs its forwards in kv mode; other methods keep %s",
+                method,
                 args.model_mode,
             )
+
+    if TASKS_EVAL in args.eval_methods:
         if not args.eval_tasks:
             raise ValueError(
                 "--eval-tasks is required when --eval-methods includes tasks_eval"
             )
 
     if SQNR_EVAL in args.eval_methods:
-        if args.model_mode != "kv":
+        # As in the legacy flow, which scores the first prompt.
+        if len(args.prompt) > 1:
             logger.warning(
-                "sqnr_eval runs its forward in kv mode; other methods keep %s",
-                args.model_mode,
+                "sqnr_eval scores only the first of %d --prompt values",
+                len(args.prompt),
             )
-        if len(args.prompt) != 1:
-            raise ValueError("sqnr_eval takes exactly one --prompt")
         if args.batch_size != 1:
             raise ValueError("sqnr_eval supports only --batch-size 1")
 
@@ -691,17 +705,6 @@ def _prepare_configs(args: argparse.Namespace) -> dict:
     if is_multimodal(args.model) and len(args.image_path) > 1:
         quantize_options["skip_quantize"] = [get_modality(args.model)]
 
-    # Device and build settings reach the runner through QnnConfig.load_config(args).
-    inference_options = {
-        "temperature": args.temperature,
-        "system_prompt": args.system_prompt,
-        "ngram": args.ngram,
-        "window": args.window,
-        "gcap": args.gcap,
-        "audio_path": args.audio_path,
-        "image_path": args.image_path,
-    }
-
     dataset_options = replace(
         DatasetOptions.from_namespace(args),
         llm_config=model_config,
@@ -711,7 +714,6 @@ def _prepare_configs(args: argparse.Namespace) -> dict:
         "dataset_options": dataset_options,
         "model_options": model_options,
         "quantize_options": quantize_options,
-        "inference_options": inference_options,
         # An explicit path wins; without model preparation, resolve it here.
         "runtime_tokenizer_path": (
             args.runtime_tokenizer_path
@@ -749,7 +751,11 @@ def get_model_preparation_stage(
 
     model_loader_adapter = get_model_loader_adapter(args.model, args)
     model_preparation_stage = ModelPreparationStage(
-        ExecuTorchModelPreparationStrategy(model_loader_adapter=model_loader_adapter)
+        ExecuTorchModelPreparationStrategy(
+            model_loader_adapter=model_loader_adapter,
+            # Reports TokenizerWrapper's runtime tokenizer for the runner.
+            export_tokenizer=True,
+        )
     )
     logger.info("Created model preparation stage for model '%s'", args.model)
     return model_preparation_stage
@@ -883,6 +889,12 @@ def get_inference_stage(args: argparse.Namespace) -> Optional[InferenceStage]:
         if is_multimodal(args.model)
         else LLMRunnerAdapter(platform)
     )
+    # Checked before compilation rather than when the runner is set up after it.
+    runner = Path(qnn_config.build_folder) / adapter.RUNNER
+    if not runner.is_file():
+        raise FileNotFoundError(
+            f"Runner not found: {runner}; build it into --build-folder"
+        )
 
     evaluators = get_evaluators(args.eval_methods, multimodal=is_multimodal(args.model))
 
@@ -944,17 +956,23 @@ def run_pipeline(args: argparse.Namespace) -> InferenceOutputConfig:
         "pre_gen_pte": args.pre_gen_pte,
         # The inference strategy prefers it over model preparation's tokenizer.
         "runtime_tokenizer_path": configs["runtime_tokenizer_path"],
-        # Model preparation reports TokenizerWrapper's runtime tokenizer.
-        "export_tokenizer": True,
         "verbose": args.verbose,
         "model_options": configs["model_options"],
         "quantize_options": configs["quantize_options"],
         "dataset_options": configs["dataset_options"],
-        "inference_options": configs["inference_options"],
         "eval_methods": args.eval_methods,
         "eval_tasks": args.eval_tasks,
         "eval_limit": args.eval_limit,
         "eval_num_fewshot": args.eval_num_fewshot,
+        # Runner settings, read through ControlArgs; device and build settings
+        # reach the runner through QnnConfig.load_config(args).
+        "temperature": args.temperature,
+        "system_prompt": args.system_prompt,
+        "ngram": args.ngram,
+        "window": args.window,
+        "gcap": args.gcap,
+        "audio_path": args.audio_path,
+        "image_path": args.image_path,
     }
     context = (
         PipelineContext.builder()

@@ -63,10 +63,10 @@ ALL_ARTIFACT_KEYS = frozenset(
 
 
 def pte_file_name(model_name: str, artifact_key: Optional[str] = None) -> str:
-    """Return the ``.pte`` base name compilation writes for an artifact.
+    """Return the ``.pte`` base name, without the suffix, of an artifact.
 
-    The single naming rule shared by compilation, which writes the file, and
-    inference, which locates it under ``--pre-gen-pte``.
+    Shared by compilation, which writes ``<name>.pte``, and inference, which
+    locates it under ``--pre-gen-pte``.
 
     Args:
         model_name: The pipeline's model name.

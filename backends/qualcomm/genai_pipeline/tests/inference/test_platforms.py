@@ -51,11 +51,13 @@ class TestGetRunnerPlatform(unittest.TestCase):
 
 class TestDevicePlatform(unittest.TestCase):
     def setUp(self):
-        patcher = patch(_DEVICE)
+        patcher = patch(_DEVICE, autospec=True)
         self.mock_device_cls = patcher.start()
         self.addCleanup(patcher.stop)
         self.device = self.mock_device_cls.return_value
+        # Instance attributes Device sets in __init__, which autospec cannot see.
         self.device.output_folder = "/data/local/tmp/ws/outputs"
+        self.device.bridge = MagicMock()
         self.qnn_config = _make_qnn_config()
 
     def _setup_platform(self):
@@ -93,13 +95,14 @@ class TestDevicePlatform(unittest.TestCase):
             inputs=None, files=["/host/m.pte", "/host/tok.json"]
         )
 
-    def test_add_file_pushes_without_reinitializing(self):
-        """add_file pushes one file without clearing the workspace."""
+    def test_add_file_pushes_only_that_file(self):
+        """add_file pushes one file, without the runner Device.push re-uploads."""
         platform = self._setup_platform()
         platform.add_file(Path("/host/input_tokens.raw"))
-        self.device.push.assert_called_with(
-            inputs=[], files=["/host/input_tokens.raw"], init_env=False
+        self.device.bridge.push_file.assert_called_once_with(
+            "/host/input_tokens.raw", "/data/local/tmp/ws"
         )
+        self.device.push.assert_called_once()
 
     def test_runner_paths_are_bare_names(self):
         """Files and input lists are referred to by name in the workspace."""
@@ -155,8 +158,12 @@ class TestX86Platform(unittest.TestCase):
     def tearDown(self):
         self._tmp.cleanup()
 
-    def _setup(self):
-        """Start the platform's session with a fake QNN SDK root."""
+    def _setup(self, runner_script="#!/bin/sh\n"):
+        """Start the platform's session with a fake QNN SDK root and runner."""
+        runner = self.build_folder / _RUNNER
+        runner.parent.mkdir(parents=True, exist_ok=True)
+        runner.write_text(runner_script)
+        runner.chmod(0o755)
         with patch.dict(os.environ, {"QNN_SDK_ROOT": "/opt/qnn"}):
             self.platform.setup(_RUNNER, [], self.host_dir)
 
@@ -170,6 +177,21 @@ class TestX86Platform(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True):
             with self.assertRaisesRegex(RuntimeError, "QNN_SDK_ROOT"):
                 self.platform.setup(_RUNNER, [], self.host_dir)
+
+    def test_setup_requires_a_built_runner(self):
+        """setup raises before any run when the runner is not built."""
+        with patch.dict(os.environ, {"QNN_SDK_ROOT": "/opt/qnn"}):
+            with self.assertRaisesRegex(FileNotFoundError, "qnn_llama_runner"):
+                self.platform.setup(_RUNNER, [], self.host_dir)
+
+    def test_execute_quotes_a_build_folder_with_spaces(self):
+        """A real shell runs the stub runner, whose path holds a space."""
+        self.build_folder = self.tmp_dir / "my build"
+        self.platform = X86Platform(_make_qnn_config(str(self.build_folder)))
+        args_file = self.host_dir / "args.txt"
+        self._setup(f'#!/bin/sh\nprintf "%s\\n" "$@" > "{args_file}"\n')
+        self.platform.execute(["--prompt 'a b'"])
+        self.assertEqual(args_file.read_text(), "--prompt\na b\n")
 
     def test_runner_path_is_absolute(self):
         """The runner reads host files by absolute path."""

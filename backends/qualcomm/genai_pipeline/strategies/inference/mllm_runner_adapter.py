@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import shlex
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -32,7 +33,6 @@ from executorch.backends.qualcomm.genai_pipeline.inference.runner_io import (
 from executorch.backends.qualcomm.genai_pipeline.inference.utils import (
     build_generate_args,
     build_runner_args,
-    get_inference_control_args,
     get_pte_paths,
     get_runtime_tokenizer_path,
     preprocess_encoder_inputs,
@@ -40,7 +40,6 @@ from executorch.backends.qualcomm.genai_pipeline.inference.utils import (
     RUNNER_INFERENCE_SPEED,
     RUNNER_OUTPUTS,
 )
-from executorch.backends.qualcomm.genai_pipeline.pipeline_context import PipelineContext
 
 
 class MLLMRunnerAdapter:
@@ -54,7 +53,7 @@ class MLLMRunnerAdapter:
         platform: Where the runner runs.
     """
 
-    _RUNNER = "examples/qualcomm/oss_scripts/llama/qnn_multimodal_runner"
+    RUNNER = "examples/qualcomm/oss_scripts/llama/qnn_multimodal_runner"
     # Generation cap on a platform that limits generation, as the legacy flow
     # uses for multimodal models on the x86 emulator.
     _LIMITED_GENERATE_SEQ_LEN = 320
@@ -70,7 +69,7 @@ class MLLMRunnerAdapter:
 
     def push_artifacts(
         self,
-        context: PipelineContext,
+        control_args: ControlArgs,
         input_config: InferenceInputConfig,
         input_data: Optional[List[Any]] = None,
         extra_files: Optional[List[str]] = None,
@@ -78,11 +77,10 @@ class MLLMRunnerAdapter:
         """Provide the MLLM artifacts and prepared modality inputs to the runner.
 
         Args:
-            context: Pipeline context that supplies the model name and control
-                args.
+            control_args: Control args supplying the model, the image/audio
+                paths, and the runner settings.
             input_config: Inference configuration that supplies the PTE paths,
-                artifact directory, tokenizer, image/audio paths, and
-                control-arg overrides.
+                artifact directory, and tokenizer.
             input_data: Unused. Source media is prepared by this adapter.
             extra_files: Optional additional files for the runner.
         """
@@ -94,23 +92,23 @@ class MLLMRunnerAdapter:
         )
 
         self._input_list_path = None
-        model_config = get_model_config(context.model_name)
-        self._modality = get_modality(context.model_name)
+        model_name = control_args.decoder_model
+        model_config = get_model_config(model_name)
+        self._modality = get_modality(model_name)
         self._pte_paths = get_pte_paths(
             input_config.pte_paths,
             (ARTIFACT_TEXT_DECODER, ARTIFACT_TOK_EMBEDDING, self._modality),
         )
         runtime_tokenizer_path = get_runtime_tokenizer_path(input_config)
 
-        self._control_args = get_inference_control_args(context, input_config)
+        self._control_args = control_args
 
-        inference_options = input_config.inference_options
-        image_paths = inference_options.get("image_path", [])
-        audio_paths = inference_options.get("audio_path", [])
-        validate_modality_inputs(context.model_name, image_paths, audio_paths)
+        image_paths = control_args.image_path
+        audio_paths = control_args.audio_path
+        validate_modality_inputs(model_name, image_paths, audio_paths)
         modality_inputs = preprocess_encoder_inputs(
             model_config,
-            context.model_name,
+            model_name,
             audio_paths,
             image_paths,
         )
@@ -135,7 +133,7 @@ class MLLMRunnerAdapter:
         runner_output_dir = input_config.artifact_dir / "outputs"
         runner_output_dir.mkdir(parents=True, exist_ok=True)
         self._platform.setup(
-            self._RUNNER,
+            self.RUNNER,
             [
                 *self._pte_paths.values(),
                 *(Path(file) for file in extra_files or []),
@@ -187,11 +185,16 @@ class MLLMRunnerAdapter:
         platform = self._platform
         args = [
             *build_runner_args(control_args, platform, self._runtime_tokenizer_path),
-            f"--decoder_path {platform.runner_path(self._pte_paths[ARTIFACT_TEXT_DECODER])}",
-            f"--encoder_path {platform.runner_path(self._pte_paths[self._modality])}",
-            f"--tok_embedding_path {platform.runner_path(self._pte_paths[ARTIFACT_TOK_EMBEDDING])}",
+            *(
+                f"--{flag} {shlex.quote(platform.runner_path(self._pte_paths[key]))}"
+                for flag, key in (
+                    ("decoder_path", ARTIFACT_TEXT_DECODER),
+                    ("encoder_path", self._modality),
+                    ("tok_embedding_path", ARTIFACT_TOK_EMBEDDING),
+                )
+            ),
             f"--{MODALITY_INPUT_FLAG_MAP[self._modality]} "
-            f"{self._runner_input_list}",
+            f"{shlex.quote(self._runner_input_list)}",
             *build_generate_args(
                 control_args,
                 request.prompts,

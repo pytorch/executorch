@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import math
 import tempfile
 import unittest
 from pathlib import Path
@@ -162,7 +163,7 @@ class TestBuildPromptTokenIds(unittest.TestCase):
 
     def test_rejects_non_tokenizer_wrapper(self):
         """A tokenizer without chat-template support is rejected by type name."""
-        with self.assertRaisesRegex(ValueError, "got MagicMock"):
+        with self.assertRaisesRegex(TypeError, "got MagicMock"):
             build_prompt_token_ids(MagicMock(), "hi", "")
 
 
@@ -220,22 +221,28 @@ class TestScoreSqnr(unittest.TestCase):
         self.assertIsNone(qdq_sqnr)
 
     def test_scores_against_saved_qdq_graph(self):
-        """With a saved QDQ graph both SQNRs are reported."""
+        """Each SQNR uses its own golden as the reference signal."""
         qdq_path = Path(self.tmp.name) / DECODE_QDQ_FILENAME
         qdq_path.touch()
         reference = _make_reference(qdq_path)
-        qdq_logits = self.qnn_logits + 0.1
+        # The errors against QNN are 1.0 throughout, so each SQNR is
+        # 20 * log10(|golden|): swapping compute_error's arguments, or scoring
+        # another tensor, changes the value.
+        fp32_logits = torch.tensor([[[10.0, 0.0]]])
+        qdq_logits = torch.tensor([[[8.0, 0.0]]])
+        qnn_logits = torch.tensor([[[9.0, 0.0]]])
         qdq_module = MagicMock(name="qdq_module")
         with patch(
-            f"{_SQNR}.forward_prompt", side_effect=[self.qnn_logits, qdq_logits]
+            f"{_SQNR}.forward_prompt", side_effect=[fp32_logits, qdq_logits]
         ) as forward, patch("torch.export.load") as load:
             load.return_value.module.return_value = qdq_module
-            sqnr, qdq_sqnr = score_sqnr(reference, [1], self.qnn_logits)
+            sqnr, qdq_sqnr = score_sqnr(reference, [1], qnn_logits)
 
         load.assert_called_once_with(qdq_path)
+        self.assertIs(forward.call_args_list[0].args[0], reference.fp32_module)
         self.assertIs(forward.call_args_list[1].args[0], qdq_module)
-        self.assertEqual(sqnr, float("inf"))
-        self.assertTrue(torch.isfinite(torch.tensor(qdq_sqnr)))
+        self.assertAlmostEqual(sqnr, 20.0, places=4)
+        self.assertAlmostEqual(qdq_sqnr, 20 * math.log10(8.0), places=4)
 
 
 class TestSqnrEvaluator(unittest.TestCase):

@@ -117,8 +117,8 @@ class TestLmEvalEvaluator(unittest.TestCase):
         self.assertIsNone(lm_model._model)
         self.assertEqual(lm_model._max_seq_length, _MAX_CONTEXT_LEN - 1)
 
-    def test_model_call_runs_one_forward_request_to_full_context(self):
-        """Each lm_eval model call is one ``ForwardRequest`` decoded to full context."""
+    def test_model_call_runs_one_forward_request_over_its_tokens(self):
+        """Each lm_eval model call is one ``ForwardRequest`` with no extra decode."""
         model = _make_model()
         with patch(_SIMPLE_EVALUATE, return_value={"results": {}}) as evaluate:
             LmEvalEvaluator().evaluate(
@@ -126,9 +126,7 @@ class TestLmEvalEvaluator(unittest.TestCase):
             )
         lm_model = evaluate.call_args.kwargs["model"]
         logits = lm_model._model_call(torch.tensor([[5, 6, 7]]))
-        model.assert_called_once_with(
-            ForwardRequest(token_ids=[5, 6, 7], seq_len=_MAX_CONTEXT_LEN)
-        )
+        model.assert_called_once_with(ForwardRequest(token_ids=[5, 6, 7]))
         self.assertIs(logits, _LOGITS)
 
     def test_model_call_rejects_batched_input(self):

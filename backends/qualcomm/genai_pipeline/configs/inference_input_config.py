@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 
@@ -32,7 +32,6 @@ class InferenceInputConfig:
         tokenizer: The tokenizer instance for encoding/decoding.
         runtime_tokenizer_path: Path to runtime tokenizer for on-device use.
         prompt: The user prompt(s) for text generation.
-        inference_options: Engine-specific inference options.
         model_module: Model preparation's FP32 modules, keyed by component, for
             evaluators that score the runner against the host model. ``None``
             when model preparation was skipped.
@@ -48,6 +47,5 @@ class InferenceInputConfig:
     tokenizer: Any = None
     runtime_tokenizer_path: Optional[Path] = None
     prompt: Optional[List[str]] = None
-    inference_options: Dict[str, Any] = field(default_factory=dict)
     model_module: Optional[Dict[str, "nn.Module"]] = None
     example_inputs: Optional[Dict[str, Dict[str, Tuple[Any, ...]]]] = None

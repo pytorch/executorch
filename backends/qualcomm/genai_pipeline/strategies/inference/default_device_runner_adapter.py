@@ -14,11 +14,11 @@ from typing import Any, List, Optional
 from executorch.backends.qualcomm.genai_pipeline.configs.inference_input_config import (
     InferenceInputConfig,
 )
+from executorch.backends.qualcomm.genai_pipeline.control_args import ControlArgs
 from executorch.backends.qualcomm.genai_pipeline.inference.runner_io import (
     ExecuteOutput,
     ExecuteRequest,
 )
-from executorch.backends.qualcomm.genai_pipeline.pipeline_context import PipelineContext
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ class DefaultDeviceRunnerAdapter:
 
     def push_artifacts(
         self,
-        context: PipelineContext,
+        control_args: ControlArgs,
         input_config: InferenceInputConfig,
         input_data: Optional[List[Any]] = None,
         extra_files: Optional[List[str]] = None,
@@ -74,7 +74,7 @@ class DefaultDeviceRunnerAdapter:
         """Push compiled artifacts and inputs to the target device.
 
         Args:
-            context: Unused pipeline context accepted for protocol compatibility.
+            control_args: Unused; the generic runner takes no control args.
             input_config: Inference configuration whose ``pte_paths`` are all
                 pushed; the keys select which on-device runner argument each
                 path is passed to, which is the runner's concern rather than

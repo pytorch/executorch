@@ -13,7 +13,10 @@ from typing import Any, Optional, Sequence, Tuple
 from executorch.backends.qualcomm.genai_pipeline.configs.inference_input_config import (
     InferenceInputConfig,
 )
-from executorch.backends.qualcomm.genai_pipeline.control_args import ControlArgs
+from executorch.backends.qualcomm.genai_pipeline.control_args import (
+    ControlArgs,
+    DEFAULT_RUN,
+)
 from executorch.backends.qualcomm.genai_pipeline.evaluation.evaluator import (
     DeployedModel,
     EvaluationScore,
@@ -35,12 +38,21 @@ class DefaultEvaluator:
 
     Args:
         inputs: The samples to run, one positional-input tuple each.
+        method_index: The compiled method to run.
+        iteration: How many times the runner runs it over the samples.
     """
 
-    method = "default"
+    method = DEFAULT_RUN
 
-    def __init__(self, inputs: Sequence[Tuple[Any, ...]]) -> None:
+    def __init__(
+        self,
+        inputs: Sequence[Tuple[Any, ...]],
+        method_index: int = 0,
+        iteration: int = 1,
+    ) -> None:
         self._inputs = tuple(inputs)
+        self._method_index = method_index
+        self._iteration = iteration
 
     def evaluate(
         self,
@@ -54,20 +66,18 @@ class DefaultEvaluator:
         Args:
             model: Runs the method on the deployed runner.
             control_args: Unused; part of the evaluator interface.
-            input_config: Inference configuration whose ``inference_options``
-                may set ``method_index`` and ``iteration``.
+            input_config: Unused; part of the evaluator interface.
             metadata: Unused; the generic runner has no decoder metadata.
 
         Returns:
             An empty score; the runner's output files reach the method's result
             through its prediction.
         """
-        options = input_config.inference_options
         model(
             ExecuteRequest(
                 inputs=self._inputs,
-                method_index=options.get("method_index", 0),
-                iteration=options.get("iteration", 1),
+                method_index=self._method_index,
+                iteration=self._iteration,
             )
         )
         return EvaluationScore()

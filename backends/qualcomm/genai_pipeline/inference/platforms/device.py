@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import getpass
 import logging
+import shlex
 from pathlib import Path
 from typing import Optional, Sequence, Tuple, TYPE_CHECKING
 
@@ -84,8 +85,11 @@ class DevicePlatform:
         self._device.push(inputs=None, files=[str(path) for path in files])
 
     def add_file(self, path: Path) -> None:
-        """Push one more file into the session's workspace."""
-        self._require_device().push(inputs=[], files=[str(path)], init_env=False)
+        """Push one more file into the session's workspace.
+
+        Through the bridge, since ``Device.push`` would upload the runner again.
+        """
+        self._require_device().bridge.push_file(str(path), self._workspace)
 
     def runner_path(self, host_path: Path) -> str:
         """Return the file's name, which the runner resolves in the workspace."""
@@ -103,7 +107,7 @@ class DevicePlatform:
         """Run the runner from the workspace; ``Device`` raises on failure."""
         device = self._require_device()
         command = " ".join(
-            [f"cd {self._workspace} &&", f"./{self._runner_name}", *args]
+            [f"cd {shlex.quote(self._workspace)} &&", f"./{self._runner_name}", *args]
         )
         logger.info("Executing on device: %s", command)
         device.execute(custom_runner_cmd=command)

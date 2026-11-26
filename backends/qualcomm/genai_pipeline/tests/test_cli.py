@@ -4,7 +4,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import json
+import tempfile
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from executorch.backends.qualcomm.genai_pipeline import cli
@@ -74,6 +78,30 @@ class TestBuildParser(unittest.TestCase):
         self.assertEqual(args.pre_gen_pte, "/tmp/ptes")
 
 
+class TestValidateArgs(unittest.TestCase):
+    def test_rejects_flag_combinations_the_legacy_flow_rejects(self):
+        """Combinations that cannot run fail before any stage starts."""
+        for extra, message in (
+            (("--model-mode", "hybrid", "--online-prepare"), "online_prepare"),
+            (("--compile-only", "--pre-gen-pte", "/tmp/ptes"), "compile_only"),
+            (("--target", "aarch64-androdi"), "--target aarch64-androdi"),
+        ):
+            with self.subTest(extra=extra):
+                with self.assertRaisesRegex(ValueError, message):
+                    cli._validate_args(_make_args("--use-fp16", *extra))
+
+    def test_quantization_requires_calibration_data(self):
+        """Without --use-fp16 or --pre-gen-pte, a calibration source is required."""
+        with self.assertRaisesRegex(ValueError, "calibration data"):
+            cli._validate_args(_make_args())
+
+    def test_calibration_is_not_needed_without_quantization(self):
+        """FP16 and pre-generated PTEs skip quantization, so need no calibration."""
+        for extra in (("--use-fp16",), ("--pre-gen-pte", "/tmp/ptes")):
+            with self.subTest(extra=extra):
+                cli._validate_args(_make_args(*extra))
+
+
 class TestValidateEvalArgs(unittest.TestCase):
     def test_drops_repeated_eval_methods(self):
         """Repeated methods are dropped in place, keeping the first occurrence."""
@@ -84,19 +112,22 @@ class TestValidateEvalArgs(unittest.TestCase):
 
         self.assertEqual(args.eval_methods, ["prompt_eval"])
 
-    def test_tasks_eval_rejects_lookahead_mode(self):
-        """tasks_eval accepts only kv and hybrid, as the legacy flow does."""
-        args = _make_eval_args("lookahead", "tasks_eval")
+    def test_logit_methods_reject_lookahead_mode(self):
+        """tasks_eval and sqnr_eval accept only kv and hybrid, as legacy intends."""
+        for eval_method in ("tasks_eval", "sqnr_eval"):
+            with self.subTest(eval_method=eval_method):
+                args = _make_eval_args("lookahead", eval_method)
 
-        with self.assertRaisesRegex(ValueError, "only supported for KV mode"):
-            cli._validate_eval_args(args)
+                with self.assertRaisesRegex(
+                    ValueError, f"{eval_method} is only supported for KV mode"
+                ):
+                    cli._validate_eval_args(args)
 
     def test_non_kv_modes_warn_that_only_the_forwards_run_in_kv(self):
-        """hybrid tasks_eval and non-kv sqnr_eval warn that their forwards run in kv mode."""
+        """hybrid tasks_eval and sqnr_eval warn that their forwards run in kv mode."""
         for model_mode, eval_method in (
             ("hybrid", "tasks_eval"),
             ("hybrid", "sqnr_eval"),
-            ("lookahead", "sqnr_eval"),
         ):
             with self.subTest(model_mode=model_mode, eval_method=eval_method):
                 args = _make_eval_args(model_mode, eval_method)
@@ -127,12 +158,15 @@ class TestValidateEvalArgs(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "--eval-tasks is required"):
             cli._validate_eval_args(args)
 
-    def test_sqnr_eval_takes_one_prompt(self):
-        """sqnr_eval compares one prompt's logits."""
+    def test_sqnr_eval_scores_the_first_of_several_prompts(self):
+        """As in the legacy flow, several prompts are accepted and the first scored."""
         args = _make_eval_args("kv", "sqnr_eval", "--prompt", "a", "b")
 
-        with self.assertRaisesRegex(ValueError, "exactly one --prompt"):
+        with self.assertLogs(_LOGGER, level="WARNING") as logs:
             cli._validate_eval_args(args)
+
+        self.assertIn("only the first of 2", logs.output[0])
+        self.assertEqual(args.prompt, ["a", "b"])
 
     def test_sqnr_eval_takes_batch_size_one(self):
         """sqnr_eval supports only a batch size of one."""
@@ -196,15 +230,15 @@ class TestSkipsModelPreparation(unittest.TestCase):
 
 
 class TestPrepareConfigs(unittest.TestCase):
-    def test_runtime_tokenizer_path_is_top_level_not_an_inference_option(self):
-        """The tokenizer override travels apart from the runner's inference options."""
+    def test_runner_settings_are_not_nested_inference_options(self):
+        """Runner settings reach the context top-level, so no nested dict is built."""
         args = _make_args("--runtime-tokenizer-path", "tok.bin")
 
         with _patch_model_lookups():
             configs = cli._prepare_configs(args)
 
         self.assertEqual(configs["runtime_tokenizer_path"], "tok.bin")
-        self.assertNotIn("runtime_tokenizer_path", configs["inference_options"])
+        self.assertNotIn("inference_options", configs)
 
     def test_explicit_runtime_tokenizer_path_wins(self):
         """An explicit path is used even when model preparation is skipped."""
@@ -267,6 +301,38 @@ class TestPrepareConfigs(unittest.TestCase):
         self.assertIsNone(configs["runtime_tokenizer_path"])
 
 
+class TestLoadRuntimeTokenizerPath(unittest.TestCase):
+    def test_maps_cli_fields_onto_tokenizer_wrapper(self):
+        """The real TokenizerWrapper resolves stories' --tokenizer-bin as the runtime tokenizer."""
+        from pytorch_tokenizers.llama2c import Llama2cTokenizer
+
+        with tempfile.TemporaryDirectory() as tmp:
+            params = Path(tmp) / "params.json"
+            params.write_text(json.dumps({"vocab_size": 512}))
+            args = _make_args(
+                "--params",
+                str(params),
+                "--tokenizer-model",
+                "/tok/tokenizer.model",
+                "--tokenizer-bin",
+                "/tok/tokenizer.bin",
+                "--artifact-dir",
+                tmp,
+            )
+            model_config = SimpleNamespace(
+                repo_id=None, instruct_model=False, params_path=None
+            )
+
+            with patch(
+                "executorch.examples.qualcomm.oss_scripts.llama.tokenizer.get_tokenizer",
+                return_value=MagicMock(spec=Llama2cTokenizer),
+            ) as get_tokenizer:
+                path = cli._load_runtime_tokenizer_path(args, model_config)
+
+        get_tokenizer.assert_called_once_with("/tok/tokenizer.model")
+        self.assertEqual(path, "/tok/tokenizer.bin")
+
+
 class TestStageFactories(unittest.TestCase):
     def test_pre_gen_pte_skips_quantization_and_compilation(self):
         """Pre-generated PTEs need neither quantization nor compilation."""
@@ -274,6 +340,13 @@ class TestStageFactories(unittest.TestCase):
 
         self.assertIsNone(cli.get_quantization_stage(args, {}, {}))
         self.assertIsNone(cli.get_compilation_stage(args))
+
+    def test_model_preparation_exports_the_runtime_tokenizer(self):
+        """The CLI's model preparation reports the tokenizer the runner loads."""
+        with patch(f"{_MODEL_LOOKUP}.get_model_loader_adapter"):
+            stage = cli.get_model_preparation_stage(_make_args())
+
+        self.assertTrue(stage._strategy.export_tokenizer)
 
     def test_pre_gen_pte_skips_model_preparation(self):
         """Model preparation is skipped when no evaluation method needs it."""
@@ -295,18 +368,38 @@ class TestStageFactories(unittest.TestCase):
 
         self.assertIsInstance(stage._strategy.adapter, DefaultCompilerAdapter)
 
+    def _patch_runner_build(self, build_folder):
+        """Patch the QnnConfig and platform the inference stage is built with."""
+        return patch(
+            "executorch.backends.qualcomm.export_utils.QnnConfig.load_config",
+            return_value=SimpleNamespace(build_folder=str(build_folder)),
+        ), patch(
+            "executorch.backends.qualcomm.genai_pipeline.inference.platforms.get_runner_platform"
+        )
+
+    def test_inference_stage_requires_a_built_runner(self):
+        """A missing runner fails while the stages are built, before compilation."""
+        with tempfile.TemporaryDirectory() as build_folder:
+            load_config, get_runner_platform = self._patch_runner_build(build_folder)
+            with load_config, get_runner_platform:
+                with self.assertRaisesRegex(FileNotFoundError, "qnn_llama_runner"):
+                    cli.get_inference_stage(_make_args())
+
     def test_inference_stage_selects_runner_adapter_by_model_kind(self):
         """Text models get the LLM runner adapter, multimodal models the MLLM one."""
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        build_folder = Path(tmp.name)
+        for runner in (LLMRunnerAdapter.RUNNER, MLLMRunnerAdapter.RUNNER):
+            (build_folder / runner).parent.mkdir(parents=True, exist_ok=True)
+            (build_folder / runner).touch()
         for model, adapter_type in (
             ("stories260k", LLMRunnerAdapter),
             ("smolvlm_500m_instruct", MLLMRunnerAdapter),
             ("granite_speech_3_3-2b", MLLMRunnerAdapter),
         ):
-            with self.subTest(model=model), patch(
-                "executorch.backends.qualcomm.export_utils.QnnConfig.load_config"
-            ), patch(
-                "executorch.backends.qualcomm.genai_pipeline.inference.platforms.get_runner_platform"
-            ):
+            load_config, get_runner_platform = self._patch_runner_build(build_folder)
+            with self.subTest(model=model), load_config, get_runner_platform:
                 stage = cli.get_inference_stage(_make_args(model=model))
 
             self.assertIsInstance(stage._strategy.adapter, adapter_type)
@@ -332,29 +425,65 @@ class TestRunPipeline(unittest.TestCase):
         get_compilation_stage,
         get_inference_stage,
     ):
-        """The tokenizer override reaches the context's top-level extra_options."""
+        """The CLI's stage and runner settings reach the context's extra_options."""
         result = InferenceOutputConfig()
         pipeline_type.return_value.invoke.return_value = result
-        inference_options = {"temperature": 0.0}
         prepare_configs.return_value = {
             "dataset_options": MagicMock(name="dataset_options"),
             "model_options": MagicMock(name="model_options"),
             "quantize_options": MagicMock(name="quantize_options"),
-            "inference_options": inference_options,
             "runtime_tokenizer_path": "tok.bin",
         }
 
-        returned = cli.run_pipeline(_make_args("--pre-gen-pte", "/tmp/ptes"))
+        returned = cli.run_pipeline(
+            _make_args(
+                "--pre-gen-pte",
+                "/tmp/ptes",
+                "--enable-x86-64",
+                "--model-mode",
+                "kv",
+                "--online-prepare",
+                "--eval-methods",
+                "prompt_eval",
+                "tasks_eval",
+                "--eval-tasks",
+                "wikitext",
+                "--eval-limit",
+                "3",
+                "--eval-num-fewshot",
+                "2",
+                "--temperature",
+                "0.5",
+                "--system-prompt",
+                "be brief",
+            )
+        )
 
         self.assertIs(returned, result)
         context = pipeline_type.return_value.invoke.call_args.args[0]
-        self.assertEqual(context.extra_options["pre_gen_pte"], "/tmp/ptes")
-        self.assertEqual(context.extra_options["runtime_tokenizer_path"], "tok.bin")
-        self.assertIs(context.extra_options["inference_options"], inference_options)
-        self.assertTrue(context.extra_options["export_tokenizer"])
+        self.assertEqual(
+            {key: context.extra_options[key] for key in _EXPECTED_EXTRA_OPTIONS},
+            _EXPECTED_EXTRA_OPTIONS,
+        )
+        self.assertNotIn("inference_options", context.extra_options)
+        self.assertNotIn("export_tokenizer", context.extra_options)
         kwargs = pipeline_type.call_args.kwargs
         self.assertIs(kwargs["compilation_stage"], get_compilation_stage.return_value)
         self.assertIs(kwargs["inference_stage"], get_inference_stage.return_value)
+
+
+_EXPECTED_EXTRA_OPTIONS = {
+    "pre_gen_pte": "/tmp/ptes",
+    "runtime_tokenizer_path": "tok.bin",
+    "enable_x86_64": True,
+    "online_prepare": True,
+    "eval_methods": ["prompt_eval", "tasks_eval"],
+    "eval_tasks": ["wikitext"],
+    "eval_limit": 3,
+    "eval_num_fewshot": 2,
+    "temperature": 0.5,
+    "system_prompt": "be brief",
+}
 
 
 class TestShowInferenceResults(unittest.TestCase):

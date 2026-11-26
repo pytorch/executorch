@@ -32,8 +32,11 @@ from executorch.backends.qualcomm.genai_pipeline.inference.runner_io import (
     GenerateOutput,
     RunnerMetadata,
 )
-from executorch.backends.qualcomm.genai_pipeline.pipeline_context import PipelineContext
-from executorch.exir._serialize._program import deserialize_pte_binary
+from executorch.exir._serialize._program import (
+    _ExtendedHeader,
+    _flatbuffer_to_program,
+    _get_extended_header,
+)
 
 if TYPE_CHECKING:
     from executorch.backends.qualcomm.genai_pipeline.inference.platforms import (
@@ -111,35 +114,6 @@ def get_runtime_tokenizer_path(input_config: InferenceInputConfig) -> Path:
     return tokenizer_path
 
 
-def get_inference_control_args(
-    context: PipelineContext,
-    input_config: InferenceInputConfig,
-) -> ControlArgs:
-    """Build ``ControlArgs`` with the CLI's inference options applied.
-
-    ``ControlArgs.from_pipeline_context`` reads only top-level
-    ``extra_options``; runner settings such as ``temperature`` and
-    ``system_prompt`` live under ``inference_options`` and are applied here as
-    overrides. Keys that name no ``ControlArgs`` field are skipped.
-
-    Args:
-        context: Pipeline context holding user inputs.
-        input_config: Inference configuration carrying ``inference_options``.
-
-    Returns:
-        The ``ControlArgs`` the runner and evaluators share.
-    """
-    known = ControlArgs.field_names()
-    return ControlArgs.from_pipeline_context(
-        context,
-        **{
-            key: value
-            for key, value in input_config.inference_options.items()
-            if key in known
-        },
-    )
-
-
 def retrieve_info_from_pte(pte_path: Path) -> RunnerMetadata:
     """Read the metadata the decoder PTE was compiled with.
 
@@ -153,7 +127,8 @@ def retrieve_info_from_pte(pte_path: Path) -> RunnerMetadata:
         The decoder's metadata.
 
     Raises:
-        RuntimeError: If a quantized PTE lacks the logits scale or zero point.
+        RuntimeError: If the PTE lacks the vocab size or max sequence length,
+            or a quantized PTE lacks the logits scale or zero point.
     """
     output_vocab_size = None
     pte_max_context_len = None
@@ -162,9 +137,11 @@ def retrieve_info_from_pte(pte_path: Path) -> RunnerMetadata:
     logits_zero_point = None
     kv_io_bit_width = 32
 
+    # Only the program flatbuffer: the delegate segments after it can be GBs.
     with open(pte_path, "rb") as f:
-        program_data = f.read()
-        program = deserialize_pte_binary(program_data).program
+        header = _get_extended_header(f.read(8 + _ExtendedHeader.EXPECTED_LENGTH))
+        f.seek(0)
+        program = _flatbuffer_to_program(f.read(header.program_size if header else -1))
 
     for method in program.execution_plan:
         if method.name == "get_vocab_size":
@@ -193,8 +170,11 @@ def retrieve_info_from_pte(pte_path: Path) -> RunnerMetadata:
         raise RuntimeError(
             "Unable to find scale/offset. The .pte file might be deprecated. Please generate a new .pte file"
         )
-    assert output_vocab_size is not None, "Couldn't find the vocab size"
-    assert pte_max_seq_len is not None, "Couldn't find the max_seq_len from pte"
+    if output_vocab_size is None or pte_max_seq_len is None:
+        raise RuntimeError(
+            f"Unable to find the vocab size or max_seq_len in {pte_path}. The "
+            ".pte file might be deprecated. Please generate a new .pte file"
+        )
     return RunnerMetadata(
         max_context_len=pte_max_context_len,
         max_seq_len=pte_max_seq_len,
@@ -308,7 +288,8 @@ def build_runner_args(
     """Build the runner flags every llama-family runner request takes.
 
     The text and multimodal runners share them; each adapter adds its own PTE
-    flags and the flags of the request.
+    flags and the flags of the request. Paths are shell-quoted, since the
+    platform's command is parsed by a shell once.
 
     Args:
         control_args: Control args supplying the decoder model.
@@ -322,9 +303,9 @@ def build_runner_args(
     output_dir = platform.output_dir()
     return [
         f"--decoder_model_version {DECODER_MODEL_VERSION[control_args.decoder_model]}",
-        f"--tokenizer_path {platform.runner_path(runtime_tokenizer_path)}",
-        f"--output_path {output_dir}/{RUNNER_OUTPUTS}",
-        f"--performance_output_path {output_dir}/{RUNNER_INFERENCE_SPEED}",
+        f"--tokenizer_path {shlex.quote(platform.runner_path(runtime_tokenizer_path))}",
+        f"--output_path {shlex.quote(f'{output_dir}/{RUNNER_OUTPUTS}')}",
+        f"--performance_output_path {shlex.quote(f'{output_dir}/{RUNNER_INFERENCE_SPEED}')}",
         *platform.target_flags,
     ]
 

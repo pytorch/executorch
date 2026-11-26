@@ -299,7 +299,6 @@ class GenAIPipeline:
         if self._inference_stage is not None:
             logger.info("[GenAIPipeline] InferenceStage started")
             start = time.monotonic()
-            inference_options = context.extra_options.get("inference_options", {})
             input_config = InferenceInputConfig(
                 artifact_dir=Path(context.artifact_dir),
                 # None when compilation was skipped; the strategy then resolves
@@ -311,7 +310,6 @@ class GenAIPipeline:
                 runtime_tokenizer_path=model_prep_output.runtime_tokenizer_path,
                 prompt=context.prompt,
                 soc_model=context.soc_model,
-                inference_options=inference_options,
             )
             output = self._inference_stage.invoke(context, input_config)
             elapsed = time.monotonic() - start

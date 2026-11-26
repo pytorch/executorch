@@ -94,9 +94,10 @@ def _make_mock_adapter():
     return adapter
 
 
-def _make_strategy(loader=None):
+def _make_strategy(loader=None, **kwargs):
     return ExecuTorchModelPreparationStrategy(
-        model_loader_adapter=loader if loader is not None else _make_mock_adapter()
+        model_loader_adapter=loader if loader is not None else _make_mock_adapter(),
+        **kwargs,
     )
 
 
@@ -363,12 +364,10 @@ class TestExecuTorchModelPreparationStrategy(unittest.TestCase):
         self.assertIn("module_transforms", str(cm.exception.original_exception))
 
     def test_invoke_exports_tokenizer_when_requested(self):
-        """export_tokenizer is called when export_tokenizer=True in extra_options."""
+        """The tokenizer is exported when the strategy is built with export_tokenizer."""
         loader = _make_mock_adapter()
-        strategy = _make_strategy(loader)
-        input_config = _make_valid_input_config(
-            extra_options={"export_tokenizer": True}
-        )
+        strategy = _make_strategy(loader, export_tokenizer=True)
+        input_config = _make_valid_input_config()
         context = make_test_context(artifact_dir="/my/artifacts")
 
         result = strategy.invoke(context, input_config)
