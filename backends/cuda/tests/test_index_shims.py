@@ -236,6 +236,44 @@ class TestIndexShims(unittest.TestCase):
                     inputs = (x.to(dtype), index.to(index_dtype), values.to(dtype))
                     self._run(Scatter(), [inputs])
 
+    def test_scatter_with_scalar_source(self):
+        """Inductor writes a scatter of a scalar itself, except in deterministic
+        mode, where it leaves every dtype to the shim. All writes store the
+        same value, so repeated writes need no order. As in ATen, the index can
+        be int32, and the value is converted to the dtype of the tensor."""
+
+        class ScatterValue(torch.nn.Module):
+            def __init__(self, value):
+                super().__init__()
+                self.value = value
+
+            def forward(self, x, index):
+                return (
+                    x.scatter(1, index, self.value),
+                    # Along the middle dim of a 3-D tensor, as a negative dim.
+                    x.unsqueeze(-1)
+                    .expand(-1, -1, 2)
+                    .scatter(-2, index.unsqueeze(-1), self.value),
+                )
+
+        # With repeats, and column 4 is never written.
+        index = torch.tensor([[0, 2, 2, 5], [1, 1, 1, 0], [5, 3, 0, 5]])
+        x = torch.full((5, 6), -1)
+        with _deterministic():
+            for dtype, index_dtype, value in (
+                (torch.float32, torch.int64, 2.5),
+                (torch.float16, torch.int64, 2.5),
+                (torch.bfloat16, torch.int64, 2.5),
+                (torch.float64, torch.int64, 2.5),
+                (torch.int64, torch.int32, 3),
+                (torch.int32, torch.int64, 3),
+                (torch.uint8, torch.int64, 3),
+                (torch.bool, torch.int64, 0),
+            ):
+                with self.subTest(dtype=dtype, index_dtype=index_dtype):
+                    inputs = (x.to(dtype), index.to(index_dtype))
+                    self._run(ScatterValue(value), [inputs])
+
     def test_scatter_strides(self):
         """Scatters along the middle dim of a 3-D tensor, given as a negative
         dim, from a strided source and from transposed operands, so the shims
