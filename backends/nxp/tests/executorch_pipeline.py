@@ -189,6 +189,7 @@ def to_quantized_edge_program(
     fetch_constants_to_sram: bool = False,
     dump_kernel_selection_code: bool = False,
     use_profiling: bool = False,
+    use_sequencer: bool = False,
     delegate_to_npu=True,
     use_recipe_export: bool = _USE_RECIPE_EXPORT,
 ) -> EdgeProgramManager:
@@ -214,6 +215,7 @@ def to_quantized_edge_program(
             use_profiling,
             train_fn,
             calibration_inputs_fn=lambda *_: calibration_inputs,
+            use_sequencer=use_sequencer,
         )
         recipe = get_neutron_recipe(rc, use_qat, delegate_to_npu)
 
@@ -256,6 +258,7 @@ def to_quantized_edge_program(
             fetch_constants_to_sram=fetch_constants_to_sram,
             dump_kernel_selection_code=dump_kernel_selection_code,
             use_profiling=use_profiling,
+            use_sequencer=use_sequencer,
         )
         post_quant_state_dict = (
             exir_program_aten__module_quant.state_dict()
@@ -311,6 +314,7 @@ def to_quantized_executorch_program(
     dataset_dir: str | None = None,
     delegate_to_npu=True,
     use_profiling: bool = False,
+    use_sequencer: bool = False,
     operators_not_to_delegate: list[str] | None = None,
     remove_quant_io_ops: bool = False,
     use_recipe_export: bool = _USE_RECIPE_EXPORT,
@@ -332,6 +336,7 @@ def to_quantized_executorch_program(
             remove_quant_io_ops=remove_quant_io_ops,
             use_neutron_for_format_conversion=use_neutron_for_format_conversion,
             use_profiling=use_profiling,
+            use_sequencer=use_sequencer,
             train_fn=train_fn,
             calibration_inputs_fn=get_calibration_inputs_fn,
         )
@@ -357,6 +362,7 @@ def to_quantized_executorch_program(
             use_neutron_for_format_conversion=use_neutron_for_format_conversion,
             delegate_to_npu=delegate_to_npu,
             use_profiling=use_profiling,
+            use_sequencer=use_sequencer,
             operators_not_to_delegate=operators_not_to_delegate,
             remove_quant_io_ops=remove_quant_io_ops,
             **calib_fn_kwarg,

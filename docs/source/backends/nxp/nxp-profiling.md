@@ -41,6 +41,23 @@ python -m examples.nxp.aot_neutron_compile --quantize \
 
 For installation details, see {doc}`nxp-overview`.
 
+### Profiling in the sequencer mode
+
+The profiling can be combined with the Neutron sequencer mode (see {doc}`nxp-sequencer`) by adding the
+`--use_sequencer` flag:
+
+```bash
+python -m examples.nxp.aot_neutron_compile --quantize \
+    --delegate -m cifar10 \
+    --use_profiling \
+    --use_sequencer
+```
+
+In the sequencer mode, consecutive Neutron kernels are grouped into sequences that are executed atomically.
+The profiled events and the cycle estimates of the Neutron Compiler are therefore reported for the grouped sequences
+(`Sequence_N`) instead of the individual kernels, so the granularity differs from a model compiled in the standard
+mode. The sequencer mode is available only for `Neutron-C` targets, like `i.MX RT700`.
+
 ---
 
 ## Generate ETRecord (Optional)
@@ -207,7 +224,8 @@ in [analyzing_with_inspector.py](https://github.com/pytorch/executorch/blob/main
 
 ## Summary
 
-* Build the model with the `--use_profiling` flag enabled.
+* Build the model with the `--use_profiling` flag enabled (optionally together with `--use_sequencer`, see
+  {doc}`nxp-sequencer`).
 * Build the ExecuTorch runtime library with the `ET_EVENT_TRACER_ENABLED` flag and the ETDump Developer Tool.
 * Use the Debug Console in MCUXpresso to save the `ETDump` file from the board to a PC.
 * Visualize the profiling results using the Inspector.

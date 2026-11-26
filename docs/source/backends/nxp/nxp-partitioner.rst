@@ -30,6 +30,7 @@ Following fields can be set:
 * `fetch_constants_to_sram` - If True, the Neutron Compiler will insert microinstructions to prefetch weights from FLASH to SRAM. This should be used when the whole model does not fit into SRAM on Neutron-C devices, like i.MX RT700.
 * `dump_kernel_selection_code` - Whether Neutron Compiler dumps kernel selection code, which is used by the selective kernel registration, see :doc:`Neutron Firmware Kernel Selection support <nxp-kernel-selection.md>`.
 * `use_profiling` - If true Neutron Compiler will enable profiling for neutron delegated model.
+* `use_sequencer` - If True, the Neutron Compiler will compile the delegated model in sequencer mode, generating bytecode for the Neutron sequencer hardware. Available only for Neutron-C targets, like i.MX RT700. See :doc:`Neutron sequencer mode <nxp-sequencer>`.
 
 -------------------------
 Custom Delegation Options

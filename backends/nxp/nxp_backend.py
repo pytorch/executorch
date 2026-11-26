@@ -67,6 +67,7 @@ class NeutronCompileSpecBuilder:
         self.fetch_constants_to_sram = False
         self.dump_kernel_selection_code = False
         self.use_profiling = False
+        self.use_sequencer = False
 
     def _replace_colons(self, operator: str) -> str:
         """
@@ -84,6 +85,7 @@ class NeutronCompileSpecBuilder:
         fetch_constants_to_sram: bool = False,
         dump_kernel_selection_code: bool = False,
         use_profiling: bool = False,
+        use_sequencer: bool = False,
     ) -> "NeutronCompileSpecBuilder":
         """Generate compile spec for Neutron NPU
 
@@ -98,6 +100,7 @@ class NeutronCompileSpecBuilder:
                                      from FLASH to SRAM. This should be used when the whole model does not fit into SRAM.
         :param dump_kernel_selection_code: Whether Neutron Compiler dumps kernel selection code.
         :param use_profiling: If true Neutron Compiler will enable profiling for neutron delegated model
+        :param use_sequencer: If True, the Neutron Compiler will generate the model in sequencer mode.
         :return: self for method chaining
         """
 
@@ -122,6 +125,7 @@ class NeutronCompileSpecBuilder:
         self.fetch_constants_to_sram = fetch_constants_to_sram
         self.dump_kernel_selection_code = dump_kernel_selection_code
         self.use_profiling = use_profiling
+        self.use_sequencer = use_sequencer
 
         return self
 
@@ -155,6 +159,10 @@ class NeutronCompileSpecBuilder:
                     "use_profiling",
                     f"{self.use_profiling}".encode(),
                 ),
+                CompileSpec(
+                    "use_sequencer",
+                    f"{self.use_sequencer}".encode(),
+                ),
             ]
 
         return self.compile_spec
@@ -170,6 +178,7 @@ def generate_neutron_compile_spec(
     fetch_constants_to_sram: bool = False,
     dump_kernel_selection_code: bool = False,
     use_profiling: bool = False,
+    use_sequencer: bool = False,
 ) -> list[CompileSpec]:
     return (
         NeutronCompileSpecBuilder()
@@ -182,6 +191,7 @@ def generate_neutron_compile_spec(
             fetch_constants_to_sram=fetch_constants_to_sram,
             dump_kernel_selection_code=dump_kernel_selection_code,
             use_profiling=use_profiling,
+            use_sequencer=use_sequencer,
         )
         .build()
     )
@@ -232,6 +242,7 @@ class NeutronBackend(BackendDetails):
         fetch_constants_to_sram = False
         dump_kernel_selection_code = None
         use_profiling = False
+        use_sequencer = False
         for spec in compile_spec:
             if spec.key == "output_format":
                 output_format = spec.value.decode()
@@ -249,6 +260,8 @@ class NeutronBackend(BackendDetails):
                 dump_kernel_selection_code = spec.value.decode() == "True"
             if spec.key == "use_profiling":
                 use_profiling = spec.value.decode() == "True"
+            if spec.key == "use_sequencer":
+                use_sequencer = spec.value.decode() == "True"
 
         # Check that the output format is set in the compile spec
         if not output_format:
@@ -298,6 +311,7 @@ class NeutronBackend(BackendDetails):
                     delegation_tag,
                     fetch_constants_to_sram,
                     use_profiling,
+                    use_sequencer,
                 )
                 tmp.seek(0)
                 log_output = tmp.read().decode()

@@ -120,6 +120,7 @@ class NeutronRecipeConfig:
         calibration_inputs_fn: Optional callable that takes a tuple of ModelInputSpec and
                                returns an iterable of input tuples used for PTQ calibration.
                                When None, the example inputs are used for calibration.
+        use_sequencer: Compile the Neutron delegated partitions in sequencer mode.
     """
 
     input_spec: Iterable[ModelInputSpec] | tuple[int, ...] | list[tuple[int, ...]]
@@ -139,6 +140,7 @@ class NeutronRecipeConfig:
         Callable[[tuple["ModelInputSpec", ...]], Iterable[tuple[torch.Tensor, ...]]]
         | None
     ) = None
+    use_sequencer: bool = False
 
 
 class NXPRecipeProvider(BackendRecipeProvider):
@@ -236,6 +238,7 @@ class NXPRecipeProvider(BackendRecipeProvider):
             fetch_constants_to_sram=rc.fetch_constants_to_sram,
             dump_kernel_selection_code=rc.dump_kernel_selection_code,
             use_profiling=rc.use_profiling,
+            use_sequencer=rc.use_sequencer,
         )
         lowering_recipe = _build_lowering_recipe(
             compile_spec, neutron_target_spec, rc, delegate=delegate
