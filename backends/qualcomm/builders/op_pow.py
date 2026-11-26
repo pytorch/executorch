@@ -42,11 +42,13 @@ class PowTensorTensor(NodeVisitor):
         # tensor input
         input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
-        # Quantized HTP ElementWisePower does not broadcast its first input:
+        # Quantized ElementWisePower on HTP does not broadcast its first input:
         # with a one-element constant base (e.g. pow.Scalar's base, lifted by
         # LiftConstantScalarOperands) only the first output element is
-        # computed. Materialize such a base at the output shape. It gets its
-        # own wrapper key so other consumers of the same node keep the original.
+        # computed. Materialize such a base at the output shape. The guard has
+        # no backend check, so every quantized backend (e.g. LPAI) gets the
+        # expanded base. It gets its own wrapper key so other consumers of the
+        # same node keep the original.
         base_wrapper_name = None
         if (
             is_parameter(input_node, self.edge_program)
