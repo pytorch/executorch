@@ -91,7 +91,13 @@ public:
      * @return Reference to this builder for chaining.
      */
     LoadOptionsBuilder& setCacheDirectory(const char* path) {
-        options_.set_option("cache_dir", path);
+        // set_option refuses a null path or one that doesn't fit; the backend
+        // then uses its default cache, so say so instead of failing silently.
+        if (options_.set_option("cache_dir", path) != ::executorch::runtime::Error::Ok) {
+            ET_LOG(Error,
+                   "CoreML cache_dir not set: null or longer than %zu bytes; using the default cache",
+                   ::executorch::runtime::kMaxOptionValueLength - 1);
+        }
         return *this;
     }
 
