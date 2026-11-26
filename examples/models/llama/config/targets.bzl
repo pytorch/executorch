@@ -17,5 +17,6 @@ def define_common_targets(is_fbcode = False):
         ],
         deps = [
             "//executorch/extension/llm/export/config:llm_config",
+            "fbsource//third-party/pypi/omegaconf:omegaconf",
         ],
     )

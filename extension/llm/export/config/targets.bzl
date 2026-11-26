@@ -5,6 +5,7 @@ def define_common_targets():
         name = "llm_config",
         srcs = [
             "llm_config.py",
+            "model_identity.py",
         ],
         _is_external_target = True,
         base_module = "executorch.extension.llm.export.config",
