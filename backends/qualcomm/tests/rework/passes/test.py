@@ -334,6 +334,13 @@ def test_fold_qdq(request, kwargs):
     FoldQDQ.test(request, kwargs)  # noqa: F405
 
 
+# FoldZeroPadIntoLinear is only used for quantized models, so this test only covers quantized backends.
+@enumerate_backends_quantized()
+@repack_pass_fixtures
+def test_fold_zero_pad_into_linear(request, kwargs):
+    FoldZeroPadIntoLinear.test(request, kwargs)  # noqa: F405
+
+
 @enumerate_backends()
 @repack_pass_fixtures
 def test_fuse_batch_norm_with_conv(request, kwargs):

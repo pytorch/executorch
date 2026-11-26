@@ -16,6 +16,7 @@ from executorch.backends.qualcomm._passes import (
     DecomposeWrapWithAutocast,
     ExpandBroadcastTensorShape,
     FoldQDQ,
+    FoldZeroPadIntoLinear,
     InsertIOQDQ,
     InsertReshapeForReduceOps,
     LayoutTransform,
@@ -1059,6 +1060,61 @@ class TestPasses(unittest.TestCase):
         self.assertTrue(
             torch.equal(*out, ref), f"Output mismatch: got {out}, expected {ref}"
         )
+
+    def test_fold_zero_pad_into_linear(self):
+        class PadLinear(torch.nn.Module):
+            def __init__(self, pad, value=0.0, in_features=32, relu=False):
+                super().__init__()
+                self.pad, self.value, self.relu = pad, value, relu
+                self.linear = torch.nn.Linear(in_features, 64)
+
+            def forward(self, x):
+                padded = torch.nn.functional.pad(x, self.pad, value=self.value)
+                out = self.linear(padded)
+                return (out, torch.relu(padded)) if self.relu else out
+
+        def pads(graph_module):
+            return [
+                n
+                for n in graph_module.graph.nodes
+                if n.target
+                in (torch.ops.aten.pad.default, torch.ops.aten.constant_pad_nd.default)
+            ]
+
+        x = torch.randn(1, 2, 8)
+        cases = [
+            # (module, folded, weight columns the linear keeps)
+            (PadLinear((0, 24)), slice(0, 8)),
+            (PadLinear((3, 21)), slice(3, 11)),
+            (PadLinear((0, 24), value=1.0), None),
+            (PadLinear((0, 0, 0, 1), in_features=8), None),
+            (PadLinear((0, 24), relu=True), None),
+        ]
+        for i, (module, columns) in enumerate(cases):
+            with self.subTest(i=i):
+                module = module.eval()
+                with torch.no_grad():
+                    reference = module(x)
+                graph_module = torch.export.export(module, (x,)).module()
+                result = FoldZeroPadIntoLinear()(graph_module)
+                folded = columns is not None
+                self.assertEqual(result.modified, folded)
+                self.assertEqual(len(pads(result.graph_module)), 0 if folded else 1)
+                if folded:
+                    linear = next(
+                        n
+                        for n in result.graph_module.graph.nodes
+                        if n.target == torch.ops.aten.linear.default
+                    )
+                    self.assertTrue(
+                        torch.equal(
+                            getattr(result.graph_module, linear.args[1].target),
+                            module.linear.weight.detach()[:, columns],
+                        )
+                    )
+                with torch.no_grad():
+                    out = result.graph_module(x)
+                torch.testing.assert_close(out, reference)
 
     def test_remove_0d_tensor_keeps_select_it_cannot_replace(self):
         class TableLookup(torch.nn.Module):
