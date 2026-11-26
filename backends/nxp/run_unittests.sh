@@ -15,6 +15,9 @@ cd $EXECUTORCH_DIR
 source .ci/scripts/pytest-parallelism.sh
 
 # '-c /dev/null' is used to ignore root level pytest.ini.
-pytest -c /dev/null -n "logical" backends/nxp/tests/
+# '--strict-markers' makes unregistered markers (e.g. a typo in a Neutron architecture marker) an error. The markers
+# are registered by backends/nxp/tests/target_selection.py.
+# The Neutron target is selected with '--neutron-target=<target>' or the NEUTRON_TARGET env variable (default imxrt700).
+pytest -c /dev/null --strict-markers -n "logical" backends/nxp/tests/
 
 python -m unittest discover -s backends/nxp/tests/ -v

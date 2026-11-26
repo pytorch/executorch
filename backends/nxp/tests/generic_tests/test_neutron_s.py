@@ -188,6 +188,25 @@ def test_to_quantized_executorch_program__neutron_s_target(
     _assert_target_propagated(partitioner_init_spy, is_supported_spy, neutron_s_target)
 
 
+@pytest.mark.neutron_c
+@pytest.mark.neutron_s_single
+@pytest.mark.neutron_s_multi
+def test_to_quantized_edge_program__selected_target(mocker, target: str):
+    # Example of a test enabled for all architectures. It runs once per pytest run, for the target selected with
+    #  `--neutron-target` (or the `NEUTRON_TARGET` env variable), and the `target` fixture provides its name.
+    partitioner_init_spy = mocker.spy(NeutronPartitioner, "__init__")
+
+    epm = to_quantized_edge_program(
+        ConvFCSoftmaxModule(), (1, 4, 5, 5), target=target, use_recipe_export=False
+    )
+    assert epm.exported_program() is not None
+
+    partitioner_specs = _get_partitioner_target_specs(partitioner_init_spy)
+    assert len(partitioner_specs) == 1
+    assert partitioner_specs[0].get_name() == target
+    assert _get_compile_spec_target(partitioner_init_spy) == target
+
+
 def test_to_quantized_executorch_program__default_target(mocker):
     partitioner_init_spy = mocker.spy(NeutronPartitioner, "__init__")
 

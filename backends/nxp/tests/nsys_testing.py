@@ -47,6 +47,7 @@ from executorch.backends.nxp.tests.executorch_pipeline import (
 from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
 from executorch.backends.nxp.tests.graph_verifier import GraphVerifier
 from executorch.backends.nxp.tests.outputs_dir_importer import outputs_dir
+from executorch.backends.nxp.tests.target_selection import DEFAULT_NEUTRON_TARGET
 from executorch.backends.nxp.tests.utils import (
     process_input_sample,
     process_output_sample,
@@ -397,6 +398,15 @@ def assert_NSYS():
     assert os.path.exists(NSYS_FIRMWARE_PATH)
 
 
+def _assert_nsys_supports_target(target: str):
+    # The NSYS config and firmware are only set up for the default target. Without this check, a test for another
+    #  target would lower for that target, but simulate it with the default target's firmware.
+    if target != DEFAULT_NEUTRON_TARGET:
+        raise NotImplementedError(
+            f"NSYS simulation is currently supported only for `{DEFAULT_NEUTRON_TARGET}`, not for `{target}`."
+        )
+
+
 def lower_run_compare(
     model: torch.nn.Module,
     model_input_spec: Iterable[ModelInputSpec] | tuple[int, ...],
@@ -444,6 +454,7 @@ def lower_run_compare(
     :param target: Neutron target platform used for the delegated program (e.g. "imxrt700", "imx95", "imx943").
 
     """
+    _assert_nsys_supports_target(target)
     assert_NSYS()
 
     if not dataset_creator:
@@ -755,6 +766,7 @@ def lower_run_compare_ptq_qat(
     :param use_recipe_export: If True, the models will be exported and lowered using the Neutron recipes.
     :param target: Neutron target platform used for the delegated programs (e.g. "imxrt700", "imx95", "imx943").
     """
+    _assert_nsys_supports_target(target)
     assert_NSYS()
 
     if not dataset_creator:
