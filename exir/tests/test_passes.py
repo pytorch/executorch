@@ -1337,6 +1337,17 @@ class TestPasses(unittest.TestCase):
         self.assertTrue(isinstance(ones.meta["val"].shape[0], torch.SymInt))
         self.assertTrue(len(ones.meta["val"].shape[0].node.expr.free_symbols) > 0)
 
+    def test_edge_to_backend_sym_pow(self) -> None:
+        class M(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x.new_zeros(x.shape[0] ** 2)
+
+        ep = torch.export.export(
+            M(), (torch.randn(4),), dynamic_shapes=({0: torch.export.Dim.AUTO},)
+        )
+        new_prog = to_edge(ep).to_executorch()
+        self.assertIsNotNone(new_prog)
+
     def test_to_edge_with_edge_ops(self) -> None:
         x = torch.randn([2, 3, 4, 5])
 
