@@ -189,8 +189,38 @@ def generate_neutron_compile_spec(
     )
 
 
+def get_compile_spec_value(compile_specs: list[CompileSpec], key: str) -> str | None:
+    """Get the value of a compile spec with the given key.
+
+    :param compile_specs: Compile specs to search through.
+    :param key: Key of the compile spec to look for.
+    :return: The decoded value, or None if the spec is not present or holds the encoded `None`.
+    """
+    for spec in compile_specs:
+        if spec.key == key:
+            value = spec.value.decode()
+            return None if value == "None" else value
+
+    return None
+
+
+def get_compile_spec_bool_value(
+    compile_specs: list[CompileSpec], key: str, default: bool
+) -> bool:
+    """Get the value of a boolean compile spec with the given key.
+
+    :param compile_specs: Compile specs to search through.
+    :param key: Key of the compile spec to look for.
+    :param default: Value to use when the compile spec is not present.
+    :return: The boolean value of the compile spec.
+    """
+    value = get_compile_spec_value(compile_specs, key)
+    return default if value is None else value == "True"
+
+
 @contextmanager
 def capture_fd_output():
+
     tmp = tempfile.TemporaryFile()
 
     # Save original stdout / stderr
@@ -223,39 +253,30 @@ class NeutronBackend(BackendDetails):
     ) -> PreprocessResult:
         logger.debug(f"NeutronBackend preprocessing graph:\n{edge_program.graph}")
 
-        output_format = ""
-        compile_flags = []
         binary = bytes()
-        target = ""
-        intermediates_dir = "None"
-        use_neutron_for_format_conversion = None
-        fetch_constants_to_sram = False
-        dump_kernel_selection_code = None
-        use_profiling = False
-        for spec in compile_spec:
-            if spec.key == "output_format":
-                output_format = spec.value.decode()
-            if spec.key == "target":
-                target = spec.value.decode()
-            if spec.key == "intermediates_dir":
-                intermediates_dir = spec.value.decode()
-            if spec.key == "compile_flags":
-                compile_flags.append(spec.value.decode())
-            if spec.key == "use_neutron_for_format_conversion":
-                use_neutron_for_format_conversion = spec.value.decode() == "True"
-            if spec.key == "fetch_constants_to_sram":
-                fetch_constants_to_sram = spec.value.decode() == "True"
-            if spec.key == "dump_kernel_selection_code":
-                dump_kernel_selection_code = spec.value.decode() == "True"
-            if spec.key == "use_profiling":
-                use_profiling = spec.value.decode() == "True"
+        output_format = get_compile_spec_value(compile_spec, "output_format") or ""
+        target = get_compile_spec_value(compile_spec, "target") or ""
+        intermediates_dir = get_compile_spec_value(compile_spec, "intermediates_dir")
+
+        # The defaults must match the ones used by the `NeutronCompileSpecBuilder`.
+        use_neutron_for_format_conversion = get_compile_spec_bool_value(
+            compile_spec, "use_neutron_for_format_conversion", True
+        )
+        dump_kernel_selection_code = get_compile_spec_bool_value(
+            compile_spec, "dump_kernel_selection_code", False
+        )
+        fetch_constants_to_sram = get_compile_spec_bool_value(
+            compile_spec, "fetch_constants_to_sram", False
+        )
+        use_profiling = get_compile_spec_bool_value(
+            compile_spec, "use_profiling", False
+        )
 
         # Check that the output format is set in the compile spec
         if not output_format:
             raise RuntimeError("output format is required")
 
-        # Check if provided intermediates_dir is a correct path (None is decoded to str)
-        if intermediates_dir != "None" and not os.path.isdir(intermediates_dir):
+        if intermediates_dir is not None and not os.path.isdir(intermediates_dir):
             raise ValueError("intermediates_dir is not a directory path.")
 
         for node in edge_program.graph.nodes:
@@ -275,8 +296,6 @@ class NeutronBackend(BackendDetails):
             # Convert the edge program to TFLite.
             conversion_config = ConversionConfig(
                 {"use_neutron_for_format_conversion": use_neutron_for_format_conversion}
-                if use_neutron_for_format_conversion is not None
-                else {}
             )
             (
                 tflite_model,
@@ -306,7 +325,7 @@ class NeutronBackend(BackendDetails):
             neutron_to_edge_map = map.get_neutron_to_edge_map()
 
             # Dump the tflite file if intermediates_dir is set
-            if intermediates_dir != "None":
+            if intermediates_dir is not None:
                 logger.debug(
                     f"Serializing converted graph with tag {delegation_tag} to {intermediates_dir}"
                 )

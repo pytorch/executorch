@@ -7,6 +7,7 @@
 
 import logging
 import operator
+import os
 from dataclasses import dataclass
 from functools import partial
 from typing import Callable, final, Mapping
@@ -33,7 +34,8 @@ from torch.nn import Parameter
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters import *  # noqa F403
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from executorch.backends.nxp.backend.node_format_inference import NodeFormatInference
-from executorch.backends.nxp.nxp_backend import NeutronBackend
+from executorch.backends.nxp.nxp_backend import get_compile_spec_value, NeutronBackend
+
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
@@ -363,10 +365,46 @@ class NeutronPartitioner(Partitioner):
         self.preserve_ops = preserve_ops or []
         self.check_op_support = check_op_support
 
+        # Number of finished `partition()` calls. Used to keep the dumps of multi-method programs apart.
+        self.partition_call_count = 0
+
         # dict: exir_op -> converter
         self.edge_op_to_converter = {}
         for exir_op, converter in supported_ops.items():
             self.edge_op_to_converter[exir_op._op] = converter
+
+    def _dump_partitioned_program(
+        self, exported_program: ExportedProgram, intermediates_dir: str
+    ):
+        """Save the tagged program as JSON for the Model Explorer GUI.
+
+        The dump is only a debugging aid, so a missing `model_explorer` installation is reported as a warning
+        and the export continues.
+
+        :param exported_program: The tagged program to save.
+        :param intermediates_dir: Directory to save the JSON file into.
+        """
+        try:
+            # Imported lazily, because it raises `ImportError` when `model_explorer` is not installed.
+            from executorch.devtools.visualization.visualization_utils import (
+                visualize_with_clusters,
+            )
+        except ImportError:
+            logger.warning(
+                "The partitioned graph was not saved, because `model_explorer` is not installed."
+            )
+            return
+
+        os.makedirs(intermediates_dir, exist_ok=True)
+
+        # The partitioner API does not expose the name of the partitioned method, so the number of the `partition()`
+        # call is used to keep the dumps of a multi-method program apart. See EIEX-1255.
+        suffix = (
+            "" if self.partition_call_count == 0 else f"_{self.partition_call_count}"
+        )
+        json_file = os.path.join(intermediates_dir, f"neutron_partitioned{suffix}.json")
+        visualize_with_clusters(exported_program, json_file, reuse_server=False)
+        logging.info(f"The partitioned graph was saved to `{json_file}`.")
 
     @staticmethod
     def _partition_contains_compute_nodes(
@@ -454,7 +492,10 @@ class NeutronPartitioner(Partitioner):
 
         graph_module.recompile()
 
-        operators_not_to_delegate = self.delegation_spec[1][4].value.decode().split(",")
+        compile_specs = self.delegation_spec.compile_specs
+        operators_not_to_delegate = (
+            get_compile_spec_value(compile_specs, "operators_not_to_delegate") or ""
+        ).split(",")
         logger.info(f"Operators not to delegate: {operators_not_to_delegate}")
 
         parameters_mapping = EdgeProgramToIRConverter.map_inputs_to_parameters(
@@ -504,6 +545,12 @@ class NeutronPartitioner(Partitioner):
                 partition_tags[delegation_tag] = self.delegation_spec
 
         tag_constant_data(exported_program)
+
+        intermediates_dir = get_compile_spec_value(compile_specs, "intermediates_dir")
+        if intermediates_dir is not None:
+            self._dump_partitioned_program(exported_program, intermediates_dir)
+            self.partition_call_count += 1
+
         return PartitionResult(
             tagged_exported_program=exported_program, partition_tags=partition_tags
         )

@@ -4,7 +4,6 @@
 # LICENSE file in the root directory of this source tree.
 
 import datetime
-import functools
 import logging
 import os.path
 import re
@@ -20,7 +19,6 @@ from typing import Callable, Iterable
 import torch
 import yaml
 from executorch.backends.nxp.backend.ops_aliases import ExecutorchDelegateCall
-from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.tests.comparators.all_close_comparator import (
     AllCloseOutputComparator,
 )
@@ -55,9 +53,6 @@ from executorch.backends.nxp.tests.utils import (
     save_pte_program,
     store_results,
     store_txt_input_tensor,
-)
-from executorch.devtools.visualization.visualization_utils import (
-    visualize_with_clusters,
 )
 from pytest import FixtureRequest
 from pytest_mock import MockerFixture
@@ -125,22 +120,7 @@ def _run_delegated_executorch_program(
 ) -> tuple[ExportedProgram, str, list[InputQuantizationSpec] | None]:
     input_quant_spec = None
     try:
-        if mocker:
-            method = getattr(NeutronPartitioner, "partition")  # noqa B009
-
-            def wrapper(*args, **kwargs):
-                result = method(*args, **kwargs)
-                visualize_with_clusters(
-                    result.tagged_exported_program,
-                    os.path.join(test_dir, test_name + "_partitioned.json"),
-                    False,
-                )
-                return result
-
-            wrapped = functools.update_wrapper(wrapper, method)
-            mocker.patch.object(
-                NeutronPartitioner, "partition", side_effect=wrapped, autospec=True
-            )
+        # The partitioned graph is saved by the `NeutronPartitioner` itself, because `intermediates_dir` is set.
         delegated_program = to_quantized_executorch_program(
             model,
             input_spec,
