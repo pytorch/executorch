@@ -94,3 +94,61 @@ class TestDecomposeScaledDotProductAttention(unittest.TestCase):
                     node.meta.get("nn_module_stack"), original_nn_module_stack
                 )
         torch.testing.assert_close(graph_module(q, k, v, mask), before_output)
+
+    def test_skip_safe_softmax_guard_uses_regular_softmax(self) -> None:
+        q, k, v = (torch.randn(1, 2, 5, 8) for _ in range(3))
+        for is_causal in (False, True):
+            with self.subTest(is_causal=is_causal):
+                model = _SDPA(is_causal=is_causal).eval()
+                graph_module = export(model, (q, k, v), strict=True).module()
+
+                result = DecomposeScaledDotProductAttention(
+                    skip_safe_softmax_guard=True
+                )(graph_module)
+
+                self.assertTrue(result.modified)
+                targets = _call_targets(result.graph_module)
+                self.assertIn(torch.ops.aten.softmax.int, targets)
+                self.assertNotIn(torch.ops.aten._safe_softmax.default, targets)
+                self.assertNotIn(
+                    torch.ops.aten.scaled_dot_product_attention.default, targets
+                )
+                torch.testing.assert_close(result.graph_module(q, k, v), model(q, k, v))
+
+    def test_skip_safe_softmax_guard_leaves_maskable_sdpa(self) -> None:
+        q, k, v = (torch.randn(1, 2, 5, 8) for _ in range(3))
+        mask = torch.zeros(5, 5)
+        mask[0] = float("-inf")
+        cases = {
+            "mask": (_SDPA(), (q, k, v, mask)),
+            "dropout": (_SDPA(dropout_p=0.1), (q, k, v)),
+        }
+        for name, (model, inputs) in cases.items():
+            with self.subTest(name):
+                graph_module = export(model.eval(), inputs, strict=True).module()
+
+                result = DecomposeScaledDotProductAttention(
+                    skip_safe_softmax_guard=True
+                )(graph_module)
+
+                self.assertFalse(result.modified)
+                self.assertIn(
+                    torch.ops.aten.scaled_dot_product_attention.default,
+                    _call_targets(result.graph_module),
+                )
+
+
+class _SDPA(torch.nn.Module):
+    def __init__(self, is_causal: bool = False, dropout_p: float = 0.0) -> None:
+        super().__init__()
+        self.is_causal = is_causal
+        self.dropout_p = dropout_p
+
+    def forward(self, q, k, v, mask=None):
+        return torch.nn.functional.scaled_dot_product_attention(
+            q, k, v, attn_mask=mask, dropout_p=self.dropout_p, is_causal=self.is_causal
+        )
+
+
+def _call_targets(graph_module: torch.fx.GraphModule) -> set:
+    return {n.target for n in graph_module.graph.nodes if n.op == "call_function"}
