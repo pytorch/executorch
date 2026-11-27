@@ -469,6 +469,11 @@ std::tuple<at::Tensor&, at::Tensor&> gated_delta_rule_out_aten(
 
 TORCH_LIBRARY_FRAGMENT(llama, m) {
   m.def(
+      "set_sdpa_masked_kv_tail_enabled(bool enabled) -> bool",
+      [](bool enabled) {
+        return torch::executor::native::set_sdpa_masked_kv_tail_enabled(enabled);
+      });
+  m.def(
       "sdpa_with_kv_cache(Tensor query, Tensor key, Tensor value, Tensor(a!) key_cache, "
       "Tensor(b!) value_cache, SymInt start_pos, SymInt seq_len, Tensor? attn_mask=None, "
       "float drpout_p=0.0, bool is_causal=False, float? scale=None) -> Tensor");
