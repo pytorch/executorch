@@ -10,7 +10,6 @@
 #include <array>
 #include <cstdio>
 #include <cstring>
-#include <limits>
 #include <mutex>
 #include <stdexcept>
 #include <utility>
@@ -148,7 +147,7 @@ ZipReader::ZipReader(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {
       throw ResourceLimitError(
           "zip: member exceeds package size limit: " + name);
     }
-    if (stat.size > std::numeric_limits<size_t>::max()) {
+    if (!std::in_range<size_t>(stat.size)) {
       throw std::runtime_error("zip: member is too large: " + name);
     }
     const Entry entry{index, static_cast<size_t>(stat.size), std::nullopt};

@@ -10,9 +10,9 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
-#include <limits>
 #include <stdexcept>
 #include <system_error>
+#include <utility>
 
 #include <executorch/backends/native/runtime/deserialize/DeserializeError.h>
 
@@ -82,9 +82,8 @@ OwnedBytes OwnedBytes::read_file(const std::string& path, uint64_t max_size) {
   if (error) {
     throw std::runtime_error("cannot size " + path + ": " + error.message());
   }
-  if (file_size > std::numeric_limits<size_t>::max() ||
-      file_size >
-          static_cast<uintmax_t>(std::numeric_limits<std::streamsize>::max())) {
+  if (!std::in_range<size_t>(file_size) ||
+      !std::in_range<std::streamsize>(file_size)) {
     throw std::runtime_error("cannot read " + path + ": file is too large");
   }
   if (file_size > max_size) {
@@ -137,7 +136,7 @@ OwnedBytes OwnedBytes::map_file(const std::string& path, uint64_t max_size) {
     ::close(fd);
     throw ResourceLimitError("file exceeds size limit: " + path);
   }
-  if (static_cast<uintmax_t>(st.st_size) > std::numeric_limits<size_t>::max()) {
+  if (!std::in_range<size_t>(st.st_size)) {
     ::close(fd);
     throw std::runtime_error("cannot mmap " + path + ": file is too large");
   }

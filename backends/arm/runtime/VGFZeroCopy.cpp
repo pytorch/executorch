@@ -11,6 +11,7 @@
 #include <executorch/runtime/platform/log.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <limits>
 #include <utility>
 
@@ -361,8 +362,11 @@ VgfZeroCopyImportResult VgfZeroCopyImportManager::try_import_candidate(
   if (host_pointer == nullptr) {
     return reject(VgfZeroCopyImportRejectionReason::kNullHostPointer, false);
   }
-  if (logical_nbytes == 0 ||
-      logical_nbytes > std::numeric_limits<VkDeviceSize>::max()) {
+  static_assert(
+      std::numeric_limits<size_t>::max() <=
+          std::numeric_limits<VkDeviceSize>::max(),
+      "size_t must fit in VkDeviceSize");
+  if (logical_nbytes == 0) {
     return reject(VgfZeroCopyImportRejectionReason::kInvalidHostRange, false);
   }
 
@@ -436,7 +440,7 @@ VgfZeroCopyImportResult VgfZeroCopyImportManager::try_import_candidate(
         VgfZeroCopyImportRejectionReason::kVulkanFunctionUnavailable, false);
   }
 
-  if (metadata.dimensions.size() > std::numeric_limits<uint32_t>::max() ||
+  if (metadata.dimensions.size() > UINT32_MAX ||
       (metadata.has_explicit_strides &&
        metadata.strides.size() != metadata.dimensions.size())) {
     return reject(VgfZeroCopyImportRejectionReason::kMetadataIneligible, false);

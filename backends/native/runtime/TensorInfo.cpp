@@ -43,8 +43,7 @@ TensorInfo::TensorInfo(
 
   numel_ = 1;
   for (const int64_t size : sizes_) {
-    if (size < 0 ||
-        static_cast<uint64_t>(size) > std::numeric_limits<size_t>::max() ||
+    if (!std::in_range<size_t>(size) ||
         !detail::checked_mul(numel_, static_cast<size_t>(size), numel_)) {
       throw std::runtime_error("tensor element count is not representable");
     }
