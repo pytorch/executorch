@@ -889,6 +889,81 @@ class DiffusersExportTest(unittest.TestCase):
             with self.assertRaisesRegex(OSError, "write failed"):
                 write_pte(edge_program, Path(directory) / "diffusion")
 
+    @mock.patch("executorch.export.huggingface.diffusers.backends.export_to_cuda")
+    @mock.patch(
+        "executorch.export.huggingface.diffusers.export.resolve_huggingface_pipeline"
+    )
+    def test_cli_dispatches_quantization_to_cuda(
+        self, resolve_pipeline, export_to_cuda
+    ):
+        resolve_pipeline.return_value = resolved_pipeline(
+            SD15PipelineExportSpec(), max_sequence_lengths=(77,)
+        )
+        main(
+            [
+                "model",
+                "model.pte",
+                "--backend",
+                "cuda",
+                "--denoiser-dtype",
+                "bfloat16",
+                "--qlinear",
+                "4w",
+                "--qlinear-group-size",
+                "32",
+            ]
+        )
+        kwargs = export_to_cuda.call_args.kwargs
+        self.assertEqual(kwargs["config"].model.denoiser_dtype, torch.bfloat16)
+        self.assertEqual((kwargs["qlinear"], kwargs["qlinear_group_size"]), ("4w", 32))
+        self.assertIs(kwargs["pipeline"], resolve_pipeline.return_value)
+
+    @mock.patch("executorch.export.huggingface.diffusers.backends.export_to_coreai")
+    @mock.patch(
+        "executorch.export.huggingface.diffusers.export.resolve_huggingface_pipeline"
+    )
+    def test_cli_dispatches_to_coreai(self, resolve_pipeline, export_to_coreai):
+        resolve_pipeline.return_value = resolved_pipeline(SDXLPipelineExportSpec())
+        main(
+            [
+                "stabilityai/stable-diffusion-xl-base-1.0",
+                "sdxl.pte",
+                "--backend",
+                "coreai",
+                "--height",
+                "512",
+                "--width",
+                "512",
+                "--denoiser-dtype",
+                "float16",
+            ]
+        )
+        export_config = export_to_coreai.call_args.kwargs["config"]
+        self.assertEqual(export_config.model.height, 512)
+        self.assertEqual(export_config.model.denoiser_dtype, torch.float16)
+        self.assertIs(
+            export_to_coreai.call_args.kwargs["pipeline"],
+            resolve_pipeline.return_value,
+        )
+
+    @mock.patch(
+        "executorch.export.huggingface.diffusers.export.resolve_huggingface_pipeline"
+    )
+    def test_coreai_rejects_unsupported_options_before_loading(self, resolve_pipeline):
+        for options in (
+            ["--dynamic-shapes"],
+            ["--qlinear", "4w"],
+            ["--qlinear-group-size", "64"],
+            ["--text-encoder-dtype", "bfloat16"],
+            ["--denoiser-dtype", "bfloat16"],
+            ["--vae-dtype", "bfloat16"],
+        ):
+            with self.subTest(options=options), mock.patch("sys.stderr"):
+                with self.assertRaises(SystemExit) as error:
+                    main(["model", "model.pte", "--backend", "coreai", *options])
+                self.assertEqual(error.exception.code, 2)
+        resolve_pipeline.assert_not_called()
+
     @mock.patch("executorch.export.huggingface.diffusers.backends.export_to_mlx")
     @mock.patch(
         "executorch.export.huggingface.diffusers.export.resolve_huggingface_pipeline"

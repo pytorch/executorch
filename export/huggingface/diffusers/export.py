@@ -233,7 +233,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Export a diffusion model to PTE")
     parser.add_argument("model_id")
     parser.add_argument("output_path", type=Path)
-    parser.add_argument("--backend", choices=("mlx",), required=True)
+    parser.add_argument("--backend", choices=("mlx", "cuda", "coreai"), required=True)
     parser.add_argument("--height", type=int)
     parser.add_argument("--width", type=int)
     parser.add_argument("--max-sequence-length", type=int)
@@ -259,6 +259,17 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--min-size", type=int, default=256)
     parser.add_argument("--max-size", type=int, default=1024)
     args = parser.parse_args(argv)
+    if args.backend == "coreai":
+        if args.dynamic_shapes:
+            parser.error("CoreAI diffusion export currently requires static shapes")
+        if args.qlinear is not None or args.qlinear_group_size is not None:
+            parser.error("--qlinear is not supported for CoreAI export")
+        if "bfloat16" in (
+            args.text_encoder_dtype,
+            args.denoiser_dtype,
+            args.vae_dtype,
+        ):
+            parser.error("CoreAI components must use float16 or float32")
 
     pipeline = resolve_huggingface_pipeline(args.model_id, args.revision)
     height = (
@@ -298,6 +309,28 @@ def main(argv: Sequence[str] | None = None) -> None:
             config=config,
             qlinear=args.qlinear,
             qlinear_group_size=args.qlinear_group_size,
+        )
+    elif args.backend == "cuda":
+        from .backends import export_to_cuda
+
+        export_to_cuda(
+            args.model_id,
+            args.output_path,
+            revision=args.revision,
+            pipeline=pipeline,
+            config=config,
+            qlinear=args.qlinear,
+            qlinear_group_size=args.qlinear_group_size,
+        )
+    elif args.backend == "coreai":
+        from .backends import export_to_coreai
+
+        export_to_coreai(
+            args.model_id,
+            args.output_path,
+            revision=args.revision,
+            pipeline=pipeline,
+            config=config,
         )
 
 
