@@ -8,6 +8,8 @@
 
 set -ex
 
+source "$(dirname "${BASH_SOURCE[0]}")/samsung-device-lifecycle.sh"
+
 API_KEY=$SAMSUNG_AI_LITECORE_KEY
 if [[ -z "${API_KEY}" ]]; then
   echo "ERROR: It didn't set up SAMSUNG_AI_LITECORE_KEY." >&2
@@ -99,26 +101,56 @@ install_devicefarm_cli() {
 
 acquire_device() {
   export DEVICE_ACQUIRED=0
+  export DEVICE_QUEUED=0
+  export DEVICE_REQUESTED=0
+  local timeout_sec="${SAMSUNG_DEVICE_TIMEOUT_SECONDS:-1800}"
+  if [[ ! "$timeout_sec" =~ ^[1-9][0-9]{0,8}$ ]]; then
+    echo "::error::SAMSUNG_DEVICE_TIMEOUT_SECONDS must be a positive integer below 1000000000." >&2
+    return 1
+  fi
+
   if ! command -v devicefarm-cli >/dev/null 2>&1; then
     echo "[WARN] devicefarm-cli is not installed." >&2
     return 1
   fi
 
   echo "[INFO] Enqueue request (-Q)..."
-  # Enqueue device request
-  if ! devicefarm-cli -Q; then
+  # A failed enqueue can still have reached the service; keep that outcome explicit.
+  export DEVICE_REQUESTED=1
+  if ! samsung_device_command none devicefarm-cli -Q; then
+    echo "$SAMSUNG_COMMAND_OUTPUT"
     echo "::warning::Failed to enqueue device request (-Q)." >&2
     echo "[WARN] Device queue registration failed - continuing without device." >&2
     return 0
   fi
 
+  export DEVICE_QUEUED=1
+  echo "$SAMSUNG_COMMAND_OUTPUT"
+
   local interval_sec=60
-  local out status
+  local deadline=$((SECONDS + timeout_sec))
+  local out="" status remaining_sec poll_status
 
-  echo "[INFO] Polling assignment status (-C) every ${interval_sec}s..."
+  echo "[INFO] Polling assignment status (-C) every ${interval_sec}s for up to ${timeout_sec}s..."
 
-  while true; do
-    out="$(devicefarm-cli -C 2>&1)"
+  while (( SECONDS < deadline )); do
+    remaining_sec=$((deadline - SECONDS))
+    if (( remaining_sec <= 0 )); then
+      break
+    fi
+    if samsung_device_command "$remaining_sec" devicefarm-cli -C; then
+      poll_status=0
+    else
+      poll_status=$?
+    fi
+    out="$SAMSUNG_COMMAND_OUTPUT"
+    if (( poll_status == 124 || poll_status == 137 )); then
+      break
+    elif (( poll_status != 0 )); then
+      echo "::error::Failed to poll Samsung device assignment (exit ${poll_status})." >&2
+      echo "$out" >&2
+      return "$poll_status"
+    fi
 
     # Determine status: assigned / waiting / unavailable
     if printf '%s' "$out" | grep -qiE 'waiting|not[[:space:]-]*assigned'; then
@@ -133,15 +165,23 @@ acquire_device() {
       assigned)
 	echo "[INFO] Device assigned."
 	echo "$out"
-	# Execute test command
-	devicefarm-cli -E "ls /" || true
 	export DEVICE_ACQUIRED=1
+	export DEVICE_QUEUED=0
+	# Mark acquisition before the interruptible probe.
+	samsung_device_command none devicefarm-cli -E "ls /" || true
+	echo "$SAMSUNG_COMMAND_OUTPUT"
 	echo "[INFO] Device successfully assigned and connected."
 	return 0
 	;;
 	waiting)
 	  echo "[INFO] Status: $status"
-	  sleep "$interval_sec"
+	  remaining_sec=$((deadline - SECONDS))
+	  if (( remaining_sec > interval_sec )); then
+	    remaining_sec=$interval_sec
+	  fi
+	  if (( remaining_sec > 0 )); then
+	    samsung_device_command none sleep "$remaining_sec"
+	  fi
 	  ;;
 	*)
 	  echo "[WARN] Unknown status from -C. Output:"
@@ -150,6 +190,10 @@ acquire_device() {
 	  ;;
      esac
    done
+
+  echo "::error::Timed out waiting for Samsung device assignment after ${timeout_sec}s." >&2
+  echo "$out" >&2
+  return 1
 }
 
 install_enn_backend() {
