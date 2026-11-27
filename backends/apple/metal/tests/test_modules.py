@@ -304,6 +304,124 @@ MODULE_REGISTRY["linear_bias_batch1"] = {
 
 
 # -------------------------------------------------------------------------
+# Views with a storage offset. The chunks below are views into the first
+# linear's output; the second chunk starts partway into that buffer. The cat
+# variants also write through such views.
+# -------------------------------------------------------------------------
+class LinearChunkLastDim(nn.Module):
+    """Chunking the last dim gives a non-packed view (its row stride is still
+    the parent's), which reinterpret_tensor has to materialize."""
+
+    def __init__(self):
+        super().__init__()
+        self.linear1 = nn.Linear(7, 16, bias=False)
+        self.linear2 = nn.Linear(8, 5, bias=False)
+
+    def forward(self, x):
+        _, second = self.linear1(x).chunk(2, dim=-1)
+        return self.linear2(second)
+
+
+MODULE_REGISTRY["linear_chunk_last_dim"] = {
+    "model_class": LinearChunkLastDim,
+    "input_shapes": [(12, 7)],
+    "description": "Linear on the second last-dim chunk of another linear's output",
+}
+
+
+# -------------------------------------------------------------------------
+class LinearChunkFirstDim(nn.Module):
+    """Chunking the first dim gives a packed view that only differs from its
+    parent by the storage offset."""
+
+    def __init__(self):
+        super().__init__()
+        self.linear1 = nn.Linear(7, 16, bias=False)
+        self.linear2 = nn.Linear(16, 5, bias=False)
+
+    def forward(self, x):
+        _, second = self.linear1(x).chunk(2, dim=0)
+        return self.linear2(second)
+
+
+MODULE_REGISTRY["linear_chunk_first_dim"] = {
+    "model_class": LinearChunkFirstDim,
+    "input_shapes": [(12, 7)],
+    "description": "Linear on the second first-dim chunk of another linear's output",
+}
+
+
+# -------------------------------------------------------------------------
+class LinearChunkCatLastDim(nn.Module):
+    """Inductor builds the cat result by writing through views of it, then the
+    second linear reads the whole buffer."""
+
+    def __init__(self):
+        super().__init__()
+        self.linear1 = nn.Linear(7, 16, bias=False)
+        self.linear2 = nn.Linear(24, 5, bias=False)
+
+    def forward(self, x):
+        first, second = self.linear1(x).chunk(2, dim=-1)
+        return self.linear2(
+            torch.cat([first, second, torch.relu(second) * 2.0], dim=-1)
+        )
+
+
+MODULE_REGISTRY["linear_chunk_cat_last_dim"] = {
+    "model_class": LinearChunkCatLastDim,
+    "input_shapes": [(12, 7)],
+    "description": "Linear on a last-dim cat assembled from chunks of another linear's output",
+    # The slices of a last-dim cat are non-packed views, which
+    # aoti_torch__reinterpret_tensor materializes into a copy. Writes through
+    # them land in the copy and never reach the cat buffer.
+    "skip": "Writes through a non-packed view are lost (view is materialized)",
+}
+
+
+# -------------------------------------------------------------------------
+class LinearChunkCatFirstDim(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear1 = nn.Linear(7, 16, bias=False)
+        self.linear2 = nn.Linear(16, 5, bias=False)
+
+    def forward(self, x):
+        first, second = self.linear1(x).chunk(2, dim=0)
+        return self.linear2(torch.cat([first, second, torch.relu(second) * 2.0], dim=0))
+
+
+MODULE_REGISTRY["linear_chunk_cat_first_dim"] = {
+    "model_class": LinearChunkCatFirstDim,
+    "input_shapes": [(12, 7)],
+    "description": "Linear on a first-dim cat assembled from chunks of another linear's output",
+}
+
+
+# -------------------------------------------------------------------------
+class LinearNestedChunk(nn.Module):
+    """A view of a view: the last quarter of the first linear's output, taken
+    as the second chunk of its second chunk."""
+
+    def __init__(self):
+        super().__init__()
+        self.linear1 = nn.Linear(7, 16, bias=False)
+        self.linear2 = nn.Linear(16, 5, bias=False)
+
+    def forward(self, x):
+        _, second = self.linear1(x).chunk(2, dim=0)
+        _, last = second.chunk(2, dim=0)
+        return self.linear2(last)
+
+
+MODULE_REGISTRY["linear_nested_chunk"] = {
+    "model_class": LinearNestedChunk,
+    "input_shapes": [(12, 7)],
+    "description": "Linear on a chunk of a chunk of another linear's output",
+}
+
+
+# -------------------------------------------------------------------------
 class LinearNoBiasInt4(nn.Module):
     def __init__(self):
         super().__init__()

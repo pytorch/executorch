@@ -100,8 +100,14 @@ extern std::unordered_map<GraphCacheKey, CachedGraph, GraphCacheKeyHash>
     graph_cache;
 extern CacheStats cache_stats;
 
-MTLBuffer_t
-get_mtl_buffer(Tensor* tensor, const char* op_name, const char* tensor_name);
+// The buffer to feed a graph for `tensor`. A tensor that starts partway into
+// its buffer gets an aliasing buffer, and `*settle_aliases` is then set: pass
+// it to the executeMPSGraph call that runs the graph this buffer feeds.
+MTLBuffer_t get_mtl_buffer(
+    Tensor* tensor,
+    const char* op_name,
+    const char* tensor_name,
+    bool* settle_aliases);
 MTLBuffer_t allocate_mtl_buffer(void** data_ptr, size_t size_bytes);
 
 } // namespace metal
