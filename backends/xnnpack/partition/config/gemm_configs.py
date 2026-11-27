@@ -6,7 +6,7 @@
 
 import logging
 from itertools import chain
-from typing import cast, List, Optional, Tuple
+from typing import cast, Dict, List, Optional, Tuple
 
 import torch
 from executorch.backends.transforms import get_shape
@@ -42,6 +42,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from torch.export import ExportedProgram
 from torch.fx.experimental.symbolic_shapes import free_symbols, statically_known_true
+from torch.fx.passes.utils.fuser_utils import validate_partition
 from torch.fx.passes.utils.source_matcher_utils import (
     get_source_partitions,
     SourcePartition,
@@ -63,6 +64,11 @@ def get_static_param_deps(  # noqa: C901
     have users outside of the computation, and only user, and node may not be
     larger than the params it frees. The computing nodes add user's name to
     their COMPUTED_PARAM_TAG set.
+
+    The other outputs of a multi-output op in the computation, such as the
+    split of nn.MultiheadAttention's packed in_proj_weight, may also be used,
+    as the same argument of GEMMs like user. They count toward the size, and
+    GEMMConfig.check_constraints accepts user only together with those GEMMs.
     """
     if is_param_node(ep, node):
         return [node]
@@ -104,15 +110,32 @@ def get_static_param_deps(  # noqa: C901
             return None
         pending.extend(dep.all_input_nodes)
 
+    # By name, as to_edge_transform_and_lower renames the GEMMs it keeps from
+    # decomposing while it checks them.
+    kind = format_target_name(user.target.__name__)
+    positions = [arg is node for arg in user.args]
+    shared = []
     for dep in deps:
         for u in dep.users:
-            if u not in deps and not (
-                u is user and (dep is node or dep.op == "placeholder")
+            if u in deps or (u is user and (dep is node or dep.op == "placeholder")):
+                continue
+            if (
+                is_getitem(u)
+                and u.users
+                and all(
+                    gemm.op == "call_function"
+                    and format_target_name(gemm.target.__name__) == kind
+                    and [arg is u for arg in gemm.args] == positions
+                    for gemm in u.users
+                )
             ):
-                why(user, f"{dep} is also used by {u}")
-                return None
+                shared.append(u)
+                continue
+            why(user, f"{dep} is also used by {u}")
+            return None
     removed = [dep for dep in deps if dep.op == "placeholder" and user not in dep.users]
-    if node.meta["val"].nbytes > sum(param.meta["val"].nbytes for param in removed):
+    folded = sum(n.meta["val"].nbytes for n in [node, *shared])
+    if folded > sum(param.meta["val"].nbytes for param in removed):
         why(user, f"folding {node} would grow the program")
         return None
 
@@ -139,12 +162,71 @@ class GEMMConfig(XNNPartitionerConfig):
         self.fused_acts = fused_acts
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        """
+        GEMMs whose weights or biases are outputs of one multi-output op end up
+        in one partition, where preprocess folds the op. So node is accepted
+        only together with all of them, and only if that partition has no node
+        with too many dims and creates no cycle.
+        """
+        group: Dict[torch.fx.Node, List[torch.fx.Node]] = {}
+        pending = [node]
+        while pending:
+            gemm = pending.pop()
+            if gemm in group:
+                continue
+            deps = self._check_gemm(gemm, ep)
+            if deps is None:
+                if gemm is not node:
+                    why(
+                        node,
+                        f"{gemm}, which shares a weight or bias computation with it, is not partitioned",
+                    )
+                return False
+            group[gemm] = deps
+            for dep in deps:
+                for item in dep.users:
+                    if is_getitem(item) and item not in deps:
+                        pending.extend(
+                            user
+                            for user in item.users
+                            if user.op == "call_function"
+                            and format_target_name(user.target.__name__)
+                            == self.target_name
+                        )
+        if len(group) == 1:
+            return True
+
+        partition = list(chain(group, *group.values()))
+        # get_partition rejects a GEMM whose partition has a node with too many dims.
+        for n in partition:
+            if not self._check_tensor_ranks(n):
+                why(
+                    node,
+                    f"merged with the GEMMs that share its weight or bias computation, its partition takes {n}, which has too many dims",
+                )
+                return False
+        if not validate_partition([n for n in partition if n.op != "placeholder"]):
+            why(
+                node,
+                "merging it with the GEMMs that share its weight or bias computation creates a cycle",
+            )
+            return False
+        return True
+
+    def _check_gemm(
+        self, node: torch.fx.Node, ep: ExportedProgram
+    ) -> Optional[List[torch.fx.Node]]:
+        """
+        Returns the dependencies of a single GEMM, or None if it is rejected.
+        check_constraints runs this on every GEMM of a group, so subclasses add
+        their checks here.
+        """
         if not self.check_common_constraints(node, ep):
             # short circuit if we don't pass common constraints
-            return False
+            return None
 
-        is_valid, _ = self.get_deps(node, ep)
-        return is_valid
+        is_valid, deps = self.get_deps(node, ep)
+        return deps if is_valid else None
 
     def get_node_and_deps(
         self, node: torch.fx.Node, ep: ExportedProgram
@@ -426,12 +508,15 @@ class ConvolutionConfig(GEMMConfig):
             **kwargs,
         )
 
-    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+    def _check_gemm(
+        self, node: torch.fx.Node, ep: ExportedProgram
+    ) -> Optional[List[torch.fx.Node]]:
         """
         Currently we have no support for convolution 3d
         """
-        if not super().check_constraints(node, ep):
-            return False
+        deps = super()._check_gemm(node, ep)
+        if deps is None:
+            return None
 
         kernel_node = get_input_node(node, 1)
         kernel_shape = get_shape(kernel_node)
@@ -441,7 +526,7 @@ class ConvolutionConfig(GEMMConfig):
         conv_dim = len(kernel_shape) - 2
         if conv_dim > 2:
             why(node, "Only support 1D + 2D Conv")
-            return False  # Only support 1D + 2D Conv
+            return None  # Only support 1D + 2D Conv
 
         # Conv1d lowering inserts reshapes with at most one inferred dimension.
         if (
@@ -452,7 +537,7 @@ class ConvolutionConfig(GEMMConfig):
             > 1
         ):
             why(node, "Conv1d reshapes only support one dynamic dimension")
-            return False
+            return None
 
         weight_quant_params = QuantParams.from_weights(kernel_node, ep)
         groups = cast(int, node.args[8])
@@ -466,7 +551,7 @@ class ConvolutionConfig(GEMMConfig):
                 node,
                 "XNNPACK only supports standard 2D convolutions for dynamic quantization",
             )
-            return False
+            return None
 
         if (
             is_transpose
@@ -479,8 +564,8 @@ class ConvolutionConfig(GEMMConfig):
                 "XNNPACK does not support per input channel quantization"
                 "for transpose convolutions with groups > 1",
             )
-            return False
-        return True
+            return None
+        return deps
 
     def _get_act_deps(
         self, node: torch.fx.Node, ep: ExportedProgram, precision: ConfigPrecisionType
@@ -557,11 +642,13 @@ class AddmmConfig(GEMMConfig):
 
         return super()._get_weight_deps(node, ep, precision)
 
-    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+    def _check_gemm(
+        self, node: torch.fx.Node, ep: ExportedProgram
+    ) -> Optional[List[torch.fx.Node]]:
         # XNNPACK's fully connected op cannot scale the bias or the product.
         if node.kwargs.get("beta", 1) != 1 or node.kwargs.get("alpha", 1) != 1:
             why(node, "Addmm with beta or alpha other than 1 is not supported")
-            return False
+            return None
         # The fully connected op also takes 1 bias value per output channel.
         # MMConfig inherits this check, and an mm has no bias argument.
         if self.bias_idx is not None:
@@ -572,8 +659,8 @@ class AddmmConfig(GEMMConfig):
                 bias.dim() > 0 and not statically_known_true(bias.shape[-1] == channels)
             ):
                 why(node, "Addmm bias must have 1 value per output channel")
-                return False
-        return super().check_constraints(node, ep)
+                return None
+        return super()._check_gemm(node, ep)
 
     def get_deps(
         self,
