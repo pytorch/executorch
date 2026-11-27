@@ -2,7 +2,8 @@
 
 This directory provides experimental export and Python runtime support for
 Hugging Face checkpoints using `StableDiffusionPipeline`,
-`StableDiffusionXLPipeline`, or `FluxPipeline`. The exported PTE stores
+`StableDiffusionXLPipeline`, `FluxPipeline`, `Flux2Pipeline`, or
+`Flux2KleinPipeline`. The exported PTE stores
 the text encoder, denoiser and VAE methods together with the metadata needed
 by the runner.
 
@@ -34,6 +35,10 @@ Use `stabilityai/stable-diffusion-xl-base-1.0` to export SDXL.
 
 Use `black-forest-labs/FLUX.1-schnell` or `black-forest-labs/FLUX.1-dev` to
 export FLUX.
+
+Use `black-forest-labs/FLUX.2-dev`, `black-forest-labs/FLUX.2-klein-4B`,
+`black-forest-labs/FLUX.2-klein-9B`, `black-forest-labs/FLUX.2-klein-base-4B`,
+or `black-forest-labs/FLUX.2-klein-base-9B` to export FLUX.2.
 
 ### Run
 

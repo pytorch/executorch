@@ -21,7 +21,10 @@ from executorch.export.huggingface.diffusers.config import (
 from executorch.export.huggingface.diffusers.export import build_diffusion_metadata
 from executorch.export.huggingface.diffusers.pipeline_specs import DiffusionModelInfo
 from executorch.extension.diffusers.metadata import DiffusionMetadata, METADATA_METHODS
+
 from executorch.extension.diffusers.pipeline_behaviors import (
+    Flux2KleinPipelineBehavior,
+    Flux2PipelineBehavior,
     FluxPipelineBehavior,
     SD15PipelineBehavior,
     SDXLPipelineBehavior,
@@ -30,6 +33,11 @@ from executorch.extension.diffusers.pipeline_behaviors.flux import (
     image_position_ids,
     pack_latents,
     unpack_latents,
+)
+from executorch.extension.diffusers.pipeline_behaviors.flux2 import (
+    compute_empirical_mu,
+    flux2_image_position_ids,
+    flux2_text_position_ids,
 )
 from executorch.extension.diffusers.runner import (
     _cast_floating_tensors,
@@ -477,7 +485,8 @@ class RunnerTest(unittest.TestCase):
             _Program("sd15"), [_TokenizerWithMask()], FakeScheduler()
         )
         runner.pipeline_behavior = SimpleNamespace(
-            text_encoder_input_names=(("input_ids", "attention_mask"),)
+            text_encoder_input_names=(("input_ids", "attention_mask"),),
+            tokenize_prompt=SD15PipelineBehavior().tokenize_prompt,
         )
         inputs = runner._tokenize("cat")[0]
         self.assertEqual(tuple(inputs[1].shape), (1, 77))
@@ -589,6 +598,158 @@ class RunnerTest(unittest.TestCase):
         )
         image = runner.generate("cat", steps=2, height=8, width=16)
         self.assertEqual(image.shape, (1, 4, 1, 2))
+
+
+class Flux2BehaviorTest(unittest.TestCase):
+    def test_position_ids_preserve_long_text_coordinates(self):
+        behavior = Flux2KleinPipelineBehavior()
+        inputs = behavior.prepare_denoiser_inputs(
+            torch.zeros(1, 6, 16, dtype=torch.bfloat16),
+            torch.tensor([500.0]),
+            (torch.zeros(1, 512, 24, dtype=torch.bfloat16),),
+            height=32,
+            width=48,
+            vae_scale_factor=8,
+            dtype=torch.bfloat16,
+            guidance_scale=None,
+        )
+        self.assertEqual(inputs[3].dtype, torch.int64)
+        self.assertEqual(inputs[3][0, 511].tolist(), [0, 0, 0, 511])
+        torch.testing.assert_close(inputs[1], torch.tensor([0.5], dtype=torch.bfloat16))
+        torch.testing.assert_close(
+            inputs[4],
+            torch.tensor(
+                [
+                    [
+                        [0, 0, 0, 0],
+                        [0, 0, 1, 0],
+                        [0, 0, 2, 0],
+                        [0, 1, 0, 0],
+                        [0, 1, 1, 0],
+                        [0, 1, 2, 0],
+                    ]
+                ]
+            ),
+        )
+
+    def test_noise_is_sampled_in_patched_channel_order(self):
+        behavior = Flux2PipelineBehavior()
+        actual = behavior.create_latents(
+            (1, 6, 16),
+            height=32,
+            width=48,
+            vae_scale_factor=8,
+            generator=torch.Generator().manual_seed(9),
+            dtype=torch.float32,
+            scheduler=None,
+        )
+        expected = torch.randn(1, 16, 2, 3, generator=torch.Generator().manual_seed(9))
+        self.assertTrue(actual.is_contiguous())
+        torch.testing.assert_close(actual, expected.flatten(2).transpose(1, 2))
+        decoded = behavior.prepare_decode_latents(
+            actual, height=32, width=48, vae_scale_factor=8
+        )
+        self.assertTrue(decoded.is_contiguous())
+        torch.testing.assert_close(decoded, expected)
+
+        noncontiguous = expected.flatten(2).transpose(1, 2)
+        denoiser_inputs = behavior.prepare_denoiser_inputs(
+            noncontiguous,
+            torch.zeros(1),
+            (torch.zeros(1, 8, 24),),
+            height=32,
+            width=48,
+            vae_scale_factor=8,
+            dtype=torch.float32,
+            guidance_scale=4.0,
+        )
+        self.assertTrue(denoiser_inputs[0].is_contiguous())
+
+    def test_klein_formats_chat_and_returns_attention_mask(self):
+        tokenizer = mock.Mock()
+        tokenizer.apply_chat_template.return_value = "formatted cat"
+        encoding = {
+            "input_ids": torch.zeros(1, 8, dtype=torch.long),
+            "attention_mask": torch.ones(1, 8, dtype=torch.long),
+        }
+        tokenizer.return_value = encoding
+        actual = Flux2KleinPipelineBehavior().tokenize_prompt(
+            tokenizer, "cat", max_length=8
+        )
+        self.assertIs(actual, encoding)
+        tokenizer.apply_chat_template.assert_called_once_with(
+            [{"role": "user", "content": "cat"}],
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=False,
+        )
+        tokenizer.assert_called_once_with(
+            "formatted cat",
+            padding="max_length",
+            max_length=8,
+            truncation=True,
+            return_tensors="pt",
+        )
+
+    def test_klein_cfg_uses_empty_negative_conditioning_by_default(self):
+        self.assertTrue(Flux2KleinPipelineBehavior().should_use_cfg(4.0, None))
+        self.assertFalse(Flux2KleinPipelineBehavior().should_use_cfg(1.0, None))
+
+    def test_schedule_respects_flow_sigmas(self):
+        for use_flow_sigmas in (False, True):
+            with self.subTest(use_flow_sigmas=use_flow_sigmas):
+                scheduler = mock.Mock()
+                scheduler.config = SimpleNamespace(use_flow_sigmas=use_flow_sigmas)
+                scheduler.timesteps = torch.arange(4)
+                actual = Flux2PipelineBehavior().prepare_schedule(
+                    scheduler, 4, height=32, width=48, vae_scale_factor=8
+                )
+                self.assertIs(actual, scheduler.timesteps)
+                scheduler.set_timesteps.assert_called_once_with(
+                    4,
+                    sigmas=None if use_flow_sigmas else [1.0, 0.75, 0.5, 0.25],
+                    mu=compute_empirical_mu(6, 4),
+                )
+                scheduler.set_begin_index.assert_called_once_with(0)
+
+    def test_reference_position_ids_schedule_and_mistral_prompt_format(self):
+        try:
+            from diffusers.pipelines.flux2.pipeline_flux2 import (
+                compute_empirical_mu as reference_mu,
+                Flux2Pipeline,
+                format_input,
+            )
+        except ImportError:
+            self.skipTest("requires Diffusers FLUX.2 support")
+        torch.testing.assert_close(
+            flux2_text_position_ids(512),
+            Flux2Pipeline._prepare_text_ids(torch.zeros(1, 512, 24)),
+        )
+        torch.testing.assert_close(
+            flux2_image_position_ids(2, 3),
+            Flux2Pipeline._prepare_latent_ids(torch.zeros(1, 16, 2, 3)),
+        )
+        for tokens in (6, 4096, 5000):
+            for steps in (4, 50):
+                self.assertAlmostEqual(
+                    compute_empirical_mu(tokens, steps), reference_mu(tokens, steps)
+                )
+
+        processor = mock.Mock()
+        actual = Flux2PipelineBehavior().tokenize_prompt(
+            processor, "cat [IMG]", max_length=8
+        )
+        self.assertIs(actual, processor.apply_chat_template.return_value)
+        processor.apply_chat_template.assert_called_once_with(
+            format_input(["cat [IMG]"]),
+            add_generation_prompt=False,
+            tokenize=True,
+            return_dict=True,
+            return_tensors="pt",
+            padding="max_length",
+            truncation=True,
+            max_length=8,
+        )
 
 
 if __name__ == "__main__":
