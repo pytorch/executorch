@@ -8,6 +8,7 @@
 
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorchBackend.h>
 #include <executorch/runtime/core/memory_allocator.h>
+#include <executorch/runtime/platform/runtime.h>
 #include <gtest/gtest.h>
 
 #include <array>
@@ -19,8 +20,14 @@
 
 namespace executorch::backends::qnn {
 
+using runtime::Error;
+
 class QnnExecuTorchBackendTest : public ::testing::Test {
  protected:
+  void SetUp() override {
+    runtime::runtime_init();
+  }
+
   using DelegateKey = QnnExecuTorchBackend::DelegateKey;
   using SpillFillKey = QnnExecuTorchBackend::SpillFillKey;
   using SpillFillGroup = QnnExecuTorchBackend::SpillFillGroup;
@@ -63,6 +70,95 @@ class QnnExecuTorchBackendTest : public ::testing::Test {
   decltype(QnnExecuTorchBackend::delegate_map_rev_)& reverse_map_ =
       backend_.delegate_map_rev_;
 };
+
+TEST_F(QnnExecuTorchBackendTest, AcceptsLpaiPriorities) {
+  runtime::BackendOptionContext context;
+  runtime::BackendOptions<1> options;
+  for (int priority : {0, 50, 100, 150, 200, 300, 400, 500}) {
+    SCOPED_TRACE(priority);
+    ASSERT_EQ(
+        options.set_option(QNN_RUNTIME_LPAI_PRIORITY, priority), Error::Ok);
+    auto view = options.view();
+    ASSERT_EQ(backend_.set_option(context, view), Error::Ok);
+    view[0].value = -1;
+    ASSERT_EQ(backend_.get_option(context, view), Error::Ok);
+    EXPECT_EQ(std::get<int>(view[0].value), priority);
+  }
+}
+
+TEST_F(
+    QnnExecuTorchBackendTest,
+    RejectsInvalidLpaiPrioritiesWithoutChangingState) {
+  runtime::BackendOptionContext context;
+  runtime::BackendOptions<1> options;
+  ASSERT_EQ(options.set_option(QNN_RUNTIME_LPAI_PRIORITY, 100), Error::Ok);
+  auto view = options.view();
+  EXPECT_EQ(backend_.get_option(context, view), Error::Internal);
+  const std::array<runtime::OptionValue, 6> invalid_values{
+      -1,
+      125,
+      501,
+      0x7fffffff,
+      true,
+      std::array<char, runtime::kMaxOptionValueLength>{},
+  };
+  for (bool already_set : {false, true}) {
+    if (already_set) {
+      view[0].value = 100;
+      ASSERT_EQ(backend_.set_option(context, view), Error::Ok);
+    }
+    for (const auto& invalid : invalid_values) {
+      view[0].value = invalid;
+      EXPECT_EQ(backend_.set_option(context, view), Error::InvalidArgument);
+      EXPECT_EQ(
+          backend_.get_option(context, view),
+          already_set ? Error::Ok : Error::Internal);
+      if (already_set) {
+        EXPECT_EQ(std::get<int>(view[0].value), 100);
+      }
+    }
+  }
+}
+
+TEST_F(
+    QnnExecuTorchBackendTest,
+    InvalidLpaiPriorityLeavesBatchOptionsUnchanged) {
+  runtime::BackendOptionContext context;
+  runtime::BackendOptions<3> initial;
+  ASSERT_EQ(initial.set_option(QNN_RUNTIME_LPAI_FPS, 30), Error::Ok);
+  ASSERT_EQ(initial.set_option(QNN_RUNTIME_LPAI_PRIORITY, 100), Error::Ok);
+  ASSERT_EQ(
+      initial.set_option(QNN_RUNTIME_HEAP_PROFILING_PATH, "initial"),
+      Error::Ok);
+  auto initial_view = initial.view();
+  const std::array<runtime::OptionValue, 2> invalid_priorities{125, true};
+  for (bool already_set : {false, true}) {
+    SCOPED_TRACE(already_set);
+    if (already_set) {
+      ASSERT_EQ(backend_.set_option(context, initial_view), Error::Ok);
+    }
+    for (const auto& invalid_priority : invalid_priorities) {
+      runtime::BackendOptions<3> update = initial;
+      ASSERT_EQ(update.set_option(QNN_RUNTIME_LPAI_FPS, 60), Error::Ok);
+      ASSERT_EQ(
+          update.set_option(QNN_RUNTIME_HEAP_PROFILING_PATH, "updated"),
+          Error::Ok);
+      auto update_view = update.view();
+      update_view[1].value = invalid_priority;
+      EXPECT_EQ(
+          backend_.set_option(context, update_view), Error::InvalidArgument);
+      for (size_t i = 0; i < update_view.size(); ++i) {
+        runtime::Span<runtime::BackendOption> option(&update_view[i], 1);
+        EXPECT_EQ(
+            backend_.get_option(context, option),
+            already_set ? Error::Ok : Error::Internal);
+        if (already_set) {
+          EXPECT_EQ(option[0].value, initial_view[i].value);
+        }
+      }
+    }
+  }
+}
 
 TEST_F(
     QnnExecuTorchBackendTest,

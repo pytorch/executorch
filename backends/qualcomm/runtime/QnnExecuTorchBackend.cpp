@@ -262,6 +262,28 @@ executorch::runtime::Error QnnExecuTorchBackend::set_option(
     const executorch::runtime::Span<executorch::runtime::BackendOption>&
         backend_options) {
   std::lock_guard<std::mutex> guard(runtime_option_mutex_);
+  for (const auto& option : backend_options) {
+    if (strcmp(option.key, QNN_RUNTIME_LPAI_PRIORITY) != 0) {
+      continue;
+    }
+    const auto* val = std::get_if<int>(&option.value);
+    ET_CHECK_OR_RETURN_ERROR(
+        val != nullptr, InvalidArgument, "LPAI priority must be an integer.");
+    switch (*val) {
+      case QNN_PRIORITY_LOWEST:
+      case QNN_PRIORITY_NORMAL_LOW:
+      case QNN_PRIORITY_NORMAL:
+      case QNN_PRIORITY_NORMAL_HIGH:
+      case QNN_PRIORITY_HIGH:
+      case QNN_PRIORITY_HIGH_PLUS:
+      case QNN_PRIORITY_CRITICAL:
+      case QNN_PRIORITY_CRITICAL_PLUS:
+        break;
+      default:
+        ET_CHECK_OR_RETURN_ERROR(
+            false, InvalidArgument, "Invalid LPAI priority: %d.", *val);
+    }
+  }
   size_t matches = backend_options.size();
   for (const auto& option : backend_options) {
     if (strcmp(option.key, QNN_RUNTIME_LOG_LEVEL) == 0) {
@@ -304,6 +326,9 @@ executorch::runtime::Error QnnExecuTorchBackend::set_option(
         qnn_runtime_lpai_core_selection_.value = *val;
         qnn_runtime_lpai_core_selection_.is_set = true;
       }
+    } else if (strcmp(option.key, QNN_RUNTIME_LPAI_PRIORITY) == 0) {
+      qnn_runtime_lpai_priority_.value = std::get<int>(option.value);
+      qnn_runtime_lpai_priority_.is_set = true;
     } else if (strcmp(option.key, QNN_RUNTIME_HEAP_PROFILING_PATH) == 0) {
       if (auto* val =
               std::get_if<std::array<char, runtime::kMaxOptionValueLength>>(
@@ -370,6 +395,10 @@ executorch::runtime::Error QnnExecuTorchBackend::get_option(
         strcmp(backend_options[i].key, QNN_RUNTIME_LPAI_CORE_SELECTION) == 0 &&
         qnn_runtime_lpai_core_selection_.is_set) {
       backend_options[i].value = qnn_runtime_lpai_core_selection_.value;
+    } else if (
+        strcmp(backend_options[i].key, QNN_RUNTIME_LPAI_PRIORITY) == 0 &&
+        qnn_runtime_lpai_priority_.is_set) {
+      backend_options[i].value = qnn_runtime_lpai_priority_.value;
     } else if (
         strcmp(backend_options[i].key, QNN_RUNTIME_HEAP_PROFILING_PATH) == 0 &&
         qnn_runtime_heap_profiling_path_.is_set) {
