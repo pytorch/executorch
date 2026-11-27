@@ -86,11 +86,14 @@ class ExecuTorchModelPreparationStrategy(ModelPreparationStrategy):
     Args:
         model_loader_adapter: Injectable adapter for model and tokenizer
             loading. Defaults to ``DefaultModelLoaderAdapter`` if not provided.
+        export_tokenizer: Whether to export the tokenizer for the runtime and
+            report its ``runtime_tokenizer_path``.
     """
 
     def __init__(
         self,
         model_loader_adapter: Optional[ModelLoaderAdapter] = None,
+        export_tokenizer: bool = False,
     ) -> None:
         if model_loader_adapter is None:
             from executorch.backends.qualcomm.genai_pipeline.strategies.model_preparation.default_model_loader_adapter import (
@@ -99,11 +102,17 @@ class ExecuTorchModelPreparationStrategy(ModelPreparationStrategy):
 
             model_loader_adapter = DefaultModelLoaderAdapter()
         self._adapter = model_loader_adapter
+        self._export_tokenizer = export_tokenizer
 
     @property
     def adapter(self) -> ModelLoaderAdapter:
         """The model loader adapter used by this strategy."""
         return self._adapter
+
+    @property
+    def export_tokenizer(self) -> bool:
+        """Whether this strategy exports the runtime tokenizer."""
+        return self._export_tokenizer
 
     def invoke(
         self,
@@ -135,9 +144,8 @@ class ExecuTorchModelPreparationStrategy(ModelPreparationStrategy):
             output:
 
             - ``tokenizer_options``: Options passed to ``load_tokenizer``.
-            - ``export_tokenizer``: Enables runtime tokenizer export.
-            - ``tokenizer_export_options``: Options passed when tokenizer
-              export is enabled.
+            - ``tokenizer_export_options``: Options passed when the strategy
+              exports the tokenizer.
             - ``chat_template``: Fallback used only when the loaded tokenizer
               has no chat template.
 
@@ -214,7 +222,7 @@ class ExecuTorchModelPreparationStrategy(ModelPreparationStrategy):
 
             # Step 7: Optionally export tokenizer for runtime
             runtime_tokenizer_path = None
-            if extra.get("export_tokenizer", False):
+            if self._export_tokenizer:
                 logger.debug("Exporting tokenizer for runtime use")
                 output_dir = Path(context.artifact_dir) / "tokenizer"
                 runtime_tokenizer_path = self._adapter.export_tokenizer(

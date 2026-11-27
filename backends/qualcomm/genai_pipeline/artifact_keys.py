@@ -28,6 +28,8 @@ exactly, so a compiled bundle can be handed to the runner without translation.
 
 from __future__ import annotations
 
+from typing import Optional
+
 # Text decoder: the language model itself. Always present.
 ARTIFACT_TEXT_DECODER = "text_decoder"
 
@@ -58,6 +60,25 @@ ALL_ARTIFACT_KEYS = frozenset(
         ARTIFACT_VISION_ENCODER,
     }
 )
+
+
+def pte_file_name(model_name: str, artifact_key: Optional[str] = None) -> str:
+    """Return the ``.pte`` base name, without the suffix, of an artifact.
+
+    Shared by compilation, which writes ``<name>.pte``, and inference, which
+    locates it under ``--pre-gen-pte``.
+
+    Args:
+        model_name: The pipeline's model name.
+        artifact_key: One of ``ALL_ARTIFACT_KEYS`` for a component of a
+            multi-graph model, or ``None`` for a single-graph model, whose one
+            artifact is named after the model alone.
+
+    Returns:
+        The file name without the ``.pte`` suffix.
+    """
+    return model_name if artifact_key is None else f"{model_name}_{artifact_key}"
+
 
 # The decode graph's QDQ exported program, written by quantization before the
 # calibration graph is released and read back by the SQNR evaluation.

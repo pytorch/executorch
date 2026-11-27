@@ -15,6 +15,7 @@ from executorch.backends.qualcomm.genai_pipeline.configs.inference_input_config 
 )
 from executorch.backends.qualcomm.genai_pipeline.configs.inference_output_config import (
     InferenceOutputConfig,
+    InferenceResult,
 )
 from executorch.backends.qualcomm.genai_pipeline.configs.model_preparation_input_config import (
     ModelPreparationInputConfig,
@@ -34,6 +35,7 @@ __all__ = [
     "CompilationOutputConfig",
     "InferenceInputConfig",
     "InferenceOutputConfig",
+    "InferenceResult",
     "ModelPreparationInputConfig",
     "ModelPreparationOutputConfig",
     "QuantizationInputConfig",

@@ -300,8 +300,13 @@ class GenAIPipeline:
             logger.info("[GenAIPipeline] InferenceStage started")
             start = time.monotonic()
             input_config = InferenceInputConfig(
-                artifact_paths=compile_output.artifact_paths,
+                artifact_dir=Path(context.artifact_dir),
+                # None when compilation was skipped; the strategy then resolves
+                # the PTEs from --pre-gen-pte.
+                pte_paths=compile_output.artifact_paths,
                 tokenizer=model_prep_output.tokenizer,
+                model_module=model_prep_output.model_module,
+                example_inputs=model_prep_output.example_inputs,
                 runtime_tokenizer_path=model_prep_output.runtime_tokenizer_path,
                 prompt=context.prompt,
                 soc_model=context.soc_model,

@@ -59,6 +59,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Evaluation methods ``--eval-methods`` accepts. Named so the CLI choices and the
+# evaluator lookup share one spelling.
+PROMPT_EVAL = "prompt_eval"
+TASKS_EVAL = "tasks_eval"
+SQNR_EVAL = "sqnr_eval"
+# Runs a compiled method through the generic executor runner; not a CLI choice.
+DEFAULT_RUN = "default"
+
 # Defaults, mirroring llama.py's argparse configuration. Named rather than
 # inlined so callers can reference them instead of repeating literals.
 DEFAULT_ARTIFACT = "./llama_qnn"
@@ -68,7 +76,7 @@ DEFAULT_CALIB_HF_LIMIT = 1
 DEFAULT_CALIB_LIMIT = 1
 DEFAULT_DTYPE_OVERRIDE = "fp32"
 DEFAULT_EVAL_LIMIT = 1
-DEFAULT_EVAL_METHOD = "prompt_eval"
+DEFAULT_EVAL_METHOD = PROMPT_EVAL
 DEFAULT_GCAP = 8
 DEFAULT_HTP_PERFORMANCE_MODE = 2
 DEFAULT_MAX_SEQ_LEN = 512

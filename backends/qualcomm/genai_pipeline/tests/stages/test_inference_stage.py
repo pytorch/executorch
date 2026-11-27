@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock
 
 from executorch.backends.qualcomm.genai_pipeline.configs.inference_input_config import (
@@ -12,6 +13,7 @@ from executorch.backends.qualcomm.genai_pipeline.configs.inference_input_config 
 )
 from executorch.backends.qualcomm.genai_pipeline.configs.inference_output_config import (
     InferenceOutputConfig,
+    InferenceResult,
 )
 from executorch.backends.qualcomm.genai_pipeline.pipeline_types import STAGE_INFERENCE
 from executorch.backends.qualcomm.genai_pipeline.stages.inference_stage import (
@@ -34,16 +36,20 @@ class TestInferenceStage(unittest.TestCase):
 
     def test_invoke_delegates_to_strategy(self):
         mock_strategy = MagicMock(spec=InferenceStrategy)
-        mock_strategy.invoke.return_value = InferenceOutputConfig(
-            inference_results=["output"]
+        expected = InferenceOutputConfig(
+            results={"prompt_eval": InferenceResult(generations=["output"])}
         )
+        mock_strategy.invoke.return_value = expected
         stage = InferenceStage(mock_strategy)
         context = make_test_context()
-        input_config = InferenceInputConfig(soc_model=MagicMock())
+        input_config = InferenceInputConfig(
+            soc_model=MagicMock(), artifact_dir=Path("/tmp/artifacts")
+        )
 
-        stage.invoke(context, input_config)
+        result = stage.invoke(context, input_config)
 
         mock_strategy.invoke.assert_called_once_with(context, input_config)
+        self.assertIs(result, expected)
 
 
 if __name__ == "__main__":

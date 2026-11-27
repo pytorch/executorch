@@ -7,10 +7,28 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
-if TYPE_CHECKING:
-    from executorch.devtools.etdump.schema_flatcc import ETDump
+
+@dataclass
+class InferenceResult:
+    """Final result for one evaluation method.
+
+    Attributes:
+        generations: Text the runner generated, or ``None`` when the
+            method generates no text.
+        performance_metrics: The runner's throughput over the method's
+            requests: ``num_requests`` and ``mean_tokens_per_sec``.
+        eval_results: The evaluator's metrics, such as SQNR or perplexity.
+        result_files: The pulled runner files plus the ``results.json`` and
+            ``performance.json`` written for the method.
+    """
+
+    generations: Optional[List[str]] = None
+    performance_metrics: Dict[str, Any] = field(default_factory=dict)
+    eval_results: Dict[str, Any] = field(default_factory=dict)
+    result_files: List[Path] = field(default_factory=list)
 
 
 @dataclass
@@ -18,18 +36,8 @@ class InferenceOutputConfig:
     """Output produced by the inference stage.
 
     Attributes:
-        inference_results: Generated text output(s) from the model, or the paths
-            of the pulled result files when the adapter writes results to disk
-            rather than returning them. Stays ``List[str]`` rather than widening
-            to ``List[Any]``: ``InferenceResult.output_data`` is already decoded
-            text by contract, so it needs no conversion, and coercing it in the
-            strategy would risk stringifying raw token ids.
-        performance_metrics: Performance data (e.g., TTFT, tokens/sec).
-        eval_results: Evaluation metric results (e.g., SQNR, perplexity).
-        etdump: Optional ETDump for debugging. ExecuTorch engine only.
+        results: Final results keyed by evaluation method, such as
+            ``prompt_eval`` and ``tasks_eval``.
     """
 
-    inference_results: Optional[List[str]] = None
-    performance_metrics: Dict[str, Any] = field(default_factory=dict)
-    eval_results: Dict[str, Any] = field(default_factory=dict)
-    etdump: Optional["ETDump"] = None
+    results: Dict[str, InferenceResult] = field(default_factory=dict)

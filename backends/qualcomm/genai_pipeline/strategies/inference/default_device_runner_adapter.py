@@ -6,12 +6,18 @@
 
 from __future__ import annotations
 
+import getpass
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 
-from executorch.backends.qualcomm.genai_pipeline.strategies.inference.device_runner_adapter import (
-    InferenceResult,
+from executorch.backends.qualcomm.genai_pipeline.configs.inference_input_config import (
+    InferenceInputConfig,
+)
+from executorch.backends.qualcomm.genai_pipeline.control_args import ControlArgs
+from executorch.backends.qualcomm.genai_pipeline.inference.runner_io import (
+    ExecuteOutput,
+    ExecuteRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -20,37 +26,62 @@ logger = logging.getLogger(__name__)
 class DefaultDeviceRunnerAdapter:
     """Default adapter delegating to ``Device`` for on-device inference.
 
-    Wraps the ``Device`` class from ``export_utils.py`` to push artifacts,
-    execute models, and pull results from a local or remote target device.
+    Implements the ``DeviceRunnerAdapter`` lifecycle for the generic executor
+    runner on a target device: a remote Android/OE-Linux device over adb, or a
+    Windows-on-Snapdragon device the CLI runs on locally, as ``Device`` picks
+    from ``qnn_config.target``.
+
+    Unlike the LLM and MLLM runner adapters, it drives ``Device`` directly
+    rather than through a ``RunnerPlatform``: it runs ``qnn_executor_runner``
+    through ``Device``'s own default command, which a platform does not model.
+
+    The runner reads the input list ``push_inputs`` deploys from the request's
+    data samples, which ``DefaultEvaluator`` is given::
+
+        ExecuTorchInferenceStrategy(
+            device_runner_adapter=DefaultDeviceRunnerAdapter(qnn_config),
+            evaluators=[DefaultEvaluator(inputs=dataset_samples)],
+        )
+
+    The CLI does not build this path: it serves only registry LLMs.
 
     Args:
         qnn_config: A ``QnnConfig`` instance for device communication.
-        workspace: Folder for storing artifacts on the target device.
+        workspace: Folder for storing artifacts on the target device. Defaults
+            to a per-user folder, as the legacy flow does: ``push_artifacts``
+            clears the workspace, so a shared one would wipe another user's or
+            CI job's files mid-run.
     """
 
     def __init__(
         self,
         qnn_config: Any,
-        workspace: str = "/data/local/tmp/genai_pipeline",
+        workspace: Optional[str] = None,
     ) -> None:
         self._qnn_config = qnn_config
-        self._workspace = workspace
+        self._workspace = (
+            workspace or f"/data/local/tmp/{getpass.getuser()}/genai_pipeline"
+        )
         self._device: Any = None
 
     def push_artifacts(
         self,
-        artifact_paths: Dict[str, Path],
+        control_args: ControlArgs,
+        input_config: InferenceInputConfig,
         input_data: Optional[List[Any]] = None,
         extra_files: Optional[List[str]] = None,
     ) -> None:
         """Push compiled artifacts and inputs to the target device.
 
         Args:
-            artifact_paths: Compiled .pte artifacts keyed by artifact name.
-                Every artifact is pushed; the keys select which on-device runner
-                argument each path is passed to, which is the runner's concern
-                rather than this adapter's.
-            input_data: Optional input data to push to device.
+            control_args: Unused; the generic runner takes no control args.
+            input_config: Inference configuration whose ``pte_paths`` are all
+                pushed; the keys select which on-device runner argument each
+                path is passed to, which is the runner's concern rather than
+                this adapter's.
+            input_data: Inputs to deploy up front, one positional-input tuple
+                per sample, for a caller that drives this adapter directly;
+                requests otherwise bring their samples through ``push_inputs``.
             extra_files: Optional additional files to push.
         """
         from executorch.backends.qualcomm.export_utils import Device
@@ -61,7 +92,7 @@ class DefaultDeviceRunnerAdapter:
                 "replaced on device."
             )
 
-        pte_paths = [str(p) for p in artifact_paths.values()]
+        pte_paths = [str(p) for p in input_config.pte_paths.values()]
 
         logger.info("Pushing artifacts to device: %s", pte_paths)
         self._device = Device(
@@ -74,63 +105,52 @@ class DefaultDeviceRunnerAdapter:
             files=extra_files,
         )
 
-    def execute(
-        self,
-        inference_options: Optional[Dict[str, Any]] = None,
-    ) -> InferenceResult:
-        """Execute the model on the target device.
+    def get_metadata(self) -> None:
+        """Return ``None``: the generic executor runner has no decoder metadata."""
+        return None
 
-        Note: This is a two-step protocol. ``execute()`` runs the model and
-        returns performance metrics. Call ``pull_results()`` afterward to
-        retrieve the actual output data files from the device.
+    def push_inputs(self, request: ExecuteRequest) -> None:
+        """Push the request's samples as the runner's input list.
 
         Args:
-            inference_options: Engine-specific options. Supported keys:
-                - ``method_index``: Index of the method to execute (default 0).
-                - ``iteration``: Number of inference iterations (default 1).
-
-        Returns:
-            InferenceResult with performance metrics. ``output_data`` is None
-            until ``pull_results()`` is called separately.
+            request: The samples to run.
         """
         if self._device is None:
             raise RuntimeError(
                 "No artifacts have been pushed. Call push_artifacts() first."
             )
+        # Device writes the samples as the input list its default command reads.
+        self._device.push(inputs=list(request.inputs), init_env=False)
 
-        inference_options = inference_options or {}
-        method_index = inference_options.get("method_index", 0)
-        iteration = inference_options.get("iteration", 1)
-
-        logger.info(
-            "Executing on device: method_index=%d, iteration=%d",
-            method_index,
-            iteration,
-        )
-        self._device.execute(
-            method_index=method_index,
-            iteration=iteration,
-        )
-
-        return InferenceResult(
-            output_data=None,
-            performance_metrics={
-                "method_index": method_index,
-                "iteration": iteration,
-            },
-        )
-
-    def pull_results(
-        self,
-        output_dir: Path,
-    ) -> List[Path]:
-        """Pull inference results from the target device.
+    def execute(self, request: ExecuteRequest) -> None:
+        """Execute one compiled method on the target device, once over all samples.
 
         Args:
+            request: The method index and iteration count to run.
+        """
+        if self._device is None:
+            raise RuntimeError(
+                "No artifacts have been pushed. Call push_artifacts() first."
+            )
+        logger.info(
+            "Executing on device: method_index=%d, iteration=%d",
+            request.method_index,
+            request.iteration,
+        )
+        self._device.execute(
+            method_index=request.method_index,
+            iteration=request.iteration,
+        )
+
+    def pull_results(self, request: ExecuteRequest, output_dir: Path) -> ExecuteOutput:
+        """Pull the device output folder of the request ``execute`` just ran.
+
+        Args:
+            request: The request ``execute`` just ran.
             output_dir: Local directory to store pulled results.
 
         Returns:
-            List of paths to pulled result files.
+            The pulled output files.
         """
         if self._device is None:
             raise RuntimeError(
@@ -151,4 +171,4 @@ class DefaultDeviceRunnerAdapter:
             else:
                 result_files.append(item)
         logger.info("Pulled %d result files", len(result_files))
-        return result_files
+        return ExecuteOutput(files=result_files)
