@@ -20,6 +20,7 @@ DATA_TYPE_STR_MAPPING = {
     torch.int64: "INT64",
     torch.float16: "FLOAT16",
     torch.float32: "FLOAT32",
+    torch.bool: "BOOL",
 }
 
 TORCH_TYPE_QTYPE_MAPPING = {

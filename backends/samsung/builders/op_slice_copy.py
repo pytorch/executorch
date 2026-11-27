@@ -41,11 +41,18 @@ class SliceCopyVisitor(NodeVisitor):
         start_val = cast(int, node.args[2]) if node.args[2] else 0
         if start_val < 0:
             start_val = start_val + in_shape[dim]
-        end_val = (
-            in_shape[dim]
-            if len(node.args) < 4
-            else min(cast(int, node.args[3]), in_shape[dim])
-        )
+        end_arg = node.args[3] if len(node.args) > 3 else None
+        if end_arg is None:
+            end_val = in_shape[dim]
+        elif isinstance(end_arg, int):
+            end_val = min(end_arg, in_shape[dim])
+        elif (
+            isinstance(end_arg, torch.fx.Node)
+            and end_arg.target == torch.ops.aten.sym_size.int
+        ):
+            end_val = in_shape[dim]
+        else:
+            end_val = min(cast(int, end_arg), in_shape[dim])
         if end_val < 0:
             end_val = end_val + in_shape[dim]
 

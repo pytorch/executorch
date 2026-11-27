@@ -42,7 +42,7 @@ class ConstantPadNDVisitor(NodeVisitor):
         paddings = [0] * (2 * len(in_shape) - len(paddings)) + paddings
         paddings = paddings[::2] + paddings[1::2]
 
-        padding_value = node.args[2]
+        padding_value = node.args[2] if len(node.args) > 2 else 0.0
         assert padding_value == 0.0, "Only Support pad constant 0 now."
         # output
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)

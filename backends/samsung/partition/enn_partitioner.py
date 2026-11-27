@@ -49,6 +49,7 @@ SUPPORTED_OPS = [
     exir_ops.edge.aten.clone.default,
     exir_ops.edge.aten.pow.Tensor_Scalar,
     exir_ops.edge.aten.as_strided_copy.default,
+    exir_ops.edge.aten.eq.Scalar,
 ]
 
 
@@ -215,5 +216,7 @@ class EnnPartitioner(Partitioner):
             torch.ops.aten.silu.default,
             torch.ops.aten.pad.default,
             torch.ops.aten.floor_divide.default,
+            torch.ops.aten.one_hot.default,
+            torch.ops.aten.all.dim,
         ]
         return (ops_not_to_decompose, None)
