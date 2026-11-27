@@ -148,7 +148,7 @@ def _prepare_binary(node, params, target, rescale_fn) -> tuple | None:
     )
 
 
-def _qparams(program, node, prefix):
+def _qparams(program, node, prefix, *, allow_output_clamp=False):
     params = get_qparams_from_node(node, prefix)
     dtype = torch.int8 if prefix == "out" else torch.float32
     if params is None or not params.is_per_tensor() or params.dtype != dtype:
@@ -168,7 +168,10 @@ def _qparams(program, node, prefix):
         raise ValueError(f"{node.name}: {prefix} scale must be finite and positive")
     if not -128 <= zero_point <= 127:
         raise ValueError(f"{node.name}: {prefix} has an invalid int8 zero point")
-    if (params.quant_min, params.quant_max) != (-128, 127):
+    if not (prefix == "out" and allow_output_clamp) and (
+        params.quant_min,
+        params.quant_max,
+    ) != (-128, 127):
         return None
     return _QParams(scale, zero_point)
 
@@ -746,7 +749,7 @@ class LowerToEsp(ExportedProgramPassBase):
                 continue
             target, rescale_fn = lowering
             params = [
-                _qparams(exported_program, node, prefix)
+                _qparams(exported_program, node, prefix, allow_output_clamp=True)
                 for prefix in ("inp", "other", "out")
             ]
             if any(param is None for param in params):
@@ -756,7 +759,14 @@ class LowerToEsp(ExportedProgramPassBase):
                 continue
             target, args = prepared
             with graph.inserting_before(node):
-                replacement = graph.call_function(target, args)
+                replacement = graph.call_function(
+                    target,
+                    (
+                        *args,
+                        get_arg(node, "out_quant_min"),
+                        get_arg(node, "out_quant_max"),
+                    ),
+                )
             replacement.meta = node.meta.copy()
             node.replace_all_uses_with(replacement)
             graph.erase_node(node)
