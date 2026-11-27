@@ -26,6 +26,27 @@ using ::executorch::extension::Module;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::Result;
 
+namespace {
+// Marks a prefill() or generate() call as running until it returns, so stop()
+// knows whether there is anything to stop. Created after the call's
+// reset_stop(): the release store orders that reset before any stop() that
+// sees the flag set.
+class RunningScope {
+ public:
+  explicit RunningScope(std::atomic<bool>& running) : running_(running) {
+    running_.store(true, std::memory_order_release);
+  }
+  ~RunningScope() {
+    running_.store(false, std::memory_order_relaxed);
+  }
+  RunningScope(const RunningScope&) = delete;
+  RunningScope& operator=(const RunningScope&) = delete;
+
+ private:
+  std::atomic<bool>& running_;
+};
+} // namespace
+
 TextLLMRunner::TextLLMRunner(
     std::unordered_map<std::string, int64_t> metadata,
     std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
@@ -76,6 +97,14 @@ Error TextLLMRunner::generate(
     const GenerationConfig& config,
     std::function<void(const std::string&)> token_callback,
     std::function<void(const Stats&)> stats_callback) {
+  // A stop() from here on, including during prefill, ends this generation.
+  // When this generate() continues an earlier prefill() call, a stop() made
+  // since that prefill started still applies, so it is kept.
+  if (!prefill_next_token_.has_value()) {
+    text_token_generator_->reset_stop();
+  }
+  RunningScope running(running_);
+
   if (!is_loaded()) {
     stats_->model_load_start_ms = time_in_ms();
     ET_CHECK_OK_OR_RETURN_ERROR(load());
@@ -242,7 +271,12 @@ Error TextLLMRunner::generate(
 
   // Generate max_new_tokens - 1 because prefill already generated 1 token.
   auto generate_result = text_token_generator_->generate(
-      prompt_tokens, pos_, max_new_tokens - 1, resolved_temp, wrapped_callback);
+      prompt_tokens,
+      pos_,
+      max_new_tokens - 1,
+      resolved_temp,
+      wrapped_callback,
+      /*clear_pending_stop=*/false);
 
   if (!generate_result.ok()) {
     return generate_result.error();
@@ -285,6 +319,13 @@ Result<uint64_t> TextLLMRunner::prefill(
     const std::vector<MultimodalInput>& inputs,
     int32_t num_bos,
     int32_t num_eos) {
+  // A prefill() that starts a new turn clears an earlier stop(); one that
+  // adds to a pending prefill keeps it, so the generate() that follows stops.
+  if (!prefill_next_token_.has_value()) {
+    text_token_generator_->reset_stop();
+  }
+  RunningScope running(running_);
+
   if (!is_loaded()) {
     ET_CHECK_OK_OR_RETURN_ERROR(load());
   }
@@ -344,10 +385,9 @@ Error TextLLMRunner::warmup(const std::string& prompt, int32_t max_new_tokens) {
 }
 
 void TextLLMRunner::stop() {
-  if (is_loaded()) {
+  // Also covers a lazy load() inside prefill() or generate().
+  if (running_.load(std::memory_order_acquire)) {
     text_token_generator_->stop();
-  } else {
-    ET_LOG(Error, "Token generator is not loaded, cannot stop");
   }
 }
 

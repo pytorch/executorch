@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -159,7 +160,7 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
    * @brief Stops the ongoing text generation process
    *
    * This method signals the generator to stop producing new tokens and
-   * terminate the current generation process.
+   * terminate the current generation process. See IRunner::stop().
    */
   void stop() override;
 
@@ -191,6 +192,10 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
 
   // Token predicted by the last prefill() call, consumed by generate("").
   std::optional<uint64_t> prefill_next_token_;
+
+  // True while a prefill() or generate() call runs; stop() is a no-op
+  // otherwise.
+  std::atomic<bool> running_{false};
 
   // The position in KV cache of the input, starting from 0.
   int64_t pos_ = 0;

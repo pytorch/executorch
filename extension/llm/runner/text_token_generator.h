@@ -78,6 +78,9 @@ class ET_EXPERIMENTAL TextTokenGenerator {
    * random predictions, while a lower temperature results in more deterministic
    * predictions.
    * @param token_callback what to do after a token is generated.
+   * @param clear_pending_stop clear an earlier stop() before generating.
+   * Runners that call reset_stop() themselves before prefill pass false, so a
+   * stop() that arrives during prefill still ends the generation.
    * @return how many tokens are generated.
    */
   inline ::executorch::runtime::Result<int64_t> generate(
@@ -85,7 +88,8 @@ class ET_EXPERIMENTAL TextTokenGenerator {
       int64_t start_pos,
       int32_t max_new_tokens,
       float temperature = 0.0f,
-      const std::function<void(const std::string&)>& token_callback = {}) {
+      const std::function<void(const std::string&)>& token_callback = {},
+      bool clear_pending_stop = true) {
     ET_CHECK_MSG(
         !tokens.empty(), "Token generation loop shouldn't take empty tokens");
     ET_CHECK_OR_RETURN_ERROR(
@@ -128,10 +132,15 @@ class ET_EXPERIMENTAL TextTokenGenerator {
           resize_tensor_ptr(tokens_managed, token_shape));
     }
 
-    should_stop_.store(false, std::memory_order_relaxed);
+    if (clear_pending_stop) {
+      should_stop_.store(false, std::memory_order_relaxed);
+    }
 
     // Generate our tokens
     while (pos < start_pos + max_new_tokens) {
+      if (should_stop_.load(std::memory_order_relaxed)) {
+        break;
+      }
       // Run the model
       auto logits_res = text_decoder_runner_->step(tokens_managed, pos);
 
@@ -171,10 +180,6 @@ class ET_EXPERIMENTAL TextTokenGenerator {
       }
       token_callback(std::move(*decode_result));
 
-      if (should_stop_.load(std::memory_order_relaxed)) {
-        break;
-      }
-
       // data-dependent terminating condition: we have n_eos_ number of EOS
       if (!ignore_eos_ && eos_ids_->find(cur_token) != eos_ids_->end()) {
         printf("\n");
@@ -190,6 +195,14 @@ class ET_EXPERIMENTAL TextTokenGenerator {
    */
   inline void stop() {
     should_stop_.store(true, std::memory_order_relaxed);
+  }
+
+  /**
+   * Clear an earlier stop(). Runners call this when a turn starts, before
+   * prefill, and then pass clear_pending_stop = false to generate().
+   */
+  inline void reset_stop() {
+    should_stop_.store(false, std::memory_order_relaxed);
   }
 
   /**
