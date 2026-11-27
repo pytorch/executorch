@@ -15,6 +15,7 @@ fbcode_target(
         "arm_pass.py",
         "arm_pass_utils.py",
         "quant_args.py",
+        "tosa_lowering_utils.py",
     ],
     deps = [
         "//executorch/backends/arm:common",
@@ -59,6 +60,7 @@ fbcode_target(
         "arm_pass.py",
         "arm_pass_utils.py",
         "quant_args.py",
+        "tosa_lowering_utils.py",
     ]),
     deps = [
         ":core",
