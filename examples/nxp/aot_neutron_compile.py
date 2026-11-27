@@ -302,6 +302,15 @@ def _get_arg_parser():
         action="store_true",
         help="This feature allows running models which do not fit into SRAM by offloading them to an external memory.",
     )
+    parser.add_argument(
+        "--use_sequencer",
+        required=False,
+        default=False,
+        action="store_true",
+        help="Compile the eIQ Neutron NPU delegated model in sequencer mode (Neutron-C only). It can reduce the "
+        "runtime dispatch overhead and so improve inference speed, at the cost of a larger model. "
+        "Benchmark your model to confirm the benefit.",
+    )
 
     return parser
 
@@ -420,6 +429,7 @@ if __name__ == "__main__":  # noqa C901
         fetch_constants_to_sram=args.fetch_constants_to_sram,
         dump_kernel_selection_code=args.dump_kernel_selection_code,
         use_profiling=args.use_profiling,
+        use_sequencer=args.use_sequencer,
     )
     partitioners = (
         [

@@ -36,8 +36,9 @@ def cifar_test_files(tmp_path_factory):
     return dataset_dir
 
 
+@pytest.mark.parametrize("use_sequencer", [False, True])
 @pytest.mark.parametrize("channels_last", [False, True])
-def test_cifarnet(mocker, request, cifar_test_files, channels_last):
+def test_cifarnet(mocker, request, cifar_test_files, channels_last, use_sequencer):
     model = (
         CifarNet(
             pth_file=os.path.join(
@@ -71,6 +72,7 @@ def test_cifarnet(mocker, request, cifar_test_files, channels_last):
         dataset_creator=CopyDatasetCreator(cifar_test_files),
         output_comparator=comparator,
         mocker=mocker,
+        use_sequencer=use_sequencer,
         # Run the channels last reference in PyTorch as the ExecuTorch CPU model contains incorrectly
         #  lowered channels last convolution weights, which cause incorrect inference results. The issue
         #  is caused by ExecuTorch (not NXP). https://github.com/pytorch/executorch/issues/16464
@@ -82,7 +84,8 @@ def test_cifarnet(mocker, request, cifar_test_files, channels_last):
     )
 
 
-def test_cifarnet_qat(mocker, request, cifar_test_files):
+@pytest.mark.parametrize("use_sequencer", [False, True])
+def test_cifarnet_qat(mocker, request, cifar_test_files, use_sequencer):
     model = CifarNet().get_eager_model().eval()
 
     input_shape = (1, 3, 32, 32)
@@ -100,4 +103,5 @@ def test_cifarnet_qat(mocker, request, cifar_test_files):
         output_comparator=comparator,
         mocker=mocker,
         use_qat=True,
+        use_sequencer=use_sequencer,
     )

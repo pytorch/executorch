@@ -222,6 +222,27 @@ class TestNeutronRecipeConfigFlags:
         spec_map = {s.key: s.value.decode() for s in captured[0].delegation_spec[1]}
         assert spec_map["fetch_constants_to_sram"] == "True"
 
+    def test_use_sequencer_flag(self, mocker):
+        """use_sequencer=True reaches the NeutronPartitioner used during export."""
+        model = SimpleCNN()
+        rc = NeutronRecipeConfig(INPUT_SHAPE, use_sequencer=True)
+
+        captured = []
+        original_init = NeutronPartitioner.__init__
+
+        def capturing_init(self_, *args, **kwargs):
+            original_init(self_, *args, **kwargs)
+            captured.append(self_)
+
+        mocker.patch.object(NeutronPartitioner, "__init__", capturing_init)
+        _run_export(model, rc)
+
+        assert (
+            len(captured) == 1
+        ), "Expected exactly one NeutronPartitioner to be created."
+        spec_map = {s.key: s.value.decode() for s in captured[0].delegation_spec[1]}
+        assert spec_map["use_sequencer"] == "True"
+
     def test_use_profiling_flag(self, mocker):
         """use_profiling=True reaches the NeutronPartitioner used during export."""
         model = SimpleCNN()

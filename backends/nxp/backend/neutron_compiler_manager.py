@@ -41,6 +41,7 @@ def _build_compilation_context(compilation_opts):
     cctx.compilationOpts.minNumOpsPerGraph = compilation_opts["minNumOpsPerGraph"]
     cctx.compilationOpts.excludeGraphPasses = compilation_opts["excludeGraphPasses"]
     cctx.compilationOpts.fetchConstantsToSRAM = compilation_opts["fetchConstantsToSRAM"]
+    cctx.compilationOpts.useSequencer = compilation_opts["useSequencer"]
     cctx.compilationOpts.dumpKernelSelectionCode = compilation_opts[
         "dumpKernelSelectionCode"
     ]
@@ -127,6 +128,7 @@ class NeutronCompilerManager:
         delegation_tag: str,
         fetch_constants_to_sram: bool = False,
         use_profiling: bool = False,
+        use_sequencer: bool = False,
     ) -> bytes:
         """
         Call Neutron Compiler.
@@ -135,8 +137,9 @@ class NeutronCompilerManager:
         :param target: The target platform.
         :param delegation_tag: The delegation tag of model partition.
         :param fetch_constants_to_sram: Add microcode that fetches weights from external memory.
+            This allows running models which do not fit into SRAM. Applies to Neutron-C only (microcontrollers).
         :param use_profiling: Use profiling for neutron delegated model.
-        This allows running models which do not fit into SRAM. Applies to Neutron-C only (microcontrollers).
+        :param use_sequencer: Generate the model in Neutron sequencer mode.
 
         :return: TFLite model with Neutron microcode as bytes.
         """
@@ -149,6 +152,7 @@ class NeutronCompilerManager:
             "fetchConstantsToSRAM": fetch_constants_to_sram,
             "dumpKernelSelectionCode": self.dump_kernel_selection_code,
             "useProfiling": use_profiling,
+            "useSequencer": use_sequencer,
         }
 
         # Run the compiler in a subprocess to isolate crashes (the Neutron SDK can

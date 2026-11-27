@@ -33,6 +33,26 @@ def test_conv2d_neutron_conversion__prefetching(mocker):
     ), "The weight prefetching flag does not make a difference!"
 
 
+def test_conv2d_neutron_conversion__sequencer(mocker):
+    model = LinearModule(True)
+    input_shape = (1, 1, 32, 32)
+
+    compiler_spy = mocker.spy(NeutronCompilerManager, "compile")
+    _ = to_quantized_edge_program(
+        model, input_shape, use_sequencer=True
+    ).exported_program()
+    neutron_model_sequencer = compiler_spy.spy_return
+
+    _ = to_quantized_edge_program(
+        model, input_shape, use_sequencer=False
+    ).exported_program()
+    neutron_model_regular = compiler_spy.spy_return
+
+    assert len(neutron_model_sequencer) > len(
+        neutron_model_regular
+    ), "The sequencer model is expected to be larger than the regular one!"
+
+
 def test_compile_unsafe_args_are_picklable(mocker):
     """Verify that all args passed to `multiprocessing.Process` are picklable.
 

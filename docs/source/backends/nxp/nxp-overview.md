@@ -71,6 +71,8 @@ here https://www.nxp.com/design/design-center/software/eiq-ai-development-enviro
 
 **→{doc}`nxp-profiling` — Neutron models profiling.**
 
+**→{doc}`nxp-sequencer` — Neutron sequencer mode.**
+
 ```{toctree}
 :maxdepth: 2
 :hidden:
@@ -82,4 +84,5 @@ tutorials/nxp-tutorials
 nxp-dim-order
 nxp-kernel-selection
 nxp-profiling
+nxp-sequencer
 ```
