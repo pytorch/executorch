@@ -51,6 +51,12 @@ jobs:
       id-token: write
       contents: read
     needs: [docker-image, gather-models]
+    # Without the ciflow/periodic label, a PR run only covers mv3 and vit,
+    # which test-models-linux-basic in pull.yml already runs on every PR.
+    # Unlabeled PRs skip; labeling a PR still runs the full periodic matrix.
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(github.event.pull_request.labels.*.name, 'ciflow/periodic')
     strategy:
       matrix: ${{ fromJSON(needs.gather-models.outputs.models) }}
       fail-fast: false
