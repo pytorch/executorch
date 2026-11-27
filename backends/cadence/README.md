@@ -15,14 +15,13 @@ executorch
 ├── backends
 │   └── cadence
 │       ├── aot
-│       ├── ops_registration
-│       ├── tests
+│       ├── common
+│       ├── fusion_g3
+│       ├── generic
+│       ├── hifi
+│       ├── runtime
 │       ├── utils
-│       └── hifi
-│           ├── kernels
-│           ├── operators
-│           └── third-party
-│               └── nnlib
+│       └── vision
 └── examples
     └── cadence
         ├── models
