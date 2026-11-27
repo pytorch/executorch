@@ -5874,6 +5874,8 @@ class ReductionOpModel(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if self.dim is None:
+            if self.keepdim:
+                return self.op_fn(x, keepdim=True)
             return self.op_fn(x)
         return self.op_fn(x, dim=self.dim, keepdim=self.keepdim)
 
@@ -5963,6 +5965,13 @@ _REDUCTION_CONFIGS_6 = [
     {"shape": (4, 4), "dim": None, "keepdim": False, "dtype": torch.float32},
 ]
 
+# argmax/argmin additionally cover dim=None with keepdim=True, which must return
+# a tensor of x.ndim size-1 dims rather than a 0-d scalar.
+_ARG_REDUCTION_CONFIGS = _REDUCTION_CONFIGS_6 + [
+    {"shape": (4, 4), "dim": None, "keepdim": True, "dtype": torch.float32},
+    {"shape": (2, 3, 4), "dim": None, "keepdim": True, "dtype": torch.float32},
+]
+
 _REDUCTION_CONFIGS_5 = [
     {"shape": (16,), "dim": 0, "keepdim": False, "dtype": torch.float32},
     {"shape": (4, 4), "dim": -1, "keepdim": False, "dtype": torch.float32},
@@ -5999,8 +6008,8 @@ _REDUCTION_OP_TESTS = [
     {"op_name": "mean",      "op_fn": torch.mean,      "configs": _REDUCTION_CONFIGS_6},
     {"op_name": "amax",      "op_fn": torch.amax,      "configs": _REDUCTION_CONFIGS_6},
     {"op_name": "amin",      "op_fn": torch.amin,      "configs": _REDUCTION_CONFIGS_6},
-    {"op_name": "argmax",    "op_fn": torch.argmax,    "configs": _REDUCTION_CONFIGS_6},
-    {"op_name": "argmin",    "op_fn": torch.argmin,    "configs": _REDUCTION_CONFIGS_6},
+    {"op_name": "argmax",    "op_fn": torch.argmax,    "configs": _ARG_REDUCTION_CONFIGS},
+    {"op_name": "argmin",    "op_fn": torch.argmin,    "configs": _ARG_REDUCTION_CONFIGS},
     {"op_name": "prod",      "op_fn": torch.prod,      "configs": _PROD_CONFIGS, "input_fn": _input_fn(scale=0.5, offset=1.0)},
     {"op_name": "var",       "op_fn": torch.var,       "configs": _REDUCTION_CONFIGS_5, "has_correction": True},
     {"op_name": "std",       "op_fn": torch.std,       "configs": _REDUCTION_CONFIGS_5, "has_correction": True},

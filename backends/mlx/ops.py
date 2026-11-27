@@ -4837,14 +4837,28 @@ def _argmax_handler(P: MLXProgramBuilder, n: Node) -> Slot:
                 shape=[P.to_int_or_vid(numel)],
             )
         )
+        # With keepdim=True, PyTorch returns a tensor of x.ndim size-1 dims
+        # rather than a 0-d scalar, so reshape the flat result back.
+        if keepdim:
+            _, idx_slot = P.make_tmp_slot()
+        else:
+            idx_slot = out
         P.emit(
             ArgmaxNode(
                 x=P.slot_to_tid(flat_slot),
-                out=P.slot_to_tid(out),
+                out=P.slot_to_tid(idx_slot),
                 axis=0,
                 keepdims=False,
             )
         )
+        if keepdim:
+            P.emit(
+                ReshapeNode(
+                    x=P.slot_to_tid(idx_slot),
+                    out=P.slot_to_tid(out),
+                    shape=[IntOrVid.from_literal(1)] * x_meta.dim(),
+                )
+            )
     else:
         P.emit(
             ArgmaxNode(
@@ -5153,14 +5167,28 @@ def _argmin_handler(P: MLXProgramBuilder, n: Node) -> Slot:
                 shape=[P.to_int_or_vid(numel)],
             )
         )
+        # With keepdim=True, PyTorch returns a tensor of x.ndim size-1 dims
+        # rather than a 0-d scalar, so reshape the flat result back.
+        if keepdim:
+            _, idx_slot = P.make_tmp_slot()
+        else:
+            idx_slot = out
         P.emit(
             ArgminNode(
                 x=P.slot_to_tid(flat_slot),
-                out=P.slot_to_tid(out),
+                out=P.slot_to_tid(idx_slot),
                 axis=0,
                 keepdims=False,
             )
         )
+        if keepdim:
+            P.emit(
+                ReshapeNode(
+                    x=P.slot_to_tid(idx_slot),
+                    out=P.slot_to_tid(out),
+                    shape=[IntOrVid.from_literal(1)] * x_meta.dim(),
+                )
+            )
     else:
         P.emit(
             ArgminNode(
