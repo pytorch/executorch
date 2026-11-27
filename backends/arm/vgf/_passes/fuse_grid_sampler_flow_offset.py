@@ -589,12 +589,23 @@ class FuseGridSamplerFlowOffsetPass(RewriteGridSamplerToTosaCustomPass):
         for node in list(graph_module.graph.nodes):
             if node.op != "call_function":
                 continue
+            if node.target != exir_ops.edge.aten.grid_sampler_2d.default:
+                continue
             match = _match_flow_offset_grid(node, self.exported_program)
             if match is None:
+                logger.debug(
+                    "Skipping flow-offset fusion for %s: grid or flow-normalization "
+                    "pattern is unsupported",
+                    node.name,
+                )
                 continue
             flow, flow_channel_offset, normalization = match
             qparams = _get_flow_offset_qparams(node, flow)
             if qparams is None:
+                logger.debug(
+                    "Skipping flow-offset fusion for %s: unsupported quantization parameters",
+                    node.name,
+                )
                 continue
             rewritten = self._rewrite_flow_offset(
                 graph_module,
@@ -626,6 +637,10 @@ class FuseGridSamplerFlowOffsetPass(RewriteGridSamplerToTosaCustomPass):
     ) -> bool:
         sampler_io = _get_quantized_sampler_io(node, image_qparams, output_qparams)
         if sampler_io is None or flow.meta["val"].dtype != torch.int8:
+            logger.debug(
+                "Skipping flow-offset fusion for %s: incompatible INT8 storage or Q/DQ boundaries",
+                node.name,
+            )
             return False
         input_tensor, output_quantizers = sampler_io
         input_value = input_tensor.meta["val"]
@@ -718,5 +733,15 @@ class FuseGridSamplerFlowOffsetPass(RewriteGridSamplerToTosaCustomPass):
             quantize.replace_all_uses_with(replacement)
             graph.erase_node(quantize)
         node.replace_all_uses_with(replacement)
+        logger.debug(
+            "Fused flow normalization into shader %s for %s: "
+            "flow=%s, channel_offset=%d, normalization_xy=%s "
+            "applied after dequantization",
+            flow_offset_grid_sampler_operator_name(),
+            node.name,
+            flow.name,
+            flow_channel_offset,
+            flow_normalization,
+        )
         graph.erase_node(node)
         return True

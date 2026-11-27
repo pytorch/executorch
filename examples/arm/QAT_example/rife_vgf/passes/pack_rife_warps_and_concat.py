@@ -659,4 +659,9 @@ class PackRifeWarpsAndConcatPass(ArmPass):
         graph.eliminate_dead_code()
         graph.lint()
         graph_module.recompile()
+        logger.debug(
+            "Fused packed RIFE warps into shader %s: normalization_xy=%s retained",
+            OPERATOR_NAME,
+            payloads[0]["flow_normalization"],
+        )
         return PassResult(graph_module, True)
