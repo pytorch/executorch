@@ -143,6 +143,8 @@ class QuantizationRecipe:
                                  AOBaseConfig with optional filter functions.
         is_qat: If True, use the QAT flow (prepare_qat_pt2e -> train_fn -> convert_pt2e).
                 If False (default), use the PTQ flow (prepare_pt2e -> calibrate -> convert_pt2e).
+                Calibration leaves the model's buffers as it found them; training keeps
+                what it writes to them, such as batch-norm statistics.
         dynamic_batch_size: If True, dimension 0 (batch) of the calibration/QAT
                             training inputs may vary. Otherwise it is fixed to the
                             example inputs' batch size.
