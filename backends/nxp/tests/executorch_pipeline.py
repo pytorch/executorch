@@ -330,6 +330,7 @@ def to_quantized_executorch_program(
         logger.info("NXP: using recipe-based export path (NXP_USE_RECIPE_EXPORT=1).")
         rc = NeutronRecipeConfig(
             input_spec,
+            target=target,
             operators_not_to_delegate=operators_not_to_delegate,
             intermediates_dir=intermediates_dir,
             remove_quant_io_ops=remove_quant_io_ops,

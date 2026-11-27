@@ -10,6 +10,13 @@ import shutil
 
 from executorch.backends.nxp.tests.outputs_dir_importer import outputs_dir
 
+from executorch.backends.nxp.tests.target_selection import (  # noqa: F401
+    add_neutron_target_option,
+    configure_neutron_target,
+    select_tests_for_neutron_target,
+    target,
+)
+
 
 def pytest_addoption(parser):
     parser.addoption(
@@ -18,6 +25,7 @@ def pytest_addoption(parser):
         default=None,
         help="Path to the nxp_executor_runner executable",
     )
+    add_neutron_target_option(parser)
 
 
 def pytest_configure(config):
@@ -26,6 +34,14 @@ def pytest_configure(config):
         os.environ["NXP_RUNNER_PATH"] = nxp_runner_path
 
     os.environ["PROJECT_DIR"] = str(pathlib.Path(__file__).parent.parent.parent.parent)
+
+    configure_neutron_target(config)
+
+
+def pytest_collection_modifyitems(config, items):
+    # Runs next to the `requires_tflite` hook in `generic_tests/conftest.py`. Both only deselect,
+    # so their order does not matter.
+    select_tests_for_neutron_target(config, items)
 
 
 # noinspection SpellCheckingInspection
