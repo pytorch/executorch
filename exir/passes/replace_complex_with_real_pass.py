@@ -45,11 +45,11 @@ import logging
 import operator
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
-import executorch.exir.passes.dim_order_ops_registry  # noqa: F401
 import torch
 import torch.utils._pytree as pytree
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
+from executorch.exir.passes.dim_order_ops_registry import DimOrderOpsMap
 from torch._export.passes.replace_view_ops_with_view_copy_ops_pass import (
     get_view_copy_of_view_op,
 )
@@ -130,8 +130,8 @@ _LIST_INPUTS = (_aten.cat.default, _aten.stack.default)
 # complex dtype, and the complex tensor's dim order with its extra dim last.
 _COPIES = (
     _aten._to_copy.default,
-    exir_ops.edge.dim_order_ops._clone_dim_order.default,
-    exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+    DimOrderOpsMap[_aten.clone.default],
+    DimOrderOpsMap[_aten._to_copy.default],
 )
 _DENSE_FORMATS = (None, torch.preserve_format, torch.contiguous_format)
 _PROVENANCE = ("from_node", "nn_module_stack", "source_fn_stack", "stack_trace")
