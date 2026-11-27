@@ -60,6 +60,12 @@ def test_canonicalize_conv(request, kwargs):
     CanonicalizeConv.test(request, kwargs)  # noqa: F405
 
 
+@enumerate_backends([QnnExecuTorchBackendType.kHtpBackend])
+@repack_pass_fixtures
+def test_canonicalize_conv1d_per_block(request, kwargs):
+    CanonicalizeConv.test_per_block_conv1d(request, kwargs)  # noqa: F405
+
+
 @enumerate_backends()
 @repack_pass_fixtures
 def test_constant_folding(request, kwargs):

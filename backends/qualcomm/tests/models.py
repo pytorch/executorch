@@ -640,6 +640,23 @@ class ContextBinaryExample(torch.nn.Module):
         }
 
 
+class Conv1dPerBlock(torch.nn.Module):
+    def __init__(self, kernel_size=1):
+        super().__init__()
+        self.block_size = (1, 32, kernel_size)
+        self.register_buffer(
+            "weight", torch.randint(-7, 8, (8, 64, kernel_size), dtype=torch.int8)
+        )
+        self.register_buffer("scale", torch.rand(8, 2, 1) + 0.1)
+        self.register_buffer("zero_point", torch.zeros(8, 2, 1))
+
+    def forward(self, x):
+        weight = torch.ops.torchao.dequantize_affine.default(
+            self.weight, self.block_size, self.scale, self.zero_point, torch.int8, -7, 7
+        )
+        return torch.nn.functional.conv1d(x, weight)
+
+
 class Conv1dBn(torch.nn.Module):
     def __init__(self, bias=True):
         super().__init__()
