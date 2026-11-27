@@ -1,0 +1,19 @@
+name: Test backend CI policy
+on:
+  pull_request:
+    paths:
+      - .github/scripts/*select_backend_flows.py
+      - .github/workflows/_test_backend.yml
+      - .github/workflows/test-backend-*.yml
+      - .github/workflows/test-backend-ci-policy.yml
+permissions:
+  contents: read
+jobs:
+  policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - run: python3 .github/scripts/test_select_backend_flows.py
