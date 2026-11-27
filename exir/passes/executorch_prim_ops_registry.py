@@ -105,6 +105,11 @@ def ceil(a: _SymScalar) -> _SymScalar:
     return math.ceil(a)  # pyre-ignore
 
 
+@bind_pattern_to_op(executorch_prims_lib, "floor.Scalar(Scalar a) -> Scalar")
+def floor(a: _SymScalar) -> _SymScalar:
+    return math.floor(a)  # pyre-ignore
+
+
 @bind_pattern_to_op(executorch_prims_lib, "round.Scalar(Scalar a) -> Scalar")
 def builtin_round(a: _SymScalar) -> _SymScalar:
     return round(a)  # pyre-ignore
@@ -144,6 +149,7 @@ def sym_ite(b: _SymScalar, t: _SymScalar, f: _SymScalar) -> _SymScalar:
 _PYTHON_SYM_OPS_TO_EXECUTORCH_SYM_OPS: Dict[Any, OpOverload] = {
     builtins.round: ops.backend.executorch_prim.round.Scalar,
     math.ceil: ops.backend.executorch_prim.ceil.Scalar,
+    math.floor: ops.backend.executorch_prim.floor.Scalar,
     math.trunc: ops.backend.executorch_prim.trunc.Scalar,
     operator.sub: ops.backend.executorch_prim.sub.Scalar,
     operator.mul: ops.backend.executorch_prim.mul.Scalar,

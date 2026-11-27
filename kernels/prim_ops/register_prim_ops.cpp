@@ -26,6 +26,7 @@ name unlike the header files above.
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 using torch::executor::function::et_copy_index;
 
@@ -684,6 +685,51 @@ static Kernel prim_ops[] = {
           EValue& out = *stack[1];
           if (a.isDouble()) {
             out = EValue(static_cast<int64_t>(ceil(a.toDouble())));
+          } else {
+            ET_KERNEL_CHECK_MSG(
+                context,
+                false,
+                InvalidType,
+                /* void */,
+                "Unsupported DType %zu",
+                (size_t)a.tag);
+          }
+        }),
+#endif
+
+#if !defined(EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD) || \
+    defined(INCLUDE_EXECUTORCH_PRIM_FLOOR_SCALAR)
+    // floor.Scalar(Scalar a) -> Scalar
+    Kernel(
+        "executorch_prim::floor.Scalar",
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
+          ET_KERNEL_CHECK_MSG(
+              context,
+              stack.size() == 2,
+              InvalidProgram,
+              /* void */,
+              "Expected %zu args, got %zu",
+              (size_t)2,
+              stack.size());
+          EValue& a = *stack[0];
+          EValue& out = *stack[1];
+          if (a.isDouble()) {
+            const double val = std::floor(a.toDouble());
+            // Both -2^63 (INT64_MIN) and +2^63 are exact in IEEE 754 double;
+            // the range check also rejects NaN and +/-inf.
+            constexpr double kMinInt64 =
+                static_cast<double>(std::numeric_limits<int64_t>::min());
+            constexpr double kMaxInt64Exclusive = -kMinInt64;
+            ET_KERNEL_CHECK_MSG(
+                context,
+                val >= kMinInt64 && val < kMaxInt64Exclusive,
+                InvalidArgument,
+                /* void */,
+                "floor input %g is out of int64_t range",
+                a.toDouble());
+            out = EValue(static_cast<int64_t>(val));
+          } else if (a.isInt()) {
+            out = EValue(a.toInt());
           } else {
             ET_KERNEL_CHECK_MSG(
                 context,
