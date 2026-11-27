@@ -6,6 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import pytest
 import torch
 from executorch.backends.arm.test.common import parametrize, xfail_type
 from executorch.backends.cortex_m.test.tester import (
@@ -13,6 +14,9 @@ from executorch.backends.cortex_m.test.tester import (
     McuTestCase,
     ramp_tensor,
 )
+from executorch.backends.test.harness.stages import StageType
+from executorch.exir.dialects._ops import ops as exir_ops
+from torch._subclasses.fake_tensor import FakeTensorMode
 
 
 class CortexMConvTranspose2D(torch.nn.Module):
@@ -113,6 +117,29 @@ class CortexMConvTranspose2DHardtanh(torch.nn.Module):
 
     def forward(self, x):
         return torch.nn.functional.hardtanh(self.conv_transpose(x), -0.5, 0.5)
+
+
+class CortexMChannelsFirstConvTranspose2D(torch.nn.Module):
+    # x.contiguous() brings its own clone and quant/dequant pair, so only the
+    # transpose conv itself is pinned here.
+    ops_before_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_convolution_default": 1,
+    }
+
+    ops_after_transforms = {
+        "executorch_exir_dialects_edge__ops_cortex_m_quantized_transpose_conv2d_default": 1,
+    }
+
+    ops_after_absent = ["executorch_exir_dialects_edge__ops_aten_convolution_default"]
+
+    def __init__(self):
+        super().__init__()
+        self.conv_transpose = torch.nn.ConvTranspose2d(
+            2, 1, kernel_size=3, bias=False
+        ).to(memory_format=torch.channels_last)
+
+    def forward(self, x):
+        return self.conv_transpose(x.contiguous())
 
 
 # Test cases covering various configurations
@@ -286,6 +313,12 @@ test_cases = {
             ramp_tensor(0, 60, (1, 3, 8, 8)).to(memory_format=torch.channels_last),
         ),
     ),
+    "conv_transpose2d_channels_first_input": McuTestCase(
+        model=CortexMChannelsFirstConvTranspose2D(),
+        example_inputs=(
+            ramp_tensor(-10, 10, (1, 2, 4, 4)).to(memory_format=torch.channels_last),
+        ),
+    ),
 }
 
 xfails_dialect: dict[str, xfail_type] = {
@@ -323,3 +356,53 @@ def test_implementation_conv_transpose2d(test_case, cortex_m_target):
         test_case.model, test_case.example_inputs, target_config=cortex_m_target
     )
     tester.test_implementation(qtol=2)
+
+
+def test_dialect_channels_first_conv_transpose2d_clone_dim_order(cortex_m_target):
+    test_case = test_cases["conv_transpose2d_channels_first_input"]
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
+    tester.quantize().export().to_edge().run_passes()
+    tester.run_method_and_compare_outputs(inputs=test_case.example_inputs, qtol=1)
+    graph = tester.get_artifact(StageType.RUN_PASSES).exported_program().graph
+    [conv_node] = [
+        n
+        for n in graph.nodes
+        if n.op == "call_function"
+        and n.target == exir_ops.edge.cortex_m.quantized_transpose_conv2d.default
+    ]
+    input_node = conv_node.args[0]
+    assert input_node.target == exir_ops.edge.dim_order_ops._clone_dim_order.default
+    assert input_node.kwargs.get("dim_order") == [0, 2, 3, 1]
+
+
+def test_quantized_transpose_conv2d_meta_rejects_channels_first_input():
+    x_nchw = torch.zeros((1, 2, 4, 4), dtype=torch.int8)
+    x_nhwc = x_nchw.to(memory_format=torch.channels_last)
+    weight = torch.zeros((1, 3, 3, 2), dtype=torch.int8)
+    multipliers = torch.ones((1,), dtype=torch.int32)
+    shifts = torch.zeros((1,), dtype=torch.int32)
+    scratch = torch.empty((0,), dtype=torch.uint8)
+    args = (
+        weight,
+        None,
+        [1, 1],
+        [0, 0],
+        [0, 0],
+        [1, 1],
+        0,
+        0,
+        multipliers,
+        shifts,
+        -128,
+        127,
+        scratch,
+        scratch,
+    )
+
+    with FakeTensorMode(allow_non_fake_inputs=True):
+        with pytest.raises(ValueError, match="channels-last"):
+            torch.ops.cortex_m.quantized_transpose_conv2d.default(x_nchw, *args)
+        result = torch.ops.cortex_m.quantized_transpose_conv2d.default(x_nhwc, *args)
+        assert result.shape == (1, 1, 6, 6)

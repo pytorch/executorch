@@ -966,6 +966,14 @@ def _compute_depthwise_conv2d_output_shape(
     return torch.Size([batch, out_channels, out_height, out_width])
 
 
+def _require_channels_last(tensor: torch.Tensor, op_name: str) -> None:
+    if not is_channels_last(tensor):
+        raise ValueError(
+            f"{op_name} requires channels-last input, got dim_order "
+            f"{list(tensor.dim_order())}"
+        )
+
+
 def _quantized_conv2d_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
@@ -1111,6 +1119,7 @@ def quantized_conv2d_meta(
     activation_max: int,
     scratch: torch.Tensor,
 ) -> torch.Tensor:
+    _require_channels_last(input, "cortex_m::quantized_conv2d")
     return _quantized_conv2d_meta(
         input,
         weight,
@@ -1284,6 +1293,7 @@ def quantized_conv2d_packed_meta(
     *,
     filter_shape: Sequence[int],
 ) -> torch.Tensor:
+    _require_channels_last(input, "cortex_m::quantized_conv2d_packed")
     return _quantized_conv2d_meta(
         input,
         weight,
@@ -1496,6 +1506,7 @@ def quantized_depthwise_conv2d_meta(
     activation_max: int,
     scratch: torch.Tensor,
 ) -> torch.Tensor:
+    _require_channels_last(input, "cortex_m::quantized_depthwise_conv2d")
     stride_vals = list(stride)
     padding_vals = list(padding)
     dilation_vals = list(dilation)
@@ -1786,6 +1797,7 @@ def quantized_transpose_conv2d_meta(
     scratch: torch.Tensor,
     output_scratch: torch.Tensor,
 ) -> torch.Tensor:
+    _require_channels_last(input, "cortex_m::quantized_transpose_conv2d")
     stride_vals = list(stride)
     padding_vals = list(padding)
     output_padding_vals = list(output_padding)
