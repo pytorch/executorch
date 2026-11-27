@@ -170,7 +170,7 @@ signature = "VgfCompileSpec.validate_environment(self, build_dir: str | None = N
 
 [python.VgfPartitioner]
 kind = "class"
-signature = "VgfPartitioner(compile_spec: executorch.backends.arm.vgf.compile_spec.VgfCompileSpec, additional_checks: Optional[Sequence[torch.fx.passes.operator_support.OperatorSupportBase]] = None) -> None"
+signature = "VgfPartitioner(compile_spec: executorch.backends.arm.vgf.compile_spec.VgfCompileSpec, additional_checks: Optional[Sequence[torch.fx.passes.operator_support.OperatorSupportBase]] = None, mutable_buffer_names: Optional[set[str]] = None) -> None"
 
 [python.VgfPartitioner.ops_to_not_decompose]
 kind = "function"

@@ -4,10 +4,15 @@ The `VgfPartitioner` controls what parts of a model is delegated to the Arm VGF 
 
 Pass `VgfCompileSpec(alias_buffer_mutations=True)` to delegate mutable KV-cache
 buffers as persistent VGF state. Eligible buffers must be zero-initialized,
-static-shape `int8` tensors whose reads and mutation stay in one partition.
+static-shape `int8` or `float32` tensors whose reads and mutation stay in one
+partition. Input and mutation output shapes, dtypes, and layouts must match.
+Pass `mutable_buffer_names` to select exact exported buffer names; other mutable
+buffers remain program-owned. Omitting it selects all mutable buffers, which
+must satisfy the eligibility checks.
+This aliases state within one delegate, not across methods or sessions.
 
 ```python
-class VgfPartitioner(compile_spec: executorch.backends.arm.vgf.compile_spec.VgfCompileSpec, additional_checks: Optional[Sequence[torch.fx.passes.operator_support.OperatorSupportBase]] = None) -> None
+class VgfPartitioner(compile_spec: executorch.backends.arm.vgf.compile_spec.VgfCompileSpec, additional_checks: Optional[Sequence[torch.fx.passes.operator_support.OperatorSupportBase]] = None, mutable_buffer_names: Optional[set[str]] = None) -> None
 ```
 Partitions subgraphs supported by the Arm Vgf backend.
 
@@ -15,6 +20,8 @@ Args:
 - **compile_spec**: The Vgf compilation specification.
 - **additional_checks**: Optional sequence of additional operator support
         checks.
+- **mutable_buffer_names**: Exact names to internalize. None selects all
+        mutable buffers; unselected buffers remain program-owned.
 
 ```python
 def VgfPartitioner.ops_to_not_decompose(self, ep: torch.export.exported_program.ExportedProgram) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.node.Node], bool]]]:
