@@ -585,7 +585,8 @@ def _conv2d_kernel_args(program, node, constants, size_query, *, depthwise=False
     ):
         return None
     input_params, output_params = (
-        _qparams(program, node, name) for name in ("inp", "out")
+        _qparams(program, node, name, allow_output_clamp=True)
+        for name in ("inp", "out")
     )
     if input_params is None or output_params is None:
         return None
@@ -627,6 +628,8 @@ def _conv2d_kernel_args(program, node, constants, size_query, *, depthwise=False
         shift_node,
         -input_params.zp,
         output_params.zp,
+        get_arg(node, "out_quant_min"),
+        get_arg(node, "out_quant_max"),
         scratch,
     )
 

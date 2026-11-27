@@ -494,9 +494,9 @@ def test_public_recipe_lut_without_sizing(monkeypatch):
         example_inputs=[case.example_inputs],
         export_recipe=get_esp_fused_quant_recipe(allow_cpu_fallback=False),
     )
-    assert get_operator_library_report(session.get_edge_program_manager()) == {
-        "esp_nn_ops": 2,
-        "cpu_ops": [],
-        "layout_ops": [],
-    }
+    report = get_operator_library_report(session.get_edge_program_manager())
+    assert report["esp_nn_ops"] == 2
+    assert report["cpu_ops"] == []
+    assert report["layout_ops"] == []
+    assert report["quantization_ops"]
     assert session.get_executorch_program_manager().buffer

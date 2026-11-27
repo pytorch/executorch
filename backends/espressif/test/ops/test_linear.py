@@ -257,11 +257,11 @@ def test_public_recipe_linear():
         example_inputs=[case.example_inputs],
         export_recipe=get_esp_fused_quant_recipe(allow_cpu_fallback=False),
     )
-    assert get_operator_library_report(session.get_edge_program_manager()) == {
-        "esp_nn_ops": 1,
-        "cpu_ops": [],
-        "layout_ops": [],
-    }
+    report = get_operator_library_report(session.get_edge_program_manager())
+    assert report["esp_nn_ops"] == 1
+    assert report["cpu_ops"] == []
+    assert report["layout_ops"] == []
+    assert report["quantization_ops"]
     assert session.get_executorch_program_manager().buffer
 
 
@@ -378,7 +378,6 @@ def test_public_recipe_unsupported_linear_falls_back(model, inputs):
     assert {op["target"] for op in report["cpu_ops"]} <= {
         "aten::addmm.out",
         "aten::mm.out",
-        "aten::permute_copy.out",
     }
     buffer = session.get_executorch_program_manager().buffer
     operators = deserialize_pte_binary(buffer).program.execution_plan[0].operators
