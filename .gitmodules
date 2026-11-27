@@ -71,3 +71,4 @@
 [submodule "backends/native/third-party/llama.cpp"]
 	path = backends/native/third-party/llama.cpp
 	url = https://github.com/ggml-org/llama.cpp.git
+	shallow = true

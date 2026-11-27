@@ -10,6 +10,7 @@ import argparse
 import glob
 import logging
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -96,9 +97,12 @@ REQUIRED_SUBMODULES = {
     "cpuinfo": "CMakeLists.txt",
     "eigen": "CMakeLists.txt",
     "flatbuffers": "CMakeLists.txt",
+    "flatcc": "CMakeLists.txt",
     "FP16": "CMakeLists.txt",
     "FXdiv": "CMakeLists.txt",
     "gflags": "CMakeLists.txt",
+    "json": "CMakeLists.txt",
+    "pocketfft": "pocketfft_hdronly.h",  # Header-only, no CMakeLists.txt.
     "prelude": "BUCK",
     "pthreadpool": "CMakeLists.txt",
     "pybind11": "CMakeLists.txt",
@@ -118,12 +122,17 @@ def get_required_submodule_paths():
     with open(gitmodules_path, "r") as file:
         lines = file.readlines()
 
+    required_submodules = dict(REQUIRED_SUBMODULES)
+    # tools/cmake/preset/pybind.cmake enables MLX by default on Apple Silicon.
+    if sys.platform == "darwin" and platform.machine() == "arm64":
+        required_submodules["mlx"] = "CMakeLists.txt"
+
     # Extract paths of required submodules
     required_paths = {}
     for line in lines:
         if line.strip().startswith("path ="):
             path = line.split("=")[1].strip()
-            for submodule, file_name in REQUIRED_SUBMODULES.items():
+            for submodule, file_name in required_submodules.items():
                 if submodule in path:
                     required_paths[path] = file_name
     return required_paths
@@ -145,7 +154,8 @@ def check_and_update_submodules():
         try:
             subprocess.check_call(["git", "submodule", "sync", "--recursive"])
             subprocess.check_call(
-                ["git", "submodule", "update", "--init", "--recursive"]
+                ["git", "submodule", "update", "--init", "--recursive", "--"]
+                + list(missing_submodules)
             )
         except subprocess.CalledProcessError as e:
             logger.error(f"Error updating submodules: {e}")
