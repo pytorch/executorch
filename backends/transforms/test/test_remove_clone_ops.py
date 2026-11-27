@@ -354,6 +354,23 @@ class TestRemoveCloneOpsTransform(TestCase):
             assert torch.allclose(actual, expected)
             assert is_channel_last_dim_order(actual)
 
+    def test_clone_not_folded_when_input_is_output(self):
+        """Verify clone is not folded when its input also produces an output."""
+
+        class MultipleOutputsModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor):
+                y = (x * 2).permute(0, 2, 1)
+                return y, y.contiguous()
+
+        x = torch.randn(1, 4, 8)
+        exported = export(MultipleOutputsModule().eval(), (x,), strict=True)
+        edge = to_edge(exported).transform([RemoveCloneOpsTransform()])
+        gm = edge.exported_program().graph_module
+        output_node = list(gm.graph.nodes)[-1]
+        out_args = output_node.args[0]
+        self.assertEqual(len(out_args), 2)
+        self.assertNotEqual(out_args[0], out_args[1])
+
 
 if __name__ == "__main__":
     unittest.main()

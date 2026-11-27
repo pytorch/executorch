@@ -100,6 +100,11 @@ class RemoveCloneOpsTransform(ExportPass):
             if self._is_input_output_copy(n) and self._preserve_input_output_copies:
                 continue
 
+            # If both the clone and its input produce an output, removing the clone
+            # would duplicate the input node in the graph's output tuple.
+            if self._produces_output(n) and self._produces_output(n.args[0]):
+                continue
+
             modified = True
             to_be_removed = n
             for user_n in list(n.users.keys()):
