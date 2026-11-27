@@ -312,3 +312,22 @@ def test_preserves_shared_padding_values(final_blend):
     assert pad_value.args == ([-11], [1], torch.int8)
     assert sum(n.target == TOSA.PAD.default for n in graph.nodes) == 4
     graph.lint()
+
+
+def test_preserves_timestep_through_image_requantization():
+    from .rife_blend import _apply_rescale
+
+    program, _, concat, _ = _program(2)
+    branch = concat.args[0][0]
+    with program.graph.inserting_before(concat):
+        requantize = create_rescale_node(
+            program.graph, (branch, torch.int8, [0.75], -127, -90), from_node=branch
+        )
+    requantize.meta = dict(branch.meta)
+    concat.args = ([requantize, *concat.args[0][1:]],)
+    assert pad.PadRifeBlock0ConcatPass(program)(program.graph_module).modified
+    image = concat.args[0][0].args[0].args[0].args[0]
+    code = image.args[2].args[0][0]
+    assert _apply_rescale(torch.tensor([code]), requantize).item() == 40
+    assert tuple(concat.meta["val"].shape) == (1, 4, 6, 16)
+    program.graph.lint()

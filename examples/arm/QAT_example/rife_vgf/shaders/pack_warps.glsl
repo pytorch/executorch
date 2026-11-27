@@ -29,8 +29,14 @@ layout(local_size_x=8, local_size_y=8, local_size_z=1) in;
 const float FLOW_SCALE = @FLOW_SCALE@;
 const vec2 FLOW_NORMALIZATION = vec2(@FLOW_NORMALIZATION_X@, @FLOW_NORMALIZATION_Y@);
 const int FLOW_ZERO_POINT = @FLOW_ZERO_POINT@;
-const float INPUT_SCALE = @INPUT_SCALE@;
-const int INPUT_ZERO_POINT = @INPUT_ZERO_POINT@;
+const float INPUT0_SCALE = @INPUT0_SCALE@;
+const int INPUT0_ZERO_POINT = @INPUT0_ZERO_POINT@;
+const float INPUT1_SCALE = @INPUT1_SCALE@;
+const int INPUT1_ZERO_POINT = @INPUT1_ZERO_POINT@;
+const float INPUT2_SCALE = @INPUT2_SCALE@;
+const int INPUT2_ZERO_POINT = @INPUT2_ZERO_POINT@;
+const float INPUT3_SCALE = @INPUT3_SCALE@;
+const int INPUT3_ZERO_POINT = @INPUT3_ZERO_POINT@;
 const float OUTPUT_SCALE = @OUTPUT_SCALE@;
 const int OUTPUT_ZERO_POINT = @OUTPUT_ZERO_POINT@;
 
@@ -74,8 +80,8 @@ vec2 uv(ivec2 p, vec2 size, vec2 offset) {
   return (texel + vec2(0.5)) / size;
 }
 
-ivec4 quantizeSample(vec4 raw) {
-  vec4 value = (raw - vec4(float(INPUT_ZERO_POINT))) * INPUT_SCALE;
+ivec4 quantizeSample(vec4 raw, float inputScale, int inputZeroPoint) {
+  vec4 value = (raw - vec4(float(inputZeroPoint))) * inputScale;
   vec4 code = roundEven(value / OUTPUT_SCALE) + vec4(float(OUTPUT_ZERO_POINT));
   return ivec4(clamp(code, vec4(-127.0), vec4(127.0)));
 }
@@ -98,10 +104,10 @@ void main() {
 #endif
   vec2 flow0 = (vec2(flowCodes[0], flowCodes[1]) - vec2(FLOW_ZERO_POINT)) * FLOW_SCALE;
   vec2 flow1 = (vec2(flowCodes[2], flowCodes[3]) - vec2(FLOW_ZERO_POINT)) * FLOW_SCALE;
-  ivec4 rgb0 = quantizeSample(texture(image0, uv(p, vec2(size), flow0)) * 127.0);
-  ivec4 rgb1 = quantizeSample(texture(image1, uv(p, vec2(size), flow1)) * 127.0);
-  ivec4 feat0 = quantizeSample(texture(image2, uv(p, vec2(size), flow0)) * 127.0);
-  ivec4 feat1 = quantizeSample(texture(image3, uv(p, vec2(size), flow1)) * 127.0);
+  ivec4 rgb0 = quantizeSample(texture(image0, uv(p, vec2(size), flow0)) * 127.0, INPUT0_SCALE, INPUT0_ZERO_POINT);
+  ivec4 rgb1 = quantizeSample(texture(image1, uv(p, vec2(size), flow1)) * 127.0, INPUT1_SCALE, INPUT1_ZERO_POINT);
+  ivec4 feat0 = quantizeSample(texture(image2, uv(p, vec2(size), flow0)) * 127.0, INPUT2_SCALE, INPUT2_ZERO_POINT);
+  ivec4 feat1 = quantizeSample(texture(image3, uv(p, vec2(size), flow1)) * 127.0, INPUT3_SCALE, INPUT3_ZERO_POINT);
 
   int8_t values[32];
   for (uint c=0u; c<3u; ++c) {

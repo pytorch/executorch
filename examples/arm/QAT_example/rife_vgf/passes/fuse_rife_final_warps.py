@@ -162,9 +162,13 @@ class FuseRifeFinalWarpsPass(ArmPass):
 
     _passes_required_after: set[type[ExportPass]] = set()
 
-    def __init__(self, exported_program: ExportedProgram | None = None):
+    def __init__(
+        self, exported_program: ExportedProgram | None = None, *, precision=None
+    ):
         super().__init__()
         self.exported_program = exported_program
+        self.precision = precision
+        self.applied = False
 
     def _match(self, graph_module):
         customs = [
@@ -263,14 +267,24 @@ class FuseRifeFinalWarpsPass(ArmPass):
                 parameters,
             ) = self._match(graph_module)
         except ValueError as error:
+            if self.precision is not None:
+                raise RuntimeError(
+                    "The requested floating RIFE tail cannot be fused."
+                ) from error
             logger.debug("Keeping the original RIFE final tail: %s", error)
             return PassResult(graph_module, False)
         try:
             blend = match_rife_blend(self.exported_program, outputs, table)
         except ValueError as error:
+            if self.precision is not None:
+                raise RuntimeError(
+                    "The requested floating RIFE blend cannot be fused."
+                ) from error
             logger.debug("Keeping the RIFE image blend in TOSA: %s", error)
             blend = None
-        payload = build_final_warps_payload(payloads, rescales, sigmoid, blend=blend)
+        payload = build_final_warps_payload(
+            payloads, rescales, sigmoid, blend=blend, precision=self.precision
+        )
         _reorder_pixel_shuffle_output(self.exported_program, phase, parameters)
         graph = graph_module.graph
         with graph.inserting_before(customs[0]):
@@ -292,4 +306,5 @@ class FuseRifeFinalWarpsPass(ArmPass):
         graph.eliminate_dead_code()
         graph.lint()
         graph_module.recompile()
+        self.applied = True
         return PassResult(graph_module, True)

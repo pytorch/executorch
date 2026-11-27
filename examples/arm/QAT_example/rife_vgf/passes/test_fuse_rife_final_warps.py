@@ -355,3 +355,12 @@ def test_fake_outputs_match_shader_contract():
         (1, 1, 8, 12),
     ]
     assert all(v.dtype == torch.int8 for v in outputs)
+
+
+def test_explicit_precision_rejects_unfused_blend():
+    program = _program()[0]
+    original = str(program.graph)
+    precision = {}
+    with pytest.raises(RuntimeError, match="blend cannot be fused"):
+        fuse.FuseRifeFinalWarpsPass(program, precision=precision)(program.graph_module)
+    assert str(program.graph) == original

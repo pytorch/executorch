@@ -3,7 +3,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import math
 from pathlib import Path
+
+import torch
+from executorch.backends.arm._passes.tosa_lowering_utils import rescale_parameters
 
 from . import _compile_shader_source
 
@@ -29,7 +33,49 @@ def _rescale_source(name, node):
 }}"""
 
 
-def build_final_warps_payload(payloads, rescales, sigmoid_table, *, blend=None):
+def _floating_constants(precision, blend, sigmoid_table, rescales, payloads):
+    """Check the matched graph before changing its intermediate precision."""
+    if blend is None:
+        raise ValueError("Floating tail requires a fused image blend.")
+    mask_scale, mask_zp = precision["mask"]
+    sigmoid_scale, sigmoid_zp = precision["sigmoid"]
+    table = torch.sigmoid(
+        (torch.arange(-128, 128).clamp(-127, 127) - mask_zp) * mask_scale
+    )
+    codes = (torch.round(table / sigmoid_scale) + sigmoid_zp).clamp(-127, 127)
+    if not torch.equal(codes.to(torch.int8), sigmoid_table):
+        raise ValueError("Floating-tail qparams disagree with the sigmoid table.")
+    entries = ", ".join(f"{float(v):.9e}" for v in table)
+    constants = f"const float FLOAT_SIGMOID[256] = float[]({entries});\n"
+    values = {
+        "FLOAT_ONE": precision["one"],
+        "FINAL_INVERSE_SCALE": 1 / precision["output"][0],
+        "FINAL_ZERO_POINT": precision["output"][1],
+    }
+    for name, node in zip(("previous", "delta"), rescales[:2]):
+        scale, zp = precision[name]
+        derived = (
+            rescale_parameters(node)[0][0]
+            * rescale_parameters(rescales[2])[0][0]
+            * payloads[0]["flow_scale"]
+        )
+        if not math.isclose(derived, scale, rel_tol=1e-7) or node.args[3] != zp:
+            raise ValueError("Floating-flow qparams disagree with the residual sum.")
+        values[name.upper() + "_SCALE"] = scale
+        values[name.upper() + "_ZERO_POINT"] = zp
+    return constants + "".join(
+        f"const float {k} = {float(v):.9e};\n" for k, v in values.items()
+    )
+
+
+def build_final_warps_payload(
+    payloads,
+    rescales,
+    sigmoid_table,
+    *,
+    blend=None,
+    precision=None,
+):
     """Compile block1 PixelShuffle, flow update, mask lookup and both warps.
 
     Args:
@@ -37,12 +83,21 @@ def build_final_warps_payload(payloads, rescales, sigmoid_table, *, blend=None):
         rescales (tuple[Node, Node, Node]): Previous flow, delta and sum rescales.
         sigmoid_table (Tensor): Original signed INT8 sigmoid lookup table.
         blend (RifeBlend | None): Optional quantized final image blend.
+        precision (dict | None): Explicit higher-precision policy.
+            None preserves every original quantization boundary.
 
     Returns:
         dict: Shader payload producing warped images and mask, or final RGB.
 
     """
     source = Path(__file__).with_name("final_warps.glsl").read_text()
+    source = source.replace("@FLOAT_TAIL@", str(int(precision is not None)))
+    constants = (
+        _floating_constants(precision, blend, sigmoid_table, rescales, payloads)
+        if precision is not None
+        else ""
+    )
+    source = source.replace("@FLOAT_CONSTANTS@", constants)
     normalization = payloads[0].get("flow_normalization", [1.0, 1.0])
     for axis, value in zip(("X", "Y"), normalization):
         source = source.replace(f"@FLOW_NORMALIZATION_{axis}@", format(value, ".9g"))
