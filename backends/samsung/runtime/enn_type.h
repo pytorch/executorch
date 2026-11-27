@@ -53,3 +53,10 @@ typedef struct _NumberOfBuffersInfo {
   uint32_t n_in_buf;
   uint32_t n_out_buf;
 } NumberOfBuffersInfo;
+
+typedef enum _PerfModePreference {
+  ENN_PREF_MODE_LOW_POWER = 0,
+  ENN_PREF_MODE_BALANCED = 4,
+  ENN_PREF_MODE_CUSTOM = 5,
+  ENN_PREF_MODE_PERFORMANCE = 7,
+} PerfModePreference;
