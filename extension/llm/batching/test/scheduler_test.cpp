@@ -181,6 +181,44 @@ TEST(CreateTest, Defaults) {
   EXPECT_EQ(scheduler->max_batch_tokens(), 544u);
   EXPECT_EQ(scheduler->max_decode_sequences(), 32u);
   EXPECT_EQ(scheduler->max_prefill_chunk_size(), 256u);
+  EXPECT_EQ(scheduler->step_prefill_budget(), 512u);
+}
+
+// Prefill shares a step with up to max_decode_sequences decodes, so its room is
+// the batch budget less a full decode batch, whatever the chunk size.
+TEST(CreateTest, StepPrefillBudgetReservesEveryDecodeSlot) {
+  EXPECT_EQ(
+      DecodeFirstScheduler::create(4096, 64, 4032)->step_prefill_budget(),
+      4032u);
+  EXPECT_EQ(
+      DecodeFirstScheduler::create(512, 8, 256)->step_prefill_budget(), 504u);
+  EXPECT_EQ(
+      DecodeFirstScheduler::create(288, 32, 256)->step_prefill_budget(), 256u);
+}
+
+TEST(SchedulerTest, StepPrefillBudgetDefaultsToTheChunkSize) {
+  class OneChunkPerStep final : public Scheduler {
+   public:
+    bool submit(std::vector<Task>) override {
+      return false;
+    }
+    bool has_work() const override {
+      return false;
+    }
+    std::vector<Task> get_work() override {
+      return {};
+    }
+    std::vector<Task> cancel(SessionId) override {
+      return {};
+    }
+    std::vector<Task> clear() override {
+      return {};
+    }
+    std::size_t max_prefill_chunk_size() const override {
+      return 96;
+    }
+  };
+  EXPECT_EQ(OneChunkPerStep().step_prefill_budget(), 96u);
 }
 
 TEST(CreateTest, RejectsZeroLimits) {
