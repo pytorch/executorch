@@ -2,9 +2,10 @@ name: Promote commit to viable/strict
 
 # Grants a commit eligibility for viable/strict by pushing a
 # `ciflow/trunk/<sha>` tag at it, which:
-#   1. Runs `pull.yml` / `trunk.yml` against that commit with
-#      ``is-full-run = true``, so every gated job runs regardless of the
-#      path filter.
+#   1. Runs `trunk.yml` (and `Apple`) against that commit with
+#      ``is-full-run = true``, so every gated job runs regardless of
+#      the path filter. (`pull`, `Lint` and `Build documentation` have
+#      no tag trigger; their required rows come from the push to main.)
 #   2. Runs `viable-strict-gate.yml`, whose presence is what
 #      `update-viablestrict` requires before it will advance.
 #
@@ -24,6 +25,21 @@ name: Promote commit to viable/strict
 # `main-branch: main` line in update-viablestrict.yml looks like it
 # controls this, but the action does not declare that input and passes a
 # hardcoded value, so it has no effect either way.)
+#
+# Scheduled runs tag the newest commit ahead of viable/strict that
+# is at least ``CANDIDATE_MIN_AGE_HOURS`` old and already green on its
+# push-side required checks (`pull`, `Lint`, `Build documentation`).
+# Tagging the raw tip spent full CI on commits whose push-side rows
+# were still running or already red; and the intermediate commits of
+# a multi-commit push never get push-side rows at all (push workflows
+# run only for the head of a push), so they can never be promoted and
+# must not be tagged. The updater promotes the newest fully green
+# commit, so one tag per tick at the newest eligible commit is
+# enough: while its full CI runs, later ticks tag newer eligible
+# commits, and a red candidate never blocks a newer green one.
+# A hand dispatch with an explicit SHA tags that commit immediately,
+# and a hand dispatch without one promotes the tip of main, as
+# before.
 
 on:
   schedule:
@@ -33,12 +49,20 @@ on:
   workflow_dispatch:
     inputs:
       sha:
-        description: "Full 40-char SHA on main / release/* to promote. Defaults to the tip of main."
+        description: "Full 40-char SHA on main / release/* to promote. If omitted on a manual dispatch, promotes the tip of main; scheduled runs pick the newest eligible commit (see header)."
         required: false
         type: string
 
+env:
+  # Minimum age, in whole hours, of a scheduled candidate. Must
+  # exceed the slowest push-side required check so a commit is only
+  # tagged after its push-side CI has had time to go green.
+  CANDIDATE_MIN_AGE_HOURS: "6"
+
 concurrency:
   # One in-flight promotion at a time; safer than racing tag pushes.
+  # cancel-in-progress must stay false: a newer scheduled run must
+  # never kill a promotion that is still tagging its candidate.
   group: promote-to-viable-strict
   cancel-in-progress: false
 
@@ -57,10 +81,12 @@ jobs:
     # request branch; it is first live after merge.
     environment: update-commit-hash
     permissions:
-      # Both the checkout and the tag push use the bot token below, so no
-      # step uses GITHUB_TOKEN at all. Declared read-only rather than
-      # omitted so that a future step cannot silently inherit write.
+      # The checkout and the tag push use the bot token below.
+      # GITHUB_TOKEN is only used to read workflow runs when a
+      # scheduled run picks its candidate, hence actions: read;
+      # contents stays read-only so it cannot push anything.
       contents: read
+      actions: read
     steps:
       # Checked before the tag is pushed rather than after, so a missing
       # secret is reported as itself instead of as an opaque checkout
@@ -87,14 +113,80 @@ jobs:
       - name: Validate SHA and push ciflow tag
         env:
           INPUT_SHA: ${{ inputs.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
 
-          # A scheduled run has no inputs, so promote the tip of main.
           SHA="${INPUT_SHA:-}"
-          if [ -z "$SHA" ]; then
+          if [ -z "$SHA" ] && [ "$EVENT_NAME" != "schedule" ]; then
+            # A hand dispatch without a SHA promotes the tip of main,
+            # as before. Scheduled runs pick a candidate below.
             SHA=$(git rev-parse origin/main)
-            echo "No SHA given; promoting the tip of main: $SHA"
+            echo "Manual dispatch without a SHA; promoting the tip of main: $SHA"
+          fi
+          if [ -z "$SHA" ]; then
+            # Scheduled run: tag the newest eligible commit (see the
+            # header comment). A hand dispatch with an explicit SHA
+            # skips this entirely.
+            NOW=$(date +%s)
+            MIN_AGE_SEC=$(( CANDIDATE_MIN_AGE_HOURS * 3600 ))
+
+            commit_age_sec() {
+              local commit_time
+              commit_time=$(git show -s --format=%ct "$1")
+              echo $(( NOW - commit_time ))
+            }
+
+            # True only if every push-side required workflow has a
+            # successful push-event run for the commit and none has a
+            # failed one: those rows can never be created by a tag,
+            # and one failure row is fatal to the updater.
+            push_side_green() {
+              local candidate="$1" runs workflow ok bad
+              runs=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${candidate}&event=push&per_page=100" 2>/dev/null) || return 1
+              for workflow in "pull" "lint" "build documentation"; do
+                ok=$(printf '%s' "$runs" | jq -r --arg n "$workflow" '[.workflow_runs[] | select((.name | ascii_downcase) == $n and .conclusion == "success")] | length')
+                bad=$(printf '%s' "$runs" | jq -r --arg n "$workflow" '[.workflow_runs[] | select((.name | ascii_downcase) == $n and (.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out"))] | length')
+                if [ "$ok" -lt 1 ] || [ "$bad" -gt 0 ]; then
+                  return 1
+                fi
+              done
+              return 0
+            }
+
+            TAGGED_SHAS=""
+            while IFS= read -r tag; do
+              TAGGED_SHAS="$TAGGED_SHAS ${tag#ciflow/trunk/}"
+            done < <(git tag -l 'ciflow/trunk/*')
+
+            # rev-list walks newest first. Bound the walk so a long
+            # backlog cannot turn into hundreds of API calls per tick.
+            CHECKED=0
+            while IFS= read -r COMMIT; do
+              [ -n "$COMMIT" ] || continue
+              CHECKED=$((CHECKED + 1))
+              if [ "$CHECKED" -gt 50 ]; then
+                echo "Checked 50 newest commits without finding an eligible candidate; stopping this tick."
+                break
+              fi
+              case " $TAGGED_SHAS " in
+                *" $COMMIT "*) continue ;;
+              esac
+              if [ "$(commit_age_sec "$COMMIT")" -lt "$MIN_AGE_SEC" ]; then
+                continue
+              fi
+              if push_side_green "$COMMIT"; then
+                SHA="$COMMIT"
+                break
+              fi
+            done < <(git rev-list origin/viable/strict..origin/main)
+
+            if [ -z "$SHA" ]; then
+              echo "No untagged commit ahead of viable/strict is at least ${CANDIDATE_MIN_AGE_HOURS}h old and green on its push-side required checks; nothing to promote on this tick."
+              exit 0
+            fi
+            echo "Selected newest eligible candidate $SHA for promotion."
           fi
 
           # Reject anything that isn't a full 40-char lowercase hex SHA.
@@ -169,4 +261,4 @@ jobs:
           # ciflow/trunk trigger, so their rows come from the earlier push
           # to main; if either was cancelled on that push, this tag cannot
           # revive it.
-          echo "::notice::Pushed $TAG. Workflow runs started by this tag: pull, trunk, Apple, viable-strict-gate, Windows MSVC Build, Test RISC-V Backend, Test QNN Windows MSVC build. Of those, update-viablestrict only requires pull, trunk, Apple and viable-strict-gate; the other three do not gate advancement. The two remaining required checks, lint and Build documentation, do not start from a ciflow/trunk tag and must already be green from the push to main. Once all six required checks are green, the next update-viablestrict cron (every 30 min) will advance viable/strict."
+          echo "::notice::Pushed $TAG. Workflow runs started by this tag: trunk, Apple, viable-strict-gate, Windows MSVC Build, Test RISC-V Backend, Test QNN Windows MSVC build. Of those, update-viablestrict only requires trunk, Apple and viable-strict-gate; the other three do not gate advancement. The three remaining required checks, pull, Lint and Build documentation, do not start from a ciflow/trunk tag and must already be green from the push to main. Once all six required checks are green, the next update-viablestrict cron (every 30 min) will advance viable/strict."
