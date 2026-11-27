@@ -517,6 +517,68 @@ class LeakyReLUTest(OpTestCase):
         return (x,)
 
 
+class ELUModel(nn.Module):
+    """Model that applies elu or selu. selu exports as aten.elu with a scale."""
+
+    def __init__(self, kind: str = "elu", alpha: Optional[float] = None):
+        super().__init__()
+        self.kind = kind
+        self.alpha = alpha
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.kind == "selu":
+            return torch.nn.functional.selu(x)
+        if self.alpha is None:
+            return torch.nn.functional.elu(x)
+        return torch.nn.functional.elu(x, alpha=self.alpha)
+
+
+@register_test
+class ELUTest(OpTestCase):
+    """Test case for elu with various alphas, and for selu."""
+
+    name = "elu"
+    rtol = 1e-5
+    atol = 1e-5
+
+    def __init__(
+        self,
+        shape: Tuple[int, ...] = (2, 3, 4),
+        kind: str = "elu",
+        alpha: Optional[float] = None,
+    ):
+        self.shape = shape
+        self.kind = kind
+        self.alpha = alpha
+        shape_str = "x".join(str(s) for s in shape)
+        alpha_str = "default" if alpha is None else f"alpha{alpha}"
+        self.name = f"{kind}_{alpha_str}_{shape_str}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["ELUTest"]:
+        return [
+            cls(shape=(2, 3, 4), kind="elu", alpha=None),
+            cls(shape=(4, 8), kind="elu", alpha=0.5),
+            cls(shape=(10,), kind="elu", alpha=2.0),
+            cls(shape=(2, 8, 16), kind="elu", alpha=1.0),
+            cls(shape=(4, 8), kind="selu"),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return ELUModel(self.kind, self.alpha)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        numel = 1
+        for size in self.shape:
+            numel *= size
+        # Both branches, zero itself, and inputs large enough that expm1 of the
+        # positive ones overflows in the branch where() does not select.
+        x = torch.linspace(-6.0, 6.0, steps=numel).reshape(self.shape)
+        x.view(-1)[0] = 0.0
+        x.view(-1)[-1] = 100.0
+        return (x,)
+
+
 class GELUModel(nn.Module):
     """Simple model using GELU activation."""
 
@@ -8104,6 +8166,69 @@ class CummaxTest(OpTestCase):
 
     def create_model(self) -> nn.Module:
         return CummaxModel(self.dim)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (torch.randn(self.shape),)
+
+
+class MinMaxDimModel(nn.Module):
+    def __init__(self, op: str, dim: int, keepdim: bool, output: str):
+        super().__init__()
+        self.op_fn = torch.max if op == "max" else torch.min
+        self.dim = dim
+        self.keepdim = keepdim
+        self.output = output
+
+    def forward(self, x: torch.Tensor):
+        values, indices = self.op_fn(x, dim=self.dim, keepdim=self.keepdim)
+        if self.output == "values":
+            return values
+        if self.output == "indices":
+            return indices
+        return values, indices
+
+
+@register_test
+class MinMaxDimTest(OpTestCase):
+    """torch.max(x, dim) and torch.min(x, dim), which return (values, indices)."""
+
+    name = "min_max_dim"
+    rtol = 1e-5
+    atol = 1e-5
+
+    def __init__(
+        self,
+        op: str = "max",
+        shape: Tuple[int, ...] = (3, 4),
+        dim: int = 0,
+        keepdim: bool = False,
+        output: str = "both",
+    ):
+        self.op = op
+        self.shape = shape
+        self.dim = dim
+        self.keepdim = keepdim
+        self.output = output
+        shape_str = "x".join(str(s) for s in shape)
+        keep_str = "_keepdim" if keepdim else ""
+        self.name = f"{op}_dim{dim}{keep_str}_{output}_{shape_str}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["MinMaxDimTest"]:
+        configs = []
+        for op in ("max", "min"):
+            configs += [
+                cls(op=op, shape=(8,), dim=0, output="both"),
+                cls(op=op, shape=(3, 4), dim=0, output="values"),
+                cls(op=op, shape=(3, 4), dim=1, output="indices"),
+                cls(op=op, shape=(3, 4), dim=-1, keepdim=True, output="both"),
+                cls(op=op, shape=(2, 3, 4), dim=1, output="both"),
+                cls(op=op, shape=(2, 3, 4), dim=-2, keepdim=True, output="values"),
+            ]
+        return configs
+
+    def create_model(self) -> nn.Module:
+        return MinMaxDimModel(self.op, self.dim, self.keepdim, self.output)
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         return (torch.randn(self.shape),)
