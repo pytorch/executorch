@@ -316,9 +316,9 @@ The details a backend has to match, or knowingly deviate from:
   `dequantize -> quantize` after an op into the op's output qparams, rounding once where
   the q/dq graph rounds twice. The fused program is therefore not bit-exact with the
   graph `convert_pt2e` produced, but never less accurate. The rewrites that do drop or
-  move a rounding in a way that can lose accuracy (`fold_into_linear`, and quant
-  absorption's `absorb_quant_with_fork` and `absorb_quant_into_inputs` modes) are off by
-  default.
+  move a rounding in a way that can lose accuracy (`fold_relu_into_producer`,
+  `fold_into_linear`, and quant absorption's `absorb_quant_with_fork` and
+  `absorb_quant_into_inputs` modes) are off by default.
 - **No tolerance is defined.** A backend's integer kernels generally differ from the
   reference in accumulation and requantization rounding. How close is close enough is up
   to each backend's tests.
@@ -455,6 +455,7 @@ make a choice for the backend are off until it turns them on:
 | Flag | Pass | What it does |
 |---|---|---|
 | `channels_last` | `ToChannelsLast` | Runs convolutions and pools in NHWC, between permutes. A backend with its own layout pass would have to undo it. |
+| `fold_relu_into_producer` | `FoldReluIntoProducer` | Has the convolution or linear before a relu quantize straight to the relu's output, dropping the rounding between the two; the relu is removed when it no longer clamps anything. |
 | `fold_into_linear` | `FuseAddIntoLinear`, `FuseMulIntoLinear` | Folds a scalar add or a constant multiply into the linear or convolution before it, dropping the rounding between the two. |
 | `prequantize_embedding` | `PrequantizeEmbedding` | Turns an embedding with a quantized table into an int8 gather before any backend sees it. |
 | `split_linear_at_slices` | `SplitLinearAtSlices` | Splits a linear whose output is sliced, such as a fused QKV projection, into one linear per slice. |

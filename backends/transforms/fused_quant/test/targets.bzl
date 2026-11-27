@@ -73,6 +73,20 @@ def define_common_targets():
     )
 
     runtime.python_test(
+        name = "test_fold_relu_into_producer",
+        srcs = ["test_fold_relu_into_producer.py"],
+        deps = [
+            "//executorch/backends/transforms/fused_quant:fold_relu_into_producer",
+            "//executorch/backends/transforms/fused_quant:graph_utils",
+            "//executorch/exir/dialects/fused_quant:ops",
+            ":test_helpers",
+            "//caffe2:torch",
+            "//executorch/backends/test:program_builder",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_test(
         name = "test_hoist_activations",
         srcs = ["test_hoist_activations.py"],
         deps = [
@@ -272,6 +286,7 @@ def define_common_targets():
             ":test_helpers",
             "//caffe2:torch",
             "//executorch/backends/test:program_builder",
+            "//executorch/backends/transforms/fused_quant:fold_relu_into_producer",
             "//executorch/backends/transforms/fused_quant:fuse_add_into_linear",
             "//executorch/backends/transforms/fused_quant:fuse_mul_into_linear",
             "//executorch/backends/transforms/fused_quant:passes",
