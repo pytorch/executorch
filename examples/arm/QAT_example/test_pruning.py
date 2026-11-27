@@ -14,7 +14,11 @@ import torch
 
 from examples.arm.QAT_example import qat_loop
 from examples.arm.QAT_example.pruning import TwoOfFourPruner
-from examples.arm.QAT_example.qat_loop import build_ptq_model, build_qat_model
+from examples.arm.QAT_example.qat_loop import (
+    build_ptq_model,
+    build_qat_model,
+    prepare_cached_model,
+)
 from PIL import Image
 
 
@@ -80,14 +84,36 @@ class _Model(torch.nn.Module):
         return self.head(torch.relu(self.conv(torch.cat((previous, current), dim=1))))
 
 
+class _CachedModel(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.flownet = torch.nn.Module()
+        self.flownet.encode = torch.nn.Conv2d(4, 4, 1)
+        self.flownet.blend = torch.nn.Conv2d(4, 3, 1)
+
+    def forward(self, previous, current, features):
+        return self.flownet.blend(features), self.flownet.encode(current)
+
+
+@pytest.mark.parametrize("cache", [False, True])
 @pytest.mark.parametrize("qat", [False, True])
-def test_pt2e_preserves_sparse_weights_and_dense_source_model(qat):
+def test_pt2e_preserves_sparse_weights_and_dense_source_model(cache, qat):
     torch.manual_seed(2026)
-    model = _Model().eval()
+    model = (_CachedModel() if cache else _Model()).eval()
     dense = {name: p.detach().clone() for name, p in model.named_parameters()}
     frames = (torch.rand(1, 4, 8, 8), torch.rand(1, 4, 8, 8))
     target = torch.rand(1, 3, 8, 8)
-    if qat:
+    if cache:
+        converted = prepare_cached_model(
+            model,
+            [(frames, target)],
+            is_qat=qat,
+            io_quantization="int8",
+            steps=2,
+            lr=1e-2,
+            prune_layers=["flownet.blend"],
+        )
+    elif qat:
         converted = build_qat_model(
             model,
             [(frames, target)],
