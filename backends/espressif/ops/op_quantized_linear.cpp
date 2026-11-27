@@ -30,6 +30,8 @@ Tensor& quantized_linear_int8_out(
     const Tensor& output_shift,
     int64_t input_offset,
     int64_t output_offset,
+    int64_t activation_min,
+    int64_t activation_max,
     Tensor& out) {
   ET_KERNEL_CHECK(ctx, weight.dim() >= 2, InvalidArgument, out);
   const auto channels = weight.size(0);
@@ -71,8 +73,8 @@ Tensor& quantized_linear_int8_out(
       static_cast<int32_t>(output_offset),
       output_shift.const_data_ptr<int32_t>(),
       output_multiplier.const_data_ptr<int32_t>(),
-      std::numeric_limits<int8_t>::min(),
-      std::numeric_limits<int8_t>::max(),
+      static_cast<int32_t>(activation_min),
+      static_cast<int32_t>(activation_max),
       static_cast<int32_t>(batches));
   return out;
 }

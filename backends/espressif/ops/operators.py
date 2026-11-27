@@ -68,12 +68,13 @@ lib.define(
 )
 lib.define(
     "quantized_linear_int8(Tensor input, Tensor weight, Tensor? bias, "
-    "Tensor output_multiplier, Tensor output_shift, int input_offset, int output_offset) -> Tensor"
+    "Tensor output_multiplier, Tensor output_shift, int input_offset, int output_offset, "
+    "int activation_min, int activation_max) -> Tensor"
 )
 lib.define(
     "quantized_linear_int8.out(Tensor input, Tensor weight, Tensor? bias, "
     "Tensor output_multiplier, Tensor output_shift, int input_offset, int output_offset, "
-    "*, Tensor(a!) out) -> Tensor(a!)"
+    "int activation_min, int activation_max, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
 lib.define(
@@ -247,14 +248,30 @@ def quantized_add_int8(
 
 @register_fake("esp_nn::quantized_linear_int8")
 def quantized_linear_int8_meta(
-    input, weight, bias, output_multiplier, output_shift, input_offset, output_offset
+    input,
+    weight,
+    bias,
+    output_multiplier,
+    output_shift,
+    input_offset,
+    output_offset,
+    activation_min,
+    activation_max,
 ):
     return input.new_empty((*input.shape[:-1], weight.shape[0]))
 
 
 @impl(lib, "quantized_linear_int8", "CompositeExplicitAutograd")
 def quantized_linear_int8(
-    input, weight, bias, output_multiplier, output_shift, input_offset, output_offset
+    input,
+    weight,
+    bias,
+    output_multiplier,
+    output_shift,
+    input_offset,
+    output_offset,
+    activation_min,
+    activation_max,
 ):
     accumulator = (input.to(torch.int64) + input_offset) @ weight.to(torch.int64).T
     if bias is not None:
@@ -268,7 +285,7 @@ def quantized_linear_int8(
         ],
         dim=-1,
     )
-    return (result + output_offset).clamp(-128, 127).to(torch.int8)
+    return (result + output_offset).clamp(activation_min, activation_max).to(torch.int8)
 
 
 @register_fake("esp_nn::quantized_conv2d_int8")
@@ -325,6 +342,8 @@ def quantized_conv2d_int8(
         output_shift,
         0,
         output_offset,
+        -128,
+        127,
     )
 
 

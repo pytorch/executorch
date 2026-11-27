@@ -404,7 +404,8 @@ def _linear_kernel_args(program, node, constants):
             "input and output must be nonempty, static, contiguous int8 tensors"
         )
     input_params, output_params = (
-        _qparams(program, node, name) for name in ("inp", "out")
+        _qparams(program, node, name, allow_output_clamp=True)
+        for name in ("inp", "out")
     )
     if input_params is None or output_params is None:
         raise ValueError("input and output require constant per-tensor int8 qparams")
@@ -436,6 +437,8 @@ def _linear_kernel_args(program, node, constants):
         shift_node,
         -input_params.zp,
         output_params.zp,
+        get_arg(node, "out_quant_min"),
+        get_arg(node, "out_quant_max"),
     )
 
 

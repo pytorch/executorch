@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from dataclasses import replace
+from functools import partial
 
 import pytest
 import torch
@@ -12,13 +13,16 @@ from executorch.backends.espressif.lowering import (
     get_esp_fused_quant_recipe,
     get_operator_library_report,
 )
+from executorch.backends.espressif.passes.fold_activations import FoldActivations
+from executorch.backends.espressif.quantizer import get_esp_fused_quant_quantizer
 from executorch.backends.espressif.test.tester import (
     EspTestCase,
     EspTester,
     ramp_tensor,
 )
 from executorch.backends.test.suite.operators.test_linear import Model
-from executorch.backends.transforms.permute_pass_utils import get_arg
+from executorch.backends.transforms.fused_quant.graph_utils import get_qparams_from_node
+from executorch.backends.transforms.permute_pass_utils import get_arg, set_arg
 from executorch.backends.transforms.utils import get_constant
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
@@ -33,6 +37,21 @@ from executorch.frontends.fused_quant.quantizer.quantizer import (
 
 _FQ_LINEAR = exir_ops.edge.fused_quant.linear.default
 _ESP_LINEAR = exir_ops.edge.esp_nn.quantized_linear_int8.default
+_ESP_LUT = exir_ops.edge.esp_nn.quantized_lut_int8.default
+_ACTIVATIONS = {
+    "relu": (torch.nn.ReLU, (-7, 127)),
+    "relu6": (torch.nn.ReLU6, (-7, 41)),
+    "hardtanh": (torch.nn.Hardtanh, (-15, 1)),
+    "hardtanh_asymmetric": (
+        partial(torch.nn.Hardtanh, min_val=-2.0625, max_val=3.1875),
+        (-23, 19),
+    ),
+    "hardtanh_positive": (partial(torch.nn.Hardtanh, min_val=1, max_val=4), (1, 25)),
+    "hardtanh_negative": (
+        partial(torch.nn.Hardtanh, min_val=-5, max_val=-2),
+        (-47, -23),
+    ),
+}
 
 
 class EspLinear(Model):
@@ -58,16 +77,27 @@ class EspLinearWithFloatUsers(EspLinear):
         return result, torch.sin(result), torch.sin(x), self.linear.bias
 
 
-class EspLinearRelu(EspLinear):
-    ops_before_transforms = {_FQ_LINEAR: 1, exir_ops.edge.fused_quant.relu.default: 1}
-    ops_after_transforms = {
-        _ESP_LINEAR: 1,
-        exir_ops.edge.esp_nn.quantized_lut_int8.default: 1,
-        exir_ops.edge.aten.relu.default: 0,
-    }
+class EspLinearActivation(EspLinear):
+    def __init__(self, activation, *, bias=True, fork=False):
+        super().__init__(bias=bias)
+        self.activation = _ACTIVATIONS[activation][0]()
+        self.fused_activation = (
+            exir_ops.edge.fused_quant.relu.default
+            if activation == "relu"
+            else exir_ops.edge.fused_quant.hard_tanh.default
+        )
+        self.fork = fork
+        self.ops_before_transforms = {_FQ_LINEAR: 1, self.fused_activation: 1}
+        self.ops_after_transforms = {
+            _ESP_LINEAR: 1,
+            self.fused_activation: 0,
+            _ESP_LUT: int(fork),
+        }
 
     def forward(self, x):
-        return torch.relu(self.linear(x))
+        result = self.linear(x)
+        activated = self.activation(result)
+        return (activated, result, torch.sin(result)) if self.fork else activated
 
 
 class EspSharedLinear(EspLinear):
@@ -132,7 +162,6 @@ test_cases = {
     "float_users": EspTestCase(
         EspLinearWithFloatUsers(), (ramp_tensor(-3, 5, (2, 17)),)
     ),
-    "relu": EspTestCase(EspLinearRelu(), (ramp_tensor(-3, 5, (2, 17)),)),
     "shared_bias": EspTestCase(
         EspSharedLinear(), (ramp_tensor(-3, 5, (2, 17)), ramp_tensor(-24, 40, (2, 17)))
     ),
@@ -152,6 +181,38 @@ test_cases = {
         calibration_samples=[(ramp_tensor(-3, 5, (2, 17)),)],
     ),
 }
+test_cases.update(
+    {
+        f"{activation}{'_no_bias' if not bias else ''}": EspTestCase(
+            EspLinearActivation(activation, bias=bias),
+            (ramp_tensor(-30, 50, (5, 17)),),
+        )
+        for activation in _ACTIVATIONS
+        for bias in (True, False)
+    }
+)
+test_cases.update(
+    {
+        "relu_fork": EspTestCase(
+            EspLinearActivation("relu", fork=True), (ramp_tensor(-3, 5, (2, 17)),)
+        ),
+        "hardtanh_fork": EspTestCase(
+            EspLinearActivation("hardtanh", fork=True),
+            (ramp_tensor(-3, 5, (2, 17)),),
+        ),
+        "relu6_vector": EspTestCase(
+            EspLinearActivation("relu6"), (ramp_tensor(-30, 50, (17,)),)
+        ),
+        "hardtanh_rank_3": EspTestCase(
+            EspLinearActivation("hardtanh"), (ramp_tensor(-30, 50, (2, 3, 17)),)
+        ),
+        "relu6_saturation": EspTestCase(
+            EspLinearActivation("relu6"),
+            (ramp_tensor(-30, 50, (2, 17)),),
+            calibration_samples=[(ramp_tensor(-3, 5, (2, 17)),)],
+        ),
+    }
+)
 
 
 @pytest.mark.parametrize("test_case", test_cases.values(), ids=test_cases.keys())
@@ -185,7 +246,7 @@ def test_implementation_linear(test_case, pytestconfig):
         test_case.model, test_case.example_inputs, test_case.calibration_samples
     )
     tester.test_implementation(
-        pytestconfig.rootpath, rtol=torch.finfo(torch.float32).eps
+        pytestconfig.rootpath, rtol=torch.finfo(torch.float32).eps, num_inferences=2
     )
 
 
@@ -204,7 +265,7 @@ def test_public_recipe_linear():
     assert session.get_executorch_program_manager().buffer
 
 
-@pytest.mark.parametrize("case_name", ["shared_bias", "large_bias"])
+@pytest.mark.parametrize("case_name", ["shared_bias", "large_bias", "relu", "hardtanh"])
 def test_lowering_reuses_quantized_bias_and_preserves_source_program(case_name):
     case = test_cases[case_name]
     tester = EspTester(case.model, case.example_inputs).export_fused_quant().to_edge()
@@ -224,6 +285,79 @@ def test_lowering_reuses_quantized_bias_and_preserves_source_program(case_name):
         )
     assert str(source.graph) == original_graph
     source.validate()
+
+
+@pytest.mark.parametrize("activation", ["relu", "relu6", "hardtanh"])
+@pytest.mark.parametrize("fork", [False, True])
+def test_linear_activation_quantization_boundary(activation, fork):
+    model = EspLinearActivation(activation, fork=fork)
+    tester = EspTester(model, (ramp_tensor(-3, 5, (2, 17)),))
+    tester.export_fused_quant().to_edge()
+    graph = tester.get_artifact().exported_program().graph
+    (producer,) = graph.find_nodes(op="call_function", target=_FQ_LINEAR)
+    (activation_node,) = graph.find_nodes(
+        op="call_function", target=model.fused_activation
+    )
+    assert (get_qparams_from_node(producer, "out") is not None) == fork
+    assert (get_qparams_from_node(activation_node, "inp") is not None) == fork
+    assert get_qparams_from_node(activation_node, "out") is not None
+
+
+@pytest.mark.parametrize("activation", ["relu", "hardtanh"])
+def test_separately_quantized_linear_activation_keeps_rounding(activation):
+    model = EspLinearActivation(activation)
+    quantizer = FusedQuantQuantizer(get_esp_fused_quant_quantizer().child_quantizers)
+    tester = EspTester(model, (ramp_tensor(-3, 5, (2, 17)),))
+    tester.export_fused_quant(quantizer).to_edge()
+    assert not FoldActivations()(tester.get_artifact().exported_program()).modified
+    tester.run_passes().check_node_count({_ESP_LINEAR: 1, _ESP_LUT: 1})
+
+
+def _linear_activation_clamp_tester(activation):
+    model = EspLinearActivation(activation)
+    tester = EspTester(model, (ramp_tensor(-80, 80, (9, 17)),))
+    tester.export_fused_quant().to_edge()
+    program = tester.get_artifact().exported_program()
+    (node,) = program.graph.find_nodes(
+        op="call_function", target=model.fused_activation
+    )
+    params = get_qparams_from_node(node, "out")
+    get_constant(program, params.scale).fill_(0.125)
+    get_constant(program, params.zero_point).fill_(-7)
+    (output,) = program.graph.find_nodes(op="output")
+    dequant = output.args[0][0]
+    set_arg(dequant, "scale", 0.125)
+    set_arg(dequant, "zero_point", -7)
+    program.graph_module.recompile()
+    return tester
+
+
+@pytest.mark.parametrize("activation", _ACTIVATIONS)
+def test_fold_linear_uses_final_qparams_and_clamp(activation):
+    tester = _linear_activation_clamp_tester(activation)
+    program = tester.get_artifact().exported_program()
+    expected = program.module()(*tester.example_inputs)
+    assert FoldActivations()(program).modified
+    torch.testing.assert_close(
+        program.module()(*tester.example_inputs), expected, atol=0, rtol=0
+    )
+    tester.run_passes().check_node_count({_ESP_LINEAR: 1, _ESP_LUT: 0})
+    lowered = tester.get_artifact().exported_program()
+    (node,) = lowered.graph.find_nodes(op="call_function", target=_ESP_LINEAR)
+    assert get_arg(node, "output_offset") == -7
+    assert (get_arg(node, "activation_min"), get_arg(node, "activation_max")) == (
+        _ACTIVATIONS[activation][1]
+    )
+    torch.testing.assert_close(
+        lowered.module()(*tester.example_inputs), expected, atol=0.125, rtol=0
+    )
+
+
+@pytest.mark.parametrize("activation", _ACTIVATIONS)
+def test_implementation_linear_activation_clamp(activation, pytestconfig):
+    tester = _linear_activation_clamp_tester(activation)
+    tester.run_passes()
+    tester.test_implementation(pytestconfig.rootpath, num_inferences=2)
 
 
 @pytest.mark.parametrize(
