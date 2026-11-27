@@ -1,0 +1,103 @@
+{
+    "version": 6,
+    "configurePresets": [
+        {
+            "name": "reverb-base",
+            "hidden": true,
+            "binaryDir": "${sourceDir}/../../../cmake-out/examples/models/reverb",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out",
+                "CMAKE_PREFIX_PATH": "${sourceDir}/../../../cmake-out"
+            }
+        },
+        {
+            "name": "reverb-cpu",
+            "displayName": "Reverb runner (XNNPACK)",
+            "inherits": [
+                "reverb-base"
+            ]
+        },
+        {
+            "name": "reverb-mlx",
+            "displayName": "Reverb runner (MLX)",
+            "inherits": [
+                "reverb-base"
+            ],
+            "cacheVariables": {
+                "EXECUTORCH_BUILD_MLX": "ON"
+            },
+            "condition": {
+                "lhs": "${hostSystemName}",
+                "type": "equals",
+                "rhs": "Darwin"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "reverb-cpu",
+            "displayName": "Build Reverb runner and tests (XNNPACK)",
+            "configurePreset": "reverb-cpu",
+            "targets": [
+                "reverb_runner",
+                "reverb_runtime_test"
+            ]
+        },
+        {
+            "name": "reverb-mlx",
+            "displayName": "Build Reverb runner and tests (MLX)",
+            "configurePreset": "reverb-mlx",
+            "targets": [
+                "reverb_runner",
+                "reverb_runtime_test"
+            ]
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "reverb-cpu",
+            "configurePreset": "reverb-cpu",
+            "output": {
+                "outputOnFailure": true
+            }
+        },
+        {
+            "name": "reverb-mlx",
+            "configurePreset": "reverb-mlx",
+            "output": {
+                "outputOnFailure": true
+            }
+        }
+    ],
+    "workflowPresets": [
+        {
+            "name": "reverb-cpu",
+            "displayName": "Configure and build Reverb runner (XNNPACK)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "reverb-cpu"
+                },
+                {
+                    "type": "build",
+                    "name": "reverb-cpu"
+                }
+            ]
+        },
+        {
+            "name": "reverb-mlx",
+            "displayName": "Configure and build Reverb runner (MLX)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "reverb-mlx"
+                },
+                {
+                    "type": "build",
+                    "name": "reverb-mlx"
+                }
+            ]
+        }
+    ]
+}
