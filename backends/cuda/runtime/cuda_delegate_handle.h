@@ -330,6 +330,11 @@ struct CudaDelegateHandle : public aoti::AOTIDelegateHandle {
   // CUDA graph state (warmup, capture, replay, static buffers)
   CudaGraphState cuda_graph_state;
 
+  // Whether a replay of the captured graph returns once it is enqueued on the
+  // per-thread stream rather than after it finishes. Set at init from the
+  // async_replay_for_method backend option.
+  bool async_replay = false;
+
   // Per-FQN weight artifacts keep the allocations and their
   // SlimTensor handles alive for as long as AOTI may reference their views.
   std::vector<std::shared_ptr<CudaWeightStorage>> fqn_weight_storages;

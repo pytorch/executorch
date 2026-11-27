@@ -37,6 +37,7 @@ from executorch.examples.models.muse_glimmer.model.model import (
 )
 from executorch.examples.models.muse_glimmer.source_transformations.sampler import (
     sample,
+    sample_token,
 )
 from executorch.extension.llm.export.model_metadata import write_cache_geometry
 from torch.library import triton_op, wrap_triton
@@ -861,11 +862,14 @@ def _decode_from_embedding_sampling(
     input_pos: torch.Tensor,
     temperature: torch.Tensor,
 ) -> torch.Tensor:
-    """Single-embedding decode entry that samples one token on-device."""
+    """Single-embedding decode entry that samples one int64 token on-device.
+
+    The int64 token can feed the next step's ``embed_text`` on the device.
+    """
     x = self._run_blocks(input_embedding, input_pos)
     x = self.output_norm(x)
     last = self._soft_cap(self.lm_head(x[:, -1, :]))
-    return sample(last, temperature)
+    return sample_token(last, temperature)
 
 
 def add_on_device_sampler(model: nn.Module) -> None:

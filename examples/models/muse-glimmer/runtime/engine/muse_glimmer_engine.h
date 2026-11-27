@@ -82,6 +82,12 @@ struct MuseGlimmerConfig {
   int32_t max_sessions = 1;
   int64_t eos_id = 200001;
   bool enable_cuda_graph = false;
+  // With CUDA graphs and a decode method that returns an int64 token, keep
+  // the token on the device and enqueue each decode step before reading the
+  // previous one back. A session may move between threads, but each step stays
+  // on the calling thread's CUDA stream until the session's next call, so that
+  // thread must not exit before then.
+  bool pipelined_decode = true;
   int64_t offgraph_initial_capacity = 512;
   MuseGlimmerArtifactMode artifact_mode = MuseGlimmerArtifactMode::Auto;
   int32_t dflash_block_length = 0;
@@ -126,6 +132,14 @@ class ET_EXPERIMENTAL MuseGlimmerEngine : public LLMEngine {
 
   bool has_vision() const {
     return vision_runtime_ != nullptr;
+  }
+
+  bool pipelined_decode() const {
+#ifdef EXECUTORCH_BUILD_CUDA
+    return pipelined_decode_;
+#else
+    return false;
+#endif
   }
 
   ::executorch::runtime::Result<PreparedMuseGlimmerImage>
@@ -219,6 +233,9 @@ class ET_EXPERIMENTAL MuseGlimmerEngine : public LLMEngine {
       offgraph_guard_;
   ::executorch::extension::llm::cache::SequenceControl* offgraph_control_ =
       nullptr;
+  // Whether sessions keep the sampled token on the device and enqueue each
+  // decode step before reading the previous one back.
+  bool pipelined_decode_ = false;
 #endif
   std::atomic<int> live_sessions_{0};
 };

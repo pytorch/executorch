@@ -204,26 +204,32 @@ static const char* method_for(int64_t chunk_len) {
   return (chunk_len == 1) ? "decode" : "prefill";
 }
 
-// Read a sampled token ID from a scalar float output (on-device sampling).
-// Used by the CUDA sampling export (sample=True), whose methods return one
-// Gumbel-max token id as a float scalar instead of full logits.
+// Read a sampled token ID from a scalar output (on-device sampling). Used by
+// the CUDA sampling export (sample=True), whose methods return one Gumbel-max
+// token id instead of full logits: int64 from decode, float from prefill.
 [[maybe_unused]] static uint64_t read_token(
     const executorch::aten::Tensor& output) {
   const void* ptr = output.const_data_ptr();
-  float val = 0.0f;
+  const bool is_long =
+      output.scalar_type() == executorch::aten::ScalarType::Long;
+  const size_t nbytes = is_long ? sizeof(int64_t) : sizeof(float);
+  int64_t long_val = 0;
+  float float_val = 0.0f;
+  void* dst = is_long ? static_cast<void*>(&long_val) : &float_val;
 #ifdef EXECUTORCH_BUILD_CUDA
   cudaPointerAttributes attrs{};
   bool on_device = cudaPointerGetAttributes(&attrs, ptr) == cudaSuccess &&
       attrs.type == cudaMemoryTypeDevice;
   if (on_device) {
-    cudaMemcpy(&val, ptr, sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(dst, ptr, nbytes, cudaMemcpyDeviceToHost);
   } else {
-    memcpy(&val, ptr, sizeof(float));
+    memcpy(dst, ptr, nbytes);
   }
 #else
-  memcpy(&val, ptr, sizeof(float));
+  memcpy(dst, ptr, nbytes);
 #endif
-  return static_cast<uint64_t>(llrintf(val));
+  return is_long ? static_cast<uint64_t>(long_val)
+                 : static_cast<uint64_t>(llrintf(float_val));
 }
 
 // Copy CUDA or MLX tensor storage to the host for embedding splices.
