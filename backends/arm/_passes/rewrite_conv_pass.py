@@ -25,6 +25,12 @@ from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import
 from executorch.backends.arm._passes.symbolic_value_range import (
     evaluate_symbolic_expr_values,
 )
+from executorch.backends.arm._passes.tosa_lowering_utils import (
+    create_rescale_node,
+    rescale_parameters,
+    rescale_tensor,
+    set_rescale_args,
+)
 from executorch.backends.arm.constants import (
     HWCM_ORDER,
     NHWC_INVERSE_ORDER,
@@ -289,9 +295,9 @@ class RewriteConvPass(ArmPass):
         rescale_chain = [*reversed(parent_rescales), bias_node]
         boundary_scale = 1.0
         for rescale in rescale_chain:
-            boundary_scales = cast(list[float], rescale.args[2])
+            boundary_scales = rescale_parameters(rescale)[0]
             boundary_scale *= boundary_scales[0]
-        boundary_zp = cast(int, rescale_chain[0].args[3])
+        boundary_zp = rescale_parameters(rescale_chain[0])[1]
         source_scale = boundary_scale * bias_qparams.get_scale_per_tensor()
         float_bias = (quantized_bias.to(torch.float32) - boundary_zp) * source_scale
 
@@ -387,18 +393,18 @@ class RewriteConvPass(ArmPass):
         rewritten_weight: torch.fx.Node = rewritten_weight_node
         for original_rescale in rescale_chain:
             with graph_module.graph.inserting_after(rewritten_weight):
-                rewritten_rescale = create_node(
-                    graph=graph_module.graph,
-                    op_target=exir_ops.backend.tosa.RESCALE.default,
-                    args=(rewritten_weight, *original_rescale.args[1:]),
-                    kwargs=original_rescale.kwargs,
+                scales, input_zp, output_zp, output_dtype = rescale_parameters(
+                    original_rescale
+                )
+                rewritten_rescale = create_rescale_node(
+                    graph_module.graph,
+                    (rewritten_weight, output_dtype, scales, input_zp, output_zp),
+                    kwargs={
+                        key: original_rescale.kwargs[key]
+                        for key in ("input_unsigned", "output_unsigned")
+                    },
                     from_node=original_rescale,
                 )
-            rewritten_rescale.meta["val"] = exir_ops.backend.tosa.RESCALE.default(
-                get_first_fake_tensor(rewritten_weight),
-                *original_rescale.args[1:],
-                **original_rescale.kwargs,
-            )
             rewritten_weight = rewritten_rescale
 
         return rewritten_weight
@@ -488,9 +494,8 @@ class RewriteConvPass(ArmPass):
             )
         ]
         with graph_module.graph.inserting_after(conv_node):
-            rescale_node = create_node(
+            rescale_node = create_rescale_node(
                 graph=graph_module.graph,
-                op_target=exir_ops.backend.tosa.RESCALE.default,
                 args=(
                     conv_node,
                     output_qparams.dtype,
@@ -500,7 +505,7 @@ class RewriteConvPass(ArmPass):
                 ),
                 from_node=source_node,
             )
-        rescale_fake_tensor = exir_ops.backend.tosa.RESCALE.default(
+        rescale_fake_tensor = rescale_tensor(
             conv_fake_tensor,
             output_qparams.dtype,
             post_conv2d_scale,
@@ -538,7 +543,7 @@ class RewriteConvPass(ArmPass):
             node.op == "call_function"
             and node.target == exir_ops.backend.tosa.RESCALE.default
             and len(node.args) > 1
-            and node.args[1] is torch.int32
+            and node.kwargs.get("dtype") is torch.int32
         )
 
     def _get_direct_int32_rescale_users(
@@ -674,18 +679,21 @@ class RewriteConvPass(ArmPass):
     ) -> None:
         """Route A16W8 convolution users through the required output types.
 
-        Keep INT32 consumers on a widened path from the INT48 accumulator, even
-        though the convolution's declared output is INT16. This preserves
-        numerical range by avoiding unnecessary INT16 rounding and clamping.
+        A declared narrow output is a quantization boundary, including its
+        rounding and saturation. INT32 consumers must read that output rather
+        than bypassing it through the convolution accumulator.
 
         """
+        if default_rescale.kwargs["dtype"] in (torch.int8, torch.int16):
+            return
+
         direct_int32_users = self._get_direct_int32_rescale_users(node)
         permute_int32_users = self._get_permute_int32_rescale_users(node)
         if not direct_int32_users and not permute_int32_users:
             return
 
-        conv_scales = cast(list[float], default_rescale.args[2])
-        conv_output_zp = cast(int, default_rescale.args[4])
+        conv_scales = rescale_parameters(default_rescale)[0]
+        conv_output_zp = rescale_parameters(default_rescale)[2]
 
         # The layout permutation cannot consume the INT48 accumulator. Fork
         # before narrowing. A direct INT32 rescale can be combined with the
@@ -706,9 +714,9 @@ class RewriteConvPass(ArmPass):
         for int32_user in direct_int32_users:
             # Retarget the existing consumer rescale to the TOSA convolution;
             # its previous consumers will be moved after the layout permute.
-            user_scales = cast(list[float], int32_user.args[2])
-            user_input_zp = int32_user.args[3]
-            user_output_zp = cast(int, int32_user.args[4])
+            user_scales = rescale_parameters(int32_user)[0]
+            user_input_zp = rescale_parameters(int32_user)[1]
+            user_output_zp = rescale_parameters(int32_user)[2]
             if conv_output_zp != user_input_zp:
                 raise ValueError(
                     "Cannot combine convolution and INT32 rescales with "
@@ -723,14 +731,17 @@ class RewriteConvPass(ArmPass):
             # blanket replace afterward would also rewrite the new permute's
             # input and create a cycle.
             previous_users = list(int32_user.users)
-            int32_user.args = (
-                tosa_op,
-                torch.int32,
-                combined_scales,
-                0,
-                user_output_zp,
+            set_rescale_args(
+                int32_user,
+                *(
+                    tosa_op,
+                    torch.int32,
+                    combined_scales,
+                    0,
+                    user_output_zp,
+                ),
             )
-            int32_fake_tensor = exir_ops.backend.tosa.RESCALE.default(
+            int32_fake_tensor = rescale_tensor(
                 tosa_node_fake_tensor,
                 torch.int32,
                 combined_scales,
@@ -742,7 +753,7 @@ class RewriteConvPass(ArmPass):
                 graph_module,
                 node,
                 int32_user,
-                int32_fake_tensor,
+                cast(FakeTensor, int32_fake_tensor),
                 post_permute_dims,
             )
             for user in previous_users:
@@ -768,19 +779,12 @@ class RewriteConvPass(ArmPass):
             # Convert the accumulator to the declared convolution domain, but
             # use INT32 storage to avoid clamping values to the INT16 range.
             with graph_module.graph.inserting_after(tosa_op):
-                widened_rescale = create_node(
+                widened_rescale = create_rescale_node(
                     graph=graph_module.graph,
-                    op_target=exir_ops.backend.tosa.RESCALE.default,
-                    args=(
-                        tosa_op,
-                        torch.int32,
-                        conv_scales,
-                        0,
-                        conv_output_zp,
-                    ),
+                    args=(tosa_op, torch.int32, conv_scales, 0, conv_output_zp),
                     from_node=node,
                 )
-            widened_fake_tensor = exir_ops.backend.tosa.RESCALE.default(
+            widened_fake_tensor = rescale_tensor(
                 tosa_node_fake_tensor,
                 torch.int32,
                 conv_scales,
@@ -792,7 +796,7 @@ class RewriteConvPass(ArmPass):
                 graph_module,
                 node,
                 widened_rescale,
-                widened_fake_tensor,
+                cast(FakeTensor, widened_fake_tensor),
                 post_permute_dims,
             )
 
@@ -811,7 +815,17 @@ class RewriteConvPass(ArmPass):
                 tuple(source_permute_dims),
             )
             for int32_user in int32_users:
-                int32_user.replace_input_with(permute, widened_permute)
+                scales, input_zp, output_zp, dtype = rescale_parameters(int32_user)
+                set_rescale_args(
+                    int32_user,
+                    widened_permute,
+                    dtype,
+                    scales,
+                    input_zp,
+                    output_zp,
+                    input_unsigned=cast(bool, int32_user.kwargs["input_unsigned"]),
+                    output_unsigned=cast(bool, int32_user.kwargs["output_unsigned"]),
+                )
 
             if not permute.users:
                 graph_module.graph.erase_node(permute)
@@ -851,10 +865,10 @@ class RewriteConvPass(ArmPass):
             # INT32 branches with their own layout permutations. If every
             # consumer moves to INT32, the caller removes the unused INT16
             # rescale and permutation.
+            tosa_op.meta[TosaSpecialDtype.meta_key()] = TosaSpecialDtype.INT48
             node_replacement, node_replacement_fake_tensor = self.insert_output_rescale(
                 graph_module, node, tosa_op, tosa_node_fake_tensor
             )
-            tosa_op.meta[TosaSpecialDtype.meta_key()] = TosaSpecialDtype.INT48
         elif is_fp8_conv:
             node_output_fake_tensor = get_first_fake_tensor(node)
             # TOSA FP8 conv widens the output. Cast back to the exported
@@ -938,9 +952,9 @@ class RewriteConvPass(ArmPass):
             pre_permute_dims: tuple[int, ...]
             post_permute_dims: tuple[int, ...]
             if transposed:
-                if spatial_rank != 2:
+                if spatial_rank not in (1, 2):
                     raise RuntimeError(
-                        "Only 2D transpose convolutions are supported in the Arm backend."
+                        "Only 1D and 2D transpose convolutions are supported in the Arm backend."
                     )
                 if any(d != 1 for d in dilation_list):
                     raise RuntimeError(
@@ -949,15 +963,36 @@ class RewriteConvPass(ArmPass):
                 output_padding_list = expand_around_channel(
                     output_padding, spatial_rank
                 )
+                target_op = exir_ops.backend.tosa.TRANSPOSE_CONV2D.default
+                weight_permute_dims: tuple[int, ...]
+                weight_reshape_dims: tuple[int, ...] | None
+                if spatial_rank == 1:
+                    # NCL -> NLC -> N1LC, as for ordinary Conv1d.
+                    # PyTorch transpose weights are [IC, OC, K]; TOSA
+                    # requires [OC, KH, KW, IC].
+                    pre_permute_dims = post_permute_dims = (0, 2, 1)
+                    weight_permute_dims = (1, 2, 0)
+                    weight_reshape_dims = (
+                        weight_shape[1],
+                        1,
+                        weight_shape[2],
+                        weight_shape[0],
+                    )
+                    stride = (1, stride[0])
+                    pad_list = [0, *pad_list]
+                    output_padding_list = [0, *output_padding_list]
+                else:
+                    pre_permute_dims = NHWC_ORDER
+                    post_permute_dims = NHWC_INVERSE_ORDER
+                    weight_permute_dims = OHWI_ORDER
+                    weight_reshape_dims = None
+
                 out_pad = [
                     -pad_list[0],
                     -pad_list[0] + output_padding_list[0],
                     -pad_list[1],
                     -pad_list[1] + output_padding_list[1],
                 ]
-                target_op = exir_ops.backend.tosa.TRANSPOSE_CONV2D.default
-                pre_permute_dims = NHWC_ORDER
-                post_permute_dims = NHWC_INVERSE_ORDER
                 with graph_module.graph.inserting_before(node):
                     x = create_node(
                         graph=graph_module.graph,
@@ -965,16 +1000,28 @@ class RewriteConvPass(ArmPass):
                         args=(x, list(pre_permute_dims)),
                         from_node=node,
                     )
-                input_tensor_for_tosa_fake = permute_fake_tensor_metadata(
-                    input_fake_tensor, pre_permute_dims
-                )
-                x.meta["val"] = input_tensor_for_tosa_fake
+                    input_tensor_for_tosa_fake = permute_fake_tensor_metadata(
+                        input_fake_tensor, pre_permute_dims
+                    )
+                    x.meta["val"] = input_tensor_for_tosa_fake
+                    if spatial_rank == 1:
+                        input_tensor_for_tosa_fake = (
+                            input_tensor_for_tosa_fake.unsqueeze(1)
+                        )
+                        x = create_node(
+                            graph=graph_module.graph,
+                            op_target=exir_ops.edge.aten.view_copy.default,
+                            args=(x, list(input_tensor_for_tosa_fake.shape)),
+                            from_node=node,
+                        )
+                        x.meta["val"] = input_tensor_for_tosa_fake
                 weight = self._rewrite_weight(
                     graph_module,
                     weight,
                     node,
-                    permute_dims=OHWI_ORDER,
+                    permute_dims=weight_permute_dims,
                     name_suffix="ohwi",
+                    reshape_dims=weight_reshape_dims,
                 )
                 weight_fake_tensor = get_first_fake_tensor(weight)
                 conv_args = (
@@ -1237,9 +1284,8 @@ class RewriteConvPass(ArmPass):
                 and input_fake_tensor.dtype == torch.int16
             )
             if is_a16w8_conv and spatial_rank != 1:
-                # Keep values in INT32 whenever a consumer supports it, even
-                # though the declared output is INT16, by branching from the
-                # accumulator before narrowing.
+                # Preserve declared narrow quantization boundaries even when a
+                # consumer subsequently rescales the result to INT32.
                 #
                 # Rank-three convolutions are excluded. The legacy Conv1d
                 # expansion placed a rank-changing view between the convolution

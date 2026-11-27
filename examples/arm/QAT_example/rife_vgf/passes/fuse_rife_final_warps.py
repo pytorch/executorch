@@ -17,9 +17,6 @@ from examples.arm.QAT_example.rife_vgf.shaders.pack_warps import (
     OPERATOR_NAME as PACK_OPERATOR_NAME,
 )
 from executorch.backends.arm._passes import ArmPass
-from executorch.backends.arm.operators.op_tosa_rescale import (
-    _compute_multiplier_and_shift,
-)
 from executorch.backends.arm.tosa.dialect.ops.custom import register_fake_tosa
 from executorch.backends.arm.vgf.shaders.grid_sampler import (
     CUSTOM_SHADER_DOMAIN_NAME,
@@ -32,6 +29,7 @@ from torch.fx import GraphModule
 from .pack_rife_warps_and_concat import (
     _constant_tensor,
     _is_op,
+    _is_rescale,
     _payload,
     _phase_major_parameters,
     _reorder_pixel_shuffle_output,
@@ -137,15 +135,11 @@ def _validate_rescales(previous, delta, total):
         (delta, torch.int32),
         (total, torch.int8),
     ):
-        if (
-            not _is_op(node, TOSA.RESCALE.default, 5)
-            or node.args[1] != dtype
-            or len(node.args[2]) != 1
-            or any(node.kwargs.values())
-            or not all(-128 <= node.args[i] <= 127 for i in (3, 4))
+        if not _is_rescale(node, dtype) or not all(
+            -128 <= node.args[i] <= 127 for i in (3, 4)
         ):
             raise ValueError("Expected signed per-tensor flow rescales.")
-        multipliers, shifts = _compute_multiplier_and_shift(node.args[2])
+        multipliers, shifts = node.args[1:3]
         if dtype == torch.int32:
             if node.args[4] != 0:
                 raise ValueError("Expected zero INT32 output zero point.")
@@ -168,9 +162,13 @@ class FuseRifeFinalWarpsPass(ArmPass):
 
     _passes_required_after: set[type[ExportPass]] = set()
 
-    def __init__(self, exported_program: ExportedProgram | None = None):
+    def __init__(
+        self, exported_program: ExportedProgram | None = None, *, precision=None
+    ):
         super().__init__()
         self.exported_program = exported_program
+        self.precision = precision
+        self.applied = False
 
     def _match(self, graph_module):
         customs = [
@@ -269,14 +267,24 @@ class FuseRifeFinalWarpsPass(ArmPass):
                 parameters,
             ) = self._match(graph_module)
         except ValueError as error:
+            if self.precision is not None:
+                raise RuntimeError(
+                    "The requested floating RIFE tail cannot be fused."
+                ) from error
             logger.debug("Keeping the original RIFE final tail: %s", error)
             return PassResult(graph_module, False)
         try:
             blend = match_rife_blend(self.exported_program, outputs, table)
         except ValueError as error:
+            if self.precision is not None:
+                raise RuntimeError(
+                    "The requested floating RIFE blend cannot be fused."
+                ) from error
             logger.debug("Keeping the RIFE image blend in TOSA: %s", error)
             blend = None
-        payload = build_final_warps_payload(payloads, rescales, sigmoid, blend=blend)
+        payload = build_final_warps_payload(
+            payloads, rescales, sigmoid, blend=blend, precision=self.precision
+        )
         _reorder_pixel_shuffle_output(self.exported_program, phase, parameters)
         graph = graph_module.graph
         with graph.inserting_before(customs[0]):
@@ -298,4 +306,10 @@ class FuseRifeFinalWarpsPass(ArmPass):
         graph.eliminate_dead_code()
         graph.lint()
         graph_module.recompile()
+        self.applied = True
+        logger.debug(
+            "Fused RIFE final warps into shader %s: normalization_xy=%s retained",
+            OPERATOR_NAME if blend is None else BLEND_OPERATOR_NAME,
+            payloads[0]["flow_normalization"],
+        )
         return PassResult(graph_module, True)

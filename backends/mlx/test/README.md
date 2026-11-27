@@ -37,6 +37,18 @@ This builds the `op_test_runner` binary that executes `.pte` models using the ML
 
 ## Running Tests
 
+The native speculative-op tests use the pinned MLX C++ library and independent
+host references for sliding-window attention, short-query attention with strided
+KV caches, and affine quantized matmul with 3–16 rows. They cover float32,
+float16, and bfloat16 without model downloads and run in the MLX CI CTest job.
+A second CTest run disables TF32 and checks float32 with tighter tolerances.
+Kernel selection depends on the Apple GPU generation.
+
+```bash
+cmake --build cmake-out --target mlx_speculative_ops_test
+ctest --test-dir cmake-out/backends/mlx/test -R '^mlx_speculative_ops' --output-on-failure
+```
+
 ### Run All Tests
 
 To run all registered tests:

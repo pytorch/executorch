@@ -11,10 +11,14 @@
 #include <cstdio>
 #include <cstring>
 #include <exception>
+#include <filesystem>
+#include <fstream>
 #include <functional>
+#include <iostream>
 #include <limits>
 #include <memory>
 #include <numeric>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <unordered_set>
@@ -24,6 +28,7 @@
 #include <executorch/backends/native/examples/hf_llm/runtime/LlmRunner.h>
 #include <executorch/backends/native/examples/hf_llm/runtime/LlmRunnerUtils.h>
 #include <executorch/backends/native/examples/runner_utils/runner_utils.h>
+#include <executorch/backends/native/runtime/OffGraphCache.h>
 #include <executorch/backends/native/runtime/Program.h>
 #include <executorch/backends/native/runtime/deserialize/Package.h>
 #include <executorch/backends/native/runtime/deserialize/Samples.h>
@@ -31,17 +36,30 @@
 #include <executorch/backends/native/runtime/engine/Engine.h>
 #include <executorch/backends/native/runtime/graph/ScalarType.h>
 #include <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
+#include <executorch/extension/llm/cache/cache_registry.h>
+#include <executorch/extension/llm/runner/constants.h>
+#include <executorch/runtime/backend/options.h>
 #include <gflags/gflags.h>
+#include <nlohmann/json.hpp>
 #include <pytorch/tokenizers/error.h>
+#include <pytorch/tokenizers/hf_tokenizer.h>
 
 DEFINE_string(package, "", "Path to the *.ptn model. Required.");
-DEFINE_string(tokenizer, "", "Path to the Llama TikToken model. Required.");
+DEFINE_string(
+    tokenizer,
+    "",
+    "Path to a Llama 3 TikToken model, or a Hugging Face tokenizer.json or "
+    "its directory. Required.");
 DEFINE_string(prompt, "The capital of France is", "Prompt text.");
 DEFINE_string(method, "", "Method to run. Defaults to the first one.");
 DEFINE_string(eos_ids, "128001,128009", "Comma-separated EOS token IDs.");
 DEFINE_int32(max_new_tokens, 32, "Maximum generated token count.");
 DEFINE_int32(max_seq_length, 2048, "Maximum prompt plus generated tokens.");
-DEFINE_int32(num_bos, 1, "Number of BOS tokens prepended to the prompt.");
+DEFINE_int32(
+    num_bos,
+    -1,
+    "Number of BOS tokens prepended to the prompt. -1 prepends one, or none "
+    "for a Hugging Face tokenizer whose tokenizer_config.json turns BOS off.");
 DEFINE_bool(
     print_token_ids,
     false,
@@ -64,7 +82,35 @@ DEFINE_string(
     "Replay this sample set, whose calls must all run --method, instead of "
     "--prompt, comparing each call's logits and forcing the sample's next "
     "token; exits 1 on mismatch.");
+DEFINE_int32(
+    kv_max_capacity,
+    0,
+    "Off-graph KV cache capacity in tokens; 0 uses --max_seq_length. Only "
+    "for packages exported with --offgraph_cache.");
+DEFINE_string(
+    kv_dtype,
+    "auto",
+    "KV cache storage: auto, fp32 or fp16. auto takes the engine's default, as "
+    "llama.cpp stores it: fp16 on a ggml GPU, fp32 on the ggml CPU and on "
+    "Vulkan. It sets an off-graph cache's storage and, through the engine, an "
+    "in-graph cache's; a type the engine cannot store is refused.");
+DEFINE_int32(
+    kv_initial_capacity,
+    -1,
+    "Off-graph KV cache rows allocated up front, doubling toward "
+    "--kv_max_capacity as the sequence grows; -1 keeps the cache default.");
+DEFINE_bool(
+    interactive,
+    false,
+    "Chat on stdin with the Llama 3 chat template, keeping the conversation "
+    "in the off-graph KV cache. Needs a package exported with "
+    "--offgraph_cache.");
 namespace {
+
+namespace cache = executorch::extension::llm::cache;
+
+// get_logits_to_keep_mode's value for selected logits.
+constexpr int64_t kSelectedLogits = 2;
 
 using Clock = std::chrono::steady_clock;
 
@@ -94,6 +140,84 @@ size_t kv_cache_length(const ptn::Method& method) {
     }
   }
   return length;
+}
+
+// A runner-owned off-graph KV cache, published for the engine to bind.
+struct OffGraphCache {
+  std::shared_ptr<cache::Cache> cache;
+  std::unique_ptr<cache::InstallGuard> guard;
+  cache::SequenceControl* control = nullptr;
+  ptn::EngineContextOptions options;
+};
+
+// `max_write` is the most tokens one call writes, which sizes a ring layer.
+OffGraphCache install_offgraph_cache(
+    const char* backend_id,
+    const cache::CacheGeometry& geometry,
+    int max_write,
+    bool half_by_default) {
+  if (backend_id == nullptr) {
+    throw std::runtime_error(
+        "the package keeps its KV cache off-graph, which this engine's "
+        "runner does not support");
+  }
+  const bool half = ptn::kv_cache_in_half(FLAGS_kv_dtype, half_by_default);
+  cache::CacheConfig cfg{
+      .capacity = FLAGS_kv_max_capacity > 0 ? FLAGS_kv_max_capacity
+                                            : FLAGS_max_seq_length,
+      .kv_dtype = static_cast<int>(
+          half ? ptn::ScalarType::Half : ptn::ScalarType::Float),
+      .max_write = max_write};
+  if (FLAGS_kv_initial_capacity >= 0) {
+    cfg.initial_capacity = FLAGS_kv_initial_capacity;
+  }
+  auto built = cache::CacheFactory::global().build(
+      backend_id, cache::kind::kSingle, geometry, cfg);
+  if (!built.ok()) {
+    throw std::runtime_error(
+        "failed to build the off-graph KV cache: error " +
+        std::to_string(static_cast<int>(built.error())));
+  }
+  OffGraphCache out;
+  out.cache = built.get();
+  out.control = out.cache->as<cache::SequenceControl>();
+  if (out.control == nullptr) {
+    throw std::runtime_error("the KV cache has no single-sequence control");
+  }
+  out.guard = std::make_unique<cache::InstallGuard>(out.cache);
+  executorch::runtime::BackendOptions<1> options;
+  const char* key = nullptr;
+  if (out.guard->set_option(options) != executorch::runtime::Error::Ok ||
+      options.get_option(cache::kCacheKeyOption, key) !=
+          executorch::runtime::Error::Ok) {
+    throw std::runtime_error("failed to publish the KV cache key");
+  }
+  out.options.emplace(cache::kCacheKeyOption, key);
+  const auto sliding = std::ranges::count_if(
+      geometry.layers, [](const cache::LayerGeometry& layer) {
+        return layer.policy.kind == cache::LayerPolicy::Kind::Ring;
+      });
+  std::printf(
+      "kv cache:  off-graph, %zu layers (%td sliding), %d tokens (%d "
+      "allocated up front), %s\n",
+      geometry.layers.size(),
+      sliding,
+      cfg.capacity,
+      std::min(std::max(cfg.initial_capacity, 1), cfg.capacity),
+      half ? "fp16" : "fp32");
+  return out;
+}
+
+// The --kv_* flags size an off-graph cache, so they are mistakes elsewhere.
+void reject_offgraph_cache_flags() {
+  for (const char* flag :
+       {"kv_max_capacity", "kv_dtype", "kv_initial_capacity"}) {
+    if (!gflags::GetCommandLineFlagInfoOrDie(flag).is_default) {
+      throw std::invalid_argument(
+          std::string("--") + flag +
+          " only applies to packages exported with --offgraph_cache");
+    }
+  }
 }
 
 // The values of an [n] or [1, n] Int or Long sample tensor.
@@ -130,19 +254,28 @@ struct Generation {
   double prompt_ms = 0.0;
   double decode_ms = 0.0;
   size_t decode_steps = 0;
+  // The last token chosen, which was never fed to the model.
+  uint64_t unfed_token = 0;
+  bool ended_on_eos = false;
 };
 
-// Prefills `prompt_tokens` in one call, then decodes one token per call until
-// `limit` tokens or an EOS, streaming the text to stdout.
+// Prefills `prompt_tokens` from `start_position` in calls of at most
+// `max_chunk` tokens, then decodes one token per call until `limit` tokens or
+// an EOS, streaming the text to stdout unless `tokenizer` is null. With
+// --warmup_prefill it prefills the prompt once beforehand, then clears
+// `offgraph_cache` if there is one.
 Generation generate(
     ptn::EngineExecutable& executable,
     size_t logits_output,
     bool per_token_positions,
-    ::tokenizers::Tiktoken& tokenizer,
+    size_t max_chunk,
+    const ::tokenizers::Tokenizer* tokenizer,
     const std::vector<uint64_t>& prompt_tokens,
+    int64_t start_position,
     size_t limit,
     const std::unordered_set<uint64_t>& eos_ids,
-    const NextToken& next_token_of) {
+    const NextToken& next_token_of,
+    cache::CacheControl* offgraph_cache) {
   std::vector<float> logits;
 
   auto set_positions = [&](int64_t start, size_t count) {
@@ -189,6 +322,13 @@ Generation generate(
   auto run_tokens = [&](const std::vector<uint64_t>& tokens, int64_t position) {
     set_tokens(tokens);
     set_positions(position, tokens.size());
+    // A selected-logits method takes the token indices to return; the runner
+    // wants only the last.
+    if (executable.num_inputs() == 3) {
+      const int64_t last = static_cast<int64_t>(tokens.size()) - 1;
+      executable.resize_input(2, {1});
+      executable.set_input(2, &last, 1, ptn::kLong);
+    }
     executable.execute();
     const std::vector<int64_t> output_shape =
         executable.output_sizes(logits_output);
@@ -201,22 +341,6 @@ Generation generate(
     logits.resize(logits_numel);
     executable.get_output(
         logits_output, logits.data(), logits.size(), ptn::kFloat);
-    if (position == 0 && !FLAGS_dump_first_logits.empty()) {
-      FILE* output = std::fopen(FLAGS_dump_first_logits.c_str(), "wbx");
-      if (output == nullptr) {
-        throw std::runtime_error(
-            "cannot create new logits dump: " + FLAGS_dump_first_logits);
-      }
-      const float* row = logits.data() + logits_numel - vocabulary_size;
-      const size_t written =
-          std::fwrite(row, sizeof(float), vocabulary_size, output);
-      const int close_status = std::fclose(output);
-      if (written != vocabulary_size || close_status != 0) {
-        std::remove(FLAGS_dump_first_logits.c_str());
-        throw std::runtime_error(
-            "failed to write complete initial logits dump");
-      }
-    }
     if (FLAGS_print_top_logits) {
       const float* row = logits.data() + logits_numel - vocabulary_size;
       const std::vector<size_t> ranks =
@@ -229,6 +353,36 @@ Generation generate(
     }
     return vocabulary_size;
   };
+  auto prefill = [&](int64_t start) {
+    size_t vocabulary_size = 0;
+    for (size_t offset = 0; offset < prompt_tokens.size();
+         offset += max_chunk) {
+      const auto first = prompt_tokens.begin() + static_cast<ptrdiff_t>(offset);
+      vocabulary_size = run_tokens(
+          {first,
+           first +
+               static_cast<ptrdiff_t>(
+                   std::min(max_chunk, prompt_tokens.size() - offset))},
+          start + static_cast<int64_t>(offset));
+    }
+    if (start == 0 && !FLAGS_dump_first_logits.empty()) {
+      FILE* output = std::fopen(FLAGS_dump_first_logits.c_str(), "wbx");
+      if (output == nullptr) {
+        throw std::runtime_error(
+            "cannot create new logits dump: " + FLAGS_dump_first_logits);
+      }
+      const float* row = logits.data() + logits.size() - vocabulary_size;
+      const size_t written =
+          std::fwrite(row, sizeof(float), vocabulary_size, output);
+      const int close_status = std::fclose(output);
+      if (written != vocabulary_size || close_status != 0) {
+        std::remove(FLAGS_dump_first_logits.c_str());
+        throw std::runtime_error(
+            "failed to write complete initial logits dump");
+      }
+    }
+    return vocabulary_size;
+  };
 
   // The same prompt and positions overwrite the same cache rows. Keep this
   // explicitly opt-in so the normal timing still includes first-use GPU
@@ -238,28 +392,37 @@ Generation generate(
       throw std::invalid_argument(
           "warmup_prefill cannot be combined with logits diagnostics");
     }
-    run_tokens(prompt_tokens, 0);
+    prefill(start_position);
+    // An off-graph cache's next step must start at its length, so the real
+    // prefill starts from an empty cache.
+    if (offgraph_cache != nullptr) {
+      offgraph_cache->clear();
+    }
   }
 
   Generation generation;
   const Clock::time_point prompt_start = Clock::now();
-  uint64_t next_token = next_token_of(logits, run_tokens(prompt_tokens, 0));
+  uint64_t next_token = next_token_of(logits, prefill(start_position));
   generation.prompt_ms = elapsed_ms(prompt_start, Clock::now());
 
   size_t generated = 0;
   std::vector<uint64_t> generated_ids;
   uint64_t previous_token = prompt_tokens.back();
-  std::printf("text:      ");
+  if (tokenizer != nullptr && !FLAGS_interactive) {
+    std::printf("text:      ");
+  }
   std::fflush(stdout);
   while (generated < limit && !eos_ids.contains(next_token)) {
-    auto decoded = tokenizer.decode(previous_token, next_token);
-    if (!decoded.ok()) {
-      throw std::runtime_error(
-          "failed to decode token: tokenizer error " +
-          std::to_string(static_cast<uint32_t>(decoded.error())));
+    if (tokenizer != nullptr) {
+      auto decoded = tokenizer->decode(previous_token, next_token);
+      if (!decoded.ok()) {
+        throw std::runtime_error(
+            "failed to decode token: tokenizer error " +
+            std::to_string(static_cast<uint32_t>(decoded.error())));
+      }
+      std::printf("%s", decoded.get().c_str());
+      std::fflush(stdout);
     }
-    std::printf("%s", decoded.get().c_str());
-    std::fflush(stdout);
     previous_token = next_token;
     if (FLAGS_print_token_ids) {
       generated_ids.push_back(next_token);
@@ -269,13 +432,18 @@ Generation generate(
       const Clock::time_point step_start = Clock::now();
       const size_t vocabulary_size = run_tokens(
           {previous_token},
-          static_cast<int64_t>(prompt_tokens.size() + generated - 1));
+          start_position +
+              static_cast<int64_t>(prompt_tokens.size() + generated - 1));
       next_token = next_token_of(logits, vocabulary_size);
       generation.decode_ms += elapsed_ms(step_start, Clock::now());
       ++generation.decode_steps;
     }
   }
-  std::printf("\n");
+  if (tokenizer != nullptr) {
+    std::printf("\n");
+  }
+  generation.unfed_token = next_token;
+  generation.ended_on_eos = eos_ids.contains(next_token);
   if (FLAGS_print_token_ids) {
     std::printf("token_ids: ");
     for (size_t i = 0; i < generated_ids.size(); ++i) {
@@ -289,19 +457,65 @@ Generation generate(
   return generation;
 }
 
+// One BOS token, unless a Hugging Face tokenizer_config.json turns BOS off.
+int config_num_bos(const std::filesystem::path& config_path) {
+  std::ifstream file(config_path);
+  if (!file) {
+    return 1;
+  }
+  const nlohmann::json config =
+      nlohmann::json::parse(file, nullptr, /*allow_exceptions=*/false);
+  if (!config.is_object()) {
+    return 1;
+  }
+  const auto add_bos = config.find("add_bos_token");
+  if (add_bos != config.end() && add_bos->is_boolean()) {
+    return add_bos->get<bool>() ? 1 : 0;
+  }
+  const auto bos = config.find("bos_token");
+  return bos != config.end() && bos->is_null() ? 0 : 1;
+}
+
+// Loads --tokenizer, with the number of BOS tokens its prompts take by default.
+std::pair<std::unique_ptr<::tokenizers::Tokenizer>, int> load_tokenizer(
+    const std::filesystem::path& path) {
+  std::unique_ptr<::tokenizers::Tokenizer> tokenizer;
+  std::filesystem::path load_path = path;
+  int num_bos = 1;
+  if (path.extension() == ".json" || std::filesystem::is_directory(path)) {
+    tokenizer = std::make_unique<::tokenizers::HFTokenizer>();
+    // HFTokenizer reads the BOS and EOS tokens that tokenizer_config.json
+    // names only when it loads their directory.
+    if (path.filename() == "tokenizer.json") {
+      load_path = std::filesystem::absolute(path).parent_path();
+    }
+    if (std::filesystem::is_directory(load_path)) {
+      num_bos = config_num_bos(load_path / "tokenizer_config.json");
+    }
+  } else {
+    tokenizer = example::get_tiktoken_for_llama();
+  }
+  if (tokenizer->load(load_path.string()) != ::tokenizers::Error::Ok) {
+    throw std::runtime_error("failed to load --tokenizer " + path.string());
+  }
+  return {std::move(tokenizer), num_bos};
+}
+
 } // namespace
 
 namespace ptn {
 
 // cppcheck-suppress unusedFunction
-int run_llm(const std::function<std::unique_ptr<EngineHost>()>& make_host) {
+int run_llm(
+    const std::function<std::unique_ptr<EngineHost>()>& make_host,
+    const char* cache_backend_id,
+    bool half_kv_cache) {
   if (FLAGS_package.empty() || FLAGS_tokenizer.empty()) {
     std::fprintf(stderr, "error: --package and --tokenizer are required\n");
     return 1;
   }
-  // The tokenizer takes num_bos as an int8_t.
   if (FLAGS_max_new_tokens <= 0 || FLAGS_max_seq_length <= 0 ||
-      FLAGS_num_bos < 0 || FLAGS_num_bos > 127) {
+      FLAGS_num_bos < -1) {
     std::fprintf(stderr, "error: invalid generation limits\n");
     return 1;
   }
@@ -309,20 +523,20 @@ int run_llm(const std::function<std::unique_ptr<EngineHost>()>& make_host) {
   try {
     const auto eos_ids = ptn::parse_token_ids(FLAGS_eos_ids);
 
-    std::unique_ptr<::tokenizers::Tiktoken> tokenizer =
-        example::get_tiktoken_for_llama();
-    if (tokenizer->load(FLAGS_tokenizer) != ::tokenizers::Error::Ok) {
-      throw std::runtime_error(
-          "failed to load --tokenizer as a Llama 3 TikToken model");
-    }
-    auto encoded =
-        tokenizer->encode(FLAGS_prompt, static_cast<int8_t>(FLAGS_num_bos), 0);
+    const auto [tokenizer, default_num_bos] = load_tokenizer(FLAGS_tokenizer);
+    const int num_bos = FLAGS_num_bos < 0 ? default_num_bos : FLAGS_num_bos;
+    // A tokenizer.json adds BOS only if its post-processor does, so prepend
+    // it here for every tokenizer.
+    auto encoded = tokenizer->encode(FLAGS_prompt, 0, 0);
     if (!encoded.ok()) {
       throw std::runtime_error(
           "failed to encode prompt: tokenizer error " +
           std::to_string(static_cast<uint32_t>(encoded.error())));
     }
-    std::vector<uint64_t> prompt_tokens = std::move(encoded.get());
+    std::vector<uint64_t> prompt_tokens(
+        static_cast<size_t>(num_bos), tokenizer->bos_tok());
+    prompt_tokens.insert(
+        prompt_tokens.end(), encoded.get().begin(), encoded.get().end());
     if (prompt_tokens.empty()) {
       throw std::runtime_error("prompt encoded to no tokens");
     }
@@ -352,8 +566,33 @@ int run_llm(const std::function<std::unique_ptr<EngineHost>()>& make_host) {
         method.graph.output_ids.size(), user_outputs);
 
     const std::unique_ptr<ptn::EngineHost> host = make_host();
+    // Declared before the context, which may hold the cache, so it outlives it.
+    std::optional<OffGraphCache> kv;
+    if (const auto geometry = ptn::offgraph_cache_geometry(method, *package)) {
+      kv = install_offgraph_cache(
+          cache_backend_id,
+          *geometry,
+          ptn::max_step_tokens(method),
+          half_kv_cache);
+    } else if (FLAGS_interactive) {
+      throw std::invalid_argument(
+          "--interactive needs a package exported with --offgraph_cache");
+    } else if (
+        ptn::kv_cache_in_half(FLAGS_kv_dtype, half_kv_cache) &&
+        !half_kv_cache) {
+      throw std::invalid_argument(
+          "--kv_dtype=fp16: this engine keeps in-graph KV caches in F32; "
+          "export with --offgraph_cache for an F16 cache");
+    }
+    const size_t cache_length = kv
+        ? static_cast<size_t>(kv->control->capacity())
+        : kv_cache_length(method);
+    if (!kv) {
+      reject_offgraph_cache_flags();
+    }
     std::unique_ptr<ptn::EngineContext> context =
-        host->create_context(program, package);
+        host->create_context_with_options(
+            program, package, kv ? kv->options : ptn::EngineContextOptions{});
     const Clock::time_point load_end = Clock::now();
     const Clock::time_point compile_start = Clock::now();
     std::unique_ptr<ptn::EngineExecutable> executable =
@@ -375,8 +614,18 @@ int run_llm(const std::function<std::unique_ptr<EngineHost>()>& make_host) {
         elapsed_ms(load_start, load_end));
     std::printf("constants: %zu package bytes\n", package->constant_bytes());
 
-    if (executable->num_inputs() != 2) {
-      throw std::runtime_error("runner requires token and position inputs");
+    // A selected-logits method's third input names the token indices whose
+    // logits to return.
+    const bool selected_logits =
+        package->metadata_int(executorch::extension::llm::kLogitsToKeepMode) ==
+        kSelectedLogits;
+    const size_t num_inputs = executable->num_inputs();
+    if (num_inputs != (selected_logits ? 3 : 2)) {
+      throw std::runtime_error(
+          selected_logits
+              ? "a selected-logits method must take tokens, positions and the "
+                "token indices whose logits to return"
+              : "runner requires token and position inputs");
     }
     if (logits_output >= executable->num_outputs()) {
       throw std::runtime_error("logits output is outside engine outputs");
@@ -395,11 +644,11 @@ int run_llm(const std::function<std::unique_ptr<EngineHost>()>& make_host) {
       throw std::runtime_error(
           "position input must have one element or one per token");
     }
-    for (size_t i = 0; i < 2; ++i) {
+    for (size_t i = 0; i < num_inputs; ++i) {
       const ptn::ScalarType dtype = executable->input_dtype(i);
       if (dtype != ptn::kInt && dtype != ptn::kLong) {
         throw std::runtime_error(
-            "token and position inputs must be Int or Long, got " +
+            "token, position and index inputs must be Int or Long, got " +
             std::string(ptn::scalar_type_name(dtype)));
       }
     }
@@ -422,8 +671,10 @@ int run_llm(const std::function<std::unique_ptr<EngineHost>()>& make_host) {
       for (size_t i = 0; i < set.samples.size(); ++i) {
         const std::vector<ptn::SampleCall>& calls = set.samples[i].calls;
         // Mutable state lives in the context, so a fresh one is the program's
-        // initial state.
-        if (i > 0) {
+        // initial state; an off-graph cache only needs clearing.
+        if (i > 0 && kv) {
+          kv->control->clear();
+        } else if (i > 0) {
           executable.reset();
           context.reset();
           context = host->create_context(program, package);
@@ -438,7 +689,7 @@ int run_llm(const std::function<std::unique_ptr<EngineHost>()>& make_host) {
                 " runs method " + calls[j].method +
                 ", but the runner replays only " + method_name);
           }
-          if (calls[j].inputs.size() != 2 || !calls[j].outputs ||
+          if (calls[j].inputs.size() != num_inputs || !calls[j].outputs ||
               calls[j].outputs->size() <= logits_output ||
               (*calls[j].outputs)[logits_output].dtype != ptn::kFloat ||
               (*calls[j].outputs)[logits_output].sizes.empty() ||
@@ -464,8 +715,12 @@ int run_llm(const std::function<std::unique_ptr<EngineHost>()>& make_host) {
               static_cast<int64_t>(j == 0 ? 0 : prompt.size() + j - 1);
           std::vector<int64_t> positions(per_token_positions ? count : 1);
           std::iota(positions.begin(), positions.end(), start);
+          const std::vector<int64_t> last_index = {
+              static_cast<int64_t>(ids.size()) - 1};
           if (ids.empty() || (j > 0 && ids.size() != 1) ||
-              integer_values(calls[j].inputs[1]) != positions) {
+              integer_values(calls[j].inputs[1]) != positions ||
+              (num_inputs == 3 &&
+               integer_values(calls[j].inputs[2]) != last_index)) {
             throw std::runtime_error(
                 "sample " + std::to_string(i) + " call " + std::to_string(j) +
                 " is not a prefill or the next decode step");
@@ -487,7 +742,7 @@ int run_llm(const std::function<std::unique_ptr<EngineHost>()>& make_host) {
                 prompt.size(),
                 calls.size(),
                 static_cast<size_t>(FLAGS_max_seq_length),
-                kv_cache_length(method),
+                cache_length,
                 static_cast<size_t>(token_shape[1])) < calls.size()) {
           throw std::runtime_error(
               "sample " + std::to_string(i) + " does not fit the method");
@@ -533,11 +788,15 @@ int run_llm(const std::function<std::unique_ptr<EngineHost>()>& make_host) {
             *executable,
             logits_output,
             per_token_positions,
-            *tokenizer,
+            static_cast<size_t>(token_shape[1]),
+            // The sample's tokens need not be in --tokenizer's vocabulary.
+            nullptr,
             prompt,
+            0,
             calls.size(),
             {},
-            check_then_force);
+            check_then_force,
+            nullptr);
         std::printf("%s", report.c_str());
       }
       std::printf(
@@ -547,29 +806,118 @@ int run_llm(const std::function<std::unique_ptr<EngineHost>()>& make_host) {
       return failed_calls == 0 ? 0 : 1;
     }
 
+    if (FLAGS_interactive) {
+      // Every conversation prefills from position 0, which would rewrite the
+      // logits dump.
+      if (FLAGS_warmup_prefill || !FLAGS_dump_first_logits.empty()) {
+        throw std::invalid_argument(
+            "--warmup_prefill and --dump_first_logits cannot be combined with "
+            "--interactive");
+      }
+      // A conversation stays within --max_seq_length, as one-shot generation
+      // does.
+      const int64_t capacity =
+          std::min<int64_t>(kv->control->capacity(), FLAGS_max_seq_length);
+      std::printf("chat:      Ctrl-D quits, /reset starts over\n");
+      int64_t position = 0;
+      // The last reply's final token, never fed, unless it was an EOS; and
+      // whether a reply precedes the next turn, which closes it with
+      // <|eot_id|> whichever way it ended.
+      std::optional<uint64_t> unfed;
+      bool after_reply = false;
+      std::string line;
+      while (true) {
+        std::printf("\n> ");
+        std::fflush(stdout);
+        if (!std::getline(std::cin, line)) {
+          std::printf("\n");
+          return 0;
+        }
+        if (line == "/reset" || line.empty()) {
+          if (line == "/reset") {
+            kv->control->clear();
+            position = 0;
+            unfed.reset();
+            after_reply = false;
+          }
+          continue;
+        }
+        const auto encode_turn = [&] {
+          const std::string text =
+              std::string(after_reply ? "<|eot_id|>" : "") +
+              "<|start_header_id|>user<|end_header_id|>\n\n" + line +
+              "<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n";
+          auto turn = tokenizer->encode(text, 0, 0);
+          if (!turn.ok()) {
+            throw std::runtime_error(
+                "failed to encode message: tokenizer error " +
+                std::to_string(static_cast<uint32_t>(turn.error())));
+          }
+          std::vector<uint64_t> tokens(
+              static_cast<size_t>(position == 0 ? num_bos : 0),
+              tokenizer->bos_tok());
+          tokens.insert(tokens.end(), turn.get().begin(), turn.get().end());
+          if (unfed) {
+            tokens.insert(tokens.begin(), *unfed);
+          }
+          return tokens;
+        };
+        std::vector<uint64_t> tokens = encode_turn();
+        // Room for the turn and at least one reply token.
+        if (position + static_cast<int64_t>(tokens.size()) >= capacity) {
+          std::printf("[context full, starting a new conversation]\n");
+          kv->control->clear();
+          position = 0;
+          unfed.reset();
+          after_reply = false;
+          tokens = encode_turn();
+          if (static_cast<int64_t>(tokens.size()) >= capacity) {
+            std::printf("[message exceeds the context]\n");
+            continue;
+          }
+        }
+        const size_t limit = std::min(
+            static_cast<size_t>(FLAGS_max_new_tokens),
+            static_cast<size_t>(
+                capacity + 1 - position - static_cast<int64_t>(tokens.size())));
+        const Generation reply = generate(
+            *executable,
+            logits_output,
+            per_token_positions,
+            static_cast<size_t>(token_shape[1]),
+            tokenizer.get(),
+            tokens,
+            position,
+            limit,
+            eos_ids,
+            ptn::greedy_argmax_last_row,
+            nullptr);
+        position += static_cast<int64_t>(tokens.size() + reply.decode_steps);
+        unfed = reply.ended_on_eos ? std::nullopt
+                                   : std::optional(reply.unfed_token);
+        after_reply = true;
+      }
+    }
+
     const size_t limit = ptn::generation_limit(
         prompt_tokens.size(),
         static_cast<size_t>(FLAGS_max_new_tokens),
         static_cast<size_t>(FLAGS_max_seq_length),
-        kv_cache_length(method),
+        cache_length,
         static_cast<size_t>(token_shape[1]));
-    // Prefill sends the whole prompt in one call.
-    if (prompt_tokens.size() > static_cast<size_t>(token_shape[1])) {
-      throw std::runtime_error(
-          "prompt of " + std::to_string(prompt_tokens.size()) +
-          " tokens exceeds the method's " + std::to_string(token_shape[1]) +
-          "-token input; chunked prefill is not implemented");
-    }
 
     const Generation generation = generate(
         *executable,
         logits_output,
         per_token_positions,
-        *tokenizer,
+        static_cast<size_t>(token_shape[1]),
+        tokenizer.get(),
         prompt_tokens,
+        0,
         limit,
         eos_ids,
-        ptn::greedy_argmax_last_row);
+        ptn::greedy_argmax_last_row,
+        kv ? kv->control : nullptr);
 
     const double prompt_tokens_per_second = generation.prompt_ms > 0.0
         ? 1000.0 * static_cast<double>(prompt_tokens.size()) /

@@ -31,15 +31,13 @@
 # source here compiles an integer matrix-multiply path only at 8.0 and above. Below that a user gets a
 # delegate that loads, runs most models, and fails on one needing that operator, which is worse than a row
 # that never claimed the device. So these lists are narrower than torch at the bottom on purpose.
-_cuda_arch_x86_64_cu130="8.0 8.6 8.9 9.0 10.0 12.0"
-_cuda_arch_x86_64_cu132="${_cuda_arch_x86_64_cu130}"
-_cuda_arch_x86_64_cu134="${_cuda_arch_x86_64_cu130}"
+_cuda_arch_x86_64_cu132="8.0 8.6 8.9 9.0 10.0 12.0"
+_cuda_arch_x86_64_cu134="${_cuda_arch_x86_64_cu132}"
 
 # The architectures the published aarch64 PyTorch CUDA build covers, read from its own library on an ARM
 # machine, for the same reason as the x86_64 rows above. Includes the ARM module whose train matches.
-_cuda_arch_aarch64_cu130="8.0 9.0 10.0 11.0 12.0"
-_cuda_arch_aarch64_cu132="${_cuda_arch_aarch64_cu130}"
-_cuda_arch_aarch64_cu134="${_cuda_arch_aarch64_cu130}"
+_cuda_arch_aarch64_cu132="8.0 9.0 10.0 11.0 12.0"
+_cuda_arch_aarch64_cu134="${_cuda_arch_aarch64_cu132}"
 
 # A CUDA train with no architecture list would leave the build detecting the builder's GPU, which is
 # the failure this file exists to prevent. Adding a train to the release matrix without adding its
@@ -73,14 +71,13 @@ executorch_cuda_arch_list() {
       return 0
       ;;
   esac
-  # The value arrives as cu130, while some callers pass 13.0 instead.
+  # The value arrives as cu132, while some callers pass 13.2 instead.
   train="${train#cu}"
   train="${train//./}"
 
   case "${machine}" in
     aarch64 | arm64)
       case "${train}" in
-        130) printf '%s' "${_cuda_arch_aarch64_cu130}" ;;
         132) printf '%s' "${_cuda_arch_aarch64_cu132}" ;;
         134) printf '%s' "${_cuda_arch_aarch64_cu134}" ;;
         *) _executorch_unknown_train "${train}" ;;
@@ -88,7 +85,6 @@ executorch_cuda_arch_list() {
       ;;
     x86_64)
       case "${train}" in
-        130) printf '%s' "${_cuda_arch_x86_64_cu130}" ;;
         132) printf '%s' "${_cuda_arch_x86_64_cu132}" ;;
         134) printf '%s' "${_cuda_arch_x86_64_cu134}" ;;
         *) _executorch_unknown_train "${train}" ;;

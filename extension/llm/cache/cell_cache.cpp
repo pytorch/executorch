@@ -208,6 +208,27 @@ CellCache::place_step(int layer, const int32_t* positions, int length) {
   return &step_for(windows_[layer]);
 }
 
+void CellCache::end_step() {
+  invalidate_steps();
+}
+
+void CellCache::abandon_step() {
+  if (!placed_) {
+    return;
+  }
+  // Each sequence's first position in the step.
+  std::map<int32_t, int32_t> starts;
+  for (size_t i = 0; i < step_seq_ids_.size(); ++i) {
+    const auto [it, inserted] =
+        starts.try_emplace(step_seq_ids_[i], step_pos_[i]);
+    it->second = std::min(it->second, step_pos_[i]);
+  }
+  for (const auto& [seq_id, start] : starts) {
+    drop_from(seq_id, start);
+  }
+  invalidate_steps();
+}
+
 // -- internals ---------------------------------------------------------------
 
 uint64_t CellCache::bit(int32_t seq_id) {
@@ -322,19 +343,15 @@ std::vector<uint8_t> CellCache::build_mask(int window) const {
   for (int i = 0; i < length; ++i) {
     const uint64_t tok_bit = bit(step_seq_ids_[i]);
     const int32_t tok_pos = step_pos_[i];
-    // Draft history is anchored at context end, shared by all block queries.
-    const int32_t context_end =
-        info_[step_seq_ids_[i]].max_pos + 1 - dflash_block_size_.value_or(0);
-    const int32_t oldest = window > 0
-        ? (dflash_block_size_ ? context_end - window : tok_pos - window + 1)
-        : 0;
+    const int32_t oldest = window > 0 ? tok_pos - window + 1 : 0;
     uint8_t* row = bits.data() + static_cast<size_t>(i) * used_end_;
     for (int j = 0; j < used_end_; ++j) {
       row[j] = static_cast<uint8_t>(
           pos_[j] >= 0 && // occupied: a freed cell holds nothing
           (owners_[j] & tok_bit) && // one of this query's sequences
-          (dflash_block_size_ || pos_[j] <= tok_pos) && // full draft block
-          pos_[j] >= oldest); // within the window
+          (dflash_block_size_ || pos_[j] <= tok_pos) && pos_[j] >= oldest &&
+          (!dflash_block_size_ || window <= 0 ||
+           static_cast<int64_t>(pos_[j]) - tok_pos < window));
     }
   }
   return bits;

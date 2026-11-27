@@ -568,19 +568,6 @@ def register_quantizedequantize_cpp_ops():
     )
 
 
-@update_features(
-    [
-        exir_ops.edge.torchao.quantize_affine.default,
-        exir_ops.edge.torchao.dequantize_affine.default,
-    ]
-)
-def register_torchao_quantize_dequantize():
-    return OpFeatures(
-        inputs_storage=utils.CONTIGUOUS_BUFFER,
-        supports_resize=True,
-    )
-
-
 # =============================================================================
 # Q8taQuantizeDequantize.cpp
 # =============================================================================
@@ -683,7 +670,12 @@ def register_q8ta_relu():
 # =============================================================================
 
 
-@update_features(exir_ops.edge.et_vk.q8ta_pixel_shuffle.default)
+@update_features(
+    [
+        exir_ops.edge.et_vk.q8ta_pixel_shuffle.default,
+        exir_ops.edge.et_vk.q8ta_pixel_shuffle.with_activation,
+    ]
+)
 def register_q8ta_pixel_shuffle():
     # The fused kernel is restricted to the channels-packed family
     # (PACKED_INT8_4W4C, PACKED_INT8_4C1W, PACKED_INT8_CONV2D), all of which

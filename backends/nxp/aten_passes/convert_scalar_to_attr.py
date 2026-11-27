@@ -13,6 +13,8 @@ from torch.export.unflatten import _assign_attr, _AttrKind
 from torch.fx import GraphModule, Node
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
 
+logger = logging.getLogger(__name__)
+
 
 class ConvertScalarToAttrPass(PassBase):
     """
@@ -61,7 +63,7 @@ class ConvertScalarToAttrPass(PassBase):
         tensor_dtype = self._get_ref_dtype(node)
         # Don't change anything if type cannot be inferred.
         if tensor_dtype is None:
-            logging.warning(f"Cannot infer dtype of node `{node}`")
+            logger.warning(f"Cannot infer dtype of node `{node}`")
             return None
 
         # Create a constant tensor holding the scalar value.

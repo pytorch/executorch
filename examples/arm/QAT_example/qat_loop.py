@@ -24,6 +24,7 @@ import copy
 import csv
 import importlib
 import json
+import logging
 import math
 import re
 import sys
@@ -47,6 +48,7 @@ from torchao.quantization.pt2e.fake_quantize import (
     enable_fake_quant,
     FakeQuantize,
 )
+from torchao.quantization.pt2e.learnable_fake_quantize import LearnableFakeQuantize
 from torchao.quantization.pt2e.observer import HistogramObserver
 from torchao.quantization.pt2e.quantize_pt2e import (
     convert_pt2e,
@@ -63,6 +65,11 @@ from examples.arm.QAT_example.pruning import TwoOfFourPruner  # noqa: E402
 from examples.arm.QAT_example.rife_vgf import (  # noqa: E402
     configure_rife_vgf,
     configure_rife_vgf_quantizer,
+)
+from examples.arm.QAT_example.rife_vgf.precision import (  # noqa: E402
+    floating_tail,
+    FullRangeImageQuantizer,
+    RifePrecisionModel,
 )
 from executorch.backends.arm.quantizer import (  # noqa: E402
     get_uint8_io_quantization_config,
@@ -683,19 +690,24 @@ def quantization_coverage(graph_module: torch.nn.Module) -> dict[str, Any]:
     }
 
 
-def histogram_qat_config(config: QuantizationConfig) -> QuantizationConfig:
+def histogram_qat_config(
+    config: QuantizationConfig, *, learn_scales: bool = False
+) -> QuantizationConfig:
     """Use cumulative activation ranges for tensors sharing QAT observers.
 
     Args:
         config (QuantizationConfig): QAT configuration to customize.
+        learn_scales (bool): Prepare learnable INT8 activation scales.
 
     Returns:
         QuantizationConfig: Configuration retaining weight and bias policies.
 
     """
+    spec = cast(QuantizationSpec, config.input_activation)
+    fake_quant = LearnableFakeQuantize if learn_scales else FakeQuantize
     activation = replace(
-        cast(QuantizationSpec, config.input_activation),
-        observer_or_fake_quant_ctr=FakeQuantize.with_args(
+        spec,
+        observer_or_fake_quant_ctr=fake_quant.with_args(
             observer=HistogramObserver.with_args(eps=2**-16),
         ),
     )
@@ -706,14 +718,18 @@ def make_quantizer(
     *,
     is_qat: bool,
     io_quantization: str,
+    accuracy: bool = False,
 ) -> VgfQuantizer:
     compile_spec = cast(
         VgfCompileSpec, VgfCompileSpec()._set_preserve_io_quantization(True)
     )
-    quantizer = VgfQuantizer(compile_spec, use_composable_quantizer=True)
+    if accuracy and io_quantization not in ("int8", "uint8"):
+        raise ValueError("The accuracy recipe requires INT8 or UINT8 IO.")
+    quantizer_class = FullRangeImageQuantizer if accuracy else VgfQuantizer
+    quantizer = quantizer_class(compile_spec, use_composable_quantizer=True)
     global_config: QuantizationConfig = get_vgf_snorm_quantization_config(is_qat=is_qat)
     if is_qat:
-        global_config = histogram_qat_config(global_config)
+        global_config = histogram_qat_config(global_config, learn_scales=accuracy)
     quantizer.set_global(global_config)
     configure_rife_vgf_quantizer(quantizer)
 
@@ -756,6 +772,7 @@ def build_ptq_model(
     *,
     io_quantization: str,
     prune_layers: Sequence[str] = (),
+    accuracy: bool = False,
 ) -> QuantizedModel:
     model = clone_model(model, channels_last=True)
     pruner = TwoOfFourPruner(model, prune_layers)
@@ -770,7 +787,9 @@ def build_ptq_model(
         check_guards=False
     )
     cast(Any, exported_model).to(memory_format=torch.channels_last)
-    quantizer = make_quantizer(is_qat=False, io_quantization=io_quantization)
+    quantizer = make_quantizer(
+        is_qat=False, io_quantization=io_quantization, accuracy=accuracy
+    )
     prepared_model = prepare_pt2e(exported_model, quantizer)
     cast(Any, prepared_model).to(memory_format=torch.channels_last)
     prepared_model = move_exported_model_to_eval(prepared_model)
@@ -783,9 +802,51 @@ def build_ptq_model(
     converted_model = convert_pt2e(prepared_model)
     cast(Any, converted_model).to(memory_format=torch.channels_last)
     return QuantizedModel(
-        model=converted_model,
+        model=RifePrecisionModel(converted_model) if accuracy else converted_model,
         coverage=quantization_coverage(converted_model),
     )
+
+
+def qat_optimizers(model, lr):
+    """Keep learned scales in Adam and model weights in momentum SGD."""
+    scales = []
+    for module in model.modules():
+        if isinstance(module, LearnableFakeQuantize):
+            module.enable_range_learning()
+            module.zero_point.requires_grad_(False)
+            scales.append(module.scale)
+    scale_ids = {id(scale) for scale in scales}
+    weights = [
+        p for p in model.parameters() if p.requires_grad and id(p) not in scale_ids
+    ]
+    optimizers = [torch.optim.SGD(weights, lr=lr, momentum=0.9)]
+    if scales:
+        optimizers.append(
+            torch.optim.Adam(
+                [
+                    {"params": [scale], "lr": float(scale.detach()) * 1e-3}
+                    for scale in scales
+                ]
+            )
+        )
+    for optimizer in optimizers:
+        for group in optimizer.param_groups:
+            group["initial_lr"] = group["lr"]
+    return optimizers, scales
+
+
+def qat_lr_multiplier(update, samples, epochs):
+    """Use the measured 32-update warmup and two-stage cosine schedule."""
+    step, total = update + 1, samples * epochs
+    end = min(2 * samples, total)
+    warmup = min(32, end - 1)
+    floor = 0.1 if end < total else 0.01
+    if step <= end:
+        progress = max(0, step - warmup) / max(end - warmup, 1)
+        return (floor + (1 - floor) * (1 + math.cos(math.pi * progress)) / 2) * min(
+            1, step / max(warmup, 1)
+        )
+    return 0.01 + 0.045 * (1 + math.cos(math.pi * (step - end) / (total - end)))
 
 
 def build_qat_model(
@@ -796,6 +857,9 @@ def build_qat_model(
     lr: float,
     io_quantization: str,
     prune_layers: Sequence[str] = (),
+    accuracy: bool = False,
+    seed: int = 2029,
+    calibration_samples: int | None = None,
 ) -> QuantizedModel:
     model = clone_model(model, channels_last=True)
     pruner = TwoOfFourPruner(model, prune_layers)
@@ -813,7 +877,9 @@ def build_qat_model(
         check_guards=False
     )
     cast(Any, exported_model).to(memory_format=torch.channels_last)
-    quantizer = make_quantizer(is_qat=True, io_quantization=io_quantization)
+    quantizer = make_quantizer(
+        is_qat=True, io_quantization=io_quantization, accuracy=accuracy
+    )
     prepared_model = prepare_qat_pt2e(exported_model, quantizer)
     cast(Any, prepared_model).to(memory_format=torch.channels_last)
     prepared_model = move_exported_model_to_train(prepared_model)
@@ -821,37 +887,52 @@ def build_qat_model(
     # Shared observers must collect a common range before weight updates.
     prepared_model.apply(disable_fake_quant)
     with torch.no_grad():
-        for inputs, _ in training_samples:
+        for inputs, _ in training_samples[:calibration_samples]:
             prepared_model(*inputs)
     prepared_model.apply(disable_observer)
     prepared_model.apply(enable_fake_quant)
-    optimizer = torch.optim.SGD(prepared_model.parameters(), lr=lr, momentum=0.9)
-
+    training_model = (
+        floating_tail(prepared_model, prepared=True) if accuracy else prepared_model
+    )
+    optimizers, scales = qat_optimizers(prepared_model, lr)
     for step in range(steps):
+        order: Sequence[int] = range(len(training_samples))
+        if accuracy:
+            generator = torch.Generator().manual_seed(seed + step + 1)
+            order = torch.randperm(len(training_samples), generator=generator).tolist()
         total_loss = 0.0
-        for inputs, target in training_samples:
-            prediction = prepared_model(*inputs).contiguous(
-                memory_format=torch.channels_last
+        for offset, index in enumerate(order):
+            inputs, target = training_samples[index]
+            multiplier = (
+                qat_lr_multiplier(step * len(order) + offset, len(order), steps)
+                if accuracy
+                else 1.0
             )
-            loss = F.mse_loss(
-                prediction,
-                target.contiguous(memory_format=torch.channels_last),
-            )
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+            for optimizer in optimizers:
+                for group in optimizer.param_groups:
+                    group["lr"] = group["initial_lr"] * multiplier
+                optimizer.zero_grad(set_to_none=True)
+            loss = F.mse_loss(training_model(*inputs), target)
+            objective = torch.log(loss + 1e-8) if accuracy else loss
+            if not torch.isfinite(objective):
+                raise RuntimeError("Non-finite QAT loss.")
+            objective.backward()
+            for optimizer in optimizers:
+                optimizer.step()
+            with torch.no_grad():
+                for scale in scales:
+                    if not torch.isfinite(scale).all():
+                        raise RuntimeError("Non-finite learned activation scale.")
+                    scale.clamp_(min=torch.finfo(scale.dtype).eps)
             pruner.apply_(prepared_model)
-            total_loss += float(loss.detach().item())
-        print(
-            f"qat_step={step + 1}/{steps} "
-            f"loss={total_loss / len(training_samples):.6f}"
-        )
+            total_loss += float(loss.detach())
+        print(f"qat_step={step + 1}/{steps} loss={total_loss / len(order):.6f}")
 
     prepared_model = move_exported_model_to_eval(prepared_model)
     converted_model = convert_pt2e(prepared_model)
     cast(Any, converted_model).to(memory_format=torch.channels_last)
     return QuantizedModel(
-        model=converted_model,
+        model=RifePrecisionModel(converted_model) if accuracy else converted_model,
         coverage=quantization_coverage(converted_model),
     )
 
@@ -869,7 +950,10 @@ def export_vgf_artifact(
     artifact_dir.mkdir(parents=True, exist_ok=True)
     compile_spec = make_vgf_compile_spec(artifact_dir)
     partitioner = VgfPartitioner(compile_spec)
-    configure_rife_vgf(partitioner)
+    precision = model.policy if isinstance(model, RifePrecisionModel) else None
+    final_pass = configure_rife_vgf(partitioner, precision=precision)
+    if isinstance(model, RifePrecisionModel):
+        model = model.export_model
     cast(Any, model).to(memory_format=torch.channels_last)
     inputs = (
         inputs[0].contiguous(memory_format=torch.channels_last),
@@ -883,12 +967,17 @@ def export_vgf_artifact(
     )
 
     print(f"[vgf] exporting {name} model to {artifact_dir} ...")
-    aten_dialect = export(model, args=inputs, strict=True)
-    edge_program_manager = to_edge_transform_and_lower(
-        aten_dialect,
-        partitioner=[partitioner],
-        compile_config=EdgeCompileConfig(_check_ir_validity=False),
-    )
+    try:
+        aten_dialect = export(model, args=inputs, strict=True)
+        edge_program_manager = to_edge_transform_and_lower(
+            aten_dialect,
+            partitioner=[partitioner],
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+        if precision is not None and not final_pass.applied:
+            raise RuntimeError("Requested RIFE precision was not fused.")
+    finally:
+        configure_rife_vgf()
     io_qparams_payload: dict[str, Any] | None = None
     if io_quantization != "none":
         edge_program = edge_program_manager.exported_program()
@@ -958,6 +1047,7 @@ def write_markdown_report(
         f"- Mode: `{aggregate['mode']}`",
         f"- 2:4 pruning patterns: `{aggregate['prune_2_4']}`",
         f"- IO quantization: `{aggregate['io_quantization']}`",
+        f"- Accuracy recipe: `{aggregate['accuracy_recipe']}`",
         f"- Data source: `{aggregate['data_source']}`",
         f"- Random seed: `{aggregate['random_seed']}`",
         "",
@@ -1068,6 +1158,13 @@ def write_quantization_coverage(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--log-level",
+        type=str.upper,
+        choices=("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"),
+        default="WARNING",
+        help="Python logging level. Use DEBUG to inspect VGF shader fusion.",
+    )
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument(
         "--triples-root",
@@ -1193,6 +1290,11 @@ def parse_args() -> argparse.Namespace:
         help="Learning rate for the QAT optimizer.",
     )
     parser.add_argument(
+        "--accuracy-recipe",
+        action="store_true",
+        help="Use full-range INT8 images, learned activation scales, log-MSE QAT and floating shader intermediates.",
+    )
+    parser.add_argument(
         "--export-vgf",
         choices=("none", "ptq", "qat", "all"),
         default="none",
@@ -1291,6 +1393,7 @@ def build_requested_quantized_models(
             calibration_inputs,
             io_quantization=args.io_quantization,
             prune_layers=args.prune_2_4,
+            accuracy=args.accuracy_recipe,
         )
         ptq_model = ptq.model
         quantization_reports["ptq"] = ptq.coverage
@@ -1318,6 +1421,11 @@ def build_requested_quantized_models(
             lr=args.qat_lr,
             io_quantization=args.io_quantization,
             prune_layers=args.prune_2_4,
+            accuracy=args.accuracy_recipe,
+            seed=args.random_seed,
+            calibration_samples=(
+                args.calibration_samples if args.accuracy_recipe else None
+            ),
         )
         qat_model = qat.model
         quantization_reports["qat"] = qat.coverage
@@ -1799,6 +1907,7 @@ def build_aggregate(
         "mode": args.mode,
         "prune_2_4": args.prune_2_4,
         "io_quantization": args.io_quantization,
+        "accuracy_recipe": args.accuracy_recipe,
         "data_source": "random" if rows and rows[0].get("synthetic") else "frames",
         "random_seed": args.random_seed,
         "runtime_warnings": runtime_warnings,
@@ -1912,6 +2021,8 @@ def print_summary(aggregate: dict[str, Any]) -> None:
 
 def main() -> int:
     args = parse_args()
+    logging.basicConfig(level=args.log_level, force=True)
+    logging.getLogger("executorch.backends.arm").setLevel(args.log_level)
     validate_args(args)
 
     triples = load_requested_triples(args)

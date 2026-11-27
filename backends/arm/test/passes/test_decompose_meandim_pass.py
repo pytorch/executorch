@@ -5,12 +5,18 @@
 
 from typing import cast, Dict, Protocol, Tuple
 
+import pytest
+
 import torch
 
-from executorch.backends.arm._passes.decompose_meandim_pass import DecomposeMeanDimPass
+from executorch.backends.arm._passes.decompose_meandim_pass import (
+    DecomposeMeanDimPass,
+    fold_channels_into_height_if_reduced,
+)
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
+    TosaPipelineFP,
     TosaPipelineINT,
 )
 
@@ -20,6 +26,43 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import Dim, export
 
 input_t = Tuple[torch.Tensor]  # Input x
+
+
+@pytest.mark.parametrize(
+    "shape,dims,expected_shape,expected_dims",
+    [
+        ((), None, (), ()),
+        ((7,), 0, (7,), (0,)),
+        ((3, 7), (0, 1), (3, 7), (0, 1)),
+        ((3, 5, 7), (0, 1), (1, 15, 7), (1,)),
+        ((2, 3, 5, 7), (1, 2), (2, 1, 15, 7), (2,)),
+        ((2, 4, 3, 5, 7), (-3, -2), (2, 4, 1, 15, 7), (3,)),
+        ((2, 4, 3, 5, 7), (2,), (2, 4, 3, 5, 7), (2,)),
+        ((2, 4, 3, 1, 7), (2,), (2, 4, 1, 3, 7), (3,)),
+        ((2, 3, 4, 5, 6, 7), None, (2, 3, 4, 1, 30, 7), tuple(range(6))[:3] + (4, 5)),
+    ],
+)
+def test_fold_reduced_channels(shape, dims, expected_shape, expected_dims):
+    x = torch.randn(shape)
+    folded, reduced = fold_channels_into_height_if_reduced(x, dims)
+    assert tuple(folded.shape) == expected_shape
+    assert reduced == expected_dims
+    torch.testing.assert_close(
+        folded.mean(dim=reduced).reshape(x.mean(dim=dims).shape), x.mean(dim=dims)
+    )
+
+
+@pytest.mark.parametrize("keepdim", [False, True])
+@pytest.mark.parametrize(
+    "shape,dims",
+    [((3, 5, 7), (0, 1)), ((2, 4, 3, 5, 7), (2, 3)), ((2, 4, 3, 5, 7), (2,))],
+)
+def test_fold_reduced_channels_tosa_FP(shape, dims, keepdim):
+    class Mean(torch.nn.Module):
+        def forward(self, x):
+            return x.mean(dim=dims, keepdim=keepdim)
+
+    TosaPipelineFP(Mean(), (torch.randn(shape),), []).run()
 
 
 class ModuleWithMeanAttrs(Protocol):

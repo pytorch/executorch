@@ -18,6 +18,9 @@ from torchao.quantization.pt2e.quantizer import Quantizer
 
 
 class ArmQuantize(Quantize):
+    def supports_dynamic_shapes(self) -> bool:
+        return True
+
     def __init__(
         self,
         quantizer: Optional[Quantizer] = None,

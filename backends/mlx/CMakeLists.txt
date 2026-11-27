@@ -252,6 +252,9 @@ ExternalProject_Add(
              -DMLX_BUILD_CPU=OFF
              -DMLX_BUILD_CUDA=OFF
              -DMLX_BUILD_SHARED_LIBS=OFF
+             # Shared delegates must expose the runtime they bundle to
+             # consumers.
+             -DMLX_EXPORT_ALL_SYMBOLS=${EXECUTORCH_BUILD_SHARED}
              -DMLX_BUILD_PYTHON_BINDINGS=OFF
              -DMLX_BUILD_PYTHON_STUBS=OFF
              -DMLX_BUILD_TESTS=OFF
@@ -316,6 +319,10 @@ set_target_properties(
   PROPERTIES INTERFACE_LINK_LIBRARIES
              "${METAL_FRAMEWORK};${FOUNDATION_FRAMEWORK};${QUARTZ_FRAMEWORK}"
 )
+if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+  find_library(IOKIT_FRAMEWORK IOKit REQUIRED)
+  target_link_libraries(mlx INTERFACE ${IOKIT_FRAMEWORK})
+endif()
 
 # -----------------------------------------------------------------------------
 # MLX Backend library

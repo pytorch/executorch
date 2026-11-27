@@ -10,11 +10,12 @@ A package holds one method per case and dtype under one quantization scheme,
 and two sample sets over the same inputs: `golden`, the eager outputs, and
 `precise`, the same math in float64 with quantized weights decoded in float32,
 whatever the method's dtype, and activations unquantized, floating outputs
-stored as float32. Weight-only schemes add `golden-int8_act`, the eager outputs
-with the same weights and int8 per-token dynamic activations. A dynamic case
-is exported with its dynamic shapes and recorded as one sample whose calls
-change them. Nothing in it depends on an engine or a device: consumers judge an
-engine by its distance from `precise` relative to eager's.
+stored as float32. Weight-only schemes over a case with an nn.Linear add
+`golden-int8_act`, the eager outputs with the same weights and int8 per-token
+dynamic activations. A dynamic case is exported with its dynamic shapes and
+recorded as one sample whose calls change them. Nothing in it depends on an
+engine or a device: consumers judge an engine by its distance from `precise`
+relative to eager's.
 """
 
 import copy
@@ -61,6 +62,9 @@ def record(
 ) -> None:
     """Writes no package, removing any at `path`, when the scheme fits no case."""
     programs, golden, precise, golden_act = {}, [], [], []
+    act_quant = any(
+        scheme.adds_int8_act(c.model) for c in cases if scheme.fits(c.model)
+    )
     for case in cases:
         if not scheme.fits(case.model):
             logger.info(f"{path.name}: {case.name} does not fit the scheme")
@@ -73,8 +77,18 @@ def record(
             model = copy.deepcopy(case.model).to(dtype).eval()
             scheme.quantize(model)
             method = _Method({name: model})
+            # A chain may carry state in buffers its calls mutate in place, so
+            # each reference runs on its own copy, and the exported program,
+            # which aliases the buffers, gets their initial values back.
+            reference, act_method = copy.deepcopy(method), copy.deepcopy(method)
+            initial = {k: v.clone() for k, v in method.named_buffers()}
+            # Non-persistent buffers too: a chain's state may be one. Floating
+            # tensors at reference precision, the others as copies.
             state = {
-                k: scheme.decode(v).double() for k, v in method.state_dict().items()
+                k: d.double() if d.is_floating_point() else d.clone()
+                for named in (method.named_parameters(), method.named_buffers())
+                for k, v in named
+                for d in (scheme.decode(v),)
             }
             inputs = [_cast(x, dtype) for x in case.inputs]
             chained = case.dynamic_shapes is not None
@@ -87,14 +101,18 @@ def record(
             with torch.no_grad():
                 for x in inputs:
                     golden_calls.append(Call(name, list(x), outputs(method(*x))))
-                    ref = functional_call(method, state, _cast(x, torch.float64))
+                    ref = functional_call(reference, state, _cast(x, torch.float64))
                     ref = [
                         t.float() if t.is_floating_point() else t for t in outputs(ref)
                     ]
                     precise_calls.append(Call(name, list(x), ref))
-                    if scheme.weight_only:
-                        with int8_activations(method):
-                            act_calls.append(Call(name, list(x), outputs(method(*x))))
+                    if act_quant:
+                        with int8_activations(act_method):
+                            act_calls.append(
+                                Call(name, list(x), outputs(act_method(*x)))
+                            )
+                for k, v in method.named_buffers():
+                    v.copy_(initial[k])
             golden += _samples(golden_calls, chained)
             precise += _samples(precise_calls, chained)
             golden_act += _samples(act_calls, chained)
@@ -114,7 +132,7 @@ def record(
             source,
         ),
     )
-    if scheme.weight_only:
+    if act_quant:
         write_samples(
             str(path),
             "golden-int8_act",

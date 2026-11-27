@@ -7,6 +7,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/Conv2d.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/Conv2dDirect.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/im2col/Conv2dGemm.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/winograd/Conv2dWinograd.h>
 #include <executorch/backends/vulkan/test/ops/benchmark_v2/framework/RouteRegistry.h>
 #include <executorch/backends/vulkan/test/ops/benchmark_v2/operators/convolution/Conv2dRouteCommon.h>
 #include <executorch/backends/vulkan/test/ops/benchmark_v2/operators/convolution/Conv2dRoutes.h>
@@ -201,6 +202,68 @@ Json build_conv2d_im2col(
       {{"intermediate_storage", storage_name(graph.storage_type_of(scratch))}});
 }
 
+Json build_conv2d_winograd(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args,
+    const Json& options) {
+  check_options(options, {"chunk_rows", "weight_storage"});
+  std::optional<int64_t> chunk_rows;
+  if (options.contains("chunk_rows")) {
+    if (!options.at("chunk_rows").is_number_integer() ||
+        options.at("chunk_rows").get<int64_t>() < 1) {
+      throw std::invalid_argument("chunk_rows must be a positive integer");
+    }
+    chunk_rows = options.at("chunk_rows").get<int64_t>();
+  }
+  std::optional<utils::StorageType> weight_storage;
+  if (options.contains("weight_storage")) {
+    const Json& name = options.at("weight_storage");
+    if (name == "buffer") {
+      weight_storage = utils::kBuffer;
+    } else if (name == "texture2d") {
+      weight_storage = utils::kTexture2D;
+    } else {
+      throw std::invalid_argument(
+          "weight_storage must be \"buffer\" or \"texture2d\"");
+    }
+    supported(
+        weight_storage != utils::kBuffer || graph.float16_buffers_enabled(),
+        "Winograd buffer weights require 16-bit storage buffers");
+  }
+  conv_shape(graph, args);
+  const Kernel2dParams kernel_params = create_kernel2d_params(
+      graph,
+      args[1],
+      /*kernel_size_only=*/false,
+      args[3],
+      args[4],
+      args[5]);
+  const std::optional<Conv2dWinogradConfig> config =
+      find_conv2d_winograd_config(
+          graph,
+          args[0],
+          args[1],
+          args.back(),
+          kernel_params,
+          graph.get_bool(args[6]),
+          graph.get_int(args[8]));
+  supported(
+      config.has_value(),
+      "Winograd convolution requires a Half 3x3 stride 1 padding 1 "
+      "convolution whose scratch textures fit the device limits");
+  conv2d_winograd_impl(
+      graph,
+      *config,
+      args[0],
+      args[1],
+      args[2],
+      args.back(),
+      conv2d_epilogue_from_args(graph, args),
+      chunk_rows,
+      weight_storage);
+  return selected("winograd", options);
+}
+
 Json inspect_conv2d_route(
     ComputeGraph& graph,
     const std::vector<ValueRef>&,
@@ -215,6 +278,9 @@ Json inspect_conv2d_route(
           "im2col",
           {{"intermediate_storage",
             storage_name(graph.storage_type_of(scratch))}});
+    }
+    if (name.rfind("conv2d_winograd", 0) == 0) {
+      return selected("winograd");
     }
     if (name.rfind("conv2d_pw", 0) == 0) {
       return selected("pointwise");
@@ -237,16 +303,22 @@ REGISTER_OPERATOR_ROUTES {
       aten.convolution.default, direct, build_conv2d_direct);
   REGISTER_OPERATOR_ROUTE(
       aten.convolution.default, im2col, build_conv2d_im2col);
+  REGISTER_OPERATOR_ROUTE(
+      aten.convolution.default, winograd, build_conv2d_winograd);
   REGISTER_ROUTE_INSPECTOR(aten.convolution.default, inspect_conv2d_route);
   REGISTER_OPERATOR_ROUTE(
       et_vk.conv_with_clamp.default, direct, build_conv2d_direct);
   REGISTER_OPERATOR_ROUTE(
       et_vk.conv_with_clamp.default, im2col, build_conv2d_im2col);
+  REGISTER_OPERATOR_ROUTE(
+      et_vk.conv_with_clamp.default, winograd, build_conv2d_winograd);
   REGISTER_ROUTE_INSPECTOR(et_vk.conv_with_clamp.default, inspect_conv2d_route);
   REGISTER_OPERATOR_ROUTE(
       et_vk.conv2d.with_epilogue, direct, build_conv2d_direct);
   REGISTER_OPERATOR_ROUTE(
       et_vk.conv2d.with_epilogue, im2col, build_conv2d_im2col);
+  REGISTER_OPERATOR_ROUTE(
+      et_vk.conv2d.with_epilogue, winograd, build_conv2d_winograd);
   REGISTER_ROUTE_INSPECTOR(et_vk.conv2d.with_epilogue, inspect_conv2d_route);
 }
 

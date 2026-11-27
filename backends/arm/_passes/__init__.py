@@ -19,6 +19,7 @@ from .canonicalize_view_copy_permute_pass import CanonicalizeViewCopyPermutePass
 from .cast_int64_pass import CastInt64BuffersToInt32Pass  # noqa
 from .cast_int_comparison_inputs_pass import CastIntComparisonInputsPass  # noqa
 from .cast_to_int32_pass import CastToInt32Pass  # noqa
+from .cast_zero_dim_int64_operands_pass import CastZeroDimInt64OperandsPass  # noqa
 from .constant_folding_pass import ConstantFoldingPass  # noqa
 from .convert_bool_sum_pass import ConvertBoolSumPass  # noqa
 from .convert_elu_params import ConvertELUParamsPass  # noqa
@@ -134,6 +135,7 @@ from .deduplicate_const_shapes_pass import DeduplicateConstShapesPass  # noqa
 from .deduplicate_get_attr_pass import DeduplicateGetAttrPass  # noqa
 from .detect_dynamic_w8a8_linear_pass import DetectDynamicW8A8LinearPass  # noqa
 from .ensure_unique_output_nodes_pass import EnsureUniqueOutputNodesPass  # noqa
+from .ethosu_direct_io_pass import EthosUMemoryPlanning  # noqa
 from .exir_to_tosa_pass import ExirToTosaPass  # noqa
 from .fold_dyt_affine_into_conv_pass import FoldDyTAffineIntoConvPass  # noqa
 from .fold_dyt_alpha_into_lut_pass import FoldDyTAlphaIntoLUTPass  # noqa
@@ -161,7 +163,7 @@ from .fuse_quantized_activation_pass import FuseQuantizedActivationPass  # noqa
 from .fuse_view_copy_transform_pass import FuseViewCopyTransformPass  # noqa
 from .insert_const_shapes import InsertConstShapesPass  # noqa
 from .insert_data_layout_casts_pass import InsertDataLayoutCastsPass  # noqa
-from .insert_dynamic_padding import InsertDynamicPaddingPass  # noqa
+from .insert_explicit_padding import InsertExplicitPaddingPass  # noqa
 from .insert_int32_casts_after_int64_placeholders import (  # noqa
     InsertInt32CastsAfterInt64PlaceholdersPass,
 )
@@ -227,6 +229,7 @@ from .rewrite_high_rank_singleton_permute_pass import (  # noqa
 )
 from .rewrite_index_put_pass import RewriteIndexPutPass  # noqa
 from .rewrite_inplace_arithmetic_pass import RewriteInplaceArithmeticPass  # noqa
+from .rewrite_int64_cast_via_int32_pass import RewriteInt64CastViaInt32Pass  # noqa
 from .rewrite_le_lt_to_ge_gt_pass import RewriteLeLtToGeGtPass  # noqa
 from .rewrite_matmul import RewriteMatmulPass  # noqa
 from .rewrite_max_pool2d_pass import RewriteMaxPool2dPass  # noqa

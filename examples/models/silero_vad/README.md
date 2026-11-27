@@ -53,7 +53,7 @@ Each line is `start_seconds end_seconds speech`. Each output frame covers 32ms o
 The export script requires the `silero_vad.jit` file from the Silero VAD repository:
 
 ```bash
-git clone https://github.com/snakers4/silero-vad.git
+git clone --branch v6.2.2 --depth 1 https://github.com/snakers4/silero-vad.git
 ```
 
 The JIT model is at `silero-vad/src/silero_vad/data/silero_vad.jit`.

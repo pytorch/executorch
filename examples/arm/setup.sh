@@ -86,6 +86,9 @@ function print_usage() {
         printf "  %-40s %s\n" "$opt" "$desc"
     done
     echo
+    echo 'FVP cache: ARM_FVP_CACHE_DIR overrides the persistent user cache (XDG_CACHE_HOME or ~/.cache).'
+    echo 'ARM_FVP_CACHE_ONLY=1 forbids downloads; prewarmed CI image caches use this by default.'
+    echo
     echo "Supplied args: $*"
 }
 
@@ -231,7 +234,7 @@ function add_target_toolchain() {
     fi
 
     local selected_toolchain
-    for selected_toolchain in "${target_toolchains[@]}"; do
+    for selected_toolchain in ${target_toolchains[@]+"${target_toolchains[@]}"}; do
         if [[ "${selected_toolchain}" == "${toolchain}" ]]; then
             return
         fi

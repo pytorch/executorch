@@ -37,8 +37,8 @@ logger = logging.getLogger(__name__)
 class EthosUBackend(BackendDetails):
     """BackendDetails subclass for delegation to Ethos-U.
 
-    Deduce the TOSA lowering from the compile spec list by filtering out the
-    compile spec values that are of interest for the TOSABackend.
+    Reuse TOSA lowering while retaining the Ethos-U target for target-specific
+    transformations.
 
     """
 
@@ -104,19 +104,24 @@ class EthosUBackend(BackendDetails):
             PreprocessResult: Result containing the compiled Ethos-U binary.
 
         """
-        logger.info(f"{EthosUBackend.__name__} preprocess")
+        logger.debug(f"{EthosUBackend.__name__} preprocess")
 
         compile_spec = EthosUCompileSpec._from_list(compile_specs)
-        # deduce TOSA compile_spec from Ethos-U compile spec. We get a new
-        # compile spec list, containing only elements relevant for the
-        # TOSABackend.
         tosa_compile_spec = TOSABackend.filter_tosa_compile_specs(compile_spec)
-
+        pipeline_config = tosa_compile_spec._get_pass_pipeline_config()
+        pipeline_config.large_stride_pool_padding = any(
+            flag.lower().startswith("--accelerator-config=ethos-u85-")
+            for flag in compile_spec.compiler_flags
+        )
+        tosa_compile_spec.set_pass_pipeline_config(pipeline_config)
         # Backends doesn't allow inheritance, as stated in comments in exir/backend/backend_api.py
         # ('All backend implementation are final...'), so use composition instead.
         # preprocess returns the serialized TOSA flatbuffer in .processed_bytes,
         # which can be passed on to next compilation step.
-        tosa_preprocess = TOSABackend._preprocess(edge_program, tosa_compile_spec)
+        tosa_preprocess = TOSABackend._preprocess(
+            edge_program,
+            tosa_compile_spec,
+        )
 
         unused_inputs = [
             node.name
@@ -151,6 +156,7 @@ class EthosUBackend(BackendDetails):
             return PreprocessResult(
                 processed_bytes=compile_result.processed_bytes,
                 scratch_specs=scratch_specs,
+                _delegate_info_meta={"vela_io": compile_result.io_layout},
             )
 
         data_store = NamedDataStore()
@@ -165,4 +171,5 @@ class EthosUBackend(BackendDetails):
             processed_bytes=compile_result.processed_bytes,
             data_store_output=data_store.get_named_data_store_output(),
             scratch_specs=scratch_specs,
+            _delegate_info_meta={"vela_io": compile_result.io_layout},
         )

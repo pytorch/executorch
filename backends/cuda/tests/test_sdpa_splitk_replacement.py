@@ -303,7 +303,7 @@ class TestUnsupportedSDPAStaysWithRegularLowering(unittest.TestCase):
         self.assertTrue(any("Replaced 1 nodes" in m for m in msgs), msgs)
 
     def assertSplitK(self, msgs):
-        self.assertTrue(any("Using split-K decode SDPA" in m for m in msgs), msgs)
+        self.assertTrue(any("(split-K decode SDPA (L_kv=" in m for m in msgs), msgs)
         self.assertTrue(any("Replaced 1 nodes" in m for m in msgs), msgs)
 
     def test_masked_decode_still_uses_splitk(self):
@@ -350,36 +350,47 @@ class TestSDPAKernelSupportCheck(unittest.TestCase):
     def test_2d_inputs_are_not_supported(self):
         # The regular lowering of a 2D SDPA fails later in Inductor, so this
         # case cannot be exported end to end.
-        from executorch.backends.cuda.triton.replacement_pass import (
-            ReplaceEdgeOpWithTritonOpPass,
-        )
+        from executorch.backends.cuda.triton.kernels.sdpa import plan as plan_sdpa
 
         node = self._sdpa_node((8, 16))
-        self.assertFalse(ReplaceEdgeOpWithTritonOpPass._sdpa_kernel_supports(node))
+        self.assertEqual([c.name for c in plan_sdpa(node).legal()], ["inductor"])
 
     def test_named_inputs_are_not_supported(self):
-        from executorch.backends.cuda.triton.replacement_pass import (
-            ReplaceEdgeOpWithTritonOpPass,
-        )
+        from executorch.backends.cuda.triton.kernels.sdpa import plan as plan_sdpa
 
         node = self._sdpa_node((1, 2, 8, 16))
         query, key, value = node.args[:3]
         node.args = ()
         node.kwargs = {"query": query, "key": key, "value": value}
-        self.assertFalse(ReplaceEdgeOpWithTritonOpPass._sdpa_kernel_supports(node))
+        self.assertEqual([c.name for c in plan_sdpa(node).legal()], ["inductor"])
 
     def test_heads_the_kernel_takes_are_supported(self):
         # Some CI GPUs lack the shared memory to compile heads of 1024.
-        from executorch.backends.cuda.triton.replacement_pass import (
-            ReplaceEdgeOpWithTritonOpPass,
-        )
+        from executorch.backends.cuda.triton.kernels.sdpa import plan as plan_sdpa
 
         for size in (192, 256, 512, 1024):
             with self.subTest(head_size=size):
                 node = self._sdpa_node((1, 2, 64, size))
-                self.assertTrue(
-                    ReplaceEdgeOpWithTritonOpPass._sdpa_kernel_supports(node)
-                )
+                plan = plan_sdpa(node)
+                self.assertEqual([c.name for c in plan.legal()], ["inductor", "sdpa"])
+                self.assertEqual(plan.static_choice, "sdpa")
+
+    def test_the_replacement_keeps_the_call_arguments(self):
+        from executorch.backends.cuda.triton.replacement_pass import (
+            ReplaceEdgeOpWithTritonOpPass,
+        )
+
+        node = self._sdpa_node((1, 2, 8, 16))
+        node.kwargs = {"is_causal": True, "scale": 0.5}
+        node.meta["val"] = node.args[0].meta["val"]
+        graph = node.graph
+        graph.output(node)
+        args, kwargs = node.args, dict(node.kwargs)
+        graph_module = torch.fx.GraphModule(torch.nn.Module(), graph)
+        ReplaceEdgeOpWithTritonOpPass()(graph_module)
+        (call,) = [n for n in graph_module.graph.nodes if n.op == "call_function"]
+        self.assertIs(call.target, torch.ops.triton.sdpa)
+        self.assertEqual((call.args, call.kwargs), (args, kwargs))
 
 
 if __name__ == "__main__":

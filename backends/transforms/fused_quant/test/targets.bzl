@@ -40,20 +40,12 @@ def define_common_targets():
             "//executorch/backends/test:program_builder",
             "//executorch/backends/transforms:permute_pass_utils",
             "//executorch/backends/transforms:utils",
+            "//executorch/exir:lib",
             "//executorch/exir/dialects:lib",
+            "//executorch/exir/verification:verifier",
         ],
     )
 
-    runtime.python_test(
-        name = "test_fold_batch_norm",
-        srcs = ["test_fold_batch_norm.py"],
-        deps = [
-            ":test_helpers",
-            "fbsource//third-party/pypi/parameterized:parameterized",
-            "//executorch/backends/transforms/fused_quant:fold_batch_norm",
-            "//caffe2:torch",
-        ],
-    )
 
     runtime.python_test(
         name = "test_tensor_constants",
@@ -250,6 +242,7 @@ def define_common_targets():
         name = "test_sink_constant_cat",
         srcs = ["test_sink_constant_cat.py"],
         deps = [
+            ":test_helpers",
             "//executorch/exir/dialects/fused_quant:ops",
             "//executorch/backends/transforms/fused_quant:sink_constant_cat",
             "//caffe2:torch",
@@ -268,6 +261,26 @@ def define_common_targets():
             "//caffe2:torch",
             "//executorch/backends/test:program_builder",
             "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_passes",
+        srcs = ["test_passes.py"],
+        deps = [
+            "fbsource//third-party/pypi/parameterized:parameterized",
+            ":test_helpers",
+            "//caffe2:torch",
+            "//executorch/backends/test:program_builder",
+            "//executorch/backends/transforms/fused_quant:fuse_add_into_linear",
+            "//executorch/backends/transforms/fused_quant:fuse_mul_into_linear",
+            "//executorch/backends/transforms/fused_quant:passes",
+            "//executorch/backends/transforms/fused_quant:prequantize_embedding",
+            "//executorch/backends/transforms/fused_quant:split_linear_at_slices",
+            "//executorch/backends/transforms/fused_quant:to_channels_last",
+            "//executorch/exir:lib",
+            "//executorch/exir/dialects:lib",
+            "//executorch/exir/dialects/fused_quant:ops",
         ],
     )
 

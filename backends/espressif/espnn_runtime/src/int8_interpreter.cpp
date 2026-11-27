@@ -11,6 +11,7 @@
 #include <espnn/int8_interpreter.h>
 
 #include <cmath>
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
 #include <new>
@@ -30,16 +31,20 @@ namespace {
 
 constexpr size_t ARENA_ALIGNMENT = 16;
 constexpr int64_t YIELD_INTERVAL_US = 1000000;
+// Without profiling, invoke() checks the yield deadline only every this many
+// operations and when it returns: one timer read costs as much as a small
+// operation.
+constexpr uint32_t YIELD_CHECK_OPERATIONS = 16;
 
-SemaphoreHandle_t invoke_mutex() {
-  static StaticSemaphore_t storage;
-  static SemaphoreHandle_t handle = xSemaphoreCreateMutexStatic(&storage);
-  return handle;
-}
+// Created by a static initializer rather than on first use, so that invoke()
+// needs no thread-safe static guard (and no C++ runtime support for one).
+StaticSemaphore_t g_invoke_mutex_storage;
+const SemaphoreHandle_t g_invoke_mutex =
+    xSemaphoreCreateMutexStatic(&g_invoke_mutex_storage);
 
 class InvokeLock {
  public:
-  InvokeLock() : handle_(invoke_mutex()) {
+  InvokeLock() : handle_(g_invoke_mutex) {
     xSemaphoreTake(handle_, portMAX_DELAY);
   }
   ~InvokeLock() {
@@ -51,6 +56,71 @@ class InvokeLock {
  private:
   SemaphoreHandle_t handle_;
 };
+
+// A version 7 graph keeps its tensor table and parameter region word-aligned.
+// On a little-endian target its tensor records then have TensorRecord's
+// layout, and per-channel multipliers and shifts are int32 arrays.
+static_assert(
+    sizeof(TensorRecord) == TENSOR_RECORD_SIZE &&
+        offsetof(TensorRecord, dtype) == 8 &&
+        offsetof(TensorRecord, rank) == 10 &&
+        offsetof(TensorRecord, shape) == 12 &&
+        offsetof(TensorRecord, quant_scale) == 28 &&
+        offsetof(TensorRecord, quant_zero_point) == 32,
+    "TensorRecord must have the XTS3 tensor record layout");
+
+bool graph_tables_aligned(const GraphView& graph) {
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+  return graph.header.version >= GRAPH_ESP_NN_INT8_ALIGNED_VERSION &&
+      (reinterpret_cast<uintptr_t>(graph.data) & 3U) == 0;
+#else
+  return false;
+#endif
+}
+
+// An int32 array of the parameter region where it sits in the graph, or
+// nullptr when it must be copied.
+const int32_t* int32s_in_place(bool tables_in_place, const uint8_t* data) {
+  if (!tables_in_place || (reinterpret_cast<uintptr_t>(data) & 3U) != 0)
+    return nullptr;
+  return reinterpret_cast<const int32_t*>(data);
+}
+
+// The per-channel requantization multipliers and shifts of a convolution or
+// linear operation, little-endian int32 arrays in its parameter block.
+bool requantization_arrays(
+    const GraphView& graph,
+    const TensorRecord* tensors,
+    const OperationRecord& op,
+    const uint8_t*& multipliers,
+    const uint8_t*& shifts,
+    uint32_t& count) {
+  const uint8_t* p = graph.parameter_data + op.parameter_offset;
+  switch (static_cast<OpCode>(op.opcode)) {
+    case OpCode::CONV2D:
+    case OpCode::DEPTHWISE_CONV2D: {
+      count = static_cast<uint32_t>(tensors[op.outputs[0]].shape[1]);
+      Int8ConvParams params{};
+      if (!read_int8_conv_params(graph, op, count, params))
+        return false;
+      multipliers = params.multipliers;
+      shifts = params.shifts;
+      return true;
+    }
+    case OpCode::TRANSPOSE_CONV2D:
+      count = static_cast<uint32_t>(tensors[op.outputs[0]].shape[1]);
+      multipliers = p + TRANSPOSE_CONV_PARAMS_SIZE;
+      shifts = multipliers + 4 * count;
+      return true;
+    case OpCode::LINEAR:
+      count = static_cast<uint32_t>(tensors[op.inputs[1]].shape[0]);
+      multipliers = p + INT8_PAIR_PARAMS_SIZE;
+      shifts = multipliers + 4 * count;
+      return true;
+    default:
+      return false;
+  }
+}
 
 size_t align_up(size_t value, size_t alignment) {
   return (value + alignment - 1) & ~(alignment - 1);
@@ -141,25 +211,36 @@ int8_t quantize_value(float value, float inverse_scale, int32_t zero_point) {
 
 } // namespace
 
+// Fields that no operation uses together share storage: the input list
+// (CONCAT, COPY) with the pooling parameters, and the convolution,
+// depthwise-convolution and add parameters with each other.
 struct Int8Interpreter::OpState {
   OpCode opcode;
   uint32_t input0;
   uint32_t input1;
   uint32_t output;
   uint8_t input_count;
-  uint32_t inputs[6];
-  int32_t pool[6];
+  // COPY: the first writer of an output in caller memory clears it first.
+  bool clear_output;
+  union {
+    uint32_t inputs[6];
+    int32_t pool[6];
+  };
   const int8_t* weights;
   const int32_t* bias;
   data_dims_t input_dims;
   data_dims_t filter_dims;
   data_dims_t output_dims;
-  conv_params_t conv;
-  dw_conv_params_t dw;
+  union {
+    conv_params_t conv;
+    dw_conv_params_t dw;
+    Int8AddParams add;
+  };
   quant_data_t quant;
   int32_t* multipliers;
   int32_t* shifts;
-  Int8AddParams add;
+  uint32_t scratch_bytes;
+  uint32_t scratch_offset;
   int32_t value0;
   int32_t value1;
   int32_t input_zero_point;
@@ -173,9 +254,6 @@ struct Int8Interpreter::OpState {
   int32_t dilation_h;
   int32_t dilation_w;
   int32_t batches;
-  int64_t total_us;
-  int64_t last_us;
-  uint32_t calls;
 };
 
 Int8Interpreter::~Int8Interpreter() {
@@ -195,22 +273,23 @@ void Int8Interpreter::reset() {
     heap_caps_free(params_);
   if (blob_copy_ != nullptr)
     heap_caps_free(blob_copy_);
-  if (tensors_ != nullptr)
-    heap_caps_free(tensors_);
-  if (operations_ != nullptr)
-    heap_caps_free(operations_);
+  if (tensors_ != nullptr && !tables_in_place_)
+    heap_caps_free(const_cast<TensorRecord*>(tensors_));
+  tables_in_place_ = false;
   if (op_states_ != nullptr)
     heap_caps_free(op_states_);
-  if (tensor_offsets_ != nullptr)
-    heap_caps_free(tensor_offsets_);
+  if (op_us_ != nullptr)
+    heap_caps_free(op_us_);
+  if (tensor_data_ != nullptr)
+    heap_caps_free(tensor_data_);
   arena_ = nullptr;
   scratch_ = nullptr;
   params_ = nullptr;
   blob_copy_ = nullptr;
   tensors_ = nullptr;
-  operations_ = nullptr;
   op_states_ = nullptr;
-  tensor_offsets_ = nullptr;
+  op_us_ = nullptr;
+  tensor_data_ = nullptr;
   arena_size_ = 0;
   scratch_size_ = 0;
   params_size_ = 0;
@@ -232,10 +311,10 @@ bool Int8Interpreter::load(
   }
   if (!is_int8_graph_version(graph_.header.version)) {
     std::printf(
-        "ERROR: model is XTS3 v%u; the int8 runtime requires v%u or v%u\n",
+        "ERROR: model is XTS3 v%u; the int8 runtime requires v%u to v%u\n",
         static_cast<unsigned>(graph_.header.version),
         static_cast<unsigned>(GRAPH_ESP_NN_INT8_VERSION),
-        static_cast<unsigned>(GRAPH_ESP_NN_INT8_IO_VERSION));
+        static_cast<unsigned>(GRAPH_ESP_NN_INT8_STATE_VERSION));
     return false;
   }
   const bool misaligned =
@@ -258,22 +337,31 @@ bool Int8Interpreter::load(
 
   const uint32_t tensor_count = graph_.header.num_tensors;
   const uint32_t op_count = graph_.header.num_operations;
-  tensors_ = static_cast<TensorRecord*>(
-      heap_caps_calloc(tensor_count, sizeof(TensorRecord), MALLOC_CAP_8BIT));
-  operations_ = static_cast<OperationRecord*>(
-      heap_caps_calloc(op_count, sizeof(OperationRecord), MALLOC_CAP_8BIT));
+  tables_in_place_ = graph_tables_aligned(graph_);
+  tensors_ = tables_in_place_
+      ? reinterpret_cast<const TensorRecord*>(
+            graph_.data + graph_.tensor_table_offset)
+      : static_cast<TensorRecord*>(heap_caps_calloc(
+            tensor_count, sizeof(TensorRecord), MALLOC_CAP_8BIT));
   op_states_ = static_cast<OpState*>(
       heap_caps_calloc(op_count, sizeof(OpState), MALLOC_CAP_8BIT));
-  tensor_offsets_ = static_cast<size_t*>(
-      heap_caps_calloc(tensor_count, sizeof(size_t), MALLOC_CAP_8BIT));
-  if (tensors_ == nullptr || operations_ == nullptr || op_states_ == nullptr ||
-      tensor_offsets_ == nullptr) {
+  tensor_data_ = static_cast<int8_t**>(
+      heap_caps_calloc(tensor_count, sizeof(int8_t*), MALLOC_CAP_8BIT));
+  if (options_.profile_operations) {
+    op_us_ = static_cast<int64_t*>(
+        heap_caps_calloc(op_count, sizeof(int64_t), MALLOC_CAP_8BIT));
+  }
+  if (tensors_ == nullptr || op_states_ == nullptr || tensor_data_ == nullptr ||
+      (options_.profile_operations && op_us_ == nullptr)) {
     std::printf("ERROR: unable to allocate interpreter tables\n");
     reset();
     return false;
   }
-  for (uint32_t i = 0; i < tensor_count; ++i)
-    read_tensor(graph_, i, tensors_[i]);
+  if (!tables_in_place_) {
+    TensorRecord* tensors = const_cast<TensorRecord*>(tensors_);
+    for (uint32_t i = 0; i < tensor_count; ++i)
+      read_tensor(graph_, i, tensors[i]);
+  }
   input_count_ = graph_input_count(graph_);
   output_count_ = graph_output_count(graph_);
   if (input_count_ > MAX_GRAPH_IO || output_count_ > MAX_GRAPH_IO) {
@@ -283,17 +371,35 @@ bool Int8Interpreter::load(
     reset();
     return false;
   }
+  if ((static_cast<uint64_t>(options_.conversion_slots) >>
+       (input_count_ + output_count_)) != 0) {
+    std::printf("ERROR: conversion mask selects a nonexistent I/O slot\n");
+    reset();
+    return false;
+  }
   for (uint32_t i = 0; i < input_count_; ++i)
     inputs_[i] = graph_input_id(graph_, i);
   for (uint32_t i = 0; i < output_count_; ++i)
     outputs_[i] = graph_output_id(graph_, i);
-  for (uint32_t i = 0; i < op_count; ++i)
-    read_operation(graph_, i, operations_[i]);
+  // Like graph inputs, outputs that an operation reads keep their arena slots
+  // (see plan_memory()).
+  for (uint32_t op = 0; options_.external_io && op < op_count; ++op) {
+    OperationRecord record{};
+    read_operation(graph_, op, record);
+    for (uint8_t j = 0; j < record.num_inputs; ++j) {
+      for (uint32_t o = 0; o < output_count_; ++o) {
+        if (outputs_[o] == record.inputs[j])
+          options_.conversion_slots |= 1U << (input_count_ + o);
+      }
+    }
+  }
 
-  if (!plan_memory() || !prepare_operations()) {
+  // Operations first: the planner places each operation's ESP-NN scratch.
+  if (!prepare_operations() || !plan_memory()) {
     reset();
     return false;
   }
+  reset_states();
   if (options_.copy_constants_to_psram && blob_copy_ == nullptr &&
       heap_caps_get_total_size(MALLOC_CAP_SPIRAM) != 0) {
     const size_t largest =
@@ -314,6 +420,10 @@ bool Int8Interpreter::load(
         return false;
       }
       rebase_constants(old_base, size);
+      if (tables_in_place_) {
+        tensors_ = reinterpret_cast<const TensorRecord*>(
+            graph_.data + graph_.tensor_table_offset);
+      }
     }
   }
   if (options_.dual_core) {
@@ -330,38 +440,85 @@ bool Int8Interpreter::load(
 bool Int8Interpreter::plan_memory() {
   const uint32_t tensor_count = graph_.header.num_tensors;
   const int32_t op_count = static_cast<int32_t>(graph_.header.num_operations);
+  // Entries below tensor_count are tensors. With scratch_in_arena, entry
+  // tensor_count + op is that operation's ESP-NN scratch, live only while the
+  // operation runs.
+  const uint32_t entries = tensor_count +
+      (options_.scratch_in_arena ? static_cast<uint32_t>(op_count) : 0U);
   int32_t* first = static_cast<int32_t*>(
-      heap_caps_calloc(tensor_count, sizeof(int32_t), MALLOC_CAP_8BIT));
+      heap_caps_calloc(entries, sizeof(int32_t), MALLOC_CAP_8BIT));
   int32_t* last = static_cast<int32_t*>(
-      heap_caps_calloc(tensor_count, sizeof(int32_t), MALLOC_CAP_8BIT));
+      heap_caps_calloc(entries, sizeof(int32_t), MALLOC_CAP_8BIT));
   size_t* bytes = static_cast<size_t*>(
-      heap_caps_calloc(tensor_count, sizeof(size_t), MALLOC_CAP_8BIT));
+      heap_caps_calloc(entries, sizeof(size_t), MALLOC_CAP_8BIT));
+  size_t* offsets = static_cast<size_t*>(
+      heap_caps_calloc(entries, sizeof(size_t), MALLOC_CAP_8BIT));
   bool* planned = static_cast<bool*>(
-      heap_caps_calloc(tensor_count, sizeof(bool), MALLOC_CAP_8BIT));
+      heap_caps_calloc(entries, sizeof(bool), MALLOC_CAP_8BIT));
   struct PlanBuffers {
     void* buffers[4];
-    ~PlanBuffers() {
-      for (void* buffer : buffers) {
+    void release() {
+      for (void*& buffer : buffers) {
         if (buffer != nullptr)
           heap_caps_free(buffer);
+        buffer = nullptr;
       }
     }
+    ~PlanBuffers() {
+      release();
+    }
   } plan_buffers{{first, last, bytes, planned}};
+  struct OffsetBuffer {
+    size_t* offsets;
+    ~OffsetBuffer() {
+      heap_caps_free(offsets);
+    }
+  } offset_buffer{offsets};
   if (first == nullptr || last == nullptr || bytes == nullptr ||
-      planned == nullptr) {
+      offsets == nullptr || planned == nullptr) {
     std::printf("ERROR: unable to allocate memory-planner tables\n");
     return false;
   }
+  // Kernels may load whole vectors past the end of a tensor they read, which
+  // stays within the arena but not within a caller's buffer, so graph inputs
+  // are always planned.
+  const auto unplanned = [&](uint32_t id) {
+    if ((tensors_[id].flags & TENSOR_FLAG_CONSTANT) != 0)
+      return true;
+    if (!options_.external_io ||
+        (tensors_[id].flags &
+         (TENSOR_FLAG_GRAPH_INPUT | TENSOR_FLAG_GRAPH_OUTPUT)) !=
+            TENSOR_FLAG_GRAPH_OUTPUT)
+      return false;
+    for (size_t o = 0; o < output_count_; ++o) {
+      if (outputs_[o] == id &&
+          (options_.conversion_slots & (1U << (input_count_ + o))) != 0)
+        return false;
+    }
+    return true;
+  };
   for (uint32_t i = 0; i < tensor_count; ++i) {
     first[i] =
-        (tensors_[i].flags & TENSOR_FLAG_GRAPH_INPUT) != 0 ? -1 : INT32_MAX;
+        (tensors_[i].flags & (TENSOR_FLAG_GRAPH_INPUT | TENSOR_FLAG_STATE)) != 0
+        ? -1
+        : INT32_MAX;
     last[i] =
         (tensors_[i].flags & TENSOR_FLAG_GRAPH_OUTPUT) != 0 ? op_count : -1;
     bytes[i] = align_up(tensor_data_size(tensors_[i]), ARENA_ALIGNMENT);
-    tensor_offsets_[i] = SIZE_MAX;
+    planned[i] = unplanned(i);
+    offsets[i] = SIZE_MAX;
+  }
+  for (uint32_t e = tensor_count; e < entries; ++e) {
+    const int32_t op = static_cast<int32_t>(e - tensor_count);
+    const size_t scratch = op_states_[op].scratch_bytes;
+    first[e] = scratch != 0 ? op : INT32_MAX;
+    last[e] = op;
+    bytes[e] = align_up(scratch, ARENA_ALIGNMENT);
+    offsets[e] = SIZE_MAX;
   }
   for (int32_t op = 0; op < op_count; ++op) {
-    const OperationRecord& record = operations_[op];
+    OperationRecord record{};
+    read_operation(graph_, static_cast<uint32_t>(op), record);
     for (uint8_t j = 0; j < record.num_inputs; ++j) {
       const uint32_t id = record.inputs[j];
       if ((tensors_[id].flags & TENSOR_FLAG_CONSTANT) == 0 && last[id] < op)
@@ -376,13 +533,29 @@ bool Int8Interpreter::plan_memory() {
     }
   }
 
+  // A state keeps its slot across invokes, so it is live for the whole graph.
+  // Its update is written straight into that slot when no operation reads the
+  // state at or after the update's first write; otherwise the update gets its
+  // own slot and is copied over the state after the last operation.
+  updates_in_place_ = 0;
+  for (uint32_t k = 0; k < graph_.num_states; ++k) {
+    uint32_t state = 0;
+    uint32_t update = 0;
+    graph_state_pair(graph_, k, state, update);
+    if (last[state] < first[update]) {
+      updates_in_place_ |= 1U << k;
+      planned[update] = true;
+    } else {
+      last[update] = op_count;
+    }
+    last[state] = op_count;
+  }
+
   size_t arena_size = 0;
-  for (uint32_t step = 0; step < tensor_count; ++step) {
+  for (uint32_t step = 0; step < entries; ++step) {
     int32_t best = -1;
-    for (uint32_t i = 0; i < tensor_count; ++i) {
-      if (planned[i] || (tensors_[i].flags & TENSOR_FLAG_CONSTANT) != 0)
-        continue;
-      if (first[i] == INT32_MAX)
+    for (uint32_t i = 0; i < entries; ++i) {
+      if (planned[i] || first[i] == INT32_MAX)
         continue;
       if (best < 0 || bytes[i] > bytes[best])
         best = static_cast<int32_t>(i);
@@ -394,14 +567,14 @@ bool Int8Interpreter::plan_memory() {
     bool moved = true;
     while (moved) {
       moved = false;
-      for (uint32_t j = 0; j < tensor_count; ++j) {
-        if (j == static_cast<uint32_t>(best) || tensor_offsets_[j] == SIZE_MAX)
+      for (uint32_t j = 0; j < entries; ++j) {
+        if (j == static_cast<uint32_t>(best) || offsets[j] == SIZE_MAX)
           continue;
         const bool lifetime_overlap =
             first[j] <= last[best] && first[best] <= last[j];
         if (!lifetime_overlap)
           continue;
-        const size_t other_begin = tensor_offsets_[j];
+        const size_t other_begin = offsets[j];
         const size_t other_end = other_begin + bytes[j];
         if (candidate < other_end && other_begin < candidate + bytes[best]) {
           candidate = other_end;
@@ -409,46 +582,82 @@ bool Int8Interpreter::plan_memory() {
         }
       }
     }
-    tensor_offsets_[best] = candidate;
+    offsets[best] = candidate;
     if (candidate + bytes[best] > arena_size)
       arena_size = candidate + bytes[best];
   }
+  for (uint32_t k = 0; k < graph_.num_states; ++k) {
+    uint32_t state = 0;
+    uint32_t update = 0;
+    graph_state_pair(graph_, k, state, update);
+    if ((updates_in_place_ & (1U << k)) != 0)
+      offsets[update] = offsets[state];
+  }
   for (uint32_t i = 0; i < tensor_count; ++i) {
-    if ((tensors_[i].flags & TENSOR_FLAG_CONSTANT) == 0 &&
-        tensor_offsets_[i] == SIZE_MAX) {
+    if (!unplanned(i) && offsets[i] == SIZE_MAX) {
       std::printf(
           "ERROR: tensor %u is never produced or consumed\n",
           static_cast<unsigned>(i));
       return false;
     }
   }
+  for (uint32_t e = tensor_count; e < entries; ++e) {
+    op_states_[e - tensor_count].scratch_offset =
+        offsets[e] == SIZE_MAX ? 0 : static_cast<uint32_t>(offsets[e]);
+  }
+  // Loading then needs at most the tensor offsets alongside the arena.
+  plan_buffers.release();
 
+  // With external_io, a graph whose every activation is an output needs no
+  // arena.
   arena_size_ = arena_size;
-  arena_ = static_cast<uint8_t*>(allocate_preferring_internal(
-      arena_size_,
-      options_.prefer_internal_arena,
-      options_.internal_reserve_bytes,
-      &arena_internal_));
+  if (arena_size_ == 0)
+    return true;
+  // Readable bytes after the last slot, for kernels that load a whole vector
+  // past the end of a tensor.
+  const size_t allocated = arena_size_ + ARENA_ALIGNMENT;
+  arena_ = allocated < arena_size_
+      ? nullptr
+      : static_cast<uint8_t*>(allocate_preferring_internal(
+            allocated,
+            options_.prefer_internal_arena,
+            options_.internal_reserve_bytes,
+            &arena_internal_));
   if (arena_ == nullptr) {
     std::printf(
         "ERROR: unable to allocate %u-byte activation arena\n",
         static_cast<unsigned>(arena_size_));
     return false;
   }
-  std::memset(arena_, 0, arena_size_);
+  std::memset(arena_, 0, allocated);
+  for (uint32_t i = 0; i < tensor_count; ++i) {
+    if (offsets[i] != SIZE_MAX)
+      tensor_data_[i] = reinterpret_cast<int8_t*>(arena_ + offsets[i]);
+  }
   return true;
 }
 
 bool Int8Interpreter::prepare_operations() {
   const uint32_t op_count = graph_.header.num_operations;
+  // Requantization parameters are used where they sit in a version 7 graph,
+  // and copied into params_ otherwise.
   size_t param_words = 0;
   for (uint32_t i = 0; i < op_count; ++i) {
-    const OperationRecord& op = operations_[i];
-    const OpCode code = static_cast<OpCode>(op.opcode);
-    if (code == OpCode::CONV2D || code == OpCode::DEPTHWISE_CONV2D ||
-        code == OpCode::LINEAR || code == OpCode::TRANSPOSE_CONV2D) {
-      param_words += 2U * tensor_element_count(tensors_[op.inputs[2]]);
-    } else if (code == OpCode::SOFTMAX) {
+    OperationRecord op{};
+    read_operation(graph_, i, op);
+    const uint8_t* multipliers = nullptr;
+    const uint8_t* shifts = nullptr;
+    uint32_t channels = 0;
+    if (requantization_arrays(
+            graph_, tensors_, op, multipliers, shifts, channels)) {
+      if (int32s_in_place(tables_in_place_, multipliers) == nullptr ||
+          int32s_in_place(tables_in_place_, shifts) == nullptr)
+        param_words += 2U * channels;
+    } else if (
+        static_cast<OpCode>(op.opcode) == OpCode::SOFTMAX &&
+        int32s_in_place(
+            tables_in_place_, graph_.parameter_data + op.parameter_offset) ==
+            nullptr) {
       param_words += 256U;
     }
   }
@@ -464,8 +673,43 @@ bool Int8Interpreter::prepare_operations() {
 
   int32_t* cursor = params_;
   size_t scratch_size = 0;
+  auto require_scratch = [&scratch_size](OpState& state, int32_t needed) {
+    if (needed <= 0)
+      return;
+    const uint32_t bytes = static_cast<uint32_t>(needed);
+    if (bytes > state.scratch_bytes)
+      state.scratch_bytes = bytes;
+    if (bytes > scratch_size)
+      scratch_size = bytes;
+  };
+  auto bind_requantization = [this, &cursor](
+                                 OpState& state, const OperationRecord& op) {
+    const uint8_t* multipliers = nullptr;
+    const uint8_t* shifts = nullptr;
+    uint32_t channels = 0;
+    if (!requantization_arrays(
+            graph_, tensors_, op, multipliers, shifts, channels))
+      return false;
+    const int32_t* multipliers_in_place =
+        int32s_in_place(tables_in_place_, multipliers);
+    const int32_t* shifts_in_place = int32s_in_place(tables_in_place_, shifts);
+    if (multipliers_in_place != nullptr && shifts_in_place != nullptr) {
+      state.multipliers = const_cast<int32_t*>(multipliers_in_place);
+      state.shifts = const_cast<int32_t*>(shifts_in_place);
+      return true;
+    }
+    state.multipliers = cursor;
+    state.shifts = cursor + channels;
+    for (uint32_t c = 0; c < channels; ++c) {
+      state.multipliers[c] = read_le_i32(multipliers + c * 4);
+      state.shifts[c] = read_le_i32(shifts + c * 4);
+    }
+    cursor += 2U * channels;
+    return true;
+  };
   for (uint32_t i = 0; i < op_count; ++i) {
-    const OperationRecord& op = operations_[i];
+    OperationRecord op{};
+    read_operation(graph_, i, op);
     OpState& state = op_states_[i];
     state = {};
     state.opcode = static_cast<OpCode>(op.opcode);
@@ -492,13 +736,8 @@ bool Int8Interpreter::prepare_operations() {
             tensor_constant_data(graph_, weight));
         state.bias = reinterpret_cast<const int32_t*>(
             tensor_constant_data(graph_, bias));
-        state.multipliers = cursor;
-        state.shifts = cursor + channels;
-        for (uint32_t c = 0; c < channels; ++c) {
-          state.multipliers[c] = read_le_i32(params.multipliers + c * 4);
-          state.shifts[c] = read_le_i32(params.shifts + c * 4);
-        }
-        cursor += 2U * channels;
+        if (!bind_requantization(state, op))
+          return false;
         state.quant.mult = state.multipliers;
         state.quant.shift = state.shifts;
         state.input_dims = {input.shape[3], input.shape[2], input.shape[1], 1};
@@ -547,8 +786,7 @@ bool Int8Interpreter::prepare_operations() {
                 params.activation_min, params.activation_max};
             const int needed = esp_nn_get_conv_scratch_size(
                 &tile_in, &state.filter_dims, &tile_out, &state.conv);
-            if (needed > 0 && static_cast<size_t>(needed) > scratch_size)
-              scratch_size = needed;
+            require_scratch(state, needed);
           } else {
             state.filter_dims = {
                 params.kernel_w, params.kernel_h, output.shape[1], 1};
@@ -562,8 +800,7 @@ bool Int8Interpreter::prepare_operations() {
                 params.activation_min, params.activation_max};
             const int needed = esp_nn_get_depthwise_conv_scratch_size(
                 &tile_in, &state.filter_dims, &tile_out, &state.dw);
-            if (needed > 0 && static_cast<size_t>(needed) > scratch_size)
-              scratch_size = needed;
+            require_scratch(state, needed);
           }
           break;
         }
@@ -582,8 +819,7 @@ bool Int8Interpreter::prepare_operations() {
               &state.filter_dims,
               &state.output_dims,
               &state.conv);
-          if (needed > 0 && static_cast<size_t>(needed) > scratch_size)
-            scratch_size = needed;
+          require_scratch(state, needed);
         } else {
           state.filter_dims = {
               params.kernel_w, params.kernel_h, output.shape[1], 1};
@@ -599,8 +835,7 @@ bool Int8Interpreter::prepare_operations() {
               &state.filter_dims,
               &state.output_dims,
               &state.dw);
-          if (needed > 0 && static_cast<size_t>(needed) > scratch_size)
-            scratch_size = needed;
+          require_scratch(state, needed);
         }
         break;
       }
@@ -618,6 +853,12 @@ bool Int8Interpreter::prepare_operations() {
         for (uint8_t k = 0; k < op.num_inputs; ++k)
           state.inputs[k] = op.inputs[k];
         state.table = p;
+        // Several COPY operations may write parts of one output (a long cat).
+        state.clear_output = options_.external_io &&
+            (output.flags & TENSOR_FLAG_GRAPH_OUTPUT) != 0 &&
+            (read_le_i32(p + 4) & COPY_FLAG_FILL) == 0;
+        for (uint32_t j = 0; state.clear_output && j < i; ++j)
+          state.clear_output = op_states_[j].output != state.output;
         break;
       case OpCode::UPSAMPLE:
         state.table = p;
@@ -629,7 +870,6 @@ bool Int8Interpreter::prepare_operations() {
       case OpCode::TRANSPOSE_CONV2D: {
         const TensorRecord& weight = tensors_[op.inputs[1]];
         const TensorRecord& bias = tensors_[op.inputs[2]];
-        const uint32_t channels = static_cast<uint32_t>(output.shape[1]);
         state.weights = reinterpret_cast<const int8_t*>(
             tensor_constant_data(graph_, weight));
         state.bias = reinterpret_cast<const int32_t*>(
@@ -640,15 +880,8 @@ bool Int8Interpreter::prepare_operations() {
         state.dilation_w = read_le_i32(p + 36);
         state.value0 = read_le_i32(p + 44);
         state.value1 = read_le_i32(p + 48);
-        state.multipliers = cursor;
-        state.shifts = cursor + channels;
-        const uint8_t* multipliers = p + TRANSPOSE_CONV_PARAMS_SIZE;
-        const uint8_t* shifts = multipliers + channels * 4U;
-        for (uint32_t c = 0; c < channels; ++c) {
-          state.multipliers[c] = read_le_i32(multipliers + c * 4);
-          state.shifts[c] = read_le_i32(shifts + c * 4);
-        }
-        cursor += 2U * channels;
+        if (!bind_requantization(state, op))
+          return false;
         state.input_dims = {input.shape[3], input.shape[2], input.shape[1], 1};
         state.output_dims = {
             output.shape[3], output.shape[2], output.shape[1], 1};
@@ -660,8 +893,7 @@ bool Int8Interpreter::prepare_operations() {
         state.input_dims = {input.shape[3], input.shape[2], input.shape[1], 1};
         const int32_t needed = esp_nn_get_mean_scratch_size(
             input.shape[2], input.shape[3], input.shape[1]);
-        if (needed > 0 && static_cast<size_t>(needed) > scratch_size)
-          scratch_size = needed;
+        require_scratch(state, needed);
         break;
       }
       case OpCode::MAX_POOL2D:
@@ -689,10 +921,14 @@ bool Int8Interpreter::prepare_operations() {
         state.rows = static_cast<int32_t>(state.elements) / state.cols;
         break;
       case OpCode::SOFTMAX:
-        state.multipliers = cursor;
-        for (int k = 0; k < 256; ++k)
-          state.multipliers[k] = static_cast<int32_t>(read_le_u32(p + 4 * k));
-        cursor += 256;
+        if (const int32_t* table = int32s_in_place(tables_in_place_, p)) {
+          state.multipliers = const_cast<int32_t*>(table);
+        } else {
+          state.multipliers = cursor;
+          for (int k = 0; k < 256; ++k)
+            state.multipliers[k] = static_cast<int32_t>(read_le_u32(p + 4 * k));
+          cursor += 256;
+        }
         state.cols = input.shape[1];
         state.rows = static_cast<int32_t>(state.elements) / state.cols;
         break;
@@ -724,16 +960,8 @@ bool Int8Interpreter::prepare_operations() {
             tensor_constant_data(graph_, bias));
         state.value0 = read_le_i32(p);
         state.value1 = read_le_i32(p + 4);
-        state.multipliers = cursor;
-        state.shifts = cursor + state.rows;
-        const uint8_t* multipliers = p + INT8_PAIR_PARAMS_SIZE;
-        const uint8_t* shifts =
-            multipliers + static_cast<size_t>(state.rows) * 4U;
-        for (int32_t r = 0; r < state.rows; ++r) {
-          state.multipliers[r] = read_le_i32(multipliers + r * 4);
-          state.shifts[r] = read_le_i32(shifts + r * 4);
-        }
-        cursor += 2 * state.rows;
+        if (!bind_requantization(state, op))
+          return false;
         break;
       }
       default:
@@ -751,7 +979,7 @@ bool Int8Interpreter::prepare_operations() {
       return false;
     }
   }
-  scratch_size_ = scratch_size;
+  scratch_size_ = options_.scratch_in_arena ? 0 : scratch_size;
   if (scratch_size_ != 0) {
     scratch_ = allocate_preferring_internal(
         scratch_size_, true, options_.internal_reserve_bytes, nullptr);
@@ -781,11 +1009,31 @@ void Int8Interpreter::rebase_constants(const uint8_t* old_base, size_t size) {
       state.bias = reinterpret_cast<const int32_t*>(rebase(state.bias));
     if (state.table != nullptr)
       state.table = rebase(state.table);
+    state.multipliers = const_cast<int32_t*>(
+        reinterpret_cast<const int32_t*>(rebase(state.multipliers)));
+    state.shifts = const_cast<int32_t*>(
+        reinterpret_cast<const int32_t*>(rebase(state.shifts)));
+    state.quant.mult = state.multipliers;
+    state.quant.shift = state.shifts;
   }
 }
 
+bool Int8Interpreter::in_arena(const int8_t* data) const {
+  const uintptr_t address = reinterpret_cast<uintptr_t>(data);
+  const uintptr_t arena = reinterpret_cast<uintptr_t>(arena_);
+  return address >= arena && address - arena < arena_size_;
+}
+
 int8_t* Int8Interpreter::activation(uint32_t tensor_id) const {
-  return reinterpret_cast<int8_t*>(arena_ + tensor_offsets_[tensor_id]);
+  return tensor_data_[tensor_id];
+}
+
+bool Int8Interpreter::bind_output(size_t index, int8_t* data) {
+  if (!loaded_ || !options_.external_io || index >= output_count_ ||
+      in_arena(tensor_data_[outputs_[index]]))
+    return false;
+  tensor_data_[outputs_[index]] = data;
+  return true;
 }
 
 const int8_t* Int8Interpreter::operand(uint32_t tensor_id) const {
@@ -925,9 +1173,37 @@ int32_t Int8Interpreter::output_argmax(size_t index) const {
   return best;
 }
 
+size_t Int8Interpreter::states_updated_in_place() const {
+  size_t count = 0;
+  for (uint32_t k = 0; k < graph_.num_states; ++k)
+    count += (updates_in_place_ >> k) & 1U;
+  return count;
+}
+
+void Int8Interpreter::reset_states() {
+  for (uint32_t k = 0; k < graph_.num_states; ++k) {
+    uint32_t state = 0;
+    uint32_t update = 0;
+    graph_state_pair(graph_, k, state, update);
+    std::memcpy(
+        activation(state),
+        tensor_constant_data(graph_, tensors_[state]),
+        tensor_data_size(tensors_[state]));
+  }
+}
+
+size_t Int8Interpreter::table_bytes() const {
+  if (!loaded_)
+    return 0;
+  const size_t records = tables_in_place_ ? 0 : sizeof(TensorRecord);
+  return graph_.header.num_operations * sizeof(OpState) +
+      graph_.header.num_tensors * (records + sizeof(int8_t*));
+}
+
 int64_t Int8Interpreter::op_time_us(uint32_t op) const {
-  return loaded_ && op < graph_.header.num_operations ? op_states_[op].last_us
-                                                      : 0;
+  return loaded_ && op_us_ != nullptr && op < graph_.header.num_operations
+      ? op_us_[op]
+      : 0;
 }
 
 bool Int8Interpreter::run_operation(uint32_t index) {
@@ -1521,6 +1797,10 @@ void Int8Interpreter::run_copy(const OpState& s, int8_t* output) const {
   if ((flags & COPY_FLAG_FILL) != 0) {
     std::memset(
         output, read_le_i32(p + 8), tensor_data_size(tensors_[s.output]));
+  } else if (s.clear_output) {
+    // Segments that do not cover a caller's output buffer must not leave its
+    // previous contents there.
+    std::memset(output, 0, tensor_data_size(tensors_[s.output]));
   }
   for (int32_t k = 0; k < segments; ++k) {
     const uint8_t* q =
@@ -1674,16 +1954,36 @@ void Int8Interpreter::run_transposed_conv(
 bool Int8Interpreter::invoke() {
   if (!loaded_)
     return false;
+  if (options_.external_io) {
+    for (size_t o = 0; o < output_count_; ++o) {
+      if (tensor_data_[outputs_[o]] == nullptr)
+        return false;
+    }
+  }
   InvokeLock lock;
+  // A kernel that leaves part of its output unwritten must not leave a
+  // caller's previous contents in a bound output.
+  for (size_t o = 0; options_.external_io && o < output_count_; ++o) {
+    int8_t* data = tensor_data_[outputs_[o]];
+    if (!in_arena(data))
+      std::memset(data, 0, tensor_data_size(tensors_[outputs_[o]]));
+  }
   if (scratch_ != nullptr) {
     esp_nn_set_conv_scratch_buf(scratch_);
     esp_nn_set_depthwise_conv_scratch_buf(scratch_);
     esp_nn_set_mean_scratch_buf(scratch_);
   }
-  int64_t compute_us = 0;
-  int64_t last_yield = esp_timer_get_time();
+  const int64_t invoke_started = esp_timer_get_time();
+  int64_t op_started = invoke_started;
+  int64_t last_yield = invoke_started;
   for (uint32_t i = 0; i < graph_.header.num_operations; ++i) {
-    const int64_t started = esp_timer_get_time();
+    const OpState& state = op_states_[i];
+    if (options_.scratch_in_arena && state.scratch_bytes != 0) {
+      void* scratch = arena_ + state.scratch_offset;
+      esp_nn_set_conv_scratch_buf(scratch);
+      esp_nn_set_depthwise_conv_scratch_buf(scratch);
+      esp_nn_set_mean_scratch_buf(scratch);
+    }
     if (!run_operation(i)) {
       std::printf(
           "ERROR: operation %u (%s) failed\n",
@@ -1691,18 +1991,33 @@ bool Int8Interpreter::invoke() {
           opcode_name(op_states_[i].opcode));
       return false;
     }
-    const int64_t finished = esp_timer_get_time();
-    OpState& state = op_states_[i];
-    state.last_us = finished - started;
-    state.total_us += state.last_us;
-    ++state.calls;
-    compute_us += state.last_us;
-    if (finished - last_yield > YIELD_INTERVAL_US) {
+    if (op_us_ == nullptr && (i + 1) % YIELD_CHECK_OPERATIONS != 0)
+      continue;
+    int64_t now = esp_timer_get_time();
+    if (op_us_ != nullptr)
+      op_us_[i] = now - op_started;
+    if (now - last_yield > YIELD_INTERVAL_US) {
       vTaskDelay(1);
-      last_yield = esp_timer_get_time();
+      now = esp_timer_get_time();
+      last_yield = now;
+    }
+    op_started = now;
+  }
+  for (uint32_t k = 0; k < graph_.num_states; ++k) {
+    uint32_t state = 0;
+    uint32_t update = 0;
+    graph_state_pair(graph_, k, state, update);
+    if ((updates_in_place_ & (1U << k)) == 0) {
+      std::memcpy(
+          activation(state),
+          activation(update),
+          tensor_data_size(tensors_[state]));
     }
   }
-  last_invoke_us_ = compute_us;
+  const int64_t finished = esp_timer_get_time();
+  if (finished - last_yield > YIELD_INTERVAL_US)
+    vTaskDelay(1);
+  last_invoke_us_ = finished - invoke_started;
   return true;
 }
 
@@ -1750,7 +2065,7 @@ void Int8Interpreter::print_summary() const {
 }
 
 void Int8Interpreter::print_profile() const {
-  if (!loaded_)
+  if (!loaded_ || op_us_ == nullptr)
     return;
   int64_t per_type[OPCODE_COUNT]{};
   uint32_t count_per_type[OPCODE_COUNT]{};
@@ -1758,7 +2073,7 @@ void Int8Interpreter::print_profile() const {
     const OpState& s = op_states_[i];
     const unsigned type = static_cast<unsigned>(s.opcode);
     if (type < OPCODE_COUNT) {
-      per_type[type] += s.last_us;
+      per_type[type] += op_us_[i];
       ++count_per_type[type];
     }
     std::printf(
@@ -1772,7 +2087,7 @@ void Int8Interpreter::print_profile() const {
         static_cast<long>(
             tensors_[s.output].rank == 4 ? tensors_[s.output].shape[1]
                                          : static_cast<int32_t>(s.elements)),
-        static_cast<long long>(s.last_us));
+        static_cast<long long>(op_us_[i]));
   }
   for (unsigned t = 0; t < OPCODE_COUNT; ++t) {
     if (count_per_type[t] == 0)

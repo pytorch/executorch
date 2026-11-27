@@ -77,6 +77,7 @@ class GenStats:
     completion_tokens: int = 0
     # Worker-reported stop reason ("stop" | "length"), or None if not reported.
     finish_reason: Optional[str] = None
+    # None is reserved for an unknown string-stop cause from a worker message.
     matched_stop: Optional[str] = ""
     # Warm-resume accounting: tokens served from the session's resident
     # state vs prefilled this request, and why.
@@ -910,6 +911,9 @@ class SessionRuntime:
                     *tuple(self._native_tasks | self._operations),
                     return_exceptions=True,
                 )
+                # gather() of already-done futures need not yield on Python 3.12+.
+                # Let their queued done callbacks remove them from the sets.
+                await asyncio.sleep(0)
             for result in results:
                 if isinstance(result, BaseException):
                     raise result

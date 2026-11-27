@@ -2704,7 +2704,7 @@ def fully_connected_meta(
     torch._check(
         src.dtype in (torch.float32, torch.bfloat16), lambda: "expected float dtype"
     )
-    torch._check(src.size(0) == 1, lambda: "expected batch size of 1")
+    torch._check(prod(src.shape[:-1]) == 1, lambda: "expected batch size of 1")
     # src comes in shape [leading_dims, in_dim]
     # weight comes in shape [out_dim, in_dim]
     # output comes in empty with shape [leading_dims, out_dim]
@@ -2729,11 +2729,10 @@ def quantized_fully_connected_meta(
 ) -> torch.Tensor:
     torch._check(bias.dtype == torch.int32, lambda: "expected int32")
     torch._check(weight.dim() == 2, lambda: "expected 2D tensor")
-    torch._check(src.size(0) == 1, lambda: "expected batch size of 1")
+    torch._check(prod(src.shape[:-1]) == 1, lambda: "expected batch size of 1")
     # src comes in shape [leading_dims, in_dim]
     # weight comes in shape [out_dim, in_dim]
     # output comes in empty with shape [leading_dims, out_dim]
-    assert src.shape[0] == 1
     out_size = list(src.size())
     weight_size = list(weight.size())
     assert len(weight_size) == 2
@@ -2755,11 +2754,10 @@ def quantized_fully_connected_per_tensor_meta(
 ) -> torch.Tensor:
     torch._check(bias.dtype == torch.int32, lambda: "expected int32")
     torch._check(weight.dim() == 2, lambda: "expected 2D tensor")
-    torch._check(src.size(0) == 1, lambda: "expected batch size of 1")
+    torch._check(prod(src.shape[:-1]) == 1, lambda: "expected batch size of 1")
     # src comes in shape [leading_dims, in_dim]
     # weight comes in shape [out_dim, in_dim]
     # output comes in empty with shape [leading_dims, out_dim]
-    assert src.shape[0] == 1
     out_size = list(src.size())
     weight_size = list(weight.size())
     assert len(weight_size) == 2
@@ -2783,7 +2781,7 @@ def quantized_fully_connected_packed_meta(
 ) -> torch.Tensor:
     torch._check(bias.dtype == torch.int32, lambda: "expected int32")
     torch._check(weight.dim() == 2, lambda: "expected 2D tensor")
-    torch._check(src.size(0) == 1, lambda: "expected batch size of 1")
+    torch._check(prod(src.shape[:-1]) == 1, lambda: "expected batch size of 1")
     # src comes in shape [leading_dims, in_dim]
     # weight comes in shape [out_dim, packed_row_bytes], so out_dim is still
     # size(0) - that is what packing per row buys us - but in_dim is an
@@ -2812,11 +2810,10 @@ def quantized_fully_connected_asym8sxasym8s_asym8s_per_tensor_meta(
     )
     torch._check(bias.dtype == torch.int32, lambda: "expected int32")
     torch._check(weight.dim() == 2, lambda: "expected 2D tensor")
-    torch._check(src.size(0) == 1, lambda: "expected batch size of 1")
+    torch._check(prod(src.shape[:-1]) == 1, lambda: "expected batch size of 1")
     # src comes in shape [leading_dims, in_dim]
     # weight comes in shape [out_dim, in_dim]
     # output comes in empty with shape [leading_dims, out_dim]
-    assert src.shape[0] == 1
     out_size = list(src.size())
     weight_size = list(weight.size())
     assert len(weight_size) == 2
@@ -2842,11 +2839,10 @@ def quantized_fully_connected_asym8uxasym8u_asym8u_per_tensor_meta(
     )
     torch._check(bias.dtype == torch.int32, lambda: "expected int32")
     torch._check(weight.dim() == 2, lambda: "expected 2D tensor")
-    torch._check(src.size(0) == 1, lambda: "expected batch size of 1")
+    torch._check(prod(src.shape[:-1]) == 1, lambda: "expected batch size of 1")
     # src comes in shape [leading_dims, in_dim]
     # weight comes in shape [out_dim, in_dim]
     # output comes in empty with shape [leading_dims, out_dim]
-    assert src.shape[0] == 1
     out_size = list(src.size())
     weight_size = list(weight.size())
     assert len(weight_size) == 2

@@ -17,7 +17,7 @@ Below are the requirements for running a CUDA-delegated ExecuTorch model:
 - **Hardware**: NVIDIA GPU with compute capability 8.0 (Ampere) or newer. This is the floor the
   prebuilt packages are built for.
 - **CUDA**: 13 for the prebuilt packages. On Linux they bring the CUDA runtime with them. On
-  Windows it comes from a CUDA 13 toolkit install. A build from source also supports CUDA 13.0.
+  Windows it comes from a CUDA 13 toolkit install. A build from source needs CUDA 13.2 or 13.4.
 - **Operating System**: Linux, or Windows from C++ for programs exported on Linux (see
   [CUDA on Windows](../../using-executorch-cpp.md#cuda-on-windows))
 - **Drivers**: An NVIDIA driver that supports the CUDA version you use: CUDA 13 for the prebuilt
@@ -108,6 +108,8 @@ If an export runs out of GPU memory while AOTInductor compiles its kernels, `Com
 - The cache directory needs free space for the weights. If it fills up, the process stops with a bus error. It defaults to a folder under the system temp directory, which on some systems is in RAM. Set `TORCHINDUCTOR_CACHE_DIR` to a disk with room.
 - The earlier template search for matrix multiplies and convolutions still keeps the weights on the GPU.
 - PyTorch skips the move when the last kernel it generates runs on the CPU.
+
+If the model's weights are already on the GPU, lowering normally copies them first, so it needs about twice their size in GPU memory. `CompileSpec("share_weights", b"ON")` makes lowering use the weights where they are instead. The export does not change them. With `CompileSpec("autotune_at_compile_time", b"OFF")`, the GPU buffers and parameters that the graph writes, such as a KV cache, are still copied. Low-memory mode always shares the weights, so setting `share_weights` to OFF with it is an error. Low-memory mode may also move the weights to disk while it autotunes, so they come back at new addresses.
 
 For a complete working example, see the [CUDA export script](https://github.com/pytorch/executorch/blob/main/examples/cuda/scripts/export.py).
 

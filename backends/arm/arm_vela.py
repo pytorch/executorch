@@ -7,12 +7,16 @@
 
 
 import hashlib
+import io
+import logging
 import os
 import struct
 import tempfile
 
 from collections.abc import Mapping
+from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass
+from math import prod
 from typing import List
 
 import numpy as np
@@ -23,6 +27,8 @@ try:
     has_vela = True
 except ImportError:
     has_vela = False
+
+logger = logging.getLogger(__name__)
 
 
 _BLOCK_NAME_LENGTH = 16
@@ -122,12 +128,31 @@ class VelaExternalBlock:
 
 
 @dataclass(frozen=True)
+class VelaIO:
+    """Location and byte size of a tensor in a Vela memory region."""
+
+    offset: int
+    size: int
+    region: int
+
+
+@dataclass(frozen=True)
+class VelaIOLayout:
+    """Vela I/O layout for AOT memory planning."""
+
+    scratch_size: int
+    inputs: tuple[VelaIO, ...]
+    outputs: tuple[VelaIO, ...]
+
+
+@dataclass(frozen=True)
 class VelaCompileResult:
     """Binary stream and external payloads produced by Vela."""
 
     processed_bytes: bytes
     scratch_size: int
     external_blocks: tuple[VelaExternalBlock, ...] = ()
+    io_layout: VelaIOLayout | None = None
 
 
 def _as_int32(value, name: str) -> int:
@@ -165,6 +190,18 @@ def vela_bin_pack_io(prefix, data):
         )
         ios += io_struct
     return ios
+
+
+def _vela_io_layout(prefix: str, data: Mapping) -> tuple[VelaIO, ...]:
+    return tuple(
+        VelaIO(
+            offset=int(data[prefix + "_offset"][index]),
+            size=prod(int(dim) or 1 for dim in shape)
+            * int(data[prefix + "_elem_size"][index]),
+            region=int(data[prefix + "_region"][index]),
+        )
+        for index, shape in enumerate(data[prefix + "_shape"])
+    )
 
 
 def _get_scratch_size(scratch_value: np.generic, max_scratch_size: int | None) -> int:
@@ -220,7 +257,16 @@ def vela_compile(
         args.append(tosa_path)
         if verbose:
             args.append("--verbose-all")
-        vela.main(" ".join(args).split(" "))
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        try:
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                vela.main(" ".join(args).split(" "))
+        finally:
+            if output := stdout.getvalue().rstrip():
+                logger.info("%s", output)
+            if output := stderr.getvalue().rstrip():
+                logger.warning("%s", output)
 
         np_path = os.path.join(dir, "output", "out_vela.npz")
 
@@ -334,6 +380,11 @@ def vela_compile(
                 processed_bytes=blocks,
                 scratch_size=scratch_size,
                 external_blocks=tuple(external_blocks),
+                io_layout=VelaIOLayout(
+                    scratch_size=scratch_size,
+                    inputs=_vela_io_layout("input", data),
+                    outputs=_vela_io_layout("output", data),
+                ),
             )
 
     if intermediate_path is not None:

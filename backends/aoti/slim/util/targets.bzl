@@ -1,16 +1,12 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
-load("@fbsource//tools/build_defs:fbsource_utils.bzl", "is_fbcode")
 
 def define_common_targets():
     """Define targets for SlimTensor util module."""
 
-    if not is_fbcode():
-        return
-
     # Header-only library for SharedPtr
     runtime.cxx_library(
         name = "shared_ptr",
-        headers = [
+        exported_headers = [
             "shared_ptr.h",
         ],
         visibility = ["@EXECUTORCH_CLIENTS"],
@@ -22,7 +18,7 @@ def define_common_targets():
     # Header-only library for ArrayRefUtil
     runtime.cxx_library(
         name = "array_ref_util",
-        headers = [
+        exported_headers = [
             "array_ref_util.h",
         ],
         visibility = ["@EXECUTORCH_CLIENTS"],
@@ -34,7 +30,7 @@ def define_common_targets():
     # Header-only library for SizeUtil
     runtime.cxx_library(
         name = "size_util",
-        headers = [
+        exported_headers = [
             "size_util.h",
         ],
         visibility = ["@EXECUTORCH_CLIENTS"],

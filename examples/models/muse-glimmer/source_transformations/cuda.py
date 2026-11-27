@@ -364,6 +364,8 @@ def dflash_cuda_source_transformations(model: nn.Module) -> None:
     Args:
         model: ``DFlashDraftModel`` instance to transform in place.
     """
+    if model.config.selector_top_k or model.config.conv_kernel_size:
+        raise ValueError("CUDA DFlash2 export is unsupported")
     block_size = model.config.block_size
     n_swapped = 0
     for layer in model.layers:
@@ -424,6 +426,8 @@ def _packed_dflash_model_forward(
 
 def enable_dflash_offgraph_kv_cache(model: nn.Module, max_write: int) -> str:
     """Packed cell-cache draft, with block-only queries and real context K/V."""
+    if model.config.selector_top_k or model.config.conv_kernel_size:
+        raise ValueError("CUDA DFlash2 export is unsupported")
     layers = []
     for i, layer in enumerate(model.layers):
         attn = layer.self_attn
@@ -841,8 +845,9 @@ def _forward_from_embeddings_sampling(
 
     Runs the decoder stack over pre-computed ``inputs_embeds`` (built by the
     runner from ``embed_text`` plus any image splice) and returns a single
-    Gumbel-max token id ``(B, 1)`` from the last position. Only the last
-    position's logits are computed, so ``lm_head`` runs on ``(B, 1, H)``.
+    token id ``(B, 1)`` from the last position: a Gumbel-max sample, or the
+    argmax at temperature 0. Only the last position's logits are computed, so
+    ``lm_head`` runs on ``(B, 1, H)``.
     """
     x = self._run_blocks(inputs_embeds, input_pos)
     x = self.output_norm(x)

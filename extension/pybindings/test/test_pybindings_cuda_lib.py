@@ -63,3 +63,39 @@ class CudaLibTest(unittest.TestCase):
             actual = np.load(root / "output.npy")
 
         np.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-6)
+
+    def test_boundary_copies_survive_repeated_executes(self) -> None:
+        """Host inputs and outputs cross the device boundary on every call
+        through the program's planned host buffers, which are pinned when
+        the program has device buffers (pytorch/executorch#24901). Two
+        executes on one loaded module must both see their own input."""
+        self.assertTrue(torch.cuda.is_available(), "requires an NVIDIA GPU")
+        torch.manual_seed(0)
+        model = torch.nn.Sequential(torch.nn.Linear(256, 256), torch.nn.ReLU()).eval()
+        first = torch.randn(512, 256)
+        second = torch.randn(512, 256)
+        with torch.no_grad():
+            expected_first = model(first).numpy()
+            expected_second = model(second).numpy()
+            program = to_edge_transform_and_lower(
+                torch.export.export(model, (first,)),
+                partitioner=[
+                    CudaPartitioner(
+                        [CudaBackend.generate_method_name_compile_spec("forward")]
+                    )
+                ],
+                compile_config=EdgeCompileConfig(_check_ir_validity=False),
+            ).to_executorch()
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "model.pte").write_bytes(program.buffer)
+            program.write_tensor_data_to_file(directory)
+            np.save(root / "input.npy", first.numpy())
+            np.save(root / "input2.npy", second.numpy())
+            subprocess.run([os.environ["RUN_CUDA_PROGRAM"], directory], check=True)
+            actual_first = np.load(root / "output.npy")
+            actual_second = np.load(root / "output2.npy")
+
+        np.testing.assert_allclose(actual_first, expected_first, rtol=1e-4, atol=1e-5)
+        np.testing.assert_allclose(actual_second, expected_second, rtol=1e-4, atol=1e-5)

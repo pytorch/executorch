@@ -23,6 +23,57 @@ class _FakeExecutorchProgramManager:
         return object()
 
 
+def test_find_infer_shapes_binary_uses_path(monkeypatch) -> None:
+    monkeypatch.setattr(
+        runner_utils.shutil, "which", lambda name, path=None: "/tools/infer_shapes"
+    )
+
+    assert runner_utils._find_infer_shapes_binary() == "/tools/infer_shapes"
+
+
+def test_find_infer_shapes_binary_uses_site_packages(
+    monkeypatch, tmp_path: Path
+) -> None:
+    binary = tmp_path / "bin" / "infer_shapes"
+    binary.parent.mkdir()
+    binary.write_text("")
+    binary.chmod(0o755)
+    monkeypatch.setattr(
+        runner_utils.shutil,
+        "which",
+        lambda name, path=None: str(binary) if path else None,
+    )
+    monkeypatch.setattr(runner_utils.sysconfig, "get_path", lambda name: str(tmp_path))
+
+    assert runner_utils._find_infer_shapes_binary() == str(binary)
+
+
+def test_find_infer_shapes_binary_uses_windows_executable(
+    monkeypatch, tmp_path: Path
+) -> None:
+    binary = tmp_path / "bin" / "infer_shapes.exe"
+    binary.parent.mkdir()
+    binary.write_text("")
+    monkeypatch.setattr(
+        runner_utils.shutil,
+        "which",
+        lambda name, path=None: str(binary) if path == str(binary.parent) else None,
+    )
+    monkeypatch.setattr(runner_utils.sysconfig, "get_path", lambda name: str(tmp_path))
+
+    assert runner_utils._find_infer_shapes_binary() == str(binary)
+
+
+def test_find_infer_shapes_binary_reports_missing_tool(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(runner_utils.shutil, "which", lambda name, path=None: None)
+    monkeypatch.setattr(runner_utils.sysconfig, "get_path", lambda name: str(tmp_path))
+
+    with pytest.raises(FileNotFoundError, match="Install tosa-tools"):
+        runner_utils._find_infer_shapes_binary()
+
+
 def test_run_corstone_uses_short_input_aliases_in_semihosting_cmd(
     monkeypatch, tmp_path: Path
 ) -> None:
@@ -119,6 +170,14 @@ def test_get_elf_path_accepts_nested_runner_output(monkeypatch, tmp_path: Path) 
     monkeypatch.setattr(runner_utils, "_elf_search_roots", lambda: [tmp_path])
 
     assert runner_utils.get_elf_path("corstone-300") == str(elf_path)
+
+
+def test_qdq_memory_format_op_recognizes_out_overloads() -> None:
+    class _QdqOutOverload:
+        def __str__(self) -> str:
+            return "quantized_decomposed.quantize_per_tensor.out"
+
+    assert runner_utils._is_qdq_memory_format_op(_QdqOutOverload())
 
 
 def test_shape_inference_json_uses_tosa_input_layout(tmp_path: Path) -> None:

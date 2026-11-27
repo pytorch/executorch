@@ -106,7 +106,17 @@ class ConvolutionSupported(SupportedTOSAOperatorCheck):
     def _check_transposed_support(
         self, node: fx.Node, groups: int, output_padding: list[int]
     ) -> bool:
-        dilation = expand_around_channel(self._get_transposed_conv_dilation(node), 2)
+        weight_shape = get_first_fake_tensor(cast(fx.Node, node.args[1])).shape
+        spatial_rank = len(weight_shape) - 2
+        if spatial_rank not in (1, 2):
+            self.reporter.report_reject(
+                node, "Only 1D and 2D transpose convolutions are supported."
+            )
+            return False
+
+        dilation = expand_around_channel(
+            self._get_transposed_conv_dilation(node), spatial_rank
+        )
         if any(d != 1 for d in dilation):
             self.reporter.report_reject(
                 node, "Transpose convolutions with dilation are not supported."
@@ -126,16 +136,15 @@ class ConvolutionSupported(SupportedTOSAOperatorCheck):
                 )
                 return False
 
-        pad = expand_around_channel(cast(list[int], node.args[4]), 2)
-        out_pad = expand_around_channel(output_padding, 2)
-        weight_shape = get_first_fake_tensor(cast(fx.Node, node.args[1])).shape
-        if len(weight_shape) != 4:
-            self.reporter.report_reject(
-                node, "Only 2D transpose convolutions are supported."
-            )
-            return False
-        kernel_h = weight_shape[2]
-        kernel_w = weight_shape[3]
+        pad = expand_around_channel(cast(list[int], node.args[4]), spatial_rank)
+        out_pad = expand_around_channel(output_padding, spatial_rank)
+        if spatial_rank == 1:
+            # Match RewriteConvPass: insert a unit-height spatial dimension.
+            pad = [0, *pad]
+            out_pad = [0, *out_pad]
+            kernel_h, kernel_w = 1, weight_shape[2]
+        else:
+            kernel_h, kernel_w = weight_shape[2], weight_shape[3]
 
         out_pad_top = -pad[0]
         out_pad_bottom = -pad[0] + out_pad[0]

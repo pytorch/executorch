@@ -38,6 +38,10 @@ def _int8(*shape: int) -> Callable[[], torch.Tensor]:
     return lambda: torch.randint(-128, 128, shape, dtype=torch.int8)
 
 
+def _positive_int8(*shape: int) -> Callable[[], torch.Tensor]:
+    return lambda: torch.randint(1, 128, shape, dtype=torch.int8)
+
+
 def _float(*shape: int) -> Callable[[], torch.Tensor]:
     return lambda: torch.randn(*shape)
 
@@ -49,6 +53,7 @@ class _Case:
     quantized: frozenset[str]
     extras: dict[str, object] = field(default_factory=dict)
     float_out: bool = True
+    label: str = ""
 
     def overload(self) -> str:
         return self.op.partition(".")[2] or "default"
@@ -88,7 +93,7 @@ _CASES: list[_Case] = [
             {"inp": _int8(2, 4), "other": _int8(2, 4)},
             frozenset({"inp", "other"}),
         )
-        for name in ("add", "mul", "sub")
+        for name in ("add", "mul", "sub", "minimum", "maximum")
     ),
     _Case("add.Scalar", {"inp": _int8(2, 4)}, frozenset({"inp"}), {"other": 2.0}),
     _Case("mul.Scalar", {"inp": _int8(2, 4)}, frozenset({"inp"}), {"other": 2.0}),
@@ -114,6 +119,13 @@ _CASES: list[_Case] = [
         {"inp": _int8(1, 6, 6, 2), "weight": _int8(3, 3, 3, 2), "bias": _float(3)},
         frozenset({"inp", "weight"}),
         _CONV_2D,
+    ),
+    _Case(
+        "convolution_channels_last",
+        {"inp": _int8(1, 6, 6, 2), "weight": _int8(2, 3, 3, 4), "bias": _float(4)},
+        frozenset({"inp", "weight"}),
+        {**_CONV_2D, "stride": [2, 2], "transposed": True, "output_padding": [1, 1]},
+        label="convolution_channels_last_transposed",
     ),
     _Case(
         "conv1d",
@@ -183,11 +195,38 @@ _CASES: list[_Case] = [
         {"weight": _int8(10, 4), "indices": lambda: torch.tensor([0, 3, 9])},
         frozenset({"weight"}),
     ),
+    *(
+        _Case(name, {"inp": _int8(2, 3, 4)}, frozenset({"inp"}), extras)
+        for name, extras in (
+            ("mean.dim", {"dim": [-1], "keepdim": True}),
+            ("mean.dim", {"dim": [1, 2]}),
+            ("sum.dim_IntList", {"dim": [1], "keepdim": True}),
+            ("amax", {"dim": [-1]}),
+            ("_softmax", {"dim": -1, "half_to_float": False}),
+            ("_log_softmax", {"dim": 1, "half_to_float": False}),
+            ("pow.Tensor_Scalar", {"exponent": 2}),
+            ("clamp", {"min": -3.0, "max": 5.0}),
+            ("clamp", {"min": 0.0}),
+            ("div.Scalar", {"other": 3.0}),
+            ("leaky_relu", {"negative_slope": 0.1}),
+        )
+    ),
+    # Positive operands, so the results stay finite.
+    *(
+        _Case(name, {"inp": _positive_int8(2, 4)}, frozenset({"inp"}))
+        for name in ("rsqrt", "sqrt")
+    ),
+    _Case(
+        "div",
+        {"inp": _int8(2, 4), "other": _positive_int8(2, 4)},
+        frozenset({"inp", "other"}),
+    ),
 ]
 
 _VARIANTS: list[tuple[str, _Case, bool]] = [
     (
-        f"{case.op}_{'float_out' if not quantize_out else 'quantized_out'}",
+        f"{case.label or case.op}_"
+        f"{'float_out' if not quantize_out else 'quantized_out'}",
         case,
         quantize_out,
     )
@@ -327,8 +366,13 @@ class DecomposeNumericsTest(unittest.TestCase):
         reference = program.module()(*user_inputs)
         # The documented fallback: channels-last ops go back to channels-first
         # before decomposition, which only knows the ATen layouts.
+        # Linear's core ATen decomposition accumulates in a different order, so
+        # it is kept whole to compare the q/dq around it exactly.
         decomposed = ExportedProgramPassManager(
-            [ToChannelsFirst(), DecomposeFusedQuant()]
+            [
+                ToChannelsFirst(),
+                DecomposeFusedQuant(keep_whole=[torch.ops.aten.linear.default]),
+            ]
         )(program).exported_program
 
         self.assertFalse(

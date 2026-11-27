@@ -65,7 +65,8 @@ disabled. Histogram observers accumulate the combined distribution of tensors
 that share quantization parameters. Moving-average observers can instead
 narrow the shared range toward individual tensors and cause clipping. After
 calibration, observers are frozen and fake quantization is enabled for weight
-training, so the calibrated ranges remain fixed throughout QAT.
+training. Unless activation-scale learning is enabled below, the calibrated
+ranges remain fixed throughout QAT.
 
 ## Smoke Runs
 
@@ -81,6 +82,11 @@ Use `--model-class` to select a compatible model class from
 add `--model-class IFNetTwoBlock` to the command above.
 
 ### Packed Intermediate Warps
+
+Add `--log-level DEBUG` when exporting with `--export-vgf` to see whether
+flow normalization is fused into the sampling shaders and retained in the
+packed and final warp shaders. Fusion diagnostics are emitted during export,
+not during device execution. The default logging level is `WARNING`.
 
 The RIFE VGF extension runs `PackRifeWarpsAndConcatPass` after TOSA lowering.
 For the supported integer pattern, one shader samples both images and both
@@ -108,8 +114,10 @@ transpose-convolution weights, bias and rescale parameters at export time so
 each PixelShuffle phase reads five contiguous channels from C20. Integer flow
 rescales preserve TOSA's single-round behavior, and each warp retains its own
 sampling quantization parameters. A compatible final image blend is fused into
-the same shader, which writes only the final NCHW INT8 RGB image. Intermediate
-warped images and masks stay in registers. The complement mask uses an exact
+the same shader, which writes only the final NCHW RGB image. With uint8 IO,
+the shader also fuses the unsigned output rescale and writes a UINT8 tensor,
+so scenario-runner saves a uint8 NumPy array. Int8 IO keeps an INT8 output.
+Intermediate warped images and masks stay in registers. The complement mask uses an exact
 lookup table. Blend rescales use TOSA's integer multipliers, shifts and
 single-round behavior. The original blend quantization boundaries are retained.
 When the blend does not match, the shader outputs both warped RGBA images and
@@ -203,3 +211,19 @@ When sharing accuracy or performance data, include:
 
 This keeps accuracy numbers comparable with board performance results and
 avoids mixing smoke-test numbers with real-data validation.
+
+## Accuracy recipe
+
+Use `--accuracy-recipe --io-quantization int8` for the trained, uncached
+`IFNetTwoBlock`: full-range image codes and FP32 final warps, blending and
+flow sums inside the existing shader. Use `--io-quantization uint8` for UINT8
+IO instead; inputs and output use scale `1/255` and zero point `0` for images
+in `[0, 1]`. The UINT8 output contains standard 8-bit pixel values, so an
+application does not need to rescale it for display. Internal image tensors
+remain signed INT8. Unsupported fusion fails.
+QAT uses log-MSE, shuffled epochs and warmup/cosine decay. Adam learns
+activation scales; weight ranges and zero points stay fixed. Tested settings:
+`--qat-lr 1e-4 --qat-steps 8 --random-seed 2029 --max-triples 512
+--qat-samples 512 --calibration-samples 96`. Use the same flag for matched PTQ.
+Score exports on held-out data; the script reports on its supplied triples.
+Defaults retain the original precision and training recipe.

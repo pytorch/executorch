@@ -37,6 +37,64 @@ def define_common_targets():
             "//executorch/exir/dialects/fused_quant:ops",
             "//caffe2:torch",
             "//executorch/backends/transforms:permute_pass_utils",
+            "//executorch/backends/transforms:utils",
+        ],
+    )
+
+    runtime.python_library(
+        name = "passes",
+        srcs = ["passes.py"],
+        visibility = _VISIBILITY,
+        deps = [
+            ":constant_fold",
+            ":fold_scalar_mul",
+            ":fuse_add_into_linear",
+            ":fuse_mul_into_linear",
+            ":graph_utils",
+            ":hoist_activations",
+            "//executorch/exir/dialects/fused_quant:ops",
+            ":pass_base",
+            ":prequantize_embedding",
+            ":quant_absorption",
+            ":replace_dequant_quant_with_requantize",
+            ":replace_sub_constant_with_add",
+            ":sink_constant_cat",
+            ":split_linear_at_slices",
+            ":to_channels_last",
+            ":to_convolution",
+            "//caffe2:torch",
+            "//executorch/backends/transforms:advance_quantize_op_above_def_chain",
+            "//executorch/backends/transforms:advance_quantize_op_above_def_in_branch",
+            "//executorch/backends/transforms:canonicalize_view_copy_permute_pass",
+            "//executorch/backends/transforms:fuse_cascaded_transpose_or_permute_ops",
+            "//executorch/backends/transforms:fuse_cascaded_view_ops",
+            "//executorch/backends/transforms:fuse_quant_dequant_to_requantize",
+            "//executorch/backends/transforms:fuse_view_copy",
+            "//executorch/backends/transforms:merge_split_concat_chain",
+            "//executorch/backends/transforms:move_permute_after_concat",
+            "//executorch/backends/transforms:move_slice_before_permute",
+            "//executorch/backends/transforms:move_slice_before_view",
+            "//executorch/backends/transforms:permute_pass_utils",
+            "//executorch/backends/transforms:postpone_dequantize_op_below_use_chain",
+            "//executorch/backends/transforms:propagate_slice",
+            "//executorch/backends/transforms:remove_alias_copy_op",
+            "//executorch/backends/transforms:remove_branched_quant_dequant",
+            "//executorch/backends/transforms:remove_cat_from_slice_copy",
+            "//executorch/backends/transforms:remove_clone_ops_transform_imported",
+            "//executorch/backends/transforms:remove_nop_as_strided_copy_op",
+            "//executorch/backends/transforms:remove_nop_expand_op",
+            "//executorch/backends/transforms:remove_nop_slice_or_view_op",
+            "//executorch/backends/transforms:remove_permute_before_mean",
+            "//executorch/backends/transforms:remove_permutes_around_elementwise_ops",
+            "//executorch/backends/transforms:remove_zero_sized_cat_args",
+            "//executorch/backends/transforms:replace_nop_transpose_or_permute_with_view",
+            "//executorch/backends/transforms:replace_select_with_view_op",
+            "//executorch/backends/transforms:replace_split_with_slice",
+            "//executorch/backends/transforms:replace_squeeze_unsqueeze_with_view",
+            "//executorch/backends/transforms:split_dequantized_cat",
+            "//executorch/exir:pass_manager",
+            "//executorch/exir/dialects:lib",
+            "//executorch/exir/dialects/edge:lib",
         ],
     )
 
@@ -53,8 +111,10 @@ def define_common_targets():
             "//executorch/backends/transforms:permute_pass_utils",
             "//executorch/backends/transforms:utils",
             "//executorch/exir:pass_base",
+            "//executorch/exir:tracer",
             "//executorch/exir/dialects:lib",
             "//executorch/exir/dialects/edge:lib",
+            "//executorch/exir/passes:lib",
         ],
     )
 
@@ -68,16 +128,6 @@ def define_common_targets():
         ],
     )
 
-    runtime.python_library(
-        name = "fold_batch_norm",
-        srcs = ["pre_quantize_passes/fold_batch_norm.py"],
-        visibility = _VISIBILITY,
-        deps = [
-            ":tensor_constants",
-            "//caffe2:torch",
-            "//executorch/backends/transforms:permute_pass_utils",
-        ],
-    )
 
     runtime.python_library(
         name = "constant_fold",
@@ -96,6 +146,7 @@ def define_common_targets():
         srcs = ["optimization_passes/hoist_activations.py"],
         visibility = _VISIBILITY,
         deps = [
+            ":graph_utils",
             "//executorch/exir/dialects/fused_quant:ops",
             "//caffe2:torch",
             "//executorch/exir:pass_base",
@@ -246,6 +297,7 @@ def define_common_targets():
         visibility = _VISIBILITY,
         deps = [
             "//executorch/exir/dialects/fused_quant:ops",
+            ":graph_utils",
             ":pass_base",
             "//caffe2:torch",
             "//executorch/backends/transforms:permute_pass_utils",

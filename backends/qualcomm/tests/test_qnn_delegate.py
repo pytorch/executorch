@@ -3832,6 +3832,29 @@ class TestQNNQuantizedOperator(TestQNN):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_cast_int_to_float(self):
+        # absolute: the class rtol of 1 accepts the raw integer copied into the
+        # fixed-point tensor
+        self.atol, self.rtol = 1, 0
+        y = torch.randn(3, 3)
+        cases = {
+            # x + 1 runs after I64toI32, so the cast reads int32
+            "int32": (True, torch.randint(0, 80, size=(3, 3))),
+            # the int32 cast I64toI32 adds is fused into this one
+            "int64": (False, torch.randint(0, 80, size=(3, 3))),
+            "uint8": (False, torch.randint(0, 80, size=(3, 3), dtype=torch.uint8)),
+        }
+        for quant_dtype in (QuantDtype.use_8a8w, QuantDtype.use_16a8w):
+            for name, (add_one, x) in cases.items():
+                with self.subTest(quant_dtype=quant_dtype, input=name):
+                    sample_input = (x, y)
+                    module = self.get_qdq_module(
+                        CastIntToFloat(add_one),  # noqa: F405
+                        sample_input,
+                        quant_dtype=quant_dtype,
+                    )
+                    self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_cat(self):
         modules = [Cat2(), Cat3(), Cat4(), Cat5()]  # noqa: F405
         sample_input = (torch.randn(1, 1, 2, 2), torch.randn(1, 1, 4, 2))
@@ -7199,7 +7222,7 @@ class TestQNNFloatingPointUtils(TestQNN):
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
 
         def output_callback(log_msg):
-            msg = log_msg.stdout
+            msg = log_msg
             # Refer to HtpDevice.cpp for the following values
             min_voltage = "coreVoltageCornerMin 80"
             self.assertTrue(min_voltage in msg, f"Expecting '{min_voltage} ' in log")
@@ -7557,7 +7580,7 @@ class TestQNNFloatingPointUtils(TestQNN):
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
 
         def output_callback(log_msg, is_burst):
-            msg = log_msg.stdout
+            msg = log_msg
             # Refer to HtpDevice.cpp for the following values
             min_voltage = (
                 "coreVoltageCornerMin 160" if is_burst else "coreVoltageCornerMin 80"
@@ -7605,7 +7628,7 @@ class TestQNNFloatingPointUtils(TestQNN):
         runtime_commands = " --log_level 4"  # kLogLevelVerbose
 
         def output_callback(log_msg):
-            msg = log_msg.stdout
+            msg = log_msg
             # Check log prefix, different QNN version will have slightly different message format.
             self.assertTrue(
                 any(
@@ -7660,7 +7683,7 @@ class TestQNNFloatingPointUtils(TestQNN):
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
 
         def output_callback(log_msg):
-            self.assertIn("Shared buffer initialized via libcdsprpc", log_msg.stdout)
+            self.assertIn("Shared buffer initialized via libcdsprpc", log_msg)
 
         self.lower_module_and_test_output(
             module,
@@ -7996,7 +8019,7 @@ class TestQNNQuantizedUtils(TestQNN):
         module = self.get_qdq_module(module, sample_input)
 
         def output_callback(log_msg):
-            msg = log_msg.stdout
+            msg = log_msg
             # Refer to HtpDevice.cpp for the following values
             min_voltage = "coreVoltageCornerMin 80"
             self.assertTrue(min_voltage in msg, f"Expecting '{min_voltage} ' in log")
@@ -8691,7 +8714,7 @@ class TestQNNQuantizedUtils(TestQNN):
         module = self.get_qdq_module(module, sample_input)
 
         def output_callback(log_msg, is_burst):
-            msg = log_msg.stdout
+            msg = log_msg
             # Refer to HtpDevice.cpp for the following values
             min_voltage = (
                 "coreVoltageCornerMin 160" if is_burst else "coreVoltageCornerMin 80"
@@ -8740,7 +8763,7 @@ class TestQNNQuantizedUtils(TestQNN):
         runtime_commands = " --log_level 4"  # kLogLevelVerbose
 
         def output_callback(log_msg):
-            msg = log_msg.stdout
+            msg = log_msg
             # Check log prefix, different QNN version will have slightly different message format.
             self.assertTrue(
                 any(
@@ -8797,7 +8820,7 @@ class TestQNNQuantizedUtils(TestQNN):
         module = self.get_qdq_module(module, sample_input)
 
         def output_callback(log_msg):
-            self.assertIn("Shared buffer initialized via libcdsprpc", log_msg.stdout)
+            self.assertIn("Shared buffer initialized via libcdsprpc", log_msg)
 
         self.lower_module_and_test_output(
             module,
@@ -12260,7 +12283,7 @@ class TestUtilsScript(TestQNN):
             else:
                 svg_path = msg["svg_path"]
                 csv_path = msg["csv_path"]
-                expected_accepted_events = 234
+                expected_accepted_events = 228
                 assert os.path.exists(svg_path), f"Unable to find SVG file: {svg_path}"
                 assert os.path.exists(csv_path), f"Unable to find CSV file: {csv_path}"
 

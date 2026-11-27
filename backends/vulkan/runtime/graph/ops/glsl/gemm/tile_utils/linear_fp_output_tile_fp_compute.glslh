@@ -58,6 +58,32 @@ void fp_accumulate_with_fp_weight(
   }
 }
 
+// Sums each output texel's four products in a temporary before adding it to
+// the accumulator. The Adreno compiler places temporaries in consecutive
+// registers, so their multiply-adds fold into (rpt3) instructions;
+// loop-carried accumulators get descending registers per lane and do not fold.
+// The accumulator lanes are kept reversed (wzyx) so that the accumulating adds
+// fold too.
+void fp_accumulate_with_fp_weight_folded(
+    inout FPOutTile accum,
+    const FPInputTile in_tile,
+    const FPWeightTile w_tile) {
+  [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+    [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+      [[unroll]] for (int k4 = 0; k4 < TILE_K4; ++k4) {
+        LINEAR_FP_OUTPUT_TILE_VEC4_T t =
+            LINEAR_FP_OUTPUT_TILE_VEC4_T(in_tile.data[m][k4][0]) *
+            MAYBE_CAST_WVEC4(w_tile.data[mul_4(k4)][n4]);
+        [[unroll]] for (int k = 1; k < 4; ++k) {
+          t += LINEAR_FP_OUTPUT_TILE_VEC4_T(in_tile.data[m][k4][k]) *
+              MAYBE_CAST_WVEC4(w_tile.data[mul_4(k4) + k][n4]);
+        }
+        accum.data[m][n4] += t.wzyx;
+      }
+    }
+  }
+}
+
 void apply_weight_scales(
     inout FPOutTile tile,
     const FPPerOutChannelParams scales) {

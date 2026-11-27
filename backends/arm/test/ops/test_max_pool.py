@@ -45,6 +45,14 @@ test_data_suite = {
         torch.rand(1, 16, 56, 56),
         [3, (1, 2), 1, 1, True],
     ),
+    "ceil_mode_last_window_dropped": lambda: (
+        torch.rand(1, 16, 56, 57),
+        [1, 2, 0, 1, True],
+    ),
+    "ceil_mode_last_window_dropped_padding": lambda: (
+        torch.rand(1, 16, 56, 56),
+        [2, 3, 1, 1, True],
+    ),
     "non_divisible_window_adjust_padding": lambda: (
         torch.rand(1, 16, 112, 112),
         [3, 2, 1],
@@ -277,6 +285,34 @@ def test_max_pool2d_u85_INT(test_data: torch.Tensor):
     ).run()
 
 
+@common.parametrize(
+    "pool_params",
+    {
+        "padded_stride5": (5, 5, (1, 2), False),
+        "padded_stride4": (5, 4, (1, 2), False),
+        "mixed_stride": (5, (4, 2), (1, 2), False),
+        "ceil_mode": (5, 5, (1, 2), True),
+    },
+)
+@common.parametrize("negative", {"random": False, "negative": True})
+@common.parametrize("a16w8", {"int8": False, "int16": True})
+@common.XfailIfNoCorstone320
+def test_max_pool2d_large_stride_padding_u85_INT(pool_params, negative, a16w8):
+    with torch.random.fork_rng():
+        torch.manual_seed(42)
+        data = torch.randn(1, 8, 20, 20)
+    if negative:
+        data = -data.abs() - 1
+    kernel, stride, padding, ceil_mode = pool_params
+    EthosU85PipelineINT[input_t1](
+        MaxPool2d(kernel, stride, padding, ceil_mode=ceil_mode),
+        (data,),
+        aten_op,
+        exir_ops=[],
+        a16w8_quantization=a16w8,
+    ).run()
+
+
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
 def test_max_pool2d_16a8w_u85_INT(test_data: torch.Tensor):
@@ -294,6 +330,37 @@ def test_max_pool2d_16a8w_u85_INT(test_data: torch.Tensor):
         use_to_edge_transform_and_lower=True,
     )
     pipeline.run()
+
+
+@common.parametrize(
+    "pool_params",
+    {
+        "padded_stride5": ((1, 8, 20, 20), 5, (1, 2), False),
+        "rectangular": ((1, 8, 11, 23), (4, 7), (2, 3), False),
+        "ceil_mode": ((1, 8, 20, 20), 5, (1, 2), True),
+        "small_input": ((1, 8, 4, 4), 5, 2, False),
+        "ceil_last_window_dropped": ((1, 8, 3, 3), 5, 2, True),
+        "ceil_without_padding": ((1, 8, 13, 17), 5, 0, True),
+        "rank3": ((8, 13, 17), 5, (1, 2), False),
+    },
+)
+@common.parametrize("negative", {"random": False, "negative": True})
+@common.parametrize("a16w8", {"int8": False, "int16": True})
+@common.XfailIfNoCorstone300
+def test_max_pool2d_large_stride_padding_u55_INT(pool_params, negative, a16w8):
+    shape, kernel, padding, ceil_mode = pool_params
+    with torch.random.fork_rng():
+        torch.manual_seed(42)
+        data = torch.randn(shape)
+    if negative:
+        data = -data.abs() - 1
+    EthosU55PipelineINT[input_t1](
+        MaxPool2d(kernel, None, padding, ceil_mode=ceil_mode),
+        (data,),
+        aten_op,
+        exir_ops=[],
+        a16w8_quantization=a16w8,
+    ).run()
 
 
 reject_data_suite = {
