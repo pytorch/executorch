@@ -6,6 +6,8 @@
 
 # pyre-strict
 
+import operator
+
 import torch
 from executorch.exir.dialects._ops import ops
 from executorch.exir.passes.executorch_prim_ops_registry import (
@@ -26,8 +28,35 @@ class EdgeToBackendOpsPass(PassBase):
             if not isinstance(module, torch.fx.GraphModule):
                 continue
 
-            for node in module.graph.nodes:
+            for node in list(module.graph.nodes):
                 if node.op == "call_function":
+                    if node.target is operator.pow:
+                        base, exp = node.args
+                        if isinstance(exp, int) and exp >= 0:
+                            if exp == 0:
+                                node.replace_all_uses_with(1)
+                                module.graph.erase_node(node)
+                                continue
+                            mul_op = _PYTHON_SYM_OPS_TO_EXECUTORCH_SYM_OPS[operator.mul]
+                            with module.graph.inserting_before(node):
+                                running = base
+                                base_val = (
+                                    base.meta.get("val")
+                                    if isinstance(base, torch.fx.Node)
+                                    else base
+                                )
+                                running_val = base_val
+                                for _ in range(exp - 1):
+                                    running = module.graph.call_function(
+                                        mul_op, (running, base)
+                                    )
+                                    if running_val is not None and base_val is not None:
+                                        running_val = running_val * base_val
+                                        running.meta["val"] = running_val
+                            node.replace_all_uses_with(running)
+                            module.graph.erase_node(node)
+                            continue
+
                     if node.target in _PYTHON_SYM_OPS_TO_EXECUTORCH_SYM_OPS:
                         node.target = _PYTHON_SYM_OPS_TO_EXECUTORCH_SYM_OPS[node.target]
 
