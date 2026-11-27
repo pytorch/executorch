@@ -12,6 +12,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/SDPA.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Permute.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/RepeatInterleave.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Slice.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/gemm/matmul/MatMul.h>
@@ -22,6 +23,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 #include <cmath>
+#include <limits>
 
 namespace vkcompute {
 
@@ -865,6 +867,175 @@ void sdpa_with_kv_cache_impl(
        out});
 }
 
+// Reads a step of update_and_attend from its positions and admits it into the
+// off-graph cache, on the host, on every execute. resize_args layout: [q,
+// position, input_pos_symint, layer_id].
+void admit_kv_cache_step(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)args;
+  const int32_t n = graph->size_at<int32_t>(-2, resize_args.at(0));
+  const ValueRef position = resize_args.at(1);
+  const int32_t layer = graph->extract_scalar<int32_t>(resize_args.at(3));
+  VK_CHECK_COND(
+      graph->numel_of(position) == n,
+      "update_and_attend: expected one position per query token");
+  // A position input bound to external memory has no staging buffer for the
+  // host to read, or one the backend does not fill.
+  const StagingPtr staging = graph->get_staging(graph->staging_of(position));
+  std::vector<int64_t> positions(n);
+  switch (staging->dtype()) {
+    case vkapi::kInt:
+      staging->cast_and_copy_to<int32_t>(positions.data(), n);
+      break;
+    case vkapi::kLong:
+      staging->cast_and_copy_to<int64_t>(positions.data(), n);
+      break;
+    default:
+      VK_THROW("update_and_attend: positions must be int32 or int64");
+  }
+  for (int32_t i = 0; i < n; ++i) {
+    VK_CHECK_COND(
+        positions[i] == positions[0] + i,
+        "update_and_attend: the positions of a step must be consecutive");
+  }
+  VK_CHECK_COND(
+      positions[0] >= 0 &&
+          positions[0] <= std::numeric_limits<int32_t>::max() - n,
+      "update_and_attend: position ",
+      positions[0],
+      " is out of range");
+  const int32_t start = static_cast<int32_t>(positions[0]);
+  VK_CHECK_COND(
+      graph->kv_cache()->admit(layer, start, n),
+      "update_and_attend: ",
+      n,
+      " tokens at position ",
+      start,
+      " are not the next step of layer ",
+      layer,
+      "'s KV cache, or do not fit it");
+  graph->set_symint(resize_args.at(2), start);
+}
+
+// kvcache::update_and_attend over the off-graph cache bound to the graph. q, k,
+// v and out are [B, H, S, D], while the pools and the LLM-mode shaders index
+// [B, S, H, D], so each crosses through a head/sequence permute.
+void update_and_attend_impl(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args) {
+  int arg_idx = 0;
+  const ValueRef q = args[arg_idx++];
+  const ValueRef k = args[arg_idx++];
+  const ValueRef v = args[arg_idx++];
+  const ValueRef position = args[arg_idx++];
+  const ValueRef layer_id = args[arg_idx++];
+  const ValueRef scale = args[arg_idx++];
+  // out already carries out_dtype.
+  const ValueRef out_dtype = args[arg_idx++];
+  const ValueRef out = args[arg_idx++];
+  (void)out_dtype;
+
+  VulkanCache* cache = graph.kv_cache();
+  VK_CHECK_COND(
+      cache != nullptr, "update_and_attend: no KV cache is bound to the graph");
+  const int layer = graph.extract_scalar<int32_t>(layer_id);
+  VK_CHECK_COND(
+      layer >= 0 && layer < cache->num_layers(),
+      "update_and_attend: layer ",
+      layer,
+      " is outside the KV cache's ",
+      cache->num_layers(),
+      " layers");
+  for (const ValueRef t : {q, k, v, out}) {
+    VK_CHECK_COND(
+        graph.storage_type_of(t) == utils::kBuffer,
+        "update_and_attend: q, k, v and out must be buffer tensors");
+  }
+  VK_CHECK_COND(
+      graph.dtype_of(out) == graph.dtype_of(q),
+      "update_and_attend: out_dtype must match the query's dtype");
+
+  const std::vector<int64_t> pool_sizes = cache->pool_sizes(layer);
+  const ValueRef k_cache = graph.add_tensor(
+      pool_sizes,
+      cache->pool_dtype(),
+      utils::kWidthPacked,
+      cache->k_buffer(layer));
+  const ValueRef v_cache = graph.add_tensor(
+      pool_sizes,
+      cache->pool_dtype(),
+      utils::kWidthPacked,
+      cache->v_buffer(layer));
+  VK_CHECK_COND(
+      graph.dtype_of(k_cache) == graph.dtype_of(k) &&
+          graph.dtype_of(v_cache) == graph.dtype_of(v),
+      "update_and_attend: the KV cache stores a dtype other than k and v's");
+
+  // Admit the step before any node below sizes itself from its start.
+  const ValueRef input_pos_symint = graph.add_symint(0);
+  graph.execute_nodes().emplace_back(new ExecuteNode(
+      admit_kv_cache_step,
+      {q, position, input_pos_symint, layer_id},
+      {},
+      "update_and_attend_admit",
+      /*has_data_dependent_shape=*/true));
+  graph.set_has_data_dependent_shapes();
+
+  const ValueRef swap_hs = graph.add_scalar_list<int64_t>({0, 2, 1, 3});
+  auto bshd_sizes = [&graph](const ValueRef t) {
+    std::vector<int64_t> sizes = graph.sizes_of(t);
+    std::swap(sizes.at(1), sizes.at(2));
+    return sizes;
+  };
+  TmpTensor q_bshd(
+      &graph,
+      bshd_sizes(q),
+      graph.dtype_of(q),
+      utils::kBuffer,
+      utils::kWidthPacked);
+  TmpTensor k_bshd(
+      &graph,
+      bshd_sizes(k),
+      graph.dtype_of(k),
+      utils::kBuffer,
+      utils::kWidthPacked);
+  TmpTensor v_bshd(
+      &graph,
+      bshd_sizes(v),
+      graph.dtype_of(v),
+      utils::kBuffer,
+      utils::kWidthPacked);
+  TmpTensor out_bshd(
+      &graph,
+      bshd_sizes(out),
+      graph.dtype_of(out),
+      utils::kBuffer,
+      utils::kWidthPacked);
+
+  add_permute_node(graph, q, swap_hs, q_bshd);
+  add_permute_node(graph, k, swap_hs, k_bshd);
+  add_permute_node(graph, v, swap_hs, v_bshd);
+
+  update_cache_impl(graph, {k_bshd, k_cache, input_pos_symint, kDummyValueRef});
+  update_cache_impl(graph, {v_bshd, v_cache, input_pos_symint, kDummyValueRef});
+
+  sdpa_impl(
+      graph,
+      {q_bshd,
+       k_cache,
+       v_cache,
+       input_pos_symint,
+       /*attn_mask=*/kDummyValueRef,
+       /*dropout_p=*/kDummyValueRef,
+       /*is_causal=*/kDummyValueRef,
+       scale,
+       out_bshd});
+
+  add_permute_node(graph, out_bshd, swap_hs, out);
+}
+
 void compute_attn_weight_with_kv_cache_impl(
     ComputeGraph& graph,
     const std::vector<ValueRef>& args) {
@@ -1068,6 +1239,7 @@ REGISTER_OPERATORS {
       testing.compute_attn_weight_with_kv_cache.default,
       compute_attn_weight_with_kv_cache_impl);
   VK_REGISTER_OP(et_vk.sdpa.default, fused_sdpa_impl);
+  VK_REGISTER_OP(kvcache.update_and_attend.default, update_and_attend_impl);
 }
 
 } // namespace vkcompute

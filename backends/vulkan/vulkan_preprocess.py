@@ -24,6 +24,7 @@ from executorch.backends.vulkan._passes import (
     insert_prepack_nodes,
     InsertDtypePromotionPass,
     RemoveRedundantOpsTransform,
+    ResolveKVCachePositionPass,
     SqueezeUnsqueezeInputs,
     TagMemoryMetaPass,
 )
@@ -232,6 +233,7 @@ class VulkanBackend(BackendDetails):
             program,
             [
                 RemoveAssertsTransform(),
+                ResolveKVCachePositionPass(),
                 insert_prepack_nodes,
             ]
             + ([FoldForceFp16CastsPass()] if force_fp16 else []),

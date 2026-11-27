@@ -185,6 +185,27 @@ def is_view_copy_node(node: torch.fx.Node) -> bool:
     return "view_copy" in node_name
 
 
+def kv_cache_position_source(node: Any) -> Optional[torch.fx.Node]:
+    """
+    Returns the placeholder whose leading elements are the elements of `node`,
+    tracing back through reshapes and selects of index 0 along dim 0, or None if
+    `node` is not such a chain over a placeholder.
+    """
+    while isinstance(node, torch.fx.Node) and node.op == "call_function":
+        name = format_target_name(node.target.__name__)  # pyre-ignore
+        if name in (
+            "view_copy.default",
+            "squeeze_copy.dims",
+            "unsqueeze_copy.default",
+        ) or (name == "select_copy.int" and node.args[1:3] == (0, 0)):
+            node = node.args[0]
+        else:
+            return None
+    if isinstance(node, torch.fx.Node) and node.op == "placeholder":
+        return node
+    return None
+
+
 def is_linear_node(node: torch.fx.Node) -> bool:
     if node.op != "call_function":
         return False

@@ -32,6 +32,10 @@
 #endif // ET_EVENT_TRACER_ENABLED
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/core/named_data_map.h>
+#if defined(EXECUTORCH_BUILD_EXTENSION_LLM)
+#include <executorch/backends/vulkan/runtime/graph/VulkanSequenceCache.h>
+#include <executorch/extension/llm/cache/cache_registry.h>
+#endif
 #include <executorch/runtime/platform/compiler.h>
 #include <executorch/runtime/platform/profiler.h>
 
@@ -67,6 +71,12 @@ using executorch::runtime::Result;
 using executorch::runtime::Span;
 
 using namespace vkcompute;
+
+#if defined(EXECUTORCH_BUILD_EXTENSION_LLM)
+namespace cache = ::executorch::extension::llm::cache;
+#endif
+
+constexpr char kVulkanBackendId[] = "VulkanBackend";
 
 // Flatbuffer types
 using VkGraphPtr = const vkgraph::VkGraph*;
@@ -809,6 +819,10 @@ struct VulkanDelegateHandle final {
   std::shared_ptr<vkapi::Adapter> shared_adapter;
   // Storage belongs to the runtime arena.
   ComputeGraph* compute_graph = nullptr;
+#if defined(EXECUTORCH_BUILD_EXTENSION_LLM)
+  // Keeps the off-graph KV cache the graph wraps alive as long as the graph.
+  std::shared_ptr<cache::Cache> kv_cache;
+#endif
   bool claimed_external_io = false;
 
   ~VulkanDelegateHandle() {
@@ -986,6 +1000,40 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
       // Assign only after construction succeeds.
       handle->compute_graph = new (graph_storage) ComputeGraph(graph_config);
 
+#if defined(EXECUTORCH_BUILD_EXTENSION_LLM)
+      // Bound before the graph is built, since update_and_attend wraps the
+      // cache's pools while building.
+      const Result<const char*> cache_key =
+          context.get_runtime_spec<const char*>(cache::kCacheKeyOption);
+      if (!cache_key.ok() && cache_key.error() != Error::NotFound) {
+        ET_LOG(
+            Error,
+            "VulkanBackend runtime spec '%s' must be a string",
+            cache::kCacheKeyOption);
+        return cache_key.error();
+      }
+      // An empty key, like an absent one, means no cache.
+      if (cache_key.ok() && cache_key.get() != nullptr &&
+          *cache_key.get() != '\0') {
+        handle->kv_cache = cache::CacheRegistry::global().get(cache_key.get());
+        ET_CHECK_OR_RETURN_ERROR(
+            handle->kv_cache != nullptr,
+            InvalidArgument,
+            "No KV cache is installed under key '%s'",
+            cache_key.get());
+        VulkanCache* vk_cache = handle->kv_cache->as<VulkanCache>();
+        ET_CHECK_OR_RETURN_ERROR(
+            vk_cache != nullptr,
+            InvalidArgument,
+            "The KV cache under key '%s' is not a Vulkan cache",
+            cache_key.get());
+        vk_cache->bind(
+            handle->compute_graph->context()->adapter_ptr(),
+            handle->shared_adapter);
+        handle->compute_graph->set_kv_cache(vk_cache);
+      }
+#endif
+
       const Error error = compileModel(
           processed->data(),
           processed->size(),
@@ -1013,9 +1061,27 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
   }
 
   Error execute(
-      ET_UNUSED BackendExecutionContext& context,
+      BackendExecutionContext& context,
       DelegateHandle* handle,
       Span<EValue*> args) const override {
+    // The graph reports failures, such as a step the off-graph KV cache cannot
+    // fit, by throwing.
+    try {
+      return execute_graph(context, handle, args);
+    } catch (const std::bad_alloc&) {
+      return Error::MemoryAllocationFailed;
+    } catch (const std::exception& error) {
+      ET_LOG(Error, "Vulkan execution failed: %s", error.what());
+      return Error::Internal;
+    } catch (...) {
+      return Error::Internal;
+    }
+  }
+
+  Error execute_graph(
+      ET_UNUSED BackendExecutionContext& context,
+      DelegateHandle* handle,
+      Span<EValue*> args) const {
     EXECUTORCH_SCOPE_PROF("VulkanBackend::execute");
 
     if (handle == nullptr) {
@@ -1278,8 +1344,28 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
 };
 
 auto cls = VulkanBackend();
-Backend backend{"VulkanBackend", &cls};
+Backend backend{kVulkanBackendId, &cls};
 static auto success_with_compiler = register_backend(backend);
+
+#if defined(EXECUTORCH_BUILD_EXTENSION_LLM)
+// A runner builds the off-graph KV cache through the factory, then installs it
+// under the key init() binds by.
+const int cache_builders_registered = [] {
+  const Error single = cache::CacheFactory::global().register_builder(
+      kVulkanBackendId,
+      cache::kind::kSingle,
+      [](const cache::CacheGeometry& geometry, const cache::CacheConfig& cfg) {
+        return std::shared_ptr<cache::Cache>(
+            VulkanSequenceCache::create(geometry, cfg));
+      });
+  ET_CHECK_MSG(
+      single == Error::Ok,
+      "Failed to register cache builder for %s:%s",
+      kVulkanBackendId,
+      cache::kind::kSingle);
+  return 0;
+}();
+#endif
 
 } // namespace
 } // namespace vulkan

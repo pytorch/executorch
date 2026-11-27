@@ -12,6 +12,7 @@
 
 #include <executorch/backends/vulkan/runtime/api/api.h>
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
+#include <executorch/backends/vulkan/runtime/graph/VulkanSequenceCache.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/extension/aten_util/make_aten_functor_from_et_functor.h>
@@ -24,6 +25,8 @@
 #include <cmath>
 #include <iostream>
 #include <limits>
+#include <numeric>
+#include <optional>
 #include <utility>
 
 //
@@ -1122,6 +1125,242 @@ TEST(VulkanSDPATest, test_sdpa_op_unaligned_head_dim) {
   const int num_kv_heads = 2;
 
   test_vulkan_sdpa(0, {3, 1, 1, 2}, head_dim, num_heads, num_kv_heads, 1);
+}
+
+//
+// Off-graph KV cache (kvcache.update_and_attend)
+//
+
+std::shared_ptr<vkcompute::VulkanSequenceCache> bind_offgraph_cache(
+    vkcompute::ComputeGraph& graph,
+    const int capacity,
+    const int num_kv_heads,
+    const int head_dim,
+    const at::ScalarType dtype) {
+  namespace cache = ::executorch::extension::llm::cache;
+  cache::CacheGeometry geometry;
+  geometry.layers = {cache::LayerGeometry{{}, num_kv_heads, head_dim}};
+  // c10 and ExecuTorch number their scalar types alike.
+  const cache::CacheConfig cfg{capacity, static_cast<int>(dtype)};
+  std::shared_ptr<vkcompute::VulkanSequenceCache> kv_cache =
+      vkcompute::VulkanSequenceCache::create(geometry, cfg);
+  kv_cache->bind(graph.context()->adapter_ptr(), nullptr);
+  graph.set_kv_cache(kv_cache.get());
+  return kv_cache;
+}
+
+struct OffGraphAttentionGraph {
+  vkcompute::IOValueRef q, k, v, position;
+  vkcompute::ValueRef out_staging;
+};
+
+// q, k, v and out are [B, H, S, D], sized for steps of up to max_step tokens.
+OffGraphAttentionGraph build_offgraph_attention(
+    vkcompute::ComputeGraph& graph,
+    const int max_step,
+    const int head_dim,
+    const int num_heads,
+    const int num_kv_heads,
+    const at::ScalarType dtype) {
+  using namespace vkcompute;
+  const vkapi::ScalarType vk_dtype = from_at_scalartype(dtype);
+  OffGraphAttentionGraph g;
+  g.q = graph.add_input_tensor(
+      {1, num_heads, max_step, head_dim}, vk_dtype, utils::kBuffer);
+  g.k = graph.add_input_tensor(
+      {1, num_kv_heads, max_step, head_dim}, vk_dtype, utils::kBuffer);
+  g.v = graph.add_input_tensor(
+      {1, num_kv_heads, max_step, head_dim}, vk_dtype, utils::kBuffer);
+  g.position = graph.add_input_tensor({max_step}, vkapi::kInt, utils::kBuffer);
+  const ValueRef out = graph.add_tensor(
+      {1, num_heads, max_step, head_dim}, vk_dtype, utils::kBuffer);
+  VK_GET_OP_FN("kvcache.update_and_attend.default")
+  (graph,
+   {
+       g.q.value,
+       g.k.value,
+       g.v.value,
+       g.position.value,
+       graph.add_scalar<int64_t>(0), // layer_id
+       graph.add_scalar<double>(1.0 / std::sqrt(head_dim)), // scale
+       kDummyValueRef, // out_dtype
+       out,
+   });
+  g.out_staging = graph.set_output_tensor(out);
+  graph.prepare();
+  graph.prepack();
+  return g;
+}
+
+std::vector<int32_t> consecutive_positions(const int start, const int n) {
+  std::vector<int32_t> positions(n);
+  std::iota(positions.begin(), positions.end(), start);
+  return positions;
+}
+
+// Sizes the graph for a step at `positions`, which admits it into the cache, as
+// the backend does before running the graph.
+void admit_offgraph_attention_step(
+    vkcompute::ComputeGraph& graph,
+    const OffGraphAttentionGraph& g,
+    const std::vector<int32_t>& positions,
+    const int num_heads,
+    const int num_kv_heads,
+    const int head_dim) {
+  const int64_t n = static_cast<int64_t>(positions.size());
+  graph.resize_input(0, {1, num_heads, n, head_dim});
+  graph.resize_input(1, {1, num_kv_heads, n, head_dim});
+  graph.resize_input(2, {1, num_kv_heads, n, head_dim});
+  graph.resize_input(3, {n});
+  graph.maybe_cast_and_copy_into_staging(
+      g.position.staging, positions.data(), n, vkcompute::vkapi::kInt);
+  graph.propagate_resize();
+}
+
+// Checks each step against the in-graph reference, which takes [B, S, H, D].
+void test_vulkan_update_and_attend(
+    const std::vector<int>& sequence_lens,
+    const int head_dim,
+    const int num_heads,
+    const int num_kv_heads) {
+  using namespace vkcompute;
+  const at::ScalarType dtype = at::kFloat;
+  int capacity = 128;
+  int max_step = 1;
+  for (const int seq_len : sequence_lens) {
+    capacity += seq_len;
+    max_step = std::max(max_step, seq_len);
+  }
+  at::Tensor k_cache = at::zeros(
+      {1, capacity, num_kv_heads, head_dim}, at::device(at::kCPU).dtype(dtype));
+  at::Tensor v_cache = at::zeros_like(k_cache);
+
+  GraphConfig config;
+  ComputeGraph graph(config);
+  const std::shared_ptr<VulkanSequenceCache> kv_cache =
+      bind_offgraph_cache(graph, capacity, num_kv_heads, head_dim, dtype);
+  const OffGraphAttentionGraph g = build_offgraph_attention(
+      graph, max_step, head_dim, num_heads, num_kv_heads, dtype);
+
+  torch::manual_seed(0);
+  int input_pos = 0;
+  for (const int seq_len : sequence_lens) {
+    const at::Tensor q = at::rand(
+        {1, seq_len, num_heads, head_dim}, at::device(at::kCPU).dtype(dtype));
+    const at::Tensor k = at::rand(
+        {1, seq_len, num_kv_heads, head_dim},
+        at::device(at::kCPU).dtype(dtype));
+    const at::Tensor v = at::rand_like(k);
+    const at::Tensor reference_out = sdpa_reference_impl(
+        q, k, v, k_cache, v_cache, input_pos, seq_len, {}, 0.0, true, {});
+
+    admit_offgraph_attention_step(
+        graph,
+        g,
+        consecutive_positions(input_pos, seq_len),
+        num_heads,
+        num_kv_heads,
+        head_dim);
+    for (const auto& [ref, t] :
+         {std::pair{g.q, q}, std::pair{g.k, k}, std::pair{g.v, v}}) {
+      const at::Tensor bhsd = t.transpose(1, 2).contiguous();
+      graph.maybe_cast_and_copy_into_staging(
+          ref.staging,
+          bhsd.const_data_ptr(),
+          bhsd.numel(),
+          from_at_scalartype(dtype));
+    }
+    graph.execute();
+
+    at::Tensor vk_out =
+        at::empty({1, num_heads, seq_len, head_dim}, q.options());
+    graph.maybe_cast_and_copy_from_staging(
+        g.out_staging,
+        vk_out.mutable_data_ptr(),
+        vk_out.numel(),
+        from_at_scalartype(dtype));
+    ASSERT_TRUE(at::allclose(reference_out, vk_out.transpose(1, 2)))
+        << "at input_pos " << input_pos << " with seq_len " << seq_len;
+
+    input_pos += seq_len;
+    EXPECT_EQ(kv_cache->length(), input_pos);
+  }
+}
+
+TEST(VulkanSDPATest, test_update_and_attend_small_params) {
+  test_vulkan_update_and_attend({3, 1, 1, 5, 1, 1}, 8, 6, 2);
+}
+
+TEST(VulkanSDPATest, test_update_and_attend_llama3_params) {
+  test_vulkan_update_and_attend({111, 1, 1, 1, 57, 1, 1}, 128, 24, 8);
+}
+
+TEST(VulkanSDPATest, test_update_and_attend_unaligned_head_dim) {
+  test_vulkan_update_and_attend({3, 1, 1, 2}, 6, 4, 2);
+}
+
+TEST(VulkanSDPATest, test_update_and_attend_rejects_step_past_capacity) {
+  using namespace vkcompute;
+  const int capacity = 8, head_dim = 8, num_heads = 4, num_kv_heads = 2;
+  GraphConfig config;
+  ComputeGraph graph(config);
+  const std::shared_ptr<VulkanSequenceCache> kv_cache =
+      bind_offgraph_cache(graph, capacity, num_kv_heads, head_dim, at::kFloat);
+  const OffGraphAttentionGraph g = build_offgraph_attention(
+      graph, capacity, head_dim, num_heads, num_kv_heads, at::kFloat);
+
+  admit_offgraph_attention_step(
+      graph, g, consecutive_positions(0, 6), num_heads, num_kv_heads, head_dim);
+  EXPECT_THROW(
+      admit_offgraph_attention_step(
+          graph,
+          g,
+          consecutive_positions(6, 3),
+          num_heads,
+          num_kv_heads,
+          head_dim),
+      vkapi::Error);
+  EXPECT_EQ(kv_cache->length(), 6);
+}
+
+// A step must start where the history ends; rewriting it takes a rewind.
+TEST(VulkanSDPATest, test_update_and_attend_admits_only_the_next_step) {
+  using namespace vkcompute;
+  const int capacity = 16, head_dim = 8, num_heads = 4, num_kv_heads = 2;
+  GraphConfig config;
+  ComputeGraph graph(config);
+  const std::shared_ptr<VulkanSequenceCache> kv_cache =
+      bind_offgraph_cache(graph, capacity, num_kv_heads, head_dim, at::kFloat);
+  const OffGraphAttentionGraph g = build_offgraph_attention(
+      graph, capacity, head_dim, num_heads, num_kv_heads, at::kFloat);
+
+  admit_offgraph_attention_step(
+      graph, g, consecutive_positions(0, 3), num_heads, num_kv_heads, head_dim);
+  for (const std::vector<int32_t>& positions :
+       std::vector<std::vector<int32_t>>{{5}, {-1}, {1}, {3, 5}, {4, 3}}) {
+    EXPECT_THROW(
+        admit_offgraph_attention_step(
+            graph, g, positions, num_heads, num_kv_heads, head_dim),
+        vkapi::Error);
+  }
+  EXPECT_EQ(kv_cache->length(), 3);
+
+  // Running the step again takes a rewind.
+  EXPECT_THROW(
+      admit_offgraph_attention_step(
+          graph,
+          g,
+          consecutive_positions(0, 3),
+          num_heads,
+          num_kv_heads,
+          head_dim),
+      vkapi::Error);
+  EXPECT_EQ(kv_cache->length(), 3);
+
+  ASSERT_TRUE(kv_cache->rewind(1));
+  admit_offgraph_attention_step(
+      graph, g, consecutive_positions(1, 1), num_heads, num_kv_heads, head_dim);
+  EXPECT_EQ(kv_cache->length(), 2);
 }
 
 // q, k and v arrive with NaN in their head_dim padding, as when the ops that

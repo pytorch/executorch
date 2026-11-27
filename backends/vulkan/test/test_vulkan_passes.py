@@ -3,6 +3,7 @@ from itertools import product
 from typing import List, Optional, Tuple
 
 import executorch.backends.vulkan.patterns as vk_patterns
+import executorch.extension.llm.cache.update_and_attend  # noqa: F401
 import torch
 
 from executorch.backends.vulkan._passes.conv1d_as_conv2d import Conv1dAsConv2dPass
@@ -2287,3 +2288,114 @@ class TestVulkanPasses(unittest.TestCase):
         replace_pass._exported_program = ep
         with self.assertRaises(RuntimeError):
             replace_pass.call(ep.graph_module)
+
+
+class OffGraphAttention(torch.nn.Module):
+    def __init__(
+        self,
+        out_dtype: Optional[torch.dtype] = None,
+        n_layers: int = 1,
+        position_tail: Tuple[int, ...] = (1,),
+    ):
+        super().__init__()
+        self.out_dtype = out_dtype
+        self.n_layers = n_layers
+        # Trailing dims of the position argument after its token dim.
+        self.position_tail = position_tail
+
+    def forward(self, q, k, v, position_ids):
+        for layer in range(self.n_layers):
+            q = torch.ops.kvcache.update_and_attend(
+                q,
+                k,
+                v,
+                position_ids[0].reshape(-1, *self.position_tail),
+                layer_id=layer,
+                scale=0.25,
+                out_dtype=self.out_dtype or q.dtype,
+            )
+        return q
+
+
+class OffGraphAttentionAtFixedPositions(OffGraphAttention):
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("position_ids", torch.arange(5, 8).reshape(1, 3))
+
+    def forward(self, q, k, v):
+        return super().forward(q, k, v, self.position_ids)
+
+
+def off_graph_attention_inputs(v_head_dim: int = 16) -> Tuple[torch.Tensor, ...]:
+    return (
+        torch.randn(1, 4, 3, 16),
+        torch.randn(1, 2, 3, 16),
+        torch.randn(1, 2, 3, v_head_dim),
+        torch.arange(5, 8).reshape(1, 3),
+    )
+
+
+class TestUpdateAndAttend(unittest.TestCase):
+    def test_layers_read_position_from_the_graph_input(self):
+        edge = lower_to_vulkan(
+            OffGraphAttention(n_layers=2), off_graph_attention_inputs()
+        )
+        self.assertEqual(
+            op_node_count(
+                edge.exported_program().graph_module, "update_and_attend.default"
+            ),
+            0,
+        )
+        (graph,) = vulkan_delegate_graphs(edge)
+        positions = {
+            op.args[3]
+            for op in graph.chain
+            if op.name == "kvcache.update_and_attend.default"
+        }
+        (position,) = positions
+        self.assertIn(position, graph.input_ids)
+
+    def test_lowered_with_one_dimensional_positions(self):
+        edge = lower_to_vulkan(
+            OffGraphAttention(position_tail=()), off_graph_attention_inputs()
+        )
+        self.assertEqual(
+            op_node_count(
+                edge.exported_program().graph_module, "update_and_attend.default"
+            ),
+            0,
+        )
+
+    def test_unsupported_stays_on_cpu(self):
+        for name, model, inputs in (
+            ("v_head_dim", OffGraphAttention(), off_graph_attention_inputs(8)),
+            (
+                "out_dtype",
+                OffGraphAttention(torch.float16),
+                off_graph_attention_inputs(),
+            ),
+            (
+                "two_position_components",
+                OffGraphAttention(position_tail=(3,)),
+                off_graph_attention_inputs()[:3] + (torch.arange(9).reshape(1, 9),),
+            ),
+            (
+                "position_count",
+                OffGraphAttention(position_tail=()),
+                off_graph_attention_inputs()[:3] + (torch.arange(4).reshape(1, 4),),
+            ),
+            (
+                "constant_position",
+                OffGraphAttentionAtFixedPositions(),
+                off_graph_attention_inputs()[:3],
+            ),
+        ):
+            with self.subTest(name):
+                edge = lower_to_vulkan(model, inputs)
+                self.assertEqual(
+                    op_node_count(
+                        edge.exported_program().graph_module,
+                        "update_and_attend.default",
+                    ),
+                    1,
+                )

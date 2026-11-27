@@ -66,6 +66,19 @@ def define_common_targets(is_fbcode = False):
     )
 
     runtime.python_library(
+        name = "resolve_kv_cache_position",
+        srcs = ["resolve_kv_cache_position.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/vulkan:utils_lib",
+            "//executorch/exir:pass_base",
+        ],
+    )
+
+    runtime.python_library(
         name = "remove_redundant_ops",
         srcs = ["remove_redundant_ops.py"],
         visibility = [
@@ -183,6 +196,7 @@ def define_common_targets(is_fbcode = False):
             ":remove_asserts",
             ":remove_redundant_ops",
             ":replace_instance_norm",
+            ":resolve_kv_cache_position",
             ":squeeze_unsqueeze_inputs",
             ":tag_memory_meta_pass",
         ]

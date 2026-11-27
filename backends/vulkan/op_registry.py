@@ -15,6 +15,7 @@ import executorch.backends.vulkan.utils as utils
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
+from torch.fx.experimental.symbolic_shapes import statically_known_true
 
 ######################
 ## OpFeatures class ##
@@ -1215,6 +1216,41 @@ def register_sdpa_cpp_ops():
         inputs_storage=utils.CONTIGUOUS_ANY,
         inputs_dtypes=utils.FP_T,
         supports_resize=True,
+    )
+
+
+@update_features("kvcache::update_and_attend")
+def register_update_and_attend():
+    def check_update_and_attend_node(
+        node: torch.fx.Node, constant_nodes: AbstractSet[torch.fx.Node]
+    ) -> bool:
+        q, k, v, position = (node.args[i].meta["val"] for i in range(4))
+        out_dtype = node.args[6] if len(node.args) > 6 else node.kwargs["out_dtype"]
+        source = utils.kv_cache_position_source(node.args[3])
+        # The LLM-mode shaders serve one sequence with one head_dim and compute
+        # in the query's dtype. The positions are read from the staging buffer
+        # of a runtime input, which a constant does not have.
+        return (
+            q.shape[0] == 1
+            and v.shape[-1] == k.shape[-1]
+            and (
+                position.dim() == 1 or (position.dim() == 2 and position.shape[-1] == 1)
+            )
+            and statically_known_true(position.shape[0] == q.shape[-2])
+            and q.dtype == k.dtype == v.dtype == out_dtype
+            and source is not None
+            and source not in constant_nodes
+        )
+
+    return OpFeatures(
+        # The cache's pools are buffers, and the shaders take one storage type.
+        # The positions are read from the staging buffer of a graph input, so
+        # any storage serves them.
+        inputs_storage=[utils.CONTIGUOUS_BUFFER] * 3 + [utils.NO_STORAGE],
+        outputs_storage=utils.CONTIGUOUS_BUFFER,
+        inputs_dtypes=[utils.FP_T, utils.FP_T, utils.FP_T, utils.INT_T],
+        supports_resize=True,
+        are_node_inputs_supported_with_constants_fn=check_update_and_attend_node,
     )
 
 
