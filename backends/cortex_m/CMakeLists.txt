@@ -123,6 +123,7 @@ if(EXECUTORCH_BUILD_CORTEX_M)
       ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_mul.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_transpose_conv2d.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_softmax.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_strided_copy.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_transpose.cpp
   )
 

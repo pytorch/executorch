@@ -622,6 +622,16 @@ _cm(
 )
 _cm("transpose", lambda: (_Fn(lambda x: x.transpose(1, 2)), (_ramp(-2, 2, (1, 4, 6)),)))
 _cm(
+    "strided_copy",
+    lambda: (
+        _Fn(torch.ops.aten.copy.default),
+        (
+            torch.zeros(2, 3, dtype=torch.int8),
+            torch.arange(6, dtype=torch.int8).reshape(2, 3),
+        ),
+    ),
+)
+_cm(
     "pad",
     lambda: (
         _Fn(lambda x: torch.nn.functional.pad(x, (1, 1))),

@@ -73,6 +73,7 @@ ops_list=(
     cortex_m::quantized_linear_per_channel.out
     cortex_m::softmax.out
     cortex_m::transpose.out
+    cortex_m::strided_copy.out
     cortex_m::pad.out
     cortex_m::quantized_conv2d.out
     cortex_m::quantized_conv2d_nhwc.out

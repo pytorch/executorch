@@ -14,6 +14,7 @@ import executorch.backends.transforms.channels_last_ops  # noqa: F401
 import torch
 import torch.fx
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
+from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.backends.cortex_m.library import cmsis_nn
 from executorch.backends.cortex_m.quantizer.quantization_configs import (
     CMSIS_SOFTMAX_SCALE,
@@ -1329,6 +1330,149 @@ def _get_layout_permute_replacement(
 ) -> DialectNodeSpec | None:
     del dialect_pass
     return _transpose_spec(node, _get_input_tensor_data(node))
+
+
+@AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.copy.default)
+def _get_copy_replacement(
+    node: Node, dialect_pass: AtenToDialectPass
+) -> DialectNodeSpec | None:
+    del dialect_pass
+    source = get_first_fake_tensor(cast(Node, node.args[1]))
+    output = get_first_fake_tensor(node)
+    non_blocking = node.kwargs.get(
+        "non_blocking", node.args[2] if len(node.args) > 2 else False
+    )
+    if (
+        non_blocking
+        or source.dtype != torch.int8
+        or output.dtype != torch.int8
+        or output.dim() > 4
+        or any(
+            isinstance(size, torch.SymInt)
+            for tensor in (source, output)
+            for size in tensor.shape
+        )
+    ):
+        return None
+    if (
+        source.shape != output.shape
+        or any(
+            not tensor.permute(tensor.dim_order()).is_contiguous()
+            for tensor in (source, output)
+        )
+        or any(
+            value < 0 or value > 2**31 - 1
+            for tensor in (source, output)
+            for value in (*tensor.shape, *tensor.stride())
+        )
+    ):
+        return None
+    return DialectNodeSpec(
+        exir_ops.edge.cortex_m.strided_copy.default,
+        (
+            [node.args[1]],
+            list(output.shape),
+            list(source.stride()),
+            list(output.stride()),
+            [0],
+            [0] * output.dim(),
+            [1] * output.dim(),
+        ),
+    )
+
+
+def _validate_cat_qparams(node: Node, inputs: list[Node]) -> None:
+    qparams = [
+        *node.meta.get("input_qparams", {}).values(),
+        *node.meta.get("output_qparams", {}).values(),
+    ]
+    if qparams:
+        # List arguments share one qparams entry, so also check their producers.
+        for source in inputs:
+            qparams.extend(source.meta.get("output_qparams", {}).values())
+            if source.target in (
+                exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+                exir_ops.edge.cortex_m.quantize_per_tensor.default,
+            ):
+                qparams.append(QuantArgs(*source.args[1:6]))
+        if any(
+            q.per_channel or q.dtype != torch.int8 or q != qparams[0] for q in qparams
+        ):
+            raise ValueError(
+                "Cortex-M cat requires matching per-tensor input and output qparams"
+            )
+
+
+@AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.cat.default)
+def _get_cat_replacement(
+    node: Node, dialect_pass: AtenToDialectPass
+) -> DialectNodeSpec | None:
+    del dialect_pass
+    output = get_first_fake_tensor(node)
+    inputs = list(cast(list[Node], node.args[0]))
+    tensors = [get_first_fake_tensor(source) for source in inputs]
+    rank = output.dim()
+    if (
+        not inputs
+        or not 1 <= rank <= 4
+        or any(tensor.dtype != torch.int8 for tensor in [*tensors, output])
+        or any(
+            isinstance(size, torch.SymInt)
+            for tensor in [*tensors, output]
+            for size in tensor.shape
+        )
+    ):
+        return None
+    dim = cast(int, node.args[1] if len(node.args) > 1 else node.kwargs.get("dim", 0))
+    if dim < 0:
+        dim += rank
+    if not 0 <= dim < rank:
+        return None
+    if any(
+        not tensor.permute(tensor.dim_order()).is_contiguous()
+        or any(
+            value < 0 or value > 2**31 - 1
+            for value in (*tensor.shape, *tensor.stride())
+        )
+        for tensor in [*tensors, output]
+    ):
+        return None
+
+    _validate_cat_qparams(node, inputs)
+
+    shapes = []
+    src_strides = []
+    dst_origins = []
+    sources = []
+    offset = 0
+    for source, tensor in zip(inputs, tensors):
+        if rank != 1 and tensor.shape == (0,):
+            continue
+        if tensor.dim() != rank or any(
+            tensor.size(d) != output.size(d) for d in range(rank) if d != dim
+        ):
+            return None
+        origin = [0] * rank
+        origin[dim] = offset
+        offset += tensor.size(dim)
+        sources.append(source)
+        shapes.extend(tensor.shape)
+        src_strides.extend(tensor.stride())
+        dst_origins.extend(origin)
+    if not sources or offset != output.size(dim):
+        return None
+    return DialectNodeSpec(
+        exir_ops.edge.cortex_m.strided_copy.default,
+        (
+            sources,
+            shapes,
+            src_strides,
+            list(output.stride()),
+            [0] * len(sources),
+            dst_origins,
+            [1] * rank,
+        ),
+    )
 
 
 @AtenToCortexMPass.register_dialect_substitution(

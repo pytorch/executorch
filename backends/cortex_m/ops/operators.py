@@ -685,6 +685,206 @@ def transpose_impl(input: torch.Tensor, perm: Sequence[int]) -> torch.Tensor:
 
 
 # ===================================================================
+# STRIDED COPY OPERATION DEFINITION
+# ===================================================================
+lib.define(
+    "strided_copy(Tensor[] inputs, int[] shapes, int[] src_strides, "
+    "int[] dst_strides, int[] src_offsets, int[] dst_origins, "
+    "int[] dst_steps) -> Tensor"
+)
+lib.define(
+    "strided_copy.out(Tensor[] inputs, int[] shapes, int[] src_strides, "
+    "int[] dst_strides, int[] src_offsets, int[] dst_origins, int[] dst_steps, "
+    "*, Tensor(a!) out) -> Tensor(a!)"
+)
+
+
+def _validate_strided_copy_regions(
+    inputs: Sequence[torch.Tensor],
+    shapes: Sequence[int],
+    src_strides: Sequence[int],
+    src_offsets: Sequence[int],
+    dst_origins: Sequence[int],
+    dst_steps: Sequence[int],
+    output_numel: int,
+) -> None:
+    rank = len(dst_steps)
+    if (
+        sum(prod(shapes[i * rank : (i + 1) * rank]) for i in range(len(inputs)))
+        != output_numel
+    ):
+        raise ValueError("strided_copy: regions must cover the output")
+    for i, tensor in enumerate(inputs):
+        start = i * rank
+        shape = shapes[start : start + rank]
+        origin = dst_origins[start : start + rank]
+        if prod(shape) == 0:
+            continue
+        extents = [
+            (size - 1) * stride
+            for size, stride in zip(shape, src_strides[start : start + rank])
+        ]
+        first = src_offsets[i] + sum(min(0, extent) for extent in extents)
+        last = src_offsets[i] + sum(max(0, extent) for extent in extents)
+        if first < 0 or last >= tensor.numel():
+            raise ValueError("strided_copy: source exceeds tensor bounds")
+        for j in range(i):
+            previous_shape = shapes[j * rank : (j + 1) * rank]
+            previous_origin = dst_origins[j * rank : (j + 1) * rank]
+            if prod(previous_shape) != 0 and all(
+                origin[d] % dst_steps[d] == previous_origin[d] % dst_steps[d]
+                and origin[d] // dst_steps[d]
+                < previous_origin[d] // dst_steps[d] + previous_shape[d]
+                and previous_origin[d] // dst_steps[d]
+                < origin[d] // dst_steps[d] + shape[d]
+                for d in range(rank)
+            ):
+                raise ValueError("strided_copy: destination regions overlap")
+
+
+@register_fake("cortex_m::strided_copy")  # type: ignore[misc]
+def strided_copy_meta(
+    inputs: Sequence[torch.Tensor],
+    shapes: Sequence[int],
+    src_strides: Sequence[int],
+    dst_strides: Sequence[int],
+    src_offsets: Sequence[int],
+    dst_origins: Sequence[int],
+    dst_steps: Sequence[int],
+) -> torch.Tensor:
+    rank = len(dst_strides)
+    if (
+        not inputs
+        or len(inputs) > (2**32 - 1) // 16
+        or rank > 16
+        or len(shapes) != len(inputs) * rank
+        or len(src_strides) != len(shapes)
+        or len(dst_origins) != len(shapes)
+        or len(src_offsets) != len(inputs)
+        or len(dst_steps) != rank
+    ):
+        raise ValueError("strided_copy: invalid copy plan")
+    if any(
+        not isinstance(value, int)
+        for values in (
+            shapes,
+            src_strides,
+            dst_strides,
+            src_offsets,
+            dst_origins,
+            dst_steps,
+            *(tensor.shape for tensor in inputs),
+            *(tensor.stride() for tensor in inputs),
+        )
+        for value in values
+    ):
+        raise ValueError("strided_copy: copy plans and tensor shapes must be static")
+    if (
+        any(step <= 0 or step > 2**31 - 1 for step in dst_steps)
+        or any(stride < -(2**31) or stride > 2**31 - 1 for stride in src_strides)
+        or any(
+            value < 0 or value > 2**31 - 1
+            for values in (shapes, dst_strides, src_offsets, dst_origins)
+            for value in values
+        )
+    ):
+        raise ValueError("strided_copy: copy plan fields exceed their int32 ranges")
+    for tensor in inputs:
+        if (
+            tensor.dim() > 16
+            or tensor.numel() > 2**31 - 1
+            or any(size > 2**31 - 1 for size in tensor.shape)
+        ):
+            raise ValueError("strided_copy: input exceeds Cortex-M tensor limits")
+        # to_edge normalizes other constant layouts, invalidating byte strides.
+        if tensor.dtype != torch.int8 or not (
+            tensor.is_contiguous()
+            or tensor.is_contiguous(memory_format=torch.channels_last)
+        ):
+            raise ValueError(
+                "strided_copy: inputs must be dense int8 tensors with "
+                "a contiguous or 4D channels-last source layout"
+            )
+
+    output_shape = [
+        max(
+            dst_origins[i * rank + dim]
+            + (
+                (shapes[i * rank + dim] - 1) * dst_steps[dim] + 1
+                if shapes[i * rank + dim] != 0
+                else 0
+            )
+            for i in range(len(inputs))
+        )
+        for dim in range(rank)
+    ]
+    output_numel = prod(output_shape)
+    if any(size > 2**31 - 1 for size in output_shape) or output_numel > 2**31 - 1:
+        raise ValueError("strided_copy: output shape exceeds int32 range")
+    if output_numel != 0:
+        stride = 1
+        for dim in sorted(range(rank), key=lambda dim: dst_strides[dim]):
+            if output_shape[dim] > 1:
+                if dst_strides[dim] != stride:
+                    raise ValueError("strided_copy: destination must be dense")
+                stride *= output_shape[dim]
+    _validate_strided_copy_regions(
+        inputs, shapes, src_strides, src_offsets, dst_origins, dst_steps, output_numel
+    )
+    # ExecuTorch requires positive strides even on singleton and empty outputs.
+    return inputs[0].new_empty_strided(
+        output_shape, [max(stride, 1) for stride in dst_strides]
+    )
+
+
+@impl(lib, "strided_copy", "CompositeExplicitAutograd")  # type: ignore[misc]
+def strided_copy_impl(
+    inputs: Sequence[torch.Tensor],
+    shapes: Sequence[int],
+    src_strides: Sequence[int],
+    dst_strides: Sequence[int],
+    src_offsets: Sequence[int],
+    dst_origins: Sequence[int],
+    dst_steps: Sequence[int],
+) -> torch.Tensor:
+    """Copy disjoint strided regions that cover a dense int8 output.
+
+    Shapes, signed source strides, and destination origins are flattened by input.
+    Destination coordinates are origin + index * dst_steps; dst_strides describe
+    the shared dense output. Source strides and offsets are in bytes. Plans may
+    have up to 16 dimensions, matching the ExecuTorch tensor dimension limit.
+    Sources must be contiguous or 4D channels-last so export preserves their
+    physical byte order.
+    """
+    out = strided_copy_meta(
+        inputs, shapes, src_strides, dst_strides, src_offsets, dst_origins, dst_steps
+    )
+    rank = len(dst_strides)
+    for i, tensor in enumerate(inputs):
+        start = i * rank
+        shape = shapes[start : start + rank]
+        strides = src_strides[start : start + rank]
+        origin = dst_origins[start : start + rank]
+        if prod(shape) == 0:
+            continue
+        extents = [(size - 1) * stride for size, stride in zip(shape, strides)]
+        first = src_offsets[i] + sum(min(0, extent) for extent in extents)
+        dst_offset = sum(index * stride for index, stride in zip(origin, dst_strides))
+        source = tensor.as_strided(
+            shape, [abs(stride) for stride in strides], tensor.storage_offset() + first
+        )
+        reverse_dims = [dim for dim, stride in enumerate(strides) if stride < 0]
+        if reverse_dims:
+            source = source.flip(reverse_dims)
+        out.as_strided(
+            shape,
+            [stride * step for stride, step in zip(dst_strides, dst_steps)],
+            dst_offset,
+        ).copy_(source)
+    return out
+
+
+# ===================================================================
 # PAD OPERATION DEFINITION
 # ===================================================================
 lib.define("pad(Tensor input, int[] pre_pad, int[] post_pad, int pad_value) -> Tensor")
