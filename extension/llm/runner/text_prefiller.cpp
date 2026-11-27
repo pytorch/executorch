@@ -29,7 +29,19 @@ TextPrefiller::TextPrefiller(
 ::executorch::runtime::Result<uint64_t> TextPrefiller::prefill(
     std::vector<uint64_t>& prompt_tokens,
     int64_t& start_pos) {
+  return prefill(prompt_tokens, start_pos, 0.0f);
+}
+
+::executorch::runtime::Result<uint64_t> TextPrefiller::prefill(
+    std::vector<uint64_t>& prompt_tokens,
+    int64_t& start_pos,
+    float temperature) {
   ET_CHECK_MSG(!prompt_tokens.empty(), "Prompt cannot be null");
+  ET_CHECK_OR_RETURN_ERROR(
+      temperature >= 0.0f && temperature <= 1.0f,
+      InvalidArgument,
+      "Temperature must be in [0, 1], got %f",
+      static_cast<double>(temperature));
   if (!text_decoder_runner_->is_method_loaded()) {
     ET_CHECK_OK_OR_RETURN_ERROR(text_decoder_runner_->load());
   }
@@ -54,8 +66,14 @@ TextPrefiller::TextPrefiller(
               num_tokens_to_prefill_with,
           prompt_tokens_to_process.begin());
 
-      // Process this chunk
-      auto chunk_result = prefill_chunk(prompt_tokens_to_process, start_pos);
+      // Only the final chunk samples the first generated token.
+      const bool is_last_chunk =
+          num_tokens_to_process + num_tokens_to_prefill_with >=
+          num_prompt_tokens;
+      auto chunk_result = prefill_chunk(
+          prompt_tokens_to_process,
+          start_pos,
+          is_last_chunk ? temperature : 0.0f);
       ET_CHECK_OK_OR_RETURN_ERROR(chunk_result.error());
       cur_token = chunk_result.get();
 
@@ -65,13 +83,25 @@ TextPrefiller::TextPrefiller(
     return cur_token;
   } else {
     // If prompt tokens don't exceed max_seq_len_, process them directly
-    return prefill_chunk(prompt_tokens, start_pos);
+    return prefill_chunk(prompt_tokens, start_pos, temperature);
   }
 }
 
 ::executorch::runtime::Result<uint64_t> TextPrefiller::prefill_chunk(
     std::vector<uint64_t>& prompt_tokens,
     int64_t& start_pos) {
+  return prefill_chunk(prompt_tokens, start_pos, 0.0f);
+}
+
+::executorch::runtime::Result<uint64_t> TextPrefiller::prefill_chunk(
+    std::vector<uint64_t>& prompt_tokens,
+    int64_t& start_pos,
+    float temperature) {
+  ET_CHECK_OR_RETURN_ERROR(
+      temperature >= 0.0f && temperature <= 1.0f,
+      InvalidArgument,
+      "Temperature must be in [0, 1], got %f",
+      static_cast<double>(temperature));
   // enable_parallel_prefill_ maybe set even when not using kv cache
   // When kv cache is not used, start pos is ignored
   int32_t num_prompt_tokens = prompt_tokens.size();
@@ -92,7 +122,8 @@ TextPrefiller::TextPrefiller(
         Info, "Prefill token result numel(): %zu", outputs_res.get().numel());
 
     start_pos += num_prompt_tokens;
-    cur_token = text_decoder_runner_->logits_to_token(outputs_res.get());
+    cur_token =
+        text_decoder_runner_->logits_to_token(outputs_res.get(), temperature);
   } else { // sequential prefill
     int64_t pos = 0; // position in the sequence
     // NOLINTNEXTLINE(facebook-hte-ParameterUncheckedArrayBounds)
@@ -128,7 +159,8 @@ TextPrefiller::TextPrefiller(
       start_pos++;
     }
 
-    cur_token = text_decoder_runner_->logits_to_token(logits_tensor);
+    cur_token =
+        text_decoder_runner_->logits_to_token(logits_tensor, temperature);
   }
   return cur_token;
 }

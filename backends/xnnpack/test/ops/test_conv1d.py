@@ -7,6 +7,7 @@
 import unittest
 
 import torch
+from executorch.backends.test.harness.stages import StageType
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
 )
@@ -21,6 +22,57 @@ from executorch.exir.passes.constant_prop_pass import constant_prop_pass
 class TestConv1d(unittest.TestCase):
     def setUp(self):
         torch._dynamo.reset()
+
+    def test_dynamic_conv1d(self):
+        for dynamic_dims in ((0,), (2,), (0, 2)):
+            with self.subTest(dynamic_dims=dynamic_dims):
+                shapes = {
+                    0: torch.export.Dim("batch", min=1, max=4),
+                    2: torch.export.Dim("length", min=5, max=16),
+                }
+                tester = (
+                    Tester(
+                        torch.nn.Conv1d(2, 2, 3).eval(),
+                        (torch.randn(2, 2, 11),),
+                        dynamic_shapes=({dim: shapes[dim] for dim in dynamic_dims},),
+                    )
+                    .export()
+                    .to_edge_transform_and_lower()
+                    .check_count(
+                        {
+                            "torch.ops.higher_order.executorch_call_delegate": int(
+                                len(dynamic_dims) == 1
+                            )
+                        }
+                    )
+                    .to_executorch()
+                    .serialize()
+                )
+                for batch, length in ((1, 5), (4, 16), (2, 7)):
+                    inputs = torch.randn(
+                        batch if 0 in dynamic_dims else 2,
+                        2,
+                        length if 2 in dynamic_dims else 11,
+                    )
+                    tester.run_method_and_compare_outputs(inputs=(inputs,))
+
+    def test_bf16_conv1d_fallback(self):
+        (
+            Tester(
+                torch.nn.Conv1d(2, 2, 3).eval().to(torch.bfloat16),
+                (torch.randn(2, 2, 11, dtype=torch.bfloat16),),
+            )
+            .export()
+            .to_edge_transform_and_lower(
+                ToEdgeTransformAndLower(
+                    partitioners=[XnnpackPartitioner(enable_bf16=True)]
+                )
+            )
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 0})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs(atol=0.01, rtol=0.01)
+        )
 
     class Conv1d(torch.nn.Module):
         def __init__(self, dtype: torch.dtype = torch.float):
@@ -90,6 +142,24 @@ class TestConv1d(unittest.TestCase):
             z = torch.add(y, z)
             return z
 
+    class Conv1dSamePadding(torch.nn.Module):
+        def __init__(self, kernel_size: int, dilation: int = 1):
+            super().__init__()
+            self.conv1d = torch.nn.Conv1d(
+                in_channels=2,
+                out_channels=4,
+                kernel_size=kernel_size,
+                dilation=dilation,
+                padding="same",
+                bias=True,
+            )
+
+        def forward(self, x):
+            return self.conv1d(x)
+
+    def _get_calibration_samples(self, inputs):
+        return [tuple(torch.randn_like(inputs[i]) for i in range(len(inputs)))]
+
     def _test_conv1d(
         self,
         module,
@@ -102,9 +172,7 @@ class TestConv1d(unittest.TestCase):
         skip_to_executorch=False,
     ):
         calibration_samples = (
-            [tuple(torch.randn_like(inputs[i]) for i in range(len(inputs)))]
-            if quantized
-            else None
+            self._get_calibration_samples(inputs) if quantized else None
         )
 
         tester = (
@@ -160,6 +228,43 @@ class TestConv1d(unittest.TestCase):
             self.Conv1d(), inputs, 1, quantized=True, dynamic_shape=dynamic_shapes
         )
 
+    def test_qs8_conv1d_even_kernel_same_padding(self):
+        inputs = (torch.randn(1, 2, 16),)
+        configs = [
+            (2, 1),
+            (3, 1),
+            (4, 1),
+            (4, 2),
+        ]
+        for kernel_size, dilation in configs:
+            with self.subTest(kernel_size=kernel_size, dilation=dilation):
+                (
+                    Tester(
+                        self.Conv1dSamePadding(
+                            kernel_size=kernel_size, dilation=dilation
+                        ),
+                        inputs,
+                    )
+                    .quantize(
+                        Quantize(
+                            calibration_samples=self._get_calibration_samples(inputs)
+                        )
+                    )
+                    .export()
+                    .check_count({"torch.ops.aten.conv1d.padding": 1})
+                    .to_edge_transform_and_lower()
+                    .check_not(
+                        [
+                            "executorch_exir_dialects_edge__ops_aten_convolution_default",
+                            "executorch_exir_dialects_edge__ops_aten_constant_pad_nd_default",
+                        ]
+                    )
+                    .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+                    .to_executorch()
+                    .serialize()
+                    .run_method_and_compare_outputs(num_runs=10, atol=0.04, rtol=0.02)
+                )
+
     def test_qs8_conv1d_batchnorm_seq(self):
         inputs = (torch.randn(2, 2, 4),)
         dynamic_shapes = ({0: torch.export.Dim("batch", min=2, max=10)},)
@@ -188,3 +293,57 @@ class TestConv1d(unittest.TestCase):
             passes=RunPasses(pass_functions=[constant_prop_pass]),
             skip_to_executorch=True,
         )
+
+    class SharedConv1d(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv = torch.nn.Conv1d(2, 4, kernel_size=3)
+
+        def forward(self, x, z):
+            return self.conv(x) + self.conv(z)
+
+    def test_fp32_conv1d_shared_weight(self):
+        # Conv1dUnsqueezePass unsqueezes the shared weight once, for both convs.
+        inputs = (torch.randn(1, 2, 6), torch.randn(1, 2, 6))
+        self._test_conv1d(self.SharedConv1d(), inputs, 2)
+
+    class ConvTranspose1dBiasReused(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            # DecomposeConvTransposePass skips kernels that are not a multiple
+            # of the stride, so the deconvolution keeps packing this bias.
+            self.convtr = torch.nn.ConvTranspose1d(8, 4, kernel_size=3, stride=2)
+
+        def forward(self, x):
+            return self.convtr(x) - self.convtr.bias.view(1, -1, 1)
+
+    def test_fp32_conv_transpose1d_bias_reused_file_load(self):
+        """
+        XNNPACK packs a convolution's bias, so the delegate frees its data after
+        init. Here the subtraction reads the same bias by pointer at every
+        execution, so it must stay alive.
+        """
+        module = self.ConvTranspose1dBiasReused().eval()
+        x = torch.randn(1, 8, 6)
+        expected = module(x)
+
+        tester = (
+            Tester(module, (x,))
+            .export()
+            .to_edge_transform_and_lower()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .check_xnnpack_node_count({"XNNConvTranspose2d": 1})
+            .check_not(
+                [
+                    "executorch_exir_dialects_edge__ops_aten_convolution_default",
+                    "executorch_exir_dialects_edge__ops_aten_sub_Tensor",
+                    "executorch_exir_dialects_edge__ops_aten_view_copy_default",
+                ]
+            )
+            .to_executorch()
+            .serialize()
+        )
+        actual = Tester.execute_from_file(
+            tester.stages[StageType.SERIALIZE].artifact, (x,)
+        )[0]
+        self.assertTrue(torch.allclose(expected, actual, atol=1e-5))

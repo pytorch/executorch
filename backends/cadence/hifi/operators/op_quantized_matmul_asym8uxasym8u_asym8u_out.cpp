@@ -10,7 +10,6 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <stdlib.h>
 
-using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::runtime::getLeadingDims;
 using torch::executor::RuntimeContext;

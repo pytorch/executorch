@@ -31,6 +31,7 @@ import flatbuffers
 
 # Import auto-generated serializers
 from executorch.backends.mlx.serialization._generated_serializers import (
+    _shared_string,
     GeneratedOpBuilders,
 )
 from executorch.backends.mlx.serialization.mlx_graph_schema import (  # noqa: F401
@@ -85,7 +86,7 @@ def _build_int_or_vid(builder: flatbuffers.Builder, iov: IntOrVid) -> int:
 
 
 def _build_string(builder: flatbuffers.Builder, s: str) -> int:
-    return builder.CreateString(s)
+    return _shared_string(builder, s)
 
 
 def _build_int_vector(builder: flatbuffers.Builder, vec: List[int]) -> int:
@@ -171,6 +172,11 @@ class MLXGraphSerializer(GeneratedOpBuilders):
         mutable_buffer_map_vec = self._build_slot_variant_vector(
             builder, self.graph.mutable_buffer_map
         )
+        mutated_inputs = self.graph.mutated_inputs or []
+        builder.StartVector(4, len(mutated_inputs), 4)
+        for position in reversed(mutated_inputs):
+            builder.PrependUint32(position)
+        mutated_inputs_vec = builder.EndVector()
 
         # 3. Build named slots
         named_slots_offsets = []
@@ -188,7 +194,7 @@ class MLXGraphSerializer(GeneratedOpBuilders):
         tensor_meta_vec = self._build_offset_vector(builder, tensor_meta_offsets)
 
         # 5. Build version string (must be created before the table that uses it)
-        version_off = builder.CreateString(self.graph.version)
+        version_off = _shared_string(builder, self.graph.version)
 
         # 6. Build the root MLXGraph table
         from executorch.backends.mlx.serialization._generated.mlx_delegate import (
@@ -213,6 +219,7 @@ class MLXGraphSerializer(GeneratedOpBuilders):
         FBMLXGraphModule.AddMutableBufferMap(builder, mutable_buffer_map_vec)
         FBMLXGraphModule.AddNamedSlots(builder, named_slots_vec)
         FBMLXGraphModule.AddTensorMeta(builder, tensor_meta_vec)
+        FBMLXGraphModule.AddMutatedInputs(builder, mutated_inputs_vec)
         root = FBMLXGraphModule.End(builder)
 
         builder.Finish(root)
@@ -280,7 +287,7 @@ class MLXGraphSerializer(GeneratedOpBuilders):
         return FBSlotVariantModule.End(builder)
 
     def _build_named_slot(self, builder: flatbuffers.Builder, ns: NamedSlot) -> int:
-        name_off = builder.CreateString(ns.name)
+        name_off = _shared_string(builder, ns.name)
         slot_off = self._build_slot_variant(builder, ns.slot)
 
         from executorch.backends.mlx.serialization._generated.mlx_delegate import (

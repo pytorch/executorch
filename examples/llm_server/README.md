@@ -1,0 +1,146 @@
+# ExecuTorch LLM Server
+
+OpenAI-compatible serving for ExecuTorch LLMs, so any OpenAI-compatible agent
+harness (pi, opencode, ...) can use ExecuTorch as a local backend.
+
+```
+examples/llm_server/
+  spec/          # language-neutral OpenAI contract ExecuTorch targets
+  conformance/   # one test suite every language server must pass
+  python/        # Python server implementation (current)
+  evals/         # task accuracy and performance through the server
+  # cpp/         # future: no-Python single-binary server
+```
+
+**Which entry point:** `examples.llm_server.python.server` is the reusable
+OpenAI control plane for workers that accept the generic `--model_path` /
+`--tokenizer_path` flags. Model-specific examples can wrap the same control
+plane when they need extra flags or a different tool parser.
+
+Why this layout: the OpenAI contract is identical across languages, so the
+**spec** and **conformance** suite are shared, and each language gets its own
+implementation directory. The real cross-language reuse comes from the C++
+`LLMEngine`/`LLMSession` primitives underneath, packaged as process-isolated
+**worker binaries** that any control plane drives over a small JSONL protocol.
+See `python/README.md` to run it.
+
+Status: experimental, reliability-first and deliberately narrow. Implemented:
+`/health`, `/v1/models`, `/v1/chat/completions` (streaming + non-streaming),
+Hugging Face chat templates (`--hf-tokenizer`), `temperature` / `max_tokens` /
+`max_completion_tokens` / `stop`, sampling controls `top_p` / `top_k` / `seed`
+(these only affect output when `temperature > 0`; under the default greedy
+decoding `temperature = 0` they are accepted but have no effect, and an omitted
+`seed` uses the worker's unset/random value), Hermes tool calling by default
+(`<tool_call>...</tool_call>` JSON, complete calls only; model-specific launchers
+may select the Qwen XML format) with `tool_choice="none"`,
+structured API errors, and bounded request cancellation. One worker process with
+serialized execution; a worker can host isolated sessions on one weight load when its engine reports
+capacity > 1 (with warm append-only resume across turns). KV/prefix state lives inside the
+worker/session, not the control plane. Unsupported params (including
+`n>1`, `reasoning_effort`, penalties, `logit_bias`, `response_format`,
+`logprobs`, and `tool_choice="required"`) are rejected with a structured 400
+rather than silently ignored. See `python/README.md` to run it and
+`spec/README.md` for the exact contract.
+
+## Use from pi (or any OpenAI-compatible harness)
+
+Point pi at the server to use ExecuTorch as a local backend for tool-use
+workflows. Launch the server:
+
+```bash
+python -m executorch.examples.llm_server.python.server \
+  --worker-bin <model-worker> \
+  --model-path <model.pte> \
+  --tokenizer-path <tokenizer.model-or-json> \
+  --hf-tokenizer <hf-model-or-local-dir> \
+  --model-id <model-id> \
+  --host 127.0.0.1 \
+  --port 8000
+```
+
+Useful optional flags (full reference in `python/README.md`):
+
+- `--no-think` — default `enable_thinking=false` for templates that support it
+  (e.g. Qwen3-style).
+- `--max-context N` — reject over-long prompts cleanly; use the export-time
+  context length.
+- `--allow-chatml-fallback` — approximate ChatML when the model has no HF
+  `chat_template`; experimentation only, not recommended for reliable tool use.
+
+Point pi at the server via `~/.pi/agent/models.json`:
+
+```json
+{ "providers": { "executorch": {
+    "baseUrl": "http://127.0.0.1:8000/v1", "api": "openai-completions",
+    "apiKey": "x", "models": [ { "id": "<model-id>",
+      "compat": { "sendSessionAffinityHeaders": true } } ] } } }
+```
+
+Other OpenAI-compatible clients use their own schema — generically: base URL
+`http://127.0.0.1:8000/v1`, the model id you passed to `--model-id`, and a dummy
+API key if one is required.
+
+Supported contract for pi:
+
+- Endpoint `POST /v1/chat/completions`; streaming supported.
+- Tool calls: the model's Hermes-style `<tool_call>...</tool_call>` output is
+  parsed and returned as OpenAI `tool_calls`. This generic server uses Hermes by
+  default; a model-specific server may select the Qwen XML format.
+- `tool_choice`: only `"auto"`, `"none"`, or unset.
+- Rejected with a structured 400 (`unsupported_parameter`), not silently
+  ignored: `tool_choice="required"` or specific-function forcing,
+  `response_format` JSON/constrained output, and `logprobs`.
+- `top_p`, `top_k`, and `seed` are supported, but only take effect when
+  `temperature > 0`; the default greedy decoding (`temperature = 0`) ignores
+  them, and an omitted `seed` uses the worker's unset/random value.
+
+Reliability guidance:
+
+- On POSIX, workers that advertise cancellation stop disconnected requests at a
+  token boundary. If cooperative stop does not finish within the grace period,
+  the server terminates the worker, reports `/health` as unavailable, and
+  requires a supervisor restart rather than silently reloading model weights.
+- Use the model's real HF `chat_template` (`--hf-tokenizer`) for tool use, kept
+  aligned with the exported tokenizer/model.
+- If tool calls come back as plain text, confirm the model is emitting the
+  configured tool-call format's markers (Hermes for the generic server) and that
+  `tools` were included in the request.
+- If a request fails with `unsupported_parameter`, remove or disable that
+  OpenAI knob in your pi/client config.
+
+## Evaluate with Terminal-Bench
+
+See [Terminal-Bench](evals/terminal_bench/README.md) for setup, configuration,
+and evaluation commands on macOS.
+
+## Benchmark with agentx-mini
+
+[agentx-mini](https://huggingface.co/datasets/SocialLocalMobile/agentx-mini) replays
+shortened agent traces, including parallel subagent calls. Follow its README to
+install AgentX Harness, download the dataset, and configure its 8-token blocks.
+
+Build the MLX `llm_worker` and export a packed off-graph-cache model following the
+[MLX LLM guide](../../backends/mlx/examples/llm/README.md). Start the batching server:
+
+```bash
+python -m executorch.examples.llm_server.python.serve \
+  --worker-bin cmake-out/backends/mlx/examples/llm/llm_worker \
+  --model-path /path/to/model.pte \
+  --tokenizer-path /path/to/hf-tokenizer-directory \
+  --model-id Qwen/Qwen3-0.6B \
+  --max-context 40960 --max-sessions 8 --max-decode-sequences 8 \
+  --prefix-cache-entries 8 --port 8000
+```
+
+Use the model ID and tokenizer matching your export, and its context limit. Point
+AgentX at `http://127.0.0.1:8000`, enable streaming, and set
+`benchmark.endpoint.extra: {ignore_eos: true}`. Keep AgentX's root concurrency at
+`1` and `trace_idle_gap_cap_seconds: 1`; the worker's eight decode slots let
+subagents within a session overlap. Run `agentx profile --config benchmark.yaml`
+using the dataset README's configuration.
+
+`ignore_eos` is per request: normal chat requests still stop at EOS, and explicit
+request stop strings remain active. Rebuild the multiplexed worker to include this
+support; no chat-template changes are needed. Generation continues after EOS, but
+the HTTP response only parses and displays the first assistant turn. Usage counts
+include all generated tokens.

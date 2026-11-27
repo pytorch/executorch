@@ -1,6 +1,6 @@
 ---
 name: qualcomm
-description: Build, test, or develop the QNN (Qualcomm AI Engine Direct) backend. Use when working on backends/qualcomm/, building QNN (use backends/qualcomm/scripts/build.sh), adding new ops or passes, running QNN delegate tests, or exporting models for Qualcomm HTP/GPU targets. Also exposes a Buck-vs-CMake parity workflow — invoke as `/qualcomm buck-fix`, `/qualcomm buck-cmake fix`, `/qualcomm buck-parity`, or any user request to fix `test-qnn-buck-build-linux` CI failures or check buck/cmake drift in backends/qualcomm/.
+description: Build, test, or develop the QNN (Qualcomm AI Engine Direct) backend. Use when working on backends/qualcomm/, building QNN (use backends/qualcomm/scripts/build.sh), adding new ops or passes, running QNN delegate tests, or exporting models for Qualcomm HTP/GPU targets. Also exposes a Buck-vs-CMake parity workflow — invoke as `/qualcomm buck-fix`, `/qualcomm buck-cmake fix`, `/qualcomm buck-parity`, or any user request to fix `test-qnn-buck-build-linux` CI failures or check buck/cmake drift in backends/qualcomm/. Also covers QNN intermediate-output / per-layer accuracy debugging — trigger on phrases like "QNN accuracy issue", "QNN output doesn't match CPU", "debug per-layer for QNN", "find which QNN layer is wrong".
 ---
 
 # QNN (Qualcomm AI Engine Direct) Backend
@@ -22,9 +22,11 @@ When the user's request falls into one of these areas, read the corresponding fi
 |---|---|---|
 | Export / lowering / quantization options / pass pipelines | `lowering_export.md` | User asks about exporting, lowering, quantization config, QuantDtype, QuantRecipe, pass pipelines |
 | New op development | `new_op_development.md` | User asks to add/implement a new op or op builder |
+| Custom op enablement via QNN op packages | `custom_op_enablement.md` | User asks to add a custom PyTorch op with their own kernel, mentions op packages / `qnn-op-package-generator` / `QnnCustomOpPackageBuilder`, or needs an op QNN has no equivalent for and that cannot be composed from existing QNN ops. Covers HTP and LPAI/eNPU. |
 | Model enablement | `model_enablement.md` | User asks to enable a new model end-to-end |
 | Buck vs CMake parity (pre-PR or fix red CI) | `buck_parity.md` | User changed BUCK / TARGETS / `targets.bzl` or `CMakeLists.txt` under `backends/qualcomm/`, added new `.cpp` / `.h` / `#include` there, is preparing to push a PR that touches QNN, **or** the `test-qnn-buck-build-linux` CI check on their PR is red and they want to fix it locally. Direct trigger: `/qualcomm buck-fix`. |
 | Profiling & debugging | `profiling.md` | User asks about profiling, optrace, QHAS, QAIRT Visualizer *(file TBD)* |
+| QNN intermediate-output / per-layer accuracy debugging | `qnn_intermediate_debugger.md` | User reports QNN-vs-CPU accuracy divergence, asks to debug per-layer / intermediate output for QNN, mentions `QNNIntermediateDebugger` / `QcomNumericalComparator`, or wants to find which layer causes a QNN accuracy drop. Workflow generates a new debug script from the user's existing example script. |
 
 ## Building
 
@@ -36,12 +38,16 @@ Use `backends/qualcomm/scripts/build.sh`. Linux only (macOS not supported).
 
 **Build targets:**
 
-| Target | Default | Build dir |
-|---|---|---|
-| x86_64 (Python interface + host tools) | enabled | `build-x86/` |
-| Android arm64-v8a (device runner) | enabled | `build-android/` |
-| Direct mode (LPAI ADSP or Hexagon CDSP) | disabled | `build-direct/` |
-| OE Linux embedded | disabled | `build-oe-linux/` |
+| Target | Default | Build dir | Flag |
+|---|---|---|---|
+| x86_64 (Python interface + host tools) | enabled | `build-x86/` | (on by default; `--skip_x86_64` to disable) |
+| Android arm64-v8a (device runner) | enabled | `build-android/` | (on by default; `--skip_linux_android` to disable) |
+| Direct mode (LPAI ADSP or Hexagon CDSP) | disabled | `build-direct/` | `--build_direct_mode <0\|3> --soc_model <model>` |
+| OE Linux embedded | disabled | `build-oe-linux/` | `--enable_linux_embedded` |
+
+Direct mode takes the DSP type as its argument: **`0` = ADSP/LPAI**, **`3` = CDSP/HTP**.
+`--soc_model` is required with it. When the DSP type is `0`, the build also signs
+the runtime libraries by calling `sign_library.sh --direct_mode`.
 
 **Common build commands:**
 
@@ -58,8 +64,11 @@ Use `backends/qualcomm/scripts/build.sh`. Linux only (macOS not supported).
 # Incremental build (skip clean)
 ./backends/qualcomm/scripts/build.sh --no_clean
 
-# Enable Hexagon DSP direct mode (requires HEXAGON_SDK_ROOT, HEXAGON_TOOLS_ROOT, DSP_VERSION)
-./backends/qualcomm/scripts/build.sh --enable_hexagon
+# Direct mode on the ADSP/LPAI (requires HEXAGON_SDK_ROOT, HEXAGON_TOOLS_ROOT)
+./backends/qualcomm/scripts/build.sh --build_direct_mode 0 --soc_model SM8850
+
+# Direct mode on the CDSP/HTP
+./backends/qualcomm/scripts/build.sh --build_direct_mode 3 --soc_model SM8750
 
 # OE Linux embedded target (requires TOOLCHAIN_ROOT_HOST, TOOLCHAIN_ROOT_TARGET)
 ./backends/qualcomm/scripts/build.sh --enable_linux_embedded
@@ -82,12 +91,22 @@ LD_LIBRARY_PATH=/path/to/executorch/build-x86/lib:/path/to/qnn_sdk/lib/x86_64-li
 PYTHONPATH=$(dirname $EXECUTORCH_ROOT) \
 python backends/qualcomm/tests/test_qnn_delegate.py \
     TestQNNFloatingPointOperator.test_qnn_backend_abs \
-    -H $HOST -s $DEVICE_SERIAL -m SM8850 -b build-android -a /path/to/artifacts
+    --host $HOST --device $DEVICE_SERIAL --soc_model SM8850 --build_folder build-android -a /path/to/artifacts
 ```
 
 > **Note (build from source):** Set `PYTHONPATH` to the parent directory of the executorch repo root. Required because `executorch.examples.qualcomm` lives in the source tree and is not installed into site-packages.
 
-Required flags: `-m` (SoC model), `-b` (Android build dir). Optional: `-s` (device serial), `-H` (host), `-a` (artifact dir), `-c` (compile only), `-x` (run on x86_64).
+Required: `--soc_model`, `--build_folder` (Android build dir). Optional: `--device`
+(serial), `--host`, `--artifact_dir` / `-a`, `--compile_only`, `--enable_x86_64`,
+`--backend <htp|gpu|lpai>`, `--direct_build_folder <dir>` (direct mode; required
+for LPAI op package tests).
+
+> Most flags are **long-form only** — they come from
+> `setup_common_args_and_variables()` in `backends/qualcomm/export_utils.py`,
+> which defines no short aliases. Only the test file's own arguments have them
+> (`-r`/`--executorch_root`, `-a`/`--artifact_dir`, `-i`/`--image_dataset`,
+> `-p`/`--pretrained_weight`, `-n`/`--model_name`, `-e`/`--error_only`,
+> `-d`/`--op_package_dir`).
 
 **Test classes:**
 

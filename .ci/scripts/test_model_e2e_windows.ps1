@@ -89,12 +89,12 @@ switch ($HfModel) {
         $runnerTarget = "voxtral_realtime_runner"
         $runnerPath = "voxtral_realtime"
         $runnerPreset = "voxtral-realtime-cuda"
-        $expectedOutput = "Quilter"
+        $expectedOutput = "Phoebe"
         $preprocessor = "preprocessor.pte"
         $tokenizerUrl = ""
         $tokenizerFile = "tekken.json"
-        $audioUrl = "https://github.com/voxserv/audio_quality_testing_samples/raw/refs/heads/master/testaudio/16000/test01_20s.wav"
-        $audioFile = "poem.wav"
+        $audioUrl = "https://dldata-public.s3.us-east-2.amazonaws.com/2086-149220-0033.wav"
+        $audioFile = "test_audio.wav"
     }
     "facebook/dinov2-small-imagenet1k-1-layer" {
         $runnerTarget = "dinov2_runner"
@@ -133,6 +133,8 @@ function Download-IfNeeded {
 Push-Location $executorchRoot
 try {
     Write-Host "::group::Check CUDA toolchain"
+    # The GPU runners come without a driver, and every CUDA call fails without one.
+    & (Join-Path -Path $scriptDir -ChildPath "install_nvidia_driver_windows.ps1")
     $nvccOutput = nvcc --version | Out-String
     Write-Host $nvccOutput
     $nvidiaSmiCmd = Get-Command nvidia-smi -ErrorAction SilentlyContinue
@@ -172,18 +174,34 @@ try {
             "-DCUDAToolkit_ROOT=$env:CUDA_HOME"
         )
     }
+    $cmakeCommonArgs = @("-DCMAKE_CXX_STANDARD=20")
     Write-Host "::endgroup::"
 
     Write-Host "::group::Build ExecuTorch (CUDA)"
     $numCores = [Math]::Max([Environment]::ProcessorCount - 1, 1)
-    cmake --preset llm-release-cuda @cmakeCudaArgs
-    cmake --build cmake-out --target install --config Release -j $numCores
+    $cmakeOut = Join-Path -Path $executorchRoot -ChildPath "cmake-out"
+    $executorchCmakeDir = Join-Path -Path $cmakeOut -ChildPath "lib\cmake\ExecuTorch"
+    $executorchConfig = Join-Path -Path $executorchCmakeDir -ChildPath "executorch-config.cmake"
+    # EXECUTORCH_BUILD_EXTENSION_IMAGE defaults OFF in the preset, so it must be
+    # enabled explicitly here (matching the Makefile CUDA target used on Linux).
+    # The dinov2 runner links the installed extension_image.lib; without this the
+    # main install never builds it and dinov2_runner fails to link (LNK1181).
+    cmake --preset llm-release-cuda -DEXECUTORCH_BUILD_EXTENSION_IMAGE=ON @cmakeCommonArgs @cmakeCudaArgs
+    cmake --build $cmakeOut --target install --config Release -j $numCores
+    if (-not (Test-Path -Path $executorchConfig -PathType Leaf)) {
+        throw "ExecuTorch CMake package config not found after install: $executorchConfig"
+    }
     Write-Host "::endgroup::"
 
     Write-Host "::group::Build $runnerTarget"
+    $cmakePackageArgs = @(
+        "-DCMAKE_FIND_ROOT_PATH=$cmakeOut",
+        "-DCMAKE_PREFIX_PATH=$cmakeOut;$executorchCmakeDir",
+        "-Dexecutorch_DIR=$executorchCmakeDir"
+    )
     Push-Location (Join-Path -Path $executorchRoot -ChildPath "examples\models\$runnerPath")
     try {
-        cmake --preset $runnerPreset @cmakeCudaArgs
+        cmake --preset $runnerPreset @cmakeCommonArgs @cmakePackageArgs @cmakeCudaArgs
         cmake --build (Join-Path -Path $executorchRoot -ChildPath "cmake-out\examples\models\$runnerPath") --target $runnerTarget --config Release -j $numCores
     }
     finally {
@@ -283,7 +301,8 @@ try {
             -RedirectStandardOutput $stdoutFile `
             -RedirectStandardError $stderrFile
 
-        $stdout = if (Test-Path -Path $stdoutFile -PathType Leaf) { Get-Content -Path $stdoutFile -Raw } else { "" }
+        # [string] because Get-Content returns nothing for an empty file, and matching against nothing never fails.
+        $stdout = if (Test-Path -Path $stdoutFile -PathType Leaf) { [string](Get-Content -Path $stdoutFile -Raw) } else { "" }
         $stderr = if (Test-Path -Path $stderrFile -PathType Leaf) { Get-Content -Path $stderrFile -Raw } else { "" }
         $exitCode = $proc.ExitCode
     }
@@ -297,7 +316,7 @@ try {
     Write-Host $stderr
 
     if ($exitCode -ne 0) {
-        Write-Warning "Runner exited with code $exitCode (may be benign)"
+        throw "Runner exited with code $exitCode"
     }
 
     if ($expectedOutput -ne "") {

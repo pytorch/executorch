@@ -14,13 +14,14 @@
 set -eu
 
 MODEL=$1
+TARGET=${2:-cortex-m55}
 script_dir=$(realpath "$(dirname "${BASH_SOURCE[0]}")")
 et_root_dir=$(realpath "${script_dir}/../..")
 
-# Quantization is the default for the cortex-m55 target; run.sh's
+# Quantization is the default for cortex-m targets; run.sh's
 # arg parser only recognizes --no_quantize, so we omit any explicit flag.
 export ARM_FVP_INSTALL_I_AGREE_TO_THE_CONTAINED_EULA=True
 bash "${et_root_dir}/examples/arm/run.sh" \
     --model_name="${MODEL}" \
-    --target=cortex-m55 \
+    --target="${TARGET}" \
     --bundleio

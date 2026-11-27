@@ -83,10 +83,10 @@ class Stats:
     """End time of tokenizer encoding in milliseconds."""
 
     model_execution_start_ms: int
-    """Start time of model execution in milliseconds."""
+    """Start time of the most recent model execution window in milliseconds."""
 
     model_execution_end_ms: int
-    """End time of model execution in milliseconds."""
+    """End time of the most recent model execution window in milliseconds."""
 
     prompt_eval_end_ms: int
     """End time of prompt evaluation in milliseconds."""
@@ -99,6 +99,9 @@ class Stats:
 
     aggregate_sampling_time_ms: int
     """Total time spent in sampling across all tokens."""
+
+    aggregate_model_execution_time_ms: int
+    """Total time spent in model execution across all forward calls."""
 
     num_prompt_tokens: int
     """Number of tokens in the input prompt."""
@@ -550,18 +553,25 @@ def make_text_input(text: str) -> MultimodalInput:
     """
     ...
 
-def make_image_input(image_tensor: torch.Tensor) -> MultimodalInput:
+def make_image_input(
+    image_tensor: torch.Tensor, layout: str = "CHW"
+) -> MultimodalInput:
     """
     Create an image input from a torch tensor.
 
     Args:
-        image_tensor: Torch tensor with shape (H, W, C), (1, H, W, C), (C, H, W), or (1, C, H, W)
+        image_tensor: Contiguous uint8 or float32 tensor with an optional batch
+            dimension of size 1.
+        layout: Tensor layout, either "CHW" or "HWC". Defaults to "CHW" to
+            preserve existing behavior. HWC inputs are converted to CHW
+            internally, including when height is 3 or 4.
 
     Returns:
         A MultimodalInput containing the image
 
     Raises:
-        RuntimeError: If the tensor has invalid dimensions or number of channels
+        RuntimeError: If the tensor has invalid dimensions, layout, dtype, or
+            number of channels
     """
     ...
 

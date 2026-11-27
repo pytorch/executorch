@@ -1,7 +1,7 @@
 #!/bin/bash
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024,2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -50,8 +50,9 @@ dedupe_macos_loader_path_rpaths() {
   fi
 
   local torch_lib_dir
+  local python_executable=${PYTHON_EXECUTABLE:-python}
   pushd ..
-  torch_lib_dir=$(python -c "import importlib.util; print(importlib.util.find_spec('torch').submodule_search_locations[0])")/lib
+  torch_lib_dir=$("${python_executable}" -c "import importlib.util; print(importlib.util.find_spec('torch').submodule_search_locations[0])")/lib
   popd
 
   if [[ -z "${torch_lib_dir}" || ! -d "${torch_lib_dir}" ]]; then
@@ -83,12 +84,16 @@ dedupe_macos_loader_path_rpaths() {
 }
 
 install_domains() {
+  local python_executable=${PYTHON_EXECUTABLE:-python}
   echo "Install torchvision and torchaudio"
-  pip install --no-build-isolation --user "git+https://github.com/pytorch/audio.git@${TORCHAUDIO_VERSION}"
-  pip install --no-build-isolation --user "git+https://github.com/pytorch/vision.git@${TORCHVISION_VERSION}"
+  "${python_executable}" -m pip install --no-build-isolation \
+    "git+https://github.com/pytorch/audio.git@${TORCHAUDIO_VERSION}"
+  "${python_executable}" -m pip install --no-build-isolation \
+    "git+https://github.com/pytorch/vision.git@${TORCHVISION_VERSION}"
 }
 
 install_pytorch_and_domains() {
+  local python_executable=${PYTHON_EXECUTABLE:-python}
   pushd .ci/docker || return
   TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
   popd || return
@@ -101,13 +106,13 @@ install_pytorch_and_domains() {
 
   local system_name=$(uname)
   if [[ "${system_name}" == "Darwin" ]]; then
-    local platform=$(python -c 'import sysconfig; import platform; v=platform.mac_ver()[0].split(".")[0]; platform=sysconfig.get_platform().split("-"); platform[1]=f"{v}_0"; print("_".join(platform))')
+    local platform=$("${python_executable}" -c 'import sysconfig; import platform; v=platform.mac_ver()[0].split(".")[0]; platform=sysconfig.get_platform().split("-"); platform[1]=f"{v}_0"; print("_".join(platform))')
   fi
-  local python_version=$(python -c 'import platform; v=platform.python_version_tuple(); print(f"{v[0]}{v[1]}")')
+  local python_version=$("${python_executable}" -c 'import platform; v=platform.python_version_tuple(); print(f"{v[0]}{v[1]}")')
   local torch_release=$(cat version.txt)
   # Download key must match the upload key below (basename of dist/*.whl,
-  # which always carries setup.py's resolved +gitHASH). Branch-ref pins
-  # like `release/2.12` would otherwise produce `+gitrelease` here and
+  # which always carries the build's resolved +gitHASH). Branch-ref pins
+  # like `release/2.14` would otherwise produce `+gitrelease` here and
   # never hit the cache.
   local torch_short_hash=$(git rev-parse --short=7 HEAD)
   local torch_wheel_path="cached_artifacts/pytorch/executorch/pytorch_wheels/${system_name}/${python_version}"
@@ -118,7 +123,7 @@ install_pytorch_and_domains() {
   # of the Docker image
   local torch_wheel_not_found=0
   if [[ "${system_name}" == "Darwin" ]]; then
-    pip install "${cached_torch_wheel}" || torch_wheel_not_found=1
+    "${python_executable}" -m pip install "${cached_torch_wheel}" || torch_wheel_not_found=1
   else
     torch_wheel_not_found=1
   fi
@@ -127,18 +132,31 @@ install_pytorch_and_domains() {
   if [[ "${torch_wheel_not_found}" == "1" ]]; then
     echo "No cached wheel found, continue with building PyTorch at ${TORCH_VERSION}"
 
-    # Install PyTorch's own build-time deps so the source build does not
-    # silently inherit them from whatever else happens to be in the env
-    # (e.g. executorch's requirements-ci.txt).
-    pip install -r requirements-build.txt
     git submodule update --init --recursive
     if [[ "$(uname -m)" == "aarch64" ]]; then
       export BUILD_IGNORE_SVE_UNAVAILABLE=1
     fi
-    USE_DISTRIBUTED=1 python setup.py bdist_wheel
-    pip install "$(echo dist/*.whl)"
+    # PyTorch dropped setup.py. Build in a throwaway environment that can see the
+    # active one, so its build requirements, which pin a cmake that would be
+    # preferred over the one on PATH, cannot disturb what is installed here.
+    #
+    # Keep in sync with pytorch/pyproject.toml [build-system].requires.
+    local build_venv=/tmp/pytorch-build-venv
+    rm -rf "${build_venv}"
+    "${python_executable}" -m venv --system-site-packages "${build_venv}"
+    "${build_venv}/bin/pip" install build "scikit-build-core>=1.0" ninja \
+      "packaging>=24.2" "typing-extensions>=4.10.0" pyyaml six numpy
+    USE_DISTRIBUTED=1 "${build_venv}/bin/python" -m build --wheel --no-isolation
+    rm -rf "${build_venv}"
+    "${python_executable}" -m pip install "$(echo dist/*.whl)"
+    # A build with no BLAS succeeds silently, so check rather than assume.
+    (cd / && "${python_executable}" -c "
+import torch
+assert torch._C.has_lapack, 'built without LAPACK'
+torch.linalg.qr(torch.randn(4, 4))
+")
 
-    # Invariant: the basename setup.py just produced must match the cache
+    # Invariant: the basename the build just produced must match the cache
     # URL we'd reconstruct on the next run. If they diverge (someone edits
     # torch_wheel_name above, or PyTorch renames its wheels), the cache
     # will silently miss and every macOS run will fall back to a ~30-min
@@ -178,7 +196,7 @@ install_pytorch_and_domains() {
   # Grab the pinned audio and vision commits from PyTorch
   TORCHAUDIO_VERSION=release/2.11
   export TORCHAUDIO_VERSION
-  TORCHVISION_VERSION=release/0.27
+  TORCHVISION_VERSION=release/0.29
   export TORCHVISION_VERSION
 
   install_domains

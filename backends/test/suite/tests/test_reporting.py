@@ -116,7 +116,7 @@ class Reporting(unittest.TestCase):
 
     def test_count_ops(self):
         """
-        Verify that the count_ops function correctly counts operator occurances in the edge graph.
+        Verify that the count_ops function correctly counts operator occurrences in the edge graph.
         """
 
         class Model1(torch.nn.Module):

@@ -82,6 +82,19 @@ if(EXECUTORCH_NNLIB_OPT)
     ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
   )
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/kernels)
+elseif(
+  EXECUTORCH_HIFI_CORE STREQUAL "hifi1"
+  OR EXECUTORCH_HIFI_CORE STREQUAL "hifi4"
+  OR EXECUTORCH_HIFI_CORE STREQUAL "hifi5"
+)
+  if(EXECUTORCH_HIFI_CORE STREQUAL "hifi5")
+    add_compile_definitions(CORE_HIFI5=1)
+  else()
+    add_compile_definitions(CORE_HIFI5=0)
+  endif()
+  set(TARGET_DIR hifi)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/third-party/nnlib)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/kernels)
 elseif(EXECUTORCH_FUSION_G3_OPT)
   set(TARGET_DIR fusion_g3)
   add_subdirectory(
@@ -97,3 +110,49 @@ else()
 endif()
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/operators)
+
+# Cadence executor_runner: cross-compiled ExecuTorch runner for the Xtensa ISS
+# (xt-run / xt-run --turbo). Self-contained, gflags-free argv parser, reads .pte
+# via xt-run semi-hosting.
+#
+# Usage: cmake ... -DEXECUTORCH_BUILD_CADENCE_RUNNER=ON xt-run --turbo
+# cmake-out/backends/cadence/cadence_executor_runner \ --model_path=add.pte
+if(EXECUTORCH_BUILD_CADENCE_RUNNER)
+  add_executable(cadence_executor_runner cadence_executor_runner.cpp)
+  target_compile_definitions(
+    cadence_executor_runner PRIVATE ET_ENABLE_ENUM_STRINGS=0
+  )
+  target_include_directories(
+    cadence_executor_runner
+    PRIVATE ${_common_include_directories} ${CMAKE_BINARY_DIR}
+            ${CMAKE_BINARY_DIR}/include
+  )
+  # Mirror the upstream executor_runner cadence link list (top-level
+  # CMakeLists.txt: list(APPEND _executor_runner_libs cadence_ops_lib)). Do NOT
+  # add --whole-archive: cadence_ops_lib is also pulled transitively, and
+  # forcing a second copy double-runs its static kernel-registration
+  # initializers and asserts at runtime.
+  target_link_libraries(
+    cadence_executor_runner PRIVATE executorch extension_evalue_util
+                                    extension_runner_util cadence_ops_lib
+  )
+  # Vision and Fusion-G3 ops (e.g. op_softmax) reference iDMA scheduling symbols
+  # and those cores ship libidma in their LSP. HiFi4 and generic cores do not
+  # use iDMA and their LSPs may not provide libidma, so only link it for the
+  # cores that need it.
+  if(EXECUTORCH_VISION_OPT OR EXECUTORCH_FUSION_G3_OPT)
+    target_link_options(cadence_executor_runner PRIVATE -lidma)
+  endif()
+  target_link_options(cadence_executor_runner PRIVATE -static -lm)
+endif()
+
+# Cadence op-level gtest tests. Built only when
+# EXECUTORCH_BUILD_CADENCE_OP_TESTS is ON and the selected backend ships a tests
+# dir. See .ci/scripts/test-cadence-generic.sh (generic, on the host) and
+# .ci/scripts/test-cadence-xtensa.sh (Xtensa backends, on the ISS via xt-run).
+if(EXECUTORCH_BUILD_CADENCE_OP_TESTS
+   AND EXISTS
+       "${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/operators/tests/CMakeLists.txt"
+)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/operators/tests)
+endif()

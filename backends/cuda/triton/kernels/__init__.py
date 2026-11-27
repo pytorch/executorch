@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from executorch.backends.cuda.triton.kernels.conv import convolution
 from executorch.backends.cuda.triton.kernels.fused_moe import (
     fused_moe,
     fused_moe_batched,
@@ -11,24 +12,33 @@ from executorch.backends.cuda.triton.kernels.fused_moe import (
     fused_moe_batched_gemm_int8,
     moe_align_block_size,
 )
-
+from executorch.backends.cuda.triton.kernels.gemm import linear
 from executorch.backends.cuda.triton.kernels.int4_matmul import (
     dequant_w4_to_bf16,
     int4_matvec,
+    int4_matvec_bf16,
 )
-from executorch.backends.cuda.triton.kernels.sdpa import sdpa, sdpa_decode_splitk
+from executorch.backends.cuda.triton.kernels.sdpa import (
+    sdpa,
+    sdpa_decode_splitk,
+    sdpa_small_query_splitk,
+)
 from executorch.backends.cuda.triton.kernels.topk import topk
 
 __all__ = [
+    "convolution",
     "dequant_w4_to_bf16",
     "fused_moe",
     "fused_moe_batched",
     "fused_moe_batched_gemm",
     "fused_moe_batched_gemm_int8",
     "int4_matvec",
+    "int4_matvec_bf16",
+    "linear",
     "moe_align_block_size",
     "sdpa",
     "sdpa_decode_splitk",
+    "sdpa_small_query_splitk",
     "topk",
 ]
 

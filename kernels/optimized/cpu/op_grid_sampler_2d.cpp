@@ -28,6 +28,7 @@
 // targets, and any unsupported interpolation/padding/layout combination,
 // delegate to the portable kernel.
 
+#include <executorch/kernels/portable/cpu/util/grid_sampler_2d_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 #ifdef __aarch64__
@@ -335,6 +336,15 @@ Tensor& opt_grid_sampler_2d_out(
     int64_t padding_mode,
     bool align_corners,
     Tensor& out) {
+  // Validate args and resize out exactly like the portable kernel. The NEON
+  // paths below size their writes from input/grid alone, so out must already
+  // match [N, C, H_out, W_out] before the fast path is reached.
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      check_grid_sampler_2d_args_and_resize_out(input, grid, out) == Error::Ok,
+      InvalidArgument,
+      out,
+      "Failed to validate arguments and resize output tensor");
   // The NEON paths index input/grid/out directly assuming a contiguous NCHW
   // default-dim-order layout — no use of .strides() or .dim_order(). Fall
   // back to portable for anything else.

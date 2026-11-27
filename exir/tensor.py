@@ -10,10 +10,7 @@
 # pyre-ignore-all-errors[16]
 from __future__ import annotations
 
-import copy
-
 import math
-import typing
 from typing import Dict, List, NamedTuple, Optional, Tuple, Union
 
 import executorch.exir.schema as schema
@@ -51,7 +48,9 @@ def contiguous_stride_from_shape(shape: torch.Size) -> Tuple[int]:
     return tuple(reversed(strides))
 
 
-def dim_order_from_stride(stride: Tuple[int]) -> Tuple[bytes]:
+def dim_order_from_stride(
+    stride: Tuple[int, ...], sizes: Optional[Tuple[int, ...]] = None
+) -> Tuple[int, ...]:
     """
     Dimension order represents how dimensions are laid out in memory,
     starting from the outer-most to the inner-most dimension.
@@ -67,8 +66,16 @@ def dim_order_from_stride(stride: Tuple[int]) -> Tuple[bytes]:
     in original order. Thus when strides = (4, 3, 1, 1) returned value is (0, 1, 2, 3)
     Another example is: sizes = (1, 3, 1, 1) with strides = (3, 1, 3, 3), returned
     value is (0, 2, 3, 1)
+
+    With sizes, ambiguous non-canonical orders are corrected when strides
+    exactly match channels-last. Preserve existing default orders: portable
+    kernels require matching dim orders even for physically equivalent layouts.
     """
-    from torch.fx.experimental.symbolic_shapes import guard_or_false, guard_or_true
+    from torch.fx.experimental.symbolic_shapes import (
+        guard_or_false,
+        guard_or_true,
+        statically_known_true,
+    )
 
     for s in stride:
         torch._check(s != 0, lambda: "0 in strides is not supported for ExecuTorch.")
@@ -95,7 +102,54 @@ def dim_order_from_stride(stride: Tuple[int]) -> Tuple[bytes]:
     sorted_dims = [
         i[0] for i in sorted(enumerate(stride), key=lambda x: K(x[1]), reverse=True)
     ]
-    return tuple(typing.cast(Tuple[bytes], sorted_dims))
+    ndim = len(stride)
+    if (
+        sizes is not None
+        and len(sizes) == ndim
+        and ndim in (4, 5)
+        and sorted_dims != list(range(ndim))
+    ):
+        from torch._prims_common import make_channels_last_strides_for
+
+        expected = make_channels_last_strides_for(sizes)
+        if all(statically_known_true(s == e) for s, e in zip(stride, expected)):
+            sorted_dims = [0, *range(2, ndim), 1]
+    return tuple(sorted_dims)
+
+
+def without_zero_strides(tensor: torch.Tensor) -> torch.Tensor:
+    """
+    Returns the tensor, or a copy of it if it has a zero stride, which
+    ExecuTorch cannot store. The copy is channels-last only if PyTorch calls
+    the tensor channels-last but not contiguous, and contiguous otherwise.
+
+    Tensor.contiguous() is not enough: PyTorch ignores the stride of a size-1
+    dim, and every stride of an empty tensor, when it checks contiguity, so it
+    can return a tensor with a zero stride unchanged.
+    """
+    if 0 not in tensor.stride():
+        return tensor
+    if not tensor.is_contiguous() and tensor.is_contiguous(
+        memory_format=torch.channels_last
+    ):
+        return tensor.clone(memory_format=torch.channels_last)
+    return tensor.clone(memory_format=torch.contiguous_format)
+
+
+def placeholder_constant(tensor: torch.Tensor) -> torch.Tensor:
+    """
+    Returns the tensor, or a copy of it, in the form the emitter stores for a
+    constant placeholder: contiguous or channels-last, and not a view into a
+    larger storage.
+    """
+    if not (
+        tensor.is_contiguous()
+        or tensor.is_contiguous(memory_format=torch.channels_last)
+    ):
+        tensor = tensor.contiguous()
+    if tensor.nbytes != tensor.untyped_storage().nbytes():
+        tensor = tensor.clone()
+    return tensor
 
 
 def stride_from_dim_order(sizes: List[int], dim_order: List[int]) -> List[int]:
@@ -112,7 +166,7 @@ def stride_from_dim_order(sizes: List[int], dim_order: List[int]) -> List[int]:
     """
     if len(sizes) == 0:
         return []
-    strides = copy.deepcopy(sizes)
+    strides = list(sizes)
     ndim = len(sizes)
     strides[dim_order[ndim - 1]] = 1
     for i in range(ndim - 2, -1, -1):
@@ -163,7 +217,7 @@ class TensorSpec:
         # convert to list making it easier to handle type checking
         self.shape: List[int] = list(shape)
         self.stride: Tuple[int] = contiguous_stride_from_shape(shape)
-        self.dim_order: Tuple[bytes] = dim_order_from_stride(self.stride)
+        self.dim_order: Tuple[int, ...] = dim_order_from_stride(self.stride)
         self.requires_grad = requires_grad
         self.layout = layout
         self.is_sparse = is_sparse
@@ -176,7 +230,10 @@ class TensorSpec:
 
     @property
     def allocated_memory(self) -> int:
-        nbytes = num_bytes_from_shape_and_dtype(self.shape, self.dtype)
+        nbytes = max(
+            num_bytes_from_shape_and_dtype(self.shape, self.dtype),
+            self.min_allocated_memory,
+        )
         return calculate_aligned_num_bytes(nbytes, self.alignment)
 
     def realign(self, new_alignment: int) -> int:
@@ -190,7 +247,7 @@ class TensorSpec:
     def from_tensor(cls, tensor: torch.Tensor, const: bool = False) -> TensorSpec:
         if const:
             # for non-contigous tensors, convert to a contiguous one
-            tensor = tensor.contiguous()
+            tensor = without_zero_strides(tensor.contiguous())
             # Weights cannot be views during emission or serialization
             if tensor.nbytes != tensor.untyped_storage().nbytes():
                 tensor = tensor.clone()
@@ -203,7 +260,7 @@ class TensorSpec:
             is_sparse=tensor.is_sparse,
         )
         spec.stride = tensor.stride()
-        spec.dim_order = dim_order_from_stride(spec.stride)
+        spec.dim_order = dim_order_from_stride(spec.stride, tuple(spec.shape))
         spec.requires_grad = tensor.requires_grad
         spec.storage = tensor.untyped_storage() if const else None
 
@@ -214,6 +271,37 @@ class TensorSpec:
         self.mem_id = None
         self.mem_obj_id = None
         self.mem_offset = None
+        # Optional TensorSpec whose storage this spec is backed by. This is
+        # metadata for memory planners; mem_offset remains an absolute offset
+        # after the winning memory plan is written back.
+        self.storage_base: Optional["TensorSpec"] = None
+        # Byte offset into storage_base when this spec is storage-backed.
+        self.storage_base_offset: int = 0
+        # Bytes to plan at least, so that a memory.view of this tensor fits too.
+        self.min_allocated_memory: int = 0
+
+    @property
+    def inplace_base(self) -> Optional["TensorSpec"]:
+        """Zero-offset compatibility alias for storage_base.
+
+        Use storage_base and storage_base_offset directly for aliases with a
+        non-zero offset.
+        """
+        internal_assert(
+            self.storage_base is None or self.storage_base_offset == 0,
+            "inplace_base is only valid for TensorSpecs whose storage_base "
+            "has offset 0.",
+        )
+        return self.storage_base
+
+    @inplace_base.setter
+    def inplace_base(self, base: Optional["TensorSpec"]) -> None:
+        internal_assert(
+            self.storage_base_offset == 0,
+            "inplace_base can only be set when storage_base_offset is 0. "
+            "Use storage_base directly for non-zero-offset aliases.",
+        )
+        self.storage_base = base
 
     @property
     def dtype(self) -> torch.dtype:

@@ -1,3 +1,8 @@
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options", "is_xplat", "runtime")
 load("@fbsource//xplat/executorch/build:selects.bzl", "selects")
 
@@ -119,18 +124,26 @@ def define_op_library(name, deps, android_deps, aten_target, _allow_third_party_
         visibility = ["PUBLIC"],
         # kernels often have helpers with no prototypes just disabling the warning here as the headers
         # are codegend and linked in later
-        # -Wno-missing-prototypes is Clang-only for C++; GCC (used by Zephyr
-        # ARM cross-compilation) rejects it with -Werror, so exclude it for
-        # Zephyr and Windows builds. OSS bypasses the zephyr branch via
-        # runtime.is_oss since ovr_config//os:zephyr is not in the OSS
-        # buck2 prelude.
+        # GCC's C++ frontend rejects this C-only flag under -Werror. Nested under
+        # DEFAULT so the windows (OS) and gcc (compiler) keys can't both match.
+        # The vendored ATen vec headers pulled in on the Windows host trip
+        # several -Werror warnings (e.g. -Wundef on __GNUC__), so disable
+        # warnings-as-errors for the Windows (clang) kernel compiles.
         compiler_flags = (select({
-                "DEFAULT": ["-Wno-missing-prototypes"],
-                "ovr_config//os:windows": [],
-                "ovr_config//os:zephyr": [],
+                "DEFAULT": select({
+                    "DEFAULT": ["-Wno-missing-prototypes"],
+                    "ovr_config//compiler:gcc": [],
+                }),
+                "ovr_config//os:windows": select({
+                    "DEFAULT": ["-Wno-error"],
+                    "ovr_config//compiler:msvc": [],
+                }),
             }) if not runtime.is_oss else select({
                 "DEFAULT": ["-Wno-missing-prototypes"],
-                "ovr_config//os:windows": [],
+                # OSS buck2 has no compiler constraint (ovr_config//compiler:msvc
+                # resolves to the nonexistent prelude//compiler:msvc), so it
+                # cannot appear as a select key. Use the clang flag directly.
+                "ovr_config//os:windows": ["-Wno-error"],
             })) + (
             # For shared library build, we don't want to expose symbols of
             # kernel implementation (ex torch::executor::native::tanh_out)
@@ -236,8 +249,6 @@ ATEN_OPS = (
         name = "op_addmm",
         deps = [
             "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:dtype_util",
-            "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/kernels/portable/cpu/util:matmul_ops_util",
             ":scalar_utils",
             ":vec_ops",
@@ -335,7 +346,19 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_avg_pool1d",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
+        ],
+    ),
+    op_target(
         name = "op_avg_pool2d",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
+        ],
+    ),
+    op_target(
+        name = "op_avg_pool3d",
         deps = [
             "//executorch/kernels/portable/cpu/util:kernel_ops_util",
         ],
@@ -402,6 +425,14 @@ ATEN_OPS = (
         name = "op_bmm",
         deps = [
             "//executorch/kernels/portable/cpu/util:matmul_ops_util",
+        ],
+    ),
+    op_target(
+        name = "op_bucketize",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
+            ":scalar_utils",
         ],
     ),
     op_target(
@@ -481,6 +512,12 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_cummin",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:math_util",
+        ],
+    ),
+    op_target(
         name = "op_cumsum",
         deps = [
             "//executorch/kernels/portable/cpu/util:dtype_util",
@@ -525,6 +562,14 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_embedding_bag",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:embedding_bag_util",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
+        ],
+    ),
+    op_target(
         name = "op_eq",
         deps = [
             ":scalar_utils",
@@ -566,6 +611,13 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_fft_r2c",
+        deps = [
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
+        ],
+    ),
+    op_target(
         name = "op_fill",
         deps = [
             ":scalar_utils",
@@ -602,6 +654,7 @@ ATEN_OPS = (
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:dtype_util",
             "//executorch/kernels/portable/cpu/util:elementwise_util",
+            "//executorch/kernels/portable/cpu/util:math_util",
         ],
     ),
     op_target(
@@ -1315,6 +1368,12 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_upsample_bicubic2d_aa",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:upsample_util",
+        ],
+    ),
+    op_target(
         name = "op_upsample_bilinear2d",
         deps = [
             "//executorch/kernels/portable/cpu/util:upsample_util",
@@ -1359,6 +1418,7 @@ ATEN_OPS = (
     op_target(
         name = "op_view_copy",
         deps = [
+            "//executorch/kernels/portable/cpu/util:broadcast_indexes_range",
             "//executorch/kernels/portable/cpu/util:copy_ops_util",
         ],
     ),
@@ -1407,11 +1467,19 @@ ATEN_OPS = (
     ),
 )
 
-# Operators that are not listed in `functions.yaml` (i.e., operators listed in
-# `custom_ops.yaml`), which are not compatible with the core ATen operators.
-# Every entry here will be backed by a cxx_library target with the given name
-# and deps, as well as a similar `<name>_aten` target that uses at::Tensor and
-# related types.
+# Operators that need a `<name>_aten` target (using at::Tensor and related
+# types) in addition to the lean `<name>` target. Every entry here is backed by
+# a cxx_library target with the given name and deps, plus a similar
+# `<name>_aten` target.
+#
+# Most entries are custom ops listed only in `custom_ops.yaml` (not in
+# `functions.yaml`) because they are not core ATen operators. `op__device_copy`
+# is an exception: it stays registered for the portable runtime via
+# `functions.yaml` (`et_copy::_h2d_copy.out` / `_d2h_copy.out`), but is listed
+# here so that an `op__device_copy_aten` target also exists. That `_aten` target
+# backs `:device_copy_ops_aten_lib`, which registers these device-copy ops for
+# ATen-mode runtimes (ATen-mode codegen consumes `custom_ops.yaml`-style
+# schemas, not `functions.yaml`, so `generated_lib_aten` cannot register them).
 #
 # Note that a single target (or single .cpp file) can't mix ATen and non-ATen
 # ops, and must be split. They can, however, share common code via a library dep
@@ -1419,6 +1487,12 @@ ATEN_OPS = (
 CUSTOM_OPS = (
     op_target(
         name = "op_allclose",
+    ),
+    op_target(
+        name = "op__device_copy",
+        deps = [
+            "//executorch/runtime/core:device_allocator",
+        ],
     ),
 )
 

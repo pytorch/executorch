@@ -73,6 +73,11 @@ class LinearVisitor(NodeVisitor):
             force_fp32 = False
             if input_quant_params is not None and input_quant_params.is_dynamic:
                 force_fp32 = True
+            # XNNPACK's bf16 fully-connected (bf16_bf16_f32) takes a bf16
+            # activation/weight but an fp32 bias, so force the bias to fp32.
+            weight_val = weight_node.meta.get("val", None)
+            if weight_val is not None and weight_val.dtype == torch.bfloat16:
+                force_fp32 = True
 
             self.define_tensor(
                 get_input_node(node, 2),

@@ -245,6 +245,16 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
+        name = "op_log2",
+        srcs = ["op_log2.cpp"],
+        exported_headers = ["operators.h"],
+        platforms = CXX,
+        deps = COMMON_DEPS + ["//executorch/kernels/portable/cpu:op_log2"],
+        visibility = ["PUBLIC"],
+        compatible_with = ["ovr_config//cpu:xtensa"],
+    )
+
+    runtime.cxx_library(
         name = "op_maximum",
         srcs = ["op_maximum.cpp"],
         exported_headers = ["operators.h"],
@@ -575,6 +585,18 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
+        name = "op_quantized_fully_connected_packed_out",
+        srcs = ["op_quantized_fully_connected_packed_out.cpp"],
+        exported_headers = ["operators.h"],
+        platforms = CXX,
+        deps = COMMON_DEPS + [
+            "//executorch/backends/cadence/generic/operators:quantized_linear",
+        ],
+        visibility = ["PUBLIC"],
+        compatible_with = ["ovr_config//cpu:xtensa"],
+    )
+
+    runtime.cxx_library(
         name = "op_quantized_fully_connected_out",
         srcs = ["op_quantized_fully_connected_out.cpp"],
         exported_headers = ["operators.h"],
@@ -694,6 +716,16 @@ def define_common_targets():
         exported_headers = ["operators.h"],
         platforms = CXX,
         deps = COMMON_DEPS,
+        visibility = ["PUBLIC"],
+        compatible_with = ["ovr_config//cpu:xtensa"],
+    )
+
+    runtime.cxx_library(
+        name = "op_relu",
+        srcs = ["op_relu.cpp"],
+        exported_headers = ["operators.h"],
+        platforms = CXX,
+        deps = COMMON_DEPS + ["//executorch/kernels/portable/cpu:op_relu"],
         visibility = ["PUBLIC"],
         compatible_with = ["ovr_config//cpu:xtensa"],
     )

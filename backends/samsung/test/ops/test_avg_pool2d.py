@@ -14,6 +14,7 @@ from executorch.backends.samsung.serialization.compile_options import (
     gen_samsung_backend_compile_spec,
 )
 from executorch.backends.samsung.test.tester import SamsungTester
+from executorch.backends.samsung.test.utils.utils import TestConfig
 
 
 class AvgPool2d(torch.nn.Module):
@@ -41,7 +42,7 @@ class TestAvgPool2d(unittest.TestCase):
         tester = SamsungTester(
             module,
             inputs,
-            [gen_samsung_backend_compile_spec("E9955")],
+            [gen_samsung_backend_compile_spec(TestConfig.chipset)],
         )
         (
             tester.export()
@@ -51,6 +52,23 @@ class TestAvgPool2d(unittest.TestCase):
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
             .run_method_and_compare_outputs(inputs=inputs)
+        )
+
+    def _test_a8w8(self, module: torch.nn.Module, inputs):
+        tester = SamsungTester(
+            module,
+            inputs,
+            [gen_samsung_backend_compile_spec(TestConfig.chipset)],
+        )
+        (
+            tester.quantize()
+            .export()
+            .check_count({"torch.ops.aten.avg_pool2d.default": 1})
+            .to_edge_transform_and_lower()
+            .check_not(["executorch_exir_dialects_edge__ops_aten_avg_pool2d_default"])
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .run_method_and_compare_outputs(inputs=inputs, atol=0.2)
         )
 
     def test_fp32_avg_pool2d(self):
@@ -64,3 +82,15 @@ class TestAvgPool2d(unittest.TestCase):
     def test_fp32_avg_pool2d_with_kernel_size(self):
         inputs = (torch.randn(1, 16, 24, 24),)
         self._test(AvgPool2d(kernel_size=4), inputs)
+
+    def test_a8w8_avg_pool2d(self):
+        inputs = (torch.randn(1, 16, 24, 24),)
+        self._test_a8w8(AvgPool2d(), inputs)
+
+    def test_a8w8_avg_pool2d_with_stride(self):
+        inputs = (torch.randn(1, 16, 24, 24),)
+        self._test_a8w8(AvgPool2d(stride=1), inputs)
+
+    def test_a8w8_avg_pool2d_with_kernel_size(self):
+        inputs = (torch.randn(1, 16, 24, 24),)
+        self._test_a8w8(AvgPool2d(kernel_size=4), inputs)

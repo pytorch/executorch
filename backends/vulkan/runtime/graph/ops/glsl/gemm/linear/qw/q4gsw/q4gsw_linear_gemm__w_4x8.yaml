@@ -1,0 +1,29 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+q4gsw_linear_gemm__w_4x8:
+  parameter_names_with_default_values:
+    DTYPE: float
+    IO_STORAGE: buffer
+    TILE_M4: 1
+    TILE_K4: 1
+    TILE_N4: 2
+    WEIGHT_STORAGE: buffer
+    WEIGHT_KC: 0
+  generate_variant_forall:
+    IO_STORAGE:
+      - VALUE: buffer
+      - VALUE: texture3d
+    DTYPE:
+      - VALUE: float
+      - VALUE: half
+  shader_variants:
+    # 4K x 8N weight tiles, interleaved (dp4a-style) nibble layout, weights
+    # stored in a buffer (N-contiguous ivec4 packing — "nc"). One ivec4 per
+    # (k4, n8) covers the 4M x 8N output tile via two adjacent ivec2 N tiles.
+    - NAME: q4gsw_linear_gemm__w_4x8_nc
+      WEIGHT_STORAGE: buffer
+      WEIGHT_KC: 0

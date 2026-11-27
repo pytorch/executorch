@@ -36,7 +36,17 @@ void add_full_node(
     const ValueRef size_or_in,
     const ValueRef fill_value,
     const ValueRef out) {
-  float fill_value_val = graph.extract_scalar<float>(fill_value);
+  vkapi::BufferBindInfo fill_value_buffer;
+  if (graph.dtype_of(out) == vkapi::kInt) {
+    fill_value_buffer =
+        graph.create_params_buffer(graph.extract_scalar<int32_t>(fill_value));
+  } else if (graph.dtype_of(out) == vkapi::kBool) {
+    const uint32_t value = graph.extract_scalar<bool>(fill_value);
+    fill_value_buffer = graph.create_params_buffer(value);
+  } else {
+    fill_value_buffer =
+        graph.create_params_buffer(graph.extract_scalar<float>(fill_value));
+  }
 
   std::string kernel_name("full");
   kernel_name.reserve(kShaderNameReserve);
@@ -47,12 +57,12 @@ void add_full_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      default_pick_global_wg_size,
-      default_pick_local_wg_size,
+      default_pick_gwg,
+      default_pick_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}},
       // Shader params buffers
-      {graph.meta_ubo(out), graph.create_params_buffer(fill_value_val)},
+      {graph.meta_ubo(out), fill_value_buffer},
       // Push Constants
       {},
       // Specialization Constants

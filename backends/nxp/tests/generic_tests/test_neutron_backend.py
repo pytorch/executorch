@@ -4,7 +4,10 @@
 # LICENSE file in the root directory of this source tree.
 
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
-from executorch.backends.nxp.tests.models import Conv2dModule, LinearSoftmaxModule
+from executorch.backends.nxp.tests.simple_models import (
+    Conv2dModule,
+    LinearSoftmaxModule,
+)
 
 
 def test_neutron_backend__single_conv_model():

@@ -26,7 +26,7 @@ class GetItemConverter(NodeConverter):
         return True
 
     def convert(self, node: Node):
-        """Skip the `GetItem` node, as it serves no purpose in NeutronIR."""
+        """Convert the `GetItem` node to identity as it serves no purpose in the Neutron IR."""
         self.assert_convertible(node)
 
         t_op = self._create_tflite_op_with_io_tensors(node)
@@ -41,5 +41,6 @@ class GetItemConverter(NodeConverter):
             input_.type = output.type
             propagate_quantization(from_tensor=output, to_tensor=input_)
 
+        # Convert into an identity operator, which will be optimized out later if possible.
         self.builder.turn_operator_to_identity(t_op)
         self.builder.append_operators([t_op])

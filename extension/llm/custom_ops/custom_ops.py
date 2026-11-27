@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -21,15 +22,29 @@ from torch._inductor.lowering import lowerings as L, register_lowering
 from torch.library import impl
 
 aten = torch.ops.aten
+_CUSTOM_SDPA_SUPPORTED_DTYPES = (torch.float32, torch.bfloat16, torch.float16)
 
-try:
-    op = torch.ops.llama.sdpa_with_kv_cache.default
-    assert op is not None
-    op2 = torch.ops.llama.fast_hadamard_transform.default
-    assert op2 is not None
-except:
-    # This is needed to ensure that custom ops are registered
-    from executorch.extension.pybindings import portable_lib  # noqa # usort: skip
+
+def _native_custom_ops_are_registered() -> bool:
+    try:
+        return all(
+            op is not None
+            for op in (
+                torch.ops.llama.sdpa_with_kv_cache.default,
+                torch.ops.llama.fast_hadamard_transform.default,
+                torch.ops.llama.quantized_moe_ffn.default,
+                torch.ops.llama.custom_sdpa.default,
+            )
+        )
+    except (AttributeError, RuntimeError):
+        return False
+
+
+def _ensure_native_custom_ops_loaded() -> None:
+    if _native_custom_ops_are_registered():
+        return
+
+    import executorch.extension.pybindings.portable_lib  # noqa: F401  # usort: skip
 
     # Ideally package is installed in only one location but usage of
     # PYATHONPATH can result in multiple locations.
@@ -40,14 +55,18 @@ except:
     logging.info(f"Looking for libcustom_ops_aot_lib.so in {package_path}")
 
     libs = list(package_path.glob("**/*custom_ops_aot_lib.*"))
+    if not libs:
+        raise RuntimeError(f"custom_ops_aot_lib was not found under {package_path}")
+    if len(libs) != 1:
+        raise RuntimeError(f"Expected 1 library but got {len(libs)}")
 
-    assert len(libs) == 1, f"Expected 1 library but got {len(libs)}"
     logging.info(f"Loading custom ops library: {libs[0]}")
     torch.ops.load_library(libs[0])
-    op = torch.ops.llama.sdpa_with_kv_cache.default
-    assert op is not None
-    op2 = torch.ops.llama.fast_hadamard_transform.default
-    assert op2 is not None
+    if not _native_custom_ops_are_registered():
+        raise RuntimeError("Native LLM custom op registration is incomplete")
+
+
+_ensure_native_custom_ops_loaded()
 
 custom_ops_lib = torch.library.Library("llama", "IMPL")
 
@@ -76,12 +95,14 @@ def _validate_params(
     ), f"Expected value to be 4 dimensional but got {value.dim()} dimensions."
 
     assert (
-        query.dtype == torch.float32
-    ), f"Expected query to be float32 but got {query.dtype}"
-    assert key.dtype == torch.float32, f"Expected key to be float32 but got {key.dtype}"
+        query.dtype in _CUSTOM_SDPA_SUPPORTED_DTYPES
+    ), f"Expected query to be float32, bfloat16, or float16 but got {query.dtype}"
     assert (
-        value.dtype == torch.float32
-    ), f"Expected value to be float32 but got {value.dtype}"
+        key.dtype == query.dtype
+    ), f"Expected key to have the same dtype as query but got {key.dtype}"
+    assert (
+        value.dtype == query.dtype
+    ), f"Expected value to have the same dtype as query but got {value.dtype}"
 
     assert (
         key_cache.dim() == 4
@@ -91,15 +112,41 @@ def _validate_params(
     ), f"Expected value_cache to be 4 dimensional but got {value_cache.dim()}"
 
     assert (
-        key_cache.dtype == torch.float32
-    ), f"Expected key_cache to be float32 but got {key_cache.dtype}"
+        key_cache.dtype == query.dtype
+    ), f"Expected key_cache to have the same dtype as query but got {key_cache.dtype}"
     assert (
-        value_cache.dtype == torch.float32
-    ), f"Expected value_cache to be float32 but got {value_cache.dtype}"
+        value_cache.dtype == query.dtype
+    ), f"Expected value_cache to have the same dtype as query but got {value_cache.dtype}"
 
-    assert (
-        key_cache.size() == value_cache.size()
-    ), f"Key cache and value cache must have same size but got {key_cache.size()} and {value_cache.size()}"
+    assert key_cache.size(0) == value_cache.size(0), (
+        "Key cache and value cache must have matching batch sizes but got "
+        f"{key_cache.size(0)} and {value_cache.size(0)}"
+    )
+    assert key_cache.size(1) == value_cache.size(1), (
+        "Key cache and value cache must have matching sequence lengths but got "
+        f"{key_cache.size(1)} and {value_cache.size(1)}"
+    )
+    assert key_cache.size(2) == value_cache.size(2), (
+        "Key cache and value cache must have matching KV head counts but got "
+        f"{key_cache.size(2)} and {value_cache.size(2)}"
+    )
+    assert key_cache.size(3) == value_cache.size(3), (
+        "Key cache and value cache must have matching head dimensions but got "
+        f"{key_cache.size(3)} and {value_cache.size(3)}"
+    )
+    assert query.size(0) == key_cache.size(0) == value_cache.size(0), (
+        "Query, key cache, and value cache must have matching batch sizes but got "
+        f"{query.size(0)}, {key_cache.size(0)}, and {value_cache.size(0)}"
+    )
+    assert query.size(3) == key_cache.size(3) == value_cache.size(3), (
+        "Query, key cache, and value cache must have matching head dimensions "
+        f"but got {query.size(3)}, {key_cache.size(3)}, and {value_cache.size(3)}"
+    )
+    assert key_cache.size(2) > 0, "Expected key/value cache to have at least one head."
+    assert query.size(2) % key_cache.size(2) == 0, (
+        "Query head count must match the KV head count or be divisible by it, "
+        f"but got {query.size(2)} and {key_cache.size(2)}"
+    )
 
     # These asserts are real but they require me to add constrain_as_size/value calls to the model and I dont want to do that right now
     # assert start_pos < key_cache.size(
@@ -113,9 +160,42 @@ def _validate_params(
         assert (
             attn_mask.dim() == 2
         ), f"Expected attn_mask to be 2 dimensional but got {attn_mask.dim()} dimensions."
-        assert (attn_mask.dtype == torch.float32) or (
-            attn_mask.dtype == torch.float16
-        ), f"Expected attn_mask to be float but got {attn_mask.dtype}"
+        assert (
+            attn_mask.dtype == torch.float32
+        ), f"Expected attn_mask to be float32 but got {attn_mask.dtype}"
+        assert not is_causal, "attn_mask and is_causal cannot be set at the same time"
+        assert attn_mask.shape == (query.size(1), key_cache.size(1)), (
+            "Expected attn_mask to match [q_len, kv_len], but got "
+            f"{tuple(attn_mask.shape)} for q_len={query.size(1)} "
+            f"and kv_len={key_cache.size(1)}"
+        )
+
+
+@impl(custom_ops_lib, "custom_sdpa", "Meta")
+def custom_sdpa(
+    query,
+    key_cache,
+    value_cache,
+    start_pos,
+    attn_mask=None,
+    drpout_p=0.0,
+    is_causal=False,
+    scale=None,
+):
+    _validate_params(
+        query,
+        key_cache,
+        value_cache,
+        key_cache,
+        value_cache,
+        start_pos,
+        query.size(1),
+        attn_mask,
+        drpout_p,
+        is_causal,
+        scale,
+    )
+    return torch.empty(query.shape, dtype=query.dtype, device=query.device)
 
 
 @impl(custom_ops_lib, "sdpa_with_kv_cache", "Meta")
@@ -157,33 +237,105 @@ def fast_hadamard_transform_meta(mat):
     return torch.empty_like(mat)
 
 
-@impl(custom_ops_lib, "custom_sdpa", "Meta")
-def custom_sdpa(
-    query,
-    key_cache,
-    value_cache,
-    start_pos,
-    attn_mask=None,
-    drpout_p=0.0,
-    is_causal=False,
-    scale=None,
+def _validate_quantized_moe_ffn_params(
+    x,
+    gate_weight,
+    expert_bias,
+    packed_w13,
+    packed_w2,
+    num_activated_experts,
+    num_experts,
+    hidden_dim,
+    dim,
+    group_size,
+    weight_nbit,
+    score_func,
+    route_scale,
 ):
-    seq_len = query.size(1)
-    _validate_params(
-        query,
-        key_cache,
-        value_cache,
-        key_cache,
-        value_cache,
-        start_pos,
-        seq_len,
-        attn_mask,
-        drpout_p,
-        is_causal,
-        scale,
-    )
+    assert x.dim() == 2, f"Expected x to be 2D [T, D], got {x.dim()}D"
+    assert x.size(1) == dim, f"x last dim ({x.size(1)}) must equal dim ({dim})"
+    assert x.dtype == torch.float32, f"Expected x to be float32, got {x.dtype}"
 
-    return torch.empty_like(query)
+    assert (
+        gate_weight.dim() == 2
+        and gate_weight.size(0) == num_experts
+        and gate_weight.size(1) == dim
+    ), f"gate_weight must be [E={num_experts}, D={dim}], got {list(gate_weight.size())}"
+    assert (
+        gate_weight.dtype == torch.float32
+    ), f"gate_weight must be float32, got {gate_weight.dtype}"
+
+    if expert_bias.numel() > 0:
+        assert (
+            expert_bias.dim() == 1 and expert_bias.size(0) == num_experts
+        ), f"expert_bias must be [E={num_experts}] when non-empty, got {list(expert_bias.size())}"
+        assert (
+            expert_bias.dtype == torch.float32
+        ), f"expert_bias must be float32, got {expert_bias.dtype}"
+
+    for name, t in (
+        ("packed_w13", packed_w13),
+        ("packed_w2", packed_w2),
+    ):
+        assert (
+            t.dim() == 2 and t.size(0) == num_experts
+        ), f"{name} must be [E={num_experts}, packed_bytes], got {list(t.size())}"
+        assert t.dtype == torch.uint8, f"{name} must be uint8, got {t.dtype}"
+
+    assert (
+        0 < num_activated_experts <= num_experts
+    ), f"num_activated_experts ({num_activated_experts}) out of range [1, {num_experts}]"
+    assert score_func in (
+        "sigmoid",
+        "softmax",
+    ), f"score_func must be 'sigmoid' or 'softmax', got {score_func!r}"
+    assert weight_nbit in (
+        4,
+        8,
+    ), f"weight_nbit must be 4 or 8 (v1), got {weight_nbit}"
+    assert group_size > 0, f"group_size must be positive, got {group_size}"
+    assert dim > 0, f"dim must be positive, got {dim}"
+    assert hidden_dim > 0, f"hidden_dim must be positive, got {hidden_dim}"
+    assert (
+        dim % group_size == 0
+    ), f"dim ({dim}) must be divisible by group_size ({group_size})"
+    assert (
+        hidden_dim % group_size == 0
+    ), f"hidden_dim ({hidden_dim}) must be divisible by group_size ({group_size})"
+
+
+@impl(custom_ops_lib, "quantized_moe_ffn", "Meta")
+def quantized_moe_ffn_meta(
+    x,
+    gate_weight,
+    expert_bias,
+    packed_w13,
+    packed_w2,
+    num_activated_experts,
+    num_experts,
+    hidden_dim,
+    dim,
+    group_size,
+    weight_nbit,
+    score_func,
+    route_scale,
+):
+    _validate_quantized_moe_ffn_params(
+        x,
+        gate_weight,
+        expert_bias,
+        packed_w13,
+        packed_w2,
+        num_activated_experts,
+        num_experts,
+        hidden_dim,
+        dim,
+        group_size,
+        weight_nbit,
+        score_func,
+        route_scale,
+    )
+    return torch.empty((x.size(0), dim), dtype=torch.float32, device=x.device)
 
 
 def _validate_update_cache_params(
@@ -269,6 +421,98 @@ def update_cache_with_indices_meta(
     # workaround. Should we just return cache instead? But I am afraid that
     # will result in extra memory allocation
     return torch.empty((1,), dtype=value.dtype, device="meta")
+
+
+def _validate_gated_delta_rule_params(
+    query,
+    key,
+    value,
+    decay,
+    beta,
+    initial_state,
+):
+    assert (
+        query.dim() == 4
+    ), f"Expected query to be 4 dimensional but got {query.dim()} dimensions."
+    assert (
+        key.dim() == 4
+    ), f"Expected key to be 4 dimensional but got {key.dim()} dimensions."
+    assert (
+        value.dim() == 4
+    ), f"Expected value to be 4 dimensional but got {value.dim()} dimensions."
+    assert decay.dim() in (3, 4), (
+        "Expected decay to be 4 dimensional (channelwise) or 3 dimensional "
+        f"(scalar) but got {decay.dim()} dimensions."
+    )
+    assert (
+        beta.dim() == 3
+    ), f"Expected beta to be 3 dimensional but got {beta.dim()} dimensions."
+    assert (
+        initial_state.dim() == 4
+    ), f"Expected initial_state to be 4 dimensional but got {initial_state.dim()} dimensions."
+
+    for name, tensor in {
+        "query": query,
+        "key": key,
+        "value": value,
+        "decay": decay,
+        "beta": beta,
+        "initial_state": initial_state,
+    }.items():
+        assert (
+            tensor.dtype == torch.float32
+        ), f"Expected {name} to be float32 but got {tensor.dtype}"
+
+    assert query.size(0) == key.size(0) and query.shape[2:] == key.shape[2:]
+    assert decay.shape == (key.shape if decay.dim() == 4 else key.shape[:3])
+    assert key.shape[:3] == value.shape[:3]
+    assert beta.shape == key.shape[:3]
+    assert query.size(1) % key.size(1) == 0
+    assert initial_state.shape == (
+        key.size(0),
+        key.size(1),
+        query.size(3),
+        value.size(3),
+    ), (
+        "Expected initial_state to have shape "
+        f"{(key.size(0), key.size(1), query.size(3), value.size(3))} "
+        f"but got {initial_state.shape}"
+    )
+
+
+@impl(custom_ops_lib, "gated_delta_rule", "Meta")
+def gated_delta_rule_meta(
+    query,
+    key,
+    value,
+    decay,
+    beta,
+    initial_state,
+):
+    _validate_gated_delta_rule_params(
+        query,
+        key,
+        value,
+        decay,
+        beta,
+        initial_state,
+    )
+    output_shape = (*query.shape[:3], value.size(3))
+    return query.new_empty(output_shape), torch.empty_like(initial_state)
+
+
+# Deprecated alias of gated_delta_rule, kept so graphs built against the
+# pre-scalar-decay name keep tracing. Remove once those have been re-exported.
+@impl(custom_ops_lib, "channelwise_gated_delta_rule", "Meta")
+def channelwise_gated_delta_rule_meta(
+    query,
+    key,
+    value,
+    decay,
+    beta,
+    initial_state,
+):
+    return gated_delta_rule_meta(query, key, value, decay, beta, initial_state)
 
 
 def _validate_quantized_sdpa_params(

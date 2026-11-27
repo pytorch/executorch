@@ -66,11 +66,19 @@ ENV AWS_REGION us-east-1
 ENV AWS_DEFAULT_REGION us-east-1
 
 ARG TORCH_VERSION
+ARG TORCHVISION_VERSION
+ARG TORCHAUDIO_VERSION
+ARG TORCHCI_REPORTS
 ARG SKIP_PYTORCH
 ARG PYTORCH_BUILD_MAX_JOBS
 COPY ./common/install_pytorch.sh install_pytorch.sh
 COPY ./common/utils.sh utils.sh
-RUN if [ -z "${SKIP_PYTORCH}" ]; then bash ./install_pytorch.sh; fi && rm install_pytorch.sh utils.sh
+# A host docker build let sccache reach its S3 bucket with the EC2 instance
+# role; a BuildKit pod has no instance metadata, so docker-builds passes the
+# credentials in as this secret. World-readable because the sccache server runs
+# as ci-user; a secret mount never lands in a layer.
+RUN --mount=type=secret,id=aws-credentials,mode=0444 \
+    if [ -z "${SKIP_PYTORCH}" ]; then bash ./install_pytorch.sh; fi && rm install_pytorch.sh utils.sh
 
 ARG LINTRUNNER
 # Install lintrunner if needed
@@ -87,15 +95,28 @@ RUN if [ -n "${ANDROID_NDK_VERSION}" ]; then bash ./install_android.sh; fi
 RUN rm install_android.sh
 
 ARG ARM_SDK
+ARG ZEPHYR_SDK
 COPY ./common/install_arm.sh install_arm.sh
-RUN if [ -n "${ARM_SDK}" ]; then bash ./install_arm.sh; fi
+COPY ./common/arm_fvp_cache.sh /opt/executorch/common/arm_fvp_cache.sh
+COPY ./ci_commit_pins/arm-fvp.sh /opt/executorch/ci_commit_pins/arm-fvp.sh
+RUN if [ -n "${ARM_SDK}${ZEPHYR_SDK}" ]; then bash ./install_arm.sh; fi
 RUN rm install_arm.sh
 
-ARG ZEPHYR_SDK
 COPY ./common/install_zephyr.sh install_zephyr.sh
+COPY ./common/zephyr_sdk_release_proxy.py zephyr_sdk_release_proxy.py
 COPY ./common/utils.sh utils.sh
 RUN if [ -n "${ZEPHYR_SDK}" ]; then bash ./install_zephyr.sh; fi
-RUN rm install_zephyr.sh utils.sh
+RUN rm install_zephyr.sh zephyr_sdk_release_proxy.py utils.sh
+
+# Cache the developer.arm.com downloads of examples/arm/setup.sh, which the
+# Arm and Zephyr jobs run.
+ENV ARM_SETUP_DOWNLOAD_CACHE=/opt/arm-download-cache
+COPY ./common/install_arm_downloads.sh install_arm_downloads.sh
+COPY ./arm-setup arm-setup
+RUN if [ -n "${ARM_SDK}${ZEPHYR_SDK}" ]; then \
+    bash ./install_arm_downloads.sh || echo "Arm download cache not populated"; \
+    fi
+RUN rm -r install_arm_downloads.sh arm-setup
 
 ARG QNN_SDK
 

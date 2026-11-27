@@ -265,12 +265,15 @@ class NodeVisitor:
                     )
         else:
             node_dtype = get_node_dtype(node)
-            if node_dtype is not None and node_dtype == torch.float16:
-                dtype = (
-                    XNNDatatype.xnn_datatype_fp32
-                    if force_fp32
-                    else XNNDatatype.xnn_datatype_fp16
-                )
+            # fp16/bf16 tensors keep their datatype unless we've been asked to
+            # force fp32 (e.g. biases for dynamic-quant or bf16 fully-connected),
+            # in which case they fall back to the default fp32.
+            float_dtype_map = {
+                torch.float16: XNNDatatype.xnn_datatype_fp16,
+                torch.bfloat16: XNNDatatype.xnn_datatype_bf16,
+            }
+            if not force_fp32:
+                dtype = float_dtype_map.get(node_dtype, dtype)
 
         return dtype
 
@@ -284,6 +287,10 @@ class NodeVisitor:
 
             if quant_params.per_channel_group:
                 scale = scale.to(torch.bfloat16)
+
+            # The bytes are read from the start of the storage in memory order.
+            # Scales are small, so always copy them into storage of their own.
+            scale = scale.clone(memory_format=torch.contiguous_format)
 
             num_bytes = scale.untyped_storage().nbytes()
             scale_array = ctypes.cast(
@@ -409,10 +416,16 @@ class NodeVisitor:
             swap_in_out_for_weights or groups == 1
         ), "groups is option for swap_in_out_for_weights"
 
-        if tensor in vals_to_ids:
+        # A statically quantized bias is scaled by the input and weight scales of
+        # the node that consumes it, so a bias shared by several nodes needs one
+        # value per consumer.
+        is_quantized_bias = (
+            quant_params is not None and quant_params.dtype == torch.int32
+        )
+        if tensor in vals_to_ids and not is_quantized_bias:
             return
 
-        if quant_params is not None:
+        if quant_params is not None and not is_quantized_bias:
             if quant_params.q_input in vals_to_ids:
                 vals_to_ids[tensor] = vals_to_ids[quant_params.q_input]
                 return
@@ -472,7 +485,10 @@ class NodeVisitor:
             elif quant_params.axis == 1:
                 quant_params.axis = 0
             else:
-                assert f"Unsupported weight per channel quantization axis for depthwise conv2d / conv_transpose2d : {quant_params.axis}, expecting 0 / 1."
+                check_or_raise(
+                    False,
+                    f"Unsupported weight per channel quantization axis for depthwise conv2d / conv_transpose2d : {quant_params.axis}, expecting 0 / 1.",
+                )
 
         # Serialize tensor value
         custom_meta = tensor.meta.get("custom", None)
@@ -591,7 +607,7 @@ class NodeVisitor:
         # Quantize buffer if static data is indeed quantized
         if quant_params is not None and not quant_params.is_dynamic:
             const_val = quant_params.quantize_tensor(const_val).contiguous()
-        elif const_val.dtype != torch.float16 or force_fp32:
+        elif const_val.dtype not in (torch.float16, torch.bfloat16) or force_fp32:
             # ensure that the const is fp32
             const_val = const_val.to(dtype=torch.float32).contiguous()
 
@@ -612,6 +628,11 @@ class NodeVisitor:
 
         if quant_params is not None and quant_params.is_qc4w:
             const_val = self.convert_to_qc4w(const_val)
+
+        # The bytes are read from the start of the storage, so a view of a
+        # larger tensor needs its own copy.
+        if const_val.nbytes != const_val.untyped_storage().nbytes():
+            const_val = const_val.clone()
 
         size = const_val.untyped_storage().nbytes()
         array_type = ctypes.c_char * size
@@ -712,12 +733,19 @@ class NodeVisitor:
                 bias_quant_params = QuantParams.from_bias(
                     bias_node, weight_quant_params, input_quant_params
                 )
+                # XNNPACK's bf16 fully-connected (bf16_bf16_f32) takes a bf16
+                # activation/weight but an fp32 bias, so force the bias to fp32.
+                weight_val = weight_node.meta.get("val", None)
+                bias_force_fp32 = (
+                    weight_val is not None and weight_val.dtype == torch.bfloat16
+                )
                 self.define_tensor(
                     bias_node,
                     xnn_graph,
                     vals_to_ids,
                     quant_params=bias_quant_params,
                     convert_to_nhwc=False,  # Bias is generally 1d and can not be in NHWC
+                    force_fp32=bias_force_fp32,
                 )
 
     def define_node(

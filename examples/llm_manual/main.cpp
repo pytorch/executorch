@@ -22,7 +22,6 @@ using executorch::aten::Tensor;
 using executorch::extension::from_blob;
 using executorch::extension::Module;
 using executorch::runtime::EValue;
-using executorch::runtime::Result;
 
 // The value of the gpt2 `<|endoftext|>` token.
 #define ENDOFTEXT_TOKEN 50256

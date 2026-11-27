@@ -1,22 +1,20 @@
 name: Test Cadence
 
 permissions:
-  id-token: write
   contents: read
 
 on:
   workflow_call:
     inputs:
       docker-image:
-        description: 'Docker image to use'
-        required: false
+        description: 'Fully qualified CI image (resolved by the caller)'
+        required: true
         type: string
-        default: ci-image:executorch-ubuntu-22.04-clang12
       runner:
         description: 'Runner type'
         required: false
         type: string
-        default: linux.8xlarge.memory
+        default: mt-l-x86iavx512-32-256
       ref:
         description: 'Git ref to checkout'
         required: false
@@ -30,7 +28,9 @@ on:
 
 jobs:
   test-aot:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      contents: read
     with:
       job-name: test-aot
       runner: ${{ inputs.runner }}
@@ -50,7 +50,9 @@ jobs:
         python -m pytest backends/cadence/aot/tests/ -v -n auto --reruns 2 --reruns-delay 1
 
   test-ops:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      contents: read
     with:
       job-name: test-ops
       runner: ${{ inputs.runner }}

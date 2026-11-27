@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -57,7 +58,38 @@ function(gen_selected_ops)
   if(GEN_INCLUDE_ALL_OPS)
     list(APPEND _gen_oplist_command --include_all_operators)
   endif()
-  if(GEN_OPS_FROM_MODEL)
+  list(LENGTH GEN_OPS_FROM_MODEL _model_count)
+  set(_model_oplists "")
+  set(_model_list "")
+  if(_model_count GREATER 1)
+    foreach(_model IN LISTS GEN_OPS_FROM_MODEL)
+      list(LENGTH _model_oplists _model_index)
+      gen_selected_ops(
+        LIB_NAME
+        "${GEN_LIB_NAME}/model_${_model_index}"
+        OPS_FROM_MODEL
+        "${_model}"
+        OPS_SCHEMA_YAML
+        "${GEN_OPS_SCHEMA_YAML}"
+        ROOT_OPS
+        "${GEN_ROOT_OPS}"
+        INCLUDE_ALL_OPS
+        "${GEN_INCLUDE_ALL_OPS}"
+      )
+      list(APPEND _model_oplists "${gen_selected_ops_output_yaml}")
+    endforeach()
+    set(_model_list "${_out_dir}/model_oplists.txt")
+    list(JOIN _model_oplists "\n" _model_paths)
+    file(
+      GENERATE
+      OUTPUT "${_model_list}"
+      CONTENT "${_model_paths}\n"
+    )
+    set(_gen_oplist_command
+        "${PYTHON_EXECUTABLE}" -m codegen.tools.gen_all_oplist
+        --output_dir=${_out_dir} --model_file_list_path=@${_model_list}
+    )
+  elseif(GEN_OPS_FROM_MODEL)
     list(APPEND _gen_oplist_command --model_file_path="${GEN_OPS_FROM_MODEL}")
   endif()
 
@@ -66,7 +98,8 @@ function(gen_selected_ops)
     COMMENT "Generating selected_operators.yaml for ${GEN_LIB_NAME}"
     OUTPUT ${_oplist_yaml}
     COMMAND ${_gen_oplist_command}
-    DEPENDS ${GEN_OPS_SCHEMA_YAML} ${_codegen_tools_srcs}
+    DEPENDS ${GEN_OPS_SCHEMA_YAML} ${GEN_OPS_FROM_MODEL} ${_model_oplists}
+            ${_model_list} ${_codegen_tools_srcs}
     WORKING_DIRECTORY ${EXECUTORCH_ROOT}
   )
 
@@ -148,6 +181,81 @@ function(gen_selected_max_kernel_num)
       ${_include_root}
       PARENT_SCOPE
   )
+endfunction()
+
+# Generate a prim ops registration library. By default the library includes only
+# operators from SELECTED_OPS_YAML. INCLUDE_ALL_OPS disables prim-op selective
+# build and registers every prim op.
+function(gen_selected_prim_ops_lib)
+  # Parse arguments.
+  set(options INCLUDE_ALL_OPS)
+  set(one_value_args LIB_NAME SELECTED_OPS_YAML)
+  set(multi_value_args DEPS)
+  cmake_parse_arguments(
+    GEN "${options}" "${one_value_args}" "${multi_value_args}" ${ARGN}
+  )
+
+  message(STATUS "Generating selected prim ops lib:")
+  message(STATUS "  LIB_NAME: ${GEN_LIB_NAME}")
+  message(STATUS "  SELECTED_OPS_YAML: ${GEN_SELECTED_OPS_YAML}")
+  message(STATUS "  INCLUDE_ALL_OPS: ${GEN_INCLUDE_ALL_OPS}")
+  message(STATUS "  DEPS: ${GEN_DEPS}")
+
+  if(NOT GEN_LIB_NAME)
+    message(FATAL_ERROR "gen_selected_prim_ops_lib: LIB_NAME is required")
+  endif()
+  if(NOT GEN_INCLUDE_ALL_OPS AND NOT GEN_SELECTED_OPS_YAML)
+    message(
+      FATAL_ERROR
+        "gen_selected_prim_ops_lib: SELECTED_OPS_YAML is required unless INCLUDE_ALL_OPS is set"
+    )
+  endif()
+
+  set(_out_dir ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
+  file(MAKE_DIRECTORY ${_out_dir})
+
+  # Generate selected operator list if needed.
+  set(_sources ${EXECUTORCH_ROOT}/kernels/prim_ops/register_prim_ops.cpp)
+  if(NOT GEN_INCLUDE_ALL_OPS)
+    set(_selected_prim_ops_header ${_out_dir}/selected_prim_ops.h)
+    set(_gen_selected_prim_ops_script
+        ${EXECUTORCH_ROOT}/codegen/tools/gen_selected_prim_ops.py
+    )
+    set(_gen_selected_prim_ops_command
+        "${PYTHON_EXECUTABLE}" -m codegen.tools.gen_selected_prim_ops
+        --op-selection-yaml-path=${GEN_SELECTED_OPS_YAML}
+        --output-dir=${_out_dir}
+    )
+    add_custom_command(
+      COMMENT "Generating selected_prim_ops.h for ${GEN_LIB_NAME}"
+      OUTPUT ${_selected_prim_ops_header}
+      COMMAND ${_gen_selected_prim_ops_command}
+      DEPENDS ${GEN_SELECTED_OPS_YAML} ${_gen_selected_prim_ops_script}
+      WORKING_DIRECTORY ${EXECUTORCH_ROOT}
+    )
+    list(APPEND _sources ${_selected_prim_ops_header})
+  endif()
+
+  # Add prim ops registration library.
+  add_library(${GEN_LIB_NAME} ${_sources})
+  target_include_directories(
+    ${GEN_LIB_NAME} PRIVATE ${EXECUTORCH_ROOT}/kernels/prim_ops ${_out_dir}
+  )
+  if(NOT GEN_INCLUDE_ALL_OPS)
+    target_compile_definitions(
+      ${GEN_LIB_NAME} PRIVATE ET_PRIM_OPS_SELECTIVE_BUILD
+                              EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD
+    )
+  endif()
+  target_link_libraries(${GEN_LIB_NAME} PRIVATE ${GEN_DEPS})
+  executorch_target_link_options_shared_lib(${GEN_LIB_NAME})
+
+  # Add prim ops kernel library.
+  add_library(
+    ${GEN_LIB_NAME}_impl ${EXECUTORCH_ROOT}/kernels/prim_ops/et_copy_index.cpp
+                         ${EXECUTORCH_ROOT}/kernels/prim_ops/et_view.cpp
+  )
+  target_link_libraries(${GEN_LIB_NAME}_impl PRIVATE ${GEN_DEPS})
 endfunction()
 
 # Codegen for registering kernels. Kernels are defined in functions_yaml and
@@ -254,22 +362,37 @@ function(gen_custom_ops_aot_lib)
   find_package_torch()
   # This lib uses ATen lib, so we explicitly enable rtti and exceptions.
   target_compile_options(${GEN_LIB_NAME} PRIVATE -frtti -fexceptions)
+  # ATen headers require C++20.
+  set_target_properties(${GEN_LIB_NAME} PROPERTIES CXX_STANDARD 20)
   target_compile_definitions(${GEN_LIB_NAME} PRIVATE USE_ATEN_LIB=1)
   include_directories(${TORCH_INCLUDE_DIRS})
-  target_link_libraries(${GEN_LIB_NAME} PRIVATE torch)
+  # torch would record libtorch_cuda with a CUDA build of PyTorch, so a CPU-only
+  # torch could not load this. torch_cpu_library does not.
+  target_link_libraries(${GEN_LIB_NAME} PRIVATE torch_cpu_library)
 
   executorch_target_link_options_shared_lib(${GEN_LIB_NAME})
   if(TARGET portable_lib)
     target_link_libraries(${GEN_LIB_NAME} PRIVATE portable_lib)
+  elseif(TARGET executorch_shared)
+    # Named here as well as retained below, because a PRIVATE link does not
+    # carry the runtime's include directories and compile definitions, and a
+    # shared build without the pybind extension would then compile against no
+    # runtime headers.
+    target_link_libraries(${GEN_LIB_NAME} PRIVATE executorch_shared)
   else()
     target_link_libraries(${GEN_LIB_NAME} PRIVATE executorch_core)
   endif()
+  executorch_target_link_shared_runtime(${GEN_LIB_NAME})
 endfunction()
 
 # Generate a runtime lib for registering operators in Executorch
+#
+# SHARED opts this library into being a shared object. It is opt-in because most
+# callers want the default static library, and only the one shipped in the wheel
+# needs to be shared so a process has a single copy of the kernels.
 function(gen_operators_lib)
   set(multi_arg_names LIB_NAME KERNEL_LIBS DEPS DTYPE_SELECTIVE_BUILD)
-  cmake_parse_arguments(GEN "" "" "${multi_arg_names}" ${ARGN})
+  cmake_parse_arguments(GEN "SHARED" "" "${multi_arg_names}" ${ARGN})
 
   message(STATUS "Generating operator lib:")
   message(STATUS "  LIB_NAME: ${GEN_LIB_NAME}")
@@ -282,7 +405,17 @@ function(gen_operators_lib)
     set(_opvariant_h ${_out_dir}/selected_op_variants.h)
   endif()
 
-  add_library(${GEN_LIB_NAME})
+  if(GEN_SHARED)
+    add_library(${GEN_LIB_NAME} SHARED)
+    # The caller names the library and sets its version, because the shipped
+    # name describes what the library provides rather than which generation
+    # target produced it, and only the caller knows that.
+    #
+    # Ships beside the runtime in the wheel's lib/ directory.
+    executorch_target_shipped_runtime_path(${GEN_LIB_NAME})
+  else()
+    add_library(${GEN_LIB_NAME})
+  endif()
 
   set(_srcs_list ${_out_dir}/RegisterCodegenUnboxedKernelsEverything.cpp
                  ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h
@@ -292,6 +425,21 @@ function(gen_operators_lib)
   endif()
   target_sources(${GEN_LIB_NAME} PRIVATE ${_srcs_list})
   target_link_libraries(${GEN_LIB_NAME} PRIVATE ${GEN_DEPS})
+  # Resolve the runtime from the shared library rather than from the static core
+  # in GEN_DEPS. Linking the static core gives this library its own copy of the
+  # operator table, so its static initializer registers into a table nothing
+  # else reads and the operators appear missing at run time.
+  #
+  # Only when this target is itself shared. On a static target the retention
+  # helper cannot work: PRIVATE link options are dropped on a static library, so
+  # the --no-as-needed scope never reaches whatever links it, and the helper is
+  # fatal on that rather than pretending. A static operators library is
+  # extracted whole into its consumer, and the consumer is what retains the
+  # runtime, so there is nothing to do here. It still needs the runtime's
+  # headers, which come through GEN_DEPS.
+  if(GEN_SHARED)
+    executorch_target_link_shared_runtime(${GEN_LIB_NAME})
+  endif()
   set(portable_kernels_check "portable_kernels")
   if(GEN_KERNEL_LIBS)
 
@@ -472,12 +620,11 @@ function(executorch_load_build_variables)
       TRAIN_XOR_SRCS
       EXECUTOR_RUNNER_SRCS
       SIZE_TEST_SRCS
-      MPS_EXECUTOR_RUNNER_SRCS
-      MPS_BACKEND_SRCS
-      MPS_SCHEMA_SRCS
       XNN_EXECUTOR_RUNNER_SRCS
       XNNPACK_BACKEND_SRCS
+      XNNPACK_PROFILER_SRCS
       XNNPACK_SCHEMA_SRCS
+      CPU_BACKEND_SRCS
       VULKAN_SCHEMA_SRCS
       CUSTOM_OPS_SRCS
       LLAMA_RUNNER_SRCS
@@ -506,12 +653,11 @@ function(executorch_load_build_variables)
       _train_xor__srcs
       _executor_runner__srcs
       _size_test__srcs
-      _mps_executor_runner__srcs
-      _mps_backend__srcs
-      _mps_schema__srcs
       _xnn_executor_runner__srcs
       _xnnpack_backend__srcs
+      _xnnpack_profiler__srcs
       _xnnpack_schema__srcs
+      _cpu_backend__srcs
       _vulkan_schema__srcs
       _custom_ops__srcs
       _llama_runner__srcs

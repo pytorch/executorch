@@ -220,6 +220,20 @@ PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
   py::class_<QnnExecuTorchContextBinary>(m, "QnnExecuTorchContextBinary")
       .def(py::init<>());
 
+  py::class_<PyQnnDlcHandle, std::shared_ptr<PyQnnDlcHandle>>(m, "DlcHandle")
+      .def(
+          "__enter__",
+          [](PyQnnDlcHandle& dlc_handle) -> PyQnnDlcHandle& {
+            return dlc_handle;
+          },
+          py::return_value_policy::reference_internal)
+      .def(
+          "__exit__",
+          [](PyQnnDlcHandle& dlc_handle,
+             const py::object&,
+             const py::object&,
+             const py::object&) { dlc_handle.Close(); });
+
   py::enum_<Error>(m, "Error")
       .value("Ok", Error::Ok)
       .value("Internal", Error::Internal)
@@ -239,6 +253,9 @@ PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
               const std::vector<std::string>&,
               std::vector<std::vector<std::shared_ptr<OpWrapper>>>&>(
               &PyQnnManager::Compile))
+      .def("CreateDlc", &PyQnnManager::CreateDlc)
+      .def("CompileToDlc", &PyQnnManager::CompileToDlc)
+      .def("GetDlcBinary", &PyQnnManager::GetDlcBinary)
       .def("Destroy", &PyQnnManager::Destroy)
       .def("DestroyContext", &PyQnnManager::DestroyContext)
       .def("IsAvailable", &PyQnnManager::IsAvailable)

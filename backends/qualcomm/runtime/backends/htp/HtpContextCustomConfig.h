@@ -27,10 +27,12 @@ class HtpContextCustomConfig {
   explicit HtpContextCustomConfig(
       const QnnContext* context,
       const QnnExecuTorchHtpBackendOptions* htp_options,
+      const QnnExecuTorchTargetOptions* target_options,
       const QnnExecuTorchProfileLevel& profile_level)
       : profile_level_(profile_level),
         context_(context),
-        htp_options_(htp_options) {}
+        htp_options_(htp_options),
+        target_options_(target_options) {}
 
   std::vector<QnnContext_CustomConfig_t> CreateContextCustomConfig();
 
@@ -50,6 +52,7 @@ class HtpContextCustomConfig {
   std::vector<std::unique_ptr<QnnHtpContext_CustomConfig_t>>
       htp_context_config_;
   [[maybe_unused]] const QnnExecuTorchHtpBackendOptions* htp_options_;
+  [[maybe_unused]] const QnnExecuTorchTargetOptions* target_options_;
 };
 
 } // namespace qnn

@@ -22,12 +22,18 @@ def define_common_targets():
     runtime.cxx_test(
         name = "xnnexecutor_test",
         srcs = ["runtime/test_xnnexecutor.cpp"],
+        fbcode_deps = [
+            third_party_dep("XNNPACK").replace(":XNNPACK", ":public-headers"),
+        ],
         deps = [
             third_party_dep("XNNPACK"),
             third_party_dep("FP16"),
             "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/backends/xnnpack:xnnpack_backend",
+            "//executorch/backends/xnnpack/serialization:xnnpack_flatbuffer_header",
+            "//executorch/extension/threadpool:threadpool",
+            "//executorch/runtime/executor:pte_data_map",
         ],
     )
 
@@ -41,6 +47,16 @@ def define_common_targets():
             "//executorch/extension/data_loader:file_data_loader",
             "//executorch/extension/testing_util:temp_file",
             "//executorch/schema:program",
+        ],
+    )
+
+    runtime.cxx_test(
+        name = "test_xnn_weights_cache_manager",
+        srcs = ["runtime/test_xnn_weights_cache_manager.cpp"],
+        deps = [
+            third_party_dep("XNNPACK"),
+            "//executorch/backends/xnnpack:xnnpack_backend",
+            "//executorch/runtime/executor:pte_data_map",
         ],
     )
 
@@ -96,6 +112,9 @@ def define_common_targets():
     runtime.cxx_test(
         name = "test_workspace_manager",
         srcs = ["runtime/test_workspace_manager.cpp"],
+        preprocessor_flags = [
+            "-DXNNPACK_WORKSPACE_ALWAYS_LOCK",
+        ],
         deps = [
                 third_party_dep("XNNPACK"),
                 "//executorch/backends/xnnpack:xnnpack_backend",

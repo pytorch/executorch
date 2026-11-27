@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -19,6 +20,7 @@ from executorch.examples.models.llama.llama_transformer import construct_transfo
 from executorch.examples.models.llama.model_args import ModelArgs
 
 from executorch.extension.llm.export.config.llm_config import LlmConfig
+from executorch.extension.llm.export.config.model_identity import ModelFamily
 from torchao.utils import TorchAOBaseTensor
 
 from ..model_base import EagerModelBase
@@ -129,11 +131,11 @@ class Llama2Model(EagerModelBase):
 
         if model_args.use_scaled_rope:
             # Older models don't have use_scaled_rope configuration
-            model_name = self.llm_config.base.model_class.value
-            assert model_name not in ["llama2", "stories110m"]
+            model_family = self.llm_config.model_identity.family
+            assert model_family != ModelFamily.llama2
 
             # Llama3_2 and newer models in ExecuTorch repo should set larger scale factor
-            if model_name not in ["llama3", "llama3_1"]:
+            if model_family not in [ModelFamily.llama3, ModelFamily.llama3_1]:
                 model_args.rope_scale_factor = 32
 
         if self.verbose:
@@ -285,27 +287,47 @@ class Llama2Model(EagerModelBase):
         if self.use_kv_cache:
             return self.get_example_inputs_kvcache_sdpa()
         else:
-            return (
-                torch.tensor(
-                    [[1, 2, 3]], dtype=torch.long
-                ),  # tokens, with kv cache our input token length is always just 1 token.
+            max_seq_len = getattr(self.llm_config.export, "max_seq_length", 3)
+            # Preserve the historical three-token example input as the minimum.
+            max_seq_len = max(3, int(max_seq_len))
+            max_len = max_seq_len - 1 if self.enable_dynamic_shape else max_seq_len
+            backend = self.llm_config.backend
+            token_dtype = (
+                torch.int32
+                if (
+                    backend.ethosu.enabled
+                    or backend.tosa.enabled
+                    or backend.vgf.enabled
+                )
+                else torch.long
             )
+            example_tokens = torch.arange(max_len, dtype=token_dtype).unsqueeze(0)
+            vocab_size = int(getattr(self.model_.params, "vocab_size", 0))
+            if vocab_size > 1:
+                example_tokens = example_tokens % (vocab_size - 1) + 1
+            return (example_tokens,)
 
     # assumption is the custom op doesnt support dynamic shape right now. It might but its untested so lets first get static shape working
     def get_example_inputs_kvcache_sdpa(self):
+        backend = self.llm_config.backend
+        token_dtype = (
+            torch.int32
+            if (backend.ethosu.enabled or backend.tosa.enabled or backend.vgf.enabled)
+            else torch.long
+        )
         if self.enable_dynamic_shape:
             return (
-                torch.tensor([[2, 3, 4]], dtype=torch.long),
-                {"input_pos": torch.tensor([0], dtype=torch.long)},
+                torch.tensor([[2, 3, 4]], dtype=token_dtype),
+                {"input_pos": torch.tensor([0], dtype=token_dtype)},
             )
         else:
             return (
                 torch.tensor(
-                    [[1]], dtype=torch.long
+                    [[1]], dtype=token_dtype
                 ),  # tokens, with kv cache our input token length is always just 1 token.
                 {
                     "input_pos": torch.tensor(
-                        [0], dtype=torch.long
+                        [0], dtype=token_dtype
                     )  # start_pos, what token of output are we on.
                 },
             )

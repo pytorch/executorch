@@ -26,6 +26,37 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 find_package_torch()
 
 # ==============================================================================
+# Writes a compiled AOTI library to a new private temporary file, for every AOTI
+# backend that loads that library by path
+# ==============================================================================
+add_library(aoti_temp_library STATIC temp_library.cpp)
+target_include_directories(
+  aoti_temp_library
+  PUBLIC $<BUILD_INTERFACE:${EXECUTORCH_ROOT}> $<INSTALL_INTERFACE:include>
+         $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
+)
+target_compile_options(
+  aoti_temp_library
+  PRIVATE
+    $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:MSVC>>:/EHsc>
+    $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<NOT:$<CXX_COMPILER_ID:MSVC>>>:-fexceptions
+    -fPIC>
+)
+# Same choice as cuda_platform: a shared library that links this one must reach
+# the runtime that ships beside it, or the process gets two platform layers.
+if(EXECUTORCH_BUILD_SHARED)
+  target_link_libraries(aoti_temp_library PRIVATE executorch_shared)
+else()
+  target_link_libraries(aoti_temp_library PRIVATE executorch_core)
+endif()
+
+install(
+  TARGETS aoti_temp_library
+  EXPORT ExecuTorchTargets
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
+
+# ==============================================================================
 # AOTI common shims using ETensor (for Metal backend)
 # TODO(gasoonjia): Remove this after metal migration
 # ==============================================================================
@@ -83,11 +114,15 @@ target_compile_definitions(
   slimtensor INTERFACE C10_USING_CUSTOM_GENERATED_MACROS
 )
 
-# Add CUDA support for SlimTensor when building with CUDA
-if(EXECUTORCH_BUILD_CUDA)
+# Add GPU support for SlimTensor when building with CUDA or ROCm.
+if(EXECUTORCH_BUILD_ROCM)
+  find_package(hip CONFIG REQUIRED)
+  target_link_libraries(slimtensor INTERFACE hip::host extension_cuda)
+  target_compile_definitions(slimtensor INTERFACE EXECUTORCH_USE_HIP=1)
+elseif(EXECUTORCH_BUILD_CUDA)
   find_package(CUDAToolkit REQUIRED)
   target_include_directories(slimtensor INTERFACE ${CUDAToolkit_INCLUDE_DIRS})
-  target_link_libraries(slimtensor INTERFACE CUDA::cudart)
+  target_link_libraries(slimtensor INTERFACE CUDA::cudart extension_cuda)
 endif()
 
 install(
@@ -102,7 +137,7 @@ install(
 # TODO(gasoonjia): Replace aoti_common with this one after metal migration
 # ==============================================================================
 set(_aoti_common_shims_slim_sources common_shims_slim.cpp)
-if(EXECUTORCH_BUILD_CUDA)
+if(EXECUTORCH_BUILD_CUDA OR EXECUTORCH_BUILD_ROCM)
   list(APPEND _aoti_common_shims_slim_sources slim/cuda/guard.cpp)
 endif()
 
@@ -144,6 +179,19 @@ if(MSVC)
   )
 endif()
 
+# These two files had a Buck target and no CMake one, so the CMake build never
+# compiled them. Declared beside the library that carries their subject.
+if(BUILD_TESTING AND (EXECUTORCH_BUILD_CUDA OR EXECUTORCH_BUILD_ROCM))
+  include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
+  et_cxx_test(
+    test_cuda_guard SOURCES slim/cuda/test/test_cuda_guard.cpp EXTRA_LIBS
+    aoti_common_shims_slim extension_cuda
+  )
+  et_cxx_test(
+    test_cuda_stream_guard SOURCES slim/cuda/test/test_cuda_stream_guard.cpp
+    EXTRA_LIBS aoti_common_shims_slim extension_cuda
+  )
+endif()
 install(
   TARGETS aoti_common_shims_slim
   EXPORT ExecuTorchTargets

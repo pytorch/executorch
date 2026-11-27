@@ -8,23 +8,43 @@ from typing import Set, Type
 
 import torch
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
 
-class RewritePadPass(ArmPass):
+class RewritePadPass(ArmOpTargetedPass):
     """Rewrite constant_pad_nd operator to TOSA Pad operator with constant
     mode.
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
-    targeted_ops = {
+    target_ops = {
         exir_ops.edge.aten.constant_pad_nd.default,
         exir_ops.edge.aten.pad.default,
     }
 
     def _rewrite_constant_pad(self, input_tensor, pad, value, meta):
+        input_rank = len(input_tensor.data.shape)
+        pad = list(pad)
+        for i in range(0, len(pad), 2):
+            left, right = pad[i : i + 2]
+            if left < 0 or right < 0:
+                # Negative padding crops the input; TOSA PAD only adds elements.
+                input_tensor = super().call_operator(
+                    exir_ops.edge.aten.slice_copy.Tensor,
+                    (
+                        input_tensor,
+                        input_rank - 1 - i // 2,
+                        max(-left, 0),
+                        right if right < 0 else None,
+                    ),
+                    {},
+                    meta,
+                    True,
+                )
+                pad[i : i + 2] = [max(left, 0), max(right, 0)]
+
         output_dtype = meta["val"].dtype
         if output_dtype in (torch.int8, torch.int16):
             input_qparams = meta.data.get("input_qparams", {})
@@ -43,7 +63,6 @@ class RewritePadPass(ArmPass):
         input_pad = []
         for pair in reversed(pad_pairs):
             input_pad.extend(pair)
-        input_rank = len(input_tensor.data.shape)
         # Place spatial dimensions last and pad non-spatial dimensions with 0 padding
         shape = [0] * ((input_rank * 2 - len(pad))) + input_pad
 
@@ -51,10 +70,17 @@ class RewritePadPass(ArmPass):
             exir_ops.backend.tosa.CONST_SHAPE.default, (shape,), {}, meta, True
         )
 
+        pad_value = super().call_operator(
+            exir_ops.backend.tosa.CONST.default,
+            ([value], [1], output_dtype),
+            {},
+            meta,
+            True,
+        )
         return super().call_operator(
             exir_ops.backend.tosa.PAD.default,
-            (input_tensor, pad_shape),
-            {"value": value},
+            (input_tensor, pad_shape, pad_value),
+            {},
             meta,
             True,
         )
@@ -141,11 +167,28 @@ class RewritePadPass(ArmPass):
                 )
             # F.pad pad tuples are ordered from the innermost dimension outward.
             dim = rank - 1 - pair_idx
-            output = self._pad_along_dim(output, dim, left, right, mode, meta)
+            # Reflect and replicate use the original borders; circular wraps
+            # the cropped input.
+            if mode != "circular":
+                output = self._pad_along_dim(
+                    output, dim, max(left, 0), max(right, 0), mode, meta
+                )
+            if left < 0 or right < 0:
+                output = super().call_operator(
+                    exir_ops.edge.aten.slice_copy.Tensor,
+                    (output, dim, max(-left, 0), right if right < 0 else None),
+                    {},
+                    meta,
+                    True,
+                )
+            if mode == "circular":
+                output = self._pad_along_dim(
+                    output, dim, max(left, 0), max(right, 0), mode, meta
+                )
         return output
 
     def call_operator(self, op, args, kwargs, meta, updated=False):
-        if op not in self.targeted_ops:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 
         if op == exir_ops.edge.aten.constant_pad_nd.default:

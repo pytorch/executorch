@@ -16,6 +16,8 @@
 #include <executorch/backends/qualcomm/runtime/backends/lpai/LpaiBackend.h>
 #include <executorch/backends/qualcomm/runtime/backends/lpai/LpaiDevice.h>
 
+#include <pal/Path.h>
+
 #include <string>
 
 namespace executorch {
@@ -48,6 +50,8 @@ Error QnnBackendUnifiedRegistry::GetOrCreateBackendBundle(
       get_option(options->log_level(), QNN_RUNTIME_LOG_LEVEL);
   QnnExecuTorchBackendType backend_type =
       options->backend_options()->backend_type();
+  const auto bundle_key =
+      std::make_pair(backend_type, options->soc_info()->soc_model());
 
   if (current_lib_path.empty()) {
     switch (backend_type) {
@@ -74,7 +78,7 @@ Error QnnBackendUnifiedRegistry::GetOrCreateBackendBundle(
   }
 
   // Check if resources already exist
-  auto it = qnn_backend_bundles_map_.find(backend_type);
+  auto it = qnn_backend_bundles_map_.find(bundle_key);
   if (it != qnn_backend_bundles_map_.end()) {
     // Create new shared_ptr that shares ownership of the managed object.
     if (auto existing_bundle = it->second.lock()) {
@@ -152,13 +156,24 @@ Error QnnBackendUnifiedRegistry::GetOrCreateBackendBundle(
   if (backend->VerifyQNNSDKVersion() != Error::Ok) {
     return Error::Internal;
   }
+  // 5. Create QnnSystemImplementation and load qnn library
+  std::unique_ptr<QnnSystemImplementation> system_implementation =
+      std::make_unique<QnnSystemImplementation>(
+          pal::path::GetLibraryName("QnnSystem"));
+  ret = system_implementation->Load();
+  ET_CHECK_OR_RETURN_ERROR(
+      ret == Error::Ok, Internal, "Fail to load Qnn system library");
 
   bundle->implementation = std::move(implementation);
+  bundle->system_implementation = std::move(system_implementation);
   bundle->qnn_logger_ptr = std::move(logger);
   bundle->qnn_backend_ptr = std::move(backend);
   bundle->qnn_device_ptr = std::move(device);
-  qnn_backend_bundles_map_.emplace(
-      backend_type, bundle); // Store weak_ptr to the bundle
+  // insert_or_assign rather than emplace: an expired bundle leaves a dead
+  // weak_ptr under this key, and emplace will not replace it, so every later
+  // request would miss the cache and build another backend for the same type.
+  // CleanupExpired() cannot be used from here -- it takes mutex_, already held.
+  qnn_backend_bundles_map_.insert_or_assign(bundle_key, bundle);
 
   return Error::Ok;
 }

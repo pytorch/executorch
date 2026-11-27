@@ -18,14 +18,16 @@ Supported pattern:
 - the selected dimension length must satisfy D >= size
 
 Notes:
-- Dtype/profile constraints apply (see dtype checks below).
+- Dtype/profile/extension constraints use is_indexing_dtype_supported.
 - This check assumes static shapes and constant dim/size/step.
 
 """
 
-import torch
 import torch.fx as fx
 
+from executorch.backends.arm.operator_support.dtype_support import (
+    is_indexing_dtype_supported,
+)
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
     register_tosa_support_check,
     SupportedTOSAOperatorCheck,
@@ -44,7 +46,6 @@ class UnfoldCopySupported(SupportedTOSAOperatorCheck):
         self, node: fx.Node, tosa_spec: TosaSpecification
     ) -> bool:  # type: ignore[override, misc]
         """Return True if the node is supported by TOSA."""
-
         if len(node.args) != 4:
             self.reporter.report_reject(
                 node,
@@ -74,31 +75,7 @@ class UnfoldCopySupported(SupportedTOSAOperatorCheck):
             )
             return False
 
-        # Values dtype validation
-        values_dtype = x_val.dtype
-        # ints (and bool via casts) require INT profile
-        if values_dtype in (torch.bool, torch.int8, torch.int16, torch.int32):
-            if not tosa_spec.support_integer():
-                self.reporter.report_reject(
-                    node,
-                    f"{node.target}: dtype {values_dtype} requires INT profile.",
-                )
-                return False
-        # fp16/fp32: either FP profile, or INT profile (via quantization)
-        elif values_dtype in (torch.float16, torch.float32):
-            if not (tosa_spec.support_float() or tosa_spec.support_integer()):
-                self.reporter.report_reject(
-                    node,
-                    f"{node.target}: dtype {values_dtype} requires FP profile or "
-                    "INT profile (with quantization).",
-                )
-                return False
-        else:
-            self.reporter.report_reject(
-                node,
-                f"{node.target}: unsupported values dtype {values_dtype}; "
-                "expected bool/int8/int16/int32/float16/float32.",
-            )
+        if not is_indexing_dtype_supported(node, x_val.dtype, tosa_spec, self.reporter):
             return False
 
         # Basic validity on unfolded dimension

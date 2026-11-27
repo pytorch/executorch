@@ -8,6 +8,9 @@
 
 #pragma once
 
+#include <optional>
+#include <string_view>
+
 #include <executorch/runtime/core/error.h> // @manual
 #include <executorch/runtime/core/result.h> // @manual
 #include <executorch/runtime/core/tensor_shape_dynamism.h> // @manual
@@ -32,7 +35,6 @@
 #include <c10/util/quint4x2.h> // @manual
 #include <c10/util/quint8.h> // @manual
 #include <c10/util/safe_numerics.h> // @manual
-#include <c10/util/string_view.h> // @manual
 #include <torch/torch.h>
 #else // use executor
 #include <executorch/runtime/core/array_ref.h> // @manual
@@ -183,8 +185,7 @@ using quint2x4 = torch::executor::quint2x4;
 using IntArrayRef = torch::executor::IntArrayRef;
 
 template <typename T>
-using OptionalArrayRef =
-    torch::executor::optional<torch::executor::ArrayRef<T>>;
+using OptionalArrayRef = std::optional<torch::executor::ArrayRef<T>>;
 using OptionalIntArrayRef = OptionalArrayRef<int64_t>;
 
 using torch::executor::compute_numel;

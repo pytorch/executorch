@@ -35,7 +35,7 @@ class AvgPool2dVisitor(NodeVisitor):
     ) -> None:
 
         validate_num_inputs(self.target, inputs, [7])
-        validate_same_dtype(self.target, [inputs[0], output], ts)
+        validate_same_dtype(self.target, [inputs[0], output])
 
         input, input_zp, output_zp, kernel, stride, pad, acc_arg = inputs
 
@@ -43,8 +43,12 @@ class AvgPool2dVisitor(NodeVisitor):
 
         if self.tosa_spec.support_extension("int16"):
             supported.append(ts.DType.INT16)
+        if self.tosa_spec.support_extension("fp8e4m3"):
+            supported.append(ts.DType.FP8E4M3)
+        if self.tosa_spec.support_extension("fp8e5m2"):
+            supported.append(ts.DType.FP8E5M2)
 
-        validate_valid_dtype(self.target, [input, output], supported, self.tosa_spec)
+        validate_valid_dtype(self.target, [input, output], supported)
 
         # Zero-point constants are provided by the decompose pass
         input_zp_name = input_zp.name

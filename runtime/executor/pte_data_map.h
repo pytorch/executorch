@@ -79,7 +79,7 @@ class PteDataMap final : public NamedDataMap {
    */
   ET_NODISCARD
   Result<const TensorLayout> get_tensor_layout(
-      ET_UNUSED executorch::aten::string_view key) const override {
+      ET_UNUSED std::string_view key) const override {
     return Error::NotImplemented;
   }
 
@@ -91,14 +91,13 @@ class PteDataMap final : public NamedDataMap {
    * @return error if the key is not present or data cannot be loaded.
    */
   ET_NODISCARD
-  Result<FreeableBuffer> get_data(
-      executorch::aten::string_view key) const override;
+  Result<FreeableBuffer> get_data(std::string_view key) const override;
 
   /**
    * The PteDataMap currently does not implement load_into.
    */
   ET_NODISCARD Error load_data_into(
-      ET_UNUSED executorch::aten::string_view key,
+      ET_UNUSED std::string_view key,
       ET_UNUSED void* buffer,
       ET_UNUSED size_t size) const override {
     return Error::NotImplemented;

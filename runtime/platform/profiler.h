@@ -227,8 +227,12 @@ using ::executorch::runtime::track_allocator;
 #define EXECUTORCH_END_PROF(token_id) \
   ::executorch::runtime::end_profiling(token_id);
 
-#define EXECUTORCH_SCOPE_PROF(name) \
-  ::executorch::runtime::ExecutorchProfiler profiler(name);
+#define EXECUTORCH_SCOPE_PROF_CONCAT_IMPL(a, b) a##b
+#define EXECUTORCH_SCOPE_PROF_CONCAT(a, b) \
+  EXECUTORCH_SCOPE_PROF_CONCAT_IMPL(a, b)
+#define EXECUTORCH_SCOPE_PROF(name)                                       \
+  ::executorch::runtime::ExecutorchProfiler EXECUTORCH_SCOPE_PROF_CONCAT( \
+      et_profiler_, __LINE__)(name);
 
 #define EXECUTORCH_PROFILE_INSTRUCTION_SCOPE(chain_idx, instruction_idx) \
   ::executorch::runtime::ExecutorchProfilerInstructionScope              \

@@ -13,6 +13,7 @@
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/runner_util/inputs.h>
 #include <executorch/extension/tensor/tensor.h>
+#include <executorch/runtime/backend/backend_options_map.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/portable_type/tensor_impl.h>
 #include <executorch/runtime/platform/log.h>
@@ -21,6 +22,7 @@
 #include <cassert>
 #include <chrono>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -58,8 +60,6 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
 
   static facebook::jni::local_ref<TensorHybrid::javaobject>
   newJTensorFromTensor(const executorch::aten::Tensor& tensor) {
-    // Java wrapper currently only supports contiguous tensors.
-
     const auto scalarType = tensor.scalar_type();
     if (scalar_type_to_java_dtype.count(scalarType) == 0) {
       std::stringstream ss;
@@ -81,6 +81,22 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
     jTensorShape->setRegion(
         0, tensor_shape_vec.size(), tensor_shape_vec.data());
 
+    std::vector<jint> dim_order_vec;
+    dim_order_vec.reserve(tensor_shape_vec.size());
+    const auto tensor_dim_order = tensor.dim_order();
+    if (tensor_dim_order.size() == tensor_shape_vec.size()) {
+      for (const auto& d : tensor_dim_order) {
+        dim_order_vec.push_back(static_cast<jint>(d));
+      }
+    } else {
+      for (size_t i = 0; i < tensor_shape_vec.size(); ++i) {
+        dim_order_vec.push_back(static_cast<jint>(i));
+      }
+    }
+    facebook::jni::local_ref<facebook::jni::JArrayInt> jDimOrder =
+        facebook::jni::make_int_array(dim_order_vec.size());
+    jDimOrder->setRegion(0, dim_order_vec.size(), dim_order_vec.data());
+
     static auto cls = TensorHybrid::javaClassStatic();
     // Note: this is safe as long as the data stored in tensor is valid; the
     // data won't go out of scope as long as the Method for the inference is
@@ -95,10 +111,16 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
         cls->getStaticMethod<facebook::jni::local_ref<TensorHybrid::javaobject>(
             facebook::jni::alias_ref<facebook::jni::JByteBuffer>,
             facebook::jni::alias_ref<jlongArray>,
+            facebook::jni::alias_ref<facebook::jni::JArrayInt>,
             jint,
             facebook::jni::alias_ref<jhybriddata>)>("nativeNewTensor");
     return jMethodNewTensor(
-        cls, jTensorBuffer, jTensorShape, jdtype, makeCxxInstance(tensor));
+        cls,
+        jTensorBuffer,
+        jTensorShape,
+        jDimOrder,
+        jdtype,
+        makeCxxInstance(tensor));
   }
 
   static TensorPtr newTensorFromJTensor(
@@ -109,6 +131,10 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
 
     static const auto shapeField = cls->getField<jlongArray>("shape");
     auto jshape = jtensor->getFieldValue(shapeField);
+
+    static const auto dimOrderField =
+        cls->getField<facebook::jni::JArrayInt>("dimOrder");
+    auto jdim_order = jtensor->getFieldValue(dimOrderField);
 
     static auto dataBufferMethod = cls->getMethod<
         facebook::jni::local_ref<facebook::jni::JBuffer::javaobject>()>(
@@ -129,6 +155,29 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
     for (int i = rank - 1; i >= 0; --i) {
       numel *= shapeArr[i];
     }
+
+    std::vector<executorch::aten::DimOrderType> dim_order_vec;
+    dim_order_vec.reserve(rank);
+    if (!jdim_order || jdim_order->size() != rank) {
+      jni_helper::throwExecutorchException(
+          static_cast<uint32_t>(Error::InvalidArgument),
+          "Tensor dim_order size must match shape size");
+      return nullptr;
+    }
+    const auto dimOrderArr = jdim_order->getRegion(0, rank);
+    std::vector<char> seen_dim(rank, 0);
+    for (int i = 0; i < rank; i++) {
+      const jint d = dimOrderArr[i];
+      if (d < 0 || d >= static_cast<jint>(rank) || seen_dim[d] != 0) {
+        jni_helper::throwExecutorchException(
+            static_cast<uint32_t>(Error::InvalidArgument),
+            "Tensor dim_order must be a permutation of shape dimensions");
+        return nullptr;
+      }
+      seen_dim[d] = 1;
+      dim_order_vec.push_back(static_cast<executorch::aten::DimOrderType>(d));
+    }
+
     JNIEnv* jni = facebook::jni::Environment::current();
     if (java_dtype_to_scalar_type.count(jdtype) == 0) {
       std::stringstream ss;
@@ -161,8 +210,12 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
           static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
       return nullptr;
     }
-    return from_blob(
-        jni->GetDirectBufferAddress(jbuffer.get()), shape_vec, scalar_type);
+    return for_blob(
+               jni->GetDirectBufferAddress(jbuffer.get()),
+               shape_vec,
+               scalar_type)
+        .dim_order(std::move(dim_order_vec))
+        .make_tensor_ptr();
   }
 
  private:
@@ -265,6 +318,24 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
     return makeCxxInstance(modelPath, loadMode, numThreads);
   }
 
+  static facebook::jni::local_ref<jhybriddata> initHybridWithOptions(
+      facebook::jni::alias_ref<jclass>,
+      facebook::jni::alias_ref<jstring> modelPath,
+      jint loadMode,
+      jint numThreads,
+      facebook::jni::alias_ref<facebook::jni::JArrayClass<jstring>>
+          backendNames,
+      facebook::jni::alias_ref<facebook::jni::JArrayClass<jstring>> optionKeys,
+      facebook::jni::alias_ref<facebook::jni::JArrayInt> optionValues) {
+    return makeCxxInstance(
+        modelPath,
+        loadMode,
+        numThreads,
+        backendNames,
+        optionKeys,
+        optionValues);
+  }
+
   ExecuTorchJni(
       facebook::jni::alias_ref<jstring> modelPath,
       jint loadMode,
@@ -318,6 +389,70 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
     }
 #endif
 #endif
+  }
+
+  // Loads with the backend options after base construction, so the real load
+  // error surfaces here instead of being masked by the base ctor's "Failed to
+  // create Module".
+  ExecuTorchJni(
+      facebook::jni::alias_ref<jstring> modelPath,
+      jint loadMode,
+      jint numThreads,
+      facebook::jni::alias_ref<facebook::jni::JArrayClass<jstring>>
+          backendNames,
+      facebook::jni::alias_ref<facebook::jni::JArrayClass<jstring>> optionKeys,
+      facebook::jni::alias_ref<facebook::jni::JArrayInt> optionValues)
+      : ExecuTorchJni(modelPath, loadMode, numThreads) {
+    // Group entries by backend; the grouped vectors back the map's Spans, so
+    // they must outlive the load() call (which deep-copies).
+    std::map<std::string, std::vector<executorch::runtime::BackendOption>>
+        grouped;
+    const size_t count = backendNames->size();
+    if (optionKeys->size() != count || optionValues->size() != count) {
+      executorch::jni_helper::throwExecutorchException(
+          static_cast<uint32_t>(Error::InvalidArgument),
+          "backend option arrays must have equal length");
+      return;
+    }
+    auto values = optionValues->pin();
+    for (size_t i = 0; i < count; ++i) {
+      executorch::runtime::BackendOption option{};
+      const std::string key = optionKeys->getElement(i)->toStdString();
+      if (key.size() >= executorch::runtime::kMaxOptionKeyLength) {
+        executorch::jni_helper::throwExecutorchException(
+            static_cast<uint32_t>(Error::InvalidArgument),
+            "backend option key too long: " + key);
+        return;
+      }
+      std::strncpy(
+          option.key,
+          key.c_str(),
+          executorch::runtime::kMaxOptionKeyLength - 1);
+      option.key[executorch::runtime::kMaxOptionKeyLength - 1] = '\0';
+      option.value = static_cast<int>(values[i]);
+      grouped[backendNames->getElement(i)->toStdString()].push_back(option);
+    }
+
+    executorch::runtime::LoadBackendOptionsMap options_map;
+    for (auto& entry : grouped) {
+      const auto set_error = options_map.set_options(
+          entry.first.c_str(),
+          executorch::runtime::Span<executorch::runtime::BackendOption>(
+              entry.second.data(), entry.second.size()));
+      if (set_error != Error::Ok) {
+        executorch::jni_helper::throwExecutorchException(
+            static_cast<uint32_t>(set_error),
+            "Failed to set backend options for " + entry.first);
+        return;
+      }
+    }
+
+    const auto load_error = module_->load(options_map);
+    if (load_error != Error::Ok) {
+      executorch::jni_helper::throwExecutorchException(
+          static_cast<uint32_t>(load_error),
+          "Failed to load Module with backend options");
+    }
   }
 
   facebook::jni::local_ref<facebook::jni::JArrayClass<JEValue>> execute(
@@ -503,7 +638,7 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
          << "]";
 
       jni_helper::throwExecutorchException(
-          static_cast<uint32_t>(Error::InvalidArgument), ss.str());
+          static_cast<uint32_t>(names_result.error()), ss.str());
       return {};
     }
     const auto& methods = names_result.get();
@@ -556,6 +691,8 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
   static void registerNatives() {
     registerHybrid({
         makeNativeMethod("initHybrid", ExecuTorchJni::initHybrid),
+        makeNativeMethod(
+            "initHybridWithOptions", ExecuTorchJni::initHybridWithOptions),
         makeNativeMethod("executeNative", ExecuTorchJni::execute),
         makeNativeMethod("loadMethodNative", ExecuTorchJni::load_method),
         makeNativeMethod("readLogBufferNative", ExecuTorchJni::readLogBuffer),

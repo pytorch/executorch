@@ -1,0 +1,36 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load(":targets.bzl", "define_common_targets")
+
+oncall("executorch")
+
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain cell-only targets.
+
+non_fbcode_target(_kind = define_common_targets)
+
+# Platforms a ggml GPU backend set builds on: its accelerator plus the x86_64
+# Linux CPU backend it also links. See CUDA_COMPAT and HIP_COMPAT in
+# targets.bzl.
+non_fbcode_target(
+    _kind = config_setting,
+    name = "ggml_cuda_platform",
+    constraint_values = [
+        "ovr_config//cuda/constraints:cuda[has_cuda]",
+        "ovr_config//cpu/constraints:x86_64",
+        "ovr_config//os/constraints:os[linux]",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+non_fbcode_target(
+    _kind = config_setting,
+    name = "ggml_hip_platform",
+    constraint_values = [
+        "ovr_config//gpu:amd",
+        "ovr_config//cpu/constraints:x86_64",
+        "ovr_config//os/constraints:os[linux]",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+fbcode_target(_kind = define_common_targets)

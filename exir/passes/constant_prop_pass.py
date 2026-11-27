@@ -6,15 +6,23 @@
 
 # pyre-unsafe
 
+import copy
+import hashlib
 import logging
-from collections import OrderedDict
-from typing import cast, Mapping, Optional
+import operator
+from collections import Counter, OrderedDict
+from typing import Any, cast, Mapping, Optional
 
 import torch
+from executorch.exir import memory
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.operator.util import _QUANT_PRIMITIVES
+from executorch.exir.passes.insert_write_back_for_buffers_pass import (
+    _schema_paired_args,
+)
 from executorch.exir.passes.replace_aten_with_edge_pass import aten_to_edge
+from executorch.exir.tensor import placeholder_constant, TensorSpec
 from torch._export.utils import (
     get_buffer,
     get_lifted_tensor_constant,
@@ -25,6 +33,7 @@ from torch._export.utils import (
 from torch._guards import detect_fake_mode
 from torch.export import ExportedProgram
 from torch.export.exported_program import InputKind, InputSpec, TensorArgument
+from torch.multiprocessing.reductions import StorageWeakRef
 from torch.utils import _pytree as pytree
 
 # Avoid propagating constants for `exir.ops.edge.aten.full.default`.
@@ -46,6 +55,7 @@ _PRIMITIVE_TYPES = (
     torch.device,
     torch.dtype,
     torch.layout,
+    torch.memory_format,
 )
 
 
@@ -108,7 +118,12 @@ def get_constant_placeholder_dict(
     Returns a dictionary of placeholder node -> constant tensor.
     """
     const_node_to_tensor: OrderedDict[torch.fx.Node, torch.Tensor] = OrderedDict()
+    # Before run_decompositions, buffers_to_mutate does not list a buffer that
+    # is written in place, so it looks like a constant here.
+    written = _nodes_written_in_place(exported_program.graph_module)
     for node in exported_program.graph.find_nodes(op="placeholder"):
+        if node in written:
+            continue
         if is_param(exported_program, node):
             const_node_to_tensor[node] = cast(
                 torch.Tensor, get_param(exported_program, node)
@@ -122,6 +137,107 @@ def get_constant_placeholder_dict(
                 torch.Tensor, get_lifted_tensor_constant(exported_program, node)
             )
     return const_node_to_tensor
+
+
+# Higher order ops whose submodule takes, in order, the operands after it.
+_WRAPPER_HOPS = (
+    torch.ops.higher_order.wrap_with_set_grad_enabled,
+    torch.ops.higher_order.wrap_with_autocast,
+)
+
+
+def _storages(node: torch.fx.Node) -> set[StorageWeakRef]:
+    # Only strided tensors have a storage to share. Sparse ones raise here.
+    return {
+        StorageWeakRef(val.untyped_storage())
+        for val in pytree.tree_leaves(node.meta.get("val"))
+        if isinstance(val, torch.Tensor) and val.layout == torch.strided
+    }
+
+
+def _hop_written_operands(
+    graph_module: torch.fx.GraphModule, node: torch.fx.Node
+) -> list[torch.fx.Node]:
+    """
+    Returns the operands of a higher order op, such as a no_grad or autocast
+    region, that an in-place op inside its submodules writes.
+    """
+    written = []
+    for i, arg in enumerate(node.args):
+        if not isinstance(arg, torch.fx.Node) or arg.op != "get_attr":
+            continue
+        # An unlifted graph reads a parameter through a qualified name.
+        submodule = operator.attrgetter(arg.target)(graph_module)
+        if not isinstance(submodule, torch.fx.GraphModule):
+            continue
+        submodule_written = _nodes_written_in_place(submodule)
+        placeholders = submodule.graph.find_nodes(op="placeholder")
+        if node.target in _WRAPPER_HOPS:
+            written += [
+                operand
+                for placeholder, operand in zip(placeholders, node.args[i + 1 :])
+                if placeholder in submodule_written
+                and isinstance(operand, torch.fx.Node)
+            ]
+        elif any(p in submodule_written for p in placeholders):
+            # The operand layout is op specific, so any operand may be written.
+            written += [
+                leaf
+                for leaf in pytree.tree_leaves(node.args)
+                if isinstance(leaf, torch.fx.Node)
+            ]
+    return written
+
+
+def _nodes_written_in_place(
+    graph_module: torch.fx.GraphModule,
+) -> set[torch.fx.Node]:
+    """
+    Returns the nodes whose value an in-place op writes, directly, through a
+    view or inside a higher order op. Such a value has to stay a runtime
+    tensor, not a constant.
+    """
+    written = set()
+    for node in graph_module.graph.nodes:
+        if node.op != "call_function":
+            continue
+        schema = getattr(node.target, "_schema", None)
+        if schema is None:
+            written.update(_hop_written_operands(graph_module, node))
+            continue
+        for arg, schema_arg in _schema_paired_args(node, schema):
+            alias_info = schema_arg.alias_info
+            if alias_info is not None and alias_info.is_write:
+                written.update(
+                    leaf
+                    for leaf in pytree.tree_leaves(arg)
+                    if isinstance(leaf, torch.fx.Node)
+                )
+    if not written:
+        return written
+    # Every view of a written tensor shares its storage, including views that
+    # composite ops like atleast_2d or meshgrid return before decomposition.
+    written_storages = set().union(*(_storages(node) for node in written))
+    written.update(
+        node
+        for node in graph_module.graph.nodes
+        if not _storages(node).isdisjoint(written_storages)
+    )
+    # A deserialized program does not share storage between a view and its
+    # base, so a write through a view also marks the tensor the view reads.
+    pending = list(written)
+    while pending:
+        node = pending.pop()
+        if node.op != "call_function" or not node.args:
+            continue
+        base = node.args[0]
+        is_view = node.target is operator.getitem or getattr(
+            node.target, "is_view", False
+        )
+        if is_view and isinstance(base, torch.fx.Node) and base not in written:
+            written.add(base)
+            pending.append(base)
+    return written
 
 
 def get_propagated_const_tensor_dict(
@@ -140,8 +256,19 @@ def get_propagated_const_tensor_dict(
         # Default set of targets to skip.
         all_skip_targets = _DEFAULT_SKIP_TARGETS
 
+    written_in_place = _nodes_written_in_place(exported_program.graph_module)
+
     for node in exported_program.graph.nodes:
-        if node.op != "call_function" or node.target in all_skip_targets:
+        if (
+            node.op != "call_function"
+            or node in written_in_place
+            or node.target is memory.alloc
+            or node.target in all_skip_targets
+            # Ops with side effects (RNG draws, mutation) have to run at
+            # runtime. `aten.rand` has no tensor inputs, so without this check
+            # it would be folded into a single frozen draw.
+            or node.is_impure()
+        ):
             continue
 
         if not is_const(
@@ -166,13 +293,31 @@ def get_propagated_const_tensor_dict(
             prop_constant_tensor = node.target(*args_data, **kwargs_data)
 
             # ExecuTorch doesn't support zero strides, so we need to ensure the tensor is contiguous
-            # if it has any zero strides from broadcasting/expansion operations
+            # if it has any zero strides from broadcasting/expansion operations.
+            # contiguous() is not enough: it keeps a zero stride on a size-1 dim.
             if (
                 isinstance(prop_constant_tensor, torch.Tensor)
                 and 0 in prop_constant_tensor.stride()
             ):
-                prop_constant_tensor = prop_constant_tensor.contiguous()
+                prop_constant_tensor = prop_constant_tensor.clone(
+                    memory_format=torch.contiguous_format
+                )
+
+            # A folded constant must be a plain tensor that does not require
+            # grad. no_grad is not enough when the op returns a view of a
+            # parameter or the parameter itself.
+            if isinstance(prop_constant_tensor, torch.Tensor):
+                prop_constant_tensor = prop_constant_tensor.detach()
         const_node_to_tensor[node] = prop_constant_tensor
+
+    # Only tensors can be lifted into placeholders. A non-tensor value read by
+    # a node outside the fold stays a runtime op, together with the non-tensor
+    # values it is computed from.
+    for node in reversed(list(const_node_to_tensor)):
+        if not isinstance(const_node_to_tensor[node], torch.Tensor) and any(
+            user not in const_node_to_tensor for user in node.users
+        ):
+            del const_node_to_tensor[node]
 
     return const_node_to_tensor
 
@@ -203,11 +348,17 @@ def replace_with_constant_node(
     # If prop_constant_tensor_fqn already exists in the state dict, we need
     # to create a new name. Find the largest suffix of "_prop_tensor_constant",
     # and increment it by 1 to form the new name.
-    if prop_constant_tensor_fqn in exported_program.constants:
+    # A program re-entering this pass can already carry a
+    # `_prop_tensor_constant*` in state_dict from an earlier run. Emission
+    # resolves placeholders against state_dict before constants, so reusing
+    # such a name lets the stale entry shadow the tensor written here. Both
+    # the check and the suffix scan therefore span state_dict too.
+    taken = exported_program.constants.keys() | exported_program.state_dict.keys()
+    if prop_constant_tensor_fqn in taken:
         suffix = 1 + max(
             (
                 int(name[len(prefix) :])
-                for name in exported_program.constants.keys()
+                for name in taken
                 if name.startswith(prefix) and name[len(prefix) :].isdigit()
             ),
             default=-1,
@@ -319,11 +470,12 @@ def _update_output_node_and_specs(
     output_specs = exported_program.graph_signature.output_specs
     assert len(output_nodes) == len(output_specs)
 
-    clone_op = (
-        exir_ops.edge.aten.clone.default
-        if _skip_dim_order
-        else exir_ops.edge.dim_order_ops._clone_dim_order.default
-    )
+    if exported_program.dialect != "EDGE":
+        clone_op = torch.ops.aten.clone.default
+    elif _skip_dim_order:
+        clone_op = exir_ops.edge.aten.clone.default
+    else:
+        clone_op = exir_ops.edge.dim_order_ops._clone_dim_order.default
 
     for i in range(len(output_specs)):
         out_node = output_nodes[i]
@@ -350,6 +502,8 @@ def constant_prop_pass(
     """
     This pass is for constant propagation for Exported Program with lifted parameters,
     as the parameters will not be shown up as `get_attr` but as `placeholder` to the graph.
+    A graph output that is a constant gets a clone in front of it: an Edge clone when
+    exported_program.dialect is "EDGE", and torch.ops.aten.clone.default otherwise.
 
     Args:
         exported_program: The ExportedProgram to perform constant propagation on.
@@ -395,8 +549,202 @@ def constant_prop_pass(
 
     _update_output_node_and_specs(exported_program, _skip_dim_order=_skip_dim_order)
 
-    # Cleanup the graph.
-    exported_program.graph.eliminate_dead_code()
-    exported_program.graph_module.recompile()
+    # Cleanup the graph. A higher order op that writes its operands has no
+    # users, yet it has to stay. Graph.eliminate_dead_code also cleans
+    # submodules without this rule, which would drop a nested region, so only
+    # the top-level graph is cleaned here.
+    graph_module = exported_program.graph_module
+    for node in reversed(graph_module.graph.nodes):
+        if (
+            node.op not in ("placeholder", "output")
+            and not node.users
+            and not node.is_impure()
+            and not _hop_written_operands(graph_module, node)
+        ):
+            graph_module.graph.erase_node(node)
+    graph_module.recompile()
 
     return exported_program
+
+
+# Ops that only reorder the elements of their input. Applied to a weight, they
+# are what a Linear layer or an explicit `weight.t()` leaves in the graph.
+_TRANSPOSE_TARGETS = {
+    exir_ops.edge.aten.permute_copy.default,
+    exir_ops.edge.aten.t_copy.default,
+    exir_ops.edge.aten.transpose_copy.int,
+}
+
+
+def _storage_hash(storage: torch.UntypedStorage) -> str:
+    data = torch.empty(0, dtype=torch.uint8).set_(storage)
+    return hashlib.sha256(data.numpy()).hexdigest()
+
+
+def _placeholder_hash(tensor: torch.Tensor) -> str:
+    """Hashes the bytes the emitter stores for this constant placeholder."""
+    return _storage_hash(placeholder_constant(tensor).untyped_storage())
+
+
+def _fold_into_copy(
+    program: ExportedProgram, folds: list[tuple[torch.fx.Node, torch.Tensor]]
+) -> ExportedProgram:
+    """
+    Returns a copy of the program in which each (transpose, result) pair is
+    replaced by a constant placeholder that holds the result. The copy has its
+    own graph, signature, state_dict and constants, so the program passed in
+    and every program that shares its dictionaries stay unchanged.
+    """
+    # A deepcopy skips the verifier, which needs meta["val"] on every node.
+    # In-place edits such as strip_taps_ leave it out until to_executorch
+    # re-traces the graph. The memo shares the weights and the example inputs
+    # instead of copying them. A non-leaf example input cannot be deep-copied.
+    shared = [*program.state_dict.values(), *program.constants.values()]
+    shared.append(program.example_inputs)
+    program = copy.deepcopy(program, {id(value): value for value in shared})
+    nodes = {node.name: node for node in program.graph.nodes}
+    first_user_input = get_first_user_input(program)
+    fake_mode = get_fake_mode(program)
+    new_specs: dict[str, InputSpec] = {}
+    for transpose, result in folds:
+        transpose = nodes[transpose.name]
+        source = transpose.args[0]
+        placeholder, fqn = replace_with_constant_node(
+            transpose, result, first_user_input, fake_mode, program
+        )
+        erase_constant_node(program, source)
+        new_specs[placeholder.name] = InputSpec(
+            kind=InputKind.CONSTANT_TENSOR,
+            arg=TensorArgument(name=placeholder.name),
+            target=fqn,
+            persistent=True,
+        )
+    new_specs.update(
+        {spec.arg.name: spec for spec in program.graph_signature.input_specs}
+    )
+    program.graph_signature.input_specs = [
+        new_specs[node.name] for node in program.graph.find_nodes(op="placeholder")
+    ]
+    program.graph_module.recompile()
+    return program
+
+
+def _split_constants(
+    programs: Mapping[str, ExportedProgram],
+) -> tuple[list[torch.Tensor], list[tuple[str, torch.fx.Node, torch.Tensor]]]:
+    """
+    Returns the constants that are not fold candidates, and the (program name,
+    transpose, weight) triples whose transpose may be folded.
+    """
+    kept: list[torch.Tensor] = []
+    candidates: list[tuple[str, torch.fx.Node, torch.Tensor]] = []
+    for name, program in programs.items():
+        trainable = program.graph_signature.backward_signature is not None
+        written = _nodes_written_in_place(program.graph_module)
+        for node, tensor in get_constant_placeholder_dict(program).items():
+            users = list(node.users)
+            if (
+                not trainable
+                # The emitter rejects a constant that is not in host memory.
+                and tensor.device.type == "cpu"
+                and (
+                    is_param(program, node) or is_lifted_tensor_constant(program, node)
+                )
+                and len(users) == 1
+                and users[0].target in _TRANSPOSE_TARGETS
+                and users[0] not in written
+                # Users without a schema include the graph output, delegate
+                # calls, where PropagateDevicePass can fail on a constant
+                # input, and auto_functionalized, which to_executorch turns
+                # into an in-place write that _nodes_written_in_place misses.
+                and all(
+                    getattr(user.target, "_schema", None) is not None
+                    for user in users[0].users
+                )
+            ):
+                candidates.append((name, users[0], tensor))
+            else:
+                kept.append(tensor)
+    return kept, candidates
+
+
+def fold_constant_transposes(
+    programs: Mapping[str, ExportedProgram],
+    constant_methods: Optional[Mapping[str, Any]] = None,
+) -> dict[str, ExportedProgram]:
+    """
+    Returns the programs with each transpose of a parameter or a lifted tensor
+    constant replaced by a constant that holds the transposed values, so the
+    transpose does not run at every inference. A program that changes is
+    returned as a copy, and the programs passed in are not modified.
+
+    A transpose is folded only when the weight has no other user, no constant
+    placeholder that stays in any of the programs and no tensor that a constant
+    method returns holds the same bytes, and every weight with those bytes
+    folds to the same result. The emitter stores equal bytes once, so this
+    keeps the program from growing in the usual case; get_attr tensors,
+    mutated buffers and weights written in place are not compared. Buffers,
+    training programs, graph outputs, delegate inputs and transposes that an op
+    writes in place are left unchanged.
+    """
+    kept, candidates = _split_constants(programs)
+    method_tensors = [
+        t
+        for t in pytree.tree_leaves(dict(constant_methods or {}))
+        if isinstance(t, torch.Tensor)
+    ]
+
+    # Only tensors of the same size can have the same bytes, so a candidate
+    # whose size is unique is folded without hashing anything.
+    candidate_sizes = Counter(tensor.nbytes for _, _, tensor in candidates)
+    kept_sizes = {t.nbytes for t in kept + method_tensors}
+    kept_hashes = {
+        _placeholder_hash(t)
+        for t in kept
+        if t.device.type == "cpu" and t.nbytes in candidate_sizes
+    } | {
+        # The emitter stores what a constant method returns this way.
+        _storage_hash(TensorSpec.from_tensor(t, const=True).storage)
+        for t in method_tensors
+        if t.device.type == "cpu" and t.nbytes in candidate_sizes
+    }
+    accepted: list[int] = []
+    same_bytes: dict[str, list[int]] = {}
+    for i, (_, _, tensor) in enumerate(candidates):
+        if candidate_sizes[tensor.nbytes] == 1 and tensor.nbytes not in kept_sizes:
+            accepted.append(i)
+        else:
+            same_bytes.setdefault(_placeholder_hash(tensor), []).append(i)
+    # Methods that share a weight share its transposed copy too.
+    transposed: dict[tuple[Any, ...], torch.Tensor] = {}
+
+    def result(i: int) -> torch.Tensor:
+        _, transpose, tensor = candidates[i]
+        key = (
+            id(tensor),
+            transpose.target,
+            repr(transpose.args[1:]),
+            repr(transpose.kwargs),
+        )
+        if key not in transposed:
+            with torch.no_grad():
+                transposed[key] = transpose.target(
+                    tensor, *transpose.args[1:], **transpose.kwargs
+                )
+        return transposed[key]
+
+    for source_hash, group in same_bytes.items():
+        if source_hash in kept_hashes:
+            continue
+        if len(group) > 1 and len({_placeholder_hash(result(i)) for i in group}) > 1:
+            continue
+        accepted.extend(group)
+
+    folds: dict[str, list[tuple[torch.fx.Node, torch.Tensor]]] = {}
+    for i in accepted:
+        name, transpose, _ = candidates[i]
+        folds.setdefault(name, []).append((transpose, result(i)))
+    folded = dict(programs)
+    for name, program_folds in folds.items():
+        folded[name] = _fold_into_copy(programs[name], program_folds)
+    return folded

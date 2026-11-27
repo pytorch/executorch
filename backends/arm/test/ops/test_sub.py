@@ -22,6 +22,8 @@ from executorch.backends.arm.test.tester.test_pipeline import (
 
 aten_op = "torch.ops.aten.sub.Tensor"
 exir_op = "executorch_exir_dialects_edge__ops_aten_sub_Tensor"
+aten_op_scalar = "torch.ops.aten.sub.Scalar"
+exir_op_scalar = "executorch_exir_dialects_edge__ops_aten_sub_Scalar"
 
 # Single-input subtraction (x - x)
 sub_test_data = {
@@ -32,6 +34,11 @@ sub_test_data = {
     "rand_3D_5x5x5": lambda: (torch.rand(5, 5, 5),),
     "rand_4D_2x3x4x5": lambda: (torch.rand(2, 3, 4, 5),),
     "zeros": lambda: (torch.zeros(10),),
+}
+
+sub_scalar_test_data = {
+    "rand_1d_scalar": lambda: (torch.rand(8),),
+    "rand_4d_scalar": lambda: (torch.rand(1, 3, 4, 4),),
 }
 
 sub_test_data_fp16 = {
@@ -75,6 +82,16 @@ sub2_test_data_bf16 = {
         torch.rand(2, 3, dtype=torch.bfloat16),
     ),
 }
+sub2_test_data_mixed = {
+    "int32_float32": lambda: (
+        torch.tensor([1, 2], dtype=torch.int32),
+        torch.tensor([0.5, 1.5]),
+    ),
+    "float32_int32": lambda: (
+        torch.tensor([0.5, 1.5]),
+        torch.tensor([1, 2], dtype=torch.int32),
+    ),
+}
 
 # Sub and tan - the tan has a really steep curve just before Pi/2 and a point of discontinuity at Pi/2
 # so if the sub result is inaccurate, the error will be amplified by the tan
@@ -95,6 +112,11 @@ class Sub(torch.nn.Module):
 class Sub2(torch.nn.Module):
     def forward(self, x: torch.Tensor, y: torch.Tensor):
         return x - y
+
+
+class SubScalar(torch.nn.Module):
+    def forward(self, x: torch.Tensor):
+        return torch.ops.aten.sub.Scalar(x, 1.5)
 
 
 class SubAlpha(torch.nn.Module):
@@ -130,7 +152,8 @@ def test_sub_tensor_tosa_FP(test_data):
 
 
 @common.parametrize(
-    "test_data", sub2_test_data | sub2_test_data_fp16 | sub2_test_data_bf16
+    "test_data",
+    sub2_test_data | sub2_test_data_fp16 | sub2_test_data_bf16 | sub2_test_data_mixed,
 )
 def test_sub_tensor_tosa_FP_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
     """Test Two-Operand Subtraction (TOSA FP)"""
@@ -145,8 +168,18 @@ def test_sub_tensor_tosa_FP_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
 )
 def test_sub_tensor_tosa_FP_alpha(test_data: Tuple[torch.Tensor, torch.Tensor]):
     """Test Two-Operand Subtraction with alpha (TOSA FP)"""
+    data = test_data()
+    # Eager bf16 add/sub with alpha may round once (fused multiply-add), while
+    # the lowered graph rounds after both the multiply and the add/sub.
+    tol = 1e-2 if data[0].dtype == torch.bfloat16 else 1e-3
     pipeline = TosaPipelineFP[input_t2](
-        SubAlpha(), test_data(), aten_op, exir_op, tosa_extensions=["bf16"]
+        SubAlpha(),
+        data,
+        aten_op,
+        exir_op,
+        atol=tol,
+        rtol=tol,
+        tosa_extensions=["bf16"],
     )
     pipeline.run()
 
@@ -257,7 +290,9 @@ def test_sub_tensor_u85_INT(test_data: Tuple[torch.Tensor, torch.Tensor]):
     pipeline.run()
 
 
-@common.parametrize("test_data", sub_test_data | sub_test_data_fp16)
+@common.parametrize(
+    "test_data", sub_test_data | sub_test_data_bf16 | sub_test_data_fp16
+)
 @common.SkipIfNoModelConverter
 def test_sub_tensor_vgf_no_quant(test_data: Tuple[torch.Tensor]):
     """Test Subtraction (VGF FP)"""
@@ -271,7 +306,10 @@ def test_sub_tensor_vgf_no_quant(test_data: Tuple[torch.Tensor]):
     pipeline.run()
 
 
-@common.parametrize("test_data", sub2_test_data | sub2_test_data_fp16)
+@common.parametrize(
+    "test_data",
+    sub2_test_data | sub2_test_data_bf16 | sub2_test_data_fp16 | sub2_test_data_mixed,
+)
 @common.SkipIfNoModelConverter
 def test_sub_tensor_vgf_no_quant_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
     """Test Two-Operand Subtraction (VGF FP)"""
@@ -495,5 +533,37 @@ def test_sub_tensor_16a8w_u85_INT(test_data: input_t1):
         use_to_edge_transform_and_lower=True,
         run_on_fvp=True,
         a16w8_quantization=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", sub_scalar_test_data)
+@common.SkipIfNoModelConverter
+def test_sub_scalar_vgf_no_quant(test_data: Tuple[torch.Tensor]):
+    """Test Tensor - Scalar subtraction (VGF FP)."""
+    pipeline = VgfPipeline[input_t1](
+        SubScalar(),
+        test_data(),
+        aten_op_scalar,
+        exir_op_scalar,
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", sub_scalar_test_data)
+@common.SkipIfNoModelConverter
+def test_sub_scalar_vgf_quant(test_data: Tuple[torch.Tensor]):
+    """Test Tensor - Scalar subtraction (VGF INT).
+
+    The quantized scalar path is lowered through the Tensor
+    overload, so we use sub.Tensor rather than sub.Scalar.
+    """
+    pipeline = VgfPipeline[input_t1](
+        SubScalar(),
+        test_data(),
+        aten_op,
+        exir_op,
+        quantize=True,
     )
     pipeline.run()

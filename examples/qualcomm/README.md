@@ -39,7 +39,7 @@ Or, you could put QNN libraries to default search path of the dynamic linker.
 Please connect an Android phone to the workstation. We use `adb` to communicate with the device.
 
 If the device is in a remote host, you might want to add `-H` to the `adb`
-commands in the `SimpleADB` class inside [export_utils.py](../../backends/qualcomm/export_utils.py).
+commands in the `Device` class inside [export_utils.py](../../backends/qualcomm/export_utils.py).
 
 ## Please use python xxx.py --help for information of each examples.
 
@@ -52,7 +52,7 @@ cd $EXECUTORCH_ROOT/examples/qualcomm/scripts
 
 ## Simple Examples to Verify the Backend is Working
 ```bash
-python export_example.py -m add -g
+python export_example.py --soc_model add -g
 ```
 
 It will generate a simple add model targeting for "SM8550". You can manually push the `add.pte` file to the device following https://pytorch.org/executorch/stable/build-run-qualcomm-ai-engine-direct-backend.html and run it with
@@ -63,12 +63,12 @@ It will generate a simple add model targeting for "SM8550". You can manually pus
 
 #### For MobileNet_v2
 ```bash
-python mobilenet_v2.py -s <device_serial> -m "SM8550" -b path/to/build-android/ -d /path/to/imagenet-mini/val
+python mobilenet_v2.py --device <device_serial> --soc_model "SM8550" --build_folder path/to/build-android/ -d /path/to/imagenet-mini/val
 ```
 
 #### For DeepLab_v3
 ```bash
-python deeplab_v3.py -s <device_serial> -m "SM8550" -b path/to/build-android/ --download
+python deeplab_v3.py --device <device_serial> --soc_model "SM8550" --build_folder path/to/build-android/ --download
 ```
 
 ## Model Structure
@@ -84,15 +84,15 @@ This section outlines the essential APIs and utilities provided to streamline th
       1. An `argparse.ArgumentParser` created by `setup_common_args_and_variables()`
       2. A `.json` configuration file. A sample file is provided under [sample_config.json](./sample_config.json) for reference.
 
-   This function returns a `QnnConfig`, which serves as an input to some of the key APIs that will be covered below: `build_executorch_binary()`, `SimpleADB`.
+   This function returns a `QnnConfig`, which serves as an input to some of the key APIs that will be covered below: `build_executorch_binary()`, `Device`.
 
 3. `build_executorch_binary()`:
 
    `build_executorch_binary` is a high-level API used to convert a PyTorch model into a Qualcomm-compatible .pte binary format. This function streamlines the process of quantization, transformation, optimization, and export, enabling users to efficiently deploy models on Qualcomm hardware.
 
-4. `SimpleADB`:
+4. `Device`:
 
-   `SimpleADB` provides a simplified interface for interacting with Android devices. It allows users to execute ADB commands such as:     
+   `Device` provides a simplified interface for interacting with a target device: either an Android/OE-Linux device over adb, or (via `--target aarch64-windows-msvc`) a Windows on Snapdragon device on which the CLI already runs locally. It allows users to execute commands such as:
       1. Push necessary artifacts to device
       2. Execute the runner
       3. Pull the execution outputs/results
@@ -104,7 +104,7 @@ This section shows how to use shared buffer for input/output tensors in QNN Exec
 ### Run example scipts with shared buffer
 You can specify `--shared_buffer` flag to run example scripts with shared buffer such as:
 ```
-python mobilenet_v2.py -s <device_serial> -m "SM8550" -b path/to/build-android/ -d /path/to/imagenet-mini/val --shared_buffer
+python mobilenet_v2.py --device <device_serial> --soc_model "SM8550" --build_folder path/to/build-android/ -d /path/to/imagenet-mini/val --shared_buffer
 ```
 
 ### Workflow of using shared memory
@@ -132,7 +132,7 @@ pip install scikit-learn pandas graphviz
 
 ## Limitation
 
-1. QNN 2.37 is used for all examples. Newer or older QNN might work, but the performance and accuracy number can differ.
+1. QNN 2.51 is used for all examples. Newer or older QNN might work, but the performance and accuracy number can differ.
 
 2. The mobilebert example is on QNN HTP fp16, which is only supported by a limited
 set of SoCs. Please check QNN documents for details.

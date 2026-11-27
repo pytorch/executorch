@@ -1,4 +1,6 @@
 /*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
  * Copyright 2023-2025 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
@@ -18,19 +20,26 @@
 #include <cstddef>
 #include <cstdint>
 
+#include <executorch/runtime/core/error.h>
+
 namespace executorch {
+namespace runtime {
+class NamedDataMap;
+}
 namespace backends {
 namespace arm {
 
 // Standard block name size
 const uint32_t kVelaBlockNameLength = 16;
+constexpr uint8_t kVelaExternalBlockReference = 1;
 
 // Generic block within the vela_bin_stream encoded by the python vela_compile
 // step
 typedef struct {
   char name[kVelaBlockNameLength]; // string name, can be shorter or truncated
   uint32_t size; // unpadded size, BinBlock size will be rounded to next_mul_16
-  char _pad[12]; // Our data often need 16 byte alignemnt
+  uint8_t external;
+  uint8_t reserved[11]; // Header remains 32 bytes for 16-byte data alignment
   char data[]; // block.name specific format data
 } VelaBinBlock;
 
@@ -58,6 +67,14 @@ typedef struct {
   size_t weight_data_size;
   char* scratch_data;
   size_t scratch_data_size;
+  // Size in bytes of the dedicated persistent (delegate-owned streaming state)
+  // region (Vela region 5). Zero when the model has no persistent state.
+  size_t persistent_data_size;
+  // Initial contents of the persistent region, laid out at the variables' own
+  // offsets. Null when the state starts from the all-zero bit pattern, in
+  // which case the backend zeroes the region instead.
+  const char* persistent_init_data;
+  size_t persistent_init_size;
   VelaIOs* inputs;
   VelaIOs* outputs;
 } VelaHandles;
@@ -67,6 +84,13 @@ typedef struct {
  * output values.
  */
 bool vela_bin_read(const char* data, VelaHandles* handles, int size);
+
+// Reads inline payloads from data and external payloads from named_data_map.
+::executorch::runtime::Error vela_bin_read(
+    const char* data,
+    int size,
+    const ::executorch::runtime::NamedDataMap* named_data_map,
+    VelaHandles* handles);
 
 /* Does minimal validation of a vela_bin_stream to ensure the overall
  * structure is correct and so likely to contain valid binary data for launch

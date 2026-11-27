@@ -19,41 +19,31 @@ for more information.
 """
 
 import argparse
+import math
 import re
+import warnings
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import ClassVar, List, Optional
 
+from executorch.extension.llm.export.config.model_identity import (
+    ModelFamily,
+    ModelIdentity,
+    ModelType,
+    normalize_model_identity,
+    resolve_model_identity,
+)
 
-################################################################################
-################################## BaseConfig ##################################
-################################################################################
+_MODEL_CLASS_DEPRECATION_MESSAGE = (
+    "base.model_class is deprecated and will be removed in a future release. "
+    "Use base.model_id, or base.model_family with base.checkpoint for local models."
+)
 
 
-class ModelType(str, Enum):
-    stories110m = "stories110m"
-    llama2 = "llama2"
-    llama3 = "llama3"
-    llama3_1 = "llama3_1"
-    llama3_2 = "llama3_2"
-    llama3_2_vision = "llama3_2_vision"
-    static_llama = "static_llama"
-    qwen2_5_0_5b = "qwen2_5_0_5b"
-    qwen2_5_1_5b = "qwen2_5_1_5b"
-    qwen2_5_coder_32b = "qwen2_5_coder_32b"
-    qwen3_0_6b = "qwen3_0_6b"
-    qwen3_1_7b = "qwen3_1_7b"
-    qwen3_4b = "qwen3_4b"
-    qwen3_5_0_8b = "qwen3_5_0_8b"
-    qwen3_5_2b = "qwen3_5_2b"
-    qwen3_5_4b = "qwen3_5_4b"
-    phi_4_mini = "phi_4_mini"
-    smollm2 = "smollm2"
-    lfm2_350m = "lfm2_350m"
-    lfm2_700m = "lfm2_700m"
-    lfm2_1_2b = "lfm2_1_2b"
-    lfm2_5_350m = "lfm2_5_350m"
-    lfm2_5_1_2b = "lfm2_5_1_2b"
+def _warn_model_class_deprecated(stacklevel: int = 2) -> None:
+    warnings.warn(
+        _MODEL_CLASS_DEPRECATION_MESSAGE, FutureWarning, stacklevel=stacklevel
+    )
 
 
 class PreqMode(str, Enum):
@@ -96,6 +86,14 @@ class LoraConfig:
     lora_rank: int = 0
     lora_alpha: int = 0
     target_modules: List[str] = field(default_factory=list)
+    # Per-adapter quantization/precision: "int8" | "fp16" | "fp32" | None.
+    # Overrides the global --lora_precision flag for this adapter only.
+    adapter_quant: Optional[str] = None
+
+
+################################################################################
+################################## BaseConfig ##################################
+################################################################################
 
 
 @dataclass
@@ -106,13 +104,19 @@ class BaseConfig:
     eager model and its weights.
 
     Attributes:
-        model_class: Which model to to export.
+        model_class: Deprecated legacy field; supported during migration.
+        model_family: Explicit architecture to use for the model implementation.
+            Mutually exclusive with model_id, which infers the family.
+        model_id: Specific registered model id. If it has a linked Hugging Face
+            checkpoint source, weights download unless checkpoint selects a local
+            override. Otherwise, checkpoint is required. Requires matching params
+            to construct the model.
         params: Model parameters, such as n_layers, hidden_size, etc.
-            If left empty will use defaults specified in model_args.py.
+            Required to construct a registered model selected by model_id. If left
+            empty otherwise, uses defaults specified in model_args.py.
         checkpoint: Path to the checkpoint file.
             If left empty, the model will either be initialized with random weights
-            if it is a Llama model or the weights will be downloaded from HuggingFace
-            if it is a non-Llama model.
+            or downloaded from Hugging Face when model_id has a linked source.
         lora_config: LoRA adapter configuration.
         tokenizer_path: Path to the tokenizer file.
         metadata: Json string containing metadata information.
@@ -127,7 +131,9 @@ class BaseConfig:
             are loaded.
     """
 
-    model_class: ModelType = ModelType.llama3
+    model_class: Optional[ModelType] = None
+    model_family: Optional[ModelFamily] = None
+    model_id: Optional[str] = None
     params: Optional[str] = None
     checkpoint: Optional[str] = None
     lora_config: Optional[LoraConfig] = None
@@ -137,6 +143,17 @@ class BaseConfig:
     preq_mode: Optional[PreqMode] = None
     preq_group_size: int = 32
     preq_embedding_quantize: str = "8,0"
+
+    def __post_init__(self) -> None:
+        identity = normalize_model_identity(
+            model_class=self.model_class,
+            model_family=self.model_family,
+            model_id=self.model_id,
+        )
+        if self.model_family is not None:
+            self.model_family = identity.family
+        if self.model_class is not None:
+            _warn_model_class_deprecated(stacklevel=4)
 
 
 ################################################################################
@@ -185,6 +202,7 @@ class ModelConfig:
         input_prune_map: Path to the output pruning token mapping file (token_map.json).
         use_kv_cache: Whether to use KV cache.
         quantize_kv_cache: Whether to perform int8 per token quantization on the KV cache.
+        static_quantize_kv_cache: Whether to use static-qparams int8 KV cache storage.
         local_global_attention: List of integers specifying local and global attention pattern.
             e.g., [0, 16, 0, 16] to specify that every other layer is sliding window of 16.
             [0, 16, 32] pattern specifies 2nd and 3rd layers have sliding windows of 16 and 32.
@@ -201,7 +219,12 @@ class ModelConfig:
     input_prune_map: Optional[str] = None
     use_kv_cache: bool = False
     quantize_kv_cache: bool = False
+    static_quantize_kv_cache: bool = False
+    static_quantize_kv_cache_scale: float = 1.0 / 127.0
     local_global_attention: Optional[List[int]] = None
+    # Replace eager MOEFeedForward modules with the
+    # `llama::quantized_moe_ffn` portable-runtime custom op.
+    use_moe_quantized_op: bool = False
 
     def __post_init__(self):
         self._validate_attention_sink()
@@ -209,6 +232,39 @@ class ModelConfig:
         if self.quantize_kv_cache and not self.use_kv_cache:
             raise ValueError(
                 "Cannot quantize the KV cache (quantize_kv_cache) without enabling the KV cache (use_kv_cache)"
+            )
+
+        if self.static_quantize_kv_cache and not self.use_kv_cache:
+            raise ValueError(
+                "Cannot statically quantize the KV cache (static_quantize_kv_cache) without enabling the KV cache (use_kv_cache)"
+            )
+
+        if self.quantize_kv_cache and self.static_quantize_kv_cache:
+            raise ValueError(
+                "Cannot enable both dynamic quantized KV cache (quantize_kv_cache) and static quantized KV cache (static_quantize_kv_cache)"
+            )
+
+        if self.static_quantize_kv_cache and self.enable_dynamic_shape:
+            raise ValueError(
+                "static_quantize_kv_cache requires static export shapes (enable_dynamic_shape=False)"
+            )
+
+        if self.static_quantize_kv_cache and self.local_global_attention:
+            raise ValueError(
+                "static_quantize_kv_cache does not support local_global_attention"
+            )
+
+        if self.static_quantize_kv_cache and self.use_attention_sink:
+            raise ValueError(
+                "static_quantize_kv_cache does not support use_attention_sink"
+            )
+
+        if (
+            not math.isfinite(self.static_quantize_kv_cache_scale)
+            or self.static_quantize_kv_cache_scale <= 0
+        ):
+            raise ValueError(
+                "static_quantize_kv_cache_scale must be finite and positive"
             )
 
         if self.local_global_attention and not self.use_kv_cache:
@@ -377,6 +433,7 @@ class Pt2eQuantize(str, Enum):
     vulkan_8w = "vulkan_8w"
     tosa_8a8w = "tosa_8a8w"
     ethosu_8a8w = "ethosu_8a8w"
+    ethosu_16a8w = "ethosu_16a8w"
     vgf_8a8w = "vgf_8a8w"
     vgf_16a8w = "vgf_16a8w"
 
@@ -384,6 +441,11 @@ class Pt2eQuantize(str, Enum):
 class SpinQuant(str, Enum):
     cuda = "cuda"
     native = "native"
+
+
+class QuantizeScope(str, Enum):
+    full = "full"
+    linear = "linear"
 
 
 @dataclass
@@ -403,6 +465,9 @@ class QuantizationConfig:
         use_spin_quant: Which spin quant mode to use. If unspecified, don't use
             spin quant.
         use_qat: Whether the checkpoint is quantization-awarely trained.
+        quantize_scope: Scope for Arm PT2E quantization. "full" quantizes the
+            full supported graph, while "linear" limits quantization to
+            torch.nn.Linear modules.
         calibration_tasks: Tasks for GPTQ calibration from lm_eval.
         calibration_limit: Number of samples used for calibration from lm_eval.
         calibration_seq_length: Sequence length for GPTQ calibration from lm_eval.
@@ -427,6 +492,7 @@ class QuantizationConfig:
     group_size: Optional[int] = None
     use_spin_quant: Optional[SpinQuant] = None
     use_qat: bool = False
+    quantize_scope: QuantizeScope = QuantizeScope.full
     calibration_tasks: Optional[List[str]] = None
     calibration_limit: Optional[int] = None
     calibration_seq_length: Optional[int] = None
@@ -475,10 +541,14 @@ class XNNPackConfig:
     Attributes:
         enabled: :)
         extended_ops: Whether to match more types of ops to delegates to XNNPack.
+            On by default; set to False to restrict the delegate to DQLinear.
+        enable_bf16: Whether to delegate BF16 ops to XNNPack. The target runtime
+            must have hardware support for XNNPACK's BF16 kernels.
     """
 
     enabled: bool = False
-    extended_ops: bool = False
+    extended_ops: bool = True
+    enable_bf16: bool = False
 
 
 class CoreMLQuantize(str, Enum):
@@ -536,15 +606,6 @@ class QNNConfig:
 
 
 @dataclass
-class MPSConfig:
-    """
-    Configures the MPS backend.
-    """
-
-    enabled: bool = False
-
-
-@dataclass
 class OpenvinoConfig:
     """
     Configures the QNN backend.
@@ -587,6 +648,7 @@ class EthosUConfig:
     target: str = "ethos-u85-128"  # Default target, can be overridden.
     memory_mode: str = "default"
     system_config: str = "default"
+    extra_flags: List[str] = field(default_factory=list)
 
 
 class VgfQuantizeScope(str, Enum):
@@ -604,6 +666,7 @@ class VgfConfig:
     compile_spec: Optional[str] = "TOSA-1.0+INT"
     compiler_flags: List[str] = field(default_factory=list)
     quantize_scope: VgfQuantizeScope = VgfQuantizeScope.full
+    alias_buffer_mutations: bool = False
 
 
 @dataclass
@@ -613,6 +676,16 @@ class MLXConfig:
     """
 
     enabled: bool = False
+
+
+@dataclass
+class SamsungConfig:
+    """
+    Configures the Samsung backend.
+    """
+
+    enabled: bool = False
+    samsung_chipset: str = "E9965"
 
 
 @dataclass
@@ -626,13 +699,13 @@ class BackendConfig:
     coreml: CoreMLConfig = field(default_factory=CoreMLConfig)
     vulkan: VulkanConfig = field(default_factory=VulkanConfig)
     qnn: QNNConfig = field(default_factory=QNNConfig)
-    mps: MPSConfig = field(default_factory=MPSConfig)
     openvino: OpenvinoConfig = field(default_factory=OpenvinoConfig)
     torchao: TorchAOKernelsConfig = field(default_factory=TorchAOKernelsConfig)
     tosa: TosaConfig = field(default_factory=TosaConfig)
     ethosu: EthosUConfig = field(default_factory=EthosUConfig)
     vgf: VgfConfig = field(default_factory=VgfConfig)
     mlx: MLXConfig = field(default_factory=MLXConfig)
+    samsung: SamsungConfig = field(default_factory=SamsungConfig)
 
 
 ################################################################################
@@ -654,17 +727,32 @@ class LlmConfig:
     quantization: QuantizationConfig = field(default_factory=QuantizationConfig)
     backend: BackendConfig = field(default_factory=BackendConfig)
 
+    @property
+    def model_identity(self) -> ModelIdentity:
+        """Effective model identity derived from the current base selectors."""
+        return resolve_model_identity(self.base)
+
     @classmethod
     def from_args(cls, args: argparse.Namespace) -> "LlmConfig":  # noqa: C901
         """
         To support legacy purposes, this function converts CLI args from
         argparse to an LlmConfig, which is used by the LLM export process.
         """
-        llm_config = LlmConfig()
-
-        # BaseConfig
-        if hasattr(args, "model"):
-            llm_config.base.model_class = ModelType(args.model)
+        llm_config = LlmConfig(
+            base=BaseConfig(
+                model_class=(
+                    ModelType(args.model)
+                    if hasattr(args, "model") and args.model
+                    else None
+                ),
+                model_family=(
+                    ModelFamily(args.model_family)
+                    if hasattr(args, "model_family") and args.model_family
+                    else None
+                ),
+                model_id=args.model_id if hasattr(args, "model_id") else None,
+            )
+        )
         if hasattr(args, "params"):
             llm_config.base.params = args.params
         if hasattr(args, "checkpoint"):
@@ -712,8 +800,16 @@ class LlmConfig:
             llm_config.model.use_kv_cache = args.use_kv_cache
         if hasattr(args, "quantize_kv_cache"):
             llm_config.model.quantize_kv_cache = args.quantize_kv_cache
+        if hasattr(args, "static_quantize_kv_cache"):
+            llm_config.model.static_quantize_kv_cache = args.static_quantize_kv_cache
+        if hasattr(args, "static_quantize_kv_cache_scale"):
+            llm_config.model.static_quantize_kv_cache_scale = (
+                args.static_quantize_kv_cache_scale
+            )
         if hasattr(args, "local_global_attention"):
             llm_config.model.local_global_attention = args.local_global_attention
+        if hasattr(args, "use_moe_quantized_op"):
+            llm_config.model.use_moe_quantized_op = args.use_moe_quantized_op
 
         # ExportConfig
         if hasattr(args, "max_seq_length"):
@@ -760,6 +856,8 @@ class LlmConfig:
             llm_config.backend.xnnpack.enabled = args.xnnpack
         if hasattr(args, "xnnpack_extended_ops"):
             llm_config.backend.xnnpack.extended_ops = args.xnnpack_extended_ops
+        if hasattr(args, "xnnpack_enable_bf16"):
+            llm_config.backend.xnnpack.enable_bf16 = args.xnnpack_enable_bf16
 
         # CoreML
         if hasattr(args, "coreml"):
@@ -799,10 +897,6 @@ class LlmConfig:
         if hasattr(args, "num_sharding"):
             llm_config.backend.qnn.num_sharding = args.num_sharding
 
-        # MPS
-        if hasattr(args, "mps"):
-            llm_config.backend.mps.enabled = args.mps
-
         # MLX - auto-enable use_kv_cache when MLX is enabled
         if hasattr(args, "mlx"):
             llm_config.backend.mlx.enabled = args.mlx
@@ -832,6 +926,15 @@ class LlmConfig:
             llm_config.backend.vgf.quantize_scope = VgfQuantizeScope(
                 args.vgf_quantize_scope
             )
+            llm_config.quantization.quantize_scope = QuantizeScope(
+                args.vgf_quantize_scope
+            )
+
+        # Samsung
+        if hasattr(args, "samsung"):
+            llm_config.backend.samsung.enabled = args.samsung
+        if hasattr(args, "samsung_chipset"):
+            llm_config.backend.samsung.samsung_chipset = args.samsung_chipset
 
         # TorchAoKernels
         if any(

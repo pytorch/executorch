@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -198,6 +199,81 @@ class TestCat(unittest.TestCase):
             torch.randn(0, 2, 3),
         )
         self._test_cat(self.Cat(), inputs, cat_num=4, quant=True)
+
+    class CatSameInput(torch.nn.Module):
+        def __init__(self, num_copies=2):
+            super().__init__()
+            self.num_copies = num_copies
+
+        def forward(self, x):
+            y = torch.cat([x] * self.num_copies, dim=1)
+            return y + y  # Quantize by propagation.
+
+    def test_fp32_cat_same_input_twice(self):
+        self._test_cat(self.CatSameInput(), (torch.randn(2, 3),))
+
+    def test_qs8_cat_same_input_twice(self):
+        self._test_cat(self.CatSameInput(), (torch.randn(2, 3),), quant=True)
+
+    def test_fp32_cat_same_input_gt_5(self):
+        # Exercises DecomposeConcatenate on a list of identical nodes.
+        self._test_cat(self.CatSameInput(num_copies=6), (torch.randn(2, 3),))
+
+    def test_fp32_cat_single_input_not_delegated(self):
+        # The cat visitor rejects a single tensor, so it must stay on portable.
+        inputs = (torch.randn(2, 3),)
+        (
+            Tester(self.CatSameInput(num_copies=1), inputs)
+            .export()
+            .check_count({"torch.ops.aten.cat": 1})
+            .to_edge_transform_and_lower()
+            .check_count({"executorch_exir_dialects_edge__ops_aten_cat_default": 1})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
+
+    class CatAfterConvAndTranspose(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.proj = torch.nn.Conv2d(
+                in_channels=3,
+                out_channels=8,
+                kernel_size=(4, 4),
+                stride=(4, 4),
+                bias=False,
+            )
+            self.cls_token = torch.nn.Parameter(torch.full((1, 1, 8), 4.0))
+            self.pos_embed = torch.nn.Parameter(torch.full((1, 5, 8), 0.125))
+
+            with torch.no_grad():
+                self.proj.weight.fill_(0.025)
+
+        def forward(self, x):
+            patch_tokens = self.proj(x).flatten(2).transpose(1, 2)
+            cls_token = self.cls_token.expand(x.shape[0], -1, -1)
+            tokens = torch.cat((cls_token, patch_tokens), dim=1)
+            return tokens + self.pos_embed
+
+    def test_qs8_cat_uses_annotated_transpose_path_qparams(self):
+        inputs = (torch.randn(1, 3, 8, 8),)
+        (
+            Tester(self.CatAfterConvAndTranspose(), inputs)
+            .quantize()
+            .export()
+            .check_count({"torch.ops.aten.cat": 1})
+            .to_edge_transform_and_lower()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .check_not(
+                [
+                    "executorch_exir_dialects_edge__ops_aten_cat",
+                    "torch.ops.quantized_decomposed",
+                ]
+            )
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs(inputs=inputs)
+        )
 
     class CatNegativeDim(torch.nn.Module):
         def __init__(self):

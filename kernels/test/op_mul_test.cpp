@@ -21,6 +21,7 @@ using namespace ::testing;
 using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
+using executorch::runtime::TensorShapeDynamism;
 using executorch::runtime::testing::TensorFactory;
 using torch::executor::testing::SupportedFeatures;
 namespace etrt = executorch::runtime;
@@ -359,6 +360,119 @@ class OpMulOutTest : public OperatorTest {
     op_mul_out(x, y, out);
     EXPECT_TENSOR_CLOSE(out, expected);
   }
+
+  template <typename CTYPE, ScalarType DTYPE>
+  void test_complex_broadcast() {
+    TensorFactory<DTYPE> tf;
+    // Bounded outputs are resized to the broadcast shape.
+    const auto make_out = [&tf](const std::vector<int32_t>& sizes) {
+      return tf.full(sizes, CTYPE(0, 0), TensorShapeDynamism::DYNAMIC_BOUND);
+    };
+
+    // Values from issue #24408, with zero-dimensional and single-element
+    // scalars on either side.
+    const Tensor x = tf.make({2}, {CTYPE(1, 1), CTYPE(2, -2)});
+    const Tensor product = tf.make({2}, {CTYPE(0, 4), CTYPE(8, 0)});
+    for (const auto& scalar_sizes :
+         {std::vector<int32_t>{}, std::vector<int32_t>{1}}) {
+      const Tensor s = tf.make(scalar_sizes, {CTYPE(2, 2)});
+      Tensor out = make_out({4});
+      EXPECT_TENSOR_EQ(op_mul_out(x, s, out), product);
+      out = make_out({4});
+      EXPECT_TENSOR_EQ(op_mul_out(s, x, out), product);
+    }
+
+    // Both operands are scalars.
+    Tensor out = make_out({1});
+    EXPECT_TENSOR_EQ(
+        op_mul_out(
+            tf.make({}, {CTYPE(5, 1)}), tf.make({1}, {CTYPE(1, 1)}), out),
+        tf.make({1}, {CTYPE(4, 6)}));
+
+    // Both operands are broadcast.
+    out = make_out({2, 2});
+    EXPECT_TENSOR_EQ(
+        op_mul_out(
+            tf.make({2, 1}, {CTYPE(5, 1), CTYPE(3, 5)}),
+            tf.make({1, 2}, {CTYPE(1, 1), CTYPE(1, -1)}),
+            out),
+        tf.make(
+            {2, 2}, {CTYPE(4, 6), CTYPE(6, -4), CTYPE(-2, 8), CTYPE(8, 2)}));
+
+    // Empty output.
+    const Tensor empty = tf.make({0}, {});
+    out = make_out({0});
+    EXPECT_TENSOR_EQ(op_mul_out(tf.make({}, {CTYPE(2, 2)}), empty, out), empty);
+
+    // Shapes for the optimized kBroadcast2dBy1d, kBroadcastLastDim, and
+    // kBroadcastNdByNd paths, with the operands in either order.
+    const Tensor a_2x3 = tf.make(
+        {2, 3},
+        {CTYPE(1, 2),
+         CTYPE(3, -1),
+         CTYPE(-2, 4),
+         CTYPE(5, 3),
+         CTYPE(-4, -3),
+         CTYPE(2, -5)});
+    const Tensor b_3 = tf.make({3}, {CTYPE(2, 1), CTYPE(-1, 3), CTYPE(3, -2)});
+    const Tensor product_2d_by_1d = tf.make(
+        {2, 3},
+        {CTYPE(0, 5),
+         CTYPE(0, 10),
+         CTYPE(2, 16),
+         CTYPE(7, 11),
+         CTYPE(13, -9),
+         CTYPE(-4, -19)});
+    out = make_out({2, 3});
+    EXPECT_TENSOR_EQ(op_mul_out(a_2x3, b_3, out), product_2d_by_1d);
+    out = make_out({2, 3});
+    EXPECT_TENSOR_EQ(op_mul_out(b_3, a_2x3, out), product_2d_by_1d);
+
+    const Tensor b_2x1 = tf.make({2, 1}, {CTYPE(3, 2), CTYPE(-2, 1)});
+    const Tensor product_last_dim = tf.make(
+        {2, 3},
+        {CTYPE(-1, 8),
+         CTYPE(11, 3),
+         CTYPE(-14, 8),
+         CTYPE(-13, -1),
+         CTYPE(11, 2),
+         CTYPE(1, 12)});
+    out = make_out({2, 3});
+    EXPECT_TENSOR_EQ(op_mul_out(a_2x3, b_2x1, out), product_last_dim);
+    out = make_out({2, 3});
+    EXPECT_TENSOR_EQ(op_mul_out(b_2x1, a_2x3, out), product_last_dim);
+
+    const Tensor a_2x3x4 = tf.make(
+        {2, 3, 4},
+        {CTYPE(1, 3),   CTYPE(2, -1),   CTYPE(3, 2),   CTYPE(4, -2),
+         CTYPE(5, -3),  CTYPE(6, 1),    CTYPE(7, -2),  CTYPE(8, 4),
+         CTYPE(9, 2),   CTYPE(10, -4),  CTYPE(11, 1),  CTYPE(12, 3),
+         CTYPE(-1, 3),  CTYPE(-2, -1),  CTYPE(-3, 2),  CTYPE(-4, -2),
+         CTYPE(-5, -3), CTYPE(-6, 1),   CTYPE(-7, -2), CTYPE(-8, 4),
+         CTYPE(-9, 2),  CTYPE(-10, -4), CTYPE(-11, 1), CTYPE(-12, 3)});
+    const Tensor b_2x1x4 = tf.make(
+        {2, 1, 4},
+        {CTYPE(2, -1),
+         CTYPE(-1, 2),
+         CTYPE(3, 1),
+         CTYPE(1, -3),
+         CTYPE(-2, 3),
+         CTYPE(1, 1),
+         CTYPE(-3, -2),
+         CTYPE(2, 2)});
+    const Tensor product_nd_by_nd = tf.make(
+        {2, 3, 4},
+        {CTYPE(5, 5),    CTYPE(0, 5),    CTYPE(7, 9),   CTYPE(-2, -14),
+         CTYPE(7, -11),  CTYPE(-8, 11),  CTYPE(23, 1),  CTYPE(20, -20),
+         CTYPE(20, -5),  CTYPE(-2, 24),  CTYPE(32, 14), CTYPE(21, -33),
+         CTYPE(-7, -9),  CTYPE(-1, -3),  CTYPE(13, 0),  CTYPE(-4, -12),
+         CTYPE(19, -9),  CTYPE(-7, -5),  CTYPE(17, 20), CTYPE(-24, -8),
+         CTYPE(12, -31), CTYPE(-6, -14), CTYPE(35, 19), CTYPE(-30, -18)});
+    out = make_out({2, 3, 4});
+    EXPECT_TENSOR_EQ(op_mul_out(a_2x3x4, b_2x1x4, out), product_nd_by_nd);
+    out = make_out({2, 3, 4});
+    EXPECT_TENSOR_EQ(op_mul_out(b_2x1x4, a_2x3x4, out), product_nd_by_nd);
+  }
 };
 
 class OpMulScalarOutTest : public OperatorTest {
@@ -512,6 +626,17 @@ TEST_F(OpMulOutTest, BothScalarInputBroadcastTest) {
 TEST_F(OpMulOutTest, AllComplexDtypesSupported) {
 #define TEST_ENTRY(ctype, dtype) test_complex_dtype<ctype, ScalarType::dtype>();
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
+    ET_FORALL_COMPLEX_TYPES(TEST_ENTRY);
+  } else {
+    ET_FORALL_COMPLEXH_TYPES(TEST_ENTRY);
+  }
+#undef TEST_ENTRY
+}
+
+TEST_F(OpMulOutTest, ComplexBroadcast) {
+#define TEST_ENTRY(ctype, dtype) \
+  test_complex_broadcast<ctype, ScalarType::dtype>();
+  if (SupportedFeatures::get()->is_aten) {
     ET_FORALL_COMPLEX_TYPES(TEST_ENTRY);
   } else {
     ET_FORALL_COMPLEXH_TYPES(TEST_ENTRY);
@@ -922,4 +1047,77 @@ TEST_F(OpMulOutTest, BroadcastDimensionMismatchWithDifferentTypes) {
     Tensor expected = tf_int.make({1, 1, 4}, {2, 4, 6, 8});
     EXPECT_TENSOR_EQ(result, expected);
   }
+}
+
+TEST_F(OpMulOutTest, BroadcastLastDimRankMismatch) {
+  TensorFactory<ScalarType::Float> tf;
+  Tensor a = tf.make({3, 4}, /*data=*/{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+  Tensor b = tf.make({1, 3, 1}, /*data=*/{10, 20, 30});
+  Tensor out = tf.zeros({1, 3, 4});
+
+  Tensor expected = tf.make(
+      {1, 3, 4},
+      /*data=*/{10, 20, 30, 40, 100, 120, 140, 160, 270, 300, 330, 360});
+  EXPECT_TENSOR_CLOSE(op_mul_out(a, b, out), expected);
+  EXPECT_TENSOR_CLOSE(op_mul_out(b, a, out), expected);
+}
+
+TEST_F(OpMulOutTest, Broadcast2dBy1dRankMismatch) {
+  TensorFactory<ScalarType::Float> tf;
+  Tensor a = tf.make({2, 3}, /*data=*/{1, 2, 3, 4, 5, 6});
+  Tensor b = tf.make({1, 1, 3}, /*data=*/{10, 20, 30});
+  Tensor out = tf.zeros({1, 2, 3});
+
+  Tensor expected = tf.make({1, 2, 3}, /*data=*/{10, 40, 90, 40, 100, 180});
+  EXPECT_TENSOR_CLOSE(op_mul_out(a, b, out), expected);
+  EXPECT_TENSOR_CLOSE(op_mul_out(b, a, out), expected);
+}
+
+TEST_F(OpMulOutTest, ChannelsLastBroadcast) {
+  TensorFactory<ScalarType::Int> tf;
+  Tensor a = tf.channels_last_like(tf.make({1, 2, 1, 2}, {1, 2, 3, 4}));
+  Tensor b = tf.channels_last_like(tf.make({1, 2, 1, 1}, {10, 20}));
+  Tensor out = tf.zeros_channels_last({1, 2, 1, 2});
+
+  Tensor expected =
+      tf.channels_last_like(tf.make({1, 2, 1, 2}, {10, 20, 60, 80}));
+  EXPECT_TENSOR_EQ(op_mul_out(a, b, out), expected);
+}
+
+TEST_F(OpMulOutTest, ChannelsLastBroadcastMixedDtype) {
+  TensorFactory<ScalarType::Int> tf_int;
+  TensorFactory<ScalarType::Float> tf_float;
+  Tensor a = tf_int.channels_last_like(tf_int.make({1, 2, 1, 2}, {1, 2, 3, 4}));
+  Tensor b = tf_float.channels_last_like(tf_float.make({1, 2, 1, 1}, {10, 20}));
+  Tensor out = tf_float.zeros_channels_last({1, 2, 1, 2});
+
+  Tensor expected = tf_float.channels_last_like(
+      tf_float.make({1, 2, 1, 2}, {10, 20, 60, 80}));
+  EXPECT_TENSOR_CLOSE(op_mul_out(a, b, out), expected);
+}
+
+TEST_F(OpMulOutTest, ChannelsLastBroadcastLastDim) {
+  TensorFactory<ScalarType::Float> tf;
+  Tensor a =
+      tf.channels_last_like(tf.make({1, 2, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8}));
+  Tensor b = tf.channels_last_like(tf.make({1, 2, 2, 1}, {10, 20, 30, 40}));
+  Tensor out = tf.zeros_channels_last({1, 2, 2, 2});
+
+  Tensor expected = tf.channels_last_like(
+      tf.make({1, 2, 2, 2}, {10, 20, 60, 80, 150, 180, 280, 320}));
+  EXPECT_TENSOR_CLOSE(op_mul_out(a, b, out), expected);
+  EXPECT_TENSOR_CLOSE(op_mul_out(b, a, out), expected);
+}
+
+TEST_F(OpMulOutTest, ChannelsLastBroadcastMiddleDim) {
+  TensorFactory<ScalarType::Float> tf;
+  Tensor a =
+      tf.channels_last_like(tf.make({1, 2, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8}));
+  Tensor b = tf.channels_last_like(tf.make({1, 2, 1, 2}, {10, 20, 30, 40}));
+  Tensor out = tf.zeros_channels_last({1, 2, 2, 2});
+
+  Tensor expected = tf.channels_last_like(
+      tf.make({1, 2, 2, 2}, {10, 40, 30, 80, 150, 240, 210, 320}));
+  EXPECT_TENSOR_CLOSE(op_mul_out(a, b, out), expected);
+  EXPECT_TENSOR_CLOSE(op_mul_out(b, a, out), expected);
 }

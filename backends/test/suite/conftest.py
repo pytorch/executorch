@@ -14,9 +14,16 @@ from executorch.backends.test.suite.reporting import _sum_op_counts
 from executorch.backends.test.suite.runner import run_test
 
 
+# Per-test timeouts in seconds. Can be overridden with the
+# EXECUTORCH_MODELS_TEST_TIMEOUT_S and EXECUTORCH_OPERATORS_TEST_TIMEOUT_S
+# environment variables (e.g. for slower platforms).
 FLOW_TEST_CASE_TIMEOUTS = {
-    "backends/test/suite/models/": 1200,
-    "backends/test/suite/operators/": 120,
+    "backends/test/suite/models/": int(
+        os.environ.get("EXECUTORCH_MODELS_TEST_TIMEOUT_S", 1200)
+    ),
+    "backends/test/suite/operators/": int(
+        os.environ.get("EXECUTORCH_OPERATORS_TEST_TIMEOUT_S", 120)
+    ),
 }
 
 
@@ -30,6 +37,13 @@ def pytest_collection_modifyitems(config, items):
                 should_skip, reason = flow.should_skip_test(test_name, callspec.params)
                 if should_skip:
                     item.add_marker(pytest.mark.skip(reason))
+                elif flow.should_xfail_test(item.name):
+                    item.add_marker(
+                        pytest.mark.xfail(
+                            reason=f"Expected to fail by {flow.name} xfail_patterns",
+                            strict=True,
+                        )
+                    )
 
         item_path = str(getattr(item, "path", ""))
         for suite_prefix, timeout_s in FLOW_TEST_CASE_TIMEOUTS.items():

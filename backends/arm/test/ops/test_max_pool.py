@@ -22,6 +22,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
+    VgfPipelineFP8,
 )
 
 test_data_suite = {
@@ -43,6 +44,14 @@ test_data_suite = {
     "non_divisible_window_width_ceil_mode": lambda: (
         torch.rand(1, 16, 56, 56),
         [3, (1, 2), 1, 1, True],
+    ),
+    "ceil_mode_last_window_dropped": lambda: (
+        torch.rand(1, 16, 56, 57),
+        [1, 2, 0, 1, True],
+    ),
+    "ceil_mode_last_window_dropped_padding": lambda: (
+        torch.rand(1, 16, 56, 56),
+        [2, 3, 1, 1, True],
     ),
     "non_divisible_window_adjust_padding": lambda: (
         torch.rand(1, 16, 112, 112),
@@ -80,6 +89,37 @@ test_data_suite_bf16 = {
     "rand_bf16": lambda: (
         torch.rand(1, 8, 20, 20, dtype=torch.bfloat16),
         [3, 2, 1],
+    ),
+}
+
+test_data_suite_rank3 = {
+    "bev_class_slice": lambda: (torch.rand(1, 8, 8), [1, 1, 0]),
+    "spatial_pool": lambda: (torch.rand(3, 9, 11), [3, 2, 1]),
+}
+
+test_data_suite_fp8_no_comparing = {
+    "rand_fp8e4m3": lambda: (
+        torch.rand(1, 8, 20, 20).to(torch.float8_e4m3fn),
+        [3, 2, 1],
+        "fp8e4m3",
+    ),
+    "rand_fp8e5m2": lambda: (
+        torch.rand(1, 8, 20, 20).to(torch.float8_e5m2),
+        [3, 2, 1],
+        "fp8e5m2",
+    ),
+}
+
+test_data_suite_fp8_dilation_no_comparing = {
+    "dilation_fp8e4m3": lambda: (
+        torch.rand(1, 1, 8, 8).to(torch.float8_e4m3fn),
+        [3, 1, 0, 2],
+        "fp8e4m3",
+    ),
+    "dilation_fp8e5m2": lambda: (
+        torch.rand(1, 1, 8, 8).to(torch.float8_e5m2),
+        [3, 1, 0, 2],
+        "fp8e5m2",
     ),
 }
 
@@ -143,7 +183,11 @@ class MaxPool2d(torch.nn.Module):
 
 
 @common.parametrize(
-    "test_data", test_data_suite | test_data_suite_fp16 | test_data_suite_bf16
+    "test_data",
+    test_data_suite
+    | test_data_suite_rank3
+    | test_data_suite_fp16
+    | test_data_suite_bf16,
 )
 def test_max_pool2d_tosa_FP(test_data: torch.Tensor):
     test_data, model_params = test_data()
@@ -157,7 +201,22 @@ def test_max_pool2d_tosa_FP(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite_fp8_no_comparing)
+def test_max_pool2d_tosa_FP_fp8(test_data: torch.Tensor):
+    input_tensor, model_params, tosa_extension = test_data()
+    pipeline = TosaPipelineFP[input_t1](
+        MaxPool2d(*model_params),
+        (input_tensor,),
+        aten_op,
+        exir_op,
+        tosa_extensions=[tosa_extension],
+        compare_tosa_ref_model_outputs=False,
+    )
+    pipeline.count_tosa_ops({"MAX_POOL2D": 1})
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite | test_data_suite_rank3)
 def test_max_pool2d_tosa_INT(test_data: torch.Tensor):
     test_data, model_params = test_data()
     pipeline = TosaPipelineINT[input_t1](
@@ -303,6 +362,21 @@ def test_max_pool2d_tosa_FP_dilation(test_data):
     pipeline.run()
 
 
+@common.parametrize("test_data", test_data_suite_fp8_dilation_no_comparing)
+def test_max_pool2d_tosa_FP_fp8_dilation(test_data):
+    data, model_params, tosa_extension = test_data()
+    pipeline = TosaPipelineFP[input_t1](
+        MaxPool2d(*model_params),
+        (data,),
+        aten_op,
+        exir_op,
+        tosa_extensions=[tosa_extension],
+        compare_tosa_ref_model_outputs=False,
+    )
+    pipeline.count_tosa_ops({"MAX_POOL2D": 1})
+    pipeline.run()
+
+
 @common.parametrize("test_data", dilation_test_data)
 def test_max_pool2d_tosa_INT_dilation(test_data):
     """TOSA INT pipeline with dilation > 1 (and dilation=1 sanity cases)."""
@@ -318,21 +392,61 @@ def test_max_pool2d_tosa_INT_dilation(test_data):
 
 
 # VGF tests
-@common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
+@common.parametrize("test_data", test_data_suite_fp8_no_comparing)
+@common.SkipIfNoModelConverter
+def test_max_pool2d_vgf_no_quant_fp8(test_data: torch.Tensor):
+    input_tensor, model_params, _ = test_data()
+    pipeline = VgfPipelineFP8[input_t1](
+        MaxPool2d(*model_params),
+        (input_tensor,),
+        aten_op,
+        exir_op,
+        expect_missing_reference=True,
+        atol=0,
+        rtol=0,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite_fp8_dilation_no_comparing)
+@common.SkipIfNoModelConverter
+def test_max_pool2d_vgf_no_quant_fp8_dilation(test_data):
+    data, model_params, _ = test_data()
+    pipeline = VgfPipelineFP8[input_t1](
+        MaxPool2d(*model_params),
+        (data,),
+        aten_op,
+        exir_op,
+        expect_missing_reference=True,
+        atol=0,
+        rtol=0,
+    )
+    pipeline.run()
+
+
+@common.parametrize(
+    "test_data",
+    test_data_suite
+    | test_data_suite_rank3
+    | test_data_suite_bf16
+    | test_data_suite_fp16,
+)
 @common.SkipIfNoModelConverter
 def test_max_pool2d_vgf_no_quant(test_data: torch.Tensor):
     test_data, model_params = test_data()
+    run_on_vulkan_runtime = test_data.dim() == 4
     pipeline = VgfPipeline[input_t1](
         MaxPool2d(*model_params),
         (test_data,),
         aten_op,
         exir_op,
         quantize=False,
+        run_on_vulkan_runtime=run_on_vulkan_runtime,
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_rank3)
 @common.SkipIfNoModelConverter
 def test_max_pool2d_vgf_quant(test_data: torch.Tensor):
     test_data, model_params = test_data()

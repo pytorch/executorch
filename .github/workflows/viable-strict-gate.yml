@@ -1,0 +1,68 @@
+name: viable-strict-gate
+
+# Marks a commit as eligible for viable/strict advancement.
+#
+# Path filtering on push to main saves runner cost but risks advancing
+# viable/strict on commits where many jobs were skipped: a partial green
+# from "no job ran" is indistinguishable from "everything passed" at the
+# workflow-conclusion level.
+#
+# So this workflow runs only on ``ciflow/trunk/<sha>`` tags, for which
+# ``_ci-run-decision.yml`` always returns ``is-full-run = true``. A plain
+# push to main produces no run of this workflow at all, so
+# update-viablestrict reports the required check as missing and declines
+# to advance. Eligibility is granted by promoting a commit, never by
+# landing it. ``promote-to-viable-strict.yml`` pushes those tags, on a
+# schedule and on demand.
+#
+# This workflow used to run on every push and fail on commits outside
+# the sample. That wrote a permanent failure: the viable/strict updater
+# reads one row per workflow *run* rather than per workflow, so a later
+# successful run sat beside the failed one instead of replacing it, and
+# a single failure anywhere is fatal. A commit that landed outside the
+# sample could therefore never be promoted afterwards. Producing no run
+# at all avoids that, because there is nothing to sit beside.
+
+on:
+  push:
+    tags:
+      - ciflow/trunk/*
+
+permissions:
+  contents: read
+
+jobs:
+  run-decision:
+    uses: ./.github/workflows/_ci-run-decision.yml
+
+  full-run-required:
+    needs: run-decision
+    name: Full CI required for viable/strict
+    runs-on: ubuntu-22.04
+    steps:
+      # Only tag pushes reach this workflow, so is-full-run is always
+      # true here. Kept as an assertion against a future trigger that
+      # does not force a full run.
+      #
+      # Failing is the correct behaviour for a tag push, which is a
+      # deliberate request, but it is NOT a safe way to reject ordinary
+      # commits: a failure row here is permanent, for the reason in the
+      # header. So do not re-add ``push: branches`` above. Adding
+      # ``workflow_dispatch`` is a different trap: it would make this
+      # assertion pass and publish a viable-strict-gate success for a
+      # commit whose CI was path-filtered. ``schedule`` is unsafe for the
+      # opposite reason: ``_ci-run-decision.yml`` returns false for a
+      # schedule event, so every tick would fail here and write a
+      # permanent failure row on the tip of main.
+      - name: Check whether this commit is a full-coverage run
+        env:
+          IS_FULL_RUN: ${{ needs.run-decision.outputs.is-full-run }}
+        run: |
+          set -eu
+          if [ "$IS_FULL_RUN" = "true" ]; then
+            echo "Full-coverage commit; viable/strict eligible."
+            exit 0
+          fi
+          echo "::error::Non-full-run commit (path-filtered CI). viable/strict cannot advance from this commit."
+          echo "This workflow should only ever run on a 'ciflow/trunk/<sha>' tag, which always forces a full run."
+          exit 1

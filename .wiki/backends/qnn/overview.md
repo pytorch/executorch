@@ -66,7 +66,7 @@ There are two code paths for exporting LLMs to QNN. **Use `examples/qualcomm/oss
 ```bash
 # CORRECT path for QNN LLM export
 python examples/qualcomm/oss_scripts/llama/llama.py \
-  -b build-android -m SM8650 \
+  --build_folder build-android --soc_model SM8650 \
   --decoder_model qwen3-0_6b \
   --model_mode hybrid --max_seq_len 1024 --prefill_ar_len 128 \
   --prompt "..." --tasks wikitext --limit 1 --compile_only
@@ -131,7 +131,7 @@ Use `--compile_only` to export, quantize, and compile a `.pte` without running o
 
 ```bash
 python examples/qualcomm/oss_scripts/llama/llama.py \
-  -b build-android -m SM8650 --compile_only \
+  --build_folder build-android --soc_model SM8650 --compile_only \
   --decoder_model qwen3-0_6b ...
 ```
 

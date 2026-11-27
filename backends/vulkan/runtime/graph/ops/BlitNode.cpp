@@ -43,8 +43,11 @@ void BlitNode::encode(ComputeGraph* graph) {
   kernel_name += "_to_";
   kernel_name += vkapi::to_string(graph->dtype_of(dst_));
 
-  context->report_shader_dispatch_start(
-      kernel_name, utils::uvec3(), utils::WorkgroupSize(), node_id_);
+  context->report_previous_work_finish(
+      kernel_name,
+      GlobalWorkGrid({0u, 0u, 0u}, kExplicitWorkGrid),
+      LocalWorkGroup(),
+      node_id_);
 
   context->register_blit(
       pipeline_barrier,
@@ -53,7 +56,7 @@ void BlitNode::encode(ComputeGraph* graph) {
       graph->get_tensor(dst_)->image(
           pipeline_barrier, vkapi::PipelineStage::TRANSFER, vkapi::kWrite));
 
-  context->report_shader_dispatch_end();
+  context->report_shader_exec_finish();
 }
 
 } // namespace vkcompute

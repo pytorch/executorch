@@ -497,15 +497,17 @@ class SlimTensor {
                   static_cast<size_t>(dst_offset), elem_size, &dst_byte_offset),
           "copy_: byte offset overflow");
 
-      // Copy elem_size bytes from src to dst
+      char* dst_byte_offset_ptr =
+          add_byte_offset_checked(dst_data, dst_byte_offset);
+      const char* src_byte_offset_ptr =
+          add_byte_offset_checked(src_data, src_byte_offset);
       if (this->device().is_cpu() && other.device().is_cpu()) {
-        std::memcpy(
-            dst_data + dst_byte_offset, src_data + src_byte_offset, elem_size);
+        std::memcpy(dst_byte_offset_ptr, src_byte_offset_ptr, elem_size);
       } else if (this->device().is_cuda() || other.device().is_cuda()) {
 #if defined(CUDA_AVAILABLE)
         DeviceTraits<c10::DeviceType::CUDA>::memcpy(
-            dst_data + dst_byte_offset,
-            src_data + src_byte_offset,
+            dst_byte_offset_ptr,
+            src_byte_offset_ptr,
             elem_size,
             device(), // dst device
             other.device() // src device
@@ -555,6 +557,17 @@ class SlimTensor {
   }
 
  private:
+  template <typename T>
+  static T* add_byte_offset_checked(T* data, size_t byte_offset) {
+    uintptr_t data_int = reinterpret_cast<uintptr_t>(data);
+    uintptr_t data_offset_int = 0;
+    ET_CHECK_MSG(
+        !::c10::add_overflows(data_int, byte_offset, &data_offset_int),
+        "copy_: data pointer overflow");
+    return reinterpret_cast<T*>( // NOLINT(performance-no-int-to-ptr)
+        data_offset_int);
+  }
+
   SlimTensor _clone_impl(
       c10::IntArrayRef sizes,
       c10::IntArrayRef strides,

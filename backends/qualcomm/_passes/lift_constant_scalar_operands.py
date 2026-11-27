@@ -33,22 +33,33 @@ class TensorOpInfo:
 
 SCALAR_OPS = {
     aten.eq.Scalar: TensorOpInfo(aten.eq.Tensor, False, False),
+    aten.eq.Tensor: TensorOpInfo(aten.eq.Tensor, False, False),
     aten.ge.Scalar: TensorOpInfo(aten.ge.Tensor, False, False),
+    aten.ge.Tensor: TensorOpInfo(aten.ge.Tensor, False, False),
     aten.gt.Scalar: TensorOpInfo(aten.gt.Tensor, False, False),
+    aten.gt.Tensor: TensorOpInfo(aten.gt.Tensor, False, False),
     aten.le.Scalar: TensorOpInfo(aten.le.Tensor, False, False),
+    aten.le.Tensor: TensorOpInfo(aten.le.Tensor, False, False),
     aten.lt.Scalar: TensorOpInfo(aten.lt.Tensor, False, False),
+    aten.lt.Tensor: TensorOpInfo(aten.lt.Tensor, False, False),
     aten.ne.Scalar: TensorOpInfo(aten.ne.Tensor, False, False),
+    aten.ne.Tensor: TensorOpInfo(aten.ne.Tensor, False, False),
     aten.add.Scalar: TensorOpInfo(aten.add.Tensor, False, False),
     aten.add_.Scalar: TensorOpInfo(aten.add_.Tensor, False, False),
     # For below cases, refer to LiftAddTensor Model in UT for sample
     aten.add.Tensor: TensorOpInfo(aten.add.Tensor, False, False),
     aten.div.Scalar: TensorOpInfo(aten.div.Tensor, False, False),
+    aten.div.Scalar_mode: TensorOpInfo(aten.div.Tensor_mode, False, False),
+    aten.floor_divide.default: TensorOpInfo(aten.floor_divide.default, False, False),
     aten.mul.Scalar: TensorOpInfo(aten.mul.Tensor, False, False),
     aten.rsub.Scalar: TensorOpInfo(aten.rsub.Tensor, False, False),
     aten.sub.Scalar: TensorOpInfo(aten.sub.Tensor, False, False),
     aten.sub.Tensor: TensorOpInfo(aten.sub.Tensor, False, False),
     aten.pow.Tensor_Scalar: TensorOpInfo(aten.pow.Tensor_Tensor, False, False),
     aten.pow.Scalar: TensorOpInfo(aten.pow.Tensor_Tensor, False, False),
+    aten.remainder.Scalar: TensorOpInfo(aten.remainder.Tensor, False, False),
+    aten.remainder.Scalar_Tensor: TensorOpInfo(aten.remainder.Tensor, False, False),
+    aten.remainder.Tensor: TensorOpInfo(aten.remainder.Tensor, False, False),
     # The scalar number arg[1] is missing when using default. Result in a corner case to deal
     aten.leaky_relu.default: TensorOpInfo(aten.prelu.default, True, False),
     aten.leaky_relu_.default: TensorOpInfo(aten.prelu.default, True, False),
@@ -69,6 +80,7 @@ SKIP_LIFT_OPS = {
     aten.scalar_tensor.default,
     aten.elu.default,
     aten.hardtanh.default,
+    aten.scatter.value,
 }
 
 
@@ -87,6 +99,7 @@ class LiftConstantScalarOperands(ExportPass):
     ) -> TensorConstant:
         # For dtype, in some cases, we cannot use node.args[0] as scalar dtype.
         # Ex: Where op args[0] can be bool, however, we probably want args[1] and args[2] to be dtype same as node.meta["val"] instead of bool type
+
         first_arg = node.args[0]
         tensor = torch.tensor(
             const_val,
@@ -175,6 +188,11 @@ class LiftConstantScalarOperands(ExportPass):
             if (
                 n.op != "call_function"
                 or isinstance(n.target, (BuiltinMethodType, BuiltinFunctionType))
+                # Higher-order ops (e.g. wrap_with_set_grad_enabled, emitted for a
+                # torch.no_grad block) carry no schema, and lifting reads
+                # node.target._schema. Test for the schema rather than the
+                # OpOverload type so EdgeOpOverload targets keep lifting.
+                or not hasattr(n.target, "_schema")
                 or n.target in SKIP_LIFT_OPS
             ):
                 continue

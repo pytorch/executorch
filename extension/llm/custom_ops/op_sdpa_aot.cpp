@@ -247,7 +247,7 @@ at::Tensor custom_sdpa_aten(
     const bool is_causal,
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
     const std::optional<double> scale) {
-  auto output = at::empty(q.sizes());
+  auto output = at::empty(q.sizes(), q.options());
   WRAP_TO_ATEN(custom_sdpa_out_no_context, 8)
   (q, k, v, start_pos, attn_mask, dropout_p, is_causal, scale, output);
   return output;
@@ -377,6 +377,92 @@ at::Tensor update_cache_with_indices_aten(
   return output;
 }
 
+std::tuple<Tensor&, Tensor&> gated_delta_rule_out_no_context(
+    const Tensor& query,
+    const Tensor& key,
+    const Tensor& value,
+    const Tensor& decay,
+    const Tensor& beta,
+    const Tensor& initial_state,
+    Tensor& out,
+    Tensor& final_state_out);
+
+std::tuple<at::Tensor, at::Tensor> gated_delta_rule_aten(
+    const at::Tensor& query,
+    const at::Tensor& key,
+    const at::Tensor& value,
+    const at::Tensor& decay,
+    const at::Tensor& beta,
+    const at::Tensor& initial_state);
+
+std::tuple<at::Tensor&, at::Tensor&> gated_delta_rule_out_aten(
+    const at::Tensor& query,
+    const at::Tensor& key,
+    const at::Tensor& value,
+    const at::Tensor& decay,
+    const at::Tensor& beta,
+    const at::Tensor& initial_state,
+    at::Tensor& out,
+    at::Tensor& final_state_out);
+
+std::tuple<Tensor&, Tensor&> gated_delta_rule_out_no_context(
+    const Tensor& query,
+    const Tensor& key,
+    const Tensor& value,
+    const Tensor& decay,
+    const Tensor& beta,
+    const Tensor& initial_state,
+    Tensor& out,
+    Tensor& final_state_out) {
+  executorch::aten::RuntimeContext context{};
+  auto result = torch::executor::native::gated_delta_rule_out(
+      context,
+      query,
+      key,
+      value,
+      decay,
+      beta,
+      initial_state,
+      out,
+      final_state_out);
+  TORCH_CHECK(
+      context.failure_state() == executorch::runtime::Error::Ok,
+      "gated_delta_rule failed");
+  return result;
+}
+
+std::tuple<at::Tensor, at::Tensor> gated_delta_rule_aten(
+    const at::Tensor& query,
+    const at::Tensor& key,
+    const at::Tensor& value,
+    const at::Tensor& decay,
+    const at::Tensor& beta,
+    const at::Tensor& initial_state) {
+  auto output = at::empty(
+      {query.size(0), query.size(1), query.size(2), value.size(3)},
+      query.options());
+  auto final_state = at::empty_like(initial_state);
+  gated_delta_rule_out_aten(
+      query, key, value, decay, beta, initial_state, output, final_state);
+  return {output, final_state};
+}
+
+std::tuple<at::Tensor&, at::Tensor&> gated_delta_rule_out_aten(
+    const at::Tensor& query,
+    const at::Tensor& key,
+    const at::Tensor& value,
+    const at::Tensor& decay,
+    const at::Tensor& beta,
+    const at::Tensor& initial_state,
+    at::Tensor& out,
+    at::Tensor& final_state_out) {
+  TORCH_CHECK(
+      !initial_state.is_alias_of(final_state_out),
+      "gated_delta_rule final_state_out must not alias initial_state.");
+  return WRAP_TO_ATEN(gated_delta_rule_out_no_context, 6)(
+      query, key, value, decay, beta, initial_state, out, final_state_out);
+}
+
 } // namespace native
 } // namespace executor
 } // namespace torch
@@ -422,6 +508,22 @@ TORCH_LIBRARY_FRAGMENT(llama, m) {
       "float? scale=None, Tensor? q_zero_points=None, Tensor? q_scales=None, "
       "Tensor? k_zero_points=None, Tensor? k_scales=None, Tensor? v_zero_points=None, "
       "Tensor? v_scales=None, bool is_seq_at_dim_2=False, *, Tensor(a!) out) -> Tensor(a!)");
+  m.def(
+      "gated_delta_rule(Tensor query, Tensor key, Tensor value, Tensor decay, "
+      "Tensor beta, Tensor initial_state) -> (Tensor, Tensor)");
+  m.def(
+      "gated_delta_rule.out(Tensor query, Tensor key, Tensor value, Tensor decay, "
+      "Tensor beta, Tensor initial_state, *, Tensor(a!) out, Tensor(b!) final_state_out) "
+      "-> (Tensor(a!), Tensor(b!))");
+  // Deprecated alias of gated_delta_rule, kept so graphs and .pte files built
+  // against the pre-scalar-decay name keep working. Remove once re-exported.
+  m.def(
+      "channelwise_gated_delta_rule(Tensor query, Tensor key, Tensor value, Tensor decay, "
+      "Tensor beta, Tensor initial_state) -> (Tensor, Tensor)");
+  m.def(
+      "channelwise_gated_delta_rule.out(Tensor query, Tensor key, Tensor value, Tensor decay, "
+      "Tensor beta, Tensor initial_state, *, Tensor(a!) out, Tensor(b!) final_state_out) "
+      "-> (Tensor(a!), Tensor(b!))");
 }
 
 // TODO: Rename this file to op_custom_ops_aot.cpp
@@ -455,4 +557,14 @@ TORCH_LIBRARY_IMPL(llama, CompositeExplicitAutograd, m) {
       "custom_quantized_sdpa.out",
       WRAP_TO_ATEN(
           torch::executor::native::custom_quantized_sdpa_out_no_context, 15));
+  m.impl("gated_delta_rule", torch::executor::native::gated_delta_rule_aten);
+  m.impl(
+      "gated_delta_rule.out",
+      torch::executor::native::gated_delta_rule_out_aten);
+  m.impl(
+      "channelwise_gated_delta_rule",
+      torch::executor::native::gated_delta_rule_aten);
+  m.impl(
+      "channelwise_gated_delta_rule.out",
+      torch::executor::native::gated_delta_rule_out_aten);
 }

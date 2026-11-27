@@ -36,32 +36,44 @@ To register a custom PAL implementation, take the following steps:
 - Create an instance of the [PalImpl](https://github.com/pytorch/executorch/blob/7b39a0ce63bfb5124d4d29cfb6c8af85a3c580ba/runtime/platform/platform.h#L163) struct.
   - Set one or more fields to custom PAL function implementations. Leave fields as null to use the default platform implementation.
   - The PalImpl struct provides a [create](https://github.com/pytorch/executorch/blob/7b39a0ce63bfb5124d4d29cfb6c8af85a3c580ba/runtime/platform/platform.h#L168) method for this purpose.
-- Call `executorch::platform::register_pal(pal_impl)` to register the implementation.
+- Call `executorch::runtime::register_pal(pal_impl)` to register the implementation.
   - This can be done from as as a global constructor, as in the example below.
 
-Here is a complete example from [pybindings.cpp](https://github.com/pytorch/executorch/blob/7b39a0ce63bfb5124d4d29cfb6c8af85a3c580ba/extension/pybindings/pybindings.cpp#L1178), where logs are redirected to show up properly in a Python notebook environment.
+Here is a complete example that writes each log line to stderr.
 
 ```cpp
+#include <cstdio>
+
+#include <executorch/runtime/platform/platform.h>
+
 namespace {
-  void emit_log_message(
-      et_timestamp_t timestamp,
-      et_pal_log_level_t level,
-      const char* filename,
-      ET_UNUSED const char* function,
-      size_t line,
-      const char* message,
-      ET_UNUSED size_t length) {
-    std::cerr << "[" << filename << ":" << line << "] " << message << std::endl;
-  }
 
-  runtime::PalImpl build_pal() {
-    return runtime::PalImpl::create(emit_log_message, __FILE__);
-  }
-
-  // Update PAL to redirect logs.
-  ET_UNUSED bool registration_result = runtime::register_pal(build_pal());
+void emit_log_message(
+    ET_UNUSED et_timestamp_t timestamp,
+    ET_UNUSED et_pal_log_level_t level,
+    const char* filename,
+    ET_UNUSED const char* function,
+    size_t line,
+    const char* message,
+    size_t length) {
+  std::fprintf(
+      stderr, "[%s:%zu] %.*s\n", filename, line, static_cast<int>(length), message);
+  std::fflush(stderr);
 }
+
+ET_UNUSED const bool registered = executorch::runtime::register_pal(
+    executorch::runtime::PalImpl::create(emit_log_message, __FILE__));
+
+} // namespace
 ```
+
+The Python bindings register their PAL the same way, in
+[pybindings.cpp](https://github.com/pytorch/executorch/blob/main/extension/pybindings/pybindings.cpp).
+A backend can log while it holds a lock, and a log function that writes to
+Python at that moment can deadlock with another thread that waits for that lock,
+so their log function never calls Python. Their
+[README](https://github.com/pytorch/executorch/blob/main/extension/pybindings/README.md#note)
+says where their lines go.
 
 ### Weak Symbol Override
 ExecuTorch also provides a link-time method to override the PAL using weak symbols. This method is primarily maintained for backwards compatibility.

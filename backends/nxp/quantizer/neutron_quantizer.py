@@ -9,14 +9,16 @@ from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (
     _get_default_passes,
     NeutronAtenPassManager,
 )
-
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from executorch.backends.nxp.quantizer.patterns import (
     AbsPattern,
     ActivationsConcatClusterPattern,
-    AdaptiveAvgPoolPattern,
+    AdaptiveAvgPool1DPattern,
+    AdaptiveAvgPool2DPattern,
     AddmmPattern,
     AddTensorPattern,
+    AmaxPattern,
+    AminPattern,
     AvgPool1DPattern,
     AvgPool2DPattern,
     BatchNormPattern,
@@ -24,17 +26,24 @@ from executorch.backends.nxp.quantizer.patterns import (
     CatPattern,
     ClampPattern,
     Conv2dPattern,
+    Conv2dPatternPadding,
     ConvTranspose2dPattern,
     DropoutPattern,
+    ExpPattern,
     FlattenPattern,
+    HardSwishInPlacePattern,
+    HardSwishPattern,
     HardTanhInPlacePattern,
     HardTanhPattern,
     LeakyReluInPlacePattern,
     LeakyReluPattern,
     LinearPattern,
+    LogPattern,
+    MaximumPattern,
     MaxPool1DPattern,
     MaxPool2DPattern,
     MeanDimPattern,
+    MinimumPattern,
     MmPattern,
     MulTensorPattern,
     NegPattern,
@@ -46,6 +55,7 @@ from executorch.backends.nxp.quantizer.patterns import (
     ReluInPlacePattern,
     ReluPattern,
     ReshapePattern,
+    RsqrtPattern,
     SharedSpecPattern,
     SigmoidPattern,
     SliceTensorPattern,
@@ -54,6 +64,8 @@ from executorch.backends.nxp.quantizer.patterns import (
     SqueezeDimsPattern,
     SqueezePattern,
     SubTensorPattern,
+    SumDimIntListPattern,
+    SumPattern,
     TanhInPlacePattern,
     TanhPattern,
     TransposeIntPattern,
@@ -88,6 +100,32 @@ from torchao.quantization.pt2e.quantizer import (
 from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 
+#: Dtypes accepted by `quantized_decomposed.quantize_per_tensor` (inserted by `convert_pt2e`)
+_QUANTIZABLE_FLOAT_DTYPES = (torch.float32, torch.float16, torch.bfloat16)
+
+
+def _is_quantizable_node(node: fx.Node) -> bool:
+    """Returns whether node is quantizable float type, per `quantized_decomposed.quantize_per_tensor` torch
+     operator.
+
+    Helper function to avoid placing Observers or FakeQuant on non-floating nodes.
+    Nodes without a `"val"` meta entry (e.g. linear_weight_bias) are treated as quantizable.
+    """
+    val = node.meta.get("val", None)
+    if val is None or not hasattr(val, "dtype"):
+        return True
+    return val.dtype in _QUANTIZABLE_FLOAT_DTYPES
+
+
+def _dtype_safe_qspec(
+    spec: QuantizationSpec | None, node: fx.Node
+) -> QuantizationSpec | None:
+    """Suppress quantization annotation for a non-floating-point node inputs."""
+    if _is_quantizable_node(node):
+        return spec
+    return None
+
+
 class NeutronAtenQuantizer(Quantizer):
     def __init__(
         self, pattern: QuantizationPattern, quantization_config: QuantizationConfig
@@ -97,6 +135,7 @@ class NeutronAtenQuantizer(Quantizer):
         self.quantization_config = quantization_config
 
     def annotate(self, model: torch.fx.GraphModule) -> torch.fx.GraphModule:
+
         fused_partitions = find_sequential_partitions_aten(
             model,
             self.pattern.partition_types(),
@@ -126,12 +165,15 @@ class NeutronAtenQuantizer(Quantizer):
                 continue
 
             for output, *custom_spec in anchors.output:
+                spec = custom_spec[0] if custom_spec else output_act_qspec
+                spec = _dtype_safe_qspec(spec, output)
                 # pyre-ignore[16]: no attribute
-                output.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
-                    # pyre-ignore[6]: incompatible parameter type
-                    output_qspec=(custom_spec[0] if custom_spec else output_act_qspec),
-                    _annotated=True,
-                )
+                if spec is not None:
+                    output.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
+                        # pyre-ignore[6]: incompatible parameter type
+                        output_qspec=spec,
+                        _annotated=True,
+                    )
 
             def annotate_inputs(
                 inputs: (
@@ -153,9 +195,9 @@ class NeutronAtenQuantizer(Quantizer):
                         # pyre-ignore[16]: no attribute
                         else node.args[args_idx.idx][args_idx.inner_idx]
                     )
-                    annotation.input_qspec_map[arg] = (
-                        custom_spec[0] if custom_spec else spec
-                    )
+                    arg_spec = custom_spec[0] if custom_spec else spec
+                    arg_spec = _dtype_safe_qspec(arg_spec, arg)
+                    annotation.input_qspec_map[arg] = arg_spec
                     # pyre-ignore[16]: no attribute
                     node.meta[Q_ANNOTATION_KEY] = annotation
 
@@ -256,29 +298,39 @@ class NeutronQuantizer(ComposableQuantizer):
         super().__init__(
             [
                 OpQuantizer(AbsPattern(is_qat=is_qat), static_qconfig),
-                OpQuantizer(AdaptiveAvgPoolPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(AdaptiveAvgPool1DPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(AdaptiveAvgPool2DPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(AddTensorPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(AddmmPattern(self, is_qat=is_qat), static_fc_qconfig),
+                OpQuantizer(AmaxPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(AminPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(AvgPool1DPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(AvgPool2DPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(BatchNormPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(BMMPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(CatPattern(is_qat=is_qat), static_qconfig),
-                OpQuantizer(ClampPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(ClampPattern(self, is_qat=is_qat), static_qconfig),
                 OpQuantizer(Conv2dPattern(self, is_qat=is_qat), static_qconfig),
+                OpQuantizer(Conv2dPatternPadding(self, is_qat=is_qat), static_qconfig),
                 OpQuantizer(
                     ConvTranspose2dPattern(self, is_qat=is_qat), static_qconfig
                 ),
                 OpQuantizer(DropoutPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(ExpPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(FlattenPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(HardSwishPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(HardSwishInPlacePattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(HardTanhPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(HardTanhInPlacePattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(LeakyReluPattern(is_qat=is_qat), static_fc_qconfig),
                 OpQuantizer(LeakyReluInPlacePattern(is_qat=is_qat), static_fc_qconfig),
                 OpQuantizer(LinearPattern(self, is_qat=is_qat), static_fc_qconfig),
+                OpQuantizer(LogPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(MaximumPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(MaxPool1DPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(MaxPool2DPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(MeanDimPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(MinimumPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(MmPattern(self, is_qat=is_qat), static_qconfig),
                 OpQuantizer(MulTensorPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(NegPattern(is_qat=is_qat), static_qconfig),
@@ -288,6 +340,7 @@ class NeutronQuantizer(ComposableQuantizer):
                 OpQuantizer(ReluPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(ReluInPlacePattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(ReshapePattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(RsqrtPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(SigmoidPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(SliceTensorPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(SoftMaxPattern(is_qat=is_qat), static_qconfig),
@@ -295,6 +348,8 @@ class NeutronQuantizer(ComposableQuantizer):
                 OpQuantizer(SqueezeDimsPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(SqueezePattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(SubTensorPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(SumDimIntListPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(SumPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(TanhPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(TanhInPlacePattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(TransposeIntPattern(is_qat=is_qat), static_qconfig),
@@ -374,8 +429,10 @@ class NeutronQuantizer(ComposableQuantizer):
                 continue
 
             if node.op == "placeholder" and len(node.users) > 0:
-                annotate_output_qspec(node, act_qspec(self.is_qat))
-                self._mark_input_node_as_annotated(node)
+                spec = _dtype_safe_qspec(act_qspec(self.is_qat), node)
+                if spec is not None:
+                    annotate_output_qspec(node, spec)
+                    self._mark_input_node_as_annotated(node)
 
     def validate(self, model: torch.fx.GraphModule) -> None:
         return super().validate(model)

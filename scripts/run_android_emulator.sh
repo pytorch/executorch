@@ -26,9 +26,12 @@ adb_shell_with_retries() {
 }
 
 echo "Waiting for emulator boot to complete"
+"$ADB_PATH" wait-for-device
+
+# PackageManager can answer before StorageManager is ready to install APKs.
 # shellcheck disable=SC2016
-$ADB_PATH wait-for-device shell 'while [[ -z $(getprop sys.boot_completed) ]]; do sleep 5; done;'
-$ADB_PATH wait-for-device
+adb_shell_with_retries 180 \
+  'test "$(getprop sys.boot_completed)" = "1" && cmd package list packages >/dev/null && sm list-volumes all >/dev/null'
 
 echo "Unlock emulator and disable animations"
 adb_shell_with_retries 5 input keyevent 82 || true
@@ -41,7 +44,22 @@ echo "List all running emulators"
 $ADB_PATH devices
 
 "$ADB_PATH" uninstall org.pytorch.executorch.test || true
-"$ADB_PATH" install -t android-test-debug-androidTest.apk
+
+# Retry the install: even after PackageManager answers, a cold software
+# boot can transiently drop adb or the framework can still be settling.
+install_ok=false
+for ((i = 1; i <= 5; i++)); do
+  if "$ADB_PATH" install -r -t android-test-debug-androidTest.apk; then
+    install_ok=true
+    break
+  fi
+  sleep 10
+  "$ADB_PATH" wait-for-device
+done
+if [ "$install_ok" != "true" ]; then
+  echo "Failed to install test APK after retries" >&2
+  exit 1
+fi
 
 "$ADB_PATH" logcat -c
 "$ADB_PATH" shell am instrument -w -r \

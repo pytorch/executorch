@@ -6,13 +6,14 @@
 
 # pyre-unsafe
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, FrozenSet, List, Optional, Union
 
 import torch
 
 from executorch.exir.dynamic_shape import DynamicMemoryPlanningMode
 from executorch.exir.pass_manager import PassType
 from executorch.exir.passes import MemoryPlanningPass, ToOutVarPass
+from executorch.exir.passes.propagate_device_config import PropagateDeviceConfig
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.tracer import ExirDynamoConfig
 from torch.fx._compatibility import compatibility
@@ -37,8 +38,6 @@ class CaptureConfig:
 class EdgeCompileConfig:
     # TODO(qihan): remove ability to opt out
     _check_ir_validity: bool = True
-    # TODO(larryliu): remove this
-    _use_edge_ops: bool = True
     # TODO(gasoonjia): remove this
     _skip_dim_order: bool = False
     # Allow core ATen ops check to be skipped for certain ops, but continue with the rest of the checks.
@@ -60,6 +59,13 @@ class ExecutorchBackendConfig:
     # A single memory planning pass can be defined for all the programs in the
     # EdgeProgramManager or can be defined per program.
     memory_planning_pass: Union[PassType, Dict[str, PassType]] = MemoryPlanningPass()
+
+    # A single propagate device config can be defined for all the programs in the
+    # EdgeProgramManager or can be defined per program.
+    propagate_device_config: Union[
+        PropagateDeviceConfig, Dict[str, PropagateDeviceConfig]
+    ] = field(default_factory=PropagateDeviceConfig)
+
     to_out_var_pass: PassType = ToOutVarPass(ignore_to_out_var_failure=False)
     dynamic_memory_planning_mode: DynamicMemoryPlanningMode = (
         DynamicMemoryPlanningMode.UPPER_BOUND
@@ -115,11 +121,34 @@ class ExecutorchBackendConfig:
     # If set to true, we run quant fusion and constant propagation passes
     do_quant_fusion_and_const_prop: bool = False
 
+    # If set to true, a transpose of a weight, such as the one each Linear layer
+    # adds, is computed once at export time instead of at every inference. A
+    # transpose is not folded when another constant input, or a tensor that a
+    # constant method returns, holds the same bytes, since the program would
+    # then store a second copy. Nothing is folded when external_constants is
+    # set. The fold runs first, so every pass in to_executorch, including
+    # `passes`, and the lowered program see a folded weight as a new constant,
+    # with no transpose. During export each folded weight is held twice, so
+    # peak memory grows by about the size of the folded weights. Once a
+    # to_executorch call has folded a transpose, calling to_executorch again on
+    # the same EdgeProgramManager with this set to false, or with
+    # external_constants, raises a RuntimeError. Copy the manager first.
+    fold_constant_transposes: bool = False
+
     # Experimental: If set to true, we run a pass to reinplace ops in the graph.
     run_reinplace_pass: bool = False
 
     # When True, memory planning partitions specs by device and runs the
     # algorithm independently per device, producing separate buffers for CPU
-    # vs. accelerator memory.  Default False preserves the legacy behavior
-    # where all tensors are planned into CPU memory regardless of device.
-    enable_non_cpu_memory_planning: bool = False
+    # vs. accelerator memory.  This is the default: device (e.g. CUDA) delegate
+    # inputs/outputs are planned into real accelerator memory, and
+    # PropagateDevicePass inserts explicit h2d/d2h copies at delegate
+    # boundaries.  Set to False to fall back to the legacy behavior where all
+    # tensors are planned into CPU memory regardless of device.
+    enable_non_cpu_memory_planning: bool = True
+
+    # Add ops to the set of re-inplace ops to be used by the reinplace pass.
+    # Re-inplace pass checks the eligibility of an op to be re-inplaced and
+    # memory planning pass allcoates the output buffer of the op to be the same
+    # as the input buffer.
+    reinplace_extra_ops: Optional[FrozenSet[Any]] = None

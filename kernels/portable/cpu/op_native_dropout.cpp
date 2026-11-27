@@ -17,7 +17,7 @@ std::tuple<Tensor&, Tensor&> native_dropout_out(
     KernelRuntimeContext& ctx,
     const Tensor& input,
     double prob,
-    torch::executor::optional<bool> train,
+    std::optional<bool> train,
     Tensor& out,
     Tensor& mask) {
   std::tuple<Tensor&, Tensor&> ret(out, mask);
@@ -45,7 +45,7 @@ std::tuple<Tensor&, Tensor&> native_dropout_out(
       prob);
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "native_dropout.out";
+  ET_DEFINE_OPERATOR_NAME(op_name, "native_dropout.out");
   if ((!train.has_value() || train.value()) && prob != 0) {
     {
       std::mt19937 gen((std::random_device())());
@@ -63,7 +63,7 @@ std::tuple<Tensor&, Tensor&> native_dropout_out(
               utils::SupportedTensorDtypes::SAME_AS_COMMON>(
               [](const CTYPE_COMPUTE val, const CTYPE_COMPUTE mask_val) {
                 if (!mask_val) {
-                  return static_cast<decltype(val)>(0);
+                  return static_cast<CTYPE_COMPUTE>(0);
                 }
                 return val;
               },

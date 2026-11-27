@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -13,6 +14,7 @@ import logging
 
 import torch
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
+from executorch.backends.xnnpack.utils.configs import get_transform_passes
 from executorch.exir import (
     EdgeCompileConfig,
     ExecutorchBackendConfig,
@@ -106,6 +108,7 @@ if __name__ == "__main__":
     edge = to_edge_transform_and_lower(
         ep,
         partitioner=[XnnpackPartitioner()],
+        transform_passes=get_transform_passes(),
         compile_config=EdgeCompileConfig(
             _check_ir_validity=False if args.quantize else True,
             _skip_dim_order=True,  # TODO(T182187531): enable dim order in xnnpack

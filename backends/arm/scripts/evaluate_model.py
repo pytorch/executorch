@@ -27,7 +27,7 @@ if EXECUTORCH_ROOT_DIR not in sys.path:
 
 import torch
 
-from executorch.backends.arm.scripts.aot_arm_compiler import (
+from executorch.backends.arm.scripts.aot_arm_compiler_backend import (
     CALIBRATION_MAX_SAMPLES,
     dump_delegation_info,
     get_model_and_inputs_from_name,
@@ -140,6 +140,12 @@ def _get_args():
         required=False,
         default=1,
         help="Batch size to use for ImageNet evaluation. (only applicable for ImageNet evaluation).",
+    )
+    parser.add_argument(
+        "--max_samples",
+        type=int,
+        default=None,
+        help="Limit the number of samples evaluated.",
     )
     parser.add_argument(
         "-s",
@@ -272,6 +278,7 @@ def _evaluate(
                     batch_size=args.batch_size,
                     validation_dataset_path=args.evaluation_dataset,
                     eval_dtype=_DTYPE_MAP.get(args.dtype, None),
+                    max_samples=args.max_samples,
                 )
             case _:
                 raise AssertionError(f"Unknown evaluator {evaluator_name}")

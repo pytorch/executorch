@@ -5,7 +5,7 @@ def _operator_registry_preprocessor_flags():
     if max_kernel_num != None:
         return select({
             "DEFAULT": ["-DMAX_KERNEL_NUM=" + max_kernel_num],
-            "ovr_config//build_mode/constraints:arvr_is_host_platform": []
+            "ovr_config//build_mode/constraints:arvr_is_host_or_target_platform[arvr_is_host_platform]": []
         })
     elif not runtime.is_oss:
         return select({
@@ -63,6 +63,21 @@ def define_common_targets():
                 "//executorch/runtime/core:evalue" + aten_suffix,
             ],
             preprocessor_flags = _operator_registry_preprocessor_flags(),
+        )
+
+        # The same registry, linked whole. A shared library that must keep its own registry
+        # depends on the `_static` flavor of this target: a lazily linked registry object is
+        # dropped when another shared library on the link line already defines its symbols.
+        runtime.cxx_library(
+            name = "operator_registry_link_whole" + aten_suffix,
+            srcs = ["operator_registry.cpp"],
+            visibility = ["PUBLIC"],
+            exported_deps = [
+                "//executorch/runtime/kernel:operator_registry" + aten_suffix,
+            ],
+            preprocessor_flags = _operator_registry_preprocessor_flags(),
+            # @lint-ignore BUCKLINT link_whole
+            link_whole = True,
         )
 
         runtime.cxx_library(

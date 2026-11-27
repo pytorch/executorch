@@ -36,7 +36,7 @@ class MoveActivationBeforeConcat(PassBase):
     def __init__(self, neutron_target_spec: NeutronTargetSpec):
         self.neutron_target_spec = neutron_target_spec
 
-    def call(self, module: GraphModule) -> bool:
+    def call(self, module: GraphModule) -> PassResult:
         def _is_concat(node_: Node) -> bool:
             return (
                 node_.op == "call_function"
@@ -80,12 +80,11 @@ class MoveActivationBeforeConcat(PassBase):
                         kwargs=activation.kwargs,
                     )
 
-                    new_activation.meta["source_fn_stack"] = [
-                        (
-                            new_activation.name,
-                            activation.meta["source_fn_stack"][-1][-1],
-                        )
-                    ]
+                    # A non-strict torch.export does not record source_fn_stack.
+                    if source_fn_stack := activation.meta.get("source_fn_stack"):
+                        new_activation.meta["source_fn_stack"] = [
+                            (new_activation.name, source_fn_stack[-1][-1])
+                        ]
                     new_activation.meta["val"] = input_node.meta["val"]
 
                     # Replace the uses of the input node with the new activation node.

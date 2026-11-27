@@ -23,7 +23,6 @@ import triton
 import triton.language as tl
 from torch.library import triton_op, wrap_triton
 
-
 # -- Autotune configs ---------------------------------------------------------
 
 _INT4_MATMUL_CONFIGS = [
@@ -307,6 +306,7 @@ def _int4_matvec_kernel(
     stride_sn,
     stride_sk,
     group_size: tl.constexpr,
+    round_weight_to_bf16: tl.constexpr,
     BLOCK_N: tl.constexpr,
     BLOCK_K: tl.constexpr,
 ):
@@ -344,29 +344,21 @@ def _int4_matvec_kernel(
             )
             w_dq = (w_uint4.to(tl.float32) - 8.0) * scale
 
+        if round_weight_to_bf16:
+            w_dq = w_dq.to(tl.bfloat16)
+
         acc += tl.sum(w_dq * x_val[None, :], axis=1)
 
     tl.store(Out + offs_n, acc.to(tl.bfloat16), mask=nm)
 
 
-@triton_op("triton::int4_matvec", mutates_args={})
-def int4_matvec(
+def _int4_matvec(
     x: torch.Tensor,
     w_packed: torch.Tensor,
     w_scale: torch.Tensor,
     group_size: int,
+    round_weight_to_bf16: bool,
 ) -> torch.Tensor:
-    """W4A16 matvec for M=1 decode: out[1,N] = x[1,K] @ dequant(w[N,K]).T
-
-    Args:
-        x:        [1, K] bf16 input (M=1)
-        w_packed: [N, K//2] int8 packed INT4 weights
-        w_scale:  [N, K//group_size] bf16 per-group scales
-        group_size: quantization group size
-
-    Returns:
-        [1, N] bf16
-    """
     K = x.shape[-1]
     N = w_packed.shape[0]
 
@@ -387,12 +379,49 @@ def int4_matvec(
         w_scale.stride(0),
         w_scale.stride(1),
         group_size,
+        round_weight_to_bf16,
     )
     return output
 
 
+@triton_op("triton::int4_matvec", mutates_args={})
+def int4_matvec(
+    x: torch.Tensor,
+    w_packed: torch.Tensor,
+    w_scale: torch.Tensor,
+    group_size: int,
+) -> torch.Tensor:
+    """W4A16 matvec for M=1 decode: out[1,N] = x[1,K] @ dequant(w[N,K]).T"""
+    return _int4_matvec(x, w_packed, w_scale, group_size, False)
+
+
 @int4_matvec.register_fake
 def _int4_matvec_fake(
+    x: torch.Tensor,
+    w_packed: torch.Tensor,
+    w_scale: torch.Tensor,
+    group_size: int,
+) -> torch.Tensor:
+    N = w_packed.shape[0]
+    return torch.empty(1, N, dtype=torch.bfloat16, device=x.device)
+
+
+@triton_op("triton::int4_matvec_bf16", mutates_args={})
+def int4_matvec_bf16(
+    x: torch.Tensor,
+    w_packed: torch.Tensor,
+    w_scale: torch.Tensor,
+    group_size: int,
+) -> torch.Tensor:
+    """W4A16 matvec with BF16-rounded weights to reduce matmul divergence.
+
+    Activation precision and reduction order still differ from ``int4_matmul``.
+    """
+    return _int4_matvec(x, w_packed, w_scale, group_size, True)
+
+
+@int4_matvec_bf16.register_fake
+def _int4_matvec_bf16_fake(
     x: torch.Tensor,
     w_packed: torch.Tensor,
     w_scale: torch.Tensor,

@@ -19,6 +19,7 @@ from executorch.exir.passes.quant_fusion_pass import (
     QuantFusionPass,
 )
 from executorch.exir.tests.common import register_additional_test_aten_ops
+from torch._subclasses.fake_tensor import FakeTensorMode
 from torch.ao.quantization import (  # @manual
     float_qparams_weight_only_qconfig,
     get_default_qconfig_mapping,
@@ -300,7 +301,6 @@ class TestQuantFusionPass(unittest.TestCase):
             m = _convert_to_reference_decomposed_fx(m)
             compile_config = EdgeCompileConfig(
                 _check_ir_validity=False,
-                _use_edge_ops=True,
             )
             m = to_edge(
                 export(m, example_inputs, strict=True), compile_config=compile_config
@@ -358,7 +358,6 @@ class TestQuantFusionPass(unittest.TestCase):
             m = _convert_to_reference_decomposed_fx(m)
             compile_config = EdgeCompileConfig(
                 _check_ir_validity=False,
-                _use_edge_ops=True,
             )
             m = to_edge(
                 export(m, example_inputs, strict=True), compile_config=compile_config
@@ -383,6 +382,34 @@ class TestQuantFusionPass(unittest.TestCase):
             #     m.dump_graph_module().code
             # )
 
+    def test_embedding_xbit_fake_dtype(self) -> None:
+        # The variants without a dtype argument return the scales' dtype; their
+        # fake kernels must report the same dtype, or export records the wrong one.
+        indices = torch.tensor([1, 2, 3])
+        for op, values_per_byte, quant_min, quant_max in (
+            (torch.ops.quantized_decomposed.embedding_2bit.default, 4, -2, 1),
+            (torch.ops.quantized_decomposed.embedding_4bit.default, 2, -8, 7),
+        ):
+            for scales_dtype in (torch.float16, torch.bfloat16, torch.float32):
+                with self.subTest(op=str(op), scales_dtype=scales_dtype):
+                    weight = torch.randint(
+                        0, 256, (10, 32 // values_per_byte), dtype=torch.uint8
+                    )
+                    scales = torch.rand(10, dtype=scales_dtype) + 0.5
+                    expected = op(weight, scales, None, quant_min, quant_max, indices)
+                    with FakeTensorMode() as mode:
+                        actual = op(
+                            mode.from_tensor(weight),
+                            mode.from_tensor(scales),
+                            None,
+                            quant_min,
+                            quant_max,
+                            mode.from_tensor(indices),
+                        )
+                    self.assertEqual(expected.dtype, scales_dtype)
+                    self.assertEqual(actual.dtype, expected.dtype)
+                    self.assertEqual(actual.shape, expected.shape)
+
     def test_embedding_torchao(self) -> None:
         for bit_width, use_dtype_variant, test_per_group, mapping_type in zip(
             [2, 4, 8],
@@ -391,7 +418,29 @@ class TestQuantFusionPass(unittest.TestCase):
             [MappingType.SYMMETRIC, MappingType.ASYMMETRIC],
         ):
             self._test_embedding_torchao(
-                bit_width, use_dtype_variant, test_per_group, mapping_type
+                bit_width,
+                use_dtype_variant,
+                test_per_group,
+                mapping_type,
+                dtype=torch.float16,
+            )
+
+        # bfloat16 mirrors the float16 (dtype-variant) path across bit widths.
+        for bit_width, test_per_group, mapping_type in zip(
+            [2, 4, 8],
+            [True, False, True],
+            [
+                MappingType.SYMMETRIC,
+                MappingType.ASYMMETRIC,
+                MappingType.SYMMETRIC,
+            ],
+        ):
+            self._test_embedding_torchao(
+                bit_width,
+                use_dtype_variant=True,
+                test_per_group=test_per_group,
+                mapping_type=mapping_type,
+                dtype=torch.bfloat16,
             )
 
     def _test_embedding_torchao(
@@ -400,6 +449,7 @@ class TestQuantFusionPass(unittest.TestCase):
         use_dtype_variant: bool,
         test_per_group: bool,
         mapping_type: MappingType,
+        dtype: torch.dtype,
     ) -> None:
         assert bit_width in [2, 4, 8]
         embedding_suffix = f"{bit_width}bit" if bit_width < 8 else "byte"
@@ -414,7 +464,7 @@ class TestQuantFusionPass(unittest.TestCase):
 
         # torchao adds a dtype cast to match embeddings original weight type
         # this does not happen for float32 because it is the default dtype
-        model = model.to(torch.float16) if use_dtype_variant else model
+        model = model.to(dtype) if use_dtype_variant else model
 
         # quantize the model
         granularity = PerGroup(32) if test_per_group else PerAxis(0)
@@ -431,7 +481,6 @@ class TestQuantFusionPass(unittest.TestCase):
 
         compile_config = EdgeCompileConfig(
             _check_ir_validity=False,
-            _use_edge_ops=True,
         )
         m = to_edge(
             export(model, example_inputs, strict=True), compile_config=compile_config

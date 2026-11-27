@@ -14,7 +14,9 @@ from executorch.backends.xnnpack.utils.quant_utils import (
     is_dequant,
     is_qparam,
     is_quant,
+    tag_as_implicit_q_dq,
 )
+from executorch.backends.xnnpack.utils.xnnpack_constants import XNN_MAX_TENSOR_DIMS
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
     PartitionerConfig,
@@ -33,6 +35,13 @@ class ConfigPrecisionType(Enum):
     DYNAMIC_QUANT = 3
 
 
+def _input_and_output_values(node: torch.fx.Node) -> List[object]:
+    values = [arg.meta.get("val") for arg in node.all_input_nodes]
+    node_val = node.meta.get("val")
+    values.extend(node_val if isinstance(node_val, (list, tuple)) else [node_val])
+    return values
+
+
 class XNNPartitionerConfig(PartitionerConfig):
     """
     Base partitioner config for XNNPACK Partitioner Configs. Base wrapper class
@@ -43,6 +52,11 @@ class XNNPartitionerConfig(PartitionerConfig):
     types they want to enable
     """
 
+    # At the pinned XNNPACK commit, some ops are defined only for fp32 and fp16
+    # tensors. Their configs set this to False, so their bf16 nodes stay on the
+    # portable kernels instead of failing when the program loads.
+    supports_bf16 = True
+
     def __init__(self, **kwargs):
         super().__init__()
         self.enabled_precision_types = self.supported_precision_types()
@@ -50,6 +64,11 @@ class XNNPartitionerConfig(PartitionerConfig):
         self.force_non_static_weights_for_f32_linear = kwargs.get(
             "force_non_static_weights_for_f32_linear", False
         )
+        # Opt-in flag for bf16 delegation (e.g. bf16 fully-connected). XNNPACK
+        # only supports bf16 fully-connected on new enough revisions, so this
+        # stays off by default and bf16 nodes fall back to the portable op
+        # unless the caller explicitly enables it.
+        self.enable_bf16 = kwargs.get("enable_bf16", False)
 
     def get_partition(
         self, node: torch.fx.Node, ep: ExportedProgram
@@ -61,14 +80,31 @@ class XNNPartitionerConfig(PartitionerConfig):
         with the name of the XNNPartitionerConfig class which return this set of nodes.
         This enforces that all partitions returned by XNNPartitioner configs are labeled
         with the partitioner config which returned them
+
+        Returns an empty list if any of the nodes has more dims than XNNPACK supports.
+        Otherwise marks every quantize and dequantize node in the partition, other
+        than the given node, as implicit, so that it is folded into the op it feeds
+        or follows.
         """
         partitioned_nodes = self.get_node_and_deps(node, ep)
+        # A partition can take nodes that their own configs reject.
+        for n in partitioned_nodes:
+            if not self._check_tensor_ranks(n):
+                why(node, reason=f"its partition takes {n}, which has too many dims")
+                return []
+
+        # Fold only now, so a rejected node keeps its q/dq nodes as separate ops. A
+        # q/dq node partitioned on its own stays a separate op as well.
+        for n in partitioned_nodes:
+            if n is not node and (is_quant(n) or is_dequant(n)):
+                tag_as_implicit_q_dq(n)
+
         # label partitioned nodes with the name of the partitioner config
-        for node in partitioned_nodes:
-            if "xnn_partitioner_config" in node.meta:
-                node.meta["xnn_partitioner_config"].append(self.__class__.__name__)
+        for n in partitioned_nodes:
+            if "xnn_partitioner_config" in n.meta:
+                n.meta["xnn_partitioner_config"].append(self.__class__.__name__)
             else:
-                node.meta["xnn_partitioner_config"] = [self.__class__.__name__]
+                n.meta["xnn_partitioner_config"] = [self.__class__.__name__]
 
         return partitioned_nodes
 
@@ -89,7 +125,9 @@ class XNNPartitionerConfig(PartitionerConfig):
     ) -> List[torch.fx.Node]:
         """
         Takes in a node and its exported program and returns a list of nodes
-        and its dependencies that need to be partitioned together
+        and its dependencies that need to be partitioned together. Quantize and
+        dequantize nodes in the list, other than the node itself, are folded into
+        the partition's op once get_partition takes it.
 
         Args:
             node: Node to be partitioned
@@ -142,10 +180,28 @@ class XNNPartitionerConfig(PartitionerConfig):
             why(node, reason="not enabled precision types")
             return False
 
+        if not self.supports_bf16 and any(
+            isinstance(val, torch.Tensor) and val.dtype == torch.bfloat16
+            for val in _input_and_output_values(node)
+        ):
+            why(node, reason="XNNPACK does not support bf16 for this op")
+            return False
+
         has_valid_dtypes = self._check_node_has_valid_dtype(node)
         if not has_valid_dtypes:
             why(node, reason="invalid dtype")
             return False
+
+        return self._check_tensor_ranks(node)
+
+    def _check_tensor_ranks(self, node: torch.fx.Node) -> bool:
+        for val in _input_and_output_values(node):
+            if isinstance(val, torch.Tensor) and val.dim() > XNN_MAX_TENSOR_DIMS:
+                why(
+                    node,
+                    reason=f"XNNPACK supports at most {XNN_MAX_TENSOR_DIMS} dims, got {val.dim()}",
+                )
+                return False
 
         return True
 
@@ -229,6 +285,8 @@ class XNNPartitionerConfig(PartitionerConfig):
             torch.float32,
             torch.float16,
         }
+        if self.enable_bf16:
+            valid_dtypes.add(torch.bfloat16)
         # Only allow int8 and quant dtypes for quant operations
         if is_quant(node) or is_dequant(node) or is_qparam(node):
             valid_dtypes.update(

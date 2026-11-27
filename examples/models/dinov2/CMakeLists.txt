@@ -7,7 +7,9 @@
 cmake_minimum_required(VERSION 3.24)
 project(dinov2_runner)
 
-set(CMAKE_CXX_STANDARD 17)
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 17)
+endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
@@ -41,11 +43,18 @@ if(TARGET optimized_native_cpu_ops_lib)
 endif()
 
 # Add the required ExecuTorch extensions
-list(APPEND link_libraries extension_module extension_data_loader
-     extension_tensor extension_flat_tensor
+list(
+  APPEND
+  link_libraries
+  extension_module
+  extension_data_loader
+  extension_tensor
+  extension_flat_tensor
+  extension_image
 )
 
-# stb_image: lightweight library to load and resize images
+# stb_image: lightweight header-only library used to decode the input image
+# (ImageProcessor handles resize and normalization).
 include(FetchContent)
 FetchContent_Declare(
   stb
@@ -81,8 +90,10 @@ if(MSVC)
   add_custom_command(
     TARGET dinov2_runner
     POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:aoti_cuda_shims>
-            $<TARGET_FILE_DIR:dinov2_runner>
-    COMMENT "Copying aoti_cuda_shims.dll to dinov2_runner directory"
+    COMMAND
+      ${CMAKE_COMMAND} -E copy_if_different $<TARGET_RUNTIME_DLLS:dinov2_runner>
+      $<TARGET_FILE_DIR:dinov2_runner>
+    COMMENT "Copying runtime DLLs to dinov2_runner directory"
+    COMMAND_EXPAND_LISTS
   )
 endif()

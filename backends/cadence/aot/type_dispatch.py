@@ -10,10 +10,6 @@ from dataclasses import dataclass
 from typing import cast, Optional
 
 import torch
-from executorch.backends.cadence.aot.pass_utils import (
-    CadencePassAttribute,
-    register_cadence_pass,
-)
 from executorch.backends.cadence.aot.utils import is_depthwise_conv
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, NodeMetadata, ProxyValue
@@ -32,7 +28,6 @@ class OpConfig:
     variant: str = "per_tensor"
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=4))
 class CompileTimeTypeDispatchPass(ExportPass):
     """
     Replaces generic ops with ops that have explicit types.
@@ -180,5 +175,18 @@ class CompileTimeTypeDispatchPass(ExportPass):
         typed_op = getattr(
             getattr(exir_ops.edge.cadence, typed_op_name), config.variant
         )
+
+        # The generic op can have trailing optional args that its typed variants
+        # lack, such as quantized_conv2d_nhwc's offset. They have to be unset.
+        typed_arg_names = [arg.name for arg in typed_op._schema.arguments]
+        extra_args = list(args[len(typed_arg_names) :]) + [
+            value for name, value in kwargs.items() if name not in typed_arg_names
+        ]
+        if any(arg is not None for arg in extra_args):
+            raise RuntimeError(
+                f"{typed_op_name} has no operand for the extra args of {op}: {extra_args}"
+            )
+        args = args[: len(typed_arg_names)]
+        kwargs = {name: kwargs[name] for name in kwargs if name in typed_arg_names}
 
         return super().call_operator(typed_op, args, kwargs, meta)

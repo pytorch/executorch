@@ -30,6 +30,8 @@ ${layout_declare_ubo(B, "BufferMetadata", "inp")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+#include "dispatch.glslh"
+
 ${layout_declare_spec_const(C, "int", "outp_layout", "CONTIG_LAYOUT_INT")}
 ${layout_declare_spec_const(C, "int", "inp_layout", "CONTIG_LAYOUT_INT")}
 ${layout_declare_spec_const(C, "int", "upscale_factor", "1")}
@@ -47,12 +49,16 @@ ${layout_declare_spec_const(C, "int", "upscale_factor", "1")}
  * mapping is independent of the tensor's memory layout.
  */
 void main() {
-  const uint outp_bufi = gl_GlobalInvocationID.x;
+  const uint outp_bufi = linear_idx_from_gid();
   if (outp_bufi >= numel(outp)) {
     return;
   }
 
   TensorIndex outp_tidx = linear_idx_to_tensor_idx(outp, outp_bufi);
+  if (out_of_bounds(outp_tidx, outp)) {
+    t_outp[outp_bufi] = T(0);
+    return;
+  }
 
   // NCHW dim indices for W (last), H (second-last), C (third-last).
   const int nd = int_ndim(outp);

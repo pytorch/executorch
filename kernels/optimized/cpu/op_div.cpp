@@ -21,9 +21,6 @@ namespace native {
 namespace {
 
 ScalarType get_common_type(ScalarType a_type, ScalarType b_type) {
-  if (isComplexType(a_type) || isComplexType(b_type)) {
-    return promoteTypes(a_type, b_type);
-  }
   ET_CHECK(!isQIntType(a_type) && !isBitsType(a_type));
   ET_CHECK(!isQIntType(b_type) && !isBitsType(b_type));
 
@@ -56,22 +53,25 @@ Tensor& opt_div_out(
       out);
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "div.out";
+  ET_DEFINE_OPERATOR_NAME(op_name, "div.out");
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
   ScalarType out_type = out.scalar_type();
 
   // Handle complex types
-  if (isComplexType(a_type) || isComplexType(b_type)) {
-    ScalarType common_type = get_common_type(a_type, b_type);
-    ET_SWITCH_COMPLEX_TYPES(common_type, ctx, op_name, CTYPE, [&]() {
-      const CTYPE* a_data = a.const_data_ptr<CTYPE>();
-      const CTYPE* b_data = b.const_data_ptr<CTYPE>();
-      CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
-      for (size_t i = 0; i < out.numel(); ++i) {
-        out_data[i] = a_data[i] / b_data[i];
-      }
+  if (isComplexType(a_type) || isComplexType(b_type) ||
+      isComplexType(out_type)) {
+    // TODO: The current support for complex dtype enforces that input and
+    // output tensors have the same dtype. Support mixed dtypes in the future.
+    ET_KERNEL_CHECK(
+        ctx, a_type == b_type && a_type == out_type, InvalidArgument, out);
+    ET_SWITCH_COMPLEX_TYPES(out_type, ctx, op_name, CTYPE, [&]() {
+      apply_binary_elementwise_fn<CTYPE, CTYPE, CTYPE>(
+          [](const CTYPE val_a, const CTYPE val_b) { return val_a / val_b; },
+          a,
+          b,
+          out);
     });
     return out;
   }
@@ -137,20 +137,9 @@ Tensor& opt_div_out(
     // Reason for using alpha is becasuse handle_broadcast_elementwise
     // is used for add and sub as well:
     ET_SWITCH_REALB_TYPES(out_type, ctx, op_name, CTYPE, [&]() {
-      if (selected_optimized_path ==
-              ElementwiseOptimizedPath::kBroadcast2dBy1dReverseArguments ||
-          selected_optimized_path ==
-              ElementwiseOptimizedPath::kBroadcastLastDimReverseArguments ||
-          selected_optimized_path ==
-              ElementwiseOptimizedPath::kBroadcastNdByNdReverseArguments) {
-        auto div_lambda = [](auto x, auto y) { return y / x; };
-        torch::executor::handle_broadcast_elementwise<CTYPE>(
-            ctx, div_lambda, a, b, out, selected_optimized_path);
-      } else {
-        auto div_lambda = [](auto x, auto y) { return x / y; };
-        torch::executor::handle_broadcast_elementwise<CTYPE>(
-            ctx, div_lambda, a, b, out, selected_optimized_path);
-      }
+      auto div_lambda = [](auto x, auto y) { return x / y; };
+      torch::executor::handle_broadcast_elementwise<CTYPE>(
+          ctx, div_lambda, a, b, out, selected_optimized_path);
     });
   } else {
     ScalarType common_type = get_common_type(a.scalar_type(), b.scalar_type());
@@ -196,7 +185,7 @@ Tensor& opt_div_scalar_out(
       ctx, resize_tensor(out, a.sizes()) == Error::Ok, InvalidArgument, out);
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "div.Scalar_out";
+  ET_DEFINE_OPERATOR_NAME(op_name, "div.Scalar_out");
 
   if (a_type == common_type && a_type == out_type &&
       a_type != ScalarType::Half && a_type != ScalarType::BFloat16) {

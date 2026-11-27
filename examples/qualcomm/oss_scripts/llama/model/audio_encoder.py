@@ -151,6 +151,12 @@ class GraniteSpeechCTCEncoderWrapper(nn.Module):
         input_dim = self.config.encoder_config.input_dim
         return (torch.randn((1, self.n_bins, input_dim), dtype=torch.float32),)
 
+    def get_metadata(self):
+        return {
+            "get_context_size": self.config.encoder_config.context_size,
+            "get_n_layers": self.config.encoder_config.num_layers,
+        }
+
     def forward(self, hidden_states: torch.Tensor):
         encoder_embeds = self.encoder(hidden_states)
         projected_embeds = self.projector(encoder_embeds)

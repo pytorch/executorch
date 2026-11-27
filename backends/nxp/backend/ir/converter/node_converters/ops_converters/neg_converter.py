@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import numpy as np
+import torch
 
 from executorch.backends.nxp.backend import edge_helper
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
@@ -18,6 +19,7 @@ from executorch.backends.nxp.backend.ir.tflite_generator.tflite_model import (
     Scale,
     ZeroPoint,
 )
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from torch.fx import Node
 from torch.nn import Parameter
 
@@ -41,6 +43,25 @@ class NegConverter(NodeConverter):
                 pass  # Atomic quantization parameters -> per tensor quantization.
             case _:
                 return False  # Everything else is unexpected.
+
+        supported_types = [torch.int8, torch.uint8]
+        if not NodeConverter.uses_quantization_type_for_io(
+            node, supported_types, [0], [0]
+        ):
+            return False
+
+        return True
+
+    @classmethod
+    def _is_supported_on_target(
+        cls,
+        node: Node,
+        neutron_target_spec: NeutronTargetSpec,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
+    ) -> bool:
+        if neutron_target_spec.is_subsystem():
+            return False
 
         return True
 

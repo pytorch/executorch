@@ -94,11 +94,11 @@ class TrainingModuleE2ETest {
             String.format(
                 "Step %d, Loss %f, Input [%.0f, %.0f], Prediction %d, Label %d",
                 i,
-                out[0].toTensor().getDataAsFloatArray()[0],
-                input.getDataAsFloatArray()[0],
-                input.getDataAsFloatArray()[1],
-                out[1].toTensor().getDataAsLongArray()[0],
-                target.getDataAsLongArray()[0],
+                out[0].toTensor().dataAsFloatArray[0],
+                input.dataAsFloatArray[0],
+                input.dataAsFloatArray[1],
+                out[1].toTensor().dataAsLongArray[0],
+                target.dataAsLongArray[0],
             ),
         )
       }
@@ -169,11 +169,11 @@ class TrainingModuleE2ETest {
             String.format(
                 "Step %d, Loss %f, Input [%.0f, %.0f], Prediction %d, Label %d",
                 i,
-                out[0].toTensor().getDataAsFloatArray()[0],
-                input.getDataAsFloatArray()[0],
-                input.getDataAsFloatArray()[1],
-                out[1].toTensor().getDataAsLongArray()[0],
-                target.getDataAsLongArray()[0],
+                out[0].toTensor().dataAsFloatArray[0],
+                input.dataAsFloatArray[0],
+                input.dataAsFloatArray[1],
+                out[1].toTensor().dataAsLongArray[0],
+                target.dataAsLongArray[0],
             ),
         )
       }

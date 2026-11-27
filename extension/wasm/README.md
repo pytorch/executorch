@@ -2,6 +2,10 @@
 
 This directory contains the source code for the ExecuTorch Wasm extension. The extension is a C++ library that provides a JavaScript API for ExecuTorch models. The extension is compiled to WebAssembly and can be used in JavaScript applications.
 
+> [!WARNING]
+> The JavaScript/WebAssembly API is experimental and may change or be removed
+> without notice.
+
 ## Installing Emscripten
 
 [Emscripten](https://emscripten.org/index.html) is necessary to compile ExecuTorch for Wasm. You can install Emscripten with these commands:
@@ -11,9 +15,9 @@ This directory contains the source code for the ExecuTorch Wasm extension. The e
 git clone https://github.com/emscripten-core/emsdk.git
 cd emsdk
 
-# Download and install version 4.0.10 of the SDK
-./emsdk install 4.0.10
-./emsdk activate 4.0.10
+# Download and install version 4.0.19 of the SDK
+./emsdk install 4.0.19
+./emsdk activate 4.0.19
 
 # Add the Emscripten environment variables to your shell
 source ./emsdk_env.sh
@@ -30,10 +34,46 @@ emcmake cmake . -DEXECUTORCH_BUILD_WASM=ON \
     -Bcmake-out-wasm
 
 # Build the Wasm extension
-cmake --build cmake-out-wasm --target executorch_wasm -j32
+cmake --build cmake-out-wasm --target executorch_wasm -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 ))
 ```
 
 To reduce the binary size, you may also use the selective build options found in the [Kernel Library Selective Build guide](../../docs/source/kernel-library-selective-build.md). You may also use optimized kernels with the `EXECUTORCH_BUILD_KERNELS_OPTIMIZED` option. Portable kernels are used by default.
+
+### Building with the WebGPU backend
+
+`EXECUTORCH_BUILD_WASM_WEBGPU` links the WebGPU backend into `executorch_wasm` so delegated `.pte` files can run on the GPU. It is off by default, and a build without it is unchanged: no backend is linked, no Asyncify, no exceptions.
+
+```bash
+emcmake cmake . -DEXECUTORCH_BUILD_WASM=ON \
+    -DEXECUTORCH_BUILD_WEBGPU=ON \
+    -DEXECUTORCH_BUILD_WASM_WEBGPU=ON \
+    -DCMAKE_BUILD_TYPE=Release \
+    -Bcmake-out-wasm-webgpu
+
+cmake --build cmake-out-wasm-webgpu --target executorch_wasm -j32
+```
+
+The option requires `EXECUTORCH_BUILD_WASM` and `EXECUTORCH_BUILD_WEBGPU`, and it adds link options that only this configuration needs:
+
+- `-sASYNCIFY`. Readback waits on `wgpuInstanceWaitAny`, which the emdawnwebgpu port implements with `Asyncify.handleAsync`; the port aborts in that call when Asyncify is off. `ASYNCIFY_IGNORE_INDIRECT` must not be set, because the wait is reached through the virtual backend interface.
+- `-sALLOW_MEMORY_GROWTH=1 -sMAXIMUM_MEMORY=4GB`. A `.pte` buffer lives in the Wasm heap while the delegate uploads its constants. Emscripten's default 16 MiB heap cannot load production model data.
+- `-fexceptions`. The backend throws on device and graph failures and catches at its own boundary.
+
+Because Asyncify makes the delegated call path suspend, `execute()` and `forward()` on a WebGPU-delegated method can return a `Promise`: embind returns `Asyncify.whenDone()` from a call that suspended and the plain value from a call that did not. CPU-only methods therefore stay synchronous, and `await` is correct for both. A CPU-only build is not affected at all.
+
+Emscripten 4.0.19 is the pinned version. The backend uses the instance-features API (`WGPUInstanceFeatureName`, `WGPUInstanceDescriptor::requiredFeatures`), which the emdawnwebgpu port ships from the version pinned by Emscripten 4.0.13; 4.0.10 pins a port with the older `capabilities` descriptor and does not compile it.
+
+#### Initializing WebGPU
+
+`initWebGPU()` creates the device and registers it as the backend's context. It must be called before loading a delegated `.pte`, otherwise the delegate fails to initialize. Calling it more than once is a no-op, and a failure to acquire an adapter or device throws a JS `Error`.
+
+```js
+await Module.initWebGPU();
+const model = Module.Module.load(modelData);
+const outputs = await model.forward(inputs);
+```
+
+WebGPU is available in desktop Chrome; there is no CPU fallback in this configuration once a model is delegated.
 
 ### Building for Web
 
@@ -77,18 +117,21 @@ The output `my_project.js` should contain both the emitted JS code and the conte
 
 ## JavaScript API
 
+### initWebGPU
+- `initWebGPU()`: Only present in a build with `EXECUTORCH_BUILD_WASM_WEBGPU`. Creates the WebGPU device and registers it as the backend's context; call it before loading a delegated `.pte`. Repeated calls do nothing, and an initialization failure throws an `Error`.
+
 ### Module
 - `static load(data)`: Load a model from a file or a buffer.
 - `getMethods()`: Returns the list of methods in the model.
 - `loadMethod(methodName)`: Load a method from the model.
-- `getMethodMetadata(methodName)`: Get the metadata of a method.
+- `getMethodMeta(methodName)`: Get the metadata of a method.
 - `etdump()`: If enabled, flushes the etdump buffer and return the results.
 - `execute(methodName, inputs)`: Execute a method with the given inputs.
 - `forward(inputs)`: Execute the forward method with the given inputs.
 - `delete()`: Delete the model from memory.
 
 ### Tensor
-- `static zeroes(shape, dtype=ScalarType.Float)`: Create a tensor of zeros with the given shape and dtype.
+- `static zeros(shape, dtype=ScalarType.Float)`: Create a tensor of zeros with the given shape and dtype.
 - `static ones(shape, dtype=ScalarType.Float)`: Create a tensor of ones with the given shape and dtype.
 - `static full(shape, value, dtype=ScalarType.Float)`: Create a tensor of the given value with the given shape and dtype
 - `static fromArray(shape, array, dtype=ScalarType.Float, dimOrder=[], strides=[])`: Create a tensor from a JavaScript array.
@@ -115,7 +158,7 @@ The output `my_project.js` should contain both the emitted JS code and the conte
 - `dimOrder`: The dimension order of the tensor.
 - `scalarType`: The scalar type of the tensor.
 - `isMemoryPlanned`: Whether the tensor is memory planned.
-- `nBytes`: The number of bytes in the tensor.
+- `nbytes`: The number of bytes in the tensor.
 - `name`: The name of the tensor.
 - These are value types and do not need to be manually deleted.
 
@@ -132,4 +175,4 @@ The output `my_project.js` should contain both the emitted JS code and the conte
 - `value`: The int constant value of the enum.
 - `name`: The `Tag` as a string.
 
-Emscripten's JavaScript API is also avaiable, which you can find more information about it in their [API Reference](https://emscripten.org/docs/api_reference/index.html).
+Emscripten's JavaScript API is also available; see its [API Reference](https://emscripten.org/docs/api_reference/index.html) for more information.

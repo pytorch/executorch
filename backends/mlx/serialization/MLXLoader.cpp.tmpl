@@ -62,7 +62,8 @@ std::vector<T> to_vector(const flatbuffers::Vector<T>* fb_vec) {
 // load_instruction - AUTO-GENERATED switch statement
 // =============================================================================
 
-Instruction load_instruction(const mlx_delegate::Instruction* fb_instr) {
+Instruction load_instruction(
+    const mlx_delegate::Instruction* fb_instr, StringPool& strpool) {
   Instruction instr;
 
   if (!fb_instr || !fb_instr->op()) {
@@ -142,6 +143,10 @@ MLXProgram load_program(const void* data, size_t size) {
   check_collection_size(program.num_tensors(), "num_tensors()");
   check_collection_size(program.num_values, "num_values");
 
+  // Pool shared across all chains so identical kernel source/header blobs are
+  // interned once for the whole program.
+  StringPool strpool;
+
   if (fb_graph->instruction_chains()) {
     check_collection_size(fb_graph->instruction_chains()->size(), "instruction_chains");
     program.instruction_chains.reserve(fb_graph->instruction_chains()->size());
@@ -152,7 +157,7 @@ MLXProgram load_program(const void* data, size_t size) {
         check_collection_size(fb_chain->instructions()->size(), "instructions in chain");
         chain.reserve(fb_chain->instructions()->size());
         for (size_t i = 0; i < fb_chain->instructions()->size(); ++i) {
-          chain.push_back(load_instruction(fb_chain->instructions()->Get(static_cast<flatbuffers::uoffset_t>(i))));
+          chain.push_back(load_instruction(fb_chain->instructions()->Get(static_cast<flatbuffers::uoffset_t>(i)), strpool));
         }
       }
       program.instruction_chains.push_back(std::move(chain));
@@ -312,6 +317,19 @@ MLXProgram load_program(const void* data, size_t size) {
       } else {
         program.tensor_meta.push_back(std::nullopt);
       }
+    }
+  }
+
+  if (fb_graph->mutated_inputs()) {
+    check_collection_size(fb_graph->mutated_inputs()->size(), "mutated_inputs");
+    for (uint32_t position : *fb_graph->mutated_inputs()) {
+      if (position >= program.input_map.size() ||
+          program.input_map[position].slot_type != SlotType::TensorSlot) {
+        throw std::runtime_error(
+            "mutated_inputs: position " + std::to_string(position) +
+            " is not a tensor input");
+      }
+      program.mutated_inputs.push_back(position);
     }
   }
 

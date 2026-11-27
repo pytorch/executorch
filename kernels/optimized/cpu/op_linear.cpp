@@ -21,7 +21,6 @@ namespace executor {
 namespace native {
 
 namespace {
-using ::at::vec::map;
 using ::at::vec::Vectorized;
 using ::executorch::aten::Tensor;
 using ::executorch::cpublas::gemm;

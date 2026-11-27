@@ -19,7 +19,6 @@
 #include <cmath>
 
 using namespace ::testing;
-using executorch::aten::ArrayRef;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
@@ -255,7 +254,7 @@ class OpMaxUnaryOutTest : public OperatorTest {
     TensorFactory<IN_DTYPE> tf_in;
     Tensor input = tf_in.make({2, 0}, {});
     Tensor out = tf_in.zeros({});
-    Tensor expected = tf_in.make({}, {-INFINITY});
+    Tensor expected = tf_in.make({}, {-std::numeric_limits<CTYPE>::infinity()});
     op_max_unary_out(input, out);
     EXPECT_TENSOR_CLOSE(out, expected);
   }

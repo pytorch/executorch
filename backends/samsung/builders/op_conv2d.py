@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 from typing import cast, Dict, List
 
 import torch
@@ -27,7 +28,7 @@ class Conv2dVisitor(NodeVisitor):
         node: torch.fx.Node,
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
-    ) -> None:
+    ) -> bool:
         all_input_tensors = []
         input = node.args[0]
         input_id = self.define_tensor(input, enn_graph, vals_to_ids)
@@ -52,9 +53,24 @@ class Conv2dVisitor(NodeVisitor):
         padding = cast(List[int], node.args[4])
         dilation = cast(List[int], node.args[5])
         groups = cast(int, node.args[8])
+        if is_transpose_conv and groups != 1:
+            logging.warning("Don't support groups for transpose conv.")
+            return False
+        output_padding = cast(List[int], node.args[7])
+        if is_transpose_conv and output_padding != [0, 0]:
+            logging.warning("Don't support output padding for transpose conv.")
+            return False
+        if len(padding) < 2:
+            logging.warning(
+                "For conv1d decomposed to conv2d(with conv1d params), Conv1dToConv2d pass will update the params."
+            )
+            return True
         explicit_padding = [padding[0], padding[1], padding[0], padding[1]]
 
         input_shape = get_shape(input)
+        if len(input_shape) > 4:
+            logging.warning("Currently, only conv2d is supported.")
+            return False
         kernel_shape = get_shape(weight_node)
         params = {}
         self._update_params_qdtype(node, params)
@@ -72,7 +88,7 @@ class Conv2dVisitor(NodeVisitor):
         params["explicit_padding"] = explicit_padding
         params["in_channels"] = input_shape[1]
         params["out_channels"] = kernel_shape[0] * kernel_shape[1] * groups
-        params["out_channels"] //= input_shape[1] * input_shape[0]
+        params["out_channels"] //= input_shape[1]
 
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
 
@@ -87,3 +103,5 @@ class Conv2dVisitor(NodeVisitor):
             enn_graph.define_op(
                 node.name, conv_type, all_input_tensors, [output_id], params
             )
+
+        return True

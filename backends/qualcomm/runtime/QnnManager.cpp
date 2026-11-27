@@ -7,11 +7,13 @@
  */
 
 #include <executorch/backends/qualcomm/runtime/QnnBackendOptions.h>
+#include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
 #include <executorch/backends/qualcomm/runtime/QnnManager.h>
 #include <executorch/backends/qualcomm/runtime/SharedBuffer.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendCommon.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnCustomProtocol.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
+#include <executorch/backends/qualcomm/runtime/backends/QnnSdkCompatibility.h>
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
@@ -44,6 +46,22 @@ int ExtractMutableBufferNumber(const std::string& name) {
   }
   return -1;
 }
+
+class OpWrapperGraphStateGuard final {
+ public:
+  explicit OpWrapperGraphStateGuard(
+      const std::vector<std::shared_ptr<OpWrapper>>& op_wrappers)
+      : op_wrappers_(op_wrappers) {}
+
+  ~OpWrapperGraphStateGuard() {
+    for (const auto& op_wrapper : op_wrappers_) {
+      op_wrapper->ResetGraphState();
+    }
+  }
+
+ private:
+  const std::vector<std::shared_ptr<OpWrapper>>& op_wrappers_;
+};
 
 QnnManager::~QnnManager() {
   Destroy();
@@ -83,7 +101,10 @@ QnnManager::QnnManager(
         "Enable shared buffer: %d", options->shared_buffer());
     QNN_EXECUTORCH_LOG_INFO(
         "The number of op packages: %d",
-        options_->op_package_options()->op_package_infos()->size());
+        options_->op_package_options() &&
+                options_->op_package_options()->op_package_infos()
+            ? options_->op_package_options()->op_package_infos()->size()
+            : 0);
   }
 
   backend_params_ptr_ = std::make_unique<BackendConfigParameters>();
@@ -193,17 +214,13 @@ Error QnnManager::RegisterCustomMem(
         tensor_wrapper, data_ptr, pre_registered_handle);
   }
 
-  SharedBuffer& shared_buffer_manager = SharedBuffer::GetSharedBufferManager();
-
   size_t tensor_offset = info.pos;
-  size_t total_custom_mem_size =
-      shared_buffer_manager.GetAllocatedSize(custom_mem_base);
-
-  int32_t mem_fd = shared_buffer_manager.MemToFd(custom_mem_base);
+  SharedBuffer::AllocationInfo allocation =
+      SharedBuffer::GetSharedBufferManager().GetAllocationInfo(custom_mem_base);
   // Note: If obtaining the file descriptor fails, it may be due to memory not
   // being released with QnnExecuTorchFreeCustomMem. In this situation, we could
   // consider adding a map to monitor it.
-  if (mem_fd == -1) {
+  if (allocation.fd == -1) {
     QNN_EXECUTORCH_LOG_WARN(
         "Tensor name %s failed to get file descriptor.",
         tensor_wrapper->GetName().c_str());
@@ -213,15 +230,99 @@ Error QnnManager::RegisterCustomMem(
   ET_CHECK_OR_RETURN_ERROR(
       backend_params_ptr_->qnn_mem_manager_ptr_->RegisterCustomMem(
           tensor_wrapper,
-          mem_fd,
+          allocation.fd,
           data_ptr,
-          total_custom_mem_size,
+          allocation.allocated_size,
           tensor_offset,
           info) == Error::Ok,
       Internal,
       "Fail to register to shared memory.");
 
   return Error::Ok;
+}
+
+Error QnnManager::CreateDlc(void** out_dlc_handle) {
+#if QNN_EXECUTORCH_SUPPORTS_FCB
+  auto error =
+      backend_bundle_ptr_->system_implementation->GetQnnSystemInterface()
+          .qnn_system_dlc_create_with_destination_dir(
+              backend_bundle_ptr_->qnn_logger_ptr->GetHandle(),
+              nullptr,
+              static_cast<QnnSystemDlc_Handle_t*>(out_dlc_handle));
+  if (error != QNN_SUCCESS) {
+    QNN_EXECUTORCH_LOG_ERROR(
+        "Failed to create DLC. Error %d", QNN_GET_ERROR_CODE(error));
+    return Error::Internal;
+  }
+  return Error::Ok;
+#else
+  (void)out_dlc_handle;
+  QNN_EXECUTORCH_LOG_ERROR(
+      "FCB is not supported by this QNN SDK; Compilation with QAIRT SDK 2.48 or newer is required.");
+  return Error::NotSupported;
+#endif
+}
+
+Error QnnManager::AddContextToDlc(void* dlc_handle) {
+#if QNN_EXECUTORCH_SUPPORTS_FCB
+  auto error =
+      backend_bundle_ptr_->implementation->GetQnnInterface()
+          .qnn_context_add_to_dlc(
+              backend_params_ptr_->qnn_context_ptr_->GetHandle(), dlc_handle);
+  if (error != QNN_SUCCESS) {
+    QNN_EXECUTORCH_LOG_ERROR(
+        "Failed to add context to  DLC. Error %d", QNN_GET_ERROR_CODE(error));
+    return Error::Internal;
+  }
+  return Error::Ok;
+#else
+  (void)dlc_handle;
+  QNN_EXECUTORCH_LOG_ERROR(
+      "FCB is not supported by this QNN SDK; Compilation with QAIRT SDK 2.48 or newer is required.");
+  return Error::NotSupported;
+#endif
+}
+
+Error QnnManager::GetDlcBinary(void* dlc_handle, std::vector<uint8_t>& binary) {
+#if QNN_EXECUTORCH_SUPPORTS_FCB
+  Qnn_SystemDlcBinarySize_t size = 0;
+  auto& system =
+      backend_bundle_ptr_->system_implementation->GetQnnSystemInterface();
+  if (system.qnn_system_dlc_get_binary_size(dlc_handle, &size) != QNN_SUCCESS) {
+    return Error::Internal;
+  }
+  binary.resize(size);
+  Qnn_SystemDlcBinarySize_t written = 0;
+  auto error = system.qnn_system_dlc_get_binary(
+      dlc_handle, binary.data(), size, &written);
+  if (error != QNN_SUCCESS || written > size) {
+    QNN_EXECUTORCH_LOG_ERROR(
+        "Failed to get DLC binary. Error %d", QNN_GET_ERROR_CODE(error));
+    return Error::Internal;
+  }
+  binary.resize(written);
+  return Error::Ok;
+#else
+  (void)dlc_handle;
+  (void)binary;
+  QNN_EXECUTORCH_LOG_ERROR(
+      "FCB is not supported by this QNN SDK; Compilation with QAIRT SDK 2.48 or newer is required.");
+  return Error::NotSupported;
+#endif
+}
+
+void QnnManager::FreeDlc(void* dlc_handle) {
+  if (dlc_handle == nullptr) {
+    return;
+  }
+  const QnnSystemInterface& qnn_sys_interface =
+      backend_bundle_ptr_->system_implementation->GetQnnSystemInterface();
+  const Qnn_ErrorHandle_t error =
+      qnn_sys_interface.qnn_system_dlc_free(dlc_handle);
+  if (error != QNN_SUCCESS) {
+    QNN_EXECUTORCH_LOG_WARN(
+        "Failed to free DLC handle. Error %d.", QNN_GET_ERROR_CODE(error));
+  }
 }
 
 Error QnnManager::InitBackend() {
@@ -237,7 +338,8 @@ Error QnnManager::InitBackend() {
 }
 
 Error QnnManager::InitContext(
-    std::optional<std::vector<std::string>> graph_names) {
+    const std::optional<std::vector<std::string>>& graph_names,
+    Qnn_ContextHandle_t spill_fill_handle) {
   if (backend_params_ptr_->backend_init_state_ ==
       BackendInitializeState::UNINITIALIZED) {
     QNN_EXECUTORCH_LOG_INFO(
@@ -246,11 +348,13 @@ Error QnnManager::InitContext(
         options_->backend_options()->backend_type());
     backend_params_ptr_ = QnnBackendFactory().Create(
         backend_bundle_ptr_->implementation.get(),
+        backend_bundle_ptr_->system_implementation.get(),
         backend_bundle_ptr_->qnn_backend_ptr.get(),
         backend_bundle_ptr_->qnn_device_ptr.get(),
         qnn_context_blob_,
         options_,
-        qnn_dlc_manager_.get());
+        qnn_dlc_manager_.get(),
+        spill_fill_handle);
     ET_CHECK_OR_RETURN_ERROR(
         backend_params_ptr_ != nullptr,
         Internal,
@@ -279,7 +383,10 @@ Error QnnManager::InitContext(
         BackendInitializeState::INITIALIZED;
   }
 
-  if (IsOnlinePrepare()) {
+  if (IsOnlinePrepare() &&
+      backend_params_ptr_->qnn_backend_cache_ptr_->GetCacheState() ==
+          QnnBackendCache::SERIALIZE) {
+    // Set up DLC environment at AOT time
     // Check whether the QNN version supports the DLC format.
     Qnn_ApiVersion_t qnn_version = {QNN_VERSION_INIT};
     backend_bundle_ptr_->implementation->GetQnnInterface()
@@ -304,6 +411,7 @@ Error QnnManager::InitContextCache() {
         options_->backend_options()->backend_type());
     backend_params_ptr_ = QnnBackendFactory().Create(
         backend_bundle_ptr_->implementation.get(),
+        backend_bundle_ptr_->system_implementation.get(),
         backend_bundle_ptr_->qnn_backend_ptr.get(),
         backend_bundle_ptr_->qnn_device_ptr.get(),
         qnn_context_blob_,
@@ -476,9 +584,9 @@ Error QnnManager::ProfileExecuteData(
 }
 
 void QnnManager::Destroy() {
+  qnn_dlc_manager_->Destroy();
   backend_params_ptr_.reset(new BackendConfigParameters());
   backend_bundle_ptr_.reset(new QnnBackendBundle());
-  qnn_dlc_manager_->Destroy();
 }
 
 void QnnManager::DestroyContext() {
@@ -539,12 +647,25 @@ Error QnnManager::GetContextBinary(
 
 Error QnnManager::CompileDlc() {
   Qnn_ErrorHandle_t error;
-  auto qnn_dlc_graph_info = qnn_dlc_manager_->GetQnnDlcGraphInfoPtr();
-  uint32_t qnn_dlc_graph_info_num = qnn_dlc_manager_->GetQnnDlcGraphInfoNum();
-  for (uint32_t i = 0; i < qnn_dlc_graph_info_num; ++i) {
-    auto& graphInfo = (*qnn_dlc_graph_info)[i];
+  auto graphs = qnn_dlc_manager_->GetQnnDlcGraphInfoPtr();
+  uint32_t num_graphs = qnn_dlc_manager_->GetQnnDlcGraphInfoNum();
+  for (uint32_t i = 0; i < num_graphs; ++i) {
+    auto& graphInfo = graphs[i].graphInfoV1;
+    Qnn_GraphHandle_t graphHandle;
+    error = backend_bundle_ptr_->implementation->GetQnnInterface()
+                .qnn_graph_retrieve(
+                    backend_params_ptr_->qnn_context_ptr_->GetHandle(),
+                    graphInfo.graphName,
+                    &graphHandle);
+    if (error != QNN_SUCCESS) {
+      QNN_EXECUTORCH_LOG_ERROR(
+          "Failed to retrieve graph %s. Error %d.",
+          graphInfo.graphName,
+          QNN_GET_ERROR_CODE(error));
+      return Error::Internal;
+    }
     backend_params_ptr_->qnn_graph_ptr_->SetGraphHandle(
-        graphInfo.graphName, graphInfo.graph);
+        graphInfo.graphName, graphHandle);
     error =
         backend_params_ptr_->qnn_graph_ptr_->GraphFinalize(graphInfo.graphName);
     if (error != QNN_SUCCESS) {
@@ -559,9 +680,9 @@ Error QnnManager::CompileDlc() {
 
     // Mapping memory address for the input and output of mutable buffer
     std::unordered_map<int, const void*> mutable_buffer_id_to_memory_map;
-    for (uint32_t i = 0; i < graphInfo.numInputTensors; ++i) {
-      auto tw = CreateTensorWrapper(graphInfo.inputTensors[i]);
-      tw->UpdateQnnTensorMeta(graphInfo.inputTensors[i]);
+    for (uint32_t i = 0; i < graphInfo.numGraphInputs; ++i) {
+      auto tw = CreateTensorWrapper(graphInfo.graphInputs[i]);
+      tw->UpdateQnnTensorMeta(graphInfo.graphInputs[i]);
 
       int mutable_buffer_id = ExtractMutableBufferNumber(tw->GetName());
       if (mutable_buffer_id != -1) {
@@ -572,9 +693,9 @@ Error QnnManager::CompileDlc() {
       }
       graph_inputs.push_back(tw);
     }
-    for (uint32_t i = 0; i < graphInfo.numOutputTensors; ++i) {
-      auto tw = CreateTensorWrapper(graphInfo.outputTensors[i]);
-      tw->UpdateQnnTensorMeta(graphInfo.outputTensors[i]);
+    for (uint32_t i = 0; i < graphInfo.numGraphOutputs; ++i) {
+      auto tw = CreateTensorWrapper(graphInfo.graphOutputs[i]);
+      tw->UpdateQnnTensorMeta(graphInfo.graphOutputs[i]);
       int mutable_buffer_id = ExtractMutableBufferNumber(tw->GetName());
       if (mutable_buffer_id != -1 &&
           mutable_buffer_id_to_memory_map.find(mutable_buffer_id) !=
@@ -599,6 +720,12 @@ Error QnnManager::CompileDlc() {
 Error QnnManager::Compile(
     const std::string& graph_name,
     std::vector<std::shared_ptr<OpWrapper>>& op_wrappers) {
+  // TODO decouple QNN tensor ID from op_wrappers into graph-level
+  // so that the compile function doesn't modify op_wrapper
+  // the type can be changed to const std::vector<std::shared_ptr<const
+  // OpWrapper>>& op_wrappers this also resolve race condition if we compile
+  // same wrapper in multiple thread.
+  OpWrapperGraphStateGuard reset_graph_state(op_wrappers);
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
   QnnGraph* qnn_graph_ptr = backend_params_ptr_->qnn_graph_ptr_.get();
 

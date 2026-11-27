@@ -55,6 +55,15 @@ class ET_EXPERIMENTAL TextTokenGenerator {
     return logit_processors_.size();
   }
 
+  /// Apply the registered logit processors before sampling.
+  inline ::executorch::runtime::Error apply_logit_processors(
+      executorch::aten::Tensor& logits) {
+    for (auto& processor : logit_processors_) {
+      ET_CHECK_OK_OR_RETURN_ERROR(processor->process(logits));
+    }
+    return ::executorch::runtime::Error::Ok;
+  }
+
   virtual ~TextTokenGenerator() = default;
 
   /**
@@ -79,6 +88,11 @@ class ET_EXPERIMENTAL TextTokenGenerator {
       const std::function<void(const std::string&)>& token_callback = {}) {
     ET_CHECK_MSG(
         !tokens.empty(), "Token generation loop shouldn't take empty tokens");
+    ET_CHECK_OR_RETURN_ERROR(
+        temperature >= 0.0f && temperature <= 1.0f,
+        InvalidArgument,
+        "Temperature must be in [0, 1], got %f",
+        static_cast<double>(temperature));
     int64_t pos = start_pos; // position in the sequence
 
     std::vector<uint64_t> token_data; // allocate space for the tokens
@@ -126,9 +140,7 @@ class ET_EXPERIMENTAL TextTokenGenerator {
 
       prev_token = cur_token;
 
-      for (auto& processor : logit_processors_) {
-        ET_CHECK_OK_OR_RETURN_ERROR(processor->process(logits_tensor));
-      }
+      ET_CHECK_OK_OR_RETURN_ERROR(apply_logit_processors(logits_tensor));
 
       stats_->on_sampling_begin();
       cur_token =

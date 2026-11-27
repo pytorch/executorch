@@ -7,12 +7,10 @@ from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes.arm_pass import ArmPass
-from executorch.backends.arm._passes.arm_pass_utils import (
-    get_cond_while_submodules_nested,
-    is_submodule_node,
-)
+from executorch.backends.arm._passes.arm_pass_utils import is_submodule_node
 from executorch.backends.transforms.utils import is_get_attr_node
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.graph_module import get_cond_while_submodules
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule
 
@@ -37,7 +35,7 @@ class ControlFlowConstInlinePass(ArmPass):
 
     def _convert_getattr(self, graph_module):
         modified = False
-        for _, submodule, _ in get_cond_while_submodules_nested(graph_module):
+        for _, submodule, _ in get_cond_while_submodules(graph_module):
             for submodule_node in submodule.graph.nodes:
                 if submodule_node.target in self._targeted_ops:
                     self._convert_getattr(submodule)

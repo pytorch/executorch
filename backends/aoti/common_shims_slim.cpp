@@ -10,6 +10,9 @@
 #include <executorch/runtime/platform/abort.h>
 #include <executorch/runtime/platform/log.h>
 
+// Keep this file free of static and thread_local state: a Windows build
+// without EXECUTORCH_BUILD_SHARED links it twice (see backends/cuda).
+
 namespace executorch {
 namespace backends {
 namespace aoti {
@@ -36,6 +39,19 @@ AOTITorchError aoti_torch_get_sizes(Tensor* tensor, int64_t** ret_sizes) {
   return Error::Ok;
 }
 
+AOTITorchError
+aoti_torch_get_size(Tensor* tensor, int64_t d, int64_t* ret_size) {
+  if (tensor == nullptr || ret_size == nullptr) {
+    return Error::InvalidArgument;
+  }
+  const auto ndim = static_cast<int64_t>(tensor->dim());
+  if (d < -ndim || d >= ndim) {
+    return Error::InvalidArgument;
+  }
+  *ret_size = tensor->size(d);
+  return Error::Ok;
+}
+
 AOTITorchError aoti_torch_get_strides(Tensor* tensor, int64_t** ret_strides) {
   if (tensor == nullptr || ret_strides == nullptr) {
     return Error::InvalidArgument;
@@ -57,6 +73,22 @@ AOTITorchError aoti_torch_get_dim(Tensor* tensor, int64_t* ret_dim) {
     return Error::InvalidArgument;
   }
   *ret_dim = static_cast<int64_t>(tensor->dim());
+  return Error::Ok;
+}
+
+AOTITorchError aoti_torch_get_numel(Tensor* tensor, int64_t* ret_numel) {
+  if (tensor == nullptr || ret_numel == nullptr) {
+    return Error::InvalidArgument;
+  }
+  *ret_numel = static_cast<int64_t>(tensor->numel());
+  return Error::Ok;
+}
+
+AOTITorchError aoti_torch_is_defined(Tensor* tensor, bool* ret_is_defined) {
+  if (ret_is_defined == nullptr) {
+    return Error::InvalidArgument;
+  }
+  *ret_is_defined = tensor != nullptr && tensor->defined();
   return Error::Ok;
 }
 
@@ -116,8 +148,16 @@ int32_t aoti_torch_dtype_float32() {
   return 6; // ScalarType::Float
 }
 
+int32_t aoti_torch_dtype_float64() {
+  return 7; // ScalarType::Double
+}
+
 int32_t aoti_torch_dtype_bfloat16() {
   return 15; // ScalarType::BFloat16
+}
+
+int32_t aoti_torch_dtype_float16() {
+  return 5; // ScalarType::Half
 }
 
 int32_t aoti_torch_dtype_int64() {
@@ -142,6 +182,18 @@ int32_t aoti_torch_dtype_uint8() {
 
 int32_t aoti_torch_dtype_bool() {
   return 11; // ScalarType::Bool
+}
+
+size_t aoti_torch_dtype_element_size(int32_t dtype) {
+  // ScalarType is int8_t-backed, so the cast truncates; scalar_type is read
+  // only after the range check passes.
+  const auto scalar_type = static_cast<slim::c10::ScalarType>(dtype);
+  if (dtype < 0 || dtype > INT8_MAX ||
+      !slim::c10::isValidScalarType(scalar_type)) {
+    ET_LOG(Error, "Unsupported dtype %d for element size", dtype);
+    return 0;
+  }
+  return slim::c10::elementSize(scalar_type);
 }
 
 // ============================================================

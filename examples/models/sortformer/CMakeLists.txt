@@ -7,7 +7,9 @@
 cmake_minimum_required(VERSION 3.24)
 project(sortformer_runner)
 
-set(CMAKE_CXX_STANDARD 17)
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 17)
+endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
@@ -109,8 +111,11 @@ if(MSVC AND EXECUTORCH_BUILD_CUDA)
   add_custom_command(
     TARGET sortformer_runner
     POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:aoti_cuda_shims>
-            $<TARGET_FILE_DIR:sortformer_runner>
-    COMMENT "Copying aoti_cuda_shims.dll to sortformer_runner directory"
+    COMMAND
+      ${CMAKE_COMMAND} -E copy_if_different
+      $<TARGET_RUNTIME_DLLS:sortformer_runner>
+      $<TARGET_FILE_DIR:sortformer_runner>
+    COMMENT "Copying runtime DLLs to sortformer_runner directory"
+    COMMAND_EXPAND_LISTS
   )
 endif()

@@ -6,7 +6,7 @@ PyTorch models to a TOSA representation. This representation is used to
 deploy to the following targets:
 
 - **Arm&reg; Ethos&trade;-U55/65/85** - Compiled using the Ethos-U Vela compiler.
-- **VGF Format, for ML extensions for Vulkan®** – a format containing SPIR-V™ ML operators for Vulkan-capable devices.
+- **VKML using VGF Format, for ML extensions for Vulkan®** – a format containing SPIR-V™ ML operators for Vulkan Machine Learning (VKML) devices.
 
 The backend provides an ahead-of-time (AOT) flow, that produces a PTE file for your
 chosen target. The AOT flow supports the following development operating systems:
@@ -21,7 +21,20 @@ In addition, the following deployment paths are supported by this backend:
   - Full testing is available in tree using Corstone&trade; Fixed Virtual Platforms (FVP).
 - Linux target support for VGF capable targets, using the executor_runner.
 
-More information on TOSA can be found here: https://www.mlplatform.org/tosa/tosa_spec.html.
+More information on TOSA can be found here: https://github.com/arm/tosa-specification.
+
+## Public API Boundary
+
+The Arm backend public Python API is the set of symbols tracked in
+`backends/arm/public_api_manifests/api_manifest_running.toml`. Other modules,
+helpers, scripts, and directory layouts in this subtree are implementation
+details and may change without deprecation.
+
+In particular, `backends/arm/tosa` contains shared lowering implementation for
+Arm backends. It is not a stable public package except for symbols explicitly
+listed in the public API manifest. Prefer the target-specific public APIs in
+`executorch.backends.arm.ethosu` and `executorch.backends.arm.vgf` for
+application code.
 
 ## Directory Layout
 
@@ -51,7 +64,9 @@ backends/arm/
 │   └── quantization_annotator.py  # Defines how operators are annotated for quantization
 │
 ├── runtime/                       # Backends for running inference on target devices
-│   ├── EthosUBackend.cpp
+│   ├── EthosUBackend.cpp          # Common Ethos-U backend implementation
+│   ├── EthosUBackend_CoreDriver.cpp
+│   ├── EthosUBackend_LinuxDriver.cpp
 │   └── VGFBackend.cpp
 │
 ├── scripts/                       # Auxiliary build, dependency installation and utility scripts
@@ -61,12 +76,25 @@ backends/arm/
 │   ├── models/                    # Model level unit tests
 │   └── tester/                    # Testing harnesses and utilities
 │
-├── third-party/                   # External dependencies
-│
 ├── tosa/                          # Shared TOSA backend implementation and dialect
 │
 └── vgf/                           # Implementations of VgfPartitioner and VgfBackend
 ```
+
+### Ethos-U runtime drivers
+
+The common `EthosUBackend.cpp` runtime is paired with one driver-specific
+implementation:
+
+- `EthosUBackend_CoreDriver.cpp` calls the Ethos-U core driver directly for
+  bare-metal (no-OS) and RTOS targets. CMake selects it when
+  `EXECUTORCH_BUILD_ARM_BAREMETAL` is enabled.
+- `EthosUBackend_LinuxDriver.cpp` uses the Ethos-U Linux userspace and kernel
+  driver stack. CMake selects it when `EXECUTORCH_BUILD_ARM_ETHOSU_LINUX` is
+  enabled.
+
+The two implementations provide the same internal platform hooks and are
+mutually exclusive in a build.
 
 ## Building
 
@@ -116,6 +144,108 @@ Developers who need local source builds can use:
 The current flow lowers to TOSA and converts to VGF for use in external projects,
 so the `executor_runner` is not typically used here.
 
+### Planned Ethos-U delegate scratch
+
+In Python, set
+`EthosUCompileSpec("ethos-u55-128", plan_delegate_scratch=True)` before creating
+an `EthosUPartitioner`. The `backends/arm/scripts/aot_arm_compiler.py` script
+exposes the same option as `--plan-delegate-scratch` when exporting for an
+Ethos-U target with delegation enabled.
+
+With `plan_delegate_scratch=True`, Vela's scratch requirement is included in AOT
+memory planning. With `False` (the default), the core-driver runtime allocates
+scratch from the temporary allocator for each delegate execution. Planned scratch
+works with ordinary memory planning and does not enable shared scratch IO planning.
+The option is independent of `--direct_drive` and Vela's separate IO regions.
+Use planned scratch with the bare-metal/RTOS core-driver runtime. Linux Direct
+Drive can load the same PTE, but allocates its own scratch, warns that the planned
+scratch reservation is unused, and leaves that reservation allocated in the host
+arena.
+
+#### Direct I/O memory planning
+
+To place compatible delegate inputs and outputs inside planned scratch, enable
+`plan_delegate_scratch` and select `EthosUMemoryPlanning` when converting the
+lowered program to ExecuTorch:
+
+```python
+from executorch.backends.arm import EthosUCompileSpec
+
+compile_spec = EthosUCompileSpec("ethos-u55-128", plan_delegate_scratch=True)
+```
+
+Use this compile spec in the quantization and lowering flow described below.
+When converting the resulting `edge_program`, select the memory planner:
+
+```python
+from executorch.backends.arm._passes import EthosUMemoryPlanning
+from executorch.exir import ExecutorchBackendConfig
+
+executorch_program = edge_program.to_executorch(
+    config=ExecutorchBackendConfig(memory_planning_pass=EthosUMemoryPlanning())
+)
+```
+
+The pass compares arena sizes with ordinary planning using the same declared
+scratch. By default, each arena may grow by at most 1%, capped at 1 KiB.
+Configure these limits with `max_arena_growth_percent` and
+`max_arena_growth_bytes` on `EthosUMemoryPlanning`; both limits apply to each arena.
+Set either limit to zero to disallow arena growth. If placement is
+invalid or exceeds that allowance, the pass uses ordinary planning and keeps
+delegate scratch planned. The fallback therefore does not require temporary
+allocation of delegate scratch on the core-driver runtime. The `baseline_algo`
+argument selects the ordinary allocator used for comparison and fallback;
+by default it uses ExecuTorch's ordinary allocator suite. `EthosUMemoryPlanning`
+configures the standard `MemoryPlanningPass` with `EthosUPreferredAlgorithmSuite`
+and verifies storage overlap regardless of the logging level. The suite compares
+largest-owner-first and scratch-first placements, checks both growth limits for
+every arena, then selects the eligible direct I/O plan with the smallest total
+arena size. If supplied, `alignment` must be a positive multiple of 16 bytes.
+
+Enable the planner's INFO logger before calling `to_executorch()` to get an
+optional memory planning report:
+
+```python
+import logging
+
+logging.basicConfig(level=logging.WARNING)
+logging.getLogger(
+    "executorch.backends.arm._passes.ethosu_direct_io_pass"
+).setLevel(logging.INFO)
+```
+
+The report shows ordinary and candidate arena sizes, the selected strategy, and
+why candidates were rejected. Arena sizes are in bytes, indexed by memory ID.
+Each graph being planned has its own report. For example:
+
+```text
+Memory planning for GraphModule: ordinary arena sizes=[0, 20480] bytes
+direct I/O (largest-first): arena sizes=[0, 20480] bytes
+direct I/O (scratch-first): arena sizes=[0, 20480] bytes
+Selected direct I/O (largest-first): arena sizes=[0, 20480] bytes
+Scratch placement: 2/2 attempted tensors placed; declared delegate scratch remains planned
+```
+
+The denominator counts unique, memory-planned I/O tensors checked for scratch
+compatibility, including those rejected by the compatibility checks. Tensors
+excluded by the allocation policy or input-sharing rules, and delegates without
+a supported scratch layout, are not attempted. A tensor passed between delegates
+is counted once. The numerator counts attempted tensors that retain the proposed
+scratch owner and offset in the final plan, including existing scratch aliases
+preserved on fallback. At DEBUG level, the logger also shows details of invalid
+candidate placements.
+
+This option controls AOT placement. Avoiding runtime copies also requires the
+runtime's direct I/O support. Setting `plan_delegate_scratch=True` alone does
+not select this pass. Selecting `EthosUMemoryPlanning` without declaring planned
+scratch logs a warning for each affected Ethos-U delegate and uses ordinary
+planning for those delegates. The warning identifies `plan_delegate_scratch=True`
+as the required compile option.
+
+The pass supports delegates whose inputs and outputs are inside Vela's scratch
+region. This includes COP1 and COP2 layouts without separate I/O regions.
+Delegates with separate I/O regions use ordinary planning.
+
 ### Compiling models with the Python API
 
 Use the Python API as the primary way to compile your own models. It lets you
@@ -138,10 +268,129 @@ The delegated Python API flow is:
 For complete examples of that flow, including quantization and target-specific
 compile specs, see:
 
-- `docs/source/backends/arm-ethos-u/tutorials/ethos-u-getting-started.md`
-- `docs/source/backends/arm-vgf/tutorials/vgf-getting-started.md`
+- [Arm Ethos-U tutorial](../../docs/source/backends/arm-ethos-u/tutorials/ethos-u-getting-started.md)
+- [Arm VGF tutorial](../../docs/source/backends/arm-vgf/tutorials/vgf-getting-started.md)
+- [Arm Cortex-M backend overview](../../docs/source/backends/arm-cortex-m/arm-cortex-m-overview.md)
+- [Ethos-U porting guide](../../examples/arm/ethos-u-porting-guide.md)
 
 Additional examples are available in `examples/arm`.
+
+#### Fast model operator-support pre-check
+
+For a quick pre-backend operator-list comparison before running the full Arm
+export and backend toolchain, use `backends/arm/scripts/check_model_support.py`.
+The script exports the model to ATen and compares operators visible in the
+`torch.export` graph with the generated support table committed in the
+**current checkout**.
+
+It uses the same external-model convention as `aot_arm_compiler.py`: the model
+file defines `ModelUnderTest` and `ModelInputs`, with optional `ModelKwargs`.
+Choose the backend with `--backend vgf`, `--backend u55`, or `--backend u85`:
+
+```bash
+python backends/arm/scripts/check_model_support.py \
+  --backend u85 \
+  --model examples/arm/example_modules/add.py
+```
+
+The backend tables used by the checker are:
+
+- VGF: `docs/source/backends/arm-vgf/VGF_op_support.md`
+- Ethos-U55: `docs/source/backends/arm-ethos-u/U55_op_support.md`
+- Ethos-U85: `docs/source/backends/arm-ethos-u/U85_op_support.md`
+
+A small demo deliberately combines table-matched operators with `torch.sort`,
+which is not in these support lists at the time the example is added:
+
+```bash
+python backends/arm/scripts/check_model_support.py \
+  --backend u85 \
+  --model backends/arm/scripts/examples/fast_model_support_demo.py
+```
+
+The expected result is inconclusive rather than a hard backend rejection:
+
+```text
+Unmatched pre-backend export operators (1):
+  - torch.sort [torch.ops.aten.sort.default]
+
+Result: INCONCLUSIVE
+```
+
+**Important:** A `PASS` only means that no operator-list gap was found in the
+pre-backend export graph. It does **not** guarantee that the model is supported
+end to end: the fast checker does not validate shapes, ranks, dtypes,
+quantization configuration, operator attributes, partitioning constraints,
+backend compiler constraints, memory requirements, or runtime behavior.
+
+`INCONCLUSIVE` means that one or more operators visible in the pre-backend
+`torch.export` graph are absent from the generated support table. This is not a
+definitive unsupported result because normal ExecuTorch/Arm lowering may
+decompose, rewrite, canonicalize, or remove those operators before backend
+support checking. Known export-only infrastructure operators, such as
+`aten._assert_tensor_metadata.default`, are ignored when they are known to be
+removed before backend lowering.
+
+#### Export recipes
+
+An `ExportRecipe` bundles those steps for a target, so a standard export needs
+no compile spec, quantizer or partitioner of its own. Each recipe carries the
+settings its target expects:
+
+```python
+from executorch.backends.arm.recipes.arm_recipe_types import ArmRecipeType
+from executorch.export import export, ExportRecipe
+
+session = export(
+    model=model,
+    example_inputs=[example_inputs],
+    export_recipe=ExportRecipe.get_recipe(ArmRecipeType.ETHOS_U55_INT8),
+)
+session.save_to_pte("model")
+```
+
+The recipe quantizes the model, so pass `example_inputs` that are representative
+of real data; they are used to calibrate.
+
+Available recipes:
+
+| Recipe | Target |
+| --- | --- |
+| `ETHOS_U55_INT8`, `ETHOS_U65_INT8`, `ETHOS_U85_INT8` | Ethos-U NPUs, int8 |
+| `TOSA_FP`, `TOSA_INT8`, `TOSA_A16W8` | TOSA, for testing without hardware |
+| `VGF_FP`, `VGF_INT8` | VGF, for the ML SDK for Vulkan |
+
+The Ethos-U recipes accept `macs`, `system_config`, `memory_mode`,
+`extra_flags` and `config_ini`, matching the corresponding Vela options:
+
+```python
+ExportRecipe.get_recipe(ArmRecipeType.ETHOS_U85_INT8, macs=512)
+```
+
+`macs` is validated against the accelerator configurations the installed Vela
+accepts, so an unsupported count fails at recipe construction rather than during
+compilation.
+
+Reach for the step-by-step flow above when a recipe does not fit -- a custom
+quantization scheme, extra passes, or a compile spec the recipe does not expose.
+
+#### TopK support
+
+The `to_edge_transform_and_lower` flow handles supported `torch.topk` calls
+automatically. Supported configurations are:
+
+- FP16 or FP32 input with positive static shape `[T, E]`, where
+  `E <= 2^31 - 1`.
+- Constant `1 <= K <= min(4, E)`, `dim=-1` or `dim=1`, `largest=True`, and
+  `sorted=True`.
+- The TOSA FP profile for K=1, or FP+INT for K>1. The scores remain
+  floating-point in both cases.
+
+**Input scores must be finite.** This condition is not checked at runtime;
+non-finite scores can produce incorrect results without triggering automatic
+fallback. Equal scores are selected in increasing index order, so tied indices
+may differ from PyTorch's results. Dynamic shapes or K, BF16, and quantized TopK
+are unsupported.
 
 ### Direct Drive (experimental, Ethos-U85 on Linux) workflow
 
@@ -163,7 +412,7 @@ https://corstone1000.docs.arm.com/en/corstone1000-2025.12/
 Setup:
 
 ```
-./examples/arm/setup.sh --i-agree-to-the-contained-eula --target-toolchain linux-musl
+./examples/arm/setup.sh --i-agree-to-the-contained-eula --target-toolchain linux-musl --fvp corstone1000
 source ./examples/arm/arm-scratch/setup_path.sh
 ```
 
@@ -175,7 +424,8 @@ Build:
   --build_type=Debug
 ```
 
-Note: setup selects the linux-musl toolchain; build uses the aarch64-linux-musl GCC toolchain name.
+Note: setup selects the linux-musl toolchain and the Corstone-1000 FVP, which is
+not installed by default; build uses the aarch64-linux-musl GCC toolchain name.
 
 If your Yocto image enables the dropbear SSH server, you can copy the
 `executor_runner` binary into the running FVP via scp:
@@ -248,16 +498,17 @@ Below is an overview of some of the testing options this script provides:
 | `test_arm_backend.sh test_pytest_ops_ethos_u85`    | Runs operator unit tests for Ethos-U85 specific use-cases.   |
 | `test_arm_backend.sh test_pytest_models_ethos_u85` | Runs model unit tests for Ethos-U85 specific use-cases.      |
 | `test_arm_backend.sh test_run_ethos_u85`           | Runs end-to-end unit tests for Ethos-U85 specific use-cases. |
-| `test_arm_backend.sh test_pytest_ops_vkml`         | Runs operator unit tests for VGF specific use-cases.         |
-| `test_arm_backend.sh test_pytest_models_vkml`      | Runs model unit tests for VGF specific use-cases.            |
-| `test_arm_backend.sh test_run_vkml`                | Runs end-to-end unit tests for VGF specific use-cases.       |
-| `test_arm_backend.sh test_model_smollm2_135M`      | Runs some models with Corstone FVP.                          |
+| `test_arm_backend.sh test_pytest_ops_vkml`         | Runs operator unit tests for VKML/VGF specific use-cases.    |
+| `test_arm_backend.sh test_pytest_models_vkml`      | Runs model unit tests for VKML/VGF specific use-cases.       |
+| `test_arm_backend.sh test_run_vkml`                | Runs end-to-end unit tests for VKML/VGF specific use-cases.  |
+| `test_arm_backend.sh test_model_smollm2_135M_ethos_u85`      | Runs smollm2_135M for Ethos-U85 specific use-cases.                          |
 | `test_arm_backend.sh test_ootb_tests_ethos_u`      | Runs out-of-the-box tests for Ethos-U.                       |
 | `test_arm_backend.sh test_ootb_tests_tosa`         | Runs out-of-the-box tests for TOSA.                          |
-| `test_arm_backend.sh test_ootb_tests_vgf`          | Runs out-of-the-box tests for VGF.                           |
+| `test_arm_backend.sh test_ootb_tests_vgf`          | Runs out-of-the-box tests for VKML/VGF.                      |
 | `test_arm_backend.sh test_deit_e2e_ethos_u`        | Runs DEiT end-to-end tests on Ethos-U.                       |
-| `test_arm_backend.sh test_smaller_stories_llama`   | Runs E2E model tests on Corstone FVP.                        |
-| `test_arm_backend.sh test_memory_allocation`       | Runs memory allocation tests for Ethos-U specific targets    |
+| `test_arm_backend.sh test_smaller_stories_llama_tosa` | Runs Llama model tests for TOSA.                          |
+| `test_arm_backend.sh test_smaller_stories_llama_vkml` | Runs Llama model tests for VKML/VGF.                      |
+| `test_arm_backend.sh test_runtime_ethos_u`       | Runs runtime tests for Ethos-U specific targets    |
 
 For more information, please refer to the `backends/arm/test/test_arm_backend.sh` script.
 
@@ -319,7 +570,7 @@ cp backends/arm/scripts/pre-push .git/hooks/
 
 The current TOSA version does not support int64. However, int64 is commonly used in many models. In order to lower the operators with int64 inputs and/or outputs to TOSA, a few passes have been developed to handle the int64-related issues. The main idea behind these passes is to replace the uses of int64 with int32 where feasible.
 
-- For floating-point models, these passes need to run very early in the lowering process and can be passed in to the to_edge_transform_and_lower() function call as an optional parameter.
+- For floating-point models, these passes need to run very early in the lowering process and can be passed in to the to_edge_transform_and_lower() function call as an optional parameter. Also pass `compile_config=EdgeCompileConfig(_check_ir_validity=False)`, as the Arm tools do: these passes can leave a `cat` or `stack` with both int64 and int32 inputs, which the edge dialect check rejects.
 - For quantized models, these transformations will be automatically handled during annotation before the export stage.
 
 List of model specific and optional passes:
@@ -346,11 +597,29 @@ List of model specific and optional passes:
        - Supported Ops:
          - torch.ops.aten.to.\[dtype|dtype_layout\]
          - exir_ops.edge.dim_order_ops.\_to_dim_order_copy.default
-    2. Post-process argmax outputs:
-       - Inserts an int64->int32 cast after the argmax operations that produce int64 outputs:
+    2. Post-process argmax and argmin outputs:
+       - Converts only downstream paths whose statically inferred values remain
+         within the int32 range.
+       - Leaves unsafe direct consumers on int64 and inserts int64 boundary
+         casts where converted paths reach unsafe consumers or model outputs.
        - Supported Ops:
          - torch.ops.aten.argmax.default
          - exir_ops.edge.aten.argmax.default
+         - torch.ops.aten.argmin.default
+         - exir_ops.edge.aten.argmin.default
+    3. Post-process TopK indices:
+       - Applies the same range-safe path conversion to `getitem(topk, 1)`.
+       - Leaves `getitem(topk, 0)` values and unsafe direct consumers unchanged.
+       - Inserts int64 boundary casts where converted paths reach unsafe
+         consumers or model outputs.
+       - Keeps gather indices int64 so an undelegated gather remains valid.
+       - Prepares supported static TopK for delegation with int32 indices,
+         preserving int64 model outputs and consumers that require int64.
+       - For TopK configurations that cannot be delegated, downstream index
+         operations can still use int32 where range analysis proves it safe.
+       - Supported Ops:
+         - torch.ops.aten.topk.default
+         - exir_ops.edge.aten.topk.default
   - Example usage:
     - (Functionality 1) backends/arm/test/models/stable_diffusion/test_T5EncoderModel.py
     - (Functionality 2) backends/arm/test/models/stable_diffusion/test_CLIPTextModelWithProjection.py
@@ -379,7 +648,45 @@ List of model specific and optional passes:
     - `graph_module = ToDevicePass("cpu")(graph_module).graph_module`
     - backends/arm/test/misc/test_post_quant_device_switch.py
 
+## Profiling of VGF Backend
+
+VGF profiling now emits both host-side ExecuTorch event tracer ranges and Vulkan timestamp-query measurements. The host ranges split init into `VGF_INIT_*` phases, including `VGF_INIT_CREATE_DATA_GRAPH_PIPELINE`, and split execute into `VGF_COPY_INPUTS`, `VGF_QUEUE_SUBMIT`, `VGF_QUEUE_WAIT_IDLE`, `VGF_TIMESTAMP_QUERY_READBACK`, `VGF_DISPATCH_AND_WAIT`, and `VGF_COPY_OUTPUTS`. Vulkan timestamp queries are inserted into the recorded VGF command buffer around `vkCmdDispatchDataGraphARM()`, producing `VGF_DATA_GRAPH_DEVICE_TIME`, which measures device-side elapsed time for the submitted data-graph command buffer region. To collect a profile, build the VGF runner with event tracing enabled, run the model with an ETDump path, then convert the ETDump to Chrome trace JSON:
+
+```bash
+mkdir -p etdumps traces
+
+./cmake-out-vgf/executor_runner \
+  --model_path vgf_mobilenetv2_out/mobilenet_v2_vgf_int8.pte \
+  --num_executions 10 \
+  --etdump_path ./etdumps/vgf_timestamps.etdp \
+  --print_output none
+
+python ./backends/arm/scripts/etdump_to_chrome_trace.py \
+  --etdump_path ./etdumps/vgf_timestamps.etdp \
+  --output ./etdumps/vgf_timestamps_trace.json
+```
+
+Open the result in Chrome by navigating to `chrome://tracing`, selecting **Load**, and choosing `./traces/vgf_timestamps_trace.json`. The key fields to inspect are `VGF_INIT_CREATE_DATA_GRAPH_PIPELINE` for pipeline creation/init cost, `VGF_QUEUE_SUBMIT` and `VGF_QUEUE_WAIT_IDLE` for host-side submission/wait overhead, and `VGF_DATA_GRAPH_DEVICE_TIME` for device-side data-graph execution time.
+
+VGF profiling can emit optional Vulkan timestamp-query measurements. Vulkan timestamp queries are controlled by the `EXECUTORCH_VGF_ENABLE_TIMESTAMP_QUERIES` environment variable. Set it to `1` to insert timestamp queries into the recorded VGF command buffer around `vkCmdDispatchDataGraphARM()`. When enabled, the backend emits `VGF_DATA_GRAPH_DEVICE_TIME`, which measures device-side elapsed time for the submitted data-graph command buffer region. If `EXECUTORCH_VGF_ENABLE_TIMESTAMP_QUERIES` is unset or set to `0`, only host-side ExecuTorch event tracer ranges are collected and no Vulkan timestamp-query readback is performed. Note that the timestamp-query measurements will be printed out and not included into `.etdp`.
+
+So, in this case the command is:
+
+```bash
+EXECUTORCH_VGF_ENABLE_TIMESTAMP_QUERIES=1 \
+./cmake-out-vgf/executor_runner \
+  --model_path vgf_mobilenetv2_out/mobilenet_v2_vgf_int8.pte \
+  --num_executions 10 \
+  --etdump_path ./etdumps/vgf_timestamps.etdp \
+  --print_output none
+```
+
 ## Help & Improvements
 
 If you have problems or questions, or have suggestions for ways to improve the Arm backend, please reach out
 to the Arm team developing this backend, or create an issue on [here](https://www.github.com/pytorch/executorch/issues) and add the "partner: arm" label.
+
+## Further documentation
+
+See [Generating operator support documentation](scripts/docgen/README.md)
+for generation commands, coverage checks, and CI troubleshooting.

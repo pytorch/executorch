@@ -305,7 +305,67 @@ class OpSumOutTest : public OperatorTest {
     op_sum_intlist_out(self, empty_dim_list, /*keepdim=*/false, dtype, out);
     EXPECT_TENSOR_CLOSE(out, tf_out.make({}, {56}));
   }
+
+  template <ScalarType DTYPE>
+  void test_sum_dim_out_is_exact() {
+    TensorFactory<DTYPE> tf;
+    // 2^24 + 1 is not representable in fp32, so an fp32 accumulator returns
+    // 2^24.
+    Tensor x = tf.make({2}, {16777216, 1});
+    Tensor out = tf.zeros({});
+    int64_t dim = 0;
+    op_sum_intlist_out(
+        x, ArrayRef<int64_t>{&dim, 1}, /*keepdim=*/false, /*dtype=*/{}, out);
+    EXPECT_TENSOR_EQ(out, tf.make({}, {16777217}));
+  }
 };
+
+TEST_F(OpSumOutTest, BFloat16GenericPathAccumulatesInFloat) {
+  TensorFactory<ScalarType::BFloat16> tf;
+  // Reducing dim=0 of {512, 1} is not the last dim, so the generic path is
+  // taken. Without fp32 accumulation the sum saturates at ~256 instead of
+  // 512. 512 = 2^9 is exactly representable in BFloat16.
+  constexpr int N = 512;
+  Tensor x = tf.ones({N, 1});
+  Tensor out = tf.zeros({1});
+  int64_t dim = 0;
+  op_sum_intlist_out(
+      x, ArrayRef<int64_t>{&dim, 1}, /*keepdim=*/false, /*dtype=*/{}, out);
+  Tensor expected = tf.full({1}, static_cast<float>(N));
+  EXPECT_TENSOR_CLOSE(out, expected);
+}
+
+TEST_F(OpSumOutTest, BFloat16LargeDimAccumulatesInFloat) {
+  TensorFactory<ScalarType::BFloat16> tf;
+  // N=512, all-ones input: without fp32 accumulation the sum saturates at
+  // ~256 in BFloat16 instead of 512.
+  constexpr int N = 512;
+  Tensor x = tf.ones({1, N});
+  Tensor out = tf.zeros({1});
+  int64_t dim = 1;
+  op_sum_intlist_out(
+      x, ArrayRef<int64_t>{&dim, 1}, /*keepdim=*/false, /*dtype=*/{}, out);
+  Tensor expected = tf.full({1}, static_cast<float>(N));
+  EXPECT_TENSOR_CLOSE(out, expected);
+}
+
+TEST_F(OpSumOutTest, ZeroDimInputWithDim) {
+  TensorFactory<ScalarType::Float> tf;
+  Tensor self = tf.make({}, {5});
+  for (int64_t dim : {0, -1}) {
+    for (bool keepdim : {false, true}) {
+      Tensor out = tf.zeros({});
+      op_sum_intlist_out(
+          self, ArrayRef<int64_t>{&dim, 1}, keepdim, /*dtype=*/{}, out);
+      EXPECT_TENSOR_EQ(out, tf.make({}, {5}));
+    }
+  }
+}
+
+TEST_F(OpSumOutTest, LongAndDoubleSumsAreExact) {
+  test_sum_dim_out_is_exact<ScalarType::Long>();
+  test_sum_dim_out_is_exact<ScalarType::Double>();
+}
 
 TEST_F(OpSumOutTest, InvalidDimensionListDies) {
   ET_SKIP_IF(

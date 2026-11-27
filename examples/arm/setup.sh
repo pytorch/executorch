@@ -6,6 +6,9 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+#
+# Developer setup helper. This command-line interface is not a public API and
+# may change without deprecation.
 
 set -u
 
@@ -20,13 +23,15 @@ root_dir="${script_dir}/arm-scratch"
 eula_acceptance=0
 enable_baremetal_toolchain=1
 target_toolchain=""
+target_toolchains=()
 enable_fvps=1
+fvps=()
 enable_vela=1
-enable_cortex_m=1
 enable_model_converter=0   # model-converter tool for VGF output
 enable_vgf_lib=0  # vgf reader - runtime backend dependency
 enable_emulation_layer=0  # Vulkan layer driver - emulates Vulkan ML extensions
 enable_vulkan_sdk=0  # Download and export Vulkan SDK required by emulation layer
+enable_model_explorer=0
 
 # Figure out if setup.sh was called or sourced and save it into "is_script_sourced"
 (return 0 2>/dev/null) && is_script_sourced=1 || is_script_sourced=0
@@ -35,6 +40,7 @@ enable_vulkan_sdk=0  # Download and export Vulkan SDK required by emulation laye
 toolchain_url=""
 toolchain_dir=""
 toolchain_md5_checksum=""
+toolchain_sha256_checksum=""
 toolchain_archive=""
 
 # Load logging helpers early so option parsing can emit status messages.
@@ -46,13 +52,15 @@ OPTION_LIST=(
   "--i-agree-to-the-contained-eula (required) Agree to the EULA"
   "--root-dir Path to scratch directory"
   "--enable-baremetal-toolchain Enable baremetal toolchain setup"
-  "--target-toolchain Select toolchain: gnu (default), zephyr, or linux-musl"
+  "--target-toolchain Select toolchain: gnu (default), clang, zephyr, or linux-musl. Repeat the option to install multiple toolchains."
   "--enable-fvps Enable FVP setup"
+  "--disable-fvps Disable FVP setup"
+  "--fvp Select FVP instead of the default corstone300 and corstone320: corstone300, corstone320, or corstone1000. Repeat the option to install multiple."
   "--enable-vela Enable VELA setup"
-  "--disable-cortex-m-deps Do not setup what is needed for Cortex-M"
   "--enable-model-converter Enable MLSDK model converter setup"
   "--enable-vgf-lib Enable MLSDK vgf library setup"
   "--enable-emulation-layer Enable MLSDK Vulkan emulation layer"
+  "--enable-model-explorer Install optional Model Explorer visualization dependencies"
   "--disable-ethos-u-deps Do not setup what is needed for Ethos-U"
   "--enable-mlsdk-deps Setup what is needed for MLSDK"
   "--install-mlsdk-deps-with-pip (default) Use MLSDK PyPI packages"
@@ -69,6 +77,7 @@ OPTION_LIST=(
 
 function print_usage() {
     echo "Usage: $(basename "$0") [OPTIONS]"
+    echo "Note: this developer setup script is not a stable public API."
     echo
     echo "Available options:"
     for entry in "${OPTION_LIST[@]}"; do
@@ -76,6 +85,9 @@ function print_usage() {
         desc="${entry#* }"
         printf "  %-40s %s\n" "$opt" "$desc"
     done
+    echo
+    echo 'FVP cache: ARM_FVP_CACHE_DIR overrides the persistent user cache (XDG_CACHE_HOME or ~/.cache).'
+    echo 'ARM_FVP_CACHE_ONLY=1 forbids downloads; prewarmed CI image caches use this by default.'
     echo
     echo "Supplied args: $*"
 }
@@ -105,28 +117,36 @@ function check_options() {
                 shift
                 ;;
             --target-toolchain)
-                # Only change default root dir if the script is being executed and not sourced.
-                if [[ $is_script_sourced -eq 0 ]]; then
-                    target_toolchain=${2:-"${target_toolchain}"}
-                fi
-
-                if [[ $# -ge 2 ]]; then
-                    shift 2
-                else
+                if [[ $# -lt 2 ]]; then
                     print_usage "$@"
                     exit 1
                 fi
+
+                # Only change target toolchains if the script is being executed and not sourced.
+                if [[ $is_script_sourced -eq 0 ]]; then
+                    add_target_toolchain "$2"
+                fi
+
+                shift 2
                 ;;
             --enable-fvps)
                 enable_fvps=1
                 shift
                 ;;
-            --enable-vela)
-                enable_vela=1
+            --disable-fvps)
+                enable_fvps=0
                 shift
                 ;;
-            --disable-cortex-m-deps)
-                enable_cortex_m=0
+            --fvp)
+                if [[ $# -lt 2 ]]; then
+                    print_usage "$@"
+                    exit 1
+                fi
+                add_fvp "$2"
+                shift 2
+                ;;
+            --enable-vela)
+                enable_vela=1
                 shift
                 ;;
             --enable-model-converter)
@@ -143,6 +163,10 @@ function check_options() {
                 ;;
             --enable-vulkan-sdk)
                 enable_vulkan_sdk=1
+                shift
+                ;;
+            --enable-model-explorer)
+                enable_model_explorer=1
                 shift
                 ;;
             --disable-ethos-u-deps)
@@ -200,6 +224,40 @@ function check_options() {
     done
 }
 
+function add_target_toolchain() {
+    local toolchain=$1
+    if [[ "${toolchain}" == "" ]]; then
+        toolchain="gnu"
+    elif [[ "${toolchain}" != "gnu" && "${toolchain}" != "clang" && "${toolchain}" != "zephyr" && "${toolchain}" != "linux-musl" ]]; then
+        echo "Error: Unsupported target toolchain '${toolchain}'. Valid options are gnu, clang, zephyr, linux-musl." >&2
+        exit 1
+    fi
+
+    local selected_toolchain
+    for selected_toolchain in ${target_toolchains[@]+"${target_toolchains[@]}"}; do
+        if [[ "${selected_toolchain}" == "${toolchain}" ]]; then
+            return
+        fi
+    done
+    target_toolchains+=("${toolchain}")
+}
+
+function add_fvp() {
+    local fvp=$1
+    if [[ "${fvp}" != "corstone300" && "${fvp}" != "corstone320" && "${fvp}" != "corstone1000" ]]; then
+        echo "Error: Unsupported FVP '${fvp}'. Valid options are corstone300, corstone320, corstone1000." >&2
+        exit 1
+    fi
+
+    local selected_fvp
+    for selected_fvp in ${fvps[@]+"${fvps[@]}"}; do
+        if [[ "${selected_fvp}" == "${fvp}" ]]; then
+            return
+        fi
+    done
+    fvps+=("${fvp}")
+}
+
 function setup_root_dir() {
     mkdir -p "${root_dir}"
     root_dir=$(realpath "${root_dir}")
@@ -209,7 +267,7 @@ function setup_root_dir() {
 
 function setup_ethos_u_tools() {
     log_step "ethos-u-tools" "Installing Ethos-U Python tooling"
-    CMAKE_POLICY_VERSION_MINIMUM=3.5 BUILD_PYBIND=1 pip install --no-dependencies -r $et_dir/backends/arm/requirements-arm-ethos-u.txt
+    CMAKE_POLICY_VERSION_MINIMUM=3.5 BUILD_PYBIND=1 pip install --no-dependencies -r "$et_dir/backends/arm/requirements-arm-ethos-u.txt"
 }
 
 function setup_cortex_m_tools() {
@@ -217,9 +275,70 @@ function setup_cortex_m_tools() {
     pip install --no-dependencies -r $et_dir/backends/cortex_m/requirements-cortex-m.txt
 }
 
+function check_model_explorer_python() {
+    local py_version
+    py_version="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+    if ! python3 -c 'import sys; raise SystemExit(0 if (3, 10) <= sys.version_info < (3, 13) else 1)'; then
+        log_step "model-explorer" \
+            "Model Explorer adapters require Python 3.10-3.12; detected Python ${py_version}."
+        return 1
+    fi
+}
+
+function setup_model_explorer() {
+    check_model_explorer_python || return 1
+
+    local model_explorer_dir="${root_dir}/model-explorer"
+    local staging_dir
+    staging_dir="$(mktemp -d "${root_dir}/model-explorer.XXXXXX")"
+
+    log_step "model-explorer" "Installing optional visualization dependencies"
+    if ! python3 -m pip install --ignore-installed --no-warn-conflicts \
+        --target "${staging_dir}" \
+        -r "${et_dir}/backends/arm/requirements-arm-model-explorer.txt"; then
+        rm -rf "${staging_dir}"
+        return 1
+    fi
+    if ! PYTHONPATH="${staging_dir}" python3 -c \
+        'import pte_adapter_model_explorer.main, tosa_adapter_model_explorer.main' || \
+       ! PYTHONPATH="${staging_dir}" python3 -m model_explorer --help >/dev/null; then
+        log_step "model-explorer" "Installed packages failed validation"
+        rm -rf "${staging_dir}"
+        return 1
+    fi
+
+    python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' \
+        > "${staging_dir}/.python-version"
+    rm -rf "${model_explorer_dir}"
+    mv "${staging_dir}" "${model_explorer_dir}"
+}
+
+function warn_if_mlsdk_python_is_untested() {
+    if [[ "${enable_model_converter}" -eq 0 && \
+          "${enable_vgf_lib}" -eq 0 && \
+          "${enable_emulation_layer}" -eq 0 ]]; then
+        return
+    fi
+
+    local py_version
+    py_version="$(python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+    if ! python -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)'; then
+        log_step "mlsdk" \
+            "Warning: Python 3.12 is the recommended minimum for the VGF flow; detected Python ${py_version}."
+        log_step "mlsdk" \
+            "Older ExecuTorch-supported Python versions may work, but are not the reference VGF configuration."
+    fi
+}
+
 function setup_mlsdk_dependencies() {
     log_step "mlsdk" "Installing MLSDK dependencies"
-    pip install -r $et_dir/backends/arm/requirements-arm-vgf.txt
+    if [[ "${enable_model_converter}" -eq 1 || "${enable_emulation_layer}" -eq 1 ]]; then
+        pip install -r "$et_dir/backends/arm/requirements-arm-vgf.txt"
+    fi
+
+    if [[ "${enable_vgf_lib}" -eq 1 ]]; then
+        pip install -r "$et_dir/backends/arm/requirements-arm-vgf-runtime.txt"
+    fi
 }
 
 function validate_mlsdk_pip_compatibility() {
@@ -260,7 +379,12 @@ function create_setup_path(){
     fi
 
     if [[ "${enable_baremetal_toolchain}" -eq 1 ]]; then
-        setup_path_toolchain
+        local selected_toolchain
+        for selected_toolchain in "${target_toolchains[@]}"; do
+            target_toolchain="${selected_toolchain}"
+            select_toolchain
+            setup_path_toolchain
+        done
     fi
 
     if [[ "${enable_vulkan_sdk}" -eq 1 ]]; then
@@ -283,7 +407,30 @@ function create_setup_path(){
 if [[ $is_script_sourced -eq 0 ]]; then
     set -e
 
+    ARM_SETUP_CURL_PROGRESS_ARGS=(--progress-bar)
+    if [[ -n "$("${et_dir}/.ci/scripts/detect_ci.sh" --and-not-debug)" ]]; then
+        ARM_SETUP_CURL_PROGRESS_ARGS=(--no-progress-meter)
+        export PIP_PROGRESS_BAR=off
+    fi
+
     check_options "$@"
+
+    if [[ "${enable_model_explorer}" -eq 1 ]]; then
+        check_model_explorer_python
+    fi
+
+    if [[ "${#target_toolchains[@]}" -eq 0 ]]; then
+        target_toolchains=("gnu")
+    fi
+    target_toolchains_display="$(IFS=,; echo "${target_toolchains[*]}")"
+
+    if [[ "${#fvps[@]}" -eq 0 ]]; then
+        fvps=("corstone300" "corstone320")
+    elif [[ "${enable_fvps}" -eq 0 ]]; then
+        echo "Error: --fvp cannot be combined with disabled FVP setup." >&2
+        exit 1
+    fi
+    fvps_display="$(IFS=,; echo "${fvps[*]}")"
 
     # Import utils
     source $et_dir/backends/arm/scripts/fvp_utils.sh
@@ -302,28 +449,34 @@ if [[ $is_script_sourced -eq 0 ]]; then
     cd "${root_dir}"
 
     log_step "options" \
-             "root=${root_dir}, target-toolchain=${target_toolchain:-<default>}"
+             "root=${root_dir}, target-toolchain=${target_toolchains_display}"
     log_step "options" \
              "ethos-u: fvps=${enable_fvps}, toolchain=${enable_baremetal_toolchain}, vela=${enable_vela} | " \
-             "cortex-m: deps=${enable_cortex_m} | " \
              "mlsdk: model-converter=${enable_model_converter}, vgf-lib=${enable_vgf_lib}, " \
                     "emu-layer=${enable_emulation_layer}, vulkan-sdk=${enable_vulkan_sdk}"
 
     # Setup toolchain
     if [[ "${enable_baremetal_toolchain}" -eq 1 ]]; then
-        log_step "toolchain" "Configuring baremetal toolchain (${target_toolchain:-gnu})"
-        # Select appropriate toolchain
-        select_toolchain
-        setup_toolchain
+        log_step "toolchain" "Configuring baremetal toolchain(s): ${target_toolchains_display}"
+        for selected_toolchain in "${target_toolchains[@]}"; do
+            target_toolchain="${selected_toolchain}"
+            select_toolchain
+            setup_toolchain
+        done
     fi
 
     # Setup FVP
     if [[ "${enable_fvps}" -eq 1 ]]; then
-        log_step "fvp" "Setting up Arm Fixed Virtual Platforms"
-        check_fvp_eula
-        setup_fvp
-        install_fvp
+        log_step "fvp" "Setting up Arm Fixed Virtual Platforms: ${fvps_display}"
+        if [[ "${OS}" == "Linux" ]]; then
+            check_fvp_eula
+            install_fvp
+        else
+            setup_fvp
+        fi
     fi
+
+    warn_if_mlsdk_python_is_untested
 
     # Setup Vulkan SDK
     if [[ "${enable_vulkan_sdk}" -eq 1 ]]; then
@@ -356,9 +509,8 @@ if [[ $is_script_sourced -eq 0 ]]; then
         setup_ethos_u_tools
     fi
 
-    if [[ "${enable_cortex_m}" -eq 1 ]]; then
-        log_step "deps" "Installing Cortex-M CMSIS-NN tooling"
-        setup_cortex_m_tools
+    if [[ "${enable_model_explorer}" -eq 1 ]]; then
+        setup_model_explorer
     fi
 
     log_step "main" "Setup complete"

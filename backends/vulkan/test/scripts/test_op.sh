@@ -149,7 +149,7 @@ build_core_libraries() {
     -DEXECUTORCH_BUILD_XNNPACK=ON \
     -DEXECUTORCH_BUILD_TESTS=ON \
     -Bcmake-out && \
-  cmake --build cmake-out -j64 --target install
+  cmake --build cmake-out -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --target install
 }
 
 build_operator_tests() {
@@ -195,13 +195,13 @@ build_operator_tests() {
   # Build operator tests
   cmake "${CMAKE_ARGS[@]}" \
     -Bcmake-out/backends/vulkan/test/op_tests && \
-  cmake --build cmake-out/backends/vulkan/test/op_tests -j16
+  cmake --build cmake-out/backends/vulkan/test/op_tests -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 ))
 }
 
 recompile() {
   echo "Recompiling..."
-  cmake --build cmake-out -j64 --target install
-  cmake --build cmake-out/backends/vulkan/test/op_tests -j16
+  cmake --build cmake-out -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --target install
+  cmake --build cmake-out/backends/vulkan/test/op_tests -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 ))
 }
 
 run_operator_test() {

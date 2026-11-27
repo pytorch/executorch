@@ -9,8 +9,12 @@ from typing import Callable, cast, Dict, Iterator, Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
-from executorch.backends.arm._passes.arm_pass_utils import create_node
+from executorch.backends.arm._passes.arm_pass_utils import (
+    create_node,
+    POW_LOG_POSITIVE_LOWER_BOUND_META,
+)
 from executorch.backends.arm._passes.quant_args import QuantArgs
+from executorch.backends.arm._passes.tosa_lowering_utils import create_rescale_node
 from executorch.backends.transforms.utils import create_constant_placeholder
 
 from executorch.exir import ExportedProgram
@@ -58,13 +62,17 @@ class TableOps:
         exir_ops.edge.aten.acos.default: torch.acos,
         exir_ops.edge.aten.tan.default: torch.tan,
         exir_ops.edge.aten.silu.default: torch.nn.functional.silu,
+        exir_ops.edge.aten.mish.default: torch.nn.functional.mish,
+        exir_ops.edge.aten.round.default: torch.round,
     }
 
     # Targets that must be treated explicitly
     special_table_ops: Set[EdgeOpOverload] = {
+        exir_ops.edge.aten.softplus.default,
         exir_ops.edge.aten.pow.Tensor_Scalar,
         exir_ops.edge.aten.gelu.default,
         exir_ops.edge.aten.elu.default,
+        exir_ops.edge.aten.leaky_relu.default,
         exir_ops.edge.aten.remainder.Scalar,
     }
 
@@ -82,6 +90,26 @@ class TableOps:
             return self.unary_table_ops[target]
         elif target in self.special_table_ops:
             match target:
+                case exir_ops.edge.aten.softplus.default:
+                    beta = cast(
+                        float,
+                        (
+                            node.args[1]
+                            if len(node.args) > 1
+                            else node.kwargs.get("beta", 1)
+                        ),
+                    )
+                    threshold = cast(
+                        float,
+                        (
+                            node.args[2]
+                            if len(node.args) > 2
+                            else node.kwargs.get("threshold", 20)
+                        ),
+                    )
+                    return lambda x: torch.nn.functional.softplus(
+                        x, beta=beta, threshold=threshold
+                    ).flatten()
                 case exir_ops.edge.aten.pow.Tensor_Scalar:
                     # Exponent is a constant. Embed it into a lambda.
                     exp = cast(int, node.args[1])
@@ -106,6 +134,18 @@ class TableOps:
                     return lambda x: torch.ops.aten.elu.default(
                         x, input_alpha, scale, input_scale
                     ).flatten()
+                case exir_ops.edge.aten.leaky_relu.default:
+                    negative_slope = cast(
+                        float,
+                        (
+                            node.args[1]
+                            if len(node.args) > 1
+                            else node.kwargs.get("negative_slope", 0.01)
+                        ),
+                    )
+                    return lambda x: torch.nn.functional.leaky_relu(
+                        x, negative_slope=negative_slope
+                    ).flatten()
                 case exir_ops.edge.aten.remainder.Scalar:
                     divisor = cast(float | int, node.args[1])
                     return lambda x: torch.remainder(x, divisor).flatten()
@@ -113,7 +153,7 @@ class TableOps:
                     # Op must be handled if it's inside self.special_ops
                     raise AssertionError("Unhandled table operation")
         else:
-            raise KeyError("Table op for {target} does not exist")
+            raise KeyError(f"Table op for {target} does not exist")
 
     @staticmethod
     def included_ops() -> Iterator[EdgeOpOverload]:
@@ -140,6 +180,54 @@ class InsertTableOpsPass(ArmPass):
     def register_buffer(self, buffer_name: str, buffer: torch.Tensor) -> None:
         """Add buffer to self.exported_program.state_dict."""
         self.exported_program.state_dict[buffer_name] = buffer
+
+    @staticmethod
+    def _validate_pow_log_positive_lower_bound(
+        node: Node, input_qargs: QuantArgs
+    ) -> None:
+        """Reject POW-generated LOG when quantization destroys positivity.
+
+        The POW decomposition proves positivity in the source floating-point
+        graph before observers run. Once the LOG input qparams are available,
+        verify that the proven lower bound is still strictly positive after the
+        exact QDQ mapping used by the backend.
+
+        """
+        custom_meta = node.meta.get("custom", {})
+        lower_bound = custom_meta.get(
+            POW_LOG_POSITIVE_LOWER_BOUND_META,
+            node.meta.get(POW_LOG_POSITIVE_LOWER_BOUND_META),
+        )
+        if lower_bound is None:
+            return
+
+        if isinstance(lower_bound, bool) or not isinstance(lower_bound, (int, float)):
+            raise RuntimeError(
+                "Invalid POW LOG positive lower-bound metadata: " f"{lower_bound!r}"
+            )
+
+        if input_qargs.per_channel:
+            raise RuntimeError(
+                "Tensor/Tensor POW LOG positivity validation requires "
+                "per-tensor activation quantization."
+            )
+
+        lower_bound_tensor = torch.tensor([float(lower_bound)], dtype=torch.float32)
+        quantized = input_qargs.quantize_value(lower_bound_tensor)
+        dequantized = input_qargs.dequantize_value(quantized)
+
+        if bool(torch.all(torch.isfinite(dequantized) & (dequantized > 0)).item()):
+            return
+
+        dequantized_lower_bound = float(dequantized.reshape(-1)[0].item())
+        raise RuntimeError(
+            "Unsafe Tensor/Tensor POW INT decomposition: the structurally "
+            f"proven positive base lower bound {float(lower_bound)} becomes "
+            f"{dequantized_lower_bound} after LOG input quantization "
+            f"(scale={input_qargs.get_scale_per_tensor()}, "
+            f"zero_point={input_qargs.get_zp_per_tensor()}). "
+            "LOG requires a strictly positive input."
+        )
 
     @staticmethod
     def _get_8bit_table_domain() -> torch.Tensor:
@@ -175,15 +263,15 @@ class InsertTableOpsPass(ArmPass):
         )
         return (f(effective_codes).to(dtype=torch.int8), 0)
 
+    @staticmethod
     def generate_16_bit_table_values(
-        self,
         torch_op: Callable[[torch.Tensor], torch.Tensor],
         in_quantargs: QuantArgs,
         out_quantargs: QuantArgs,
     ) -> tuple[torch.Tensor, int]:
         """Compute LUT values for a INT16 TOSA.TABLE with 32 bit output.
         In practice the output is 23 bits that should be interpreted as 16 'whole' bits and 7 fractional bits, see
-        the specification: https://www.mlplatform.org/tosa/tosa_spec.html#_table. This means that the output
+        the specification: https://github.com/arm/tosa-specification/blob/main/chapters/ewise_binary.adoc#table. This means that the output
         will interpreted as 2**7=128 times too large unless accounted for by rescaling down the table output.
 
         Quantization can be either int16 or int32 which means that the op output could be larger than the 23 bits from
@@ -197,11 +285,22 @@ class InsertTableOpsPass(ArmPass):
         """
 
         def f(x: torch.Tensor) -> torch.Tensor:
+            int16_max = torch.iinfo(torch.int16).max
+            has_full_int16_upper_range = (
+                in_quantargs.dtype == torch.int16 and in_quantargs.qmax == int16_max
+            )
             x = x.clamp(in_quantargs.qmin, in_quantargs.qmax).to(
                 dtype=in_quantargs.dtype
             )
             # Dont use the 7 LSBs.
             x = in_quantargs.dequantize_value((x & ~0x7F))
+            if has_full_int16_upper_range:
+                # TOSA uses table[512] as the virtual right endpoint when
+                # interpolating raw INT16 input codes [32640, 32767]. Evaluate
+                # its real value at affine code 32768 without casting to int16.
+                x[-1] = (
+                    int16_max + 1 - in_quantargs.get_zp_per_tensor()
+                ) * in_quantargs.get_scale_per_tensor()
             x = torch_op(x)
             return out_quantargs.quantize_value(x)
 
@@ -223,6 +322,15 @@ class InsertTableOpsPass(ArmPass):
         #       but due to signedness this is a negative number! So we need to shift it one more bit.
         # Note: for out_quantargs.dtype=torch.int16, rshift == 0 and rescale_lshift = -7.
         rshift = int(torch.ceil(torch.log2(lut_values.abs().max()))) + 1 - 16
+        # When the table values use fewer than 16 bits (e.g. a sigmoid output
+        # quantized with a small scale, so the max table value is well below
+        # 2**15), the formula above yields a negative rshift. The values already
+        # fit in signed int16, and a negative right-shift is undefined (on host it
+        # masks the shift count and zeroes the table, giving a degenerate
+        # step-function LUT on device). Clamp to 0 so no shift is applied; this is
+        # the documented int16 case (rshift == 0, rescale_lshift == -7) and keeps
+        # rescale_lshift consistent with the shift actually performed below.
+        rshift = max(rshift, 0)
         # The 7 fractional bits are equivalent to a lshift of 7, so subtract 7 from the lshift we do.
         rescale_lshift = rshift - 7
         lut_values = lut_values >> rshift
@@ -274,9 +382,11 @@ class InsertTableOpsPass(ArmPass):
                     )
 
                 # Generate table buffer and how much to lshift the table output.
+                input_qargs = input_qparams[0]
+                self._validate_pow_log_positive_lower_bound(node, input_qargs)
                 buffer, lshift = self.generate_table_values(
                     torch_op=self.table_ops[node],
-                    in_quantargs=input_qparams[0],
+                    in_quantargs=input_qargs,
                     out_quantargs=output_qparams[0],
                 )
                 # Register buffer in self.exported_program.state_dict
@@ -297,13 +407,15 @@ class InsertTableOpsPass(ArmPass):
                     op_target=exir_ops.backend.tosa.TABLE.default,
                     args=(node.args[0], const_table_node),
                 )
+                table_op_node.meta["val"] = exir_ops.backend.tosa.TABLE.default(
+                    node.args[0].meta["val"], const_table_node.meta["val"]
+                )
                 output_node = table_op_node
 
                 if lshift != 0:
                     scale = 2.0**lshift
-                    rescale_node = create_node(
+                    rescale_node = create_rescale_node(
                         graph=graph_module.graph,
-                        op_target=exir_ops.backend.tosa.RESCALE.default,
                         args=(table_op_node, output_qparams[0].dtype, [scale], 0, 0),
                     )
                     output_node = rescale_node

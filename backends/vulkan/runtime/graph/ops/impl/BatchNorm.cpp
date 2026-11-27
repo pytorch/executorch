@@ -99,8 +99,8 @@ void add_native_batch_norm_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      default_pick_global_wg_size,
-      default_pick_local_wg_size,
+      default_pick_gwg,
+      default_pick_lwg,
       {{out_ref, vkapi::kWrite},
        {{in_ref, arg_weight, arg_bias, arg_mean, arg_var}, vkapi::kRead}},
       {graph.logical_limits_ubo(out_ref),

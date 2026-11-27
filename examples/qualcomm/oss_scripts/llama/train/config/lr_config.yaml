@@ -1,0 +1,49 @@
+# Copyright (c) Qualcomm Innovation Center, Inc.
+# All rights reserved
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+#
+# Pattern names are aligned to the parameter names in
+# model/static_llama.py so they match what the trainer sees via
+# `model.named_parameters()`:
+#   tok_embeddings.weight
+#   layers.<i>.attention.{wq,wk,wv,wo}.weight
+#   layers.<i>.feed_forward.{w1,w2,w3}.weight
+#   layers.<i>.attention_norm.weight / layers.<i>.ffn_norm.weight
+#   norm.weight
+#   output.weight            (LM head)
+#
+# Any keyword accepted by the AdamW optimizer constructor can be specified here.
+# Common kwargs for AdamW:
+#   lr           - learning rate
+#   weight_decay - L2 penalty (overrides the global --weight_decay)
+#   betas        - Adam momentum coefficients [beta1, beta2]
+#   eps          - term added to denominator for numerical stability
+#
+# Usage:
+#   --lr_config train/config/lr_config.yaml
+#
+# Parameters not matched by any pattern below fall back to the global optimizer
+# settings (--lr and weight_decay=0.01), so no explicit `default` entry is needed.
+
+# Output head: lower LR, no weight decay
+"*output*":
+  lr: 4e-6
+  weight_decay: 0.0
+
+# Attention projections (wq/wk/wv/wo): higher LR + more aggressive momentum.
+"*attention.*":
+  lr: 2e-5
+  betas: [0.9, 0.95]
+
+# Feed-forward projections (w1/w2/w3): higher LR + higher weight decay.
+"*feed_forward.*":
+  lr: 2e-5
+  weight_decay: 0.05
+
+# Embedding layers: small LR, no weight decay (unfrozen to fine-tune)
+"*tok_embeddings*":
+  lr: 5e-7
+  weight_decay: 0.0
+  eps: 1e-7

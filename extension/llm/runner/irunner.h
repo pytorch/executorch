@@ -33,12 +33,12 @@ struct GenerationConfig {
   // Whether to echo the input prompt in the output
   bool echo = true;
 
-  // Grammar definition for constrained decoding (e.g. a JSON schema, regex,
-  // Lark CFG, or GBNF grammar). Empty string means no constraint.
+  // Reserved grammar definition for constrained decoding.
+  // Currently ignored by in-tree runners.
   std::string grammar;
 
-  // Grammar format: "json_schema", "regex", "lark", or "gbnf".
-  // Only used when grammar is non-empty.
+  // Reserved grammar format (e.g. "json_schema", "regex", "lark", or "gbnf").
+  // Currently ignored by in-tree runners.
   std::string grammar_type;
 
   // Whether to ignore EOS token and continue generating until max_new_tokens
@@ -55,7 +55,7 @@ struct GenerationConfig {
   // Whether this is a warmup run (affects perf benchmarking)
   bool warming = false;
 
-  // Maximum number of total tokens
+  // Maximum number of total tokens. Does not resize the allocated KV cache.
   // If the .pte file contains the max_context_len metadata, it will override
   // this value if it's smaller. If this field is -1, we will use the
   // max_context_len metadata directly. Check resolve_max_new_tokens for

@@ -13,7 +13,17 @@ from typing import Callable
 
 import torch
 from executorch.backends.cadence.aot.quantizer import quantizer as quantizer_module
-from executorch.backends.cadence.aot.quantizer.patterns import AddmmPattern
+from executorch.backends.cadence.aot.quantizer.patterns import (
+    AddmmPattern,
+    Conv1dBNReluPattern0,
+    Conv1dPattern,
+    Conv1dReluPattern0,
+    Conv2dBNReluPattern0,
+    Conv2dPattern,
+    Conv2dReluPattern0,
+    LinearPattern,
+    QuantizationPattern,
+)
 from executorch.backends.cadence.aot.quantizer.quantizer import (
     CadenceAtenQuantizer,
     CadenceDefaultQuantizer,
@@ -36,6 +46,11 @@ from executorch.backends.test.graph_builder import GraphBuilder, single_op_build
 from executorch.exir.pass_base import NodeMetadata
 from parameterized import parameterized
 from torch._ops import OpOverload
+from torchao.quantization.pt2e import PerChannelMinMaxObserver
+from torchao.quantization.pt2e.quantizer import (
+    DerivedQuantizationSpec,
+    QuantizationConfig,
+)
 from torchao.quantization.pt2e.quantizer.quantizer import (
     Q_ANNOTATION_KEY,
     QuantizationAnnotation,
@@ -241,6 +256,15 @@ QUANTIZER_ANNOTATION_TEST_CASES: list[
         torch.ops.aten.relu.default,
         qconfig_A8W8sym.output_activation,
         # For fused conv2d+relu: [input_activation, weight] from conv2d node
+        [qconfig_A8W8sym.input_activation, qconfig_A8W8sym.weight],
+    ),
+    (
+        "fused_conv1d_bn_relu_A8W8sym",
+        lambda self: self._build_conv1d_bn_relu_graph(),
+        CadenceFusedConvReluQuantizer(),
+        torch.ops.aten.relu.default,
+        qconfig_A8W8sym.output_activation,
+        # For fused conv1d+bn+relu: [input_activation, weight] from conv1d node
         [qconfig_A8W8sym.input_activation, qconfig_A8W8sym.weight],
     ),
 ]
@@ -665,6 +689,64 @@ class QuantizerAnnotationTest(unittest.TestCase):
 
         return gm, relu_nodes[0], conv1d_nodes[0]
 
+    def _build_conv1d_bn_relu_graph(
+        self,
+    ) -> tuple[torch.fx.GraphModule, torch.fx.Node, torch.fx.Node]:
+        """Build a graph with conv1d + batch_norm + relu (3-op fused pattern)."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 3, 10))
+        weight = builder.placeholder("weight", torch.randn(6, 3, 3))
+        bn_weight = builder.placeholder("bn_weight", torch.randn(6))
+        bn_bias = builder.placeholder("bn_bias", torch.randn(6))
+        bn_running_mean = builder.placeholder("bn_running_mean", torch.randn(6))
+        bn_running_var = builder.placeholder(
+            "bn_running_var", torch.abs(torch.randn(6))
+        )
+        conv1d = builder.call_operator(
+            op=torch.ops.aten.conv1d.default,
+            args=(x, weight),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("conv1d", torch.ops.aten.conv1d.default)]}
+            ),
+        )
+        batch_norm = builder.call_operator(
+            op=torch.ops.aten.batch_norm.default,
+            args=(
+                conv1d,
+                bn_weight,
+                bn_bias,
+                bn_running_mean,
+                bn_running_var,
+                False,
+                0.1,
+                1e-5,
+                False,
+            ),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("batch_norm", torch.ops.aten.batch_norm.default)]}
+            ),
+        )
+        relu = builder.call_operator(
+            op=torch.ops.aten.relu.default,
+            args=(batch_norm,),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("relu", torch.ops.aten.relu.default)]}
+            ),
+        )
+        builder.output([relu])
+        gm = builder.get_graph_module()
+
+        relu_nodes = gm.graph.find_nodes(
+            op="call_function", target=torch.ops.aten.relu.default
+        )
+        self.assertEqual(len(relu_nodes), 1)
+        conv1d_nodes = gm.graph.find_nodes(
+            op="call_function", target=torch.ops.aten.conv1d.default
+        )
+        self.assertEqual(len(conv1d_nodes), 1)
+
+        return gm, relu_nodes[0], conv1d_nodes[0]
+
     @parameterized.expand(QUANTIZER_ANNOTATION_TEST_CASES)
     def test_quantizer_annotation(
         self,
@@ -813,6 +895,476 @@ class QuantizerOpsPreserveTest(unittest.TestCase):
             torch.ops.aten.rms_norm.default,
         ]
         self.assertCountEqual(actual, expected)
+
+
+class ConvBNReluFusionTest(unittest.TestCase):
+    """Tests for ConvBNReluBasePattern.fuse() correctness.
+
+    A BatchNorm sitting between conv and relu must be folded by an upstream
+    float-level pass (torchao prepare_pt2e for PTQ, FuseQATConvBN for QAT)
+    before quantizer fusion runs. If a real batch_norm survives to fuse(),
+    folding it into the already-quantized conv is not supported here, so fuse()
+    must decline rather than silently drop the BatchNorm affine (which would
+    corrupt numerics).
+    """
+
+    def _build_dq_conv_bn_relu_q_graph(
+        self,
+    ) -> tuple[torch.fx.GraphModule, torch.fx.Node]:
+        builder = GraphBuilder()
+        x_q = builder.placeholder(
+            "x_q", torch.randint(-128, 127, (1, 3, 8, 8), dtype=torch.int8)
+        )
+        w_q = builder.placeholder(
+            "w_q", torch.randint(-127, 127, (6, 3, 3, 3), dtype=torch.int8)
+        )
+        bn_weight = builder.placeholder("bn_weight", torch.randn(6))
+        bn_bias = builder.placeholder("bn_bias", torch.randn(6))
+        bn_mean = builder.placeholder("bn_mean", torch.randn(6))
+        bn_var = builder.placeholder("bn_var", torch.rand(6) + 1.0)
+
+        dq_input = builder.call_operator(
+            op=torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+            args=(x_q, 0.1, 0, -128, 127, torch.int8),
+        )
+        dq_weight = builder.call_operator(
+            op=torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+            args=(w_q, 0.05, 0, -127, 127, torch.int8),
+        )
+        conv = builder.call_operator(
+            op=torch.ops.aten.conv2d.default,
+            args=(dq_input, dq_weight),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("conv2d", torch.ops.aten.conv2d.default)]}
+            ),
+        )
+        bn = builder.call_operator(
+            op=torch.ops.aten.batch_norm.default,
+            args=(conv, bn_weight, bn_bias, bn_mean, bn_var, False, 0.1, 1e-5, True),
+        )
+        relu = builder.call_operator(
+            op=torch.ops.aten.relu.default,
+            args=(bn,),
+        )
+        # out_zero_point == -128 keeps check_out_zero_point_is_min_range happy so
+        # fuse() would proceed to fuse_conv if it did not bail on the BatchNorm.
+        q = builder.call_operator(
+            op=torch.ops.quantized_decomposed.quantize_per_tensor.default,
+            args=(relu, 0.2, -128, -128, 127, torch.int8),
+        )
+        builder.output([q])
+        gm = builder.get_graph_module()
+
+        conv_nodes = gm.graph.find_nodes(
+            op="call_function", target=torch.ops.aten.conv2d.default
+        )
+        self.assertEqual(len(conv_nodes), 1, "Should find exactly one conv2d node")
+        return gm, conv_nodes[0]
+
+    def test_fuse_declines_when_batchnorm_present(self) -> None:
+        gm, conv_node = self._build_dq_conv_bn_relu_q_graph()
+
+        result = Conv2dBNReluPattern0().fuse(gm, conv_node)
+
+        # A real BatchNorm survived to fusion time: fuse() must decline rather
+        # than fold it away into a quantized conv.
+        self.assertIsNone(result)
+        bn_nodes = gm.graph.find_nodes(
+            op="call_function", target=torch.ops.aten.batch_norm.default
+        )
+        self.assertEqual(len(bn_nodes), 1, "BatchNorm must not be dropped")
+        fused_nodes = [
+            n
+            for n in gm.graph.nodes
+            if n.op == "call_function" and "quantized_conv" in str(n.target)
+        ]
+        self.assertEqual(
+            len(fused_nodes), 0, "conv must not be fused while BatchNorm is present"
+        )
+
+
+PER_CHANNEL_WEIGHT_QSPEC: QuantizationSpec = QuantizationSpec(
+    dtype=torch.int8,
+    quant_min=-128,
+    quant_max=127,
+    qscheme=torch.per_channel_symmetric,
+    ch_axis=0,
+    is_dynamic=False,
+    observer_or_fake_quant_ctr=PerChannelMinMaxObserver,
+)
+
+
+class DerivedBiasSpecGranularityTest(unittest.TestCase):
+    """The derived bias spec has to follow the weight spec's granularity.
+
+    Patterns hardcode the bias ``DerivedQuantizationSpec`` as per-tensor because
+    they cannot see the quantization config. With a per-channel weight the derived
+    bias scale is a vector, and convert_pt2e's per-tensor branch calls float() on
+    it. The quantizer holds both specs, so it is what reconciles them.
+    """
+
+    def _build_conv1d_with_bias_graph(
+        self,
+    ) -> tuple[torch.fx.GraphModule, torch.fx.Node]:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 3, 10))
+        weight = builder.placeholder("weight", torch.randn(6, 3, 3))
+        bias = builder.placeholder("bias", torch.randn(6))
+        conv1d = builder.call_operator(
+            op=torch.ops.aten.conv1d.default,
+            args=(x, weight, bias),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("conv1d", torch.ops.aten.conv1d.default)]}
+            ),
+        )
+        builder.output([conv1d])
+        gm = builder.get_graph_module()
+        conv_nodes = gm.graph.find_nodes(
+            op="call_function", target=torch.ops.aten.conv1d.default
+        )
+        self.assertEqual(len(conv_nodes), 1)
+        return gm, conv_nodes[0]
+
+    def _annotate_and_get_bias_spec(
+        self, weight_qspec: QuantizationSpec
+    ) -> DerivedQuantizationSpec:
+        gm, conv_node = self._build_conv1d_with_bias_graph()
+        config = QuantizationConfig(
+            qconfig_A8W8sym.input_activation,
+            qconfig_A8W8sym.output_activation,
+            weight_qspec,
+            None,
+        )
+        CadenceAtenQuantizer(Conv1dPattern(), config).annotate(gm)
+
+        annotation = conv_node.meta[Q_ANNOTATION_KEY]
+        bias_spec = annotation.input_qspec_map[conv_node.args[2]]
+        self.assertIsInstance(bias_spec, DerivedQuantizationSpec)
+        return bias_spec
+
+    def test_per_channel_weight_makes_bias_spec_per_channel(self) -> None:
+        bias_spec = self._annotate_and_get_bias_spec(PER_CHANNEL_WEIGHT_QSPEC)
+
+        self.assertEqual(bias_spec.qscheme, torch.per_channel_symmetric)
+        self.assertEqual(bias_spec.ch_axis, 0)
+        # The rest of the derived spec must survive the rewrite untouched.
+        self.assertEqual(bias_spec.dtype, torch.int32)
+        self.assertEqual(bias_spec.quant_min, -(2**31))
+        self.assertEqual(bias_spec.quant_max, 2**31 - 1)
+
+    def test_per_tensor_weight_leaves_bias_spec_per_tensor(self) -> None:
+        bias_spec = self._annotate_and_get_bias_spec(qconfig_A8W8sym.weight)
+
+        self.assertEqual(bias_spec.qscheme, torch.per_tensor_affine)
+
+    def test_weight_annotation_is_unchanged(self) -> None:
+        """Only the bias spec is rewritten; the weight keeps the configured spec."""
+        gm, conv_node = self._build_conv1d_with_bias_graph()
+        config = QuantizationConfig(
+            qconfig_A8W8sym.input_activation,
+            qconfig_A8W8sym.output_activation,
+            PER_CHANNEL_WEIGHT_QSPEC,
+            None,
+        )
+        CadenceAtenQuantizer(Conv1dPattern(), config).annotate(gm)
+
+        annotation = conv_node.meta[Q_ANNOTATION_KEY]
+        self.assertEqual(
+            annotation.input_qspec_map[conv_node.args[1]], PER_CHANNEL_WEIGHT_QSPEC
+        )
+
+
+class _BiasSpecGranularityGraphs(unittest.TestCase):
+    """Graph builders used by DerivedBiasSpecGranularityAcrossPatternsTest.
+
+    Each helper returns a graph module together with the fx node whose
+    ``Q_ANNOTATION_KEY`` will carry the derived bias spec after annotation.
+    """
+
+    def _linear_with_bias(
+        self,
+    ) -> tuple[torch.fx.GraphModule, torch.fx.Node, int]:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 4))
+        weight = builder.placeholder("weight", torch.randn(5, 4))
+        bias = builder.placeholder("bias", torch.randn(5))
+        linear = builder.call_operator(
+            op=torch.ops.aten.linear.default,
+            args=(x, weight, bias),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("linear", torch.ops.aten.linear.default)]}
+            ),
+        )
+        builder.output([linear])
+        gm = builder.get_graph_module()
+        node = gm.graph.find_nodes(
+            op="call_function", target=torch.ops.aten.linear.default
+        )[0]
+        # linear(input, weight, bias) -> bias is arg index 2
+        return gm, node, 2
+
+    def _addmm(
+        self,
+    ) -> tuple[torch.fx.GraphModule, torch.fx.Node, int]:
+        builder = GraphBuilder()
+        bias = builder.placeholder("bias", torch.randn(5))
+        mat1 = builder.placeholder("mat1", torch.randn(2, 4))
+        mat2 = builder.placeholder("mat2", torch.randn(4, 5))
+        addmm = builder.call_operator(
+            op=torch.ops.aten.addmm.default,
+            args=(bias, mat1, mat2),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("addmm", torch.ops.aten.addmm.default)]}
+            ),
+        )
+        builder.output([addmm])
+        gm = builder.get_graph_module()
+        node = gm.graph.find_nodes(
+            op="call_function", target=torch.ops.aten.addmm.default
+        )[0]
+        # addmm(bias, mat1, mat2) -> bias is arg index 0
+        return gm, node, 0
+
+    def _conv2d_with_bias(
+        self,
+    ) -> tuple[torch.fx.GraphModule, torch.fx.Node, int]:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 3, 8, 8))
+        weight = builder.placeholder("weight", torch.randn(6, 3, 3, 3))
+        bias = builder.placeholder("bias", torch.randn(6))
+        conv2d = builder.call_operator(
+            op=torch.ops.aten.conv2d.default,
+            args=(x, weight, bias),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("conv2d", torch.ops.aten.conv2d.default)]}
+            ),
+        )
+        builder.output([conv2d])
+        gm = builder.get_graph_module()
+        node = gm.graph.find_nodes(
+            op="call_function", target=torch.ops.aten.conv2d.default
+        )[0]
+        return gm, node, 2
+
+    def _conv1d_relu_with_bias(
+        self,
+    ) -> tuple[torch.fx.GraphModule, torch.fx.Node, int]:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 3, 10))
+        weight = builder.placeholder("weight", torch.randn(6, 3, 3))
+        bias = builder.placeholder("bias", torch.randn(6))
+        conv = builder.call_operator(
+            op=torch.ops.aten.conv1d.default,
+            args=(x, weight, bias),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("conv1d", torch.ops.aten.conv1d.default)]}
+            ),
+        )
+        relu = builder.call_operator(
+            op=torch.ops.aten.relu.default,
+            args=(conv,),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("relu", torch.ops.aten.relu.default)]}
+            ),
+        )
+        builder.output([relu])
+        gm = builder.get_graph_module()
+        conv_node = gm.graph.find_nodes(
+            op="call_function", target=torch.ops.aten.conv1d.default
+        )[0]
+        return gm, conv_node, 2
+
+    def _conv1d_bn_relu_with_bias(
+        self,
+    ) -> tuple[torch.fx.GraphModule, torch.fx.Node, int]:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 3, 10))
+        weight = builder.placeholder("weight", torch.randn(6, 3, 3))
+        bias = builder.placeholder("bias", torch.randn(6))
+        bn_weight = builder.placeholder("bn_weight", torch.randn(6))
+        bn_bias = builder.placeholder("bn_bias", torch.randn(6))
+        bn_mean = builder.placeholder("bn_mean", torch.randn(6))
+        bn_var = builder.placeholder("bn_var", torch.abs(torch.randn(6)))
+        conv = builder.call_operator(
+            op=torch.ops.aten.conv1d.default,
+            args=(x, weight, bias),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("conv1d", torch.ops.aten.conv1d.default)]}
+            ),
+        )
+        bn = builder.call_operator(
+            op=torch.ops.aten.batch_norm.default,
+            args=(conv, bn_weight, bn_bias, bn_mean, bn_var, False, 0.1, 1e-5, False),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("batch_norm", torch.ops.aten.batch_norm.default)]}
+            ),
+        )
+        relu = builder.call_operator(
+            op=torch.ops.aten.relu.default,
+            args=(bn,),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("relu", torch.ops.aten.relu.default)]}
+            ),
+        )
+        builder.output([relu])
+        gm = builder.get_graph_module()
+        conv_node = gm.graph.find_nodes(
+            op="call_function", target=torch.ops.aten.conv1d.default
+        )[0]
+        return gm, conv_node, 2
+
+
+class DerivedBiasSpecGranularityAcrossPatternsTest(_BiasSpecGranularityGraphs):
+    """Every pattern with a derived bias spec must follow the weight granularity.
+
+    quantizer.py aligns the bias spec once in ``CadenceAtenQuantizer.annotate``,
+    not in each pattern, so a regression here would silently apply per-tensor
+    bias to only some patterns. Six pattern families declare a derived bias spec
+    (Addmm, Linear, Conv1d, Conv2d, ConvRelu*, ConvBNRelu*); each is checked.
+    """
+
+    def _annotate_and_get_bias_spec(
+        self,
+        pattern: QuantizationPattern,
+        weight_qspec: QuantizationSpec,
+        graph_builder: Callable[[], tuple[torch.fx.GraphModule, torch.fx.Node, int]],
+    ) -> DerivedQuantizationSpec:
+        gm, anchor_node, bias_idx = graph_builder()
+        config = QuantizationConfig(
+            qconfig_A8W8sym.input_activation,
+            qconfig_A8W8sym.output_activation,
+            weight_qspec,
+            None,
+        )
+        CadenceAtenQuantizer(pattern, config).annotate(gm)
+
+        annotation = anchor_node.meta[Q_ANNOTATION_KEY]
+        bias_spec = annotation.input_qspec_map[anchor_node.args[bias_idx]]
+        self.assertIsInstance(
+            bias_spec,
+            DerivedQuantizationSpec,
+            f"{type(pattern).__name__}: expected a derived bias spec",
+        )
+        return bias_spec
+
+    def _cases(
+        self,
+    ) -> list[
+        tuple[
+            str,
+            QuantizationPattern,
+            Callable[[], tuple[torch.fx.GraphModule, torch.fx.Node, int]],
+        ]
+    ]:
+        return [
+            ("linear", LinearPattern(), self._linear_with_bias),
+            ("addmm", AddmmPattern(), self._addmm),
+            ("conv2d", Conv2dPattern(), self._conv2d_with_bias),
+            ("conv1d_relu", Conv1dReluPattern0(), self._conv1d_relu_with_bias),
+            ("conv2d_relu", Conv2dReluPattern0(), self._conv2d_relu_with_bias_graph),
+            ("conv1d_bn_relu", Conv1dBNReluPattern0(), self._conv1d_bn_relu_with_bias),
+            (
+                "conv2d_bn_relu",
+                Conv2dBNReluPattern0(),
+                self._conv2d_bn_relu_with_bias_graph,
+            ),
+        ]
+
+    def _conv2d_relu_with_bias_graph(
+        self,
+    ) -> tuple[torch.fx.GraphModule, torch.fx.Node, int]:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 3, 8, 8))
+        weight = builder.placeholder("weight", torch.randn(6, 3, 3, 3))
+        bias = builder.placeholder("bias", torch.randn(6))
+        conv = builder.call_operator(
+            op=torch.ops.aten.conv2d.default,
+            args=(x, weight, bias),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("conv2d", torch.ops.aten.conv2d.default)]}
+            ),
+        )
+        relu = builder.call_operator(
+            op=torch.ops.aten.relu.default,
+            args=(conv,),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("relu", torch.ops.aten.relu.default)]}
+            ),
+        )
+        builder.output([relu])
+        gm = builder.get_graph_module()
+        conv_node = gm.graph.find_nodes(
+            op="call_function", target=torch.ops.aten.conv2d.default
+        )[0]
+        return gm, conv_node, 2
+
+    def _conv2d_bn_relu_with_bias_graph(
+        self,
+    ) -> tuple[torch.fx.GraphModule, torch.fx.Node, int]:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 3, 8, 8))
+        weight = builder.placeholder("weight", torch.randn(6, 3, 3, 3))
+        bias = builder.placeholder("bias", torch.randn(6))
+        bn_weight = builder.placeholder("bn_weight", torch.randn(6))
+        bn_bias = builder.placeholder("bn_bias", torch.randn(6))
+        bn_mean = builder.placeholder("bn_mean", torch.randn(6))
+        bn_var = builder.placeholder("bn_var", torch.abs(torch.randn(6)))
+        conv = builder.call_operator(
+            op=torch.ops.aten.conv2d.default,
+            args=(x, weight, bias),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("conv2d", torch.ops.aten.conv2d.default)]}
+            ),
+        )
+        bn = builder.call_operator(
+            op=torch.ops.aten.batch_norm.default,
+            args=(conv, bn_weight, bn_bias, bn_mean, bn_var, False, 0.1, 1e-5, False),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("batch_norm", torch.ops.aten.batch_norm.default)]}
+            ),
+        )
+        relu = builder.call_operator(
+            op=torch.ops.aten.relu.default,
+            args=(bn,),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("relu", torch.ops.aten.relu.default)]}
+            ),
+        )
+        builder.output([relu])
+        gm = builder.get_graph_module()
+        conv_node = gm.graph.find_nodes(
+            op="call_function", target=torch.ops.aten.conv2d.default
+        )[0]
+        return gm, conv_node, 2
+
+    def test_per_channel_weight_makes_bias_spec_per_channel(self) -> None:
+        for name, pattern, builder_fn in self._cases():
+            with self.subTest(pattern=name):
+                bias_spec = self._annotate_and_get_bias_spec(
+                    pattern, PER_CHANNEL_WEIGHT_QSPEC, builder_fn
+                )
+                self.assertEqual(
+                    bias_spec.qscheme,
+                    torch.per_channel_symmetric,
+                    f"{name}: bias qscheme was not aligned to weight granularity",
+                )
+                self.assertEqual(bias_spec.ch_axis, 0)
+                # The rest of the derived spec must survive untouched.
+                self.assertEqual(bias_spec.dtype, torch.int32)
+                self.assertEqual(bias_spec.quant_min, -(2**31))
+                self.assertEqual(bias_spec.quant_max, 2**31 - 1)
+
+    def test_per_tensor_weight_leaves_bias_spec_per_tensor(self) -> None:
+        for name, pattern, builder_fn in self._cases():
+            with self.subTest(pattern=name):
+                bias_spec = self._annotate_and_get_bias_spec(
+                    pattern, qconfig_A8W8sym.weight, builder_fn
+                )
+                self.assertEqual(
+                    bias_spec.qscheme,
+                    torch.per_tensor_affine,
+                    f"{name}: per-tensor weight was rewritten as per-channel",
+                )
 
 
 if __name__ == "__main__":

@@ -24,32 +24,39 @@ class _QuantOpVistorBase(NodeVisitor):
         node: torch.fx.Node,
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
-    ) -> None:
+    ) -> bool:
         # input
         input = node.args[0]
         input_id = self.define_tensor(input, enn_graph, vals_to_ids)
 
         scales = node.args[1]
-        if isinstance(scales, torch.Tensor):
-            scales = scales.tolist()
-        elif not isinstance(scales, list):
-            scales = torch.tensor(scales).reshape([1]).tolist()
         zero_points = node.args[2]
-        if isinstance(zero_points, torch.Tensor):
-            zero_points = zero_points.tolist()
-        elif not isinstance(zero_points, list):
-            zero_points = torch.tensor(zero_points).reshape([1]).tolist()
+        if not isinstance(scales, torch.fx.Node) and not isinstance(
+            zero_points, torch.fx.Node
+        ):
+            if isinstance(scales, torch.Tensor):
+                scales = scales.tolist()
+            elif not isinstance(scales, list):
+                scales = torch.tensor(scales).reshape([1]).tolist()
+            if isinstance(zero_points, torch.Tensor):
+                zero_points = zero_points.tolist()
+            elif not isinstance(zero_points, list):
+                zero_points = torch.tensor(zero_points).reshape([1]).tolist()
 
-        output_id = self.define_tensor(node, enn_graph, vals_to_ids)
+            output_id = self.define_tensor(node, enn_graph, vals_to_ids)
 
-        params = {"scales": scales, "zero_points": zero_points}
+            params = {"scales": scales, "zero_points": zero_points}
 
-        if node.target in QuantConstants.QUANT_OPS_KEY_MAP:
-            enn_graph.define_op(node.name, "QUANTIZE", [input_id], [output_id], params)
-        else:
-            enn_graph.define_op(
-                node.name, "DEQUANTIZE", [input_id], [output_id], params
-            )
+            if node.target in QuantConstants.QUANT_OPS_KEY_MAP:
+                enn_graph.define_op(
+                    node.name, "QUANTIZE", [input_id], [output_id], params
+                )
+            else:
+                enn_graph.define_op(
+                    node.name, "DEQUANTIZE", [input_id], [output_id], params
+                )
+
+        return True
 
 
 @register_node_visitor

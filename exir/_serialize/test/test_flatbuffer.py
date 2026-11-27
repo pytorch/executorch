@@ -6,17 +6,17 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import json
 import os
-import re
-import shutil
 import tempfile
 import unittest
+from pathlib import Path
 from typing import Dict, Optional, Sequence
 from unittest.mock import patch
 
 from executorch.exir._serialize import _flatbuffer
 from executorch.exir._serialize._flatbuffer import (
-    _program_json_to_flatbuffer,
+    _replace_non_finite_in_json,
     _ResourceFiles,
     _SchemaInfo,
 )
@@ -279,58 +279,63 @@ class TestPrepareSchema(unittest.TestCase):
                         )
 
 
-class TestProgramJsonToFlatbuffer(unittest.TestCase):
-    @patch.dict(os.environ, {_flatbuffer._SAVE_FLATC_ENV: "1"})
-    def test_save_json_on_failure(self) -> None:
-        err_msg: Optional[str] = None
-        try:
-            _program_json_to_flatbuffer("} some bad json {")
-            self.fail("Should have raised an exception")
-        except RuntimeError as err:
-            err_msg = err.args[0]
+class TestReplaceNonFiniteInJson(unittest.TestCase):
+    def test_non_finite_floats_are_quoted(self) -> None:
+        content = json.dumps(
+            {
+                "neg_inf": float("-inf"),
+                "pos_inf": float("inf"),
+                "nan": float("nan"),
+                "nested": [1.0, float("-inf")],
+            }
+        ).encode("ascii")
+        # Confirm the premise: json.dumps emits literals flatc cannot parse.
+        self.assertIn(b"-Infinity", content)
 
-        self.assertIsNotNone(err_msg)
-        match = re.search(r"Moved input files to '(.*?)'", err_msg)
-        self.assertTrue(match, msg=f"Unexpected error message: {err_msg}")
-        path = match.group(1)
+        result = json.loads(_replace_non_finite_in_json(content))
+        self.assertEqual(result["neg_inf"], "-inf")
+        self.assertEqual(result["pos_inf"], "inf")
+        self.assertEqual(result["nan"], "nan")
+        self.assertEqual(result["nested"], [1.0, "-inf"])
 
-        files = frozenset(os.listdir(path))
-        # Delete the files otherwise they'll accumulate every time the
-        # test is run.
-        shutil.rmtree(path)
-        # Check for a couple of the files that should be there.
-        self.assertIn("data.json", files)
-        self.assertIn("program.fbs", files)
+    def test_finite_content_is_unchanged(self) -> None:
+        content = json.dumps({"a": 1.5, "b": [2, 3], "c": "text"}).encode("ascii")
+        self.assertIs(_replace_non_finite_in_json(content), content)
 
-    @patch.dict(os.environ, {_flatbuffer._SAVE_FLATC_ENV: "1"})
-    def test_unable_to_save_json_on_failure(self) -> None:
-        err_msg: Optional[str] = None
-        try:
-            with patch.object(
-                _flatbuffer.shutil,
-                "move",
-                side_effect=Exception("shutil.move mock failure"),
-            ):
-                _program_json_to_flatbuffer("} some bad json {")
-            self.fail("Should have raised an exception")
-        except RuntimeError as err:
-            err_msg = err.args[0]
-
-        self.assertIsNotNone(err_msg)
-        self.assertIn("Failed to save input files", err_msg)
-
-    @patch.dict(os.environ, {_flatbuffer._SAVE_FLATC_ENV: ""})
-    def test_no_save_json_on_failure(self) -> None:
-        err_msg: Optional[str] = None
-        try:
-            _program_json_to_flatbuffer("} some bad json {")
-            self.fail("Should have raised an exception")
-        except RuntimeError as err:
-            err_msg = err.args[0]
-
-        self.assertIsNotNone(err_msg)
-        self.assertIn(
-            f"Set {_flatbuffer._SAVE_FLATC_ENV}=1 to save input files", err_msg
+    def test_string_values_are_not_rewritten(self) -> None:
+        # A string that would trip a regex over the raw JSON text.
+        content = json.dumps({"name": "a:Infinity,b", "v": float("inf")}).encode(
+            "ascii"
         )
-        self.assertNotIn("Moved input files", err_msg)
-        self.assertNotIn("Failed to save input files", err_msg)
+        result = json.loads(_replace_non_finite_in_json(content))
+        self.assertEqual(result["name"], "a:Infinity,b")
+        self.assertEqual(result["v"], "inf")
+
+
+class TestGetFlatcPath(unittest.TestCase):
+    def assert_finds_packaged_flatc(self, platform: str, filename: str) -> None:
+        """Checks that flatc is found in executorch.data.bin under its wheel name."""
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_dir = Path(tmp, "bin")
+            bin_dir.mkdir()
+            (bin_dir / filename).touch()
+            packages = {
+                _flatbuffer.__package__: Path(tmp),
+                "executorch.data.bin": bin_dir,
+            }
+            with patch.object(
+                _flatbuffer.importlib.resources,
+                "files",
+                side_effect=packages.__getitem__,
+            ), patch("sys.platform", platform), patch.multiple(
+                _flatbuffer, _flatc_cached_path=None, _flatc_exit_stack=None
+            ):
+                self.assertEqual(_flatbuffer._get_flatc_path(), str(bin_dir / filename))
+
+    def test_windows_wheel_flatc_exe(self) -> None:
+        self.assert_finds_packaged_flatc("win32", "flatc.exe")
+
+    def test_non_windows_wheel_flatc(self) -> None:
+        for platform in ("linux", "darwin"):
+            with self.subTest(platform=platform):
+                self.assert_finds_packaged_flatc(platform, "flatc")

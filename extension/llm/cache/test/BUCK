@@ -1,0 +1,6 @@
+load("@fbsource//tools/build_defs:fbsource_utils.bzl", "is_fbcode")
+load(":targets.bzl", "define_common_targets")
+
+oncall("executorch")
+
+define_common_targets(is_fbcode = is_fbcode())

@@ -1,3 +1,5 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
 # Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -14,11 +16,16 @@
 import logging
 from typing import final, List
 
-from executorch.backends.arm.arm_vela import vela_compile
+from executorch.backends.arm.arm_vela import vela_compile, VelaCompileResult
 from executorch.backends.arm.ethosu.compile_spec import EthosUCompileSpec
 
 from executorch.backends.arm.tosa.backend import TOSABackend
-from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
+from executorch.exir._serialize._named_data_store import NamedDataStore
+from executorch.exir.backend.backend_details import (
+    BackendDetails,
+    DelegateScratchSpec,
+    PreprocessResult,
+)
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.export.exported_program import ExportedProgram
 
@@ -37,8 +44,9 @@ class EthosUBackend(BackendDetails):
 
     @staticmethod
     def _compile_tosa_flatbuffer(
-        tosa_flatbuffer: bytes, compile_spec: EthosUCompileSpec
-    ) -> bytes:
+        tosa_flatbuffer: bytes,
+        compile_spec: EthosUCompileSpec,
+    ) -> VelaCompileResult:
         """Compile a TOSA flatbuffer into a target-specific binary stream.
 
         Args:
@@ -46,9 +54,8 @@ class EthosUBackend(BackendDetails):
                 ``TOSABackend``.
             compile_spec (EthosUCompileSpec): Compile specification providing
                 Vela flags and intermediate paths.
-
         Returns:
-            bytes: Target-specific binary stream produced by Vela.
+            VelaCompileResult: Binary stream and external payloads from Vela.
 
         """
         compile_flags = compile_spec.compiler_flags
@@ -70,13 +77,16 @@ class EthosUBackend(BackendDetails):
             )
 
         # Pass on the TOSA flatbuffer to the vela compiler.
-        binary = vela_compile(
+        return vela_compile(
             tosa_flatbuffer,
             compile_flags,
-            verbose=logger.getEffectiveLevel() <= logging.INFO,
+            verbose=logger.isEnabledFor(logging.DEBUG),
             intermediate_path=compile_spec._get_intermediate_path(),
+            block_placements=(
+                compile_spec.external_block_placements.to_block_placements()
+            ),
+            max_scratch_size=compile_spec.max_scratch_size,
         )
-        return binary
 
     @staticmethod
     def preprocess(
@@ -94,7 +104,7 @@ class EthosUBackend(BackendDetails):
             PreprocessResult: Result containing the compiled Ethos-U binary.
 
         """
-        logger.info(f"{EthosUBackend.__name__} preprocess")
+        logger.debug(f"{EthosUBackend.__name__} preprocess")
 
         compile_spec = EthosUCompileSpec._from_list(compile_specs)
         # deduce TOSA compile_spec from Ethos-U compile spec. We get a new
@@ -108,8 +118,53 @@ class EthosUBackend(BackendDetails):
         # which can be passed on to next compilation step.
         tosa_preprocess = TOSABackend._preprocess(edge_program, tosa_compile_spec)
 
-        binary = EthosUBackend._compile_tosa_flatbuffer(
+        unused_inputs = [
+            node.name
+            for node in edge_program.graph_module.graph.nodes
+            if node.op == "placeholder"
+            and not node.users
+            and node.name in edge_program.graph_signature.user_inputs
+        ]
+        if unused_inputs:
+            raise RuntimeError(
+                "A delegate input is not used after lowering, for example an "
+                "input that only gives its shape to zeros_like or full_like, or "
+                "that copy_ overwrites. Vela removes unused inputs, but the "
+                "Ethos-U runtime binds delegate arguments by position, so this "
+                f"delegate would compute on the wrong tensors. Unused: {unused_inputs}"
+            )
+
+        compile_result = EthosUBackend._compile_tosa_flatbuffer(
             tosa_preprocess.processed_bytes, compile_spec
         )
+        scratch_specs = (
+            [
+                DelegateScratchSpec(
+                    nbytes=compile_result.scratch_size,
+                    label="ethosu_scratch",
+                )
+            ]
+            if compile_result.scratch_size > 0 and compile_spec.plan_delegate_scratch
+            else []
+        )
+        if not compile_result.external_blocks:
+            return PreprocessResult(
+                processed_bytes=compile_result.processed_bytes,
+                scratch_specs=scratch_specs,
+                _delegate_info_meta={"vela_io": compile_result.io_layout},
+            )
 
-        return PreprocessResult(processed_bytes=binary)
+        data_store = NamedDataStore()
+        for external_block in compile_result.external_blocks:
+            data_store.add_named_data(
+                external_block.key,
+                external_block.payload,
+                alignment=external_block.alignment,
+                external_tag=external_block.placement,
+            )
+        return PreprocessResult(
+            processed_bytes=compile_result.processed_bytes,
+            data_store_output=data_store.get_named_data_store_output(),
+            scratch_specs=scratch_specs,
+            _delegate_info_meta={"vela_io": compile_result.io_layout},
+        )

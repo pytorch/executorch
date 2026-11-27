@@ -83,23 +83,49 @@ struct BlockConfig {
 /**
  * Creates a global workgroup size based on the first output tensor in the args.
  * This is a utility function that extracts the output tensor from
- * args.at(0).refs.at(0) and calls graph->create_global_wg_size(out) on it.
+ * args.at(0).refs.at(0) and calls graph->create_gwg(out) on it.
  */
-utils::uvec3 default_pick_global_wg_size(
+GlobalWorkGrid default_pick_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args);
 
 /**
- * Creates a local workgroup size based on the first output tensor in the args.
- * This is a utility function that extracts the output tensor from
- * args.at(0).refs.at(0) and calls graph->create_local_wg_size(out) on it.
+ * Like default_pick_gwg, but for shaders in which each thread processes one
+ * vec4 of the output. Buffer outputs dispatch one thread per vec4 of the padded
+ * buffer; texture outputs dispatch one thread per texel.
  */
-utils::uvec3 default_pick_local_wg_size(
+GlobalWorkGrid default_pick_vec4_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args);
+
+/**
+ * Constructs a local work group that fills X first (up to 64 invocations), then
+ * Y, and Z only with what X and Y cannot hold, so a work group stays within one
+ * depth slice of a texture3d tensor whenever the tensor is wide enough. This
+ * suits memory-bound texture shaders such as elementwise ops and copies: a work
+ * group spanning several depth slices scatters its reads across separate 2D
+ * surfaces. For an FP16 binary add of a 256-channel texture, {64, 1, 1} ran
+ * 3.6x faster than {4, 4, 4} on Adreno 750 and about 1.2x on Mali-G715.
+ *
+ * Shaders whose reads and writes walk different axes, such as permutes, should
+ * use pick_balanced_lwg instead. Linear grids keep their required local work
+ * group.
+ */
+LocalWorkGroup default_pick_lwg(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const GlobalWorkGrid& gwg,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args);
+
+LocalWorkGroup pick_required_lwg(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args);
 
@@ -114,17 +140,39 @@ utils::uvec3 default_pick_local_wg_size(
  * = W * K elements from the weight tensor, resulting in (W + H) * K unique
  * elements in total.
  */
-utils::uvec3 pick_hw_square_wg_size(
+LocalWorkGroup pick_xy_square_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args);
 
-utils::uvec3 pick_wc_square_wg_size(
+LocalWorkGroup pick_xz_square_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args);
+
+LocalWorkGroup pick_120shape_lwg(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const GlobalWorkGrid& gwg,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args);
+
+/**
+ * Constructs a local work group that spreads invocations evenly over the
+ * non-trivial axes of the global work grid, e.g. {4, 4, 4} for a 3D grid. This
+ * suits shaders whose reads and writes walk different axes, such as permutes
+ * and im2col: a tile over several axes keeps both sides local. For a permute
+ * moving channels to width on Adreno 750, {4, 4, 4} ran 2.3x faster than
+ * {64, 1, 1}.
+ */
+LocalWorkGroup pick_balanced_lwg(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args);
 
@@ -202,7 +250,7 @@ BlockConfig create_block_config_from_other(
  *
  * @return Global workgroup size as {total_blocks, 1, 1}
  */
-utils::uvec3 pick_linear_global_wg_with_block_config(
+GlobalWorkGrid pick_linear_gwg_with_block_config(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -224,7 +272,7 @@ utils::uvec3 pick_linear_global_wg_with_block_config(
  *
  * @return Global workgroup size as {x_threads, y_threads, z_threads}
  */
-utils::uvec3 pick_extents_global_wg_with_block_config(
+GlobalWorkGrid pick_extents_gwg_with_block_config(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -238,10 +286,10 @@ utils::uvec3 pick_extents_global_wg_with_block_config(
  *   - extra_args.at(0): Packed int32_t block configuration cast to ValueRef
  *     (created via static_cast<ValueRef>(BlockConfig::as_packed_int()))
  *
- * For linear dispatch (buffer storage, global_wg = {total_blocks, 1, 1}):
+ * For linear dispatch (buffer storage, gwg = {total_blocks, 1, 1}):
  *   - Returns {64, 1, 1}
  *
- * For extents dispatch (texture storage, global_wg = {x, y, z}):
+ * For extents dispatch (texture storage, gwg = {x, y, z}):
  *   - Returns an 8x8 square configuration where:
  *     - Axes corresponding to inner_dim and outer_dim are set to 8
  *     - The remaining axis is set to 1
@@ -250,10 +298,10 @@ utils::uvec3 pick_extents_global_wg_with_block_config(
  *
  * @return Local workgroup size optimized for the dispatch pattern
  */
-utils::uvec3 pick_square_local_wg_with_block_config(
+LocalWorkGroup pick_square_lwg_with_block_config(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args);
 

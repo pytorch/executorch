@@ -2,6 +2,8 @@
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
  *
+ * Copyright 2026  Arm Limited and/or its affiliates.
+ *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
@@ -33,9 +35,13 @@ struct PhysicalDevice final {
 
   // Properties obtained from Vulkan
   VkPhysicalDeviceProperties properties;
+  VkPhysicalDeviceFeatures shader_features;
   VkPhysicalDeviceMemoryProperties memory_properties;
 
   // Additional features available from extensions
+#ifdef VK_KHR_vulkan_memory_model
+  VkPhysicalDeviceVulkanMemoryModelFeaturesKHR vulkan_memory_model_features;
+#endif /* VK_KHR_vulkan_memory_model */
 #ifdef VK_KHR_16bit_storage
   VkPhysicalDevice16BitStorageFeatures shader_16bit_storage;
 #endif /* VK_KHR_16bit_storage */
@@ -54,6 +60,11 @@ struct PhysicalDevice final {
 
 #ifdef VK_KHR_cooperative_matrix
   VkPhysicalDeviceCooperativeMatrixFeaturesKHR cooperative_matrix_features;
+  // True when VK_COMPONENT_TYPE_SINT8_KHR appears in the enumerated coopmat
+  // property list — required for coopmat<int8> shaders (e.g. dq8ca_q4gsw).
+  bool supports_int8_coopmat;
+  // Every entry of vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR.
+  std::vector<VkCooperativeMatrixPropertiesKHR> cooperative_matrix_properties;
 #endif /* VK_KHR_cooperative_matrix */
 
 #ifdef VK_NV_cooperative_matrix2
@@ -100,6 +111,9 @@ struct PhysicalDevice final {
   // Device identity
   std::string device_name;
   DeviceType device_type;
+  // VkDriverId from VkPhysicalDeviceDriverProperties
+  // (VK_KHR_driver_properties); 0 when the device does not advertise it.
+  uint32_t driver_id;
 
   explicit PhysicalDevice(VkInstance instance, VkPhysicalDevice);
 
@@ -114,8 +128,14 @@ struct PhysicalDevice final {
 struct DeviceHandle final {
   VkDevice handle;
 
-  explicit DeviceHandle(VkDevice);
+  // Record device ownership when DeviceHandle is constructed. If a later
+  // Adapter member throws during construction, already-created members are
+  // destroyed even though Adapter itself is never fully constructed.
+  explicit DeviceHandle(VkDevice, bool owns_handle = true);
   ~DeviceHandle();
+
+ private:
+  bool owns_handle_;
 };
 
 void find_requested_device_extensions(

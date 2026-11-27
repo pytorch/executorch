@@ -6,6 +6,7 @@
 
 # pyre-strict
 
+from executorch.backends.vulkan._passes.conv1d_as_conv2d import Conv1dAsConv2dPass
 from executorch.backends.vulkan._passes.fold_qdq import FoldQDQPass
 from executorch.backends.vulkan._passes.fuse_patterns import FusePatternsPass
 from executorch.backends.vulkan._passes.fuse_quantized_ops import (
@@ -20,7 +21,11 @@ from executorch.backends.vulkan._passes.remove_asserts import (
     RemoveAssertsTransform,
 )
 from executorch.backends.vulkan._passes.remove_redundant_ops import (
+    FoldForceFp16CastsPass,
     RemoveRedundantOpsTransform,
+)
+from executorch.backends.vulkan._passes.replace_instance_norm import (
+    ReplaceInstanceNormPass,
 )
 from executorch.backends.vulkan._passes.squeeze_unsqueeze_inputs import (
     SqueezeUnsqueezeInputs,
@@ -28,6 +33,7 @@ from executorch.backends.vulkan._passes.squeeze_unsqueeze_inputs import (
 from executorch.backends.vulkan._passes.tag_memory_meta_pass import TagMemoryMetaPass
 
 __all__ = [
+    "Conv1dAsConv2dPass",
     "FoldQDQPass",
     "FusePatternsPass",
     "FuseQuantizedOpsTransform",
@@ -35,7 +41,9 @@ __all__ = [
     "insert_prepack_nodes",
     "remove_asserts",
     "RemoveAssertsTransform",
+    "FoldForceFp16CastsPass",
     "RemoveRedundantOpsTransform",
+    "ReplaceInstanceNormPass",
     "SqueezeUnsqueezeInputs",
     "TagMemoryMetaPass",
 ]

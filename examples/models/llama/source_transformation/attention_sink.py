@@ -37,8 +37,10 @@ class RopeWithAttentionSink(Rope):
       - Window tokens (pos >= sink_size): wrapped into ring buffer range
         [sink_size, sink_size + ring_size) via modulo
 
-    The ring buffer is 2x window_size, so the live window (window_size tokens)
-    never spans a wrap boundary, preserving correct relative distances in RoPE.
+    The ring buffer is 2x window_size for write-ahead headroom, not to keep the
+    live window contiguous -- it can span a wrap. Across a wrap two positions
+    remap to a difference that is not their true distance, so RoPE preserves
+    relative distance only within a wrap.
     """
 
     def __init__(
@@ -64,32 +66,27 @@ class RopeWithAttentionSink(Rope):
         """
         Get rotary embedding frequencies with position remapping.
 
-        For dynamic shape mode (input_pos is a single start position), we remap
-        the start and use narrow. For static shape mode (input_pos is the full
-        position tensor), we remap all positions and index directly.
+        For dynamic shape mode input_pos is a single start position, expanded
+        here into the full chunk; for static shape mode it already is the full
+        position tensor. Either way every position is remapped and indexed.
+        Remapping only the start and slicing from there would branch on a
+        data-dependent value, which blocks export, and would read past the ring
+        on a chunk that wraps.
         """
         assert input_pos is not None
         if not self.params.use_kv_cache:
             return self.freqs_cos[:seq_len], self.freqs_sin[:seq_len]
 
         if self.params.enable_dynamic_shape:
-            # Dynamic shape: input_pos is [start_pos], remap and narrow
-            input_pos_item = input_pos[-1].item()
-            if input_pos_item < self.sink_size:
-                remapped_item = input_pos_item
-            else:
-                remapped_item = (
-                    self.sink_size + (input_pos_item - self.sink_size) % self.ring_size
-                )
-            torch._check_is_size(remapped_item)
-            torch._check(remapped_item + seq_len <= self.sink_size + self.ring_size)
-            freqs_cos = self.freqs_cos.narrow(0, remapped_item, seq_len)
-            freqs_sin = self.freqs_sin.narrow(0, remapped_item, seq_len)
-        else:
-            # Static shape: remap full position tensor and index
-            remapped = self._remap_input_pos(input_pos)
-            freqs_cos = self.freqs_cos[remapped]
-            freqs_sin = self.freqs_sin[remapped]
+            # Dynamic shape: input_pos is [start_pos], expand to the whole chunk
+            input_pos = input_pos[-1] + torch.arange(
+                seq_len, device=input_pos.device, dtype=input_pos.dtype
+            )
+
+        # Remap the full position tensor and index
+        remapped = self._remap_input_pos(input_pos)
+        freqs_cos = self.freqs_cos[remapped]
+        freqs_sin = self.freqs_sin[remapped]
 
         return freqs_cos, freqs_sin
 

@@ -16,6 +16,8 @@
 
 #include <gtest/gtest.h>
 
+#include <limits>
+
 using namespace ::testing;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
@@ -46,6 +48,17 @@ class OpFloorDivideTest : public OperatorTest {
 
     // Check that it matches the expected output.
     EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{-2, 0, 1, 2, 4, -1}));
+  }
+
+  template <ScalarType DTYPE>
+  void test_most_negative_by_minus_one() {
+    TensorFactory<DTYPE> tf;
+    using CTYPE = typename TensorFactory<DTYPE>::ctype;
+
+    const CTYPE min = std::numeric_limits<CTYPE>::min();
+    Tensor out = tf.zeros({3});
+    op_floor_divide_out(tf.make({3}, {min, 7, -7}), tf.full({3}, -1), out);
+    EXPECT_TENSOR_EQ(out, tf.make({3}, {min, -7, 7}));
   }
 
   template <ScalarType DTYPE>
@@ -352,4 +365,43 @@ TEST_F(OpFloorDivideTest, FloatFloorDivideEdgeCase) {
   Tensor ret = op_floor_divide_out(x, y, out);
   EXPECT_TENSOR_EQ(ret, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
+}
+
+TEST_F(OpFloorDivideTest, FloatResultIsWholeNumber) {
+  TensorFactory<ScalarType::Double> tf;
+
+  // (a - fmod(a, b)) / b is off from a whole number for these, e.g.
+  // 2.9999999999999996 for 4.2 // 1.4.
+  Tensor out = tf.zeros({5});
+  op_floor_divide_out(
+      tf.make({5}, {4.2, 0.7, 8.414953682439204, -4.2, -0.7}),
+      tf.make({5}, {1.4, 0.1, 1.1735722892242082, 1.4, 0.1}),
+      out);
+  EXPECT_TENSOR_EQ(out, tf.make({5}, {3.0, 6.0, 7.0, -4.0, -7.0}));
+
+  TensorFactory<ScalarType::Float> tff;
+
+  Tensor out_float = tff.zeros({1});
+  op_floor_divide_out(
+      tff.make({1}, {-6.4278764724731445}),
+      tff.make({1}, {1.870701551437378}),
+      out_float);
+  EXPECT_TENSOR_EQ(out_float, tff.make({1}, {-4.0}));
+}
+
+TEST_F(OpFloorDivideTest, FloatDivideByZero) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor out = tf.zeros({5});
+  op_floor_divide_out(
+      tf.make({5}, {0.0, 1.0, -1.0, 1.0, -1.0}),
+      tf.make({5}, {0.0, 0.0, 0.0, -0.0, -0.0}),
+      out);
+  EXPECT_TENSOR_EQ(
+      out, tf.make({5}, {NAN, INFINITY, -INFINITY, -INFINITY, INFINITY}));
+}
+
+TEST_F(OpFloorDivideTest, MostNegativeByMinusOneWraps) {
+  test_most_negative_by_minus_one<ScalarType::Int>();
+  test_most_negative_by_minus_one<ScalarType::Long>();
 }

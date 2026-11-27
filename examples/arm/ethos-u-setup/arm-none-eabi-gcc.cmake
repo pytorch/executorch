@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2020-2022 Arm Limited. All rights reserved.
+# Copyright (c) 2020-2022,2026 Arm Limited. All rights reserved.
 #
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -52,14 +52,16 @@ add_compile_options(
 )
 
 # Compile defines
-add_compile_definitions("$<$<NOT:$<CONFIG:DEBUG>>:NDEBUG>")
+add_compile_definitions(
+  "$<$<NOT:$<CONFIG:DEBUG>>:NDEBUG>" ET_USE_BUILTIN_FUNCTION_NAME=0
+)
 
 # Link options
 add_link_options(-mcpu=${GCC_CPU} -mthumb)
 
 if(SEMIHOSTING)
   add_link_options(--specs=rdimon.specs)
-else()
+elseif(NOT EXECUTORCH_SIZE_TEST_NO_OS_LINK)
   add_link_options(--specs=nosys.specs)
 endif()
 

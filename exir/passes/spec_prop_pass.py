@@ -11,12 +11,22 @@ from typing import Optional
 
 import torch
 from executorch.exir.delegate import executorch_call_delegate
+from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.inplace_aliasing import alias_inplace_result_specs, is_inplace_node
 from executorch.exir.pass_base import ExportPass, ProxyValue
 from executorch.exir.tensor import TensorSpec
 from torch.export.exported_program import ExportGraphSignature
 from torch.fx.node import Node
 from torch.fx.passes.infra.pass_base import PassResult
 from torch.utils import _pytree as pytree
+
+# register llama.fallback (optional — only needed for QNN/llama sharding paths)
+try:
+    import executorch.extension.llm.custom_ops.op_fallback  # noqa: F401
+
+    _llama_fallback_default = exir_ops.edge.llama.fallback.default
+except (ImportError, AttributeError):
+    _llama_fallback_default = None
 
 
 # pyre-ignore
@@ -75,9 +85,9 @@ class SpecPropPass(ExportPass):
                     elif node.op == "call_function" and node.target == operator.getitem:
                         value_spec = pytree.tree_map(get_spec, node.args[0])
                         node.meta["spec"] = value_spec[node.args[1]]
-                    elif (
-                        node.op == "call_function"
-                        and node.target == executorch_call_delegate
+                    elif node.op == "call_function" and node.target in (
+                        executorch_call_delegate,
+                        _llama_fallback_default,
                     ):
                         # Note: We currently rely on delegate node specs not being regenerated,
                         # as the spec is set somewhat manually when adding the call delegate node.
@@ -91,6 +101,9 @@ class SpecPropPass(ExportPass):
                             node.meta["spec"] = pytree.tree_map(make_spec, meta_val)
                     else:
                         node.meta["spec"] = pytree.tree_map(make_spec, meta_val)
+                    # Propagate aliases before consumers capture the result spec.
+                    if is_inplace_node(node) and node.meta["spec"] is not None:
+                        alias_inplace_result_specs(node)
         return res
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:

@@ -10,14 +10,17 @@ from typing import cast, Dict, Optional, Set, Tuple, Type
 
 import torch
 from executorch.backends.arm._passes.arm_pass import ArmPass
-from executorch.backends.arm._passes.arm_pass_utils import create_node, set_node_arg
+from executorch.backends.arm._passes.arm_pass_utils import set_node_arg
 from executorch.backends.arm._passes.decompose_sum_pass import DecomposeSumPass
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_output_qparams,
 )
 
 from executorch.backends.arm._passes.quant_args import QuantArgs
+from executorch.backends.arm._passes.tosa_lowering_utils import create_rescale_node
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
+from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
+from executorch.backends.arm.tosa.specification import get_context_spec
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule, Node
@@ -35,6 +38,12 @@ class InsertRescalePass(ArmPass):
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
+    _mxfp_payload_dtypes = {
+        TosaSpecialDtype.FP4E2M1,
+        TosaSpecialDtype.FP6E2M3,
+        TosaSpecialDtype.FP6E3M2,
+    }
+
     def _ensure_uint8_io_only(self, graph_module: GraphModule) -> None:
         """Ensure uint8 tensors only appear at IO boundaries.
 
@@ -51,21 +60,25 @@ class InsertRescalePass(ArmPass):
                 continue
             if node.op in ("placeholder", "output"):
                 continue
-            if node.op == "call_function" and node.target == operator.getitem:
-                if all(user.op == "output" for user in node.users):
+            if node.op == "call_function":
+                if node.target == operator.getitem and all(
+                    user.op == "output" for user in node.users
+                ):
                     continue
-            if (
-                node.op == "call_function"
-                and node.target
-                == exir_ops.edge.dim_order_ops._to_dim_order_copy.default
-            ):
-                # dim_order is a view-like transform; allow it to preserve uint8 at IO.
+                if node.target == exir_ops.backend.tosa.RESCALE.default:
+                    continue
+                if node.target == exir_ops.backend.tosa.CONST.default:
+                    continue
+                if (
+                    node.target
+                    == exir_ops.edge.dim_order_ops._to_dim_order_copy.default
+                ):
+                    # dim_order is a view-like transform; allow it to preserve uint8 at IO.
+                    continue
+            if node.meta.get(TosaSpecialDtype.meta_key()) in self._mxfp_payload_dtypes:
+                # Sub-byte FP types are stored uint8 arrays, so we need an exception for those.
                 continue
-            if (
-                node.op == "call_function"
-                and node.target == exir_ops.backend.tosa.RESCALE.default
-            ):
-                continue
+
             raise ValueError(
                 f"Found internal uint8 tensor at node {node.name} "
                 f"({node.target}). Uint8 is only allowed at IO boundaries."
@@ -82,9 +95,8 @@ class InsertRescalePass(ArmPass):
         output_dtype = torch.int8 if output_unsigned else q_args.dtype
 
         with graph_module.graph.inserting_before(node):
-            rescale_node = create_node(
+            rescale_node = create_rescale_node(
                 graph_module.graph,
-                exir_ops.backend.tosa.RESCALE.default,
                 (
                     node.all_input_nodes[0],
                     output_dtype,
@@ -100,6 +112,14 @@ class InsertRescalePass(ArmPass):
             rescale_node.meta = copy(user.meta)
             user.replace_all_uses_with(rescale_node)
             graph_module.graph.erase_node(user)
+
+    def should_run_pass(self, graph_module: GraphModule) -> bool:
+        if not get_context_spec().support_integer():
+            return False
+        return any(
+            graph_module.graph.find_nodes(op="call_function", target=target, sort=False)
+            for target in DQ_OPS
+        )
 
     def call(self, graph_module: GraphModule) -> PassResult:
         modified = False
@@ -323,18 +343,17 @@ class InsertRescaleInt32Pass(ArmPass):
             seen_args.add(arg_node)
 
             with graph.inserting_after(arg_node):
-                rescale_node = create_node(
+                rescale_node = create_rescale_node(
                     graph,
-                    exir_ops.backend.tosa.RESCALE.default,
                     (
                         arg_node,
                         torch.int32,
                         [
                             qp.get_scale_per_tensor()
                             / rescale_qargs[i].get_scale_per_tensor()
-                        ],  # [Old scale / new scale]
-                        qp.get_zp_per_tensor(),  # Old zero point
-                        rescale_qargs[i].get_zp_per_tensor(),  # New zero point
+                        ],
+                        qp.get_zp_per_tensor(),
+                        rescale_qargs[i].get_zp_per_tensor(),
                     ),
                     from_node=node,
                 )
@@ -359,18 +378,17 @@ class InsertRescaleInt32Pass(ArmPass):
         users_copy = list(node.users)
 
         with graph.inserting_after(node):
-            rescale_node = create_node(
+            rescale_node = create_rescale_node(
                 graph,
-                exir_ops.backend.tosa.RESCALE.default,
                 (
                     node,
                     qarg.dtype,
                     [
                         rescale_qargs.get_scale_per_tensor()
                         / qarg.get_scale_per_tensor()
-                    ],  # [Old scale / new scale]
-                    rescale_qargs.get_zp_per_tensor(),  # Old zero point
-                    qarg.get_zp_per_tensor(),  # New zero point
+                    ],
+                    rescale_qargs.get_zp_per_tensor(),
+                    qarg.get_zp_per_tensor(),
                 ),
                 from_node=node,
             )
@@ -390,6 +408,12 @@ class InsertRescaleInt32Pass(ArmPass):
             if node.op != "call_function" or node.target not in self.included_targets:
                 continue
 
+            has_preserved_qdq = any(
+                input_node.target in DQ_OPS for input_node in node.all_input_nodes
+            ) or any(user.target in Q_OPS for user in node.users)
+            if has_preserved_qdq:
+                continue
+
             if "input_qparams" not in node.meta or len(node.meta["input_qparams"]) == 0:
                 continue
             input_qparams = node.meta["input_qparams"]
@@ -403,6 +427,10 @@ class InsertRescaleInt32Pass(ArmPass):
             )
             outputs_was_rescaled = False
             if inputs_was_rescaled:
+                if output_rescale_qargs is not None:
+                    node.meta["val"] = node.meta["val"].new_empty(
+                        node.meta["val"].shape, dtype=output_rescale_qargs.dtype
+                    )
                 outputs_was_rescaled = self._rescale_outputs(
                     graph, node, output_rescale_qargs
                 )
@@ -469,15 +497,14 @@ class InsertControlFlowRescalesPass(ArmPass):
             in_qparams.get_scale_per_tensor() / out_qparams.get_scale_per_tensor()
         ]
 
-        rescale_node = create_node(
+        rescale_node = create_rescale_node(
             graph_module.graph,
-            exir_ops.backend.tosa.RESCALE.default,
             (
                 None,
                 out_qparams.dtype,
                 new_scales,
-                in_qparams.get_zp_per_tensor(),  # Old zero point
-                out_qparams.get_zp_per_tensor(),  # New zero point
+                in_qparams.get_zp_per_tensor(),
+                out_qparams.get_zp_per_tensor(),
             ),
             from_node=from_node,
         )
@@ -509,7 +536,13 @@ class InsertControlFlowRescalesPass(ArmPass):
             input_node = input_nodes[qargs_index]
             if len(input_node.users) == 0:
                 continue
-            if len(out_qparams_map := input_node.meta.get("output_qparams", {})) != 1:
+            out_qparams_map = input_node.meta.get("output_qparams", {})
+            if len(out_qparams_map) == 0:
+                # Nested control-flow submodules may also expose frozen captured
+                # values as placeholders. Those are not control-flow boundary
+                # inputs, so there is no qparam pair to bridge with a RESCALE.
+                continue
+            if len(out_qparams_map) != 1:
                 raise ValueError(
                     f"Expected submodule input {input_node} to have exactly one output qparam, got {out_qparams_map}"
                 )

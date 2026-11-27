@@ -104,13 +104,15 @@ void check_embedding_xbit_args(
 
   ET_CHECK_MSG(
       out.scalar_type() == ScalarType::Float ||
-          out.scalar_type() == ScalarType::Half,
+          out.scalar_type() == ScalarType::Half ||
+          out.scalar_type() == ScalarType::BFloat16,
       "out.scalar_type() %" PRId8 " is not supported:",
       static_cast<int8_t>(out.scalar_type()));
 
   ET_CHECK_MSG(
       weight_scales.scalar_type() == ScalarType::Float ||
-          weight_scales.scalar_type() == ScalarType::Half,
+          weight_scales.scalar_type() == ScalarType::Half ||
+          weight_scales.scalar_type() == ScalarType::BFloat16,
       "weight_scales.scalar_type() %" PRId8 " is not supported:",
       static_cast<int8_t>(weight_scales.scalar_type()));
 
@@ -123,9 +125,10 @@ void check_embedding_xbit_args(
         static_cast<int8_t>(weight_scales.dim()));
 
     ET_CHECK_MSG(
-        opt_weight_zero_points.value().scalar_type() == out.scalar_type(),
+        opt_weight_zero_points.value().scalar_type() ==
+            weight_scales.scalar_type(),
         "weight zero points scalar type %" PRId8
-        " does not match out.scalar_type()",
+        " does not match weight_scales.scalar_type()",
         static_cast<int8_t>(opt_weight_zero_points.value().scalar_type()));
 
     for (int32_t i = 0; i < weight_scales.dim(); ++i) {
@@ -191,6 +194,12 @@ void embedding_xbit_per_channel(
 
   for (int i = 0; i < indices.numel(); i++) {
     CTYPE_INDICES index = indices_ptr[i];
+    ET_CHECK_MSG(
+        index >= 0 && index < weight.size(0),
+        "Index out of bounds for weight: index %" PRId64
+        " must be in range [0, %zd)",
+        static_cast<int64_t>(index),
+        weight.size(0));
     // If using groupwise embedding
     int32_t qparams_index = index * num_groups_per_channel;
     CTYPE_PARAMS zp = 0.0;
@@ -282,19 +291,30 @@ Tensor& quantized_embedding_xbit_out(
       out,
       weight_nbit);
 
+  // Without a dtype argument the output takes the scales' dtype, and the
+  // kernel reads the scales as the output type.
+  ET_CHECK_MSG(
+      weight_scales.scalar_type() == out_type,
+      "weight_scales.scalar_type() %" PRId8
+      " does not match out.scalar_type() %" PRId8,
+      static_cast<int8_t>(weight_scales.scalar_type()),
+      static_cast<int8_t>(out_type));
+
   constexpr auto name = "quantized_decomposed::embedding_xbit.out";
   ScalarType indices_type = indices.scalar_type();
-  ET_SWITCH_TWO_TYPES(Float, Half, out_type, ctx, name, CTYPE_OUT, [&]() {
-    ET_SWITCH_TWO_TYPES(Int, Long, indices_type, ctx, name, CTYPE_IDX, [&]() {
-      embedding_xbit_per_channel<CTYPE_OUT, CTYPE_OUT, CTYPE_IDX>(
-          weight,
-          weight_scales,
-          opt_weight_zero_points,
-          indices,
-          out,
-          weight_nbit);
-    });
-  });
+  ET_SWITCH_THREE_TYPES(
+      Float, Half, BFloat16, out_type, ctx, name, CTYPE_OUT, [&]() {
+        ET_SWITCH_TWO_TYPES(
+            Int, Long, indices_type, ctx, name, CTYPE_IDX, [&]() {
+              embedding_xbit_per_channel<CTYPE_OUT, CTYPE_OUT, CTYPE_IDX>(
+                  weight,
+                  weight_scales,
+                  opt_weight_zero_points,
+                  indices,
+                  out,
+                  weight_nbit);
+            });
+      });
 
   return out;
 }
@@ -358,19 +378,22 @@ Tensor& quantized_embedding_xbit_dtype_out(
 
   constexpr auto name = "quantized_decomposed::embedding_xbit.dtype_out";
   ScalarType indices_type = indices.scalar_type();
-  ET_SWITCH_TWO_TYPES(Float, Half, params_type, ctx, name, CTYPE_P, [&]() {
-    ET_SWITCH_TWO_TYPES(Float, Half, out_type, ctx, name, CTYPE_OUT, [&]() {
-      ET_SWITCH_TWO_TYPES(Int, Long, indices_type, ctx, name, CTYPE_IDX, [&]() {
-        embedding_xbit_per_channel<CTYPE_P, CTYPE_OUT, CTYPE_IDX>(
-            weight,
-            weight_scales,
-            opt_weight_zero_points,
-            indices,
-            out,
-            weight_nbit);
+  ET_SWITCH_THREE_TYPES(
+      Float, Half, BFloat16, params_type, ctx, name, CTYPE_P, [&]() {
+        ET_SWITCH_THREE_TYPES(
+            Float, Half, BFloat16, out_type, ctx, name, CTYPE_OUT, [&]() {
+              ET_SWITCH_TWO_TYPES(
+                  Int, Long, indices_type, ctx, name, CTYPE_IDX, [&]() {
+                    embedding_xbit_per_channel<CTYPE_P, CTYPE_OUT, CTYPE_IDX>(
+                        weight,
+                        weight_scales,
+                        opt_weight_zero_points,
+                        indices,
+                        out,
+                        weight_nbit);
+                  });
+            });
       });
-    });
-  });
 
   return out;
 }

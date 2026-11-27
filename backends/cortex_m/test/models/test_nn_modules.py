@@ -24,7 +24,7 @@ Modules tested:
 """
 
 import torch
-from executorch.backends.arm.test.common import parametrize, xfail_type
+from executorch.backends.arm.test.common import parametrize
 from executorch.backends.cortex_m.test.tester import (
     CortexMTester,
     McuTestCase,
@@ -188,10 +188,12 @@ test_cases = {
     ),
 }
 
-xfails: dict[str, xfail_type] = {}
 
-
-@parametrize("test_case", test_cases, xfails=xfails, strict=False)
-def test_dialect_nn_modules(test_case):
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
-    tester.test_dialect({}, {}, qtol=2)
+@parametrize("use_explicit_layout", {"legacy": False, "explicit_layout": True})
+@parametrize("test_case", test_cases)
+def test_dialect_nn_modules(test_case, use_explicit_layout):
+    tester = CortexMTester(
+        test_case.model,
+        test_case.get_example_inputs(use_explicit_layout=use_explicit_layout),
+    )
+    tester.test_dialect({}, {}, qtol=2, use_explicit_layout=use_explicit_layout)

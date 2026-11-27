@@ -25,6 +25,16 @@ Tensor& unfold_copy_out(
   if (dim < 0) {
     dim += nonzero_dim(self);
   }
+  // Unfold adds one output dim; the target-size buffer holds
+  // kTensorDimensionLimit entries.
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      static_cast<size_t>(self.dim()) < kTensorDimensionLimit,
+      InvalidArgument,
+      out,
+      "Output size buffer is too small. Expected at least %zd, got %zu",
+      self.dim() + 1,
+      kTensorDimensionLimit);
   // Calculate output size
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   Tensor::SizesType expected_output_size[kTensorDimensionLimit];
@@ -38,6 +48,10 @@ Tensor& unfold_copy_out(
       resize_tensor(out, {expected_output_size, expected_out_dim}) == Error::Ok,
       InvalidArgument,
       out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(self), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(out), InvalidArgument, out);
 
   // Copy data
   const size_t leading_dims = getLeadingDims(self, dim);

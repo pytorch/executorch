@@ -31,7 +31,10 @@ from executorch.exir.dialects._ops import ops as exir_ops
 class ConvolutionSupported(SupportedTOSAOperatorCheck):
     """Provide TOSA support check for convolutions."""
 
-    targets = [exir_ops.edge.aten.convolution.default]
+    targets = [
+        exir_ops.edge.aten.convolution.default,
+        torch.ops.aten.conv_transpose2d.input,
+    ]
 
     def is_node_tosa_supported(
         self, node: fx.Node, tosa_spec: TosaSpecification
@@ -42,9 +45,7 @@ class ConvolutionSupported(SupportedTOSAOperatorCheck):
         padding. Apply additional hardware-specific constraints for U55.
 
         """
-        transposed = cast(bool, node.args[6])
-        output_padding = cast(list[int], node.args[7])
-        groups = cast(int, node.args[8])
+        transposed, output_padding, groups = self._get_conv_params(node)
 
         if transposed:
             if not self._check_transposed_support(node, groups, output_padding):
@@ -67,6 +68,13 @@ class ConvolutionSupported(SupportedTOSAOperatorCheck):
             return input_qparams[1]
         return None
 
+    def _has_per_channel_weight(self, node: fx.Node) -> bool:
+        weight_node = cast(fx.Node, node.args[1])
+        return weight_node.target in (
+            torch.ops.quantized_decomposed.dequantize_per_channel.default,
+            exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+        )
+
     def _check_output_padding(self, output_padding: list[int], node: fx.Node) -> bool:
         for output_pad in output_padding:
             if output_pad != 0:
@@ -77,35 +85,66 @@ class ConvolutionSupported(SupportedTOSAOperatorCheck):
                 return False
         return True
 
+    def _get_conv_params(self, node: fx.Node) -> tuple[bool, list[int], int]:
+        """Return transposed, output_padding, and groups for supported conv
+        targets.
+        """
+
+        if node.target == torch.ops.aten.conv_transpose2d.input:
+            return True, cast(list[int], node.args[5]), cast(int, node.args[6])
+        return (
+            cast(bool, node.args[6]),
+            cast(list[int], node.args[7]),
+            cast(int, node.args[8]),
+        )
+
+    def _get_transposed_conv_dilation(self, node: fx.Node) -> list[int]:
+        if node.target == torch.ops.aten.conv_transpose2d.input:
+            return cast(list[int], node.args[7])
+        return cast(list[int], node.args[5])
+
     def _check_transposed_support(
         self, node: fx.Node, groups: int, output_padding: list[int]
     ) -> bool:
+        weight_shape = get_first_fake_tensor(cast(fx.Node, node.args[1])).shape
+        spatial_rank = len(weight_shape) - 2
+        if spatial_rank not in (1, 2):
+            self.reporter.report_reject(
+                node, "Only 1D and 2D transpose convolutions are supported."
+            )
+            return False
+
+        dilation = expand_around_channel(
+            self._get_transposed_conv_dilation(node), spatial_rank
+        )
+        if any(d != 1 for d in dilation):
+            self.reporter.report_reject(
+                node, "Transpose convolutions with dilation are not supported."
+            )
+            return False
+
         if groups != 1:
             weight_qargs = self._get_weight_qargs(node)
-            if isinstance(weight_qargs, QuantArgs) and weight_qargs.per_channel:
+            has_per_channel_qargs = (
+                isinstance(weight_qargs, QuantArgs) and weight_qargs.per_channel
+            )
+            if has_per_channel_qargs or self._has_per_channel_weight(node):
                 self.reporter.report_reject(
                     node,
                     "Grouped transpose convolutions with per-channel weight "
                     "quantization are not supported.",
                 )
                 return False
-            dilation = expand_around_channel(cast(list[int], node.args[5]), 2)
-            if any(d != 1 for d in dilation):
-                self.reporter.report_reject(
-                    node, "Transpose convolutions with dilation are not supported."
-                )
-                return False
 
-        pad = expand_around_channel(cast(list[int], node.args[4]), 2)
-        out_pad = expand_around_channel(output_padding, 2)
-        weight_shape = get_first_fake_tensor(cast(fx.Node, node.args[1])).shape
-        if len(weight_shape) != 4:
-            self.reporter.report_reject(
-                node, "Only 2D transpose convolutions are supported."
-            )
-            return False
-        kernel_h = weight_shape[2]
-        kernel_w = weight_shape[3]
+        pad = expand_around_channel(cast(list[int], node.args[4]), spatial_rank)
+        out_pad = expand_around_channel(output_padding, spatial_rank)
+        if spatial_rank == 1:
+            # Match RewriteConvPass: insert a unit-height spatial dimension.
+            pad = [0, *pad]
+            out_pad = [0, *out_pad]
+            kernel_h, kernel_w = 1, weight_shape[2]
+        else:
+            kernel_h, kernel_w = weight_shape[2], weight_shape[3]
 
         out_pad_top = -pad[0]
         out_pad_bottom = -pad[0] + out_pad[0]
@@ -286,6 +325,11 @@ class ConvolutionSupported(SupportedTOSAOperatorCheck):
             stride_condition = 1 <= stride <= 3
             dilation_condition = (not has_padding) and (dilation == 1)
             if (not stride_condition) and (not dilation_condition):
+                self.reporter.report_reject(
+                    node,
+                    "Convolution stride must be in [1, 3] unless padding is zero "
+                    "and dilation is 1.",
+                )
                 return False
 
         return True

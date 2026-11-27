@@ -93,12 +93,15 @@ PORTABLE_KERNELS_SRCS = [
     "kernels/portable/cpu/op_atan.cpp",
     "kernels/portable/cpu/op_atan2.cpp",
     "kernels/portable/cpu/op_atanh.cpp",
+    "kernels/portable/cpu/op_avg_pool1d.cpp",
     "kernels/portable/cpu/op_avg_pool2d.cpp",
+    "kernels/portable/cpu/op_avg_pool3d.cpp",
     "kernels/portable/cpu/op_bitwise_and.cpp",
     "kernels/portable/cpu/op_bitwise_not.cpp",
     "kernels/portable/cpu/op_bitwise_or.cpp",
     "kernels/portable/cpu/op_bitwise_xor.cpp",
     "kernels/portable/cpu/op_bmm.cpp",
+    "kernels/portable/cpu/op_bucketize.cpp",
     "kernels/portable/cpu/op_cat.cpp",
     "kernels/portable/cpu/op_cdist_forward.cpp",
     "kernels/portable/cpu/op_ceil.cpp",
@@ -110,6 +113,7 @@ PORTABLE_KERNELS_SRCS = [
     "kernels/portable/cpu/op_copy.cpp",
     "kernels/portable/cpu/op_cos.cpp",
     "kernels/portable/cpu/op_cosh.cpp",
+    "kernels/portable/cpu/op_cummin.cpp",
     "kernels/portable/cpu/op_cumsum.cpp",
     "kernels/portable/cpu/op_detach_copy.cpp",
     "kernels/portable/cpu/op_diagonal_copy.cpp",
@@ -228,6 +232,7 @@ PORTABLE_KERNELS_SRCS = [
     "kernels/portable/cpu/op_unbind_copy.cpp",
     "kernels/portable/cpu/op_unfold_copy.cpp",
     "kernels/portable/cpu/op_unsqueeze_copy.cpp",
+    "kernels/portable/cpu/op_upsample_bicubic2d_aa.cpp",
     "kernels/portable/cpu/op_upsample_bilinear2d.cpp",
     "kernels/portable/cpu/op_upsample_bilinear2d_aa.cpp",
     "kernels/portable/cpu/op_upsample_nearest2d.cpp",
@@ -247,6 +252,8 @@ KERNELS_UTIL_ALL_DEPS_SRCS = [
     "kernels/portable/cpu/util/delinearize_index.cpp",
     "kernels/portable/cpu/util/distance_util.cpp",
     "kernels/portable/cpu/util/dtype_util.cpp",
+    "kernels/portable/cpu/util/embedding_bag_util.cpp",
+    "kernels/portable/cpu/util/grid_sampler_2d_util.cpp",
     "kernels/portable/cpu/util/index_util.cpp",
     "kernels/portable/cpu/util/kernel_ops_util.cpp",
     "kernels/portable/cpu/util/matmul_ops_util.cpp",
@@ -256,6 +263,7 @@ KERNELS_UTIL_ALL_DEPS_SRCS = [
     "kernels/portable/cpu/util/repeat_util.cpp",
     "kernels/portable/cpu/util/select_copy_util.cpp",
     "kernels/portable/cpu/util/slice_util.cpp",
+    "kernels/portable/cpu/util/stack_util.cpp",
     "kernels/portable/cpu/util/upsample_util.cpp",
 ]
 
@@ -265,6 +273,7 @@ OPTIMIZED_KERNELS_SRCS = [
     "kernels/optimized/cpu/op_bmm.cpp",
     "kernels/optimized/cpu/op_div.cpp",
     "kernels/optimized/cpu/op_elu.cpp",
+    "kernels/optimized/cpu/op_embedding_bag.cpp",
     "kernels/optimized/cpu/op_exp.cpp",
     "kernels/optimized/cpu/op_fft_c2r.cpp",
     "kernels/optimized/cpu/op_fft_r2c.cpp",
@@ -278,6 +287,7 @@ OPTIMIZED_KERNELS_SRCS = [
     "kernels/optimized/cpu/op_native_layer_norm.cpp",
     "kernels/optimized/cpu/op_sub.cpp",
     "kernels/optimized/cpu/op_sum.cpp",
+    "kernels/optimized/cpu/op_to_copy.cpp",
     "kernels/optimized/cpu/op_where.cpp",
 ]
 
@@ -297,6 +307,7 @@ QUANTIZED_KERNELS_SRCS = [
 OPTIMIZED_CPUBLAS_SRCS = [
     "kernels/optimized/blas/BlasKernel.cpp",
     "kernels/optimized/blas/CPUBlas.cpp",
+    "kernels/optimized/blas/KleidiBlas.cpp",
 ]
 
 OPTIMIZED_NATIVE_CPU_OPS_SRCS = [
@@ -320,6 +331,7 @@ OPTIMIZED_NATIVE_CPU_OPS_SRCS = [
     "kernels/optimized/cpu/op_mul.cpp",
     "kernels/optimized/cpu/op_native_layer_norm.cpp",
     "kernels/optimized/cpu/op_sub.cpp",
+    "kernels/optimized/cpu/op_to_copy.cpp",
     "kernels/optimized/cpu/op_where.cpp",
 ]
 
@@ -339,6 +351,7 @@ EXTENSION_EVALUE_UTIL_SRCS = [
 EXTENSION_FLAT_TENSOR_SRCS = [
     "extension/flat_tensor/flat_tensor_data_map.cpp",
     "extension/flat_tensor/serialize/flat_tensor_header.cpp",
+    "extension/flat_tensor/serialize/serialize.cpp",
 ]
 
 EXTENSION_MEMORY_ALLOCATOR_SRCS = [
@@ -347,6 +360,7 @@ EXTENSION_MEMORY_ALLOCATOR_SRCS = [
 
 EXTENSION_MODULE_SRCS = [
     "extension/module/module.cpp",
+    "extension/module/ptn_module.cpp",
 ]
 
 EXTENSION_NAMED_DATA_MAP_SRCS = [
@@ -383,12 +397,11 @@ EXTENSION_THREADPOOL_SRCS = ["extension/threadpool/" + x for x in THREADPOOL_SRC
 
 EXTENSION_TRAINING_SRCS = [
     "extension/training/module/training_module.cpp",
+    "extension/training/optimizer/adamw.cpp",
     "extension/training/optimizer/sgd.cpp",
 ]
 
 TRAIN_XOR_SRCS = [
-    # REVIEW: removing this breaks the build; where is it supposed to come from?
-    "extension/flat_tensor/serialize/serialize.cpp",
     "extension/training/examples/XOR/train.cpp",
 ]
 
@@ -402,70 +415,6 @@ SIZE_TEST_SRCS = [
     "test/size_test.cpp",
 ]
 
-MPS_EXECUTOR_RUNNER_SRCS = [
-    "backends/apple/mps/runtime/MPSBackend.mm",
-    "backends/apple/mps/runtime/MPSCompiler.mm",
-    "backends/apple/mps/runtime/MPSDelegateHeader.mm",
-    "backends/apple/mps/runtime/MPSDevice.mm",
-    "backends/apple/mps/runtime/MPSExecutor.mm",
-    "backends/apple/mps/runtime/MPSGraphBuilder.mm",
-    "backends/apple/mps/runtime/MPSStream.mm",
-    "backends/apple/mps/runtime/operations/ActivationOps.mm",
-    "backends/apple/mps/runtime/operations/BinaryOps.mm",
-    "backends/apple/mps/runtime/operations/ClampOps.mm",
-    "backends/apple/mps/runtime/operations/ConstantOps.mm",
-    "backends/apple/mps/runtime/operations/ConvolutionOps.mm",
-    "backends/apple/mps/runtime/operations/IndexingOps.mm",
-    "backends/apple/mps/runtime/operations/LinearAlgebra.mm",
-    "backends/apple/mps/runtime/operations/NormalizationOps.mm",
-    "backends/apple/mps/runtime/operations/OperationUtils.mm",
-    "backends/apple/mps/runtime/operations/PadOps.mm",
-    "backends/apple/mps/runtime/operations/PoolingOps.mm",
-    "backends/apple/mps/runtime/operations/QuantDequant.mm",
-    "backends/apple/mps/runtime/operations/RangeOps.mm",
-    "backends/apple/mps/runtime/operations/ReduceOps.mm",
-    "backends/apple/mps/runtime/operations/ShapeOps.mm",
-    "backends/apple/mps/runtime/operations/UnaryOps.mm",
-    "devtools/bundled_program/bundled_program.cpp",
-    "devtools/etdump/data_sinks/buffer_data_sink.cpp",
-    "devtools/etdump/emitter.cpp",
-    "devtools/etdump/etdump_flatcc.cpp",
-    "examples/apple/mps/executor_runner/mps_executor_runner.mm",
-    "extension/data_loader/file_data_loader.cpp",
-]
-
-MPS_BACKEND_BUCK_SRCS = [
-    "runtime/MPSBackend.mm",
-    "runtime/MPSCompiler.mm",
-    "runtime/MPSDelegateHeader.mm",
-    "runtime/MPSDevice.mm",
-    "runtime/MPSExecutor.mm",
-    "runtime/MPSGraphBuilder.mm",
-    "runtime/MPSStream.mm",
-    "runtime/operations/ActivationOps.mm",
-    "runtime/operations/BinaryOps.mm",
-    "runtime/operations/ClampOps.mm",
-    "runtime/operations/ConstantOps.mm",
-    "runtime/operations/ConvolutionOps.mm",
-    "runtime/operations/IndexingOps.mm",
-    "runtime/operations/LinearAlgebra.mm",
-    "runtime/operations/NormalizationOps.mm",
-    "runtime/operations/OperationUtils.mm",
-    "runtime/operations/PadOps.mm",
-    "runtime/operations/PoolingOps.mm",
-    "runtime/operations/QuantDequant.mm",
-    "runtime/operations/RangeOps.mm",
-    "runtime/operations/ReduceOps.mm",
-    "runtime/operations/ShapeOps.mm",
-    "runtime/operations/UnaryOps.mm",
-]
-
-MPS_BACKEND_SRCS = ["backends/apple/mps/" + x for x in MPS_BACKEND_BUCK_SRCS]
-
-MPS_SCHEMA_SRCS = [
-    "backends/apple/mps/serialization/schema.fbs",
-]
-
 XNN_EXECUTOR_RUNNER_SRCS = [
     "examples/portable/executor_runner/executor_runner.cpp",
     "extension/data_loader/file_data_loader.cpp",
@@ -477,16 +426,36 @@ XNNPACK_BACKEND_BUCK_SRCS = [
     "runtime/XNNHeader.cpp",
     "runtime/XNNPACKBackend.cpp",
     "runtime/XNNWeightsCache.cpp",
+    "runtime/XNNWeightsCacheManager.cpp",
     "runtime/XNNWorkspaceManager.cpp",
     "runtime/XnnpackBackendOptions.cpp",
+]
+
+XNNPACK_PROFILER_BUCK_SRCS = [
     "runtime/profiling/XNNProfiler.cpp",
 ]
 
 XNNPACK_BACKEND_SRCS = ["backends/xnnpack/" + x for x in XNNPACK_BACKEND_BUCK_SRCS]
 
+XNNPACK_PROFILER_SRCS = ["backends/xnnpack/" + x for x in XNNPACK_PROFILER_BUCK_SRCS]
+
 XNNPACK_SCHEMA_SRCS = [
     "backends/xnnpack/serialization/runtime_schema.fbs",
 ]
+
+CPU_RUNTIME_BUCK_SRCS = [
+    "runtime/KernelProvider.cpp",
+    "runtime/CPUPlan.cpp",
+    "runtime/op_helpers/Convolution.cpp",
+]
+
+# CpuBackend with the default provider composition: XNNPACK and Reference.
+CPU_BACKEND_SRCS = ["backends/cpu/" + x for x in CPU_RUNTIME_BUCK_SRCS + [
+    "runtime/CPUBackend.cpp",
+    "runtime/providers/reference/ReferenceProvider.cpp",
+    "runtime/providers/xnnpack/XNNPACKPasses.cpp",
+    "runtime/providers/xnnpack/XNNPACKProvider.cpp",
+]]
 
 VULKAN_SCHEMA_SRCS = [
     "backends/vulkan/serialization/schema.fbs",
@@ -495,6 +464,7 @@ VULKAN_SCHEMA_SRCS = [
 EXTENSION_LLM_CUSTOM_OPS_BUCK_SRCS = [
     "op_fallback.cpp",
     "op_fast_hadamard_transform.cpp",
+    "op_moe.cpp",
     "op_sdpa.cpp",
     "op_update_cache.cpp",
 ]

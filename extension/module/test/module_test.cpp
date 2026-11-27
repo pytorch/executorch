@@ -301,6 +301,28 @@ TEST_F(ModuleTest, TestForward) {
   EXPECT_TENSOR_CLOSE(result2->at(0).toTensor(), *expected2.get());
 }
 
+TEST_F(ModuleTest, TestForwardRefusesTensorFromMistypedPointer) {
+  Module module(model_path_);
+
+  // A byte buffer used to become a Float tensor, so the runtime's own dtype
+  // check agreed with the claim and the method ran on reinterpreted bytes,
+  // returning a plausible wrong number with no error anywhere.
+  std::vector<uint8_t> bytes(4, 1);
+  auto mistyped = make_tensor_ptr({2, 2}, bytes.data());
+  EXPECT_EQ(mistyped->scalar_type(), executorch::aten::ScalarType::Byte);
+
+  const auto result = module.forward({mistyped, mistyped, 1.0});
+  EXPECT_NE(result.error(), Error::Ok);
+
+  // A correctly typed call still runs and still gives the right answer.
+  auto correct = make_tensor_ptr({2, 2}, {1.f, 1.f, 1.f, 1.f});
+  const auto ok = module.forward({correct, correct, 1.0});
+  EXPECT_EQ(ok.error(), Error::Ok);
+
+  const auto expected = make_tensor_ptr({2, 2}, {2.f, 2.f, 2.f, 2.f});
+  EXPECT_TENSOR_CLOSE(ok->at(0).toTensor(), *expected.get());
+}
+
 TEST_F(ModuleTest, TestForwardWithInvalidInputs) {
   Module module(model_path_);
 

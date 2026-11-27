@@ -122,19 +122,16 @@ def get_aten_node_target_partitions(
     modules: Dict[Type, Dict[str, list[torch.fx.Node]]] = {}
 
     for node in graph.nodes:
-        # The metadata source_fn should contain a tuple of a unique name for the
-        # source, and the source function if the node is decomposed from a
-        # function, or the type of module if the node is decomposed from a leaf
-        # module
-        # TODO(matthiascremon): look into ways to avoid using source_fn_stack
-        if (source_fn_st := node.meta.get("source_fn_stack")) is None:
-            continue
-
-        source_fn = source_fn_st[-1]
         if node.target not in wanted_original_aten_op:
             continue
 
-        diff_modules = modules.setdefault(source_fn[1], {})
+        # The metadata source_fn_stack names the function or leaf module the
+        # node came from. A non-strict torch.export does not record it, so fall
+        # back to the node's target.
+        source_fn_st = node.meta.get("source_fn_stack")
+        source = source_fn_st[-1][1] if source_fn_st else node.target
+
+        diff_modules = modules.setdefault(source, {})
         partition = diff_modules.setdefault(node.name, [])
         partition.append(node)
 
@@ -228,7 +225,10 @@ def calibrate_and_quantize(
     if is_qat:
         m = prepare_qat_pt2e(model, quantizer)
         m = AddSimulatedLinearBatchNormFusionQATPass()(m).graph_module
+    else:
+        m = prepare_pt2e(model, quantizer)
 
+    if is_qat:
         if train_fn:
             m = move_exported_model_to_train(m)
             train_fn(m)
@@ -236,8 +236,6 @@ def calibrate_and_quantize(
         m = move_exported_model_to_eval(m)
         m = RemoveSimulatedLinearBatchNormFusionQATPass()(m).graph_module
         m = FuseBatchNormWithLinearPass()(m).graph_module
-    else:
-        m = prepare_pt2e(model, quantizer)
 
     if not is_qat or (is_qat and not train_fn):
         for data in calibration_inputs:

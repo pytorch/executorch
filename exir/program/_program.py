@@ -1,12 +1,11 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
-
+# pyre-strict
 import copy
 import io
 import logging
@@ -24,31 +23,35 @@ from executorch.exir._serialize._named_data_store import (
 from executorch.exir._serialize._serialize import serialize_for_executorch
 from executorch.exir._serialize.data_serializer import DataSerializer
 from executorch.exir._warnings import experimental
-from executorch.exir.backend.backend_api import (
-    MethodProgramsPartitionerSpec,
-    to_backend,
-)
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
 from executorch.exir.delegate import executorch_call_delegate, is_lowered_module
 from executorch.exir.emit import emit_program, EmitterOutput
 from executorch.exir.emit._emitter import _DelegateDebugIdentifierMap
 from executorch.exir.error import ExportError
-from executorch.exir.graph_module import get_control_flow_submodules
+from executorch.exir.graph_module import (
+    contains_any_call_fn_target_op,
+    get_control_flow_submodules,
+)
 from executorch.exir.operator.convert import _pybind_schema_to_native_schema
 from executorch.exir.operator.util import _QUANT_PRIMITIVES
 from executorch.exir.pass_base import PassBase
-from executorch.exir.pass_manager import PassType
+from executorch.exir.pass_manager import ExportedProgramPassManager, PassType
+
 from executorch.exir.passes import (
     base_post_op_replace_passes,
     base_pre_op_replace_passes,
     convert_constant_dim_order_pass,
     dead_code_elimination_pass,
     EdgeToBackendOpsPass,
+    LegalizePortableDimOrderPass,
     MemoryFormatOpsPass,
     OpReplacePass,
     remove_unused_parameters_pass,
+    ReplaceEmptyLikePass,
 )
+from executorch.exir.passes.constant_prop_pass import fold_constant_transposes
+from executorch.exir.passes.delegate_scratch_pass import DelegateScratchSpecPass
 from executorch.exir.passes.external_constants_pass import (
     external_constants_pass,
     external_mutable_weights_pass,
@@ -59,15 +62,19 @@ from executorch.exir.passes.insert_write_back_for_buffers_pass import (
 from executorch.exir.passes.normalize_view_copy_base_pass import (
     NormalizeViewCopyBasePass,
 )
+from executorch.exir.passes.propagate_device_config import PropagateDeviceConfig
 from executorch.exir.passes.propagate_device_pass import PropagateDevicePass
 from executorch.exir.passes.quant_fusion_pass import quant_fusion_and_const_prop_pass
-from executorch.exir.passes.reinplace import reinplace_pass
+from executorch.exir.passes.reinplace import DEFAULT_INPLACEABLE_OPS, reinplace_pass
 from executorch.exir.passes.remove_graph_asserts_pass import (
     RemoveGraphAssertsPass,
     RemoveNonCoreAtenOpGraphAssertsPass,
 )
 from executorch.exir.passes.remove_mixed_type_operators import RemoveMixedTypeOperators
 from executorch.exir.passes.replace_aten_with_edge_pass import aten_to_edge
+from executorch.exir.passes.replace_complex_with_real_pass import (
+    ReplaceComplexWithRealPass,
+)
 from executorch.exir.passes.replace_view_copy_with_view_pass import (
     ReplaceViewCopyWithViewPass,
 )
@@ -88,17 +95,11 @@ from torch.export import ExportedProgram
 from torch.export._remove_auto_functionalized_pass import (
     unsafe_remove_auto_functionalized_pass,
 )
-from torch.export.exported_program import (
-    ConstantArgument,
-    ExportGraphSignature,
-    InputKind,
-    InputSpec,
-    OutputSpec,
-    TensorArgument,
-)
+from torch.export.exported_program import InputKind, InputSpec, TensorArgument
 from torch.fx import _pytree as fx_pytree
 from torch.fx._compatibility import compatibility
-from torch.fx.passes.infra.pass_manager import PassManager
+from torch.fx.passes.infra.pass_manager import PassManager as GraphModulePassManager
+
 from torch.utils import _pytree as pytree
 
 Val = Any
@@ -131,93 +132,10 @@ aten_op_to_transform_op = {}
 transform_op_to_aten_op = {}
 
 
-def _get_updated_range_constraints(gm):
-    def get_shape_env(gm):
-        vals = [
-            node.meta["val"]
-            for node in gm.graph.nodes
-            if node.meta.get("val", None) is not None
-        ]
-        from torch._guards import detect_fake_mode  # type: ignore[21]
-
-        fake_mode = detect_fake_mode(vals)
-        if fake_mode is not None:
-            return fake_mode.shape_env
-        for v in vals:
-            if isinstance(v, torch.SymInt):
-                return v.node.shape_env
-
-    shape_env = get_shape_env(gm)
-    if shape_env is None:
-        return {}
-    range_constraints = {
-        shape_env.replacements.get(k, k): v for k, v in shape_env.var_to_range.items()
-    }
-    # Only when we have an unbacked symint, and it's used as constructor inputs,
-    # runtime_var_to_range will make a difference compated to var_to_range.
-    # e.g. [2, oo) -> [0, oo)
-    for k, v in shape_env.var_to_range.items():
-        if k not in shape_env.replacements:
-            range_constraints[k] = v
-    return range_constraints
-
-
-def _get_updated_graph_signature(
-    old_signature: ExportGraphSignature,
-    new_gm: torch.fx.GraphModule,
-) -> ExportGraphSignature:
-    """
-    Update the graph signature's user_input/user_outputs.
-    """
-    new_input_specs = []
-    i = 0
-    for node in new_gm.graph.nodes:
-        if node.op != "placeholder":
-            continue
-
-        assert i < len(
-            old_signature.input_specs
-        ), "Number of inputs changed after transformation"
-        old_input_spec = old_signature.input_specs[i]
-        arg = (
-            old_input_spec.arg
-            if isinstance(old_input_spec.arg, ConstantArgument)
-            # pyre-fixme[20]: Argument `class_fqn` expected.
-            else type(old_input_spec.arg)(node.name)
-        )
-        new_input_specs.append(
-            InputSpec(
-                old_input_spec.kind,
-                arg,
-                old_input_spec.target,
-                persistent=old_input_spec.persistent,
-            )
-        )
-        i += 1
-
-    output_node = new_gm.graph.output_node()
-    assert output_node.op == "output"
-
-    new_output_specs = []
-    for i, node in enumerate(output_node.args[0]):
-        assert i < len(
-            old_signature.output_specs
-        ), "Number of outputs changed after transformation"
-        old_output_spec = old_signature.output_specs[i]
-        arg = (
-            old_output_spec.arg
-            if isinstance(old_output_spec.arg, ConstantArgument)
-            # pyre-fixme[20]: Argument `class_fqn` expected.
-            else type(old_output_spec.arg)(node.name)
-        )
-        new_output_specs.append(
-            OutputSpec(old_output_spec.kind, arg, old_output_spec.target)
-        )
-
-    new_signature = ExportGraphSignature(
-        input_specs=new_input_specs, output_specs=new_output_specs
-    )
-    return new_signature
+from executorch.exir._program_utils import (  # noqa: E402
+    _get_updated_graph_signature,
+    _get_updated_range_constraints,
+)
 
 
 def _transform(
@@ -243,13 +161,13 @@ def _transform(
     ), f"Expected all passes to be of PassType, not list or Verifier. Use override_verifiers kwarg instead. Got: {list(passes)}"
 
     return _transform_with_pass_manager(
-        self, PassManager(list(passes)), override_verifiers
+        self, ExportedProgramPassManager(list(passes)), override_verifiers
     )
 
 
 def _transform_with_pass_manager(
-    self,
-    pass_manager: PassManager,
+    self: ExportedProgram,
+    pass_manager: Union[ExportedProgramPassManager, GraphModulePassManager],
     override_verifiers: None | list[Type[Verifier]] = None,
 ) -> "ExportedProgram":
     """
@@ -258,22 +176,26 @@ def _transform_with_pass_manager(
     Args:
         self: The ExportedProgram instance to transform
         pass_manager: An instance of PassManager to apply transformations.
+            - ExportedProgramPassManager: operates on the full ExportedProgram
+            - GraphModulePassManager: operates on the GraphModule only
         override_verifiers: Optional list of verifier classes to use instead of the default verifiers.
             This is needed if the transforms yields illegal graph that the default verifier cannot handle.
 
     Returns:
         ExportedProgram: A new ExportedProgram with the transformations applied, or self if no changes were made
     """
-    res = pass_manager(self.graph_module)
-    transformed_gm = res.graph_module if res is not None else self.graph_module
-    assert transformed_gm is not None
-
-    if transformed_gm is self.graph_module and not res.modified:
-        return self
-
-    return _update_exported_program_graph_module(
-        self, transformed_gm, override_verifiers
-    )
+    if isinstance(pass_manager, ExportedProgramPassManager):
+        res = pass_manager(self, override_verifiers)
+        if not res.modified:
+            return self
+        return res.exported_program
+    else:
+        res = pass_manager(self.graph_module)
+        if not res.modified:
+            return self
+        return _update_exported_program_graph_module(
+            self, res.graph_module, override_verifiers
+        )
 
 
 def _update_exported_program_graph_module(
@@ -288,7 +210,9 @@ def _update_exported_program_graph_module(
             exported_program.graph_signature, gm
         ),
         state_dict=exported_program.state_dict,
-        range_constraints=_get_updated_range_constraints(gm),
+        range_constraints=_get_updated_range_constraints(
+            gm, exported_program.range_constraints
+        ),
         module_call_graph=copy.deepcopy(exported_program._module_call_graph),
         example_inputs=exported_program.example_inputs,
         constants=exported_program.constants,
@@ -489,12 +413,14 @@ class ExirExportedProgram:
         self,
         exported_program: ExportedProgram,
         after_to_edge_passes: bool,
+        compile_config: Optional[EdgeCompileConfig] = None,
     ):
         self.exported_program = exported_program
 
         # Add a flag to denote whehter to_edge is called on this program
         # to detect misusage of directly calling to_executorch without to_edge
         self.after_to_edge_passes = after_to_edge_passes
+        self.compile_config = compile_config or EdgeCompileConfig()
 
     def transform(self, *passes: PassType) -> "ExirExportedProgram":
         self.exported_program = _transform(self.exported_program, *passes)
@@ -525,7 +451,9 @@ class ExirExportedProgram:
             raise RuntimeError("Must run to_edge before to_executorch.")
         config = config or ExecutorchBackendConfig()
         new_gm = self.exported_program.graph_module
-        for p in edge_to_executorch_passes(config):
+        for p in edge_to_executorch_passes(
+            config, edge_compile_config=self.compile_config
+        ):
             new_gm_res = p(new_gm)
             assert new_gm_res is not None
             new_gm = new_gm_res.graph_module
@@ -562,6 +490,7 @@ class ExirExportedProgram:
         new_eep = ExirExportedProgram(
             copy.deepcopy(self.exported_program, memo),
             self.after_to_edge_passes,
+            copy.deepcopy(self.compile_config, memo),
         )
         return new_eep
 
@@ -757,6 +686,7 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
                 ],
             ),
             False,
+            config,
         )
     pre_op_replace_passes, post_op_replace_passes = _get_aten_to_edge_passes(config)
 
@@ -765,14 +695,13 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
         new_ep.exported_program = lift_constant_tensor_pass(new_ep.exported_program)
 
     new_gm = new_ep.exported_program.graph_module
-    if config._use_edge_ops:
-        new_gm_res = OpReplacePass()(new_gm)
+    new_gm_res = OpReplacePass()(new_gm)
+    assert new_gm_res is not None
+    new_gm = new_gm_res.graph_module
+    if not config._skip_dim_order:
+        new_gm_res = MemoryFormatOpsPass()(new_gm)
         assert new_gm_res is not None
         new_gm = new_gm_res.graph_module
-        if not config._skip_dim_order:
-            new_gm_res = MemoryFormatOpsPass()(new_gm)
-            assert new_gm_res is not None
-            new_gm = new_gm_res.graph_module
 
     for p in post_op_replace_passes:
         new_gm_res = p(new_gm)
@@ -828,31 +757,52 @@ def pre_memory_planning_passes(
             ReplaceViewCopyWithViewPass(),
             sym_shape_eval_pass,
             config.to_out_var_pass,
+            DelegateScratchSpecPass(),
         ]
     else:
         return [
             sym_shape_eval_pass,
             config.to_out_var_pass,
+            DelegateScratchSpecPass(),
         ]
 
 
 def edge_to_executorch_passes(
-    config: ExecutorchBackendConfig, name: Optional[str] = None
+    config: ExecutorchBackendConfig,
+    name: Optional[str] = None,
+    edge_compile_config: Optional[EdgeCompileConfig] = None,
 ) -> List[PassType]:
     """
     Returns a list of passes to lower from edge to executorch.
     Get the pre memory planning passes based on the method name, if the pass is not in the dict, use the default pass.
     """
+    # Handle propagate device config
+    propagate_device_config = config.propagate_device_config
+    if isinstance(propagate_device_config, dict):
+        device_cfg = propagate_device_config.get(name, PropagateDeviceConfig())
+    else:
+        device_cfg = propagate_device_config
+
+    edge_compile_config = edge_compile_config or EdgeCompileConfig()
     passes: List[PassType] = [
         # ExecuTorch backend ops are unable to handle unbacked symints. So after
         # this pass, passes cannot be Interpreter-based, because it will fail if
         # there exists an unbacked symint operation.
         *config.passes,
         SpecPropPass(),
-        PropagateDevicePass(),
+        PropagateDevicePass(
+            skip_h2d_for_method_inputs=device_cfg.skip_h2d_for_method_inputs,
+            skip_d2h_for_method_outputs=device_cfg.skip_d2h_for_method_outputs,
+            enable_non_cpu_memory_planning=config.enable_non_cpu_memory_planning,
+            error_on_per_call_copies=device_cfg.error_on_per_call_copies,
+            skip_h2d_for_constants=device_cfg.skip_h2d_for_constants,
+        ),
         EdgeToBackendOpsPass(),
         RemoveGraphAssertsPass(),
     ] + pre_memory_planning_passes(config, name)
+
+    if not edge_compile_config._skip_dim_order:
+        passes.insert(len(config.passes), LegalizePortableDimOrderPass())
 
     return passes
 
@@ -875,6 +825,15 @@ def _generate_edge_program(
     # Remove unused parameters
     program = remove_unused_parameters_pass(program)
 
+    if not config._skip_dim_order:
+        # Normalize constants, buffers, parameters and inputs before
+        # partitioning, so a delegate sees the layout the program stores, and before
+        # MemoryFormatOpsPass rewrites preserve-format copies, which cannot
+        # represent arbitrary dim orders.
+        program = convert_constant_dim_order_pass.convert_constant_dim_order_pass(
+            program
+        )
+
     pre_op_replace_passes, post_op_replace_passes = _get_aten_to_edge_passes(config)
 
     passes = [
@@ -884,10 +843,16 @@ def _generate_edge_program(
         ReplaceViewOpsWithViewCopyOpsPass(),
     ]
     passes.extend(pre_op_replace_passes)
-    if config._use_edge_ops:
-        passes.append(OpReplacePass())
-        if not config._skip_dim_order:
-            passes.append(MemoryFormatOpsPass())
+    empty_like = torch.ops.aten.empty_like.default
+    if (
+        empty_like not in (preserve_ops or [])
+        and empty_like not in config.preserve_ops
+        and contains_any_call_fn_target_op(program.graph_module, [empty_like])
+    ):
+        passes.append(ReplaceEmptyLikePass())
+    passes.append(OpReplacePass())
+    if not config._skip_dim_order:
+        passes.append(MemoryFormatOpsPass())
 
     gm = program.graph_module
     for p in passes:
@@ -917,7 +882,10 @@ def _generate_edge_program(
     # Lift the tensor constants created in ScalarToTensorPass
     edge_program = lift_constant_tensor_pass(edge_program)
 
-    # Normalize constant tensor dim order on the unlifted graph
+    # Normalize tensor constants introduced by the preceding passes. With
+    # _skip_dim_order this is the only call, so it fixes the layout of
+    # parameters, buffers, constants and inputs, but ops computed from them
+    # keep the old strides.
     edge_program = convert_constant_dim_order_pass.convert_constant_dim_order_pass(
         edge_program
     )
@@ -1173,6 +1141,14 @@ def _can_skip_using_EDGE_DO_NOT_DECOMP(
     return check_op_support is None
 
 
+def _apply_pre_decomposition_transforms(
+    program: ExportedProgram, partitioners: List[Partitioner]
+) -> ExportedProgram:
+    for partitioner in partitioners:
+        program = partitioner.transform_for_pre_decomposition(program)
+    return program
+
+
 def _gen_edge_manager_for_partitioners(
     partitioner: Dict[str, List[Partitioner]],
     aten_programs: Dict[str, ExportedProgram],
@@ -1196,11 +1172,13 @@ def _gen_edge_manager_for_partitioners(
     ops_set_to_not_decompose_by_program = defaultdict(list)
     edge_programs: Dict[str, ExportedProgram] = {}
     for name, program in aten_programs.items():
+        partitioners_for_program = partitioner.get(name, [])
+        program = _apply_pre_decomposition_transforms(program, partitioners_for_program)
+
         # Functionalize program before asking partitioners to preserve ops
         program = program.run_decompositions({})
 
         if partitioner is not None:
-            partitioners_for_program = partitioner.get(name, [])
             final_ops_to_preserve = set()
 
             # Decompose by default if there are no partitioners for the method
@@ -1228,7 +1206,21 @@ def _gen_edge_manager_for_partitioners(
                         if table.pop(op, None) is not None:
                             ops_needing_preservation.append(op)
 
-                    program = program.run_decompositions(table)
+                    # The initial ``run_decompositions({})`` above has already
+                    # functionalized the graph. This second call only applies
+                    # operator decompositions from the remaining table, so it is
+                    # safe to skip when none of those targets occur in the graph.
+                    # Unless the config preserves it, empty_like does not
+                    # count: ReplaceEmptyLikePass lowers any that is left.
+                    not_counted = (
+                        set()
+                        if torch.ops.aten.empty_like.default in config.preserve_ops
+                        else {torch.ops.aten.empty_like.default}
+                    )
+                    if contains_any_call_fn_target_op(
+                        program.graph_module, table.keys() - not_counted
+                    ):
+                        program = program.run_decompositions(table)
                     final_ops_to_preserve.update(ops_needing_preservation)
                 else:
                     # EDGE_DO_NOT_DECOMP path for the partitioner
@@ -1261,6 +1253,8 @@ def _gen_edge_manager_for_partitioners(
                     _restore_transformed_ops_to_aten_ops(program)
             ops_set_to_not_decompose_by_program[name].extend(final_ops_to_preserve)
 
+        # Edge programs have no complex dtypes for ops such as mul.
+        ReplaceComplexWithRealPass()(program)
         edge_programs[name] = _generate_edge_program(
             config,
             program,
@@ -1324,7 +1318,12 @@ def collect_named_data_store_from_exported_program(
 def to_edge_transform_and_lower(  # noqa: C901
     programs: Union[ExportedProgram, Dict[str, ExportedProgram]],
     transform_passes: Optional[
-        Union[Sequence[PassType], Dict[str, Sequence[PassType]], PassManager]
+        Union[
+            Sequence[PassType],
+            Dict[str, Sequence[PassType]],
+            GraphModulePassManager,
+            ExportedProgramPassManager,
+        ]
     ] = None,
     partitioner: Optional[
         Union[List[Partitioner], Dict[str, List[Partitioner]]]
@@ -1348,6 +1347,14 @@ def to_edge_transform_and_lower(  # noqa: C901
 
     This API is the primary recommended way to lower to the CPU based XNNPack backend.
 
+    Unlike to_edge, it replaces complex numbers with real numbers before it builds the
+    Edge programs, since the Edge dialect has no complex dtypes for ops such as mul. A
+    complex tensor becomes a real tensor with a last dim of size 2 that holds its real and
+    imaginary parts, as torch.view_as_real gives. This includes complex constants,
+    parameters and buffers, so the returned programs store them in that layout. A program
+    that the pass cannot rewrite completely keeps all its complex numbers. See
+    ReplaceComplexWithRealPass.
+
     Args:
         programs: Can be a single ExportedProgram or a dictionary mapping function names
             to their corresponding ExportedPrograms. If only a single ExportedProgram is
@@ -1359,7 +1366,7 @@ def to_edge_transform_and_lower(  # noqa: C901
             2) a dictionary -
                 only method names specified in the dictionary will be transformed
                 with their corresponding passes
-            3) an instance of a PassManager -
+            3) an instance of a PassManager (either a GraphModulePassManager or an ExportedProgramPassManager) -
                 all methods in the given EdgeProgramManager will be
                 transformed with the given PassManager instance.
 
@@ -1399,6 +1406,8 @@ def to_edge_transform_and_lower(  # noqa: C901
 
     if transform_passes is not None:
         edge_manager = edge_manager.transform(transform_passes)
+        for method in edge_manager.methods:
+            lift_constant_tensor_pass(edge_manager.exported_program(method))
 
         if generate_etrecord:
             edge_manager._etrecord.add_extra_export_modules(
@@ -1501,6 +1510,8 @@ def to_edge(
                 EXIRATenDialectVerifier(
                     edge_compile_config=config,
                     class_only=False,
+                    # ReplaceEmptyLikePass lowers it in _generate_edge_program.
+                    core_aten_ops_exception_list=[torch.ops.aten.empty_like.default],
                 )(gm)
             except ExportError as e:
                 logging.info(f"Input program {name} is not in ATen dialect.")
@@ -1571,6 +1582,7 @@ class EdgeProgramManager:
 
         self._edge_programs: Dict[str, ExportedProgram] = edge_programs
         self._config_methods = constant_methods
+        self._folded_methods: Set[str] = set()
 
         self._named_data_store = NamedDataStore()
         for _, program in self._edge_programs.items():
@@ -1604,7 +1616,12 @@ class EdgeProgramManager:
     @et_logger("transform")
     def transform(
         self,
-        passes: Union[Sequence[PassType], Dict[str, Sequence[PassType]], PassManager],
+        passes: Union[
+            Sequence[PassType],
+            Dict[str, Sequence[PassType]],
+            ExportedProgramPassManager,
+            GraphModulePassManager,
+        ],
         compile_config: Optional[EdgeCompileConfig] = None,
     ) -> "EdgeProgramManager":
         """
@@ -1618,7 +1635,7 @@ class EdgeProgramManager:
                 2) a dictionary mapping method names to lists of passes -
                     only method names specified in the dictionary will be
                     transformed with their corresponding passes.
-                3) a PassManager instance -
+                3) a PassManager (either ExportedProgramPassManager or GraphModulePassManager) instance -
                     all methods in the given EdgeProgramManager will be
                     transformed with the given PassManager instance.
             compile_config: Compile config to use for veriy the correctness of model
@@ -1637,13 +1654,15 @@ class EdgeProgramManager:
         # Cast passes parameter upfront.
         passes_seq: Optional[Sequence[PassType]] = None
         passes_dict: Optional[Dict[str, Sequence[PassType]]] = None
-        pass_manager: Optional[PassManager] = None
+        pass_manager: Optional[
+            Union[ExportedProgramPassManager, GraphModulePassManager]
+        ] = None
 
         if isinstance(passes, Sequence):
             passes_seq = passes
         if isinstance(passes, dict):
             passes_dict = passes
-        if isinstance(passes, PassManager):
+        if isinstance(passes, (ExportedProgramPassManager, GraphModulePassManager)):
             pass_manager = passes
 
         for name, program in self._edge_programs.items():
@@ -1704,6 +1723,13 @@ class EdgeProgramManager:
             EdgeProgramManager: A copy of the calling EdgeProgramManager with the
             specified subgraphs lowered.
         """
+        # backend_api imports executorch.exir.program (via program._fake_program),
+        # so importing it at module scope is circular.
+        from executorch.exir.backend.backend_api import (
+            MethodProgramsPartitionerSpec,
+            to_backend,
+        )
+
         new_edge_programs: Dict[str, ExportedProgram] = {}
         method_to_partitioner: Dict[str, Partitioner] = {}
         if not isinstance(partitioner, dict):
@@ -1741,11 +1767,39 @@ class EdgeProgramManager:
 
         Returns:
             ExecutorchProgramManager: A manager representing the state of the EdgeProgramManager
-            after it has been transformed to the ExecuTorch backend.
+            after it has been transformed to the ExecuTorch backend. Afterwards,
+            exported_program() of this EdgeProgramManager also returns the
+            lowered programs. An ExportedProgram taken from this manager before
+            the call is lowered in place only for methods in which
+            fold_constant_transposes folds nothing.
+
+        Raises:
+            RuntimeError: If an earlier call on this manager folded a weight
+                transpose and this call leaves fold_constant_transposes off,
+                which is the default, or uses external_constants. Copy the
+                manager before the first call to lower it more than once with
+                different settings.
         """
         config = config if config else ExecutorchBackendConfig()
+        # External constants are matched by name, which a fold would change.
+        fold = config.fold_constant_transposes and not config.external_constants
+        if self._folded_methods and not fold:
+            raise RuntimeError(
+                "An earlier to_executorch() call folded weight transposes in "
+                f"methods {sorted(self._folded_methods)}, so this manager cannot be "
+                "lowered again without fold_constant_transposes=True or with "
+                "external_constants. Copy the manager before the first call."
+            )
+        programs = self._edge_programs
+        if fold:
+            programs = fold_constant_transposes(programs, self._config_methods)
+        folded = {
+            name
+            for name, program in programs.items()
+            if program is not self._edge_programs[name]
+        }
         execution_programs: Dict[str, ExportedProgram] = {}
-        for name, program in self._edge_programs.items():
+        for name, program in programs.items():
             if config.do_quant_fusion_and_const_prop:
                 if program.graph_signature.backward_signature is not None:
                     raise Exception(
@@ -1753,13 +1807,19 @@ class EdgeProgramManager:
                         " Please set do_quant_fusion_and_const_prop to False in the ExecutorchBackendConfig."
                     )
                 program = quant_fusion_and_const_prop_pass(program)
-            if config.run_reinplace_pass:
-                program = reinplace_pass(program)
+            if config.run_reinplace_pass or config.reinplace_extra_ops:
+                extra = config.reinplace_extra_ops or frozenset()
+                program = reinplace_pass(
+                    program,
+                    ops_to_inplace=DEFAULT_INPLACEABLE_OPS | extra,
+                )
             program = weights_to_outputs_pass(program)
             program = unsafe_remove_auto_functionalized_pass(program)
             gm, new_signature = insert_write_back_for_buffers_pass(program)
             new_gm = program.graph_module
-            for p in edge_to_executorch_passes(config, name):
+            for p in edge_to_executorch_passes(
+                config, name, edge_compile_config=self.compile_config
+            ):
                 new_gm_res = p(new_gm)
                 assert new_gm_res is not None
                 new_gm = new_gm_res.graph_module
@@ -1817,6 +1877,10 @@ class EdgeProgramManager:
 
             _copy_module(program.graph_module, new_gm)
             execution_programs[name] = program
+        # A folded program was lowered on a copy. Hand it to this manager too,
+        # as every other program is lowered in place.
+        self._folded_methods.update(folded)
+        self._edge_programs.update(execution_programs)
         # After running memory planning on all entry points we can run the cross entry point memory planning
         if isinstance(config.memory_planning_pass, dict):
             for memory_planning_pass in config.memory_planning_pass.values():
@@ -1890,11 +1954,17 @@ class ExecutorchProgramManager:
         backend_config = backend_config or ExecutorchBackendConfig()
 
         # Emit methods
+        reserved_external_names = set()
+        if named_data is not None:
+            reserved_external_names.update(named_data.pte_data)
+            for entries in named_data.external_data.values():
+                reserved_external_names.update(entries)
         self._emitter_output: EmitterOutput = emit_program(
             self._execution_programs,
             backend_config.emit_stacktrace,
             self._config_methods,
             backend_config.emit_mutable_buffer_names,
+            reserved_external_names=reserved_external_names,
         )
 
         # Serialize emitter output, ready to be written to a file.

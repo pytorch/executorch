@@ -23,10 +23,18 @@ if(ANDROID)
 endif()
 
 find_package(executorch CONFIG REQUIRED COMPONENTS vulkan_backend)
-find_package(GTest CONFIG REQUIRED)
 
 if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../..)
+endif()
+
+# Keep GoogleTest's headers and library on the same pinned revision.
+if(NOT TARGET GTest::gtest_main)
+  set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+  add_subdirectory(
+    ${EXECUTORCH_ROOT}/third-party/googletest
+    ${CMAKE_CURRENT_BINARY_DIR}/googletest EXCLUDE_FROM_ALL
+  )
 endif()
 
 # Include this file to access executorch_target_link_options_shared_lib This is
@@ -49,19 +57,12 @@ find_library(LIB_C10 c10 HINTS ${TORCH_INSTALL_PREFIX}/lib)
 
 set(VULKAN_THIRD_PARTY_PATH ${EXECUTORCH_ROOT}/backends/vulkan/third-party)
 
-set(GTEST_INCLUDE_PATH
-    ${EXECUTORCH_ROOT}/third-party/googletest/googletest/include
-)
 set(VULKAN_HEADERS_PATH ${VULKAN_THIRD_PARTY_PATH}/Vulkan-Headers/include)
 set(VOLK_PATH ${VULKAN_THIRD_PARTY_PATH}/volk)
 set(VMA_PATH ${VULKAN_THIRD_PARTY_PATH}/VulkanMemoryAllocator)
 
 set(COMMON_INCLUDES
-    ${EXECUTORCH_ROOT}/..
-    ${VULKAN_HEADERS_PATH}
-    ${VOLK_PATH}
-    ${VMA_PATH}
-    ${GTEST_INCLUDE_PATH}
+    ${EXECUTORCH_ROOT}/.. ${VULKAN_HEADERS_PATH} ${VOLK_PATH} ${VMA_PATH}
     ${TORCH_BASE_PATH}/include
     ${TORCH_BASE_PATH}/include/torch/csrc/api/include
 )
@@ -73,6 +74,8 @@ function(vulkan_op_test test_name test_src)
 
   add_executable(${test_name} ${test_src})
   target_include_directories(${test_name} PRIVATE ${COMMON_INCLUDES})
+  # ATen headers require C++20.
+  set_target_properties(${test_name} PROPERTIES CXX_STANDARD 20)
   target_link_libraries(
     ${test_name}
     PRIVATE GTest::gtest_main
@@ -88,8 +91,13 @@ function(vulkan_op_test test_name test_src)
 endfunction()
 
 if(TARGET vulkan_backend AND LIB_TORCH)
+  vulkan_op_test(
+    vulkan_sdpa_av_test ${CMAKE_CURRENT_SOURCE_DIR}/sdpa_av_test.cpp
+  )
   add_library(test_utils ${CMAKE_CURRENT_SOURCE_DIR}/test_utils.cpp)
   target_include_directories(test_utils PRIVATE ${COMMON_INCLUDES})
+  # ATen headers require C++20.
+  set_target_properties(test_utils PROPERTIES CXX_STANDARD 20)
   target_link_libraries(
     test_utils PRIVATE vulkan_backend ${LIB_TORCH} ${LIB_TORCH_CPU}
   )
@@ -114,6 +122,23 @@ if(TARGET vulkan_backend AND LIB_TORCH)
   )
   vulkan_op_test(
     quantized_linear_test ${CMAKE_CURRENT_SOURCE_DIR}/quantized_linear_test.cpp
+    test_utils
+  )
+  vulkan_op_test(
+    adamw_step_test ${CMAKE_CURRENT_SOURCE_DIR}/adamw_step_test.cpp test_utils
+  )
+  vulkan_op_test(
+    linear_dW_test ${CMAKE_CURRENT_SOURCE_DIR}/linear_dW_test.cpp test_utils
+  )
+  vulkan_op_test(
+    fused_ce_test ${CMAKE_CURRENT_SOURCE_DIR}/fused_ce_test.cpp test_utils
+  )
+  vulkan_op_test(
+    quantized_linear_backward_test
+    ${CMAKE_CURRENT_SOURCE_DIR}/quantized_linear_backward_test.cpp test_utils
+  )
+  vulkan_op_test(
+    q4gsw_requant_test ${CMAKE_CURRENT_SOURCE_DIR}/q4gsw_requant_test.cpp
     test_utils
   )
 

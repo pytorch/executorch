@@ -28,7 +28,16 @@ if [[ "$1" == "-h" || "$1" == "--help" ]]; then
 fi
 
 if [[ $# -eq 0 ]]; then
-    TEST_SUITES=(run_ootb_tests_ethos_u run_ootb_tests_tosa run_ootb_tests_vgf run_deit_e2e_ethos_u run_swin2sr_e2e_vgf)
+    TEST_SUITES=(
+        run_ootb_tests_ethos_u
+        run_ootb_tests_tosa
+        run_ootb_tests_vgf
+        run_deit_e2e_ethos_u
+        run_mobilesam_e2e_ethos_u
+        run_swin2sr_e2e_vgf
+        run_silero_vad_e2e_ethos_u
+        run_person_detection_e2e_cortex_m
+    )
 else
     TEST_SUITES=("$1")
 fi
@@ -40,6 +49,73 @@ import notebook  # noqa: F401
 import nbconvert  # noqa: F401
 PY
 }
+
+run_person_detection_e2e_cortex_m() (
+    local example_dir="${et_root_dir}/examples/arm/person_detection_example_cortex_m"
+    local work_root
+    mkdir -p "${et_root_dir}/arm_test"
+    work_root=$(mktemp -d "${et_root_dir}/arm_test/person_detection_ootb.XXXXXX")
+    local artifacts_dir="${example_dir}/artifacts"
+    local image_path="${example_dir}/example.jpg"
+    local pte_path="${artifacts_dir}/person_detection.pte"
+    local toolchain_file="${et_root_dir}/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake"
+    echo "${FUNCNAME}: Work directory: ${work_root}"
+
+    source "${et_root_dir}/examples/arm/arm-scratch/setup_path.sh"
+    source "${et_root_dir}/backends/arm/scripts/utils.sh"
+    pip install -r "${example_dir}/requirements.txt"
+
+    python3 "${example_dir}/training/pretrain.py" --smoke-test
+    python3 "${example_dir}/training/training.py" --smoke-test
+    test -s "${artifacts_dir}/trained_unpruned.pt"
+    test -s "${artifacts_dir}/trained_fully_pruned.pt"
+    python3 "${example_dir}/training/test_model.py" \
+        --pt "${artifacts_dir}/trained_fully_pruned.pt" --image "${image_path}" \
+        --no-display --output "${work_root}/prediction.jpg"
+    python3 "${example_dir}/training/pruning.py" \
+        --input "${artifacts_dir}/trained_fully_pruned.pt" \
+        --output "${artifacts_dir}/pruned.pt"
+    python3 "${example_dir}/export/export_model.py" \
+        --input "${artifacts_dir}/pruned.pt" --smoke-test --pte "${pte_path}" \
+        --eager "${artifacts_dir}/person_detection.eager" \
+        --etrecord "${artifacts_dir}/person_detection.etrecord"
+    python3 "${example_dir}/export/test_exported_model.py" \
+        --pte "${pte_path}" --eager "${artifacts_dir}/person_detection.eager"
+    python3 "${example_dir}/deploy/generate_qparams_header.py" \
+        --pte "${pte_path}" --output "${work_root}/model_qparams.h"
+
+    local profiling build_dir host_log
+    for profiling in OFF ON; do
+        build_dir="${work_root}/build-${profiling}"
+        host_log="${work_root}/host-${profiling}.log"
+        cmake -S "${example_dir}/deploy" -B "${build_dir}" \
+            -DCMAKE_TOOLCHAIN_FILE="${toolchain_file}" \
+            -DCMAKE_BUILD_TYPE=Release -DET_PTE_FILE_PATH="${pte_path}" \
+            -DET_ENABLE_PROFILING="${profiling}"
+        cmake --build "${build_dir}" --target person_detection -j"$(get_parallel_jobs)"
+        (
+            setsid python3 "${example_dir}/deploy/run_fvp.py" \
+                --elf "${build_dir}/person_detection" --pte "${pte_path}" \
+                --input "${image_path}" --headless \
+                > "${work_root}/fvp-${profiling}.log" 2>&1 &
+            fvp_pid=$!
+            trap 'kill -- "-${fvp_pid}" 2>/dev/null || true; wait "${fvp_pid}" 2>/dev/null || true' EXIT
+            host_args=(--tcp 127.0.0.1:5000 --timeout 120 --once)
+            if [[ "${profiling}" == ON ]]; then
+                host_args+=(--expect-etdump --etrecord "${artifacts_dir}/person_detection.etrecord"
+                    --etdump-output "${work_root}/profile.etdp")
+            fi
+            timeout 180 python3 "${example_dir}/deploy/host.py" "${host_args[@]}" \
+                > "${host_log}"
+            grep -q 'Inference time:' "${host_log}"
+            if [[ "${profiling}" == ON ]]; then
+                grep -q 'ETDump:' "${host_log}"
+                test -s "${work_root}/profile.etdp"
+            fi
+        )
+    done
+    echo "${FUNCNAME}: PASS"
+)
 
 
 run_ootb_tests_ethos_u() {
@@ -162,6 +238,10 @@ run_deit_e2e_ethos_u() {
         -C mps4_board.subsystem.ethosu.extra_args="--fast"
 
     echo "${FUNCNAME}: PASS"
+}
+
+run_mobilesam_e2e_ethos_u() {
+    "${et_root_dir}/examples/arm/mobilesam_prompt_segmentation_example_ethos_u/run.sh"
 }
 
 run_swin2sr_e2e_vgf() {
@@ -289,6 +369,128 @@ run_swin2sr_e2e_vgf() {
         # quantized VKML runtime validation on Darwin.
         echo "${FUNCNAME}: Skipping INT8 runtime on $(uname -s); quantized VKML runtime validation is Linux-only"
     fi
+
+    echo "${FUNCNAME}: PASS"
+}
+
+run_silero_vad_e2e_ethos_u() {
+    echo "$FUNCNAME: Export, build, run, and validate the Silero VAD e2e test"
+
+    local example_dir="${et_root_dir}/examples/arm/silero_vad_example_ethos_u"
+    local work_root="${et_root_dir}/arm_test/silero_vad_ootb_smoke"
+    local model_dir="${work_root}/silero-vad"
+    local model_ref="v6.2.2"
+    local jit_path="${model_dir}/src/silero_vad/data/silero_vad.jit"
+    local calibration_audio_path="${work_root}/silero_vad_calibration.wav"
+    local validation_audio_path="${work_root}/silero_vad_validation.wav"
+    local source_audio_path="${model_dir}/tests/data/test.wav"
+    local export_dir="${work_root}/export"
+    local build_dir="${work_root}/silero_vad_app"
+    local fvp_out_dir="${work_root}/fvp"
+    local et_build_dir="${et_root_dir}/cmake-out-arm"
+    local pte_path="${export_dir}/silero_vad_ethos_u.pte"
+    local expected_path="${export_dir}/expected_probs.bin"
+    local fvp_log_path="${fvp_out_dir}/fvp.log"
+    local validation_threshold="0.55"
+    local toolchain_file="${et_root_dir}/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake"
+    local codegen_pythonpath="${et_root_dir}:${PYTHONPATH:-}"
+    local platform_cmake_args=()
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+        # FVPs-on-Mac exposes the application console at the MPS3 UART address.
+        platform_cmake_args+=("-DUART0_BASE=0x49303000")
+    fi
+    mkdir -p "${export_dir}" "${build_dir}" "${fvp_out_dir}"
+
+    setup_path_script=${et_root_dir}/examples/arm/arm-scratch/setup_path.sh
+    source ${setup_path_script}
+
+    source ${et_root_dir}/backends/arm/scripts/utils.sh
+    local n_proc="$(get_parallel_jobs)"
+
+    echo "${FUNCNAME}: Building ExecuTorch (if needed)"
+    cmake --preset arm-baremetal -B "${et_build_dir}"
+    cmake --build "${et_build_dir}" --target install -j"$n_proc"
+
+    if [[ ! -f "${jit_path}" || "$(git -C "${model_dir}" describe --tags --exact-match HEAD 2>/dev/null)" != "${model_ref}" ]]; then
+        echo "${FUNCNAME}: Cloning Silero VAD repository"
+        rm -rf "${model_dir}"
+        git init "${model_dir}"
+        git -C "${model_dir}" remote add origin https://github.com/snakers4/silero-vad.git
+        git -C "${model_dir}" fetch --depth 1 origin "refs/tags/${model_ref}:refs/tags/${model_ref}"
+        git -C "${model_dir}" checkout --detach "${model_ref}"
+    else
+        echo "${FUNCNAME}: Reusing JIT model at ${jit_path}"
+    fi
+
+    echo "${FUNCNAME}: Preparing separate calibration and validation WAVs"
+    python3 "${example_dir}/model_export/generate_smoke_audio.py" \
+        --source-wav "${source_audio_path}" \
+        --start-seconds 0.0 \
+        --duration-seconds 2.5 \
+        --output "${calibration_audio_path}"
+    python3 "${example_dir}/model_export/generate_smoke_audio.py" \
+        --source-wav "${source_audio_path}" \
+        --start-seconds 2.5 \
+        --duration-seconds 2.5 \
+        --output "${validation_audio_path}"
+
+    echo "${FUNCNAME}: Exporting quantized Silero VAD PTE"
+    python3 "${example_dir}/model_export/export_silero_vad_ethos_u.py" \
+        --jit-model "${jit_path}" \
+        --calibration-audio "${calibration_audio_path}" \
+        --validation-audio "${validation_audio_path}" \
+        --output-path "${pte_path}" \
+        --expected-output-path "${expected_path}" \
+        --num-calibration-frames 32 \
+        --num-validation-frames 0
+
+    [[ -f "${pte_path}" ]] || {
+        echo "${FUNCNAME}: Missing PTE at ${pte_path}"
+        return 1
+    }
+    [[ -f "${expected_path}" ]] || {
+        echo "${FUNCNAME}: Missing expected probability dump at ${expected_path}"
+        return 1
+    }
+
+    echo "${FUNCNAME}: Configuring the Silero VAD application"
+    cmake \
+        -S "${example_dir}/runtime" \
+        -B "${build_dir}" \
+        -DCMAKE_TOOLCHAIN_FILE="${toolchain_file}" \
+        -DTARGET_CPU=cortex-m85 \
+        -DET_PTE_FILE_PATH="${pte_path}" \
+        -DAUDIO_PATH="${validation_audio_path}" \
+        -DET_BUILD_DIR_PATH="${et_build_dir}" \
+        -DMAX_AUDIO_SAMPLES=40000 \
+        -DVAD_THRESHOLD="${validation_threshold}" \
+        -DPYTHON_EXECUTABLE="$(command -v python3)" \
+        "${platform_cmake_args[@]}"
+
+    echo "${FUNCNAME}: Building silero_vad_ethos_u"
+    PYTHONPATH="${codegen_pythonpath}" cmake --build "${build_dir}" -j"$n_proc" --target silero_vad_ethos_u
+
+    rm -f "${fvp_log_path}"
+    local elf="${build_dir}/silero_vad_ethos_u"
+
+    echo "${FUNCNAME}: Running on FVP_Corstone_SSE-320"
+    bash "${et_root_dir}/backends/arm/scripts/run_fvp.sh" \
+        --elf="${elf}" \
+        --target=ethos-u85-256 \
+        --timeout=300 2>&1 | tee "${fvp_log_path}"
+
+    [[ -s "${fvp_log_path}" ]] || {
+        echo "${FUNCNAME}: Missing FVP serial log at ${fvp_log_path}"
+        return 1
+    }
+
+    echo "${FUNCNAME}: Comparing FVP probabilities with export-time reference"
+    python3 "${example_dir}/runtime/compare_vad_probs.py" \
+        --expected "${expected_path}" \
+        --actual-log "${fvp_log_path}" \
+        --threshold "${validation_threshold}" \
+        --atol 0.25 \
+        --mean-atol 0.02
 
     echo "${FUNCNAME}: PASS"
 }

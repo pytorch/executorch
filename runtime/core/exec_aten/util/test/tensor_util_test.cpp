@@ -31,6 +31,12 @@ class TensorUtilTest : public ::testing::Test {
   TensorFactory<ScalarType::Double> tf_double_;
   TensorFactory<ScalarType::Bool> tf_bool_;
 
+  static void SetUpTestSuite() {
+    // Fork-based death tests deadlock when libtorch's thread pool (~40
+    // threads) is active; use threadsafe style.
+    ::testing::GTEST_FLAG(death_test_style) = "threadsafe";
+  }
+
   void SetUp() override {
     // As some of these tests cause ET_LOG to be called, the PAL must be
     // initialized first by calling runtime_init();
@@ -145,6 +151,26 @@ TEST_F(TensorUtilTest, EmptyTensor) {
   ET_CHECK_SAME_DTYPE3(t, t, t);
   ET_CHECK_SAME_SHAPE_AND_DTYPE2(t, t);
   ET_CHECK_SAME_SHAPE_AND_DTYPE3(t, t, t);
+}
+
+TEST_F(TensorUtilTest, CopyEmptyTensorData) {
+  Tensor destination = tf_int_.zeros({3, 0});
+  Tensor source = tf_int_.zeros({3, 0});
+
+  EXPECT_EQ(
+      executorch::ET_RUNTIME_NAMESPACE::internal::copy_tensor_data(
+          destination, source),
+      executorch::runtime::Error::Ok);
+}
+
+TEST_F(TensorUtilTest, CopyEmptyTensorDataToNonEmptyDestinationIsNoOp) {
+  Tensor destination = tf_int_.zeros({1});
+  Tensor source = tf_int_.zeros({0});
+
+  EXPECT_EQ(
+      executorch::ET_RUNTIME_NAMESPACE::internal::copy_tensor_data(
+          destination, source),
+      executorch::runtime::Error::Ok);
 }
 
 TEST_F(TensorUtilTest, GetLeadingDimsSmokeTest) {

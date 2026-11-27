@@ -10,7 +10,7 @@ import unittest
 from typing import List, Optional
 
 import torch
-from executorch.exir import EdgeCompileConfig, to_edge
+from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.dialects._ops import ops as edge_ops
 from executorch.exir.passes.reinplace import DEFAULT_INPLACEABLE_OPS, reinplace_pass
@@ -89,6 +89,162 @@ class TestReinplacePass(unittest.TestCase):
                 e.forward((indices, values))[0], torch.tensor([1.0, 0.0, 0.0, 0.0, 0.0])
             )
         )
+
+    def test_returned_original_is_not_reinplaced(self) -> None:
+        class ReturnsOldAndNew(torch.nn.Module):
+            def forward(self, x, indices, values):
+                original = x + 1
+                updated = original.index_put((indices,), values)
+                return original, updated
+
+        model = ReturnsOldAndNew()
+        first = (torch.zeros(5), torch.tensor([0]), torch.tensor([9.0]))
+        edge = to_edge(export(model, first, strict=True))
+        et = edge.to_executorch(ExecutorchBackendConfig(run_reinplace_pass=True))
+        self.assertEqual(len(_find_nodes(et.exported_program(), "index_put_")), 0)
+
+        loaded = _load_for_executorch_from_buffer(et.buffer)
+        for inputs in (
+            first,
+            (torch.full((5,), 2.0), torch.tensor([3]), torch.tensor([-2.0])),
+        ):
+            with self.subTest(inputs=inputs):
+                for actual, expected in zip(loaded.forward(inputs), model(*inputs)):
+                    torch.testing.assert_close(actual, expected)
+
+    def test_nested_output_keeps_original_live(self) -> None:
+        class ReturnsNested(torch.nn.Module):
+            def forward(self, x, indices, values):
+                original = x + 1
+                updated = original.index_put((indices,), values)
+                return original, (original, updated)
+
+        inputs = (torch.zeros(5), torch.tensor([0]), torch.tensor([9.0]))
+        edge = to_edge(export(ReturnsNested(), inputs, strict=True))
+        ep = reinplace_pass(edge.exported_program())
+        self.assertEqual(len(_find_nodes(ep, "index_put_")), 0)
+        actual = ep.module()(*inputs)
+        expected = ReturnsNested()(*inputs)
+        for result, reference in zip(
+            (actual[0], *actual[1]), (expected[0], *expected[1])
+        ):
+            torch.testing.assert_close(result, reference)
+
+    def test_output_view_copy_preserves_original(self) -> None:
+        class ReturnsViewAndUpdated(torch.nn.Module):
+            def forward(self, x, indices, values):
+                original = x + 1
+                view = original.view(-1)
+                updated = original.index_put((indices,), values)
+                return view, updated
+
+        inputs = (torch.zeros(5), torch.tensor([0]), torch.tensor([9.0]))
+        edge = to_edge(export(ReturnsViewAndUpdated(), inputs, strict=True))
+        et = edge.to_executorch(ExecutorchBackendConfig(run_reinplace_pass=True))
+        # The view is materialized before the update, so it keeps the old value.
+        self.assertEqual(len(_find_nodes(et.exported_program(), "index_put_")), 1)
+        loaded = _load_for_executorch_from_buffer(et.buffer)
+        for actual, expected in zip(
+            loaded.forward(inputs), ReturnsViewAndUpdated()(*inputs)
+        ):
+            torch.testing.assert_close(actual, expected)
+
+    def test_later_reader_keeps_original_live(self) -> None:
+        class ReadsOriginalLater(torch.nn.Module):
+            def forward(self, x, indices, values):
+                original = x + 1
+                updated = original.index_put((indices,), values)
+                return updated, original * 2
+
+        inputs = (torch.zeros(5), torch.tensor([0]), torch.tensor([9.0]))
+        edge = to_edge(export(ReadsOriginalLater(), inputs, strict=True))
+        ep = reinplace_pass(edge.exported_program())
+        self.assertEqual(len(_find_nodes(ep, "index_put_")), 0)
+        for actual, expected in zip(
+            ep.module()(*inputs), ReadsOriginalLater()(*inputs)
+        ):
+            torch.testing.assert_close(actual, expected)
+
+    def test_immutable_input_is_not_reinplaced(self) -> None:
+        class UpdatesCopy(torch.nn.Module):
+            def forward(self, x, indices, values):
+                return x.index_put((indices,), values)
+
+        inputs = (torch.zeros(5), torch.tensor([0]), torch.tensor([9.0]))
+        edge = to_edge(export(UpdatesCopy(), inputs, strict=True))
+        ep = reinplace_pass(edge.exported_program())
+        self.assertEqual(len(_find_nodes(ep, "index_put_")), 0)
+        torch.testing.assert_close(ep.module()(*inputs), UpdatesCopy()(*inputs))
+        torch.testing.assert_close(inputs[0], torch.zeros(5))
+
+    def test_mutable_buffer_reinplace_across_executions(self) -> None:
+        class UpdatesBuffer(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("state", torch.zeros(5))
+
+            def forward(self, indices, values):
+                self.state.index_put_((indices,), values)
+                return self.state
+
+        first = (torch.tensor([0]), torch.tensor([1.0]))
+        edge = to_edge(export(UpdatesBuffer(), first, strict=True))
+        et = edge.to_executorch(ExecutorchBackendConfig(run_reinplace_pass=True))
+        self.assertEqual(len(_find_nodes(et.exported_program(), "index_put_")), 1)
+
+        loaded = _load_for_executorch_from_buffer(et.buffer)
+        reference = UpdatesBuffer()
+        for inputs in (first, (torch.tensor([2]), torch.tensor([3.0]))):
+            with self.subTest(inputs=inputs):
+                torch.testing.assert_close(
+                    loaded.forward(inputs)[0], reference(*inputs)
+                )
+
+    def test_accumulating_index_put_reinplaced(self) -> None:
+        """Accumulation must retain repeated-index semantics after rewriting."""
+
+        class AccumulateModel(torch.nn.Module):
+            def forward(self, x, indices, values):
+                intermediate = x + 1
+                return intermediate.index_put((indices,), values, accumulate=True)
+
+        inputs = (
+            torch.zeros(5),
+            torch.tensor([1, 1]),
+            torch.tensor([2.0, 3.0]),
+        )
+        edge = to_edge(export(AccumulateModel(), inputs, strict=True))
+        et = edge.to_executorch(ExecutorchBackendConfig(run_reinplace_pass=True))
+        self.assertEqual(len(_find_nodes(et.exported_program(), "index_put_")), 1)
+        self.assertEqual(
+            len(_find_nodes(et.exported_program(), "index_put", excludes="index_put_")),
+            0,
+        )
+
+        loaded = _load_for_executorch_from_buffer(et.buffer)
+        torch.testing.assert_close(
+            loaded.forward(inputs)[0], AccumulateModel()(*inputs)
+        )
+
+    def test_accumulating_index_put_kwarg_reinplaced(self) -> None:
+        class AccumulateModel(torch.nn.Module):
+            def forward(self, x, indices, values):
+                return (x + 1).index_put((indices,), values, accumulate=True)
+
+        inputs = (torch.zeros(5), torch.tensor([1]), torch.tensor([2.0]))
+        ep = to_edge(export(AccumulateModel(), inputs, strict=True)).exported_program()
+        node = _find_nodes(ep, "index_put", excludes="index_put_")[0]
+        # Export normally normalizes accumulate to a positional argument.
+        # Exercise the keyword form too, as the pass forwards kwargs.
+        self.assertIs(node.args[3], True)
+        node.args = node.args[:3]
+        node.kwargs = {"accumulate": True}
+
+        reinplace_pass(ep)
+        inplace = _find_nodes(ep, "index_put_")
+        self.assertEqual(len(inplace), 1)
+        self.assertIs(inplace[0].kwargs["accumulate"], True)
+        self.assertEqual(len(_find_nodes(ep, "index_put", excludes="index_put_")), 0)
 
     def test_cant_reinplace(self) -> None:
         """Test that index_put on a mutable buffer that is viewed later is not safe."""
@@ -207,8 +363,7 @@ class TestReinplacePass(unittest.TestCase):
     def test_kwargs_are_forwarded(self) -> None:
         """When the matched node carries a value in ``node.kwargs`` (e.g.
         ``accumulate=True`` for ``index_put``), the rewrite must forward
-        those kwargs to the in-place form. Otherwise the in-place op
-        falls back to the schema default and silently changes semantics.
+        those kwargs to the in-place form.
 
         ``export`` normalizes most arguments into positional form, so we
         explicitly move ``accumulate`` into ``node.kwargs`` after export
@@ -241,14 +396,9 @@ class TestReinplacePass(unittest.TestCase):
         self.assertEqual(len(functionals), 1, "Should find a functional index_put")
         functional = functionals[0]
 
-        # index_put schema: (self, indices, values, accumulate=False).
-        # Move arg[3] -> kwargs["accumulate"] if present.
-        if len(functional.args) >= 4:
-            new_args = functional.args[:3]
-            new_kwargs = dict(functional.kwargs)
-            new_kwargs["accumulate"] = functional.args[3]
-            functional.args = new_args
-            functional.kwargs = new_kwargs
+        # Export normalizes the argument to positional form.
+        functional.args = functional.args[:3]
+        functional.kwargs = {**functional.kwargs, "accumulate": True}
         self.assertEqual(
             functional.kwargs.get("accumulate"),
             True,
@@ -325,6 +475,150 @@ class TestReinplacePass(unittest.TestCase):
         # program). Runtime execution is covered by ops with portable
         # kernels in the other tests in this file.
         edge.to_executorch()
+
+    def test_output_specs_updated_after_reinplace(self) -> None:
+        """reinplace_pass must update graph_signature.output_specs to match
+        the renamed output nodes (e.g. relu -> relu_)."""
+
+        class M(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return torch.relu(x + 1.0)
+
+        ep = export(M(), (torch.randn(4),), strict=True)
+        edge_program = to_edge(ep).exported_program()
+
+        custom_set = {edge_ops.edge.aten.relu.default}
+        ep = reinplace_pass(edge_program, ops_to_inplace=custom_set)
+
+        output_node = next(n for n in ep.graph.nodes if n.op == "output")
+        actual_names = [arg.name for arg in output_node.args[0] if hasattr(arg, "name")]
+        spec_names = [s.arg.name for s in ep.graph_signature.output_specs]
+        self.assertEqual(actual_names, spec_names)
+
+    def test_broadcasting_self_not_reinplaced(self) -> None:
+        """An op whose mutated arg (self) broadcasts up to a larger output
+        must NOT be reinplaced: the in-place form cannot grow self
+        (``add_(self[D], other[N, D])`` is invalid). Only the shape guard
+        prevents this — the arg is otherwise a dead, single-use temp.
+        """
+
+        class M(torch.nn.Module):
+            def forward(self, bias: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
+                c = torch.relu(bias)  # intermediate temp, shape [D]
+                return (c + x) * 2.0  # c [D] broadcasts to [N, D]
+
+        model = M()
+        bias = torch.randn(4)
+        x = torch.randn(3, 4)
+        edge = to_edge(export(model, (bias, x), strict=True))
+        ep = reinplace_pass(
+            edge.exported_program(),
+            ops_to_inplace={edge_ops.edge.aten.add.Tensor},
+        )
+        self.assertEqual(
+            len(_find_nodes(ep, "add_")),
+            0,
+            "broadcast-first add must stay functional",
+        )
+        ep.validate()
+        torch.testing.assert_close(ep.module()(bias, x), model(bias, x))
+
+    def test_dtype_changing_op_not_reinplaced(self) -> None:
+        """A comparison whose output dtype (bool) differs from its mutated
+        arg (float) must NOT be reinplaced: ``lt_`` cannot change self's
+        dtype. The shape/dtype guard blocks it."""
+
+        class M(torch.nn.Module):
+            def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                t = torch.exp(x)  # float temp
+                return (t < y).float()  # bool output, dtype != self
+
+        model = M()
+        x = torch.randn(3, 4)
+        y = torch.randn(3, 4)
+        edge = to_edge(export(model, (x, y), strict=True))
+        ep = reinplace_pass(
+            edge.exported_program(),
+            ops_to_inplace={edge_ops.edge.aten.lt.Tensor},
+        )
+        self.assertEqual(
+            len(_find_nodes(ep, "lt_")),
+            0,
+            "dtype-changing comparison must stay functional",
+        )
+        ep.validate()
+
+    def test_multi_use_self_reinplaced_at_most_once(self) -> None:
+        """When a value is the mutated arg of two ops, reinplacing both
+        would let the earlier consumer read a value the later one already
+        overwrote in place. Only the last consumer (execution order) may be
+        reinplaced; numerics must be preserved."""
+
+        class M(torch.nn.Module):
+            def forward(
+                self, x: torch.Tensor, y: torch.Tensor, z: torch.Tensor
+            ) -> torch.Tensor:
+                t = torch.exp(x)  # intermediate temp with TWO consumers
+                a = t + y
+                b = t + z
+                return a * b
+
+        model = M()
+        x, y, z = torch.randn(5), torch.randn(5), torch.randn(5)
+        edge = to_edge(export(model, (x, y, z), strict=True))
+        ep = reinplace_pass(
+            edge.exported_program(),
+            ops_to_inplace={edge_ops.edge.aten.add.Tensor},
+        )
+        self.assertLessEqual(
+            len(_find_nodes(ep, "add_")),
+            1,
+            "a value with two consumers must be reinplaced at most once",
+        )
+        # Note: no ep.validate() here — reinplacing intentionally introduces a
+        # non-core-ATen in-place op (add_), which the strict edge verifier
+        # rejects (see test_ops_to_inplace_extends_with_add). Correctness is
+        # checked by running the rewritten graph instead.
+        torch.testing.assert_close(ep.module()(x, y, z), model(x, y, z))
+
+    def test_dynamic_shapes_no_guard_error(self) -> None:
+        """With dynamic (SymInt) dims the shape guard must not raise:
+        a same-symbol full-size op is reinplaced, while a broadcasting one
+        (static dim 1 vs a dynamic dim) is left functional."""
+
+        class M(torch.nn.Module):
+            def forward(self, x: torch.Tensor, row: torch.Tensor) -> torch.Tensor:
+                t = torch.exp(x)  # [B, D] dynamic B, single-use temp
+                s = t + x  # full-size, same symbol B -> reinplaceable
+                r = torch.relu(row)  # [1, D] temp
+                return r + s  # [1, D] + [B, D] -> self=r broadcasts -> skip
+
+        model = M()
+        x = torch.randn(3, 4)
+        row = torch.randn(1, 4)
+        dynamic_shapes = {"x": {0: torch.export.Dim("B")}, "row": None}
+        exported_program = export(
+            model, (x, row), dynamic_shapes=dynamic_shapes, strict=True
+        )
+        edge = to_edge(exported_program)
+
+        # Must not raise GuardOnDataDependentSymNode on the SymInt comparison.
+        ep = reinplace_pass(
+            edge.exported_program(),
+            ops_to_inplace={edge_ops.edge.aten.add.Tensor},
+        )
+        # The same-symbol full-size add is reinplaced...
+        self.assertGreaterEqual(
+            len(_find_nodes(ep, "add_")),
+            1,
+            "same-symbol full-size add should reinplace under dynamic shapes",
+        )
+        # ...while the broadcasting add stays functional.
+        self.assertGreaterEqual(
+            len(_find_nodes(ep, "aten.add.Tensor")),
+            1,
+            "broadcasting add must remain functional under dynamic shapes",
+        )
 
     def test_ops_to_inplace_empty_disables_all_rewrites(self) -> None:
         """Passing an empty ``ops_to_inplace`` set should disable every
@@ -518,6 +812,69 @@ class TestReinplacePass(unittest.TestCase):
         # (the in-place rewrite must serialize cleanly into the ET
         # program).
         edge.to_executorch()
+
+    def test_mutated_input_cache_reinplaced_after_transform_and_lower(self) -> None:
+        """A static KV cache passed in as an input and updated with
+        ``index_copy_`` is updated in place, with no copy of the cache.
+
+        Each ``run_decompositions`` in ``to_edge_transform_and_lower`` writes
+        the mutated cache back with a ``copy`` of the ``index_put`` result into
+        the cache. Those copies must be removed for the reinplace pass to see
+        that ``index_put`` is the last use of the cache.
+        """
+
+        class CacheUpdate(torch.nn.Module):
+            def forward(
+                self, k: torch.Tensor, k_cache: torch.Tensor, pos: torch.Tensor
+            ) -> torch.Tensor:
+                k_cache.index_copy_(2, pos, k)
+                return k_cache.sum(-1)
+
+        k, k_cache, pos = (
+            torch.ones(1, 2, 1, 4),
+            torch.zeros(1, 2, 8, 4),
+            torch.tensor([3]),
+        )
+        program = to_edge_transform_and_lower(
+            export(CacheUpdate(), (k, k_cache, pos), strict=True)
+        ).to_executorch(ExecutorchBackendConfig(run_reinplace_pass=True))
+        ep = program.exported_program()
+
+        self.assertEqual(len(_find_nodes(ep, "index_put_")), 1)
+        self.assertEqual(len(_find_nodes(ep, "index_put", excludes="index_put_")), 0)
+        self.assertEqual(len(_find_nodes(ep, "copy")), 0)
+
+        expected_cache = k_cache.clone().index_copy_(2, pos, k)
+        outputs = _load_for_executorch_from_buffer(program.buffer).forward(
+            (k, k_cache, pos)
+        )
+        self.assertTrue(torch.equal(outputs[0], expected_cache))
+        self.assertTrue(torch.equal(outputs[1], expected_cache.sum(-1)))
+
+    def test_reinplaced_and_written_back_inputs_keep_their_outputs(self) -> None:
+        """With one mutated input updated in place and another written back,
+        each mutation output stays in its position and names its own input."""
+
+        class TwoMutations(torch.nn.Module):
+            def forward(
+                self, a: torch.Tensor, b: torch.Tensor, pos: torch.Tensor
+            ) -> torch.Tensor:
+                a.index_copy_(0, pos, torch.ones(1, 4))
+                b.add_(1)
+                return a.sum() + b.sum()
+
+        a, b, pos = torch.zeros(3, 4), torch.zeros(2), torch.tensor([1])
+        program = to_edge_transform_and_lower(
+            export(TwoMutations(), (a, b, pos), strict=True)
+        ).to_executorch(ExecutorchBackendConfig(run_reinplace_pass=True))
+        specs = program.exported_program().graph_signature.output_specs
+        self.assertEqual([spec.target for spec in specs[:2]], ["a", "b"])
+
+        expected_a = a.clone().index_copy_(0, pos, torch.ones(1, 4))
+        outputs = _load_for_executorch_from_buffer(program.buffer).forward((a, b, pos))
+        self.assertTrue(torch.equal(outputs[0], expected_a))
+        self.assertTrue(torch.equal(outputs[1], torch.ones(2)))
+        self.assertTrue(torch.equal(outputs[2], expected_a.sum() + 2))
 
     def test_chain_of_inplaceable_ops(self) -> None:
         """A chain of safe-to-reinplace ops gets fully rewritten in

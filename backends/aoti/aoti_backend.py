@@ -5,7 +5,9 @@
 # LICENSE file in the root directory of this source tree.
 
 import contextlib
+import hashlib
 import os
+import re
 import typing
 from abc import ABC, abstractmethod
 from enum import Enum
@@ -19,12 +21,52 @@ from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir._warnings import experimental
 from executorch.exir.backend.backend_details import ExportedProgram, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.graph_module import contains_any_call_fn_target_op
 from torch._inductor.codegen.cpp_wrapper_cpu import CppWrapperCpu
 from torch.export.passes import move_to_device_pass
 
 
 class COMPILE_SPEC_KEYS(Enum):
     METHOD_NAME = "method_name"
+    DATA_NAME = "data_name"
+
+
+# The name becomes a file name on every platform, so keep it short, to portable
+# characters, and clear of Windows device names such as NUL. Without re.ASCII,
+# IGNORECASE lets [A-Za-z] match letters like the Kelvin sign. A leading '-'
+# reads as an option on a command line. Some writers add .ptd only when it is
+# missing, so "encoder" and "encoder.ptd" could both write encoder.ptd.
+_DATA_NAME_PATTERN = re.compile(
+    r"(?!(?:CON|PRN|AUX|NUL|COM\d|LPT\d)(?:\.|$))(?!.*\.ptd$)"
+    r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,199}",
+    re.IGNORECASE | re.ASCII,
+)
+
+
+def _checked_data_name(data_name: str) -> str:
+    if not _DATA_NAME_PATTERN.fullmatch(data_name):
+        raise ValueError(
+            f"Invalid data name {data_name!r}: use up to 200 ASCII letters, "
+            "digits, '_', '-' and '.', do not start with '.' or '-', do not end "
+            "with '.ptd', and avoid Windows device names such as NUL"
+        )
+    return data_name
+
+
+def _written_buffer_options(program: ExportedProgram) -> Dict[str, Any]:
+    """Inductor options for a program that writes a buffer.
+
+    They turn off Inductor's joint-graph constant folding for the whole
+    program, not only for the buffers it writes. Before torch 2.15, that
+    folding can turn the update of a one-element buffer, such as a counter,
+    into its value at export, so every call writes that same value
+    (https://github.com/pytorch/pytorch/pull/185077).
+
+    TODO: remove once the pinned torch is 2.15 or newer.
+    """
+    if program.graph_signature.buffers_to_mutate:
+        return {"joint_graph_constant_folding": False}
+    return {}
 
 
 @experimental(
@@ -112,6 +154,38 @@ class AotiBackend(ABC):
         return
 
     @classmethod
+    def load_weights_blob(
+        cls, blob_path: str, compile_specs: List[CompileSpec]
+    ) -> tuple[Any, str]:
+        """Load an AOTI weights blob and return its data and SHA-256 digest."""
+        with open(blob_path, "rb") as f:
+            blob_data = f.read()
+        os.remove(blob_path)
+        return blob_data, hashlib.sha256(blob_data).hexdigest()
+
+    @classmethod
+    def materialize_weights_blob(
+        cls, paths: Any, compile_specs: List[CompileSpec]
+    ) -> Any:
+        """Materialize backend-specific weight outputs into an AOTI blob."""
+        return paths
+
+    @classmethod
+    def move_program_to_device(
+        cls,
+        edge_program: ExportedProgram,
+        device: str,
+        compile_specs: List[CompileSpec],
+    ) -> ExportedProgram:
+        """Move the exported program to the target device for compilation.
+
+        Default implementation moves everything (params, buffers, constants) via
+        ``move_to_device_pass``. Concrete backends may override to keep large
+        non-parameter tensors off the device during a low-memory export.
+        """
+        return move_to_device_pass(edge_program, device)
+
+    @classmethod
     def release_moved_tensors(
         cls,
         device_edge_program: ExportedProgram,
@@ -134,7 +208,8 @@ class AotiBackend(ABC):
     def collect_unsupported_fallback_kernels(cls, missing_fallback_kernels: Set[str]):
         """
         Context manager to collect unsupported fallback kernels during compilation.
-        Monitors both extern kernel calls and runtime lookup.
+        Monitors extern kernel calls, runtime lookup, and the scatter and
+        index_put fallbacks, which call their kernels directly.
         """
         supported_kernels = cls.get_supported_fallback_kernels()
 
@@ -143,6 +218,10 @@ class AotiBackend(ABC):
         )
         original_generate_fallback_kernel_with_runtime_lookup_aot = (
             CppWrapperCpu.generate_fallback_kernel_with_runtime_lookup_aot
+        )
+        original_generate_scatter_fallback = CppWrapperCpu._generate_scatter_fallback
+        original_generate_index_put_fallback = (
+            CppWrapperCpu._generate_index_put_fallback
         )
 
         def generate_c_shim_extern_kernel_call_and_collect_unsupported_kernels(
@@ -166,10 +245,36 @@ class AotiBackend(ABC):
                 self, op_overload, *args, **kwargs
             )
 
+        def collect_kernels_it_writes(original: Any) -> Any:
+            # These fallbacks write their shim call directly, so read the
+            # kernel names from the lines they write.
+            def generate_and_collect_unsupported_kernels(
+                self, *args: Any, **kwargs: Any
+            ) -> None:
+                lines: List[str] = []
+                writeline = self.writeline
+                self.writeline = lambda line: (lines.append(str(line)), writeline(line))
+                try:
+                    return original(self, *args, **kwargs)
+                finally:
+                    self.writeline = writeline
+                    for line in lines:
+                        for kernel in re.findall(r"\b(aoti_torch_\w+)\(", line):
+                            if kernel not in supported_kernels:
+                                missing_fallback_kernels.add(kernel)
+
+            return generate_and_collect_unsupported_kernels
+
         CppWrapperCpu.generate_c_shim_extern_kernel_call = (
             generate_c_shim_extern_kernel_call_and_collect_unsupported_kernels
         )
         CppWrapperCpu.generate_fallback_kernel_with_runtime_lookup_aot = generate_fallback_kernel_with_runtime_lookup_aot_and_collect_unsupported_kernels
+        CppWrapperCpu._generate_scatter_fallback = collect_kernels_it_writes(
+            original_generate_scatter_fallback
+        )
+        CppWrapperCpu._generate_index_put_fallback = collect_kernels_it_writes(
+            original_generate_index_put_fallback
+        )
 
         try:
             yield
@@ -179,6 +284,12 @@ class AotiBackend(ABC):
             )
             CppWrapperCpu.generate_fallback_kernel_with_runtime_lookup_aot = (
                 original_generate_fallback_kernel_with_runtime_lookup_aot
+            )
+            CppWrapperCpu._generate_scatter_fallback = (
+                original_generate_scatter_fallback
+            )
+            CppWrapperCpu._generate_index_put_fallback = (
+                original_generate_index_put_fallback
             )
 
     @classmethod
@@ -191,13 +302,21 @@ class AotiBackend(ABC):
         Preprocess the edge program and compile it using AOTInductor.
         Weights are always separated from the SO file.
         """
+        # First, so that a backend keeping its data in the .pte refuses a data
+        # name before anything is compiled.
+        data_name = cls.data_name_from_compile_specs(compile_specs)
         device_name = cls.get_device_name()
         decomposition_table = cls.get_decomposition_table()
         options = cls.get_aoti_compile_options(compile_specs)
+        options.update(_written_buffer_options(edge_program))
 
-        # Move the edge_program to the target device
-        device_edge_program = move_to_device_pass(
-            edge_program, device_name if device_name != "metal" else "mps"
+        # Move the edge_program to the target device. Routed through a hook so
+        # backends can keep large non-parameter tensors (e.g. KV-cache buffers)
+        # off the device during a low-memory export.
+        device_edge_program = cls.move_program_to_device(
+            edge_program,
+            device_name if device_name != "metal" else "mps",
+            compile_specs,
         )
 
         # Replace view_copy with view
@@ -211,8 +330,13 @@ class AotiBackend(ABC):
             else:
                 custom_pass(device_edge_program.graph_module)
 
-        # Run decompositions if any
-        if decomposition_table:
+        # ``run_decompositions`` retraces the complete ExportedProgram even
+        # when none of the table's operators occur in the graph. Nothing else
+        # rebuilds the graph signature, so the in-place passes above must keep
+        # it valid when the decomposition table cannot apply.
+        if contains_any_call_fn_target_op(
+            device_edge_program.graph_module, decomposition_table
+        ):
             device_edge_program = device_edge_program.run_decompositions(
                 decomposition_table
             )
@@ -236,6 +360,8 @@ class AotiBackend(ABC):
             paths = torch._inductor.aot_compile(
                 edge_program_module, tuple(user_input_placeholders), options=options
             )
+
+            paths = cls.materialize_weights_blob(paths, compile_specs)
 
             if len(missing_fallback_kernels) > 0:
                 formatted_kernels = "\n  - ".join(sorted(missing_fallback_kernels))
@@ -270,28 +396,26 @@ class AotiBackend(ABC):
         with open(so_path, "rb") as f:
             so_data = f.read()
 
-        # Read weights blob
-        with open(blob_path, "rb") as f:
-            blob_data = f.read()
+        blob_data, weights_blob_hash = cls.load_weights_blob(blob_path, compile_specs)
 
         # Create named data store
         named_data_store = NamedDataStore()
-        method_name = cls.method_name_from_compile_specs(compile_specs)
 
-        named_data_store.add_named_data(method_name + "_so_blob", so_data, 1, None)
+        # Key each blob by a content hash so partitions in one method get distinct
+        # keys (a method-name-only key collides). Runtime recovers them from
+        # processed_bytes below.
+        so_blob_key = hashlib.sha256(so_data).hexdigest() + "_so_blob"
+        weights_blob_key = weights_blob_hash + "_weights_blob"
+
+        named_data_store.add_named_data(so_blob_key, so_data, 1, None)
         # Determine whether to save named data externally based on backend setting
         # External: save to separate .ptd file, otherwise merge with .pte file
-        external_tag = (
-            f"aoti_{device_name}_blob" if cls.save_data_externally() else None
-        )
+        external_tag = data_name if cls.save_data_externally() else None
 
-        named_data_store.add_named_data(
-            method_name + "_weights_blob", blob_data, 1, external_tag
-        )
+        named_data_store.add_named_data(weights_blob_key, blob_data, 1, external_tag)
 
         # Clean up the generated files
         os.remove(so_path)
-        os.remove(blob_path)
 
         # Release device memory held by tensors that ``move_to_device_pass``
         # placed on the target device. Default impl is a no-op; concrete
@@ -299,8 +423,11 @@ class AotiBackend(ABC):
         # the next preprocess call (e.g. for the next method).
         cls.release_moved_tensors(device_edge_program, compile_specs)
 
+        # The runtime cannot recompute these hash keys, so carry them (one per line).
+        processed_bytes = (so_blob_key + "\n" + weights_blob_key).encode("utf-8")
+
         return PreprocessResult(
-            processed_bytes=b"",
+            processed_bytes=processed_bytes,
             debug_handle_map={},
             data_store_output=named_data_store.get_named_data_store_output(),
         )
@@ -317,6 +444,38 @@ class AotiBackend(ABC):
             COMPILE_SPEC_KEYS.METHOD_NAME.value,
             method_name.encode("utf-8"),
         )
+
+    @classmethod
+    def generate_data_name_compile_spec(cls, data_name: str) -> CompileSpec:
+        """
+        Generate a CompileSpec that names the external data file, written as
+        ``<data_name>.ptd``, so several programs can share a folder.
+        """
+        cls._check_saves_data_externally()
+        return CompileSpec(
+            COMPILE_SPEC_KEYS.DATA_NAME.value,
+            _checked_data_name(data_name).encode("utf-8"),
+        )
+
+    @classmethod
+    def data_name_from_compile_specs(cls, compile_specs: List[CompileSpec]) -> str:
+        """
+        The external data file name, without ``.ptd``, set by
+        generate_data_name_compile_spec, or ``aoti_<device>_blob`` by default.
+        """
+        for spec in compile_specs:
+            if spec.key == COMPILE_SPEC_KEYS.DATA_NAME.value:
+                cls._check_saves_data_externally()
+                return _checked_data_name(spec.value.decode("utf-8"))
+        return f"aoti_{cls.get_device_name()}_blob"
+
+    @classmethod
+    def _check_saves_data_externally(cls) -> None:
+        if not cls.save_data_externally():
+            raise ValueError(
+                f"{cls.__name__} keeps its data in the .pte file, so it takes no "
+                "data name"
+            )
 
     @classmethod
     def method_name_from_compile_specs(

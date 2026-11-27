@@ -103,6 +103,9 @@ table TileNode {
     reps: [IntOrVid] (required);
 }
 
+// Index values are clamped like ScatterNode's, so a bad index reads the
+// first or last element instead of memory outside x. A non-empty take from
+// an empty axis fails.
 table TakeAlongAxisNode {
     x: Tid (required);
     indices: Tid (required);
@@ -151,6 +154,19 @@ table SdpaNode {
     scale: float;
     mask: Tid;  // optional
     causal: bool = false;
+}
+
+table UpdateAndAttendNode {
+    q: Tid (required);
+    k: Tid (required);
+    v: Tid (required);
+    position: Tid (required);
+    out: Tid (required);
+    // Required, but FlatBuffers cannot mark a scalar (required): null-defaulted
+    // so an omitted field is distinguishable from 0 and the handler rejects it.
+    layer_id: int32 = null;
+    scale: float = null;
+    out_dtype: int8 = null;  // ET ScalarType; null = keep SDPA's native output
 }
 
 table AddNode {
@@ -450,13 +466,29 @@ table QuantizedMatmulNode {
 }
 
 // Scatter-add: accumulate updates into input at index positions along an axis
-// Maps to mlx::scatter_add(a, indices, updates, axis)
+// Maps to mlx::scatter_add_axis(a, indices, updates, axis)
 table ScatterAddNode {
     x: Tid (required);          // Input tensor to scatter into
     indices: Tid (required);    // Index tensor
     updates: Tid (required);    // Values to accumulate
     out: Tid (required);
     axis: int32;                // Dimension to scatter along
+}
+
+// Scatter: write updates into x at the positions given by one index tensor
+// per indexed axis. Maps to mlx::scatter, or mlx::scatter_add for "sum".
+// Index values are clamped to [-size, size - 1], where negative values count
+// from the end as in PyTorch. So a bad index updates the first or last slice
+// instead of memory outside x. If an indexed axis is empty, x is returned.
+table ScatterNode {
+    x: Tid (required);
+    indices: [Tid] (required);   // Index tensors (one per indexed axis)
+    // Shape: broadcast(indices).shape followed by x.shape, with size 1 on
+    // every indexed axis, so rank(updates) = rank(indices) + rank(x).
+    updates: Tid (required);
+    out: Tid (required);
+    axes: [int32] (required);    // Which axes the indices address
+    reduce: string (required);   // "none" overwrites x at the indices, "sum" adds into x
 }
 
 table ConcatenateNode {
@@ -585,6 +617,18 @@ table BitwiseAndNode {
     out: Tid (required);
 }
 
+table BitwiseOrNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
+table BitwiseXorNode {
+    a: Tid (required);
+    b: Tid (required);
+    out: Tid (required);
+}
+
 // Triangular matrix ops
 table TriNode {
     out: Tid (required);
@@ -619,6 +663,12 @@ table CumsumNode {
     axis: int32;
     reverse: bool = false;
     inclusive: bool = true;
+}
+
+table CummaxNode {
+    x: Tid (required);
+    out: Tid (required);
+    axis: int32;
 }
 
 table StackNode {
@@ -820,6 +870,11 @@ table NegNode {
     out: Tid (required);
 }
 
+table TruncNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
 // =============================================================================
 // Math ops - Binary element-wise
 // =============================================================================
@@ -937,6 +992,11 @@ table GatherMmNode {
     lhs_indices: Tid;           // optional - LHS gather indices
     rhs_indices: Tid;           // optional - RHS gather indices (expert selection)
     sorted_indices: bool = false;
+    // Runtime (possibly data-dependent) override of `sorted_indices` above.
+    // Appended last to preserve wire compatibility with existing .pte files:
+    // when absent, deserializers fall back to the static `sorted_indices`
+    // bool. When present, it takes precedence.
+    sorted_indices_flag: IntOrVid;
 }
 
 table GatherQmmNode {
@@ -952,6 +1012,8 @@ table GatherQmmNode {
     group_size: int32;
     bits: int32;
     sorted_indices: bool = false;
+    // See GatherMmNode.sorted_indices_flag.
+    sorted_indices_flag: IntOrVid;
 }
 
 table ScanNode {
@@ -962,6 +1024,23 @@ table ScanNode {
 
     body_chain_idx: int32;             // index into MLXGraph.instruction_chains
     scan_axis: int32 = 1;              // dimension to iterate over
+}
+
+// Runtime conditional: select one of two instruction chains based on a runtime
+// integer condition. The selected branch writes its output slot(s) directly, so
+// no `outputs` field is needed (unlike ScanNode, which post-processes/stacks).
+table IfNode {
+    cond: IntOrVid (required);         // nonzero -> then_chain, zero -> else_chain
+    then_chain_idx: uint32;            // index into MLXGraph.instruction_chains
+    else_chain_idx: uint32;            // index into MLXGraph.instruction_chains
+}
+
+table RandomBitsNode {
+    out: Tid (required);
+    shape: [IntOrVid] (required);
+    seed: Vid;                   // OPTIONAL: present -> random::key(seed);
+                                 //           absent  -> MLX global KeySequence
+    width: int32 = 4;            // bytes per element (4 -> uint32)
 }
 
 // Custom Metal kernel execution via mlx::core::fast::metal_kernel().
@@ -1000,6 +1079,12 @@ table MetalKernelNode {
     template_arg_kinds: [int8];      // 0=int, 1=bool, 2=dtype (ScalarType)
     template_arg_values: [int32];    // int value, bool as 0/1, or ScalarType enum
     init_value: float = null;
+}
+
+table FlipNode {
+    x: Tid (required);
+    out: Tid (required);
+    axes: [int32] (required);
 }
 
 // =============================================================================
@@ -1137,7 +1222,16 @@ union OpNode {
     MetalKernelNode,
     BitwiseInvertNode,
     RollNode,
-    BitwiseAndNode
+    BitwiseAndNode,
+    BitwiseOrNode,
+    BitwiseXorNode,
+    IfNode,
+    RandomBitsNode,
+    UpdateAndAttendNode,
+    TruncNode,
+    FlipNode,
+    CummaxNode,
+    ScatterNode
     // BC: Add new op nodes here (append only)
 }
 
@@ -1233,6 +1327,10 @@ table MLXGraph {
 
     // Tensor metadata (for non-temp tensors), indexed by Tid
     tensor_meta: [TensorMeta];
+
+    // Positions in input_map of tensor inputs the program updates. After a run,
+    // the runtime writes each one's slot back into the caller's input tensor.
+    mutated_inputs: [uint32];
 
     // BC: New fields must be appended here with a default value
 }

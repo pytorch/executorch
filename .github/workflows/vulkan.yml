@@ -1,0 +1,272 @@
+name: Test Vulkan Backend (specialized runners)
+
+# Vulkan CI jobs that require special runners (an NVIDIA GPU, or a Windows
+# MSVC toolchain). These are separate from test-backend-vulkan.yml (which runs the
+# default SwiftShader coverage on standard runners) so that they're only run
+# when Vulkan related files change.
+
+on:
+  push:
+    branches:
+      - main
+      - release/*
+    tags:
+      - ciflow/nightly/*
+  pull_request:
+    paths:
+      - .github/workflows/vulkan.yml
+      - backends/vulkan/**
+      - examples/vulkan/**
+      - examples/models/llama/**
+      - examples/models/qwen3/**
+      - examples/models/phi_4_mini/**
+      - extension/llm/**
+      - extension/pybindings/**
+      - backends/transforms/**
+      - exir/**
+      - runtime/**
+      - schema/**
+      - install_requirements.py
+      - torch_pin.py
+      - requirements-examples.txt
+      - setup.py
+      - CMakeLists.txt
+      - CMakePresets.json
+      - tools/cmake/**
+      - Makefile
+      - .ci/scripts/export_model_artifact.sh
+      - .ci/scripts/test_model_e2e.sh
+      - .ci/scripts/tests/vulkan/**
+      - .ci/scripts/setup-vulkan-linux-deps.sh
+      - .ci/scripts/setup-vulkan-windows-deps.ps1
+      - .ci/scripts/setup-windows-msvc-vulkan.ps1
+  workflow_dispatch:
+  schedule:
+    - cron: '30 2 * * *'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  changed-files:
+    name: Get changed files
+    uses: ./.github/workflows/_get-changed-files.yml
+    with:
+      include-push-diff: true # so push commits can also be path-filtered
+
+  run-decision:
+    name: CI run decision
+    uses: ./.github/workflows/_ci-run-decision.yml
+
+  test-vulkan-nvidia:
+    needs: [changed-files, run-decision]
+    # Path-filtered: skip commits that don't touch Vulkan-relevant paths, except
+    # on sampled full runs (see _ci-run-decision.yml).
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'backends/vulkan/') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/vulkan/') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-vulkan-linux-deps.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/vulkan.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      timeout: 120
+      runner: mt-l-x86aavx2-11-41-a10g
+      gpu-arch-type: cuda
+      gpu-arch-version: "13.2"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+
+        # Install a glibc-compatible glslc (conda-forge), the Vulkan loader and
+        # tools, and select a real system ICD. The CUDA runner image is
+        # manylinux_2_28 (glibc 2.28), where the LunarG SDK's prebuilt glslc does
+        # not run, so setup-vulkan-linux-deps.sh sources those from conda-forge and
+        # the system package manager instead. The NVIDIA container runtime mounts
+        # the driver's Vulkan library but not its ICD manifest, so the script
+        # synthesizes one and requires the loader to enumerate a hardware GPU.
+        source .ci/scripts/setup-vulkan-linux-deps.sh real-gpu
+        vulkaninfo --summary || true
+
+        # Full from-source install. Unlike the SwiftShader jobs in pull.yml, the
+        # CUDA runner image does not pre-install ExecuTorch's dependencies, so
+        # setup-linux.sh's "deps already in the image" assumption does not hold.
+        # CMAKE_ARGS enables Vulkan in the pybindings so the model --test runs and
+        # the pt2e/torchao e2e tests below execute on the GPU (default is OFF).
+        CMAKE_ARGS="-DEXECUTORCH_BUILD_VULKAN=ON" PYTHON_EXECUTABLE=python ./install_executorch.sh
+
+        python -m unittest backends/vulkan/test/test_vulkan_dynamic.py
+
+        # Model coverage (mirrors test-vulkan-models-linux, on real hardware).
+        PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_model.sh --build
+
+        models="mv2 mv3 edsr resnet18 resnet50 dl3 w2l ic3 ic4"
+        for model in $models; do
+          python -m examples.vulkan.export --model_name=$model --test
+        done
+
+        # For selected vision models, test with dynamic shapes
+        models="mv2 resnet18 resnet50 ic3 densenet161"
+        for model in $models; do
+          python -m examples.vulkan.export --model_name=$model --test -d
+        done
+
+        # Operator coverage (mirrors test-vulkan-operators-linux, on real hardware).
+        # etvk_ops_bench validates each operator's correctness cases on the GPU
+        # selected above.
+        PYTHON_EXECUTABLE=python bash backends/vulkan/test/ops/benchmark_v2/build.sh
+        for op in binary/add gemm/linear/qw/q8csw convolution/qw/q8csw gemm/linear/qw/q4gsw \
+                  quantization/choose_qparams_per_row quantize/q8ta clone/q8ta binary/q8ta \
+                  warp; do
+          ./cmake-out/backends/vulkan/test/ops/benchmark_v2/etvk_ops_bench --validation_only \
+            --config=backends/vulkan/test/ops/benchmark_v2/operators/${op}/cases/correctness.json
+        done
+        # Cooperative-matrix family kernels. The runner's GPU must match the nvidia
+        # family, every case must run, and each step's dispatched kernel is checked.
+        # No GitHub runner has an Intel Xe2 GPU: the xe2 rows are not covered in CI.
+        ETVK_WMMA_EXPECTED_FAMILY=nvidia \
+          ./cmake-out/backends/vulkan/test/ops/benchmark_v2/etvk_ops_bench --validation_only \
+          --config=backends/vulkan/test/ops/benchmark_v2/operators/gemm/linear/qw/wmma/cases/correctness.json
+
+        PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_op.sh --build vulkan_sdpa_av_test
+
+        # Run e2e testing for selected operators.
+        python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*pt2e*"
+        python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*torchao*"
+
+  test-model-vulkan-e2e:
+    needs: [changed-files, run-decision]
+    if: |
+      github.event_name == 'schedule' ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/vulkan/') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/llama/') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/qwen3/') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/phi_4_mini/') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/pybindings/') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/transforms/') ||
+      contains(needs.changed-files.outputs.changed-files, 'exir/') ||
+      contains(needs.changed-files.outputs.changed-files, 'runtime/') ||
+      contains(needs.changed-files.outputs.changed-files, 'schema/') ||
+      contains(needs.changed-files.outputs.changed-files, 'install_requirements.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'torch_pin.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'requirements-examples.txt') ||
+      contains(needs.changed-files.outputs.changed-files, 'setup.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'CMakeLists.txt') ||
+      contains(needs.changed-files.outputs.changed-files, 'CMakePresets.json') ||
+      contains(needs.changed-files.outputs.changed-files, 'tools/cmake/') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/vulkan/') ||
+      contains(needs.changed-files.outputs.changed-files, 'Makefile') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/tests/vulkan/') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-vulkan-linux-deps.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/vulkan.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      timeout: 180
+      runner: mt-l-x86aavx2-11-41-a10g
+      gpu-arch-type: cuda
+      gpu-arch-version: "13.2"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      upload-artifact: vulkan-llm-e2e
+      script: |
+        set -euxo pipefail
+        # Runners pin HF_HUB_CACHE to a read-only mount independently of HF_HOME.
+        export HF_HOME="${RUNNER_TEMP:-/tmp}/hf_cache"
+        mkdir -p "${HF_HOME}" 2>/dev/null || export HF_HOME=/tmp/hf_cache
+        mkdir -p "${HF_HOME}"
+        export HF_HUB_CACHE="${HF_HOME}/hub"
+        export HF_HUB_DISABLE_XET=1
+
+        source .ci/scripts/setup-vulkan-linux-deps.sh real-gpu
+        vulkaninfo --summary > "${RUNNER_ARTIFACT_DIR}/vulkaninfo.txt" 2>&1 || true
+
+        # GPU runners cannot fetch transitive wheel dependencies from the public CDN.
+        export PIP_EXTRA_INDEX_URL=
+        pip install filelock typing-extensions "setuptools<82" sympy networkx jinja2 "fsspec[http]<=2025.3.0" numpy pillow
+        export USE_MKL=OFF
+        CMAKE_ARGS="-DEXECUTORCH_BUILD_VULKAN=ON -DEXECUTORCH_BUILD_KERNELS_LLM_AOT=ON" \
+          PYTHON_EXECUTABLE=python ./install_executorch.sh
+        python -m pip list --format=json > "${RUNNER_ARTIFACT_DIR}/python-packages.json"
+
+        make llama-vulkan 2>&1 | tee "${RUNNER_ARTIFACT_DIR}/build.log"
+        export EXECUTORCH_E2E_RUNNER="${PWD}/cmake-out/examples/models/llama/llama_main"
+        test -x "${EXECUTORCH_E2E_RUNNER}"
+
+        MODELS_DIR="$(mktemp -d "${RUNNER_TEMP:-/tmp}/vulkan_models_XXXXXX")"
+        collect_artifacts() {
+          for artifact in "${MODEL_DIR}"/*.json "${MODEL_DIR}"/*.log \
+            "${MODEL_DIR}"/runner.stdout "${MODEL_DIR}"/runner.stderr \
+            "${MODEL_DIR}"/prompt.txt "${MODEL_DIR}"/expected_output.txt; do
+            if [ -f "$artifact" ]; then
+              cp "$artifact" "${CASE_ARTIFACT_DIR}/"
+            fi
+          done
+        }
+        trap collect_artifacts EXIT
+        printf 'model\tquantization\tresult\n' > "${RUNNER_ARTIFACT_DIR}/results.tsv"
+        RESULT=0
+        while read -r HF_MODEL QUANT_NAME; do
+          CASE_NAME="${HF_MODEL//\//_}-${QUANT_NAME}"
+          MODEL_DIR="${MODELS_DIR}/${CASE_NAME}"
+          CASE_ARTIFACT_DIR="${RUNNER_ARTIFACT_DIR}/${CASE_NAME}"
+          mkdir -p "${MODEL_DIR}" "${CASE_ARTIFACT_DIR}"
+          if RUN_EXPORT=1 bash .ci/scripts/test_model_e2e.sh vulkan \
+            "${HF_MODEL}" "${QUANT_NAME}" "${MODEL_DIR}" 2>&1 | tee "${MODEL_DIR}/test.log"; then
+            printf '%s\t%s\tPASS\n' "${HF_MODEL}" "${QUANT_NAME}" >> "${RUNNER_ARTIFACT_DIR}/results.tsv"
+          else
+            printf '%s\t%s\tFAIL\n' "${HF_MODEL}" "${QUANT_NAME}" >> "${RUNNER_ARTIFACT_DIR}/results.tsv"
+            echo "::error::Vulkan LLM test failed: ${HF_MODEL} ${QUANT_NAME}"
+            RESULT=1
+          fi
+          collect_artifacts
+          rm -f "${MODEL_DIR}/model.pte"
+        done <<'MODELS'
+        Qwen/Qwen3-0.6B quantized-8da4w-fp16-embedding
+        unsloth/Llama-3.2-1B-Instruct quantized-8da4w
+        unsloth/Llama-3.2-1B-Instruct quantized-8da4w-fp16
+        unsloth/Llama-3.2-1B-Instruct quantized-8da4w-embedding
+        unsloth/Llama-3.2-1B-Instruct quantized-8da4w-fp16-embedding
+        unsloth/Llama-3.2-1B-Instruct quantized-int4-weight-only
+        microsoft/Phi-4-mini-instruct quantized-8da4w-embedding
+        MODELS
+        exit "${RESULT}"
+
+  build-vulkan-windows-msvc:
+    needs: [changed-files, run-decision]
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'backends/vulkan/') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-vulkan-windows-deps.ps1') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-windows-msvc-vulkan.ps1') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/vulkan.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
+    name: build-vulkan-windows-msvc
+    uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
+    with:
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        git config --global http.sslBackend openssl
+        git submodule update --init backends/vulkan/third-party/Vulkan-Headers backends/vulkan/third-party/volk backends/vulkan/third-party/VulkanMemoryAllocator
+        git submodule update --init
+        conda init powershell
+        powershell -Command "& {
+          Set-PSDebug -Trace 1
+          \$ErrorActionPreference = 'Stop'
+          \$PSNativeCommandUseErrorActionPreference = \$true
+          .ci/scripts/setup-windows-msvc-vulkan.ps1
+        }"

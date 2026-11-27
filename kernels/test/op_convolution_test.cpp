@@ -50,6 +50,132 @@ class OpConvOutTest : public OperatorTest {
         out);
   }
 
+  template <ScalarType DTYPE>
+  void test_accumulation(bool transposed) {
+    TensorFactory<DTYPE> tf;
+    using CTYPE = typename TensorFactory<DTYPE>::ctype;
+    // PyTorch FP32 references: 1024 input channels with a 3-tap/3x3 kernel.
+    for (const bool two_dimensional : {false, true}) {
+      for (const bool with_bias : {false, true}) {
+        SCOPED_TRACE(
+            ::testing::Message()
+            << "2D=" << two_dimensional << " bias=" << with_bias);
+        std::vector<int32_t> input_sizes = {1, 1024, 3};
+        std::vector<int32_t> weight_sizes = transposed
+            ? std::vector<int32_t>{1024, 1, 3}
+            : std::vector<int32_t>{1, 1024, 3};
+        std::vector<int32_t> output_sizes = {1, 1, 3};
+        std::vector<CTYPE> expected_data = {2048, 3072, 2048};
+        if (two_dimensional) {
+          input_sizes.push_back(3);
+          weight_sizes.push_back(3);
+          output_sizes.push_back(3);
+          expected_data = {
+              4096, 6144, 4096, 6144, 9216, 6144, 4096, 6144, 4096};
+        }
+        optional<Tensor> bias;
+        if (with_bias) {
+          bias = tf.full({1}, 32);
+          for (auto& value : expected_data) {
+            value = static_cast<CTYPE>(static_cast<float>(value) + 32);
+          }
+        }
+        auto input = tf.ones(input_sizes);
+        auto weight = tf.ones(weight_sizes);
+        auto out = tf.full(output_sizes, -1);
+        auto expected = tf.make(output_sizes, expected_data);
+        const size_t dims = two_dimensional ? 2 : 1;
+        const int64_t ones[] = {1, 1};
+        const int64_t zeros[] = {0, 0};
+        op_convolution_out(
+            input,
+            weight,
+            bias,
+            {ones, dims},
+            {ones, dims},
+            {ones, dims},
+            transposed,
+            {zeros, dims},
+            1,
+            out);
+        EXPECT_TENSOR_EQ(out, expected);
+      }
+    }
+  }
+
+  template <ScalarType DTYPE>
+  void test_float_bias_accumulation(float bias_value, float expected_value) {
+    ET_SKIP_IF(
+        torch::executor::testing::SupportedFeatures::get()->is_aten,
+        "ATen can round mixed-dtype bias before accumulation");
+    TensorFactory<DTYPE> tf;
+    TensorFactory<ScalarType::Float> tf_float;
+    auto input = tf.ones({1, 1, 1});
+    auto weight = tf.ones({1, 1, 1});
+    auto bias = tf_float.full({1}, bias_value);
+    auto expected = tf.full({1, 1, 1}, expected_value);
+    for (const bool transposed : {false, true}) {
+      SCOPED_TRACE(transposed);
+      auto out = tf.zeros({1, 1, 1});
+      op_convolution_out(
+          input, weight, bias, {1}, {0}, {1}, transposed, {0}, 1, out);
+      EXPECT_TENSOR_EQ(out, expected);
+    }
+  }
+
+  template <ScalarType DTYPE>
+  void test_grouped_transposed_accumulation(int32_t channels_per_group) {
+    TensorFactory<DTYPE> tf;
+    using CTYPE = typename TensorFactory<DTYPE>::ctype;
+    std::vector<CTYPE> input_data;
+    std::vector<CTYPE> weight_data;
+    for (int32_t channel = 0; channel < 2 * channels_per_group; ++channel) {
+      for (int32_t i = 0; i < 4; ++i) {
+        input_data.push_back(channel < channels_per_group ? i + 1 : 1);
+        weight_data.push_back(
+            channel < channels_per_group ? i + 1 : (i == 0 || i == 3 ? 1 : -1));
+      }
+    }
+    auto input = tf.make({1, 2 * channels_per_group, 2, 2}, input_data);
+    auto weight = tf.make({2 * channels_per_group, 1, 2, 2}, weight_data);
+    auto bias = tf.make({2}, {0.5, -0.5});
+    const int64_t stride[] = {2, 2};
+    const int64_t padding[] = {1, 1};
+    const int64_t dilation[] = {2, 2};
+    const int64_t output_padding[] = {1, 1};
+    // PyTorch FP32 reference for one input channel per group, before bias.
+    // Repeating channels lengthens the reduction; gaps must retain the bias.
+    const float sums[] = {0, 0, 0, 0, 0, 20, 0, 16, 0, 0, 0, 0, 0, 24, 0, 16,
+                          0, 0, 0, 0, 0, 0,  0, 0,  0, 0, 0, 0, 0, 0,  0, 1};
+    std::vector<CTYPE> expected_data;
+    for (int32_t i = 0; i < 32; ++i) {
+      expected_data.push_back(
+          sums[i] * channels_per_group + (i < 16 ? 0.5f : -0.5f));
+    }
+    auto expected = tf.make({1, 2, 4, 4}, expected_data);
+    for (const bool channels_last : {false, true}) {
+      SCOPED_TRACE(channels_last);
+      auto in = channels_last ? tf.channels_last_like(input) : input;
+      auto exp = channels_last ? tf.channels_last_like(expected) : expected;
+      auto out = tf.zeros_like(exp);
+      if (channels_last) {
+        out = tf.channels_last_like(out);
+      }
+      op_convolution_out(
+          in,
+          weight,
+          bias,
+          stride,
+          padding,
+          dilation,
+          true,
+          output_padding,
+          2,
+          out);
+      EXPECT_TENSOR_EQ(out, exp);
+    }
+  }
+
   /* Correctness Test Template for test code generation via Python */
   /* %python
   correctness_test_template = f"""
@@ -165,7 +291,7 @@ TEST_F(OpConvCorrectnessTest, GenericSmokeTest) {
   op_convolution_out(
       input,
       weight,
-      std::optional<Tensor>(bias),
+      bias,
       executorch::aten::ArrayRef<int64_t>{stride, 1},
       executorch::aten::ArrayRef<int64_t>{padding, 1},
       executorch::aten::ArrayRef<int64_t>{dilation, 1},
@@ -493,7 +619,7 @@ TEST_F(OpConvCorrectnessTest, InvalidInputShape) {
       op_convolution_out(
           input,
           weight,
-          std::optional<Tensor>(bias),
+          bias,
           executorch::aten::ArrayRef<int64_t>{stride, 1},
           executorch::aten::ArrayRef<int64_t>{padding, 1},
           executorch::aten::ArrayRef<int64_t>{dilation, 1},
@@ -507,7 +633,7 @@ TEST_F(OpConvCorrectnessTest, InvalidInputShape) {
       op_convolution_out(
           input,
           weight,
-          std::optional<Tensor>(bias),
+          bias,
           executorch::aten::ArrayRef<int64_t>{stride, 1},
           executorch::aten::ArrayRef<int64_t>{padding, 1},
           executorch::aten::ArrayRef<int64_t>{dilation, 1},
@@ -515,6 +641,308 @@ TEST_F(OpConvCorrectnessTest, InvalidInputShape) {
           executorch::aten::ArrayRef<int64_t>{output_padding, 1},
           groups,
           out));
+
+  // A 3-D convolution takes one stride, padding and dilation for all spatial
+  // dims or one per dim, and no input has more than three spatial dims.
+  Tensor input_3d = tf.ones({1, 2, 3, 3, 3});
+  Tensor weight_3d = tf.ones({4, 2, 2, 2, 2});
+  Tensor out_3d = tf.zeros({1, 4, 2, 2, 2});
+  auto conv_3d = [&](executorch::aten::ArrayRef<int64_t> stride_3d,
+                     executorch::aten::ArrayRef<int64_t> padding_3d,
+                     executorch::aten::ArrayRef<int64_t> dilation_3d) {
+    context_ = torch::executor::KernelRuntimeContext();
+    return op_convolution_out(
+        input_3d,
+        weight_3d,
+        bias,
+        stride_3d,
+        padding_3d,
+        dilation_3d,
+        false,
+        {0},
+        1,
+        out_3d);
+  };
+  const int64_t one[] = {1};
+  const int64_t two[] = {2};
+  const int64_t four_ones[] = {1, 1, 1, 1};
+  const int64_t four_twos[] = {2, 2, 2, 2};
+  // Single values apply to every spatial dim. With stride 2, padding 1 and
+  // dilation 2, each output sees one kernel tap per dim. The calls below differ
+  // only in the length of one list.
+  conv_3d(two, one, two);
+  EXPECT_TENSOR_EQ(out_3d, tf.full({1, 4, 2, 2, 2}, 2));
+  ET_EXPECT_KERNEL_FAILURE(context_, conv_3d(four_twos, one, two));
+  ET_EXPECT_KERNEL_FAILURE(context_, conv_3d(two, four_ones, two));
+  ET_EXPECT_KERNEL_FAILURE(context_, conv_3d(two, one, four_twos));
+
+  Tensor input_6d = tf.ones({1, 2, 3, 3, 3, 3});
+  Tensor weight_6d = tf.ones({4, 2, 2, 2, 2, 2});
+  Tensor out_6d = tf.zeros({1, 4, 2, 2, 2, 2});
+  context_ = torch::executor::KernelRuntimeContext();
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_convolution_out(
+          input_6d, weight_6d, bias, {1}, {0}, {1}, false, {0}, 1, out_6d));
+
+  // Like PyTorch, a kernel dim must not be empty.
+  Tensor narrow_input = tf.ones({1, 1, 3});
+  Tensor empty_weight = tf.ones({1, 1, 0});
+  Tensor wide_out = tf.zeros({1, 1, 4});
+  context_ = torch::executor::KernelRuntimeContext();
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_convolution_out(
+          narrow_input,
+          empty_weight,
+          bias,
+          {1},
+          {0},
+          {1},
+          false,
+          {0},
+          1,
+          wide_out));
+
+  // Like PyTorch, an empty spatial dim is rejected even when padding would
+  // give it an output.
+  Tensor empty_input = tf.ones({1, 1, 0});
+  Tensor point_weight = tf.ones({1, 1, 1});
+  Tensor padded_out = tf.zeros({1, 1, 2});
+  context_ = torch::executor::KernelRuntimeContext();
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_convolution_out(
+          empty_input,
+          point_weight,
+          bias,
+          {1},
+          {1},
+          {1},
+          false,
+          {0},
+          1,
+          padded_out));
+}
+
+TEST_F(OpConvCorrectnessTest, EmptyBatchOrChannelWithEmptySpatialDim) {
+  TensorFactory<ScalarType::Float> tf;
+  optional<Tensor> bias;
+
+  // Like PyTorch, an empty spatial dim is fine when the batch or channel dim is
+  // empty too.
+  Tensor input = tf.ones({0, 1, 0});
+  Tensor weight = tf.ones({1, 1, 1});
+  Tensor out = tf.zeros({0, 1, 2});
+  op_convolution_out(input, weight, bias, {1}, {1}, {1}, false, {0}, 1, out);
+
+  Tensor channelless_input = tf.ones({1, 0, 0});
+  Tensor channelless_weight = tf.ones({1, 0, 1});
+  Tensor channelless_out = tf.zeros({1, 0, 2});
+  op_convolution_out(
+      channelless_input,
+      channelless_weight,
+      bias,
+      {1},
+      {1},
+      {1},
+      false,
+      {0},
+      1,
+      channelless_out);
+
+  Tensor transposed_input = tf.ones({0, 2, 0});
+  Tensor transposed_weight = tf.ones({2, 1, 3});
+  Tensor transposed_out = tf.zeros({0, 1, 2});
+  op_convolution_out(
+      transposed_input,
+      transposed_weight,
+      bias,
+      {1},
+      {0},
+      {1},
+      true,
+      {0},
+      1,
+      transposed_out);
+}
+
+TEST_F(OpConvCorrectnessTest, InvalidBiasLength) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor input = tf.ones({1, 2, 3, 3});
+  Tensor bias = tf.ones({1});
+
+  Tensor weight = tf.ones({4, 2, 2, 2});
+  Tensor out = tf.zeros({1, 4, 2, 2});
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_convolution_out(
+          input, weight, bias, {1}, {0}, {1}, false, {0}, 1, out));
+
+  Tensor transposed_weight = tf.ones({2, 4, 2, 2});
+  Tensor transposed_out = tf.zeros({1, 4, 4, 4});
+  context_ = torch::executor::KernelRuntimeContext();
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_convolution_out(
+          input,
+          transposed_weight,
+          bias,
+          {1},
+          {0},
+          {1},
+          true,
+          {0},
+          1,
+          transposed_out));
+}
+
+TEST_F(OpConvCorrectnessTest, InvalidBiasDtype) {
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen accepts a Bool bias");
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Bool> tf_bool;
+
+  Tensor input = tf.ones({1, 2, 3, 3});
+  Tensor weight = tf.ones({4, 2, 2, 2});
+  Tensor bias = tf_bool.ones({4});
+  Tensor out = tf.zeros({1, 4, 2, 2});
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_convolution_out(
+          input, weight, bias, {1}, {0}, {1}, false, {0}, 1, out));
+}
+
+TEST_F(OpConvCorrectnessTest, InvalidGroups) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor input = tf.ones({1, 2, 3, 3});
+  Tensor weight = tf.ones({4, 2, 2, 2});
+  optional<Tensor> bias;
+  Tensor out = tf.zeros({1, 4, 2, 2});
+
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_convolution_out(
+          input, weight, bias, {1}, {0}, {1}, false, {0}, 0, out));
+
+  // A transposed bias has groups * weight.size(1) elements, so groups must be
+  // in range before that product is formed. Only an UndefinedBehaviorSanitizer
+  // build that halts on errors fails here when the order is wrong.
+  Tensor transposed_weight = tf.ones({2, 4, 2, 2});
+  Tensor transposed_bias = tf.ones({4});
+  Tensor transposed_out = tf.zeros({1, 4, 4, 4});
+  context_ = torch::executor::KernelRuntimeContext();
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_convolution_out(
+          input,
+          transposed_weight,
+          transposed_bias,
+          {1},
+          {0},
+          {1},
+          true,
+          {0},
+          std::numeric_limits<int64_t>::max(),
+          transposed_out));
+}
+
+TEST_F(OpConvCorrectnessTest, KernelLargerThanPaddedInput) {
+  TensorFactory<ScalarType::Float> tf;
+
+  // Depth dilation 2 stretches the kernel depth of 2 to 3.
+  Tensor input = tf.ones({1, 1, 2, 2, 2});
+  Tensor weight = tf.ones({1, 1, 2, 2, 2});
+  optional<Tensor> bias;
+  Tensor out = tf.zeros({1, 1, 1, 1, 1});
+  const int64_t stride[] = {2, 1, 1};
+  const int64_t dilation[] = {2, 1, 1};
+
+  // Padding makes the input depth 4, so the kernel fits.
+  const int64_t padding[] = {1, 0, 0};
+  op_convolution_out(
+      input, weight, bias, stride, padding, dilation, false, {0}, 1, out);
+  EXPECT_TENSOR_EQ(out, tf.full({1, 1, 1, 1, 1}, 4));
+
+  // Without padding the input depth of 2 is too small. Stride 2 must not round
+  // the output depth up to 1.
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_convolution_out(
+          input, weight, bias, stride, {0}, dilation, false, {0}, 1, out));
+
+  // The same holds in 1-D.
+  Tensor input_1d = tf.ones({1, 1, 2});
+  Tensor weight_1d = tf.ones({1, 1, 3});
+  Tensor out_1d = tf.zeros({1, 1, 1});
+  context_ = torch::executor::KernelRuntimeContext();
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_convolution_out(
+          input_1d, weight_1d, bias, {2}, {0}, {1}, false, {0}, 1, out_1d));
+}
+
+TEST_F(OpConvCorrectnessTest, HugePaddingAndDilation) {
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen does not reject all of these values");
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor input = tf.ones({1, 1, 3});
+  Tensor weight = tf.ones({1, 1, 5});
+  Tensor point_weight = tf.ones({1, 1, 1});
+  optional<Tensor> bias;
+  const int64_t int32_max[] = {std::numeric_limits<int32_t>::max()};
+  const int64_t huge[] = {std::numeric_limits<int64_t>::max() / 2 + 1};
+
+  // The dilated kernel size would wrap around to 1, which fits the input.
+  Tensor out = tf.zeros({1, 1, 3});
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_convolution_out(
+          input, weight, bias, {1}, {0}, huge, false, {0}, 1, out));
+
+  // These output sizes, 2^32 + 1 and 5 - 2^32, would turn into 1 and 5 in
+  // 32-bit sizes.
+  Tensor out_1 = tf.zeros({1, 1, 1});
+  context_ = torch::executor::KernelRuntimeContext();
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_convolution_out(
+          input,
+          point_weight,
+          bias,
+          {1},
+          int32_max,
+          {1},
+          false,
+          {0},
+          1,
+          out_1));
+  Tensor out_5 = tf.zeros({1, 1, 5});
+  context_ = torch::executor::KernelRuntimeContext();
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_convolution_out(
+          input, point_weight, bias, {1}, int32_max, {1}, true, {0}, 1, out_5));
+
+  // A huge stride or padding would wrap these transposed output sizes around to
+  // 1 and 5 in 64 bits.
+  Tensor input_5 = tf.ones({1, 1, 5});
+  context_ = torch::executor::KernelRuntimeContext();
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_convolution_out(
+          input_5, point_weight, bias, huge, {0}, {1}, true, {0}, 1, out_1));
+  const int64_t int64_max[] = {std::numeric_limits<int64_t>::max()};
+  context_ = torch::executor::KernelRuntimeContext();
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_convolution_out(
+          input, point_weight, bias, {1}, int64_max, {1}, true, {0}, 1, out_5));
 }
 
 TEST_F(OpConvCorrectnessTest, TransposedDefaultParams) {
@@ -539,7 +967,7 @@ TEST_F(OpConvCorrectnessTest, TransposedDefaultParams) {
   op_convolution_out(
       input,
       weight,
-      std::optional<Tensor>(bias),
+      bias,
       executorch::aten::ArrayRef<int64_t>{stride, 1},
       executorch::aten::ArrayRef<int64_t>{padding, 1},
       executorch::aten::ArrayRef<int64_t>{dilation, 1},
@@ -576,7 +1004,7 @@ TEST_F(OpConvCorrectnessTest, TransposedNonDefaultParams) {
   op_convolution_out(
       input,
       weight,
-      std::optional<Tensor>(bias),
+      bias,
       executorch::aten::ArrayRef<int64_t>{stride, 1},
       executorch::aten::ArrayRef<int64_t>{padding, 1},
       executorch::aten::ArrayRef<int64_t>{dilation, 1},
@@ -644,7 +1072,7 @@ TEST_F(OpConvCorrectnessTest, TransposedDefaultParamsChannelsLast) {
   op_convolution_out(
       input,
       weight,
-      std::optional<Tensor>(bias),
+      bias,
       executorch::aten::ArrayRef<int64_t>{stride, 1},
       executorch::aten::ArrayRef<int64_t>{padding, 1},
       executorch::aten::ArrayRef<int64_t>{dilation, 1},
@@ -688,7 +1116,7 @@ TEST_F(OpConvCorrectnessTest, TransposedNonDefaultParamsChannelsLast) {
   op_convolution_out(
       input,
       weight,
-      std::optional<Tensor>(bias),
+      bias,
       executorch::aten::ArrayRef<int64_t>{stride, 1},
       executorch::aten::ArrayRef<int64_t>{padding, 1},
       executorch::aten::ArrayRef<int64_t>{dilation, 1},
@@ -720,7 +1148,7 @@ TEST_F(OpConvCorrectnessTest, InvalidOutputPadding) {
       op_convolution_out(
           input,
           weight,
-          std::optional<Tensor>(bias),
+          bias,
           executorch::aten::ArrayRef<int64_t>{stride, 1},
           executorch::aten::ArrayRef<int64_t>{padding, 1},
           executorch::aten::ArrayRef<int64_t>{dilation, 1},
@@ -784,4 +1212,292 @@ TEST_F(OpConvCorrectnessTest, BFloat16TypeSmokeTest) {
       int64_t(1),
       out);
   EXPECT_TENSOR_CLOSE(out, expected);
+}
+
+// Regression test for #20804: a transposed convolution weight with
+// out_channels == 1 arrives with a non-default dim order (e.g. [1, 0, 2, 3],
+// since the weight is laid out as (in_channels, out_channels / groups, kH,
+// kW)). The kernel indexes the weight through its strides, so it must run and
+// produce the same result as a default-order weight.
+TEST_F(OpConvCorrectnessTest, TransposedWeightNonDefaultDimOrder) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor input = tf.make({1, 2, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8});
+
+  // Weight (in_channels=2, out_channels=1, kH=2, kW=2)
+  // in dim order [1, 0, 2, 3].
+  Tensor weight = tf.make_with_dimorder(
+      {2, 1, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8}, /*dim_order=*/{1, 0, 2, 3});
+
+  optional<Tensor> bias;
+  Tensor out = tf.zeros({1, 1, 3, 3});
+  Tensor expected =
+      tf.make({1, 1, 3, 3}, {26, 64, 40, 76, 184, 112, 58, 136, 80});
+
+  int64_t stride[2] = {1, 1};
+  int64_t padding[2] = {0, 0};
+  int64_t dilation[2] = {1, 1};
+  bool transposed = true;
+  int64_t output_padding[2] = {0, 0};
+  int64_t groups = 1;
+
+  op_convolution_out(
+      input,
+      weight,
+      std::optional<Tensor>(bias),
+      executorch::aten::ArrayRef<int64_t>{stride, 2},
+      executorch::aten::ArrayRef<int64_t>{padding, 2},
+      executorch::aten::ArrayRef<int64_t>{dilation, 2},
+      transposed,
+      executorch::aten::ArrayRef<int64_t>{output_padding, 2},
+      groups,
+      out);
+
+  EXPECT_TENSOR_CLOSE(out, expected);
+}
+
+TEST_F(OpConvCorrectnessTest, HalfAccumulation) {
+  test_accumulation<ScalarType::Half>(false);
+}
+
+TEST_F(OpConvCorrectnessTest, BFloat16Accumulation) {
+  test_accumulation<ScalarType::BFloat16>(false);
+}
+
+TEST_F(OpConvCorrectnessTest, HalfTransposedAccumulation) {
+  test_accumulation<ScalarType::Half>(true);
+}
+
+TEST_F(OpConvCorrectnessTest, BFloat16TransposedAccumulation) {
+  test_accumulation<ScalarType::BFloat16>(true);
+}
+
+TEST_F(OpConvCorrectnessTest, HalfFloatBiasAccumulation) {
+  test_float_bias_accumulation<ScalarType::Half>(0.0004884f, 1.0009765625f);
+}
+
+TEST_F(OpConvCorrectnessTest, BFloat16FloatBiasAccumulation) {
+  test_float_bias_accumulation<ScalarType::BFloat16>(0.00392f, 1.0078125f);
+}
+
+TEST_F(OpConvCorrectnessTest, GroupedTransposedStrideDilationAndOutputPadding) {
+  test_grouped_transposed_accumulation<ScalarType::Float>(1);
+}
+
+TEST_F(OpConvCorrectnessTest, HalfGroupedTransposedAccumulation) {
+  test_grouped_transposed_accumulation<ScalarType::Half>(1024);
+}
+
+TEST_F(OpConvCorrectnessTest, BFloat16GroupedTransposedAccumulation) {
+  test_grouped_transposed_accumulation<ScalarType::BFloat16>(1024);
+}
+
+TEST_F(OpConvCorrectnessTest, TransposedCoprimeStrideDilation) {
+  TensorFactory<ScalarType::Float> tf;
+  const int64_t stride[] = {2, 3};
+  const int64_t padding[] = {2, 2};
+  const int64_t dilation[] = {3, 2};
+  const int64_t output_padding[] = {1, 2};
+  auto input = tf.make({1, 1, 2, 2}, {1, 2, 3, 4});
+  auto weight = tf.make({1, 1, 3, 3}, {1, 2, 3, 4, 5, 6, 7, 8, 9});
+  auto bias = tf.make({1}, {0.5});
+  // PyTorch reference, including cropped taps and bias-only output positions.
+  auto expected = tf.make(
+      {1, 1, 6, 6},
+      {6.5, 4.5,  9.5, 8.5,  0.5, 12.5, 5.5,  8.5,  6.5,  10.5, 0.5, 12.5,
+       0.5, 0.5,  0.5, 0.5,  0.5, 0.5,  15.5, 16.5, 18.5, 20.5, 0.5, 24.5,
+       8.5, 14.5, 9.5, 16.5, 0.5, 18.5, 0.5,  0.5,  0.5,  0.5,  0.5, 0.5});
+  auto out = tf.zeros_like(expected);
+  op_convolution_out(
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      dilation,
+      true,
+      output_padding,
+      1,
+      out);
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST_F(OpConvCorrectnessTest, TransposedNonCoprimeStrideDilation) {
+  TensorFactory<ScalarType::Float> tf;
+  auto input = tf.make({1, 1, 3}, {1, 2, 3});
+  auto weight = tf.make({1, 1, 5}, {1, 2, 3, 4, 5});
+  auto bias = tf.make({1}, {0.5});
+  auto expected =
+      tf.make({1, 1, 26}, {0.5, 2.5, 0.5, 3.5,  0.5, 4.5,  0.5, 3.5, 0.5,
+                           6.5, 0.5, 6.5, 0.5,  4.5, 0.5,  9.5, 0.5, 8.5,
+                           0.5, 5.5, 0.5, 12.5, 0.5, 10.5, 0.5, 0.5});
+  auto out = tf.full({1, 1, 26}, -1);
+  op_convolution_out(input, weight, bias, {4}, {5}, {6}, true, {3}, 1, out);
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST_F(OpConvCorrectnessTest, TransposedStrideLargerThanTile) {
+  TensorFactory<ScalarType::Float> tf;
+  auto input = tf.make({1, 1, 2}, {1, 2});
+  auto weight = tf.make({1, 1, 2}, {3, 4});
+  auto bias = tf.make({1}, {0.5});
+  std::vector<float> expected_data(164, 0.5);
+  expected_data[0] = 3.5;
+  expected_data[34] = 4.5;
+  expected_data[65] = 6.5;
+  expected_data[99] = 8.5;
+  auto expected = tf.make({1, 1, 164}, expected_data);
+  auto out = tf.full({1, 1, 164}, -1);
+  op_convolution_out(input, weight, bias, {65}, {0}, {34}, true, {64}, 1, out);
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST_F(OpConvCorrectnessTest, TransposedOutputTiles) {
+  TensorFactory<ScalarType::Float> tf;
+  const int64_t stride[] = {1, 2};
+  const int64_t padding[] = {0, 1};
+  const int64_t dilation[] = {1, 1};
+  const int64_t output_padding[] = {0, 1};
+  auto input = tf.ones({1, 2, 9, 33});
+  auto weight = tf.make({2, 2, 1, 3}, {1, 2, 3, 2, 4, 6, 1, 2, 3, 2, 4, 6});
+  auto bias = tf.make({2}, {-0.5, 0.5});
+  // PyTorch reference spans full and partial tiles along both spatial axes.
+  std::vector<float> expected_data;
+  for (const int channel : {0, 1}) {
+    for (int row = 0; row < 9; ++row) {
+      for (int x = 0; x < 66; ++x) {
+        const float sum = x == 65 ? 6 : (x % 2 == 0 ? 4 : 8);
+        expected_data.push_back(
+            sum * (channel + 1) + (channel == 0 ? -0.5 : 0.5));
+      }
+    }
+  }
+  auto expected = tf.make({1, 2, 9, 66}, expected_data);
+  for (const bool channels_last : {false, true}) {
+    SCOPED_TRACE(channels_last);
+    auto in = channels_last ? tf.channels_last_like(input) : input;
+    auto w = channels_last ? tf.channels_last_like(weight) : weight;
+    auto exp = channels_last ? tf.channels_last_like(expected) : expected;
+    auto out = tf.zeros_like(exp);
+    if (channels_last) {
+      out = tf.channels_last_like(out);
+    }
+    op_convolution_out(
+        in, w, bias, stride, padding, dilation, true, output_padding, 1, out);
+    EXPECT_TENSOR_EQ(out, exp);
+  }
+}
+
+namespace {
+// Small integers that keep every sum exact in float. The tests pick periods
+// that leave no repeats along any dim, so reading the wrong element changes the
+// result.
+std::vector<float> cycling_values(size_t count, int period) {
+  std::vector<float> values(count);
+  for (size_t i = 0; i < count; ++i) {
+    values[i] = static_cast<float>(static_cast<int>(i) % period - period / 2);
+  }
+  return values;
+}
+} // namespace
+
+TEST_F(OpConvCorrectnessTest, Grouped3DStridePaddingDilation) {
+  TensorFactory<ScalarType::Float> tf;
+  // Each spatial dim has its own size, kernel size, stride, padding and
+  // dilation, none of which is 1 (or 0 for padding), so mixing up dims or
+  // dropping a factor changes the result.
+  const int64_t stride[] = {2, 3, 4};
+  const int64_t padding[] = {1, 2, 3};
+  const int64_t dilation[] = {3, 4, 2};
+  auto input = tf.make({1, 4, 10, 8, 5}, cycling_values(1600, 23));
+  auto weight = tf.make({2, 2, 4, 2, 3}, cycling_values(96, 11));
+  auto bias = tf.make({2}, {1, -1});
+  // PyTorch reference.
+  auto expected =
+      tf.make({1, 2, 2, 3, 2}, {-52, -34, -31, 64,  86, 62,   -38, -87,
+                                81,  0,   19,  62,  56, -21,  -19, -60,
+                                49,  26,  -63, -44, 40, -173, 24,  74});
+  for (const bool channels_last : {false, true}) {
+    SCOPED_TRACE(channels_last);
+    auto in = channels_last ? tf.channels_last_like(input) : input;
+    auto w = channels_last ? tf.channels_last_like(weight) : weight;
+    auto exp = channels_last ? tf.channels_last_like(expected) : expected;
+    auto out = tf.zeros_like(exp);
+    if (channels_last) {
+      out = tf.channels_last_like(out);
+    }
+    op_convolution_out(
+        in, w, bias, stride, padding, dilation, false, {0}, 2, out);
+    EXPECT_TENSOR_EQ(out, exp);
+  }
+  // Export gives a channels-last 5-D input a contiguous output, and the
+  // weight may keep its contiguous layout.
+  for (const Tensor& w : {weight, tf.channels_last_like(weight)}) {
+    auto out = tf.zeros_like(expected);
+    op_convolution_out(
+        tf.channels_last_like(input),
+        w,
+        bias,
+        stride,
+        padding,
+        dilation,
+        false,
+        {0},
+        2,
+        out);
+    EXPECT_TENSOR_EQ(out, expected);
+  }
+}
+
+TEST_F(OpConvCorrectnessTest, GroupedTransposed3DStridePaddingDilation) {
+  TensorFactory<ScalarType::Float> tf;
+  // Depth has its own stride, padding, dilation and output padding, and height
+  // and width have their own padding and dilation. Two output channels per
+  // group make every weight stride matter in the channels-last layout.
+  const int64_t stride[] = {2, 1, 1};
+  const int64_t padding[] = {3, 1, 2};
+  const int64_t dilation[] = {4, 2, 3};
+  const int64_t output_padding[] = {1, 0, 0};
+  auto input = tf.make({1, 4, 4, 2, 3}, cycling_values(96, 13));
+  auto weight = tf.make({4, 2, 2, 2, 2}, cycling_values(64, 11));
+  auto bias = tf.make({4}, {1, -1, 2, -2});
+  // PyTorch reference. Even output depths get only the bias.
+  auto expected = tf.make(
+      {1, 4, 6, 2, 2},
+      {1,  1,  1,  1,  0,   -14, 54,  -31, 1,  1,  1,  1,  -12, -2,  -2,  2,
+       1,  1,  1,  1,  -13, -29, -34, -3,  -1, -1, -1, -1, 6,   -6,  -42, -5,
+       -1, -1, -1, -1, -12, 0,   1,   -4,  -1, -1, -1, -1, 3,   -1,  27,  9,
+       2,  2,  2,  2,  -5,  -13, 3,   -6,  2,  2,  2,  2,  -1,  1,   -11, 55,
+       2,  2,  2,  2,  29,  9,   12,  4,   -2, -2, -2, -2, -9,  -16, 1,   5,
+       -2, -2, -2, -2, 1,   5,   -6,  -43, -2, -2, -2, -2, 28,  -19, -10, -6});
+  for (const bool channels_last : {false, true}) {
+    SCOPED_TRACE(channels_last);
+    auto in = channels_last ? tf.channels_last_like(input) : input;
+    auto w = channels_last ? tf.channels_last_like(weight) : weight;
+    auto exp = channels_last ? tf.channels_last_like(expected) : expected;
+    auto out = tf.zeros_like(exp);
+    if (channels_last) {
+      out = tf.channels_last_like(out);
+    }
+    op_convolution_out(
+        in, w, bias, stride, padding, dilation, true, output_padding, 2, out);
+    EXPECT_TENSOR_EQ(out, exp);
+  }
+  // Export gives a channels-last 5-D input a contiguous output, and the
+  // weight may keep its contiguous layout.
+  for (const Tensor& w : {weight, tf.channels_last_like(weight)}) {
+    auto out = tf.zeros_like(expected);
+    op_convolution_out(
+        tf.channels_last_like(input),
+        w,
+        bias,
+        stride,
+        padding,
+        dilation,
+        true,
+        output_padding,
+        2,
+        out);
+    EXPECT_TENSOR_EQ(out, expected);
+  }
 }

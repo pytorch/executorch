@@ -59,20 +59,25 @@ class Conv2dVisitor(NodeVisitor):
             valid_input_dtypes.append(ts.DType.INT16)
             # Check constraints for int16 activations
             if inputs[0].dtype == ts.DType.INT16:
-                validate_valid_dtype(
-                    self.target, [inputs[1]], [ts.DType.INT8], self.tosa_spec
-                )
-                validate_valid_dtype(
-                    self.target, [inputs[2]], [ts.DType.INT48], self.tosa_spec
-                )
+                validate_valid_dtype(self.target, [inputs[1]], [ts.DType.INT8])
+                validate_valid_dtype(self.target, [inputs[2]], [ts.DType.INT48])
         if self.tosa_spec.support_extension("bf16"):
             valid_input_dtypes.append(ts.DType.BF16)
+        if self.tosa_spec.support_extension("fp8e4m3"):
+            valid_input_dtypes.append(ts.DType.FP8E4M3)
+            if inputs[0].dtype == ts.DType.FP8E4M3:
+                validate_valid_dtype(self.target, [inputs[1]], [ts.DType.FP8E4M3])
+                validate_valid_dtype(self.target, [inputs[2]], [ts.DType.FP16])
+        if self.tosa_spec.support_extension("fp8e5m2"):
+            valid_input_dtypes.append(ts.DType.FP8E5M2)
+            if inputs[0].dtype == ts.DType.FP8E5M2:
+                validate_valid_dtype(self.target, [inputs[1]], [ts.DType.FP8E5M2])
+                validate_valid_dtype(self.target, [inputs[2]], [ts.DType.FP16])
 
         validate_valid_dtype(
             self.target,
             [inputs[0]],
             valid_input_dtypes,
-            self.tosa_spec,
         )
 
         # Get the attributes of convolution.
@@ -82,8 +87,13 @@ class Conv2dVisitor(NodeVisitor):
 
         conv2d_output_name = output.name
         acc_type = output.dtype
-        if output.dtype in [ts.DType.BF16, ts.DType.FP16]:
-            # Accumulate BF16, FP16 inputs in FP32 for better precision.
+        if input.dtype in [ts.DType.FP8E4M3, ts.DType.FP8E5M2]:
+            acc_type = ts.DType.FP16
+        elif output.dtype in [
+            ts.DType.BF16,
+            ts.DType.FP16,
+        ]:
+            # Accumulate BF16 and FP16 inputs in FP32 for better precision.
             acc_type = ts.DType.FP32
 
         input_zp_name, weight_zp_name = add_input_weight_zp_consts(

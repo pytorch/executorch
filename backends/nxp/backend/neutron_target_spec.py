@@ -1,19 +1,18 @@
-# Copyright 2025 NXP
+# Copyright 2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 #
 # Target Spec for the NXP Neutron NPU
 
+from abc import ABC, abstractmethod
 from enum import Enum
 
 import torch
-
-from executorch.backends.nxp.backend.neutron_converter_manager import (
-    NeutronConverterManager,
+from executorch.backends.nxp.backend.neutron_compiler_manager import (
+    NeutronCompilerManager,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
-
 from torch.fx import Node
 
 
@@ -22,14 +21,72 @@ class NeutronHWVersion(Enum):
     N3 = 2
 
 
-class NeutronTargetNeutronC:
+class TargetInfo(ABC):
+    """
+    Abstract base class describing target specific capabilities of a Neutron NPU.
+
+    Once new targets are verified, they can create their own subclasses of `TargetInfo` to customize some
+     functionality for the particular target.
+    """
+
+    @staticmethod
+    @abstractmethod
+    def is_supported_fused_activation__aten(node_: Node) -> bool:
+        """Node operator is supported fused activation on Neutron for Linear and Conv2D."""
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def is_supported_fused_activation__edge(node_: Node) -> bool:
+        """Node operator is supported fused activation on Neutron for Linear and Conv2D."""
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def is_fusable_conv_or_linear__aten(node_: Node) -> bool:
+        """Node operator is supported fusable Linear or Conv2D on Neutron."""
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def is_fusable_conv_or_linear__edge(node_: Node) -> bool:
+        """Node operator in edge dialect is supported fusable Linear or Conv2D on Neutron."""
+        pass
+
+
+class NeutronSTargetInfo(TargetInfo):
+    """
+    Target info for Neutron-S (subsystem) targets. The implementations are defensive and report every feature
+     as unsupported, until the support is verified.
+    """
+
+    @staticmethod
+    def is_supported_fused_activation__aten(node_: Node) -> bool:
+        return False
+
+    @staticmethod
+    def is_supported_fused_activation__edge(node_: Node) -> bool:
+        return False
+
+    @staticmethod
+    def is_fusable_conv_or_linear__aten(node_: Node) -> bool:
+        return False
+
+    @staticmethod
+    def is_fusable_conv_or_linear__edge(node_: Node) -> bool:
+        return False
+
+
+class NeutronCTargetInfo(TargetInfo):
+    """Target info for Neutron-C (MCU) targets."""
+
     @staticmethod
     def is_supported_fused_activation__aten(node_: Node) -> bool:
         """Node operator is supported fused activation on Neutron for Linear and Conv2D."""
         return node_.op == "call_function" and (
             node_.target
             in (
-                torch.ops.aten.relu.default,  # TODO Add torch.ops.aten.leaky_relu.default once it is supported
+                torch.ops.aten.relu.default,  # TODO (EIEX-1244) Add torch.ops.aten.leaky_relu.default once it is supported
                 torch.ops.aten.relu_.default,
                 torch.ops.aten.sigmoid.default,
                 torch.ops.aten.sigmoid_.default,
@@ -54,7 +111,7 @@ class NeutronTargetNeutronC:
         return node_.op == "call_function" and (
             node_.target
             in (
-                exir_ops.edge.aten.relu.default,  # TODO Add torch.ops.aten.leaky_relu.default once it is supported
+                exir_ops.edge.aten.relu.default,  # TODO (EIEX-1244) Add exir_ops.edge.aten.leaky_relu.default once it is supported
                 exir_ops.edge.aten.sigmoid.default,
                 exir_ops.edge.aten.tanh.default,
             )
@@ -100,23 +157,23 @@ class NeutronTargetSpec:
 
     def __init__(self, target: str):
 
-        converter_manager = NeutronConverterManager()
-        converter_manager.verify_target(target)
-        neutron_converter = converter_manager.get_converter()
-        self.neutron_target = neutron_converter.getNeutronTarget(target)
-
-        if self.is_subsystem():
-            raise ValueError(
-                f"Target `{target}` is not a neutron-C target. Only MCU targets are supported at the moment."
-            )
+        compiler_manager = NeutronCompilerManager()
+        compiler_manager.verify_target(target)
+        neutron_compiler = compiler_manager.get_compiler()
+        self.neutron_target = neutron_compiler.getNeutronTarget(target)
 
         if self.get_hw_version() != NeutronHWVersion.N3:
             raise ValueError(
                 f"Target `{target}` contains unsupported HW version. Only N3/N3+ targets are supported at the moment."
             )
 
-        # Now only Neutron-C is supported
-        self.neutron_target_info = NeutronTargetNeutronC()
+        # Once new targets are verified, they can create their own `TargetInfo` subclasses to customize some
+        #  functionality.
+        self.neutron_target_info: TargetInfo
+        if self.is_subsystem():
+            self.neutron_target_info = NeutronSTargetInfo()
+        else:
+            self.neutron_target_info = NeutronCTargetInfo()
 
     # Target name.
     def get_name(self) -> str:
@@ -124,20 +181,40 @@ class NeutronTargetSpec:
 
     # Whether the target has subsystem (Neutron-S) or not (Neutron-C).
     def is_subsystem(self) -> bool:
-        return self.neutron_target.subsystem
+        return (
+            self.neutron_target.npu.subsystem
+            if hasattr(self.neutron_target, "npu")
+            else self.neutron_target.subsystem
+        )
 
     # Number of compute units.
     def get_num_units(self) -> int:
-        return self.neutron_target.numUnits
+        return (
+            self.neutron_target.npu.numUnits
+            if hasattr(self.neutron_target, "npu")
+            else self.neutron_target.numUnits
+        )
 
     # Number of compute pipelines.
     def get_num_pipes(self) -> int:
-        return self.neutron_target.numPipes
+        return (
+            self.neutron_target.npu.numPipes
+            if hasattr(self.neutron_target, "npu")
+            else self.neutron_target.numPipes
+        )
 
     # Number of compute MACs.
     def get_num_macs(self) -> int:
-        return self.neutron_target.numMacs
+        return (
+            self.neutron_target.npu.numMacs
+            if hasattr(self.neutron_target, "npu")
+            else self.neutron_target.numMacs
+        )
 
     # Neutron compute block hardware version.
     def get_hw_version(self) -> NeutronHWVersion:
-        return NeutronHWVersion(self.neutron_target.hwVersion)
+        return NeutronHWVersion(
+            self.neutron_target.npu.hwVersion
+            if hasattr(self.neutron_target, "npu")
+            else self.neutron_target.hwVersion
+        )

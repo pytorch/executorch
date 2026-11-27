@@ -8,11 +8,13 @@ from typing import Callable, Tuple
 import pytest
 
 import torch
+
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
+    OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
@@ -62,6 +64,32 @@ class Sum(torch.nn.Module):
 
     def forward(self, x: torch.Tensor, dim: int, keepdim: bool):
         return x.sum(dim=dim, keepdim=keepdim)
+
+
+class ScalarSum(torch.nn.Module):
+    def forward(self, x: torch.Tensor):
+        return x.sum(dim=0, keepdim=True)
+
+
+def test_sum_dim_intlist_scalar_input_tosa_FP_not_delegated():
+    pipeline = OpNotSupportedPipeline[input_t1](
+        ScalarSum(),
+        (torch.tensor(1.0),),
+        {
+            "executorch_exir_dialects_edge__ops_aten_sum_dim_IntList": 1,
+        },
+    )
+    pipeline.run()
+
+
+def test_sum_bool_tosa_INT() -> None:
+    pipeline = TosaPipelineINT(
+        Sum(),
+        (torch.ones(1, dtype=torch.bool), [], False),
+        aten_op,
+        exir_op=[],
+    )
+    pipeline.run()
 
 
 @common.parametrize(
@@ -131,15 +159,28 @@ def test_sum_u85_INT_1_0(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", Sum.test_parameters | Sum.test_parameters_fp16)
+@common.parametrize(
+    "test_data",
+    Sum.test_parameters | Sum.test_parameters_bf16 | Sum.test_parameters_fp16,
+)
 @common.SkipIfNoModelConverter
 def test_sum_dim_intlist_vgf_no_quant(test_data: input_t1):
+    data = test_data()
+    match data[0].dtype:
+        case torch.bfloat16:
+            atol = 1e-1
+            rtol = 1e-1
+        case _:
+            atol = 1e-3
+            rtol = 1e-3
     pipeline = VgfPipeline[input_t1](
         Sum(),
-        test_data(),
+        data,
         aten_op,
         run_on_vulkan_runtime=True,
         quantize=False,
+        atol=atol,
+        rtol=rtol,
     )
     pipeline.run()
 

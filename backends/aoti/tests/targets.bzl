@@ -1,0 +1,77 @@
+load("@fbcode_macros//build_defs:cpp_unittest.bzl", "cpp_unittest")
+load("@fbcode_macros//build_defs/lib:re_test_utils.bzl", "re_test_utils")
+
+def define_common_targets(is_fbcode = False):
+    if not is_fbcode:
+        return
+
+    cpp_unittest(
+        name = "test_resolve_blob_keys",
+        srcs = [
+            "test_resolve_blob_keys.cpp",
+        ],
+        deps = [
+            "//executorch/backends/aoti:delegate_handle",
+            "//executorch/runtime/core:core",
+            "//executorch/runtime/core:evalue",
+        ],
+    )
+
+    cpp_unittest(
+        name = "test_common_shims",
+        srcs = [
+            "test_common_shims.cpp",
+        ],
+        headers = [
+            "utils.h",
+        ],
+        deps = [
+            "//executorch/backends/aoti:common_shims",
+            "//executorch/extension/tensor:tensor",
+            "//executorch/runtime/core:core",
+            "//executorch/runtime/platform:platform",
+            "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/extension/tensor:tensor",
+        ],
+    )
+
+    cpp_unittest(
+        name = "test_common_shims_slim_link",
+        srcs = [
+            "test_common_shims_slim_link.cpp",
+        ],
+        deps = [
+            "//executorch/backends/aoti:common_shims_slim",
+        ],
+        # Static linking drops archive members nothing references, and
+        # --export-dynamic lets dlsym(RTLD_DEFAULT) see the members that stay.
+        overridden_link_style = "static",
+        linker_flags = [
+            "--export-dynamic",
+        ],
+    )
+
+    cpp_unittest(
+        name = "test_common_shims_slim",
+        srcs = [
+            "test_common_shims_slim.cpp",
+        ],
+        deps = [
+            "//executorch/backends/aoti:common_shims_slim",
+            "//executorch/backends/aoti/slim/core:slimtensor",
+            "//executorch/backends/aoti/slim/factory:empty",
+            "//executorch/runtime/core:core",
+            "//executorch/runtime/platform:platform",
+        ],
+        external_deps = [
+            ("cuda", None, "cuda-lazy"),
+        ],
+        preprocessor_flags = [
+            "-DCUDA_AVAILABLE=1",
+        ],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+        ),
+    )

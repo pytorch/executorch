@@ -1,3 +1,8 @@
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 """Export Silero VAD (16kHz) to ExecuTorch.
 
 Reimplements the model in eager PyTorch, loads weights from the official
@@ -8,6 +13,8 @@ Usage:
 """
 
 import argparse
+import hashlib
+import io
 import os
 
 import torch
@@ -30,6 +37,9 @@ INPUT_SIZE = WINDOW_SIZE + CONTEXT_SIZE  # 576
 HIDDEN_DIM = 128
 STFT_FILTERS = 258
 FREQ_BINS = STFT_FILTERS // 2  # 129
+SILERO_VAD_V6_2_2_JIT_SHA256 = (
+    "e1122837f4154c511485fe0b9c64455f7b929c96fbb8d79fbdb336383ebd3720"
+)
 
 
 class SileroVAD16k(nn.Module):
@@ -87,7 +97,11 @@ class SileroVAD16k(nn.Module):
 
 def load_model(jit_path: str) -> SileroVAD16k:
     """Load weights from JIT model into eager PyTorch reimplementation."""
-    jit_model = torch.jit.load(jit_path, map_location="cpu")
+    with open(jit_path, "rb") as jit_file:
+        jit_data = jit_file.read()
+    if hashlib.sha256(jit_data).hexdigest() != SILERO_VAD_V6_2_2_JIT_SHA256:
+        raise ValueError("Silero VAD JIT model SHA-256 does not match v6.2.2")
+    jit_model = torch.jit.load(io.BytesIO(jit_data), map_location="cpu")
     jit_sd = jit_model._model.state_dict()
 
     model = SileroVAD16k()

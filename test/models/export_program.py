@@ -59,7 +59,7 @@ class ModuleIndex(nn.Module):
     def forward(self, x):
         # Weird index that happens to generate a None in torch.index.Tensor_out
         # which is desirable for deserialization testing. A modified form of
-        # an example index from https://pytorch.org/cppdocs/notes/tensor_indexing.html.
+        # an example index from the PyTorch C++ tensor indexing notes.
         return x[1::2, torch.tensor([1, 2])]
 
     def get_random_inputs(self):
@@ -113,6 +113,14 @@ class ModuleAddHalf(nn.Module):
             torch.randn(2, 2).half(),
             1.0,
         )
+
+
+class ModuleChannelsLast(nn.Module):
+    def forward(self, x):
+        return x + x
+
+    def get_random_inputs(self):
+        return (torch.randn(1, 3, 4, 5).to(memory_format=torch.channels_last),)
 
 
 class ModuleDynamicCatUnallocatedIO(nn.Module):

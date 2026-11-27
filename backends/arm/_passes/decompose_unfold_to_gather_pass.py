@@ -9,7 +9,8 @@ from typing import Set, Type
 
 import torch
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
+from executorch.backends.arm._passes.arm_pass_utils import meta_without_qparams
 from executorch.backends.arm._passes.replace_scalar_with_tensor_pass import (
     ReplaceScalarWithTensorByProfilePass,
 )
@@ -29,7 +30,7 @@ def _get_unfold_copy_decomposition(op) -> tuple:
 
     """
 
-    if op in DecomposeUnfoldToGatherPass._TARGET_OPS:
+    if op in DecomposeUnfoldToGatherPass.target_ops:
         return (
             exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
             exir_ops.edge.aten.view_copy.default,
@@ -45,7 +46,7 @@ def _get_unfold_copy_decomposition(op) -> tuple:
     raise RuntimeError(f"Can't get unfold_copy decomposition for op {op}")
 
 
-class DecomposeUnfoldToGatherPass(ArmPass):
+class DecomposeUnfoldToGatherPass(ArmOpTargetedPass):
     """Decompose unfold_copy with backend tosa.GATHER as the core op, plus other
     TOSA-supported ops to build indices and materialize the output layout.
 
@@ -93,9 +94,13 @@ class DecomposeUnfoldToGatherPass(ArmPass):
         ReplaceScalarWithTensorByProfilePass,
     }
 
-    _TARGET_OPS = {
+    target_ops = {
         exir_ops.edge.aten.unfold_copy.default,
     }
+
+    def __init__(self, use_slice: bool = False, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.use_slice = use_slice
 
     _UnfoldCopyInfo = tuple[
         torch.Tensor,  # x_val (FakeTensor)
@@ -147,7 +152,7 @@ class DecomposeUnfoldToGatherPass(ArmPass):
         return (x_val, C, S, K, U, UC, pre, post, P, Q, needs_bool_cast)
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in self._TARGET_OPS:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 
         x, dim, size, step = args
@@ -165,6 +170,47 @@ class DecomposeUnfoldToGatherPass(ArmPass):
             Q,
             needs_bool_cast,
         ) = self._compute_unfold_copy_params(x, dim, size, step)
+
+        if self.use_slice:
+            rank = len(x_val.shape)
+            dim_norm = dim % rank
+            perm = list(range(dim_norm)) + list(range(dim_norm + 1, rank)) + [dim_norm]
+            windows = []
+            for window in range(U):
+                start = window * S
+                sliced = super().call_operator(
+                    exir_ops.edge.aten.slice_copy.Tensor,
+                    (x, dim_norm, start, start + C),
+                    {},
+                    meta,
+                    updated=True,
+                )
+                transposed = super().call_operator(
+                    exir_ops.edge.aten.permute_copy.default,
+                    (sliced, perm),
+                    {},
+                    meta,
+                    updated=True,
+                )
+                windows.append(
+                    super().call_operator(
+                        exir_ops.edge.aten.unsqueeze_copy.default,
+                        (transposed, dim_norm),
+                        {},
+                        meta,
+                        updated=True,
+                    )
+                )
+
+            if len(windows) == 1:
+                return windows[0]
+            return super().call_operator(
+                exir_ops.edge.aten.cat.default,
+                (windows, dim_norm),
+                {},
+                meta,
+                updated=True,
+            )
 
         (
             to_copy_op,
@@ -202,6 +248,7 @@ class DecomposeUnfoldToGatherPass(ArmPass):
         )
 
         # ---- build idx1d of length U*C ----
+        index_meta = meta_without_qparams(meta)
         # idx_u: [U]
         idx_u = super().call_operator(
             arange_op,
@@ -210,7 +257,7 @@ class DecomposeUnfoldToGatherPass(ArmPass):
                 "dtype": torch.int32,
                 "device": x_val.device,
             },
-            meta,
+            index_meta,
             updated=True,
         )
         # idx_u_scaled: [U] = idx_u * S
@@ -218,7 +265,7 @@ class DecomposeUnfoldToGatherPass(ArmPass):
             mul_scalar_op,
             (idx_u, S),
             {},
-            meta,
+            index_meta,
             updated=True,
         )
         # idx_u2d: [U,1]
@@ -226,7 +273,7 @@ class DecomposeUnfoldToGatherPass(ArmPass):
             unsqueeze_op,
             (idx_u_scaled, 1),
             {},
-            meta,
+            index_meta,
             updated=True,
         )
 
@@ -238,7 +285,7 @@ class DecomposeUnfoldToGatherPass(ArmPass):
                 "dtype": torch.int32,
                 "device": x_val.device,
             },
-            meta,
+            index_meta,
             updated=True,
         )
         # idx_c2d: [1,C]
@@ -246,7 +293,7 @@ class DecomposeUnfoldToGatherPass(ArmPass):
             unsqueeze_op,
             (idx_c, 0),
             {},
-            meta,
+            index_meta,
             updated=True,
         )
 
@@ -255,7 +302,7 @@ class DecomposeUnfoldToGatherPass(ArmPass):
             add_tensor_op,
             (idx_u2d, idx_c2d),
             {},
-            meta,
+            index_meta,
             updated=True,
         )
 
@@ -264,7 +311,7 @@ class DecomposeUnfoldToGatherPass(ArmPass):
             view_op,
             (idx2d, [UC]),
             {},
-            meta,
+            index_meta,
             updated=True,
         )
 
@@ -273,14 +320,14 @@ class DecomposeUnfoldToGatherPass(ArmPass):
             unsqueeze_op,
             (idx1d, 0),
             {},
-            meta,
+            index_meta,
             updated=True,
         )
         indices_puc = super().call_operator(
             expand_op,
             (idx_1xUC, [P, UC]),
             {},
-            meta,
+            index_meta,
             updated=True,
         )
 

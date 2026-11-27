@@ -8,10 +8,8 @@
 
 #pragma once
 
-#include <cuda.h>
-#include <cuda_runtime.h>
-
 #include <executorch/backends/aoti/slim/c10/macros/Macros.h>
+#include <executorch/extension/cuda/runtime_api.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/platform/assert.h>
 #include <executorch/runtime/platform/log.h>

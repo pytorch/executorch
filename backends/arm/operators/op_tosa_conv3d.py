@@ -15,7 +15,7 @@ class Conv3dVisitor(Conv2dVisitor):
     target = "tosa.CONV3D.default"
 
     def _get_tosa_op(self):
-        import serializer.tosa_serializer as ts  # type: ignore
+        import tosa_serializer as ts
 
         return ts.Op.CONV3D
 

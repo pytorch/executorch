@@ -3,10 +3,14 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+#
+# Developer build helper. This command-line interface is not a public API and
+# may change without deprecation.
 
 # Optional parameter:
 # --build_type= "Release" | "Debug" | "RelWithDebInfo" | "UndefinedSanitizer" | "AddressSanitizer"
 # --etdump      build with devtools-etdump support
+# --cmake-args= Additional arguments passed to cmake configure
 
 set -eu
 
@@ -24,16 +28,19 @@ build_type="Release"
 build_devtools=OFF
 build_with_etdump=OFF
 is_linux_musl=0
+extra_cmake_args=()
 target_cpu=""
 
 help() {
     echo "Usage: $(basename $0) [options]"
+    echo "Note: this developer build script is not a stable public API."
     echo "Options:"
     echo "  --et_build_root=<FOLDER>  Build output root folder to use, defaults to ${et_build_root}"
     echo "  --build_type=<TYPE>       Build with Release, Debug, RelWithDebInfo, UndefinedSanitizer or AddressSanitizer, default is ${build_type}"
     echo "  --devtools                Build Devtools libs"
     echo "  --etdump                  Adds Devtools etdump support to track timing, etdump area will be base64 encoded in the log"
-    echo "  --toolchain=<TOOLCHAIN>   Toolchain can be specified (arm-none-eabi-gcc, arm-zephyr-eabi-gcc, aarch64-linux-musl-gcc). Default: ${toolchain}"
+    echo "  --cmake-args=<ARGS>       Additional arguments passed to cmake configure"
+    echo "  --toolchain=<TOOLCHAIN>   Toolchain can be specified (arm-none-eabi-gcc, arm-none-eabi-clang, arm-zephyr-eabi-gcc, aarch64-linux-musl-gcc). Default: ${toolchain}"
     echo "  --target_cpu=<CPU>        Override the toolchain's default TARGET_CPU (e.g. cortex-m4). Switching target_cpu reuses the same cmake-out dir, so clear ${et_build_root}/cmake-out first to avoid stale per-CPU artifacts. Default: unset (toolchain default)."
     exit 0
 }
@@ -45,6 +52,10 @@ for arg in "$@"; do
       --build_type=*) build_type="${arg#*=}";;
       --devtools) build_devtools=ON ;;
       --etdump) build_with_etdump=ON ;;
+      --cmake-args=*)
+        # shellcheck disable=SC2206
+        extra_cmake_args=(${arg#*=})
+        ;;
       --toolchain=*) toolchain="${arg#*=}";;
       --target_cpu=*) target_cpu="${arg#*=}";;
       *)
@@ -54,6 +65,8 @@ done
 
 if [[ ${toolchain} == "arm-none-eabi-gcc" ]]; then
     toolchain_cmake=${et_root_dir}/examples/arm/ethos-u-setup/${toolchain}.cmake
+elif [[ ${toolchain} == "arm-none-eabi-clang" ]]; then
+    toolchain_cmake=${et_root_dir}/examples/arm/ethos-u-setup/${toolchain}.cmake
 elif [[ ${toolchain} == "arm-zephyr-eabi-gcc" ]]; then
     toolchain_cmake=${et_root_dir}/examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake
 elif [[ ${toolchain} == "aarch64-linux-musl-gcc" ]]; then
@@ -61,7 +74,7 @@ elif [[ ${toolchain} == "aarch64-linux-musl-gcc" ]]; then
     is_linux_musl=1
 else
     echo "Error: Invalid toolchain selection, provided: ${toolchain}"
-    echo "    Valid options are {arm-none-eabi-gcc, arm-zephyr-eabi-gcc, aarch64-linux-musl-gcc}"
+    echo "    Valid options are {arm-none-eabi-gcc, arm-none-eabi-clang, arm-zephyr-eabi-gcc, aarch64-linux-musl-gcc}"
     exit 1;
 fi
 toolchain_cmake=$(realpath ${toolchain_cmake})
@@ -90,6 +103,13 @@ cmake_args=(
     -DEXECUTORCH_BUILD_ARM_ETDUMP=${build_with_etdump}
     -DEXECUTORCH_BAREMETAL_SKIP_INSTALL=OFF
 )
+if ((${#extra_cmake_args[@]})); then
+      cmake_args+=("${extra_cmake_args[@]}")
+fi
+
+if [[ ${#extra_cmake_args[@]} -gt 0 ]]; then
+    cmake_args+=("${extra_cmake_args[@]}")
+fi
 
 if [[ -n "${target_cpu}" ]]; then
     cmake_args+=(-DTARGET_CPU=${target_cpu})

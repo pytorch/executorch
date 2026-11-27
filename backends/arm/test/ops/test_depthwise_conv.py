@@ -20,6 +20,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
+    VgfPipelineFP8,
 )
 
 input_t = Tuple[torch.Tensor]  # Input x
@@ -195,7 +196,38 @@ test_data_conv2d_FP_fp16 = {
         dtype=torch.float16,
     ),
 }
-
+test_data_conv2d_FP_fp8_no_comparing = {
+    "fp8e4m3_3x3_gp3": lambda: (
+        Conv2d(
+            in_channels=3,
+            out_channels=3,
+            kernel_size=(3, 3),
+            stride=(1, 1),
+            groups=3,
+            padding=2,
+            width=16,
+            height=16,
+            batches=1,
+            dtype=torch.float8_e4m3fn,
+        ),
+        "fp8e4m3",
+    ),
+    "fp8e5m2_3x3_gp3": lambda: (
+        Conv2d(
+            in_channels=3,
+            out_channels=3,
+            kernel_size=(3, 3),
+            stride=(1, 1),
+            groups=3,
+            padding=2,
+            width=16,
+            height=16,
+            batches=1,
+            dtype=torch.float8_e5m2,
+        ),
+        "fp8e5m2",
+    ),
+}
 # Generate a new test set paired with per_channel_quant=True/False.
 test_data_conv2d_INT = {
     f"{k},per_channel_quant={q}": (lambda v=v, q=q: (v(), q))
@@ -233,7 +265,8 @@ test_data_conv1d_INT = {
 def _get_dtype_count(model: torch.nn.Module):
     nbr_convs: int = model.nbr_convs  # noqa
     return {
-        "CONST": {"INT4": nbr_convs * 2},
+        # Each convolution has a distinct weight and shares the symmetric zero point.
+        "CONST": {"INT4": nbr_convs + 1},
         "DEPTHWISE_CONV2D": {"INT32": nbr_convs},
         "RESCALE": {"INT8": nbr_convs},
     }
@@ -247,13 +280,38 @@ def _get_dtype_count(model: torch.nn.Module):
     | test_data_conv2d_FP_fp16,
 )
 def test_convolution_2d_tosa_FP_depthwise(test_data: torch.nn.Module):
+    model = test_data()
+    match model.dtype:
+        case torch.bfloat16:
+            atol = 2e-2
+            rtol = 2e-2
+        case _:
+            atol = 1e-3
+            rtol = 1e-3
     pipeline = TosaPipelineFP[input_t](
-        test_data(),
-        test_data().get_inputs(),
+        model,
+        model.get_inputs(),
         aten_op=[],
         exir_op=exir_op,
         tosa_extensions=["bf16"],
+        atol=atol,
+        rtol=rtol,
     )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_conv2d_FP_fp8_no_comparing)
+def test_convolution_2d_tosa_FP_fp8_depthwise(test_data):
+    model, tosa_extension = test_data()
+    pipeline = TosaPipelineFP[input_t](
+        model,
+        model.get_inputs(),
+        aten_op=[],
+        exir_op=exir_op,
+        compare_tosa_ref_model_outputs=False,
+        tosa_extensions=[tosa_extension],
+    )
+    pipeline.count_tosa_ops({"DEPTHWISE_CONV2D": 1, "CAST": 1})
     pipeline.run()
 
 
@@ -293,18 +351,45 @@ def test_convolution_2d_tosa_INT_a8w4_depthwise(test_data):
     pipeline.run()
 
 
+@common.parametrize("test_data", test_data_conv2d_FP_fp8_no_comparing)
+@common.SkipIfNoModelConverter
+def test_convolution_2d_vgf_no_quant_fp8_depthwise(test_data):
+    model, _ = test_data()
+    pipeline = VgfPipelineFP8[input_t](
+        model,
+        model.get_inputs(),
+        aten_op=[],
+        exir_op=exir_op,
+        expect_missing_reference=True,
+    )
+    pipeline.run()
+
+
 @common.parametrize(
-    "test_data", test_data_conv1d_FP | test_data_conv2d_FP | test_data_conv2d_FP_fp16
+    "test_data",
+    test_data_conv1d_FP
+    | test_data_conv2d_FP
+    | test_data_conv2d_FP_bf16
+    | test_data_conv2d_FP_fp16,
 )
 @common.SkipIfNoModelConverter
 def test_convolution_2d_vgf_no_quant_depthwise(test_data: torch.nn.Module):
     model = test_data()
+    match model.dtype:
+        case torch.bfloat16:
+            atol = 2e-2
+            rtol = 2e-2
+        case _:
+            atol = 1e-3
+            rtol = 1e-3
     pipeline = VgfPipeline[input_t](
         model,
         model.get_inputs(),
         aten_op=[],
         exir_op=exir_op,
         quantize=False,
+        atol=atol,
+        rtol=rtol,
     )
     pipeline.run()
 

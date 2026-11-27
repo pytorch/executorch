@@ -325,7 +325,7 @@ def convert_run_compare(
 
     if tfl_model is None:
         NodeFormatInference(edge_program).identify_node_formats()
-        tfl_model, _ = EdgeProgramToIRConverter().convert_program(
+        tfl_model, *_ = EdgeProgramToIRConverter().convert_program(
             edge_program, conversion_config
         )
 

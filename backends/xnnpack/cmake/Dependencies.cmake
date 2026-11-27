@@ -66,12 +66,25 @@ if(WIN32)
   set_overridable_option(XNNPACK_ENABLE_AVX256VNNI OFF)
   set_overridable_option(XNNPACK_ENABLE_AVX256VNNIGFNI OFF)
   set_overridable_option(XNNPACK_ENABLE_AVX512BF16 OFF)
+  # clang-cl (reported by CMake as Clang, not MSVC, so XNNPACK's own MSVC gate
+  # does not catch it) crashes with an internal codegen error compiling some of
+  # the AVX512-FP16 micro-kernels, so disable them on Windows.
+  set_overridable_option(XNNPACK_ENABLE_AVX512FP16 OFF)
 endif()
 
 set(XNNPACK_BUILD_ALL_MICROKERNELS
     OFF
     CACHE BOOL ""
 )
+
+# XNNPACK nests variadic macros (XNN_RETURN_IF_ERROR expands to xnn_log_error),
+# which MSVC's default legacy preprocessor mis-expands. Only observable where
+# XNN_LOG_LEVEL is non-zero, i.e. Debug configurations. Not applied to clang-cl,
+# which sets MSVC but already has a conforming preprocessor.
+if(CMAKE_C_COMPILER_ID STREQUAL "MSVC")
+  add_compile_options(/Zc:preprocessor)
+endif()
+
 add_subdirectory("${XNNPACK_SOURCE_DIR}")
 include_directories(SYSTEM ${XNNPACK_INCLUDE_DIR})
 list(APPEND xnnpack_third_party XNNPACK)

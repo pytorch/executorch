@@ -10,6 +10,7 @@ from typing import cast, Sequence
 
 import torch
 import torch.fx
+from executorch.backends.transforms.channels_last_layout import PERMUTE_COPY_TARGETS
 from executorch.backends.transforms.permute_pass_utils import (
     RemoveOrReplacePassInterface,
 )
@@ -28,7 +29,7 @@ class ReplaceNopTransposeOrPermuteWithViewPass(RemoveOrReplacePassInterface):
     def targets(self) -> list[EdgeOpOverload]:
         return [
             exir_ops.edge.aten.transpose_copy.int,
-            exir_ops.edge.aten.permute_copy.default,
+            *PERMUTE_COPY_TARGETS,
         ]
 
     def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
@@ -61,7 +62,7 @@ class ReplaceNopTransposeOrPermuteWithViewPass(RemoveOrReplacePassInterface):
                 node.replace_all_uses_with(new_node)
                 return True
 
-        elif node.target == exir_ops.edge.aten.permute_copy.default:
+        elif node.target in PERMUTE_COPY_TARGETS:
             old_dims = list(range(len(in_shape)))
             new_dims = cast(Sequence[int], node.args[1])
             # If the permute does not change anything, return the input as output.

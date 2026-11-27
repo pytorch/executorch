@@ -20,8 +20,6 @@
 
 namespace executorch::backends::aoti::slim {
 
-using executorch::runtime::Error;
-using executorch::runtime::TensorShapeDynamism;
 using executorch::runtime::etensor::ScalarType;
 using executorch::runtime::testing::TensorFactory;
 

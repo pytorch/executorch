@@ -4,7 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import List
+from typing import Collection, List
+
+import executorch.backends.vulkan.patterns.conv2d_with_epilogue  # noqa
 
 import executorch.backends.vulkan.patterns.quantized_binary  # noqa
 
@@ -28,6 +30,8 @@ import executorch.backends.vulkan.patterns.sdpa  # noqa
 
 import executorch.backends.vulkan.patterns.select_as_symint  # noqa
 
+import executorch.backends.vulkan.patterns.swiglu  # noqa
+
 import torch
 
 from executorch.backends.vulkan.patterns.pattern_registry import (
@@ -36,6 +40,7 @@ from executorch.backends.vulkan.patterns.pattern_registry import (
     DetectorFn,
     fusable_patterns,
     GetGraphFn,
+    PatternEntry,
     PatternMatch,
     register_pattern_detector,
     register_pattern_graph,
@@ -64,9 +69,17 @@ __all__ = [
 ]
 
 
-def all_fusable_graph_patterns() -> List[torch.fx.GraphModule]:
+def enabled_patterns(skip_patterns: Collection[str] = ()) -> List[PatternEntry]:
+    return [
+        entry for name, entry in fusable_patterns.items() if name not in skip_patterns
+    ]
+
+
+def all_fusable_graph_patterns(
+    skip_patterns: Collection[str] = (),
+) -> List[torch.fx.GraphModule]:
     all_patterns = []
-    for entry in fusable_patterns.values():
+    for entry in enabled_patterns(skip_patterns):
         if entry.get_graphs_fn is not None:
             all_patterns.extend(entry.get_graphs_fn())
 
@@ -75,18 +88,20 @@ def all_fusable_graph_patterns() -> List[torch.fx.GraphModule]:
 
 def get_all_fusable_subgraphs(
     graph_module: torch.fx.GraphModule,
+    skip_patterns: Collection[str] = (),
 ) -> List[PatternMatch]:
     fusable_subgraphs = []
 
-    fuse_patterns = all_fusable_graph_patterns()
+    fuse_patterns = all_fusable_graph_patterns(skip_patterns)
     for pattern in fuse_patterns:
         sm = SubgraphMatcher(pattern.graph, ignore_literals=True)
         matches = list(sm.match(graph_module.graph))
         for match in matches:
             fusable_subgraphs.append(create_pattern_match_from_internal_match(match))
 
+    entries = enabled_patterns(skip_patterns)
     for node in graph_module.graph.nodes:
-        for entry in fusable_patterns.values():
+        for entry in entries:
             if entry.detector_fn is not None:
                 maybe_match = entry.detector_fn(node)
                 if maybe_match is not None:
@@ -109,7 +124,8 @@ def create_replacement_for_pattern(
 
         for partition_to_replace in matches:
             pattern = create_pattern_match_from_internal_match(partition_to_replace)
-            create_replacement_func(ep, graph_module, pattern)
+            if create_replacement_func(ep, graph_module, pattern) is False:
+                continue
             total_replaced += 1
             # Remove dead code so they won't be matched again
             graph_module.graph.eliminate_dead_code()
@@ -120,11 +136,13 @@ def create_replacement_for_pattern(
 def replace_all_fusable_subgraphs(
     ep: ExportedProgram,
     graph_module: torch.fx.GraphModule,
+    skip_patterns: Collection[str] = (),
 ) -> int:
     total_replaced = 0
+    entries = enabled_patterns(skip_patterns)
 
     # Handle patterns identified with SubgraphMatcher
-    for entry in fusable_patterns.values():
+    for entry in entries:
         if entry.get_graphs_fn is not None and entry.create_replacement_fn is not None:
             total_replaced += create_replacement_for_pattern(
                 ep,
@@ -136,7 +154,8 @@ def replace_all_fusable_subgraphs(
 
     # Handle patterns identified with custom detector function
     for node in graph_module.graph.nodes:
-        for entry in fusable_patterns.values():
+        replaced_before = total_replaced
+        for entry in entries:
             if (
                 entry.detector_fn is not None
                 and entry.create_replacement_fn is not None
@@ -144,8 +163,14 @@ def replace_all_fusable_subgraphs(
                 maybe_match = entry.detector_fn(node)
                 if maybe_match is not None:
                     assert entry.create_replacement_fn is not None
-                    entry.create_replacement_fn(ep, graph_module, maybe_match)
-                    total_replaced += 1
+                    if (
+                        entry.create_replacement_fn(ep, graph_module, maybe_match)
+                        is not False
+                    ):
+                        total_replaced += 1
+        if total_replaced > replaced_before:
+            # Remove dead code so they won't be matched again
+            graph_module.graph.eliminate_dead_code()
 
     graph_module.graph.eliminate_dead_code()
     return total_replaced

@@ -75,6 +75,93 @@ The diagram looks like following
 
 **Figure 2.** The graph goes through partition and each subgraph will be sent to the preprocess part.
 
+### Declaring scratch memory
+
+A backend whose kernels need scratch memory for the duration of one `execute()`
+call can declare it on the `PreprocessResult`, and the memory planner will place
+it in the arena alongside the program's activations:
+
+```python
+from executorch.exir.backend.backend_details import (
+    DelegateScratchSpec,
+    PreprocessResult,
+)
+
+return PreprocessResult(
+    processed_bytes=blob,
+    scratch_specs=[DelegateScratchSpec(nbytes=workspace_size)],
+)
+```
+
+Declare it here rather than in `partition()`, because the size is usually only
+known once the partition has been compiled. A spec carries a size and a label:
+which memory pool the bytes come from is a property of the target, and is chosen
+by the integrator's memory planning pass rather than by the backend.
+
+The label is how the two sides meet without either learning the other's numbering.
+A backend that wants its spill buffer and its weight staging in different local
+memories says what each one is for:
+
+```python
+scratch_specs=[
+    DelegateScratchSpec(nbytes=spill_size, label="spill"),
+    DelegateScratchSpec(nbytes=staging_size, label="weights"),
+]
+```
+
+and the integrator's memory planning pass decides where those belong:
+
+```python
+class ScratchPoolPass(MemoryPlanningPass):
+    POOLS = {"spill": 2, "weights": 3}
+
+    def run(self, graph_module, graph_signature=None):
+        for node in graph_module.graph.nodes:
+            for scratch in memory.delegate_scratch(node):
+                scratch.spec.mem_id = self.POOLS[scratch.label]
+        return super().run(graph_module, graph_signature)
+```
+
+Labels are descriptive rather than identifying, so two buffers that belong in the
+same pool may share one. They still get separate memory.
+
+The alternative is to take the memory from `BackendExecutionContext::get_temp_allocator()`
+at runtime, which requires the integrator to have sized a temp pool large enough
+for a number only the backend knows. Declaring the scratch instead puts that
+number in the program, lets the planner reuse the bytes for tensors whose
+lifetimes do not overlap the delegate call, and makes the requirement visible to
+the memory planning inspection tools.
+
+### Sharing one handle across calls
+
+A method can call the same lowered module more than once. For example, you lower
+a step once with `to_backend`, call it in a loop from a wrapper module, and
+export the wrapper again. By default each call gets its own handle (the object
+that `init()` returns), so `init()` runs once per call. A backend can ask for
+one handle for all of these calls:
+
+```python
+return PreprocessResult(
+    processed_bytes=blob,
+    share_handle_across_calls=True,
+)
+```
+
+Then `init()` runs once, and every call runs `execute()` on that handle with its
+own arguments. Set it only if `execute()` does all of the following, in every
+runtime version of the backend and with any runtime options:
+
+- It reads its arguments again on every call.
+- It keeps nothing on the handle that is tied to one call or that changes later
+  results, for example saved argument pointers or a cache that each call
+  updates.
+- It writes outputs only into the output tensors it is given.
+
+Sharing applies to calls of one lowered module. Separate partitions get separate
+lowered modules, so they keep separate handles even when their blobs are
+identical. A backend that declares scratch always gets one handle per call,
+because the runtime keeps scratch on the delegate and each call has its own.
+
 ## Backend Interfaces: Runtime Initialization and Execution
 
 During the runtime, the compiled blob from the `preprocess` function will be
@@ -126,6 +213,34 @@ static auto success_with_compiler = register_backend(backend);
 } // namespace
 ```
 
+### Receiving scratch memory
+
+Scratch declared during lowering arrives on the execution context, in the order
+it was declared. It is not part of `args`, which still holds exactly the
+delegate's inputs and outputs.
+
+```cpp
+Span<const Span<uint8_t>> scratch = context.scratch_buffers();
+uint8_t* workspace = nullptr;
+if (scratch.size() == kNumScratchBuffers &&
+    scratch[0].size() >= required_bytes) {
+  workspace = scratch[0].data();
+} else {
+  // A program exported before the backend declared scratch delivers none, and
+  // the integrator is not required to supply a temp allocator either.
+  MemoryAllocator* temp_allocator = context.get_temp_allocator();
+  ET_CHECK_OR_RETURN_ERROR(
+      temp_allocator != nullptr,
+      InvalidState,
+      "Program declares no scratch and no temp allocator is available");
+  workspace = static_cast<uint8_t*>(
+      temp_allocator->allocate(required_bytes, kAlignment));
+}
+```
+
+The doc comment on `scratch_buffers()` is the normative contract: it covers why
+`size()` must be checked before indexing, what the bytes may and may not be
+used for across calls, and what alignment is and is not guaranteed.
 
 ## Developer Tools Integration: Debuggability
 

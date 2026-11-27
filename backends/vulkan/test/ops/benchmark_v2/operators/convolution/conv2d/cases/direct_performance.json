@@ -1,0 +1,210 @@
+[
+  {
+    "name": "conv2d direct_performance",
+    "operator": "aten.convolution.default",
+    "target_ms": 100,
+    "warmup_runs": 5,
+    "benchmark_runs": 20,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 0.001, "rtol": 0.001},
+    "route_sweep": ["direct"],
+    "sweep_variables": {"v_DTYPE": ["float32", "float16"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 16, 48, 64], "dtype": "v_DTYPE", "storage": "texture3d", "layout": "channels", "data": {"rand_uniform_int": [-1, 1]}}},
+        {"tensor": {"name": "weight", "sizes": [16, 16, 3, 3], "dtype": "v_DTYPE", "storage": "constant", "layout": "channels", "data": {"rand_uniform_int": [-1, 1]}}},
+        null,
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"bool": false},
+        {"int_list": [0, 0]},
+        {"int": 1},
+        {"tensor": {"name": "output", "sizes": [1, 16, 48, 64], "dtype": "v_DTYPE", "storage": "texture3d", "layout": "channels", "data": {"fill": 0}}}
+      ],
+      [
+        {"tensor": {"name": "input", "sizes": [1, 3, 65, 97], "dtype": "v_DTYPE", "storage": "texture3d", "layout": "channels", "data": {"rand_uniform_int": [-1, 1]}}},
+        {"tensor": {"name": "weight", "sizes": [8, 3, 3, 3], "dtype": "v_DTYPE", "storage": "constant", "layout": "channels", "data": {"rand_uniform_int": [-1, 1]}}},
+        null,
+        {"int_list": [2, 2]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"bool": false},
+        {"int_list": [0, 0]},
+        {"int": 1},
+        {"tensor": {"name": "output", "sizes": [1, 8, 33, 49], "dtype": "v_DTYPE", "storage": "texture3d", "layout": "channels", "data": {"fill": 0}}}
+      ],
+      [
+        {"tensor": {"name": "input", "sizes": [1, 11, 48, 64], "dtype": "v_DTYPE", "storage": "texture3d", "layout": "channels", "data": {"rand_uniform_int": [-1, 1]}}},
+        {"tensor": {"name": "weight", "sizes": [13, 11, 3, 3], "dtype": "v_DTYPE", "storage": "constant", "layout": "channels", "data": {"rand_uniform_int": [-1, 1]}}},
+        null,
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"bool": false},
+        {"int_list": [0, 0]},
+        {"int": 1},
+        {"tensor": {"name": "output", "sizes": [1, 13, 48, 64], "dtype": "v_DTYPE", "storage": "texture3d", "layout": "channels", "data": {"fill": 0}}}
+      ],
+      [
+        {"tensor": {"name": "input", "sizes": [1, 17, 49, 65], "dtype": "v_DTYPE", "storage": "texture3d", "layout": "channels", "data": {"rand_uniform_int": [-1, 1]}}},
+        {"tensor": {"name": "weight", "sizes": [17, 17, 5, 5], "dtype": "v_DTYPE", "storage": "constant", "layout": "channels", "data": {"rand_uniform_int": [-1, 1]}}},
+        null,
+        {"int_list": [1, 1]},
+        {"int_list": [2, 2]},
+        {"int_list": [1, 1]},
+        {"bool": false},
+        {"int_list": [0, 0]},
+        {"int": 1},
+        {"tensor": {"name": "output", "sizes": [1, 17, 49, 65], "dtype": "v_DTYPE", "storage": "texture3d", "layout": "channels", "data": {"fill": 0}}}
+      ],
+      [
+        {"tensor": {"name": "input", "sizes": [1, 16, 31, 47], "dtype": "v_DTYPE", "storage": "texture3d", "layout": "channels", "data": {"rand_uniform_int": [-1, 1]}}},
+        {"tensor": {"name": "weight", "sizes": [24, 16, 3, 5], "dtype": "v_DTYPE", "storage": "constant", "layout": "channels", "data": {"rand_uniform_int": [-1, 1]}}},
+        null,
+        {"int_list": [2, 1]},
+        {"int_list": [0, 3]},
+        {"int_list": [1, 1]},
+        {"bool": false},
+        {"int_list": [0, 0]},
+        {"int": 1},
+        {"tensor": {"name": "output", "sizes": [1, 24, 15, 49], "dtype": "v_DTYPE", "storage": "texture3d", "layout": "channels", "data": {"fill": 0}}}
+      ],
+      [
+        {"tensor": {"name": "input", "sizes": [1, 16, 48, 64], "dtype": "v_DTYPE", "storage": "texture3d", "layout": "channels", "data": {"rand_uniform_int": [-1, 1]}}},
+        {"tensor": {"name": "weight", "sizes": [16, 16, 3, 3], "dtype": "v_DTYPE", "storage": "constant", "layout": "channels", "data": {"rand_uniform_int": [-1, 1]}}},
+        null,
+        {"int_list": [1, 1]},
+        {"int_list": [2, 3]},
+        {"int_list": [2, 3]},
+        {"bool": false},
+        {"int_list": [0, 0]},
+        {"int": 1},
+        {"tensor": {"name": "output", "sizes": [1, 16, 48, 64], "dtype": "v_DTYPE", "storage": "texture3d", "layout": "channels", "data": {"fill": 0}}}
+      ],
+      [
+        {"tensor": {"name": "input", "sizes": [1, 8, 32, 48], "dtype": "v_DTYPE", "storage": "texture3d", "layout": "channels", "data": {"rand_uniform_int": [-1, 1]}}},
+        {"tensor": {"name": "weight", "sizes": [8, 8, 7, 7], "dtype": "v_DTYPE", "storage": "constant", "layout": "channels", "data": {"rand_uniform_int": [-1, 1]}}},
+        null,
+        {"int_list": [1, 1]},
+        {"int_list": [3, 3]},
+        {"int_list": [1, 1]},
+        {"bool": false},
+        {"int_list": [0, 0]},
+        {"int": 1},
+        {"tensor": {"name": "output", "sizes": [1, 8, 32, 48], "dtype": "v_DTYPE", "storage": "texture3d", "layout": "channels", "data": {"fill": 0}}}
+      ],
+      [
+        {"tensor": {"name": "input", "sizes": [1, 16, 1, 1537], "dtype": "v_DTYPE", "storage": "texture3d", "layout": "channels", "data": {"rand_uniform_int": [-1, 1]}}},
+        {"tensor": {"name": "weight", "sizes": [32, 16, 1, 5], "dtype": "v_DTYPE", "storage": "constant", "layout": "channels", "data": {"rand_uniform_int": [-1, 1]}}},
+        null,
+        {"int_list": [1, 1]},
+        {"int_list": [0, 2]},
+        {"int_list": [1, 1]},
+        {"bool": false},
+        {"int_list": [0, 0]},
+        {"int": 1},
+        {"tensor": {"name": "output", "sizes": [1, 32, 1, 1537], "dtype": "v_DTYPE", "storage": "texture3d", "layout": "channels", "data": {"fill": 0}}}
+      ],
+      [
+        {"tensor": {"name": "input", "sizes": [1, 64, 32, 48], "dtype": "v_DTYPE", "storage": "texture3d", "layout": "channels", "data": {"rand_uniform_int": [-1, 1]}}},
+        {"tensor": {"name": "weight", "sizes": [64, 64, 3, 3], "dtype": "v_DTYPE", "storage": "constant", "layout": "channels", "data": {"rand_uniform_int": [-1, 1]}}},
+        null,
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"bool": false},
+        {"int_list": [0, 0]},
+        {"int": 1},
+        {"tensor": {"name": "output", "sizes": [1, 64, 32, 48], "dtype": "v_DTYPE", "storage": "texture3d", "layout": "channels", "data": {"fill": 0}}}
+      ],
+      [
+        {"tensor": {"name": "input", "sizes": [1, 64, 32, 48], "dtype": "v_DTYPE", "storage": "texture3d", "layout": "channels", "data": {"rand_uniform_int": [-1, 1]}}},
+        {"tensor": {"name": "weight", "sizes": [64, 64, 5, 5], "dtype": "v_DTYPE", "storage": "constant", "layout": "channels", "data": {"rand_uniform_int": [-1, 1]}}},
+        null,
+        {"int_list": [1, 1]},
+        {"int_list": [2, 2]},
+        {"int_list": [1, 1]},
+        {"bool": false},
+        {"int_list": [0, 0]},
+        {"int": 1},
+        {"tensor": {"name": "output", "sizes": [1, 64, 32, 48], "dtype": "v_DTYPE", "storage": "texture3d", "layout": "channels", "data": {"fill": 0}}}
+      ],
+      [
+        {"tensor": {"name": "input", "sizes": [1, 128, 16, 24], "dtype": "v_DTYPE", "storage": "texture3d", "layout": "channels", "data": {"rand_uniform_int": [-1, 1]}}},
+        {"tensor": {"name": "weight", "sizes": [128, 128, 5, 5], "dtype": "v_DTYPE", "storage": "constant", "layout": "channels", "data": {"rand_uniform_int": [-1, 1]}}},
+        null,
+        {"int_list": [1, 1]},
+        {"int_list": [2, 2]},
+        {"int_list": [1, 1]},
+        {"bool": false},
+        {"int_list": [0, 0]},
+        {"int": 1},
+        {"tensor": {"name": "output", "sizes": [1, 128, 16, 24], "dtype": "v_DTYPE", "storage": "texture3d", "layout": "channels", "data": {"fill": 0}}}
+      ],
+      [
+        {"tensor": {"name": "input", "sizes": [1, 16, 48, 64], "dtype": "v_DTYPE", "storage": "texture3d", "layout": "channels", "data": {"rand_uniform_int": [-1, 1]}}},
+        {"tensor": {"name": "weight", "sizes": [16, 8, 3, 3], "dtype": "v_DTYPE", "storage": "constant", "layout": "channels", "data": {"rand_uniform_int": [-1, 1]}}},
+        null,
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"bool": false},
+        {"int_list": [0, 0]},
+        {"int": 2},
+        {"tensor": {"name": "output", "sizes": [1, 16, 48, 64], "dtype": "v_DTYPE", "storage": "texture3d", "layout": "channels", "data": {"fill": 0}}}
+      ],
+      [
+        {"tensor": {"name": "input", "sizes": [1, 16, 48, 64], "dtype": "v_DTYPE", "storage": "texture3d", "layout": "channels", "data": {"rand_uniform_int": [-1, 1]}}},
+        {"tensor": {"name": "weight", "sizes": [24, 8, 3, 3], "dtype": "v_DTYPE", "storage": "constant", "layout": "channels", "data": {"rand_uniform_int": [-1, 1]}}},
+        null,
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"bool": false},
+        {"int_list": [0, 0]},
+        {"int": 2},
+        {"tensor": {"name": "output", "sizes": [1, 24, 48, 64], "dtype": "v_DTYPE", "storage": "texture3d", "layout": "channels", "data": {"fill": 0}}}
+      ],
+      [
+        {"tensor": {"name": "input", "sizes": [1, 3, 3, 3], "dtype": "v_DTYPE", "storage": "texture3d", "layout": "channels", "data": {"rand_uniform_int": [-1, 1]}}},
+        {"tensor": {"name": "weight", "sizes": [1, 3, 3, 3], "dtype": "v_DTYPE", "storage": "constant", "layout": "channels", "data": {"rand_uniform_int": [-1, 1]}}},
+        null,
+        {"int_list": [1, 1]},
+        {"int_list": [0, 0]},
+        {"int_list": [1, 1]},
+        {"bool": false},
+        {"int_list": [0, 0]},
+        {"int": 1},
+        {"tensor": {"name": "output", "sizes": [1, 1, 1, 1], "dtype": "v_DTYPE", "storage": "texture3d", "layout": "channels", "data": {"fill": 0}}}
+      ]
+    ]
+  },
+  {
+    "name": "conv2d direct_performance clamp",
+    "operator": "et_vk.conv_with_clamp.default",
+    "target_ms": 100,
+    "warmup_runs": 5,
+    "benchmark_runs": 20,
+    "max_dispatches": 200,
+    "validation_method": {"function": "is_close", "atol": 0.001, "rtol": 0.001},
+    "route_sweep": ["direct"],
+    "sweep_variables": {"v_DTYPE": ["float32", "float16"]},
+    "args_sweep": [
+      [
+        {"tensor": {"name": "input", "sizes": [1, 16, 48, 64], "dtype": "v_DTYPE", "storage": "texture3d", "layout": "channels", "data": {"rand_uniform_int": [-1, 1]}}},
+        {"tensor": {"name": "weight", "sizes": [32, 16, 3, 3], "dtype": "v_DTYPE", "storage": "constant", "layout": "channels", "data": {"rand_uniform_int": [-1, 1]}}},
+        {"tensor": {"name": "bias", "sizes": [32], "dtype": "v_DTYPE", "storage": "constant", "layout": "channels", "data": {"rand_uniform_int": [-1, 1]}}},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"int_list": [1, 1]},
+        {"bool": false},
+        {"int_list": [0, 0]},
+        {"int": 1},
+        {"float": -0.25},
+        {"float": 0.5},
+        {"tensor": {"name": "output", "sizes": [1, 32, 48, 64], "dtype": "v_DTYPE", "storage": "texture3d", "layout": "channels", "data": {"fill": 0}}}
+      ]
+    ]
+  }
+]

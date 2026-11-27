@@ -6,13 +6,13 @@ from typing import Set, Type
 
 import torch
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.rewrite_index_put_pass import RewriteIndexPutPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
 
-class NormalizeIndexPutBoolIndexTensorPass(ArmPass):
+class NormalizeIndexPutBoolIndexTensorPass(ArmOpTargetedPass):
     """Normalize  single boolean mask index_put scalar to where.
     In the general case, boolean masks are complex and data dependent. The simple case
     x[mask] = scalar
@@ -30,6 +30,7 @@ class NormalizeIndexPutBoolIndexTensorPass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {RewriteIndexPutPass}
+    target_ops = (exir_ops.edge.aten.index_put.default,)
 
     def __init__(self):
         super().__init__()
@@ -57,7 +58,7 @@ class NormalizeIndexPutBoolIndexTensorPass(ArmPass):
         return True
 
     def call_operator(self, op, args, kwargs, meta, updated: bool | None = False):
-        if op not in (exir_ops.edge.aten.index_put.default,):
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta, updated)
 
         destination, indices_tensor_list, data = args[:3]

@@ -60,6 +60,11 @@ class TensorWrapper {
     created_ = true;
   }
 
+  void ResetGraphState() {
+    created_ = false;
+    QNN_TENSOR_VER_PTR(tensor_)->id = 0u;
+  }
+
   // Return true if the tensor is static:
   bool IsTensorStatic() const {
     return QNN_TENSOR_VER_PTR(tensor_)->type == QNN_TENSOR_TYPE_STATIC;
@@ -130,9 +135,12 @@ class TensorWrapper {
   std::unique_ptr<char[]> owned_data_;
   bool created_{false};
 
-  Qnn_Tensor_t tensor_ = {
-      .version = QNN_TENSOR_VERSION_2,
-      .v2 = QNN_TENSOR_V2_INIT};
+  Qnn_Tensor_t tensor_ = []() noexcept {
+    Qnn_Tensor_t t{};
+    t.version = QNN_TENSOR_VERSION_2;
+    t.v2 = QNN_TENSOR_V2_INIT;
+    return t;
+  }();
 };
 // base function for Create TensorWrapper
 std::shared_ptr<TensorWrapper> CreateTensorWrapper(

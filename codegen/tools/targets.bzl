@@ -172,6 +172,9 @@ def define_common_targets(is_fbcode = False):
         srcs = ["gen_selected_prim_ops.py"],
         base_module = "executorch.codegen.tools",
         visibility = ["//executorch/..."],
+        deps = [
+            "fbsource//third-party/pypi/pyyaml:pyyaml",
+        ],
         external_deps = ["torchgen"],
     )
 
@@ -188,7 +191,21 @@ def define_common_targets(is_fbcode = False):
         _is_external_target = True,
     )
 
-    
+    runtime.python_test(
+        name = "test_gen_selected_prim_ops",
+        srcs = [
+            "test/test_gen_selected_prim_ops.py",
+        ],
+        package_style = "inplace",
+        visibility = [
+            "PUBLIC",
+        ],
+        deps = [
+            ":gen_selected_prim_ops_lib",
+        ],
+        _is_external_target = True,
+    )
+
     runtime.cxx_python_extension(
         name = "selective_build",
         srcs = [

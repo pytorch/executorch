@@ -1,4 +1,6 @@
 /*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
  * Copyright 2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
@@ -13,13 +15,13 @@
 #pragma GCC diagnostic ignored "-Wdouble-promotion"
 #endif
 
-#include <cstddef>
-#include <cstdint>
-
+#include <executorch/backends/arm/runtime/EthosUIOPlan.h>
 #include <executorch/backends/arm/runtime/VelaBinStream.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
-#include <executorch/runtime/core/evalue.h>
+#include <executorch/runtime/core/span.h>
+#include <cstddef>
+#include <cstdint>
 
 #if defined(__GNUC__) && defined(__ZEPHYR__)
 #pragma GCC diagnostic pop
@@ -31,14 +33,19 @@
 using executorch::runtime::EventTracer;
 using executorch::runtime::EventTracerEntry;
 
+/** Ends an event-tracer profiling scope when the current C++ scope exits. */
 class EventTraceScope {
  public:
   EventTraceScope(EventTracer* event_tracer_, const char* name) {
     event_tracer = event_tracer_;
-    event_tracer_entry_scope = event_tracer->start_profiling(name);
+    if (event_tracer != nullptr) {
+      event_tracer_entry_scope = event_tracer->start_profiling(name);
+    }
   }
   ~EventTraceScope() {
-    event_tracer->end_profiling(event_tracer_entry_scope);
+    if (event_tracer != nullptr) {
+      event_tracer->end_profiling(event_tracer_entry_scope);
+    }
   }
 
  private:
@@ -57,51 +64,53 @@ class EventTraceScope {
 #define EXECUTORCH_PROF_END(EVENTTRACER, SCOPE)
 #endif
 
-#define ETHOSU_NUM_BASE_ADDRS 3
-
 namespace executorch {
 namespace backends {
 namespace arm {
 
+inline constexpr size_t ETHOSU_SCRATCH_ALIGNMENT = 16;
+
 struct PlatformState;
 
 struct ExecutionHandle {
-  executorch::runtime::FreeableBuffer* processed;
-  PlatformState* platform_state;
+  PlatformState* platform_state = nullptr;
+  VelaHandles handles{};
+  // Dedicated persistent (Vela region 5) buffer for delegate-owned streaming
+  // state, base address 5. Kept separate from the scratch region (base 1) so
+  // state is isolated from both intermediates and the read-only weights.
+  // Allocated from the model-lifetime runtime allocator and zeroed once at
+  // init(); null when the model has no persistent state.
+  char* persistent_region{nullptr};
 };
 
 extern "C" {
 void EthosUBackend_execute_begin();
 void EthosUBackend_execute_end();
+#if defined(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
+void EthosUBackend_delegate_begin(const void* handle);
+void EthosUBackend_delegate_end();
+#endif
+#if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
+void EthosUBackend_input_memcpy(size_t size);
+void EthosUBackend_output_memcpy(size_t size);
+#endif
 extern unsigned char* ethosu_fast_scratch;
 extern size_t ethosu_fast_scratch_size;
 }
 
-PlatformState* platform_init(
+executorch::runtime::Error platform_init(
     executorch::runtime::ArrayRef<executorch::runtime::CompileSpec> specs,
-    executorch::runtime::MemoryAllocator* allocator);
+    executorch::runtime::MemoryAllocator* allocator,
+    ExecutionHandle* handle);
+
 void platform_destroy(PlatformState* state);
+
+bool needs_scratch_allocation();
+
 executorch::runtime::Error platform_execute(
     executorch::runtime::BackendExecutionContext& context,
     const ExecutionHandle* execution_handle,
-    const VelaHandles& handles,
-    int input_count,
-    int output_count,
-    executorch::runtime::Span<executorch::runtime::EValue*> args,
-    char* ethosu_scratch);
-
-executorch::runtime::Error copy_with_layout_adjustment(
-    const VelaIO& output_io,
-    int output_index,
-    const char* src,
-    executorch::aten::Tensor& tensor_out,
-    size_t tensor_bytes);
-
-void calculate_dimensions(
-    const executorch::aten::Tensor tensor,
-    VelaIO* io,
-    int* tensor_count,
-    int* io_count);
+    IOPlan& io_plan);
 
 } // namespace arm
 } // namespace backends

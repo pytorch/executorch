@@ -24,17 +24,36 @@ if(NOT EXECUTORCH_ROOT)
   message("WARNING: EXECUTORCH_ROOT is not set! A failure is likely imminent.")
 endif()
 
-find_program(GLSLC_PATH glslc PATHS $ENV{PATH})
+# find_program already searches the PATH environment variable and appends the
+# platform executable suffix (.exe on Windows). Prefer the Vulkan SDK bin dir so
+# an explicitly configured SDK takes precedence, including on Windows where the
+# installer may not add it to PATH.
+find_program(GLSLC_PATH glslc HINTS $ENV{VULKAN_SDK}/bin $ENV{VULKAN_SDK}/Bin)
 
-if(NOT GLSLC_PATH AND EXECUTORCH_BUILD_VULKAN)
-  message(
-    FATAL_ERROR
-      "glslc from the Vulkan SDK must be installed to build the Vulkan backend. "
-      "Please install the Vulkan SDK 1.4.321.0 or newer from "
-      "https://vulkan.lunarg.com/sdk/home and ensure that the glslc binary is in your PATH. "
-      "Note that the glslc distributed with the Android NDK is not compatible since it "
-      "does not support the GL_EXT_integer_dot_product extension. "
-  )
+if(NOT GLSLC_PATH AND (EXECUTORCH_BUILD_VULKAN OR EXECUTORCH_BUILD_NATIVE_VULKAN
+                      )
+)
+  if(EXECUTORCH_BUILD_WHEEL_DO_NOT_USE AND NOT EXECUTORCH_BUILD_NATIVE_VULKAN)
+    # In a wheel/pybind build, degrade gracefully so the wheel can still be
+    # produced without the Vulkan backend rather than failing the whole build.
+    message(
+      STATUS
+        "glslc not found; the Vulkan backend will not be included in the wheel."
+    )
+    set(EXECUTORCH_BUILD_VULKAN
+        OFF
+        CACHE BOOL "" FORCE
+    )
+  else()
+    message(
+      FATAL_ERROR
+        "glslc from the Vulkan SDK must be installed to build the Vulkan backend. "
+        "Please install the Vulkan SDK 1.4.341.1 or newer from "
+        "https://vulkan.lunarg.com/sdk/home and ensure that the glslc binary is in your PATH. "
+        "Note that the glslc distributed with the Android NDK is not compatible since it "
+        "does not support the GL_EXT_integer_dot_product extension. "
+    )
+  endif()
 endif()
 
 # Required to enable linking with --whole-archive
@@ -64,8 +83,14 @@ function(gen_vulkan_shader_lib_cpp shaders_path)
   endif()
 
   # Ninja cannot expand wildcards (*) in DEPENDS lists.
-  file(GLOB VULKAN_SHADERS "${shaders_path}/*.glsl" "${shaders_path}/*.glslh"
-       "${shaders_path}/*.yaml" "${shaders_path}/*.h"
+  file(
+    GLOB_RECURSE
+    VULKAN_SHADERS
+    CONFIGURE_DEPENDS
+    "${shaders_path}/*.glsl"
+    "${shaders_path}/*.glslh"
+    "${shaders_path}/*.yaml"
+    "${shaders_path}/*.h"
   )
 
   add_custom_command(
@@ -97,7 +122,7 @@ function(vulkan_shader_lib library_name generated_spv_cpp)
       ${EXECUTORCH_ROOT}/backends/vulkan/third-party/Vulkan-Headers/include
       ${EXECUTORCH_ROOT}/backends/vulkan/third-party/volk
   )
-  target_link_libraries(${library_name} vulkan_backend)
+  target_link_libraries(${library_name} vulkan_graph_runtime)
   target_compile_options(${library_name} PRIVATE ${VULKAN_CXX_FLAGS})
   # Link this library with --whole-archive due to dynamic shader registrations
   executorch_target_link_options_shared_lib(${library_name})
@@ -121,7 +146,7 @@ macro(vulkan_shader_library shaders_path library_name)
       ${EXECUTORCH_ROOT}/backends/vulkan/third-party/Vulkan-Headers/include
       ${EXECUTORCH_ROOT}/backends/vulkan/third-party/volk
   )
-  target_link_libraries(${library_name} vulkan_backend)
+  target_link_libraries(${library_name} vulkan_graph_runtime)
   target_compile_options(${library_name} PRIVATE ${VULKAN_CXX_FLAGS})
   # Link this library with --whole-archive due to dynamic shader registrations
   executorch_target_link_options_shared_lib(${library_name})

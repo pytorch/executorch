@@ -27,7 +27,6 @@ using executorch::runtime::DelegateHandle;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
-using executorch::runtime::get_backend_class;
 using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Result;
 using executorch::runtime::Span;

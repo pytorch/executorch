@@ -12,6 +12,10 @@ import torch
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
+from executorch.backends.nxp.backend.ops_aliases import (
+    Convolution,
+    DequantizePerChannel,
+)
 from executorch.backends.nxp.quantizer.neutron_quantizer import (
     act_qspec,
     NeutronAtenQuantizer,
@@ -29,8 +33,7 @@ from executorch.backends.nxp.tests.executors import (
     ToChannelFirstPreprocess,
     ToChannelLastPreprocess,
 )
-from executorch.backends.nxp.tests.models import Conv2dModule
-from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.backends.nxp.tests.simple_models import Conv2dModule
 from parameterized import parameterized
 
 from torch import fx
@@ -153,7 +156,7 @@ class TestPerChannelConversion(unittest.TestCase):
                 use_neutron_for_format_conversion=False,
             )
 
-            tflite_flatbuffers_model, io_formats = converter_spy.calls[-1].return_value
+            tflite_flatbuffers_model, *_ = converter_spy.calls[-1].return_value
             exported_program: ExportedProgram = converter_spy.calls[-1].args[0]
 
             input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(
@@ -172,16 +175,10 @@ class TestPerChannelConversion(unittest.TestCase):
             conv_nodes = [
                 node
                 for node in exported_program.graph.nodes
-                if node.target == exir_ops.edge.aten.convolution.default
+                if node.target == Convolution
             ]
             assert len(conv_nodes) == 1
 
             conv_node = conv_nodes[0]
-            assert (
-                conv_node.args[1].target
-                == exir_ops.edge.quantized_decomposed.dequantize_per_channel.default
-            )
-            assert (
-                conv_node.args[2].target
-                == exir_ops.edge.quantized_decomposed.dequantize_per_channel.default
-            )
+            assert conv_node.args[1].target == DequantizePerChannel
+            assert conv_node.args[2].target == DequantizePerChannel

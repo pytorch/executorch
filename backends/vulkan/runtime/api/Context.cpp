@@ -2,6 +2,8 @@
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
  *
+ * Copyright 2026  Arm Limited and/or its affiliates.
+ *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
@@ -18,7 +20,7 @@
 #endif
 
 #ifndef VULKAN_QUERY_POOL_SIZE
-#define VULKAN_QUERY_POOL_SIZE 4096u
+#define VULKAN_QUERY_POOL_SIZE 131072u
 #endif
 
 namespace vkcompute {
@@ -61,38 +63,83 @@ Context::~Context() {
 }
 
 void Context::initialize_querypool() {
+  const bool already_created = querypool_;
   querypool_.initialize(adapter_p_);
+  if (already_created || !querypool_) {
+    return;
+  }
+  // Results may only be read from queries that have been reset. Profiled
+  // dispatches reset the queries they record when they execute, so reset the
+  // whole pool once for captures that are read before executing.
+  vkapi::CommandBuffer cmd = command_pool_.get_new_cmd();
+  cmd.begin();
+  querypool_.reset_all(cmd);
+  cmd.end();
+  vkapi::VulkanFence fence(device_);
+  adapter_p_->submit_cmd(
+      queue_,
+      cmd.get_submit_handle(/*final_use = */ true),
+      fence.get_submit_handle());
+  fence.wait();
 }
 
 void Context::cmd_reset_querypool() {
   if (querypool_) {
     set_cmd();
-    querypool_.reset_querypool(cmd_);
+    querypool_.reset_querypool();
   }
 }
 
-void Context::report_shader_dispatch_start(
+void Context::report_previous_work_finish(
     const std::string& shader_name,
-    const utils::uvec3& global_wg_size,
-    const utils::WorkgroupSize& local_wg_size,
+    const GlobalWorkGrid& gwg,
+    const LocalWorkGroup& lwg,
     const uint32_t dispatch_id) {
-  if (querypool_) {
-    querypool_.shader_profile_begin(
-        cmd_,
-        dispatch_id,
-        shader_name,
-        vkapi::create_extent3d(global_wg_size),
-        vkapi::create_extent3d((utils::uvec3)local_wg_size));
+  // Dispatch encoding and mode changes hold cmd_mutex_, keeping this flag
+  // unchanged until the paired shader execution finish.
+  if (querypool_ && shader_profiling_enabled_) {
+    querypool_.record_previous_work_finish(
+        cmd_, dispatch_id, shader_name, gwg, lwg);
   }
 }
 
-void Context::report_shader_dispatch_end() {
-  if (querypool_) {
-    querypool_.shader_profile_end(cmd_);
+void Context::report_barrier_finish() {
+  if (querypool_ && shader_profiling_enabled_) {
+    querypool_.record_barrier_finish(cmd_);
+  }
+}
+
+void Context::report_shader_exec_finish() {
+  if (querypool_ && shader_profiling_enabled_) {
+    querypool_.record_shader_exec_finish(cmd_);
+  }
+}
+
+void Context::serialize_if_profiling(vkapi::PipelineBarrier& pipeline_barrier) {
+  // Profiled dispatches never overlap, so each one's timestamps bracket only
+  // its own barrier and execution. The barrier includes a global memory
+  // dependency because some drivers overlap consecutive dispatches across an
+  // execution-only dependency.
+  if (querypool_ && shader_profiling_enabled_) {
+    const vkapi::PipelineBarrier full = vkapi::full_pipeline_barrier();
+    pipeline_barrier.stage.src |= full.stage.src;
+    pipeline_barrier.stage.dst |= full.stage.dst;
+    pipeline_barrier.global_access.src |= full.global_access.src;
+    pipeline_barrier.global_access.dst |= full.global_access.dst;
   }
 }
 
 void Context::check_device_capabilities(const vkapi::ShaderInfo& shader) {
+  if (!shader.required_capabilities.empty()) {
+    for (const uint32_t capability : shader.required_capabilities) {
+      if (!adapter_p_->supports_spirv_capability(capability)) {
+        throw vkapi::ShaderNotSupportedError(
+            shader.kernel_name,
+            utils::concat_str("SPIR-V capability ", capability));
+      }
+    }
+    return;
+  }
   if (shader.requires_shader_int16) {
     if (!adapter_p_->supports_int16_shader_types()) {
       throw vkapi::ShaderNotSupportedError(
@@ -133,7 +180,7 @@ void Context::check_device_capabilities(const vkapi::ShaderInfo& shader) {
 
 vkapi::DescriptorSet Context::get_descriptor_set(
     const vkapi::ShaderInfo& shader_descriptor,
-    const utils::WorkgroupSize& local_workgroup_size,
+    const LocalWorkGroup& lwg,
     const vkapi::SpecVarList& additional_constants,
     const uint32_t push_constants_size) {
   VkDescriptorSetLayout shader_layout =
@@ -142,10 +189,7 @@ vkapi::DescriptorSet Context::get_descriptor_set(
   VkPipelineLayout pipeline_layout =
       pipeline_layout_cache().retrieve(shader_layout, push_constants_size);
 
-  vkapi::SpecVarList spec_constants = {
-      SV(local_workgroup_size[0u]),
-      SV(local_workgroup_size[1u]),
-      SV(local_workgroup_size[2u])};
+  vkapi::SpecVarList spec_constants = {SV(lwg[0u]), SV(lwg[1u]), SV(lwg[2u])};
 
   spec_constants.append(additional_constants);
 
@@ -158,7 +202,7 @@ vkapi::DescriptorSet Context::get_descriptor_set(
        spec_constants,
        resolved_required_subgroup_size});
 
-  cmd_.bind_pipeline(pipeline, pipeline_layout, local_workgroup_size);
+  cmd_.bind_pipeline(pipeline, pipeline_layout, lwg);
 
   return descriptor_pool().get_descriptor_set(
       shader_layout, shader_descriptor.kernel_layout);
@@ -168,33 +212,40 @@ void Context::register_shader_dispatch(
     const vkapi::DescriptorSet& descriptors,
     vkapi::PipelineBarrier& pipeline_barrier,
     const vkapi::ShaderInfo& shader_descriptor,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
+    const LocalWorkGroup& lwg,
     const void* push_constants_data,
     const uint32_t push_constants_size) {
+  vkapi::Adapter* const adapter = adapter_ptr();
+  const LocalWorkGroup& dispatch_lwg =
+      gwg.required_lwg_size().is_valid() ? gwg.required_lwg_size() : lwg;
+  dispatch_lwg.validate(
+      adapter->max_compute_workgroup_size(),
+      adapter->max_compute_workgroup_invocations());
+  gwg.validate(
+      dispatch_lwg,
+      adapter->max_compute_workgroup_count(),
+      shader_descriptor.out_tile_size);
+
   // Adjust the global workgroup size based on the output tile size
-  uint32_t global_wg_w = utils::div_up(
-      global_workgroup_size[0u], shader_descriptor.out_tile_size[0u]);
-  uint32_t global_wg_h = utils::div_up(
-      global_workgroup_size[1u], shader_descriptor.out_tile_size[1u]);
-  uint32_t global_wg_d = utils::div_up(
-      global_workgroup_size[2u], shader_descriptor.out_tile_size[2u]);
+  uint32_t gwg_w = utils::div_up(gwg[0u], shader_descriptor.out_tile_size[0u]);
+  uint32_t gwg_h = utils::div_up(gwg[1u], shader_descriptor.out_tile_size[1u]);
+  uint32_t gwg_d = utils::div_up(gwg[2u], shader_descriptor.out_tile_size[2u]);
 
   // Submitting a global work group size of 0 is undefined behaviour. If this is
   // detected then submit a single workgroup instead.
-  if (global_wg_w == 0u || global_wg_h == 0u || global_wg_d == 0u) {
-    global_wg_w = 1u;
-    global_wg_h = 1u;
-    global_wg_d = 1u;
+  if (gwg_w == 0u || gwg_h == 0u || gwg_d == 0u) {
+    gwg_w = 1u;
+    gwg_h = 1u;
+    gwg_d = 1u;
   }
 
-  const utils::uvec3 effective_global_wg = {
-      global_wg_w,
-      global_wg_h,
-      global_wg_d,
-  };
+  const GlobalWorkGrid effective_gwg({gwg_w, gwg_h, gwg_d}, kExplicitWorkGrid);
 
   cmd_.bind_descriptors(descriptors.get_bind_handle());
+  serialize_if_profiling(pipeline_barrier);
   cmd_.insert_barrier(pipeline_barrier);
+  report_barrier_finish();
 
   if (push_constants_size > 0 && push_constants_data != nullptr) {
     const VkDescriptorSetLayout shader_layout =
@@ -205,14 +256,29 @@ void Context::register_shader_dispatch(
         pipeline_layout, push_constants_data, push_constants_size);
   }
 
-  cmd_.dispatch(effective_global_wg);
+  cmd_.dispatch(effective_gwg, dispatch_lwg);
+}
+
+void Context::register_barrier(vkapi::PipelineBarrier& pipeline_barrier) {
+  cmd_.insert_barrier_only(pipeline_barrier);
 }
 
 void Context::register_blit(
     vkapi::PipelineBarrier& pipeline_barrier,
     vkapi::VulkanImage& src,
     vkapi::VulkanImage& dst) {
+  // vkCmdBlitImage requires a queue with graphics capability; transfer- or
+  // compute-only queues cannot perform blits. The queue is selected by compute
+  // capability only, so on desktop GPUs that expose compute-only queue families
+  // this could otherwise be invalid usage. On mobile the single universal queue
+  // always has this bit set.
+  VK_CHECK_COND(
+      queue_.capabilities & VK_QUEUE_GRAPHICS_BIT,
+      "The Vulkan queue selected for compute does not support blit operations "
+      "(VK_QUEUE_GRAPHICS_BIT is not set).");
+  serialize_if_profiling(pipeline_barrier);
   cmd_.insert_barrier(pipeline_barrier);
+  report_barrier_finish();
   cmd_.blit(src, dst);
 }
 
@@ -231,7 +297,9 @@ void Context::submit_cmd_to_gpu(VkFence fence_handle, const bool final_use) {
 }
 
 void Context::wait_for_queue() {
-  VK_CHECK(vkQueueWaitIdle(queue().handle));
+  // We ask the Adapter to wait on its queue, because it knows whether the queue
+  // is local or shared.
+  adapter_p_->wait_idle(queue());
 }
 
 void Context::clear_resources() {
@@ -311,11 +379,8 @@ VkPipeline Context::get_shader_pipeline(
   VkPipelineLayout pipeline_layout =
       pipeline_layout_cache().retrieve(shader_layout, push_constants_size);
 
-  const utils::WorkgroupSize local_workgroup_size(4u, 4u, 1u);
-  vkapi::SpecVarList spec_constants = {
-      SV(local_workgroup_size[0u]),
-      SV(local_workgroup_size[1u]),
-      SV(local_workgroup_size[2u])};
+  const LocalWorkGroup lwg(4u, 4u, 1u);
+  vkapi::SpecVarList spec_constants = {SV(lwg[0u]), SV(lwg[1u]), SV(lwg[2u])};
 
   spec_constants.append(additional_constants);
 

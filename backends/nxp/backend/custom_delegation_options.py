@@ -11,18 +11,7 @@ from dataclasses import dataclass
 class CustomDelegationOptions:
     """The class allows the user to specify details which affect which nodes will be delegated."""
 
-    # Neutron requires the channel dimension to be multiple of `num_macs` for concatenation (cat op).
-    #  Due to different dim ordering in torch (channel_first) and Neutron IR (channel last), dim of the channel is
-    #  ambiguous. Cat converter will defensively require both possible dimension index for the channels to be multiple
-    #  of `num_macs`. The `force_delegate_cat` allows the user to turn off the defensive check if from the model design
-    #  it is known this constraint will be satisfied.
-    force_delegate_cat: bool = False
-
     # Proposed partitions which only contain Neutron no-ops are normally not delegated, as the NeutronConverter would
     #  not create any NeutronGraph that can be called. This is done by the partitioner itself, and is not handled by
     #  the individual node converters.
     allow_no_op_partitions: bool = False
-
-    # The new neutron converter flow has different constraints for supported operators. These need to be addressed when
-    # deciding is operator is delegated or not in _is_supported_on_target().
-    use_new_flow_neutron_c: bool = False

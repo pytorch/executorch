@@ -32,6 +32,12 @@ void add_tensor_to_staging_node(
 // Standard Prepack
 //
 
+void add_prepack_standard_node(
+    ComputeGraph& graph,
+    const ValueRef tensor_data,
+    const ValueRef tensor,
+    const bool transpose_hw = false);
+
 /*
  * Given that `v` is a `TensorRef`, create a new `Tensor` value with the
  * specified `storage_type` and `memory_layout`, and add a a prepacking node to
@@ -80,8 +86,8 @@ ValueRef prepack_standard_like(
 /*
  * Given that `v` is a `TensorRef`, create a new `Tensor` value with buffer
  * storage and `kWidthPacked` memory layout, and add a prepacking node to
- * transfer the `TensorRef` data to the new `Tensor` object via a direct buffer
- * to buffer copy shader.
+ * transfer the `TensorRef` data via a direct buffer copy when no padding is
+ * present, or a standard prepack shader when rows require padding.
  */
 ValueRef prepack_direct_copy_buffer(
     ComputeGraph& graph,

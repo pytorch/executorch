@@ -5,11 +5,63 @@ load(
     "@fbsource//tools/build_defs:default_platform_defs.bzl",
     "ANDROID",
 )
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "non_fbcode_target")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
-runtime.cxx_library(
+non_fbcode_target(
+    _kind = runtime.cxx_test,
+    name = "neuron_adapter_library_selector_test",
+    srcs = [
+        "test/NeuronAdapterLibrarySelectorTest.cpp",
+    ],
+    headers = [
+        "include/api/NeuronAdapterLibrarySelector.h",
+    ],
+    include_directories = ["include"],
+    deps = [
+        "//executorch/runtime/backend:interface",
+    ],
+)
+
+non_fbcode_target(
+    _kind = runtime.cxx_test,
+    name = "neuron_backend_init_test",
+    srcs = [
+        "test/NeuronBackendInitTest.cpp",
+    ],
+    headers = [
+        "include/api/NeuronAdapterLibrarySelector.h",
+        "include/api/NeuronBackendInit.h",
+        "include/api/NeuronError.h",
+    ],
+    include_directories = ["include"],
+    deps = [
+        "fbsource//third-party/mediatek/neuropilot-express-sdk:runtime_api",
+        "//executorch/runtime/backend:interface",
+        "//executorch/runtime/core:core",
+    ],
+)
+
+non_fbcode_target(
+    _kind = runtime.cxx_test,
+    name = "neuron_error_test",
+    srcs = [
+        "test/NeuronErrorTest.cpp",
+    ],
+    headers = [
+        "include/api/NeuronError.h",
+    ],
+    include_directories = ["include"],
+    deps = [
+        "fbsource//third-party/mediatek/neuropilot-express-sdk:runtime_api",
+        "//executorch/runtime/core:core",
+    ],
+)
+
+non_fbcode_target(
+    _kind = runtime.cxx_library,
     name = "neuron_backend",
     srcs = [
         "NeuronBackend.cpp",
@@ -20,9 +72,11 @@ runtime.cxx_library(
         "include/**/*.h",
     ]),
     include_directories = ["include"],
+    modifiers = ["ovr_config//os/version/android/constraints:api-level-26"],
     deps = [
         "fbsource//third-party/mediatek/neuropilot-express-sdk:runtime_api",
         "//executorch/runtime/backend:interface",
+        "//executorch/runtime/core:core",
         "//executorch/runtime/core:memory_allocator",
         "//executorch/runtime/executor:pte_data_map",
     ],

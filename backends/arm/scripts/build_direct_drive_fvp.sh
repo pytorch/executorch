@@ -3,6 +3,9 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+#
+# Developer build helper. This command-line interface is not a public API and
+# may change without deprecation.
 
 apply_patch_if_needed () {
   local patch="$1"

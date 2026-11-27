@@ -7,13 +7,28 @@
 from dataclasses import dataclass
 from typing import Dict, Optional
 
-_FALSE_VALUES = {"off", "0", "", "no"}
-
 
 @dataclass
 class CacheValue:
     value_type: str
     value: str
+
+
+try:
+    from install_utils import cmake_boolean_is_true
+except ImportError:  # pragma: no cover
+    # This module is imported both as tools.cmake.cmake_cache and standalone, so the repository root
+    # is not always reachable and the import above cannot be relied on. Keep this the only copy of
+    # the rule besides install_utils, so the two cannot drift apart.
+    _CMAKE_FALSE_CONSTANTS = frozenset(
+        {"off", "false", "n", "no", "0", "", "ignore", "notfound"}
+    )
+
+    def cmake_boolean_is_true(value: str) -> bool:
+        normalized = value.strip().lower()
+        if normalized in _CMAKE_FALSE_CONSTANTS:
+            return False
+        return not normalized.endswith("-notfound")
 
 
 @dataclass
@@ -35,9 +50,9 @@ class CMakeCache:
 
     @staticmethod
     def _is_truthy(value: Optional[str]) -> bool:
-        if (value is None) or (value.lower().strip() in _FALSE_VALUES):
+        if value is None:
             return False
-        return True
+        return cmake_boolean_is_true(value)
 
     @staticmethod
     def read_cmake_cache(cache_path: str) -> Dict[str, CacheValue]:

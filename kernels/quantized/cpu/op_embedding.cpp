@@ -66,13 +66,15 @@ void check_embedding_byte_args(
 
   ET_CHECK_MSG(
       out.scalar_type() == ScalarType::Float ||
-          out.scalar_type() == ScalarType::Half,
+          out.scalar_type() == ScalarType::Half ||
+          out.scalar_type() == ScalarType::BFloat16,
       "out.scalar_type() %" PRId8 " is not supported:",
       static_cast<int8_t>(out.scalar_type()));
 
   ET_CHECK_MSG(
       weight_scales.scalar_type() == ScalarType::Float ||
-          weight_scales.scalar_type() == ScalarType::Half,
+          weight_scales.scalar_type() == ScalarType::Half ||
+          weight_scales.scalar_type() == ScalarType::BFloat16,
       "weight_scales.scalar_type() %" PRId8 " is not supported:",
       static_cast<int8_t>(weight_scales.scalar_type()));
 
@@ -85,9 +87,10 @@ void check_embedding_byte_args(
         static_cast<int8_t>(weight_scales.dim()));
 
     ET_CHECK_MSG(
-        opt_weight_zero_points.value().scalar_type() == out.scalar_type(),
+        opt_weight_zero_points.value().scalar_type() ==
+            weight_scales.scalar_type(),
         "weight zero points scalar type %" PRId8
-        " does not match out.scalar_type()",
+        " does not match weight_scales.scalar_type()",
         static_cast<int8_t>(opt_weight_zero_points.value().scalar_type()));
 
     for (int32_t i = 0; i < weight_scales.dim(); ++i) {
@@ -257,12 +260,22 @@ Tensor& quantized_embedding_byte_out(
       out_type,
       out);
 
+  // Without a dtype argument the output takes the scales' dtype, and the
+  // kernel reads the scales as the output type.
+  ET_CHECK_MSG(
+      weight_scales.scalar_type() == out_type,
+      "weight_scales.scalar_type() %" PRId8
+      " does not match out.scalar_type() %" PRId8,
+      static_cast<int8_t>(weight_scales.scalar_type()),
+      static_cast<int8_t>(out_type));
+
   constexpr auto name = "quantized_decomposed::embedding_byte.out";
   ET_SWITCH_TWO_TYPES(Byte, Char, w_type, ctx, name, CTYPE_W, [&]() {
-    ET_SWITCH_TWO_TYPES(Float, Half, out_type, ctx, name, CTYPE_OUT, [&]() {
-      embedding_byte_per_channel<CTYPE_W, CTYPE_OUT, CTYPE_OUT>(
-          weight, weight_scales, opt_weight_zero_points, indices, out);
-    });
+    ET_SWITCH_THREE_TYPES(
+        Float, Half, BFloat16, out_type, ctx, name, CTYPE_OUT, [&]() {
+          embedding_byte_per_channel<CTYPE_W, CTYPE_OUT, CTYPE_OUT>(
+              weight, weight_scales, opt_weight_zero_points, indices, out);
+        });
   });
 
   return out;
@@ -324,12 +337,18 @@ Tensor& quantized_embedding_byte_dtype_out(
 
   constexpr auto name = "quantized_decomposed::embedding_byte.dtype_out";
   ET_SWITCH_TWO_TYPES(Byte, Char, weight_type, ctx, name, CTYPE_W, [&]() {
-    ET_SWITCH_TWO_TYPES(Float, Half, params_type, ctx, name, CTYPE_P, [&]() {
-      ET_SWITCH_TWO_TYPES(Float, Half, out_type, ctx, name, CTYPE_OUT, [&]() {
-        embedding_byte_per_channel<CTYPE_W, CTYPE_P, CTYPE_OUT>(
-            weight, weight_scales, opt_weight_zero_points, indices, out);
-      });
-    });
+    ET_SWITCH_THREE_TYPES(
+        Float, Half, BFloat16, params_type, ctx, name, CTYPE_P, [&]() {
+          ET_SWITCH_THREE_TYPES(
+              Float, Half, BFloat16, out_type, ctx, name, CTYPE_OUT, [&]() {
+                embedding_byte_per_channel<CTYPE_W, CTYPE_P, CTYPE_OUT>(
+                    weight,
+                    weight_scales,
+                    opt_weight_zero_points,
+                    indices,
+                    out);
+              });
+        });
   });
 
   return out;

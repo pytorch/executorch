@@ -282,7 +282,7 @@ class OpAvgPool2DOutTest : public OperatorTest {
             padding_vec.data(), padding_vec.size());
     bool ceil_mode = false;
     bool count_include_pad = true;
-    std::optional<int64_t> divisor_override = std::optional<int64_t>(10);
+    int64_t divisor_override = 10;
     executorch::aten::Tensor out = tfFloat.zeros({2, 3, 3, 4});
     executorch::aten::Tensor out_expected = tfFloat.make(
         {2, 3, 3, 4},
@@ -1115,4 +1115,38 @@ TEST_F(OpAvgPool2DOutTest, SanityCheck4DCeilModeNoIncludePadding) {
   test_4d_ceil_mode_no_include_padding_dtype<ScalarType::dtype>();
   ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY)
 #undef TEST_ENTRY
+}
+
+TEST_F(OpAvgPool2DOutTest, BFloat16LargeKernelAccumulatesInFloat) {
+  torch::executor::testing::TensorFactory<ScalarType::BFloat16> tf;
+  // A 32x32 window sums 1024 ones. A BFloat16 running sum stops growing at
+  // 256, so without float accumulation the average is 0.25 instead of 1.
+  executorch::aten::Tensor in = tf.ones({1, 1, 32, 32});
+  executorch::aten::Tensor out = tf.zeros({1, 1, 1, 1});
+  int64_t kernel_size = 32;
+  int64_t padding = 0;
+  bool ceil_mode = false;
+  bool count_include_pad = true;
+
+  // With and without divisor_override take different paths.
+  op_avg_pool2d_out(
+      in, kernel_size, {}, padding, ceil_mode, count_include_pad, {}, out);
+  EXPECT_TENSOR_CLOSE(out, tf.ones({1, 1, 1, 1}));
+  // BFloat16 rounds 257 to 256, so dividing in BFloat16 would give exactly 4.
+  op_avg_pool2d_out(
+      in, kernel_size, {}, padding, ceil_mode, count_include_pad, 257, out);
+  EXPECT_TENSOR_EQ(out, tf.full({1, 1, 1, 1}, 1024.0 / 257));
+}
+
+TEST_F(OpAvgPool2DOutTest, SingleElementPaddingExceedsHalfKernelOnOtherAxis) {
+  torch::executor::testing::TensorFactory<ScalarType::Float> tf;
+  executorch::aten::Tensor in = tf.ones({1, 1, 3, 3});
+  executorch::aten::Tensor out = tf.zeros({1, 1, 3, 5});
+  int64_t kernel_size[] = {3, 1};
+  int64_t stride = 1;
+  int64_t padding = 1;
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_avg_pool2d_out(
+          in, kernel_size, stride, padding, false, false, {}, out));
 }

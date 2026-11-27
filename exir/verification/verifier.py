@@ -19,7 +19,10 @@ from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.error import ExportError, ExportErrorType
 from executorch.exir.lowered_backend_module import LoweredBackendModule
 from executorch.exir.passes.dim_order_ops_registry import DimOrderOpsMap
-from executorch.exir.passes.executorch_prim_ops_registry import _EXECUTORCH_SYM_OPS
+from executorch.exir.passes.executorch_prim_ops_registry import (
+    _EXECUTORCH_SYM_OPS,
+    _PYTHON_SYM_OPS_TO_EXECUTORCH_SYM_OPS,
+)
 from executorch.exir.passes.replace_aten_with_edge_pass import DISALLOW_LIST
 from executorch.exir.verification.arg_validator import (
     EdgeOpArgValidator,
@@ -47,6 +50,26 @@ def _check_tensors_are_contiguous(gm: GraphModule) -> None:
                 raise SpecViolationError(
                     f"Tensors in Aten dialect must be contiguous, {name} is not contiguous"
                 )
+
+
+def _check_sym_max_min_args_are_ints(gm: GraphModule) -> None:
+    # The executorch_prim sym_max and sym_min kernels only take ints.
+    for module in gm.modules():
+        if not isinstance(module, GraphModule):
+            continue
+        for node in module.graph.nodes:
+            if node.op != "call_function" or node.target not in (
+                torch.sym_max,
+                torch.sym_min,
+            ):
+                continue
+            for arg in node.args:
+                val = arg.meta.get("val") if isinstance(arg, torch.fx.Node) else arg
+                if isinstance(val, bool) or not isinstance(val, (int, torch.SymInt)):
+                    raise SpecViolationError(
+                        f"{node.target.__name__} only supports int arguments, but "
+                        f"{node.name} has {val!r}"
+                    )
 
 
 def _check_valid_dim_order_ops(op, use_dim_order) -> None:
@@ -90,8 +113,8 @@ def EXIRATenDialectVerifier(  # noqa: C901
     """
     Returns a verifier class that runs ATen dialect specific checks on the graph module.
     """
-    _core_aten_ops_exception_list = core_aten_ops_exception_list or []
-    _preserve_ops = preserve_ops or []
+    _core_aten_ops_exception_list = list(core_aten_ops_exception_list or [])
+    _preserve_ops = list(preserve_ops or [])
     # merge the exception list from edge_compile_config and exception_list
     if edge_compile_config:
         if edge_compile_config._core_aten_ops_exception_list:
@@ -114,6 +137,7 @@ def EXIRATenDialectVerifier(  # noqa: C901
             exception_list = (
                 [
                     torch.ops.aten.mkldnn_rnn_layer.default,
+                    torch.ops.aten._upsample_bicubic2d_aa.default,
                     torch.ops.aten._upsample_bilinear2d_aa.default,
                     torch.ops.aten.quantize_per_tensor.default,
                     torch.ops.aten.dequantize.self,
@@ -245,8 +269,8 @@ def EXIREdgeDialectVerifier(  # noqa: C901
     core_aten_ops_exception_list: Optional[List[torch._ops.OpOverload]] = None,
     preserve_ops: Optional[List[torch._ops.OpOverload]] = None,
 ):
-    _core_aten_ops_exception_list = core_aten_ops_exception_list or []
-    _preserve_ops = preserve_ops or []
+    _core_aten_ops_exception_list = list(core_aten_ops_exception_list or [])
+    _preserve_ops = list(preserve_ops or [])
     # merge the exception list from edge_compile_config and exception_list
     if edge_compile_config:
         if edge_compile_config._core_aten_ops_exception_list:
@@ -263,7 +287,6 @@ def EXIREdgeDialectVerifier(  # noqa: C901
             _edge_compile_config = edge_compile_config or EdgeCompileConfig()
 
             self.enable = _edge_compile_config._check_ir_validity
-            self.check_edge_ops = _edge_compile_config._use_edge_ops
             self.use_dim_order = not _edge_compile_config._skip_dim_order
 
             self._core_aten_ops_exception_list = _core_aten_ops_exception_list
@@ -274,11 +297,7 @@ def EXIREdgeDialectVerifier(  # noqa: C901
                 preserve_ops=_preserve_ops,
             )
             self.check_valid_aten_op = self.aten_op_verifier.check_valid_op
-
-            if self.check_edge_ops:
-                self.check_valid_op = self.check_valid_edge_op
-            else:
-                self.check_valid_op = self.check_valid_aten_op
+            self.check_valid_op = self.check_valid_edge_op
 
         def allowed_getattr_types(self) -> Tuple[Type[Any], ...]:
             return (
@@ -299,6 +318,7 @@ def EXIREdgeDialectVerifier(  # noqa: C901
                 in [operator.getitem]
                 + DISALLOW_LIST
                 + list(_EXECUTORCH_SYM_OPS)
+                + list(_PYTHON_SYM_OPS_TO_EXECUTORCH_SYM_OPS)
                 + self._core_aten_ops_exception_list
             ):
                 return
@@ -319,9 +339,9 @@ def EXIREdgeDialectVerifier(  # noqa: C901
         def check_additional(self, gm: GraphModule) -> None:
             if not self.enable:
                 return
-            if self.check_edge_ops:
-                _check_tensors_are_contiguous(gm)
-                _check_tensor_args_matching_op_allowed_dtype(gm)
+            _check_tensors_are_contiguous(gm)
+            _check_sym_max_min_args_are_ints(gm)
+            _check_tensor_args_matching_op_allowed_dtype(gm)
 
         def is_valid(self, gm: GraphModule) -> bool:
             try:

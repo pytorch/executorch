@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -7,6 +8,7 @@
 # pyre-unsafe
 
 import dataclasses
+import json
 import logging
 import sys
 import warnings
@@ -72,10 +74,8 @@ from executorch.devtools.inspector._intermediate_output_capturer import (
     IntermediateOutputCapturer,
 )
 from executorch.devtools.inspector.numerical_comparator import (
-    L1Comparator,
-    MSEComparator,
+    comparator_class_for_metric,
     NumericalComparatorBase,
-    SNRComparator,
 )
 from executorch.exir import ExportedProgram
 
@@ -933,7 +933,7 @@ class EventBlock:
         self,
         handle_map: Dict[str, List[int]],
         delegate_map: Optional[Dict[str, DelegateMetadata]] = None,
-        instruction_id_to_num_outs_map: Dict[int, int] = None,
+        instruction_id_to_num_outs_map: Dict[str, int] = None,
     ):
         """
         Given mappings from instruction id to debug handles, populate the
@@ -1133,16 +1133,25 @@ class Inspector:
             return
 
         # (1) Debug Handle Symbolification
-        for event_block in self.event_blocks:
-            event_block._gen_resolve_debug_handles(
-                self._etrecord._debug_handle_map[FORWARD],
-                (
-                    self._etrecord._delegate_map[FORWARD]
-                    if self._etrecord._delegate_map is not None
-                    else None
-                ),
-                self._etrecord._instruction_id_to_num_outs_map[FORWARD],
+        if self.event_blocks:
+            # An ETRecord object from get_etrecord() has int keys (at every level)
+            # and tuples; save()/parse_etrecord() gives the JSON shape (str keys,
+            # lists) that _gen_resolve_debug_handles expects, so use that for both.
+            debug_handle_map = json.loads(json.dumps(self._etrecord._debug_handle_map))
+            delegate_map = (
+                json.loads(json.dumps(self._etrecord._delegate_map))[FORWARD]
+                if self._etrecord._delegate_map is not None
+                else None
             )
+            num_outs_map = json.loads(
+                json.dumps(self._etrecord._instruction_id_to_num_outs_map)
+            )
+            for event_block in self.event_blocks:
+                event_block._gen_resolve_debug_handles(
+                    debug_handle_map[FORWARD],
+                    delegate_map,
+                    num_outs_map[FORWARD],
+                )
 
         # (2) Event Metadata Association
         self.op_graph_dict = gen_graphs_from_etrecord(
@@ -1646,15 +1655,7 @@ class Inspector:
             if comparator.inspector is None:
                 comparator.inspector = self
         else:
-            metric = distance.strip().upper()
-            if metric == "MSE":
-                comparator = MSEComparator(inspector=self)
-            elif metric == "L1":
-                comparator = L1Comparator(inspector=self)
-            elif metric == "SNR":
-                comparator = SNRComparator(inspector=self)
-            else:
-                raise ValueError(f"Unsupported distance metric {distance!r}")
+            comparator = comparator_class_for_metric(distance)(inspector=self)
 
         # Delegate to comparator's compare method (includes preprocessing)
         df = comparator.compare(
@@ -1686,3 +1687,26 @@ class Inspector:
             df["stacktraces"] = df["aot_ops"].apply(get_stacktraces_for_row)
 
         return df
+
+    def get_vgf_neural_statistics(self) -> List[Dict[str, Any]]:
+        """
+        Return parsed VGF neural accelerator statistics records embedded as
+        delegate metadata in ETDump.
+
+        Each returned item is the JSON wrapper emitted by the VGF backend. Blob
+        fields under each segment contain both the original base64 string and a
+        decoded `raw_data: bytes` field.
+        """
+        from executorch.devtools.inspector.vgf_neural_statistics import (
+            parse_vgf_neural_statistics_delegate_metadata,
+        )
+
+        records: List[Dict[str, Any]] = []
+        for event_block in self.event_blocks:
+            for event in event_block.events:
+                records.extend(
+                    parse_vgf_neural_statistics_delegate_metadata(
+                        event.raw_delegate_debug_metadatas
+                    )
+                )
+        return records

@@ -16,7 +16,6 @@
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/executor/pte_data_map.h>
 
-#include <cinttypes>
 #include <memory>
 #include <mutex>
 
@@ -41,13 +40,6 @@ using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
-
-// Global mutex for all XNNPACK operations. This is temporary, tracked by
-// T272407942.
-static std::mutex& global_xnnpack_mutex() {
-  static std::mutex m;
-  return m;
-}
 
 class XnnpackBackend final
     : public ::executorch::ET_RUNTIME_NAMESPACE::BackendInterface {
@@ -74,8 +66,6 @@ class XnnpackBackend final
       BackendInitContext& context,
       FreeableBuffer* processed,
       ArrayRef<CompileSpec> compile_specs) const override {
-    const std::lock_guard<std::mutex> global_lock(global_xnnpack_mutex());
-
     auto executor = context.get_runtime_allocator()
                         ->allocateInstance<xnnpack::delegate::XNNExecutor>();
     if (executor == nullptr) {
@@ -100,16 +90,34 @@ class XnnpackBackend final
     }
     auto workspace = workspace_result.get();
 
-    bool use_weight_cache = options_.resolve_weight_cache(context);
-    // Hold the lock for the entire init-compile-finalize sequence to prevent
-    // concurrent inits from resetting is_finalized_ or overwriting
-    // named_data_map_ while compileModel is using the shared weights cache.
-    std::unique_lock<std::mutex> lock_weights_cache(
-        weights_cache_mutex_, std::defer_lock);
-    if (use_weight_cache) {
-      lock_weights_cache.lock();
-      weights_cache_->initialize_for_runtime(
+    const xnnpack::delegate::XNNCompilerOptions compiler_options{
+        .use_weight_cache = options_.resolve_weight_cache(context),
+        .disable_packed_lhs = options_.resolve_disable_packed_lhs(context),
+    };
+    // Per-path weights cache: same-path PTEs share an instance and
+    // serialize on its mutex; different paths run in parallel.
+    std::shared_ptr<xnnpack::delegate::XNNWeightsCache> weights_cache;
+    std::unique_lock<std::mutex> lock_weights_cache;
+    if (compiler_options.use_weight_cache) {
+      // Only honor a path coming through runtime_spec (per-PTE opt-in).
+      // Reading the backend-singleton global would let a non-opt-in PTE
+      // inherit another model's cache file.
+      std::string cache_path;
+      auto path_spec = context.get_runtime_spec<const char*>(
+          xnnpack::packed_cache_path_option_key);
+      if (path_spec.ok()) {
+        cache_path = path_spec.get();
+      }
+      auto wc_result = options_.get_or_create_weights_cache(cache_path);
+      if (!wc_result.ok()) {
+        return wc_result.error();
+      }
+      weights_cache = wc_result.get();
+      lock_weights_cache = std::unique_lock<std::mutex>(weights_cache->mutex());
+
+      weights_cache->initialize_for_runtime(
           context.get_runtime_allocator(), named_data_map);
+      workspace->set_uses_weight_cache();
     }
 
     auto [workspace_lock, workspace_ptr] = workspace->acquire();
@@ -123,10 +131,10 @@ class XnnpackBackend final
         processed->data(),
         processed->size(),
         executor,
-        weights_cache_.get(),
+        weights_cache.get(),
         workspace_ptr,
         named_data_map,
-        use_weight_cache);
+        compiler_options);
     // This backend does not need its processed data after compiling the model.
     processed->Free();
 
@@ -140,15 +148,11 @@ class XnnpackBackend final
       return err;
     }
 
-    ET_LOG(
-        Info,
-        "XnnpackBackend::init delegate=%p workspace_id=%" PRIu64
-        " workspace_ptr=%p program_id=0x%" PRIxPTR " weight_cache=%s",
-        (void*)executor,
-        workspace->id(),
-        (void*)workspace_ptr,
-        program_id,
-        use_weight_cache ? "true" : "false");
+    // Hand the cache to the executor (held by shared_ptr so it
+    // outlives any sibling executors that share it).
+    if (compiler_options.use_weight_cache) {
+      executor->set_weights_cache(std::move(weights_cache));
+    }
 
     return executor;
   }
@@ -157,24 +161,16 @@ class XnnpackBackend final
       BackendExecutionContext& context,
       DelegateHandle* handle,
       Span<EValue*> args) const override {
-    const std::lock_guard<std::mutex> global_lock(global_xnnpack_mutex());
-
     auto executor = static_cast<xnnpack::delegate::XNNExecutor*>(handle);
 
     auto workspace = executor->get_workspace();
-    ET_LOG(
-        Info,
-        "XnnpackBackend::execute begin delegate=%p workspace_id=%" PRIu64
-        " num_args=%zu weight_cache=%s",
-        (void*)executor,
-        workspace->id(),
-        (size_t)args.size(),
-        executor->uses_weight_cache() ? "true" : "false");
 
-    std::unique_lock<std::mutex> lock_weights_cache(
-        weights_cache_mutex_, std::defer_lock);
-    if (executor->uses_weight_cache()) {
-      lock_weights_cache.lock();
+    // Lock the cache shared with sibling executors at the same path.
+    // Empty cache → PTE didn't opt into file-backed mode.
+    auto cache = executor->get_weights_cache();
+    std::unique_lock<std::mutex> lock_weights_cache;
+    if (cache) {
+      lock_weights_cache = std::unique_lock<std::mutex>(cache->mutex());
     }
 
     auto [raii_lock, _] = workspace->acquire();
@@ -194,38 +190,28 @@ class XnnpackBackend final
     // Convert output data types if necessary (e.g., int32 -> int64 for Long)
     err = executor->convert_outputs(args);
 
-    ET_LOG(
-        Info,
-        "XnnpackBackend::execute end delegate=%p workspace_id=%" PRIu64
-        " err=0x%x",
-        (void*)executor,
-        workspace->id(),
-        (unsigned int)err);
-
     return err;
   }
 
   void destroy(DelegateHandle* handle) const override {
     if (handle != nullptr) {
-      const std::lock_guard<std::mutex> global_lock(global_xnnpack_mutex());
-
       auto executor = static_cast<xnnpack::delegate::XNNExecutor*>(handle);
       auto workspace = executor->get_workspace();
+      auto cache = executor->get_weights_cache();
 
-      ET_LOG(
-          Info,
-          "XnnpackBackend::destroy delegate=%p workspace_id=%" PRIu64,
-          (void*)executor,
-          workspace->id());
+      // Local shared_ptr keeps the instance alive through
+      // delete_packed_data even if the executor was the last holder.
+      std::unique_lock<std::mutex> lock_weights_cache;
+      if (cache) {
+        lock_weights_cache = std::unique_lock<std::mutex>(cache->mutex());
+      }
 
 #ifdef ENABLE_XNNPACK_PROFILING
       executor->print_avg_op_timings();
 #endif
 
-      if (executor->uses_weight_cache()) {
-        const std::lock_guard<std::mutex> lock_weights_cache(
-            weights_cache_mutex_);
-        weights_cache_->delete_packed_data(executor->get_packed_data_names());
+      if (cache && executor->uses_weight_cache()) {
+        cache->delete_packed_data(executor->get_packed_data_names());
       }
 
       // This is needed to serialize access to xnn_delete_runtime which is not
@@ -256,27 +242,37 @@ class XnnpackBackend final
   Error set_option(
       BackendOptionContext& context,
       const Span<BackendOption>& backend_options) override {
+    // Process every option even if one fails — applying a `packed_cache_path`
+    // and triggering `save_weight_cache_on_disk` in the same array must not
+    // depend on declaration order. Capture the first error and report it
+    // after the loop. All option-key dispatch — including the disk-save
+    // side effect — lives inside XnnpackBackendOptions::set_option, which
+    // owns the weights-cache instance and its mutex.
+    Error first_err = Error::Ok;
     for (const auto& option : backend_options) {
       Error err = options_.set_option(option);
-      if (err != Error::Ok) {
-        return err;
+      if (err != Error::Ok && first_err == Error::Ok) {
+        first_err = err;
       }
     }
-    return Error::Ok;
+    return first_err;
+  }
+
+ public:
+  /** See xnnpack::get_packed_cache_report(). */
+  xnnpack::PackedCacheReport packed_cache_report() const {
+    return options_.weights_cache_manager().report();
   }
 
  private:
   mutable xnnpack::XnnpackBackendOptions options_;
 
-  // Weights cache is global to all delegate instances.
-  mutable std::mutex weights_cache_mutex_;
-  std::unique_ptr<XNNWeightsCache> weights_cache_ =
-      std::make_unique<XNNWeightsCache>();
-
-  // Lock Hiearchy for Mutexes:
-  // weights_cache_mutex_
-  // workspace_meta_mutex_
-  // workspace_mutex_ (owned by executor)
+  // Lock hierarchy for mutexes:
+  //   weights_cache_manager_.meta_mutex_  (leaf — held only during
+  //                                        get_or_create map ops)
+  //   XNNWeightsCache::instance_mutex_    (one per cache instance)
+  //   workspace_meta_mutex_
+  //   workspace_mutex_ (owned by executor)
 };
 
 namespace {
@@ -284,6 +280,12 @@ auto backend_instance = XnnpackBackend();
 Backend backend{xnnpack::xnnpack_backend_key, &backend_instance};
 static auto success_with_compiler = register_backend(backend);
 } // namespace
+
+namespace xnnpack {
+PackedCacheReport get_packed_cache_report() {
+  return backend_instance.packed_cache_report();
+}
+} // namespace xnnpack
 
 } // namespace backends
 } // namespace executorch

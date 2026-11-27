@@ -6,10 +6,14 @@
 
 # mypy: disable-error-code=import-not-found
 
+from collections import Counter
 from typing import Callable, final, List, Optional, Tuple
 
 import torch
-from executorch.backends.openvino.preprocess import OpenvinoBackend
+from executorch.backends.openvino.preprocess import (
+    _inference_precision,
+    OpenvinoBackend,
+)
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
@@ -22,8 +26,28 @@ from openvino.frontend.pytorch.torchdynamo.op_support import (  # type: ignore[i
 )
 
 from torch.export.exported_program import ExportedProgram
-from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
+from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partition
 from torch.fx.passes.operator_support import OperatorSupportBase
+
+# OpenVINO converts these to nothing, so their output is their input.
+_COPY_OPS = {
+    "aten.alias_copy.default",
+    "aten.clone.default",
+    "dim_order_ops._clone_dim_order.default",
+}
+
+# The runtime binds outputs of these types, and the CPU plugin computes 64-bit
+# types in 32 bits, so only copies of these types can return a constant.
+_CONSTANT_COPY_DTYPES = {
+    torch.bool,
+    torch.uint8,
+    torch.int8,
+    torch.int16,
+    torch.int32,
+    torch.float16,
+    torch.bfloat16,
+    torch.float32,
+}
 
 
 class PatternNode:
@@ -33,10 +57,117 @@ class PatternNode:
         self.op_types = {}
 
 
+def _reads_only_bool(node: torch.fx.Node) -> bool:
+    """Whether OpenVINO would compute the node in bool. It promotes mixed tensor
+    inputs, so maximum(bool, float) is computed in float and converts fine."""
+    vals = [n.meta.get("val") for n in node.all_input_nodes]
+    tensors = [val for val in vals if isinstance(val, torch.Tensor)]
+    return bool(tensors) and all(t.dtype == torch.bool for t in tensors)
+
+
+def _copy_source(node: torch.fx.Node) -> Optional[torch.fx.Node]:
+    """The node's input, if OpenVINO returns that input as the node's output."""
+    if isinstance(node.target, str) or node.target.__name__ not in _COPY_OPS:
+        return None
+    source = node.args[0]
+    return source if isinstance(source, torch.fx.Node) else None
+
+
+def _constants(program: ExportedProgram) -> set[torch.fx.Node]:
+    """The placeholders that each partition reading them stores as its own
+    data (see tag_constant_data), so OpenVINO gets them as constants, not as
+    inputs."""
+    signature = program.graph_signature
+    mutated = set(signature.buffers_to_mutate.values())
+    names = {
+        *signature.inputs_to_parameters,
+        *signature.inputs_to_lifted_tensor_constants,
+        *(
+            name
+            for name, buffer in signature.inputs_to_buffers.items()
+            if buffer not in mutated
+        ),
+    }
+    return {
+        node
+        for node in program.graph.nodes
+        if node.op == "placeholder" and node.name in names
+    }
+
+
+def _remove_copies_of_inputs(
+    partition: Partition, constants: set[torch.fx.Node], dtypes: set[torch.dtype]
+) -> None:
+    """Leave out of the partition each copy that would return, unchanged, one
+    of the partition's inputs or a constant OpenVINO cannot return.
+
+    OpenVINO would return the input itself, and when the runtime binds the
+    output buffers after the inputs, its CPU plugin does not write such an
+    output and can overwrite the input with the output buffer's old contents.
+    A copy into another dim order leaves too. OpenVINO would return a
+    transpose of the input instead, but that was checked only on the CPU.
+    Copies used only inside the partition stay. A copy of a constant that only
+    this partition reads stays too, since the constant is not a partition
+    input. Such a copy still leaves when its type is not in dtypes, the types
+    OpenVINO can return, or when another output also returns that constant,
+    since OpenVINO's PyTorch frontend cannot convert two outputs of one
+    constant.
+    """
+
+    def copied(node: torch.fx.Node) -> Optional[torch.fx.Node]:
+        while (source := _copy_source(node)) is not None:
+            if source not in partition.nodes:
+                return source
+            node = source
+        return None
+
+    # Taking out a copy can make another copy leave.
+    while True:
+        outputs = {
+            node: copied(node)
+            for node in partition.nodes
+            if any(user not in partition.nodes for user in node.users)
+        }
+        returns = Counter(outputs.values())
+        leaving = [
+            node
+            for node, source in outputs.items()
+            if source is not None
+            and not (
+                source in constants
+                and returns[source] == 1
+                and all(user in partition.nodes for user in source.users)
+                and node.meta["val"].dtype in dtypes
+            )
+        ]
+        if not leaving:
+            return
+        for node in leaving:
+            # The copies it reads leave with it. A copy of a constant left inside
+            # could feed it while the partition also reads it, a cycle.
+            while (inner := _copy_source(node)) is not None and node in partition.nodes:
+                partition.remove_node(node)
+                node = inner
+
+
 class OpenvinoOperatorsSupport(OperatorSupportBase):
     extended_support_dict = {
         "torch.ops.dim_order_ops._clone_dim_order.default": None,
         "torch.ops.dim_order_ops._to_dim_order_copy.default": None,
+    }
+    # OpenVINO converts these to ReduceMin, ReduceMax, Minimum, Maximum or Sign,
+    # none of which take bool tensors.
+    bool_unsupported_ops = {
+        "aten.amax.default",
+        "aten.amin.default",
+        "aten.clamp.default",
+        "aten.max.default",
+        "aten.max.dim",
+        "aten.maximum.default",
+        "aten.min.default",
+        "aten.min.dim",
+        "aten.minimum.default",
+        "aten.sign.default",
     }
 
     def __init__(
@@ -86,6 +217,10 @@ class OpenvinoOperatorsSupport(OperatorSupportBase):
         )
         if op_type == "getitem":
             return True
+
+        if op_type in self.bool_unsupported_ops and _reads_only_bool(node):
+            print("Op not supported for bool tensors: ", "torch.ops." + str(op_type))
+            return False
 
         if "torch.ops." + str(op_type) in supported_ops:
             return True
@@ -225,7 +360,22 @@ class OpenvinoPartitioner(Partitioner):
         partition_list = partitioner.propose_partitions()
 
         partition_tags = {}
+        constants = _constants(exported_program)
+        options = {
+            spec.key: spec.value.decode() for spec in self.delegation_spec.compile_specs
+        }
+        precision = _inference_precision(
+            options.get("device", "CPU"), options.get("inference_precision")
+        )
+        # OpenVINO can round a float copy in any precision but f32, as an ARM
+        # CPU does in f16.
+        dtypes = {
+            dtype
+            for dtype in _CONSTANT_COPY_DTYPES
+            if precision == "f32" or not dtype.is_floating_point
+        }
         for partition in partition_list:
+            _remove_copies_of_inputs(partition, constants, dtypes)
             for node in partition.nodes:
                 tag = f"tag{partition.id}"
                 node.meta["delegation_tag"] = tag

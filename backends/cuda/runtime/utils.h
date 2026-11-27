@@ -8,8 +8,8 @@
 
 #pragma once
 
-#include <cuda_runtime.h>
 #include <executorch/backends/aoti/slim/c10/cuda/Exception.h>
+#include <executorch/extension/cuda/runtime_api.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
@@ -23,6 +23,26 @@
 namespace executorch::backends::cuda {
 
 namespace {
+// Bytes from a view's first element to one past its last, which equals
+// nbytes() for a contiguous view. False if that does not fit in size_t.
+inline bool _extent_nbytes(
+    const executorch::backends::aoti::slim::SlimTensor* slim_tensor,
+    size_t* extent_nbytes) {
+  size_t last = 0;
+  for (size_t i = 0; i < slim_tensor->dim(); ++i) {
+    size_t term = 0;
+    if (::c10::mul_overflows(
+            static_cast<size_t>(slim_tensor->sizes()[i] - 1),
+            static_cast<size_t>(slim_tensor->strides()[i]),
+            &term) ||
+        ::c10::add_overflows(last, term, &last)) {
+      return false;
+    }
+  }
+  return !::c10::add_overflows(last, size_t{1}, &last) &&
+      !::c10::mul_overflows(last, slim_tensor->itemsize(), extent_nbytes);
+}
+
 inline executorch::runtime::Error _check_tensor_metadata(
     const executorch::backends::aoti::slim::SlimTensor* slim_tensor,
     executorch::runtime::etensor::Tensor* etensor) {
@@ -34,18 +54,31 @@ inline executorch::runtime::Error _check_tensor_metadata(
   ET_CHECK_OR_RETURN_ERROR(
       etensor != nullptr, InvalidArgument, "etensor pointer cannot be nullptr");
 
-  // Check storage_offset is 0 (ETensor does not support storage offset)
+  // The copy reads every element the view reaches, starting at data_ptr(),
+  // which adds the offset, so that span has to stay inside the storage.
+  const int64_t storage_offset = slim_tensor->storage_offset();
   ET_CHECK_OR_RETURN_ERROR(
-      slim_tensor->storage_offset() == 0,
+      storage_offset >= 0,
       InvalidArgument,
-      "SlimTensor storage_offset must be 0, got %ld",
-      static_cast<long>(slim_tensor->storage_offset()));
-
-  // Check that SlimTensor is contiguous
-  ET_CHECK_OR_RETURN_ERROR(
-      slim_tensor->is_contiguous(),
-      InvalidArgument,
-      "SlimTensor must be contiguous");
+      "SlimTensor storage_offset must not be negative, got %ld",
+      static_cast<long>(storage_offset));
+  if (slim_tensor->numel() > 0) {
+    size_t span_nbytes = 0;
+    ET_CHECK_OR_RETURN_ERROR(
+        _extent_nbytes(slim_tensor, &span_nbytes),
+        InvalidArgument,
+        "SlimTensor view extent does not fit in size_t");
+    const size_t storage_nbytes = slim_tensor->storage()->nbytes();
+    ET_CHECK_OR_RETURN_ERROR(
+        span_nbytes <= storage_nbytes &&
+            static_cast<size_t>(storage_offset) <=
+                (storage_nbytes - span_nbytes) / slim_tensor->itemsize(),
+        InvalidArgument,
+        "SlimTensor view spanning %zu bytes at storage_offset %ld runs past its %zu byte storage",
+        span_nbytes,
+        static_cast<long>(storage_offset),
+        storage_nbytes);
+  }
 
   // Check dtype matches
   executorch::backends::aoti::slim::c10::ScalarType slim_dtype =
@@ -104,7 +137,7 @@ inline bool _strides_match(
   return true;
 }
 
-// Element-by-element copy from a contiguous CPU buffer (src_strides layout)
+// Element-by-element copy from a CPU buffer (src_strides layout)
 // to an ETensor (dst_strides layout), rearranging data to match.
 inline void _strided_copy(
     void* dst,
@@ -147,11 +180,13 @@ inline void _strided_copy(
 }
 
 // Copy data from SlimTensor to ETensor, rearranging if strides differ.
-// When stream is non-null, GPU copies use that stream (async fast path).
-// When stream is null, GPU copies are synchronous.
+// dst_device selects the destination memory space (CPU for D2H, a CUDA device
+// for D2D). When stream is non-null, GPU copies use that stream (async fast
+// path). When stream is null, GPU copies are synchronous.
 inline executorch::runtime::Error _copy_slimtensor_to_etensor_impl(
     const executorch::backends::aoti::slim::SlimTensor* slim_tensor,
     executorch::runtime::etensor::Tensor* etensor,
+    const executorch::backends::aoti::slim::c10::Device& dst_device,
     cudaStream_t stream) {
   ET_CHECK_OK_OR_RETURN_ERROR(_check_tensor_metadata(slim_tensor, etensor));
 
@@ -165,7 +200,7 @@ inline executorch::runtime::Error _copy_slimtensor_to_etensor_impl(
 
   if (_strides_match(slim_tensor, etensor)) {
     // Fast path: strides match, raw byte copy
-    if (slim_tensor->is_cpu()) {
+    if (slim_tensor->is_cpu() && dst_device.is_cpu()) {
       std::memcpy(dst_data, src_data, nbytes);
     } else if (stream) {
       executorch::backends::aoti::slim::DeviceTraits<
@@ -174,32 +209,35 @@ inline executorch::runtime::Error _copy_slimtensor_to_etensor_impl(
               dst_data,
               src_data,
               nbytes,
-              executorch::backends::aoti::slim::CPU_DEVICE,
+              dst_device,
               slim_tensor->device(),
               stream);
     } else {
       executorch::backends::aoti::slim::DeviceTraits<
           executorch::backends::aoti::slim::c10::DeviceType::CUDA>::
-          memcpy(
-              dst_data,
-              src_data,
-              nbytes,
-              executorch::backends::aoti::slim::CPU_DEVICE,
-              slim_tensor->device());
+          memcpy(dst_data, src_data, nbytes, dst_device, slim_tensor->device());
     }
   } else {
     // Slow path: strides differ (e.g., AOTI delegate output layout differs
-    // from .pte's dim_order). Copy to a temp CPU buffer, then rearrange
-    // element-by-element to match the ETensor's expected layout.
-    std::vector<char> tmp(nbytes);
+    // from .pte's dim_order, or AOTI returned a strided view such as a slice).
+    // Copy the span the view reaches to a temp CPU buffer, rearrange
+    // element-by-element to match the ETensor's expected layout, then move the
+    // result to the destination (CPU stays in place; GPU gets an H2D copy).
+    // _check_tensor_metadata above already checked that this fits.
+    size_t span_nbytes = 0;
+    _extent_nbytes(slim_tensor, &span_nbytes);
+    std::vector<char> tmp(span_nbytes);
     if (slim_tensor->is_cpu()) {
-      std::memcpy(tmp.data(), src_data, nbytes);
+      std::memcpy(tmp.data(), src_data, span_nbytes);
     } else {
       if (stream) {
+        ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpyAsync(
+            tmp.data(), src_data, span_nbytes, cudaMemcpyDeviceToHost, stream));
         ET_CUDA_CHECK_OR_RETURN_ERROR(cudaStreamSynchronize(stream));
+      } else {
+        ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpy(
+            tmp.data(), src_data, span_nbytes, cudaMemcpyDeviceToHost));
       }
-      ET_CUDA_CHECK_OR_RETURN_ERROR(
-          cudaMemcpy(tmp.data(), src_data, nbytes, cudaMemcpyDeviceToHost));
     }
 
     const size_t ndim = slim_tensor->dim();
@@ -218,18 +256,88 @@ inline executorch::runtime::Error _copy_slimtensor_to_etensor_impl(
 
     size_t elem_size = executorch::backends::aoti::slim::c10::elementSize(
         slim_tensor->dtype());
-    _strided_copy(
-        dst_data,
-        tmp.data(),
-        elem_size,
-        sizes_vec,
-        src_strides_vec,
-        dst_strides_vec);
+
+    if (dst_device.is_cpu()) {
+      _strided_copy(
+          dst_data,
+          tmp.data(),
+          elem_size,
+          sizes_vec,
+          src_strides_vec,
+          dst_strides_vec);
+    } else {
+      static const bool logged = [] {
+        ET_LOG(
+            Info,
+            "CUDA backend: an output is not laid out like its ETensor, so it "
+            "is copied through host memory with a stream sync on every call");
+        return true;
+      }();
+      (void)logged;
+      // Rearrange into a CPU staging buffer, then copy to the GPU destination.
+      std::vector<char> rearranged(nbytes);
+      _strided_copy(
+          rearranged.data(),
+          tmp.data(),
+          elem_size,
+          sizes_vec,
+          src_strides_vec,
+          dst_strides_vec);
+      if (stream) {
+        ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpyAsync(
+            dst_data,
+            rearranged.data(),
+            nbytes,
+            cudaMemcpyHostToDevice,
+            stream));
+        ET_CUDA_CHECK_OR_RETURN_ERROR(cudaStreamSynchronize(stream));
+      } else {
+        ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpy(
+            dst_data, rearranged.data(), nbytes, cudaMemcpyHostToDevice));
+      }
+    }
   }
 
   return executorch::runtime::Error::Ok;
 }
 } // namespace
+
+/**
+ * Whether copying an output's raw bytes into its ETensor puts every element
+ * where the ETensor expects it, which is how a CUDA graph replay lands it.
+ *
+ * The ETensor may still have its previous shape, so its strides can be stale
+ * for dynamic shapes. Its expected strides come from its dim order and the
+ * output's sizes instead, the way resizing it computes them. Size-1 dims never
+ * move an element, so their strides may differ.
+ *
+ * @param output Pointer to the output SlimTensor (must not be null).
+ * @param etensor Pointer to the destination ETensor (must not be null).
+ * @return True if the raw copy is correct, including when there is nothing
+ *     to copy.
+ */
+inline bool output_is_raw_copyable(
+    const executorch::backends::aoti::slim::SlimTensor* output,
+    const executorch::runtime::etensor::Tensor* etensor) {
+  const size_t ndim = output->dim();
+  if (ndim != static_cast<size_t>(etensor->dim())) {
+    return false;
+  }
+  if (output->numel() == 0) {
+    return true;
+  }
+  const auto dim_order = etensor->dim_order();
+  int64_t expected_stride = 1;
+  for (size_t i = ndim; i > 0; --i) {
+    const int64_t d = dim_order[i - 1];
+    const int64_t size = output->size(d);
+    if (size != 1 && output->stride(d) != expected_stride) {
+      return false;
+    }
+    expected_stride *= size;
+  }
+  return true;
+}
 
 /**
  * Copies data from a SlimTensor to an ETensor asynchronously.
@@ -251,7 +359,39 @@ inline executorch::runtime::Error copy_slimtensor_to_etensor_async(
     const executorch::backends::aoti::slim::SlimTensor* slim_tensor,
     executorch::runtime::etensor::Tensor* etensor,
     cudaStream_t stream) {
-  return _copy_slimtensor_to_etensor_impl(slim_tensor, etensor, stream);
+  return _copy_slimtensor_to_etensor_impl(
+      slim_tensor,
+      etensor,
+      executorch::backends::aoti::slim::CPU_DEVICE,
+      stream);
+}
+
+/**
+ * Copies data from a SlimTensor to a GPU-resident ETensor asynchronously
+ * (device-to-device).
+ *
+ * Used when the destination ETensor's storage lives in a planned GPU arena.
+ * The destination device is taken from the source SlimTensor, so this only
+ * supports same-device D2D copies (source and destination on the same GPU).
+ *
+ * When strides match (common case), performs a fast async D2D copy on the
+ * provided stream. When strides differ, falls back to a staged copy with
+ * element-by-element rearrangement on the host.
+ *
+ * NOTE: In the fast path the copy is asynchronous. The caller must synchronize
+ * the stream before consuming the ETensor data.
+ *
+ * @param slim_tensor Pointer to the source SlimTensor (must not be null).
+ * @param etensor Pointer to the destination GPU ETensor (must not be null).
+ * @param stream The CUDA stream to use for async copy.
+ * @return Error::Ok on success, or an appropriate error code on failure.
+ */
+inline executorch::runtime::Error copy_slimtensor_to_device_etensor_async(
+    const executorch::backends::aoti::slim::SlimTensor* slim_tensor,
+    executorch::runtime::etensor::Tensor* etensor,
+    cudaStream_t stream) {
+  return _copy_slimtensor_to_etensor_impl(
+      slim_tensor, etensor, slim_tensor->device(), stream);
 }
 
 /**
@@ -267,7 +407,11 @@ inline executorch::runtime::Error copy_slimtensor_to_etensor_async(
 inline executorch::runtime::Error copy_slimtensor_to_etensor(
     const executorch::backends::aoti::slim::SlimTensor* slim_tensor,
     executorch::runtime::etensor::Tensor* etensor) {
-  return _copy_slimtensor_to_etensor_impl(slim_tensor, etensor, nullptr);
+  return _copy_slimtensor_to_etensor_impl(
+      slim_tensor,
+      etensor,
+      executorch::backends::aoti::slim::CPU_DEVICE,
+      nullptr);
 }
 
 /**
@@ -289,6 +433,10 @@ inline executorch::runtime::Error wrap_slimtensor_to_etensor(
     const executorch::backends::aoti::slim::SlimTensor* slim_tensor,
     executorch::runtime::etensor::Tensor* etensor) {
   ET_CHECK_OK_OR_RETURN_ERROR(_check_tensor_metadata(slim_tensor, etensor));
+  ET_CHECK_OR_RETURN_ERROR(
+      slim_tensor->is_contiguous(),
+      InvalidArgument,
+      "SlimTensor must be contiguous");
 
   // Set data pointer to point directly to SlimTensor's data (zero-copy)
   etensor->unsafeGetTensorImpl()->set_data(

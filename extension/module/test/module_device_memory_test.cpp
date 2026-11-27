@@ -24,60 +24,16 @@
 
 #include <executorch/runtime/core/device_allocator.h>
 #include <executorch/runtime/core/device_memory_buffer.h>
+#include <executorch/runtime/core/test/mock_cuda_allocator.h>
 #include <executorch/runtime/platform/runtime.h>
 
 using executorch::extension::Module;
-using executorch::runtime::DeviceAllocator;
 using executorch::runtime::DeviceMemoryBuffer;
 using executorch::runtime::Error;
+using executorch::runtime::get_device_allocator;
 using executorch::runtime::register_device_allocator;
-using executorch::runtime::Result;
-using executorch::runtime::etensor::DeviceIndex;
 using executorch::runtime::etensor::DeviceType;
-
-namespace {
-
-class MockCudaAllocator : public DeviceAllocator {
- public:
-  Result<void*> allocate(
-      size_t nbytes,
-      DeviceIndex index,
-      size_t alignment = kDefaultAlignment) override {
-    (void)alignment;
-    allocate_count_++;
-    last_allocate_size_ = nbytes;
-    last_allocate_index_ = index;
-    buffer_ = std::make_unique<uint8_t[]>(nbytes);
-    return static_cast<void*>(buffer_.get());
-  }
-
-  void deallocate(void* ptr, DeviceIndex index) override {
-    deallocate_count_++;
-    buffer_.reset();
-  }
-
-  Error copy_host_to_device(void*, const void*, size_t, DeviceIndex) override {
-    return Error::Ok;
-  }
-
-  Error copy_device_to_host(void*, const void*, size_t, DeviceIndex) override {
-    return Error::Ok;
-  }
-
-  DeviceType device_type() const override {
-    return DeviceType::CUDA;
-  }
-
-  int allocate_count_ = 0;
-  int deallocate_count_ = 0;
-  size_t last_allocate_size_ = 0;
-  DeviceIndex last_allocate_index_ = -1;
-
- private:
-  std::unique_ptr<uint8_t[]> buffer_;
-};
-
-} // namespace
+using executorch::runtime::testing::MockCudaAllocator;
 
 static MockCudaAllocator g_mock_cuda;
 
@@ -85,10 +41,15 @@ class ModuleDeviceMemoryTest : public ::testing::Test {
  protected:
   static void SetUpTestSuite() {
     executorch::runtime::runtime_init();
-    register_device_allocator(&g_mock_cuda);
+    // The registry is a process-wide static, so a second registration for the
+    // same device type aborts. Repeat runs re-enter this function.
+    if (get_device_allocator(DeviceType::CUDA) == nullptr) {
+      register_device_allocator(&g_mock_cuda);
+    }
   }
 
   void SetUp() override {
+    g_mock_cuda.fail_allocations_ = false;
     g_mock_cuda.allocate_count_ = 0;
     g_mock_cuda.deallocate_count_ = 0;
     g_mock_cuda.last_allocate_size_ = 0;
@@ -146,17 +107,32 @@ TEST_F(ModuleDeviceMemoryTest, DeviceModelMethodMetaReportsCudaBuffer) {
   auto meta = module.method_meta("forward");
   ASSERT_TRUE(meta.ok());
 
-  // ModuleAddWithDevice has 1 planned buffer (48 bytes) on CUDA.
-  ASSERT_EQ(meta->num_memory_planned_buffers(), 1);
+  ASSERT_EQ(meta->num_memory_planned_buffers(), 2);
 
-  auto size = meta->memory_planned_buffer_size(0);
-  ASSERT_TRUE(size.ok());
-  EXPECT_EQ(size.get(), 48);
+  {
+    // After turn on on-device memory planning, the output cpu tensor shares
+    // the same buffer with the input cpu tensor. So the memory planned buffer
+    // only needs 2 * 16 = 32 bytes.
 
-  auto device = meta->memory_planned_buffer_device(0);
-  ASSERT_TRUE(device.ok());
-  EXPECT_EQ(device->type(), DeviceType::CUDA);
-  EXPECT_EQ(device->index(), 0);
+    auto size = meta->memory_planned_buffer_size(0);
+    ASSERT_TRUE(size.ok());
+    EXPECT_EQ(size.get(), 32);
+
+    auto device = meta->memory_planned_buffer_device(0);
+    ASSERT_TRUE(device.ok());
+    EXPECT_EQ(device->type(), DeviceType::CPU);
+    EXPECT_EQ(device->index(), 0);
+  }
+  {
+    auto size = meta->memory_planned_buffer_size(1);
+    ASSERT_TRUE(size.ok());
+    EXPECT_EQ(size.get(), 48);
+
+    auto device = meta->memory_planned_buffer_device(1);
+    ASSERT_TRUE(device.ok());
+    EXPECT_EQ(device->type(), DeviceType::CUDA);
+    EXPECT_EQ(device->index(), 0);
+  }
 }
 
 TEST_F(ModuleDeviceMemoryTest, DeviceModelWithSharedArenasReturnsNotSupported) {
@@ -174,6 +150,27 @@ TEST_F(ModuleDeviceMemoryTest, DeviceModelWithSharedArenasReturnsNotSupported) {
 
   auto err = module.load_method("forward");
   EXPECT_EQ(err, Error::NotSupported);
+}
+
+TEST_F(ModuleDeviceMemoryTest, DeviceAllocationFailureIsReportedNotFatal) {
+  const char* path = std::getenv("ET_MODULE_ADD_WITH_DEVICE_PATH");
+  ASSERT_NE(path, nullptr) << "ET_MODULE_ADD_WITH_DEVICE_PATH not set";
+
+  // Stand in for a device that is out of memory. The caller gets an error and
+  // the process survives to handle it.
+  g_mock_cuda.fail_allocations_ = true;
+
+  Module module(path);
+  EXPECT_EQ(module.load_method("forward"), Error::MemoryAllocationFailed);
+  EXPECT_FALSE(module.is_method_loaded("forward"));
+  EXPECT_EQ(g_mock_cuda.allocate_count_, 0);
+  EXPECT_EQ(g_mock_cuda.deallocate_count_, 0);
+
+  // The failure must not leave the Module half-built: with the device back,
+  // the same call reaches the allocator again.
+  g_mock_cuda.fail_allocations_ = false;
+  (void)module.load_method("forward");
+  EXPECT_EQ(g_mock_cuda.allocate_count_, 1);
 }
 
 TEST_F(

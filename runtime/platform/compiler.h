@@ -41,6 +41,35 @@
     "Macro clash with min and max -- define NOMINMAX when compiling your program on Windows"
 #endif
 
+// The prebuilt Windows package defines ET_PREBUILT_RELEASE_CRT or
+// ET_PREBUILT_DEBUG_CRT, after the C++ library its DLLs were built with. A
+// program built with the other one (/MDd and /MTd define _DEBUG, /MD and /MT do
+// not) sees differently laid out types: the two mixed in one process corrupt
+// memory instead of failing to link.
+#if defined(ET_PREBUILT_RELEASE_CRT) && defined(_DEBUG)
+#error \
+    "The prebuilt ExecuTorch DLLs use the release C++ library; build this program as Release (configure with -DCMAKE_BUILD_TYPE=Release, or build with --config Release under a multi-config generator such as Visual Studio)"
+#endif
+#if defined(ET_PREBUILT_DEBUG_CRT) && !defined(_DEBUG)
+#error \
+    "The prebuilt ExecuTorch DLLs use the debug C++ library; build this program as Debug (configure with -DCMAKE_BUILD_TYPE=Debug, or build with --config Debug under a multi-config generator such as Visual Studio)"
+#endif
+// The same configuration can still change the layout: an explicit
+// _ITERATOR_DEBUG_LEVEL adds checking members to the standard containers. The
+// DLLs use the default for their library, 0 for release and 2 for debug, and
+// only a value set by the program (with /D, before any standard header) can
+// differ, since the library's own default is not defined yet at this point.
+#if defined(ET_PREBUILT_RELEASE_CRT) && defined(_ITERATOR_DEBUG_LEVEL) && \
+    _ITERATOR_DEBUG_LEVEL != 0
+#error \
+    "The prebuilt ExecuTorch DLLs use _ITERATOR_DEBUG_LEVEL=0; do not set it for this program"
+#endif
+#if defined(ET_PREBUILT_DEBUG_CRT) && defined(_ITERATOR_DEBUG_LEVEL) && \
+    _ITERATOR_DEBUG_LEVEL != 2
+#error \
+    "The prebuilt ExecuTorch DLLs use _ITERATOR_DEBUG_LEVEL=2; do not set it for this program"
+#endif
+
 /*
  * Define annotations aliasing C++ declaration attributes.
  * See all C++ declaration attributes here:
@@ -138,8 +167,14 @@
 #define __has_builtin(x) (0)
 #endif
 
-#if __has_builtin(__builtin_strrchr)
+#if defined(__FILE_NAME__)
+/// __FILE_NAME__ provides just the filename at
+/// compile time, avoiding embedding full paths in the binary
+#define ET_SHORT_FILENAME __FILE_NAME__
+#elif __has_builtin(__builtin_strrchr)
 /// Name of the source file without a directory string.
+/// Note: This approach embeds the full path in .rodata even though only the
+/// basename is used at runtime. __FILE_NAME__ is preferred when available.
 #define ET_SHORT_FILENAME (__builtin_strrchr("/" __FILE__, '/') + 1)
 #else
 #define ET_SHORT_FILENAME __FILE__
@@ -152,12 +187,17 @@
 #define ET_LINE __LINE__
 #endif // __has_builtin(__builtin_LINE)
 
-#if __has_builtin(__builtin_FUNCTION)
+#if defined(ET_USE_BUILTIN_FUNCTION_NAME) && ET_USE_BUILTIN_FUNCTION_NAME == 0
+/// __FUNCTION__ provides a short undecorated name, saving .rodata space
+/// compared to __builtin_FUNCTION() which includes the full signature
+/// (namespace, parameters, return type).
+#define ET_FUNCTION __FUNCTION__
+#elif __has_builtin(__builtin_FUNCTION)
 /// Name of the current function as a const char[].
 #define ET_FUNCTION __builtin_FUNCTION()
 #else
 #define ET_FUNCTION __FUNCTION__
-#endif // __has_builtin(__builtin_FUNCTION)
+#endif
 
 // As of G3 RJ-2024.3 toolchain, zu format specifier is not supported for Xtensa
 #if defined(__XTENSA__)

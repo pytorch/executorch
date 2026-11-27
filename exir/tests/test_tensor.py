@@ -24,6 +24,7 @@ from executorch.exir.tensor import (
     scalar_type_enum,
     stride_from_dim_order,
     TensorSpec,
+    without_zero_strides,
 )
 
 
@@ -183,6 +184,23 @@ class TestTensor(unittest.TestCase):
             with self.assertRaisesRegex(Exception, test_case[1], msg=f"{kwargs}"):
                 make_allocation_info(**kwargs)
 
+    def test_inplace_base_aliases_storage_base_at_offset_zero(self) -> None:
+        base = TensorSpec.from_tensor(torch.empty(4))
+        child = TensorSpec.from_tensor(torch.empty(4))
+
+        child.inplace_base = base
+
+        self.assertIs(child.storage_base, base)
+        self.assertEqual(child.storage_base_offset, 0)
+        self.assertIs(child.inplace_base, base)
+
+        child.storage_base_offset = 4
+        with self.assertRaisesRegex(Exception, "offset 0"):
+            child.inplace_base
+        with self.assertRaisesRegex(Exception, "storage_base_offset is 0"):
+            child.inplace_base = base
+        self.assertEqual(child.storage_base_offset, 4)
+
     def test_contiguous_stride_from_shape(self) -> None:
         shape = (2, 3, 4)
         stride = contiguous_stride_from_shape(torch.Size(shape))
@@ -304,6 +322,86 @@ class TestTensor(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             dim_order_from_stride((u0, 0, 1))
 
+    def test_dim_order_from_stride_with_sizes(self) -> None:
+        dim_order = dim_order_from_stride((490, 1, 10, 1), (1, 1, 49, 10))
+        self.assertEqual((0, 2, 3, 1), dim_order)
+        self.assertEqual(
+            [490, 1, 10, 1],
+            stride_from_dim_order([1, 1, 49, 10], [0, 2, 3, 1]),
+        )
+
+        self.assertEqual(
+            (0, 1, 2, 3),
+            dim_order_from_stride((490, 490, 10, 1), (1, 1, 49, 10)),
+        )
+
+        self.assertEqual(
+            (0, 1, 2, 3), dim_order_from_stride((1, 1, 1, 1), (2, 1, 1, 1))
+        )
+
+        self.assertEqual(
+            (0, 2, 3, 4, 1),
+            dim_order_from_stride((120, 1, 30, 6, 1), (1, 1, 4, 5, 6)),
+        )
+
+        self.assertEqual(
+            (3, 1, 2, 0),
+            dim_order_from_stride((1, 20, 5, 60), (2, 3, 4, 5)),
+        )
+
+        self.assertEqual((0, 2, 1, 3), dim_order_from_stride((490, 1, 10, 1)))
+
+        t = torch.empty(1, 1, 49, 10).to(memory_format=torch.channels_last)
+        spec = TensorSpec.from_tensor(t)
+        self.assertEqual((0, 2, 3, 1), spec.dim_order)
+
+    def test_dim_order_from_stride_preserves_supported_orders(self) -> None:
+        for sizes, strides in (
+            ((2, 1, 3, 1), (3, 1, 1, 1)),
+            ((2, 1, 3, 1, 1), (3, 1, 1, 1, 1)),
+            ((2, 3, 4, 5), (60, 1, 15, 3)),
+            ((2, 3, 4, 5, 6), (360, 1, 90, 18, 3)),
+        ):
+            with self.subTest(sizes=sizes):
+                self.assertEqual(
+                    dim_order_from_stride(strides),
+                    dim_order_from_stride(strides, sizes),
+                )
+
+    def test_dim_order_from_stride_with_symbolic_sizes(self) -> None:
+        from torch.fx.experimental.symbolic_shapes import ShapeEnv
+
+        shape_env = ShapeEnv()
+        height = shape_env.create_unbacked_symint()
+        torch._check_is_size(height)
+        torch._check(height >= 2)
+        self.assertEqual(
+            (0, 2, 3, 1),
+            dim_order_from_stride((10 * height, 1, 10, 1), (2, 1, height, 10)),
+        )
+        self.assertEqual(
+            (0, 2, 1, 3),
+            dim_order_from_stride((490, 1, 10, 1), (2, 1, height, 10)),
+        )
+        self.assertEqual(shape_env.guards, [])
+
+    def test_without_zero_strides(self) -> None:
+        dense = torch.arange(4.0)
+        self.assertIs(without_zero_strides(dense), dense)
+
+        for tensor, stride in [
+            (torch.tensor(2.0).expand(1), (1,)),
+            (torch.zeros(3).expand(0, 3), (3, 1)),
+            (
+                torch.randn(1, 3, 4, 4).as_strided((1, 3, 4, 4), (0, 1, 12, 3)),
+                (48, 1, 12, 3),
+            ),
+        ]:
+            self.assertIn(0, tensor.stride())
+            copy = without_zero_strides(tensor)
+            self.assertEqual(copy.stride(), stride)
+            self.assertTrue(torch.equal(copy, tensor))
+
     def test_strides_from_dim_order(self) -> None:
         sizes = []
         dim_order = []
@@ -387,6 +485,26 @@ class TestTensor(unittest.TestCase):
         expected_strides = [1, 1, 1, 1]
         strides = stride_from_dim_order(sizes, dim_order)
         self.assertEqual(expected_strides, strides)
+
+    def test_strides_from_dim_order_with_symbolic_sizes(self) -> None:
+        class ViewModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x.view(x.shape[0], -1)
+
+        exported_program = torch.export.export(
+            ViewModule(),
+            (torch.randn(2, 3, 4),),
+            dynamic_shapes={"x": {0: torch.export.Dim("batch", min=1, max=8)}},
+        )
+        placeholder = next(
+            node
+            for node in exported_program.graph_module.graph.nodes
+            if node.op == "placeholder"
+        )
+        sizes = list(placeholder.meta["val"].shape)
+
+        self.assertIsInstance(sizes[0], torch.SymInt)
+        self.assertEqual([12, 4, 1], stride_from_dim_order(sizes, [0, 1, 2]))
 
     def test_num_bytes_from_shape_and_dtype(self) -> None:
         shape = (2, 3, 4)

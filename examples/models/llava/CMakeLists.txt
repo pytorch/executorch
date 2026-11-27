@@ -60,7 +60,11 @@ else()
   set(CMAKE_TOOLCHAIN_IOS OFF)
 endif()
 
-set(_common_compile_options -Wno-deprecated-declarations -fPIC)
+if(MSVC)
+  set(_common_compile_options /wd4996)
+else()
+  set(_common_compile_options -Wno-deprecated-declarations -fPIC)
+endif()
 
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
@@ -144,20 +148,6 @@ endif()
 if(TARGET qnn_executorch_backend)
   list(APPEND link_libraries qnn_executorch_backend)
   executorch_target_link_options_shared_lib(qnn_executorch_backend)
-endif()
-
-# MPS backend
-if(TARGET mpsdelegate)
-  list(
-    APPEND
-    link_libraries
-    mpsdelegate
-    "-framework Foundation"
-    "-weak_framework MetalPerformanceShaders"
-    "-weak_framework MetalPerformanceShadersGraph"
-    "-weak_framework Metal"
-  )
-  executorch_target_link_options_shared_lib(mpsdelegate)
 endif()
 
 if(TARGET coremldelegate)

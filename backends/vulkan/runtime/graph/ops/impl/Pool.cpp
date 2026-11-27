@@ -110,8 +110,8 @@ void add_max_pool2d_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      default_pick_global_wg_size,
-      default_pick_local_wg_size,
+      default_pick_gwg,
+      default_pick_lwg,
       // Inputs and Outputs
       {{{out_tensor, indices_tensor}, vkapi::kWrite}, {in, vkapi::kRead}},
       // Shader params buffers
@@ -179,8 +179,8 @@ void add_avg_pool2d_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      default_pick_global_wg_size,
-      default_pick_local_wg_size,
+      default_pick_gwg,
+      default_pick_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {in, vkapi::kRead}},
       // Shader params buffers

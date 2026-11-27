@@ -44,7 +44,13 @@ class Model(str, Enum):
     DSCNN = "ds_cnn"
     MobileNetV1025 = "mobilenet_v1_025"
     ResNet8 = "resnet8"
+    StreamingWakeWord = "streaming_wakeword"
     Sdpa = "sdpa"
+    DepthwiseConv = "depthwise_conv"
+    Qwen3 = "qwen3"
+    SmolVLM = "smolvlm"
+    YOLO26 = "yolo26"
+    Whisper = "whisper"
 
     def __str__(self) -> str:
         return self.value
@@ -104,7 +110,16 @@ MODEL_NAME_TO_MODEL = {
         "MobileNetV1025Model",
     ),
     str(Model.ResNet8): ("mlperf_tiny.resnet8", "ResNet8Model"),
+    str(Model.StreamingWakeWord): (
+        "mlperf_tiny.streaming_wakeword",
+        "StreamingWakeWordModel",
+    ),
     str(Model.Sdpa): ("toy_model", "SdpaModule"),
+    str(Model.DepthwiseConv): ("toy_model", "DepthwiseConvModule"),
+    str(Model.Qwen3): ("qwen3", "Qwen3Model"),
+    str(Model.SmolVLM): ("smolvlm", "SmolVLMModel"),
+    str(Model.YOLO26): ("yolo26", "YOLO26Model"),
+    str(Model.Whisper): ("whisper", "WhisperModel"),
 }
 
 __all__ = [

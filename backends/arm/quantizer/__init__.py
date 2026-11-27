@@ -10,12 +10,15 @@ unavailable.
 
 """
 
+import logging
+
 from .quantization_config import QuantizationConfig  # noqa  # usort: skip
 from .arm_quantizer import (  # noqa
     EthosUQuantizer,
     get_symmetric_a16w8_quantization_config,
     get_symmetric_quantization_config,
     get_uint8_io_quantization_config,
+    get_vgf_snorm_quantization_config,
     TOSAQuantizer,
     VgfQuantizer,
 )
@@ -23,15 +26,14 @@ from .arm_quantizer import (  # noqa
 # Used in tests
 from .arm_quantizer_utils import is_annotated  # noqa
 
+logger = logging.getLogger(__name__)
+
 # Load quantized ops library.
 try:
     import executorch.extension.pybindings.portable_lib
     import executorch.kernels.quantized  # noqa
 except:
-    import logging
-
-    logging.info(
+    logger.warning(
         "Failed to load portable_lib and quantized_aot_lib. To run quantized kernels AOT, either build "
         "Executorch with pybindings, or load your own custom built op library using torch.ops.load_library."
     )
-    del logging

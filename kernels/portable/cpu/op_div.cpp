@@ -55,7 +55,7 @@ Tensor& div_out(
       out);
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "div.out";
+  ET_DEFINE_OPERATOR_NAME(op_name, "div.out");
 
   if (executorch::runtime::isComplexType(common_type)) {
     ET_SWITCH_COMPLEX_TYPES(common_type, ctx, op_name, CTYPE, [&]() {
@@ -129,7 +129,7 @@ Tensor& div_out_mode(
   ScalarType compute_type = utils::get_compute_type(common_type);
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "div.out_mode";
+  ET_DEFINE_OPERATOR_NAME(op_name, "div.out_mode");
 
   const bool mode_is_trunc = mode_val == "trunc";
   bool div_by_zero_error = false;
@@ -148,15 +148,12 @@ Tensor& div_out_mode(
               return static_cast<CTYPE_COMPUTE>(0);
             }
           }
-          CTYPE_COMPUTE value = val_a / val_b;
           if (mode_is_trunc) {
-            value = std::trunc(value);
-          } else {
-            // We established above that the mode is either trunc or floor, so
-            // it must be floor.
-            value = utils::floor_divide(val_a, val_b);
+            return utils::trunc_divide(val_a, val_b);
           }
-          return value;
+          // We established above that the mode is either trunc or floor, so
+          // it must be floor.
+          return utils::floor_divide(val_a, val_b);
         },
         ctx,
         a,
@@ -200,7 +197,7 @@ Tensor& div_scalar_out(
   ScalarType compute_type = utils::get_compute_type(common_type);
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "div.Scalar_out";
+  ET_DEFINE_OPERATOR_NAME(op_name, "div.Scalar_out");
 
   ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
     const CTYPE_COMPUTE val_b = utils::scalar_to<CTYPE_COMPUTE>(b);
@@ -245,15 +242,6 @@ Tensor& div_scalar_mode_out(
       InvalidArgument,
       out);
 
-  // Check for intergral division by zero
-  ET_KERNEL_CHECK_MSG(
-      ctx,
-      !(executorch::runtime::isIntegralType(common_type, true) &&
-        utils::scalar_to<double>(b) == 0),
-      InvalidArgument,
-      out,
-      "Div mode operation encountered integer division by zero");
-
   // Check Dim Order
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dim_order(a, out), InvalidArgument, out);
@@ -268,19 +256,24 @@ Tensor& div_scalar_mode_out(
   const bool mode_is_trunc = mode_val == "trunc";
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "div.Scalar_mode_out";
+  ET_DEFINE_OPERATOR_NAME(op_name, "div.Scalar_mode_out");
+
+  bool div_by_zero_error = false;
 
   ET_SWITCH_REAL_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+    // Like ATen, the scalar takes the compute dtype first, so a scalar such as
+    // 256 for an int8 tensor becomes 0.
     const CTYPE_COMPUTE val_b = utils::scalar_to<CTYPE_COMPUTE>(b);
+    if constexpr (std::is_integral_v<CTYPE_COMPUTE>) {
+      if (val_b == 0 && a.numel() > 0) {
+        div_by_zero_error = true;
+        return;
+      }
+    }
     utils::apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
         [val_b, mode_is_trunc](const CTYPE_COMPUTE val_a) {
-          CTYPE_COMPUTE value = val_a / val_b;
-          if (mode_is_trunc) {
-            value = std::trunc(value);
-          } else {
-            value = utils::floor_divide(val_a, val_b);
-          }
-          return value;
+          return mode_is_trunc ? utils::trunc_divide(val_a, val_b)
+                               : utils::floor_divide(val_a, val_b);
         },
         ctx,
         a,
@@ -288,6 +281,13 @@ Tensor& div_scalar_mode_out(
         out,
         utils::SupportedTensorDtypes::REALHBF16);
   });
+
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      !div_by_zero_error,
+      InvalidArgument,
+      out,
+      "Div mode operation encountered integer division by zero");
 
   return out;
 }

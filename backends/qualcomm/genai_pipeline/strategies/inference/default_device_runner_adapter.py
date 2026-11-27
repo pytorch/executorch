@@ -1,0 +1,154 @@
+# Copyright (c) Qualcomm Innovation Center, Inc.
+# All rights reserved
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from executorch.backends.qualcomm.genai_pipeline.strategies.inference.device_runner_adapter import (
+    InferenceResult,
+)
+
+logger = logging.getLogger(__name__)
+
+
+class DefaultDeviceRunnerAdapter:
+    """Default adapter delegating to ``Device`` for on-device inference.
+
+    Wraps the ``Device`` class from ``export_utils.py`` to push artifacts,
+    execute models, and pull results from a local or remote target device.
+
+    Args:
+        qnn_config: A ``QnnConfig`` instance for device communication.
+        workspace: Folder for storing artifacts on the target device.
+    """
+
+    def __init__(
+        self,
+        qnn_config: Any,
+        workspace: str = "/data/local/tmp/genai_pipeline",
+    ) -> None:
+        self._qnn_config = qnn_config
+        self._workspace = workspace
+        self._device: Any = None
+
+    def push_artifacts(
+        self,
+        artifact_paths: Dict[str, Path],
+        input_data: Optional[List[Any]] = None,
+        extra_files: Optional[List[str]] = None,
+    ) -> None:
+        """Push compiled artifacts and inputs to the target device.
+
+        Args:
+            artifact_paths: Compiled .pte artifacts keyed by artifact name.
+                Every artifact is pushed; the keys select which on-device runner
+                argument each path is passed to, which is the runner's concern
+                rather than this adapter's.
+            input_data: Optional input data to push to device.
+            extra_files: Optional additional files to push.
+        """
+        from executorch.backends.qualcomm.export_utils import Device
+
+        if self._device is not None:
+            logger.warning(
+                "Overwriting existing device session. Previous artifacts will be "
+                "replaced on device."
+            )
+
+        pte_paths = [str(p) for p in artifact_paths.values()]
+
+        logger.info("Pushing artifacts to device: %s", pte_paths)
+        self._device = Device(
+            qnn_config=self._qnn_config,
+            pte_path=pte_paths,
+            workspace=self._workspace,
+        )
+        self._device.push(
+            inputs=input_data,
+            files=extra_files,
+        )
+
+    def execute(
+        self,
+        inference_options: Optional[Dict[str, Any]] = None,
+    ) -> InferenceResult:
+        """Execute the model on the target device.
+
+        Note: This is a two-step protocol. ``execute()`` runs the model and
+        returns performance metrics. Call ``pull_results()`` afterward to
+        retrieve the actual output data files from the device.
+
+        Args:
+            inference_options: Engine-specific options. Supported keys:
+                - ``method_index``: Index of the method to execute (default 0).
+                - ``iteration``: Number of inference iterations (default 1).
+
+        Returns:
+            InferenceResult with performance metrics. ``output_data`` is None
+            until ``pull_results()`` is called separately.
+        """
+        if self._device is None:
+            raise RuntimeError(
+                "No artifacts have been pushed. Call push_artifacts() first."
+            )
+
+        inference_options = inference_options or {}
+        method_index = inference_options.get("method_index", 0)
+        iteration = inference_options.get("iteration", 1)
+
+        logger.info(
+            "Executing on device: method_index=%d, iteration=%d",
+            method_index,
+            iteration,
+        )
+        self._device.execute(
+            method_index=method_index,
+            iteration=iteration,
+        )
+
+        return InferenceResult(
+            output_data=None,
+            performance_metrics={
+                "method_index": method_index,
+                "iteration": iteration,
+            },
+        )
+
+    def pull_results(
+        self,
+        output_dir: Path,
+    ) -> List[Path]:
+        """Pull inference results from the target device.
+
+        Args:
+            output_dir: Local directory to store pulled results.
+
+        Returns:
+            List of paths to pulled result files.
+        """
+        if self._device is None:
+            raise RuntimeError(
+                "No artifacts have been pushed. Call push_artifacts() first."
+            )
+
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        logger.info("Pulling results from device to %s", output_dir)
+        self._device.pull(host_output_path=str(output_dir))
+
+        # pulling a directory creates a subdirectory locally;
+        # collect actual result files from pulled content
+        result_files = []
+        for item in output_dir.iterdir():
+            if item.is_dir():
+                result_files.extend(item.iterdir())
+            else:
+                result_files.append(item)
+        logger.info("Pulled %d result files", len(result_files))
+        return result_files

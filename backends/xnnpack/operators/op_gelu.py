@@ -12,6 +12,7 @@ from executorch.backends.xnnpack.operators.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
+    XNNApproxGelu,
     XNNGelu,
     XNNGraph,
     XNode,
@@ -41,8 +42,15 @@ class GeluVisitor(NodeVisitor):
         # output
         output_id = vals_to_ids[node]
 
+        approximate = node.kwargs.get("approximate", "none")
+        if approximate == "none":
+            gelu_node_type = XNNGelu
+        elif approximate == "tanh":
+            gelu_node_type = XNNApproxGelu
+        else:
+            raise ValueError(f"Unsupported GELU approximation: {approximate}")
         ser_node = XNode(
-            xnode_union=XNNGelu(
+            xnode_union=gelu_node_type(
                 input_id=input_id,
                 output_id=output_id,
                 flags=0,

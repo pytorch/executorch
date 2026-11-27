@@ -20,10 +20,22 @@ namespace torch {
 namespace executor {
 namespace native {
 
+namespace {
+
+bool extract_arange_scalar(const Scalar& scalar, double* out) {
+  if (scalar.isBoolean()) {
+    *out = static_cast<double>(scalar.to<bool>());
+    return true;
+  }
+  return utils::extract_scalar(scalar, out);
+}
+
+} // namespace
+
 Tensor& arange_out(KernelRuntimeContext& ctx, const Scalar& end, Tensor& out) {
   double end_val = 0;
   ET_KERNEL_CHECK(
-      ctx, utils::extract_scalar(end, &end_val), InvalidArgument, out);
+      ctx, extract_arange_scalar(end, &end_val), InvalidArgument, out);
 
   ET_KERNEL_CHECK(
       ctx, check_arange_args(0.0, end_val, 1.0, out), InvalidArgument, out);
@@ -53,15 +65,15 @@ Tensor& arange_start_out(
 
   double d_start = 0;
   ET_KERNEL_CHECK(
-      ctx, utils::extract_scalar(start, &d_start), InvalidArgument, out);
+      ctx, extract_arange_scalar(start, &d_start), InvalidArgument, out);
 
   double d_end = 0;
   ET_KERNEL_CHECK(
-      ctx, utils::extract_scalar(end, &d_end), InvalidArgument, out);
+      ctx, extract_arange_scalar(end, &d_end), InvalidArgument, out);
 
   double d_step = 0;
   ET_KERNEL_CHECK(
-      ctx, utils::extract_scalar(step, &d_step), InvalidArgument, out);
+      ctx, extract_arange_scalar(step, &d_step), InvalidArgument, out);
 
   ET_KERNEL_CHECK(
       ctx,

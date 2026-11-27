@@ -24,17 +24,23 @@ target="ethos-u55-128"
 timeout="600"
 etrecord_file=""
 trace_file=""
+semihosting_cwd=""
+semihosting_cmd_line=""
+ethosu_fast=0
 
 help() {
     echo "Usage: $(basename $0) [options]"
     echo "Options:"
     echo "  --elf=<ELF_FILE>         elf file to run"
     echo "  --data=<FILE>@<ADDRESS>  Place a file in memory at this address, useful to emulate a PTE flashed into memory instead as part of the code."
-    echo "  --bundle=<BPTE_FILE>     Bundled program (.bpte) to load via semihosting. Required for cortex-m targets; the FVP launches a semihosting executor_runner that reads the bundle from the host filesystem and checks the embedded reference outputs."
+    echo "  --bundle=<BPTE_FILE>     Bundled program (.bpte) to load via semihosting for cortex-m targets; the FVP launches a semihosting executor_runner that reads the bundle from the host filesystem and checks the embedded reference outputs. Optional; without it the ELF is run directly."
     echo "  --target=<TARGET>        Target to build and run for Default: ${target}"
     echo "  --timeout=<TIME_IN_SEC>  Maximum target runtime, used to detect hanging, might need to be higer on large models Default: ${timeout}"
     echo "  --etrecord=<FILE>        If ETDump is used you can supply a ETRecord file matching the PTE"
     echo "  --trace_file=<FILE>      File to write PMU trace output to"
+    echo "  --semihosting-cwd=<DIR>  Enable target semihosting with this host working directory"
+    echo "  --semihosting-cmd-line=<COMMAND>  Command line passed to a semihosting runner"
+    echo "  --fast                   Use fast Ethos-U model simulation for Ethos-U targets"
     exit 0
 }
 
@@ -48,6 +54,9 @@ for arg in "$@"; do
       --timeout=*) timeout="${arg#*=}";;
       --etrecord=*) etrecord_file="${arg#*=}";;
       --trace_file=*) trace_file="${arg#*=}";;
+      --semihosting-cwd=*) semihosting_cwd="${arg#*=}";;
+      --semihosting-cmd-line=*) semihosting_cmd_line="${arg#*=}";;
+      --fast) ethosu_fast=1;;
       *)
       ;;
     esac
@@ -59,6 +68,8 @@ elf_file=$(realpath ${elf_file})
 # the Corstone-300 M55 (ISA superset).
 if [[ ${target} == *"ethos-u55"* || ${target} == cortex-m* && ${target} != cortex-m85* ]]; then
     fvp_model=FVP_Corstone_SSE-300_Ethos-U55
+elif [[ ${target} == *"ethos-u65"* ]]; then
+    fvp_model=FVP_Corstone_SSE-300_Ethos-U65
 else
     fvp_model=FVP_Corstone_SSE-320
 fi
@@ -79,13 +90,18 @@ hash ${fvp_model} \
 if [[ ${target} == cortex-m* ]]; then
     # Cortex-M CPU-only; the NPU is unused but the FVP still needs a value.
     num_macs=128
+    ethosu_fast=1
 else
     num_macs=$(echo ${target} | cut -d - -f 3)
 fi
 
 echo "--------------------------------------------------------------------------------"
 echo "Running ${elf_file} for ${target} run with FVP:${fvp_model} num_macs:${num_macs} timeout:${timeout}"
-echo "The Corstone FVPs are cycle accurate for the NPU part, but note that the CPU performance is not cycle accurate."
+if [[ ${ethosu_fast} == 1 ]]; then
+    echo "FVP CPU timing, CPU/NPU ratios and NPU PMU counters: N/A (--fast)."
+else
+    echo "FVP CPU timing and CPU/NPU ratios: N/A; NPU PMU counters are simulated."
+fi
 echo "--------------------------------------------------------------------------------"
 
 # Check if stdbuf is intalled and use stdbuf -oL together with tee below to make the output
@@ -98,25 +114,104 @@ else
 fi
 
 log_file=$(mktemp)
+log_filter='s/\r$//'
+if [[ ${target} == ethos-u55-* ]]; then
+    # Dynamic BMM can trigger this false critical datatype diagnostic.
+    known_u55_diagnostic='^\[critical\]\[u_dut\.u_npu(_simple)?\.u_npu_cc\.u_npu_cc_tsu\.proc\]'
+    known_u55_diagnostic+='\[[0-9]+ ns\] Op=4: Invalid data type, ifm=5 ofm=1$'
+    log_filter+="; /${known_u55_diagnostic}/s/^\[critical\]/[warning]/"
+fi
+
+# Non-semihosting runners cannot receive the simulation mode as an argument.
+# Qualify their console measurements here, leaving errors and execution counts intact.
+perf_log='^I \[executorch:arm_perf_monitor\.cpp:[0-9]+ StopMeasurements\(\)\] '
+cpu_metrics='(Profiler report, CPU cycles per operator:|ethos-u : cycle_cnt :|Operator\(s\) total:'
+cpu_metrics+='|Inference runtime:|Inference (CPU|NPU) ratio:|cpu_wait_for_npu_cntr :'
+cpu_metrics+='|NOTE: CPU\/NPU ratios|CPU timing and CPU\/NPU ratios:)'
+log_filter+="; /${perf_log}${cpu_metrics}/d"
+if [[ ${ethosu_fast} == 1 ]]; then
+    npu_metrics='(Ethos-U (per-delegate )?PMU report:|ethosu_pmu_(cycle_cntr|cntr[0-9]+) :'
+    npu_metrics+='|Ethos-U delegate [0-9]+ PMU (cycles|counter [0-9]+):'
+    npu_metrics+='|Ethos-U (delegate [0-9]+ )?NPU 0x[[:xdigit:]]+ PMU (cycles|counter [0-9]+ event [0-9]+):)'
+    log_filter+="; /${perf_log}${npu_metrics}/d"
+fi
+
+run_simulation() {
+    local -a pipeline_status
+    local simulation_status
+    local status
+
+    set +e
+    "$@" 2>&1 | sed -E "${log_filter}" | tee "${log_file}"
+    pipeline_status=("${PIPESTATUS[@]}")
+    set -e
+
+    simulation_status=${pipeline_status[0]}
+    for status in "${pipeline_status[@]:1}"; do
+        if [[ ${simulation_status} -eq 0 && ${status} -ne 0 ]]; then
+            simulation_status=${status}
+        fi
+    done
+
+    echo "[${BASH_SOURCE[0]}] Simulation complete, ${simulation_status}"
+    if [[ ${simulation_status} -ne 0 ]]; then
+        echo "[${BASH_SOURCE[0]}] FVP launch or execution failed"
+        rm "${log_file}"
+        exit "${simulation_status}"
+    fi
+}
 
 extra_args_u55=()
 extra_args_u85=()
 
+ethosu_extra_args=()
+if [[ "${ethosu_fast}" == 1 ]]; then
+    ethosu_extra_args+=("--fast")
+fi
 if [[ -n "${trace_file}" ]]; then
-    extra_args_u55+=(-C "ethosu.extra_args=--pmu-trace ${trace_file}")
-    extra_args_u85+=(-C "mps4_board.subsystem.ethosu.extra_args=--pmu-trace ${trace_file}")
+    ethosu_extra_args+=("--pmu-trace" "${trace_file}")
+fi
+if [[ ${#ethosu_extra_args[@]} -gt 0 ]]; then
+    extra_args_u55+=(-C "ethosu.extra_args=${ethosu_extra_args[*]}")
+    extra_args_u85+=(-C "mps4_board.subsystem.ethosu.extra_args=${ethosu_extra_args[*]}")
 fi
 
-if [[ ${target} == cortex-m* ]]; then
-    [[ -z "${bundle_file}" ]] \
-        && { echo "[${BASH_SOURCE[0]}] --bundle=<BPTE_FILE> is required for cortex-m targets"; exit 1; }
+semihosting_args_u55=()
+semihosting_args_u85=()
+if [[ -n "${semihosting_cwd}" ]]; then
+    semihosting_cwd=$(realpath "${semihosting_cwd}")
+    semihosting_args_u55+=(
+        -C cpu0.semihosting-enable=1
+        -C cpu0.semihosting-stack_base=0
+        -C cpu0.semihosting-heap_limit=0
+        -C "cpu0.semihosting-cwd=${semihosting_cwd}"
+    )
+    semihosting_args_u85+=(
+        -C mps4_board.subsystem.cpu0.semihosting-enable=1
+        -C mps4_board.subsystem.cpu0.semihosting-stack_base=0
+        -C mps4_board.subsystem.cpu0.semihosting-heap_limit=0
+        -C "mps4_board.subsystem.cpu0.semihosting-cwd=${semihosting_cwd}"
+    )
+fi
+if [[ -n "${semihosting_cmd_line}" ]]; then
+    [[ -n "${semihosting_cwd}" ]] \
+        || { echo "--semihosting-cmd-line requires --semihosting-cwd"; exit 1; }
+    semihosting_args_u55+=(
+        -C "cpu0.semihosting-cmd_line=${semihosting_cmd_line}"
+    )
+    semihosting_args_u85+=(
+        -C "mps4_board.subsystem.cpu0.semihosting-cmd_line=${semihosting_cmd_line}"
+    )
+fi
+
+if [[ ${target} == cortex-m* && -n "${bundle_file}" ]]; then
     bundle_file=$(realpath "${bundle_file}")
     bundle_dir=$(dirname "${bundle_file}")
     bundle_name=$(basename "${bundle_file}")
     # Bundled-IO runner needs -i to point at a real file even though
     # inputs come from the bundle.
     dd if=/dev/zero of="${bundle_dir}/fvp_dummy_input.bin" bs=4 count=1 2>/dev/null
-    ${nobuf} ${fvp_model}                                              \
+    run_simulation ${nobuf} ${fvp_model}                               \
         -C ethosu.num_macs=${num_macs}                                 \
         -C mps3_board.visualisation.disable-visualisation=1            \
         -C mps3_board.telnetterminal0.start_telnet=0                   \
@@ -129,8 +224,7 @@ if [[ ${target} == cortex-m* ]]; then
         -C "ethosu.extra_args=--fast"                                  \
         -C "cpu0.semihosting-cmd_line=executor_runner -m ${bundle_name} -i fvp_dummy_input.bin -o out" \
         -a "${elf_file}"                                               \
-        --timelimit ${timeout} 2>&1 | sed 's/\r$//' | tee ${log_file} || true
-    echo "[${BASH_SOURCE[0]}] Simulation complete, $?"
+        --timelimit ${timeout}
     if grep -q "Test_result: PASS" "${log_file}"; then
         echo "[${BASH_SOURCE[0]}] Bundled I/O check PASSED for ${bundle_name}"
         rm "${log_file}"
@@ -144,31 +238,33 @@ if [[ ${target} == cortex-m* ]]; then
         rm "${log_file}"
         exit 1
     fi
-elif [[ ${target} == *"ethos-u55"*  ]]; then
-    ${nobuf} ${fvp_model}                                   \
+elif [[ ${target} == *"ethos-u55"* || ${target} == *"ethos-u65"* \
+        || ( ${target} == cortex-m* && ${target} != cortex-m85* ) ]]; then
+    run_simulation ${nobuf} ${fvp_model}                    \
         -C ethosu.num_macs=${num_macs}                      \
         -C mps3_board.visualisation.disable-visualisation=1 \
         -C mps3_board.telnetterminal0.start_telnet=0        \
         -C mps3_board.uart0.out_file='-'                    \
         -C mps3_board.uart0.shutdown_on_eot=1               \
         ${extra_args_u55[@]+"${extra_args_u55[@]}"}         \
+        ${semihosting_args_u55[@]+"${semihosting_args_u55[@]}"} \
         -a "${elf_file}"                                    \
         ${data_file}                                        \
-        --timelimit ${timeout} 2>&1 | sed 's/\r$//' | tee ${log_file} || true # seconds
-    echo "[${BASH_SOURCE[0]}] Simulation complete, $?"
-elif [[ ${target} == *"ethos-u85"*  ]]; then
-    ${nobuf} ${fvp_model}                                   \
+        --timelimit ${timeout} # seconds
+elif [[ ${target} == *"ethos-u85"* || ${target} == cortex-m85* ]]; then
+    run_simulation ${nobuf} ${fvp_model}                    \
         -C mps4_board.subsystem.ethosu.num_macs=${num_macs} \
         -C mps4_board.visualisation.disable-visualisation=1 \
         -C vis_hdlcd.disable_visualisation=1                \
         -C mps4_board.telnetterminal0.start_telnet=0        \
         -C mps4_board.uart0.out_file='-'                    \
+        -C mps4_board.uart0.unbuffered_output=1             \
         -C mps4_board.uart0.shutdown_on_eot=1               \
         ${extra_args_u85[@]+"${extra_args_u85[@]}"}         \
+        ${semihosting_args_u85[@]+"${semihosting_args_u85[@]}"} \
         -a "${elf_file}"                                    \
         ${data_file}                                        \
-        --timelimit ${timeout} 2>&1 | sed 's/\r$//' | tee ${log_file} || true # seconds
-    echo "[${BASH_SOURCE[0]}] Simulation complete, $?"
+        --timelimit ${timeout} # seconds
 else
     echo "Running ${elf_file} for ${target} is not supported"
     exit 1
@@ -198,11 +294,29 @@ if [ $? != 0 ]; then
 fi
 
 echo "Checking for problems in log:"
-! grep -E "^(F|E|\\[critical\\]|Hard fault.|Info: Simulation is stopping. Reason: CPU time has been exceeded.).*$" ${log_file}
-if [ $? != 0 ]; then
+problem_log=$(mktemp)
+grep -E "^([FE]([[:space:]:]|$)|Error|ERROR|Fatal|FATAL|Fail|\\[critical\\]|Hard fault.|Info: Simulation is stopping. Reason: CPU time has been exceeded.).*$" "${log_file}" > "${problem_log}" || true
+if [[ "${ethosu_fast}" == 1 ]]; then
+    filtered_problem_log=$(mktemp)
+    timing_adapter_fast_mode_regex="Failed to initialize timing-adapter #[0-9]+|Timing adapter has no effect if option --fast/-F is enabled"
+    grep -Ev "${timing_adapter_fast_mode_regex}" "${problem_log}" > "${filtered_problem_log}" || true
+    mv "${filtered_problem_log}" "${problem_log}"
+fi
+if [[ -s "${problem_log}" ]]; then
+    cat "${problem_log}"
     echo "Found ERROR"
+    rm "${problem_log}"
+    rm "${log_file}"
+    exit 1
+fi
+model_success_regex="Model run: 1|Model executed successfully\."
+model_success_regex+="|Inference complete: [1-9][0-9]* output\(s\)"
+if ! grep -Eq "${model_success_regex}" "${log_file}"; then
+    echo "No successful model execution found in log"
+    rm "${problem_log}"
     rm "${log_file}"
     exit 1
 fi
 echo "No problems found!"
+rm "${problem_log}"
 rm "${log_file}"

@@ -13,7 +13,6 @@
 #import <memory>
 
 namespace executorch::core_ml_backend_delegate {
-  using executorch::runtime::get_backend_class;
 
 static std::unique_ptr<executorch::backends::coreml::CoreMLBackendDelegate> backendInterfaceLazy_;
 

@@ -7,6 +7,8 @@
  */
 #pragma once
 
+#include <executorch/backends/qualcomm/runtime/backends/QnnSdkCompatibility.h>
+
 #include "QnnInterface.h"
 #include "Saver/QnnSaver.h"
 
@@ -59,6 +61,9 @@ class QnnInterface {
       context_create_from_binary,
       contextCreateFromBinary);
   DEFINE_SHIM_FUNCTION_INTERFACE(context_free, contextFree);
+#if QNN_EXECUTORCH_SUPPORTS_FCB
+  DEFINE_SHIM_FUNCTION_INTERFACE(context_add_to_dlc, contextAddToDlc);
+#endif
   // --------- QnnGraph ---------
   DEFINE_SHIM_FUNCTION_INTERFACE(graph_create, graphCreate);
   DEFINE_SHIM_FUNCTION_INTERFACE(graph_add_node, graphAddNode);
@@ -106,6 +111,9 @@ class QnnInterface {
   }
   const QNN_INTERFACE_VER_TYPE& GetInterfaceVer() const {
     return qnn_interface_->QNN_INTERFACE_VER_NAME;
+  }
+  const QnnInterface_t* GetInterface() const {
+    return qnn_interface_;
   }
   void Unload() {
     qnn_interface_ = nullptr;

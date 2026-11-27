@@ -18,7 +18,6 @@
 #include <cmath>
 
 using namespace ::testing;
-using executorch::aten::ArrayRef;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using std::optional;
@@ -135,9 +134,9 @@ TEST_F(OpCumSumOutTest, EnforcedDtypePasses) {
   test_cumsum_out_dtype<ScalarType::INPUT_DTYPE, ScalarType::OUTPUT_DTYPE>();
 
 #define TEST_ENTRY(INPUT_CTYPE, INPUT_DTYPE) \
-  ET_FORALL_REAL_TYPES_WITH2(INPUT_CTYPE, INPUT_DTYPE, TEST_KERNEL);
+  ET_FORALL_REALHBF16_TYPES_WITH2(INPUT_CTYPE, INPUT_DTYPE, TEST_KERNEL);
 
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 #undef TEST_KERNEL
 }
@@ -207,6 +206,34 @@ TEST_F(OpCumSumOutTest, SimpleGeneratedCase) {
   Tensor out = tf.zeros({10, 10});
   Tensor ret = op_cumsum_out(x, 1, ScalarType::Float, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
+}
+
+TEST_F(OpCumSumOutTest, BFloat16LargeDimAccumulatesInFloat) {
+  TensorFactory<ScalarType::BFloat16> tf;
+  // Each of the 1025 columns sums 512 ones. A BFloat16 running sum stops
+  // growing at 256, so without float accumulation the later rows would stay at
+  // 256. 1025 columns also need a second, partial block of running sums, and
+  // the leading dim of 2 runs every block twice.
+  constexpr int N = 512;
+  constexpr int C = 1025;
+  std::vector<executorch::aten::BFloat16> expected;
+  for (int l = 0; l < 2; ++l) {
+    for (int i = 1; i <= N; ++i) {
+      expected.insert(expected.end(), C, static_cast<float>(i));
+    }
+  }
+  Tensor out = tf.zeros({2, N, C});
+  op_cumsum_out(tf.ones({2, N, C}), /*dim=*/1, /*enforced_dtype=*/{}, out);
+  EXPECT_TENSOR_EQ(out, tf.make({2, N, C}, expected));
+
+  // The last dim keeps a single running sum.
+  std::vector<executorch::aten::BFloat16> expected_row;
+  for (int i = 1; i <= N; ++i) {
+    expected_row.push_back(static_cast<float>(i));
+  }
+  Tensor row_out = tf.zeros({1, N});
+  op_cumsum_out(tf.ones({1, N}), /*dim=*/1, /*enforced_dtype=*/{}, row_out);
+  EXPECT_TENSOR_EQ(row_out, tf.make({1, N}, expected_row));
 }
 
 TEST_F(OpCumSumOutTest, DynamicShapeUpperBoundSameAsExpected) {
@@ -286,4 +313,19 @@ TEST_F(OpCumSumOutTest, DISABLED_DynamicShapeUnbound) {
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
   Tensor ret = op_cumsum_out(x, 1, ScalarType::Float, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
+}
+
+TEST_F(OpCumSumOutTest, NonDefaultDimOrderDies) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor in = tf.channels_last_like(
+      tf.make({1, 3, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}));
+  Tensor out = tf.zeros_channels_last({1, 3, 2, 2});
+
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle non-default dim order");
+
+  ET_EXPECT_KERNEL_FAILURE(
+      context_, op_cumsum_out(in, 1, ScalarType::Float, out));
 }

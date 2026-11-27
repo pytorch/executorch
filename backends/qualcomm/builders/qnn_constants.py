@@ -215,6 +215,11 @@ class OpElementWiseMinimum:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseMod:
+    op_name: str = "ElementWiseMod"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWiseMultiply:
     op_name: str = "ElementWiseMultiply"
 
@@ -380,6 +385,12 @@ class OpGroupNorm:
     op_name: str = "GroupNorm"
     param_epsilon = "epsilon"
     param_group = "group"
+
+
+@dataclass(init=False, frozen=True)
+class OpHadamardTransform:
+    op_name: str = "HadamardTransform"
+    param_scale: str = "scale"
 
 
 @dataclass(init=False, frozen=True)
@@ -603,6 +614,8 @@ class OpScatterElements:
     @unique
     class Reduction(IntEnum):
         NONE = 0
+        ADD = 1
+        MUL = 2
 
 
 @dataclass(init=False, frozen=True)
@@ -644,6 +657,14 @@ class OpSplit:
 @dataclass(init=False, frozen=True)
 class OpSqueeze:
     op_name: str = "Squeeze"
+
+
+@dataclass(init=False, frozen=True)
+class OpStft:
+    op_name: str = "Stft"
+    param_frame_step: str = "frame_step"
+    param_frame_length: str = "frame_length"
+    param_onesided: str = "onesided"
 
 
 @dataclass(init=False, frozen=True)

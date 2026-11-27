@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -46,9 +47,13 @@ class GraphModuleEvalWrapper(EagerEvalWrapper):
         use_kv_cache: bool = False,
         generate_full_logits: bool = False,
         enable_dynamic_shape: bool = True,
+        device: Optional[str] = None,
     ):
         super().__init__(
-            model=model, tokenizer=tokenizer, max_seq_length=max_seq_length
+            model=model,
+            tokenizer=tokenizer,
+            max_seq_length=max_seq_length,
+            device=device,
         )
         self._model = model.to(self.device)
         self._use_kv_cache = use_kv_cache
@@ -57,30 +62,70 @@ class GraphModuleEvalWrapper(EagerEvalWrapper):
 
     def _model_call(self, inps):
         if self._use_kv_cache:
-            if not self._enable_dynamic_shape:
-                # graph module exported without dynamic shape won't work with a different shape.
-                # And we have to do single token prefill here.
-                result_logits = []
-                for pos in range(inps.shape[-1]):
-                    pos_tensor = torch.tensor([pos], dtype=torch.int64)
-                    logits = self._model(
-                        inps[:, pos : pos + 1], {"input_pos": pos_tensor}
-                    )
-                    result_logits.append(logits)
-                if self._generate_full_logits:
-                    return torch.cat(result_logits, dim=1)
-                else:
-                    return torch.stack(result_logits, dim=1)
-            else:
-                pos_tensor = torch.tensor([0], dtype=torch.int64, device=self.device)
-                # Batch process the whole sequence.
-                logits = self._model(
-                    inps[:, : self._max_seq_length], {"input_pos": pos_tensor}
-                )
-                return logits
+            return self._model_call_kv_cache(inps)
+        return self._model_call_no_kv_cache(inps)
 
-        else:
-            return self._model(inps)
+    def _model_call_kv_cache(self, inps):
+        if self._enable_dynamic_shape:
+            pos_tensor = torch.tensor([0], dtype=torch.int64, device=self.device)
+            return self._model(
+                inps[:, : self._max_seq_length], {"input_pos": pos_tensor}
+            )
+
+        # graph module exported without dynamic shape won't work with a different shape.
+        # And we have to do single token prefill here.
+        result_logits = []
+        for pos in range(inps.shape[-1]):
+            pos_tensor = torch.tensor([pos], dtype=torch.int64)
+            logits = self._model(inps[:, pos : pos + 1], {"input_pos": pos_tensor})
+            result_logits.append(logits)
+        if self._generate_full_logits:
+            return torch.cat(result_logits, dim=1)
+        return torch.stack(result_logits, dim=1)
+
+    def _model_call_no_kv_cache(self, inps):
+        # lm-eval expects logits shaped [batch, seq, vocab]. In the non-KV path,
+        # some exported graphs (when generate_full_logits=False) return only
+        # last-position logits [batch, vocab], so reconstruct per-position
+        # logits by running prefix calls.
+        if not self._enable_dynamic_shape and not self._generate_full_logits:
+            raise ValueError(
+                "Static non-KV lm-eval requires generate_full_logits=True "
+                "so logits can be read from the last non-pad token."
+            )
+
+        if self._generate_full_logits:
+            return self._model(self._pad_to_max_len(inps))
+
+        result_logits = []
+        seq_len = inps.shape[-1]
+        for pos in range(min(seq_len, self._max_seq_length)):
+            prefix = self._pad_to_max_len(inps[:, : pos + 1])
+            logits = self._model(prefix)
+            if logits.dim() == 3:
+                logits = logits[:, -1, :]
+            result_logits.append(logits)
+
+        return torch.stack(result_logits, dim=1)
+
+    def _pad_to_max_len(self, tokens: torch.Tensor) -> torch.Tensor:
+        if self._enable_dynamic_shape:
+            return tokens
+        token_len = tokens.shape[-1]
+        if token_len > self._max_seq_length:
+            return tokens[:, : self._max_seq_length]
+        if token_len == self._max_seq_length:
+            return tokens
+
+        pad_len = self._max_seq_length - token_len
+        pad_token = getattr(self._tokenizer, "pad_id", self._tokenizer.eos_id)
+        pad = torch.full(
+            (tokens.shape[0], pad_len),
+            pad_token,
+            dtype=tokens.dtype,
+            device=tokens.device,
+        )
+        return torch.cat((tokens, pad), dim=-1)
 
     def _model_generate(self, context, max_length, eos_token_id):
         raise Exception("unimplemented")
@@ -219,6 +264,7 @@ def gen_eval_wrapper(
             tokenizer=tokenizer,
             max_seq_length=llm_config.export.max_seq_length,
             use_kv_cache=llm_config.model.use_kv_cache,
+            generate_full_logits=llm_config.debug.generate_full_logits,
             enable_dynamic_shape=llm_config.model.enable_dynamic_shape,
         )
     else:

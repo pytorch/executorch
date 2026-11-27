@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -62,6 +63,7 @@ bool validate_batch_matmul_arguments(
 
 } // namespace
 
+// cppcheck-suppress unusedFunction
 Tensor& quantized_batch_matmul_out(
     KernelRuntimeContext& context,
     const Tensor& lhs,
@@ -71,6 +73,7 @@ Tensor& quantized_batch_matmul_out(
     int64_t output_offset,
     int64_t output_multiplier,
     int64_t output_shift,
+    const Tensor& scratch,
     Tensor& out) {
   if (!validate_batch_matmul_arguments(context, lhs, rhs_transposed, out)) {
     return out;
@@ -100,25 +103,26 @@ Tensor& quantized_batch_matmul_out(
   quant_params.multiplier = static_cast<int32_t>(output_multiplier);
   quant_params.shift = static_cast<int32_t>(output_shift);
 
-  const int32_t buf_size = arm_fully_connected_s8_get_buffer_size(&out_dims);
-
   cmsis_nn_context ctx;
   ctx.buf = nullptr;
-  ctx.size = 0;
-
-  if (buf_size > 0) {
-    auto buffer_or_error = context.allocate_temp(buf_size);
-    if (!buffer_or_error.ok()) {
-      ET_LOG(
-          Error,
-          "quantized_batch_matmul: failed to allocate scratch buffer (%d bytes)",
-          buf_size);
-      context.fail(buffer_or_error.error());
-      return out;
-    }
-    ctx.buf = buffer_or_error.get();
-    ctx.size = buf_size;
+  ctx.size = scratch.nbytes();
+  if (ctx.size > 0) {
+    ctx.buf = scratch.mutable_data_ptr<int8_t>();
   }
+
+#ifdef CORTEX_M_ENABLE_RUNTIME_CHECKS
+  const int32_t runtime_buffer_bytes =
+      arm_fully_connected_s8_get_buffer_size(&out_dims);
+  if (ctx.size != static_cast<size_t>(runtime_buffer_bytes)) {
+    ET_LOG(
+        Error,
+        "quantized_batch_matmul: scratch buffer size incorrect - actual: (%d) needed: (%d)",
+        static_cast<int>(ctx.size),
+        runtime_buffer_bytes);
+    context.fail(Error::Internal);
+    return out;
+  }
+#endif
 
   const arm_cmsis_nn_status status = arm_batch_matmul_s8(
       &ctx,

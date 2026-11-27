@@ -8,7 +8,7 @@ The ExecuTorch project introduces an advanced benchmarking infrastructure design
 
 - **Device Support**: Includes popular phones like latest Apple iPhone, Google Pixel, and Samsung Galaxy, etc.
 
-- **Backend Delegates**: Supports XNNPACK, Apple CoreML and MPS, Qualcomm QNN, and more in the near future.
+- **Backend Delegates**: Supports XNNPACK, Apple CoreML, Qualcomm QNN, and more in the near future.
 
 - **Benchmark Apps:** Generic apps that support both GenAI and non-GenAI models, capable of measuring performance offline. [Android App](android/benchmark/) | [iOS App](apple/Benchmark/). Popular Android and iOS profilers with in-depth performance analysis will be integrated with these apps in the future.
 
@@ -22,7 +22,7 @@ The ExecuTorch project introduces an advanced benchmarking infrastructure design
 The ExecuTorch Benchmark Dashboard tracks performance metrics for various models across different backend delegates and devices. It enables users to compare metrics, monitor trends, and identify optimizations or regressions in Executorch. The dashboard is accessible at **[ExecuTorch Benchmark Dashboard](https://hud.pytorch.org/benchmark/llms?repoName=pytorch%2Fexecutorch)**. <!-- @lint-ignore -->
 
 **Comprehensive Comparisons**:
-- Analyze performance differences between backend delegates (e.g., XNNPACK, CoreML, QNN, MPS) for the same model.
+- Analyze performance differences between backend delegates (e.g., XNNPACK, CoreML, QNN) for the same model.
 - Compare performance across different models.
 - Track performance changes over time and across different commits.
 

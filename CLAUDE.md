@@ -5,8 +5,10 @@
 - `/export` - Export model to .pte
 - `/building` - Build runners or C++ libs
 - `/profile` - Profile execution
+- `/arm` - Develop, debug, or understand the Arm TOSA, VGF, and Ethos-U backends and examples (`.claude/skills/arm/SKILL.md`)
 - `/cortex-m` - Build, test, or develop the Cortex-M backend
 - `/binary-size` - Analyze and reduce binary size
+- `/pr-review` - Review a pull request
 - `/qualcomm` - Build, test, or develop the QNN (Qualcomm AI Engine Direct) backend
 - `/executorch-kb` - Search tribal knowledge base (known issues, quant recipes, debugging guides)
 
@@ -41,7 +43,7 @@ Details: [docs/source/using-executorch-building-from-source.md](docs/source/usin
 
 - Only commit when explicitly asked
 - No bullet lists of changes; explain review order for large PRs, or omit for small ones
-- Disclose PR was authored with Claude
+- Disclose PR was authored with AI, include tool name.
 
 ## Code Style
 

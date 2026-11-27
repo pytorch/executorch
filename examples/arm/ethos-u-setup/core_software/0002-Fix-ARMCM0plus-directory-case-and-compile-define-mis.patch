@@ -1,0 +1,77 @@
+From 1ee9cf9c956ea6a266fc79dfa62071131f162510 Mon Sep 17 00:00:00 2001
+From: RJ Ascani <rja@meta.com>
+Date: Wed, 13 May 2026 15:48:07 -0700
+Subject: [PATCH] Fix ARMCM0plus directory case and compile-define mismatch
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The Cortex DFP names the Cortex-M0+ device directory and headers
+`ARMCM0plus` (lowercase suffix), while the device source files
+(`startup_ARMCM0plus.c`, `system_ARMCM0plus.c`) gate their
+implementations on the `ARMCM0P` preprocessor macro — three different
+spellings. `cmsis.cmake` previously did
+`string(TOUPPER \"ARMCM\${CPU_NUMBER}\" ARM_CPU)`, producing
+`ARMCM0PLUS`: the include path lookup fails and the source files hit
+their `#error device not specified!` guard.
+
+Override `ARM_CPU` to `ARMCM0plus` and introduce a separate
+`CMSIS_DEVICE_CPU_DEFINE` set to `ARMCM0P` for the cmsis_startup and
+cmsis_system compile-definitions; all other cores still drive both
+paths from the uppercased default.
+---
+ cmsis.cmake | 20 ++++++++++++++++++--
+ 1 file changed, 18 insertions(+), 2 deletions(-)
+
+diff --git a/cmsis.cmake b/cmsis.cmake
+index 7f2b93f..c49f205 100644
+--- a/cmsis.cmake
++++ b/cmsis.cmake
+@@ -23,6 +23,15 @@ endif()
+ 
+ string(TOUPPER "ARMCM${CPU_NUMBER}" ARM_CPU)
+ 
++# Cortex-M0+ is special: the Cortex DFP names the device directory and headers
++# `ARMCM0plus` (lowercase suffix), while the device sources gate their
++# implementations on the `ARMCM0P` preprocessor macro. Override both so the
++# directory lookup and `#include` resolution succeed; the compile-definition
++# override is applied instead of `CMSIS_DEVICE_CPU_FEATURE` further down.
++if(CPU_NUMBER STREQUAL "0plus")
++    set(ARM_CPU "ARMCM0plus")
++endif()
++
+ # Set CPU specific features
+ if(CMAKE_SYSTEM_PROCESSOR MATCHES "cortex-m33(\\+|$)")
+     set(ARM_FEATURES "_DSP_FP")
+@@ -50,6 +59,13 @@ else()
+     cmake_path(SET CMSIS_DEVICE_CPU_FEATURE "${ARM_CPU}")
+ endif()
+ 
++# Macro the device sources gate on. Matches CMSIS_DEVICE_CPU_FEATURE for most
++# cores; Cortex-M0+ keys off `ARMCM0P`, not `ARMCM0plus`.
++set(CMSIS_DEVICE_CPU_DEFINE "${CMSIS_DEVICE_CPU_FEATURE}")
++if(CPU_NUMBER STREQUAL "0plus")
++    set(CMSIS_DEVICE_CPU_DEFINE "ARMCM0P")
++endif()
++
+ target_include_directories(cmsis_device INTERFACE ${CMSIS_DEVICE_PATH}/${ARM_CPU}/Include)
+ 
+ target_compile_options(cmsis_device INTERFACE
+@@ -66,12 +82,12 @@ target_sources(cmsis_startup INTERFACE
+ set_source_files_properties(${CMSIS_DEVICE_PATH}/${ARM_CPU}/Source/startup_${ARM_CPU}.c
+     PROPERTIES COMPILE_FLAGS -Wno-redundant-decls)
+ 
+-target_compile_definitions(cmsis_startup INTERFACE ${CMSIS_DEVICE_CPU_FEATURE})
++target_compile_definitions(cmsis_startup INTERFACE ${CMSIS_DEVICE_CPU_DEFINE})
+ target_link_libraries(cmsis_startup INTERFACE cmsis_device)
+ 
+ # CMSIS system
+ add_library(cmsis_system INTERFACE)
+ target_sources(cmsis_system INTERFACE
+     ${CMSIS_DEVICE_PATH}/${ARM_CPU}/Source/system_${ARM_CPU}.c)
+-target_compile_definitions(cmsis_system INTERFACE ${CMSIS_DEVICE_CPU_FEATURE})
++target_compile_definitions(cmsis_system INTERFACE ${CMSIS_DEVICE_CPU_DEFINE})
+ target_link_libraries(cmsis_system INTERFACE cmsis_startup)
+-- 
+2.53.0
+

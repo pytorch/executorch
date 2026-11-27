@@ -230,7 +230,9 @@ def test_clamp_u85_INT_16a8w(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
+@common.parametrize(
+    "test_data", test_data_suite | test_data_suite_bf16 | test_data_suite_fp16
+)
 @common.SkipIfNoModelConverter
 def test_clamp_vgf_no_quant(test_data):
     input_tensor, min_val, max_val = test_data()
@@ -546,7 +548,10 @@ def test_clamp_u85_INT_16a8w_tensor(test_data):
 
 
 @common.parametrize(
-    "test_data", test_data_suite_tensor_FP | test_data_suite_tensor_fp16
+    "test_data",
+    test_data_suite_tensor_FP
+    | test_data_suite_tensor_bf16
+    | test_data_suite_tensor_fp16,
 )
 @common.SkipIfNoModelConverter
 def test_clamp_vgf_no_quant_tensor(test_data):

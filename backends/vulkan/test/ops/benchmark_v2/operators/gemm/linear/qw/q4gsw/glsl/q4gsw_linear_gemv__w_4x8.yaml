@@ -1,0 +1,40 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+q4gsw_linear_gemv__w_4x8:
+  parameter_names_with_default_values:
+    DTYPE: float
+    IO_STORAGE: buffer
+    NUM_SUBGROUPS: 4
+    SUBGROUP_SIZE: 64
+    LWG_X_SIZE: 64
+    USE_SUBGROUP_BROADCAST: true
+    WEIGHT_TILE_CONTIG_DIM: 0
+  generate_variant_forall:
+    IO_STORAGE:
+      - VALUE: buffer
+      - VALUE: texture3d
+    DTYPE:
+      - VALUE: float
+      - VALUE: half
+  shader_variants:
+    # interleaved nibble, N dim contiguous, subgroup broadcast.
+    # SUBGROUP_SIZE=64 (inherited from top-level) auto-pins the pipeline's
+    # required subgroup size to 64 so subgroupBroadcast indexing matches the
+    # host-side LWG.x assumption (currently 64). Without this the driver
+    # may pick any size in [minSubgroupSize, maxSubgroupSize] (e.g. 128 on
+    # Adreno 750) and break the reduction.
+    - NAME: q4gsw_linear_gemv__w_4x8_nc
+      WEIGHT_TILE_CONTIG_DIM: 0
+    # interleaved nibble, N dim contiguous, no subgroup ops — portable
+    # across any subgroup width (works on Mali / 16-wide as well as Adreno).
+    # SUBGROUP_SIZE=0 opts out of the pipeline subgroup-size pin (the
+    # SUBGROUP_SIZE macro is unused on the nosg path; shared-mem layout uses
+    # LWG_X_SIZE).
+    - NAME: q4gsw_linear_gemv__w_4x8_nc_nosg
+      WEIGHT_TILE_CONTIG_DIM: 0
+      USE_SUBGROUP_BROADCAST: false
+      SUBGROUP_SIZE: 0

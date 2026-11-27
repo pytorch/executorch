@@ -16,27 +16,31 @@ namespace vkcompute {
 void scalar_tensor(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   // Extract the scalar value from the first argument
   ValueRef scalar_in = args[0];
-  float scalar_value = graph.extract_scalar<float>(scalar_in);
 
   // Get the output tensor reference
   ValueRef out = args[args.size() - 1];
+  const vkapi::ScalarType scalar_dtype =
+      graph.dtype_of(out) == vkapi::kInt ? vkapi::kInt : vkapi::kFloat;
+  const vkapi::BufferBindInfo scalar_buffer = scalar_dtype == vkapi::kInt
+      ? graph.create_params_buffer(graph.extract_scalar<int32_t>(scalar_in))
+      : graph.create_params_buffer(graph.extract_scalar<float>(scalar_in));
 
   std::string kernel_name("scalar_tensor");
   kernel_name.reserve(kShaderNameReserve);
 
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
-  add_dtype_suffix(kernel_name, graph.dtype_of(scalar_in));
+  add_dtype_suffix(kernel_name, scalar_dtype);
 
   graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      graph.create_global_wg_size(out),
-      graph.create_local_wg_size(out),
+      graph.create_gwg(out),
+      graph.create_lwg(out),
       // Inputs and Outputs
       {{out, vkapi::kWrite}},
       // Shader params buffers
-      {graph.create_params_buffer(scalar_value)},
+      {scalar_buffer},
       // Push Constants
       {},
       // Specialization Constants

@@ -27,6 +27,7 @@ class AnnotateAvgPool1D(ExportPass):
         torch.avg_pool1d,
         torch.ops.aten.adaptive_avg_pool1d.default,
         torch.adaptive_avg_pool1d,
+        torch.nn.modules.pooling.AvgPool1d,
     ]
 
     def __init__(self, edge_program: torch.export.ExportedProgram):

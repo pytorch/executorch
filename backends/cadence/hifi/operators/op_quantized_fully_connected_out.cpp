@@ -16,11 +16,7 @@ namespace impl {
 namespace HiFi {
 namespace native {
 
-using ::executorch::aten::ArrayRef;
-using ::executorch::aten::IntArrayRef;
-using ::executorch::aten::Scalar;
 using ::executorch::aten::ScalarType;
-using ::executorch::aten::SizesType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::KernelRuntimeContext;
 using std::optional;
@@ -30,7 +26,7 @@ void inline _quantized_fully_connected_asym8u(
     const Tensor& weight,
     const Tensor& bias,
     int64_t in_zero_point,
-    const Tensor& weight_zero_point,
+    int32_t weight_zero_point,
     const Tensor& out_multiplier,
     const Tensor& out_shift,
     int64_t out_zero_point,
@@ -57,7 +53,7 @@ void inline _quantized_fully_connected_asym8u(
       in_dim, // weight_depth, number of columns in weight
       out_dim, // out_depth, number of rows in weight
       -in_zero_point,
-      -weight_zero_point.const_data_ptr<int32_t>()[0],
+      -weight_zero_point,
       out_multiplier.const_data_ptr<int32_t>()[0],
       out_shift.const_data_ptr<int32_t>()[0],
       out_zero_point);
@@ -69,7 +65,7 @@ void inline _quantized_fully_connected_asym8s(
     const Tensor& weight,
     const Tensor& bias,
     int64_t in_zero_point,
-    const Tensor& weight_zero_point,
+    int32_t weight_zero_point,
     const Tensor& out_multiplier,
     const Tensor& out_shift,
     int64_t out_zero_point,
@@ -96,7 +92,7 @@ void inline _quantized_fully_connected_asym8s(
       in_dim, // weight_depth, number of columns in weight
       out_dim, // out_depth, number of rows in weight
       -in_zero_point,
-      -weight_zero_point.const_data_ptr<int32_t>()[0],
+      -weight_zero_point,
       out_multiplier.const_data_ptr<int32_t>()[0],
       out_shift.const_data_ptr<int32_t>()[0],
       out_zero_point);
@@ -109,12 +105,16 @@ void quantized_fully_connected_out(
     const Tensor& weight,
     const Tensor& bias,
     int64_t in_zero_point,
-    const Tensor& weight_zero_point,
+    const optional<Tensor>& weight_zero_point_t,
     const Tensor& out_multiplier,
     const Tensor& out_shift,
     int64_t out_zero_point,
     __ET_UNUSED const optional<Tensor>& offset,
     Tensor& out) {
+  // Absent means a symmetric weight, whose zero point is zero by definition.
+  const int32_t weight_zero_point = weight_zero_point_t.has_value()
+      ? weight_zero_point_t->const_data_ptr<int32_t>()[0]
+      : 0;
   if (out.scalar_type() == ScalarType::Byte) {
     _quantized_fully_connected_asym8u(
         in,

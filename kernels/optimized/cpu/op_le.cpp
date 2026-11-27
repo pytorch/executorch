@@ -40,7 +40,7 @@ Tensor& opt_le_tensor_out(
       out);
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "le.Tensor_out";
+  ET_DEFINE_OPERATOR_NAME(op_name, "le.Tensor_out");
 
   // Check for optimized broadcast paths
   auto selected_optimized_path = select_optimized_path(a, b, out);
@@ -85,7 +85,7 @@ Tensor& opt_le_scalar_out(
       ctx, resize_tensor(out, a.sizes()) == Error::Ok, InvalidArgument, out);
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "le.Scalar_out";
+  ET_DEFINE_OPERATOR_NAME(op_name, "le.Scalar_out");
 
   if (a_type == common_type && a_type == out_type &&
       a_type != ScalarType::Half && a_type != ScalarType::BFloat16) {

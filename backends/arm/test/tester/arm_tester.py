@@ -11,6 +11,7 @@ import logging
 import platform
 
 from collections import Counter, defaultdict
+from pathlib import Path
 from pprint import pformat
 from typing import (
     Any,
@@ -41,6 +42,7 @@ from executorch.backends.arm._passes.arm_pass_manager import ArmPassManager
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.ethosu import EthosUCompileSpec
 from executorch.backends.arm.quantizer import get_symmetric_quantization_config
+from executorch.backends.arm.test.common import maybe_get_tosa_artifact_path
 from executorch.backends.arm.test.runner_utils import (
     dbg_tosa_fb_to_json,
     get_output_quantization_params,
@@ -57,6 +59,7 @@ from executorch.backends.arm.test.tester.serialize import Serialize
 from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.mapping import extract_tensor_meta
+from executorch.backends.arm.tosa.specification import TosaLoweringContext
 
 from executorch.backends.arm.util._factory import (
     create_partitioner,
@@ -192,7 +195,6 @@ class ToEdgeTransformAndLower(BaseStages.ToEdgeTransformAndLower):
         transform_passes: Optional[
             Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
         ] = None,
-        compile_spec: Optional[ArmCompileSpec] = None,
     ):
         super().__init__(
             default_partitioner_cls=None,
@@ -232,18 +234,13 @@ class ToEdgeTransformAndLower(BaseStages.ToEdgeTransformAndLower):
 class ToExecutorch(BaseStages.ToExecutorch):
     def run_artifact(self, inputs):
         with TosaReferenceModelDispatch():
-            # Check if the model has mutable buffers. These are not delegated to the backend
-            # and are handled by core ExecuTorch as I/O. In other words, the mutable buffer
-            # is outputted and re-inputted into the model. As we are calling the graph module
-            # directly, we need to ensure we handle these extra mutable inputs.
-            if (
-                len(self.artifact.exported_program().graph_signature.buffers_to_mutate)
-                > 0
-            ):
-                buffers = list(self.artifact.exported_program().buffers())
-                buffers.extend(inputs)
-
-                return self.artifact.exported_program().graph_module(*buffers)
+            program = self.artifact.exported_program()
+            # Mutable inputs and other parameters become inputs to the graph
+            # so we need to input these in the correct order.
+            # Also, execute the raw graph to preserve mutation outputs for comparison.
+            if program.graph_signature.buffers_to_mutate:
+                flat_inputs = program._graph_module_flat_inputs(inputs, {})
+                return program.graph_module(*flat_inputs)
             else:
                 return super().run_artifact(inputs)
 
@@ -376,6 +373,12 @@ class ArmTester(tester.Tester):
         self.transform_passes = transform_passes
         self.constant_methods = constant_methods
         self.compile_spec = compile_spec
+        if compile_spec._get_intermediate_path() is None:
+            artifact_path = maybe_get_tosa_artifact_path()
+            if artifact_path is not None:
+                Path(artifact_path).mkdir(parents=True, exist_ok=True)
+                self.compile_spec = copy.deepcopy(compile_spec)
+                self.compile_spec.dump_intermediate_artifacts_to(artifact_path)
         stage_classes = tester.Tester.default_stage_classes() | {
             StageType.PARTITION: Partition,
             StageType.TO_EDGE_TRANSFORM_AND_LOWER: ToEdgeTransformAndLower,
@@ -474,7 +477,6 @@ class ArmTester(tester.Tester):
                 edge_compile_config,
                 constant_methods=self.constant_methods,
                 transform_passes=self.transform_passes,
-                compile_spec=self.compile_spec,
             )
         else:
             if partitioners is not None:
@@ -517,7 +519,8 @@ class ArmTester(tester.Tester):
     def run_passes(self, run_passes_stage: Optional[BaseStages.RunPasses] = None):
         if run_passes_stage is None:
             run_passes_stage = RunPasses()
-        return super().run_passes(run_passes_stage)
+        with TosaLoweringContext(self.compile_spec.tosa_spec):
+            return super().run_passes(run_passes_stage)
 
     def _get_input_and_stages(
         self, inputs, stage, reference_stage_type, run_eager_mode: bool
@@ -556,6 +559,52 @@ class ArmTester(tester.Tester):
 
         return inputs, reference_stage, test_stage
 
+    def _run_method_without_comparing_outputs(
+        self,
+        stage: Optional[StageType] = None,
+        inputs: Optional[Tuple[torch.Tensor, ...]] = None,
+        num_runs: int = 1,
+    ):
+        """Runs the artifact output of 'stage' without reference comparison."""
+
+        inputs, _, test_stage = self._get_input_and_stages(inputs, stage, None, False)
+
+        logger.info(f"Running Stage '{test_stage.stage_type()}' without comparison")
+
+        number_of_runs = 1 if inputs is not None else num_runs
+
+        for run_iteration in range(number_of_runs):
+            reference_input = inputs if inputs else next(self.generate_random_inputs())
+
+            test_input = copy.deepcopy(reference_input)
+            original_input = copy.deepcopy(reference_input)
+
+            input_shapes = [
+                generated_input.shape if hasattr(generated_input, "shape") else (1,)
+                for generated_input in reference_input
+            ]
+            input_shape_str = ", ".join([str(list(i)) for i in input_shapes])
+            logger.info(f"Run #{run_iteration}, input shapes: {input_shape_str}")
+
+            test_outputs, _ = pytree.tree_flatten(test_stage.run_artifact(test_input))
+
+            # When we run with KV cache enabled, the model returns cache data in the results. This we need to strip away by extracting only USER_OUTPUT.
+            if hasattr(test_stage.artifact, "exported_program"):
+                output_specs = (
+                    test_stage.artifact.exported_program().graph_signature.output_specs
+                )
+                user_outputs = [
+                    output
+                    for output, spec in zip(test_outputs, output_specs)
+                    if spec.kind == OutputKind.USER_OUTPUT
+                ]
+                test_outputs = user_outputs
+
+            logger.info(f"\n      Input: {original_input}")
+            logger.info(f"\nTest output: {test_outputs}")
+
+        return self
+
     def run_method_and_compare_outputs(
         self,
         stage: Optional[StageType] = None,
@@ -572,13 +621,16 @@ class ArmTester(tester.Tester):
         compare_callback: Optional[Callable[..., None]] = None,
         error_callbacks: Optional[Sequence[Callable[..., None]]] = None,
         run_eager_mode: bool = False,
+        compare_outputs: bool = True,
     ):
-        """Compares the run_artifact output of 'stage' with the output of a
-        reference stage. If the model is quantized, the reference stage is the
-        Quantize stage output. Otherwise, the reference stage is the initial
-        pytorch module.
+        """Runs the artifact output of 'stage' and optionally compares it with
+        the output of a reference stage. If the model is quantized, the
+        reference stage is the Quantize stage output. Otherwise, the reference
+        stage is the initial pytorch module.
 
-        Asserts that the outputs are equal (within tolerances).
+        When compare_outputs is True, asserts that the outputs are equal
+        (within tolerances). When compare_outputs is False, only the compared
+        stage is run.
         Returns self to allow the function to be run in a test chain.
 
         Args:
@@ -586,8 +638,21 @@ class ArmTester(tester.Tester):
                 The default is the latest run stage.
             inputs (Optional[Tuple[torch.Tensor]]): Allows you to input custom input data.
                 The default is random data.
+            compare_outputs: Whether to compare the stage output with the
+                reference stage output.
 
         """
+
+        if not compare_outputs:
+            if run_eager_mode:
+                raise ValueError(
+                    "run_eager_mode is only supported when compare_outputs=True."
+                )
+            return self._run_method_without_comparing_outputs(
+                stage=stage,
+                inputs=inputs,
+                num_runs=num_runs,
+            )
 
         atol = _adjust_tosa_aarch64_atol(self.compile_spec, atol)
 
@@ -640,6 +705,18 @@ class ArmTester(tester.Tester):
                 test_outputs, _ = pytree.tree_flatten(
                     test_stage.run_artifact(test_input)
                 )
+
+            # When we run with KV cache enabled, the model returns cache data in the results. This we need to strip away by extracting only USER_OUTPUT.
+            if hasattr(test_stage.artifact, "exported_program"):
+                output_specs = (
+                    test_stage.artifact.exported_program().graph_signature.output_specs
+                )
+                user_outputs = [
+                    output
+                    for output, spec in zip(test_outputs, output_specs)
+                    if spec.kind == OutputKind.USER_OUTPUT
+                ]
+                test_outputs = user_outputs
 
             logger.info(f"\n      Input: {original_input}")
             logger.info(f"\n Ref output: {reference_outputs}")

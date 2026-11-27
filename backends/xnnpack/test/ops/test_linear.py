@@ -6,6 +6,7 @@
 # pyre-unsafe
 
 import unittest
+from dataclasses import replace
 
 from itertools import product
 from typing import Callable, Dict, List, Optional, Tuple
@@ -33,10 +34,18 @@ from executorch.backends.xnnpack.test.tester.tester import (
 
 from torch.export.graph_signature import ExportGraphSignature, InputKind
 
+# Buck preloads the quantized kernels instead of shipping this module.
+try:
+    import executorch.extension.pybindings.portable_lib  # noqa[F401]
+    import executorch.kernels.quantized  # noqa[F401]
+except ImportError:
+    pass
+
 try:
     from torchao.quantization.granularity import PerGroup
     from torchao.quantization.quant_api import (
         Int8DynamicActivationIntxWeightConfig,
+        IntxWeightOnlyConfig,
         quantize_,
     )
     from torchao.utils import unwrap_tensor_subclass
@@ -44,6 +53,12 @@ try:
     torchao_installed = True
 except:
     torchao_installed = False
+
+
+def is_fbcode() -> bool:
+    # torch.version.git_version is only set in OSS PyTorch; the internal
+    # Buck-built torch omits it.
+    return not hasattr(torch.version, "git_version")
 
 
 # Pytorch Modules Used for Testing
@@ -64,7 +79,11 @@ class BaseLinear(torch.nn.Module):
         self.ic = input_channels
         self.oc = output_channels
 
-        assert dtype in [torch.float, torch.half], "Unsupported op dtype"
+        assert dtype in [
+            torch.float,
+            torch.half,
+            torch.bfloat16,
+        ], "Unsupported op dtype"
         self.op_dtype = dtype
         self.in_size = in_size
 
@@ -388,6 +407,7 @@ class TestLinear(unittest.TestCase):
         num_linears: int = 1,
         atol: float = 5e-3,  # TODO(T212995726): Investigate right atol for rand[n] inputs
         rtol: float = 5e-3,  # TODO(T212995726): Investigate right rtol for rand[n] inputs
+        enable_bf16: bool = False,
     ):
         """
         Helper function to test groupwise dynamic quantized linear op with different configurations.
@@ -404,6 +424,7 @@ class TestLinear(unittest.TestCase):
         DynamicallyQuantizedPartitioner = XnnpackPartitioner(
             config_precisions=ConfigPrecisionType.DYNAMIC_QUANT,
             per_op_mode=True,
+            enable_bf16=enable_bf16,
         )
         tester = (
             Tester(mod, inputs)
@@ -547,6 +568,7 @@ class TestLinear(unittest.TestCase):
                 # )
 
     def test_qd8_f32_per_channel_shared_dq_chain(self):
+        torch.manual_seed(42)
         for use_bias in (False, True):
             module = SharedDQChain(
                 input_size=13,
@@ -561,6 +583,7 @@ class TestLinear(unittest.TestCase):
                 is_per_channel=True,
                 linear_count=2,
                 uses_bias=use_bias,
+                atol=1.5e-1,  # TODO(T212995726): Investigate right atol for rand[n] inputs
             )
 
     def _test_qd8_per_channel_linear(self, dtype: torch.dtype = torch.float):
@@ -706,11 +729,22 @@ class TestLinear(unittest.TestCase):
                     # Mean: 0.2373046875, 0.237060546875
                     # Max: 1.0078125, 1.0078125
                     # Min: -0.08465576171875, -0.08441162109375
-                    atol = (
-                        1e-2 if dtype == torch.half else 5e-3
-                    )  # TODO(T212995726): Investigate right atol for rand[n] inputs
+                    # bf16 has ~8x coarser mantissa than fp16, so it needs a
+                    # looser atol.
+                    # TODO(T212995726): Investigate right atol for rand[n] inputs
+                    if dtype == torch.bfloat16:
+                        atol = 8e-2
+                    elif dtype == torch.half:
+                        atol = 1e-2
+                    else:
+                        atol = 5e-3
                     self._test_groupwise_dq_linear(
-                        lin_mod, inputs, group_size=bl, use_bias=use_bias, atol=atol
+                        lin_mod,
+                        inputs,
+                        group_size=bl,
+                        use_bias=use_bias,
+                        atol=atol,
+                        enable_bf16=dtype == torch.bfloat16,
                     )
 
     def test_fp16_linear(self):
@@ -756,6 +790,25 @@ class TestLinear(unittest.TestCase):
             uses_bias=True,
         )
 
+    def test_fp32_linear_view_weight(self):
+        class ViewWeightLinear(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("weight", torch.randn(3, 8, 8)[1])
+
+            def forward(self, x):
+                return torch.nn.functional.linear(x, self.weight)
+
+        (
+            Tester(ViewWeightLinear(), (torch.randn(2, 8),))
+            .export()
+            .to_edge_transform_and_lower()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
+
     def test_fp32_linear_fused_relu(self):
         for use_bias in (True, False):
             for num_batch_dims in range(1, 3):
@@ -794,6 +847,56 @@ class TestLinear(unittest.TestCase):
                     num_batch_dims=num_batch_dims,
                     quant_type="per_tensor",
                 )
+
+    def test_qs8_linear_shared_by_two_activations(self):
+        # The int32 bias is scaled by the input scale of each use, so a linear
+        # applied to activations with different scales needs one bias per use.
+        class SharedLinear(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(8, 6)
+                with torch.no_grad():
+                    self.linear.bias.copy_(
+                        torch.tensor([3.0, -3.0, 2.0, -2.0, 1.0, -1.0])
+                    )
+
+            def forward(self, x):
+                return self.linear(x), self.linear(x * 4.0)
+
+        for is_per_channel in (False, True):
+            quant_config = get_symmetric_quantization_config(
+                is_per_channel=is_per_channel
+            )
+            (
+                Tester(SharedLinear().eval(), (torch.rand(2, 5, 8) * 2 - 1,))
+                .quantize(Quantize(quantization_config=quant_config))
+                .export()
+                .to_edge_transform_and_lower()
+                .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+                .to_executorch()
+                .serialize()
+                .run_method_and_compare_outputs()
+            )
+
+    def test_qs8_linear_float_output(self):
+        # XNNPACK leaves out a quantized linear whose output is not quantized. The
+        # quantize and dequantize of its input then run in a delegate of their own.
+        quant_config = replace(
+            get_symmetric_quantization_config(is_per_channel=True),
+            output_activation=None,
+        )
+        module = BaseLinear(use_bias=True)
+        (
+            Tester(module.eval(), module.get_inputs(rank=2))
+            .quantize(Quantize(quantization_config=quant_config))
+            .export()
+            .to_edge_transform_and_lower()
+            .check(["executorch_exir_dialects_edge__ops_aten_addmm_default"])
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
 
     # Tests for q[dp]8-f16-qc8w
     def test_qd8_f16_per_channel_linear(self):
@@ -839,6 +942,17 @@ class TestLinear(unittest.TestCase):
     def test_linear_qd8_f32_per_token_weight_per_channel_group_int4(self):
         self._test_qd8_per_token_weight_per_channel_group_int4(dtype=torch.float)
 
+    # Tests for q[dp]8-bf16-qb4w
+    @unittest.skipIf(
+        not torchao_installed, "Per Channel Group Quantization Required TorchAO"
+    )
+    @unittest.skipIf(
+        is_fbcode(),
+        "wait for XNNPACK pin bump to enable",
+    )
+    def test_linear_qd8_bf16_per_token_weight_per_channel_group_int4(self):
+        self._test_qd8_per_token_weight_per_channel_group_int4(dtype=torch.bfloat16)
+
     @unittest.skipIf(
         not torchao_installed, "Per Channel Group Quantization Required TorchAO"
     )
@@ -861,6 +975,112 @@ class TestLinear(unittest.TestCase):
                 self._test_groupwise_dq_linear(
                     lin_mod, inputs, group_size=30, use_bias=False, atol=1e-2
                 )
+
+    @unittest.skipIf(not torchao_installed, "Requires TorchAO")
+    def test_qd8_linear_transposed_scale(self):
+        mod = torch.nn.Linear(64, 4, bias=False)
+        with torch.no_grad():
+            # Rows with very different scales make a misordered scale obvious.
+            mod.weight.mul_(torch.arange(1.0, 5.0).unsqueeze(1))
+        quantize_(
+            mod,
+            Int8DynamicActivationIntxWeightConfig(
+                weight_dtype=torch.int4, weight_granularity=PerGroup(32)
+            ),
+        )
+        unwrap_tensor_subclass(mod)
+        # XNNPACK stores groupwise scales as bf16, so round them for an exact comparison.
+        scale = mod.weight.scale.to(torch.bfloat16).float()
+        mod.weight.scale = scale.t().contiguous().t()
+        (
+            Tester(mod, (torch.randn(2, 64),))
+            .export()
+            .to_edge_transform_and_lower(
+                ToEdgeTransformAndLower(
+                    [
+                        XnnpackPartitioner(
+                            config_precisions=ConfigPrecisionType.DYNAMIC_QUANT
+                        )
+                    ]
+                )
+            )
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
+
+    @unittest.skipIf(not torchao_installed, "Requires TorchAO")
+    def test_linear_int4_weight_only_dequant_in_source_partition(self):
+        # An int4 weight-only tensor subclass dequantizes inside the linear
+        # call, so its dequant is inside the linear's source partition and
+        # must not be skipped when looking for the weight.
+        # Activations are quantized by hand so that their quantize and
+        # dequantize stay outside the linear's source partition.
+        class DynamicActivationLinear(torch.nn.Module):
+            def __init__(self, linear):
+                super().__init__()
+                self.linear = linear
+
+            def forward(self, x):
+                block, qmin, qmax = [1, 64], -128, 127
+                scale, zero_point = torch.ops.torchao.choose_qparams_affine(
+                    x,
+                    "ASYMMETRIC",
+                    block,
+                    torch.int8,
+                    qmin,
+                    qmax,
+                    None,
+                    None,
+                    torch.int8,
+                )
+                q = torch.ops.torchao.quantize_affine(
+                    x, block, scale, zero_point, torch.int8, qmin, qmax
+                )
+                dq = torch.ops.torchao.dequantize_affine(
+                    q, block, scale, zero_point, torch.int8, qmin, qmax
+                )
+                return self.linear(dq)
+
+        for use_bias, gemm in (
+            (False, "executorch_exir_dialects_edge__ops_aten_mm_default"),
+            (True, "executorch_exir_dialects_edge__ops_aten_addmm_default"),
+        ):
+            mod = torch.nn.Linear(64, 32, bias=use_bias)
+            quantize_(
+                mod,
+                IntxWeightOnlyConfig(weight_dtype=torch.int4, granularity=PerGroup(32)),
+            )
+            unwrap_tensor_subclass(mod)
+            inputs = (torch.randn(2, 64),)
+            # The XNNPACK partitioner does not delegate float activations with
+            # quantized weights, so the gemm must stay out of the delegate.
+            (
+                Tester(mod, inputs)
+                .export()
+                .to_edge_transform_and_lower()
+                .check_count({gemm: 1})
+            )
+            # With dynamically quantized activations it is delegated and has
+            # to keep the weight scales.
+            (
+                Tester(DynamicActivationLinear(mod), inputs)
+                .export()
+                .to_edge()
+                .partition(
+                    Partition(
+                        XnnpackPartitioner(
+                            config_precisions=ConfigPrecisionType.DYNAMIC_QUANT
+                        )
+                    )
+                )
+                .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+                .check_not([gemm])
+                .to_executorch()
+                .serialize()
+                .run_method_and_compare_outputs(atol=1e-2, rtol=1e-2)
+            )
 
     def test_qd8_per_channel_linear_parallel(self):
         in_size = 2
@@ -988,6 +1208,32 @@ class TestLinear(unittest.TestCase):
                     "dequantize_per_tensor.tensor": 1,  #  1: act
                     "dequantize_per_channel.default": 1,  # 1: weight
                 },
+            )
+
+    def test_quantized_linear_with_force_non_static_weights_for_f32_linear(self):
+        # The flag is for float linears. A quantized linear that is decomposed into
+        # a matmul keeps its quantize and dequantize nodes and is delegated whole.
+        partitioner = XnnpackPartitioner(force_non_static_weights_for_f32_linear=True)
+        for is_dynamic in (False, True):
+            module = BaseLinear(use_bias=True)
+            quant_config = get_symmetric_quantization_config(
+                is_per_channel=True, is_dynamic=is_dynamic
+            )
+            (
+                Tester(module.eval(), module.get_inputs(rank=2))
+                .quantize(Quantize(quantization_config=quant_config))
+                .export()
+                .to_edge()
+                .partition(Partition(partitioner=partitioner))
+                .check_not(
+                    [
+                        "executorch_exir_dialects_edge__ops_aten_addmm_default",
+                        "quantized_decomposed",
+                    ]
+                )
+                .to_executorch()
+                .serialize()
+                .run_method_and_compare_outputs(atol=5e-2)
             )
 
     def test_linear_with_force_non_static_weights_for_f32_linear(self):

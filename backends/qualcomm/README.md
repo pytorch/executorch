@@ -120,16 +120,22 @@ PRs are always welcome to help improve the codebase in a comprehensive manner. B
     ```bash
     cd $PATH_TO_EXECUTORCH
     # example usage of performing unit test
-    python backends/qualcomm/tests/test_qnn_delegate.py -k TestQNNQuantizedOperator.test_qnn_backend_layer_norm -s $DEVICE_SERIAL -m SM8650 -b build-android/ -a $PATH_TO_TEST_ARTIFACTS
+    python backends/qualcomm/tests/test_qnn_delegate.py -k TestQNNQuantizedOperator.test_qnn_backend_layer_norm --device $DEVICE_SERIAL --soc_model SM8650 --build_folder build-android/ -a $PATH_TO_TEST_ARTIFACTS
     ```
     The test graph is expected to have 1 delegated node with only placeholders / output nodes being left. Check the execution report for more information.
 
 - **Code Reviews**:<br/>
     Please ping authors in Qualcomm AI Engine Direct related PRs for reviewing, possible candidates are listed below:
-    - [shewu-quic](https://github.com/shewu-quic)
     - [chenweng-quic](https://github.com/chenweng-quic)
-    - [winskuo-quic](https://github.com/winskuo-quic)
     - [DannyYuyang-quic](https://github.com/DannyYuyang-quic)
     - [haowhsu-quic](https://github.com/haowhsu-quic)
+    - [harshs-qti](https://github.com/harshs-qti)
+    - [jethroqti](https://github.com/jethroqti)
+    - [qti-horodnic](https://github.com/qti-horodnic)
+    - [qti-mmadhava](https://github.com/qti-mmadhava)
+    - [quic-boyuc](https://github.com/quic-boyuc)
+    - [shewu-quic](https://github.com/shewu-quic)
+    - [winskuo-quic](https://github.com/winskuo-quic)
+    - [zhaoxul-qti](https://github.com/zhaoxul-qti)
 
 Thanks again for your contribution!

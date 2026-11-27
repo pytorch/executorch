@@ -16,11 +16,25 @@ def _program_preprocessor_flags():
     if enable_verification == "false":
         return ["-DET_ENABLE_PROGRAM_VERIFICATION=0"]
     elif enable_verification == "true":
-        # Enabled by default.
-        return []
+        # Enabled by default; allow opt-out via constraint
+        if not runtime.is_oss:
+            return select({
+                "DEFAULT": [],
+                "fbsource//xplat/executorch/tools/buck/constraints:executorch-program-verification-disabled": ["-DET_ENABLE_PROGRAM_VERIFICATION=0"],
+            })
+        else:
+            return []
     else:
         fail("executorch.enable_program_verification must be one of 'true' or 'false'; saw '" +
              enable_verification + "'")
+
+def _program_lto_flags(aten_mode):
+    if runtime.is_oss or aten_mode:
+        return []
+    return select({
+        "DEFAULT": [],
+        "fbsource//xplat/executorch/tools/buck/constraints:executorch-lto-enabled": ["-flto=thin"],
+    })
 
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
@@ -101,7 +115,8 @@ def define_common_targets():
             compiler_flags = select({
                 "ovr_config//os:windows": [],
                 "DEFAULT" :["-Wno-error=deprecated-declarations"]
-            }),
+            }) + _program_lto_flags(aten_mode),
+            exported_linker_flags = _program_lto_flags(aten_mode),
             preprocessor_flags = _program_preprocessor_flags(),
             exported_deps = [
                 ":memory_manager",
@@ -122,6 +137,7 @@ def define_common_targets():
             ],
             deps = [
                 "//executorch/schema:program",
+                "//executorch/runtime/core:device_allocator",
                 "//executorch/runtime/core/exec_aten/util:tensor_dimension_limit",
                 "//executorch/runtime/core/portable_type/c10/c10:c10",
             ],

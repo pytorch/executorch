@@ -97,7 +97,7 @@ quantizer = CoreMLQuantizer(weight_only_8bit_config)
 
 Quantizing activations requires calibrating the model on representative data.  Also note that PT2E currently requires passing at least 1 calibration sample before calling `convert_pt2e`, even for data-free weight-only quantization.
 
-See [PyTorch 2 Export Post Training Quantization](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html) for more information.
+See [PyTorch 2 Export Post Training Quantization](https://docs.pytorch.org/ao/main/pt2e_quantization/pt2e_quant_ptq.html) for more information.
 
 ### LLM quantization with quantize_
 

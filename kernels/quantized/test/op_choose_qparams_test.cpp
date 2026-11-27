@@ -19,8 +19,6 @@
 #include <limits>
 
 using namespace ::testing;
-using executorch::aten::ArrayRef;
-using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using torch::executor::native::choose_qparams_per_token_asymmetric_out;
@@ -50,6 +48,10 @@ void test_dtype() {
 
   EXPECT_TENSOR_CLOSE(scale_out, expected_scale);
   EXPECT_TENSOR_EQ(zero_point_out, expected_zero_point);
+}
+
+TEST(OpChooseQparamsTensorOutTest, Byte) {
+  test_dtype<ScalarType::Byte>();
 }
 
 TEST(OpChooseQparamsPerTokenAsymmetricTensorOutTest, Float) {
@@ -257,4 +259,22 @@ TEST(
     EXPECT_NEAR(scale_out.const_data_ptr<double>()[i], scale, 1e-6);
     EXPECT_EQ(zero_point_out.const_data_ptr<int64_t>()[i], nudged_zero_point);
   }
+}
+
+TEST(OpChooseQparamsPerTokenAsymmetricTensorOutTest, ScalarInputDies) {
+  et_pal_init();
+  TensorFactory<ScalarType::Float> tf_float;
+  TensorFactory<ScalarType::Double> tf_double;
+  TensorFactory<ScalarType::Long> tf_long;
+
+  // Per-token scales index input.dim() - 1; a scalar input must be rejected
+  // instead of indexing before the output-shape buffer.
+  Tensor input = tf_float.make({}, {1.0});
+  Tensor scale_out = tf_double.zeros({1});
+  Tensor zero_point_out = tf_long.zeros({1});
+
+  ET_EXPECT_DEATH(
+      choose_qparams_per_token_asymmetric_out(
+          input, ScalarType::Float, scale_out, zero_point_out),
+      "must have rank");
 }

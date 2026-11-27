@@ -51,13 +51,13 @@ Use -h (or --help) to see all the supported models. For the browser example, mak
 (mkdir cmake-out-wasm \
     && cd cmake-out-wasm \
     && emcmake cmake -DEXECUTORCH_PAL_DEFAULT=posix ..) \
-  && cmake --build cmake-out-wasm -j32 --target executor_runner
+  && cmake --build cmake-out-wasm -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --target executor_runner
 ```
 
 If you need to rebuild `executor_runner` after modifying the contents of `./models/`, you can run the following command
 
 ```bash
-cmake --build cmake-out-wasm -j32 --target executor_runner --clean-first
+cmake --build cmake-out-wasm -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --target executor_runner --clean-first
 ```
 
 4. Run the model with Node.js. Emscripten should come preinstalled with a compatible version of Node.js. If you have an incompatible version of Node.js installed, you can use the Emscripten-provided version by running `$EMSDK_NODE` instead of `node`.
@@ -91,7 +91,7 @@ echo $EMSDK_NODE
 The file may not have been present while building the Wasm binary. You can rebuild with the following command
 
 ```bash
-cmake --build cmake-out-wasm -j32 --target executor_runner --clean-first
+cmake --build cmake-out-wasm -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --target executor_runner --clean-first
 ```
 
 The path may also be incorrect. The files in the `WASM_MODEL_DIR` are placed into the root directory of the virtual file system, so you would use `--model_path mv2.pte` instead of `--model_path models/mv2.pte`, for example.

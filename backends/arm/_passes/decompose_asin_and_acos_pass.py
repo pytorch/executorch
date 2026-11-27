@@ -10,7 +10,7 @@ from typing import Set, Type
 
 import torch
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.convert_full_like_to_full_pass import (
     ConvertFullLikeToFullPass,
 )
@@ -27,6 +27,7 @@ from executorch.exir.pass_base import ExportPass
 # For MI case
 edge_asin_op = (exir_ops.edge.aten.asin.default,)
 edge_acos_op = (exir_ops.edge.aten.acos.default,)
+logger = logging.getLogger(__name__)
 
 
 def get_decomposition(op) -> tuple:
@@ -48,7 +49,7 @@ def get_decomposition(op) -> tuple:
     raise RuntimeError(f"Can't get decomposition for op {op}")
 
 
-class DecomposeAsinAndAcosPass(ArmPass):
+class DecomposeAsinAndAcosPass(ArmOpTargetedPass):
     """This pass decomposes asin and acos into a rational approximation for
     small values and a transformed rational approximation for large values.
 
@@ -71,6 +72,18 @@ class DecomposeAsinAndAcosPass(ArmPass):
         MatchArgDtypePass,
         ReplaceScalarWithTensorByProfilePass,
     }
+    target_ops = edge_asin_op + edge_acos_op
+
+    def call(self, graph_module):
+        self._approximated = 0
+        result = super().call(graph_module)
+        if self._approximated:
+            logger.info(
+                "DecomposeAsinAndAcosPass: approximated %d asin/acos operator(s); "
+                "small numerical errors may be introduced.",
+                self._approximated,
+            )
+        return result
 
     def _build_polynomial(
         self, coefficients: list[float], variable: torch.Tensor, meta: dict[str, str]
@@ -116,16 +129,14 @@ class DecomposeAsinAndAcosPass(ArmPass):
         )
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in (edge_asin_op + edge_acos_op):
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 
         if self._is_quantized_meta(meta):
             # If quantized, node should be replace by table op
             return super().call_operator(op, args, kwargs, meta)
 
-        logging.info(
-            f"Approximating {op}. This may introduce small numerical errors. For details, see {__file__}."
-        )
+        self._approximated += 1
         x = args[0]
         half = 0.5
         one = 1.0

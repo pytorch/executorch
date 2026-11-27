@@ -22,12 +22,13 @@ from executorch.backends.qualcomm.custom_op.annotator import (
 from executorch.backends.qualcomm.custom_op.interface import QnnCustomOpPackageBuilder
 from executorch.backends.qualcomm.export_utils import (
     build_executorch_binary,
+    Device,
     generate_inputs,
     get_backend_type,
     make_quantizer,
     QnnConfig,
     setup_common_args_and_variables,
-    SimpleADB,
+    WINDOWS_TARGET,
 )
 from executorch.backends.qualcomm.quantizer.qconfig import (
     get_ptq_per_channel_quant_config,
@@ -142,10 +143,12 @@ def main(args):
     ]
 
     # Quantization
-    quant_dtype = QuantDtype.use_8a8w
+    # quant_dtype must be None for fp16, otherwise build_executorch_binary
+    # still lowers as a quantized graph and applies a default quantizer.
     if args.use_fp16:
-        quantizer = None
+        quant_dtype, quantizer = None, None
     else:
+        quant_dtype = QuantDtype.use_8a8w
         quant_cfg = get_ptq_per_channel_quant_config()
         custom_quant_annotator = CustomOpsQuantAnnotator()
         custom_quant_annotator.register_annotation(
@@ -202,28 +205,32 @@ def main(args):
             cwd=artifact,
         )
     else:
+        if args.debug and qnn_config.target in WINDOWS_TARGET:
+            raise RuntimeError(
+                "Debug mode for this script only supports Android devices."
+            )
         # setup required params accordingly
         # qnn_config    : QnnConfig that saves config info
         # device_id     : serial number of android device
         # workspace     : folder for storing artifacts on android device
-        adb = SimpleADB(
+        device = Device(
             qnn_config=qnn_config,
             pte_path=f"{args.artifact}/{pte_filename}.pte",
             workspace=workspace,
         )
-        adb.push(inputs=sample_input, files=op_package_paths)
+        device.push(inputs=sample_input, files=op_package_paths)
         if args.debug:
-            adb.execute(custom_runner_cmd="logcat -c")
-            adb.execute(
+            device.execute(custom_runner_cmd="logcat -c")
+            device.execute(
                 custom_runner_cmd=f"echo 0x1f > {workspace}/qnn_executor_runner.farf"
             )
 
-        adb.execute()
+        device.execute()
         if args.debug:
-            adb.execute(
+            device.execute(
                 custom_runner_cmd=f"logcat -d -v time >{workspace}/outputs/debug_logs.txt"
             )
-        adb.pull(host_output_path=args.artifact)
+        device.pull(host_output_path=args.artifact)
 
     x86_golden = instance(*sample_input)
     device_output = torch.from_numpy(

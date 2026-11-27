@@ -144,9 +144,15 @@ class XnnpackPartitioner(ConfigerationBasedPartitioner):
 
 
 class XnnpackDynamicallyQuantizedPartitioner(XnnpackPartitioner):
-    def __init__(self):
+    def __init__(self, **kwargs):
+        if "config_precisions" in kwargs:
+            raise ValueError(
+                "XnnpackDynamicallyQuantizedPartitioner pins config_precisions to "
+                "DYNAMIC_QUANT and does not accept a config_precisions argument."
+            )
         super().__init__(
             config_precisions=ConfigPrecisionType.DYNAMIC_QUANT,
+            **kwargs,
         )
 
 

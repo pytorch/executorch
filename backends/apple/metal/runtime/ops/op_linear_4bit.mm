@@ -1237,21 +1237,21 @@ static std::string get_int4_metal_source() {
 
       METAL_FUNC MMATile() thread {}
 
-      METAL_FUNC constexpr thread frag_type& frag_at(const short i, const short j) {
+      METAL_FUNC constexpr thread frag_type& frag_at(const short i, const short j) thread {
         return val_frags[i * kTileCols + j];
       }
 
       METAL_FUNC constexpr const thread frag_type& frag_at(
-          const short i, const short j) const {
+          const short i, const short j) const thread {
         return val_frags[i * kTileCols + j];
       }
 
-      METAL_FUNC thread elem_type* elems() {
+      METAL_FUNC thread elem_type* elems() thread {
         return reinterpret_cast<thread elem_type*>(val_frags);
       }
 
       template <typename U, int w_x, int w_y, int str_x, int str_y>
-      METAL_FUNC void load(const threadgroup U* src) {
+      METAL_FUNC void load(const threadgroup U* src) thread {
         STEEL_PRAGMA_UNROLL
         for (short i = 0; i < kTileRows; ++i) {
           STEEL_PRAGMA_UNROLL
@@ -1267,7 +1267,7 @@ static std::string get_int4_metal_source() {
       }
 
       template <typename U, int w_x, int w_y>
-      METAL_FUNC void store(device U* dst, const int ld) const {
+      METAL_FUNC void store(device U* dst, const int ld) const thread {
         STEEL_PRAGMA_UNROLL
         for (short i = 0; i < kTileRows; ++i) {
           STEEL_PRAGMA_UNROLL
@@ -1283,7 +1283,7 @@ static std::string get_int4_metal_source() {
 
       template <typename U, int w_x, int w_y>
       METAL_FUNC void
-      store_safe(device U* dst, const int ld, const short2 dst_tile_dims) const {
+      store_safe(device U* dst, const int ld, const short2 dst_tile_dims) const thread {
         STEEL_PRAGMA_UNROLL
         for (int i = 0; i < kTileRows; ++i) {
           STEEL_PRAGMA_UNROLL
@@ -1365,7 +1365,7 @@ static std::string get_int4_metal_source() {
 
       METAL_FUNC BlockMMA(
           ushort simd_group_id [[simdgroup_index_in_threadgroup]],
-          ushort simd_lane_id [[thread_index_in_simdgroup]]) {
+          ushort simd_lane_id [[thread_index_in_simdgroup]]) thread {
         short tm = kFragSize * (simd_group_id / WN);
         short tn = kFragSize * (simd_group_id % WN);
         short2 simd_coord = MMAFrag_acc_t::get_coord(simd_lane_id);
@@ -1377,7 +1377,7 @@ static std::string get_int4_metal_source() {
         sn += tn;
       }
 
-      METAL_FUNC void mma(const threadgroup T* As, const threadgroup T* Bs) {
+      METAL_FUNC void mma(const threadgroup T* As, const threadgroup T* Bs) thread {
         As += As_offset;
         Bs += Bs_offset;
         STEEL_PRAGMA_UNROLL
@@ -1393,7 +1393,7 @@ static std::string get_int4_metal_source() {
         }
       }
 
-      METAL_FUNC void store_result(device U* D, const int ldd) {
+      METAL_FUNC void store_result(device U* D, const int ldd) thread {
         STEEL_PRAGMA_UNROLL
         for (short i = 0; i < decltype(Ctile)::kElemsPerTile; i++) {
           Ctile.elems()[i] = Epilogue::apply(Ctile.elems()[i]);
@@ -1403,7 +1403,7 @@ static std::string get_int4_metal_source() {
       }
 
       METAL_FUNC void
-      store_result_safe(device U* D, const int ldd, short2 dst_tile_dims) {
+      store_result_safe(device U* D, const int ldd, short2 dst_tile_dims) thread {
         STEEL_PRAGMA_UNROLL
         for (short i = 0; i < decltype(Ctile)::kElemsPerTile; i++) {
           Ctile.elems()[i] = Epilogue::apply(Ctile.elems()[i]);
@@ -1642,8 +1642,9 @@ AOTITorchError aoti_torch_mps__linear_fp_act_4bit_weight(
         ET_LOG(Error, "aoti_torch_mps__linear_fp_act_4bit_weight: expect A to be 32-bit or 16-bit float tensor, got dtype %d", (int)a_dtype);
         return Error::InvalidArgument;
       }
-      // Check A is contiguous (stride[1] == 1 and stride[0] == size[1])
-      if (a_tensor->strides()[1] != 1 || a_tensor->strides()[0] != a_tensor->sizes()[1]) {
+      // Check A is contiguous (stride[1] == 1 and stride[0] == size[1], ignoring
+      // the stride of a dimension of size 1)
+      if (!is_row_major_dense(*a_tensor)) {
         ET_LOG(Error, "aoti_torch_mps__linear_fp_act_4bit_weight: expect A to be contiguous, strides=[%lld, %lld]",
                (long long)a_tensor->strides()[0], (long long)a_tensor->strides()[1]);
         return Error::InvalidArgument;
@@ -1660,7 +1661,7 @@ AOTITorchError aoti_torch_mps__linear_fp_act_4bit_weight(
         return Error::InvalidArgument;
       }
       // Check B is contiguous
-      if (b_tensor->strides()[1] != 1 || b_tensor->strides()[0] != b_tensor->sizes()[1]) {
+      if (!is_row_major_dense(*b_tensor)) {
         ET_LOG(Error, "aoti_torch_mps__linear_fp_act_4bit_weight: expect B to be contiguous, strides=[%lld, %lld]",
                (long long)b_tensor->strides()[0], (long long)b_tensor->strides()[1]);
         return Error::InvalidArgument;
@@ -1705,7 +1706,7 @@ AOTITorchError aoti_torch_mps__linear_fp_act_4bit_weight(
                (int)a_dtype, (int)s_tensor->scalar_type());
         return Error::InvalidArgument;
       }
-      if (s_tensor->strides()[1] != 1 || s_tensor->strides()[0] != s_tensor->sizes()[1]) {
+      if (!is_row_major_dense(*s_tensor)) {
         ET_LOG(Error, "aoti_torch_mps__linear_fp_act_4bit_weight: expect S to be contiguous, strides=[%lld, %lld]",
                (long long)s_tensor->strides()[0], (long long)s_tensor->strides()[1]);
         return Error::InvalidArgument;
@@ -1722,7 +1723,7 @@ AOTITorchError aoti_torch_mps__linear_fp_act_4bit_weight(
                (int)a_dtype, (int)z_tensor->scalar_type());
         return Error::InvalidArgument;
       }
-      if (z_tensor->strides()[1] != 1 || z_tensor->strides()[0] != z_tensor->sizes()[1]) {
+      if (!is_row_major_dense(*z_tensor)) {
         ET_LOG(Error, "aoti_torch_mps__linear_fp_act_4bit_weight: expect Z to be contiguous, strides=[%lld, %lld]",
                (long long)z_tensor->strides()[0], (long long)z_tensor->strides()[1]);
         return Error::InvalidArgument;

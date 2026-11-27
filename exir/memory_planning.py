@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -30,12 +31,8 @@ from executorch.exir import memory
 from executorch.exir.control_flow import while_loop as exir_while
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.error import internal_assert, InternalError
-from executorch.exir.operator.convert import (
-    is_inplace_variant,
-    is_out_variant,
-    output_to_aliased_input_map,
-    unwrap_op_overload,
-)
+from executorch.exir.inplace_aliasing import is_inplace_node
+from executorch.exir.operator.convert import is_out_variant
 from executorch.exir.schema import DeviceType, NonConstBufferDevice, TensorShapeDynamism
 from executorch.exir.tensor import TensorSpec
 from torch import fx
@@ -90,6 +87,22 @@ class Verifier:
         return lhs_spec.mem_obj_id == rhs_spec.mem_obj_id
 
     @classmethod
+    def _storage_root_chain(cls, spec: TensorSpec) -> set[TensorSpec]:
+        """Return spec and all TensorSpecs backing its storage."""
+        seen: Set[TensorSpec] = set()
+        root = spec
+        while True:
+            internal_assert(
+                root not in seen,
+                "Circular storage_base relationship is not supported.",
+            )
+            seen.add(root)
+            if root.storage_base is None:
+                break
+            root = root.storage_base
+        return seen
+
+    @classmethod
     def has_overlap(cls, lhs_ivl: List[int], rhs_ivl: List[int]) -> bool:
         r"""
         The passed in intervals are inclusive in both sides. Return if they have
@@ -109,11 +122,13 @@ class Verifier:
         rhs_lifetime = rhs_spec.lifetime
         internal_assert(
             lhs_lifetime[0] is not None and lhs_lifetime[1] is not None,
-            f"{lhs_spec} should have valid start and end",
+            "%s should have valid start and end",
+            lhs_spec,
         )
         internal_assert(
             rhs_lifetime[0] is not None and rhs_lifetime[1] is not None,
-            f"{rhs_spec} should have valid start and end",
+            "%s should have valid start and end",
+            rhs_spec,
         )
         return cls.has_overlap(lhs_lifetime, rhs_lifetime)
 
@@ -125,11 +140,13 @@ class Verifier:
         for spec in [lhs_spec, rhs_spec]:
             internal_assert(
                 spec.allocated_memory >= 0,
-                f"{spec} should have non-zero allocated memory",
+                "%s should have non-zero allocated memory",
+                spec,
             )
             internal_assert(
                 isinstance(spec.mem_offset, int) and spec.mem_offset >= 0,
-                f"{spec} should have specified memory offset",
+                "%s should have specified memory offset",
+                spec,
             )
             intervals.append(
                 [spec.mem_offset, spec.mem_offset + spec.allocated_memory - 1]
@@ -191,9 +208,19 @@ class Verifier:
                 if not allow_lifetime_and_storage_overlap and self.lifetime_overlap(
                     lhs_spec, rhs_spec
                 ):
-                    raise InternalError(
-                        f"Unexpected storage overlap: {Verifier._debug_message_from_specs(lhs_spec, rhs_spec)}"
-                    )
+                    # Some ops, such as in-place ops, intentionally place one
+                    # TensorSpec inside another TensorSpec's storage despite
+                    # overlapping lifetimes.
+                    # This is OK if one spec is storage-backed by the other.
+                    # Specs that merely share a root, such as siblings, should
+                    # still be checked as normal allocations.
+                    lhs_chain = Verifier._storage_root_chain(lhs_spec)
+                    rhs_chain = Verifier._storage_root_chain(rhs_spec)
+                    is_common_base_pair = lhs_spec in rhs_chain or rhs_spec in lhs_chain
+                    if not is_common_base_pair:
+                        raise InternalError(
+                            f"Unexpected storage overlap: {Verifier._debug_message_from_specs(lhs_spec, rhs_spec)}"
+                        )
 
                 # Check that each mem_obj_id is consistent with whether the tensors have
                 # storage overlap
@@ -248,6 +275,14 @@ class Verifier:
         for nd in graph_module.graph.nodes:
             if nd.op in check_list:
                 if not (specs := get_node_tensor_specs(nd)):
+                    # A node that carries no tensor specs has nothing to
+                    # allocate. An output node can legitimately be in that
+                    # position, e.g. when a delegated subgraph's only results
+                    # are symints, and skipping it silently leaves
+                    # graph_output_allocated unset so the assert below fires on
+                    # a graph that is in fact fully planned.
+                    if nd.op == "output":
+                        graph_output_allocated = self.alloc_graph_output
                     continue
                 if _is_mutable_buffer(nd, self.graph_signature):
                     continue
@@ -306,140 +341,6 @@ def _is_out_var_node(node: torch.fx.Node) -> bool:
     )
 
 
-def _is_inplace_node(node: torch.fx.Node) -> bool:
-    if node.op != "call_function":
-        return False
-    target = node.target
-    if not isinstance(target, torch._ops.OpOverload) and not isinstance(
-        getattr(target, "_op", None), torch._ops.OpOverload
-    ):
-        return False
-    op = unwrap_op_overload(target)
-    return is_inplace_variant(op._schema.name, op._schema.overload_name)
-
-
-def _alias_inplace_result_specs(node: torch.fx.Node) -> None:  # noqa: C901
-    """Alias an in-place op's result TensorSpec(s) onto the corresponding
-    input's spec.
-
-    In-place ops (schema kind == inplace) mutate one or more of their
-    inputs and return tensors that alias them, declared via the
-    ``Tensor(a!)`` schema annotation. To make the memory planner treat
-    result and aliased input as one storage, we copy the input's spec
-    object onto the output's ``node.meta["spec"]`` slot.
-
-    Output→input correspondence is computed via
-    ``output_to_aliased_input_map``, which matches each return's
-    write-alias set against the inputs that share it.
-
-    Gating:
-
-    - Only runs for in-place nodes (caller checks ``_is_inplace_node``).
-    - Multi-output in-place ops are supported when each return's alias
-      set matches exactly one input's alias set.
-    - Falls through silently when alias info is absent or unparseable,
-      preserving the original spec. ``logging.debug`` records each
-      early-return reason so silent regressions are observable.
-    """
-    target = node.target
-    op = unwrap_op_overload(target)
-
-    schema = op._schema
-    out_to_in = output_to_aliased_input_map(schema)
-    if not out_to_in:
-        logging.debug(
-            f"_alias_inplace_result_specs: schema for {op} declares no "
-            f"write-aliased outputs matching an input; skipping."
-        )
-        return
-
-    # Normalize the current spec container into a list for uniform
-    # handling. Caller guarantees this node was identified as an
-    # in-place op with a meta spec (see `_is_inplace_node`), so an
-    # unrecognized container shape is a real bug — assert loudly so it
-    # surfaces in tests rather than silently disabling aliasing.
-    current = node.meta.get("spec")
-    if isinstance(current, TensorSpec):
-        out_specs_list: List[Optional[TensorSpec]] = [current]
-        return_container_kind = "scalar"
-    elif isinstance(current, (list, tuple)):
-        out_specs_list = list(current)
-        return_container_kind = type(current).__name__
-    else:
-        raise InternalError(
-            f"_alias_inplace_result_specs: in-place node {node.name} "
-            f"({op}) has unrecognized spec container of type "
-            f"{type(current).__name__!r}; expected TensorSpec, list, "
-            f"or tuple."
-        )
-
-    # Compute new spec for each return; None means "keep original".
-    # Mutated inputs are usually positional (the `Tensor(a!)` `self`
-    # arg), but custom ops may pass them via kwargs — fall back to
-    # `node.kwargs[arg_name]` in that case.
-    replacements: List[Optional[TensorSpec]] = [None] * len(out_specs_list)
-
-    for out_idx, in_idx in out_to_in.items():
-        if out_idx >= len(out_specs_list):
-            logging.debug(
-                f"_alias_inplace_result_specs: schema for {op} declares "
-                f"return {out_idx} but spec container has only "
-                f"{len(out_specs_list)} entries; skipping this return."
-            )
-            continue
-        # Resolve the mutated input. Prefer positional args, fall back
-        # to kwargs by argument name (custom ops may pass `Tensor(a!)`
-        # args via kwargs).
-        in_node: object
-        if in_idx < len(node.args):
-            in_node = node.args[in_idx]
-        else:
-            arg_name = (
-                schema.arguments[in_idx].name
-                if in_idx < len(schema.arguments)
-                else None
-            )
-            if arg_name is None or arg_name not in node.kwargs:
-                logging.debug(
-                    f"_alias_inplace_result_specs: schema for {op} "
-                    f"expects mutated input at position {in_idx} "
-                    f"(name={arg_name!r}) but it is supplied neither "
-                    f"positionally nor via kwargs; skipping."
-                )
-                continue
-            in_node = node.kwargs[arg_name]
-        if not isinstance(in_node, torch.fx.Node):
-            continue
-        # NOTE: alias unconditionally — including when the input is a
-        # placeholder (named buffer / mutable input). Skipping
-        # placeholders would leave a dangling out-arg on in-place op
-        # instructions whose self is a buffer; the runtime kernel
-        # writes to that out-arg's storage rather than mutating the
-        # buffer, producing incorrect results. The companion change in
-        # `_emit_spec` (emit/_emitter.py) deduplicates by spec identity
-        # so this aliasing doesn't produce two Values for the same FQN.
-        in_spec = in_node.meta.get("spec")
-        if not isinstance(in_spec, TensorSpec):
-            continue
-        replacements[out_idx] = in_spec
-
-    if not any(r is not None for r in replacements):
-        return
-
-    # Assemble the new spec container, preserving the original shape.
-    new_list = [
-        replacements[i] if replacements[i] is not None else out_specs_list[i]
-        for i in range(len(out_specs_list))
-    ]
-    if return_container_kind == "scalar":
-        if isinstance(new_list[0], TensorSpec):
-            node.meta["spec"] = new_list[0]
-    elif return_container_kind == "list":
-        node.meta["spec"] = list(new_list)
-    elif return_container_kind == "tuple":
-        node.meta["spec"] = tuple(new_list)
-
-
 def update_tensor_lifetime(
     node: torch.fx.Node,
     spec: TensorSpec,
@@ -462,8 +363,11 @@ def update_tensor_lifetime(
     else:
         start = node_idx if start is None or start > node_idx else start
 
-    if node.op == "placeholder" and _is_mutable_buffer(node, gs):
-        # mutable buffers are never freed
+    if node.op == "placeholder" and (
+        _is_mutable_buffer(node, gs) or _is_device_resident_constant(node)
+    ):
+        # Mutable buffers and device resident constants keep their data across
+        # calls, so they are never freed.
         end = max_node_idx
     else:
         end = node_idx if end is None or end < node_idx else end
@@ -495,6 +399,14 @@ def _is_mutable_buffer(
                 if fqn in graph_signature.buffers_to_mutate.values():
                     return True
     return False
+
+
+def _is_device_resident_constant(node: Node) -> bool:
+    """Whether node is a constant that PropagateDevicePass placed in device
+    memory. The runtime copies its data from the program or its data file
+    into its planned memory once, at load, so it is planned like a mutable
+    buffer instead of being used in place."""
+    return node.op == "placeholder" and node.meta.get("device_resident_constant", False)
 
 
 def _get_mutable_buffer_specs(
@@ -536,7 +448,11 @@ def get_graph_input_tensors(
 ) -> Set[TensorSpec]:
     graph_input_tensors = set()
     for node in nodes:
-        if node.op == "placeholder" and not _is_mutable_buffer(node, graph_signature):
+        if (
+            node.op == "placeholder"
+            and not _is_mutable_buffer(node, graph_signature)
+            and not _is_device_resident_constant(node)
+        ):
             for spec in get_node_tensor_specs(node):
                 graph_input_tensors.add(spec)
 
@@ -583,11 +499,12 @@ def collect_specs_from_nodes(  # noqa: C901
         get_graph_output_tensors(nodes) if ignore_graph_output else set()
     )
 
-    # Collect mutable buffer specs so we can filter them when they appear on
-    # non-placeholder nodes (e.g., aliased on the output node via SpecPropPass).
+    # Mutation outputs alias persistent state, whose allocation is controlled
+    # by ignore_mutable_buffers independently of graph output allocation.
     mutable_buffer_specs: Set[TensorSpec] = set()
-    if ignore_mutable_buffers:
+    if ignore_mutable_buffers or ignore_graph_output:
         mutable_buffer_specs = _get_mutable_buffer_specs(nodes, graph_signature)
+    graph_output_tensors -= mutable_buffer_specs
 
     for node in nodes:
         # ignore the specs from unrelevant Fx ops for now.
@@ -602,20 +519,13 @@ def collect_specs_from_nodes(  # noqa: C901
         if not (specs := get_node_tensor_specs(node)):
             continue
 
-        if _is_inplace_node(node):
-            # Schema-driven: alias the in-place op's result spec(s) onto
-            # the corresponding mutated input's spec so the planner gives
-            # them the same allocation slot. See `_alias_inplace_result_specs`
-            # for the full rationale and gating rules.
-            _alias_inplace_result_specs(node)
-            continue
-
         if _is_mutable_buffer(node, graph_signature) and ignore_mutable_buffers:
             continue
 
         if do_assertion:
             internal_assert(
                 node.op in ("placeholder", "output")
+                or is_inplace_node(node)
                 or node.target
                 in [
                     memory.alloc,
@@ -626,7 +536,9 @@ def collect_specs_from_nodes(  # noqa: C901
                     torch.ops.higher_order.map_impl,
                     executorch_call_delegate,
                 ],
-                f"Unexpected op {node.op}, target {node.target}",
+                "Unexpected op %s, target %s",
+                node.op,
+                node.target,
             )
         for spec in specs:
             if spec is None:
@@ -652,6 +564,7 @@ def collect_specs_from_nodes(  # noqa: C901
                 ignore_const
                 and spec.const
                 and not node.meta.get("weight_has_gradient", False)
+                and not _is_device_resident_constant(node)
             ):
                 continue
             if dedup:
@@ -684,6 +597,23 @@ def update_all_tensors_lifetime(
         ):
             update_tensor_lifetime(node, spec, node_idx, max_node_idx, graph_signature)
             specs.add(spec)
+    # Scratch is live only while the delegate is executing, but it is reached
+    # through the delegate node, so the walk above extends it every time a
+    # consumer of the call's outputs mentions that node. Recompute it from the
+    # delegate calls alone rather than letting those consumers stretch it.
+    #
+    # Accumulated across calls rather than assigned per call: fx copies
+    # node.meta shallowly, so a pass that clones a delegate call leaves two
+    # nodes sharing one spec. Covering both is conservative; assigning would
+    # leave the buffer looking dead while the earlier call still writes to it.
+    scratch_lifetimes: Dict[TensorSpec, Tuple[int, int]] = {}
+    for node_idx, node in enumerate(graph_module.graph.nodes):
+        for spec in memory.delegate_scratch_specs(node):
+            start, end = scratch_lifetimes.get(spec, (node_idx, node_idx))
+            scratch_lifetimes[spec] = (min(start, node_idx), max(end, node_idx))
+    for spec, (start, end) in scratch_lifetimes.items():
+        spec.lifetime = [start, end]
+    _extend_storage_base_lifetimes(specs)
     return specs
 
 
@@ -749,21 +679,6 @@ class MemoryAlgoResult:
 
     spec_dict: Dict[TensorSpec, SpecAllocResult]
     bufsizes: List[int]
-
-
-def materialize_buffer(
-    shared_objects: List[SharedObject], input_total_size: int = 0
-) -> int:
-    r"""
-    Assign concrete location in the buffer for each SharedObject.offset.
-
-    Assuming all the passed in shared objects belong to the same memory buffer.
-    """
-    total_size = input_total_size
-    for sobj in shared_objects:
-        sobj.offset = total_size
-        total_size += sobj.size
-    return total_size
 
 
 def _does_not_overlap(sobj: SharedObject, spec: TensorSpec) -> bool:
@@ -895,6 +810,10 @@ def get_node_tensor_specs(
     r"""
     Return the list of the tensor specs for the node or empty list if the node
     has no tensor specs.
+
+    A delegate call's scratch buffers are included. They are not values the
+    node produces, but every caller that walks specs to place, verify or
+    attribute memory needs them.
     """
     # get tensor specs
     if node.target == memory.view:
@@ -907,13 +826,17 @@ def get_node_tensor_specs(
     if isinstance(specs, TensorSpec):
         specs = [specs]
     if not isinstance(specs, (list, tuple)):
-        return []
+        specs = []
     else:
-        return [
+        specs = [
             spec
             for spec in specs
             if not isinstance(spec, (int, float, bool, str, type(None)))
         ]
+
+    if scratch := memory.delegate_scratch_specs(node):
+        return list(specs) + scratch
+    return specs
 
 
 # Little bit hacky to check if the graph contains
@@ -930,6 +853,145 @@ def _contains_xnnpack_delegate(graph_module: torch.fx.GraphModule) -> bool:
             if "xnnpack" in lowered_module.backend_id.lower():
                 return True
     return False
+
+
+def _extend_storage_base_lifetimes(specs: Set[TensorSpec]) -> None:
+    for spec in specs:
+        if spec.storage_base is None:
+            continue
+        internal_assert(
+            spec.lifetime[0] is not None and spec.lifetime[1] is not None,
+            "Storage-backed TensorSpec must have a lifetime.",
+        )
+        start = cast(int, spec.lifetime[0])
+        end = cast(int, spec.lifetime[1])
+        seen: Set[TensorSpec] = {spec}
+        base = spec.storage_base
+        while base is not None:
+            internal_assert(
+                base not in seen,
+                "Circular storage_base relationship is not supported.",
+            )
+            seen.add(base)
+            internal_assert(
+                base.lifetime[0] is not None and base.lifetime[1] is not None,
+                "storage_base TensorSpec must have a lifetime.",
+            )
+            base.lifetime[0] = min(cast(int, base.lifetime[0]), start)
+            base.lifetime[1] = max(cast(int, base.lifetime[1]), end)
+            base = base.storage_base
+
+
+def _resolve_storage_base_specs(
+    deferred_storage_base: List[TensorSpec],
+    spec2obj: Dict[TensorSpec, SharedObject],
+    greedy_result: MemoryAlgoResult,
+) -> None:
+    remaining = list(deferred_storage_base)
+    while remaining:
+        progress = False
+        next_remaining = []
+        for spec in remaining:
+            base = spec.storage_base
+            internal_assert(
+                base is not None,
+                "Deferred storage-backed TensorSpec should have a storage_base.",
+            )
+            if base not in spec2obj:
+                next_remaining.append(spec)
+                continue
+            progress = True
+            sobj = spec2obj[base]
+
+            base_alloc_result = greedy_result.spec_dict[base]
+            spec_alloc_result = greedy_result.spec_dict[spec]
+            spec_alloc_result.mem_id = base_alloc_result.mem_id
+
+            allocated_memory = spec.allocated_memory
+            storage_base_offset = spec.storage_base_offset
+            internal_assert(
+                storage_base_offset >= 0,
+                "storage_base_offset must be non-negative.",
+            )
+            base_alloc_offset = None
+            base_allocated_memory = None
+            for alloc_entry in sobj.allocations:
+                if alloc_entry.spec is base:
+                    base_alloc_offset = alloc_entry.offset
+                    base_allocated_memory = alloc_entry.spec.allocated_memory
+                    break
+            assert base_alloc_offset is not None, (
+                f"Base allocation entry not found in shared object for spec "
+                f"with allocated_memory={spec.allocated_memory}"
+            )
+            assert base_allocated_memory is not None, (
+                f"Base allocation entry not found in shared object for spec "
+                f"with allocated_memory={allocated_memory}"
+            )
+            internal_assert(
+                (base_alloc_offset + storage_base_offset) % spec.alignment == 0,
+                "Storage-backed TensorSpec allocation must respect alignment, got offset %s "
+                "inside parent with offset %s for alignment %s.",
+                storage_base_offset,
+                base_alloc_offset,
+                spec.alignment,
+            )
+            internal_assert(
+                storage_base_offset + allocated_memory <= base_allocated_memory,
+                "Storage-backed TensorSpec allocation must fit within storage_base.",
+            )
+            sobj.first_used_index = min(sobj.first_used_index, spec.lifetime[0])
+            sobj.last_used_index = max(sobj.last_used_index, spec.lifetime[1])
+            sobj.allocations.append(
+                AllocationSpec(base_alloc_offset + storage_base_offset, spec)
+            )
+            spec2obj[spec] = sobj
+        if not progress:
+            unresolved = ", ".join(
+                f"allocated_memory={s.allocated_memory}" for s in next_remaining
+            )
+            raise InternalError(
+                "Circular or unresolvable storage_base dependency chain: " + unresolved
+            )
+        remaining = next_remaining
+
+
+def _compute_total_sizes(
+    shared_objects: Dict[int, List[SharedObject]],
+    graph_module: torch.fx.GraphModule,
+    extra_padding: int,
+    greedy_result: MemoryAlgoResult,
+    num_specs_expected: int,
+) -> List[int]:
+    if len(shared_objects) == 0:
+        return [0, 0]
+
+    total_sizes = [0] * (max(shared_objects.keys()) + 1)
+    num_specs_processed = 0
+    for mem_id in shared_objects:
+        input_total_size = 0
+        if bufsizes := getattr(graph_module, "input_mem_buffer_sizes", None):
+            assert isinstance(bufsizes, list)
+            if len(bufsizes) > mem_id:
+                input_total_size = bufsizes[mem_id]
+        total_size = input_total_size
+        for sobj in shared_objects[mem_id]:
+            sobj.offset = total_size
+            total_size += sobj.size
+        total_sizes[mem_id] = total_size
+        total_sizes[mem_id] += extra_padding
+
+        for sobj in shared_objects[mem_id]:
+            for alloc in sobj.allocations:
+                spec_alloc_result = greedy_result.spec_dict.get(alloc.spec, None)
+                assert spec_alloc_result is not None, f"Spec {alloc.spec} not found."
+                spec_alloc_result.mem_obj_id = sobj.idx
+                spec_alloc_result.mem_offset = sobj.offset + alloc.offset
+                num_specs_processed += 1
+    assert (
+        num_specs_expected == num_specs_processed
+    ), f"All specs should be processed but there were {num_specs_expected} specs and processed {num_specs_processed} specs"
+    return total_sizes
 
 
 def greedy(
@@ -958,12 +1020,9 @@ def greedy(
         MemoryAlgoResult containing the allocation decisions
     """
     greedy_result = MemoryAlgoResult({}, [])
-    spec2obj = {}
-    shared_objects = defaultdict(list)
+    spec2obj: Dict[TensorSpec, SharedObject] = {}
+    shared_objects: Dict[int, List[SharedObject]] = defaultdict(list)
 
-    # For each tensor, pick the available shared object with closest size to
-    # the tensor. If there are no available shared object left, create a new
-    # one.
     import bisect
 
     sorted_specs = []
@@ -972,9 +1031,9 @@ def greedy(
 
     sorted_specs.reverse()
 
+    deferred_storage_base: List[TensorSpec] = []
+
     for spec in sorted_specs:
-        # Create an entry for this TensorSpec in the result object that we'll be
-        # returning from this algorithm.
         spec_alloc_result = greedy_result.spec_dict.get(spec, SpecAllocResult(0, 0, 0))
         if spec.mem_id is None:
             spec_alloc_result.mem_id = 1
@@ -982,46 +1041,22 @@ def greedy(
             spec_alloc_result.mem_id = spec.mem_id
         greedy_result.spec_dict[spec] = spec_alloc_result
         spec.realign(alignment)
+
+        if spec.storage_base is not None:
+            deferred_storage_base.append(spec)
+            continue
+
         spec2obj[spec] = pick_shared_obj(
             shared_objects[spec_alloc_result.mem_id],
             spec,
             allow_overlapping_allocations,
         )
 
-    if len(shared_objects) == 0:
-        # Cannot find any tensor in the graph that needs to be allocated.
-        # Return [0, 0] to be consistent with default behavior of naive.
-        total_sizes = [0, 0]
-    else:
-        total_sizes = [0] * (max(shared_objects.keys()) + 1)
-        num_specs_processed = 0
-        for mem_id in shared_objects:
-            input_total_size = 0
-            if bufsizes := getattr(graph_module, "input_mem_buffer_sizes", None):
-                assert isinstance(bufsizes, list)
-                if len(bufsizes) > mem_id:
-                    input_total_size = bufsizes[mem_id]
-            total_sizes[mem_id] = materialize_buffer(
-                shared_objects[mem_id], input_total_size
-            )
-            total_sizes[mem_id] += extra_padding
+    _resolve_storage_base_specs(deferred_storage_base, spec2obj, greedy_result)
 
-            # Since we now know the number of shared objects we need and the size of
-            # each shared object, we can assign offset in the memory buffer for each
-            # shared object.
-            for sobj in shared_objects[mem_id]:
-                for alloc in sobj.allocations:
-                    spec = alloc.spec
-                    # Get the spec_alloc_result for this spec and update it with the
-                    # mem_obj_id and mem_offset generated by this algorithm.
-                    spec_alloc_result = greedy_result.spec_dict.get(spec, None)
-                    assert spec_alloc_result is not None, f"Spec {spec} not found."
-                    spec_alloc_result.mem_obj_id = sobj.idx
-                    spec_alloc_result.mem_offset = sobj.offset + alloc.offset
-                    num_specs_processed += 1
-        assert (
-            len(spec2obj) == num_specs_processed
-        ), f"All specs should be processed but there were {len(spec2obj)} specs and processed {num_specs_processed} specs"
+    total_sizes = _compute_total_sizes(
+        shared_objects, graph_module, extra_padding, greedy_result, len(spec2obj)
+    )
 
     logging.debug(f"greedy algorithm returns bufsizes: {total_sizes}")
     greedy_result.bufsizes = total_sizes
@@ -1146,6 +1181,12 @@ def naive(
     bufsizes = cast(List[int], bufsizes)
 
     for spec in specs:
+        if spec.storage_base is not None:
+            raise InternalError(
+                "The naive memory planning algorithm does not support storage-backed "
+                "TensorSpecs. Use the greedy algorithm instead."
+            )
+
         spec_alloc_result = naive_result.spec_dict.get(spec, SpecAllocResult(0, 0, 0))
         # assume a single memory layer which has mem_id 1
         if spec.mem_id is None:
@@ -1408,6 +1449,26 @@ def _build_non_const_buffer_device(
     ]
 
 
+def _reserve_memory_for_views(graph_module: torch.fx.GraphModule) -> None:
+    """
+    A memory.view shares its base's memory, but each of its dims is bounded on its
+    own, so the view can be planned larger than its base. The runtime refuses to
+    load a tensor whose planned size runs past the end of its buffer, so plan each
+    base large enough for its views.
+    """
+    for node in graph_module.graph.nodes:
+        if node.op != "call_function" or node.target != memory.view:
+            continue
+        spec = node.meta["spec"]
+        # A view's spec writes this field through to its base. A base backed by
+        # another tensor's storage must still fit in that storage.
+        needed = spec.nbytes()
+        while spec is not None:
+            spec.min_allocated_memory = max(spec.min_allocated_memory, needed)
+            needed += spec.storage_base_offset
+            spec = spec.storage_base
+
+
 def apply_algo(
     algo: Callable[..., list[int]],
     graph_module: torch.fx.GraphModule,
@@ -1444,6 +1505,7 @@ def apply_algo(
     """
     # Extract the nodes and their lifespans from the graph_module
     _ = update_all_tensors_lifetime(graph_module, graph_signature)
+    _reserve_memory_for_views(graph_module)
 
     # Collect specs into an ordered list so we can iterate multiple times and
     # partition by device.  Order matters: order-sensitive algorithms (e.g.

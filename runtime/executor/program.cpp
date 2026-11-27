@@ -218,13 +218,29 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
             root_offset <=
                 program_data->size() - sizeof(flatbuffers::soffset_t),
         InvalidProgram,
-        "Root table offset %u is invalid for program size %zu",
+        "Root table offset %" PRIu32 " is invalid for program size %zu",
         root_offset,
         program_data->size());
   }
   // Get the pointer to the root flatbuffer table.
   const executorch_flatbuffer::Program* flatbuffer_program =
       executorch_flatbuffer::GetProgram(program_data->data());
+
+  // The file identifier above ("ET12") is bumped by convention only on a
+  // backward-incompatible schema change, so it selects a schema family. The
+  // version is the finer gate within that family: a file written by a newer
+  // exporter is refused here instead of being misread field by field. Older
+  // files stay loadable because the schema only grows by appending optional
+  // fields.
+  ET_CHECK_OR_RETURN_ERROR(
+      flatbuffer_program->version() <= kMaxSupportedSchemaVersion,
+      InvalidProgram,
+      "Program schema version %" PRIu32
+      " is newer than the highest this runtime supports (%" PRIu32
+      "). Export the model with an older ExecuTorch, or update "
+      "the runtime.",
+      flatbuffer_program->version(),
+      kMaxSupportedSchemaVersion);
 
   // Instantiate PteDataMap if named_data is present.
   const auto named_data = flatbuffer_program->named_data();
@@ -430,13 +446,20 @@ Result<const void*> Program::get_constant_buffer_data(
   // Constant data is either in a separate segment (constant_segment_data) and
   // loaded during Program::load, or stored inside the flatbuffer data
   // (constant_buffer).
-  if (constant_segment_data_.data() != nullptr) {
-    const auto* constant_segment = internal_program->constant_segment();
-    size_t num_elems = constant_segment == nullptr
-        ? 0
-        : (constant_segment->offsets() == nullptr
-               ? 0
-               : constant_segment->offsets()->size());
+  //
+  // Decide which one by what the program declares, not by whether the loaded
+  // segment has a non-null pointer. A constant segment holding only
+  // zero-length tensors is itself zero bytes, and loading it yields a null
+  // pointer even though the program does use the segment path. Testing the
+  // pointer sends those programs down the deprecated constant_buffer path,
+  // which fails outright when it is compiled out.
+  const auto* constant_segment = internal_program->constant_segment();
+  const bool uses_constant_segment = constant_segment != nullptr &&
+      constant_segment->offsets() != nullptr &&
+      constant_segment->offsets()->size() > 0;
+
+  if (uses_constant_segment) {
+    size_t num_elems = constant_segment->offsets()->size();
     ET_CHECK_OR_RETURN_ERROR(
         buffer_index < num_elems,
         InvalidArgument,
@@ -462,10 +485,15 @@ Result<const void*> Program::get_constant_buffer_data(
         nbytes,
         size);
 
-    // Offset is wrt the beginning of the constant segment.
-    return static_cast<const void*>(
-        static_cast<const unsigned char*>(constant_segment_data_.data()) +
-        offset);
+    // Offset is wrt the beginning of the constant segment. An empty segment
+    // has a null base; the bounds check above has already established that
+    // nbytes is 0 in that case, so there is nothing to point at.
+    const auto* base =
+        static_cast<const unsigned char*>(constant_segment_data_.data());
+    if (base == nullptr) {
+      return static_cast<const void*>(nullptr);
+    }
+    return static_cast<const void*>(base + offset);
   } else {
 #if ET_ENABLE_DEPRECATED_CONSTANT_BUFFER
     // Otherwise, the constant data is stored inside Program.constant_buffer.
@@ -577,6 +605,11 @@ Result<FreeableBuffer> Program::LoadSegment(
     ET_LOG(Error, "No segments in program: requested index %zu", index);
     return Error::NotFound;
   }
+  ET_CHECK_OR_RETURN_ERROR(
+      internal_program_->segments() != nullptr,
+      InvalidProgram,
+      "No segments in program: requested index %zu",
+      index);
   size_t num_segments = internal_program_->segments()->size();
   if (index >= num_segments) {
     ET_LOG(
@@ -602,12 +635,10 @@ Result<FreeableBuffer> Program::LoadSegment(
       static_cast<size_t>(absolute_offset), segment->size(), segment_info);
 }
 
-Error Program::load_mutable_subsegment_into(
+Result<Program::MutableSubsegment> Program::locate_mutable_subsegment(
     size_t mutable_data_segments_index,
     size_t offset_index,
-    size_t size,
-    void* buffer) const {
-  EXECUTORCH_SCOPE_PROF("Program::load_subsegment_into");
+    size_t size) const {
   // Check that the program has segments.
   if (loader_ == nullptr || segment_base_offset_ == 0) {
     ET_LOG(Error, "No segments in program");
@@ -652,6 +683,10 @@ Error Program::load_mutable_subsegment_into(
   size_t offset = segment_offsets->offsets()->Get(offset_index);
 
   // Grab the segment index
+  ET_CHECK_OR_RETURN_ERROR(
+      internal_program_->segments() != nullptr,
+      InvalidProgram,
+      "No segments in program");
   size_t num_segments = internal_program_->segments()->size();
   if (segment_offsets->segment_index() >= num_segments) {
     ET_LOG(
@@ -708,7 +743,34 @@ Error Program::load_mutable_subsegment_into(
       "segment base+offset %zu + subsegment offset %zu overflows",
       base_plus_seg,
       offset);
-  return loader_->load_into(total_offset, size, info, buffer);
+  return MutableSubsegment{total_offset, info};
+}
+
+Error Program::load_mutable_subsegment_into(
+    size_t mutable_data_segments_index,
+    size_t offset_index,
+    size_t size,
+    void* buffer) const {
+  EXECUTORCH_SCOPE_PROF("Program::load_subsegment_into");
+  Result<MutableSubsegment> subsegment = locate_mutable_subsegment(
+      mutable_data_segments_index, offset_index, size);
+  if (!subsegment.ok()) {
+    return subsegment.error();
+  }
+  return loader_->load_into(subsegment->offset, size, subsegment->info, buffer);
+}
+
+Result<FreeableBuffer> Program::load_mutable_subsegment(
+    size_t mutable_data_segments_index,
+    size_t offset_index,
+    size_t size) const {
+  EXECUTORCH_SCOPE_PROF("Program::load_mutable_subsegment");
+  Result<MutableSubsegment> subsegment = locate_mutable_subsegment(
+      mutable_data_segments_index, offset_index, size);
+  if (!subsegment.ok()) {
+    return subsegment.error();
+  }
+  return loader_->load(subsegment->offset, size, subsegment->info);
 }
 
 } // namespace ET_RUNTIME_NAMESPACE

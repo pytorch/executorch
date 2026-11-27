@@ -13,6 +13,7 @@ from . import ContainerMetadata
 from . import DataLocation
 from . import DataSegment
 from . import DelegateCall
+from . import DelegateScratch
 from . import DeviceType
 from . import Double
 from . import DoubleList
@@ -58,6 +59,7 @@ __all__ = [
     "DataLocation",
     "DataSegment",
     "DelegateCall",
+    "DelegateScratch",
     "DeviceType",
     "Double",
     "DoubleList",

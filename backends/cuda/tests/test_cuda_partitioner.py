@@ -4,22 +4,714 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import hashlib
+import json
+import operator
+import os
+import tempfile
 import unittest
 from typing import Tuple
+from unittest.mock import patch
 
 import torch
+from executorch.backends.cuda.cuda_backend import (
+    _aoti_device_type_for_weight,
+    _moved_program_tensors,
+    CudaBackend,
+)
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+from executorch.backends.cuda.cuda_weight_collector import (
+    AOTI_DEVICE_TYPE_CPU,
+    AOTI_DEVICE_TYPE_CUDA,
+    CUDA_AOTI_METADATA_MAGIC,
+    CudaAotiVariant,
+    CudaWeightCollector,
+    decode_cuda_aoti_metadata,
+    encode_cuda_aoti_metadata,
+)
+from executorch.backends.cuda.passes.lower_offgraph_kv import (
+    LowerOffGraphKVPass,
+    parse_offgraph_kv_manifest,
+    ring_physical_capacity,
+)
+from executorch.exir import to_edge
+from executorch.exir._serialize._cord import FileBackedData
+from executorch.exir._serialize._named_data_store import NamedDataStore
+from executorch.exir.backend.backend_details import PreprocessResult
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import PartitionResult
+from executorch.exir.delegate import executorch_call_delegate
+from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
+from torch._inductor.compile_fx import clone_preserve_strides
 from torch.export import export
+from torch.export.pt2_archive._package_weights import TensorProperties, Weights
+from torch.fx.passes.utils.fuser_utils import validate_partition
+
+
+class _LinearModule(torch.nn.Module):
+    def __init__(self, device=None) -> None:
+        super().__init__()
+        self.linear = torch.nn.Linear(256, 256, device=device)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.linear(x)
+
+
+class TestCudaLowMemoryExport(unittest.TestCase):
+    @staticmethod
+    def _materialize(weights, directory, device_type=AOTI_DEVICE_TYPE_CPU):
+        collector = CudaWeightCollector()
+        with collector.capture(lambda _: device_type) as capture:
+            return collector.materialize(weights, directory, capture)
+
+    @staticmethod
+    def _parent_result(so_key: str) -> PreprocessResult:
+        store = NamedDataStore()
+        store.add_named_data(so_key, so_key.encode())
+        store.add_named_data("empty_weights", b"", external_tag="aoti_cuda_blob")
+        return PreprocessResult(
+            processed_bytes=f"{so_key}\nempty_weights".encode(),
+            data_store_output=store.get_named_data_store_output(),
+        )
+
+    @patch.object(CudaBackend, "_setup_cuda_environment_for_fatbin", return_value=True)
+    def test_all_cuda_exports_request_structured_weights(self, _) -> None:
+        options = CudaBackend.get_aoti_compile_options(
+            [CompileSpec("low_memory_mode", b"ON")]
+        )
+        self.assertEqual(
+            options["aot_inductor.package_constants_on_disk_format"],
+            "pickle_weights",
+        )
+        self.assertEqual(
+            CudaBackend.get_aoti_compile_options([])[
+                "aot_inductor.package_constants_on_disk_format"
+            ],
+            "pickle_weights",
+        )
+
+    def test_weights_are_materialized_as_independent_storages(self) -> None:
+        first = torch.tensor([1, 2, 3], dtype=torch.int16)
+        second = torch.tensor([4, 5], dtype=torch.int32)
+        weights = Weights(
+            {
+                "first": (first, TensorProperties(first)),
+                "second": (second, TensorProperties(second)),
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = self._materialize(weights, directory)
+            self.assertEqual(2, len(artifact.entries))
+            self.assertEqual(2, len(artifact.storages))
+            self.assertEqual(artifact.entries[0].device_type, 0)
+            self.assertEqual(artifact.entries[1].device_type, 0)
+            self.assertEqual(
+                bytes(first.untyped_storage()),
+                artifact.storages[artifact.entries[0].storage_key].to_bytes(),
+            )
+            self.assertEqual(
+                bytes(second.untyped_storage()),
+                artifact.storages[artifact.entries[1].storage_key].to_bytes(),
+            )
+
+            metadata = encode_cuda_aoti_metadata(
+                [CudaAotiVariant(0, 0, "so-key")], artifact.entries
+            )
+            self.assertTrue(metadata.startswith(CUDA_AOTI_METADATA_MAGIC))
+            self.assertIn(b"first", metadata)
+            self.assertIn(b"second", metadata)
+            for storage in artifact.storages.values():
+                storage.close()
+
+    def test_offgraph_kv_metadata_is_kept_without_storage(self) -> None:
+        cache = torch.zeros(16, dtype=torch.bfloat16)
+        cache_properties = TensorProperties(cache)
+        cache.untyped_storage().resize_(0)
+        weight = torch.arange(4, dtype=torch.float32)
+        weights = Weights(
+            {
+                "__et_offgraph_kv_layer_0_k": (
+                    cache,
+                    cache_properties,
+                ),
+                "weight": (weight, TensorProperties(weight)),
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = self._materialize(weights, directory)
+            self.assertEqual(2, len(artifact.entries))
+            self.assertNotIn(
+                artifact.entries[0].storage_key,
+                artifact.storages,
+            )
+            self.assertEqual(artifact.entries[0].storage_nbytes, 32)
+            self.assertIn(artifact.entries[1].storage_key, artifact.storages)
+            collector = CudaWeightCollector()
+            result = self._parent_result("so-key")
+            collector.add_preprocess_result(result, artifact, "cuda")
+            collector.finish()
+            self.assertIn(
+                artifact.entries[1].storage_key.encode(), result.processed_bytes
+            )
+            self.assertIn(artifact.entries[0].fqn.encode(), result.processed_bytes)
+            for storage in artifact.storages.values():
+                storage.close()
+
+    def test_offgraph_manifest_rejects_duplicate_layer_ids(self) -> None:
+        layer = {
+            "layer_id": 0,
+            "policy": "flat",
+        }
+        manifest = {
+            "version": 1,
+            "maximum_capacity": 32,
+            "max_write": 8,
+            "layers": [layer, layer],
+        }
+
+        with self.assertRaisesRegex(ValueError, "unique"):
+            parse_offgraph_kv_manifest(json.dumps(manifest).encode())
+
+    def test_offgraph_manifest_requires_max_write(self) -> None:
+        manifest = {
+            "version": 1,
+            "maximum_capacity": 32,
+            "layers": [
+                {
+                    "layer_id": 0,
+                    "policy": "flat",
+                }
+            ],
+        }
+
+        with self.assertRaisesRegex(ValueError, "max_write"):
+            parse_offgraph_kv_manifest(json.dumps(manifest).encode())
+
+    def test_offgraph_ring_storage_fits_a_max_write_step(self) -> None:
+        # The ring must hold the union of one step's per-query windows,
+        # window + max_write - 1, not just the window itself.
+        window, max_write = 16, 32
+        manifest = parse_offgraph_kv_manifest(
+            json.dumps(
+                {
+                    "version": 1,
+                    "maximum_capacity": 256,
+                    "max_write": max_write,
+                    "layers": [
+                        {
+                            "layer_id": 0,
+                            "policy": "ring",
+                            "window": window,
+                        }
+                    ],
+                }
+            ).encode()
+        )
+
+        self.assertEqual(
+            window + max_write - 1,
+            ring_physical_capacity(window, manifest["max_write"]),
+        )
+
+    def test_offgraph_compile_placeholder_has_no_physical_storage(self) -> None:
+        storage = LowerOffGraphKVPass._compile_storage(
+            1024, torch.bfloat16, torch.device("cpu")
+        )
+
+        self.assertEqual(storage.numel(), 1024)
+        self.assertEqual(storage.untyped_storage().nbytes(), 0)
+
+    @patch(
+        "executorch.backends.cuda.cuda_backend._is_cpu_clone_active",
+        return_value=True,
+    )
+    def test_low_memory_cpu_clones_keep_cuda_device_type(self, _) -> None:
+        tensor = torch.tensor([1, 2], dtype=torch.int16)
+        weights = Weights({"weight": (tensor, TensorProperties(tensor))})
+
+        with tempfile.TemporaryDirectory() as directory:
+            collector = CudaWeightCollector()
+            with collector.capture(_aoti_device_type_for_weight) as capture:
+                artifact = collector.materialize(weights, directory, capture)
+            self.assertEqual(artifact.entries[0].device_type, AOTI_DEVICE_TYPE_CUDA)
+            for storage in artifact.storages.values():
+                storage.close()
+
+    def test_different_fqn_views_have_distinct_logical_storage(self) -> None:
+        base = torch.arange(12, dtype=torch.float32).reshape(3, 4)
+        view = base[:, 1:]
+        weights = Weights(
+            {
+                "base": (base, TensorProperties(base)),
+                # The value shares the view's storage, so the offset from
+                # TensorProperties applies.
+                "view": (base, TensorProperties(view)),
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = self._materialize(weights, directory)
+            self.assertEqual(2, len(artifact.storages))
+            self.assertNotEqual(
+                artifact.entries[0].storage_key,
+                artifact.entries[1].storage_key,
+            )
+            self.assertEqual(1, artifact.entries[1].storage_offset)
+            self.assertEqual((3, 3), artifact.entries[1].sizes)
+            self.assertEqual((4, 1), artifact.entries[1].strides)
+            for storage in artifact.storages.values():
+                storage.close()
+
+    def test_compact_clone_of_a_view_uses_the_written_storage(self) -> None:
+        # AOTI clones a buffer that views a larger tensor into compact storage
+        # but reports TensorProperties of the original view.
+        view = torch.arange(32, dtype=torch.float32).reshape(8, 4)[2:5]
+        clone = view.clone()
+        weights = Weights({"w": (clone, TensorProperties(view))})
+
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = self._materialize(weights, directory)
+            entry = artifact.entries[0]
+            self.assertEqual(0, entry.storage_offset)
+            self.assertEqual(48, entry.storage_nbytes)
+            self.assertEqual((3, 4), entry.sizes)
+            data = artifact.storages[entry.storage_key].to_bytes()
+            self.assertEqual(bytes(clone.untyped_storage()), data)
+            for storage in artifact.storages.values():
+                storage.close()
+
+    def test_compact_clone_with_too_little_storage_is_rejected(self) -> None:
+        view = torch.arange(32, dtype=torch.float32).reshape(8, 4)[2:5]
+        truncated = view.clone()
+        truncated.untyped_storage().resize_(8 * truncated.element_size())
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(RuntimeError, "requires 48 bytes"):
+                self._materialize(
+                    Weights({"w": (truncated, TensorProperties(view))}), directory
+                )
+
+    def test_compact_clone_with_bytes_past_its_view_is_rejected(self) -> None:
+        view = torch.arange(32, dtype=torch.float32).reshape(8, 4)[2:5]
+        padded = view.clone()
+        padded.untyped_storage().resize_(16 * padded.element_size())
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(RuntimeError, "span exactly its 64-byte"):
+                self._materialize(
+                    Weights({"w": (padded, TensorProperties(view))}), directory
+                )
+
+    def test_value_with_the_same_shape_but_other_strides_is_not_a_clone(self) -> None:
+        view = torch.arange(32, dtype=torch.float32).reshape(8, 4)[2:5]
+        transposed = torch.arange(12, dtype=torch.float32).reshape(4, 3).t()
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(
+                RuntimeError, "smaller than its TensorProperties"
+            ):
+                self._materialize(
+                    Weights({"w": (transposed, TensorProperties(view))}), directory
+                )
+
+    def test_compact_clone_of_a_strided_view_spans_its_storage(self) -> None:
+        # A strided view's clone keeps the gaps between its rows, so it spans
+        # more bytes than its elements take.
+        view = torch.arange(64, dtype=torch.float32).reshape(8, 8)[:, 1:3]
+        clone = clone_preserve_strides(view)
+        weights = Weights({"w": (clone, TensorProperties(view))})
+
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = self._materialize(weights, directory)
+            entry = artifact.entries[0]
+            self.assertEqual(0, entry.storage_offset)
+            self.assertEqual(232, entry.storage_nbytes)
+            self.assertEqual((8, 1), entry.strides)
+            data = artifact.storages[entry.storage_key].to_bytes()
+            self.assertEqual(bytes(clone.untyped_storage()), data)
+            for storage in artifact.storages.values():
+                storage.close()
+
+    def test_view_sharing_its_storage_keeps_the_view_offset(self) -> None:
+        # AOTI does not clone parameters, so a parameter that slices a fused
+        # tensor arrives in the fused tensor's storage.
+        fused = torch.arange(36, dtype=torch.float32).reshape(9, 4)
+        view = fused[3:6]
+        weights = Weights({"w": (view, TensorProperties(view))})
+
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = self._materialize(weights, directory)
+            entry = artifact.entries[0]
+            self.assertEqual(12, entry.storage_offset)
+            self.assertEqual(144, entry.storage_nbytes)
+            for storage in artifact.storages.values():
+                storage.close()
+
+    def test_value_with_other_layout_keeps_the_view_offset(self) -> None:
+        # A value in a different storage that is not a compact clone of the view
+        # (other shape) keeps the offset its TensorProperties records.
+        base = torch.arange(32, dtype=torch.float32).reshape(8, 4)
+        view = base[:, 1:]
+        weights = Weights({"w": (base.clone(), TensorProperties(view))})
+
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = self._materialize(weights, directory)
+            self.assertEqual(1, artifact.entries[0].storage_offset)
+            for storage in artifact.storages.values():
+                storage.close()
+
+    def test_identical_values_keep_distinct_fqn_keys(self) -> None:
+        first = torch.zeros(4)
+        second = torch.zeros(4)
+        weights = Weights(
+            {
+                "first": (first, TensorProperties(first)),
+                "second": (second, TensorProperties(second)),
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = self._materialize(weights, directory)
+            self.assertEqual(2, len(artifact.storages))
+            self.assertNotEqual(artifact.entries[0].fqn, artifact.entries[1].fqn)
+            self.assertNotEqual(
+                artifact.entries[0].storage_key,
+                artifact.entries[1].storage_key,
+            )
+            store = NamedDataStore()
+            for entry in artifact.entries:
+                store.add_named_data(
+                    entry.storage_key, artifact.storages[entry.storage_key]
+                )
+            self.assertEqual(1, len(store.buffers))
+            for storage in artifact.storages.values():
+                storage.close()
+
+    def test_same_fqn_with_different_data_is_rejected_when_merged(self) -> None:
+        first = torch.zeros(4)
+        second = torch.ones(4)
+
+        with (
+            tempfile.TemporaryDirectory() as first_dir,
+            tempfile.TemporaryDirectory() as second_dir,
+        ):
+            first_artifact = self._materialize(
+                Weights({"weight": (first, TensorProperties(first))}), first_dir
+            )
+            second_artifact = self._materialize(
+                Weights({"weight": (second, TensorProperties(second))}), second_dir
+            )
+            first_key = first_artifact.entries[0].storage_key
+            second_key = second_artifact.entries[0].storage_key
+            self.assertEqual(first_key, second_key)
+
+            collector = CudaWeightCollector()
+            collector.add_preprocess_result(
+                self._parent_result("first_so"), first_artifact, "cuda"
+            )
+            with self.assertRaisesRegex(ValueError, "different data"):
+                collector.add_preprocess_result(
+                    self._parent_result("second_so"), second_artifact, "cuda"
+                )
+
+            for artifact in (first_artifact, second_artifact):
+                for storage in artifact.storages.values():
+                    storage.close()
+
+    def test_same_fqn_with_different_metadata_shares_storage(self) -> None:
+        tensor = torch.arange(4)
+        view = tensor.reshape(2, 2)
+        with (
+            tempfile.TemporaryDirectory() as first_dir,
+            tempfile.TemporaryDirectory() as second_dir,
+        ):
+            first_artifact = self._materialize(
+                Weights({"weight": (tensor, TensorProperties(tensor))}), first_dir
+            )
+            second_artifact = self._materialize(
+                Weights({"weight": (tensor, TensorProperties(view))}), second_dir
+            )
+            collector = CudaWeightCollector()
+            first_result = self._parent_result("first_so")
+            second_result = self._parent_result("second_so")
+            collector.add_preprocess_result(first_result, first_artifact, "cuda")
+            collector.add_preprocess_result(second_result, second_artifact, "cuda")
+            collector.finish()
+
+            self.assertIs(
+                first_result.data_store_output, second_result.data_store_output
+            )
+            self.assertNotEqual(
+                first_result.processed_bytes, second_result.processed_bytes
+            )
+            weight_key = (
+                decode_cuda_aoti_metadata(first_result.processed_bytes)
+                .entries[0]
+                .storage_key
+            )
+            self.assertIn(
+                weight_key,
+                first_result.data_store_output.external_data["aoti_cuda_blob"],
+            )
+
+            for artifact in (first_artifact, second_artifact):
+                for storage in artifact.storages.values():
+                    storage.close()
+
+    def test_aoti_local_fqns_are_scoped_by_library(self) -> None:
+        first = torch.zeros(4)
+        second = torch.ones(5)
+
+        with (
+            tempfile.TemporaryDirectory() as first_dir,
+            tempfile.TemporaryDirectory() as second_dir,
+        ):
+            first_artifact = self._materialize(
+                Weights(
+                    {
+                        "_tensor_constant0": (
+                            first,
+                            TensorProperties(first),
+                        )
+                    }
+                ),
+                first_dir,
+            )
+            second_artifact = self._materialize(
+                Weights(
+                    {
+                        "_tensor_constant0": (
+                            second,
+                            TensorProperties(second),
+                        )
+                    }
+                ),
+                second_dir,
+            )
+            first_result = self._parent_result("first_so")
+            second_result = self._parent_result("second_so")
+            collector = CudaWeightCollector()
+            collector.add_preprocess_result(first_result, first_artifact, "cuda")
+            collector.add_preprocess_result(second_result, second_artifact, "cuda")
+            collector.finish()
+
+            external_data = first_result.data_store_output.external_data[
+                "aoti_cuda_blob"
+            ]
+            for result, library in ((first_result, "first"), (second_result, "second")):
+                (entry,) = decode_cuda_aoti_metadata(result.processed_bytes).entries
+                self.assertTrue(
+                    entry.storage_key.startswith(
+                        f"cuda_fqn_weight:cpu:{library}_so:_tensor_constant0:"
+                    )
+                )
+                self.assertIn(entry.storage_key, external_data)
+
+            for artifact in (first_artifact, second_artifact):
+                for storage in artifact.storages.values():
+                    storage.close()
+
+    def test_methods_share_one_collected_named_data_store(self) -> None:
+        tensor = torch.arange(4)
+        weights = Weights({"weight": (tensor, TensorProperties(tensor))})
+        with (
+            tempfile.TemporaryDirectory() as first_dir,
+            tempfile.TemporaryDirectory() as second_dir,
+        ):
+            first_artifact = self._materialize(weights, first_dir)
+            second_artifact = self._materialize(weights, second_dir)
+            first_result = self._parent_result("first_so")
+            second_result = self._parent_result("second_so")
+            collector = CudaWeightCollector()
+            collector.add_preprocess_result(first_result, first_artifact, "cuda")
+            collector.add_preprocess_result(second_result, second_artifact, "cuda")
+            collector.finish()
+
+            self.assertIs(
+                first_result.data_store_output, second_result.data_store_output
+            )
+            weight_key = (
+                decode_cuda_aoti_metadata(first_result.processed_bytes)
+                .entries[0]
+                .storage_key
+            )
+            self.assertIn(
+                weight_key,
+                first_result.data_store_output.external_data["aoti_cuda_blob"],
+            )
+            for artifact in (first_artifact, second_artifact):
+                for storage in artifact.storages.values():
+                    storage.close()
+
+    def test_device_is_part_of_the_fqn_key(self) -> None:
+        tensor = torch.zeros(4)
+        weights = Weights({"weight": (tensor, TensorProperties(tensor))})
+        with (
+            tempfile.TemporaryDirectory() as cpu_dir,
+            tempfile.TemporaryDirectory() as cuda_dir,
+        ):
+            cpu = self._materialize(weights, cpu_dir, AOTI_DEVICE_TYPE_CPU)
+            cuda = self._materialize(weights, cuda_dir, AOTI_DEVICE_TYPE_CUDA)
+            self.assertNotEqual(cpu.entries[0].storage_key, cuda.entries[0].storage_key)
+            for artifact in (cpu, cuda):
+                for storage in artifact.storages.values():
+                    storage.close()
+
+    def test_low_memory_weights_require_wrapper_so(self) -> None:
+        tensor = torch.tensor([1], dtype=torch.int16)
+        weights = Weights({"weight": (tensor, TensorProperties(tensor))})
+
+        with self.assertRaisesRegex(
+            RuntimeError, r"Expected a CUDA AOTI \.wrapper\.so output"
+        ):
+            CudaBackend.materialize_weights_blob(
+                [weights], [CompileSpec("low_memory_mode", b"ON")]
+            )
+
+    def test_low_memory_blob_stays_file_backed(self) -> None:
+        data = b"cuda weights"
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "weights.blob")
+            with open(path, "wb") as output:
+                output.write(data)
+
+            blob, digest = CudaBackend.load_weights_blob(
+                path, [CompileSpec("low_memory_mode", b"ON")]
+            )
+
+            self.assertIsInstance(blob, FileBackedData)
+            self.assertEqual(hashlib.sha256(data).hexdigest(), digest)
+            self.assertEqual(data, blob.to_bytes())
+            self.assertFalse(os.path.exists(path))
+
+    def test_default_blob_behavior_is_unchanged(self) -> None:
+        data = b"cuda weights"
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "weights.blob")
+            with open(path, "wb") as output:
+                output.write(data)
+
+            blob, digest = CudaBackend.load_weights_blob(path, [])
+
+            self.assertIsInstance(blob, bytes)
+            self.assertEqual(data, blob)
+            self.assertEqual(hashlib.sha256(data).hexdigest(), digest)
+            self.assertFalse(os.path.exists(path))
+
+    def test_program_copy_shares_tensor_storage_when_asked(self) -> None:
+        module = torch.nn.Linear(4, 3)
+        program = export(module, (torch.randn(2, 4),), strict=True)
+
+        for spec in (
+            CompileSpec("low_memory_mode", b"ON"),
+            CompileSpec("share_weights", b"ON"),
+        ):
+            with self.subTest(spec=spec):
+                copied = CudaBackend.copy_exported_program_for_preprocess(
+                    program, [spec]
+                )
+
+                self.assertIsNot(program, copied)
+                self.assertIsNot(program.graph_module, copied.graph_module)
+                self.assertIs(program.state_dict["weight"], copied.state_dict["weight"])
+                copied._state_dict["weight"] = torch.nn.Parameter(torch.zeros(3, 4))
+                self.assertFalse(torch.count_nonzero(program.state_dict["weight"]) == 0)
+
+    def test_default_program_copy_has_independent_tensor_storage(self) -> None:
+        module = torch.nn.Linear(4, 3)
+        program = export(module, (torch.randn(2, 4),), strict=True)
+
+        copied = CudaBackend.copy_exported_program_for_preprocess(program, [])
+
+        self.assertIsNot(program.state_dict["weight"], copied.state_dict["weight"])
+        self.assertNotEqual(
+            program.state_dict["weight"].data_ptr(),
+            copied.state_dict["weight"].data_ptr(),
+        )
+
+    @unittest.skipUnless(torch.cuda.is_available(), "needs a CUDA device")
+    def test_sharing_move_copies_gpu_tensors_the_graph_writes(self) -> None:
+        class State(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("count", torch.zeros(4, device="cuda"))
+                self.scale = torch.nn.Parameter(
+                    torch.ones(4, device="cuda"), requires_grad=False
+                )
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                self.count.add_(1)
+                self.scale.mul_(2)
+                return self.count * self.scale + x
+
+        program = to_edge(
+            export(State(), (torch.ones(4, device="cuda"),), strict=True)
+        ).exported_program()
+        caller = [program.state_dict[name] for name in ("count", "scale")]
+        share = CompileSpec("share_weights", b"ON")
+        low_memory = CompileSpec("low_memory_mode", b"ON")
+        off = CompileSpec("autotune_at_compile_time", b"OFF")
+        for compile_specs, copies in (
+            ([share], False),
+            ([low_memory], False),
+            ([share, off], True),
+            ([low_memory, off], True),
+        ):
+            with self.subTest(compile_specs=compile_specs):
+                copied = CudaBackend.copy_exported_program_for_preprocess(
+                    program, compile_specs
+                )
+                with CudaWeightCollector().capture(_aoti_device_type_for_weight):
+                    moved = CudaBackend.move_program_to_device(
+                        copied, "cuda", compile_specs
+                    )
+                moved.module()  # Fails unless a copied parameter stays a Parameter.
+                compiled = [moved.state_dict[name] for name in ("count", "scale")]
+                moved_pointers = [t.data_ptr() for t in _moved_program_tensors()]
+                for tensor, value in zip(caller, compiled):
+                    self.assertEqual(copies, tensor.data_ptr() != value.data_ptr())
+                    self.assertEqual(copies, value.data_ptr() in moved_pointers)
+                    self.assertTrue(torch.equal(tensor, value))
+                CudaBackend.release_moved_tensors(moved, compile_specs)
+
+                for tensor, value in zip(caller, compiled):
+                    self.assertEqual(16, tensor.untyped_storage().nbytes())
+                    self.assertEqual(
+                        0 if copies else 16, value.untyped_storage().nbytes()
+                    )
+
+    @unittest.skipUnless(torch.cuda.is_available(), "needs a CUDA device")
+    def test_sharing_release_frees_only_what_the_move_created(self) -> None:
+        module = _LinearModule(device="cuda")
+        module.register_buffer("scale", torch.ones(256))
+        expected = module.linear.weight.detach().clone()
+        program = export(module, (torch.randn(2, 256, device="cuda"),), strict=True)
+        compile_specs = [CompileSpec("share_weights", b"ON")]
+
+        copied = CudaBackend.copy_exported_program_for_preprocess(
+            program, compile_specs
+        )
+        moved = CudaBackend.move_program_to_device(copied, "cuda", compile_specs)
+        scale = moved.state_dict["scale"]
+        self.assertEqual(
+            [scale.data_ptr()], [t.data_ptr() for t in _moved_program_tensors()]
+        )
+        CudaBackend.release_moved_tensors(moved, compile_specs)
+
+        self.assertEqual(0, scale.untyped_storage().nbytes())
+        self.assertEqual(
+            expected.untyped_storage().nbytes(),
+            module.linear.weight.untyped_storage().nbytes(),
+        )
+        self.assertTrue(torch.equal(expected, module.linear.weight))
 
 
 class TestCudaPartitioner(unittest.TestCase):
     """
     Test CUDA partitioner functionality.
 
-    After CUDA partitioning, there should be exactly one partitioned graph that contains
-    all operators from the input graph. This means all operators should be tagged with
-    the same delegation tag, indicating they will all be executed by the CUDA backend.
+    A fully delegatable graph collapses to a single partition. When a
+    non-delegated node splits the delegatable ops, the partitioner emits one
+    convex partition per island.
     """
 
     def _get_partition_result(
@@ -175,12 +867,6 @@ class TestCudaPartitioner(unittest.TestCase):
         for node in partition_result.tagged_exported_program.graph.nodes:
             if node.op == "placeholder":
                 # Check if this is a constant (param, buffer, or lifted tensor constant)
-                from torch._export.utils import (
-                    is_buffer,
-                    is_lifted_tensor_constant,
-                    is_param,
-                )
-
                 is_constant = (
                     is_param(partition_result.tagged_exported_program, node)
                     or is_buffer(partition_result.tagged_exported_program, node)
@@ -213,8 +899,9 @@ class TestCudaPartitioner(unittest.TestCase):
             f"All constant placeholders should be tagged. Found untagged constants: {untagged_constants}",
         )
 
-        # Verify all tagged constants have the expected tag
-        expected_tag = "tag0"
+        # Verify all tagged constants share the (single) partition's tag.
+        self.assertEqual(len(partition_result.partition_tags), 1)
+        expected_tag = next(iter(partition_result.partition_tags))
         for node in constant_placeholders:
             actual_tag = node.meta.get("delegation_tag")
             self.assertEqual(
@@ -222,3 +909,318 @@ class TestCudaPartitioner(unittest.TestCase):
                 expected_tag,
                 f"Constant placeholder {node.name} has tag '{actual_tag}' but expected '{expected_tag}'",
             )
+
+    def test_unread_mutated_buffer_copied_from_an_input_stays_out(self) -> None:
+        """
+        A mutated buffer that no op reads stays in the owning program when its
+        new value is a method input, as in self.state.copy_(x). When the only
+        partition computes the new value, the buffer goes to that delegate.
+        """
+
+        class WriteState(torch.nn.Module):
+            def __init__(self, copy_input: bool) -> None:
+                super().__init__()
+                self.copy_input = copy_input
+                self.register_buffer("state", torch.zeros(2))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                self.state.copy_(x if self.copy_input else x + x)
+                return torch.sin(x)
+
+        for copy_input in (False, True):
+            # to_edge removes the copy, so the new value comes straight from x or x + x.
+            edge = to_edge(export(WriteState(copy_input), (torch.randn(2),)))
+            result = CudaPartitioner([]).partition(edge.exported_program())
+            program = result.tagged_exported_program
+            state = next(
+                n
+                for n in program.graph.nodes
+                if n.op == "placeholder" and is_buffer(program, n)
+            )
+            tag = state.meta.get("delegation_tag")
+            if copy_input:
+                self.assertIsNone(tag)
+            else:
+                self.assertIn(tag, result.partition_tags)
+
+    def test_unread_mutated_buffer_goes_to_the_partition_that_writes_it(
+        self,
+    ) -> None:
+        """
+        With several partitions, a mutated buffer that no op reads goes to the
+        delegate whose op computes its new value, even when that partition is
+        not the one listed first.
+        """
+
+        class WriteState(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("state", torch.zeros(2))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                s = x + x
+                self.state.copy_(s)
+                return torch.cos(s * 3)
+
+        program = to_edge(export(WriteState(), (torch.randn(2),))).exported_program()
+        graph = program.graph_module.graph
+        nodes = {n.name: n for n in graph.nodes}
+        add, mul, cos = (
+            nodes[name]
+            for name in ("aten_add_tensor", "aten_mul_tensor", "aten_cos_default")
+        )
+        # A delegate of another backend between mul and cos splits this
+        # backend's ops into two partitions.
+        program.graph_module.lowered_module_0 = torch.nn.Module()
+        with graph.inserting_before(cos):
+            lowered = graph.get_attr("lowered_module_0")
+            delegate = graph.call_function(executorch_call_delegate, (lowered, mul))
+            output = graph.call_function(operator.getitem, (delegate, 0))
+        cos.replace_input_with(mul, output)
+        graph.lint()
+
+        result = CudaPartitioner([]).partition(program)
+        state = next(
+            n
+            for n in program.graph.nodes
+            if n.op == "placeholder" and is_buffer(program, n)
+        )
+        self.assertNotEqual(
+            add.meta["delegation_tag"], next(iter(result.partition_tags))
+        )
+        self.assertEqual(state.meta.get("delegation_tag"), add.meta["delegation_tag"])
+
+    def test_does_not_retag_already_lowered_delegate(self) -> None:
+        """
+        A node already lowered by a previous partitioner appears as an
+        executorch_call_delegate call plus its output getitem. The CUDA
+        partitioner must not re-tag those, so it can run after another backend
+        (e.g. TensorRT) and only claim the remaining ops.
+        """
+
+        class AddModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + x
+
+        exported_program = export(AddModule(), (torch.randn(3, 4),), strict=True)
+        graph_module = exported_program.graph_module
+        graph = graph_module.graph
+
+        placeholder = next(n for n in graph.nodes if n.op == "placeholder")
+        aten_node = next(
+            n
+            for n in graph.nodes
+            if n.op == "call_function" and n.target != operator.getitem
+        )
+
+        # Splice in a fake, already-lowered delegate (call + output getitem), as a
+        # preceding partitioner (e.g. TensorRT) would have produced.
+        graph_module.lowered_module_0 = torch.nn.Module()
+        with graph.inserting_before(aten_node):
+            lowered = graph.get_attr("lowered_module_0")
+            delegate = graph.call_function(
+                executorch_call_delegate, (lowered, placeholder)
+            )
+            delegate_output = graph.call_function(operator.getitem, (delegate, 0))
+        graph.lint()
+
+        CudaPartitioner([]).partition(exported_program)
+
+        self.assertNotIn("delegation_tag", delegate.meta)
+        self.assertNotIn("delegation_tag", delegate_output.meta)
+        self.assertIn("delegation_tag", aten_node.meta)
+
+    def test_does_not_tag_constant_used_only_by_prior_delegate(self) -> None:
+        """
+        A constant whose only consumer is a previously lowered delegate must stay
+        untagged. Tagging it would give it this partition's tag while its user
+        keeps the prior delegate's, which backend lowering rejects. Only ops this
+        partitioner claims and genuinely unused constants may be tagged.
+        """
+
+        class AddModule(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("w", torch.randn(3, 4))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + self.w
+
+        exported_program = export(AddModule(), (torch.randn(3, 4),), strict=True)
+        graph_module = exported_program.graph_module
+        graph = graph_module.graph
+
+        buffer_placeholder = next(
+            n
+            for n in graph.nodes
+            if n.op == "placeholder" and is_buffer(exported_program, n)
+        )
+        input_placeholder = next(
+            n
+            for n in graph.nodes
+            if n.op == "placeholder" and not is_buffer(exported_program, n)
+        )
+        aten_node = next(
+            n
+            for n in graph.nodes
+            if n.op == "call_function" and n.target != operator.getitem
+        )
+
+        # Make the buffer feed only a fake, already-lowered delegate (as a
+        # preceding TensorRT partition would): rewire the aten op off the buffer,
+        # then splice the delegate consuming it.
+        aten_node.replace_input_with(buffer_placeholder, input_placeholder)
+        graph_module.lowered_module_0 = torch.nn.Module()
+        with graph.inserting_before(aten_node):
+            lowered = graph.get_attr("lowered_module_0")
+            delegate = graph.call_function(
+                executorch_call_delegate, (lowered, buffer_placeholder)
+            )
+            graph.call_function(operator.getitem, (delegate, 0))
+        graph.lint()
+
+        CudaPartitioner([]).partition(exported_program)
+
+        self.assertNotIn("delegation_tag", buffer_placeholder.meta)
+        self.assertNotIn("delegation_tag", delegate.meta)
+        self.assertIn("delegation_tag", aten_node.meta)
+
+    def test_multiple_partitions_for_split_graph(self) -> None:
+        """Ops split by a non-delegated node must land in separate partitions.
+
+        One tag over the disconnected islands would be non-convex and fail fusion.
+        """
+
+        class TwoAddModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                a = x + 1.0
+                return a + 2.0
+
+        exported_program = export(TwoAddModule(), (torch.randn(3, 4),), strict=True)
+        graph_module = exported_program.graph_module
+        graph = graph_module.graph
+
+        add_nodes = [
+            n
+            for n in graph.nodes
+            if n.op == "call_function" and n.target != operator.getitem
+        ]
+        first_add, second_add = add_nodes[0], add_nodes[1]
+
+        # Splice an already-lowered region between the two adds so the second add
+        # depends on the first only through that non-delegated node.
+        graph_module.lowered_module_0 = torch.nn.Module()
+        with graph.inserting_before(second_add):
+            lowered = graph.get_attr("lowered_module_0")
+            delegate = graph.call_function(
+                executorch_call_delegate, (lowered, first_add)
+            )
+            delegate_output = graph.call_function(operator.getitem, (delegate, 0))
+        second_add.replace_input_with(first_add, delegate_output)
+        graph.lint()
+
+        result = CudaPartitioner([]).partition(exported_program)
+
+        # Separated by the delegate, the adds must land in different partitions.
+        self.assertEqual(len(result.partition_tags), 2)
+        self.assertIn("delegation_tag", first_add.meta)
+        self.assertIn("delegation_tag", second_add.meta)
+        self.assertNotEqual(
+            first_add.meta["delegation_tag"], second_add.meta["delegation_tag"]
+        )
+        self.assertNotIn("delegation_tag", delegate.meta)
+        self.assertNotIn("delegation_tag", delegate_output.meta)
+
+        # Each partition must be convex on its own so fusion does not cycle.
+        for tag in result.partition_tags:
+            tagged = [
+                n
+                for n in exported_program.graph.nodes
+                if n.meta.get("delegation_tag") == tag
+            ]
+            self.assertTrue(validate_partition(tagged))
+
+    def test_control_flow_get_attr_shares_op_tag(self) -> None:
+        """A control-flow op's branch get_attrs must share the op's partition tag.
+
+        They are not call_function nodes, so the capability partitioner does not
+        claim them; they must be lowered into the same submodule as the op.
+        """
+
+        class CondModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return torch.cond(x.sum() > 0, torch.sin, torch.cos, (x,))
+
+        exported_program = export(CondModule(), (torch.randn(3, 4),), strict=True)
+        result = CudaPartitioner([]).partition(exported_program)
+
+        cond_node = next(
+            n
+            for n in exported_program.graph.nodes
+            if n.op == "call_function" and n.target is torch.ops.higher_order.cond
+        )
+        branch_get_attrs = [
+            arg
+            for arg in cond_node.args
+            if isinstance(arg, torch.fx.Node) and arg.op == "get_attr"
+        ]
+
+        self.assertEqual(len(branch_get_attrs), 2)
+        self.assertIn(cond_node.meta["delegation_tag"], result.partition_tags)
+        for get_attr in branch_get_attrs:
+            self.assertEqual(
+                get_attr.meta.get("delegation_tag"),
+                cond_node.meta["delegation_tag"],
+            )
+
+    def test_shared_constant_across_partitions(self) -> None:
+        """A constant read by two partitions is claimed, not dropped.
+
+        tag_constant_data assigns it one partition's tag; backend lowering later
+        duplicates it per consumer, so partitioning must not crash or drop it.
+        """
+
+        class SharedWeightModule(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("w", torch.randn(3, 4))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return (x + self.w) + self.w
+
+        exported_program = export(
+            SharedWeightModule(), (torch.randn(3, 4),), strict=True
+        )
+        graph_module = exported_program.graph_module
+        graph = graph_module.graph
+
+        add_nodes = [
+            n
+            for n in graph.nodes
+            if n.op == "call_function" and n.target != operator.getitem
+        ]
+        first_add, second_add = add_nodes[0], add_nodes[1]
+
+        # Split the two adds (both reading w) with an already-lowered region.
+        graph_module.lowered_module_0 = torch.nn.Module()
+        with graph.inserting_before(second_add):
+            lowered = graph.get_attr("lowered_module_0")
+            delegate = graph.call_function(
+                executorch_call_delegate, (lowered, first_add)
+            )
+            delegate_output = graph.call_function(operator.getitem, (delegate, 0))
+        second_add.replace_input_with(first_add, delegate_output)
+        graph.lint()
+
+        result = CudaPartitioner([]).partition(exported_program)
+
+        # Two islands, and the shared buffer is claimed by one of them, not dropped.
+        self.assertEqual(len(result.partition_tags), 2)
+        buffer_placeholder = next(
+            n
+            for n in graph.nodes
+            if n.op == "placeholder" and is_buffer(exported_program, n)
+        )
+        self.assertIn(
+            buffer_placeholder.meta.get("delegation_tag"), result.partition_tags
+        )

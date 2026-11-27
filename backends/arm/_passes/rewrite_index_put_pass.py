@@ -7,7 +7,8 @@ from typing import Sequence, Set, Type
 
 import torch
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
+from executorch.backends.arm._passes.arm_pass_utils import meta_without_qparams
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     ConvertExpandCopyToRepeatPass,
 )
@@ -31,7 +32,7 @@ def calculate_data_stride(destination_shape: list[int]) -> list[int]:
     return data_strides
 
 
-class RewriteIndexPutPass(ArmPass):
+class RewriteIndexPutPass(ArmOpTargetedPass):
     """
     This pass transforms index_put with arguments
         - destination, of shape (*K_i, *C_j)
@@ -69,6 +70,7 @@ class RewriteIndexPutPass(ArmPass):
         FuseViewCopyTransformPass,
         ConvertExpandCopyToRepeatPass,
     }
+    target_ops = (exir_ops.edge.aten.index_put.default,)
 
     def _calculate_flat_indices(
         self,
@@ -121,7 +123,7 @@ class RewriteIndexPutPass(ArmPass):
         )
 
     def call_operator(self, op, args, kwargs, meta, updated: bool | None = False):
-        if op not in (exir_ops.edge.aten.index_put.default,):
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 
         destination, indices_tensor_list, data = args[:3]
@@ -156,10 +158,7 @@ class RewriteIndexPutPass(ArmPass):
         )
 
         # CALCULATE FLATTENED INDEX [N=1, W]
-        plain_meta_dict = dict(meta.data)
-        plain_meta_dict["input_qparams"] = {}
-        plain_meta_dict["output_qparams"] = {}
-        plain_meta = NodeMetadata(plain_meta_dict)
+        plain_meta = meta_without_qparams(meta)
         indices_flattened = self._calculate_flat_indices(
             indices_tensor_list, K_i, plain_meta
         )

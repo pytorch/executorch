@@ -131,6 +131,11 @@ float32_tensor_cond_tuple_dtype_bool = Where(
     (torch.float32, torch.bool),
     tensor_condition,
 )
+int32_float32_tensor_cond = Where(
+    1,
+    (torch.int32, torch.float32),
+    lambda input: input.to(torch.float32) > 0,
+)
 
 # Scalar tests
 two_dim_scalar_cond = Where(
@@ -183,14 +188,20 @@ test_modules_FP = {
     "float16_tensor_cond": lambda: float16_tensor_cond,
     "const_float32": lambda: const_float32,
 }
+test_modules_mixed = {
+    "int32_float32_tensor_cond": lambda: int32_float32_tensor_cond,
+}
 
 test_modules_FP_bf16 = {
     "bf16_tensor_cond": lambda: bf16_tensor_cond,
 }
 
 test_modules_FP_unsupported_dtype = {
-    "float32_tensor_cond_tuple_dtype": lambda: float32_tensor_cond_tuple_dtype,
-    "int32_scalar_cond": lambda: int32_scalar_cond,
+    "float32_tensor_cond_tuple_dtype": lambda: (
+        float32_tensor_cond_tuple_dtype,
+        1,
+    ),
+    "int32_scalar_cond": lambda: (int32_scalar_cond, 0),
 }
 
 test_modules_INT = {
@@ -215,11 +226,12 @@ def test_where_self_tosa_FP(test_module):
 
 @common.parametrize("test_module", test_modules_FP_unsupported_dtype)
 def test_where_self_tosa_FP_unsupported_dtype(test_module):
+    module, n_expected_delegates = test_module()
     pipeline = OpNotSupportedPipeline[input_t](
-        test_module(),
-        test_module().get_inputs(),
+        module,
+        module.get_inputs(),
         {exir_op: 1},
-        n_expected_delegates=1,  # condition can be delegated
+        n_expected_delegates=n_expected_delegates,
     )
     pipeline.run()
 
@@ -288,7 +300,9 @@ def test_where_self_u85_INT(test_module):
     pipeline.run()
 
 
-@common.parametrize("test_module", test_modules_FP)
+@common.parametrize(
+    "test_module", test_modules_FP | test_modules_FP_bf16 | test_modules_mixed
+)
 @common.SkipIfNoModelConverter
 def test_where_self_vgf_no_quant(test_module):
     module = test_module()

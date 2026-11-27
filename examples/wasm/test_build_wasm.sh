@@ -23,7 +23,7 @@ test_build_wasm() {
     retry emcmake cmake -DWASM_MODEL_DIR="$(realpath "${model_dir_name}")" -B${build_dir} .
 
     echo "Building ${example_dir}"
-    cmake --build ${build_dir} -j9 --target executor_runner
+    cmake --build ${build_dir} -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --target executor_runner
 
     echo "Removing ${model_dir_name}"
     rm -rf "${model_dir_name}"

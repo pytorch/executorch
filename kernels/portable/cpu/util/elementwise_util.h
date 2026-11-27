@@ -31,9 +31,9 @@ namespace native {
 namespace utils {
 namespace internal {
 /**
- * Causes these utility functions to make sure to respect Tensor
- * strides; normally, this is not strictly necessary because ExecuTorch
- * Tensors are contiguous.
+ * Causes these utility functions to respect the strides of a single input
+ * whose layout may differ from the output's. Strides are respected either
+ * way when there are two or more inputs.
  */
 struct SupportNoncontiguousInputTensors {
   explicit SupportNoncontiguousInputTensors() = default;
@@ -94,11 +94,14 @@ inline void dtype_specialized_elementwise_fn_impl(
 
 #if defined(ET_USE_PYTORCH_HEADERS) && ET_USE_PYTORCH_HEADERS
   if constexpr (can_use_vectorized<CTYPE_COMPUTE, Op, Args...>()) {
-    const bool any_is_broadcasted =
-        !(torch::executor::internal::sizes_match_ignoring_leading_1s(
-              inputs.first->sizes(), out.sizes()) &&
-          ...);
-    if (!any_is_broadcasted) {
+    const bool all_match_out_layout =
+        (torch::executor::internal::layouts_match_ignoring_leading_1s(
+             inputs.first->sizes(),
+             inputs.first->strides(),
+             out.sizes(),
+             out.strides()) &&
+         ...);
+    if (all_match_out_layout) {
       using Vec = at::vec::Vectorized<CTYPE_COMPUTE>;
       ::executorch::extension::parallel_for(
           0,
@@ -219,7 +222,7 @@ inline bool validate_elementwise_fn_inputs(
 
 template <
     typename CTYPE_COMPUTE,
-    const char* op_name,
+    ET_OPERATOR_NAME_TYPE op_name,
     bool support_noncontiguous_tensors,
     typename Op,
     typename... Args>
@@ -277,7 +280,7 @@ inline void apply_elementwise_fn_generic_impl(
 
 template <
     typename CTYPE_COMPUTE,
-    const char* op_name,
+    ET_OPERATOR_NAME_TYPE op_name,
     typename Op,
     typename... Args>
 inline void apply_elementwise_fn_runtime_out_dtypes(
@@ -301,7 +304,7 @@ inline void apply_elementwise_fn_runtime_out_dtypes(
 
 template <
     typename CTYPE_COMPUTE,
-    const char* op_name,
+    ET_OPERATOR_NAME_TYPE op_name,
     SupportedTensorDtypes out_dtypes,
     bool support_noncontiguous_tensors,
     typename Op,
@@ -345,7 +348,7 @@ inline void apply_elementwise_fn(
 }
 
 /// DEPRECATED: prefer the variant with out_dtypes in the template argument.
-template <typename CTYPE_COMPUTE, const char* op_name, typename Op>
+template <typename CTYPE_COMPUTE, ET_OPERATOR_NAME_TYPE op_name, typename Op>
 inline void apply_unitensor_elementwise_fn(
     const Op& compute_fun,
     KernelRuntimeContext& ctx,
@@ -372,7 +375,7 @@ inline void apply_unitensor_elementwise_fn(
  */
 template <
     typename CTYPE_COMPUTE,
-    const char* op_name,
+    ET_OPERATOR_NAME_TYPE op_name,
     SupportedTensorDtypes out_dtypes,
     typename Op>
 inline void apply_unitensor_elementwise_fn(
@@ -391,7 +394,7 @@ inline void apply_unitensor_elementwise_fn(
 
 template <
     typename CTYPE_COMPUTE,
-    const char* op_name,
+    ET_OPERATOR_NAME_TYPE op_name,
     SupportedTensorDtypes out_dtypes,
     typename Op>
 inline void apply_unitensor_elementwise_fn(
@@ -412,7 +415,7 @@ inline void apply_unitensor_elementwise_fn(
 /**
  * DEPRECATED: prefer the variant with out_dtypes in the template argument list.
  */
-template <typename CTYPE_COMPUTE, const char* op_name, typename Op>
+template <typename CTYPE_COMPUTE, ET_OPERATOR_NAME_TYPE op_name, typename Op>
 inline void apply_bitensor_elementwise_fn(
     const Op& compute_fun,
     KernelRuntimeContext& ctx,
@@ -440,7 +443,7 @@ inline void apply_bitensor_elementwise_fn(
  */
 template <
     typename CTYPE_COMPUTE,
-    const char* op_name,
+    ET_OPERATOR_NAME_TYPE op_name,
     SupportedTensorDtypes out_dtypes,
     typename Op>
 inline void apply_bitensor_elementwise_fn(
@@ -465,7 +468,7 @@ inline void apply_bitensor_elementwise_fn(
 
 template <
     typename CTYPE_COMPUTE,
-    const char* op_name,
+    ET_OPERATOR_NAME_TYPE op_name,
     SupportedTensorDtypes out_dtypes,
     typename Op>
 inline void apply_bitensor_elementwise_fn(
@@ -492,7 +495,7 @@ inline void apply_bitensor_elementwise_fn(
 /**
  * DEPRECATED: prefer the variant with out_dtypes in the template argument list.
  */
-template <typename CTYPE_COMPUTE, const char* op_name, typename Op>
+template <typename CTYPE_COMPUTE, ET_OPERATOR_NAME_TYPE op_name, typename Op>
 inline void apply_tritensor_elementwise_fn(
     const Op& compute_fun,
     KernelRuntimeContext& ctx,
@@ -531,7 +534,7 @@ inline void apply_tritensor_elementwise_fn(
  * can't pass a string literal for op_name. Instead, you should do the
  * following:
  *
- * static constexpr const char op_name[] = "my_op";
+ * ET_DEFINE_OPERATOR_NAME(op_name, "my_op");
  * apply_ternary_elementwise_fn<CTYPE_COMPUTE, op_name>.
  *
  * See [NOTE: Generic lambdas] if you want to pass a generic lambda for
@@ -539,7 +542,7 @@ inline void apply_tritensor_elementwise_fn(
  */
 template <
     typename CTYPE_COMPUTE,
-    const char* op_name,
+    ET_OPERATOR_NAME_TYPE op_name,
     SupportedTensorDtypes out_dtypes,
     typename Op>
 inline void apply_tritensor_elementwise_fn(
@@ -567,7 +570,7 @@ inline void apply_tritensor_elementwise_fn(
 
 template <
     typename CTYPE_COMPUTE,
-    const char* op_name,
+    ET_OPERATOR_NAME_TYPE op_name,
     SupportedTensorDtypes out_dtypes,
     typename Op>
 inline void apply_tritensor_elementwise_fn(

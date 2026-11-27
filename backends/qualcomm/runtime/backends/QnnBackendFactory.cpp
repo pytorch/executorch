@@ -13,15 +13,15 @@ namespace executorch {
 namespace backends {
 namespace qnn {
 
-using executorch::runtime::Error;
-
 std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
     QnnImplementation* implementation_ptr,
+    QnnSystemImplementation* system_implementation_ptr,
     QnnBackend* qnn_backend_ptr,
     QnnDevice* qnn_device_ptr,
     const QnnExecuTorchContextBinary& qnn_context_blob,
     const QnnExecuTorchOptions* options,
-    QnnDlcManager* qnn_dlc_manager) {
+    QnnDlcManager* qnn_dlc_manager,
+    Qnn_ContextHandle_t spill_fill_handle) {
   auto backend_params = std::make_unique<BackendConfigParameters>();
 
   switch (options->backend_options()->backend_type()) {
@@ -61,18 +61,27 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
         QNN_EXECUTORCH_LOG_INFO(
             "use_weight_sharing in htp_options: %d",
             htp_options->use_weight_sharing());
+        QNN_EXECUTORCH_LOG_INFO(
+            "use_graph_splitting in htp_options: %d",
+            htp_options->use_graph_splitting());
       }
       backend_params->qnn_backend_cache_ptr_ =
-          std::make_unique<HtpBackendCache>(qnn_context_blob);
+          std::make_unique<HtpBackendCache>(
+              qnn_context_blob,
+              system_implementation_ptr,
+              options->target_options() != nullptr);
 
       backend_params->qnn_context_ptr_ = std::make_unique<HtpContext>(
           implementation_ptr,
+          system_implementation_ptr,
           qnn_backend_ptr,
           qnn_device_ptr,
           backend_params->qnn_backend_cache_ptr_.get(),
           htp_options,
+          options->target_options(),
           qnn_dlc_manager,
-          get_option(options->profile_level(), QNN_RUNTIME_PROFILE_LEVEL));
+          get_option(options->profile_level(), QNN_RUNTIME_PROFILE_LEVEL),
+          spill_fill_handle);
 
       backend_params->qnn_graph_ptr_ = std::make_unique<HtpGraph>(
           implementation_ptr,
@@ -107,10 +116,12 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
       }
 
       backend_params->qnn_backend_cache_ptr_ =
-          std::make_unique<QnnBackendCache>(qnn_context_blob);
+          std::make_unique<QnnBackendCache>(
+              qnn_context_blob, system_implementation_ptr);
 
       backend_params->qnn_context_ptr_ = std::make_unique<GpuContext>(
           implementation_ptr,
+          system_implementation_ptr,
           qnn_backend_ptr,
           qnn_device_ptr,
           backend_params->qnn_backend_cache_ptr_.get(),
@@ -151,10 +162,12 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
             "target_env in lpai_options: %d", lpai_options->target_env());
       }
       backend_params->qnn_backend_cache_ptr_ =
-          std::make_unique<QnnBackendCache>(qnn_context_blob);
+          std::make_unique<QnnBackendCache>(
+              qnn_context_blob, system_implementation_ptr);
 
       backend_params->qnn_context_ptr_ = std::make_unique<LpaiContext>(
           implementation_ptr,
+          system_implementation_ptr,
           qnn_backend_ptr,
           qnn_device_ptr,
           backend_params->qnn_backend_cache_ptr_.get(),

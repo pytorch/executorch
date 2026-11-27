@@ -319,9 +319,9 @@ Error resize_reduction_out(
  */
 bool check_reduction_args(
     const Tensor& in,
-    const optional<ArrayRef<int64_t>>& dim_list,
+    const std::optional<ArrayRef<int64_t>>& dim_list,
     bool keepdim,
-    optional<ScalarType> dtype,
+    std::optional<ScalarType> dtype,
     Tensor& out) {
   if (dtype.has_value()) {
     ET_LOG_AND_RETURN_IF_FALSE(dtype.value() == out.scalar_type());
@@ -339,9 +339,9 @@ bool check_reduction_args(
  */
 bool check_reduction_args_single_dim(
     const Tensor& in,
-    optional<int64_t> dim,
+    std::optional<int64_t> dim,
     bool keepdim,
-    optional<ScalarType> dtype,
+    std::optional<ScalarType> dtype,
     Tensor& out,
     bool allow_empty_dim) {
   if (dtype.has_value()) {
@@ -369,9 +369,9 @@ bool check_reduction_args_single_dim(
 
 bool check_mean_dim_args(
     const Tensor& in,
-    optional<ArrayRef<int64_t>> dim_list,
+    std::optional<ArrayRef<int64_t>> dim_list,
     bool keepdim,
-    optional<ScalarType> dtype,
+    std::optional<ScalarType> dtype,
     Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(
       check_reduction_args(in, dim_list, keepdim, dtype, out));
@@ -397,12 +397,23 @@ bool check_amin_amax_args(
       check_reduction_args(in, dim_list, keepdim, {}, out));
   ET_LOG_AND_RETURN_IF_FALSE(in.scalar_type() == out.scalar_type());
 
+  // Matches ATen's zero_numel_check_dims: max and min have no identity, so an
+  // empty input can only be reduced over explicit, non-empty dims.
+  if (in.numel() == 0) {
+    ET_CHECK_OR_RETURN_FALSE(
+        dim_list.size() > 0,
+        "Expected reduction dim to be specified for input.numel() == 0");
+    for (const auto d : dim_list) {
+      ET_LOG_AND_RETURN_IF_FALSE(tensor_has_non_empty_dim(in, d));
+    }
+  }
+
   return true;
 }
 
 bool check_argmin_argmax_args(
     const Tensor& in,
-    optional<int64_t> dim,
+    std::optional<int64_t> dim,
     bool keepdim,
     Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(
@@ -432,7 +443,7 @@ bool check_min_max_args(
 
 bool check_prod_out_args(
     const Tensor& in,
-    optional<ScalarType> dtype,
+    std::optional<ScalarType> dtype,
     Tensor& out) {
   if (dtype.has_value()) {
     ET_LOG_AND_RETURN_IF_FALSE(dtype.value() == out.scalar_type());

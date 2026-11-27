@@ -21,6 +21,7 @@ using namespace ::testing;
 using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
+using executorch::runtime::TensorShapeDynamism;
 using executorch::runtime::testing::TensorFactory;
 using torch::executor::testing::SupportedFeatures;
 namespace etrt = executorch::runtime;
@@ -127,6 +128,160 @@ class OpAddOutKernelTest : public OperatorTest {
   test_add_complex_dtype<ctype, ScalarType::dtype>();
     ET_FORALL_COMPLEXH_TYPES(RUN_COMPLEX_TEST);
 #undef RUN_COMPLEX_TEST
+  }
+
+  template <typename CTYPE, ScalarType DTYPE>
+  void test_add_complex_broadcast() {
+    TensorFactory<DTYPE> tf;
+    // Bounded outputs are resized to the broadcast shape.
+    const auto make_out = [&tf](const std::vector<int32_t>& sizes) {
+      return tf.full(sizes, CTYPE(0, 0), TensorShapeDynamism::DYNAMIC_BOUND);
+    };
+
+    // Values from issue #24408, with zero-dimensional and single-element
+    // scalars on either side.
+    const Tensor x = tf.make({2}, {CTYPE(1, 1), CTYPE(2, -2)});
+    for (const auto& scalar_sizes :
+         {std::vector<int32_t>{}, std::vector<int32_t>{1}}) {
+      const Tensor s = tf.make(scalar_sizes, {CTYPE(2, 2)});
+      Tensor out = make_out({4});
+      EXPECT_TENSOR_EQ(
+          op_add_out(x, s, /*alpha=*/2, out),
+          tf.make({2}, {CTYPE(5, 5), CTYPE(6, 2)}));
+      out = make_out({4});
+      EXPECT_TENSOR_EQ(
+          op_add_out(s, x, /*alpha=*/2, out),
+          tf.make({2}, {CTYPE(4, 4), CTYPE(6, -2)}));
+      out = make_out({4});
+      EXPECT_TENSOR_EQ(
+          op_add_out(s, x, /*alpha=*/1, out),
+          tf.make({2}, {CTYPE(3, 3), CTYPE(4, 0)}));
+    }
+
+    // Both operands are scalars.
+    Tensor out = make_out({1});
+    EXPECT_TENSOR_EQ(
+        op_add_out(
+            tf.make({}, {CTYPE(5, 1)}),
+            tf.make({1}, {CTYPE(1, 1)}),
+            /*alpha=*/2,
+            out),
+        tf.make({1}, {CTYPE(7, 3)}));
+
+    // Both operands are broadcast.
+    out = make_out({2, 2});
+    EXPECT_TENSOR_EQ(
+        op_add_out(
+            tf.make({2, 1}, {CTYPE(5, 1), CTYPE(3, 5)}),
+            tf.make({1, 2}, {CTYPE(1, 1), CTYPE(1, -1)}),
+            /*alpha=*/2,
+            out),
+        tf.make({2, 2}, {CTYPE(7, 3), CTYPE(7, -1), CTYPE(5, 7), CTYPE(5, 3)}));
+
+    // Empty output.
+    const Tensor empty = tf.make({0}, {});
+    out = make_out({0});
+    EXPECT_TENSOR_EQ(
+        op_add_out(tf.make({}, {CTYPE(2, 2)}), empty, /*alpha=*/2, out), empty);
+
+    // Shapes for the optimized kBroadcast2dBy1d, kBroadcastLastDim, and
+    // kBroadcastNdByNd paths, with the operands in either order.
+    const Tensor a_2x3 = tf.make(
+        {2, 3},
+        {CTYPE(1, 2),
+         CTYPE(3, -1),
+         CTYPE(-2, 4),
+         CTYPE(5, 3),
+         CTYPE(-4, -3),
+         CTYPE(2, -5)});
+    const Tensor b_3 = tf.make({3}, {CTYPE(2, 1), CTYPE(-1, 3), CTYPE(3, -2)});
+    out = make_out({2, 3});
+    EXPECT_TENSOR_EQ(
+        op_add_out(a_2x3, b_3, /*alpha=*/2, out),
+        tf.make(
+            {2, 3},
+            {CTYPE(5, 4),
+             CTYPE(1, 5),
+             CTYPE(4, 0),
+             CTYPE(9, 5),
+             CTYPE(-6, 3),
+             CTYPE(8, -9)}));
+    out = make_out({2, 3});
+    EXPECT_TENSOR_EQ(
+        op_add_out(b_3, a_2x3, /*alpha=*/2, out),
+        tf.make(
+            {2, 3},
+            {CTYPE(4, 5),
+             CTYPE(5, 1),
+             CTYPE(-1, 6),
+             CTYPE(12, 7),
+             CTYPE(-9, -3),
+             CTYPE(7, -12)}));
+
+    const Tensor b_2x1 = tf.make({2, 1}, {CTYPE(3, 2), CTYPE(-2, 1)});
+    out = make_out({2, 3});
+    EXPECT_TENSOR_EQ(
+        op_add_out(a_2x3, b_2x1, /*alpha=*/2, out),
+        tf.make(
+            {2, 3},
+            {CTYPE(7, 6),
+             CTYPE(9, 3),
+             CTYPE(4, 8),
+             CTYPE(1, 5),
+             CTYPE(-8, -1),
+             CTYPE(-2, -3)}));
+    out = make_out({2, 3});
+    EXPECT_TENSOR_EQ(
+        op_add_out(b_2x1, a_2x3, /*alpha=*/2, out),
+        tf.make(
+            {2, 3},
+            {CTYPE(5, 6),
+             CTYPE(9, 0),
+             CTYPE(-1, 10),
+             CTYPE(8, 7),
+             CTYPE(-10, -5),
+             CTYPE(2, -9)}));
+
+    const Tensor a_2x3x4 = tf.make(
+        {2, 3, 4},
+        {CTYPE(1, 3),   CTYPE(2, -1),   CTYPE(3, 2),   CTYPE(4, -2),
+         CTYPE(5, -3),  CTYPE(6, 1),    CTYPE(7, -2),  CTYPE(8, 4),
+         CTYPE(9, 2),   CTYPE(10, -4),  CTYPE(11, 1),  CTYPE(12, 3),
+         CTYPE(-1, 3),  CTYPE(-2, -1),  CTYPE(-3, 2),  CTYPE(-4, -2),
+         CTYPE(-5, -3), CTYPE(-6, 1),   CTYPE(-7, -2), CTYPE(-8, 4),
+         CTYPE(-9, 2),  CTYPE(-10, -4), CTYPE(-11, 1), CTYPE(-12, 3)});
+    const Tensor b_2x1x4 = tf.make(
+        {2, 1, 4},
+        {CTYPE(2, -1),
+         CTYPE(-1, 2),
+         CTYPE(3, 1),
+         CTYPE(1, -3),
+         CTYPE(-2, 3),
+         CTYPE(1, 1),
+         CTYPE(-3, -2),
+         CTYPE(2, 2)});
+    out = make_out({2, 3, 4});
+    EXPECT_TENSOR_EQ(
+        op_add_out(a_2x3x4, b_2x1x4, /*alpha=*/2, out),
+        tf.make(
+            {2, 3, 4},
+            {CTYPE(5, 1),   CTYPE(0, 3),   CTYPE(9, 4),    CTYPE(6, -8),
+             CTYPE(9, -5),  CTYPE(4, 5),   CTYPE(13, 0),   CTYPE(10, -2),
+             CTYPE(13, 0),  CTYPE(8, 0),   CTYPE(17, 3),   CTYPE(14, -3),
+             CTYPE(-5, 9),  CTYPE(0, 1),   CTYPE(-9, -2),  CTYPE(0, 2),
+             CTYPE(-9, 3),  CTYPE(-4, 3),  CTYPE(-13, -6), CTYPE(-4, 8),
+             CTYPE(-13, 8), CTYPE(-8, -2), CTYPE(-17, -3), CTYPE(-8, 7)}));
+    out = make_out({2, 3, 4});
+    EXPECT_TENSOR_EQ(
+        op_add_out(b_2x1x4, a_2x3x4, /*alpha=*/2, out),
+        tf.make(
+            {2, 3, 4},
+            {CTYPE(4, 5),    CTYPE(3, 0),    CTYPE(9, 5),    CTYPE(9, -7),
+             CTYPE(12, -7),  CTYPE(11, 4),   CTYPE(17, -3),  CTYPE(17, 5),
+             CTYPE(20, 3),   CTYPE(19, -6),  CTYPE(25, 3),   CTYPE(25, 3),
+             CTYPE(-4, 9),   CTYPE(-3, -1),  CTYPE(-9, 2),   CTYPE(-6, -2),
+             CTYPE(-12, -3), CTYPE(-11, 3),  CTYPE(-17, -6), CTYPE(-14, 10),
+             CTYPE(-20, 7),  CTYPE(-19, -7), CTYPE(-25, 0),  CTYPE(-22, 8)}));
   }
 
   // Common testing for adding two floating point Tensors.
@@ -335,6 +490,26 @@ TEST_F(OpAddOutKernelTest, AllRealDtypesSupported) {
 
 TEST_F(OpAddOutKernelTest, ComplexTensors) {
   test_add_enumerate_complex_types();
+}
+
+TEST_F(OpAddOutKernelTest, ComplexBroadcast) {
+#define TEST_ENTRY(ctype, dtype) \
+  test_add_complex_broadcast<ctype, ScalarType::dtype>();
+  ET_FORALL_COMPLEXH_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
+}
+
+TEST_F(OpAddOutKernelTest, RealScalarLeftAdd) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Int> tf_int;
+  const Tensor b = tf.make({3}, {1, 2, 3});
+  const Tensor expected = tf.make({3}, {3, 5, 7});
+
+  Tensor out = tf.zeros({3});
+  EXPECT_TENSOR_EQ(op_add_out(tf.make({}, {1}), b, /*alpha=*/2, out), expected);
+  out = tf.zeros({3});
+  EXPECT_TENSOR_EQ(
+      op_add_out(tf_int.make({}, {1}), b, /*alpha=*/2, out), expected);
 }
 
 TEST_F(OpAddOutKernelTest, FloatTensors) {
@@ -602,6 +777,29 @@ TEST_F(OpAddOutKernelTest, BroadcastBToA) {
   // Check that it matches the expected output.
   Tensor expected = tf_a.make({1, 1, 3}, /*data=*/{4.2, 3.3, 8.5});
   EXPECT_TENSOR_CLOSE(op_add_out(a, b, 1.0, out), expected);
+}
+
+TEST_F(OpAddOutKernelTest, BroadcastLastDimRankMismatch) {
+  TensorFactory<ScalarType::Float> tf;
+  Tensor a = tf.make({3, 4}, /*data=*/{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+  Tensor b = tf.make({1, 3, 1}, /*data=*/{10, 20, 30});
+  Tensor out = tf.zeros({1, 3, 4});
+
+  Tensor expected = tf.make(
+      {1, 3, 4}, /*data=*/{11, 12, 13, 14, 25, 26, 27, 28, 39, 40, 41, 42});
+  EXPECT_TENSOR_CLOSE(op_add_out(a, b, 1.0, out), expected);
+  EXPECT_TENSOR_CLOSE(op_add_out(b, a, 1.0, out), expected);
+}
+
+TEST_F(OpAddOutKernelTest, Broadcast2dBy1dRankMismatch) {
+  TensorFactory<ScalarType::Float> tf;
+  Tensor a = tf.make({2, 3}, /*data=*/{1, 2, 3, 4, 5, 6});
+  Tensor b = tf.make({1, 1, 3}, /*data=*/{10, 20, 30});
+  Tensor out = tf.zeros({1, 2, 3});
+
+  Tensor expected = tf.make({1, 2, 3}, /*data=*/{11, 22, 33, 14, 25, 36});
+  EXPECT_TENSOR_CLOSE(op_add_out(a, b, 1.0, out), expected);
+  EXPECT_TENSOR_CLOSE(op_add_out(b, a, 1.0, out), expected);
 }
 
 //

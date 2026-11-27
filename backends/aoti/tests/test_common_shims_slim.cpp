@@ -143,6 +143,28 @@ void runGetSizesTest(slim_c10::DeviceType device_type) {
   delete tensor;
 }
 
+void runGetSizeTest(slim_c10::DeviceType device_type) {
+  std::vector<int64_t> sizes = {2, 3};
+  std::vector<int64_t> strides = calculateContiguousStrides(sizes);
+  slim_c10::Device device(device_type, 0);
+
+  Tensor* tensor = new Tensor(slim::empty_strided(
+      slim::makeArrayRef(sizes),
+      slim::makeArrayRef(strides),
+      slim_c10::ScalarType::Float,
+      device));
+
+  int64_t size = -1;
+  EXPECT_EQ(aoti_torch_get_size(tensor, 1, &size), Error::Ok);
+  EXPECT_EQ(size, 3);
+  EXPECT_EQ(aoti_torch_get_size(tensor, -2, &size), Error::Ok);
+  EXPECT_EQ(size, 2);
+  EXPECT_EQ(aoti_torch_get_size(tensor, 2, &size), Error::InvalidArgument);
+  EXPECT_EQ(aoti_torch_get_size(tensor, -3, &size), Error::InvalidArgument);
+
+  delete tensor;
+}
+
 void runGetStridesTest(slim_c10::DeviceType device_type) {
   std::vector<int64_t> sizes = {2, 3, 4};
   std::vector<int64_t> strides = calculateContiguousStrides(sizes);
@@ -289,6 +311,50 @@ void runGetDimTest(slim_c10::DeviceType device_type) {
   }
 }
 
+void runGetNumelTest(slim_c10::DeviceType device_type) {
+  slim_c10::Device device(device_type, 0);
+
+  // Test 0D tensor (scalar)
+  {
+    std::vector<int64_t> sizes = {};
+    std::vector<int64_t> strides = {};
+
+    Tensor* tensor = new Tensor(slim::empty_strided(
+        slim::makeArrayRef(sizes),
+        slim::makeArrayRef(strides),
+        slim_c10::ScalarType::Float,
+        device));
+
+    int64_t ret_numel = -1;
+    AOTITorchError error = aoti_torch_get_numel(tensor, &ret_numel);
+
+    EXPECT_EQ(error, Error::Ok);
+    EXPECT_EQ(ret_numel, 1);
+
+    delete tensor;
+  }
+
+  // Test 3D tensor
+  {
+    std::vector<int64_t> sizes = {2, 3, 4};
+    std::vector<int64_t> strides = calculateContiguousStrides(sizes);
+
+    Tensor* tensor = new Tensor(slim::empty_strided(
+        slim::makeArrayRef(sizes),
+        slim::makeArrayRef(strides),
+        slim_c10::ScalarType::Float,
+        device));
+
+    int64_t ret_numel = -1;
+    AOTITorchError error = aoti_torch_get_numel(tensor, &ret_numel);
+
+    EXPECT_EQ(error, Error::Ok);
+    EXPECT_EQ(ret_numel, 24);
+
+    delete tensor;
+  }
+}
+
 // ============================================================================
 // Storage & Device Property Tests
 // ============================================================================
@@ -388,6 +454,10 @@ TEST_F(CommonShimsSlimTest, GetSizes_CPU) {
   runGetSizesTest(slim_c10::DeviceType::CPU);
 }
 
+TEST_F(CommonShimsSlimTest, GetSize_CPU) {
+  runGetSizeTest(slim_c10::DeviceType::CPU);
+}
+
 TEST_F(CommonShimsSlimTest, GetStrides_CPU) {
   runGetStridesTest(slim_c10::DeviceType::CPU);
 }
@@ -398,6 +468,10 @@ TEST_F(CommonShimsSlimTest, GetDtype_CPU) {
 
 TEST_F(CommonShimsSlimTest, GetDim_CPU) {
   runGetDimTest(slim_c10::DeviceType::CPU);
+}
+
+TEST_F(CommonShimsSlimTest, GetNumel_CPU) {
+  runGetNumelTest(slim_c10::DeviceType::CPU);
 }
 
 TEST_F(CommonShimsSlimTest, GetStorageOffset_CPU) {
@@ -435,6 +509,13 @@ TEST_F(CommonShimsSlimTest, GetSizes_CUDA) {
   runGetSizesTest(slim_c10::DeviceType::CUDA);
 }
 
+TEST_F(CommonShimsSlimTest, GetSize_CUDA) {
+  if (!isCudaAvailable()) {
+    GTEST_SKIP() << "CUDA not available";
+  }
+  runGetSizeTest(slim_c10::DeviceType::CUDA);
+}
+
 TEST_F(CommonShimsSlimTest, GetStrides_CUDA) {
   if (!isCudaAvailable()) {
     GTEST_SKIP() << "CUDA not available";
@@ -454,6 +535,13 @@ TEST_F(CommonShimsSlimTest, GetDim_CUDA) {
     GTEST_SKIP() << "CUDA not available";
   }
   runGetDimTest(slim_c10::DeviceType::CUDA);
+}
+
+TEST_F(CommonShimsSlimTest, GetNumel_CUDA) {
+  if (!isCudaAvailable()) {
+    GTEST_SKIP() << "CUDA not available";
+  }
+  runGetNumelTest(slim_c10::DeviceType::CUDA);
 }
 
 TEST_F(CommonShimsSlimTest, GetStorageOffset_CUDA) {
@@ -495,13 +583,16 @@ TEST_F(CommonShimsSlimTest, NullTensorArgument) {
   int64_t* strides = nullptr;
   int32_t dtype = -1;
   int64_t dim = -1;
+  int64_t numel = -1;
 
   EXPECT_EQ(
       aoti_torch_get_data_ptr(nullptr, &data_ptr), Error::InvalidArgument);
   EXPECT_EQ(aoti_torch_get_sizes(nullptr, &sizes), Error::InvalidArgument);
+  EXPECT_EQ(aoti_torch_get_size(nullptr, 0, &numel), Error::InvalidArgument);
   EXPECT_EQ(aoti_torch_get_strides(nullptr, &strides), Error::InvalidArgument);
   EXPECT_EQ(aoti_torch_get_dtype(nullptr, &dtype), Error::InvalidArgument);
   EXPECT_EQ(aoti_torch_get_dim(nullptr, &dim), Error::InvalidArgument);
+  EXPECT_EQ(aoti_torch_get_numel(nullptr, &numel), Error::InvalidArgument);
 }
 
 TEST_F(CommonShimsSlimTest, NullReturnPointer) {
@@ -509,9 +600,11 @@ TEST_F(CommonShimsSlimTest, NullReturnPointer) {
 
   EXPECT_EQ(aoti_torch_get_data_ptr(tensor, nullptr), Error::InvalidArgument);
   EXPECT_EQ(aoti_torch_get_sizes(tensor, nullptr), Error::InvalidArgument);
+  EXPECT_EQ(aoti_torch_get_size(tensor, 0, nullptr), Error::InvalidArgument);
   EXPECT_EQ(aoti_torch_get_strides(tensor, nullptr), Error::InvalidArgument);
   EXPECT_EQ(aoti_torch_get_dtype(tensor, nullptr), Error::InvalidArgument);
   EXPECT_EQ(aoti_torch_get_dim(tensor, nullptr), Error::InvalidArgument);
+  EXPECT_EQ(aoti_torch_get_numel(tensor, nullptr), Error::InvalidArgument);
 }
 
 // ============================================================================
@@ -534,6 +627,7 @@ TEST_F(CommonShimsSlimTest, ScalarTensor) {
   int64_t* ret_sizes = nullptr;
   int64_t* ret_strides = nullptr;
   int64_t ret_dim = -1;
+  int64_t ret_numel = -1;
 
   EXPECT_EQ(aoti_torch_get_sizes(tensor, &ret_sizes), Error::Ok);
   EXPECT_NE(ret_sizes, nullptr);
@@ -543,6 +637,9 @@ TEST_F(CommonShimsSlimTest, ScalarTensor) {
 
   EXPECT_EQ(aoti_torch_get_dim(tensor, &ret_dim), Error::Ok);
   EXPECT_EQ(ret_dim, 0);
+
+  EXPECT_EQ(aoti_torch_get_numel(tensor, &ret_numel), Error::Ok);
+  EXPECT_EQ(ret_numel, 1);
 }
 
 TEST_F(CommonShimsSlimTest, LargeTensor) {
@@ -559,6 +656,7 @@ TEST_F(CommonShimsSlimTest, LargeTensor) {
 
   int64_t* ret_sizes = nullptr;
   int64_t* ret_strides = nullptr;
+  int64_t ret_numel = -1;
 
   EXPECT_EQ(aoti_torch_get_sizes(tensor, &ret_sizes), Error::Ok);
   EXPECT_EQ(ret_sizes[0], 100);
@@ -569,6 +667,9 @@ TEST_F(CommonShimsSlimTest, LargeTensor) {
   EXPECT_EQ(ret_strides[0], 60000); // 200 * 300
   EXPECT_EQ(ret_strides[1], 300); // 300
   EXPECT_EQ(ret_strides[2], 1);
+
+  EXPECT_EQ(aoti_torch_get_numel(tensor, &ret_numel), Error::Ok);
+  EXPECT_EQ(ret_numel, 6000000);
 }
 
 TEST_F(CommonShimsSlimTest, ConsistentPointerReturn) {
@@ -597,12 +698,32 @@ TEST_F(CommonShimsSlimTest, ConsistentPointerReturn) {
 TEST_F(CommonShimsSlimTest, DTypeConstants) {
   // Verify dtype constants match expected PyTorch ScalarType values
   EXPECT_EQ(aoti_torch_dtype_float32(), 6); // ScalarType::Float
+  EXPECT_EQ(aoti_torch_dtype_float64(), 7); // ScalarType::Double
   EXPECT_EQ(aoti_torch_dtype_bfloat16(), 15); // ScalarType::BFloat16
   EXPECT_EQ(aoti_torch_dtype_int64(), 4); // ScalarType::Long
   EXPECT_EQ(aoti_torch_dtype_int32(), 3); // ScalarType::Int
   EXPECT_EQ(aoti_torch_dtype_int16(), 2); // ScalarType::Short
   EXPECT_EQ(aoti_torch_dtype_int8(), 1); // ScalarType::Char
   EXPECT_EQ(aoti_torch_dtype_bool(), 11); // ScalarType::Bool
+}
+
+TEST_F(CommonShimsSlimTest, DTypeElementSize) {
+  EXPECT_EQ(aoti_torch_dtype_element_size(aoti_torch_dtype_float32()), 4);
+  EXPECT_EQ(aoti_torch_dtype_element_size(aoti_torch_dtype_float64()), 8);
+  EXPECT_EQ(aoti_torch_dtype_element_size(aoti_torch_dtype_bfloat16()), 2);
+  EXPECT_EQ(aoti_torch_dtype_element_size(aoti_torch_dtype_float16()), 2);
+  EXPECT_EQ(aoti_torch_dtype_element_size(aoti_torch_dtype_int64()), 8);
+  EXPECT_EQ(aoti_torch_dtype_element_size(aoti_torch_dtype_int32()), 4);
+  EXPECT_EQ(aoti_torch_dtype_element_size(aoti_torch_dtype_int16()), 2);
+  EXPECT_EQ(aoti_torch_dtype_element_size(aoti_torch_dtype_int8()), 1);
+  EXPECT_EQ(aoti_torch_dtype_element_size(aoti_torch_dtype_uint8()), 1);
+  EXPECT_EQ(aoti_torch_dtype_element_size(aoti_torch_dtype_bool()), 1);
+  EXPECT_EQ(aoti_torch_dtype_element_size(9), 0); // ComplexFloat
+  // Out of int8_t range: 262 and -250 would truncate to 6 (Float) without a
+  // range check.
+  EXPECT_EQ(aoti_torch_dtype_element_size(262), 0);
+  EXPECT_EQ(aoti_torch_dtype_element_size(-250), 0);
+  EXPECT_EQ(aoti_torch_dtype_element_size(-1), 0); // Undefined
 }
 
 // ============================================================================

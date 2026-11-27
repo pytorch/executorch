@@ -20,24 +20,52 @@
 #include <functional>
 
 #ifndef VULKAN_QUERY_POOL_SIZE
-#define VULKAN_QUERY_POOL_SIZE 4096u
+#define VULKAN_QUERY_POOL_SIZE 131072u
 #endif
 
 namespace vkcompute {
 namespace vkapi {
 
 struct ShaderMetadata final {
-  const uint32_t global_workgroup_size[3];
-  const uint32_t local_workgroup_size[3];
+  uint32_t gwg[3];
+  uint32_t lwg[3];
 };
+
+// Each profiled dispatch records three bottom-of-pipe timestamps. Each marks
+// when all previously recorded GPU work had finished:
+//   previous_work_finish: before the dispatch's pipeline barrier.
+//   barrier_finish: after the barrier, before the dispatch. Whether this waits
+//     for the barrier's cache maintenance is driver-dependent.
+//   shader_exec_finish: after the dispatch.
+// The barrier interval is the cost of making earlier writes visible; the shader
+// execution interval is the dispatch itself.
 
 struct ShaderResult final {
   const std::string kernel_name;
   const uint32_t dispatch_id;
-  const uint64_t start_time_ns;
-  const uint64_t end_time_ns;
+  const uint64_t previous_work_finish_ns;
+  const uint64_t barrier_finish_ns;
+  const uint64_t shader_exec_finish_ns;
   const ShaderMetadata metadata;
 };
+
+struct ShaderTimestamp final {
+  std::string kernel_name;
+  uint64_t previous_work_finish_ticks;
+  uint64_t barrier_finish_ticks;
+  uint64_t shader_exec_finish_ticks;
+  ShaderMetadata metadata;
+};
+
+// Previous work finish, barrier finish, and shader execution finish.
+constexpr uint32_t kQueriesPerDispatch = 3u;
+
+// Counts entries whose timestamps are out of order: within an entry, or between
+// an entry's shader execution finish and the next entry's previous work finish.
+// Every timestamp is written at the bottom of the pipe, so valid results are in
+// order even when dispatches overlap; a violation means a query was stale or
+// never written.
+size_t count_order_violations(const std::vector<ShaderTimestamp>& timestamps);
 
 struct QueryPoolConfig final {
   uint32_t max_query_count = VULKAN_QUERY_POOL_SIZE;
@@ -50,17 +78,20 @@ struct ShaderDuration final {
   // Execution Properties
   uint32_t dispatch_id;
   std::string kernel_name;
-  VkExtent3D global_workgroup_size;
-  VkExtent3D local_workgroup_size;
+  GlobalWorkGrid gwg;
+  LocalWorkGroup lwg;
 
   // Query indexes
-  uint32_t start_query_idx;
-  uint32_t end_query_idx;
+  uint32_t previous_work_finish_query_idx;
+  uint32_t barrier_finish_query_idx;
+  uint32_t shader_exec_finish_query_idx;
 
   // Timings
-  uint64_t start_time_ns;
-  uint64_t end_time_ns;
-  uint64_t execution_duration_ns;
+  uint64_t previous_work_finish_ns;
+  uint64_t barrier_finish_ns;
+  uint64_t shader_exec_finish_ns;
+  uint64_t barrier_duration_ns;
+  uint64_t shader_exec_duration_ns;
 };
 
 class QueryPool final {
@@ -75,6 +106,7 @@ class QueryPool final {
   // Internal State
   uint32_t num_queries_;
   std::vector<ShaderDuration> shader_durations_;
+  size_t num_order_violations_;
 
   std::mutex mutex_;
 
@@ -94,24 +126,55 @@ class QueryPool final {
  private:
   size_t write_timestamp(const CommandBuffer&);
 
+  // Returns true if any entry is missing its previous work finish or shader
+  // execution finish query.
+  bool has_incomplete_entries() const;
+
+  // Converts raw query results into per-dispatch timestamps. A dispatch without
+  // a barrier finish timestamp reports its previous work finish instead.
+  std::vector<ShaderTimestamp> to_shader_timestamps(
+      const std::vector<uint64_t>& ticks) const;
+
  public:
-  void reset_querypool(const CommandBuffer&);
+  // Starts a new capture by clearing recorded entries. Each dispatch resets the
+  // queries it uses when it records them.
+  void reset_querypool();
+
+  // Records a reset of every query in the pool.
+  void reset_all(const CommandBuffer&);
 
   void reset_state();
 
-  void shader_profile_begin(
+  // Opens a profiling entry for a dispatch and records its previous work
+  // finish timestamp.
+  void record_previous_work_finish(
       const CommandBuffer&,
       const uint32_t,
       const std::string&,
-      const VkExtent3D,
-      const VkExtent3D);
+      const GlobalWorkGrid&,
+      const LocalWorkGroup&);
 
-  void shader_profile_end(const CommandBuffer&);
+  // Records the open entry's barrier finish timestamp. No-op without an open
+  // entry.
+  void record_barrier_finish(const CommandBuffer&);
 
+  // Records the open entry's shader execution finish timestamp and closes it.
+  // No-op without an open entry.
+  void record_shader_exec_finish(const CommandBuffer&);
+
+  // Converts query results into per-entry timings. Leaves all timings at zero
+  // if any entry is incomplete.
   void extract_results();
 
   std::vector<ShaderResult> get_shader_timestamp_data();
+  // Read after fence completion; unfinished or unavailable captures return no
+  // samples and never wait for GPU work.
+  std::vector<ShaderTimestamp> get_shader_timestamp_ticks();
   void print_results(const bool tsv_format = false);
+  // Order violations found by the last extract_results().
+  size_t num_order_violations() const {
+    return num_order_violations_;
+  }
   unsigned long get_total_shader_ns(std::string kernel_name);
   unsigned long get_mean_shader_ns(std::string kernel_name);
 

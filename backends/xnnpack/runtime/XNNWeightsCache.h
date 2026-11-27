@@ -10,10 +10,15 @@
 
 #include <xnnpack.h>
 
+#include <executorch/backends/xnnpack/runtime/XNNPACKBackend.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/executor/pte_data_map.h>
+#include <array>
+#include <atomic>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -30,17 +35,45 @@ using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Result;
 
 struct PackedDataMeta {
-  size_t offset;
+  size_t offset{};
+  size_t data_size{0};
   // Count number of xnn_runtime_t this packed data is used in
-  size_t ref_count;
+  size_t ref_count{};
   // true if this packed data was inserted or looked up for the
   // current runtime being created
-  bool in_current_runtime;
+  bool in_current_runtime{};
+  // True if this entry's bytes are persisted in the on-disk cache file
+  // (either originally loaded via load_packed_cache, or freshly packed
+  // and then save_packed_index-ed). delete_packed_data preserves these
+  // entries so the next init reuses the saved file instead of re-packing.
+  bool from_load{false};
+  // Per-ukernel seed from xnn_weights_cache_look_up_key.seed. XNNPACK
+  // guarantees this is consistent across runs of the same ukernel; when
+  // XNNPACK upgrades and a ukernel implementation changes, the seed
+  // changes. look_up rejects entries whose stored seed doesn't match
+  // the caller's seed so that stale cache entries don't deliver wrongly
+  // packed weights to a newer ukernel.
+  uint32_t seed{0};
 };
+
+// Telemetry types live in XNNPACKBackend.h — hosts read them without pulling
+// in xnnpack.h through this header.
+using xnnpack::PackedCacheFailure;
+using xnnpack::PackedCacheHeapReason;
+using xnnpack::PackedCacheState;
+using xnnpack::PackedCacheStats;
 
 class XNNWeightsCache {
  public:
   XNNWeightsCache();
+  ~XNNWeightsCache();
+
+  // Owns OS resources (file descriptor, mmap regions). Non-copyable,
+  // non-movable. cppcoreguidelines-special-member-functions.
+  XNNWeightsCache(const XNNWeightsCache&) = delete;
+  XNNWeightsCache& operator=(const XNNWeightsCache&) = delete;
+  XNNWeightsCache(XNNWeightsCache&&) = delete;
+  XNNWeightsCache& operator=(XNNWeightsCache&&) = delete;
 
   /**
    * Initializes the XNNWeightsCache for the next xnn_create_runtime
@@ -58,6 +91,26 @@ class XNNWeightsCache {
    */
   Result<std::vector<std::string>> finalize_for_runtime();
 
+  /**
+   * Transfers ownership of the unpacked buffers loaded since `first_index`
+   * out of this cache. finalize_for_runtime() will not free them.
+   *
+   * For values XNNPACK does not pack (PReLU slopes, for example) the subgraph
+   * keeps a pointer into the unpacked memory for the life of the runtime, so
+   * something has to keep those buffers alive past finalize_for_runtime().
+   * Callers pair this with get_num_unpacked_data() taken before the value was
+   * defined, which is how the non-weights-cache path in XNNCompiler decides
+   * what to retain.
+   *
+   * @param[in] first_index Index into the unpacked buffer list, from
+   *     get_num_unpacked_data() before the value was defined.
+   * @param[out] out Receives the buffers. The caller owns them and must keep
+   *     them alive for at least as long as the runtime.
+   */
+  void take_unpacked_data_from(
+      size_t first_index,
+      std::vector<FreeableBuffer>& out);
+
   // Taken from XNN_ALLOCATION_ALIGNMENT in xnnpack/common.h
   static const size_t kPackedAllocationAlignment = 64;
 
@@ -73,29 +126,31 @@ class XNNWeightsCache {
    */
   inline size_t get_num_unpacked_data() {
     return unpacked_data_.size();
-  };
+  }
 
   /**
    * Returns the names of all unpacked data
    */
   inline std::vector<std::string> get_unpacked_data_names() {
     std::vector<std::string> names;
+    names.reserve(unpacked_data_to_name_.size());
     for (const auto& pair : unpacked_data_to_name_) {
       names.push_back(pair.second);
     }
     return names;
-  };
+  }
 
   /**
    * Returns the packed data names
    */
   inline std::vector<std::string> get_packed_data_names() {
     std::vector<std::string> names;
+    names.reserve(name_to_packed_data_metadata_.size());
     for (const auto& pair : name_to_packed_data_metadata_) {
       names.push_back(pair.first);
     }
     return names;
-  };
+  }
 
   /**
    * Loads unpacked named data from the NamedDataMap into this XNNWeightsCache
@@ -115,7 +170,83 @@ class XNNWeightsCache {
    */
   Error delete_packed_data(const std::vector<std::string>& packed_names);
 
+  /**
+   * Set the file-backed storage path. When set, reserve_space()
+   * allocates from a MAP_SHARED file instead of heap, and
+   * finalize_for_runtime() msyncs pages.
+   *
+   * Call once, before any other method, and never again. Two
+   * instances sharing the same path will corrupt each other on
+   * O_TRUNC (SIGBUS); the manager prevents this by per-path dedup.
+   */
+  void set_packed_cache_path(const std::string& path);
+
+  /** Save packed weight index so subsequent loads skip packing. */
+  Error save_packed_index();
+
+  /**
+   * Per-instance mutex. The cache has no internal synchronization;
+   * callers must hold this around every method call and every
+   * XNNPACK callback that touches the cache during xnn_create_runtime.
+   */
+  std::mutex& mutex() noexcept {
+    return instance_mutex_;
+  }
+
+  /**
+   * Outcome of the file-backed path for this instance. HeapFallback is
+   * sticky: once an init has been served from heap the instance keeps
+   * reporting it, because that is the memory the process is actually
+   * carrying for the rest of its life.
+   */
+  PackedCacheStats stats() const noexcept;
+
  private:
+  /** Record a fallback. Overwrites any previous failure for this instance. */
+  void record_cache_failure(PackedCacheFailure failure, int err) noexcept;
+  /** Note a working file-backed path; never downgrades a recorded fallback. */
+  void mark_cache_file_backed() noexcept;
+  /** Attribute `n` packed bytes to heap under `reason`. */
+  void record_heap_alloc(size_t n, PackedCacheHeapReason reason) noexcept;
+  /** Attribute `n` packed bytes to the mmap'd file. */
+  void record_mapped_alloc(size_t n) noexcept;
+
+  // Telemetry counters. Written from the XNNPACK callbacks (which run under
+  // the caller-held instance mutex) and read by hosts through
+  // XNNWeightsCacheManager::aggregate_stats() with no lock at all — atomics,
+  // not the mutex, are what make that read safe. The mutex is held across the
+  // whole of xnn_create_runtime, so a telemetry read that waited on it could
+  // stall an inference thread for the length of a model compile.
+  //
+  // relaxed ordering throughout: these are independent accumulators, and a
+  // reader that observes one field slightly ahead of another still gets a
+  // usable picture. There is no invariant spanning them.
+  //
+  // Cumulative for the instance's lifetime — delete_packed_data and
+  // full_unload do not decrement. Decrementing would need a ptr -> reason map
+  // kept alive purely for telemetry, and hosts sample right after a load or a
+  // generate, before anything is released, so the two agree in practice.
+  // Read them as "bytes this cache ever packed", not current residency.
+  std::atomic<int32_t> state_{static_cast<int32_t>(PackedCacheState::Disabled)};
+  std::atomic<int32_t> failure_{static_cast<int32_t>(PackedCacheFailure::None)};
+  std::atomic<int32_t> last_errno_{0};
+  std::atomic<int64_t> file_bytes_{0};
+  std::atomic<int64_t> mapped_bytes_{0};
+  std::array<
+      std::atomic<int64_t>,
+      static_cast<std::size_t>(PackedCacheHeapReason::Count)>
+      heap_bytes_by_reason_{};
+
+  static constexpr uint32_t kCacheMagic = 0x58505743; // "XPWC"
+  // Bump when the on-disk layout (footer or per-entry record) changes.
+  // v2: per-entry seed added — old v1 files don't carry seeds and would
+  // load with seed=0, mismatching every fresh look_up with a non-zero
+  // seed, causing a stampede of re-packs. Reject v1 outright.
+  static constexpr uint32_t kCacheVersion = 2;
+  bool load_packed_cache();
+  void reset_for_fresh_write();
+  void release_entry(void* packed_data_ptr);
+  void full_unload();
   // Runtime Allocator used to reserve memory for packed weights
   MemoryAllocator* runtime_allocator_;
 
@@ -128,14 +259,73 @@ class XNNWeightsCache {
   std::unordered_map<std::string, PackedDataMeta> name_to_packed_data_metadata_;
   // Vector holding list of pointers to the packed data
   std::vector<void*> packed_data_ptrs_;
-  // vector holding list of strings which are containers for packed_data_ptrs
-  std::unordered_map<void*, std::string> packed_pointer_to_container_;
+  // Owns heap allocations backing packed_data_ptrs_. XNNPACK initializes the
+  // allocation before packing, so these buffers do not need value
+  // initialization.
+  std::unordered_map<void*, std::unique_ptr<char[]>>
+      packed_pointer_to_container_;
   // Vector hodling list of unpacked freeable buffers
   std::vector<FreeableBuffer> unpacked_data_;
   // xnnpack's weight cache provider
   xnn_weights_cache_provider weights_cache_;
   // whether or not the weight cache is finalized
   bool is_finalized_;
+
+  // File-backed mmap for packed weights. When packed_cache_path_ is set,
+  // reserve_space() allocates from this mmap'd file instead of heap.
+  // After msync, pages become clean file-backed → 0 phys_footprint.
+  //
+  std::string packed_cache_path_;
+  int packed_file_fd_{-1};
+  size_t packed_file_used_{0};
+  // Tracks file offset of each file-backed allocation. Used by
+  // save_packed_index() to serialize (name → offset, size) index.
+  std::unordered_map<void*, size_t> ptr_to_file_offset_;
+  struct MmapRegion {
+    void* addr;
+    size_t size;
+  };
+  std::vector<MmapRegion> mmap_regions_;
+  size_t mmap_regions_synced_{0};
+  // Number of regions present at the time of the most recent successful
+  // save_packed_index. Used to skip no-op saves: identical bytes would
+  // still bump mtime via pwrite/fsync, making the cache file appear
+  // modified on every load when nothing has actually changed. A successful
+  // save closes packed_file_fd_ before returning, so the no-op check is
+  // unreachable except after a load_packed_cache (or fresh-write path)
+  // re-opens the fd — both paths populate at least one mmap region, so
+  // the "zero regions saved" edge case never lives long enough to matter.
+  size_t mmap_regions_at_last_save_{0};
+  // For file-backed packed allocations, maps the returned ptr to its index
+  // in mmap_regions_, so delete_packed_data() can munmap when ref_count==0.
+  std::unordered_map<void*, size_t> file_ptr_to_region_index_;
+
+  // Set by look_up when the kernel pointer is not in unpacked_data_to_name_
+  // (i.e., the constant is unnamed / embedded in the delegate blob). Checked
+  // by reserve_space to route unnamed constants to heap instead of the
+  // file-backed mmap — unnamed entries can never be found by name on reload,
+  // so persisting them to disk wastes space and triggers spurious saves.
+  bool last_lookup_unnamed_{false};
+
+  // True after load_packed_cache succeeds. When set, reserve_space routes
+  // to heap — all named entries are already in the file, so any new
+  // reserve_space is a re-pack (e.g., XNNPACK internal re-pack for a
+  // different runtime context) that doesn't need to persist.
+  bool loaded_from_disk_{false};
+
+  // Set by look_up when a named entry is present but its cached seed does not
+  // match the current ukernel's seed (i.e. an XNNPACK upgrade invalidated the
+  // loaded packing). Unlike an incidental re-pack of an already-valid loaded
+  // cache, this stale entry MUST be re-packed to the file and persisted;
+  // otherwise every launch re-packs it into heap (anonymous dirty memory that
+  // can OOM/jetsam the app in the background) and the cache never converges.
+  // Consumed (and cleared) by reserve_space so the file-backed path is taken
+  // only by the re-pack that directly follows the seed-mismatch look_up.
+  bool last_lookup_seed_mismatch_{false};
+
+  // See mutex() for the locking contract — caller-owned, no internal
+  // use within this class.
+  std::mutex instance_mutex_;
 
   // Function pointers to override XNNPACK's default xnn_weights_cache_provider
   // functions.
@@ -144,6 +334,10 @@ class XNNWeightsCache {
       const xnn_weights_cache_look_up_key* cache_key);
 
   static void* reserve_space(XNNWeightsCache* context, size_t n);
+
+  // Heap-backed allocation path. Used when the mmap path is not configured
+  // or has failed for this allocation.
+  void* reserve_space_heap(size_t n);
 
   static size_t look_up_or_insert(
       XNNWeightsCache* context,

@@ -11,13 +11,13 @@ from multiprocessing.connection import Client
 
 import numpy as np
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
-    get_capture_program_passes,
+    get_qnn_pass_manager_cls,
 )
 from executorch.backends.qualcomm.export_utils import (
     build_executorch_binary,
+    Device,
     QnnConfig,
     setup_common_args_and_variables,
-    SimpleADB,
 )
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import (
@@ -57,7 +57,7 @@ def main(args):
 
     pte_filename = "dino_v2"
     instance = get_instance()
-    passes_job = get_capture_program_passes()
+    passes_job = get_qnn_pass_manager_cls().get_capture_program_passes()
     quant_dtype = {
         QnnExecuTorchBackendType.kGpuBackend: None,
         QnnExecuTorchBackendType.kHtpBackend: QuantDtype.use_8a8w,
@@ -71,19 +71,19 @@ def main(args):
         passes_job=passes_job,
     )
 
-    adb = SimpleADB(
+    device = Device(
         qnn_config=qnn_config,
         pte_path=f"{args.artifact}/{pte_filename}.pte",
         workspace=f"/data/local/tmp/executorch/{pte_filename}",
     )
-    adb.push(inputs=inputs)
-    adb.execute()
+    device.push(inputs=inputs)
+    device.execute()
 
     # collect output data
     output_data_folder = f"{args.artifact}/outputs"
     make_output_dir(output_data_folder)
 
-    adb.pull(host_output_path=args.artifact)
+    device.pull(host_output_path=args.artifact)
 
     # top-k analysis
     predictions = []

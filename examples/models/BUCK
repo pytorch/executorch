@@ -1,4 +1,4 @@
-load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 
 oncall("executorch")
@@ -19,6 +19,7 @@ fbcode_target(_kind = python_library,
         "//executorch/examples/models/inception_v4:ic4_model",  # @manual
         "//executorch/examples/models/llama:llama2_model",  # @manual
         "//executorch/examples/models/mobilebert:mobilebert_model",  # @manual
+        "//executorch/examples/models/mlperf_tiny:models",  # @manual
         "//executorch/examples/models/mobilenet_v2:mv2_model",  # @manual
         "//executorch/examples/models/mobilenet_v3:mv3_model",  # @manual
         "//executorch/examples/models/resnet:resnet_model",  # @manual
@@ -33,6 +34,7 @@ fbcode_target(_kind = python_library,
         "//executorch/examples/models/phi_4_mini:phi_4_mini",  # @manual
         "//executorch/examples/models/smollm2:smollm2",  # @manual
         "//executorch/examples/models/smollm3:smollm3",  # @manual
+        "//executorch/examples/models/smolvlm:smolvlm",  # @manual
     ],
 )
 

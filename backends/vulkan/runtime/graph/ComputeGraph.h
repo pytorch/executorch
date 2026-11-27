@@ -26,6 +26,8 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/ExecuteNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/PrepackNode.h>
 
+#include <executorch/backends/vulkan/runtime/vk_api/DispatchGrid.h>
+
 #ifdef ET_EVENT_TRACER_ENABLED
 std::string& set_and_get_current_operator_json(const std::string& json);
 size_t get_current_operator_count(const bool increment = false);
@@ -184,6 +186,12 @@ class ComputeGraph final {
 
   std::vector<Value> values_;
   std::vector<api::ParamsBuffer> param_ubos_;
+  // Buffers that back tensors and are owned by the graph, e.g. imported from
+  // an AHardwareBuffer.
+  std::vector<vkapi::VulkanBuffer> external_buffers_;
+  // Whether a tensor or staging buffer wraps memory that is also accessed
+  // outside the graph.
+  bool has_external_memory_ = false;
 
   std::vector<std::unique_ptr<PrepackNode>> prepack_nodes_;
   std::vector<std::unique_ptr<ExecuteNode>> execute_nodes_;
@@ -202,8 +210,8 @@ class ComputeGraph final {
   // List of command buffers deferred for submission
   std::vector<vkapi::CommandBuffer> deferred_cmd_list_;
 
-  // Set to track which ValueRefs were updated during inference
-  std::unordered_set<ValueRef> updated_values_;
+  std::vector<uint32_t> value_update_generations_;
+  uint32_t current_update_generation_ = 1;
 
   // Cache to prevent duplicate prepacking of the same weight tensor with the
   // same kernel. Key is (inputValueRef, kernel_name).
@@ -274,6 +282,10 @@ class ComputeGraph final {
 
   inline GraphConfig& graphconfig() {
     return config_;
+  }
+
+  inline bool has_external_memory() const {
+    return has_external_memory_;
   }
 
   // Check if the ComputeGraph has a value at the specified index
@@ -369,6 +381,12 @@ class ComputeGraph final {
 
   vkapi::ScalarType dtype_of(const ValueRef idx) const;
 
+  inline vkapi::ScalarType original_dtype_of(const ValueRef idx) const {
+    const Value& value = values_.at(idx);
+    return value.isTensor() ? value.toConstTensor().original_dtype()
+                            : dtype_of(idx);
+  }
+
   vkapi::ScalarType get_staging_dtype_for(const ValueRef idx) const;
 
   inline const utils::ivec3& logical_limits_of(const ValueRef idx) const {
@@ -432,9 +450,9 @@ class ComputeGraph final {
   bool is_standard_channels_packed_texture_tensor(const ValueRef idx) const;
 
   /*
-   * Checks that the value at `idx` is either a 2D tensor, or if the tensor has
-   * more than 2 dims, the outermost dims have size of 1, i.e. can be squeezed
-   * to be a 2D tensor.
+   * Checks that the value at `idx` is a 1D tensor (a single row), a 2D tensor,
+   * or a tensor whose outermost dims have size of 1, i.e. can be squeezed to
+   * be a 2D tensor.
    */
   bool is_2d_matrix(const ValueRef idx) const;
 
@@ -452,6 +470,19 @@ class ComputeGraph final {
    * buffer
    */
   bool is_vectorizable_width_packed_tensor(const ValueRef idx) const;
+
+  /*
+   * Checks that texture reads outside the logical limits of the tensor at
+   * `idx` return zero, i.e. that the following is true:
+   * 1. The value at `idx` is a tensor with texture storage
+   * 2. The image extents of the tensor match its logical limits
+   * 3. The image sampler uses nearest filtering and a transparent black border
+   */
+  bool samples_zero_outside_tensor(const ValueRef idx) const;
+
+  inline bool val_has_external_storage(const ValueRef idx) const {
+    return values_.at(idx).toConstTensor().has_external_storage();
+  }
 
   inline bool val_is_view_of(const ValueRef maybe_view, const ValueRef base)
       const {
@@ -686,6 +717,14 @@ class ComputeGraph final {
     return context_->adapter_ptr()->device_type() == vkapi::DeviceType::MALI;
   }
 
+  // AMD-RDNA GPUs (Samsung Xclipse, AMD Radeon). There is no DeviceType for
+  // AMD, so this matches on the driver-reported device name; both casings are
+  // checked since the string casing varies by driver.
+  inline bool device_is_amd() {
+    return device_name_contains("Xclipse") || device_name_contains("xclipse") ||
+        device_name_contains("Radeon") || device_name_contains("radeon");
+  }
+
   const std::string& device_name() {
     return context()->adapter_ptr()->device_name();
   }
@@ -702,6 +741,7 @@ class ComputeGraph final {
 
  private:
   void check_no_active_value_ptrs();
+  bool was_value_list_updated(const ValueRef idx) const noexcept;
 
  public:
   /*
@@ -772,6 +812,53 @@ class ComputeGraph final {
   ValueRef add_tensor(const vkapi::VulkanImage& image);
 
   /*
+   * Wrap an externally owned image as a tensor with the given logical sizes.
+   * Unlike add_tensor(image), the shape is taken from the caller instead of
+   * being reconstructed from the image's extents.
+   */
+  ValueRef add_tensor(
+      const std::vector<int64_t>& sizes,
+      const vkapi::ScalarType dtype,
+      const utils::GPUMemoryLayout memory_layout,
+      const vkapi::VulkanImage& image);
+
+  /*
+   * Wrap an externally owned buffer as a tensor with the given logical sizes.
+   * The buffer must be large enough for them.
+   */
+  ValueRef add_tensor(
+      const std::vector<int64_t>& sizes,
+      const vkapi::ScalarType dtype,
+      const utils::GPUMemoryLayout memory_layout,
+      const vkapi::VulkanBuffer& buffer);
+
+  /*
+   * Wrap an image that something else created on the graph's device, and
+   * destroys, as a texture3d tensor. The image stays in
+   * VK_IMAGE_LAYOUT_GENERAL. Throws if its format or extents do not match the
+   * tensor.
+   */
+  ValueRef add_external_vkimage_backed_tensor(
+      const std::vector<int64_t>& sizes,
+      const vkapi::ScalarType dtype,
+      const utils::GPUMemoryLayout memory_layout,
+      const VkImage image,
+      const VkImageView view,
+      const VkFormat format,
+      const VkExtent3D extents);
+
+  /*
+   * Wrap a buffer as a buffer tensor. The graph takes ownership of `buffer`,
+   * which may alias a VkBuffer owned elsewhere or own imported memory. Throws
+   * if it is too small for the tensor.
+   */
+  ValueRef add_external_vkbuffer_backed_tensor(
+      const std::vector<int64_t>& sizes,
+      const vkapi::ScalarType dtype,
+      const utils::GPUMemoryLayout memory_layout,
+      vkapi::VulkanBuffer&& buffer);
+
+  /*
    * Add a `api::vTensor` value to the graph with the properties of `vref`.
    */
   ValueRef add_tensor_like(
@@ -836,6 +923,15 @@ class ComputeGraph final {
       const size_t numel,
       const vkapi::CopyDirection direction);
 
+  /*
+   * Add a staging buffer over external memory, which the graph takes ownership
+   * of. Throws if it cannot hold `numel` elements.
+   */
+  ValueRef add_staging(
+      const vkapi::ScalarType dtype,
+      const size_t numel,
+      vkapi::VulkanBuffer&& external_buffer);
+
   ValueRef add_none();
 
   template <typename T>
@@ -865,11 +961,29 @@ class ComputeGraph final {
 
   ValueRef set_input_tensor(const ValueRef idx, const bool use_staging = true);
 
+  /*
+   * Stages the input in external memory, e.g. a buffer that an app writes,
+   * which the graph takes ownership of.
+   */
+  ValueRef set_input_tensor(
+      const ValueRef idx,
+      vkapi::ScalarType staging_dtype,
+      vkapi::VulkanBuffer&& external_staging);
+
   ValueRef set_output_tensor(
       const ValueRef idx,
       vkapi::ScalarType staging_dtype);
 
   ValueRef set_output_tensor(const ValueRef idx, const bool use_staging = true);
+
+  /*
+   * Stages the output in external memory, e.g. a buffer that an app reads,
+   * which the graph takes ownership of.
+   */
+  ValueRef set_output_tensor(
+      const ValueRef idx,
+      vkapi::ScalarType staging_dtype,
+      vkapi::VulkanBuffer&& external_staging);
 
   ValueRef set_output_value(const ValueRef idx);
 
@@ -981,7 +1095,7 @@ class ComputeGraph final {
 
   void register_pipeline_to_create(
       const vkapi::ShaderInfo& shader_info,
-      const utils::WorkgroupSize& local_workgroup_size,
+      const LocalWorkGroup& lwg,
       const vkapi::SpecVarList& spec_vars,
       const std::vector<PushConstantDataInfo>& push_constants);
 
@@ -994,37 +1108,39 @@ class ComputeGraph final {
   //
 
   /*
-   * Create a global workgroup size for a given `api::vTensor` value assuming
-   * that every shader invocation calculates one texel element of the output
-   * tensor.
+   * Create a global invocation size for a given `api::vTensor` value assuming
+   * that every shader invocation calculates one element of the output tensor.
    *
    * For tensors that use texture storage, the image extents of the
    * `api::vTensor` will be used to set the global workgroup size.
    *
-   * For tensor that use buffer storage, the number of texels in the texel
-   * buffer will be used to set the x component of the global workgroup size.
-   * All other components will be set to 1 (i.e. {ntexels, 1, 1} will be
-   * returned).
+   * Ordinary buffers use one invocation per physical scalar. Packed int8
+   * tensors retain logical-element dispatch because their kernels map groups
+   * of four logical bytes to each int32 storage element. Buffer dispatch uses
+   * linear intent; oversized X dimensions wrap across X and Y according to
+   * device workgroup-count limits.
    */
-  utils::uvec3 create_global_wg_size(const ValueRef idx);
+  GlobalWorkGrid create_gwg(const ValueRef idx);
+
+  GlobalWorkGrid create_linear_gwg(const uint64_t numel);
 
   /*
-   * Suggest a local workgroup size for a given global workgroup size.
+   * Suggest a local workgroup size for a given global invocation size.
    *
    * The local workgroup size will be formed to try and minimize the number of
    * inactive invocations.
    *
-   * Currently, the local workgroup size is hard-coded to contain a total of 64
-   * shader invocations. In the future, this value can be configured.
+   * Linear dispatches return their binding hint. Other dispatches use a shape
+   * heuristic targeting the adapter's recommended thread count.
    */
-  utils::uvec3 create_local_wg_size(const utils::uvec3 global_wg_size);
+  LocalWorkGroup create_lwg(const GlobalWorkGrid& gwg);
 
   /*
    * Convenience function to suggest a local workgroup size for a given
    * `api::vTensor` value, assuming that every shader invocation calculates one
    * texel element of the output tensor.
    */
-  utils::uvec3 create_local_wg_size(const ValueRef idx);
+  LocalWorkGroup create_lwg(const ValueRef idx);
 
   void bind_tensor_to_descriptor_set(
       const ValueRef ref,
@@ -1108,12 +1224,6 @@ class ComputeGraph final {
   void prepack();
 
   //
-  // Optional Graph Execution
-  //
-
-  void optional_warmup_execute();
-
-  //
   // Graph Execution
   //
 
@@ -1144,7 +1254,22 @@ class ComputeGraph final {
 
   // Check if a specific ValueRef (or ValueList) was updated, with recursive
   // handling
-  bool was_value_updated(const ValueRef idx) const noexcept;
+  inline bool was_value_updated(const ValueRef idx) const noexcept {
+    if (idx < 0) {
+      return false;
+    }
+
+    const size_t value_idx = static_cast<size_t>(idx);
+    if (value_idx >= values_.size()) {
+      return false;
+    }
+    if (value_idx < value_update_generations_.size() &&
+        value_update_generations_[value_idx] == current_update_generation_) {
+      return true;
+    }
+
+    return values_[value_idx].isValueList() && was_value_list_updated(idx);
+  }
 
   // Set the flag to indicate that re-encoding is required
   inline void set_requires_reencode() noexcept {
@@ -1191,6 +1316,10 @@ class ComputeGraph final {
   //
 
   void print_readable();
+
+ private:
+  void mark_value_updated(const ValueRef idx);
+  void advance_update_generation() noexcept;
 
   //
   // Friend classes

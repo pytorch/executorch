@@ -13,6 +13,7 @@ from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import (
     get_constant_placeholder_kind,
     get_param_tensor,
+    is_mutable_buffer,
     is_param_node,
 )
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
@@ -36,31 +37,64 @@ class FuseEqualPlaceholdersPass(ArmPass):
         super().__init__(*args, **kwargs)
         self.exported_program = exported_program
 
+    def _get_param_key(
+        self, node: torch.fx.Node, include_data_hash: bool
+    ) -> tuple[tuple[object, ...], torch.Tensor] | None:
+        if not is_param_node(self.exported_program, node):
+            return None
+
+        # Never fuse mutable buffers. Two pieces of streaming state that happen
+        # to start from the same value (all-zero at the start of a stream, say)
+        # are still independent: each is written back separately every
+        # invocation, so aliasing them to one placeholder makes the states
+        # shadow each other. It also strands the BUFFER_MUTATION entries that
+        # still name the removed placeholders, and export fails its own
+        # verifier with "Buffer output ... does not point to a buffer that
+        # exists". Only genuinely constant data is safe to share.
+        if is_mutable_buffer(self.exported_program, node):
+            return None
+
+        tensor = get_param_tensor(self.exported_program, node)
+        if tensor is None:
+            return None
+
+        key: tuple[object, ...] = (
+            node.meta.get(TosaSpecialDtype.meta_key(), None),
+            str(tensor.dtype),
+            tuple(tensor.shape),
+        )
+        if include_data_hash:
+            t_cpu = tensor.cpu().contiguous().flatten().view(dtype=torch.uint8)
+            data_hash = hashlib.sha1(
+                t_cpu.numpy().tobytes(), usedforsecurity=False
+            ).hexdigest()
+            key = (*key, data_hash)
+        return key, tensor
+
+    def should_run_pass(self, graph_module: torch.fx.GraphModule) -> bool:
+        seen: set[tuple[object, ...]] = set()
+        for node in graph_module.graph.nodes:
+            param_key = self._get_param_key(node, include_data_hash=False)
+            if param_key is None:
+                continue
+            key, _ = param_key
+            if key in seen:
+                # Metadata matches are only a cheap pre-scan; call() hashes the
+                # tensor bytes before actually fusing placeholders.
+                return True
+            seen.add(key)
+        return False
+
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         modified = False
 
         # Build a cache of params: mapping hash_key -> list of (node, tensor)
         hash_buckets = defaultdict(list)
         for node in graph_module.graph.nodes:
-            if not is_param_node(self.exported_program, node):
+            param_key = self._get_param_key(node, include_data_hash=True)
+            if param_key is None:
                 continue
-            tensor = get_param_tensor(self.exported_program, node)
-            if tensor is None:
-                continue
-            # Create a lightweight fingerprint: dtype + shape + SHA1 of raw bytes
-            # Ensure tensor is on CPU and contiguous
-
-            # ensure we don't merge any special case int48_t tensors with int32_t tensors
-            # since int48_t tensors needs to be instantiated separately.
-            is_special_dtype = node.meta.get(TosaSpecialDtype.meta_key(), None)
-            t_cpu = tensor.cpu().contiguous().flatten().view(dtype=torch.uint8)
-            data_bytes = t_cpu.numpy().tobytes()
-            key = (
-                is_special_dtype,
-                str(tensor.dtype),
-                tuple(tensor.shape),
-                hashlib.sha1(data_bytes, usedforsecurity=False).hexdigest(),
-            )
+            key, tensor = param_key
             hash_buckets[key].append((node, tensor))
 
         # For each bucket with more than one entry, fuse:

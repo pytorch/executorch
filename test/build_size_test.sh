@@ -33,7 +33,7 @@ cmake_install_executorch_lib() {
           -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
           ${EXTRA_BUILD_ARGS} \
           -Bcmake-out .
-  cmake --build cmake-out -j9 --target install --config Release
+  cmake --build cmake-out -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --target install --config Release
 }
 
 test_cmake_size_test() {
@@ -43,7 +43,7 @@ test_cmake_size_test() {
         -Bcmake-out/test test
 
     echo "Build size test"
-    cmake --build cmake-out/test -j9 --config Release
+    cmake --build cmake-out/test -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --config Release
 
     echo 'ExecuTorch with no ops binary size, unstripped:'
     ls -al cmake-out/test/size_test

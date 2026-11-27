@@ -212,7 +212,9 @@ def test_max_dim_tosa_FP_not_delegated():
     pipeline.run()
 
 
-@common.parametrize("test_data", Amax.test_data | Amax.test_data_fp16)
+@common.parametrize(
+    "test_data", Amax.test_data | Amax.test_data_fp16 | Amax.test_data_bf16
+)
 @common.SkipIfNoModelConverter
 def test_amax_vgf_no_quant(test_data: Amax.input_t):
     data, dim, keep_dims = test_data()
@@ -240,7 +242,9 @@ def test_amax_vgf_quant(test_data: Amax.input_t):
     pipeline.run()
 
 
-@common.parametrize("test_data", Max.test_data | Max.test_data_fp16)
+@common.parametrize(
+    "test_data", Max.test_data | Max.test_data_fp16 | Max.test_data_bf16
+)
 @common.SkipIfNoModelConverter
 def test_max_dim_vgf_no_quant_to_amax(test_data: Max.input_t):
     data, dim = test_data()

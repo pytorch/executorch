@@ -12,14 +12,13 @@
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
 #include <algorithm>
+#include <limits>
 
 #include <gtest/gtest.h>
 
 using namespace ::testing;
 using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
-using executorch::aten::SizesType;
-using executorch::aten::StridesType;
 using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
@@ -36,6 +35,21 @@ class OpDivScalarOutKernelTest : public OperatorTest {
       Tensor& out) {
     return torch::executor::aten::div_outf(context_, a, b, mode, out);
   }
+
+  template <ScalarType DTYPE>
+  void test_most_negative_by_minus_one() {
+    TensorFactory<DTYPE> tf;
+    using CTYPE = typename TensorFactory<DTYPE>::ctype;
+
+    const CTYPE min = std::numeric_limits<CTYPE>::min();
+    Tensor self = tf.make({3}, {min, 7, -7});
+    Tensor out = tf.zeros({3});
+    op_div_out_mode(self, tf.full({3}, -1), "trunc", out);
+    EXPECT_TENSOR_EQ(out, tf.make({3}, {min, -7, 7}));
+    out = tf.zeros({3});
+    op_div_out_mode(self, tf.full({3}, -1), "floor", out);
+    EXPECT_TENSOR_EQ(out, tf.make({3}, {min, -7, 7}));
+  }
 };
 
 class OpDivScalarModeOutKernelTest : public OperatorTest {
@@ -46,6 +60,21 @@ class OpDivScalarModeOutKernelTest : public OperatorTest {
       std::optional<std::string_view> mode,
       Tensor& out) {
     return torch::executor::aten::div_outf(context_, a, b, mode, out);
+  }
+
+  template <ScalarType DTYPE>
+  void test_most_negative_by_minus_one() {
+    TensorFactory<DTYPE> tf;
+    using CTYPE = typename TensorFactory<DTYPE>::ctype;
+
+    const CTYPE min = std::numeric_limits<CTYPE>::min();
+    Tensor self = tf.make({3}, {min, 7, -7});
+    Tensor out = tf.zeros({3});
+    op_div_scalar_mode_out(self, -1, "trunc", out);
+    EXPECT_TENSOR_EQ(out, tf.make({3}, {min, -7, 7}));
+    out = tf.zeros({3});
+    op_div_scalar_mode_out(self, -1, "floor", out);
+    EXPECT_TENSOR_EQ(out, tf.make({3}, {min, -7, 7}));
   }
 };
 
@@ -60,7 +89,7 @@ TEST_F(OpDivScalarOutKernelTest, SanityCheckModeTrunc) {
   op_div_out_mode(
       tf_a.make(sizes, {1, 2, 4, -9}),
       tf_a.make(sizes, {2, 2, 2, 2}),
-      std::optional<std::string_view>("trunc"),
+      "trunc",
       out);
 
   // Check that it matches the expected output.
@@ -78,7 +107,7 @@ TEST_F(OpDivScalarOutKernelTest, SanityCheckModeFloor) {
   op_div_out_mode(
       tf_a.make(sizes, {1, 2, 4, -9}),
       tf_a.make(sizes, {2, 2, 2, 2}),
-      std::optional<std::string_view>("floor"),
+      "floor",
       out);
 
   // Check that it matches the expected output.
@@ -92,11 +121,7 @@ TEST_F(OpDivScalarModeOutKernelTest, SanityCheckModeTrunc) {
 
   Tensor out = tf.zeros(sizes);
 
-  op_div_scalar_mode_out(
-      tf.make(sizes, {1, 2, 4, -9}),
-      2,
-      std::optional<std::string_view>("trunc"),
-      out);
+  op_div_scalar_mode_out(tf.make(sizes, {1, 2, 4, -9}), 2, "trunc", out);
 
   // Check that it matches the expected output.
   EXPECT_TENSOR_EQ(out, tf.make(sizes, {0, 1, 2, -4}));
@@ -109,12 +134,78 @@ TEST_F(OpDivScalarModeOutKernelTest, SanityCheckModeFloor) {
 
   Tensor out = tf.zeros(sizes);
 
-  op_div_scalar_mode_out(
-      tf.make(sizes, {1, 2, 4, -9}),
-      2,
-      std::optional<std::string_view>("floor"),
-      out);
+  op_div_scalar_mode_out(tf.make(sizes, {1, 2, 4, -9}), 2, "floor", out);
 
   // Check that it matches the expected output.
   EXPECT_TENSOR_EQ(out, tf.make(sizes, {0, 1, 2, -5}));
+}
+
+TEST_F(OpDivScalarOutKernelTest, TruncModeKeepsInt64Precision) {
+  TensorFactory<ScalarType::Long> tf;
+  // Values above 2^53, which a double cannot hold exactly.
+  Tensor a = tf.make(
+      {3},
+      {(int64_t{1} << 62) + 3, -((int64_t{1} << 62) + 3), 9007199254740993});
+  Tensor b = tf.make({3}, {3, 3, 1});
+  Tensor out = tf.zeros({3});
+
+  torch::executor::aten::div_outf(context_, a, b, "trunc", out);
+  EXPECT_TENSOR_EQ(
+      out,
+      tf.make(
+          {3}, {1537228672809129302, -1537228672809129302, 9007199254740993}));
+}
+
+TEST_F(OpDivScalarModeOutKernelTest, TruncModeKeepsInt64Precision) {
+  TensorFactory<ScalarType::Long> tf;
+  // Values above 2^53, which a double cannot hold exactly.
+  Tensor a = tf.make(
+      {3},
+      {(int64_t{1} << 62) + 3, -((int64_t{1} << 62) + 3), 9007199254740993});
+  Tensor out = tf.zeros({3});
+
+  torch::executor::aten::div_outf(context_, a, Scalar(3), "trunc", out);
+  EXPECT_TENSOR_EQ(
+      out,
+      tf.make(
+          {3}, {1537228672809129302, -1537228672809129302, 3002399751580331}));
+}
+
+TEST_F(OpDivScalarModeOutKernelTest, ModeIntegerScalarIsCastToTensorDtype) {
+  TensorFactory<ScalarType::Char> tf;
+  Tensor a = tf.make({3}, {5, -7, 100});
+  Tensor out = tf.zeros({3});
+
+  // Like ATen, the scalar takes the tensor's dtype: 255 is -1 as int8.
+  torch::executor::aten::div_outf(context_, a, Scalar(255), "trunc", out);
+  EXPECT_TENSOR_EQ(out, tf.make({3}, {-5, 7, -100}));
+
+  // 256 is 0 as int8.
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      torch::executor::aten::div_outf(context_, a, Scalar(256), "trunc", out));
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      torch::executor::aten::div_outf(context_, a, Scalar(256), "floor", out));
+}
+
+TEST_F(OpDivScalarOutKernelTest, MostNegativeByMinusOneWraps) {
+  test_most_negative_by_minus_one<ScalarType::Int>();
+  test_most_negative_by_minus_one<ScalarType::Long>();
+}
+
+TEST_F(OpDivScalarModeOutKernelTest, MostNegativeByMinusOneWraps) {
+  test_most_negative_by_minus_one<ScalarType::Int>();
+  test_most_negative_by_minus_one<ScalarType::Long>();
+}
+
+TEST_F(OpDivScalarModeOutKernelTest, EmptyInputWithZeroScalarDivisor) {
+  TensorFactory<ScalarType::Char> tf;
+  Tensor self = tf.make({0}, {});
+  Tensor out = tf.make({0}, {});
+
+  op_div_scalar_mode_out(self, 0, "trunc", out);
+  EXPECT_TENSOR_EQ(out, tf.make({0}, {}));
+  op_div_scalar_mode_out(self, 0, "floor", out);
+  EXPECT_TENSOR_EQ(out, tf.make({0}, {}));
 }

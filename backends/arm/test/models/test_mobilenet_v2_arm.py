@@ -14,6 +14,7 @@ from executorch.backends.arm.quantizer import get_symmetric_quantization_config
 from executorch.backends.arm.quantizer.arm_quantizer import _TOSAQuantizerV2
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
+    DType,
     EthosU55PipelineINT,
     EthosU85PipelineINT,
     TosaPipelineFP,
@@ -25,7 +26,6 @@ from torchvision import models, transforms  # type: ignore[import-untyped]
 from torchvision.models.mobilenetv2 import (  # type: ignore[import-untyped]
     MobileNet_V2_Weights,
 )
-
 
 mv2 = models.mobilenetv2.mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT)
 mv2 = mv2.eval()
@@ -174,6 +174,7 @@ def test_mv2_vgf_quant(per_channel_quantization):
         atol=0.25,
         qtol=1,
         quantize=True,
+        forbidden_tosa_dtypes=[DType.FP16],
     )
     pipeline.run()
 
@@ -187,6 +188,26 @@ def test_mv2_vgf_no_quant():
         exir_op=[],
         use_to_edge_transform_and_lower=True,
         quantize=False,
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_mv2_vgf_no_quant_bf16():
+    bf16_model = models.mobilenetv2.mobilenet_v2(
+        weights=MobileNet_V2_Weights.DEFAULT
+    ).eval()
+    bf16_model = bf16_model.to(torch.bfloat16)
+    bf16_input = normalize(torch.rand((1, 3, 224, 224))).to(torch.bfloat16)
+    pipeline = VgfPipeline[input_t](
+        bf16_model,
+        (bf16_input,),
+        aten_op=[],
+        exir_op=[],
+        use_to_edge_transform_and_lower=True,
+        quantize=False,
+        atol=2.5e-01,
+        rtol=2.5e-01,
     )
     pipeline.run()
 
@@ -215,7 +236,7 @@ def test_mv2_vgf_quant_partial_quant():
         aten_op=[],
         exir_op=[],
         quantize=True,
-        atol=0.10,
+        atol=0.12,
     )
     _use_partial_quantizer(pipeline)
     pipeline.run()

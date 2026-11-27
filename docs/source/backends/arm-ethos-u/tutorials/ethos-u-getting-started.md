@@ -43,7 +43,7 @@ To install Ethos-U dependencies, run
 ./examples/arm/setup.sh --i-agree-to-the-contained-eula
 ```
 This will install:
-- [TOSA Serialization Library](https://www.mlplatform.org/tosa/software.html) for serializing the Exir IR graph into TOSA IR.
+- [TOSA Serialization Library](https://gitlab.arm.com/tosa/tosa-tools) for serializing the Exir IR graph into TOSA IR.
 - [Ethos-U Vela graph compiler](https://pypi.org/project/ethos-u-vela/) for compiling TOSA flatbuffers into a Ethos-U command stream.
 - [Arm GNU Toolchain](https://developer.arm.com/Tools%20and%20Software/GNU%20Toolchain) for cross compilation.
 - [Corstone SSE-300 FVP](https://developer.arm.com/documentation/100966/1128/Arm--Corstone-SSE-300-FVP) for testing on Ethos-U55 reference design.
@@ -164,8 +164,10 @@ cmake -S examples/arm/executor_runner/standalone \
       -DETHOSU_TARGET_NPU_CONFIG=ethos-u55-128 \
       -DMEMORY_MODE=Shared_Sram \
       -DSYSTEM_CONFIG=Ethos_U55_High_End_Embedded
-cmake --build ethos_u_minimal_example -j$(nproc) -- arm_executor_runner
+cmake --build ethos_u_minimal_example -- arm_executor_runner
 ```
+
+Adding `-j<N>` to `cmake --build` runs `<N>` jobs in parallel and tends to speed up the build significantly.
 
 ```{tip}
 For a quick start, you can use the script `backends/arm/scripts/build_executor_runner.sh` to configure and build the standalone runner.
@@ -190,7 +192,7 @@ The example application is by default built with an input of ones, so the expect
 ## Takeaways
 
 In this tutorial you have learned how to use ExecuTorch to export a PyTorch model to an executable that can run on an embedded target, and then run that executable on simulated hardware.
-To learn more, check out the [ExecuTorch on Arm Practical Labs](https://github.com/arm-education/executorch_on_arm_labs) series. This series provides a structured entry-point to developing with ExecuTorch on Arm, across both CPU and Ethos-U NPU.
+To learn more, check out the [Optimize and deploy AI inference with ExecuTorch on Arm](https://learn.arm.com/courses/executorch-on-arm/) course. This course provides a structured entry-point to developing with ExecuTorch on Arm, across both CPU and Ethos-U NPU.
 
 For quick learning paths showcasing short tutorials:
 

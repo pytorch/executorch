@@ -1,0 +1,30 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+cmake_minimum_required(VERSION 3.19)
+
+set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../..)
+
+include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
+
+set(_test_srcs scheduler_test.cpp runner_test.cpp prefix_cache_test.cpp
+               opaque_input_test.cpp
+)
+
+et_cxx_test(
+  extension_llm_batching_test SOURCES ${_test_srcs} EXTRA_LIBS
+  extension_llm_batching
+)
+
+et_cxx_test(
+  extension_llm_batching_executor_utils_test SOURCES executor_utils_test.cpp
+  EXTRA_LIBS extension_llm_batching_executor_utils
+)
+
+et_cxx_test(
+  extension_llm_batching_util_test SOURCES session_table_test.cpp EXTRA_LIBS
+  extension_llm_batching_util extension_tensor
+)

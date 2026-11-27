@@ -14,11 +14,7 @@ from typing import Callable, cast, DefaultDict, Iterable, Optional, Sequence, Ty
 
 import torch
 import torch.fx
-from executorch.backends.cadence.aot.pass_utils import (
-    CadencePassAttribute,
-    create_cadence_pass_filter,
-    register_cadence_pass,
-)
+from executorch.backends.cadence.aot.pass_utils import CompileMode, get_arg
 from executorch.backends.cadence.aot.utils import get_shape, is_node_in_flattened_output
 from executorch.exir import memory
 from executorch.exir.pass_manager import PassManager
@@ -63,11 +59,11 @@ class MemConstraints:
 
     def __init__(
         self,
-        opt_level: int = 1,
+        mode: CompileMode = CompileMode.DEFAULT,
         alloc_graph_input: bool = True,
         alloc_graph_output: bool = True,
     ) -> None:
-        self.opt_level = opt_level
+        self.mode = CompileMode(mode)
         self.alloc_graph_input = alloc_graph_input
         self.alloc_graph_output = alloc_graph_output
 
@@ -396,7 +392,6 @@ def get_relative_offset_of_slice(slice_node: torch.fx.Node) -> int:
     return offset
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=2))
 class GenerateCatNopConstraints(PassBase):
     """
     For cat op where the concatenation is along the outermost dimension, generate
@@ -578,7 +573,6 @@ class GenerateCatNopConstraints(PassBase):
         graph_module.recompile()
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class GenerateMemoryViewConstraints(PassBase):
     """
     For memory.view ops, where input and output use the same underlying memory,
@@ -595,7 +589,6 @@ class GenerateMemoryViewConstraints(PassBase):
             self.constraint.add_relative_placement_constraint(node.args[0], node)
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=2))
 class GenerateSliceAndSelectNopConstraints(PassBase):
     """
     For slice ops, where the slice is along the outermost dimension, generate
@@ -634,11 +627,11 @@ class GenerateSliceAndSelectNopConstraints(PassBase):
 
         # A slice/select op is redundant only if (a) either the slicing/select
         # is along the outermost dimension, or (b) all dimensions previous to
-        # slicing/select dimension are 0 or 1.
-        node_spec = node.meta.get("spec")
-        tensor_shape = list(node_spec.shape)
-        dim = 0 if len(node.args) == 1 else node.args[1]
-        if dim and not set(tensor_shape[0:dim]).issubset({0, 1}):
+        # slicing/select dimension are 0 or 1. A select drops its dimension from
+        # the output, so use the input shape.
+        input_shape = input_node.meta["spec"].shape
+        dim = get_arg(node, "dim", int) % len(input_shape)
+        if not set(input_shape[0:dim]).issubset({0, 1}):
             return False
 
         # The slice step should be 1 for contiguity.
@@ -697,37 +690,6 @@ ConstraintsGenPass: TypeAlias = Callable[
 ]
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
-class GenerateIdmaConstraints(PassBase):
-    """Generate constraints for idma ops."""
-
-    def __init__(self, constraint: MemConstraints) -> None:
-        self.constraint = constraint
-
-    def call(self, graph_module: torch.fx.GraphModule) -> Optional[PassResult]:
-        for node in graph_module.graph.find_nodes(
-            op="call_function", target=torch.ops.cadence.idma_wait.out
-        ):
-            # This is just an alias op.
-            self.constraint.add_relative_placement_constraint(node.args[0], node)
-
-        for node in graph_module.graph.find_nodes(
-            op="call_function", target=torch.ops.cadence.idma_load.out
-        ):
-            # TODO: set correct dtcm bank here.
-            mem_id = 1
-            self.constraint.add_absolute_placement_constraint(node, mem_id, None)
-
-        for node in graph_module.graph.find_nodes(
-            op="call_function", target=torch.ops.cadence.idma_store.out
-        ):
-            # TODO: set correct dtcm bank here.
-            mem_id = 1
-            self.constraint.add_absolute_placement_constraint(
-                node.args[0], mem_id, None
-            )
-
-
 # The class to generate all the constraints that will be passed on to the memory
 # planning algorithm.
 class GenerateMemConstraints:
@@ -742,25 +704,24 @@ class GenerateMemConstraints:
         )
 
     def __call__(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        # Colocation constraints for cat/slice/select no-ops are optimizations;
+        # memory-view constraints are always required.
         constraint_gen_passes: Sequence[ConstraintsGenPass] = cast(
             list[ConstraintsGenPass],
-            [
-                GenerateIdmaConstraints,
-                GenerateMemoryViewConstraints,
-                GenerateSliceAndSelectNopConstraints,
-                GenerateCatNopConstraints,
-            ],
+            (
+                [
+                    GenerateMemoryViewConstraints,
+                ]
+                if self.mem_constraints.mode is CompileMode.MINIMAL
+                else [
+                    GenerateMemoryViewConstraints,
+                    GenerateSliceAndSelectNopConstraints,
+                    GenerateCatNopConstraints,
+                ]
+            ),
         ) + list(self.additional_constraint_gen_passes)
-        # Create a filter using the opt level in mem_constraints, and filter
-        # the relevant passes.
-        pass_filter = create_cadence_pass_filter(self.mem_constraints.opt_level)
-        filtered_passes = [
-            mcg_pass(self.mem_constraints)
-            for mcg_pass in cast(
-                list[ConstraintsGenPass],
-                # pyre-ignore[6]: Incompatible parameter type.
-                list(filter(pass_filter, constraint_gen_passes)),
-            )
-        ]
-        # Now run the pass manager on the filtered passes
-        return PassManager(passes=filtered_passes)(graph_module)
+        return PassManager(
+            passes=[
+                mcg_pass(self.mem_constraints) for mcg_pass in constraint_gen_passes
+            ]
+        )(graph_module)

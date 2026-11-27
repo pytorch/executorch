@@ -39,26 +39,30 @@ class GroupNormVisitor(NodeVisitor):
             PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
+        input_tensors = [input_tensor_wrapper]
 
-        weight_node = self.get_node(node.args[1])
-        weight_tensor = get_parameter(weight_node, self.edge_program)
-        weight_tensor_wrapper = self.define_tensor(
-            weight_node,
-            node,
-            weight_tensor,
-            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
-            nodes_to_wrappers,
-        )
+        if weight_node := self.get_node(node.args[1]):
+            weight_tensor = get_parameter(weight_node, self.edge_program)
+            weight_tensor_wrapper = self.define_tensor(
+                weight_node,
+                node,
+                weight_tensor,
+                PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+                nodes_to_wrappers,
+            )
+            input_tensors.append(weight_tensor_wrapper)
 
-        bias_node = self.get_node(node.args[2])
-        bias_tensor = get_parameter(bias_node, self.edge_program)
-        bias_tensor_wrapper = self.define_tensor(
-            bias_node,
-            node,
-            bias_tensor,
-            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
-            nodes_to_wrappers,
-        )
+        if bias_node := self.get_node(node.args[2]):
+            bias_tensor = get_parameter(bias_node, self.edge_program)
+            bias_tensor_wrapper = self.define_tensor(
+                bias_node,
+                node,
+                bias_tensor,
+                PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+                nodes_to_wrappers,
+            )
+            input_tensors.append(bias_tensor_wrapper)
+
         group = node.args[6]
         epsilon = node.args[7]
 
@@ -76,9 +80,7 @@ class GroupNormVisitor(NodeVisitor):
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpGroupNorm.op_name,
         )
-        group_norm_op.AddInputTensors(
-            [input_tensor_wrapper, weight_tensor_wrapper, bias_tensor_wrapper]
-        )
+        group_norm_op.AddInputTensors(input_tensors)
         group_norm_op.AddOutputTensors([output_tensor_wrapper])
         group_norm_op.AddScalarParam(
             OpGroupNorm.param_epsilon,

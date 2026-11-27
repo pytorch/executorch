@@ -11,10 +11,7 @@ from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_output_qparams,
 )
-from executorch.backends.cortex_m.passes.passes_utils import (
-    get_activation_bounds,
-    quantize_val,
-)
+from executorch.backends.cortex_m.utils import get_activation_bounds, quantize_val
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 from torch.fx import GraphModule, Node

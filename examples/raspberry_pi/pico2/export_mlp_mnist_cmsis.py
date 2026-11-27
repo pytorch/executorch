@@ -23,11 +23,14 @@ import logging
 import os
 
 import torch
+from executorch.backends.cortex_m.edge_compile_config import (
+    cortex_m_edge_compile_config,
+)
 from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
 from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
 
 from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
-from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig, to_edge
+from executorch.exir import ExecutorchBackendConfig, to_edge
 from executorch.extension.export_util.utils import save_pte_program
 
 from export_mlp_mnist import create_balanced_model, IMAGE_SIZE, test_comprehensive
@@ -87,21 +90,15 @@ def quantize_model(model, calibration_data):
 def export_to_pte(quantized_model, example_input, output_path: str):
     exported_program = torch.export.export(quantized_model, (example_input,))
 
-    edge_config = EdgeCompileConfig(
-        _check_ir_validity=False,
-        preserve_ops=[torch.ops.aten.linear.default],
-    )
+    edge_config = cortex_m_edge_compile_config()
     edge_program = to_edge(exported_program, compile_config=edge_config)
     logger.info("Edge program created")
 
     logger.info("Applying Cortex-M optimization passes...")
     pass_manager = CortexMPassManager(
-        edge_program.exported_program(),
         target_config=CortexMTargetConfig(cpu=CortexM.M33),
     )
-    transformed_ep = pass_manager.transform()
-
-    edge_program = to_edge(transformed_ep, compile_config=edge_config)
+    edge_program = edge_program.transform(pass_manager)
 
     logger.info("Converting to ExecuTorch format...")
     exec_program = edge_program.to_executorch(

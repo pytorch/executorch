@@ -1,5 +1,6 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * Copyright 2026 Arm Limited and/or its affiliates.
  * All rights reserved.
  *
  * This source code is licensed under the BSD-style license found in the
@@ -26,23 +27,9 @@ const size_t kMaxNumOfDimensions = 16;
 
 namespace {
 
-inline bool _check__empty_out_dim_order(
-    OptionalIntArrayRef dim_order,
+inline bool check_empty_out_dim_order_ref(
+    executorch::aten::ArrayRef<int64_t> dim_order_ref,
     Tensor& out) {
-  executorch::aten::ArrayRef<int64_t> dim_order_ref;
-  std::vector<int64_t> dim_order_vec;
-
-  if (dim_order.has_value()) {
-    // out tensor's dim order shall equal to input dim order
-    dim_order_ref = executorch::aten::ArrayRef<int64_t>(
-        dim_order.value().data(), dim_order.value().size());
-  } else { // dim_order is not set, out tensor should be contiguous dim order
-    for (int i = 0; i < out.dim(); i++) {
-      dim_order_vec.push_back(i);
-    }
-    dim_order_ref = executorch::aten::ArrayRef<int64_t>(dim_order_vec);
-  }
-
   // dim order size shall equal to input dim
   ET_LOG_AND_RETURN_IF_FALSE(dim_order_ref.size() == out.dim());
 
@@ -63,6 +50,30 @@ inline bool _check__empty_out_dim_order(
   }
 
   return true;
+}
+
+inline bool _check__empty_out_dim_order(
+    OptionalIntArrayRef dim_order,
+    Tensor& out) {
+  if (dim_order.has_value()) {
+    // out tensor's dim order shall equal to input dim order
+    return check_empty_out_dim_order_ref(
+        executorch::aten::ArrayRef<int64_t>(
+            dim_order.value().data(), dim_order.value().size()),
+        out);
+  } else { // dim_order is not set, out tensor should be contiguous dim order
+    const auto ndim = out.dim();
+    ET_LOG_AND_RETURN_IF_FALSE(
+        ndim <= static_cast<ssize_t>(kMaxNumOfDimensions));
+    int64_t dim_order_arr[kMaxNumOfDimensions];
+    for (ssize_t i = 0; i < ndim; i++) {
+      dim_order_arr[i] = i;
+    }
+    return check_empty_out_dim_order_ref(
+        executorch::aten::ArrayRef<int64_t>(
+            dim_order_arr, static_cast<size_t>(ndim)),
+        out);
+  }
 }
 
 } // namespace

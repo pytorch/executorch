@@ -22,6 +22,7 @@ from executorch.backends.xnnpack.test.test_xnnpack_utils_classes import (
 from executorch.backends.xnnpack.test.tester import Quantize, RunPasses, Tester
 from executorch.backends.xnnpack.utils.quant_utils import (
     is_dequant,
+    is_dynamic_qdq,
     is_quant,
     is_tagged_as_implicit_q_dq,
 )
@@ -265,6 +266,32 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
             .run_method_and_compare_outputs()
         )
 
+    class AddConv(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv = torch.nn.Conv2d(5, 8, 3)
+
+        def forward(self, x):
+            return self.conv(x + x)
+
+    def test_qs8_channels_last_input_add_conv(self):
+        """
+        A quantized channels_last input is already NHWC, so the add and the
+        convolution read it without a transpose.
+        """
+        x = torch.randn(1, 5, 8, 8).to(memory_format=torch.channels_last)
+        (
+            Tester(self.AddConv().eval(), (x,))
+            .quantize()
+            .export()
+            .to_edge_transform_and_lower()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .check_xnnpack_node_count({"XNNConv2d": 1, "XNNStaticTranspose": 0})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs(qtol=1)
+        )
+
     class Conv2dBnHardtanhMeanSequenceModule(torch.nn.Module):
         def __init__(self):
             super().__init__()
@@ -288,6 +315,555 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
             x = self.hardtanh(x)
             x = torch.mean(x, (-1, -2), keepdim=True)
             return x
+
+    class ConvScalarMulConv(torch.nn.Module):
+        """conv -> x * scalar -> clamp -> conv: the scalar must not pull the
+        activation back to NCHW between the two convolutions."""
+
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 8, 3, padding=1)
+            self.conv2 = torch.nn.Conv2d(8, 4, 3, padding=1)
+
+        def forward(self, x):
+            x = self.conv1(x)
+            x = torch.clamp(x * 1.4142, -256.0, 256.0)
+            return self.conv2(x)
+
+    def test_fp32_channels_last_tagged_reshape_pass_scalar_operand_stays_nhwc(self):
+        (
+            Tester(self.ConvScalarMulConv().eval(), (torch.randn(1, 3, 8, 8),))
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+            # input -> NHWC and output -> NCHW only
+            .check_count({self.to_copy_name: 2})
+            .run_method_and_compare_outputs()
+        )
+
+    class ConvBinaryOpConv(torch.nn.Module):
+        """conv -> op(x, operand) -> conv for any of the broadcasting binary
+        ops the pass handles."""
+
+        def __init__(self, op, operand):
+            super().__init__()
+            self.op = op
+            self.conv1 = torch.nn.Conv2d(3, 8, 3, padding=1)
+            self.conv2 = torch.nn.Conv2d(8, 4, 3, padding=1)
+            self.register_buffer("operand", operand)
+
+        def forward(self, x):
+            x = self.conv1(x)
+            x = self.op(x, self.operand)
+            return self.conv2(x)
+
+    broadcast_binary_ops = (
+        torch.add,
+        torch.mul,
+        torch.sub,
+        torch.div,
+        torch.maximum,
+        torch.minimum,
+    )
+
+    def test_fp32_channels_last_tagged_reshape_pass_scalar_operand_all_binary_ops(
+        self,
+    ):
+        inputs = (torch.randn(1, 3, 8, 8),)
+        for op in self.broadcast_binary_ops:
+            with self.subTest(op=op.__name__):
+                module = self.ConvBinaryOpConv(op, torch.tensor(1.4142)).eval()
+                (
+                    Tester(module, inputs)
+                    .export()
+                    .to_edge()
+                    .run_passes(self.PassStage)
+                    # input -> NHWC and output -> NCHW only
+                    .check_count({self.to_copy_name: 2})
+                    .run_method_and_compare_outputs()
+                )
+                tester = (
+                    Tester(module, inputs)
+                    .export()
+                    .to_edge_transform_and_lower()
+                    .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+                )
+                self._assert_only_io_transposes(tester)
+                tester.to_executorch().serialize().run_method_and_compare_outputs()
+
+    def test_fp32_channels_last_tagged_reshape_pass_lower_rank_operand_all_binary_ops(
+        self,
+    ):
+        for op in self.broadcast_binary_ops:
+            with self.subTest(op=op.__name__):
+                self._test_constant_lower_rank_operand_folded_to_nhwc(
+                    self.ConvBinaryOpConv(op, torch.rand(5, 7) + 0.5)
+                )
+
+    class ConvMul5dScalar(torch.nn.Module):
+        """conv -> x * buf[1, 1, 1, 1, 1]: the single-element operand has
+        rank 5, so the mul output is 5D and cannot be NHWC. The operand takes
+        part in the layout decision and the mul takes the NCHW path."""
+
+        def __init__(self):
+            super().__init__()
+            self.conv = torch.nn.Conv2d(3, 8, 3, padding=1)
+            self.register_buffer("buf", torch.full((1, 1, 1, 1, 1), 1.5))
+
+        def forward(self, x):
+            return self.conv(x) * self.buf
+
+    def test_fp32_channels_last_tagged_reshape_pass_5d_single_element_operand(self):
+        inputs = (torch.randn(1, 3, 8, 8),)
+        (
+            Tester(self.ConvMul5dScalar().eval(), inputs)
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+            # input -> NHWC and conv output -> NCHW; the 5D mul output stays NCHW
+            .check_count({self.to_copy_name: 2})
+            .run_method_and_compare_outputs()
+        )
+        (
+            Tester(self.ConvMul5dScalar().eval(), inputs)
+            .export()
+            .to_edge_transform_and_lower()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
+
+    class ConvNoiseAddConv(torch.nn.Module):
+        """conv -> x + noise[H, W] -> conv: the constant operand is reshaped to
+        [1, 1, H, W] and laid out as NHWC ahead of time, instead of converting
+        the activation. `kind` picks how the constant is held by the module,
+        which decides where the exported program stores it."""
+
+        def __init__(self, kind="buffer"):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 8, 3, padding=1)
+            self.conv2 = torch.nn.Conv2d(8, 4, 3, padding=1)
+            noise = torch.randn(5, 7)
+            if kind == "buffer":
+                self.register_buffer("noise", noise)
+            elif kind == "non_persistent_buffer":
+                self.register_buffer("noise", noise, persistent=False)
+            elif kind == "parameter":
+                self.noise = torch.nn.Parameter(noise, requires_grad=False)
+            elif kind == "tensor_constant":
+                self.noise = noise
+            else:
+                raise ValueError(kind)
+
+        def forward(self, x):
+            x = self.conv1(x)
+            x = x + self.noise
+            return self.conv2(x)
+
+    class ConvChannelScaleConv(torch.nn.Module):
+        """conv -> x * scale[C, 1, 1] -> conv: a per-channel constant is
+        reshaped to [1, C, 1, 1] ahead of time."""
+
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 8, 3, padding=1)
+            self.conv2 = torch.nn.Conv2d(8, 4, 3, padding=1)
+            self.register_buffer("scale", torch.randn(8, 1, 1))
+
+        def forward(self, x):
+            x = self.conv1(x)
+            x = x * self.scale
+            return self.conv2(x)
+
+    class ConvNoiseSubConv(torch.nn.Module):
+        """conv -> noise[H, W] - x -> conv: the lower-rank operand is the
+        left argument."""
+
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 8, 3, padding=1)
+            self.conv2 = torch.nn.Conv2d(8, 4, 3, padding=1)
+            self.register_buffer("noise", torch.randn(5, 7))
+
+        def forward(self, x):
+            x = self.conv1(x)
+            x = self.noise - x
+            return self.conv2(x)
+
+    class ConvChwBiasAddConv(torch.nn.Module):
+        """conv -> x + bias[C, H, W] -> conv: a constant whose NHWC data
+        layout differs from NCHW, so the ahead-of-time transpose is
+        observable in the output."""
+
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 8, 3, padding=1)
+            self.conv2 = torch.nn.Conv2d(8, 4, 3, padding=1)
+            self.register_buffer("bias", torch.randn(8, 5, 7))
+
+        def forward(self, x):
+            x = self.conv1(x)
+            x = x + self.bias
+            return self.conv2(x)
+
+    def _delegate_input_buffers(self, tester) -> set:
+        """Names of the buffers the single delegate takes as inputs."""
+        exported_program = tester.get_artifact(
+            StageType.TO_EDGE_TRANSFORM_AND_LOWER
+        ).exported_program()
+        (delegate,) = [
+            node
+            for node in exported_program.graph_module.graph.nodes
+            if node.target == torch.ops.higher_order.executorch_call_delegate
+        ]
+        inputs_to_buffers = exported_program.graph_signature.inputs_to_buffers
+        return {
+            inputs_to_buffers[arg.name]
+            for arg in delegate.args[1:]
+            if arg.name in inputs_to_buffers
+        }
+
+    def _assert_only_io_transposes(self, tester):
+        """The delegate transposes the input to NHWC and the output back, and
+        nothing else: no reshape or transpose for the operand."""
+        node_types = tester.xnnpack_node_types()
+        self.assertEqual(node_types["XNNStaticTranspose"], 2, node_types)
+        self.assertEqual(node_types["XNNStaticReshape"], 0, node_types)
+
+    def _test_constant_lower_rank_operand_folded_to_nhwc(self, module):
+        inputs = (torch.randn(1, 3, 5, 7),)
+        (
+            Tester(module.eval(), inputs)
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+            # input -> NHWC and output -> NCHW only: the constant is reshaped
+            # and transposed ahead of time, not in the graph
+            .check_count({self.to_copy_name: 2})
+            .check_not(["executorch_exir_dialects_edge__ops_aten_view_copy_default"])
+            .run_method_and_compare_outputs()
+        )
+        tester = (
+            Tester(module.eval(), inputs)
+            .export()
+            .to_edge_transform_and_lower()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+        )
+        self._assert_only_io_transposes(tester)
+        tester.to_executorch().serialize().run_method_and_compare_outputs()
+
+    def test_fp32_channels_last_tagged_reshape_pass_lower_rank_operand_stays_nhwc(self):
+        # Every kind of constant: state dict buffer and parameter, and the
+        # non-persistent buffer and lifted tensor held among the constants.
+        for kind in ("buffer", "non_persistent_buffer", "parameter", "tensor_constant"):
+            with self.subTest(kind=kind):
+                self._test_constant_lower_rank_operand_folded_to_nhwc(
+                    self.ConvNoiseAddConv(kind)
+                )
+
+    def test_fp32_channels_last_tagged_reshape_pass_per_channel_operand_stays_nhwc(
+        self,
+    ):
+        self._test_constant_lower_rank_operand_folded_to_nhwc(
+            self.ConvChannelScaleConv()
+        )
+
+    def test_fp32_channels_last_tagged_reshape_pass_lower_rank_left_operand_stays_nhwc(
+        self,
+    ):
+        self._test_constant_lower_rank_operand_folded_to_nhwc(self.ConvNoiseSubConv())
+
+    def test_fp32_channels_last_tagged_reshape_pass_chw_operand_stays_nhwc(self):
+        self._test_constant_lower_rank_operand_folded_to_nhwc(self.ConvChwBiasAddConv())
+
+    class ConvSharedNoiseAddConv(torch.nn.Module):
+        """conv -> x + noise[H, W] -> conv -> x + noise: the constant has two
+        users, so it keeps its rank and each use is reshaped in the graph."""
+
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 8, 3, padding=1)
+            self.conv2 = torch.nn.Conv2d(8, 4, 3, padding=1)
+            self.register_buffer("noise", torch.randn(5, 7))
+
+        def forward(self, x):
+            x = self.conv1(x) + self.noise
+            return self.conv2(x) + self.noise
+
+    def test_fp32_channels_last_tagged_reshape_pass_shared_lower_rank_operand(self):
+        inputs = (torch.randn(1, 3, 5, 7),)
+        (
+            Tester(self.ConvSharedNoiseAddConv().eval(), inputs)
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+            # input -> NHWC, each 4D view of the operand -> NHWC, output -> NCHW
+            .check_count(
+                {
+                    self.to_copy_name: 4,
+                    "executorch_exir_dialects_edge__ops_aten_view_copy_default": 2,
+                }
+            )
+            .run_method_and_compare_outputs()
+        )
+        (
+            Tester(self.ConvSharedNoiseAddConv().eval(), inputs)
+            .export()
+            .to_edge_transform_and_lower()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
+
+    class ConvMutatedStateMulConv(torch.nn.Module):
+        """conv -> x * state[H, W] -> conv, with the state updated after each
+        inference: a mutated buffer is not constant, so it is neither folded
+        nor delegated as constant data."""
+
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 8, 3, padding=1)
+            self.conv2 = torch.nn.Conv2d(8, 4, 3, padding=1)
+            self.register_buffer("state", torch.randn(5, 7))
+
+        def forward(self, x):
+            x = self.conv1(x)
+            x = x * self.state
+            self.state.add_(1.0)
+            return self.conv2(x)
+
+    def test_fp32_channels_last_tagged_reshape_pass_mutated_buffer_operand(self):
+        inputs = (torch.randn(1, 3, 5, 7),)
+        tester = (
+            Tester(self.ConvMutatedStateMulConv().eval(), inputs)
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+            # input -> NHWC, the 4D view of the state -> NHWC, output -> NCHW
+            .check_count(
+                {
+                    self.to_copy_name: 3,
+                    "executorch_exir_dialects_edge__ops_aten_view_copy_default": 1,
+                }
+            )
+        )
+        state = tester.get_artifact(StageType.RUN_PASSES).exported_program()
+        self.assertEqual(tuple(state.state_dict["state"].shape), (5, 7))
+        tester = (
+            Tester(self.ConvMutatedStateMulConv().eval(), inputs)
+            .export()
+            .to_edge_transform_and_lower()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+        )
+        # Read at every inference, so it stays a delegate input.
+        self.assertIn("state", self._delegate_input_buffers(tester))
+
+    class ConvScale4dMulConv(torch.nn.Module):
+        """conv -> x * scale[1, C, 1, 1] -> conv: a 4D constant is already
+        broadcast-aligned, so it stays a delegate input and is converted to
+        NHWC in the graph, as before."""
+
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 8, 3, padding=1)
+            self.conv2 = torch.nn.Conv2d(8, 4, 3, padding=1)
+            self.register_buffer("scale", torch.randn(1, 8, 1, 1))
+
+        def forward(self, x):
+            x = self.conv1(x)
+            x = x * self.scale
+            return self.conv2(x)
+
+    def test_fp32_channels_last_tagged_reshape_pass_4d_constant_operand(self):
+        inputs = (torch.randn(1, 3, 5, 7),)
+        (
+            Tester(self.ConvScale4dMulConv().eval(), inputs)
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+            # On the whole program the constant is tagged NCHW, so the op
+            # takes the NCHW path: input -> NHWC, conv1 output -> NCHW,
+            # op output -> NHWC, output -> NCHW
+            .check_count({self.to_copy_name: 4})
+            .check_not(["executorch_exir_dialects_edge__ops_aten_view_copy_default"])
+            .run_method_and_compare_outputs()
+        )
+        # In the delegate the constant is an input: input -> NHWC,
+        # scale -> NHWC, output -> NCHW
+        tester = (
+            Tester(self.ConvScale4dMulConv().eval(), inputs)
+            .export()
+            .to_edge_transform_and_lower()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+        )
+        self.assertIn("scale", self._delegate_input_buffers(tester))
+        node_types = tester.xnnpack_node_types()
+        self.assertEqual(node_types["XNNStaticTranspose"], 3, node_types)
+        self.assertEqual(node_types["XNNStaticReshape"], 0, node_types)
+        tester.to_executorch().serialize().run_method_and_compare_outputs()
+
+    class ConvNoiseAddConvCumsum(torch.nn.Module):
+        """conv -> x + noise[H, W] -> conv, and cumsum(noise) outside the
+        delegate: the delegate gets its own folded copy of the constant and
+        the non-delegated consumer keeps the original."""
+
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 8, 3, padding=1)
+            self.conv2 = torch.nn.Conv2d(8, 4, 3, padding=1)
+            self.register_buffer("noise", torch.randn(5, 7))
+
+        def forward(self, x):
+            x = self.conv1(x)
+            x = x + self.noise
+            return self.conv2(x), torch.cumsum(self.noise, 0)
+
+    def test_fp32_channels_last_tagged_reshape_pass_lower_rank_operand_shared_with_non_delegated_op(
+        self,
+    ):
+        inputs = (torch.randn(1, 3, 5, 7),)
+        tester = (
+            Tester(self.ConvNoiseAddConvCumsum().eval(), inputs)
+            .export()
+            .to_edge_transform_and_lower()
+            .check_count(
+                {
+                    "torch.ops.higher_order.executorch_call_delegate": 1,
+                    "executorch_exir_dialects_edge__ops_aten_cumsum_default": 1,
+                }
+            )
+        )
+        self.assertEqual(self._delegate_input_buffers(tester), set())
+        self._assert_only_io_transposes(tester)
+        tester.to_executorch().serialize().run_method_and_compare_outputs()
+
+    def test_fp32_channels_last_tagged_reshape_pass_input_lower_rank_operand(self):
+        # A non-constant [H, W] operand is reshaped and converted in the graph.
+        inputs = (torch.randn(1, 3, 5, 7), torch.randn(5, 7))
+        (
+            Tester(self.ConvDynamicNoiseAddConv().eval(), inputs)
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+            # input -> NHWC, the 4D view of the operand -> NHWC, output -> NCHW
+            .check_count(
+                {
+                    self.to_copy_name: 3,
+                    "executorch_exir_dialects_edge__ops_aten_view_copy_default": 1,
+                }
+            )
+            .run_method_and_compare_outputs()
+        )
+        (
+            Tester(self.ConvDynamicNoiseAddConv().eval(), inputs)
+            .export()
+            .to_edge_transform_and_lower()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
+
+    def test_qs8_channels_last_tagged_reshape_pass_lower_rank_operand(self):
+        # The dequantized operand is left at its own rank: a view between
+        # dequantize and the op would carry no quant params and fail at load.
+        # The op takes the NCHW path instead.
+        inputs = (torch.randn(1, 3, 5, 7),)
+        for module, op in (
+            (self.ConvNoiseAddConv(), exir_ops.edge.aten.add.Tensor),
+            (self.ConvChannelScaleConv(), exir_ops.edge.aten.mul.Tensor),
+        ):
+            with self.subTest(module=type(module).__name__):
+                tester = (
+                    Tester(module.eval(), inputs)
+                    .quantize()
+                    .export()
+                    .to_edge()
+                    .run_passes(self.PassStage)
+                    # input -> NHWC, conv1 output -> NCHW, op output -> NHWC,
+                    # output -> NCHW
+                    .check_count({self.to_copy_name: 4})
+                    .check_not(
+                        ["executorch_exir_dialects_edge__ops_aten_view_copy_default"]
+                    )
+                    .run_method_and_compare_outputs()
+                )
+                graph_module = (
+                    tester.get_artifact(StageType.RUN_PASSES)
+                    .exported_program()
+                    .graph_module
+                )
+                (binary_op,) = [
+                    node for node in graph_module.graph.nodes if node.target == op
+                ]
+                self.assertFalse(ChannelsLastTaggedReshapePass.is_nhwc_node(binary_op))
+
+                tester = (
+                    Tester(module.eval(), inputs)
+                    .quantize()
+                    .export()
+                    .to_edge_transform_and_lower()
+                    .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+                )
+                node_types = tester.xnnpack_node_types()
+                self.assertEqual(node_types["XNNStaticTranspose"], 4, node_types)
+                self.assertEqual(node_types["XNNStaticReshape"], 0, node_types)
+                tester.to_executorch().serialize().run_method_and_compare_outputs(
+                    qtol=1
+                )
+
+    class ConvDynamicNoiseAddConv(torch.nn.Module):
+        """conv -> x + noise[H, W] -> conv with noise as a graph input. With
+        dynamic H and W the operand cannot be reshaped by XNNStaticReshape, so
+        the add takes the NCHW path."""
+
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 8, 3, padding=1)
+            self.conv2 = torch.nn.Conv2d(8, 4, 3, padding=1)
+
+        def forward(self, x, noise):
+            x = self.conv1(x)
+            x = x + noise
+            return self.conv2(x)
+
+    def test_fp32_channels_last_tagged_reshape_pass_dynamic_lower_rank_operand(self):
+        height = torch.export.Dim("height", min=4, max=32)
+        width = torch.export.Dim("width", min=4, max=32)
+        dynamic_shapes = ({2: height, 3: width}, {0: height, 1: width})
+        inputs = (torch.randn(1, 3, 5, 7), torch.randn(5, 7))
+        (
+            Tester(
+                self.ConvDynamicNoiseAddConv().eval(),
+                inputs,
+                dynamic_shapes=dynamic_shapes,
+            )
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+            # input -> NHWC, conv1 output -> NCHW, add output -> NHWC,
+            # output -> NCHW
+            .check_count({self.to_copy_name: 4})
+            .check_not(["executorch_exir_dialects_edge__ops_aten_view_copy_default"])
+            .run_method_and_compare_outputs()
+        )
+        (
+            Tester(
+                self.ConvDynamicNoiseAddConv().eval(),
+                inputs,
+                dynamic_shapes=dynamic_shapes,
+            )
+            .export()
+            .to_edge_transform_and_lower()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs(
+                inputs=(torch.randn(1, 3, 12, 6), torch.randn(12, 6))
+            )
+        )
 
     def test_fp32_channels_last_tagged_reshape_pass_conv_bn_hardtanh_mean_seq(self):
         # Copy #1 is for input to conv, nchw -> nhwc
@@ -330,6 +906,49 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
             .run_method_and_compare_outputs()
         )
 
+    class ConvMeanChannels(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv = torch.nn.Conv2d(3, 4, 3)
+
+        def forward(self, x):
+            return torch.mean(self.conv(x), 1, keepdim=True)
+
+    def test_fp32_channels_last_tagged_reshape_pass_conv_mean_channels(self):
+        # Copy #1 is for input to conv, nchw -> nhwc
+        # Copy #2 is for conv to mean, nhwc -> nchw
+        tester = (
+            Tester(self.ConvMeanChannels().eval(), (torch.randn(1, 3, 8, 8),))
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+            .check_count({self.to_copy_name: 2})
+        )
+        graph = (
+            tester.get_artifact(StageType.RUN_PASSES)
+            .exported_program()
+            .graph_module.graph
+        )
+        (mean,) = [n for n in graph.nodes if n.target == exir_ops.edge.aten.mean.dim]
+        copy = mean.args[0]
+        self.assertEqual(copy.target, exir_ops.edge.aten._to_copy.default)
+        self.assertEqual(copy.kwargs["memory_format"], torch.contiguous_format)
+        tester.run_method_and_compare_outputs()
+
+    class MeanLastDim(torch.nn.Module):
+        def forward(self, x):
+            return torch.mean(x, -1, keepdim=True)
+
+    def test_fp32_channels_last_tagged_reshape_pass_mean_3d(self):
+        (
+            Tester(self.MeanLastDim().eval(), (torch.randn(2, 7, 16),))
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+            .check_not([self.to_copy_name])
+            .run_method_and_compare_outputs()
+        )
+
     class Conv2dDynamicQuant(torch.nn.Module):
         def __init__(self):
             super().__init__()
@@ -363,6 +982,222 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
             )
             .run_method_and_compare_outputs()
         )
+
+    class EltwiseConv2dDynamicQuant(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv = torch.nn.Conv2d(3, 10, 3)
+
+        def forward(self, x):
+            return self.conv(torch.sigmoid(x))
+
+    def test_dq_conv2d_eltwise_source_channels_last_tagged_reshape_pass(self) -> None:
+        # The conv's input is sigmoid -> q -> dq. Stepping past the q/dq pair leaves
+        # the sigmoid reading NHWC while its own output stays NCHW, which XNNPACK
+        # only rejects at runtime.
+        tester = (
+            Tester(self.EltwiseConv2dDynamicQuant().eval(), (torch.randn(1, 3, 8, 8),))
+            .quantize(
+                Quantize(
+                    quantization_config=get_symmetric_quantization_config(
+                        is_dynamic=True
+                    )
+                )
+            )
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+        )
+
+        artifact = tester.get_artifact(StageType.RUN_PASSES)
+        graph_module = artifact.exported_program().graph_module
+        sigmoid_nodes = [
+            node
+            for node in graph_module.graph.nodes
+            if node.target == exir_ops.edge.aten.sigmoid.default
+        ]
+        self.assertEqual(len(sigmoid_nodes), 1)
+        sigmoid = sigmoid_nodes[0]
+
+        # The sigmoid keeps its NCHW input and the copy sits on its output instead.
+        self.assertEqual(sigmoid.args[0].op, "placeholder")
+        copies = [
+            user
+            for user in sigmoid.users
+            if user.target == exir_ops.edge.aten._to_copy.default
+            and user.kwargs.get("memory_format") == torch.channels_last
+        ]
+        self.assertEqual(len(copies), 1)
+
+        tester.run_method_and_compare_outputs()
+
+    class SiLUStemSharedConv2dDynamicQuant(torch.nn.Module):
+        """A SiLU stem ahead of the first convolution, as detection backbones have.
+
+        Two producers here have more than one consumer: the input activation feeds
+        both the sigmoid and the mul, and the SiLU output feeds both the quantized
+        convolution and the graph output. Both are reachable by the blanket
+        ``replace_all_uses_with`` in the dynamic-quant branch of ``input_to_nhwc``.
+        """
+
+        def __init__(self):
+            super().__init__()
+            self.conv = torch.nn.Conv2d(3, 8, 3, padding=1)
+
+        def forward(self, x):
+            act = x * torch.sigmoid(x)
+            return self.conv(act), act
+
+    def test_dq_conv2d_silu_stem_shared_channels_last_tagged_reshape_pass(self) -> None:
+        tester = (
+            Tester(
+                self.SiLUStemSharedConv2dDynamicQuant().eval(),
+                (torch.randn(1, 3, 16, 16),),
+            )
+            .quantize(
+                Quantize(
+                    quantization_config=get_symmetric_quantization_config(
+                        is_dynamic=True
+                    )
+                )
+            )
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+        )
+
+        graph_module = (
+            tester.get_artifact(StageType.RUN_PASSES).exported_program().graph_module
+        )
+        muls = [
+            node
+            for node in graph_module.graph.nodes
+            if node.target == exir_ops.edge.aten.mul.Tensor
+        ]
+        self.assertEqual(len(muls), 1)
+        silu = muls[0]
+
+        # The walk must stop at the SiLU output rather than run on to the input
+        # activation, which would leave the mul and the sigmoid reading NHWC while
+        # their own outputs stay NCHW.
+        for arg in silu.all_input_nodes:
+            self.assertNotEqual(arg.target, exir_ops.edge.aten._to_copy.default)
+
+        # The SiLU output is converted once, for the convolution only. The graph
+        # output keeps the unconverted node.
+        copies = [
+            user
+            for user in silu.users
+            if user.target == exir_ops.edge.aten._to_copy.default
+            and user.kwargs.get("memory_format") == torch.channels_last
+        ]
+        self.assertEqual(len(copies), 1)
+        output_node = next(
+            node for node in graph_module.graph.nodes if node.op == "output"
+        )
+        self.assertIn(silu, output_node.args[0])
+
+        tester.run_method_and_compare_outputs()
+
+    class SiblingBranchConv2dDynamicQuant(torch.nn.Module):
+        """A producer feeding both a quantized conv and an ordinary op."""
+
+        def __init__(self):
+            super().__init__()
+            self.conv = torch.nn.Conv2d(3, 8, 3, padding=1)
+
+        def forward(self, x):
+            act = torch.sigmoid(x)
+            return self.conv(act), torch.tanh(act)
+
+    def test_dq_conv2d_sibling_branch_channels_last_tagged_reshape_pass(self) -> None:
+        tester = (
+            Tester(
+                self.SiblingBranchConv2dDynamicQuant().eval(),
+                (torch.randn(1, 3, 16, 16),),
+            )
+            .quantize(
+                Quantize(
+                    quantization_config=get_symmetric_quantization_config(
+                        is_dynamic=True
+                    )
+                )
+            )
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+        )
+
+        graph_module = (
+            tester.get_artifact(StageType.RUN_PASSES).exported_program().graph_module
+        )
+        tanhs = [
+            node
+            for node in graph_module.graph.nodes
+            if node.target == exir_ops.edge.aten.tanh.default
+        ]
+        self.assertEqual(len(tanhs), 1)
+
+        # Only the quantize wrapper moved to the NHWC copy.
+        self.assertEqual(tanhs[0].args[0].target, exir_ops.edge.aten.sigmoid.default)
+
+        tester.run_method_and_compare_outputs()
+
+    class SharedLinearConvDynamicQuant(torch.nn.Module):
+        """Two dynamically quantized siblings sharing one source; only the conv
+        wants NHWC.
+        """
+
+        def __init__(self):
+            super().__init__()
+            self.linear = torch.nn.Linear(8, 8)
+            self.conv = torch.nn.Conv2d(3, 4, 1)
+
+        def forward(self, x):
+            act = torch.sigmoid(x)
+            # Keep linear before conv so it is processed first.
+            return self.linear(act), self.conv(act)
+
+    def test_dq_shared_linear_conv_channels_last_tagged_reshape_pass(self) -> None:
+        tester = (
+            Tester(
+                self.SharedLinearConvDynamicQuant().eval(),
+                (torch.randn(1, 3, 8, 8),),
+            )
+            .quantize(
+                Quantize(
+                    quantization_config=get_symmetric_quantization_config(
+                        is_dynamic=True
+                    )
+                )
+            )
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+        )
+
+        graph_module = (
+            tester.get_artifact(StageType.RUN_PASSES).exported_program().graph_module
+        )
+        quantizes = [
+            node
+            for node in graph_module.graph.nodes
+            if is_dynamic_qdq(node) and is_quant(node)
+        ]
+        self.assertEqual(len(quantizes), 2)
+        for quantize in quantizes:
+            consumer = next(iter(next(iter(quantize.users)).users))
+            source = quantize.args[0].target
+            qparam_source = quantize.args[1].args[0].args[0].target
+            self.assertEqual(source, qparam_source)
+            if consumer.target == exir_ops.edge.aten.convolution.default:
+                # The conv's chain reads the NHWC copy.
+                self.assertEqual(source, exir_ops.edge.aten._to_copy.default)
+            else:
+                # The linear's chain keeps the source.
+                self.assertEqual(source, exir_ops.edge.aten.sigmoid.default)
+
+        tester.run_method_and_compare_outputs()
 
     class ConvAddConvOutput(torch.nn.Module):
         def __init__(self):
@@ -663,5 +1498,92 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
             .export()
             .to_edge()
             .run_passes(self.PassStage)
+            .run_method_and_compare_outputs()
+        )
+
+    class DynamicQuantPerChannelBinaryChain(torch.nn.Module):
+        """A per-channel broadcasting binary op that is the first consumer of an
+        input activation, followed by a dynamically-quantized convolution.
+
+        This reproduces the graph shape that the dynamic-quant path of
+        ``input_to_nhwc`` mishandles. The input activation feeds a per-channel
+        ``mul``/``add`` (an NCHW ``[1, C, 1, 1]`` constant operand), and the
+        convolution chain runs *through* that binary op. When the convolution
+        requests NHWC, ``input_to_nhwc`` traces back through the binary op to the
+        input activation and calls ``replace_all_uses_with``, switching the binary
+        op's activation operand to NHWC while its constant operand stays NCHW. At
+        runtime XNNPACK then fails in ``xnn_reshape_binary_elementwise_nd`` with
+        ``xnn_status_invalid_parameter`` because ``[1, H, W, C]`` and
+        ``[1, C, 1, 1]`` are not broadcast-compatible -- unless the pass
+        re-converges the binary op's operands.
+
+        The quantize/dequantize ops are emitted directly (rather than via the
+        quantizer) so the graph reliably reproduces the shared back-traced source;
+        the whole graph delegates to XNNPACK.
+        """
+
+        def __init__(self):
+            super().__init__()
+            out_channels, in_channels, kernel = 8, 8, 3
+            self.register_buffer(
+                "weight",
+                torch.randint(
+                    -127,
+                    127,
+                    (out_channels, in_channels, kernel, kernel),
+                    dtype=torch.int8,
+                ),
+            )
+            self.register_buffer(
+                "weight_scale", torch.rand(out_channels) * 0.02 + 0.001
+            )
+            self.register_buffer(
+                "weight_zero_point", torch.zeros(out_channels, dtype=torch.int64)
+            )
+            self.register_buffer("scale", torch.rand(1, out_channels, 1, 1) + 0.5)
+            self.register_buffer("bias", torch.rand(1, out_channels, 1, 1))
+
+        def forward(self, activation):
+            qd = torch.ops.quantized_decomposed
+            # Per-channel binary op as the first consumer of the input activation.
+            scaled = activation * self.scale + self.bias
+            relued = torch.relu(scaled)
+            # Dynamic (runtime-chosen) quantization feeding the convolution.
+            q_scale, q_zero_point = qd.choose_qparams.tensor(
+                relued, -128, 127, 1e-5, torch.int8
+            )
+            dequantized = qd.dequantize_per_tensor.tensor(
+                qd.quantize_per_tensor.tensor(
+                    relued, q_scale, q_zero_point, -128, 127, torch.int8
+                ),
+                q_scale,
+                q_zero_point,
+                -128,
+                127,
+                torch.int8,
+            )
+            weight = qd.dequantize_per_channel(
+                self.weight,
+                self.weight_scale,
+                self.weight_zero_point,
+                0,
+                -127,
+                127,
+                torch.int8,
+            )
+            return torch.nn.functional.conv2d(dequantized, weight, padding=1)
+
+    def test_dynamic_quant_per_channel_binary_chain_lowers_and_runs(self):
+        # Regression test: the full XNNPACK lowering of this graph must run
+        # without an xnn_status_invalid_parameter from a binary op whose operands
+        # ended up in mismatched (NHWC vs NCHW) memory formats.
+        model = self.DynamicQuantPerChannelBinaryChain().eval()
+        activation = torch.randn(1, 8, 16, 16)
+        (
+            Tester(model, (activation,))
+            .export()
+            .to_edge_transform_and_lower()
+            .to_executorch()
+            .serialize()
             .run_method_and_compare_outputs()
         )

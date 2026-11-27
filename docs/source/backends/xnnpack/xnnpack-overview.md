@@ -32,6 +32,7 @@ import torch
 import torchvision.models as models
 from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
+from executorch.backends.xnnpack.utils.configs import get_transform_passes
 from executorch.exir import to_edge_transform_and_lower
 
 mobilenet_v2 = models.mobilenetv2.mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT).eval()
@@ -40,11 +41,17 @@ sample_inputs = (torch.randn(1, 3, 224, 224), )
 et_program = to_edge_transform_and_lower(
     torch.export.export(mobilenet_v2, sample_inputs),
     partitioner=[XnnpackPartitioner()],
+    transform_passes=get_transform_passes(),
 ).to_executorch()
 
 with open("mv2_xnnpack.pte", "wb") as file:
     et_program.write_to_file(file)
 ```
+
+The `transform_passes` stage is optional in the generic lowering API. For
+XNNPACK, `get_transform_passes()` is recommended in general because it runs
+pre-partition graph transforms that expose supported patterns to the
+partitioner.
 
 See [Partitioner API](/backends/xnnpack/xnnpack-partitioner) for a reference on available partitioner options. <!-- @lint-ignore -->
 
@@ -62,7 +69,7 @@ To run the model on-device, use the standard ExecuTorch runtime APIs.
 
 The XNNPACK delegate is included by default in the published Android, iOS, and pip packages. When building from source, pass `-DEXECUTORCH_BUILD_XNNPACK=ON` when configuring the CMake build to compile the XNNPACK backend. See [Running on Device](/getting-started.md#running-on-device) for more information.
 
-To link against the backend, add the `executorch_backends` CMake target as a build dependency, or link directly against `libxnnpack_backend`. Due to the use of static registration, it may be necessary to link with whole-archive. This can typically be done by passing `"$<LINK_LIBRARY:WHOLE_ARCHIVE,xnnpack_backend>"` to `target_link_libraries`.
+To link against the backend, add the `executorch_backends` CMake target as a build dependency, or link directly against `libxnnpack_backend` and `libxnnpack_profiler`. Due to the use of static registration, it may be necessary to link with whole-archive. This can typically be done by passing `"$<LINK_LIBRARY:WHOLE_ARCHIVE,xnnpack_backend>"` to `target_link_libraries`.
 
 ```
 # CMakeLists.txt

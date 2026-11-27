@@ -6,7 +6,7 @@
 from typing import Set, Type
 
 import torch
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -42,7 +42,7 @@ def _fixup_end(end, dim_size):
     return max(0, min(e, dim_size))
 
 
-class DecomposeStridedSliceCopyPass(ArmPass):
+class DecomposeStridedSliceCopyPass(ArmOpTargetedPass):
     """Decompose edge.aten.slice_copy.Tensor with non-unit step into supported
     ops.
 
@@ -61,10 +61,10 @@ class DecomposeStridedSliceCopyPass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
-    _TARGET_OPS = {exir_ops.edge.aten.slice_copy.Tensor}
+    target_ops = {exir_ops.edge.aten.slice_copy.Tensor}
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in self._TARGET_OPS:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 
         # Only handle the non-unit-step case; leave unit-step to existing lowering.

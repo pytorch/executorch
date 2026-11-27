@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -104,6 +105,19 @@ class Partitioner(ABC):
         guaranteed that the program that the backend receives will not have any of these ops
         decomposed.
 
+        to_edge_transform_and_lower calls this method at two stages, possibly more than once
+        in each, and `ep.dialect` tells them apart. Each returned filter is only applied to
+        the nodes of the `ep` passed to that same call, including those of the submodules of
+        its top-level cond, map and scan ops.
+
+        * During decomposition, on the ATen program (`ep.dialect == "ATEN"`). The list and
+          the filter decide which nodes are kept whole.
+        * After lowering, on the EDGE program (`ep.dialect == "EDGE"`). A node still in the
+          graph whose op is in this list, or in the list of an earlier partitioner for the
+          same method, and that the filter accepts was neither decomposed nor delegated,
+          and raises an error, except for some quantization ops and, when this call
+          returns a filter, ops that exir does not preserve.
+
         Returns:
             List[torch._ops.OpOverload]: a list of operator names that should not be decomposed.
             Optional[Callable[[torch.fx.Node], bool]]]: an optional callable, acting as a filter, that users can provide
@@ -112,3 +126,27 @@ class Partitioner(ABC):
             in the list returned by ops_to_not_decompose.
         """
         return ([], None)
+
+    def transform_for_pre_decomposition(
+        self, exported_program: ExportedProgram
+    ) -> ExportedProgram:
+        """Transform an ATen program before default decompositions run.
+
+        EXIR invokes this hook automatically from
+        ``to_edge_transform_and_lower``. Backend partitioners may override it
+        to apply transformations that must run before decomposition. Callers
+        should use ``to_edge_transform_and_lower`` instead of invoking this
+        method directly.
+
+        When multiple partitioners are used for a method, their transforms run
+        sequentially in the order supplied to ``to_edge_transform_and_lower``.
+
+        Args:
+            exported_program (ExportedProgram): The ATen-dialect program to
+                transform.
+
+        Returns:
+            ExportedProgram: The transformed ATen-dialect program.
+
+        """
+        return exported_program

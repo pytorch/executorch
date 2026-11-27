@@ -7,6 +7,7 @@
 # pyre-unsafe
 
 import copy
+import functools
 import os
 import random
 import statistics
@@ -88,6 +89,28 @@ EVENTS_SIZE = 10
 RAW_DATA_SIZE = 10
 ETDUMP_PATH = "unittest_etdump_path"
 ETRECORD_PATH = "unittest_etrecord_path"
+
+
+def disable_if(condition, reason):
+    """Disable a test when condition is true, still reporting it as executed.
+
+    Conditional analogue of unittest.skipIf that keeps disabled tests visible in
+    logs instead of producing a skipped result, which some test runners handle
+    inconsistently.
+    """
+
+    def decorator(fn):
+        if not condition:
+            return fn
+
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            print(f"DISABLED_TEST: {fn.__qualname__}: {reason}")
+            return None
+
+        return wrapper
+
+    return decorator
 
 
 # TODO: write an E2E test: create an inspector instance, mock just the file reads, and then verify the external correctness
@@ -366,6 +389,106 @@ class TestInspector(unittest.TestCase):
                         inspector_instance.get_exported_program(), ExportedProgram
                     )
                 )
+
+    def test_inspector_with_etrecord_object_resolves_debug_handles(self):
+        _, _, et_output = TestETRecord().get_test_model(generate_etrecord=True)
+        etrecord = et_output.get_etrecord()
+        # An ETRecord object from get_etrecord() keys its maps by int instruction id
+        instruction_id = next(iter(etrecord._debug_handle_map["forward"]))
+        self.assertIsInstance(instruction_id, int)
+
+        def gen_event_blocks(*args, **kwargs):
+            return [
+                EventBlock(
+                    name=EVENT_BLOCK_NAME,
+                    events=[Event(name="op", _instruction_id=instruction_id)],
+                )
+            ]
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            etrecord_path = os.path.join(tmp_dir, "etrecord.bin")
+            etrecord.save(etrecord_path)
+
+            with patch.object(
+                _inspector, "gen_etdump_object", return_value=None
+            ), patch.object(
+                EventBlock, "_gen_from_etdump", side_effect=gen_event_blocks
+            ):
+                inspector_from_object = Inspector(
+                    etdump_path=ETDUMP_PATH, etrecord=etrecord
+                )
+                inspector_from_file = Inspector(
+                    etdump_path=ETDUMP_PATH, etrecord=etrecord_path
+                )
+
+        event_from_object = inspector_from_object.event_blocks[0].events[0]
+        event_from_file = inspector_from_file.event_blocks[0].events[0]
+        self.assertIsNotNone(event_from_file.debug_handles)
+        # Passing the ETRecord object directly must give the same result as
+        # passing the path of the saved ETRecord
+        self.assertEqual(event_from_object.debug_handles, event_from_file.debug_handles)
+        self.assertEqual(event_from_object.op_types, event_from_file.op_types)
+
+    def test_inspector_with_delegated_etrecord_object_matches_saved_file(self):
+        _, _, et_output = TestETRecord().get_test_model(generate_etrecord=True)
+        etrecord = et_output.get_etrecord()
+        instruction_id = next(iter(etrecord._debug_handle_map["forward"]))
+        # Shape produced by DelegateMappingBuilder: int keys, tuple values
+        etrecord._delegate_map = {
+            "forward": {
+                instruction_id: {
+                    "name": "TestBackend",
+                    "delegate_map": {0: (1, 2), 5: (3,)},
+                }
+            }
+        }
+
+        def gen_event_blocks(*args, **kwargs):
+            return [
+                EventBlock(
+                    name=EVENT_BLOCK_NAME,
+                    events=[
+                        Event(name="op", _instruction_id=instruction_id),
+                        Event(
+                            name="delegated",
+                            _instruction_id=instruction_id,
+                            delegate_debug_identifier=0,
+                        ),
+                        # not in the delegate map
+                        Event(
+                            name="unmapped",
+                            _instruction_id=instruction_id,
+                            delegate_debug_identifier=7,
+                        ),
+                    ],
+                )
+            ]
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            etrecord_path = os.path.join(tmp_dir, "etrecord.bin")
+            etrecord.save(etrecord_path)
+
+            with patch.object(
+                _inspector, "gen_etdump_object", return_value=None
+            ), patch.object(
+                EventBlock, "_gen_from_etdump", side_effect=gen_event_blocks
+            ):
+                inspector_from_object = Inspector(
+                    etdump_path=ETDUMP_PATH, etrecord=etrecord
+                )
+                inspector_from_file = Inspector(
+                    etdump_path=ETDUMP_PATH, etrecord=etrecord_path
+                )
+
+        events_from_object = inspector_from_object.event_blocks[0].events
+        events_from_file = inspector_from_file.event_blocks[0].events
+        self.assertEqual(events_from_file[1].debug_handles, [1, 2])
+        for from_object, from_file in zip(events_from_object, events_from_file):
+            self.assertEqual(from_object.debug_handles, from_file.debug_handles)
+            self.assertEqual(from_object.num_outputs, from_file.num_outputs)
+            self.assertEqual(
+                from_object.delegate_backend_name, from_file.delegate_backend_name
+            )
 
     def test_populate_debugging_related_fields_raises_for_inconsistent_events(self):
         ret_event: Event = Event(
@@ -939,6 +1062,33 @@ class TestInspector(unittest.TestCase):
             # For (1,): max(|[4.0, 5.0, 6.0] - [3.0, 6.0, 5.0]|) = max([1.0, 1.0, 1.0]) = 1.0
             self.assertEqual(df.iloc[1]["gap"][0], 1.0)
 
+    def test_comparators_get_complex_values_as_pairs(self):
+        """Lowering can store a complex tensor as real pairs, while the
+        reference graph keeps it complex."""
+        from executorch.devtools.inspector.numerical_comparator import (
+            MSEComparator,
+            NumericalComparatorBase,
+        )
+
+        class MaxAbsDiffComparator(NumericalComparatorBase):
+            def element_compare(self, a, b):
+                return torch.max(torch.abs(a - b)).item()
+
+        reference = torch.polar(torch.ones(4), torch.rand(4)).conj()
+        pairs = torch.view_as_real(reference.resolve_conj()).clone()
+        for comparator in (MaxAbsDiffComparator(), MSEComparator()):
+            with self.subTest(comparator=type(comparator).__name__):
+                df = comparator.compare(
+                    {
+                        ((0,), reference): ((0,), pairs),
+                        ((1,), (reference,)): ((1,), (pairs,)),
+                    },
+                    {(0,): ["mul"], (1,): ["mul_1"]},
+                    {(0,): ["mul"], (1,): ["mul_1"]},
+                )
+                self.assertEqual(list(df["gap"]), [[0.0], [0.0]])
+                self.assertIs(df["aot_intermediate_output"][0], reference)
+
     def test_calculate_numeric_gap_with_custom_comparator_and_preprocessing(self):
         """Test calculate_numeric_gap with multiple custom comparators sharing the same preprocessing."""
         from executorch.devtools.inspector.numerical_comparator import (
@@ -1504,7 +1654,7 @@ class TestInspector(unittest.TestCase):
             self.assertIsInstance(df, pd.DataFrame)
             self.assertEqual(len(df), 1)
 
-    @unittest.skipIf(sys.platform.startswith("win"), "Skipping on Windows")
+    @disable_if(sys.platform.startswith("win"), "Skipping on Windows")
     def test_transformer_block_xnnpack_numeric_gap_within_tolerance(self):
         """
         Test that the numeric gap between AOT and runtime intermediate outputs
@@ -1693,7 +1843,67 @@ class TestInspector(unittest.TestCase):
                         f"Stack trace for {op_name} doesn't contain file info",
                     )
 
-    @unittest.skipIf(sys.platform.startswith("win"), "Skipping on Windows")
+    @disable_if(sys.platform.startswith("win"), "Skipping on Windows")
+    def test_complex_rotary_embedding_numeric_gap(self):
+        """Lowering stores complex tensors as real pairs, while the default
+        reference graph keeps them complex."""
+        from executorch.runtime import Runtime, Verification
+
+        class Rope(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                angles = torch.outer(torch.arange(8.0), torch.rand(4))
+                self.register_buffer(
+                    "freqs", torch.polar(torch.ones_like(angles), angles)
+                )
+
+            def forward(self, x):
+                pairs = torch.view_as_complex(x.unflatten(-1, (-1, 2)))
+                return torch.view_as_real(pairs * self.freqs).flatten(-2)
+
+        inputs = (torch.randn(2, 8, 8),)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            et_program = to_edge_transform_and_lower(
+                export(Rope(), inputs, strict=True), generate_etrecord=True
+            ).to_executorch()
+            pte_path = os.path.join(temp_dir, "model.pte")
+            et_program.save(pte_path)
+            etrecord = et_program.get_etrecord()
+            etrecord.update_representative_inputs(inputs)
+            etrecord_path = os.path.join(temp_dir, "etrecord.bin")
+            etrecord.save(etrecord_path)
+
+            program = Runtime.get().load_program(
+                pte_path,
+                verification=Verification.Minimal,
+                enable_etdump=True,
+                debug_buffer_size=1024 * 1024,
+            )
+            program.load_method("forward").execute(inputs)
+            etdump_path = os.path.join(temp_dir, "etdump.etdp")
+            debug_buffer_path = os.path.join(temp_dir, "debug_buffer.bin")
+            program.write_etdump_result_to_file(etdump_path, debug_buffer_path)
+            if not os.path.exists(etdump_path):
+                self.skipTest(
+                    "Event tracer not enabled. Run with --config executorch.event_tracer_enabled=true"
+                )
+
+            df = Inspector(
+                etdump_path=etdump_path,
+                etrecord=etrecord_path,
+                debug_buffer_path=debug_buffer_path,
+            ).calculate_numeric_gap("MSE")
+
+        self.assertTrue(
+            any(
+                isinstance(output, torch.Tensor) and output.is_complex()
+                for output in df["aot_intermediate_output"]
+            )
+        )
+        for gap in df["gap"]:
+            self.assertLess(gap[0], 1e-10)
+
+    @disable_if(sys.platform.startswith("win"), "Skipping on Windows")
     def test_intermediate_tensor_comparison_with_torch_export(self):
         """Test intermediate tensor comparison using torch.export.export and to_edge_transform_and_lower.
 
@@ -1840,7 +2050,7 @@ class TestInspector(unittest.TestCase):
     ) -> List[Union[None, List[torch.Tensor], bool, float, int, str, torch.Tensor]]:
         return [torch.randn(RAW_DATA_SIZE)]
 
-    @unittest.skipIf(sys.platform.startswith("win"), "Skipping on Windows")
+    @disable_if(sys.platform.startswith("win"), "Skipping on Windows")
     def test_disable_debug_handle_validation_with_symbolic_shapes(self):
         """
         Test that demonstrates the issue with symbolic shape related nodes losing from_node info

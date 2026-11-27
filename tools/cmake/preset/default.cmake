@@ -24,6 +24,9 @@ define_overridable_option(
   EXECUTORCH_BUILD_COREML "Build the Core ML backend" BOOL OFF
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_COREAI "Build the Core AI backend (Apple SDK 27+)" BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_FLATBUFFERS_MAX_ALIGNMENT
   "Exir lets users set the alignment of tensor data embedded in the flatbuffer, and some users need an alignment larger than the default, which is typically 32."
   STRING
@@ -95,7 +98,14 @@ define_overridable_option(
   ON # Required by executor_runner
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_EXTENSION_IMAGE "Build the Image extension" BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_LLM "Build the LLM extension" BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE "Build the ETDump Apple extension"
+  BOOL OFF
 )
 define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_LLM_APPLE "Build the LLM Apple extension" BOOL OFF
@@ -120,8 +130,11 @@ define_overridable_option(
 define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_APPLE "Build the Apple extension" BOOL OFF
 )
-define_overridable_option(EXECUTORCH_BUILD_MPS "Build the MPS backend" BOOL OFF)
 define_overridable_option(EXECUTORCH_BUILD_MLX "Build the MLX backend" BOOL OFF)
+define_overridable_option(
+  EXECUTORCH_MLX_SWIFTPM_RESOURCES
+  "Load the MLX metallib from the ExecuTorch SwiftPM resource bundle" BOOL OFF
+)
 define_overridable_option(
   EXECUTORCH_BUILD_NEURON "Build the backends/mediatek directory" BOOL OFF
 )
@@ -165,9 +178,48 @@ define_overridable_option(
 define_overridable_option(
   EXECUTORCH_BUILD_XNNPACK "Build the XNNPACK backend" BOOL OFF
 )
+define_overridable_option(EXECUTORCH_BUILD_CPU "Build the CPU backend" BOOL OFF)
 define_overridable_option(
   EXECUTORCH_BUILD_VULKAN "Build the Vulkan backend" BOOL OFF
 )
+define_overridable_option(
+  EXECUTORCH_BUILD_NATIVE "Build the engine-independent native runtime" BOOL
+  OFF
+)
+cmake_dependent_option(
+  EXECUTORCH_BUILD_NATIVE_CPU "Build the native CPU engine" OFF
+  "EXECUTORCH_BUILD_NATIVE" OFF
+)
+cmake_dependent_option(
+  EXECUTORCH_BUILD_NATIVE_VULKAN "Build the native Vulkan engine" OFF
+  "EXECUTORCH_BUILD_NATIVE" OFF
+)
+cmake_dependent_option(
+  EXECUTORCH_BUILD_NATIVE_GGML "Build the native GGML engine" OFF
+  "EXECUTORCH_BUILD_NATIVE" OFF
+)
+cmake_dependent_option(
+  EXECUTORCH_BUILD_NATIVE_VISION_RUNNER
+  "Build the native vision classification runners"
+  OFF
+  "EXECUTORCH_BUILD_NATIVE_CPU OR EXECUTORCH_BUILD_NATIVE_VULKAN OR EXECUTORCH_BUILD_NATIVE_GGML"
+  OFF
+)
+cmake_dependent_option(
+  EXECUTORCH_BUILD_NATIVE_AUDIO_RUNNER
+  "Build the native GGML CPU Whisper speech recognition runner" OFF
+  "EXECUTORCH_BUILD_NATIVE_GGML" OFF
+)
+cmake_dependent_option(
+  EXECUTORCH_BUILD_NATIVE_LLM_RUNNER "Build the native LLM runners" OFF
+  "EXECUTORCH_BUILD_NATIVE_VULKAN OR EXECUTORCH_BUILD_NATIVE_GGML" OFF
+)
+announce_configured_options(EXECUTORCH_BUILD_NATIVE_CPU)
+announce_configured_options(EXECUTORCH_BUILD_NATIVE_VULKAN)
+announce_configured_options(EXECUTORCH_BUILD_NATIVE_GGML)
+announce_configured_options(EXECUTORCH_BUILD_NATIVE_VISION_RUNNER)
+announce_configured_options(EXECUTORCH_BUILD_NATIVE_AUDIO_RUNNER)
+announce_configured_options(EXECUTORCH_BUILD_NATIVE_LLM_RUNNER)
 define_overridable_option(
   EXECUTORCH_BUILD_WEBGPU "Build the WebGPU backend" BOOL OFF
 )
@@ -182,7 +234,18 @@ define_overridable_option(
   EXECUTORCH_BUILD_CORTEX_M "Build the Cortex-M backend" BOOL OFF
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_CMSIS_NN_PYBINDS "Build the CMSIS-NN Python bindings" BOOL
+  OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_ESP_NN_PYBINDS "Build ESP-NN scratch-size Python bindings"
+  BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_CUDA "Build the CUDA backend" BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_ROCM "Build the CUDA/AOTI backend against ROCm" BOOL OFF
 )
 define_overridable_option(
   EXECUTORCH_BUILD_METAL "Build the Metal backend" BOOL OFF
@@ -205,6 +268,10 @@ define_overridable_option(
   EXECUTORCH_BUILD_TOKENIZERS_WASM "Build the JavaScript Tokenizers API" BOOL
   OFF
 )
+define_overridable_option(
+  EXECUTORCH_BUILD_WASM_WEBGPU
+  "Link the WebGPU backend into the ExecuTorch JavaScript API" BOOL OFF
+)
 
 if(EXECUTORCH_BUILD_ARM_BAREMETAL)
   set(_default_executorch_build_pthreadpool OFF)
@@ -222,8 +289,9 @@ define_overridable_option(
   ${_default_executorch_build_cpuinfo}
 )
 define_overridable_option(
-  EXECUTORCH_BUILD_SHARED "Build a consolidated ExecuTorch shared library" BOOL
-  OFF
+  EXECUTORCH_BUILD_SHARED
+  "Build a consolidated ExecuTorch shared library (Linux, macOS and Windows)"
+  BOOL OFF
 )
 
 # Threadpool size options. At most one can be specified. Note that the default
@@ -287,8 +355,7 @@ define_overridable_option(
   EXECUTORCH_XNNPACK_SHARED_WORKSPACE
   "Enable workspace sharing across different delegate instances" BOOL ON
 )
-# Keeping this OFF by default due to regressions in decode and model load with
-# kleidi kernels
+# Enable KleidiAI kernels by default when building the XNNPACK backend.
 define_overridable_option(
   EXECUTORCH_XNNPACK_ENABLE_KLEIDI "Enable Arm Kleidi kernels" BOOL ON
 )
@@ -301,6 +368,11 @@ define_overridable_option(
 define_overridable_option(
   EXECUTORCH_XNNPACK_ENABLE_WEIGHT_CACHE
   "Enable weights cache to cache and manage all packed weights" BOOL OFF
+)
+# Reads XNNPACK's internal runtime, so it is only meant for profiling builds.
+define_overridable_option(
+  EXECUTORCH_CPU_XNNPACK_OPERATOR_SHAPES
+  "Attach XNNPACK operator shapes to CPU backend ETDump events" BOOL OFF
 )
 define_overridable_option(
   EXECUTORCH_USE_CPP_CODE_COVERAGE "Build with code coverage enabled" BOOL OFF
@@ -319,7 +391,7 @@ define_overridable_option(
 )
 define_overridable_option(
   EXECUTORCH_SELECT_OPS_MODEL
-  "Build the executorch_kernels target with only operators from the given model .pte file."
+  "Build the executorch_kernels target with only operators from the given semicolon-separated .pte files."
   STRING
   ""
 )
@@ -342,9 +414,22 @@ define_overridable_option(
 # At this point all the options should be configured with their final value.
 # ------------------------------------------------------------------------------
 
-check_required_options_on(
-  IF_ON EXECUTORCH_ENABLE_EVENT_TRACER REQUIRES EXECUTORCH_BUILD_DEVTOOLS
+# The tracer needs the etdump target, not the whole devtools umbrella. A pybind,
+# shared, or Apple ETDump build adds that target on its own, so accept any of
+# those routes rather than forcing an option that also pulls in submodules a
+# wheel does not check out. Skip the check whenever the caller asked for the
+# tracer explicitly too: an Apple preset turns the tracer on for the whole
+# runtime, so someone switching only the Apple ETDump extension off would
+# otherwise trip a devtools requirement they never asked about.
+if(NOT EXECUTORCH_BUILD_PYBIND
+   AND NOT EXECUTORCH_BUILD_SHARED
+   AND NOT EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE
+   AND NOT EXECUTORCH_BUILD_EXTENSION_APPLE
 )
+  check_required_options_on(
+    IF_ON EXECUTORCH_ENABLE_EVENT_TRACER REQUIRES EXECUTORCH_BUILD_DEVTOOLS
+  )
+endif()
 
 check_required_options_on(
   IF_ON EXECUTORCH_BUILD_QNN REQUIRES EXECUTORCH_BUILD_EXTENSION_TENSOR
@@ -352,6 +437,11 @@ check_required_options_on(
 
 check_required_options_on(
   IF_ON EXECUTORCH_ENABLE_BUNDLE_IO REQUIRES EXECUTORCH_BUILD_DEVTOOLS
+)
+
+check_required_options_on(
+  IF_ON EXECUTORCH_CPU_XNNPACK_OPERATOR_SHAPES REQUIRES
+  EXECUTORCH_ENABLE_EVENT_TRACER
 )
 
 check_required_options_on(
@@ -368,9 +458,23 @@ check_required_options_on(
   EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER
 )
 
+# The wrapper links the profiler and the core Apple extension. The profiler only
+# records anything when the runtime was compiled with the tracing hooks enabled,
+# and it needs the etdump target, which the root CMakeLists adds for this build,
+# not the whole devtools umbrella.
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE REQUIRES
+  EXECUTORCH_ENABLE_EVENT_TRACER EXECUTORCH_BUILD_EXTENSION_APPLE
+  EXECUTORCH_BUILD_EXTENSION_MODULE
+)
+
 check_required_options_on(
   IF_ON EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER REQUIRES
   EXECUTORCH_BUILD_EXTENSION_LLM
+)
+
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_COREAI REQUIRES EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
 )
 
 check_required_options_on(
@@ -386,6 +490,7 @@ check_required_options_on(
 
 check_required_options_on(
   IF_ON EXECUTORCH_BUILD_PYBIND REQUIRES EXECUTORCH_BUILD_EXTENSION_MODULE
+  EXECUTORCH_BUILD_EXTENSION_TENSOR
 )
 
 check_required_options_on(
@@ -409,6 +514,11 @@ check_required_options_on(
 )
 
 check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_EXTENSION_IMAGE REQUIRES
+  EXECUTORCH_BUILD_EXTENSION_TENSOR
+)
+
+check_required_options_on(
   IF_ON EXECUTORCH_BUILD_TESTS REQUIRES EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR
 )
 
@@ -421,6 +531,24 @@ check_required_options_on(
   IF_ON EXECUTORCH_BUILD_XNNPACK REQUIRES EXECUTORCH_BUILD_CPUINFO
   EXECUTORCH_BUILD_PTHREADPOOL
 )
+
+# The default composition uses XNNPACK and the full Reference kernel library.
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_CPU REQUIRES EXECUTORCH_BUILD_XNNPACK
+  EXECUTORCH_BUILD_KERNELS_OPTIMIZED
+)
+
+if(EXECUTORCH_BUILD_CPU)
+  if(NOT EXECUTORCH_SELECT_OPS_YAML STREQUAL ""
+     OR NOT EXECUTORCH_SELECT_OPS_LIST STREQUAL ""
+     OR NOT EXECUTORCH_SELECT_OPS_MODEL STREQUAL ""
+  )
+    message(
+      FATAL_ERROR
+        "EXECUTORCH_BUILD_CPU does not support selective kernel builds"
+    )
+  endif()
+endif()
 
 check_conflicting_options_on(
   IF_ON EXECUTORCH_BUILD_ARM_BAREMETAL CONFLICTS_WITH
@@ -448,11 +576,29 @@ check_required_options_on(
 )
 
 check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_WASM_WEBGPU REQUIRES EXECUTORCH_BUILD_WASM
+  EXECUTORCH_BUILD_WEBGPU
+)
+
+check_required_options_on(
   IF_ON EXECUTORCH_BUILD_CUDA REQUIRES EXECUTORCH_BUILD_EXTENSION_TENSOR
 )
 
 check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_ROCM REQUIRES EXECUTORCH_BUILD_EXTENSION_TENSOR
+)
+
+check_conflicting_options_on(
+  IF_ON EXECUTORCH_BUILD_ROCM CONFLICTS_WITH EXECUTORCH_BUILD_CUDA
+)
+
+check_required_options_on(
   IF_ON EXECUTORCH_BUILD_METAL REQUIRES EXECUTORCH_BUILD_EXTENSION_TENSOR
+)
+
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_NATIVE_CPU REQUIRES EXECUTORCH_BUILD_XNNPACK
+  EXECUTORCH_BUILD_KERNELS_OPTIMIZED
 )
 
 if(NOT EXISTS ${EXECUTORCH_PAL_DEFAULT_FILE_PATH})

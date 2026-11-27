@@ -1,0 +1,72 @@
+// Copyright (c) Meta Platforms, Inc. and affiliates.
+// All rights reserved.
+//
+// This source code is licensed under the BSD-style license found in the
+// LICENSE file in the root directory of this source tree.
+
+#include <executorch/backends/native/runtime/engine/Engine.h>
+
+#include <stdexcept>
+#include <utility>
+
+#include <executorch/backends/native/runtime/Program.h>
+#include <executorch/backends/native/runtime/Validation.h>
+#include <executorch/backends/native/runtime/deserialize/Package.h>
+
+namespace ptn {
+
+// Out of line so each vtable is emitted here rather than in every translation
+// unit that includes the header.
+EngineExecutable::~EngineExecutable() = default;
+
+// NOLINTNEXTLINE(clang-diagnostic-missing-noreturn): overrides may return.
+void EngineExecutable::resize_input(size_t, const std::vector<int64_t>&) {
+  throw std::runtime_error("engine does not support resizing inputs");
+}
+
+EngineContext::EngineContext(
+    std::shared_ptr<const Program> program,
+    std::shared_ptr<const Package> package)
+    : program_(std::move(program)), package_(std::move(package)) {
+  if (program_ == nullptr || package_ == nullptr) {
+    throw std::invalid_argument("engine context requires program and package");
+  }
+  validate_program_state(*program_);
+}
+
+EngineContext::~EngineContext() = default;
+
+const Program& EngineContext::program() const {
+  return *program_;
+}
+
+const Package& EngineContext::package() const {
+  return *package_;
+}
+
+std::unique_ptr<EngineExecutable> EngineContext::compile(
+    const std::string& method_name) {
+  const Method& method = program_->get_method(method_name);
+  validate_method_constants(method, *package_);
+  std::unique_ptr<EngineExecutable> executable = compile_method(method);
+  if (executable == nullptr) {
+    throw std::runtime_error("engine returned a null executable");
+  }
+  return executable;
+}
+
+EngineHost::~EngineHost() = default;
+
+std::unique_ptr<EngineContext> EngineHost::create_context_with_options(
+    std::shared_ptr<const Program> program,
+    std::shared_ptr<const Package> package,
+    const EngineContextOptions& options) {
+  if (!options.empty()) {
+    throw std::invalid_argument(
+        name() + ": unsupported context option '" + options.begin()->first +
+        "'");
+  }
+  return create_context(std::move(program), std::move(package));
+}
+
+} // namespace ptn

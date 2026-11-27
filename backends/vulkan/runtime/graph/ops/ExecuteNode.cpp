@@ -39,8 +39,11 @@ bool ExecuteNode::trigger_resize(ComputeGraph* graph) {
 }
 
 bool ExecuteNode::was_any_arg_updated(const ComputeGraph* const graph) const {
-  // Check all ValueRefs in ArgGroups
+  // Check input args.
   for (const auto& arg_group : args_) {
+    if (!(arg_group.access & vkapi::kRead)) {
+      continue;
+    }
     for (const auto& value_ref : arg_group.refs) {
       if (graph->was_value_updated(value_ref)) {
         return true;
@@ -48,10 +51,22 @@ bool ExecuteNode::was_any_arg_updated(const ComputeGraph* const graph) const {
     }
   }
 
-  // Check all ValueRefs in resize_args
+  // Check resize args.
   for (const auto& value_ref : resize_args_) {
     if (graph->was_value_updated(value_ref)) {
       return true;
+    }
+  }
+
+  // Check output args.
+  for (const auto& arg_group : args_) {
+    if (arg_group.access & vkapi::kRead) {
+      continue;
+    }
+    for (const auto& value_ref : arg_group.refs) {
+      if (graph->was_value_updated(value_ref)) {
+        return true;
+      }
     }
   }
 

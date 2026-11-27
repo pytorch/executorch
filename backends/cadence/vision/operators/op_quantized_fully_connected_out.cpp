@@ -13,10 +13,10 @@ namespace impl {
 namespace vision {
 namespace native {
 
-using ::executorch::aten::optional;
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::KernelRuntimeContext;
+using std::optional;
 
 void quantized_fully_connected_out(
     __ET_UNUSED KernelRuntimeContext& ctx,
@@ -24,7 +24,7 @@ void quantized_fully_connected_out(
     const Tensor& weight,
     const Tensor& bias,
     int64_t in_zero_point,
-    const Tensor& weight_zero_point_t,
+    const std::optional<Tensor>& weight_zero_point_t,
     const Tensor& out_multiplier,
     const Tensor& out_shift,
     int64_t out_zero_point,

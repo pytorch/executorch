@@ -15,17 +15,17 @@ using executorch::runtime::TensorInfo;
 
 namespace example {
 // Constructor with embedding runner support
-template <typename T>
-MultimodalTokenGenerator<T>::MultimodalTokenGenerator(
+MultimodalTokenGenerator::MultimodalTokenGenerator(
     tokenizers::Tokenizer* tokenizer,
     TokenEmbeddingProcessor* tok_embedding_runner,
     DecoderRunner* decoder_runner,
-    KVManager<T>* kv_manager,
+    KVManager* kv_manager,
     const std::string& method_name,
     std::unique_ptr<std::unordered_set<uint64_t>>&& eos_ids,
     Metadata metadata,
-    executorch::llm::Stats* stats)
-    : TokenGenerator<T>(
+    executorch::llm::Stats* stats,
+    std::unique_ptr<executorch::extension::MethodMeta> method_meta)
+    : TokenGenerator(
           tokenizer,
           decoder_runner,
           kv_manager,
@@ -39,7 +39,8 @@ MultimodalTokenGenerator<T>::MultimodalTokenGenerator(
            metadata.use_int64_token,
            metadata.sliding_window,
            metadata.cache_mode},
-          stats),
+          stats,
+          std::move(method_meta)),
       tok_embedding_runner_(tok_embedding_runner),
       metadata_(metadata) {
   // Set input_toks_.size to 0 since we use embeddings instead
@@ -48,8 +49,7 @@ MultimodalTokenGenerator<T>::MultimodalTokenGenerator(
       metadata_.ar_len * metadata_.embedding_dim * sizeof(float);
 }
 
-template <typename T>
-void MultimodalTokenGenerator<T>::init_io(
+void MultimodalTokenGenerator::init_io(
     IMemAlloc* buffer_manager,
     Result<MethodMeta> method_meta) {
   size_t idx = 0;
@@ -73,8 +73,7 @@ void MultimodalTokenGenerator<T>::init_io(
 
   // [I]: attention_mask
   Result<TensorInfo> attention_mask = method_meta->input_tensor_meta(idx++);
-  attention_mask_.data = reinterpret_cast<uint16_t*>(
-      buffer_manager->allocate(attention_mask_.size));
+  attention_mask_.data = buffer_manager->allocate(attention_mask_.size);
   attention_mask_.tensor = std::make_unique<TensorImpl>(
       attention_mask->scalar_type(),
       attention_mask->sizes().size(),
@@ -90,8 +89,8 @@ void MultimodalTokenGenerator<T>::init_io(
   if (metadata_.cache_mode == CacheMode::HybridCache) {
     Result<TensorInfo> window_attention_mask =
         method_meta->input_tensor_meta(idx++);
-    window_attention_mask_.data = reinterpret_cast<uint16_t*>(
-        buffer_manager->allocate(window_attention_mask_.size));
+    window_attention_mask_.data =
+        buffer_manager->allocate(window_attention_mask_.size);
     window_attention_mask_.tensor = std::make_unique<TensorImpl>(
         window_attention_mask->scalar_type(),
         window_attention_mask->sizes().size(),
@@ -126,30 +125,27 @@ void MultimodalTokenGenerator<T>::init_io(
   for (int cache_group = 0; cache_group < 2; ++cache_group) {
     std::vector<std::unique_ptr<TensorImpl>>& cache =
         (cache_group == 0 ? k_cache_in_ : v_cache_in_);
-    std::vector<KVCache<T>> cache_ptrs = (cache_group == 0)
+    std::vector<KVCache> cache_ptrs = (cache_group == 0)
         ? kv_manager_->get_k_cache_()
         : kv_manager_->get_v_cache_();
     for (int layer = 0; layer < metadata_.num_layers; ++layer, ++index) {
       Result<TensorInfo> kv_cache = method_meta->input_tensor_meta(index);
 
-      T* cache_ptr = cache_ptrs[layer].buffer;
-
       cache[layer] = std::make_unique<TensorImpl>(
           kv_cache->scalar_type(),
           kv_cache->sizes().size(),
           const_cast<TensorImpl::SizesType*>(kv_cache->sizes().data()),
-          cache_ptr,
+          cache_ptrs[layer].buffer,
           const_cast<TensorImpl::DimOrderType*>(kv_cache->dim_order().data()));
       input_tensors_.emplace_back(cache[layer].get());
       buffer_manager->add_memory_info(
-          cache_ptr, cache[layer]->nbytes(), kv_cache.get());
+          cache_ptrs[layer].buffer, cache[layer]->nbytes(), kv_cache.get());
     }
   }
 
   // [O]: logits
   Result<TensorInfo> logits = method_meta->output_tensor_meta(0);
-  logits_.data =
-      reinterpret_cast<uint16_t*>(buffer_manager->allocate(logits_.size));
+  logits_.data = buffer_manager->allocate(logits_.size);
   logits_.tensor = std::make_unique<TensorImpl>(
       logits->scalar_type(),
       logits->sizes().size(),
@@ -164,21 +160,22 @@ void MultimodalTokenGenerator<T>::init_io(
   for (int cache_group = 0; cache_group < 2; ++cache_group) {
     std::vector<std::unique_ptr<TensorImpl>>& cache =
         (cache_group == 0 ? k_cache_out_ : v_cache_out_);
-    std::vector<KVCache<T>> cache_ptrs = (cache_group == 0)
+    std::vector<KVCache> cache_ptrs = (cache_group == 0)
         ? kv_manager_->get_k_cache_()
         : kv_manager_->get_v_cache_();
     for (int layer = 0; layer < metadata_.num_layers; ++layer, ++index) {
       Result<TensorInfo> kv_cache = method_meta->output_tensor_meta(index);
-      T* cache_ptr = cache_ptrs[layer].output_buffer;
       cache[layer] = std::make_unique<TensorImpl>(
           kv_cache->scalar_type(),
           kv_cache->sizes().size(),
           const_cast<TensorImpl::SizesType*>(kv_cache->sizes().data()),
-          cache_ptr,
+          cache_ptrs[layer].output_buffer,
           const_cast<TensorImpl::DimOrderType*>(kv_cache->dim_order().data()));
       output_tensors_.emplace_back(cache[layer].get());
       buffer_manager->add_memory_info(
-          cache_ptr, cache[layer]->nbytes(), kv_cache.get());
+          cache_ptrs[layer].output_buffer,
+          cache[layer]->nbytes(),
+          kv_cache.get());
     }
   }
 
@@ -190,8 +187,7 @@ void MultimodalTokenGenerator<T>::init_io(
 }
 
 // This function only considers the case where token_generator_ar_len equals 1.
-template <typename T>
-void MultimodalTokenGenerator<T>::prepare_io(
+void MultimodalTokenGenerator::prepare_io(
     uint64_t cur_token,
     int64_t start_pos) {
   // Generate embedding for current token using embedding runner
@@ -208,9 +204,5 @@ void MultimodalTokenGenerator<T>::prepare_io(
   // update position_ids
   *input_pos_.data = static_cast<int32_t>(start_pos);
 }
-
-// Explicit instantiations
-template class MultimodalTokenGenerator<uint16_t>;
-template class MultimodalTokenGenerator<uint8_t>;
 
 } // namespace example

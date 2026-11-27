@@ -1,0 +1,282 @@
+load("@fbsource//tools/build_defs:platform_defs.bzl", "CXX")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbcode_macros//build_defs:cpp_unittest.bzl", "cpp_unittest")
+load("@fbcode_macros//build_defs/lib:re_test_utils.bzl", "re_test_utils")
+load("@fbcode//tools/build/buck:nvcc_flags.bzl", "get_nvcc_arch_args")
+
+def define_common_targets(is_fbcode = False):
+    if not is_fbcode and runtime.is_oss:
+        return
+
+    platform_kwargs = {} if is_fbcode else {
+        "platforms": [CXX],
+        "compatible_with": ["ovr_config//cuda:has_cuda"],
+    }
+    cuda_kwargs = dict(platform_kwargs)
+    if is_fbcode:
+        cuda_kwargs["nvcc_flags"] = get_nvcc_arch_args() + [
+            "-_NVCC_HOST_COMPILER_FLAG_",
+            "gcc",
+        ]
+
+    runtime.cxx_library(
+        name = "cuda_platform",
+        srcs = [
+            "platform/platform.cpp",
+        ],
+        exported_headers = [
+            "platform/platform.h",
+        ],
+        # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
+        link_whole = True,
+        supports_python_dlopen = True,
+        visibility = ["PUBLIC"],
+        deps = [
+            "//executorch/runtime/core:core",
+        ],
+        external_deps = [
+            ("cuda", None, "cuda-lazy"),
+        ],
+        **cuda_kwargs
+    )
+
+    shims_kwargs = dict(cuda_kwargs)
+    if not is_fbcode:
+        # CUDA translation units use scalar Half conversions, not host SIMD.
+        shims_kwargs["lang_preprocessor_flags"] = {
+            "cuda": ["-UCPU_CAPABILITY_AVX2", "-UCPU_CAPABILITY_AVX512"],
+        }
+
+    runtime.cxx_library(
+        name = "runtime_shims",
+        srcs = [
+            "shims/cuda_guard.cpp",
+            "shims/index.cu",
+            "shims/int4mm.cu",
+            "shims/memory.cpp",
+            "shims/rand.cu",
+            "shims/sort.cu",
+        ],
+        exported_headers = [
+            "shims/cuda_guard.h",
+            "shims/index.h",
+            "shims/int4mm.cuh",
+            "shims/int4mm.h",
+            "shims/memory.h",
+            "shims/rand.h",
+            "shims/sort.h",
+            "utils.h",
+        ],
+        # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
+        link_whole = True,
+        supports_python_dlopen = True,
+        # Constructor needed for backend registration.
+        compiler_flags = ["-Wno-global-constructors"],
+        preprocessor_flags = ["-DCUDA_AVAILABLE=1"],
+        visibility = ["PUBLIC"],
+        deps = [
+            "//executorch/backends/aoti:aoti_common_slim",
+            "//executorch/backends/aoti/slim/core:slimtensor",
+            "//executorch/backends/aoti/slim/factory:empty",
+            "//executorch/backends/aoti/slim/factory:from_blob",
+            "//executorch/backends/aoti/slim/cuda:guard",
+            "//executorch/extension/cuda:runtime_api",
+            "//executorch/runtime/core:core",
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
+            "//executorch/runtime/platform:platform",
+        ],
+        xplat_deps = [
+            "fbsource//third-party/cuda:libcuda",
+            "fbsource//third-party/cuda:libcurand",
+            "fbsource//third-party/cuda:libthrust",
+        ],
+        external_deps = [
+            ("cuda", None, "cuda-lazy"),
+        ],
+        **shims_kwargs
+    )
+
+    # Deprecated stub left behind after the move to extension/cuda; depend on
+    # //executorch/extension/cuda:cuda_allocator directly instead.
+    runtime.cxx_library(
+        name = "cuda_allocator",
+        exported_headers = [
+            "cuda_allocator.h",
+        ],
+        visibility = ["PUBLIC"],
+        exported_deps = [
+            "//executorch/extension/cuda:cuda_allocator",
+        ],
+        **platform_kwargs
+    )
+
+    # The off-graph KV cache builds on the LLM extension's cache, so, as in
+    # CMake's EXECUTORCH_BUILD_EXTENSION_LLM, it is part of the backend only
+    # where that extension is built.
+    with_llm_cache = is_fbcode
+
+    runtime.cxx_library(
+        name = "cuda_backend",
+        srcs = [
+            "cuda_backend.cpp",
+            "cuda_mutable_state.cpp",
+            "cuda_weight_cache.cpp",
+        ] + (["cuda_kv_cache.cpp", "cuda_kv_pool.cpp"] if with_llm_cache else []),
+        exported_headers = [
+            "backend_options.h",
+            "cuda_delegate_handle.h",
+            "cuda_mutable_state.h",
+            "cuda_weight_cache.h",
+        ] + (["cuda_kv_cache.h", "cuda_kv_pool.h"] if with_llm_cache else []),
+        # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
+        link_whole = True,
+        supports_python_dlopen = True,
+        # Constructor needed for backend registration.
+        compiler_flags = ["-Wno-global-constructors"],
+        preprocessor_flags = ["-DCUDA_AVAILABLE=1"] + (
+            ["-DEXECUTORCH_BUILD_EXTENSION_LLM"] if with_llm_cache else []
+        ),
+        # A compiled AOTI library binds its aoti_torch_* calls to the shims in
+        # the host, so an executable that links this backend must export them,
+        # as CMake's PUBLIC --export-dynamic on aoti_cuda_backend does.
+        exported_linker_flags = [] if is_fbcode else select({
+            "DEFAULT": [],
+            "ovr_config//os:linux": ["-Wl,--export-dynamic"],
+        }),
+        visibility = ["PUBLIC"],
+        exported_deps = [
+            "//executorch/backends/aoti:delegate_handle",
+            "//executorch/backends/aoti/slim/core:slimtensor",
+            "//executorch/extension/cuda:runtime_api",
+            "//executorch/runtime/core:core",
+            "//executorch/runtime/core:named_data_map",
+        ] + (["//executorch/extension/llm/cache:kv_cache"] if with_llm_cache else []),
+        deps = [
+            ":cuda_platform",
+            ":runtime_shims",
+            "//executorch/backends/aoti:aoti_common_slim",
+            "//executorch/backends/aoti:temp_library",
+            "//executorch/backends/aoti/slim/factory:empty",
+            "//executorch/backends/aoti/slim/factory:from_blob",
+            "//executorch/backends/aoti/slim/factory:from_etensor",
+            "//executorch/backends/aoti/slim/util:array_ref_util",
+            "//executorch/backends/aoti/slim/util:size_util",
+            "//executorch/extension/cuda:caller_stream",
+            "//executorch/extension/cuda:cuda_allocator",
+            "//executorch/extension/tensor:tensor",
+            "//executorch/runtime/backend:interface",
+            "//executorch/runtime/core/exec_aten/util:tensor_shape_to_c_string",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
+        ],
+        external_deps = [
+            ("cuda", None, "cuda-lazy"),
+        ],
+        **cuda_kwargs
+    )
+
+    if not is_fbcode:
+        return
+
+    cpp_unittest(
+        name = "test_cuda_mutable_state",
+        srcs = [
+            "test/test_cuda_mutable_state.cpp",
+        ],
+        deps = [
+            ":cuda_backend",
+            "//executorch/backends/aoti:aoti_common_slim",
+            "//executorch/backends/aoti/slim/core:slimtensor",
+            "//executorch/backends/aoti/slim/factory:from_blob",
+            "//executorch/runtime/core:core",
+            "//executorch/runtime/core:evalue",
+            "//executorch/runtime/platform:platform",
+        ],
+        external_deps = [
+            ("cuda", None, "cuda-lazy"),
+        ],
+        preprocessor_flags = ["-DCUDA_AVAILABLE=1"],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+        ),
+    )
+
+    cpp_unittest(
+        name = "test_cuda_output_copy",
+        srcs = [
+            "test/test_cuda_output_copy.cpp",
+        ],
+        deps = [
+            ":cuda_backend",
+            ":runtime_shims",
+            "//executorch/backends/aoti/slim/factory:from_blob",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
+        ],
+        external_deps = [
+            ("cuda", None, "cuda-lazy"),
+        ],
+        preprocessor_flags = ["-DCUDA_AVAILABLE=1"],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+        ),
+    )
+
+    cpp_unittest(
+        name = "test_cuda_kv_cache",
+        srcs = [
+            "test/test_cuda_kv_cache.cpp",
+        ],
+        deps = [
+            ":cuda_backend",
+            "//executorch/backends/aoti:aoti_common_slim",
+            "//executorch/backends/aoti/slim/core:slimtensor",
+            "//executorch/runtime/core:core",
+        ],
+        external_deps = [
+            ("cuda", None, "cuda-lazy"),
+        ],
+        preprocessor_flags = ["-DCUDA_AVAILABLE=1"],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+        ),
+    )
+
+    cpp_unittest(
+        name = "test_cuda_weight_cache",
+        srcs = [
+            "test/test_cuda_weight_cache.cpp",
+        ],
+        deps = [
+            ":cuda_backend",
+            "//executorch/runtime/core:core",
+        ],
+        external_deps = [
+            ("cuda", None, "cuda-lazy"),
+        ],
+        preprocessor_flags = ["-DCUDA_AVAILABLE=1"],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+        ),
+    )
+
+    cpp_unittest(
+        name = "test_cuda_allocator",
+        srcs = ["test/test_cuda_allocator.cpp"],
+        deps = [
+            ":cuda_allocator",
+            ":cuda_backend",
+            "//executorch/extension/cuda:caller_stream",
+            "//executorch/runtime/core:core",
+            "//executorch/runtime/platform:platform",
+        ],
+        external_deps = [("cuda", None, "cuda-lazy")],
+        preprocessor_flags = ["-DCUDA_AVAILABLE=1"],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+        ),
+    )

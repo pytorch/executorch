@@ -35,7 +35,7 @@ cmake -DCMAKE_INSTALL_PREFIX="${build_dir}" \
       -B"${build_dir}"
 
 # Build the project
-cmake --build "${build_dir}" --target install --config Release -j5
+cmake --build "${build_dir}" --target install --config Release -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 ))
 
 # Switch back to the original directory
 cd - > /dev/null

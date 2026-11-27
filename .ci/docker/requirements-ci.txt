@@ -6,10 +6,10 @@ sympy>=1.13.3
 timm==0.6.13
 tomli==2.0.1
 torchsr==1.0.4
-transformers==4.56.1
+transformers==5.3.0
 zstd==1.5.5.1
 pandas>=2.2.2; python_version >= '3.10'
-pytest==7.2.0
+pytest==7.3.0
 pytest-cov==4.1.0
 expecttest==0.1.6
 hypothesis==6.84.2

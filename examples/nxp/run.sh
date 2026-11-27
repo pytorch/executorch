@@ -19,7 +19,7 @@ rm -rf ${SCRIPT_DIR}/executor_runner/build/*
 
 pushd ${SCRIPT_DIR}/executor_runner/build
 cmake -DCMAKE_BUILD_TYPE=Release ..
-make -j8 nxp_executor_runner
+make -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) nxp_executor_runner
 popd
 
 echo "** Export cifar10 model to executorch"

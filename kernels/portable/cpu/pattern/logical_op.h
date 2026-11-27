@@ -18,7 +18,7 @@ namespace internal {
  * Implements an op pattern for ops that take two broadcastable input tensors
  * and performs an element-wise binary logical operation `fn`.
  */
-template <const char* op_name>
+template <ET_OPERATOR_NAME_TYPE op_name>
 Tensor& logical_tensor_out(
     bool (*fn)(bool, bool),
     KernelRuntimeContext& ctx,

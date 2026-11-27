@@ -16,17 +16,16 @@ import torch
 import torchvision
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     FoldQDQ,
-    get_capture_program_passes,
-    get_passes_dependency_for_capture_program,
+    get_qnn_pass_manager_cls,
     QCOM_PASS_ACTIVATE_KEY,
     QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY,
 )
 from executorch.backends.qualcomm.export_utils import (
     build_executorch_binary,
+    Device,
     make_quantizer,
     QnnConfig,
     setup_common_args_and_variables,
-    SimpleADB,
 )
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
@@ -96,12 +95,13 @@ def main(args):
 
     pte_filename = "swin_v2_t_qnn"
     instance = torchvision.models.swin_v2_t(weights="IMAGENET1K_V1").eval()
-    passes_job = get_capture_program_passes()
+    pass_manager_cls = get_qnn_pass_manager_cls()
+    passes_job = pass_manager_cls.get_capture_program_passes()
     passes_job[RewritePartition] = {
         QCOM_PASS_ACTIVATE_KEY: True,
         QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY: {},
     }
-    passes_dep = get_passes_dependency_for_capture_program()
+    passes_dep = pass_manager_cls.get_passes_dependency_for_capture_program()
     passes_dep[RewritePartition] = [FoldQDQ]
     qnn_quantizer = {
         QnnExecuTorchBackendType.kGpuBackend: None,
@@ -122,19 +122,19 @@ def main(args):
         passes_dependency=passes_dep,
     )
 
-    adb = SimpleADB(
+    device = Device(
         qnn_config=qnn_config,
         pte_path=f"{args.artifact}/{pte_filename}.pte",
         workspace=f"/data/local/tmp/executorch/{pte_filename}",
     )
-    adb.push(inputs=inputs)
-    adb.execute()
+    device.push(inputs=inputs)
+    device.execute()
 
     # collect output data
     output_data_folder = f"{args.artifact}/outputs"
     make_output_dir(output_data_folder)
 
-    adb.pull(host_output_path=args.artifact)
+    device.pull(host_output_path=args.artifact)
 
     # top-k analysis
     predictions = []

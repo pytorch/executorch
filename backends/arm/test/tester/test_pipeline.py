@@ -3,14 +3,19 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import copy
 import logging
+import os
+import tempfile
 import warnings as _warnings
+from pathlib import Path
 
 from typing import (
     Any,
     Callable,
     Dict,
     Generic,
+    Iterable,
     List,
     Optional,
     Sequence,
@@ -23,6 +28,7 @@ from typing import (
 import executorch.backends.arm.test.tester.arm_tester as arm_tester_module
 
 import torch
+import tosa_serializer as ts
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.ethosu import EthosUCompileSpec
 
@@ -38,6 +44,13 @@ from executorch.backends.arm.test.tester.analyze_output_utils import (
     compare_rel_frobenius_and_cosine_similarity,
 )
 from executorch.backends.arm.test.tester.arm_tester import ArmTester, RunPasses
+from executorch.backends.arm.test.tester.pte_diff_utils import (
+    _read_tosa_ops,
+    format_tosa_delegate_diff,
+    pte_diff_within_tolerance,
+    tosa_delegate_op_names_equal,
+    tosa_delegate_payloads_equal,
+)
 from executorch.backends.arm.test.tester.quantize import ArmQuantize as Quantize
 from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
@@ -47,11 +60,18 @@ from executorch.backends.arm.tosa.specification import (
 from executorch.backends.arm.util._factory import create_quantizer
 from executorch.backends.arm.vgf.compile_spec import VgfCompileSpec
 from executorch.backends.test.harness.stages import StageType
+from executorch.devtools.pte_tool.diff_pte import (
+    diff_pte as _diff_pte,
+    format_diff_result,
+    PTEDiffResult,
+)
 from executorch.exir.pass_base import ExportPass
-from torch._export.pass_base import PassType
+from executorch.exir.pass_manager import PassType
 from torch.export.graph_signature import InputKind, OutputKind
 from torchao.quantization.pt2e.quantizer import QuantizationSpec
+from tosa.TosaGraph import TosaGraph  # type: ignore[import-untyped]
 
+DType = ts.DType
 logger = logging.getLogger(__name__)
 T = TypeVar("T", bound=Tuple[Any, ...])
 """Generic type used for test data in the pipeline.
@@ -246,6 +266,20 @@ class BasePipeline(Generic[T]):
                 f"First argument of quantize stage was {type(quantize_stage).__name__}, not Quantize as expected."
             )
 
+    def set_quantization_calibration(
+        self,
+        calibration_samples: Iterable[Any],
+        dynamic_shapes: Optional[Tuple[Any, ...]] = None,
+    ):
+        """Calibrates the quantize stage with the given samples instead of the
+        test data.
+        """
+        quantize_stage = self._stages[self.find_pos("quantize")].args[0]
+        quantize_stage.calibration_samples = calibration_samples
+        if dynamic_shapes is not None:
+            quantize_stage.dynamic_shapes = dynamic_shapes
+        return self
+
     def pop_stage(self, identifier: int | str):
         """Removes and returns the stage at postion pos."""
         if isinstance(identifier, int):
@@ -302,6 +336,97 @@ class BasePipeline(Generic[T]):
     def visualize(self, stage_id: str, suffix: str | None = None):
         """Adds a dump_operator_distribution stage after the given stage id."""
         self.add_stage_after(stage_id, self.tester.visualize, suffix=suffix)
+        return self
+
+    def _compare_pte(
+        self,
+        pte: bytes | str | os.PathLike[str],
+        verbose: bool = False,
+        max_samples: int = 10,
+        atol: float = 0.0,
+        rtol: float = 0.0,
+        allow_tosa_op_name_only_match: bool = False,
+    ):
+        """Compare the to_executorch PTE with another PTE."""
+        reference_pte = self.tester.get_artifact(StageType.TO_EXECUTORCH).buffer
+
+        if isinstance(pte, bytes):
+            pte_data = pte
+            pte_path = "generated.pte"
+        else:
+            pte_path = os.fspath(pte)
+            with open(pte_path, "rb") as pte_file:
+                pte_data = pte_file.read()
+
+        result = _diff_pte(
+            reference_pte,
+            pte_data,
+            "to_executorch.pte",
+            pte_path,
+            max_samples=max_samples,
+        )
+        if not result.bitwise_equal and not self._pte_diff_within_tolerance(
+            result,
+            reference_pte,
+            pte_data,
+            atol,
+            rtol,
+            allow_tosa_op_name_only_match,
+        ):
+            message = format_diff_result(result, verbose=verbose)
+            extra_diff = self._format_extra_pte_diff(
+                reference_pte, pte_data, max_samples=max_samples
+            )
+            if extra_diff:
+                message = message + "\n" + "\n".join(extra_diff)
+            print(message)
+            raise AssertionError(message)
+
+    def _format_extra_pte_diff(
+        self,
+        data_a: bytes,
+        data_b: bytes,
+        max_samples: int,
+    ) -> list[str]:
+        return []
+
+    def _pte_diff_within_tolerance(
+        self,
+        result: PTEDiffResult,
+        data_a: bytes,
+        data_b: bytes,
+        atol: float,
+        rtol: float,
+        allow_tosa_op_name_only_match: bool = False,
+    ) -> bool:
+        return pte_diff_within_tolerance(result, data_a, data_b, atol=atol, rtol=rtol)
+
+    def diff_pte(
+        self,
+        pte: bytes | str | os.PathLike[str],
+        verbose: bool = False,
+        max_samples: int = 10,
+        atol: float = 0.0,
+        rtol: float = 0.0,
+        allow_tosa_op_name_only_match: bool = False,
+    ):
+        """Add a stage to compare the to_executorch PTE with another PTE.
+
+        Set allow_tosa_op_name_only_match to accept changed TOSA delegate
+        payload bytes when their decoded operator-name sequences match.
+
+        """
+        self.add_stage_after(
+            "to_executorch",
+            self._compare_pte,
+            pte,
+            verbose=verbose,
+            max_samples=max_samples,
+            atol=atol,
+            rtol=rtol,
+            allow_tosa_op_name_only_match=allow_tosa_op_name_only_match,
+            suffix="diff_pte",
+        )
         return self
 
     def count_tosa_ops(self, expected_ops: Dict[str, int]):
@@ -401,12 +526,46 @@ class TOSAPipeline(BasePipeline, Generic[T]):
         # Not all deployments of ET have the TOSA reference model available.
         # Make sure we don't try to use it if it's not available.
         try:
-            import tosa_reference_model  # type: ignore[import-not-found, import-untyped]
+            import tosa_reference_model  # type: ignore[import-untyped]
 
             # Check if the module has content
             return bool(dir(tosa_reference_model))
         except ImportError:
             return False
+
+    def _format_extra_pte_diff(
+        self,
+        data_a: bytes,
+        data_b: bytes,
+        max_samples: int,
+    ) -> list[str]:
+        return format_tosa_delegate_diff(
+            data_a,
+            data_b,
+            max_samples=max_samples,
+            read_tosa_ops=_read_tosa_ops,
+        )
+
+    def _pte_diff_within_tolerance(
+        self,
+        result: PTEDiffResult,
+        data_a: bytes,
+        data_b: bytes,
+        atol: float,
+        rtol: float,
+        allow_tosa_op_name_only_match: bool = False,
+    ) -> bool:
+        if super()._pte_diff_within_tolerance(
+            result, data_a, data_b, atol, rtol, allow_tosa_op_name_only_match
+        ):
+            return True
+        if tosa_delegate_payloads_equal(data_a, data_b):
+            return True
+        if not allow_tosa_op_name_only_match:
+            return False
+        return tosa_delegate_op_names_equal(
+            data_a, data_b, read_tosa_ops=_read_tosa_ops
+        )
 
     def run(self):
         if (
@@ -435,12 +594,15 @@ class TosaPipelineINT(TOSAPipeline, Generic[T]):
        run_on_tosa_ref_model: Set to true to test the tosa file on the TOSA reference model.
        symmetric_io_quantization: Whether to use symmetric I/O quantization.
        per_channel_quantization: Whether to use per-channel quantization.
+       is_qat: Whether to prepare the model for quantization-aware training instead of PTQ.
        use_to_edge_transform_and_lower: Selects betweeen two possible ways of lowering the module.
        custom_path : Path to dump intermediate artifacts such as tosa and pte to.
        tosa_debug_mode: Optional debug mode for TOSA compilation.
        atol: Absolute tolerance for output comparison.
        rtol: Relative tolerance for output comparison.
        qtol: Quantization tolerance for output comparison.
+       compare_tosa_ref_model_outputs: Whether to compare TOSA reference model
+               outputs against the eager or quantized reference outputs.
        frobenius_threshold: Threshold for Frobenius norm comparison with original model
        cosine_threshold: Threshold for cosine similarity comparison with original model
        dynamic_shapes: Optional dynamic shape specifications.
@@ -465,6 +627,7 @@ class TosaPipelineINT(TOSAPipeline, Generic[T]):
         atol: float = 1e-03,
         rtol: float = 1e-03,
         qtol: int = 1,
+        compare_tosa_ref_model_outputs: bool = True,
         frobenius_threshold: float | None = 0.15,
         cosine_threshold: float | None = 0.9,
         dynamic_shapes: Optional[Tuple[Any]] = None,
@@ -472,6 +635,7 @@ class TosaPipelineINT(TOSAPipeline, Generic[T]):
         tosa_extensions: Optional[List[str]] = None,
         epsilon: float = 2**-16,
         fold_quantize: bool = True,
+        is_qat: bool = False,
     ):
         if tosa_extensions is None:
             tosa_extensions = []
@@ -489,16 +653,22 @@ class TosaPipelineINT(TOSAPipeline, Generic[T]):
         # choose 16A8W quantization config when int16 extension is requested
         if "int16" in tosa_extensions:
             quantization_config = get_symmetric_a16w8_quantization_config(
-                is_per_channel=per_channel_quantization, epsilon=epsilon
+                is_per_channel=per_channel_quantization,
+                is_qat=is_qat,
+                epsilon=epsilon,
             )
         else:
             quantization_config = get_symmetric_quantization_config(
-                is_per_channel=per_channel_quantization
+                is_per_channel=per_channel_quantization,
+                is_qat=is_qat,
             )
         if symmetric_io_quantization:
             quantizer.set_io(quantization_config)
         quant_stage = Quantize(
-            quantizer, quantization_config, fold_quantize=fold_quantize
+            quantizer,
+            quantization_config,
+            is_qat=is_qat,
+            fold_quantize=fold_quantize,
         )
 
         super().__init__(
@@ -561,6 +731,7 @@ class TosaPipelineINT(TOSAPipeline, Generic[T]):
                 rtol=rtol,
                 qtol=qtol,
                 inputs=self.test_data,
+                compare_outputs=compare_tosa_ref_model_outputs,
             )
 
         self.run_and_compare_to_initial_model(
@@ -583,6 +754,8 @@ class TosaPipelineFP(TOSAPipeline, Generic[T]):
        if not using use_edge_to_transform_and_lower.
 
        run_on_tosa_ref_model: Set to true to test the tosa file on the TOSA reference model.
+       compare_tosa_ref_model_outputs: Whether to compare TOSA reference model
+               outputs against eager reference outputs.
 
        tosa_version: A string for identifying the TOSA version, see common.get_tosa_compile_spec for
                      options.
@@ -604,6 +777,7 @@ class TosaPipelineFP(TOSAPipeline, Generic[T]):
         atol: float = 1e-03,
         rtol: float = 1e-03,
         qtol: int = 0,
+        compare_tosa_ref_model_outputs: bool = True,
         dynamic_shapes: Optional[Tuple[Any]] = None,
         transform_passes: Optional[
             Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
@@ -649,6 +823,7 @@ class TosaPipelineFP(TOSAPipeline, Generic[T]):
                 rtol=rtol,
                 qtol=qtol,
                 inputs=self.test_data,
+                compare_outputs=compare_tosa_ref_model_outputs,
             )
 
 
@@ -834,6 +1009,65 @@ class EthosU85PipelineINT(EthosUPipelineINTBase, Generic[T]):
         fold_quantize: bool = True,
     ):
         compile_spec = common.get_u85_compile_spec(
+            custom_path=custom_path,
+            tosa_debug_mode=tosa_debug_mode,
+        )
+        super().__init__(
+            compile_spec,
+            module,
+            test_data,
+            aten_ops,
+            exir_ops,
+            run_on_fvp=run_on_fvp,
+            symmetric_io_quantization=symmetric_io_quantization,
+            per_channel_quantization=per_channel_quantization,
+            a16w8_quantization=a16w8_quantization,
+            use_to_edge_transform_and_lower=use_to_edge_transform_and_lower,
+            atol=atol,
+            rtol=rtol,
+            qtol=qtol,
+            epsilon=epsilon,
+            fold_quantize=fold_quantize,
+        )
+
+
+class EthosU65PipelineINT(EthosUPipelineINTBase, Generic[T]):
+    """Lowers a graph to u65 INT TOSA spec and tests it on the Corstone300 U65
+    FVP, if run_on_fvp is true.
+
+    Attributes:
+       module: The module which the pipeline is applied to.
+       test_data: Data used for quantizing and testing the module.
+       aten_ops: Aten dialect ops expected to be found in the graph after export.
+
+       exir_ops: Exir dialect ops expected to be found in the graph after to_edge if not using
+                 use_edge_to_transform_and_lower.
+       run_on_fvp: Set to true to test the pte file on a fvp simulator.
+       use_edge_to_transform_and_lower: Selects between two possible ways of lowering the module.
+       custom_path : Path to dump intermediate artifacts such as tosa and pte to.
+
+    """
+
+    def __init__(
+        self,
+        module: torch.nn.Module,
+        test_data: T,
+        aten_ops: str | List[str],
+        exir_ops: str | Sequence[str] | None = None,
+        run_on_fvp: bool = True,
+        symmetric_io_quantization: bool = False,
+        per_channel_quantization: bool = True,
+        a16w8_quantization: bool = False,
+        use_to_edge_transform_and_lower: bool = True,
+        custom_path: str | None = None,
+        tosa_debug_mode: Optional[ArmCompileSpec.DebugMode] = None,
+        atol: float = 1e-03,
+        rtol: float = 1e-03,
+        qtol: int = 1,
+        epsilon: float = 2**-12,
+        fold_quantize: bool = True,
+    ):
+        compile_spec = common.get_u65_compile_spec(
             custom_path=custom_path,
             tosa_debug_mode=tosa_debug_mode,
         )
@@ -1148,14 +1382,23 @@ class VgfPipeline(BasePipeline, Generic[T]):
        if not using use_edge_to_transform_and_lower.
 
        run_on_vulkan_runtime: Whether to test VGF output on VKML runtime.
+       compare_outputs: Whether to compare VKML runtime outputs with reference
+           outputs. If False, skip reference execution and output comparison.
+           Defaults to True.
 
        vgf_compiler_flags: Optional compiler flags.
+       is_qat: Whether to prepare the model for quantization-aware training instead of PTQ.
 
        tosa_version: A string for identifying the TOSA version.
        tosa_spec: Optional override for the TOSA specification.
 
        use_edge_to_transform_and_lower: Selects betweeen two possible ways of lowering the module.
        custom_path : Path to dump intermediate artifacts such as tosa and pte to.
+       n_expected_delegates: Number of delegate calls expected after
+       partitioning.
+       forbidden_tosa_dtypes: TOSA DType values to reject in emitted flatbuffers,
+           e.g. [DType.FP32, DType.FP16]. Import DType from this module.
+           Defaults to None, which disables the check.
 
     """
 
@@ -1185,16 +1428,29 @@ class VgfPipeline(BasePipeline, Generic[T]):
         tosa_spec: TosaSpecification | str | None = None,
         fold_quantize: bool = True,
         preserve_io_quantization: bool = False,
+        alias_buffer_mutations: bool = False,
+        n_expected_delegates: int = 1,
+        is_qat: bool = False,
+        compare_outputs: bool = True,
+        forbidden_tosa_dtypes: list[int] | None = None,
     ):
+        if is_qat and not quantize:
+            raise ValueError("QAT requires quantize=True.")
+
+        self.forbidden_tosa_dtypes = forbidden_tosa_dtypes or []
+        custom_path = self._configure_tosa_dtype_check(custom_path)
+
         if tosa_spec is None:
             if tosa_version is None:
-                tosa_spec = VgfCompileSpec().tosa_spec
-            else:
-                if tosa_extensions is None:
+                tosa_version = str(VgfCompileSpec().tosa_spec)
+            if tosa_extensions is None:
+                if "FP" in tosa_version:
+                    tosa_extensions = ["bf16"]
+                else:
                     tosa_extensions = []
-                tosa_spec = TosaSpecification.create_from_string(
-                    tosa_version + "".join([f"+{ext}" for ext in tosa_extensions])
-                )
+            tosa_spec = TosaSpecification.create_from_string(
+                tosa_version + "".join([f"+{ext}" for ext in tosa_extensions])
+            )
         elif isinstance(tosa_spec, str):
             tosa_spec = TosaSpecification.create_from_string(tosa_spec)
         compile_spec = common.get_vgf_compile_spec(
@@ -1203,6 +1459,7 @@ class VgfPipeline(BasePipeline, Generic[T]):
             custom_path=custom_path,
             tosa_debug_mode=tosa_debug_mode,
             preserve_io_quantization=preserve_io_quantization,
+            alias_buffer_mutations=alias_buffer_mutations,
         )
 
         super().__init__(
@@ -1215,6 +1472,10 @@ class VgfPipeline(BasePipeline, Generic[T]):
             dynamic_shapes,
             transform_passes=transform_passes,
         )
+        self.change_args(
+            "check_count.exir",
+            {"torch.ops.higher_order.executorch_call_delegate": n_expected_delegates},
+        )
 
         remove_torch_quant_nodes_stage = (
             "to_edge_transform_and_lower"
@@ -1222,15 +1483,21 @@ class VgfPipeline(BasePipeline, Generic[T]):
             else "partition"
         )
 
+        self._add_tosa_dtype_check_stage(remove_torch_quant_nodes_stage)
+
         if quantize:
             quantizer = VgfQuantizer(compile_spec)
             quantization_config = get_symmetric_quantization_config(
-                is_per_channel=per_channel_quantization
+                is_per_channel=per_channel_quantization,
+                is_qat=is_qat,
             )
             if symmetric_io_quantization:
                 quantizer.set_io(quantization_config)
             quant_stage = Quantize(
-                quantizer, quantization_config, fold_quantize=fold_quantize
+                quantizer,
+                quantization_config,
+                is_qat=is_qat,
+                fold_quantize=fold_quantize,
             )
 
             self.add_stage(self.tester.quantize, quant_stage, pos=0)
@@ -1289,5 +1556,133 @@ class VgfPipeline(BasePipeline, Generic[T]):
                 rtol=rtol,
                 qtol=qtol,
                 inputs=self.test_data,
+                compare_outputs=compare_outputs,
             )
         self.run_on_vulkan_runtime = run_on_vulkan_runtime
+
+    def _configure_tosa_dtype_check(self, custom_path: str | None) -> str | None:
+        """Configure a private directory for the optional TOSA dtype check."""
+        self._tosa_dtype_artifact_path: Path | None = None
+        self._tosa_dtype_temporary_directory: tempfile.TemporaryDirectory | None = None
+        if not self.forbidden_tosa_dtypes:
+            return custom_path
+
+        artifact_parent = custom_path or common.maybe_get_tosa_artifact_path(
+            allow_unresolved=True
+        )
+        if artifact_parent is None:
+            self._tosa_dtype_temporary_directory = tempfile.TemporaryDirectory(
+                prefix="vgf_dtype_check_"
+            )
+            self._tosa_dtype_artifact_path = Path(
+                self._tosa_dtype_temporary_directory.name
+            )
+        else:
+            Path(artifact_parent).mkdir(parents=True, exist_ok=True)
+            self._tosa_dtype_artifact_path = Path(
+                tempfile.mkdtemp(prefix="vgf_dtype_check_", dir=artifact_parent)
+            )
+        return str(self._tosa_dtype_artifact_path)
+
+    def _add_tosa_dtype_check_stage(self, stage_id: str) -> None:
+        """Validate datatypes and add the check after lowering."""
+        for dtype in self.forbidden_tosa_dtypes:
+            if dtype not in range(len(ts.DTypeNames)):
+                raise ValueError(f"Expected a TOSA DType value, got {dtype!r}.")
+        if self.forbidden_tosa_dtypes:
+            self.add_stage_after(stage_id, self._assert_no_forbidden_tosa_dtypes)
+
+    def _assert_no_forbidden_tosa_dtypes(self) -> None:
+        """Reject forbidden tensor datatypes in all emitted TOSA flatbuffers."""
+        if self._tosa_dtype_artifact_path is None:
+            raise RuntimeError("No TOSA artifact directory configured for dtype check.")
+
+        tosa_paths = sorted(self._tosa_dtype_artifact_path.glob("*.tosa"))
+        if not tosa_paths:
+            raise AssertionError(
+                f"No TOSA flatbuffers found in {self._tosa_dtype_artifact_path}."
+            )
+
+        forbidden_tensors = []
+        for tosa_path in tosa_paths:
+            tosa_graph = TosaGraph.GetRootAsTosaGraph(tosa_path.read_bytes(), 0)
+            for region_index in range(tosa_graph.RegionsLength()):
+                region = tosa_graph.Regions(region_index)
+                for block_index in range(region.BlocksLength()):
+                    block = region.Blocks(block_index)
+                    for tensor_index in range(block.TensorsLength()):
+                        tensor = block.Tensors(tensor_index)
+                        if tensor.Type() in self.forbidden_tosa_dtypes:
+                            forbidden_tensors.append(
+                                f"{tosa_path.name}: {tensor.Name().decode()} "
+                                f"({ts.DTypeNames[tensor.Type()]})"
+                            )
+
+        if forbidden_tensors:
+            raise AssertionError(
+                "VGF TOSA artifacts contain forbidden tensor datatypes:\n"
+                + "\n".join(forbidden_tensors)
+            )
+
+
+class VgfPipelineFP8(VgfPipeline[T]):
+    """Test FP8 VGF execution and the expected CPU reference availability.
+
+    Cases with a CPU reference compare outputs normally. Cases without one
+    execute VGF first, then check the missing CPU kernel separately. Compiler
+    and runtime errors always fail the test. A newly supported CPU reference
+    also fails, prompting the case to enable output comparison.
+
+    """
+
+    def __init__(
+        self,
+        module: torch.nn.Module,
+        test_data: T,
+        aten_op: str | List[str],
+        exir_op: Optional[str | List[str]] = None,
+        *,
+        expect_missing_reference: bool = False,
+        **kwargs: Any,
+    ) -> None:
+        """Configure an unquantized FP8 VGF test.
+
+        Args:
+            module (torch.nn.Module): Module to test.
+            test_data (T): Inputs used for export and execution.
+            aten_op (str | List[str]): Expected ATen operators.
+            exir_op (Optional[str | List[str]]): Expected edge operators.
+            expect_missing_reference (bool): Expect an unsupported FP8 CPU
+                kernel instead of comparing outputs. Defaults to False.
+            **kwargs (Any): Additional VgfPipeline options, excluding runtime
+                enablement, quantization, TOSA extensions, and comparison.
+
+        """
+        super().__init__(
+            module,
+            test_data,
+            aten_op,
+            exir_op,
+            run_on_vulkan_runtime=True,
+            quantize=False,
+            tosa_extensions=["fp8e4m3", "fp8e5m2"],
+            compare_outputs=not expect_missing_reference,
+            **kwargs,
+        )
+        if expect_missing_reference:
+            self.add_stage(self._check_missing_reference)
+
+    def _check_missing_reference(self) -> None:
+        reference_stage = self.tester.stages[StageType.INITIAL_MODEL]
+        assert reference_stage is not None
+        reference_inputs = copy.deepcopy(self.test_data)
+        try:
+            reference_stage.run_artifact(reference_inputs)
+        except NotImplementedError as error:
+            if "not implemented for 'Float8_" not in str(error):
+                raise
+        else:
+            raise AssertionError(
+                "The FP8 CPU reference now succeeds. Set "
+                "expect_missing_reference=False to enable output comparison."
+            )

@@ -3,46 +3,68 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import datetime
 import functools
-import inspect
 import logging
 import os.path
+import re
 import shutil
 import subprocess
 from copy import deepcopy
+from dataclasses import replace
 from enum import Enum
+from importlib.metadata import version
 from os import environ, mkdir
 from typing import Callable, Iterable
 
-import numpy as np
 import torch
-from executorch.backends.nxp.backend.edge_helper import is_channels_last_dim_order
-from executorch.backends.nxp.backend.ir.converter.conversion import translator
-from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
-    torch_type_to_numpy_type,
-)
+import yaml
+from executorch.backends.nxp.backend.ops_aliases import ExecutorchDelegateCall
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
+from executorch.backends.nxp.tests.comparators.all_close_comparator import (
+    AllCloseOutputComparator,
+)
 from executorch.backends.nxp.tests.config_importer import test_config
-from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
+from executorch.backends.nxp.tests.dataset_creators.quant_helpers import (
+    create_quantized_variant_of_dataset,
+    InputQuantizationSpec,
+)
+from executorch.backends.nxp.tests.dataset_creators.real_dataset_creators import (
+    CopyDatasetCreator,
+)
+from executorch.backends.nxp.tests.dataset_creators.synthetic_creators import (
+    RandomDatasetCreator,
+)
 from executorch.backends.nxp.tests.executorch_pipeline import (
     get_calibration_inputs_fn_from_dataset_dir,
+    get_example_input,
     ModelInputSpec,
+    to_edge_program,
     to_model_input_spec,
     to_quantized_edge_program,
     to_quantized_executorch_program,
 )
+from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
 from executorch.backends.nxp.tests.graph_verifier import GraphVerifier
-from executorch.backends.nxp.tests.model_output_comparator import (
-    AllCloseOutputComparator,
-)
 from executorch.backends.nxp.tests.outputs_dir_importer import outputs_dir
-from executorch.backends.nxp.tests.utils import save_pte_program
+from executorch.backends.nxp.tests.utils import (
+    process_input_sample,
+    process_output_sample,
+    read_prepared_samples,
+    reorder_results_to_match_spec,
+    save_pte_program,
+    store_results,
+    store_txt_input_tensor,
+)
 from executorch.devtools.visualization.visualization_utils import (
     visualize_with_clusters,
 )
+from pytest import FixtureRequest
 from pytest_mock import MockerFixture
 from torch.export import ExportedProgram
 from torch.fx import GraphModule
+
+_USE_RECIPE_EXPORT = environ.get("NXP_USE_RECIPE_EXPORT", "0") == "1"
 
 logger = logging.getLogger(__name__)
 
@@ -51,30 +73,19 @@ NSYS_PATH = test_config.NSYS_PATH
 NSYS_CONFIG_PATH = test_config.NSYS_CONFIG_PATH
 NSYS_FIRMWARE_PATH = test_config.NSYS_FIRMWARE_PATH
 NEUTRON_TEST_PATH = test_config.NEUTRON_TEST_PATH
+PROJECT_DIR = test_config.PROJECT_DIR
 
 
-class ReferenceModel(Enum):
+class ReferenceRunner(Enum):
     QUANTIZED_EXECUTORCH_CPP = 0
     QUANTIZED_EDGE_PYTHON = 1
     # QUANTIZED_ATEN_PYTHON = 2  # Not implemented.
     # FLOAT_ATEN_PYTHON = 3  # Not implemented.
     FLOAT_PYTORCH_PYTHON = 4
+    QUANTIZED_CORTEX_M = 5
 
 
-def _run_delegated_executorch_program(
-    model,
-    test_dir,
-    test_name,
-    calibration_dataset_dir,
-    testing_dataset_dir,
-    input_spec,
-    dlg_model_verifier,
-    npu_results_dir,
-    mocker,
-    use_qat: bool = False,
-    train_fn: Callable[[torch.fx.GraphModule], None] | None = None,
-    use_new_flow_neutron_c: bool = False,
-) -> ExportedProgram:
+def _get_dataset_cli_args(input_spec: list[ModelInputSpec], testing_dataset_dir):
     if len(input_spec) == 1:
         # Single input, use --dataset
         dataset_cli = "--dataset"
@@ -90,14 +101,29 @@ def _run_delegated_executorch_program(
                 ]
             )
         )
+    return dataset_cli, dataset_or_inputs
 
-    # Run nxp_executor_runner with program delegated to NPU
-    delegated_model_path = os.path.abspath(
-        os.path.join(test_dir, f"{test_name}_delegated.pte")
-    )
 
-    delegated_cmd = f"{NEUTRON_TEST_PATH} --model {delegated_model_path} {dataset_cli} {dataset_or_inputs} \
-        --output {npu_results_dir} --firmware {NSYS_FIRMWARE_PATH} --nsys {NSYS_PATH} --nsys_config {NSYS_CONFIG_PATH}"
+def _run_delegated_executorch_program(
+    model,
+    test_dir,
+    test_name,
+    calibration_dataset_dir,
+    testing_dataset_dir,
+    input_spec,
+    dlg_model_verifier,
+    npu_results_dir,
+    mocker,
+    use_qat: bool = False,
+    train_fn: Callable[[torch.fx.GraphModule], None] | None = None,
+    use_profiling: bool = False,
+    use_neutron_for_format_conversion=True,
+    operators_not_to_delegate: list[str] = None,
+    remove_quant_io_ops: bool = False,
+    use_recipe_export: bool = False,
+    target: str = "imxrt700",
+) -> tuple[ExportedProgram, str, list[InputQuantizationSpec] | None]:
+    input_quant_spec = None
     try:
         if mocker:
             method = getattr(NeutronPartitioner, "partition")  # noqa B009
@@ -118,12 +144,19 @@ def _run_delegated_executorch_program(
         delegated_program = to_quantized_executorch_program(
             model,
             input_spec,
+            target=target,
+            intermediates_dir=test_dir,
             dataset_dir=calibration_dataset_dir,
             delegate_to_npu=True,
             use_qat=use_qat,
             train_fn=train_fn,
-            use_new_flow_neutron_c=use_new_flow_neutron_c,
+            use_profiling=use_profiling,
+            use_neutron_for_format_conversion=use_neutron_for_format_conversion,
+            operators_not_to_delegate=operators_not_to_delegate,
+            remove_quant_io_ops=remove_quant_io_ops,
+            use_recipe_export=use_recipe_export,
         )
+
     except RuntimeError as e:
         if "Model converted with neutron-converter has" in str(e) and hasattr(
             dlg_model_verifier, "check_num_delegated_nodes"
@@ -132,16 +165,45 @@ def _run_delegated_executorch_program(
         raise
 
     exported_program = delegated_program.exported_program()
-    nodes = list(exported_program.graph.nodes)
-    assert any(
-        node.name.startswith("executorch_call_delegate") for node in nodes
+    assert graph_contains_any_of_ops(
+        exported_program.graph, [ExecutorchDelegateCall]
     ), "No delegated parts found in program delegated to NPU!"
     dlg_model_verifier.verify_graph(exported_program.graph)
 
     save_pte_program(delegated_program, test_name + "_delegated", test_dir)
+
+    # Generate ETRecord if profiling flag is set.
+    if use_profiling:
+        etrecord_path = os.path.join(npu_results_dir, "etrecord.bin")
+        # Create directory if it doesn't exist
+        os.makedirs(os.path.dirname(etrecord_path), exist_ok=True)
+        # Save ETRecord
+        delegated_program.get_etrecord().save(etrecord_path)
+        logger.info(f"The ETRecord for the model was saved to {etrecord_path}.")
+
+    # Preparation of quantized dataset, requires quantization parameters from converted delegated model
+    if remove_quant_io_ops:
+        dataset_dir_quant = os.path.join(test_dir, "model_dataset_quant")
+        input_quant_spec = _parse_input_quant_params(input_spec, delegated_program)
+        create_quantized_variant_of_dataset(
+            testing_dataset_dir, dataset_dir_quant, input_quant_spec, input_spec
+        )
+        testing_dataset_dir = dataset_dir_quant
+
+    dataset_cli, dataset_or_inputs = _get_dataset_cli_args(
+        input_spec, testing_dataset_dir
+    )
+
+    # Run nxp_executor_runner with program delegated to NPU
+    delegated_model_path = os.path.abspath(
+        os.path.join(test_dir, f"{test_name}_delegated.pte")
+    )
+
+    delegated_cmd = f"{NEUTRON_TEST_PATH} --model {delegated_model_path} {dataset_cli} {dataset_or_inputs} \
+        --output {npu_results_dir} --firmware {NSYS_FIRMWARE_PATH} --nsys {NSYS_PATH} --nsys_config {NSYS_CONFIG_PATH}"
     execute_cmd(delegated_cmd)
 
-    return exported_program
+    return exported_program, testing_dataset_dir, input_quant_spec
 
 
 def _run_non_delegated_executorch_program(
@@ -154,30 +216,12 @@ def _run_non_delegated_executorch_program(
     cpu_results_dir,
     use_qat: bool = False,
     train_fn: Callable[[torch.fx.GraphModule], None] | None = None,
+    remove_quant_io_ops: bool = False,
+    use_recipe_export: bool = False,
 ) -> ExportedProgram:
-    if len(input_spec) == 1:
-        # Single input, use --dataset
-        dataset_cli = "--dataset"
-        dataset_or_inputs = testing_dataset_dir
-    else:
-        # Multiple input, use --inputs with subdirectories
-        dataset_cli = "--inputs"
-        dataset_or_inputs = ",".join(
-            sorted(
-                [
-                    os.path.join(testing_dataset_dir, d)
-                    for d in os.listdir(testing_dataset_dir)
-                ]
-            )
-        )
-
-    # Run program via nxp_executor_runner on CPU
-    non_delegated_model_path = os.path.abspath(
-        os.path.join(test_dir, f"{test_name}_non_delegated.pte")
+    dataset_cli, dataset_or_inputs = _get_dataset_cli_args(
+        input_spec, testing_dataset_dir
     )
-
-    non_delegated_cmd = f"{NEUTRON_TEST_PATH} --model {non_delegated_model_path} {dataset_cli} {dataset_or_inputs} \
-        --output {cpu_results_dir} --firmware {NSYS_FIRMWARE_PATH} --nsys {NSYS_PATH} --nsys_config {NSYS_CONFIG_PATH}"
 
     non_delegated_program = to_quantized_executorch_program(
         model,
@@ -186,113 +230,43 @@ def _run_non_delegated_executorch_program(
         delegate_to_npu=False,
         use_qat=use_qat,
         train_fn=train_fn,
+        remove_quant_io_ops=remove_quant_io_ops,
+        use_recipe_export=use_recipe_export,
     )
 
-    nodes = list(non_delegated_program.exported_program().graph.nodes)
-    assert all(
-        not node.name.startswith("executorch_call_delegate") for node in nodes
+    assert not graph_contains_any_of_ops(
+        non_delegated_program.exported_program().graph, [ExecutorchDelegateCall]
     ), "Delegated parts found in program executed on CPU!"
 
     save_pte_program(non_delegated_program, test_name + "_non_delegated", test_dir)
+
+    # Run program via nxp_executor_runner on CPU
+    non_delegated_model_path = os.path.abspath(
+        os.path.join(test_dir, f"{test_name}_non_delegated.pte")
+    )
+
+    non_delegated_cmd = f"{NEUTRON_TEST_PATH} --model {non_delegated_model_path} {dataset_cli} {dataset_or_inputs} \
+        --output {cpu_results_dir} --firmware {NSYS_FIRMWARE_PATH} --nsys {NSYS_PATH} --nsys_config {NSYS_CONFIG_PATH}"
     execute_cmd(non_delegated_cmd)
 
     return non_delegated_program.exported_program()
 
 
-def read_prepared_samples(
-    dataset_dir: str, input_spec: list[ModelInputSpec]
-) -> list[tuple[np.ndarray, ...]]:
-    """Read numpy arrays generated by a `DatasetCreator`.
+def _save_non_quantized_fp32_executorch_program(
+    model,
+    test_dir,
+    test_name,
+    input_spec,
+) -> ExportedProgram:
+    non_quantized_program = to_edge_program(model, input_spec).to_executorch()
 
-    :param dataset_dir: Directory containing the generated samples
-    :param input_spec: List of ModelInputSpec defining the shape and type of each input
+    assert not graph_contains_any_of_ops(
+        non_quantized_program.exported_program().graph, [ExecutorchDelegateCall]
+    ), "Delegated parts found in non-quantized FP32 program!"
 
-    :return:  List of tuples, where each tuple contains numpy arrays for one sample
-    """
-    all_samples = []
+    save_pte_program(non_quantized_program, test_name + "_non_quantized", test_dir)
 
-    # Multi-input: samples are in numbered subdirectories
-    if len(input_spec) > 1:
-        sample_dirs = sorted(
-            [
-                d
-                for d in os.listdir(dataset_dir)
-                if os.path.isdir(os.path.join(dataset_dir, d))
-            ]
-        )
-
-        for sample_name in sample_dirs:
-            sample_dir = os.path.join(dataset_dir, sample_name)
-            current_samples = []
-
-            for spec_idx, spec in enumerate(input_spec):
-                bin_file_path = os.path.join(
-                    sample_dir, f"{str(spec_idx).zfill(2)}.bin"
-                )
-                sample_vector = np.fromfile(bin_file_path, dtype=spec.type).reshape(
-                    spec.shape
-                )
-                current_samples.append(sample_vector)
-
-            all_samples.append(tuple(current_samples))
-
-    # Single-input: binary files are directly in dataset_dir
-    else:
-        bin_files = sorted([f for f in os.listdir(dataset_dir) if f.endswith(".bin")])
-
-        for bin_file in bin_files:
-            bin_file_path = os.path.join(dataset_dir, bin_file)
-            sample_vector = np.fromfile(
-                bin_file_path, dtype=torch_type_to_numpy_type(input_spec[0].dtype)
-            ).reshape(input_spec[0].shape)
-            all_samples.append((sample_vector,))
-
-    return all_samples
-
-
-def store_results(
-    results: list[tuple[np.ndarray, ...]], output_dir: str, reference_dir: str
-):
-    """Store a list of output arrays in the directory structure matching the reference directory.
-
-    :param results: List of tuples, where each tuple contains numpy arrays (outputs for one sample)
-    :param output_dir: Directory where results will be stored
-
-    Directory structure created matches reference_dir:
-        output_dir/
-        ├── sample_0/
-        │   ├── 0000.bin
-        │   └── 0001.bin
-        ├── some_other_sample/
-        │   ├── 0000.bin
-        │   └── 0001.bin
-    """
-    os.makedirs(output_dir, exist_ok=True)
-
-    # Get subdirectories from reference directory
-    sample_dirs = sorted(
-        [
-            d
-            for d in os.listdir(reference_dir)
-            if os.path.isdir(os.path.join(reference_dir, d))
-        ]
-    )
-
-    assert len(sample_dirs) == len(
-        results
-    ), f"Number of samples ({len(results)}) must match number of subdirectories in reference_dir ({len(sample_dirs)})"
-
-    for _sample_idx, (sample_name, sample_outputs) in enumerate(
-        zip(sample_dirs, results)
-    ):
-        sample_dir = os.path.join(output_dir, sample_name)
-        os.makedirs(sample_dir, exist_ok=True)
-
-        # Store each output tensor
-        for output_idx, output_array in enumerate(sample_outputs):
-            bin_file_name = f"{str(output_idx).zfill(4)}.bin"
-            bin_file_path = os.path.join(sample_dir, bin_file_name)
-            output_array.tofile(bin_file_path)
+    return non_quantized_program.exported_program()
 
 
 def _run_python_program(
@@ -319,53 +293,102 @@ def _run_python_program(
     all_outputs = []
 
     for input_samples in read_prepared_samples(testing_dataset_dir, input_spec):
-        current_input_samples = []
-        for spec, sample in zip(input_spec, input_samples, strict=True):
-            match spec.dim_order:
-                case torch.contiguous_format:
-                    # Use the data as is, just turn it into a PyTorch tensor.
-                    sample = torch.tensor(sample)
-
-                case torch.channels_last:
-                    # The tensor data was stored by the DatasetCreator as channels last (NHWC), but it was now
-                    #  incorrectly parsed as contiguous/channels first (NCHW). Transpose it to channels last to preserve
-                    #  the semantics.
-                    channels_last_shape = translator.dims_to_channels_last(
-                        list(spec.shape)
-                    )
-                    sample = np.moveaxis(sample.reshape(channels_last_shape), -1, 1)
-                    sample = torch.tensor(sample).to(memory_format=torch.channels_last)
-
-                case _:
-                    raise ValueError(f"Unsupported dim_order: {spec.dim_order}")
-
-            current_input_samples.append(sample)
+        current_input_samples = process_input_sample(input_spec, input_samples)
 
         # Run the model.
         output = model(*current_input_samples)
-        if isinstance(output, torch.Tensor):
-            output = (output,)
-
-        current_outputs = []
-
-        for o, o_spec in zip(output, output_spec, strict=True):
-            dim_order = list(o_spec.dim_order())  # ExecuTorch dim order.
-            rank = len(o_spec.shape)
-            if dim_order == list(range(rank)):  # Contiguous dim order.
-                current_outputs.append(o.detach().numpy())
-
-            elif is_channels_last_dim_order(dim_order):  # Channels last dim order.
-                # The NPU variant outputs channels last (NHWC). We need to convert the CPU output to match.
-                o = o.detach().numpy().reshape(o_spec.shape)
-                current_outputs.append(np.moveaxis(o, 1, -1))
-
-            else:
-                raise ValueError(f"Unsupported dim_order: {o_spec.dim_order}")
-
+        current_outputs = process_output_sample(output, output_spec)
         all_outputs.append(current_outputs)
 
     # Store all the results.
     store_results(all_outputs, cpu_results_dir, npu_results_dir)
+
+
+def _run_cortex_m_program(
+    model: torch.nn.Module | GraphModule,
+    test_dir,
+    test_name,
+    calibration_dataset_dir,
+    testing_dataset_dir,
+    input_spec: list[ModelInputSpec],
+    output_spec: list[torch.Tensor],
+    cpu_results_dir,
+    npu_results_dir,
+):
+    """Run a model with Cortex-M backend with channels last inputs.
+
+    :param model: Any PyTorch/ExecuTorch model runnable with Cortex-M with channels last inputs.
+    :param test_dir: Directory for saving test artifacts.
+    :param test_name: Name of the test.
+    :param calibration_dataset_dir: Directory containing calibration data.
+    :param testing_dataset_dir: Directory containing testing data. The samples have to be channels last (NHWC) for 4D tensors.
+                                The format must match the input_spec.dim_order.
+    :param input_spec: List of ModelInputSpec defining the shape, type, and dimension order of each input.
+    :param output_spec: List of output tensor specifications.
+    :param cpu_results_dir: Directory where CPU results will be stored. The structure will match the existing structure
+                             of `npu_results_dir`.
+    :param npu_results_dir: Directory where NPU results are already stored, to serve as reference directory structure
+                             for `cpu_results_dir`.
+    """
+    # Assert Cortex-M dependencies are available
+    assert_cortex_m()
+
+    from executorch.backends.nxp.tests.cortex_m_benchmarking import (
+        CortexMNXPBenchmarkTester,
+    )
+
+    numpy_samples = read_prepared_samples(calibration_dataset_dir, input_spec)
+    calibration_samples = [
+        process_input_sample(input_spec, sample) for sample in numpy_samples
+    ]
+
+    example_inputs = get_example_input(input_spec)
+
+    tester = CortexMNXPBenchmarkTester(
+        model,
+        example_inputs,
+    )
+    cortex_m_delegated_program = tester.run_benchmark(
+        calibration_samples,
+        input_spec,
+        output_spec,
+        testing_dataset_dir,
+        cpu_results_dir,
+        npu_results_dir,
+    )
+    save_pte_program(
+        cortex_m_delegated_program, test_name + "_cortex_m_delegated", test_dir
+    )
+
+
+def assert_cortex_m():
+    # Follow backends/cortex_m/README.md to install the required dependencies.
+    # Build Arm executor runner with target="cortex-m33":
+    #    ./backends/cortex_m/test/build_test_runner.sh --target="cortex-m33"
+    # FVP Corstone-300 simulator needs to be added to PATH.
+
+    import sysconfig
+
+    suffix = sysconfig.get_config_var(
+        "EXT_SUFFIX"
+    )  # e.g. ".cpython-312-x86_64-linux-gnu.so"
+    cmsis_nn_lib_path = os.path.join(
+        PROJECT_DIR, "backends/cortex_m/library/_cmsis_nn", f"cmsis_nn{suffix}"
+    )
+
+    assert os.path.exists(
+        cmsis_nn_lib_path
+    ), "CMSIS-NN lib is not available, check if ET is built correctly."
+    fvp_simulator_path = os.path.join(
+        PROJECT_DIR,
+        "examples/arm/arm-scratch/FVP-corstone300/models/Linux64_GCC-9.3/FVP_Corstone_SSE-300_Ethos-U55",
+    )
+    assert os.path.exists(fvp_simulator_path), "Arm FVP Corstone-300 is not installed."
+    arm_executor_runner_path = os.path.join(
+        PROJECT_DIR,
+        "arm_test/arm_semihosting_executor_runner_corstone-300_cortex-m33/arm_executor_runner",
+    )
+    assert os.path.exists(arm_executor_runner_path), "Arm executor is not installed."
 
 
 def assert_NSYS():
@@ -376,15 +399,22 @@ def assert_NSYS():
 
 def lower_run_compare(
     model: torch.nn.Module,
-    input_spec: Iterable[ModelInputSpec] | tuple[int, ...],
+    model_input_spec: Iterable[ModelInputSpec] | tuple[int, ...],
     dlg_model_verifier: GraphVerifier,
+    request: FixtureRequest,
     dataset_creator=None,
     output_comparator=None,
     mocker: MockerFixture = None,
-    reference_model: ReferenceModel = ReferenceModel.QUANTIZED_EXECUTORCH_CPP,
+    reference_runner: ReferenceRunner = ReferenceRunner.QUANTIZED_EXECUTORCH_CPP,
+    reference_input_spec: Iterable[ModelInputSpec] | None = None,
     use_qat: bool = False,
     train_fn: Callable[[torch.fx.GraphModule], None] | None = None,
-    use_new_flow_neutron_c: bool = False,
+    use_profiling: bool = False,
+    use_neutron_for_format_conversion=True,
+    operators_not_to_delegate: list[str] = None,
+    remove_quant_io_ops: bool = False,
+    use_recipe_export: bool = _USE_RECIPE_EXPORT,
+    target: str = "imxrt700",
 ):
     """
     Run provided program twice with neutron-test and check if results correspond. At first,
@@ -392,16 +422,27 @@ def lower_run_compare(
     (some nodes run on Neutron NPU).
 
     :param model: Executed PyTorch model.
-    :param input_spec: Model input specification. Can be either tuple of ints - single float32 input model - or Iterable
+    :param model_input_spec: Model input specification. Can be either tuple of ints - single float32 input model - or Iterable
         of ModelInputSpec.
+    :param dlg_model_verifier: Graph verifier instance.
+    :param request: PyTest request needed for correct test name extraction.
     :param dataset_creator: Creator that should fill provided `dataset_dir` with model input samples.
     :param output_comparator: Comparator of results produced by NPU and CPU runs of the program.
-    :param dlg_model_verifier: Graph verifier instance.
-    :param reference_model: Version of the model which will be run to obtain reference output data.
     :param mocker: Mocker instance used by visualizer.
+    :param reference_runner: Runner which will be used to obtain reference output data.
+    :param reference_input_spec: Reference model input specification, in the same format as `input_spec`.
     :param use_qat: If True, applies quantization-aware training before conversion (without the QAT training).
     :param train_fn: Train/finetune function for QAT training. Is used only when `use_qat=True`.
-    :param use_new_flow_neutron_c: Enable experimental MLIR-based flow for Neutron-C with improved INT8 operator support.
+    :param use_profiling: Enable profiling for neutron delegated model.
+    :param use_neutron_for_format_conversion: If True, the EdgeProgramToIRConverter will insert `Transpose` ops to
+                                                ensure that the IO matches the executorch partition, which will be
+                                                delegated to Neutron,
+    :param operators_not_to_delegate: list of operators not to delegate.
+    :param remove_quant_io_ops: If true, IO q-ops are removed and verification is done on quantized
+        version of dataset (quantized INT8 input samples).
+    :param use_recipe_export: If True, the applicable models will be exported and lowered using the Neutron recipes.
+    :param target: Neutron target platform used for the delegated program (e.g. "imxrt700", "imx95", "imx943").
+
     """
     assert_NSYS()
 
@@ -411,127 +452,308 @@ def lower_run_compare(
         output_comparator = AllCloseOutputComparator()
 
     model_to_delegate = model
-    model_to_not_delegate = deepcopy(model)
+    reference_model = deepcopy(model)
+    model_to_export_fp32 = deepcopy(model)
 
-    test_name = _get_caller_name()
+    test_name = get_test_name(request)
     test_dir = os.path.join(OUTPUTS_DIR, test_name)
 
     shutil.rmtree(test_dir, ignore_errors=True)
     mkdir(test_dir)
 
-    dataset_dir = os.path.join(test_dir, "dataset")
-    mkdir(dataset_dir)
-    input_spec = to_model_input_spec(input_spec)
-
-    calibration_dataset_dir, testing_dataset_dir = dataset_creator.generate_samples(
-        dataset_dir, list(input_spec)
+    model_input_spec = to_model_input_spec(model_input_spec)
+    model_dataset_dir = os.path.join(test_dir, "model_dataset")
+    mkdir(model_dataset_dir)
+    model_calibration_dataset_dir, model_testing_dataset_dir = (
+        dataset_creator.generate_samples(model_dataset_dir, list(model_input_spec))
     )
+
+    if reference_input_spec is None:
+        ref_calibration_dataset_dir, ref_testing_dataset_dir = (
+            model_calibration_dataset_dir,
+            model_testing_dataset_dir,
+        )
+        reference_input_spec = model_input_spec
+    else:
+        assert (
+            len(reference_input_spec) == 1
+        ), "Customizing input specification for reference models is currently supported only for models with single input."
+        ref_dim_order = reference_input_spec[0].dim_order
+
+        ref_dataset_dir = os.path.join(test_dir, "ref_dataset")
+        mkdir(ref_dataset_dir)
+
+        # Calibration data is always channels-first. If channels-last data for reference testing is desired,
+        # the data is transposed in the dataset creator.
+        ref_dataset_creator = CopyDatasetCreator(model_calibration_dataset_dir)
+        ref_calibration_dataset_dir, ref_testing_dataset_dir = (
+            ref_dataset_creator.generate_samples(ref_dataset_dir, reference_input_spec)
+        )
+
+        reference_model.to(memory_format=ref_dim_order)
 
     cpu_results_dir = os.path.join(test_dir, "results_cpu")
     npu_results_dir = os.path.join(test_dir, "results_npu")
 
-    delegated_program = _run_delegated_executorch_program(
-        model_to_delegate,
+    _save_non_quantized_fp32_executorch_program(
+        model_to_export_fp32,
         test_dir,
         test_name,
-        calibration_dataset_dir,
-        testing_dataset_dir,
-        input_spec,
-        dlg_model_verifier,
-        npu_results_dir,
-        mocker,
-        use_qat=use_qat,
-        train_fn=train_fn,
-        use_new_flow_neutron_c=use_new_flow_neutron_c,
+        model_input_spec,
+    )
+
+    delegated_program, model_testing_dataset_dir, model_input_quant_spec = (
+        _run_delegated_executorch_program(
+            model_to_delegate,
+            test_dir,
+            test_name,
+            model_calibration_dataset_dir,
+            model_testing_dataset_dir,
+            model_input_spec,
+            dlg_model_verifier,
+            npu_results_dir,
+            mocker,
+            use_qat=use_qat,
+            train_fn=train_fn,
+            use_profiling=use_profiling,
+            use_neutron_for_format_conversion=use_neutron_for_format_conversion,
+            operators_not_to_delegate=operators_not_to_delegate,
+            remove_quant_io_ops=remove_quant_io_ops,
+            use_recipe_export=use_recipe_export,
+            target=target,
+        )
     )
 
     output_spec = _get_program_output_spec(delegated_program)
 
-    match reference_model:
-        case ReferenceModel.QUANTIZED_EXECUTORCH_CPP:
+    # Create quantized version of reference dataset
+    if remove_quant_io_ops:
+        ref_dataset_dir_quant = os.path.join(test_dir, "ref_dataset_quant")
+        create_quantized_variant_of_dataset(
+            ref_testing_dataset_dir,
+            ref_dataset_dir_quant,
+            model_input_quant_spec,
+            reference_input_spec,
+        )
+        ref_testing_dataset_dir = ref_dataset_dir_quant
+
+    _run_reference_model(
+        reference_runner,
+        reference_model,
+        test_dir,
+        test_name,
+        ref_calibration_dataset_dir,
+        ref_testing_dataset_dir,
+        reference_input_spec,
+        output_spec,
+        cpu_results_dir,
+        npu_results_dir,
+        use_qat=use_qat,
+        train_fn=train_fn,
+        remove_quant_io_ops=remove_quant_io_ops,
+        use_recipe_export=use_recipe_export,
+    )
+
+    if logging.root.isEnabledFor(logging.DEBUG):
+        model_spec, ref_spec = list(model_input_spec), list(reference_input_spec)
+        _generate_txt_test_data(
+            [
+                (model_calibration_dataset_dir, model_spec, False),
+                (model_testing_dataset_dir, model_spec, remove_quant_io_ops),
+                (ref_calibration_dataset_dir, ref_spec, False),
+                (ref_testing_dataset_dir, ref_spec, remove_quant_io_ops),
+            ]
+        )
+        dump_debug_test_summary(test_name, test_dir)
+    npu_results_dir = os.path.join(test_dir, "results_npu")
+    cpu_results_dir = os.path.join(test_dir, "results_cpu")
+    output_comparator.compare_results(cpu_results_dir, npu_results_dir, output_spec)
+
+
+def _run_reference_model(
+    reference_runner: ReferenceRunner,
+    reference_model: torch.nn.Module,
+    test_dir,
+    test_name,
+    calibration_dataset_dir,
+    testing_dataset_dir,
+    reference_input_spec: list[ModelInputSpec],
+    output_spec: list[torch.Tensor],
+    cpu_results_dir,
+    npu_results_dir,
+    use_qat: bool = False,
+    train_fn: Callable[[torch.fx.GraphModule], None] | None = None,
+    remove_quant_io_ops: bool = False,
+    use_recipe_export: bool = False,
+):
+    """
+    Run the selected reference model variant to produce the reference output data
+    stored in `cpu_results_dir`.
+
+    :param reference_runner: Runner which will be used to obtain reference output data.
+    :param reference_model: Copy of the model used for the reference runs.
+    :param test_dir: Directory for saving test artifacts.
+    :param test_name: Name of the test.
+    :param calibration_dataset_dir: Directory containing calibration data.
+    :param testing_dataset_dir: Directory containing testing data.
+    :param reference_input_spec: Input specification used for the reference model.
+    :param output_spec: List of output tensor specifications.
+    :param cpu_results_dir: Directory where reference (CPU) results will be stored.
+    :param npu_results_dir: Directory where NPU results are already stored.
+    :param use_qat: If True, applies quantization-aware training before conversion.
+    :param train_fn: Train/finetune function for QAT training. Used only when `use_qat=True`.
+    :param remove_quant_io_ops: If True, IO q-ops are removed and verification is done on quantized
+        version of dataset (quantized INT8 input samples).
+    :param use_recipe_export: If True, the applicable models will be exported and lowered using the Neutron recipes.
+    """
+    match reference_runner:
+        case ReferenceRunner.QUANTIZED_EXECUTORCH_CPP:
             # Lower to quantized executorch program, export to `.pte` file and run in c++ using
             #  examples/nxp/executor_runner/nxp_executor_runner.cpp
-            _run_non_delegated_executorch_program(
-                model_to_not_delegate,
+            non_delegated_program = _run_non_delegated_executorch_program(
+                reference_model,
                 test_dir,
                 test_name,
                 calibration_dataset_dir,
                 testing_dataset_dir,
-                input_spec,
+                reference_input_spec,
                 cpu_results_dir,
                 use_qat=use_qat,
                 train_fn=train_fn,
+                remove_quant_io_ops=remove_quant_io_ops,
+                use_recipe_export=use_recipe_export,
             )
 
-        case ReferenceModel.QUANTIZED_EDGE_PYTHON:
+            # The C++ runner dumps raw output memory in the reference program's dim order, so reorder it to the NPU
+            #  layout. The Python and Cortex-M runners already do this via `process_output_sample()`.
+            reorder_results_to_match_spec(
+                cpu_results_dir,
+                _get_program_output_spec(non_delegated_program),
+                output_spec,
+            )
+
+        case ReferenceRunner.QUANTIZED_EDGE_PYTHON:
             # Lower to quantized edge program and run in Python.
             non_delegated_edge_program = (
                 to_quantized_edge_program(
-                    model_to_not_delegate,
-                    input_spec,
+                    reference_model,
+                    reference_input_spec,
                     get_calibration_inputs_fn=get_calibration_inputs_fn_from_dataset_dir(
                         calibration_dataset_dir
                     ),
                     delegate_to_npu=False,
                     use_qat=use_qat,
                     train_fn=train_fn,
+                    remove_quant_io_ops=remove_quant_io_ops,
+                    use_recipe_export=use_recipe_export,
                 )
                 .exported_program()
                 .module()
             )
+            # Switch input spec dtype to quantized int8 if run with remove_quant_io_ops flag
+            # The input spec has to still have float32 dtype during edge program lowering to correctly calibrate the
+            # model. When running in Python, the testing data are loaded from numpy tensors according to input spec.
+            # There the testing data are in quantized int8 dtype.
+            # A copy is used, as the spec may be shared with the delegated model.
+            if remove_quant_io_ops:
+                reference_input_spec = [
+                    replace(spec, dtype=torch.int8) for spec in reference_input_spec
+                ]
+
             _run_python_program(
                 non_delegated_edge_program,
                 testing_dataset_dir,
-                input_spec,
+                reference_input_spec,
                 output_spec,
                 cpu_results_dir,
                 npu_results_dir,
             )
 
-        case ReferenceModel.FLOAT_PYTORCH_PYTHON:
+        case ReferenceRunner.FLOAT_PYTORCH_PYTHON:
+            if remove_quant_io_ops:
+                raise ValueError(
+                    "Flag remove_quant_io_ops is not applicable to FLOAT_PYTORCH_PYTHON reference model"
+                    "as it works with float data only. Run with remove_quant_io_ops=False."
+                )
+
             # Run the PyTorch nn.Module directly in Python.
             _run_python_program(
-                model_to_not_delegate,
+                reference_model,
                 testing_dataset_dir,
-                input_spec,
+                reference_input_spec,
+                output_spec,
+                cpu_results_dir,
+                npu_results_dir,
+            )
+
+        case ReferenceRunner.QUANTIZED_CORTEX_M:
+            if use_qat:
+                raise ValueError(
+                    "Flag use_qat is not applicable to QUANTIZED_CORTEX_M reference model "
+                    "as it doesn't support QAT. Run with use_qat=False."
+                )
+            if remove_quant_io_ops:
+                raise ValueError(
+                    "Flag remove_quant_io_ops is not applicable to QUANTIZED_CORTEX_M reference model "
+                    "as it works with float data only. Run with remove_quant_io_ops=False."
+                )
+            if any(
+                spec.dim_order != torch.channels_last
+                for spec in reference_input_spec
+                if len(spec.shape) == 4
+            ):
+                raise ValueError(
+                    "Cortex-M backend supports only channel last dim order for 4D inputs."
+                )
+
+            model_to_delegate_cortex_m = deepcopy(reference_model)
+
+            # Lower to quantized Cortex-M program and run on Arm simulator.
+            _run_cortex_m_program(
+                model_to_delegate_cortex_m,
+                test_dir,
+                test_name,
+                calibration_dataset_dir,
+                testing_dataset_dir,
+                reference_input_spec,
                 output_spec,
                 cpu_results_dir,
                 npu_results_dir,
             )
 
         case _:
-            raise ValueError(f"Unsupported reference model: `{reference_model}`.")
-
-    output_tensor_spec = _get_program_output_spec(delegated_program)
-
-    npu_results_dir = os.path.join(test_dir, "results_npu")
-    cpu_results_dir = os.path.join(test_dir, "results_cpu")
-    output_comparator.compare_results(
-        cpu_results_dir, npu_results_dir, output_tensor_spec
-    )
+            raise ValueError(f"Unsupported reference runner: `{reference_runner}`.")
 
 
 def lower_run_compare_ptq_qat(
     model: torch.nn.Module,
     input_spec: list[ModelInputSpec] | tuple,
     dlg_model_verifier: GraphVerifier,
+    request: FixtureRequest,
     train_fn: Callable[[torch.fx.GraphModule], None],
     dataset_creator=None,
     output_comparator=None,
     mocker: MockerFixture = None,
+    operators_not_to_delegate: list[str] = None,
+    use_recipe_export: bool = _USE_RECIPE_EXPORT,
+    target: str = "imxrt700",
 ):
     """
-    Run provided program twice and compare it's results.
+    Run provided program twice and compare its results.
     The model is once quantized with PTQ and with QAT.
 
     :param model: Executed PyTorch model.
     :param input_spec: Model input specification. Can be either tuple - single float32 input model - or list
         of ModelInputSpec.
     :param dlg_model_verifier: Graph verifier instance.
+    :param request: PyTest request needed for correct test name extraction.
     :param train_fn: Train/finetune function for QAT training.
     :param dataset_creator: Creator that should fill provided `dataset_dir` with model input samples.
     :param output_comparator: Comparator of results produced by NPU and CPU runs of the program.
     :param mocker: Mocker instance used by visualizer.
+    :param operators_not_to_delegate: list of operators not to delegate.
+    :param use_recipe_export: If True, the models will be exported and lowered using the Neutron recipes.
+    :param target: Neutron target platform used for the delegated programs (e.g. "imxrt700", "imx95", "imx943").
     """
     assert_NSYS()
 
@@ -543,13 +765,13 @@ def lower_run_compare_ptq_qat(
     model_ptq = model
     model_qat = deepcopy(model)
 
-    test_name = _get_caller_name()
+    test_name = get_test_name(request)
     test_dir = os.path.join(OUTPUTS_DIR, test_name)
 
     shutil.rmtree(test_dir, ignore_errors=True)
     mkdir(test_dir)
 
-    dataset_dir = os.path.join(test_dir, "dataset")
+    dataset_dir = os.path.join(test_dir, "model_dataset")
     mkdir(dataset_dir)
     if isinstance(input_spec, tuple):
         input_spec = [ModelInputSpec(input_spec)]
@@ -561,7 +783,7 @@ def lower_run_compare_ptq_qat(
     ptq_results_dir = os.path.join(test_dir, "results_ptq")
     qat_results_dir = os.path.join(test_dir, "results_qat")
 
-    delegated_program_ptq = _run_delegated_executorch_program(
+    delegated_program_ptq, _, _ = _run_delegated_executorch_program(
         model_ptq,
         test_dir,
         test_name,
@@ -572,6 +794,9 @@ def lower_run_compare_ptq_qat(
         ptq_results_dir,
         mocker,
         use_qat=False,
+        operators_not_to_delegate=operators_not_to_delegate,
+        use_recipe_export=use_recipe_export,
+        target=target,
     )
 
     _ = _run_delegated_executorch_program(
@@ -586,10 +811,16 @@ def lower_run_compare_ptq_qat(
         mocker,
         use_qat=True,
         train_fn=train_fn,
+        operators_not_to_delegate=operators_not_to_delegate,
+        use_recipe_export=use_recipe_export,
+        target=target,
     )
 
     output_tensor_spec = _get_program_output_spec(delegated_program_ptq)
 
+    if logging.root.isEnabledFor(logging.DEBUG):
+        dump_debug_test_summary(test_name, test_dir)
+        shutil.make_archive(test_dir, "zip", test_dir)
     ptq_results_dir = os.path.join(test_dir, "results_ptq")
     qat_results_dir = os.path.join(test_dir, "results_qat")
     output_comparator.compare_results(
@@ -597,12 +828,39 @@ def lower_run_compare_ptq_qat(
     )
 
 
-def _get_caller_name():
-    test_function_names = ["lower_run_compare", "lower_run_compare_ptq_qat"]
-    for idx, frame in enumerate(inspect.stack()):
-        if frame.function in test_function_names:
-            # Look one index above to get caller
-            return inspect.stack()[idx + 1].function
+def _parse_input_quant_params(
+    input_spec: tuple[ModelInputSpec, ...], exported_program_manager
+) -> list[InputQuantizationSpec]:
+    """
+    Parse input quantization params from provided exported program manager.
+
+    :param input_spec: Model inputs specification.
+    :param exported_program_manager: Exported program manager of parsed model.
+    :return: List of input quantization specification.
+    """
+    if (config_methods := exported_program_manager._config_methods) is None:
+        raise ValueError("Attempt to parse q-params for not fully quantized model")
+
+    q_params = []
+
+    for idx in range(len(input_spec)):
+        input_name = f"input{idx}"
+        scale = config_methods[f"{input_name}_scale"]
+        zp = config_methods[f"{input_name}_zp"]
+        dtype = config_methods[f"{input_name}_dtype"]
+
+        q_params.append(InputQuantizationSpec(input_name, scale, zp, dtype))
+
+    return q_params
+
+
+def get_test_name(request):
+    # PyTest request is available, extract correct name including test class and params
+    test_name = request.node.nodeid.lstrip(":")
+    # Escape unacceptable characters from test name to make sure it is a valid filesystem directory name
+    test_name = re.sub(r'[<>:"/\\|?* ,()`]', "_", test_name)
+    test_name = test_name.strip(" .")
+    return test_name
 
 
 def execute_cmd(cmd, cwd="."):
@@ -664,3 +922,64 @@ def _get_program_output_spec(exported_program) -> list[torch.Tensor]:
     output_tensors_spec = list(exported_program.graph.output_node().meta["val"])
 
     return output_tensors_spec
+
+
+def get_executorch_git_info() -> dict[str, str]:
+    git_branch_cmd = f"git -C {PROJECT_DIR} branch --show-current"
+    git_branch, _, _ = execute_cmd(git_branch_cmd)
+    git_commit_cmd = f"git -C {PROJECT_DIR} rev-parse --short HEAD"
+    git_commit, _, _ = execute_cmd(git_commit_cmd)
+    return {"git_branch": git_branch, "git_commit": git_commit}
+
+
+def dump_debug_test_summary(test_name: str, test_dir: str):
+    git_info = get_executorch_git_info()
+
+    # During development, the NSYS in virtual env is not used.
+    nsys_version = (
+        "Internal build from executorch-integration"
+        if NSYS_PATH is not None
+        else version("eiq_nsys")
+    )
+    summary = {
+        "test_name": test_name,
+        "date_time": datetime.datetime.now().isoformat(),
+        "git_branch": git_info["git_branch"],
+        "git_commit": git_info["git_commit"],
+        "eiq_neutron_sdk_version": version("eiq_neutron_sdk"),
+        "eiq_nsys_version": nsys_version,
+    }
+    with open(os.path.join(test_dir, "summary.yaml"), "w") as f:
+        yaml.dump(summary, f)
+
+
+def _generate_txt_test_data(
+    datasets: list[tuple[str, list[ModelInputSpec], bool]],
+):
+    """Generate txt tensor variants for input datasets.
+
+    :param datasets: List of (dataset_dir, input_spec, is_quantized_dataset) tuples.
+    """
+
+    def _list_bin_files(dir_path: str) -> list[str]:
+        return sorted(f for f in os.listdir(dir_path) if f.endswith(".bin"))
+
+    for d_path, input_tensor_spec, quant_dataset in datasets:
+        # For multiple input tests, list each sample dir, for single input tests the input files are in d_path
+        sample_dirs = [os.path.join(d_path, file) for file in os.listdir(d_path)]
+        sample_dirs = [file for file in sample_dirs if os.path.isdir(file)]
+        # Single input dataset has tensor directly in dataset path
+        if len(sample_dirs) == 0:
+            for input_tensor_name in _list_bin_files(d_path):
+                input_tensor_path = os.path.join(d_path, input_tensor_name)
+                tensor_spec = input_tensor_spec[0]
+                store_txt_input_tensor(input_tensor_path, tensor_spec, quant_dataset)
+        else:
+            for sample_dir in sample_dirs:
+                input_tensor_names = _list_bin_files(sample_dir)
+                for idx, input_tensor_name in enumerate(input_tensor_names):
+                    input_tensor_path = os.path.join(sample_dir, input_tensor_name)
+                    tensor_spec = input_tensor_spec[idx]
+                    store_txt_input_tensor(
+                        input_tensor_path, tensor_spec, quant_dataset
+                    )

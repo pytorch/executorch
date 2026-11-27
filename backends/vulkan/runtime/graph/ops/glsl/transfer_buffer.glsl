@@ -49,15 +49,20 @@ layout(push_constant) uniform restrict Block {
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+#include "dispatch.glslh"
 #include "${OP_NAME}.glslh"
 
 void main() {
-  const uint out_bufi = gl_GlobalInvocationID.x;
+  const uint out_bufi = linear_idx_from_gid();
   if (out_of_bounds(out_bufi, outp)) {
     return;
   }
 
   TensorIndex out_tidx = linear_idx_to_tensor_idx(outp, out_bufi);
+  if (out_of_bounds(out_tidx, outp)) {
+    t_out[out_bufi] = T(0);
+    return;
+  }
   TensorIndex in_tidx = out_tidx_to_in_tidx(out_tidx);
 
   const uint in_bufi = tensor_idx_to_linear_idx(inp, in_tidx);

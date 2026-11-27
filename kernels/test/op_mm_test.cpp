@@ -20,8 +20,6 @@
 #include <limits>
 
 using namespace ::testing;
-using executorch::aten::ArrayRef;
-using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
@@ -85,6 +83,16 @@ TEST_F(OpMmOutTest, AllDtypesSupported) {
   // TODO: Also add tests for half, complex, quantized, and other types. Easiest
   // way to do that would be to make TensorFactory support zeros() and ones()
   // for those types.
+}
+
+TEST_F(OpMmOutTest, BFloat16LargeDimAccumulatesInFloat) {
+  TensorFactory<ScalarType::BFloat16> tf;
+  // Each output sums 512 products of 1. A BFloat16 running sum stops growing
+  // at 256, so without float accumulation the result is 256 instead of 512.
+  constexpr int K = 512;
+  Tensor out = tf.zeros({2, 3});
+  op_mm_out(tf.ones({2, K}), tf.ones({K, 3}), out);
+  EXPECT_TENSOR_EQ(out, tf.full({2, 3}, K));
 }
 
 TEST_F(OpMmOutTest, EmptyInputWithEmptyOutTensorPasses) {
@@ -295,4 +303,20 @@ TEST_F(OpMmOutTest, DISABLED_DynamicShapeUnbound) {
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
   Tensor ret = op_mm_out(x, y, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
+}
+
+TEST_F(OpMmOutTest, NonDefaultDimOrderDies) {
+  TensorFactory<ScalarType::Float> tf;
+
+  // All three tensors share the same non-default dim order, so the kernel's
+  // same dim order check passes and only the default dim order check rejects.
+  Tensor x = tf.make_with_dimorder({3, 4}, std::vector<float>(12, 2), {1, 0});
+  Tensor y = tf.make_with_dimorder({4, 5}, std::vector<float>(20, 3), {1, 0});
+  Tensor out = tf.make_with_dimorder({3, 5}, std::vector<float>(15), {1, 0});
+
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle non-default dim order");
+
+  ET_EXPECT_KERNEL_FAILURE(context_, op_mm_out(x, y, out));
 }

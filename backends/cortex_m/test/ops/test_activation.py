@@ -5,6 +5,7 @@
 
 import torch
 from executorch.backends.arm.test.common import parametrize
+from executorch.backends.cortex_m.library import cmsis_nn
 from executorch.backends.cortex_m.test.tester import (
     CortexMTester,
     McuTestCase,
@@ -695,11 +696,23 @@ test_cases = {
 
 
 @parametrize("test_case", test_cases)
-def test_dialect_activation(test_case):
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
+def test_dialect_activation(test_case, cortex_m_target):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
     tester.test_dialect(
         test_case.model.ops_before_transforms,
-        test_case.model.ops_after_transforms,
+        {
+            (
+                name.replace(
+                    "quantized_conv2d_default", "quantized_conv2d_packed_default"
+                )
+                if cortex_m_target.backend == cmsis_nn.Backend.MVE
+                and cmsis_nn.is_aot_enabled()
+                else name
+            ): count
+            for name, count in test_case.model.ops_after_transforms.items()
+        },
         qtol=1,
     )
     if hasattr(test_case.model, "ops_after_absent"):
@@ -707,6 +720,8 @@ def test_dialect_activation(test_case):
 
 
 @parametrize("test_case", test_cases)
-def test_implementation_activation(test_case):
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
+def test_implementation_activation(test_case, cortex_m_target):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
     tester.test_implementation(qtol=1)

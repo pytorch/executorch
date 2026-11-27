@@ -2,6 +2,8 @@
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
  *
+ * Copyright 2026  Arm Limited and/or its affiliates.
+ *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
@@ -12,10 +14,16 @@
 
 #include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
 
+// vk_api.h must precede SharedVulkanDevice.h: Volk requires VK_NO_PROTOTYPES
+// before the first inclusion of Vulkan headers.
+#include <executorch/backends/vulkan_shared/runtime/SharedVulkanDevice.h>
+
 #include <executorch/backends/vulkan/runtime/vk_api/Device.h>
 #include <executorch/backends/vulkan/runtime/vk_api/Pipeline.h>
 
 #include <executorch/backends/vulkan/runtime/vk_api/memory/Allocator.h>
+
+#include <executorch/backends/vulkan/runtime/vk_api/AdapterCapabilityOverrides.h>
 
 #include <array>
 
@@ -63,6 +71,11 @@ class Adapter final {
       const uint32_t num_queues,
       const std::string& cache_data_path);
 
+  // Borrow only the queue registered in shared_device.
+  explicit Adapter(
+      executorch::backends::vulkan_shared::SharedVulkanDevicePtr shared_device,
+      const std::string& cache_data_path);
+
   Adapter(const Adapter&) = delete;
   Adapter& operator=(const Adapter&) = delete;
 
@@ -78,7 +91,17 @@ class Adapter final {
     VkQueue handle;
   };
 
+  friend class ScopedAdapterCapabilityOverride;
+
  private:
+  // First member => released last, after caches, VMA, and borrowed
+  // DeviceHandle.
+  executorch::backends::vulkan_shared::SharedVulkanDevicePtr shared_device_;
+  // Filled before device creation; these are enabled, not available,
+  // extensions.
+  std::vector<std::string> enabled_device_extensions_;
+  executorch::backends::vulkan_shared::SharedVulkanDeviceFeatures
+      enabled_device_features_;
   // Use a mutex to manage queue usage info since
   // it can be accessed from multiple threads
   std::mutex queue_usage_mutex_;
@@ -102,9 +125,34 @@ class Adapter final {
   // Miscellaneous
   bool linear_tiling_3d_enabled_;
   bool owns_device_;
+  // VK_KHR_vulkan_memory_model and vulkanMemoryModel are enabled on the
+  // logical device: known for a device this Adapter created or borrows through
+  // a shared device, false for an external VkDevice.
+  bool vulkan_memory_model_enabled_ = false;
+  // Test-only capability overrides; empty unless a ScopedCapabilityOverride
+  // is live.
+  AdapterCapabilityOverrides capability_overrides_;
 
  public:
   // Physical Device metadata
+
+  inline VkInstance instance_handle() const {
+    return instance_;
+  }
+
+  inline const std::vector<std::string>& enabled_device_extensions() const {
+    return enabled_device_extensions_;
+  }
+
+  inline const executorch::backends::vulkan_shared::SharedVulkanDeviceFeatures&
+  enabled_device_features() const {
+    return enabled_device_features_;
+  }
+
+  inline const executorch::backends::vulkan_shared::SharedVulkanDevicePtr&
+  shared_device() const {
+    return shared_device_;
+  }
 
   inline VkPhysicalDevice physical_handle() const {
     return physical_device_.handle;
@@ -139,6 +187,16 @@ class Adapter final {
     return physical_device_.device_type;
   }
 
+  // VkPhysicalDeviceProperties::vendorID.
+  inline uint32_t vendor_id() const {
+    return physical_device_.properties.vendorID;
+  }
+
+  // VkDriverId of the driver, or 0 when the device does not report it.
+  inline uint32_t driver_id() const {
+    return physical_device_.driver_id;
+  }
+
   // Driver-reported physical device type. Use device_type() above for
   // vendor-specific quirks; this for capability-tier decisions.
   inline bool is_integrated_gpu() const {
@@ -150,6 +208,8 @@ class Adapter final {
 
   Queue request_queue();
   void return_queue(Queue&);
+  // All queue host operations, including waits, use the shared queue mutex.
+  void wait_idle(const Queue&);
 
   // Caches
 
@@ -184,6 +244,8 @@ class Adapter final {
   }
 
   // Physical Device Features
+
+  bool supports_spirv_capability(uint32_t capability);
 
   inline bool supports_16bit_storage_buffers() {
 #ifdef ETVK_FORCE_NO_EXTENSIONS
@@ -231,13 +293,50 @@ class Adapter final {
 #endif /* VK_KHR_shader_float16_int8 */
   }
 
-  inline bool supports_int8_dot_product() {
+  inline bool supports_int8_dot_product() const {
+    if (capability_overrides_.int8_dot_product.has_value()) {
+      return *capability_overrides_.int8_dot_product;
+    }
 #ifdef ETVK_FORCE_NO_EXTENSIONS
     return false;
 #endif
 #ifdef VK_KHR_shader_integer_dot_product
     return physical_device_.shader_int_dot_product_features
                .shaderIntegerDotProduct == VK_TRUE;
+#else
+    return false;
+#endif /* VK_KHR_shader_integer_dot_product */
+  }
+
+  inline bool accelerates_signed_packed4x8_dot() const {
+    if (capability_overrides_.signed_packed4x8_dot.has_value()) {
+      return *capability_overrides_.signed_packed4x8_dot;
+    }
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+    return false;
+#endif
+#ifdef VK_KHR_shader_integer_dot_product
+    return supports_int8_dot_product() &&
+        physical_device_.shader_int_dot_product_properties
+            .integerDotProductAccumulatingSaturating4x8BitPackedSignedAccelerated ==
+        VK_TRUE;
+#else
+    return false;
+#endif /* VK_KHR_shader_integer_dot_product */
+  }
+
+  inline bool accelerates_unsigned_packed4x8_dot() const {
+    if (capability_overrides_.unsigned_packed4x8_dot.has_value()) {
+      return *capability_overrides_.unsigned_packed4x8_dot;
+    }
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+    return false;
+#endif
+#ifdef VK_KHR_shader_integer_dot_product
+    return supports_int8_dot_product() &&
+        physical_device_.shader_int_dot_product_properties
+            .integerDotProductAccumulatingSaturating4x8BitPackedUnsignedAccelerated ==
+        VK_TRUE;
 #else
     return false;
 #endif /* VK_KHR_shader_integer_dot_product */
@@ -269,6 +368,32 @@ class Adapter final {
     return false;
 #endif /* VK_KHR_cooperative_matrix */
   }
+
+  // True when VK_COMPONENT_TYPE_SINT8_KHR is enumerated in the device's
+  // cooperative matrix property list — required for coopmat<int8> shaders.
+  inline bool supports_int8_cooperative_matrix() const {
+#if defined(ETVK_FORCE_NO_EXTENSIONS)
+    return false;
+#elif defined(VK_KHR_cooperative_matrix)
+    return physical_device_.supports_int8_coopmat;
+#else
+    return false;
+#endif /* VK_KHR_cooperative_matrix */
+  }
+
+#ifdef VK_KHR_cooperative_matrix
+  // Every cooperative-matrix configuration the device enumerates (empty when
+  // cooperative matrices are unsupported).
+  inline const std::vector<VkCooperativeMatrixPropertiesKHR>&
+  cooperative_matrix_properties() const {
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+    static const std::vector<VkCooperativeMatrixPropertiesKHR> kNone;
+    return kNone;
+#else
+    return physical_device_.cooperative_matrix_properties;
+#endif
+  }
+#endif /* VK_KHR_cooperative_matrix */
 
   inline bool supports_int16_shader_types() {
 #ifdef ETVK_FORCE_NO_EXTENSIONS
@@ -413,6 +538,40 @@ class Adapter final {
 
   inline uint32_t max_buffer_numel() const {
     return physical_device_.properties.limits.maxStorageBufferRange;
+  }
+
+  inline utils::uvec3 max_compute_workgroup_count() const {
+    const auto& limits = physical_device_.properties.limits;
+    return {
+        limits.maxComputeWorkGroupCount[0],
+        limits.maxComputeWorkGroupCount[1],
+        limits.maxComputeWorkGroupCount[2]};
+  }
+
+  inline utils::uvec3 max_compute_workgroup_size() const {
+    const auto& limits = physical_device_.properties.limits;
+    return {
+        limits.maxComputeWorkGroupSize[0],
+        limits.maxComputeWorkGroupSize[1],
+        limits.maxComputeWorkGroupSize[2]};
+  }
+
+  inline uint32_t max_compute_workgroup_invocations() const {
+    return physical_device_.properties.limits.maxComputeWorkGroupInvocations;
+  }
+
+  // vulkanMemoryModel is enabled on the logical device (false for an external
+  // VkDevice).
+  inline bool supports_vulkan_memory_model() const {
+    return vulkan_memory_model_enabled_;
+  }
+
+  inline uint32_t max_compute_shared_memory_size() const {
+    return physical_device_.properties.limits.maxComputeSharedMemorySize;
+  }
+
+  inline uint32_t recommended_lwg_nthreads() const {
+    return 64u;
   }
 
   // Command Buffer Submission

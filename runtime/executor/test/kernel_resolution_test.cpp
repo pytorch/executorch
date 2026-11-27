@@ -32,7 +32,6 @@ using executorch::runtime::EValue;
 using executorch::runtime::Kernel;
 using executorch::runtime::KernelKey;
 using executorch::runtime::KernelRuntimeContext;
-using executorch::runtime::Method;
 using executorch::runtime::Program;
 using executorch::runtime::register_kernel;
 using executorch::runtime::Result;

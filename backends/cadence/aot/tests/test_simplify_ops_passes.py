@@ -147,14 +147,49 @@ class TestSimplifyOpsPasses(unittest.TestCase):
             args=(x, 1),
             kwargs={"end": 3},
         )
+        original_graph_module = gm
         original_slice_copy = list(gm.graph.nodes)[1]
+        original_metadata = original_slice_copy.meta
+        original_slice_copy.meta["bind_optional_args_test"] = "preserved"
         self.assertEqual(original_slice_copy.args[1:], (1,))
         self.assertEqual(original_slice_copy.kwargs, {"end": 3})
+
         result = transform_and_check_numerics(
             gm, (x,), BindOptionalArgsPass(), "BindOptionalArgsPass"
         )
+
         self.assertTrue(result.modified)
-        gm = result.graph_module
-        modified_slice_copy = list(gm.graph.nodes)[1]
+        self.assertIs(result.graph_module, original_graph_module)
+        modified_slice_copy = list(result.graph_module.graph.nodes)[1]
+        self.assertIs(modified_slice_copy, original_slice_copy)
+        self.assertIs(modified_slice_copy.meta, original_metadata)
+        self.assertEqual(
+            modified_slice_copy.meta["bind_optional_args_test"], "preserved"
+        )
         self.assertEqual(modified_slice_copy.args[1:], (1, None, 3, 1))
         self.assertEqual(modified_slice_copy.kwargs, {})
+
+    def test_bind_optional_args_no_change(self) -> None:
+        x = torch.rand(4, 5)
+        gm = single_op_builder(
+            placeholders=(x,),
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(x, 1, None, 3, 1),
+        )
+        original_nodes = list(gm.graph.nodes)
+        slice_copy = original_nodes[1]
+        original_metadata = slice_copy.meta
+        slice_copy.meta["bind_optional_args_test"] = "preserved"
+
+        result = BindOptionalArgsPass().call(gm)
+
+        self.assertFalse(result.modified)
+        self.assertIs(result.graph_module, gm)
+        self.assertEqual(
+            len(list(result.graph_module.graph.nodes)), len(original_nodes)
+        )
+        self.assertIs(list(result.graph_module.graph.nodes)[1], slice_copy)
+        self.assertIs(slice_copy.meta, original_metadata)
+        self.assertEqual(slice_copy.meta["bind_optional_args_test"], "preserved")
+        self.assertEqual(slice_copy.args[1:], (1, None, 3, 1))
+        self.assertEqual(slice_copy.kwargs, {})

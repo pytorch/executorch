@@ -7,7 +7,6 @@
 import json
 import logging
 import os
-import random
 import re
 from multiprocessing.connection import Client
 
@@ -16,9 +15,9 @@ import torch
 
 from executorch.backends.qualcomm.export_utils import (
     build_executorch_binary,
+    Device,
     QnnConfig,
     setup_common_args_and_variables,
-    SimpleADB,
 )
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
@@ -41,23 +40,23 @@ def get_dataset(data_size, dataset_dir, download):
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ]
     )
-    dataset = list(
-        datasets.VOCSegmentation(
-            root=os.path.join(dataset_dir, "voc_image"),
-            year="2012",
-            image_set="val",
-            transform=preprocess,
-            download=download,
-        )
+    dataset = datasets.VOCSegmentation(
+        root=os.path.join(dataset_dir, "voc_image"),
+        year="2012",
+        image_set="val",
+        transform=preprocess,
+        download=download,
+    )
+
+    data_loader = torch.utils.data.DataLoader(
+        dataset, shuffle=True, collate_fn=lambda batch: batch[0]
     )
 
     # prepare input data
-    random.shuffle(dataset)
     inputs, targets = [], []
-    for index, data in enumerate(dataset):
+    for index, (image, target) in enumerate(data_loader):
         if index >= data_size:
             break
-        image, target = data
         inputs.append((image.unsqueeze(0),))
         targets.append(np.array(target.resize(input_size)))
 
@@ -97,13 +96,13 @@ def main(args):
         quant_dtype=quant_dtype,
     )
 
-    adb = SimpleADB(
+    device = Device(
         qnn_config=qnn_config,
         pte_path=f"{args.artifact}/{pte_filename}.pte",
         workspace=f"/data/local/tmp/executorch/{pte_filename}",
     )
-    adb.push(inputs=inputs)
-    adb.execute()
+    device.push(inputs=inputs)
+    device.execute()
 
     # collect output data
     output_data_folder = f"{args.artifact}/outputs"
@@ -145,7 +144,7 @@ def main(args):
                 output = output.reshape(output_shape)
                 output.argmax(0).astype(np.uint8).tofile(filename)
 
-    adb.pull(host_output_path=args.artifact, callback=post_process)
+    device.pull(host_output_path=args.artifact, callback=post_process)
 
     # segmentation metrics
     predictions = []

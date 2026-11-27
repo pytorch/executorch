@@ -13,7 +13,8 @@
 #ifdef CUDA_AVAILABLE
 #include <executorch/backends/aoti/slim/c10/cuda/Exception.h>
 #include <executorch/backends/aoti/slim/cuda/guard.h>
-#include <executorch/backends/cuda/runtime/cuda_allocator.h>
+#include <executorch/extension/cuda/caller_stream.h>
+#include <executorch/extension/cuda/cuda_allocator.h>
 #endif
 
 #include <executorch/backends/aoti/slim/c10/core/Device.h>
@@ -177,7 +178,26 @@ struct DeviceTraits<c10::DeviceType::CUDA> {
           static_cast<int>(dst_device.index()));
     }
 
-    ET_CUDA_CHECK(cudaMemcpy(dst, src, nbytes, direction));
+    // Plain cudaMemcpy runs on the legacy default stream, which a green
+    // context would not confine, and which fails while another thread is
+    // capturing a CUDA graph. So copy on the caller stream, or else on the
+    // current stream.
+    const auto caller_stream = executorch::extension::cuda::getCallerStream();
+    if (caller_stream) {
+      ET_CUDA_CHECK(
+          cudaMemcpyAsync(dst, src, nbytes, direction, *caller_stream));
+      ET_CUDA_CHECK(cudaStreamSynchronize(*caller_stream));
+    } else {
+      auto current = executorch::backends::cuda::getCurrentCUDAStream(
+          src_device.is_cuda() ? src_device.index() : dst_device.index());
+      ET_CHECK_MSG(current.ok(), "Failed to get current CUDA stream");
+      ET_CUDA_CHECK(
+          cudaMemcpyAsync(dst, src, nbytes, direction, current.get()));
+      // cudaMemcpy does not wait for a copy between device buffers.
+      if (direction != cudaMemcpyDeviceToDevice) {
+        ET_CUDA_CHECK(cudaStreamSynchronize(current.get()));
+      }
+    }
   }
 };
 #else

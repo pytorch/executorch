@@ -1,6 +1,7 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 
-def define_common_targets():
+def define_common_targets(is_fbcode = False):
     """Defines targets that should be shared between fbcode and xplat.
 
     The directory containing this targets.bzl file should also contain both
@@ -24,6 +25,34 @@ def define_common_targets():
     )
 
     runtime.cxx_test(
+        name = "etdump_device_test",
+        srcs = [
+            "etdump_device_test.cpp",
+        ],
+        deps = [
+            "//executorch/devtools/etdump:etdump_flatcc",
+            "//executorch/devtools/etdump:etdump_schema_flatcc",
+            "//executorch/devtools/etdump/data_sinks:buffer_data_sink",
+            "//executorch/runtime/core:device_allocator",
+            "//executorch/runtime/core/test:mock_cuda_allocator",
+            "//executorch/runtime/platform:platform",
+        ],
+    )
+
+    runtime.cxx_test(
+        name = "etdump_device_no_allocator_test",
+        srcs = [
+            "etdump_device_no_allocator_test.cpp",
+        ],
+        deps = [
+            "//executorch/devtools/etdump:etdump_flatcc",
+            "//executorch/devtools/etdump/data_sinks:buffer_data_sink",
+            "//executorch/runtime/core:device_allocator",
+            "//executorch/runtime/platform:platform",
+        ],
+    )
+
+    runtime.cxx_test(
         name = "etdump_filter_test",
         srcs = [
             "etdump_filter_test.cpp",
@@ -33,3 +62,16 @@ def define_common_targets():
             "//executorch/runtime/platform:platform",
         ],
     )
+
+    if is_fbcode:
+        python_unittest(
+            name = "serialize_test",
+            srcs = [
+                "serialize_test.py",
+            ],
+            deps = [
+                "//executorch/devtools/etdump:schema_flatcc",
+                "//executorch/devtools/etdump:serialize",
+                "//executorch/exir/_serialize:lib",
+            ],
+        )

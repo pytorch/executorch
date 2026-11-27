@@ -32,6 +32,16 @@
     - arg_meta: null
       kernel_name: torch::executor::_conj_physical_out
 
+- op: _embedding_bag.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::_embedding_bag_out
+
+- op: _fft_r2c.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::_fft_r2c_out
+
 - op: _log_softmax.out
   kernels:
     - arg_meta: null
@@ -177,10 +187,20 @@
     - arg_meta: null
       kernel_name: torch::executor::atanh_out
 
+- op: avg_pool1d.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::avg_pool1d_out
+
 - op: avg_pool2d.out
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::avg_pool2d_out
+
+- op: avg_pool3d.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::avg_pool3d_out
 
 - op: bitwise_and.Scalar_out
   kernels:
@@ -242,6 +262,16 @@
     - arg_meta: null
       kernel_name: torch::executor::bmm_out
 
+- op: bucketize.Tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::bucketize_tensor_out
+
+- op: bucketize.Scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::bucketize_scalar_out
+
 - op: cat.out
   kernels:
     - arg_meta: null
@@ -302,6 +332,11 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::cosh_out
+
+- op: cummin.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::cummin_out
 
 - op: cumsum.out
   kernels:
@@ -995,6 +1030,11 @@
     - arg_meta: null
       kernel_name: torch::executor::unsqueeze_copy_out
 
+- op: _upsample_bicubic2d_aa.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::_upsample_bicubic2d_aa_out
+
 - op: upsample_bilinear2d.vec_out
   kernels:
     - arg_meta: null
@@ -1045,7 +1085,17 @@
     - arg_meta: null
       kernel_name: torch::executor::zeros_out
 
-- func: dim_order_ops::_empty_dim_order.out(int[] size, *, int[]? dim_order=None, Tensor(a!) out) -> Tensor(a!)
+- func: et_copy::_h2d_copy.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::_h2d_copy_out
+
+- func: et_copy::_d2h_copy.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::_d2h_copy_out
+
+- func: dim_order_ops::_empty_dim_order.out(SymInt[] size, *, int[]? dim_order=None, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::_empty_dim_order_out

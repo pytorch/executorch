@@ -30,25 +30,18 @@ bool check_same_packed_dim(
     const ValueRef in,
     const ValueRef out);
 
-//
-// Broadcast flag functions
-//
-
-bool is_packed_dim_broadcasted(
-    ComputeGraph& graph,
-    const ValueRef sndr,
-    const ValueRef rcvr);
-
-utils::ivec2 create_broadcast_params(
-    ComputeGraph& graph,
-    const ValueRef t1,
-    const ValueRef t2);
+/*
+ * Returns true if a buffer tensor's packed dim has stride 1, so that each group
+ * of four elements along it, starting at a multiple of four, forms one vec4
+ * texel in the buffer.
+ */
+bool is_packed_dim_vec4_contiguous(ComputeGraph& graph, const ValueRef tensor);
 
 //
 // Work group size calculation functions
 //
 
-utils::uvec3 adaptive_work_group_size(const utils::uvec3& global_work_group);
+LocalWorkGroup adaptive_lwg(const GlobalWorkGrid& gwg);
 
 //
 // Tensor dim utilities

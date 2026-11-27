@@ -17,9 +17,11 @@ class TestLlama2ETExample(unittest.TestCase):
         torch._dynamo.reset()
 
     def test_f32(self):
+        torch.manual_seed(0)
         self._test()
 
     def test_f16(self):
+        torch.manual_seed(0)
         self._test(torch.float16)
 
     # TODO - dynamic shape
@@ -31,7 +33,17 @@ class TestLlama2ETExample(unittest.TestCase):
         ], f"Only fp32 and fp16 are supported, but got dtype: {dtype}"
 
         llama2 = Llama2Model()
-        model = llama2.get_eager_model().to(dtype)
+        model = llama2.get_eager_model()
+        # This example uses random weights. Keep them and the floating-point
+        # buffers in a small range so fp16 intermediates do not overflow to
+        # inf/nan and make the backend comparison depend on random state.
+        with torch.no_grad():
+            for parameter in model.parameters():
+                parameter.uniform_(-0.02, 0.02)
+            for buffer in model.buffers():
+                if buffer.is_floating_point():
+                    buffer.uniform_(-0.02, 0.02)
+        model = model.to(dtype)
 
         # Only convert fp32 inputs to dtype
         example_inputs = tuple(

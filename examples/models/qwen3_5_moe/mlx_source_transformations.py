@@ -70,7 +70,6 @@ def _sparse_moe_forward(self, x):
         expert_weights,
         expert_indices,
         self.top_k,
-        sort_experts=getattr(self, "_sort_experts", False),
     )
 
     shared_out = self.shared_expert(x_flat)
@@ -113,12 +112,14 @@ def _full_attention_forward(self, x, input_pos):
 
     k, v = self.kv_cache.update(input_pos, k, v)
 
-    if self.n_kv_groups > 1:
-        k = k.repeat_interleave(self.n_kv_groups, dim=1)
-        v = v.repeat_interleave(self.n_kv_groups, dim=1)
-
-    attn_mask = self.mask[input_pos].unsqueeze(0).unsqueeze(0)
-    y = torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask)
+    y = torch.ops.mlx.custom_sdpa(
+        q,
+        k,
+        v,
+        start_pos=pos,
+        dropout_p=0.0,
+        is_causal=True,
+    )
 
     y = y.transpose(1, 2).contiguous().view(B, T, -1)
 
@@ -184,17 +185,15 @@ def _exportable_gated_delta_net_forward(self, x, input_pos):
         k, (self.head_k_dim,), self._qk_rms_weight, eps=1e-6
     )
 
-    # head_repeat for k_heads != v_heads
-    if self.head_repeat > 1:
-        q = q.repeat_interleave(self.head_repeat, dim=2)
-        k = k.repeat_interleave(self.head_repeat, dim=2)
+    # GQA head expansion (k_heads != v_heads) is handled inside
+    # mlx::gated_delta_rule
 
     # Mamba-style gating
     beta = b.sigmoid()
     x = a + self.dt_bias
     g = (-self.A_log.exp() * torch.logaddexp(x, torch.zeros_like(x))).exp()
 
-    import executorch.backends.mlx.model_ops.gated_delta_rule as _  # noqa: ensure op registered
+    import executorch.backends.mlx.custom_kernel_ops.gated_delta_rule as _  # noqa: ensure op registered
 
     output = torch.ops.mlx.gated_delta_rule(
         q,
@@ -215,7 +214,7 @@ def _exportable_gated_delta_net_forward(self, x, input_pos):
     return self.out_proj(output)
 
 
-def _swap_moe_experts(model, fuse_gate_up):
+def _swap_moe_experts(model, fuse_gate_up, sort_cutoff=1):
     """FusedMoEExperts → SwitchMLP."""
     from executorch.backends.mlx.llm.switch import SwitchMLP
 
@@ -229,6 +228,7 @@ def _swap_moe_experts(model, fuse_gate_up):
             module.intermediate_size,
             module.num_experts,
             fuse_gate_up=fuse_gate_up,
+            sort_cutoff=sort_cutoff,
         )
         switch_mlp.to(dtype=module.w1_weight.dtype)
 
@@ -278,17 +278,13 @@ def _swap_gated_delta_net(model, model_dtype):
 
 
 def _swap_full_attention(model, config):
-    """FullAttention → mlx::rope custom op + causal mask."""
+    """FullAttention → mlx::rope custom op"""
     rope_theta = config.rope_theta if config else 10000.0
-    max_seq_len = config.max_seq_len if config else 4096
     count = 0
     for _name, module in model.named_modules():
         if isinstance(module, FullAttention):
             module._rope_dims = module.rotary_emb.rotary_dim
             module._rope_base = rope_theta
-            mask = torch.full((max_seq_len, max_seq_len), float("-inf"))
-            mask = torch.triu(mask, diagonal=1)
-            module.register_buffer("mask", mask)
             module.forward = types.MethodType(_full_attention_forward, module)
             count += 1
     return count
@@ -325,12 +321,11 @@ def _swap_rms_norm(model):
     return count
 
 
-def _swap_sparse_moe(model, sort_experts):
+def _swap_sparse_moe(model):
     """SparseMoE → no .float() on expert_weights."""
     count = 0
     for _name, module in model.named_modules():
         if isinstance(module, SparseMoE):
-            module._sort_experts = sort_experts
             module.forward = types.MethodType(_sparse_moe_forward, module)
             count += 1
     return count
@@ -340,7 +335,7 @@ def mlx_source_transformations(
     model,
     model_dtype=torch.bfloat16,
     config=None,
-    sort_experts=False,
+    sort_cutoff=1,
     fuse_gate_up=False,
 ):
     """Replace all Triton-dependent modules with MLX-compatible equivalents.
@@ -357,15 +352,16 @@ def mlx_source_transformations(
         model: The Qwen 3.5 MoE model to transform.
         model_dtype: Target dtype for the model (default: bf16).
         config: Model config (Qwen35MoEConfig).
-        sort_experts: Sort tokens by expert index for coalesced memory access.
+        sort_cutoff: Token-count threshold for runtime MoE expert sorting.
+            Sort when M > sort_cutoff (default 1 = sort on prefill only).
         fuse_gate_up: Fuse gate+up into single SwitchLinear.
     """
-    count_moe = _swap_moe_experts(model, fuse_gate_up)
+    count_moe = _swap_moe_experts(model, fuse_gate_up, sort_cutoff)
     count_gdn = _swap_gated_delta_net(model, model_dtype)
     count_attn = _swap_full_attention(model, config)
     count_kv = _swap_kv_cache(model, model_dtype)
     count_norm = _swap_rms_norm(model)
-    count_moe_fwd = _swap_sparse_moe(model, sort_experts)
+    count_moe_fwd = _swap_sparse_moe(model)
 
     logger.info(f"Replaced {count_moe} FusedMoEExperts → SwitchMLP")
     logger.info(f"Replaced {count_gdn} GatedDeltaNet → exportable PyTorch forward")

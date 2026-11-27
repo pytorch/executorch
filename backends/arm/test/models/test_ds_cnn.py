@@ -22,7 +22,7 @@ from executorch.examples.models.mlperf_tiny import DSCNNKWSModel
 _wrapper = DSCNNKWSModel()
 model = _wrapper.get_eager_model()
 # TODO: Remove once a pass decomposes large-stride AvgPool2d.
-# Replace AvgPool2d(24,5) with AdaptiveAvgPool2d(1) so the
+# Replace AvgPool2d(25,5) with AdaptiveAvgPool2d(1) so the
 # DecomposeAdaptiveAvgPool2dPass can break it into stride-1
 # pools that satisfy the Ethos-U55 stride <= 3 constraint.
 model.pool = nn.AdaptiveAvgPool2d(output_size=1)  # type: ignore[assignment]

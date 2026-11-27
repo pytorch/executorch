@@ -13,7 +13,7 @@
         },
         {
             "name": "gemma4-31b-cuda",
-            "displayName": "Gemma 4 31B runner (CUDA)",
+            "displayName": "Gemma 4 31B runner and worker (CUDA)",
             "inherits": ["gemma4-31b-base"],
             "cacheVariables": {
                 "EXECUTORCH_BUILD_CUDA": "ON"
@@ -26,7 +26,7 @@
         },
         {
             "name": "gemma4-31b-mlx",
-            "displayName": "Gemma 4 31B runner (MLX)",
+            "displayName": "Gemma 4 31B runner and worker (MLX)",
             "inherits": ["gemma4-31b-base"],
             "cacheVariables": {},
             "condition": {
@@ -39,21 +39,25 @@
     "buildPresets": [
         {
             "name": "gemma4-31b-cuda",
-            "displayName": "Build Gemma 4 31B runner (CUDA)",
+            "displayName": "Build Gemma 4 31B runner, worker, and no-bleed test (CUDA)",
             "configurePreset": "gemma4-31b-cuda",
-            "targets": ["gemma4_31b_runner"]
+            "targets": [
+                "gemma4_31b_runner",
+                "gemma4_31b_worker",
+                "test_gemma4_31b_nobleed"
+            ]
         },
         {
             "name": "gemma4-31b-mlx",
-            "displayName": "Build Gemma 4 31B runner (MLX)",
+            "displayName": "Build Gemma 4 31B runner and worker (MLX)",
             "configurePreset": "gemma4-31b-mlx",
-            "targets": ["gemma4_31b_runner"]
+            "targets": ["gemma4_31b_runner", "gemma4_31b_worker"]
         }
     ],
     "workflowPresets": [
         {
             "name": "gemma4-31b-cuda",
-            "displayName": "Configure and build Gemma 4 31B runner (CUDA)",
+            "displayName": "Configure and build Gemma 4 31B runner and worker (CUDA)",
             "steps": [
                 {
                     "type": "configure",
@@ -67,7 +71,7 @@
         },
         {
             "name": "gemma4-31b-mlx",
-            "displayName": "Configure and build Gemma 4 31B runner (MLX)",
+            "displayName": "Configure and build Gemma 4 31B runner and worker (MLX)",
             "steps": [
                 {
                     "type": "configure",

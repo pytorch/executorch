@@ -16,6 +16,7 @@ using executorch::runtime::Error;
 
 GpuContext::GpuContext(
     QnnImplementation* implementation,
+    QnnSystemImplementation* system_implementation,
     QnnBackend* backend,
     QnnDevice* device,
     QnnBackendCache* cache,
@@ -23,6 +24,7 @@ GpuContext::GpuContext(
     const QnnExecuTorchGpuBackendOptions* gpu_options)
     : QnnContext(
           implementation,
+          system_implementation,
           backend,
           device,
           cache,

@@ -76,6 +76,15 @@ class Program final {
   };
 
   /**
+   * The highest program schema version that this runtime can read.
+   *
+   * Keep in sync with EXECUTORCH_SCHEMA_VERSION in
+   * //executorch/exir/version.py, which is the version that the exporter stamps
+   * into every PTE file.
+   */
+  static constexpr uint32_t kMaxSupportedSchemaVersion = 0;
+
+  /**
    * Loads a Program from the provided loader. The Program will hold a pointer
    * to the loader, which must outlive the returned Program instance.
    *
@@ -274,6 +283,33 @@ class Program final {
       size_t offset_index,
       size_t size,
       void* buffer) const;
+
+  /**
+   * Loads a portion of a mutable segment into a new buffer, for a destination
+   * such as device memory that the data loader cannot write.
+   *
+   * Takes the same arguments as load_mutable_subsegment_into(), except the
+   * buffer, and fails in the same cases.
+   *
+   * @returns The data as a FreeableBuffer of `size` bytes.
+   */
+  ET_NODISCARD Result<FreeableBuffer> load_mutable_subsegment(
+      size_t mutable_data_segments_index,
+      size_t offset_index,
+      size_t size) const;
+
+  /// Where a mutable subsegment starts in the data loader's data, and the
+  /// segment info to load it with.
+  struct MutableSubsegment {
+    size_t offset;
+    DataLoader::SegmentInfo info;
+  };
+
+  /// Checks the indices and size of a mutable subsegment and locates it.
+  ET_NODISCARD Result<MutableSubsegment> locate_mutable_subsegment(
+      size_t mutable_data_segments_index,
+      size_t offset_index,
+      size_t size) const;
 
  private:
   Program(

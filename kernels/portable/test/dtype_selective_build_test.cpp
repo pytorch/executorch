@@ -11,8 +11,6 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using executorch::aten::ScalarType;
-using torch::executor::ScalarTypeToCppType;
 
 TEST(DtypeSelectiveBuildTest, UnknownOp) {
   // Create a minimal context for error handling in ET_SWITCH

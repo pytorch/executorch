@@ -1,11 +1,14 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
-def define_common_targets():
+def define_common_targets(is_fbcode = False):
     """Defines targets that should be shared between fbcode and xplat.
 
-    The directory containing this targets.bzl file should also contain both
-    TARGETS and BUCK files that call this function.
+    Originally an fbcode-only TARGETS dir; the runtime.python_binary calls
+    here use srcs=[...] which the xplat python_binary macro rejects, so the
+    body is gated on is_fbcode to preserve pre-migration behavior.
     """
+    if not is_fbcode:
+        return
 
     runtime.python_library(
         name = "model",

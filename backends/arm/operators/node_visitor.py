@@ -31,6 +31,7 @@ from executorch.backends.arm.tosa.specification import (
     TosaSpecMapping,
 )
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -117,23 +118,21 @@ class NodeVisitor:
     ) -> None:
         validate_num_inputs(target, inputs, num_inputs)
         if same_dtype_with_output:
-            validate_same_dtype(target, [*inputs, output], ts)
+            validate_same_dtype(target, [*inputs, output])
         else:
-            validate_same_dtype(target, inputs, ts)
+            validate_same_dtype(target, inputs)
 
         dtype_check_tensors = inputs if dtype_check_inputs_only else [*inputs, output]
         validate_valid_dtype(
             target,
             dtype_check_tensors,
             input_dtypes,
-            self.tosa_spec,
         )
         if output_dtypes is not None:
             validate_valid_dtype(
                 target,
                 output,
                 output_dtypes,
-                self.tosa_spec,
             )
 
     def serialize(
@@ -246,3 +245,15 @@ def get_node_visitors(*args) -> Dict[str, NodeVisitor]:
         node_visitors[target] = visitor(*args)
 
     return node_visitors
+
+
+def get_node_visitor(target: str, tosa_spec: TosaSpecification):
+    # Ensure all operator modules are imported so visitors are registered.
+    import executorch.backends.arm.operators  # noqa: F401
+
+    node_visitor_tuples = _node_visitor_tuples.get(tosa_spec)
+    for target_name, node_visitor_cls in node_visitor_tuples:
+        if target_name == target:
+            return node_visitor_cls(tosa_spec)
+
+    raise ValueError(f"No {target} NodeVisitor registered for {tosa_spec}")

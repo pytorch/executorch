@@ -9,12 +9,12 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/SDPA.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/MatMul.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/RepeatInterleave.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Slice.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/Softmax.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/gemm/matmul/MatMul.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/ScalarUtils.h>
 
@@ -26,19 +26,6 @@
 namespace vkcompute {
 
 namespace {
-
-//
-// SDPA mode: distinguishes the two dispatch families sharing this file.
-//   LLM   — Llama-style KV-cache SDPA. Q layout [B=1, S, H,    D] (DHSB).
-//           Separate k_cache/v_cache inputs + input_pos_symint for dynamic
-//           context_len. attn_weights are padded to multiples of 4 in the
-//           S/context_len dims and carry the input dtype. A coop (GEMV)
-//           shader variant is selected for single-token decode.
-//   FUSED — General SDPA fused op. Q layout [B, H, S, D] (DSHB). No cache,
-//           optional additive attn_mask, optional scale arg. attn_weights
-//           are unpadded and always fp32. Tiled shader variant only.
-//
-enum class SDPAMode { LLM, FUSED };
 
 //
 // Common dimension helper: folds the axis-swap for LLM vs fused Q layouts.
@@ -155,7 +142,7 @@ void resize_sdpa_out_node(
 // Shader dispatch pick functions
 //
 
-utils::uvec3 kv_cache_update_global_wg_size(
+GlobalWorkGrid kv_cache_update_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -169,13 +156,81 @@ utils::uvec3 kv_cache_update_global_wg_size(
   const uint32_t num_heads = graph->size_at<uint32_t>(-2, projected);
   const uint32_t seq_len = graph->size_at<uint32_t>(-3, projected);
 
-  return {utils::div_up_4(head_dim_size), seq_len, num_heads};
+  return GlobalWorkGrid(
+      {utils::div_up_4(head_dim_size), seq_len, num_heads}, kTiledWorkGrid);
 }
 
 // resize_args layout for SDPA dispatch pickers mirrors the node creation
 // helper: [q, k, input_pos_symint_or_dummy, mode_as_int].
 static inline SDPAMode mode_of(const std::vector<ValueRef>& resize_args) {
   return static_cast<SDPAMode>(resize_args.at(3));
+}
+
+// Upper bound on the GQA group size the coop-GQA shader supports; must match
+// MAX_GROUP_SIZE in the GQA branch of sdpa_compute_out_coop.glsl.
+constexpr int64_t kMaxGqaGroupSize = 8;
+
+// Whether the LLM decode AV path should use the GQA-reuse coop shader: one
+// workgroup computes all G = Hq / Hkv query heads sharing a KV head, loading
+// each V texel once. Requires GQA (Hq > Hkv, evenly divisible) and a group size
+// within the shader's compile-time bound.
+bool use_gqa_av_coop(
+    ComputeGraph* graph,
+    const int64_t num_q_heads,
+    const int64_t num_kv_heads) {
+  (void)graph;
+  if (num_kv_heads <= 0 || num_q_heads <= num_kv_heads) {
+    return false;
+  }
+  if (num_q_heads % num_kv_heads != 0) {
+    return false;
+  }
+  const int64_t group_size = num_q_heads / num_kv_heads;
+  return group_size <= kMaxGqaGroupSize;
+}
+
+// Resolve whether the AV decode path uses the GQA-reuse coop shader, honoring
+// the test-only shader_override knob (see SDPA.h): auto selects via
+// use_gqa_av_coop; kShaderOverrideForceNonGqa forces off; any other value
+// forces the GQA family on.
+bool resolve_use_gqa(
+    ComputeGraph* graph,
+    const ValueRef shader_override,
+    const int64_t num_q_heads,
+    const int64_t num_kv_heads) {
+  if (shader_override == kDummyValueRef) {
+    return use_gqa_av_coop(graph, num_q_heads, num_kv_heads);
+  }
+  const bool force_gqa = graph->extract_scalar<int64_t>(shader_override) !=
+      kShaderOverrideForceNonGqa;
+  // Forcing the GQA shader on an ineligible shape would silently drop query
+  // heads (z-dispatch = Hkv cannot cover Hq, or group size exceeds the shader's
+  // fixed accumulator array). Fail loudly instead of producing garbage output.
+  if (force_gqa) {
+    VK_CHECK_COND(
+        num_kv_heads > 0 && num_q_heads % num_kv_heads == 0 &&
+            num_q_heads / num_kv_heads <= kMaxGqaGroupSize,
+        "forcing GQA via shader_override requires a GQA-eligible shape: Hq "
+        "divisible by Hkv and group size <= kMaxGqaGroupSize");
+  }
+  return force_gqa;
+}
+
+// Resolve whether the GQA-reuse AV path uses the head_dim output-tiled (_tile2)
+// variant. Auto (no override) and kShaderOverrideForceGqa defer to the vendor
+// gate (tile2 on Adreno); the force values pin the variant on any device (see
+// SDPA.h), giving the Adreno-only tile2 variant deterministic test coverage.
+bool resolve_use_tile2(ComputeGraph* graph, const ValueRef shader_override) {
+  if (shader_override != kDummyValueRef) {
+    const int64_t ov = graph->extract_scalar<int64_t>(shader_override);
+    if (ov == kShaderOverrideForceTile2) {
+      return true;
+    }
+    if (ov == kShaderOverrideForceBase) {
+      return false;
+    }
+  }
+  return graph->device_is_adreno();
 }
 
 vkapi::ShaderInfo pick_sdpa_qk_shader(
@@ -209,12 +264,11 @@ vkapi::ShaderInfo pick_sdpa_qk_shader(
   }
 }
 
-utils::uvec3 pick_sdpa_qk_global_wg_size(
+GlobalWorkGrid pick_sdpa_qk_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
-  (void)shader;
   (void)args;
   const SDPAMode mode = mode_of(resize_args);
   const ValueRef q = resize_args.at(0);
@@ -225,30 +279,30 @@ utils::uvec3 pick_sdpa_qk_global_wg_size(
   // Dispatch grid: (context_len tiles, S tiles, H * B).
   const uint32_t N4 = utils::div_up_4(static_cast<uint32_t>(d.context_len));
   const uint32_t M4 = utils::div_up_4(static_cast<uint32_t>(d.S));
-  return {N4, M4, static_cast<uint32_t>(d.H * d.B)};
+  const utils::uvec3 extents{N4, M4, static_cast<uint32_t>(d.H * d.B)};
+  if (shader.kernel_name.find("_coop") != std::string::npos) {
+    return GlobalWorkGrid(extents, kTiledWorkGrid, LocalWorkGroup(1u, 64u, 1u));
+  }
+  return GlobalWorkGrid(extents, kTiledWorkGrid);
 }
 
-utils::uvec3 pick_sdpa_qk_local_wg_size(
+LocalWorkGroup pick_sdpa_qk_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
+  if (gwg.required_lwg_size().is_valid()) {
+    return pick_required_lwg(graph, shader, gwg, args, resize_args);
+  }
   const SDPAMode mode = mode_of(resize_args);
   if (mode == SDPAMode::LLM) {
-    const bool use_coop_algorithm =
-        shader.kernel_name.find("_coop") != std::string::npos;
-    if (use_coop_algorithm) {
-      return {1, 64, 1};
-    }
-    return pick_hw_square_wg_size(
-        graph, shader, global_workgroup_size, args, resize_args);
+    return pick_xy_square_lwg(graph, shader, gwg, args, resize_args);
   }
-  return default_pick_local_wg_size(
-      graph, shader, global_workgroup_size, args, resize_args);
+  return default_pick_lwg(graph, shader, gwg, args, resize_args);
 }
 
-utils::uvec3 pick_sdpa_softmax_global_wg_size(
+GlobalWorkGrid pick_sdpa_softmax_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -266,24 +320,12 @@ utils::uvec3 pick_sdpa_softmax_global_wg_size(
       : graph->size_at<int64_t>(-2, q);
   const int64_t B =
       (mode == SDPAMode::LLM) ? 1 : graph->size_at<int64_t>(-4, q);
-  return {
-      1,
-      static_cast<uint32_t>(seq_len),
-      static_cast<uint32_t>(num_q_heads * B)};
-}
-
-utils::uvec3 pick_sdpa_softmax_local_wg_size(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)graph;
-  (void)shader;
-  (void)global_workgroup_size;
-  (void)args;
-  (void)resize_args;
-  return {64, 1, 1};
+  return GlobalWorkGrid(
+      {1u,
+       static_cast<uint32_t>(seq_len),
+       static_cast<uint32_t>(num_q_heads * B)},
+      kTiledWorkGrid,
+      LocalWorkGroup(64u, 1u, 1u));
 }
 
 vkapi::ShaderInfo pick_sdpa_av_shader(
@@ -297,8 +339,36 @@ vkapi::ShaderInfo pick_sdpa_av_shader(
     const ValueRef q_projected = resize_args.at(0);
     const bool is_gemv = is_single_token(graph, q_projected);
 
+    // Test-only knob (see SDPA.h): -1 auto, 0 forces per-query-head, 1 forces
+    // the GQA-reuse shader.
+    const ValueRef shader_override = resize_args.at(4);
+
     std::string shader_name = "sdpa_compute_out";
-    shader_name += is_gemv ? "_coop" : "_tiled";
+    if (is_gemv) {
+      const int64_t num_q_heads = graph->size_at<int64_t>(-2, q_projected);
+      const int64_t num_kv_heads = graph->size_at<int64_t>(-2, v_cache);
+      if (resolve_use_gqa(graph, shader_override, num_q_heads, num_kv_heads)) {
+        // Grouped-query attention: one workgroup computes all G = Hq / Hkv
+        // query heads that share a KV head, loading each V texel once and
+        // reusing it across the group. Cuts the dominant V-cache traffic ~Gx
+        // for this bandwidth-bound kernel.
+        shader_name += "_gqa_coop";
+        // The _tile2 (head_dim output-tiled) variant amortizes the attn-weight
+        // loads and shared-memory reduction over more outputs per workgroup. A
+        // consistent win on Adreno (AV ~1.14-1.63x) but a regression on Mali at
+        // common decode contexts (~0.67-0.86x, interleaved median), so it is
+        // selected vendor-adaptively (tests can pin it via shader_override; see
+        // resolve_use_tile2). pick_sdpa_av_gwg keys the x-dim
+        // collapse off this same _tile2 suffix.
+        if (resolve_use_tile2(graph, shader_override)) {
+          shader_name += "_tile2";
+        }
+      } else {
+        shader_name += "_coop";
+      }
+    } else {
+      shader_name += "_tiled";
+    }
     add_storage_type_suffix(shader_name, graph->storage_type_of(out));
     add_storage_type_suffix(shader_name, graph->storage_type_of(v_cache));
     add_dtype_suffix(shader_name, graph->dtype_of(out));
@@ -314,12 +384,11 @@ vkapi::ShaderInfo pick_sdpa_av_shader(
   }
 }
 
-utils::uvec3 pick_sdpa_av_global_wg_size(
+GlobalWorkGrid pick_sdpa_av_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
-  (void)shader;
   const SDPAMode mode = mode_of(resize_args);
   const ValueRef q = resize_args.at(0);
   const ValueRef k = resize_args.at(1);
@@ -328,27 +397,59 @@ utils::uvec3 pick_sdpa_av_global_wg_size(
 
   const uint32_t N4 = utils::div_up_4(static_cast<uint32_t>(d.D));
   const uint32_t M4 = utils::div_up_4(static_cast<uint32_t>(d.S));
-  return {N4, M4, static_cast<uint32_t>(d.H * d.B)};
+
+  // The GQA-reuse AV coop shader assigns one workgroup per (d4, kv_h) and emits
+  // all G query heads in the group, so the z-dim is the number of KV heads
+  // rather than the number of Q heads. d.H is the Q-head count; recover the KV
+  // count from the V cache (args read group: [attn_weights_softmax, v]).
+  if (shader.kernel_name.find("_gqa_coop") != std::string::npos) {
+    const ValueRef v = args.at(1).refs.at(1);
+    const uint32_t num_kv_heads = graph->size_at<uint32_t>(-2, v);
+    // The _tile2 variant has each workgroup own 2 head_dim texels, so its x-dim
+    // collapses to div_up(D4, 2). The plain (TILE_N4 == 1) variant keeps x ==
+    // D4.
+    const uint32_t x_dim =
+        shader.kernel_name.find("_tile2") != std::string::npos
+        ? utils::div_up(N4, 2u)
+        : N4;
+    return GlobalWorkGrid(
+        {x_dim, M4, static_cast<uint32_t>(num_kv_heads * d.B)},
+        kTiledWorkGrid,
+        LocalWorkGroup(1u, 64u, 1u));
+  }
+
+  const utils::uvec3 extents{N4, M4, static_cast<uint32_t>(d.H * d.B)};
+  if (shader.kernel_name.find("_coop") != std::string::npos) {
+    return GlobalWorkGrid(extents, kTiledWorkGrid, LocalWorkGroup(1u, 64u, 1u));
+  }
+  return GlobalWorkGrid(extents, kTiledWorkGrid);
 }
 
-utils::uvec3 pick_sdpa_av_local_wg_size(
+LocalWorkGroup pick_sdpa_av_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
+  if (gwg.required_lwg_size().is_valid()) {
+    return pick_required_lwg(graph, shader, gwg, args, resize_args);
+  }
   const SDPAMode mode = mode_of(resize_args);
   if (mode == SDPAMode::LLM) {
-    const bool use_coop_algorithm =
-        shader.kernel_name.find("_coop") != std::string::npos;
-    if (use_coop_algorithm) {
-      return {1, 64, 1};
+    const LocalWorkGroup lwg =
+        pick_xy_square_lwg(graph, shader, gwg, args, resize_args);
+    // On Adreno 830, the tiled buffer shader reads zeros from the V cache in
+    // many workgroups shrunk below the recommended size to fit a small grid.
+    const uint32_t nthreads =
+        graph->context()->adapter_ptr()->recommended_lwg_nthreads();
+    if (graph->device_is_adreno() &&
+        graph->is_buffer_storage(args.at(0).refs.at(0)) &&
+        lwg.nthreads() < nthreads) {
+      return LocalWorkGroup(kSquareLwg, nthreads);
     }
-    return pick_hw_square_wg_size(
-        graph, shader, global_workgroup_size, args, resize_args);
+    return lwg;
   }
-  return default_pick_local_wg_size(
-      graph, shader, global_workgroup_size, args, resize_args);
+  return default_pick_lwg(graph, shader, gwg, args, resize_args);
 }
 
 //
@@ -373,8 +474,8 @@ void add_sdpa_kv_cache_update_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      kv_cache_update_global_wg_size,
-      default_pick_local_wg_size,
+      kv_cache_update_gwg,
+      default_pick_lwg,
       // Inputs and Outputs
       {{cache, vkapi::kWrite}, {projected, vkapi::kRead}},
       // Shader param buffers
@@ -422,8 +523,8 @@ void add_sdpa_compute_attn_weights_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       pick_sdpa_qk_shader,
-      pick_sdpa_qk_global_wg_size,
-      pick_sdpa_qk_local_wg_size,
+      pick_sdpa_qk_gwg,
+      pick_sdpa_qk_lwg,
       // Inputs and Outputs
       {{attn_weights, vkapi::kWrite}, {read_inputs, vkapi::kRead}},
       // Shader param buffers
@@ -474,8 +575,8 @@ void add_sdpa_attn_weights_softmax_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(shader_name),
-      pick_sdpa_softmax_global_wg_size,
-      pick_sdpa_softmax_local_wg_size,
+      pick_sdpa_softmax_gwg,
+      pick_required_lwg,
       // Inputs and Outputs
       {{attn_weights_softmax, vkapi::kWrite}, {attn_weights, vkapi::kRead}},
       // Shader param buffers
@@ -498,7 +599,8 @@ void add_sdpa_compute_out_node(
     const ValueRef k,
     const ValueRef input_pos_symint,
     const ValueRef out,
-    const SDPAMode mode) {
+    const SDPAMode mode,
+    const ValueRef shader_override) {
   vkapi::ParamsBindList param_ubos;
   if (mode == SDPAMode::LLM) {
     param_ubos = {
@@ -511,11 +613,29 @@ void add_sdpa_compute_out_node(
 
   const ValueRef mode_ref = static_cast<ValueRef>(mode);
 
+  // The GQA-reuse AV coop shader needs its group size G = Hq / Hkv as a
+  // specialization constant. The shader declares spec consts [inv_scale (unused
+  // in AV), group_size]; pass both positionally so group_size lands at the
+  // right slot. Non-GQA AV shaders declare only inv_scale (or none), so the
+  // trailing group_size entry is simply ignored there. The GQA gate is fixed at
+  // build time (Hq/Hkv/capability don't change across decode steps), matching
+  // pick_sdpa_av_shader.
+  vkapi::SpecVarList spec_vars = {};
+  if (mode == SDPAMode::LLM) {
+    const int64_t num_q_heads = graph.size_at<int64_t>(-2, q);
+    const int64_t num_kv_heads = graph.size_at<int64_t>(-2, v);
+    if (resolve_use_gqa(&graph, shader_override, num_q_heads, num_kv_heads)) {
+      const int32_t group_size =
+          utils::safe_downcast<int32_t>(num_q_heads / num_kv_heads);
+      spec_vars = {1.0f, group_size};
+    }
+  }
+
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       pick_sdpa_av_shader,
-      pick_sdpa_av_global_wg_size,
-      pick_sdpa_av_local_wg_size,
+      pick_sdpa_av_gwg,
+      pick_sdpa_av_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{attn_weights_softmax, v}, vkapi::kRead}},
       // Shader param buffers
@@ -523,9 +643,9 @@ void add_sdpa_compute_out_node(
       // Push Constants
       {},
       // Specialization Constants
-      {},
-      // Resize Args: [q, k, input_pos_symint_or_dummy, mode]
-      {q, k, input_pos_symint, mode_ref},
+      spec_vars,
+      // Resize Args: [q, k, input_pos_symint_or_dummy, mode, shader_override]
+      {q, k, input_pos_symint, mode_ref, shader_override},
       // Resizing Logic
       resize_sdpa_out_node));
 }
@@ -554,7 +674,10 @@ void update_cache_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   add_sdpa_kv_cache_update_node(graph, input_pos_symint, value, cache);
 }
 
-void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+void sdpa_impl_with_shader_override(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args,
+    const ValueRef shader_override) {
   int arg_idx = 0;
   const ValueRef q_projected = args[arg_idx++];
   const ValueRef k_cache = args[arg_idx++];
@@ -586,7 +709,6 @@ void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   VK_CHECK_COND(
       graph.val_is_none(dropout_p) ||
       graph.extract_scalar<double>(dropout_p) == 0);
-  VK_CHECK_COND(graph.val_is_none(scale));
   // is_causal is assumed to be true in the current implementation.
   VK_CHECK_COND(
       graph.val_is_none(is_causal) || graph.extract_scalar<bool>(is_causal));
@@ -599,17 +721,31 @@ void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   const utils::StorageType attn_weights_storage =
       graph.storage_type_of(q_projected);
 
-  // If using buffer storage for attn weights, we need to ensure that the buffer
-  // numel limit is not exceeded. If needed, manually adjust max_seq_len based
-  // on the buffer numel limit.
+  // The attn_weights S and context dims are padded up to a multiple of 4 to
+  // match resize_sdpa_attn_weights_node(), which virtual_resizes to
+  // align_up_4(seq_len)/align_up_4(context_len). The alignment originates from
+  // an Adreno 750 (Samsung S24) correctness workaround (D86226134 / PR #15578).
+  // With buffer-backed attn_weights the SDPA shaders index each head at a
+  // per-head stride of align_up_4(S) * div_up_4(context) texels, so the
+  // allocation must reserve that padded extent — otherwise heads past the first
+  // few read/write out of bounds. The texture path is immune: it addresses each
+  // head as an image layer rather than via a linear stride.
+  const int64_t padded_context_len = utils::align_up_4(max_context_len);
+
+  // If using buffer storage for attn weights, ensure the buffer numel limit is
+  // not exceeded by the PADDED allocation. Checking the raw (unpadded) sizes is
+  // insufficient: padding can push the actual allocation past the limit even
+  // when the raw size fits — e.g. max_seq_len=2047 pads to 2048, so
+  // 32*2048*2048 lands exactly on maxStorageBufferRange/4 and the shaders index
+  // out of bounds, corrupting attention output.
   if (attn_weights_storage == utils::kBuffer) {
     const int64_t max_buffer_numel = graph.max_buffer_numel();
-    if (num_q_heads * max_seq_len * max_context_len >= max_buffer_numel) {
-      // Compute the maximum possible value for max_seq_len that will hit
-      // the buffer numel limit.
-      max_seq_len = max_buffer_numel / (num_q_heads * max_context_len);
-      // Adjust down to the nearest multiple of 4 to make sure the limit is
-      // not hit.
+    if (num_q_heads * utils::align_up_4(max_seq_len) * padded_context_len >=
+        max_buffer_numel) {
+      // Largest max_seq_len whose padded allocation stays under the limit.
+      max_seq_len = max_buffer_numel / (num_q_heads * padded_context_len);
+      // Round down to a multiple of 4 (so align_up_4 is a no-op below) and keep
+      // the allocation strictly below the limit.
       if (max_seq_len % 4 != 0) {
         max_seq_len = (max_seq_len / 4) * 4;
       } else {
@@ -621,8 +757,8 @@ void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   std::vector<int64_t> attn_weight_full_sizes = {
       1, // batch
       num_q_heads,
-      max_seq_len,
-      max_context_len};
+      utils::align_up_4(max_seq_len),
+      padded_context_len};
 
   TmpTensor attn_weights(
       &graph,
@@ -639,7 +775,9 @@ void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       utils::kWidthPacked);
 
   const int32_t head_dim_size = graph.size_at<int32_t>(-1, q_projected);
-  const float scale_val = 1.0f / std::sqrt(static_cast<float>(head_dim_size));
+  const float scale_val = graph.val_is_none(scale)
+      ? 1.0f / std::sqrt(static_cast<float>(head_dim_size))
+      : graph.extract_scalar<float>(scale);
 
   add_sdpa_compute_attn_weights_node(
       graph,
@@ -668,7 +806,12 @@ void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       /*k=*/kDummyValueRef,
       input_pos_symint,
       out,
-      SDPAMode::LLM);
+      SDPAMode::LLM,
+      shader_override);
+}
+
+void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  sdpa_impl_with_shader_override(graph, args, kDummyValueRef);
 }
 
 void sdpa_with_kv_cache_impl(
@@ -693,10 +836,18 @@ void sdpa_with_kv_cache_impl(
   (void)sequence_len;
 
   utils::StorageType cache_storage = graph.storage_type_of(q_projected);
-  const ValueRef k_cache =
-      graph.add_tensor_like(k_cache_data, cache_storage, utils::kWidthPacked);
-  const ValueRef v_cache =
-      graph.add_tensor_like(v_cache_data, cache_storage, utils::kWidthPacked);
+  const ValueRef k_cache = prepack_standard(
+      graph,
+      k_cache_data,
+      cache_storage,
+      utils::kWidthPacked,
+      /*passthrough=*/true);
+  const ValueRef v_cache = prepack_standard(
+      graph,
+      v_cache_data,
+      cache_storage,
+      utils::kWidthPacked,
+      /*passthrough=*/true);
 
   update_cache_impl(graph, {k_projected, k_cache, input_pos_symint, -1});
   update_cache_impl(graph, {v_projected, v_cache, input_pos_symint, -1});
@@ -732,7 +883,6 @@ void compute_attn_weight_with_kv_cache_impl(
   const ValueRef is_causal = args[arg_idx++];
   (void)is_causal;
   const ValueRef scale = args[arg_idx++];
-  (void)scale;
 
   // Output tensors
   const ValueRef out = args[arg_idx++];
@@ -740,16 +890,26 @@ void compute_attn_weight_with_kv_cache_impl(
   (void)sequence_len;
 
   const utils::StorageType cache_storage = graph.storage_type_of(q_projected);
-  const ValueRef k_cache =
-      graph.add_tensor_like(k_cache_data, cache_storage, utils::kWidthPacked);
-  const ValueRef v_cache =
-      graph.add_tensor_like(v_cache_data, cache_storage, utils::kWidthPacked);
+  const ValueRef k_cache = prepack_standard(
+      graph,
+      k_cache_data,
+      cache_storage,
+      utils::kWidthPacked,
+      /*passthrough=*/true);
+  const ValueRef v_cache = prepack_standard(
+      graph,
+      v_cache_data,
+      cache_storage,
+      utils::kWidthPacked,
+      /*passthrough=*/true);
 
   update_cache_impl(graph, {k_projected, k_cache, input_pos_symint, -1});
   update_cache_impl(graph, {v_projected, v_cache, input_pos_symint, -1});
 
   const int32_t head_dim_size = graph.size_at<int32_t>(-1, q_projected);
-  const float scale_val = 1.0f / std::sqrt(static_cast<float>(head_dim_size));
+  const float scale_val = graph.val_is_none(scale)
+      ? 1.0f / std::sqrt(static_cast<float>(head_dim_size))
+      : graph.extract_scalar<float>(scale);
 
   add_sdpa_compute_attn_weights_node(
       graph,
@@ -790,6 +950,31 @@ void fused_sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   VK_CHECK_COND(graph.packed_dim_of(q) == WHCN::kWidthDim);
   VK_CHECK_COND(graph.packed_dim_of(k) == WHCN::kWidthDim);
   VK_CHECK_COND(graph.packed_dim_of(v) == WHCN::kWidthDim);
+  // The buffer shaders index every tensor as contiguous rows.
+  for (const ValueRef t : {q, k, v, attn_mask, out}) {
+    VK_CHECK_COND(
+        graph.val_is_none(t) || !graph.val_is_tensor(t) ||
+            !graph.is_buffer_storage(t) || graph.is_contiguous_buffer_tensor(t),
+        "fused SDPA requires contiguous buffer tensors");
+  }
+  // The QK shader binds the mask and attention weights in the query's storage,
+  // and the attention weights take the output's.
+  for (const ValueRef t : {attn_mask, out}) {
+    VK_CHECK_COND(
+        graph.val_is_none(t) ||
+            graph.storage_type_of(t) == graph.storage_type_of(q),
+        "fused SDPA requires the attn_mask and output in the query's storage");
+  }
+  // Buffer shaders read the mask in the query's dtype; texture shaders sample
+  // it as floats.
+  VK_CHECK_COND(
+      graph.val_is_none(attn_mask) ||
+          (graph.is_buffer_storage(q)
+               ? graph.dtype_of(attn_mask) == graph.dtype_of(q)
+               : graph.dtype_of(attn_mask) == vkapi::kFloat ||
+                   graph.dtype_of(attn_mask) == vkapi::kHalf),
+      "fused SDPA requires an attn_mask of the query's dtype, or a float one "
+      "in textures");
 
   // Compute scale
   const int32_t head_dim = graph.size_at<int32_t>(-1, q);
@@ -817,6 +1002,16 @@ void fused_sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   // entire fused SDPA pipeline uses a uniform storage type. attn_weights stays
   // in fp32 for numerical stability of the Q@K^T accumulation.
   const utils::StorageType attn_storage = graph.storage_type_of(out);
+  if (attn_storage == utils::kBuffer) {
+    // max_buffer_numel() is maxStorageBufferRange, a byte limit, and buffer
+    // rows are padded to whole texels.
+    VK_CHECK_COND(
+        B * H * S * static_cast<int64_t>(utils::align_up_4(L)) *
+                static_cast<int64_t>(sizeof(float)) <=
+            graph.max_buffer_numel(),
+        "fused SDPA attention weights exceed the device's storage buffer "
+        "range");
+  }
 
   TmpTensor attn_weights(
       &graph,

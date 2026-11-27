@@ -1,4 +1,4 @@
-load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
@@ -8,6 +8,7 @@ fbcode_target(_kind = runtime.python_library,
     srcs = native.glob(["*.py", "stages/*.py"]),
     visibility = ["PUBLIC"],
     deps = [
+        "//executorch/backends/transforms:duplicate_dynamic_quant_chain",
         "//executorch/exir:graph_module",
     ],
 )

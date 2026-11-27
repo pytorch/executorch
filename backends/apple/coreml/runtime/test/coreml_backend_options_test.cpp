@@ -13,7 +13,6 @@
 #include <gtest/gtest.h>
 
 using executorch::backends::coreml::LoadOptionsBuilder;
-using executorch::runtime::BackendOption;
 using executorch::runtime::Error;
 using executorch::runtime::kMaxOptionValueLength;
 using executorch::runtime::LoadBackendOptionsMap;

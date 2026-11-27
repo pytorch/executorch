@@ -5,32 +5,15 @@
 
 from typing import List, Union
 
-import sympy  # type: ignore[import-untyped]
 import torch
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
-from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
+from executorch.backends.arm.tosa.dialect.ops._common import compute_pool2d_output_shape
+from executorch.backends.arm.tosa.dialect.ops_registration import register_tosa_op
 from executorch.backends.arm.tosa.specification import (
-    get_context_shape_env,
     get_context_spec,
     TosaSpecification,
 )
-from torch.fx.experimental.symbolic_shapes import FloorDiv
 from torch.types import IntLikeType
-
-
-def _to_sympy_expr(value: int | torch.SymInt) -> sympy.Expr:
-    if isinstance(value, torch.SymInt):
-        return value.node._expr
-    return sympy.Integer(int(value))
-
-
-def _from_sympy_expr(expr: sympy.Expr) -> int | torch.SymInt:
-    # Full `sympy.simplify()` is too expensive for the large symbolic formulas
-    # produced by dynamic-shape model lowering. Keep the expression in its raw
-    # symbolic form and only fold obviously-static integers.
-    if expr.is_Integer:
-        return int(expr)
-    return get_context_shape_env().create_symintnode(expr, hint=None)
 
 
 def _get_supported_avg_pool2d_acc_types(
@@ -48,6 +31,10 @@ def _get_supported_avg_pool2d_acc_types(
         supported_acc_types[torch.float32] = (torch.float32,)
         if tosa_spec.support_extension("bf16"):
             supported_acc_types[torch.bfloat16] = (torch.float32,)
+        if tosa_spec.support_extension("fp8e4m3"):
+            supported_acc_types[torch.float8_e4m3fn] = (torch.float16,)
+        if tosa_spec.support_extension("fp8e5m2"):
+            supported_acc_types[torch.float8_e5m2] = (torch.float16,)
 
     return supported_acc_types
 
@@ -101,7 +88,7 @@ def validate_avg_pool2d_args(
         )
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "AVG_POOL2D(Tensor input, Tensor input_zp, Tensor output_zp, int[2] kernel, int[2] stride, SymInt[4] pad, ScalarType acc_type) -> Tensor",
     TosaSpecification.all_versions_and_profiles(),
 )
@@ -143,27 +130,4 @@ def compute_avg_pool2d_output_shape(
 
     validate_avg_pool2d_args(kernel, stride, pad, op=op)
 
-    n, h, w, c = x.shape
-    k_h, k_w = kernel
-    s_h, s_w = stride
-    p_top, p_bot, p_left, p_right = pad
-
-    h_expr = (
-        FloorDiv(
-            _to_sympy_expr(h) + _to_sympy_expr(p_top) + _to_sympy_expr(p_bot) - k_h,
-            s_h,
-        )
-        + 1
-    )
-    w_expr = (
-        FloorDiv(
-            _to_sympy_expr(w) + _to_sympy_expr(p_left) + _to_sympy_expr(p_right) - k_w,
-            s_w,
-        )
-        + 1
-    )
-
-    h_out = _from_sympy_expr(h_expr)
-    w_out = _from_sympy_expr(w_expr)
-
-    return [n, h_out, w_out, c]
+    return compute_pool2d_output_shape(x, kernel, stride, pad)

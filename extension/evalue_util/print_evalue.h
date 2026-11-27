@@ -13,17 +13,25 @@
 #include <executorch/runtime/core/evalue.h>
 
 namespace executorch {
-namespace runtime {
+namespace ET_RUNTIME_NAMESPACE {
 /**
  * Prints an Evalue to a stream.
  */
 std::ostream& operator<<(std::ostream& os, const EValue& value);
 // Note that this must be declared in the same namespace as EValue.
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch
 
 namespace executorch {
 namespace extension {
+
+namespace internal {
+// Inline so the lean and ATen builds of this library share one stream slot.
+inline int evalue_edge_items_xalloc() {
+  static const int xalloc = std::ios_base::xalloc();
+  return xalloc;
+}
+} // namespace internal
 
 /**
  * Sets the number of "edge items" when printing EValue lists to a stream.
@@ -64,7 +72,9 @@ class evalue_edge_items final {
   }
 
  private:
-  static void set_edge_items(std::ostream& os, long edge_items);
+  static void set_edge_items(std::ostream& os, long edge_items) {
+    os.iword(internal::evalue_edge_items_xalloc()) = edge_items;
+  }
 
   const long edge_items_;
 };

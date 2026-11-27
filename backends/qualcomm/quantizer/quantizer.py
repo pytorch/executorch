@@ -3,23 +3,26 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import itertools
+import logging
+import operator
 from dataclasses import dataclass
 from enum import IntEnum, unique
 from functools import partial
-from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
+from operator import attrgetter
+from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple, Union
 
 # To support quantize op lowering in AOT
 try:
     import executorch.kernels.quantized  # noqa[F401]
 except:
-    import logging
-
     logging.info(
         "Failed to load quantized_aot_lib. To run on LPAI backend, please make sure that quantized_aot_lib is accessible."
     )
-    del logging
 import torch
-from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
+from executorch.backends.qualcomm._passes.qnn_pass_manager import (
+    get_qnn_pass_manager_cls,
+)
 
 from executorch.backends.qualcomm.quantizer.backend_opinfo_adapter import (
     constraints_loader,
@@ -33,17 +36,27 @@ from executorch.backends.qualcomm.quantizer.validators import NormalizedConstrai
 
 from executorch.backends.qualcomm.serialization.qc_schema import (
     _soc_info_table,
+    HtpArch,
     QcomChipset,
     QnnExecuTorchBackendType,
 )
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_CONVERTED_LINEAR,
+    QCOM_QUANT_ANNOTATION_KEY,
+)
+from executorch.backends.qualcomm.utils.qnn_sdk_setup import disable_mkldnn_on_amd
 from torch._ops import OpOverload
 
 from torch.fx import GraphModule
+from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 from torchao.quantization.pt2e import UniformQuantizationObserverBase
-from torchao.quantization.pt2e.quantizer import Quantizer
+from torchao.quantization.pt2e.quantizer import Quantizer, SharedQuantizationSpec
+
+from .conv_bn import annotate_conv_bn_partitions
 
 from .qconfig import (
     get_16a16w_qnn_ptq_config,
+    get_16a2w_qnn_ptq_config,
     get_16a4w_qnn_ptq_config,
     get_16a4w_qnn_qat_config,
     get_16a8w_qnn_ptq_config,
@@ -51,6 +64,10 @@ from .qconfig import (
     get_8a4w_qnn_ptq_config,
     get_8a8w_qnn_ptq_config,
     get_8a8w_qnn_qat_config,
+    get_fp16a8w_per_channel_quant_config,
+    get_fp16a8w_qat_per_channel_quant_config,
+    get_fp16a8w_qnn_ptq_config,
+    get_fp16a8w_qnn_qat_config,
     get_ptq_per_block_quant_config,
     get_ptq_per_channel_quant_config,
     get_qat_per_block_quant_config,
@@ -65,6 +82,7 @@ get_default_16bit_qnn_ptq_config = get_16a16w_qnn_ptq_config
 __all__ = [
     "QnnQuantizer",
     "QuantDtype",
+    "get_16a2w_qnn_ptq_config",
     "get_16a4w_qnn_ptq_config",
     "get_16a8w_qnn_ptq_config",
     "get_16a8w_qnn_qat_config",
@@ -89,6 +107,8 @@ class QuantDtype(IntEnum):
     use_16a4w_block = 3
     use_8a8w = 4
     use_8a4w = 5
+    use_fp16a8w = 6
+    use_16a2w = 7
 
 
 QUANT_CONFIG_DICT = {
@@ -120,6 +140,15 @@ QUANT_CONFIG_DICT = {
         ),
         None,
     ),
+    (QuantDtype.use_16a2w, False): (
+        get_16a2w_qnn_ptq_config,
+        partial(
+            get_ptq_per_channel_quant_config,
+            act_dtype=torch.uint16,
+            weight_dtype=torch.int2,
+        ),
+        None,
+    ),
     (QuantDtype.use_16a4w_block, False): (
         get_16a4w_qnn_ptq_config,
         partial(
@@ -145,6 +174,16 @@ QUANT_CONFIG_DICT = {
             act_dtype=torch.uint8,
             weight_dtype=torch.int4,
         ),
+        None,
+    ),
+    (QuantDtype.use_fp16a8w, False): (
+        get_fp16a8w_qnn_ptq_config,
+        get_fp16a8w_per_channel_quant_config,
+        None,
+    ),
+    (QuantDtype.use_fp16a8w, True): (
+        get_fp16a8w_qnn_qat_config,
+        get_fp16a8w_qat_per_channel_quant_config,
         None,
     ),
     # QAT,
@@ -173,6 +212,15 @@ QUANT_CONFIG_DICT = {
     (QuantDtype.use_8a8w, True): (
         get_8a8w_qnn_qat_config,
         partial(get_qat_per_channel_quant_config),
+        None,
+    ),
+    (QuantDtype.use_16a8w, True): (
+        get_16a8w_qnn_qat_config,
+        partial(
+            get_qat_per_channel_quant_config,
+            act_dtype=torch.uint16,
+            weight_dtype=torch.int8,
+        ),
         None,
     ),
 }
@@ -301,7 +349,9 @@ class QnnQuantizer(Quantizer):
 
     Args:
         backend: QnnQuantizer uses the backend_type to dynamically load the appropriate backend rules as needed.
-        soc_model: QnnQuantizer checks each operation according to the soc_model. For example, LPBQ requires V69 or a newer version.
+        soc_model:
+            QnnQuantizer checks each operation according to the soc_model.
+            For an FCB target list, validation uses the target with the lowest HTP architecture.
         strict:
           When enabled (default), the validation stage raises a ValueError if quantization constraints are not met.
           In this mode, all quantization constraints must be satisfied to fully delegate to the QNN Backend.
@@ -332,23 +382,41 @@ class QnnQuantizer(Quantizer):
     def __init__(
         self,
         backend: QnnExecuTorchBackendType = QnnExecuTorchBackendType.kHtpBackend,
-        soc_model: QcomChipset = QcomChipset.SM8750,
+        soc_model: Union[QcomChipset, Sequence[QcomChipset]] = QcomChipset.SM8750,
         strict: bool = True,
     ):
         super().__init__()
         self.strict = strict
-        self.backend = str(backend)
-        self.soc_info = _soc_info_table[soc_model]
+        self.backend = backend
+        self.soc_models = (
+            (soc_model,) if isinstance(soc_model, QcomChipset) else tuple(soc_model)
+        )
+        if not self.soc_models:
+            raise ValueError("soc_model must not be empty")
+        if len(self.soc_models) > 1 and backend != QnnExecuTorchBackendType.kHtpBackend:
+            raise ValueError(
+                "multiple soc_model (FCB) is only supported for HTP backend"
+            )
+        least_capable_soc_model = min(
+            self.soc_models,
+            key=lambda model: _soc_info_table[model].htp_info.htp_arch,
+        )
+        self.soc_info = _soc_info_table[least_capable_soc_model]
 
         # Lazy load rules and constraints of current backend
         self._rules_map, self._constraint_cache = load_backend_rules_and_constraints(
-            self.backend
+            str(backend)
         )
         self.supported_ops: Set[OpOverload] = set(self._rules_map.keys())
         self.quant_ops: Set[OpOverload] = self.supported_ops.copy()
 
-        # Load backend_opinfo of current backend and soc_model
-        self.backend_opinfo = get_backend_opinfo(self.backend, soc_model)
+        # Applied when the quantizer is built, because that is upstream of calibration, and
+        # calibration runs the model eagerly. The AMD crash this prevents needs a real
+        # convolution, so a guard applied at lowering time comes after the risk has passed.
+        disable_mkldnn_on_amd()
+
+        # Validate against the least capable FCB target.
+        self.backend_opinfo = get_backend_opinfo(str(backend), least_capable_soc_model)
 
         self.default_quant_config = ModuleQConfig()
         self.submodule_qconfig_list: List[
@@ -356,13 +424,109 @@ class QnnQuantizer(Quantizer):
         ] = []
 
         self.block_size_map = {}
+        # Block sizes of linears lowered as conv2d, keyed by conv node name.
+        # Rebuilt on every transform_for_annotation call.
+        self._converted_block_sizes: Dict[str, Tuple] = {}
         self.custom_quant_annotations: Sequence[Callable] = []
         self.discard_nodes: Set[str] = set()
         self._recipe = None
+        self._convert_linear_to_conv2d = False
 
     @property
     def recipe(self):
         return self._recipe
+
+    def _get_quant_range(self, node):
+        if quant_info := node.meta.get(QCOM_QUANT_ANNOTATION_KEY, None):
+            try:
+                # SharedQuantizationSpec has not quant info, so we need to find source node
+                # that this node is sharing quant info with and use source node's quant info.
+                qspec = quant_info.output_qspec
+                while isinstance(qspec, SharedQuantizationSpec):
+                    edge_or_node = qspec.edge_or_node
+                    if isinstance(edge_or_node, tuple):
+                        input_node, user_node = edge_or_node
+                        shared_info = user_node.meta[QCOM_QUANT_ANNOTATION_KEY]
+                        qspec = shared_info.input_qspec_map[input_node]
+                    else:
+                        shared_info = edge_or_node.meta[QCOM_QUANT_ANNOTATION_KEY]
+                        qspec = shared_info.output_qspec
+                dtype_info = torch.iinfo(qspec.dtype)
+            except:
+                logging.warning(f"Could not resolve quant range for node: {node.name}")
+                return
+
+            quant_range = (
+                dtype_info.max if qspec.quant_max is None else qspec.quant_max
+            ) - (dtype_info.min if qspec.quant_min is None else qspec.quant_min)
+            return quant_range
+
+    def _get_candidates_with_infinity_args(self, graph_module: GraphModule):
+        binary_op_sources = [
+            operator.add,
+            operator.sub,
+            operator.mul,
+            operator.truediv,
+            torch.add,
+            torch.sub,
+            torch.mul,
+            torch.div,
+            "add",
+            "sub",
+            "mul",
+            "truediv",
+        ]
+        src_partitions = get_source_partitions(graph_module.graph, binary_op_sources)
+        src_partitions = list(itertools.chain(*src_partitions.values()))
+        return {sp.nodes[0].target for sp in src_partitions} | {
+            torch.ops.aten.masked_fill.Scalar,
+            torch.ops.aten.masked_fill.Tensor,
+            torch.ops.aten.scalar_tensor.default,
+        }
+
+    def _replace_inf(self, graph_module: GraphModule) -> GraphModule:
+        candidates = self._get_candidates_with_infinity_args(graph_module)
+        for node in graph_module.graph.nodes:
+            if all(
+                [
+                    node.op == "call_function",
+                    node.target in candidates,
+                    quant_range := self._get_quant_range(node),
+                ]
+            ):
+                arg_list = list(node.args)
+                for index, arg in enumerate(arg_list):
+                    if isinstance(arg, (int, float)):
+                        if arg >= torch.finfo(torch.float16).max:
+                            arg_list[index] = quant_range
+                        elif arg <= torch.finfo(torch.float16).min:
+                            arg_list[index] = -quant_range
+
+                node.args = tuple(arg_list)
+            elif node.op == "get_attr":
+                constant_tensor = attrgetter(node.target)(graph_module)
+                if (
+                    torch.is_tensor(constant_tensor)
+                    and constant_tensor.is_floating_point()
+                ):
+                    # Anything smaller than float16.min, which covers float32.min and float(-inf)
+                    min_value = torch.finfo(torch.float16).min
+                    # Anything larger than float16.max, which covers float32.max and float(inf)
+                    max_value = torch.finfo(torch.float16).max
+
+                    quant_min, quant_max = float("inf"), float("-inf")
+                    for source_node in node.users:
+                        if quant_range := self._get_quant_range(source_node):
+                            quant_min = min(quant_min, -quant_range)
+                            quant_max = max(quant_max, quant_range)
+
+                    if quant_min != float("inf") and quant_max != float("-inf"):
+                        # Inplace update
+                        with torch.no_grad():
+                            constant_tensor[constant_tensor <= min_value] = quant_min
+                            constant_tensor[constant_tensor >= max_value] = quant_max
+
+        graph_module.recompile()
 
     def annotate(self, model: GraphModule) -> GraphModule:
         """
@@ -378,10 +542,23 @@ class QnnQuantizer(Quantizer):
             GraphModule: The annotated model.
         """
         if self._recipe:
+            if self.block_size_map:
+                logging.warning("block_size_map is ignored when a quant recipe is set.")
             self._recipe.annotate(model, self._rules_map)
         else:
+            if self.default_quant_config.is_qat:
+                # Conv+BN has to be claimed as one partition before the per-node
+                # pass. PTQ is left alone: batchnorm is already folded into the
+                # conv by the time it is quantized there.
+                annotate_conv_bn_partitions(
+                    model, self._get_quant_config, self.discard_nodes
+                )
             self._annotate(model)
             self._annotate_custom_annotation(model)
+
+        # This is the only place we have sufficient information for min-max ranges.
+        # This has to be done before calibration since this affects scale/offset.
+        self._replace_inf(model)
 
         return model
 
@@ -395,7 +572,53 @@ class QnnQuantizer(Quantizer):
         Returns:
             GraphModule: The transformed model.
         """
-        return QnnPassManager().transform_for_annotation_pipeline(model)
+        per_block_linears = self._get_per_block_linears(model)
+        # HTP FullyConnected reads BLOCKWISE_EXPANSION block scales past their
+        # documented size, which can corrupt the output (pytorch/executorch#23746),
+        # so per-block linears are lowered as 1x1 conv2d instead. V68 does not
+        # support per-block conv2d, so its linears stay FullyConnected.
+        route_to_conv = (
+            self.backend == QnnExecuTorchBackendType.kHtpBackend
+            and self.soc_info.htp_info.htp_arch >= HtpArch.V69
+        )
+        model = get_qnn_pass_manager_cls(
+            self.backend
+        )().transform_for_annotation_pipeline(
+            model,
+            convert_linear_to_conv2d=self._convert_linear_to_conv2d,
+            linear_node_names=set(per_block_linears) if route_to_conv else None,
+        )
+
+        self._converted_block_sizes = {}
+        converted_strategies = {}
+        for node in model.graph.nodes:
+            linear_name = node.meta.get(QCOM_CONVERTED_LINEAR)
+            if linear_name not in per_block_linears:
+                continue
+            block_size, strategy = per_block_linears[linear_name]
+            block_size = tuple(block_size) + (1,) * (4 - len(block_size))
+            self._converted_block_sizes[node.name] = block_size
+            if strategy is not None:
+                converted_strategies[node.name] = (strategy, block_size)
+        if self._recipe:
+            self._recipe.set_converted_block_strategies(converted_strategies)
+        return model
+
+    def _get_per_block_linears(self, model: GraphModule) -> Dict[str, Tuple]:
+        """Map each per-block linear name to (block_size, recipe strategy or None)."""
+        per_block_linears = {}
+        for node in model.graph.nodes:
+            if node.target != torch.ops.aten.linear.default:
+                continue
+            if self._recipe:
+                if strategy := self._recipe.get_per_block_strategy(node):
+                    per_block_linears[node.name] = (
+                        strategy.extra_kwargs["block_size"],
+                        strategy,
+                    )
+            elif node.name in self.block_size_map:
+                per_block_linears[node.name] = (self.block_size_map[node.name], None)
+        return per_block_linears
 
     def validate(self, model: GraphModule) -> None:
         # Validate: only for mapped nodes (qnn_op present); unmapped → skip validation
@@ -449,7 +672,10 @@ class QnnQuantizer(Quantizer):
         if isinstance(op, str):
             return
         config = self._get_submodule_qconfig(node)
-        if block_size := self.block_size_map.get(node.name):
+        block_size = self._converted_block_sizes.get(
+            node.name
+        ) or self.block_size_map.get(node.name)
+        if block_size:
             ch_axis = config.op_axis_dict.get(node.target, 0)
             assert (
                 len(config.per_block_quant_config_list) > ch_axis
@@ -545,10 +771,26 @@ class QnnQuantizer(Quantizer):
         """
         Set the mapping from node names to block sizes for per-block quantization.
 
+        On HTP V69 and later, a linear in this map with an input of rank 2-4 is
+        lowered as a 1x1 conv2d, and its block size is padded to 4D for the conv
+        weight (e.g. (1, 32) -> (1, 32, 1, 1)). Other ranks stay linear.
+
         Args:
             block_size_map (Dict[str, Tuple]): Mapping from node name to block size.
         """
         self.block_size_map = block_size_map
+
+    def set_convert_linear_to_conv2d(self, convert_linear_to_conv2d: bool) -> None:
+        """
+        Convert linear to conv2d during the annotation pipeline.
+
+        If this is enabled, quant_recipe will need to target conv node instead of linear node.
+        A per-block linear keeps its block size on the converted conv node.
+
+        Args:
+            convert_linear_to_conv2d (bool): True to convert during annotation.
+        """
+        self._convert_linear_to_conv2d = convert_linear_to_conv2d
 
     def set_default_quant_config(
         self,
@@ -571,8 +813,13 @@ class QnnQuantizer(Quantizer):
             is_linear_per_channel (bool, optional): Enables per-channel quantization for linear (fully connected) operations.
             is_embedding_per_channel (bool, optional): Enables per-channel quantization for embedding operations.
             act_observer (Optional[UniformQuantizationObserverBase], optional): Custom observer for activation quantization. If not specified, the default observer is determined by `QUANT_CONFIG_DICT`.
-
         """
+        if quant_dtype == QuantDtype.use_16a16w and is_conv_per_channel:
+            logging.warning(
+                "use_16a16w with per-channel conv weights can be much less "
+                "accurate than per-tensor; consider is_conv_per_channel=False "
+                "(per_channel_conv=False in make_quantizer)."
+            )
         self.default_quant_config = ModuleQConfig(
             quant_dtype,
             is_qat=is_qat,

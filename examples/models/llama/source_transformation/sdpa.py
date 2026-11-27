@@ -42,12 +42,12 @@ class SDPACustom(torch.nn.Module):
         k = k.transpose(1, 2)
         v = v.transpose(1, 2)
 
-        # Custom op only supports float32 currently. Converting to/from float32 is
-        # faster than not having the op.
         input_dtype = q.dtype
-        q = q.to(dtype=torch.float)
-        k = k.to(dtype=torch.float)
-        v = v.to(dtype=torch.float)
+        use_fp32_fallback = input_dtype not in (torch.float, torch.bfloat16)
+        if use_fp32_fallback:
+            q = q.to(dtype=torch.float)
+            k = k.to(dtype=torch.float)
+            v = v.to(dtype=torch.float)
 
         if self.use_attention_mask:
             output = torch.ops.llama.custom_sdpa(
@@ -69,7 +69,10 @@ class SDPACustom(torch.nn.Module):
                 0,  # dropout probability. Ignored by the code
                 True,  # is_causal
             )
-        return output.view(bsz, seqlen, self.dim).to(dtype=input_dtype)
+        output = output.view(bsz, seqlen, self.dim)
+        if use_fp32_fallback:
+            output = output.to(dtype=input_dtype)
+        return output
 
 
 def _replace_sdpa_with_custom_op(

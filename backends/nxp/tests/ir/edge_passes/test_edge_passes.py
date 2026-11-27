@@ -18,7 +18,14 @@ from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters import (
+    PermuteCopyConverter,
     ViewCopyConverter,
+)
+from executorch.backends.nxp.backend.ops_aliases import (
+    DequantizePerTensor,
+    PermuteCopy,
+    QuantizePerTensor,
+    ViewCopy,
 )
 from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
     NeutronEdgePassManager,
@@ -41,15 +48,12 @@ from executorch.backends.nxp.tests.executors import (
     EdgeProgramExecutor,
     OverrideTargetSupportCheck,
 )
-from executorch.backends.nxp.tests.ir.converter.node_converter.test_permute_copy_converter import (
-    Conv2dPermuteModule,
-)
-from executorch.backends.nxp.tests.models import (
+from executorch.backends.nxp.tests.simple_models import (
+    Conv2dModule,
     ConvActivationModule,
     ConvFCFCSoftmaxModuleWithoutReshape,
     LinearActivationModule,
 )
-from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.extension.export_util.utils import export_to_edge
 from parameterized import parameterized
 from torch.export import ExportedProgram
@@ -57,10 +61,7 @@ from torch.fx import Graph, Node
 
 
 def _is_view_copy(node_: Node) -> bool:
-    return (
-        node_.op == "call_function"
-        and node_.target == exir_ops.edge.aten.view_copy.default
-    )
+    return node_.op == "call_function" and node_.target == ViewCopy
 
 
 def _find_view_copy_node_indices(graph_nodes: list[Node]) -> list[int]:
@@ -84,6 +85,23 @@ def _assert_nodes_form_a_view_copy_qdq_cluster(graph: Graph, node_indices: list[
     # Make sure the nodes are properly connected.
     assert view_copy.args[0] == dequantize
     assert quantize.args[0] == view_copy
+
+
+class Conv2dPermuteModule(torch.nn.Module):
+    def __init__(self, in_channels: int, perm: tuple[int, ...]):
+        super().__init__()
+        self.perm = perm
+        self.conv = Conv2dModule(
+            in_channels=in_channels,
+            out_channels=in_channels,
+            stride=1,
+            kernel_size=3,
+            padding=1,
+        )
+
+    def forward(self, x):
+        x = self.conv(x)
+        return torch.permute(x, self.perm)
 
 
 class TestEdgePasses(unittest.TestCase):
@@ -239,19 +257,19 @@ class TestEdgePasses(unittest.TestCase):
 
             # Check linear and activation are in separate QDQ clusters
             nodes = list(exported_program.graph.nodes)
-            assert len(nodes) == 13
+            assert len(nodes) == 15
             assert _is_dequantize(nodes[5])
             assert (
                 neutron_target_spec.neutron_target_info.is_fusable_conv_or_linear__edge(
-                    nodes[7]
+                    nodes[9]
                 )
             )
-            assert _is_quantize(nodes[8])
-            assert _is_dequantize(nodes[9])
+            assert _is_quantize(nodes[10])
+            assert _is_dequantize(nodes[11])
             assert neutron_target_spec.neutron_target_info.is_supported_fused_activation__edge(
-                nodes[10]
+                nodes[12]
             )
-            assert _is_quantize(nodes[11])
+            assert _is_quantize(nodes[13])
 
     @parameterized.expand(
         [
@@ -324,7 +342,11 @@ class TestEdgePasses(unittest.TestCase):
             compile_spec, neutron_target_spec, custom_delegation_options
         )
 
-        edge_program_manager = edge_program_manager.to_backend(partitioner)
+        # Make sure the `permute_copy` is not delegated.
+        with OverrideTargetSupportCheck(
+            PermuteCopyConverter, new_target_support_check=lambda *_: False
+        ):
+            edge_program_manager = edge_program_manager.to_backend(partitioner)
 
         # Make sure QDQ cluster for permute_copy is present.
         edge_program_with_qdq_cluster = copy.deepcopy(
@@ -332,16 +354,10 @@ class TestEdgePasses(unittest.TestCase):
         )
         nodes = list(edge_program_with_qdq_cluster.graph.nodes)
         assert len(nodes) == 10
-        assert (
-            nodes[5].target
-            == exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
-        )
-        assert nodes[6].target == exir_ops.edge.aten.permute_copy.default
+        assert nodes[5].target == DequantizePerTensor
+        assert nodes[6].target == PermuteCopy
         assert "cluster" in nodes[6].meta
-        assert (
-            nodes[7].target
-            == exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
-        )
+        assert nodes[7].target == QuantizePerTensor
 
         # Run pass for removal of additional QDQ nodes and compute in non-float types where possible
         edge_program_manager = edge_program_manager.transform(
@@ -353,12 +369,9 @@ class TestEdgePasses(unittest.TestCase):
         nodes = list(edge_program_without_qdq_cluster.graph.nodes)
         assert len(nodes) == 8
         assert nodes[4].name == "getitem"
-        assert nodes[5].target == exir_ops.edge.aten.permute_copy.default
+        assert nodes[5].target == PermuteCopy
         assert "cluster" not in nodes[5].meta
-        assert (
-            nodes[6].target
-            == exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
-        )
+        assert nodes[6].target == DequantizePerTensor
 
         edge_program_executor_without_qdq_cluster = EdgeProgramExecutor(
             edge_program_without_qdq_cluster

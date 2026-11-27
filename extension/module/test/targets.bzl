@@ -78,6 +78,7 @@ def define_common_targets(is_fbcode=False):
                     "//executorch/extension/module:module" + aten_suffix,
                     "//executorch/runtime/core:device_allocator",
                     "//executorch/runtime/core:device_memory_buffer",
+                    "//executorch/runtime/core/test:mock_cuda_allocator",
                 ],
                 env = {
                     "ET_MODULE_ADD_WITH_DEVICE_PATH": "$(location fbcode//executorch/test/models:exported_program_with_device_info[ModuleAddWithDevice.pte])",
@@ -87,6 +88,26 @@ def define_common_targets(is_fbcode=False):
                     "-Wno-error=deprecated-declarations",
                 ],
             )
+
+    runtime.cxx_test(
+        name = "ptn_hooks_test",
+        srcs = ["ptn_hooks_test.cpp"],
+        deps = [
+            "//executorch/extension/data_loader:buffer_data_loader",
+            "//executorch/extension/module:module",
+            "//executorch/extension/module:ptn_module_internal",
+        ],
+    )
+
+    runtime.cxx_test(
+        name = "ptn_no_hooks_test",
+        srcs = ["ptn_no_hooks_test.cpp"],
+        deps = [
+            "//executorch/extension/data_loader:buffer_data_loader",
+            "//executorch/extension/module:module",
+            "//executorch/extension/module:ptn_module_internal",
+        ],
+    )
 
     runtime.filegroup(
         name = "resources",

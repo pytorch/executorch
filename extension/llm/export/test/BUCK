@@ -1,4 +1,4 @@
-load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
@@ -15,5 +15,26 @@ fbcode_target(_kind = runtime.python_test,
     deps = [
         "//executorch/extension/llm/export:export_lib",
         "//caffe2:torch",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_test,
+    name = "test_int4",
+    srcs = ["test_int4.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/extension/llm/export:int4",
+        "//pytorch/ao:torchao",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_test,
+    name = "test_gguf",
+    srcs = ["test_gguf.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/extension/llm/export:gguf",
+        "fbsource//third-party/pypi/gguf:gguf",
+        "fbsource//third-party/pypi/numpy:numpy",
     ],
 )

@@ -33,7 +33,7 @@ void resize_rotary_embedding_node(
   graph->virtual_resize(xk_out, xk_sizes);
 }
 
-utils::uvec3 rotary_embedding_global_wg_size(
+GlobalWorkGrid rotary_embedding_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -53,7 +53,7 @@ utils::uvec3 rotary_embedding_global_wg_size(
   // Input tokens sequence length
   const uint32_t S = graph->size_at<uint32_t>(-3, xq_out);
 
-  return {D8, QH, S};
+  return GlobalWorkGrid({D8, QH, S}, kTiledWorkGrid);
 }
 
 void add_rotary_embedding_node(
@@ -91,8 +91,8 @@ void add_rotary_embedding_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      rotary_embedding_global_wg_size,
-      default_pick_local_wg_size,
+      rotary_embedding_gwg,
+      default_pick_lwg,
       // Inputs and Outputs
       {{{xq_out, xk_out}, vkapi::kWrite},
        {{xq, xk, freqs_cos, freqs_sin}, vkapi::kRead}},
@@ -121,7 +121,7 @@ void apply_rotary_emb(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 // HuggingFace RoPE variant
 //
 
-utils::uvec3 rotary_embedding_hf_global_wg_size(
+GlobalWorkGrid rotary_embedding_hf_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -139,7 +139,7 @@ utils::uvec3 rotary_embedding_hf_global_wg_size(
   const uint32_t QH = graph->size_at<uint32_t>(-2, xq_out);
   const uint32_t S = graph->size_at<uint32_t>(-3, xq_out);
 
-  return {D4, QH, S};
+  return GlobalWorkGrid({D4, QH, S}, kTiledWorkGrid);
 }
 
 void add_rotary_embedding_hf_node(
@@ -189,8 +189,8 @@ void add_rotary_embedding_hf_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      rotary_embedding_hf_global_wg_size,
-      default_pick_local_wg_size,
+      rotary_embedding_hf_gwg,
+      default_pick_lwg,
       // Inputs and Outputs
       {{{xq_out, xk_out}, vkapi::kWrite},
        {{xq, xk, freqs_cos, freqs_sin}, vkapi::kRead}},
@@ -225,10 +225,8 @@ void apply_rotary_emb_hf(
 // Operates on a single tensor (Q or K) of shape [B, N, C] with pair-interleaved
 // (real, imag) components along the last dim, and a freqs tensor with a total
 // element count of N * C that packs (cos, sin) pairs in the same interleaved
-// order as the x tensor. The freqs tensor may be passed in at any rank whose
-// flattened layout is [N, C] — e.g. 2D `[N, C]` or 4D `[1, N, C/2, 2]`. This
-// avoids callers having to emit a `view` dispatch (view_copy) purely to
-// normalize rank.
+// order as the x tensor. Expected frequency shapes are [N, C], [N, C/2, 2]
+// or [1, N, C/2, 2], avoiding a view_copy purely to normalize rank.
 //
 
 void resize_rotary_embedding_interleaved_node(
@@ -243,7 +241,7 @@ void resize_rotary_embedding_interleaved_node(
   graph->virtual_resize(out, graph->sizes_of(in));
 }
 
-utils::uvec3 rotary_embedding_interleaved_global_wg_size(
+GlobalWorkGrid rotary_embedding_interleaved_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -261,7 +259,7 @@ utils::uvec3 rotary_embedding_interleaved_global_wg_size(
   const uint32_t C = static_cast<uint32_t>(out_sizes.at(2));
 
   // One thread per output texel of 4 elements along C.
-  return {utils::div_up_4(C), N, B};
+  return GlobalWorkGrid({utils::div_up_4(C), N, B}, kTiledWorkGrid);
 }
 
 void add_rotary_embedding_interleaved_node(
@@ -275,10 +273,8 @@ void add_rotary_embedding_interleaved_node(
   VK_CHECK_COND(x_sizes.size() == 3);
   VK_CHECK_COND(x_sizes.at(2) % 4 == 0);
 
-  // freqs_cis may arrive at any rank (commonly 2D [N, C] or 4D [1, N, C/2, 2]
-  // from `torch.view_as_real(...).unsqueeze(0)`). Validate via numel rather
-  // than per-dim equality so callers do not need to emit a view_copy purely
-  // to flatten the shape.
+  // The expected frequency shapes differ in rank but contain the same N * C
+  // interleaved values. Validate numel rather than requiring a view_copy.
   int64_t freqs_numel = 1;
   for (const int64_t s : freqs_sizes) {
     freqs_numel *= s;
@@ -290,21 +286,20 @@ void add_rotary_embedding_interleaved_node(
   VK_CHECK_COND(graph.packed_dim_of(out) == WHCN::kWidthDim);
   VK_CHECK_COND(graph.has_standard_axis_map(x));
   VK_CHECK_COND(graph.has_standard_axis_map(out));
-  // freqs_cis is pinned to buffer storage via op_registry so the shader can
-  // use flat (row, col) indexing regardless of its declared rank.
   VK_CHECK_COND(graph.is_buffer_storage(freqs_cis));
 
   std::string kernel_name = "apply_rotary_emb_interleaved";
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
-  vkapi::ParamsBindList param_ubos = {graph.meta_ubo(out)};
+  vkapi::ParamsBindList param_ubos = {
+      graph.meta_ubo(out), graph.buffer_meta_ubo(freqs_cis)};
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      rotary_embedding_interleaved_global_wg_size,
-      default_pick_local_wg_size,
+      rotary_embedding_interleaved_gwg,
+      default_pick_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{x, freqs_cis}, vkapi::kRead}},
       // Parameter buffers

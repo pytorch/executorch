@@ -61,9 +61,6 @@ GraphConfig::GraphConfig() {
   // dispatches. By default, this functionality is disabled.
   enable_querypool = false;
 
-  enable_local_wg_size_override = false;
-  local_wg_size_override = {};
-
   has_data_dependent_shapes = false;
   expect_dynamic_shapes = false;
   force_resize = false;
@@ -80,12 +77,6 @@ void GraphConfig::set_memory_layout_override(
     utils::GPUMemoryLayout memory_layout) {
   enable_memory_layout_override = true;
   memory_layout_override = memory_layout;
-}
-
-void GraphConfig::set_local_wg_size_override(
-    const utils::uvec3& local_wg_size) {
-  enable_local_wg_size_override = true;
-  local_wg_size_override = local_wg_size;
 }
 
 } // namespace vkcompute

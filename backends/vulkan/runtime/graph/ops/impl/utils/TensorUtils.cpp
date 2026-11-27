@@ -18,10 +18,15 @@ std::vector<int64_t> calculate_broadcasted_output_size(
     const std::vector<int64_t>& sizes1,
     const std::vector<int64_t>& sizes2) {
   std::vector<int64_t> out_sizes(std::max(sizes1.size(), sizes2.size()));
+  // ndim must be signed. `-out_sizes.size()` is size_t arithmetic, so when both
+  // inputs are 0-dimensional it evaluates to 0 while `i` promotes to a huge
+  // unsigned value, the guard stays true, and `out_sizes.at(size() - 1)` throws
+  // std::out_of_range instead of the loop being skipped.
+  const int64_t ndim = static_cast<int64_t>(out_sizes.size());
 
   // Match the sizes in reverse because sizes are in NCHW order
-  for (int i = -1; i >= -out_sizes.size(); --i) {
-    out_sizes.at(out_sizes.size() + i) =
+  for (int64_t i = -1; i >= -ndim; --i) {
+    out_sizes.at(static_cast<size_t>(ndim + i)) =
         std::max(utils::val_at(i, sizes1), utils::val_at(i, sizes2));
   }
 
@@ -39,58 +44,45 @@ bool check_same_packed_dim(
   return graph.packed_dim_of(in) == graph.packed_dim_of(out);
 }
 
-//
-// Broadcast flag functions
-//
-
-bool is_packed_dim_broadcasted(
-    ComputeGraph& graph,
-    const ValueRef sndr,
-    const ValueRef rcvr) {
-  // We assume that the tensors are broadcastable. If values aren't equal at
-  // some index, then the value of rcvr is 1 and hence should be broadcasted.
-  const std::vector<int64_t> sndr_sizes = graph.sizes_of(sndr);
-  const std::vector<int64_t> rcvr_sizes = graph.sizes_of(rcvr);
-
-  switch (graph.packed_dim_of(sndr)) {
-    case WHCN::kChannelsDim:
-      return utils::val_at(-3, sndr_sizes) > utils::val_at(-3, rcvr_sizes);
-    case WHCN::kHeightDim:
-      return utils::val_at(-2, sndr_sizes) > utils::val_at(-2, rcvr_sizes);
-    case WHCN::kWidthDim:
-      return utils::val_at(-1, sndr_sizes) > utils::val_at(-1, rcvr_sizes);
-    default:
-      VK_THROW("Invalid packed dim");
+bool is_packed_dim_vec4_contiguous(ComputeGraph& graph, const ValueRef tensor) {
+  if (!graph.is_buffer_storage(tensor)) {
+    return false;
   }
-}
-
-utils::ivec2 create_broadcast_params(
-    ComputeGraph& graph,
-    const ValueRef t1,
-    const ValueRef t2) {
-  return utils::make_ivec2(
-      {is_packed_dim_broadcasted(graph, t2, t1),
-       is_packed_dim_broadcasted(graph, t1, t2)});
+  // Elements wider than 4 bytes do not form vec4 texels.
+  if (vkapi::element_size(graph.dtype_of(tensor)) > 4) {
+    return false;
+  }
+  const api::PackedDimInfo& packed_dim_info = graph.packed_dim_info_of(tensor);
+  if (packed_dim_info.packed_dim_block_size != 1 ||
+      packed_dim_info.outer_packed_dim_block_size != 1 ||
+      packed_dim_info.packed_dim_align % 4 != 0) {
+    return false;
+  }
+  const std::vector<int64_t> dim_order = graph.dim_order_of(tensor);
+  const int64_t ndim = utils::safe_downcast<int64_t>(dim_order.size());
+  const int64_t packed_dim = packed_dim_info.packed_dim;
+  // A packed dim beyond the tensor's rank is placed innermost.
+  return packed_dim >= ndim || dim_order.back() == ndim - 1 - packed_dim;
 }
 
 //
 // Work group size calculation functions
 //
 
-utils::uvec3 adaptive_work_group_size(const utils::uvec3& global_work_group) {
-  utils::uvec3 local_group_size = {4, 4, 4};
-  if (global_work_group[2u] == 1) {
-    if (global_work_group[1u] < 8) {
-      local_group_size[0u] = 16;
-      local_group_size[1u] = 4;
-      local_group_size[2u] = 1;
+LocalWorkGroup adaptive_lwg(const GlobalWorkGrid& gwg) {
+  utils::uvec3 extents = {4u, 4u, 4u};
+  if (gwg[2u] == 1) {
+    if (gwg[1u] < 8) {
+      extents[0u] = 16u;
+      extents[1u] = 4u;
+      extents[2u] = 1u;
     } else {
-      local_group_size[0u] = 8;
-      local_group_size[1u] = 8;
-      local_group_size[2u] = 1;
+      extents[0u] = 8u;
+      extents[1u] = 8u;
+      extents[2u] = 1u;
     }
   }
-  return local_group_size;
+  return LocalWorkGroup(extents);
 }
 
 } // namespace vkcompute

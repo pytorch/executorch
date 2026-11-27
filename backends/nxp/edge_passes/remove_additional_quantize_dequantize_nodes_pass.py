@@ -7,9 +7,18 @@ import numpy as np
 import torch
 
 from executorch.backends.nxp.backend.edge_helper import get_quantization_parameters_for
+from executorch.backends.nxp.backend.ops_aliases import (
+    Cat,
+    DequantizePerChannel,
+    DequantizePerTensor,
+    DequantizePerTensorTensor,
+    PermuteCopy,
+    QuantizePerChannel,
+    QuantizePerTensor,
+    QuantizePerTensorTensor,
+)
 from executorch.backends.nxp.edge_passes.neutron_edge_pass import NeutronEdgePass
 from executorch.backends.nxp.neutron_partitioner import QDQClusterRecognizer
-from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx.passes.infra.pass_base import PassResult
 
 
@@ -36,15 +45,15 @@ class RemoveAdditionalQDQClustersPass(NeutronEdgePass):
     """
 
     qdq_per_channel_nodes = (
-        exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
-        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+        DequantizePerChannel,
+        QuantizePerChannel,
     )
 
     qdq_per_tensor_nodes = (
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
-        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
+        QuantizePerTensor,
+        QuantizePerTensorTensor,
+        DequantizePerTensor,
+        DequantizePerTensorTensor,
     )
 
     def run(self, graph_module: torch.fx.GraphModule) -> PassResult:
@@ -55,8 +64,8 @@ class RemoveAdditionalQDQClustersPass(NeutronEdgePass):
         for cluster in qdq_clusterer.cluster_map.values():
             # For now, enable only permute_copy and cat.
             if cluster.compute_node.target not in [
-                exir_ops.edge.aten.permute_copy.default,
-                exir_ops.edge.aten.cat.default,
+                PermuteCopy,
+                Cat,
             ]:
                 continue
 

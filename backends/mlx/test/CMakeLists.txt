@@ -29,7 +29,7 @@ endif()
 
 target_link_libraries(
   op_test_runner PRIVATE extension_module extension_tensor executorch
-                         mlxdelegate
+                         mlxdelegate extension_llm_cache
 )
 
 # --------------------------------------------------------------------------
@@ -54,6 +54,63 @@ add_dependencies(op_test_runner strict_compile_test)
 include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
 et_cxx_test(
+  mlx_speculative_ops_test
+  SOURCES
+  ${CMAKE_CURRENT_LIST_DIR}/mlx_speculative_ops_test.cpp
+  EXTRA_LIBS
+  mlxdelegate
+  mlx_schema
+  mlx
+)
+target_include_directories(
+  mlx_speculative_ops_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
+)
+set_tests_properties(
+  mlx_speculative_ops_test PROPERTIES ENVIRONMENT "MLX_ENABLE_TF32=1"
+)
+add_test(NAME mlx_speculative_ops_fp32_test COMMAND mlx_speculative_ops_test
+                                                    "--gtest_filter=*/Float32"
+)
+set_tests_properties(
+  mlx_speculative_ops_fp32_test PROPERTIES ENVIRONMENT "MLX_ENABLE_TF32=0"
+)
+if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
+  target_compile_options(
+    mlx_speculative_ops_test PRIVATE -fsanitize=address,undefined
+                                     -fno-omit-frame-pointer
+  )
+  target_link_options(
+    mlx_speculative_ops_test PRIVATE ${_mlx_sanitizer_link_options}
+  )
+endif()
+
+if(APPLE)
+  et_cxx_test(
+    mlx_metallib_path_test SOURCES
+    ${CMAKE_CURRENT_LIST_DIR}/mlx_metallib_path_test.mm
+    ${CMAKE_CURRENT_LIST_DIR}/../runtime/SwiftPMMetallibPath.mm
+  )
+  target_include_directories(
+    mlx_metallib_path_test PRIVATE ${CMAKE_CURRENT_LIST_DIR}/../runtime
+  )
+  set_source_files_properties(
+    ${CMAKE_CURRENT_LIST_DIR}/mlx_metallib_path_test.mm
+    ${CMAKE_CURRENT_LIST_DIR}/../runtime/SwiftPMMetallibPath.mm
+    PROPERTIES COMPILE_FLAGS "-fobjc-arc"
+  )
+  if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
+    target_compile_options(
+      mlx_metallib_path_test PRIVATE -fsanitize=address,undefined
+                                     -fno-omit-frame-pointer
+    )
+    target_link_options(
+      mlx_metallib_path_test PRIVATE ${_mlx_sanitizer_link_options}
+    )
+  endif()
+  target_link_libraries(mlx_metallib_path_test ${FOUNDATION_FRAMEWORK})
+endif()
+
+et_cxx_test(
   multi_thread_test_runner
   SOURCES
   ${CMAKE_CURRENT_LIST_DIR}/multi_thread_test_runner.cpp
@@ -67,5 +124,152 @@ et_cxx_test(
 if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
   target_link_options(
     multi_thread_test_runner PRIVATE ${_mlx_sanitizer_link_options}
+  )
+endif()
+
+# Per-session mutable-state manager unit test (no model/tokenizer needed).
+add_executable(mlx_mutable_state_test mlx_mutable_state_test.cpp)
+target_include_directories(
+  mlx_mutable_state_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
+)
+target_link_libraries(
+  mlx_mutable_state_test PRIVATE mlxdelegate mlx_schema mlx executorch_core
+)
+if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
+  target_compile_options(
+    mlx_mutable_state_test PRIVATE -fsanitize=address,undefined
+                                   -fno-omit-frame-pointer
+  )
+  target_link_options(
+    mlx_mutable_state_test PRIVATE ${_mlx_sanitizer_link_options}
+  )
+endif()
+add_test(NAME mlx_mutable_state COMMAND mlx_mutable_state_test)
+
+# Lazy-graph evaluation threshold (kEvalThresholdBytesKey). Drives the
+# interpreter over hand-built programs; no model/tokenizer needed.
+et_cxx_test(
+  mlx_eval_threshold_test
+  SOURCES
+  ${CMAKE_CURRENT_LIST_DIR}/mlx_eval_threshold_test.cpp
+  EXTRA_LIBS
+  mlxdelegate
+  mlx_schema
+  mlx
+)
+target_include_directories(
+  mlx_eval_threshold_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
+)
+if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
+  target_compile_options(
+    mlx_eval_threshold_test PRIVATE -fsanitize=address,undefined
+                                    -fno-omit-frame-pointer
+  )
+  target_link_options(
+    mlx_eval_threshold_test PRIVATE ${_mlx_sanitizer_link_options}
+  )
+endif()
+
+# Temp-slot release. Drives the interpreter over hand-built programs; no
+# model/tokenizer needed.
+et_cxx_test(
+  mlx_temp_release_test
+  SOURCES
+  ${CMAKE_CURRENT_LIST_DIR}/mlx_temp_release_test.cpp
+  EXTRA_LIBS
+  mlxdelegate
+  mlx_schema
+  mlx
+)
+target_include_directories(
+  mlx_temp_release_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
+)
+if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
+  target_compile_options(
+    mlx_temp_release_test PRIVATE -fsanitize=address,undefined
+                                  -fno-omit-frame-pointer
+  )
+  target_link_options(
+    mlx_temp_release_test PRIVATE ${_mlx_sanitizer_link_options}
+  )
+endif()
+
+# MetalKernelNode kernel-function reuse across nodes and executions. Drives the
+# interpreter over hand-built programs; no model/tokenizer needed.
+et_cxx_test(
+  mlx_metal_kernel_reuse_test
+  SOURCES
+  ${CMAKE_CURRENT_LIST_DIR}/mlx_metal_kernel_reuse_test.cpp
+  EXTRA_LIBS
+  mlxdelegate
+  mlx_schema
+  mlx
+)
+target_include_directories(
+  mlx_metal_kernel_reuse_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
+)
+if(ET_MLX_ALLOW_CUSTOM_KERNEL_EXECUTION)
+  target_compile_definitions(
+    mlx_metal_kernel_reuse_test PRIVATE ET_MLX_ALLOW_CUSTOM_KERNEL_EXECUTION
+  )
+endif()
+if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
+  target_compile_options(
+    mlx_metal_kernel_reuse_test PRIVATE -fsanitize=address,undefined
+                                        -fno-omit-frame-pointer
+  )
+  target_link_options(
+    mlx_metal_kernel_reuse_test PRIVATE ${_mlx_sanitizer_link_options}
+  )
+endif()
+
+et_cxx_test(
+  mlx_batch_control_test
+  SOURCES
+  ${CMAKE_CURRENT_LIST_DIR}/mlx_batch_control_test.cpp
+  EXTRA_LIBS
+  mlxdelegate
+  mlx_schema
+  mlx
+  extension_llm_cache
+)
+target_include_directories(
+  mlx_batch_control_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
+)
+if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
+  target_compile_options(
+    mlx_batch_control_test PRIVATE -fsanitize=address,undefined
+                                   -fno-omit-frame-pointer
+  )
+  target_link_options(
+    mlx_batch_control_test PRIVATE ${_mlx_sanitizer_link_options}
+  )
+endif()
+
+et_cxx_test(
+  mlx_sequence_control_test
+  SOURCES
+  ${CMAKE_CURRENT_LIST_DIR}/mlx_sequence_control_test.cpp
+  EXTRA_LIBS
+  mlxdelegate
+  mlx_schema
+  mlx
+  extension_llm_cache
+)
+# Cache lifecycle tests use strict FP32 oracles; primitive tests cover TF32.
+set_tests_properties(
+  mlx_batch_control_test mlx_sequence_control_test
+  PROPERTIES ENVIRONMENT "MLX_ENABLE_TF32=0"
+)
+target_include_directories(
+  mlx_sequence_control_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
+)
+if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
+  target_compile_options(
+    mlx_sequence_control_test PRIVATE -fsanitize=address,undefined
+                                      -fno-omit-frame-pointer
+  )
+  target_link_options(
+    mlx_sequence_control_test PRIVATE ${_mlx_sanitizer_link_options}
   )
 endif()

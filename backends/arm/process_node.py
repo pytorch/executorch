@@ -17,6 +17,7 @@ from executorch.backends.arm.tosa.dialect.shape import is_shape_op_node
 from executorch.backends.arm.tosa.mapping import TosaArg
 from executorch.backends.arm.tosa.specification import TosaSpecification
 from executorch.backends.arm.tosa.utils import normalize_symint
+from executorch.exir.dialects._ops import ops as exir_ops
 from torch._export.utils import (
     get_buffer,
     get_lifted_tensor_constant,
@@ -30,7 +31,12 @@ from torch.export.exported_program import ExportedProgram
 
 def _tensor_to_numpy(tensor: torch.Tensor) -> np.ndarray:
     tensor = tensor.detach().cpu().contiguous()
-    if tensor.dtype in (torch.bfloat16, torch.float8_e4m3fn, torch.float8_e5m2):
+    if tensor.dtype in (
+        torch.bfloat16,
+        torch.float8_e4m3fn,
+        torch.float8_e5m2,
+        torch.float8_e8m0fnu,
+    ):
         try:
             import ml_dtypes  # type: ignore[import-not-found]
         except ImportError as e:
@@ -38,11 +44,11 @@ def _tensor_to_numpy(tensor: torch.Tensor) -> np.ndarray:
                 f"ml_dtypes is required to serialize {tensor.dtype} tensors for TOSA. "
                 "Have you run setup.sh?"
             ) from e
-
         ml_dtype_map = {
             torch.bfloat16: (torch.uint16, ml_dtypes.bfloat16),
             torch.float8_e4m3fn: (torch.uint8, ml_dtypes.float8_e4m3fn),
             torch.float8_e5m2: (torch.uint8, ml_dtypes.float8_e5m2),
+            torch.float8_e8m0fnu: (torch.uint8, ml_dtypes.float8_e8m0fnu),
         }
         storage_dtype, ml_dtype = ml_dtype_map[tensor.dtype]
         return tensor.view(storage_dtype).numpy().view(ml_dtype)
@@ -51,12 +57,86 @@ def _tensor_to_numpy(tensor: torch.Tensor) -> np.ndarray:
 
 
 def _prepare_const_values_for_tosa_dtype(
-    values: np.ndarray, tosa_dtype: ts.DType
+    values: np.ndarray, tosa_arg: TosaArg
 ) -> np.ndarray:
     """Normalize constant storage to the expected TOSA serializer dtype."""
-    if tosa_dtype == ts.DType.INT48 and values.dtype != np.int64:
+    if tosa_arg.dtype == ts.DType.INT48 and values.dtype != np.int64:
         return values.astype(np.int64)
+    if tosa_arg.dtype in (ts.DType.FP6E2M3, ts.DType.FP6E3M2):
+        if values.dtype == np.uint8:
+            try:
+                import ml_dtypes  # type: ignore[import-not-found]
+            except ImportError as e:
+                raise RuntimeError(
+                    "ml_dtypes is required to serialize FP6 tensors for TOSA. "
+                    "Have you run setup.sh?"
+                ) from e
+            ml_dtype = {
+                ts.DType.FP6E2M3: ml_dtypes.float6_e2m3fn,
+                ts.DType.FP6E3M2: ml_dtypes.float6_e3m2fn,
+            }[tosa_arg.dtype]
+            return values.view(ml_dtype)
     return values
+
+
+def _get_const_shape(values: np.ndarray, tosa_arg: TosaArg) -> list[int]:
+    """Return the TOSA logical shape for a serialized constant."""
+    if tosa_arg.dtype == ts.DType.FP4E2M1:
+        return normalize_symint(tosa_arg.shape)
+    return normalize_symint(values.shape)
+
+
+def _is_packed_fp4_const(values: np.ndarray, tosa_arg: TosaArg) -> bool:
+    """FP4 elements are pairwise in each byte of a uint8 tensor.
+
+    This function checks if the given values and TOSA argument represent a
+    packed FP4 constant.
+
+    """
+
+    return (
+        tosa_arg.dtype == ts.DType.FP4E2M1
+        and values.dtype == np.uint8
+        and values.shape[-1] * 2 == tosa_arg.shape[-1]
+    )
+
+
+def _add_const(
+    tosa_graph: Any,
+    values: np.ndarray,
+    tosa_arg: TosaArg,
+    name: str,
+) -> None:
+    """Add a graph-owned constant under its exact name.
+
+    Parameters, buffers, and lifted constants are referenced by their FX names,
+    so pooling them could leave those names undefined. Preserve packed FP4
+    storage when required.
+
+    """
+    if _is_packed_fp4_const(values, tosa_arg):
+        # TOSA FP4 tensors have logical FP4 shape, but constants are stored as
+        # packed bytes (two values per byte). Add the raw bytes as INT8 first
+        # then set TOSA dtype and shape correctly on the tensor metadata.
+        tosa_graph.addUnpooledConst(
+            normalize_symint(values.shape),
+            ts.DType.INT8,
+            values,
+            name=name,
+        )
+        tensor = tosa_graph.currRegion.currBasicBlock.tensors[name]
+        tensor.setDtype(ts.DType.FP4E2M1)
+        for dim, size in enumerate(normalize_symint(tosa_arg.shape)):
+            tensor.SetDimSize(dim, size)
+        return
+
+    prepared_values = _prepare_const_values_for_tosa_dtype(values, tosa_arg)
+    tosa_graph.addUnpooledConst(
+        _get_const_shape(prepared_values, tosa_arg),
+        tosa_arg.dtype,
+        prepared_values,
+        name=name,
+    )
 
 
 def process_call_function(
@@ -65,6 +145,11 @@ def process_call_function(
     node_visitors: Dict[str, NodeVisitor],
     tosa_spec: TosaSpecification,
 ):
+    if node.target == exir_ops.backend.tosa.CONST.default:
+        # Temporarily skip dialect constants: visitors still create serializer
+        # constants until the node-visitor flow is replaced by direct lowering.
+        return
+
     # Unpack arguments and convert
     try:
         inputs = [TosaArg(arg, tosa_spec) for arg in node.args]
@@ -149,16 +234,62 @@ def process_inputs_to_parameters(
             f"{type(parameter_data).__name__}"
         )
     parameter_values = _tensor_to_numpy(parameter_data)
-    parameter_values = _prepare_const_values_for_tosa_dtype(
-        parameter_values, tosa_arg.dtype
-    )
+    _add_const(tosa_graph, parameter_values, tosa_arg, name=tosa_arg.name)
 
-    tosa_graph.addConst(
-        normalize_symint(parameter_values.shape),
-        tosa_arg.dtype,
-        parameter_values,
-        name=tosa_arg.name,
+
+def is_mutable_buffer(node: torch.fx.Node, edge_program: ExportedProgram) -> bool:
+    """Is this placeholder a buffer the graph mutates (streaming state)?"""
+    signature = edge_program.graph_signature
+    target = signature.inputs_to_buffers.get(node.name)
+    if target is None:
+        return False
+    return target in set(signature.buffers_to_mutate.values())
+
+
+def _variable_tensor_name(buffer_name: str) -> str:
+    """Name of the TOSA variable tensor that holds a mutable buffer."""
+    return f"{buffer_name}_variable"
+
+
+def process_inputs_to_mutable_buffers(
+    node: torch.fx.Node,
+    tosa_graph: Any,
+    edge_program: ExportedProgram,
+    tosa_spec: TosaSpecification,
+):
+    """Serialize a mutable buffer (streaming state) as a TOSA variable."""
+    try:
+        tosa_arg = TosaArg(node, tosa_spec)
+    except ValueError as e:
+        raise ValueError(
+            f"Failed processing mutable buffer placeholder: {node.name}. "
+            "Is the original torch function supported?"
+        ) from e
+    # A CONST would freeze the state, so the buffer becomes a TOSA variable
+    # that the delegate owns and keeps between invocations. The variable
+    # carries the buffer's contents as its initial value: the memory belongs
+    # to the delegate, so ExecuTorch cannot initialise it. Consumers read the
+    # variable through VARIABLE_READ into a tensor named after the
+    # placeholder, so they need no special handling.
+    initial = get_buffer(edge_program, node)
+    initial_values = (
+        _tensor_to_numpy(initial) if isinstance(initial, torch.Tensor) else None
     )
+    shape = normalize_symint(tosa_arg.shape)
+    block = tosa_graph.currRegion.currBasicBlock
+    variable = _variable_tensor_name(tosa_arg.name)
+    block.addTensor(
+        variable,
+        shape,
+        tosa_arg.dtype,
+        data=initial_values,
+        variable=True,
+        variable_name=tosa_arg.name,
+    )
+    block.addTensor(tosa_arg.name, shape, tosa_arg.dtype)
+    attr = ts.TosaSerializerAttribute()
+    attr.setAttribute(ts.Op.VARIABLE_READ)
+    tosa_graph.addOperator(ts.Op.VARIABLE_READ, [variable], [tosa_arg.name], attr)
 
 
 def process_inputs_to_buffers(
@@ -183,14 +314,7 @@ def process_inputs_to_buffers(
             f"{type(buffer_data).__name__}"
         )
     buffer_values = _tensor_to_numpy(buffer_data)
-    buffer_values = _prepare_const_values_for_tosa_dtype(buffer_values, tosa_arg.dtype)
-
-    tosa_graph.addConst(
-        normalize_symint(buffer_values.shape),
-        tosa_arg.dtype,
-        buffer_values,
-        name=tosa_arg.name,
-    )
+    _add_const(tosa_graph, buffer_values, tosa_arg, name=tosa_arg.name)
 
 
 def process_inputs_to_lifted_tensor_constants(
@@ -212,14 +336,7 @@ def process_inputs_to_lifted_tensor_constants(
         f"{type(tensor).__name__}"
     )
     tensor_values = _tensor_to_numpy(tensor)
-    tensor_values = _prepare_const_values_for_tosa_dtype(tensor_values, tosa_arg.dtype)
-
-    tosa_graph.addConst(
-        normalize_symint(tensor_values.shape),
-        tosa_arg.dtype,
-        tensor_values,
-        name=tosa_arg.name,
-    )
+    _add_const(tosa_graph, tensor_values, tosa_arg, name=tosa_arg.name)
 
 
 def _is_submodule_input(
@@ -254,6 +371,8 @@ def process_placeholder(
         process_inputs(node, tosa_graph, tosa_spec)
     elif is_param(edge_program, node):
         process_inputs_to_parameters(node, tosa_graph, edge_program, tosa_spec)
+    elif is_mutable_buffer(node, edge_program):
+        process_inputs_to_mutable_buffers(node, tosa_graph, edge_program, tosa_spec)
     elif is_buffer(edge_program, node):
         process_inputs_to_buffers(node, tosa_graph, edge_program, tosa_spec)
     elif is_lifted_tensor_constant(edge_program, node):
@@ -268,9 +387,47 @@ def process_placeholder(
         raise RuntimeError(f"Placeholder '{node.name}' is of unknown type.")
 
 
-def process_output(node: torch.fx.Node, tosa_graph: Any, tosa_spec: TosaSpecification):
+def process_output(
+    node: torch.fx.Node,
+    tosa_graph: Any,
+    tosa_spec: TosaSpecification,
+    edge_program: ExportedProgram | None = None,
+):
+    mutated = _buffer_mutation_targets(edge_program)
     for output in cast(tuple[torch.fx.Node, ...], node.args[0]):
         output_arg = TosaArg(output, tosa_spec)
+        variable_name = mutated.get(output.name)
+        if variable_name is not None:
+            # A buffer mutation is a write into the variable, not a graph output,
+            # so the update happens on the NPU rather than as an aten.copy_ on
+            # the MCU.
+            attr = ts.TosaSerializerAttribute()
+            attr.setAttribute(ts.Op.VARIABLE_WRITE)
+            tosa_graph.addOperator(
+                ts.Op.VARIABLE_WRITE,
+                [output_arg.name],
+                [_variable_tensor_name(variable_name)],
+                attr,
+            )
+            continue
         tosa_graph.addOutputTensor(
             tosa_graph.currRegion.currBasicBlock.tensors[output_arg.name]
         )
+
+
+def _buffer_mutation_targets(
+    edge_program: ExportedProgram | None,
+) -> dict[str, str]:
+    """Map producing-node name to the buffer placeholder it writes into."""
+    if edge_program is None:
+        return {}
+    signature = edge_program.graph_signature
+    buffer_to_placeholder = {
+        target: name for name, target in signature.inputs_to_buffers.items()
+    }
+    targets: dict[str, str] = {}
+    for output_name, buffer_target in signature.buffers_to_mutate.items():
+        placeholder = buffer_to_placeholder.get(buffer_target)
+        if placeholder is not None:
+            targets[output_name] = placeholder
+    return targets

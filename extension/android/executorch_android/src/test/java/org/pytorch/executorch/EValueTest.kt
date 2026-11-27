@@ -30,7 +30,7 @@ class EValueTest {
     val shape = longArrayOf(1, 3)
     val evalue = EValue.from(Tensor.fromBlob(data, shape))
     assertTrue(evalue.isTensor)
-    assertTrue(evalue.toTensor().shape.contentEquals(shape))
+    assertTrue(evalue.toTensor().shape().contentEquals(shape))
     assertTrue(evalue.toTensor().dataAsLongArray.contentEquals(data))
   }
 

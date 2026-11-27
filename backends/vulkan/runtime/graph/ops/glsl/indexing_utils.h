@@ -9,6 +9,8 @@
 #ifndef INDEXING_UTILS_H
 #define INDEXING_UTILS_H
 
+#include "common.glslh"
+
 /*
  * The functions defined in this header file use the following shorthand to
  * represent tensor related data structures.
@@ -94,7 +96,7 @@ ivec4 tidx_to_nchwi(const ivec4 tidx, const ivec4 sizes, const int packed_dim) {
   int base_i = tidx.x * strides.x + tidx.y * strides.y + tidx.z * strides.z +
       tidx.w * strides.w;
 
-  return base_i + ivec4(0, 1, 2, 3) * strides[packed_dim];
+  return base_i + ivec4(0, 1, 2, 3) * safe_idx(strides, packed_dim);
 }
 
 /*
@@ -135,9 +137,10 @@ int tidx_to_nchwi(const ivec4 tidx, const ivec4 sizes) {
 ivec4 bufi_to_tidx(int bufi, const ivec4 strides, const ivec4 dim_order) {
   ivec4 idx;
   for (int i = 3; i >= 0; i--) {
-    int dim = dim_order[i];
-    idx[dim] = bufi / strides[dim];
-    bufi %= strides[dim];
+    int dim = safe_idx(dim_order, i);
+    int dim_stride = safe_idx(strides, dim);
+    idx[dim] = bufi / dim_stride;
+    bufi %= dim_stride;
   }
   return idx;
 }
@@ -148,8 +151,9 @@ ivec4 bufi_to_tidx(int bufi, const ivec4 strides, const ivec4 dim_order) {
 ivec4 contiguous_bufi_to_tidx(int bufi, const ivec4 strides) {
   ivec4 idx;
   for (int i = 3; i >= 0; i--) {
-    idx[i] = bufi / strides[i];
-    bufi %= strides[i];
+    int dim_stride = safe_idx(strides, i);
+    idx[i] = bufi / dim_stride;
+    bufi %= dim_stride;
   }
   return idx;
 }
@@ -165,15 +169,16 @@ ivec4 lpos_to_tidx(
     const int batch_inner_dim,
     const int packed_dim) {
   // Align packed dim to next multiple of 4 to account for texel padding
-  sizes[packed_dim] = alignup4(sizes[packed_dim]);
+  safe_set(sizes, packed_dim, alignup4(safe_idx(sizes, packed_dim)));
   // Moving 1 texel along the packed dim traverses 4 tensor elements
   lpos[packed_dim] *= 4;
 
   ivec4 tidx = ivec4(lpos, 0);
 
   if (sizes.w > 1) {
-    tidx.w = tidx[batch_inner_dim] / sizes[batch_inner_dim];
-    tidx[batch_inner_dim] %= sizes[batch_inner_dim];
+    int batch_inner_size = safe_idx(sizes, batch_inner_dim);
+    tidx.w = tidx[batch_inner_dim] / batch_inner_size;
+    tidx[batch_inner_dim] %= batch_inner_size;
   }
   return tidx;
 }
@@ -184,13 +189,13 @@ ivec3 tidx_to_lpos(
     const int batch_inner_dim,
     const int packed_dim) {
   // Align packed dim to next multiple of 4 to account for texel padding
-  sizes[packed_dim] = alignup4(sizes[packed_dim]);
+  safe_set(sizes, packed_dim, alignup4(safe_idx(sizes, packed_dim)));
 
   ivec3 lpos = tidx.xyz;
 
   // Adjust batch inner dim by batch index if needed
   if (sizes.w > 1) {
-    lpos[batch_inner_dim] += tidx.w * sizes[batch_inner_dim];
+    lpos[batch_inner_dim] += tidx.w * safe_idx(sizes, batch_inner_dim);
   }
   // Fast division by 4, since moving 1 texel along the packed dim traverses 4
   // tensor elements.
@@ -204,7 +209,7 @@ ivec3 tidx_to_pos(
     const ivec4 axis_map,
     const int packed_dim) {
   // Align packed dim to next multiple of 4 to account for texel padding
-  sizes[packed_dim] = alignup4(sizes[packed_dim]);
+  safe_set(sizes, packed_dim, alignup4(safe_idx(sizes, packed_dim)));
 
   ivec3 pos;
   for (int dim = 0; dim < 3; ++dim) {
@@ -213,11 +218,13 @@ ivec3 tidx_to_pos(
 
   // Adjust batch inner dim by batch index if needed
   if (sizes.w > 1) {
-    pos[axis_map[axis_map.w]] += tidx.w * sizes[axis_map.w];
+    int batch_inner_dim = axis_map.w;
+    pos[safe_idx(axis_map, batch_inner_dim)] +=
+        tidx.w * safe_idx(sizes, batch_inner_dim);
   }
   // Fast division by 4, since moving 1 texel along the packed dim traverses 4
   // tensor elements.
-  pos[axis_map[packed_dim]] >>= 2;
+  pos[safe_idx(axis_map, packed_dim)] >>= 2;
   return pos;
 }
 

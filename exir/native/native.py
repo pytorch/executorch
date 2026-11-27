@@ -1,0 +1,596 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# pyre-strict
+
+"""
+Direct native lowering.
+
+Where the ExecuTorch flow is export -> [quantize] -> to_edge -> to_backend -> to_executorch, this
+is export -> [quantize] -> to_native, and yields a NativeProgramManager to save as a .ptn.
+See backends/native/README.md.
+
+Lowering runs the same to_edge_transform_and_lower pipeline as the ExecuTorch path
+(the default native passes plus NativePartitioner), but opts the partitioner into
+PTN serialization, so each delegate hands its constants back on NativeDelegateInfo
+instead of copying them into a NamedDataStore. They are merged into one
+multi-method Program and packed once, on save.
+
+Nothing about lowering is configurable yet: the passes, the partitioner, and the
+edge compile config are all owned here, because correctness of the package depends
+on them. See to_native for what a future compile_config argument would have to
+enforce.
+
+Eligible immutable constants are deduped exactly once, on save, across every method
+-- preprocess does no hashing and no packing. That is both cheaper than deduping per
+method and more correct, since per-method alias maps do not compose.
+"""
+
+from __future__ import annotations
+
+import operator
+import warnings
+from typing import TYPE_CHECKING
+
+import torch
+
+from executorch.backends.native.preprocess import NativeDelegateInfo
+from executorch.backends.native.serialization.graph_serialize import (
+    _compile_to_bytes,
+    _same_tensor,
+    collect_data_keys,
+    deserialize_program,
+    map_data_keys,
+    merge_programs,
+    validate_program,
+)
+from executorch.backends.native.serialization.schema import OutputKind, Program
+from executorch.exir._serialize._ptn import _check_metadata, MetadataValue, write_ptn
+from torch.export.graph_signature import InputKind
+from torch.utils import _pytree as pytree
+
+if TYPE_CHECKING:
+    from torch.export import ExportedProgram
+    from torch.fx import GraphModule
+
+_STATE_NAMESPACE = "state"
+
+
+class NativeProgramManager:
+    """One or more methods lowered for the native runtime, ready to save.
+
+    The counterpart to ExecutorchProgramManager: ``methods`` and ``save`` mirror it
+    deliberately, so the two pipelines read alike. The surface is intentionally
+    small, we will expand this later.
+
+    The graph blob is the only source of truth: method names and package-wide
+    mutability are read back out of it on demand rather than carried alongside,
+    so a manager cannot describe a package it does not hold.
+
+    Constants are held as tensor references returned by lowering. ``save`` may
+    normalize device or layout before writing them.
+    """
+
+    def __init__(
+        self,
+        ptg: bytes,
+        constants: dict[str, torch.Tensor],
+        metadata: dict[str, MetadataValue] | None = None,
+    ) -> None:
+        # TODO add args help
+        self._ptg = ptg
+        self._constants = constants
+        self._metadata = dict(metadata or {})
+
+    @property
+    def methods(self) -> set[str]:
+        """Names of the methods in the program."""
+        return {method.name for method in deserialize_program(self._ptg).methods}
+
+    def save(self, path: str) -> None:
+        """Write the program and its constants to ``path`` as a .ptn package."""
+        mutable_keys = frozenset(_mutable_data_keys(deserialize_program(self._ptg)))
+        write_ptn(
+            path,
+            self._ptg,
+            self._constants,
+            mutable_keys=mutable_keys,
+            metadata=self._metadata,
+        )
+
+
+def _check_delegate_outputs(
+    output_node: torch.fx.Node,
+    delegate_call: torch.fx.Node,
+    getitems: list[torch.fx.Node],
+    method_name: str,
+) -> None:
+    """Require every output leaf to be an ordered projection of the delegate."""
+    stray = [n.name for n in getitems if n.args[0] is not delegate_call]
+    if stray:
+        raise ValueError(
+            f"to_native: method {method_name!r} indexes something other than the "
+            f"native delegate: {sorted(stray)}. Every value must come from the "
+            f"delegated subgraph."
+        )
+
+    # all_input_nodes is a Node-only ordered set: it drops literal leaves and
+    # collapses repeated uses of the same Node. Walk the actual output pytree so
+    # `return y, 7` and `return y, y` cannot masquerade as `return y`.
+    leaves, _ = pytree.tree_flatten(output_node.args[0])
+    for position, value in enumerate(leaves):
+        if value is delegate_call and len(leaves) == 1:
+            continue
+        if not isinstance(value, torch.fx.Node):
+            raise ValueError(
+                f"to_native: method {method_name!r} returns literal {value!r} in "
+                f"position {position}, which does not come from the native "
+                f"delegate and would be dropped."
+            )
+        if not (
+            value.op == "call_function"
+            and value.target is operator.getitem
+            and value.args[0] is delegate_call
+        ):
+            raise ValueError(
+                f"to_native: method {method_name!r} returns {value.name!r}, which "
+                f"does not come from the native delegate and would be dropped. "
+                f"Every output must derive from the delegated subgraph."
+            )
+        if value.args[1] != position:
+            raise ValueError(
+                f"to_native: method {method_name!r} returns delegate output "
+                f"{value.args[1]} in position {position}. The outer graph must "
+                f"return the delegate's outputs in order, each exactly once; "
+                f"reordering, duplicating, or omitting them would change the "
+                f"method's contract."
+            )
+
+
+def _check_delegate_contract(
+    graph_module: GraphModule,
+    user_inputs: list[object],
+    method_name: str,
+) -> None:
+    """Require the top-level graph to be an identity wrapper around the delegate.
+
+    Only the delegate's graph is packaged, so anything the outer graph contributes
+    is lost. An op allowlist is not enough to prove that: the outer graph can drop,
+    reorder, duplicate, or inject values without running a single op. This checks
+    that the wrapper adds nothing, in four ways.
+
+    No residual ops. An op the partitioner rejected can sit beside a delegated
+    region and would simply vanish.
+
+    Inputs match. The delegate must receive exactly the method's user inputs, in
+    order, so a dropped or extra public input cannot slip through.
+
+    Outputs are an identity projection. Every output leaf must be
+    ``getitem(delegate, i)`` with ``i`` equal to its position, covering the
+    delegate's outputs exactly once each and in order. That rejects a pass-through
+    (``return x, x + 1`` needs no op at all), a swap, a duplicate, and a gap.
+
+    Every getitem is rooted in the delegate call, so none can smuggle in a value
+    from elsewhere.
+
+    Not covered: an output the delegate produces that the outer graph never
+    references. The index rule catches a gap between returned outputs but not a
+    dropped tail, and the delegate's own output_specs are not a usable reference --
+    they include buffer-mutation writebacks the outer graph legitimately does not
+    re-surface, and their order does not match the delegate call site. Establishing
+    the delegate's call-site arity needs the serialized program, so it belongs after
+    the merge rather than here.
+
+    TODO: check for a dropped trailing output using the merged program's method
+    output specs. TODO: compare mutation specs -- buffer- and input-mutation targets
+    and ordering -- and dynamic-shape constraints on the matched inputs; neither is
+    representable in the package yet, so a mismatch could not be honored even if
+    detected.
+    """
+    from executorch.exir.lowered_backend_module import executorch_call_delegate
+
+    delegate_calls = []
+    residual = []
+    getitems = []
+    output_node = None
+    for node in graph_module.graph.nodes:
+        if node.op == "output":
+            output_node = node
+            continue
+        if node.op in ("placeholder", "get_attr"):
+            continue
+        if node.op == "call_function" and node.target is executorch_call_delegate:
+            delegate_calls.append(node)
+            continue
+        if node.op == "call_function" and node.target is operator.getitem:
+            getitems.append(node)
+            continue
+        residual.append(node)
+
+    if residual:
+        raise ValueError(
+            f"to_native: method {method_name!r} did not fully delegate to the "
+            f"native backend; {len(residual)} op(s) remain outside the delegate and "
+            f"would be silently dropped: {sorted(str(n.target) for n in residual)}"
+        )
+    if len(delegate_calls) != 1:
+        raise ValueError(
+            f"to_native: method {method_name!r} has {len(delegate_calls)} native "
+            f"delegate calls; exactly one is required."
+        )
+    delegate_call = delegate_calls[0]
+    if output_node is None:
+        raise ValueError(f"to_native: method {method_name!r} has no output node.")
+
+    delegate_inputs = [
+        arg.name if isinstance(arg, torch.fx.Node) else arg
+        for arg in delegate_call.args[1:]
+    ]
+    if delegate_inputs != user_inputs:
+        raise ValueError(
+            f"to_native: method {method_name!r} does not pass its inputs straight "
+            f"to the native delegate. Method takes {user_inputs}, delegate receives "
+            f"{delegate_inputs}; a dropped or reordered public input would change "
+            f"the method's contract."
+        )
+
+    _check_delegate_outputs(output_node, delegate_call, getitems, method_name)
+
+
+def _mutable_data_keys(program: Program) -> set[str]:
+    """Data keys some method mutates.
+
+    Mutability is package-wide: the runtime holds one buffer per key, so a second
+    method treating it as read-only does not make the storage shareable.
+    """
+    keys: set[str] = set()
+    for method in program.methods:
+        for constant in method.constants or []:
+            if constant.mutated:
+                keys.add(constant.data_key)
+    return keys
+
+
+def _delegate_info(lowered: object, method_name: str) -> NativeDelegateInfo:
+    """Read back what preprocess attached, refusing anything else."""
+    meta = getattr(lowered, "meta", None) or {}
+    info = meta.get("_delegate_info_meta")
+    if not isinstance(info, NativeDelegateInfo):
+        raise ValueError(
+            f"to_native: method {method_name!r} lowered to a delegate carrying "
+            f"{type(info).__name__} instead of NativeDelegateInfo."
+        )
+    return info
+
+
+def _merge_constants(
+    per_method: dict[str, dict[str, torch.Tensor]],
+) -> dict[str, torch.Tensor]:
+    """Merge constants by their final data keys, rejecting differing values."""
+    merged: dict[str, torch.Tensor] = {}
+    source: dict[str, str] = {}
+    for method_name, constants in per_method.items():
+        for fqn, tensor in constants.items():
+            existing = merged.get(fqn)
+            if existing is None:
+                merged[fqn] = tensor
+                source[fqn] = method_name
+            elif not _same_tensor(existing, tensor):
+                raise ValueError(
+                    f"to_native: constant {fqn!r} differs between methods "
+                    f"{source[fqn]!r} and {method_name!r}; a fully-qualified name "
+                    f"must name one buffer across all methods."
+                )
+    return merged
+
+
+def _check_shared_mutable_buffers(program: Program) -> None:
+    """Hold the merged Program to serialize_program's cross-method guarantee.
+
+    A mutable buffer fqn used by several methods is one runtime buffer, so its
+    shape and dtype must agree. serialize_program validates this; merge_programs
+    concatenates methods without looking, so check it here instead.
+    """
+    seen: dict[str, tuple[str, object]] = {}
+    for method in program.methods:
+        meta_by_name = {tv.name: tv.meta for tv in (method.graph.tensor_values or [])}
+        for buffer in method.mutable_buffers or []:
+            meta = meta_by_name.get(buffer.name)
+            if meta is None:
+                continue
+            previous = seen.get(buffer.fqn)
+            if previous is not None and previous[1] != meta:
+                raise ValueError(
+                    f"to_native: mutable buffer {buffer.fqn!r} has a different "
+                    f"shape/dtype in methods {previous[0]!r} and {method.name!r}; a "
+                    f"buffer shared across methods must match."
+                )
+            seen[buffer.fqn] = (method.name, meta)
+
+
+def _validate_merged_program(
+    program: Program, constants: dict[str, torch.Tensor]
+) -> None:
+    """Reject an incomplete or structurally invalid merged native program."""
+    # Validate graph SSA, nested subgraphs, mutable-buffer metadata, and constant
+    # bindings before applying the cross-method/package-wide checks below.
+    validate_program(program, set(constants))
+    _check_shared_mutable_buffers(program)
+
+    # Catches any data key the validator does not cover, including quantization
+    # scale/zero-point keys carried by graph tensor metadata.
+    missing = sorted(collect_data_keys(program) - constants.keys())
+    if missing:
+        raise ValueError(
+            f"to_native: constant(s) referenced by the graph have no backing "
+            f"tensor: {missing}"
+        )
+
+
+# (user input name, dim, size) of a dim re-tracing made static.
+SpecializedDim = tuple[str, int, int]
+
+
+def _user_input_sizes(program: ExportedProgram) -> list[tuple[str, tuple]]:
+    """Each user input's name and example sizes: () for a zero-dim tensor too,
+    and for an input with no tensor value, e.g. a scalar or None."""
+    nodes = {node.name: node for node in program.graph.nodes}
+    sizes = []
+    for spec in program.graph_signature.input_specs:
+        if spec.kind != InputKind.USER_INPUT:
+            continue
+        name = str(getattr(spec.arg, "name", spec.arg))
+        val = nodes[name].meta.get("val") if name in nodes else None
+        sizes.append((name, tuple(val.shape) if isinstance(val, torch.Tensor) else ()))
+    return sizes
+
+
+def _is_symbolic(size: object) -> bool:
+    return isinstance(size, torch.SymInt) and size.node.maybe_as_int() is None
+
+
+def _specialized_dims(
+    symbolic: dict[str, tuple[bool, ...]],
+    program: ExportedProgram,
+) -> list[SpecializedDim]:
+    """The dims `symbolic` flags, per input name, that are static in `program`."""
+    return [
+        (name, d, int(size))
+        for name, sizes in _user_input_sizes(program)
+        for d, (was, size) in enumerate(zip(symbolic.get(name, ()), sizes))
+        if was and not _is_symbolic(size)
+    ]
+
+
+def _check_specialized_dims(
+    specialized: dict[str, list[SpecializedDim]], allow: bool
+) -> None:
+    """Re-tracing evaluates symbolic comparisons on the example sizes, and one it
+    guards on, e.g. functionalization comparing a size with another size equal
+    to it in the example, makes the dim static. The package would then accept
+    only that size, so refuse unless the caller allows it."""
+    dims = "; ".join(
+        f"method {method!r} input {name!r} dim {d} -> {size}"
+        for method, entries in specialized.items()
+        for name, d, size in entries
+    )
+    if not dims:
+        return
+    message = (
+        "to_native: torch.export left these input dims dynamic, but re-tracing "
+        f"for functionalization made them static: {dims}. The package would accept "
+        "only those sizes for them. One possible cause is a comparison of a dim "
+        "with another size that equals it in the example inputs."
+    )
+    if not allow:
+        raise ValueError(f"{message} Pass allow_specialized_dims=True to accept them.")
+    warnings.warn(message, stacklevel=3)
+
+
+def _normalize_programs(
+    programs: "ExportedProgram | dict[str, ExportedProgram]",
+) -> tuple[dict[str, ExportedProgram], dict[str, list[SpecializedDim]]]:
+    """Validate the public input, then functionalize each method for lowering.
+
+    Also returns each method's user-input dims that export left dynamic and
+    functionalization made static."""
+    from torch.export import ExportedProgram as TorchExportedProgram
+
+    if isinstance(programs, TorchExportedProgram):
+        programs = {"forward": programs}
+    if not isinstance(programs, dict):
+        raise TypeError(
+            "to_native: programs must be an ExportedProgram or a dict mapping "
+            f"method names to ExportedProgram, got {type(programs).__name__}."
+        )
+    if not programs:
+        raise ValueError("to_native: programs must contain at least one method.")
+
+    method_programs: dict[str, ExportedProgram] = {}
+    specialized: dict[str, list[SpecializedDim]] = {}
+    for method_name, program in programs.items():
+        if not isinstance(method_name, str):
+            raise TypeError(
+                "to_native: every method name must be str, got "
+                f"{type(method_name).__name__}."
+            )
+        if not method_name:
+            raise ValueError("to_native: method names must be non-empty strings.")
+        if method_name.split("/")[0] == _STATE_NAMESPACE:
+            raise ValueError(
+                f"to_native: method name {method_name!r} is reserved; "
+                f"{_STATE_NAMESPACE!r} namespaces mutable state keys."
+            )
+        if not isinstance(program, TorchExportedProgram):
+            raise TypeError(
+                f"to_native: method {method_name!r} must map to an "
+                f"ExportedProgram, got {type(program).__name__}."
+            )
+        # Functionalize so each method's buffer writes appear in its signature.
+        # The flags are taken first: the re-trace shares export's ShapeEnv.
+        symbolic = {
+            name: tuple(_is_symbolic(size) for size in sizes)
+            for name, sizes in _user_input_sizes(program)
+        }
+        method_programs[method_name] = program.run_decompositions({})
+        if entries := _specialized_dims(symbolic, method_programs[method_name]):
+            specialized[method_name] = entries
+    return method_programs, specialized
+
+
+def to_native(
+    programs: "ExportedProgram | dict[str, ExportedProgram]",
+    metadata: dict[str, MetadataValue] | None = None,
+    allow_specialized_dims: bool = False,
+) -> NativeProgramManager:
+    """Lower ExportedProgram(s) through the native backend.
+
+    ``programs`` is a single ``ExportedProgram`` (lowered as the sole ``forward``
+    method) or a dict mapping method name to ``ExportedProgram``.
+
+    Immutable constant keys are namespaced as ``<method>/<key>``, including for a
+    single method. Keys mutated by any method become ``state/<key>`` in every
+    method, so state remains shared across methods. Equal immutable tensors
+    deduplicate on save.
+
+    Nothing about lowering is configurable yet. The passes, the partitioner, and
+    the edge compile config are all owned here, because correctness of the package
+    depends on them. Exposing the compile config is worth reconsidering.
+    ETRecord is likewise deferred.
+
+    Args:
+        programs: The exported program(s) to lower.
+        metadata: Values a runtime reads by name, the package's counterpart to a
+            PTE's ``constant_methods``: each a bool, int, float, str, or a list
+            of those. Saved as the package's metadata.json.
+        allow_specialized_dims: Accepts, with a warning, user-input dims that
+            export left dynamic and functionalization's re-trace made static;
+            by default they are refused.
+
+    Returns:
+        A ``NativeProgramManager``; call ``save`` to write a .ptn package.
+
+    Raises:
+        TypeError: If ``programs`` is not an ``ExportedProgram`` or a method-name
+            dictionary containing only ``ExportedProgram`` values, or
+            ``metadata`` holds a name or value outside the types above.
+        ValueError: If the method dictionary is empty, a method name is empty or
+            in the reserved ``state`` namespace, a method does not fully delegate
+            to the native backend, re-tracing made a dynamic input dim static
+            without ``allow_specialized_dims``, a mutable constant differs
+            between methods,
+            namespaced keys conflict, or a data key the graph references has no
+            backing tensor.
+    """
+    method_programs, specialized = _normalize_programs(programs)
+    _check_specialized_dims(specialized, allow_specialized_dims)
+    if metadata is not None:
+        _check_metadata(metadata, "to_native")
+
+    from executorch.backends.native import get_default_compile_config
+    from executorch.backends.native.partitioner import NativePartitioner
+    from executorch.backends.native.passes import get_default_passes
+    from executorch.exir import to_edge_transform_and_lower
+    from executorch.exir.lowered_backend_module import (
+        executorch_call_delegate,
+        get_lowered_submodules,
+    )
+
+    # Methods in a package share mutable buffers, so a buffer one method writes
+    # is not constant in the others. Passes that fold buffer values into weights
+    # must skip any buffer written by any method, not just their own.
+    mutable_buffers = {
+        buffer
+        for program in method_programs.values()
+        for buffer in program.graph_signature.buffers_to_mutate.values()
+    }
+
+    edge = to_edge_transform_and_lower(
+        method_programs,
+        transform_passes=get_default_passes(mutable_buffers=mutable_buffers),
+        partitioner=[
+            NativePartitioner(external_constants_tag=None, _serialize_as_ptn=True)
+        ],
+        compile_config=get_default_compile_config(),
+    )
+
+    # preprocess already serialized each method's delegated subgraph during
+    # lowering and handed back its constants; reuse both instead of running
+    # to_executorch or re-exporting.
+    method_blobs: dict[str, bytes] = {}
+    method_constants: dict[str, dict[str, torch.Tensor]] = {}
+    for method_name in method_programs:
+        method_program = edge.exported_program(method_name)
+        lowered = get_lowered_submodules(method_program.graph_module)
+        if len(lowered) != 1:
+            residual_targets = sorted(
+                {
+                    str(node.target)
+                    for node in method_program.graph_module.graph.nodes
+                    if node.op == "call_function"
+                    and node.target not in (executorch_call_delegate, operator.getitem)
+                }
+            )
+            raise ValueError(
+                f"to_native: method {method_name!r} lowered to {len(lowered)} "
+                f"native delegates; exactly one is required. A method must be "
+                f"wholly supported by the native backend: an identity method "
+                f"produces none, and disconnected supported regions produce "
+                "several. Residual operator targets: "
+                f"{residual_targets}."
+            )
+        module = lowered[0][1]
+        _check_delegate_contract(
+            method_program.graph_module,
+            list(method_program.graph_signature.user_inputs),
+            method_name,
+        )
+        method_blobs[method_name] = module.processed_bytes
+        method_constants[method_name] = _delegate_info(module, method_name).constants
+
+    program = deserialize_program(merge_programs(method_blobs))
+    state_keys = _mutable_data_keys(program) | {
+        buffer.fqn
+        for method in program.methods
+        for buffer in method.mutable_buffers or []
+    }
+    state = {key: f"{_STATE_NAMESPACE}/{key}" for key in state_keys}
+    data_keys = set(state.values())
+    for method in program.methods:
+        constants_for_method = method_constants[method.name]
+        namespaced = {
+            key: f"{method.name}/{key}"
+            for key in constants_for_method
+            if key not in state
+        }
+        conflicts = set(namespaced.values()) & data_keys
+        if conflicts:
+            raise ValueError(
+                "to_native: namespaced constant keys already exist: "
+                f"{sorted(conflicts)}"
+            )
+        data_keys.update(namespaced.values())
+        mapping = state | namespaced
+        map_data_keys(method, lambda key, mapping=mapping: mapping.get(key, key))
+        for buffer in method.mutable_buffers or []:
+            buffer.fqn = state[buffer.fqn]
+        for spec in method.output_specs or []:
+            if spec.kind == OutputKind.BUFFER_MUTATION and spec.target is not None:
+                spec.target = state.get(spec.target, spec.target)
+        method_constants[method.name] = {
+            mapping.get(key, key): tensor
+            for key, tensor in constants_for_method.items()
+        }
+
+    constants = _merge_constants(method_constants)
+    _validate_merged_program(program, constants)
+
+    return NativeProgramManager(
+        ptg=_compile_to_bytes(program), constants=constants, metadata=metadata
+    )
+
+
+__all__ = ["NativeProgramManager", "to_native"]

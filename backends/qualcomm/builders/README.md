@@ -13,6 +13,7 @@ Thank you for contributing to Qualcomm AI Engine Direct delegate for ExecuTorch.
     - [Implementation](#implementation)
     - [Quantizer Annotation](#quantizer-annotation)
   - [Operator Support Status](#operator-support-status)
+  - [Additional PyTorch Operators Supported via Composite QNN Lowering](#additional-pytorch-operators-supported-via-composite-qnn-lowering)
   - [Issues](#issues)
   - [Pull Requests](#pull-requests)
 
@@ -406,6 +407,7 @@ Please help update following table if you are contributing new operators:
 | ElementWiseLog | &check; |
 | ElementWiseMaximum | &check; |
 | ElementWiseMinimum | &check; |
+| ElementWiseMod | &check; |
 | ElementWiseMultiply | &check; |
 | ElementWiseNeg | &check; |
 | ElementWiseNeuron | &check; |
@@ -436,6 +438,7 @@ Please help update following table if you are contributing new operators:
 | GetSparseValues | &cross; |
 | GridSample | &check; |
 | GroupNorm | &check; |
+| HadamardTransform | &check; |
 | HardSwish | &check; |
 | InstanceNorm | &check; |
 | IsInf | &check; |
@@ -482,6 +485,7 @@ Please help update following table if you are contributing new operators:
 | SparseToDense | &cross; |
 | Split | &check; |
 | Squeeze | &check; |
+| Stft | &check; |
 | StridedSlice | &check; |
 | Tanh | &check; |
 | Tile | &check; |
@@ -498,31 +502,57 @@ The following PyTorch operators are supported through decomposition or annotatio
 | PyTorch Op | Decomposition Pass |
 |---|---|
 | `aten.acos` | `DecomposeAcos` |
+| `aten.acosh` | `DecomposeHyperbolicVariants` |
+| `aten.addmm` | `DecomposeAddmm` |
 | `aten.adaptive_avg_pool1d`, `aten.avg_pool1d` | `AnnotateAvgPool1D` |
 | `aten.any` | `DecomposeAny` |
+| `aten.as_strided` | `DecomposeAsStrided` |
+| `aten.asinh` | `DecomposeHyperbolicVariants` |
 | `aten.atan2.default`, `aten.atan2.out` | `DecomposeAtan2` |
+| `aten.atanh` | `DecomposeHyperbolicVariants` |
 | `aten.add` (with alpha), `aten.sub` (with alpha) | `DecomposeBinaryAlpha` |
-| `aten.cdist` | `DecomposeCDist` |
+| `aten.cdist`, `aten._cdist_forward` | `DecomposeCDist` |
+| `aten.cosh` | `DecomposeHyperbolicVariants` |
+| `aten.diagonal` | `DecomposeDiagonal` |
+| `aten.div.Tensor_mode` | `DecomposeDivMode` |
+| `aten.div.Scalar_mode` | `LiftConstantScalarOperands` → `DecomposeDivMode` |
 | `aten.im2col`, `aten.col2im` | `DecomposeColIm` |
 | `aten.einsum` | `DecomposeEinsum` |
+| `aten.empty.memory_format`, `aten.empty_strided` | `DecomposeEmpty` |
 | `aten.special_expm1` | `DecomposeExpM1` |
-| `aten.floor_divide` | `DecomposeFloorDivide` |
+| `aten.fill.Scalar` | `DecomposeFill` |
 | `aten.glu` | `DecomposeGlu` |
 | `aten.linalg_vector_norm` | `DecomposeLinalgVectorNorm` |
 | `aten.log10`, `aten.log2`, `aten.log1p` | `DecomposeLogVariants` |
 | `aten.max_pool3d` | `DecomposeMaxPool3d` |
 | `aten.min.dim`, `aten.max.dim` | `DecomposeMinMaxDim` |
+| `aten.pdist`, `aten._pdist_forward` | `DecomposePDist` |
 | `aten.reciprocal` | `DecomposeReciprocal` |
 | `aten.reflection_pad1d` | PyTorch built-in decomposition |
-| `aten.reflection_pad2d` | `DecomposePad` |
-| `aten.remainder.Scalar`, `aten.remainder.Tensor` | `DecomposeRemainder` |
+| `aten.reflection_pad2d`, `aten.reflection_pad3d` | `DecomposePad` |
+| `aten.remainder` (floating point) | `DecomposeRemainder` |
 | `aten.roll` | `DecomposeRoll` |
 | `aten.select_scatter` | `DecomposeSelectScatter` |
 | `aten.silu` | `DecomposeSilu` |
+| `aten.sinh` | `DecomposeHyperbolicVariants` |
 | `aten.tan` | `DecomposeTan` |
 | `aten.threshold` | `DecomposeThreshold` |
 | `aten.triu` | `DecomposeTriu` |
 | `aten.trunc` | `DecomposeTrunc` |
+| `aten.var.correction`, `aten.var.dim` | `DecomposeVar` |
+
+## Additional PyTorch Operators Supported via Composite QNN Lowering
+
+The following PyTorch operators are lowered by a node visitor into multiple QNN operations.
+
+ConvBackward uses this path to reuse the forward Conv2d's QNN weight wrapper and derive HWOI at runtime; an ATen decomposition would otherwise require another static weight or changes to the forward Conv2d visitor. It currently supports floating-point inputs and weights only; quantized ConvBackward support is planned for a future change.
+
+| PyTorch Op | Builder | QNN Lowering |
+|---|---|---|
+| `aten.convolution_backward.default` | `ConvBackward` | `Transpose` → `TransposeConv2d` |
+| `aten.copy.default` | `Copy` | `Reshape` → `Tile` |
+| `aten.embedding.default` | `Embedding` | `Convert` → `Gather` or `Gather` → `Convert` |
+| `aten.index_put.default` | `IndexPutVisitor` | tensor preparation → `ScatterNd` |
 
 ## Issues
 Please refer to the [issue section](../README.md#issues) for more information.

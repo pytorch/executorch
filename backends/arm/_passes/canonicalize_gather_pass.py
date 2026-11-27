@@ -6,12 +6,12 @@
 from typing import Set, Type
 
 import torch
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
 
-class CanonicalizeGatherPass(ArmPass):
+class CanonicalizeGatherPass(ArmOpTargetedPass):
     """Canonicalize gather so it can be lowered to TOSA.GATHER via the backend
     dialect.
 
@@ -40,10 +40,10 @@ class CanonicalizeGatherPass(ArmPass):
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
-    _TARGET_OPS = {exir_ops.edge.aten.gather.default}
+    target_ops = {exir_ops.edge.aten.gather.default}
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in self._TARGET_OPS:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 
         # edge.aten.gather.default: (x, dim, index) with kw-only sparse_grad

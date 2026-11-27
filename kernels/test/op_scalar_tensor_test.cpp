@@ -19,7 +19,6 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using executorch::aten::IntArrayRef;
 using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
@@ -139,7 +138,9 @@ TEST_F(OpScalarTensorOutTest, HalfSupport) {
   EXPECT_TENSOR_CLOSE(out, tf.make({}, {2.5}));
 
   op_scalar_tensor_out(INFINITY, out);
-  EXPECT_TENSOR_CLOSE(out, tf.make({}, {INFINITY}));
+  EXPECT_TENSOR_CLOSE(
+      out,
+      tf.make({}, {std::numeric_limits<executorch::aten::Half>::infinity()}));
 }
 
 GENERATE_SCALAR_OVERFLOW_TESTS(OpScalarTensorOutTest)

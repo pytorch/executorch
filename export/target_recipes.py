@@ -7,7 +7,7 @@
 """
 Target-specific recipe functions for simplified multi-backend deployment.
 
-This module provides platform-specific functions that abstract away backend 
+This module provides platform-specific functions that abstract away backend
 selection and combine multiple backends optimally for target hardware.
 """
 
@@ -146,21 +146,16 @@ def get_android_recipe(
         )
 
     try:
-        # Qualcomm QNN backend runs QNN sdk download on first use
-        # with a pip install, so wrap it in a try/except
         # pyre-ignore
         from executorch.backends.qualcomm.recipes import QNNRecipeType
-
-        # (1) if this is called from a pip install, the QNN SDK will be available
-        # (2) if this is called from a source build, check if qnn is available otherwise, had to run build.sh
-        if os.getenv("QNN_SDK_ROOT", None) is None:
-            raise ValueError(
-                "QNN SDK not found, cannot use QNN recipes. First run `./backends/qualcomm/scripts/build.sh`, if building from source"
-            )
-    except Exception as e:
+        from executorch.backends.qualcomm.utils import qnn_sdk_setup
+    except ImportError as e:
+        # Only an import failure means the backend is not installed. Catching everything here
+        # would rewrite a real bug inside those modules as a missing backend and hide its
+        # traceback.
         raise ValueError(
             "QNN backend is not available. Please ensure the Qualcomm backend "
-            "is properly installed and configured, "
+            "is properly installed and configured."
         ) from e
 
     android_configs: Dict[str, List[RecipeType]] = {
@@ -168,11 +163,34 @@ def get_android_recipe(
         "android-arm64-snapdragon-fp16": [QNNRecipeType.FP16, XNNPackRecipeType.FP32],
     }
 
+    # Rejected before the SDK is fetched, so a mistyped target does not cost a full download.
     if target_config not in android_configs:
         supported = list(android_configs.keys())
         raise ValueError(
             f"Unsupported Android configuration: '{target_config}'. "
             f"Supported: {supported}"
+        )
+
+    # Outside the import block, so a setup failure says what actually went wrong rather than
+    # being rewritten as "the backend is not available".
+    #
+    # The SDK is fetched here for a pip install that has not set one up by hand. It used to
+    # happen while the backend was imported, which meant every import fetched an SDK whether
+    # or not one was wanted.
+    qnn_sdk_setup.setup_qnn_sdk()
+
+    # Checked for a usable path, not merely for the variable being present. Setup treats an empty
+    # value as the caller taking charge of the SDK, but a recipe needs a real path.
+    qnn_sdk_root = os.getenv("QNN_SDK_ROOT")
+    if qnn_sdk_root is not None and not qnn_sdk_root:
+        raise ValueError(
+            "QNN_SDK_ROOT is set but empty, so no SDK was fetched. Set it to the path of an SDK, "
+            "or unset it to have one downloaded."
+        )
+    if not qnn_sdk_root:
+        raise ValueError(
+            "QNN SDK not found, cannot use QNN recipes. First run "
+            "`./backends/qualcomm/scripts/build.sh`, if building from source"
         )
 
     kwargs = kwargs or {}

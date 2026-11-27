@@ -5,6 +5,8 @@ load("@prelude//toolchains:genrule.bzl", "system_genrule_toolchain")
 load("@prelude//toolchains:python.bzl", "system_python_bootstrap_toolchain", "system_python_toolchain")
 load("@prelude//toolchains:remote_test_execution.bzl", "remote_test_execution_toolchain")
 
+oncall("executorch")
+
 # Although the non-Android toolchains below are present in shim/BUCK, it appears that we
 # have to duplicate them here or builds won't work.
 system_cxx_toolchain(

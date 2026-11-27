@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-25 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -7,14 +7,63 @@
 
 import argparse
 import os
+import platform
+import runpy
 import subprocess
 import sys
 
-from install_utils import determine_torch_url, is_intel_mac_os, python_is_compatible
+from install_utils import (
+    determine_torch_url,
+    ensure_pip,
+    is_intel_mac_os,
+    python_is_compatible,
+)
+
+# Loaded by path because setup.py executes this file without the project directory on sys.path.
+TORCH_VERSION = runpy.run_path(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "torch_pin.py")
+)["TORCH_VERSION"]
 
 # The pip repository that hosts nightly torch packages.
 # This will be dynamically set based on CUDA availability and CUDA backend enabled/disabled.
 TORCH_URL_BASE = "https://download.pytorch.org/whl/test"
+TORCHAO_URL_BASE = "https://download.pytorch.org/whl/nightly"
+TORCHAO_STABLE_VERSION = "0.18.0"
+TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20261118"
+# Newest rocm7.2 TorchAO nightly with compiled kernels (cp310-abi3); later ROCm nightlies
+# are py3-none-any only, and none are published after 0.19.0.dev20260831.
+ROCM_TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20260805"
+# The rocm7.2 index publishes no torch release newer than 2.14.0.
+ROCM_TORCH_VERSION = "2.14.0"
+
+# The domain releases that go with torch_pin.py's TORCH_VERSION; bump them with it.
+TORCHVISION_VERSION = "0.29.2"
+TORCHAUDIO_VERSION = "2.11.1"
+
+
+def torchao_from_source():
+    return (
+        os.environ.get("EXECUTORCH_BUILD_KERNELS_TORCHAO") == "1"
+        or os.environ.get("TORCHAO_BUILD_EXPERIMENTAL_MPS") == "1"
+    )
+
+
+def get_torchao_version(torch_url):
+    if (
+        os.environ.get("EXECUTORCH_USE_RELEASE_CPU_DEPS") == "1"
+        and torch_url.endswith("/cpu")
+        and not torchao_from_source()
+    ):
+        return TORCHAO_STABLE_VERSION
+    return TORCHAO_NIGHTLY_VERSION
+
+
+def get_torch_url():
+    torch_url = determine_torch_url(TORCH_URL_BASE)
+    if get_torchao_version(torch_url) == TORCHAO_STABLE_VERSION:
+        return "https://download.pytorch.org/whl/cpu"
+    return torch_url
+
 
 # Since ExecuTorch often uses main-branch features of pytorch, only the nightly
 # pip versions will have the required features.
@@ -42,14 +91,27 @@ def install_requirements(use_pytorch_nightly):
         sys.exit(1)
 
     # Determine the appropriate PyTorch URL based on CUDA delegate status
-    torch_url = determine_torch_url(TORCH_URL_BASE)
+    torch_url = get_torch_url()
+    torchao_version = get_torchao_version(torch_url)
+    if torchao_version == TORCHAO_STABLE_VERSION:
+        torchao_url = "https://download.pytorch.org/whl/cpu"
+    # CUDA TorchAO wheels cover x86_64 only; use CPU wheels on aarch64.
+    elif platform.machine().lower() in ("aarch64", "arm64"):
+        # The cpu channel specifically, not the index root. The root carries every variant, and a
+        # pin without a local segment admits all of them while ordering a local segment highest,
+        # so the xpu channel's pure python wheel would win on version before pip compares wheel
+        # tags, silently replacing the compiled aarch64 build.
+        torchao_url = f"{TORCHAO_URL_BASE}/cpu"
+    else:
+        torchao_url = determine_torch_url(TORCHAO_URL_BASE)
 
     # pip packages needed by exir.
     TORCH_PACKAGE = [
         # Setting use_pytorch_nightly to false to test the pinned PyTorch commit. Note
         # that we don't need to set any version number there because they have already
         # been installed on CI before this step, so pip won't reinstall them
-        ("torch==2.12.0" if use_pytorch_nightly else "torch"),
+        (f"torch=={TORCH_VERSION}" if use_pytorch_nightly else "torch"),
+        f"torchao=={torchao_version}",
     ]
 
     # Install the requirements for core ExecuTorch package.
@@ -66,54 +128,78 @@ def install_requirements(use_pytorch_nightly):
             *TORCH_PACKAGE,
             "--extra-index-url",
             torch_url,
+            "--extra-index-url",
+            torchao_url,
         ],
         check=True,
     )
 
-    LOCAL_REQUIREMENTS = [
-        "third-party/ao",  # We need the latest kernels for fast iteration, so not relying on pypi.
-    ] + (
-        [
-            "extension/llm/tokenizers",  # TODO(larryliu0820): Setup a pypi package for this.
-        ]
-        if sys.platform != "win32"
-        else []
-    )  # TODO(gjcomer): Re-enable when buildable on Windows.
+    LOCAL_REQUIREMENTS = []
+    if torchao_from_source():
+        LOCAL_REQUIREMENTS.append("third-party/ao")
+    if sys.platform != "win32":
+        if sys.platform == "darwin" and sys.version_info >= (3, 15):
+            # SentencePiece 0.2.2 hardcodes a 10.9 compile target despite the
+            # wheel's newer deployment target. Scope the libc++ workaround to it.
+            sentencepiece_env = os.environ.copy()
+            sentencepiece_env["CXXFLAGS"] = (
+                f"{sentencepiece_env.get('CXXFLAGS', '')} -D_LIBCPP_DISABLE_AVAILABILITY"
+            )
+            subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "pip",
+                    "install",
+                    "--no-build-isolation",
+                    "sentencepiece==0.2.2",
+                ],
+                env=sentencepiece_env,
+                check=True,
+            )
+        # TODO(larryliu0820): Setup a pypi package for this.
+        LOCAL_REQUIREMENTS.append("extension/llm/tokenizers")
+    # TODO(gjcomer): Re-enable when buildable on Windows.
 
-    # Install packages directly from local copy instead of pypi.
-    # This is usually not recommended.
-    new_env = os.environ.copy()
-    if ("EXECUTORCH_BUILD_KERNELS_TORCHAO" not in new_env) or (
-        new_env["EXECUTORCH_BUILD_KERNELS_TORCHAO"] == "0"
-    ):
-        new_env["USE_CPP"] = "0"
-    else:
-        assert new_env["EXECUTORCH_BUILD_KERNELS_TORCHAO"] == "1"
-        new_env["USE_CPP"] = "1"
-        new_env["CMAKE_POLICY_VERSION_MINIMUM"] = "3.5"
-    subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "pip",
-            "install",
-            # Without --no-build-isolation, setup.py can't find the torch module.
-            "--no-build-isolation",
-            *LOCAL_REQUIREMENTS,
-        ],
-        env=new_env,
-        check=True,
-    )
+    if LOCAL_REQUIREMENTS:
+        # Install packages directly from local copy instead of pypi.
+        # This is usually not recommended.
+        new_env = os.environ.copy()
+        if ("EXECUTORCH_BUILD_KERNELS_TORCHAO" not in new_env) or (
+            new_env["EXECUTORCH_BUILD_KERNELS_TORCHAO"] == "0"
+        ):
+            new_env["USE_CPP"] = "0"
+        else:
+            assert new_env["EXECUTORCH_BUILD_KERNELS_TORCHAO"] == "1"
+            new_env["USE_CPP"] = "1"
+            new_env["CMAKE_POLICY_VERSION_MINIMUM"] = "3.5"
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                # Without --no-build-isolation, setup.py can't find the torch module.
+                "--no-build-isolation",
+                *LOCAL_REQUIREMENTS,
+            ],
+            env=new_env,
+            check=True,
+        )
 
 
 def install_optional_example_requirements(use_pytorch_nightly):
     # Determine the appropriate PyTorch URL based on CUDA delegate status
-    torch_url = determine_torch_url(TORCH_URL_BASE)
+    torch_url = get_torch_url()
 
     print("Installing torch domain libraries")
     DOMAIN_LIBRARIES = [
-        ("torchvision==0.27.0" if use_pytorch_nightly else "torchvision"),
-        ("torchaudio==2.11.0" if use_pytorch_nightly else "torchaudio"),
+        (
+            f"torchvision=={TORCHVISION_VERSION}"
+            if use_pytorch_nightly
+            else "torchvision"
+        ),
+        (f"torchaudio=={TORCHAUDIO_VERSION}" if use_pytorch_nightly else "torchaudio"),
     ]
     # Then install domain libraries
     subprocess.run(
@@ -169,6 +255,7 @@ def main(args):
 if __name__ == "__main__":
     # Before doing anything, cd to the directory containing this script.
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
+    ensure_pip()
     if not python_is_compatible():
         sys.exit(1)
     main(sys.argv[1:])

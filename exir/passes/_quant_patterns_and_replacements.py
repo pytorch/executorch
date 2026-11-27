@@ -108,7 +108,8 @@ def embedding_weight_checks(weight, weight_scales, weight_zero_points):
     assert weight_scales.dtype in [
         torch.float16,
         torch.float32,
-    ], f"Expecting weight_scales to be of dtype in [torch.float16, torch.float32], but got {weight_scales.dtype}"
+        torch.bfloat16,
+    ], f"Expecting weight_scales to be of dtype in [torch.float16, torch.float32, torch.bfloat16], but got {weight_scales.dtype}"
     assert (
         weight_scales.dim() == 1 or weight_scales.dim() == 2
     ), f"Expecting weight_scales tensor to have rank 1 or 2, but found {weight_scales.dim()}"
@@ -297,7 +298,8 @@ def _(
     num_embeddings, packed_embedding_dim = weight.shape
     embedding_dim = packed_embedding_dim * 4
     embedding = torch.nn.Embedding(num_embeddings, embedding_dim, device=weight.device)
-    return embedding(indices)
+    # As in the reference op, the variant without dtype returns the scales' dtype.
+    return embedding(indices).to(weight_scales.dtype)
 
 
 @register_fake("quantized_decomposed::embedding_2bit.out")
@@ -472,7 +474,8 @@ def _(
     num_embeddings, packed_embedding_dim = weight.shape
     embedding_dim = packed_embedding_dim * 2
     embedding = torch.nn.Embedding(num_embeddings, embedding_dim, device=weight.device)
-    return embedding(indices)
+    # As in the reference op, the variant without dtype returns the scales' dtype.
+    return embedding(indices).to(weight_scales.dtype)
 
 
 @register_fake("quantized_decomposed::embedding_4bit.out")

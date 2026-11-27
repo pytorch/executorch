@@ -14,11 +14,13 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     get_constant_placeholder_kind,
     get_first_fake_tensor,
     get_param_tensor,
+    is_mutable_buffer,
     is_persistent_buffer,
 )
 from executorch.backends.arm._passes.fuse_equal_placeholders_pass import (
     FuseEqualPlaceholdersPass,
 )
+from executorch.backends.arm._passes.match_arg_dtype_pass import MatchArgDtypePass
 from executorch.backends.arm.tosa.dialect.shape import meta_has_shape_mark
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.backends.transforms.utils import (
@@ -28,7 +30,7 @@ from executorch.backends.transforms.utils import (
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
-from torch.export.graph_signature import InputKind
+from torch.export.graph_signature import ExportGraphSignature, InputKind
 
 logger = logging.getLogger(__name__)
 
@@ -49,11 +51,40 @@ class FuseConstantArgsPass(ArmPass):
 
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = set()
+    _passes_required_after: Set[Type[ExportPass]] = {MatchArgDtypePass}
 
     def __init__(self, exported_program: ExportedProgram, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.exported_program = exported_program
+
+    def _delete_placeholder_input(self, node: torch.fx.Node) -> None:
+        if len(node.users) != 0:
+            raise RuntimeError(
+                f"Cannot delete input node {node.name} since it has users in the graph."
+            )
+
+        input_specs = [
+            spec
+            for spec in self.exported_program.graph_signature.input_specs
+            if spec.arg.name != node.name
+        ]
+        self.exported_program._graph_signature = ExportGraphSignature(
+            input_specs, self.exported_program.graph_signature.output_specs
+        )
+        node.graph.erase_node(node)
+
+    def _delete_constant_placeholder(self, node: torch.fx.Node) -> None:
+        graph_signature = self.exported_program.graph_signature
+        if node.name in graph_signature.inputs_to_parameters:
+            target = graph_signature.inputs_to_parameters[node.name]
+            if target not in self.exported_program.state_dict:
+                # Tied parameters can share a state_dict entry across placeholders;
+                # another dead placeholder may have already removed the tensor, so
+                # only remove this placeholder from the graph signature.
+                self._delete_placeholder_input(node)
+                return
+
+        delete_constant_placeholder(self.exported_program, node)
 
     @staticmethod
     def _is_tosa_dialect_op(target) -> bool:
@@ -62,6 +93,20 @@ class FuseConstantArgsPass(ArmPass):
             "executorch.exir.dialects.backend._ops.tosa." in target_str
             or "<EdgeOpOverload: tosa." in target_str
         )
+
+    @staticmethod
+    def _has_real_tosa_dialect_impl(target) -> bool:
+        schema = getattr(target, "_schema", None)
+        op_name = getattr(schema, "name", None)
+        if op_name is None:
+            return False
+
+        try:
+            return torch._C._dispatch_has_kernel_for_dispatch_key(
+                op_name, "CompositeExplicitAutograd"
+            )
+        except RuntimeError:
+            return False
 
     @staticmethod
     def _arg_contains_symbolic_shape(arg) -> bool:
@@ -168,30 +213,54 @@ class FuseConstantArgsPass(ArmPass):
 
         return True
 
+    def maybe_delete(self, input_nodes_to_maybe_delete):
+        for input_node in input_nodes_to_maybe_delete:
+            if input_node.meta.get("is_input", False):
+                # Never delete submodule inputs, they need to match the parameters from the outer module.
+                continue
+            if len(input_node.users) == 0:
+                self._delete_constant_placeholder(input_node)
+
+    @staticmethod
+    def _log_summary(fused: int) -> None:
+        if fused:
+            logger.debug("FuseConstantArgsPass: fused %d constant operator(s).", fused)
+
     def call(self, graph_module):
         modified = False
+        fused = 0
         input_nodes_to_maybe_delete = set()
         for node in graph_module.graph.nodes:
             if node.op != "call_function":
                 continue
-            # Don't fuse TOSA dialect ops as they do not have eager forward functions.
-            # Also don't fuse ops whose explicit args/kwargs include symbolic shape values.
-            if (
-                self._is_tosa_dialect_op(node.target)
-                or self._arg_contains_symbolic_shape(node.args)
-                or self._arg_contains_symbolic_shape(node.kwargs)
-            ):
+            if node.target == exir_ops.backend.tosa.RESCALE.default:
+                # Leave fusing of RESCALES to the compiler.
+                continue
+            if self._is_tosa_dialect_op(
+                node.target
+            ) and not self._has_real_tosa_dialect_impl(node.target):
+                continue
+            # Don't fuse ops whose explicit args/kwargs include symbolic shape values.
+            if self._arg_contains_symbolic_shape(
+                node.args
+            ) or self._arg_contains_symbolic_shape(node.kwargs):
                 continue
 
             input_nodes = node.all_input_nodes
             if len(input_nodes) == 0:
                 continue
+            # A mutable buffer is streaming state, not a constant: folding it
+            # would freeze its initial value, and deleting its now-unused
+            # placeholder would strand its BUFFER_MUTATION output.
             input_nodes_constant = (
-                torch._export.utils.is_param(self.exported_program, input_node)
-                or torch._export.utils.is_lifted_tensor_constant(
-                    self.exported_program, input_node
+                (
+                    torch._export.utils.is_param(self.exported_program, input_node)
+                    or torch._export.utils.is_lifted_tensor_constant(
+                        self.exported_program, input_node
+                    )
+                    or torch._export.utils.is_buffer(self.exported_program, input_node)
                 )
-                or torch._export.utils.is_buffer(self.exported_program, input_node)
+                and not is_mutable_buffer(self.exported_program, input_node)
                 for input_node in input_nodes
             )
             if not all(input_nodes_constant):
@@ -199,11 +268,8 @@ class FuseConstantArgsPass(ArmPass):
             try:
                 did_fuse = self._fuse_nodes(node)
                 if did_fuse:
-                    logger.debug(
-                        f"Fused constant op: {node.name} with placeholder inputs:"
-                        f"{[input_node.name for input_node in input_nodes]}"
-                    )
                     modified |= did_fuse
+                    fused += 1
                     input_nodes_to_maybe_delete.update(input_nodes)
             except Exception as e:
                 logger.warning(
@@ -212,13 +278,12 @@ class FuseConstantArgsPass(ArmPass):
 
         if modified:
             graph_module.graph.eliminate_dead_code()
-            for input_node in input_nodes_to_maybe_delete:
-                if len(input_node.users) == 0:
-                    delete_constant_placeholder(self.exported_program, input_node)
-
+            self.maybe_delete(input_nodes_to_maybe_delete)
             graph_module = super().call(graph_module).graph_module
 
-        return PassResult(graph_module, True)
+        self._log_summary(fused)
+
+        return PassResult(graph_module, modified)
 
 
 class ComputeConstantOpsAOTPass(ArmPass):
@@ -263,7 +328,9 @@ class ComputeConstantOpsAOTPass(ArmPass):
         output_qparams = node.meta.get("output_qparams", None)
         if output_qparams:
             # If we have output_qparams, compute data in fp and quantize
-            data = node.target(*node.args)  #  type: ignore
+            data = node.target(  #  type: ignore
+                *node.args, **{**node.kwargs, "dtype": torch.float32}
+            )
             output_qparams = output_qparams[0]
             data = output_qparams.quantize_value(data)
         else:
@@ -307,4 +374,4 @@ class ComputeConstantOpsAOTPass(ArmPass):
             graph_module.recompile()
             graph_module = super().call(graph_module).graph_module
 
-        return PassResult(graph_module, True)
+        return PassResult(graph_module, modified)

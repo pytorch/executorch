@@ -1,0 +1,12 @@
+# ESP-IDF Partition Table for 8 MB flash.
+# Two OTA app slots and no factory app, with a 2 MB SPIFFS partition for
+# models loaded from the filesystem. The table sits at 0xC000
+# (CONFIG_PARTITION_TABLE_OFFSET), which leaves the bootloader room on
+# every target. App partitions must be 64 KB aligned.
+# Name,   Type, SubType, Offset,   Size,     Flags
+nvs,      data, nvs,     0x10000,  0x6000,
+otadata,  data, ota,     ,         0x2000,
+phy_init, data, phy,     ,         0x1000,
+ota_0,    app,  ota_0,   0x20000,  0x2E0000,
+storage,  data, spiffs,  0x300000, 0x200000,
+ota_1,    app,  ota_1,   0x500000, 0x2E0000,

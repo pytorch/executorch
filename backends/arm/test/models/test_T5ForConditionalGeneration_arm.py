@@ -37,8 +37,8 @@ class TestT5ForConditionalGeneration:
     }
 
     ops_after_partitioner_INT = {
-        "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 7,
-        "torch.ops.higher_order.executorch_call_delegate": 3,
+        "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 5,
+        "torch.ops.higher_order.executorch_call_delegate": 2,
     }
 
     ops_after_partitioner_vgf_no_quantize = {
@@ -114,7 +114,6 @@ def test_t5_for_conditional_generation_tosa_INT():
             aten_op=[],
             exir_op=[],
             use_to_edge_transform_and_lower=True,
-            atol=14,  # TODO: MLETORCH-1703: Reduce the tolerance of quantized T5ForConditionalGeneration
             frobenius_threshold=0.3,
         )
         pipeline.change_args(
@@ -162,7 +161,6 @@ def test_t5_for_conditional_generation_vgf_quant():
             aten_op=[],
             exir_op=[],
             use_to_edge_transform_and_lower=True,
-            atol=14,  # TODO: MLETORCH-1703: Reduce the tolerance of quantized T5ForConditionalGeneration
             quantize=True,
         )
         pipeline.change_args(

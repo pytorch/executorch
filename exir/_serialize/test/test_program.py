@@ -1,6 +1,7 @@
 #!/usr/bin/env fbpython
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -15,20 +16,23 @@ import math
 import unittest
 
 from typing import Dict, List, Sequence
+from unittest.mock import patch
 
-from executorch.exir._serialize._flatbuffer import _program_flatbuffer_to_json
+from executorch.exir._serialize._flatbuffer_program import _flatbuffer_to_program
 from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
 from executorch.exir._serialize._program import (
     _ExtendedHeader,
     _get_extended_header,
-    _json_to_program,
     _program_to_json,
+    _restore_segments,
     deserialize_pte_binary,
     PTEFile,
     serialize_pte_binary,
 )
 from executorch.exir._serialize.data_serializer import DataEntry
 from executorch.exir._serialize.padding import aligned_size
+
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 from executorch.exir.schema import (
     BackendDelegate,
@@ -39,7 +43,15 @@ from executorch.exir.schema import (
     DataLocation,
     DataSegment,
     DeviceType,
+    Double,
+    EValue,
     ExecutionPlan,
+    Frame,
+    FrameList,
+    FreeCall,
+    Instruction,
+    JumpFalseCall,
+    MoveCall,
     NonConstBufferDevice,
     Program,
     SubsegmentOffsets,
@@ -197,7 +209,7 @@ class TestProgram(unittest.TestCase):
         self.assertGreater(eh.segment_data_size, 0)
 
         # Peek inside the actual flatbuffer data to see the segments.
-        program_with_segments = _json_to_program(_program_flatbuffer_to_json(pte_data))
+        program_with_segments = _flatbuffer_to_program(pte_data)
 
         # The constant tensor data should appear as the only segment.
         self.assertEqual(len(program_with_segments.segments), 1)
@@ -467,6 +479,68 @@ class TestProgram(unittest.TestCase):
         self.assertEqual(deserialized.mutable_data, None)
         self.assertEqual(deserialized.named_data, None)
 
+    def test_deserialize_pte_binary_with_rich_flatbuffer_types(self) -> None:
+        program = get_test_program()
+        plan = program.execution_plan[0]
+        plan.values.append(EValue(Double(float("inf"))))
+        plan.delegates.append(
+            BackendDelegate(
+                id="delegate0",
+                processed=BackendDelegateDataReference(
+                    location=DataLocation.INLINE,
+                    index=0,
+                ),
+                compile_specs=[CompileSpec(key="k", value=b"v")],
+            )
+        )
+        plan.chains[0].instructions.extend(
+            [
+                Instruction(MoveCall(move_from=0, move_to=1)),
+                Instruction(
+                    JumpFalseCall(cond_value_index=1, destination_instruction=0)
+                ),
+                Instruction(FreeCall(value_index=0)),
+            ]
+        )
+        plan.chains[0].stacktrace = [
+            FrameList(
+                items=[
+                    Frame(
+                        filename="file.py",
+                        lineno=idx + 1,
+                        name="fn",
+                        context="ctx",
+                    )
+                ]
+            )
+            for idx, _ in enumerate(plan.chains[0].instructions)
+        ]
+        program.constant_buffer.append(Buffer(storage=b"abcd"))
+        program.backend_delegate_data.append(
+            BackendDelegateInlineData(data=b"delegate-data")
+        )
+
+        deserialized = deserialize_pte_binary(
+            bytes(serialize_pte_binary(PTEFile(program=program)))
+        )
+
+        self.assert_programs_equal(program, deserialized.program)
+        self.assertEqual(deserialized.mutable_data, None)
+        self.assertEqual(deserialized.named_data, None)
+        self.assertIsInstance(plan.values[-1].val, Double)
+        self.assertIsInstance(
+            deserialized.program.execution_plan[0].values[-1].val,
+            Double,
+        )
+        self.assertEqual(
+            deserialized.program.execution_plan[0].values[-1].val.double_val,
+            "inf",
+        )
+        self.assertEqual(
+            deserialized.program.execution_plan[0].delegates[0].compile_specs[0].value,
+            b"v",
+        )
+
     def test_round_trip_large_buffer_sizes(self) -> None:
         """Tests that when the non_const_buffer_sizes contains integers
         overflowing a signed/unsigned 32 bit integer, we can still serialize the
@@ -531,7 +605,7 @@ class TestProgram(unittest.TestCase):
         self.assertIsNone(eh)
 
         # Peek inside the flatbuffer data to confirm that there are no segments.
-        program_with_segments = _json_to_program(_program_flatbuffer_to_json(pte_data))
+        program_with_segments = _flatbuffer_to_program(pte_data)
         self.assertEqual(program_with_segments.segments, [])
 
         # Convert back.
@@ -597,7 +671,7 @@ class TestProgram(unittest.TestCase):
         # this also implicity tests the case where we try parsing the entire
         # file with segment data following it, demonstrating that the extra data
         # doesn't upset the flatbuffer parsing path.
-        program_with_segments = _json_to_program(_program_flatbuffer_to_json(pte_data))
+        program_with_segments = _flatbuffer_to_program(pte_data)
 
         # The delegate blobs we added to the program should appear as segments.
         # The one empty blob should have been ignored, hence the `- 1`.
@@ -677,6 +751,50 @@ class TestProgram(unittest.TestCase):
         self.assertEqual(deserialized.mutable_data, None)
         self.assertEqual(deserialized.named_data, None)
 
+    def test_deserialize_restores_segments_from_a_view_of_the_input(self) -> None:
+        program = get_test_program()
+        blob = self.gen_blob_data(SEGMENT_ALIGNMENT * 4, b"\x10\x11\x01")
+        add_delegate_data(program, program.execution_plan[0], [blob])
+        pte_data = bytes(
+            serialize_pte_binary(
+                PTEFile(program=program),
+                extract_delegate_segments=True,
+                segment_alignment=SEGMENT_ALIGNMENT,
+            )
+        )
+
+        with patch(
+            "executorch.exir._serialize._program._restore_segments",
+            wraps=_restore_segments,
+        ) as restore_segments:
+            deserialized = deserialize_pte_binary(pte_data)
+
+        # A copy of the segment data is as large as all the delegates together.
+        segment_data = restore_segments.call_args.kwargs["segment_data"]
+        self.assertIsInstance(segment_data, memoryview)
+        self.assertIs(segment_data.obj, pte_data)
+        restored = deserialized.program.backend_delegate_data[-1].data
+        self.assertIsInstance(restored, bytes)
+        self.assertEqual(restored, blob)
+
+    def test_serialize_shares_delegate_blobs(self) -> None:
+        # Not exactly bytes, like the blob Core ML returns for models over
+        # 1 GiB, which deepcopy would copy.
+        class Blob(bytes):
+            pass
+
+        program = get_test_program()
+        blob = Blob(self.gen_blob_data(SEGMENT_ALIGNMENT, b"\x10\x11\x01"))
+        add_delegate_data(program, program.execution_plan[0], [blob])
+
+        pte_data = serialize_pte_binary(
+            PTEFile(program=program),
+            extract_delegate_segments=True,
+            segment_alignment=SEGMENT_ALIGNMENT,
+        )
+
+        self.assertTrue(any(buffer is blob for buffer in pte_data._buffers))
+
     def test_no_constants(self) -> None:
         program = get_test_program()
         # Insert placeholder for non-const tensors.
@@ -694,7 +812,7 @@ class TestProgram(unittest.TestCase):
         self.assertEqual(program.segments, [])
 
         # Peek inside the actual flatbuffer data to see the segments.
-        flatbuffer_program = _json_to_program(_program_flatbuffer_to_json(pte_data))
+        flatbuffer_program = _flatbuffer_to_program(pte_data)
 
         # Constant buffer should be empty.
         self.assertEqual(len(flatbuffer_program.constant_buffer), 0)
@@ -814,7 +932,7 @@ class TestProgram(unittest.TestCase):
         self.assertGreater(eh.segment_data_size, 0)
 
         # Peek inside the actual flatbuffer data to see the segments.
-        program_with_segments = _json_to_program(_program_flatbuffer_to_json(pte_data))
+        program_with_segments = _flatbuffer_to_program(pte_data)
 
         # Segment table should contain a constant segment, the delegate blobs
         # and a named data segment.
@@ -1017,7 +1135,7 @@ class TestProgram(unittest.TestCase):
         self.assertGreater(eh.segment_data_size, 0)
 
         # Peek inside the actual flatbuffer data to see the named data segments.
-        program_with_segments = _json_to_program(_program_flatbuffer_to_json(pte_data))
+        program_with_segments = _flatbuffer_to_program(pte_data)
         # pyre-ignore Incompatible parameter type [6]
         self.assertEqual(len(program_with_segments.named_data), len(pte_named_data))
 
@@ -1092,6 +1210,38 @@ class TestProgram(unittest.TestCase):
         self.assert_programs_equal(deserialized2.program, program)
         self.assertEqual(deserialized2.mutable_data, None)
         self._check_named_data_store_output(deserialized2.named_data, named_data)
+
+    def test_named_data_aliases_combine_alignment(self) -> None:
+        named_data = NamedDataStoreOutput(
+            buffers=[b"abcd"],
+            pte_data={
+                "weak": DataEntry(0, 16, None),
+                "strong": DataEntry(0, 256, None),
+            },
+            external_data={},
+        )
+        pte_data = bytes(
+            serialize_pte_binary(
+                PTEFile(
+                    program=get_test_program(),
+                    named_data=named_data,
+                ),
+                segment_alignment=128,
+            )
+        )
+
+        header = self.get_and_validate_extended_header(pte_data)
+        self.assertEqual(header.segment_base_offset % 256, 0)
+
+        program = _flatbuffer_to_program(pte_data)
+        alias_entries = [
+            entry for entry in program.named_data if entry.key in ("weak", "strong")
+        ]
+        self.assertEqual(len(alias_entries), 2)
+        self.assertEqual(alias_entries[0].segment_index, alias_entries[1].segment_index)
+        segment = program.segments[alias_entries[0].segment_index]
+        absolute_offset = header.segment_base_offset + segment.offset
+        self.assertEqual(absolute_offset % 256, 0)
 
 
 # Common data for extended header tests. The two example values should produce

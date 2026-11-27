@@ -2,16 +2,16 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-import logging
 
 import executorch.backends.nxp.backend.ir.lib.tflite.Padding as tflPadding
 import torch
 
-from executorch.backends.nxp.backend.data_format import NXP_NODE_FORMAT
+from executorch.backends.nxp.backend.edge_helper import input_rank
 from executorch.backends.nxp.backend.ir.converter.conversion import common
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
     CustomDelegationOptions,
     NodeConverter,
+    requires_channels_first_format,
 )
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import (
     average_pool_2d_options,
@@ -25,6 +25,7 @@ KernelSize = tuple[int, int]
 Stride = tuple[int, int]
 
 
+@requires_channels_first_format
 class AdaptiveAvgPool2dConverter(NodeConverter):
 
     @staticmethod
@@ -45,13 +46,8 @@ class AdaptiveAvgPool2dConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-        if (
-            format_ := node.meta.get(NXP_NODE_FORMAT)
-        ) is None or not format_.is_channels_first():
-            logging.warning(
-                "NXP backend: `adaptive_avg_pool_2d` doesn't have the required input format for delegation. "
-                "Please run `NodeFormatInference.identify_node_formats()` during lowering or report this issue."
-            )
+        # The input must be 4D.
+        if input_rank(node, 0) != 4:
             return False
 
         input_size = node.args[0].meta["val"].shape
@@ -67,33 +63,34 @@ class AdaptiveAvgPool2dConverter(NodeConverter):
 
         return True
 
-    @staticmethod
+    @classmethod
     def _is_supported_on_target(
+        cls,
         node: Node,
         neutron_target_spec: NeutronTargetSpec,
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
+        if neutron_target_spec.is_subsystem():
+            return False
+
         kernel_size, stride = (
             AdaptiveAvgPool2dConverter._get_equivalent_avg_pool_parameters(node)
         )
 
-        if custom_delegation_options.use_new_flow_neutron_c:
-            # Requirements specified by the new Neutron flow documentation.
+        if not NodeConverter.uses_quantization_type_for_io(
+            node,
+            supported_types=[torch.int8, torch.uint8],
+            input_indices=[0],
+            output_indices=[0],
+        ):
+            return False
 
-            if not NodeConverter.uses_quantization_type_for_io(
-                node,
-                supported_types=[torch.int8, torch.uint8],
-                input_indices=[0],
-                output_indices=[0],
-            ):
-                return False
+        if any(k > 4096 for k in kernel_size):
+            return False
 
-            if any(k > 4096 for k in kernel_size):
-                return False
-
-            if any(s > 4096 for s in stride):
-                return False
+        if any(s > 4096 for s in stride):
+            return False
 
         return True
 

@@ -7,19 +7,40 @@
 
 # pyre-strict
 
+from collections.abc import Callable
 from typing import Set, Type
 
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass, PassResult
 
 
 class FuseViewCopyTransform(ExportPass):
+    """Fuse redundant ``view_copy`` nodes through supported unary elementwise
+    chains.
+
+    Example:
+        let view(sN) be a view node with output shape sN
+
+        Input:
+        view(s0) -> view(s1) -> abs -> view(s2) -> sqrt -> view(s3) -> user0
+                                                               `-----> user1
+        Output:
+        view(s3) -> abs -> sqrt -> user0
+                             `---> user1
+
+        Note that all view nodes except the first one have been elimininated.
+        That first node now outputs the final view shape s3 instead. user0 and
+        user1 have been reconnected to the last retained node sqrt because the
+        former connection has been broken with the removal of the view nodes.
+    """
+
     _passes_required_after: Set[Type[ExportPass]] = set()
 
-    VIEW_OP = exir_ops.edge.aten.view_copy.default
+    VIEW_OP: EdgeOpOverload = exir_ops.edge.aten.view_copy.default
 
-    UNARY_ELEMENTWISE_OPS = [
+    UNARY_ELEMENTWISE_OPS: list[EdgeOpOverload] = [
         exir_ops.edge.aten.alias_copy.default,
         exir_ops.edge.aten.clone.default,
         exir_ops.edge.dim_order_ops._clone_dim_order.default,
@@ -46,71 +67,141 @@ class FuseViewCopyTransform(ExportPass):
         exir_ops.edge.aten.log.default,
     ]
 
-    def merge_view_copy_chains(
+    def __init__(
+        self,
+        extra_fusible_ops: set[EdgeOpOverload] | None = None,
+        target_filters: (
+            dict[
+                EdgeOpOverload,
+                Callable[[torch.fx.Node, torch.fx.Node], bool],
+            ]
+            | None
+        ) = None,
+    ) -> None:
+        super().__init__()
+        self._fusible_ops = set(self.UNARY_ELEMENTWISE_OPS)
+        if extra_fusible_ops:
+            self._fusible_ops |= extra_fusible_ops
+        self._target_filters = target_filters or {}
+
+    def _find_view_copy_chain(self, start_node: torch.fx.Node) -> list[torch.fx.Node]:
+        """Collect a fusible chain starting at ``start_node``.
+
+        Returns:
+            list[torch.fx.Node]: View nodes following ``node`` that can be removed.
+        """
+
+        ops = self._fusible_ops | {self.VIEW_OP}
+        end_node = start_node
+        view_nodes: list[torch.fx.Node] = []
+        while (
+            end_node.op == "call_function"
+            and end_node.target in ops
+            and len(end_node.users) == 1
+            and (end_node_user := next(iter(end_node.users))).target in ops
+        ):
+            if end_node_user.target == self.VIEW_OP:
+                view_nodes.append(end_node_user)
+
+            end_node = end_node_user
+
+        return view_nodes
+
+    def _passes_target_filters(
+        self,
+        start_node: torch.fx.Node,
+        final_view_node: torch.fx.Node,
+    ) -> bool:
+        """Check caller-provided legality predicates for one fusion candidate.
+
+        A predicate receives the operator node and the final view that would be
+        folded into ``start_node``. This lets a backend opt in operators whose
+        legality depends on the resulting shape.
+        """
+        node = start_node
+        while node is not final_view_node:
+            assert len(node.users) == 1
+            node = next(iter(node.users))
+            target_filter = self._target_filters.get(node.target)
+            if target_filter is not None and not target_filter(node, final_view_node):
+                return False
+        return True
+
+    @staticmethod
+    def _shape_is_available_at(
+        shape: object,
+        node: torch.fx.Node,
+        order: dict[torch.fx.Node, int],
+    ) -> bool:
+        """Whether every element of ``shape`` is already defined before ``node``.
+
+        A view's shape is not always a list of ints: under dynamic shapes a
+        dimension is a node computing a symbolic size. Giving ``node`` the shape
+        of a later view moves that shape's arguments backwards in the graph, so
+        it is only valid when they are available at ``node`` to begin with.
+        """
+        if not isinstance(shape, (list, tuple)):
+            return True
+        node_pos = order[node]
+        return all(
+            order[dim] < node_pos for dim in shape if isinstance(dim, torch.fx.Node)
+        )
+
+    def _merge_view_copy_chains(
         self, graph: torch.fx.Graph
     ) -> tuple[torch.fx.Graph, bool]:
-        """
-        Find chains of view_copy nodes and unary elementwise ops and set all
-        view_copy nodes to have the final shape. The views will then be removed
-        by the remove_noop_view_copy call.
+        """Merge redundant view nodes in linear chains.
 
-        Only merges view_copy nodes that are not used by any other nodes.
+        For each view node, search forward through a single-user chain of view
+        and supported unary elementwise ops. If the chain contains later view
+        nodes, update the first view to the final view shape and bypass each
+        later view by replacing its uses with its input. The view nodes are
+        then eliminated.
+
+        Args:
+            graph (torch.fx.Graph): Graph to rewrite.
+
+        Returns:
+            tuple[torch.fx.Graph, bool]: The rewritten graph and whether it was
+                modified.
         """
-        view_op = self.VIEW_OP
         modified = False
-        ops = self.UNARY_ELEMENTWISE_OPS + [view_op]
-        for node in graph.nodes:
-            if node.op == "call_function" and node.target == view_op:
-                # Find a chain of unary elementwise ops and save all view_copy nodes
-                end_node = node
-                view_ops = [node]
-                while (
-                    end_node.op == "call_function"
-                    and end_node.target in ops
-                    and len(end_node.users) == 1
-                    and list(end_node.users)[0].target in ops
-                ):
-                    end_node = list(end_node.users)[0]
-                    if end_node.target == view_op:
-                        view_ops.append(end_node)
+        # Nothing below inserts or moves nodes, so a single ordering snapshot
+        # stays valid for the whole sweep.
+        order = {n: i for i, n in enumerate(graph.nodes)}
+        for node in graph.find_nodes(op="call_function", target=self.VIEW_OP):
+            view_nodes_to_remove = self._find_view_copy_chain(node)
 
-                # Set all view_copy nodes to have the final shape
-                if len(view_ops) > 1:
-                    final_shape = view_ops[-1].args[1]
-                    for node in view_ops:
-                        new_args = (node.args[0], final_shape)
-                        node.args = new_args
-                    modified = True
+            # Fuse the longest prefix of the chain whose shape `node` can
+            # actually take on; a later view whose shape is computed after
+            # `node` has to stay where it is.
+            while view_nodes_to_remove and (
+                not self._shape_is_available_at(
+                    view_nodes_to_remove[-1].args[1], node, order
+                )
+                or not self._passes_target_filters(node, view_nodes_to_remove[-1])
+            ):
+                view_nodes_to_remove.pop()
+
+            if len(view_nodes_to_remove) > 0:
+                modified = True
+
+                # Set the first view node in the chain to have the final shape
+                final_shape = view_nodes_to_remove[-1].args[1]
+                new_args = (node.args[0], final_shape)
+                node.args = new_args
+
+                # Redirect output edges from removed view nodes to bypass them
+                for view_node in view_nodes_to_remove:
+                    view_node.replace_all_uses_with(view_node.args[0])
+
         if modified:
             graph.eliminate_dead_code()
-        return graph, modified
 
-    def remove_noop_view_copy(
-        self, graph: torch.fx.Graph
-    ) -> tuple[torch.fx.Graph, bool]:
-        """
-        Remove view_copy nodes that are no-ops.
-        """
-        view_op = self.VIEW_OP
-        modified = False
-        for node in graph.nodes:
-            if node.op == "call_function" and node.target == view_op:
-                input_shape = list(node.args[0].meta["val"].shape)
-                target_shape = list(node.meta["val"].shape)
-                if input_shape == target_shape:
-                    node.replace_all_uses_with(node.args[0])
-                    modified = True
-        if modified:
-            graph.eliminate_dead_code()
         return graph, modified
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        graph_module.graph, modified = self.merge_view_copy_chains(graph_module.graph)
-        if modified:
-            graph_module.recompile()
-            graph_module = super().call(graph_module).graph_module
-
-        graph_module.graph, modified = self.remove_noop_view_copy(graph_module.graph)
+        graph_module.graph, modified = self._merge_view_copy_chains(graph_module.graph)
         if modified:
             graph_module.recompile()
             graph_module = super().call(graph_module).graph_module

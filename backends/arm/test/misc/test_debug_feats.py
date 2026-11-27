@@ -17,14 +17,22 @@ import torch
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.runner_utils import dbg_tosa_fb_to_json
+from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 from executorch.backends.test.harness.stages import StageType
 
 input_t1 = Tuple[torch.Tensor]  # Input x
+input_t2 = Tuple[torch.Tensor, torch.Tensor]
+
+
+class AddModel(torch.nn.Module):
+    def forward(self, x, y):
+        return x + y
 
 
 class Linear(torch.nn.Module):
@@ -97,6 +105,81 @@ def test_compare_initial_to_quantized_tosa_INT(test_data: input_t1):
     assert compare_stage.kwargs["reference_stage_type"] == StageType.INITIAL_MODEL
     assert compare_stage.kwargs["run_eager_mode"] is True
     pipeline.run()
+
+
+@common.parametrize("test_data", Linear.inputs)
+def test_tosa_FP_can_skip_ref_model_output_comparison(test_data: input_t1):
+    default_pipeline = TosaPipelineFP[input_t1](Linear(), test_data, [], [])
+    default_compare_stage = default_pipeline._stages[
+        default_pipeline.find_pos("run_method_and_compare_outputs")
+    ]
+    assert default_compare_stage.kwargs["compare_outputs"] is True
+
+    validation_pipeline = TosaPipelineFP[input_t1](
+        Linear(),
+        test_data,
+        [],
+        [],
+        compare_tosa_ref_model_outputs=False,
+    )
+    validation_compare_stage = validation_pipeline._stages[
+        validation_pipeline.find_pos("run_method_and_compare_outputs")
+    ]
+    assert validation_compare_stage.kwargs["compare_outputs"] is False
+    assert validation_compare_stage.kwargs["inputs"] == test_data
+
+
+@common.parametrize(
+    "dtype_extension",
+    {
+        "e4m3": (torch.float8_e4m3fn, torch.float8_e4m3fn, "fp8e4m3"),
+        "e5m2": (torch.float8_e5m2, torch.float8_e5m2, "fp8e5m2"),
+        "e4m3_fp32": (torch.float8_e4m3fn, torch.float32, "fp8e4m3"),
+        "fp32_e4m3": (torch.float32, torch.float8_e4m3fn, "fp8e4m3"),
+        "e5m2_fp32": (torch.float8_e5m2, torch.float32, "fp8e5m2"),
+        "fp32_e5m2": (torch.float32, torch.float8_e5m2, "fp8e5m2"),
+    },
+)
+def test_fp8_mismatch_reports_and_saves_diagnostics(dtype_extension, tmp_path, caplog):
+    reference_dtype, result_dtype, extension = dtype_extension
+    reference = (
+        torch.tensor([1.0, 2.0, 3.0, 4.0]).reshape(1, 2, 1, 2).to(reference_dtype)
+    )
+    result = torch.tensor([1.0, 2.0, 4.0, 5.0]).reshape(1, 2, 1, 2).to(result_dtype)
+    tester = ArmTester(
+        torch.nn.Identity(),
+        (reference,),
+        common.get_vgf_compile_spec(
+            f"TOSA-1.0+FP+{extension}", custom_path=str(tmp_path)
+        ),
+    )
+
+    # The base comparator only widens inputs when the result is FP8.
+    def compare_in_fp32(reference, result, _):
+        ArmTester._assert_outputs_equal(
+            [result.float()], [reference.float()], atol=0, rtol=0
+        )
+
+    with pytest.raises(
+        AssertionError, match="Output 0 does not match reference output"
+    ):
+        tester._compare_outputs(
+            reference,
+            result,
+            atol=0,
+            rtol=0,
+            compare_callback=compare_in_fp32 if result_dtype == torch.float32 else None,
+        )
+
+    assert "ERROR DIFFERENCE" in caplog.text
+    assert "MEAN      MEDIAN    MAX       MIN" in caplog.text
+    for filename, expected in (
+        ("torch_tosa_output.pt", result),
+        ("torch_ref_output.pt", reference),
+    ):
+        saved = torch.load(tmp_path / filename, weights_only=True)
+        assert saved.dtype == expected.dtype
+        torch.testing.assert_close(saved.float(), expected.float(), atol=0, rtol=0)
 
 
 @common.parametrize("test_data", Linear.inputs)
@@ -341,3 +424,47 @@ def test_fail_dump_ops_u55_INT(capsys, test_data: input_t1):
     error_msg = "Can not get operator distribution for Vela command stream."
     with pytest.raises(NotImplementedError, match=error_msg):
         pipeline.run()
+
+
+def _is_rescale_op(op: dict) -> bool:
+    return op.get("op") == "RESCALE" or op.get("opcode") == "RESCALE"
+
+
+@common.SkipIfNoModelConverter
+def test_vgf_rescale_tosa_debug_location_is_not_empty():
+    # Repro test for a bug with debug loc for RESCALE
+    with tempfile.TemporaryDirectory() as tmpdir:
+        pipeline = VgfPipeline[input_t2](
+            module=AddModel(),
+            test_data=(torch.ones(5), 2 * torch.ones(5)),
+            aten_op="torch.ops.aten.add.Tensor",
+            exir_op="executorch_exir_dialects_edge__ops_aten_add_Tensor",
+            run_on_vulkan_runtime=False,
+            vgf_compiler_flags="--emit-debug-info",
+            symmetric_io_quantization=True,
+            custom_path=tmpdir,
+            tosa_debug_mode=ArmCompileSpec.DebugMode.TOSA,
+            tosa_spec="TOSA-1.0+INT",
+        )
+
+        pipeline.run()
+
+        tosa_files = list(Path(tmpdir).glob("*.tosa"))
+        assert tosa_files, "Expected VGF lowering to dump a TOSA artifact"
+
+        rescale_ops = []
+        for tosa_file in tosa_files:
+            with tosa_file.open("rb") as f:
+                tosa_json = dbg_tosa_fb_to_json(f.read())
+
+            ops = tosa_json["regions"][0]["blocks"][0]["operators"]
+            rescale_ops.extend([op for op in ops if _is_rescale_op(op)])
+
+        assert (
+            rescale_ops
+        ), "Expected the quantized AddModel repro to emit TOSA RESCALE ops"
+
+        for op in rescale_ops:
+            location_text = op["location"]["text"]
+            assert location_text, f"RESCALE op has empty debug location: {op}"
+            json.loads(location_text)

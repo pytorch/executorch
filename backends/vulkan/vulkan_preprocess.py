@@ -6,7 +6,6 @@
 
 # pyre-strict
 
-import copy
 from functools import partial
 from typing import Any, Callable, Dict, final, List
 
@@ -18,6 +17,8 @@ from executorch.backends.transforms.view_copy_to_squeeze_unsqueeze import (
     ViewCopyToSqueezeUnsqueezePass,
 )
 from executorch.backends.vulkan._passes import (
+    Conv1dAsConv2dPass,
+    FoldForceFp16CastsPass,
     FoldQDQPass,
     FuseQuantizedOpsTransform,
     insert_prepack_nodes,
@@ -28,6 +29,9 @@ from executorch.backends.vulkan._passes import (
 )
 from executorch.backends.vulkan._passes.fuse_patterns import FusePatternsPass
 from executorch.backends.vulkan._passes.remove_asserts import RemoveAssertsTransform
+from executorch.backends.vulkan._passes.replace_instance_norm import (
+    ReplaceInstanceNormPass,
+)
 from executorch.backends.vulkan.serialization.vulkan_graph_builder import VkGraphBuilder
 from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
     VkMemoryLayout,
@@ -91,7 +95,20 @@ def apply_passes(program: ExportedProgram, passes) -> ExportedProgram:
     return program
 
 
-def parse_compile_spec(compile_specs: List[CompileSpec]) -> Dict[str, Any]:
+def _parse_external_constants_max_data_bytes(value_bytes: bytes) -> int:
+    # CompileSpec values can bypass parse_compile_options, so validate this
+    # serialized boundary independently.
+    if len(value_bytes) != 8:
+        raise ValueError("external_constants_max_data_bytes must be encoded as uint64")
+    value = int.from_bytes(value_bytes, byteorder="little")
+    if value <= 0:
+        raise ValueError("external_constants_max_data_bytes must be a positive uint64")
+    return value
+
+
+def parse_compile_spec(  # noqa: C901
+    compile_specs: List[CompileSpec],
+) -> Dict[str, Any]:
     options = {}
     for spec in compile_specs:
         if spec.key == "storage_type_override":
@@ -114,6 +131,21 @@ def parse_compile_spec(compile_specs: List[CompileSpec]) -> Dict[str, Any]:
         if spec.key == "force_fp16":
             options[spec.key] = bool.from_bytes(spec.value, byteorder="little")
 
+        if spec.key == "small_texture_limits":
+            options[spec.key] = bool.from_bytes(spec.value, byteorder="little")
+
+        if spec.key == "skip_memory_planning":
+            options[spec.key] = bool.from_bytes(spec.value, byteorder="little")
+
+        if spec.key == "alias_buffer_mutations":
+            options[spec.key] = bool.from_bytes(spec.value, byteorder="little")
+
+        if spec.key == "external_constants_max_data_bytes":
+            options[spec.key] = _parse_external_constants_max_data_bytes(spec.value)
+
+        if spec.key == "skip_fusion_patterns":
+            options[spec.key] = set(filter(None, spec.value.decode().split(",")))
+
         # Unhandled options are ignored
 
     return options
@@ -130,16 +162,15 @@ class VulkanBackend(BackendDetails):
     ) -> PreprocessResult:
         compile_options = parse_compile_spec(module_compile_spec)
 
-        default_texture_limits = copy.deepcopy(utils.DEFAULT_TEXTURE_LIMITS)
         # 2048 is the typical limit value for 3D textures, but mobile GPUs often support
         # 16384. Since the Vulkan delegate primarily targets mobile GPUs at the moment,
-        # 16394 is the default texture limit used. This option is provided as a
-        # convenient way to switch to using a limit of 2048 for image textures which
-        # will be compatible with most GPUs.
+        # 16384 is the default texture limit used. The small_texture_limits option is
+        # provided as a convenient way to switch to a limit of 2048 for image textures,
+        # which will be compatible with most desktop/laptop GPUs.
         if compile_options.get("small_texture_limits", False):
-            default_texture_limits[0] = 2048
-            default_texture_limits[1] = 2048
-            default_texture_limits[2] = 2048
+            default_texture_limits = utils.SMALL_TEXTURE_LIMITS
+        else:
+            default_texture_limits = utils.DEFAULT_TEXTURE_LIMITS
 
         limits_x = compile_options.get("texture_limits_x", default_texture_limits[0])
         limits_y = compile_options.get("texture_limits_y", default_texture_limits[1])
@@ -154,6 +185,7 @@ class VulkanBackend(BackendDetails):
         )
         downcast_64_bit = compile_options.get("downcast_64_bit", True)
         force_fp16 = compile_options.get("force_fp16", False)
+        alias_buffer_mutations = compile_options.get("alias_buffer_mutations", False)
 
         program = unsafe_remove_auto_functionalized_pass(program)
 
@@ -167,14 +199,24 @@ class VulkanBackend(BackendDetails):
                 FuseBatchNormPass(program),
                 AddmmToLinearTransform(),
                 InsertDtypePromotionPass(),
-                FusePatternsPass(),
+                FusePatternsPass(compile_options.get("skip_fusion_patterns", ())),
+                Conv1dAsConv2dPass(),
+                # Fuses activations into the convolutions FusePatternsPass left
+                # unfused, such as conv1d.
                 FuseClampPass(),
                 RemoveRedundantOpsTransform(),
+                ReplaceInstanceNormPass(),
                 FuseQuantizedOpsTransform(),
                 FoldQDQPass(),
                 SqueezeUnsqueezeInputs(),
                 FuseViewCopyTransform(),
                 ViewCopyToSqueezeUnsqueezePass(),
+                # Again: the three passes above rewrite views, and collapsing a
+                # chain of them can leave a view onto the shape it started from.
+                # Those reach the runtime as a shader that reads every texel and
+                # writes it back, and the earlier run happened before they were
+                # created.
+                RemoveRedundantOpsTransform(),
             ],
         )
 
@@ -191,13 +233,14 @@ class VulkanBackend(BackendDetails):
             [
                 RemoveAssertsTransform(),
                 insert_prepack_nodes,
-            ],
+            ]
+            + ([FoldForceFp16CastsPass()] if force_fp16 else []),
         )
 
         # Optionally apply the memory metadata tagging pass, which will insert storage
         # type and memory layout transition nodes to ensure that all tensor arguments
         # to an operator is in a supported or optimal configuration. If this pass is not
-        # applied, there will be a risk that some operators recieve arguments with
+        # applied, there will be a risk that some operators receive arguments with
         # memory settings that are not supported by the implementation.
         if not compile_options.get("skip_tag_memory_metadata", False):
             program = apply_passes(
@@ -240,8 +283,19 @@ class VulkanBackend(BackendDetails):
             DelegateMappingBuilder(generated_identifiers=True),
             downcast_64_bit=downcast_64_bit,
             force_fp16=force_fp16,
+            alias_buffer_mutations=alias_buffer_mutations,
         )
         vk_graph = graph_builder.build_graph()
+        external_constants_max_data_bytes = compile_options.get(
+            "external_constants_max_data_bytes"
+        )
+        if external_constants_max_data_bytes is not None:
+            # VkGraphBuilder populates pte_data only from constant tensors;
+            # already-tagged named data remains in external_data.
+            graph_builder.named_data_store.externalize_pte_data(
+                external_constants_max_data_bytes,
+                "vulkan_constants",
+            )
 
         return PreprocessResult(
             processed_bytes=serialize_vulkan_graph(

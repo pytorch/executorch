@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -23,12 +24,13 @@ from executorch.backends.xnnpack.partition.config.generic_node_configs import (
     CatConfig,
     CeilConfig,
     ClampConfig,
+    CloneConfig,
     CloneDimOrderConfig,
     ConstantPadConfig,
     CosConfig,
     DeQuantizedPerTensorConfig,
     DivConfig,
-    # EluConfig,
+    EluConfig,
     ExpConfig,
     FloorConfig,
     GeluConfig,
@@ -48,15 +50,18 @@ from executorch.backends.xnnpack.partition.config.generic_node_configs import (
     ReciprocalSquareRootConfig,
     ReLUConfig,
     SigmoidConfig,
+    SiluConfig,
     SinConfig,
     SliceCopyConfig,
     SoftmaxConfig,
     SquareRootConfig,
     SubConfig,
     TanhConfig,
+    ToCopyConfig,
     ToDimOrderCopyConfig,
     UnsqueezeCopyConfig,
     UpsampleBilinear2dConfig,
+    UpsampleNearest2dConfig,
     ViewCopyConfig,
 )
 from executorch.backends.xnnpack.partition.config.node_configs import (
@@ -82,12 +87,13 @@ ALL_PARTITIONER_CONFIGS: List[Type[XNNPartitionerConfig]] = [
     BMMConfig,
     CatConfig,
     CeilConfig,
+    CloneConfig,
     CloneDimOrderConfig,
     ConstantPadConfig,
     ConvolutionConfig,
     ClampConfig,
     DivConfig,
-    # EluConfig, # Waiting for PyTorch Pin Update
+    EluConfig,
     ExpConfig,
     FloorConfig,
     GeluConfig,
@@ -110,8 +116,10 @@ ALL_PARTITIONER_CONFIGS: List[Type[XNNPartitionerConfig]] = [
     ReciprocalSquareRootConfig,
     ReLUConfig,
     TanhConfig,
+    ToCopyConfig,
     ToDimOrderCopyConfig,
     SigmoidConfig,
+    SiluConfig,
     SinConfig,
     CosConfig,
     SliceCopyConfig,
@@ -120,6 +128,7 @@ ALL_PARTITIONER_CONFIGS: List[Type[XNNPartitionerConfig]] = [
     SubConfig,
     UnsqueezeCopyConfig,
     UpsampleBilinear2dConfig,
+    UpsampleNearest2dConfig,
     ViewCopyConfig,
     # Quant/Dequant Op Configs
     QuantizedPerTensorConfig,

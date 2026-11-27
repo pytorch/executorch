@@ -12,6 +12,7 @@
 #include <executorch/runtime/platform/assert.h>
 
 #include <atomic>
+#include <cinttypes>
 #include <cstring>
 #include <limits>
 #include <numeric>
@@ -143,7 +144,8 @@ Error TensorWrapper::FillDataBuffer(const void* data) {
 }
 
 Error TensorWrapper::AllocateDataBuffer() {
-  char* static_data_buffer = new (std::nothrow) char[bytes_]; // NOLINT
+  // The graph reads mutable buffers before the first write; start from zero.
+  char* static_data_buffer = new (std::nothrow) char[bytes_](); // NOLINT
   if (static_data_buffer == nullptr) {
     return Error::Internal;
   }
@@ -188,7 +190,7 @@ std::shared_ptr<TensorWrapper> CreateTensorWrapper(
     for (std::uint32_t i = 0; i < rank; ++i) {
       ET_CHECK_MSG(
           !c10::mul_overflows(computed_bytes, dims[i], &computed_bytes),
-          "Overflow computing tensor byte size for tensor of rank %u",
+          "Overflow computing tensor byte size for tensor of rank %" PRIu32,
           rank);
     }
     bytes = computed_bytes;

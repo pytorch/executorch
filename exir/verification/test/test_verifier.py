@@ -20,7 +20,7 @@ from torch.ao.quantization.fx._decomposed import quantized_decomposed_lib  # noq
 from torch.export import export
 from torch.export.experimental import _export_forward_backward
 
-from ..verifier import EXIREdgeDialectVerifier
+from ..verifier import EXIRATenDialectVerifier, EXIREdgeDialectVerifier
 
 
 class TestEdgeDialectVerifier(unittest.TestCase):
@@ -31,52 +31,35 @@ class TestEdgeDialectVerifier(unittest.TestCase):
         except exc_type:
             raise self.failureException("{} raised".format(exc_type.__name__))
 
+    def _assert_leaves_the_callers_lists_unchanged(self, make_verifier: Any) -> None:
+        exception_list = [torch.ops.aten.sort.default]
+        preserve_ops = [torch.ops.aten.linear.default]
+        config = EdgeCompileConfig(
+            _core_aten_ops_exception_list=[torch.ops.aten.median.default],
+            preserve_ops=[torch.ops.aten.gelu.default],
+        )
+
+        make_verifier(
+            edge_compile_config=config,
+            core_aten_ops_exception_list=exception_list,
+            preserve_ops=preserve_ops,
+        )
+
+        self.assertEqual(exception_list, [torch.ops.aten.sort.default])
+        self.assertEqual(preserve_ops, [torch.ops.aten.linear.default])
+
+    def test_aten_verifier_leaves_the_callers_lists_unchanged(self) -> None:
+        self._assert_leaves_the_callers_lists_unchanged(EXIRATenDialectVerifier)
+
+    def test_edge_verifier_leaves_the_callers_lists_unchanged(self) -> None:
+        self._assert_leaves_the_callers_lists_unchanged(EXIREdgeDialectVerifier)
+
     def test_edge_verifier_check_valid_op_succeed_given_custom_op(self) -> None:
         edge_op = ops.edge.quantized_decomposed.quantize_per_tensor.default
         verifier = EXIREdgeDialectVerifier()
         with self.assertNotRaises(SpecViolationError):
             verifier.check_valid_edge_op(edge_op)
             verifier.check_valid_op(edge_op)
-
-    def test_edge_verifier_check_edge_op(self) -> None:
-        class Model(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x: torch.Tensor) -> torch.Tensor:
-                return x.transpose(0, 1)
-
-        m = Model().eval()
-
-        example_input = (torch.zeros([2, 2]),)
-
-        export_model = export(m, example_input, strict=True)
-
-        compile_config_without_edge_op = EdgeCompileConfig(
-            _use_edge_ops=False, _skip_dim_order=False
-        )
-
-        edge_manager = to_edge(
-            export_model, compile_config=compile_config_without_edge_op
-        )
-
-        normal_verifier = EXIREdgeDialectVerifier()
-        disable_edge_op_check_verifier = EXIREdgeDialectVerifier(
-            compile_config_without_edge_op
-        )
-
-        # exported model can not pass normal verifier due to
-        # incontiguous memory layout tensor is not supported in ET
-        with self.assertRaises(SpecViolationError):
-            normal_verifier(edge_manager.exported_program())
-
-        # exported model can pass disable_edge_op_check_verifier due to the
-        # incontiguous memory layout tensor verification is disabled by
-        # compile_config_without_edge_op (_use_edge_ops=False). Noted that this
-        # verifation has been done when calling `to_edge`. Explicitly calling
-        # verifier here just for better demonstration and is unnecessary
-        # in real world for ir verification.
-        disable_edge_op_check_verifier(edge_manager.exported_program())
 
     def test_edge_verifier_check_valid_dim_order_graph(self) -> None:
         class Model(torch.nn.Module):

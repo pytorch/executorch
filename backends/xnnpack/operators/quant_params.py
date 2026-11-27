@@ -30,7 +30,7 @@ from torch.export import ExportedProgram
 
 class QuantParams:
     """
-    QuantParams class, to represent the paramaters and meta data needed
+    QuantParams class, to represent the parameters and meta data needed
     to quantize a tensor. The metadata can technically all be encapsulated
     within the quant torch.fx.Node, however, there are some cases in which
     nodes which are meant to be quantized for XNNPACK are not quantized

@@ -21,3 +21,19 @@ def define_common_targets():
                 "//executorch/extension/tensor:tensor" + aten_suffix,
             ],
         )
+
+    # tensor_ptr_device_test.cpp is guarded by `#ifndef USE_ATEN_LIB` from top to bottom, so
+    # it only has tests to run in portable mode. Defining it once, outside the aten_mode
+    # loop, keeps its `tensor` dependency honest: the `_aten` variant used to link the
+    # portable library and then compile zero tests.
+    runtime.cxx_test(
+        name = "tensor_ptr_device_test",
+        srcs = [
+            "tensor_ptr_device_test.cpp",
+        ],
+        deps = [
+            "//executorch/extension/tensor:tensor",
+            "//executorch/runtime/core:device_allocator",
+            "//executorch/runtime/core/test:mock_cuda_allocator",
+        ],
+    )

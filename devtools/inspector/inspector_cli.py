@@ -64,12 +64,20 @@ def main() -> None:
         inspector.save_data_to_tsv(args.tsv_path)
     if args.compare_results:
         for event_block in inspector.event_blocks:
-            if event_block.name == "Execute":
-                compare_results(
-                    reference_output=event_block.reference_output,
-                    run_output=event_block.run_output,
-                    plot=True,
+            if event_block.name != "Execute":
+                continue
+            if event_block.reference_output is None or event_block.run_output is None:
+                print(
+                    "Skipping --compare_results: no reference output for this run. "
+                    "Pass --etrecord_path for an ETRecord that holds reference outputs "
+                    "(e.g. generated from a BundledProgram) and an ETDump with run outputs."
                 )
+                continue
+            compare_results(
+                reference_output=event_block.reference_output,
+                run_output=event_block.run_output,
+                plot=True,
+            )
 
 
 if __name__ == "__main__":
