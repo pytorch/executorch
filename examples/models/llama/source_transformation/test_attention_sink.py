@@ -17,6 +17,11 @@ from executorch.examples.models.llama.source_transformation.attention_sink impor
 )
 from parameterized import parameterized
 
+# Quantized-vs-float logits sit near 60 dB on these models; dropping the sink
+# costs about 40 dB more.
+SNR_FLOOR_DB = 40.0
+SNR_MARGIN_DB = 20.0
+
 
 class RopeWithAttentionSinkTest(unittest.TestCase):
 
@@ -622,3 +627,338 @@ class AttentionSinkE2ETest(unittest.TestCase):
             self.assertTrue(
                 torch.isfinite(out).all(), "Output contains non-finite values"
             )
+
+
+def _snr_db(actual: torch.Tensor, reference: torch.Tensor) -> float:
+    noise = (actual - reference).pow(2).sum()
+    return (10 * torch.log10(reference.pow(2).sum() / noise)).item()
+
+
+class AttentionSinkSurvivesSourceTransformsTest(unittest.TestCase):
+    """The sink and ring caches have to survive the export transforms.
+
+    An export applies replace_sdpa_with_custom_op,
+    replace_kv_cache_with_custom_kv_cache, replace_kv_cache_with_quantized_kv_cache
+    and replace_sdpa_with_quantized_sdpa. Each rebuilds a module by isinstance
+    dispatch, and the ring caches subclass the plain caches.
+    """
+
+    SINK_SIZE = 4
+    WINDOW_SIZE = 12
+
+    def _build_model(self, sink_size=SINK_SIZE, window_size=WINDOW_SIZE, full_logits=False):
+        from executorch.examples.models.llama.llama_transformer import (
+            construct_transformer,
+        )
+        from executorch.examples.models.llama.source_transformation.attention_sink import (
+            enable_attention_sink,
+        )
+
+        args = ModelArgs(
+            dim=64,
+            n_heads=4,
+            n_kv_heads=2,
+            head_dim=16,
+            hidden_dim=128,
+            max_batch_size=1,
+            max_seq_len=window_size + 1,
+            max_context_len=self.SINK_SIZE + window_size * 2,
+            use_kv_cache=True,
+            enable_dynamic_shape=True,
+            n_layers=2,
+            vocab_size=32,
+            generate_full_logits=full_logits,
+        )
+        torch.manual_seed(0)
+        model = construct_transformer(args)
+        model = enable_attention_sink(
+            model, params=args, sink_size=sink_size, window_size=window_size
+        )
+        model.eval()
+        return args, model
+
+    def _custom_ops(self, model):
+        from executorch.examples.models.llama.source_transformation.custom_kv_cache import (
+            replace_kv_cache_with_custom_kv_cache,
+        )
+        from executorch.examples.models.llama.source_transformation.sdpa import (
+            replace_sdpa_with_custom_op,
+        )
+
+        replace_sdpa_with_custom_op(model)
+        replace_kv_cache_with_custom_kv_cache(model)
+        return model
+
+    def _quantize(self, model):
+        from executorch.examples.models.llama.source_transformation.custom_kv_cache import (
+            replace_kv_cache_with_quantized_kv_cache,
+        )
+        from executorch.examples.models.llama.source_transformation.sdpa import (
+            replace_sdpa_with_quantized_sdpa,
+        )
+
+        replace_kv_cache_with_quantized_kv_cache(model)
+        replace_sdpa_with_quantized_sdpa(model)
+        return model
+
+    def _feed(self, model, tokens, chunk_size):
+        """Feed tokens chunk_size at a time; return the logits of every call."""
+        outputs = []
+        with torch.no_grad():
+            for pos in range(0, tokens.shape[1], chunk_size):
+                result = model(
+                    tokens=tokens[:, pos : pos + chunk_size],
+                    attn_options={"input_pos": torch.tensor([pos], dtype=torch.long)},
+                )
+                out = result[0] if isinstance(result, tuple) else result
+                outputs.append(out.reshape(1, -1, out.shape[-1]))
+        return torch.cat(outputs, dim=1)
+
+    def _assert_quantized_sdpas(self, model, use_attention_mask):
+        from executorch.examples.models.llama.source_transformation.sdpa import (
+            QuantizedSDPA,
+        )
+
+        sdpas = [m for m in model.modules() if isinstance(m, QuantizedSDPA)]
+        self.assertEqual(len(sdpas), 2, "expected one QuantizedSDPA per layer")
+        for sdpa in sdpas:
+            self.assertEqual(sdpa.use_attention_mask, use_attention_mask)
+
+    def test_quantizing_the_kv_cache_keeps_the_sink(self):
+        from executorch.examples.models.llama.source_transformation.custom_kv_cache import (
+            CustomKVCacheWithAttentionSink,
+            QuantizedKVCacheWithAttentionSink,
+        )
+
+        _, model = self._build_model()
+        self._custom_ops(model)
+        float_slots = [
+            m.k_cache.shape[1]
+            for m in model.modules()
+            if isinstance(m, CustomKVCacheWithAttentionSink)
+        ]
+        self._quantize(model)
+
+        caches = [
+            m
+            for m in model.modules()
+            if isinstance(m, QuantizedKVCacheWithAttentionSink)
+        ]
+        self.assertEqual(len(caches), 2)
+        self.assertEqual([c.k_cache.shape[1] for c in caches], float_slots)
+        for cache in caches:
+            self.assertEqual(cache.sink_size, self.SINK_SIZE)
+            self.assertEqual(cache.window_size, self.WINDOW_SIZE)
+            self.assertEqual(
+                cache.cache_positions_manager.max_context_length,
+                cache.k_cache.shape[1],
+            )
+            self.assertEqual(cache.k_cache.dtype, torch.int8)
+            self.assertEqual(cache.v_cache.dtype, torch.int8)
+            self.assertEqual(cache.k_cache_scales.dtype, torch.float32)
+            self.assertEqual(cache.k_cache_zero_points.dtype, torch.int8)
+        self._assert_quantized_sdpas(model, use_attention_mask=True)
+
+    def test_quantized_sink_matches_float_through_several_laps(self):
+        _, model = self._build_model()
+        _, no_sink_model = self._build_model(sink_size=0)
+        reference = self._custom_ops(copy.deepcopy(model))
+        quantized = self._quantize(self._custom_ops(copy.deepcopy(model)))
+        no_sink = self._custom_ops(no_sink_model)
+        self._assert_quantized_sdpas(quantized, use_attention_mask=True)
+
+        # 80 tokens against a 28 slot cache: several laps of the ring.
+        tokens = torch.randint(0, 32, (1, 80))
+        expected = self._feed(reference, tokens, chunk_size=1)
+        actual = self._feed(quantized, tokens, chunk_size=1)
+
+        past_first_lap = slice(self.SINK_SIZE + 2 * self.WINDOW_SIZE, None)
+        snr = _snr_db(actual[:, past_first_lap], expected[:, past_first_lap])
+        self.assertGreater(snr, SNR_FLOOR_DB)
+        # Dropping the sink is a far larger change than the quantization noise,
+        # so this would catch a quantized model that lost it.
+        without_sink = self._feed(no_sink, tokens, chunk_size=1)
+        self.assertLess(
+            _snr_db(without_sink[:, past_first_lap], expected[:, past_first_lap]),
+            snr - SNR_MARGIN_DB,
+        )
+
+    def test_quantized_sink_chunked_prefill_across_the_wrap(self):
+        _, model = self._build_model(full_logits=True)
+        reference = self._custom_ops(copy.deepcopy(model))
+        quantized = self._quantize(self._custom_ops(copy.deepcopy(model)))
+        self._assert_quantized_sdpas(quantized, use_attention_mask=True)
+
+        # window_size + 1 is the widest chunk that keeps its first query's window
+        # in a 2 * window_size ring. Chunk starts 0, 13, 26, ... put the chunk
+        # at 26 across the ring top at position 28.
+        chunk = self.WINDOW_SIZE + 1
+        tokens = torch.randint(0, 32, (1, 5 * chunk))
+        one_at_a_time = self._feed(copy.deepcopy(reference), tokens, chunk_size=1)
+
+        torch.testing.assert_close(
+            self._feed(reference, tokens, chunk_size=chunk), one_at_a_time
+        )
+        self.assertGreater(
+            _snr_db(self._feed(quantized, tokens, chunk_size=chunk), one_at_a_time),
+            SNR_FLOOR_DB,
+        )
+
+    def test_zero_sink_ring_is_quantized_as_a_ring(self):
+        from executorch.examples.models.llama.source_transformation.custom_kv_cache import (
+            QuantizedRingKVCache,
+        )
+
+        _, model = self._build_model(sink_size=0)
+        reference = self._custom_ops(copy.deepcopy(model))
+        quantized = self._quantize(self._custom_ops(copy.deepcopy(model)))
+
+        caches = [m for m in quantized.modules() if isinstance(m, QuantizedRingKVCache)]
+        self.assertEqual(len(caches), 2)
+        for cache in caches:
+            self.assertEqual(cache.window_size, self.WINDOW_SIZE)
+            self.assertEqual(cache.k_cache.shape[1], 2 * self.WINDOW_SIZE)
+        self._assert_quantized_sdpas(quantized, use_attention_mask=True)
+
+        tokens = torch.randint(0, 32, (1, 80))
+        self.assertGreater(
+            _snr_db(
+                self._feed(quantized, tokens, chunk_size=1),
+                self._feed(reference, tokens, chunk_size=1),
+            ),
+            SNR_FLOOR_DB,
+        )
+
+    def test_ring_cache_without_custom_ops_is_quantized_as_a_ring(self):
+        from executorch.examples.models.llama.source_transformation.custom_kv_cache import (
+            QuantizedRingKVCache,
+            replace_kv_cache_with_quantized_kv_cache,
+        )
+
+        _, model = self._build_model(sink_size=0)
+        quantized = replace_kv_cache_with_quantized_kv_cache(copy.deepcopy(model))
+
+        caches = [m for m in quantized.modules() if isinstance(m, QuantizedRingKVCache)]
+        self.assertEqual(len(caches), 2)
+        tokens = torch.randint(0, 32, (1, 80))
+        self.assertGreater(
+            _snr_db(
+                self._feed(quantized, tokens, chunk_size=1),
+                self._feed(model, tokens, chunk_size=1),
+            ),
+            SNR_FLOOR_DB,
+        )
+
+    def test_quantized_sdpa_masks_a_ring_whatever_the_transform_order(self):
+        from executorch.examples.models.llama.source_transformation.custom_kv_cache import (
+            replace_kv_cache_with_custom_kv_cache,
+        )
+        from executorch.examples.models.llama.source_transformation.sdpa import (
+            replace_sdpa_with_custom_op,
+        )
+
+        _, model = self._build_model()
+        reference = self._custom_ops(copy.deepcopy(model))
+        # Replacing the cache before the SDPA leaves the float SDPACustom
+        # without use_attention_mask.
+        quantized = copy.deepcopy(model)
+        replace_kv_cache_with_custom_kv_cache(quantized)
+        replace_sdpa_with_custom_op(quantized)
+        self._quantize(quantized)
+        self._assert_quantized_sdpas(quantized, use_attention_mask=True)
+
+        tokens = torch.randint(0, 32, (1, 80))
+        self.assertGreater(
+            _snr_db(
+                self._feed(quantized, tokens, chunk_size=1),
+                self._feed(reference, tokens, chunk_size=1),
+            ),
+            SNR_FLOOR_DB,
+        )
+
+    @parameterized.expand([(4,), (0,)])
+    def test_quantizing_twice_is_a_no_op(self, sink_size):
+        _, model = self._build_model(sink_size=sink_size)
+        self._quantize(self._custom_ops(model))
+        caches = [m for m in model.modules() if hasattr(m, "k_cache")]
+        self._quantize(model)
+        self.assertEqual(
+            [id(m) for m in model.modules() if hasattr(m, "k_cache")],
+            [id(m) for m in caches],
+        )
+
+    def test_quantized_sink_cache_constructor(self):
+        from executorch.examples.models.llama.source_transformation.custom_kv_cache import (
+            QuantizedCacheType,
+            QuantizedKVCacheWithAttentionSink,
+        )
+        from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
+
+        sink_size, window_size, n_heads, head_dim = 2, 4, 2, 8
+        cache_size = sink_size + 2 * window_size
+        cache = QuantizedKVCacheWithAttentionSink(
+            1, cache_size, n_heads, head_dim, window_size, sink_size
+        )
+        for pos in range(3 * cache_size):
+            k = torch.randn(1, n_heads, 1, head_dim)
+            k_out, _ = cache.update(torch.tensor([pos]), k, k)
+            self.assertEqual(k_out.shape, (1, n_heads, cache_size, head_dim))
+            mask = cache.create_causal_mask_for_ring_buffer(pos, 1)
+            self.assertEqual(
+                int((mask == 0).sum()), min(pos + 1, sink_size + window_size)
+            )
+
+        with self.assertRaisesRegex(ValueError, "AffineAsymmetric"):
+            QuantizedKVCacheWithAttentionSink(
+                1,
+                cache_size,
+                n_heads,
+                head_dim,
+                window_size,
+                sink_size,
+                QuantizedCacheType.AffineSymmetric,
+            )
+        with self.assertRaisesRegex(ValueError, "use_custom_update_cache_op"):
+            QuantizedKVCacheWithAttentionSink(
+                1,
+                cache_size,
+                n_heads,
+                head_dim,
+                window_size,
+                sink_size,
+                use_custom_update_cache_op=False,
+            )
+
+    def test_sink_cache_without_custom_ops_is_rejected(self):
+        from executorch.examples.models.llama.source_transformation.custom_kv_cache import (
+            replace_kv_cache_with_quantized_kv_cache,
+        )
+
+        _, model = self._build_model()
+        with self.assertRaisesRegex(NotImplementedError, "KVCacheWithAttentionSink"):
+            replace_kv_cache_with_quantized_kv_cache(model)
+
+    @parameterized.expand([(False,), (True,)])
+    def test_full_context_cache_is_unchanged(self, use_attention_mask):
+        from executorch.examples.models.llama.llama_transformer import (
+            construct_transformer,
+        )
+        from executorch.examples.models.llama.source_transformation.custom_kv_cache import (
+            QuantizedKVCache,
+            replace_kv_cache_with_custom_kv_cache,
+        )
+        from executorch.examples.models.llama.source_transformation.sdpa import (
+            replace_sdpa_with_custom_op,
+        )
+
+        args, _ = self._build_model()
+        model = construct_transformer(args).eval()
+        replace_sdpa_with_custom_op(model, use_attention_mask=use_attention_mask)
+        replace_kv_cache_with_custom_kv_cache(model)
+        self._quantize(model)
+
+        caches = [m for m in model.modules() if hasattr(m, "k_cache")]
+        self.assertEqual(len(caches), 2)
+        for cache in caches:
+            self.assertIs(type(cache), QuantizedKVCache)
+        self._assert_quantized_sdpas(model, use_attention_mask=False)
