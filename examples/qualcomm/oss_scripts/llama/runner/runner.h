@@ -18,6 +18,7 @@
 
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/attention_sink_rope_runner.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/cache_utils.h>
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/conv_state_manager.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/decoder_runner.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/imem_alloc.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/kv_manager.h>
@@ -45,6 +46,8 @@ enum DecoderModelVersion {
   kGlm,
   kGemma2,
   kGemma4,
+  kLfm3,
+  kLfm3Base,
 };
 
 class Runner : public executorch::extension::llm::IRunner {
@@ -90,7 +93,13 @@ class Runner : public executorch::extension::llm::IRunner {
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const executorch::llm::Stats&)> stats_callback = {});
   void stop() override {};
-  void reset() override {};
+  // Start a new sequence; stale KV entries are masked out by position. The
+  // attention-sink runner keeps its own eviction state, so it is left as is.
+  void reset() override {
+    if (attention_sink_rope_module_ == nullptr) {
+      cur_pos_ = 0;
+    }
+  };
   executorch::runtime::Result<DecoderModelVersion> get_decoder_model_version();
 
  private:
@@ -117,6 +126,7 @@ class Runner : public executorch::extension::llm::IRunner {
   DecoderModelVersion decoder_model_version_;
   std::unique_ptr<IMemAlloc> buffer_manager_;
   std::unique_ptr<KVManager> kv_manager_;
+  std::unique_ptr<ConvStateManager> conv_state_manager_;
   std::unique_ptr<tokenizers::Tokenizer> tokenizer_;
   std::unique_ptr<DecoderRunner> decoder_runner_;
   std::unique_ptr<AttentionSinkRopeRunner> attention_sink_rope_runner_;

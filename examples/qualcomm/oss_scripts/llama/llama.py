@@ -48,6 +48,7 @@ from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
     TEXT_ENCODER,
     TOK_EMBEDDING,
     TOK_EMBEDDING_GRAPH_NAMES,
+    validate_lfm3_mode,
     VISION_ENCODER,
 )
 from executorch.examples.qualcomm.oss_scripts.llama.evaluator.device_evaluator import (
@@ -763,6 +764,7 @@ def export_llama(args) -> None:
                 "Pass --calib_tasks to match the previous --tasks behavior."
             )
         raise RuntimeError("Please provide --eval_tasks to eval perplexity")
+    validate_lfm3_mode(args.decoder_model, args.model_mode, args.use_attention_sink)
     if args.decoder_model == "gemma4-e2b" and not args.embedding_quantize:
         raise RuntimeError(
             "gemma4-e2b requires --embedding-quantize: "
