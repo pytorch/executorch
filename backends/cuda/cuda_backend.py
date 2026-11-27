@@ -36,6 +36,7 @@ from executorch.backends.cuda.cuda_weight_collector import (
     CudaWeightCollector,
     trim_host_memory,
 )
+from executorch.backends.cuda.passes.copy_returned_views import CopyReturnedViewsPass
 from executorch.backends.cuda.passes.lower_offgraph_kv import (
     CheckOffGraphKVStepWidthPass,
     LowerOffGraphKVPass,
@@ -1534,6 +1535,7 @@ class CudaBackend(AotiBackend, BackendDetails):
                         stacklevel=2,
                     )
         passes = [
+            CopyReturnedViewsPass(),
             RemoveAssertAsyncPass(),
             ReplaceComplexWithRealPass(),
             MoveCondPredicateToCpuPass(),
