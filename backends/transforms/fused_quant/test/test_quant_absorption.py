@@ -1265,6 +1265,7 @@ class QuantAbsorptionTest(unittest.TestCase):
         expose_dequant: bool = False,
         input_passthrough: str | None = None,
         expose_passthrough: bool = False,
+        second_pool_input_zero_point: int | None = None,
     ) -> tuple[ExportedProgram, torch.Tensor]:
         builder = ProgramBuilder()
         inp = (torch.arange(16, dtype=torch.uint8) * input_step).reshape(1, 4, 4, 1)
@@ -1304,34 +1305,39 @@ class QuantAbsorptionTest(unittest.TestCase):
             )
         elif input_passthrough is not None:
             raise ValueError(f"Unsupported input passthrough: {input_passthrough}")
-        pool_input_qparams = create_per_tensor_qparams(
-            builder,
-            scale=consumer_input_scale,
-            zero_point=consumer_input_zero_point,
-            dtype=torch.float32,
-        )
-        pool_output_qparams = create_per_tensor_qparams(
-            builder,
-            scale=0.1,
-            dtype=torch.uint8,
-        )
-        pool = builder.call_operator(
-            op=exir_ops.edge.fused_quant.avg_pool2d_channels_last.default,
-            args=(
-                consumer_input,
-                *pool_input_qparams,
-                *pool_output_qparams[:3],
-                0,
-                255,
-                [2, 2],
-                [2, 2],
-                [0, 0],
-                False,
-                True,
-                None,
-            ),
-        )
-        outputs = [pool]
+
+        def add_pool(input_zero_point: int) -> torch.fx.Node:
+            pool_input_qparams = create_per_tensor_qparams(
+                builder,
+                scale=consumer_input_scale,
+                zero_point=input_zero_point,
+                dtype=torch.float32,
+            )
+            pool_output_qparams = create_per_tensor_qparams(
+                builder,
+                scale=0.1,
+                dtype=torch.uint8,
+            )
+            return builder.call_operator(
+                op=exir_ops.edge.fused_quant.avg_pool2d_channels_last.default,
+                args=(
+                    consumer_input,
+                    *pool_input_qparams,
+                    *pool_output_qparams[:3],
+                    0,
+                    255,
+                    [2, 2],
+                    [2, 2],
+                    [0, 0],
+                    False,
+                    True,
+                    None,
+                ),
+            )
+
+        outputs = [add_pool(consumer_input_zero_point)]
+        if second_pool_input_zero_point is not None:
+            outputs.append(add_pool(second_pool_input_zero_point))
         if expose_quant:
             outputs.append(quant)
         if expose_dequant:
@@ -1678,6 +1684,54 @@ class QuantAbsorptionTest(unittest.TestCase):
         result = QuantAbsorptionPass(absorb_into_inputs=True)(ep)
 
         self.assertFalse(result.modified)
+
+    def test_absorbs_dequant_quant_read_by_several_fused_inputs(self) -> None:
+        ep, inp = self._build_dequant_quant_pool(second_pool_input_zero_point=-5)
+
+        result = QuantAbsorptionPass(absorb_into_inputs=True)(ep)
+
+        self.assertTrue(result.modified)
+        expected = self._direct_pool(inp)
+        for actual in result.exported_program.module()(inp):
+            self.assertTrue(torch.equal(expected, actual))
+        graph = result.exported_program.graph
+        for target in (
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        ):
+            self.assertEqual([], graph.find_nodes(op="call_function", target=target))
+        pools = graph.find_nodes(
+            op="call_function",
+            target=exir_ops.edge.fused_quant.avg_pool2d_channels_last.default,
+        )
+        self.assertEqual(2, len(pools))
+        for pool in pools:
+            self.assertEqual("placeholder", get_arg(pool, "inp", torch.fx.Node).op)
+            input_qparams = get_qparams_from_node(pool, "inp")
+            assert input_qparams is not None
+            self.assertAlmostEqual(
+                0.25, get_scale(result.exported_program, input_qparams)
+            )
+            self.assertEqual(0, get_zero_point(result.exported_program, input_qparams))
+        result.exported_program.validate()
+
+    def test_does_not_absorb_fan_out_unless_every_reader_can(self) -> None:
+        # The second pool's zero point composes to 1.6 on the dequantize's grid.
+        ep, _ = self._build_dequant_quant_pool(
+            quant_scale=0.4,
+            consumer_input_zero_point=-5,
+            second_pool_input_zero_point=-4,
+        )
+
+        result = QuantAbsorptionPass(absorb_into_inputs=True)(ep)
+
+        self.assertFalse(result.modified)
+        graph = result.exported_program.graph
+        (quant,) = graph.find_nodes(
+            op="call_function",
+            target=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        )
+        self.assertEqual(2, len(quant.users))
 
     def test_symmetric_quant_input_op_keeps_requantize_for_nonzero_zero_point(
         self,
