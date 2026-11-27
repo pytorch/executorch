@@ -408,3 +408,23 @@ def test_ethosu_planned_scratch_roundtrip(plan_delegate_scratch):
 def test_ethosu_planned_scratch_rejects_invalid_values(plan_delegate_scratch):
     with raises(ValueError, match="plan_delegate_scratch must be a boolean"):
         EthosUCompileSpec("ethos-u55-128", plan_delegate_scratch=plan_delegate_scratch)
+
+
+@mark.parametrize("place_named_data_inline", [False, True])
+def test_ethosu_named_data_inline_roundtrip(place_named_data_inline):
+    compile_spec = EthosUCompileSpec(
+        "ethos-u85-256", place_named_data_inline=place_named_data_inline
+    )
+    serialized = compile_spec._to_list()
+    roundtripped = EthosUCompileSpec._from_list(serialized)
+    assert roundtripped.place_named_data_inline is place_named_data_inline
+    if not place_named_data_inline:
+        assert all(spec.key != "place_named_data_inline" for spec in serialized)
+
+
+@mark.parametrize("place_named_data_inline", [None, 0, 1, "True"])
+def test_ethosu_named_data_inline_rejects_invalid_values(place_named_data_inline):
+    with raises(ValueError, match="place_named_data_inline must be a boolean"):
+        EthosUCompileSpec(
+            "ethos-u85-256", place_named_data_inline=place_named_data_inline
+        )
