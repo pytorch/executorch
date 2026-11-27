@@ -33,11 +33,19 @@ void* CPUCachingAllocator::allocate(size_t size, size_t alignment) {
   // 2. Allocate new memory
   // 2 can lead to current_size > max_size_
   if (it == available_map_.end() || it->second.empty()) {
+    // Make room in the cache now, so reset() can cache this block without
+    // allocating and therefore without throwing.
+    auto& cached = available_map_[size];
+    auto& block_count = block_counts_[size];
+    if (cached.capacity() <= block_count) {
+      cached.reserve(2 * block_count + 1);
+    }
     void* ptr = std::malloc(size);
     if (ptr == nullptr) {
       ET_LOG(Error, "Failed to allocate memory");
       return nullptr;
     }
+    ++block_count;
     current_size_ += size;
     allocation_map_[ptr] = size;
     return alignPointer(ptr, alignment);
@@ -58,6 +66,7 @@ void CPUCachingAllocator::free_everything() {
     }
   }
   available_map_.clear();
+  block_counts_.clear();
   for (const auto& it : allocation_map_) {
     void* ptr = it.first;
     std::free(ptr);
