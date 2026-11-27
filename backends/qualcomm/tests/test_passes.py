@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch, PropertyMock
 import torch
 from executorch.backends.qualcomm._passes import (
     AnnotateQuantAttrs,
+    CanonicalizeConv,
     ConstantFolding,
     ConvertBmmToMatmul,
     ConvertMhaToSha,
@@ -61,6 +62,7 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
 from executorch.backends.qualcomm.tests.models import (
     BroadcastAndMutate,
     CastToFloat,
+    Conv1dPerBlock,
     ConvBackward,
     HardSigmoid,
     Reciprocal,
@@ -687,6 +689,39 @@ class TestPasses(unittest.TestCase):
             torch.ops.aten.convolution_backward.default,
             get_skip_decomp_table(),
         )
+
+    def test_canonicalize_conv1d_per_block(self):
+        for kernel_size in (1, 3):
+            with self.subTest(kernel_size=kernel_size):
+                model = Conv1dPerBlock(kernel_size).eval()
+                inputs = (torch.randn(1, 64, 16),)
+                expected = model(*inputs)
+                ep = to_edge(
+                    torch.export.export(model, inputs),
+                    compile_config=EdgeCompileConfig(
+                        preserve_ops=[torch.ops.torchao.dequantize_affine.default]
+                    ),
+                ).exported_program()
+                dq_nodes = [
+                    node
+                    for node in ep.graph.nodes
+                    if node.target == exir_ops.edge.torchao.dequantize_affine.default
+                ]
+                self.assertEqual(len(dq_nodes), 1)
+                dq = dq_nodes[0]
+                self.assertEqual(tuple(dq.args[1]), (1, 32, kernel_size))
+                self.assertEqual(
+                    tuple(dq.args[0].meta["val"].shape), (8, 64, kernel_size)
+                )
+
+                CanonicalizeConv(ep)(ep.graph_module)
+
+                self.assertEqual(tuple(dq.args[1]), (1, 32, 1, kernel_size))
+                self.assertEqual(
+                    tuple(dq.args[0].meta["val"].shape), (8, 64, 1, kernel_size)
+                )
+                torch.testing.assert_close(ep.module()(*inputs), expected)
+                LayoutTransform(ep)(ep.graph_module)
 
     def test_conv_backward_composite_lowering(self):
         x = torch.randn(1, 3, 8, 8)

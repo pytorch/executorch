@@ -26,6 +26,7 @@ from executorch.backends.qualcomm.builders.node_visitor import dq_ops, q_ops
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendType,
 )
+from executorch.backends.qualcomm.tests.models import Conv1dPerBlock
 from executorch.backends.qualcomm.tests.rework.conftest import (
     check_exception,
     EXCEPTION_FROM_PASSES,
@@ -376,6 +377,36 @@ class BuildQuantIo:
 
 
 class CanonicalizeConv:
+    @staticmethod
+    @unpack_pass_fixtures
+    def test_per_block_conv1d(
+        subtests,
+        compile_spec,
+        backend_type: QnnExecuTorchBackendType,
+        assertions: Assertions,
+        pass_pipeline: PassPipeline,
+    ):
+        dq_target = exir_ops.edge.torchao.dequantize_affine.default
+        for kernel_size in (1, 3):
+            with subtests.test(kernel_size=kernel_size):
+                model = Conv1dPerBlock(kernel_size).eval()
+                inputs = (torch.randn(1, 64, 16),)
+                assert model.weight.ndim == len(model.block_size) == 3
+                expected = model(*inputs)
+                ep = pass_pipeline.lower_edge_ep(
+                    module=model,
+                    sample_input=inputs,
+                    target_pass=_passes.CanonicalizeConv,
+                    backend_type=backend_type,
+                    compile_spec=compile_spec,
+                )
+                assertions.assert_target_count(ep.graph_module, dq_target, 1)
+                dq = next(node for node in ep.graph.nodes if node.target == dq_target)
+                assert tuple(dq.args[1]) == (1, 32, 1, kernel_size)
+                assert tuple(dq.args[0].meta["val"].shape) == (8, 64, 1, kernel_size)
+                torch.testing.assert_close(ep.module()(*inputs), expected)
+                _passes.LayoutTransform(ep)(ep.graph_module)
+
     # --- Group 1: conv1d canonicalization (conv1d → unsqueeze + conv2d + squeeze) ---
     class _Conv1d(torch.nn.Module):
         def __init__(self):

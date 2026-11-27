@@ -1273,6 +1273,12 @@ class Modality(Component):
             self.model.load_state_dict(
                 auto_model.state_dict(), strict=False
             )  # set strict to false to simplify parameter loading for non-text models
+
+            # check dtype override
+            if self.control_args.dtype_override is not None:
+                dtype_override = DType[self.control_args.dtype_override]
+                self.model = self.model.to(dtype_override.to_torch_dtype())
+
             self.example_input = self.model.get_example_inputs()
 
             # set quant recipe
@@ -1317,7 +1323,7 @@ class Modality(Component):
 
     def _get_sharding_get_pattern(self):
         prefixes = [
-            "encoder.layers",
+            "model.encoder.layers",
             "vision_tower.encoder.layer",
             "vision_model.encoder.layers",
         ]

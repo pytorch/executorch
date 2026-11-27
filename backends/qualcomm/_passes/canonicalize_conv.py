@@ -189,6 +189,17 @@ class CanonicalizeConv(ExportPass):
                             filter_dequant_node.replace_input_with(
                                 filter_placeholder_node, get_attr_node
                             )
+                            if (
+                                is_1d_op
+                                and filter_dequant_node.target
+                                == exir_ops.edge.torchao.dequantize_affine.default
+                            ):
+                                block_size = filter_dequant_node.args[1]
+                                filter_dequant_node.args = (
+                                    filter_dequant_node.args[0],
+                                    [*block_size[:2], 1, *block_size[2:]],
+                                    *filter_dequant_node.args[2:],
+                                )
                         else:
                             node.replace_input_with(
                                 filter_placeholder_node, get_attr_node
