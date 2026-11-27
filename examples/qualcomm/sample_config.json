@@ -3,7 +3,7 @@
     "build_folder" : "build-android",
     "backend" : "htp",
     "target" : "aarch64-android",
-    "online_prepare" : false,
+    "allow_ontarget_compilation" : false,
     "shared_buffer" : false,
     "dump_intermediate_outputs" : false,
     "profile_level" : 0,

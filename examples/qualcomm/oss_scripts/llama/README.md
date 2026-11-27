@@ -116,6 +116,8 @@ At the end of this step, users should have the following files ready: `consolida
 #### Note:
 All example scripts below use hybrid mode, which is optimized for on-device performance. However, compiling a model in hybrid mode can consume a significant amount of memory on the host machine—sometimes up to ~100 GB. If your host machine has limited memory, it is highly recommended to switch from `--model_mode hybrid` to `--model_mode kv` and remove the `--prefill_ar_len` flag.
 
+On-target compilation (`--allow_ontarget_compilation`) is currently supported only for non-generative AI models fully delegated to QNN. See [On-target Compilation](../../../../backends/qualcomm/README.md#on-target-compilation) for the support limits and how to select `--soc_model` during AOT preparation. The previous `--online_prepare` flag is deprecated and hidden from command-line help; it remains supported for backward compatibility.
+
 #### LLAMA2
 ```bash
 python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --checkpoint stories110M.pt --params params.json --tokenizer_model tokenizer.model --tokenizer_bin tokenizer.bin --decoder_model stories110m --model_mode hybrid --prefill_ar_len 32 --max_seq_len 128 --prompt "Once upon a time" --calib_tasks wikitext --calib_limit 1
