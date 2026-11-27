@@ -143,7 +143,9 @@ class DecomposeScaledDotProductAttention(ExportPass):
             )
             subgraph_node.meta["nn_module_stack"] = node.meta.get("nn_module_stack")
             subgraph_node.meta["source_fn_stack"] = [
-                (subgraph_node, subgraph_node.target)
+                *node.meta.get("source_fn_stack", []),
+                (node.name, node.target),
+                (subgraph_node.name, subgraph_node.target),
             ]
             decomposed_node_to_subgraph_node[decomposed_node] = subgraph_node
 

@@ -5,6 +5,7 @@
 
 from typing import Callable, Iterator, List
 
+import torch
 from executorch.backends.arm.quantizer.arm_quantizer_utils import NodeFinder
 from torch._ops import OpOverload
 from torch.fx import GraphModule, Node
@@ -198,3 +199,147 @@ class ModuleTypeNodeFinder(NodeFinder):
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__} targeting module types: {format_items(self.module_type_names)}"
+
+
+class SDPAFinder(NodeFinder):
+    """Find native SDPA calls and their FX decomposition descendants.
+
+    Decompositions must preserve the original SDPA call in the standard
+    ``source_fn_stack`` metadata. No backend-specific role tags are required.
+
+    """
+
+    @staticmethod
+    def _groups(model: GraphModule) -> dict[tuple[str, str, Callable], set[Node]]:
+        groups: dict[tuple[str, str, Callable], set[Node]] = {}
+        for node in model.graph.nodes:
+            if node.target == torch.ops.aten.scaled_dot_product_attention.default:
+                groups.setdefault(("native", node.name, node.target), set()).add(node)
+                continue
+            for name, target in reversed(node.meta.get("source_fn_stack", [])):
+                if target in (
+                    torch.ops.aten.scaled_dot_product_attention.default,
+                    torch.nn.functional.scaled_dot_product_attention,
+                ):
+                    groups.setdefault(("decomposed", name, target), set()).add(node)
+                    break
+        return groups
+
+    @staticmethod
+    def _softmax_nodes(group: set[Node]) -> set[Node]:
+        softmax_targets = (
+            torch.ops.aten._safe_softmax.default,
+            torch.ops.aten._softmax.default,
+            torch.ops.aten.softmax.int,
+        )
+        return {
+            node
+            for node in group
+            if node.target in softmax_targets
+            or any(
+                target in softmax_targets
+                for _, target in node.meta.get("source_fn_stack", [])
+            )
+        }
+
+    def find_nodes(self, model: GraphModule) -> Iterator[Node]:
+        nodes = set().union(*self._groups(model).values())
+        return (node for node in model.graph.nodes if node in nodes)
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__} targeting SDPA calls and decompositions"
+
+
+class SDPAMatmulFinder(SDPAFinder):
+    """Find matmuls within SDPA, optionally selecting the QK or AV product.
+
+    Native or fused SDPA calls without explicit matmuls are not matched.
+    To trigger decomposition, also register a quantized ``SDPAFinder`` or global
+    policy. Role selection rejects incomplete or ambiguous decompositions rather
+    than silently changing precision.
+
+    Args:
+        role (str | None): ``qk`` selects the score product, ``av`` selects
+            the value product, and ``None`` selects both. Products are
+            classified by their dependency order within the SDPA call.
+
+    """
+
+    def __init__(self, role: str | None = None) -> None:
+        if role not in (None, "qk", "av"):
+            raise ValueError("SDPA matmul role must be qk, av, or None")
+        self.role = role
+
+    @staticmethod
+    def _ancestors(node: Node, group: set[Node]) -> set[Node]:
+        found: set[Node] = set()
+        pending = list(node.all_input_nodes)
+        while pending:
+            upstream = pending.pop()
+            if upstream not in found and (
+                upstream in group
+                or str(upstream.target).startswith("quantized_decomposed.")
+            ):
+                found.add(upstream)
+                pending.extend(upstream.all_input_nodes)
+        return found
+
+    def find_nodes(self, model: GraphModule) -> Iterator[Node]:
+        selected: set[Node] = set()
+        for group in self._groups(model).values():
+            matmuls = {
+                node
+                for node in group
+                if node.target
+                in (torch.ops.aten.bmm.default, torch.ops.aten.matmul.default)
+            }
+            if self.role is None:
+                selected.update(matmuls)
+                continue
+            if not matmuls and not self._softmax_nodes(group):
+                continue
+            if len(matmuls) != 2:
+                raise ValueError("Cannot identify QK and AV in SDPA decomposition")
+            scores = set().union(
+                *(matmuls & self._ancestors(node, group) for node in matmuls)
+            )
+            values = {node for node in matmuls if scores & self._ancestors(node, group)}
+            if len(scores) != 1 or len(values) != 1 or scores == values:
+                raise ValueError("Cannot identify QK and AV in SDPA decomposition")
+            selected.update(scores if self.role == "qk" else values)
+        return (node for node in model.graph.nodes if node in selected)
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__} targeting SDPA matmuls: {self.role or 'all'}"
+
+
+class SDPAScoreFinder(SDPAFinder):
+    """Find SDPA score scaling, masking, and softmax intermediates.
+
+    Keep the QK operands and matmul outside this region so their
+    quantization can be configured independently of softmax precision.
+    Native calls are not matched; a quantized ``SDPAFinder`` or global policy
+    must first enable their decomposition.
+
+    """
+
+    def find_nodes(self, model: GraphModule) -> Iterator[Node]:
+        try:
+            qk_products = set(SDPAMatmulFinder("qk").find_nodes(model))
+        except ValueError as error:
+            raise ValueError(f"Cannot identify SDPA score region: {error}") from error
+        selected: set[Node] = set()
+        for group in self._groups(model).values():
+            qk = qk_products & group
+            softmax_nodes = self._softmax_nodes(group)
+            score_nodes = softmax_nodes | set().union(
+                *(SDPAMatmulFinder._ancestors(node, group) for node in softmax_nodes)
+            )
+            operands = set().union(
+                *(SDPAMatmulFinder._ancestors(node, group) for node in qk)
+            )
+            selected.update((score_nodes & group) - operands - qk)
+        return (node for node in model.graph.nodes if node in selected)
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__} targeting SDPA scores and softmax"
