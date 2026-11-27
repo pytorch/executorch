@@ -89,6 +89,10 @@ class ThreadPool final {
    * executorch::extension::threadpool::UseNThreadsThreadPoolGuard API that
    * provides a safer way to select a subset of threads, from threadpool, to run
    * the model on.
+   *
+   * @returns false, keeping the current threadpool, if creating the new one
+   *     fails; true otherwise. Worker threads that fail to start are not
+   *     detected.
    */
   [[deprecated(
       "This API is experimental and may change without notice. Consider using UseNThreadsThreadPoolGuard")]]
