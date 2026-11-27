@@ -18,6 +18,8 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
+MAX_UPLOAD_ATTEMPTS = 3
+
 
 @cache
 def get_runner_path() -> Path:
@@ -52,21 +54,30 @@ class EDBTestManager:
 
         logging.info(f"[EDB] Run: {command}")
 
-        result = subprocess.run(
-            command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-        )
+        max_attempts = MAX_UPLOAD_ATTEMPTS if cmd and cmd[0] == "-U" else 1
+        for attempt in range(max_attempts):
+            result = subprocess.run(
+                command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            )
 
-        stdout_msg = result.stdout.decode("utf-8").strip()
-        if stdout_msg:
-            logging.info(f"[EDB] stdout: {stdout_msg}")
+            stdout_msg = result.stdout.decode("utf-8").strip()
+            if stdout_msg:
+                logging.info(f"[EDB] stdout: {stdout_msg}")
 
-        if result.returncode != 0:
+            if result.returncode == 0:
+                logging.info("[EDB] Command succeeded")
+                return
+
             stderr_msg = result.stderr.decode("utf-8").strip()
             if stderr_msg:
                 logging.error(f"[EDB] stderr: {stderr_msg}")
-            raise RuntimeError("edb(Exynos device bridge) command execute failed")
-        else:
-            logging.info("[EDB] Command succeeded")
+            if attempt + 1 == max_attempts:
+                raise RuntimeError("edb(Exynos device bridge) command execute failed")
+
+            logging.warning(
+                f"[EDB] Upload failed; retrying ({attempt + 2}/{max_attempts})"
+            )
+            time.sleep(2**attempt)
 
     def push(self):
         self._edb(["-E", f"'rm -rf {self.work_directory}'"])
