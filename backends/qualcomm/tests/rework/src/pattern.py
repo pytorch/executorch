@@ -5366,28 +5366,53 @@ class RemoveRedundancy:
         def forward(self, x):
             return x.clone() + 1
 
+    class _SingleChunkSplit(torch.nn.Module):
+        def forward(self, x):
+            (y,) = x.sigmoid().split([x.shape[1]], dim=1)
+            return y.relu()
+
     @staticmethod
     @unpack_pass_fixtures
     def test(
+        subtests,
         quantizer,
         compile_spec,
         backend_type: QnnExecuTorchBackendType,
         assertions: Assertions,
         pass_pipeline: PassPipeline,
     ):
-        inputs = (torch.randn(3, 4),)
-        gm = pass_pipeline.lower_edge_ep(
-            module=RemoveRedundancy._Clone(),
-            sample_input=inputs,
-            backend_type=backend_type,
-            compile_spec=compile_spec,
-            target_pass=_passes.RemoveRedundancy,
-            quantizer=quantizer,
-        ).graph_module
-        assertions.assert_no_target(
-            gm, exir_ops.edge.dim_order_ops._clone_dim_order.default
-        )
-        assertions.assert_target_count(gm, exir_ops.edge.aten.add.Tensor, 1)
+        with subtests.test(msg="clone"):
+            gm = pass_pipeline.lower_edge_ep(
+                module=RemoveRedundancy._Clone(),
+                sample_input=(torch.randn(3, 4),),
+                backend_type=backend_type,
+                compile_spec=compile_spec,
+                target_pass=_passes.RemoveRedundancy,
+                quantizer=quantizer,
+            ).graph_module
+            assertions.assert_no_target(
+                gm, exir_ops.edge.dim_order_ops._clone_dim_order.default
+            )
+            assertions.assert_target_count(gm, exir_ops.edge.aten.add.Tensor, 1)
+
+        # QNN's Split rejects a single output, so a one-chunk split must go
+        with subtests.test(msg="single_chunk_split"):
+            gm = pass_pipeline.lower_edge_ep(
+                module=RemoveRedundancy._SingleChunkSplit(),
+                sample_input=(torch.randn(1, 4, 3),),
+                backend_type=backend_type,
+                compile_spec=compile_spec,
+                target_pass=_passes.RemoveRedundancy,
+                quantizer=quantizer,
+            ).graph_module
+            assertions.assert_no_target(
+                gm,
+                {
+                    exir_ops.edge.aten.split_with_sizes.default,
+                    exir_ops.edge.aten.split_with_sizes_copy.default,
+                },
+            )
+            assertions.assert_target_count(gm, exir_ops.edge.aten.relu.default, 1)
 
 
 class ReplaceArangeArgs:
