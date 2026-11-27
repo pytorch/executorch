@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -24,6 +25,7 @@ ConfigValue: TypeAlias = Union[
     int,
     bool,
     float,
+    None,
 ]
 
 """
@@ -99,11 +101,6 @@ class MethodTestCase:
             ), "The type of input {} with type {} is not supported.\n".format(
                 data, type(data)
             )
-            assert not isinstance(
-                data,
-                type(None),
-            ), "The input {} should not be in null type.\n".format(data)
-
         return flatten_data
 
 
