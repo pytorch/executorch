@@ -41,10 +41,14 @@ To extract the VGF file for integration into applications without the ExecuTorch
 The full user-facing API is documented below.
 
 For static mutable buffers such as KV caches, set `alias_buffer_mutations=True`.
-Eligible buffers must be zero-initialized `int8` tensors whose reads and mutation
+Eligible buffers must be zero-initialized `int8` or `float32` tensors whose reads and mutation
 are contained in one delegated partition, and whose new value is not returned or
 read outside that partition. The backend aliases each buffer's
 input and mutation output to persistent VGF storage across invocations.
+Input and mutation output must have matching shapes, dtypes, and layouts.
+Use `VgfPartitioner(..., mutable_buffer_names={...})` to select exact buffer
+names without internalizing other mutable state. This does not share state
+between different delegates or methods.
 
 ```python
 class VgfCompileSpec(tosa_spec: executorch.backends.arm.tosa.specification.TosaSpecification | str | None = None, compiler_flags: list[str] | None = None, emit_debug_info: bool = False, alias_buffer_mutations: bool = False)
