@@ -114,11 +114,13 @@ set(optional_lib_list
     portable_ops_lib
     custom_ops
     extension_asr_runner
+    extension_diffusers_runner
     extension_evalue_util
     extension_llm_runner
     extension_llm_sampler
     extension_module
     extension_module_static
+    extension_random
     extension_runner_util
     extension_tensor
     extension_threadpool
