@@ -129,8 +129,9 @@ from executorch.exir.pass_manager import PassType
 from torch.fx.passes.dialect.common.cse_pass import CSEPass, get_CSE_banned_ops
 
 # fused_quant elementwise ops (add / mul in both their Tensor and Scalar
-# overloads, and the unary activations) that RemovePermutesAroundElementwiseOps
-# should treat as permutable, so a permutation from ToChannelsLast propagates
+# overloads, the unary activations, and constant padding, whose pad the pass
+# remaps) that RemovePermutesAroundElementwiseOps should treat as permutable,
+# so a permutation from ToChannelsLast propagates
 # through them and cancels at the boundary permutes -- running the whole region
 # in NHWC. See the pass for how the lifted scale / zero_point operands are
 # handled per qparam flavor.
@@ -149,6 +150,7 @@ FUSED_QUANT_ELEMENTWISE: set[EdgeOpOverload] = {
     exir_ops.edge.fused_quant.silu.default,
     exir_ops.edge.fused_quant.hardsigmoid.default,
     exir_ops.edge.fused_quant.gelu.default,
+    exir_ops.edge.fused_quant.constant_pad_nd.default,
 }
 
 # Hardcoded max number of iterations for the optimization group.
@@ -290,6 +292,7 @@ def get_optimization_passes(
                     target: has_only_per_tensor_qparams
                     for target in FUSED_QUANT_ELEMENTWISE
                 },
+                extra_pad_ops={exir_ops.edge.fused_quant.constant_pad_nd.default},
             ),
             MovePermuteAfterConcat(),
             ReplaceNopTransposeOrPermuteWithViewPass(),

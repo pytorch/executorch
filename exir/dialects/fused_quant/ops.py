@@ -2764,6 +2764,19 @@ def _define_dq_op_q(
         f"{name}({tensors}, {blocks}{', ' + extras if extras else ''}) -> Tensor"
     )
     count = len(inputs)
+    aten_extras = aten_op._schema.arguments[count:]
+
+    def call_aten(
+        dequantized: list[torch.Tensor], extra: tuple[object, ...]
+    ) -> torch.Tensor:
+        args: list[object] = list(dequantized)
+        kwargs: dict[str, object] = {}
+        for argument, value in zip(aten_extras, extra):
+            if argument.kwarg_only:
+                kwargs[argument.name] = value
+            else:
+                args.append(value)
+        return aten_op(*args, **kwargs)
 
     def split(
         args: tuple[object, ...],
@@ -2789,7 +2802,7 @@ def _define_dq_op_q(
     def impl(*args: object) -> torch.Tensor:
         tensors, inp_qps, out_qp, extra = split(args)
         dequantized = [_maybe_dequantize(t, qp) for t, qp in zip(tensors, inp_qps)]
-        return _maybe_quantize(aten_op(*dequantized, *extra), out_qp)
+        return _maybe_quantize(call_aten(dequantized, extra), out_qp)
 
     def meta(*args: object) -> torch.Tensor:
         tensors, inp_qps, out_qp, extra = split(args)
@@ -2797,7 +2810,7 @@ def _define_dq_op_q(
             t.new_empty(t.shape, dtype=dequantized_dtype(t, qp))
             for t, qp in zip(tensors, inp_qps)
         ]
-        out = aten_op(*dequantized, *extra)
+        out = call_aten(dequantized, extra)
         return out.new_empty(out.shape, dtype=get_out_dtype(out_qp, out.dtype))
 
     _lib.impl(name, impl, "CompositeExplicitAutograd")
@@ -2848,6 +2861,12 @@ for _name, _inputs, _extras, _aten_op in (
         ("inp",),
         "Scalar negative_slope=0.01",
         torch.ops.aten.leaky_relu.default,
+    ),
+    (
+        "constant_pad_nd",
+        ("inp",),
+        "SymInt[] pad, Scalar value=0",
+        torch.ops.aten.constant_pad_nd.default,
     ),
 ):
     _define_dq_op_q(_name, _inputs, _extras, _aten_op)
