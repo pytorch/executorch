@@ -5593,6 +5593,23 @@ def _cumsum_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     x = args[0]
     dim = args[1]
 
+    # PyTorch casts the input to the output dtype before scanning: the explicit
+    # ``dtype`` kwarg if given, otherwise int64 for bool/integer inputs. MLX's
+    # cumsum scans in the input dtype, so emit the same cast first. Without it,
+    # narrow integer inputs wrap and ``dtype`` is ignored.
+    in_dtype = n.args[0].meta["val"].dtype
+    out_dtype = n.meta["val"].dtype
+    if out_dtype != in_dtype:
+        _, cast_slot = P.make_tmp_slot()
+        P.emit(
+            AsTypeNode(
+                x=P.slot_to_tid(x),
+                out=P.slot_to_tid(cast_slot),
+                scalar_type=torch_dtype_to_scalar_type(out_dtype),
+            )
+        )
+        x = cast_slot
+
     out = P.make_or_get_slot(n)
     P.emit(
         CumsumNode(
