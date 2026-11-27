@@ -1113,6 +1113,35 @@ class TestConv2d(unittest.TestCase):
         )
         self._test_dq(model)
 
+    def test_dq_conv2d_2bit_weights_not_delegated(self) -> None:
+        model = Conv2d(
+            in_channels=3,
+            out_channels=10,
+            kernel_size=(3, 3),
+            stride=(1, 1),
+            padding=(0, 0),
+            batches=1,
+            width=8,
+            height=8,
+        )
+        quant_config = get_symmetric_quantization_config(
+            is_per_channel=True,
+            is_dynamic=True,
+            weight_qmin=-2,
+            weight_qmax=1,
+        )
+        partitioner = XnnpackPartitioner(
+            config_precisions=ConfigPrecisionType.DYNAMIC_QUANT, per_op_mode=True
+        )
+        (
+            Tester(model, model.get_inputs())
+            .quantize(Quantize(quantization_config=quant_config))
+            .export()
+            .to_edge_transform_and_lower(ToEdgeTransformAndLower([partitioner]))
+            .check_not(["torch.ops.higher_order.executorch_call_delegate"])
+            .check(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
+        )
+
     def test_dq_conv2d_seq(self) -> None:
         model = Conv2dDQSeq()
         conv_count = sum(1 for m in model.modules() if type(m) is torch.nn.Conv2d)
