@@ -5,9 +5,10 @@
 
 import datetime
 import functools
+import hashlib
 import logging
 import os.path
-import re
+import pathlib
 import shutil
 import subprocess
 from copy import deepcopy
@@ -59,6 +60,7 @@ from executorch.backends.nxp.tests.utils import (
 from executorch.devtools.visualization.visualization_utils import (
     visualize_with_clusters,
 )
+from filelock import FileLock
 from pytest import FixtureRequest
 from pytest_mock import MockerFixture
 from torch.export import ExportedProgram
@@ -107,7 +109,6 @@ def _get_dataset_cli_args(input_spec: list[ModelInputSpec], testing_dataset_dir)
 def _run_delegated_executorch_program(
     model,
     test_dir,
-    test_name,
     calibration_dataset_dir,
     testing_dataset_dir,
     input_spec,
@@ -132,7 +133,7 @@ def _run_delegated_executorch_program(
                 result = method(*args, **kwargs)
                 visualize_with_clusters(
                     result.tagged_exported_program,
-                    os.path.join(test_dir, test_name + "_partitioned.json"),
+                    os.path.join(test_dir, "model_partitioned.json"),
                     False,
                 )
                 return result
@@ -170,7 +171,7 @@ def _run_delegated_executorch_program(
     ), "No delegated parts found in program delegated to NPU!"
     dlg_model_verifier.verify_graph(exported_program.graph)
 
-    save_pte_program(delegated_program, test_name + "_delegated", test_dir)
+    save_pte_program(delegated_program, "model_delegated", test_dir)
 
     # Generate ETRecord if profiling flag is set.
     if use_profiling:
@@ -196,7 +197,7 @@ def _run_delegated_executorch_program(
 
     # Run nxp_executor_runner with program delegated to NPU
     delegated_model_path = os.path.abspath(
-        os.path.join(test_dir, f"{test_name}_delegated.pte")
+        os.path.join(test_dir, "model_delegated.pte")
     )
 
     delegated_cmd = f"{NEUTRON_TEST_PATH} --model {delegated_model_path} {dataset_cli} {dataset_or_inputs} \
@@ -209,7 +210,6 @@ def _run_delegated_executorch_program(
 def _run_non_delegated_executorch_program(
     model,
     test_dir,
-    test_name,
     calibration_dataset_dir,
     testing_dataset_dir,
     input_spec,
@@ -238,11 +238,11 @@ def _run_non_delegated_executorch_program(
         non_delegated_program.exported_program().graph, [ExecutorchDelegateCall]
     ), "Delegated parts found in program executed on CPU!"
 
-    save_pte_program(non_delegated_program, test_name + "_non_delegated", test_dir)
+    save_pte_program(non_delegated_program, "model_non_delegated", test_dir)
 
     # Run program via nxp_executor_runner on CPU
     non_delegated_model_path = os.path.abspath(
-        os.path.join(test_dir, f"{test_name}_non_delegated.pte")
+        os.path.join(test_dir, "model_non_delegated.pte")
     )
 
     non_delegated_cmd = f"{NEUTRON_TEST_PATH} --model {non_delegated_model_path} {dataset_cli} {dataset_or_inputs} \
@@ -255,7 +255,6 @@ def _run_non_delegated_executorch_program(
 def _save_non_quantized_fp32_executorch_program(
     model,
     test_dir,
-    test_name,
     input_spec,
 ) -> ExportedProgram:
     non_quantized_program = to_edge_program(model, input_spec).to_executorch()
@@ -264,7 +263,7 @@ def _save_non_quantized_fp32_executorch_program(
         non_quantized_program.exported_program().graph, [ExecutorchDelegateCall]
     ), "Delegated parts found in non-quantized FP32 program!"
 
-    save_pte_program(non_quantized_program, test_name + "_non_quantized", test_dir)
+    save_pte_program(non_quantized_program, "model_non_quantized", test_dir)
 
     return non_quantized_program.exported_program()
 
@@ -307,7 +306,6 @@ def _run_python_program(
 def _run_cortex_m_program(
     model: torch.nn.Module | GraphModule,
     test_dir,
-    test_name,
     calibration_dataset_dir,
     testing_dataset_dir,
     input_spec: list[ModelInputSpec],
@@ -356,9 +354,7 @@ def _run_cortex_m_program(
         cpu_results_dir,
         npu_results_dir,
     )
-    save_pte_program(
-        cortex_m_delegated_program, test_name + "_cortex_m_delegated", test_dir
-    )
+    save_pte_program(cortex_m_delegated_program, "model_cortex_m_delegated", test_dir)
 
 
 def assert_cortex_m():
@@ -455,11 +451,7 @@ def lower_run_compare(
     reference_model = deepcopy(model)
     model_to_export_fp32 = deepcopy(model)
 
-    test_name = get_test_name(request)
-    test_dir = os.path.join(OUTPUTS_DIR, test_name)
-
-    shutil.rmtree(test_dir, ignore_errors=True)
-    mkdir(test_dir)
+    test_dir = make_test_dir(request)
 
     model_input_spec = to_model_input_spec(model_input_spec)
     model_dataset_dir = os.path.join(test_dir, "model_dataset")
@@ -498,7 +490,6 @@ def lower_run_compare(
     _save_non_quantized_fp32_executorch_program(
         model_to_export_fp32,
         test_dir,
-        test_name,
         model_input_spec,
     )
 
@@ -506,7 +497,6 @@ def lower_run_compare(
         _run_delegated_executorch_program(
             model_to_delegate,
             test_dir,
-            test_name,
             model_calibration_dataset_dir,
             model_testing_dataset_dir,
             model_input_spec,
@@ -541,7 +531,6 @@ def lower_run_compare(
         reference_runner,
         reference_model,
         test_dir,
-        test_name,
         ref_calibration_dataset_dir,
         ref_testing_dataset_dir,
         reference_input_spec,
@@ -564,7 +553,7 @@ def lower_run_compare(
                 (ref_testing_dataset_dir, ref_spec, remove_quant_io_ops),
             ]
         )
-        dump_debug_test_summary(test_name, test_dir)
+        dump_debug_test_summary(request, test_dir)
     npu_results_dir = os.path.join(test_dir, "results_npu")
     cpu_results_dir = os.path.join(test_dir, "results_cpu")
     output_comparator.compare_results(cpu_results_dir, npu_results_dir, output_spec)
@@ -574,7 +563,6 @@ def _run_reference_model(
     reference_runner: ReferenceRunner,
     reference_model: torch.nn.Module,
     test_dir,
-    test_name,
     calibration_dataset_dir,
     testing_dataset_dir,
     reference_input_spec: list[ModelInputSpec],
@@ -613,7 +601,6 @@ def _run_reference_model(
             non_delegated_program = _run_non_delegated_executorch_program(
                 reference_model,
                 test_dir,
-                test_name,
                 calibration_dataset_dir,
                 testing_dataset_dir,
                 reference_input_spec,
@@ -712,7 +699,6 @@ def _run_reference_model(
             _run_cortex_m_program(
                 model_to_delegate_cortex_m,
                 test_dir,
-                test_name,
                 calibration_dataset_dir,
                 testing_dataset_dir,
                 reference_input_spec,
@@ -765,11 +751,7 @@ def lower_run_compare_ptq_qat(
     model_ptq = model
     model_qat = deepcopy(model)
 
-    test_name = get_test_name(request)
-    test_dir = os.path.join(OUTPUTS_DIR, test_name)
-
-    shutil.rmtree(test_dir, ignore_errors=True)
-    mkdir(test_dir)
+    test_dir = make_test_dir(request)
 
     dataset_dir = os.path.join(test_dir, "model_dataset")
     mkdir(dataset_dir)
@@ -786,7 +768,6 @@ def lower_run_compare_ptq_qat(
     delegated_program_ptq, _, _ = _run_delegated_executorch_program(
         model_ptq,
         test_dir,
-        test_name,
         calibration_dataset_dir,
         testing_dataset_dir,
         input_spec,
@@ -802,7 +783,6 @@ def lower_run_compare_ptq_qat(
     _ = _run_delegated_executorch_program(
         model_qat,
         test_dir,
-        test_name,
         calibration_dataset_dir,
         testing_dataset_dir,
         input_spec,
@@ -819,7 +799,7 @@ def lower_run_compare_ptq_qat(
     output_tensor_spec = _get_program_output_spec(delegated_program_ptq)
 
     if logging.root.isEnabledFor(logging.DEBUG):
-        dump_debug_test_summary(test_name, test_dir)
+        dump_debug_test_summary(request, test_dir)
         shutil.make_archive(test_dir, "zip", test_dir)
     ptq_results_dir = os.path.join(test_dir, "results_ptq")
     qat_results_dir = os.path.join(test_dir, "results_qat")
@@ -854,13 +834,43 @@ def _parse_input_quant_params(
     return q_params
 
 
-def get_test_name(request):
-    # PyTest request is available, extract correct name including test class and params
-    test_name = request.node.nodeid.lstrip(":")
-    # Escape unacceptable characters from test name to make sure it is a valid filesystem directory name
-    test_name = re.sub(r'[<>:"/\\|?* ,()`]', "_", test_name)
-    test_name = test_name.strip(" .")
-    return test_name
+def get_test_dir_name(request: FixtureRequest) -> str:
+    """Return the per-test output directory name "<test_name>__<hash>".
+
+    The test name is the sanitized test function name and the hash is
+    a truncated SHA-256 of the complete pytest node ID.
+
+    :param request: PyTest fixture request.
+    """
+    nodeid = request.node.nodeid
+    test_file_name = request.node.path.stem
+
+    digest = hashlib.sha256(nodeid.encode()).hexdigest()[:8]
+
+    return f"{test_file_name}__{digest}"
+
+
+def get_test_dir(request: FixtureRequest) -> pathlib.Path:
+    """Return the per-test output directory path under OUTPUTS_DIR.
+
+    :param request: PyTest fixture request.
+    """
+    return OUTPUTS_DIR / get_test_dir_name(request)
+
+
+def make_test_dir(request: FixtureRequest) -> str:
+    """Create and return a fresh per-test output directory under OUTPUTS_DIR.
+
+    The mapping of the directory name to the full test ID is recorded as well.
+
+    :param request: PyTest fixture request.
+    """
+    test_dir = get_test_dir(request)
+    shutil.rmtree(test_dir, ignore_errors=True)
+    test_dir.mkdir(parents=True)
+    dump_test_name_mapping(request, str(test_dir))
+
+    return str(test_dir)
 
 
 def execute_cmd(cmd, cwd="."):
@@ -932,7 +942,7 @@ def get_executorch_git_info() -> dict[str, str]:
     return {"git_branch": git_branch, "git_commit": git_commit}
 
 
-def dump_debug_test_summary(test_name: str, test_dir: str):
+def dump_debug_test_summary(request: FixtureRequest, test_dir: str):
     git_info = get_executorch_git_info()
 
     # During development, the NSYS in virtual env is not used.
@@ -942,7 +952,7 @@ def dump_debug_test_summary(test_name: str, test_dir: str):
         else version("eiq_nsys")
     )
     summary = {
-        "test_name": test_name,
+        "test_node_id": request.node.nodeid,
         "date_time": datetime.datetime.now().isoformat(),
         "git_branch": git_info["git_branch"],
         "git_commit": git_info["git_commit"],
@@ -950,7 +960,20 @@ def dump_debug_test_summary(test_name: str, test_dir: str):
         "eiq_nsys_version": nsys_version,
     }
     with open(os.path.join(test_dir, "summary.yaml"), "w") as f:
-        yaml.dump(summary, f)
+        # Infinite width to prevent insertion of line breaks, which might prevent look-ups via grep etc.
+        yaml.dump(summary, f, width=float("inf"))
+
+
+def dump_test_name_mapping(request: FixtureRequest, test_dir: str):
+    """Append the mapping of test directory name (with hash) to the full pytest node ID.
+    FileLock is used, so the file writes are thread-safe.
+    """
+    test_name_with_hash = pathlib.Path(test_dir).name
+    mapping_file = OUTPUTS_DIR / "test_name_mapping.yaml"
+    with FileLock(f"{mapping_file}.lock"):
+        with open(mapping_file, "a") as f:
+            # Infinite width to prevent insertion of line breaks, which might prevent look-ups via grep etc.
+            yaml.dump({test_name_with_hash: request.node.nodeid}, f, width=float("inf"))
 
 
 def _generate_txt_test_data(
