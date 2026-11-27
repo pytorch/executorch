@@ -82,6 +82,11 @@ class BoxedEvalueList {
    */
   Result<executorch::aten::ArrayRef<T>> tryGet() const;
 
+  // Inspect current list elements without populating the unwrapped buffer.
+  executorch::aten::ArrayRef<EValue*> wrapped_values() const {
+    return wrapped_vals_;
+  }
+
   /**
    * Destroys the unwrapped elements without re-dereferencing wrapped_vals_.
    * This is safe to call during EValue destruction because it does not
@@ -547,6 +552,25 @@ struct EValue {
       return Error::InvalidState;
     }
     return payload.copyable_union.as_list_optional_tensor_ptr->tryGet();
+  }
+
+  // Access the value table entries shared by tensor and optional tensor lists.
+  Result<executorch::aten::ArrayRef<EValue*>> tryGetTensorListElements() const {
+    if (isTensorList()) {
+      const auto* list = payload.copyable_union.as_tensor_list_ptr;
+      if (list != nullptr) {
+        return list->wrapped_values();
+      }
+      return Error::InvalidState;
+    }
+    if (isListOptionalTensor()) {
+      const auto* list = payload.copyable_union.as_list_optional_tensor_ptr;
+      if (list != nullptr) {
+        return list->wrapped_values();
+      }
+      return Error::InvalidState;
+    }
+    return Error::InvalidType;
   }
 
   /****** ScalarType Type ******/
