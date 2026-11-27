@@ -54,6 +54,17 @@ class DeviceType(IntEnum):
 
 
 @dataclass
+class DimConstraint:
+    """
+    Check program.fbs for explanations of this table.
+    """
+
+    min: int = 0
+    divisor: int = 1
+    remainder: int = 0
+
+
+@dataclass
 class ExtraTensorInfo:
     """
     Check program.fbs for explanations of this enum.
@@ -64,6 +75,7 @@ class ExtraTensorInfo:
     location: TensorDataLocation = TensorDataLocation.SEGMENT
     device_type: DeviceType = DeviceType.CPU
     device_index: int = 0
+    dim_constraints: Optional[List[DimConstraint]] = None
 
 
 @dataclass

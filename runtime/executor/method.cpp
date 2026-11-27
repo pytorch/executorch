@@ -1476,6 +1476,46 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
               static_cast<ssize_t>(t_src.size(i)),
               bound_sizes[i]);
         }
+        // Lower bounds and divisibility, which export only serializes for
+        // dimensions that have them. See DimConstraint in program.fbs.
+        const auto* extra_info = s_tensor->extra_tensor_info();
+        const auto* constraints =
+            extra_info != nullptr ? extra_info->dim_constraints() : nullptr;
+        if (constraints != nullptr && constraints->size() > 0) {
+          ET_CHECK_OR_RETURN_ERROR(
+              constraints->size() == bound_sizes.size(),
+              InvalidProgram,
+              "Input %" ET_PRIsize_t " has %" PRIu32
+              " dimension constraints for %" ET_PRIsize_t " dimensions.",
+              input_idx,
+              constraints->size(),
+              bound_sizes.size());
+          for (size_t i = 0; i < bound_sizes.size(); ++i) {
+            const auto* constraint = constraints->Get(i);
+            const auto size = t_src.size(i);
+            ET_CHECK_OR_RETURN_ERROR(
+                size >= constraint->min(),
+                InvalidArgument,
+                "Input %" ET_PRIsize_t " dimension %" ET_PRIsize_t
+                " is %" ET_PRIssize_t " but its lower bound is %" PRId32 ".",
+                input_idx,
+                i,
+                static_cast<ssize_t>(size),
+                constraint->min());
+            const int32_t divisor = constraint->divisor();
+            ET_CHECK_OR_RETURN_ERROR(
+                divisor <= 1 || size % divisor == constraint->remainder(),
+                InvalidArgument,
+                "Input %" ET_PRIsize_t " dimension %" ET_PRIsize_t
+                " is %" ET_PRIssize_t " but it must be %" PRId32
+                " modulo %" PRId32 ".",
+                input_idx,
+                i,
+                static_cast<ssize_t>(size),
+                constraint->remainder(),
+                divisor);
+          }
+        }
       }
     }
 

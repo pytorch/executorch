@@ -172,3 +172,68 @@ class TestSymIntViewArgs(TestCase):
         out_spec = speclist[0]
         self.assertTrue(out_spec.is_upper_bound_tensor)
         self.assertEqual(out_spec.shape, [1, 1, 98])
+
+
+class TestDimConstraints(TestCase):
+    """
+    ConstraintBasedSymShapeEvalPass keeps the constraints of dynamic inputs
+    besides their upper bounds, and they reach the input's ExtraTensorInfo.
+    """
+
+    class _AddOne(torch.nn.Module):
+        def forward(self, x):
+            return x + 1
+
+    def _input_tensors(self, example, dynamic_shapes):
+        program = to_edge(
+            export(self._AddOne(), (example,), dynamic_shapes=dynamic_shapes)
+        ).to_executorch()
+        plan = program.executorch_program.execution_plan[0]
+        values = plan.values
+        inputs = [values[i].val for i in plan.inputs]
+        others = [
+            v.val
+            for i, v in enumerate(values)
+            if i not in plan.inputs and isinstance(v.val, exir.schema.Tensor)
+        ]
+        return inputs, others
+
+    def test_lower_bound_and_divisor(self):
+        h = torch.export.Dim("h", min=3, max=8)
+        w = torch.export.Dim("w", min=5, max=10)
+        (x,), others = self._input_tensors(torch.randn(16, 6), {"x": {0: 4 * h, 1: w}})
+        self.assertEqual(x.sizes, [32, 10])
+        self.assertEqual(
+            x.extra_tensor_info.dim_constraints,
+            [
+                exir.schema.DimConstraint(min=12, divisor=4, remainder=0),
+                exir.schema.DimConstraint(min=5, divisor=1, remainder=0),
+            ],
+        )
+        # Only the method's inputs carry the constraints.
+        for tensor in others:
+            if tensor.extra_tensor_info is not None:
+                self.assertIsNone(tensor.extra_tensor_info.dim_constraints)
+
+    def test_offset_gives_remainder(self):
+        # torch.export raises a minimum of 1 to 2, so the minimum that is kept
+        # is the one 2 * k + 1 has with k unbounded below, not 2 * 2 + 1.
+        k = torch.export.Dim("k", min=1, max=10)
+        (x,), _ = self._input_tensors(torch.randn(7), {"x": {0: 2 * k + 1}})
+        self.assertEqual(
+            x.extra_tensor_info.dim_constraints,
+            [exir.schema.DimConstraint(min=1, divisor=2, remainder=1)],
+        )
+
+    def test_default_minimum_is_not_serialized(self):
+        # A Dim with the default or a small minimum has no constraint besides
+        # its upper bound, so nothing is added to the program, and sizes under
+        # the minimum torch.export traced with (such as a batch of 1) keep
+        # working.
+        for dim in (
+            torch.export.Dim("b", max=8),
+            torch.export.Dim("b", min=2, max=8),
+        ):
+            (x,), _ = self._input_tensors(torch.randn(4, 3), {"x": {0: dim}})
+            self.assertEqual(x.sizes, [8, 3])
+            self.assertIsNone(x.extra_tensor_info)

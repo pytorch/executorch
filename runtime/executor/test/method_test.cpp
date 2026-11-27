@@ -85,6 +85,8 @@ class MethodTest : public ::testing::Test {
     load_program(std::getenv("ET_MODULE_CHANNELS_LAST_PATH"), "channels_last");
     load_program(
         std::getenv("ET_MODULE_DYNAMIC_CAT_UNALLOCATED_IO_PATH"), "cat");
+    load_program(
+        std::getenv("ET_MODULE_DYNAMIC_CONSTRAINED_IO_PATH"), "constrained");
     load_program(std::getenv("ET_MODULE_ADD_MUL_PATH"), "add_mul");
     load_program(std::getenv("ET_MODULE_STATEFUL_PATH"), "stateful");
 #if ET_ENABLE_DEPRECATED_CONSTANT_BUFFER
@@ -486,6 +488,66 @@ TEST_F(MethodTest, SetInputRejectsRankMismatchOnBoundedInput) {
     EXPECT_EQ(
         method->set_input(EValue(executorch::aten::Tensor(&impl)), 0),
         Error::NotSupported);
+  }
+}
+
+// The "constrained" model (ModuleDynamicConstrainedIO) is DYNAMIC_BOUND with
+// an upper-bound shape of (32, 10). Dim 0 is 4 * h with h in [3, 8], so a
+// multiple of 4 in [12, 32], and dim 1 is in [5, 10].
+class ConstrainedInputTest : public MethodTest {
+ protected:
+  Error set_input_of_shape(int32_t dim0, int32_t dim1) {
+    ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+    Result<Method> method =
+        programs_["constrained"]->load_method("forward", &mmm.get());
+    EXPECT_EQ(method.error(), Error::Ok);
+    if (method.error() != Error::Ok) {
+      return method.error();
+    }
+    int32_t sizes[2] = {dim0, dim1};
+    uint8_t dim_order[2] = {0, 1};
+    int32_t strides[2] = {dim1, 1};
+    executorch::aten::TensorImpl impl(
+        executorch::aten::ScalarType::Float,
+        2,
+        sizes,
+        data_,
+        dim_order,
+        strides);
+    return method->set_input(EValue(executorch::aten::Tensor(&impl)), 0);
+  }
+
+ private:
+  float data_[32 * 10] = {};
+};
+
+TEST_F(ConstrainedInputTest, AcceptsShapesThatMeetTheConstraints) {
+  // Both bounds of each dimension, and a size in between.
+  const int32_t accepted[][2] = {{12, 5}, {32, 10}, {20, 7}};
+  for (const auto& shape : accepted) {
+    SCOPED_TRACE(
+        testing::Message() << "shape (" << shape[0] << ", " << shape[1] << ")");
+    EXPECT_EQ(set_input_of_shape(shape[0], shape[1]), Error::Ok);
+  }
+}
+
+TEST_F(ConstrainedInputTest, RejectsSizesUnderTheLowerBound) {
+  // Each is under the upper bounds, so only the lower bound rejects it.
+  const int32_t rejected[][2] = {{8, 6}, {16, 4}, {4, 1}};
+  for (const auto& shape : rejected) {
+    SCOPED_TRACE(
+        testing::Message() << "shape (" << shape[0] << ", " << shape[1] << ")");
+    EXPECT_EQ(set_input_of_shape(shape[0], shape[1]), Error::InvalidArgument);
+  }
+}
+
+TEST_F(ConstrainedInputTest, RejectsSizesThatAreNotAMultiple) {
+  // Dim 0 is in [12, 32] but not a multiple of 4.
+  const int32_t rejected[][2] = {{14, 6}, {31, 10}};
+  for (const auto& shape : rejected) {
+    SCOPED_TRACE(
+        testing::Message() << "shape (" << shape[0] << ", " << shape[1] << ")");
+    EXPECT_EQ(set_input_of_shape(shape[0], shape[1]), Error::InvalidArgument);
   }
 }
 

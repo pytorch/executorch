@@ -250,6 +250,7 @@ class _ViewSpec(TensorSpec):
             "stride",
             "dim_order",
             "shape_dynamism",
+            "dim_constraints",
             "nbytes",  # method
             "allocated_memory",  # property
             "is_dynamic_shape_tensor",  # property
@@ -320,6 +321,9 @@ class _ViewSpec(TensorSpec):
         self.shape_dynamism: TensorShapeDynamism = determine_tensor_dynanism(
             torch.Size(self.shape)
         )
+        # The constraints of the base's sizes do not hold for the view's, and a
+        # view is never a method input, which is where they are checked.
+        self.dim_constraints = None
 
         # Check compatibility with base on creation
         if self.shape_dynamism != base.shape_dynamism:

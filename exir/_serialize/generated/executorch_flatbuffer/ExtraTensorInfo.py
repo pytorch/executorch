@@ -2,9 +2,11 @@
 
 # namespace: executorch_flatbuffer
 
+from executorch.exir._serialize.generated import executorch_flatbuffer
 import flatbuffers
 from flatbuffers.compat import import_numpy
 from typing import Any
+from executorch.exir._serialize.generated.executorch_flatbuffer.DimConstraint import DimConstraint
 from typing import Optional
 np = import_numpy()
 
@@ -65,8 +67,32 @@ class ExtraTensorInfo(object):
             return self._tab.Get(flatbuffers.number_types.Int8Flags, o + self._tab.Pos)
         return 0
 
+    # ExtraTensorInfo
+    def DimConstraints(self, j: int) -> Optional[DimConstraint]:
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(14))
+        if o != 0:
+            x = self._tab.Vector(o)
+            x += flatbuffers.number_types.UOffsetTFlags.py_type(j) * 4
+            x = self._tab.Indirect(x)
+            obj = DimConstraint()
+            obj.Init(self._tab.Bytes, x)
+            return obj
+        return None
+
+    # ExtraTensorInfo
+    def DimConstraintsLength(self) -> int:
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(14))
+        if o != 0:
+            return self._tab.VectorLen(o)
+        return 0
+
+    # ExtraTensorInfo
+    def DimConstraintsIsNone(self) -> bool:
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(14))
+        return o == 0
+
 def ExtraTensorInfoStart(builder: flatbuffers.Builder):
-    builder.StartObject(5)
+    builder.StartObject(6)
 
 def Start(builder: flatbuffers.Builder):
     ExtraTensorInfoStart(builder)
@@ -101,12 +127,29 @@ def ExtraTensorInfoAddDeviceIndex(builder: flatbuffers.Builder, deviceIndex: int
 def AddDeviceIndex(builder: flatbuffers.Builder, deviceIndex: int):
     ExtraTensorInfoAddDeviceIndex(builder, deviceIndex)
 
+def ExtraTensorInfoAddDimConstraints(builder: flatbuffers.Builder, dimConstraints: int):
+    builder.PrependUOffsetTRelativeSlot(5, flatbuffers.number_types.UOffsetTFlags.py_type(dimConstraints), 0)
+
+def AddDimConstraints(builder: flatbuffers.Builder, dimConstraints: int):
+    ExtraTensorInfoAddDimConstraints(builder, dimConstraints)
+
+def ExtraTensorInfoStartDimConstraintsVector(builder, numElems: int) -> int:
+    return builder.StartVector(4, numElems, 4)
+
+def StartDimConstraintsVector(builder, numElems: int) -> int:
+    return ExtraTensorInfoStartDimConstraintsVector(builder, numElems)
+
 def ExtraTensorInfoEnd(builder: flatbuffers.Builder) -> int:
     return builder.EndObject()
 
 def End(builder: flatbuffers.Builder) -> int:
     return ExtraTensorInfoEnd(builder)
 
+from executorch.exir._serialize.generated.executorch_flatbuffer import DimConstraint
+try:
+    from typing import List
+except:
+    pass
 
 class ExtraTensorInfoT(object):
 
@@ -117,6 +160,7 @@ class ExtraTensorInfoT(object):
         self.location = 0  # type: int
         self.deviceType = 0  # type: int
         self.deviceIndex = 0  # type: int
+        self.dimConstraints = None  # type: List[executorch_flatbuffer.DimConstraint.DimConstraintT]
 
     @classmethod
     def InitFromBuf(cls, buf, pos):
@@ -141,7 +185,8 @@ class ExtraTensorInfoT(object):
             self.fullyQualifiedName == other.fullyQualifiedName and \
             self.location == other.location and \
             self.deviceType == other.deviceType and \
-            self.deviceIndex == other.deviceIndex
+            self.deviceIndex == other.deviceIndex and \
+            self.dimConstraints == other.dimConstraints
 
     # ExtraTensorInfoT
     def _UnPack(self, extraTensorInfo):
@@ -152,11 +197,27 @@ class ExtraTensorInfoT(object):
         self.location = extraTensorInfo.Location()
         self.deviceType = extraTensorInfo.DeviceType()
         self.deviceIndex = extraTensorInfo.DeviceIndex()
+        if not extraTensorInfo.DimConstraintsIsNone():
+            self.dimConstraints = []
+            for i in range(extraTensorInfo.DimConstraintsLength()):
+                if extraTensorInfo.DimConstraints(i) is None:
+                    self.dimConstraints.append(None)
+                else:
+                    dimConstraint_ = executorch_flatbuffer.DimConstraint.DimConstraintT.InitFromObj(extraTensorInfo.DimConstraints(i))
+                    self.dimConstraints.append(dimConstraint_)
 
     # ExtraTensorInfoT
     def Pack(self, builder):
         if self.fullyQualifiedName is not None:
             fullyQualifiedName = builder.CreateString(self.fullyQualifiedName)
+        if self.dimConstraints is not None:
+            dimConstraintslist = []
+            for i in range(len(self.dimConstraints)):
+                dimConstraintslist.append(self.dimConstraints[i].Pack(builder))
+            ExtraTensorInfoStartDimConstraintsVector(builder, len(self.dimConstraints))
+            for i in reversed(range(len(self.dimConstraints))):
+                builder.PrependUOffsetTRelative(dimConstraintslist[i])
+            dimConstraints = builder.EndVector()
         ExtraTensorInfoStart(builder)
         ExtraTensorInfoAddMutableDataSegmentsIdx(builder, self.mutableDataSegmentsIdx)
         if self.fullyQualifiedName is not None:
@@ -164,5 +225,7 @@ class ExtraTensorInfoT(object):
         ExtraTensorInfoAddLocation(builder, self.location)
         ExtraTensorInfoAddDeviceType(builder, self.deviceType)
         ExtraTensorInfoAddDeviceIndex(builder, self.deviceIndex)
+        if self.dimConstraints is not None:
+            ExtraTensorInfoAddDimConstraints(builder, dimConstraints)
         extraTensorInfo = ExtraTensorInfoEnd(builder)
         return extraTensorInfo

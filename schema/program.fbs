@@ -69,6 +69,19 @@ enum DeviceType : byte {
   CUDA = 1,
 }
 
+// Constraints on one dimension of a DYNAMIC_BOUND tensor, beyond the upper
+// bound that Tensor.sizes already gives. A size d satisfies the constraint
+// when d >= min and d % divisor == remainder.
+table DimConstraint {
+  // Smallest size the dimension may take.
+  min: int;
+
+  // The size must be congruent to remainder modulo divisor. A divisor of 1
+  // places no constraint on the size.
+  divisor: int = 1;
+  remainder: int;
+}
+
 // Table to put additional information about tensors in that is not applicable
 // to the vast majority of tensors in the vast majority of programs.
 table ExtraTensorInfo {
@@ -95,6 +108,12 @@ table ExtraTensorInfo {
   // [Optional] The device index for multi-device scenarios (e.g., cuda:0, cuda:1).
   // Defaults to 0 (the first device of the given type).
   device_index: byte = 0;
+
+  // [Optional] Per-dimension constraints on the sizes of a DYNAMIC_BOUND
+  // input, one entry per dimension, in dimension order. Absent or empty when
+  // no dimension has a constraint beyond its upper bound, which is the case
+  // for programs serialized before this field existed.
+  dim_constraints: [DimConstraint];
 }
 
 table Tensor {

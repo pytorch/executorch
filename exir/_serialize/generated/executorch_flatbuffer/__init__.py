@@ -15,6 +15,7 @@ from . import DataSegment
 from . import DelegateCall
 from . import DelegateScratch
 from . import DeviceType
+from . import DimConstraint
 from . import Double
 from . import DoubleList
 from . import EValue
@@ -61,6 +62,7 @@ __all__ = [
     "DelegateCall",
     "DelegateScratch",
     "DeviceType",
+    "DimConstraint",
     "Double",
     "DoubleList",
     "EValue",

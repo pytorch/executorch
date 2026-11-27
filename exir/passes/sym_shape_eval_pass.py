@@ -14,8 +14,10 @@ import torch.utils._pytree as pytree
 from executorch.exir._warnings import deprecated
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassBase, PassResult
+from executorch.exir.schema import DimConstraint
 from executorch.exir.sym_util import (
     EnumerationBudget,
+    eval_dim_constraint,
     eval_expr,
     eval_shape,
     eval_upper_bound,
@@ -259,6 +261,20 @@ class HintBasedSymShapeEvalPass(PassBase):
         return PassResult(graph_module, True)
 
 
+def _record_dim_constraints(spec: TensorSpec) -> None:
+    """
+    Sets spec.dim_constraints from the symbolic sizes of spec, before they are
+    replaced by their upper bounds, if any dimension has a constraint besides
+    its upper bound.
+    """
+    constraints = [eval_dim_constraint(s) for s in spec.shape]
+    if all(c is None for c in constraints):
+        return
+    spec.dim_constraints = [
+        DimConstraint() if c is None else DimConstraint(*c) for c in constraints
+    ]
+
+
 class ConstraintBasedSymShapeEvalPass(PassBase):
     """
     If we enable dynamic shape tracing, a tensor's shape may become a symbolic
@@ -290,6 +306,11 @@ class ConstraintBasedSymShapeEvalPass(PassBase):
                 for spec in pytree.tree_flatten(node.meta.get("spec", []))[0]:
                     # Node for function like aten.sym_size does not have spec
                     if isinstance(spec, TensorSpec):
+                        # The runtime checks a method's inputs against these
+                        # constraints in set_input, so they are kept only for
+                        # the placeholders of the method's own graph.
+                        if subgm is graph_module and node.op == "placeholder":
+                            _record_dim_constraints(spec)
                         concrete_shape = [
                             eval_upper_bound(s, budget=budget) for s in spec.shape
                         ]

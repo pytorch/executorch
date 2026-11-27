@@ -244,6 +244,68 @@ def eval_upper_bound(
         )
 
 
+# torch.export does not trace sizes 0 and 1 symbolically, so it raises the lower
+# bound of every dynamic dimension to at least this value, whatever minimum the
+# user gave. A lower bound at or below it may not be the user's, and the program
+# usually still runs with the sizes under it, so it is not enforced.
+_SPECIALIZATION_FLOOR = 2
+
+
+def eval_dim_constraint(
+    maybe_symint: Union[int, torch.SymInt],
+) -> Optional[Tuple[int, int, int]]:
+    """
+    Returns (min, divisor, remainder) for a dynamic size, the constraints that a
+    runtime size d must meet besides the upper bound: d >= min and
+    d % divisor == remainder. Returns None for a static size or a size with no
+    such constraint.
+
+    The minimum comes from the lower bounds of the size's symbols, except those
+    at or below _SPECIALIZATION_FLOOR, which are taken as 0. The divisor and
+    remainder come from sizes of the form a * s + b with a single symbol s, as
+    torch.export derives them from a Dim, such as 32 * Dim("h").
+    """
+    if isinstance(maybe_symint, int):
+        return None
+    node = maybe_symint.node
+    expr = node.expr
+    if not isinstance(expr, sympy.Expr) or not expr.free_symbols:
+        return None
+    var_to_range = node.shape_env.var_to_range
+    ranges: Dict[sympy.Symbol, ValueRanges] = {}  # pyre-ignore[24]
+    for symbol in expr.free_symbols:
+        var_range = var_to_range.get(symbol)
+        if var_range is None:
+            return None
+        lower = var_range.lower
+        if not isinstance(lower, sympy.Integer) or lower <= _SPECIALIZATION_FLOOR:
+            lower = sympy.Integer(0)
+        ranges[symbol] = ValueRanges(lower, var_range.upper)
+
+    lower_bound = bound_sympy(expr, ranges).lower
+    min_size = (
+        int(lower_bound)
+        if isinstance(lower_bound, sympy.Integer) and lower_bound > 0
+        else 0
+    )
+
+    divisor, remainder = 1, 0
+    if len(expr.free_symbols) == 1:
+        (symbol,) = expr.free_symbols
+        try:
+            poly = sympy.Poly(expr, symbol)
+        except sympy.PolynomialError:
+            poly = None
+        if poly is not None and poly.degree() == 1:
+            a, b = poly.all_coeffs()
+            if isinstance(a, sympy.Integer) and isinstance(b, sympy.Integer) and a > 1:
+                divisor, remainder = int(a), int(b) % int(a)
+
+    if min_size == 0 and divisor == 1:
+        return None
+    return min_size, divisor, remainder
+
+
 def eval_shape(shape: Iterable[Union[int, torch.SymInt]]):  # pyre-ignore[3]
     """
     Shape maybe immutable so we return a new shape. Return None for
