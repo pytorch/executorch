@@ -814,18 +814,19 @@ def test_rewrite_conv1d_emits_atomic_rank3_layout_boundaries(
 
 
 @pytest.mark.skipif(not _VGF_ENABLED, reason="VGF not enabled")
-def test_fold_and_annotate_q_params_vgf_quant_tracks_fused_relu_qparams() -> None:
+def test_fold_and_annotate_q_params_vgf_quant_tracks_unfused_relu_qparams() -> None:
     exported_program = _export_quantized(TinyConvReluCat())
     gm = _run_pre_rewrite_passes(to_edge(exported_program).exported_program())
 
     conv = _get_call_function_node(gm, exir_ops.edge.aten.convolution.default)
-    output_qparams = conv.meta["output_qparams"][0]
+    clamp = _get_call_function_node(gm, exir_ops.edge.aten.clamp.default)
+    output_qparams = clamp.meta["output_qparams"][0]
 
     assert conv.meta["input_qparams"]
-    assert output_qparams.qmin == output_qparams.zp
-    assert not any(
-        node.target == exir_ops.edge.aten.clamp.default for node in gm.graph.nodes
-    )
+    assert conv.meta["output_qparams"] == {}
+    assert clamp.args[0] is conv
+    assert output_qparams.zp > output_qparams.qmin
+    assert clamp.args[1] == output_qparams.zp
 
 
 @pytest.mark.skipif(not _VGF_ENABLED, reason="VGF not enabled")
