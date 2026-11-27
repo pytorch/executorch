@@ -102,11 +102,24 @@ say "Running Tests"
 
 # Parallel testing runs on cloned simulators, which intermittently fail to
 # launch the app on hosted runners.
-xcodebuild test \
+#
+# The first app launch also intermittently crashes on hosted runners:
+# xcodebuild relaunches the test bundle, every test then passes, but the
+# run is still reported as TEST FAILED because of the crashed launch.
+# Retry the whole test invocation once so that flake does not fail CI.
+TEST_ATTEMPT=1
+until xcodebuild test \
   -project "$APP_PATH.xcodeproj" \
   -scheme MobileNetClassifierTest \
   -destination name="$SIMULATOR_NAME" \
-  -parallel-testing-enabled NO
+  -parallel-testing-enabled NO; do
+  if [ "$TEST_ATTEMPT" -ge 2 ]; then
+    say "iOS tests failed after $TEST_ATTEMPT attempts"
+    exit 1
+  fi
+  TEST_ATTEMPT=$((TEST_ATTEMPT + 1))
+  say "iOS tests failed; retrying (attempt $TEST_ATTEMPT)"
+done
 
 # NB: https://docs.aws.amazon.com/devicefarm/latest/developerguide/test-types-ios-xctest-ui.html
 say "Package The Test Suite"
