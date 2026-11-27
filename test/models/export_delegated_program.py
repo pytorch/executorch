@@ -115,6 +115,202 @@ class ModuleLinear(torch.nn.Module):
 
 
 #
+# XNNPACK weights cache modules
+#
+# The weights cache keys packed kernels by the name of their unpacked bytes,
+# and the exporter names constants by content hash. A weight and its double
+# quantize to the same int8 codes under symmetric quantization, so they share
+# one name with different scales, and one weight feeding two nodes with
+# different activation quantization needs two packings under one name. Each
+# module below pairs its kernels that way so a run with the cache on can be
+# compared against one with it off.
+#
+# Statically quantized kernels are packed with their requantization scale,
+# input scale * kernel scale / output scale, which a doubled kernel or a scaled
+# input leaves unchanged once the output is calibrated on its own. The static
+# modules therefore concatenate the paired outputs: the quantizer gives the
+# inputs of a cat one shared output scale, so the pairs requantize apart.
+#
+
+
+def _export_pt2e(
+    module: nn.Module,
+    inputs: tuple[torch.Tensor, ...],
+    is_per_channel: bool,
+    is_dynamic: bool = False,
+):
+    from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
+        DuplicateDynamicQuantChainPass,
+    )
+    from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+        get_symmetric_quantization_config,
+        XNNPACKQuantizer,
+    )
+    from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+
+    quantizer = XNNPACKQuantizer()
+    quantizer.set_global(
+        get_symmetric_quantization_config(
+            is_per_channel=is_per_channel, is_dynamic=is_dynamic
+        )
+    )
+    prepared = prepare_pt2e(export(module, args=inputs).module(), quantizer)
+    prepared(*inputs)
+    converted = convert_pt2e(prepared)
+    if is_dynamic:
+        DuplicateDynamicQuantChainPass()(converted)
+    return export(converted, args=inputs)
+
+
+def _copy_scaled(dst: torch.Tensor, src: torch.Tensor, factor: float) -> None:
+    with torch.no_grad():
+        dst.copy_(factor * src)
+
+
+class ModuleQuantSharedLinear(nn.Module):
+    """Static per-channel int8: `doubled` shares `linear`'s int8 codes with
+    doubled scales, `twin` shares its codes and scales but consumes an input
+    with a different scale, and `linear` itself feeds two nodes."""
+
+    def __init__(self):
+        super().__init__()
+        torch.manual_seed(0)
+        self.linear = nn.Linear(16, 8, bias=False)
+        self.doubled = nn.Linear(16, 8, bias=False)
+        self.twin = nn.Linear(16, 8, bias=False)
+        _copy_scaled(self.doubled.weight, self.linear.weight, 2.0)
+        _copy_scaled(self.twin.weight, self.linear.weight, 1.0)
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor):
+        return torch.cat(
+            [self.linear(x), self.doubled(x), self.twin(y), self.linear(y)], dim=1
+        )
+
+    def get_random_inputs(self):
+        torch.manual_seed(1)
+        x = torch.randn(4, 16)
+        return (x, 4 * x)
+
+    def export_quantized(self, inputs):
+        return _export_pt2e(self, inputs, is_per_channel=True)
+
+
+class ModuleQuantPerTensorLinear(nn.Module):
+    """Static per-tensor int8: `doubled` shares `linear`'s int8 codes with a
+    doubled scale."""
+
+    def __init__(self):
+        super().__init__()
+        torch.manual_seed(0)
+        self.linear = nn.Linear(16, 8, bias=False)
+        self.doubled = nn.Linear(16, 8, bias=False)
+        _copy_scaled(self.doubled.weight, self.linear.weight, 2.0)
+
+    def forward(self, x: torch.Tensor):
+        return torch.cat([self.linear(x), self.doubled(x)], dim=1)
+
+    def get_random_inputs(self):
+        torch.manual_seed(1)
+        return (torch.randn(4, 16),)
+
+    def export_quantized(self, inputs):
+        return _export_pt2e(self, inputs, is_per_channel=False)
+
+
+class ModuleQuantDoubledConv(nn.Module):
+    """Static per-channel int8 convolution, depthwise convolution and
+    transposed convolution, each with a doubled twin. (The quantizer leaves a
+    convolution weight's second consumer unquantized, so the shared-weight
+    case lives in ModuleQuantSharedLinear.)"""
+
+    def __init__(self):
+        super().__init__()
+        torch.manual_seed(0)
+        self.conv = nn.Conv2d(4, 4, 3, padding=1, bias=False)
+        self.conv_doubled = nn.Conv2d(4, 4, 3, padding=1, bias=False)
+        self.dw = nn.Conv2d(4, 4, 3, padding=1, groups=4, bias=False)
+        self.dw_doubled = nn.Conv2d(4, 4, 3, padding=1, groups=4, bias=False)
+        self.deconv = nn.ConvTranspose2d(4, 4, 2, stride=2, bias=False)
+        self.deconv_doubled = nn.ConvTranspose2d(4, 4, 2, stride=2, bias=False)
+        _copy_scaled(self.conv_doubled.weight, self.conv.weight, 2.0)
+        _copy_scaled(self.dw_doubled.weight, self.dw.weight, 2.0)
+        _copy_scaled(self.deconv_doubled.weight, self.deconv.weight, 2.0)
+
+    def forward(self, x: torch.Tensor):
+        return (
+            torch.cat([self.conv(x), self.conv_doubled(x)], dim=1),
+            torch.cat([self.dw(x), self.dw_doubled(x)], dim=1),
+            torch.cat([self.deconv(x), self.deconv_doubled(x)], dim=1),
+        )
+
+    def get_random_inputs(self):
+        torch.manual_seed(1)
+        return (torch.randn(1, 4, 8, 8),)
+
+    def export_quantized(self, inputs):
+        return _export_pt2e(self, inputs, is_per_channel=True)
+
+
+class ModuleDynQuantSharedLinear(nn.Module):
+    """Dynamic per-channel int8: `doubled` shares `linear`'s int8 codes with
+    doubled scales, and `linear` feeds two nodes."""
+
+    def __init__(self):
+        super().__init__()
+        torch.manual_seed(0)
+        self.linear = nn.Linear(16, 8, bias=False)
+        self.doubled = nn.Linear(16, 8, bias=False)
+        _copy_scaled(self.doubled.weight, self.linear.weight, 2.0)
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor):
+        return (self.linear(x), self.doubled(x), self.linear(y))
+
+    def get_random_inputs(self):
+        torch.manual_seed(1)
+        x = torch.randn(4, 16)
+        return (x, 4 * x)
+
+    def export_quantized(self, inputs):
+        return _export_pt2e(self, inputs, is_per_channel=True, is_dynamic=True)
+
+
+class ModuleGroupwiseQuantLinear(nn.Module):
+    """Dynamic int8 activations with int4 per-channel-group weights: `doubled`
+    shares `linear`'s int4 codes with doubled group scales."""
+
+    def __init__(self):
+        super().__init__()
+        torch.manual_seed(0)
+        self.linear = nn.Linear(64, 8, bias=False)
+        self.doubled = nn.Linear(64, 8, bias=False)
+        _copy_scaled(self.doubled.weight, self.linear.weight, 2.0)
+
+    def forward(self, x: torch.Tensor):
+        return (self.linear(x), self.doubled(x))
+
+    def get_random_inputs(self):
+        torch.manual_seed(1)
+        return (torch.randn(4, 64),)
+
+    def export_quantized(self, inputs):
+        from torchao.quantization.granularity import PerGroup
+        from torchao.quantization.quant_api import (
+            Int8DynamicActivationIntxWeightConfig,
+            quantize_,
+        )
+        from torchao.utils import unwrap_tensor_subclass
+
+        quantize_(
+            self,
+            Int8DynamicActivationIntxWeightConfig(
+                weight_dtype=torch.int4, weight_granularity=PerGroup(32)
+            ),
+        )
+        unwrap_tensor_subclass(self)
+        return export(self, args=inputs)
+
+
+#
 # Backends
 #
 
@@ -173,6 +369,8 @@ def export_module_to_program(
     if method_name != "forward":
         # Only require wrapper module if we're exporting a specific method other than forward.
         exported_program = export(WrapperModule(eager_module), args=inputs)
+    elif hasattr(eager_module, "export_quantized"):
+        exported_program = eager_module.export_quantized(inputs)  # type: ignore[operator]
     else:
         exported_program = export(eager_module, args=inputs)
 

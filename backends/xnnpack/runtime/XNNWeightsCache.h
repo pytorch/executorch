@@ -47,6 +47,21 @@ struct PackedDataMeta {
   // and then save_packed_index-ed). delete_packed_data preserves these
   // entries so the next init reuses the saved file instead of re-packing.
   bool from_load{false};
+  // True once a second kernel packed under this name with different bytes:
+  // the name does not tell the two apart, so look_up treats it as a miss
+  // while any runtime still holds the entry, and save_packed_index leaves it
+  // out of the file. Nodes under a conflicted name pack unnamed. Once the
+  // last runtime releases the entry it goes like any other, and the next
+  // compile re-detects the conflict the same way.
+  bool conflicted{false};
+  // True for a packing XNNPACK stored without a usable name (an inline
+  // constant, a kernel whose consumers disagree on the qualifier, or a
+  // kernel under a conflicted name). It is keyed by a synthetic name that
+  // look_up never produces, so no later node can hit it, and
+  // save_packed_index leaves it out of the file. The synthetic name is
+  // handed to the runtime like any other, so the packing is freed with the
+  // runtime's last reference instead of outliving it.
+  bool unnamed{false};
   // Per-ukernel seed from xnn_weights_cache_look_up_key.seed. XNNPACK
   // guarantees this is consistent across runs of the same ukernel; when
   // XNNPACK upgrades and a ukernel implementation changes, the seed
@@ -163,6 +178,23 @@ class XNNWeightsCache {
   Result<const uint8_t*> load_unpacked_data(const std::string& name);
 
   /**
+   * Appends `suffix` to the cache name of a buffer returned by
+   * load_unpacked_data. XNNPACK folds quantization parameters (scales, zero
+   * points) into the packed weights, but the cache identifies packed data by
+   * the unpacked kernel's name alone, so two weights with identical bytes and
+   * different scales would share one entry and the second would run with the
+   * first's scales. No-op for pointers the cache did not load (inline
+   * constants), which never hit the cache.
+   *
+   * Call it once per node that packs the buffer, with that node's full
+   * suffix. The same suffix again is a no-op: those nodes share one packing.
+   * A different suffix means the nodes need different packings of one
+   * pointer, which the cache cannot key apart, so it forgets the buffer's
+   * name and every node that packs it gets its own unnamed packing.
+   */
+  void qualify_unpacked_name(const void* data_ptr, const std::string& suffix);
+
+  /**
    * Deletes the packed data associated with the names given.
    * Decrements the ref_count if the packed data is used by other
    * models
@@ -242,11 +274,18 @@ class XNNWeightsCache {
   // v2: per-entry seed added — old v1 files don't carry seeds and would
   // load with seed=0, mismatching every fresh look_up with a non-zero
   // seed, causing a stampede of re-packs. Reject v1 outright.
-  static constexpr uint32_t kCacheVersion = 2;
+  // v3: entry names of quantized kernels carry the kernel's quantization and
+  // its consumer's activation quantization (quantizedKernelQualifier in
+  // XNNCompiler.cpp). A v2 file names them without, so every quantized
+  // kernel would miss and, the file having loaded, be re-packed to heap as
+  // RepackAfterLoad on each launch without ever reaching the file. Reject
+  // v2 outright.
+  static constexpr uint32_t kCacheVersion = 3;
   bool load_packed_cache();
   void reset_for_fresh_write();
   void release_entry(void* packed_data_ptr);
   void full_unload();
+  size_t insert_unnamed(size_t offset, size_t size, uint32_t seed);
   // Runtime Allocator used to reserve memory for packed weights
   MemoryAllocator* runtime_allocator_;
 
@@ -255,10 +294,17 @@ class XNNWeightsCache {
 
   // Map of unpacked pointers to the data name
   std::unordered_map<const void*, std::string> unpacked_data_to_name_;
+  // Map of unpacked pointers to the suffix qualify_unpacked_name applied in
+  // the current compile; a second node reporting a different suffix for a
+  // pointer is a conflict
+  std::unordered_map<const void*, std::string> unpacked_data_to_qualifier_;
   // Map of data names to offset into the packed data
   std::unordered_map<std::string, PackedDataMeta> name_to_packed_data_metadata_;
   // Vector holding list of pointers to the packed data
   std::vector<void*> packed_data_ptrs_;
+  // Size of the packing in each slot of packed_data_ptrs_, so a hit can
+  // reject a packing of another length without reading past the buffer
+  std::vector<size_t> packed_data_sizes_;
   // Owns heap allocations backing packed_data_ptrs_. XNNPACK initializes the
   // allocation before packing, so these buffers do not need value
   // initialization.
@@ -306,6 +352,9 @@ class XNNWeightsCache {
   // file-backed mmap — unnamed entries can never be found by name on reload,
   // so persisting them to disk wastes space and triggers spurious saves.
   bool last_lookup_unnamed_{false};
+  // True when the last look_up missed on a conflicted name, so that the
+  // re-pack is booked as ConflictedName rather than UnnamedConstant.
+  bool last_lookup_conflicted_{false};
 
   // True after load_packed_cache succeeds. When set, reserve_space routes
   // to heap — all named entries are already in the file, so any new

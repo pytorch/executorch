@@ -105,6 +105,10 @@ enum class PackedCacheHeapReason : int32_t {
   GrowFailed = 5,
   /// mmap() of the grown region failed.
   MmapFailed = 6,
+  /// Two nodes packed different bytes under one cache name, so the name no
+  /// longer serves either and every later packing under it goes to heap.
+  /// Points at a gap in the cache name, not at the export.
+  ConflictedName = 7,
   /// Not a reason; bounds the per-reason counters. Matches the
   /// WorkspaceSharingMode convention in this header.
   Count,

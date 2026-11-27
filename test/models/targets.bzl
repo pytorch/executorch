@@ -183,12 +183,40 @@ def define_common_targets():
         visibility = [],  # Private
     )
 
+    # Same entry point with the quantization dependencies. Only the weight-cache
+    # programs quantize, so torchao is a dependency of this binary alone and the
+    # other exported programs do not rebuild when it changes.
+    runtime.python_binary(
+        name = "export_delegated_quantized_program",
+        main_module = "executorch.test.models.export_delegated_program",
+        par_style = "xar",
+        deps = [
+            ":export_delegated_program_lib",
+            "//executorch/backends/transforms:duplicate_dynamic_quant_chain",
+            "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+            "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
+            "//executorch/exir/backend/test/demos/rpc:executor_backend_preprocess",
+            "//pytorch/ao:torchao",  # @manual
+        ],
+        visibility = [],  # Private
+    )
+
     # Class names of nn.Modules available in export_delegated_program.py.
     DELEGATED_MODULES_TO_EXPORT = [
         "ModuleAddMul",
         "ModuleAddLarge",
         "ModuleSubLarge",
         "ModuleLinear",
+    ]
+
+    # Quantized modules whose kernels collide in the XNNPACK weights cache
+    # unless their cache names carry the quantization parameters.
+    XNNPACK_WEIGHT_CACHE_MODULES_TO_EXPORT = [
+        "ModuleQuantSharedLinear",
+        "ModuleQuantPerTensorLinear",
+        "ModuleQuantDoubledConv",
+        "ModuleDynQuantSharedLinear",
+        "ModuleGroupwiseQuantLinear",
     ]
 
     # Name of the backend to use when exporting delegated programs.
@@ -247,6 +275,21 @@ def define_common_targets():
         outs = {
             fname + ".pte": [fname + ".pte"]
             for fname in DELEGATED_MODULES_TO_EXPORT
+        },
+        default_outs = ["."],
+        visibility = ["PUBLIC"],
+        env = {"PYTORCH_DISABLE_JUSTKNOBS": "1",},
+    )
+
+    runtime.genrule(
+        name = "exported_xnnp_weight_cache_programs",
+        cmd = "$(exe :export_delegated_quantized_program)" +
+              " --modules " + ",".join(XNNPACK_WEIGHT_CACHE_MODULES_TO_EXPORT) +
+              " --backend_id " + "XnnpackBackend" +
+              " --outdir $OUT",
+        outs = {
+            fname + ".pte": [fname + ".pte"]
+            for fname in XNNPACK_WEIGHT_CACHE_MODULES_TO_EXPORT
         },
         default_outs = ["."],
         visibility = ["PUBLIC"],

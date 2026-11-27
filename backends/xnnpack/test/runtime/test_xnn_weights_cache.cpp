@@ -22,10 +22,12 @@
 #include <unistd.h>
 #include <xnnpack.h>
 #include <atomic>
+#include <cstring>
 #include <fstream>
 #include <mutex>
 #include <thread>
 
+using executorch::backends::xnnpack::delegate::PackedCacheHeapReason;
 using executorch::backends::xnnpack::delegate::XNNWeightsCache;
 using executorch::extension::FileDataLoader;
 using executorch::extension::testing::TempFile;
@@ -256,6 +258,157 @@ class XNNWeightsCacheTest : public ::testing::Test {
   static constexpr size_t kLaunchInputChannels = 3;
   static constexpr size_t kLaunchOutputChannels = 4;
 
+  static constexpr size_t kQc8InputChannels = 8;
+  static constexpr size_t kQc8OutputChannels = 4;
+  static constexpr size_t kQc8Batch = 2;
+  using Qc8Output = std::array<int8_t, kQc8Batch * kQc8OutputChannels>;
+
+  // Builds qint8 input -> qc8 fully connected -> qint8 output around the
+  // "weight" segment and runs it once. Every entry of `nodes` adds one fully
+  // connected node with its own output scale; all of them consume the one
+  // kernel value, the way nodes sharing a weight do in a compiled graph.
+  // `cache == nullptr` runs without a weights cache (the reference);
+  // `qualifier` is what XNNCompiler appends to the kernel's cache name for
+  // that node, "" leaves the bare name.
+  struct Qc8Node {
+    const char* qualifier;
+    float output_scale;
+    Qc8Output* output;
+  };
+  void RunQc8FullyConnected(
+      XNNWeightsCache* cache,
+      const std::vector<Qc8Node>& nodes) {
+    // "weight" is kSegmentSizes[0] bytes of 1, enough for a [4, 8] int8
+    // kernel.
+    static_assert(kQc8OutputChannels * kQc8InputChannels <= kSegmentSizes[0]);
+    const std::array<float, kQc8OutputChannels> kernel_scales{
+        0.5f, 0.25f, 0.125f, 0.0625f};
+    std::array<int8_t, kQc8Batch * kQc8InputChannels> input;
+    for (size_t i = 0; i < input.size(); i++) {
+      input[i] = static_cast<int8_t>(i * 7 - 40);
+    }
+
+    xnn_subgraph_t subgraph_ptr = nullptr;
+    ASSERT_EQ(
+        xnn_create_subgraph(1 + nodes.size(), 0, &subgraph_ptr),
+        xnn_status_success);
+    std::unique_ptr<xnn_subgraph, decltype(&xnn_delete_subgraph)> subgraph(
+        subgraph_ptr, &xnn_delete_subgraph);
+
+    const uint8_t* kernel = nullptr;
+    // Without a cache the kernel is read straight from the data map; the
+    // buffer has to outlive the runtime, hence the outer scope.
+    Result<executorch::runtime::FreeableBuffer> direct = cache != nullptr
+        ? Result<executorch::runtime::FreeableBuffer>(Error::InvalidArgument)
+        : data_map_->get_data("weight");
+    if (cache != nullptr) {
+      Result<const uint8_t*> loaded = cache->load_unpacked_data("weight");
+      ASSERT_TRUE(loaded.ok());
+      kernel = loaded.get();
+    } else {
+      ASSERT_TRUE(direct.ok());
+      kernel = static_cast<const uint8_t*>(direct.get().data());
+    }
+
+    uint32_t input_id = XNN_INVALID_VALUE_ID;
+    std::array<size_t, 2> input_dims{kQc8Batch, kQc8InputChannels};
+    ASSERT_EQ(
+        xnn_define_quantized_tensor_value(
+            subgraph_ptr,
+            xnn_datatype_qint8,
+            /*zero_point=*/0,
+            /*scale=*/1.0f / 64.0f,
+            input_dims.size(),
+            input_dims.data(),
+            nullptr,
+            0,
+            XNN_VALUE_FLAG_EXTERNAL_INPUT,
+            &input_id),
+        xnn_status_success);
+
+    uint32_t kernel_id = XNN_INVALID_VALUE_ID;
+    std::array<size_t, 2> kernel_dims{kQc8OutputChannels, kQc8InputChannels};
+    ASSERT_EQ(
+        xnn_define_channelwise_quantized_tensor_value_v2(
+            subgraph_ptr,
+            xnn_datatype_qcint8,
+            /*zero_point=*/0,
+            kernel_scales.data(),
+            kernel_dims.size(),
+            /*channel_dim=*/0,
+            kernel_dims.data(),
+            kernel,
+            XNN_INVALID_VALUE_ID,
+            0,
+            &kernel_id),
+        xnn_status_success);
+
+    std::vector<xnn_external_value> external = {
+        xnn_external_value{0, input.data()}};
+    std::array<size_t, 2> output_dims{kQc8Batch, kQc8OutputChannels};
+    for (const Qc8Node& node : nodes) {
+      if (cache != nullptr) {
+        cache->qualify_unpacked_name(kernel, node.qualifier);
+      }
+      uint32_t output_id = XNN_INVALID_VALUE_ID;
+      ASSERT_EQ(
+          xnn_define_quantized_tensor_value(
+              subgraph_ptr,
+              xnn_datatype_qint8,
+              /*zero_point=*/0,
+              node.output_scale,
+              output_dims.size(),
+              output_dims.data(),
+              nullptr,
+              external.size(),
+              XNN_VALUE_FLAG_EXTERNAL_OUTPUT,
+              &output_id),
+          xnn_status_success);
+      ASSERT_EQ(
+          xnn_define_fully_connected(
+              subgraph_ptr,
+              -std::numeric_limits<float>::infinity(),
+              std::numeric_limits<float>::infinity(),
+              input_id,
+              kernel_id,
+              XNN_INVALID_VALUE_ID,
+              output_id,
+              0),
+          xnn_status_success);
+      external.push_back(xnn_external_value{
+          static_cast<uint32_t>(external.size()), node.output->data()});
+    }
+
+    xnn_runtime_t runtime_ptr = nullptr;
+    ASSERT_EQ(
+        xnn_create_runtime_v3(
+            subgraph_ptr,
+            cache != nullptr ? cache->get() : nullptr,
+            nullptr,
+            0,
+            &runtime_ptr),
+        xnn_status_success);
+    std::unique_ptr<xnn_runtime, decltype(&xnn_delete_runtime)> runtime(
+        runtime_ptr, xnn_delete_runtime);
+    if (cache != nullptr) {
+      ASSERT_TRUE(cache->finalize_for_runtime().ok());
+    }
+
+    ASSERT_EQ(xnn_reshape_runtime(runtime.get()), xnn_status_success);
+    ASSERT_EQ(
+        xnn_setup_runtime_v2(runtime.get(), external.size(), external.data()),
+        xnn_status_success);
+    ASSERT_EQ(xnn_invoke_runtime(runtime.get()), xnn_status_success);
+  }
+
+  // References without a cache for output scales 0.5 and 0.0625. The two must
+  // give different int8 results, or a test could not tell the packings apart.
+  void Qc8References(Qc8Output& coarse, Qc8Output& fine) {
+    RunQc8FullyConnected(nullptr, {{"", 0.5f, &coarse}});
+    RunQc8FullyConnected(nullptr, {{"", 0.0625f, &fine}});
+    ASSERT_NE(coarse, fine);
+  }
+
   // Program builder constants.
   static constexpr int kSegmentAlignment = 16;
   static constexpr std::array<int, 2> kSegmentSizes{384, 128};
@@ -318,6 +471,334 @@ TEST_F(XNNWeightsCacheTest, ReusePackedWeights) {
   weight_cache.delete_packed_data(weight_cache.get_packed_data_names());
   packed_data_names = weight_cache.get_packed_data_names();
   ASSERT_EQ(packed_data_names.size(), 0);
+}
+
+// A per-channel quantized kernel is packed together with its requantization
+// scales, which depend on the consuming node's input and output quantization.
+// Two nodes can therefore share the very same kernel bytes and kernel scales
+// and still need different packed weights. The compiler tells the cache about
+// that through qualify_unpacked_name; this test drives the cache the way the
+// compiler does and checks that the second node does not run on the first
+// node's packing.
+TEST_F(XNNWeightsCacheTest, SameKernelBytesDifferentRequantizationPackApart) {
+  Qc8Output ref_coarse, ref_fine, out;
+  Qc8References(ref_coarse, ref_fine);
+
+  XNNWeightsCache cache;
+
+  // Node A packs under its own qualified name.
+  cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+  RunQc8FullyConnected(&cache, {{"|io:coarse", 0.5f, &out}});
+  ASSERT_EQ(out, ref_coarse);
+
+  // Node B: same kernel bytes and kernel scales, different output scale. With
+  // the qualifier its name differs, so it must pack its own weights.
+  cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+  RunQc8FullyConnected(&cache, {{"|io:fine", 0.0625f, &out}});
+  ASSERT_EQ(out, ref_fine);
+  ASSERT_EQ(cache.get_packed_data_names().size(), 2u);
+
+  // And a genuine duplicate of node A still shares its entry.
+  cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+  RunQc8FullyConnected(&cache, {{"|io:coarse", 0.5f, &out}});
+  ASSERT_EQ(out, ref_coarse);
+  ASSERT_EQ(cache.get_packed_data_names().size(), 2u);
+
+  // Without the qualifier both nodes would share one name, and the second
+  // would silently run on the first's packing: XNNPACK takes a look_up hit
+  // as final and never packs, so nothing downstream can catch it.
+  XNNWeightsCache unqualified;
+  unqualified.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+  RunQc8FullyConnected(&unqualified, {{"", 0.5f, &out}});
+  ASSERT_EQ(out, ref_coarse);
+  unqualified.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+  RunQc8FullyConnected(&unqualified, {{"", 0.0625f, &out}});
+  ASSERT_NE(out, ref_fine);
+  ASSERT_EQ(unqualified.get_packed_data_names().size(), 1u);
+}
+
+// One weight consumed by two nodes is a single value, so both nodes hand
+// XNNPACK the same kernel pointer and look_up cannot tell them apart by name.
+// When their requantization differs the cache drops the name instead, and
+// each node gets its own unnamed packing, owned by the runtime like a named
+// one so that it is freed with the runtime's last reference.
+TEST_F(XNNWeightsCacheTest, SharedKernelConflictingRequantizationPacksUnnamed) {
+  Qc8Output ref_coarse, ref_fine, out_coarse, out_fine;
+  Qc8References(ref_coarse, ref_fine);
+
+  XNNWeightsCache cache;
+  cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+  RunQc8FullyConnected(
+      &cache,
+      {{"|io:coarse", 0.5f, &out_coarse}, {"|io:fine", 0.0625f, &out_fine}});
+  ASSERT_EQ(out_coarse, ref_coarse);
+  ASSERT_EQ(out_fine, ref_fine);
+  ASSERT_EQ(cache.get_packed_data_names().size(), 2u);
+  ASSERT_EQ(cache.delete_packed_data(cache.get_packed_data_names()), Error::Ok);
+  ASSERT_TRUE(cache.get_packed_data_names().empty());
+
+  // Consumers that agree on the requantization share one cached packing.
+  cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+  RunQc8FullyConnected(
+      &cache,
+      {{"|io:coarse", 0.5f, &out_coarse}, {"|io:coarse", 0.5f, &out_fine}});
+  ASSERT_EQ(out_coarse, ref_coarse);
+  ASSERT_EQ(out_fine, ref_coarse);
+  ASSERT_EQ(cache.get_packed_data_names().size(), 1u);
+
+  // Qualified alike despite the different output scales, the second node
+  // would run on the first's packing.
+  cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+  RunQc8FullyConnected(
+      &cache,
+      {{"|io:coarse", 0.5f, &out_coarse}, {"|io:coarse", 0.0625f, &out_fine}});
+  ASSERT_EQ(out_coarse, ref_coarse);
+  ASSERT_NE(out_fine, ref_fine);
+}
+
+// Nodes that agree on a kernel's qualifier share its name; a node that
+// disagrees drops the name for the rest of the compile, and nothing of that
+// carries over to the next compile.
+TEST_F(XNNWeightsCacheTest, ConflictingQualifierDropsNameForCurrentCompile) {
+  XNNWeightsCache cache;
+  cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+  Result<const uint8_t*> kernel = cache.load_unpacked_data("weight");
+  ASSERT_TRUE(kernel.ok());
+  cache.qualify_unpacked_name(kernel.get(), "|a");
+  cache.qualify_unpacked_name(kernel.get(), "|a");
+  ASSERT_EQ(
+      cache.get_unpacked_data_names(), std::vector<std::string>{"weight|a"});
+
+  cache.qualify_unpacked_name(kernel.get(), "|b");
+  ASSERT_TRUE(cache.get_unpacked_data_names().empty());
+  ASSERT_TRUE(cache.finalize_for_runtime().ok());
+
+  cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+  Result<const uint8_t*> fresh = cache.load_unpacked_data("weight");
+  ASSERT_TRUE(fresh.ok());
+  ASSERT_EQ(
+      cache.get_unpacked_data_names(), std::vector<std::string>{"weight"});
+  ASSERT_TRUE(cache.finalize_for_runtime().ok());
+}
+
+namespace {
+xnn_weights_cache_look_up_key keyFor(const uint8_t* kernel) {
+  xnn_weights_cache_look_up_key key{};
+  key.seed = 7;
+  key.kernel = kernel;
+  return key;
+}
+
+size_t packUnder(
+    xnn_weights_cache_provider* provider,
+    const uint8_t* kernel,
+    uint8_t fill,
+    size_t size = 64) {
+  xnn_weights_cache_look_up_key key = keyFor(kernel);
+  void* space = provider->reserve_space(provider->context, size);
+  memset(space, fill, size);
+  return provider->look_up_or_insert(provider->context, &key, space, size);
+}
+} // namespace
+
+// Deconvolution packs its kernel first and only then calls look_up_or_insert,
+// so a second kernel can arrive under an already packed name with different
+// bytes. The cache must store it separately: XNNPACK takes the returned offset
+// as the operator's packed weights, so a miss here would send the operator to
+// an invalid offset. The name itself cannot tell the two apart, so from then
+// on it must miss: a hit would hand a later consumer whichever packing the
+// name happens to point at.
+TEST_F(XNNWeightsCacheTest, LookUpOrInsertStoresMismatchedPackingApart) {
+  XNNWeightsCache cache;
+  cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+  xnn_weights_cache_provider* provider = cache.get();
+  Result<const uint8_t*> first = cache.load_unpacked_data("weight");
+  Result<const uint8_t*> second = cache.load_unpacked_data("weight");
+  ASSERT_TRUE(first.ok());
+  ASSERT_TRUE(second.ok());
+
+  const size_t first_offset = packUnder(provider, first.get(), 1);
+  xnn_weights_cache_look_up_key first_key = keyFor(first.get());
+  ASSERT_EQ(provider->look_up(provider->context, &first_key), first_offset);
+
+  const size_t second_offset = packUnder(provider, second.get(), 2);
+  ASSERT_NE(first_offset, SIZE_MAX);
+  ASSERT_NE(second_offset, SIZE_MAX);
+  ASSERT_NE(first_offset, second_offset);
+  ASSERT_EQ(
+      *static_cast<uint8_t*>(
+          provider->offset_to_addr(provider->context, first_offset)),
+      1);
+  ASSERT_EQ(
+      *static_cast<uint8_t*>(
+          provider->offset_to_addr(provider->context, second_offset)),
+      2);
+
+  ASSERT_EQ(provider->look_up(provider->context, &first_key), SIZE_MAX);
+  const size_t third_offset = packUnder(provider, first.get(), 3);
+  ASSERT_NE(third_offset, first_offset);
+  ASSERT_NE(third_offset, second_offset);
+  ASSERT_EQ(provider->look_up(provider->context, &first_key), SIZE_MAX);
+  ASSERT_TRUE(cache.finalize_for_runtime().ok());
+}
+
+// A packing stored without a name belongs to the runtime that packed it. Its
+// synthetic name comes back from finalize_for_runtime so the runtime holds a
+// reference: another runtime releasing the last named entry must not unload
+// the slot from under it, and its own release must free it.
+TEST_F(XNNWeightsCacheTest, UnnamedPackingIsOwnedByItsRuntime) {
+  XNNWeightsCache cache;
+  xnn_weights_cache_provider* provider = cache.get();
+
+  cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+  Result<const uint8_t*> first = cache.load_unpacked_data("weight");
+  ASSERT_TRUE(first.ok());
+  const size_t named_offset = packUnder(provider, first.get(), 1);
+  Result<std::vector<std::string>> named_runtime = cache.finalize_for_runtime();
+  ASSERT_TRUE(named_runtime.ok());
+  ASSERT_EQ(named_runtime.get().size(), 1u);
+
+  // Same name, different bytes: this runtime's packing is stored unnamed.
+  cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+  Result<const uint8_t*> second = cache.load_unpacked_data("weight");
+  ASSERT_TRUE(second.ok());
+  const size_t unnamed_offset = packUnder(provider, second.get(), 2);
+  ASSERT_NE(unnamed_offset, named_offset);
+  Result<std::vector<std::string>> unnamed_runtime =
+      cache.finalize_for_runtime();
+  ASSERT_TRUE(unnamed_runtime.ok());
+  ASSERT_FALSE(unnamed_runtime.get().empty());
+
+  ASSERT_EQ(cache.delete_packed_data(named_runtime.get()), Error::Ok);
+  ASSERT_FALSE(cache.get_packed_data_names().empty());
+  ASSERT_EQ(
+      *static_cast<uint8_t*>(
+          provider->offset_to_addr(provider->context, unnamed_offset)),
+      2);
+
+  ASSERT_EQ(cache.delete_packed_data(unnamed_runtime.get()), Error::Ok);
+  ASSERT_TRUE(cache.get_packed_data_names().empty());
+}
+
+// Unnamed packings never reach the cache file: a later load has no name to
+// hit them by, and the slot they would occupy belongs to a runtime that is
+// gone.
+TEST_F(XNNWeightsCacheTest, UnnamedPackingStaysOutOfCacheFile) {
+  std::string cache_path = std::string("/tmp/xnn_weights_cache_unnamed_") +
+      std::to_string(::getpid()) + ".packed_cache";
+  ::unlink(cache_path.c_str());
+  std::vector<std::string> names;
+  {
+    XNNWeightsCache cache;
+    cache.set_packed_cache_path(cache_path);
+    cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+    xnn_weights_cache_provider* provider = cache.get();
+    Result<const uint8_t*> bias = cache.load_unpacked_data("bias");
+    ASSERT_TRUE(bias.ok());
+    ASSERT_NE(packUnder(provider, bias.get(), 1), SIZE_MAX);
+    std::array<uint8_t, 64> inline_kernel{};
+    ASSERT_NE(packUnder(provider, inline_kernel.data(), 2), SIZE_MAX);
+    Result<std::vector<std::string>> finalized = cache.finalize_for_runtime();
+    ASSERT_TRUE(finalized.ok());
+    ASSERT_EQ(finalized.get().size(), 2u);
+    names = finalized.get();
+  }
+  {
+    XNNWeightsCache cache;
+    cache.set_packed_cache_path(cache_path);
+    cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+    std::vector<std::string> loaded = cache.get_packed_data_names();
+    ASSERT_EQ(loaded.size(), 1u);
+    ASSERT_EQ(loaded[0], "bias");
+    xnn_weights_cache_provider* provider = cache.get();
+    Result<const uint8_t*> bias = cache.load_unpacked_data("bias");
+    ASSERT_TRUE(bias.ok());
+    xnn_weights_cache_look_up_key key = keyFor(bias.get());
+    ASSERT_NE(provider->look_up(provider->context, &key), SIZE_MAX);
+    ASSERT_TRUE(cache.finalize_for_runtime().ok());
+  }
+  ::unlink(cache_path.c_str());
+}
+
+// A packing of another length under a hit name is a mismatch too, decided
+// without reading past the shorter one. Both are stored and the name retired.
+TEST_F(XNNWeightsCacheTest, LookUpOrInsertTreatsSizeDifferenceAsMismatch) {
+  XNNWeightsCache cache;
+  cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+  xnn_weights_cache_provider* provider = cache.get();
+  Result<const uint8_t*> kernel = cache.load_unpacked_data("weight");
+  ASSERT_TRUE(kernel.ok());
+
+  const size_t short_offset = packUnder(provider, kernel.get(), 1, 32);
+  xnn_weights_cache_look_up_key key = keyFor(kernel.get());
+  ASSERT_EQ(provider->look_up(provider->context, &key), short_offset);
+
+  const size_t long_offset = packUnder(provider, kernel.get(), 1, 64);
+  ASSERT_NE(long_offset, SIZE_MAX);
+  ASSERT_NE(long_offset, short_offset);
+  ASSERT_EQ(provider->look_up(provider->context, &key), SIZE_MAX);
+  ASSERT_TRUE(cache.finalize_for_runtime().ok());
+}
+
+// The retired name must not come back from the cache file either: a program
+// loaded again would otherwise hit it with a matching seed and run on the
+// other node's packing without repacking. A second, clean entry proves the
+// index was written at all: with the conflicted name alone the index would be
+// empty and rejected at load, which would look the same as leaving it out.
+TEST_F(XNNWeightsCacheTest, MismatchedPackingNameStaysOutOfCacheFile) {
+  std::string cache_path = std::string("/tmp/xnn_weights_cache_conflict_") +
+      std::to_string(::getpid()) + ".packed_cache";
+  ::unlink(cache_path.c_str());
+  {
+    XNNWeightsCache cache;
+    cache.set_packed_cache_path(cache_path);
+    cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+    xnn_weights_cache_provider* provider = cache.get();
+    Result<const uint8_t*> kernel = cache.load_unpacked_data("weight");
+    ASSERT_TRUE(kernel.ok());
+    Result<const uint8_t*> bias = cache.load_unpacked_data("bias");
+    ASSERT_TRUE(bias.ok());
+    ASSERT_NE(packUnder(provider, bias.get(), 4), SIZE_MAX);
+    ASSERT_NE(packUnder(provider, kernel.get(), 1), SIZE_MAX);
+    ASSERT_NE(packUnder(provider, kernel.get(), 2), SIZE_MAX);
+    // A packing that misses on the retired name is booked as a gap in the
+    // name, not as an unnamed constant.
+    xnn_weights_cache_look_up_key key = keyFor(kernel.get());
+    ASSERT_EQ(provider->look_up(provider->context, &key), SIZE_MAX);
+    ASSERT_NE(packUnder(provider, kernel.get(), 3), SIZE_MAX);
+    const auto stats = cache.stats();
+    EXPECT_EQ(
+        stats.heap_bytes_by_reason[static_cast<size_t>(
+            PackedCacheHeapReason::ConflictedName)],
+        64);
+    EXPECT_EQ(
+        stats.heap_bytes_by_reason[static_cast<size_t>(
+            PackedCacheHeapReason::UnnamedConstant)],
+        0);
+    ASSERT_TRUE(cache.finalize_for_runtime().ok());
+  }
+  {
+    XNNWeightsCache cache;
+    cache.set_packed_cache_path(cache_path);
+    cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+    ASSERT_EQ(cache.get_packed_data_names(), std::vector<std::string>{"bias"});
+    xnn_weights_cache_provider* provider = cache.get();
+    Result<const uint8_t*> kernel = cache.load_unpacked_data("weight");
+    ASSERT_TRUE(kernel.ok());
+    xnn_weights_cache_look_up_key key = keyFor(kernel.get());
+    ASSERT_EQ(provider->look_up(provider->context, &key), SIZE_MAX);
+    Result<const uint8_t*> bias = cache.load_unpacked_data("bias");
+    ASSERT_TRUE(bias.ok());
+    xnn_weights_cache_look_up_key bias_key = keyFor(bias.get());
+    const size_t bias_offset = provider->look_up(provider->context, &bias_key);
+    ASSERT_NE(bias_offset, SIZE_MAX);
+    ASSERT_EQ(
+        *static_cast<uint8_t*>(
+            provider->offset_to_addr(provider->context, bias_offset)),
+        4);
+    ASSERT_TRUE(cache.finalize_for_runtime().ok());
+  }
+  ::unlink(cache_path.c_str());
 }
 
 TEST_F(XNNWeightsCacheTest, TakenUnpackedDataSurvivesFinalize) {
@@ -898,8 +1379,8 @@ TEST_F(XNNWeightsCacheTest, LoadPackedCache_RejectsV1Format) {
   ::unlink(cache_path.c_str());
 }
 
-// Verify save_packed_index writes the schema version 2 footer and embeds a
-// 4-byte seed field in each entry record. Guards against future refactors
+// Verify save_packed_index writes the current schema version footer and embeds
+// a 4-byte seed field in each entry record. Guards against future refactors
 // silently dropping the seed write.
 TEST_F(XNNWeightsCacheTest, SavePackedIndex_EntryFormatIncludesSeed) {
   std::string cache_path = std::string("/tmp/xnn_weights_cache_format_") +
@@ -941,7 +1422,7 @@ TEST_F(XNNWeightsCacheTest, SavePackedIndex_EntryFormatIncludesSeed) {
   uint32_t magic = read_le_u32(footer + 12);
   uint32_t version = read_le_u32(footer + 16);
   EXPECT_EQ(magic, 0x58505743u);
-  EXPECT_EQ(version, 2u);
+  EXPECT_EQ(version, 3u);
 
   // Walk first entry:
   // [name_len:u32][name][file_offset:u64][data_size:u64][seed:u32]
