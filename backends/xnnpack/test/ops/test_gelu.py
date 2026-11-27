@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -72,16 +73,9 @@ class TestGelu(unittest.TestCase):
             .to_edge_transform_and_lower()
         )
 
-        if is_fp16:
-            # Older versions of XNNPACK don't support fp16 GELU.
-            # TODO (gjcomer) Remove this when we update XNNPACK. (#16679)
-            tester.check(
-                ["executorch_exir_dialects_edge__ops_aten_gelu_default"]
-            ).check_not(["torch.ops.higher_order.executorch_call_delegate"])
-        else:
-            tester.check_count(
-                {"torch.ops.higher_order.executorch_call_delegate": 1}
-            ).check_not(["executorch_exir_dialects_edge__ops_aten_gelu_default"])
+        tester.check_count(
+            {"torch.ops.higher_order.executorch_call_delegate": 1}
+        ).check_not(["executorch_exir_dialects_edge__ops_aten_gelu_default"])
 
         (
             tester.to_executorch()
