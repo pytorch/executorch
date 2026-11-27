@@ -39,11 +39,11 @@ TextLLMRunner::TextLLMRunner(
     std::unique_ptr<TextDecoderRunner> decode_text_decoder_runner)
     : tokenizer_(std::move(tokenizer)),
       metadata_(std::move(metadata)),
+      io_manager_(std::move(io_manager)),
       module_(std::move(module)),
       text_decoder_runner_(std::move(text_decoder_runner)),
       decode_text_decoder_runner_(std::move(decode_text_decoder_runner)),
       text_prefiller_(std::move(text_prefiller)),
-      io_manager_(std::move(io_manager)),
       text_token_generator_(std::move(text_token_generator)),
       stats_(std::move(stats)),
       temperature_(temperature),
@@ -58,7 +58,10 @@ Error TextLLMRunner::load() {
     return Error::Ok;
   }
   ET_CHECK_OK_OR_RETURN_ERROR(text_prefiller_->load());
-  ET_CHECK_OK_OR_RETURN_ERROR(io_manager_->load());
+  ET_CHECK_OK_OR_RETURN_ERROR(io_manager_->load(
+      text_decoder_runner_->method_name(),
+      decode_text_decoder_runner_ ? decode_text_decoder_runner_->method_name()
+                                  : text_decoder_runner_->method_name()));
   ET_CHECK_OK_OR_RETURN_ERROR(text_token_generator_->load());
   return Error::Ok;
 }
@@ -352,6 +355,17 @@ void TextLLMRunner::stop() {
 }
 
 void TextLLMRunner::reset() {
+  const auto error = io_manager_->reset(
+      text_decoder_runner_->method_name(),
+      decode_text_decoder_runner_ ? decode_text_decoder_runner_->method_name()
+                                  : text_decoder_runner_->method_name());
+  if (error != Error::Ok) {
+    ET_LOG(
+        Error,
+        "Failed to reset the IOManager: 0x%x.",
+        static_cast<unsigned>(error));
+    return;
+  }
   stats_->reset();
   pos_ = 0;
   prefill_next_token_.reset();
