@@ -20,21 +20,31 @@ import unittest
 import torch
 import torch.nn.functional as F
 
+from executorch.backends.cuda.cuda_backend import CudaBackend
+from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 from executorch.backends.cuda.passes.lower_offgraph_kv import (
+    batched_sequence_max_segments,
     batched_sequence_step,
     CheckOffGraphKVStepWidthPass,
     LowerOffGraphKVPass,
+    OFFGRAPH_KV_COMPILE_SPEC,
     OFFGRAPH_KV_FQN_PREFIX,
     OFFGRAPH_KV_SEQ_COLS_FQN,
     OFFGRAPH_KV_SEQ_INFO_FQN,
+    OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC,
     parse_offgraph_kv_manifest,
     ring_physical_capacity,
+)
+from executorch.backends.cuda.tests.host_memory_test_utils import (
+    IS_LINUX,
+    PeakResidentBytes,
 )
 
 from executorch.examples.models.muse_glimmer.model.dflash_model import (
     build_dflash_swa_mask,
 )
-from executorch.exir import EdgeCompileConfig, to_edge
+from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.extension.llm.cache.reference_cache import (
     BatchedSequenceReferenceCache,
@@ -529,6 +539,105 @@ class LowerBatchedSequencePassTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             CheckOffGraphKVStepWidthPass(b"0:0", layout="paged")
         CheckOffGraphKVStepWidthPass(b"0:0", layout="batched-sequence")
+
+
+class _FlatLayer(torch.nn.Module):
+    def forward(self, q, k, v, position):
+        return torch.ops.kvcache.update_and_attend(
+            q, k, v, position, 0, SCALE, torch.bfloat16
+        )
+
+
+@unittest.skipUnless(torch.cuda.is_available(), "CUDA required")
+@unittest.skipUnless(IS_LINUX, "reads /proc/self/statm")
+class BatchedSequenceCompileHostMemoryTest(unittest.TestCase):
+    """Lowering one batched-sequence layer grows host memory by well under
+    the size of its declared KV storage, which the runtime supplies.
+    """
+
+    CAPACITY = 1 << 16
+    MAX_SEQS = 63
+    MAX_WRITE = 8
+
+    def test_declared_storage_stays_off_the_host(self) -> None:
+        # K and V of one layer: 1 GiB each. Dense zeros would grow the host by
+        # the whole 2 GiB; the limit leaves the compile itself half of that.
+        declared = 2 * self.CAPACITY * (self.MAX_SEQS + 1) * N_KV_HEADS * HEAD_DIM * 2
+        limit = declared // 2
+        # 8 GiB: fits the 24 GB A10G that runs unittest-cuda, and A100/H100.
+        priming_bytes = 4 * declared
+        free, _ = torch.cuda.mem_get_info()
+        if free < priming_bytes:
+            self.skipTest(
+                f"needs {priming_bytes >> 30} GiB of free GPU memory to prime the "
+                f"allocator's peak, has {free >> 30} GiB"
+            )
+        manifest = json.dumps(
+            {
+                "version": 1,
+                "layout": "batched-sequence",
+                "maximum_capacity": self.CAPACITY,
+                "max_write": self.MAX_WRITE,
+                "max_seqs": self.MAX_SEQS,
+                "max_segments": batched_sequence_max_segments(self.MAX_SEQS),
+                "layers": [{"layer_id": 0, "policy": "flat"}],
+            }
+        ).encode()
+        q, k, v, position = _inputs(0, self.MAX_WRITE)
+        t = torch.export.Dim("t", min=2, max=self.MAX_WRITE)
+        program = torch.export.export(
+            _FlatLayer(),
+            (q, k, v, position.reshape(-1, 1)),
+            dynamic_shapes=({2: t}, {2: t}, {2: t}, {0: t}),
+            strict=False,
+        )
+        # Inductor's autotuner protects a kernel's written arguments from its
+        # benchmark launches: it clones each on the GPU, or copies it to pinned
+        # host memory when the clone would push GPU allocation past its
+        # recorded peak. The storage is written, so in a fresh process the
+        # copy would land in host memory and be measured here. Raising the
+        # peak first keeps the clones on the GPU, as a model's weights would.
+        # Freeing the block keeps the recorded peak but not the reservation,
+        # and the cleanup resets the peak for later tests in this process.
+        self.addCleanup(torch.cuda.reset_peak_memory_stats)
+        priming = torch.empty(priming_bytes, dtype=torch.uint8, device="cuda")
+        del priming
+        torch.cuda.empty_cache()
+        import torch._inductor.config as inductor_config
+
+        with inductor_config.patch(
+            {"aot_inductor.precompile_headers": False}
+        ), PeakResidentBytes() as resident:
+            lowered = to_edge_transform_and_lower(
+                {"forward": program},
+                partitioner={
+                    "forward": [
+                        CudaPartitioner(
+                            [
+                                CudaBackend.generate_method_name_compile_spec(
+                                    "forward"
+                                ),
+                                CompileSpec(OFFGRAPH_KV_COMPILE_SPEC, manifest),
+                                CompileSpec(
+                                    OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC, b"3:0"
+                                ),
+                                CompileSpec("low_memory_mode", b"ON"),
+                            ]
+                        )
+                    ]
+                },
+                compile_config=EdgeCompileConfig(_check_ir_validity=False),
+            )
+        graph = lowered.exported_program("forward").graph
+        self.assertTrue(
+            any("executorch_call_delegate" in str(n.target) for n in graph.nodes)
+        )
+        self.assertLess(
+            resident.growth,
+            limit,
+            f"compiling grew the host by {resident.growth >> 20} MiB, limit "
+            f"{limit >> 20} MiB, for {declared >> 20} MiB of declared KV storage",
+        )
 
 
 if __name__ == "__main__":
