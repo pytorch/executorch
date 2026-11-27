@@ -331,16 +331,29 @@ Tensor& index_put_(
             }
           });
     } else {
+      const auto position = [&](size_t j) {
+        return index_arr[j] < 0
+            ? index_arr[j] + static_cast<CTYPE>(in_dim_length)
+            : index_arr[j];
+      };
       for (const auto i : c10::irange(leading_dims)) {
         const char* src = values_data + i * values_dim_length * length_per_step;
         char* dest = in_data + i * in_dim_length * length_per_step;
-        for (const auto j : c10::irange(values_dim_length)) {
-          const auto ix = index_arr[j] < 0
-              ? index_arr[j] + static_cast<CTYPE>(in_dim_length)
-              : index_arr[j];
-          const char* copy_src = src + j * length_per_step;
-          char* copy_dest = dest + ix * length_per_step;
-          memcpy(copy_dest, copy_src, length_per_step);
+        // Rows bound for consecutive positions (e.g. a step's new cache rows)
+        // are copied in one block.
+        size_t j = 0;
+        while (j < values_dim_length) {
+          const auto ix = position(j);
+          size_t run = 1;
+          while (j + run < values_dim_length &&
+                 position(j + run) == ix + static_cast<CTYPE>(run)) {
+            ++run;
+          }
+          memcpy(
+              dest + ix * length_per_step,
+              src + j * length_per_step,
+              run * length_per_step);
+          j += run;
         }
       }
     }

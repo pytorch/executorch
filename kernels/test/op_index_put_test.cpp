@@ -1141,6 +1141,20 @@ TEST_F(OpIndexPutInplaceTest, AccumulateHalfRepeatedIndices) {
   EXPECT_TENSOR_EQ(x, tf.make({3}, {1, 6, 1}));
 }
 
+TEST_F(OpIndexPutInplaceTest, ConsecutiveAndScatteredIndicesInLastDimension) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tfl;
+  // Positions 1, 2 and 3 form one run, then 0, then -1 (= 4), then 4 again:
+  // the last write to a position wins.
+  optional<Tensor> indices[] = {
+      std::nullopt, std::nullopt, tfl.make({6}, {1, 2, 3, 0, -1, 4})};
+  Tensor x = tf.zeros({1, 2, 5});
+  Tensor values =
+      tf.make({1, 2, 6}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+  op_index_put_(x, indices, values, /*accumulate=*/false);
+  EXPECT_TENSOR_EQ(x, tf.make({1, 2, 5}, {4, 1, 2, 3, 6, 10, 7, 8, 9, 12}));
+}
+
 class OpIndexPutInplaceNegativeIndexTest
     : public OpIndexPutInplaceTest,
       public WithParamInterface<std::tuple<ScalarType, bool>> {};

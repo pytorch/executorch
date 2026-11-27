@@ -12,6 +12,7 @@
 #include <executorch/backends/qualcomm/qc_compiler_spec_generated.h>
 #include <executorch/backends/qualcomm/runtime/Logging.h>
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
+#include <executorch/backends/qualcomm/runtime/SharedIoStaging.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendFactory.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendUnifiedRegistry.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnDlcManager.h>
@@ -105,6 +106,13 @@ class QnnManager {
   // Pre-register custom memory handle from the SharedBuffer before execution
   executorch::runtime::Error PreRegisterMem();
 
+  // Persistent shared buffers registered for `tensors` of `graph_name`, in
+  // one block, so an execute that binds other tensors in shared memory can
+  // stage these; empty if shared memory is unavailable.
+  std::vector<void*> StagingBuffers(
+      const std::string& graph_name,
+      const std::vector<std::shared_ptr<TensorWrapper>>& tensors);
+
   uint64_t GetSpillFillBufferSize() {
     auto* htp_backend_cache_ptr = static_cast<HtpBackendCache*>(
         backend_params_ptr_->qnn_backend_cache_ptr_.get());
@@ -164,6 +172,10 @@ class QnnManager {
 
   // Manager for handling DLC (Deep Learning Container)
   std::shared_ptr<QnnDlcManager> qnn_dlc_manager_;
+  // Each graph's registered staging buffers, in the order they were staged.
+  std::unordered_map<std::string, std::vector<void*>> staged_buffers_;
+  // Declared last: freed after Destroy() deregisters the memory.
+  StagingBlocks staging_blocks_;
 };
 } // namespace qnn
 } // namespace backends
