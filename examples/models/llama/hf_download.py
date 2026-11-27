@@ -49,7 +49,7 @@ def download_hf_snapshot(
     revision: str,
     expected_sha256: str | None = None,
     metadata_path: Path | None = None,
-    token_auth: bool = False,
+    token_auth: bool | None = None,
 ) -> str:
     """Download a pinned Safetensors checkpoint and optionally verify its hash."""
     for attempt in range(_MAX_RATE_LIMIT_RETRIES + 1):

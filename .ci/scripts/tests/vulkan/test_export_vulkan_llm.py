@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -93,7 +94,7 @@ def test_existing_hf_download_accepts_pinned_revision_and_propagates_failure(
     def failed_download(**kwargs):
         assert kwargs["repo_id"] == "test/model"
         assert kwargs["revision"] == "r" * 40
-        assert kwargs["token"] is False
+        assert kwargs["token"] is None
         raise RuntimeError("download failed")
 
     monkeypatch.setattr(module, "snapshot_download", failed_download)
@@ -193,7 +194,7 @@ def test_hf_snapshot_retries_rate_limited_repo_tree(
             api.list_repo_tree(
                 kwargs["repo_id"],
                 revision=kwargs["revision"],
-                token=kwargs["token"],
+                token=kwargs.get("token"),
                 recursive=True,
             )
         )
@@ -214,7 +215,7 @@ def test_hf_snapshot_retries_rate_limited_repo_tree(
                 "repo_id": "test/model",
                 "revision": "r" * 40,
                 "allow_patterns": ["*.safetensors", "*.json"],
-                "token": False,
+                "token": None,
             }
         ]
         * 2
