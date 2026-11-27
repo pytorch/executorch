@@ -1,0 +1,35 @@
+digraph pipeline {
+  graph [fontname="Helvetica,Arial,sans-serif", fontsize=16, nodesep=0.5, ranksep=0.32, pad=0.3, bgcolor="white", newrank=true];
+  node [shape=box, style="rounded,filled", fontname="Helvetica,Arial,sans-serif", fontsize=13, penwidth=1.6, margin="0.22,0.1", width=6.4];
+  edge [color="#666666", penwidth=1.4, arrowsize=0.8];
+
+  m [label=<<b>PyTorch model</b>>, fillcolor="white", color="#555555"];
+  cap [label=<<b>Export</b>>, fillcolor="#ececec", color="#888888"];
+  pt2e [label=<<b>PT2E quantization</b><br/><font point-size="11">prepare (annotate), calibrate, convert</font>>, fillcolor="#ececec", color="#888888"];
+  cfg [label=<<b>Quantization configuration</b><br/><font point-size="11">torchao specs, quantizers for extra ops</font>>, fillcolor="#fde3c8", color="#e07b24", width=3.2];
+  fuse [label=<<b>Fuse</b><br/><font point-size="11">each annotated dequantize, op, quantize becomes one fused_quant op</font>>, fillcolor="#d6e7f9", color="#2b6cb0"];
+  edge_ [label=<<b>to_edge</b>>, fillcolor="#ececec", color="#888888"];
+  opt [label=<<b>Graph rewrites</b><br/><font point-size="11">get_fused_quant_passes()</font>>, fillcolor="#d6e7f9", color="#2b6cb0"];
+  color [label=<<b>Colorer</b> (when delegating)<br/><font point-size="11">claims the ops a delegate will run</font>>, fillcolor="#fde3c8", color="#e07b24", style="rounded,filled,dashed"];
+  lower [label=<<b>Lowering</b><br/><font point-size="11">transforms the graph for the backend: delegated subgraphs,<br/>backend operators, ATen operators, or a mix</font>>, fillcolor="#fde3c8", color="#e07b24"];
+  fb [label=<<b>Decompose remaining fused ops</b><br/><font point-size="11">fused ops have no kernels: ToChannelsFirst, DecomposeFusedQuant,<br/>AssertNoFusedQuantOps</font>>, fillcolor="#d6e7f9", color="#2b6cb0"];
+  part [label=<<b>Partitioner and to_backend</b> (when delegating)>, fillcolor="#fde3c8", color="#e07b24", style="rounded,filled,dashed"];
+  et [label=<<b>to_executorch</b>>, fillcolor="#ececec", color="#888888"];
+
+  m -> cap -> pt2e -> fuse -> edge_ -> opt -> color -> lower -> fb -> part -> et;
+  cfg -> pt2e [style=dashed];
+  {rank=same; pt2e; cfg;}
+
+  legend [shape=plaintext, style="", margin=0, width=0, label=<
+    <table border="0" cellspacing="4" cellpadding="0">
+      <tr><td><table border="0" cellspacing="10" cellpadding="0"><tr>
+        <td bgcolor="#fde3c8" width="22" height="16"></td><td align="left"><font point-size="12">backend-specific</font></td>
+        <td width="18"></td>
+        <td bgcolor="#d6e7f9" width="22" height="16"></td><td align="left"><font point-size="12">Fused Quant</font></td>
+        <td width="18"></td>
+        <td bgcolor="#ececec" width="22" height="16"></td><td align="left"><font point-size="12">standard PyTorch and ExecuTorch</font></td>
+      </tr></table></td></tr>
+      <tr><td><font point-size="12">Dashed: only when the backend delegates.</font></td></tr>
+    </table>>];
+  et -> legend [style=invis];
+}
