@@ -208,6 +208,26 @@ def _load_cortex_m() -> list[TestFlow]:
     return [CORTEX_M_TEST_FLOW]
 
 
+def _load_espressif() -> list[TestFlow]:
+    # Every case builds ESP-IDF firmware and runs it in esp-emu, against the
+    # runtime in ESPRESSIF_BUILD_DIR/runtime.
+    build_dir = os.environ.get("ESPRESSIF_BUILD_DIR")
+    if not build_dir or not os.path.isdir(os.path.join(build_dir, "runtime")):
+        logger.info(
+            "Skipping Espressif flow registration: no ESPRESSIF_BUILD_DIR runtime"
+        )
+        return []
+    if not (shutil.which("idf.py") and shutil.which("esp-emu")):
+        logger.info(
+            "Skipping Espressif flow registration: idf.py or esp-emu not on PATH"
+        )
+        return []
+
+    from executorch.backends.test.suite.flows.espressif import ESPRESSIF_TEST_FLOW
+
+    return [ESPRESSIF_TEST_FLOW]
+
+
 def all_flows() -> dict[str, TestFlow]:
     from executorch.backends.test.suite.flows.portable import PORTABLE_TEST_FLOW
 
@@ -222,6 +242,7 @@ def all_flows() -> dict[str, TestFlow]:
         + _register_flow(_load_qnn, "QNN")
         + _register_flow(_load_arm, "ARM")
         + _register_flow(_load_cortex_m, "Cortex-M")
+        + _register_flow(_load_espressif, "Espressif")
         + _register_flow(_load_nxp, "NXP")
     )
 
