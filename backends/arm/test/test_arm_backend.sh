@@ -10,12 +10,10 @@ script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 vulkan_validation_runner="${script_dir}/run_with_vulkan_validation.sh"
 
 # Executorch root
-et_root_dir=$(cd ${script_dir}/../../.. && pwd)
+et_root_dir=$(cd "${script_dir}/../../.." && pwd)
 cd "${et_root_dir}"
 pwd
 
-# Cap pytest-xdist's `auto` workers to the container's CPU quota.
-source .ci/scripts/pytest-parallelism.sh
 scratch_dir=${et_root_dir}/examples/arm/arm-scratch
 setup_path_script=${scratch_dir}/setup_path.sh
 _setup_msg="please refer to ${et_root_dir}/examples/arm/setup.sh to properly install necessary tools."
@@ -118,21 +116,7 @@ enable_vgf_vulkan_validation() {
     echo "VK_INSTANCE_LAYERS=${VK_INSTANCE_LAYERS}"
 }
 
-TEST_SUITE=$1
-
-# Enable Vulkan validation for VGF/VKML runtime tests.
-
-# Source the tools
-# This should be prepared by the setup.sh
-[[ -f ${setup_path_script} ]] \
-    || { echo "Missing ${setup_path_script}. ${_setup_msg}"; exit 1; }
-source ${setup_path_script}
-
-# Enable Vulkan validation for every VGF/VKML test path, including tests that
-# launch scripts/executables directly instead of going through runner_utils.py.
-if [[ "${TEST_SUITE}" == *vkml* || "${TEST_SUITE}" == *vgf* ]]; then
-    enable_vgf_vulkan_validation
-fi
+TEST_SUITE=${1:-}
 
 help() {
     echo "Usage:"
@@ -141,15 +125,33 @@ help() {
     # This will list all lines in this file that is starting with test_ remove () { and print it as a list.
     # e,g, "test_pytest() { # Test ops and other things" -> test_pytest # Test ops and other things
     echo "all # run all tests"
-    grep "^test_" $0 | sed 's/([^)]*)[[:space:]]*{*//g'
+    grep "^test_" "${script_dir}/test_arm_backend.sh" | sed 's/([^)]*)[[:space:]]*{*//g'
     exit
 }
 
 if [[ -z "${TEST_SUITE:-}" ]]; then
     echo "Missing test suite name, exiting..."
     help
+elif [[ "${TEST_SUITE}" == help ]]; then
+    help
 else
     echo "Run Arm backend test suite ${TEST_SUITE}"
+fi
+
+# Static Buck declarations need only Git and the Python standard library.
+if [[ "${TEST_SUITE}" != test_buck_declarations ]]; then
+    # Cap pytest-xdist's `auto` workers to the container's CPU quota.
+    source .ci/scripts/pytest-parallelism.sh
+
+    # This should be prepared by setup.sh.
+    [[ -f ${setup_path_script} ]] \
+        || { echo "Missing ${setup_path_script}. ${_setup_msg}"; exit 1; }
+    source "${setup_path_script}"
+
+    # Enable validation for VGF/VKML paths after setup_path.sh configures the layers.
+    if [[ "${TEST_SUITE}" == *vkml* || "${TEST_SUITE}" == *vgf* ]]; then
+        enable_vgf_vulkan_validation
+    fi
 fi
 
 TEST_SUITE_NAME="$(basename "$0") ${TEST_SUITE}"
@@ -177,13 +179,71 @@ all() { # Run all tests
     # ----
     # That is executed
     echo "${TEST_SUITE_NAME}: Run all tests"
-    grep "^test_" backends/arm/test/test_arm_backend.sh | sed 's/([^)]*)[[:space:]]*{*//g' | sed "s|^|$0 |" | sh -e
+    # Declaration checks require a change-specific base; run them explicitly.
+    grep "^test_" backends/arm/test/test_arm_backend.sh | grep -v "^test_buck_declarations()" | sed 's/([^)]*)[[:space:]]*{*//g' | sed "s|^|$0 |" | sh -e
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
 # -------------------------------------------
 # -------- Non target-specific tests --------
 # -------------------------------------------
+test_buck_declarations() { # Check changed Arm Python Buck declarations without Arm tool setup.
+    local base_revision="${BASE_REVISION:-}"
+    local python_executable="${PYTHON_EXECUTABLE:-python3}"
+
+    "${python_executable}" -m unittest discover -s .ci/scripts/tests -p test_arm_buck_declarations.py
+
+    if [[ -z "${base_revision}" || "${base_revision}" == 0000000000000000000000000000000000000000 ]]; then
+        # Local/manual runs and new branches compare the latest commit.
+        base_revision=$(git rev-parse HEAD^)
+    elif ! git cat-file -e "${base_revision}^{commit}" 2>/dev/null; then
+        local fetch_args=(--no-tags)
+        if [[ "$(git rev-parse --is-shallow-repository)" == true ]]; then
+            fetch_args+=(--depth=64)
+        fi
+        git fetch "${fetch_args[@]}" origin "${base_revision}"
+    fi
+    if [[ "${GITHUB_EVENT_NAME:-}" == pull_request ]]; then
+        local merge_base shallow_file shallow_boundary history_complete
+        local deepen_by=64
+        while true; do
+            if merge_base=$(git merge-base HEAD "${base_revision}"); then
+                history_complete=true
+                shallow_file=$(git rev-parse --git-path shallow)
+                if [[ -f "${shallow_file}" ]]; then
+                    # A short merge-parent path can expose an older common ancestor
+                    # before a longer path reveals the true merge base.
+                    while IFS= read -r shallow_boundary; do
+                        if ! git merge-base --is-ancestor "${shallow_boundary}" "${merge_base}" &&
+                            { git merge-base --is-ancestor "${shallow_boundary}" HEAD ||
+                                git merge-base --is-ancestor "${shallow_boundary}" "${base_revision}"; }; then
+                            history_complete=false
+                            break
+                        fi
+                    done < "${shallow_file}"
+                fi
+                if [[ "${history_complete}" == true ]]; then
+                    break
+                fi
+            fi
+            if [[ "$(git rev-parse --is-shallow-repository)" != true ]]; then
+                echo "No common ancestor between HEAD and ${base_revision}" >&2
+                return 1
+            fi
+            if (( deepen_by > 1024 )); then
+                git fetch --no-tags --unshallow origin "$(git rev-parse HEAD)" "${base_revision}"
+                merge_base=$(git merge-base HEAD "${base_revision}")
+                break
+            fi
+            git fetch --no-tags --deepen="${deepen_by}" origin "$(git rev-parse HEAD)" "${base_revision}"
+            deepen_by=$((deepen_by * 4))
+        done
+        base_revision="${merge_base}"
+    fi
+
+    "${python_executable}" .ci/scripts/check_arm_buck_declarations.py --repo . --base "${base_revision}"
+}
+
 test_pytest_ops_no_target() {
     echo "${TEST_SUITE_NAME}: Run pytest ops for target-less tests"
 
