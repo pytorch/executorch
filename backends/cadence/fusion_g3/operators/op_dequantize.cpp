@@ -13,6 +13,8 @@
 #include <cmath>
 
 #include <xa_nnlib_kernels_api.h>
+#include <xtensa/config/core-isa.h>
+#include <xtensa/tie/xt_pdx4.h>
 
 #include <executorch/backends/cadence/common/xt_macros.h>
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
@@ -609,7 +611,7 @@ Tensor& dequantize_per_tensor_out(
     constexpr int num_inp_dims = 1;
     if (input.scalar_type() == ScalarType::Char) {
       const int8_t* __restrict__ input_data = input.const_data_ptr<int8_t>();
-#if defined(__XTENSA__)
+#if XCHAL_HAVE_PDX4
       // Direct inline PDX SIMD dequantization for per-tensor int8->float32.
       // The zero-point subtract is kept in the int32 domain (PDX_SUB_MX32) so
       // it issues on the integer unit and overlaps the float pipe; the widened
@@ -624,17 +626,12 @@ Tensor& dequantize_per_tensor_out(
         const int numel = inp_shape[0];
         auto vIn = reinterpret_cast<const xb_vecMx8*>(input_data);
         auto vOut = reinterpret_cast<xb_vecMxf32*>(out_data);
-        const xb_vecMxf32 v_scale{
-            scale_data, scale_data, scale_data, scale_data};
+        const xb_vecMxf32 v_scale = scale_data;
         int i = 0;
         // 4x unrolled main loop: 16 elements per iteration
         const int e16 = (numel >> 4) << 4;
         if (zero_point_data != 0) {
-          const xb_vecMx32 v_zp{
-              zero_point_data,
-              zero_point_data,
-              zero_point_data,
-              zero_point_data};
+          const xb_vecMx32 v_zp = zero_point_data;
           const float zp_f = static_cast<float>(zero_point_data);
           for (; i < e16; i += 16) {
             xb_vecMx32 vP0 = PDX_LV32_MX8_I(vIn, 0);
@@ -701,7 +698,7 @@ Tensor& dequantize_per_tensor_out(
       return out;
     } else if (input.scalar_type() == ScalarType::Byte) {
       const uint8_t* __restrict__ input_data = input.const_data_ptr<uint8_t>();
-#if defined(__XTENSA__)
+#if XCHAL_HAVE_PDX4
       // Direct inline PDX SIMD dequantization for per-tensor uint8->float32.
       // The zero-point subtract is kept in the int32 domain (PDX_SUB_MX32) so
       // it issues on the integer unit and overlaps the float pipe; the widened
@@ -716,17 +713,12 @@ Tensor& dequantize_per_tensor_out(
         const int numel = inp_shape[0];
         auto vIn = reinterpret_cast<const xb_vecMxu8*>(input_data);
         auto vOut = reinterpret_cast<xb_vecMxf32*>(out_data);
-        const xb_vecMxf32 v_scale{
-            scale_data, scale_data, scale_data, scale_data};
+        const xb_vecMxf32 v_scale = scale_data;
         int i = 0;
         // 4x unrolled main loop: 16 elements per iteration
         const int e16 = (numel >> 4) << 4;
         if (zero_point_data != 0) {
-          const xb_vecMxu32 v_zp{
-              static_cast<uint32_t>(zero_point_data),
-              static_cast<uint32_t>(zero_point_data),
-              static_cast<uint32_t>(zero_point_data),
-              static_cast<uint32_t>(zero_point_data)};
+          const xb_vecMxu32 v_zp = static_cast<uint32_t>(zero_point_data);
           const float zp_f = static_cast<float>(zero_point_data);
           for (; i < e16; i += 16) {
             xb_vecMxu32 vP0 = PDX_LVU32_MX8_I(vIn, 0);
@@ -793,7 +785,7 @@ Tensor& dequantize_per_tensor_out(
       return out;
     } else if (input.scalar_type() == ScalarType::Short) {
       const int16_t* __restrict__ input_data = input.const_data_ptr<int16_t>();
-#if defined(__XTENSA__)
+#if XCHAL_HAVE_PDX4
       // Direct inline PDX SIMD dequantization for per-tensor int16->float32.
       // The zero-point subtract is kept in the int32 domain (PDX_SUB_MX32) so
       // it issues on the integer unit and overlaps the float pipe; the widened
@@ -808,17 +800,12 @@ Tensor& dequantize_per_tensor_out(
         const int numel = inp_shape[0];
         auto vIn = reinterpret_cast<const xb_vecMx16*>(input_data);
         auto vOut = reinterpret_cast<xb_vecMxf32*>(out_data);
-        const xb_vecMxf32 v_scale{
-            scale_data, scale_data, scale_data, scale_data};
+        const xb_vecMxf32 v_scale = scale_data;
         int i = 0;
         // 4x unrolled main loop: 16 elements per iteration
         const int e16 = (numel >> 4) << 4;
         if (zero_point_data != 0) {
-          const xb_vecMx32 v_zp{
-              zero_point_data,
-              zero_point_data,
-              zero_point_data,
-              zero_point_data};
+          const xb_vecMx32 v_zp = zero_point_data;
           const float zp_f = static_cast<float>(zero_point_data);
           for (; i < e16; i += 16) {
             xb_vecMx32 vP0 = PDX_LV32_MX16_I(vIn, 0);
@@ -886,7 +873,7 @@ Tensor& dequantize_per_tensor_out(
     } else if (input.scalar_type() == ScalarType::UInt16) {
       const uint16_t* __restrict__ input_data =
           input.const_data_ptr<uint16_t>();
-#if defined(__XTENSA__)
+#if XCHAL_HAVE_PDX4
       // Direct inline PDX SIMD dequantization for per-tensor uint16->float32.
       // The zero-point subtract is kept in the int32 domain (PDX_SUB_MX32) so
       // it issues on the integer unit and overlaps the float pipe; the widened
@@ -901,17 +888,12 @@ Tensor& dequantize_per_tensor_out(
         const int numel = inp_shape[0];
         auto vIn = reinterpret_cast<const xb_vecMxu16*>(input_data);
         auto vOut = reinterpret_cast<xb_vecMxf32*>(out_data);
-        const xb_vecMxf32 v_scale{
-            scale_data, scale_data, scale_data, scale_data};
+        const xb_vecMxf32 v_scale = scale_data;
         int i = 0;
         // 4x unrolled main loop: 16 elements per iteration
         const int e16 = (numel >> 4) << 4;
         if (zero_point_data != 0) {
-          const xb_vecMxu32 v_zp{
-              static_cast<uint32_t>(zero_point_data),
-              static_cast<uint32_t>(zero_point_data),
-              static_cast<uint32_t>(zero_point_data),
-              static_cast<uint32_t>(zero_point_data)};
+          const xb_vecMxu32 v_zp = static_cast<uint32_t>(zero_point_data);
           const float zp_f = static_cast<float>(zero_point_data);
           for (; i < e16; i += 16) {
             xb_vecMxu32 vP0 = PDX_LVU32_MX16_I(vIn, 0);
@@ -1010,6 +992,8 @@ Tensor& dequantize_per_tensor_tensor_args_out(
       zero_point.numel() == 1,
       "Exepcted zero_point to only have one element received: %zd",
       ssize_t(zero_point.numel()));
+  check_dequantize_per_tensor_args(
+      input, quant_min, quant_max, dtype, out_dtype, out);
 #endif
 
   dequantize_per_tensor_out(
@@ -1020,7 +1004,6 @@ Tensor& dequantize_per_tensor_tensor_args_out(
       quant_min,
       quant_max,
       dtype,
-      out_dtype,
       out);
 
   return out;

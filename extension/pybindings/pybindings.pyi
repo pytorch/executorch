@@ -120,6 +120,13 @@ class ExecuTorchModule:
     ) -> None: ...
     def method_meta(self, method_name: str) -> MethodMeta: ...
     def method_names(self) -> List[str]: ...
+    def load_method(
+        self, method_name: str, kernels: int = 0, num_kernels: int = 0
+    ) -> None:
+        """Loads ``method_name`` now instead of when it first runs, with
+        ``kernels`` as in ``ExecuTorchProgram.load_method``. Raises if kernels
+        are given for a method that is already loaded."""
+        ...
 
 @experimental("This API is experimental and subject to change without notice.")
 class ExecuTorchProgram:
@@ -132,7 +139,36 @@ class ExecuTorchProgram:
 
     def num_methods(self) -> int: ...
     def get_method_name(self, method_index: int) -> str: ...
-    def load_method(self, method_name: str) -> ExecuTorchMethod: ...
+    def load_method(
+        self, method_name: str, kernels: int = 0, num_kernels: int = 0
+    ) -> ExecuTorchMethod:
+        """Loads ``method_name``. Each of its ops uses a kernel from
+        ``kernels`` that implements it, if there is one, before the registered
+        ones. ``kernels`` is the address of an array of ``num_kernels``
+        ``executorch::runtime::Kernel`` built against this ExecuTorch runtime,
+        which must outlive the method.
+
+        Python can't build that array, so it comes from native code, such as
+        a library that exports it and stays loaded while the method exists::
+
+            // C++
+            extern "C" const executorch::runtime::Kernel* my_kernels(size_t* n) {
+              static const executorch::runtime::Kernel kernels[] = {
+                  executorch::runtime::Kernel("aten::add.out", my_add_out),
+              };
+              *n = std::size(kernels);
+              return kernels;
+            }
+
+            # Python
+            library = ctypes.CDLL("libmy_kernels.so")
+            library.my_kernels.restype = ctypes.c_void_p
+            library.my_kernels.argtypes = [ctypes.POINTER(ctypes.c_size_t)]
+            n = ctypes.c_size_t()
+            kernels = library.my_kernels(ctypes.byref(n))
+            method = program.load_method("forward", kernels, n.value)
+        """
+        ...
     def method_meta(self, method_name: str) -> MethodMeta: ...
     def has_etdump(self) -> bool: ...
     def write_etdump_result_to_file(
@@ -191,6 +227,11 @@ class BundledModule:
         This API is experimental and subject to change without notice.
     """
 
+    def load_method(
+        self, method_name: str, kernels: int = 0, num_kernels: int = 0
+    ) -> None:
+        """As ``ExecuTorchModule.load_method``."""
+        ...
     # pyre-ignore[3]: "Any" in return type annotations.
     def verify_result_with_bundled_expected_output(
         self,
