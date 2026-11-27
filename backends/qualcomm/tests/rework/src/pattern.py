@@ -4235,6 +4235,74 @@ class FoldQDQ:
             assertions.assert_no_target(gm, dq_targets)
 
 
+class FoldZeroPadIntoLinear:
+    class ZeroPadLinear(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.linear = torch.nn.Linear(32, 64)
+
+        def forward(self, x):
+            return self.linear(
+                torch.nn.functional.pad(
+                    x,
+                    (0, 32 - x.shape[-1]),
+                )
+            )
+
+    @staticmethod
+    @unpack_pass_fixtures
+    def test(
+        quantizer,
+        compile_spec,
+        backend_type: QnnExecuTorchBackendType,
+        assertions: Assertions,
+        pass_pipeline: PassPipeline,
+        subtests,
+    ):
+        module = FoldZeroPadIntoLinear.ZeroPadLinear()
+        inputs = (torch.randn(1, 8),)
+
+        target_pass = _passes.FoldZeroPadIntoLinear
+        _ = compile_spec
+        _ = quantizer
+
+        with subtests.test(msg="annotation"):
+
+            gm = pass_pipeline.lower_annotation_gm(
+                module=module,
+                sample_input=inputs,
+                backend_type=backend_type,
+                target_pass=target_pass,
+            )
+
+            assertions.assert_no_target(
+                gm,
+                {
+                    torch.ops.aten.pad.default,
+                    torch.ops.aten.constant_pad_nd.default,
+                },
+            )
+
+            assertions.assert_target_count(
+                gm,
+                {torch.ops.aten.linear.default},
+                1,
+            )
+
+            linear_nodes = [
+                node
+                for node in gm.graph.nodes
+                if node.target == torch.ops.aten.linear.default
+            ]
+
+            assert len(linear_nodes) == 1
+
+            weight = linear_nodes[0].args[1]
+
+            assert isinstance(weight, torch.fx.Node)
+            assert weight.meta["val"].shape == (64, 8)
+
+
 class FuseBatchNormWithConv:
     """The shared backends/transforms fold, run from the QNN edge pipeline.
 

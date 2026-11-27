@@ -5713,6 +5713,17 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_zero_pad_linear(self):
+        module = ZeroPadLinear()  # noqa: F405
+        sample_input = (torch.randn(1, 8),)
+        module = self.get_qdq_module(
+            module,
+            sample_input,
+            is_linear_per_channel=True,
+            quant_dtype=QuantDtype.use_16a8w,
+        )
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_permute(self):
         modules = [
             Permute([0, 2, 3, 1]),  # noqa: F405

@@ -2206,6 +2206,15 @@ class Pad(torch.nn.Module):
         )
 
 
+class ZeroPadLinear(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear = torch.nn.Linear(32, 64)
+
+    def forward(self, x):
+        return self.linear(torch.nn.functional.pad(x, (0, 32 - x.shape[-1])))
+
+
 class Permute(torch.nn.Module):
     def __init__(self, dims: List[int]):
         super().__init__()

@@ -57,6 +57,7 @@ from executorch.backends.qualcomm._passes import (
     ExpandBroadcastTensorShape,
     FixedLinearKeepDim,
     FoldQDQ,
+    FoldZeroPadIntoLinear,
     FuseBatchNormWithConv,
     FuseConsecutiveCast,
     FuseConsecutiveReshape,
@@ -209,6 +210,7 @@ class QnnPassManager(PassManager):
             DecomposeSelectScatter,
             DecomposeLinalgVectorNorm,
             DecomposeLogVariants,
+            FoldZeroPadIntoLinear,
             LiftConstantScalarOperands,
             InsertReshapeForReduceOps,
         ]

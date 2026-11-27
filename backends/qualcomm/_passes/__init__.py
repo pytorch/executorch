@@ -54,6 +54,7 @@ from .decompose_wrap_with_autocast import DecomposeWrapWithAutocast
 from .expand_broadcast_tensor_shape import ExpandBroadcastTensorShape
 from .fixed_linear_keep_dim import FixedLinearKeepDim
 from .fold_qdq import FoldQDQ
+from .fold_zero_pad_into_linear import FoldZeroPadIntoLinear
 from .fuse_batch_norm_with_conv import FuseBatchNormWithConv
 from .fuse_consecutive_cast import FuseConsecutiveCast
 from .fuse_consecutive_reshape import FuseConsecutiveReshape
@@ -128,6 +129,7 @@ __all__ = [
     ExpandBroadcastTensorShape,
     FixedLinearKeepDim,
     FoldQDQ,
+    FoldZeroPadIntoLinear,
     FuseBatchNormWithConv,
     FuseConsecutiveCast,
     FuseConsecutiveReshape,
