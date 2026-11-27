@@ -367,7 +367,7 @@ jobs:
 
         merged_dir="${RUNNER_ARTIFACT_DIR}/merged"
         mkdir -p "${merged_dir}"
-        python -m executorch.backends.cuda.merge_ptes \
+        python -m executorch.backends.cuda.scripts.merge_ptes \
           --input-pte "${RUNNER_ARTIFACT_DIR}/native-sm80/linear/linear.pte" \
           --input-pte "${RUNNER_ARTIFACT_DIR}/native-sm86/linear/linear.pte" \
           --input-ptd "${sm80_ptd}" \

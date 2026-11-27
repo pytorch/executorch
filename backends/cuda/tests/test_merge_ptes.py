@@ -20,7 +20,7 @@ from executorch.backends.cuda.cuda_weight_collector import (
     decode_cuda_aoti_metadata,
     encode_cuda_aoti_metadata,
 )
-from executorch.backends.cuda.merge_ptes import (
+from executorch.backends.cuda.scripts.merge_ptes import (
     CudaPteInput,
     main as merge_main,
     merge_cuda_pte_files,
@@ -46,7 +46,7 @@ from executorch.exir.schema import (
 from executorch.extension.flat_tensor.serialize.serialize import FlatTensorSerializer
 
 
-@patch("executorch.backends.cuda.merge_ptes.torch.version.hip", None)
+@patch("executorch.backends.cuda.scripts.merge_ptes.torch.version.hip", None)
 class TestMergeCudaPtes(unittest.TestCase):
     def _write_artifact(
         self,
@@ -585,7 +585,7 @@ class TestMergeCudaPtes(unittest.TestCase):
 
     def test_rejects_rocm(self) -> None:
         with patch(
-            "executorch.backends.cuda.merge_ptes.torch.version.hip", "6.3"
+            "executorch.backends.cuda.scripts.merge_ptes.torch.version.hip", "6.3"
         ), self.assertRaisesRegex(RuntimeError, "only NVIDIA CUDA"):
             merge_cuda_pte_files([])
 
@@ -602,7 +602,9 @@ class TestMergeCudaPtes(unittest.TestCase):
             first = self._write_artifact(sm80, 80, b"sm80-so", b"weight")
             second = self._write_artifact(sm120, 120, b"sm120-so", b"weight")
             fallback = self._write_artifact(fallback_dir, 75, b"fallback-so", b"weight")
-            self.assertIsNotNone(first.ptd_path)
+            assert first.ptd_path is not None
+            first.pte_path.chmod(0o640)
+            first.ptd_path.chmod(0o604)
             output_pte = output / "model.pte"
             output_ptd = output / "aoti_cuda_blob.ptd"
 
@@ -631,7 +633,12 @@ class TestMergeCudaPtes(unittest.TestCase):
                 merge_main()
 
             self.assertTrue(output_pte.is_file())
-            assert first.ptd_path is not None
+            self.assertEqual(output_pte.stat().st_mode & 0o777, 0o640)
+            self.assertEqual(output_ptd.stat().st_mode & 0o777, 0o604)
+            self.assertEqual(
+                {entry.name for entry in output.iterdir()},
+                {"model.pte", "aoti_cuda_blob.ptd"},
+            )
             self.assertEqual(output_ptd.read_bytes(), first.ptd_path.read_bytes())
             report = stdout.getvalue()
             self.assertIn(f"cubin\tsm80\t{first.pte_path}", report)
@@ -640,6 +647,87 @@ class TestMergeCudaPtes(unittest.TestCase):
                 f"ptx-fallback\tcompute_75 (source sm75)\t"
                 f"{fallback.pte_path} [fallback]",
                 report,
+            )
+
+    def test_cli_output_ptd_without_input_ptd_writes_nothing(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "sm80"
+            source.mkdir()
+            input_pte = source / "model.pte"
+            input_pte.write_bytes(b"unused")
+            output_pte = root / "output" / "model.pte"
+            output_ptd = root / "output" / "aoti_cuda_blob.ptd"
+            with patch(
+                "sys.argv",
+                [
+                    "merge_ptes",
+                    "--input-pte",
+                    str(input_pte),
+                    "--output-pte",
+                    str(output_pte),
+                    "--output-ptd",
+                    str(output_ptd),
+                ],
+            ), patch(
+                "executorch.backends.cuda.scripts.merge_ptes."
+                "merge_cuda_pte_files_with_provenance"
+            ) as merge, self.assertRaisesRegex(
+                ValueError, "requires --input-ptd"
+            ):
+                merge_main()
+            merge.assert_not_called()
+            self.assertFalse(output_pte.exists())
+            self.assertFalse(output_ptd.exists())
+
+    def test_cli_failed_ptd_copy_leaves_no_output(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sm80 = root / "sm80"
+            sm120 = root / "sm120"
+            output = root / "output"
+            sm80.mkdir()
+            sm120.mkdir()
+            inputs = [
+                self._write_artifact(sm80, 80, b"sm80-so", b"weight", ptx_compute=0),
+                self._write_artifact(sm120, 120, b"sm120-so", b"weight", ptx_compute=0),
+            ]
+            output.mkdir()
+            output_pte = output / "model.pte"
+            output_pte.write_bytes(b"previous pte")
+            output_ptd = output / "aoti_cuda_blob.ptd"
+            output_ptd.write_bytes(b"previous ptd")
+            argv = ["merge_ptes"]
+            for artifact in inputs:
+                argv += ["--input-pte", str(artifact.pte_path)]
+            for artifact in inputs:
+                assert artifact.ptd_path is not None
+                argv += ["--input-ptd", str(artifact.ptd_path)]
+            argv += [
+                "--output-pte",
+                str(output_pte),
+                "--output-ptd",
+                str(output_ptd),
+            ]
+
+            class FailingFileData:
+                def __init__(self, path: str) -> None:
+                    pass
+
+                def write_to_file(self, stream) -> None:
+                    stream.write(b"partial")
+                    raise OSError("copy failed")
+
+            with patch("sys.argv", argv), patch(
+                "executorch.backends.cuda.scripts.merge_ptes.FileBackedData",
+                FailingFileData,
+            ), self.assertRaisesRegex(OSError, "copy failed"):
+                merge_main()
+            self.assertEqual(output_pte.read_bytes(), b"previous pte")
+            self.assertEqual(output_ptd.read_bytes(), b"previous ptd")
+            self.assertEqual(
+                {entry.name for entry in output.iterdir()},
+                {"model.pte", "aoti_cuda_blob.ptd"},
             )
 
 

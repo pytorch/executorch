@@ -7,9 +7,6 @@
 import argparse
 import copy
 import hashlib
-import os
-import shutil
-import tempfile
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
@@ -23,7 +20,8 @@ from executorch.backends.cuda.cuda_weight_collector import (
     decode_cuda_aoti_metadata,
     encode_cuda_aoti_metadata,
 )
-from executorch.exir._serialize._cord import Cord
+from executorch.backends.cuda.scripts._atomic_output import write_atomically
+from executorch.exir._serialize._cord import Cord, FileBackedData
 from executorch.exir._serialize._named_data_store import (
     NamedDataStore,
     NamedDataStoreOutput,
@@ -43,7 +41,6 @@ from executorch.extension.flat_tensor.serialize.serialize import (
     _deserialize_to_flat_tensor,
     FlatTensorHeader,
 )
-
 
 CUDA_BACKEND_ID = "CudaBackend"
 
@@ -280,14 +277,16 @@ def _validate_shared_weights(
             != reference_entry.storage_nbytes
         ):
             raise ValueError(
-                f"CUDA weight {fqn!r} has an invalid size in {reference.source.pte_path}"
+                f"CUDA weight {fqn!r} has an invalid size in "
+                f"{reference.source.pte_path}"
             )
         if (
             candidate.blob_size(candidate_entry.storage_key)
             != candidate_entry.storage_nbytes
         ):
             raise ValueError(
-                f"CUDA weight {fqn!r} has an invalid size in {candidate.source.pte_path}"
+                f"CUDA weight {fqn!r} has an invalid size in "
+                f"{candidate.source.pte_path}"
             )
         if reference.blob_sha256(reference_entry.storage_key) != candidate.blob_sha256(
             candidate_entry.storage_key
@@ -559,7 +558,9 @@ def _prepare_merged_output(reference: _Artifact) -> Tuple[Program, NamedDataStor
                         for key, entry in entries.items()
                         if key not in cuda_so_keys
                     }
-                    for filename, entries in reference.pte.named_data.external_data.items()
+                    for filename, entries in (
+                        reference.pte.named_data.external_data.items()
+                    )
                 },
             )
         )
@@ -700,6 +701,8 @@ def main() -> None:
         raise ValueError("--input-ptd must be provided once per --input-pte")
     if args.input_ptd and args.output_ptd is None:
         raise ValueError("--output-ptd is required when --input-ptd is provided")
+    if not args.input_ptd and args.output_ptd is not None:
+        raise ValueError("--output-ptd requires --input-ptd")
     if args.fallback_ptd is not None and args.fallback_pte is None:
         raise ValueError("--fallback-ptd requires --fallback-pte")
     sources = [
@@ -718,20 +721,20 @@ def main() -> None:
         else None
     )
     result = merge_cuda_pte_files_with_provenance(sources, fallback)
-    args.output_pte.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(
-        dir=args.output_pte.parent, prefix=f".{args.output_pte.name}.", delete=False
-    ) as temporary:
-        temporary_path = Path(temporary.name)
-        result.pte.write_to_file(temporary)
-    os.replace(temporary_path, args.output_pte)
-
+    # The (much larger) PTD goes first, so a failed copy leaves the
+    # existing output PTE untouched instead of pairing a new PTE with
+    # a stale weights blob.
     if args.output_ptd is not None:
-        if not args.input_ptd:
-            raise ValueError("--output-ptd requires --input-ptd")
-        args.output_ptd.parent.mkdir(parents=True, exist_ok=True)
         if args.input_ptd[0].resolve() != args.output_ptd.resolve():
-            shutil.copyfile(args.input_ptd[0], args.output_ptd)
+            write_atomically(
+                args.output_ptd,
+                FileBackedData(str(args.input_ptd[0])).write_to_file,
+                mode_from=args.input_ptd[0],
+            )
+
+    write_atomically(
+        args.output_pte, result.pte.write_to_file, mode_from=sources[0].pte_path
+    )
 
     print("Merged CUDA code provenance:")
     print("delegate\tkind\ttarget\tsource PTE")
